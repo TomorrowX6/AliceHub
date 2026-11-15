@@ -1,206 +1,128 @@
-# re:xsystem4
-
-[![Build APK](https://github.com/TomorrowX6/re-xsystem4/actions/workflows/build.yml/badge.svg)](https://github.com/TomorrowX6/re-xsystem4/actions/workflows/build.yml)
-[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](xsystem4/COPYING)
-[![Platform](https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg)](https://github.com/TomorrowX6/re-xsystem4/releases)
-
-**English** | **[简体中文](README.zh-CN.md)** | **[日本語](README.ja.md)**
-
-**re:xsystem4** is a heavily customized and extended native Android engine for AliceSoft **System 4.x** games, built upon [xsystem4](https://github.com/nunuhara/xsystem4) and [xsystem4-android](https://github.com/kichikuou/xsystem4-android).
-
-Written in pure C/C++, SDL2, and OpenGL ES 3.0, it directly interprets AIN bytecode and renders original game assets on Android `arm64-v8a` devices without relying on Wine, Winlator, or any x86/x64 translation layer. Beyond classic System 4.0 titles, it provides full implementations, MOD compatibility, and mobile-focused optimizations for late-era large-scale AliceSoft titles (such as *Rance X / Rance 10 -Showdown-* with community expansions like *Sunset MOD / 日不落 MOD*, and *Dohna Dohna: Let's Do Bad Things Together / 多娜多娜*) powered by **AIN v12 – v14+**, **PartsEngine**, **FLAT v15 skeletal & particle animations**, **SealEngine 3D**, **APEG video streaming**, and **SaveData v26 / v27**.
-
----
-
-## Key Features
-
-### 1. AIN v12 – v14+ Virtual Machine, HLL & Deep MOD Compatibility
-- **AIN v12 – v14.1 Bytecode Support**: Full support for AIN v12 and v14+ opcodes (including `X_DUP`, `X_MOV`, `X_REF`, `X_ASSIGN`, `X_A_INIT`, `X_TO_STR`, `IFACE_WRAP` interface wrappers, and `CALLMETHOD` vtable dispatch), delegates (`DG_*`), local reference management, deep struct copying, `CALLFUNC` `struct_page` inheritance, and reflection interfaces.
-- **Full HLL Coverage**: Implements and extends `PartsEngine` (804/804 functions), `HashMap`, `SealEngine`, `ADVEngine`, `SaveData`, `RSave`, `APEG`, `SoundEngine`, `FileOperation`, `FileDialog`, `MsgSkip`, `Math`, `PassRegister`, `BanMisc`, and other core HLL libraries.
-- **Large-Scale MOD Compatibility**:
-  - Archive-indexed AFA asset IDs and per-entry `FILETIME` timestamp + MOD priority resolution across overlapping `.afa` archives, ensuring localized base/hotfix assets (`CG` / `CG6`) and MOD overrides coexist cleanly without collisions.
-  - Canonical `.ex` data table prioritization, incremental MOD patch layering, and automatic Shift-JIS / GBK / UTF-8 text & font fallback.
-  - Cross-version MOD save hardening (`resume` schema drift protection and automatic fallback card rendering when saves reference removed/missing EX entries).
-
-### 2. PartsEngine Rendering & 3D Transform Pipeline
-- **FLAT v15 Animation & Particle System**:
-  - Supports zlib-compressed `ELNA` / `FLAT` v15 timelines, keyframe interpolation, script frame triggers, radial/fixed-end particle emitter trajectories, and `.flat` binary/timeline caching.
-  - Implements nested ancestor keyframe birth-matrix inheritance (`parent_key_mode == 2`), ancestor alpha clipper inheritance, and additive blending for glow/route layers.
-- **3D Perspective Rotation & Back-Face Culling**:
-  - Supports X/Y/Z Euler perspective rotation matrices for UI parts (e.g., card flip animations), hierarchical parent-child 3D transform cascading, and automatic front/back-face culling.
-- **Construction Process (`cproc`) Pipeline**:
-  - Full implementation of text layout rendering, surface crop/copy, color fill, alpha blending, Gaussian blur, grayscale conversion, HSL/HSV adjustment, pixel snapshots (`m_procOrg` preservation), and gauge clipping.
-- **Editor Layer Filtering & Accurate Hit-Testing**:
-  - Automatically suppresses internal editor placeholder parts (`CheckBox`, `RadioButton`, `■ボタン上敷き`, etc.) and excludes hidden (`alpha == 0`) parts and transparent `.flat` containers from hit-testing.
-
-### 3. Performance, Scheduling & Multimedia Optimization
-- **OpenGL ES 3.0 Hardware Acceleration**: GLES 3.0 shader pipeline with offscreen framebuffer (FBO) composition, early `glFlush()` GPU pipelining, and 16 KB page alignment (Android 15+ ready).
-- **Android Thread Scheduling & Frame Pacing**:
-  - Elevates the render thread to `THREAD_PRIORITY_URGENT_DISPLAY` (`-8`, `50us` timer slack) and the audio mixing callback thread to `ANDROID_PRIORITY_URGENT_AUDIO` (`-16`).
-  - Integrates Android 12+ **ADPF (`APerformanceHintManager`)** for dynamic CPU boost on heavy frames, paired with `eglPresentationTimeANDROID` and seamless `Surface.setFrameRate` 60fps VSync pacing on 60Hz/120Hz displays.
-  - Automatically suspends audio mixing when backgrounded to eliminate idle CPU/battery drain.
-- **APEG Video Decoder & Texture GC**: Built-in MPEG-1 video and Ogg Vorbis audio synchronized decoder, per-frame deferred texture garbage collection, `SceneParty` card loading acceleration, and fast-forward (`MsgSkip` / `Ctrl`) surface rebuild throttling.
-
-### 4. Per-Game Hub, Online & Local Installer, Save Manager & Game Modifier
-- **Game Selection Home & Dedicated Game Hubs**:
-  - Opening the app presents a **Select Game** portal showing official high-res icons and live status badges for **Rance 10**, **Dohna Dohna**, and any additional imported System 4 titles.
-  - Tapping a game opens its **Dedicated Hub**: Rance 10 provides cloud/local base & MOD installers, MOD Manager, scoped saves, and the full Rance 10 modifier suite, while Dohna Dohna and other titles present a clean local import flow, isolated save directory management, and universal modifier tools (floating overlay, `⏩ Ctrl` skip button, live font scaling, and scrollbar scaling).
-- **Online & Local Dual-Mode Installation (Base Game & MODs)**:
-  - **Dual-Line Online Base Game Installer (EdgeOne / Cloudflare)**: One-click cloud download of the complete Chinese Rance 10 base game via **EdgeOne** or **Cloudflare** CDN lines, with seamless cross-line HTTP `Range` resume and per-file SHA-256 verification (no double storage overhead for archive extraction).
-  - **Background Download & System Notifications**: Powered by an Android Foreground Service with CPU/Wi-Fi locks so downloads and extractions continue at full speed when backgrounded or with the screen off; includes a **Background** dialog minimize action, live notification progress bar & speed, notification **Pause** button, and completion alerts.
-  - **Native Full-Screen MOD Manager & Portal (`rance10sns.cn`)**: Unified native UI matching the Save Manager and Game Modifier; automatically fetches the full MOD release catalog and changelogs, tracks installed versions, detects updates, and supports smart incremental patch updates, automatic base + patch combo installation, clean switching across historical versions, and an integrated portal login/download Activity.
-- **Native `.zip` / `.rar` / `.7z` Streaming Extractor**: Powered by `libarchive` + `xz` (`liblzma`), supporting ZIP/Zip64, RAR4/RAR5 (including solid archives and large dictionaries), and 7z (LZMA/LZMA2/PPMd/BCJ) with automatic UTF-8 / UTF-16LE / GBK filename detection.
-- **Non-Destructive MOD Manager**: Install full or incremental MODs online or from local `.zip` / `.rar` / `.7z` archives and folders with automatic vanilla file backup and one-tap **Restore Vanilla (`还原原版`)**.
-- **Built-in Save Manager**: Bidirectional PC save compatibility (`SaveData` v26 `.asd` & `RSave` `.rsd`) with atomic `fsync` writes; import saves from `.zip` / `.rar` / `.7z` archives, folders, or individual files; export saves to ZIP or external folders; and back up, rename, or delete individual files.
-- **Standalone & In-Game Floating Modifier (Default ON)**:
-  - **In-Game Floating Modifier (`悬浮窗修改器`)**: Enabled by default via a draggable overlay icon; provides **live Font Size scaling (`75%–160%` with overflow-safe layout adaptation)**, **live Scrollbar width & touch-thumb enlargement (`100%–300%` with swipe-hijack protection)**, 11 real-time battle/campaign locks (Max HP, Infinite AP, 999 Combo, Round 1 Lock, One-Hit Kill, Enemy 0 ATK/DEF, Boost & Crit, Infinite Skill Uses, Infinite Zippo, Resources >= 999, 100% Treasure Drop), persistent **Disable Streamer Mode (`关闭主播模式`)** & cheat code submission for MODs, a draggable **`⏩ Ctrl`** latched skip button (enabled by default), and live resource/party/world/card editors.
-  - **Standalone Game Modifier (`游戏修改器`)**: Offline `GlobalSave.asd` / `Collection.asd` and `SaveData*.asd` slot editor, one-click full-unlock save installation with automatic `.modbak` backup, **Font Size** & **Scrollbar** presets, and master toggles for the floating modifier and **`⏩ Ctrl`** skip button (disabling **`⏩ Ctrl`** also blocks summoning it in-game).
+<div align="center">
+  <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
+  <h1>AliceHub</h1>
+  <p><strong>面向 System 4.x 架构的 Android 原生运行引擎与聚合管理中心</strong></p>
+  <p>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build APK" /></a>
+    <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Platform" /></a>
+    <img src="https://img.shields.io/badge/QQ%20%E4%BA%A4%E6%B5%81%E7%BE%A4-383917628-12B7F5.svg" alt="QQ 交流群: 383917628" />
+  </p>
+  <p><strong>简体中文</strong> | <a href="README.en.md"><strong>English</strong></a> | <a href="README.ja.md"><strong>日本語</strong></a></p>
+</div>
 
 ---
 
-## System Requirements
+**AliceHub**（`io.github.alicehub`）是基于 [xsystem4](https://github.com/nunuhara/xsystem4) 与 [xsystem4-android](https://github.com/kichikuou/xsystem4-android) 深度定制与扩展的 **System 4.x** Android 原生运行引擎与本地资源管理中心。
 
-| Component | Minimum | Recommended |
+项目采用纯 C/C++、SDL2 与 OpenGL ES 3.0 编写，在 `arm64-v8a` Android 设备上直接解释执行 AIN 字节码并硬件加速渲染原版资源，无需借助 Wine、Winlator 或任何 x86/x64 指令转译层。除兼容早期 System 4.0 架构外，重点针对采用 **AIN v12 ~ v14.1**、**PartsEngine**、**FLAT v15 骨骼与粒子动画**、**SealEngine 3D**、**APEG 视频流** 以及 **SaveData v26 / v27** 的后期大型项目与社区扩展补丁进行了完整实现与移动端深度调优。
+
+---
+
+## 核心特性
+
+### 1. 聚合启动主页、独立项目管理与全局设置
+- **简洁直观的聚合主页**：卡片式展示内置支持条目、高清图标及实时状态角标（`未安装`、`已安装`、`已安装 · MOD`、`安装中…`、`运行中`）。
+- **独立项目中心**：每个条目拥有独立的专属管理页，按项目特性自动适配本体安装、多实例目录切换、无损 MOD 管理、隔离存档目录管理、修改器及右上角资源清理菜单。
+- **全局设置页**（主页右上角齿轮图标）：
+  - **主题模式**：支持 `自动`、`亮色`、`深色` 三档实时切换。
+  - **界面语言**：支持 `跟随系统`、`简体中文`、`日本語`、`English` 四档即时切换，同步覆盖系统通知栏与局内悬浮窗。
+  - **在线安装开关**：默认关闭；点击开启时弹出完整七条《免责声明与使用条款》，开启后展示在线安装入口与精确包体大小。
+  - **社区与关于**：内置 **QQ 交流群**、**开源许可证** 与 **GitHub** 仓库入口。
+
+### 2. 双模式资源安装、后台服务与无损扩展管理
+- **本地与在线安装**：
+  - **本地安装**：内置基于 `libarchive` + `liblzma` 的原生流式解压引擎，支持直接从 `.zip` / `.rar` / `.7z` 压缩包（含固实压缩与大字典）或外部文件夹导入，自动识别 UTF-8 / UTF-16LE / GBK 文件名。
+  - **在线安装**（于设置中开启后可用）：支持流式下载、包体体积预展示、HTTP `Range` 断点续传与逐文件 SHA-256 完整性校验，无需双倍解压暂存空间。
+- **前台服务后台保活**：支持一键转入后台运行，依托前台服务与唤醒锁在切回桌面或息屏状态下持续满速传输与解压，并在系统通知栏实时显示进度、网速与暂停操作。
+- **无损 MOD 与补丁管理**：
+  - 支持在线查看版本列表、包体体积与更新日志，执行一键增量补丁更新、基础包 + 补丁自动组合安装及历史版本切换；同时支持从本地压缩包或文件夹导入扩展包。
+  - 安装时自动备份被覆盖的原版文件，随时支持一键 **卸载 MOD** 无损还原。
+
+### 3. 存档管理与局内实时悬浮工具
+- **存档管理**：
+  - 与桌面端原版存档格式双向互通（`SaveData` v26/v27 `.asd` 与 `RSave` `.rsd`，关键全局数据 `fsync` 原子落盘）。
+  - 支持压缩包、文件夹、单文件多模式导入与导出，支持多存档目录切换及单文件备份、重命名与删除。
+- **离线修改与局内悬浮窗**：
+  - **通用移动端增强**：游戏内左上角可拖动悬浮图标、可锁定快进状态的 **`⏩ Ctrl`** 悬浮键、**字体大小实时缩放（`75%~160%`，防溢出重排）** 以及 **滚动条加宽放大（`100%~300%`）**。
+  - **数值编辑与实时锁定**：支持离线存档编辑、全解锁存档导入还原，以及局内实时数值调节与状态锁定开关。
+
+### 4. 原生 System 4.x 引擎与移动端性能调优
+- **AIN v12 ~ v14.1 虚拟机与完整 HLL 库**：完整支持 AIN v12–v14.1 指令集（含 `IFACE_WRAP`、`CALLMETHOD`、`X_*` 系列操作码、委托 `DG_*`、结构体深拷贝）、`PartsEngine` 全 804 个接口、`SealEngine`、`ADVEngine`、`SaveData`、`RSave`、`APEG`、`SoundEngine`、`HashMap` 及多 `.afa` / `.ex` 优先级覆盖解析。
+- **PartsEngine、FLAT v15 与 3D 渲染管线**：OpenGL ES 3.0 离屏 FBO 合成、zlib 压缩 `ELNA` / `FLAT` v15 骨骼与粒子动画、3D 欧拉角透视翻转与背面剔除，以及完整 `cproc` 图像滤镜与文本排版工序。
+- **高刷帧率节奏与低功耗调度**：渲染（`-8`）与混音（`-16`）高优先级线程调度，接入 Android 12+ **ADPF（`APerformanceHintManager`）** 动态提频与 60fps VSync 对齐，兼容 Android 15+ `16 KB` 页面对齐，切入后台自动挂起音频混音。
+
+---
+
+## 系统与硬件要求
+
+| 项目 | 最低要求 | 推荐配置 |
 | :--- | :--- | :--- |
-| **CPU Architecture** | `arm64-v8a` (64-bit ARM) | Snapdragon 8 Series / Dimensity 8000+ or equivalent |
-| **OS Version** | Android 8.0 (API 26) or higher | Android 12.0 (API 31) or higher (for ADPF & seamless frame rate) |
-| **Graphics API** | OpenGL ES 3.0 | OpenGL ES 3.2 |
-| **Memory (RAM)** | 4 GB RAM | 6 GB RAM or higher |
-| **Storage** | Depends on game size (5 GB+ free space recommended) | UFS 3.0+ Flash Storage |
+| **处理器架构** | `arm64-v8a`（64 位 ARM） | 骁龙 8 系列 / 天玑 8000+ 或同级芯片 |
+| **操作系统** | Android 8.0（API 26）及以上 | Android 12.0（API 31）及以上（支持 ADPF 与无缝帧率） |
+| **图形接口** | OpenGL ES 3.0 | OpenGL ES 3.2 |
+| **运行内存** | 4 GB RAM | 6 GB RAM 及以上 |
+| **存储空间** | 建议预留 5 GB 以上可用空间 | UFS 3.0+ 闪存 |
 
 ---
 
-## Download & Installation
+## 快速上手
 
-1. Visit the [**Releases**](https://github.com/TomorrowX6/re-xsystem4/releases) page to download the latest signed APK `re-xsystem4-arm64-v8a.apk`.
-2. You can also download the latest automated build artifact from [**GitHub Actions**](https://github.com/TomorrowX6/re-xsystem4/actions/workflows/build.yml).
-3. Install the APK on your Android device and launch **re:xsystem4**.
-
----
-
-## Game, MOD, Save & Modifier Guide
-
-To run a game, prepare the complete original PC game files (containing `AliceStart.ini` or `System40.ini`, `*.ain` bytecode file, `*.afa` / `*.ald` archives, `Data/`, `Movie/`, etc.).
-
-### 1. Online Install (`在线安装`)
-Tap **Online Install (`在线安装`)** on the launcher and choose:
-- **Install Base Game**: Select **EdgeOne** or **Cloudflare** to download the complete Chinese Rance 10 base game (~3.75 GB) with cross-line pause/resume support and SHA-256 integrity verification.
-- **Install MOD**: Opens the native **MOD Manager** screen to check for new releases against the currently installed version, perform one-tap smart updates, browse changelogs and switch to any historical version, open the integrated `https://rance10sns.cn` portal screen, or restore the vanilla game.
-
-### 2. Local Install (`本地安装`)
-Tap **Local Install (`本地安装`)** on the launcher and choose:
-- **Install Base Game**: Import the base game from a local **`.zip` / `.rar` / `.7z` archive** or an **external folder** (e.g., `/sdcard/Download/Rance10/`).
-- **Install MOD**: Install full or incremental MODs from a local **`.zip` / `.rar` / `.7z` archive** or **external folder** with automatic vanilla file backup and one-tap **Restore Vanilla (`还原原版`)**.
-
-### 3. Save Manager (`存档管理器`)
-- **Import Saves**: Import saves from an external `.zip` / `.rar` / `.7z` archive, external folder, or individual save files (`GlobalSave.asd`, `Collection.asd`, `SaveData*.asd`, etc.).
-- **Export Saves**: Package all internal saves into a `.zip` archive or export directly to any external folder.
-- **Manage Save Files**: Switch or create save directories per game/MOD, inspect file tags, sizes, and modification timestamps, and export, back up (`.bak`), rename, or delete individual save files.
-
-### 4. Game Modifier (`游戏修改器` & In-Game Floating Overlay)
-- **In-Game Floating Modifier**: Enabled by default when launching a game (draggable icon in the top-left corner). Tap it anytime to preview and adjust **Font Size** and **Scrollbar Size** live (without modifying save files), toggle real-time battle/resource locks, disable MOD streamer mode (persisted automatically across restarts), enter MOD cheat codes, toggle the draggable **`⏩ Ctrl`** skip button, or edit live campaign/battle stats.
-- **Launcher Game Modifier**: Edit `GlobalSave.asd` / `Collection.asd` and individual `SaveData*.asd` slots offline, install/restore full-unlock saves, configure **Font Size** and **Scrollbar Size**, or toggle the floating modifier icon and **`⏩ Ctrl`** skip button on/off (enabled by default; turning **`⏩ Ctrl`** off also disables summoning it in-game).
+1. 前往 [**Releases**](https://github.com/TomorrowX6/AliceHub/releases) 下载最新签名安装包，或在 [**GitHub Actions**](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 获取最新自动构建产物。
+2. 安装并打开 **AliceHub**，选择对应条目进入管理页：
+   - 点击 **本地安装**，从本地 `.zip` / `.rar` / `.7z` 压缩包或文件夹导入完整运行资源（含 `AliceStart.ini` / `System40.ini`、`*.ain`、`*.afa` 等）。
+   - 如需使用在线通道，可在主页右上角 **设置** 中阅读并同意《免责声明与使用条款》后开启 **在线安装**。
+3. 点击 **开始游戏** 启动运行；运行过程中可随时点击左上角悬浮图标调节字号、滚动条、快进及辅助功能。
 
 ---
 
-## Touch Controls
+## 触控操作说明
 
-| In-Game Action | Touch Gesture |
+| 运行时操作 | 触控手势 |
 | :--- | :--- |
-| **Left Mouse Click / Confirm** | Single-finger tap on the target position |
-| **Right Mouse Click / Cancel / Menu** | Single-finger tap on the left/right letterbox bars, or two-finger tap anywhere |
-| **Skip Text (`Ctrl`)** | Single-finger long press and hold, or tap the floating **`⏩ Ctrl`** pill to latch skip |
-| **Mouse Wheel Up / Down (Backlog / Scroll)** | Two-finger swipe down / up |
-| **Cursor Hover / Card Drag-Scroll** | Single-finger press and drag across the screen |
-| **Exit Confirmation Dialog** | System Back gesture / button (triggers in-game `SetHookCloseApp` confirmation) |
+| **鼠标左键 / 确认** | 单指轻触目标位置 |
+| **鼠标右键 / 返回 / 菜单** | 双指轻触屏幕任意位置，或单指轻触左右黑边区域 |
+| **对话快进（`Ctrl`）** | 单指长按屏幕，或点击 **`⏩ Ctrl`** 悬浮键锁定快进 |
+| **鼠标滚轮上下翻页** | 双指在屏幕上向下 / 向上滑动 |
+| **光标悬停 / 拖拽滚动** | 单指按住并滑动 |
+| **退出确认弹窗** | 系统返回手势 / 返回键 |
 
 ---
 
-## Repository Structure
+## 从源码构建
 
-```text
-.
-├── .github/workflows/
-│   └── build.yml           # GitHub Actions CI workflow for building and signing APK
-├── CMakeLists.txt          # Top-level CMake ExternalProject script for cross-compiling dependencies & xsystem4
-├── build-shared-libs.sh    # Entry script to build Android JNI native shared libraries (.so)
-├── collect-licenses.sh     # Script to collect third-party open-source licenses
-├── cmake/                  # CMake modules for fetching FreeType and SDL2
-├── archive_jni/            # Native libarchive + xz (liblzma) JNI streaming extractor (.zip / .rar / .7z)
-├── xsystem4/               # Extended xsystem4 engine, modifier core, and libsys4 source code
-│   ├── include/            # Engine headers
-│   ├── src/                # VM, rendering pipeline, ADPF pacing, audio, video, HLL, PartsEngine & modifier
-│   ├── shaders/            # OpenGL ES 3.0 shaders
-│   └── subprojects/
-│       └── libsys4/        # Parsers for AIN, AFA, FLAT, EX, ACF, and save formats
-└── project/                # Android Gradle application project
-    └── app/
-        ├── build.gradle    # Android build and signing configuration
-        └── src/main/
-            ├── AndroidManifest.xml
-            ├── java/io/github/kichikuou/xsystem4/  # Launcher, MOD/Save Manager, Modifier, ArchiveExtractor & Activity
-            ├── jniLibs/arm64-v8a/                  # Output directory for compiled native .so libraries
-            └── res/                                # Layouts, icons, full-unlock saves, and multilingual resources
-```
+### 1. 环境准备
+推荐使用 Linux（Ubuntu 22.04 / 24.04）或 macOS，安装 **JDK 17**、**Android SDK（API 34+）**、**Android NDK（r26d–r29）**、**CMake 3.22+** 与 **Ninja**：
 
----
-
-## Building from Source
-
-### 1. Prerequisites
-Build on Linux (Ubuntu 22.04 / 24.04 recommended) or macOS with the following tools installed:
-- **JDK 17**
-- **Android SDK** (Platform API 34+, Build-Tools 34.0.0+)
-- **Android NDK** (r26d – r29 recommended)
-- **CMake** (3.22+) & **Ninja**
-- Build utilities: `flex`, `bison`, `pkg-config`, `autoconf`, `automake`, `libtool`, `python3`, `git`
-
-On Ubuntu / Debian:
 ```bash
 sudo apt-get update
 sudo apt-get install -y ninja-build bison flex autoconf automake libtool pkg-config cmake git python3 openjdk-17-jdk
 ```
 
-### 2. Build Steps
+### 2. 编译与打包
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/TomorrowX6/re-xsystem4.git
-   cd re-xsystem4
-   ```
+```bash
+git clone https://github.com/TomorrowX6/AliceHub.git
+cd AliceHub
 
-2. **Set Android SDK & NDK environment variables**:
-   ```bash
-   export ANDROID_SDK_ROOT=/path/to/android-sdk
-   export ANDROID_NDK_HOME=/path/to/android-sdk/ndk/27.2.12479018
-   ```
+export ANDROID_SDK_ROOT=/path/to/android-sdk
+export ANDROID_NDK_HOME=/path/to/android-sdk/ndk/26.1.10909125
 
-3. **Cross-compile native shared libraries (`arm64-v8a`)**:
-   ```bash
-   ./build-shared-libs.sh
-   ```
-   This script automatically downloads and cross-compiles `libwebp`, `libjpeg-turbo`, `libpng`, `libogg`, `libvorbis`, `libsndfile`, `freetype`, `SDL2`, `cglm`, `libffi`, `libdeflate`, `xz` (`liblzma`), `libarchive`, `archive_jni`, and `xsystem4`, installing the resulting `.so` files into `project/app/src/main/jniLibs/arm64-v8a/`.
+# 1. 交叉编译全部 arm64-v8a 原生动态库
+./build-shared-libs.sh
 
-4. **Assemble the Android APK**:
-   ```bash
-   cd project
-   ./gradlew assembleRelease
-   ```
-   The signed APK will be generated at `project/app/build/outputs/apk/release/app-release.apk`.
+# 2. 构建签名 Release APK
+cd project
+./gradlew assembleRelease
+```
 
-### 3. Automated Signing in CI
-The repository includes a GitHub Actions workflow ([`.github/workflows/build.yml`](.github/workflows/build.yml)). To use your own keystore in a fork, configure the following repository secrets under `Settings -> Secrets and variables -> Actions` (if omitted, a temporary debug signing key is generated automatically):
-- `KEYSTORE_BASE64`: Base64-encoded keystore file
-- `KEYSTORE_PASSWORD`: Keystore password
-- `KEY_ALIAS`: Key alias
-- `KEY_PASSWORD`: Key password
+构建完成后，安装包输出路径为 `project/app/build/outputs/apk/release/app-release.apk`。
 
 ---
 
-## Credits & License
+## 致谢与开源许可
 
-- [nunuhara/xsystem4](https://github.com/nunuhara/xsystem4) & [nunuhara/libsys4](https://github.com/nunuhara/libsys4): Core cross-platform System 4 engine and file format parsers.
-- [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android): Android port framework for xsystem4.
-- [xiexiahai/xsystem4-rance10-android](https://github.com/xiexiahai/xsystem4-rance10-android): Project Features & Enhancements.
+- [nunuhara/xsystem4](https://github.com/nunuhara/xsystem4) & [nunuhara/libsys4](https://github.com/nunuhara/libsys4) — 跨平台 System 4 核心引擎与格式解析库。
+- [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — xsystem4 Android 移植基础框架。
 
-Licensed under the [GNU General Public License v2.0 (GPL-2.0)](xsystem4/COPYING).
+本项目基于 [GNU General Public License v2.0 (GPL-2.0)](xsystem4/COPYING) 协议开源。

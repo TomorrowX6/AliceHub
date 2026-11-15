@@ -16,6 +16,7 @@
     <string name="action_game_modifier">游戏修改器</string>
     <string name="action_github">GitHub</string>
     <string name="action_licenses">开源许可证</string>
+    <string name="action_qq_group">QQ交流群</string>
     <string name="choose_a_file">选择压缩包</string>
     <string name="ok">确定</string>
     <string name="cancel">取消</string>
@@ -220,4 +221,8 @@
     <string name="switch_running_game_title">切换运行游戏</string>
     <string name="switch_running_game_msg">结束后台游戏并启动 %1$s 吗？</string>
     <string name="switch_running_game_confirm">结束并启动</string>
+    <string name="game_exit_title">退出游戏</string>
+    <string name="game_exit_message">要结束游戏吗？\n※未保存的数据将丢失</string>
+    <string name="dialog_btn_stop">终止</string>
+    <string name="dialog_btn_continue">继续</string>
 </resources>

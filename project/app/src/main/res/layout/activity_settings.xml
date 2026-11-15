@@ -171,6 +171,13 @@
             android:showDividers="middle">
 
             <Button
+                android:id="@+id/btn_settings_qq_group"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_qq_group" />
+
+            <Button
                 android:id="@+id/btn_settings_licenses"
                 style="@style/Widget.Launcher.ActionRow"
                 android:layout_width="match_parent"

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -39,6 +40,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
     private fun dp(v: Int): Int =
         (v * activity.resources.displayMetrics.density).toInt()
+
+    private fun dialogBuilder(): AlertDialog.Builder =
+        AlertDialog.Builder(ContextThemeWrapper(activity, R.style.Theme_Launcher))
 
     fun attach() {
         if (!GameModifierBridge.isFloatingEnabled(activity)) {
@@ -281,21 +285,27 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (isRance10) {
             menuEntries.add(streamerItemLabel to { triggerDisableStreamerModeInGame(inGame) })
         }
-        if (ctrlEnabled) {
-            menuEntries.add(
-                ctrlItemLabel to {
-                    val nextVisible = xsAct?.toggleCtrlOverlay() ?: (!ctrlVisible).also {
-                        GameModifierBridge.setCtrlOverlayVisible(activity, it)
-                    }
-                    Toast.makeText(
-                        activity,
-                        if (nextVisible) tr("已显示 Ctrl 快进键", "Ctrl早送りを表示しました", "Ctrl skip shown")
-                        else tr("已隐藏 Ctrl 快进键", "Ctrl早送りを非表示にしました", "Ctrl skip hidden"),
-                        Toast.LENGTH_SHORT
-                    ).show()
+        menuEntries.add(
+            ctrlItemLabel to {
+                val nextVisible = !ctrlVisible
+                if (!GameModifierBridge.isCtrlOverlayEnabled(activity) && nextVisible) {
+                    GameModifierBridge.setCtrlOverlayEnabled(activity, true)
                 }
-            )
-        }
+                val applied = if (xsAct != null) {
+                    xsAct.setCtrlOverlayVisible(nextVisible)
+                    xsAct.isCtrlOverlayCurrentlyVisible()
+                } else {
+                    GameModifierBridge.setCtrlOverlayVisible(activity, nextVisible)
+                    nextVisible
+                }
+                Toast.makeText(
+                    activity,
+                    if (applied) tr("已显示 Ctrl 快进键", "Ctrl早送りを表示しました", "Ctrl skip shown")
+                    else tr("已隐藏 Ctrl 快进键", "Ctrl早送りを非表示にしました", "Ctrl skip hidden"),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
         if (isRance10) {
             menuEntries.addAll(
                 listOf(
@@ -318,7 +328,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         val items = menuEntries.map { it.first }.toTypedArray()
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(titleText)
             .setItems(items) { _, which ->
                 menuEntries.getOrNull(which)?.second?.invoke()
@@ -345,7 +355,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val labels = lockDefs.map { it.second }.toTypedArray()
         val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
@@ -377,7 +387,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
         container.addView(et)
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("作弊码", "チートコード", "Cheat Code"))
             .setView(container)
             .setPositiveButton(tr("执行", "実行", "Apply")) { _, _ ->
@@ -438,7 +448,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             "梗概关闭" to tr("关闭梗概模式", "ダイジェストモードOFF", "Disable Summary Mode")
         )
         val labels = presets.map { it.second }.toTypedArray()
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("选择常用作弊码", "定型チートコード選択", "Cheat Code Presets"))
             .setItems(labels) { _, which ->
                 val chosen = presets[which].first
@@ -460,7 +470,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("全员蓄力必暴 + 重置技能次数", "全員ブースト＋スキル回数回復", "Boost Leaders & Reset Skills"),
             tr("宝箱100%掉落", "宝箱100%ドロップ化", "100% Treasure Drop")
         )
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("战斗指令", "戦闘クイック", "Battle Actions"))
             .setItems(items) { _, which ->
                 when (which) {
@@ -501,7 +511,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("一键关闭主播模式", "配信者モード解除", "Disable Streamer Mode"),
             tr("打开MOD内置作弊器", "MOD内蔵チートを開く", "Open MOD Cheat Console")
         )
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("一键强化", "一括強化", "Quick Boosts"))
             .setItems(items) { _, which ->
                 when (which) {
@@ -708,7 +718,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val labels = lockDefs.map { it.second }.toTypedArray()
         val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
@@ -733,7 +743,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("我方全员满HP满MP满怒气并净化异常", "味方全員全回復＋弱体解除", "Full Heal & Cleanse All Allies"),
             tr("我方全员满状态并附加攻技速暴击强化", "味方全員全回復＋全能力バフ付与", "Full Heal & Super Buff All Allies")
         )
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("战斗指令", "戦闘クイック", "Battle Actions"))
             .setItems(items) { _, which ->
                 when (which) {
@@ -778,7 +788,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("全体春销人材精神避孕药回满并治愈崩溃怀孕", "全人材メンタル・ピル回復＋異常治療", "Heal All Workers Mental, Pill & Status"),
             tr("全体春销人材一键 SS 评级·UR 稀有度·四维拉满", "全人材ランクSS・UR・全ステータス最大", "Max All Workers Rank SS, UR & Stats")
         )
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
             .setItems(items) { _, which ->
                 when (which) {
@@ -911,7 +921,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
 
         val labels = options.map { it.third }.toTypedArray()
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("战斗成员", "戦闘メンバー", "Party Members"))
             .setItems(labels) { _, which ->
                 val chosen = options.getOrNull(which) ?: return@setItems
@@ -1045,7 +1055,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
 
         val labels = options.map { it.label }.toTypedArray()
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(tr("春销人材", "ハルウリ人材", "Brothel Workers"))
             .setItems(labels) { _, which ->
                 val chosen = options.getOrNull(which) ?: return@setItems
@@ -1166,7 +1176,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
         scroll.addView(container)
 
-        val builder = AlertDialog.Builder(activity)
+        val builder = dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->
@@ -1217,7 +1227,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
         scroll.addView(container)
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->
@@ -1398,7 +1408,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         updateSelected(selectedPct, true, false)
         scroll.addView(container)
 
-        AlertDialog.Builder(activity)
+        dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->

@@ -16,6 +16,7 @@
     <string name="action_game_modifier">ゲーム改造</string>
     <string name="action_github">GitHub</string>
     <string name="action_licenses">オープンソースライセンス</string>
+    <string name="action_qq_group">QQ交流グループ</string>
     <string name="choose_a_file">アーカイブを選択</string>
     <string name="ok">OK</string>
     <string name="cancel">キャンセル</string>
@@ -220,4 +221,8 @@
     <string name="switch_running_game_title">ゲームの切替</string>
     <string name="switch_running_game_msg">実行中のゲームを終了して %1$s を起動しますか？</string>
     <string name="switch_running_game_confirm">終了して起動</string>
+    <string name="game_exit_title">ゲーム終了</string>
+    <string name="game_exit_message">ゲームを終了しますか？\n※未保存のデータは失われます</string>
+    <string name="dialog_btn_stop">終了</string>
+    <string name="dialog_btn_continue">続行</string>
 </resources>

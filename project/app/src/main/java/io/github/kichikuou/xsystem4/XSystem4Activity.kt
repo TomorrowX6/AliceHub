@@ -1,20 +1,34 @@
 package io.github.kichikuou.xsystem4
 
+import android.app.Dialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
+import android.util.SparseArray
 import android.util.TypedValue
+import android.view.ContextThemeWrapper
 import android.view.Gravity
+import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDLActivity
 import kotlin.math.abs
 
@@ -28,6 +42,11 @@ class XSystem4Activity : SDLActivity() {
         const val COMMAND_OPEN_PLAYING_MANUAL = 0x8000  // xsystem4/src/hll/SystemService.c
         const val COMMAND_SHOW_WAIT_MESSAGE = 0x8001
         const val COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002  // xsystem4/src/input.c
+
+        private const val SDL_MESSAGEBOX_ERROR = 0x00000010
+        private const val SDL_BUTTON_RETURNKEY_DEFAULT = 0x00000001
+        private const val SDL_BUTTON_ESCAPEKEY_DEFAULT = 0x00000002
+        private const val SENTINEL_ALICEHUB_QUIT = "__ALICEHUB_QUIT__"
     }
 
     private var loadingLabel: TextView? = null
@@ -36,6 +55,14 @@ class XSystem4Activity : SDLActivity() {
     private var ctrlPill: TextView? = null
     private var ctrlSkipLatched: Boolean = false
     private var lastSyncedConfigSeq: Int = -1
+    private var activeMessageBoxDialog: Dialog? = null
+    private var lastBackDispatchMs: Long = 0L
+    private var backHandledInCurrentGesture: Boolean = false
+    private var backInvokedCallback: Any? = null
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppSettings.wrapThemeContext(newBase))
+    }
 
     private fun dp(v: Int): Int =
         (v * resources.displayMetrics.density).toInt()
@@ -78,6 +105,31 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         window.decorView.postDelayed({ ensureOverlaysAttached() }, 1800L)
+        registerModernBackCallback()
+    }
+
+    private fun registerModernBackCallback() {
+        if (Build.VERSION.SDK_INT >= 33 && backInvokedCallback == null) {
+            val cb = OnBackInvokedCallback {
+                handleGameBackPressed()
+            }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                cb
+            )
+            backInvokedCallback = cb
+        }
+    }
+
+    private fun unregisterModernBackCallback() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val cb = backInvokedCallback as? OnBackInvokedCallback ?: return
+            try {
+                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+            } catch (_: Throwable) {
+            }
+            backInvokedCallback = null
+        }
     }
 
     private fun ensureOverlaysAttached() {
@@ -286,12 +338,341 @@ class XSystem4Activity : SDLActivity() {
         }
     }
 
+    private fun handleGameBackPressed() {
+        setCtrlSkipLatched(false)
+        if (activeMessageBoxDialog?.isShowing == true) {
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastBackDispatchMs < 350L) {
+            return
+        }
+        lastBackDispatchMs = now
+        SDLActivity.nativeSendQuit()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK &&
+            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE
+        ) {
+            if (event.repeatCount == 0) {
+                backHandledInCurrentGesture = false
+            }
+            event.startTracking()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK &&
+            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE
+        ) {
+            if (!event.isCanceled && !backHandledInCurrentGesture) {
+                backHandledInCurrentGesture = true
+                handleGameBackPressed()
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        setCtrlSkipLatched(false)
-        // Route Back through SDL_QUIT so Rance 10's SetHookCloseApp handler can
-        // show its native exit confirmation dialog instead of tearing down immediately.
-        SDLActivity.nativeSendQuit()
+        backHandledInCurrentGesture = true
+        handleGameBackPressed()
+    }
+
+    override fun messageboxCreateAndShow(args: Bundle) {
+        activeMessageBoxDialog?.let { prev ->
+            if (prev.isShowing) {
+                try {
+                    prev.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(this), R.style.Theme_Launcher)
+        val flags = args.getInt("flags", 0)
+        val rawTitle = args.getString("title").orEmpty()
+        val rawMessage = args.getString("message").orEmpty()
+        val buttonFlags = args.getIntArray("buttonFlags") ?: IntArray(0)
+        val buttonIds = args.getIntArray("buttonIds") ?: IntArray(0)
+        val buttonTexts = args.getStringArray("buttonTexts") ?: emptyArray()
+
+        val isSentinelQuit = rawTitle == SENTINEL_ALICEHUB_QUIT
+        val isQuitDialog = isSentinelQuit || (
+            rawTitle.equals("xsystem4", ignoreCase = true) && (
+                rawMessage.contains("结束游戏") ||
+                    rawMessage.contains("終了しますか") ||
+                    rawMessage.contains("Exit", ignoreCase = true) ||
+                    rawMessage.contains("Quit", ignoreCase = true)
+                )
+            )
+        val isErrorDialog = (flags and SDL_MESSAGEBOX_ERROR) != 0 ||
+            rawTitle.contains("Error", ignoreCase = true)
+
+        val displayTitle = when {
+            isQuitDialog -> uiCtx.getString(R.string.game_exit_title)
+            isErrorDialog -> uiCtx.getString(R.string.error)
+            rawTitle.isBlank() || rawTitle.equals("xsystem4", ignoreCase = true) ->
+                uiCtx.getString(R.string.app_name)
+            else -> rawTitle
+        }
+
+        val displayMessage = if (isSentinelQuit) {
+            uiCtx.getString(R.string.game_exit_message)
+        } else {
+            rawMessage
+                .replace("\r\n", "\n")
+                .replace(Regex("\n{2,}"), "\n")
+                .trim()
+        }
+
+        data class MsgBtnSpec(
+            val id: Int,
+            val bFlags: Int,
+            val label: String,
+            val isPrimary: Boolean,
+            val isEscape: Boolean
+        )
+
+        val rawSpecs = buttonTexts.indices.map { idx ->
+            val rawLabel = buttonTexts[idx].orEmpty()
+            val bFlag = buttonFlags.getOrElse(idx) { 0 }
+            val bId = buttonIds.getOrElse(idx) { idx }
+            val localized = when {
+                rawLabel.equals("OK", ignoreCase = true) -> uiCtx.getString(R.string.ok)
+                rawLabel.equals("Cancel", ignoreCase = true) -> uiCtx.getString(R.string.cancel)
+                rawLabel.equals("Stop", ignoreCase = true) -> uiCtx.getString(R.string.dialog_btn_stop)
+                rawLabel.equals("Continue", ignoreCase = true) -> uiCtx.getString(R.string.dialog_btn_continue)
+                else -> rawLabel
+            }
+            val isEsc = (bFlag and SDL_BUTTON_ESCAPEKEY_DEFAULT) != 0 ||
+                rawLabel.equals("Cancel", ignoreCase = true)
+            val isPrim = !isEsc && (
+                (bFlag and SDL_BUTTON_RETURNKEY_DEFAULT) != 0 ||
+                    buttonTexts.size == 1 ||
+                    rawLabel.equals("OK", ignoreCase = true)
+                )
+            MsgBtnSpec(bId, bFlag, localized, isPrim, isEsc)
+        }
+
+        val orderedSpecs = rawSpecs.sortedBy { spec ->
+            when {
+                spec.isEscape -> 0
+                !spec.isPrimary -> 1
+                else -> 2
+            }
+        }
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        activeMessageBoxDialog = dialog
+
+        val keyMapping = SparseArray<Button>()
+        var escapeButtonId: Int? = null
+        var selectionMade = false
+
+        val dm = resources.displayMetrics
+        val cardWidth = dp(332).coerceAtMost((dm.widthPixels - dp(48)).coerceAtLeast(dp(260)))
+        val cardRadius = uiCtx.resources.getDimension(R.dimen.ui_radius_dialog)
+
+        val card = LinearLayout(uiCtx).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(24)
+            setPadding(padH, dp(22), padH, dp(20))
+            elevation = dp(20).toFloat()
+            background = GradientDrawable().apply {
+                cornerRadius = cardRadius
+                setColor(uiCtx.getColor(R.color.ui_surface_dialog))
+                setStroke(dp(1), uiCtx.getColor(R.color.ui_outline))
+            }
+            clipToOutline = true
+            isClickable = true
+        }
+
+        val titleView = TextView(uiCtx).apply {
+            text = displayTitle
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(uiCtx.getColor(R.color.ui_text_primary))
+        }
+        card.addView(
+            titleView,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        if (displayMessage.isNotEmpty()) {
+            val messageView = TextView(uiCtx).apply {
+                text = displayMessage
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
+                setTextColor(uiCtx.getColor(R.color.ui_text_secondary))
+                setLineSpacing(dp(3).toFloat(), 1.18f)
+            }
+            val msgScroll = ScrollView(uiCtx).apply {
+                isVerticalScrollBarEnabled = true
+                addView(
+                    messageView,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+            card.addView(
+                msgScroll,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(12)
+                }
+            )
+        }
+
+        if (orderedSpecs.isNotEmpty()) {
+            val btnRow = LinearLayout(uiCtx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
+            val mediumFont = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+            orderedSpecs.forEachIndexed { index, spec ->
+                val btn = Button(uiCtx).apply {
+                    text = spec.label
+                    isAllCaps = false
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    typeface = mediumFont
+                    gravity = Gravity.CENTER
+                    minHeight = dp(42)
+                    minimumHeight = dp(42)
+                    elevation = 0f
+                    stateListAnimator = null
+                    setPadding(dp(14), dp(8), dp(14), dp(8))
+                    if (spec.isPrimary) {
+                        if (isErrorDialog) {
+                            background = uiCtx.getDrawable(R.drawable.bg_btn_danger)?.mutate()
+                            setTextColor(uiCtx.getColor(R.color.tone_danger_fg))
+                        } else {
+                            background = uiCtx.getDrawable(R.drawable.bg_btn_filled)?.mutate()
+                            setTextColor(uiCtx.getColor(R.color.ui_on_primary))
+                        }
+                    } else {
+                        background = uiCtx.getDrawable(R.drawable.bg_btn_tonal)?.mutate()
+                        setTextColor(uiCtx.getColor(R.color.ui_text_primary))
+                    }
+                    setOnClickListener {
+                        selectionMade = true
+                        messageboxSelection[0] = spec.id
+                        dialog.dismiss()
+                    }
+                }
+                if ((spec.bFlags and SDL_BUTTON_RETURNKEY_DEFAULT) != 0 || spec.isPrimary) {
+                    keyMapping.put(KeyEvent.KEYCODE_ENTER, btn)
+                    keyMapping.put(KeyEvent.KEYCODE_NUMPAD_ENTER, btn)
+                }
+                if (spec.isEscape) {
+                    escapeButtonId = spec.id
+                    keyMapping.put(KeyEvent.KEYCODE_ESCAPE, btn)
+                    keyMapping.put(KeyEvent.KEYCODE_BACK, btn)
+                }
+                val lp = if (orderedSpecs.size == 1) {
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                } else {
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (index > 0) marginStart = dp(10)
+                    }
+                }
+                btnRow.addView(btn, lp)
+            }
+
+            card.addView(
+                btnRow,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(22)
+                }
+            )
+        }
+
+        val backdrop = FrameLayout(this).apply {
+            setOnClickListener {
+                val escId = escapeButtonId
+                if (escId != null) {
+                    selectionMade = true
+                    messageboxSelection[0] = escId
+                    dialog.dismiss()
+                }
+            }
+            addView(
+                card,
+                FrameLayout.LayoutParams(
+                    cardWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER
+                )
+            )
+        }
+
+        dialog.setContentView(backdrop)
+        dialog.setCancelable(escapeButtonId != null)
+        dialog.setCanceledOnTouchOutside(escapeButtonId != null)
+        dialog.setOnCancelListener {
+            val escId = escapeButtonId
+            if (!selectionMade && escId != null) {
+                selectionMade = true
+                messageboxSelection[0] = escId
+            }
+        }
+        dialog.setOnDismissListener {
+            if (activeMessageBoxDialog === dialog) {
+                activeMessageBoxDialog = null
+            }
+            synchronized(messageboxSelection) {
+                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+                (messageboxSelection as Object).notifyAll()
+            }
+        }
+        dialog.setOnKeyListener { _, keyCode, event ->
+            val mapped = keyMapping.get(keyCode)
+            if (mapped != null) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                    mapped.performClick()
+                }
+                true
+            } else if (keyCode == KeyEvent.KEYCODE_BACK) {
+                true
+            } else {
+                false
+            }
+        }
+
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            setGravity(Gravity.CENTER)
+            setDimAmount(0.55f)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        }
+
+        dialog.show()
+
+        dialog.window?.let { dlgWin ->
+            @Suppress("DEPRECATION")
+            dlgWin.decorView.systemUiVisibility = window.decorView.systemUiVisibility
+            dlgWin.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        }
     }
 
     override fun getLibraries(): Array<String> {
@@ -320,6 +701,16 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onDestroy() {
+        unregisterModernBackCallback()
+        activeMessageBoxDialog?.let { dlg ->
+            if (dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        activeMessageBoxDialog = null
         setCtrlSkipLatched(false)
         GameCatalog.clearRunningGameRoot(this)
         GameModifierBridge.syncLockMaskFromNative(this)

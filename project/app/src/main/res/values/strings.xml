@@ -17,6 +17,7 @@
     <string name="action_game_modifier">Game Modifier</string>
     <string name="action_github">GitHub</string>
     <string name="action_licenses">Open Source Licenses</string>
+    <string name="action_qq_group">QQ Group</string>
     <string name="choose_a_file">Select Archive</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
@@ -221,4 +222,8 @@
     <string name="switch_running_game_title">Switch Running Game</string>
     <string name="switch_running_game_msg">Close background game and launch %1$s?</string>
     <string name="switch_running_game_confirm">Close &amp; Launch</string>
+    <string name="game_exit_title">Exit Game</string>
+    <string name="game_exit_message">Exit the current game?\nUnsaved progress will be lost.</string>
+    <string name="dialog_btn_stop">Stop</string>
+    <string name="dialog_btn_continue">Continue</string>
 </resources>

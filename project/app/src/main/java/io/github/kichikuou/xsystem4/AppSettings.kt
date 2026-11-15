@@ -17,6 +17,7 @@ object AppSettings {
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
+    private const val THEME_FILE_NAME = ".app_theme"
 
     const val THEME_AUTO = 0
     const val THEME_LIGHT = 1
@@ -37,12 +38,27 @@ object AppSettings {
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getThemeMode(context: Context): Int =
-        prefs(context).getInt(KEY_THEME_MODE, THEME_AUTO).coerceIn(THEME_AUTO, THEME_DARK)
+    fun getThemeMode(context: Context): Int {
+        try {
+            val f = File(context.filesDir, THEME_FILE_NAME)
+            if (f.isFile) {
+                val parsed = f.readText(Charsets.UTF_8).trim().toIntOrNull()
+                if (parsed != null) {
+                    return parsed.coerceIn(THEME_AUTO, THEME_DARK)
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        return prefs(context).getInt(KEY_THEME_MODE, THEME_AUTO).coerceIn(THEME_AUTO, THEME_DARK)
+    }
 
     fun setThemeMode(context: Context, mode: Int) {
         val valid = mode.coerceIn(THEME_AUTO, THEME_DARK)
         prefs(context).edit().putInt(KEY_THEME_MODE, valid).apply()
+        try {
+            File(context.filesDir, THEME_FILE_NAME).writeText(valid.toString(), Charsets.UTF_8)
+        } catch (_: Throwable) {
+        }
         applyPlatformNightMode(context, valid)
     }
 

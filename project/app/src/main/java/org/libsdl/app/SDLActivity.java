@@ -1359,6 +1359,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             }
         }
 
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            // Let Android dispatch system Back to Activity.onBackPressed().
+            return false;
+        }
+
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             if (isTextInputEvent(event)) {
                 if (ic != null) {

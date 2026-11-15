@@ -94,6 +94,36 @@ static bool input_hook_close_request(void)
 	return true;
 }
 
+static void handle_quit_event(void)
+{
+	if (input_hook_close_request())
+		return;
+#ifdef __ANDROID__
+	static const SDL_MessageBoxButtonData quit_buttons[] = {
+		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "OK" },
+		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" },
+	};
+	const SDL_MessageBoxData mbox = {
+		SDL_MESSAGEBOX_INFORMATION,
+		NULL,
+		"__ALICEHUB_QUIT__",
+		"",
+		SDL_arraysize(quit_buttons),
+		quit_buttons,
+		NULL
+	};
+	int result = 0;
+	if (SDL_ShowMessageBox(&mbox, &result) == 0 && result != 1) {
+		pending_close_requests = 0;
+		first_unpopped_close_tick = 0;
+		gfx_reset_frame_pacer();
+		return;
+	}
+#endif
+	savedata_flush_on_background();
+	vm_exit(0);
+}
+
 static void sync_ctrl_key_state(void)
 {
 	key_state[VK_CONTROL] = kbd_ctrl_down || touch_ctrl_skip;
@@ -902,10 +932,7 @@ void handle_window_events(void)
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
 		case SDL_QUIT:
-			if (input_hook_close_request())
-				break;
-			savedata_flush_on_background();
-			vm_exit(0);
+			handle_quit_event();
 			break;
 		case SDL_WINDOWEVENT:
 			handle_window_event(&e);
@@ -946,10 +973,7 @@ void handle_events(void)
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
 		case SDL_QUIT:
-			if (input_hook_close_request())
-				break;
-			savedata_flush_on_background();
-			vm_exit(0);
+			handle_quit_event();
 			break;
 		case SDL_WINDOWEVENT:
 			handle_window_event(&e);

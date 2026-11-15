@@ -1,18 +1,35 @@
 package io.github.kichikuou.xsystem4
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.view.Window
+import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 
@@ -34,8 +51,10 @@ class SettingsActivity : ThemedActivity() {
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
 
+        val btnQqGroup = findViewById<Button>(R.id.btn_settings_qq_group)
         val btnLicenses = findViewById<Button>(R.id.btn_settings_licenses)
         val btnGithub = findViewById<Button>(R.id.btn_settings_github)
+        UiKit.styleActionRow(btnQqGroup, R.drawable.ic_qq_group, accent)
         UiKit.styleActionRow(btnLicenses, R.drawable.ic_licenses, accent)
         UiKit.styleActionRow(btnGithub, R.drawable.ic_github, accent)
 
@@ -47,6 +66,9 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
+        }
+        btnQqGroup.setOnClickListener {
+            showQqGroupDialog()
         }
         btnLicenses.setOnClickListener {
             startActivity(Intent(this, LicensesMenuActivity::class.java))
@@ -87,6 +109,218 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+    }
+
+    private fun showQqGroupDialog() {
+        val dm = resources.displayMetrics
+        val sheetWidth = if (dm.widthPixels > UiKit.dpInt(this, 520)) {
+            UiKit.dpInt(this, 440)
+        } else {
+            ViewGroup.LayoutParams.MATCH_PARENT
+        }
+        val qrWidth = (dm.widthPixels - UiKit.dpInt(this, 64))
+            .coerceIn(UiKit.dpInt(this, 220), UiKit.dpInt(this, 310))
+        val qrMaxHeight = (dm.heightPixels * 0.68f).toInt()
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val scrim = View(this).apply {
+            setBackgroundColor(0x8A000000.toInt())
+            alpha = 0f
+        }
+
+        val handleView = View(this).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = UiKit.dp(this@SettingsActivity, 2f)
+                setColor(UiKit.withAlpha(getColor(R.color.ui_text_tertiary), 0x66))
+            }
+        }
+
+        val qrBitmap = BitmapFactory.decodeResource(
+            resources,
+            R.drawable.qq_group_qr,
+            BitmapFactory.Options().apply {
+                inScaled = false
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        )
+        val qrView = ImageView(this).apply {
+            if (qrBitmap != null) {
+                setImageBitmap(qrBitmap)
+            } else {
+                setImageResource(R.drawable.qq_group_qr)
+            }
+            adjustViewBounds = true
+            maxHeight = qrMaxHeight
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = UiKit.dp(this@SettingsActivity, 16f)
+                setColor(Color.WHITE)
+            }
+            clipToOutline = true
+        }
+
+        val topRadius = UiKit.dp(this, 24f)
+        val basePadH = UiKit.dpInt(this, 24)
+        val basePadTop = UiKit.dpInt(this, 12)
+        val basePadBottom = UiKit.dpInt(this, 28)
+
+        val sheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(basePadH, basePadTop, basePadH, basePadBottom)
+            elevation = UiKit.dp(this@SettingsActivity, 16f)
+            background = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(
+                    topRadius, topRadius,
+                    topRadius, topRadius,
+                    0f, 0f,
+                    0f, 0f
+                )
+                setColor(getColor(R.color.ui_surface_dialog))
+            }
+            isClickable = true
+
+            addView(
+                handleView,
+                LinearLayout.LayoutParams(
+                    UiKit.dpInt(this@SettingsActivity, 36),
+                    UiKit.dpInt(this@SettingsActivity, 4)
+                ).apply {
+                    bottomMargin = UiKit.dpInt(this@SettingsActivity, 16)
+                }
+            )
+            addView(
+                qrView,
+                LinearLayout.LayoutParams(
+                    qrWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        val root = FrameLayout(this).apply {
+            addView(
+                scrim,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            addView(
+                sheet,
+                FrameLayout.LayoutParams(
+                    sheetWidth,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                )
+            )
+            setOnApplyWindowInsetsListener { _, insets ->
+                @Suppress("DEPRECATION")
+                val bottomInset = insets.systemWindowInsetBottom.coerceAtLeast(0)
+                sheet.setPadding(basePadH, basePadTop, basePadH, basePadBottom + bottomInset)
+                insets
+            }
+        }
+
+        var dismissing = false
+        fun dismissSheet() {
+            if (dismissing) return
+            dismissing = true
+            val targetY = sheet.height.toFloat().coerceAtLeast(UiKit.dp(this, 320f))
+            scrim.animate()
+                .alpha(0f)
+                .setDuration(200L)
+                .start()
+            sheet.animate()
+                .translationY(targetY)
+                .setDuration(200L)
+                .setInterpolator(AccelerateInterpolator(1.6f))
+                .withEndAction {
+                    if (dialog.isShowing) {
+                        dialog.dismiss()
+                    }
+                }
+                .start()
+        }
+
+        scrim.setOnClickListener { dismissSheet() }
+
+        var touchDownRawY = 0f
+        sheet.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchDownRawY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = (event.rawY - touchDownRawY).coerceAtLeast(0f)
+                    sheet.translationY = dy
+                    val h = sheet.height.coerceAtLeast(1)
+                    scrim.alpha = (1f - (dy / h) * 0.7f).coerceIn(0f, 1f)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val dy = (event.rawY - touchDownRawY).coerceAtLeast(0f)
+                    val h = sheet.height.coerceAtLeast(1)
+                    if (dy > h * 0.22f) {
+                        dismissSheet()
+                    } else {
+                        sheet.animate()
+                            .translationY(0f)
+                            .setDuration(180L)
+                            .setInterpolator(DecelerateInterpolator(2f))
+                            .start()
+                        scrim.animate()
+                            .alpha(1f)
+                            .setDuration(180L)
+                            .start()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        dialog.setContentView(root)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                dismissSheet()
+                true
+            } else {
+                false
+            }
+        }
+
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setWindowAnimations(0)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            setGravity(Gravity.BOTTOM)
+            navigationBarColor = getColor(R.color.ui_surface_dialog)
+        }
+
+        sheet.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                sheet.viewTreeObserver.removeOnPreDrawListener(this)
+                sheet.translationY = sheet.height.toFloat()
+                scrim.animate()
+                    .alpha(1f)
+                    .setDuration(220L)
+                    .start()
+                sheet.animate()
+                    .translationY(0f)
+                    .setDuration(260L)
+                    .setInterpolator(DecelerateInterpolator(2.2f))
+                    .start()
+                return true
+            }
+        })
+
+        dialog.show()
     }
 
     private fun showThemeDialog() {
