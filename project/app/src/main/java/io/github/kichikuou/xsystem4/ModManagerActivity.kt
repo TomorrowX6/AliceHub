@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.os.Bundle
-import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
@@ -53,6 +52,13 @@ class ModManagerActivity : Activity(), GameListObserver {
         setContentView(R.layout.activity_mod_manager)
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
+        // The status card and its buttons scroll with the list as its header. It has to be
+        // added before the adapter is set; its views are then found by findViewById() as usual.
+        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
+        listView.addHeaderView(
+            layoutInflater.inflate(R.layout.mod_manager_header, listView, false), null, false
+        )
+
         gameList = LauncherActivity.obtainGameList(this)
         val r10Candidates = GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
         if (r10Candidates.isEmpty()) {
@@ -65,7 +71,6 @@ class ModManagerActivity : Activity(), GameListObserver {
         rebindCurrentTarget()
 
         adapter = ModReleaseAdapter()
-        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
         listView.adapter = adapter
 
         findViewById<View>(R.id.btn_mod_mgr_switch_game).setOnClickListener {
@@ -85,8 +90,9 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
-            if (pos in releases.indices) {
-                showReleaseDetailDialog(pos)
+            val index = pos - listView.headerViewsCount
+            if (index in releases.indices) {
+                showReleaseDetailDialog(index)
             }
         }
 
@@ -259,12 +265,13 @@ class ModManagerActivity : Activity(), GameListObserver {
             else -> getString(R.string.mod_mgr_status_installed, gameTitle)
         }
 
+        // While the list is empty, the loading / error text is shown by the placeholder
+        // right below this card, so it is not repeated here.
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
-        val summaryText = when {
-            isLoadingCatalog && releases.isEmpty() -> getString(R.string.mod_mgr_loading)
-            catalogLoadError && releases.isEmpty() -> getString(R.string.mod_mgr_load_failed)
-            releases.isNotEmpty() -> getString(R.string.mod_mgr_summary_format, releases[0].version)
-            else -> ""
+        val summaryText = if (releases.isNotEmpty()) {
+            getString(R.string.mod_mgr_summary_format, releases[0].version)
+        } else {
+            ""
         }
         summaryView.text = summaryText
         summaryView.visibility = if (summaryText.isEmpty()) View.GONE else View.VISIBLE
@@ -311,10 +318,8 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         val emptyView = findViewById<TextView>(R.id.mod_mgr_empty_view)
-        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
         if (releases.isEmpty()) {
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
             emptyView.text = when {
                 isLoadingCatalog -> getString(R.string.mod_mgr_loading)
                 catalogLoadError -> getString(R.string.mod_mgr_load_failed)
@@ -322,7 +327,6 @@ class ModManagerActivity : Activity(), GameListObserver {
             }
         } else {
             emptyView.visibility = View.GONE
-            listView.visibility = View.VISIBLE
         }
 
         adapter.notifyDataSetChanged()
@@ -658,7 +662,7 @@ class ModManagerActivity : Activity(), GameListObserver {
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val view = convertView ?: LayoutInflater.from(this@ModManagerActivity)
-                .inflate(android.R.layout.simple_list_item_2, parent, false)
+                .inflate(R.layout.list_item_entry, parent, false)
             val entry = releases[position]
             val hasMod = gameList.hasInstalledMod(currentTarget)
             val installed = gameList.getInstalledModInfo(currentTarget)
@@ -671,27 +675,21 @@ class ModManagerActivity : Activity(), GameListObserver {
                         OnlineInstaller.normalizeModVersionKey(entry.version))
                 )
 
-            val tags = mutableListOf<String>()
+            val tags = mutableListOf<UiKit.Chip>()
             if (position == 0) {
-                tags.add(getString(R.string.mod_mgr_tag_latest))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_latest), UiKit.Tone.PRIMARY))
             }
             if (isCurrent) {
-                tags.add(getString(R.string.mod_mgr_tag_installed))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_installed), UiKit.Tone.SUCCESS))
             } else if (isCurrentBase) {
-                tags.add(getString(R.string.mod_mgr_tag_base))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_base), UiKit.Tone.SUCCESS))
             }
             if (entry.isPatch) {
-                tags.add(getString(R.string.mod_mgr_tag_patch))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_patch), UiKit.Tone.NEUTRAL))
             }
 
-            val text1 = view.findViewById<TextView>(android.R.id.text1)
-            val text2 = view.findViewById<TextView>(android.R.id.text2)
-
-            text1.text = if (tags.isNotEmpty()) {
-                "${entry.version}  [${tags.joinToString(" · ")}]"
-            } else {
-                entry.version
-            }
+            view.findViewById<TextView>(R.id.title).text = entry.version
+            UiKit.bindChips(view, tags)
 
             val metaParts = mutableListOf<String>()
             if (entry.formattedDate.isNotEmpty()) {
@@ -702,9 +700,7 @@ class ModManagerActivity : Activity(), GameListObserver {
             }
             metaParts.add(entry.fileName)
 
-            text2.maxLines = 1
-            text2.ellipsize = TextUtils.TruncateAt.END
-            text2.text = metaParts.joinToString(" · ")
+            view.findViewById<TextView>(R.id.meta).text = metaParts.joinToString(" · ")
             return view
         }
     }

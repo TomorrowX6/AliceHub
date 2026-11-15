@@ -36,7 +36,8 @@ data class ModSaveSlotEntry(
 
 private class ModSaveSlotAdapter(
     private val activity: Activity,
-    private var entries: List<ModSaveSlotEntry>
+    private var entries: List<ModSaveSlotEntry>,
+    private val backupLabel: String
 ) : BaseAdapter() {
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -52,17 +53,27 @@ private class ModSaveSlotAdapter(
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
         val view = convertView ?: LayoutInflater.from(activity)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.list_item_entry, parent, false)
         val entry = entries[position]
-        val text1 = view.findViewById<TextView>(android.R.id.text1)
-        val text2 = view.findViewById<TextView>(android.R.id.text2)
 
-        val bakMark = if (GameModifierBridge.hasModBackup(entry.file)) " · 已备份" else ""
-        text1.text = "${entry.relativePath}  [${entry.tag}$bakMark]"
+        view.findViewById<TextView>(R.id.title).text = entry.relativePath
+        val chips = mutableListOf(UiKit.Chip(entry.tag, slotTone(entry.slotNum)))
+        if (GameModifierBridge.hasModBackup(entry.file)) {
+            chips.add(UiKit.Chip(backupLabel, UiKit.Tone.SUCCESS))
+        }
+        UiKit.bindChips(view, chips)
         val sizeStr = String.format(Locale.US, "%.1f KB", entry.sizeBytes / 1024.0)
         val dateStr = dateFormat.format(Date(entry.lastModified))
-        text2.text = "$sizeStr · $dateStr"
+        view.findViewById<TextView>(R.id.meta).text = "$sizeStr · $dateStr"
         return view
+    }
+
+    /** Same slot ranges as the tag labels: checkpoint / cleared run / auto / normal. */
+    private fun slotTone(slotNum: Int): UiKit.Tone = when {
+        slotNum >= 5000 -> UiKit.Tone.WARNING
+        slotNum >= 1000 -> UiKit.Tone.PRIMARY
+        slotNum >= 100 -> UiKit.Tone.INFO
+        else -> UiKit.Tone.NEUTRAL
     }
 }
 
@@ -97,6 +108,14 @@ class GameModifierActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game_modifier)
         actionBar?.setDisplayHomeAsUpEnabled(true)
+
+        // The info card, switches and buttons scroll with the list as its header. It has to be
+        // added before the adapter is set; its views are then found by findViewById() as usual.
+        val listView = findViewById<ListView>(R.id.mod_save_list)
+        listView.addHeaderView(
+            layoutInflater.inflate(R.layout.game_modifier_header, listView, false), null, false
+        )
+
         scopedGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
         val modLabel = tr("游戏修改器", "ゲーム改造", "Game Modifier")
         title = scopedGameId?.let { gid ->
@@ -126,8 +145,7 @@ class GameModifierActivity : Activity() {
             refreshSummaryText()
         }
 
-        adapter = ModSaveSlotAdapter(this, emptyList())
-        val listView = findViewById<ListView>(R.id.mod_save_list)
+        adapter = ModSaveSlotAdapter(this, emptyList(), tr("已备份", "バックアップ済", "Backed up"))
         listView.adapter = adapter
 
         discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME))
@@ -148,8 +166,11 @@ class GameModifierActivity : Activity() {
         }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
-            val slot = adapter.getItem(pos)
-            ensureGameNotRunning(this) { showLocalSaveMenuDialog(slot) }
+            val index = pos - listView.headerViewsCount
+            if (index in 0 until adapter.count) {
+                val slot = adapter.getItem(index)
+                ensureGameNotRunning(this) { showLocalSaveMenuDialog(slot) }
+            }
         }
 
         refreshList()
@@ -336,7 +357,6 @@ class GameModifierActivity : Activity() {
         saveDir.mkdirs()
 
         val emptyView = findViewById<TextView>(R.id.mod_empty_view)
-        val listView = findViewById<View>(R.id.mod_save_list)
         if (!isCurrentTargetRance10()) {
             currentEntries = emptyList()
             adapter.update(emptyList())
@@ -347,7 +367,6 @@ class GameModifierActivity : Activity() {
                 "Universal UI scale and Ctrl skip controls are enabled for this game."
             )
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
             return
         }
 
@@ -381,10 +400,8 @@ class GameModifierActivity : Activity() {
                 "No progress saves in this directory."
             )
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
         } else {
             emptyView.visibility = View.GONE
-            listView.visibility = View.VISIBLE
         }
     }
 
@@ -826,26 +843,32 @@ class GameModifierActivity : Activity() {
         onConfirm: (JSONObject) -> Unit
     ) {
         val scroll = ScrollView(this)
+        // The EditText underline is inset by 4dp, so 20dp at the end lines it up with the
+        // labels' 24dp (the dialog title's inset).
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(8))
+            setPaddingRelative(dp(24), dp(8), dp(20), dp(4))
         }
         val inputs = LinkedHashMap<String, EditText>()
         for ((key, label, defVal) in fields) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(4), 0, dp(4))
+                minimumHeight = dp(48)
             }
             val tv = TextView(this).apply {
                 text = label
+                setTextAppearance(R.style.TextAppearance_Launcher_Body)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f)
             }
             val et = EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
                 setText(defVal.toString())
                 setSingleLine(true)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f)
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginStart = dp(12)
+                }
             }
             inputs[key] = et
             row.addView(tv)
@@ -943,28 +966,40 @@ class GameModifierActivity : Activity() {
         val scroll = ScrollView(this)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(8))
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+            // Lets the slider thumb overhang into the padding at both ends of the track.
+            clipToPadding = false
         }
 
         val descTv = TextView(this).apply {
             text = description
-            setPadding(0, 0, 0, dp(10))
+            setTextAppearance(R.style.TextAppearance_Launcher_Caption)
+            textSize = 13f
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(0, 0, 0, dp(14))
         }
         container.addView(descTv)
 
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
         }
         val valueTv = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            textSize = 16f
+            setTextAppearance(R.style.TextAppearance_Launcher_CardTitle)
         }
+        // Negative margins cancel the padding that makes room for the thumb, so the track
+        // spans the full content width.
         val seekBar = SeekBar(this).apply {
             max = maxPct - minPct
             progress = selectedPct - minPct
-            setPadding(dp(4), dp(8), dp(4), dp(12))
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = -dp(8)
+                marginEnd = -dp(8)
+            }
         }
 
         fun updateSelected(newPct: Int, syncSeek: Boolean) {
@@ -981,14 +1016,17 @@ class GameModifierActivity : Activity() {
             }
         }
 
-        val minusBtn = Button(this).apply {
-            text = "-$stepPct%"
-            setOnClickListener { updateSelected(selectedPct - stepPct, true) }
-        }
-        val plusBtn = Button(this).apply {
-            text = "+$stepPct%"
-            setOnClickListener { updateSelected(selectedPct + stepPct, true) }
-        }
+        fun stepButton(label: String, delta: Int) =
+            Button(this, null, 0, R.style.Widget_Launcher_Button_Small).apply {
+                text = label
+                minWidth = dp(60)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(8) }
+                setOnClickListener { updateSelected(selectedPct + delta, true) }
+            }
+        val minusBtn = stepButton("-$stepPct%", -stepPct)
+        val plusBtn = stepButton("+$stepPct%", stepPct)
         headerRow.addView(valueTv)
         headerRow.addView(minusBtn)
         headerRow.addView(plusBtn)
@@ -1004,15 +1042,20 @@ class GameModifierActivity : Activity() {
             override fun onStopTrackingTouch(bar: SeekBar?) {}
         })
 
-        for (chunk in presets.chunked(3)) {
+        for ((rowIndex, chunk) in presets.chunked(3).withIndex()) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = if (rowIndex > 0) dp(8) else 0 }
             }
-            for (preset in chunk) {
+            for ((index, preset) in chunk.withIndex()) {
                 val btn = Button(this).apply {
                     text = "$preset%"
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = if (index > 0) dp(8) else 0
+                    }
                     setOnClickListener { updateSelected(preset, true) }
                 }
                 row.addView(btn)
