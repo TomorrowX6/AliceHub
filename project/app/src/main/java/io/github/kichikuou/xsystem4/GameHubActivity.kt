@@ -258,7 +258,6 @@ class GameHubActivity : Activity(), GameListObserver {
         val runningRoot = GameCatalog.getRunningGameRoot(this)
         val isRunning = curItem != null && runningRoot == curItem.path.path
         val isInstallingHere = gameList.isInstallingForGame(descriptor.id)
-        val dirSuffix = if (matchingItems.size > 1 && curItem != null) " · ${curItem.path.name}" else ""
 
         val statusView = findViewById<TextView>(R.id.hub_status)
         val statusText: String
@@ -269,20 +268,20 @@ class GameHubActivity : Activity(), GameListObserver {
                 statusTone = UiKit.Tone.INFO
             }
             isRunning && curItem != null -> {
-                statusText = getString(R.string.game_status_running) + dirSuffix
+                statusText = getString(R.string.game_status_running)
                 statusTone = UiKit.Tone.SUCCESS
             }
             curItem != null && curItem.error != null -> {
-                statusText = getString(R.string.game_status_error) + dirSuffix
+                statusText = getString(R.string.game_status_error)
                 statusTone = UiKit.Tone.DANGER
             }
             curItem != null && gameList.hasInstalledMod(curItem) -> {
                 val ver = gameList.getInstalledModInfo(curItem)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
-                statusText = getString(R.string.game_status_installed_mod, ver) + dirSuffix
+                statusText = getString(R.string.game_status_installed_mod, ver)
                 statusTone = UiKit.Tone.WARNING
             }
             curItem != null -> {
-                statusText = getString(R.string.game_status_installed) + dirSuffix
+                statusText = getString(R.string.game_status_installed)
                 statusTone = UiKit.Tone.SUCCESS
             }
             else -> {
@@ -293,8 +292,13 @@ class GameHubActivity : Activity(), GameListObserver {
         statusView.text = statusText
         UiKit.styleChip(statusView, statusTone, dot = true)
 
-        findViewById<View>(R.id.btn_hub_switch_instance).visibility =
-            if (matchingItems.size > 1) View.VISIBLE else View.GONE
+        // With several copies of the game installed, the directory in use gets its own row
+        // (next to the button that switches it) instead of being squeezed into the status chip.
+        val hasInstanceChoice = matchingItems.size > 1
+        findViewById<View>(R.id.hub_instance_row).visibility =
+            if (hasInstanceChoice) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.hub_instance_dir).text =
+            if (hasInstanceChoice) curItem?.path?.name.orEmpty() else ""
 
         val playBtn = findViewById<Button>(R.id.btn_hub_play)
         playBtn.setTextColor(Color.WHITE)
