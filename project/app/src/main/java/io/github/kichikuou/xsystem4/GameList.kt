@@ -215,7 +215,9 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
 }
 
 class GameList(activity: Activity) {
-    private val context: Context = activity.applicationContext
+    private val appContext: Context = activity.applicationContext
+    private val context: Context
+        get() = AppSettings.wrapThemeContext(appContext)
     private val items: ArrayList<Item> = arrayListOf()
     private val storageDirs: ArrayList<File> = arrayListOf()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

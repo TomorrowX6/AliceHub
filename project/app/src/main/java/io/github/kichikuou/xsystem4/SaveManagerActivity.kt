@@ -144,7 +144,7 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         onProceed()
         return
     }
-    val lang = Locale.getDefault().language
+    val lang = AppSettings.resolveLocale(activity).language
     val title = when {
         lang.startsWith("zh") -> "游戏正在运行"
         lang.startsWith("ja") -> "ゲームが実行中です"
@@ -644,7 +644,7 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun formatArchiveImportError(e: Exception): String {
         val raw = e.message ?: ""
-        val lang = Locale.getDefault().language
+        val lang = AppSettings.resolveLocale(this).language
         if (raw.startsWith("ENCRYPTED:")) {
             return when {
                 lang.startsWith("zh") -> "不支持加密压缩包，请解压后导入"

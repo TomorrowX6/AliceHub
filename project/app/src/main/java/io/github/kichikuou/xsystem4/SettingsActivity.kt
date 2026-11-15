@@ -29,6 +29,8 @@ class SettingsActivity : ThemedActivity() {
         val accent = getColor(R.color.ui_primary)
         findViewById<ImageView>(R.id.icon_settings_theme)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_theme, accent))
+        findViewById<ImageView>(R.id.icon_settings_language)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_language, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
 
@@ -39,6 +41,9 @@ class SettingsActivity : ThemedActivity() {
 
         findViewById<View>(R.id.row_settings_theme).setOnClickListener {
             showThemeDialog()
+        }
+        findViewById<View>(R.id.row_settings_language).setOnClickListener {
+            showLanguageDialog()
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
@@ -73,6 +78,13 @@ class SettingsActivity : ThemedActivity() {
             AppSettings.THEME_DARK -> getString(R.string.theme_dark)
             else -> getString(R.string.theme_auto)
         }
+        val lang = AppSettings.getLanguageMode(this)
+        findViewById<TextView>(R.id.value_settings_language).text = when (lang) {
+            AppSettings.LANG_ZH -> getString(R.string.lang_zh)
+            AppSettings.LANG_JA -> getString(R.string.lang_ja)
+            AppSettings.LANG_EN -> getString(R.string.lang_en)
+            else -> getString(R.string.lang_auto)
+        }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
     }
@@ -98,6 +110,36 @@ class SettingsActivity : ThemedActivity() {
                 dlg.dismiss()
                 if (nextMode != currentMode) {
                     AppSettings.setThemeMode(this, nextMode)
+                    recreate()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showLanguageDialog() {
+        val codes = arrayOf(
+            AppSettings.LANG_AUTO,
+            AppSettings.LANG_ZH,
+            AppSettings.LANG_JA,
+            AppSettings.LANG_EN
+        )
+        val labels = arrayOf(
+            getString(R.string.lang_auto),
+            getString(R.string.lang_zh),
+            getString(R.string.lang_ja),
+            getString(R.string.lang_en)
+        )
+        val currentLang = AppSettings.getLanguageMode(this)
+        val checkedIdx = codes.indexOf(currentLang).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_language)
+            .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
+                val nextLang = codes.getOrElse(which) { AppSettings.LANG_AUTO }
+                dlg.dismiss()
+                if (nextLang != currentLang) {
+                    AppSettings.setLanguageMode(this, nextLang)
                     recreate()
                 }
             }

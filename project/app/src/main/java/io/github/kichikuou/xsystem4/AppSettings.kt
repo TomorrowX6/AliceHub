@@ -7,19 +7,32 @@ import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
 import android.os.Bundle
+import java.io.File
+import java.util.Locale
 
 object AppSettings {
     private const val PREFS_NAME = "alicehub_settings"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_LANGUAGE = "app_language"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
+    private const val LANG_FILE_NAME = ".app_lang"
 
     const val THEME_AUTO = 0
     const val THEME_LIGHT = 1
     const val THEME_DARK = 2
 
+    const val LANG_AUTO = ""
+    const val LANG_ZH = "zh"
+    const val LANG_JA = "ja"
+    const val LANG_EN = "en"
+
     private const val DEFAULT_RANCE10_BYTES = 4028714690L
     private const val DEFAULT_DOHNA_BYTES = 3310231215L
+
+    private val initialSystemLocale: Locale =
+        Resources.getSystem().configuration.locales.takeIf { !it.isEmpty }?.get(0)
+            ?: Locale.getDefault()
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -47,6 +60,49 @@ object AppSettings {
             }
         }
     }
+
+    private fun normalizeLang(raw: String?): String = when (raw?.trim()?.lowercase(Locale.ROOT)) {
+        LANG_ZH -> LANG_ZH
+        LANG_JA -> LANG_JA
+        LANG_EN -> LANG_EN
+        else -> LANG_AUTO
+    }
+
+    fun getLanguageMode(context: Context): String {
+        try {
+            val f = File(context.filesDir, LANG_FILE_NAME)
+            if (f.isFile) {
+                return normalizeLang(f.readText(Charsets.UTF_8))
+            }
+        } catch (_: Throwable) {
+        }
+        return normalizeLang(prefs(context).getString(KEY_LANGUAGE, LANG_AUTO))
+    }
+
+    fun setLanguageMode(context: Context, lang: String) {
+        val valid = normalizeLang(lang)
+        prefs(context).edit().putString(KEY_LANGUAGE, valid).apply()
+        try {
+            val f = File(context.filesDir, LANG_FILE_NAME)
+            f.writeText(valid, Charsets.UTF_8)
+        } catch (_: Throwable) {
+        }
+        Locale.setDefault(resolveLocaleForMode(valid))
+    }
+
+    fun systemLocale(): Locale =
+        Resources.getSystem().configuration.locales.takeIf { !it.isEmpty }?.get(0)
+            ?: initialSystemLocale
+
+    private fun resolveLocaleForMode(mode: String): Locale = when (mode) {
+        LANG_ZH -> Locale.SIMPLIFIED_CHINESE
+        LANG_JA -> Locale.JAPANESE
+        LANG_EN -> Locale.ENGLISH
+        else -> systemLocale()
+    }
+
+    fun resolveLocale(context: Context): Locale =
+        resolveLocaleForMode(getLanguageMode(context))
 
     fun isOnlineInstallEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ONLINE_INSTALL, false)
@@ -82,13 +138,29 @@ object AppSettings {
             THEME_DARK -> Configuration.UI_MODE_NIGHT_YES
             else -> systemNightBits()
         }
+        val desiredLocale = resolveLocale(base)
+        Locale.setDefault(desiredLocale)
+
         val currentCfg = base.resources.configuration
         val currentBits = currentCfg.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        if (desiredNightBits == Configuration.UI_MODE_NIGHT_UNDEFINED || currentBits == desiredNightBits) {
+        val currentLocale = currentCfg.locales.takeIf { !it.isEmpty }?.get(0) ?: Locale.getDefault()
+
+        val nightMatches = desiredNightBits == Configuration.UI_MODE_NIGHT_UNDEFINED || currentBits == desiredNightBits
+        val localeMatches = currentLocale.language == desiredLocale.language &&
+            (desiredLocale.country.isEmpty() || currentLocale.country == desiredLocale.country)
+
+        if (nightMatches && localeMatches) {
             return base
         }
+
         val overrideCfg = Configuration(currentCfg)
-        overrideCfg.uiMode = (overrideCfg.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or desiredNightBits
+        if (!nightMatches) {
+            overrideCfg.uiMode = (overrideCfg.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or desiredNightBits
+        }
+        if (!localeMatches) {
+            overrideCfg.setLocale(desiredLocale)
+            overrideCfg.setLayoutDirection(desiredLocale)
+        }
         return base.createConfigurationContext(overrideCfg)
     }
 }
@@ -96,6 +168,8 @@ object AppSettings {
 open class ThemedActivity : Activity() {
     private var appliedThemeMode: Int = AppSettings.THEME_AUTO
     private var appliedNightBits: Int = Configuration.UI_MODE_NIGHT_UNDEFINED
+    private var appliedLanguageMode: String = AppSettings.LANG_AUTO
+    private var appliedEffectiveLang: String = ""
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppSettings.wrapThemeContext(newBase))
@@ -104,7 +178,16 @@ open class ThemedActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         appliedThemeMode = AppSettings.getThemeMode(this)
         appliedNightBits = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        appliedLanguageMode = AppSettings.getLanguageMode(this)
+        appliedEffectiveLang = AppSettings.resolveLocale(this).toLanguageTag()
         super.onCreate(savedInstanceState)
+        try {
+            val info = packageManager.getActivityInfo(componentName, 0)
+            if (info.labelRes != 0) {
+                title = getString(info.labelRes)
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onResume() {
@@ -115,8 +198,13 @@ open class ThemedActivity : Activity() {
             AppSettings.THEME_DARK -> Configuration.UI_MODE_NIGHT_YES
             else -> AppSettings.systemNightBits()
         }
+        val currentLangMode = AppSettings.getLanguageMode(this)
+        val currentEffectiveLang = AppSettings.resolveLocale(this).toLanguageTag()
+
         if (currentMode != appliedThemeMode ||
-            (expectedBits != Configuration.UI_MODE_NIGHT_UNDEFINED && expectedBits != appliedNightBits)
+            (expectedBits != Configuration.UI_MODE_NIGHT_UNDEFINED && expectedBits != appliedNightBits) ||
+            currentLangMode != appliedLanguageMode ||
+            currentEffectiveLang != appliedEffectiveLang
         ) {
             recreate()
         }

@@ -95,9 +95,9 @@ class GameModifierActivity : ThemedActivity() {
     private var updatingSwitches = false
 
     private val isZh: Boolean
-        get() = Locale.getDefault().language.startsWith("zh")
+        get() = AppSettings.resolveLocale(this).language.startsWith("zh")
     private val isJa: Boolean
-        get() = Locale.getDefault().language.startsWith("ja")
+        get() = AppSettings.resolveLocale(this).language.startsWith("ja")
 
     private fun tr(zh: String, ja: String, en: String): String = when {
         isZh -> zh

@@ -18,7 +18,6 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
-import java.util.Locale
 import kotlin.math.abs
 
 class FloatingModifierOverlay(private val activity: Activity) {
@@ -28,9 +27,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
     private var lastCheatCode: String = ""
 
     private val isZh: Boolean
-        get() = Locale.getDefault().language.startsWith("zh")
+        get() = AppSettings.resolveLocale(activity).language.startsWith("zh")
     private val isJa: Boolean
-        get() = Locale.getDefault().language.startsWith("ja")
+        get() = AppSettings.resolveLocale(activity).language.startsWith("ja")
 
     private fun tr(zh: String, ja: String, en: String): String = when {
         isZh -> zh

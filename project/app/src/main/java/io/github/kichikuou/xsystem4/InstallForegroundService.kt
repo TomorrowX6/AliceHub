@@ -155,15 +155,16 @@ class InstallForegroundService : Service() {
 
         fun finishSessionSucceeded(context: Context, postResultNotification: Boolean) {
             val appCtx = context.applicationContext
-            val finishedTitle = taskTitle.ifBlank { appCtx.getString(R.string.install_dialog_title) }
+            val lctx = AppSettings.wrapThemeContext(appCtx)
+            val finishedTitle = taskTitle.ifBlank { lctx.getString(R.string.install_dialog_title) }
             val targetPath = modTargetPath
             val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
-                    title = appCtx.getString(R.string.notif_done_title),
-                    body = appCtx.getString(R.string.notif_done_msg, finishedTitle),
+                    title = lctx.getString(R.string.notif_done_title),
+                    body = lctx.getString(R.string.notif_done_msg, finishedTitle),
                     targetPath = targetPath,
                     targetGameId = targetGameId
                 )
@@ -172,13 +173,14 @@ class InstallForegroundService : Service() {
 
         fun finishSessionFailed(context: Context, errorMsg: String, postResultNotification: Boolean) {
             val appCtx = context.applicationContext
+            val lctx = AppSettings.wrapThemeContext(appCtx)
             val targetPath = modTargetPath
             val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
-                    title = appCtx.getString(R.string.notif_failed_title),
+                    title = lctx.getString(R.string.notif_failed_title),
                     body = errorMsg,
                     targetPath = targetPath,
                     targetGameId = targetGameId
@@ -209,10 +211,11 @@ class InstallForegroundService : Service() {
         }
 
         private fun ensureChannels(context: Context) {
+            val lctx = AppSettings.wrapThemeContext(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val progressChannel = NotificationChannel(
                 CHANNEL_PROGRESS,
-                context.getString(R.string.notif_channel_progress_name),
+                lctx.getString(R.string.notif_channel_progress_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setSound(null, null)
@@ -221,7 +224,7 @@ class InstallForegroundService : Service() {
             }
             val resultChannel = NotificationChannel(
                 CHANNEL_RESULT,
-                context.getString(R.string.notif_channel_result_name),
+                lctx.getString(R.string.notif_channel_result_name),
                 NotificationManager.IMPORTANCE_DEFAULT
             )
             nm.createNotificationChannel(progressChannel)
@@ -259,14 +262,15 @@ class InstallForegroundService : Service() {
 
         private fun buildProgressNotification(context: Context): Notification {
             ensureChannels(context)
+            val lctx = AppSettings.wrapThemeContext(context)
             val curPermille = permille
-            val baseTitle = taskTitle.ifBlank { context.getString(R.string.install_dialog_title) }
+            val baseTitle = taskTitle.ifBlank { lctx.getString(R.string.install_dialog_title) }
             val fullTitle = if (curPermille != null) {
                 "$baseTitle · ${(curPermille.coerceIn(0, 1000)) / 10}%"
             } else {
                 baseTitle
             }
-            val rawBody = progressText.ifBlank { context.getString(R.string.online_fetching_manifest) }
+            val rawBody = progressText.ifBlank { lctx.getString(R.string.online_fetching_manifest) }
             val singleLineBody = rawBody.lineSequence().firstOrNull()?.trim().orEmpty().ifEmpty { rawBody }
 
             val builder = Notification.Builder(context, CHANNEL_PROGRESS)
@@ -299,7 +303,7 @@ class InstallForegroundService : Service() {
                     cancelIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                val actionLabel = context.getString(
+                val actionLabel = lctx.getString(
                     if (resumable) R.string.notif_action_pause else R.string.cancel
                 )
                 val action = Notification.Action.Builder(null as Icon?, actionLabel, cancelPi).build()
