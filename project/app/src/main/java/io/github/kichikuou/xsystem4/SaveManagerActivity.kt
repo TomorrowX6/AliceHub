@@ -185,7 +185,7 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
 // Status-card views live in save_manager_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class SaveManagerActivity : Activity() {
+class SaveManagerActivity : ThemedActivity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"

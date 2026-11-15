@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.Menu
@@ -101,7 +100,7 @@ private class GameSelectAdapter(
     }
 }
 
-class LauncherActivity : Activity(), GameListObserver {
+class LauncherActivity : ThemedActivity(), GameListObserver {
     companion object {
         private var savedGameList: GameList? = null
 
@@ -120,6 +119,7 @@ class LauncherActivity : Activity(), GameListObserver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppSettings.applyPlatformNightMode(this)
         setContentView(R.layout.launcher)
         title = getString(R.string.select_game_title)
 
@@ -217,12 +217,8 @@ class LauncherActivity : Activity(), GameListObserver {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.licenses -> {
-                startActivity(Intent(this, LicensesMenuActivity::class.java))
-                true
-            }
-            R.id.open_github -> {
-                openGitHub()
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -246,10 +242,6 @@ class LauncherActivity : Activity(), GameListObserver {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
         }
-    }
-
-    private fun openGitHub() {
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GameCatalog.GITHUB_URL)))
     }
 
     override fun onInstallProgress(path: String) {

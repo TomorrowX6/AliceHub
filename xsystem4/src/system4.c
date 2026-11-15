@@ -756,8 +756,8 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	char path_buf[PATH_MAX];
 #ifdef __ANDROID__
 	{
-		const char *ext_crash = "/storage/emulated/0/Android/data/io.github.rance10.nativeport/files/crash.log";
-		const char *ext_hist  = "/storage/emulated/0/Android/data/io.github.rance10.nativeport/files/crash_history.log";
+		const char *ext_crash = "/storage/emulated/0/Android/data/io.github.alicehub/files/crash.log";
+		const char *ext_hist  = "/storage/emulated/0/Android/data/io.github.alicehub/files/crash_history.log";
 		if (write_file_raw(ext_crash, crash_report_buf, off, false)) {
 			if (out_primary_path && out_primary_size > 0 && !out_primary_path[0]) {
 				size_t p_off = 0;

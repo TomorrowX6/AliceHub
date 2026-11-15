@@ -81,7 +81,7 @@ private class ModSaveSlotAdapter(
 // Status-card views live in game_modifier_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class GameModifierActivity : Activity() {
+class GameModifierActivity : ThemedActivity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"

@@ -1,7 +1,6 @@
 package io.github.kichikuou.xsystem4
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
@@ -31,7 +30,7 @@ private const val REQ_MOD_LOCAL_DIR = 205
 // Status-card views live in mod_manager_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class ModManagerActivity : Activity(), GameListObserver {
+class ModManagerActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
     }
@@ -98,7 +97,11 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         handleRestoreDialogIntent(intent)
-        loadCatalog()
+        if (AppSettings.isOnlineInstallEnabled(this)) {
+            loadCatalog()
+        } else {
+            updateUi()
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -144,6 +147,16 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
         rebindCurrentTarget()
         gameList.observer = this
+        val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
+        if (!onlineEnabled) {
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
+            catalogLoadError = false
+            releases = emptyList()
+        } else if (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError) {
+            loadCatalog()
+        }
         updateUi()
         renderInstallState(gameList.installState)
 
@@ -224,6 +237,15 @@ class ModManagerActivity : Activity(), GameListObserver {
     }
 
     private fun loadCatalog() {
+        if (!AppSettings.isOnlineInstallEnabled(this)) {
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
+            catalogLoadError = false
+            releases = emptyList()
+            updateUi()
+            return
+        }
         catalogJob?.cancel()
         isLoadingCatalog = true
         catalogLoadError = false
@@ -247,6 +269,7 @@ class ModManagerActivity : Activity(), GameListObserver {
     }
 
     private fun updateUi() {
+        val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
         val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
@@ -265,7 +288,7 @@ class ModManagerActivity : Activity(), GameListObserver {
             else -> getString(R.string.mod_mgr_status_installed)
         }
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
-        summaryView.text = if (releases.isNotEmpty()) {
+        summaryView.text = if (onlineEnabled && releases.isNotEmpty()) {
             "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].version)}"
         } else {
             statusPart
@@ -273,16 +296,30 @@ class ModManagerActivity : Activity(), GameListObserver {
         summaryView.visibility = View.VISIBLE
 
         val isInstalling = gameList.installState is InstallState.Installing
+        val btnLocal = findViewById<Button>(R.id.btn_mod_mgr_local)
         findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isInstalling
-        findViewById<Button>(R.id.btn_mod_mgr_local).isEnabled = !isInstalling
+        btnLocal.isEnabled = !isInstalling
         findViewById<Button>(R.id.btn_mod_mgr_restore).isEnabled =
             gameList.canRestoreVanilla(currentTarget) && !isInstalling
 
         val btnUpdate = findViewById<Button>(R.id.btn_mod_mgr_update)
+        val showUpdateBtn = onlineEnabled || isInstalling
+        btnUpdate.visibility = if (showUpdateBtn) View.VISIBLE else View.GONE
+        val targetStartMargin = if (showUpdateBtn) UiKit.dpInt(this, 4) else 0
+        (btnLocal.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            if (lp.marginStart != targetStartMargin) {
+                lp.marginStart = targetStartMargin
+                btnLocal.layoutParams = lp
+            }
+        }
+
         when {
             isInstalling -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_downloading)
                 btnUpdate.isEnabled = true
+            }
+            !onlineEnabled -> {
+                btnUpdate.isEnabled = false
             }
             isLoadingCatalog && releases.isEmpty() -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_checking)
@@ -297,11 +334,13 @@ class ModManagerActivity : Activity(), GameListObserver {
                 if (plan == null) {
                     btnUpdate.text = getString(R.string.mod_mgr_btn_up_to_date)
                     btnUpdate.isEnabled = false
-                } else if (!hasMod) {
-                    btnUpdate.text = getString(R.string.mod_mgr_btn_install_latest)
-                    btnUpdate.isEnabled = true
                 } else {
-                    btnUpdate.text = getString(R.string.mod_mgr_btn_update_latest)
+                    val baseLabel = getString(
+                        if (!hasMod) R.string.mod_mgr_btn_install_latest else R.string.mod_mgr_btn_update_latest
+                    )
+                    val planBytes = plan.steps.sumOf { it.expectedSize.coerceAtLeast(0L) }
+                    val sizeStr = OnlineInstaller.formatSize(planBytes)
+                    btnUpdate.text = if (sizeStr.isNotEmpty()) "$baseLabel · $sizeStr" else baseLabel
                     btnUpdate.isEnabled = true
                 }
             }
@@ -315,6 +354,7 @@ class ModManagerActivity : Activity(), GameListObserver {
         if (releases.isEmpty()) {
             emptyView.visibility = View.VISIBLE
             val label = when {
+                !onlineEnabled -> getString(R.string.mod_mgr_online_disabled)
                 isLoadingCatalog -> getString(R.string.mod_mgr_loading)
                 catalogLoadError -> getString(R.string.mod_mgr_load_failed)
                 else -> getString(R.string.mod_mgr_empty)
@@ -462,6 +502,10 @@ class ModManagerActivity : Activity(), GameListObserver {
 
         val msg = buildString {
             append(getString(R.string.mod_mgr_detail_file, entry.fileName))
+            val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
+            if (sizeStr.isNotEmpty()) {
+                append("\n").append(getString(R.string.mod_mgr_detail_size, sizeStr))
+            }
             if (entry.formattedDate.isNotEmpty()) {
                 append("\n").append(getString(R.string.mod_mgr_detail_date, entry.formattedDate))
             }
@@ -530,6 +574,7 @@ class ModManagerActivity : Activity(), GameListObserver {
     }
 
     private fun executeSteps(steps: List<ModReleaseEntry>) {
+        if (!AppSettings.isOnlineInstallEnabled(this)) return
         if (steps.isEmpty() || gameList.installState is InstallState.Installing) return
         ensureGameNotRunning(this) {
             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
@@ -699,6 +744,10 @@ class ModManagerActivity : Activity(), GameListObserver {
             UiKit.bindChips(view, tags)
 
             val metaParts = mutableListOf<String>()
+            val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
+            if (sizeStr.isNotEmpty()) {
+                metaParts.add(sizeStr)
+            }
             if (entry.formattedDate.isNotEmpty()) {
                 metaParts.add(entry.formattedDate)
             }

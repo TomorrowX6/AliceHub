@@ -1,5 +1,13 @@
 <resources>
-    <string name="app_name" translatable="false">re:xsystem4</string>
+    <string name="app_name" translatable="false">AliceHub</string>
+    <string name="action_settings">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_auto">Auto</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="online_disclaimer_title">Disclaimer</string>
+    <string name="online_disclaimer_msg">Online resources are collected from public internet sources for personal study and compatibility testing only. AliceHub holds no copyright over third-party works. Please support official releases and delete downloaded files within 24 hours.</string>
+    <string name="online_disclaimer_agree">Agree &amp; Enable</string>
     <string name="action_save_manager">Save Manager</string>
     <string name="action_game_modifier">Game Modifier</string>
     <string name="action_github">GitHub</string>
@@ -109,12 +117,14 @@
     <string name="save_cleared_toast">Saves cleared</string>
 
     <string name="action_online_install">Online Install</string>
+    <string name="action_online_install_with_size">Online Install · %1$s</string>
     <string name="action_local_install">Local Install</string>
     <string name="game_local_dialog_title">Local Install</string>
     <string name="game_opt_zip">From Archive</string>
     <string name="game_opt_dir">From Folder</string>
     <string name="online_base_confirm_title">Online Install</string>
     <string name="online_base_confirm_msg">Download and install %1$s base game? Supports resumable downloads.</string>
+    <string name="online_base_confirm_msg_size">Download and install %1$s base game? Size: %2$s, supports resumable downloads.</string>
     <string name="online_fetching_manifest">Fetching manifest…</string>
     <string name="online_base_download_progress">Downloading %1$d/%2$d · %3$d%% · %4$s\n%5$d / %6$d MB · %7$s</string>
     <string name="online_verifying_extracting">Extracting %1$s…</string>
@@ -138,6 +148,7 @@
     <string name="mod_mgr_loading">Loading…</string>
     <string name="mod_mgr_load_failed">Failed to load. Check network.</string>
     <string name="mod_mgr_empty">No versions available</string>
+    <string name="mod_mgr_online_disabled">Online install is off</string>
     <string name="mod_mgr_summary_format">Latest %1$s</string>
     <string name="mod_mgr_btn_checking">Checking…</string>
     <string name="mod_mgr_btn_retry">Retry</string>
@@ -151,6 +162,7 @@
     <string name="mod_mgr_tag_patch">PATCH</string>
     <string name="mod_mgr_based_on">for %1$s</string>
     <string name="mod_mgr_detail_file">File: %1$s</string>
+    <string name="mod_mgr_detail_size">Size: %1$s</string>
     <string name="mod_mgr_detail_date">Date: %1$s</string>
     <string name="mod_mgr_detail_type_patch">Patch · for %1$s</string>
     <string name="mod_mgr_detail_type_full">Standalone</string>
@@ -185,7 +197,7 @@
     <string name="notif_failed_title">Installation Failed</string>
     <string name="mod_mgr_btn_downloading">Progress</string>
 
-    <string name="select_game_title">Select Game</string>
+    <string name="select_game_title">AliceHub</string>
     <string name="game_rance10_title">Rance 10</string>
     <string name="game_dohnadohna_title">Dohna Dohna</string>
     <string name="game_status_not_installed">Not Installed</string>

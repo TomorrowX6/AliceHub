@@ -1,4 +1,12 @@
 <resources>
+    <string name="action_settings">設定</string>
+    <string name="settings_theme">テーマ</string>
+    <string name="theme_auto">自動</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="online_disclaimer_title">免責事項</string>
+    <string name="online_disclaimer_msg">オンライン資源はインターネット上の公開情報から収集されたものであり、個人の学習および互換性検証のみを目的としています。公式製品をご支援いただき、24時間以内に削除してください。</string>
+    <string name="online_disclaimer_agree">同意して有効化</string>
     <string name="action_save_manager">セーブ管理</string>
     <string name="action_game_modifier">ゲーム改造</string>
     <string name="action_github">GitHub</string>
@@ -108,12 +116,14 @@
     <string name="save_cleared_toast">セーブを全削除しました</string>
 
     <string name="action_online_install">オンライン導入</string>
+    <string name="action_online_install_with_size">オンライン導入 · %1$s</string>
     <string name="action_local_install">ローカル導入</string>
     <string name="game_local_dialog_title">ローカル導入</string>
     <string name="game_opt_zip">アーカイブから導入</string>
     <string name="game_opt_dir">フォルダから導入</string>
     <string name="online_base_confirm_title">オンライン導入</string>
     <string name="online_base_confirm_msg">%1$s のゲーム本体をダウンロードして導入しますか？レジュームに対応しています。</string>
+    <string name="online_base_confirm_msg_size">%1$s のゲーム本体を導入しますか？約 %2$s、レジュームに対応しています。</string>
     <string name="online_fetching_manifest">情報取得中…</string>
     <string name="online_base_download_progress">ダウンロード中 %1$d/%2$d · %3$d%% · %4$s\n%5$d / %6$d MB · %7$s</string>
     <string name="online_verifying_extracting">%1$s を展開中…</string>
@@ -137,6 +147,7 @@
     <string name="mod_mgr_loading">読み込み中…</string>
     <string name="mod_mgr_load_failed">取得に失敗しました。通信環境を確認してください</string>
     <string name="mod_mgr_empty">利用可能なバージョンがありません</string>
+    <string name="mod_mgr_online_disabled">オンライン導入はオフです</string>
     <string name="mod_mgr_summary_format">最新 %1$s</string>
     <string name="mod_mgr_btn_checking">確認中…</string>
     <string name="mod_mgr_btn_retry">再取得</string>
@@ -150,6 +161,7 @@
     <string name="mod_mgr_tag_patch">パッチ</string>
     <string name="mod_mgr_based_on">%1$s 用</string>
     <string name="mod_mgr_detail_file">ファイル：%1$s</string>
+    <string name="mod_mgr_detail_size">サイズ：%1$s</string>
     <string name="mod_mgr_detail_date">日時：%1$s</string>
     <string name="mod_mgr_detail_type_patch">差分パッチ · %1$s 用</string>
     <string name="mod_mgr_detail_type_full">本体バージョン</string>
@@ -184,7 +196,7 @@
     <string name="notif_failed_title">インストール失敗</string>
     <string name="mod_mgr_btn_downloading">進捗表示</string>
 
-    <string name="select_game_title">ゲーム選択</string>
+    <string name="select_game_title">AliceHub</string>
     <string name="game_rance10_title">ランス10</string>
     <string name="game_dohnadohna_title">ドーナドーナ</string>
     <string name="game_status_not_installed">未導入</string>

@@ -1,6 +1,5 @@
 package io.github.kichikuou.xsystem4
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
@@ -14,15 +13,24 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val HUB_INSTALL_ARCHIVE_REQ = 21
 private const val HUB_INSTALL_DIR_REQ = 22
 
-class GameHubActivity : Activity(), GameListObserver {
+class GameHubActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
     }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var refreshedSizeCdnUrl: String? = null
 
     private lateinit var gameList: GameList
     private var gameId: String = GameCatalog.ID_RANCE10
@@ -102,6 +110,7 @@ class GameHubActivity : Activity(), GameListObserver {
         gameList = LauncherActivity.obtainGameList(this, refresh = false)
         gameList.observer = this
         rebindGameState()
+        refreshOnlineSizeIfNeeded()
         refreshUi()
         renderInstallState(gameList.installState)
 
@@ -123,6 +132,7 @@ class GameHubActivity : Activity(), GameListObserver {
             gameList.observer = null
         }
         dismissProgressDialog()
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -298,7 +308,9 @@ class GameHubActivity : Activity(), GameListObserver {
         val localBtn = findViewById<Button>(R.id.btn_hub_local_install)
         val modMgrBtn = findViewById<Button>(R.id.btn_hub_mod_manager)
 
-        onlineBtn.visibility = if (descriptor.supportsOnlineBaseInstall) View.VISIBLE else View.GONE
+        val onlineEnabled = descriptor.supportsOnlineBaseInstall && AppSettings.isOnlineInstallEnabled(this)
+        onlineBtn.visibility = if (onlineEnabled) View.VISIBLE else View.GONE
+        onlineBtn.text = onlineInstallLabel()
         modMgrBtn.visibility = if (descriptor.supportsOnlineMod) View.VISIBLE else View.GONE
 
         val rowAccent = UiKit.accentOnSurface(this, descriptor.accentColor)
@@ -307,6 +319,44 @@ class GameHubActivity : Activity(), GameListObserver {
         UiKit.styleActionRow(modMgrBtn, R.drawable.ic_extension, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_save_manager), R.drawable.ic_save, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_game_modifier), R.drawable.ic_tune, rowAccent)
+    }
+
+    private fun onlineBaseSizeText(): String {
+        val cdnUrl = descriptor.onlineBaseCdnUrl ?: return ""
+        val bytes = AppSettings.getCachedBaseGameSize(this, cdnUrl)
+        return OnlineInstaller.formatSize(bytes)
+    }
+
+    private fun onlineInstallLabel(): String {
+        val sizeStr = onlineBaseSizeText()
+        return if (sizeStr.isNotEmpty()) {
+            getString(R.string.action_online_install_with_size, sizeStr)
+        } else {
+            getString(R.string.action_online_install)
+        }
+    }
+
+    private fun refreshOnlineSizeIfNeeded() {
+        if (!descriptor.supportsOnlineBaseInstall || !AppSettings.isOnlineInstallEnabled(this)) return
+        val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
+        if (refreshedSizeCdnUrl == cdnUrl) return
+        refreshedSizeCdnUrl = cdnUrl
+        scope.launch {
+            val fetched = try {
+                withContext(Dispatchers.IO) {
+                    OnlineInstaller.fetchManifestTotalBytes(cdnUrl)
+                }
+            } catch (_: Throwable) {
+                -1L
+            }
+            if (fetched > 0L) {
+                val prev = AppSettings.getCachedBaseGameSize(this@GameHubActivity, cdnUrl)
+                AppSettings.setCachedBaseGameSize(this@GameHubActivity, cdnUrl, fetched)
+                if (prev != fetched) {
+                    refreshUi()
+                }
+            }
+        }
     }
 
     private fun showSwitchInstanceDialog() {
@@ -346,9 +396,9 @@ class GameHubActivity : Activity(), GameListObserver {
             GameCatalog.launchGameItem(this, curItem)
             return
         }
-        if (descriptor.supportsOnlineBaseInstall) {
+        if (descriptor.supportsOnlineBaseInstall && AppSettings.isOnlineInstallEnabled(this)) {
             val opts = arrayOf(
-                getString(R.string.action_online_install),
+                onlineInstallLabel(),
                 getString(R.string.action_local_install)
             )
             AlertDialog.Builder(this)
@@ -381,10 +431,17 @@ class GameHubActivity : Activity(), GameListObserver {
             renderInstallState(gameList.installState)
             return
         }
+        if (!AppSettings.isOnlineInstallEnabled(this)) return
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
+        val sizeStr = onlineBaseSizeText()
+        val msg = if (sizeStr.isNotEmpty()) {
+            getString(R.string.online_base_confirm_msg_size, descriptor.title, sizeStr)
+        } else {
+            getString(R.string.online_base_confirm_msg, descriptor.title)
+        }
         AlertDialog.Builder(this)
             .setTitle(R.string.online_base_confirm_title)
-            .setMessage(getString(R.string.online_base_confirm_msg, descriptor.title))
+            .setMessage(msg)
             .setPositiveButton(R.string.ok) { _, _ ->
                 InstallForegroundService.requestNotificationPermissionIfNeeded(this)
                 gameList.installOnlineBaseGame(cdnBaseUrl = cdnUrl, targetGameId = descriptor.id)

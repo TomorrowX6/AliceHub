@@ -1,4 +1,12 @@
 <resources>
+    <string name="action_settings">设置</string>
+    <string name="settings_theme">主题</string>
+    <string name="theme_auto">自动</string>
+    <string name="theme_light">亮色</string>
+    <string name="theme_dark">深色</string>
+    <string name="online_disclaimer_title">免责声明</string>
+    <string name="online_disclaimer_msg">在线资源均整理自互联网公开渠道，仅供个人学习交流与兼容性测试，本应用不持有任何第三方作品版权。请支持正版，下载后请于 24 小时内自行删除。</string>
+    <string name="online_disclaimer_agree">同意并开启</string>
     <string name="action_save_manager">存档管理</string>
     <string name="action_game_modifier">游戏修改器</string>
     <string name="action_github">GitHub</string>
@@ -108,12 +116,14 @@
     <string name="save_cleared_toast">已清空存档</string>
 
     <string name="action_online_install">在线安装</string>
+    <string name="action_online_install_with_size">在线安装 · %1$s</string>
     <string name="action_local_install">本地安装</string>
     <string name="game_local_dialog_title">本地安装</string>
     <string name="game_opt_zip">从压缩包安装</string>
     <string name="game_opt_dir">从文件夹安装</string>
     <string name="online_base_confirm_title">在线安装</string>
     <string name="online_base_confirm_msg">下载并安装 %1$s 游戏本体？支持断点续传。</string>
+    <string name="online_base_confirm_msg_size">下载并安装 %1$s 游戏本体？约 %2$s，支持断点续传。</string>
     <string name="online_fetching_manifest">正在获取资源信息…</string>
     <string name="online_base_download_progress">下载中 %1$d/%2$d · %3$d%% · %4$s\n%5$d / %6$d MB · %7$s</string>
     <string name="online_verifying_extracting">正在解压 %1$s…</string>
@@ -137,6 +147,7 @@
     <string name="mod_mgr_loading">正在加载…</string>
     <string name="mod_mgr_load_failed">获取失败，请检查网络</string>
     <string name="mod_mgr_empty">暂无可用版本</string>
+    <string name="mod_mgr_online_disabled">在线安装未开启</string>
     <string name="mod_mgr_summary_format">最新 %1$s</string>
     <string name="mod_mgr_btn_checking">检查中…</string>
     <string name="mod_mgr_btn_retry">重新获取</string>
@@ -150,6 +161,7 @@
     <string name="mod_mgr_tag_patch">补丁</string>
     <string name="mod_mgr_based_on">需 %1$s</string>
     <string name="mod_mgr_detail_file">文件：%1$s</string>
+    <string name="mod_mgr_detail_size">大小：%1$s</string>
     <string name="mod_mgr_detail_date">时间：%1$s</string>
     <string name="mod_mgr_detail_type_patch">增量补丁 · 需 %1$s</string>
     <string name="mod_mgr_detail_type_full">完整版本</string>
@@ -184,7 +196,7 @@
     <string name="notif_failed_title">安装失败</string>
     <string name="mod_mgr_btn_downloading">查看进度</string>
 
-    <string name="select_game_title">选择游戏</string>
+    <string name="select_game_title">AliceHub</string>
     <string name="game_rance10_title">兰斯10</string>
     <string name="game_dohnadohna_title">多娜多娜</string>
     <string name="game_status_not_installed">未安装</string>

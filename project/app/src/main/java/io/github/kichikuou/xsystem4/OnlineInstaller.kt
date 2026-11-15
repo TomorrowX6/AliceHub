@@ -503,6 +503,7 @@ object OnlineInstaller {
         if (manifest.entries.isEmpty()) {
             throw GameList.InstallFailureException(R.string.online_download_error)
         }
+        AppSettings.setCachedBaseGameSize(context, cleanBaseUrl, manifest.totalBytes)
 
         val safeBase = manifest.baseName
             .replace(Regex("[^A-Za-z0-9_\\-]"), "_")
@@ -768,6 +769,24 @@ object OnlineInstaller {
         return File(stagingDir, ".extracted_${safe}.done")
     }
 
+    fun fetchManifestTotalBytes(cdnBaseUrl: String): Long {
+        val cleanBaseUrl = cdnBaseUrl.trimEnd('/')
+        return fetchManifest(cleanBaseUrl) {}.totalBytes
+    }
+
+    fun formatSize(bytes: Long): String {
+        if (bytes <= 0L) return ""
+        val gb = 1024.0 * 1024.0 * 1024.0
+        val mb = 1024.0 * 1024.0
+        val kb = 1024.0
+        return when {
+            bytes >= gb -> String.format(Locale.US, "%.2f GB", bytes / gb)
+            bytes >= mb -> String.format(Locale.US, "%.1f MB", bytes / mb)
+            bytes >= kb -> String.format(Locale.US, "%.0f KB", bytes / kb)
+            else -> "$bytes B"
+        }
+    }
+
     private fun fetchManifest(cdnBaseUrl: String, checkCancelled: () -> Unit): OnlineManifest {
         var lastErr: Exception? = null
         for (attempt in 0 until 3) {
@@ -879,7 +898,7 @@ object OnlineInstaller {
 
                 val respEtag = conn.getHeaderField("ETag")?.trim()
                 val curSavedEtag = readSavedMeta(metaFile, url, expectedSha256)?.etag
-                var appendMode = false
+                val appendMode: Boolean
 
                 when (code) {
                     HttpURLConnection.HTTP_PARTIAL -> {
