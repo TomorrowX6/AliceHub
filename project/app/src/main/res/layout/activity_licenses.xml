@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-    <TextView android:id="@+id/license_text"
-        android:layout_width="fill_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false"
+    android:paddingStart="@dimen/ui_screen_padding_h"
+    android:paddingTop="8dp"
+    android:paddingEnd="@dimen/ui_screen_padding_h"
+    android:paddingBottom="24dp"
+    android:scrollbarStyle="outsideOverlay">
+
+    <TextView
+        android:id="@+id/license_text"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="20dp" />
+        android:background="@drawable/bg_card"
+        android:lineSpacingExtra="2dp"
+        android:padding="16dp"
+        android:textAppearance="@style/TextAppearance.Launcher.Caption"
+        android:textIsSelectable="true" />
 </ScrollView>

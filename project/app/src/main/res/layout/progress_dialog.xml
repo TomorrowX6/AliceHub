@@ -1,59 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:padding="18dp"
-    android:minWidth="280dp"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:minWidth="280dp"
+    android:orientation="vertical"
+    android:paddingTop="10dp"
+    android:paddingBottom="12dp">
 
     <LinearLayout
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:minHeight="40dp"
+        android:orientation="horizontal">
 
         <ProgressBar
-            android:layout_marginEnd="12dp"
-            android:layout_width="36dp"
-            android:layout_height="36dp" />
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="16dp" />
 
         <TextView
             android:id="@+id/text"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="14sp" />
+            android:lineSpacingExtra="2dp"
+            android:textAppearance="@style/TextAppearance.Launcher.Body" />
     </LinearLayout>
 
     <ProgressBar
         android:id="@+id/progress_bar"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_height="6dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="24dp"
         android:max="1000"
+        android:progressDrawable="@drawable/progress_horizontal"
         android:visibility="gone" />
 
+    <!--
+        Text buttons sit closer to the dialog edges than the content (like alert dialog
+        buttons), so that their labels line up with it.
+    -->
     <LinearLayout
         android:id="@+id/action_bar"
-        android:orientation="horizontal"
-        android:gravity="end"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="12dp"
+        android:gravity="end"
+        android:orientation="horizontal">
 
         <Button
             android:id="@+id/btn_bg_install"
-            style="?android:attr/buttonBarButtonStyle"
+            style="@style/Widget.Launcher.Button.Text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/install_btn_background" />
 
         <Button
             android:id="@+id/btn_cancel_install"
-            style="?android:attr/buttonBarButtonStyle"
+            style="@style/Widget.Launcher.Button.Text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
             android:text="@string/cancel"
             android:visibility="gone" />
     </LinearLayout>

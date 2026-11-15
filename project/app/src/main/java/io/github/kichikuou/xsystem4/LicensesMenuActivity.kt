@@ -32,8 +32,8 @@ class LicensesMenuActivity : Activity() {
 
         val items = entries.map { mapOf("name" to it.displayName, "url" to it.url)}
         val listView = findViewById<ListView>(R.id.list)
-        listView.adapter = SimpleAdapter(this, items, android.R.layout.simple_list_item_2,
-            arrayOf("name", "url"), intArrayOf(android.R.id.text1, android.R.id.text2))
+        listView.adapter = SimpleAdapter(this, items, R.layout.list_item_entry,
+            arrayOf("name", "url"), intArrayOf(R.id.title, R.id.meta))
         listView.setOnItemClickListener { _, _, pos, _ ->
             val intent = Intent(this, LicensesActivity::class.java).apply {
                 putExtra(LicensesActivity.EXTRA_DISPLAY_NAME, entries[pos].displayName)
