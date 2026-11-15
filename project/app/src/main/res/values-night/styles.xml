@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Platform.Theme.Launcher" parent="android:Theme.Material" />
+    <style name="Platform.Theme.Launcher.Dialog" parent="android:Theme.Material.Dialog.MinWidth" />
+    <style name="Platform.Theme.Launcher.AlertDialog" parent="android:Theme.Material.Dialog.Alert" />
+</resources>

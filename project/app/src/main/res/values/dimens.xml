@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Horizontal screen inset; widened on large/landscape screens so content keeps a readable width. -->
+    <dimen name="ui_screen_padding_h">16dp</dimen>
+    <dimen name="ui_radius_card">20dp</dimen>
+    <dimen name="ui_radius_row">16dp</dimen>
+    <dimen name="ui_radius_button">14dp</dimen>
+    <dimen name="ui_radius_dialog">24dp</dimen>
+    <dimen name="ui_radius_popup">12dp</dimen>
+    <dimen name="ui_card_gap">12dp</dimen>
+    <dimen name="ui_row_gap">8dp</dimen>
+</resources>

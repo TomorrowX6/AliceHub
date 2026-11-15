@@ -4,4 +4,215 @@
     <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
         <!-- Customize your theme here. -->
     </style>
+
+    <!--
+        Launcher theme (everything except the in-game activity).
+        Platform.* only choose the light/dark framework parent; values-night swaps them,
+        so every item below can stay in one place and rely on day/night color resources.
+    -->
+    <style name="Platform.Theme.Launcher" parent="android:Theme.Material.Light" />
+    <style name="Platform.Theme.Launcher.Dialog" parent="android:Theme.Material.Light.Dialog.MinWidth" />
+    <style name="Platform.Theme.Launcher.AlertDialog" parent="android:Theme.Material.Light.Dialog.Alert" />
+
+    <style name="Base.Theme.Launcher" parent="Platform.Theme.Launcher">
+        <item name="android:colorPrimary">@color/ui_bg</item>
+        <item name="android:colorPrimaryDark">@color/ui_bg</item>
+        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="android:colorControlHighlight">@color/ui_ripple</item>
+        <item name="android:colorEdgeEffect">@color/ui_text_tertiary</item>
+        <item name="android:windowBackground">@color/ui_bg</item>
+        <item name="android:statusBarColor">@color/ui_bg</item>
+        <item name="android:windowLightStatusBar">@bool/ui_light_system_bars</item>
+        <item name="android:actionBarStyle">@style/Widget.Launcher.ActionBar</item>
+        <item name="android:popupMenuStyle">@style/Widget.Launcher.PopupMenu</item>
+        <item name="android:actionOverflowMenuStyle">@style/Widget.Launcher.PopupMenu.Overflow</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.AlertDialog</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Dialog</item>
+        <item name="android:buttonStyle">@style/Widget.Launcher.Button</item>
+    </style>
+
+    <!-- values-v27 adds the light navigation bar on top of this. -->
+    <style name="Theme.Launcher" parent="Base.Theme.Launcher" />
+
+    <style name="Theme.Launcher.Dialog" parent="Platform.Theme.Launcher.Dialog">
+        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="android:colorControlHighlight">@color/ui_ripple</item>
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="android:windowClipToOutline">true</item>
+        <item name="android:windowTitleStyle">@style/Widget.Launcher.DialogTitle</item>
+        <item name="android:buttonBarButtonStyle">@style/Widget.Launcher.Button.Text</item>
+        <item name="android:buttonStyle">@style/Widget.Launcher.Button</item>
+    </style>
+
+    <style name="Theme.Launcher.AlertDialog" parent="Platform.Theme.Launcher.AlertDialog">
+        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="android:colorControlHighlight">@color/ui_ripple</item>
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="android:windowClipToOutline">true</item>
+        <item name="android:windowTitleStyle">@style/Widget.Launcher.DialogTitle</item>
+        <item name="android:buttonBarButtonStyle">@style/Widget.Launcher.Button.Text</item>
+        <item name="android:buttonStyle">@style/Widget.Launcher.Button</item>
+    </style>
+
+    <!-- Action bar: flat, same color as the page, bold title. -->
+    <style name="Widget.Launcher.ActionBar" parent="android:Widget.Material.ActionBar.Solid">
+        <item name="android:background">@color/ui_bg</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:titleTextStyle">@style/TextAppearance.Launcher.ActionBarTitle</item>
+    </style>
+
+    <style name="TextAppearance.Launcher.ActionBarTitle" parent="android:TextAppearance.Material.Widget.ActionBar.Title">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ui_text_primary</item>
+    </style>
+
+    <style name="Widget.Launcher.PopupMenu" parent="android:Widget.Material.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_popup</item>
+        <item name="android:popupElevation">8dp</item>
+    </style>
+
+    <style name="Widget.Launcher.PopupMenu.Overflow" parent="android:Widget.Material.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/bg_popup</item>
+        <item name="android:popupElevation">8dp</item>
+    </style>
+
+    <style name="Widget.Launcher.DialogTitle" parent="">
+        <item name="android:maxLines">1</item>
+        <item name="android:scrollHorizontally">true</item>
+        <item name="android:textAppearance">@style/TextAppearance.Launcher.DialogTitle</item>
+    </style>
+
+    <style name="TextAppearance.Launcher.DialogTitle" parent="android:TextAppearance.Material.Title">
+        <item name="android:textSize">19sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ui_text_primary</item>
+    </style>
+
+    <!--
+        Buttons. The base style is the neutral "tonal" look and is also the theme's
+        buttonStyle, so buttons created in code pick it up without extra work.
+    -->
+    <style name="Widget.Launcher.Button" parent="android:Widget.Material.Button">
+        <item name="android:background">@drawable/bg_btn_tonal</item>
+        <item name="android:textColor">@color/btn_tonal_text</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:gravity">center</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:minWidth">56dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+
+    <style name="Widget.Launcher.Button.Filled">
+        <item name="android:background">@drawable/bg_btn_filled</item>
+        <item name="android:textColor">@color/btn_filled_text</item>
+    </style>
+
+    <style name="Widget.Launcher.Button.Danger">
+        <item name="android:background">@drawable/bg_btn_danger</item>
+        <item name="android:textColor">@color/btn_danger_text</item>
+    </style>
+
+    <style name="Widget.Launcher.Button.Text">
+        <item name="android:background">@drawable/bg_btn_text</item>
+        <item name="android:textColor">@color/btn_text_text</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:minWidth">64dp</item>
+    </style>
+
+    <!-- Compact pill button used inside cards (e.g. "switch directory"). -->
+    <style name="Widget.Launcher.Button.Small">
+        <item name="android:textSize">13sp</item>
+        <item name="android:minHeight">36dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <!-- Settings-like row inside a card: icon at start, chevron at end (set in code). -->
+    <style name="Widget.Launcher.ActionRow" parent="android:Widget.Material.Button">
+        <item name="android:background">@drawable/bg_row_action</item>
+        <item name="android:textColor">@color/row_action_text</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:gravity">start|center_vertical</item>
+        <item name="android:textAlignment">viewStart</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:minHeight">60dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:drawablePadding">14dp</item>
+    </style>
+
+    <!-- Card-per-row list: no selector/dividers, rows carry their own background and ripple. -->
+    <style name="Widget.Launcher.CardList" parent="android:Widget.Material.ListView">
+        <item name="android:divider">@android:color/transparent</item>
+        <item name="android:dividerHeight">@dimen/ui_row_gap</item>
+        <item name="android:listSelector">@android:color/transparent</item>
+        <item name="android:clipToPadding">false</item>
+        <item name="android:scrollbarStyle">outsideOverlay</item>
+        <item name="android:paddingStart">@dimen/ui_screen_padding_h</item>
+        <item name="android:paddingEnd">@dimen/ui_screen_padding_h</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">24dp</item>
+    </style>
+
+    <!-- Placeholder shown under a screen's header card when its list is empty. -->
+    <style name="Widget.Launcher.EmptyText" parent="">
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
+        <item name="android:paddingTop">40dp</item>
+        <item name="android:paddingBottom">24dp</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/ui_text_secondary</item>
+    </style>
+
+    <!-- Status / tag pill. Colors are applied in code (UiKit.styleChip). -->
+    <style name="Widget.Launcher.Chip" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">9dp</item>
+        <item name="android:paddingEnd">9dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <style name="TextAppearance.Launcher.CardTitle" parent="android:TextAppearance.Material.Subhead">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ui_text_primary</item>
+    </style>
+
+    <style name="TextAppearance.Launcher.Body" parent="android:TextAppearance.Material.Body1">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/ui_text_primary</item>
+    </style>
+
+    <style name="TextAppearance.Launcher.Caption" parent="android:TextAppearance.Material.Caption">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/ui_text_secondary</item>
+    </style>
 </resources>

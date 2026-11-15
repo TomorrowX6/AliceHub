@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ui_bg">#0E1014</color>
+    <color name="ui_surface">#181B21</color>
+    <color name="ui_surface_variant">#242832</color>
+    <color name="ui_surface_dialog">#1F232B</color>
+    <color name="ui_outline">#1AFFFFFF</color>
+    <color name="ui_divider">#14FFFFFF</color>
+    <color name="ui_ripple">#29FFFFFF</color>
+    <color name="ui_ripple_on_color">#33FFFFFF</color>
+
+    <color name="ui_text_primary">#ECEEF4</color>
+    <color name="ui_text_secondary">#A4AAB8</color>
+    <color name="ui_text_tertiary">#737988</color>
+    <color name="ui_text_disabled">#555B68</color>
+
+    <color name="ui_primary">#A9B6FF</color>
+    <color name="ui_on_primary">#0F1A5C</color>
+    <color name="ui_danger">#FF8A80</color>
+
+    <color name="ui_btn_tonal">#2A2F3C</color>
+    <color name="ui_btn_disabled">#22262E</color>
+
+    <color name="tone_neutral_bg">#262A33</color>
+    <color name="tone_neutral_fg">#A4AAB8</color>
+    <color name="tone_info_bg">#132C4A</color>
+    <color name="tone_info_fg">#8CC1FF</color>
+    <color name="tone_success_bg">#12301D</color>
+    <color name="tone_success_fg">#7FD79A</color>
+    <color name="tone_warning_bg">#3A2A0A</color>
+    <color name="tone_warning_fg">#FFCB6B</color>
+    <color name="tone_danger_bg">#45201D</color>
+    <color name="tone_danger_fg">#FF9C92</color>
+    <color name="tone_primary_bg">#2B3568</color>
+    <color name="tone_primary_fg">#C3CCFF</color>
+</resources>
