@@ -80,7 +80,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
                 val baseName = (bakIni?.let { System40Ini.parse(it).gameName }
-                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落")) "兰斯10" else rawName)
+                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落")) "兰斯10 决战" else rawName)
                     .replace("兰斯１０", "兰斯10")
                     .removeSuffix("[MOD]")
                     .trim()

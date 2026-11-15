@@ -203,8 +203,8 @@
     <string name="mod_mgr_btn_downloading">查看进度</string>
 
     <string name="select_game_title">AliceHub</string>
-    <string name="game_rance10_title">兰斯10</string>
-    <string name="game_dohnadohna_title">多娜多娜一起来干坏事吧</string>
+    <string name="game_rance10_title">兰斯10 决战</string>
+    <string name="game_dohnadohna_title">多娜多娜 一起来干坏事吧</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>
