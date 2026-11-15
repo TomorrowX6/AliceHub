@@ -257,6 +257,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     OnlineInstaller.fetchModCatalog()
                 }
                 releases = loaded
+                syncLocalModVersionWithCatalog(loaded)
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
@@ -265,6 +266,39 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 catalogLoadError = true
                 updateUi()
             }
+        }
+    }
+
+    private fun syncLocalModVersionWithCatalog(catalog: List<ModReleaseEntry>) {
+        if (catalog.isEmpty() || !::currentTarget.isInitialized) return
+        val hasMod = gameList.hasInstalledMod(currentTarget)
+        if (!hasMod) return
+        val installed = gameList.getInstalledModInfo(currentTarget) ?: return
+        val idx = OnlineInstaller.matchInstalledIndex(catalog, installed)
+        if (idx !in catalog.indices) return
+        val matched = catalog[idx]
+        if (installed.version != matched.version || (installed.fileId <= 0 && matched.fileId > 0)) {
+            val resolvedBaseVer = if (!matched.isPatch) {
+                matched.version
+            } else {
+                matched.baseVersion ?: installed.baseVersion
+            }
+            val resolvedBaseFid = if (!matched.isPatch) {
+                matched.fileId
+            } else {
+                matched.baseFileId ?: installed.baseFileId
+            }
+            InstalledModInfo.write(
+                currentTarget.path,
+                installed.copy(
+                    version = matched.version,
+                    baseVersion = resolvedBaseVer,
+                    fileId = if (installed.fileId > 0) installed.fileId else matched.fileId,
+                    baseFileId = if (installed.baseFileId > 0) installed.baseFileId else resolvedBaseFid
+                )
+            )
+            gameList.refreshItemMetadata(currentTarget)
+            rebindCurrentTarget()
         }
     }
 
@@ -630,8 +664,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 dismissProgressDialog()
                 rebindCurrentTarget()
                 updateUi()
-                if (state.resumable) {
+                if (state.paused) {
                     Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, R.string.install_cancelled_toast, Toast.LENGTH_SHORT).show()
                 }
                 gameList.consumeInstallResult()
             }
@@ -675,6 +711,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+                findViewById<Button>(R.id.btn_pause_install)?.setOnClickListener {
+                    gameList.pauseInstall()
+                }
                 findViewById<Button>(R.id.btn_cancel_install)?.setOnClickListener {
                     gameList.cancelInstall()
                 }
@@ -694,10 +733,14 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 bar.visibility = View.GONE
             }
         }
+        val pauseBtn = dlg.findViewById<Button>(R.id.btn_pause_install)
+        if (pauseBtn != null) {
+            pauseBtn.visibility = if (cancellable && resumable) View.VISIBLE else View.GONE
+        }
         val cancelBtn = dlg.findViewById<Button>(R.id.btn_cancel_install)
         if (cancelBtn != null) {
             cancelBtn.visibility = if (cancellable) View.VISIBLE else View.GONE
-            cancelBtn.setText(if (resumable) R.string.notif_action_pause else R.string.cancel)
+            cancelBtn.setText(R.string.cancel)
         }
     }
 

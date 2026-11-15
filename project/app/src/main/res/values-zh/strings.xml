@@ -186,6 +186,7 @@
     <string name="online_mod_download_progress_indeterminate">下载中 · %1$d MB · %2$s\n%3$s</string>
     <string name="online_mod_download_error">下载失败，请检查网络与可用空间</string>
     <string name="online_download_paused_toast">已暂停，可随时继续下载</string>
+    <string name="install_cancelled_toast">已取消</string>
     <string name="install_done_toast">安装完成</string>
 
     <string name="install_btn_background">后台</string>
@@ -225,4 +226,26 @@
     <string name="game_exit_message">要结束游戏吗？\n※未保存的数据将丢失</string>
     <string name="dialog_btn_stop">终止</string>
     <string name="dialog_btn_continue">继续</string>
+
+    <string name="error_report_title">错误报告</string>
+    <string name="error_report_kind_fatal">致命错误</string>
+    <string name="error_report_kind_signal">异常崩溃</string>
+    <string name="error_report_kind_script">脚本错误</string>
+    <string name="error_report_kind_runtime">运行异常</string>
+    <string name="error_report_details_label">诊断详情</string>
+    <string name="error_report_lines_meta">%1$d 行 · %2$s</string>
+    <string name="error_report_btn_export">导出</string>
+    <string name="error_report_btn_share">分享</string>
+    <string name="error_report_btn_close">关闭</string>
+    <string name="error_report_exported_toast">已导出错误报告</string>
+    <string name="error_report_export_failed_toast">导出失败</string>
+    <string name="error_report_share_failed_toast">无法调起系统分享</string>
+    <string name="error_report_view">查看错误报告</string>
+    <string name="error_report_share">分享错误报告</string>
+
+    <string name="settings_clear_cache">清空缓存</string>
+    <string name="settings_clear_cache_confirm_msg">确定清空全部缓存吗？将释放 %1$s 空间，包含临时文件与未完成的下载缓存。</string>
+    <string name="settings_clear_cache_done_toast">已清空缓存，释放 %1$s</string>
+    <string name="settings_clear_cache_empty_toast">缓存已为空</string>
+    <string name="settings_clear_cache_busy_toast">请先暂停或取消正在进行的安装任务</string>
 </resources>

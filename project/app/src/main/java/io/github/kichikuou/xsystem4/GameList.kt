@@ -11,10 +11,12 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
+import android.widget.Toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,7 +42,7 @@ sealed class InstallState {
         val resumable: Boolean = false
     ) : InstallState()
     object Succeeded : InstallState()
-    data class Cancelled(val resumable: Boolean = false) : InstallState()
+    data class Cancelled(val paused: Boolean = false) : InstallState()
     data class Failed(val msgId: Int) : InstallState()
 }
 
@@ -73,7 +75,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             }
             val savedir = File(context.filesDir, "saves/${dir.name}")
             savedir.mkdirs()
-            val modMeta = InstalledModInfo.read(dir)
+            val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
             val rawName = ini.gameName.replace("兰斯１０", "兰斯10")
             val displayName = if (hasModMarker) {
@@ -230,6 +232,8 @@ class GameList(activity: Activity) {
     var isProgressMinimized: Boolean = false
         private set
     private var activeInstallResumable: Boolean = false
+    @Volatile
+    private var cancelDiscardPartial: Boolean = false
     private var activeTargetGamePath: String? = null
     var activeTargetGameId: String? = null
         private set
@@ -293,7 +297,16 @@ class GameList(activity: Activity) {
         return installState is InstallState.Installing && activeTargetGameId == gameId
     }
 
+    fun pauseInstall() {
+        cancelDiscardPartial = false
+        val job = installJob
+        if (job?.isActive == true) {
+            job.cancel()
+        }
+    }
+
     fun cancelInstall() {
+        cancelDiscardPartial = true
         val job = installJob
         if (job?.isActive == true) {
             job.cancel()
@@ -313,8 +326,10 @@ class GameList(activity: Activity) {
         lastInstalledItem = null
         isProgressMinimized = false
         activeInstallResumable = resumable
+        cancelDiscardPartial = false
         activeTargetGamePath = targetGamePath
         activeTargetGameId = targetGameId
+        InstallForegroundService.pauseCallback = { pauseInstall() }
         InstallForegroundService.cancelCallback = { cancelInstall() }
         installState = InstallState.Installing(
             progress = initialProgress,
@@ -349,14 +364,16 @@ class GameList(activity: Activity) {
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
+            val storagePath = storageDirs[0]
+            var resolvedStaging: File? = null
             try {
-                val storagePath = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
                     val myJob = kotlin.coroutines.coroutineContext[Job]
                     OnlineInstaller.installBaseGameFromCloud(
                         context = context,
                         storagePath = storagePath,
                         cdnBaseUrl = cdnBaseUrl,
+                        onStagingDirReady = { resolvedStaging = it },
                         checkCancelled = {
                             if (myJob?.isActive == false) {
                                 throw CancellationException()
@@ -382,7 +399,13 @@ class GameList(activity: Activity) {
                 lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
-                setInstallCancelled()
+                val discard = cancelDiscardPartial
+                if (discard) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        OnlineInstaller.cleanupBaseStagingForGame(storagePath, targetGameId, resolvedStaging)
+                    }
+                }
+                setInstallCancelled(wasPaused = !discard)
             } catch (e: InstallFailureException) {
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
@@ -401,7 +424,7 @@ class GameList(activity: Activity) {
         beginInstallSession(
             notifTitle = context.getString(R.string.notif_title_local_game),
             initialProgress = null,
-            cancellable = false,
+            cancellable = true,
             resumable = false,
             targetGameId = targetGameId
         )
@@ -410,7 +433,9 @@ class GameList(activity: Activity) {
                 val storage = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
                     val imported = NativeGameImport.copyTree(context, uri, storage, expectedAinName) { progress ->
-                        withContext(Dispatchers.Main) { setInstallProgress(progress) }
+                        withContext(Dispatchers.Main) {
+                            setInstallProgress(progress, cancellable = true, resumable = false)
+                        }
                     }
                     maybeRecordPreinstalledModMeta(imported, uri)
                     imported
@@ -420,7 +445,7 @@ class GameList(activity: Activity) {
                 lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
-                setInstallCancelled()
+                setInstallCancelled(wasPaused = false)
             } catch (e: InstallFailureException) {
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
@@ -464,7 +489,7 @@ class GameList(activity: Activity) {
                 lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
-                setInstallCancelled()
+                setInstallCancelled(wasPaused = false)
             } catch (e: InstallFailureException) {
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
@@ -511,14 +536,27 @@ class GameList(activity: Activity) {
         observer?.onInstallSuccess()
     }
 
-    private fun setInstallCancelled() {
-        val wasResumable = activeInstallResumable
+    private fun setInstallCancelled(wasPaused: Boolean) {
+        val inBackground = observer == null || isProgressMinimized
+        val pausedOutcome = wasPaused && activeInstallResumable
         isProgressMinimized = false
         activeTargetGamePath = null
         activeTargetGameId = null
-        installState = InstallState.Cancelled(resumable = wasResumable)
         InstallForegroundService.finishSessionCancelled(context)
-        observer?.onInstallCancelled()
+        if (inBackground) {
+            installState = InstallState.Idle
+            val toastMsg = if (pausedOutcome) {
+                R.string.online_download_paused_toast
+            } else {
+                R.string.install_cancelled_toast
+            }
+            val toastLen = if (pausedOutcome) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+            Toast.makeText(context, toastMsg, toastLen).show()
+            observer?.onInstallCancelled()
+        } else {
+            installState = InstallState.Cancelled(paused = pausedOutcome)
+            observer?.onInstallCancelled()
+        }
     }
 
     private fun setInstallFailed(msgId: Int) {
@@ -621,8 +659,12 @@ class GameList(activity: Activity) {
             return
         }
         val srcLabel = resolveUriDisplayName(srcUri)
-        if (Regex("""0\.\d+(?:\.\d+)?[A-Za-z]?""").containsMatchIn(srcLabel)) {
-            val inferred = OnlineInstaller.inferVersionFromFileName(srcLabel)
+        val inferred = OnlineInstaller.inferVersionFromFileName(
+            fileName = srcLabel,
+            isPatchHint = false,
+            fallbackIniDir = gameDir
+        )
+        if (inferred != "MOD") {
             InstalledModInfo.write(
                 gameDir,
                 InstalledModInfo(
@@ -639,7 +681,11 @@ class GameList(activity: Activity) {
         }
     }
 
-    fun getInstalledModInfo(item: Item): InstalledModInfo? = InstalledModInfo.read(item.path)
+    fun getInstalledModInfo(item: Item): InstalledModInfo? = InstalledModInfo.readOrInfer(item.path)
+
+    fun refreshItemMetadata(item: Item) {
+        refreshTargetItemInList(item)
+    }
 
     fun restoreMod(item: Item): Boolean {
         if (installJob?.isActive == true) return false
@@ -658,7 +704,7 @@ class GameList(activity: Activity) {
         beginInstallSession(
             notifTitle = context.getString(R.string.notif_title_local_mod),
             initialProgress = null,
-            cancellable = false,
+            cancellable = true,
             resumable = false,
             targetGamePath = targetItem.path.path,
             targetGameId = GameCatalog.classifyItem(targetItem)
@@ -668,13 +714,19 @@ class GameList(activity: Activity) {
             var staging: File? = null
             try {
                 withContext(Dispatchers.IO) {
-                    val prevInfo = InstalledModInfo.read(targetItem.path)
+                    val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
-                    val inferredVer = OnlineInstaller.inferVersionFromFileName(srcLabel)
                     staging = NativeGameImport.copyModTree(context, uri, storage) { progress ->
-                        withContext(Dispatchers.Main) { setInstallProgress(progress) }
+                        withContext(Dispatchers.Main) {
+                            setInstallProgress(progress, cancellable = true, resumable = false)
+                        }
                     }
                     val wasFull = applyModStagingToGameDir(staging!!, targetItem.path, cleanReplaceIfStandalone = true)
+                    val inferredVer = OnlineInstaller.inferVersionFromFileName(
+                        fileName = srcLabel,
+                        isPatchHint = !wasFull,
+                        fallbackIniDir = if (wasFull) targetItem.path else null
+                    )
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -692,14 +744,14 @@ class GameList(activity: Activity) {
                 refreshTargetItemInList(targetItem)
                 setInstallSucceeded()
             } catch (_: CancellationException) {
-                setInstallCancelled()
+                setInstallCancelled(wasPaused = false)
             } catch (e: InstallFailureException) {
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
                 Log.e("GameList", "Failed to install MOD from directory", e)
                 setInstallFailed(R.string.mod_install_error)
             } finally {
-                withContext(Dispatchers.IO) {
+                withContext(NonCancellable + Dispatchers.IO) {
                     staging?.deleteRecursively()
                 }
             }
@@ -722,9 +774,8 @@ class GameList(activity: Activity) {
             val tempDir = File(storagePath, ".mod_install_temp")
             try {
                 withContext(Dispatchers.IO) {
-                    val prevInfo = InstalledModInfo.read(targetItem.path)
+                    val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
-                    val inferredVer = OnlineInstaller.inferVersionFromFileName(srcLabel)
                     tempDir.deleteRecursively()
                     ArchiveExtractor.extractUriToDirectory(
                         context = context,
@@ -752,6 +803,11 @@ class GameList(activity: Activity) {
                         }
                     )
                     val wasFull = applyModStagingToGameDir(tempDir, targetItem.path, cleanReplaceIfStandalone = true)
+                    val inferredVer = OnlineInstaller.inferVersionFromFileName(
+                        fileName = srcLabel,
+                        isPatchHint = !wasFull,
+                        fallbackIniDir = if (wasFull) targetItem.path else null
+                    )
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -769,14 +825,14 @@ class GameList(activity: Activity) {
                 refreshTargetItemInList(targetItem)
                 setInstallSucceeded()
             } catch (_: CancellationException) {
-                setInstallCancelled()
+                setInstallCancelled(wasPaused = false)
             } catch (e: InstallFailureException) {
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
                 Log.e("GameList", "Failed to install MOD from archive", e)
                 setInstallFailed(R.string.mod_install_error)
             } finally {
-                withContext(Dispatchers.IO) {
+                withContext(NonCancellable + Dispatchers.IO) {
                     tempDir.deleteRecursively()
                 }
             }
@@ -883,8 +939,14 @@ class GameList(activity: Activity) {
                 refreshTargetItemInList(targetItem)
                 setInstallSucceeded()
             } catch (_: CancellationException) {
+                val discard = cancelDiscardPartial
+                if (discard) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        OnlineInstaller.cleanupModCacheForSteps(storagePath, steps)
+                    }
+                }
                 if (completedCount > 0) refreshTargetItemInList(targetItem)
-                setInstallCancelled()
+                setInstallCancelled(wasPaused = !discard)
             } catch (e: InstallFailureException) {
                 if (completedCount > 0) refreshTargetItemInList(targetItem)
                 setInstallFailed(e.msgId)
@@ -893,7 +955,7 @@ class GameList(activity: Activity) {
                 Log.e("GameList", "Failed to download and install online MOD plan", e)
                 setInstallFailed(R.string.online_mod_download_error)
             } finally {
-                withContext(Dispatchers.IO) {
+                withContext(NonCancellable + Dispatchers.IO) {
                     tempDir.deleteRecursively()
                 }
             }

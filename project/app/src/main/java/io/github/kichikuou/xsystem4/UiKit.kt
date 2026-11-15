@@ -209,13 +209,20 @@ internal object UiKit {
      * Label with a leading icon that stays centered together with the text (a compound
      * drawable would stick to the button edge instead).
      */
-    fun iconLabel(context: Context, iconRes: Int, tint: Int, label: CharSequence): CharSequence {
-        val size = dpInt(context, 22)
+    fun iconLabel(
+        context: Context,
+        iconRes: Int,
+        tint: Int,
+        label: CharSequence,
+        iconDp: Int = 22,
+        gapDp: Int = 6
+    ): CharSequence {
+        val size = dpInt(context, iconDp)
         val icon = context.getDrawable(iconRes)!!.mutate()
         icon.setTint(tint)
         icon.setBounds(0, 0, size, size)
         return SpannableStringBuilder()
-            .append(" ", CenteredIconSpan(icon, dpInt(context, 6)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            .append(" ", CenteredIconSpan(icon, dpInt(context, gapDp)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             .append(label)
     }
 

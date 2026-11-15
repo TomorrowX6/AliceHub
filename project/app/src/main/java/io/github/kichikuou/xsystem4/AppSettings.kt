@@ -3,6 +3,7 @@ package io.github.kichikuou.xsystem4
 import android.app.Activity
 import android.app.UiModeManager
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
@@ -192,6 +193,7 @@ open class ThemedActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ErrorReportKit.installUncaughtExceptionHandler(this)
         appliedThemeMode = AppSettings.getThemeMode(this)
         appliedNightBits = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         appliedLanguageMode = AppSettings.getLanguageMode(this)
@@ -204,6 +206,11 @@ open class ThemedActivity : Activity() {
             }
         } catch (_: Throwable) {
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        ErrorReportKit.handleActivityResult(this, requestCode, resultCode, data)
     }
 
     override fun onResume() {

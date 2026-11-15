@@ -27,6 +27,7 @@ class InstallForegroundService : Service() {
 
         private const val TAG = "InstallFgService"
         private const val ACTION_START_FOREGROUND = "io.github.kichikuou.xsystem4.ACTION_START_INSTALL_FG"
+        private const val ACTION_PAUSE_INSTALL = "io.github.kichikuou.xsystem4.ACTION_PAUSE_INSTALL"
         private const val ACTION_CANCEL_INSTALL = "io.github.kichikuou.xsystem4.ACTION_CANCEL_INSTALL"
 
         private const val CHANNEL_PROGRESS = "install_progress"
@@ -68,6 +69,9 @@ class InstallForegroundService : Service() {
 
         @Volatile
         private var runningInstance: InstallForegroundService? = null
+
+        @Volatile
+        var pauseCallback: (() -> Unit)? = null
 
         @Volatile
         var cancelCallback: (() -> Unit)? = null
@@ -294,20 +298,39 @@ class InstallForegroundService : Service() {
             }
 
             if (cancellable) {
+                if (resumable) {
+                    val pauseIntent = Intent(context, InstallForegroundService::class.java).apply {
+                        action = ACTION_PAUSE_INSTALL
+                    }
+                    val pausePi = PendingIntent.getService(
+                        context,
+                        3,
+                        pauseIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    val pauseAction = Notification.Action.Builder(
+                        null as Icon?,
+                        lctx.getString(R.string.notif_action_pause),
+                        pausePi
+                    ).build()
+                    builder.addAction(pauseAction)
+                }
+
                 val cancelIntent = Intent(context, InstallForegroundService::class.java).apply {
                     action = ACTION_CANCEL_INSTALL
                 }
                 val cancelPi = PendingIntent.getService(
                     context,
-                    3,
+                    4,
                     cancelIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                val actionLabel = lctx.getString(
-                    if (resumable) R.string.notif_action_pause else R.string.cancel
-                )
-                val action = Notification.Action.Builder(null as Icon?, actionLabel, cancelPi).build()
-                builder.addAction(action)
+                val cancelAction = Notification.Action.Builder(
+                    null as Icon?,
+                    lctx.getString(R.string.cancel),
+                    cancelPi
+                ).build()
+                builder.addAction(cancelAction)
             }
 
             return builder.build()
@@ -361,6 +384,15 @@ class InstallForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         runningInstance = this
         when (intent?.action) {
+            ACTION_PAUSE_INSTALL -> {
+                val cb = pauseCallback ?: cancelCallback
+                if (cb != null) {
+                    Handler(Looper.getMainLooper()).post { cb() }
+                }
+                if (!activeSession) {
+                    stopFromSession()
+                }
+            }
             ACTION_CANCEL_INSTALL -> {
                 val cb = cancelCallback
                 if (cb != null) {

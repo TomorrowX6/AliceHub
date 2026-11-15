@@ -80,6 +80,8 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ErrorReportKit.installUncaughtExceptionHandler(this)
+        ErrorReportKit.ensureSeenBaselineInitialized(this, offsetMs = -1000L)
         super.onCreate(savedInstanceState)
         // Workaround for https://github.com/libsdl-org/SDL/issues/8995
         SDLActivity.setWindowStyle(true)
@@ -383,6 +385,13 @@ class XSystem4Activity : SDLActivity() {
         handleGameBackPressed()
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (ErrorReportKit.handleActivityResult(this, requestCode, resultCode, data)) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun messageboxCreateAndShow(args: Bundle) {
         activeMessageBoxDialog?.let { prev ->
             if (prev.isShowing) {
@@ -465,6 +474,43 @@ class XSystem4Activity : SDLActivity() {
                 !spec.isPrimary -> 1
                 else -> 2
             }
+        }
+
+        if (isErrorDialog) {
+            val report = ErrorReportKit.buildFromGameMessageBox(
+                context = this,
+                rawTitle = rawTitle,
+                rawMessage = rawMessage,
+                gameRoot = intent?.getStringExtra(EXTRA_GAME_ROOT),
+                saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR),
+                hasMultipleChoices = orderedSpecs.size > 1
+            )
+            val errorSpecs = orderedSpecs.map { spec ->
+                ErrorDialogButtonSpec(
+                    id = spec.id,
+                    label = spec.label,
+                    isPrimary = spec.isPrimary,
+                    isEscape = spec.isEscape,
+                    isReturnDefault = (spec.bFlags and SDL_BUTTON_RETURNKEY_DEFAULT) != 0
+                )
+            }
+            val dlg = ErrorReportKit.showInGameErrorDialog(
+                activity = this,
+                report = report,
+                decisionSpecs = errorSpecs,
+                onSelected = { selectedId ->
+                    messageboxSelection[0] = selectedId
+                },
+                onDismissed = {
+                    activeMessageBoxDialog = null
+                    synchronized(messageboxSelection) {
+                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+                        (messageboxSelection as Object).notifyAll()
+                    }
+                }
+            )
+            activeMessageBoxDialog = dlg
+            return
         }
 
         val dialog = Dialog(this)

@@ -920,6 +920,37 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun showSingleFileManageDialog(entry: SaveFileEntry) {
+        val isLogFile = entry.file.name.endsWith(".log", ignoreCase = true)
+        if (isLogFile) {
+            val logOptions = arrayOf(
+                getString(R.string.error_report_view),
+                getString(R.string.error_report_share),
+                getString(R.string.save_file_opt_export),
+                getString(R.string.save_file_opt_delete)
+            )
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
+                .setItems(logOptions) { _, which ->
+                    when (which) {
+                        0 -> ErrorReportKit.showFromFile(this, entry.file)
+                        1 -> ErrorReportKit.shareFromFile(this, entry.file)
+                        2 -> {
+                            pendingSingleExportFile = entry.file
+                            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TITLE, entry.file.name)
+                            }
+                            startActivityForResult(intent, REQ_EXPORT_SINGLE_FILE)
+                        }
+                        3 -> ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+
         val options = arrayOf(
             getString(R.string.save_file_opt_export),
             getString(R.string.save_file_opt_backup),

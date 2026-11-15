@@ -186,6 +186,7 @@
     <string name="online_mod_download_progress_indeterminate">ダウンロード中 · %1$d MB · %2$s\n%3$s</string>
     <string name="online_mod_download_error">ダウンロードに失敗しました。通信環境と空き容量を確認してください</string>
     <string name="online_download_paused_toast">一時停止しました。再開可能です</string>
+    <string name="install_cancelled_toast">キャンセルしました</string>
     <string name="install_done_toast">インストール完了</string>
 
     <string name="install_btn_background">バックグラウンド</string>
@@ -225,4 +226,26 @@
     <string name="game_exit_message">ゲームを終了しますか？\n※未保存のデータは失われます</string>
     <string name="dialog_btn_stop">終了</string>
     <string name="dialog_btn_continue">続行</string>
+
+    <string name="error_report_title">エラーレポート</string>
+    <string name="error_report_kind_fatal">致命的エラー</string>
+    <string name="error_report_kind_signal">異常終了</string>
+    <string name="error_report_kind_script">スクリプトエラー</string>
+    <string name="error_report_kind_runtime">実行時エラー</string>
+    <string name="error_report_details_label">診断ログ</string>
+    <string name="error_report_lines_meta">%1$d 行 · %2$s</string>
+    <string name="error_report_btn_export">保存</string>
+    <string name="error_report_btn_share">共有</string>
+    <string name="error_report_btn_close">閉じる</string>
+    <string name="error_report_exported_toast">エラーレポートを保存しました</string>
+    <string name="error_report_export_failed_toast">保存に失敗しました</string>
+    <string name="error_report_share_failed_toast">共有画面を開けませんでした</string>
+    <string name="error_report_view">エラーレポートを表示</string>
+    <string name="error_report_share">エラーレポートを共有</string>
+
+    <string name="settings_clear_cache">キャッシュ削除</string>
+    <string name="settings_clear_cache_confirm_msg">キャッシュと未完了のダウンロードデータをすべて削除し、%1$s の容量を解放しますか？</string>
+    <string name="settings_clear_cache_done_toast">キャッシュを削除しました · %1$s 解放</string>
+    <string name="settings_clear_cache_empty_toast">キャッシュは空です</string>
+    <string name="settings_clear_cache_busy_toast">進行中の導入タスクを一時停止またはキャンセルしてください</string>
 </resources>

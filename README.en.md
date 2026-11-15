@@ -27,14 +27,16 @@ Written in pure C/C++, SDL2, and OpenGL ES 3.0, AliceHub directly executes AIN b
   - **Theme**: Instant switching across **Auto**, **Light**, and **Dark** modes.
   - **Language**: Instant UI, notification, and overlay localization across **System**, **简体中文**, **日本語**, and **English**.
   - **Online Install Toggle**: Disabled by default; enabling presents formal Terms & Disclaimer and displays package file sizes across online installation options.
+  - **Clear Cache**: Displays live temporary/staging cache size and safely purges temporary files without affecting installed data or saves.
   - **About**: Built-in **Open Source Licenses** viewer and **GitHub** repository link.
 
 ### 2. Dual-Mode Installation, Foreground Service & MOD Management
 - **Local & Online Package Installation**:
   - **Local Install**: Powered by a native `libarchive` + `liblzma` streaming extractor supporting `.zip` / `.rar` / `.7z` archives (including solid archives and large dictionaries) and external folders with automatic UTF-8 / UTF-16LE / GBK filename detection.
   - **Online Install** *(when enabled in Settings)*: Supports streaming cloud downloads with upfront file-size indicators, HTTP `Range` pause/resume, and per-file SHA-256 verification without double extraction storage overhead.
-- **Foreground Download Service**: Continues downloading and extracting at full speed when minimized or with the screen off, providing live progress notifications and pause controls.
-- **Non-Destructive MOD Manager**: Supports online release catalogs with file sizes and changelogs, incremental patch updates, automatic base + patch combo installation, local MOD archive/folder imports, and automatic vanilla file backup for one-tap restoration.
+- **Foreground Download Service**: Continues downloading and extracting at full speed when minimized or with the screen off, providing live progress notifications along with **Pause** and **Cancel** controls.
+- **Non-Destructive MOD Manager**: Supports online release catalogs with file sizes and changelogs, incremental patch updates, automatic base + patch combo installation, local MOD archive/folder imports with canonical version recognition, and automatic vanilla file backup for one-tap restoration.
+- **Diagnostic Error Reports**: Modernized error report dialog supporting one-tap clipboard copy, `.txt` log export, and system share sheet integration.
 
 ### 3. Save Manager & Live Floating Overlay Tools
 - **Scoped Save Manager**: Bidirectional desktop save compatibility (`SaveData` v26/v27 `.asd` & `RSave` `.rsd`) with atomic `fsync` writes, archive/folder/single-file import & export, multi-directory switching, and per-file backup, rename, and delete actions.

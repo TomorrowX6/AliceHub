@@ -64,21 +64,64 @@ data class InstalledModInfo(
             if (!f.isFile) return null
             return try {
                 val j = JSONObject(f.readText(Charsets.UTF_8))
-                val ver = j.optString("version", "").trim()
-                if (ver.isEmpty()) return null
+                val rawVer = j.optString("version", "").trim()
+                if (rawVer.isEmpty()) return null
+                val rawBaseVer = j.optString("baseVersion", "").trim().takeIf { it.isNotEmpty() }
+                val source = j.optString("source", "online").trim().ifEmpty { "online" }
+                val fileName = j.optString("fileName", "").trim()
+                val isPatchStored = rawBaseVer != null && rawBaseVer != rawVer
+                val isPatchHint = when {
+                    rawBaseVer == null -> null
+                    isPatchStored -> true
+                    else -> false
+                }
+                val ver = if (source == "online") {
+                    rawVer
+                } else {
+                    OnlineInstaller.inferVersionFromFileName(
+                        fileName = rawVer.ifEmpty { fileName },
+                        isPatchHint = isPatchHint,
+                        fallbackIniDir = if (!isPatchStored) gameDir else null
+                    )
+                }
+                val baseVer = when {
+                    rawBaseVer == null -> null
+                    source == "online" -> rawBaseVer
+                    else -> OnlineInstaller.inferVersionFromFileName(
+                        fileName = rawBaseVer,
+                        isPatchHint = false,
+                        fallbackIniDir = gameDir
+                    )
+                }
                 InstalledModInfo(
                     version = ver,
-                    baseVersion = j.optString("baseVersion", "").trim().takeIf { it.isNotEmpty() },
+                    baseVersion = baseVer,
                     fileId = j.optInt("fileId", -1),
                     baseFileId = j.optInt("baseFileId", -1),
-                    fileName = j.optString("fileName", "").trim(),
+                    fileName = fileName,
                     uploadedAt = j.optString("uploadedAt", "").trim(),
-                    source = j.optString("source", "online").trim().ifEmpty { "online" },
+                    source = source,
                     installedAtMs = j.optLong("installedAtMs", 0L)
                 )
             } catch (_: Throwable) {
                 null
             }
+        }
+
+        fun readOrInfer(gameDir: File): InstalledModInfo? {
+            read(gameDir)?.let { return it }
+            if (!Item.detectInstalledMod(gameDir)) return null
+            val inferred = OnlineInstaller.extractCanonicalModVersionFromDir(gameDir) ?: return null
+            return InstalledModInfo(
+                version = inferred,
+                baseVersion = inferred,
+                fileId = -1,
+                baseFileId = -1,
+                fileName = "",
+                uploadedAt = "",
+                source = "preinstalled",
+                installedAtMs = 0L
+            )
         }
 
         fun write(gameDir: File, info: InstalledModInfo) {
@@ -212,7 +255,119 @@ object OnlineInstaller {
         return s
     }
 
-    fun inferVersionFromFileName(fileName: String): String {
+    private val modVersionNumberRegex = Regex("""v?(\d+\.\d+(?:\.\d+)?[a-zA-Z]?)""", RegexOption.IGNORE_CASE)
+    private val patchSeqRegex = Regex("""(?:补丁|patch|hotfix)\s*(\d+)""", RegexOption.IGNORE_CASE)
+
+    fun extractCanonicalModVersionFromDir(gameDir: File): String? {
+        if (!gameDir.isDirectory) return null
+        val iniFile = File(gameDir, "AliceStart.ini").takeIf { it.isFile }
+            ?: File(gameDir, "System40.ini").takeIf { it.isFile }
+            ?: gameDir.listFiles()?.firstOrNull {
+                it.isFile && (it.name.equals("AliceStart.ini", ignoreCase = true) ||
+                    it.name.equals("System40.ini", ignoreCase = true))
+            }
+        val gn = iniFile?.let {
+            try {
+                System40Ini.parse(it).gameName
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        if (!gn.isNullOrBlank()) {
+            extractCanonicalModVersion(gn, isPatchHint = false)?.let { return it }
+        }
+        return extractCanonicalModVersion(gameDir.name, isPatchHint = false)
+    }
+
+    private fun extractCanonicalModVersion(raw: String, isPatchHint: Boolean?): String? {
+        val base = stripArchiveExtAndCopySuffix(
+            raw.substringAfterLast('/').substringAfterLast('\\').trim()
+        )
+        if (base.isEmpty()) return null
+
+        var cleaned = base
+            .replace('（', ' ')
+            .replace('）', ' ')
+            .replace('(', ' ')
+            .replace(')', ' ')
+            .replace('[', ' ')
+            .replace(']', ' ')
+            .replace('【', ' ')
+            .replace('】', ' ')
+            .replace("收费必是倒卖", " ")
+            .replace("免费分享", " ")
+            .replace("严禁倒卖", " ")
+            .trim()
+
+        val trimSep = charArrayOf(' ', '-', '_', '·', ':', '：')
+        var prefixStripped = true
+        while (prefixStripped) {
+            prefixStripped = false
+            cleaned = cleaned.trimStart(*trimSep)
+            for (prefix in arrayOf(
+                "兰斯10",
+                "兰斯１０",
+                "决战",
+                "rance10",
+                "rance 10",
+                "日不落mod",
+                "日不落",
+                "mod"
+            )) {
+                if (cleaned.startsWith(prefix, ignoreCase = true)) {
+                    cleaned = cleaned.substring(prefix.length).trimStart(*trimSep)
+                    prefixStripped = true
+                }
+            }
+        }
+
+        val match = modVersionNumberRegex.find(cleaned) ?: return null
+        val ver = match.groupValues[1]
+        val lower = cleaned.lowercase(Locale.ROOT)
+        val afterVer = cleaned.substring(match.range.last + 1)
+
+        val hasPatchWord = lower.contains("补丁") || lower.contains("patch") ||
+            lower.contains("hotfix") || lower.contains("热更") || lower.contains("修复")
+        val hasFullWord = lower.contains("完整") || lower.contains("正式") ||
+            lower.contains("整合") || lower.contains("本体")
+
+        val isPatch = when {
+            hasPatchWord && !hasFullWord -> true
+            hasFullWord && !hasPatchWord -> false
+            isPatchHint != null -> isPatchHint
+            else -> hasPatchWord
+        }
+
+        if (isPatch) {
+            val patchNum = patchSeqRegex.find(afterVer)?.groupValues?.getOrNull(1).orEmpty()
+            return if (lower.contains("增量")) {
+                "v${ver}增量补丁$patchNum"
+            } else {
+                "v${ver}修复补丁$patchNum"
+            }
+        }
+
+        return when {
+            lower.contains("内测") -> "v${ver}内测版"
+            lower.contains("公测") -> "v${ver}公测版"
+            lower.contains("测试") || lower.contains("beta") -> "v${ver}测试版"
+            lower.contains("先行") -> "v${ver}先行版"
+            lower.contains("体验") -> "v${ver}体验版"
+            else -> "v${ver}正式版"
+        }
+    }
+
+    fun inferVersionFromFileName(
+        fileName: String,
+        isPatchHint: Boolean? = null,
+        fallbackIniDir: File? = null
+    ): String {
+        extractCanonicalModVersion(fileName, isPatchHint)?.let { return it }
+
+        if (fallbackIniDir != null) {
+            extractCanonicalModVersionFromDir(fallbackIniDir)?.let { return it }
+        }
+
         val rawBase = fileName.substringAfterLast('/').substringAfterLast('\\').trim()
         val stripped = stripArchiveExtAndCopySuffix(rawBase)
             .replace('(', ' ')
@@ -221,7 +376,12 @@ object OnlineInstaller {
             .replace('）', ' ')
             .replace(Regex("""\s+"""), " ")
             .trim()
-        return stripped.ifEmpty { "MOD" }
+        if (stripped.isEmpty()) return "MOD"
+        val lower = stripped.lowercase(Locale.ROOT)
+        if (lower == "mod" || lower == "mods" || lower == "rance10" || lower == "兰斯10") {
+            return "MOD"
+        }
+        return stripped
     }
 
     fun matchInstalledIndex(releases: List<ModReleaseEntry>, installed: InstalledModInfo?): Int {
@@ -494,6 +654,7 @@ object OnlineInstaller {
         context: Context,
         storagePath: File,
         cdnBaseUrl: String = RANCE10_CDN_URL,
+        onStagingDirReady: ((File) -> Unit)? = null,
         checkCancelled: () -> Unit,
         onProgress: (OnlineProgressUpdate) -> Unit
     ): File {
@@ -514,6 +675,7 @@ object OnlineInstaller {
             throw IOException("Invalid staging path")
         }
         stagingDir.mkdirs()
+        onStagingDirReady?.invoke(stagingDir)
         val stagingPrefix = stagingDir.path + File.separator
 
         var alreadyCompletedBytes = 0L
@@ -767,6 +929,55 @@ object OnlineInstaller {
     private fun markerFileForExtractEntry(stagingDir: File, entry: ManifestEntry): File {
         val safe = entry.path.replace(Regex("[^A-Za-z0-9._\\-]"), "_")
         return File(stagingDir, ".extracted_${safe}.done")
+    }
+
+    fun cleanupBaseStagingForGame(
+        storagePath: File,
+        targetGameId: String?,
+        resolvedStagingDir: File?
+    ) {
+        try {
+            val storageCanonical = storagePath.canonicalFile
+            if (resolvedStagingDir != null &&
+                resolvedStagingDir.canonicalFile.parentFile == storageCanonical &&
+                resolvedStagingDir.exists()
+            ) {
+                resolvedStagingDir.deleteRecursively()
+            }
+            val children = storageCanonical.listFiles() ?: return
+            for (child in children) {
+                if (!child.isDirectory || !child.name.startsWith(".online_base_staging_")) continue
+                val lower = child.name.lowercase(Locale.ROOT)
+                val matches = when (targetGameId) {
+                    GameCatalog.ID_RANCE10 -> lower.contains("rance10") || lower.contains("rance_10")
+                    GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
+                    null, "" -> true
+                    else -> false
+                }
+                if (matches) {
+                    child.deleteRecursively()
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun cleanupModCacheForSteps(storagePath: File, steps: List<ModReleaseEntry>) {
+        try {
+            val cacheDir = File(storagePath, ".online_mod_cache")
+            if (!cacheDir.isDirectory) return
+            for (step in steps) {
+                val cacheId = step.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
+                    ?: sha256Hex(step.downloadUrl.toByteArray(Charsets.UTF_8)).take(16)
+                val ext = extractArchiveExtension(step.fileName)
+                File(cacheDir, "mod_${cacheId}${ext}.part").delete()
+                File(cacheDir, "mod_${cacheId}${ext}.part.meta").delete()
+            }
+            if (cacheDir.listFiles()?.isEmpty() == true) {
+                cacheDir.delete()
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     fun fetchManifestTotalBytes(cdnBaseUrl: String): Long {

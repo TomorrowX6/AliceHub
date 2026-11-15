@@ -2,6 +2,7 @@ package io.github.kichikuou.xsystem4
 
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -32,8 +33,19 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class SettingsActivity : ThemedActivity() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var clearingCache: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +62,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_language, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
+        findViewById<ImageView>(R.id.icon_settings_clear_cache)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_clear_cache, accent))
 
         val btnQqGroup = findViewById<Button>(R.id.btn_settings_qq_group)
         val btnLicenses = findViewById<Button>(R.id.btn_settings_licenses)
@@ -67,6 +81,9 @@ class SettingsActivity : ThemedActivity() {
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
         }
+        findViewById<View>(R.id.row_settings_clear_cache).setOnClickListener {
+            onClearCacheClicked()
+        }
         btnQqGroup.setOnClickListener {
             showQqGroupDialog()
         }
@@ -83,6 +100,11 @@ class SettingsActivity : ThemedActivity() {
     override fun onResume() {
         super.onResume()
         refreshSettingsUi()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -109,6 +131,154 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+        refreshCacheSizeAsync()
+    }
+
+    private fun refreshCacheSizeAsync() {
+        val appCtx = applicationContext
+        scope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                computeTotalCacheBytes(appCtx)
+            }
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(bytes)
+        }
+    }
+
+    private fun onClearCacheClicked() {
+        if (clearingCache) return
+        val gameList = LauncherActivity.obtainGameList(this, refresh = false)
+        if (gameList.installState is InstallState.Installing) {
+            Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val appCtx = applicationContext
+        scope.launch {
+            val totalBytes = withContext(Dispatchers.IO) {
+                computeTotalCacheBytes(appCtx)
+            }
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(totalBytes)
+            if (totalBytes <= 0L) {
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.settings_clear_cache_empty_toast,
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            val sizeLabel = formatCacheSize(totalBytes)
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle(R.string.settings_clear_cache)
+                .setMessage(getString(R.string.settings_clear_cache_confirm_msg, sizeLabel))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    performClearCache(totalBytes)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun performClearCache(expectedBytes: Long) {
+        if (clearingCache) return
+        val gameList = LauncherActivity.obtainGameList(this, refresh = false)
+        if (gameList.installState is InstallState.Installing) {
+            Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
+            return
+        }
+        clearingCache = true
+        val appCtx = applicationContext
+        scope.launch {
+            val remainingBytes = try {
+                withContext(Dispatchers.IO) {
+                    clearAllCacheTargets(appCtx)
+                    computeTotalCacheBytes(appCtx)
+                }
+            } finally {
+                clearingCache = false
+            }
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(remainingBytes)
+            val freed = (expectedBytes - remainingBytes).coerceAtLeast(0L)
+            val freedLabel = formatCacheSize(if (freed > 0L) freed else expectedBytes)
+            Toast.makeText(
+                this@SettingsActivity,
+                getString(R.string.settings_clear_cache_done_toast, freedLabel),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun formatCacheSize(bytes: Long): String {
+        if (bytes <= 0L) return "0 B"
+        return OnlineInstaller.formatSize(bytes).ifEmpty { "0 B" }
+    }
+
+    private fun collectCacheTargets(context: Context): List<File> {
+        val out = LinkedHashSet<File>()
+        context.cacheDir?.listFiles()?.forEach { out.add(it) }
+        context.externalCacheDirs?.filterNotNull()?.forEach { dir ->
+            dir.listFiles()?.forEach { out.add(it) }
+        }
+        val saveTmp = File(context.filesDir, ".save_import_tmp")
+        if (saveTmp.exists()) {
+            out.add(saveTmp)
+        }
+
+        val storageRoots = LinkedHashSet<File>()
+        context.getExternalFilesDirs(null)?.filterNotNull()?.forEach { storageRoots.add(it) }
+        val internalGames = File(context.filesDir, "games")
+        if (internalGames.isDirectory) {
+            storageRoots.add(internalGames)
+        }
+
+        for (root in storageRoots) {
+            val children = root.listFiles() ?: continue
+            for (f in children) {
+                val n = f.name
+                val isTempTarget = n.startsWith(".online_base_staging_") ||
+                    n == ".online_mod_cache" ||
+                    n == ".mod_online_extract_temp" ||
+                    n == ".install_temp" ||
+                    n == ".mod_install_temp" ||
+                    n.startsWith(".import-") ||
+                    n.startsWith(".mod-import-") ||
+                    (f.isFile && n.startsWith(".archive_src_") && n.endsWith(".tmp"))
+                if (isTempTarget) {
+                    out.add(f)
+                }
+            }
+        }
+        return out.toList()
+    }
+
+    private fun computeTotalCacheBytes(context: Context): Long {
+        var sum = 0L
+        for (target in collectCacheTargets(context)) {
+            sum += computeFileTreeBytes(target)
+        }
+        return sum
+    }
+
+    private fun computeFileTreeBytes(file: File): Long {
+        if (!file.exists()) return 0L
+        if (file.isFile) return file.length().coerceAtLeast(0L)
+        var sum = 0L
+        val children = file.listFiles() ?: return 0L
+        for (child in children) {
+            sum += computeFileTreeBytes(child)
+        }
+        return sum
+    }
+
+    private fun clearAllCacheTargets(context: Context) {
+        for (target in collectCacheTargets(context)) {
+            try {
+                if (target.isDirectory) {
+                    target.deleteRecursively()
+                } else {
+                    target.delete()
+                }
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     private fun showQqGroupDialog() {

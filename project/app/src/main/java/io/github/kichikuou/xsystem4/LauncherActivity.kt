@@ -192,6 +192,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         val postAction = pendingPostResumeAction
         pendingPostResumeAction = null
         postAction?.invoke()
+        ErrorReportKit.checkAndShowPendingCrash(this)
     }
 
     override fun onPause() {
@@ -303,8 +304,10 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
             is InstallState.Cancelled -> {
                 dismissProgressDialog()
                 adapter.reload()
-                if (state.resumable) {
+                if (state.paused) {
                     Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, R.string.install_cancelled_toast, Toast.LENGTH_SHORT).show()
                 }
                 gameList.consumeInstallResult()
             }
@@ -346,6 +349,9 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+                findViewById<Button>(R.id.btn_pause_install)?.setOnClickListener {
+                    gameList.pauseInstall()
+                }
                 findViewById<Button>(R.id.btn_cancel_install)?.setOnClickListener {
                     gameList.cancelInstall()
                 }
@@ -365,10 +371,14 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
                 bar.visibility = View.GONE
             }
         }
+        val pauseBtn = dlg.findViewById<Button>(R.id.btn_pause_install)
+        if (pauseBtn != null) {
+            pauseBtn.visibility = if (cancellable && resumable) View.VISIBLE else View.GONE
+        }
         val cancelBtn = dlg.findViewById<Button>(R.id.btn_cancel_install)
         if (cancelBtn != null) {
             cancelBtn.visibility = if (cancellable) View.VISIBLE else View.GONE
-            cancelBtn.setText(if (resumable) R.string.notif_action_pause else R.string.cancel)
+            cancelBtn.setText(R.string.cancel)
         }
     }
 

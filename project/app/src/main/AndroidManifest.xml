@@ -165,6 +165,12 @@
             android:name="io.github.kichikuou.xsystem4.InstallForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <provider
+            android:name="io.github.kichikuou.xsystem4.ErrorReportProvider"
+            android:authorities="${applicationId}.errorreport"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 
 </manifest>

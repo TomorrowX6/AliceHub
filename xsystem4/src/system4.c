@@ -625,7 +625,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 
 	cbuf_puts(crash_report_buf, cap, &off,
 		"============================================================\n"
-		"XSystem4 Crash Report\n"
+		"AliceHub Crash Report\n"
 		"============================================================\n"
 		"Timestamp   : ");
 #ifndef _WIN32
