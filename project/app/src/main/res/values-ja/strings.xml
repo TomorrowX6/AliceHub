@@ -121,13 +121,13 @@
     <string name="save_clear_confirm_msg">全 %1$d 個のセーブファイルを削除しますか？元に戻せません。</string>
     <string name="save_cleared_toast">セーブを全削除しました</string>
 
-    <string name="action_online_install">オンライン導入</string>
-    <string name="action_online_install_with_size">オンライン導入 · %1$s</string>
+    <string name="action_online_install">オンライン導入(中国語)</string>
+    <string name="action_online_install_with_size">オンライン導入(中国語) · %1$s</string>
     <string name="action_local_install">ローカル導入</string>
     <string name="game_local_dialog_title">ローカル導入</string>
     <string name="game_opt_zip">アーカイブから導入</string>
     <string name="game_opt_dir">フォルダから導入</string>
-    <string name="online_base_confirm_title">オンライン導入</string>
+    <string name="online_base_confirm_title">オンライン導入(中国語)</string>
     <string name="online_base_confirm_msg">%1$s のゲーム本体をダウンロードして導入しますか？レジュームに対応しています。</string>
     <string name="online_base_confirm_msg_size">%1$s のゲーム本体を導入しますか？約 %2$s、レジュームに対応しています。</string>
     <string name="online_fetching_manifest">情報取得中…</string>

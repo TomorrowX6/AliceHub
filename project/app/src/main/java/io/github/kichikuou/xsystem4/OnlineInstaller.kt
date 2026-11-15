@@ -160,6 +160,84 @@ data class OnlineProgressUpdate(
     val permille: Int? = null
 )
 
+class InstallAbortHandle {
+    private val lock = Any()
+    private var aborted = false
+    private val connections = HashSet<HttpURLConnection>()
+    private val workerThreads = HashSet<Thread>()
+
+    val isAborted: Boolean
+        get() = synchronized(lock) { aborted }
+
+    fun register(conn: HttpURLConnection) {
+        val curThread = Thread.currentThread()
+        val disconnectImmediately = synchronized(lock) {
+            if (aborted) {
+                true
+            } else {
+                connections.add(conn)
+                workerThreads.add(curThread)
+                false
+            }
+        }
+        if (disconnectImmediately) {
+            disconnectAsync(listOf(conn))
+            throw CancellationException()
+        }
+    }
+
+    fun unregister(conn: HttpURLConnection?) {
+        val curThread = Thread.currentThread()
+        val wasAborted = synchronized(lock) {
+            if (conn != null) {
+                connections.remove(conn)
+            }
+            workerThreads.remove(curThread)
+            aborted
+        }
+        if (wasAborted) {
+            // Clear interrupt flag before returning worker thread to Dispatchers.IO pool
+            Thread.interrupted()
+        }
+    }
+
+    fun abort() {
+        val (threads, toClose) = synchronized(lock) {
+            aborted = true
+            val tCopy = workerThreads.toList()
+            val cCopy = connections.toList()
+            workerThreads.clear()
+            connections.clear()
+            tCopy to cCopy
+        }
+        for (t in threads) {
+            try {
+                t.interrupt()
+            } catch (_: Throwable) {
+            }
+        }
+        if (toClose.isNotEmpty()) {
+            disconnectAsync(toClose)
+        }
+    }
+
+    companion object {
+        fun disconnectAsync(conns: List<HttpURLConnection>) {
+            Thread({
+                for (c in conns) {
+                    try {
+                        c.disconnect()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }, "InstallHttpAbort").apply {
+                isDaemon = true
+                start()
+            }
+        }
+    }
+}
+
 object OnlineInstaller {
     const val RANCE10_CDN_URL = "https://r10-src.000.moe"
     const val DOHNA_DOHNA_CDN_URL = "https://dohnadohna.000.moe"
@@ -169,6 +247,8 @@ object OnlineInstaller {
     private const val HEADROOM_BYTES = 64L * 1024L * 1024L
     private const val MAX_HTTP_RETRIES = 8
     private const val MAX_REDIRECTS = 6
+    private const val READ_SLICE_TIMEOUT_MS = 3_000
+    private const val TOTAL_READ_TIMEOUT_MS = 45_000L
 
     private data class ManifestEntry(
         val path: String,
@@ -654,16 +734,19 @@ object OnlineInstaller {
         context: Context,
         storagePath: File,
         cdnBaseUrl: String = RANCE10_CDN_URL,
+        abortHandle: InstallAbortHandle? = null,
         onStagingDirReady: ((File) -> Unit)? = null,
         checkCancelled: () -> Unit,
         onProgress: (OnlineProgressUpdate) -> Unit
     ): File {
         onProgress(OnlineProgressUpdate(context.getString(R.string.online_fetching_manifest), null))
         val cleanBaseUrl = cdnBaseUrl.trimEnd('/')
-        val manifest = fetchManifest(cleanBaseUrl, checkCancelled)
+        val manifest = fetchManifest(cleanBaseUrl, abortHandle, checkCancelled)
         if (manifest.entries.isEmpty()) {
             throw GameList.InstallFailureException(R.string.online_download_error)
         }
+        if (abortHandle?.isAborted == true) throw CancellationException()
+        checkCancelled()
         AppSettings.setCachedBaseGameSize(context, cleanBaseUrl, manifest.totalBytes)
 
         val safeBase = manifest.baseName
@@ -674,6 +757,8 @@ object OnlineInstaller {
         if (stagingDir.parentFile != storageCanonical) {
             throw IOException("Invalid staging path")
         }
+        if (abortHandle?.isAborted == true) throw CancellationException()
+        checkCancelled()
         stagingDir.mkdirs()
         onStagingDirReady?.invoke(stagingDir)
         val stagingPrefix = stagingDir.path + File.separator
@@ -720,6 +805,7 @@ object OnlineInstaller {
                 expectedSize = entry.size,
                 expectedSha256 = entry.sha256,
                 headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
+                abortHandle = abortHandle,
                 checkCancelled = checkCancelled,
                 onProgress = { fileDoneBytes, _, speedBps ->
                     val globalDone = (completedBeforeCurrent + fileDoneBytes).coerceAtMost(manifest.totalBytes)
@@ -813,6 +899,7 @@ object OnlineInstaller {
         tempExtractDir: File,
         stepPrefix: String = "",
         releaseLabel: String? = null,
+        abortHandle: InstallAbortHandle? = null,
         checkCancelled: () -> Unit,
         onProgress: (OnlineProgressUpdate) -> Unit,
         applyStaging: (File) -> Unit
@@ -867,6 +954,7 @@ object OnlineInstaller {
             expectedSize = req.contentLength.takeIf { it > 0L } ?: -1L,
             expectedSha256 = req.expectedSha256,
             headers = headers,
+            abortHandle = abortHandle,
             checkCancelled = checkCancelled,
             onProgress = reportProgress
         )
@@ -931,20 +1019,28 @@ object OnlineInstaller {
         return File(stagingDir, ".extracted_${safe}.done")
     }
 
-    fun cleanupBaseStagingForGame(
+    fun evictFileToTrash(target: File?): File? {
+        if (target == null || !target.exists()) return null
+        val parent = target.parentFile ?: return target
+        val trash = File(parent, ".trash_${System.nanoTime()}_${(Math.random() * 100000).toInt()}")
+        return if (target.renameTo(trash)) trash else target
+    }
+
+    fun evictBaseStagingToTrash(
         storagePath: File,
         targetGameId: String?,
         resolvedStagingDir: File?
-    ) {
+    ): List<File> {
+        val out = ArrayList<File>()
         try {
             val storageCanonical = storagePath.canonicalFile
             if (resolvedStagingDir != null &&
                 resolvedStagingDir.canonicalFile.parentFile == storageCanonical &&
                 resolvedStagingDir.exists()
             ) {
-                resolvedStagingDir.deleteRecursively()
+                evictFileToTrash(resolvedStagingDir)?.let { out.add(it) }
             }
-            val children = storageCanonical.listFiles() ?: return
+            val children = storageCanonical.listFiles() ?: return out
             for (child in children) {
                 if (!child.isDirectory || !child.name.startsWith(".online_base_staging_")) continue
                 val lower = child.name.lowercase(Locale.ROOT)
@@ -955,25 +1051,54 @@ object OnlineInstaller {
                     else -> false
                 }
                 if (matches) {
-                    child.deleteRecursively()
+                    evictFileToTrash(child)?.let { out.add(it) }
                 }
             }
         } catch (_: Throwable) {
         }
+        return out
     }
 
-    fun cleanupModCacheForSteps(storagePath: File, steps: List<ModReleaseEntry>) {
+    fun evictModCacheToTrash(storagePath: File, steps: List<ModReleaseEntry>): List<File> {
+        val out = ArrayList<File>()
         try {
             val cacheDir = File(storagePath, ".online_mod_cache")
-            if (!cacheDir.isDirectory) return
+            if (!cacheDir.isDirectory) return out
             for (step in steps) {
                 val cacheId = step.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
                     ?: sha256Hex(step.downloadUrl.toByteArray(Charsets.UTF_8)).take(16)
                 val ext = extractArchiveExtension(step.fileName)
-                File(cacheDir, "mod_${cacheId}${ext}.part").delete()
-                File(cacheDir, "mod_${cacheId}${ext}.part.meta").delete()
+                evictFileToTrash(File(cacheDir, "mod_${cacheId}${ext}.part"))?.let { out.add(it) }
+                evictFileToTrash(File(cacheDir, "mod_${cacheId}${ext}.part.meta"))?.let { out.add(it) }
             }
-            if (cacheDir.listFiles()?.isEmpty() == true) {
+        } catch (_: Throwable) {
+        }
+        return out
+    }
+
+    fun cleanupBaseStagingForGame(
+        storagePath: File,
+        targetGameId: String?,
+        resolvedStagingDir: File?
+    ) {
+        for (f in evictBaseStagingToTrash(storagePath, targetGameId, resolvedStagingDir)) {
+            try {
+                f.deleteRecursively()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun cleanupModCacheForSteps(storagePath: File, steps: List<ModReleaseEntry>) {
+        for (f in evictModCacheToTrash(storagePath, steps)) {
+            try {
+                f.deleteRecursively()
+            } catch (_: Throwable) {
+            }
+        }
+        try {
+            val cacheDir = File(storagePath, ".online_mod_cache")
+            if (cacheDir.isDirectory && cacheDir.listFiles()?.isEmpty() == true) {
                 cacheDir.delete()
             }
         } catch (_: Throwable) {
@@ -982,7 +1107,7 @@ object OnlineInstaller {
 
     fun fetchManifestTotalBytes(cdnBaseUrl: String): Long {
         val cleanBaseUrl = cdnBaseUrl.trimEnd('/')
-        return fetchManifest(cleanBaseUrl) {}.totalBytes
+        return fetchManifest(cleanBaseUrl, null) {}.totalBytes
     }
 
     fun formatSize(bytes: Long): String {
@@ -998,9 +1123,14 @@ object OnlineInstaller {
         }
     }
 
-    private fun fetchManifest(cdnBaseUrl: String, checkCancelled: () -> Unit): OnlineManifest {
+    private fun fetchManifest(
+        cdnBaseUrl: String,
+        abortHandle: InstallAbortHandle?,
+        checkCancelled: () -> Unit
+    ): OnlineManifest {
         var lastErr: Exception? = null
         for (attempt in 0 until 3) {
+            if (abortHandle?.isAborted == true) throw CancellationException()
             checkCancelled()
             var conn: HttpURLConnection? = null
             try {
@@ -1010,7 +1140,9 @@ object OnlineInstaller {
                         "User-Agent" to DEFAULT_USER_AGENT,
                         "Accept" to "application/json",
                         "Accept-Encoding" to "identity"
-                    )
+                    ),
+                    abortHandle = abortHandle,
+                    readTimeoutMs = 15_000
                 )
                 val code = conn.responseCode
                 if (code != HttpURLConnection.HTTP_OK) {
@@ -1044,12 +1176,21 @@ object OnlineInstaller {
             } catch (e: GameList.InstallFailureException) {
                 throw e
             } catch (e: Exception) {
+                if (abortHandle?.isAborted == true) throw CancellationException()
+                checkCancelled()
                 lastErr = e
                 if (attempt < 2) {
                     sleepCancellable(1200L * (attempt + 1), checkCancelled)
                 }
             } finally {
-                conn?.disconnect()
+                abortHandle?.unregister(conn)
+                if (conn != null) {
+                    if (abortHandle?.isAborted == true) {
+                        InstallAbortHandle.disconnectAsync(listOf(conn))
+                    } else {
+                        conn.disconnect()
+                    }
+                }
             }
         }
         throw IOException("Failed to fetch online manifest", lastErr)
@@ -1061,6 +1202,7 @@ object OnlineInstaller {
         expectedSize: Long,
         expectedSha256: String?,
         headers: Map<String, String>,
+        abortHandle: InstallAbortHandle?,
         checkCancelled: () -> Unit,
         onProgress: (doneBytes: Long, totalBytes: Long, speedBps: Long) -> Unit
     ) {
@@ -1079,6 +1221,7 @@ object OnlineInstaller {
 
         var lastIoError: Exception? = null
         for (attempt in 0 until MAX_HTTP_RETRIES) {
+            if (abortHandle?.isAborted == true) throw CancellationException()
             checkCancelled()
             var curLen = if (destPartFile.isFile) destPartFile.length() else 0L
             if (knownTotal > 0L && curLen > knownTotal) {
@@ -1094,6 +1237,7 @@ object OnlineInstaller {
             }
 
             var conn: HttpURLConnection? = null
+            var completedNormally = false
             try {
                 val reqHeaders = LinkedHashMap<String, String>(headers)
                 reqHeaders["Accept-Encoding"] = "identity"
@@ -1101,8 +1245,9 @@ object OnlineInstaller {
                     reqHeaders["Range"] = "bytes=$curLen-"
                 }
 
-                conn = openFollowingRedirects(url, reqHeaders)
+                conn = openFollowingRedirects(url, reqHeaders, abortHandle)
                 val code = conn.responseCode
+                conn.readTimeout = READ_SLICE_TIMEOUT_MS
                 if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
                     throw IOException("HTTP $code")
                 }
@@ -1114,6 +1259,7 @@ object OnlineInstaller {
                 when (code) {
                     HttpURLConnection.HTTP_PARTIAL -> {
                         if (expectedSha256.isNullOrBlank() && curSavedEtag != null && respEtag != null && curSavedEtag != respEtag) {
+                            abortHandle?.unregister(conn)
                             conn.disconnect()
                             conn = null
                             destPartFile.delete()
@@ -1124,6 +1270,7 @@ object OnlineInstaller {
                         val parsed = parseContentRange(cr)
                         if (parsed != null) {
                             if (parsed.first != curLen) {
+                                abortHandle?.unregister(conn)
                                 conn.disconnect()
                                 conn = null
                                 destPartFile.delete()
@@ -1153,6 +1300,7 @@ object OnlineInstaller {
                         val slashTotal = cr?.substringAfter('/', "")?.trim()?.toLongOrNull() ?: -1L
                         if (slashTotal > 0L && curLen == slashTotal) {
                             knownTotal = slashTotal
+                            completedNormally = true
                             break
                         }
                         destPartFile.delete()
@@ -1174,12 +1322,28 @@ object OnlineInstaller {
                 var currentSpeedBps = 0L
                 var lastUiReportMs = 0L
 
-                conn.inputStream.use { input ->
+                val input = conn.inputStream
+                try {
                     FileOutputStream(destPartFile, appendMode).use { output ->
                         val buf = ByteArray(256 * 1024)
+                        var idleReadMs = 0L
                         while (true) {
+                            if (abortHandle?.isAborted == true) throw CancellationException()
                             checkCancelled()
-                            val n = input.read(buf)
+                            val n = try {
+                                input.read(buf)
+                            } catch (ste: java.net.SocketTimeoutException) {
+                                if (abortHandle?.isAborted == true) throw CancellationException()
+                                checkCancelled()
+                                idleReadMs += READ_SLICE_TIMEOUT_MS
+                                if (idleReadMs >= TOTAL_READ_TIMEOUT_MS) {
+                                    throw ste
+                                }
+                                continue
+                            }
+                            idleReadMs = 0L
+                            if (abortHandle?.isAborted == true) throw CancellationException()
+                            checkCancelled()
                             if (n < 0) break
                             if (n == 0) continue
                             output.write(buf, 0, n)
@@ -1200,6 +1364,14 @@ object OnlineInstaller {
                         }
                         output.fd.sync()
                     }
+                    completedNormally = true
+                } finally {
+                    if (completedNormally) {
+                        try {
+                            input.close()
+                        } catch (_: Throwable) {
+                        }
+                    }
                 }
 
                 onProgress(curLen, knownTotal, currentSpeedBps)
@@ -1214,12 +1386,21 @@ object OnlineInstaller {
             } catch (e: GameList.InstallFailureException) {
                 throw e
             } catch (e: Exception) {
+                if (abortHandle?.isAborted == true) throw CancellationException()
+                checkCancelled()
                 lastIoError = e
                 if (attempt + 1 < MAX_HTTP_RETRIES) {
                     sleepCancellable(1000L * (attempt + 1).coerceAtMost(5), checkCancelled)
                 }
             } finally {
-                conn?.disconnect()
+                abortHandle?.unregister(conn)
+                if (conn != null) {
+                    if (!completedNormally && abortHandle?.isAborted == true) {
+                        InstallAbortHandle.disconnectAsync(listOf(conn))
+                    } else {
+                        conn.disconnect()
+                    }
+                }
             }
         }
 
@@ -1246,23 +1427,34 @@ object OnlineInstaller {
 
     private fun openFollowingRedirects(
         initialUrl: String,
-        headers: Map<String, String>
+        headers: Map<String, String>,
+        abortHandle: InstallAbortHandle? = null,
+        readTimeoutMs: Int = READ_SLICE_TIMEOUT_MS
     ): HttpURLConnection {
         var currentUrl = URL(initialUrl)
 
         for (hop in 0..MAX_REDIRECTS) {
+            if (abortHandle?.isAborted == true) throw CancellationException()
             val conn = (currentUrl.openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = false
-                connectTimeout = 20_000
-                readTimeout = 45_000
+                connectTimeout = 15_000
+                readTimeout = readTimeoutMs
                 requestMethod = "GET"
                 for ((k, v) in headers) {
                     setRequestProperty(k, v)
                 }
             }
-            val code = conn.responseCode
+            abortHandle?.register(conn)
+            val code = try {
+                conn.responseCode
+            } catch (t: Throwable) {
+                abortHandle?.unregister(conn)
+                InstallAbortHandle.disconnectAsync(listOf(conn))
+                throw t
+            }
             if (code in intArrayOf(301, 302, 303, 307, 308)) {
                 val loc = conn.getHeaderField("Location")
+                abortHandle?.unregister(conn)
                 conn.disconnect()
                 if (loc.isNullOrBlank()) {
                     throw IOException("Redirect $code missing Location header")

@@ -121,13 +121,13 @@
     <string name="save_clear_confirm_msg">确定清空全部 %1$d 个存档文件吗？此操作不可恢复。</string>
     <string name="save_cleared_toast">已清空存档</string>
 
-    <string name="action_online_install">在线安装</string>
-    <string name="action_online_install_with_size">在线安装 · %1$s</string>
+    <string name="action_online_install">在线安装(中文)</string>
+    <string name="action_online_install_with_size">在线安装(中文) · %1$s</string>
     <string name="action_local_install">本地安装</string>
     <string name="game_local_dialog_title">本地安装</string>
     <string name="game_opt_zip">从压缩包安装</string>
     <string name="game_opt_dir">从文件夹安装</string>
-    <string name="online_base_confirm_title">在线安装</string>
+    <string name="online_base_confirm_title">在线安装(中文)</string>
     <string name="online_base_confirm_msg">下载并安装 %1$s 游戏本体？支持断点续传。</string>
     <string name="online_base_confirm_msg_size">下载并安装 %1$s 游戏本体？约 %2$s，支持断点续传。</string>
     <string name="online_fetching_manifest">正在获取资源信息…</string>

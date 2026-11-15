@@ -235,9 +235,10 @@ class SettingsActivity : ThemedActivity() {
                 val n = f.name
                 val isTempTarget = n.startsWith(".online_base_staging_") ||
                     n == ".online_mod_cache" ||
-                    n == ".mod_online_extract_temp" ||
-                    n == ".install_temp" ||
-                    n == ".mod_install_temp" ||
+                    n.startsWith(".mod_online_extract_temp") ||
+                    n.startsWith(".install_temp") ||
+                    n.startsWith(".mod_install_temp") ||
+                    n.startsWith(".trash_") ||
                     n.startsWith(".import-") ||
                     n.startsWith(".mod-import-") ||
                     (f.isFile && n.startsWith(".archive_src_") && n.endsWith(".tmp"))

@@ -122,13 +122,13 @@
     <string name="save_clear_confirm_msg">Delete all %1$d save files? This cannot be undone.</string>
     <string name="save_cleared_toast">Saves cleared</string>
 
-    <string name="action_online_install">Online Install</string>
-    <string name="action_online_install_with_size">Online Install · %1$s</string>
+    <string name="action_online_install">Online Install (Chinese)</string>
+    <string name="action_online_install_with_size">Online Install (Chinese) · %1$s</string>
     <string name="action_local_install">Local Install</string>
     <string name="game_local_dialog_title">Local Install</string>
     <string name="game_opt_zip">From Archive</string>
     <string name="game_opt_dir">From Folder</string>
-    <string name="online_base_confirm_title">Online Install</string>
+    <string name="online_base_confirm_title">Online Install (Chinese)</string>
     <string name="online_base_confirm_msg">Download and install %1$s base game? Supports resumable downloads.</string>
     <string name="online_base_confirm_msg_size">Download and install %1$s base game? Size: %2$s, supports resumable downloads.</string>
     <string name="online_fetching_manifest">Fetching manifest…</string>
