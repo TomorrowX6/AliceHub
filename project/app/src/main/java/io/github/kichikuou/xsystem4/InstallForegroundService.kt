@@ -61,6 +61,9 @@ class InstallForegroundService : Service() {
         private var modTargetPath: String? = null
 
         @Volatile
+        private var hubTargetGameId: String? = null
+
+        @Volatile
         private var lastNotifyElapsedMs: Long = 0L
 
         @Volatile
@@ -93,7 +96,8 @@ class InstallForegroundService : Service() {
             initialPermille: Int?,
             isCancellable: Boolean,
             isResumable: Boolean,
-            targetGamePathForMod: String? = null
+            targetGamePathForMod: String? = null,
+            targetGameId: String? = null
         ) {
             val appCtx = context.applicationContext
             ensureChannels(appCtx)
@@ -105,6 +109,7 @@ class InstallForegroundService : Service() {
             cancellable = isCancellable
             resumable = isResumable
             modTargetPath = targetGamePathForMod
+            hubTargetGameId = targetGameId
             lastNotifyElapsedMs = SystemClock.elapsedRealtime()
             activeSession = true
 
@@ -150,29 +155,35 @@ class InstallForegroundService : Service() {
 
         fun finishSessionSucceeded(context: Context, postResultNotification: Boolean) {
             val appCtx = context.applicationContext
-            val finishedTitle = taskTitle.ifBlank { appCtx.getString(R.string.install_dialog_title) }
+            val lctx = AppSettings.wrapThemeContext(appCtx)
+            val finishedTitle = taskTitle.ifBlank { lctx.getString(R.string.install_dialog_title) }
             val targetPath = modTargetPath
+            val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
-                    title = appCtx.getString(R.string.notif_done_title),
-                    body = appCtx.getString(R.string.notif_done_msg, finishedTitle),
-                    targetPath = targetPath
+                    title = lctx.getString(R.string.notif_done_title),
+                    body = lctx.getString(R.string.notif_done_msg, finishedTitle),
+                    targetPath = targetPath,
+                    targetGameId = targetGameId
                 )
             }
         }
 
         fun finishSessionFailed(context: Context, errorMsg: String, postResultNotification: Boolean) {
             val appCtx = context.applicationContext
+            val lctx = AppSettings.wrapThemeContext(appCtx)
             val targetPath = modTargetPath
+            val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
-                    title = appCtx.getString(R.string.notif_failed_title),
+                    title = lctx.getString(R.string.notif_failed_title),
                     body = errorMsg,
-                    targetPath = targetPath
+                    targetPath = targetPath,
+                    targetGameId = targetGameId
                 )
             }
         }
@@ -200,10 +211,11 @@ class InstallForegroundService : Service() {
         }
 
         private fun ensureChannels(context: Context) {
+            val lctx = AppSettings.wrapThemeContext(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val progressChannel = NotificationChannel(
                 CHANNEL_PROGRESS,
-                context.getString(R.string.notif_channel_progress_name),
+                lctx.getString(R.string.notif_channel_progress_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setSound(null, null)
@@ -212,7 +224,7 @@ class InstallForegroundService : Service() {
             }
             val resultChannel = NotificationChannel(
                 CHANNEL_RESULT,
-                context.getString(R.string.notif_channel_result_name),
+                lctx.getString(R.string.notif_channel_result_name),
                 NotificationManager.IMPORTANCE_DEFAULT
             )
             nm.createNotificationChannel(progressChannel)
@@ -222,14 +234,17 @@ class InstallForegroundService : Service() {
         private fun buildOpenAppPendingIntent(
             context: Context,
             targetPath: String?,
+            targetGameId: String?,
             restoreDialog: Boolean
         ): PendingIntent {
-            val openIntent = if (!targetPath.isNullOrBlank()) {
-                Intent(context, ModManagerActivity::class.java).apply {
+            val openIntent = when {
+                !targetPath.isNullOrBlank() -> Intent(context, ModManagerActivity::class.java).apply {
                     putExtra(ModManagerActivity.EXTRA_GAME_PATH, targetPath)
                 }
-            } else {
-                Intent(context, LauncherActivity::class.java)
+                !targetGameId.isNullOrBlank() -> Intent(context, GameHubActivity::class.java).apply {
+                    putExtra(GameHubActivity.EXTRA_GAME_ID, targetGameId)
+                }
+                else -> Intent(context, LauncherActivity::class.java)
             }
             openIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -247,14 +262,15 @@ class InstallForegroundService : Service() {
 
         private fun buildProgressNotification(context: Context): Notification {
             ensureChannels(context)
+            val lctx = AppSettings.wrapThemeContext(context)
             val curPermille = permille
-            val baseTitle = taskTitle.ifBlank { context.getString(R.string.install_dialog_title) }
+            val baseTitle = taskTitle.ifBlank { lctx.getString(R.string.install_dialog_title) }
             val fullTitle = if (curPermille != null) {
                 "$baseTitle · ${(curPermille.coerceIn(0, 1000)) / 10}%"
             } else {
                 baseTitle
             }
-            val rawBody = progressText.ifBlank { context.getString(R.string.online_fetching_manifest) }
+            val rawBody = progressText.ifBlank { lctx.getString(R.string.online_fetching_manifest) }
             val singleLineBody = rawBody.lineSequence().firstOrNull()?.trim().orEmpty().ifEmpty { rawBody }
 
             val builder = Notification.Builder(context, CHANNEL_PROGRESS)
@@ -265,7 +281,7 @@ class InstallForegroundService : Service() {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(Notification.CATEGORY_PROGRESS)
-                .setContentIntent(buildOpenAppPendingIntent(context, modTargetPath, restoreDialog = true))
+                .setContentIntent(buildOpenAppPendingIntent(context, modTargetPath, hubTargetGameId, restoreDialog = true))
 
             if (curPermille != null) {
                 builder.setProgress(1000, curPermille.coerceIn(0, 1000), false)
@@ -287,7 +303,7 @@ class InstallForegroundService : Service() {
                     cancelIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                val actionLabel = context.getString(
+                val actionLabel = lctx.getString(
                     if (resumable) R.string.notif_action_pause else R.string.cancel
                 )
                 val action = Notification.Action.Builder(null as Icon?, actionLabel, cancelPi).build()
@@ -311,7 +327,8 @@ class InstallForegroundService : Service() {
             context: Context,
             title: String,
             body: String,
-            targetPath: String?
+            targetPath: String?,
+            targetGameId: String?
         ) {
             try {
                 ensureChannels(context)
@@ -323,7 +340,7 @@ class InstallForegroundService : Service() {
                     .setContentText(singleLine)
                     .setStyle(Notification.BigTextStyle().bigText(body))
                     .setAutoCancel(true)
-                    .setContentIntent(buildOpenAppPendingIntent(context, targetPath, restoreDialog = false))
+                    .setContentIntent(buildOpenAppPendingIntent(context, targetPath, targetGameId, restoreDialog = false))
                     .build()
                 nm.notify(NOTIF_ID_RESULT, notif)
             } catch (t: Throwable) {

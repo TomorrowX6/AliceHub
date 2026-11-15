@@ -277,6 +277,8 @@ bool PE_SetPartsConstructionSurfaceArea(int parts_no, int x, int y, int w, int h
 
 // input.c
 void PE_UpdateInputState(int passed_time);
+void PE_SetEnableInput(bool enable);
+bool PE_IsEnableInput(void);
 void PE_SetPassCursor(int parts_no, bool pass);
 bool PE_GetPartsPassCursor(int parts_no);
 void PE_SetClickable(int parts_no, bool clickable);
@@ -309,9 +311,14 @@ void PE_FlushCGCache(void);
 // message.c
 void PE_ReleaseMessage(void);
 void PE_PopMessage(void);
+void PE_SeekMessage(int target_parts_no);
 int PE_GetMessageType(void);
 int PE_GetMessagePartsNumber(void);
 int PE_GetMessageDelegateIndex(void);
+int PE_GetMessageUniqueID(void);
+void PE_SetEventID(int parts_no, int delegate_index, int unique_id);
+void PE_SetComponentSubColorMode(int parts_no, bool enable);
+bool PE_IsComponentSubColorMode(int parts_no);
 int PE_GetMessageVariableCount(void);
 int PE_GetMessageVariableType(int index);
 int PE_GetMessageVariableInt(int index);

@@ -163,6 +163,8 @@ float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm);
 int gfx_render_text(Texture *dst, float x, int y, char *msg, struct text_style *ts, bool blend);
 float gfx_render_textf(Texture *dst, float x, int y, char *msg, struct text_style *ts, bool blend);
 float gfx_render_text_mode(Texture *dst, float x, int y, char *msg, struct text_style *ts, enum text_render_mode mode);
+float gfx_render_text_edge_only(Texture *dst, float x, int y, char *msg, struct text_style *ts);
+float gfx_render_text_core_only(Texture *dst, float x, int y, char *msg, struct text_style *ts);
 void gfx_render_dash_text(Texture *dst, struct text_style *ts);
 void gfx_draw_text_to_amap(Texture *dst, int x, int y, char *text);
 void gfx_draw_text_to_pmap(Texture *dst, int x, int y, char *text);

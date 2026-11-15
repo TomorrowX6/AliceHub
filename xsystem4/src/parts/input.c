@@ -35,6 +35,7 @@
 
 // true between calls to BeginClick and EndClick
 bool parts_began_click = false;
+static bool parts_input_enabled = true;
 static int input_depth;
 
 // the mouse position at last update
@@ -146,6 +147,23 @@ static void parts_play_sound(struct parts *parts, int state)
 		audio_play_system_sound(parts->on_click_sound);
 }
 
+static struct parts_state *parts_hittest_alpha_state(struct parts *parts, int state)
+{
+	if (state == PARTS_STATE_DEFAULT && parts->widget) {
+		struct parts_widget *w = parts->widget;
+		struct parts_state *ws = NULL;
+		if (!w->enabled) {
+			ws = (parts->component_type == 1 && w->checked && w->checked_disabled.type != PARTS_UNINITIALIZED)
+				? &w->checked_disabled : &w->disabled;
+		} else if (parts->component_type == 1 && w->checked) {
+			ws = &w->checked_states[state];
+		}
+		if (ws && ws->type != PARTS_UNINITIALIZED)
+			return ws;
+	}
+	return &parts->states[state];
+}
+
 static bool parts_hittest(struct parts *parts, int state, Point pos)
 {
 	if (parts->states[state].type == PARTS_LAYOUT_BOX || parts->component_type == 15)
@@ -158,6 +176,8 @@ static bool parts_hittest(struct parts *parts, int state, Point pos)
 				!(parts->states[state].type == PARTS_RECT_DETECTION && parts->states[state].rect.custom))
 			return false;
 	}
+	bool checkbox_with_label = (parts->component_type == 1 && parts->widget
+			&& !parts->widget->button_mode && parts->widget->text->size);
 	if (ain->version >= 12) {
 		int clipper_no = parts_get_effective_alpha_clipper(parts);
 		if (clipper_no > 0) {
@@ -211,18 +231,37 @@ static bool parts_hittest(struct parts *parts, int state, Point pos)
 			}
 			return inside;
 		}
-		if (parts->states[state].type == PARTS_FLAT
-				&& !(parts->component_type == 1 && parts->widget && !parts->widget->button_mode && parts->widget->text->size)) {
+		if (parts->states[state].type == PARTS_FLAT && !checkbox_with_label) {
 			return parts_flat_hittest(&parts->states[state].flat, x, y);
 		}
-		return x >= hitbox.x && y >= hitbox.y
-			&& x < hitbox.x + hitbox.w && y < hitbox.y + hitbox.h;
+		if (!(x >= hitbox.x && y >= hitbox.y
+				&& x < hitbox.x + hitbox.w && y < hitbox.y + hitbox.h))
+			return false;
+		struct parts_state *alpha_state = parts_hittest_alpha_state(parts, state);
+		if ((alpha_state->type == PARTS_RECT_DETECTION && alpha_state->rect.is_cg_detection)
+				|| (parts->pixel_decide && !parts->scrollbar && !checkbox_with_label)) {
+			int px = (int)floorf(x - alpha_state->common.origin_offset.x);
+			int py = (int)floorf(y - alpha_state->common.origin_offset.y);
+			return parts_common_check_alpha(alpha_state, px, py);
+		}
+		return true;
 	}
 	if (parts->parent) {
 		hitbox.x += parts->parent->global.pos.x;
 		hitbox.y += parts->parent->global.pos.y;
 	}
-	return SDL_PointInRect(&pos, &hitbox);
+	if (!SDL_PointInRect(&pos, &hitbox))
+		return false;
+	struct parts_state *alpha_state = parts_hittest_alpha_state(parts, state);
+	if ((alpha_state->type == PARTS_RECT_DETECTION && alpha_state->rect.is_cg_detection)
+			|| (parts->pixel_decide && !parts->scrollbar && !checkbox_with_label)) {
+		float base_x = parts->local.pos.x + (parts->parent ? parts->parent->global.pos.x : 0.0f);
+		float base_y = parts->local.pos.y + (parts->parent ? parts->parent->global.pos.y : 0.0f);
+		int px = (int)floorf(pos.x - base_x - alpha_state->common.origin_offset.x);
+		int py = (int)floorf(pos.y - base_y - alpha_state->common.origin_offset.y);
+		return parts_common_check_alpha(alpha_state, px, py);
+	}
+	return true;
 }
 
 static void drag_state_reset(void)
@@ -299,6 +338,7 @@ void parts_input_reset(void)
 	PE_EndInput();
 	input_depth = 0;
 	parts_began_click = false;
+	parts_input_enabled = true;
 	reset_transient_pointer_state();
 	parts_prev_pos = (Point) {0};
 	if (click_miss_sound_name) free_string(click_miss_sound_name);
@@ -555,12 +595,38 @@ static void update_drop_target(Point cur_pos)
 	}
 }
 
+void PE_SetEnableInput(bool enable)
+{
+	if (parts_input_enabled == enable)
+		return;
+	parts_input_enabled = enable;
+	if (!enable) {
+		reset_transient_pointer_state();
+		struct parts *p;
+		PARTS_LIST_FOREACH(p) {
+			parts_input_reset_part(p);
+			p->is_hovered = false;
+			p->hover_time = 0;
+		}
+	}
+}
+
+bool PE_IsEnableInput(void)
+{
+	return parts_input_enabled;
+}
+
 void PE_UpdateInputState(int passed_time)
 {
 	Point cur_pos;
 	click_fired_this_frame = false;
-	input_parts_poll_begin(parts_began_click);
+	input_parts_poll_begin(parts_began_click && parts_input_enabled);
 	mouse_get_pos(&cur_pos.x, &cur_pos.y);
+	if (!parts_input_enabled) {
+		parts_prev_pos = cur_pos;
+		input_notify_parts_poll(false, false);
+		return;
+	}
 	bool cur_clicking = key_is_down(VK_LBUTTON);
 	bool cur_rclicking = key_is_down(VK_RBUTTON);
 	bool cur_mclicking = key_is_down(VK_MBUTTON);

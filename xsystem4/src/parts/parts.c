@@ -83,6 +83,8 @@ static void parts_init(struct parts *parts)
 	parts->want_save = true;
 	parts->enable_input = true;
 	parts->enable_speed_up = true;
+	parts->delegate_index = -1;
+	parts->event_unique_id = -1;
 	parts->on_cursor_sound = -1;
 	parts->on_click_sound = -1;
 	for (int i = 0; i < PARTS_NR_STATES; i++)
@@ -217,6 +219,99 @@ bool parts_exists(int parts_no)
 	return !!ht_get_int(parts_table, parts_no, NULL);
 }
 
+void parts_common_free_alpha_mask(struct parts_common *common)
+{
+	free(common->alpha_mask);
+	common->alpha_mask = NULL;
+	common->alpha_w = 0;
+	common->alpha_h = 0;
+}
+
+static void parts_common_build_alpha_mask(struct parts_common *common,
+		const uint8_t *rgba, int w, int h, bool has_alpha)
+{
+	parts_common_free_alpha_mask(common);
+	if (w <= 0 || h <= 0)
+		return;
+	if (!has_alpha || !rgba) {
+		common->alpha_w = -1;
+		common->alpha_h = -1;
+		return;
+	}
+	size_t n = (size_t)w * (size_t)h;
+	bool has_transparent = false;
+	for (size_t i = 0; i < n; i++) {
+		if (rgba[i * 4 + 3] == 0) {
+			has_transparent = true;
+			break;
+		}
+	}
+	if (!has_transparent) {
+		common->alpha_w = -1;
+		common->alpha_h = -1;
+		return;
+	}
+	uint8_t *mask = xcalloc((n + 7) >> 3, 1);
+	for (size_t i = 0; i < n; i++) {
+		if (rgba[i * 4 + 3] != 0)
+			mask[i >> 3] |= (uint8_t)(1u << (i & 7));
+	}
+	common->alpha_mask = mask;
+	common->alpha_w = w;
+	common->alpha_h = h;
+}
+
+void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg *cg)
+{
+	if (!cg) {
+		parts_common_free_alpha_mask(common);
+		return;
+	}
+	parts_common_build_alpha_mask(common, cg->pixels, cg->metrics.w, cg->metrics.h,
+			cg->metrics.has_alpha);
+}
+
+bool parts_common_check_alpha(struct parts_state *state, int px, int py)
+{
+	struct parts_common *common = &state->common;
+	if (px < 0 || py < 0 || px >= common->w || py >= common->h)
+		return false;
+	if (common->alpha_w == -1)
+		return true;
+	if (common->alpha_w == 0) {
+		if (state->type == PARTS_RECT_DETECTION && state->rect.is_cg_detection
+				&& state->rect.cg_name && state->rect.cg_name->size > 0) {
+			int cg_no;
+			struct cg *cg = asset_cg_load_by_name(state->rect.cg_name->text, &cg_no);
+			if (cg) {
+				parts_common_set_alpha_from_cg(common, cg);
+				cg_free(cg);
+			} else {
+				common->alpha_w = -1;
+				common->alpha_h = -1;
+			}
+		} else if (common->texture.handle != 0) {
+			if (common->texture.opaque) {
+				common->alpha_w = -1;
+				common->alpha_h = -1;
+			} else if (common->texture.w > 0 && common->texture.h > 0) {
+				uint8_t *pixels = gfx_get_pixels(&common->texture);
+				parts_common_build_alpha_mask(common, pixels,
+						common->texture.w, common->texture.h, true);
+				free(pixels);
+			}
+		} else {
+			return true;
+		}
+	}
+	if (common->alpha_w == -1)
+		return true;
+	if (!common->alpha_mask || px >= common->alpha_w || py >= common->alpha_h)
+		return false;
+	size_t bit = (size_t)py * (size_t)common->alpha_w + (size_t)px;
+	return (common->alpha_mask[bit >> 3] & (1u << (bit & 7))) != 0;
+}
+
 #define PARTS_CG_CACHE_SIZE 128
 
 struct parts_cg_cache_entry {
@@ -224,6 +319,8 @@ struct parts_cg_cache_entry {
 	struct string *name;
 	Texture texture;
 	int w, h;
+	uint8_t *alpha_mask;
+	int alpha_w, alpha_h;
 };
 
 static struct parts_cg_cache_entry parts_cg_cache[PARTS_CG_CACHE_SIZE];
@@ -233,6 +330,7 @@ static void parts_cg_cache_put(struct parts_cg *cg)
 {
 	if (cg->no <= 0 || !cg->common.texture.handle || cg->common.w <= 0 || cg->common.h <= 0) {
 		gfx_delete_texture(&cg->common.texture);
+		parts_common_free_alpha_mask(&cg->common);
 		if (cg->name) {
 			free_string(cg->name);
 			cg->name = NULL;
@@ -243,6 +341,7 @@ static void parts_cg_cache_put(struct parts_cg *cg)
 	if (nr_parts_cg_cache == PARTS_CG_CACHE_SIZE) {
 		struct parts_cg_cache_entry *evict = &parts_cg_cache[PARTS_CG_CACHE_SIZE - 1];
 		gfx_delete_texture(&evict->texture);
+		free(evict->alpha_mask);
 		if (evict->name)
 			free_string(evict->name);
 		nr_parts_cg_cache--;
@@ -257,9 +356,15 @@ static void parts_cg_cache_put(struct parts_cg *cg)
 		.texture = cg->common.texture,
 		.w = cg->common.w,
 		.h = cg->common.h,
+		.alpha_mask = cg->common.alpha_mask,
+		.alpha_w = cg->common.alpha_w,
+		.alpha_h = cg->common.alpha_h,
 	};
 	nr_parts_cg_cache++;
 	cg->common.texture.handle = 0;
+	cg->common.alpha_mask = NULL;
+	cg->common.alpha_w = 0;
+	cg->common.alpha_h = 0;
 	cg->name = NULL;
 	cg->no = 0;
 }
@@ -288,10 +393,33 @@ static void parts_cg_cache_clear(void)
 {
 	for (int i = 0; i < nr_parts_cg_cache; i++) {
 		gfx_delete_texture(&parts_cg_cache[i].texture);
+		free(parts_cg_cache[i].alpha_mask);
 		if (parts_cg_cache[i].name)
 			free_string(parts_cg_cache[i].name);
 	}
 	nr_parts_cg_cache = 0;
+}
+
+void PE_SetEventID(int parts_no, int delegate_index, int unique_id)
+{
+	struct parts *parts = parts_get(parts_no);
+	parts->delegate_index = delegate_index;
+	parts->event_unique_id = unique_id;
+}
+
+void PE_SetComponentSubColorMode(int parts_no, bool enable)
+{
+	struct parts *parts = parts_get(parts_no);
+	if (parts->sub_color_mode == enable)
+		return;
+	parts->sub_color_mode = enable;
+	parts_dirty(parts);
+}
+
+bool PE_IsComponentSubColorMode(int parts_no)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	return parts ? parts->sub_color_mode : false;
 }
 
 void PE_FlushCGCache(void)
@@ -363,6 +491,7 @@ static void parts_state_free(struct parts_state *state)
 			sact_SP_Delete(state->layer3d.sprite_no);
 		break;
 	}
+	parts_common_free_alpha_mask(&state->common);
 	memset(state, 0, sizeof(struct parts_state));
 }
 
@@ -984,6 +1113,7 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 	}
 	parts_cg_cache_put(parts_cg);
 	gfx_init_texture_with_cg(&parts_cg->common.texture, cg);
+	parts_common_set_alpha_from_cg(&parts_cg->common, cg);
 	parts_set_dims(parts, &parts_cg->common, cg->metrics.w, cg->metrics.h);
 	parts_cg->no = cg_no;
 	if (parts_cg->name)
@@ -1000,6 +1130,9 @@ static void parts_cg_apply_cached(struct parts *parts, struct parts_cg *parts_cg
 {
 	parts_cg_cache_put(parts_cg);
 	parts_cg->common.texture = cached->texture;
+	parts_cg->common.alpha_mask = cached->alpha_mask;
+	parts_cg->common.alpha_w = cached->alpha_w;
+	parts_cg->common.alpha_h = cached->alpha_h;
 	parts_set_dims(parts, &parts_cg->common, cached->w, cached->h);
 	parts_cg->no = cached->cg_no;
 	if (cached->name)
@@ -1034,10 +1167,7 @@ bool parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct string 
 	int no;
 	struct cg *cg;
 	if (!memcmp(cg_name->text, "<save>", 6)) {
-		char *path = savedir_path(cg_name->text + 6);
-		cg = cg_load_file(path);
-		no = 0;
-		free(path);
+		cg = asset_cg_load_by_name(cg_name->text, &no);
 	} else {
 		if (parts_cg->no > 0 && parts_cg->common.texture.handle &&
 				parts_cg->name && !strcmp(parts_cg->name->text, cg_name->text)) {
@@ -3112,6 +3242,8 @@ bool PE_SetPartsRectangleDetectionSize(int parts_no, int w, int h, int state)
 	if (parts->states[state].type != PARTS_RECT_DETECTION)
 		parts_state_reset(&parts->states[state], PARTS_RECT_DETECTION);
 	parts->states[state].rect.custom = false;
+	parts->states[state].rect.is_cg_detection = false;
+	parts_common_free_alpha_mask(&parts->states[state].common);
 	parts_set_dims(parts, &parts->states[state].common, w, h);
 	return true;
 }
@@ -3125,6 +3257,8 @@ void PE_SetRectangleDetectionPoint(int no, int x0, int y0, int x1, int y1,
 		parts_state_reset(&parts->states[state], PARTS_RECT_DETECTION);
 	struct parts_rect *rect = &parts->states[state].rect;
 	rect->custom = true;
+	rect->is_cg_detection = false;
+	parts_common_free_alpha_mask(&rect->common);
 	rect->points[0] = (Point){x0, y0}; rect->points[1] = (Point){x1, y1};
 	rect->points[2] = (Point){x2, y2}; rect->points[3] = (Point){x3, y3};
 	rect->common.w = max(max(x0, x1), max(x2, x3)) - min(min(x0, x1), min(x2, x3));
@@ -3156,6 +3290,9 @@ bool PE_SetPartsCGDetectionSize(int parts_no, struct string *cg_name, int state)
 	if (parts->states[state].type != PARTS_RECT_DETECTION)
 		parts_state_reset(&parts->states[state], PARTS_RECT_DETECTION);
 	struct parts_rect *rect = &parts->states[state].rect;
+	rect->custom = false;
+	rect->is_cg_detection = true;
+	parts_common_free_alpha_mask(&rect->common);
 	if (rect->cg_name)
 		free_string(rect->cg_name);
 	rect->cg_name = cg_name ? string_dup(cg_name) : string_ref(&EMPTY_STRING);
@@ -3163,6 +3300,7 @@ bool PE_SetPartsCGDetectionSize(int parts_no, struct string *cg_name, int state)
 		int cg_no;
 		struct cg *cg = asset_cg_load_by_name(cg_name->text, &cg_no);
 		if (cg) {
+			parts_common_set_alpha_from_cg(&rect->common, cg);
 			parts_set_dims(parts, &rect->common, cg->metrics.w, cg->metrics.h);
 			cg_free(cg);
 			return true;

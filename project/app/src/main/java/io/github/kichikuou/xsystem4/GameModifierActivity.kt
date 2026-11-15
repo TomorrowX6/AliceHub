@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
@@ -36,7 +37,8 @@ data class ModSaveSlotEntry(
 
 private class ModSaveSlotAdapter(
     private val activity: Activity,
-    private var entries: List<ModSaveSlotEntry>
+    private var entries: List<ModSaveSlotEntry>,
+    private val backupLabel: String
 ) : BaseAdapter() {
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -52,25 +54,40 @@ private class ModSaveSlotAdapter(
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
         val view = convertView ?: LayoutInflater.from(activity)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.list_item_entry, parent, false)
         val entry = entries[position]
-        val text1 = view.findViewById<TextView>(android.R.id.text1)
-        val text2 = view.findViewById<TextView>(android.R.id.text2)
 
-        val bakMark = if (GameModifierBridge.hasModBackup(entry.file)) " · 已备份" else ""
-        text1.text = "${entry.relativePath}  [${entry.tag}$bakMark]"
+        view.findViewById<TextView>(R.id.title).text = entry.relativePath
+        val chips = mutableListOf(UiKit.Chip(entry.tag, slotTone(entry.slotNum)))
+        if (GameModifierBridge.hasModBackup(entry.file)) {
+            chips.add(UiKit.Chip(backupLabel, UiKit.Tone.SUCCESS))
+        }
+        UiKit.bindChips(view, chips)
         val sizeStr = String.format(Locale.US, "%.1f KB", entry.sizeBytes / 1024.0)
         val dateStr = dateFormat.format(Date(entry.lastModified))
-        text2.text = "$sizeStr · $dateStr"
+        view.findViewById<TextView>(R.id.meta).text = "$sizeStr · $dateStr"
         return view
+    }
+
+    /** Same slot ranges as the tag labels: checkpoint / cleared run / auto / normal. */
+    private fun slotTone(slotNum: Int): UiKit.Tone = when {
+        slotNum >= 5000 -> UiKit.Tone.WARNING
+        slotNum >= 1000 -> UiKit.Tone.PRIMARY
+        slotNum >= 100 -> UiKit.Tone.INFO
+        else -> UiKit.Tone.NEUTRAL
     }
 }
 
-class GameModifierActivity : Activity() {
+// Status-card views live in game_modifier_header, added with addHeaderView. Lint only
+// sees the activity layout, so those ids look missing.
+@SuppressLint("MissingInflatedId")
+class GameModifierActivity : ThemedActivity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
+        const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
+    private var scopedGameId: String? = null
     private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: ModSaveSlotAdapter
@@ -78,9 +95,9 @@ class GameModifierActivity : Activity() {
     private var updatingSwitches = false
 
     private val isZh: Boolean
-        get() = Locale.getDefault().language.startsWith("zh")
+        get() = AppSettings.resolveLocale(this).language.startsWith("zh")
     private val isJa: Boolean
-        get() = Locale.getDefault().language.startsWith("ja")
+        get() = AppSettings.resolveLocale(this).language.startsWith("ja")
 
     private fun tr(zh: String, ja: String, en: String): String = when {
         isZh -> zh
@@ -95,13 +112,25 @@ class GameModifierActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game_modifier)
         actionBar?.setDisplayHomeAsUpEnabled(true)
-        title = tr("游戏修改器", "ゲーム改造", "Game Modifier")
+
+        // The info card, switches and buttons scroll with the list as its header. It has to be
+        // added before the adapter is set; its views are then found by findViewById() as usual.
+        val listView = findViewById<ListView>(R.id.mod_save_list)
+        listView.addHeaderView(
+            layoutInflater.inflate(R.layout.game_modifier_header, listView, false), null, false
+        )
+
+        scopedGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        val modLabel = tr("游戏修改器", "ゲーム改造", "Game Modifier")
+        title = scopedGameId?.let { gid ->
+            "${GameCatalog.descriptorFor(this, gid).title} · $modLabel"
+        } ?: modLabel
 
         findViewById<TextView>(R.id.label_floating_modifier).text = tr("悬浮窗修改器", "フローティング改造", "Floating Modifier")
-        findViewById<TextView>(R.id.label_ctrl_overlay).text = tr("Ctrl 快进悬浮键", "Ctrl 早送りボタン", "Ctrl Skip Button")
+        findViewById<TextView>(R.id.label_ctrl_overlay).text = tr("Ctrl 快进键", "Ctrl 早送りキー", "Ctrl Skip Key")
         findViewById<Button>(R.id.btn_mod_full_unlock).text = tr("全解锁存档", "全解放セーブ", "Full Unlock")
-        findViewById<Button>(R.id.btn_mod_global_save).text = tr("全局存档修改", "全体セーブ改造", "Global Save")
-        findViewById<Button>(R.id.btn_mod_floating_cfg).text = tr("实时锁定设置", "リアルタイムロック", "Live Locks")
+        findViewById<Button>(R.id.btn_mod_global_save).text = tr("全局存档", "全体セーブ", "Global Save")
+        findViewById<Button>(R.id.btn_mod_floating_cfg).text = tr("实时锁定", "リアルタイムロック", "Live Locks")
         refreshUiScaleButtons()
 
         val floatingSwitch = findViewById<Switch>(R.id.switch_floating_modifier)
@@ -120,8 +149,7 @@ class GameModifierActivity : Activity() {
             refreshSummaryText()
         }
 
-        adapter = ModSaveSlotAdapter(this, emptyList())
-        val listView = findViewById<ListView>(R.id.mod_save_list)
+        adapter = ModSaveSlotAdapter(this, emptyList(), tr("已备份", "バックアップ済", "Backed up"))
         listView.adapter = adapter
 
         discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME))
@@ -136,14 +164,13 @@ class GameModifierActivity : Activity() {
         findViewById<View>(R.id.btn_mod_floating_cfg).setOnClickListener { showFloatingLocksDialog() }
         findViewById<View>(R.id.btn_mod_font_size).setOnClickListener { showFontScaleDialog() }
         findViewById<View>(R.id.btn_mod_scrollbar).setOnClickListener { showScrollbarScaleDialog() }
-        findViewById<View>(R.id.btn_mod_refresh).setOnClickListener {
-            refreshList()
-            Toast.makeText(this, R.string.save_manager_refreshed, Toast.LENGTH_SHORT).show()
-        }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
-            val slot = adapter.getItem(pos)
-            ensureGameNotRunning(this) { showLocalSaveMenuDialog(slot) }
+            val index = pos - listView.headerViewsCount
+            if (index in 0 until adapter.count) {
+                val slot = adapter.getItem(index)
+                ensureGameNotRunning(this) { showLocalSaveMenuDialog(slot) }
+            }
         }
 
         refreshList()
@@ -153,7 +180,8 @@ class GameModifierActivity : Activity() {
         super.onResume()
         syncTopSwitches()
         if (::currentTarget.isInitialized) {
-            refreshSummaryText()
+            discoverSaveTargets(currentTarget.dirName)
+            refreshList()
         }
     }
 
@@ -189,7 +217,7 @@ class GameModifierActivity : Activity() {
             val saveDir = item.savedir ?: File(savesRoot, dirName)
             saveDir.mkdirs()
             found[dirName] = SaveTarget(
-                displayName = if (item.name == dirName) item.name else "${item.name} · $dirName",
+                displayName = dirName,
                 dirName = dirName,
                 saveDir = saveDir,
                 externalGameDir = item.path
@@ -208,12 +236,39 @@ class GameModifierActivity : Activity() {
             }
         }
 
-        if (found.isEmpty()) {
+        val gid = scopedGameId
+        if (!gid.isNullOrBlank()) {
+            val iter = found.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next().value
+                val classified = GameCatalog.classifyDirectory(
+                    gameDir = entry.externalGameDir,
+                    dirName = entry.dirName,
+                    saveDir = entry.saveDir,
+                    displayName = entry.displayName
+                )
+                if (classified != gid && entry.dirName != preferredDirName) {
+                    iter.remove()
+                }
+            }
+            if (found.isEmpty()) {
+                val desc = GameCatalog.descriptorFor(this, gid, gameList)
+                val defaultDir = File(savesRoot, desc.defaultDirName)
+                defaultDir.mkdirs()
+                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                found[desc.defaultDirName] = SaveTarget(
+                    displayName = desc.defaultDirName,
+                    dirName = desc.defaultDirName,
+                    saveDir = defaultDir,
+                    externalGameDir = extDir
+                )
+            }
+        } else if (found.isEmpty()) {
             val defaultDir = File(savesRoot, "Rance10")
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
             found["Rance10"] = SaveTarget(
-                displayName = getString(R.string.save_manager_default_dir_label),
+                displayName = "Rance10",
                 dirName = "Rance10",
                 saveDir = defaultDir,
                 externalGameDir = extDir
@@ -224,43 +279,116 @@ class GameModifierActivity : Activity() {
         currentTarget = targets.firstOrNull { it.dirName == preferredDirName } ?: targets.first()
     }
 
+    private fun isCurrentTargetRance10(): Boolean {
+        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+            return false
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10) {
+            return true
+        }
+        val extDir = currentTarget.externalGameDir
+        if (extDir == null &&
+            File(currentTarget.saveDir, "GlobalSaveData.asd").isFile &&
+            !File(currentTarget.saveDir, "GlobalSave.asd").isFile
+        ) {
+            return false
+        }
+        return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName)
+    }
+
+    private fun isCurrentTargetDohnaDohna(): Boolean {
+        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+            return false
+        }
+        return GameModifierBridge.isDohnaDohnaGameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
     private fun refreshUiScaleButtons() {
         val fontPct = GameModifierBridge.getFontScalePercent(this)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
         findViewById<Button>(R.id.btn_mod_font_size)?.text = tr(
             "字体大小 · $fontPct%",
             "文字サイズ · $fontPct%",
-            "Font Size · $fontPct%"
+            "Font · $fontPct%"
         )
         findViewById<Button>(R.id.btn_mod_scrollbar)?.text = tr(
-            "滚动条修改 · $sbPct%",
+            "滚动条 · $sbPct%",
             "スクロールバー · $sbPct%",
             "Scrollbar · $sbPct%"
         )
     }
 
+    private fun refreshTargetControlsVisibility(isRance10: Boolean, isDohnaDohna: Boolean) {
+        val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
+        (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
+        val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
+        val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
+        val showLocks = isRance10 || isDohnaDohna
+        floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
+        (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = if (showLocks) dp(4) else 0
+            switchDirBtn.layoutParams = lp
+        }
+    }
+
     private fun refreshSummaryText() {
         val saveDir = currentTarget.saveDir
-        val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
-        val floatOn = GameModifierBridge.isFloatingEnabled(this)
-        val ctrlOn = GameModifierBridge.isCtrlOverlayEnabled(this)
-        val lockCount = GameModifierBridge.getLiveLockCount(this)
-        val fontPct = GameModifierBridge.getFontScalePercent(this)
-        val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
+        val isRance10 = isCurrentTargetRance10()
+        val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
         refreshUiScaleButtons()
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna)
 
         findViewById<TextView>(R.id.mod_target_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.displayName)
+            getString(R.string.save_manager_current_dir, currentTarget.dirName)
+        if (!isRance10) {
+            val asdCount = saveDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
+                .count()
+            if (isDohnaDohna) {
+                val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
+                findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                    "存档 $asdCount 个 · 锁定 $ddLockCount 项",
+                    "セーブ $asdCount 個 · ロック $ddLockCount 項目",
+                    "$asdCount saves · Locks: $ddLockCount"
+                )
+            } else {
+                findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                    "存档 $asdCount 个",
+                    "セーブ $asdCount 個",
+                    "$asdCount saves"
+                )
+            }
+            return
+        }
+
+        val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
+        val lockCount = GameModifierBridge.getLiveLockCount(this)
         findViewById<TextView>(R.id.mod_target_summary).text = tr(
-            "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "已有" else "无"} · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 实时锁定：$lockCount 项 · 字体：$fontPct% · 滚动条：$sbPct%",
-            "セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · Ctrl：${if (ctrlOn) "ON" else "OFF"} · ロック $lockCount 項目 · 文字：$fontPct% · バー：$sbPct%",
-            "${currentEntries.size} saves · Global: ${if (hasGlobal) "Yes" else "No"} · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Locks: $lockCount · Font: $fontPct% · Scrollbar: $sbPct%"
+            "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "有" else "无"} · 锁定 $lockCount 项",
+            "進行セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · ロック $lockCount 項目",
+            "${currentEntries.size} progress saves · Global: ${if (hasGlobal) "Yes" else "No"} · Locks: $lockCount"
         )
     }
 
     private fun refreshList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
+
+        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
+        if (!isCurrentTargetRance10()) {
+            currentEntries = emptyList()
+            adapter.update(emptyList())
+            refreshSummaryText()
+            emptyView.visibility = View.GONE
+            return
+        }
 
         val regex = Regex("localsave(\\d+)\\.asd", RegexOption.IGNORE_CASE)
         val slots = mutableListOf<ModSaveSlotEntry>()
@@ -285,19 +413,15 @@ class GameModifierActivity : Activity() {
         adapter.update(slots)
         refreshSummaryText()
 
-        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
-        val listView = findViewById<View>(R.id.mod_save_list)
         if (slots.isEmpty()) {
-            emptyView.text = tr(
-                "当前目录暂无进度存档。\n可使用上方“全解锁存档”、“全局存档修改”、“实时锁定设置”、“字体大小”或“滚动条修改”。",
-                "進行セーブがありません。\n上部のボタンから全解放・ロック・文字サイズ・スクロールバー設定を利用できます。",
-                "No progress saves in this directory."
+            UiKit.bindEmptyState(
+                emptyView,
+                R.drawable.ic_save,
+                tr("当前无进度存档", "進行セーブなし", "No progress saves")
             )
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
         } else {
             emptyView.visibility = View.GONE
-            listView.visibility = View.VISIBLE
         }
     }
 
@@ -307,13 +431,44 @@ class GameModifierActivity : Activity() {
             val count = target.saveDir.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
                 .count()
-            getString(R.string.save_dir_item_count, target.displayName, count)
-        }.toTypedArray()
+            getString(R.string.save_dir_item_count, target.dirName, count)
+        }.toMutableList()
+        labels.add(getString(R.string.save_dir_new_option))
 
         AlertDialog.Builder(this)
             .setTitle(R.string.save_dir_select_title)
-            .setItems(labels) { _, which ->
-                currentTarget = targets[which]
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == targets.size) {
+                    showCreateTargetDialog()
+                } else {
+                    currentTarget = targets[which]
+                    refreshList()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showCreateTargetDialog() {
+        val defaultPrefix = scopedGameId?.let { GameCatalog.descriptorFor(this, it).defaultDirName } ?: "Rance10"
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hint = getString(R.string.save_dir_create_hint)
+            setText(defaultPrefix)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.save_dir_create_title)
+            .setView(UiKit.dialogContent(this, input))
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val rawName = input.text.toString().trim()
+                val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                if (safeName.isEmpty() || safeName.startsWith(".")) {
+                    Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val newDir = File(File(filesDir, "saves"), safeName)
+                newDir.mkdirs()
+                discoverSaveTargets(safeName)
                 refreshList()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -367,8 +522,8 @@ class GameModifierActivity : Activity() {
         val cFile = File(saveDir, "Collection.asd")
         if (!gFile.isFile && !cFile.isFile) {
             AlertDialog.Builder(this)
-                .setTitle(tr("未找到全局存档", "全体セーブなし", "No Global Save"))
-                .setMessage(tr("当前目录尚无 GlobalSave.asd，是否先写入全解锁存档？", "先に全解放セーブを適用しますか？", "Install Full Unlock Save first?"))
+                .setTitle(tr("无全局存档", "全体セーブなし", "No Global Save"))
+                .setMessage(tr("当前无全局存档，是否写入全解锁存档？", "先に全解放セーブを適用しますか？", "Install Full Unlock Save first?"))
                 .setPositiveButton(R.string.ok) { _, _ ->
                     GameModifierBridge.installFullUnlockSaves(this, saveDir)
                     refreshList()
@@ -390,11 +545,11 @@ class GameModifierActivity : Activity() {
         val hasBak = GameModifierBridge.hasModBackup(gFile) || GameModifierBridge.hasModBackup(cFile)
 
         val options = mutableListOf(
-            tr("一键满CP / 满勋章 / 满实绩加成", "CP・メダル・実績ボーナス最大", "Max CP, Medals & Bonuses"),
-            tr("自定义全局数值…", "数値を個別編集…", "Edit Global Values…")
+            tr("一键满 CP / 勋章 / 实绩加成", "CP・メダル・実績最大", "Max CP, Medals & Bonuses"),
+            tr("自定义数值", "数値を編集", "Edit Values")
         )
         if (hasBak) {
-            options.add(tr("恢复修改前备份", "変更前のバックアップを復元", "Restore Backup"))
+            options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
         AlertDialog.Builder(this)
@@ -472,6 +627,45 @@ class GameModifierActivity : Activity() {
     // 3. In-Game Live Locks Dialog
     // =========================================================================
     private fun showFloatingLocksDialog() {
+        if (!isCurrentTargetRance10() && isCurrentTargetDohnaDohna()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("我方全员满 HP", "味方全員HP最大", "Party Max HP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_MP to tr("我方全员满 MP", "味方全員MP最大", "Party Max MP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_VP to tr("我方全员满怒气 VP", "味方全員VP最大", "Party Max VP"),
+                GameModifierBridge.LOCK_DD_ONE_HIT_KILL to tr("敌方 1 血秒杀", "敵全員HP1", "Enemy 1 HP"),
+                GameModifierBridge.LOCK_DD_INFINITE_MONEY to tr("无限资金", "資金無限", "Infinite Money"),
+                GameModifierBridge.LOCK_DD_INFINITE_TP to tr("无限调教点", "調教P無限", "Infinite TP"),
+                GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材最佳状态", "人材状態維持", "Keep Workers Healthy"),
+                GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销时间锁定", "ハルウリ時間固定", "Freeze Brothel Timer")
+            )
+            var lockMask = GameModifierBridge.getSavedDohnaLockMask(this)
+            val labels = lockDefs.map { it.second }.toTypedArray()
+            val checked = BooleanArray(lockDefs.size) { idx ->
+                (lockMask and lockDefs[idx].first) != 0
+            }
+            AlertDialog.Builder(this)
+                .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
+                .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                    val bit = lockDefs[which].first
+                    lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
+                }
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    GameModifierBridge.setSavedDohnaLockMask(this, lockMask)
+                    syncTopSwitches()
+                    refreshSummaryText()
+                    Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
+                }
+                .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
+                    GameModifierBridge.setSavedDohnaLockMask(this, 0)
+                    syncTopSwitches()
+                    refreshSummaryText()
+                    Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+
         val lockDefs = listOf(
             GameModifierBridge.LOCK_PARTY_MAX_HP to tr("锁定我方满生命", "味方HP最大ロック", "Lock Party Max HP"),
             GameModifierBridge.LOCK_INFINITE_AP to tr("锁定无限AP", "AP 99ロック", "Lock Infinite AP"),
@@ -493,7 +687,7 @@ class GameModifierActivity : Activity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle(tr("实时锁定设置", "リアルタイムロック設定", "Live Locks"))
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
                 lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
@@ -540,17 +734,17 @@ class GameModifierActivity : Activity() {
         val hasBak = GameModifierBridge.hasModBackup(entry.file)
 
         val options = mutableListOf(
-            tr("一键满资源与满属性", "リソース・部隊ステータス最大", "One-Click Max Resources & Stats"),
-            tr("一键宝箱100%掉落", "宝箱100%ドロップ化", "One-Click 100% Treasure Drop"),
-            tr("一键全卡牌99叠卡与全员5星", "全カード99枚＋全キャラ★5", "One-Click All Cards x99 & 5★"),
-            tr("一键四国满兵力与人类零伤亡", "四国兵力最大＋人類被害ゼロ", "One-Click Max Armies & 0 Casualties"),
-            tr("修改资源与回合进度…", "リソース・ターン編集…", "Edit Resources & Turn…"),
-            tr("修改部队生命与属性加成…", "部隊HP・ステータス倍率編集…", "Edit Party HP & Multipliers…"),
-            tr("修改四国兵力与人类人口…", "四国兵力・人口編集…", "Edit World & Armies…"),
-            tr("修改卡牌叠卡与角色星级…", "カード枚数・キャラ★編集…", "Edit Cards & Characters…")
+            tr("一键满资源与属性", "リソース・部隊ステータス最大", "Max Resources & Stats"),
+            tr("一键宝箱100%掉落", "宝箱100%ドロップ化", "100% Treasure Drop"),
+            tr("一键全卡99叠与5星", "全カード99枚＋全キャラ★5", "All Cards x99 & 5★"),
+            tr("一键满兵力与零伤亡", "四国兵力最大＋人類被害ゼロ", "Max Armies & 0 Casualties"),
+            tr("资源与回合…", "リソース・ターン…", "Resources & Turn…"),
+            tr("部队与属性…", "部隊・ステータス…", "Party & Stats…"),
+            tr("四国与人口…", "四国・人口…", "World & Armies…"),
+            tr("卡牌与角色…", "カード・キャラ…", "Cards & Chars…")
         )
         if (hasBak) {
-            options.add(tr("恢复修改前备份", "変更前のバックアップを復元", "Restore Pre-Mod Backup"))
+            options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
         AlertDialog.Builder(this)
@@ -739,26 +933,32 @@ class GameModifierActivity : Activity() {
         onConfirm: (JSONObject) -> Unit
     ) {
         val scroll = ScrollView(this)
+        // The EditText underline is inset by 4dp, so 20dp at the end lines it up with the
+        // labels' 24dp (the dialog title's inset).
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(8))
+            setPaddingRelative(dp(24), dp(8), dp(20), dp(4))
         }
         val inputs = LinkedHashMap<String, EditText>()
         for ((key, label, defVal) in fields) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(4), 0, dp(4))
+                minimumHeight = dp(48)
             }
             val tv = TextView(this).apply {
                 text = label
+                setTextAppearance(R.style.TextAppearance_Launcher_Body)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f)
             }
             val et = EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
                 setText(defVal.toString())
                 setSingleLine(true)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f)
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginStart = dp(12)
+                }
             }
             inputs[key] = et
             row.addView(tv)
@@ -787,11 +987,11 @@ class GameModifierActivity : Activity() {
     // =========================================================================
     private fun showFontScaleDialog() {
         showScaleSliderDialog(
-            title = tr("字体大小修改", "文字サイズ変更", "Font Size"),
+            title = tr("字体大小", "文字サイズ", "Font Size"),
             description = tr(
-                "调节游戏内对话、界面按钮与卡牌说明文字缩放比例，范围 75%~160%，默认 100%，实时生效且不改动存档文件。",
-                "ゲーム内の会話・UI・カード説明の文字倍率を調整します。範囲 75%~160%、標準 100%。",
-                "Adjust in-game dialogue, UI, and card text scale from 75% to 160%. Default 100%."
+                "范围 75%~160%，默认 100%",
+                "範囲 75%~160% · 標準 100%",
+                "Range 75%~160% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,
@@ -803,9 +1003,9 @@ class GameModifierActivity : Activity() {
                 GameModifierBridge.setFontScalePercent(this, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
-                    tr("字体大小已恢复默认 100%", "文字サイズを 100% に戻しました", "Font size reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("字体大小已设为 $pct%", "文字サイズを $pct% に設定しました", "Font size set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
@@ -814,11 +1014,11 @@ class GameModifierActivity : Activity() {
 
     private fun showScrollbarScaleDialog() {
         showScaleSliderDialog(
-            title = tr("滚动条修改", "スクロールバー変更", "Scrollbar Size"),
+            title = tr("滚动条", "スクロールバー", "Scrollbar"),
             description = tr(
-                "放大游戏内列表与日志滚动条宽度、按钮及滑块触控区域，范围 100%~300%，默认 100%，实时生效方便触屏拖拽。",
-                "リストやログのスクロールバー幅とつまみ操作領域を拡大します。範囲 100%~300%、標準 100%。",
-                "Enlarge in-game scrollbar width and touch thumb area from 100% to 300%. Default 100%."
+                "范围 100%~300%，默认 100%",
+                "範囲 100%~300% · 標準 100%",
+                "Range 100%~300% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_SCROLLBAR_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_SCROLLBAR_SCALE_PCT,
@@ -830,9 +1030,9 @@ class GameModifierActivity : Activity() {
                 GameModifierBridge.setScrollbarScalePercent(this, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
-                    tr("滚动条比例已恢复默认 100%", "スクロールバーを 100% に戻しました", "Scrollbar reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("滚动条比例已设为 $pct%", "スクロールバーを $pct% に設定しました", "Scrollbar set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
@@ -856,28 +1056,40 @@ class GameModifierActivity : Activity() {
         val scroll = ScrollView(this)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(8))
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+            // Lets the slider thumb overhang into the padding at both ends of the track.
+            clipToPadding = false
         }
 
         val descTv = TextView(this).apply {
             text = description
-            setPadding(0, 0, 0, dp(10))
+            setTextAppearance(R.style.TextAppearance_Launcher_Caption)
+            textSize = 13f
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(0, 0, 0, dp(14))
         }
         container.addView(descTv)
 
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
         }
         val valueTv = TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            textSize = 16f
+            setTextAppearance(R.style.TextAppearance_Launcher_CardTitle)
         }
+        // Negative margins cancel the padding that makes room for the thumb, so the track
+        // spans the full content width.
         val seekBar = SeekBar(this).apply {
             max = maxPct - minPct
             progress = selectedPct - minPct
-            setPadding(dp(4), dp(8), dp(4), dp(12))
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = -dp(8)
+                marginEnd = -dp(8)
+            }
         }
 
         fun updateSelected(newPct: Int, syncSeek: Boolean) {
@@ -894,14 +1106,17 @@ class GameModifierActivity : Activity() {
             }
         }
 
-        val minusBtn = Button(this).apply {
-            text = "-$stepPct%"
-            setOnClickListener { updateSelected(selectedPct - stepPct, true) }
-        }
-        val plusBtn = Button(this).apply {
-            text = "+$stepPct%"
-            setOnClickListener { updateSelected(selectedPct + stepPct, true) }
-        }
+        fun stepButton(label: String, delta: Int) =
+            Button(this, null, 0, R.style.Widget_Launcher_Button_Small).apply {
+                text = label
+                minWidth = dp(60)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(8) }
+                setOnClickListener { updateSelected(selectedPct + delta, true) }
+            }
+        val minusBtn = stepButton("-$stepPct%", -stepPct)
+        val plusBtn = stepButton("+$stepPct%", stepPct)
         headerRow.addView(valueTv)
         headerRow.addView(minusBtn)
         headerRow.addView(plusBtn)
@@ -917,15 +1132,20 @@ class GameModifierActivity : Activity() {
             override fun onStopTrackingTouch(bar: SeekBar?) {}
         })
 
-        for (chunk in presets.chunked(3)) {
+        for ((rowIndex, chunk) in presets.chunked(3).withIndex()) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = if (rowIndex > 0) dp(8) else 0 }
             }
-            for (preset in chunk) {
+            for ((index, preset) in chunk.withIndex()) {
                 val btn = Button(this).apply {
                     text = "$preset%"
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = if (index > 0) dp(8) else 0
+                    }
                     setOnClickListener { updateSelected(preset, true) }
                 }
                 row.addView(btn)

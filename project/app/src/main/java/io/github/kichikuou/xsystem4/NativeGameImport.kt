@@ -18,8 +18,12 @@ object NativeGameImport {
         val parts = path.replace('\\', '/').split('/')
         if (parts.any { it.startsWith('.') || it.equals("android-port", true) || it.equals("SaveData", true) })
             return true
-        return parts.last().substringAfterLast('.', "").lowercase() in
-                setOf("exe", "dll", "lnk", "bat", "cmd", "ps1")
+        val fileName = parts.last()
+        val lowerName = fileName.lowercase()
+        if (lowerName == "opensavefolder.exe" || lowerName == "resetconfig.exe" || lowerName == "uninstaller.exe")
+            return true
+        return fileName.substringAfterLast('.', "").lowercase() in
+                setOf("dll", "lnk", "bat", "cmd", "ps1")
     }
 
     private fun children(context: Context, tree: Uri, parent: Uri): List<Document> {
@@ -40,13 +44,22 @@ object NativeGameImport {
         return result
     }
 
-    suspend fun copyTree(context: Context, tree: Uri, storage: File, progress: suspend (String) -> Unit): File {
+    suspend fun copyTree(
+        context: Context,
+        tree: Uri,
+        storage: File,
+        expectedAinName: String? = null,
+        progress: suspend (String) -> Unit
+    ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val files = children(context, tree, root)
         val ainDoc = files.firstOrNull { !it.folder && it.name.endsWith(".ain", true) }
         if (files.none { !it.folder && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true)) } ||
             ainDoc == null)
             throw GameList.InstallFailureException(R.string.directory_no_game)
+        if (!expectedAinName.isNullOrBlank() && !ainDoc.name.equals(expectedAinName, ignoreCase = true)) {
+            throw GameList.InstallFailureException(R.string.import_wrong_game)
+        }
         val baseName = ainDoc.name.substringBeforeLast('.').ifEmpty { "Game" }
         val staging = File(storage, ".import-${UUID.randomUUID()}").canonicalFile
         if (staging.parentFile != storage.canonicalFile || !staging.mkdir())
@@ -98,7 +111,7 @@ object NativeGameImport {
             currentCoroutineContext().ensureActive()
             var destination = File(storage, baseName)
             var index = 1
-            while (destination.exists()) destination = File(storage, "$baseName (${index++})")
+            while (destination.exists()) destination = File(storage, "$baseName-${index++}")
             if (!staging.renameTo(destination)) throw IOException("Cannot finish game import")
             return destination
         } finally {

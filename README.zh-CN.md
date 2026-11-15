@@ -8,15 +8,15 @@
 
 **re:xsystem4** 是基于 [xsystem4](https://github.com/nunuhara/xsystem4) 与 [xsystem4-android](https://github.com/kichikuou/xsystem4-android) 深度定制和扩展的 AliceSoft **System 4.x** Android 原生引擎。
 
-本项目通过纯 C/C++、SDL2 与 OpenGL ES 3.0 在 Android `arm64-v8a` 设备上直接解释执行 AIN 字节码并渲染原版资源，无需借助 Wine、Winlator 或任何 x86/x64 指令转译层。除兼容传统 System 4.0 游戏外，重点针对后期大型作品（如《兰斯10 -决战- / Rance X》及「日不落 MOD」等大型扩展 MOD）所使用的 **AIN v12**、**PartsEngine v12**、**FLAT v15 骨骼与粒子动画**、**SealEngine 3D**、**APEG 视频流** 以及 **SaveData v26** 进行了完整实现与移动端深度优化。
+本项目通过纯 C/C++、SDL2 与 OpenGL ES 3.0 在 Android `arm64-v8a` 设备上直接解释执行 AIN 字节码并渲染原版资源，无需借助 Wine、Winlator 或任何 x86/x64 指令转译层。除兼容传统 System 4.0 游戏外，重点针对后期大型作品（如《兰斯10 -决战- / Rance X》及「日不落 MOD」等大型扩展 MOD、《多娜多娜 一起来干坏事吧 / Dohna Dohna》等）所使用的 **AIN v12 ~ v14+**、**PartsEngine**、**FLAT v15 骨骼与粒子动画**、**SealEngine 3D**、**APEG 视频流** 以及 **SaveData v26 / v27** 进行了完整实现与移动端深度优化。
 
 ---
 
 ## 核心特性
 
-### 1. AIN v12 虚拟机、HLL 扩展与大型 MOD 深度兼容
-- **AIN v12 字节码支持**：完整解析并执行 AIN v12 操作码、委托（Delegate / `DG_*`）、局部引用管理、结构体深拷贝、`CALLFUNC` `struct_page` 继承与反射接口。
-- **HLL 模块覆盖**：完整实现并扩展 `PartsEngine`（804/804 函数全覆盖）、`SealEngine`、`ADVEngine`、`SaveData`、`RSave`、`APEG`、`SoundEngine`、`FileOperation`、`FileDialog`、`MsgSkip`、`Math`、`PassRegister`、`BanMisc` 等核心 HLL 库。
+### 1. AIN v12 ~ v14+ 虚拟机、HLL 扩展与大型 MOD 深度兼容
+- **AIN v12 ~ v14.1 字节码支持**：完整解析并执行 AIN v12 及 v14+ 操作码（含 `X_DUP`、`X_MOV`、`X_REF`、`X_ASSIGN`、`X_A_INIT`、`X_TO_STR`、接口包装器 `IFACE_WRAP` 与虚表分派 `CALLMETHOD`）、委托（Delegate / `DG_*`）、局部引用管理、结构体深拷贝、`CALLFUNC` `struct_page` 继承与反射接口。
+- **HLL 模块覆盖**：完整实现并扩展 `PartsEngine`（804/804 函数全覆盖）、`HashMap`、`SealEngine`、`ADVEngine`、`SaveData`、`RSave`、`APEG`、`SoundEngine`、`FileOperation`、`FileDialog`、`MsgSkip`、`Math`、`PassRegister`、`BanMisc` 等核心 HLL 库。
 - **大型 MOD 深度适配**：
   - 将归档索引编码进 AFA 资源 ID，并按条目 `FILETIME` 时间戳与 MOD 优先级精确解析同名 AFA 资源，确保汉化包与热更补丁（如 `CG6`）完整生效且与大型 MOD 无缝共存。
   - 优先解析规范 `.ex` 数据表，支持增量 MOD 补丁分层覆盖以及 Shift-JIS / GBK / UTF-8 多编码文本与字体自动回退渲染。
@@ -41,7 +41,10 @@
   - 应用切入后台时自动休眠音频混音线程，彻底消除后台解码耗电。
 - **APEG 视频解码与内存回收**：内置 MPEG-1 视频流与 Ogg Vorbis 音频同步解码器，主循环实时回收延迟纹理（Deferred Texture GC），加速 `SceneParty` 编成界面卡牌加载并对快进（`MsgSkip` / `Ctrl`）贴图重建节流。
 
-### 4. 在线与本地安装、多格式解压引擎、存档管理与游戏修改器
+### 4. 分游戏选择门户、在线与本地安装、存档管理与游戏修改器
+- **进入应用先选择游戏，点击进入游戏专属页面**：
+  - 首页直观展示 **《兰斯10》**、**《多娜多娜》** 及其他已导入 System 4 游戏的官方高清图标与实时安装/运行状态角标。
+  - 每款游戏拥有独立定制的专属页面：《兰斯10》专属页集成在线本体/MOD 安装、本地安装、MOD 管理、专属存档目录与全套修改器；《多娜多娜》及其他作品专属页自动精简为本地导入、独立存档目录管理及通用字号/滚动条/快进悬浮修改器，互不干扰。
 - **游戏本体与 MOD 在线 / 本地双模式安装**：
   - **游戏本体在线双线路下载（EdgeOne / Cloudflare）**：支持一键选择 **EdgeOne 线路** 或 **Cloudflare 线路** 流式下载《兰斯10》中文完整本体，支持跨线路无缝 HTTP `Range` 断点续传与逐文件 SHA-256 完整性校验，无需双倍解压暂存空间。
   - **后台保活下载与系统通知栏进度**：基于 Android 前台服务与 CPU/Wi-Fi 唤醒锁保活，切回桌面或锁屏息屏仍可满速下载与解压；支持点击进度框 **「后台」** 收起弹窗、在系统通知栏实时查看进度与网速、通知栏一键 **「暂停」**，以及安装完成/异常系统提醒。

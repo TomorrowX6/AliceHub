@@ -1,17 +1,15 @@
 package io.github.kichikuou.xsystem4
 
-import android.app.Activity
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.os.Bundle
-import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.webkit.CookieManager
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.ListView
@@ -26,11 +24,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val REQ_AUTH_FOR_PLAN = 201
-private const val REQ_AUTH_FOR_RETRY = 202
-private const val REQ_OPEN_PORTAL = 203
+private const val REQ_MOD_LOCAL_ARCHIVE = 204
+private const val REQ_MOD_LOCAL_DIR = 205
 
-class ModManagerActivity : Activity(), GameListObserver {
+// Status-card views live in mod_manager_header, added with addHeaderView. Lint only
+// sees the activity layout, so those ids look missing.
+@SuppressLint("MissingInflatedId")
+class ModManagerActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
     }
@@ -45,12 +45,9 @@ class ModManagerActivity : Activity(), GameListObserver {
     private lateinit var adapter: ModReleaseAdapter
 
     private var releases: List<ModReleaseEntry> = emptyList()
-    private var isLoggedIn: Boolean = false
     private var isLoadingCatalog: Boolean = false
     private var catalogLoadError: Boolean = false
 
-    private var pendingStepsAfterAuth: List<ModReleaseEntry>? = null
-    private var pendingRetryHolder: PendingModAuthRetry? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,18 +55,25 @@ class ModManagerActivity : Activity(), GameListObserver {
         setContentView(R.layout.activity_mod_manager)
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
+        // The status card and its buttons scroll with the list as its header. It has to be
+        // added before the adapter is set; its views are then found by findViewById() as usual.
+        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
+        listView.addHeaderView(
+            layoutInflater.inflate(R.layout.mod_manager_header, listView, false), null, false
+        )
+
         gameList = LauncherActivity.obtainGameList(this)
-        if (gameList.size == 0) {
+        val r10Candidates = GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
+        if (r10Candidates.isEmpty()) {
             Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        currentTargetPath = intent.getStringExtra(EXTRA_GAME_PATH) ?: gameList[0].path.path
+        currentTargetPath = intent.getStringExtra(EXTRA_GAME_PATH) ?: r10Candidates[0].path.path
         rebindCurrentTarget()
 
         adapter = ModReleaseAdapter()
-        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
         listView.adapter = adapter
 
         findViewById<View>(R.id.btn_mod_mgr_switch_game).setOnClickListener {
@@ -78,24 +82,26 @@ class ModManagerActivity : Activity(), GameListObserver {
         findViewById<View>(R.id.btn_mod_mgr_update).setOnClickListener {
             onPrimaryUpdateClicked()
         }
-        findViewById<View>(R.id.btn_mod_mgr_portal).setOnClickListener {
-            openPortalBrowser()
-        }
-        findViewById<View>(R.id.btn_mod_mgr_refresh).setOnClickListener {
-            loadCatalog(showRefreshedToast = true)
+        findViewById<View>(R.id.btn_mod_mgr_local).setOnClickListener {
+            showLocalModInstallDialog()
         }
         findViewById<View>(R.id.btn_mod_mgr_restore).setOnClickListener {
             confirmRestoreVanilla()
         }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
-            if (pos in releases.indices) {
-                showReleaseDetailDialog(pos)
+            val index = pos - listView.headerViewsCount
+            if (index in releases.indices) {
+                showReleaseDetailDialog(index)
             }
         }
 
         handleRestoreDialogIntent(intent)
-        loadCatalog(showRefreshedToast = false)
+        if (AppSettings.isOnlineInstallEnabled(this)) {
+            loadCatalog()
+        } else {
+            updateUi()
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -135,12 +141,22 @@ class ModManagerActivity : Activity(), GameListObserver {
     override fun onResume() {
         super.onResume()
         gameList = LauncherActivity.obtainGameList(this)
-        if (gameList.size == 0) {
+        if (GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10).isEmpty()) {
             finish()
             return
         }
         rebindCurrentTarget()
         gameList.observer = this
+        val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
+        if (!onlineEnabled) {
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
+            catalogLoadError = false
+            releases = emptyList()
+        } else if (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError) {
+            loadCatalog()
+        }
         updateUi()
         renderInstallState(gameList.installState)
 
@@ -174,102 +190,44 @@ class ModManagerActivity : Activity(), GameListObserver {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
-            REQ_AUTH_FOR_PLAN -> {
-                val steps = pendingStepsAfterAuth
-                pendingStepsAfterAuth = null
-                if (resultCode == RESULT_OK && !steps.isNullOrEmpty()) {
-                    val cookie = data?.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                        ?: CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
-                        ?: ""
-                    isLoggedIn = cookie.isNotBlank()
+            REQ_MOD_LOCAL_ARCHIVE -> {
+                val uri = if (resultCode == RESULT_OK) data?.data else null
+                if (uri != null) {
                     pendingPostResumeAction = {
                         ensureGameNotRunning(this) {
                             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
                             rebindCurrentTarget()
-                            gameList.installOnlineModPlan(currentTarget, steps, cookie)
+                            gameList.installModArchive(currentTarget, uri)
+                            updateUi()
                             renderInstallState(gameList.installState)
                         }
-                        loadCatalog(showRefreshedToast = false)
                     }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
                 }
             }
-            REQ_AUTH_FOR_RETRY -> {
-                val retry = pendingRetryHolder
-                pendingRetryHolder = null
-                if (resultCode == RESULT_OK && retry != null) {
-                    val cookie = data?.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                        ?: CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
-                        ?: ""
-                    isLoggedIn = cookie.isNotBlank()
+            REQ_MOD_LOCAL_DIR -> {
+                val uri = if (resultCode == RESULT_OK) data?.data else null
+                if (uri != null) {
                     pendingPostResumeAction = {
                         ensureGameNotRunning(this) {
                             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
                             rebindCurrentTarget()
-                            if (retry.steps != null) {
-                                gameList.installOnlineModPlan(currentTarget, retry.steps, cookie)
-                            } else if (retry.manualReq != null) {
-                                gameList.installOnlineMod(
-                                    currentTarget,
-                                    retry.manualReq.copy(cookie = cookie),
-                                    retry.manualReleaseMeta
-                                )
-                            }
+                            gameList.installModDirectory(currentTarget, uri)
+                            updateUi()
                             renderInstallState(gameList.installState)
                         }
-                        loadCatalog(showRefreshedToast = false)
                     }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
-                }
-            }
-            REQ_OPEN_PORTAL -> {
-                val dlUrl = if (resultCode == RESULT_OK) {
-                    data?.getStringExtra(ModPortalActivity.EXTRA_DOWNLOAD_URL)
-                } else null
-                val dlName = if (resultCode == RESULT_OK) {
-                    data?.getStringExtra(ModPortalActivity.EXTRA_DOWNLOAD_FILENAME)
-                } else null
-
-                if (!dlUrl.isNullOrBlank() && !dlName.isNullOrBlank() && data != null) {
-                    val cookie = data.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                    val ua = data.getStringExtra(ModPortalActivity.EXTRA_USER_AGENT)
-                    val len = data.getLongExtra(ModPortalActivity.EXTRA_CONTENT_LENGTH, -1L)
-                    val req = ModDownloadRequest(
-                        url = dlUrl,
-                        fileName = dlName,
-                        cookie = cookie,
-                        userAgent = ua,
-                        contentLength = len
-                    )
-                    val matched = matchReleaseFromUrlOrName(dlUrl, dlName)
-                    pendingPostResumeAction = {
-                        ensureGameNotRunning(this) {
-                            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            gameList.installOnlineMod(currentTarget, req, matched)
-                            renderInstallState(gameList.installState)
-                        }
-                        loadCatalog(showRefreshedToast = false)
-                    }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
                 }
             }
         }
     }
 
+    private fun rance10Items(): List<Item> =
+        GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
+
     private fun rebindCurrentTarget() {
-        var found: Item? = null
-        for (i in 0 until gameList.size) {
-            val candidate = gameList[i]
-            if (candidate.path.path == currentTargetPath) {
-                found = candidate
-                break
-            }
-        }
-        currentTarget = found ?: gameList[0]
+        val candidates = rance10Items()
+        if (candidates.isEmpty()) return
+        currentTarget = candidates.firstOrNull { it.path.path == currentTargetPath } ?: candidates[0]
         currentTargetPath = currentTarget.path.path
     }
 
@@ -278,26 +236,30 @@ class ModManagerActivity : Activity(), GameListObserver {
         return if (idx > 0) name.substring(0, idx) else name
     }
 
-    private fun loadCatalog(showRefreshedToast: Boolean) {
+    private fun loadCatalog() {
+        if (!AppSettings.isOnlineInstallEnabled(this)) {
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
+            catalogLoadError = false
+            releases = emptyList()
+            updateUi()
+            return
+        }
         catalogJob?.cancel()
         isLoadingCatalog = true
         catalogLoadError = false
         updateUi()
 
-        val cookie = CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
         catalogJob = scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
-                    OnlineInstaller.fetchModCatalog(cookie)
+                val loaded = withContext(Dispatchers.IO) {
+                    OnlineInstaller.fetchModCatalog()
                 }
-                releases = result.releases
-                isLoggedIn = result.isLoggedIn
+                releases = loaded
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
-                if (showRefreshedToast) {
-                    Toast.makeText(this@ModManagerActivity, R.string.mod_mgr_refreshed, Toast.LENGTH_SHORT).show()
-                }
             } catch (_: Throwable) {
                 isLoadingCatalog = false
                 catalogLoadError = true
@@ -307,39 +269,57 @@ class ModManagerActivity : Activity(), GameListObserver {
     }
 
     private fun updateUi() {
+        val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
-        val gameTitle = currentTarget.cleanGameTitle()
-
-        findViewById<TextView>(R.id.mod_mgr_title).text = when {
-            !hasMod -> getString(R.string.mod_mgr_status_none, gameTitle)
-            installed != null && installed.version.isNotBlank() ->
-                getString(R.string.mod_mgr_status_ver, gameTitle, installed.version)
-            else -> getString(R.string.mod_mgr_status_installed, gameTitle)
+        val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
+        val displayVer = when {
+            installedIdx in releases.indices -> releases[installedIdx].version
+            installed != null && installed.version.isNotBlank() -> installed.version
+            else -> ""
         }
 
-        val authLabel = getString(if (isLoggedIn) R.string.mod_mgr_logged_in else R.string.mod_mgr_not_logged_in)
-        findViewById<TextView>(R.id.mod_mgr_summary).text = when {
-            isLoadingCatalog && releases.isEmpty() -> getString(R.string.mod_mgr_loading)
-            catalogLoadError && releases.isEmpty() -> getString(R.string.mod_mgr_load_failed)
-            releases.isNotEmpty() -> getString(R.string.mod_mgr_summary_format, releases[0].version, authLabel)
-            else -> authLabel
+        findViewById<TextView>(R.id.mod_mgr_title).text =
+            getString(R.string.save_manager_current_dir, currentTarget.path.name)
+
+        val statusPart = when {
+            !hasMod -> getString(R.string.mod_mgr_status_none)
+            displayVer.isNotBlank() -> getString(R.string.mod_mgr_status_ver, displayVer)
+            else -> getString(R.string.mod_mgr_status_installed)
         }
-
-        findViewById<View>(R.id.btn_mod_mgr_switch_game).visibility =
-            if (gameList.size > 1) View.VISIBLE else View.GONE
-
-        findViewById<Button>(R.id.btn_mod_mgr_portal).text =
-            getString(if (isLoggedIn) R.string.mod_mgr_btn_portal_browse else R.string.mod_mgr_btn_portal)
+        val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
+        summaryView.text = if (onlineEnabled && releases.isNotEmpty()) {
+            "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].version)}"
+        } else {
+            statusPart
+        }
+        summaryView.visibility = View.VISIBLE
 
         val isInstalling = gameList.installState is InstallState.Installing
-        findViewById<Button>(R.id.btn_mod_mgr_restore).isEnabled = hasMod && !isInstalling
+        val btnLocal = findViewById<Button>(R.id.btn_mod_mgr_local)
+        findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isInstalling
+        btnLocal.isEnabled = !isInstalling
+        findViewById<Button>(R.id.btn_mod_mgr_restore).isEnabled =
+            gameList.canRestoreVanilla(currentTarget) && !isInstalling
 
         val btnUpdate = findViewById<Button>(R.id.btn_mod_mgr_update)
+        val showUpdateBtn = onlineEnabled || isInstalling
+        btnUpdate.visibility = if (showUpdateBtn) View.VISIBLE else View.GONE
+        val targetStartMargin = if (showUpdateBtn) UiKit.dpInt(this, 4) else 0
+        (btnLocal.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            if (lp.marginStart != targetStartMargin) {
+                lp.marginStart = targetStartMargin
+                btnLocal.layoutParams = lp
+            }
+        }
+
         when {
             isInstalling -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_downloading)
                 btnUpdate.isEnabled = true
+            }
+            !onlineEnabled -> {
+                btnUpdate.isEnabled = false
             }
             isLoadingCatalog && releases.isEmpty() -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_checking)
@@ -354,11 +334,13 @@ class ModManagerActivity : Activity(), GameListObserver {
                 if (plan == null) {
                     btnUpdate.text = getString(R.string.mod_mgr_btn_up_to_date)
                     btnUpdate.isEnabled = false
-                } else if (!hasMod) {
-                    btnUpdate.text = getString(R.string.mod_mgr_btn_install_latest)
-                    btnUpdate.isEnabled = true
                 } else {
-                    btnUpdate.text = getString(R.string.mod_mgr_btn_update_latest)
+                    val baseLabel = getString(
+                        if (!hasMod) R.string.mod_mgr_btn_install_latest else R.string.mod_mgr_btn_update_latest
+                    )
+                    val planBytes = plan.steps.sumOf { it.expectedSize.coerceAtLeast(0L) }
+                    val sizeStr = OnlineInstaller.formatSize(planBytes)
+                    btnUpdate.text = if (sizeStr.isNotEmpty()) "$baseLabel · $sizeStr" else baseLabel
                     btnUpdate.isEnabled = true
                 }
             }
@@ -369,33 +351,79 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         val emptyView = findViewById<TextView>(R.id.mod_mgr_empty_view)
-        val listView = findViewById<ListView>(R.id.mod_mgr_version_list)
         if (releases.isEmpty()) {
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
-            emptyView.text = when {
+            val label = when {
+                !onlineEnabled -> getString(R.string.mod_mgr_online_disabled)
                 isLoadingCatalog -> getString(R.string.mod_mgr_loading)
                 catalogLoadError -> getString(R.string.mod_mgr_load_failed)
                 else -> getString(R.string.mod_mgr_empty)
             }
+            UiKit.bindEmptyState(emptyView, R.drawable.ic_extension, label)
         } else {
             emptyView.visibility = View.GONE
-            listView.visibility = View.VISIBLE
         }
 
         adapter.notifyDataSetChanged()
     }
 
     private fun showSwitchGameDialog() {
-        if (gameList.installState is InstallState.Installing || gameList.size <= 1) return
-        val names = Array(gameList.size) { gameList[it].name }
+        val candidates = rance10Items()
+        if (gameList.installState is InstallState.Installing || candidates.isEmpty()) return
+        val names = Array(candidates.size) { idx ->
+            val it = candidates[idx]
+            val ver = if (gameList.hasInstalledMod(it)) {
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+            } else {
+                null
+            }
+            if (ver != null) "${it.path.name} · $ver" else it.path.name
+        }
+        val curIdx = candidates.indexOfFirst { it.path.path == currentTargetPath }.coerceAtLeast(0)
         AlertDialog.Builder(this)
             .setTitle(R.string.mod_select_game_title)
-            .setItems(names) { _, which ->
-                if (which in 0 until gameList.size) {
-                    currentTarget = gameList[which]
+            .setSingleChoiceItems(names, curIdx) { dlg, which ->
+                if (which in candidates.indices) {
+                    currentTarget = candidates[which]
                     currentTargetPath = currentTarget.path.path
                     updateUi()
+                }
+                dlg.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showLocalModInstallDialog() {
+        if (gameList.installState is InstallState.Installing) {
+            gameList.restoreInstallProgress()
+            renderInstallState(gameList.installState)
+            return
+        }
+        val options = arrayOf(
+            getString(R.string.mod_opt_zip),
+            getString(R.string.mod_opt_dir)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.mod_local_dialog_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivityForResult(
+                            Intent.createChooser(i, getString(R.string.mod_choose_zip)),
+                            REQ_MOD_LOCAL_ARCHIVE
+                        )
+                    }
+                    1 -> {
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }, REQ_MOD_LOCAL_DIR)
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -409,33 +437,21 @@ class ModManagerActivity : Activity(), GameListObserver {
             return
         }
         if (catalogLoadError && releases.isEmpty()) {
-            loadCatalog(showRefreshedToast = false)
+            loadCatalog()
             return
         }
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
         val plan = OnlineInstaller.computeUpdatePlan(releases, hasMod, installed) ?: return
-        executeStepsWithAuthCheck(plan.steps)
-    }
-
-    private fun openPortalBrowser() {
-        if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
-            return
-        }
-        val intent = Intent(this, ModPortalActivity::class.java)
-            .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, false)
-            .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, currentTarget.cleanGameTitle())
-        startActivityForResult(intent, REQ_OPEN_PORTAL)
+        executeSteps(plan.steps)
     }
 
     private fun confirmRestoreVanilla() {
         if (gameList.installState is InstallState.Installing) return
-        if (!gameList.hasInstalledMod(currentTarget)) return
+        if (!gameList.canRestoreVanilla(currentTarget)) return
         AlertDialog.Builder(this)
-            .setTitle(R.string.mod_opt_restore_vanilla)
-            .setMessage(getString(R.string.mod_mgr_restore_confirm, currentTarget.cleanGameTitle()))
+            .setTitle(R.string.action_uninstall_mod)
+            .setMessage(R.string.mod_mgr_restore_confirm)
             .setPositiveButton(R.string.ok) { _, _ ->
                 ensureGameNotRunning(this) {
                     if (gameList.restoreMod(currentTarget)) {
@@ -461,9 +477,35 @@ class ModManagerActivity : Activity(), GameListObserver {
         val installed = gameList.getInstalledModInfo(currentTarget)
         val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
         val hasMatchingBase = OnlineInstaller.hasMatchingBaseForPatch(releases, index, hasMod, installed)
+        val comboSteps = if (entry.isPatch) {
+            OnlineInstaller.computeStepsForSelectedRelease(
+                releases = releases,
+                targetIdx = index,
+                hasMod = hasMod,
+                installed = installed,
+                includeBaseForPatch = true
+            )
+        } else {
+            emptyList()
+        }
+        val patchOnlySteps = if (entry.isPatch) {
+            OnlineInstaller.computeStepsForSelectedRelease(
+                releases = releases,
+                targetIdx = index,
+                hasMod = hasMod,
+                installed = installed,
+                includeBaseForPatch = false
+            )
+        } else {
+            emptyList()
+        }
 
         val msg = buildString {
             append(getString(R.string.mod_mgr_detail_file, entry.fileName))
+            val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
+            if (sizeStr.isNotEmpty()) {
+                append("\n").append(getString(R.string.mod_mgr_detail_size, sizeStr))
+            }
             if (entry.formattedDate.isNotEmpty()) {
                 append("\n").append(getString(R.string.mod_mgr_detail_date, entry.formattedDate))
             }
@@ -475,10 +517,13 @@ class ModManagerActivity : Activity(), GameListObserver {
                 append(getString(R.string.mod_mgr_detail_type_full))
             }
             if (entry.isPatch && !hasMatchingBase && !entry.baseVersion.isNullOrBlank()) {
-                append("\n\n").append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
+                append("\n\n")
+                append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
             }
-            append("\n\n")
-            append(entry.changelog.ifBlank { getString(R.string.mod_mgr_detail_no_changelog) })
+            if (entry.changelog.isNotBlank()) {
+                append("\n\n")
+                append(entry.changelog)
+            }
         }
 
         val builder = AlertDialog.Builder(this)
@@ -493,24 +538,10 @@ class ModManagerActivity : Activity(), GameListObserver {
                 else -> getString(R.string.mod_mgr_action_install)
             }
             builder.setPositiveButton(posLabel) { _, _ ->
-                executeStepsWithAuthCheck(listOf(entry))
+                executeSteps(listOf(entry))
             }
         } else {
-            val comboSteps = OnlineInstaller.computeStepsForSelectedRelease(
-                releases = releases,
-                targetIdx = index,
-                hasMod = hasMod,
-                installed = installed,
-                includeBaseForPatch = true
-            )
-            val patchOnlySteps = OnlineInstaller.computeStepsForSelectedRelease(
-                releases = releases,
-                targetIdx = index,
-                hasMod = hasMod,
-                installed = installed,
-                includeBaseForPatch = false
-            )
-
+            val patchSteps = patchOnlySteps.ifEmpty { listOf(entry) }
             if (hasMatchingBase) {
                 val posLabel = if (installedIdx == index) {
                     getString(R.string.mod_mgr_action_reinstall_patch)
@@ -518,23 +549,23 @@ class ModManagerActivity : Activity(), GameListObserver {
                     getString(R.string.mod_mgr_action_apply_patch)
                 }
                 builder.setPositiveButton(posLabel) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlySteps)
+                    executeSteps(patchSteps)
                 }
                 if (comboSteps.size > 1) {
                     builder.setNeutralButton(R.string.mod_mgr_action_combo_reinstall) { _, _ ->
-                        executeStepsWithAuthCheck(comboSteps)
+                        executeSteps(comboSteps)
                     }
                 }
             } else if (comboSteps.size > 1) {
                 builder.setPositiveButton(R.string.mod_mgr_action_combo_install) { _, _ ->
-                    executeStepsWithAuthCheck(comboSteps)
+                    executeSteps(comboSteps)
                 }
                 builder.setNeutralButton(R.string.mod_mgr_action_patch_only) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlySteps)
+                    executeSteps(patchSteps)
                 }
             } else {
                 builder.setPositiveButton(R.string.mod_mgr_action_apply_patch) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlySteps)
+                    executeSteps(patchSteps)
                 }
             }
         }
@@ -542,33 +573,15 @@ class ModManagerActivity : Activity(), GameListObserver {
         builder.show()
     }
 
-    private fun executeStepsWithAuthCheck(steps: List<ModReleaseEntry>) {
+    private fun executeSteps(steps: List<ModReleaseEntry>) {
+        if (!AppSettings.isOnlineInstallEnabled(this)) return
         if (steps.isEmpty() || gameList.installState is InstallState.Installing) return
         ensureGameNotRunning(this) {
-            val curCookie = CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL) ?: ""
-            if (isLoggedIn && curCookie.isNotBlank()) {
-                InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                rebindCurrentTarget()
-                gameList.installOnlineModPlan(currentTarget, steps, curCookie)
-                renderInstallState(gameList.installState)
-            } else {
-                pendingStepsAfterAuth = steps
-                val intent = Intent(this, ModPortalActivity::class.java)
-                    .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, true)
-                    .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, steps.last().version)
-                startActivityForResult(intent, REQ_AUTH_FOR_PLAN)
-            }
+            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+            rebindCurrentTarget()
+            gameList.installOnlineModPlan(currentTarget, steps)
+            renderInstallState(gameList.installState)
         }
-    }
-
-    private fun matchReleaseFromUrlOrName(url: String, fileName: String): ModReleaseEntry? {
-        if (releases.isEmpty()) return null
-        val idMatch = Regex("""/files/(\d+)/download""").find(url)
-        val fid = idMatch?.groupValues?.get(1)?.toIntOrNull()
-        if (fid != null) {
-            releases.firstOrNull { it.fileId == fid }?.let { return it }
-        }
-        return releases.firstOrNull { it.fileName.equals(fileName, ignoreCase = true) }
     }
 
     override fun onInstallProgress(path: String) {
@@ -626,35 +639,12 @@ class ModManagerActivity : Activity(), GameListObserver {
                 dismissProgressDialog()
                 rebindCurrentTarget()
                 updateUi()
-                val retry = if (state.msgId == R.string.online_mod_auth_expired) {
-                    gameList.pendingModAuthRetry
-                } else {
-                    null
-                }
-                gameList.clearPendingModAuthRetry()
                 gameList.consumeInstallResult()
-                if (retry != null) {
-                    isLoggedIn = false
-                    updateUi()
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.online_mod_auth_dialog_title)
-                        .setMessage(R.string.online_mod_auth_expired_retry_msg)
-                        .setPositiveButton(R.string.online_mod_portal_btn_auth) { _, _ ->
-                            pendingRetryHolder = retry
-                            val intent = Intent(this, ModPortalActivity::class.java)
-                                .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, true)
-                                .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, retry.label)
-                            startActivityForResult(intent, REQ_AUTH_FOR_RETRY)
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.error)
-                        .setMessage(state.msgId)
-                        .setPositiveButton(R.string.ok, null)
-                        .show()
-                }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.error)
+                    .setMessage(state.msgId)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
             }
         }
     }
@@ -724,38 +714,40 @@ class ModManagerActivity : Activity(), GameListObserver {
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val view = convertView ?: LayoutInflater.from(this@ModManagerActivity)
-                .inflate(android.R.layout.simple_list_item_2, parent, false)
+                .inflate(R.layout.list_item_entry, parent, false)
             val entry = releases[position]
             val hasMod = gameList.hasInstalledMod(currentTarget)
             val installed = gameList.getInstalledModInfo(currentTarget)
             val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
             val isCurrent = hasMod && installedIdx == position
-            val isCurrentBase = hasMod && !isCurrent && !entry.isPatch &&
-                installed != null && installed.baseFileId > 0 && installed.baseFileId == entry.fileId
+            val isCurrentBase = hasMod && !isCurrent && !entry.isPatch && installed != null && (
+                (installed.baseFileId > 0 && installed.baseFileId == entry.fileId) ||
+                    (!installed.baseVersion.isNullOrBlank() &&
+                        OnlineInstaller.normalizeModVersionKey(installed.baseVersion) ==
+                        OnlineInstaller.normalizeModVersionKey(entry.version))
+                )
 
-            val tags = mutableListOf<String>()
+            val tags = mutableListOf<UiKit.Chip>()
             if (position == 0) {
-                tags.add(getString(R.string.mod_mgr_tag_latest))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_latest), UiKit.Tone.PRIMARY))
             }
             if (isCurrent) {
-                tags.add(getString(R.string.mod_mgr_tag_installed))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_installed), UiKit.Tone.SUCCESS))
             } else if (isCurrentBase) {
-                tags.add(getString(R.string.mod_mgr_tag_base))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_base), UiKit.Tone.SUCCESS))
             }
             if (entry.isPatch) {
-                tags.add(getString(R.string.mod_mgr_tag_patch))
+                tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_patch), UiKit.Tone.NEUTRAL))
             }
 
-            val text1 = view.findViewById<TextView>(android.R.id.text1)
-            val text2 = view.findViewById<TextView>(android.R.id.text2)
-
-            text1.text = if (tags.isNotEmpty()) {
-                "${entry.version}  [${tags.joinToString(" · ")}]"
-            } else {
-                entry.version
-            }
+            view.findViewById<TextView>(R.id.title).text = entry.version
+            UiKit.bindChips(view, tags)
 
             val metaParts = mutableListOf<String>()
+            val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
+            if (sizeStr.isNotEmpty()) {
+                metaParts.add(sizeStr)
+            }
             if (entry.formattedDate.isNotEmpty()) {
                 metaParts.add(entry.formattedDate)
             }
@@ -764,9 +756,7 @@ class ModManagerActivity : Activity(), GameListObserver {
             }
             metaParts.add(entry.fileName)
 
-            text2.maxLines = 1
-            text2.ellipsize = TextUtils.TruncateAt.END
-            text2.text = metaParts.joinToString(" · ")
+            view.findViewById<TextView>(R.id.meta).text = metaParts.joinToString(" · ")
             return view
         }
     }

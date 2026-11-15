@@ -334,14 +334,25 @@ static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rec
 		parts_render_pass_end();
 }
 
+static void parts_get_effective_add_color(struct parts *parts, vec3 out)
+{
+	float r = 0.0f, g = 0.0f, b = 0.0f;
+	for (struct parts *p = parts; p; p = p->parent) {
+		float sign = p->sub_color_mode ? -1.0f : 1.0f;
+		r += sign * (p->local.add_color.r / 255.0f);
+		g += sign * (p->local.add_color.g / 255.0f);
+		b += sign * (p->local.add_color.b / 255.0f);
+	}
+	out[0] = min(1.0f, max(-1.0f, r));
+	out[1] = min(1.0f, max(-1.0f, g));
+	out[2] = min(1.0f, max(-1.0f, b));
+}
+
 static void parts_render_text(struct parts *parts, struct parts_text *t,
 		struct parts_message_window *message)
 {
-	vec3 add_color = {
-		parts->global.add_color.r / 255.0f,
-		parts->global.add_color.g / 255.0f,
-		parts->global.add_color.b / 255.0f
-	};
+	vec3 add_color;
+	parts_get_effective_add_color(parts, add_color);
 	vec3 multiply_color = {
 		parts->global.multiply_color.r / 255.0f,
 		parts->global.multiply_color.g / 255.0f,
@@ -352,47 +363,77 @@ static void parts_render_text(struct parts *parts, struct parts_text *t,
 
 	mat4 base;
 	parts_world_matrix(parts, base);
-	int x = t->common.origin_offset.x;
-	int y = t->common.origin_offset.y;
-	for (unsigned i = 0; i < t->nr_lines; i++) {
+	bool any_edge = false;
+	for (unsigned i = 0; i < t->nr_lines && !any_edge; i++) {
 		struct parts_text_line *line = &t->lines[i];
 		for (int j = 0; j < line->nr_chars; j++) {
-			struct parts_text_char *ch = &line->chars[j];
-			float alpha = blend_rate;
-			if (message && !message->fixed) {
-				double time = message->elapsed - ch->fade_start;
-				alpha *= time < 0 ? 0 : ch->fade_time > 0 ? min(1., time / ch->fade_time) : 1.;
+			if (line->chars[j].t_edge.handle) {
+				any_edge = true;
+				break;
 			}
-			Rectangle r = { 0, 0, ch->t.w, ch->t.h };
-			if (message) {
-				Rectangle a = message->text_area;
-				if (a.h > 0 && parts_get_modifier_font_scale() > 100) {
-					int bg_avail = parts->states[0].common.h - message->text_area.y;
-					if (bg_avail > a.h)
-						a.h = bg_avail;
-				}
-				a.x += parts->states[0].common.origin_offset.x;
-				a.y += parts->states[0].common.origin_offset.y;
-				if (a.w > 0) { r.x = max(0, a.x - x); r.w = min(ch->t.w, a.x + a.w - x) - r.x; }
-				if (a.h > 0) { r.y = max(0, a.y - y); r.h = min(ch->t.h, a.y + a.h - y) - r.y; }
-			}
-			if (alpha > 0 && r.w > 0 && r.h > 0 && ch->t.handle) {
-				mat4 mw_transform;
-				for (int row = 0; row < 4; row++) {
-					float b0 = base[0][row];
-					float b1 = base[1][row];
-					mw_transform[0][row] = ch->t.w * b0;
-					mw_transform[1][row] = ch->t.h * b1;
-					mw_transform[2][row] = base[2][row];
-					mw_transform[3][row] = base[3][row] + x * b0 + y * b1;
-				}
-				parts_render_texture(&ch->t, mw_transform, &r, alpha, add_color,
-						multiply_color, 0, alpha_clipper);
-			}
-			x += ch->advance;
 		}
-		x = t->common.origin_offset.x;
-		y += line->height + line->line_space;
+	}
+
+	for (int pass = any_edge ? 0 : 1; pass < 2; pass++) {
+		int x = t->common.origin_offset.x;
+		int y = t->common.origin_offset.y;
+		for (unsigned i = 0; i < t->nr_lines; i++) {
+			struct parts_text_line *line = &t->lines[i];
+			for (int j = 0; j < line->nr_chars; j++) {
+				struct parts_text_char *ch = &line->chars[j];
+				Texture *tex = (pass == 0) ? &ch->t_edge : &ch->t;
+				if (!tex->handle) {
+					x += ch->advance;
+					continue;
+				}
+				float alpha = blend_rate;
+				if (message && !message->fixed) {
+					double time = message->elapsed - ch->fade_start;
+					alpha *= time < 0 ? 0 : ch->fade_time > 0 ? min(1., time / ch->fade_time) : 1.;
+				}
+				int draw_x = x - ch->pad.x;
+				int draw_y = y - ch->pad.y;
+				Rectangle r = { 0, 0, tex->w, tex->h };
+				if (message) {
+					Rectangle a = message->text_area;
+					if (a.h > 0 && parts_get_modifier_font_scale() > 100) {
+						int bg_avail = parts->states[0].common.h - message->text_area.y;
+						if (bg_avail > a.h)
+							a.h = bg_avail;
+					}
+					a.x += parts->states[0].common.origin_offset.x;
+					a.y += parts->states[0].common.origin_offset.y;
+					if (a.w > 0) {
+						int ax0 = a.x - ch->pad.x;
+						int ax1 = a.x + a.w + ch->pad.x;
+						r.x = max(0, ax0 - draw_x);
+						r.w = min(tex->w, ax1 - draw_x) - r.x;
+					}
+					if (a.h > 0) {
+						int ay0 = a.y - ch->pad.y;
+						int ay1 = a.y + a.h + ch->pad.y;
+						r.y = max(0, ay0 - draw_y);
+						r.h = min(tex->h, ay1 - draw_y) - r.y;
+					}
+				}
+				if (alpha > 0 && r.w > 0 && r.h > 0) {
+					mat4 mw_transform;
+					for (int row = 0; row < 4; row++) {
+						float b0 = base[0][row];
+						float b1 = base[1][row];
+						mw_transform[0][row] = tex->w * b0;
+						mw_transform[1][row] = tex->h * b1;
+						mw_transform[2][row] = base[2][row];
+						mw_transform[3][row] = base[3][row] + draw_x * b0 + draw_y * b1;
+					}
+					parts_render_texture(tex, mw_transform, &r, alpha, add_color,
+							multiply_color, 0, alpha_clipper);
+				}
+				x += ch->advance;
+			}
+			x = t->common.origin_offset.x;
+			y += line->height + line->line_space;
+		}
 	}
 }
 
@@ -426,11 +467,8 @@ static void parts_render_cg(struct parts *parts, struct parts_common *common)
 		r = (Rectangle) { 0, 0, common->texture.w, common->texture.h };
 	}
 
-	vec3 add_color = {
-		parts->global.add_color.r / 255.0f,
-		parts->global.add_color.g / 255.0f,
-		parts->global.add_color.b / 255.0f
-	};
+	vec3 add_color;
+	parts_get_effective_add_color(parts, add_color);
 	vec3 multiply_color = {
 		parts->global.multiply_color.r / 255.0f,
 		parts->global.multiply_color.g / 255.0f,
@@ -769,9 +807,7 @@ static void parts_render_flat(struct parts *parts, struct parts_flat *f)
 	parts_world_matrix(parts, ctx.matrix);
 	glm_translate(ctx.matrix, (vec3){f->common.origin_offset.x, f->common.origin_offset.y, 0});
 	ctx.alpha = parts->global.alpha / 255.0f;
-	ctx.add_color[0] = parts->global.add_color.r / 255.0f;
-	ctx.add_color[1] = parts->global.add_color.g / 255.0f;
-	ctx.add_color[2] = parts->global.add_color.b / 255.0f;
+	parts_get_effective_add_color(parts, ctx.add_color);
 	ctx.mul_color[0] = parts->global.multiply_color.r / 255.0f;
 	ctx.mul_color[1] = parts->global.multiply_color.g / 255.0f;
 	ctx.mul_color[2] = parts->global.multiply_color.b / 255.0f;
@@ -1224,7 +1260,7 @@ void parts_render(struct parts *parts)
 		struct parts_widget *w = parts->widget;
 		bool has_skin = w->cg_name->size || w->flat_name->size
 			|| (parts->component_type == 1 && (w->override_cg[w->checked]->size || w->override_flat[w->checked]->size));
-		if ((parts->component_type == 1 && !w->button_mode) || !has_skin) {
+		if (parts->component_type == 0 || !w->button_mode || !has_skin) {
 			struct parts_text label = w->label.text;
 			int mode = w->text_origin >= 1 && w->text_origin <= 9 ? w->text_origin - 1 : 4;
 			label.common.origin_offset.x = label_box->origin_offset.x

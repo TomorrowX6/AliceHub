@@ -79,6 +79,7 @@ struct archive_data;
 enum cg_type cg_check_format(uint8_t *data);
 bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst);
 bool cg_get_metrics(struct archive *ar, int no, struct cg_metrics *dst);
+bool cg_get_metrics_file(const char *filename, struct cg_metrics *dst);
 struct cg *cg_load_data(struct archive_data *dfile);
 struct cg *cg_load(struct archive *ar, int no);
 struct cg *cg_load_file(const char *filename);

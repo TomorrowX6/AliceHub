@@ -26,7 +26,7 @@ android {
     compileSdkVersion 34
     ndkVersion '26.1.10909125'
     defaultConfig {
-        applicationId 'io.github.rance10.nativeport'
+        applicationId 'io.github.alicehub'
         minSdkVersion 26
         targetSdkVersion 34
         ndk { abiFilters 'arm64-v8a' }

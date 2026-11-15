@@ -144,9 +144,39 @@ static bool asset_cg_format_special_org_fallback(const char *name, char *buf, si
 	return false;
 }
 
+static char *asset_cg_save_path(const char *name)
+{
+	if (!name || strncmp(name, "<save>", 6) != 0)
+		return NULL;
+	const char *rel = name + 6;
+	while (*rel == '/' || *rel == '\\')
+		rel++;
+	char *resolved = savedir_path(rel);
+	if (resolved && !file_exists(resolved)) {
+		char *icase = path_get_icase(resolved);
+		if (icase) {
+			free(resolved);
+			resolved = icase;
+		}
+	}
+	return resolved;
+}
+
 bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out)
 {
-	if (!assets[type] || !name || !name[0])
+	if (!name || !name[0])
+		return false;
+	if (type == ASSET_CG) {
+		char *save_path = asset_cg_save_path(name);
+		if (save_path) {
+			bool exists = file_exists(save_path);
+			free(save_path);
+			if (exists && id_out)
+				*id_out = 0;
+			return exists;
+		}
+	}
+	if (!assets[type])
 		return false;
 	if (!assets[type]->exists_by_name)
 		ERROR("exists_by_name not supported on this archive type");
@@ -192,6 +222,14 @@ struct cg *asset_cg_load(int id)
 
 struct cg *asset_cg_load_by_name(const char *name, int *id_out)
 {
+	char *save_path = asset_cg_save_path(name);
+	if (save_path) {
+		if (id_out)
+			*id_out = 0;
+		struct cg *cg = cg_load_file(save_path);
+		free(save_path);
+		return cg;
+	}
 	struct archive_data *data = asset_get_by_name(ASSET_CG, name, id_out);
 	if (!data)
 		return NULL;
@@ -212,6 +250,12 @@ bool asset_cg_get_metrics(int id, struct cg_metrics *metrics)
 
 bool asset_cg_get_metrics_by_name(const char *name, struct cg_metrics *metrics)
 {
+	char *save_path = asset_cg_save_path(name);
+	if (save_path) {
+		bool r = cg_get_metrics_file(save_path, metrics);
+		free(save_path);
+		return r;
+	}
 	struct archive_data *data = asset_get_by_name(ASSET_CG, name, NULL);
 	if (!data)
 		return false;

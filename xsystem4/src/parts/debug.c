@@ -130,6 +130,7 @@ static void parts_construction_process_to_json(struct parts_construction_process
 		[PARTS_CP_MUL_FILTER] = "mul_filter",
 		[PARTS_CP_HBLUR_FILTER] = "hblur_filter",
 		[PARTS_CP_VBLUR_FILTER] = "vblur_filter",
+		[PARTS_CP_V14] = "v14",
 	};
 
 	cJSON *ops, *tmp;
@@ -239,6 +240,13 @@ static void parts_construction_process_to_json(struct parts_construction_process
 			cJSON_AddNumberToObject(obj, "h", op->filter.h);
 			cJSON_AddNumberToObject(obj, "blur", op->filter.blur);
 			cJSON_AddBoolToObject(obj, "full_size", op->filter.full_size);
+			break;
+		case PARTS_CP_V14:
+			cJSON_AddNumberToObject(obj, "command", op->v14.command);
+			cJSON_AddNumberToObject(obj, "dx", op->v14.dx);
+			cJSON_AddNumberToObject(obj, "dy", op->v14.dy);
+			cJSON_AddNumberToObject(obj, "dw", op->v14.dw);
+			cJSON_AddNumberToObject(obj, "dh", op->v14.dh);
 			break;
 		}
 	}

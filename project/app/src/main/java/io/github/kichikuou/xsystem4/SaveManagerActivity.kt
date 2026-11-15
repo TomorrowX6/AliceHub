@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlertDialog
@@ -78,19 +79,38 @@ private class SaveFileAdapter(
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
         val view = convertView ?: LayoutInflater.from(activity)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.list_item_entry, parent, false)
         val entry = entries[position]
-        val text1 = view.findViewById<TextView>(android.R.id.text1)
-        val text2 = view.findViewById<TextView>(android.R.id.text2)
 
-        text1.text = if (entry.tag.isNotEmpty()) {
-            "${entry.relativePath}  [${entry.tag}]"
-        } else {
-            entry.relativePath
-        }
+        view.findViewById<TextView>(R.id.title).text = entry.relativePath
+        UiKit.bindChips(
+            view,
+            if (entry.tag.isNotEmpty()) {
+                listOf(UiKit.Chip(entry.tag, tagTone(entry.file.name)))
+            } else {
+                emptyList()
+            }
+        )
         val dateStr = dateFormat.format(Date(entry.lastModified))
-        text2.text = "${formatFileSize(entry.sizeBytes)} · $dateStr"
+        view.findViewById<TextView>(R.id.meta).text = "${formatFileSize(entry.sizeBytes)} · $dateStr"
         return view
+    }
+
+    /** Game-wide saves stand out from the per-slot ones; crash logs get a warning tint. */
+    private fun tagTone(fileName: String): UiKit.Tone {
+        val lower = fileName.lowercase(Locale.ROOT)
+        return when {
+            lower in GLOBAL_SAVE_FILES -> UiKit.Tone.PRIMARY
+            lower.endsWith(".log") -> UiKit.Tone.WARNING
+            else -> UiKit.Tone.NEUTRAL
+        }
+    }
+
+    private companion object {
+        val GLOBAL_SAVE_FILES = setOf(
+            "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
+            "afcgmode.asd", "gameenquete.asd", "commonsystemdata.sav"
+        )
     }
 }
 
@@ -124,19 +144,19 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         onProceed()
         return
     }
-    val lang = Locale.getDefault().language
+    val lang = AppSettings.resolveLocale(activity).language
     val title = when {
-        lang.startsWith("zh") -> "游戏正在后台运行"
+        lang.startsWith("zh") -> "游戏正在运行"
         lang.startsWith("ja") -> "ゲームが実行中です"
         else -> "Game Is Running"
     }
     val message = when {
-        lang.startsWith("zh") -> "检测到游戏进程正在后台运行。直接导入、删除或离线修改存档可能会与后台游戏冲突或被覆盖。\n是否先结束后台游戏进程再继续？"
-        lang.startsWith("ja") -> "バックグラウンドでゲームが実行中です。セーブデータの競合を防ぐため、ゲームを終了してから続行しますか？"
-        else -> "The game is running in the background and may conflict with offline save changes.\nClose the background game process and continue?"
+        lang.startsWith("zh") -> "请先结束后台游戏再执行此操作。"
+        lang.startsWith("ja") -> "バックグラウンドのゲームを終了して続行しますか？"
+        else -> "Close the background game and continue?"
     }
     val confirmLabel = when {
-        lang.startsWith("zh") -> "结束游戏并继续"
+        lang.startsWith("zh") -> "结束并继续"
         lang.startsWith("ja") -> "終了して続行"
         else -> "Close & Continue"
     }
@@ -162,15 +182,20 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         .show()
 }
 
-class SaveManagerActivity : Activity() {
+// Status-card views live in save_manager_header, added with addHeaderView. Lint only
+// sees the activity layout, so those ids look missing.
+@SuppressLint("MissingInflatedId")
+class SaveManagerActivity : ThemedActivity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
+        const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var activeJob: Job? = null
     private var progressDialog: Dialog? = null
 
+    private var scopedGameId: String? = null
     private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: SaveFileAdapter
@@ -182,8 +207,19 @@ class SaveManagerActivity : Activity() {
         setContentView(R.layout.activity_save_manager)
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
+        scopedGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        scopedGameId?.let { gid ->
+            val desc = GameCatalog.descriptorFor(this, gid)
+            title = "${desc.title} · ${getString(R.string.action_save_manager)}"
+        }
+
         adapter = SaveFileAdapter(this, emptyList())
         val listView = findViewById<ListView>(R.id.save_file_list)
+        // The info card and its buttons scroll with the list as its header. It has to be
+        // added before the adapter is set; its views are then found by findViewById() as usual.
+        listView.addHeaderView(
+            layoutInflater.inflate(R.layout.save_manager_header, listView, false), null, false
+        )
         listView.adapter = adapter
 
         discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME))
@@ -193,20 +229,25 @@ class SaveManagerActivity : Activity() {
             ensureGameNotRunning(this) { showImportDialog() }
         }
         findViewById<View>(R.id.btn_export_saves).setOnClickListener { showExportDialog() }
-        findViewById<View>(R.id.btn_refresh_saves).setOnClickListener {
-            refreshFileList()
-            Toast.makeText(this, R.string.save_manager_refreshed, Toast.LENGTH_SHORT).show()
-        }
         findViewById<View>(R.id.btn_clear_saves).setOnClickListener {
             ensureGameNotRunning(this) { showClearSavesDialog() }
         }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
-            val entry = adapter.getItem(pos)
-            showSingleFileManageDialog(entry)
+            val index = pos - listView.headerViewsCount
+            if (index in 0 until adapter.count) {
+                showSingleFileManageDialog(adapter.getItem(index))
+            }
         }
 
         refreshFileList()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::currentTarget.isInitialized) {
+            refreshFileList()
+        }
     }
 
     override fun onDestroy() {
@@ -235,7 +276,7 @@ class SaveManagerActivity : Activity() {
             val saveDir = item.savedir ?: File(savesRoot, dirName)
             saveDir.mkdirs()
             found[dirName] = SaveTarget(
-                displayName = if (item.name == dirName) item.name else "${item.name} · $dirName",
+                displayName = dirName,
                 dirName = dirName,
                 saveDir = saveDir,
                 externalGameDir = item.path
@@ -254,12 +295,39 @@ class SaveManagerActivity : Activity() {
             }
         }
 
-        if (found.isEmpty()) {
+        val gid = scopedGameId
+        if (!gid.isNullOrBlank()) {
+            val iter = found.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next().value
+                val classified = GameCatalog.classifyDirectory(
+                    gameDir = entry.externalGameDir,
+                    dirName = entry.dirName,
+                    saveDir = entry.saveDir,
+                    displayName = entry.displayName
+                )
+                if (classified != gid && entry.dirName != preferredDirName) {
+                    iter.remove()
+                }
+            }
+            if (found.isEmpty()) {
+                val desc = GameCatalog.descriptorFor(this, gid, gameList)
+                val defaultDir = File(savesRoot, desc.defaultDirName)
+                defaultDir.mkdirs()
+                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                found[desc.defaultDirName] = SaveTarget(
+                    displayName = desc.defaultDirName,
+                    dirName = desc.defaultDirName,
+                    saveDir = defaultDir,
+                    externalGameDir = extDir
+                )
+            }
+        } else if (found.isEmpty()) {
             val defaultDir = File(savesRoot, "Rance10")
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
             found["Rance10"] = SaveTarget(
-                displayName = getString(R.string.save_manager_default_dir_label),
+                displayName = "Rance10",
                 dirName = "Rance10",
                 saveDir = defaultDir,
                 externalGameDir = extDir
@@ -278,7 +346,8 @@ class SaveManagerActivity : Activity() {
         collectSaveFiles(saveDir, saveDir, list)
         list.sortWith(compareBy<SaveFileEntry> {
             when {
-                it.file.name.equals("GlobalSave.asd", true) -> 0
+                it.file.name.equals("GlobalSave.asd", true) ||
+                    it.file.name.equals("GlobalSaveData.asd", true) -> 0
                 it.file.name.equals("Collection.asd", true) -> 1
                 it.file.name.endsWith(".asd", true) || it.file.name.endsWith(".sav", true) -> 2
                 it.file.name.endsWith(".log", true) -> 4
@@ -291,18 +360,16 @@ class SaveManagerActivity : Activity() {
 
         val totalBytes = list.sumOf { it.sizeBytes }
         findViewById<TextView>(R.id.save_target_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.displayName)
+            getString(R.string.save_manager_current_dir, currentTarget.dirName)
         findViewById<TextView>(R.id.save_target_summary).text =
-            getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes), currentTarget.dirName)
+            getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes))
 
-        val emptyView = findViewById<View>(R.id.save_empty_view)
-        val listView = findViewById<View>(R.id.save_file_list)
+        val emptyView = findViewById<TextView>(R.id.save_empty_view)
         if (list.isEmpty()) {
+            UiKit.bindEmptyState(emptyView, R.drawable.ic_folder_open, getString(R.string.save_manager_empty))
             emptyView.visibility = View.VISIBLE
-            listView.visibility = View.GONE
         } else {
             emptyView.visibility = View.GONE
-            listView.visibility = View.VISIBLE
         }
     }
 
@@ -330,7 +397,7 @@ class SaveManagerActivity : Activity() {
     private fun classifySaveFile(name: String): String {
         val lower = name.lowercase(Locale.ROOT)
         return when {
-            lower == "globalsave.asd" -> getString(R.string.save_tag_global)
+            lower == "globalsave.asd" || lower == "globalsavedata.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" -> getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" -> getString(R.string.save_tag_afcg)
@@ -368,14 +435,15 @@ class SaveManagerActivity : Activity() {
     }
 
     private fun showCreateTargetDialog() {
+        val defaultPrefix = scopedGameId?.let { GameCatalog.descriptorFor(this, it).defaultDirName } ?: "Rance10"
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT
             hint = getString(R.string.save_dir_create_hint)
-            setText("Rance10")
+            setText(defaultPrefix)
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.save_dir_create_title)
-            .setView(input)
+            .setView(UiKit.dialogContent(this, input))
             .setPositiveButton(R.string.ok) { _, _ ->
                 val rawName = input.text.toString().trim()
                 val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
@@ -533,7 +601,7 @@ class SaveManagerActivity : Activity() {
                 refreshFileList()
                 showMessageDialog(
                     getString(R.string.save_import_done_title),
-                    getString(R.string.save_import_zip_done_msg, count, currentTarget.dirName)
+                    getString(R.string.save_import_zip_done_msg, count)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to import saves from archive", e)
@@ -576,12 +644,12 @@ class SaveManagerActivity : Activity() {
 
     private fun formatArchiveImportError(e: Exception): String {
         val raw = e.message ?: ""
-        val lang = Locale.getDefault().language
+        val lang = AppSettings.resolveLocale(this).language
         if (raw.startsWith("ENCRYPTED:")) {
             return when {
-                lang.startsWith("zh") -> "不支持带密码加密的压缩包，请先去除密码或解压后再导入。"
-                lang.startsWith("ja") -> "パスワード付きアーカイブには対応していません。パスワードを解除して再度お試しください。"
-                else -> "Password-protected archives are not supported."
+                lang.startsWith("zh") -> "不支持加密压缩包，请解压后导入"
+                lang.startsWith("ja") -> "パスワード付きアーカイブには非対応です"
+                else -> "Password-protected archives are not supported"
             }
         }
         if (raw.startsWith("ENOSPC:")) {
@@ -852,8 +920,6 @@ class SaveManagerActivity : Activity() {
     }
 
     private fun showSingleFileManageDialog(entry: SaveFileEntry) {
-        val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            .format(Date(entry.lastModified))
         val options = arrayOf(
             getString(R.string.save_file_opt_export),
             getString(R.string.save_file_opt_backup),
@@ -861,7 +927,7 @@ class SaveManagerActivity : Activity() {
             getString(R.string.save_file_opt_delete)
         )
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes), dateStr))
+            .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
@@ -916,7 +982,7 @@ class SaveManagerActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.save_backup_title)
-            .setView(input)
+            .setView(UiKit.dialogContent(this, input))
             .setPositiveButton(R.string.ok) { _, _ ->
                 val newName = input.text.toString().trim()
                 if (newName.isEmpty() || newName.contains('/') || newName.contains('\\')) {
@@ -950,7 +1016,7 @@ class SaveManagerActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.save_rename_title)
-            .setView(input)
+            .setView(UiKit.dialogContent(this, input))
             .setPositiveButton(R.string.ok) { _, _ ->
                 val newName = input.text.toString().trim()
                 if (newName.isEmpty() || newName == entry.file.name || newName.contains('/') || newName.contains('\\')) {
@@ -1007,7 +1073,7 @@ class SaveManagerActivity : Activity() {
     private fun confirmDeleteAllSaves() {
         AlertDialog.Builder(this)
             .setTitle(R.string.save_clear_confirm_title)
-            .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size, currentTarget.displayName))
+            .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size))
             .setPositiveButton(R.string.ok) { _, _ ->
                 currentTarget.saveDir.listFiles()?.forEach { child ->
                     child.deleteRecursively()
@@ -1036,6 +1102,8 @@ class SaveManagerActivity : Activity() {
                 setTitle(R.string.action_save_manager)
                 setCancelable(false)
                 setContentView(R.layout.progress_dialog)
+                // Save operations are short and cannot be moved to the background or cancelled.
+                findViewById<View>(R.id.action_bar)?.visibility = View.GONE
                 show()
             }
         }

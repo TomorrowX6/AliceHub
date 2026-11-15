@@ -26,6 +26,10 @@
 #include "input.h"
 #include "gfx/gfx.h"
 #include "gfx/private.h"
+#include "system4/little_endian.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+#include "vm/v12.h"
 #include "mixer.h"
 #include "savedata.h"
 #include "vm.h"
@@ -66,6 +70,9 @@ static struct string *SystemService_GetGameVersionByText(void)
 		// This API returns a compatibility identifier, not a dotted version.
 		// Captured from the original Rance X v1.04 runtime.
 		return cstr_to_string("lasdf62uihf29fosif83oisdhf15j2l87asdf");
+	}
+	if (game_dohnadohna) {
+		return cstr_to_string("sd40006sd00000008f6300004");
 	}
 	VM_ERROR("Unknown game version text for this title");
 }
@@ -806,6 +813,134 @@ static bool SystemService_Debug_IsShowMipmapLevel(void)
 	return show_mipmap_level;
 }
 
+static bool resizable_user_control = false;
+static void SystemService_SetResizableUserControl(bool flag)
+{
+	resizable_user_control = flag;
+}
+
+static bool SystemService_IsResizableUserControl(void)
+{
+	return resizable_user_control;
+}
+
+static struct string *SystemService_GetCountryNo(void)
+{
+	return cstr_to_string("86");
+}
+
+static char **backup_save_files = NULL;
+static int nr_backup_save_files = 0;
+
+static void SystemService_AddBackupSaveFileName(struct string *file_name)
+{
+	if (!file_name || !file_name->size)
+		return;
+	backup_save_files = xrealloc(backup_save_files, (nr_backup_save_files + 1) * sizeof(*backup_save_files));
+	backup_save_files[nr_backup_save_files++] = xstrdup(file_name->text);
+}
+
+static void SystemService_BackupSaveFile(void)
+{
+	for (int i = 0; i < nr_backup_save_files; i++) {
+		char *src = savedir_path(backup_save_files[i]);
+		if (src && file_exists(src)) {
+			char *rel = path_join("Backup", backup_save_files[i]);
+			char *dst = savedir_path(rel);
+			free(rel);
+			if (dst) {
+				char *dst_copy = xstrdup(dst);
+				char *dir = path_dirname(dst_copy);
+				if (dir && dir[0])
+					mkdir_p(dir);
+				free(dst_copy);
+				file_copy(src, dst);
+				free(dst);
+			}
+		}
+		free(src);
+		free(backup_save_files[i]);
+	}
+	free(backup_save_files);
+	backup_save_files = NULL;
+	nr_backup_save_files = 0;
+}
+
+static bool SystemService_Save(struct page **out)
+{
+	if (!out)
+		return false;
+	int count = 0;
+	size_t byte_len = 4;
+	for (struct service_variable *v = game_variables; v; v = v->next) {
+		count++;
+		byte_len += strlen(v->key->text) + 1 + strlen(v->value->text) + 1;
+	}
+	int nr_ints = (int)(byte_len / 4) + 1;
+	uint8_t *buf = xcalloc(nr_ints, 4);
+	size_t pos = 0;
+	LittleEndian_putDW(buf, pos, count);
+	pos += 4;
+	for (struct service_variable *v = game_variables; v; v = v->next) {
+		size_t klen = strlen(v->key->text) + 1;
+		memcpy(buf + pos, v->key->text, klen);
+		pos += klen;
+		size_t vlen = strlen(v->value->text) + 1;
+		memcpy(buf + pos, v->value->text, vlen);
+		pos += vlen;
+	}
+	struct ain_type int_type = { .data = AIN_INT, .struc = -1 };
+	struct page *page = v12_array_new(&int_type, nr_ints, false);
+	for (int i = 0; i < nr_ints; i++)
+		page->values[i].i = LittleEndian_getDW(buf, i * 4);
+	free(buf);
+	if (*out) {
+		delete_page_vars(*out);
+		free_page(*out);
+	}
+	*out = page;
+	return true;
+}
+
+static bool SystemService_Load(struct page **in)
+{
+	if (!in || !*in)
+		return true;
+	if ((*in)->nr_vars < 1)
+		return true;
+	size_t cap = (size_t)(*in)->nr_vars * 4;
+	uint8_t *buf = xmalloc(cap);
+	for (int i = 0; i < (*in)->nr_vars; i++)
+		LittleEndian_putDW(buf, i * 4, (*in)->values[i].i);
+	int count = LittleEndian_getDW(buf, 0);
+	size_t pos = 4;
+	while (game_variables) {
+		struct service_variable *next = game_variables->next;
+		free_string(game_variables->key);
+		free_string(game_variables->value);
+		free(game_variables);
+		game_variables = next;
+	}
+	for (int i = 0; i < count && pos < cap; i++) {
+		const void *knul = memchr(buf + pos, 0, cap - pos);
+		if (!knul) break;
+		const char *k = (const char *)(buf + pos);
+		pos = (const uint8_t *)knul - buf + 1;
+		if (pos >= cap) break;
+		const void *vnul = memchr(buf + pos, 0, cap - pos);
+		if (!vnul) break;
+		const char *val = (const char *)(buf + pos);
+		pos = (const uint8_t *)vnul - buf + 1;
+		struct string *ks = cstr_to_string(k);
+		struct string *vs = cstr_to_string(val);
+		service_variable_set(&game_variables, ks, vs);
+		free_string(ks);
+		free_string(vs);
+	}
+	free(buf);
+	return true;
+}
+
 HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(_PreLink, SystemService_PreLink),
 	    SERVICE_VARIABLE_EXPORTS(SystemVariable),
@@ -841,6 +976,13 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(GetWindowPosY, SystemService_GetWindowPosY),
 	    HLL_EXPORT(SetViewResizableMode, SystemService_SetViewResizableMode),
 	    HLL_EXPORT(IsViewResizableMode, SystemService_IsViewResizableMode),
+	    HLL_EXPORT(SetResizableUserControl, SystemService_SetResizableUserControl),
+	    HLL_EXPORT(IsResizableUserControl, SystemService_IsResizableUserControl),
+	    HLL_EXPORT(GetCountryNo, SystemService_GetCountryNo),
+	    HLL_EXPORT(AddBackupSaveFileName, SystemService_AddBackupSaveFileName),
+	    HLL_EXPORT(BackupSaveFile, SystemService_BackupSaveFile),
+	    HLL_EXPORT(Save, SystemService_Save),
+	    HLL_EXPORT(Load, SystemService_Load),
 	    HLL_EXPORT(SetWaitVSyncMode, SystemService_SetWaitVSyncMode),
 	    HLL_EXPORT(GetWaitVSyncMode, SystemService_GetWaitVSyncMode),
 	    HLL_EXPORT(GetHideMouseCursorByGame, SystemService_GetHideMouseCursorByGame),

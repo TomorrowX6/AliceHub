@@ -21,6 +21,9 @@ static bool HTTPDownloader_IsRun(void) { return false; }
 static void HTTPDownloader_Stop(void) { }
 static int HTTPDownloader_GetReadSize(void) { return 0; }
 static bool HTTPDownloader_ReadString(struct string **s) { (void)s; return false; }
+static bool HTTPDownloader_ReadByte(int *v) { if (v) *v = 0; return false; }
+static bool HTTPDownloader_ReadInt(int *v) { if (v) *v = 0; return false; }
+static bool HTTPDownloader_ReadFloat(float *v) { if (v) *v = 0.0f; return false; }
 static bool HTTPDownloader_ConvertString(struct string **s)
 {
 	(void)s;
@@ -41,6 +44,10 @@ HLL_LIBRARY(HTTPDownloader,
 	    HLL_EXPORT(IsRun, HTTPDownloader_IsRun),
 	    HLL_EXPORT(Stop, HTTPDownloader_Stop),
 	    HLL_EXPORT(GetReadSize, HTTPDownloader_GetReadSize),
+	    HLL_EXPORT(ReadAllString, HTTPDownloader_ReadString),
+	    HLL_EXPORT(ReadByte, HTTPDownloader_ReadByte),
+	    HLL_EXPORT(ReadInt, HTTPDownloader_ReadInt),
+	    HLL_EXPORT(ReadFloat, HTTPDownloader_ReadFloat),
 	    HLL_EXPORT(ReadString, HTTPDownloader_ReadString),
 	    HLL_EXPORT(ReadStringUTF8ToSJIS, HTTPDownloader_ReadString),
 	    HLL_EXPORT(UTF8ToSJIS, HTTPDownloader_ConvertString),

@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/ui_screen_padding_h"
+        android:paddingTop="8dp"
+        android:paddingEnd="@dimen/ui_screen_padding_h"
+        android:paddingBottom="24dp">
+
+        <!-- Hero: icon, title and status. Background (accent wash) is set in code. -->
+        <LinearLayout
+            android:id="@+id/hub_hero_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:divider="@drawable/divider_line"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:showDividers="middle">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:minHeight="112dp"
+                android:orientation="horizontal"
+                android:paddingTop="16dp"
+                android:paddingBottom="16dp">
+
+                <FrameLayout
+                    android:id="@+id/hub_icon_frame"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp">
+
+                    <ImageView
+                        android:id="@+id/hub_icon"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:importantForAccessibility="no"
+                        android:scaleType="fitCenter" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/hub_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/ui_text_primary"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/hub_status"
+                        style="@style/Widget.Launcher.Chip"
+                        android:layout_marginTop="8dp"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Only shown when the game is installed in more than one directory. -->
+            <LinearLayout
+                android:id="@+id/hub_instance_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_folder_open"
+                    android:tint="@color/ui_text_secondary" />
+
+                <TextView
+                    android:id="@+id/hub_instance_dir"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:ellipsize="middle"
+                    android:singleLine="true"
+                    android:textAppearance="@style/TextAppearance.Launcher.Body" />
+
+                <Button
+                    android:id="@+id/btn_hub_switch_instance"
+                    style="@style/Widget.Launcher.Button.Small"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="@string/hub_switch_instance" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Primary action. Accent background, icon and label are set in code. -->
+        <Button
+            android:id="@+id/btn_hub_play"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="14dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0"
+            android:singleLine="true"
+            android:stateListAnimator="@null"
+            android:textAllCaps="false"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/hub_install_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:divider="@drawable/divider_line"
+            android:dividerPadding="16dp"
+            android:orientation="vertical"
+            android:showDividers="middle">
+
+            <Button
+                android:id="@+id/btn_hub_online_install"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_online_install" />
+
+            <Button
+                android:id="@+id/btn_hub_local_install"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_local_install" />
+
+            <Button
+                android:id="@+id/btn_hub_mod_manager"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/mod_mgr_activity_title" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/hub_tools_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/ui_card_gap"
+            android:background="@drawable/bg_card"
+            android:divider="@drawable/divider_line"
+            android:dividerPadding="16dp"
+            android:orientation="vertical"
+            android:showDividers="middle">
+
+            <Button
+                android:id="@+id/btn_hub_save_manager"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_save_manager" />
+
+            <Button
+                android:id="@+id/btn_hub_game_modifier"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_game_modifier" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

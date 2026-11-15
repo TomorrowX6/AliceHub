@@ -44,4 +44,12 @@ void PE_SetMessageWindowTextSpeed(int no, int speed);
 int PE_GetMessageWindowTextSpeed(int no);
 void PE_SetMessageWindowTextSpace(int no, int letter, int line);
 void PE_GetMessageWindowTextSpace(int no, int *letter, int *line);
+void PE_SetMessageWindowRubyFont(int no, int face, int size, int r, int g, int b,
+		float bold, int edge_r, int edge_g, int edge_b, float edge);
+void PE_GetMessageWindowRubyFont(int no, int *face, int *size, int *r, int *g, int *b,
+		float *bold, int *edge_r, int *edge_g, int *edge_b, float *edge);
+void PE_SetMessageWindowRubyCharSpace(int no, int space);
+int PE_GetMessageWindowRubyCharSpace(int no);
+void PE_SetMessageWindowRubyLineSpace(int no, int space);
+int PE_GetMessageWindowRubyLineSpace(int no);
 #endif

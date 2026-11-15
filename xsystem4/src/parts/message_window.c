@@ -142,11 +142,16 @@ void parts_message_window_rebuild_text(struct parts *parts)
 {
 	struct parts_message_window *w = parts->message_box;
 	struct text_style base = w->label.text.ts;
+	struct text_style ruby_base = w->label.text.ruby_ts;
+	int ruby_char_space = w->label.text.ruby_char_space;
 	int line_space = w->label.text.line_space;
 	parts_state_reset(&w->label, PARTS_TEXT);
 	struct parts_text *t = &w->label.text;
 	t->ts = base;
 	t->ts.font_size = NULL;
+	t->ruby_ts = ruby_base;
+	t->ruby_ts.font_size = NULL;
+	t->ruby_char_space = ruby_char_space;
 	t->line_space = line_space;
 	struct message_font_frame *fonts = NULL;
 	double *times = NULL, time = floor(max(0, w->text_speed) * w->speed_rate);
@@ -409,3 +414,36 @@ void PE_GetMessageWindowTextSpace(int no, int *letter, int *line)
 	struct parts_message_window *w = window(no);
 	*letter = w->label.text.ts.font_spacing; *line = w->label.text.line_space;
 }
+void PE_SetMessageWindowRubyFont(int no, int face, int size, int r, int g, int b,
+		float bold, int edge_r, int edge_g, int edge_b, float edge)
+{
+	struct text_style *ts = &window(no)->label.text.ruby_ts;
+	ts->face = face; ts->size = size;
+	ts->color = (SDL_Color){r, g, b, 255};
+	ts->bold_width = bold; ts->weight = bold * 1000;
+	ts->edge_color = (SDL_Color){edge_r, edge_g, edge_b, 255};
+	text_style_set_edge_width(ts, edge);
+	ts->font_size = NULL;
+	parts_message_window_rebuild_text(parts_get(no));
+}
+void PE_GetMessageWindowRubyFont(int no, int *face, int *size, int *r, int *g, int *b,
+		float *bold, int *edge_r, int *edge_g, int *edge_b, float *edge)
+{
+	struct text_style *ts = &window(no)->label.text.ruby_ts;
+	*face = ts->face; *size = ts->size;
+	*r = ts->color.r; *g = ts->color.g; *b = ts->color.b;
+	*bold = ts->bold_width; *edge = ts->edge_left;
+	*edge_r = ts->edge_color.r; *edge_g = ts->edge_color.g; *edge_b = ts->edge_color.b;
+}
+void PE_SetMessageWindowRubyCharSpace(int no, int space)
+{
+	window(no)->label.text.ruby_char_space = space;
+	parts_message_window_rebuild_text(parts_get(no));
+}
+int PE_GetMessageWindowRubyCharSpace(int no) { return window(no)->label.text.ruby_char_space; }
+void PE_SetMessageWindowRubyLineSpace(int no, int space)
+{
+	window(no)->ruby_line_space = space;
+	parts_message_window_rebuild_text(parts_get(no));
+}
+int PE_GetMessageWindowRubyLineSpace(int no) { return window(no)->ruby_line_space; }

@@ -1271,3 +1271,70 @@ void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rect
 	run_copy_shader(&blend_rmap_color_shader.s, dst, glyph, &data);
 	restore_blend_mode();
 }
+
+void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
+{
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
+	run_copy_shader(&copy_shader.s, dst, src, &data);
+	restore_blend_mode();
+}
+
+void gfx_draw_shape_mask(Texture *dst, int dx, int dy, int w, int h, const uint8_t *cov, SDL_Color color, int mode)
+{
+	if (!dst || !dst->handle || w <= 0 || h <= 0 || !cov)
+		return;
+	size_t n = (size_t)w * h;
+	SDL_Color *pixels = xmalloc(n * sizeof(SDL_Color));
+	if (mode == 1 || mode == 2) {
+		for (size_t i = 0; i < n; i++) {
+			uint8_t c = cov[i];
+			pixels[i] = (SDL_Color){ c, c, c, c };
+		}
+	} else if (mode == 3 || mode == 4) {
+		for (size_t i = 0; i < n; i++) {
+			uint8_t eff = (uint8_t)((cov[i] * (int)color.a + 127) / 255);
+			pixels[i] = (SDL_Color){ color.r, color.g, color.b, eff };
+		}
+	} else {
+		for (size_t i = 0; i < n; i++) {
+			pixels[i] = (SDL_Color){ color.r, color.g, color.b, cov[i] };
+		}
+	}
+
+	Texture src;
+	gfx_init_texture_with_pixels(&src, w, h, pixels);
+	free(pixels);
+
+	struct copy_data data = COPY_DATA(dx, dy, 0, 0, w, h);
+	if (mode == 1) {
+		// WithAlpha: dst.rgba = mix(dst.rgba, color.rgba, cov)
+		glBlendFuncSeparate(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+		run_copy_shader(&copy_shader.s, dst, &src, &data);
+		if (color.r || color.g || color.b || color.a) {
+			glBlendColor(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+			glBlendFuncSeparate(GL_CONSTANT_COLOR, GL_ONE, GL_CONSTANT_ALPHA, GL_ONE);
+			run_copy_shader(&copy_shader.s, dst, &src, &data);
+		}
+	} else if (mode == 2) {
+		// AMap: dst.a = mix(dst.a, color.a, cov), dst.rgb unchanged
+		glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+		run_copy_shader(&copy_shader.s, dst, &src, &data);
+		if (color.a) {
+			glBlendColor(0.0f, 0.0f, 0.0f, color.a / 255.0f);
+			glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_ALPHA, GL_ONE);
+			run_copy_shader(&copy_shader.s, dst, &src, &data);
+		}
+	} else if (mode == 4) {
+		// AlphaBlend: Porter-Duff src-over
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		run_copy_shader(&copy_shader.s, dst, &src, &data);
+	} else {
+		// Mode 0 (RGB) & Mode 3 (Blend): blend RGB, preserve dst.a
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+		run_copy_shader(&copy_shader.s, dst, &src, &data);
+	}
+
+	restore_blend_mode();
+	gfx_delete_texture(&src);
+}

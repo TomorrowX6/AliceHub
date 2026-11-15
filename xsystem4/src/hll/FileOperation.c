@@ -68,11 +68,25 @@ static bool FileOperation_DeleteFile(struct string *file_name)
 	return result;
 }
 
+static char *fileop_resolve_write_path(const char *sjis_path)
+{
+	if (ain && ain->version >= 12 && config.game_dir)
+		return gamedir_path(sjis_path);
+	return unix_path(sjis_path);
+}
+
 static bool FileOperation_CopyFile(struct string *dest_file_name, struct string *src_file_name)
 {
-	char *dest = unix_path(dest_file_name->text);
-	char *src = unix_path(src_file_name->text);
-	bool result = file_copy(src, dest);
+	char *dest = fileop_resolve_write_path(dest_file_name->text);
+	char *src = fileop_resolve_path(src_file_name->text);
+	if (dest) {
+		char *dest_copy = xstrdup(dest);
+		char *dir = path_dirname(dest_copy);
+		if (dir && dir[0])
+			mkdir_p(dir);
+		free(dest_copy);
+	}
+	bool result = src && dest && file_copy(src, dest);
 	free(src);
 	free(dest);
 	return result;
@@ -161,17 +175,17 @@ static bool FileOperation_GetFileSize(struct string *file_name, int *size)
 
 static bool FileOperation_ExistFolder(struct string *folder_name)
 {
-	char *path = unix_path(folder_name->text);
-	bool result = is_directory(path);
+	char *path = fileop_resolve_path(folder_name->text);
+	bool result = path && is_directory(path);
 	free(path);
 	return result;
 }
 
 static bool FileOperation_CreateFolder(struct string *folder_name)
 {
-	char *path = unix_path(folder_name->text);
-	bool result = mkdir_p(path) == 0;
-	if (!result)
+	char *path = fileop_resolve_write_path(folder_name->text);
+	bool result = path && mkdir_p(path) == 0;
+	if (!result && path)
 		WARNING("mkdir_p(%s): %s", path, strerror(errno));
 	free(path);
 	return result;
@@ -223,21 +237,66 @@ static bool rmtree(const char *path)
 
 static bool FileOperation_DeleteFolder(struct string *folder_name)
 {
-	char *path = unix_path(folder_name->text);
-	bool result = rmtree(path);
+	char *path = fileop_resolve_path(folder_name->text);
+	bool result = path && rmtree(path);
 	free(path);
 	return result;
 }
 
+static bool copytree(const char *src_dir, const char *dst_dir)
+{
+	if (mkdir_p(dst_dir) != 0)
+		return false;
+	UDIR *d = opendir_utf8(src_dir);
+	if (!d)
+		return false;
+	bool ok = true;
+	char *d_name;
+	while (ok && (d_name = readdir_utf8(d)) != NULL) {
+		if (d_name[0] == '.' && (d_name[1] == '\0' || (d_name[1] == '.' && d_name[2] == '\0'))) {
+			free(d_name);
+			continue;
+		}
+		char *src_path = path_join(src_dir, d_name);
+		char *dst_path = path_join(dst_dir, d_name);
+		ustat s;
+		if (stat_utf8(src_path, &s) < 0) {
+			ok = false;
+		} else if (S_ISDIR(s.st_mode)) {
+			ok = copytree(src_path, dst_path);
+		} else if (S_ISREG(s.st_mode)) {
+			ok = file_copy(src_path, dst_path);
+		}
+		free(src_path);
+		free(dst_path);
+		free(d_name);
+	}
+	closedir_utf8(d);
+	return ok;
+}
+
+static bool FileOperation_CopyFolder(struct string *dest_folder_name, struct string *src_folder_name)
+{
+	if (!dest_folder_name || !src_folder_name)
+		return false;
+	char *src = fileop_resolve_path(src_folder_name->text);
+	char *dst = fileop_resolve_write_path(dest_folder_name->text);
+	bool ok = src && dst && is_directory(src) && copytree(src, dst);
+	free(src);
+	free(dst);
+	return ok;
+}
+
 static bool get_file_list(struct string *folder_name, struct page **out, bool folders)
 {
-	char *dir_name = ain->version >= 12 ? gamedir_path_icase(folder_name->text)
+	char *dir_name = ain->version >= 12 ? fileop_resolve_path(folder_name->text)
 		: unix_path(folder_name->text);
 	if (!dir_name) return false;
 
 	UDIR *d = opendir_utf8(dir_name);
 	if (!d) {
-		WARNING("opendir(\"%s\"): %s", display_utf0(dir_name), strerror(errno));
+		if (errno != ENOENT)
+			WARNING("opendir(\"%s\"): %s", display_utf0(dir_name), strerror(errno));
 		free(dir_name);
 		return false;
 	}
@@ -337,6 +396,7 @@ HLL_LIBRARY(FileOperation,
 	    HLL_EXPORT(ExistFile, FileOperation_ExistFile),
 	    HLL_EXPORT(DeleteFile, FileOperation_DeleteFile),
 	    HLL_EXPORT(CopyFile, FileOperation_CopyFile),
+	    HLL_EXPORT(CopyFolder, FileOperation_CopyFolder),
 	    HLL_EXPORT(GetFileCreationTime, FileOperation_GetFileCreationTime),
 	    HLL_EXPORT(GetFileLastAccessTime, FileOperation_GetFileLastAccessTime),
 	    HLL_EXPORT(GetFileLastWriteTime, FileOperation_GetFileLastWriteTime),
@@ -368,6 +428,96 @@ HLL_LIBRARY(Clipboard,
 
 static FILE *text_file_fp = NULL;
 
+struct text_file_entry {
+	bool used;
+	bool is_writer;
+	FILE *fp;
+	char *buf;
+	size_t len;
+	size_t pos;
+};
+
+static struct text_file_entry *tf_entries = NULL;
+static int nr_tf_entries = 0;
+
+static int alloc_tf_handle(void)
+{
+	for (int i = 1; i < nr_tf_entries; i++) {
+		if (!tf_entries[i].used) {
+			memset(&tf_entries[i], 0, sizeof(tf_entries[i]));
+			tf_entries[i].used = true;
+			return i;
+		}
+	}
+	int next = nr_tf_entries ? nr_tf_entries * 2 : 16;
+	tf_entries = xrealloc(tf_entries, next * sizeof(*tf_entries));
+	memset(tf_entries + nr_tf_entries, 0, (next - nr_tf_entries) * sizeof(*tf_entries));
+	int idx = nr_tf_entries ? nr_tf_entries : 1;
+	nr_tf_entries = next;
+	tf_entries[idx].used = true;
+	return idx;
+}
+
+static bool is_valid_utf8_multibyte(const uint8_t *s, size_t len)
+{
+	bool has_multibyte = false;
+	size_t i = 0;
+	while (i < len) {
+		uint8_t c = s[i];
+		if (c < 0x80) {
+			i++;
+		} else if (c >= 0xC2 && c <= 0xDF) {
+			if (i + 1 >= len || (s[i + 1] & 0xC0) != 0x80)
+				return false;
+			has_multibyte = true;
+			i += 2;
+		} else if (c >= 0xE0 && c <= 0xEF) {
+			if (i + 2 >= len || (s[i + 1] & 0xC0) != 0x80 || (s[i + 2] & 0xC0) != 0x80)
+				return false;
+			if (c == 0xE0 && s[i + 1] < 0xA0)
+				return false;
+			if (c == 0xED && s[i + 1] >= 0xA0)
+				return false;
+			has_multibyte = true;
+			i += 3;
+		} else if (c >= 0xF0 && c <= 0xF4) {
+			if (i + 3 >= len || (s[i + 1] & 0xC0) != 0x80 || (s[i + 2] & 0xC0) != 0x80 || (s[i + 3] & 0xC0) != 0x80)
+				return false;
+			if (c == 0xF0 && s[i + 1] < 0x90)
+				return false;
+			if (c == 0xF4 && s[i + 1] >= 0x90)
+				return false;
+			has_multibyte = true;
+			i += 4;
+		} else {
+			return false;
+		}
+	}
+	return has_multibyte;
+}
+
+static char *read_text_file_bytes(const char *path, size_t *out_len)
+{
+	size_t len = 0;
+	char *buf = file_read(path, &len);
+	if (!buf)
+		return NULL;
+	if (len >= 3 && (uint8_t)buf[0] == 0xEF && (uint8_t)buf[1] == 0xBB && (uint8_t)buf[2] == 0xBF) {
+		char *sjis = utf2sjis(buf + 3, len - 3);
+		free(buf);
+		*out_len = strlen(sjis);
+		return sjis;
+	}
+	if (is_valid_utf8_multibyte((const uint8_t *)buf, len)) {
+		char *sjis = utf2sjis(buf, len);
+		free(buf);
+		*out_len = strlen(sjis);
+		return sjis;
+	}
+	*out_len = len;
+	return buf;
+}
+
 static bool TextFile_Close(void)
 {
 	if (!text_file_fp)
@@ -377,24 +527,55 @@ static bool TextFile_Close(void)
 	return true;
 }
 
-static bool TextFile_Create(struct string *file_name)
+static bool TextFile_Close_v14(int handle)
+{
+	if (handle <= 0 || handle >= nr_tf_entries || !tf_entries[handle].used)
+		return false;
+	if (tf_entries[handle].fp)
+		fclose(tf_entries[handle].fp);
+	free(tf_entries[handle].buf);
+	memset(&tf_entries[handle], 0, sizeof(tf_entries[handle]));
+	return true;
+}
+
+static void *TextFile_ResolveClose(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)TextFile_Close_v14 : (void *)TextFile_Close;
+}
+
+static FILE *open_text_writer_path(struct string *file_name)
 {
 	if (!file_name)
-		return false;
-	TextFile_Close();
-	char *path = fileop_resolve_path(file_name->text);
+		return NULL;
+	char *path = fileop_resolve_write_path(file_name->text);
 	if (!path)
-		return false;
-	text_file_fp = file_open_utf8(path, "wb");
-	if (!text_file_fp && config.game_dir && file_name->text[0] != '/') {
-		char *gd_path = gamedir_path(file_name->text);
-		if (gd_path) {
-			text_file_fp = file_open_utf8(gd_path, "wb");
-			free(gd_path);
-		}
-	}
+		return NULL;
+	char *path_copy = xstrdup(path);
+	char *dir = path_dirname(path_copy);
+	if (dir && dir[0])
+		mkdir_p(dir);
+	free(path_copy);
+	FILE *fp = file_open_utf8(path, "wb");
 	free(path);
+	return fp;
+}
+
+static bool TextFile_Create(struct string *file_name)
+{
+	TextFile_Close();
+	text_file_fp = open_text_writer_path(file_name);
 	return text_file_fp != NULL;
+}
+
+static int TextFile_CreateWriter(struct string *file_name)
+{
+	FILE *fp = open_text_writer_path(file_name);
+	if (!fp)
+		return -1;
+	int h = alloc_tf_handle();
+	tf_entries[h].is_writer = true;
+	tf_entries[h].fp = fp;
+	return h;
 }
 
 static bool TextFile_Write(struct string *text)
@@ -406,6 +587,39 @@ static bool TextFile_Write(struct string *text)
 	return fwrite(text->text, 1, text->size, text_file_fp) == (size_t)text->size;
 }
 
+static bool TextFile_Write_v14(int handle, struct string *text)
+{
+	if (handle <= 0 || handle >= nr_tf_entries || !tf_entries[handle].used || !tf_entries[handle].fp || !text)
+		return false;
+	if (text->size <= 0)
+		return true;
+	return fwrite(text->text, 1, text->size, tf_entries[handle].fp) == (size_t)text->size;
+}
+
+static void *TextFile_ResolveWrite(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)TextFile_Write_v14 : (void *)TextFile_Write;
+}
+
+static bool TextFile_WriteLine(int handle, struct string *text)
+{
+	if (!TextFile_Write_v14(handle, text))
+		return false;
+	return fwrite("\r\n", 1, 2, tf_entries[handle].fp) == 2;
+}
+
+static bool TextFile_WriteAll(struct string *file_name, struct string *text)
+{
+	FILE *fp = open_text_writer_path(file_name);
+	if (!fp)
+		return false;
+	bool ok = true;
+	if (text && text->size > 0)
+		ok = fwrite(text->text, 1, text->size, fp) == (size_t)text->size;
+	fclose(fp);
+	return ok;
+}
+
 static bool TextFile_ReadAll(struct string *file_name, struct string **text)
 {
 	if (!file_name || !text)
@@ -414,7 +628,7 @@ static bool TextFile_ReadAll(struct string *file_name, struct string **text)
 	if (!path)
 		return false;
 	size_t len = 0;
-	char *buf = file_read(path, &len);
+	char *buf = read_text_file_bytes(path, &len);
 	free(path);
 	if (!buf)
 		return false;
@@ -425,11 +639,79 @@ static bool TextFile_ReadAll(struct string *file_name, struct string **text)
 	return true;
 }
 
+static int TextFile_OpenReader(struct string *file_name)
+{
+	if (!file_name)
+		return -1;
+	char *path = fileop_resolve_path(file_name->text);
+	if (!path)
+		return -1;
+	size_t len = 0;
+	char *buf = read_text_file_bytes(path, &len);
+	free(path);
+	if (!buf)
+		return -1;
+	int h = alloc_tf_handle();
+	tf_entries[h].is_writer = false;
+	tf_entries[h].buf = buf;
+	tf_entries[h].len = len;
+	tf_entries[h].pos = 0;
+	return h;
+}
+
+static bool TextFile_IsEOF(int handle)
+{
+	if (handle <= 0 || handle >= nr_tf_entries || !tf_entries[handle].used || tf_entries[handle].is_writer)
+		return true;
+	return tf_entries[handle].pos >= tf_entries[handle].len;
+}
+
+static bool TextFile_Read(int handle, struct string **text)
+{
+	if (!text || TextFile_IsEOF(handle))
+		return false;
+	struct text_file_entry *e = &tf_entries[handle];
+	size_t clen = 1;
+	if (SJIS_2BYTE(e->buf[e->pos]) && e->pos + 1 < e->len)
+		clen = 2;
+	if (*text)
+		free_string(*text);
+	*text = make_string(e->buf + e->pos, clen);
+	e->pos += clen;
+	return true;
+}
+
+static bool TextFile_ReadLine(int handle, struct string **text)
+{
+	if (!text || TextFile_IsEOF(handle))
+		return false;
+	struct text_file_entry *e = &tf_entries[handle];
+	size_t start = e->pos;
+	while (e->pos < e->len && e->buf[e->pos] != '\n' && e->buf[e->pos] != '\r')
+		e->pos++;
+	size_t line_len = e->pos - start;
+	if (e->pos < e->len && e->buf[e->pos] == '\r')
+		e->pos++;
+	if (e->pos < e->len && e->buf[e->pos] == '\n')
+		e->pos++;
+	if (*text)
+		free_string(*text);
+	*text = make_string(e->buf + start, line_len);
+	return true;
+}
+
 HLL_LIBRARY(TextFile,
 	    HLL_EXPORT(Create, TextFile_Create),
-	    HLL_EXPORT(Close, TextFile_Close),
-	    HLL_EXPORT(Write, TextFile_Write),
-	    HLL_EXPORT(ReadAll, TextFile_ReadAll));
+	    HLL_EXPORT(CreateWriter, TextFile_CreateWriter),
+	    HLL_OVERLOAD(Close, TextFile_ResolveClose),
+	    HLL_OVERLOAD(Write, TextFile_ResolveWrite),
+	    HLL_EXPORT(WriteLine, TextFile_WriteLine),
+	    HLL_EXPORT(WriteAll, TextFile_WriteAll),
+	    HLL_EXPORT(ReadAll, TextFile_ReadAll),
+	    HLL_EXPORT(OpenReader, TextFile_OpenReader),
+	    HLL_EXPORT(Read, TextFile_Read),
+	    HLL_EXPORT(ReadLine, TextFile_ReadLine),
+	    HLL_EXPORT(IsEOF, TextFile_IsEOF));
 
 static int EXWriter_CreateHandle(void) { return 0; }
 static void EXWriter_ReleaseHandle(possibly_unused int id) {}
@@ -525,6 +807,7 @@ static void ADVEngine_GetFunctionList(possibly_unused struct string *file_path,
 static bool ADVEngine_Load(possibly_unused struct string *function_name) { return false; }
 static bool ADVEngine_LoadByFile(possibly_unused struct string *file_path,
 		possibly_unused struct string *function_name) { return false; }
+static bool ADVEngine_LoadByText(possibly_unused struct string *text) { return false; }
 static void ADVEngine_Release(void) {}
 static bool ADVEngine_IsExistLowerIf(void) { return false; }
 static int ADVEngine_NumofStep(void) { return 0; }
@@ -569,6 +852,7 @@ HLL_LIBRARY(ADVEngine,
 	    HLL_EXPORT(GetFunctionList, ADVEngine_GetFunctionList),
 	    HLL_EXPORT(Load, ADVEngine_Load),
 	    HLL_EXPORT(LoadByFile, ADVEngine_LoadByFile),
+	    HLL_EXPORT(LoadByText, ADVEngine_LoadByText),
 	    HLL_EXPORT(Release, ADVEngine_Release),
 	    HLL_EXPORT(IsExistLowerIf, ADVEngine_IsExistLowerIf),
 	    HLL_EXPORT(NumofStep, ADVEngine_NumofStep),

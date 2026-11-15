@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Launcher" parent="Base.Theme.Launcher">
+        <item name="android:navigationBarColor">@color/ui_bg</item>
+        <item name="android:windowLightNavigationBar">@bool/ui_light_system_bars</item>
+    </style>
+</resources>

@@ -117,6 +117,7 @@ static const char *array_leaf_type_name(enum ain_data_type leaf_data, int struct
 	case AIN_STRUCT:
 	case AIN_REF_STRUCT:
 	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
 		return (struct_type >= 0 && struct_type < ain->nr_structures)
 			? ain->structures[struct_type].name : "";
 	case AIN_ENUM:
@@ -136,6 +137,144 @@ static const char *array_leaf_type_name(enum ain_data_type leaf_data, int struct
 		return (struct_type >= 0 && struct_type < ain->nr_structures)
 			? ain->structures[struct_type].name : "";
 	}
+}
+
+struct interned_x4_type {
+	char *spec;
+	struct ain_type type;
+	struct interned_x4_type *next;
+};
+
+static struct interned_x4_type *interned_x4_types = NULL;
+
+static void append_str(struct string **out, const char *s);
+
+static void encode_x4_type_node(struct string **out, const struct ain_type *t)
+{
+	const char *sym = "";
+	switch (t->data) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+	case AIN_ENUM:
+	case AIN_ENUM2:
+	case AIN_REF_ENUM:
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+	case AIN_FUNC_TYPE:
+	case AIN_REF_FUNC_TYPE:
+		sym = array_leaf_type_name(t->data, t->struc);
+		break;
+	default:
+		break;
+	}
+	size_t sym_len = strlen(sym);
+	char hdr[64];
+	snprintf(hdr, sizeof(hdr), "%d:%zu:", (int)t->data, sym_len);
+	append_str(out, hdr);
+	if (sym_len > 0)
+		string_append_cstr(out, sym, sym_len);
+	if (t->array_type) {
+		append_str(out, ":1:");
+		encode_x4_type_node(out, t->array_type);
+	} else {
+		append_str(out, ":0");
+	}
+}
+
+static char *encode_x4_type(const struct ain_type *t)
+{
+	struct string *out = cstr_to_string("@x4t:");
+	encode_x4_type_node(&out, t);
+	char *res = xstrdup(out->text);
+	free_string(out);
+	return res;
+}
+
+static int resolve_array_leaf_symbol(enum ain_data_type leaf_data, struct rsave_symbol *sym);
+
+static const struct ain_type *intern_x4_type_node(const char **p)
+{
+	const char *start = *p;
+	char *end = NULL;
+	int data = (int)strtol(*p, &end, 10);
+	if (!end || *end != ':')
+		return NULL;
+	*p = end + 1;
+	size_t sym_len = (size_t)strtoul(*p, &end, 10);
+	if (!end || *end != ':')
+		return NULL;
+	*p = end + 1;
+	if (strlen(*p) < sym_len + 2 || (*p)[sym_len] != ':')
+		return NULL;
+	char *sym_name = xmalloc(sym_len + 1);
+	memcpy(sym_name, *p, sym_len);
+	sym_name[sym_len] = '\0';
+	*p += sym_len + 1;
+
+	int has_child = (int)strtol(*p, &end, 10);
+	if (!end) {
+		free(sym_name);
+		return NULL;
+	}
+	*p = end;
+	const struct ain_type *child = NULL;
+	if (has_child) {
+		if (**p != ':') {
+			free(sym_name);
+			return NULL;
+		}
+		(*p)++;
+		child = intern_x4_type_node(p);
+		if (!child) {
+			free(sym_name);
+			return NULL;
+		}
+	}
+
+	size_t spec_len = (size_t)(*p - start);
+	for (struct interned_x4_type *it = interned_x4_types; it; it = it->next) {
+		if (strlen(it->spec) == spec_len && !memcmp(it->spec, start, spec_len)) {
+			free(sym_name);
+			return &it->type;
+		}
+	}
+
+	int struc = -1;
+	if (sym_len > 0) {
+		struct rsave_symbol rsym = { .name = sym_name, .id = -1 };
+		struc = resolve_array_leaf_symbol((enum ain_data_type)data, &rsym);
+	} else if (child) {
+		struc = child->struc;
+	}
+	free(sym_name);
+
+	struct interned_x4_type *node = xcalloc(1, sizeof(*node));
+	node->spec = xmalloc(spec_len + 1);
+	memcpy(node->spec, start, spec_len);
+	node->spec[spec_len] = '\0';
+	node->type = (struct ain_type) {
+		.data = (enum ain_data_type)data,
+		.struc = struc,
+		.rank = child ? 1 : 0,
+		.array_type = (struct ain_type *)child,
+	};
+	node->next = interned_x4_types;
+	interned_x4_types = node;
+	return &node->type;
+}
+
+static bool decode_x4_type(const char *s, struct ain_type *out)
+{
+	if (!s || strncmp(s, "@x4t:", 5) != 0)
+		return false;
+	const char *p = s + 5;
+	const struct ain_type *t = intern_x4_type_node(&p);
+	if (!t)
+		return false;
+	*out = *t;
+	return true;
 }
 
 static int resolve_array_leaf_symbol(enum ain_data_type leaf_data, struct rsave_symbol *sym)
@@ -217,7 +356,23 @@ static void format_rsave_type(struct string **out, const struct ain_type *t)
 		if (t->array_type)
 			format_rsave_type(out, t->array_type);
 		break;
+	case AIN_WRAP:
+		append_str(out, "wrap@");
+		if (t->array_type)
+			format_rsave_type(out, t->array_type);
+		break;
+	case AIN_OPTION:
+		append_str(out, "option@");
+		if (t->array_type)
+			format_rsave_type(out, t->array_type);
+		break;
+	case AIN_REF_OPTION:
+		append_str(out, "ref option@");
+		if (t->array_type)
+			format_rsave_type(out, t->array_type);
+		break;
 	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
 		append_str(out, (t->struc >= 0 && t->struc < ain->nr_structures) ? ain->structures[t->struc].name : "interface");
 		break;
 	case AIN_ENUM:
@@ -401,6 +556,11 @@ static cJSON *resume_page_to_json(struct page *page)
 			cJSON_AddNumberToObject(json, "element-type", leaf_data);
 			cJSON_AddNumberToObject(json, "element-struct", struct_type);
 			cJSON_AddNumberToObject(json, "element-depth", depth);
+			if (ain->version >= 14) {
+				char *spec = encode_x4_type(&page->array.element_type);
+				cJSON_AddStringToObject(json, "v14-element-type", spec);
+				free(spec);
+			}
 		} else if (ain->version >= 11) {
 			enum ain_data_type leaf_data = normalize_v12_array_leaf_type(page->a_type);
 			int struct_type = page->array.struct_type;
@@ -507,21 +667,22 @@ static struct rsave_heap_frame *frame_page_to_rsave(struct page *page, int slot)
 	o->ref = heap[slot].ref;
 	o->seq = heap[slot].seq;
 	struct ain_variable *vars;
+	int nr_vars;
 	if (page->type == GLOBAL_PAGE) {
 		o->tag = RSAVE_GLOBALS;
 		o->func.id = -1;
-		assert(page->nr_vars == ain->nr_globals);
+		nr_vars = ain->nr_globals;
 		vars = ain->globals;
 	} else {
 		struct ain_function *f = &ain->functions[page->index];
 		o->tag = RSAVE_LOCALS;
 		o->func.name = format_rsave_function_name(page->index);
-		assert(page->nr_vars == f->nr_vars);
+		nr_vars = f->nr_vars;
 		vars = f->vars;
 		o->struct_ptr = page->local.struct_ptr;
 		o->parent_ptr = page->local.parent_page;
 	}
-	o->nr_types = page->nr_vars;
+	o->nr_types = nr_vars;
 	o->types = xcalloc(o->nr_types, sizeof(int32_t));
 	for (int i = 0; i < o->nr_types; i++)
 		o->types[i] = vars[i].type.data;
@@ -570,7 +731,11 @@ static struct rsave_heap_array *array_page_to_rsave(struct page *page, int slot)
 		leaf_data = normalize_v12_array_leaf_type(leaf_data);
 		o->rank_minus_1 = depth;
 		o->data_type = leaf_data;
-		o->struct_type.name = strdup(array_leaf_type_name(leaf_data, struct_type));
+		if (ain->version >= 14) {
+			o->struct_type.name = encode_x4_type(&page->array.element_type);
+		} else {
+			o->struct_type.name = strdup(array_leaf_type_name(leaf_data, struct_type));
+		}
 		o->root_rank = depth + 1;
 	} else if (ain->version >= 11) {
 		enum ain_data_type leaf_data = normalize_v12_array_leaf_type(page->a_type);
@@ -866,19 +1031,27 @@ static void load_json_page(int slot, cJSON *json)
 		page->array.struct_type = _struct_type->valueint;
 		page->array.rank = _rank->valueint;
 		if (ain->version >= 11) {
-			cJSON *elem_type = cJSON_GetObjectItem(json, "element-type");
-			cJSON *elem_struct = cJSON_GetObjectItem(json, "element-struct");
-			cJSON *elem_depth = cJSON_GetObjectItem(json, "element-depth");
-			enum ain_data_type dt = elem_type
-				? normalize_v12_array_leaf_type(type_check(cJSON_Number, elem_type)->valueint)
-				: normalize_v12_array_leaf_type(page->a_type);
-			int st = elem_struct ? type_check(cJSON_Number, elem_struct)->valueint : page->array.struct_type;
-			int depth = elem_depth
-				? type_check(cJSON_Number, elem_depth)->valueint
-				: (page->a_type == AIN_ARRAY ? 0 : (page->array.rank > 0 ? page->array.rank - 1 : 0));
-			page->a_type = AIN_ARRAY;
-			page->array.rank = 1;
-			page->array.element_type = make_v12_element_type(dt, st, depth);
+			cJSON *v14_spec = cJSON_GetObjectItem(json, "v14-element-type");
+			if (ain->version >= 14 && v14_spec && cJSON_IsString(v14_spec) &&
+			    decode_x4_type(cJSON_GetStringValue(v14_spec), &page->array.element_type)) {
+				page->a_type = AIN_ARRAY;
+				page->array.rank = 1;
+				page->array.struct_type = page->array.element_type.struc;
+			} else {
+				cJSON *elem_type = cJSON_GetObjectItem(json, "element-type");
+				cJSON *elem_struct = cJSON_GetObjectItem(json, "element-struct");
+				cJSON *elem_depth = cJSON_GetObjectItem(json, "element-depth");
+				enum ain_data_type dt = elem_type
+					? normalize_v12_array_leaf_type(type_check(cJSON_Number, elem_type)->valueint)
+					: normalize_v12_array_leaf_type(page->a_type);
+				int st = elem_struct ? type_check(cJSON_Number, elem_struct)->valueint : page->array.struct_type;
+				int depth = elem_depth
+					? type_check(cJSON_Number, elem_depth)->valueint
+					: (page->a_type == AIN_ARRAY ? 0 : (page->array.rank > 0 ? page->array.rank - 1 : 0));
+				page->a_type = AIN_ARRAY;
+				page->array.rank = 1;
+				page->array.element_type = make_v12_element_type(dt, st, depth);
+			}
 		}
 	} else if (page_type == DELEGATE_PAGE) {
 		cJSON *cursor = cJSON_GetObjectItem(json, "cursor");
@@ -1069,14 +1242,21 @@ static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t versi
 	enum ain_data_type data_type = a->data_type;
 	if (ain->version >= 11)
 		data_type = normalize_v12_array_leaf_type(data_type);
-	int struct_type = resolve_array_leaf_symbol(data_type, &a->struct_type);
 	struct page *page;
-	if (ain->version >= 11) {
+	struct ain_type decoded_v14;
+	if (ain->version >= 14 && a->struct_type.name && decode_x4_type(a->struct_type.name, &decoded_v14)) {
+		page = alloc_page(ARRAY_PAGE, AIN_ARRAY, a->nr_slots);
+		page->array.struct_type = decoded_v14.struc;
+		page->array.rank = 1;
+		page->array.element_type = decoded_v14;
+	} else if (ain->version >= 11) {
+		int struct_type = resolve_array_leaf_symbol(data_type, &a->struct_type);
 		page = alloc_page(ARRAY_PAGE, AIN_ARRAY, a->nr_slots);
 		page->array.struct_type = struct_type;
 		page->array.rank = 1;
 		page->array.element_type = make_v12_element_type(data_type, struct_type, a->rank_minus_1);
 	} else {
+		int struct_type = resolve_array_leaf_symbol(data_type, &a->struct_type);
 		page = alloc_page(ARRAY_PAGE, data_type, a->nr_slots);
 		page->array.struct_type = struct_type;
 		page->array.rank = a->rank_minus_1 + 1;
@@ -1135,6 +1315,8 @@ static bool delegate_target_matches_function(struct rsave *save, int obj, int fu
 		return false;
 	if (fun < 0 || fun >= ain->nr_functions || !ain->functions[fun].name)
 		return false;
+	if (ain->version >= 14)
+		return true;
 	struct rsave_heap_struct *s = save->heap[obj];
 	const char *fname = ain->functions[fun].name;
 	const char *at = NULL;
@@ -1231,7 +1413,10 @@ static void load_rsave_heap(struct rsave *save)
 				struct ain_variable *vars = f->tag == RSAVE_GLOBALS
 					? ain->globals : ain->functions[page->index].vars;
 				for (int i = f->nr_slots; i < page->nr_vars; i++) {
-					if (vars[i].type.data == AIN_STRUCT) {
+					if (ain->version >= 14) {
+						int w = variable_init_typed(&page->values[i], &vars[i].type, false, false);
+						i += w - 1;
+					} else if (vars[i].type.data == AIN_STRUCT) {
 						int st_slot = alloc_struct(vars[i].type.struc);
 						page->values[i].i = st_slot;
 					} else {
@@ -1243,7 +1428,10 @@ static void load_rsave_heap(struct rsave *save)
 				struct page *page = heap[slot].page;
 				struct ain_struct *as = &ain->structures[page->index];
 				for (int i = s->nr_slots; i < page->nr_vars; i++) {
-					if (as->members[i].type.data == AIN_STRUCT) {
+					if (ain->version >= 14) {
+						int w = variable_init_typed(&page->values[i], &as->members[i].type, false, false);
+						i += w - 1;
+					} else if (as->members[i].type.data == AIN_STRUCT) {
 						int st_slot = alloc_struct(as->members[i].type.struc);
 						page->values[i].i = st_slot;
 					} else {

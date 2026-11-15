@@ -17,6 +17,7 @@ object GameModifierBridge {
     private const val KEY_CTRL_OVERLAY_VISIBLE = "ctrl_overlay_visible"
     private const val KEY_DISABLE_STREAMER_MODE = "disable_streamer_mode"
     private const val KEY_LOCK_MASK = "lock_mask"
+    private const val KEY_DOHNA_LOCK_MASK = "dohna_lock_mask"
     private const val KEY_FONT_SCALE_PCT = "font_scale_pct"
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
     private const val KEY_CONFIG_SEQ = "config_seq"
@@ -44,6 +45,16 @@ object GameModifierBridge {
     const val LOCK_TREASURE_100 = 1 shl 10
     const val LOCK_DISABLE_STREAMER_MODE = 1 shl 11
 
+    const val LOCK_DD_ALLY_MAX_HP = 1 shl 0
+    const val LOCK_DD_ALLY_MAX_MP = 1 shl 1
+    const val LOCK_DD_ALLY_MAX_VP = 1 shl 2
+    const val LOCK_DD_ONE_HIT_KILL = 1 shl 3
+    const val LOCK_DD_INFINITE_MONEY = 1 shl 4
+    const val LOCK_DD_INFINITE_TP = 1 shl 5
+    const val LOCK_DD_WORKER_BEST_COND = 1 shl 6
+    const val LOCK_DD_WORK_FREEZE_TIMER = 1 shl 7
+    const val LOCK_DD_ALL_MASK = 0xFF
+
     @Volatile
     private var loaded = false
 
@@ -67,6 +78,44 @@ object GameModifierBridge {
 
     fun getConfigFilePath(context: Context): String {
         return File(context.filesDir, CONFIG_FILE_NAME).absolutePath
+    }
+
+    fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null): Boolean {
+        if (gameDir != null && gameDir.isDirectory) {
+            val files = gameDir.listFiles()
+            if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
+                return files.any { it.isFile && it.name.equals("Rance10.ain", ignoreCase = true) }
+            }
+        }
+        if (!dirNameFallback.isNullOrBlank()) {
+            return dirNameFallback.startsWith("Rance10", ignoreCase = true)
+        }
+        return true
+    }
+
+    fun isDohnaDohnaGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (gameDir != null && gameDir.isDirectory) {
+            val files = gameDir.listFiles()
+            if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
+                return files.any { it.isFile && it.name.equals("dohnadohna.ain", ignoreCase = true) }
+            }
+        }
+        if (saveDir != null && saveDir.isDirectory) {
+            if ((File(saveDir, "GlobalSaveData.asd").isFile ||
+                    File(saveDir, "AFInfo.asd").isFile ||
+                    File(saveDir, "SaveData5000.asd").isFile) &&
+                !File(saveDir, "GlobalSave.asd").isFile
+            ) {
+                return true
+            }
+        }
+        if (!dirNameFallback.isNullOrBlank()) {
+            val lower = dirNameFallback.lowercase()
+            if (lower == "dohnadohna" || lower.startsWith("dohnadohna-") || lower.contains("多娜多娜")) {
+                return true
+            }
+        }
+        return false
     }
 
     fun syncNativeConfigPath(context: Context) {
@@ -95,8 +144,10 @@ object GameModifierBridge {
                 } else {
                     rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
                 }
+                val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
                 json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
                 json.put(KEY_LOCK_MASK, mask)
+                json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
                 val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
                 val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
                 json.put(KEY_FONT_SCALE_PCT, fontPct)
@@ -146,6 +197,7 @@ object GameModifierBridge {
         } else {
             rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
         }
+        val dohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
         val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val json = JSONObject().apply {
@@ -156,6 +208,7 @@ object GameModifierBridge {
             put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
             put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
             put(KEY_LOCK_MASK, mask)
+            put(KEY_DOHNA_LOCK_MASK, dohnaMask)
             put(KEY_FONT_SCALE_PCT, fontPct)
             put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
@@ -181,6 +234,7 @@ object GameModifierBridge {
         } else {
             rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
         }
+        val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
         val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
@@ -191,6 +245,7 @@ object GameModifierBridge {
         json.put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
         json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
         json.put(KEY_LOCK_MASK, mask)
+        json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
         json.put(KEY_FONT_SCALE_PCT, fontPct)
         json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
         json.put(KEY_CONFIG_SEQ, nextSeq)
@@ -213,6 +268,7 @@ object GameModifierBridge {
             .putBoolean(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
             .putBoolean(KEY_DISABLE_STREAMER_MODE, disableStreamer)
             .putInt(KEY_LOCK_MASK, mask)
+            .putInt(KEY_DOHNA_LOCK_MASK, dohnaMask)
             .putInt(KEY_FONT_SCALE_PCT, fontPct)
             .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             .putInt(KEY_CONFIG_SEQ, nextSeq)
@@ -267,13 +323,19 @@ object GameModifierBridge {
         if (!loaded) return getConfigSeq(context)
         return try {
             val liveMask = nativeGetLiveLocks()
+            val dohnaLiveMask = getDohnaLiveLocks()
             val json = readConfigJson(context)
             val savedMask = json.optInt(KEY_LOCK_MASK, 0)
+            val savedDohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val prefsMask = prefs.getInt(KEY_LOCK_MASK, -1)
-            if (liveMask != savedMask || liveMask != prefsMask) {
+            val prefsDohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, -1)
+            if (liveMask != savedMask || liveMask != prefsMask ||
+                dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask
+            ) {
                 json.put(KEY_DISABLE_STREAMER_MODE, (liveMask and LOCK_DISABLE_STREAMER_MODE) != 0)
                 json.put(KEY_LOCK_MASK, liveMask)
+                json.put(KEY_DOHNA_LOCK_MASK, dohnaLiveMask)
                 writeConfigJson(context, json)
             }
             json.optInt(KEY_CONFIG_SEQ, 0)
@@ -356,6 +418,45 @@ object GameModifierBridge {
         val cur = getSavedLockMask(context)
         val next = if (enabled) (cur or LOCK_DISABLE_STREAMER_MODE) else (cur and LOCK_DISABLE_STREAMER_MODE.inv())
         setSavedLockMask(context, next)
+    }
+
+    fun getSavedDohnaLockMask(context: Context): Int {
+        return readConfigJson(context).optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+    }
+
+    fun getDohnaLiveLockCount(context: Context): Int {
+        return Integer.bitCount(getSavedDohnaLockMask(context))
+    }
+
+    fun setSavedDohnaLockMask(context: Context, mask: Int) {
+        val clean = mask and LOCK_DD_ALL_MASK
+        val json = readConfigJson(context)
+        json.put(KEY_DOHNA_LOCK_MASK, clean)
+        writeConfigJson(context, json)
+        if (loaded) {
+            try {
+                nativeSetConfigPath(getConfigFilePath(context))
+                setDohnaLiveLocks(clean)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun setDohnaLiveLocks(mask: Int) {
+        if (!loaded) return
+        try {
+            nativeSetDohnaLiveLocks(mask and LOCK_DD_ALL_MASK)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun getDohnaLiveLocks(): Int {
+        if (!loaded) return 0
+        return try {
+            nativeGetDohnaLiveLocks() and LOCK_DD_ALL_MASK
+        } catch (_: Throwable) {
+            0
+        }
     }
 
     fun readStreamerModeForDir(saveDir: File): Int {
@@ -512,6 +613,12 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetLiveLocks(): Int
+
+    @JvmStatic
+    external fun nativeSetDohnaLiveLocks(mask: Int)
+
+    @JvmStatic
+    external fun nativeGetDohnaLiveLocks(): Int
 
     @JvmStatic
     external fun nativeApplyLiveAction(actionSpec: String)

@@ -46,7 +46,7 @@
     <!-- Allow access to the vibrator -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Network access for online base game (Cloudflare R2/Workers) and MOD (rance10sns.cn) installation -->
+    <!-- Network access for online base game and MOD (Cloudflare R2/Workers) installation -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -68,7 +68,9 @@
          An example Java class can be found in README-android.md
     -->
     <application android:label="@string/app_name"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.Launcher"
         android:allowBackup="false"
         android:hasFragileUserData="true" >
 
@@ -78,12 +80,18 @@
         <meta-data android:name="SDL_ENV.SDL_IOS_ORIENTATIONS" android:value="LandscapeLeft LandscapeRight"/>
 
         <activity android:name="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:label="@string/app_name"
             android:exported="true">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <activity android:name="io.github.kichikuou.xsystem4.GameHubActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.XSystem4Activity"
@@ -114,32 +122,31 @@
 
         <activity android:name="io.github.kichikuou.xsystem4.SaveManagerActivity"
             android:label="@string/action_save_manager"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.GameModifierActivity"
             android:label="@string/action_game_modifier"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.ModManagerActivity"
             android:label="@string/mod_mgr_activity_title"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 
-        <activity android:name="io.github.kichikuou.xsystem4.ModPortalActivity"
-            android:label="@string/mod_portal_activity_title"
-            android:parentActivityName="io.github.kichikuou.xsystem4.ModManagerActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+        <activity android:name="io.github.kichikuou.xsystem4.SettingsActivity"
+            android:label="@string/action_settings"
+            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
             android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.LicensesMenuActivity"
             android:label="@string/action_licenses"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.SettingsActivity"
             android:exported="false">
         </activity>
 

@@ -8,15 +8,15 @@
 
 **re:xsystem4** is a heavily customized and extended native Android engine for AliceSoft **System 4.x** games, built upon [xsystem4](https://github.com/nunuhara/xsystem4) and [xsystem4-android](https://github.com/kichikuou/xsystem4-android).
 
-Written in pure C/C++, SDL2, and OpenGL ES 3.0, it directly interprets AIN bytecode and renders original game assets on Android `arm64-v8a` devices without relying on Wine, Winlator, or any x86/x64 translation layer. Beyond classic System 4.0 titles, it provides full implementations, MOD compatibility, and mobile-focused optimizations for late-era large-scale AliceSoft titles (such as *Rance X / Rance 10 -Showdown-* and community expansions like *Sunset MOD / 日不落 MOD*) powered by **AIN v12**, **PartsEngine v12**, **FLAT v15 skeletal & particle animations**, **SealEngine 3D**, **APEG video streaming**, and **SaveData v26**.
+Written in pure C/C++, SDL2, and OpenGL ES 3.0, it directly interprets AIN bytecode and renders original game assets on Android `arm64-v8a` devices without relying on Wine, Winlator, or any x86/x64 translation layer. Beyond classic System 4.0 titles, it provides full implementations, MOD compatibility, and mobile-focused optimizations for late-era large-scale AliceSoft titles (such as *Rance X / Rance 10 -Showdown-* with community expansions like *Sunset MOD / 日不落 MOD*, and *Dohna Dohna: Let's Do Bad Things Together / 多娜多娜*) powered by **AIN v12 – v14+**, **PartsEngine**, **FLAT v15 skeletal & particle animations**, **SealEngine 3D**, **APEG video streaming**, and **SaveData v26 / v27**.
 
 ---
 
 ## Key Features
 
-### 1. AIN v12 Virtual Machine, HLL & Deep MOD Compatibility
-- **AIN v12 Bytecode Support**: Full support for AIN v12 opcodes, delegates (`DG_*`), local reference management, deep struct copying, `CALLFUNC` `struct_page` inheritance, and reflection interfaces.
-- **Full HLL Coverage**: Implements and extends `PartsEngine` (804/804 functions), `SealEngine`, `ADVEngine`, `SaveData`, `RSave`, `APEG`, `SoundEngine`, `FileOperation`, `FileDialog`, `MsgSkip`, `Math`, `PassRegister`, `BanMisc`, and other core HLL libraries.
+### 1. AIN v12 – v14+ Virtual Machine, HLL & Deep MOD Compatibility
+- **AIN v12 – v14.1 Bytecode Support**: Full support for AIN v12 and v14+ opcodes (including `X_DUP`, `X_MOV`, `X_REF`, `X_ASSIGN`, `X_A_INIT`, `X_TO_STR`, `IFACE_WRAP` interface wrappers, and `CALLMETHOD` vtable dispatch), delegates (`DG_*`), local reference management, deep struct copying, `CALLFUNC` `struct_page` inheritance, and reflection interfaces.
+- **Full HLL Coverage**: Implements and extends `PartsEngine` (804/804 functions), `HashMap`, `SealEngine`, `ADVEngine`, `SaveData`, `RSave`, `APEG`, `SoundEngine`, `FileOperation`, `FileDialog`, `MsgSkip`, `Math`, `PassRegister`, `BanMisc`, and other core HLL libraries.
 - **Large-Scale MOD Compatibility**:
   - Archive-indexed AFA asset IDs and per-entry `FILETIME` timestamp + MOD priority resolution across overlapping `.afa` archives, ensuring localized base/hotfix assets (`CG` / `CG6`) and MOD overrides coexist cleanly without collisions.
   - Canonical `.ex` data table prioritization, incremental MOD patch layering, and automatic Shift-JIS / GBK / UTF-8 text & font fallback.
@@ -41,7 +41,10 @@ Written in pure C/C++, SDL2, and OpenGL ES 3.0, it directly interprets AIN bytec
   - Automatically suspends audio mixing when backgrounded to eliminate idle CPU/battery drain.
 - **APEG Video Decoder & Texture GC**: Built-in MPEG-1 video and Ogg Vorbis audio synchronized decoder, per-frame deferred texture garbage collection, `SceneParty` card loading acceleration, and fast-forward (`MsgSkip` / `Ctrl`) surface rebuild throttling.
 
-### 4. Online & Local Installer, Multi-Format Archive Engine, Save Manager & Game Modifier
+### 4. Per-Game Hub, Online & Local Installer, Save Manager & Game Modifier
+- **Game Selection Home & Dedicated Game Hubs**:
+  - Opening the app presents a **Select Game** portal showing official high-res icons and live status badges for **Rance 10**, **Dohna Dohna**, and any additional imported System 4 titles.
+  - Tapping a game opens its **Dedicated Hub**: Rance 10 provides cloud/local base & MOD installers, MOD Manager, scoped saves, and the full Rance 10 modifier suite, while Dohna Dohna and other titles present a clean local import flow, isolated save directory management, and universal modifier tools (floating overlay, `⏩ Ctrl` skip button, live font scaling, and scrollbar scaling).
 - **Online & Local Dual-Mode Installation (Base Game & MODs)**:
   - **Dual-Line Online Base Game Installer (EdgeOne / Cloudflare)**: One-click cloud download of the complete Chinese Rance 10 base game via **EdgeOne** or **Cloudflare** CDN lines, with seamless cross-line HTTP `Range` resume and per-file SHA-256 verification (no double storage overhead for archive extraction).
   - **Background Download & System Notifications**: Powered by an Android Foreground Service with CPU/Wi-Fi locks so downloads and extractions continue at full speed when backgrounded or with the screen off; includes a **Background** dialog minimize action, live notification progress bar & speed, notification **Pause** button, and completion alerts.

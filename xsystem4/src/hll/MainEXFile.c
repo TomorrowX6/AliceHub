@@ -724,7 +724,8 @@ HLL_LIBRARY(MainEXFile,
 	    HLL_TODO_EXPORT(Load, NULL),
 	    HLL_TODO_EXPORT(GetColAtFormatName, NULL),
 	    HLL_TODO_EXPORT(GetNodeNameList, NULL),
-	    HLL_TODO_EXPORT(GetEXNameList, NULL));
+	    HLL_TODO_EXPORT(GetEXNameList, NULL),
+	    HLL_TODO_EXPORT(GetFormatNameList, NULL));
 
 static void MainEXFile_PreLink(void)
 {

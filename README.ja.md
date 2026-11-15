@@ -8,15 +8,15 @@
 
 **re:xsystem4** は、[xsystem4](https://github.com/nunuhara/xsystem4) および [xsystem4-android](https://github.com/kichikuou/xsystem4-android) をベースに独自拡張・最適化された AliceSoft **System 4.x** 向けのネイティブ Android エンジンです。
 
-C/C++、SDL2、OpenGL ES 3.0 で実装されており、Wine や Winlator などの x86/x64 エミュレーション層を介さずに、Android `arm64-v8a` デバイス上で AIN バイトコードを直接解釈実行し、オリジナルのアセットを描画します。従来の System 4.0 作品に加え、後期の大規模タイトル（『ランス10 -決戦- / Rance X』および大型拡張 MOD など）で採用されている **AIN v12**、**PartsEngine v12**、**FLAT v15 スケルタル＆パーティクルアニメーション**、**SealEngine 3D**、**APEG 動画再生**、および **SaveData v26** を完全に実装し、モバイル環境向けに最適化しています。
+C/C++、SDL2、OpenGL ES 3.0 で実装されており、Wine や Winlator などの x86/x64 エミュレーション層を介さずに、Android `arm64-v8a` デバイス上で AIN バイトコードを直接解釈実行し、オリジナルのアセットを描画します。従来の System 4.0 作品に加え、後期の大規模タイトル（『ランス10 -決戦- / Rance X』および大型拡張 MOD、『ドーナドーナ いっしょにわるいことをしよう / Dohna Dohna』など）で採用されている **AIN v12〜v14+**、**PartsEngine**、**FLAT v15 スケルタル＆パーティクルアニメーション**、**SealEngine 3D**、**APEG 動画再生**、および **SaveData v26 / v27** を完全に実装し、モバイル環境向けに最適化しています。
 
 ---
 
 ## 主な機能
 
-### 1. AIN v12 仮想マシン、HLL 拡張＆大型 MOD 対応
-- **AIN v12 バイトコード対応**：AIN v12 の新規オペコード、デリゲート（`DG_*`）、ローカル参照管理、構造体のディープコピー、`CALLFUNC` における `struct_page` 継承、リフレクションインターフェースを完全実装。
-- **包括的な HLL モジュール実装**：`PartsEngine`（全 804 関数実装済み）、`SealEngine`、`ADVEngine`、`SaveData`、`RSave`、`APEG`、`SoundEngine`、`FileOperation`、`FileDialog`、`MsgSkip`、`Math`、`PassRegister`、`BanMisc` などの主要 HLL ライブラリを網羅。
+### 1. AIN v12〜v14+ 仮想マシン、HLL 拡張＆大型 MOD 対応
+- **AIN v12〜v14.1 バイトコード対応**：AIN v12 および v14+ の新規オペコード（`X_DUP`、`X_MOV`、`X_REF`、`X_ASSIGN`、`X_A_INIT`、`X_TO_STR`、`IFACE_WRAP` インターフェースラッパー、`CALLMETHOD` 仮想テーブルディスパッチを含む）、デリゲート（`DG_*`）、ローカル参照管理、構造体のディープコピー、`CALLFUNC` における `struct_page` 継承、リフレクションインターフェースを完全実装。
+- **包括的な HLL モジュール実装**：`PartsEngine`（全 804 関数実装済み）、`HashMap`、`SealEngine`、`ADVEngine`、`SaveData`、`RSave`、`APEG`、`SoundEngine`、`FileOperation`、`FileDialog`、`MsgSkip`、`Math`、`PassRegister`、`BanMisc` などの主要 HLL ライブラリを網羅。
 - **大型 MOD 互換性**：
   - アーカイブインデックスを AFA アセット ID にエンコードし、エントリ単位の `FILETIME` タイムスタンプ＆MOD 優先度解決により、ローカライズ版ベース／ホットフィックス資産と大型 MOD の競合を防止。
   - 正規 `.ex` テーブルの優先解決、差分 MOD パッチの上書き適用、Shift-JIS / GBK / UTF-8 テキスト・フォント自動フォールバックに対応。
@@ -41,7 +41,10 @@ C/C++、SDL2、OpenGL ES 3.0 で実装されており、Wine や Winlator など
   - バックグラウンド移行時にオーディオミキサーを自動休止し、待機時のバッテリー消費を削減。
 - **APEG ビデオデコーダ＆テクスチャ GC**：MPEG-1 映像と Ogg Vorbis 音声の同期デコーダを内蔵。フレーム内の遅延解放テクスチャ回収、`SceneParty` カード読み込み高速化、およびスキップ（`MsgSkip` / `Ctrl`）時の再構築スロットリングを実装。
 
-### 4. オンライン＆ローカル導入、マルチフォーマット展開エンジン、セーブ管理＆ゲーム改造
+### 4. ゲーム選択ホーム＆専用ページ、オンライン／ローカル導入、セーブ管理＆ゲーム改造
+- **ゲーム選択ホーム＆タイトル別専用ページ**：
+  - アプリ起動時に **『ランス10』**、**『ドーナドーナ』**、および追加インポートされた System 4 作品をカード形式で一覧表示し、公式高解像度アイコンと導入・実行状態をリアルタイム表示。
+  - 各タイトルをタップすると専用ページへ遷移：『ランス10』ではオンライン導入・MOD管理・専用セーブ＆全改造機能を表示し、『ドーナドーナ』等ではローカル導入・個別セーブ管理・汎用改造機能（フローティングオーバーレイ、`⏩ Ctrl` 早送り、文字サイズ＆スクロールバー変更）のみをスリムに表示します。
 - **本体・MOD のオンライン／ローカル両対応インストーラー**：
   - **ゲーム本体オンライン 2 回線ダウンロード（EdgeOne / Cloudflare）**：**EdgeOne 回線** または **Cloudflare 回線** を選択して中国語版『ランス10』本体一式を直接ダウンロード（回線切替時のシームレスな HTTP `Range` レジューム再開およびファイル単位の SHA-256 検証に対応）。
   - **バックグラウンドダウンロード＆システム通知**：Android フォアグラウンドサービスと CPU/Wi-Fi ロックにより、画面オフや他アプリ使用中もフルスピードでダウンロード・展開を継続。進捗ダイアログのバックグラウンド最小化、通知バーでのリアルタイム進捗・速度表示、通知からの一時停止、完了通知に対応。
