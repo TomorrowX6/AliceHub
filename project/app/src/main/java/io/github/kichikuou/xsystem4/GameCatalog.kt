@@ -72,7 +72,11 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
-            if (File(saveDir, "GlobalSaveData.asd").isFile && !File(saveDir, "GlobalSave.asd").isFile) {
+            if ((File(saveDir, "GlobalSaveData.asd").isFile ||
+                    File(saveDir, "AFInfo.asd").isFile ||
+                    File(saveDir, "SaveData5000.asd").isFile) &&
+                !File(saveDir, "GlobalSave.asd").isFile
+            ) {
                 return ID_DOHNA_DOHNA
             }
             if (File(saveDir, "GlobalSave.asd").isFile) {

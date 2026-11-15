@@ -274,6 +274,20 @@ class GameModifierActivity : Activity() {
         return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName)
     }
 
+    private fun isCurrentTargetDohnaDohna(): Boolean {
+        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+            return false
+        }
+        return GameModifierBridge.isDohnaDohnaGameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
     private fun refreshUiScaleButtons() {
         val fontPct = GameModifierBridge.getFontScalePercent(this)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
@@ -289,11 +303,12 @@ class GameModifierActivity : Activity() {
         )
     }
 
-    private fun refreshTargetControlsVisibility(isRance10: Boolean) {
+    private fun refreshTargetControlsVisibility(isRance10: Boolean, isDohnaDohna: Boolean) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
-        (floatingCfgBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
+        (floatingCfgBtn?.parent as? View)?.visibility = if (isRance10 || isDohnaDohna) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_mod_refresh)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         findViewById<View>(R.id.btn_mod_switch_dir)?.visibility =
             if (!scopedGameId.isNullOrBlank() && targets.size <= 1) View.GONE else View.VISIBLE
     }
@@ -301,12 +316,13 @@ class GameModifierActivity : Activity() {
     private fun refreshSummaryText() {
         val saveDir = currentTarget.saveDir
         val isRance10 = isCurrentTargetRance10()
+        val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
         val floatOn = GameModifierBridge.isFloatingEnabled(this)
         val ctrlOn = GameModifierBridge.isCtrlOverlayEnabled(this)
         val fontPct = GameModifierBridge.getFontScalePercent(this)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna)
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.displayName)
@@ -314,11 +330,20 @@ class GameModifierActivity : Activity() {
             val asdCount = saveDir.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
                 .count()
-            findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 字体：$fontPct% · 滚动条：$sbPct%",
-                "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · 文字：$fontPct% · バー：$sbPct%",
-                "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Font: $fontPct% · Scrollbar: $sbPct%"
-            )
+            if (isDohnaDohna) {
+                val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
+                findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                    "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 实时锁定：$ddLockCount 项 · 字体：$fontPct% · 滚动条：$sbPct%",
+                    "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · ロック $ddLockCount 項目 · 文字：$fontPct% · バー：$sbPct%",
+                    "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Locks: $ddLockCount · Font: $fontPct% · Scrollbar: $sbPct%"
+                )
+            } else {
+                findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                    "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 字体：$fontPct% · 滚动条：$sbPct%",
+                    "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · 文字：$fontPct% · バー：$sbPct%",
+                    "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Font: $fontPct% · Scrollbar: $sbPct%"
+                )
+            }
             return
         }
 
@@ -338,14 +363,23 @@ class GameModifierActivity : Activity() {
         val emptyView = findViewById<TextView>(R.id.mod_empty_view)
         val listView = findViewById<View>(R.id.mod_save_list)
         if (!isCurrentTargetRance10()) {
+            val isDohnaDohna = isCurrentTargetDohnaDohna()
             currentEntries = emptyList()
             adapter.update(emptyList())
             refreshSummaryText()
-            emptyView.text = tr(
-                "当前游戏支持通用界面与快捷辅助功能。\n可使用上方开关控制游戏内悬浮窗与 Ctrl 快进悬浮键，或点击“字体大小”、“滚动条修改”实时调节显示与触控比例。",
-                "このゲームでは共通UI・早送り補助を利用できます。\n上部のスイッチや文字サイズ・スクロールバー変更をご利用ください。",
-                "Universal UI scale and Ctrl skip controls are enabled for this game."
-            )
+            emptyView.text = if (isDohnaDohna) {
+                tr(
+                    "多娜多娜已支持游戏内悬浮窗实时数值修改与常用作弊器。\n进入游戏后点击左上角悬浮图标，即可修改资金、天数、调教点、单间上限、战斗成员等级能力好感、春销人材评级四维状态，以及使用全物品全徽章、毕业武器、战斗秒杀等快捷作弊；也可在此处预先配置实时锁定开关、字体大小与滚动条比例。",
+                    "ドーナドーナはゲーム内フローティングメニューから資金・日数・調教P・戦闘メンバー・人材ステータス編集および定番チートに対応しています。\n上部のリアルタイムロック・文字サイズ・スクロールバー設定も利用可能です。",
+                    "Dohna Dohna supports live in-game numeric modification and common cheats via the floating icon."
+                )
+            } else {
+                tr(
+                    "当前游戏支持通用界面与快捷辅助功能。\n可使用上方开关控制游戏内悬浮窗与 Ctrl 快进悬浮键，或点击“字体大小”、“滚动条修改”实时调节显示与触控比例。",
+                    "このゲームでは共通UI・早送り補助を利用できます。\n上部のスイッチや文字サイズ・スクロールバー変更をご利用ください。",
+                    "Universal UI scale and Ctrl skip controls are enabled for this game."
+                )
+            }
             emptyView.visibility = View.VISIBLE
             listView.visibility = View.GONE
             return
@@ -559,6 +593,45 @@ class GameModifierActivity : Activity() {
     // 3. In-Game Live Locks Dialog
     // =========================================================================
     private fun showFloatingLocksDialog() {
+        if (!isCurrentTargetRance10() && isCurrentTargetDohnaDohna()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("战斗锁定我方全员满HP", "味方全員HP最大ロック", "Lock Party Max HP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_MP to tr("战斗锁定我方全员满MP", "味方全員MP最大ロック", "Lock Party Max MP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_VP to tr("战斗锁定我方全员满怒气VP", "味方全員VP最大ロック", "Lock Party Max VP"),
+                GameModifierBridge.LOCK_DD_ONE_HIT_KILL to tr("战斗敌方全员1血秒杀", "敵全員HP1・一撃撃破", "Enemy 1 HP One-Hit Kill"),
+                GameModifierBridge.LOCK_DD_INFINITE_MONEY to tr("无限资金 · 保底99999999", "資金無限・99999999維持", "Infinite Money"),
+                GameModifierBridge.LOCK_DD_INFINITE_TP to tr("无限调教点 · TP不减", "調教ポイント無限", "Infinite Training Points"),
+                GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材满精神满避孕药且不崩溃不怀孕", "人材メンタル・ピル最大維持", "Keep Workers Best Condition"),
+                GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销营业配对倒计时锁定不减", "ハルウリ制限時間ロック", "Freeze Brothel Match Timer")
+            )
+            var lockMask = GameModifierBridge.getSavedDohnaLockMask(this)
+            val labels = lockDefs.map { it.second }.toTypedArray()
+            val checked = BooleanArray(lockDefs.size) { idx ->
+                (lockMask and lockDefs[idx].first) != 0
+            }
+            AlertDialog.Builder(this)
+                .setTitle(tr("多娜多娜实时锁定设置", "ドーナドーナ ロック設定", "Dohna Dohna Live Locks"))
+                .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                    val bit = lockDefs[which].first
+                    lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
+                }
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    GameModifierBridge.setSavedDohnaLockMask(this, lockMask)
+                    syncTopSwitches()
+                    refreshSummaryText()
+                    Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
+                }
+                .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
+                    GameModifierBridge.setSavedDohnaLockMask(this, 0)
+                    syncTopSwitches()
+                    refreshSummaryText()
+                    Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+
         val lockDefs = listOf(
             GameModifierBridge.LOCK_PARTY_MAX_HP to tr("锁定我方满生命", "味方HP最大ロック", "Lock Party Max HP"),
             GameModifierBridge.LOCK_INFINITE_AP to tr("锁定无限AP", "AP 99ロック", "Lock Infinite AP"),

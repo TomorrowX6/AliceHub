@@ -193,16 +193,41 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val ctrlVisible = ctrlEnabled && (xsAct?.isCtrlOverlayCurrentlyVisible()
             ?: GameModifierBridge.isCtrlOverlayVisible(activity))
         val j = readLiveJson()
-        val isRance10 = j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
+        val isDohnaDohna = j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
+        val isRance10 = !isDohnaDohna && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)
         val lockCount = GameModifierBridge.getLiveLockCount(activity)
+        val dohnaLockCount = GameModifierBridge.getDohnaLiveLockCount(activity)
         val streamerLockOff = (savedMask and GameModifierBridge.LOCK_DISABLE_STREAMER_MODE) != 0
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
 
-        val titleText = if (!isRance10 || !inGame) {
+        val titleText = if (isDohnaDohna) {
+            if (!inGame) {
+                tr("多娜多娜修改器 · 请先进入游戏存档", "ドーナドーナ改造 · ロード後に有効", "Dohna Modifier · Enter Game First")
+            } else if (inBattle) {
+                val bTurn = j.optInt("battleTurn", 1)
+                val eCnt = j.optInt("enemyCount", 0)
+                val eHp = j.optInt("enemyTotalHp", 0)
+                tr(
+                    "多娜多娜修改器 [战斗T$bTurn · 敌${eCnt}名 · 敌HP:$eHp]",
+                    "改造 [戦闘T$bTurn · 敵${eCnt}体 · 敵HP:$eHp]",
+                    "Modifier [Battle T$bTurn · Enemy HP:$eHp]"
+                )
+            } else {
+                val turn = j.optInt("turn", 1)
+                val money = j.optInt("money", 0)
+                val tp = j.optInt("tp", 0)
+                val tpMax = j.optInt("tpMax", 0)
+                tr(
+                    "多娜多娜修改器 [第${turn}天 · 资金:$money · TP:$tp/$tpMax]",
+                    "改造 [${turn}日目 · 資金:$money · TP:$tp/$tpMax]",
+                    "Modifier [Day $turn · Money:$money · TP:$tp/$tpMax]"
+                )
+            }
+        } else if (!isRance10 || !inGame) {
             tr("悬浮窗修改器", "ゲーム改造", "Floating Modifier")
         } else if (inBattle) {
             val ap = j.optInt("battleAp", 0)
@@ -235,6 +260,17 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (isRance10) {
             menuEntries.add(
                 tr("实时锁定开关 · 已开启 $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount ON…") to { showLocksDialog() }
+            )
+        } else if (isDohnaDohna) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定开关 · 已开启 $dohnaLockCount 项…", "リアルタイムロック · $dohnaLockCount 項目…", "Live Locks · $dohnaLockCount ON…") to { showDohnaLocksDialog() },
+                    tr("常用作弊器…", "定番チート機能…", "Common Cheats…") to { showDohnaCommonCheatsDialog() },
+                    tr("战斗快捷指令…", "戦闘クイック操作…", "Battle Quick Actions…") to { showDohnaBattleQuickDialog() },
+                    tr("修改经营与资源数值…", "経営・資金・日数編集…", "Edit Economy & Resources…") to { showDohnaEditEconomyDialog() },
+                    tr("修改战斗成员数值…", "戦闘メンバー数値編集…", "Edit Party Members…") to { showDohnaSelectPlayerDialog() },
+                    tr("修改春销人材数值…", "ハルウリ人材数値編集…", "Edit Brothel Workers…") to { showDohnaSelectWorkerDialog() }
+                )
             )
         }
         menuEntries.add(
@@ -626,6 +662,536 @@ class FloatingModifierOverlay(private val activity: Activity) {
             Triple("setCharExp", tr("全角色经验值", "全キャラ経験値", "All Chars EXP"), 999999)
         )
         showNumberInputDialog(tr("修改卡牌与角色", "カード・キャラ", "Edit Cards & Chars"), fields)
+    }
+
+    private fun dohnaPhaseName(phase: Int): String = when (phase) {
+        0 -> tr("回合初", "ターン開始前", "Turn Start")
+        1 -> tr("清晨", "朝", "Morning")
+        2 -> tr("基地日常", "拠点日常", "Base")
+        3 -> tr("行动选择", "行動選択", "Action Select")
+        4 -> tr("春销营业", "ハルウリ", "Brothel Work")
+        5 -> tr("迷宫抢夺", "ヒトカリ", "Dungeon")
+        6 -> tr("特殊顾客", "特別顧客", "Special Guest")
+        7 -> tr("回合结算", "ターン終了", "Turn End")
+        else -> tr("进行中", "進行中", "Active")
+    }
+
+    private fun dohnaWorkerRankName(rank: Int): String =
+        arrayOf("D", "C", "C+", "B", "B+", "A", "A+", "S", "S+", "SS").getOrElse(rank) { "D" }
+
+    private fun dohnaWorkerRarityName(rarity: Int): String =
+        arrayOf("N", "R", "SR", "SSR", "SSSR", "UR").getOrElse(rarity) { "N" }
+
+    private fun sendDohnaInGameAction(act: JSONObject, toastMsg: String, requireBattle: Boolean = false) {
+        val live = readLiveJson()
+        if (!live.optBoolean("inGame", false)) {
+            Toast.makeText(
+                activity,
+                tr("请先开始游戏或读取存档后再执行", "ゲームを開始またはロードしてから実行してください", "Start or load a game first"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (requireBattle && !live.optBoolean("inBattle", false)) {
+            Toast.makeText(
+                activity,
+                tr("当前不在战斗中，进入战斗后方可执行", "現在は戦闘中ではありません", "Only available during battle"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        sendAction(act, toastMsg)
+    }
+
+    private fun showDohnaLocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("战斗锁定我方全员满HP", "味方全員HP最大ロック", "Lock Party Max HP"),
+            GameModifierBridge.LOCK_DD_ALLY_MAX_MP to tr("战斗锁定我方全员满MP", "味方全員MP最大ロック", "Lock Party Max MP"),
+            GameModifierBridge.LOCK_DD_ALLY_MAX_VP to tr("战斗锁定我方全员满怒气VP", "味方全員VP最大ロック", "Lock Party Max VP"),
+            GameModifierBridge.LOCK_DD_ONE_HIT_KILL to tr("战斗敌方全员1血秒杀", "敵全員HP1・一撃撃破", "Enemy 1 HP One-Hit Kill"),
+            GameModifierBridge.LOCK_DD_INFINITE_MONEY to tr("无限资金 · 保底99999999", "資金無限・99999999維持", "Infinite Money"),
+            GameModifierBridge.LOCK_DD_INFINITE_TP to tr("无限调教点 · TP不减", "調教ポイント無限", "Infinite Training Points"),
+            GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材满精神满避孕药且不崩溃不怀孕", "人材メンタル・ピル最大維持", "Keep Workers Best Condition"),
+            GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销营业配对倒计时锁定不减", "ハルウリ制限時間ロック", "Freeze Brothel Match Timer")
+        )
+        var mask = GameModifierBridge.getSavedDohnaLockMask(activity)
+        val labels = lockDefs.map { it.second }.toTypedArray()
+        val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
+
+        AlertDialog.Builder(activity)
+            .setTitle(tr("多娜多娜实时锁定开关", "リアルタイムロック", "Dohna Live Locks"))
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val bit = lockDefs[which].first
+                mask = if (isChecked) (mask or bit) else (mask and bit.inv())
+            }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                GameModifierBridge.setSavedDohnaLockMask(activity, mask)
+                Toast.makeText(activity, tr("已更新锁定项", "ロックを更新しました", "Locks updated"), Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(tr("全部关闭", "全解除", "Clear All")) { _, _ ->
+                GameModifierBridge.setSavedDohnaLockMask(activity, 0)
+                Toast.makeText(activity, tr("已关闭全部锁定", "全解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDohnaBattleQuickDialog() {
+        val items = arrayOf(
+            tr("敌方全员HP设为1", "敵全員のHPを1にする", "Set All Enemies HP to 1"),
+            tr("敌方清除增益并清空MP与怒气", "敵の強化解除＋MP・VPを0化", "Strip Enemy Buffs & Drain MP/VP"),
+            tr("我方全员满HP满MP满怒气并净化异常", "味方全員全回復＋弱体解除", "Full Heal & Cleanse All Allies"),
+            tr("我方全员满状态并附加攻技速暴击强化", "味方全員全回復＋全能力バフ付与", "Full Heal & Super Buff All Allies")
+        )
+        AlertDialog.Builder(activity)
+            .setTitle(tr("战斗快捷指令", "戦闘クイック操作", "Battle Quick Actions"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(
+                        JSONObject().put("ddBattle1HpEnemies", true),
+                        tr("敌方全员HP已设为1", "敵全員のHPを1にしました", "Enemies HP set to 1"),
+                        requireBattle = true
+                    )
+                    1 -> sendDohnaInGameAction(
+                        JSONObject().put("ddBattleWeakenEnemies", true),
+                        tr("已清除敌方增益并清空MP与怒气", "敵の強化解除・MP/VPゼロ化完了", "Enemy buffs & MP/VP cleared"),
+                        requireBattle = true
+                    )
+                    2 -> sendDohnaInGameAction(
+                        JSONObject().put("ddBattleHealAllies", true),
+                        tr("我方全员已回满状态并净化异常", "味方全員を全回復しました", "Allies healed & cleansed"),
+                        requireBattle = true
+                    )
+                    3 -> sendDohnaInGameAction(
+                        JSONObject().put("ddBattleBoostAllies", true),
+                        tr("我方全员已满状态并附加战技强化", "味方全員を全回復・強化しました", "Allies healed & boosted"),
+                        requireBattle = true
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDohnaCommonCheatsDialog() {
+        val items = arrayOf(
+            tr("资金增加 100 万", "資金 +1,000,000", "Add 1,000,000 Money"),
+            tr("资金增加 1000 万", "資金 +10,000,000", "Add 10,000,000 Money"),
+            tr("资金拉满 9.99 亿并回满调教点", "資金カンスト＋調教P全回復", "Max Money & Refill TP"),
+            tr("扩建店面单间上限至 10 间并扩充调教点上限", "部屋枠10拡張＋調教P上限10", "Expand Rooms to 10 & TP Max 10"),
+            tr("当前已持有消耗品与徽章数量补满 99", "所持済みアイテム・バッジを99個化", "Refill Held Items & Badges to 99"),
+            tr("解锁全消耗品与全 31 种正式徽章各 99 个", "全消費アイテム・全31種バッジ×99解放", "Unlock All Consumables & 31 Badges x99"),
+            tr("在籍战斗成员全员 HP·MP·怒气回满", "戦闘メンバー全員HP・MP・VP全回復", "Full Heal All Party Members"),
+            tr("已入队战斗成员一键满级 Lv99", "加入済みメンバー全員Lv99", "Level 99 All Joined Members"),
+            tr("已入队成员全能力永久强化并满好感度", "加入済みメンバー全能力強化＋好感度最大", "Super Boost Joined Members & Max Feel"),
+            tr("全员装备专属六阶毕业武器", "全員にランク6最強武器を装備", "Equip Rank 6 Weapons for All Members"),
+            tr("全体春销人材精神避孕药回满并治愈崩溃怀孕", "全人材メンタル・ピル回復＋異常治療", "Heal All Workers Mental, Pill & Status"),
+            tr("全体春销人材一键 SS 评级·UR 稀有度·四维拉满", "全人材ランクSS・UR・全ステータス最大", "Max All Workers Rank SS, UR & Stats")
+        )
+        AlertDialog.Builder(activity)
+            .setTitle(tr("多娜多娜常用作弊器", "定番チート機能", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatAddMoney", 1000000),
+                        tr("已增加 100 万资金", "資金 +100万を適用しました", "Added 1,000,000 Money")
+                    )
+                    1 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatAddMoney", 10000000),
+                        tr("已增加 1000 万资金", "資金 +1000万を適用しました", "Added 10,000,000 Money")
+                    )
+                    2 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatMaxMoney", true),
+                        tr("资金已拉满并回满调教点", "資金最大・調教P全回復を適用", "Max Money & TP applied")
+                    )
+                    3 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatExpandMansion", true),
+                        tr("单间上限已扩至 10 间且调教点上限扩至 10", "部屋枠10・調教P上限10を適用", "Expanded rooms & TP max to 10")
+                    )
+                    4 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatHeldItems99", true),
+                        tr("已持有消耗品与徽章已补满 99 个", "所持アイテム・バッジを99個にしました", "Held items & badges set to 99")
+                    )
+                    5 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatAllItemsBadges99", true),
+                        tr("已解锁全部消耗品与 31 种正式徽章各 99 个", "全消費アイテム・バッジ99個を解放", "Unlocked all consumables & badges x99")
+                    )
+                    6 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatPartyFullHeal", true),
+                        tr("战斗成员全员状态已回满", "全員全回復しました", "Party fully healed")
+                    )
+                    7 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatPartyLv99", true),
+                        tr("已入队成员已升至 Lv99", "加入済み全員Lv99を適用", "Joined members set to Lv99")
+                    )
+                    8 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatPartySuperBoost", true),
+                        tr("已入队成员全能力与好感度已强化", "加入済み全員の能力・好感度を強化", "Joined members super boosted")
+                    )
+                    9 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatPartyRank6Weapons", true),
+                        tr("已为全员装备六阶毕业武器", "全員にランク6武器を装備しました", "Equipped Rank 6 weapons")
+                    )
+                    10 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatWorkersHeal", true),
+                        tr("全体人材精神避孕药已回满并治愈异常状态", "全人材の状態を回復しました", "All workers healed")
+                    )
+                    11 -> sendDohnaInGameAction(
+                        JSONObject().put("ddCheatWorkersMaxStats", true),
+                        tr("全体人材已设为 SS 评级·UR 稀有度·四维拉满", "全人材ステータス最大を適用", "All workers maxed")
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDohnaEditEconomyDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(
+                activity,
+                tr("请先开始游戏或读取存档后再修改数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val phaseStr = dohnaPhaseName(j.optInt("phase", 0))
+        val wCnt = j.optInt("workerCount", 0)
+        val wLim = j.optInt("workerLimit", 5)
+        val gCnt = j.optInt("garageCount", 0)
+        val itemKinds = j.optInt("heldItemKinds", 0)
+        val badgeKinds = j.optInt("heldBadgeKinds", 0)
+
+        val summary = tr(
+            "当前阶段：$phaseStr · 店面人材：$wCnt/$wLim · 库房人材：$gCnt · 已持有物品种类：$itemKinds · 徽章种类：$badgeKinds",
+            "進行：$phaseStr · 店舗人材：$wCnt/$wLim · 保管：$gCnt · アイテム種：$itemKinds · バッジ種：$badgeKinds",
+            "Phase: $phaseStr · Shop: $wCnt/$wLim · Garage: $gCnt · Items: $itemKinds · Badges: $badgeKinds"
+        )
+        val fields = listOf(
+            Triple("ddMoney", tr("持有资金 0~999999999", "所持資金", "Money"), j.optInt("money", 0)),
+            Triple("ddTurn", tr("当前天数 1~99999", "現在日数", "Current Day"), j.optInt("turn", 1)),
+            Triple("ddTp", tr("当前调教点 TP", "現在調教P", "Current TP"), j.optInt("tp", 0)),
+            Triple("ddTpMax", tr("调教点上限 1~99", "調教P上限", "Max TP"), j.optInt("tpMax", 3)),
+            Triple("ddWorkerLimit", tr("店面单间上限 1~10", "部屋枠上限 1~10", "Room Limit 1~10"), wLim)
+        )
+        showDohnaFormDialog(
+            title = tr("修改经营与资源数值", "経営・資金・日数編集", "Edit Economy & Resources"),
+            summary = summary,
+            fields = fields,
+            prefillValues = true,
+            onApply = { values ->
+                val act = JSONObject()
+                for ((k, v) in values) act.put(k, v)
+                sendDohnaInGameAction(act, tr("经营与资源数值修改已生效", "適用しました", "Applied"))
+            }
+        )
+    }
+
+    private fun showDohnaSelectPlayerDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(
+                activity,
+                tr("请先开始游戏或读取存档后再修改成员数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val arr = j.optJSONArray("ddPlayers")
+        if (arr == null || arr.length() == 0) {
+            Toast.makeText(activity, tr("暂无可修改的战斗成员数据", "メンバーデータがありません", "No party members found"), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val options = mutableListOf<Triple<Int, JSONObject?, String>>()
+        options.add(Triple(-1, null, tr("批量修改：全部已入队成员", "一括編集：加入済みメンバー全員", "Batch: All Joined Members")))
+        options.add(Triple(-2, null, tr("批量修改：全体10名可操作角色", "一括編集：全プレイアブルキャラ", "Batch: All Playable Characters")))
+
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONObject(i) ?: continue
+            val realIdx = p.optInt("index", i)
+            val name = p.optString("name", "").ifBlank { p.optString("id", "#$realIdx") }
+            val joined = p.optBoolean("joined", false)
+            val lv = p.optInt("level", 1)
+            val hp = p.optInt("hp", 0)
+            val hpMax = p.optInt("hpMax", 0)
+            val joinTag = if (joined) tr("已入队", "加入済", "Joined") else tr("未入队", "未加入", "Not Joined")
+            options.add(Triple(realIdx, p, "$name · $joinTag · Lv$lv · HP $hp/$hpMax"))
+        }
+
+        val labels = options.map { it.third }.toTypedArray()
+        AlertDialog.Builder(activity)
+            .setTitle(tr("选择要修改的战斗成员", "編集する戦闘メンバーを選択", "Select Party Member"))
+            .setItems(labels) { _, which ->
+                val chosen = options.getOrNull(which) ?: return@setItems
+                showDohnaEditPlayerDialog(chosen.first, chosen.second, chosen.third)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDohnaEditPlayerDialog(target: Int, p: JSONObject?, labelTitle: String) {
+        val single = p != null
+        val summary = if (p != null) {
+            val wp = p.optString("weaponId", "").ifBlank { tr("无", "なし", "None") }
+            val pow = p.optInt("pow", 0)
+            val tec = p.optInt("tec", 0)
+            val spd = p.optInt("spd", 0)
+            val exp = p.optInt("exp", 0)
+            tr(
+                "装备武器：$wp · 当前总能力 力量:$pow · 技巧:$tec · 速度:$spd · 累计经验:$exp",
+                "武器：$wp · 現在能力 POW:$pow · TEC:$tec · SPD:$spd · EXP:$exp",
+                "Weapon: $wp · POW:$pow · TEC:$tec · SPD:$spd · EXP:$exp"
+            )
+        } else {
+            tr(
+                "批量修改提示：仅修改填写了数字的项目，留空的项目将保持各成员原有数值不变。",
+                "一括編集：数値を入力した項目のみ変更されます。空欄の項目は元の値を維持します。",
+                "Batch mode: only filled fields are updated; blank fields keep current values."
+            )
+        }
+
+        val fields = listOf(
+            Triple("level", tr("等级 1~99", "レベル 1~99", "Level 1~99"), p?.optInt("level", 1) ?: 99),
+            Triple("addExp", tr("追加升级经验 留空不加", "追加経験値 空欄で加算なし", "Add EXP"), -1),
+            Triple("hp", tr("当前HP", "現在HP", "Current HP"), p?.optInt("hp", 0) ?: 9999),
+            Triple("mp", tr("当前MP", "現在MP", "Current MP"), p?.optInt("mp", 100) ?: 100),
+            Triple("vp", tr("当前怒气VP", "現在VP", "Current VP"), p?.optInt("vp", 0) ?: 100),
+            Triple("alterPow", tr("力量永久加成 POW", "POW永久加算", "Bonus POW"), p?.optInt("alterPow", 0) ?: 9999),
+            Triple("alterTec", tr("技巧永久加成 TEC", "TEC永久加算", "Bonus TEC"), p?.optInt("alterTec", 0) ?: 9999),
+            Triple("alterSpd", tr("速度永久加成 SPD", "SPD永久加算", "Bonus SPD"), p?.optInt("alterSpd", 0) ?: 3000),
+            Triple("alterHp", tr("最大HP永久加成", "最大HP永久加算", "Bonus Max HP"), p?.optInt("alterHp", 0) ?: 20000),
+            Triple("alterMp", tr("最大MP永久加成", "最大MP永久加算", "Bonus Max MP"), p?.optInt("alterMp", 0) ?: 100),
+            Triple("alterVp", tr("最大怒气永久加成", "最大VP永久加算", "Bonus Max VP"), p?.optInt("alterVp", 0) ?: 100),
+            Triple("feel", tr("感情好感度 0~99999", "好感度 0~99999", "Affection Feel"), p?.optInt("feel", 0) ?: 9999)
+        )
+
+        showDohnaFormDialog(
+            title = labelTitle,
+            summary = summary,
+            fields = fields,
+            prefillValues = single,
+            blankByDefaultKeys = setOf("addExp"),
+            neutralActionLabel = tr("一键强化此目标", "この対象を最大強化", "Max Target"),
+            onNeutralAction = {
+                val pe = JSONObject().apply {
+                    put("target", target)
+                    put("level", 99)
+                    put("alterPow", 9999)
+                    put("alterTec", 9999)
+                    put("alterSpd", 3000)
+                    put("alterHp", 20000)
+                    put("alterMp", 100)
+                    put("alterVp", 100)
+                    put("hp", 999999)
+                    put("mp", 9999)
+                    put("vp", 9999)
+                    put("feel", 9999)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("ddPlayerEdit", pe),
+                    tr("战斗成员一键强化已生效", "最大強化を適用しました", "Member maxed")
+                )
+            },
+            onApply = { values ->
+                if (values.isEmpty()) {
+                    Toast.makeText(activity, tr("未输入需要修改的数值", "変更する数値が入力されていません", "No values entered"), Toast.LENGTH_SHORT).show()
+                    return@showDohnaFormDialog
+                }
+                val pe = JSONObject().put("target", target)
+                for ((k, v) in values) {
+                    if (k == "addExp" && v <= 0) continue
+                    pe.put(k, v)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("ddPlayerEdit", pe),
+                    tr("战斗成员数值修改已生效", "適用しました", "Applied")
+                )
+            }
+        )
+    }
+
+    private fun showDohnaSelectWorkerDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(
+                activity,
+                tr("请先开始游戏或读取存档后再修改人材数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val arr = j.optJSONArray("ddWorkers")
+        val totalCnt = j.optInt("workerCount", 0) + j.optInt("garageCount", 0)
+        if (totalCnt <= 0 || arr == null || arr.length() == 0) {
+            Toast.makeText(
+                activity,
+                tr("当前店面与库房暂无春销人材", "現在ハルウリ人材がいません", "No brothel workers yet"),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        data class WorkerTarget(val scope: Int, val index: Int, val obj: JSONObject?, val label: String)
+        val options = mutableListOf(
+            WorkerTarget(0, -1, null, tr("批量修改：店面全体人材", "一括編集：店舗の全人材", "Batch: All Shop Workers")),
+            WorkerTarget(1, -1, null, tr("批量修改：库房全体人材", "一括編集：保管庫の全人材", "Batch: All Garage Workers")),
+            WorkerTarget(2, -1, null, tr("批量修改：店面与库房全体人材", "一括編集：全在籍人材", "Batch: All Workers"))
+        )
+
+        for (i in 0 until arr.length()) {
+            val w = arr.optJSONObject(i) ?: continue
+            val sc = w.optInt("scope", 0)
+            val idx = w.optInt("index", 0)
+            val locTag = if (sc == 0) tr("店面", "店舗", "Shop") else tr("库房", "保管", "Garage")
+            val name = w.optString("name", "").ifBlank { "#$idx" }
+            val rk = dohnaWorkerRankName(w.optInt("rank", 0))
+            val rr = dohnaWorkerRarityName(w.optInt("rarity", 0))
+            val lks = w.optInt("looks", 0)
+            val tec = w.optInt("technic", 0)
+            val men = w.optInt("mental", 0)
+            options.add(WorkerTarget(sc, idx, w, "$locTag · $name · 评级$rk · $rr · 貌$lks 技$tec 心$men"))
+        }
+
+        val labels = options.map { it.label }.toTypedArray()
+        AlertDialog.Builder(activity)
+            .setTitle(tr("选择要修改的春销人材", "編集するハルウリ人材を選択", "Select Brothel Worker"))
+            .setItems(labels) { _, which ->
+                val chosen = options.getOrNull(which) ?: return@setItems
+                showDohnaEditWorkerDialog(chosen.scope, chosen.index, chosen.obj, chosen.label)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDohnaEditWorkerDialog(scope: Int, index: Int, w: JSONObject?, labelTitle: String) {
+        val single = w != null
+        val summary = tr(
+            "评级 0~9 对应 D C C+ B B+ A A+ S S+ SS · 稀有度 0~5 对应 N R SR SSR SSSR UR · 状态 0为否 1为是${if (!single) " · 批量模式留空项保持原值" else ""}",
+            "ランク 0~9 は D〜SS · レア度 0~5 は N〜UR · 状態 0=OFF 1=ON",
+            "Rank 0~9 = D..SS · Rarity 0~5 = N..UR · State 0=No 1=Yes"
+        )
+        val fields = listOf(
+            Triple("rank", tr("综合评级 0~9", "総合ランク 0~9", "Rank 0~9"), w?.optInt("rank", 0) ?: 9),
+            Triple("rarity", tr("稀有度 0~5", "レア度 0~5", "Rarity 0~5"), w?.optInt("rarity", 0) ?: 5),
+            Triple("looks", tr("容貌 LKS 0~9999", "ルックス 0~9999", "Looks 0~9999"), w?.optInt("looks", 0) ?: 9999),
+            Triple("technic", tr("技巧 TEC 0~9999", "テクニック 0~9999", "Technic 0~9999"), w?.optInt("technic", 0) ?: 9999),
+            Triple("mental", tr("精神 MEN 0~9999", "メンタル 0~9999", "Mental 0~9999"), w?.optInt("mental", 0) ?: 9999),
+            Triple("pill", tr("避孕药 DEF 0~255", "ピル効果 0~255", "Pill DEF 0~255"), w?.optInt("pill", 0) ?: 255),
+            Triple("virgin", tr("处女状态 0或1", "処女状態 0/1", "Virgin 0/1"), if (w?.optBoolean("virgin", false) == true) 1 else 0),
+            Triple("pregnance", tr("怀孕状态 0或1", "妊娠状態 0/1", "Pregnant 0/1"), if (w?.optBoolean("pregnance", false) == true) 1 else 0),
+            Triple("insane", tr("精神崩溃 0或1", "精神崩壊 0/1", "Insane 0/1"), if (w?.optBoolean("insane", false) == true) 1 else 0)
+        )
+
+        showDohnaFormDialog(
+            title = labelTitle,
+            summary = summary,
+            fields = fields,
+            prefillValues = single,
+            neutralActionLabel = tr("一键拉满此目标", "この対象を最大化", "Max Target"),
+            onNeutralAction = {
+                val we = JSONObject().apply {
+                    put("scope", scope)
+                    put("index", index)
+                    put("rank", 9)
+                    put("rarity", 5)
+                    put("looks", 9999)
+                    put("technic", 9999)
+                    put("mental", 9999)
+                    put("pill", 255)
+                    put("pregnance", 0)
+                    put("insane", 0)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("ddWorkerEdit", we),
+                    tr("春销人材一键拉满已生效", "人材最大化を適用しました", "Worker maxed")
+                )
+            },
+            onApply = { values ->
+                if (values.isEmpty()) {
+                    Toast.makeText(activity, tr("未输入需要修改的数值", "変更する数値が入力されていません", "No values entered"), Toast.LENGTH_SHORT).show()
+                    return@showDohnaFormDialog
+                }
+                val we = JSONObject()
+                    .put("scope", scope)
+                    .put("index", index)
+                for ((k, v) in values) we.put(k, v)
+                sendDohnaInGameAction(
+                    JSONObject().put("ddWorkerEdit", we),
+                    tr("春销人材数值修改已生效", "適用しました", "Applied")
+                )
+            }
+        )
+    }
+
+    private fun showDohnaFormDialog(
+        title: String,
+        summary: String?,
+        fields: List<Triple<String, String, Int>>,
+        prefillValues: Boolean,
+        blankByDefaultKeys: Set<String> = emptySet(),
+        neutralActionLabel: String? = null,
+        onNeutralAction: (() -> Unit)? = null,
+        onApply: (Map<String, Int>) -> Unit
+    ) {
+        val scroll = ScrollView(activity)
+        val container = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(6))
+        }
+        if (!summary.isNullOrBlank()) {
+            val tip = TextView(activity).apply {
+                text = summary
+                setPadding(0, 0, 0, dp(8))
+            }
+            container.addView(tip)
+        }
+        val inputs = LinkedHashMap<String, EditText>()
+        for ((key, label, defVal) in fields) {
+            val row = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(3), 0, dp(3))
+            }
+            val tv = TextView(activity).apply {
+                text = label
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.25f)
+            }
+            val shouldPrefill = prefillValues && !blankByDefaultKeys.contains(key)
+            val et = EditText(activity).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                if (shouldPrefill) {
+                    setText(defVal.toString())
+                } else {
+                    hint = tr("留空保持不变", "空欄で変更なし", "Blank = keep")
+                }
+                setSingleLine(true)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.75f)
+            }
+            inputs[key] = et
+            row.addView(tv)
+            row.addView(et)
+            container.addView(row)
+        }
+        scroll.addView(container)
+
+        val builder = AlertDialog.Builder(activity)
+            .setTitle(title)
+            .setView(scroll)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val out = LinkedHashMap<String, Int>()
+                for ((key, et) in inputs) {
+                    val v = et.text.toString().trim().toIntOrNull()
+                    if (v != null) out[key] = v
+                }
+                onApply(out)
+            }
+            .setNegativeButton(R.string.cancel, null)
+        if (!neutralActionLabel.isNullOrBlank() && onNeutralAction != null) {
+            builder.setNeutralButton(neutralActionLabel) { _, _ -> onNeutralAction.invoke() }
+        }
+        builder.show()
     }
 
     private fun showNumberInputDialog(
