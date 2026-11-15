@@ -40,6 +40,12 @@ class XSystem4Activity : SDLActivity() {
     private fun dp(v: Int): Int =
         (v * resources.displayMetrics.density).toInt()
 
+    fun isRance10Game(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveName = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+        return GameModifierBridge.isRance10GameDir(root, saveName)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Workaround for https://github.com/libsdl-org/SDL/issues/8995
@@ -286,6 +292,7 @@ class XSystem4Activity : SDLActivity() {
     override fun getArguments(): Array<String> {
         val saveFolder = intent.getStringExtra(EXTRA_SAVE_DIR)!!
         val gameRoot = intent.getStringExtra(EXTRA_GAME_ROOT)!!
+        GameCatalog.writeRunningGameRoot(this, gameRoot)
         if (Build.SUPPORTED_ABIS.any { it == "x86_64" || it == "x86" }) {
             // x86/x86_64 Android emulators can hang in AAudio STARTING on first write;
             // fall back to SDL's Java AudioTrack backend on x86 hosts.
@@ -305,6 +312,7 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onDestroy() {
         setCtrlSkipLatched(false)
+        GameCatalog.clearRunningGameRoot(this)
         GameModifierBridge.syncLockMaskFromNative(this)
         ctrlPill = null
         ctrlOverlayContainer = null

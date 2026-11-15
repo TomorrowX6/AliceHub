@@ -50,4 +50,33 @@ void PE_SetComponentScrollAlphaLinkNumber(int no, int target);
 int PE_GetComponentScrollPosXLinkNumber(int no);
 int PE_GetComponentScrollPosYLinkNumber(int no);
 int PE_GetComponentScrollAlphaLinkNumber(int no);
+#define SLIDERBAR_API(axis) \
+void PE_Set##axis##SliderBarSize(int no, int width, int height); \
+void PE_Set##axis##SliderBarTotalSize(int no, int size); \
+void PE_Set##axis##SliderBarViewSize(int no, int size); \
+void PE_Set##axis##SliderBarScrollPos(int no, int pos); \
+void PE_Set##axis##SliderBarScrollRate(int no, float rate); \
+int PE_Get##axis##SliderBarTotalSize(int no); \
+int PE_Get##axis##SliderBarViewSize(int no); \
+int PE_Get##axis##SliderBarScrollPos(int no); \
+float PE_Get##axis##SliderBarScrollRate(int no); \
+void PE_Set##axis##SliderTotalSizeLinkNumber(int no, int target); \
+void PE_Set##axis##SliderViewSizeLinkNumber(int no, int target); \
+int PE_Get##axis##SliderTotalSizeLinkNumber(int no); \
+int PE_Get##axis##SliderViewSizeLinkNumber(int no); \
+void PE_Set##axis##SliderBarCGName(int no, struct string *name); \
+void PE_Set##axis##SliderBarOverrideBarCGName(int no, struct string *name); \
+void PE_Set##axis##SliderBarOverrideBGCGName(int no, struct string *name); \
+struct string *PE_Get##axis##SliderBarCGName(int no); \
+struct string *PE_Get##axis##SliderBarOverrideBarCGName(int no); \
+struct string *PE_Get##axis##SliderBarOverrideBGCGName(int no); \
+void PE_Set##axis##SliderBarFlatName(int no, struct string *name); \
+void PE_Set##axis##SliderBarOverrideBarFlatName(int no, struct string *name); \
+void PE_Set##axis##SliderBarOverrideBGFlatName(int no, struct string *name); \
+struct string *PE_Get##axis##SliderBarFlatName(int no); \
+struct string *PE_Get##axis##SliderBarOverrideBarFlatName(int no); \
+struct string *PE_Get##axis##SliderBarOverrideBGFlatName(int no);
+SLIDERBAR_API(V)
+SLIDERBAR_API(H)
+#undef SLIDERBAR_API
 #endif

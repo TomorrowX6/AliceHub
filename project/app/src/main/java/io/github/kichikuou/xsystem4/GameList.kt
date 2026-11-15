@@ -113,14 +113,14 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
         private fun findIcon(dir: File): File? {
             dir.listFiles()?.forEach {
-                if (it.extension == "ico") { return it }
+                if (it.extension.equals("ico", ignoreCase = true)) { return it }
             }
             try {
                 dir.listFiles { file ->
-                    file.extension == "exe" &&
-                            file.name != "OpenSaveFolder.exe" &&
-                            file.name != "ResetConfig.exe" &&
-                            file.name != "Uninstaller.exe"
+                    file.extension.equals("exe", ignoreCase = true) &&
+                            !file.name.equals("OpenSaveFolder.exe", ignoreCase = true) &&
+                            !file.name.equals("ResetConfig.exe", ignoreCase = true) &&
+                            !file.name.equals("Uninstaller.exe", ignoreCase = true)
                 }?.forEach { exeFile ->
                     PEResourceExtractor.create(exeFile)?.extractIcon()?.let { bytes ->
                         val f = File(dir, ".xsystem4.ico")
@@ -148,10 +148,11 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 buf.get(entryBytes)
                 entryBytes
             }.minWith(compareBy({
-                val width = if (it[0].toInt() == 0) 256 else it[0].toInt()
+                val rawW = it[0].toInt() and 0xff
+                val width = if (rawW == 0) 256 else rawW
                 kotlin.math.abs(width - reqSize)
             }, {
-                -it[6]
+                -(it[6].toInt() and 0xff)
             }))
             buf.position(4)
             buf.putShort(1)
@@ -195,6 +196,10 @@ class GameList(activity: Activity) {
         private set
     private var activeInstallResumable: Boolean = false
     private var activeTargetGamePath: String? = null
+    var activeTargetGameId: String? = null
+        private set
+    var lastInstalledItem: Item? = null
+        private set
     var pendingModAuthRetry: PendingModAuthRetry? = null
         private set
 
@@ -255,6 +260,10 @@ class GameList(activity: Activity) {
         return installState is InstallState.Installing && activeTargetGamePath == item.path.path
     }
 
+    fun isInstallingForGame(gameId: String): Boolean {
+        return installState is InstallState.Installing && activeTargetGameId == gameId
+    }
+
     fun cancelInstall() {
         val job = installJob
         if (job?.isActive == true) {
@@ -269,12 +278,15 @@ class GameList(activity: Activity) {
         cancellable: Boolean = false,
         resumable: Boolean = false,
         targetGamePath: String? = null,
-        notifModManagerPath: String? = null
+        notifModManagerPath: String? = null,
+        targetGameId: String? = null
     ) {
         pendingModAuthRetry = null
+        lastInstalledItem = null
         isProgressMinimized = false
         activeInstallResumable = resumable
         activeTargetGamePath = targetGamePath
+        activeTargetGameId = targetGameId
         InstallForegroundService.cancelCallback = { cancelInstall() }
         installState = InstallState.Installing(
             progress = initialProgress,
@@ -289,18 +301,23 @@ class GameList(activity: Activity) {
             initialPermille = initialPermille,
             isCancellable = cancellable,
             isResumable = resumable,
-            targetGamePathForMod = notifModManagerPath
+            targetGamePathForMod = notifModManagerPath,
+            targetGameId = targetGameId
         )
     }
 
-    fun installOnlineBaseGame(cdnLine: BaseGameCdnLine = BaseGameCdnLine.EDGEONE) {
+    fun installOnlineBaseGame(
+        cdnLine: BaseGameCdnLine = BaseGameCdnLine.EDGEONE,
+        targetGameId: String = GameCatalog.ID_RANCE10
+    ) {
         if (installJob?.isActive == true) return
         beginInstallSession(
             notifTitle = context.getString(R.string.notif_title_base_online),
             initialProgress = context.getString(R.string.online_fetching_manifest),
             initialPermille = null,
             cancellable = true,
-            resumable = true
+            resumable = true,
+            targetGameId = targetGameId
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
@@ -332,7 +349,9 @@ class GameList(activity: Activity) {
                     )
                 }
                 val homedir = File(storagePath, ".xsystem4")
-                items.add(Item.fromDirectory(path, homedir, context))
+                val created = Item.fromDirectory(path, homedir, context)
+                items.add(created)
+                lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
                 setInstallCancelled()
@@ -345,23 +364,30 @@ class GameList(activity: Activity) {
         }
     }
 
-    fun installDirectory(uri: Uri) {
+    fun installDirectory(
+        uri: Uri,
+        expectedAinName: String? = null,
+        targetGameId: String? = null
+    ) {
         if (installJob?.isActive == true) return
         beginInstallSession(
             notifTitle = context.getString(R.string.notif_title_local_game),
             initialProgress = null,
             cancellable = false,
-            resumable = false
+            resumable = false,
+            targetGameId = targetGameId
         )
         installJob = scope.launch {
             try {
                 val storage = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
-                    NativeGameImport.copyTree(context, uri, storage) { progress ->
+                    NativeGameImport.copyTree(context, uri, storage, expectedAinName) { progress ->
                         withContext(Dispatchers.Main) { setInstallProgress(progress) }
                     }
                 }
-                items.add(Item.fromDirectory(path, File(storage, ".xsystem4"), context))
+                val created = Item.fromDirectory(path, File(storage, ".xsystem4"), context)
+                items.add(created)
+                lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
                 setInstallCancelled()
@@ -374,20 +400,25 @@ class GameList(activity: Activity) {
         }
     }
 
-    fun installArchive(uri: Uri) {
+    fun installArchive(
+        uri: Uri,
+        expectedAinName: String? = null,
+        targetGameId: String? = null
+    ) {
         if (installJob?.isActive == true) return
         beginInstallSession(
             notifTitle = context.getString(R.string.notif_title_local_game),
             initialProgress = null,
             cancellable = true,
-            resumable = false
+            resumable = false,
+            targetGameId = targetGameId
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
             try {
                 val storagePath = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
-                    doInstallArchive(uri, storagePath) { msg ->
+                    doInstallArchive(uri, storagePath, expectedAinName) { msg ->
                         mainHandler.post {
                             if (installJob?.isActive == true) {
                                 setInstallProgress(msg, cancellable = true, resumable = false)
@@ -396,7 +427,9 @@ class GameList(activity: Activity) {
                     }
                 }
                 val homedir = File(storagePath, ".xsystem4")
-                items.add(Item.fromDirectory(path, homedir, context))
+                val created = Item.fromDirectory(path, homedir, context)
+                items.add(created)
+                lastInstalledItem = created
                 setInstallSucceeded()
             } catch (_: CancellationException) {
                 setInstallCancelled()
@@ -440,6 +473,7 @@ class GameList(activity: Activity) {
         val postNotif = observer == null || isProgressMinimized
         isProgressMinimized = false
         activeTargetGamePath = null
+        activeTargetGameId = null
         installState = InstallState.Succeeded
         InstallForegroundService.finishSessionSucceeded(context, postResultNotification = postNotif)
         observer?.onInstallSuccess()
@@ -449,6 +483,7 @@ class GameList(activity: Activity) {
         val wasResumable = activeInstallResumable
         isProgressMinimized = false
         activeTargetGamePath = null
+        activeTargetGameId = null
         installState = InstallState.Cancelled(resumable = wasResumable)
         InstallForegroundService.finishSessionCancelled(context)
         observer?.onInstallCancelled()
@@ -458,6 +493,7 @@ class GameList(activity: Activity) {
         val postNotif = observer == null || isProgressMinimized
         isProgressMinimized = false
         activeTargetGamePath = null
+        activeTargetGameId = null
         installState = InstallState.Failed(msgId)
         InstallForegroundService.finishSessionFailed(
             context = context,
@@ -470,6 +506,7 @@ class GameList(activity: Activity) {
     private fun doInstallArchive(
         uri: Uri,
         storagePath: File,
+        expectedAinName: String? = null,
         progressCallback: (String) -> Unit
     ): File {
         val tempDir = File(storagePath, ".install_temp")
@@ -505,14 +542,27 @@ class GameList(activity: Activity) {
                     )
                 }
             )
-            val srcDir = gameRoot ?: throw InstallFailureException(R.string.zip_no_ini)
+            var srcDir = gameRoot
+            if (srcDir == null || srcDir.listFiles()?.none { it.isFile && it.name.endsWith(".ain", true) } == true) {
+                srcDir = tempDir.walkTopDown().firstOrNull { d ->
+                    d.isDirectory &&
+                        (d.listFiles()?.any {
+                            it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
+                        } == true) &&
+                        (d.listFiles()?.any { it.isFile && it.name.endsWith(".ain", true) } == true)
+                } ?: srcDir
+            }
+            if (srcDir == null) throw InstallFailureException(R.string.zip_no_ini)
             val ainFile = srcDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
                 ?: throw InstallFailureException(R.string.directory_no_game)
+            if (!expectedAinName.isNullOrBlank() && !ainFile.name.equals(expectedAinName, ignoreCase = true)) {
+                throw InstallFailureException(R.string.import_wrong_game)
+            }
             val baseName = ainFile.nameWithoutExtension.ifEmpty { "Game" }
             var dstDir = File(storagePath, baseName)
             var i = 1
             while (dstDir.exists()) {
-                dstDir = File(storagePath, "$baseName (${i++})")
+                dstDir = File(storagePath, "$baseName-${i++}")
             }
             if (!srcDir.renameTo(dstDir)) {
                 throw IOException("Failed to move installed game: ${srcDir} -> ${dstDir}")
@@ -558,7 +608,8 @@ class GameList(activity: Activity) {
             initialProgress = null,
             cancellable = false,
             resumable = false,
-            targetGamePath = targetItem.path.path
+            targetGamePath = targetItem.path.path,
+            targetGameId = GameCatalog.classifyItem(targetItem)
         )
         installJob = scope.launch {
             val storage = targetItem.path.parentFile ?: storageDirs[0]
@@ -610,7 +661,8 @@ class GameList(activity: Activity) {
             initialProgress = null,
             cancellable = true,
             resumable = false,
-            targetGamePath = targetItem.path.path
+            targetGamePath = targetItem.path.path,
+            targetGameId = GameCatalog.classifyItem(targetItem)
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
@@ -699,7 +751,8 @@ class GameList(activity: Activity) {
             cancellable = true,
             resumable = true,
             targetGamePath = targetItem.path.path,
-            notifModManagerPath = if (fromModManager) targetItem.path.path else null
+            notifModManagerPath = if (fromModManager) targetItem.path.path else null,
+            targetGameId = GameCatalog.classifyItem(targetItem)
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
@@ -823,7 +876,8 @@ class GameList(activity: Activity) {
             cancellable = true,
             resumable = true,
             targetGamePath = targetItem.path.path,
-            notifModManagerPath = if (fromModManager) targetItem.path.path else null
+            notifModManagerPath = if (fromModManager) targetItem.path.path else null,
+            targetGameId = GameCatalog.classifyItem(targetItem)
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {

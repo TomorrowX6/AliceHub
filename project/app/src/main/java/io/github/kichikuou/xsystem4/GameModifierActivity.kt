@@ -69,8 +69,10 @@ private class ModSaveSlotAdapter(
 class GameModifierActivity : Activity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
+        const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
+    private var scopedGameId: String? = null
     private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: ModSaveSlotAdapter
@@ -95,7 +97,11 @@ class GameModifierActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game_modifier)
         actionBar?.setDisplayHomeAsUpEnabled(true)
-        title = tr("游戏修改器", "ゲーム改造", "Game Modifier")
+        scopedGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        val modLabel = tr("游戏修改器", "ゲーム改造", "Game Modifier")
+        title = scopedGameId?.let { gid ->
+            "${GameCatalog.descriptorFor(this, gid).title} · $modLabel"
+        } ?: modLabel
 
         findViewById<TextView>(R.id.label_floating_modifier).text = tr("悬浮窗修改器", "フローティング改造", "Floating Modifier")
         findViewById<TextView>(R.id.label_ctrl_overlay).text = tr("Ctrl 快进悬浮键", "Ctrl 早送りボタン", "Ctrl Skip Button")
@@ -208,7 +214,34 @@ class GameModifierActivity : Activity() {
             }
         }
 
-        if (found.isEmpty()) {
+        val gid = scopedGameId
+        if (!gid.isNullOrBlank()) {
+            val iter = found.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next().value
+                val classified = GameCatalog.classifyDirectory(
+                    gameDir = entry.externalGameDir,
+                    dirName = entry.dirName,
+                    saveDir = entry.saveDir,
+                    displayName = entry.displayName
+                )
+                if (classified != gid && entry.dirName != preferredDirName) {
+                    iter.remove()
+                }
+            }
+            if (found.isEmpty()) {
+                val desc = GameCatalog.descriptorFor(this, gid, gameList)
+                val defaultDir = File(savesRoot, desc.defaultDirName)
+                defaultDir.mkdirs()
+                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                found[desc.defaultDirName] = SaveTarget(
+                    displayName = getString(R.string.save_manager_game_default_dir_label, desc.title),
+                    dirName = desc.defaultDirName,
+                    saveDir = defaultDir,
+                    externalGameDir = extDir
+                )
+            }
+        } else if (found.isEmpty()) {
             val defaultDir = File(savesRoot, "Rance10")
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
@@ -222,6 +255,23 @@ class GameModifierActivity : Activity() {
 
         targets = found.values.toMutableList()
         currentTarget = targets.firstOrNull { it.dirName == preferredDirName } ?: targets.first()
+    }
+
+    private fun isCurrentTargetRance10(): Boolean {
+        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+            return false
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10) {
+            return true
+        }
+        val extDir = currentTarget.externalGameDir
+        if (extDir == null &&
+            File(currentTarget.saveDir, "GlobalSaveData.asd").isFile &&
+            !File(currentTarget.saveDir, "GlobalSave.asd").isFile
+        ) {
+            return false
+        }
+        return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName)
     }
 
     private fun refreshUiScaleButtons() {
@@ -239,18 +289,41 @@ class GameModifierActivity : Activity() {
         )
     }
 
+    private fun refreshTargetControlsVisibility(isRance10: Boolean) {
+        val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
+        (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
+        val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
+        (floatingCfgBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.btn_mod_switch_dir)?.visibility =
+            if (!scopedGameId.isNullOrBlank() && targets.size <= 1) View.GONE else View.VISIBLE
+    }
+
     private fun refreshSummaryText() {
         val saveDir = currentTarget.saveDir
-        val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
+        val isRance10 = isCurrentTargetRance10()
         val floatOn = GameModifierBridge.isFloatingEnabled(this)
         val ctrlOn = GameModifierBridge.isCtrlOverlayEnabled(this)
-        val lockCount = GameModifierBridge.getLiveLockCount(this)
         val fontPct = GameModifierBridge.getFontScalePercent(this)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
         refreshUiScaleButtons()
+        refreshTargetControlsVisibility(isRance10)
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.displayName)
+        if (!isRance10) {
+            val asdCount = saveDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
+                .count()
+            findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 字体：$fontPct% · 滚动条：$sbPct%",
+                "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · 文字：$fontPct% · バー：$sbPct%",
+                "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Font: $fontPct% · Scrollbar: $sbPct%"
+            )
+            return
+        }
+
+        val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
+        val lockCount = GameModifierBridge.getLiveLockCount(this)
         findViewById<TextView>(R.id.mod_target_summary).text = tr(
             "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "已有" else "无"} · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 实时锁定：$lockCount 项 · 字体：$fontPct% · 滚动条：$sbPct%",
             "セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · Ctrl：${if (ctrlOn) "ON" else "OFF"} · ロック $lockCount 項目 · 文字：$fontPct% · バー：$sbPct%",
@@ -261,6 +334,22 @@ class GameModifierActivity : Activity() {
     private fun refreshList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
+
+        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
+        val listView = findViewById<View>(R.id.mod_save_list)
+        if (!isCurrentTargetRance10()) {
+            currentEntries = emptyList()
+            adapter.update(emptyList())
+            refreshSummaryText()
+            emptyView.text = tr(
+                "当前游戏支持通用界面与快捷辅助功能。\n可使用上方开关控制游戏内悬浮窗与 Ctrl 快进悬浮键，或点击“字体大小”、“滚动条修改”实时调节显示与触控比例。",
+                "このゲームでは共通UI・早送り補助を利用できます。\n上部のスイッチや文字サイズ・スクロールバー変更をご利用ください。",
+                "Universal UI scale and Ctrl skip controls are enabled for this game."
+            )
+            emptyView.visibility = View.VISIBLE
+            listView.visibility = View.GONE
+            return
+        }
 
         val regex = Regex("localsave(\\d+)\\.asd", RegexOption.IGNORE_CASE)
         val slots = mutableListOf<ModSaveSlotEntry>()
@@ -285,8 +374,6 @@ class GameModifierActivity : Activity() {
         adapter.update(slots)
         refreshSummaryText()
 
-        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
-        val listView = findViewById<View>(R.id.mod_save_list)
         if (slots.isEmpty()) {
             emptyView.text = tr(
                 "当前目录暂无进度存档。\n可使用上方“全解锁存档”、“全局存档修改”、“实时锁定设置”、“字体大小”或“滚动条修改”。",
@@ -789,9 +876,9 @@ class GameModifierActivity : Activity() {
         showScaleSliderDialog(
             title = tr("字体大小修改", "文字サイズ変更", "Font Size"),
             description = tr(
-                "调节游戏内对话、界面按钮与卡牌说明文字缩放比例，范围 75%~160%，默认 100%，实时生效且不改动存档文件。",
-                "ゲーム内の会話・UI・カード説明の文字倍率を調整します。範囲 75%~160%、標準 100%。",
-                "Adjust in-game dialogue, UI, and card text scale from 75% to 160%. Default 100%."
+                "调节游戏内对话与界面文字缩放比例，范围 75%~160%，默认 100%，实时生效且不改动存档文件。",
+                "ゲーム内の会話・UIの文字倍率を調整します。範囲 75%~160%、標準 100%。",
+                "Adjust in-game dialogue and UI text scale from 75% to 160%. Default 100%."
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,

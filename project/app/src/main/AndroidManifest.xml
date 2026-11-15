@@ -78,12 +78,18 @@
         <meta-data android:name="SDL_ENV.SDL_IOS_ORIENTATIONS" android:value="LandscapeLeft LandscapeRight"/>
 
         <activity android:name="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:label="@string/app_name"
             android:exported="true">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <activity android:name="io.github.kichikuou.xsystem4.GameHubActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.XSystem4Activity"
@@ -114,19 +120,19 @@
 
         <activity android:name="io.github.kichikuou.xsystem4.SaveManagerActivity"
             android:label="@string/action_save_manager"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.GameModifierActivity"
             android:label="@string/action_game_modifier"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 
         <activity android:name="io.github.kichikuou.xsystem4.ModManagerActivity"
             android:label="@string/mod_mgr_activity_title"
-            android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
             android:exported="false">
         </activity>
 

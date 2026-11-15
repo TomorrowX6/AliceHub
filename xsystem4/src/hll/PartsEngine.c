@@ -80,8 +80,40 @@ static void PartsEngine_Update_v12(int passed_time, int scaled_time, bool messag
 // Values are confirmed by the corresponding C*Parts constructors in its AIN.
 static void PartsEngine_SetComponentType_v12(int parts_no, int type, int state)
 {
+	if (ain->version >= 14) {
+		if (type == 12 || type == 13) {
+			parts_sliderbar_create(parts_get(parts_no), type == 13);
+			return;
+		}
+		if ((type >= 0 && type <= 7) || (type >= 9 && type <= 11)) {
+			PE_SetSpecialComponentType(parts_no, type);
+			return;
+		}
+		if (type >= 14 && type <= 18) {
+			PE_SetSpecialComponentType(parts_no, type - 2);
+			return;
+		}
+		if (type == 27) {
+			PE_SetComponentType(parts_no, 17, state);
+			if (parts_state_valid(state - 1))
+				parts_get(parts_no)->states[state - 1].rect.is_cg_detection = true;
+			return;
+		}
+		if ((type >= 19 && type <= 26) || (type >= 28 && type <= 30))
+			type -= 8;
+		else if (type != 8)
+			VM_ERROR("Unimplemented AIN v14 component type %d", type);
+		PE_SetComponentType(parts_no, type, state);
+		return;
+	}
 	if ((type >= 0 && type <= 7) || (type >= 9 && type <= 16)) {
 		PE_SetSpecialComponentType(parts_no, type);
+		return;
+	}
+	if (type == 25) {
+		PE_SetComponentType(parts_no, 17, state);
+		if (parts_state_valid(state - 1))
+			parts_get(parts_no)->states[state - 1].rect.is_cg_detection = true;
 		return;
 	}
 	if ((type >= 17 && type <= 24) || (type >= 26 && type <= 28))
@@ -93,9 +125,23 @@ static void PartsEngine_SetComponentType_v12(int parts_no, int type, int state)
 
 static int PartsEngine_GetComponentType_v12(int parts_no, int state)
 {
+	struct parts *p = parts_try_get(parts_no);
+	if (ain->version >= 14) {
+		if (p && p->scrollbar && p->scrollbar->is_slider)
+			return p->scrollbar->horizontal ? 13 : 12;
+		int special = PE_GetSpecialComponentType(parts_no);
+		if (special >= 0)
+			return special >= 12 ? special + 2 : special;
+		int type = PE_GetComponentType(parts_no, state);
+		if (type == 17 && parts_state_valid(state - 1) && p && p->states[state - 1].rect.is_cg_detection)
+			return 27;
+		return type >= 11 ? type + 8 : type;
+	}
 	int special = PE_GetSpecialComponentType(parts_no);
 	if (special >= 0) return special;
 	int type = PE_GetComponentType(parts_no, state);
+	if (type == 17 && parts_state_valid(state - 1) && p && p->states[state - 1].rect.is_cg_detection)
+		return 25;
 	return type >= 11 ? type + 6 : type;
 }
 
@@ -597,6 +643,23 @@ static void PartsEngine_WidgetSetSize(int parts_no, int w, int h)
 	struct parts *p = parts_get(parts_no);
 	parts_set_dims(p, &p->states[0].common, w, h);
 	parts_component_dirty(p);
+}
+
+static void PartsEngine_SetMultiTextBoxMode(int parts_no, int mode)
+{
+	parts_get(parts_no)->multi_textbox_mode = mode;
+}
+
+static int PartsEngine_GetMultiTextBoxMode(int parts_no)
+{
+	struct parts *p = parts_try_get(parts_no);
+	return p ? p->multi_textbox_mode : 0;
+}
+
+static bool PartsEngine_Save_v14(struct page **buf, bool compress)
+{
+	(void)compress;
+	return PE_Save(buf);
 }
 
 static void PartsEngine_WidgetStub_ii(int parts_no, int a, int b)
@@ -1316,18 +1379,22 @@ static void PartsEngine_add_construction_process(union vm_value *ints,
 	case 3:  // CASConstructionProcess::SetFill
 		PE_AddFillToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, r, g, b, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 4:  // CASConstructionProcess::SetFillAlphaColor
 		PE_AddFillAlphaColorToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, r, g, b, a, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 5:  // CASConstructionProcess::SetFillAMap
 		PE_AddFillAMapToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, a, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 6:  // CASConstructionProcess::SetFillWithAlpha
 		PE_AddFillWithAlphaToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, r, g, b, a, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 7:  // CASConstructionProcess::SetDrawText
 		PE_AddDrawTextToPartsConstructionProcess(parts_no,
@@ -1346,10 +1413,12 @@ static void PartsEngine_add_construction_process(union vm_value *ints,
 	case 9:  // CASConstructionProcess::SetFillGradationHorizon
 		PE_AddFillGradationHorizonToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, r, g, b, r2, g2, b2, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 10:  // CASConstructionProcess::SetDrawRect
 		PE_AddDrawRectToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, r, g, b, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 11:  // CASConstructionProcess::SetCutCGBlend (equal scale)
 		PE_AddDrawCutCGToPartsConstructionProcess(parts_no, cg_name,
@@ -1424,10 +1493,12 @@ static void PartsEngine_add_construction_process(union vm_value *ints,
 	case 25:  // CASConstructionProcess::SetMulAMapGradationHorizon (v12)
 		PE_AddMulAMapGradationHorizonToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, a, a2, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 26:  // CASConstructionProcess::SetMulAMapGradationVertical (v12)
 		PE_AddMulAMapGradationVerticalToPartsConstructionProcess(parts_no,
 				dx, dy, dw, dh, a, a2, state);
+		parts_cp_set_last_fill_full_size(parts_no, state, !!full_size);
 		break;
 	case 27:  // CASConstructionProcess::SetHBlurFilter (v12)
 		PE_AddHBlurFilterToPartsConstructionProcess(parts_no,
@@ -1467,6 +1538,61 @@ static void PartsEngine_AddPartsConstructionProcess(int parts_no, struct page **
 	PartsEngine_add_construction_process(ints, (*array_float)->values, (*array_string)->values, src[19].i, src[31].i);
 }
 
+static void PartsEngine_AddPartsConstructionProcess_v14(int parts_no, struct page **array_int,
+		struct page **array_float, struct page **array_string, struct page **array_pos, int state)
+{
+	if (!array_int || !*array_int || (*array_int)->nr_vars < 32
+			|| !array_float || !*array_float || (*array_float)->nr_vars != 2
+			|| !array_string || !*array_string || (*array_string)->nr_vars != 2)
+		VM_ERROR("Invalid v14 construction process arrays");
+	union vm_value *src = (*array_int)->values;
+	int nr_int = (*array_int)->nr_vars;
+	int command = src[0].i;
+	if (command >= 0 && command <= 29) {
+		union vm_value ints[32];
+		ints[0].i = parts_no;
+		ints[1].i = state;
+		memcpy(ints + 2, src, 19 * sizeof(*src));
+		memcpy(ints + 21, src + 20, 11 * sizeof(*src));
+		PartsEngine_add_construction_process(ints, (*array_float)->values, (*array_string)->values, src[19].i, src[31].i);
+		return;
+	}
+	if (command >= 30 && command <= 132) {
+		struct parts_cp_v14 v = { 0 };
+		v.command = command;
+		v.interp_type = src[1].i;
+		v.sx = src[2].i; v.sy = src[3].i; v.sw = src[4].i; v.sh = src[5].i;
+		v.dx = src[6].i; v.dy = src[7].i; v.dx2 = src[8].i; v.dy2 = src[9].i;
+		v.dw = src[10].i; v.dh = src[11].i;
+		v.r = src[12].i; v.g = src[13].i; v.b = src[14].i; v.a = src[15].i;
+		v.r2 = src[16].i; v.g2 = src[17].i; v.b2 = src[18].i; v.a2 = src[19].i;
+		v.full_size = !!src[30].i;
+		v.blur = src[31].i;
+		if (nr_int > 32) v.radius_x = src[32].i;
+		if (nr_int > 33) v.radius_y = src[33].i;
+		if (nr_int > 34) v.line_width = src[34].i;
+		if (nr_int > 35) v.round_edge = !!src[35].i;
+		if (nr_int > 36) v.round_corner = !!src[36].i;
+		if (nr_int > 37) v.angle = src[37].i;
+		if (nr_int > 38) v.start_angle = src[38].i;
+		if (nr_int > 39) v.sweep_angle = src[39].i;
+		v.cg_name = heap_get_string((*array_string)->values[1].i);
+		int nr_coords = (array_pos && *array_pos) ? (*array_pos)->nr_vars : 0;
+		int *coords = NULL;
+		if (nr_coords > 0) {
+			coords = xcalloc(nr_coords, sizeof(int));
+			for (int i = 0; i < nr_coords; i++)
+				coords[i] = (*array_pos)->values[i].i;
+		}
+		v.nr_coords = nr_coords;
+		v.coords = coords;
+		parts_cp_add_v14(parts_no, &v, state);
+		free(coords);
+		return;
+	}
+	WARNING("Unimplemented v14 construction process command %d", command);
+}
+
 static int PartsEngine_Parts_GetPartsConstructionProcessCount(int parts_no, int state)
 {
 	if (!parts_state_valid(--state))
@@ -1481,16 +1607,16 @@ static int PartsEngine_Parts_GetPartsConstructionProcessCount(int parts_no, int 
 	return count;
 }
 
-static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
-		struct page **array_int, struct page **array_float,
-		struct page **array_string, int state)
+static void PartsEngine_get_construction_process_common(int parts_no, int index,
+		struct page **array_int, int int_len, struct page **array_float,
+		struct page **array_string, struct page **array_pos, int state)
 {
 	if (!parts_state_valid(--state) || index < 0)
 		return;
 	if (!array_int || !array_float || !array_string)
 		return;
-	if (!*array_int || (*array_int)->nr_vars != 32) {
-		union vm_value dim = { .i = 32 };
+	if (!*array_int || (*array_int)->nr_vars != int_len) {
+		union vm_value dim = { .i = int_len };
 		*array_int = realloc_array(*array_int, 1, &dim, AIN_ARRAY_INT, -1, false);
 	}
 	if (!*array_float || (*array_float)->nr_vars != 2) {
@@ -1500,6 +1626,10 @@ static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
 	if (!*array_string || (*array_string)->nr_vars != 2) {
 		union vm_value dim = { .i = 2 };
 		*array_string = realloc_array(*array_string, 1, &dim, AIN_ARRAY_STRING, -1, false);
+	}
+	if (array_pos && *array_pos) {
+		union vm_value dim = { .i = 0 };
+		*array_pos = realloc_array(*array_pos, 1, &dim, AIN_ARRAY_INT, -1, false);
 	}
 	struct parts *parts = parts_try_get(parts_no);
 	if (!parts || parts->states[state].type != PARTS_CONSTRUCTION_PROCESS)
@@ -1517,7 +1647,7 @@ static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
 	union vm_value *ints = (*array_int)->values;
 	union vm_value *floats = (*array_float)->values;
 	union vm_value *strings = (*array_string)->values;
-	for (int k = 0; k < 32; k++) ints[k].i = 0;
+	for (int k = 0; k < int_len; k++) ints[k].i = 0;
 	floats[0].f = 0.0f;
 	floats[1].f = 0.0f;
 	free_string(heap[strings[0].i].s);
@@ -1575,6 +1705,7 @@ static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
 		ints[17].i = op->fill.g2;
 		ints[18].i = op->fill.b2;
 		ints[19].i = op->fill.a2;
+		ints[30].i = op->fill.full_size;
 		break;
 	case PARTS_CP_DRAW_TEXT:
 	case PARTS_CP_COPY_TEXT:
@@ -1663,7 +1794,56 @@ static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
 		ints[14].i = op->line.b;
 		ints[15].i = op->line.a;
 		break;
+	case PARTS_CP_V14: {
+		const struct parts_cp_v14 *v = &op->v14;
+		ints[0].i = v->command;
+		ints[1].i = v->interp_type;
+		ints[2].i = v->sx; ints[3].i = v->sy; ints[4].i = v->sw; ints[5].i = v->sh;
+		ints[6].i = v->dx; ints[7].i = v->dy; ints[8].i = v->dx2; ints[9].i = v->dy2;
+		ints[10].i = v->dw; ints[11].i = v->dh;
+		ints[12].i = v->r; ints[13].i = v->g; ints[14].i = v->b; ints[15].i = v->a;
+		ints[16].i = v->r2; ints[17].i = v->g2; ints[18].i = v->b2; ints[19].i = v->a2;
+		ints[30].i = v->full_size;
+		ints[31].i = v->blur;
+		if (int_len >= 40) {
+			ints[32].i = v->radius_x;
+			ints[33].i = v->radius_y;
+			ints[34].i = v->line_width;
+			ints[35].i = v->round_edge;
+			ints[36].i = v->round_corner;
+			ints[37].i = v->angle;
+			ints[38].i = v->start_angle;
+			ints[39].i = v->sweep_angle;
+		}
+		if (v->cg_name) {
+			free_string(heap[strings[1].i].s);
+			heap[strings[1].i].s = string_dup(v->cg_name);
+		}
+		if (array_pos && v->nr_coords > 0 && v->coords) {
+			union vm_value dim = { .i = v->nr_coords };
+			*array_pos = realloc_array(*array_pos, 1, &dim, AIN_ARRAY_INT, -1, false);
+			for (int k = 0; k < v->nr_coords; k++)
+				(*array_pos)->values[k].i = v->coords[k];
+		}
+		break;
 	}
+	}
+}
+
+static void PartsEngine_GetPartsConstructionProcess(int parts_no, int index,
+		struct page **array_int, struct page **array_float,
+		struct page **array_string, int state)
+{
+	PartsEngine_get_construction_process_common(parts_no, index, array_int, 32,
+			array_float, array_string, NULL, state);
+}
+
+static void PartsEngine_GetPartsConstructionProcess_v14(int parts_no, int index,
+		struct page **array_int, struct page **array_float,
+		struct page **array_string, struct page **array_pos, int state)
+{
+	PartsEngine_get_construction_process_common(parts_no, index, array_int, 40,
+			array_float, array_string, array_pos, state);
 }
 
 // Generic dispatch function for PartsEngine operations.
@@ -1837,6 +2017,71 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetHScrollViewSizeLinkNumber, PE_SetHScrollViewSizeLinkNumber),
 	    HLL_EXPORT(GetHScrollTotalSizeLinkNumber, PE_GetHScrollTotalSizeLinkNumber),
 	    HLL_EXPORT(GetHScrollViewSizeLinkNumber, PE_GetHScrollViewSizeLinkNumber),
+	    HLL_EXPORT(SetVSliderBarSize, PE_SetVSliderBarSize),
+	    HLL_EXPORT(SetVSliderBarTotalSize, PE_SetVSliderBarTotalSize),
+	    HLL_EXPORT(SetVSliderBarViewSize, PE_SetVSliderBarViewSize),
+	    HLL_EXPORT(SetVSliderBarScrollPos, PE_SetVSliderBarScrollPos),
+	    HLL_EXPORT(SetVSliderBarScrollRate, PE_SetVSliderBarScrollRate),
+	    HLL_EXPORT(GetVSliderBarTotalSize, PE_GetVSliderBarTotalSize),
+	    HLL_EXPORT(GetVSliderBarViewSize, PE_GetVSliderBarViewSize),
+	    HLL_EXPORT(GetVSliderBarScrollPos, PE_GetVSliderBarScrollPos),
+	    HLL_EXPORT(GetVSliderBarScrollRate, PE_GetVSliderBarScrollRate),
+	    HLL_EXPORT(SetVSliderBarCGName, PE_SetVSliderBarCGName),
+	    HLL_EXPORT(SetVSliderBarOverrideBarCGName, PE_SetVSliderBarOverrideBarCGName),
+	    HLL_EXPORT(SetVSliderBarOverrideBGCGName, PE_SetVSliderBarOverrideBGCGName),
+	    HLL_EXPORT(GetVSliderBarCGName, PE_GetVSliderBarCGName),
+	    HLL_EXPORT(GetVSliderBarOverrideBarCGName, PE_GetVSliderBarOverrideBarCGName),
+	    HLL_EXPORT(GetVSliderBarOverrideBGCGName, PE_GetVSliderBarOverrideBGCGName),
+	    HLL_EXPORT(SetVSliderBarFlatName, PE_SetVSliderBarFlatName),
+	    HLL_EXPORT(SetVSliderBarOverrideBarFlatName, PE_SetVSliderBarOverrideBarFlatName),
+	    HLL_EXPORT(SetVSliderBarOverrideBGFlatName, PE_SetVSliderBarOverrideBGFlatName),
+	    HLL_EXPORT(GetVSliderBarFlatName, PE_GetVSliderBarFlatName),
+	    HLL_EXPORT(GetVSliderBarOverrideBarFlatName, PE_GetVSliderBarOverrideBarFlatName),
+	    HLL_EXPORT(GetVSliderBarOverrideBGFlatName, PE_GetVSliderBarOverrideBGFlatName),
+	    HLL_EXPORT(SetVSliderTotalSizeLinkNumber, PE_SetVSliderTotalSizeLinkNumber),
+	    HLL_EXPORT(SetVSliderViewSizeLinkNumber, PE_SetVSliderViewSizeLinkNumber),
+	    HLL_EXPORT(GetVSliderTotalSizeLinkNumber, PE_GetVSliderTotalSizeLinkNumber),
+	    HLL_EXPORT(GetVSliderViewSizeLinkNumber, PE_GetVSliderViewSizeLinkNumber),
+	    HLL_EXPORT(SetHSliderBarSize, PE_SetHSliderBarSize),
+	    HLL_EXPORT(SetHSliderBarTotalSize, PE_SetHSliderBarTotalSize),
+	    HLL_EXPORT(SetHSliderBarViewSize, PE_SetHSliderBarViewSize),
+	    HLL_EXPORT(SetHSliderBarScrollPos, PE_SetHSliderBarScrollPos),
+	    HLL_EXPORT(SetHSliderBarScrollRate, PE_SetHSliderBarScrollRate),
+	    HLL_EXPORT(GetHSliderBarTotalSize, PE_GetHSliderBarTotalSize),
+	    HLL_EXPORT(GetHSliderBarViewSize, PE_GetHSliderBarViewSize),
+	    HLL_EXPORT(GetHSliderBarScrollPos, PE_GetHSliderBarScrollPos),
+	    HLL_EXPORT(GetHSliderBarScrollRate, PE_GetHSliderBarScrollRate),
+	    HLL_EXPORT(SetHSliderBarCGName, PE_SetHSliderBarCGName),
+	    HLL_EXPORT(SetHSliderBarOverrideBarCGName, PE_SetHSliderBarOverrideBarCGName),
+	    HLL_EXPORT(SetHSliderBarOverrideBGCGName, PE_SetHSliderBarOverrideBGCGName),
+	    HLL_EXPORT(GetHSliderBarCGName, PE_GetHSliderBarCGName),
+	    HLL_EXPORT(GetHSliderBarOverrideBarCGName, PE_GetHSliderBarOverrideBarCGName),
+	    HLL_EXPORT(GetHSliderBarOverrideBGCGName, PE_GetHSliderBarOverrideBGCGName),
+	    HLL_EXPORT(SetHSliderBarFlatName, PE_SetHSliderBarFlatName),
+	    HLL_EXPORT(SetHSliderBarOverrideBarFlatName, PE_SetHSliderBarOverrideBarFlatName),
+	    HLL_EXPORT(SetHSliderBarOverrideBGFlatName, PE_SetHSliderBarOverrideBGFlatName),
+	    HLL_EXPORT(GetHSliderBarFlatName, PE_GetHSliderBarFlatName),
+	    HLL_EXPORT(GetHSliderBarOverrideBarFlatName, PE_GetHSliderBarOverrideBarFlatName),
+	    HLL_EXPORT(GetHSliderBarOverrideBGFlatName, PE_GetHSliderBarOverrideBGFlatName),
+	    HLL_EXPORT(SetHSliderTotalSizeLinkNumber, PE_SetHSliderTotalSizeLinkNumber),
+	    HLL_EXPORT(SetHSliderViewSizeLinkNumber, PE_SetHSliderViewSizeLinkNumber),
+	    HLL_EXPORT(GetHSliderTotalSizeLinkNumber, PE_GetHSliderTotalSizeLinkNumber),
+	    HLL_EXPORT(GetHSliderViewSizeLinkNumber, PE_GetHSliderViewSizeLinkNumber),
+	    HLL_EXPORT(SetEnableInput, PE_SetEnableInput),
+	    HLL_EXPORT(IsEnableInput, PE_IsEnableInput),
+	    HLL_EXPORT(SeekMessage, PE_SeekMessage),
+	    HLL_EXPORT(GetMessageUniqueID, PE_GetMessageUniqueID),
+	    HLL_EXPORT(SetEventID, PE_SetEventID),
+	    HLL_EXPORT(SetComponentSubColorMode, PE_SetComponentSubColorMode),
+	    HLL_EXPORT(IsComponentSubColorMode, PE_IsComponentSubColorMode),
+	    HLL_EXPORT(SetMultiTextBoxMode, PartsEngine_SetMultiTextBoxMode),
+	    HLL_EXPORT(GetMultiTextBoxMode, PartsEngine_GetMultiTextBoxMode),
+	    HLL_EXPORT(SetMessageWindowRubyFont, PE_SetMessageWindowRubyFont),
+	    HLL_EXPORT(GetMessageWindowRubyFont, PE_GetMessageWindowRubyFont),
+	    HLL_EXPORT(SetMessageWindowRubyCharSpace, PE_SetMessageWindowRubyCharSpace),
+	    HLL_EXPORT(GetMessageWindowRubyCharSpace, PE_GetMessageWindowRubyCharSpace),
+	    HLL_EXPORT(SetMessageWindowRubyLineSpace, PE_SetMessageWindowRubyLineSpace),
+	    HLL_EXPORT(GetMessageWindowRubyLineSpace, PE_GetMessageWindowRubyLineSpace),
 	    HLL_EXPORT(_PreLink, PartsEngine_PreLink),
 	    // for versions without PartsEngine.Init
 	    HLL_EXPORT(_ModuleInit, PartsEngine_ModuleInit),
@@ -1984,7 +2229,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetPartsRectangleDetectionSize, PE_SetPartsRectangleDetectionSize),
 	    HLL_TODO_EXPORT(SetPartsRectangleDetectionSurfaceArea, PartsEngine_SetPartsRectangleDetectionSurfaceArea),
 	    HLL_EXPORT(SetPartsCGDetectionSize, PE_SetPartsCGDetectionSize),
-	    HLL_TODO_EXPORT(SetPartsCGDetectionSurfaceArea, PartsEngine_SetPartsCGDetectionSurfaceArea),
+	    HLL_EXPORT(SetPartsCGDetectionSurfaceArea, PartsEngine_Parts_SetPartsCGDetectionSurfaceArea),
 	    HLL_EXPORT(SetPartsFlash, PE_SetPartsFlash),
 	    HLL_EXPORT(IsPartsFlashEnd, PE_IsPartsFlashEnd),
 	    HLL_EXPORT(GetPartsFlashCurrentFrameNumber, PE_GetPartsFlashCurrentFrameNumber),
@@ -2252,8 +2497,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_TODO_EXPORT(IsButtonDrag, PartsEngine_IsButtonDrag),
 	    HLL_TODO_EXPORT(SetButtonEnable, PartsEngine_SetButtonEnable),
 	    HLL_TODO_EXPORT(IsButtonEnable, PartsEngine_IsButtonEnable),
-	    HLL_TODO_EXPORT(SetButtonPixelDecide, PartsEngine_SetButtonPixelDecide),
-	    HLL_TODO_EXPORT(IsButtonPixelDecide, PartsEngine_IsButtonPixelDecide),
+	    HLL_EXPORT(SetButtonPixelDecide, PE_SetPartsPixelDecide),
+	    HLL_EXPORT(IsButtonPixelDecide, PartsEngine_Parts_IsPartsPixelDecide),
 	    HLL_TODO_EXPORT(SetButtonColor, PartsEngine_SetButtonColor),
 	    HLL_TODO_EXPORT(GetButtonR, PartsEngine_GetButtonR),
 	    HLL_TODO_EXPORT(GetButtonG, PartsEngine_GetButtonG),
@@ -2787,8 +3032,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_AddDrawCutCGToPartsConstructionProcess, PE_AddDrawCutCGToPartsConstructionProcess),
 	    HLL_EXPORT(Parts_AddCopyCutCGToPartsConstructionProcess, PE_AddCopyCutCGToPartsConstructionProcess),
 	    HLL_EXPORT(Parts_AddGrayFilterToPartsConstructionProcess, PE_AddGrayFilterToPartsConstructionProcess),
-	    HLL_TODO_EXPORT(Parts_AddAddFilterToPartsConstructionProcess, PartsEngine_Parts_AddAddFilterToPartsConstructionProcess),
-	    HLL_TODO_EXPORT(Parts_AddMulFilterToPartsConstructionProcess, PartsEngine_Parts_AddMulFilterToPartsConstructionProcess),
+	    HLL_EXPORT(Parts_AddAddFilterToPartsConstructionProcess, PE_AddAddFilterToPartsConstructionProcess),
+	    HLL_EXPORT(Parts_AddMulFilterToPartsConstructionProcess, PE_AddMulFilterToPartsConstructionProcess),
 	    HLL_EXPORT(Parts_AddDrawLineToPartsConstructionProcess, PE_AddDrawLineToPartsConstructionProcess),
 	    HLL_EXPORT(Parts_BuildPartsConstructionProcess, PE_BuildPartsConstructionProcess),
 	    HLL_EXPORT(Parts_AddDrawTextToPartsConstructionProcess, PE_AddDrawTextToPartsConstructionProcess),
@@ -2881,6 +3126,21 @@ static void PartsEngine_PreLink(void)
 	if (fun && fun->nr_arguments == 5) {
 		static_library_replace(&lib_PartsEngine, "Update",
 				PartsEngine_Update_Pascha3PC);
+	}
+	fun = get_fun(libno, "Save");
+	if (fun && fun->nr_arguments == 2) {
+		static_library_replace(&lib_PartsEngine, "Save",
+				PartsEngine_Save_v14);
+	}
+	fun = get_fun(libno, "AddPartsConstructionProcess");
+	if (fun && fun->nr_arguments == 6) {
+		static_library_replace(&lib_PartsEngine, "AddPartsConstructionProcess",
+				PartsEngine_AddPartsConstructionProcess_v14);
+	}
+	fun = get_fun(libno, "GetPartsConstructionProcess");
+	if (fun && fun->nr_arguments == 7) {
+		static_library_replace(&lib_PartsEngine, "GetPartsConstructionProcess",
+				PartsEngine_GetPartsConstructionProcess_v14);
 	}
 	if (get_fun(libno, "AddController")) {
 		PE_enable_multi_controller();

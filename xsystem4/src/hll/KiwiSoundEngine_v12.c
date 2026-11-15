@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
+#include "system4/ain.h"
 #include "system4/archive.h"
 #include "system4/ex.h"
 #include "system4/file.h"
@@ -40,6 +41,15 @@ static void kiwi_prelink(void)
 		for (int i = 0; i < 6; i++) {
 			config.mixer_channels[i] = strdup(names[i]);
 			config.mixer_volumes[i] = 100;
+		}
+	} else if (game_dohnadohna && !config.mixer_nr_channels) {
+		const char *names[] = { "Master", "BGM", "SE", "Voice", "SubVoice", "Ambient", "System", "Movie", "Extra" };
+		config.mixer_nr_channels = 9;
+		config.mixer_channels = xcalloc(9, sizeof(char *));
+		config.mixer_volumes = xcalloc(9, sizeof(int));
+		for (int i = 0; i < 9; i++) {
+			config.mixer_channels[i] = strdup(names[i]);
+			config.mixer_volumes[i] = (i == 3) ? 100 : 80;
 		}
 	}
 }
@@ -145,7 +155,7 @@ static bool kiwi_exists_se(int id) { return id_pool_get(&effects, id); }
 static bool kiwi_prepare(int id, struct string *name, struct string *filter, bool streaming)
 {
 	if (id < 0) return false;
-	if (filter->size) VM_ERROR("Unimplemented sound filter: %s", display_sjis0(filter->text));
+	if (filter && filter->size) WARNING("Unimplemented sound filter: %s", display_sjis0(filter->text));
 	// libsndfile streams both archive and filesystem data on demand.
 	(void)streaming;
 	struct channel *channel = open_sound(name);
@@ -288,6 +298,20 @@ static bool kiwi_play_se(int id, struct string *name)
 	return play_effect(id_pool_get(&effects, id), name);
 }
 
+static bool kiwi_play_se_v14(int id, struct string *name, struct string *filter)
+{
+	if (filter && filter->size)
+		WARNING("Unimplemented SE filter: %s", display_sjis0(filter->text));
+	return kiwi_play_se(id, name);
+}
+
+static void *kiwi_resolve_play_se(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 3)
+		return kiwi_play_se_v14;
+	return kiwi_play_se;
+}
+
 bool kiwi_play_system_sound(struct string *name)
 {
 	return !name->size || play_effect(&system_effect, name);
@@ -370,7 +394,7 @@ struct static_library lib_KiwiSoundEngine_v12 = {
 		HLL_EXPORT(_PreLink, kiwi_prelink), HLL_EXPORT(_ModuleInit, kiwi_init), HLL_EXPORT(_ModuleFini, kiwi_fini),
 		HLL_EXPORT(SetGlobalFocus, mixer_set_global_focus),
 		HLL_EXPORT(GetFreeSeID, kiwi_free_se), HLL_EXPORT(IsExistSeID, kiwi_exists_se),
-		HLL_EXPORT(SetSeParam, kiwi_set_se), HLL_EXPORT(PlaySe, kiwi_play_se),
+		HLL_EXPORT(SetSeParam, kiwi_set_se), HLL_OVERLOAD(PlaySe, kiwi_resolve_play_se),
 		HLL_EXPORT(StopSe, kiwi_stop_se), HLL_EXPORT(IsPlaySe, kiwi_playing_se),
 		HLL_EXPORT(GetFreeID, kiwi_free), HLL_EXPORT(IsExistID, kiwi_exists),
 		HLL_EXPORT(Prepare, kiwi_prepare), HLL_EXPORT(Unprepare, kiwi_unprepare),

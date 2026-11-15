@@ -39,7 +39,7 @@ void main() {
 	}
 
 	vec4 tex_color = texture(tex, tex_coord);
-	vec3 mod_color = (tex_color.rgb + add_color) * multiply_color;
+	vec3 mod_color = clamp(tex_color.rgb + add_color, 0.0, 1.0) * multiply_color;
 	float alpha = tex_color.a * blend_rate * clip_alpha;
 
 	if (draw_filter == DRAW_FILTER_MULTIPLY) {

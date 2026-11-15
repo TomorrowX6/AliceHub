@@ -193,6 +193,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val ctrlVisible = ctrlEnabled && (xsAct?.isCtrlOverlayCurrentlyVisible()
             ?: GameModifierBridge.isCtrlOverlayVisible(activity))
         val j = readLiveJson()
+        val isRance10 = j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)
@@ -201,7 +202,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
 
-        val titleText = if (!inGame) {
+        val titleText = if (!isRance10 || !inGame) {
             tr("悬浮窗修改器", "ゲーム改造", "Floating Modifier")
         } else if (inBattle) {
             val ap = j.optInt("battleAp", 0)
@@ -230,12 +231,21 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val fontPct = GameModifierBridge.getFontScalePercent(activity)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(activity)
 
-        val menuEntries = mutableListOf<Pair<String, () -> Unit>>(
-            tr("实时锁定开关 · 已开启 $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount ON…") to { showLocksDialog() },
-            tr("字体大小修改 · 当前 $fontPct%…", "文字サイズ変更 · 現在 $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() },
-            tr("滚动条修改 · 当前 $sbPct%…", "スクロールバー変更 · 現在 $sbPct%…", "Scrollbar Size · $sbPct%…") to { showScrollbarScaleDialog() },
-            streamerItemLabel to { triggerDisableStreamerModeInGame(inGame) }
+        val menuEntries = mutableListOf<Pair<String, () -> Unit>>()
+        if (isRance10) {
+            menuEntries.add(
+                tr("实时锁定开关 · 已开启 $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount ON…") to { showLocksDialog() }
+            )
+        }
+        menuEntries.add(
+            tr("字体大小修改 · 当前 $fontPct%…", "文字サイズ変更 · 現在 $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() }
         )
+        menuEntries.add(
+            tr("滚动条修改 · 当前 $sbPct%…", "スクロールバー変更 · 現在 $sbPct%…", "Scrollbar Size · $sbPct%…") to { showScrollbarScaleDialog() }
+        )
+        if (isRance10) {
+            menuEntries.add(streamerItemLabel to { triggerDisableStreamerModeInGame(inGame) })
+        }
         if (ctrlEnabled) {
             menuEntries.add(
                 ctrlItemLabel to {
@@ -251,20 +261,24 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 }
             )
         }
-        menuEntries.addAll(
-            listOf(
-                tr("输入作弊码…", "チートコード入力…", "Enter Cheat Code…") to { showCheatCodeDialog() },
-                tr("战斗快捷指令…", "戦闘クイック操作…", "Battle Quick Actions…") to { showBattleQuickDialog() },
-                tr("一键全局强化…", "一括強化プリセット…", "One-Click Boosts…") to { showOneClickBoostDialog() },
-                tr("修改资源与回合…", "リソース・ターン編集…", "Edit Resources & Turn…") to { showEditResourcesDialog(j) },
-                tr("修改部队与属性加成…", "部隊HP・ステータス編集…", "Edit Party & Stats…") to { showEditPartyDialog(j) },
-                tr("修改四国兵力与人口…", "四国兵力・人口編集…", "Edit World & Armies…") to { showEditWorldDialog(j) },
-                tr("修改卡牌叠卡与角色星级…", "カード・キャラ★編集…", "Edit Cards & Chars…") to { showEditCardsDialog() },
-                tr("隐藏悬浮图标", "アイコンを非表示", "Hide Floating Icon") to {
-                    floatingBtn?.visibility = View.GONE
-                    Toast.makeText(activity, tr("已隐藏悬浮图标", "非表示にしました", "Hidden"), Toast.LENGTH_SHORT).show()
-                }
+        if (isRance10) {
+            menuEntries.addAll(
+                listOf(
+                    tr("输入作弊码…", "チートコード入力…", "Enter Cheat Code…") to { showCheatCodeDialog() },
+                    tr("战斗快捷指令…", "戦闘クイック操作…", "Battle Quick Actions…") to { showBattleQuickDialog() },
+                    tr("一键全局强化…", "一括強化プリセット…", "One-Click Boosts…") to { showOneClickBoostDialog() },
+                    tr("修改资源与回合…", "リソース・ターン編集…", "Edit Resources & Turn…") to { showEditResourcesDialog(j) },
+                    tr("修改部队与属性加成…", "部隊HP・ステータス編集…", "Edit Party & Stats…") to { showEditPartyDialog(j) },
+                    tr("修改四国兵力与人口…", "四国兵力・人口編集…", "Edit World & Armies…") to { showEditWorldDialog(j) },
+                    tr("修改卡牌叠卡与角色星级…", "カード・キャラ★編集…", "Edit Cards & Chars…") to { showEditCardsDialog() }
+                )
             )
+        }
+        menuEntries.add(
+            tr("隐藏悬浮图标", "アイコンを非表示", "Hide Floating Icon") to {
+                floatingBtn?.visibility = View.GONE
+                Toast.makeText(activity, tr("已隐藏悬浮图标", "非表示にしました", "Hidden"), Toast.LENGTH_SHORT).show()
+            }
         )
 
         val items = menuEntries.map { it.first }.toTypedArray()

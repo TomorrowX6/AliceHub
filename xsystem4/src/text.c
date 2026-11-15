@@ -15,6 +15,7 @@
  */
 
 #include "system4.h"
+#include "system4/ain.h"
 #include "system4/fnl.h"
 #include "system4/hashtable.h"
 #include "system4/string.h"
@@ -22,6 +23,7 @@
 
 #include "gfx/gfx.h"
 #include "gfx/font.h"
+#include "vm.h"
 #include "xsystem4.h"
 
 /*
@@ -124,6 +126,8 @@ void gfx_font_init(void)
 			font_fnl[i] = fnl_font_load(fnl, i);
 		}
 	}
+	if (ain && ain->version >= 12 && !game_rance7_mg)
+		gfx_text_advance_edges = true;
 	font_initialized = true;
 }
 
@@ -335,6 +339,62 @@ float gfx_render_text_mode(Texture *dst, float x, int y, char *msg, struct text_
 		.font_spacing = ts->font_spacing,
 		.edge_spacing = edge_advance,
 		.mode = mode,
+		.font_size = font_size,
+	};
+	return _gfx_render_text(dst, msg, &metrics);
+}
+
+float gfx_render_text_edge_only(Texture *dst, float x, int y, char *msg, struct text_style *ts)
+{
+	float edge_width = text_style_edge_width(ts);
+	if (edge_width <= 0.01f)
+		return 0.0f;
+	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
+	struct font_size *font_size = text_style_font_size(ts);
+	float edge_advance = gfx_text_advance_edges
+		? edge_width + ceilf(ts->bold_width)
+		: 0.f;
+	int edge_y = gfx_text_advance_edges
+		? lroundf(ts->edge_up + ceilf(ts->bold_width))
+		: 0;
+	struct text_render_metrics metrics = {
+		.x = x,
+		.y = y + edge_y,
+		.color = ts->edge_color,
+		.weight = weight,
+		.edge_width = edge_width,
+		.scale_x = ts->scale_x,
+		.space_scale_x = ts->space_scale_x,
+		.font_spacing = ts->font_spacing,
+		.edge_spacing = edge_advance,
+		.mode = RENDER_COPY,
+		.font_size = font_size,
+	};
+	return _gfx_render_text(dst, msg, &metrics);
+}
+
+float gfx_render_text_core_only(Texture *dst, float x, int y, char *msg, struct text_style *ts)
+{
+	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
+	struct font_size *font_size = text_style_font_size(ts);
+	float edge_width = text_style_edge_width(ts);
+	float edge_advance = gfx_text_advance_edges
+		? edge_width + ceilf(ts->bold_width)
+		: 0.f;
+	int edge_y = gfx_text_advance_edges
+		? lroundf(ts->edge_up + ceilf(ts->bold_width))
+		: 0;
+	struct text_render_metrics metrics = {
+		.x = x,
+		.y = y + edge_y,
+		.color = ts->color,
+		.weight = weight,
+		.edge_width = ts->bold_width,
+		.scale_x = ts->scale_x,
+		.space_scale_x = ts->space_scale_x,
+		.font_spacing = ts->font_spacing,
+		.edge_spacing = edge_advance,
+		.mode = RENDER_COPY,
 		.font_size = font_size,
 	};
 	return _gfx_render_text(dst, msg, &metrics);

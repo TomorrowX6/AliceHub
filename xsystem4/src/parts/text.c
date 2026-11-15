@@ -128,6 +128,8 @@ struct parts_glyph_cache_entry {
 	uint32_t hash;
 	struct parts_glyph_key key;
 	Texture t;
+	Texture t_edge;
+	Point pad;
 	int advance;
 	int height;
 	int refcount;
@@ -263,6 +265,8 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 			glyph_lru_insert_head(idx);
 			e->refcount++;
 			ch->t = e->t;
+			ch->t_edge = e->t_edge;
+			ch->pad = e->pad;
 			ch->advance = e->advance;
 			ch->cache_idx = idx;
 			line->width += ch->advance;
@@ -283,17 +287,33 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 		}
 	}
 
-	int width = gfx_size_char(&eff_ts, ch->ch);
-	int height = text_style_height(&eff_ts);
+	float edge_w = text_style_edge_width(&eff_ts);
+	bool has_edge = edge_w > 0.01f;
+	float sx = max(1.0f, eff_ts.scale_x);
+	int pad_x = (int)ceilf((edge_w + ceilf(eff_ts.bold_width)) * sx) + 2;
+	int pad_y = (int)ceilf(max(eff_ts.edge_up, eff_ts.edge_down) + ceilf(eff_ts.bold_width)) + 2;
+	int base_w = max(1, (int)ceilf(gfx_size_char(&eff_ts, ch->ch)));
+	int height = max(1, (int)ceilf(text_style_height(&eff_ts)));
+	int tex_w = base_w + pad_x * 2;
+	int tex_h = height + pad_y * 2;
+	Point pad = { pad_x, pad_y };
+
 	if (slot >= 0) {
 		struct parts_glyph_cache_entry *e = &glyph_cache[slot];
 		if (e->valid) {
 			glyph_hash_remove(slot);
 			glyph_lru_remove(slot);
 			gfx_delete_texture(&e->t);
+			gfx_delete_texture(&e->t_edge);
 		}
-		gfx_init_texture_rgba(&e->t, width, height, (SDL_Color){0,0,0,0});
-		e->advance = ceilf(gfx_render_textf(&e->t, 0, 0, ch->ch, &eff_ts, false));
+		memset(&e->t_edge, 0, sizeof(e->t_edge));
+		if (has_edge) {
+			gfx_init_texture_rgba(&e->t_edge, tex_w, tex_h, (SDL_Color){0,0,0,0});
+			gfx_render_text_edge_only(&e->t_edge, (float)pad_x, pad_y, ch->ch, &eff_ts);
+		}
+		gfx_init_texture_rgba(&e->t, tex_w, tex_h, (SDL_Color){0,0,0,0});
+		e->advance = ceilf(gfx_render_text_core_only(&e->t, (float)pad_x, pad_y, ch->ch, &eff_ts));
+		e->pad = pad;
 		e->height = height;
 		e->key = key;
 		e->hash = hash;
@@ -303,11 +323,19 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 		glyph_hash_buckets[bucket] = slot;
 		glyph_lru_insert_head(slot);
 		ch->t = e->t;
+		ch->t_edge = e->t_edge;
+		ch->pad = pad;
 		ch->advance = e->advance;
 		ch->cache_idx = slot;
 	} else {
-		gfx_init_texture_rgba(&ch->t, width, height, (SDL_Color){0,0,0,0});
-		ch->advance = ceilf(gfx_render_textf(&ch->t, 0, 0, ch->ch, &eff_ts, false));
+		memset(&ch->t_edge, 0, sizeof(ch->t_edge));
+		if (has_edge) {
+			gfx_init_texture_rgba(&ch->t_edge, tex_w, tex_h, (SDL_Color){0,0,0,0});
+			gfx_render_text_edge_only(&ch->t_edge, (float)pad_x, pad_y, ch->ch, &eff_ts);
+		}
+		gfx_init_texture_rgba(&ch->t, tex_w, tex_h, (SDL_Color){0,0,0,0});
+		ch->advance = ceilf(gfx_render_text_core_only(&ch->t, (float)pad_x, pad_y, ch->ch, &eff_ts));
+		ch->pad = pad;
 		ch->cache_idx = -1;
 	}
 	line->width += ch->advance;
@@ -354,6 +382,7 @@ void parts_text_free(struct parts_text *t)
 					glyph_cache[idx].refcount--;
 			} else {
 				gfx_delete_texture(&line->chars[j].t);
+				gfx_delete_texture(&line->chars[j].t_edge);
 			}
 		}
 		free(line->chars);

@@ -2237,6 +2237,10 @@ void modifier_on_config_loaded(void)
 	if (!vm_globals_ready())
 		return;
 	maybe_load_initial_modifier_config();
+	if (!game_rance10) {
+		s_game_config_ready = true;
+		return;
+	}
 	vm_inspect_mod_streamer_ain();
 	s_game_config_ready = true;
 	if (!s_is_mod_streamer)
@@ -2275,7 +2279,7 @@ void modifier_on_config_loaded(void)
 
 void modifier_on_globals_loaded(void)
 {
-	if (!vm_globals_ready())
+	if (!game_rance10 || !vm_globals_ready())
 		return;
 	vm_ensure_card_org_fallback_proc();
 	if (!vm_has_mod_streamer_mode() || !s_game_config_ready)
@@ -2938,6 +2942,7 @@ static void vm_enforce_locks(int mask)
 static char *vm_build_live_state_json(int lock_mask)
 {
 	cJSON *root = cJSON_CreateObject();
+	cJSON_AddBoolToObject(root, "isRance10", game_rance10);
 	cJSON_AddNumberToObject(root, "lockMask", lock_mask);
 	pthread_mutex_lock(&g_mod_mutex);
 	int cur_font_pct = g_font_scale_pct;
@@ -2945,6 +2950,13 @@ static char *vm_build_live_state_json(int lock_mask)
 	pthread_mutex_unlock(&g_mod_mutex);
 	cJSON_AddNumberToObject(root, "fontScalePct", cur_font_pct);
 	cJSON_AddNumberToObject(root, "scrollbarScalePct", cur_sb_pct);
+
+	if (!game_rance10) {
+		cJSON_AddBoolToObject(root, "inGame", ain != NULL);
+		char *out = cJSON_PrintUnformatted(root);
+		cJSON_Delete(root);
+		return out;
+	}
 
 	vm_inspect_mod_streamer_ain();
 	struct page *gc    = s_glob_game_context >= 0 ? vm_get_global_page_idx(s_glob_game_context) : vm_get_global_page("g_gameContext", NULL);
@@ -3119,6 +3131,68 @@ void modifier_on_frame(void)
 		}
 	}
 #endif
+
+	if (!game_rance10) {
+		int desired_font_pct = 100;
+		int desired_sb_pct = 100;
+		pthread_mutex_lock(&g_mod_mutex);
+		free(g_pending_action_json);
+		g_pending_action_json = NULL;
+		desired_font_pct = g_font_scale_pct;
+		desired_sb_pct = g_scrollbar_scale_pct;
+		pthread_mutex_unlock(&g_mod_mutex);
+
+		bool ui_changed = false;
+		if (s_applied_font_scale_pct != desired_font_pct) {
+			s_applied_font_scale_pct = desired_font_pct;
+			parts_set_modifier_font_scale(desired_font_pct);
+			parts_refresh_live_font_scale();
+			ui_changed = true;
+		}
+		if (s_applied_scrollbar_scale_pct != desired_sb_pct) {
+			s_applied_scrollbar_scale_pct = desired_sb_pct;
+			parts_set_modifier_scrollbar_scale(desired_sb_pct);
+			parts_refresh_live_scrollbar_scale();
+			ui_changed = true;
+		}
+
+		pthread_mutex_lock(&g_mod_mutex);
+		int lock_mask = g_live_lock_mask;
+		uint32_t req_seq = g_live_state_req_seq;
+		bool need_snap = (req_seq != g_live_state_built_seq) || ui_changed;
+		pthread_mutex_unlock(&g_mod_mutex);
+
+#ifndef __ANDROID__
+		if (s_state_file && s_state_file[0] && (ui_changed || (s_frame_tick % 15 == 1))) {
+			need_snap = true;
+		}
+#endif
+		if (need_snap) {
+			char *snap = vm_build_live_state_json(lock_mask);
+#ifndef __ANDROID__
+			if (s_state_file && s_state_file[0] && snap) {
+				char *tmp_path = NULL;
+				FILE *sfp = atomic_save_open(s_state_file, "wb", &tmp_path);
+				if (sfp) {
+					size_t slen = strlen(snap);
+					if (fwrite(snap, 1, slen, sfp) == slen)
+						atomic_save_commit(sfp, s_state_file, tmp_path, false);
+					else
+						atomic_save_abort(sfp, tmp_path);
+				}
+			}
+#endif
+			pthread_mutex_lock(&g_mod_mutex);
+			free(g_cached_live_state_json);
+			g_cached_live_state_json = snap;
+			g_live_state_built_seq = req_seq;
+			pthread_cond_broadcast(&g_mod_cond);
+			pthread_mutex_unlock(&g_mod_mutex);
+		}
+
+		s_in_modifier_frame = false;
+		return;
+	}
 
 	vm_inspect_mod_streamer_ain();
 	if (!s_game_config_ready) {

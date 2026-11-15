@@ -76,12 +76,24 @@ static void draw_plain_button(struct parts *parts, struct parts_state *state, bo
 	gfx_fill(&state->common.texture, width - 1, 0, 1, height, lower, lower, lower);
 }
 
+static bool load_skin_any(struct parts *parts, struct parts_state *state,
+		struct string *base, bool flat, const char *const suffixes[], int n)
+{
+	for (int k = 0; k < n; k++) {
+		if (suffixes[k] && load_skin(parts, state, base, flat, suffixes[k]))
+			return true;
+	}
+	return false;
+}
+
 static void rebuild_background(struct parts *parts)
 {
 	struct parts_widget *w = parts->widget;
-	static const char *suffixes[4][2] = {
-		{ "／一般", "／通常" }, { "／オン", "／オン" },
-		{ "／DOWN", "／DOWN" }, { "／无效", "／無効" }
+	static const char *const suffixes[4][3] = {
+		{ "／一般", "／通常", "／普通" },
+		{ "／オン", NULL, NULL },
+		{ "／DOWN", "／ダウン", NULL },
+		{ "／无效", "／無効", "／无効" }
 	};
 	bool checkbox = parts->component_type == 1;
 	for (int checked = 0; checked < (checkbox ? 2 : 1); checked++) {
@@ -101,13 +113,11 @@ static void rebuild_background(struct parts *parts)
 			: (i < PARTS_NR_STATES ? &parts->states[i] : &w->disabled);
 		bool loaded = false;
 		if (base->size) {
-			loaded = load_skin(parts, state, checked_base, flat, suffixes[i][0]);
-			if (!loaded && strcmp(suffixes[i][0], suffixes[i][1]))
-				loaded = load_skin(parts, state, checked_base, flat, suffixes[i][1]);
-			if (!loaded && i && !(checkbox && i == 3)) {
-				loaded = load_skin(parts, state, checked_base, flat, suffixes[0][0]);
-				if (!loaded) loaded = load_skin(parts, state, checked_base, flat, suffixes[0][1]);
-			}
+			loaded = load_skin_any(parts, state, checked_base, flat, suffixes[i], 3);
+			if (!loaded && i && !(checkbox && i == 3))
+				loaded = load_skin_any(parts, state, checked_base, flat, suffixes[0], 3);
+			if (!loaded)
+				loaded = load_skin(parts, state, checked_base, flat, "");
 		}
 		if (!base->size) {
 			bool depressed = (i == PARTS_STATE_CLICKED) || (checked && w->button_mode);

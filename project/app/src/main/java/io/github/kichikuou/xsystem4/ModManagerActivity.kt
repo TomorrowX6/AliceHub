@@ -59,13 +59,14 @@ class ModManagerActivity : Activity(), GameListObserver {
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
         gameList = LauncherActivity.obtainGameList(this)
-        if (gameList.size == 0) {
+        val r10Candidates = GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
+        if (r10Candidates.isEmpty()) {
             Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        currentTargetPath = intent.getStringExtra(EXTRA_GAME_PATH) ?: gameList[0].path.path
+        currentTargetPath = intent.getStringExtra(EXTRA_GAME_PATH) ?: r10Candidates[0].path.path
         rebindCurrentTarget()
 
         adapter = ModReleaseAdapter()
@@ -135,7 +136,7 @@ class ModManagerActivity : Activity(), GameListObserver {
     override fun onResume() {
         super.onResume()
         gameList = LauncherActivity.obtainGameList(this)
-        if (gameList.size == 0) {
+        if (GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10).isEmpty()) {
             finish()
             return
         }
@@ -260,16 +261,13 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
     }
 
+    private fun rance10Items(): List<Item> =
+        GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
+
     private fun rebindCurrentTarget() {
-        var found: Item? = null
-        for (i in 0 until gameList.size) {
-            val candidate = gameList[i]
-            if (candidate.path.path == currentTargetPath) {
-                found = candidate
-                break
-            }
-        }
-        currentTarget = found ?: gameList[0]
+        val candidates = rance10Items()
+        if (candidates.isEmpty()) return
+        currentTarget = candidates.firstOrNull { it.path.path == currentTargetPath } ?: candidates[0]
         currentTargetPath = currentTarget.path.path
     }
 
@@ -327,7 +325,7 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         findViewById<View>(R.id.btn_mod_mgr_switch_game).visibility =
-            if (gameList.size > 1) View.VISIBLE else View.GONE
+            if (rance10Items().size > 1) View.VISIBLE else View.GONE
 
         findViewById<Button>(R.id.btn_mod_mgr_portal).text =
             getString(if (isLoggedIn) R.string.mod_mgr_btn_portal_browse else R.string.mod_mgr_btn_portal)
@@ -387,13 +385,14 @@ class ModManagerActivity : Activity(), GameListObserver {
     }
 
     private fun showSwitchGameDialog() {
-        if (gameList.installState is InstallState.Installing || gameList.size <= 1) return
-        val names = Array(gameList.size) { gameList[it].name }
+        val candidates = rance10Items()
+        if (gameList.installState is InstallState.Installing || candidates.size <= 1) return
+        val names = Array(candidates.size) { candidates[it].name }
         AlertDialog.Builder(this)
             .setTitle(R.string.mod_select_game_title)
             .setItems(names) { _, which ->
-                if (which in 0 until gameList.size) {
-                    currentTarget = gameList[which]
+                if (which in candidates.indices) {
+                    currentTarget = candidates[which]
                     currentTargetPath = currentTarget.path.path
                     updateUi()
                 }

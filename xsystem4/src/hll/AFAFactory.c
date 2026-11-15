@@ -23,6 +23,9 @@
 #include "system4/string.h"
 #include "system4/utfsjis.h"
 #include "asset_manager.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+#include "vm/v12.h"
 #include "xsystem4.h"
 #include "hll.h"
 
@@ -191,6 +194,23 @@ static void AFAFactory_GetSearchTitleByIndex(int type, int at, struct string **o
 	*out = AFAFactory_GetSearchTitleByIndex_v12(type, at);
 }
 
+static void AFAFactory_GetSearchTitleList(int type, struct string *name, struct page **out)
+{
+	int count = AFAFactory_SearchTitle(type, name);
+	struct ain_type str_type = { .data = AIN_STRING, .struc = -1 };
+	struct page *page = v12_array_new(&str_type, count, false);
+	for (int i = 0; i < count; i++) {
+		int slot = page->values[i].i;
+		free_string(heap[slot].s);
+		heap[slot].s = AFAFactory_GetSearchTitleByIndex_v12(type, i);
+	}
+	if (*out) {
+		delete_page_vars(*out);
+		free_page(*out);
+	}
+	*out = page;
+}
+
 static void AFAFactory_PreLink(void);
 
 HLL_LIBRARY(AFAFactory,
@@ -204,7 +224,10 @@ HLL_LIBRARY(AFAFactory,
 	    HLL_EXPORT(PrefixSearchTitle, AFAFactory_SearchTitle),
 	    HLL_EXPORT(SuffixSearchTitle, AFAFactory_SearchTitle),
 	    HLL_EXPORT(GetCountOfSearchData, AFAFactory_GetCountOfSearchData),
-	    HLL_EXPORT(GetSearchTitleByIndex, AFAFactory_GetSearchTitleByIndex)
+	    HLL_EXPORT(GetSearchTitleByIndex, AFAFactory_GetSearchTitleByIndex),
+	    HLL_EXPORT(GetSearchTitleList, AFAFactory_GetSearchTitleList),
+	    HLL_EXPORT(GetPrefixSearchTitleList, AFAFactory_GetSearchTitleList),
+	    HLL_EXPORT(GetSuffixSearchTitleList, AFAFactory_GetSearchTitleList)
 	    );
 
 static void AFAFactory_PreLink(void)

@@ -28,7 +28,7 @@
 #include "parts_internal.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 29
+#define CURRENT_SAVE_VERSION 30
 
 static struct parts_context *back_scene;
 
@@ -270,6 +270,7 @@ static void save_parts_cp_op(struct iarray_writer *w, struct parts_cp_op *op)
 		iarray_write(w, op->fill.g);
 		iarray_write(w, op->fill.b);
 		iarray_write(w, op->fill.a);
+		iarray_write(w, op->fill.full_size);
 		break;
 	case PARTS_CP_FILL_GRADATION_HORIZON:
 	case PARTS_CP_MUL_AMAP_GRADATION_HORIZON:
@@ -286,6 +287,7 @@ static void save_parts_cp_op(struct iarray_writer *w, struct parts_cp_op *op)
 		iarray_write(w, op->fill.g2);
 		iarray_write(w, op->fill.b2);
 		iarray_write(w, op->fill.a2);
+		iarray_write(w, op->fill.full_size);
 		break;
 	case PARTS_CP_DRAW_CUT_CG:
 	case PARTS_CP_COPY_CUT_CG:
@@ -340,6 +342,28 @@ static void save_parts_cp_op(struct iarray_writer *w, struct parts_cp_op *op)
 		iarray_write(w, op->filter.blur);
 		iarray_write(w, op->filter.full_size);
 		break;
+	case PARTS_CP_V14: {
+		const struct parts_cp_v14 *v = &op->v14;
+		int fields[29] = {
+			v->command, v->interp_type,
+			v->sx, v->sy, v->sw, v->sh,
+			v->dx, v->dy, v->dx2, v->dy2, v->dw, v->dh,
+			v->r, v->g, v->b, v->a,
+			v->r2, v->g2, v->b2, v->a2,
+			v->full_size, v->blur,
+			v->radius_x, v->radius_y, v->line_width,
+			v->round_edge, v->round_corner,
+			v->angle, v->start_angle
+		};
+		for (int i = 0; i < 29; i++)
+			iarray_write(w, fields[i]);
+		iarray_write(w, v->sweep_angle);
+		iarray_write_string(w, v->cg_name ? v->cg_name : &EMPTY_STRING);
+		iarray_write(w, v->nr_coords);
+		for (int i = 0; i < v->nr_coords; i++)
+			iarray_write(w, v->coords[i]);
+		break;
+	}
 	}
 }
 
@@ -401,6 +425,7 @@ static struct parts_cp_op *load_parts_cp_op(struct iarray_reader *r, int version
 		op->fill.g = iarray_read(r);
 		op->fill.b = iarray_read(r);
 		op->fill.a = iarray_read(r);
+		op->fill.full_size = version >= 30 ? !!iarray_read(r) : false;
 		break;
 	case PARTS_CP_FILL_GRADATION_HORIZON:
 	case PARTS_CP_MUL_AMAP_GRADATION_HORIZON:
@@ -417,6 +442,7 @@ static struct parts_cp_op *load_parts_cp_op(struct iarray_reader *r, int version
 		op->fill.g2 = iarray_read(r);
 		op->fill.b2 = iarray_read(r);
 		op->fill.a2 = iarray_read(r);
+		op->fill.full_size = version >= 30 ? !!iarray_read(r) : false;
 		break;
 	case PARTS_CP_DRAW_CUT_CG:
 	case PARTS_CP_COPY_CUT_CG:
@@ -472,6 +498,42 @@ static struct parts_cp_op *load_parts_cp_op(struct iarray_reader *r, int version
 		op->filter.blur = iarray_read(r);
 		op->filter.full_size = !!iarray_read(r);
 		break;
+	case PARTS_CP_V14: {
+		struct parts_cp_v14 *v = &op->v14;
+		v->command = iarray_read(r);
+		v->interp_type = iarray_read(r);
+		v->sx = iarray_read(r); v->sy = iarray_read(r);
+		v->sw = iarray_read(r); v->sh = iarray_read(r);
+		v->dx = iarray_read(r); v->dy = iarray_read(r);
+		v->dx2 = iarray_read(r); v->dy2 = iarray_read(r);
+		v->dw = iarray_read(r); v->dh = iarray_read(r);
+		v->r = iarray_read(r); v->g = iarray_read(r);
+		v->b = iarray_read(r); v->a = iarray_read(r);
+		v->r2 = iarray_read(r); v->g2 = iarray_read(r);
+		v->b2 = iarray_read(r); v->a2 = iarray_read(r);
+		v->full_size = !!iarray_read(r);
+		v->blur = iarray_read(r);
+		v->radius_x = iarray_read(r);
+		v->radius_y = iarray_read(r);
+		v->line_width = iarray_read(r);
+		v->round_edge = !!iarray_read(r);
+		v->round_corner = !!iarray_read(r);
+		v->angle = iarray_read(r);
+		v->start_angle = iarray_read(r);
+		v->sweep_angle = iarray_read(r);
+		v->cg_name = iarray_read_string(r);
+		int n = iarray_read(r);
+		if (n > 0 && n <= 65536) {
+			v->nr_coords = n;
+			v->coords = xmalloc((size_t)n * sizeof(int));
+			for (int i = 0; i < n; i++)
+				v->coords[i] = iarray_read(r);
+		} else {
+			v->nr_coords = 0;
+			v->coords = NULL;
+		}
+		break;
+	}
 	}
 	return op;
 }
@@ -914,6 +976,8 @@ static void save_parts_state(struct iarray_writer *w, struct parts *parts, struc
 	case PARTS_RECT_DETECTION:
 		iarray_write(w, state->rect.custom);
 		for (int i = 0; i < 4; i++) iarray_write_point(w, &state->rect.points[i]);
+		iarray_write(w, state->rect.is_cg_detection);
+		iarray_write_string_or_null(w, state->rect.cg_name);
 		break;
 	case PARTS_CG:
 		save_parts_cg(w, &state->cg);
@@ -964,6 +1028,12 @@ static void load_parts_state(struct iarray_reader *r, struct parts *parts,
 		if (version >= 13) {
 			state->rect.custom = iarray_read(r);
 			for (int i = 0; i < 4; i++) iarray_read_point(r, &state->rect.points[i]);
+		}
+		if (version >= 30) {
+			state->rect.is_cg_detection = !!iarray_read(r);
+			if (state->rect.cg_name)
+				free_string(state->rect.cg_name);
+			state->rect.cg_name = iarray_read_string_or_null(r);
 		}
 		break;
 	case PARTS_CG:
@@ -1105,6 +1175,9 @@ static void save_message_window(struct iarray_writer *w, struct parts *parts, st
 	iarray_write_float(w, m->speed_rate);
 	iarray_write_text_style(w, &m->label.text.ts);
 	iarray_write(w, m->label.text.line_space);
+	iarray_write_text_style(w, &m->label.text.ruby_ts);
+	iarray_write(w, m->label.text.ruby_char_space);
+	iarray_write(w, m->ruby_line_space);
 	save_parts_state(w, parts, &m->key_wait);
 }
 
@@ -1144,6 +1217,11 @@ static void load_message_window(struct iarray_reader *r, struct parts *parts, in
 	parts_state_reset(&m->label, PARTS_TEXT);
 	iarray_read_text_style(r, &m->label.text.ts);
 	m->label.text.line_space = iarray_read(r);
+	if (version >= 30) {
+		iarray_read_text_style(r, &m->label.text.ruby_ts);
+		m->label.text.ruby_char_space = iarray_read(r);
+		m->ruby_line_space = iarray_read(r);
+	}
 	parts_message_window_rebuild_text(parts);
 	load_parts_state(r, parts, &m->key_wait, version);
 	// Sys43 resumes a loaded message fully visible, without its wait marker.
@@ -1240,6 +1318,7 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 		iarray_write_float(w, s->rate);
 		for (int resource = 0; resource < 2; resource++)
 			for (int piece = 0; piece < 5; piece++) iarray_write_string(w, s->names[resource][piece]);
+		iarray_write(w, s->is_slider);
 	}
 	iarray_write(w, parts->checkbox_show_link);
 	iarray_write(w, parts->nr_radio_children);
@@ -1248,6 +1327,9 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	iarray_write_string_or_null(w, parts->text_box_text);
 	iarray_write(w, parts->enable_speed_up);
 	iarray_write(w, parts->swipe_type);
+	iarray_write(w, parts->event_unique_id);
+	iarray_write(w, parts->sub_color_mode);
+	iarray_write(w, parts->multi_textbox_mode);
 	motion_count_pos = iarray_writer_pos(w);
 	iarray_write(w, 0); // size of motion list
 
@@ -1371,6 +1453,8 @@ static void load_parts(struct iarray_reader *r, int version)
 			s->hovered = s->pressed = -1;
 			for (int resource = 0; resource < 2; resource++)
 				for (int piece = 0; piece < 5; piece++) s->names[resource][piece] = iarray_read_string(r);
+			if (version >= 30)
+				s->is_slider = !!iarray_read(r);
 			parts_scrollbar_rebuild(parts);
 		}
 	}
@@ -1391,6 +1475,11 @@ static void load_parts(struct iarray_reader *r, int version)
 	}
 	if (version >= 27) {
 		parts->swipe_type = iarray_read(r);
+	}
+	if (version >= 30) {
+		parts->event_unique_id = iarray_read(r);
+		parts->sub_color_mode = !!iarray_read(r);
+		parts->multi_textbox_mode = iarray_read(r);
 	}
 	int motion_count = iarray_read(r);
 	for (int i = 0; i < motion_count; i++) {

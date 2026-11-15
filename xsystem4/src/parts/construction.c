@@ -15,6 +15,8 @@
  */
 
 #include <assert.h>
+#include <math.h>
+#include <string.h>
 #include "system4.h"
 #include "system4/ain.h"
 #include "system4/cg.h"
@@ -69,6 +71,11 @@ void parts_cp_op_free(struct parts_cp_op *op)
 	case PARTS_CP_ONLY_ALPHA_TEXT:
 		free_string(op->text.text);
 		break;
+	case PARTS_CP_V14:
+		if (op->v14.cg_name)
+			free_string(op->v14.cg_name);
+		free(op->v14.coords);
+		break;
 	}
 	free(op);
 }
@@ -76,6 +83,40 @@ void parts_cp_op_free(struct parts_cp_op *op)
 void parts_add_cp_op(struct parts_construction_process *cproc, struct parts_cp_op *op)
 {
 	TAILQ_INSERT_TAIL(&cproc->ops, op, entry);
+}
+
+void parts_cp_set_last_fill_full_size(int parts_no, int state, bool full_size)
+{
+	if (!full_size || !parts_state_valid(--state))
+		return;
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_CONSTRUCTION_PROCESS)
+		return;
+	struct parts_cp_op *last = NULL, *it;
+	TAILQ_FOREACH(it, &parts->states[state].cproc.ops, entry)
+		last = it;
+	if (last)
+		last->fill.full_size = true;
+}
+
+bool parts_cp_add_v14(int parts_no, const struct parts_cp_v14 *src, int state)
+{
+	if (!parts_state_valid(--state) || !src)
+		return false;
+	struct parts_construction_process *cproc = get_cproc(parts_no, state);
+	struct parts_cp_op *op = xcalloc(1, sizeof(struct parts_cp_op));
+	op->type = PARTS_CP_V14;
+	op->v14 = *src;
+	op->v14.cg_name = src->cg_name ? string_dup(src->cg_name) : string_ref(&EMPTY_STRING);
+	if (src->nr_coords > 0 && src->coords) {
+		op->v14.coords = xmalloc((size_t)src->nr_coords * sizeof(int));
+		memcpy(op->v14.coords, src->coords, (size_t)src->nr_coords * sizeof(int));
+	} else {
+		op->v14.nr_coords = 0;
+		op->v14.coords = NULL;
+	}
+	parts_add_cp_op(cproc, op);
+	return true;
 }
 
 bool PE_ClearPartsConstructionProcess(int parts_no, int state);
@@ -640,7 +681,11 @@ static bool build_fill(struct parts_construction_process *cproc, struct parts_cp
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	gfx_fill(&cproc->common.texture, op->x, op->y, op->w, op->h, op->r, op->g, op->b);
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	gfx_fill(&cproc->common.texture, x, y, w, h, op->r, op->g, op->b);
 	return true;
 }
 
@@ -648,7 +693,11 @@ static bool build_fill_alpha_color(struct parts_construction_process *cproc, str
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	gfx_fill_alpha_color(&cproc->common.texture, op->x, op->y, op->w, op->h, op->r, op->g, op->b, op->a);
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	gfx_fill_alpha_color(&cproc->common.texture, x, y, w, h, op->r, op->g, op->b, op->a);
 	return true;
 }
 
@@ -656,7 +705,11 @@ static bool build_fill_amap(struct parts_construction_process *cproc, struct par
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	gfx_fill_amap(&cproc->common.texture, op->x, op->y, op->w, op->h, op->a);
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	gfx_fill_amap(&cproc->common.texture, x, y, w, h, op->a);
 	return true;
 }
 
@@ -664,7 +717,11 @@ static bool build_fill_with_alpha(struct parts_construction_process *cproc, stru
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	gfx_fill_with_alpha(&cproc->common.texture, op->x, op->y, op->w, op->h, op->r, op->g, op->b, op->a);
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	gfx_fill_with_alpha(&cproc->common.texture, x, y, w, h, op->r, op->g, op->b, op->a);
 	return true;
 }
 
@@ -672,22 +729,26 @@ static bool build_fill_gradation_horizon(struct parts_construction_process *cpro
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	if (op->w <= 0 || op->h <= 0)
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	if (w <= 0 || h <= 0)
 		return true;
-	SDL_Color *pixels = xmalloc((size_t)op->w * op->h * sizeof(*pixels));
-	int denom = max(1, op->h - 1);
-	for (int row = 0; row < op->h; row++) {
+	SDL_Color *pixels = xmalloc((size_t)w * h * sizeof(*pixels));
+	int denom = max(1, h - 1);
+	for (int row = 0; row < h; row++) {
 		uint8_t r = min(255, max(0, op->r + (op->r2 - op->r) * row / denom));
 		uint8_t g = min(255, max(0, op->g + (op->g2 - op->g) * row / denom));
 		uint8_t b = min(255, max(0, op->b + (op->b2 - op->b) * row / denom));
 		SDL_Color c = { r, g, b, 255 };
-		for (int col = 0; col < op->w; col++)
-			pixels[(size_t)row * op->w + col] = c;
+		for (int col = 0; col < w; col++)
+			pixels[(size_t)row * w + col] = c;
 	}
 	Texture src;
-	gfx_init_texture_with_pixels(&src, op->w, op->h, pixels);
+	gfx_init_texture_with_pixels(&src, w, h, pixels);
 	free(pixels);
-	gfx_copy(&cproc->common.texture, op->x, op->y, &src, 0, 0, op->w, op->h);
+	gfx_copy(&cproc->common.texture, x, y, &src, 0, 0, w, h);
 	gfx_delete_texture(&src);
 	return true;
 }
@@ -696,21 +757,25 @@ static bool build_mul_amap_gradation(struct parts_construction_process *cproc, s
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	if (op->w <= 0 || op->h <= 0)
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	if (w <= 0 || h <= 0)
 		return true;
-	SDL_Color *pixels = xmalloc((size_t)op->w * op->h * sizeof(*pixels));
-	int denom = max(1, (vertical ? op->w : op->h) - 1);
-	for (int row = 0; row < op->h; row++) {
-		for (int col = 0; col < op->w; col++) {
+	SDL_Color *pixels = xmalloc((size_t)w * h * sizeof(*pixels));
+	int denom = max(1, (vertical ? w : h) - 1);
+	for (int row = 0; row < h; row++) {
+		for (int col = 0; col < w; col++) {
 			int pos = vertical ? col : row;
 			uint8_t a = min(255, max(0, op->a + (op->a2 - op->a) * pos / denom));
-			pixels[(size_t)row * op->w + col] = (SDL_Color){ 255, 255, 255, a };
+			pixels[(size_t)row * w + col] = (SDL_Color){ 255, 255, 255, a };
 		}
 	}
 	Texture src;
-	gfx_init_texture_with_pixels(&src, op->w, op->h, pixels);
+	gfx_init_texture_with_pixels(&src, w, h, pixels);
 	free(pixels);
-	gfx_blend_da_daxsa(&cproc->common.texture, op->x, op->y, &src, 0, 0, op->w, op->h);
+	gfx_blend_da_daxsa(&cproc->common.texture, x, y, &src, 0, 0, w, h);
 	gfx_delete_texture(&src);
 	return true;
 }
@@ -719,12 +784,16 @@ static bool build_draw_rect(struct parts_construction_process *cproc, struct par
 {
 	if (!cproc->common.texture.handle)
 		return false;
-	int x2 = op->x + op->w - 1;
-	int y2 = op->y + op->h - 1;
-	gfx_draw_line(&cproc->common.texture, op->x, op->y, x2, op->y, op->r, op->g, op->b);
-	gfx_draw_line(&cproc->common.texture, op->x, op->y, op->x, y2, op->r, op->g, op->b);
-	gfx_draw_line(&cproc->common.texture, x2, op->y, x2, y2, op->r, op->g, op->b);
-	gfx_draw_line(&cproc->common.texture, op->x, y2, x2, y2, op->r, op->g, op->b);
+	int x = op->full_size ? 0 : op->x;
+	int y = op->full_size ? 0 : op->y;
+	int w = op->full_size ? cproc->common.texture.w : op->w;
+	int h = op->full_size ? cproc->common.texture.h : op->h;
+	int x2 = x + w - 1;
+	int y2 = y + h - 1;
+	gfx_draw_line(&cproc->common.texture, x, y, x2, y, op->r, op->g, op->b);
+	gfx_draw_line(&cproc->common.texture, x, y, x, y2, op->r, op->g, op->b);
+	gfx_draw_line(&cproc->common.texture, x2, y, x2, y2, op->r, op->g, op->b);
+	gfx_draw_line(&cproc->common.texture, x, y2, x2, y2, op->r, op->g, op->b);
 	return true;
 }
 
@@ -1032,11 +1101,355 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 	return true;
 }
 
+static inline float cp_seg_dist2(float px, float py, float x0, float y0, float x1, float y1, bool round_cap)
+{
+	float vx = x1 - x0, vy = y1 - y0;
+	float len2 = vx * vx + vy * vy;
+	if (len2 < 1e-6f) {
+		float dx = px - x0, dy = py - y0;
+		return dx * dx + dy * dy;
+	}
+	float t = ((px - x0) * vx + (py - y0) * vy) / len2;
+	if (!round_cap && (t < 0.0f || t > 1.0f))
+		return 1e30f;
+	if (t < 0.0f) t = 0.0f;
+	else if (t > 1.0f) t = 1.0f;
+	float dx = px - (x0 + t * vx), dy = py - (y0 + t * vy);
+	return dx * dx + dy * dy;
+}
+
+static inline bool cp_angle_in_sweep(float px, float py, float cx, float cy, int start_deg, int sweep_deg)
+{
+	if (sweep_deg >= 360 || sweep_deg <= -360)
+		return true;
+	if (sweep_deg == 0)
+		return false;
+	float ang = atan2f(py - cy, px - cx) * (180.0f / (float)M_PI);
+	if (ang < 0.0f)
+		ang += 360.0f;
+	float s = fmodf((float)start_deg, 360.0f);
+	if (s < 0.0f)
+		s += 360.0f;
+	if (sweep_deg > 0) {
+		float diff = ang - s;
+		if (diff < 0.0f)
+			diff += 360.0f;
+		return diff <= (float)sweep_deg;
+	} else {
+		float diff = s - ang;
+		if (diff < 0.0f)
+			diff += 360.0f;
+		return diff <= (float)(-sweep_deg);
+	}
+}
+
+static inline float cp_rrect_sdf(float lx, float ly, float hw, float hh, float rx, float ry)
+{
+	float cr = min(min(hw, hh), max(0.0f, max(rx, ry)));
+	float qx = fabsf(lx) - (hw - cr);
+	float qy = fabsf(ly) - (hh - cr);
+	float ox = max(qx, 0.0f), oy = max(qy, 0.0f);
+	return hypotf(ox, oy) + min(max(qx, qy), 0.0f) - cr;
+}
+
+static inline bool cp_poly_contains(float px, float py, const int *coords, int nr_pts)
+{
+	bool inside = false;
+	for (int i = 0, j = nr_pts - 1; i < nr_pts; j = i++) {
+		float xi = (float)coords[i * 2], yi = (float)coords[i * 2 + 1];
+		float xj = (float)coords[j * 2], yj = (float)coords[j * 2 + 1];
+		if (((yi > py) != (yj > py)) &&
+		    (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+			inside = !inside;
+	}
+	return inside;
+}
+
+static bool build_v14(struct parts_construction_process *cproc, struct parts_cp_v14 *op)
+{
+	Texture *dst = &cproc->common.texture;
+	if (!dst->handle)
+		return false;
+	int cmd = op->command;
+
+	if (cmd == 132) {
+		int x = op->full_size ? 0 : op->dx;
+		int y = op->full_size ? 0 : op->dy;
+		int w = op->full_size ? dst->w : op->dw;
+		int h = op->full_size ? dst->h : op->dh;
+		if (w > 0 && h > 0)
+			gfx_copy_color_reverse(dst, x, y, dst, x, y, w, h);
+		return true;
+	}
+
+	if (cmd >= 128 && cmd <= 131) {
+		Texture *src = cproc_get_cached_texture(op->cg_name);
+		if (!src || src->w <= 0 || src->h <= 0)
+			return true;
+		int sx = max(0, op->sx), sy = max(0, op->sy);
+		int sw = op->sw > 0 ? min(op->sw, src->w - sx) : (src->w - sx);
+		int sh = op->sh > 0 ? min(op->sh, src->h - sy) : (src->h - sy);
+		int dx = op->full_size ? 0 : op->dx;
+		int dy = op->full_size ? 0 : op->dy;
+		int dw = op->full_size ? dst->w : op->dw;
+		int dh = op->full_size ? dst->h : op->dh;
+		if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0)
+			return true;
+		for (int ty = 0; ty < dh; ty += sh) {
+			int ch = min(sh, dh - ty);
+			for (int tx = 0; tx < dw; tx += sw) {
+				int cw = min(sw, dw - tx);
+				if (cmd == 128)
+					gfx_blend_amap(dst, dx + tx, dy + ty, src, sx, sy, cw, ch);
+				else if (cmd == 129)
+					gfx_copy_with_alpha_map(dst, dx + tx, dy + ty, src, sx, sy, cw, ch);
+				else if (cmd == 130)
+					gfx_blend_alpha(dst, dx + tx, dy + ty, src, sx, sy, cw, ch);
+				else
+					gfx_copy_amap(dst, dx + tx, dy + ty, src, sx, sy, cw, ch);
+			}
+		}
+		return true;
+	}
+
+	// Fast GPU path for axis-aligned unrounded FillRect variants
+	if (cmd >= 88 && cmd <= 90 && (op->angle % 360) == 0 && !op->round_corner
+			&& op->radius_x <= 0 && op->radius_y <= 0) {
+		int x = op->full_size ? 0 : op->dx;
+		int y = op->full_size ? 0 : op->dy;
+		int w = op->full_size ? dst->w : op->dw;
+		int h = op->full_size ? dst->h : op->dh;
+		if (w <= 0 || h <= 0)
+			return true;
+		if (cmd == 88)
+			gfx_fill(dst, x, y, w, h, op->r, op->g, op->b);
+		else if (cmd == 89)
+			gfx_fill_with_alpha(dst, x, y, w, h, op->r, op->g, op->b, op->a);
+		else
+			gfx_fill_amap(dst, x, y, w, h, op->a);
+		return true;
+	}
+
+	int mode = 0;
+	bool in_rect = false;
+	enum {
+		SH_LINE, SH_POLYLINE, SH_RECT_STROKE, SH_POLY_STROKE,
+		SH_ELLIPSE_STROKE, SH_ARC_STROKE, SH_PIE_STROKE,
+		SH_RECT_FILL, SH_POLY_FILL, SH_ELLIPSE_FILL, SH_PIE_FILL
+	} kind;
+
+	if (cmd >= 30 && cmd <= 33) { kind = SH_LINE; mode = (cmd - 30) + 1; }
+	else if (cmd >= 34 && cmd <= 38) { kind = SH_POLYLINE; mode = cmd - 34; }
+	else if (cmd >= 39 && cmd <= 42) { kind = SH_RECT_STROKE; mode = (cmd - 39) + 1; }
+	else if (cmd >= 43 && cmd <= 47) { kind = SH_POLY_STROKE; mode = cmd - 43; }
+	else if (cmd >= 48 && cmd <= 57) { kind = SH_ELLIPSE_STROKE; mode = (cmd - 48) / 2; in_rect = (cmd - 48) % 2; }
+	else if (cmd >= 58 && cmd <= 67) { kind = SH_ELLIPSE_STROKE; mode = (cmd - 58) / 2; in_rect = (cmd - 58) % 2; }
+	else if (cmd >= 68 && cmd <= 77) { kind = SH_ARC_STROKE; mode = (cmd - 68) / 2; in_rect = (cmd - 68) % 2; }
+	else if (cmd >= 78 && cmd <= 87) { kind = SH_PIE_STROKE; mode = (cmd - 78) / 2; in_rect = (cmd - 78) % 2; }
+	else if (cmd >= 88 && cmd <= 92) { kind = SH_RECT_FILL; mode = cmd - 88; }
+	else if (cmd >= 93 && cmd <= 97) { kind = SH_POLY_FILL; mode = cmd - 93; }
+	else if (cmd >= 98 && cmd <= 107) { kind = SH_ELLIPSE_FILL; mode = (cmd - 98) / 2; in_rect = (cmd - 98) % 2; }
+	else if (cmd >= 108 && cmd <= 117) { kind = SH_ELLIPSE_FILL; mode = (cmd - 108) / 2; in_rect = (cmd - 108) % 2; }
+	else if (cmd >= 118 && cmd <= 127) { kind = SH_PIE_FILL; mode = (cmd - 118) / 2; in_rect = (cmd - 118) % 2; }
+	else {
+		WARNING("Unsupported v14 construction command: %d", cmd);
+		return true;
+	}
+
+	float half_lw = max(1, op->line_width) * 0.5f;
+	float half_lw2 = half_lw * half_lw;
+	int nr_pts = op->nr_coords / 2;
+	float cx = 0.0f, cy = 0.0f, rx = 0.0f, ry = 0.0f;
+	float cos_a = 1.0f, sin_a = 0.0f;
+	int bx0 = 0, by0 = 0, bx1 = 0, by1 = 0;
+
+	if (kind == SH_LINE) {
+		int pad = (int)ceilf(half_lw) + 2;
+		bx0 = min(op->dx, op->dx2) - pad;
+		by0 = min(op->dy, op->dy2) - pad;
+		bx1 = max(op->dx, op->dx2) + pad + 1;
+		by1 = max(op->dy, op->dy2) + pad + 1;
+	} else if (kind == SH_POLYLINE || kind == SH_POLY_STROKE || kind == SH_POLY_FILL) {
+		if (nr_pts < (kind == SH_POLYLINE ? 2 : 3))
+			return true;
+		bx0 = bx1 = op->coords[0];
+		by0 = by1 = op->coords[1];
+		for (int i = 1; i < nr_pts; i++) {
+			int px = op->coords[i * 2], py = op->coords[i * 2 + 1];
+			if (px < bx0) bx0 = px;
+			if (px > bx1) bx1 = px;
+			if (py < by0) by0 = py;
+			if (py > by1) by1 = py;
+		}
+		int pad = (kind == SH_POLY_FILL) ? 2 : ((int)ceilf(half_lw) + 2);
+		bx0 -= pad; by0 -= pad; bx1 += pad + 1; by1 += pad + 1;
+	} else if (kind == SH_RECT_FILL || kind == SH_RECT_STROKE) {
+		float rw = (float)(op->full_size ? dst->w : op->dw);
+		float rh = (float)(op->full_size ? dst->h : op->dh);
+		if (rw <= 0.0f || rh <= 0.0f)
+			return true;
+		float rx_pos = (float)(op->full_size ? 0 : op->dx);
+		float ry_pos = (float)(op->full_size ? 0 : op->dy);
+		cx = rx_pos + rw * 0.5f;
+		cy = ry_pos + rh * 0.5f;
+		rx = rw * 0.5f;
+		ry = rh * 0.5f;
+		float rad = -op->angle * ((float)M_PI / 180.0f);
+		cos_a = cosf(rad);
+		sin_a = sinf(rad);
+		float ext_x = fabsf(cos_a) * rx + fabsf(sin_a) * ry + half_lw + 2.0f;
+		float ext_y = fabsf(sin_a) * rx + fabsf(cos_a) * ry + half_lw + 2.0f;
+		bx0 = (int)floorf(cx - ext_x);
+		by0 = (int)floorf(cy - ext_y);
+		bx1 = (int)ceilf(cx + ext_x);
+		by1 = (int)ceilf(cy + ext_y);
+	} else {
+		bool is_circle = (cmd >= 48 && cmd <= 57) || (cmd >= 98 && cmd <= 107);
+		if (in_rect) {
+			int ir_x = op->full_size ? 0 : op->dx;
+			int ir_y = op->full_size ? 0 : op->dy;
+			int ir_w = op->full_size ? dst->w : op->dw;
+			int ir_h = op->full_size ? dst->h : op->dh;
+			if (ir_w <= 0 || ir_h <= 0)
+				return true;
+			cx = ir_x + ir_w * 0.5f;
+			cy = ir_y + ir_h * 0.5f;
+			rx = ir_w * 0.5f;
+			ry = ir_h * 0.5f;
+		} else {
+			cx = (float)op->dx;
+			cy = (float)op->dy;
+			rx = (float)op->radius_x;
+			ry = is_circle && op->radius_y <= 0 ? rx : (float)op->radius_y;
+			if (rx <= 0.0f || ry <= 0.0f)
+				return true;
+		}
+		int pad = (int)ceilf(half_lw) + 2;
+		bx0 = (int)floorf(cx - rx) - pad;
+		by0 = (int)floorf(cy - ry) - pad;
+		bx1 = (int)ceilf(cx + rx) + pad + 1;
+		by1 = (int)ceilf(cy + ry) + pad + 1;
+	}
+
+	if (bx0 < 0) bx0 = 0;
+	if (by0 < 0) by0 = 0;
+	if (bx1 > dst->w) bx1 = dst->w;
+	if (by1 > dst->h) by1 = dst->h;
+	int bw = bx1 - bx0, bh = by1 - by0;
+	if (bw <= 0 || bh <= 0)
+		return true;
+
+	uint8_t *cov = xcalloc((size_t)bw * bh, 1);
+	bool round_cap = op->round_edge || op->line_width <= 2;
+	float r_corner = op->round_corner ? (float)max(op->radius_x, op->radius_y) : 0.0f;
+
+	for (int iy = 0; iy < bh; iy++) {
+		float base_y = (float)(by0 + iy);
+		for (int ix = 0; ix < bw; ix++) {
+			float base_x = (float)(bx0 + ix);
+			int hits = 0;
+			for (int sy_sub = 0; sy_sub < 4; sy_sub++) {
+				float py = base_y + (sy_sub + 0.5f) * 0.25f;
+				for (int sx_sub = 0; sx_sub < 4; sx_sub++) {
+					float px = base_x + (sx_sub + 0.5f) * 0.25f;
+					bool hit = false;
+					switch (kind) {
+					case SH_LINE:
+						hit = cp_seg_dist2(px, py, (float)op->dx, (float)op->dy,
+								(float)op->dx2, (float)op->dy2, round_cap) <= half_lw2;
+						break;
+					case SH_POLYLINE:
+					case SH_POLY_STROKE: {
+						int segs = (kind == SH_POLY_STROKE) ? nr_pts : (nr_pts - 1);
+						for (int k = 0; k < segs; k++) {
+							int k2 = (k + 1) % nr_pts;
+							if (cp_seg_dist2(px, py,
+									(float)op->coords[k * 2], (float)op->coords[k * 2 + 1],
+									(float)op->coords[k2 * 2], (float)op->coords[k2 * 2 + 1],
+									true) <= half_lw2) {
+								hit = true;
+								break;
+							}
+						}
+						break;
+					}
+					case SH_POLY_FILL:
+						hit = cp_poly_contains(px, py, op->coords, nr_pts);
+						break;
+					case SH_RECT_FILL:
+					case SH_RECT_STROKE: {
+						float dx = px - cx, dy = py - cy;
+						float lx = dx * cos_a - dy * sin_a;
+						float ly = dx * sin_a + dy * cos_a;
+						float d = cp_rrect_sdf(lx, ly, rx, ry, r_corner, r_corner);
+						if (kind == SH_RECT_FILL)
+							hit = (d <= 0.0f);
+						else
+							hit = (fabsf(d + half_lw) <= half_lw);
+						break;
+					}
+					case SH_ELLIPSE_FILL: {
+						float nx = (px - cx) / rx, ny = (py - cy) / ry;
+						hit = (nx * nx + ny * ny <= 1.0f);
+						break;
+					}
+					case SH_PIE_FILL: {
+						float nx = (px - cx) / rx, ny = (py - cy) / ry;
+						hit = (nx * nx + ny * ny <= 1.0f) &&
+						      cp_angle_in_sweep(px, py, cx, cy, op->start_angle, op->sweep_angle);
+						break;
+					}
+					case SH_ELLIPSE_STROKE:
+					case SH_ARC_STROKE:
+					case SH_PIE_STROKE: {
+						float ri_x = max(0.01f, rx - half_lw), ri_y = max(0.01f, ry - half_lw);
+						float ro_x = rx + half_lw, ro_y = ry + half_lw;
+						float ox = (px - cx) / ro_x, oy = (py - cy) / ro_y;
+						float ix_n = (px - cx) / ri_x, iy_n = (py - cy) / ri_y;
+						bool on_ring = (ox * ox + oy * oy <= 1.0f) &&
+						               (rx <= half_lw || ry <= half_lw || (ix_n * ix_n + iy_n * iy_n >= 1.0f));
+						if (kind == SH_ELLIPSE_STROKE) {
+							hit = on_ring;
+						} else {
+							bool in_ang = cp_angle_in_sweep(px, py, cx, cy, op->start_angle, op->sweep_angle);
+							hit = on_ring && in_ang;
+							if (!hit && kind == SH_PIE_STROKE && (ox * ox + oy * oy <= 1.0f) &&
+							    abs(op->sweep_angle) < 360) {
+								float a0 = op->start_angle * ((float)M_PI / 180.0f);
+								float a1 = (op->start_angle + op->sweep_angle) * ((float)M_PI / 180.0f);
+								if (cp_seg_dist2(px, py, cx, cy, cx + cosf(a0) * rx, cy + sinf(a0) * ry, true) <= half_lw2 ||
+								    cp_seg_dist2(px, py, cx, cy, cx + cosf(a1) * rx, cy + sinf(a1) * ry, true) <= half_lw2)
+									hit = true;
+							}
+						}
+						break;
+					}
+					}
+					if (hit)
+						hits++;
+				}
+			}
+			cov[(size_t)iy * bw + ix] = (uint8_t)((hits * 255 + 8) / 16);
+		}
+	}
+
+	SDL_Color col = {
+		(uint8_t)min(255, max(0, op->r)),
+		(uint8_t)min(255, max(0, op->g)),
+		(uint8_t)min(255, max(0, op->b)),
+		(uint8_t)min(255, max(0, op->a))
+	};
+	gfx_draw_shape_mask(dst, bx0, by0, bw, bh, cov, col, mode);
+	free(cov);
+	return true;
+}
+
 bool parts_build_construction_process(struct parts *parts,
 		struct parts_construction_process *cproc)
 {
 	parts_frame_did_heavy_load = true;
 	cproc->needs_build = false;
+	parts_common_free_alpha_mask(&cproc->common);
 	bool resume_pass = parts_render_pass_suspend();
 	glEnable(GL_BLEND);
 	glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
@@ -1168,6 +1581,10 @@ bool parts_build_construction_process(struct parts *parts,
 			if (!build_blur_filter(cproc, &op->filter, true))
 				goto done;
 			break;
+		case PARTS_CP_V14:
+			if (!build_v14(cproc, &op->v14))
+				goto done;
+			break;
 		}
 	}
 	parts_dirty(parts);
@@ -1235,6 +1652,7 @@ bool PE_BuildPartsConstructionProcessThread(int parts_no, int state)
 		return parts_build_construction_process(parts, cproc);
 
 	gfx_delete_texture(&cproc->common.texture);
+	parts_common_free_alpha_mask(&cproc->common);
 	parts_set_dims(parts, &cproc->common, w, h);
 	cproc->needs_build = true;
 	parts_frame_did_heavy_load = true;

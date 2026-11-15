@@ -393,6 +393,38 @@ void hll_call(int libno, int fno)
 			ptrs[i] = &heap_ptrs[i];
 			args[i] = &ptrs[i];
 			break;
+		case AIN_WRAP: {
+			enum ain_data_type inner = f->arguments[i].type.array_type
+				? f->arguments[i].type.array_type->data : AIN_INT;
+			switch (inner) {
+			case AIN_STRING:
+				stack_ptr--;
+				heap_slots[i] = stack[stack_ptr].i;
+				heap_ptrs[i] = heap[stack[stack_ptr].i].s;
+				ptrs[i] = &heap_ptrs[i];
+				args[i] = &ptrs[i];
+				break;
+			case AIN_STRUCT:
+			case AIN_ARRAY:
+			case AIN_DELEGATE:
+			case AIN_ARRAY_TYPE:
+				stack_ptr--;
+				heap_slots[i] = stack[stack_ptr].i;
+				heap_ptrs[i] = heap[stack[stack_ptr].i].page;
+				ptrs[i] = &heap_ptrs[i];
+				args[i] = &ptrs[i];
+				break;
+			default: {
+				stack_ptr -= 2;
+				int pageno = stack[stack_ptr].i;
+				int varno  = stack[stack_ptr+1].i;
+				ptrs[i] = &heap[pageno].page->values[varno];
+				args[i] = &ptrs[i];
+				break;
+			}
+			}
+			break;
+		}
 		default:
 			stack_ptr--;
 			args[i] = &argument_values[i];
@@ -433,11 +465,18 @@ void hll_call(int libno, int fno)
 			r.ref = string_ref(&EMPTY_STRING);
 			break;
 		case AIN_ARRAY:
+			r.ref = (ain->version >= 11 && f->return_type.array_type)
+				? v12_array_new(f->return_type.array_type, 0, false) : NULL;
+			break;
 		case AIN_ARRAY_TYPE:
 			r.ref = NULL;
 			break;
 		case AIN_STRUCT:
 			r.i = alloc_struct(f->return_type.struc);
+			break;
+		case AIN_WRAP:
+		case AIN_REF_TYPE:
+			r.i = -1;
 			break;
 		case AIN_FLOAT:
 			r.f = 0.0f;
@@ -473,6 +512,24 @@ void hll_call(int libno, int fno)
 		case AIN_REF_ARRAY:
 			heap[heap_slots[i]].page = heap_ptrs[i];
 			break;
+		case AIN_WRAP: {
+			enum ain_data_type inner = f->arguments[i].type.array_type
+				? f->arguments[i].type.array_type->data : AIN_INT;
+			switch (inner) {
+			case AIN_STRING:
+				heap[heap_slots[i]].s = heap_ptrs[i];
+				break;
+			case AIN_STRUCT:
+			case AIN_ARRAY:
+			case AIN_DELEGATE:
+			case AIN_ARRAY_TYPE:
+				heap[heap_slots[i]].page = heap_ptrs[i];
+				break;
+			default:
+				break;
+			}
+			break;
+		}
 		case AIN_REF_FUNC_TYPE:
 			break;
 		case AIN_ARRAY_TYPE:
@@ -568,6 +625,7 @@ extern struct static_library lib_FillAngle;
 extern struct static_library lib_GoatGUIEngine;
 extern struct static_library lib_Gpx2Plus;
 extern struct static_library lib_GUIEngine;
+extern struct static_library lib_HashMap;
 extern struct static_library lib_HTTPDownloader;
 extern struct static_library lib_IbisInputEngine;
 extern struct static_library lib_InputDevice;
@@ -702,6 +760,7 @@ static struct static_library *static_libraries[] = {
 	&lib_GoatGUIEngine,
 	&lib_Gpx2Plus,
 	&lib_GUIEngine,
+	&lib_HashMap,
 	&lib_HTTPDownloader,
 	&lib_IbisInputEngine,
 	&lib_InputDevice,
@@ -810,6 +869,7 @@ static ffi_type *ain_to_ffi_type(enum ain_data_type type)
 	case AIN_ARRAY_TYPE:
 	case AIN_ARRAY:
 	case AIN_REF_TYPE:
+	case AIN_WRAP:
 	case AIN_IMAIN_SYSTEM: // ???
 		return &ffi_type_pointer;
 	default:

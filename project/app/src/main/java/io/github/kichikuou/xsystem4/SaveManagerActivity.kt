@@ -165,12 +165,14 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
 class SaveManagerActivity : Activity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
+        const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var activeJob: Job? = null
     private var progressDialog: Dialog? = null
 
+    private var scopedGameId: String? = null
     private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: SaveFileAdapter
@@ -181,6 +183,12 @@ class SaveManagerActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_save_manager)
         actionBar?.setDisplayHomeAsUpEnabled(true)
+
+        scopedGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        scopedGameId?.let { gid ->
+            val desc = GameCatalog.descriptorFor(this, gid)
+            title = "${desc.title} · ${getString(R.string.action_save_manager)}"
+        }
 
         adapter = SaveFileAdapter(this, emptyList())
         val listView = findViewById<ListView>(R.id.save_file_list)
@@ -254,7 +262,34 @@ class SaveManagerActivity : Activity() {
             }
         }
 
-        if (found.isEmpty()) {
+        val gid = scopedGameId
+        if (!gid.isNullOrBlank()) {
+            val iter = found.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next().value
+                val classified = GameCatalog.classifyDirectory(
+                    gameDir = entry.externalGameDir,
+                    dirName = entry.dirName,
+                    saveDir = entry.saveDir,
+                    displayName = entry.displayName
+                )
+                if (classified != gid && entry.dirName != preferredDirName) {
+                    iter.remove()
+                }
+            }
+            if (found.isEmpty()) {
+                val desc = GameCatalog.descriptorFor(this, gid, gameList)
+                val defaultDir = File(savesRoot, desc.defaultDirName)
+                defaultDir.mkdirs()
+                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                found[desc.defaultDirName] = SaveTarget(
+                    displayName = getString(R.string.save_manager_game_default_dir_label, desc.title),
+                    dirName = desc.defaultDirName,
+                    saveDir = defaultDir,
+                    externalGameDir = extDir
+                )
+            }
+        } else if (found.isEmpty()) {
             val defaultDir = File(savesRoot, "Rance10")
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
@@ -278,7 +313,8 @@ class SaveManagerActivity : Activity() {
         collectSaveFiles(saveDir, saveDir, list)
         list.sortWith(compareBy<SaveFileEntry> {
             when {
-                it.file.name.equals("GlobalSave.asd", true) -> 0
+                it.file.name.equals("GlobalSave.asd", true) ||
+                    it.file.name.equals("GlobalSaveData.asd", true) -> 0
                 it.file.name.equals("Collection.asd", true) -> 1
                 it.file.name.endsWith(".asd", true) || it.file.name.endsWith(".sav", true) -> 2
                 it.file.name.endsWith(".log", true) -> 4
@@ -288,6 +324,9 @@ class SaveManagerActivity : Activity() {
 
         currentEntries = list
         adapter.update(list)
+
+        findViewById<View>(R.id.btn_switch_game)?.visibility =
+            if (!scopedGameId.isNullOrBlank() && targets.size <= 1) View.GONE else View.VISIBLE
 
         val totalBytes = list.sumOf { it.sizeBytes }
         findViewById<TextView>(R.id.save_target_title).text =
@@ -330,7 +369,7 @@ class SaveManagerActivity : Activity() {
     private fun classifySaveFile(name: String): String {
         val lower = name.lowercase(Locale.ROOT)
         return when {
-            lower == "globalsave.asd" -> getString(R.string.save_tag_global)
+            lower == "globalsave.asd" || lower == "globalsavedata.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" -> getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" -> getString(R.string.save_tag_afcg)
@@ -368,10 +407,11 @@ class SaveManagerActivity : Activity() {
     }
 
     private fun showCreateTargetDialog() {
+        val defaultPrefix = scopedGameId?.let { GameCatalog.descriptorFor(this, it).defaultDirName } ?: "Rance10"
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_TEXT
             hint = getString(R.string.save_dir_create_hint)
-            setText("Rance10")
+            setText(defaultPrefix)
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.save_dir_create_title)

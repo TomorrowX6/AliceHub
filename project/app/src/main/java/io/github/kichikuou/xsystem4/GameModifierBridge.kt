@@ -69,6 +69,19 @@ object GameModifierBridge {
         return File(context.filesDir, CONFIG_FILE_NAME).absolutePath
     }
 
+    fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null): Boolean {
+        if (gameDir != null && gameDir.isDirectory) {
+            val files = gameDir.listFiles()
+            if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
+                return files.any { it.isFile && it.name.equals("Rance10.ain", ignoreCase = true) }
+            }
+        }
+        if (!dirNameFallback.isNullOrBlank()) {
+            return dirNameFallback.startsWith("Rance10", ignoreCase = true)
+        }
+        return true
+    }
+
     fun syncNativeConfigPath(context: Context) {
         if (!loaded) return
         try {

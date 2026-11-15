@@ -656,7 +656,7 @@ object OnlineInstaller {
         var dstDir = File(storagePath, dirBaseName)
         var suffix = 1
         while (dstDir.exists()) {
-            dstDir = File(storagePath, "$dirBaseName (${suffix++})")
+            dstDir = File(storagePath, "$dirBaseName-${suffix++}")
         }
         if (!stagingDir.renameTo(dstDir)) {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")

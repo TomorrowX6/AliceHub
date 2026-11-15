@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <zlib.h>
 #ifdef _WIN32
 #include <io.h>
 #include "system4/utfsjis.h"
@@ -115,9 +116,9 @@ static bool is_critical_global_save(const char *path)
 		base = slash2;
 	base = base ? base + 1 : path;
 #ifdef _WIN32
-	return !_stricmp(base, "GlobalSave.asd") || !_stricmp(base, "Collection.asd") || !_stricmp(base, "GameConfig.asd");
+	return !_stricmp(base, "GlobalSave.asd") || !_stricmp(base, "GlobalSaveData.asd") || !_stricmp(base, "Collection.asd") || !_stricmp(base, "GameConfig.asd");
 #else
-	return !strcasecmp(base, "GlobalSave.asd") || !strcasecmp(base, "Collection.asd") || !strcasecmp(base, "GameConfig.asd");
+	return !strcasecmp(base, "GlobalSave.asd") || !strcasecmp(base, "GlobalSaveData.asd") || !strcasecmp(base, "Collection.asd") || !strcasecmp(base, "GameConfig.asd");
 #endif
 }
 
@@ -240,6 +241,11 @@ void savedata_reset(void)
 FILE *atomic_save_open(const char *path, const char *mode, char **tmp_path_out)
 {
 	char *tmp = make_atomic_tmp_path(path);
+	char *tmp_copy = xstrdup(tmp);
+	char *dir = path_dirname(tmp_copy);
+	if (dir && dir[0])
+		mkdir_p(dir);
+	free(tmp_copy);
 	FILE *fp = file_open_utf8(tmp, mode);
 	if (!fp) {
 		free(tmp);
@@ -1046,4 +1052,1156 @@ void savedata_flush_on_background(void)
 		save_globals(entry->keyname, entry->filename, entry->group_name, NULL);
 	}
 	flushing_background_saves = false;
+}
+
+/* =========================================================================
+ * AIN v14 SerializeStruct / DeserializeStruct & Comment Container (X4SS v1)
+ * ========================================================================= */
+
+static const uint8_t X4SS_MAGIC[8] = { 'X', '4', 'S', 'S', 1, 0, 0, 0 };
+
+enum x4ss_obj_kind {
+	X4SS_OBJ_STRUCT = 1,
+	X4SS_OBJ_ARRAY  = 2,
+	X4SS_OBJ_NULL   = 3,
+};
+
+enum x4ss_val_tag {
+	X4SS_VAL_NONE     = 0,
+	X4SS_VAL_SCALAR   = 1,
+	X4SS_VAL_STRING   = 2,
+	X4SS_VAL_OBJ      = 3,
+	X4SS_VAL_IFACE    = 4,
+	X4SS_VAL_OPTION   = 5,
+	X4SS_VAL_PAGE_VAR = 6,
+};
+
+struct x4ss_buf {
+	uint8_t *data;
+	size_t len;
+	size_t cap;
+};
+
+static void x4ss_buf_ensure(struct x4ss_buf *b, size_t extra)
+{
+	if (b->len + extra <= b->cap)
+		return;
+	size_t new_cap = b->cap ? b->cap * 2 : 4096;
+	while (new_cap < b->len + extra)
+		new_cap *= 2;
+	b->data = xrealloc(b->data, new_cap);
+	b->cap = new_cap;
+}
+
+static void x4ss_put_bytes(struct x4ss_buf *b, const void *src, size_t n)
+{
+	if (!n)
+		return;
+	x4ss_buf_ensure(b, n);
+	memcpy(b->data + b->len, src, n);
+	b->len += n;
+}
+
+static void x4ss_put_u8(struct x4ss_buf *b, uint8_t v)
+{
+	x4ss_put_bytes(b, &v, 1);
+}
+
+static void x4ss_put_u32(struct x4ss_buf *b, uint32_t v)
+{
+	uint8_t le[4] = {
+		(uint8_t)(v & 0xff),
+		(uint8_t)((v >> 8) & 0xff),
+		(uint8_t)((v >> 16) & 0xff),
+		(uint8_t)((v >> 24) & 0xff),
+	};
+	x4ss_put_bytes(b, le, 4);
+}
+
+static void x4ss_put_i32(struct x4ss_buf *b, int32_t v)
+{
+	x4ss_put_u32(b, (uint32_t)v);
+}
+
+static void x4ss_put_cstr(struct x4ss_buf *b, const char *s)
+{
+	uint32_t n = s ? (uint32_t)strlen(s) : 0;
+	x4ss_put_u32(b, n);
+	if (n)
+		x4ss_put_bytes(b, s, n);
+}
+
+struct x4ss_reader {
+	const uint8_t *data;
+	size_t len;
+	size_t pos;
+	bool error;
+};
+
+static bool x4ss_get_bytes(struct x4ss_reader *r, void *dst, size_t n)
+{
+	if (r->error || r->pos + n > r->len) {
+		r->error = true;
+		return false;
+	}
+	if (n && dst)
+		memcpy(dst, r->data + r->pos, n);
+	r->pos += n;
+	return true;
+}
+
+static uint8_t x4ss_get_u8(struct x4ss_reader *r)
+{
+	uint8_t v = 0;
+	x4ss_get_bytes(r, &v, 1);
+	return v;
+}
+
+static uint32_t x4ss_get_u32(struct x4ss_reader *r)
+{
+	uint8_t le[4] = {0};
+	if (!x4ss_get_bytes(r, le, 4))
+		return 0;
+	return (uint32_t)le[0] | ((uint32_t)le[1] << 8)
+		| ((uint32_t)le[2] << 16) | ((uint32_t)le[3] << 24);
+}
+
+static int32_t x4ss_get_i32(struct x4ss_reader *r)
+{
+	return (int32_t)x4ss_get_u32(r);
+}
+
+static char *x4ss_get_cstr(struct x4ss_reader *r, uint32_t *out_len)
+{
+	uint32_t n = x4ss_get_u32(r);
+	if (r->error || r->pos + n > r->len) {
+		r->error = true;
+		if (out_len)
+			*out_len = 0;
+		return NULL;
+	}
+	char *s = xmalloc(n + 1);
+	if (n)
+		memcpy(s, r->data + r->pos, n);
+	s[n] = '\0';
+	r->pos += n;
+	if (out_len)
+		*out_len = n;
+	return s;
+}
+
+/* Interned ain_type pool for nested array element types reconstructed on load */
+struct x4ss_intern_type {
+	struct ain_type type;
+	struct x4ss_intern_type *next;
+};
+static struct x4ss_intern_type *x4ss_intern_pool = NULL;
+
+static struct ain_type *x4ss_intern_ain_type(const struct ain_type *src)
+{
+	for (struct x4ss_intern_type *it = x4ss_intern_pool; it; it = it->next) {
+		if (it->type.data == src->data &&
+		    it->type.struc == src->struc &&
+		    it->type.rank == src->rank &&
+		    it->type.array_type == src->array_type) {
+			return &it->type;
+		}
+	}
+	struct x4ss_intern_type *node = xcalloc(1, sizeof(*node));
+	node->type = *src;
+	node->next = x4ss_intern_pool;
+	x4ss_intern_pool = node;
+	return &node->type;
+}
+
+static const char *x4ss_type_symbol_name(enum ain_data_type data, int id)
+{
+	if (id < 0)
+		return "";
+	switch (data) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		return id < ain->nr_structures ? ain->structures[id].name : "";
+	case AIN_ENUM:
+	case AIN_ENUM2:
+	case AIN_REF_ENUM:
+		return id < ain->nr_enums ? ain->enums[id].name : "";
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+		return id < ain->nr_delegates ? ain->delegates[id].name : "";
+	case AIN_FUNC_TYPE:
+	case AIN_REF_FUNC_TYPE:
+		return id < ain->nr_function_types ? ain->function_types[id].name : "";
+	default:
+		return "";
+	}
+}
+
+static int x4ss_resolve_type_symbol(enum ain_data_type data, const char *name, int fallback_id)
+{
+	if (!name || !name[0])
+		return fallback_id;
+	int id = -1;
+	switch (data) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		id = ain_get_struct(ain, (char *)name);
+		return id >= 0 ? id : fallback_id;
+	case AIN_ENUM:
+	case AIN_ENUM2:
+	case AIN_REF_ENUM:
+		for (int i = 0; i < ain->nr_enums; i++) {
+			if (ain->enums[i].name && !strcmp(ain->enums[i].name, name))
+				return i;
+		}
+		return fallback_id;
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+		for (int i = 0; i < ain->nr_delegates; i++) {
+			if (ain->delegates[i].name && !strcmp(ain->delegates[i].name, name))
+				return i;
+		}
+		return fallback_id;
+	default:
+		return fallback_id;
+	}
+}
+
+static void x4ss_write_ain_type(struct x4ss_buf *b, const struct ain_type *t)
+{
+	if (!t) {
+		x4ss_put_i32(b, AIN_VOID);
+		x4ss_put_i32(b, -1);
+		x4ss_put_i32(b, 0);
+		x4ss_put_cstr(b, "");
+		x4ss_put_u8(b, 0);
+		return;
+	}
+	x4ss_put_i32(b, (int32_t)t->data);
+	x4ss_put_i32(b, (int32_t)t->struc);
+	x4ss_put_i32(b, (int32_t)t->rank);
+	x4ss_put_cstr(b, x4ss_type_symbol_name(t->data, t->struc));
+	if (t->array_type) {
+		x4ss_put_u8(b, 1);
+		x4ss_write_ain_type(b, t->array_type);
+	} else {
+		x4ss_put_u8(b, 0);
+	}
+}
+
+static struct ain_type x4ss_read_ain_type(struct x4ss_reader *r)
+{
+	struct ain_type t = {0};
+	t.data = (enum ain_data_type)x4ss_get_i32(r);
+	int fallback_id = x4ss_get_i32(r);
+	t.rank = x4ss_get_i32(r);
+	char *sym = x4ss_get_cstr(r, NULL);
+	t.struc = x4ss_resolve_type_symbol(t.data, sym, fallback_id);
+	free(sym);
+	uint8_t has_inner = x4ss_get_u8(r);
+	if (has_inner && !r->error) {
+		struct ain_type inner = x4ss_read_ain_type(r);
+		t.array_type = x4ss_intern_ain_type(&inner);
+	} else {
+		t.array_type = NULL;
+	}
+	return t;
+}
+
+struct x4ss_save_ctx {
+	int *slot_to_id;
+	int *id_to_slot;
+	int nr_objs;
+	int cap_objs;
+};
+
+static uint32_t x4ss_register_page(struct x4ss_save_ctx *ctx, int slot)
+{
+	if (slot < 0 || !page_index_valid(slot))
+		return 0;
+	struct page *p = heap[slot].page;
+	if (p && p->type != STRUCT_PAGE && p->type != ARRAY_PAGE)
+		return 0;
+	if (ctx->slot_to_id[slot] > 0)
+		return (uint32_t)ctx->slot_to_id[slot];
+	uint32_t id = (uint32_t)(++ctx->nr_objs);
+	if (ctx->nr_objs >= ctx->cap_objs) {
+		ctx->cap_objs = ctx->cap_objs ? ctx->cap_objs * 2 : 256;
+		ctx->id_to_slot = xrealloc(ctx->id_to_slot, (size_t)ctx->cap_objs * sizeof(int));
+	}
+	ctx->slot_to_id[slot] = (int)id;
+	ctx->id_to_slot[id] = slot;
+	return id;
+}
+
+static void x4ss_collect_value(struct x4ss_save_ctx *ctx, const union vm_value *vals, const struct ain_type *t)
+{
+	if (!t)
+		return;
+	switch (t->data) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_ARRAY:
+	case AIN_ARRAY_TYPE:
+	case AIN_REF_ARRAY:
+	case AIN_REF_ARRAY_TYPE:
+		x4ss_register_page(ctx, vals[0].i);
+		break;
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		x4ss_register_page(ctx, vals[0].i);
+		break;
+	case AIN_WRAP:
+		if (!t->array_type)
+			break;
+		if (t->array_type->data == AIN_STRING || t->array_type->data == AIN_DELEGATE)
+			break;
+		x4ss_register_page(ctx, vals[0].i);
+		break;
+	case AIN_REF_INT:
+	case AIN_REF_FLOAT:
+	case AIN_REF_BOOL:
+	case AIN_REF_LONG_INT:
+	case AIN_REF_ENUM:
+	case AIN_REF_OPTION:
+		x4ss_register_page(ctx, vals[0].i);
+		break;
+	case AIN_OPTION: {
+		int w = ain_type_slot_width(t);
+		if (vals[w - 1].i == 0 && t->array_type)
+			x4ss_collect_value(ctx, vals, t->array_type);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static void x4ss_write_value(struct x4ss_save_ctx *ctx, struct x4ss_buf *b, const union vm_value *vals, const struct ain_type *t)
+{
+	if (!t) {
+		x4ss_put_u8(b, X4SS_VAL_NONE);
+		return;
+	}
+	switch (t->data) {
+	case AIN_VOID:
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+		x4ss_put_u8(b, X4SS_VAL_NONE);
+		break;
+	case AIN_STRING: {
+		x4ss_put_u8(b, X4SS_VAL_STRING);
+		if (string_index_valid(vals[0].i)) {
+			struct string *s = heap_get_string(vals[0].i);
+			x4ss_put_u32(b, (uint32_t)s->size);
+			x4ss_put_bytes(b, s->text, (size_t)s->size);
+		} else {
+			x4ss_put_u32(b, 0);
+		}
+		break;
+	}
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_ARRAY:
+	case AIN_ARRAY_TYPE:
+	case AIN_REF_ARRAY:
+	case AIN_REF_ARRAY_TYPE: {
+		x4ss_put_u8(b, X4SS_VAL_OBJ);
+		uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+			? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+		x4ss_put_u32(b, id);
+		break;
+	}
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP: {
+		x4ss_put_u8(b, X4SS_VAL_IFACE);
+		uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+			? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+		x4ss_put_u32(b, id);
+		x4ss_put_i32(b, id ? vals[1].i : 0);
+		break;
+	}
+	case AIN_WRAP: {
+		if (!t->array_type || t->array_type->data == AIN_DELEGATE) {
+			x4ss_put_u8(b, X4SS_VAL_NONE);
+			break;
+		}
+		if (t->array_type->data == AIN_STRING) {
+			x4ss_put_u8(b, X4SS_VAL_STRING);
+			if (string_index_valid(vals[0].i)) {
+				struct string *s = heap_get_string(vals[0].i);
+				x4ss_put_u32(b, (uint32_t)s->size);
+				x4ss_put_bytes(b, s->text, (size_t)s->size);
+			} else {
+				x4ss_put_u32(b, 0);
+			}
+			break;
+		}
+		if (t->array_type->data == AIN_IFACE || t->array_type->data == AIN_IFACE_WRAP) {
+			x4ss_put_u8(b, X4SS_VAL_IFACE);
+			uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+				? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+			x4ss_put_u32(b, id);
+			x4ss_put_i32(b, id ? vals[1].i : 0);
+			break;
+		}
+		if (ain_type_slot_width(t) == 2) {
+			x4ss_put_u8(b, X4SS_VAL_PAGE_VAR);
+			uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+				? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+			x4ss_put_u32(b, id);
+			x4ss_put_i32(b, id ? vals[1].i : 0);
+			break;
+		}
+		x4ss_put_u8(b, X4SS_VAL_OBJ);
+		uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+			? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+		x4ss_put_u32(b, id);
+		break;
+	}
+	case AIN_REF_INT:
+	case AIN_REF_FLOAT:
+	case AIN_REF_BOOL:
+	case AIN_REF_LONG_INT:
+	case AIN_REF_ENUM:
+	case AIN_REF_OPTION: {
+		x4ss_put_u8(b, X4SS_VAL_PAGE_VAR);
+		uint32_t id = (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_id[vals[0].i] > 0)
+			? (uint32_t)ctx->slot_to_id[vals[0].i] : 0;
+		x4ss_put_u32(b, id);
+		x4ss_put_i32(b, id ? vals[1].i : 0);
+		break;
+	}
+	case AIN_OPTION: {
+		int w = ain_type_slot_width(t);
+		bool is_none = (vals[w - 1].i != 0);
+		x4ss_put_u8(b, X4SS_VAL_OPTION);
+		x4ss_put_u8(b, is_none ? 1 : 0);
+		if (!is_none)
+			x4ss_write_value(ctx, b, vals, t->array_type);
+		break;
+	}
+	default:
+		x4ss_put_u8(b, X4SS_VAL_SCALAR);
+		x4ss_put_i32(b, vals[0].i);
+		break;
+	}
+}
+
+static void x4ss_skip_value(struct x4ss_reader *r)
+{
+	uint8_t tag = x4ss_get_u8(r);
+	if (r->error)
+		return;
+	switch (tag) {
+	case X4SS_VAL_NONE:
+		break;
+	case X4SS_VAL_SCALAR:
+		x4ss_get_i32(r);
+		break;
+	case X4SS_VAL_STRING: {
+		uint32_t len = x4ss_get_u32(r);
+		x4ss_get_bytes(r, NULL, len);
+		break;
+	}
+	case X4SS_VAL_OBJ:
+		x4ss_get_u32(r);
+		break;
+	case X4SS_VAL_IFACE:
+	case X4SS_VAL_PAGE_VAR:
+		x4ss_get_u32(r);
+		x4ss_get_i32(r);
+		break;
+	case X4SS_VAL_OPTION: {
+		uint8_t is_none = x4ss_get_u8(r);
+		if (!is_none && !r->error)
+			x4ss_skip_value(r);
+		break;
+	}
+	default:
+		r->error = true;
+		break;
+	}
+}
+
+static int x4ss_resolve_vtable_offset(int concrete_sno, int iface_sno, int saved_voff)
+{
+	if (concrete_sno >= 0 && concrete_sno < ain->nr_structures && iface_sno >= 0) {
+		struct ain_struct *st = &ain->structures[concrete_sno];
+		for (int i = 0; i < st->nr_interfaces; i++) {
+			if (st->interfaces[i].struct_type == iface_sno)
+				return st->interfaces[i].vtable_offset;
+		}
+	}
+	return saved_voff;
+}
+
+struct x4ss_load_ctx {
+	uint32_t nr_objs;
+	int *id_to_slot;
+	bool *is_root;
+};
+
+static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
+		union vm_value *dst, const struct ain_type *t, bool has_existing)
+{
+	uint8_t tag = x4ss_get_u8(r);
+	if (r->error)
+		return;
+	if (!t || t->data == AIN_VOID || t->data == AIN_DELEGATE || t->data == AIN_REF_DELEGATE) {
+		/* Re-wind tag? No, consume remainder of tag payload cleanly */
+		switch (tag) {
+		case X4SS_VAL_NONE: break;
+		case X4SS_VAL_SCALAR: x4ss_get_i32(r); break;
+		case X4SS_VAL_STRING: { uint32_t l = x4ss_get_u32(r); x4ss_get_bytes(r, NULL, l); break; }
+		case X4SS_VAL_OBJ: x4ss_get_u32(r); break;
+		case X4SS_VAL_IFACE: case X4SS_VAL_PAGE_VAR: x4ss_get_u32(r); x4ss_get_i32(r); break;
+		case X4SS_VAL_OPTION: if (!x4ss_get_u8(r)) x4ss_skip_value(r); break;
+		default: r->error = true; break;
+		}
+		return;
+	}
+
+	if (has_existing) {
+		elem_value_fini(dst, t, false);
+		int w = ain_type_slot_width(t);
+		for (int k = 0; k < w; k++)
+			dst[k].i = 0;
+	}
+
+	if (t->data == AIN_OPTION) {
+		int w = ain_type_slot_width(t);
+		if (tag != X4SS_VAL_OPTION) {
+			/* Fallback: default to none */
+			for (int k = 0; k < w - 1; k++)
+				dst[k].i = -1;
+			dst[w - 1].i = 1;
+			return;
+		}
+		uint8_t is_none = x4ss_get_u8(r);
+		if (is_none) {
+			for (int k = 0; k < w - 1; k++)
+				dst[k].i = -1;
+			dst[w - 1].i = 1;
+		} else {
+			x4ss_read_value(ctx, r, dst, t->array_type, false);
+			dst[w - 1].i = 0;
+		}
+		return;
+	}
+
+	switch (tag) {
+	case X4SS_VAL_NONE:
+		variable_init_typed(dst, t, false, false);
+		break;
+	case X4SS_VAL_SCALAR:
+		dst[0].i = x4ss_get_i32(r);
+		break;
+	case X4SS_VAL_STRING: {
+		uint32_t len = x4ss_get_u32(r);
+		if (r->error || r->pos + len > r->len) {
+			r->error = true;
+			dst[0].i = heap_alloc_string(string_ref(&EMPTY_STRING));
+			break;
+		}
+		struct string *s = make_string((const char *)(r->data + r->pos), len);
+		r->pos += len;
+		dst[0].i = heap_alloc_string(s);
+		break;
+	}
+	case X4SS_VAL_OBJ: {
+		uint32_t id = x4ss_get_u32(r);
+		int slot = (id > 0 && id <= ctx->nr_objs) ? ctx->id_to_slot[id] : -1;
+		if (slot >= 0)
+			heap_ref(slot);
+		dst[0].i = slot;
+		break;
+	}
+	case X4SS_VAL_IFACE: {
+		uint32_t id = x4ss_get_u32(r);
+		int32_t saved_voff = x4ss_get_i32(r);
+		int slot = (id > 0 && id <= ctx->nr_objs) ? ctx->id_to_slot[id] : -1;
+		if (slot >= 0 && page_index_valid(slot) && heap[slot].page) {
+			int concrete_sno = heap[slot].page->index;
+			int iface_sno = (t->data == AIN_WRAP && t->array_type) ? t->array_type->struc : t->struc;
+			heap_ref(slot);
+			dst[0].i = slot;
+			dst[1].i = x4ss_resolve_vtable_offset(concrete_sno, iface_sno, saved_voff);
+		} else {
+			dst[0].i = -1;
+			dst[1].i = 0;
+		}
+		break;
+	}
+	case X4SS_VAL_PAGE_VAR: {
+		uint32_t id = x4ss_get_u32(r);
+		int32_t varno = x4ss_get_i32(r);
+		int slot = (id > 0 && id <= ctx->nr_objs) ? ctx->id_to_slot[id] : -1;
+		if (slot >= 0) {
+			heap_ref(slot);
+			dst[0].i = slot;
+			dst[1].i = varno;
+		} else {
+			dst[0].i = -1;
+			dst[1].i = 0;
+		}
+		break;
+	}
+	default:
+		r->error = true;
+		break;
+	}
+}
+
+static char *resolve_struct_save_path(const char *filename, bool save_folder)
+{
+	return save_folder ? savedir_path(filename) : gamedir_path(filename);
+}
+
+static bool x4ss_read_existing_parts(const char *path,
+		uint8_t **comment_out, uint32_t *comment_len_out,
+		uint32_t *uncomp_len_out, uint8_t **comp_out, uint32_t *comp_len_out)
+{
+	if (comment_out) *comment_out = NULL;
+	if (comment_len_out) *comment_len_out = 0;
+	if (uncomp_len_out) *uncomp_len_out = 0;
+	if (comp_out) *comp_out = NULL;
+	if (comp_len_out) *comp_len_out = 0;
+
+	FILE *fp = file_open_utf8(path, "rb");
+	if (!fp)
+		return false;
+
+	uint8_t hdr[12];
+	if (fread(hdr, 1, 12, fp) != 12 || memcmp(hdr, X4SS_MAGIC, 8) != 0) {
+		fclose(fp);
+		return false;
+	}
+	uint32_t clen = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8)
+		| ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+	if (clen > 16 * 1024 * 1024) {
+		fclose(fp);
+		return false;
+	}
+	if (comment_out) {
+		uint8_t *cbuf = xmalloc(clen + 1);
+		if (clen && fread(cbuf, 1, clen, fp) != clen) {
+			free(cbuf);
+			fclose(fp);
+			return false;
+		}
+		cbuf[clen] = 0;
+		*comment_out = cbuf;
+		if (comment_len_out)
+			*comment_len_out = clen;
+	} else {
+		if (clen && fseek(fp, (long)clen, SEEK_CUR) != 0) {
+			fclose(fp);
+			return false;
+		}
+		if (comment_len_out)
+			*comment_len_out = clen;
+	}
+
+	if (!comp_out && !uncomp_len_out && !comp_len_out) {
+		fclose(fp);
+		return true;
+	}
+
+	uint8_t phdr[8];
+	if (fread(phdr, 1, 8, fp) != 8) {
+		fclose(fp);
+		return true;
+	}
+	uint32_t ulen = (uint32_t)phdr[0] | ((uint32_t)phdr[1] << 8)
+		| ((uint32_t)phdr[2] << 16) | ((uint32_t)phdr[3] << 24);
+	uint32_t zlen = (uint32_t)phdr[4] | ((uint32_t)phdr[5] << 8)
+		| ((uint32_t)phdr[6] << 16) | ((uint32_t)phdr[7] << 24);
+	if (uncomp_len_out)
+		*uncomp_len_out = ulen;
+	if (comp_len_out)
+		*comp_len_out = zlen;
+	if (comp_out && zlen > 0) {
+		uint8_t *zbuf = xmalloc(zlen);
+		if (fread(zbuf, 1, zlen, fp) != zlen) {
+			free(zbuf);
+			fclose(fp);
+			return false;
+		}
+		*comp_out = zbuf;
+	}
+	fclose(fp);
+	return true;
+}
+
+static bool x4ss_write_container(const char *path,
+		const uint8_t *comment, uint32_t comment_len,
+		uint32_t uncomp_len, const uint8_t *comp, uint32_t comp_len)
+{
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
+	if (!fp)
+		return false;
+	uint8_t hdr[12];
+	memcpy(hdr, X4SS_MAGIC, 8);
+	hdr[8]  = (uint8_t)(comment_len & 0xff);
+	hdr[9]  = (uint8_t)((comment_len >> 8) & 0xff);
+	hdr[10] = (uint8_t)((comment_len >> 16) & 0xff);
+	hdr[11] = (uint8_t)((comment_len >> 24) & 0xff);
+	bool ok = fwrite(hdr, 1, 12, fp) == 12;
+	if (ok && comment_len > 0)
+		ok = fwrite(comment, 1, comment_len, fp) == comment_len;
+	uint8_t phdr[8] = {
+		(uint8_t)(uncomp_len & 0xff), (uint8_t)((uncomp_len >> 8) & 0xff),
+		(uint8_t)((uncomp_len >> 16) & 0xff), (uint8_t)((uncomp_len >> 24) & 0xff),
+		(uint8_t)(comp_len & 0xff), (uint8_t)((comp_len >> 8) & 0xff),
+		(uint8_t)((comp_len >> 16) & 0xff), (uint8_t)((comp_len >> 24) & 0xff),
+	};
+	if (ok)
+		ok = fwrite(phdr, 1, 8, fp) == 8;
+	if (ok && comp_len > 0)
+		ok = fwrite(comp, 1, comp_len, fp) == comp_len;
+	if (!ok) {
+		atomic_save_abort(fp, tmp_path);
+		return false;
+	}
+	return atomic_save_commit(fp, path, tmp_path, is_critical_global_save(path));
+}
+
+int serialize_structs(const char *filename, struct page *struct_page_list, bool save_folder)
+{
+	if (!filename || !struct_page_list || struct_page_list->type != ARRAY_PAGE)
+		return 0;
+
+	int nr_roots = v12_array_length(struct_page_list);
+	for (int i = 0; i < nr_roots; i++) {
+		int s = struct_page_list->values[i].i;
+		if (!page_index_valid(s) || !heap[s].page || heap[s].page->type != STRUCT_PAGE) {
+			WARNING("SerializeStruct: invalid root page %d at index %d", s, i);
+			return 0;
+		}
+	}
+
+	struct x4ss_save_ctx ctx = {
+		.slot_to_id = xcalloc((size_t)max(heap_size, 1), sizeof(int)),
+		.id_to_slot = xcalloc(256, sizeof(int)),
+		.nr_objs = 0,
+		.cap_objs = 256,
+	};
+
+	uint32_t *root_ids = xcalloc((size_t)max(nr_roots, 1), sizeof(uint32_t));
+	for (int i = 0; i < nr_roots; i++)
+		root_ids[i] = x4ss_register_page(&ctx, struct_page_list->values[i].i);
+
+	/* BFS over all reachable STRUCT_PAGE and ARRAY_PAGE objects */
+	for (int id = 1; id <= ctx.nr_objs; id++) {
+		int slot = ctx.id_to_slot[id];
+		struct page *p = heap[slot].page;
+		if (!p)
+			continue;
+		if (p->type == STRUCT_PAGE) {
+			struct ain_struct *st = &ain->structures[p->index];
+			for (int m = 0; m < st->nr_members; m++) {
+				if (st->members[m].type.data == AIN_VOID)
+					continue;
+				if (st->members[m].name && !strcmp(st->members[m].name, "<vtable>"))
+					continue;
+				x4ss_collect_value(&ctx, &p->values[m], &st->members[m].type);
+			}
+		} else if (p->type == ARRAY_PAGE) {
+			struct ain_type et = p->a_type == AIN_ARRAY
+				? p->array.element_type
+				: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
+			int w = ain_type_slot_width(&et);
+			int len = p->nr_vars / w;
+			for (int k = 0; k < len; k++)
+				x4ss_collect_value(&ctx, &p->values[k * w], &et);
+		}
+	}
+
+	struct x4ss_buf payload = {0};
+	x4ss_put_u32(&payload, (uint32_t)nr_roots);
+	for (int i = 0; i < nr_roots; i++)
+		x4ss_put_u32(&payload, root_ids[i]);
+	x4ss_put_u32(&payload, (uint32_t)ctx.nr_objs);
+
+	/* Pass 1: object headers so cycles & forward refs allocate first on load */
+	for (int id = 1; id <= ctx.nr_objs; id++) {
+		int slot = ctx.id_to_slot[id];
+		struct page *p = heap[slot].page;
+		if (!p) {
+			x4ss_put_u8(&payload, X4SS_OBJ_NULL);
+		} else if (p->type == STRUCT_PAGE) {
+			x4ss_put_u8(&payload, X4SS_OBJ_STRUCT);
+			x4ss_put_cstr(&payload, ain->structures[p->index].name);
+		} else {
+			struct ain_type et = p->a_type == AIN_ARRAY
+				? p->array.element_type
+				: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
+			int w = ain_type_slot_width(&et);
+			int len = p->nr_vars / w;
+			x4ss_put_u8(&payload, X4SS_OBJ_ARRAY);
+			x4ss_put_i32(&payload, p->a_type);
+			x4ss_put_i32(&payload, p->array.rank);
+			x4ss_write_ain_type(&payload, &et);
+			x4ss_put_u32(&payload, (uint32_t)len);
+		}
+	}
+
+	/* Pass 2: object bodies */
+	for (int id = 1; id <= ctx.nr_objs; id++) {
+		int slot = ctx.id_to_slot[id];
+		struct page *p = heap[slot].page;
+		if (!p)
+			continue;
+		if (p->type == STRUCT_PAGE) {
+			struct ain_struct *st = &ain->structures[p->index];
+			uint32_t nr_fields = 0;
+			for (int m = 0; m < st->nr_members; m++) {
+				enum ain_data_type dt = st->members[m].type.data;
+				if (dt == AIN_VOID || dt == AIN_DELEGATE || dt == AIN_REF_DELEGATE)
+					continue;
+				if (st->members[m].name && !strcmp(st->members[m].name, "<vtable>"))
+					continue;
+				nr_fields++;
+			}
+			x4ss_put_u32(&payload, nr_fields);
+			for (int m = 0; m < st->nr_members; m++) {
+				enum ain_data_type dt = st->members[m].type.data;
+				if (dt == AIN_VOID || dt == AIN_DELEGATE || dt == AIN_REF_DELEGATE)
+					continue;
+				if (st->members[m].name && !strcmp(st->members[m].name, "<vtable>"))
+					continue;
+				x4ss_put_cstr(&payload, st->members[m].name);
+				x4ss_write_value(&ctx, &payload, &p->values[m], &st->members[m].type);
+			}
+		} else if (p->type == ARRAY_PAGE) {
+			struct ain_type et = p->a_type == AIN_ARRAY
+				? p->array.element_type
+				: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
+			int w = ain_type_slot_width(&et);
+			int len = p->nr_vars / w;
+			for (int k = 0; k < len; k++)
+				x4ss_write_value(&ctx, &payload, &p->values[k * w], &et);
+		}
+	}
+
+	free(root_ids);
+	free(ctx.slot_to_id);
+	free(ctx.id_to_slot);
+
+	uLongf comp_cap = compressBound((uLong)payload.len);
+	uint8_t *comp = xmalloc(comp_cap);
+	if (compress2(comp, &comp_cap, payload.data, (uLong)payload.len, Z_BEST_SPEED) != Z_OK) {
+		free(comp);
+		free(payload.data);
+		return 0;
+	}
+
+	char *path = resolve_struct_save_path(filename, save_folder);
+	uint8_t *existing_comment = NULL;
+	uint32_t existing_comment_len = 0;
+	x4ss_read_existing_parts(path, &existing_comment, &existing_comment_len, NULL, NULL, NULL);
+
+	bool ok = x4ss_write_container(path, existing_comment, existing_comment_len,
+			(uint32_t)payload.len, comp, (uint32_t)comp_cap);
+
+	free(existing_comment);
+	free(path);
+	free(comp);
+	free(payload.data);
+	return ok ? 1 : 0;
+}
+
+struct x4ss_obj_meta {
+	uint8_t kind;
+	int struct_no;
+	struct ain_type elem_type;
+	uint32_t elem_count;
+};
+
+int deserialize_structs(const char *filename, struct page *struct_page_list, bool save_folder)
+{
+	if (!filename || !struct_page_list || struct_page_list->type != ARRAY_PAGE)
+		return 0;
+
+	int nr_caller_roots = v12_array_length(struct_page_list);
+	for (int i = 0; i < nr_caller_roots; i++) {
+		int s = struct_page_list->values[i].i;
+		if (!page_index_valid(s) || !heap[s].page || heap[s].page->type != STRUCT_PAGE) {
+			WARNING("DeserializeStruct: invalid root page %d at index %d", s, i);
+			return 0;
+		}
+	}
+
+	char *path = resolve_struct_save_path(filename, save_folder);
+	uint32_t uncomp_len = 0, comp_len = 0;
+	uint8_t *comp = NULL;
+	if (!x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
+	    uncomp_len == 0 || comp_len == 0 || !comp) {
+		/* Try .bak recovery if critical save */
+		char *bak_path = make_backup_path(path);
+		free(comp);
+		comp = NULL;
+		if (!file_exists(bak_path) ||
+		    !x4ss_read_existing_parts(bak_path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
+		    uncomp_len == 0 || comp_len == 0 || !comp) {
+			free(comp);
+			free(bak_path);
+			free(path);
+			return 0;
+		}
+		WARNING("Recovered %s from backup %s", display_utf0(path), display_utf0(bak_path));
+		file_copy(bak_path, path);
+		free(bak_path);
+	}
+	free(path);
+
+	uint8_t *raw = xmalloc(uncomp_len);
+	uLongf dst_len = (uLongf)uncomp_len;
+	if (uncompress(raw, &dst_len, comp, (uLong)comp_len) != Z_OK || dst_len != uncomp_len) {
+		free(raw);
+		free(comp);
+		WARNING("DeserializeStruct: decompression failed for %s", display_sjis0(filename));
+		return 0;
+	}
+	free(comp);
+
+	struct x4ss_reader r = { .data = raw, .len = uncomp_len, .pos = 0, .error = false };
+	uint32_t nr_saved_roots = x4ss_get_u32(&r);
+	if (r.error || (int)nr_saved_roots != nr_caller_roots) {
+		free(raw);
+		WARNING("DeserializeStruct: root count mismatch (%u vs %d)", nr_saved_roots, nr_caller_roots);
+		return 0;
+	}
+	uint32_t *root_ids = xcalloc(max(nr_saved_roots, 1u), sizeof(uint32_t));
+	for (uint32_t i = 0; i < nr_saved_roots; i++)
+		root_ids[i] = x4ss_get_u32(&r);
+
+	uint32_t nr_objs = x4ss_get_u32(&r);
+	if (r.error || nr_objs > 16 * 1024 * 1024) {
+		free(root_ids);
+		free(raw);
+		return 0;
+	}
+
+	struct x4ss_load_ctx ctx = {
+		.nr_objs = nr_objs,
+		.id_to_slot = xcalloc((size_t)nr_objs + 1, sizeof(int)),
+		.is_root = xcalloc((size_t)nr_objs + 1, sizeof(bool)),
+	};
+	for (uint32_t id = 0; id <= nr_objs; id++)
+		ctx.id_to_slot[id] = -1;
+	for (uint32_t i = 0; i < nr_saved_roots; i++) {
+		uint32_t rid = root_ids[i];
+		if (rid > 0 && rid <= nr_objs) {
+			ctx.id_to_slot[rid] = struct_page_list->values[i].i;
+			ctx.is_root[rid] = true;
+		}
+	}
+
+	struct x4ss_obj_meta *metas = xcalloc((size_t)nr_objs + 1, sizeof(*metas));
+
+	/* Pass 1: read headers and pre-allocate non-root pages */
+	for (uint32_t id = 1; id <= nr_objs && !r.error; id++) {
+		uint8_t kind = x4ss_get_u8(&r);
+		metas[id].kind = kind;
+		if (kind == X4SS_OBJ_NULL) {
+			if (!ctx.is_root[id]) {
+				int slot = heap_alloc_slot(VM_PAGE);
+				heap_set_page(slot, NULL);
+				ctx.id_to_slot[id] = slot;
+			}
+		} else if (kind == X4SS_OBJ_STRUCT) {
+			char *sname = x4ss_get_cstr(&r, NULL);
+			int sno = sname ? ain_get_struct(ain, sname) : -1;
+			free(sname);
+			metas[id].struct_no = sno;
+			if (!ctx.is_root[id] && sno >= 0) {
+				ctx.id_to_slot[id] = alloc_struct(sno);
+			}
+		} else if (kind == X4SS_OBJ_ARRAY) {
+			int32_t a_type = x4ss_get_i32(&r);
+			int32_t rank = x4ss_get_i32(&r);
+			struct ain_type et = x4ss_read_ain_type(&r);
+			uint32_t count = x4ss_get_u32(&r);
+			metas[id].elem_type = et;
+			metas[id].elem_count = count;
+			if (!r.error && !ctx.is_root[id]) {
+				int w = ain_type_slot_width(&et);
+				struct page *ap = alloc_page(ARRAY_PAGE, a_type, (int)count * w);
+				ap->array.rank = rank > 0 ? rank : 1;
+				ap->array.struct_type = et.struc;
+				ap->array.element_type = et;
+				for (uint32_t k = 0; k < count; k++)
+					variable_init_typed(&ap->values[k * w], &et, false, false);
+				ctx.id_to_slot[id] = heap_alloc_page(ap);
+			}
+		} else {
+			r.error = true;
+		}
+	}
+
+	/* Pass 2: populate bodies */
+	for (uint32_t id = 1; id <= nr_objs && !r.error; id++) {
+		uint8_t kind = metas[id].kind;
+		int slot = ctx.id_to_slot[id];
+		if (kind == X4SS_OBJ_NULL) {
+			continue;
+		} else if (kind == X4SS_OBJ_STRUCT) {
+			uint32_t nr_fields = x4ss_get_u32(&r);
+			int sno = metas[id].struct_no;
+			struct page *sp = (slot >= 0 && page_index_valid(slot)) ? heap[slot].page : NULL;
+			if (sp && sp->type == STRUCT_PAGE && ctx.is_root[id]) {
+				/* Clear any existing delegate listeners on root struct */
+				struct ain_struct *rst = &ain->structures[sp->index];
+				for (int m = 0; m < rst->nr_members; m++) {
+					if (rst->members[m].type.data == AIN_DELEGATE) {
+						int dslot = sp->values[m].i;
+						if (page_index_valid(dslot) && heap[dslot].page)
+							heap_set_page(dslot, delegate_clear(heap[dslot].page));
+					}
+				}
+			}
+			for (uint32_t f = 0; f < nr_fields && !r.error; f++) {
+				char *fname = x4ss_get_cstr(&r, NULL);
+				int m_idx = -1;
+				if (sp && sp->type == STRUCT_PAGE && sno >= 0 && fname) {
+					struct ain_struct *st = &ain->structures[sp->index];
+					for (int m = 0; m < st->nr_members; m++) {
+						if (st->members[m].name && !strcmp(st->members[m].name, fname)) {
+							m_idx = m;
+							break;
+						}
+					}
+				}
+				free(fname);
+				if (m_idx >= 0) {
+					struct ain_struct *st = &ain->structures[sp->index];
+					x4ss_read_value(&ctx, &r, &sp->values[m_idx], &st->members[m_idx].type, true);
+				} else {
+					x4ss_skip_value(&r);
+				}
+			}
+		} else if (kind == X4SS_OBJ_ARRAY) {
+			struct page *ap = (slot >= 0 && page_index_valid(slot)) ? heap[slot].page : NULL;
+			int w = ain_type_slot_width(&metas[id].elem_type);
+			for (uint32_t k = 0; k < metas[id].elem_count && !r.error; k++) {
+				if (ap && ap->type == ARRAY_PAGE) {
+					x4ss_read_value(&ctx, &r, &ap->values[k * w], &metas[id].elem_type, true);
+				} else {
+					x4ss_skip_value(&r);
+				}
+			}
+		}
+	}
+
+	bool ok = !r.error;
+
+	/* Release temporary table reference on all newly allocated non-root pages */
+	for (uint32_t id = 1; id <= nr_objs; id++) {
+		if (!ctx.is_root[id] && ctx.id_to_slot[id] >= 0)
+			exit_unref(ctx.id_to_slot[id]);
+	}
+
+	free(metas);
+	free(ctx.is_root);
+	free(ctx.id_to_slot);
+	free(root_ids);
+	free(raw);
+
+	if (ok && save_folder && is_game_config_save(filename))
+		modifier_on_config_loaded();
+
+	return ok ? 1 : 0;
+}
+
+int write_serialize_struct_comment(const char *filename, const struct string *comment, bool save_folder)
+{
+	if (!filename)
+		return 0;
+	char *path = resolve_struct_save_path(filename, save_folder);
+	uint32_t uncomp_len = 0, comp_len = 0;
+	uint8_t *comp = NULL;
+	x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len);
+
+	const uint8_t *cbuf = comment ? (const uint8_t *)comment->text : (const uint8_t *)"";
+	uint32_t clen = comment ? (uint32_t)comment->size : 0;
+	bool ok = x4ss_write_container(path, cbuf, clen, uncomp_len, comp, comp_len);
+
+	free(comp);
+	free(path);
+	return ok ? 1 : 0;
+}
+
+int read_serialize_struct_comment(const char *filename, struct string **comment_out, bool save_folder)
+{
+	if (!filename || !comment_out)
+		return 0;
+	char *path = resolve_struct_save_path(filename, save_folder);
+	uint8_t *cbuf = NULL;
+	uint32_t clen = 0;
+	bool ok = x4ss_read_existing_parts(path, &cbuf, &clen, NULL, NULL, NULL);
+	free(path);
+	if (!ok || !cbuf)
+		return 0;
+	*comment_out = make_string((const char *)cbuf, clen);
+	free(cbuf);
+	return 1;
+}
+
+int write_group_save_comment(const char *keyname, const char *filename, const struct string *log)
+{
+	(void)keyname;
+	if (!filename)
+		return 0;
+	char *base = savedir_path(filename);
+	size_t blen = strlen(base);
+	char *cpath = xmalloc(blen + 9);
+	memcpy(cpath, base, blen);
+	memcpy(cpath + blen, ".comment", 9);
+	free(base);
+
+	char *tmp = NULL;
+	FILE *fp = atomic_save_open(cpath, "wb", &tmp);
+	if (!fp) {
+		free(cpath);
+		return 0;
+	}
+	size_t slen = log ? (size_t)log->size : 0;
+	bool ok = (slen == 0) || (fwrite(log->text, 1, slen, fp) == slen);
+	if (!ok) {
+		atomic_save_abort(fp, tmp);
+		free(cpath);
+		return 0;
+	}
+	ok = atomic_save_commit(fp, cpath, tmp, false);
+	free(cpath);
+	return ok ? 1 : 0;
+}
+
+int read_group_save_comment(const char *keyname, const char *filename, struct string **log_out)
+{
+	(void)keyname;
+	if (!filename || !log_out)
+		return 0;
+	char *base = savedir_path(filename);
+	size_t blen = strlen(base);
+	char *cpath = xmalloc(blen + 9);
+	memcpy(cpath, base, blen);
+	memcpy(cpath + blen, ".comment", 9);
+	free(base);
+
+	size_t len = 0;
+	uint8_t *data = file_read(cpath, &len);
+	free(cpath);
+	if (!data)
+		return 0;
+	*log_out = make_string((const char *)data, (unsigned int)len);
+	free(data);
+	return 1;
 }

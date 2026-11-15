@@ -1,20 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:id="@+id/online_install"
-        android:title="@string/action_online_install" />
-    <item
-        android:id="@+id/local_install"
-        android:title="@string/action_local_install" />
-    <item
-        android:id="@+id/save_manager"
-        android:title="@string/action_save_manager" />
-    <item
-        android:id="@+id/game_modifier"
-        android:title="@string/action_game_modifier" />
-    <item
         android:id="@+id/refresh"
         android:title="@string/action_refresh" />
+    <item
+        android:id="@+id/import_other_game"
+        android:title="@string/action_import_other_game" />
     <item
         android:id="@+id/licenses"
         android:title="@string/action_licenses" />

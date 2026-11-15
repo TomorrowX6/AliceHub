@@ -82,10 +82,12 @@ struct sound_motion {
 
 struct parts_text_char {
 	Texture t;
+	Texture t_edge;
 	char ch[4];
 	int advance;
 	int cache_idx;
 	Point off;
+	Point pad;
 	// Message-window timing; ordinary Parts text ignores these fields.
 	double fade_start, fade_time;
 };
@@ -122,6 +124,8 @@ struct parts_common {
 	Point origin_offset;
 	Rectangle hitbox;
 	Rectangle surface_area;
+	uint8_t *alpha_mask;
+	int alpha_w, alpha_h;
 };
 
 struct parts_cg {
@@ -227,7 +231,8 @@ enum parts_cp_op_type {
 	PARTS_CP_MUL_FILTER,
 	PARTS_CP_HBLUR_FILTER,
 	PARTS_CP_VBLUR_FILTER,
-#define PARTS_NR_CP_TYPES (PARTS_CP_VBLUR_FILTER+1)
+	PARTS_CP_V14,
+#define PARTS_NR_CP_TYPES (PARTS_CP_V14+1)
 };
 
 struct parts_cp_create {
@@ -244,6 +249,7 @@ struct parts_cp_fill {
 	int x, y, w, h;
 	int r, g, b, a;
 	int r2, g2, b2, a2;
+	bool full_size;
 };
 
 struct parts_cp_cut_cg {
@@ -273,6 +279,24 @@ struct parts_cp_line {
 	int r, g, b, a;
 };
 
+struct parts_cp_v14 {
+	int command;
+	int interp_type;
+	int sx, sy, sw, sh;
+	int dx, dy, dx2, dy2, dw, dh;
+	int r, g, b, a;
+	int r2, g2, b2, a2;
+	bool full_size;
+	int blur;
+	int radius_x, radius_y;
+	int line_width;
+	bool round_edge, round_corner;
+	int angle, start_angle, sweep_angle;
+	struct string *cg_name;
+	int nr_coords;
+	int *coords;
+};
+
 struct parts_cp_op {
 	TAILQ_ENTRY(parts_cp_op) entry;
 	enum parts_cp_op_type type;
@@ -284,6 +308,7 @@ struct parts_cp_op {
 		struct parts_cp_text text;
 		struct parts_cp_filter filter;
 		struct parts_cp_line line;
+		struct parts_cp_v14 v14;
 	};
 };
 
@@ -446,6 +471,7 @@ struct parts_3dlayer {
 struct parts_rect {
 	struct parts_common common;
 	bool custom;
+	bool is_cg_detection;
 	Point points[4];
 	struct string *cg_name;
 };
@@ -506,6 +532,7 @@ struct parts_panel {
 
 struct parts_scrollbar {
 	bool horizontal;
+	bool is_slider;
 	int width, height, before, after, total, view, pos, step;
 	int total_link, view_link, hovered, pressed, repeat_ms;
 	float rate, drag_offset;
@@ -525,6 +552,7 @@ struct parts_message_window {
 	int message, version, step;
 	int key_x, key_y, key_z, key_start, key_count, key_time;
 	int elapsed;
+	int ruby_line_space;
 	double finish_time, speed_rate;
 	struct parts_state label, key_wait;
 };
@@ -553,6 +581,9 @@ struct parts {
 	struct parts_message_window *message_box;
 	bool textures_suspended;
 	int delegate_index;
+	int event_unique_id;
+	bool sub_color_mode;
+	int multi_textbox_mode;
 	int sprite_deform;
 	bool clickable;
 	bool wheelable;
@@ -689,6 +720,9 @@ void parts_release(int parts_no);
 void parts_release_all(void);
 void parts_set_surface_area(struct parts *parts, struct parts_common *common, int x, int y, int w, int h);
 bool parts_is_visible(struct parts *parts);
+void parts_common_free_alpha_mask(struct parts_common *common);
+void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg *cg);
+bool parts_common_check_alpha(struct parts_state *state, int px, int py);
 extern bool parts_message_window_show;
 
 // for save.c
@@ -706,6 +740,7 @@ void parts_panel_create(struct parts *parts);
 void parts_panel_free(struct parts *parts);
 void parts_panel_rebuild(struct parts *parts);
 void parts_scrollbar_create(struct parts *parts, bool horizontal);
+void parts_sliderbar_create(struct parts *parts, bool horizontal);
 void parts_scrollbar_free(struct parts *parts);
 void parts_scrollbar_rebuild(struct parts *parts);
 int parts_scrollbar_range(struct parts_scrollbar *s);
@@ -820,6 +855,8 @@ void parts_msg_push(struct parts* parts, int type, const char *fmt, ...);
 // construction.c
 void parts_cp_op_free(struct parts_cp_op *op);
 void parts_add_cp_op(struct parts_construction_process *cproc, struct parts_cp_op *op);
+void parts_cp_set_last_fill_full_size(int parts_no, int state, bool full_size);
+bool parts_cp_add_v14(int parts_no, const struct parts_cp_v14 *src, int state);
 bool parts_build_construction_process(struct parts *parts,
 		struct parts_construction_process *cproc);
 bool parts_clear_construction_process(struct parts_construction_process *cproc);

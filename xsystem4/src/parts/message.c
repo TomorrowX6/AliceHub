@@ -32,6 +32,7 @@ struct parts_message {
 	STAILQ_ENTRY(parts_message) entry;
 	int parts_no;
 	int delegate_index;
+	int unique_id;
 	int type;
 	struct {
 		int type;
@@ -87,6 +88,7 @@ void parts_msg_push(struct parts* parts, int type, const char *fmt, ...)
 	struct parts_message *msg = xmalloc(sizeof(*msg));
 	msg->parts_no = parts ? parts->no : 0;
 	msg->delegate_index = parts ? parts->delegate_index : -1;
+	msg->unique_id = parts ? parts->event_unique_id : -1;
 	msg->type = ain->version >= 12 ? message_type_v12(type) : type;
 	msg->nr_variables = 0;
 
@@ -145,6 +147,30 @@ void PE_PopMessage(void)
 	struct parts_message *msg = STAILQ_FIRST(&msg_queue);
 	STAILQ_REMOVE_HEAD(&msg_queue, entry);
 	message_free(msg);
+}
+
+void PE_SeekMessage(int target_parts_no)
+{
+	if (STAILQ_EMPTY(&msg_queue))
+		return;
+	STAILQ_HEAD(, parts_message) match_q = STAILQ_HEAD_INITIALIZER(match_q);
+	STAILQ_HEAD(, parts_message) rest_q = STAILQ_HEAD_INITIALIZER(rest_q);
+	while (!STAILQ_EMPTY(&msg_queue)) {
+		struct parts_message *m = STAILQ_FIRST(&msg_queue);
+		STAILQ_REMOVE_HEAD(&msg_queue, entry);
+		if (m->parts_no == target_parts_no)
+			STAILQ_INSERT_TAIL(&match_q, m, entry);
+		else
+			STAILQ_INSERT_TAIL(&rest_q, m, entry);
+	}
+	STAILQ_CONCAT(&msg_queue, &match_q);
+	STAILQ_CONCAT(&msg_queue, &rest_q);
+}
+
+int PE_GetMessageUniqueID(void)
+{
+	struct parts_message *msg = STAILQ_FIRST(&msg_queue);
+	return msg ? msg->unique_id : -1;
 }
 
 int PE_GetMessageType(void)

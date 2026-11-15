@@ -301,9 +301,12 @@ static void config_init(void)
 	config.home_dir = get_xsystem4_home();
 	if (!config.game_name)
 		config.game_name = strdup(config.ain_filename);
-	if ((config.game_name && strstr(config.game_name, "\xc0\xbc\xcb\xb9"))
+	if ((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
+				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
-				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))) {
+				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
+			|| (config.ain_filename && !strcasecmp(config.ain_filename, "dohnadohna.ain")
+				&& (!config.game_name || !strstr(config.game_name, "\x83\x68\x81\x5b\x83\x69")))) {
 		sys4_set_text_gbk(true);
 	}
 

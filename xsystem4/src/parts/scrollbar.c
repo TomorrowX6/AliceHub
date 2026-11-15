@@ -75,26 +75,67 @@ static bool load_skin(struct parts *parts, struct parts_state *state, struct str
 	return ok;
 }
 
+static bool load_skin_variants(struct parts *parts, struct parts_state *state, struct string *base,
+		bool flat, bool has_override, const char *const piece_alts[2],
+		bool is_bg, const char *const state_alts[3])
+{
+	if (!base->size)
+		return false;
+	for (int p = 0; p < (has_override ? 1 : 2); p++) {
+		const char *piece = has_override ? "" : piece_alts[p];
+		if (!piece)
+			continue;
+		if (is_bg) {
+			if (load_skin(parts, state, base, flat, piece, ""))
+				return true;
+		} else {
+			for (int k = 0; k < 3; k++) {
+				if (state_alts[k] && load_skin(parts, state, base, flat, piece, state_alts[k]))
+					return true;
+			}
+		}
+	}
+	return false;
+}
+
 void parts_scrollbar_rebuild(struct parts *parts)
 {
 	struct parts_scrollbar *s = parts->scrollbar;
-	static const char *pieces[2][4] = {
-		{"／上按钮", "／下按钮", "／栏", "／背景"},
-		{"／左按钮", "／右按钮", "／栏", "／背景"}
+	static const char *const pieces[2][4][2] = {
+		{ {"／上按钮", "／上ボタン"}, {"／下按钮", "／下ボタン"}, {"／栏", "／バー"}, {"／背景", NULL} },
+		{ {"／左按钮", "／左ボタン"}, {"／右按钮", "／右ボタン"}, {"／栏", "／バー"}, {"／背景", NULL} }
 	};
-	static const char *states[] = {"／一般", "／オン", "／DOWN", "／无效"};
+	static const char *const states[4][3] = {
+		{ "／一般", "／通常", "／普通" },
+		{ "／オン", NULL, NULL },
+		{ "／DOWN", "／ダウン", NULL },
+		{ "／无效", "／無効", "／无効" }
+	};
 	for (int piece = 0; piece < 4; piece++) {
+		if (s->is_slider && piece < 2) {
+			for (int state = 0; state < 4; state++) {
+				s->loaded[piece][state] = false;
+				parts_state_reset(&s->skins[piece][state], PARTS_UNINITIALIZED);
+			}
+			continue;
+		}
 		bool flat = s->names[1][piece + 1]->size
 			|| (!s->names[0][piece + 1]->size && s->names[1][0]->size);
 		struct string *override = s->names[flat][piece + 1];
 		struct string *base = override->size ? override : s->names[flat][0];
 		for (int state = 0; state < 4; state++) {
 			struct parts_state *target = &s->skins[piece][state];
-			bool loaded = base->size && load_skin(parts, target, base, flat,
-					override->size ? "" : pieces[s->horizontal][piece], piece == 3 ? "" : states[state]);
-			if (!loaded && state && base->size)
-				loaded = load_skin(parts, target, base, flat, override->size ? "" : pieces[s->horizontal][piece],
-						piece == 3 ? "" : states[0]);
+			bool loaded = load_skin_variants(parts, target, base, flat,
+					override->size > 0, pieces[s->horizontal][piece],
+					piece == 3, states[state]);
+			if (!loaded && state) {
+				loaded = load_skin_variants(parts, target, base, flat,
+						override->size > 0, pieces[s->horizontal][piece],
+						piece == 3, states[0]);
+			}
+			if (!loaded && override->size > 0 && piece != 3) {
+				loaded = load_skin(parts, target, base, flat, "", "");
+			}
 			s->loaded[piece][state] = loaded;
 			if (!loaded) {
 				parts_state_reset(target, PARTS_CG);
@@ -113,18 +154,18 @@ void parts_scrollbar_rebuild(struct parts *parts)
 	parts_dirty(parts);
 }
 
-void parts_scrollbar_create(struct parts *parts, bool horizontal)
+static void init_scrollbar_common(struct parts *parts, bool horizontal, bool is_slider)
 {
-	if (parts->scrollbar && parts->scrollbar->horizontal == horizontal) return;
 	parts_scrollbar_free(parts);
 	parts_widget_free(parts);
 	parts_panel_free(parts);
 	parts_message_window_free(parts);
 	struct parts_scrollbar *s = parts->scrollbar = xcalloc(1, sizeof(*s));
 	s->horizontal = horizontal;
+	s->is_slider = is_slider;
 	s->width = horizontal ? 256 : 24;
 	s->height = horizontal ? 24 : 256;
-	s->before = s->after = 24;
+	s->before = s->after = is_slider ? 0 : 24;
 	s->total = 100;
 	s->view = s->step = 1;
 	s->reported_range = 99;
@@ -135,10 +176,29 @@ void parts_scrollbar_create(struct parts *parts, bool horizontal)
 	parts_scrollbar_rebuild(parts);
 }
 
+void parts_scrollbar_create(struct parts *parts, bool horizontal)
+{
+	if (parts->scrollbar && parts->scrollbar->horizontal == horizontal && !parts->scrollbar->is_slider) return;
+	init_scrollbar_common(parts, horizontal, false);
+}
+
+void parts_sliderbar_create(struct parts *parts, bool horizontal)
+{
+	if (parts->scrollbar && parts->scrollbar->horizontal == horizontal && parts->scrollbar->is_slider) return;
+	init_scrollbar_common(parts, horizontal, true);
+}
+
 static struct parts *scrollbar(int no, bool horizontal)
 {
 	struct parts *parts = parts_get(no);
 	parts_scrollbar_create(parts, horizontal);
+	return parts;
+}
+
+static struct parts *sliderbar(int no, bool horizontal)
+{
+	struct parts *parts = parts_get(no);
+	parts_sliderbar_create(parts, horizontal);
 	return parts;
 }
 
@@ -296,8 +356,13 @@ void parts_scrollbar_input(struct parts *parts, Point cursor, bool hovered,
 	s->hovered = !hovered ? -1 : axis < begin ? 0 : axis >= begin + length ? 1
 		: axis >= thumb && axis < thumb + size ? 2 : 3;
 	if (pressed) {
-		s->pressed = s->hovered;
-		s->drag_offset = axis - thumb;
+		if (s->is_slider && s->hovered == 3) {
+			s->pressed = 2;
+			s->drag_offset = size * 0.5f;
+		} else {
+			s->pressed = s->hovered;
+			s->drag_offset = axis - thumb;
+		}
 		s->repeat_ms = -400;
 	}
 	if (hovered && wheel) set_pos(parts, min((int64_t)INT_MAX, max((int64_t)INT_MIN,
@@ -434,3 +499,52 @@ LINK_API(PosX, 0)
 LINK_API(PosY, 1)
 LINK_API(Alpha, 2)
 #undef LINK_API
+
+#define SLIDERBAR_API(axis, horizontal) \
+void PE_Set##axis##SliderBarSize(int no, int width, int height) { \
+	struct parts *p = sliderbar(no, horizontal); \
+	if (p->scrollbar->width == width && p->scrollbar->height == height) return; \
+	p->scrollbar->width = width; p->scrollbar->height = height; parts_scrollbar_rebuild(p); } \
+void PE_Set##axis##SliderBarTotalSize(int no, int size) { \
+	struct parts *p = sliderbar(no, horizontal); \
+	if (p->scrollbar->total == size) return; \
+	p->scrollbar->total = size; set_pos(p, p->scrollbar->pos); } \
+void PE_Set##axis##SliderBarViewSize(int no, int size) { \
+	struct parts *p = sliderbar(no, horizontal); \
+	if (p->scrollbar->view == size) return; \
+	p->scrollbar->view = size; set_pos(p, p->scrollbar->pos); } \
+void PE_Set##axis##SliderBarScrollPos(int no, int pos) { set_pos(sliderbar(no, horizontal), pos); } \
+void PE_Set##axis##SliderBarScrollRate(int no, float rate) { \
+	struct parts *p = sliderbar(no, horizontal); struct parts_scrollbar *s = p->scrollbar; \
+	float clamped = isfinite(rate) ? min(1.f, max(0.f, rate)) : 0.f; \
+	int new_pos = (int)((double)clamped * parts_scrollbar_range(s)); \
+	if (s->rate == clamped && s->pos == new_pos) return; \
+	s->rate = clamped; s->pos = new_pos; parts_dirty(p); } \
+int PE_Get##axis##SliderBarTotalSize(int no) { return sliderbar(no, horizontal)->scrollbar->total; } \
+int PE_Get##axis##SliderBarViewSize(int no) { return sliderbar(no, horizontal)->scrollbar->view; } \
+int PE_Get##axis##SliderBarScrollPos(int no) { return sliderbar(no, horizontal)->scrollbar->pos; } \
+float PE_Get##axis##SliderBarScrollRate(int no) { return sliderbar(no, horizontal)->scrollbar->rate; } \
+void PE_Set##axis##SliderTotalSizeLinkNumber(int no, int target) { sliderbar(no, horizontal)->scrollbar->total_link = target; } \
+void PE_Set##axis##SliderViewSizeLinkNumber(int no, int target) { sliderbar(no, horizontal)->scrollbar->view_link = target; } \
+int PE_Get##axis##SliderTotalSizeLinkNumber(int no) { return sliderbar(no, horizontal)->scrollbar->total_link; } \
+int PE_Get##axis##SliderViewSizeLinkNumber(int no) { return sliderbar(no, horizontal)->scrollbar->view_link; }
+SLIDERBAR_API(V, false)
+SLIDERBAR_API(H, true)
+#undef SLIDERBAR_API
+
+#define SLIDER_NAME_API(axis, horizontal, part, index, kind, flat) \
+void PE_Set##axis##SliderBar##part##kind##Name(int no, struct string *name) { \
+	struct parts *p = sliderbar(no, horizontal); struct string **target = &p->scrollbar->names[flat][index]; \
+	if (!strcmp((*target)->text, name->text)) return; \
+	struct string *copy = string_dup(name); free_string(*target); *target = copy; parts_scrollbar_rebuild(p); } \
+struct string *PE_Get##axis##SliderBar##part##kind##Name(int no) { return string_dup(sliderbar(no, horizontal)->scrollbar->names[flat][index]); }
+#define SLIDER_NAMES(axis, horizontal, kind, flat) \
+SLIDER_NAME_API(axis, horizontal, , 0, kind, flat) \
+SLIDER_NAME_API(axis, horizontal, OverrideBar, 3, kind, flat) \
+SLIDER_NAME_API(axis, horizontal, OverrideBG, 4, kind, flat)
+SLIDER_NAMES(V, false, CG, 0)
+SLIDER_NAMES(V, false, Flat, 1)
+SLIDER_NAMES(H, true, CG, 0)
+SLIDER_NAMES(H, true, Flat, 1)
+#undef SLIDER_NAMES
+#undef SLIDER_NAME_API

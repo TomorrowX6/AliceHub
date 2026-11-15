@@ -130,6 +130,17 @@ bool cg_get_metrics(struct archive *ar, int no, struct cg_metrics *dst)
 	return r;
 }
 
+bool cg_get_metrics_file(const char *filename, struct cg_metrics *dst)
+{
+	size_t buf_size;
+	uint8_t *buf = file_read(filename, &buf_size);
+	if (!buf)
+		return false;
+	bool r = cg_get_metrics_internal(buf, buf_size, dst);
+	free(buf);
+	return r;
+}
+
 /*
  * Free CG data
  *  cg: object to free

@@ -109,10 +109,18 @@ static inline void _page_set_var(struct page *page, int i, union vm_value v)
 #define page_set_var(page, i, v) _page_set_var(page, i, vm_value_cast(v))
 
 // variables
+int ain_type_slot_width(const struct ain_type *type);
+int ain_return_type_width(const struct ain_type *type);
+bool ain_option_inner_is_value_heap(const struct ain_type *inner);
+bool ain_option_inner_is_ref_heap(const struct ain_type *inner);
 union vm_value variable_initval(enum ain_data_type type);
 union vm_value variable_initval_typed(const struct ain_type *type);
+int variable_init_typed(union vm_value *dst, const struct ain_type *type, bool alloc_structs, bool init_structs);
 const struct ain_type *variable_full_type(struct page *page, int varno);
 void variable_fini(union vm_value v, enum ain_data_type type, bool call_dtor);
+void page_var_fini(struct page *page, int varno, bool call_dtor);
+int elem_value_fini(const union vm_value *vals, const struct ain_type *type, bool call_dtor);
+int elem_value_copy(union vm_value *dst, const union vm_value *src, const struct ain_type *type);
 enum ain_data_type variable_type(struct page *page, int varno, int *struct_type, int *array_rank);
 void variable_set(struct page *page, int varno, enum ain_data_type type, union vm_value val);
 

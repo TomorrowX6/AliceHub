@@ -61,6 +61,9 @@ class InstallForegroundService : Service() {
         private var modTargetPath: String? = null
 
         @Volatile
+        private var hubTargetGameId: String? = null
+
+        @Volatile
         private var lastNotifyElapsedMs: Long = 0L
 
         @Volatile
@@ -93,7 +96,8 @@ class InstallForegroundService : Service() {
             initialPermille: Int?,
             isCancellable: Boolean,
             isResumable: Boolean,
-            targetGamePathForMod: String? = null
+            targetGamePathForMod: String? = null,
+            targetGameId: String? = null
         ) {
             val appCtx = context.applicationContext
             ensureChannels(appCtx)
@@ -105,6 +109,7 @@ class InstallForegroundService : Service() {
             cancellable = isCancellable
             resumable = isResumable
             modTargetPath = targetGamePathForMod
+            hubTargetGameId = targetGameId
             lastNotifyElapsedMs = SystemClock.elapsedRealtime()
             activeSession = true
 
@@ -152,13 +157,15 @@ class InstallForegroundService : Service() {
             val appCtx = context.applicationContext
             val finishedTitle = taskTitle.ifBlank { appCtx.getString(R.string.install_dialog_title) }
             val targetPath = modTargetPath
+            val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
                     title = appCtx.getString(R.string.notif_done_title),
                     body = appCtx.getString(R.string.notif_done_msg, finishedTitle),
-                    targetPath = targetPath
+                    targetPath = targetPath,
+                    targetGameId = targetGameId
                 )
             }
         }
@@ -166,13 +173,15 @@ class InstallForegroundService : Service() {
         fun finishSessionFailed(context: Context, errorMsg: String, postResultNotification: Boolean) {
             val appCtx = context.applicationContext
             val targetPath = modTargetPath
+            val targetGameId = hubTargetGameId
             stopSessionInternal(appCtx)
             if (postResultNotification) {
                 postOutcomeNotification(
                     context = appCtx,
                     title = appCtx.getString(R.string.notif_failed_title),
                     body = errorMsg,
-                    targetPath = targetPath
+                    targetPath = targetPath,
+                    targetGameId = targetGameId
                 )
             }
         }
@@ -222,14 +231,17 @@ class InstallForegroundService : Service() {
         private fun buildOpenAppPendingIntent(
             context: Context,
             targetPath: String?,
+            targetGameId: String?,
             restoreDialog: Boolean
         ): PendingIntent {
-            val openIntent = if (!targetPath.isNullOrBlank()) {
-                Intent(context, ModManagerActivity::class.java).apply {
+            val openIntent = when {
+                !targetPath.isNullOrBlank() -> Intent(context, ModManagerActivity::class.java).apply {
                     putExtra(ModManagerActivity.EXTRA_GAME_PATH, targetPath)
                 }
-            } else {
-                Intent(context, LauncherActivity::class.java)
+                !targetGameId.isNullOrBlank() -> Intent(context, GameHubActivity::class.java).apply {
+                    putExtra(GameHubActivity.EXTRA_GAME_ID, targetGameId)
+                }
+                else -> Intent(context, LauncherActivity::class.java)
             }
             openIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -265,7 +277,7 @@ class InstallForegroundService : Service() {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(Notification.CATEGORY_PROGRESS)
-                .setContentIntent(buildOpenAppPendingIntent(context, modTargetPath, restoreDialog = true))
+                .setContentIntent(buildOpenAppPendingIntent(context, modTargetPath, hubTargetGameId, restoreDialog = true))
 
             if (curPermille != null) {
                 builder.setProgress(1000, curPermille.coerceIn(0, 1000), false)
@@ -311,7 +323,8 @@ class InstallForegroundService : Service() {
             context: Context,
             title: String,
             body: String,
-            targetPath: String?
+            targetPath: String?,
+            targetGameId: String?
         ) {
             try {
                 ensureChannels(context)
@@ -323,7 +336,7 @@ class InstallForegroundService : Service() {
                     .setContentText(singleLine)
                     .setStyle(Notification.BigTextStyle().bigText(body))
                     .setAutoCancel(true)
-                    .setContentIntent(buildOpenAppPendingIntent(context, targetPath, restoreDialog = false))
+                    .setContentIntent(buildOpenAppPendingIntent(context, targetPath, targetGameId, restoreDialog = false))
                     .build()
                 nm.notify(NOTIF_ID_RESULT, notif)
             } catch (t: Throwable) {

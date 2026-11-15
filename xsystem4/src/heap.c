@@ -227,21 +227,7 @@ void exit_unref(int slot)
 		if (heap[slot].page) {
 			struct page *page = heap[slot].page;
 			for (int i = 0; i < page->nr_vars; i++) {
-				switch (variable_type(page, i, NULL, NULL)) {
-				case AIN_STRING:
-				case AIN_STRUCT:
-				case AIN_DELEGATE:
-				case AIN_ARRAY_TYPE:
-				case AIN_ARRAY:
-				case AIN_IFACE:
-				case AIN_REF_TYPE:
-					if (page->values[i].i == -1)
-						break;
-					exit_unref(page->values[i].i);
-					break;
-				default:
-					break;
-				}
+				page_var_fini(page, i, false);
 			}
 			if (page->type == LOCAL_PAGE && page->local.parent_page >= 0)
 				exit_unref(page->local.parent_page);

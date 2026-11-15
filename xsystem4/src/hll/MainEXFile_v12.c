@@ -510,6 +510,24 @@ static bool mainex_name(struct string *p, int i, struct string **s, int id) { re
 static bool mainex_nodes(struct string *p, struct page **a, int id) { return name_list(p, a, id, false); }
 static bool mainex_names(struct string *p, struct page **a, int id) { return name_list(p, a, id, true); }
 
+static bool mainex_format_names(struct string *name, struct page **out, int id)
+{
+	struct ex_value *v = value(name, id);
+	if (!v || v->type != EX_TABLE || !v->t)
+		return false;
+	int count = (int)v->t->nr_fields;
+	struct ain_type type = { .data = AIN_STRING, .struc = -1 };
+	struct page *page = v12_array_new(&type, count, false);
+	for (int i = 0; i < count; i++) {
+		int slot = page->values[i].i;
+		free_string(heap[slot].s);
+		heap[slot].s = v->t->fields[i].name ? string_dup(v->t->fields[i].name) : string_ref(&EMPTY_STRING);
+	}
+	if (*out) { delete_page_vars(*out); free_page(*out); }
+	*out = page;
+	return true;
+}
+
 void mainex_v12_prelink(struct static_library *library)
 {
 	const struct static_hll_function functions[] = {
@@ -528,6 +546,7 @@ void mainex_v12_prelink(struct static_library *library)
 		HLL_EXPORT(GetNodeNameCount, mainex_node_count), HLL_EXPORT(GetEXNameCount, mainex_name_count),
 		HLL_EXPORT(GetNodeName, mainex_node), HLL_EXPORT(GetEXName, mainex_name),
 		HLL_EXPORT(GetNodeNameList, mainex_nodes), HLL_EXPORT(GetEXNameList, mainex_names),
+		HLL_EXPORT(GetFormatNameList, mainex_format_names),
 	};
 	for (unsigned i = 0; i < sizeof(functions) / sizeof(*functions); i++)
 		static_library_replace(library, functions[i].name, functions[i].fun);
