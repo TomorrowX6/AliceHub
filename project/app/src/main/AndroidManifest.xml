@@ -46,7 +46,7 @@
     <!-- Allow access to the vibrator -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Network access for online base game (Cloudflare R2/Workers) and MOD (rance10sns.cn) installation -->
+    <!-- Network access for online base game and MOD (Cloudflare R2/Workers) installation -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -133,13 +133,6 @@
         <activity android:name="io.github.kichikuou.xsystem4.ModManagerActivity"
             android:label="@string/mod_mgr_activity_title"
             android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
-            android:exported="false">
-        </activity>
-
-        <activity android:name="io.github.kichikuou.xsystem4.ModPortalActivity"
-            android:label="@string/mod_portal_activity_title"
-            android:parentActivityName="io.github.kichikuou.xsystem4.ModManagerActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false">
         </activity>
 

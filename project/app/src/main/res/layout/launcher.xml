@@ -33,30 +33,5 @@
         android:paddingLeft="14dp"
         android:paddingRight="14dp"
         android:paddingTop="10dp"
-        android:paddingBottom="8dp" />
-
-    <LinearLayout
-        android:orientation="horizontal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingLeft="12dp"
-        android:paddingRight="12dp"
-        android:paddingBottom="6dp">
-
-        <Button
-            android:id="@+id/btn_import_other"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/action_import_other_game" />
-
-        <Button
-            android:id="@+id/open_github"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/action_github" />
-    </LinearLayout>
+        android:paddingBottom="12dp" />
 </LinearLayout>

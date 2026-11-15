@@ -3,11 +3,7 @@ package io.github.kichikuou.xsystem4
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.text.TextUtils
 import android.view.LayoutInflater
@@ -15,7 +11,6 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.webkit.CookieManager
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.ListView
@@ -30,9 +25,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val REQ_AUTH_FOR_PLAN = 201
-private const val REQ_AUTH_FOR_RETRY = 202
-private const val REQ_OPEN_PORTAL = 203
 private const val REQ_MOD_LOCAL_ARCHIVE = 204
 private const val REQ_MOD_LOCAL_DIR = 205
 
@@ -51,12 +43,9 @@ class ModManagerActivity : Activity(), GameListObserver {
     private lateinit var adapter: ModReleaseAdapter
 
     private var releases: List<ModReleaseEntry> = emptyList()
-    private var isLoggedIn: Boolean = false
     private var isLoadingCatalog: Boolean = false
     private var catalogLoadError: Boolean = false
 
-    private var pendingStepsAfterAuth: List<ModReleaseEntry>? = null
-    private var pendingRetryHolder: PendingModAuthRetry? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,9 +76,6 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
         findViewById<View>(R.id.btn_mod_mgr_local).setOnClickListener {
             showLocalModInstallDialog()
-        }
-        findViewById<View>(R.id.btn_mod_mgr_portal).setOnClickListener {
-            openPortalBrowser()
         }
         findViewById<View>(R.id.btn_mod_mgr_refresh).setOnClickListener {
             loadCatalog(showRefreshedToast = true)
@@ -184,89 +170,6 @@ class ModManagerActivity : Activity(), GameListObserver {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
-            REQ_AUTH_FOR_PLAN -> {
-                val steps = pendingStepsAfterAuth
-                pendingStepsAfterAuth = null
-                if (resultCode == RESULT_OK && !steps.isNullOrEmpty()) {
-                    val cookie = data?.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                        ?: CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
-                        ?: ""
-                    isLoggedIn = cookie.isNotBlank()
-                    pendingPostResumeAction = {
-                        ensureGameNotRunning(this) {
-                            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            gameList.installOnlineModPlan(currentTarget, steps, cookie)
-                            renderInstallState(gameList.installState)
-                        }
-                        loadCatalog(showRefreshedToast = false)
-                    }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
-                }
-            }
-            REQ_AUTH_FOR_RETRY -> {
-                val retry = pendingRetryHolder
-                pendingRetryHolder = null
-                if (resultCode == RESULT_OK && retry != null) {
-                    val cookie = data?.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                        ?: CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
-                        ?: ""
-                    isLoggedIn = cookie.isNotBlank()
-                    pendingPostResumeAction = {
-                        ensureGameNotRunning(this) {
-                            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            if (retry.steps != null) {
-                                gameList.installOnlineModPlan(currentTarget, retry.steps, cookie)
-                            } else if (retry.manualReq != null) {
-                                gameList.installOnlineMod(
-                                    currentTarget,
-                                    retry.manualReq.copy(cookie = cookie),
-                                    retry.manualReleaseMeta
-                                )
-                            }
-                            renderInstallState(gameList.installState)
-                        }
-                        loadCatalog(showRefreshedToast = false)
-                    }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
-                }
-            }
-            REQ_OPEN_PORTAL -> {
-                val dlUrl = if (resultCode == RESULT_OK) {
-                    data?.getStringExtra(ModPortalActivity.EXTRA_DOWNLOAD_URL)
-                } else null
-                val dlName = if (resultCode == RESULT_OK) {
-                    data?.getStringExtra(ModPortalActivity.EXTRA_DOWNLOAD_FILENAME)
-                } else null
-
-                if (!dlUrl.isNullOrBlank() && !dlName.isNullOrBlank() && data != null) {
-                    val cookie = data.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                    val ua = data.getStringExtra(ModPortalActivity.EXTRA_USER_AGENT)
-                    val len = data.getLongExtra(ModPortalActivity.EXTRA_CONTENT_LENGTH, -1L)
-                    val req = ModDownloadRequest(
-                        url = dlUrl,
-                        fileName = dlName,
-                        cookie = cookie,
-                        userAgent = ua,
-                        contentLength = len
-                    )
-                    val matched = matchReleaseFromUrlOrName(dlUrl, dlName)
-                    pendingPostResumeAction = {
-                        ensureGameNotRunning(this) {
-                            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            gameList.installOnlineMod(currentTarget, req, matched)
-                            renderInstallState(gameList.installState)
-                        }
-                        loadCatalog(showRefreshedToast = false)
-                    }
-                } else {
-                    pendingPostResumeAction = { loadCatalog(showRefreshedToast = false) }
-                }
-            }
             REQ_MOD_LOCAL_ARCHIVE -> {
                 val uri = if (resultCode == RESULT_OK) data?.data else null
                 if (uri != null) {
@@ -319,14 +222,12 @@ class ModManagerActivity : Activity(), GameListObserver {
         catalogLoadError = false
         updateUi()
 
-        val cookie = CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
         catalogJob = scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
-                    OnlineInstaller.fetchModCatalog(cookie)
+                val loaded = withContext(Dispatchers.IO) {
+                    OnlineInstaller.fetchModCatalog()
                 }
-                releases = result.releases
-                isLoggedIn = result.isLoggedIn
+                releases = loaded
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
@@ -358,19 +259,18 @@ class ModManagerActivity : Activity(), GameListObserver {
             else -> getString(R.string.mod_mgr_status_installed, gameTitle)
         }
 
-        val authLabel = getString(if (isLoggedIn) R.string.mod_mgr_logged_in else R.string.mod_mgr_not_logged_in)
-        findViewById<TextView>(R.id.mod_mgr_summary).text = when {
+        val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
+        val summaryText = when {
             isLoadingCatalog && releases.isEmpty() -> getString(R.string.mod_mgr_loading)
             catalogLoadError && releases.isEmpty() -> getString(R.string.mod_mgr_load_failed)
-            releases.isNotEmpty() -> getString(R.string.mod_mgr_summary_format, releases[0].version, authLabel)
-            else -> authLabel
+            releases.isNotEmpty() -> getString(R.string.mod_mgr_summary_format, releases[0].version)
+            else -> ""
         }
+        summaryView.text = summaryText
+        summaryView.visibility = if (summaryText.isEmpty()) View.GONE else View.VISIBLE
 
         findViewById<View>(R.id.btn_mod_mgr_switch_game).visibility =
             if (rance10Items().size > 1) View.VISIBLE else View.GONE
-
-        findViewById<Button>(R.id.btn_mod_mgr_portal).text =
-            getString(if (isLoggedIn) R.string.mod_mgr_btn_portal_browse else R.string.mod_mgr_btn_portal)
 
         val isInstalling = gameList.installState is InstallState.Installing
         findViewById<Button>(R.id.btn_mod_mgr_local).isEnabled = !isInstalling
@@ -481,23 +381,6 @@ class ModManagerActivity : Activity(), GameListObserver {
             .show()
     }
 
-    private fun openExternalNetdisk(entry: ModReleaseEntry) {
-        val url = entry.externalUrl?.takeIf { it.isNotBlank() } ?: return
-        val pwd = entry.externalPwd?.takeIf { it.isNotBlank() }
-        if (pwd != null) {
-            try {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                cm?.setPrimaryClip(ClipData.newPlainText("pwd", pwd))
-                Toast.makeText(this, getString(R.string.mod_mgr_pwd_copied_toast, pwd), Toast.LENGTH_LONG).show()
-            } catch (_: Throwable) {
-            }
-        }
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (_: Throwable) {
-        }
-    }
-
     private fun onPrimaryUpdateClicked() {
         if (gameList.installState is InstallState.Installing) {
             gameList.restoreInstallProgress()
@@ -511,50 +394,7 @@ class ModManagerActivity : Activity(), GameListObserver {
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
         val plan = OnlineInstaller.computeUpdatePlan(releases, hasMod, installed) ?: return
-        val extStep = plan.firstExternalStep
-        if (extStep != null) {
-            val msg = buildString {
-                append(getString(R.string.mod_mgr_need_base_netdisk_msg, extStep.version))
-                append("\n\n").append(getString(R.string.mod_mgr_detail_file, extStep.fileName))
-                if (!extStep.externalUrl.isNullOrBlank()) {
-                    append("\n").append(getString(R.string.mod_mgr_detail_source_netdisk))
-                    if (!extStep.externalPwd.isNullOrBlank()) {
-                        append("\n").append(getString(R.string.mod_mgr_detail_pwd, extStep.externalPwd))
-                    }
-                }
-            }
-            val dlg = AlertDialog.Builder(this)
-                .setTitle(extStep.version)
-                .setMessage(msg)
-                .setNegativeButton(R.string.cancel, null)
-            if (!extStep.externalUrl.isNullOrBlank()) {
-                dlg.setPositiveButton(R.string.mod_mgr_action_open_netdisk) { _, _ ->
-                    openExternalNetdisk(extStep)
-                }
-                dlg.setNeutralButton(R.string.action_local_install) { _, _ ->
-                    showLocalModInstallDialog()
-                }
-            } else {
-                dlg.setPositiveButton(R.string.action_local_install) { _, _ ->
-                    showLocalModInstallDialog()
-                }
-            }
-            dlg.show()
-            return
-        }
-        executeStepsWithAuthCheck(plan.steps)
-    }
-
-    private fun openPortalBrowser() {
-        if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
-            return
-        }
-        val intent = Intent(this, ModPortalActivity::class.java)
-            .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, false)
-            .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, currentTarget.cleanGameTitle())
-        startActivityForResult(intent, REQ_OPEN_PORTAL)
+        executeSteps(plan.steps)
     }
 
     private fun confirmRestoreVanilla() {
@@ -610,7 +450,6 @@ class ModManagerActivity : Activity(), GameListObserver {
         } else {
             emptyList()
         }
-        val extInCombo = comboSteps.firstOrNull { !it.hasDirectDownload }
 
         val msg = buildString {
             append(getString(R.string.mod_mgr_detail_file, entry.fileName))
@@ -624,19 +463,9 @@ class ModManagerActivity : Activity(), GameListObserver {
             } else {
                 append(getString(R.string.mod_mgr_detail_type_full))
             }
-            if (!entry.hasDirectDownload && !entry.externalUrl.isNullOrBlank()) {
-                append("\n").append(getString(R.string.mod_mgr_detail_source_netdisk))
-                if (!entry.externalPwd.isNullOrBlank()) {
-                    append("\n").append(getString(R.string.mod_mgr_detail_pwd, entry.externalPwd))
-                }
-            }
             if (entry.isPatch && !hasMatchingBase && !entry.baseVersion.isNullOrBlank()) {
                 append("\n\n")
-                if (extInCombo != null) {
-                    append(getString(R.string.mod_mgr_need_base_netdisk_msg, entry.baseVersion))
-                } else {
-                    append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
-                }
+                append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
             }
             append("\n\n")
             append(entry.changelog.ifBlank { getString(R.string.mod_mgr_detail_no_changelog) })
@@ -647,30 +476,17 @@ class ModManagerActivity : Activity(), GameListObserver {
             .setMessage(msg)
             .setNegativeButton(R.string.cancel, null)
 
-        if (!entry.hasDirectDownload) {
-            if (!entry.externalUrl.isNullOrBlank()) {
-                builder.setPositiveButton(R.string.mod_mgr_action_open_netdisk) { _, _ ->
-                    openExternalNetdisk(entry)
-                }
-                builder.setNeutralButton(R.string.action_local_install) { _, _ ->
-                    showLocalModInstallDialog()
-                }
-            } else {
-                builder.setPositiveButton(R.string.action_local_install) { _, _ ->
-                    showLocalModInstallDialog()
-                }
-            }
-        } else if (!entry.isPatch) {
+        if (!entry.isPatch) {
             val posLabel = when {
                 hasMod && installedIdx == index -> getString(R.string.mod_mgr_action_reinstall)
                 hasMod -> getString(R.string.mod_mgr_action_switch)
                 else -> getString(R.string.mod_mgr_action_install)
             }
             builder.setPositiveButton(posLabel) { _, _ ->
-                executeStepsWithAuthCheck(listOf(entry))
+                executeSteps(listOf(entry))
             }
         } else {
-            val patchOnlyDirectSteps = patchOnlySteps.filter { it.hasDirectDownload }.ifEmpty { listOf(entry) }
+            val patchSteps = patchOnlySteps.ifEmpty { listOf(entry) }
             if (hasMatchingBase) {
                 val posLabel = if (installedIdx == index) {
                     getString(R.string.mod_mgr_action_reinstall_patch)
@@ -678,34 +494,23 @@ class ModManagerActivity : Activity(), GameListObserver {
                     getString(R.string.mod_mgr_action_apply_patch)
                 }
                 builder.setPositiveButton(posLabel) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlyDirectSteps)
+                    executeSteps(patchSteps)
                 }
-                if (comboSteps.size > 1 && extInCombo == null) {
+                if (comboSteps.size > 1) {
                     builder.setNeutralButton(R.string.mod_mgr_action_combo_reinstall) { _, _ ->
-                        executeStepsWithAuthCheck(comboSteps)
+                        executeSteps(comboSteps)
                     }
-                }
-            } else if (extInCombo != null) {
-                builder.setPositiveButton(R.string.mod_mgr_action_get_base) { _, _ ->
-                    if (!extInCombo.externalUrl.isNullOrBlank()) {
-                        openExternalNetdisk(extInCombo)
-                    } else {
-                        showLocalModInstallDialog()
-                    }
-                }
-                builder.setNeutralButton(R.string.mod_mgr_action_patch_only) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlyDirectSteps)
                 }
             } else if (comboSteps.size > 1) {
                 builder.setPositiveButton(R.string.mod_mgr_action_combo_install) { _, _ ->
-                    executeStepsWithAuthCheck(comboSteps)
+                    executeSteps(comboSteps)
                 }
                 builder.setNeutralButton(R.string.mod_mgr_action_patch_only) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlyDirectSteps)
+                    executeSteps(patchSteps)
                 }
             } else {
                 builder.setPositiveButton(R.string.mod_mgr_action_apply_patch) { _, _ ->
-                    executeStepsWithAuthCheck(patchOnlyDirectSteps)
+                    executeSteps(patchSteps)
                 }
             }
         }
@@ -713,34 +518,14 @@ class ModManagerActivity : Activity(), GameListObserver {
         builder.show()
     }
 
-    private fun executeStepsWithAuthCheck(steps: List<ModReleaseEntry>) {
+    private fun executeSteps(steps: List<ModReleaseEntry>) {
         if (steps.isEmpty() || gameList.installState is InstallState.Installing) return
         ensureGameNotRunning(this) {
-            val needsAuth = steps.any { it.requiresAuth }
-            val curCookie = CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL) ?: ""
-            if (!needsAuth || (isLoggedIn && curCookie.isNotBlank())) {
-                InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                rebindCurrentTarget()
-                gameList.installOnlineModPlan(currentTarget, steps, curCookie)
-                renderInstallState(gameList.installState)
-            } else {
-                pendingStepsAfterAuth = steps
-                val intent = Intent(this, ModPortalActivity::class.java)
-                    .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, true)
-                    .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, steps.last().version)
-                startActivityForResult(intent, REQ_AUTH_FOR_PLAN)
-            }
+            InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+            rebindCurrentTarget()
+            gameList.installOnlineModPlan(currentTarget, steps)
+            renderInstallState(gameList.installState)
         }
-    }
-
-    private fun matchReleaseFromUrlOrName(url: String, fileName: String): ModReleaseEntry? {
-        if (releases.isEmpty()) return null
-        val idMatch = Regex("""/files/(\d+)/download""").find(url)
-        val fid = idMatch?.groupValues?.get(1)?.toIntOrNull()
-        if (fid != null) {
-            releases.firstOrNull { it.fileId == fid }?.let { return it }
-        }
-        return releases.firstOrNull { it.fileName.equals(fileName, ignoreCase = true) }
     }
 
     override fun onInstallProgress(path: String) {
@@ -798,35 +583,12 @@ class ModManagerActivity : Activity(), GameListObserver {
                 dismissProgressDialog()
                 rebindCurrentTarget()
                 updateUi()
-                val retry = if (state.msgId == R.string.online_mod_auth_expired) {
-                    gameList.pendingModAuthRetry
-                } else {
-                    null
-                }
-                gameList.clearPendingModAuthRetry()
                 gameList.consumeInstallResult()
-                if (retry != null) {
-                    isLoggedIn = false
-                    updateUi()
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.online_mod_auth_dialog_title)
-                        .setMessage(R.string.online_mod_auth_expired_retry_msg)
-                        .setPositiveButton(R.string.online_mod_portal_btn_auth) { _, _ ->
-                            pendingRetryHolder = retry
-                            val intent = Intent(this, ModPortalActivity::class.java)
-                                .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, true)
-                                .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, retry.label)
-                            startActivityForResult(intent, REQ_AUTH_FOR_RETRY)
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.error)
-                        .setMessage(state.msgId)
-                        .setPositiveButton(R.string.ok, null)
-                        .show()
-                }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.error)
+                    .setMessage(state.msgId)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
             }
         }
     }
@@ -920,14 +682,6 @@ class ModManagerActivity : Activity(), GameListObserver {
             }
             if (entry.isPatch) {
                 tags.add(getString(R.string.mod_mgr_tag_patch))
-            }
-            if (!entry.hasDirectDownload) {
-                tags.add(
-                    getString(
-                        if (!entry.externalUrl.isNullOrBlank()) R.string.mod_mgr_tag_netdisk
-                        else R.string.mod_mgr_tag_unavailable
-                    )
-                )
             }
 
             val text1 = view.findViewById<TextView>(android.R.id.text1)

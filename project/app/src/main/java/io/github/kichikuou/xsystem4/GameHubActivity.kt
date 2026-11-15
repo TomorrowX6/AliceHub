@@ -6,13 +6,11 @@ import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
-import android.webkit.CookieManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -25,7 +23,6 @@ private const val HUB_INSTALL_ARCHIVE_REQ = 21
 private const val HUB_INSTALL_DIR_REQ = 22
 private const val HUB_MOD_ARCHIVE_REQ = 23
 private const val HUB_MOD_DIR_REQ = 24
-private const val HUB_MOD_AUTH_RETRY_REQ = 25
 
 class GameHubActivity : Activity(), GameListObserver {
     companion object {
@@ -42,7 +39,6 @@ class GameHubActivity : Activity(), GameListObserver {
 
     private var progressDialog: Dialog? = null
     private var pendingModTarget: Item? = null
-    private var pendingHubRetry: PendingModAuthRetry? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -65,10 +61,6 @@ class GameHubActivity : Activity(), GameListObserver {
         findViewById<View>(R.id.btn_hub_mod_manager).setOnClickListener { openModManager() }
         findViewById<View>(R.id.btn_hub_save_manager).setOnClickListener { openSaveManager() }
         findViewById<View>(R.id.btn_hub_game_modifier).setOnClickListener { openGameModifier() }
-        findViewById<View>(R.id.btn_hub_uninstall).setOnClickListener {
-            selectedItem?.let { confirmUninstallGame(it) }
-        }
-        findViewById<View>(R.id.btn_hub_back_select).setOnClickListener { navigateBackToSelect() }
 
         handleRestoreDialogIntent(intent)
         refreshUi()
@@ -146,7 +138,12 @@ class GameHubActivity : Activity(), GameListObserver {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.findItem(R.id.uninstall_game)?.isVisible = (selectedItem != null)
+        val cur = selectedItem
+        val deleteMenu = menu.findItem(R.id.menu_delete)
+        deleteMenu?.isVisible = (cur != null)
+        deleteMenu?.subMenu?.clearHeader()
+        menu.findItem(R.id.uninstall_game)?.isVisible = (cur != null)
+        menu.findItem(R.id.uninstall_mod)?.isVisible = (cur != null && gameList.hasInstalledMod(cur))
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -156,24 +153,12 @@ class GameHubActivity : Activity(), GameListObserver {
                 navigateBackToSelect()
                 true
             }
-            R.id.refresh -> {
-                gameList = LauncherActivity.obtainGameList(this, refresh = true)
-                gameList.observer = this
-                rebindGameState()
-                refreshUi()
-                renderInstallState(gameList.installState)
-                true
-            }
             R.id.uninstall_game -> {
                 selectedItem?.let { confirmUninstallGame(it) }
                 true
             }
-            R.id.open_github -> {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GameCatalog.GITHUB_URL)))
-                true
-            }
-            R.id.licenses -> {
-                startActivity(Intent(this, LicensesMenuActivity::class.java))
+            R.id.uninstall_mod -> {
+                selectedItem?.let { confirmUninstallMod(it) }
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -182,32 +167,6 @@ class GameHubActivity : Activity(), GameListObserver {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == HUB_MOD_AUTH_RETRY_REQ) {
-            val retry = pendingHubRetry
-            pendingHubRetry = null
-            if (resultCode == RESULT_OK && retry != null) {
-                val freshCookie = data?.getStringExtra(ModPortalActivity.EXTRA_COOKIE)
-                    ?: CookieManager.getInstance().getCookie(OnlineInstaller.MOD_PORTAL_BASE_URL)
-                    ?: ""
-                pendingPostResumeAction = {
-                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                    if (retry.steps != null) {
-                        gameList.installOnlineModPlan(retry.targetItem, retry.steps, freshCookie, fromModManager = false)
-                    } else if (retry.manualReq != null) {
-                        gameList.installOnlineMod(
-                            retry.targetItem,
-                            retry.manualReq.copy(cookie = freshCookie),
-                            retry.manualReleaseMeta,
-                            fromModManager = false
-                        )
-                    }
-                    refreshUi()
-                    renderInstallState(gameList.installState)
-                }
-            }
-            return
-        }
-
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {
@@ -412,8 +371,6 @@ class GameHubActivity : Activity(), GameListObserver {
         }
 
         modMgrBtn.visibility = if (descriptor.supportsOnlineMod) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.btn_hub_uninstall).visibility =
-            if (curItem != null) View.VISIBLE else View.GONE
     }
 
     private fun showSwitchInstanceDialog() {
@@ -500,16 +457,13 @@ class GameHubActivity : Activity(), GameListObserver {
             renderInstallState(gameList.installState)
             return
         }
-        val lines = arrayOf(
-            getString(R.string.online_line_edgeone),
-            getString(R.string.online_line_cloudflare)
-        )
+        val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
         AlertDialog.Builder(this)
-            .setTitle(R.string.online_select_line_title)
-            .setItems(lines) { _, which ->
-                val chosen = if (which == 0) BaseGameCdnLine.EDGEONE else BaseGameCdnLine.CLOUDFLARE
+            .setTitle(R.string.online_base_confirm_title)
+            .setMessage(getString(R.string.online_base_confirm_msg, descriptor.title))
+            .setPositiveButton(R.string.ok) { _, _ ->
                 InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                gameList.installOnlineBaseGame(chosen, targetGameId = descriptor.id)
+                gameList.installOnlineBaseGame(cdnBaseUrl = cdnUrl, targetGameId = descriptor.id)
                 refreshUi()
                 renderInstallState(gameList.installState)
             }
@@ -663,15 +617,15 @@ class GameHubActivity : Activity(), GameListObserver {
     }
 
     private fun confirmUninstallGame(item: Item) {
-        if (gameList.isInstallingInto(item)) {
+        if (gameList.isInstallingInto(item) || gameList.isInstallingForGame(descriptor.id)) {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
             return
         }
         ensureGameNotRunning(this) {
             AlertDialog.Builder(this)
-                .setTitle(R.string.uninstall_dialog_title)
-                .setMessage(getString(R.string.uninstall_dialog_message, item.name))
+                .setTitle(R.string.action_delete_base_game)
+                .setMessage(getString(R.string.delete_base_game_message, item.name))
                 .setPositiveButton(R.string.ok) { _, _ ->
                     gameList.uninstall(item)
                     rebindGameState()
@@ -684,6 +638,36 @@ class GameHubActivity : Activity(), GameListObserver {
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    private fun confirmUninstallMod(item: Item) {
+        if (gameList.installState is InstallState.Installing) {
+            gameList.restoreInstallProgress()
+            renderInstallState(gameList.installState)
+            return
+        }
+        if (!gameList.canRestoreVanilla(item)) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.action_uninstall_mod)
+                .setMessage(R.string.uninstall_mod_no_backup_msg)
+                .setPositiveButton(R.string.ok, null)
+                .show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_uninstall_mod)
+            .setMessage(getString(R.string.mod_mgr_restore_confirm, item.cleanGameTitle()))
+            .setPositiveButton(R.string.ok) { _, _ ->
+                ensureGameNotRunning(this) {
+                    if (gameList.restoreMod(item)) {
+                        rebindGameState()
+                        refreshUi()
+                        Toast.makeText(this, R.string.mod_restored_toast, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     override fun onInstallProgress(path: String) {
@@ -743,33 +727,12 @@ class GameHubActivity : Activity(), GameListObserver {
                 dismissProgressDialog()
                 rebindGameState()
                 refreshUi()
-                val retry = if (state.msgId == R.string.online_mod_auth_expired) {
-                    gameList.pendingModAuthRetry
-                } else {
-                    null
-                }
-                gameList.clearPendingModAuthRetry()
                 gameList.consumeInstallResult()
-                if (retry != null) {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.online_mod_auth_dialog_title)
-                        .setMessage(R.string.online_mod_auth_expired_retry_msg)
-                        .setPositiveButton(R.string.online_mod_portal_btn_auth) { _, _ ->
-                            pendingHubRetry = retry
-                            val intent = Intent(this, ModPortalActivity::class.java)
-                                .putExtra(ModPortalActivity.EXTRA_AUTH_ONLY, true)
-                                .putExtra(ModPortalActivity.EXTRA_TARGET_LABEL, retry.label)
-                            startActivityForResult(intent, HUB_MOD_AUTH_RETRY_REQ)
-                        }
-                        .setNegativeButton(R.string.cancel, null)
-                        .show()
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.error)
-                        .setMessage(state.msgId)
-                        .setPositiveButton(R.string.ok, null)
-                        .show()
-                }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.error)
+                    .setMessage(state.msgId)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
             }
         }
     }

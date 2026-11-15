@@ -67,15 +67,6 @@
             android:layout_weight="1"
             android:singleLine="true"
             android:text="@string/action_local_install" />
-
-        <Button
-            android:id="@+id/btn_mod_mgr_portal"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:singleLine="true"
-            android:text="@string/mod_mgr_btn_portal" />
     </LinearLayout>
 
     <LinearLayout

@@ -20,6 +20,7 @@ data class GameDescriptor(
     val accentBorderColor: Int,
     val iconFrameColor: Int,
     val supportsOnlineBaseInstall: Boolean,
+    val onlineBaseCdnUrl: String?,
     val supportsOnlineMod: Boolean,
     val supportsLocalMod: Boolean,
     val isRance10: Boolean
@@ -124,6 +125,7 @@ object GameCatalog {
                 accentBorderColor = 0x66FF7043,
                 iconFrameColor = 0xFF221A18.toInt(),
                 supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE10_CDN_URL,
                 supportsOnlineMod = true,
                 supportsLocalMod = true,
                 isRance10 = true
@@ -137,7 +139,8 @@ object GameCatalog {
                 accentColor = 0xFFE91E63.toInt(),
                 accentBorderColor = 0x66FF4081,
                 iconFrameColor = 0xFFF4F6FA.toInt(),
-                supportsOnlineBaseInstall = false,
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DOHNA_DOHNA_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = true,
                 isRance10 = false
@@ -161,6 +164,7 @@ object GameCatalog {
                     accentBorderColor = 0x665C6BC0,
                     iconFrameColor = 0xFF232733.toInt(),
                     supportsOnlineBaseInstall = false,
+                    onlineBaseCdnUrl = null,
                     supportsOnlineMod = false,
                     supportsLocalMod = true,
                     isRance10 = false

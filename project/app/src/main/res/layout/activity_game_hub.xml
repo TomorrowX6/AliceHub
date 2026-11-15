@@ -155,34 +155,5 @@
                     android:text="@string/action_game_modifier" />
             </LinearLayout>
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <LinearLayout
-            android:orientation="horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp">
-
-            <Button
-                android:id="@+id/btn_hub_uninstall"
-                style="?android:attr/buttonBarButtonStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:visibility="gone"
-                android:text="@string/uninstall_dialog_title" />
-
-            <Button
-                android:id="@+id/btn_hub_back_select"
-                style="?android:attr/buttonBarButtonStyle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/hub_back_to_select" />
-        </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -44,19 +44,6 @@ sealed class InstallState {
     data class Failed(val msgId: Int) : InstallState()
 }
 
-data class PendingModAuthRetry(
-    val targetItem: Item,
-    val steps: List<ModReleaseEntry>?,
-    val manualReq: ModDownloadRequest?,
-    val manualReleaseMeta: ModReleaseEntry?
-) {
-    val label: String
-        get() = steps?.lastOrNull()?.version
-            ?: manualReleaseMeta?.version
-            ?: manualReq?.fileName
-            ?: "MOD"
-}
-
 data class Item(val name: String, val path: File, val homedir: File, val savedir: File?, val icon: File?, val error: String?) {
     companion object {
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
@@ -246,8 +233,6 @@ class GameList(activity: Activity) {
         private set
     var lastInstalledItem: Item? = null
         private set
-    var pendingModAuthRetry: PendingModAuthRetry? = null
-        private set
 
     class InstallFailureException(val msgId: Int) : Exception()
 
@@ -287,10 +272,6 @@ class GameList(activity: Activity) {
         }
     }
 
-    fun clearPendingModAuthRetry() {
-        pendingModAuthRetry = null
-    }
-
     fun minimizeInstallProgress() {
         if (installState is InstallState.Installing) {
             isProgressMinimized = true
@@ -327,7 +308,6 @@ class GameList(activity: Activity) {
         notifModManagerPath: String? = null,
         targetGameId: String? = null
     ) {
-        pendingModAuthRetry = null
         lastInstalledItem = null
         isProgressMinimized = false
         activeInstallResumable = resumable
@@ -353,7 +333,7 @@ class GameList(activity: Activity) {
     }
 
     fun installOnlineBaseGame(
-        cdnLine: BaseGameCdnLine = BaseGameCdnLine.EDGEONE,
+        cdnBaseUrl: String = OnlineInstaller.RANCE10_CDN_URL,
         targetGameId: String = GameCatalog.ID_RANCE10
     ) {
         if (installJob?.isActive == true) return
@@ -374,7 +354,7 @@ class GameList(activity: Activity) {
                     OnlineInstaller.installBaseGameFromCloud(
                         context = context,
                         storagePath = storagePath,
-                        cdnBaseUrl = cdnLine.baseUrl,
+                        cdnBaseUrl = cdnBaseUrl,
                         checkCancelled = {
                             if (myJob?.isActive == false) {
                                 throw CancellationException()
@@ -804,7 +784,6 @@ class GameList(activity: Activity) {
     fun installOnlineModPlan(
         targetItem: Item,
         steps: List<ModReleaseEntry>,
-        cookie: String?,
         fromModManager: Boolean = true
     ) {
         if (steps.isEmpty() || installJob?.isActive == true) return
@@ -837,14 +816,10 @@ class GameList(activity: Activity) {
                         val req = ModDownloadRequest(
                             url = release.downloadUrl,
                             fileName = release.fileName,
-                            cookie = cookie,
-                            userAgent = OnlineInstaller.DEFAULT_USER_AGENT,
                             contentLength = release.expectedSize,
-                            fallbackUrl = release.fallbackDownloadUrl,
-                            expectedSha256 = release.expectedSha256,
-                            isModPortal = release.requiresAuth
+                            expectedSha256 = release.expectedSha256
                         )
-                        OnlineInstaller.downloadAndExtractModFromPortal(
+                        OnlineInstaller.downloadAndExtractMod(
                             context = context,
                             req = req,
                             storagePath = storagePath,
@@ -910,131 +885,10 @@ class GameList(activity: Activity) {
                 setInstallCancelled()
             } catch (e: InstallFailureException) {
                 if (completedCount > 0) refreshTargetItemInList(targetItem)
-                if (e.msgId == R.string.online_mod_auth_expired) {
-                    val remaining = steps.drop(completedCount)
-                    if (remaining.isNotEmpty()) {
-                        pendingModAuthRetry = PendingModAuthRetry(
-                            targetItem = targetItem,
-                            steps = remaining,
-                            manualReq = null,
-                            manualReleaseMeta = null
-                        )
-                    }
-                }
                 setInstallFailed(e.msgId)
             } catch (e: Exception) {
                 if (completedCount > 0) refreshTargetItemInList(targetItem)
                 Log.e("GameList", "Failed to download and install online MOD plan", e)
-                setInstallFailed(R.string.online_mod_download_error)
-            } finally {
-                withContext(Dispatchers.IO) {
-                    tempDir.deleteRecursively()
-                }
-            }
-        }
-    }
-
-    fun installOnlineMod(
-        targetItem: Item,
-        req: ModDownloadRequest,
-        releaseMeta: ModReleaseEntry? = null,
-        fromModManager: Boolean = true
-    ) {
-        if (installJob?.isActive == true) return
-        val label = releaseMeta?.version ?: req.fileName
-        beginInstallSession(
-            notifTitle = context.getString(R.string.notif_title_mod_online, label),
-            initialProgress = context.getString(R.string.online_mod_starting_download, label),
-            initialPermille = 0,
-            cancellable = true,
-            resumable = true,
-            targetGamePath = targetItem.path.path,
-            notifModManagerPath = if (fromModManager) targetItem.path.path else null,
-            targetGameId = GameCatalog.classifyItem(targetItem)
-        )
-        val mainHandler = Handler(Looper.getMainLooper())
-        installJob = scope.launch {
-            val storagePath = targetItem.path.parentFile ?: storageDirs[0]
-            val tempDir = File(storagePath, ".mod_online_extract_temp")
-            try {
-                withContext(Dispatchers.IO) {
-                    val myJob = kotlin.coroutines.coroutineContext[Job]
-                    OnlineInstaller.downloadAndExtractModFromPortal(
-                        context = context,
-                        req = req,
-                        storagePath = storagePath,
-                        tempExtractDir = tempDir,
-                        stepPrefix = "",
-                        releaseLabel = releaseMeta?.version,
-                        checkCancelled = {
-                            if (myJob?.isActive == false) {
-                                throw CancellationException()
-                            }
-                        },
-                        onProgress = { update ->
-                            mainHandler.post {
-                                if (myJob?.isActive == true) {
-                                    setInstallProgress(
-                                        update.text,
-                                        update.permille,
-                                        cancellable = true,
-                                        resumable = true
-                                    )
-                                }
-                            }
-                        },
-                        applyStaging = { staging ->
-                            val prevInfo = InstalledModInfo.read(targetItem.path)
-                            val allowClean = releaseMeta?.let { !it.isPatch } ?: true
-                            val wasFull = applyModStagingToGameDir(
-                                stagingDir = staging,
-                                targetDir = targetItem.path,
-                                cleanReplaceIfStandalone = allowClean
-                            )
-                            val verName = releaseMeta?.version ?: OnlineInstaller.inferVersionFromFileName(req.fileName)
-                            val fid = releaseMeta?.fileId ?: -1
-                            val baseVer = if (releaseMeta != null && !releaseMeta.isPatch || wasFull) {
-                                verName
-                            } else {
-                                releaseMeta?.baseVersion ?: prevInfo?.baseVersion
-                            }
-                            val baseFid = if (releaseMeta != null && !releaseMeta.isPatch || wasFull) {
-                                fid
-                            } else {
-                                releaseMeta?.baseFileId ?: prevInfo?.baseFileId ?: -1
-                            }
-                            InstalledModInfo.write(
-                                targetItem.path,
-                                InstalledModInfo(
-                                    version = verName,
-                                    baseVersion = baseVer,
-                                    fileId = fid,
-                                    baseFileId = baseFid,
-                                    fileName = releaseMeta?.fileName ?: req.fileName,
-                                    uploadedAt = releaseMeta?.uploadedAt ?: "",
-                                    source = "online",
-                                    installedAtMs = System.currentTimeMillis()
-                                )
-                            )
-                        }
-                    )
-                }
-                refreshTargetItemInList(targetItem)
-                setInstallSucceeded()
-            } catch (_: CancellationException) {
-                setInstallCancelled()
-            } catch (e: InstallFailureException) {
-                if (e.msgId == R.string.online_mod_auth_expired) {
-                    pendingModAuthRetry = PendingModAuthRetry(
-                        targetItem = targetItem,
-                        steps = null,
-                        manualReq = req,
-                        manualReleaseMeta = releaseMeta
-                    )
-                }
-                setInstallFailed(e.msgId)
-            } catch (e: Exception) {
-                Log.e("GameList", "Failed to download and install online MOD", e)
                 setInstallFailed(R.string.online_mod_download_error)
             } finally {
                 withContext(Dispatchers.IO) {

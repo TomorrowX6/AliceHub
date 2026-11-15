@@ -24,9 +24,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 
-private const val IMPORT_OTHER_ZIP_REQ = 11
-private const val IMPORT_OTHER_DIR_REQ = 12
-
 private class GameSelectAdapter(
     private val activity: Activity,
     private val gameList: GameList
@@ -156,7 +153,6 @@ class LauncherActivity : Activity(), GameListObserver {
     private lateinit var adapter: GameSelectAdapter
     private var progressDialog: Dialog? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
-    private var startedGenericImportHere: Boolean = false
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -186,9 +182,6 @@ class LauncherActivity : Activity(), GameListObserver {
                 restoreInstallDialog = gameList.isInstallingForGame(entry.descriptor.id)
             )
         }
-
-        findViewById<View>(R.id.btn_import_other).setOnClickListener { openImportOtherGameDialog() }
-        findViewById<View>(R.id.open_github).setOnClickListener { openGitHub() }
 
         handleRestoreDialogIntent(intent)
     }
@@ -232,7 +225,7 @@ class LauncherActivity : Activity(), GameListObserver {
 
     override fun onResume() {
         super.onResume()
-        val latestList = obtainGameList(this, refresh = false)
+        val latestList = obtainGameList(this, refresh = true)
         if (latestList !== gameList) {
             setGameList(latestList)
         } else {
@@ -268,45 +261,15 @@ class LauncherActivity : Activity(), GameListObserver {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
-            R.id.refresh -> {
-                setGameList(obtainGameList(this, refresh = true))
-                true
-            }
-            R.id.import_other_game -> {
-                openImportOtherGameDialog()
-                true
-            }
             R.id.licenses -> {
                 startActivity(Intent(this, LicensesMenuActivity::class.java))
                 true
             }
+            R.id.open_github -> {
+                openGitHub()
+                true
+            }
             else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) return
-        val uri = data?.data ?: return
-        when (requestCode) {
-            IMPORT_OTHER_DIR_REQ -> {
-                pendingPostResumeAction = {
-                    startedGenericImportHere = true
-                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                    gameList.installDirectory(uri, expectedAinName = null, targetGameId = null)
-                    adapter.reload()
-                    renderInstallState(gameList.installState)
-                }
-            }
-            IMPORT_OTHER_ZIP_REQ -> {
-                pendingPostResumeAction = {
-                    startedGenericImportHere = true
-                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                    gameList.installArchive(uri, expectedAinName = null, targetGameId = null)
-                    adapter.reload()
-                    renderInstallState(gameList.installState)
-                }
-            }
         }
     }
 
@@ -327,38 +290,6 @@ class LauncherActivity : Activity(), GameListObserver {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
         }
-    }
-
-    private fun openImportOtherGameDialog() {
-        if (gameList.installState is InstallState.Installing) {
-            onActiveInstallBannerClick()
-            return
-        }
-        val options = arrayOf(
-            getString(R.string.game_opt_zip),
-            getString(R.string.game_opt_dir)
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_import_other_game)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivityForResult(Intent.createChooser(i, getString(R.string.choose_a_file)), IMPORT_OTHER_ZIP_REQ)
-                    }
-                    1 -> {
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, IMPORT_OTHER_DIR_REQ)
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
     }
 
     private fun openGitHub() {
@@ -418,18 +349,11 @@ class LauncherActivity : Activity(), GameListObserver {
             InstallState.Succeeded -> {
                 dismissProgressDialog()
                 adapter.reload()
-                val installed = gameList.lastInstalledItem
-                val openImported = startedGenericImportHere && installed != null
-                startedGenericImportHere = false
                 Toast.makeText(this, R.string.install_done_toast, Toast.LENGTH_SHORT).show()
                 gameList.consumeInstallResult()
-                if (openImported && installed != null) {
-                    openGameHub(GameCatalog.classifyItem(installed))
-                }
             }
             is InstallState.Cancelled -> {
                 dismissProgressDialog()
-                startedGenericImportHere = false
                 adapter.reload()
                 if (state.resumable) {
                     Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_LONG).show()
@@ -438,9 +362,7 @@ class LauncherActivity : Activity(), GameListObserver {
             }
             is InstallState.Failed -> {
                 dismissProgressDialog()
-                startedGenericImportHere = false
                 adapter.reload()
-                gameList.clearPendingModAuthRetry()
                 gameList.consumeInstallResult()
                 AlertDialog.Builder(this).setTitle(R.string.error)
                     .setMessage(state.msgId)
