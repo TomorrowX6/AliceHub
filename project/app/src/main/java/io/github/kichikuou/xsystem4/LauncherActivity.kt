@@ -5,8 +5,6 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -17,8 +15,6 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.BaseAdapter
 import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -30,8 +26,6 @@ private class GameSelectAdapter(
 ) : BaseAdapter() {
     private val context: Context = activity
     private var entries: List<GameSelectEntry> = GameCatalog.buildSelectEntries(activity, gameList)
-
-    private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
 
     fun reload() {
         entries = GameCatalog.buildSelectEntries(context, gameList)
@@ -50,36 +44,17 @@ private class GameSelectAdapter(
             ?: LayoutInflater.from(context).inflate(R.layout.launcher_item, parent, false)
 
         val card = view.findViewById<View>(R.id.card_container)
-        card.background = GradientDrawable().apply {
-            cornerRadius = dp(14).toFloat()
-            setColor(0x16888888)
-            setStroke(dp(1), desc.accentBorderColor)
-        }
+        card.background = UiKit.accentCard(
+            context, desc.accentColor, R.dimen.ui_radius_card, clickable = true
+        )
 
-        val accentBar = view.findViewById<View>(R.id.accent_bar)
-        accentBar.background = GradientDrawable().apply {
-            cornerRadius = dp(2).toFloat()
-            setColor(desc.accentColor)
-        }
-
-        val iconFrame = view.findViewById<FrameLayout>(R.id.icon_frame)
-        iconFrame.background = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            setColor(desc.iconFrameColor)
-            setStroke(dp(1), 0x33FFFFFF)
-        }
-
-        val iconView = view.findViewById<ImageView>(R.id.icon)
-        if (desc.id == GameCatalog.ID_RANCE10 || desc.id == GameCatalog.ID_DOHNA_DOHNA) {
-            iconView.setImageResource(desc.iconRes)
-        } else {
-            val bmp = primary?.getIconBitmap(dp(52))
-            if (bmp != null) {
-                iconView.setImageBitmap(bmp)
-            } else {
-                iconView.setImageResource(desc.iconRes)
-            }
-        }
+        UiKit.bindGameIcon(
+            frame = view.findViewById(R.id.icon_frame),
+            iconView = view.findViewById(R.id.icon),
+            desc = desc,
+            item = primary,
+            radiusDp = 16f
+        )
 
         view.findViewById<TextView>(R.id.title).text = desc.title
 
@@ -88,50 +63,39 @@ private class GameSelectAdapter(
         val isInstalling = gameList.isInstallingForGame(desc.id)
 
         val badge = view.findViewById<TextView>(R.id.status_badge)
-        val badgeBgColor: Int
-        val badgeTextColor: Int
+        val badgeTone: UiKit.Tone
         val badgeLabel: String
 
         when {
             isInstalling -> {
                 badgeLabel = context.getString(R.string.game_status_installing)
-                badgeBgColor = 0x332196F3
-                badgeTextColor = 0xFF64B5F6.toInt()
+                badgeTone = UiKit.Tone.INFO
             }
             isRunning -> {
                 badgeLabel = context.getString(R.string.game_status_running)
-                badgeBgColor = 0x334CAF50
-                badgeTextColor = 0xFF81C784.toInt()
+                badgeTone = UiKit.Tone.SUCCESS
             }
             primary != null && primary.error != null -> {
                 badgeLabel = context.getString(R.string.game_status_error)
-                badgeBgColor = 0x33F44336
-                badgeTextColor = 0xFFE57373.toInt()
+                badgeTone = UiKit.Tone.DANGER
             }
             primary != null && gameList.hasInstalledMod(primary) -> {
                 val ver = gameList.getInstalledModInfo(primary)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
                 badgeLabel = context.getString(R.string.game_status_installed_mod, ver)
-                badgeBgColor = 0x33FFB300
-                badgeTextColor = 0xFFFFCA28.toInt()
+                badgeTone = UiKit.Tone.WARNING
             }
             primary != null -> {
                 badgeLabel = context.getString(R.string.game_status_installed)
-                badgeBgColor = 0x334CAF50
-                badgeTextColor = 0xFF66BB6A.toInt()
+                badgeTone = UiKit.Tone.SUCCESS
             }
             else -> {
                 badgeLabel = context.getString(R.string.game_status_not_installed)
-                badgeBgColor = 0x24888888
-                badgeTextColor = Color.GRAY
+                badgeTone = UiKit.Tone.NEUTRAL
             }
         }
 
         badge.text = badgeLabel
-        badge.setTextColor(badgeTextColor)
-        badge.background = GradientDrawable().apply {
-            cornerRadius = dp(8).toFloat()
-            setColor(badgeBgColor)
-        }
+        UiKit.styleChip(badge, badgeTone, dot = true)
 
         return view
     }
@@ -154,8 +118,6 @@ class LauncherActivity : Activity(), GameListObserver {
     private var progressDialog: Dialog? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.launcher)
@@ -165,12 +127,6 @@ class LauncherActivity : Activity(), GameListObserver {
         adapter = GameSelectAdapter(this, gameList)
 
         val banner = findViewById<TextView>(R.id.active_install_banner)
-        banner.background = GradientDrawable().apply {
-            cornerRadius = dp(10).toFloat()
-            setColor(0x262196F3)
-            setStroke(dp(1), 0x662196F3)
-        }
-        banner.setTextColor(0xFF64B5F6.toInt())
         banner.setOnClickListener { onActiveInstallBannerClick() }
 
         val listView = findViewById<ListView>(R.id.list)
