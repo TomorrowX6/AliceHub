@@ -5,16 +5,12 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -41,12 +37,13 @@ class GameHubActivity : Activity(), GameListObserver {
     private var pendingModTarget: Item? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game_hub)
         actionBar?.setDisplayHomeAsUpEnabled(true)
+        // Keeps the row ripples inside the cards' rounded corners.
+        findViewById<View>(R.id.hub_install_card).clipToOutline = true
+        findViewById<View>(R.id.hub_tools_card).clipToOutline = true
 
         gameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() } ?: GameCatalog.ID_RANCE10
         selectedPath = intent.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
@@ -238,45 +235,18 @@ class GameHubActivity : Activity(), GameListObserver {
         title = descriptor.title
         invalidateOptionsMenu()
 
-        val heroCard = findViewById<View>(R.id.hub_hero_card)
-        heroCard.background = GradientDrawable().apply {
-            cornerRadius = dp(14).toFloat()
-            setColor(0x18888888)
-            setStroke(dp(1), descriptor.accentBorderColor)
-        }
+        findViewById<View>(R.id.hub_hero_card).background = UiKit.accentCard(
+            this, descriptor.accentColor, R.dimen.ui_radius_card, clickable = false
+        )
 
-        val sectionBg1 = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            setColor(0x12888888)
-            setStroke(dp(1), 0x26FFFFFF)
-        }
-        val sectionBg2 = GradientDrawable().apply {
-            cornerRadius = dp(12).toFloat()
-            setColor(0x12888888)
-            setStroke(dp(1), 0x26FFFFFF)
-        }
-        findViewById<View>(R.id.hub_install_card).background = sectionBg1
-        findViewById<View>(R.id.hub_tools_card).background = sectionBg2
-
-        val iconFrame = findViewById<FrameLayout>(R.id.hub_icon_frame)
-        iconFrame.background = GradientDrawable().apply {
-            cornerRadius = dp(14).toFloat()
-            setColor(descriptor.iconFrameColor)
-            setStroke(dp(1), 0x33FFFFFF)
-        }
-
-        val iconView = findViewById<ImageView>(R.id.hub_icon)
         val curItem = selectedItem
-        if (descriptor.id == GameCatalog.ID_RANCE10 || descriptor.id == GameCatalog.ID_DOHNA_DOHNA) {
-            iconView.setImageResource(descriptor.iconRes)
-        } else {
-            val bmp = curItem?.getIconBitmap(dp(64))
-            if (bmp != null) {
-                iconView.setImageBitmap(bmp)
-            } else {
-                iconView.setImageResource(descriptor.iconRes)
-            }
-        }
+        UiKit.bindGameIcon(
+            frame = findViewById(R.id.hub_icon_frame),
+            iconView = findViewById(R.id.hub_icon),
+            desc = descriptor,
+            item = curItem,
+            radiusDp = 20f
+        )
 
         findViewById<TextView>(R.id.hub_title).text =
             if (descriptor.id == GameCatalog.ID_RANCE10 || descriptor.id == GameCatalog.ID_DOHNA_DOHNA) {
@@ -292,85 +262,71 @@ class GameHubActivity : Activity(), GameListObserver {
 
         val statusView = findViewById<TextView>(R.id.hub_status)
         val statusText: String
-        val statusBg: Int
-        val statusColor: Int
+        val statusTone: UiKit.Tone
         when {
             isInstallingHere -> {
                 statusText = getString(R.string.game_status_installing)
-                statusBg = 0x332196F3
-                statusColor = 0xFF64B5F6.toInt()
+                statusTone = UiKit.Tone.INFO
             }
             isRunning && curItem != null -> {
                 statusText = getString(R.string.game_status_running) + dirSuffix
-                statusBg = 0x334CAF50
-                statusColor = 0xFF81C784.toInt()
+                statusTone = UiKit.Tone.SUCCESS
             }
             curItem != null && curItem.error != null -> {
                 statusText = getString(R.string.game_status_error) + dirSuffix
-                statusBg = 0x33F44336
-                statusColor = 0xFFE57373.toInt()
+                statusTone = UiKit.Tone.DANGER
             }
             curItem != null && gameList.hasInstalledMod(curItem) -> {
                 val ver = gameList.getInstalledModInfo(curItem)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
                 statusText = getString(R.string.game_status_installed_mod, ver) + dirSuffix
-                statusBg = 0x33FFB300
-                statusColor = 0xFFFFCA28.toInt()
+                statusTone = UiKit.Tone.WARNING
             }
             curItem != null -> {
                 statusText = getString(R.string.game_status_installed) + dirSuffix
-                statusBg = 0x334CAF50
-                statusColor = 0xFF66BB6A.toInt()
+                statusTone = UiKit.Tone.SUCCESS
             }
             else -> {
                 statusText = getString(R.string.game_status_not_installed)
-                statusBg = 0x24888888
-                statusColor = Color.GRAY
+                statusTone = UiKit.Tone.NEUTRAL
             }
         }
         statusView.text = statusText
-        statusView.setTextColor(statusColor)
-        statusView.background = GradientDrawable().apply {
-            cornerRadius = dp(8).toFloat()
-            setColor(statusBg)
-        }
+        UiKit.styleChip(statusView, statusTone, dot = true)
 
         findViewById<View>(R.id.btn_hub_switch_instance).visibility =
             if (matchingItems.size > 1) View.VISIBLE else View.GONE
 
         val playBtn = findViewById<Button>(R.id.btn_hub_play)
+        playBtn.setTextColor(Color.WHITE)
         if (curItem != null) {
-            playBtn.text = getString(if (isRunning) R.string.hub_btn_resume_game else R.string.hub_btn_start_game)
-            playBtn.setTextColor(Color.WHITE)
-            playBtn.background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(descriptor.accentColor)
-            }
+            playBtn.text = UiKit.iconLabel(
+                this, R.drawable.ic_play_arrow, Color.WHITE,
+                getString(if (isRunning) R.string.hub_btn_resume_game else R.string.hub_btn_start_game)
+            )
+            playBtn.background = UiKit.accentButtonBackground(this, descriptor.accentColor, 18f)
         } else {
-            playBtn.text = getString(R.string.hub_btn_install_first)
-            playBtn.setTextColor(Color.WHITE)
-            playBtn.background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(descriptor.accentColor)
-                alpha = 215
-            }
+            playBtn.text = UiKit.iconLabel(
+                this, R.drawable.ic_download, Color.WHITE,
+                getString(R.string.hub_btn_install_first)
+            )
+            playBtn.background = UiKit.accentButtonBackground(
+                this, UiKit.withAlpha(descriptor.accentColor, 215), 18f
+            )
         }
 
         val onlineBtn = findViewById<Button>(R.id.btn_hub_online_install)
         val localBtn = findViewById<Button>(R.id.btn_hub_local_install)
         val modMgrBtn = findViewById<Button>(R.id.btn_hub_mod_manager)
-        val lpLocal = localBtn.layoutParams as? LinearLayout.LayoutParams
 
-        if (descriptor.supportsOnlineBaseInstall) {
-            onlineBtn.visibility = View.VISIBLE
-            lpLocal?.marginStart = dp(4)
-            localBtn.layoutParams = lpLocal
-        } else {
-            onlineBtn.visibility = View.GONE
-            lpLocal?.marginStart = 0
-            localBtn.layoutParams = lpLocal
-        }
-
+        onlineBtn.visibility = if (descriptor.supportsOnlineBaseInstall) View.VISIBLE else View.GONE
         modMgrBtn.visibility = if (descriptor.supportsOnlineMod) View.VISIBLE else View.GONE
+
+        val rowAccent = UiKit.accentOnSurface(this, descriptor.accentColor)
+        UiKit.styleActionRow(onlineBtn, R.drawable.ic_cloud_download, rowAccent)
+        UiKit.styleActionRow(localBtn, R.drawable.ic_folder_open, rowAccent)
+        UiKit.styleActionRow(modMgrBtn, R.drawable.ic_extension, rowAccent)
+        UiKit.styleActionRow(findViewById(R.id.btn_hub_save_manager), R.drawable.ic_save, rowAccent)
+        UiKit.styleActionRow(findViewById(R.id.btn_hub_game_modifier), R.drawable.ic_tune, rowAccent)
     }
 
     private fun showSwitchInstanceDialog() {
