@@ -228,7 +228,7 @@ internal object ErrorReportKit {
             append("AliceHub Error Report\n")
             append("============================================================\n")
             append("Timestamp   : ").append(tsHuman).append('\n')
-            append("App         : AliceHub ").append(BuildConfig.VERSION_NAME).append('\n')
+            append("App         : AliceHub ").append(appVersionName(lctx)).append('\n')
             append("Device      : ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                 .append(" · Android ").append(Build.VERSION.RELEASE)
                 .append(" · SDK ").append(Build.VERSION.SDK_INT).append('\n')
@@ -1050,7 +1050,7 @@ internal object ErrorReportKit {
             append("AliceHub Crash Report\n")
             append("============================================================\n")
             append("Timestamp   : ").append(tsHuman).append('\n')
-            append("App         : AliceHub ").append(BuildConfig.VERSION_NAME).append('\n')
+            append("App         : AliceHub ").append(appVersionName(context)).append('\n')
             append("Process     : ").append(procName).append(" · PID ").append(Process.myPid()).append('\n')
             append("Thread      : ").append(thread.name).append('\n')
             append("Device      : ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
@@ -1078,6 +1078,16 @@ internal object ErrorReportKit {
                 File(ext, "crash_history.log").appendBytes(bytes)
             }
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun appVersionName(context: Context): String {
+        return try {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, 0)?.versionName?.takeIf { it.isNotBlank() }
+                ?: "unknown"
+        } catch (_: Throwable) {
+            "unknown"
         }
     }
 
