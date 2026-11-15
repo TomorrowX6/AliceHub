@@ -186,9 +186,15 @@
     <string name="mod_mgr_action_combo_reinstall">Full Reinstall</string>
     <string name="mod_mgr_action_combo_install">Combo Install</string>
     <string name="mod_mgr_action_patch_only">Patch Only</string>
+    <string name="mod_mgr_tag_netdisk">NETDISK</string>
+    <string name="mod_mgr_tag_unavailable">NO LINK</string>
+    <string name="mod_mgr_detail_source_netdisk">Source: Baidu Netdisk</string>
+    <string name="mod_mgr_detail_pwd">Code: %1$s</string>
+    <string name="mod_mgr_action_open_netdisk">Open Netdisk</string>
+    <string name="mod_mgr_action_get_base">Get Base</string>
+    <string name="mod_mgr_pwd_copied_toast">Copied code %1$s</string>
+    <string name="mod_mgr_need_base_netdisk_msg">Please install base release %1$s first, then apply the patch here.</string>
 
-    <string name="online_mod_portal_hint_login">Log in, then tap download to install automatically</string>
-    <string name="online_mod_portal_hint_ready">Logged in · Tap download to install automatically</string>
     <string name="online_mod_portal_btn_auth">Login</string>
     <string name="online_mod_portal_btn_register">Register</string>
     <string name="online_mod_portal_btn_list">Downloads</string>
@@ -201,8 +207,6 @@
     <string name="online_download_paused_toast">Paused. Retry anytime to resume download</string>
     <string name="install_done_toast">Installation complete</string>
     <string name="online_mod_auth_dialog_title">Portal Login</string>
-    <string name="online_mod_auth_hint_generic">Log in or register</string>
-    <string name="online_mod_auth_hint_target">Auto-download %1$s after login</string>
     <string name="online_mod_auth_expired_retry_msg">Not logged in or session expired. Log in now and continue downloading?</string>
 
     <string name="install_btn_background">Background</string>
@@ -220,16 +224,9 @@
     <string name="mod_mgr_btn_downloading">Progress</string>
 
     <string name="select_game_title">Select Game</string>
-    <string name="select_game_subtitle">Tap a game card to open its dedicated page</string>
     <string name="action_import_other_game">Import Other Game</string>
     <string name="game_rance10_title">Rance 10</string>
-    <string name="game_rance10_subtitle">Rance 10 Showdown</string>
-    <string name="game_rance10_tools_hint">Full unlock saves · Global &amp; slot save editor · Live battle locks · Font &amp; scrollbar scaling</string>
     <string name="game_dohnadohna_title">Dohna Dohna</string>
-    <string name="game_dohnadohna_subtitle">Let\'s Do Bad Things Together</string>
-    <string name="game_dohnadohna_tools_hint">Save import &amp; export · Floating modifier · Ctrl skip button · Font &amp; scrollbar scaling</string>
-    <string name="game_custom_subtitle">System 4 Game · %1$s</string>
-    <string name="game_custom_tools_hint">Save import &amp; export · Floating modifier · Ctrl skip button · Font &amp; scrollbar scaling</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>
@@ -240,13 +237,9 @@
     <string name="hub_btn_start_game">Start Game</string>
     <string name="hub_btn_resume_game">Resume Game</string>
     <string name="hub_btn_install_first">Install Base Game</string>
-    <string name="hub_section_install">Game Installation &amp; Files</string>
-    <string name="hub_section_tools">Dedicated Tools</string>
     <string name="hub_switch_instance">Switch</string>
     <string name="hub_select_instance_title">Select Installed Version</string>
     <string name="hub_back_to_select">Switch Game</string>
-    <string name="hub_status_dir_installed">Status: %1$s · %2$s</string>
-    <string name="hub_status_not_installed_hint">Status: Not Installed · Please install the base game first</string>
     <string name="hub_local_patch_sub">Install Local Patch or MOD</string>
     <string name="import_wrong_game">The selected game files do not match this game page.</string>
     <string name="save_manager_game_default_dir_label">%1$s · Default</string>

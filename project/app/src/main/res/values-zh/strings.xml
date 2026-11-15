@@ -185,9 +185,15 @@
     <string name="mod_mgr_action_combo_reinstall">完整重装</string>
     <string name="mod_mgr_action_combo_install">组合安装</string>
     <string name="mod_mgr_action_patch_only">仅装补丁</string>
+    <string name="mod_mgr_tag_netdisk">网盘</string>
+    <string name="mod_mgr_tag_unavailable">暂无直链</string>
+    <string name="mod_mgr_detail_source_netdisk">渠道：百度网盘</string>
+    <string name="mod_mgr_detail_pwd">提取码：%1$s</string>
+    <string name="mod_mgr_action_open_netdisk">打开网盘</string>
+    <string name="mod_mgr_action_get_base">获取基础包</string>
+    <string name="mod_mgr_pwd_copied_toast">已复制提取码 %1$s</string>
+    <string name="mod_mgr_need_base_netdisk_msg">需先安装基础包 %1$s，完成后可在此一键更新补丁。</string>
 
-    <string name="online_mod_portal_hint_login">登录后点击网页下载即可自动安装</string>
-    <string name="online_mod_portal_hint_ready">已登录 · 点击网页下载即可自动安装</string>
     <string name="online_mod_portal_btn_auth">登录</string>
     <string name="online_mod_portal_btn_register">注册</string>
     <string name="online_mod_portal_btn_list">下载页</string>
@@ -200,8 +206,6 @@
     <string name="online_download_paused_toast">已暂停，再次安装可继续断点续传</string>
     <string name="install_done_toast">安装完成</string>
     <string name="online_mod_auth_dialog_title">官网登录</string>
-    <string name="online_mod_auth_hint_generic">登录或注册官网账号</string>
-    <string name="online_mod_auth_hint_target">登录后自动下载 %1$s</string>
     <string name="online_mod_auth_expired_retry_msg">尚未登录或登录已过期，是否登录并继续下载？</string>
 
     <string name="install_btn_background">后台</string>
@@ -219,16 +223,9 @@
     <string name="mod_mgr_btn_downloading">查看进度</string>
 
     <string name="select_game_title">选择游戏</string>
-    <string name="select_game_subtitle">点击游戏卡片进入专属管理与启动页面</string>
     <string name="action_import_other_game">导入其他游戏</string>
     <string name="game_rance10_title">兰斯10</string>
-    <string name="game_rance10_subtitle">兰斯10 决战</string>
-    <string name="game_rance10_tools_hint">支持全解锁存档 · 全局与进度存档修改 · 悬浮窗实时锁定 · 字体与滚动条调节</string>
     <string name="game_dohnadohna_title">多娜多娜</string>
-    <string name="game_dohnadohna_subtitle">一起来干坏事吧</string>
-    <string name="game_dohnadohna_tools_hint">支持全局与进度存档导入导出 · 悬浮窗修改器 · Ctrl 快进键 · 字体与滚动条调节</string>
-    <string name="game_custom_subtitle">System 4 游戏 · %1$s</string>
-    <string name="game_custom_tools_hint">支持存档导入导出备份 · 悬浮窗修改器 · Ctrl 快进键 · 字体与滚动条调节</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>
@@ -239,13 +236,9 @@
     <string name="hub_btn_start_game">开始游戏</string>
     <string name="hub_btn_resume_game">继续游戏</string>
     <string name="hub_btn_install_first">安装游戏本体</string>
-    <string name="hub_section_install">游戏资源与安装</string>
-    <string name="hub_section_tools">专属工具与管理</string>
     <string name="hub_switch_instance">切换目录</string>
     <string name="hub_select_instance_title">选择游戏版本目录</string>
     <string name="hub_back_to_select">切换其他游戏</string>
-    <string name="hub_status_dir_installed">状态：%1$s · 目录 %2$s</string>
-    <string name="hub_status_not_installed_hint">状态：未安装 · 请先安装游戏本体</string>
     <string name="hub_local_patch_sub">安装本地补丁或 MOD</string>
     <string name="import_wrong_game">所选资源与当前专属页面不匹配，请返回选择游戏页或确认游戏包是否正确。</string>
     <string name="save_manager_game_default_dir_label">%1$s · 默认目录</string>

@@ -2,6 +2,9 @@ package io.github.kichikuou.xsystem4
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -46,21 +49,11 @@ class ModPortalActivity : Activity() {
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
         isAuthOnly = intent.getBooleanExtra(EXTRA_AUTH_ONLY, false)
-        val targetLabel = intent.getStringExtra(EXTRA_TARGET_LABEL)
 
         title = if (isAuthOnly) {
             getString(R.string.online_mod_auth_dialog_title)
         } else {
             getString(R.string.mod_portal_activity_title)
-        }
-        actionBar?.subtitle = if (isAuthOnly) {
-            if (targetLabel.isNullOrBlank()) {
-                getString(R.string.online_mod_auth_hint_generic)
-            } else {
-                getString(R.string.online_mod_auth_hint_target, targetLabel)
-            }
-        } else {
-            getString(R.string.online_mod_portal_hint_login)
         }
 
         loadBar = findViewById(R.id.portal_load_progress)
@@ -104,6 +97,19 @@ class ModPortalActivity : Activity() {
                 if (host == "rance10sns.cn" || host.endsWith(".rance10sns.cn")) {
                     return false
                 }
+                val pwd = uri.getQueryParameter("pwd")?.trim()?.takeIf { it.isNotEmpty() }
+                if (pwd != null) {
+                    try {
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("pwd", pwd))
+                        Toast.makeText(
+                            this@ModPortalActivity,
+                            getString(R.string.mod_mgr_pwd_copied_toast, pwd),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } catch (_: Throwable) {
+                    }
+                }
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, uri))
                 } catch (_: Throwable) {
@@ -143,21 +149,13 @@ class ModPortalActivity : Activity() {
                     if (!isAuthOnly) {
                         if (path == "/download" && hasLoginLink && !isLoggedIn && !autoRedirectedToLogin) {
                             autoRedirectedToLogin = true
-                            actionBar?.subtitle = getString(R.string.online_mod_portal_hint_login)
                             wv.loadUrl("${OnlineInstaller.MOD_PORTAL_BASE_URL}/login?next=/download")
                             return@evaluateJavascript
                         }
 
                         if ((path.isEmpty() || path == "/") && isLoggedIn) {
-                            actionBar?.subtitle = getString(R.string.online_mod_portal_hint_ready)
                             wv.loadUrl("${OnlineInstaller.MOD_PORTAL_BASE_URL}/download")
                             return@evaluateJavascript
-                        }
-
-                        actionBar?.subtitle = if (isLoggedIn) {
-                            getString(R.string.online_mod_portal_hint_ready)
-                        } else {
-                            getString(R.string.online_mod_portal_hint_login)
                         }
                     }
                 }

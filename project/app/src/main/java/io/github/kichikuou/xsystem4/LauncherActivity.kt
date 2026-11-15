@@ -85,7 +85,6 @@ private class GameSelectAdapter(
         }
 
         view.findViewById<TextView>(R.id.title).text = desc.title
-        view.findViewById<TextView>(R.id.subtitle).text = desc.subtitle
 
         val runningRoot = GameCatalog.getRunningGameRoot(context)
         val isRunning = runningRoot != null && entry.items.any { it.path.path == runningRoot }

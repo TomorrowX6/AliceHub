@@ -13,8 +13,6 @@ import java.io.File
 data class GameDescriptor(
     val id: String,
     val title: String,
-    val subtitle: String,
-    val toolsHint: String,
     val defaultDirName: String,
     val expectedAinName: String?,
     val iconRes: Int,
@@ -93,7 +91,9 @@ object GameCatalog {
         if (lowerDisp.contains("多娜多娜") || lowerDisp.contains("ドーナドーナ") || lowerDisp.contains("dohna")) {
             return ID_DOHNA_DOHNA
         }
-        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("ランス10") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")) {
+        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
+            lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
+        ) {
             return ID_RANCE10
         }
 
@@ -108,6 +108,7 @@ object GameCatalog {
                 result.add(item)
             }
         }
+        result.sortBy { it.path.name }
         return result
     }
 
@@ -116,8 +117,6 @@ object GameCatalog {
             ID_RANCE10 -> GameDescriptor(
                 id = ID_RANCE10,
                 title = context.getString(R.string.game_rance10_title),
-                subtitle = context.getString(R.string.game_rance10_subtitle),
-                toolsHint = context.getString(R.string.game_rance10_tools_hint),
                 defaultDirName = "Rance10",
                 expectedAinName = "Rance10.ain",
                 iconRes = R.drawable.ic_game_rance10,
@@ -132,8 +131,6 @@ object GameCatalog {
             ID_DOHNA_DOHNA -> GameDescriptor(
                 id = ID_DOHNA_DOHNA,
                 title = context.getString(R.string.game_dohnadohna_title),
-                subtitle = context.getString(R.string.game_dohnadohna_subtitle),
-                toolsHint = context.getString(R.string.game_dohnadohna_tools_hint),
                 defaultDirName = "dohnadohna",
                 expectedAinName = "dohnadohna.ain",
                 iconRes = R.drawable.ic_game_dohnadohna,
@@ -150,12 +147,13 @@ object GameCatalog {
                 val matched = gameList?.let { list ->
                     (0 until list.size).map { list[it] }.firstOrNull { it.path.name == customDir }
                 }
-                val title = matched?.name ?: customDir
+                val title = matched?.let {
+                    val idx = it.name.indexOf(" [MOD")
+                    if (idx > 0) it.name.substring(0, idx) else it.name
+                } ?: customDir
                 GameDescriptor(
                     id = "$PREFIX_CUSTOM$customDir",
                     title = title,
-                    subtitle = context.getString(R.string.game_custom_subtitle, customDir),
-                    toolsHint = context.getString(R.string.game_custom_tools_hint),
                     defaultDirName = customDir,
                     expectedAinName = null,
                     iconRes = R.drawable.ic_launcher,

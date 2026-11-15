@@ -20,7 +20,10 @@ data class ModDownloadRequest(
     val fileName: String,
     val cookie: String?,
     val userAgent: String?,
-    val contentLength: Long
+    val contentLength: Long,
+    val fallbackUrl: String? = null,
+    val expectedSha256: String? = null,
+    val isModPortal: Boolean = true
 )
 
 data class ModReleaseEntry(
@@ -33,10 +36,19 @@ data class ModReleaseEntry(
     val downloadUrl: String,
     val isPatch: Boolean,
     val baseFileId: Int?,
-    val baseVersion: String?
+    val baseVersion: String?,
+    val externalUrl: String? = null,
+    val externalPwd: String? = null,
+    val fallbackDownloadUrl: String? = null,
+    val expectedSize: Long = -1L,
+    val expectedSha256: String? = null,
+    val requiresAuth: Boolean = true
 ) {
     val formattedDate: String
         get() = uploadedAt.replace('T', ' ').take(16)
+
+    val hasDirectDownload: Boolean
+        get() = downloadUrl.isNotBlank()
 
     val isFullMarked: Boolean
         get() = version.contains("完整") || fileName.contains("完整") || version.contains("正式版")
@@ -114,7 +126,10 @@ data class ModUpdatePlan(
     val targetRelease: ModReleaseEntry,
     val steps: List<ModReleaseEntry>,
     val isIncrementalOnly: Boolean
-)
+) {
+    val firstExternalStep: ModReleaseEntry?
+        get() = steps.firstOrNull { !it.hasDirectDownload }
+}
 
 data class OnlineProgressUpdate(
     val text: String,
@@ -157,38 +172,81 @@ object OnlineInstaller {
         val totalBytes: Long
     )
 
-    fun normalizeModVersionKey(raw: String): String {
-        var s = raw.lowercase(Locale.ROOT).trim()
+    private val copySuffixRegex = Regex("""(?:\s*[\(（]\d+[\)）]|\s*[-_]?\s*副本)+$""")
+
+    private fun stripArchiveExtAndCopySuffix(raw: String): String {
+        var s = raw.trim()
         for (ext in arrayOf(".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz")) {
-            if (s.endsWith(ext)) {
-                s = s.removeSuffix(ext).trim()
+            if (s.lowercase(Locale.ROOT).endsWith(ext)) {
+                s = s.substring(0, s.length - ext.length).trim()
                 break
             }
         }
-        for (prefix in arrayOf("日不落mod", "日不落")) {
-            if (s.startsWith(prefix)) {
-                s = s.removePrefix(prefix).trim()
+        s = copySuffixRegex.replace(s, "").trim()
+        return s
+    }
+
+    fun normalizeModVersionKey(raw: String): String {
+        var s = stripArchiveExtAndCopySuffix(raw.lowercase(Locale.ROOT))
+        s = s.replace("(", "")
+            .replace(")", "")
+            .replace("（", "")
+            .replace("）", "")
+            .replace("[", "")
+            .replace("]", "")
+            .replace(" ", "")
+            .replace("_", "")
+        var changed = true
+        while (changed) {
+            changed = false
+            for (prefix in arrayOf(
+                "兰斯10日不落mod",
+                "rance10日不落mod",
+                "日不落mod",
+                "日不落",
+                "兰斯10mod",
+                "rance10mod",
+                "兰斯10",
+                "rance10"
+            )) {
+                if (s.startsWith(prefix)) {
+                    s = s.removePrefix(prefix).trimStart('-', '.')
+                    changed = true
+                }
             }
         }
         if (s.startsWith("v") && s.length > 1 && s[1].isDigit()) {
-            s = s.substring(1).trim()
+            s = s.substring(1)
         }
         s = s.replace("bug修复补丁", "补丁")
             .replace("修复补丁", "补丁")
-            .replace("完整版", "正式版")
-            .replace(" ", "")
+            .replace("增量补丁", "补丁")
+            .replace("patch", "补丁")
+        if (!s.contains("补丁")) {
+            var suffixChanged = true
+            while (suffixChanged) {
+                suffixChanged = false
+                for (suffix in arrayOf("完整版", "正式版", "完整包", "整合版", "本体", "更新")) {
+                    if (s.endsWith(suffix) && s.length > suffix.length) {
+                        s = s.removeSuffix(suffix).trimEnd('-', '.')
+                        suffixChanged = true
+                    }
+                }
+            }
+        }
         return s
     }
 
     fun inferVersionFromFileName(fileName: String): String {
-        var base = fileName.substringAfterLast('/').substringAfterLast('\\').trim()
-        for (ext in arrayOf(".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz")) {
-            if (base.lowercase(Locale.ROOT).endsWith(ext)) {
-                base = base.substring(0, base.length - ext.length).trim()
-                break
-            }
-        }
-        return base.ifEmpty { "MOD" }
+        val rawBase = fileName.substringAfterLast('/').substringAfterLast('\\').trim()
+        val stripped = stripArchiveExtAndCopySuffix(rawBase)
+            .replace('(', ' ')
+            .replace(')', ' ')
+            .replace('（', ' ')
+            .replace('）', ' ')
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return stripped.ifEmpty { "MOD" }
     }
 
     fun matchInstalledIndex(releases: List<ModReleaseEntry>, installed: InstalledModInfo?): Int {
@@ -200,13 +258,41 @@ object OnlineInstaller {
         if (installed.fileName.isNotBlank()) {
             val byFile = releases.indexOfFirst { it.fileName.equals(installed.fileName, ignoreCase = true) }
             if (byFile >= 0) return byFile
+            val normFile = normalizeModVersionKey(installed.fileName)
+            if (normFile.isNotEmpty()) {
+                val byNormFile = releases.indexOfFirst {
+                    normalizeModVersionKey(it.fileName) == normFile ||
+                        normalizeModVersionKey(it.version) == normFile
+                }
+                if (byNormFile >= 0) return byNormFile
+            }
         }
         val normInstalled = normalizeModVersionKey(installed.version)
         if (normInstalled.isNotEmpty()) {
-            val byVer = releases.indexOfFirst { normalizeModVersionKey(it.version) == normInstalled }
+            val byVer = releases.indexOfFirst {
+                normalizeModVersionKey(it.version) == normInstalled ||
+                    normalizeModVersionKey(it.fileName) == normInstalled
+            }
             if (byVer >= 0) return byVer
         }
         return -1
+    }
+
+    private fun isInstalledMatchingBaseRelease(
+        baseRelease: ModReleaseEntry,
+        installed: InstalledModInfo?
+    ): Boolean {
+        if (installed == null) return false
+        if (installed.baseFileId > 0 && installed.baseFileId == baseRelease.fileId) {
+            return true
+        }
+        val baseNorm = normalizeModVersionKey(baseRelease.version)
+        if (baseNorm.isNotEmpty() && !installed.baseVersion.isNullOrBlank()) {
+            if (normalizeModVersionKey(installed.baseVersion) == baseNorm) {
+                return true
+            }
+        }
+        return false
     }
 
     fun hasMatchingBaseForPatch(
@@ -222,10 +308,7 @@ object OnlineInstaller {
         val baseRelease = releases[baseIdx]
         val installedIdx = matchInstalledIndex(releases, installed)
         if (installedIdx in patchIdx..baseIdx) return true
-        if (installed != null && installed.baseFileId > 0 && installed.baseFileId == baseRelease.fileId) {
-            return true
-        }
-        return false
+        return isInstalledMatchingBaseRelease(baseRelease, installed)
     }
 
     fun computeUpdatePlan(
@@ -238,7 +321,9 @@ object OnlineInstaller {
         if (hasMod && installedIdx == 0) {
             return null
         }
-        if (hasMod && installed != null && installed.fileId > 0 && installedIdx < 0 && installed.fileId >= latest.fileId) {
+        if (hasMod && installed != null && installed.fileId > 0 && latest.fileId > 0 &&
+            installedIdx < 0 && installed.fileId >= latest.fileId
+        ) {
             return null
         }
         if (!latest.isPatch) {
@@ -250,23 +335,29 @@ object OnlineInstaller {
         }
         val baseIdx = (1 until releases.size).firstOrNull { !releases[it].isPatch } ?: -1
         if (baseIdx < 0) {
-            return ModUpdatePlan(
-                targetRelease = latest,
-                steps = listOf(latest),
-                isIncrementalOnly = true
-            )
+            return if (hasMod) {
+                ModUpdatePlan(
+                    targetRelease = latest,
+                    steps = listOf(latest),
+                    isIncrementalOnly = true
+                )
+            } else {
+                null
+            }
         }
         val baseRelease = releases[baseIdx]
         val matchingBase = hasMod && (
             installedIdx in 1..baseIdx ||
-                (installed != null && installed.baseFileId > 0 && installed.baseFileId == baseRelease.fileId)
+                isInstalledMatchingBaseRelease(baseRelease, installed)
             )
         if (matchingBase) {
             val patches = if (installedIdx in 1..baseIdx) {
                 (installedIdx - 1 downTo 0).map { releases[it] }.filter { it.isPatch }
             } else {
                 val minFid = installed?.fileId ?: -1
-                (baseIdx - 1 downTo 0).map { releases[it] }.filter { it.isPatch && it.fileId > minFid }
+                (baseIdx - 1 downTo 0).map { releases[it] }.filter {
+                    it.isPatch && (minFid <= 0 || it.fileId <= 0 || it.fileId > minFid)
+                }
             }
             if (patches.isNotEmpty()) {
                 return ModUpdatePlan(
@@ -325,6 +416,66 @@ object OnlineInstaller {
         return steps
     }
 
+    private data class CloudModMirrorEntry(
+        val version: String,
+        val fileName: String,
+        val key: String,
+        val size: Long,
+        val sha256: String?,
+        val isPatch: Boolean,
+        val uploadedAt: String,
+        val summary: String
+    )
+
+    private fun fetchCloudModMirrors(): List<CloudModMirrorEntry> {
+        val bases = arrayOf(BASE_GAME_CDN_URL, BASE_GAME_CF_CDN_URL)
+        for (base in bases) {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = openFollowingRedirects(
+                    initialUrl = "${base.trimEnd('/')}/files/mods/index.json",
+                    headers = mapOf(
+                        "User-Agent" to DEFAULT_USER_AGENT,
+                        "Accept" to "application/json",
+                        "Accept-Encoding" to "identity"
+                    ),
+                    isModPortal = false
+                )
+                if (conn.responseCode != HttpURLConnection.HTTP_OK) {
+                    continue
+                }
+                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val root = JSONObject(raw)
+                val arr = root.optJSONArray("releases") ?: return emptyList()
+                val list = ArrayList<CloudModMirrorEntry>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val key = obj.optString("key", "").trim()
+                    val fileName = obj.optString("fileName", "").trim()
+                    val version = obj.optString("version", "").trim()
+                    if (key.isEmpty() || fileName.isEmpty() || version.isEmpty()) continue
+                    list.add(
+                        CloudModMirrorEntry(
+                            version = version,
+                            fileName = fileName,
+                            key = key,
+                            size = obj.optLong("size", -1L),
+                            sha256 = obj.optString("sha256", "").trim().takeIf { it.isNotEmpty() },
+                            isPatch = obj.optBoolean("isPatch", version.contains("补丁") || fileName.contains("补丁")),
+                            uploadedAt = obj.optString("uploadedAt", "").trim(),
+                            summary = obj.optString("summary", "").trim()
+                        )
+                    )
+                }
+                return list
+            } catch (_: Throwable) {
+            } finally {
+                conn?.disconnect()
+            }
+        }
+        return emptyList()
+    }
+
     fun fetchModCatalog(cookie: String?): ModCatalogResult {
         val headers = LinkedHashMap<String, String>()
         headers["User-Agent"] = DEFAULT_USER_AGENT
@@ -334,21 +485,77 @@ object OnlineInstaller {
             headers["Cookie"] = cookie
         }
 
-        val downloadHtml = fetchPortalHtml("$MOD_PORTAL_BASE_URL/download", headers)
-        val isLoggedIn = downloadHtml.contains("href=\"/logout\"") || downloadHtml.contains("href='/logout'")
+        val cloudMirrors = fetchCloudModMirrors()
 
+        var isLoggedIn = false
         val changelogsByExact = HashMap<String, String>()
         val changelogsByNorm = HashMap<String, String>()
+        val rawRows = ArrayList<ModReleaseEntry>()
+
+        var portalError: Throwable? = null
         try {
-            val changelogHtml = fetchPortalHtml("$MOD_PORTAL_BASE_URL/changelog", headers)
-            parseChangelogHtml(changelogHtml, changelogsByExact, changelogsByNorm)
-        } catch (_: Throwable) {
-            // Changelog is optional enrichment; keep catalog working even if /changelog fails
+            val downloadHtml = fetchPortalHtml("$MOD_PORTAL_BASE_URL/download", headers)
+            isLoggedIn = downloadHtml.contains("href=\"/logout\"") || downloadHtml.contains("href='/logout'")
+            try {
+                val changelogHtml = fetchPortalHtml("$MOD_PORTAL_BASE_URL/changelog", headers)
+                parseChangelogHtml(changelogHtml, changelogsByExact, changelogsByNorm)
+            } catch (_: Throwable) {
+            }
+            rawRows.addAll(parseDownloadTableHtml(downloadHtml, changelogsByExact, changelogsByNorm))
+        } catch (t: Throwable) {
+            portalError = t
         }
 
-        val rawRows = parseDownloadTableHtml(downloadHtml, changelogsByExact, changelogsByNorm)
+        if (cloudMirrors.isNotEmpty()) {
+            for ((mIdx, mirror) in cloudMirrors.withIndex()) {
+                val encodedKey = mirror.key.split('/').joinToString("/") { Uri.encode(it) }
+                val primaryUrl = "${BASE_GAME_CDN_URL.trimEnd('/')}/files/$encodedKey"
+                val cfUrl = "${BASE_GAME_CF_CDN_URL.trimEnd('/')}/files/$encodedKey"
+                val normMirrorVer = normalizeModVersionKey(mirror.version)
+                val normMirrorFile = normalizeModVersionKey(mirror.fileName)
+                val matchIdx = rawRows.indexOfFirst { row ->
+                    row.fileName.equals(mirror.fileName, ignoreCase = true) ||
+                        (normMirrorVer.isNotEmpty() && normalizeModVersionKey(row.version) == normMirrorVer) ||
+                        (normMirrorFile.isNotEmpty() && normalizeModVersionKey(row.fileName) == normMirrorFile)
+                }
+                if (matchIdx >= 0) {
+                    val existing = rawRows[matchIdx]
+                    rawRows[matchIdx] = existing.copy(
+                        downloadUrl = primaryUrl,
+                        fallbackDownloadUrl = cfUrl,
+                        expectedSize = mirror.size,
+                        expectedSha256 = mirror.sha256,
+                        requiresAuth = false
+                    )
+                } else {
+                    val matchedChangelog = changelogsByExact[mirror.version]
+                        ?: changelogsByNorm[normMirrorVer]
+                        ?: mirror.summary
+                    rawRows.add(
+                        mIdx.coerceAtMost(rawRows.size),
+                        ModReleaseEntry(
+                            fileId = -(2000 + mIdx),
+                            version = mirror.version,
+                            fileName = mirror.fileName,
+                            summary = mirror.summary,
+                            changelog = matchedChangelog,
+                            uploadedAt = mirror.uploadedAt,
+                            downloadUrl = primaryUrl,
+                            isPatch = mirror.isPatch,
+                            baseFileId = null,
+                            baseVersion = null,
+                            fallbackDownloadUrl = cfUrl,
+                            expectedSize = mirror.size,
+                            expectedSha256 = mirror.sha256,
+                            requiresAuth = false
+                        )
+                    )
+                }
+            }
+        }
+
         if (rawRows.isEmpty()) {
-            throw IOException("No MOD releases found on portal download page")
+            throw (portalError as? IOException) ?: IOException("No MOD releases found", portalError)
         }
 
         val resolved = ArrayList<ModReleaseEntry>(rawRows.size)
@@ -419,6 +626,8 @@ object OnlineInstaller {
         val trRegex = Regex("""<tr\b[^>]*>(.*?)</tr>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
         val tdRegex = Regex("""<td\b[^>]*>(.*?)</td>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
         val fileLinkRegex = Regex("""href\s*=\s*["']([^"']*/files/(\d+)/download[^"']*)["']""", RegexOption.IGNORE_CASE)
+        val extLinkRegex = Regex("""href\s*=\s*["'](https?://[^"']+)["']""", RegexOption.IGNORE_CASE)
+        val pwdRegex = Regex("""[?&]pwd=([A-Za-z0-9]+)""", RegexOption.IGNORE_CASE)
 
         val scopeHtml = tbodyRegex.find(html)?.groupValues?.get(1) ?: html
         val entries = ArrayList<ModReleaseEntry>()
@@ -428,14 +637,33 @@ object OnlineInstaller {
             val tds = tdRegex.findAll(trBody).map { it.groupValues[1] }.toList()
             if (tds.size < 5) continue
 
-            val linkMatch = fileLinkRegex.find(tds[4]) ?: fileLinkRegex.find(trBody) ?: continue
-            val rawHref = linkMatch.groupValues[1].trim()
-            val fileId = linkMatch.groupValues[2].toIntOrNull() ?: continue
-            val downloadUrl = URL(URL(MOD_PORTAL_BASE_URL), rawHref).toString()
+            val linkMatch = fileLinkRegex.find(tds[4]) ?: fileLinkRegex.find(trBody)
+            val externalUrl = extLinkRegex.findAll(tds[4])
+                .map { unescapeHtmlEntities(it.groupValues[1].trim()) }
+                .firstOrNull { !it.contains("rance10sns.cn", ignoreCase = true) }
+            val externalPwd = externalUrl?.let { pwdRegex.find(it)?.groupValues?.get(1) }
+
+            val syntheticId = -(entries.size + 1000)
+            val fileId: Int
+            val downloadUrl: String
+            if (linkMatch != null) {
+                val rawHref = unescapeHtmlEntities(linkMatch.groupValues[1].trim())
+                fileId = linkMatch.groupValues[2].toIntOrNull() ?: syntheticId
+                downloadUrl = URL(URL(MOD_PORTAL_BASE_URL), rawHref).toString()
+            } else {
+                fileId = syntheticId
+                downloadUrl = ""
+            }
 
             val version = stripHtmlAndUnescape(tds[0], preserveLineBreaks = false)
-            val fileName = stripHtmlAndUnescape(tds[1], preserveLineBreaks = false)
-                .ifEmpty { "mod_$fileId.rar" }
+            val rawFileName = stripHtmlAndUnescape(tds[1], preserveLineBreaks = false)
+            val fileName = if (rawFileName.isNotEmpty()) {
+                rawFileName
+            } else if (linkMatch != null) {
+                "mod_$fileId.rar"
+            } else {
+                continue
+            }
             if (!ArchiveExtractor.isSupportedArchiveName(fileName)) {
                 continue
             }
@@ -445,6 +673,7 @@ object OnlineInstaller {
             val displayVersion = version.ifEmpty { inferVersionFromFileName(fileName) }
             val matchedChangelog = changelogsByExact[displayVersion]
                 ?: changelogsByNorm[normalizeModVersionKey(displayVersion)]
+                ?: changelogsByNorm[normalizeModVersionKey(fileName)]
                 ?: summary
 
             val lowerVer = displayVersion.lowercase(Locale.ROOT)
@@ -465,7 +694,9 @@ object OnlineInstaller {
                     downloadUrl = downloadUrl,
                     isPatch = isPatch,
                     baseFileId = null,
-                    baseVersion = null
+                    baseVersion = null,
+                    externalUrl = externalUrl,
+                    externalPwd = externalPwd
                 )
             )
         }
@@ -677,16 +908,19 @@ object OnlineInstaller {
     ) {
         val cacheDir = File(storagePath, ".online_mod_cache")
         cacheDir.mkdirs()
-        val urlHash = sha256Hex(req.url.toByteArray(Charsets.UTF_8)).take(16)
+        val cacheId = req.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
+            ?: sha256Hex(req.url.toByteArray(Charsets.UTF_8)).take(16)
         val ext = extractArchiveExtension(req.fileName)
-        val partFile = File(cacheDir, "mod_${urlHash}${ext}.part")
+        val partFile = File(cacheDir, "mod_${cacheId}${ext}.part")
         val metaFile = File("${partFile.path}.meta")
 
         val headers = LinkedHashMap<String, String>()
         headers["User-Agent"] = req.userAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT
-        headers["Referer"] = "$MOD_PORTAL_BASE_URL/download"
-        if (!req.cookie.isNullOrBlank()) {
-            headers["Cookie"] = req.cookie
+        if (req.isModPortal) {
+            headers["Referer"] = "$MOD_PORTAL_BASE_URL/download"
+            if (!req.cookie.isNullOrBlank()) {
+                headers["Cookie"] = req.cookie
+            }
         }
 
         val rawName = req.fileName.ifBlank { "MOD$ext" }
@@ -696,41 +930,61 @@ object OnlineInstaller {
             rawName
         }
 
-        downloadFileWithResume(
-            url = req.url,
-            destPartFile = partFile,
-            expectedSize = req.contentLength.takeIf { it > 0L } ?: -1L,
-            expectedSha256 = null,
-            headers = headers,
-            isModPortal = true,
-            checkCancelled = checkCancelled,
-            onProgress = { doneBytes, totalBytes, speedBps ->
-                val speedStr = formatSpeed(speedBps)
-                val doneMb = doneBytes / (1024L * 1024L)
-                if (totalBytes > 0L) {
-                    val permille = ((doneBytes * 1000L) / totalBytes).toInt().coerceIn(0, 1000)
-                    val pct = permille / 10
-                    val totalMb = (totalBytes / (1024L * 1024L)).coerceAtLeast(1L)
-                    val msg = stepPrefix + context.getString(
-                        R.string.online_mod_download_progress,
-                        pct,
-                        speedStr,
-                        doneMb,
-                        totalMb,
-                        displayName
-                    )
-                    onProgress(OnlineProgressUpdate(msg, permille))
-                } else {
-                    val msg = stepPrefix + context.getString(
-                        R.string.online_mod_download_progress_indeterminate,
-                        doneMb,
-                        speedStr,
-                        displayName
-                    )
-                    onProgress(OnlineProgressUpdate(msg, null))
-                }
+        val reportProgress: (Long, Long, Long) -> Unit = { doneBytes, totalBytes, speedBps ->
+            val speedStr = formatSpeed(speedBps)
+            val doneMb = doneBytes / (1024L * 1024L)
+            if (totalBytes > 0L) {
+                val permille = ((doneBytes * 1000L) / totalBytes).toInt().coerceIn(0, 1000)
+                val pct = permille / 10
+                val totalMb = (totalBytes / (1024L * 1024L)).coerceAtLeast(1L)
+                val msg = stepPrefix + context.getString(
+                    R.string.online_mod_download_progress,
+                    pct,
+                    speedStr,
+                    doneMb,
+                    totalMb,
+                    displayName
+                )
+                onProgress(OnlineProgressUpdate(msg, permille))
+            } else {
+                val msg = stepPrefix + context.getString(
+                    R.string.online_mod_download_progress_indeterminate,
+                    doneMb,
+                    speedStr,
+                    displayName
+                )
+                onProgress(OnlineProgressUpdate(msg, null))
             }
-        )
+        }
+
+        try {
+            downloadFileWithResume(
+                url = req.url,
+                destPartFile = partFile,
+                expectedSize = req.contentLength.takeIf { it > 0L } ?: -1L,
+                expectedSha256 = req.expectedSha256,
+                headers = headers,
+                isModPortal = req.isModPortal,
+                checkCancelled = checkCancelled,
+                onProgress = reportProgress
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: GameList.InstallFailureException) {
+            throw e
+        } catch (e: Exception) {
+            val fb = req.fallbackUrl?.takeIf { it.isNotBlank() && it != req.url } ?: throw e
+            downloadFileWithResume(
+                url = fb,
+                destPartFile = partFile,
+                expectedSize = req.contentLength.takeIf { it > 0L } ?: -1L,
+                expectedSha256 = req.expectedSha256,
+                headers = headers,
+                isModPortal = false,
+                checkCancelled = checkCancelled,
+                onProgress = reportProgress
+            )
+        }
 
         var extractedOk = false
         try {
@@ -1076,8 +1330,14 @@ object OnlineInstaller {
                     throw IOException("Redirect $code missing Location header")
                 }
                 val nextUrl = URL(currentUrl, loc)
-                if (isModPortal && nextUrl.path.startsWith("/login")) {
-                    throw GameList.InstallFailureException(R.string.online_mod_auth_expired)
+                val nextHost = nextUrl.host.lowercase(Locale.ROOT)
+                if (isModPortal) {
+                    if (nextUrl.path.startsWith("/login")) {
+                        throw GameList.InstallFailureException(R.string.online_mod_auth_expired)
+                    }
+                    if (nextHost.contains("baidu.com") || nextHost.contains("lanzou") || nextHost.contains("quark.cn")) {
+                        throw IOException("Portal link redirected to external netdisk: $nextUrl")
+                    }
                 }
                 currentUrl = nextUrl
                 continue

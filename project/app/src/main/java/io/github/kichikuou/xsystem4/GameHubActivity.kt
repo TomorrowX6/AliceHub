@@ -319,12 +319,17 @@ class GameHubActivity : Activity(), GameListObserver {
             }
         }
 
-        findViewById<TextView>(R.id.hub_title).text = curItem?.name ?: descriptor.title
-        findViewById<TextView>(R.id.hub_subtitle).text = descriptor.subtitle
+        findViewById<TextView>(R.id.hub_title).text =
+            if (descriptor.id == GameCatalog.ID_RANCE10 || descriptor.id == GameCatalog.ID_DOHNA_DOHNA) {
+                descriptor.title
+            } else {
+                curItem?.cleanGameTitle() ?: descriptor.title
+            }
 
         val runningRoot = GameCatalog.getRunningGameRoot(this)
         val isRunning = curItem != null && runningRoot == curItem.path.path
         val isInstallingHere = gameList.isInstallingForGame(descriptor.id)
+        val dirSuffix = if (matchingItems.size > 1 && curItem != null) " · ${curItem.path.name}" else ""
 
         val statusView = findViewById<TextView>(R.id.hub_status)
         val statusText: String
@@ -337,30 +342,28 @@ class GameHubActivity : Activity(), GameListObserver {
                 statusColor = 0xFF64B5F6.toInt()
             }
             isRunning && curItem != null -> {
-                statusText = getString(
-                    R.string.hub_status_dir_installed,
-                    getString(R.string.game_status_running),
-                    curItem.path.name
-                )
+                statusText = getString(R.string.game_status_running) + dirSuffix
                 statusBg = 0x334CAF50
                 statusColor = 0xFF81C784.toInt()
             }
             curItem != null && curItem.error != null -> {
-                statusText = getString(R.string.game_status_error)
+                statusText = getString(R.string.game_status_error) + dirSuffix
                 statusBg = 0x33F44336
                 statusColor = 0xFFE57373.toInt()
             }
+            curItem != null && gameList.hasInstalledMod(curItem) -> {
+                val ver = gameList.getInstalledModInfo(curItem)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
+                statusText = getString(R.string.game_status_installed_mod, ver) + dirSuffix
+                statusBg = 0x33FFB300
+                statusColor = 0xFFFFCA28.toInt()
+            }
             curItem != null -> {
-                statusText = getString(
-                    R.string.hub_status_dir_installed,
-                    getString(R.string.game_status_installed),
-                    curItem.path.name
-                )
+                statusText = getString(R.string.game_status_installed) + dirSuffix
                 statusBg = 0x334CAF50
                 statusColor = 0xFF66BB6A.toInt()
             }
             else -> {
-                statusText = getString(R.string.hub_status_not_installed_hint)
+                statusText = getString(R.string.game_status_not_installed)
                 statusBg = 0x24888888
                 statusColor = Color.GRAY
             }
@@ -409,7 +412,6 @@ class GameHubActivity : Activity(), GameListObserver {
         }
 
         modMgrBtn.visibility = if (descriptor.supportsOnlineMod) View.VISIBLE else View.GONE
-        findViewById<TextView>(R.id.hub_tools_hint).text = descriptor.toolsHint
         findViewById<View>(R.id.btn_hub_uninstall).visibility =
             if (curItem != null) View.VISIBLE else View.GONE
     }
@@ -589,7 +591,7 @@ class GameHubActivity : Activity(), GameListObserver {
             getString(R.string.mod_opt_zip),
             getString(R.string.mod_opt_dir)
         )
-        if (gameList.hasInstalledMod(target)) {
+        if (gameList.canRestoreVanilla(target)) {
             options.add(getString(R.string.mod_opt_restore_vanilla))
         }
         AlertDialog.Builder(this)

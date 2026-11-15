@@ -53,13 +53,6 @@
                     android:textAppearance="?android:attr/textAppearanceMedium" />
 
                 <TextView
-                    android:id="@+id/hub_subtitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:textAppearance="?android:attr/textAppearanceSmall" />
-
-                <TextView
                     android:id="@+id/hub_status"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -90,21 +83,12 @@
             android:textSize="16sp"
             android:text="@string/hub_btn_start_game" />
 
-        <TextView
-            android:id="@+id/hub_section_install_label"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:layout_marginBottom="6dp"
-            android:textStyle="bold"
-            android:text="@string/hub_section_install"
-            android:textAppearance="?android:attr/textAppearanceSmall" />
-
         <LinearLayout
             android:id="@+id/hub_install_card"
             android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:paddingLeft="10dp"
             android:paddingRight="10dp"
             android:paddingTop="8dp"
@@ -139,25 +123,16 @@
                 android:text="@string/mod_mgr_activity_title" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/hub_section_tools_label"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="6dp"
-            android:textStyle="bold"
-            android:text="@string/hub_section_tools"
-            android:textAppearance="?android:attr/textAppearanceSmall" />
-
         <LinearLayout
             android:id="@+id/hub_tools_card"
             android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
             android:paddingLeft="10dp"
             android:paddingRight="10dp"
             android:paddingTop="8dp"
-            android:paddingBottom="10dp">
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:orientation="horizontal"
@@ -179,16 +154,6 @@
                     android:layout_weight="1"
                     android:text="@string/action_game_modifier" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/hub_tools_hint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:paddingLeft="4dp"
-                android:paddingRight="4dp"
-                android:textSize="12sp"
-                android:textAppearance="?android:attr/textAppearanceSmall" />
         </LinearLayout>
 
         <View

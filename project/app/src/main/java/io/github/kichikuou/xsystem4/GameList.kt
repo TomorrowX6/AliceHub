@@ -87,16 +87,14 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             val savedir = File(context.filesDir, "saves/${dir.name}")
             savedir.mkdirs()
             val modMeta = InstalledModInfo.read(dir)
-            val hasModMarker = modMeta != null ||
-                File(dir, ".mod_installed_files.txt").exists() ||
-                File(dir, "Rance10MODCG.afa").exists() ||
-                (dir.listFiles()?.any { it.name.endsWith(".vanilla.bak") } == true)
-            val rawName = ini.gameName
-            val displayName = if (hasModMarker || rawName.contains("收费必是倒卖")) {
+            val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
+            val rawName = ini.gameName.replace("兰斯１０", "兰斯10")
+            val displayName = if (hasModMarker) {
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
                 val baseName = (bakIni?.let { System40Ini.parse(it).gameName }
-                    ?: if (rawName.contains("收费必是倒卖")) "兰斯10" else rawName)
+                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落")) "兰斯10" else rawName)
+                    .replace("兰斯１０", "兰斯10")
                     .removeSuffix("[MOD]")
                     .trim()
                 val verLabel = modMeta?.version?.takeIf { it.isNotBlank() }
@@ -109,6 +107,54 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 rawName
             }
             return Item(displayName, dir, homedir, savedir, icon, null)
+        }
+
+        fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
+            if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
+                File(dir, ".mod_installed_files.txt").isFile
+            ) {
+                return true
+            }
+            val children = dir.listFiles()
+            if (children != null) {
+                for (f in children) {
+                    if (!f.isFile) continue
+                    val lower = f.name.lowercase()
+                    if (lower.endsWith(".vanilla.bak") ||
+                        (lower.startsWith("rance10modcg") && lower.endsWith(".afa")) ||
+                        (lower.startsWith("rance10modflat") && lower.endsWith(".afa")) ||
+                        lower == "asratest.ini" ||
+                        lower == "作弊码.txt" ||
+                        (lower == "rance10.ain" && f.length() > 8_000_000L)
+                    ) {
+                        return true
+                    }
+                }
+            }
+            val ini = parsedIni ?: run {
+                val iniFile = File(dir, "System40.ini").takeIf { it.isFile }
+                    ?: File(dir, "AliceStart.ini").takeIf { it.isFile }
+                    ?: children?.firstOrNull {
+                        it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
+                            it.name.equals("AliceStart.ini", ignoreCase = true))
+                    }
+                iniFile?.let { System40Ini.parse(it) }
+            }
+            if (ini != null) {
+                if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true) {
+                    return true
+                }
+                val gn = ini.gameName ?: ""
+                if (gn.contains("收费必是倒卖") || gn.contains("日不落") || gn.contains("[MOD")) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        fun canRestoreVanillaDir(dir: File): Boolean {
+            return File(dir, ".mod_installed_files.txt").isFile ||
+                (dir.listFiles()?.any { it.name.endsWith(".vanilla.bak") } == true)
         }
 
         private fun findIcon(dir: File): File? {
@@ -381,9 +427,11 @@ class GameList(activity: Activity) {
             try {
                 val storage = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
-                    NativeGameImport.copyTree(context, uri, storage, expectedAinName) { progress ->
+                    val imported = NativeGameImport.copyTree(context, uri, storage, expectedAinName) { progress ->
                         withContext(Dispatchers.Main) { setInstallProgress(progress) }
                     }
+                    maybeRecordPreinstalledModMeta(imported, uri)
+                    imported
                 }
                 val created = Item.fromDirectory(path, File(storage, ".xsystem4"), context)
                 items.add(created)
@@ -418,13 +466,15 @@ class GameList(activity: Activity) {
             try {
                 val storagePath = storageDirs[0]
                 val path = withContext(Dispatchers.IO) {
-                    doInstallArchive(uri, storagePath, expectedAinName) { msg ->
+                    val extracted = doInstallArchive(uri, storagePath, expectedAinName) { msg ->
                         mainHandler.post {
                             if (installJob?.isActive == true) {
                                 setInstallProgress(msg, cancellable = true, resumable = false)
                             }
                         }
                     }
+                    maybeRecordPreinstalledModMeta(extracted, uri)
+                    extracted
                 }
                 val homedir = File(storagePath, ".xsystem4")
                 val created = Item.fromDirectory(path, homedir, context)
@@ -578,14 +628,34 @@ class GameList(activity: Activity) {
         items.remove(item)
     }
 
-    private fun hasInstalledModDir(dir: File): Boolean {
-        return File(dir, InstalledModInfo.META_FILE_NAME).exists() ||
-            File(dir, ".mod_installed_files.txt").exists() ||
-            File(dir, "Rance10MODCG.afa").exists() ||
-            (dir.listFiles()?.any { it.name.endsWith(".vanilla.bak") } == true)
-    }
+    private fun hasInstalledModDir(dir: File): Boolean = Item.detectInstalledMod(dir)
 
     fun hasInstalledMod(item: Item): Boolean = hasInstalledModDir(item.path)
+
+    fun canRestoreVanilla(item: Item): Boolean = Item.canRestoreVanillaDir(item.path)
+
+    private fun maybeRecordPreinstalledModMeta(gameDir: File, srcUri: Uri) {
+        if (!hasInstalledModDir(gameDir) || File(gameDir, InstalledModInfo.META_FILE_NAME).isFile) {
+            return
+        }
+        val srcLabel = resolveUriDisplayName(srcUri)
+        if (Regex("""0\.\d+(?:\.\d+)?[A-Za-z]?""").containsMatchIn(srcLabel)) {
+            val inferred = OnlineInstaller.inferVersionFromFileName(srcLabel)
+            InstalledModInfo.write(
+                gameDir,
+                InstalledModInfo(
+                    version = inferred,
+                    baseVersion = inferred,
+                    fileId = -1,
+                    baseFileId = -1,
+                    fileName = srcLabel,
+                    uploadedAt = "",
+                    source = "preinstalled",
+                    installedAtMs = System.currentTimeMillis()
+                )
+            )
+        }
+    }
 
     fun getInstalledModInfo(item: Item): InstalledModInfo? = InstalledModInfo.read(item.path)
 
@@ -769,7 +839,10 @@ class GameList(activity: Activity) {
                             fileName = release.fileName,
                             cookie = cookie,
                             userAgent = OnlineInstaller.DEFAULT_USER_AGENT,
-                            contentLength = -1L
+                            contentLength = release.expectedSize,
+                            fallbackUrl = release.fallbackDownloadUrl,
+                            expectedSha256 = release.expectedSha256,
+                            isModPortal = release.requiresAuth
                         )
                         OnlineInstaller.downloadAndExtractModFromPortal(
                             context = context,
