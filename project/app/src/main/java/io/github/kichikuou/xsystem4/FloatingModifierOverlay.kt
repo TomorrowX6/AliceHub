@@ -206,15 +206,15 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         val titleText = if (isDohnaDohna) {
             if (!inGame) {
-                tr("多娜多娜修改器 · 请先进入游戏存档", "ドーナドーナ改造 · ロード後に有効", "Dohna Modifier · Enter Game First")
+                tr("修改器 · 未进入存档", "改造 · 未ロード", "Modifier · Not Loaded")
             } else if (inBattle) {
                 val bTurn = j.optInt("battleTurn", 1)
                 val eCnt = j.optInt("enemyCount", 0)
                 val eHp = j.optInt("enemyTotalHp", 0)
                 tr(
-                    "多娜多娜修改器 [战斗T$bTurn · 敌${eCnt}名 · 敌HP:$eHp]",
-                    "改造 [戦闘T$bTurn · 敵${eCnt}体 · 敵HP:$eHp]",
-                    "Modifier [Battle T$bTurn · Enemy HP:$eHp]"
+                    "修改器 · 战斗T$bTurn · 敌${eCnt}名 · HP:$eHp",
+                    "改造 · 戦闘T$bTurn · 敵${eCnt}体 · HP:$eHp",
+                    "Modifier · Battle T$bTurn · Enemy HP:$eHp"
                 )
             } else {
                 val turn = j.optInt("turn", 1)
@@ -222,35 +222,35 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 val tp = j.optInt("tp", 0)
                 val tpMax = j.optInt("tpMax", 0)
                 tr(
-                    "多娜多娜修改器 [第${turn}天 · 资金:$money · TP:$tp/$tpMax]",
-                    "改造 [${turn}日目 · 資金:$money · TP:$tp/$tpMax]",
-                    "Modifier [Day $turn · Money:$money · TP:$tp/$tpMax]"
+                    "修改器 · 第${turn}天 · 资金:$money · TP:$tp/$tpMax",
+                    "改造 · ${turn}日目 · 資金:$money · TP:$tp/$tpMax",
+                    "Modifier · Day $turn · Money:$money · TP:$tp/$tpMax"
                 )
             }
         } else if (!isRance10 || !inGame) {
-            tr("悬浮窗修改器", "ゲーム改造", "Floating Modifier")
+            tr("修改器", "ゲーム改造", "Modifier")
         } else if (inBattle) {
             val ap = j.optInt("battleAp", 0)
             val eHp = j.optInt("enemyHp", 0)
             val pHp = j.optInt("partyHp", 0)
-            tr("悬浮窗修改器 [战斗 · AP:$ap · 敌HP:$eHp · 我HP:$pHp]", "改造 [戦闘 · AP:$ap · 敵HP:$eHp]", "Modifier [Battle · AP:$ap]")
+            tr("修改器 · 战斗 AP:$ap · 敌HP:$eHp · 我HP:$pHp", "改造 · 戦闘 AP:$ap · 敵HP:$eHp", "Modifier · Battle AP:$ap")
         } else {
             val turn = j.optInt("turn", 0)
             val food = j.optInt("foodTicket", 0)
             val pHp = j.optInt("partyHp", 0)
-            tr("悬浮窗修改器 [回合:$turn · 食券:$food · HP:$pHp]", "改造 [T:$turn · 食券:$food · HP:$pHp]", "Modifier [Turn:$turn · HP:$pHp]")
+            tr("修改器 · 回合$turn · 食券:$food · HP:$pHp", "改造 · T:$turn · 食券:$food · HP:$pHp", "Modifier · Turn:$turn · HP:$pHp")
         }
 
         val streamerItemLabel = if (isStreamerDisabled) {
-            tr("关闭主播模式 · 已关闭", "配信者モード解除 · 現在OFF", "Disable Streamer Mode · OFF")
+            tr("关闭主播模式 · 已关闭", "配信者モード解除 · OFF", "Disable Streamer Mode · OFF")
         } else {
             tr("关闭主播模式", "配信者モード解除", "Disable Streamer Mode")
         }
 
         val ctrlItemLabel = if (ctrlVisible) {
-            tr("Ctrl 快进悬浮键：已显示 [点击隐藏]", "Ctrl早送りボタン：表示中", "Ctrl Skip Button: Shown")
+            tr("Ctrl 快进键 · 已显示", "Ctrl早送り · 表示中", "Ctrl Skip · Shown")
         } else {
-            tr("Ctrl 快进悬浮键：已隐藏 [点击显示]", "Ctrl早送りボタン：非表示", "Ctrl Skip Button: Hidden")
+            tr("Ctrl 快进键 · 已隐藏", "Ctrl早送り · 非表示", "Ctrl Skip · Hidden")
         }
 
         val fontPct = GameModifierBridge.getFontScalePercent(activity)
@@ -259,25 +259,25 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val menuEntries = mutableListOf<Pair<String, () -> Unit>>()
         if (isRance10) {
             menuEntries.add(
-                tr("实时锁定开关 · 已开启 $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount ON…") to { showLocksDialog() }
+                tr("实时锁定 · $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount…") to { showLocksDialog() }
             )
         } else if (isDohnaDohna) {
             menuEntries.addAll(
                 listOf(
-                    tr("实时锁定开关 · 已开启 $dohnaLockCount 项…", "リアルタイムロック · $dohnaLockCount 項目…", "Live Locks · $dohnaLockCount ON…") to { showDohnaLocksDialog() },
-                    tr("常用作弊器…", "定番チート機能…", "Common Cheats…") to { showDohnaCommonCheatsDialog() },
-                    tr("战斗快捷指令…", "戦闘クイック操作…", "Battle Quick Actions…") to { showDohnaBattleQuickDialog() },
-                    tr("修改经营与资源数值…", "経営・資金・日数編集…", "Edit Economy & Resources…") to { showDohnaEditEconomyDialog() },
-                    tr("修改战斗成员数值…", "戦闘メンバー数値編集…", "Edit Party Members…") to { showDohnaSelectPlayerDialog() },
-                    tr("修改春销人材数值…", "ハルウリ人材数値編集…", "Edit Brothel Workers…") to { showDohnaSelectWorkerDialog() }
+                    tr("实时锁定 · $dohnaLockCount 项…", "リアルタイムロック · $dohnaLockCount 項目…", "Live Locks · $dohnaLockCount…") to { showDohnaLocksDialog() },
+                    tr("常用作弊…", "定番チート…", "Common Cheats…") to { showDohnaCommonCheatsDialog() },
+                    tr("战斗指令…", "戦闘クイック…", "Battle Actions…") to { showDohnaBattleQuickDialog() },
+                    tr("经营与资源…", "経営・資金…", "Economy & Resources…") to { showDohnaEditEconomyDialog() },
+                    tr("战斗成员…", "戦闘メンバー…", "Party Members…") to { showDohnaSelectPlayerDialog() },
+                    tr("春销人材…", "ハルウリ人材…", "Brothel Workers…") to { showDohnaSelectWorkerDialog() }
                 )
             )
         }
         menuEntries.add(
-            tr("字体大小修改 · 当前 $fontPct%…", "文字サイズ変更 · 現在 $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() }
+            tr("字体大小 · $fontPct%…", "文字サイズ · $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() }
         )
         menuEntries.add(
-            tr("滚动条修改 · 当前 $sbPct%…", "スクロールバー変更 · 現在 $sbPct%…", "Scrollbar Size · $sbPct%…") to { showScrollbarScaleDialog() }
+            tr("滚动条 · $sbPct%…", "スクロールバー · $sbPct%…", "Scrollbar · $sbPct%…") to { showScrollbarScaleDialog() }
         )
         if (isRance10) {
             menuEntries.add(streamerItemLabel to { triggerDisableStreamerModeInGame(inGame) })
@@ -290,8 +290,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     }
                     Toast.makeText(
                         activity,
-                        if (nextVisible) tr("已显示 Ctrl 快进悬浮键", "Ctrl早送りボタンを表示しました", "Ctrl skip button shown")
-                        else tr("已隐藏 Ctrl 快进悬浮键", "Ctrl早送りボタンを非表示にしました", "Ctrl skip button hidden"),
+                        if (nextVisible) tr("已显示 Ctrl 快进键", "Ctrl早送りを表示しました", "Ctrl skip shown")
+                        else tr("已隐藏 Ctrl 快进键", "Ctrl早送りを非表示にしました", "Ctrl skip hidden"),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -300,13 +300,13 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (isRance10) {
             menuEntries.addAll(
                 listOf(
-                    tr("输入作弊码…", "チートコード入力…", "Enter Cheat Code…") to { showCheatCodeDialog() },
-                    tr("战斗快捷指令…", "戦闘クイック操作…", "Battle Quick Actions…") to { showBattleQuickDialog() },
-                    tr("一键全局强化…", "一括強化プリセット…", "One-Click Boosts…") to { showOneClickBoostDialog() },
-                    tr("修改资源与回合…", "リソース・ターン編集…", "Edit Resources & Turn…") to { showEditResourcesDialog(j) },
-                    tr("修改部队与属性加成…", "部隊HP・ステータス編集…", "Edit Party & Stats…") to { showEditPartyDialog(j) },
-                    tr("修改四国兵力与人口…", "四国兵力・人口編集…", "Edit World & Armies…") to { showEditWorldDialog(j) },
-                    tr("修改卡牌叠卡与角色星级…", "カード・キャラ★編集…", "Edit Cards & Chars…") to { showEditCardsDialog() }
+                    tr("作弊码…", "チートコード…", "Cheat Code…") to { showCheatCodeDialog() },
+                    tr("战斗指令…", "戦闘クイック…", "Battle Actions…") to { showBattleQuickDialog() },
+                    tr("一键强化…", "一括強化…", "Quick Boosts…") to { showOneClickBoostDialog() },
+                    tr("资源与回合…", "リソース・ターン…", "Resources & Turn…") to { showEditResourcesDialog(j) },
+                    tr("部队与属性…", "部隊・ステータス…", "Party & Stats…") to { showEditPartyDialog(j) },
+                    tr("四国与人口…", "四国・人口…", "World & Armies…") to { showEditWorldDialog(j) },
+                    tr("卡牌与角色…", "カード・キャラ…", "Cards & Chars…") to { showEditCardsDialog() }
                 )
             )
         }
@@ -347,7 +347,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
 
         AlertDialog.Builder(activity)
-            .setTitle(tr("实时锁定开关", "リアルタイムロック", "Live Locks"))
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
                 mask = if (isChecked) (mask or bit) else (mask and bit.inv())
@@ -369,26 +369,17 @@ class FloatingModifierOverlay(private val activity: Activity) {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(6))
         }
-        val tip = TextView(activity).apply {
-            text = tr(
-                "输入后自动解禁限制并提交生效：",
-                "入力すると自動的に制限を解除してMODチートを実行します：",
-                "Automatically unlocks restrictions and submits MOD cheat:"
-            )
-            setPadding(0, 0, 0, dp(8))
-        }
         val et = EditText(activity).apply {
             inputType = InputType.TYPE_CLASS_TEXT
-            hint = tr("例如：whosyourdaddy / 打败哈尼王 / 餐券10", "例: whosyourdaddy", "e.g. whosyourdaddy")
+            hint = tr("如 whosyourdaddy / 打败哈尼王 / 餐券10", "例: whosyourdaddy", "e.g. whosyourdaddy")
             setSingleLine(true)
             setText(prefill)
             setSelection(text.length)
         }
-        container.addView(tip)
         container.addView(et)
 
         AlertDialog.Builder(activity)
-            .setTitle(tr("输入作弊码", "チートコード入力", "Enter Cheat Code"))
+            .setTitle(tr("作弊码", "チートコード", "Cheat Code"))
             .setView(container)
             .setPositiveButton(tr("执行", "実行", "Apply")) { _, _ ->
                 val code = et.text.toString().trim().trim('"', '“', '”')
@@ -471,7 +462,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("宝箱100%掉落", "宝箱100%ドロップ化", "100% Treasure Drop")
         )
         AlertDialog.Builder(activity)
-            .setTitle(tr("战斗快捷指令", "戦闘クイック操作", "Battle Quick Actions"))
+            .setTitle(tr("战斗指令", "戦闘クイック", "Battle Actions"))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> sendAction(JSONObject().put("killEnemy", true), tr("敌方HP已设为1", "敵HPを1にしました", "Enemy HP = 1"))
@@ -512,7 +503,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("打开MOD内置作弊器", "MOD内蔵チートを開く", "Open MOD Cheat Console")
         )
         AlertDialog.Builder(activity)
-            .setTitle(tr("一键全局强化", "一括強化プリセット", "One-Click Boosts"))
+            .setTitle(tr("一键强化", "一括強化", "Quick Boosts"))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> sendAction(
@@ -687,7 +678,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (!live.optBoolean("inGame", false)) {
             Toast.makeText(
                 activity,
-                tr("请先开始游戏或读取存档后再执行", "ゲームを開始またはロードしてから実行してください", "Start or load a game first"),
+                tr("请先进入游戏存档", "ロード後に実行してください", "Load a game first"),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -695,7 +686,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (requireBattle && !live.optBoolean("inBattle", false)) {
             Toast.makeText(
                 activity,
-                tr("当前不在战斗中，进入战斗后方可执行", "現在は戦闘中ではありません", "Only available during battle"),
+                tr("仅限战斗中使用", "戦闘中のみ使用可能", "Battle only"),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -719,7 +710,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
 
         AlertDialog.Builder(activity)
-            .setTitle(tr("多娜多娜实时锁定开关", "リアルタイムロック", "Dohna Live Locks"))
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
                 mask = if (isChecked) (mask or bit) else (mask and bit.inv())
@@ -744,7 +735,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("我方全员满状态并附加攻技速暴击强化", "味方全員全回復＋全能力バフ付与", "Full Heal & Super Buff All Allies")
         )
         AlertDialog.Builder(activity)
-            .setTitle(tr("战斗快捷指令", "戦闘クイック操作", "Battle Quick Actions"))
+            .setTitle(tr("战斗指令", "戦闘クイック", "Battle Actions"))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> sendDohnaInGameAction(
@@ -789,7 +780,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("全体春销人材一键 SS 评级·UR 稀有度·四维拉满", "全人材ランクSS・UR・全ステータス最大", "Max All Workers Rank SS, UR & Stats")
         )
         AlertDialog.Builder(activity)
-            .setTitle(tr("多娜多娜常用作弊器", "定番チート機能", "Common Cheats"))
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> sendDohnaInGameAction(
@@ -851,7 +842,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (!j.optBoolean("inGame", false)) {
             Toast.makeText(
                 activity,
-                tr("请先开始游戏或读取存档后再修改数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                tr("请先进入游戏存档", "ロード後に編集してください", "Load a game first"),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -864,9 +855,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val badgeKinds = j.optInt("heldBadgeKinds", 0)
 
         val summary = tr(
-            "当前阶段：$phaseStr · 店面人材：$wCnt/$wLim · 库房人材：$gCnt · 已持有物品种类：$itemKinds · 徽章种类：$badgeKinds",
-            "進行：$phaseStr · 店舗人材：$wCnt/$wLim · 保管：$gCnt · アイテム種：$itemKinds · バッジ種：$badgeKinds",
-            "Phase: $phaseStr · Shop: $wCnt/$wLim · Garage: $gCnt · Items: $itemKinds · Badges: $badgeKinds"
+            "$phaseStr · 店面：$wCnt/$wLim · 库房：$gCnt · 物品：$itemKinds · 徽章：$badgeKinds",
+            "$phaseStr · 店舗：$wCnt/$wLim · 保管：$gCnt · アイテム：$itemKinds · バッジ：$badgeKinds",
+            "$phaseStr · Shop: $wCnt/$wLim · Garage: $gCnt · Items: $itemKinds · Badges: $badgeKinds"
         )
         val fields = listOf(
             Triple("ddMoney", tr("持有资金 0~999999999", "所持資金", "Money"), j.optInt("money", 0)),
@@ -876,14 +867,14 @@ class FloatingModifierOverlay(private val activity: Activity) {
             Triple("ddWorkerLimit", tr("店面单间上限 1~10", "部屋枠上限 1~10", "Room Limit 1~10"), wLim)
         )
         showDohnaFormDialog(
-            title = tr("修改经营与资源数值", "経営・資金・日数編集", "Edit Economy & Resources"),
+            title = tr("经营与资源", "経営・資金・日数", "Economy & Resources"),
             summary = summary,
             fields = fields,
             prefillValues = true,
             onApply = { values ->
                 val act = JSONObject()
                 for ((k, v) in values) act.put(k, v)
-                sendDohnaInGameAction(act, tr("经营与资源数值修改已生效", "適用しました", "Applied"))
+                sendDohnaInGameAction(act, tr("修改已生效", "適用しました", "Applied"))
             }
         )
     }
@@ -893,20 +884,20 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (!j.optBoolean("inGame", false)) {
             Toast.makeText(
                 activity,
-                tr("请先开始游戏或读取存档后再修改成员数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                tr("请先进入游戏存档", "ロード後に編集してください", "Load a game first"),
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
         val arr = j.optJSONArray("ddPlayers")
         if (arr == null || arr.length() == 0) {
-            Toast.makeText(activity, tr("暂无可修改的战斗成员数据", "メンバーデータがありません", "No party members found"), Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, tr("暂无战斗成员数据", "メンバーデータなし", "No party members"), Toast.LENGTH_SHORT).show()
             return
         }
 
         val options = mutableListOf<Triple<Int, JSONObject?, String>>()
-        options.add(Triple(-1, null, tr("批量修改：全部已入队成员", "一括編集：加入済みメンバー全員", "Batch: All Joined Members")))
-        options.add(Triple(-2, null, tr("批量修改：全体10名可操作角色", "一括編集：全プレイアブルキャラ", "Batch: All Playable Characters")))
+        options.add(Triple(-1, null, tr("批量：全部已入队成员", "一括：加入済み全員", "Batch: Joined Members")))
+        options.add(Triple(-2, null, tr("批量：全体可操作角色", "一括：全キャラ", "Batch: All Characters")))
 
         for (i in 0 until arr.length()) {
             val p = arr.optJSONObject(i) ?: continue
@@ -922,7 +913,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         val labels = options.map { it.third }.toTypedArray()
         AlertDialog.Builder(activity)
-            .setTitle(tr("选择要修改的战斗成员", "編集する戦闘メンバーを選択", "Select Party Member"))
+            .setTitle(tr("战斗成员", "戦闘メンバー", "Party Members"))
             .setItems(labels) { _, which ->
                 val chosen = options.getOrNull(which) ?: return@setItems
                 showDohnaEditPlayerDialog(chosen.first, chosen.second, chosen.third)
@@ -940,15 +931,15 @@ class FloatingModifierOverlay(private val activity: Activity) {
             val spd = p.optInt("spd", 0)
             val exp = p.optInt("exp", 0)
             tr(
-                "装备武器：$wp · 当前总能力 力量:$pow · 技巧:$tec · 速度:$spd · 累计经验:$exp",
-                "武器：$wp · 現在能力 POW:$pow · TEC:$tec · SPD:$spd · EXP:$exp",
+                "武器：$wp · 力量:$pow · 技巧:$tec · 速度:$spd · 经验:$exp",
+                "武器：$wp · POW:$pow · TEC:$tec · SPD:$spd · EXP:$exp",
                 "Weapon: $wp · POW:$pow · TEC:$tec · SPD:$spd · EXP:$exp"
             )
         } else {
             tr(
-                "批量修改提示：仅修改填写了数字的项目，留空的项目将保持各成员原有数值不变。",
-                "一括編集：数値を入力した項目のみ変更されます。空欄の項目は元の値を維持します。",
-                "Batch mode: only filled fields are updated; blank fields keep current values."
+                "留空项保持原值",
+                "空欄の項目は元の値を維持します",
+                "Blank fields keep current values"
             )
         }
 
@@ -1017,7 +1008,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (!j.optBoolean("inGame", false)) {
             Toast.makeText(
                 activity,
-                tr("请先开始游戏或读取存档后再修改人材数值", "ゲームを開始またはロードしてから編集してください", "Start or load a game first"),
+                tr("请先进入游戏存档", "ロード後に編集してください", "Load a game first"),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -1027,7 +1018,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         if (totalCnt <= 0 || arr == null || arr.length() == 0) {
             Toast.makeText(
                 activity,
-                tr("当前店面与库房暂无春销人材", "現在ハルウリ人材がいません", "No brothel workers yet"),
+                tr("暂无春销人材", "ハルウリ人材なし", "No brothel workers"),
                 Toast.LENGTH_SHORT
             ).show()
             return
@@ -1035,9 +1026,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         data class WorkerTarget(val scope: Int, val index: Int, val obj: JSONObject?, val label: String)
         val options = mutableListOf(
-            WorkerTarget(0, -1, null, tr("批量修改：店面全体人材", "一括編集：店舗の全人材", "Batch: All Shop Workers")),
-            WorkerTarget(1, -1, null, tr("批量修改：库房全体人材", "一括編集：保管庫の全人材", "Batch: All Garage Workers")),
-            WorkerTarget(2, -1, null, tr("批量修改：店面与库房全体人材", "一括編集：全在籍人材", "Batch: All Workers"))
+            WorkerTarget(0, -1, null, tr("批量：店面全体人材", "一括：店舗の全人材", "Batch: Shop Workers")),
+            WorkerTarget(1, -1, null, tr("批量：库房全体人材", "一括：保管庫の全人材", "Batch: Garage Workers")),
+            WorkerTarget(2, -1, null, tr("批量：全体在籍人材", "一括：全在籍人材", "Batch: All Workers"))
         )
 
         for (i in 0 until arr.length()) {
@@ -1056,7 +1047,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         val labels = options.map { it.label }.toTypedArray()
         AlertDialog.Builder(activity)
-            .setTitle(tr("选择要修改的春销人材", "編集するハルウリ人材を選択", "Select Brothel Worker"))
+            .setTitle(tr("春销人材", "ハルウリ人材", "Brothel Workers"))
             .setItems(labels) { _, which ->
                 val chosen = options.getOrNull(which) ?: return@setItems
                 showDohnaEditWorkerDialog(chosen.scope, chosen.index, chosen.obj, chosen.label)
@@ -1068,9 +1059,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
     private fun showDohnaEditWorkerDialog(scope: Int, index: Int, w: JSONObject?, labelTitle: String) {
         val single = w != null
         val summary = tr(
-            "评级 0~9 对应 D C C+ B B+ A A+ S S+ SS · 稀有度 0~5 对应 N R SR SSR SSSR UR · 状态 0为否 1为是${if (!single) " · 批量模式留空项保持原值" else ""}",
-            "ランク 0~9 は D〜SS · レア度 0~5 は N〜UR · 状態 0=OFF 1=ON",
-            "Rank 0~9 = D..SS · Rarity 0~5 = N..UR · State 0=No 1=Yes"
+            "评级 0~9：D~SS · 稀有度 0~5：N~UR · 状态 0/1${if (!single) " · 留空保持原值" else ""}",
+            "ランク 0~9：D〜SS · レア度 0~5：N〜UR · 状態 0/1",
+            "Rank 0~9: D..SS · Rarity 0~5: N..UR · State 0/1"
         )
         val fields = listOf(
             Triple("rank", tr("综合评级 0~9", "総合ランク 0~9", "Rank 0~9"), w?.optInt("rank", 0) ?: 9),
@@ -1244,11 +1235,11 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
     private fun showFontScaleDialog() {
         showScaleSliderDialog(
-            title = tr("字体大小修改", "文字サイズ変更", "Font Size"),
+            title = tr("字体大小", "文字サイズ", "Font Size"),
             description = tr(
-                "松开滑块或点击预设即可在下方画面实时预览文字缩放，范围 75%~160%，默认 100%，不改动存档文件。",
-                "スライダーやプリセットで画面内の文字倍率を即時プレビューできます。範囲 75%~160%、標準 100%。",
-                "Release slider or tap a preset to preview font scale live. Range 75% to 160%. Default 100%."
+                "范围 75%~160%，默认 100%",
+                "範囲 75%~160% · 標準 100%",
+                "Range 75%~160% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,
@@ -1259,9 +1250,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
             applyPct = { pct -> GameModifierBridge.setFontScalePercent(activity, pct) },
             onConfirmedToast = { pct, isReset ->
                 val msg = if (isReset) {
-                    tr("字体大小已恢复默认 100%", "文字サイズを 100% に戻しました", "Font size reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("字体大小已设为 $pct%", "文字サイズを $pct% に設定しました", "Font size set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
             }
@@ -1270,11 +1261,11 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
     private fun showScrollbarScaleDialog() {
         showScaleSliderDialog(
-            title = tr("滚动条修改", "スクロールバー変更", "Scrollbar Size"),
+            title = tr("滚动条", "スクロールバー", "Scrollbar"),
             description = tr(
-                "松开滑块或点击预设即可实时放大游戏内列表与日志滚动条宽度及滑块触控区域，范围 100%~300%，默认 100%。",
-                "リストやログのスクロールバー幅とつまみ操作領域を即時拡大します。範囲 100%~300%、標準 100%。",
-                "Enlarge in-game scrollbar width and touch thumb area live from 100% to 300%. Default 100%."
+                "范围 100%~300%，默认 100%",
+                "範囲 100%~300% · 標準 100%",
+                "Range 100%~300% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_SCROLLBAR_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_SCROLLBAR_SCALE_PCT,
@@ -1285,9 +1276,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
             applyPct = { pct -> GameModifierBridge.setScrollbarScalePercent(activity, pct) },
             onConfirmedToast = { pct, isReset ->
                 val msg = if (isReset) {
-                    tr("滚动条比例已恢复默认 100%", "スクロールバーを 100% に戻しました", "Scrollbar reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("滚动条比例已设为 $pct%", "スクロールバーを $pct% に設定しました", "Scrollbar set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
             }

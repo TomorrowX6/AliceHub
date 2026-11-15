@@ -11,42 +11,19 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <LinearLayout
+        <TextView
+            android:id="@+id/mod_mgr_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:textAppearance="@style/TextAppearance.Launcher.CardTitle" />
 
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/mod_mgr_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.Launcher.CardTitle" />
-
-                <TextView
-                    android:id="@+id/mod_mgr_summary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textAppearance="@style/TextAppearance.Launcher.Caption"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btn_mod_mgr_switch_game"
-                style="@style/Widget.Launcher.Button.Small"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="@string/mod_mgr_switch_game" />
-        </LinearLayout>
+        <TextView
+            android:id="@+id/mod_mgr_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textAppearance="@style/TextAppearance.Launcher.Caption"
+            android:textSize="13sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -82,13 +59,13 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btn_mod_mgr_refresh"
+                android:id="@+id/btn_mod_mgr_switch_game"
                 style="@style/Widget.Launcher.Button"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:text="@string/save_manager_refresh" />
+                android:text="@string/save_manager_switch_dir" />
 
             <Button
                 android:id="@+id/btn_mod_mgr_restore"
@@ -97,7 +74,7 @@
                 android:layout_height="match_parent"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="@string/mod_opt_restore_vanilla" />
+                android:text="@string/action_uninstall_mod" />
         </LinearLayout>
     </LinearLayout>
 

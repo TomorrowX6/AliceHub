@@ -17,8 +17,6 @@ import android.widget.Toast
 
 private const val HUB_INSTALL_ARCHIVE_REQ = 21
 private const val HUB_INSTALL_DIR_REQ = 22
-private const val HUB_MOD_ARCHIVE_REQ = 23
-private const val HUB_MOD_DIR_REQ = 24
 
 class GameHubActivity : Activity(), GameListObserver {
     companion object {
@@ -34,7 +32,6 @@ class GameHubActivity : Activity(), GameListObserver {
     private var selectedItem: Item? = null
 
     private var progressDialog: Dialog? = null
-    private var pendingModTarget: Item? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +137,8 @@ class GameHubActivity : Activity(), GameListObserver {
         deleteMenu?.isVisible = (cur != null)
         deleteMenu?.subMenu?.clearHeader()
         menu.findItem(R.id.uninstall_game)?.isVisible = (cur != null)
-        menu.findItem(R.id.uninstall_mod)?.isVisible = (cur != null && gameList.hasInstalledMod(cur))
+        menu.findItem(R.id.uninstall_mod)?.isVisible =
+            (cur != null && descriptor.supportsLocalMod && gameList.hasInstalledMod(cur))
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -189,28 +187,6 @@ class GameHubActivity : Activity(), GameListObserver {
                     )
                     refreshUi()
                     renderInstallState(gameList.installState)
-                }
-            }
-            HUB_MOD_DIR_REQ -> {
-                val target = pendingModTarget ?: selectedItem ?: return
-                pendingPostResumeAction = {
-                    ensureGameNotRunning(this) {
-                        InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                        gameList.installModDirectory(target, uri)
-                        refreshUi()
-                        renderInstallState(gameList.installState)
-                    }
-                }
-            }
-            HUB_MOD_ARCHIVE_REQ -> {
-                val target = pendingModTarget ?: selectedItem ?: return
-                pendingPostResumeAction = {
-                    ensureGameNotRunning(this) {
-                        InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                        gameList.installModArchive(target, uri)
-                        refreshUi()
-                        renderInstallState(gameList.installState)
-                    }
                 }
             }
         }
@@ -278,7 +254,7 @@ class GameHubActivity : Activity(), GameListObserver {
             curItem != null && gameList.hasInstalledMod(curItem) -> {
                 val ver = gameList.getInstalledModInfo(curItem)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
                 statusText = getString(R.string.game_status_installed_mod, ver)
-                statusTone = UiKit.Tone.WARNING
+                statusTone = UiKit.Tone.SUCCESS
             }
             curItem != null -> {
                 statusText = getString(R.string.game_status_installed)
@@ -337,7 +313,12 @@ class GameHubActivity : Activity(), GameListObserver {
         if (matchingItems.size <= 1) return
         val labels = Array(matchingItems.size) { idx ->
             val it = matchingItems[idx]
-            "${it.name} · ${it.path.name}"
+            val ver = if (gameList.hasInstalledMod(it)) {
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+            } else {
+                null
+            }
+            if (ver != null) "${it.path.name} · $ver" else it.path.name
         }
         val curIdx = matchingItems.indexOfFirst { it.path.path == selectedItem?.path?.path }.coerceAtLeast(0)
         AlertDialog.Builder(this)
@@ -391,24 +372,7 @@ class GameHubActivity : Activity(), GameListObserver {
             renderInstallState(gameList.installState)
             return
         }
-        if (!descriptor.supportsOnlineMod) {
-            confirmOnlineBaseGameInstall()
-            return
-        }
-        val options = arrayOf(
-            getString(R.string.online_sub_game),
-            getString(R.string.online_sub_mod)
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_online_install)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> confirmOnlineBaseGameInstall()
-                    1 -> openModManager()
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        confirmOnlineBaseGameInstall()
     }
 
     private fun confirmOnlineBaseGameInstall() {
@@ -437,30 +401,7 @@ class GameHubActivity : Activity(), GameListObserver {
             renderInstallState(gameList.installState)
             return
         }
-        val curItem = selectedItem
-        if (curItem == null || !descriptor.supportsLocalMod) {
-            openLocalInstallBaseDialog()
-            return
-        }
-        val modSubLabel = if (descriptor.isRance10) {
-            getString(R.string.local_sub_mod)
-        } else {
-            getString(R.string.hub_local_patch_sub)
-        }
-        val options = arrayOf(
-            getString(R.string.local_sub_game),
-            modSubLabel
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_local_install)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> openLocalInstallBaseDialog()
-                    1 -> showLocalModInstallDialog(curItem)
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        openLocalInstallBaseDialog()
     }
 
     private fun openLocalInstallBaseDialog() {
@@ -498,51 +439,6 @@ class GameHubActivity : Activity(), GameListObserver {
     private fun Item.cleanGameTitle(): String {
         val idx = name.indexOf(" [MOD")
         return if (idx > 0) name.substring(0, idx) else name
-    }
-
-    private fun showLocalModInstallDialog(target: Item) {
-        val options = mutableListOf(
-            getString(R.string.mod_opt_zip),
-            getString(R.string.mod_opt_dir)
-        )
-        if (gameList.canRestoreVanilla(target)) {
-            options.add(getString(R.string.mod_opt_restore_vanilla))
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.mod_local_dialog_title, target.cleanGameTitle()))
-            .setItems(options.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> {
-                        pendingModTarget = target
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivityForResult(
-                            Intent.createChooser(i, getString(R.string.mod_choose_zip)),
-                            HUB_MOD_ARCHIVE_REQ
-                        )
-                    }
-                    1 -> {
-                        pendingModTarget = target
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, HUB_MOD_DIR_REQ)
-                    }
-                    2 -> {
-                        ensureGameNotRunning(this) {
-                            if (gameList.restoreMod(target)) {
-                                rebindGameState()
-                                refreshUi()
-                                Toast.makeText(this, R.string.mod_restored_toast, Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
     }
 
     private fun openModManager() {
@@ -585,7 +481,7 @@ class GameHubActivity : Activity(), GameListObserver {
         ensureGameNotRunning(this) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.action_delete_base_game)
-                .setMessage(getString(R.string.delete_base_game_message, item.name))
+                .setMessage(getString(R.string.delete_base_game_message, item.cleanGameTitle()))
                 .setPositiveButton(R.string.ok) { _, _ ->
                     gameList.uninstall(item)
                     rebindGameState()
@@ -616,7 +512,7 @@ class GameHubActivity : Activity(), GameListObserver {
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.action_uninstall_mod)
-            .setMessage(getString(R.string.mod_mgr_restore_confirm, item.cleanGameTitle()))
+            .setMessage(R.string.mod_mgr_restore_confirm)
             .setPositiveButton(R.string.ok) { _, _ ->
                 ensureGameNotRunning(this) {
                     if (gameList.restoreMod(item)) {

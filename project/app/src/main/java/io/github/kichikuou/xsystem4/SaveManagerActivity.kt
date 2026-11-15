@@ -146,17 +146,17 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
     }
     val lang = Locale.getDefault().language
     val title = when {
-        lang.startsWith("zh") -> "游戏正在后台运行"
+        lang.startsWith("zh") -> "游戏正在运行"
         lang.startsWith("ja") -> "ゲームが実行中です"
         else -> "Game Is Running"
     }
     val message = when {
-        lang.startsWith("zh") -> "检测到游戏进程正在后台运行。直接导入、删除或离线修改存档可能会与后台游戏冲突或被覆盖。\n是否先结束后台游戏进程再继续？"
-        lang.startsWith("ja") -> "バックグラウンドでゲームが実行中です。セーブデータの競合を防ぐため、ゲームを終了してから続行しますか？"
-        else -> "The game is running in the background and may conflict with offline save changes.\nClose the background game process and continue?"
+        lang.startsWith("zh") -> "请先结束后台游戏再执行此操作。"
+        lang.startsWith("ja") -> "バックグラウンドのゲームを終了して続行しますか？"
+        else -> "Close the background game and continue?"
     }
     val confirmLabel = when {
-        lang.startsWith("zh") -> "结束游戏并继续"
+        lang.startsWith("zh") -> "结束并继续"
         lang.startsWith("ja") -> "終了して続行"
         else -> "Close & Continue"
     }
@@ -229,10 +229,6 @@ class SaveManagerActivity : Activity() {
             ensureGameNotRunning(this) { showImportDialog() }
         }
         findViewById<View>(R.id.btn_export_saves).setOnClickListener { showExportDialog() }
-        findViewById<View>(R.id.btn_refresh_saves).setOnClickListener {
-            refreshFileList()
-            Toast.makeText(this, R.string.save_manager_refreshed, Toast.LENGTH_SHORT).show()
-        }
         findViewById<View>(R.id.btn_clear_saves).setOnClickListener {
             ensureGameNotRunning(this) { showClearSavesDialog() }
         }
@@ -245,6 +241,13 @@ class SaveManagerActivity : Activity() {
         }
 
         refreshFileList()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::currentTarget.isInitialized) {
+            refreshFileList()
+        }
     }
 
     override fun onDestroy() {
@@ -273,7 +276,7 @@ class SaveManagerActivity : Activity() {
             val saveDir = item.savedir ?: File(savesRoot, dirName)
             saveDir.mkdirs()
             found[dirName] = SaveTarget(
-                displayName = if (item.name == dirName) item.name else "${item.name} · $dirName",
+                displayName = dirName,
                 dirName = dirName,
                 saveDir = saveDir,
                 externalGameDir = item.path
@@ -313,7 +316,7 @@ class SaveManagerActivity : Activity() {
                 defaultDir.mkdirs()
                 val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
                 found[desc.defaultDirName] = SaveTarget(
-                    displayName = getString(R.string.save_manager_game_default_dir_label, desc.title),
+                    displayName = desc.defaultDirName,
                     dirName = desc.defaultDirName,
                     saveDir = defaultDir,
                     externalGameDir = extDir
@@ -324,7 +327,7 @@ class SaveManagerActivity : Activity() {
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
             found["Rance10"] = SaveTarget(
-                displayName = getString(R.string.save_manager_default_dir_label),
+                displayName = "Rance10",
                 dirName = "Rance10",
                 saveDir = defaultDir,
                 externalGameDir = extDir
@@ -355,17 +358,19 @@ class SaveManagerActivity : Activity() {
         currentEntries = list
         adapter.update(list)
 
-        findViewById<View>(R.id.btn_switch_game)?.visibility =
-            if (!scopedGameId.isNullOrBlank() && targets.size <= 1) View.GONE else View.VISIBLE
-
         val totalBytes = list.sumOf { it.sizeBytes }
         findViewById<TextView>(R.id.save_target_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.displayName)
+            getString(R.string.save_manager_current_dir, currentTarget.dirName)
         findViewById<TextView>(R.id.save_target_summary).text =
-            getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes), currentTarget.dirName)
+            getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes))
 
-        findViewById<View>(R.id.save_empty_view).visibility =
-            if (list.isEmpty()) View.VISIBLE else View.GONE
+        val emptyView = findViewById<TextView>(R.id.save_empty_view)
+        if (list.isEmpty()) {
+            UiKit.bindEmptyState(emptyView, R.drawable.ic_folder_open, getString(R.string.save_manager_empty))
+            emptyView.visibility = View.VISIBLE
+        } else {
+            emptyView.visibility = View.GONE
+        }
     }
 
     private fun collectSaveFiles(root: File, current: File, out: MutableList<SaveFileEntry>) {
@@ -596,7 +601,7 @@ class SaveManagerActivity : Activity() {
                 refreshFileList()
                 showMessageDialog(
                     getString(R.string.save_import_done_title),
-                    getString(R.string.save_import_zip_done_msg, count, currentTarget.dirName)
+                    getString(R.string.save_import_zip_done_msg, count)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to import saves from archive", e)
@@ -642,9 +647,9 @@ class SaveManagerActivity : Activity() {
         val lang = Locale.getDefault().language
         if (raw.startsWith("ENCRYPTED:")) {
             return when {
-                lang.startsWith("zh") -> "不支持带密码加密的压缩包，请先去除密码或解压后再导入。"
-                lang.startsWith("ja") -> "パスワード付きアーカイブには対応していません。パスワードを解除して再度お試しください。"
-                else -> "Password-protected archives are not supported."
+                lang.startsWith("zh") -> "不支持加密压缩包，请解压后导入"
+                lang.startsWith("ja") -> "パスワード付きアーカイブには非対応です"
+                else -> "Password-protected archives are not supported"
             }
         }
         if (raw.startsWith("ENOSPC:")) {
@@ -915,8 +920,6 @@ class SaveManagerActivity : Activity() {
     }
 
     private fun showSingleFileManageDialog(entry: SaveFileEntry) {
-        val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            .format(Date(entry.lastModified))
         val options = arrayOf(
             getString(R.string.save_file_opt_export),
             getString(R.string.save_file_opt_backup),
@@ -924,7 +927,7 @@ class SaveManagerActivity : Activity() {
             getString(R.string.save_file_opt_delete)
         )
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes), dateStr))
+            .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
@@ -1070,7 +1073,7 @@ class SaveManagerActivity : Activity() {
     private fun confirmDeleteAllSaves() {
         AlertDialog.Builder(this)
             .setTitle(R.string.save_clear_confirm_title)
-            .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size, currentTarget.displayName))
+            .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size))
             .setPositiveButton(R.string.ok) { _, _ ->
                 currentTarget.saveDir.listFiles()?.forEach { child ->
                     child.deleteRecursively()

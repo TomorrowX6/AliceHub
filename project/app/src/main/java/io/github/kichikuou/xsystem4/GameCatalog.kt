@@ -146,7 +146,7 @@ object GameCatalog {
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.DOHNA_DOHNA_CDN_URL,
                 supportsOnlineMod = false,
-                supportsLocalMod = true,
+                supportsLocalMod = false,
                 isRance10 = false
             )
             else -> {
@@ -170,7 +170,7 @@ object GameCatalog {
                     supportsOnlineBaseInstall = false,
                     onlineBaseCdnUrl = null,
                     supportsOnlineMod = false,
-                    supportsLocalMod = true,
+                    supportsLocalMod = false,
                     isRance10 = false
                 )
             }
@@ -240,9 +240,10 @@ object GameCatalog {
         val runningRoot = getRunningGameRoot(activity)
 
         if (isGameProcessRunning(activity) && runningRoot != null && runningRoot != targetRoot) {
+            val cleanName = item.name.substringBefore(" [MOD")
             AlertDialog.Builder(activity)
                 .setTitle(R.string.switch_running_game_title)
-                .setMessage(activity.getString(R.string.switch_running_game_msg, item.name))
+                .setMessage(activity.getString(R.string.switch_running_game_msg, cleanName))
                 .setPositiveButton(R.string.switch_running_game_confirm) { _, _ ->
                     killRunningGameProcess(activity)
                     Handler(Looper.getMainLooper()).postDelayed({

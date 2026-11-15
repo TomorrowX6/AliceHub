@@ -15,41 +15,24 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:paddingStart="16dp"
             android:paddingEnd="16dp">
 
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/mod_target_title"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:textAppearance="@style/TextAppearance.Launcher.CardTitle" />
 
-                <TextView
-                    android:id="@+id/mod_target_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.Launcher.CardTitle" />
-
-                <TextView
-                    android:id="@+id/mod_target_summary"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:lineSpacingExtra="2dp"
-                    android:textAppearance="@style/TextAppearance.Launcher.Caption"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btn_mod_switch_dir"
-                style="@style/Widget.Launcher.Button.Small"
-                android:layout_width="wrap_content"
+            <TextView
+                android:id="@+id/mod_target_summary"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="@string/save_manager_switch_dir" />
+                android:layout_marginTop="4dp"
+                android:lineSpacingExtra="2dp"
+                android:textAppearance="@style/TextAppearance.Launcher.Caption"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <View
@@ -99,7 +82,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Ctrl 快进悬浮键"
+                android:text="Ctrl 快进键"
                 android:textAppearance="@style/TextAppearance.Launcher.Body"
                 android:textSize="15sp" />
 
@@ -118,10 +101,6 @@
             android:layout_marginBottom="6dp"
             android:background="@color/ui_divider" />
 
-        <!--
-            Each row below is shown/hidden as a whole by GameModifierActivity
-            (via the parent of btn_mod_full_unlock / btn_mod_floating_cfg), so keep the pairing.
-        -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -147,7 +126,7 @@
                 android:layout_height="match_parent"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="全局存档修改" />
+                android:text="全局存档" />
         </LinearLayout>
 
         <LinearLayout
@@ -166,16 +145,16 @@
                 android:layout_height="match_parent"
                 android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:text="实时锁定设置" />
+                android:text="实时锁定" />
 
             <Button
-                android:id="@+id/btn_mod_refresh"
+                android:id="@+id/btn_mod_switch_dir"
                 style="@style/Widget.Launcher.Button"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="@string/save_manager_refresh" />
+                android:text="@string/save_manager_switch_dir" />
         </LinearLayout>
 
         <LinearLayout
@@ -203,7 +182,7 @@
                 android:layout_height="match_parent"
                 android:layout_marginStart="4dp"
                 android:layout_weight="1"
-                android:text="滚动条修改" />
+                android:text="滚动条" />
         </LinearLayout>
     </LinearLayout>
 

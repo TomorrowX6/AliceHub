@@ -178,12 +178,11 @@
     <!-- Placeholder shown under a screen's header card when its list is empty. -->
     <style name="Widget.Launcher.EmptyText" parent="">
         <item name="android:gravity">center</item>
-        <!-- Evens out the line lengths so centered text does not end in a one-word line. -->
         <item name="android:breakStrategy">balanced</item>
         <item name="android:paddingStart">24dp</item>
         <item name="android:paddingEnd">24dp</item>
-        <item name="android:paddingTop">40dp</item>
-        <item name="android:paddingBottom">24dp</item>
+        <item name="android:paddingTop">48dp</item>
+        <item name="android:paddingBottom">32dp</item>
         <item name="android:lineSpacingExtra">3dp</item>
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/ui_text_secondary</item>

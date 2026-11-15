@@ -82,7 +82,7 @@ private class GameSelectAdapter(
             primary != null && gameList.hasInstalledMod(primary) -> {
                 val ver = gameList.getInstalledModInfo(primary)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
                 badgeLabel = context.getString(R.string.game_status_installed_mod, ver)
-                badgeTone = UiKit.Tone.WARNING
+                badgeTone = UiKit.Tone.SUCCESS
             }
             primary != null -> {
                 badgeLabel = context.getString(R.string.game_status_installed)

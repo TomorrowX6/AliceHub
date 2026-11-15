@@ -229,6 +229,19 @@ internal object UiKit {
             )
         }
 
+    /** Centered icon stacked above a single concise empty-state label. */
+    fun bindEmptyState(view: TextView, iconRes: Int, text: CharSequence) {
+        val ctx = view.context
+        val size = dpInt(ctx, 36)
+        val icon = ctx.getDrawable(iconRes)!!.mutate()
+        icon.setTint(ctx.getColor(R.color.ui_text_tertiary))
+        icon.setBounds(0, 0, size, size)
+        view.setCompoundDrawables(null, icon, null, null)
+        view.compoundDrawablePadding = dpInt(ctx, 10)
+        view.gravity = Gravity.CENTER
+        view.text = text
+    }
+
     /** Draws an icon vertically centered on the text without changing the line height. */
     private class CenteredIconSpan(
         private val icon: Drawable,

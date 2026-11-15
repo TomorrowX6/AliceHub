@@ -127,10 +127,10 @@ class GameModifierActivity : Activity() {
         } ?: modLabel
 
         findViewById<TextView>(R.id.label_floating_modifier).text = tr("悬浮窗修改器", "フローティング改造", "Floating Modifier")
-        findViewById<TextView>(R.id.label_ctrl_overlay).text = tr("Ctrl 快进悬浮键", "Ctrl 早送りボタン", "Ctrl Skip Button")
+        findViewById<TextView>(R.id.label_ctrl_overlay).text = tr("Ctrl 快进键", "Ctrl 早送りキー", "Ctrl Skip Key")
         findViewById<Button>(R.id.btn_mod_full_unlock).text = tr("全解锁存档", "全解放セーブ", "Full Unlock")
-        findViewById<Button>(R.id.btn_mod_global_save).text = tr("全局存档修改", "全体セーブ改造", "Global Save")
-        findViewById<Button>(R.id.btn_mod_floating_cfg).text = tr("实时锁定设置", "リアルタイムロック", "Live Locks")
+        findViewById<Button>(R.id.btn_mod_global_save).text = tr("全局存档", "全体セーブ", "Global Save")
+        findViewById<Button>(R.id.btn_mod_floating_cfg).text = tr("实时锁定", "リアルタイムロック", "Live Locks")
         refreshUiScaleButtons()
 
         val floatingSwitch = findViewById<Switch>(R.id.switch_floating_modifier)
@@ -164,10 +164,6 @@ class GameModifierActivity : Activity() {
         findViewById<View>(R.id.btn_mod_floating_cfg).setOnClickListener { showFloatingLocksDialog() }
         findViewById<View>(R.id.btn_mod_font_size).setOnClickListener { showFontScaleDialog() }
         findViewById<View>(R.id.btn_mod_scrollbar).setOnClickListener { showScrollbarScaleDialog() }
-        findViewById<View>(R.id.btn_mod_refresh).setOnClickListener {
-            refreshList()
-            Toast.makeText(this, R.string.save_manager_refreshed, Toast.LENGTH_SHORT).show()
-        }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
             val index = pos - listView.headerViewsCount
@@ -184,7 +180,8 @@ class GameModifierActivity : Activity() {
         super.onResume()
         syncTopSwitches()
         if (::currentTarget.isInitialized) {
-            refreshSummaryText()
+            discoverSaveTargets(currentTarget.dirName)
+            refreshList()
         }
     }
 
@@ -220,7 +217,7 @@ class GameModifierActivity : Activity() {
             val saveDir = item.savedir ?: File(savesRoot, dirName)
             saveDir.mkdirs()
             found[dirName] = SaveTarget(
-                displayName = if (item.name == dirName) item.name else "${item.name} · $dirName",
+                displayName = dirName,
                 dirName = dirName,
                 saveDir = saveDir,
                 externalGameDir = item.path
@@ -260,7 +257,7 @@ class GameModifierActivity : Activity() {
                 defaultDir.mkdirs()
                 val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
                 found[desc.defaultDirName] = SaveTarget(
-                    displayName = getString(R.string.save_manager_game_default_dir_label, desc.title),
+                    displayName = desc.defaultDirName,
                     dirName = desc.defaultDirName,
                     saveDir = defaultDir,
                     externalGameDir = extDir
@@ -271,7 +268,7 @@ class GameModifierActivity : Activity() {
             defaultDir.mkdirs()
             val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
             found["Rance10"] = SaveTarget(
-                displayName = getString(R.string.save_manager_default_dir_label),
+                displayName = "Rance10",
                 dirName = "Rance10",
                 saveDir = defaultDir,
                 externalGameDir = extDir
@@ -319,10 +316,10 @@ class GameModifierActivity : Activity() {
         findViewById<Button>(R.id.btn_mod_font_size)?.text = tr(
             "字体大小 · $fontPct%",
             "文字サイズ · $fontPct%",
-            "Font Size · $fontPct%"
+            "Font · $fontPct%"
         )
         findViewById<Button>(R.id.btn_mod_scrollbar)?.text = tr(
-            "滚动条修改 · $sbPct%",
+            "滚动条 · $sbPct%",
             "スクロールバー · $sbPct%",
             "Scrollbar · $sbPct%"
         )
@@ -332,25 +329,24 @@ class GameModifierActivity : Activity() {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
-        (floatingCfgBtn?.parent as? View)?.visibility = if (isRance10 || isDohnaDohna) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.btn_mod_refresh)?.visibility = if (isRance10) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.btn_mod_switch_dir)?.visibility =
-            if (!scopedGameId.isNullOrBlank() && targets.size <= 1) View.GONE else View.VISIBLE
+        val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
+        val showLocks = isRance10 || isDohnaDohna
+        floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
+        (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = if (showLocks) dp(4) else 0
+            switchDirBtn.layoutParams = lp
+        }
     }
 
     private fun refreshSummaryText() {
         val saveDir = currentTarget.saveDir
         val isRance10 = isCurrentTargetRance10()
         val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
-        val floatOn = GameModifierBridge.isFloatingEnabled(this)
-        val ctrlOn = GameModifierBridge.isCtrlOverlayEnabled(this)
-        val fontPct = GameModifierBridge.getFontScalePercent(this)
-        val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
         refreshUiScaleButtons()
         refreshTargetControlsVisibility(isRance10, isDohnaDohna)
 
         findViewById<TextView>(R.id.mod_target_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.displayName)
+            getString(R.string.save_manager_current_dir, currentTarget.dirName)
         if (!isRance10) {
             val asdCount = saveDir.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
@@ -358,15 +354,15 @@ class GameModifierActivity : Activity() {
             if (isDohnaDohna) {
                 val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
                 findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                    "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 实时锁定：$ddLockCount 项 · 字体：$fontPct% · 滚动条：$sbPct%",
-                    "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · ロック $ddLockCount 項目 · 文字：$fontPct% · バー：$sbPct%",
-                    "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Locks: $ddLockCount · Font: $fontPct% · Scrollbar: $sbPct%"
+                    "存档 $asdCount 个 · 锁定 $ddLockCount 项",
+                    "セーブ $asdCount 個 · ロック $ddLockCount 項目",
+                    "$asdCount saves · Locks: $ddLockCount"
                 )
             } else {
                 findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                    "存档文件 $asdCount 个 · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 字体：$fontPct% · 滚动条：$sbPct%",
-                    "セーブ $asdCount 個 · Ctrl：${if (ctrlOn) "ON" else "OFF"} · 文字：$fontPct% · バー：$sbPct%",
-                    "$asdCount save files · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Font: $fontPct% · Scrollbar: $sbPct%"
+                    "存档 $asdCount 个",
+                    "セーブ $asdCount 個",
+                    "$asdCount saves"
                 )
             }
             return
@@ -375,9 +371,9 @@ class GameModifierActivity : Activity() {
         val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
         val lockCount = GameModifierBridge.getLiveLockCount(this)
         findViewById<TextView>(R.id.mod_target_summary).text = tr(
-            "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "已有" else "无"} · 悬浮窗：${if (floatOn) "开" else "关"} · Ctrl键：${if (ctrlOn) "开" else "关"} · 实时锁定：$lockCount 项 · 字体：$fontPct% · 滚动条：$sbPct%",
-            "セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · Ctrl：${if (ctrlOn) "ON" else "OFF"} · ロック $lockCount 項目 · 文字：$fontPct% · バー：$sbPct%",
-            "${currentEntries.size} saves · Global: ${if (hasGlobal) "Yes" else "No"} · Ctrl: ${if (ctrlOn) "ON" else "OFF"} · Locks: $lockCount · Font: $fontPct% · Scrollbar: $sbPct%"
+            "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "有" else "无"} · 锁定 $lockCount 项",
+            "進行セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · ロック $lockCount 項目",
+            "${currentEntries.size} progress saves · Global: ${if (hasGlobal) "Yes" else "No"} · Locks: $lockCount"
         )
     }
 
@@ -387,24 +383,10 @@ class GameModifierActivity : Activity() {
 
         val emptyView = findViewById<TextView>(R.id.mod_empty_view)
         if (!isCurrentTargetRance10()) {
-            val isDohnaDohna = isCurrentTargetDohnaDohna()
             currentEntries = emptyList()
             adapter.update(emptyList())
             refreshSummaryText()
-            emptyView.text = if (isDohnaDohna) {
-                tr(
-                    "多娜多娜已支持游戏内悬浮窗实时数值修改与常用作弊器。\n进入游戏后点击左上角悬浮图标，即可修改资金、天数、调教点、单间上限、战斗成员等级能力好感、春销人材评级四维状态，以及使用全物品全徽章、毕业武器、战斗秒杀等快捷作弊；也可在此处预先配置实时锁定开关、字体大小与滚动条比例。",
-                    "ドーナドーナはゲーム内フローティングメニューから資金・日数・調教P・戦闘メンバー・人材ステータス編集および定番チートに対応しています。\n上部のリアルタイムロック・文字サイズ・スクロールバー設定も利用可能です。",
-                    "Dohna Dohna supports live in-game numeric modification and common cheats via the floating icon."
-                )
-            } else {
-                tr(
-                    "当前游戏支持通用界面与快捷辅助功能。\n可使用上方开关控制游戏内悬浮窗与 Ctrl 快进悬浮键，或点击“字体大小”、“滚动条修改”实时调节显示与触控比例。",
-                    "このゲームでは共通UI・早送り補助を利用できます。\n上部のスイッチや文字サイズ・スクロールバー変更をご利用ください。",
-                    "Universal UI scale and Ctrl skip controls are enabled for this game."
-                )
-            }
-            emptyView.visibility = View.VISIBLE
+            emptyView.visibility = View.GONE
             return
         }
 
@@ -432,10 +414,10 @@ class GameModifierActivity : Activity() {
         refreshSummaryText()
 
         if (slots.isEmpty()) {
-            emptyView.text = tr(
-                "当前目录暂无进度存档。\n可使用上方“全解锁存档”、“全局存档修改”、“实时锁定设置”、“字体大小”或“滚动条修改”。",
-                "進行セーブがありません。\n上部のボタンから全解放・ロック・文字サイズ・スクロールバー設定を利用できます。",
-                "No progress saves in this directory."
+            UiKit.bindEmptyState(
+                emptyView,
+                R.drawable.ic_save,
+                tr("当前无进度存档", "進行セーブなし", "No progress saves")
             )
             emptyView.visibility = View.VISIBLE
         } else {
@@ -449,13 +431,44 @@ class GameModifierActivity : Activity() {
             val count = target.saveDir.walkTopDown()
                 .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
                 .count()
-            getString(R.string.save_dir_item_count, target.displayName, count)
-        }.toTypedArray()
+            getString(R.string.save_dir_item_count, target.dirName, count)
+        }.toMutableList()
+        labels.add(getString(R.string.save_dir_new_option))
 
         AlertDialog.Builder(this)
             .setTitle(R.string.save_dir_select_title)
-            .setItems(labels) { _, which ->
-                currentTarget = targets[which]
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == targets.size) {
+                    showCreateTargetDialog()
+                } else {
+                    currentTarget = targets[which]
+                    refreshList()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showCreateTargetDialog() {
+        val defaultPrefix = scopedGameId?.let { GameCatalog.descriptorFor(this, it).defaultDirName } ?: "Rance10"
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hint = getString(R.string.save_dir_create_hint)
+            setText(defaultPrefix)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.save_dir_create_title)
+            .setView(UiKit.dialogContent(this, input))
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val rawName = input.text.toString().trim()
+                val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                if (safeName.isEmpty() || safeName.startsWith(".")) {
+                    Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val newDir = File(File(filesDir, "saves"), safeName)
+                newDir.mkdirs()
+                discoverSaveTargets(safeName)
                 refreshList()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -509,8 +522,8 @@ class GameModifierActivity : Activity() {
         val cFile = File(saveDir, "Collection.asd")
         if (!gFile.isFile && !cFile.isFile) {
             AlertDialog.Builder(this)
-                .setTitle(tr("未找到全局存档", "全体セーブなし", "No Global Save"))
-                .setMessage(tr("当前目录尚无 GlobalSave.asd，是否先写入全解锁存档？", "先に全解放セーブを適用しますか？", "Install Full Unlock Save first?"))
+                .setTitle(tr("无全局存档", "全体セーブなし", "No Global Save"))
+                .setMessage(tr("当前无全局存档，是否写入全解锁存档？", "先に全解放セーブを適用しますか？", "Install Full Unlock Save first?"))
                 .setPositiveButton(R.string.ok) { _, _ ->
                     GameModifierBridge.installFullUnlockSaves(this, saveDir)
                     refreshList()
@@ -532,11 +545,11 @@ class GameModifierActivity : Activity() {
         val hasBak = GameModifierBridge.hasModBackup(gFile) || GameModifierBridge.hasModBackup(cFile)
 
         val options = mutableListOf(
-            tr("一键满CP / 满勋章 / 满实绩加成", "CP・メダル・実績ボーナス最大", "Max CP, Medals & Bonuses"),
-            tr("自定义全局数值…", "数値を個別編集…", "Edit Global Values…")
+            tr("一键满 CP / 勋章 / 实绩加成", "CP・メダル・実績最大", "Max CP, Medals & Bonuses"),
+            tr("自定义数值", "数値を編集", "Edit Values")
         )
         if (hasBak) {
-            options.add(tr("恢复修改前备份", "変更前のバックアップを復元", "Restore Backup"))
+            options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
         AlertDialog.Builder(this)
@@ -616,14 +629,14 @@ class GameModifierActivity : Activity() {
     private fun showFloatingLocksDialog() {
         if (!isCurrentTargetRance10() && isCurrentTargetDohnaDohna()) {
             val lockDefs = listOf(
-                GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("战斗锁定我方全员满HP", "味方全員HP最大ロック", "Lock Party Max HP"),
-                GameModifierBridge.LOCK_DD_ALLY_MAX_MP to tr("战斗锁定我方全员满MP", "味方全員MP最大ロック", "Lock Party Max MP"),
-                GameModifierBridge.LOCK_DD_ALLY_MAX_VP to tr("战斗锁定我方全员满怒气VP", "味方全員VP最大ロック", "Lock Party Max VP"),
-                GameModifierBridge.LOCK_DD_ONE_HIT_KILL to tr("战斗敌方全员1血秒杀", "敵全員HP1・一撃撃破", "Enemy 1 HP One-Hit Kill"),
-                GameModifierBridge.LOCK_DD_INFINITE_MONEY to tr("无限资金 · 保底99999999", "資金無限・99999999維持", "Infinite Money"),
-                GameModifierBridge.LOCK_DD_INFINITE_TP to tr("无限调教点 · TP不减", "調教ポイント無限", "Infinite Training Points"),
-                GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材满精神满避孕药且不崩溃不怀孕", "人材メンタル・ピル最大維持", "Keep Workers Best Condition"),
-                GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销营业配对倒计时锁定不减", "ハルウリ制限時間ロック", "Freeze Brothel Match Timer")
+                GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("我方全员满 HP", "味方全員HP最大", "Party Max HP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_MP to tr("我方全员满 MP", "味方全員MP最大", "Party Max MP"),
+                GameModifierBridge.LOCK_DD_ALLY_MAX_VP to tr("我方全员满怒气 VP", "味方全員VP最大", "Party Max VP"),
+                GameModifierBridge.LOCK_DD_ONE_HIT_KILL to tr("敌方 1 血秒杀", "敵全員HP1", "Enemy 1 HP"),
+                GameModifierBridge.LOCK_DD_INFINITE_MONEY to tr("无限资金", "資金無限", "Infinite Money"),
+                GameModifierBridge.LOCK_DD_INFINITE_TP to tr("无限调教点", "調教P無限", "Infinite TP"),
+                GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材最佳状态", "人材状態維持", "Keep Workers Healthy"),
+                GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销时间锁定", "ハルウリ時間固定", "Freeze Brothel Timer")
             )
             var lockMask = GameModifierBridge.getSavedDohnaLockMask(this)
             val labels = lockDefs.map { it.second }.toTypedArray()
@@ -631,7 +644,7 @@ class GameModifierActivity : Activity() {
                 (lockMask and lockDefs[idx].first) != 0
             }
             AlertDialog.Builder(this)
-                .setTitle(tr("多娜多娜实时锁定设置", "ドーナドーナ ロック設定", "Dohna Dohna Live Locks"))
+                .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
                 .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                     val bit = lockDefs[which].first
                     lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
@@ -674,7 +687,7 @@ class GameModifierActivity : Activity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle(tr("实时锁定设置", "リアルタイムロック設定", "Live Locks"))
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
                 lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
@@ -721,17 +734,17 @@ class GameModifierActivity : Activity() {
         val hasBak = GameModifierBridge.hasModBackup(entry.file)
 
         val options = mutableListOf(
-            tr("一键满资源与满属性", "リソース・部隊ステータス最大", "One-Click Max Resources & Stats"),
-            tr("一键宝箱100%掉落", "宝箱100%ドロップ化", "One-Click 100% Treasure Drop"),
-            tr("一键全卡牌99叠卡与全员5星", "全カード99枚＋全キャラ★5", "One-Click All Cards x99 & 5★"),
-            tr("一键四国满兵力与人类零伤亡", "四国兵力最大＋人類被害ゼロ", "One-Click Max Armies & 0 Casualties"),
-            tr("修改资源与回合进度…", "リソース・ターン編集…", "Edit Resources & Turn…"),
-            tr("修改部队生命与属性加成…", "部隊HP・ステータス倍率編集…", "Edit Party HP & Multipliers…"),
-            tr("修改四国兵力与人类人口…", "四国兵力・人口編集…", "Edit World & Armies…"),
-            tr("修改卡牌叠卡与角色星级…", "カード枚数・キャラ★編集…", "Edit Cards & Characters…")
+            tr("一键满资源与属性", "リソース・部隊ステータス最大", "Max Resources & Stats"),
+            tr("一键宝箱100%掉落", "宝箱100%ドロップ化", "100% Treasure Drop"),
+            tr("一键全卡99叠与5星", "全カード99枚＋全キャラ★5", "All Cards x99 & 5★"),
+            tr("一键满兵力与零伤亡", "四国兵力最大＋人類被害ゼロ", "Max Armies & 0 Casualties"),
+            tr("资源与回合…", "リソース・ターン…", "Resources & Turn…"),
+            tr("部队与属性…", "部隊・ステータス…", "Party & Stats…"),
+            tr("四国与人口…", "四国・人口…", "World & Armies…"),
+            tr("卡牌与角色…", "カード・キャラ…", "Cards & Chars…")
         )
         if (hasBak) {
-            options.add(tr("恢复修改前备份", "変更前のバックアップを復元", "Restore Pre-Mod Backup"))
+            options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
         AlertDialog.Builder(this)
@@ -974,11 +987,11 @@ class GameModifierActivity : Activity() {
     // =========================================================================
     private fun showFontScaleDialog() {
         showScaleSliderDialog(
-            title = tr("字体大小修改", "文字サイズ変更", "Font Size"),
+            title = tr("字体大小", "文字サイズ", "Font Size"),
             description = tr(
-                "调节游戏内对话与界面文字缩放比例，范围 75%~160%，默认 100%，实时生效且不改动存档文件。",
-                "ゲーム内の会話・UIの文字倍率を調整します。範囲 75%~160%、標準 100%。",
-                "Adjust in-game dialogue and UI text scale from 75% to 160%. Default 100%."
+                "范围 75%~160%，默认 100%",
+                "範囲 75%~160% · 標準 100%",
+                "Range 75%~160% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,
@@ -990,9 +1003,9 @@ class GameModifierActivity : Activity() {
                 GameModifierBridge.setFontScalePercent(this, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
-                    tr("字体大小已恢复默认 100%", "文字サイズを 100% に戻しました", "Font size reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("字体大小已设为 $pct%", "文字サイズを $pct% に設定しました", "Font size set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
@@ -1001,11 +1014,11 @@ class GameModifierActivity : Activity() {
 
     private fun showScrollbarScaleDialog() {
         showScaleSliderDialog(
-            title = tr("滚动条修改", "スクロールバー変更", "Scrollbar Size"),
+            title = tr("滚动条", "スクロールバー", "Scrollbar"),
             description = tr(
-                "放大游戏内列表与日志滚动条宽度、按钮及滑块触控区域，范围 100%~300%，默认 100%，实时生效方便触屏拖拽。",
-                "リストやログのスクロールバー幅とつまみ操作領域を拡大します。範囲 100%~300%、標準 100%。",
-                "Enlarge in-game scrollbar width and touch thumb area from 100% to 300%. Default 100%."
+                "范围 100%~300%，默认 100%",
+                "範囲 100%~300% · 標準 100%",
+                "Range 100%~300% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_SCROLLBAR_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_SCROLLBAR_SCALE_PCT,
@@ -1017,9 +1030,9 @@ class GameModifierActivity : Activity() {
                 GameModifierBridge.setScrollbarScalePercent(this, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
-                    tr("滚动条比例已恢复默认 100%", "スクロールバーを 100% に戻しました", "Scrollbar reset to 100%")
+                    tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
-                    tr("滚动条比例已设为 $pct%", "スクロールバーを $pct% に設定しました", "Scrollbar set to $pct%")
+                    tr("已设为 $pct%", "$pct% に設定しました", "Set to $pct%")
                 }
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }

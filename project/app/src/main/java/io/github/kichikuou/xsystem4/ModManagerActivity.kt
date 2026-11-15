@@ -86,9 +86,6 @@ class ModManagerActivity : Activity(), GameListObserver {
         findViewById<View>(R.id.btn_mod_mgr_local).setOnClickListener {
             showLocalModInstallDialog()
         }
-        findViewById<View>(R.id.btn_mod_mgr_refresh).setOnClickListener {
-            loadCatalog(showRefreshedToast = true)
-        }
         findViewById<View>(R.id.btn_mod_mgr_restore).setOnClickListener {
             confirmRestoreVanilla()
         }
@@ -101,7 +98,7 @@ class ModManagerActivity : Activity(), GameListObserver {
         }
 
         handleRestoreDialogIntent(intent)
-        loadCatalog(showRefreshedToast = false)
+        loadCatalog()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -226,7 +223,7 @@ class ModManagerActivity : Activity(), GameListObserver {
         return if (idx > 0) name.substring(0, idx) else name
     }
 
-    private fun loadCatalog(showRefreshedToast: Boolean) {
+    private fun loadCatalog() {
         catalogJob?.cancel()
         isLoadingCatalog = true
         catalogLoadError = false
@@ -241,9 +238,6 @@ class ModManagerActivity : Activity(), GameListObserver {
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
-                if (showRefreshedToast) {
-                    Toast.makeText(this@ModManagerActivity, R.string.mod_mgr_refreshed, Toast.LENGTH_SHORT).show()
-                }
             } catch (_: Throwable) {
                 isLoadingCatalog = false
                 catalogLoadError = true
@@ -261,29 +255,25 @@ class ModManagerActivity : Activity(), GameListObserver {
             installed != null && installed.version.isNotBlank() -> installed.version
             else -> ""
         }
-        val gameTitle = currentTarget.cleanGameTitle()
 
-        findViewById<TextView>(R.id.mod_mgr_title).text = when {
-            !hasMod -> getString(R.string.mod_mgr_status_none, gameTitle)
-            displayVer.isNotBlank() -> getString(R.string.mod_mgr_status_ver, gameTitle, displayVer)
-            else -> getString(R.string.mod_mgr_status_installed, gameTitle)
+        findViewById<TextView>(R.id.mod_mgr_title).text =
+            getString(R.string.save_manager_current_dir, currentTarget.path.name)
+
+        val statusPart = when {
+            !hasMod -> getString(R.string.mod_mgr_status_none)
+            displayVer.isNotBlank() -> getString(R.string.mod_mgr_status_ver, displayVer)
+            else -> getString(R.string.mod_mgr_status_installed)
         }
-
-        // While the list is empty, the loading / error text is shown by the placeholder
-        // right below this card, so it is not repeated here.
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
-        val summaryText = if (releases.isNotEmpty()) {
-            getString(R.string.mod_mgr_summary_format, releases[0].version)
+        summaryView.text = if (releases.isNotEmpty()) {
+            "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].version)}"
         } else {
-            ""
+            statusPart
         }
-        summaryView.text = summaryText
-        summaryView.visibility = if (summaryText.isEmpty()) View.GONE else View.VISIBLE
-
-        findViewById<View>(R.id.btn_mod_mgr_switch_game).visibility =
-            if (rance10Items().size > 1) View.VISIBLE else View.GONE
+        summaryView.visibility = View.VISIBLE
 
         val isInstalling = gameList.installState is InstallState.Installing
+        findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isInstalling
         findViewById<Button>(R.id.btn_mod_mgr_local).isEnabled = !isInstalling
         findViewById<Button>(R.id.btn_mod_mgr_restore).isEnabled =
             gameList.canRestoreVanilla(currentTarget) && !isInstalling
@@ -324,11 +314,12 @@ class ModManagerActivity : Activity(), GameListObserver {
         val emptyView = findViewById<TextView>(R.id.mod_mgr_empty_view)
         if (releases.isEmpty()) {
             emptyView.visibility = View.VISIBLE
-            emptyView.text = when {
+            val label = when {
                 isLoadingCatalog -> getString(R.string.mod_mgr_loading)
                 catalogLoadError -> getString(R.string.mod_mgr_load_failed)
                 else -> getString(R.string.mod_mgr_empty)
             }
+            UiKit.bindEmptyState(emptyView, R.drawable.ic_extension, label)
         } else {
             emptyView.visibility = View.GONE
         }
@@ -338,16 +329,26 @@ class ModManagerActivity : Activity(), GameListObserver {
 
     private fun showSwitchGameDialog() {
         val candidates = rance10Items()
-        if (gameList.installState is InstallState.Installing || candidates.size <= 1) return
-        val names = Array(candidates.size) { candidates[it].name }
+        if (gameList.installState is InstallState.Installing || candidates.isEmpty()) return
+        val names = Array(candidates.size) { idx ->
+            val it = candidates[idx]
+            val ver = if (gameList.hasInstalledMod(it)) {
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+            } else {
+                null
+            }
+            if (ver != null) "${it.path.name} · $ver" else it.path.name
+        }
+        val curIdx = candidates.indexOfFirst { it.path.path == currentTargetPath }.coerceAtLeast(0)
         AlertDialog.Builder(this)
             .setTitle(R.string.mod_select_game_title)
-            .setItems(names) { _, which ->
+            .setSingleChoiceItems(names, curIdx) { dlg, which ->
                 if (which in candidates.indices) {
                     currentTarget = candidates[which]
                     currentTargetPath = currentTarget.path.path
                     updateUi()
                 }
+                dlg.dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -364,7 +365,7 @@ class ModManagerActivity : Activity(), GameListObserver {
             getString(R.string.mod_opt_dir)
         )
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.mod_local_dialog_title, currentTarget.cleanGameTitle()))
+            .setTitle(R.string.mod_local_dialog_title)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
@@ -396,7 +397,7 @@ class ModManagerActivity : Activity(), GameListObserver {
             return
         }
         if (catalogLoadError && releases.isEmpty()) {
-            loadCatalog(showRefreshedToast = false)
+            loadCatalog()
             return
         }
         val hasMod = gameList.hasInstalledMod(currentTarget)
@@ -409,8 +410,8 @@ class ModManagerActivity : Activity(), GameListObserver {
         if (gameList.installState is InstallState.Installing) return
         if (!gameList.canRestoreVanilla(currentTarget)) return
         AlertDialog.Builder(this)
-            .setTitle(R.string.mod_opt_restore_vanilla)
-            .setMessage(getString(R.string.mod_mgr_restore_confirm, currentTarget.cleanGameTitle()))
+            .setTitle(R.string.action_uninstall_mod)
+            .setMessage(R.string.mod_mgr_restore_confirm)
             .setPositiveButton(R.string.ok) { _, _ ->
                 ensureGameNotRunning(this) {
                     if (gameList.restoreMod(currentTarget)) {
@@ -475,8 +476,10 @@ class ModManagerActivity : Activity(), GameListObserver {
                 append("\n\n")
                 append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
             }
-            append("\n\n")
-            append(entry.changelog.ifBlank { getString(R.string.mod_mgr_detail_no_changelog) })
+            if (entry.changelog.isNotBlank()) {
+                append("\n\n")
+                append(entry.changelog)
+            }
         }
 
         val builder = AlertDialog.Builder(this)
