@@ -3,7 +3,6 @@
     <color name="colorPrimary">#3F51B5</color>
     <color name="colorPrimaryDark">#303F9F</color>
     <color name="colorAccent">#FF4081</color>
-    <color name="ic_launcher_background">#FFFFFF</color>
 
     <!-- Launcher UI palette (day). Night values are in values-night/colors.xml. -->
     <color name="ui_bg">#F3F4F8</color>

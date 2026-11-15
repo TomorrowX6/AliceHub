@@ -151,8 +151,11 @@ internal object UiKit {
         }
         frame.clipToOutline = true
 
-        val fullBleed = desc.id == GameCatalog.ID_RANCE10
-        val pad = if (fullBleed) 0 else frame.layoutParams.width / 10
+        val pad = when (desc.id) {
+            GameCatalog.ID_RANCE10 -> 0
+            GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
+            else -> frame.layoutParams.width / 10
+        }
         frame.setPadding(pad, pad, pad, pad)
 
         val builtIn = desc.id == GameCatalog.ID_RANCE10 || desc.id == GameCatalog.ID_DOHNA_DOHNA

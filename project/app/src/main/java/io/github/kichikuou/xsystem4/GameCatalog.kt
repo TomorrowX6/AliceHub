@@ -36,7 +36,7 @@ object GameCatalog {
     const val ID_RANCE10 = "rance10"
     const val ID_DOHNA_DOHNA = "dohnadohna"
     const val PREFIX_CUSTOM = "custom:"
-    const val GITHUB_URL = "https://github.com/TomorrowX6/re-xsystem4"
+    const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
 
@@ -142,7 +142,7 @@ object GameCatalog {
                 iconRes = R.drawable.ic_game_dohnadohna,
                 accentColor = 0xFFE91E63.toInt(),
                 accentBorderColor = 0x66FF4081,
-                iconFrameColor = 0xFFF4F6FA.toInt(),
+                iconFrameColor = 0x00000000,
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.DOHNA_DOHNA_CDN_URL,
                 supportsOnlineMod = false,

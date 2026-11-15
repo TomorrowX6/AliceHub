@@ -2,8 +2,13 @@ package io.github.kichikuou.xsystem4
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.MenuItem
 import android.view.View
 import android.widget.Button
@@ -108,9 +113,9 @@ class SettingsActivity : ThemedActivity() {
             return
         }
 
-        AlertDialog.Builder(this)
+        val dlg = AlertDialog.Builder(this)
             .setTitle(R.string.online_disclaimer_title)
-            .setMessage(R.string.online_disclaimer_msg)
+            .setMessage(buildDisclaimerText())
             .setPositiveButton(R.string.online_disclaimer_agree) { _, _ ->
                 AppSettings.setOnlineInstallEnabled(this, true)
                 refreshSettingsUi()
@@ -122,5 +127,27 @@ class SettingsActivity : ThemedActivity() {
                 refreshSettingsUi()
             }
             .show()
+        dlg.findViewById<TextView>(android.R.id.message)?.apply {
+            textSize = 13.5f
+            setLineSpacing(0f, 1.28f)
+        }
+    }
+
+    private fun buildDisclaimerText(): CharSequence {
+        val raw = getString(R.string.online_disclaimer_msg)
+        val lines = raw.split('\n')
+        val sb = SpannableStringBuilder()
+        val headingColor = getColor(R.color.ui_text_primary)
+        for ((index, line) in lines.withIndex()) {
+            if (index > 0) sb.append('\n')
+            val start = sb.length
+            sb.append(line)
+            val end = sb.length
+            if (line.startsWith("第") || line.startsWith("Article ")) {
+                sb.setSpan(StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(ForegroundColorSpan(headingColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return sb
     }
 }
