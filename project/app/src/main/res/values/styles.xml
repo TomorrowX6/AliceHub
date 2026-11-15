@@ -105,6 +105,8 @@
         <item name="android:gravity">center</item>
         <item name="android:maxLines">2</item>
         <item name="android:ellipsize">end</item>
+        <!-- A label that needs two lines is split evenly instead of leaving a stray syllable. -->
+        <item name="android:breakStrategy">balanced</item>
         <item name="android:minHeight">44dp</item>
         <item name="android:minWidth">56dp</item>
         <item name="android:paddingStart">12dp</item>
@@ -176,6 +178,8 @@
     <!-- Placeholder shown under a screen's header card when its list is empty. -->
     <style name="Widget.Launcher.EmptyText" parent="">
         <item name="android:gravity">center</item>
+        <!-- Evens out the line lengths so centered text does not end in a one-word line. -->
+        <item name="android:breakStrategy">balanced</item>
         <item name="android:paddingStart">24dp</item>
         <item name="android:paddingEnd">24dp</item>
         <item name="android:paddingTop">40dp</item>
