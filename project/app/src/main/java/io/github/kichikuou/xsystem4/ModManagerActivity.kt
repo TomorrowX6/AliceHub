@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
@@ -27,6 +28,9 @@ import kotlinx.coroutines.withContext
 private const val REQ_MOD_LOCAL_ARCHIVE = 204
 private const val REQ_MOD_LOCAL_DIR = 205
 
+// Status-card views live in mod_manager_header, added with addHeaderView. Lint only
+// sees the activity layout, so those ids look missing.
+@SuppressLint("MissingInflatedId")
 class ModManagerActivity : Activity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"

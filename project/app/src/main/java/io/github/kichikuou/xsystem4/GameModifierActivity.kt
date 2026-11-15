@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
@@ -77,6 +78,9 @@ private class ModSaveSlotAdapter(
     }
 }
 
+// Status-card views live in game_modifier_header, added with addHeaderView. Lint only
+// sees the activity layout, so those ids look missing.
+@SuppressLint("MissingInflatedId")
 class GameModifierActivity : Activity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"

@@ -16,7 +16,6 @@
 
     <color name="ui_primary">#A9B6FF</color>
     <color name="ui_on_primary">#0F1A5C</color>
-    <color name="ui_danger">#FF8A80</color>
 
     <color name="ui_btn_tonal">#2A2F3C</color>
     <color name="ui_btn_disabled">#22262E</color>
