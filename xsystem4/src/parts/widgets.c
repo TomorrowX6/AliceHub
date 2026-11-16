@@ -39,13 +39,48 @@ void parts_widget_free(struct parts *parts)
 	parts->widget = NULL;
 }
 
+/*
+ * Convert a static UTF-8 string literal to the active game encoding (SJIS/GBK),
+ * memoized permanently to avoid repeated allocations during UI rebuilds.
+ */
+const char *parts_utf8_to_cjk_literal(const char *literal)
+{
+	if (!literal || !literal[0])
+		return "";
+	static struct {
+		const char *src;
+		char *enc;
+		bool gbk;
+	} cache[2048];
+	static size_t nr_cached = 0;
+
+	bool gbk = sys4_text_is_gbk;
+	size_t n = sizeof(cache) / sizeof(cache[0]);
+	size_t idx = (size_t)(((uintptr_t)literal >> 3) ^ ((uintptr_t)gbk << 7)) & (n - 1);
+	for (size_t step = 0; step < n; step++) {
+		size_t slot = (idx + step) & (n - 1);
+		if (!cache[slot].src) {
+			if (nr_cached >= n - 1)
+				return "";
+			char *enc = utf2sjis(literal, strlen(literal));
+			cache[slot].src = literal;
+			cache[slot].enc = enc;
+			cache[slot].gbk = gbk;
+			nr_cached++;
+			return enc;
+		}
+		if (cache[slot].src == literal && cache[slot].gbk == gbk)
+			return cache[slot].enc;
+	}
+	return "";
+}
+
 static bool load_skin(struct parts *parts, struct parts_state *state,
 		struct string *base, bool flat, const char *suffix)
 {
-	char *encoded = utf2sjis(suffix, strlen(suffix));
+	const char *encoded = parts_utf8_to_cjk_literal(suffix);
 	struct string *name = string_dup(base);
 	string_append_cstr(&name, encoded, strlen(encoded));
-	free(encoded);
 	parts_state_reset(state, flat ? PARTS_FLAT : PARTS_CG);
 	bool ok = flat ? parts_flat_load(parts, &state->flat, name)
 		: parts_cg_set(parts, &state->cg, name);
@@ -142,9 +177,8 @@ static void rebuild_background(struct parts *parts)
 	if (checked && !override->size && base->size) {
 		for (int cs = 0; cs < 3; cs++) {
 			struct string *cand = string_dup(base);
-			char *suffix = utf2sjis(checked_suffixes[cs], strlen(checked_suffixes[cs]));
+			const char *suffix = parts_utf8_to_cjk_literal(checked_suffixes[cs]);
 			string_append_cstr(&cand, suffix, strlen(suffix));
-			free(suffix);
 			struct parts_state probe = {0};
 			if (load_skin_any(parts, &probe, cand, flat, suffixes[0], 3)
 					|| load_skin(parts, &probe, cand, flat, "")) {

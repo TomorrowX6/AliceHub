@@ -37,6 +37,7 @@ extern int   sjis_index(const char *src, int index);
 extern char *sjis_char2unicode(const char *src, int *dst);
 extern char* sjis2utf(const char *src, size_t len);
 extern char* cjk2utf_strict(const char *src, bool gbk, bool *valid_out);
+extern char* cjk2utf_strict_buf(const char *src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out);
 extern int   cjk_encode_codepoint(int u, bool gbk);
 extern char* utf2cjk(const char *src, size_t len, bool gbk);
 extern char* utf2sjis(const char *src, size_t len);

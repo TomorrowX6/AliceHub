@@ -45,10 +45,13 @@ void savedata_reset(void);
 bool save_names_equal(const char *a, const char *b);
 bool save_symbols_equal(const char *a, const char *b);
 void save_cjk_canon_forms(const char *s, char **sjis_out, char **gbk_out);
+void save_cjk_canon_forms_buf(const char *s, char *sjis_buf, size_t sjis_cap, char **sjis_out,
+		char *gbk_buf, size_t gbk_cap, char **gbk_out);
 bool save_symbol_prefix_equal(const char *full_sym, const char *prefix_buf, size_t prefix_len);
 int save_symbol_similarity(const char *a, const char *b);
 int save_text_gbk_bias(const char *s);
 char *save_transcode_cstr(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len);
+char *save_transcode_cstr_strict(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len);
 struct string *save_decode_vm_string(const char *s, size_t len, bool src_is_gbk);
 int save_find_struct(const char *name);
 int save_find_enum(const char *name);
