@@ -1,46 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <TextView
-        android:id="@+id/active_install_banner"
+    <LinearLayout
+        android:orientation="vertical"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/ui_screen_padding_h"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="@dimen/ui_screen_padding_h"
-        android:layout_marginBottom="4dp"
-        android:background="@drawable/bg_banner"
-        android:drawableStart="@drawable/ic_download"
-        android:drawableEnd="@drawable/ic_chevron_right"
-        android:drawablePadding="10dp"
-        android:drawableTint="@color/tone_info_fg"
-        android:gravity="center_vertical"
-        android:minHeight="48dp"
-        android:paddingStart="14dp"
-        android:paddingTop="10dp"
-        android:paddingEnd="10dp"
-        android:paddingBottom="10dp"
-        android:text="@string/active_install_banner_text"
-        android:textColor="@color/tone_info_fg"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        android:layout_height="match_parent">
 
-    <ListView
-        android:id="@+id/list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:divider="@android:color/transparent"
-        android:dividerHeight="@dimen/ui_card_gap"
-        android:listSelector="@android:color/transparent"
-        android:paddingStart="@dimen/ui_screen_padding_h"
-        android:paddingTop="8dp"
-        android:paddingEnd="@dimen/ui_screen_padding_h"
-        android:paddingBottom="16dp"
-        android:scrollbarStyle="outsideOverlay" />
-</LinearLayout>
+        <TextView
+            android:id="@+id/active_install_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/ui_screen_padding_h"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="@dimen/ui_screen_padding_h"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_banner"
+            android:drawableStart="@drawable/ic_download"
+            android:drawableEnd="@drawable/ic_chevron_right"
+            android:drawablePadding="10dp"
+            android:drawableTint="@color/tone_info_fg"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="10dp"
+            android:text="@string/active_install_banner_text"
+            android:textColor="@color/tone_info_fg"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/search_bar_container"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginStart="@dimen/ui_screen_padding_h"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="@dimen/ui_screen_padding_h"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/bg_card"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingEnd="6dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_search"
+                android:tint="@color/ui_text_tertiary" />
+
+            <EditText
+                android:id="@+id/search_input"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:hint="@string/search_games_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:textColor="@color/ui_text_primary"
+                android:textColorHint="@color/ui_text_tertiary"
+                android:textSize="14sp" />
+
+            <ImageButton
+                android:id="@+id/btn_search_clear"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/search_close"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_close"
+                android:tint="@color/ui_text_secondary" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/search_empty_view"
+            style="@style/Widget.Launcher.EmptyText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
+
+        <ListView
+            android:id="@+id/list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="@dimen/ui_card_gap"
+            android:listSelector="@android:color/transparent"
+            android:paddingStart="@dimen/ui_screen_padding_h"
+            android:paddingTop="8dp"
+            android:paddingEnd="@dimen/ui_screen_padding_h"
+            android:paddingBottom="88dp"
+            android:scrollbarStyle="outsideOverlay" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/fab_import_game"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/bg_fab_circle"
+        android:contentDescription="@string/action_import_other_game"
+        android:elevation="6dp"
+        android:scaleType="center"
+        android:src="@drawable/ic_add"
+        android:stateListAnimator="@null"
+        android:tint="@color/ui_on_primary" />
+</FrameLayout>

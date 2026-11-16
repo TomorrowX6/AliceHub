@@ -1,4 +1,5 @@
 /* AIN v12 sound channels, GPL-2.0-or-later. */
+#include <ctype.h>
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
@@ -17,9 +18,34 @@
 #include "xsystem4.h"
 #include "hll.h"
 
-static struct id_pool sounds, effects;
+static struct id_pool sounds, sound_names, sound_file_names, effects;
 static struct ex *metadata;
 static struct ex_table *sound_info;
+
+static int parse_sound_num_prefix(const char *name)
+{
+	if (!name || !isdigit((unsigned char)name[0]))
+		return -1;
+	char *endp = NULL;
+	long val = strtol(name, &endp, 10);
+	if (endp == name || val < 0 || val > INT_MAX)
+		return -1;
+	if (*endp != '_' && *endp != '\0')
+		return -1;
+	return (int)val;
+}
+
+static void register_archive_sound_name(struct archive_data *data, void *user)
+{
+	(void)user;
+	if (!data || !data->name)
+		return;
+	char *base = archive_basename(data->name);
+	int num = parse_sound_num_prefix(base);
+	if (num >= 0 && !id_pool_get(&sound_file_names, num))
+		id_pool_set(&sound_file_names, num, cstr_to_string(base));
+	free(base);
+}
 
 struct effect_voice { struct channel *channel; struct effect_voice *next; };
 struct effect {
@@ -54,10 +80,35 @@ static void kiwi_prelink(void)
 	}
 }
 
+static bool sound_file_names_loaded = false;
+
+static void ensure_sound_file_names(void)
+{
+	if (sound_file_names_loaded)
+		return;
+	sound_file_names_loaded = true;
+	if (sound_info && sound_info->nr_columns >= 1) {
+		for (unsigned r = 0; r < sound_info->nr_rows; r++) {
+			if (sound_info->rows[r][0].type != EX_STRING)
+				continue;
+			struct string *s = sound_info->rows[r][0].s;
+			int num = parse_sound_num_prefix(s->text);
+			if (num >= 0 && !id_pool_get(&sound_file_names, num))
+				id_pool_set(&sound_file_names, num, string_dup(s));
+		}
+	}
+	asset_foreach_file(ASSET_SOUND, register_archive_sound_name, NULL);
+	asset_foreach_file(ASSET_BGM, register_archive_sound_name, NULL);
+	asset_foreach_file(ASSET_VOICE, register_archive_sound_name, NULL);
+}
+
 static void kiwi_init(void)
 {
 	id_pool_init(&sounds, 0);
+	id_pool_init(&sound_names, 0);
+	id_pool_init(&sound_file_names, 0);
 	id_pool_init(&effects, 0);
+	sound_file_names_loaded = false;
 	SDL_InitSubSystem(SDL_INIT_AUDIO);
 	audio_init();
 	struct archive_data *data = asset_get_by_name(ASSET_SOUND, "timemap_sound.ex", NULL);
@@ -83,13 +134,20 @@ static void kiwi_fini(void)
 	stop_effect(&system_effect);
 	for (int i = id_pool_get_first(&sounds); i >= 0; i = id_pool_get_next(&sounds, i))
 		channel_close(id_pool_get(&sounds, i));
+	for (int i = id_pool_get_first(&sound_names); i >= 0; i = id_pool_get_next(&sound_names, i))
+		free_string(id_pool_get(&sound_names, i));
+	for (int i = id_pool_get_first(&sound_file_names); i >= 0; i = id_pool_get_next(&sound_file_names, i))
+		free_string(id_pool_get(&sound_file_names, i));
 	for (int i = id_pool_get_first(&effects); i >= 0; i = id_pool_get_next(&effects, i)) {
 		struct effect *effect = id_pool_get(&effects, i);
 		stop_effect(effect);
 		free(effect);
 	}
 	id_pool_delete(&sounds);
+	id_pool_delete(&sound_names);
+	id_pool_delete(&sound_file_names);
 	id_pool_delete(&effects);
+	sound_file_names_loaded = false;
 	if (metadata) ex_free(metadata);
 	metadata = NULL;
 	sound_info = NULL;
@@ -162,11 +220,43 @@ static bool kiwi_prepare(int id, struct string *name, struct string *filter, boo
 	if (!channel) return false;
 	struct channel *old = id_pool_set(&sounds, id, channel);
 	if (old) channel_close(old);
+	struct string *old_name = id_pool_set(&sound_names, id, string_dup(name));
+	if (old_name) free_string(old_name);
 	return true;
+}
+
+static bool kiwi_prepare_3(int id, struct string *name, bool streaming)
+{
+	return kiwi_prepare(id, name, NULL, streaming);
+}
+
+static void *kiwi_resolve_prepare(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)kiwi_prepare_3 : (void *)kiwi_prepare;
+}
+
+static int kiwi_get_sound_file_name(int id, struct string **out)
+{
+	if (id < 0)
+		return 0;
+	ensure_sound_file_names();
+	struct string *s = id_pool_get(&sound_file_names, id);
+	if (!s)
+		s = id_pool_get(&sound_names, id);
+	if (!s)
+		return 0;
+	if (out) {
+		if (*out)
+			free_string(*out);
+		*out = string_dup(s);
+	}
+	return 1;
 }
 
 static bool kiwi_unprepare(int id)
 {
+	struct string *old_name = id_pool_release(&sound_names, id);
+	if (old_name) free_string(old_name);
 	struct channel *channel = id_pool_release(&sounds, id);
 	if (!channel) return false;
 	channel_close(channel);
@@ -233,6 +323,8 @@ bool kiwi_prepare_from_memory(int id, uint8_t *buf, size_t size, int group)
 	struct channel *channel = channel_open_archive_data(dfile, ASSET_SOUND, AUDIO_NO_METADATA);
 	if (!channel) return false;
 	if (group >= 0) channel_set_group(channel, group);
+	struct string *old_name = id_pool_release(&sound_names, id);
+	if (old_name) free_string(old_name);
 	struct channel *old = id_pool_set(&sounds, id, channel);
 	if (old) channel_close(old);
 	return true;
@@ -397,7 +489,8 @@ struct static_library lib_KiwiSoundEngine_v12 = {
 		HLL_EXPORT(SetSeParam, kiwi_set_se), HLL_OVERLOAD(PlaySe, kiwi_resolve_play_se),
 		HLL_EXPORT(StopSe, kiwi_stop_se), HLL_EXPORT(IsPlaySe, kiwi_playing_se),
 		HLL_EXPORT(GetFreeID, kiwi_free), HLL_EXPORT(IsExistID, kiwi_exists),
-		HLL_EXPORT(Prepare, kiwi_prepare), HLL_EXPORT(Unprepare, kiwi_unprepare),
+		HLL_OVERLOAD(Prepare, kiwi_resolve_prepare), HLL_EXPORT(Unprepare, kiwi_unprepare),
+		HLL_EXPORT(GetSoundFileName, kiwi_get_sound_file_name),
 		HLL_EXPORT(Play, kiwi_play), HLL_EXPORT(Stop, kiwi_stop), HLL_EXPORT(IsPlay, kiwi_playing),
 		HLL_EXPORT(SetLoopCount, kiwi_loop), HLL_EXPORT(GetLoopCount, kiwi_get_loop),
 		HLL_EXPORT(Pause, kiwi_pause), HLL_EXPORT(Restart, kiwi_restart), HLL_EXPORT(IsPause, kiwi_paused),

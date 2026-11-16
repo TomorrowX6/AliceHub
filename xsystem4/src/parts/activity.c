@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 
 #include "system4.h"
 #include "system4/ain.h"
@@ -30,12 +31,51 @@ struct activity_part {
 	struct activity_part *next;
 };
 
+struct activity_intent {
+	struct string *src;
+	int nr_dests;
+	struct string **dests;
+	int type;
+	struct activity_intent *next;
+};
+
+struct activity_func {
+	struct string *part_name;
+	int state;
+	struct string *id;
+	struct string *func;
+	struct activity_func *next;
+};
+
 struct activity {
 	struct string *name, *background, *ex_text;
 	struct activity_part *parts;
+	struct activity_intent *intents;
+	struct activity_func *funcs;
 	int ex_id, nr_keys, *keys;
 	struct activity *next;
 };
+
+static void free_activity_intents_and_funcs(struct activity *a)
+{
+	while (a->intents) {
+		struct activity_intent *it = a->intents;
+		a->intents = it->next;
+		free_string(it->src);
+		for (int i = 0; i < it->nr_dests; i++)
+			free_string(it->dests[i]);
+		free(it->dests);
+		free(it);
+	}
+	while (a->funcs) {
+		struct activity_func *fn = a->funcs;
+		a->funcs = fn->next;
+		free_string(fn->part_name);
+		free_string(fn->id);
+		free_string(fn->func);
+		free(fn);
+	}
+}
 
 static struct activity *activities;
 
@@ -123,6 +163,7 @@ bool PE_ReleaseActivity(struct string *name, struct page **erased)
 			free(p);
 		}
 		mainex_v12_unregister_activity(a->ex_id);
+		free_activity_intents_and_funcs(a);
 		free_string(a->name);
 		free_string(a->background);
 		free_string(a->ex_text);
@@ -234,6 +275,167 @@ struct string *PE_GetActivityBG(struct string *name)
 	}
 PART_FLAG_API(Close, closed)
 PART_FLAG_API(Locked, locked)
+
+void PE_RemoveActivityCloseParts(struct string *name, struct string *part_name)
+{
+	struct activity_part *p = find_part(find_activity(name), part_name);
+	if (p) p->closed = false;
+}
+
+void PE_RemoveAllActivityCloseParts(struct string *name)
+{
+	struct activity *a = find_activity(name);
+	if (a) for (struct activity_part *p = a->parts; p; p = p->next) p->closed = false;
+}
+
+static struct activity_intent *find_intent(struct activity *a, struct string *part_name)
+{
+	if (a) for (struct activity_intent *it = a->intents; it; it = it->next)
+		if (!strcmp(it->src->text, part_name->text)) return it;
+	return NULL;
+}
+
+void PE_SetActivityIntentData(struct string *name, struct string *part_name, struct string *dest, int type)
+{
+	struct activity *a = find_activity(name);
+	if (!a) return;
+	struct activity_intent *it = find_intent(a, part_name);
+	if (!it) {
+		struct activity_intent **at = &a->intents;
+		while (*at) at = &(*at)->next;
+		it = xcalloc(1, sizeof(*it));
+		it->src = string_dup(part_name);
+		*at = it;
+	} else {
+		for (int i = 0; i < it->nr_dests; i++) free_string(it->dests[i]);
+		free(it->dests);
+		it->dests = NULL;
+		it->nr_dests = 0;
+	}
+	it->type = type;
+	it->dests = xmalloc(sizeof(*it->dests));
+	it->dests[0] = string_dup(dest);
+	it->nr_dests = 1;
+}
+
+void PE_AddActivityIntentDataDestination(struct string *name, struct string *part_name, struct string *dest)
+{
+	struct activity *a = find_activity(name);
+	if (!a) return;
+	struct activity_intent *it = find_intent(a, part_name);
+	if (!it) {
+		PE_SetActivityIntentData(name, part_name, dest, 0);
+		return;
+	}
+	it->dests = xrealloc(it->dests, (size_t)(it->nr_dests + 1) * sizeof(*it->dests));
+	it->dests[it->nr_dests++] = string_dup(dest);
+}
+
+bool PE_IsExistActivityIntentData(struct string *name, struct string *part_name)
+{
+	return find_intent(find_activity(name), part_name) != NULL;
+}
+
+int PE_NumofActivityIntentData(struct string *name)
+{
+	struct activity *a = find_activity(name);
+	int count = 0;
+	if (a) for (struct activity_intent *it = a->intents; it; it = it->next) count++;
+	return count;
+}
+
+int PE_NumofActivityIntentDataDestination(struct string *name, struct string *part_name)
+{
+	struct activity_intent *it = find_intent(find_activity(name), part_name);
+	return it ? it->nr_dests : 0;
+}
+
+struct string *PE_GetActivityIntentDataSource(struct string *name, int index)
+{
+	struct activity *a = find_activity(name);
+	if (a && index >= 0) for (struct activity_intent *it = a->intents; it; it = it->next)
+		if (!index--) return string_dup(it->src);
+	return string_ref(&EMPTY_STRING);
+}
+
+struct string *PE_GetActivityIntentDataDestination(int index, struct string *name, struct string *part_name)
+{
+	struct activity_intent *it = find_intent(find_activity(name), part_name);
+	if (it && index >= 0 && index < it->nr_dests)
+		return string_dup(it->dests[index]);
+	return string_ref(&EMPTY_STRING);
+}
+
+int PE_GetActivityIntentDataType(struct string *name, struct string *part_name)
+{
+	struct activity_intent *it = find_intent(find_activity(name), part_name);
+	return it ? it->type : 0;
+}
+
+void PE_SetActivityFunc(struct string *name, struct string *part_name, int state,
+		struct string *fmap_id, struct string *func_name)
+{
+	struct activity *a = find_activity(name);
+	if (!a) return;
+	for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
+		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text) &&
+		    !strcmp(fn->id->text, fmap_id->text)) {
+			free_string(fn->func);
+			fn->func = string_dup(func_name);
+			return;
+		}
+	}
+	struct activity_func **at = &a->funcs;
+	while (*at) at = &(*at)->next;
+	struct activity_func *fn = xcalloc(1, sizeof(*fn));
+	fn->part_name = string_dup(part_name);
+	fn->state = state;
+	fn->id = string_dup(fmap_id);
+	fn->func = string_dup(func_name);
+	*at = fn;
+}
+
+struct string *PE_GetActivityFunc(struct string *name, struct string *part_name, int state, struct string *fmap_id)
+{
+	struct activity *a = find_activity(name);
+	if (a) for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
+		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text) &&
+		    !strcmp(fn->id->text, fmap_id->text))
+			return string_dup(fn->func);
+	}
+	return string_ref(&EMPTY_STRING);
+}
+
+int PE_NumofActivityFunc(struct string *name, struct string *part_name, int state)
+{
+	struct activity *a = find_activity(name);
+	int count = 0;
+	if (a) for (struct activity_func *fn = a->funcs; fn; fn = fn->next)
+		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text))
+			count++;
+	return count;
+}
+
+void PE_GetActivityFuncPair(int index, struct string *name, struct string *part_name, int state,
+		struct string **fmap_id, struct string **func_name)
+{
+	struct activity *a = find_activity(name);
+	if (a && index >= 0) for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
+		if (fn->state != state || strcmp(fn->part_name->text, part_name->text))
+			continue;
+		if (index--)
+			continue;
+		if (*fmap_id) free_string(*fmap_id);
+		if (*func_name) free_string(*func_name);
+		*fmap_id = string_dup(fn->id);
+		*func_name = string_dup(fn->func);
+		return;
+	}
+	if (*fmap_id) free_string(*fmap_id);
+	if (*func_name) free_string(*func_name);
+	*fmap_id = string_ref(&EMPTY_STRING);
+	*func_name = string_ref(&EMPTY_STRING);
+}
 
 bool PE_IsExistActivityEndKey(struct string *name, int key)
 {
@@ -1000,6 +1202,13 @@ static char *activity_file_path(struct string *file)
 	memcpy(name, file->text, file->size);
 	strcpy(name + file->size, ".pactex");
 	path = gamedir_path_icase(name);
+	if (path && file_exists(path)) {
+		free(name);
+		return path;
+	}
+	free(path);
+	strcpy(name + file->size, ".pact");
+	path = gamedir_path_icase(name);
 	free(name);
 	return path;
 }
@@ -1013,17 +1222,988 @@ bool PE_IsExistActivityFile(struct string *file)
 	return exists;
 }
 
+struct pact_bin_reader {
+	const uint8_t *buf;
+	size_t size;
+	size_t pos;
+	bool err;
+};
+
+static uint8_t pbr_u8(struct pact_bin_reader *r)
+{
+	if (r->err || r->pos + 1 > r->size) { r->err = true; return 0; }
+	return r->buf[r->pos++];
+}
+
+static bool pbr_bool(struct pact_bin_reader *r)
+{
+	uint8_t v = pbr_u8(r);
+	if (v > 1) { r->err = true; return false; }
+	return v == 1;
+}
+
+static int32_t pbr_i32(struct pact_bin_reader *r)
+{
+	if (r->err || r->pos + 4 > r->size) { r->err = true; return 0; }
+	int32_t v;
+	memcpy(&v, r->buf + r->pos, 4);
+	r->pos += 4;
+	return v;
+}
+
+static float pbr_f32(struct pact_bin_reader *r)
+{
+	if (r->err || r->pos + 4 > r->size) { r->err = true; return 0.f; }
+	float v;
+	memcpy(&v, r->buf + r->pos, 4);
+	r->pos += 4;
+	return v;
+}
+
+static const char *pbr_cstr(struct pact_bin_reader *r)
+{
+	if (r->err || r->pos >= r->size) { r->err = true; return ""; }
+	const char *s = (const char *)(r->buf + r->pos);
+	const void *nul = memchr(s, 0, r->size - r->pos);
+	if (!nul) { r->err = true; return ""; }
+	r->pos += ((const char *)nul - s) + 1;
+	return s;
+}
+
+static const char *pbr_opt_cstr(struct pact_bin_reader *r)
+{
+	return pbr_bool(r) ? pbr_cstr(r) : NULL;
+}
+
+struct pact_font40 {
+	int type, size, r, g, b;
+	float bold, edge;
+	int er, eg, eb;
+};
+
+struct pact_font48 {
+	int type, size, r, g, b;
+	float bold, edge;
+	int er, eg, eb, cspace, lspace;
+};
+
+static struct pact_font40 pbr_font40(struct pact_bin_reader *r)
+{
+	struct pact_font40 f;
+	f.type = pbr_i32(r); f.size = pbr_i32(r);
+	f.r = pbr_i32(r); f.g = pbr_i32(r); f.b = pbr_i32(r);
+	f.bold = pbr_f32(r); f.edge = pbr_f32(r);
+	f.er = pbr_i32(r); f.eg = pbr_i32(r); f.eb = pbr_i32(r);
+	return f;
+}
+
+static struct pact_font48 pbr_font48(struct pact_bin_reader *r)
+{
+	struct pact_font48 f;
+	f.type = pbr_i32(r); f.size = pbr_i32(r);
+	f.r = pbr_i32(r); f.g = pbr_i32(r); f.b = pbr_i32(r);
+	f.bold = pbr_f32(r); f.edge = pbr_f32(r);
+	f.er = pbr_i32(r); f.eg = pbr_i32(r); f.eb = pbr_i32(r);
+	f.cspace = pbr_i32(r); f.lspace = pbr_i32(r);
+	return f;
+}
+
+static void pbr_skip_mitem(struct pact_bin_reader *r, bool is_float)
+{
+	pbr_cstr(r);
+	pbr_cstr(r);
+	if (is_float) { pbr_f32(r); pbr_f32(r); }
+	else { pbr_i32(r); pbr_i32(r); }
+	pbr_i32(r);
+	pbr_i32(r);
+}
+
+static void pbr_skip_mlist(struct pact_bin_reader *r, bool is_float)
+{
+	int32_t m1 = pbr_i32(r);
+	if (m1 < 0 || m1 > 100000) { r->err = true; return; }
+	for (int32_t i = 0; i < m1 && !r->err; i++) pbr_skip_mitem(r, is_float);
+	int32_t m2 = pbr_i32(r);
+	if (m2 < 0 || m2 > 100000) { r->err = true; return; }
+	for (int32_t i = 0; i < m2 && !r->err; i++) {
+		int32_t m3 = pbr_i32(r);
+		if (m3 < 0 || m3 > 100000) { r->err = true; return; }
+		for (int32_t j = 0; j < m3 && !r->err; j++) pbr_skip_mitem(r, is_float);
+	}
+}
+
+struct pact_bin_part_links {
+	int no;
+	int32_t nr_children;
+	const char **children;
+	const char *links[6];
+	int32_t nr_radio;
+	const char **radio_names;
+};
+
+static struct activity_part *find_part_cstr(struct activity *a, const char *cstr)
+{
+	if (!a || !cstr || !cstr[0]) return NULL;
+	for (struct activity_part *p = a->parts; p; p = p->next)
+		if (!strcmp(p->name->text, cstr)) return p;
+	return NULL;
+}
+
+static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf, size_t size)
+{
+	struct pact_bin_reader R = { buf, size, 0, false };
+	struct pact_bin_reader *r = &R;
+	int32_t version = pbr_i32(r);
+	int32_t flag = pbr_i32(r);
+	int32_t nr_parts = pbr_i32(r);
+	(void)flag;
+	if (r->err || version < 1 || version > 20 || nr_parts < 0 || nr_parts > 100000)
+		return false;
+	if (!PE_CreateActivity(act_name))
+		return false;
+	struct activity *a = find_activity(act_name);
+	struct pact_bin_part_links *plinks = nr_parts > 0 ? xcalloc((size_t)nr_parts, sizeof(*plinks)) : NULL;
+
+	for (int32_t idx = 0; idx < nr_parts && !r->err; idx++) {
+		const char *pname_c = pbr_cstr(r);
+		int32_t nr_children = pbr_i32(r);
+		if (nr_children < 0 || nr_children > 10000) { r->err = true; break; }
+		plinks[idx].nr_children = nr_children;
+		if (nr_children > 0) {
+			plinks[idx].children = xmalloc((size_t)nr_children * sizeof(const char *));
+			for (int32_t c = 0; c < nr_children; c++)
+				plinks[idx].children[c] = pbr_cstr(r);
+		}
+		for (int k = 0; k < 6; k++)
+			plinks[idx].links[k] = pbr_opt_cstr(r);
+		if (r->err) break;
+
+		int no = PE_GetFreeNumber();
+		plinks[idx].no = no;
+		struct parts *p = parts_get(no);
+		struct string *pname = make_string(pname_c, (unsigned)strlen(pname_c));
+		PE_AddActivityParts(act_name, pname, no);
+		free_string(pname);
+
+		int32_t st0 = pbr_i32(r);
+		bool show = pbr_bool(r);
+		bool clickable = pbr_bool(r);
+		float x = pbr_f32(r);
+		float y = pbr_f32(r);
+		int32_t z = pbr_i32(r);
+		int32_t orig = pbr_i32(r);
+		bool pmove = pbr_bool(r);
+		bool msgw = pbr_bool(r);
+		int32_t alpha = pbr_i32(r);
+		int32_t add_r = pbr_i32(r), add_g = pbr_i32(r), add_b = pbr_i32(r);
+		int32_t mul_r = pbr_i32(r), mul_g = pbr_i32(r), mul_b = pbr_i32(r);
+		int32_t draw_filter = pbr_i32(r);
+		float mag_x = pbr_f32(r), mag_y = pbr_f32(r);
+		float rot_x = pbr_f32(r), rot_y = pbr_f32(r), rot_z = pbr_f32(r);
+		int32_t i11[11];
+		for (int i = 0; i < 11; i++) i11[i] = pbr_i32(r);
+		pbr_bool(r);
+		pbr_i32(r);
+		pbr_i32(r);
+		int32_t nv1 = pbr_i32(r);
+		if (nv1 < 0 || nv1 > 10000) { r->err = true; break; }
+		for (int32_t i = 0; i < nv1; i++) pbr_i32(r);
+		pbr_i32(r);
+		pbr_i32(r);
+		for (int i = 0; i < 2; i++) pbr_skip_mlist(r, true);
+		for (int i = 0; i < 9; i++) pbr_skip_mlist(r, false);
+		pbr_i32(r);
+		pbr_i32(r);
+		for (int i = 0; i < 5; i++) pbr_skip_mlist(r, true);
+		pbr_skip_mlist(r, false);
+		for (int i = 0; i < 4; i++) pbr_skip_mlist(r, true);
+		pbr_skip_mlist(r, false);
+		int32_t nv2 = pbr_i32(r);
+		if (nv2 < 0 || nv2 > 10000) { r->err = true; break; }
+		for (int32_t i = 0; i < nv2; i++) pbr_i32(r);
+		int32_t nv3 = pbr_i32(r);
+		if (nv3 < 0 || nv3 > 10000) { r->err = true; break; }
+		for (int32_t i = 0; i < nv3; i++) pbr_i32(r);
+		bool b4[4];
+		for (int i = 0; i < 4; i++) b4[i] = pbr_bool(r);
+		(void)b4;
+		if (version >= 4)
+			p->position_is_ratio = pbr_bool(r);
+		if (version >= 3) {
+			for (int s = 0; s < 4; s++) {
+				const char *snd = pbr_cstr(r);
+				if (s >= 1 && snd[0]) {
+					struct string *ss = make_string(snd, (unsigned)strlen(snd));
+					PE_Parts_SetSoundName(no, ss, s);
+					free_string(ss);
+				}
+			}
+		} else {
+			for (int s = 0; s < 4; s++) pbr_i32(r);
+		}
+		for (int i = 0; i < 4; i++) pbr_i32(r);
+		if (r->err) break;
+
+		(void)pmove;
+		if (st0 >= 1 && st0 <= 3) PE_SetInputState(no, st0);
+		PE_SetShow(no, show);
+		PE_SetClickable(no, clickable);
+		PE_SetComponentPos(no, x, y);
+		PE_SetZ(no, z);
+		PE_SetPartsOriginPosMode(no, orig);
+		PE_SetPartsMessageWindowShowLink(no, msgw);
+		PE_SetAlpha(no, alpha);
+		PE_SetAddColor(no, add_r, add_g, add_b);
+		PE_SetMultiplyColor(no, mul_r, mul_g, mul_b);
+		PE_SetPartsDrawFilter(no, draw_filter);
+		PE_SetPartsMagX(no, mag_x);
+		PE_SetPartsMagY(no, mag_y);
+		PE_SetPartsRotateX(no, rot_x);
+		PE_SetPartsRotateY(no, rot_y);
+		PE_SetPartsRotateZ(no, rot_z);
+		PE_SetComponentMargin(no, i11[0], i11[1], i11[2], i11[3]);
+		PE_SetEnableSpeedUp(no, !!i11[10]);
+
+		int32_t ck = pbr_i32(r);
+		switch (ck) {
+		case 0: { // Button
+			int32_t bw = pbr_i32(r), bh = pbr_i32(r);
+			bool ben = pbr_bool(r);
+			int32_t br = pbr_i32(r), bg = pbr_i32(r), bb = pbr_i32(r);
+			struct pact_font40 bf = pbr_font40(r);
+			const char *bcg = pbr_cstr(r);
+			const char *bflat = version >= 2 ? pbr_cstr(r) : "";
+			const char *btxt = pbr_cstr(r);
+			int32_t tpos = pbr_i32(r), cspace = pbr_i32(r), lspace = pbr_i32(r);
+			PE_SetSpecialComponentType(no, 0);
+			PE_SetButtonSize(no, bw, bh);
+			PE_SetButtonEnable(no, ben);
+			PE_SetButtonColor(no, br, bg, bb);
+			PE_SetButtonFontProperty(no, bf.type, bf.size, bf.r, bf.g, bf.b, bf.bold, bf.er, bf.eg, bf.eb, bf.edge);
+			PE_SetButtonTextOriginPosMode(no, tpos);
+			PE_SetButtonCharSpace(no, cspace);
+			PE_SetButtonLineSpace(no, lspace);
+			struct string *ts = make_string(btxt, (unsigned)strlen(btxt));
+			PE_SetButtonText(no, ts);
+			free_string(ts);
+			if (bcg[0]) {
+				struct string *cs = make_string(bcg, (unsigned)strlen(bcg));
+				PE_SetButtonCGName(no, cs);
+				free_string(cs);
+			}
+			if (bflat[0]) {
+				struct string *fs = make_string(bflat, (unsigned)strlen(bflat));
+				PE_SetButtonFlatName(no, fs);
+				free_string(fs);
+			}
+			break;
+		}
+		case 1: { // CheckBox
+			int32_t cw = pbr_i32(r), ch = pbr_i32(r);
+			bool checked = pbr_bool(r);
+			int32_t cr = pbr_i32(r), cg0 = pbr_i32(r), cb0 = pbr_i32(r);
+			struct pact_font40 cf = pbr_font40(r);
+			const char *ccg = pbr_cstr(r);
+			const char *cflat = version >= 2 ? pbr_cstr(r) : "";
+			const char *ctxt = pbr_cstr(r);
+			int32_t tpos = pbr_i32(r);
+			bool button_mode = pbr_bool(r);
+			int32_t cspace = pbr_i32(r), lspace = pbr_i32(r);
+			parts_checkbox_create(p);
+			p->widget->checked = checked;
+			PE_SetCheckBoxButtonMode(no, button_mode);
+			PE_SetCheckBoxSize(no, cw, ch);
+			PE_SetCheckBoxColor(no, cr, cg0, cb0);
+			PE_SetCheckBoxFontProperty(no, cf.type, cf.size, cf.r, cf.g, cf.b, cf.bold, cf.er, cf.eg, cf.eb, cf.edge);
+			PE_SetCheckBoxTextOriginPosMode(no, tpos);
+			PE_SetCheckBoxCharSpace(no, cspace);
+			PE_SetCheckBoxLineSpace(no, lspace);
+			struct string *ts = make_string(ctxt, (unsigned)strlen(ctxt));
+			PE_SetCheckBoxText(no, ts);
+			free_string(ts);
+			if (ccg[0]) {
+				struct string *cs = make_string(ccg, (unsigned)strlen(ccg));
+				PE_SetCheckBoxCGName(no, cs);
+				free_string(cs);
+			}
+			if (cflat[0]) {
+				struct string *fs = make_string(cflat, (unsigned)strlen(cflat));
+				PE_SetCheckBoxFlatName(no, fs);
+				free_string(fs);
+			}
+			break;
+		}
+		case 2:
+		case 3: { // VScrollbar / HScrollbar
+			bool horizontal = (ck == 3);
+			int32_t v7[7];
+			for (int i = 0; i < 7; i++) v7[i] = pbr_i32(r);
+			float rate = pbr_f32(r);
+			int32_t step = pbr_i32(r);
+			const char *scg = pbr_cstr(r);
+			const char *sflat = version >= 2 ? pbr_cstr(r) : "";
+			parts_scrollbar_create(p, horizontal);
+			struct parts_scrollbar *s = p->scrollbar;
+			s->width = horizontal ? v7[0] : v7[1];
+			s->height = horizontal ? v7[1] : v7[0];
+			s->before = v7[2];
+			s->after = v7[3];
+			s->total = v7[4];
+			s->view = v7[5];
+			s->pos = min(parts_scrollbar_range(s), max(0, v7[6]));
+			s->rate = min(1.f, max(0.f, rate));
+			s->step = step;
+			if (scg[0]) {
+				free_string(s->names[0][0]);
+				s->names[0][0] = make_string(scg, (unsigned)strlen(scg));
+			}
+			if (sflat[0]) {
+				free_string(s->names[1][0]);
+				s->names[1][0] = make_string(sflat, (unsigned)strlen(sflat));
+			}
+			parts_scrollbar_rebuild(p);
+			break;
+		}
+		case 4: { // TextBox
+			int32_t tw = pbr_i32(r), th = pbr_i32(r);
+			(void)pbr_font40(r);
+			pbr_bool(r);
+			const char *ttxt = pbr_cstr(r);
+			pbr_i32(r);
+			for (int i = 0; i < 13; i++) pbr_i32(r);
+			pbr_cstr(r);
+			pbr_i32(r);
+			if (version >= 5) pbr_bool(r);
+			PE_SetSpecialComponentType(no, 4);
+			parts_set_dims(p, &p->states[0].common, tw, th);
+			struct string *ts = make_string(ttxt, (unsigned)strlen(ttxt));
+			PE_SetTextBoxText(no, ts);
+			free_string(ts);
+			break;
+		}
+		case 5: { // ListBox
+			int32_t lw = pbr_i32(r), lh = pbr_i32(r);
+			pbr_i32(r); pbr_i32(r); pbr_i32(r);
+			pbr_cstr(r);
+			pbr_i32(r);
+			(void)pbr_font40(r);
+			int32_t ni = pbr_i32(r);
+			if (ni < 0 || ni > 100000) { r->err = true; break; }
+			for (int32_t i = 0; i < ni; i++) pbr_cstr(r);
+			pbr_i32(r); pbr_i32(r);
+			PE_SetSpecialComponentType(no, 5);
+			parts_set_dims(p, &p->states[0].common, lw, lh);
+			break;
+		}
+		case 6: { // ComboBox
+			int32_t cw = pbr_i32(r), ch = pbr_i32(r);
+			pbr_i32(r); pbr_i32(r);
+			pbr_cstr(r);
+			pbr_cstr(r);
+			(void)pbr_font40(r);
+			pbr_i32(r);
+			PE_SetSpecialComponentType(no, 6);
+			parts_set_dims(p, &p->states[0].common, cw, ch);
+			break;
+		}
+		case 7: { // MultiTextBox
+			int32_t mw = pbr_i32(r), mh = pbr_i32(r);
+			(void)pbr_font40(r);
+			pbr_bool(r);
+			const char *mtxt = pbr_cstr(r);
+			for (int i = 0; i < 15; i++) pbr_i32(r);
+			pbr_cstr(r);
+			pbr_i32(r); pbr_i32(r);
+			PE_SetSpecialComponentType(no, 7);
+			parts_set_dims(p, &p->states[0].common, mw, mh);
+			struct string *ts = make_string(mtxt, (unsigned)strlen(mtxt));
+			PE_SetTextBoxText(no, ts);
+			free_string(ts);
+			break;
+		}
+		case 8: { // LayoutBox
+			int32_t ltype = pbr_i32(r);
+			bool ret_flag = pbr_bool(r);
+			float ret_size = version < 4 ? (float)pbr_i32(r) : pbr_f32(r);
+			bool ret_rate = version >= 4 ? pbr_bool(r) : false;
+			int32_t align = pbr_i32(r);
+			int32_t pt0 = pbr_i32(r), pb0 = pbr_i32(r), pl0 = pbr_i32(r), pr0 = pbr_i32(r);
+			PE_SetLayoutBoxLayoutType(no, ltype);
+			PE_SetLayoutBoxAlign(no, align);
+			PE_SetLayoutBoxReturnF(no, ret_flag, ret_size);
+			PE_SetLayoutBoxReturnSizeForRate(no, ret_rate);
+			PE_set_layoutbox_padding(no, pt0, pb0, pl0, pr0);
+			break;
+		}
+		case 9: { // RadioButtonBox
+			int32_t nid = pbr_i32(r);
+			if (nid < 0 || nid > 10000) { r->err = true; break; }
+			for (int32_t i = 0; i < nid; i++) pbr_i32(r);
+			int32_t nnm = pbr_i32(r);
+			if (nnm < 0 || nnm > 10000) { r->err = true; break; }
+			plinks[idx].nr_radio = nnm;
+			if (nnm > 0) {
+				plinks[idx].radio_names = xmalloc((size_t)nnm * sizeof(const char *));
+				for (int32_t i = 0; i < nnm; i++)
+					plinks[idx].radio_names[i] = pbr_cstr(r);
+			}
+			PE_SetSpecialComponentType(no, 9);
+			break;
+		}
+		case 10: { // State Part
+			bool pix = pbr_bool(r);
+			PE_SetPartsPixelDecide(no, pix);
+			int32_t nst = pbr_i32(r);
+			if (nst < 0 || nst > 10) { r->err = true; break; }
+			for (int32_t s = 0; s < nst && !r->err; s++) {
+				int32_t st = pbr_i32(r);
+				bool apply = (s >= 1 && s <= PARTS_NR_STATES);
+				int state = s;
+				switch (st) {
+				case 10:
+					break;
+				case 11: { // CG
+					const char *cg_c = pbr_cstr(r);
+					int32_t deform = pbr_i32(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply) {
+						parts_get_cg(p, state - 1);
+						if (cg_c[0]) {
+							struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+							PE_SetPartsCG(no, cs, deform, state);
+							free_string(cs);
+						}
+						if (sa[2] > 0 && sa[3] > 0)
+							PE_SetPartsCGSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+					}
+					break;
+				}
+				case 12: { // LoopCG
+					const char *cg_c = pbr_cstr(r);
+					int32_t start_no = pbr_i32(r), nr_frames = pbr_i32(r), ftime = pbr_i32(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply && cg_c[0]) {
+						struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+						PE_SetLoopCG(no, cs, start_no, nr_frames, ftime, state);
+						free_string(cs);
+						if (sa[2] > 0 && sa[3] > 0)
+							PE_SetLoopCGSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+					}
+					break;
+				}
+				case 13: { // Text
+					struct pact_font48 f1 = pbr_font48(r);
+					struct pact_font48 f2 = pbr_font48(r);
+					bool b0 = pbr_bool(r);
+					int32_t v7[7];
+					for (int i = 0; i < 7; i++) v7[i] = pbr_i32(r);
+					int32_t nl = pbr_i32(r);
+					if (nl < 0 || nl > 100000) { r->err = true; break; }
+					for (int32_t i = 0; i < nl; i++)
+						for (int j = 0; j < 5; j++) pbr_i32(r);
+					const char *tx_c = pbr_cstr(r);
+					bool b1 = pbr_bool(r), b2 = pbr_bool(r);
+					(void)b1;
+					if (apply) {
+						PE_SetPartsFontType(no, f1.type, state);
+						PE_SetPartsFontSize(no, f1.size, state);
+						PE_SetPartsFontColor(no, f1.r, f1.g, f1.b, state);
+						PE_SetPartsFontBoldWeight(no, f1.bold, state);
+						PE_SetPartsFontEdgeWeight(no, f1.edge, state);
+						PE_SetPartsFontEdgeColor(no, f1.er, f1.eg, f1.eb, state);
+						PE_SetTextCharSpace(no, f1.cspace, state);
+						PE_SetTextLineSpace(no, f1.lspace, state);
+						struct parts_text *pt = parts_get_text(p, state - 1);
+						pt->show_time = v7[1];
+						pt->text_pos = v7[2];
+						pt->enable_tag = b0;
+						pt->count_return = b2;
+						pt->ruby_ts.face = f2.type;
+						pt->ruby_ts.size = f2.size;
+						pt->ruby_ts.color = (SDL_Color){ f2.r, f2.g, f2.b, 255 };
+						pt->ruby_ts.bold_width = f2.bold;
+						pt->ruby_ts.edge_color = (SDL_Color){ f2.er, f2.eg, f2.eb, 255 };
+						text_style_set_edge_width(&pt->ruby_ts, f2.edge);
+						pt->ruby_char_space = f2.cspace;
+						struct string *ts = make_string(tx_c, (unsigned)strlen(tx_c));
+						PE_SetText(no, ts, state);
+						free_string(ts);
+						if (v7[5] > 0 && v7[6] > 0)
+							PE_SetPartsTextSurfaceArea(no, v7[3], v7[4], v7[5], v7[6], state);
+					}
+					break;
+				}
+				case 14:
+				case 15: { // HGauge / VGauge
+					const char *cg_c = pbr_cstr(r);
+					float num = pbr_f32(r), den = pbr_f32(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply) {
+						struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+						if (st == 14) {
+							if (cg_c[0]) PE_SetHGaugeCG(no, cs, state);
+							PE_SetHGaugeRate(no, num, den, state);
+							if (sa[2] > 0 && sa[3] > 0)
+								PE_SetHGaugeSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+						} else {
+							if (cg_c[0]) PE_SetVGaugeCG(no, cs, state);
+							PE_SetVGaugeRate(no, num, den, state);
+							if (sa[2] > 0 && sa[3] > 0)
+								PE_SetVGaugeSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+						}
+						free_string(cs);
+					}
+					break;
+				}
+				case 16: { // Numeral
+					const char *cg_c = pbr_cstr(r);
+					int32_t show_type = pbr_i32(r);
+					int32_t nw = pbr_i32(r);
+					if (nw < 0 || nw > 1000) { r->err = true; break; }
+					int32_t w12[12] = {0};
+					for (int32_t i = 0; i < nw; i++) {
+						int32_t wv = pbr_i32(r);
+						if (i < 12) w12[i] = wv;
+					}
+					int32_t num_val = pbr_i32(r);
+					bool show_comma = pbr_bool(r);
+					int32_t space = pbr_i32(r);
+					struct pact_font40 nf = pbr_font40(r);
+					bool full_pitch = pbr_bool(r);
+					int32_t length = pbr_i32(r);
+					bool show_pad = pbr_bool(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply) {
+						PE_SetNumeralFont(no, nf.type, nf.size, nf.r, nf.g, nf.b, nf.bold, nf.er, nf.eg, nf.eb, nf.edge, state);
+						struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+						if (cg_c[0] && show_type == 0)
+							PE_SetNumeralCG(no, cs, state);
+						else if (cg_c[0] && show_type == 1)
+							PE_SetNumeralLinkedCGNumberWidthWidthList(no, cs,
+								w12[0], w12[1], w12[2], w12[3], w12[4], w12[5],
+								w12[6], w12[7], w12[8], w12[9], w12[10], w12[11], state);
+						free_string(cs);
+						PE_SetNumeralShowType(no, show_type, state);
+						PE_SetNumeralSpace(no, space, state);
+						PE_SetNumeralShowComma(no, show_comma, state);
+						PE_SetNumeralFullPitch(no, full_pitch, state);
+						PE_SetNumeralShowPadding(no, show_pad, state);
+						PE_SetNumeralLength(no, length, state);
+						PE_SetNumeralNumber(no, num_val, state);
+						if (sa[2] > 0 && sa[3] > 0)
+							PE_SetNumeralSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+					}
+					break;
+				}
+				case 17: { // RectDetection
+					pbr_bool(r);
+					float f8[8];
+					for (int i = 0; i < 8; i++) f8[i] = pbr_f32(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					(void)sa;
+					if (apply)
+						PE_SetRectangleDetectionPoint(no, (int)f8[0], (int)f8[1], (int)f8[2], (int)f8[3],
+							(int)f8[4], (int)f8[5], (int)f8[6], (int)f8[7], state);
+					break;
+				}
+				case 18: { // ConstructionProcess
+					int32_t nops = pbr_i32(r);
+					if (nops < 0 || nops > 100000) { r->err = true; break; }
+					if (apply)
+						parts_get_construction_process(p, state - 1);
+					for (int32_t i = 0; i < nops && !r->err; i++) {
+						int32_t cmd = pbr_i32(r);
+						switch (cmd) {
+						case 0: {
+							int32_t dw = pbr_i32(r), dh = pbr_i32(r);
+							if (apply) PE_AddCreateToPartsConstructionProcess(no, dw, dh, state);
+							break;
+						}
+						case 1: {
+							int32_t dw = pbr_i32(r), dh = pbr_i32(r);
+							if (apply) PE_AddCreatePixelOnlyToPartsConstructionProcess(no, dw, dh, state);
+							break;
+						}
+						case 2: {
+							const char *cg_c = pbr_cstr(r);
+							if (apply) {
+								struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+								PE_AddCreateCGToProcess(no, cs, state);
+								free_string(cs);
+							}
+							break;
+						}
+						case 3:
+						case 10: {
+							int32_t v[7];
+							for (int j = 0; j < 7; j++) v[j] = pbr_i32(r);
+							if (apply) {
+								if (cmd == 3) PE_AddFillToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], state);
+								else PE_AddDrawRectToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], state);
+							}
+							break;
+						}
+						case 4:
+						case 6:
+						case 18: {
+							int32_t v[8];
+							for (int j = 0; j < 8; j++) v[j] = pbr_i32(r);
+							if (apply) {
+								if (cmd == 4) PE_AddFillAlphaColorToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], state);
+								else if (cmd == 6) PE_AddFillWithAlphaToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], state);
+								else PE_AddDrawLineToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], state);
+							}
+							break;
+						}
+						case 5: {
+							int32_t v[5];
+							for (int j = 0; j < 5; j++) v[j] = pbr_i32(r);
+							if (apply) PE_AddFillAMapToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], state);
+							break;
+						}
+						case 7:
+						case 8: {
+							int32_t dx = pbr_i32(r), dy = pbr_i32(r);
+							const char *tx_c = pbr_cstr(r);
+							int32_t ftype = pbr_i32(r), fsize = pbr_i32(r);
+							int32_t fr = pbr_i32(r), fg = pbr_i32(r), fb = pbr_i32(r);
+							float bold = pbr_f32(r);
+							int32_t er = pbr_i32(r), eg = pbr_i32(r), eb = pbr_i32(r);
+							float edge = pbr_f32(r);
+							int32_t cs0 = pbr_i32(r), ls0 = pbr_i32(r);
+							if (apply) {
+								struct string *ts = make_string(tx_c, (unsigned)strlen(tx_c));
+								if (cmd == 7)
+									PE_AddDrawTextToPartsConstructionProcess(no, dx, dy, ts, ftype, fsize, fr, fg, fb, bold, er, eg, eb, edge, cs0, ls0, state);
+								else
+									PE_AddCopyTextToPartsConstructionProcess(no, dx, dy, ts, ftype, fsize, fr, fg, fb, bold, er, eg, eb, edge, cs0, ls0, state);
+								free_string(ts);
+							}
+							break;
+						}
+						case 9: {
+							int32_t v[10];
+							for (int j = 0; j < 10; j++) v[j] = pbr_i32(r);
+							if (apply)
+								PE_AddFillGradationHorizonToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], state);
+							break;
+						}
+						case 11:
+						case 12:
+						case 13:
+						case 14: {
+							const char *cg_c = pbr_cstr(r);
+							int32_t v[9];
+							for (int j = 0; j < 9; j++) v[j] = pbr_i32(r);
+							if (apply) {
+								struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+								int sw = (cmd == 11 || cmd == 12) ? v[2] : v[6];
+								int sh = (cmd == 11 || cmd == 12) ? v[3] : v[7];
+								if (cmd == 11 || cmd == 13)
+									PE_AddDrawCutCGToPartsConstructionProcess(no, cs, v[0], v[1], v[2], v[3], v[4], v[5], sw, sh, v[8], state);
+								else
+									PE_AddCopyCutCGToPartsConstructionProcess(no, cs, v[0], v[1], v[2], v[3], v[4], v[5], sw, sh, v[8], state);
+								free_string(cs);
+							}
+							break;
+						}
+						case 15: {
+							int32_t v[4];
+							for (int j = 0; j < 4; j++) v[j] = pbr_i32(r);
+							bool full = pbr_bool(r);
+							if (apply) PE_AddGrayFilterToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], full, state);
+							break;
+						}
+						case 16:
+						case 17: {
+							int32_t v[7];
+							for (int j = 0; j < 7; j++) v[j] = pbr_i32(r);
+							bool full = pbr_bool(r);
+							if (apply) {
+								if (cmd == 16) PE_AddAddFilterToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], full, state);
+								else PE_AddMulFilterToPartsConstructionProcess(no, v[0], v[1], v[2], v[3], v[4], v[5], v[6], full, state);
+							}
+							break;
+						}
+						default:
+							r->err = true;
+							break;
+						}
+					}
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply && !r->err) {
+						PE_BuildPartsConstructionProcess(no, state);
+						if (sa[2] > 0 && sa[3] > 0)
+							PE_SetPartsConstructionSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+					}
+					break;
+				}
+				case 19: { // CGDetection
+					const char *cg_c = pbr_cstr(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					(void)sa;
+					if (apply && cg_c[0]) {
+						struct string *cs = make_string(cg_c, (unsigned)strlen(cg_c));
+						PE_SetPartsCGDetectionSize(no, cs, state);
+						free_string(cs);
+					}
+					break;
+				}
+				case 20: { // Flat
+					const char *fl_c = pbr_cstr(r);
+					int32_t sa[4];
+					for (int i = 0; i < 4; i++) sa[i] = pbr_i32(r);
+					if (apply && fl_c[0]) {
+						struct string *fs = make_string(fl_c, (unsigned)strlen(fl_c));
+						PE_SetPartsFlat(no, fs, state);
+						free_string(fs);
+					}
+					int32_t ncg = pbr_i32(r);
+					if (ncg < 0 || ncg > 10000) { r->err = true; break; }
+					for (int32_t i = 0; i < ncg; i++) {
+						const char *ocg = pbr_cstr(r), *ncg_s = pbr_cstr(r);
+						if (apply && ocg[0]) {
+							struct string *os = make_string(ocg, (unsigned)strlen(ocg));
+							struct string *ns = make_string(ncg_s, (unsigned)strlen(ncg_s));
+							PE_ChangeFlatCG(no, os, ns, state);
+							free_string(os);
+							free_string(ns);
+						}
+					}
+					int32_t nsnd = pbr_i32(r);
+					if (nsnd < 0 || nsnd > 10000) { r->err = true; break; }
+					for (int32_t i = 0; i < nsnd; i++) {
+						const char *osnd = pbr_cstr(r);
+						if (version >= 3) {
+							const char *nsnd_s = pbr_cstr(r);
+							if (apply && osnd[0]) {
+								struct string *os = make_string(osnd, (unsigned)strlen(osnd));
+								struct string *ns = make_string(nsnd_s, (unsigned)strlen(nsnd_s));
+								PE_ChangeFlatSound(no, os, ns, state);
+								free_string(os);
+								free_string(ns);
+							}
+						} else {
+							pbr_i32(r);
+						}
+					}
+					float fps_rate = pbr_f32(r);
+					if (apply) {
+						PE_SetFlatFPSRate(no, fps_rate, state);
+						if (sa[2] > 0 && sa[3] > 0)
+							PE_SetPartsFlatSurfaceArea(no, sa[0], sa[1], sa[2], sa[3], state);
+					}
+					break;
+				}
+				case 21: // Sound
+					pbr_bool(r);
+					break;
+				case 22: // Movie
+					pbr_bool(r);
+					for (int i = 0; i < 5; i++) pbr_i32(r);
+					break;
+				default:
+					r->err = true;
+					break;
+				}
+			}
+			break;
+		}
+		default:
+			r->err = true;
+			break;
+		}
+	}
+
+	if (!r->err) {
+		for (int32_t idx = 0; idx < nr_parts; idx++) {
+			int no = plinks[idx].no;
+			struct parts *p = parts_try_get(no);
+			if (!p) continue;
+			for (int32_t c = 0; c < plinks[idx].nr_children; c++) {
+				struct activity_part *cp = find_part_cstr(a, plinks[idx].children[c]);
+				if (cp) PE_SetParentPartsNumber(cp->no, no);
+			}
+			struct activity_part *lp;
+			if ((lp = find_part_cstr(a, plinks[idx].links[0])))
+				PE_SetPartsAlphaClipperPartsNumber(no, lp->no);
+			if ((lp = find_part_cstr(a, plinks[idx].links[1])))
+				PE_SetOnCursorShowLinkPartsNumber(no, lp->no);
+			for (int s = 0; s < 3; s++) {
+				lp = find_part_cstr(a, plinks[idx].links[2 + s]);
+				p->scroll_links[s] = lp ? lp->no : 0;
+			}
+			if ((lp = find_part_cstr(a, plinks[idx].links[5])))
+				PE_SetComponentCheckBoxShowLinkNumber(no, lp->no);
+			for (int32_t i = 0; i < plinks[idx].nr_radio; i++) {
+				struct activity_part *rp = find_part_cstr(a, plinks[idx].radio_names[i]);
+				if (rp) PE_AddRadioButtonBoxChild(no, rp->no);
+			}
+		}
+
+		int32_t n_close = pbr_i32(r);
+		if (n_close < 0 || n_close > 10000) r->err = true;
+		for (int32_t i = 0; i < n_close && !r->err; i++) {
+			const char *cn = pbr_cstr(r);
+			struct string *cs = make_string(cn, (unsigned)strlen(cn));
+			PE_AddActivityCloseParts(act_name, cs);
+			free_string(cs);
+		}
+
+		int32_t n_intent = pbr_i32(r);
+		if (n_intent < 0 || n_intent > 10000) r->err = true;
+		for (int32_t i = 0; i < n_intent && !r->err; i++) {
+			const char *src_c = pbr_cstr(r);
+			int32_t nd = pbr_i32(r);
+			if (nd < 0 || nd > 10000) { r->err = true; break; }
+			const char **dsts = nd > 0 ? xmalloc((size_t)nd * sizeof(const char *)) : NULL;
+			for (int32_t j = 0; j < nd; j++) dsts[j] = pbr_cstr(r);
+			int32_t itype = pbr_i32(r);
+			if (!r->err) {
+				struct string *ss = make_string(src_c, (unsigned)strlen(src_c));
+				if (nd == 0) {
+					PE_SetActivityIntentData(act_name, ss, &EMPTY_STRING, itype);
+				} else {
+					for (int32_t j = 0; j < nd; j++) {
+						struct string *ds = make_string(dsts[j], (unsigned)strlen(dsts[j]));
+						if (j == 0) PE_SetActivityIntentData(act_name, ss, ds, itype);
+						else PE_AddActivityIntentDataDestination(act_name, ss, ds);
+						free_string(ds);
+					}
+				}
+				free_string(ss);
+			}
+			free(dsts);
+		}
+
+		int32_t n_fmap = pbr_i32(r);
+		if (n_fmap < 0 || n_fmap > 10000) r->err = true;
+		for (int32_t i = 0; i < n_fmap && !r->err; i++) {
+			const char *pn_c = pbr_cstr(r);
+			int32_t nst = pbr_i32(r);
+			if (nst < 0 || nst > 1000) { r->err = true; break; }
+			struct string *pns = make_string(pn_c, (unsigned)strlen(pn_c));
+			for (int32_t j = 0; j < nst && !r->err; j++) {
+				int32_t st = pbr_i32(r);
+				int32_t np = pbr_i32(r);
+				if (np < 0 || np > 10000) { r->err = true; break; }
+				for (int32_t k = 0; k < np && !r->err; k++) {
+					const char *id_c = pbr_cstr(r), *fn_c = pbr_cstr(r);
+					struct string *ids = make_string(id_c, (unsigned)strlen(id_c));
+					struct string *fns = make_string(fn_c, (unsigned)strlen(fn_c));
+					PE_SetActivityFunc(act_name, pns, st, ids, fns);
+					free_string(ids);
+					free_string(fns);
+				}
+			}
+			free_string(pns);
+		}
+
+		int32_t n_endkey = pbr_i32(r);
+		if (n_endkey < 0 || n_endkey > 10000) r->err = true;
+		for (int32_t i = 0; i < n_endkey && !r->err; i++)
+			PE_SetActivityEndKey(act_name, pbr_i32(r));
+	}
+
+	for (int32_t idx = 0; idx < nr_parts; idx++) {
+		free(plinks[idx].children);
+		free(plinks[idx].radio_names);
+	}
+	free(plinks);
+
+	if (r->err) {
+		PE_ReleaseActivity(act_name, NULL);
+		return false;
+	}
+	PE_UpdateComponent(0);
+	return true;
+}
+
+static bool load_binary_pact(struct string *act_name, const uint8_t *raw, size_t raw_size)
+{
+	if (!raw || raw_size < 4)
+		return false;
+	uint32_t usize;
+	memcpy(&usize, raw, 4);
+	if (usize == 0 || usize > 64u * 1024u * 1024u)
+		return false;
+	uint8_t *ubuf = malloc(usize);
+	if (!ubuf)
+		return false;
+	uLongf dest_len = usize;
+	int zrc = uncompress(ubuf, &dest_len, raw + 4, (uLong)(raw_size - 4));
+	if (zrc != Z_OK || dest_len != usize) {
+		free(ubuf);
+		return false;
+	}
+	bool ok = parse_binary_pact_stream(act_name, ubuf, usize);
+	free(ubuf);
+	return ok;
+}
+
+bool PE_CrateActivityBinary(struct string *name, struct page **data)
+{
+	(void)name;
+	(void)data;
+	WARNING("PE_CrateActivityBinary is not implemented");
+	return false;
+}
+
+bool PE_ReadActivityBinary(struct string *name, struct page **data)
+{
+	if (!data || !*data || (*data)->nr_vars <= 0)
+		return false;
+	size_t n = (size_t)(*data)->nr_vars;
+	uint8_t *raw = xmalloc(n * 4);
+	for (size_t i = 0; i < n; i++) {
+		int32_t v = (*data)->values[i].i;
+		memcpy(raw + i * 4, &v, 4);
+	}
+	bool ok = load_binary_pact(name, raw, n * 4) || parse_binary_pact_stream(name, raw, n * 4);
+	free(raw);
+	return ok;
+}
+
+static bool is_exf_buffer(const uint8_t *buf, size_t size)
+{
+	return buf && size >= 12 && !memcmp(buf, "HEAD", 4) && !memcmp(buf + 8, "EXTF", 4);
+}
+
 bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit)
 {
 	struct archive_data *data = asset_get_by_name(ASSET_PACT, file->text, NULL);
-	struct ex *ex;
+	struct ex *ex = NULL;
 	if (data) {
+		if (!is_exf_buffer(data->data, data->size)) {
+			bool ok = load_binary_pact(name, data->data, data->size);
+			archive_free_data(data);
+			return ok;
+		}
 		ex = ex_read(data->data, data->size);
 		archive_free_data(data);
 	} else {
 		char *path = activity_file_path(file);
-		ex = path ? ex_read_file(path) : NULL;
-		free(path);
+		if (path) {
+			size_t raw_size = 0;
+			uint8_t *raw = file_read(path, &raw_size);
+			free(path);
+			if (!raw)
+				return false;
+			if (!is_exf_buffer(raw, raw_size)) {
+				bool ok = load_binary_pact(name, raw, raw_size);
+				free(raw);
+				return ok;
+			}
+			ex = ex_read(raw, raw_size);
+			free(raw);
+		}
 	}
 	if (!ex) return false;
 	struct ex_value *layout = block(ex, "アクティビティ");
@@ -1060,6 +2240,7 @@ static void free_activity_metadata(struct activity *a)
 		free(p);
 	}
 	mainex_v12_unregister_activity(a->ex_id);
+	free_activity_intents_and_funcs(a);
 	free_string(a->name);
 	free_string(a->background);
 	free_string(a->ex_text);
@@ -1201,11 +2382,18 @@ static void recover_legacy_activity_from_pact(struct string *handle, struct part
 	struct archive_data *data = asset_get_by_name(ASSET_PACT, file->text, NULL);
 	struct ex *ex = NULL;
 	if (data) {
-		ex = ex_read(data->data, data->size);
+		if (is_exf_buffer(data->data, data->size))
+			ex = ex_read(data->data, data->size);
 		archive_free_data(data);
 	} else {
 		char *path = activity_file_path(file);
-		ex = path ? ex_read_file(path) : NULL;
+		if (path) {
+			size_t raw_size = 0;
+			uint8_t *raw = file_read(path, &raw_size);
+			if (is_exf_buffer(raw, raw_size))
+				ex = ex_read(raw, raw_size);
+			free(raw);
+		}
 		free(path);
 	}
 	free_string(file);

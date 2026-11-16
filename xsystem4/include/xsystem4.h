@@ -97,6 +97,7 @@ extern bool game_rance8;
 extern bool game_rance8_mg;
 extern bool game_rance10;
 extern bool game_dohnadohna;
+extern bool game_evenicle;
 extern bool game_dungeons_and_dolls;
 
 #endif /* XSYSTEM4_H */

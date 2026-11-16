@@ -26,9 +26,12 @@
 #include "parts.h"
 #include "parts_activity.h"
 #include "parts_internal.h"
+#include "reign.h"
+#include "sact.h"
+#include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 30
+#define CURRENT_SAVE_VERSION 31
 
 static struct parts_context *back_scene;
 
@@ -960,6 +963,58 @@ static void load_parts_layout_box(struct iarray_reader *r, struct parts_layout_b
 	lb->padding_right = iarray_read(r);
 }
 
+static void save_parts_3dlayer(struct iarray_writer *w, struct parts_3dlayer *l)
+{
+	struct RE_plugin *p = l->plugin >= 0 ? RE_get_plugin(l->plugin) : NULL;
+	iarray_write(w, p ? 1 : 0);
+	if (!p)
+		return;
+	iarray_write(w, l->plugin);
+	iarray_write(w, p->version);
+	struct sact_sprite *sp = l->sprite_no >= 0 ? sact_try_get_sprite(l->sprite_no) : NULL;
+	iarray_write(w, sp ? sp->rect.x : 0);
+	iarray_write(w, sp ? sp->rect.y : 0);
+	iarray_write(w, sp ? sp->rect.w : 1);
+	iarray_write(w, sp ? sp->rect.h : 1);
+	iarray_write(w, false);
+	RE_plugin_save(p, w);
+}
+
+static void load_parts_3dlayer(struct iarray_reader *r, struct parts_3dlayer *l, int version)
+{
+	if (version < 31 || !iarray_read(r))
+		return;
+	int saved_plugin = iarray_read(r);
+	enum RE_plugin_version pver = iarray_read(r);
+	int vx = iarray_read(r);
+	int vy = iarray_read(r);
+	int vw = iarray_read(r);
+	int vh = iarray_read(r);
+	bool sp_show = !!iarray_read(r);
+	int w = vw > 0 ? vw : 1;
+	int h = vh > 0 ? vh : 1;
+
+	int handle = ReignEngine_create_plugin_at(saved_plugin, pver);
+	struct RE_plugin *p = handle >= 0 ? RE_get_plugin(handle) : NULL;
+	int sp_no = p ? sact_SP_GetUnuseNum(0) : -1;
+	struct sact_sprite *sp = sp_no >= 0 ? sact_create_sprite(sp_no, w, h, 0, 0, 0, 255) : NULL;
+	if (!p || !sp || !ReignEngine_BindPlugin(handle, sp_no)) {
+		if (sp)
+			sact_SP_Delete(sp_no);
+		if (handle >= 0)
+			ReignEngine_ReleasePlugin(handle);
+		RE_plugin_load(NULL, r);
+		return;
+	}
+	RE_set_viewport(p, vx, vy, w, h);
+	// Bound 3D layer sprite is composited via parts_render_3dlayer(), never via SACT scene.
+	(void)sp_show;
+	sprite_set_show(sp, false);
+	RE_plugin_load(p, r);
+	l->plugin = handle;
+	l->sprite_no = sp_no;
+}
+
 static void save_parts_state(struct iarray_writer *w, struct parts *parts, struct parts_state *state)
 {
 	iarray_write(w, state->type);
@@ -971,7 +1026,9 @@ static void save_parts_state(struct iarray_writer *w, struct parts *parts, struc
 	switch (state->type) {
 	case PARTS_UNINITIALIZED:
 	case PARTS_MOVIE:
+		break;
 	case PARTS_3DLAYER:
+		save_parts_3dlayer(w, &state->layer3d);
 		break;
 	case PARTS_RECT_DETECTION:
 		iarray_write(w, state->rect.custom);
@@ -1022,7 +1079,9 @@ static void load_parts_state(struct iarray_reader *r, struct parts *parts,
 	switch (state->type) {
 	case PARTS_UNINITIALIZED:
 	case PARTS_MOVIE:
+		break;
 	case PARTS_3DLAYER:
+		load_parts_3dlayer(r, &state->layer3d, version);
 		break;
 	case PARTS_RECT_DETECTION:
 		if (version >= 13) {
@@ -1099,6 +1158,14 @@ static void save_parts_motion(struct iarray_writer *w, struct parts_motion *moti
 		iarray_write(w, motion->begin.x);
 		iarray_write(w, motion->begin.y);
 		break;
+	case PARTS_MOTION_ADD_COLOR:
+	case PARTS_MOTION_MUL_COLOR:
+		iarray_write_color(w, &motion->begin.color);
+		iarray_write_color(w, &motion->end.color);
+		break;
+	case PARTS_MOTION_CG_NAME:
+		iarray_write_string_or_null(w, motion->cg_name);
+		break;
 	}
 	iarray_write(w, motion->begin_time);
 	iarray_write(w, motion->end_time);
@@ -1134,6 +1201,14 @@ static struct parts_motion *load_parts_motion(struct iarray_reader *r)
 	case PARTS_MOTION_VIBRATION_SIZE:
 		motion->begin.x = iarray_read(r);
 		motion->begin.y = iarray_read(r);
+		break;
+	case PARTS_MOTION_ADD_COLOR:
+	case PARTS_MOTION_MUL_COLOR:
+		iarray_read_color(r, &motion->begin.color);
+		iarray_read_color(r, &motion->end.color);
+		break;
+	case PARTS_MOTION_CG_NAME:
+		motion->cg_name = iarray_read_string_or_null(r);
 		break;
 	}
 	motion->begin_time = iarray_read(r);
@@ -1349,7 +1424,7 @@ static void load_parts(struct iarray_reader *r, int version)
 	struct parts *parts = parts_get(no);
 	// Allocation normally attaches new components to the active controller.
 	// Saved components have their own parent IDs, including detached roots.
-	if (ain->version >= 12 && parts->parent) {
+	if (parts_v2 && parts->parent) {
 		TAILQ_REMOVE(&parts->parent->children, parts, child_list_entry);
 		parts->parent = NULL;
 	}
@@ -1530,6 +1605,15 @@ static bool parts_wants_backscene(struct parts *parts)
 	return true;
 }
 
+static bool parts_has_3dlayer(const struct parts *parts)
+{
+	for (int i = 0; i < PARTS_NR_STATES; i++) {
+		if (parts->states[i].type == PARTS_3DLAYER)
+			return true;
+	}
+	return false;
+}
+
 static bool parts_engine_save(struct page **buffer, bool save_hidden, bool backscene)
 {
 	// get parts into clean state first
@@ -1559,7 +1643,7 @@ static bool parts_engine_save(struct page **buffer, bool save_hidden, bool backs
 			continue;
 		if (backscene && !parts_wants_backscene(parts))
 			continue;
-		if (ain->version < 12 && !parts->want_save)
+		if (!parts_v2 && !parts->want_save && !parts_has_3dlayer(parts))
 			continue;
 		save_parts(&w, parts);
 		count++;
@@ -1648,7 +1732,7 @@ bool PE_Load(struct page **buffer)
 	for (int i = 0; i < nr_parts; i++) {
 		load_parts(&r, version);
 	}
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		// Resolve the complete hierarchy before recursive updates can remove
 		// children from the dirty list and discard their pending parent links.
 		struct parts *parts;
@@ -1716,6 +1800,30 @@ void PE_SetShowForBackScene(int no, bool show)
 	struct parts_context *previous = parts_context_select(back_scene);
 	if (parts_try_get(no)) {
 		PE_SetShow(no, show);
+		PE_UpdateComponent(0);
+		scene_dirty();
+	}
+	parts_context_select(previous);
+}
+
+void PE_SetMulColorForBackScene(int no, int r, int g, int b)
+{
+	if (!back_scene) return;
+	struct parts_context *previous = parts_context_select(back_scene);
+	if (parts_try_get(no)) {
+		PE_SetMultiplyColor(no, r, g, b);
+		PE_UpdateComponent(0);
+		scene_dirty();
+	}
+	parts_context_select(previous);
+}
+
+void PE_SetAlphaForBackScene(int no, int a)
+{
+	if (!back_scene) return;
+	struct parts_context *previous = parts_context_select(back_scene);
+	if (parts_try_get(no)) {
+		PE_SetAlpha(no, a);
 		PE_UpdateComponent(0);
 		scene_dirty();
 	}

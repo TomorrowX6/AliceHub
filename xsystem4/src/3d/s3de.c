@@ -515,6 +515,7 @@ static struct s3de *parse_3de(char *text)
 		else if (MATCH("子移動方向タイプ = %d", &n)) { /* unused */ }
 		else if (MATCH("アップベクトルタイプ = %d", &n)) { /* unused */ }
 		else if (MATCH("停止フレーム = %d", &n)) { /* unused */ }
+		else if (MATCH("乱数の種 = %d", &n)) { /* unused */ }
 		else if (MATCH("アルファフェードインフレーム = ")) { if (!parse_range(&text, &current->alpha_fade_in_frame)) goto err; }
 		else if (MATCH("アルファフェードアウトフレーム = ")) { if (!parse_range(&text, &current->alpha_fade_out_frame)) goto err; }
 		else if (MATCH("ダメージ = ")) {

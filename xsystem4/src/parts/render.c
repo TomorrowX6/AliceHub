@@ -31,6 +31,7 @@
 #include "sact.h"
 #include "scene.h"
 #include "sprite.h"
+#include "reign.h"
 #include "xsystem4.h"
 
 #include "parts.h"
@@ -823,6 +824,11 @@ static void parts_render_3dlayer(struct parts *parts, struct parts_3dlayer *l)
 {
 	if (l->sprite_no < 0)
 		return;
+	if (l->plugin >= 0) {
+		struct RE_plugin *p = RE_get_plugin(l->plugin);
+		if (p && p->suspended)
+			return;
+	}
 	struct sact_sprite *sp = sact_try_get_sprite(l->sprite_no);
 	if (!sp)
 		return;

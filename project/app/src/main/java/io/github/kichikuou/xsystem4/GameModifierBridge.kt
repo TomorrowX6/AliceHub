@@ -19,6 +19,7 @@ object GameModifierBridge {
     private const val KEY_DISABLE_STREAMER_MODE = "disable_streamer_mode"
     private const val KEY_LOCK_MASK = "lock_mask"
     private const val KEY_DOHNA_LOCK_MASK = "dohna_lock_mask"
+    private const val KEY_EVENICLE_LOCK_MASK = "evenicle_lock_mask"
     private const val KEY_FONT_SCALE_PCT = "font_scale_pct"
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
     private const val KEY_CONFIG_SEQ = "config_seq"
@@ -55,6 +56,14 @@ object GameModifierBridge {
     const val LOCK_DD_WORKER_BEST_COND = 1 shl 6
     const val LOCK_DD_WORK_FREEZE_TIMER = 1 shl 7
     const val LOCK_DD_ALL_MASK = 0xFF
+
+    const val LOCK_EV_NO_ENCOUNT = 1 shl 0
+    const val LOCK_EV_ALLY_FULL_HP = 1 shl 1
+    const val LOCK_EV_INF_SKILL_P = 1 shl 2
+    const val LOCK_EV_INF_BP = 1 shl 3
+    const val LOCK_EV_ONE_HIT_KILL = 1 shl 4
+    const val LOCK_EV_INFINITE_MONEY = 1 shl 5
+    const val LOCK_EV_ALL_MASK = 0x3F
 
     @Volatile
     private var loaded = false
@@ -119,6 +128,29 @@ object GameModifierBridge {
         return false
     }
 
+    fun isEvenicleGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (gameDir != null && gameDir.isDirectory) {
+            val files = gameDir.listFiles()
+            if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
+                return files.any { it.isFile && it.name.equals("Evenicle.ain", ignoreCase = true) }
+            }
+        }
+        if (saveDir != null && saveDir.isDirectory) {
+            if (File(saveDir, "CommonSystemData.sav").isFile || File(saveDir, "CommonOtherData.sav").isFile) {
+                return true
+            }
+        }
+        if (!dirNameFallback.isNullOrBlank()) {
+            val lower = dirNameFallback.lowercase()
+            if (lower == "evenicle" || lower.startsWith("evenicle-") ||
+                lower.contains("イブニクル") || lower.contains("夏娃年代记")
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun syncNativeConfigPath(context: Context) {
         if (!loaded) return
         try {
@@ -146,9 +178,11 @@ object GameModifierBridge {
                     rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
                 }
                 val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+                val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
                 json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
                 json.put(KEY_LOCK_MASK, mask)
                 json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+                json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
                 val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
                 val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
                 json.put(KEY_FONT_SCALE_PCT, fontPct)
@@ -200,6 +234,7 @@ object GameModifierBridge {
             rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
         }
         val dohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+        val evenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
         val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val json = JSONObject().apply {
@@ -212,6 +247,7 @@ object GameModifierBridge {
             put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
             put(KEY_LOCK_MASK, mask)
             put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+            put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
             put(KEY_FONT_SCALE_PCT, fontPct)
             put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
@@ -238,6 +274,7 @@ object GameModifierBridge {
             rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
         }
         val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+        val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
         val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
@@ -250,6 +287,7 @@ object GameModifierBridge {
         json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
         json.put(KEY_LOCK_MASK, mask)
         json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+        json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
         json.put(KEY_FONT_SCALE_PCT, fontPct)
         json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
         json.put(KEY_CONFIG_SEQ, nextSeq)
@@ -274,6 +312,7 @@ object GameModifierBridge {
             .putBoolean(KEY_DISABLE_STREAMER_MODE, disableStreamer)
             .putInt(KEY_LOCK_MASK, mask)
             .putInt(KEY_DOHNA_LOCK_MASK, dohnaMask)
+            .putInt(KEY_EVENICLE_LOCK_MASK, evenicleMask)
             .putInt(KEY_FONT_SCALE_PCT, fontPct)
             .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             .putInt(KEY_CONFIG_SEQ, nextSeq)
@@ -329,18 +368,23 @@ object GameModifierBridge {
         return try {
             val liveMask = nativeGetLiveLocks()
             val dohnaLiveMask = getDohnaLiveLocks()
+            val evenicleLiveMask = getEvenicleLiveLocks()
             val json = readConfigJson(context)
             val savedMask = json.optInt(KEY_LOCK_MASK, 0)
             val savedDohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+            val savedEvenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val prefsMask = prefs.getInt(KEY_LOCK_MASK, -1)
             val prefsDohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, -1)
+            val prefsEvenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, -1)
             if (liveMask != savedMask || liveMask != prefsMask ||
-                dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask
+                dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask ||
+                evenicleLiveMask != savedEvenicleMask || evenicleLiveMask != prefsEvenicleMask
             ) {
                 json.put(KEY_DISABLE_STREAMER_MODE, (liveMask and LOCK_DISABLE_STREAMER_MODE) != 0)
                 json.put(KEY_LOCK_MASK, liveMask)
                 json.put(KEY_DOHNA_LOCK_MASK, dohnaLiveMask)
+                json.put(KEY_EVENICLE_LOCK_MASK, evenicleLiveMask)
                 writeConfigJson(context, json)
             }
             json.optInt(KEY_CONFIG_SEQ, 0)
@@ -459,6 +503,45 @@ object GameModifierBridge {
         if (!loaded) return 0
         return try {
             nativeGetDohnaLiveLocks() and LOCK_DD_ALL_MASK
+        } catch (_: Throwable) {
+            0
+        }
+    }
+
+    fun getSavedEvenicleLockMask(context: Context): Int {
+        return readConfigJson(context).optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
+    }
+
+    fun getEvenicleLiveLockCount(context: Context): Int {
+        return Integer.bitCount(getSavedEvenicleLockMask(context))
+    }
+
+    fun setSavedEvenicleLockMask(context: Context, mask: Int) {
+        val clean = mask and LOCK_EV_ALL_MASK
+        val json = readConfigJson(context)
+        json.put(KEY_EVENICLE_LOCK_MASK, clean)
+        writeConfigJson(context, json)
+        if (loaded) {
+            try {
+                nativeSetConfigPath(getConfigFilePath(context))
+                setEvenicleLiveLocks(clean)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun setEvenicleLiveLocks(mask: Int) {
+        if (!loaded) return
+        try {
+            nativeSetEvenicleLiveLocks(mask and LOCK_EV_ALL_MASK)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun getEvenicleLiveLocks(): Int {
+        if (!loaded) return 0
+        return try {
+            nativeGetEvenicleLiveLocks() and LOCK_EV_ALL_MASK
         } catch (_: Throwable) {
             0
         }
@@ -624,6 +707,12 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetDohnaLiveLocks(): Int
+
+    @JvmStatic
+    external fun nativeSetEvenicleLiveLocks(mask: Int)
+
+    @JvmStatic
+    external fun nativeGetEvenicleLiveLocks(): Int
 
     @JvmStatic
     external fun nativeApplyLiveAction(actionSpec: String)

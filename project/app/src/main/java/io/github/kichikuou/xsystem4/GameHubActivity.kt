@@ -236,7 +236,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         )
 
         findViewById<TextView>(R.id.hub_title).text =
-            if (descriptor.id == GameCatalog.ID_RANCE10 || descriptor.id == GameCatalog.ID_DOHNA_DOHNA) {
+            if (descriptor.id == GameCatalog.ID_RANCE10 ||
+                descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
+                descriptor.id == GameCatalog.ID_EVENICLE
+            ) {
                 descriptor.title
             } else {
                 curItem?.cleanGameTitle() ?: descriptor.title
@@ -464,34 +467,12 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun openLocalInstallBaseDialog() {
         if (gameList.installState is InstallState.Installing) return
-        val options = arrayOf(
-            getString(R.string.game_opt_zip),
-            getString(R.string.game_opt_dir)
+        GameCatalog.showLocalGameImportDialog(
+            activity = this,
+            titleRes = R.string.game_local_dialog_title,
+            archiveReqCode = HUB_INSTALL_ARCHIVE_REQ,
+            dirReqCode = HUB_INSTALL_DIR_REQ
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.game_local_dialog_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivityForResult(
-                            Intent.createChooser(i, getString(R.string.choose_a_file)),
-                            HUB_INSTALL_ARCHIVE_REQ
-                        )
-                    }
-                    1 -> {
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, HUB_INSTALL_DIR_REQ)
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
     }
 
     private fun Item.cleanGameTitle(): String {

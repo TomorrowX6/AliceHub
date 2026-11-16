@@ -40,6 +40,7 @@ bool game_rance8 = false;
 bool game_rance8_mg = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
+bool game_evenicle = false;
 bool game_dungeons_and_dolls = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
@@ -298,6 +299,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
 	game_dohnadohna = ain->version == 14
 		&& ain_get_function(ain, "DohnaDohna@CreateResources") >= 0;
+	game_evenicle = ain->version == 6
+		&& ain_get_struct(ain, "CBigMap") >= 0
+		&& ain_get_function(ain, "CMapPlayer@RunPathFindMove") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")

@@ -35,6 +35,7 @@ data class GameSelectEntry(
 object GameCatalog {
     const val ID_RANCE10 = "rance10"
     const val ID_DOHNA_DOHNA = "dohnadohna"
+    const val ID_EVENICLE = "evenicle"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -65,6 +66,9 @@ object GameCatalog {
                 if (ainFiles.any { it.name.equals("dohnadohna.ain", ignoreCase = true) }) {
                     return ID_DOHNA_DOHNA
                 }
+                if (ainFiles.any { it.name.equals("Evenicle.ain", ignoreCase = true) }) {
+                    return ID_EVENICLE
+                }
                 if (ainFiles.isNotEmpty()) {
                     return "$PREFIX_CUSTOM$dirName"
                 }
@@ -72,6 +76,12 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
+            if (File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_EVENICLE
+            }
             if ((File(saveDir, "GlobalSaveData.asd").isFile ||
                     File(saveDir, "AFInfo.asd").isFile ||
                     File(saveDir, "SaveData5000.asd").isFile) &&
@@ -85,6 +95,9 @@ object GameCatalog {
         }
 
         val lowerDir = dirName.lowercase()
+        if (lowerDir == "evenicle" || lowerDir.startsWith("evenicle-") || lowerDir.contains("イブニクル") || lowerDir.contains("夏娃")) {
+            return ID_EVENICLE
+        }
         if (lowerDir == "dohnadohna" || lowerDir.startsWith("dohnadohna-") || lowerDir.contains("多娜多娜")) {
             return ID_DOHNA_DOHNA
         }
@@ -93,6 +106,9 @@ object GameCatalog {
         }
 
         val lowerDisp = displayName?.lowercase() ?: ""
+        if (lowerDisp.contains("イブニクル") || lowerDisp.contains("evenicle") || lowerDisp.contains("夏娃")) {
+            return ID_EVENICLE
+        }
         if (lowerDisp.contains("多娜多娜") || lowerDisp.contains("ドーナドーナ") || lowerDisp.contains("dohna")) {
             return ID_DOHNA_DOHNA
         }
@@ -149,6 +165,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_EVENICLE -> GameDescriptor(
+                id = ID_EVENICLE,
+                title = context.getString(R.string.game_evenicle_title),
+                defaultDirName = "Evenicle",
+                expectedAinName = "Evenicle.ain",
+                iconRes = R.drawable.ic_game_evenicle,
+                accentColor = 0xFF1E88E5.toInt(),
+                accentBorderColor = 0x6642A5F5,
+                iconFrameColor = 0xFF151E2E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -188,10 +219,14 @@ object GameCatalog {
         val ddItems = matchingItems(gameList, ID_DOHNA_DOHNA)
         entries.add(GameSelectEntry(ddDesc, ddItems, ddItems.firstOrNull()))
 
+        val evDesc = descriptorFor(context, ID_EVENICLE, gameList)
+        val evItems = matchingItems(gameList, ID_EVENICLE)
+        entries.add(GameSelectEntry(evDesc, evItems, evItems.firstOrNull()))
+
         for (i in 0 until gameList.size) {
             val item = gameList[i]
             val cid = classifyItem(item)
-            if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA) {
+            if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))
             }
@@ -270,6 +305,46 @@ object GameCatalog {
         } catch (_: Throwable) {
         }
         clearRunningGameRoot(context)
+    }
+
+    /** Shows the standard local-game import chooser for an archive/image or a directory. */
+    fun showLocalGameImportDialog(
+        activity: Activity,
+        titleRes: Int,
+        archiveReqCode: Int,
+        dirReqCode: Int
+    ) {
+        val options = arrayOf(
+            activity.getString(R.string.game_opt_zip),
+            activity.getString(R.string.game_opt_dir)
+        )
+        AlertDialog.Builder(activity)
+            .setTitle(titleRes)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        activity.startActivityForResult(
+                            Intent.createChooser(i, activity.getString(R.string.choose_a_file)),
+                            archiveReqCode
+                        )
+                    }
+                    1 -> {
+                        activity.startActivityForResult(
+                            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            },
+                            dirReqCode
+                        )
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun startXSystem4Activity(context: Context, gameRoot: String, saveDir: String) {

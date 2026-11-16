@@ -239,8 +239,9 @@ class InstallAbortHandle {
 }
 
 object OnlineInstaller {
-    const val RANCE10_CDN_URL = "https://r10-src.000.moe"
-    const val DOHNA_DOHNA_CDN_URL = "https://dohnadohna.000.moe"
+    const val RANCE10_CDN_URL = "https://alicehub.000.moe/rance10"
+    const val DOHNA_DOHNA_CDN_URL = "https://alicehub.000.moe/dohnadohna"
+    const val EVENICLE_CDN_URL = "https://alicehub.000.moe/evenicle"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1047,6 +1048,7 @@ object OnlineInstaller {
                 val matches = when (targetGameId) {
                     GameCatalog.ID_RANCE10 -> lower.contains("rance10") || lower.contains("rance_10")
                     GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
+                    GameCatalog.ID_EVENICLE -> lower.contains("evenicle")
                     null, "" -> true
                     else -> false
                 }

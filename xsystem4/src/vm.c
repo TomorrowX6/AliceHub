@@ -1343,7 +1343,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 		stack_push(v);
 		break;
 	}
-	case DELETE: {
+	case DELETE:
+	case CHECKUDO: {
 		int slot = stack_pop().i;
 		if (slot != -1)
 			heap_unref(slot);
@@ -3143,6 +3144,9 @@ static enum opcode execute_instruction(enum opcode opcode)
 	// -- NOOPs ---
 	case FUNC:
 		break;
+	case ENDFUNC:
+		function_return();
+		return RETURN;
 	default:
 #ifdef DEBUGGER_ENABLED
 		if ((opcode & OPTYPE_MASK) == BREAKPOINT) {
@@ -3267,8 +3271,35 @@ int vm_execute_ain(struct ain *program)
 			heap[0].page->values[v->global_index].i = index;
 			heap[index].s = make_string(v->string_value, strlen(v->string_value));
 			break;
+		case AIN_REF_STRING:
+		case AIN_REF_STRUCT:
+		case AIN_REF_DELEGATE:
+		case AIN_REF_ARRAY_TYPE:
+		case AIN_REF_ARRAY:
+			// Resolved in the second pass once target globals have valid heap slots.
+			break;
 		default:
 			heap[0].page->values[v->global_index].i = v->int_value;
+			break;
+		}
+	}
+	for (int i = 0; i < ain->nr_initvals; i++) {
+		struct ain_initval *v = &ain->global_initvals[i];
+		switch (v->data_type) {
+		case AIN_REF_STRING:
+		case AIN_REF_STRUCT:
+		case AIN_REF_DELEGATE:
+		case AIN_REF_ARRAY_TYPE:
+		case AIN_REF_ARRAY:
+			if (v->int_value >= 0 && v->int_value < ain->nr_globals) {
+				int32_t slot = heap[0].page->values[v->int_value].i;
+				heap[0].page->values[v->global_index].i = slot;
+				heap_ref(slot);
+			} else {
+				heap[0].page->values[v->global_index].i = -1;
+			}
+			break;
+		default:
 			break;
 		}
 	}

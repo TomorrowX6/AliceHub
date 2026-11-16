@@ -200,9 +200,26 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
     companion object {
         fun parse(file: File): System40Ini {
             val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
+            val raw = file.readBytes()
+            val latin = String(raw, Charsets.ISO_8859_1)
+            val gnMatch = Regex("""(?:^|\r?\n)\s*GameName\s*=\s*"([^\r\n"]*)"""").find(latin)
+            val chosenCharset = if (gnMatch != null) {
+                val gnRaw = gnMatch.groupValues[1].toByteArray(Charsets.ISO_8859_1)
+                val decoded = ArchiveExtractor.decodeBestCjkText(gnRaw, preferGbkOnTie = true)
+                when {
+                    decoded == String(gnRaw, Charsets.UTF_8) && gnRaw.any { (it.toInt() and 0x80) != 0 } ->
+                        Charsets.UTF_8
+                    decoded == String(gnRaw, Charset.forName("Shift_JIS")) &&
+                        decoded != String(gnRaw, Charset.forName("GBK")) ->
+                        Charset.forName("Shift_JIS")
+                    else -> Charset.forName("GBK")
+                }
+            } else {
+                Charset.forName("GBK")
+            }
             var gameName: String? = null
             var SaveFolder: String? = null
-            for (line in file.readLines(Charset.forName("GBK"))) {
+            for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
                         "GameName" -> gameName = it.groupValues[2]
@@ -694,6 +711,70 @@ class GameList(activity: Activity) {
         observer?.onInstallFailure(msgId)
     }
 
+    private fun shouldSkipBaseInstallEntry(relPath: String): Boolean {
+        if (NativeGameImport.skip(relPath)) return true
+        val fileName = relPath.substringAfterLast('/').lowercase()
+        val isArchive = fileName.endsWith(".rar") || fileName.endsWith(".zip") || fileName.endsWith(".7z")
+        if (isArchive && (fileName.contains("sound album") || fileName.contains("(flac)") || fileName.contains("ost"))) {
+            return true
+        }
+        return false
+    }
+
+    private fun findGameRootDir(root: File, expectedAinName: String?): File? {
+        val candidates = root.walkTopDown()
+            .filter { d ->
+                d.isDirectory && run {
+                    val files = d.listFiles()?.filter { it.isFile }.orEmpty()
+                    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+                    val hasAin = files.any { it.name.endsWith(".ain", true) }
+                    hasIni && hasAin
+                }
+            }
+            .sortedBy { it.relativeTo(root).path.length }
+            .toList()
+        if (!expectedAinName.isNullOrBlank()) {
+            candidates.firstOrNull { d ->
+                d.listFiles()?.any { it.isFile && it.name.equals(expectedAinName, true) } == true
+            }?.let { return it }
+        }
+        return candidates.firstOrNull()
+    }
+
+    private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
+        val ainName = destGameDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }?.name
+        val destCanonical = destGameDir.canonicalPath
+        val patchDirs = mutableListOf<File>()
+        for (root in searchRoots) {
+            if (!root.exists()) continue
+            root.walkTopDown()
+                .filter { d ->
+                    d.isDirectory && !d.canonicalPath.startsWith(destCanonical) && run {
+                        val p = d.path.replace('\\', '/').lowercase()
+                        p.endsWith("/updatefiles/files/commonfiles") || p.endsWith("/commonfiles")
+                    }
+                }
+                .forEach { patchDirs.add(it) }
+        }
+        for (pdir in patchDirs) {
+            val files = pdir.listFiles()?.filter { it.isFile }.orEmpty()
+            val hasAin = files.any { it.name.endsWith(".ain", true) }
+            if (ainName != null && hasAin && files.none { it.name.equals(ainName, true) }) continue
+            pdir.walkTopDown().forEach { f ->
+                checkCancelled()
+                val rel = f.relativeTo(pdir).path.replace('\\', '/')
+                if (rel.isEmpty() || NativeGameImport.skip(rel)) return@forEach
+                val out = File(destGameDir, rel)
+                if (f.isDirectory) {
+                    out.mkdirs()
+                } else if (f.isFile) {
+                    out.parentFile?.mkdirs()
+                    f.copyTo(out, overwrite = true)
+                }
+            }
+        }
+    }
+
     private fun doInstallArchive(
         uri: Uri,
         storagePath: File,
@@ -704,23 +785,16 @@ class GameList(activity: Activity) {
     ): File {
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
-        var gameRoot: File? = null
         try {
+            var currentStageDir = File(tempDir, "stage0")
             ArchiveExtractor.extractUriToDirectory(
                 context = context,
                 uri = uri,
-                destDir = tempDir,
+                destDir = currentStageDir,
                 tempScratchParent = storagePath,
-                shouldSkip = { rel -> NativeGameImport.skip(rel) },
+                shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
-                onEntryAccepted = { outFile, _ ->
-                    if (outFile.name.equals("System40.ini", ignoreCase = true) ||
-                        outFile.name.equals("AliceStart.ini", ignoreCase = true)
-                    ) {
-                        gameRoot = outFile.parentFile
-                    }
-                },
                 onProgress = { totalBytes, entryPath ->
                     progressCallback(
                         context.getString(
@@ -731,22 +805,93 @@ class GameList(activity: Activity) {
                     )
                 }
             )
-            var srcDir = gameRoot
-            if (srcDir == null || srcDir.listFiles()?.none { it.isFile && it.name.endsWith(".ain", true) } == true) {
-                srcDir = tempDir.walkTopDown().firstOrNull { d ->
-                    d.isDirectory &&
-                        (d.listFiles()?.any {
-                            it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
-                        } == true) &&
-                        (d.listFiles()?.any { it.isFile && it.name.endsWith(".ain", true) } == true)
-                } ?: srcDir
+
+            var srcDir: File? = findGameRootDir(currentStageDir, expectedAinName)
+            var stage = 1
+            while (srcDir == null && stage <= 3) {
+                checkCancelled()
+                val discs = currentStageDir.walkTopDown()
+                    .filter { it.isFile && Iso9660Extractor.isIsoOrMdfName(it.name) }
+                    .sortedByDescending { it.length() }
+                    .toList()
+                val chosenDisc = discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, expectedAinName) }
+                    ?: if (expectedAinName.isNullOrBlank()) {
+                        discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null) }
+                    } else null
+
+                if (chosenDisc != null) {
+                    val nextDir = File(tempDir, "stage$stage")
+                    ArchiveExtractor.extractFileToDirectory(
+                        archiveFile = chosenDisc,
+                        destDir = nextDir,
+                        shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                        throwInstallFailureOnNoSpace = true,
+                        checkCancelled = checkCancelled,
+                        onProgress = { totalBytes, entryPath ->
+                            progressCallback(
+                                context.getString(
+                                    R.string.import_extract_progress,
+                                    totalBytes / (1024L * 1024L),
+                                    entryPath
+                                )
+                            )
+                        }
+                    )
+                    // Delete extracted disc images immediately to reclaim space while preserving UpdateFiles
+                    for (d in discs) d.delete()
+                    currentStageDir.walkTopDown()
+                        .filter { it.isFile && it.name.lowercase().endsWith(".mds") }
+                        .forEach { it.delete() }
+                    currentStageDir = nextDir
+                    srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                    stage++
+                    continue
+                }
+
+                val archives = currentStageDir.walkTopDown()
+                    .filter {
+                        it.isFile &&
+                            ArchiveExtractor.isSupportedArchiveName(it.name) &&
+                            !shouldSkipBaseInstallEntry(it.name)
+                    }
+                    .sortedByDescending { it.length() }
+                    .toList()
+                val chosenArchive = archives.firstOrNull() ?: break
+                val nextDir = File(tempDir, "stage$stage")
+                ArchiveExtractor.extractFileToDirectory(
+                    archiveFile = chosenArchive,
+                    destDir = nextDir,
+                    shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                    throwInstallFailureOnNoSpace = true,
+                    checkCancelled = checkCancelled,
+                    onProgress = { totalBytes, entryPath ->
+                        progressCallback(
+                            context.getString(
+                                R.string.import_extract_progress,
+                                totalBytes / (1024L * 1024L),
+                                entryPath
+                            )
+                        )
+                    }
+                )
+                for (a in archives) a.delete()
+                currentStageDir = nextDir
+                srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                stage++
             }
-            if (srcDir == null) throw InstallFailureException(R.string.zip_no_ini)
+
+            if (srcDir == null) {
+                val hasIni = tempDir.walkTopDown().any {
+                    it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
+                }
+                throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
+            }
             val ainFile = srcDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
                 ?: throw InstallFailureException(R.string.directory_no_game)
             if (!expectedAinName.isNullOrBlank() && !ainFile.name.equals(expectedAinName, ignoreCase = true)) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
+            overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
             val baseName = ainFile.nameWithoutExtension.ifEmpty { "Game" }
             var dstDir = File(storagePath, baseName)
             var i = 1

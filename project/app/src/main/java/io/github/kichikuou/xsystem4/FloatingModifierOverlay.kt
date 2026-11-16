@@ -197,12 +197,14 @@ class FloatingModifierOverlay(private val activity: Activity) {
             ?: GameModifierBridge.isCtrlOverlayVisible(activity))
         val j = readLiveJson()
         val isDohnaDohna = j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
-        val isRance10 = !isDohnaDohna && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
+        val isEvenicle = !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
+        val isRance10 = !isDohnaDohna && !isEvenicle && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)
         val lockCount = GameModifierBridge.getLiveLockCount(activity)
         val dohnaLockCount = GameModifierBridge.getDohnaLiveLockCount(activity)
+        val evenicleLockCount = GameModifierBridge.getEvenicleLiveLockCount(activity)
         val streamerLockOff = (savedMask and GameModifierBridge.LOCK_DISABLE_STREAMER_MODE) != 0
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
@@ -228,6 +230,27 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     "修改器 · 第${turn}天 · 资金:$money · TP:$tp/$tpMax",
                     "改造 · ${turn}日目 · 資金:$money · TP:$tp/$tpMax",
                     "Modifier · Day $turn · Money:$money · TP:$tp/$tpMax"
+                )
+            }
+        } else if (isEvenicle) {
+            if (!inGame) {
+                tr("修改器 · 未进入游戏", "改造 · 未開始", "Modifier · Not In Game")
+            } else if (inBattle) {
+                val eCnt = j.optInt("enemyCount", 0)
+                val eHp = j.optInt("enemyTotalHp", 0)
+                tr(
+                    "修改器 · 战斗中 · 敌${eCnt}名 · HP:$eHp",
+                    "改造 · 戦闘中 · 敵${eCnt}体 · HP:$eHp",
+                    "Modifier · Battle · Enemy HP:$eHp"
+                )
+            } else {
+                val money = j.optInt("money", 0)
+                val encNow = j.optInt("encountNow", 0)
+                val encMax = j.optInt("encountMax", 0)
+                tr(
+                    "修改器 · 所持金:$money · 遇敌:$encNow/$encMax",
+                    "改造 · 所持金:$money · 遭遇:$encNow/$encMax",
+                    "Modifier · Gold:$money · Enc:$encNow/$encMax"
                 )
             }
         } else if (!isRance10 || !inGame) {
@@ -273,6 +296,16 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     tr("经营与资源…", "経営・資金…", "Economy & Resources…") to { showDohnaEditEconomyDialog() },
                     tr("战斗成员…", "戦闘メンバー…", "Party Members…") to { showDohnaSelectPlayerDialog() },
                     tr("春销人材…", "ハルウリ人材…", "Brothel Workers…") to { showDohnaSelectWorkerDialog() }
+                )
+            )
+        } else if (isEvenicle) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $evenicleLockCount 项…", "リアルタイムロック · $evenicleLockCount 項目…", "Live Locks · $evenicleLockCount…") to { showEvenicleLocksDialog() },
+                    tr("常用作弊…", "定番チート…", "Common Cheats…") to { showEvenicleCommonCheatsDialog() },
+                    tr("战斗指令…", "戦闘クイック…", "Battle Actions…") to { showEvenicleBattleQuickDialog() },
+                    tr("修改所持金…", "所持金変更…", "Edit Gold…") to { showEvenicleEditMoneyDialog() },
+                    tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showEvenicleSelectCharDialog() }
                 )
             )
         }
@@ -703,6 +736,33 @@ class FloatingModifierOverlay(private val activity: Activity) {
         sendAction(act, toastMsg)
     }
 
+    private fun showBitmaskLocksDialog(
+        lockDefs: List<Pair<Int, String>>,
+        initialMask: Int,
+        applyMask: (Int) -> Unit
+    ) {
+        var mask = initialMask
+        val labels = lockDefs.map { it.second }.toTypedArray()
+        val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
+
+        dialogBuilder()
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val bit = lockDefs[which].first
+                mask = if (isChecked) (mask or bit) else (mask and bit.inv())
+            }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                applyMask(mask)
+                Toast.makeText(activity, tr("已更新锁定项", "ロックを更新しました", "Locks updated"), Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(tr("全部关闭", "全解除", "Clear All")) { _, _ ->
+                applyMask(0)
+                Toast.makeText(activity, tr("已关闭全部锁定", "全解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun showDohnaLocksDialog() {
         val lockDefs = listOf(
             GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("战斗锁定我方全员满HP", "味方全員HP最大ロック", "Lock Party Max HP"),
@@ -714,26 +774,220 @@ class FloatingModifierOverlay(private val activity: Activity) {
             GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材满精神满避孕药且不崩溃不怀孕", "人材メンタル・ピル最大維持", "Keep Workers Best Condition"),
             GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销营业配对倒计时锁定不减", "ハルウリ制限時間ロック", "Freeze Brothel Match Timer")
         )
-        var mask = GameModifierBridge.getSavedDohnaLockMask(activity)
-        val labels = lockDefs.map { it.second }.toTypedArray()
-        val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedDohnaLockMask(activity)
+        ) { GameModifierBridge.setSavedDohnaLockMask(activity, it) }
+    }
 
+    private fun showEvenicleLocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_EV_NO_ENCOUNT to tr("禁止随机遇敌 · 安全步数锁定满值", "エンカウント無効・エンカウントゲージ最大維持", "Disable Random Encounters"),
+            GameModifierBridge.LOCK_EV_ALLY_FULL_HP to tr("我方全员满 HP 锁定", "味方全員HP最大ロック", "Lock Party Full HP"),
+            GameModifierBridge.LOCK_EV_INF_SKILL_P to tr("无限技能点 · SkillP 至少 99", "スキルP無限・最低99維持", "Infinite Skill Points"),
+            GameModifierBridge.LOCK_EV_INF_BP to tr("无限 BP · 战斗 BP 满 5 格", "BP無限・5維持", "Infinite BP"),
+            GameModifierBridge.LOCK_EV_ONE_HIT_KILL to tr("战斗敌方全员 1 血秒杀", "敵全員HP1・一撃撃破", "Enemy 1 HP One-Hit Kill"),
+            GameModifierBridge.LOCK_EV_INFINITE_MONEY to tr("无限所持金 · 保底 9999999", "所持金無限・9999999維持", "Infinite Gold")
+        )
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedEvenicleLockMask(activity)
+        ) { GameModifierBridge.setSavedEvenicleLockMask(activity, it) }
+    }
+
+    private fun showEvenicleCommonCheatsDialog() {
+        val items = arrayOf(
+            tr("所持金增加 10 万", "所持金 +100,000", "Add 100,000 Gold"),
+            tr("所持金增加 100 万", "所持金 +1,000,000", "Add 1,000,000 Gold"),
+            tr("所持金拉满 99999999", "所持金カンスト 99999999", "Max Gold 99,999,999"),
+            tr("出战角色全员满 HP 与满 5 BP", "出撃キャラ全員HP・BP全回復", "Full Heal & BP 5 Party"),
+            tr("出战角色技能点全部补满 999", "出撃キャラ スキルP 999", "Set Party Skill Points to 999"),
+            tr("出战角色一键暴走强化 9999 HP 与 999 四维", "出撃キャラ最強強化 HP9999・能力999", "Super Boost Active Party"),
+            tr("立即触发下次移动遇敌", "次の移動で即エンカウント", "Trigger Instant Encounter"),
+            tr("清空当前遇敌危险度至安全状态", "エンカウント危険度を安全に戻す", "Clear Encounter Gauge")
+        )
         dialogBuilder()
-            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                val bit = lockDefs[which].first
-                mask = if (isChecked) (mask or bit) else (mask and bit.inv())
-            }
-            .setPositiveButton(R.string.ok) { _, _ ->
-                GameModifierBridge.setSavedDohnaLockMask(activity, mask)
-                Toast.makeText(activity, tr("已更新锁定项", "ロックを更新しました", "Locks updated"), Toast.LENGTH_SHORT).show()
-            }
-            .setNeutralButton(tr("全部关闭", "全解除", "Clear All")) { _, _ ->
-                GameModifierBridge.setSavedDohnaLockMask(activity, 0)
-                Toast.makeText(activity, tr("已关闭全部锁定", "全解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatAddMoney", 100000),
+                        tr("所持金已增加 10 万", "所持金 +100,000 を適用", "Added 100,000 Gold")
+                    )
+                    1 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatAddMoney", 1000000),
+                        tr("所持金已增加 100 万", "所持金 +1,000,000 を適用", "Added 1,000,000 Gold")
+                    )
+                    2 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatMaxMoney", true),
+                        tr("所持金已拉满 99999999", "所持金を最大にしました", "Max Gold applied")
+                    )
+                    3 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatPartyFullHeal", true),
+                        tr("出战角色已回满 HP 与 BP", "HP・BPを全回復しました", "Party healed & BP filled")
+                    )
+                    4 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatPartySkillP999", true),
+                        tr("出战角色技能点已设为 999", "スキルPを999にしました", "Party SkillP set to 999")
+                    )
+                    5 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatPartyBoost", true),
+                        tr("出战角色一键强化完成", "出撃キャラを強化しました", "Party boosted")
+                    )
+                    6 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatTriggerEncounter", true),
+                        tr("下次大地图移动将立即遇敌", "次の移動でエンカウントします", "Instant encounter armed")
+                    )
+                    7 -> sendDohnaInGameAction(
+                        JSONObject().put("evCheatClearEncounter", true),
+                        tr("遇敌危险度已重置为安全状态", "エンカウントをリセットしました", "Encounter gauge cleared")
+                    )
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun showEvenicleBattleQuickDialog() {
+        val items = arrayOf(
+            tr("敌方全员 HP 设为 1", "敵全員のHPを1にする", "Set All Enemies HP to 1"),
+            tr("我方全员满 HP 与满 5 BP", "味方全員HP・BP全回復", "Full Heal & BP 5 Allies")
+        )
+        dialogBuilder()
+            .setTitle(tr("战斗指令", "戦闘クイック", "Battle Actions"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(
+                        JSONObject().put("evBattle1HpEnemies", true),
+                        tr("敌方全员 HP 已设为 1", "敵全員のHPを1にしました", "Enemies HP set to 1"),
+                        requireBattle = true
+                    )
+                    1 -> sendDohnaInGameAction(
+                        JSONObject().put("evBattleHealAllies", true),
+                        tr("我方全员已回满 HP 与 BP", "味方全員を全回復しました", "Allies healed"),
+                        requireBattle = true
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEvenicleEditMoneyDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val encNow = j.optInt("encountNow", 0)
+        val encMax = j.optInt("encountMax", 0)
+        showDohnaFormDialog(
+            title = tr("修改所持金", "所持金変更", "Edit Gold"),
+            summary = tr("当前遇敌安全步数：$encNow / $encMax", "現在のエンカウント残値：$encNow / $encMax", "Encounter bar: $encNow / $encMax"),
+            fields = listOf(Triple("evMoney", tr("所持金 GOLD", "所持金 GOLD", "Gold"), j.optInt("money", 0))),
+            prefillValues = true
+        ) { vals ->
+            vals["evMoney"]?.let { m ->
+                sendDohnaInGameAction(JSONObject().put("evMoney", m), tr("所持金已修改", "所持金を変更しました", "Gold updated"))
+            }
+        }
+    }
+
+    private fun showEvenicleSelectCharDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val charsArr = j.optJSONArray("evCharacters") ?: org.json.JSONArray()
+        val entries = mutableListOf<Triple<Int, JSONObject?, String>>()
+        entries.add(Triple(-1, null, tr("所有出战角色 批量修改", "出撃キャラ全員 一括編集", "All Active Party Batch Edit")))
+        entries.add(Triple(-2, null, tr("全部角色 批量修改", "全キャラ 一括編集", "All Characters Batch Edit")))
+        for (i in 0 until charsArr.length()) {
+            val c = charsArr.optJSONObject(i) ?: continue
+            val idx = c.optInt("index", i)
+            val nm = c.optString("name", "#$idx")
+            val lv = c.optInt("lv", 1)
+            val hp = c.optInt("hp", 0)
+            val hpMax = c.optInt("hpMax", 0)
+            val atk = c.optInt("atk", 0)
+            val tag = if (c.optBoolean("inParty", false)) {
+                tr("出战", "出撃", "Party")
+            } else {
+                tr("待命", "控え", "Reserve")
+            }
+            entries.add(Triple(idx, c, "[$tag] $nm · Lv$lv · HP:$hp/$hpMax · ATK:$atk"))
+        }
+        val labels = entries.map { it.third }.toTypedArray()
+        dialogBuilder()
+            .setTitle(tr("选择要修改的角色", "編集するキャラを選択", "Select Character"))
+            .setItems(labels) { _, which ->
+                val chosen = entries[which]
+                showEvenicleEditCharDialog(chosen.first, chosen.second, chosen.third)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEvenicleEditCharDialog(target: Int, c: JSONObject?, labelTitle: String) {
+        val isBatch = target < 0
+        val title = if (isBatch) {
+            labelTitle
+        } else {
+            val nm = c?.optString("name", "#$target") ?: "#$target"
+            tr("修改属性 · $nm", "ステータス編集 · $nm", "Edit · $nm")
+        }
+        val fields = listOf(
+            Triple("lv", tr("等级 Lv", "レベル Lv", "Level"), c?.optInt("lv", 1) ?: 1),
+            Triple("hp", tr("当前 HP", "現在 HP", "Current HP"), c?.optInt("hp", 100) ?: 100),
+            Triple("hpMax", tr("最大 HP", "最大 HP", "Max HP"), c?.optInt("hpMax", 100) ?: 100),
+            Triple("atk", tr("攻击力 ATK", "攻撃力 ATK", "ATK"), c?.optInt("atk", 10) ?: 10),
+            Triple("mag", tr("魔法力 MAG", "魔法力 MAG", "MAG"), c?.optInt("mag", 10) ?: 10),
+            Triple("def", tr("防御力 DEF", "防御力 DEF", "DEF"), c?.optInt("def", 10) ?: 10),
+            Triple("spd", tr("速度 SPD", "素早さ SPD", "SPD"), c?.optInt("spd", 10) ?: 10),
+            Triple("skillP", tr("技能点 SkillP", "スキルポイント", "SkillP"), c?.optInt("skillP", 0) ?: 0),
+            Triple("bp", tr("斗志 BP 上限5", "BP 上限5", "BP max 5"), c?.optInt("bp", 0) ?: 0),
+            Triple("exp", tr("经验值 EXP", "経験値 EXP", "EXP"), c?.optInt("exp", 0) ?: 0)
+        )
+        showDohnaFormDialog(
+            title = title,
+            summary = if (isBatch) {
+                tr("留空的项保持原值不变", "空欄の項目は変更しません", "Leave blank to keep current value")
+            } else {
+                val sp = c?.optInt("skillP", 0) ?: 0
+                val bp = c?.optInt("bp", 0) ?: 0
+                tr("当前 SkillP:$sp · BP:$bp", "現在 SkillP:$sp · BP:$bp", "Current SkillP:$sp · BP:$bp")
+            },
+            fields = fields,
+            prefillValues = !isBatch,
+            neutralActionLabel = if (!isBatch) tr("一键强化并回满", "全回復・強化", "Full Heal & Boost") else null,
+            onNeutralAction = if (!isBatch) {
+                {
+                    val boost = JSONObject()
+                        .put("target", target)
+                        .put("hp", 9999)
+                        .put("hpMax", 9999)
+                        .put("atk", 999)
+                        .put("mag", 999)
+                        .put("def", 999)
+                        .put("spd", 999)
+                        .put("skillP", 999)
+                        .put("bp", 6)
+                    sendDohnaInGameAction(
+                        JSONObject().put("evCharEdit", boost),
+                        tr("角色已满状态强化", "キャラを強化しました", "Character boosted")
+                    )
+                }
+            } else null
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val ce = JSONObject().put("target", target)
+            for ((k, v) in vals) ce.put(k, v)
+            sendDohnaInGameAction(
+                JSONObject().put("evCharEdit", ce),
+                tr("角色属性修改已生效", "ステータスを更新しました", "Character updated")
+            )
+        }
     }
 
     private fun showDohnaBattleQuickDialog() {

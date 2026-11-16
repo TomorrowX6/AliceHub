@@ -42,6 +42,15 @@ int ReignEngine_create_plugin(enum RE_plugin_version version)
 	return -1;
 }
 
+int ReignEngine_create_plugin_at(int handle, enum RE_plugin_version version)
+{
+	if ((unsigned)handle < RE_MAX_PLUGINS && !plugins[handle]) {
+		plugins[handle] = RE_plugin_new(version);
+		return plugins[handle] ? handle : -1;
+	}
+	return ReignEngine_create_plugin(version);
+}
+
 struct RE_plugin *RE_get_plugin(int handle)
 {
 	return (unsigned)handle < RE_MAX_PLUGINS ? plugins[handle] : NULL;
@@ -653,7 +662,10 @@ static bool SealEngine_CalcInstanceHeightDetection(int plugin, int instance, flo
 		*height = 0.0f;
 		return false;
 	}
-	*height = RE_instance_calc_height(ri, x, -z);
+	if (!RE_instance_calc_height_ex(ri, x, -z, height)) {
+		*height = 0.0f;
+		return false;
+	}
 	return true;
 }
 
@@ -1137,7 +1149,11 @@ static bool ReignEngine_SetCameraAngleB(int plugin, float angle_b)
 	return true;
 }
 
-//float ReignEngine_GetShadowBias(int plugin, int num);
+static float ReignEngine_GetShadowBias(int plugin, int num)
+{
+	struct RE_plugin *p = RE_get_plugin(plugin);
+	return (p && num == 0) ? p->shadow_bias : 0.0f;
+}
 //float ReignEngine_GetShadowTargetDistance(int plugin, int num);
 
 static int ReignEngine_GetShadowMapResolutionLevel(int plugin)
@@ -1177,11 +1193,8 @@ static bool ReignEngine_SetShadowBias(int plugin, int num, float shadow_bias)
 	struct RE_plugin *p = RE_get_plugin(plugin);
 	if (!p)
 		return false;
-	if (num != 0) {
-		WARNING("SetShadowBias(num=%d): not supported", num);
-		return false;
-	}
-	p->shadow_bias = shadow_bias;
+	if (num == 0)
+		p->shadow_bias = shadow_bias;
 	return true;
 }
 
@@ -1830,8 +1843,13 @@ static bool ReignEngine_SetBackCGShow(int plugin, int num, bool show)
 
 //float ReignEngine_GetGlareBrightnessParam(int plugin, int index);
 HLL_WARN_UNIMPLEMENTED(false, bool, ReignEngine, SetGlareBrightnessParam, int plugin, int index, float param);
-//float ReignEngine_GetSSAOParam(int plugin, int type);
-HLL_WARN_UNIMPLEMENTED(false, bool, ReignEngine, SetSSAOParam, int plugin, int type, float param);
+static float ReignEngine_GetSSAOParam(int plugin, int type)
+{
+	(void)plugin;
+	(void)type;
+	return 0.0f;
+}
+HLL_QUIET_UNIMPLEMENTED(true, bool, ReignEngine, SetSSAOParam, int plugin, int type, float param);
 HLL_QUIET_UNIMPLEMENTED(false, bool, ReignEngine, IsLoading, int plugin);
 //int ReignEngine_GetDebugInfoMode(int plugin);
 //bool ReignEngine_SetDebugInfoMode(int plugin, int nMode);
@@ -1842,7 +1860,10 @@ HLL_WARN_UNIMPLEMENTED(false, bool, ReignEngine, SetInstanceFresnelReflectRate, 
 //float ReignEngine_GetInstanceSpecularReflectRate(int plugin, int instance);
 //float ReignEngine_GetInstanceFresnelReflectRate(int plugin, int instance);
 //float ReignEngine_StringToFloat(struct string *pIText);
-//bool ReignEngine_DrawToMainSurface(int plugin);
+static bool ReignEngine_DrawToMainSurface(int plugin)
+{
+	return RE_get_plugin(plugin) != NULL;
+}
 
 static int TapirEngine_CreatePlugin(void)
 {
@@ -1912,10 +1933,8 @@ static bool TapirEngine_OptimizeInstancePathLine(int plugin, int instance)
 	return RE_instance_optimize_path_line(get_instance(plugin, instance));
 }
 
-static bool TapirEngine_GetInstancePathLine(int plugin, int instance, struct page **x_array, struct page **y_array, struct page **z_array)
+static bool fill_path_line_arrays(const vec3 *path_points, int nr_path_points, struct page **x_array, struct page **y_array, struct page **z_array)
 {
-	int nr_path_points;
-	const vec3 *path_points = RE_instance_get_path_line(get_instance(plugin, instance), &nr_path_points);
 	if (!path_points)
 		return false;
 	if (*x_array) {
@@ -1940,6 +1959,13 @@ static bool TapirEngine_GetInstancePathLine(int plugin, int instance, struct pag
 		(*z_array)->values[i].f = -path_points[i][2];
 	}
 	return true;
+}
+
+static bool TapirEngine_GetInstancePathLine(int plugin, int instance, struct page **x_array, struct page **y_array, struct page **z_array)
+{
+	int nr_path_points;
+	const vec3 *path_points = RE_instance_get_path_line(get_instance(plugin, instance), &nr_path_points);
+	return fill_path_line_arrays(path_points, nr_path_points, x_array, y_array, z_array);
 }
 
 //bool TapirEngine_CreateInstancePathLineList(int PluginNumber, int InstanceNumber, int PathInstanceNumber);
@@ -1996,12 +2022,11 @@ static bool TapirEngine_Resume(int plugin_number)
 
 static int TapirEngine_GetNumofPlugin(void)
 {
-	int count = 0;
-	for (int i = 0; i < RE_MAX_PLUGINS; i++) {
+	for (int i = RE_MAX_PLUGINS - 1; i >= 0; i--) {
 		if (plugins[i])
-			count++;
+			return i + 1;
 	}
-	return count;
+	return 0;
 }
 
 static bool TapirEngine_IsExistPlugin(int plugin_number)
@@ -2237,7 +2262,7 @@ static bool TapirEngine_IsExistPlugin(int plugin_number)
 	    HLL_EXPORT(SetCameraAngle, ReignEngine_SetCameraAngle), \
 	    HLL_EXPORT(SetCameraAngleP, ReignEngine_SetCameraAngleP), \
 	    HLL_EXPORT(SetCameraAngleB, ReignEngine_SetCameraAngleB), \
-	    HLL_TODO_EXPORT(GetShadowBias, ReignEngine_GetShadowBias), \
+	    HLL_EXPORT(GetShadowBias, ReignEngine_GetShadowBias), \
 	    HLL_TODO_EXPORT(GetShadowTargetDistance, ReignEngine_GetShadowTargetDistance), \
 	    HLL_EXPORT(GetShadowMapResolutionLevel, ReignEngine_GetShadowMapResolutionLevel), \
 	    HLL_TODO_EXPORT(GetShadowSplitDepth, ReignEngine_GetShadowSplitDepth), \
@@ -2343,7 +2368,7 @@ static bool TapirEngine_IsExistPlugin(int plugin_number)
 	    HLL_EXPORT(SetBackCGShow, ReignEngine_SetBackCGShow), \
 	    HLL_TODO_EXPORT(GetGlareBrightnessParam, ReignEngine_GetGlareBrightnessParam), \
 	    HLL_EXPORT(SetGlareBrightnessParam, ReignEngine_SetGlareBrightnessParam), \
-	    HLL_TODO_EXPORT(GetSSAOParam, ReignEngine_GetSSAOParam), \
+	    HLL_EXPORT(GetSSAOParam, ReignEngine_GetSSAOParam), \
 	    HLL_EXPORT(SetSSAOParam, ReignEngine_SetSSAOParam), \
 	    HLL_EXPORT(CalcIntersectEyeVec, TapirEngine_CalcPathFinderIntersectEyeVec), \
 	    HLL_EXPORT(IsLoading, ReignEngine_IsLoading), \
@@ -2356,13 +2381,12 @@ static bool TapirEngine_IsExistPlugin(int plugin_number)
 	    HLL_TODO_EXPORT(GetInstanceSpecularReflectRate, ReignEngine_GetInstanceSpecularReflectRate), \
 	    HLL_TODO_EXPORT(GetInstanceFresnelReflectRate, ReignEngine_GetInstanceFresnelReflectRate), \
 	    HLL_TODO_EXPORT(StringToFloat, ReignEngine_StringToFloat), \
-	    HLL_TODO_EXPORT(DrawToMainSurface, ReignEngine_DrawToMainSurface)
+	    HLL_EXPORT(DrawToMainSurface, ReignEngine_DrawToMainSurface)
 
 HLL_LIBRARY(ReignEngine, REIGN_EXPORTS,
 	    HLL_EXPORT(CreatePlugin, ReignEngine_CreatePlugin));
 
 #define TAPIR_EXPORTS \
-	    HLL_EXPORT(CreatePlugin, TapirEngine_CreatePlugin), \
 	    HLL_EXPORT(SetInstanceDrawParam, TapirEngine_SetInstanceDrawParam), \
 	    HLL_EXPORT(GetInstanceDrawParam, TapirEngine_GetInstanceDrawParam), \
 	    HLL_EXPORT(CalcInstance2DDetectionHeight, TapirEngine_CalcInstance2DDetectionHeight), \
@@ -2385,7 +2409,13 @@ HLL_LIBRARY(ReignEngine, REIGN_EXPORTS,
 	    HLL_EXPORT(IsExistPlugin, TapirEngine_IsExistPlugin), \
 	    HLL_TODO_EXPORT(GetNumofInstance, TapirEngine_GetNumofInstance)
 
-HLL_LIBRARY(TapirEngine, REIGN_EXPORTS, TAPIR_EXPORTS);
+HLL_LIBRARY(TapirEngine, REIGN_EXPORTS, TAPIR_EXPORTS,
+	    HLL_EXPORT(CreatePlugin, TapirEngine_CreatePlugin));
+
+static int SealEngine_CreatePlugin(void)
+{
+	return ReignEngine_create_plugin(RE_SEAL_PLUGIN);
+}
 
 static void SealEngine_SetMagSpeed(int mag_speed)
 {
@@ -2556,7 +2586,7 @@ static bool SealEngine_IsExistInstanceMotion(int plugin, int instance, struct st
 //bool SealEngine_IsInstanceMeshAlphaBlending(int PluginNumber, int InstanceNumber, int MeshNumber);
 //bool SealEngine_ClearLineList(int PluginNumber, int InstanceNumber);
 //bool SealEngine_AddLineList(int PluginNumber, int InstanceNumber, float X0, float Y0, float Z0, int Color0, float X1, float Y1, float Z1, int Color1);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetInstanceCircleShadowRadius, int PluginNumber, int InstanceNumber, float CircleShadowRadius);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetInstanceCircleShadowRadius, int PluginNumber, int InstanceNumber, float CircleShadowRadius);
 //float SealEngine_GetInstanceCircleShadowRadius(int PluginNumber, int InstanceNumber);
 static bool SealEngine_LoadInstanceLightParam(int plugin, int instance)
 {
@@ -2678,20 +2708,36 @@ static bool SealEngine_GetCameraZVector(int plugin, float *x, float *y, float *z
 	return true;
 }
 
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetDrawDOF, int PluginNumber, bool DrawDOF);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetDOF_L, int PluginNumber, float DOF_L);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetDOF_F, int PluginNumber, float DOF_F);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetDOF_f, int PluginNumber, float DOF_f);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, GetDrawDOF, int PluginNumber, bool *DrawDOF);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_L, int PluginNumber, float *DOF_L);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_F, int PluginNumber, float *DOF_F);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_f, int PluginNumber, float *DOF_f);
-//bool SealEngine_SetShadowLightVector(int PluginNumber, float X, float Y, float Z);
-//bool SealEngine_GetShadowLightVector(int PluginNumber, float *X, float *Y, float *Z);
-HLL_WARN_UNIMPLEMENTED(false, bool, SealEngine, SetShadowRate, int PluginNumber, float Rate);
-//float SealEngine_GetShadowRate(int PluginNumber);
-//bool SealEngine_SetSoftFogEdgeLength(int PluginNumber, float SoftFogEdgeLength);
-//float SealEngine_GetSoftFogEdgeLength(int PluginNumber);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDrawDOF, int PluginNumber, bool DrawDOF);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_L, int PluginNumber, float DOF_L);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_F, int PluginNumber, float DOF_F);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_f, int PluginNumber, float DOF_f);
+HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDrawDOF, int PluginNumber, bool *DrawDOF);
+HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_L, int PluginNumber, float *DOF_L);
+HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_F, int PluginNumber, float *DOF_F);
+HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_f, int PluginNumber, float *DOF_f);
+static bool SealEngine_SetShadowLightVector(int PluginNumber, float X, float Y, float Z)
+{
+	return ReignEngine_SetShadowMapLightDir(PluginNumber, X, Y, Z);
+}
+
+static bool SealEngine_GetShadowLightVector(int PluginNumber, float *X, float *Y, float *Z)
+{
+	struct RE_plugin *p = RE_get_plugin(PluginNumber);
+	if (!p) {
+		*X = *Y = *Z = 0.0f;
+		return false;
+	}
+	*X = p->shadow_map_light_dir[0];
+	*Y = p->shadow_map_light_dir[1];
+	*Z = -p->shadow_map_light_dir[2];
+	return true;
+}
+
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetShadowRate, int PluginNumber, float Rate);
+HLL_QUIET_UNIMPLEMENTED(1.0f, float, SealEngine, GetShadowRate, int PluginNumber);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetSoftFogEdgeLength, int PluginNumber, float SoftFogEdgeLength);
+HLL_QUIET_UNIMPLEMENTED(0.0f, float, SealEngine, GetSoftFogEdgeLength, int PluginNumber);
 static bool SealEngine_SetEdgeLength(int PluginNumber, float EdgeLength)
 {
 	struct RE_plugin *p = RE_get_plugin(PluginNumber);
@@ -2743,12 +2789,56 @@ static bool SealEngine_GetEdgeColor(int PluginNumber, float *ColorR, float *Colo
 	*ColorB = p->edge_color[2];
 	return true;
 }
-//bool SealEngine_Calc2DDetectionHeight(int PluginNumber, float X, float Z, float *Height);
-//bool SealEngine_Calc2DDetection(int PluginNumber, float X0, float Y0, float Z0, float X1, float Y1, float Z1, float Radius, float *X2, float *Y2, float *Z2);
-//bool SealEngine_Calc2DDetectionIntersectEyeVector(int PluginNumber, int ViewX, int ViewY, float *X, float *Y, float *Z);
-//bool SealEngine_FindPath(int PluginNumber, float StartX, float StartY, float StartZ, float GoalX, float GoalY, float GoalZ);
-//bool SealEngine_GetPathLine(int PluginNumber, struct page **pIXArray, struct page **pIYArray, struct page **pIZArray);
-//bool SealEngine_GetOptimizedPathLine(int PluginNumber, struct page **pIXArray, struct page **pIYArray, struct page **pIZArray);
+static bool SealEngine_Calc2DDetectionHeight(int PluginNumber, float X, float Z, float *Height)
+{
+	if (!RE_plugin_calc_2d_detection_height(RE_get_plugin(PluginNumber), X, Z, Height)) {
+		*Height = 0.0f;
+		return false;
+	}
+	return true;
+}
+
+static bool SealEngine_Calc2DDetection(int PluginNumber, float X0, float Y0, float Z0, float X1, float Y1, float Z1, float Radius, float *X2, float *Y2, float *Z2)
+{
+	return RE_plugin_calc_2d_detection(RE_get_plugin(PluginNumber), X0, Y0, Z0, X1, Y1, Z1, Radius, X2, Y2, Z2);
+}
+
+static bool SealEngine_Calc2DDetectionIntersectEyeVector(int PluginNumber, int ViewX, int ViewY, float *X, float *Y, float *Z)
+{
+	vec3 out;
+	if (!RE_plugin_calc_2d_detection_intersect_eye_vec(RE_get_plugin(PluginNumber), ViewX, ViewY, out)) {
+		*X = *Y = *Z = 0.0f;
+		return false;
+	}
+	*X = out[0];
+	*Y = out[1];
+	*Z = -out[2];
+	return true;
+}
+
+static bool SealEngine_FindPath(int PluginNumber, float StartX, float StartY, float StartZ, float GoalX, float GoalY, float GoalZ)
+{
+	vec3 start = { StartX, StartY, -StartZ };
+	vec3 goal = { GoalX, GoalY, -GoalZ };
+	return RE_plugin_find_path(RE_get_plugin(PluginNumber), start, goal);
+}
+
+static bool SealEngine_GetPathLine(int PluginNumber, struct page **pIXArray, struct page **pIYArray, struct page **pIZArray)
+{
+	int nr_path_points = 0;
+	const vec3 *pts = RE_plugin_get_path_line(RE_get_plugin(PluginNumber), &nr_path_points);
+	return fill_path_line_arrays(pts, nr_path_points, pIXArray, pIYArray, pIZArray);
+}
+
+static bool SealEngine_GetOptimizedPathLine(int PluginNumber, struct page **pIXArray, struct page **pIYArray, struct page **pIZArray)
+{
+	struct RE_plugin *p = RE_get_plugin(PluginNumber);
+	if (!RE_plugin_optimize_path_line(p))
+		return false;
+	int nr_path_points = 0;
+	const vec3 *pts = RE_plugin_get_path_line(p, &nr_path_points);
+	return fill_path_line_arrays(pts, nr_path_points, pIXArray, pIYArray, pIZArray);
+}
 
 static bool SealEngine_TransformPosToViewPos(int PluginNumber, float x, float y, float z, int *view_x, int *view_y)
 {
@@ -2789,6 +2879,7 @@ static bool SealEngine_ClearCache(int PluginNumber)
 //bool SealEngine_GetHistogram(int PluginNumber, struct page **HistogramList);
 
 #define SEAL_EXPORTS \
+	    HLL_EXPORT(CreatePlugin, SealEngine_CreatePlugin), \
 	    HLL_EXPORT(SetMagSpeed, SealEngine_SetMagSpeed), \
 	    HLL_TODO_EXPORT(SaveInstance, SealEngine_SaveInstance), \
 	    HLL_EXPORT(IsExistInstanceData, SealEngine_IsExistInstanceData), \
@@ -2867,24 +2958,24 @@ static bool SealEngine_ClearCache(int PluginNumber)
 	    HLL_EXPORT(GetDOF_L, SealEngine_GetDOF_L), \
 	    HLL_EXPORT(GetDOF_F, SealEngine_GetDOF_F), \
 	    HLL_EXPORT(GetDOF_f, SealEngine_GetDOF_f), \
-	    HLL_TODO_EXPORT(SetShadowLightVector, SealEngine_SetShadowLightVector), \
-	    HLL_TODO_EXPORT(GetShadowLightVector, SealEngine_GetShadowLightVector), \
+	    HLL_EXPORT(SetShadowLightVector, SealEngine_SetShadowLightVector), \
+	    HLL_EXPORT(GetShadowLightVector, SealEngine_GetShadowLightVector), \
 	    HLL_EXPORT(SetShadowRate, SealEngine_SetShadowRate), \
-	    HLL_TODO_EXPORT(GetShadowRate, SealEngine_GetShadowRate), \
-	    HLL_TODO_EXPORT(SetSoftFogEdgeLength, SealEngine_SetSoftFogEdgeLength), \
-	    HLL_TODO_EXPORT(GetSoftFogEdgeLength, SealEngine_GetSoftFogEdgeLength), \
+	    HLL_EXPORT(GetShadowRate, SealEngine_GetShadowRate), \
+	    HLL_EXPORT(SetSoftFogEdgeLength, SealEngine_SetSoftFogEdgeLength), \
+	    HLL_EXPORT(GetSoftFogEdgeLength, SealEngine_GetSoftFogEdgeLength), \
 	    HLL_EXPORT(SetEdgeLength, SealEngine_SetEdgeLength), \
 	    HLL_EXPORT(GetEdgeLength, SealEngine_GetEdgeLength), \
 	    HLL_EXPORT(SetEdgeReductionRate, SealEngine_SetEdgeReductionRate), \
 	    HLL_EXPORT(GetEdgeReductionRate, SealEngine_GetEdgeReductionRate), \
 	    HLL_EXPORT(SetEdgeColor, SealEngine_SetEdgeColor), \
 	    HLL_EXPORT(GetEdgeColor, SealEngine_GetEdgeColor), \
-	    HLL_TODO_EXPORT(Calc2DDetectionHeight, SealEngine_Calc2DDetectionHeight), \
-	    HLL_TODO_EXPORT(Calc2DDetection, SealEngine_Calc2DDetection), \
-	    HLL_TODO_EXPORT(Calc2DDetectionIntersectEyeVector, SealEngine_Calc2DDetectionIntersectEyeVector), \
-	    HLL_TODO_EXPORT(FindPath, SealEngine_FindPath), \
-	    HLL_TODO_EXPORT(GetPathLine, SealEngine_GetPathLine), \
-	    HLL_TODO_EXPORT(GetOptimizedPathLine, SealEngine_GetOptimizedPathLine), \
+	    HLL_EXPORT(Calc2DDetectionHeight, SealEngine_Calc2DDetectionHeight), \
+	    HLL_EXPORT(Calc2DDetection, SealEngine_Calc2DDetection), \
+	    HLL_EXPORT(Calc2DDetectionIntersectEyeVector, SealEngine_Calc2DDetectionIntersectEyeVector), \
+	    HLL_EXPORT(FindPath, SealEngine_FindPath), \
+	    HLL_EXPORT(GetPathLine, SealEngine_GetPathLine), \
+	    HLL_EXPORT(GetOptimizedPathLine, SealEngine_GetOptimizedPathLine), \
 	    HLL_EXPORT(TransformPosToViewPos, SealEngine_TransformPosToViewPos), \
 	    HLL_EXPORT(ResetLightParam, SealEngine_ResetLightParam), \
 	    HLL_EXPORT(SetLightParam, SealEngine_SetLightParam), \

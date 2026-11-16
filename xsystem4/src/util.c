@@ -129,6 +129,28 @@ bool is_absolute_path(const char *path)
 
 static char *resolve_path(const char *dir, const char *path)
 {
+	if (dir && *dir && path && *path) {
+		char *sjis_dir = utf2sjis(dir, strlen(dir));
+		size_t pfx = strlen(sjis_dir);
+		if (pfx > 0 && !strncmp(path, sjis_dir, pfx) &&
+		    (path[pfx] == '/' || path[pfx] == '\\' || path[pfx] == '\0')) {
+			const char *rel = path + pfx;
+			while (*rel == '/' || *rel == '\\')
+				rel++;
+			free(sjis_dir);
+			char *utf_rel = unix_path(rel);
+			char *resolved = xmalloc(strlen(dir) + strlen(utf_rel) + 2);
+			strcpy(resolved, dir);
+			if (*utf_rel) {
+				strcat(resolved, "/");
+				strcat(resolved, utf_rel);
+			}
+			free(utf_rel);
+			return resolved;
+		}
+		free(sjis_dir);
+	}
+
 	char *utf = unix_path(path);
 	if (is_absolute_path(utf))
 		return utf;

@@ -69,6 +69,7 @@ void heap_grow(size_t new_size)
 	for (size_t i = heap_size; i < new_size; i++) {
 		heap[i].ref = 0;
 		heap[i].has_delegate_target = false;
+		heap[i].exiting = false;
 		heap[i].delegate_index = -1;
 		heap_free_stack[i] = i;
 	}
@@ -119,6 +120,7 @@ int32_t heap_alloc_slot(enum vm_pointer_type type)
 	heap[slot].seq = heap_next_seq++;
 	heap[slot].type = type;
 	heap[slot].has_delegate_target = false;
+	heap[slot].exiting = false;
 	heap[slot].page = NULL;
 	heap[slot].delegate_index = -1;
 #ifdef DEBUG_HEAP
@@ -136,6 +138,7 @@ static void heap_free_slot(int32_t slot)
 {
 	unregister_delegate_page(slot);
 	heap[slot].has_delegate_target = false;
+	heap[slot].exiting = false;
 	heap[slot].seq = 0;
 	heap_free_stack[--heap_free_ptr] = slot;
 }
@@ -211,6 +214,8 @@ void exit_unref(int slot)
 		WARNING("out of bounds heap index: %d", slot);
 		return;
 	}
+	if (heap[slot].exiting)
+		return;
 	if (heap[slot].ref <= 0) {
 		heap_double_free(slot);
 		return;
@@ -222,10 +227,15 @@ void exit_unref(int slot)
 		heap[slot].ref--;
 		return;
 	}
+	// Mark exiting before recursing into children so cyclic page references
+	// cannot loop infinitely or re-enter heap_double_free during shutdown.
+	heap[slot].exiting = true;
+	heap[slot].ref = 0;
 	switch (heap[slot].type) {
 	case VM_PAGE:
 		if (heap[slot].page) {
 			struct page *page = heap[slot].page;
+			heap[slot].page = NULL;
 			for (int i = 0; i < page->nr_vars; i++) {
 				page_var_fini(page, i, false);
 			}
@@ -235,10 +245,14 @@ void exit_unref(int slot)
 		}
 		break;
 	case VM_STRING:
-		free_string(heap[slot].s);
+		if (heap[slot].s) {
+			struct string *s = heap[slot].s;
+			heap[slot].s = NULL;
+			free_string(s);
+		}
 		break;
 	}
-	heap[slot].ref = 0;
+	heap[slot].exiting = false;
 	heap_free_slot(slot);
 }
 

@@ -92,8 +92,8 @@ static bool Sys43VM_ReadGroupSaveComment(struct string *key_name, struct string 
 
 static bool Sys43VM_GetFunctionNameList(struct page **out)
 {
-	struct ain_type type = { .data = AIN_STRING, .struc = -1 };
-	struct page *list = v12_array_new(&type, ain->nr_functions, false);
+	union vm_value dim = { .i = ain->nr_functions };
+	struct page *list = alloc_array(1, &dim, AIN_ARRAY_STRING, 0, false);
 	for (int i = 0; i < ain->nr_functions; i++) {
 		int slot = list->values[i].i;
 		free_string(heap[slot].s);

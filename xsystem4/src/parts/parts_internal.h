@@ -29,6 +29,8 @@ typedef struct cJSON cJSON;
 struct string;
 struct hash_table;
 
+extern bool parts_v2;
+
 // NOTE: actual value is +1
 enum parts_state_type {
 	PARTS_STATE_DEFAULT = 0,
@@ -49,8 +51,11 @@ enum parts_motion_type {
 	PARTS_MOTION_ROTATE_X,
 	PARTS_MOTION_ROTATE_Y,
 	PARTS_MOTION_ROTATE_Z,
-	PARTS_MOTION_VIBRATION_SIZE
-#define PARTS_NR_MOTION_TYPES (PARTS_MOTION_VIBRATION_SIZE+1)
+	PARTS_MOTION_VIBRATION_SIZE,
+	PARTS_MOTION_ADD_COLOR,
+	PARTS_MOTION_MUL_COLOR,
+	PARTS_MOTION_CG_NAME
+#define PARTS_NR_MOTION_TYPES (PARTS_MOTION_CG_NAME+1)
 };
 
 union parts_motion_param {
@@ -60,6 +65,7 @@ union parts_motion_param {
 		int x;
 		int y;
 	};
+	SDL_Color color;
 };
 
 struct parts_motion {
@@ -67,6 +73,7 @@ struct parts_motion {
 	enum parts_motion_type type;
 	union parts_motion_param begin;
 	union parts_motion_param end;
+	struct string *cg_name;
 	int begin_time;
 	int end_time;
 };
@@ -77,6 +84,7 @@ struct sound_motion {
 	TAILQ_ENTRY(sound_motion) entry;
 	int begin_time;
 	int sound_no;
+	struct string *sound_name;
 	bool played;
 };
 
@@ -842,12 +850,15 @@ enum parts_message_type {
 	PARTS_MSG_KEY_UP         = 17,
 	PARTS_MSG_FOCUS_IN       = 18,
 	PARTS_MSG_FOCUS_OUT      = 19,
-	PARTS_MSG_CHECK_CHANGED  = 20,
-	PARTS_MSG_SCROLL         = 21,
-	PARTS_MSG_RADIO_BUTTON_BOX = 22,
-	PARTS_MSG_SWIPE_BEGIN    = 23,
-	PARTS_MSG_SWIPING        = 24,
-	PARTS_MSG_SWIPE_END      = 25,
+	PARTS_MSG_SCROLL         = 20,
+	PARTS_MSG_TEXT_CHANGED   = 21,
+	PARTS_MSG_CHECK_CHANGED  = 22,
+	PARTS_MSG_CREATED        = 23,
+	PARTS_MSG_RADIO_BUTTON_BOX = 24,
+	PARTS_MSG_TEXT_FIXED     = 25,
+	PARTS_MSG_SWIPE_BEGIN    = 27,
+	PARTS_MSG_SWIPING        = 28,
+	PARTS_MSG_SWIPE_END      = 29,
 };
 
 void parts_msg_push(struct parts* parts, int type, const char *fmt, ...);

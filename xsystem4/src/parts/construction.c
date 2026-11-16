@@ -154,7 +154,7 @@ bool PE_AddCreateCGToProcess(int parts_no, struct string *cg_name, int state)
 	if (!parts_state_valid(--state))
 		return false;
 
-	if ((!ain || ain->version < 12) && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
+	if (!parts_v2 && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
 		WARNING("Invalid CG name: %s", display_sjis0(cg_name->text));
 		return false;
 	}
@@ -387,7 +387,7 @@ bool PE_AddDrawCutCGToPartsConstructionProcess(int parts_no, struct string *cg_n
 	if (!parts_state_valid(--state))
 		return false;
 
-	if ((!ain || ain->version < 12) && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
+	if (!parts_v2 && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
 		WARNING("Invalid CG name: %s", display_sjis0(cg_name->text));
 		return false;
 	}
@@ -413,7 +413,7 @@ bool PE_AddCopyCutCGToPartsConstructionProcess(int parts_no, struct string *cg_n
 	if (!parts_state_valid(--state))
 		return false;
 
-	if ((!ain || ain->version < 12) && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
+	if (!parts_v2 && !asset_exists_by_name(ASSET_CG, cg_name->text, NULL)) {
 		WARNING("Invalid CG name: %s", display_sjis0(cg_name->text));
 		return false;
 	}
