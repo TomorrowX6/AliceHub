@@ -151,6 +151,20 @@
     <string name="mod_invalid_package">未找到有效的 MOD 文件</string>
     <string name="mod_install_error">MOD 安装失败，请检查文件与可用空间</string>
     <string name="mod_restored_toast">已卸载 MOD</string>
+    <string name="action_install_cn_patch">安装汉化补丁</string>
+    <string name="action_uninstall_cn_patch">卸载汉化补丁</string>
+    <string name="uninstall_cn_patch_no_backup_msg">当前无原版备份，请删除游戏本体后重装原版。</string>
+    <string name="cn_patch_local_dialog_title">本地安装汉化补丁</string>
+    <string name="cn_patch_choose_zip">选择汉化补丁压缩包</string>
+    <string name="cn_patch_invalid_package">未找到有效的汉化补丁文件</string>
+    <string name="cn_patch_install_error">汉化补丁安装失败，请检查文件与可用空间</string>
+    <string name="cn_patch_restored_toast">已卸载汉化补丁</string>
+    <string name="cn_patch_mgr_status_none">未安装汉化补丁</string>
+    <string name="cn_patch_mgr_status_installed">已安装汉化补丁</string>
+    <string name="cn_patch_mgr_empty">暂无可用汉化补丁</string>
+    <string name="cn_patch_mgr_restore_confirm">确定卸载汉化补丁并还原原版吗？存档会保留。</string>
+    <string name="cn_patch_mgr_detail_group">汉化组：%1$s</string>
+    <string name="cn_patch_mgr_detail_type_full">完整汉化补丁</string>
 
     <string name="mod_mgr_activity_title">MOD 管理</string>
     <string name="mod_mgr_status_none">未安装 MOD</string>
@@ -201,8 +215,10 @@
     <string name="notif_channel_result_name">安装结果</string>
     <string name="notif_title_base_online">正在下载游戏本体</string>
     <string name="notif_title_mod_online">正在安装 MOD · %1$s</string>
+    <string name="notif_title_cn_patch_online">正在安装汉化补丁 · %1$s</string>
     <string name="notif_title_local_game">正在导入游戏本体</string>
     <string name="notif_title_local_mod">正在导入 MOD</string>
+    <string name="notif_title_local_cn_patch">正在导入汉化补丁</string>
     <string name="notif_action_pause">暂停</string>
     <string name="notif_done_title">安装完成</string>
     <string name="notif_done_msg">%1$s 已完成</string>
@@ -216,6 +232,7 @@
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>
+    <string name="game_status_installed_cn_patch">已安装 · 汉化 %1$s</string>
     <string name="game_status_installing">安装中…</string>
     <string name="game_status_running">运行中</string>
     <string name="game_status_error">资源异常</string>

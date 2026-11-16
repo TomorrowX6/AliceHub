@@ -23,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private const val REQ_MOD_LOCAL_ARCHIVE = 204
 private const val REQ_MOD_LOCAL_DIR = 205
@@ -33,6 +34,7 @@ private const val REQ_MOD_LOCAL_DIR = 205
 class ModManagerActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
+        const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -40,6 +42,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private var progressDialog: Dialog? = null
 
     private lateinit var gameList: GameList
+    private var targetGameId: String = GameCatalog.ID_RANCE10
+    private lateinit var descriptor: GameDescriptor
+    private val isCnPatch: Boolean
+        get() = descriptor.isCnPatch
     private var currentTargetPath: String = ""
     private lateinit var currentTarget: Item
     private lateinit var adapter: ModReleaseAdapter
@@ -49,6 +55,22 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private var catalogLoadError: Boolean = false
 
     private var pendingPostResumeAction: (() -> Unit)? = null
+
+    private fun resolveGameContext(srcIntent: Intent?) {
+        val pathExtra = srcIntent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
+        if (pathExtra != null) {
+            currentTargetPath = pathExtra
+        }
+        val idExtra = srcIntent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        targetGameId = idExtra ?: if (currentTargetPath.isNotBlank()) {
+            val f = File(currentTargetPath)
+            GameCatalog.classifyDirectory(f, f.name)
+        } else {
+            GameCatalog.ID_RANCE10
+        }
+        descriptor = GameCatalog.descriptorFor(this, targetGameId, gameList)
+        title = getString(if (isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,14 +85,17 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         )
 
         gameList = LauncherActivity.obtainGameList(this)
-        val r10Candidates = GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
-        if (r10Candidates.isEmpty()) {
+        resolveGameContext(intent)
+        val candidates = overlayGameItems()
+        if (candidates.isEmpty()) {
             Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        currentTargetPath = intent.getStringExtra(EXTRA_GAME_PATH) ?: r10Candidates[0].path.path
+        if (currentTargetPath.isBlank()) {
+            currentTargetPath = candidates[0].path.path
+        }
         rebindCurrentTarget()
 
         adapter = ModReleaseAdapter()
@@ -107,8 +132,14 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }?.let {
-            currentTargetPath = it
+        val prevGameId = targetGameId
+        resolveGameContext(intent)
+        if (targetGameId != prevGameId) {
+            releases = emptyList()
+            catalogLoadError = false
+            if (AppSettings.isOnlineInstallEnabled(this)) {
+                loadCatalog()
+            }
         }
         if (::gameList.isInitialized && gameList.size > 0) {
             rebindCurrentTarget()
@@ -141,7 +172,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     override fun onResume() {
         super.onResume()
         gameList = LauncherActivity.obtainGameList(this)
-        if (GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10).isEmpty()) {
+        if (overlayGameItems().isEmpty()) {
             finish()
             return
         }
@@ -221,19 +252,14 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
     }
 
-    private fun rance10Items(): List<Item> =
-        GameCatalog.matchingItems(gameList, GameCatalog.ID_RANCE10)
+    private fun overlayGameItems(): List<Item> =
+        GameCatalog.matchingItems(gameList, targetGameId)
 
     private fun rebindCurrentTarget() {
-        val candidates = rance10Items()
+        val candidates = overlayGameItems()
         if (candidates.isEmpty()) return
         currentTarget = candidates.firstOrNull { it.path.path == currentTargetPath } ?: candidates[0]
         currentTargetPath = currentTarget.path.path
-    }
-
-    private fun Item.cleanGameTitle(): String {
-        val idx = name.indexOf(" [MOD")
-        return if (idx > 0) name.substring(0, idx) else name
     }
 
     private fun loadCatalog() {
@@ -251,10 +277,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         catalogLoadError = false
         updateUi()
 
+        val cdnBaseUrl = descriptor.effectiveOverlayCdnUrl ?: OnlineInstaller.RANCE10_CDN_URL
+        val catalogRelPath = descriptor.overlayCatalogRelPath
         catalogJob = scope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) {
-                    OnlineInstaller.fetchModCatalog()
+                    OnlineInstaller.fetchModCatalog(cdnBaseUrl, catalogRelPath)
                 }
                 releases = loaded
                 syncLocalModVersionWithCatalog(loaded)
@@ -277,7 +305,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val idx = OnlineInstaller.matchInstalledIndex(catalog, installed)
         if (idx !in catalog.indices) return
         val matched = catalog[idx]
-        if (installed.version != matched.version || (installed.fileId <= 0 && matched.fileId > 0)) {
+        if (installed.version != matched.version ||
+            (installed.fileId <= 0 && matched.fileId > 0) ||
+            (installed.group.isBlank() && matched.group.isNotBlank())
+        ) {
             val resolvedBaseVer = if (!matched.isPatch) {
                 matched.version
             } else {
@@ -294,7 +325,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     version = matched.version,
                     baseVersion = resolvedBaseVer,
                     fileId = if (installed.fileId > 0) installed.fileId else matched.fileId,
-                    baseFileId = if (installed.baseFileId > 0) installed.baseFileId else resolvedBaseFid
+                    baseFileId = if (installed.baseFileId > 0) installed.baseFileId else resolvedBaseFid,
+                    group = installed.group.ifBlank { matched.group },
+                    kind = descriptor.overlayKind
                 )
             )
             gameList.refreshItemMetadata(currentTarget)
@@ -312,18 +345,25 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             installed != null && installed.version.isNotBlank() -> installed.version
             else -> ""
         }
+        val displayGroup = when {
+            installedIdx in releases.indices -> releases[installedIdx].group
+            else -> installed?.group.orEmpty()
+        }
 
         findViewById<TextView>(R.id.mod_mgr_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.path.name)
 
         val statusPart = when {
-            !hasMod -> getString(R.string.mod_mgr_status_none)
-            displayVer.isNotBlank() -> getString(R.string.mod_mgr_status_ver, displayVer)
-            else -> getString(R.string.mod_mgr_status_installed)
+            !hasMod -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_none else R.string.mod_mgr_status_none)
+            displayVer.isNotBlank() -> {
+                val baseStatus = getString(R.string.mod_mgr_status_ver, displayVer)
+                if (displayGroup.isNotBlank()) "$baseStatus · $displayGroup" else baseStatus
+            }
+            else -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_installed else R.string.mod_mgr_status_installed)
         }
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
         summaryView.text = if (onlineEnabled && releases.isNotEmpty()) {
-            "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].version)}"
+            "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].displayTitle)}"
         } else {
             statusPart
         }
@@ -333,8 +373,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val btnLocal = findViewById<Button>(R.id.btn_mod_mgr_local)
         findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isInstalling
         btnLocal.isEnabled = !isInstalling
-        findViewById<Button>(R.id.btn_mod_mgr_restore).isEnabled =
-            gameList.canRestoreVanilla(currentTarget) && !isInstalling
+        val btnRestore = findViewById<Button>(R.id.btn_mod_mgr_restore)
+        btnRestore.setText(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
+        btnRestore.isEnabled = gameList.canRestoreVanilla(currentTarget) && !isInstalling
 
         val btnUpdate = findViewById<Button>(R.id.btn_mod_mgr_update)
         val showUpdateBtn = onlineEnabled || isInstalling
@@ -391,9 +432,13 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 !onlineEnabled -> getString(R.string.mod_mgr_online_disabled)
                 isLoadingCatalog -> getString(R.string.mod_mgr_loading)
                 catalogLoadError -> getString(R.string.mod_mgr_load_failed)
-                else -> getString(R.string.mod_mgr_empty)
+                else -> getString(if (isCnPatch) R.string.cn_patch_mgr_empty else R.string.mod_mgr_empty)
             }
-            UiKit.bindEmptyState(emptyView, R.drawable.ic_extension, label)
+            UiKit.bindEmptyState(
+                emptyView,
+                if (isCnPatch) R.drawable.ic_language else R.drawable.ic_extension,
+                label
+            )
         } else {
             emptyView.visibility = View.GONE
         }
@@ -402,12 +447,13 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun showSwitchGameDialog() {
-        val candidates = rance10Items()
+        val candidates = overlayGameItems()
         if (gameList.installState is InstallState.Installing || candidates.isEmpty()) return
+        val fallbackTag = if (isCnPatch) "CN" else "MOD"
         val names = Array(candidates.size) { idx ->
             val it = candidates[idx]
             val ver = if (gameList.hasInstalledMod(it)) {
-                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: fallbackTag
             } else {
                 null
             }
@@ -439,7 +485,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             getString(R.string.mod_opt_dir)
         )
         AlertDialog.Builder(this)
-            .setTitle(R.string.mod_local_dialog_title)
+            .setTitle(if (isCnPatch) R.string.cn_patch_local_dialog_title else R.string.mod_local_dialog_title)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
@@ -448,8 +494,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                             type = "*/*"
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
+                        val chooseTitle = getString(
+                            if (isCnPatch) R.string.cn_patch_choose_zip else R.string.mod_choose_zip
+                        )
                         startActivityForResult(
-                            Intent.createChooser(i, getString(R.string.mod_choose_zip)),
+                            Intent.createChooser(i, chooseTitle),
                             REQ_MOD_LOCAL_ARCHIVE
                         )
                     }
@@ -484,14 +533,18 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         if (gameList.installState is InstallState.Installing) return
         if (!gameList.canRestoreVanilla(currentTarget)) return
         AlertDialog.Builder(this)
-            .setTitle(R.string.action_uninstall_mod)
-            .setMessage(R.string.mod_mgr_restore_confirm)
+            .setTitle(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
+            .setMessage(if (isCnPatch) R.string.cn_patch_mgr_restore_confirm else R.string.mod_mgr_restore_confirm)
             .setPositiveButton(R.string.ok) { _, _ ->
                 ensureGameNotRunning(this) {
                     if (gameList.restoreMod(currentTarget)) {
                         rebindCurrentTarget()
                         updateUi()
-                        Toast.makeText(this, R.string.mod_restored_toast, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this,
+                            if (isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast,
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             }
@@ -535,6 +588,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         val msg = buildString {
+            if (entry.group.isNotBlank()) {
+                append(getString(R.string.cn_patch_mgr_detail_group, entry.group)).append("\n")
+            }
             append(getString(R.string.mod_mgr_detail_file, entry.fileName))
             val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
             if (sizeStr.isNotEmpty()) {
@@ -548,7 +604,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 val base = entry.baseVersion ?: "-"
                 append(getString(R.string.mod_mgr_detail_type_patch, base))
             } else {
-                append(getString(R.string.mod_mgr_detail_type_full))
+                append(
+                    getString(
+                        if (isCnPatch) R.string.cn_patch_mgr_detail_type_full else R.string.mod_mgr_detail_type_full
+                    )
+                )
             }
             if (entry.isPatch && !hasMatchingBase && !entry.baseVersion.isNullOrBlank()) {
                 append("\n\n")
@@ -561,7 +621,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         val builder = AlertDialog.Builder(this)
-            .setTitle(entry.version)
+            .setTitle(entry.displayTitle)
             .setMessage(msg)
             .setNegativeButton(R.string.cancel, null)
 
@@ -783,7 +843,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 tags.add(UiKit.Chip(getString(R.string.mod_mgr_tag_patch), UiKit.Tone.NEUTRAL))
             }
 
-            view.findViewById<TextView>(R.id.title).text = entry.version
+            view.findViewById<TextView>(R.id.title).text = entry.displayTitle
             UiKit.bindChips(view, tags)
 
             val metaParts = mutableListOf<String>()

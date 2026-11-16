@@ -504,7 +504,11 @@ bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
 		ext = ".3de";
 		break;
 	default:
-		return archive_exists_by_name(instance->plugin->aar, name, NULL);
+		if (archive_exists_by_name(instance->plugin->aar, name, NULL))
+			return true;
+		if (!strncasecmp(name, "Data\\", 5))
+			return archive_exists_by_name(instance->plugin->aar, name + 4, NULL);
+		return false;
 	}
 	const char *basename = strrchr(name, '\\');
 	basename = basename ? basename + 1 : name;
@@ -613,6 +617,8 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 	case RE_ITYPE_DIRECTIONAL_LIGHT:
 		if (re_plugin_version >= RE_SEAL_PLUGIN) {
 			struct archive_data *dfile = archive_get_by_name(instance->plugin->aar, name);
+			if (!dfile && !strncasecmp(name, "Data\\", 5))
+				dfile = archive_get_by_name(instance->plugin->aar, name + 4);
 			if (!dfile)
 				return false;
 			bool ok = lit_parse(dfile->data, dfile->size, instance->light_params);

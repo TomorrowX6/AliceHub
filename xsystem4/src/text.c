@@ -116,7 +116,7 @@ void gfx_font_init(void)
 	font_ttf[FONT_GOTHIC] = load_font(FONT_GOTHIC);
 	font_ttf[FONT_MINCHO] = load_font(FONT_MINCHO);
 
-	if (config.fnl_path) {
+	if (config.fnl_path && !sys4_text_is_gbk) {
 		struct fnl *fnl = fnl_open(config.fnl_path);
 		if (!fnl)
 			ERROR("Failed to load .fnl font library '%s'", config.fnl_path);
@@ -134,7 +134,7 @@ void gfx_font_init(void)
 static struct font *get_font(unsigned face)
 {
 	if (face > 255) {
-		if (!config.fnl_path)
+		if (sys4_text_is_gbk || !config.fnl_path)
 			return font_ttf[0];
 		face -= 256;
 		if (face >= MAX_FNL_FONTS || !font_fnl[face]) {
@@ -567,9 +567,11 @@ void gfx_set_font_name(const char *name)
 {
 	static const char mincho_name[] = { 0x82, 0x6c, 0x82, 0x72, 0x20, 0x96, 0xbe, 0x92, 0xa9, 0 };
 	static const char gothic_name[] = { 0x82, 0x6c, 0x82, 0x72, 0x20, 0x83, 0x53, 0x83, 0x56, 0x83, 0x62, 0x83, 0x4e, 0 };
-	if (!strcmp(name, mincho_name)) {
+	static const char gbk_mincho_name[] = { 0xcb, 0xce, 0xcc, 0xe5, 0 };
+	static const char gbk_gothic_name[] = { 0xba, 0xda, 0xcc, 0xe5, 0 };
+	if (!strcmp(name, mincho_name) || (sys4_text_is_gbk && !strcmp(name, gbk_mincho_name))) {
 		font_metrics.face = FONT_MINCHO;
-	} else if (!strcmp(name, gothic_name)) {
+	} else if (!strcmp(name, gothic_name) || (sys4_text_is_gbk && !strcmp(name, gbk_gothic_name))) {
 		font_metrics.face = FONT_GOTHIC;
 	} else {
 		WARNING("Unhandled font name: \"%s\"", display_sjis0(name));

@@ -98,6 +98,29 @@ static int s_last_observed_summary_mode = -1;
 #define EV_F_BASE_SPD     "\x8a\xee\x91" "b\x91" "f\x91\x81\x82\xb3"
 #define EV_SJIS_TITLE_FN  "\x83^\x83" "C\x83g\x83\x8b\x89\xe6\x96\xca"
 
+/* GBK global/member names for Chinese Evenicle (Evenicle.ain v6) */
+#define EV_G_CHARA_DATA_CN "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf"
+#define EV_F_NAME_CN       "\xc3\xfb\xc7\xb0"
+#define EV_F_PARTY_SET_CN  "\xa5\xd1\xa9`\xa5\xc6\xa5\xa3\xa9`\xd4O\xb6\xa8"
+#define EV_F_CHARA_ID_CN   "\xa5\xad\xa5\xe3\xa5\xe9\xca\xb6\x84" "eID"
+#define EV_F_LV_CN         "\xa3\xcc\xa3\xd6"
+#define EV_F_HP_CN         "\xa3\xc8\xa3\xd0"
+#define EV_F_MAX_HP_CN     "\xd7\xee\xb4\xf3\xa3\xc8\xa3\xd0"
+#define EV_F_ATK_CN        "\xb9\xa5\xbb\xf7\xc1\xa6"
+#define EV_F_MAG_CN        "\xc4\xa7\xb7\xa8\xc1\xa6"
+#define EV_F_DEF_CN        "\xb7\xc0\xd3\xf9\xc1\xa6"
+#define EV_F_SPD_CN        "\xcb\xd9\xb6\xc8"
+#define EV_F_EXP_CN        "\xbdU\xf2Y\x82\x8e"
+#define EV_F_MAX_EXP_CN    "\xd7\xee\xb4\xf3\xbdU\xf2Y\x82\x8e"
+#define EV_F_SKILL_P_CN    "\xa5\xb9\xa5\xad\xa5\xeb\xa3\xd0"
+#define EV_F_BP_CN         "\xa3\xc2\xa3\xd0"
+#define EV_F_BASE_HP_CN    "\xbb\xf9\xb5" "A\xa3\xc8\xa3\xd0"
+#define EV_F_BASE_ATK_CN   "\xbb\xf9\xb5" "A\xb9\xa5\xbb\xf7\xc1\xa6"
+#define EV_F_BASE_DEF_CN   "\xbb\xf9\xb5" "A\xb7\xc0\xd3\xf9\xc1\xa6"
+#define EV_F_BASE_MAG_CN   "\xbb\xf9\xb5" "A\xc4\xa7\xb7\xa8\xc1\xa6"
+#define EV_F_BASE_SPD_CN   "\xbb\xf9\xb5" "A\xcb\xd8\xd4\xe7\xa4\xb5"
+#define EV_CN_TITLE_FN     "\xa5\xbf\xa5\xa4\xa5\xc8\xa5\xeb\xbb\xad\xc3\xe6"
+
 /* GBK / SJIS names for special Rance 10 globals */
 #define GBK_BATTLE_COUNT  "\xa1\xf4\xd5\xbd\xb6\xb7\xbb\xd8\xca\xfd"
 #define SJIS_BATTLE_COUNT "\x81\x9f\x90\xed\x93\xac\x89\xf1\x90\x94"
@@ -4383,7 +4406,8 @@ static void vm_dd_populate_live_state_json(cJSON *root)
  * Evenicle Live In-Game Modifier Support
  * ========================================================================= */
 
-#define EV_FN_SET_MONEY   "\x8f\x8a\x8e\x9d\x8b\xe0\x90\xdd\x92\xe8"
+#define EV_FN_SET_MONEY     "\x8f\x8a\x8e\x9d\x8b\xe0\x90\xdd\x92\xe8"
+#define EV_FN_SET_MONEY_CN  "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8"
 
 static struct ain *s_ev_inspected_ain = NULL;
 static int s_ev_glob_money = -1;
@@ -4401,11 +4425,13 @@ static void vm_inspect_evenicle_ain(void)
 	s_ev_inspected_ain = ain;
 	s_ev_glob_money      = vm_find_global_idx("g_nPartyMoney", NULL);
 	s_ev_glob_status     = vm_find_global_idx("g_arfStatus", NULL);
-	s_ev_glob_chara      = vm_find_global_idx(EV_G_CHARA_DATA, NULL);
+	s_ev_glob_chara      = vm_find_global_idx(EV_G_CHARA_DATA_CN, EV_G_CHARA_DATA);
 	s_ev_glob_game       = vm_find_global_idx("g_pfGame", NULL);
 	s_ev_glob_battle     = vm_find_global_idx("g_ptBattle", NULL);
 	s_ev_glob_party_menu = vm_find_global_idx("g_ptPartyMenu", NULL);
 	s_ev_fno_set_money   = ain_get_function(ain, EV_FN_SET_MONEY);
+	if (s_ev_fno_set_money < 0)
+		s_ev_fno_set_money = ain_get_function(ain, EV_FN_SET_MONEY_CN);
 	if (s_ev_fno_set_money >= 0 && ain->functions[s_ev_fno_set_money].nr_args != 2)
 		s_ev_fno_set_money = -1;
 }
@@ -4423,7 +4449,8 @@ static bool vm_ev_is_on_title_screen(void)
 			    !strncmp(fn, "CSmallMap@", 10) ||
 			    !strncmp(fn, "CBigMap@", 8))
 				return false;
-			if (strstr(fn, EV_SJIS_TITLE_FN) != NULL)
+			if (strstr(fn, EV_SJIS_TITLE_FN) != NULL ||
+			    strstr(fn, EV_CN_TITLE_FN) != NULL)
 				return true;
 		}
 	}
@@ -4451,7 +4478,7 @@ static char *vm_ev_find_chara_name_utf8(struct page *cdata_arr, int chara_no, in
 		if (idx >= 0 && idx < n) {
 			struct page *cp = vm_safe_get_page(vm_dd_array_elem_slot(cdata_arr, idx));
 			if (cp) {
-				char *nm = vm_dd_get_field_utf8(cp, EV_F_NAME, NULL);
+				char *nm = vm_dd_get_field_utf8(cp, EV_F_NAME_CN, EV_F_NAME);
 				if (nm && nm[0]) return nm;
 				free(nm);
 			}
@@ -4470,9 +4497,9 @@ static bool vm_ev_is_playable_chara(struct page *cdata_arr, int32_t chara_no, st
 			return false;
 		struct page *cp = vm_safe_get_page(vm_dd_array_elem_slot(cdata_arr, chara_no));
 		if (cp) {
-			if (vm_get_field_int(cp, EV_F_CHARA_ID, NULL, 0) > 0)
+			if (vm_get_field_int(cp, EV_F_CHARA_ID_CN, EV_F_CHARA_ID, 0) > 0)
 				return false;
-			if (vm_get_field_int(cp, EV_F_PARTY_SET, NULL, 0) <= 1)
+			if (vm_get_field_int(cp, EV_F_PARTY_SET_CN, EV_F_PARTY_SET, 0) <= 1)
 				return false;
 		}
 	}
@@ -4527,17 +4554,18 @@ static void vm_ev_set_money(int32_t val)
 	}
 }
 
-static void vm_ev_set_stat_with_base(struct page *st, const char *eff_f, const char *base_f, int32_t target, int32_t min_v, int32_t max_v)
+static void vm_ev_set_stat_with_base(struct page *st, const char *eff_f1, const char *eff_f2,
+		const char *base_f1, const char *base_f2, int32_t target, int32_t min_v, int32_t max_v)
 {
 	if (!st) return;
 	int32_t clamped = vm_dd_clamp(target, min_v, max_v);
-	int32_t cur = vm_get_field_int(st, eff_f, NULL, 0);
+	int32_t cur = vm_get_field_int(st, eff_f1, eff_f2, 0);
 	int32_t delta = clamped - cur;
-	vm_set_field_int(st, eff_f, NULL, clamped);
-	if (base_f && delta != 0) {
-		int32_t bcur = vm_get_field_int(st, base_f, NULL, 0);
+	vm_set_field_int(st, eff_f1, eff_f2, clamped);
+	if ((base_f1 || base_f2) && delta != 0) {
+		int32_t bcur = vm_get_field_int(st, base_f1, base_f2, 0);
 		int32_t bnext = vm_dd_clamp(bcur + delta, min_v, max_v);
-		vm_set_field_int(st, base_f, NULL, bnext);
+		vm_set_field_int(st, base_f1, base_f2, bnext);
 	}
 }
 
@@ -4552,8 +4580,8 @@ static void vm_ev_apply_enemy_1hp(struct page *bt)
 		struct page *ep = vm_safe_get_page(vm_dd_array_elem_slot(earr, i));
 		if (!ep || !vm_get_field_int(ep, "isExist", NULL, 0)) continue;
 		struct page *est = vm_get_field_page(ep, "status", NULL);
-		if (est && vm_get_field_int(est, EV_F_HP, NULL, 0) > 1)
-			vm_set_field_int(est, EV_F_HP, NULL, 1);
+		if (est && vm_get_field_int(est, EV_F_HP_CN, EV_F_HP, 0) > 1)
+			vm_set_field_int(est, EV_F_HP_CN, EV_F_HP, 1);
 	}
 	struct page *dinfo = vm_get_field_page(bt, "m_EnemyInfo", NULL);
 	struct page *darr  = vm_get_field_page(dinfo, "m_anEnemyInfoList", NULL);
@@ -4563,8 +4591,8 @@ static void vm_ev_apply_enemy_1hp(struct page *bt)
 		struct page *ep  = ref ? vm_get_field_page(ref, "rf", NULL) : NULL;
 		if (!ep || !vm_get_field_int(ep, "isExist", NULL, 0)) continue;
 		struct page *est = vm_get_field_page(ep, "status", NULL);
-		if (est && vm_get_field_int(est, EV_F_HP, NULL, 0) > 1)
-			vm_set_field_int(est, EV_F_HP, NULL, 1);
+		if (est && vm_get_field_int(est, EV_F_HP_CN, EV_F_HP, 0) > 1)
+			vm_set_field_int(est, EV_F_HP_CN, EV_F_HP, 1);
 	}
 }
 
@@ -4573,36 +4601,36 @@ static void vm_ev_apply_char_edit(struct page *st, cJSON *ce)
 	if (!st || !ce) return;
 	cJSON *it;
 	if ((it = cJSON_GetObjectItem(ce, "lv")) && cJSON_IsNumber(it))
-		vm_set_field_int(st, EV_F_LV, NULL, vm_dd_clamp(it->valueint, 1, 999));
+		vm_set_field_int(st, EV_F_LV_CN, EV_F_LV, vm_dd_clamp(it->valueint, 1, 999));
 	if ((it = cJSON_GetObjectItem(ce, "hpMax")) && cJSON_IsNumber(it)) {
-		int32_t old_max = vm_get_field_int(st, EV_F_MAX_HP, NULL, 1);
+		int32_t old_max = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 1);
 		int32_t new_max = vm_dd_clamp(it->valueint, 1, 999999);
-		vm_ev_set_stat_with_base(st, EV_F_MAX_HP, EV_F_BASE_HP, new_max, 1, 999999);
-		int32_t cur_hp = vm_get_field_int(st, EV_F_HP, NULL, new_max);
+		vm_ev_set_stat_with_base(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, EV_F_BASE_HP_CN, EV_F_BASE_HP, new_max, 1, 999999);
+		int32_t cur_hp = vm_get_field_int(st, EV_F_HP_CN, EV_F_HP, new_max);
 		if (new_max > old_max && cur_hp >= old_max)
-			vm_set_field_int(st, EV_F_HP, NULL, new_max);
+			vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, new_max);
 		else if (cur_hp > new_max)
-			vm_set_field_int(st, EV_F_HP, NULL, new_max);
+			vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, new_max);
 	}
 	if ((it = cJSON_GetObjectItem(ce, "hp")) && cJSON_IsNumber(it)) {
-		int32_t max_hp = vm_get_field_int(st, EV_F_MAX_HP, NULL, 999999);
+		int32_t max_hp = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 999999);
 		if (max_hp < 1) max_hp = 1;
-		vm_set_field_int(st, EV_F_HP, NULL, vm_dd_clamp(it->valueint, 0, max_hp));
+		vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, vm_dd_clamp(it->valueint, 0, max_hp));
 	}
 	if ((it = cJSON_GetObjectItem(ce, "atk")) && cJSON_IsNumber(it))
-		vm_ev_set_stat_with_base(st, EV_F_ATK, EV_F_BASE_ATK, it->valueint, 0, 99999);
+		vm_ev_set_stat_with_base(st, EV_F_ATK_CN, EV_F_ATK, EV_F_BASE_ATK_CN, EV_F_BASE_ATK, it->valueint, 0, 99999);
 	if ((it = cJSON_GetObjectItem(ce, "mag")) && cJSON_IsNumber(it))
-		vm_ev_set_stat_with_base(st, EV_F_MAG, EV_F_BASE_MAG, it->valueint, 0, 99999);
+		vm_ev_set_stat_with_base(st, EV_F_MAG_CN, EV_F_MAG, EV_F_BASE_MAG_CN, EV_F_BASE_MAG, it->valueint, 0, 99999);
 	if ((it = cJSON_GetObjectItem(ce, "def")) && cJSON_IsNumber(it))
-		vm_ev_set_stat_with_base(st, EV_F_DEF, EV_F_BASE_DEF, it->valueint, 0, 99999);
+		vm_ev_set_stat_with_base(st, EV_F_DEF_CN, EV_F_DEF, EV_F_BASE_DEF_CN, EV_F_BASE_DEF, it->valueint, 0, 99999);
 	if ((it = cJSON_GetObjectItem(ce, "spd")) && cJSON_IsNumber(it))
-		vm_ev_set_stat_with_base(st, EV_F_SPD, EV_F_BASE_SPD, it->valueint, 0, 99999);
+		vm_ev_set_stat_with_base(st, EV_F_SPD_CN, EV_F_SPD, EV_F_BASE_SPD_CN, EV_F_BASE_SPD, it->valueint, 0, 99999);
 	if ((it = cJSON_GetObjectItem(ce, "skillP")) && cJSON_IsNumber(it))
-		vm_set_field_int(st, EV_F_SKILL_P, NULL, vm_dd_clamp(it->valueint, 0, 99999));
+		vm_set_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, vm_dd_clamp(it->valueint, 0, 99999));
 	if ((it = cJSON_GetObjectItem(ce, "bp")) && cJSON_IsNumber(it))
-		vm_set_field_int(st, EV_F_BP, NULL, vm_dd_clamp(it->valueint, 0, 5));
+		vm_set_field_int(st, EV_F_BP_CN, EV_F_BP, vm_dd_clamp(it->valueint, 0, 5));
 	if ((it = cJSON_GetObjectItem(ce, "exp")) && cJSON_IsNumber(it))
-		vm_set_field_int(st, EV_F_EXP, NULL, vm_dd_clamp(it->valueint, 0, 99999999));
+		vm_set_field_int(st, EV_F_EXP_CN, EV_F_EXP, vm_dd_clamp(it->valueint, 0, 99999999));
 }
 
 static void vm_enforce_evenicle_locks(int ev_mask)
@@ -4643,17 +4671,17 @@ static void vm_enforce_evenicle_locks(int ev_mask)
 			int32_t cno = vm_get_field_int(st, "charaNo", NULL, i);
 			if (!vm_ev_is_playable_chara(cdata_arr, cno, st))
 				continue;
-			if (!vm_get_field_int(st, "bIsUse", NULL, 0) || vm_get_field_int(st, EV_F_LV, NULL, 0) <= 0)
+			if (!vm_get_field_int(st, "bIsUse", NULL, 0) || vm_get_field_int(st, EV_F_LV_CN, EV_F_LV, 0) <= 0)
 				continue;
 			if (lock_hp) {
-				int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP, NULL, 0);
-				if (mhp > 0 && vm_get_field_int(st, EV_F_HP, NULL, 0) != mhp)
-					vm_set_field_int(st, EV_F_HP, NULL, mhp);
+				int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 0);
+				if (mhp > 0 && vm_get_field_int(st, EV_F_HP_CN, EV_F_HP, 0) != mhp)
+					vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, mhp);
 			}
-			if (lock_sp && vm_get_field_int(st, EV_F_SKILL_P, NULL, 0) < 99)
-				vm_set_field_int(st, EV_F_SKILL_P, NULL, 99);
-			if (lock_bp && vm_get_field_int(st, EV_F_BP, NULL, 0) < 5)
-				vm_set_field_int(st, EV_F_BP, NULL, 5);
+			if (lock_sp && vm_get_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 0) < 99)
+				vm_set_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 99);
+			if (lock_bp && vm_get_field_int(st, EV_F_BP_CN, EV_F_BP, 0) < 5)
+				vm_set_field_int(st, EV_F_BP_CN, EV_F_BP, 5);
 		}
 	}
 
@@ -4707,11 +4735,11 @@ static void vm_execute_evenicle_action(const char *json_str)
 			int32_t cno = st ? vm_get_field_int(st, "charaNo", NULL, i) : 0;
 			if (!st || !vm_ev_is_playable_chara(cdata_arr, cno, st))
 				continue;
-			if (!vm_get_field_int(st, "bIsUse", NULL, 0) || vm_get_field_int(st, EV_F_LV, NULL, 0) <= 0)
+			if (!vm_get_field_int(st, "bIsUse", NULL, 0) || vm_get_field_int(st, EV_F_LV_CN, EV_F_LV, 0) <= 0)
 				continue;
-			int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP, NULL, 0);
-			if (mhp > 0) vm_set_field_int(st, EV_F_HP, NULL, mhp);
-			vm_set_field_int(st, EV_F_BP, NULL, 5);
+			int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 0);
+			if (mhp > 0) vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, mhp);
+			vm_set_field_int(st, EV_F_BP_CN, EV_F_BP, 5);
 		}
 	}
 
@@ -4750,9 +4778,9 @@ static void vm_execute_evenicle_action(const char *json_str)
 			int32_t cno = st ? vm_get_field_int(st, "charaNo", NULL, i) : 0;
 			if (!st || cno <= 0 || !vm_ev_is_in_active_party(cno, st))
 				continue;
-			int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP, NULL, 0);
-			if (mhp > 0) vm_set_field_int(st, EV_F_HP, NULL, mhp);
-			vm_set_field_int(st, EV_F_BP, NULL, 5);
+			int32_t mhp = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 0);
+			if (mhp > 0) vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, mhp);
+			vm_set_field_int(st, EV_F_BP_CN, EV_F_BP, 5);
 		}
 	}
 	if ((it = cJSON_GetObjectItem(act, "evCheatPartySkillP999")) && cJSON_IsTrue(it)) {
@@ -4762,8 +4790,8 @@ static void vm_execute_evenicle_action(const char *json_str)
 			int32_t cno = st ? vm_get_field_int(st, "charaNo", NULL, i) : 0;
 			if (!st || cno <= 0 || !vm_ev_is_in_active_party(cno, st))
 				continue;
-			if (vm_get_field_int(st, EV_F_SKILL_P, NULL, 0) < 999)
-				vm_set_field_int(st, EV_F_SKILL_P, NULL, 999);
+			if (vm_get_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 0) < 999)
+				vm_set_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 999);
 		}
 	}
 	if ((it = cJSON_GetObjectItem(act, "evCheatPartyBoost")) && cJSON_IsTrue(it)) {
@@ -4773,20 +4801,20 @@ static void vm_execute_evenicle_action(const char *json_str)
 			int32_t cno = st ? vm_get_field_int(st, "charaNo", NULL, i) : 0;
 			if (!st || cno <= 0 || !vm_ev_is_in_active_party(cno, st))
 				continue;
-			if (vm_get_field_int(st, EV_F_MAX_HP, NULL, 0) < 9999)
-				vm_ev_set_stat_with_base(st, EV_F_MAX_HP, EV_F_BASE_HP, 9999, 1, 999999);
-			vm_set_field_int(st, EV_F_HP, NULL, vm_get_field_int(st, EV_F_MAX_HP, NULL, 9999));
-			if (vm_get_field_int(st, EV_F_ATK, NULL, 0) < 999)
-				vm_ev_set_stat_with_base(st, EV_F_ATK, EV_F_BASE_ATK, 999, 0, 99999);
-			if (vm_get_field_int(st, EV_F_MAG, NULL, 0) < 999)
-				vm_ev_set_stat_with_base(st, EV_F_MAG, EV_F_BASE_MAG, 999, 0, 99999);
-			if (vm_get_field_int(st, EV_F_DEF, NULL, 0) < 999)
-				vm_ev_set_stat_with_base(st, EV_F_DEF, EV_F_BASE_DEF, 999, 0, 99999);
-			if (vm_get_field_int(st, EV_F_SPD, NULL, 0) < 999)
-				vm_ev_set_stat_with_base(st, EV_F_SPD, EV_F_BASE_SPD, 999, 0, 99999);
-			if (vm_get_field_int(st, EV_F_SKILL_P, NULL, 0) < 999)
-				vm_set_field_int(st, EV_F_SKILL_P, NULL, 999);
-			vm_set_field_int(st, EV_F_BP, NULL, 5);
+			if (vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 0) < 9999)
+				vm_ev_set_stat_with_base(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, EV_F_BASE_HP_CN, EV_F_BASE_HP, 9999, 1, 999999);
+			vm_set_field_int(st, EV_F_HP_CN, EV_F_HP, vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 9999));
+			if (vm_get_field_int(st, EV_F_ATK_CN, EV_F_ATK, 0) < 999)
+				vm_ev_set_stat_with_base(st, EV_F_ATK_CN, EV_F_ATK, EV_F_BASE_ATK_CN, EV_F_BASE_ATK, 999, 0, 99999);
+			if (vm_get_field_int(st, EV_F_MAG_CN, EV_F_MAG, 0) < 999)
+				vm_ev_set_stat_with_base(st, EV_F_MAG_CN, EV_F_MAG, EV_F_BASE_MAG_CN, EV_F_BASE_MAG, 999, 0, 99999);
+			if (vm_get_field_int(st, EV_F_DEF_CN, EV_F_DEF, 0) < 999)
+				vm_ev_set_stat_with_base(st, EV_F_DEF_CN, EV_F_DEF, EV_F_BASE_DEF_CN, EV_F_BASE_DEF, 999, 0, 99999);
+			if (vm_get_field_int(st, EV_F_SPD_CN, EV_F_SPD, 0) < 999)
+				vm_ev_set_stat_with_base(st, EV_F_SPD_CN, EV_F_SPD, EV_F_BASE_SPD_CN, EV_F_BASE_SPD, 999, 0, 99999);
+			if (vm_get_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 0) < 999)
+				vm_set_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 999);
+			vm_set_field_int(st, EV_F_BP_CN, EV_F_BP, 5);
 		}
 	}
 
@@ -4802,7 +4830,7 @@ static void vm_execute_evenicle_action(const char *json_str)
 			for (int i = 0; i < sn; i++) {
 				struct page *st = vm_ev_get_status_param_at(status_arr, i);
 				int32_t cno = st ? vm_get_field_int(st, "charaNo", NULL, i) : 0;
-				if (!st || !vm_ev_is_playable_chara(cdata_arr, cno, st) || vm_get_field_int(st, EV_F_LV, NULL, 0) <= 0) continue;
+				if (!st || !vm_ev_is_playable_chara(cdata_arr, cno, st) || vm_get_field_int(st, EV_F_LV_CN, EV_F_LV, 0) <= 0) continue;
 				if (target == -1 && !vm_ev_is_in_active_party(cno, st))
 					continue;
 				vm_ev_apply_char_edit(st, ce);
@@ -4849,7 +4877,7 @@ static void vm_ev_populate_live_state_json(cJSON *root)
 			struct page *ep = vm_safe_get_page(vm_dd_array_elem_slot(earr, i));
 			if (!ep || !vm_get_field_int(ep, "isExist", NULL, 0)) continue;
 			struct page *est = vm_get_field_page(ep, "status", NULL);
-			int32_t hp = est ? vm_get_field_int(est, EV_F_HP, NULL, 0) : 0;
+			int32_t hp = est ? vm_get_field_int(est, EV_F_HP_CN, EV_F_HP, 0) : 0;
 			if (hp > 0) {
 				alive_cnt++;
 				hp_sum += hp;
@@ -4871,8 +4899,8 @@ static void vm_ev_populate_live_state_json(cJSON *root)
 			bool in_party = vm_ev_is_in_active_party(chara_no, st);
 			if ((pass == 0) != in_party)
 				continue;
-			int32_t lv = vm_get_field_int(st, EV_F_LV, NULL, 0);
-			int32_t hpMax = vm_get_field_int(st, EV_F_MAX_HP, NULL, 0);
+			int32_t lv = vm_get_field_int(st, EV_F_LV_CN, EV_F_LV, 0);
+			int32_t hpMax = vm_get_field_int(st, EV_F_MAX_HP_CN, EV_F_MAX_HP, 0);
 			bool is_use = vm_get_field_int(st, "bIsUse", NULL, 0) != 0;
 			if (!in_party && (!is_use || (lv <= 0 && hpMax <= 0)))
 				continue;
@@ -4888,16 +4916,16 @@ static void vm_ev_populate_live_state_json(cJSON *root)
 			free(name_u);
 			cJSON_AddBoolToObject(jc, "inParty", in_party);
 			cJSON_AddNumberToObject(jc, "lv", lv);
-			cJSON_AddNumberToObject(jc, "hp", vm_get_field_int(st, EV_F_HP, NULL, 0));
+			cJSON_AddNumberToObject(jc, "hp", vm_get_field_int(st, EV_F_HP_CN, EV_F_HP, 0));
 			cJSON_AddNumberToObject(jc, "hpMax", hpMax);
-			cJSON_AddNumberToObject(jc, "atk", vm_get_field_int(st, EV_F_ATK, NULL, 0));
-			cJSON_AddNumberToObject(jc, "mag", vm_get_field_int(st, EV_F_MAG, NULL, 0));
-			cJSON_AddNumberToObject(jc, "def", vm_get_field_int(st, EV_F_DEF, NULL, 0));
-			cJSON_AddNumberToObject(jc, "spd", vm_get_field_int(st, EV_F_SPD, NULL, 0));
-			cJSON_AddNumberToObject(jc, "exp", vm_get_field_int(st, EV_F_EXP, NULL, 0));
-			cJSON_AddNumberToObject(jc, "expMax", vm_get_field_int(st, EV_F_MAX_EXP, NULL, 0));
-			cJSON_AddNumberToObject(jc, "skillP", vm_get_field_int(st, EV_F_SKILL_P, NULL, 0));
-			cJSON_AddNumberToObject(jc, "bp", vm_get_field_int(st, EV_F_BP, NULL, 0));
+			cJSON_AddNumberToObject(jc, "atk", vm_get_field_int(st, EV_F_ATK_CN, EV_F_ATK, 0));
+			cJSON_AddNumberToObject(jc, "mag", vm_get_field_int(st, EV_F_MAG_CN, EV_F_MAG, 0));
+			cJSON_AddNumberToObject(jc, "def", vm_get_field_int(st, EV_F_DEF_CN, EV_F_DEF, 0));
+			cJSON_AddNumberToObject(jc, "spd", vm_get_field_int(st, EV_F_SPD_CN, EV_F_SPD, 0));
+			cJSON_AddNumberToObject(jc, "exp", vm_get_field_int(st, EV_F_EXP_CN, EV_F_EXP, 0));
+			cJSON_AddNumberToObject(jc, "expMax", vm_get_field_int(st, EV_F_MAX_EXP_CN, EV_F_MAX_EXP, 0));
+			cJSON_AddNumberToObject(jc, "skillP", vm_get_field_int(st, EV_F_SKILL_P_CN, EV_F_SKILL_P, 0));
+			cJSON_AddNumberToObject(jc, "bp", vm_get_field_int(st, EV_F_BP_CN, EV_F_BP, 0));
 			cJSON_AddItemToArray(j_chars, jc);
 		}
 	}

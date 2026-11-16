@@ -127,8 +127,15 @@ private class GameSelectAdapter(
                 badgeTone = UiKit.Tone.DANGER
             }
             primary != null && gameList.hasInstalledMod(primary) -> {
-                val ver = gameList.getInstalledModInfo(primary)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
-                badgeLabel = context.getString(R.string.game_status_installed_mod, ver)
+                val modInfo = gameList.getInstalledModInfo(primary)
+                val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
+                val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
+                val statusRes = if (isCnPatch) {
+                    R.string.game_status_installed_cn_patch
+                } else {
+                    R.string.game_status_installed_mod
+                }
+                badgeLabel = context.getString(statusRes, ver)
                 badgeTone = UiKit.Tone.SUCCESS
             }
             primary != null -> {

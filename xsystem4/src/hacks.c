@@ -305,11 +305,14 @@ void apply_game_specific_hacks(struct ain *ain)
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
-			|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")))
+			|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
+			|| strstr(config.game_name, "\xcf\xc4\xcd\xde")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
-		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0));
+		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
+		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
+			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0)));
 	if (game_rance10 && config.view_width == 800 && config.view_height == 600) {
 		// The original Rance X executable stores this outside AliceStart.ini.
 		config.view_width = 1920;

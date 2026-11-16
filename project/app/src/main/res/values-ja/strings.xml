@@ -151,6 +151,20 @@
     <string name="mod_invalid_package">有効なMODファイルが見つかりません</string>
     <string name="mod_install_error">MOD導入に失敗しました。ファイルと空き容量を確認してください</string>
     <string name="mod_restored_toast">MODを解除しました</string>
+    <string name="action_install_cn_patch">中国語化パッチ導入</string>
+    <string name="action_uninstall_cn_patch">パッチを解除</string>
+    <string name="uninstall_cn_patch_no_backup_msg">元データのバックアップがありません。本体を削除して再導入してください。</string>
+    <string name="cn_patch_local_dialog_title">パッチをローカル導入</string>
+    <string name="cn_patch_choose_zip">パッチアーカイブを選択</string>
+    <string name="cn_patch_invalid_package">有効なパッチファイルが見つかりません</string>
+    <string name="cn_patch_install_error">パッチ導入に失敗しました。ファイルと空き容量を確認してください</string>
+    <string name="cn_patch_restored_toast">パッチを解除しました</string>
+    <string name="cn_patch_mgr_status_none">パッチ未導入</string>
+    <string name="cn_patch_mgr_status_installed">パッチ導入済</string>
+    <string name="cn_patch_mgr_empty">利用可能なパッチがありません</string>
+    <string name="cn_patch_mgr_restore_confirm">パッチを解除して元バージョンに戻しますか？セーブは保持されます。</string>
+    <string name="cn_patch_mgr_detail_group">翻訳グループ：%1$s</string>
+    <string name="cn_patch_mgr_detail_type_full">フルパッチ</string>
 
     <string name="mod_mgr_activity_title">MOD管理</string>
     <string name="mod_mgr_status_none">MOD未導入</string>
@@ -201,8 +215,10 @@
     <string name="notif_channel_result_name">導入完了通知</string>
     <string name="notif_title_base_online">ゲーム本体をダウンロード中</string>
     <string name="notif_title_mod_online">MODを導入中 · %1$s</string>
+    <string name="notif_title_cn_patch_online">パッチを導入中 · %1$s</string>
     <string name="notif_title_local_game">ゲーム本体をインポート中</string>
     <string name="notif_title_local_mod">MODをインポート中</string>
+    <string name="notif_title_local_cn_patch">パッチをインポート中</string>
     <string name="notif_action_pause">一時停止</string>
     <string name="notif_done_title">インストール完了</string>
     <string name="notif_done_msg">%1$s が完了しました</string>
@@ -216,6 +232,7 @@
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>
+    <string name="game_status_installed_cn_patch">導入済 · 中国語化 %1$s</string>
     <string name="game_status_installing">導入中…</string>
     <string name="game_status_running">実行中</string>
     <string name="game_status_error">データ異常</string>

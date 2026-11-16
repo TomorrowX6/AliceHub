@@ -23,8 +23,17 @@ data class GameDescriptor(
     val onlineBaseCdnUrl: String?,
     val supportsOnlineMod: Boolean,
     val supportsLocalMod: Boolean,
-    val isRance10: Boolean
-)
+    val isRance10: Boolean,
+    val isCnPatch: Boolean = false,
+    val overlayCdnBaseUrl: String? = null,
+    val overlayCatalogRelPath: String = "files/mods/index.json"
+) {
+    val effectiveOverlayCdnUrl: String?
+        get() = overlayCdnBaseUrl ?: onlineBaseCdnUrl
+
+    val overlayKind: String
+        get() = if (isCnPatch) InstalledModInfo.KIND_CN_PATCH else InstalledModInfo.KIND_MOD
+}
 
 data class GameSelectEntry(
     val descriptor: GameDescriptor,
@@ -40,6 +49,15 @@ object GameCatalog {
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
+
+    /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
+    fun cleanItemTitle(rawName: String): String {
+        val cut = listOf(" [MOD", " [汉化")
+            .map { rawName.indexOf(it) }
+            .filter { it > 0 }
+            .minOrNull()
+        return if (cut != null) rawName.substring(0, cut) else rawName
+    }
 
     fun classifyItem(item: Item): String {
         return classifyDirectory(
@@ -176,19 +194,19 @@ object GameCatalog {
                 iconFrameColor = 0xFF151E2E.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLE_CDN_URL,
-                supportsOnlineMod = false,
-                supportsLocalMod = false,
-                isRance10 = false
+                supportsOnlineMod = true,
+                supportsLocalMod = true,
+                isRance10 = false,
+                isCnPatch = true,
+                overlayCdnBaseUrl = OnlineInstaller.EVENICLE_CDN_URL,
+                overlayCatalogRelPath = "files/cn-patch/index.json"
             )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
                     (0 until list.size).map { list[it] }.firstOrNull { it.path.name == customDir }
                 }
-                val title = matched?.let {
-                    val idx = it.name.indexOf(" [MOD")
-                    if (idx > 0) it.name.substring(0, idx) else it.name
-                } ?: customDir
+                val title = matched?.let { cleanItemTitle(it.name) } ?: customDir
                 GameDescriptor(
                     id = "$PREFIX_CUSTOM$customDir",
                     title = title,
@@ -275,7 +293,7 @@ object GameCatalog {
         val runningRoot = getRunningGameRoot(activity)
 
         if (isGameProcessRunning(activity) && runningRoot != null && runningRoot != targetRoot) {
-            val cleanName = item.name.substringBefore(" [MOD")
+            val cleanName = cleanItemTitle(item.name)
             AlertDialog.Builder(activity)
                 .setTitle(R.string.switch_running_game_title)
                 .setMessage(activity.getString(R.string.switch_running_game_msg, cleanName))

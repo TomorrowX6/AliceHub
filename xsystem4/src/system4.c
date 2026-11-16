@@ -302,11 +302,14 @@ static void config_init(void)
 	if (!config.game_name)
 		config.game_name = strdup(config.ain_filename);
 	if ((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
-				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")))
+				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
+				|| strstr(config.game_name, "\xcf\xc4\xcd\xde")))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "dohnadohna.ain")
-				&& (!config.game_name || !strstr(config.game_name, "\x83\x68\x81\x5b\x83\x69")))) {
+				&& (!config.game_name || !strstr(config.game_name, "\x83\x68\x81\x5b\x83\x69")))
+			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Evenicle.ain")
+				&& (!config.game_name || !strstr(config.game_name, "\x83\x43\x83\x75\x83\x6a\x83\x4e\x83\x8b")))) {
 		sys4_set_text_gbk(true);
 	}
 

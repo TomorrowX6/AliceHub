@@ -244,6 +244,9 @@ class InstallForegroundService : Service() {
             val openIntent = when {
                 !targetPath.isNullOrBlank() -> Intent(context, ModManagerActivity::class.java).apply {
                     putExtra(ModManagerActivity.EXTRA_GAME_PATH, targetPath)
+                    if (!targetGameId.isNullOrBlank()) {
+                        putExtra(ModManagerActivity.EXTRA_GAME_ID, targetGameId)
+                    }
                 }
                 !targetGameId.isNullOrBlank() -> Intent(context, GameHubActivity::class.java).apply {
                     putExtra(GameHubActivity.EXTRA_GAME_ID, targetGameId)

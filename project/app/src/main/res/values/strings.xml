@@ -152,6 +152,20 @@
     <string name="mod_invalid_package">No valid MOD files found</string>
     <string name="mod_install_error">MOD install failed. Check files and free space.</string>
     <string name="mod_restored_toast">MOD uninstalled</string>
+    <string name="action_install_cn_patch">Install CN Patch</string>
+    <string name="action_uninstall_cn_patch">Uninstall CN Patch</string>
+    <string name="uninstall_cn_patch_no_backup_msg">No original backup found. Delete base game and reinstall vanilla.</string>
+    <string name="cn_patch_local_dialog_title">Local Install CN Patch</string>
+    <string name="cn_patch_choose_zip">Select CN Patch Archive</string>
+    <string name="cn_patch_invalid_package">No valid patch files found</string>
+    <string name="cn_patch_install_error">CN patch install failed. Check files and free space.</string>
+    <string name="cn_patch_restored_toast">CN patch uninstalled</string>
+    <string name="cn_patch_mgr_status_none">No CN Patch</string>
+    <string name="cn_patch_mgr_status_installed">CN Patch Installed</string>
+    <string name="cn_patch_mgr_empty">No patch versions available</string>
+    <string name="cn_patch_mgr_restore_confirm">Uninstall CN patch and restore original edition? Saves will be kept.</string>
+    <string name="cn_patch_mgr_detail_group">Group: %1$s</string>
+    <string name="cn_patch_mgr_detail_type_full">Full CN Patch</string>
 
     <string name="mod_mgr_activity_title">MOD Manager</string>
     <string name="mod_mgr_status_none">No MOD</string>
@@ -202,8 +216,10 @@
     <string name="notif_channel_result_name">Install Alerts</string>
     <string name="notif_title_base_online">Downloading Base Game</string>
     <string name="notif_title_mod_online">Installing MOD · %1$s</string>
+    <string name="notif_title_cn_patch_online">Installing CN Patch · %1$s</string>
     <string name="notif_title_local_game">Importing Base Game</string>
     <string name="notif_title_local_mod">Importing MOD</string>
+    <string name="notif_title_local_cn_patch">Importing CN Patch</string>
     <string name="notif_action_pause">Pause</string>
     <string name="notif_done_title">Installation Complete</string>
     <string name="notif_done_msg">%1$s finished</string>
@@ -217,6 +233,7 @@
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>
+    <string name="game_status_installed_cn_patch">Installed · CN %1$s</string>
     <string name="game_status_installing">Installing…</string>
     <string name="game_status_running">Running</string>
     <string name="game_status_error">Invalid Files</string>

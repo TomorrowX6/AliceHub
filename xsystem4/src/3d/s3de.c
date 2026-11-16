@@ -62,7 +62,7 @@ static enum s3de_move_type parse_move_type(const char *s)
 
 static enum s3de_spawn_position_type parse_spawn_position_type(const char *s)
 {
-	if (!strcmp(s, "標準"))
+	if (!strcmp(s, "標準") || !strcmp(s, "标准"))
 		return S3DE_SPAWN_NORMAL;
 	if (!strcmp(s, "球"))
 		return S3DE_SPAWN_SPHERE;
@@ -74,7 +74,7 @@ static enum s3de_spawn_position_type parse_spawn_position_type(const char *s)
 
 static enum s3de_blend_type parse_blend_type(const char *s)
 {
-	if (!strcmp(s, "標準"))
+	if (!strcmp(s, "標準") || !strcmp(s, "标准"))
 		return S3DE_BLEND_NORMAL;
 	if (!strcmp(s, "加算"))
 		return S3DE_BLEND_ADDITIVE;
@@ -104,7 +104,7 @@ static enum s3de_direction_type parse_direction_type(const char *s)
 
 static enum s3de_posture_type parse_posture_type(const char *s)
 {
-	if (!strcmp(s, "なし"))
+	if (!strcmp(s, "なし") || !strcmp(s, "不用"))
 		return S3DE_POSE_NONE;
 	if (!strcmp(s, "カメラ"))
 		return S3DE_POSE_CAMERA;
@@ -120,7 +120,7 @@ static enum s3de_posture_type parse_posture_type(const char *s)
 
 static enum s3de_interp_type parse_interp_type(const char *s)
 {
-	if (!strcmp(s, "なし"))
+	if (!strcmp(s, "なし") || !strcmp(s, "不用"))
 		return S3DE_INTERP_NONE;
 	if (!strcmp(s, "線形"))
 		return S3DE_INTERP_LINEAR;
@@ -412,7 +412,7 @@ static struct s3de *parse_3de(char *text)
 
 		if (MATCH("}")) {
 			current = NULL;
-		} else if (MATCH("種類 = " KEYWORD, buf)) {
+		} else if (MATCH("種類 = " KEYWORD, buf) || MATCH("种类 = " KEYWORD, buf)) {
 			int v = parse_object_type(buf);
 			if (v < 0) goto err;
 			current->type = v;
@@ -491,12 +491,12 @@ static struct s3de *parse_3de(char *text)
 		else if (MATCH("自由落下 = %d", &n)) { current->free_fall = (n != 0); }
 		else if (MATCH("質量 = %f", &f)) { current->mass = f; }
 		else if (MATCH("空気抵抗係数 = %f", &f)) { current->air_resistance = f; }
-		else if (MATCH("開始Ｘ回転角度 = ")) { if (!parse_range(&text, &current->start_x_rotation)) goto err; }
-		else if (MATCH("終了Ｘ回転角度 = ")) { if (!parse_range(&text, &current->end_x_rotation)) goto err; }
-		else if (MATCH("開始Ｙ回転角度 = ")) { if (!parse_range(&text, &current->start_y_rotation)) goto err; }
-		else if (MATCH("終了Ｙ回転角度 = ")) { if (!parse_range(&text, &current->end_y_rotation)) goto err; }
-		else if (MATCH("開始Ｚ回転角度 = ")) { if (!parse_range(&text, &current->start_z_rotation)) goto err; }
-		else if (MATCH("終了Ｚ回転角度 = ")) { if (!parse_range(&text, &current->end_z_rotation)) goto err; }
+		else if (MATCH("開始Ｘ回転角度 = ") || MATCH("開始Ｘ回转角度 = ")) { if (!parse_range(&text, &current->start_x_rotation)) goto err; }
+		else if (MATCH("終了Ｘ回転角度 = ") || MATCH("終了Ｘ回转角度 = ")) { if (!parse_range(&text, &current->end_x_rotation)) goto err; }
+		else if (MATCH("開始Ｙ回転角度 = ") || MATCH("開始Ｙ回转角度 = ")) { if (!parse_range(&text, &current->start_y_rotation)) goto err; }
+		else if (MATCH("終了Ｙ回転角度 = ") || MATCH("終了Ｙ回转角度 = ")) { if (!parse_range(&text, &current->end_y_rotation)) goto err; }
+		else if (MATCH("開始Ｚ回転角度 = ") || MATCH("開始Ｚ回转角度 = ")) { if (!parse_range(&text, &current->start_z_rotation)) goto err; }
+		else if (MATCH("終了Ｚ回転角度 = ") || MATCH("終了Ｚ回转角度 = ")) { if (!parse_range(&text, &current->end_z_rotation)) goto err; }
 		else if (MATCH("Ｘ軸自転角度 = ")) { if (!parse_spin_angle(&text, &current->start_x_rotation, &current->end_x_rotation)) goto err; }
 		else if (MATCH("Ｙ軸自転角度 = ")) { if (!parse_spin_angle(&text, &current->start_y_rotation, &current->end_y_rotation)) goto err; }
 		else if (MATCH("Ｚ軸自転角度 = ")) { if (!parse_spin_angle(&text, &current->start_z_rotation, &current->end_z_rotation)) goto err; }
