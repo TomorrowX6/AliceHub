@@ -857,6 +857,27 @@ void gfx_init_texture_rgba(struct texture *t, int w, int h, SDL_Color color)
 		WARNING("Texture height %d exceeds maximum texture size %d", h, max_texture_size);
 		h = max_texture_size;
 	}
+	if (w > 0 && h > 0 && (int64_t)w * h <= 65536) {
+		size_t n = (size_t)w * (size_t)h;
+		uint8_t stack_buf[4096];
+		uint8_t *pixels = (n * 4 <= sizeof(stack_buf)) ? stack_buf : xmalloc(n * 4);
+		if ((color.r | color.g | color.b | color.a) == 0) {
+			memset(pixels, 0, n * 4);
+		} else if (color.r == color.g && color.r == color.b && color.r == color.a) {
+			memset(pixels, color.r, n * 4);
+		} else {
+			uint8_t rgba[4] = { color.r, color.g, color.b, color.a };
+			uint32_t packed;
+			memcpy(&packed, rgba, 4);
+			uint32_t *p32 = (uint32_t *)pixels;
+			for (size_t i = 0; i < n; i++)
+				p32[i] = packed;
+		}
+		gfx_init_texture_with_pixels(t, w, h, pixels);
+		if (pixels != stack_buf)
+			free(pixels);
+		return;
+	}
 	gfx_init_texture_blank(t, w, h);
 	if (w <= 0 || h <= 0)
 		return;

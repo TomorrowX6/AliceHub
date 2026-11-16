@@ -54,7 +54,23 @@ static bool load_skin(struct parts *parts, struct parts_state *state,
 	return ok;
 }
 
-static void draw_plain_button(struct parts *parts, struct parts_state *state, bool hovered, bool depressed)
+static void fill_rgba_rect(uint8_t *pixels, int tex_w, int x0, int y0, int rw, int rh,
+		uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+	for (int y = y0; y < y0 + rh; y++) {
+		uint8_t *row = pixels + ((size_t)y * (size_t)tex_w + (size_t)x0) * 4;
+		for (int x = 0; x < rw; x++) {
+			row[0] = r;
+			row[1] = g;
+			row[2] = b;
+			row[3] = a;
+			row += 4;
+		}
+	}
+}
+
+static void draw_plain_button(struct parts *parts, struct parts_state *state,
+		bool hovered, bool depressed, bool draw_checkmark)
 {
 	struct parts_widget *w = parts->widget;
 	parts_state_reset(state, PARTS_CG);
@@ -67,13 +83,27 @@ static void draw_plain_button(struct parts *parts, struct parts_state *state, bo
 	if (hovered) {
 		r = min(255, r + 16); g = min(255, g + 16); b = min(255, b + 16);
 	}
-	gfx_init_texture_rgba(&state->common.texture, width, height, (SDL_Color){r, g, b, 255});
-	int upper = depressed ? 96 : 240;
-	int lower = depressed ? 240 : 96;
-	gfx_fill(&state->common.texture, 0, 0, width, 1, upper, upper, upper);
-	gfx_fill(&state->common.texture, 0, 0, 1, height, upper, upper, upper);
-	gfx_fill(&state->common.texture, 0, height - 1, width, 1, lower, lower, lower);
-	gfx_fill(&state->common.texture, width - 1, 0, 1, height, lower, lower, lower);
+	uint8_t *pixels = xmalloc((size_t)width * (size_t)height * 4);
+	fill_rgba_rect(pixels, width, 0, 0, width, height, r, g, b, 255);
+	uint8_t upper = depressed ? 96 : 240;
+	uint8_t lower = depressed ? 240 : 96;
+	fill_rgba_rect(pixels, width, 0, 0, width, 1, upper, upper, upper, 255);
+	fill_rgba_rect(pixels, width, 0, 0, 1, height, upper, upper, upper, 255);
+	fill_rgba_rect(pixels, width, 0, height - 1, width, 1, lower, lower, lower, 255);
+	fill_rgba_rect(pixels, width, width - 1, 0, 1, height, lower, lower, lower, 255);
+	if (draw_checkmark) {
+		for (int x = 3; x < width - 3; x++) {
+			int y = x < width / 2 ? height / 2 + x - 3
+				: height - 4 - (x - width / 2) * 2;
+			int cy = max(2, min(height - 4, y));
+			int cw = min(2, width - x);
+			int ch = min(2, height - cy);
+			if (cw > 0 && ch > 0)
+				fill_rgba_rect(pixels, width, x, cy, cw, ch, 0, 0, 0, 255);
+		}
+	}
+	gfx_init_texture_with_pixels(&state->common.texture, width, height, pixels);
+	free(pixels);
 }
 
 static bool load_skin_any(struct parts *parts, struct parts_state *state,
@@ -89,6 +119,10 @@ static bool load_skin_any(struct parts *parts, struct parts_state *state,
 static void rebuild_background(struct parts *parts)
 {
 	struct parts_widget *w = parts->widget;
+	if (w->defer_rebuild) {
+		w->dirty_bg = true;
+		return;
+	}
 	static const char *const suffixes[4][3] = {
 		{ "／一般", "／通常", "／普通" },
 		{ "／オン", "／on", "／ON" },
@@ -136,15 +170,8 @@ static void rebuild_background(struct parts *parts)
 		}
 		if (!base->size) {
 			bool depressed = (i == PARTS_STATE_CLICKED) || (checked && w->button_mode);
-			draw_plain_button(parts, state, i == PARTS_STATE_HOVERED, depressed);
-			if (checked && !w->button_mode && state->common.texture.handle) {
-				int width = state->common.w, height = state->common.h;
-				for (int x = 3; x < width - 3; x++) {
-					int y = x < width / 2 ? height / 2 + x - 3
-						: height - 4 - (x - width / 2) * 2;
-					gfx_fill(&state->common.texture, x, max(2, min(height - 4, y)), 2, 2, 0, 0, 0);
-				}
-			}
+			draw_plain_button(parts, state, i == PARTS_STATE_HOVERED, depressed,
+					checked && !w->button_mode);
 		}
 	}
 	free_string(checked_base);
@@ -157,6 +184,10 @@ static void rebuild_background(struct parts *parts)
 static void rebuild_label(struct parts *parts)
 {
 	struct parts_widget *w = parts->widget;
+	if (w->defer_rebuild) {
+		w->dirty_label = true;
+		return;
+	}
 	struct text_style style = w->label.text.ts;
 	int line_space = w->label.text.line_space;
 	parts_state_reset(&w->label, PARTS_TEXT);
@@ -182,9 +213,13 @@ void parts_widget_rebuild(struct parts *parts)
 	rebuild_label(parts);
 }
 
-static void parts_widget_create_type(struct parts *parts, int type)
+static void parts_widget_create_type(struct parts *parts, int type, bool defer)
 {
-	if (parts->widget && parts->component_type == type) return;
+	if (parts->widget && parts->component_type == type) {
+		if (defer)
+			parts->widget->defer_rebuild = true;
+		return;
+	}
 	parts_widget_free(parts);
 	parts_panel_free(parts);
 	parts_scrollbar_free(parts);
@@ -205,11 +240,38 @@ static void parts_widget_create_type(struct parts *parts, int type)
 	parts_state_reset(&w->label, PARTS_TEXT);
 	w->label.text.ts.color = type == 1 ? (SDL_Color){255, 255, 255, 255} : (SDL_Color){0, 0, 0, 255};
 	parts->component_type = type;
-	parts_widget_rebuild(parts);
+	if (defer) {
+		w->defer_rebuild = true;
+		w->dirty_bg = true;
+		w->dirty_label = true;
+	} else {
+		parts_widget_rebuild(parts);
+	}
 }
 
-void parts_widget_create(struct parts *parts) { parts_widget_create_type(parts, 0); }
-void parts_checkbox_create(struct parts *parts) { parts_widget_create_type(parts, 1); }
+void parts_widget_create(struct parts *parts) { parts_widget_create_type(parts, 0, false); }
+void parts_checkbox_create(struct parts *parts) { parts_widget_create_type(parts, 1, false); }
+
+void parts_widget_create_deferred(struct parts *parts, int type)
+{
+	parts_widget_create_type(parts, type, true);
+}
+
+void parts_widget_end_batch(struct parts *parts)
+{
+	if (!parts || !parts->widget)
+		return;
+	struct parts_widget *w = parts->widget;
+	w->defer_rebuild = false;
+	bool do_bg = w->dirty_bg;
+	bool do_label = w->dirty_label;
+	w->dirty_bg = false;
+	w->dirty_label = false;
+	if (do_bg)
+		rebuild_background(parts);
+	if (do_label)
+		rebuild_label(parts);
+}
 
 void parts_widget_get_size(struct parts *parts, int *width, int *height)
 {

@@ -928,7 +928,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		load_state(p, node2(info, "光标选中状态", "オン指针状態"), 2);
 		load_state(p, node2(info, "键DOWN状态", "キーダウン状態"), 3);
 	} else if (!strcmp(kind, "按钮")) {
-		PE_SetSpecialComponentType(no, 0);
+		parts_widget_create_deferred(p, 0);
 		PE_SetButtonSize(no, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 30));
 		PE_SetButtonEnable(no, number2(info, "有效", "有効", 1));
 		PE_SetButtonColor(no, item(info, "按钮の色", 0, 200), item(info, "按钮の色", 1, 200), item(info, "按钮の色", 2, 200));
@@ -950,8 +950,9 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		struct string *flat = str(info, "フラット名"), *cg = str(info, "ＣＧ名");
 		if (cg->size) PE_SetButtonCGName(no, cg);
 		if (flat->size) PE_SetButtonFlatName(no, flat);
+		parts_widget_end_batch(p);
 	} else if (!strcmp(kind, "复选框") || !strcmp(kind, "检查ボックス")) {
-		parts_checkbox_create(p);
+		parts_widget_create_deferred(p, 1);
 		p->widget->checked = number2(info, "选择状态", "检查状態", 0);
 		p->widget->button_mode = number(info, "按钮模式", 0);
 		PE_SetCheckBoxSize(no, item2(info, "尺寸", "サイズ", 0, 16), item2(info, "尺寸", "サイズ", 1, 16));
@@ -984,6 +985,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		if (flat->size) PE_SetCheckBoxOverrideFlatName(no, flat);
 		flat = str2(info, "上書き检查フラット名", "覆盖检查フラット名");
 		if (flat->size) PE_SetCheckBoxOverrideCheckedFlatName(no, flat);
+		parts_widget_end_batch(p);
 	} else if (!strcmp(kind, "纵向滚动条栏") || !strcmp(kind, "横向滚动条栏") ||
 	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") ||
 	           !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
@@ -1600,7 +1602,7 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 			const char *bflat = version >= 2 ? pbr_cstr(r) : "";
 			const char *btxt = pbr_cstr(r);
 			int32_t tpos = pbr_i32(r), cspace = pbr_i32(r), lspace = pbr_i32(r);
-			PE_SetSpecialComponentType(no, 0);
+			parts_widget_create_deferred(p, 0);
 			PE_SetButtonSize(no, bw, bh);
 			PE_SetButtonEnable(no, ben);
 			PE_SetButtonColor(no, br, bg, bb);
@@ -1621,6 +1623,7 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 				PE_SetButtonFlatName(no, fs);
 				free_string(fs);
 			}
+			parts_widget_end_batch(p);
 			break;
 		}
 		case 1: { // CheckBox
@@ -1634,7 +1637,7 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 			int32_t tpos = pbr_i32(r);
 			bool button_mode = pbr_bool(r);
 			int32_t cspace = pbr_i32(r), lspace = pbr_i32(r);
-			parts_checkbox_create(p);
+			parts_widget_create_deferred(p, 1);
 			p->widget->checked = checked;
 			PE_SetCheckBoxButtonMode(no, button_mode);
 			PE_SetCheckBoxSize(no, cw, ch);
@@ -1656,6 +1659,7 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 				PE_SetCheckBoxFlatName(no, fs);
 				free_string(fs);
 			}
+			parts_widget_end_batch(p);
 			break;
 		}
 		case 2:
