@@ -2577,6 +2577,734 @@ static char *resolve_struct_save_path(const char *filename, bool save_folder)
 	return save_folder ? savedir_path(filename) : gamedir_path(filename);
 }
 
+static const uint8_t GDSS_OUTER_MAGIC[4] = { 'G', 'D', 1, 1 };
+static const char GDSS_INNER_MAGIC[17] = "serialize_struct";
+
+struct gd_ss_str {
+	const char *ptr;
+	size_t len;
+};
+
+struct gd_ss_field {
+	int32_t type1;
+	int32_t type2;
+	const char *name;
+};
+
+struct gd_ss_struct_def {
+	const char *name;
+	uint32_t nr_fields;
+	struct gd_ss_field *fields;
+};
+
+struct gd_ss_obj {
+	int32_t struct_def;
+	uint32_t nr_vals;
+	const uint8_t *val_idxs_le;
+};
+
+struct gd_ss_array {
+	int32_t rank;
+	uint32_t count;
+	int32_t elem_type;
+	const uint8_t *elems_le;
+};
+
+struct gd_ss_parsed {
+	uint8_t *raw;
+	uint32_t raw_len;
+	uint32_t nr_objs;
+	struct gd_ss_obj *objs;
+	uint32_t nr_roots;
+	int32_t *root_ids;
+	uint32_t nr_strings;
+	struct gd_ss_str *strings;
+	uint32_t nr_arrays;
+	struct gd_ss_array *arrays;
+	uint32_t nr_vals;
+	const uint8_t *vals_le;
+	uint32_t nr_struct_defs;
+	struct gd_ss_struct_def *struct_defs;
+	const char *comment;
+	uint32_t comment_len;
+	bool has_comment;
+};
+
+static uint32_t gd_read_u32_le(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+		| ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static int32_t gd_read_i32_le(const uint8_t *p)
+{
+	return (int32_t)gd_read_u32_le(p);
+}
+
+static void gd_write_u32_le(uint8_t *p, uint32_t v)
+{
+	p[0] = (uint8_t)(v & 0xff);
+	p[1] = (uint8_t)((v >> 8) & 0xff);
+	p[2] = (uint8_t)((v >> 16) & 0xff);
+	p[3] = (uint8_t)((v >> 24) & 0xff);
+}
+
+static const char *gd_read_cstr_slice(const uint8_t *base, uint32_t limit, uint32_t *pos, size_t *len_out)
+{
+	if (*pos >= limit)
+		return NULL;
+	const uint8_t *start = base + *pos;
+	const void *nul = memchr(start, '\0', (size_t)(limit - *pos));
+	if (!nul)
+		return NULL;
+	size_t slen = (size_t)((const uint8_t *)nul - start);
+	*pos += (uint32_t)(slen + 1);
+	if (len_out)
+		*len_out = slen;
+	return (const char *)start;
+}
+
+static void gd_ss_free_parsed(struct gd_ss_parsed *p)
+{
+	if (!p)
+		return;
+	free(p->objs);
+	free(p->root_ids);
+	free(p->strings);
+	free(p->arrays);
+	if (p->struct_defs) {
+		for (uint32_t i = 0; i < p->nr_struct_defs; i++)
+			free(p->struct_defs[i].fields);
+		free(p->struct_defs);
+	}
+	free(p->raw);
+	memset(p, 0, sizeof(*p));
+}
+
+/*
+ * Decompress a native Windows PC "GD\x01\x01" + zlib serialize_struct file.
+ * Returns true if `path` has GD\x01\x01 + serialize_struct\0 header and
+ * decompresses cleanly; returns false otherwise.
+ */
+static bool gd_ss_decompress_file(const char *path, uint8_t **raw_out, uint32_t *ulen_out)
+{
+	*raw_out = NULL;
+	*ulen_out = 0;
+	FILE *fp = file_open_utf8(path, "rb");
+	if (!fp)
+		return false;
+
+	uint8_t hdr[8];
+	if (fread(hdr, 1, 8, fp) != 8 || memcmp(hdr, GDSS_OUTER_MAGIC, 4) != 0) {
+		fclose(fp);
+		return false;
+	}
+	uint32_t ulen = gd_read_u32_le(hdr + 4);
+	if (ulen < 81 || ulen > 256u * 1024u * 1024u) {
+		fclose(fp);
+		return false;
+	}
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return false;
+	}
+	long fsize = ftell(fp);
+	if (fsize <= 8 || fseek(fp, 8, SEEK_SET) != 0) {
+		fclose(fp);
+		return false;
+	}
+	size_t zlen = (size_t)(fsize - 8);
+	uint8_t *zbuf = xmalloc(zlen);
+	if (fread(zbuf, 1, zlen, fp) != zlen) {
+		free(zbuf);
+		fclose(fp);
+		return false;
+	}
+	fclose(fp);
+
+	uint8_t *raw = xmalloc(ulen);
+	uLongf dst_len = (uLongf)ulen;
+	int zret = uncompress(raw, &dst_len, zbuf, (uLong)zlen);
+	free(zbuf);
+	if (zret != Z_OK || dst_len != ulen || memcmp(raw, GDSS_INNER_MAGIC, 17) != 0) {
+		free(raw);
+		return false;
+	}
+	*raw_out = raw;
+	*ulen_out = ulen;
+	return true;
+}
+
+static bool gd_ss_parse(uint8_t *raw, uint32_t ulen, struct gd_ss_parsed *out)
+{
+	memset(out, 0, sizeof(*out));
+	out->raw = raw;
+	out->raw_len = ulen;
+
+	if (ulen < 81 || memcmp(raw, GDSS_INNER_MAGIC, 17) != 0)
+		return false;
+	uint32_t version = gd_read_u32_le(raw + 17);
+	if (version != 1000)
+		return false;
+
+	uint32_t sec_off[7], sec_cnt[7];
+	for (int i = 0; i < 7; i++) {
+		sec_off[i] = gd_read_u32_le(raw + 25 + i * 8);
+		sec_cnt[i] = gd_read_u32_le(raw + 29 + i * 8);
+	}
+	for (int i = 1; i < 7; i++) {
+		if (sec_off[i] > ulen)
+			return false;
+		if (i > 1 && sec_off[i] < sec_off[i - 1])
+			return false;
+	}
+	if (sec_off[1] < 81)
+		return false;
+
+	/* C1: Object index records */
+	out->nr_objs = sec_cnt[1];
+	if (out->nr_objs > 16u * 1024u * 1024u)
+		return false;
+	out->objs = xcalloc(max(out->nr_objs, 1u), sizeof(*out->objs));
+	uint32_t pos = sec_off[1];
+	for (uint32_t i = 0; i < out->nr_objs; i++) {
+		if (pos + 8 > sec_off[2])
+			goto fail;
+		out->objs[i].struct_def = gd_read_i32_le(raw + pos);
+		uint32_t nf = gd_read_u32_le(raw + pos + 4);
+		pos += 8;
+		if (nf > (sec_off[2] - pos) / 4)
+			goto fail;
+		out->objs[i].nr_vals = nf;
+		out->objs[i].val_idxs_le = raw + pos;
+		pos += nf * 4;
+	}
+
+	/* C2: Root descriptor entries */
+	uint32_t root_cap = max(sec_cnt[2], 1u);
+	out->root_ids = xcalloc(root_cap, sizeof(int32_t));
+	pos = sec_off[2];
+	for (uint32_t i = 0; i < sec_cnt[2] && pos < sec_off[3]; i++) {
+		if (pos + 16 > sec_off[3])
+			goto fail;
+		int32_t type1 = gd_read_i32_le(raw + pos);
+		int32_t root_id = gd_read_i32_le(raw + pos + 8);
+		pos += 16;
+		if (!gd_read_cstr_slice(raw, sec_off[3], &pos, NULL))
+			goto fail;
+		if (type1 != AIN_VOID && root_id > 0)
+			out->root_ids[out->nr_roots++] = root_id;
+	}
+
+	/* C3: String pool */
+	out->nr_strings = sec_cnt[3];
+	if (out->nr_strings > 16u * 1024u * 1024u)
+		goto fail;
+	out->strings = xcalloc(max(out->nr_strings, 1u), sizeof(*out->strings));
+	pos = sec_off[3];
+	for (uint32_t i = 0; i < out->nr_strings; i++) {
+		size_t slen = 0;
+		const char *s = gd_read_cstr_slice(raw, sec_off[4], &pos, &slen);
+		if (!s)
+			goto fail;
+		out->strings[i].ptr = s;
+		out->strings[i].len = slen;
+	}
+
+	/* C4: Array pool */
+	out->nr_arrays = sec_cnt[4];
+	if (out->nr_arrays > 16u * 1024u * 1024u)
+		goto fail;
+	out->arrays = xcalloc(max(out->nr_arrays, 1u), sizeof(*out->arrays));
+	pos = sec_off[4];
+	for (uint32_t i = 0; i < out->nr_arrays; i++) {
+		if (pos + 4 > sec_off[5])
+			goto fail;
+		int32_t rank = gd_read_i32_le(raw + pos);
+		pos += 4;
+		if (rank != 1)
+			goto fail;
+		if (pos + 16 > sec_off[5])
+			goto fail;
+		uint32_t total = gd_read_u32_le(raw + pos + 8);
+		int32_t et = gd_read_i32_le(raw + pos + 12);
+		pos += 16;
+		if (total > (sec_off[5] - pos) / 4)
+			goto fail;
+		out->arrays[i].rank = rank;
+		out->arrays[i].count = total;
+		out->arrays[i].elem_type = et;
+		out->arrays[i].elems_le = raw + pos;
+		pos += total * 4;
+	}
+
+	/* C5: Value table + struct schema definitions */
+	out->nr_vals = sec_cnt[5];
+	if (out->nr_vals > (sec_off[6] - sec_off[5]) / 4)
+		goto fail;
+	out->vals_le = raw + sec_off[5];
+	pos = sec_off[5] + out->nr_vals * 4;
+	if (pos + 4 > sec_off[6])
+		goto fail;
+	out->nr_struct_defs = gd_read_u32_le(raw + pos);
+	pos += 4;
+	if (out->nr_struct_defs > 1024u * 1024u)
+		goto fail;
+	out->struct_defs = xcalloc(max(out->nr_struct_defs, 1u), sizeof(*out->struct_defs));
+	for (uint32_t si = 0; si < out->nr_struct_defs; si++) {
+		const char *sname = gd_read_cstr_slice(raw, sec_off[6], &pos, NULL);
+		if (!sname || pos + 4 > sec_off[6])
+			goto fail;
+		uint32_t nf = gd_read_u32_le(raw + pos);
+		pos += 4;
+		if (nf > 1024u * 1024u)
+			goto fail;
+		out->struct_defs[si].name = sname;
+		out->struct_defs[si].nr_fields = nf;
+		out->struct_defs[si].fields = xcalloc(max(nf, 1u), sizeof(struct gd_ss_field));
+		for (uint32_t fi = 0; fi < nf; fi++) {
+			if (pos + 8 > sec_off[6])
+				goto fail;
+			out->struct_defs[si].fields[fi].type1 = gd_read_i32_le(raw + pos);
+			out->struct_defs[si].fields[fi].type2 = gd_read_i32_le(raw + pos + 4);
+			pos += 8;
+			const char *fname = gd_read_cstr_slice(raw, sec_off[6], &pos, NULL);
+			if (!fname)
+				goto fail;
+			out->struct_defs[si].fields[fi].name = fname;
+		}
+	}
+
+	/* C6: Optional SaveData comment */
+	if (sec_cnt[6] > 0 && sec_off[6] + 4 <= ulen) {
+		uint32_t clen = gd_read_u32_le(raw + sec_off[6]);
+		if (clen <= ulen - sec_off[6] - 4) {
+			out->comment = (const char *)(raw + sec_off[6] + 4);
+			out->comment_len = clen;
+			out->has_comment = true;
+		}
+	}
+	return true;
+
+fail:
+	out->raw = NULL; /* Caller frees `raw` or gd_ss_free_parsed owns it */
+	gd_ss_free_parsed(out);
+	return false;
+}
+
+static bool gd_ss_detect_is_gbk(const struct gd_ss_parsed *p)
+{
+	int native_votes = 0;
+	int opp_votes = 0;
+	for (uint32_t si = 0; si < p->nr_struct_defs && (native_votes + opp_votes) < 60; si++) {
+		const struct gd_ss_struct_def *sd = &p->struct_defs[si];
+		bool st_non_ascii = sd->name && !cjk_is_ascii_only(sd->name);
+		bool has_non_ascii_field = false;
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (fn && fn[0] && !cjk_is_ascii_only(fn)) {
+				has_non_ascii_field = true;
+				break;
+			}
+		}
+		if (!st_non_ascii && !has_non_ascii_field)
+			continue;
+		int sno = save_find_struct(sd->name);
+		if (sno < 0 || sno >= ain->nr_structures)
+			continue;
+		const struct ain_struct *st = &ain->structures[sno];
+		if (st_non_ascii) {
+			if (!strcmp(st->name, sd->name))
+				native_votes += 10;
+			else
+				opp_votes += 10;
+		}
+		if (!has_non_ascii_field)
+			continue;
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (!fn || !fn[0] || cjk_is_ascii_only(fn))
+				continue;
+			int m = struct_member_index(&ain->structures[sno], fn);
+			if (m < 0)
+				continue;
+			const char *an = (st->members[m].name2 && st->members[m].name2[0])
+				? st->members[m].name2 : st->members[m].name;
+			if (!strcmp(an, fn))
+				native_votes += 10;
+			else
+				opp_votes += 10;
+		}
+	}
+	if (opp_votes > native_votes)
+		return !sys4_text_is_gbk;
+	if (native_votes > opp_votes)
+		return sys4_text_is_gbk;
+
+	int bias = 0;
+	for (uint32_t i = 0, seen = 0; i < p->nr_strings && seen < 64; i++) {
+		if (p->strings[i].len > 0 && !cjk_is_ascii_only(p->strings[i].ptr)) {
+			bias += save_text_gbk_bias(p->strings[i].ptr);
+			seen++;
+		}
+	}
+	if (p->has_comment && p->comment_len > 0) {
+		char *cb = xmalloc(p->comment_len + 1);
+		memcpy(cb, p->comment, p->comment_len);
+		cb[p->comment_len] = '\0';
+		bias += save_text_gbk_bias(cb);
+		free(cb);
+	}
+	if (bias > 15)
+		return true;
+	if (bias < -15)
+		return false;
+	return sys4_text_is_gbk;
+}
+
+struct gd_ss_load_ctx {
+	const struct gd_ss_parsed *p;
+	bool src_is_gbk;
+	int *c1_slots;
+	bool *is_root;
+	int *arr_slots;
+	struct ain_type *arr_types;
+};
+
+static void gd_ss_assign_value(struct gd_ss_load_ctx *ctx, union vm_value *dst,
+		const struct ain_type *t, int32_t raw_val, bool is_none, bool has_opt_none, bool has_existing);
+
+static int gd_ss_materialize_array(struct gd_ss_load_ctx *ctx, int32_t arr_idx,
+		enum ain_data_type a_type, const struct ain_type *et)
+{
+	if (arr_idx < 0 || (uint32_t)arr_idx >= ctx->p->nr_arrays) {
+		int slot = heap_alloc_slot(VM_PAGE);
+		heap_set_page(slot, NULL);
+		return slot;
+	}
+	const struct gd_ss_array *arr = &ctx->p->arrays[arr_idx];
+	bool can_reuse = ctx->arr_slots[arr_idx] >= 0
+		&& ctx->arr_types[arr_idx].data == et->data
+		&& ctx->arr_types[arr_idx].struc == et->struc;
+	if (can_reuse) {
+		heap_ref(ctx->arr_slots[arr_idx]);
+		return ctx->arr_slots[arr_idx];
+	}
+
+	int w = ain_type_slot_width(et);
+	struct page *ap = alloc_page(ARRAY_PAGE, a_type, (int)arr->count * w);
+	ap->array.rank = arr->rank > 0 ? arr->rank : 1;
+	ap->array.struct_type = et->struc;
+	ap->array.element_type = *et;
+	for (uint32_t k = 0; k < arr->count; k++)
+		variable_init_typed(&ap->values[k * w], et, false, false);
+	int slot = heap_alloc_page(ap);
+
+	bool record_cache = ctx->arr_slots[arr_idx] < 0;
+	if (record_cache) {
+		ctx->arr_slots[arr_idx] = slot;
+		ctx->arr_types[arr_idx] = *et;
+		heap_ref(slot); /* table retains one ref released at cleanup for shared cycle safety */
+	}
+
+	for (uint32_t k = 0; k < arr->count; k++) {
+		int32_t elem = gd_read_i32_le(arr->elems_le + k * 4);
+		gd_ss_assign_value(ctx, &ap->values[k * w], et, elem, false, false, true);
+	}
+	return slot;
+}
+
+static bool gd_ss_is_iface_type(const struct ain_type *t)
+{
+	if (!t)
+		return false;
+	const struct ain_type *eff = (t->data == AIN_WRAP && t->array_type) ? t->array_type : t;
+	return eff->data == AIN_IFACE || eff->data == AIN_IFACE_WRAP;
+}
+
+static bool gd_ss_iface_array_unserialized(const struct gd_ss_load_ctx *ctx,
+		const union vm_value *dst, const struct ain_type *t, int32_t raw_val)
+{
+	if (!dst || !t || raw_val < 0 || (uint32_t)raw_val >= ctx->p->nr_arrays)
+		return false;
+	const struct ain_type *eff = (t->data == AIN_WRAP && t->array_type) ? t->array_type : t;
+	if ((eff->data != AIN_ARRAY && eff->data != AIN_REF_ARRAY) || !gd_ss_is_iface_type(eff->array_type))
+		return false;
+	const struct gd_ss_array *arr = &ctx->p->arrays[raw_val];
+	if (arr->count == 0 || (arr->elem_type != AIN_IFACE && arr->elem_type != AIN_IFACE_WRAP))
+		return false;
+	if (!page_index_valid(dst[0].i) || !heap[dst[0].i].page
+			|| heap[dst[0].i].page->type != ARRAY_PAGE || heap[dst[0].i].page->nr_vars <= 0)
+		return false;
+	for (uint32_t k = 0; k < arr->count; k++) {
+		if (gd_read_i32_le(arr->elems_le + k * 4) >= 0)
+			return false;
+	}
+	return true;
+}
+
+static void gd_ss_assign_value(struct gd_ss_load_ctx *ctx, union vm_value *dst,
+		const struct ain_type *t, int32_t raw_val, bool is_none, bool has_opt_none, bool has_existing)
+{
+	if (!t || t->data == AIN_VOID || t->data == AIN_DELEGATE || t->data == AIN_REF_DELEGATE)
+		return;
+
+	/* PC SerializeStruct writes -1 placeholders for AIN_IFACE array elements; keep pre-built runtime interfaces. */
+	if (has_existing && gd_ss_iface_array_unserialized(ctx, dst, t, raw_val))
+		return;
+
+	if (has_existing) {
+		elem_value_fini(dst, t, false);
+		int w = ain_type_slot_width(t);
+		for (int k = 0; k < w; k++)
+			dst[k].i = 0;
+	}
+
+	if (t->data == AIN_OPTION) {
+		int w = ain_type_slot_width(t);
+		if (!has_opt_none || is_none || !t->array_type) {
+			for (int k = 0; k < w - 1; k++)
+				dst[k].i = -1;
+			dst[w - 1].i = 1;
+		} else {
+			gd_ss_assign_value(ctx, dst, t->array_type, raw_val, false, false, false);
+			dst[w - 1].i = 0;
+		}
+		return;
+	}
+
+	const struct ain_type *eff = (t->data == AIN_WRAP && t->array_type) ? t->array_type : t;
+	switch (eff->data) {
+	case AIN_VOID:
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+		break;
+	case AIN_STRING: {
+		struct string *s;
+		if (raw_val == INT32_MAX || raw_val < 0 || (uint32_t)raw_val >= ctx->p->nr_strings)
+			s = string_ref(&EMPTY_STRING);
+		else
+			s = save_decode_vm_string(ctx->p->strings[raw_val].ptr, ctx->p->strings[raw_val].len, ctx->src_is_gbk);
+		dst[0].i = heap_alloc_string(s);
+		break;
+	}
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT: {
+		int slot = (raw_val > 0 && (uint32_t)raw_val < ctx->p->nr_objs) ? ctx->c1_slots[raw_val] : -1;
+		if (slot >= 0)
+			heap_ref(slot);
+		dst[0].i = slot;
+		break;
+	}
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP: {
+		int slot = (raw_val > 0 && (uint32_t)raw_val < ctx->p->nr_objs) ? ctx->c1_slots[raw_val] : -1;
+		if (slot >= 0 && page_index_valid(slot) && heap[slot].page) {
+			heap_ref(slot);
+			dst[0].i = slot;
+			dst[1].i = x4ss_resolve_vtable_offset(heap[slot].page->index, eff->struc, 0);
+		} else {
+			dst[0].i = -1;
+			dst[1].i = 0;
+		}
+		break;
+	}
+	case AIN_ARRAY:
+	case AIN_REF_ARRAY: {
+		if (eff->array_type) {
+			dst[0].i = gd_ss_materialize_array(ctx, raw_val, AIN_ARRAY, eff->array_type);
+		} else {
+			int slot = heap_alloc_slot(VM_PAGE);
+			heap_set_page(slot, NULL);
+			dst[0].i = slot;
+		}
+		break;
+	}
+	case AIN_ARRAY_TYPE: {
+		struct ain_type et = { .data = array_type(eff->data), .struc = eff->struc };
+		enum ain_data_type a_type = ain->version >= 11 ? AIN_ARRAY : eff->data;
+		dst[0].i = gd_ss_materialize_array(ctx, raw_val, a_type, &et);
+		break;
+	}
+	case AIN_REF_ARRAY_TYPE: {
+		struct ain_type et = { .data = array_type(eff->data), .struc = eff->struc };
+		enum ain_data_type a_type = ain->version >= 11 ? AIN_ARRAY
+			: (eff->data == AIN_REF_ARRAY_DELEGATE ? AIN_ARRAY_DELEGATE : eff->data - 8);
+		dst[0].i = gd_ss_materialize_array(ctx, raw_val, a_type, &et);
+		break;
+	}
+	default:
+		dst[0].i = raw_val;
+		break;
+	}
+}
+
+static bool deserialize_gd_structs(const char *path, const char *filename,
+		bool save_folder, struct page *struct_page_list, uint8_t *raw, uint32_t ulen)
+{
+	struct gd_ss_parsed parsed;
+	if (!gd_ss_parse(raw, ulen, &parsed)) {
+		free(raw);
+		WARNING("DeserializeStruct: invalid GD serialize_struct file %s", display_sjis0(filename));
+		return false;
+	}
+
+	int nr_caller_roots = v12_array_length(struct_page_list);
+	if ((int)parsed.nr_roots != nr_caller_roots) {
+		WARNING("DeserializeStruct: root count mismatch (%u vs %d) in %s",
+				parsed.nr_roots, nr_caller_roots, display_sjis0(filename));
+		gd_ss_free_parsed(&parsed);
+		return false;
+	}
+
+	int *schema_snos = xcalloc(max(parsed.nr_struct_defs, 1u), sizeof(int));
+	for (uint32_t si = 0; si < parsed.nr_struct_defs; si++)
+		schema_snos[si] = save_find_struct(parsed.struct_defs[si].name);
+
+	struct gd_ss_load_ctx ctx = {
+		.p = &parsed,
+		.src_is_gbk = gd_ss_detect_is_gbk(&parsed),
+		.c1_slots = xcalloc(max(parsed.nr_objs, 1u), sizeof(int)),
+		.is_root = xcalloc(max(parsed.nr_objs, 1u), sizeof(bool)),
+		.arr_slots = xcalloc(max(parsed.nr_arrays, 1u), sizeof(int)),
+		.arr_types = xcalloc(max(parsed.nr_arrays, 1u), sizeof(struct ain_type)),
+	};
+	for (uint32_t id = 0; id < parsed.nr_objs; id++)
+		ctx.c1_slots[id] = -1;
+	for (uint32_t ai = 0; ai < parsed.nr_arrays; ai++)
+		ctx.arr_slots[ai] = -1;
+
+	for (int r = 0; r < nr_caller_roots; r++) {
+		int32_t rid = parsed.root_ids[r];
+		if (rid <= 0 || (uint32_t)rid >= parsed.nr_objs) {
+			free(ctx.arr_types);
+			free(ctx.arr_slots);
+			free(ctx.is_root);
+			free(ctx.c1_slots);
+			free(schema_snos);
+			gd_ss_free_parsed(&parsed);
+			return false;
+		}
+		ctx.c1_slots[rid] = struct_page_list->values[r].i;
+		ctx.is_root[rid] = true;
+	}
+
+	/* Pass 1: pre-allocate non-root STRUCT_PAGE instances */
+	for (uint32_t id = 1; id < parsed.nr_objs; id++) {
+		if (ctx.is_root[id])
+			continue;
+		int32_t sd_idx = parsed.objs[id].struct_def;
+		if (sd_idx < 0 || (uint32_t)sd_idx >= parsed.nr_struct_defs)
+			continue;
+		int sno = schema_snos[sd_idx];
+		if (sno >= 0)
+			ctx.c1_slots[id] = alloc_struct(sno);
+	}
+
+	/* Precompute field -> member mappings once per struct schema */
+	int **schema_fmap = xcalloc(max(parsed.nr_struct_defs, 1u), sizeof(int *));
+	for (uint32_t si = 0; si < parsed.nr_struct_defs; si++) {
+		const struct gd_ss_struct_def *sd = &parsed.struct_defs[si];
+		int sno = schema_snos[si];
+		if (sno < 0 || sno >= ain->nr_structures || sd->nr_fields == 0)
+			continue;
+		struct ain_struct *st = &ain->structures[sno];
+		schema_fmap[si] = xcalloc(sd->nr_fields, sizeof(int));
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			int m = -1;
+			if (fn && strcmp(fn, "<vtable>") == 0) {
+				m = -1;
+			} else if (fn && fn[0]) {
+				m = struct_member_index(st, fn);
+			} else if ((int)fi < st->nr_members && sd->fields[fi].type1 != AIN_VOID) {
+				if ((!st->members[fi].name2 || !st->members[fi].name2[0])
+						&& st->members[fi].type.data == (enum ain_data_type)sd->fields[fi].type1) {
+					m = (int)fi;
+				}
+			}
+			schema_fmap[si][fi] = m;
+		}
+	}
+
+	/* Pass 2: populate structs and materialize typed arrays */
+	for (uint32_t id = 1; id < parsed.nr_objs; id++) {
+		int slot = ctx.c1_slots[id];
+		if (slot < 0 || !page_index_valid(slot))
+			continue;
+		struct page *sp = heap[slot].page;
+		if (!sp || sp->type != STRUCT_PAGE)
+			continue;
+		if (ctx.is_root[id]) {
+			struct ain_struct *rst = &ain->structures[sp->index];
+			for (int m = 0; m < rst->nr_members; m++) {
+				if (rst->members[m].type.data == AIN_DELEGATE) {
+					int dslot = sp->values[m].i;
+					if (page_index_valid(dslot) && heap[dslot].page)
+						heap_set_page(dslot, delegate_clear(heap[dslot].page));
+				}
+			}
+		}
+
+		int32_t sd_idx = parsed.objs[id].struct_def;
+		if (sd_idx < 0 || (uint32_t)sd_idx >= parsed.nr_struct_defs)
+			continue;
+		const struct gd_ss_struct_def *sd = &parsed.struct_defs[sd_idx];
+		struct ain_struct *st = &ain->structures[sp->index];
+		uint32_t nfields = min(sd->nr_fields, parsed.objs[id].nr_vals);
+		bool use_cached_map = (sp->index == schema_snos[sd_idx] && schema_fmap[sd_idx] != NULL);
+
+		for (uint32_t fi = 0; fi < nfields; fi++) {
+			const struct gd_ss_field *f = &sd->fields[fi];
+			if (f->type1 == AIN_VOID || (f->name && !strcmp(f->name, "<vtable>")))
+				continue;
+			int m_idx = use_cached_map ? schema_fmap[sd_idx][fi] : struct_member_index(st, f->name);
+			if (m_idx < 0 || m_idx >= st->nr_members)
+				continue;
+			uint32_t v_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + fi * 4);
+			if (v_idx >= parsed.nr_vals)
+				continue;
+			int32_t raw_val = gd_read_i32_le(parsed.vals_le + v_idx * 4);
+
+			const struct ain_type *mt = &st->members[m_idx].type;
+			bool is_none = false;
+			bool has_opt_none = false;
+			if (mt->data == AIN_OPTION && fi + 1 < nfields && sd->fields[fi + 1].type1 == AIN_VOID) {
+				uint32_t nv_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + (fi + 1) * 4);
+				if (nv_idx < parsed.nr_vals) {
+					is_none = (gd_read_i32_le(parsed.vals_le + nv_idx * 4) != 0);
+					has_opt_none = true;
+				}
+			}
+			gd_ss_assign_value(&ctx, &sp->values[m_idx], mt, raw_val, is_none, has_opt_none, true);
+		}
+	}
+
+	for (uint32_t id = 1; id < parsed.nr_objs; id++) {
+		if (!ctx.is_root[id] && ctx.c1_slots[id] >= 0)
+			exit_unref(ctx.c1_slots[id]);
+	}
+	for (uint32_t ai = 0; ai < parsed.nr_arrays; ai++) {
+		if (ctx.arr_slots[ai] >= 0)
+			exit_unref(ctx.arr_slots[ai]);
+	}
+
+	for (uint32_t si = 0; si < parsed.nr_struct_defs; si++)
+		free(schema_fmap[si]);
+	free(schema_fmap);
+	free(ctx.arr_types);
+	free(ctx.arr_slots);
+	free(ctx.is_root);
+	free(ctx.c1_slots);
+	free(schema_snos);
+	gd_ss_free_parsed(&parsed);
+
+	if (save_folder && is_game_config_save(filename))
+		modifier_on_config_loaded();
+	(void)path;
+	return true;
+}
+
 static bool x4ss_read_existing_parts(const char *path,
 		uint8_t **comment_out, uint32_t *comment_len_out,
 		uint32_t *uncomp_len_out, uint8_t **comp_out, uint32_t *comp_len_out)
@@ -2854,6 +3582,14 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 	}
 
 	char *path = resolve_struct_save_path(filename, save_folder);
+	uint8_t *gd_raw = NULL;
+	uint32_t gd_ulen = 0;
+	if (gd_ss_decompress_file(path, &gd_raw, &gd_ulen)) {
+		bool gd_ok = deserialize_gd_structs(path, filename, save_folder, struct_page_list, gd_raw, gd_ulen);
+		free(path);
+		return gd_ok ? 1 : 0;
+	}
+
 	uint32_t uncomp_len = 0, comp_len = 0;
 	uint8_t *comp = NULL;
 	if (!x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
@@ -2862,6 +3598,14 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 		char *bak_path = make_backup_path(path);
 		free(comp);
 		comp = NULL;
+		if (file_exists(bak_path) && gd_ss_decompress_file(bak_path, &gd_raw, &gd_ulen)) {
+			WARNING("Recovered %s from backup %s", display_utf0(path), display_utf0(bak_path));
+			file_copy(bak_path, path);
+			free(bak_path);
+			bool gd_ok = deserialize_gd_structs(path, filename, save_folder, struct_page_list, gd_raw, gd_ulen);
+			free(path);
+			return gd_ok ? 1 : 0;
+		}
 		if (!file_exists(bak_path) ||
 		    !x4ss_read_existing_parts(bak_path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
 		    uncomp_len == 0 || comp_len == 0 || !comp) {
@@ -3028,6 +3772,74 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 	return ok ? 1 : 0;
 }
 
+static bool gd_ss_update_comment(const char *path, const struct string *comment)
+{
+	uint8_t *gd_raw = NULL;
+	uint32_t gd_ulen = 0;
+	if (!gd_ss_decompress_file(path, &gd_raw, &gd_ulen))
+		return false;
+
+	struct gd_ss_parsed parsed;
+	if (!gd_ss_parse(gd_raw, gd_ulen, &parsed)) {
+		free(gd_raw);
+		return false;
+	}
+	uint32_t c6_off = gd_read_u32_le(gd_raw + 73);
+	if (c6_off < 81 || c6_off > gd_ulen) {
+		gd_ss_free_parsed(&parsed);
+		return false;
+	}
+
+	bool dst_is_gbk = gd_ss_detect_is_gbk(&parsed);
+	size_t c6_len = 0;
+	char *c6_buf = save_transcode_cstr(comment ? comment->text : "",
+			comment ? (size_t)comment->size : 0, sys4_text_is_gbk, dst_is_gbk, &c6_len);
+	if (c6_len > UINT32_MAX - 4u - c6_off) {
+		free(c6_buf);
+		gd_ss_free_parsed(&parsed);
+		return false;
+	}
+
+	uint32_t new_ulen = c6_off + 4u + (uint32_t)c6_len;
+	uint8_t *new_raw = xmalloc(new_ulen);
+	memcpy(new_raw, gd_raw, c6_off);
+	gd_write_u32_le(new_raw + 77, 1); /* sec_cnt[6] = has_comment */
+	gd_write_u32_le(new_raw + c6_off, (uint32_t)c6_len);
+	if (c6_len > 0)
+		memcpy(new_raw + c6_off + 4u, c6_buf, c6_len);
+
+	free(c6_buf);
+	gd_ss_free_parsed(&parsed);
+
+	uLongf comp_cap = compressBound((uLong)new_ulen);
+	uint8_t *comp = xmalloc(comp_cap);
+	if (compress2(comp, &comp_cap, new_raw, (uLong)new_ulen, Z_BEST_SPEED) != Z_OK) {
+		free(comp);
+		free(new_raw);
+		return false;
+	}
+	free(new_raw);
+
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
+	if (!fp) {
+		free(comp);
+		return false;
+	}
+	uint8_t hdr[8];
+	memcpy(hdr, GDSS_OUTER_MAGIC, 4);
+	gd_write_u32_le(hdr + 4, new_ulen);
+	bool ok = fwrite(hdr, 1, 8, fp) == 8;
+	if (ok && comp_cap > 0)
+		ok = fwrite(comp, 1, (size_t)comp_cap, fp) == (size_t)comp_cap;
+	free(comp);
+	if (!ok) {
+		atomic_save_abort(fp, tmp_path);
+		return false;
+	}
+	return atomic_save_commit(fp, path, tmp_path, is_critical_global_save(path));
+}
+
 int write_serialize_struct_comment(const char *filename, const struct string *comment, bool save_folder)
 {
 	if (!filename)
@@ -3035,7 +3847,11 @@ int write_serialize_struct_comment(const char *filename, const struct string *co
 	char *path = resolve_struct_save_path(filename, save_folder);
 	uint32_t uncomp_len = 0, comp_len = 0;
 	uint8_t *comp = NULL;
-	x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len);
+	bool has_x4ss = x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len);
+	if (!has_x4ss && gd_ss_update_comment(path, comment)) {
+		free(path);
+		return 1;
+	}
 
 	const uint8_t *cbuf = comment ? (const uint8_t *)comment->text : (const uint8_t *)"";
 	uint32_t clen = comment ? (uint32_t)comment->size : 0;
@@ -3051,6 +3867,39 @@ int read_serialize_struct_comment(const char *filename, struct string **comment_
 	if (!filename || !comment_out)
 		return 0;
 	char *path = resolve_struct_save_path(filename, save_folder);
+	uint8_t *gd_raw = NULL;
+	uint32_t gd_ulen = 0;
+	if (gd_ss_decompress_file(path, &gd_raw, &gd_ulen)) {
+		free(path);
+		struct gd_ss_parsed parsed;
+		if (!gd_ss_parse(gd_raw, gd_ulen, &parsed)) {
+			free(gd_raw);
+			return 0;
+		}
+		if (!parsed.has_comment) {
+			gd_ss_free_parsed(&parsed);
+			return 0;
+		}
+		if (parsed.comment_len == 0) {
+			*comment_out = string_ref(&EMPTY_STRING);
+		} else {
+			bool ascii = true;
+			for (uint32_t i = 0; i < parsed.comment_len; i++) {
+				if ((uint8_t)parsed.comment[i] >= 0x80) {
+					ascii = false;
+					break;
+				}
+			}
+			if (ascii) {
+				*comment_out = make_string(parsed.comment, parsed.comment_len);
+			} else {
+				bool src_is_gbk = gd_ss_detect_is_gbk(&parsed);
+				*comment_out = save_decode_vm_string(parsed.comment, parsed.comment_len, src_is_gbk);
+			}
+		}
+		gd_ss_free_parsed(&parsed);
+		return 1;
+	}
 	uint8_t *cbuf = NULL;
 	uint32_t clen = 0;
 	bool ok = x4ss_read_existing_parts(path, &cbuf, &clen, NULL, NULL, NULL);
