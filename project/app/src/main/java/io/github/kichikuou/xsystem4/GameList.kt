@@ -1001,7 +1001,7 @@ class GameList(activity: Activity) {
                         cleanReplaceIfStandalone = true,
                         isCnPatch = isCnPatch
                     )
-                    val (inferredVer, inferredGroup) = OnlineInstaller.inferLocalOverlayMeta(
+                    val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
                         isPatchHint = !wasFull,
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
@@ -1018,7 +1018,6 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            group = inferredGroup,
                             kind = overlayKind
                         )
                     )
@@ -1097,7 +1096,7 @@ class GameList(activity: Activity) {
                         cleanReplaceIfStandalone = true,
                         isCnPatch = isCnPatch
                     )
-                    val (inferredVer, inferredGroup) = OnlineInstaller.inferLocalOverlayMeta(
+                    val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
                         isPatchHint = !wasFull,
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
@@ -1114,7 +1113,6 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            group = inferredGroup,
                             kind = overlayKind
                         )
                     )
@@ -1143,19 +1141,24 @@ class GameList(activity: Activity) {
         val gameId = GameCatalog.classifyItem(targetItem)
         val isCnPatch = GameCatalog.descriptorFor(context, gameId).isCnPatch
         val overlayKind = if (isCnPatch) InstalledModInfo.KIND_CN_PATCH else InstalledModInfo.KIND_MOD
-        val firstLabelBase = steps[0].displayTitle
         val firstLabel = if (steps.size > 1) {
-            "[1/${steps.size}] $firstLabelBase"
+            "[1/${steps.size}] ${steps[0].version}"
         } else {
-            firstLabelBase
+            steps[0].version
         }
-        val targetLabel = steps.last().displayTitle
+        val targetVer = steps.last().version
+        val targetGroup = steps.last().group
+        val notifLabel = if (isCnPatch && targetGroup.isNotBlank()) {
+            "$targetGroup · $targetVer"
+        } else {
+            targetVer
+        }
         val storagePath = targetItem.path.parentFile ?: storageDirs[0]
         val prevBarrier = retiringBarrierJob
         val (sessionGen, abortHandle) = beginInstallSession(
             notifTitle = context.getString(
                 if (isCnPatch) R.string.notif_title_cn_patch_online else R.string.notif_title_mod_online,
-                targetLabel
+                notifLabel
             ),
             initialProgress = context.getString(R.string.online_mod_starting_download, firstLabel),
             initialPermille = 0,
@@ -1185,8 +1188,7 @@ class GameList(activity: Activity) {
                             url = release.downloadUrl,
                             fileName = release.fileName,
                             contentLength = release.expectedSize,
-                            expectedSha256 = release.expectedSha256,
-                            group = release.group
+                            expectedSha256 = release.expectedSha256
                         )
                         OnlineInstaller.downloadAndExtractMod(
                             context = context,
@@ -1243,7 +1245,6 @@ class GameList(activity: Activity) {
                                         uploadedAt = release.uploadedAt,
                                         source = "online",
                                         installedAtMs = System.currentTimeMillis(),
-                                        group = release.group,
                                         kind = overlayKind
                                     )
                                 )

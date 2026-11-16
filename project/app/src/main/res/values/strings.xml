@@ -164,7 +164,6 @@
     <string name="cn_patch_mgr_status_installed">CN Patch Installed</string>
     <string name="cn_patch_mgr_empty">No patch versions available</string>
     <string name="cn_patch_mgr_restore_confirm">Uninstall CN patch and restore original edition? Saves will be kept.</string>
-    <string name="cn_patch_mgr_detail_group">Group: %1$s</string>
     <string name="cn_patch_mgr_detail_type_full">Full CN Patch</string>
 
     <string name="mod_mgr_activity_title">MOD Manager</string>

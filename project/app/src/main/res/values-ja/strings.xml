@@ -163,7 +163,6 @@
     <string name="cn_patch_mgr_status_installed">パッチ導入済</string>
     <string name="cn_patch_mgr_empty">利用可能なパッチがありません</string>
     <string name="cn_patch_mgr_restore_confirm">パッチを解除して元バージョンに戻しますか？セーブは保持されます。</string>
-    <string name="cn_patch_mgr_detail_group">翻訳グループ：%1$s</string>
     <string name="cn_patch_mgr_detail_type_full">フルパッチ</string>
 
     <string name="mod_mgr_activity_title">MOD管理</string>

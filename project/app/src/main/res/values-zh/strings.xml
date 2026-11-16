@@ -163,7 +163,6 @@
     <string name="cn_patch_mgr_status_installed">已安装汉化补丁</string>
     <string name="cn_patch_mgr_empty">暂无可用汉化补丁</string>
     <string name="cn_patch_mgr_restore_confirm">确定卸载汉化补丁并还原原版吗？存档会保留。</string>
-    <string name="cn_patch_mgr_detail_group">汉化组：%1$s</string>
     <string name="cn_patch_mgr_detail_type_full">完整汉化补丁</string>
 
     <string name="mod_mgr_activity_title">MOD 管理</string>

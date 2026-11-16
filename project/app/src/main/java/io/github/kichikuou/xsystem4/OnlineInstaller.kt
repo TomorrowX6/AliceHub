@@ -19,8 +19,7 @@ data class ModDownloadRequest(
     val url: String,
     val fileName: String,
     val contentLength: Long,
-    val expectedSha256: String? = null,
-    val group: String = ""
+    val expectedSha256: String? = null
 )
 
 data class ModReleaseEntry(
@@ -41,9 +40,6 @@ data class ModReleaseEntry(
     val formattedDate: String
         get() = uploadedAt.replace('T', ' ').take(16)
 
-    val displayTitle: String
-        get() = if (group.isNotBlank()) "$version · $group" else version
-
     val isFullMarked: Boolean
         get() = version.contains("完整") || fileName.contains("完整") || version.contains("正式版")
 }
@@ -57,7 +53,6 @@ data class InstalledModInfo(
     val uploadedAt: String,
     val source: String,
     val installedAtMs: Long,
-    val group: String = "",
     val kind: String = KIND_MOD
 ) {
     val formattedDate: String
@@ -78,7 +73,6 @@ data class InstalledModInfo(
                 val rawBaseVer = j.optString("baseVersion", "").trim().takeIf { it.isNotEmpty() }
                 val source = j.optString("source", "online").trim().ifEmpty { "online" }
                 val fileName = j.optString("fileName", "").trim()
-                val group = j.optString("group", "").trim()
                 val kind = j.optString("kind", KIND_MOD).trim().ifEmpty { KIND_MOD }
                 val isPatchStored = rawBaseVer != null && rawBaseVer != rawVer
                 val isPatchHint = when {
@@ -113,7 +107,6 @@ data class InstalledModInfo(
                     uploadedAt = j.optString("uploadedAt", "").trim(),
                     source = source,
                     installedAtMs = j.optLong("installedAtMs", 0L),
-                    group = group,
                     kind = kind
                 )
             } catch (_: Throwable) {
@@ -148,7 +141,6 @@ data class InstalledModInfo(
                     .put("uploadedAt", info.uploadedAt)
                     .put("source", info.source)
                     .put("installedAtMs", info.installedAtMs)
-                    .put("group", info.group)
                     .put("kind", info.kind)
                 File(gameDir, META_FILE_NAME).writeText(j.toString(), Charsets.UTF_8)
             } catch (_: Throwable) {
@@ -480,19 +472,19 @@ object OnlineInstaller {
         return stripped
     }
 
-    /** Infers version and translation group for a local overlay archive/folder. */
-    fun inferLocalOverlayMeta(
+    /** Infers display version for a local overlay archive/folder. */
+    fun inferLocalOverlayVersion(
         fileName: String,
         isPatchHint: Boolean,
         fallbackIniDir: File?,
         isCnPatch: Boolean
-    ): Pair<String, String> {
+    ): String {
         if (!isCnPatch) {
             return inferVersionFromFileName(
                 fileName = fileName,
                 isPatchHint = isPatchHint,
                 fallbackIniDir = if (!isPatchHint) fallbackIniDir else null
-            ) to ""
+            )
         }
         val iniName = fallbackIniDir?.let { dir ->
             val iniFile = File(dir, "AliceStart.ini").takeIf { it.isFile }
@@ -507,9 +499,7 @@ object OnlineInstaller {
         }.orEmpty()
         val combined = "$iniName $fileName"
         val verMatch = modVersionNumberRegex.find(combined)
-        val version = if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
-        val group = if (combined.contains("哈尼喵")) "哈尼喵汉化组" else ""
-        return version to group
+        return if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
     }
 
     fun matchInstalledIndex(releases: List<ModReleaseEntry>, installed: InstalledModInfo?): Int {
@@ -969,15 +959,11 @@ object OnlineInstaller {
         val headers = mapOf("User-Agent" to DEFAULT_USER_AGENT)
 
         val rawName = req.fileName.ifBlank { "MOD$ext" }
-        val nameParts = ArrayList<String>(3)
-        if (req.group.isNotBlank() && !rawName.contains(req.group)) {
-            nameParts.add(req.group)
+        val displayName = if (!releaseLabel.isNullOrBlank() && !rawName.contains(releaseLabel)) {
+            "$releaseLabel · $rawName"
+        } else {
+            rawName
         }
-        if (!releaseLabel.isNullOrBlank() && !rawName.contains(releaseLabel)) {
-            nameParts.add(releaseLabel)
-        }
-        nameParts.add(rawName)
-        val displayName = nameParts.joinToString(" · ")
 
         val reportProgress: (Long, Long, Long) -> Unit = { doneBytes, totalBytes, speedBps ->
             val speedStr = formatSpeed(speedBps)
