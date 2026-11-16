@@ -32,17 +32,41 @@
 
 bool sys4_text_is_gbk = false;
 static uint16_t unicode_to_gbk[65536];
+static uint16_t unicode_to_sjis_tbl[65536];
+
+static void ensure_unicode_to_gbk(void)
+{
+	if (unicode_to_gbk[0x4e00])
+		return;
+	for (int lead = 0x81; lead <= 0xfe; lead++) {
+		for (int trail = 0x40; trail <= 0xfe; trail++) {
+			int code = gbk_to_unicode[lead - 0x81][trail - 0x40];
+			if (code && code < 65536)
+				unicode_to_gbk[code] = (uint16_t)((lead << 8) | trail);
+		}
+	}
+}
+
+static void ensure_unicode_to_sjis(void)
+{
+	if (unicode_to_sjis_tbl[0x4e00])
+		return;
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			int u = s2u[b1 - 0x80][b2 - 0x40];
+			if (u > 0 && u < 65536 && !unicode_to_sjis_tbl[u])
+				unicode_to_sjis_tbl[u] = (uint16_t)((b1 << 8) | b2);
+		}
+	}
+}
 
 void sys4_set_text_gbk(bool enabled)
 {
 	sys4_text_is_gbk = enabled;
-	if (!enabled || unicode_to_gbk[0x4e00]) return;
-	for (int lead = 0x81; lead <= 0xfe; lead++) {
-		for (int trail = 0x40; trail <= 0xfe; trail++) {
-			int code = gbk_to_unicode[lead - 0x81][trail - 0x40];
-			if (code) unicode_to_gbk[code] = (lead << 8) | trail;
-		}
-	}
+	if (enabled)
+		ensure_unicode_to_gbk();
 }
 
 // Convert a character-index to a byte-index for a given SJIS string.
@@ -123,21 +147,97 @@ char *sjis2utf(const char *_src, size_t len) {
 	return (char*)dst;
 }
 
-static int unicode_to_sjis(int u) {
-	if (sys4_text_is_gbk)
-		return u >= 0 && u < 65536 ? unicode_to_gbk[u] : 0;
-	for (int b1 = 0x81; b1 <= 0xff; b1++) {
-		if (b1 >= 0xa0 && b1 <= 0xdf)
-			continue;
-		for (int b2 = 0x40; b2 <= 0xff; b2++) {
-			if (u == s2u[b1 - 0x80][b2 - 0x40])
-				return b1 << 8 | b2;
-		}
+static void encode_utf8_bmp(int u, uint8_t **dstp)
+{
+	if (u <= 0x7f) {
+		*(*dstp)++ = (uint8_t)u;
+	} else if (u <= 0x7ff) {
+		*(*dstp)++ = (uint8_t)(0xc0 | (u >> 6));
+		*(*dstp)++ = (uint8_t)(0x80 | (u & 0x3f));
+	} else {
+		*(*dstp)++ = (uint8_t)(0xe0 | (u >> 12));
+		*(*dstp)++ = (uint8_t)(0x80 | ((u >> 6) & 0x3f));
+		*(*dstp)++ = (uint8_t)(0x80 | (u & 0x3f));
 	}
-	return 0;
 }
 
-char *utf2sjis(const char *_src, size_t len) {
+/* Decode SJIS (gbk=false) or GBK (gbk=true) to UTF-8 without mutating sys4_text_is_gbk.
+ * Returns NULL and sets *valid_out=false if any byte sequence is invalid or unmapped. */
+char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
+{
+	if (valid_out)
+		*valid_out = false;
+	if (!_src)
+		return NULL;
+	const uint8_t *src = (const uint8_t *)_src;
+	size_t len = strlen(_src);
+	uint8_t *dst = malloc(len * 3 + 1);
+	if (!dst)
+		return NULL;
+	uint8_t *dstp = dst;
+
+	while (*src) {
+		uint8_t b0 = *src;
+		if (b0 <= 0x7f) {
+			*dstp++ = b0;
+			src++;
+			continue;
+		}
+		int u = 0;
+		if (!gbk) {
+			if (b0 >= 0xa1 && b0 <= 0xdf) {
+				u = 0xff60 + (b0 - 0xa0);
+				src++;
+			} else if (b0 >= 0x81 && b0 != 0xa0 && ((b0 & 0xe0) == 0x80 || (b0 & 0xe0) == 0xe0) && src[1]) {
+				uint8_t b1 = src[1];
+				size_t r = (size_t)(b0 - 0x80);
+				size_t c = (size_t)(b1 - 0x40);
+				if (b1 >= 0x40 && r < sizeof(s2u) / sizeof(s2u[0]) && c < sizeof(s2u_80) / sizeof(s2u_80[0]))
+					u = s2u[r][c];
+				src += 2;
+			}
+		} else {
+			if (b0 >= 0x81 && b0 <= 0xfe && src[1]) {
+				uint8_t b1 = src[1];
+				size_t r = (size_t)(b0 - 0x81);
+				size_t c = (size_t)(b1 - 0x40);
+				if (b1 >= 0x40 && r < sizeof(gbk_to_unicode) / sizeof(gbk_to_unicode[0]) &&
+				    c < sizeof(gbk_to_unicode[0]) / sizeof(gbk_to_unicode[0][0]))
+					u = gbk_to_unicode[r][c];
+				src += 2;
+			}
+		}
+		if (u <= 0) {
+			free(dst);
+			return NULL;
+		}
+		encode_utf8_bmp(u, &dstp);
+	}
+	*dstp = '\0';
+	if (valid_out)
+		*valid_out = true;
+	return (char *)dst;
+}
+
+int cjk_encode_codepoint(int u, bool gbk)
+{
+	if (u <= 0x7f)
+		return u >= 0 ? u : 0;
+	if (!gbk && u > 0xff60 && u <= 0xff9f)
+		return u - 0xff60 + 0xa0;
+	if (gbk && u == 0x20ac)
+		return 0x80;
+	if (u >= 65536)
+		return 0;
+	if (gbk) {
+		ensure_unicode_to_gbk();
+		return unicode_to_gbk[u];
+	}
+	ensure_unicode_to_sjis();
+	return unicode_to_sjis_tbl[u];
+}
+
+char *utf2cjk(const char *_src, size_t len, bool gbk) {
 	if (!len)
 		len = strlen(_src);
 	const uint8_t *src = (uint8_t*)_src;
@@ -163,22 +263,22 @@ char *utf2sjis(const char *_src, size_t len) {
 			continue;
 		}
 
-		if (!sys4_text_is_gbk && u > 0xff60 && u <= 0xff9f) {
-			*dstp++ = u - 0xff60 + 0xa0;
-		} else if (sys4_text_is_gbk && u == 0x20ac) {
-			*dstp++ = 0x80;
+		int c = cjk_encode_codepoint(u, gbk);
+		if (c > 0xff) {
+			*dstp++ = c >> 8;
+			*dstp++ = c & 0xff;
+		} else if (c) {
+			*dstp++ = c & 0xff;
 		} else {
-			int c = unicode_to_sjis(u);
-			if (c) {
-				*dstp++ = c >> 8;
-				*dstp++ = c & 0xff;
-			} else {
-				*dstp++ = '?';
-			}
+			*dstp++ = '?';
 		}
 	}
 	*dstp = '\0';
 	return (char*)dst;
+}
+
+char *utf2sjis(const char *_src, size_t len) {
+	return utf2cjk(_src, len, sys4_text_is_gbk);
 }
 
 /* src 内に半角カナもしくはASCII文字があるかどうか */

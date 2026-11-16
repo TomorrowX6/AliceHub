@@ -25,6 +25,7 @@
 #include "system4/utfsjis.h"
 
 #include "hll.h"
+#include "savedata.h"
 #include "xsystem4.h"
 
 static bool vs_read = false;
@@ -246,6 +247,15 @@ static bool VSFile_ReadString(struct string **str)
 		if (!b)
 			break;
 		string_append_cstr(&s, &b, 1);
+	}
+
+	if (s->size > 0) {
+		int bias = save_text_gbk_bias(s->text);
+		if ((sys4_text_is_gbk && bias <= -12) || (!sys4_text_is_gbk && bias >= 12)) {
+			struct string *conv = save_decode_vm_string(s->text, s->size, !sys4_text_is_gbk);
+			free_string(s);
+			s = conv;
+		}
 	}
 
 	if (*str)

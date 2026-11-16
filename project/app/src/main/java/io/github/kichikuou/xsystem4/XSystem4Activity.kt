@@ -402,6 +402,13 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun messageboxCreateAndShow(args: Bundle) {
+        if (isFinishing || isDestroyed) {
+            synchronized(messageboxSelection) {
+                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+                (messageboxSelection as Object).notifyAll()
+            }
+            return
+        }
         activeMessageBoxDialog?.let { prev ->
             if (prev.isShowing) {
                 try {

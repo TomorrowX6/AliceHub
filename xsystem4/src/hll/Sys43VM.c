@@ -14,6 +14,7 @@
 #include "vm/v12.h"
 #include "xsystem4.h"
 #include "hll.h"
+#include "savedata.h"
 
 static bool Sys43VM_WriteGroupSaveComment(struct string *key_name, struct string *file_name, struct string *comment)
 {
@@ -28,7 +29,7 @@ static bool Sys43VM_WriteGroupSaveComment(struct string *key_name, struct string
 		free(path);
 		return false;
 	}
-	if (strcmp(key_name->text, gs->key)) {
+	if (!save_names_equal(key_name->text, gs->key)) {
 		char *expected = strdup(gs->key);
 		gsave_free(gs);
 		free(path);
@@ -74,7 +75,7 @@ static bool Sys43VM_ReadGroupSaveComment(struct string *key_name, struct string 
 	if (!gs)
 		return false;
 
-	if (strcmp(key_name->text, gs->key)) {
+	if (!save_names_equal(key_name->text, gs->key)) {
 		char *expected = strdup(gs->key);
 		gsave_free(gs);
 		VM_ERROR("Attempted to read save comment with wrong key: expected '%s', got '%s'",

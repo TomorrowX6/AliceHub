@@ -119,8 +119,9 @@ static int MsgSkip_Init(struct string *name)
 	}
 #ifdef __ANDROID__
 	SDL_AddEventWatch(msgskip_event_handler, NULL);
-#endif
+#else
 	atexit(msgskip_save);
+#endif
 	return 1;
 }
 
@@ -209,8 +210,18 @@ static int MsgSkip_GetAdvFlag(struct string *adv_name, int version, int step)
 	return 0;
 }
 
+static void MsgSkip_ModuleFini(void)
+{
+	msgskip_save();
+	free(flags);
+	flags = NULL;
+	free(save_path);
+	save_path = NULL;
+}
+
 HLL_LIBRARY(MsgSkip,
 	    HLL_EXPORT(_PreLink, MsgSkip_PreLink),
+	    HLL_EXPORT(_ModuleFini, MsgSkip_ModuleFini),
 	    HLL_EXPORT(Init, MsgSkip_Init),
 	    HLL_EXPORT(UseFlag, MsgSkip_UseFlag),
 	    HLL_EXPORT(SetEnable, MsgSkip_SetEnable),

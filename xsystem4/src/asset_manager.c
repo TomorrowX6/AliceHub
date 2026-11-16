@@ -33,6 +33,7 @@
 
 #include "xsystem4.h"
 #include "asset_manager.h"
+#include "savedata.h"
 #include "gfx/font.h"
 
 enum archive_type {
@@ -412,7 +413,16 @@ static uint64_t afa_entry_timestamp(const struct afa_entry *e)
 	return ((uint64_t)(e->unknown1 & 0x7fffffffu) << 32) | (uint64_t)e->unknown0;
 }
 
-static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *manager,
+static bool name_has_non_ascii(const char *s)
+{
+	for (const unsigned char *p = (const unsigned char *)s; p && *p; p++) {
+		if (*p >= 0x80)
+			return true;
+	}
+	return false;
+}
+
+static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
 		const char *name, struct afa_archive **ar_out)
 {
 	struct afa_archive *best_ar = NULL;
@@ -452,6 +462,46 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 	if (best_entry)
 		*ar_out = best_ar;
 	return best_entry;
+}
+
+static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *manager,
+		const char *name, struct afa_archive **ar_out)
+{
+	struct afa_entry *best_entry = afa_find_best_raw(manager, name, ar_out);
+	if (best_entry || !name || !name_has_non_ascii(name))
+		return best_entry;
+
+	size_t name_len = strlen(name);
+	// Fast O(1) opposite-encoding fallback (both native->opp and opp->native).
+	for (int dir = 0; dir < 2; dir++) {
+		bool src_gbk = (dir == 0) ? !sys4_text_is_gbk : sys4_text_is_gbk;
+		char *alt = save_transcode_cstr(name, name_len, src_gbk, !src_gbk, NULL);
+		best_entry = afa_find_best_raw(manager, alt, ar_out);
+		free(alt);
+		if (best_entry)
+			return best_entry;
+	}
+
+	// Canonical Shinjitai/Simplified fallback across non-ASCII entries on miss.
+	char *target_base = archive_basename(name);
+	for (size_t i = 0; i < manager->nr_archives; i++) {
+		struct afa_archive *ar = manager->archives[i];
+		for (uint32_t j = 0; j < ar->nr_files; j++) {
+			const char *ename = ar->files[j].name->text;
+			if (!name_has_non_ascii(ename))
+				continue;
+			char *ebase = archive_basename(ename);
+			bool eq = save_symbols_equal(ebase, target_base);
+			free(ebase);
+			if (eq) {
+				free(target_base);
+				*ar_out = ar;
+				return &ar->files[j];
+			}
+		}
+	}
+	free(target_base);
+	return NULL;
 }
 
 static struct archive_data *afa_get_by_name(struct asset_manager *_manager, const char *name,

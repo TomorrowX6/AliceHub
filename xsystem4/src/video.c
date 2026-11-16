@@ -402,11 +402,20 @@ int gfx_init(void)
 	gfx_draw_init();
 	gfx_set_window_logical_size(config.view_width, config.view_height);
 	init_window_size();
+#ifndef __ANDROID__
 	atexit(gfx_fini);
+#endif
 	gfx_clear();
 	icon_init();
 	gfx_initialized = true;
 	return 0;
+}
+
+void gfx_android_fini(void)
+{
+#ifdef __ANDROID__
+	android_perf_pacing_fini();
+#endif
 }
 
 void gfx_fini(void)
