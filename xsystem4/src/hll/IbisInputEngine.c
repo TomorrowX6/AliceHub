@@ -42,7 +42,7 @@ static void IbisInputEngine_Joystick_ClearCaptureFlag(void)
 }
 
 //int IbisInputEngine_Joystick_GetNumofDevice(void);
-HLL_WARN_UNIMPLEMENTED(0, int,  IbisInputEngine, Joystick_GetNumofDevice);
+HLL_QUIET_UNIMPLEMENTED(0, int,  IbisInputEngine, Joystick_GetNumofDevice);
 
 bool IbisInputEngine_Joystick_IsKeyDown(int DeviceNumber, int JoystickCode)
 {
@@ -51,7 +51,7 @@ bool IbisInputEngine_Joystick_IsKeyDown(int DeviceNumber, int JoystickCode)
 }
 
 //float IbisInputEngine_Joystick_GetAxis(int DeviceNumber, int AxisType);
-HLL_WARN_UNIMPLEMENTED(0.0, float, IbisInputEngine, Joystick_GetAxis, int dev, int axis);
+HLL_QUIET_UNIMPLEMENTED(0.0, float, IbisInputEngine, Joystick_GetAxis, int dev, int axis);
 
 HLL_LIBRARY(IbisInputEngine,
 	    HLL_EXPORT(Mouse_GetPos, sact_Mouse_GetPos),

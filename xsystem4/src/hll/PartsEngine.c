@@ -738,6 +738,85 @@ static struct string *PartsEngine_WidgetGetItemEmptyString(int parts_no, int ind
 	return string_ref(&EMPTY_STRING);
 }
 
+static void pf_assign_out_string(struct string **out, struct string *s)
+{
+	if (!out) {
+		if (s)
+			free_string(s);
+		return;
+	}
+	if (*out)
+		free_string(*out);
+	*out = s ? s : string_ref(&EMPTY_STRING);
+}
+
+static void PartsEngine_GetClickMissSoundName_v6(struct string **out)
+{
+	pf_assign_out_string(out, PE_GetClickMissSoundName());
+}
+
+static void PartsEngine_Parts_GetSoundName_v6(int no, struct string **out, int state)
+{
+	pf_assign_out_string(out, PE_Parts_GetSoundName(no, state));
+}
+
+static void PartsEngine_Parts_GetPartsFlatDataInfo_v6(int no, struct string **out, int state)
+{
+	pf_assign_out_string(out, PE_GetPartsFlatDataInfo(no, state));
+}
+
+#define DEFINE_V6_STR_GETTER(name) \
+static void PartsEngine_##name##_v6(int no, struct string **out) \
+{ \
+	pf_assign_out_string(out, PE_##name(no)); \
+}
+DEFINE_V6_STR_GETTER(GetButtonCGName)
+DEFINE_V6_STR_GETTER(GetButtonFlatName)
+DEFINE_V6_STR_GETTER(GetButtonText)
+DEFINE_V6_STR_GETTER(GetCheckBoxCGName)
+DEFINE_V6_STR_GETTER(GetCheckBoxFlatName)
+DEFINE_V6_STR_GETTER(GetCheckBoxText)
+DEFINE_V6_STR_GETTER(GetVScrollbarCGName)
+DEFINE_V6_STR_GETTER(GetVScrollbarFlatName)
+DEFINE_V6_STR_GETTER(GetHScrollbarCGName)
+DEFINE_V6_STR_GETTER(GetHScrollbarFlatName)
+DEFINE_V6_STR_GETTER(GetTextBoxText)
+#undef DEFINE_V6_STR_GETTER
+
+static void PartsEngine_WidgetGetEmptyString_v6(int parts_no, struct string **out)
+{
+	(void)parts_no;
+	pf_assign_out_string(out, string_ref(&EMPTY_STRING));
+}
+
+static void PartsEngine_WidgetGetItemEmptyString_v6(int parts_no, int index, struct string **out)
+{
+	(void)parts_no; (void)index;
+	pf_assign_out_string(out, string_ref(&EMPTY_STRING));
+}
+
+static void PartsEngine_SetResetTimerByChangeInputStatus(int parts_no, bool reset)
+{
+	(void)parts_no; (void)reset;
+}
+
+static bool PartsEngine_GetResetTimerByChangeInputStatus(int parts_no)
+{
+	(void)parts_no;
+	return false;
+}
+
+static void PartsEngine_Parts_SetResetTimerByChangeInputStatus(int parts_no, bool reset, int state)
+{
+	(void)parts_no; (void)reset; (void)state;
+}
+
+static bool PartsEngine_Parts_GetResetTimerByChangeInputStatus(int parts_no, int state)
+{
+	(void)parts_no; (void)state;
+	return false;
+}
+
 static void PartsEngine_WidgetSetFontProperty(int parts_no, int type, int size,
 		int r, int g, int b, float bold, int er, int eg, int eb, float edge)
 {
@@ -1846,6 +1925,12 @@ static void PartsEngine_GetPartsConstructionProcess_v14(int parts_no, int index,
 			array_float, array_string, array_pos, state);
 }
 
+static void pf_set_str(union vm_value *strings, int slot, struct string *s)
+{
+	free_string(heap[strings[slot].i].s);
+	heap[strings[slot].i].s = s ? s : string_ref(&EMPTY_STRING);
+}
+
 // Generic dispatch function for PartsEngine operations.
 // func_id selects the operation; arguments and return values are passed
 // through three typed arrays (int/bool, float, string).
@@ -1863,6 +1948,11 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 	union vm_value *floats = nr_floats ? (*array_float)->values : NULL;
 	int nr_strings = (array_string && *array_string) ? (*array_string)->nr_vars : 0;
 	union vm_value *strings = nr_strings ? (*array_string)->values : NULL;
+
+	// AIN v12+ promoted IDs 3..5 (GetControllerIndex/ID/Length) to direct HLLs,
+	// shifting all subsequent PartsFunc IDs down by 3.
+	if (ain && ain->version >= 12 && func_id >= 3)
+		func_id += 3;
 
 #define REQUIRE_INTS(n) \
 	if (nr_ints != (n)) VM_ERROR("Invalid arguments for PartsFunc %d: expected %d ints, got %d", func_id, (n), nr_ints)
@@ -1884,76 +1974,715 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		REQUIRE_INTS(1);
 		ints[0].i = PE_get_system_controller();
 		return 1;
-	case 3:  // void PauseMotion(bool pause)
+	case 3:  // int GetControllerIndex(int id)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetControllerIndex(ints[0].i);
+		return 1;
+	case 4:  // int GetControllerID(int index)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetControllerID(ints[0].i);
+		return 1;
+	case 5:  // int GetControllerLength()
+		REQUIRE_INTS(1);
+		ints[0].i = PE_GetControllerLength();
+		return 1;
+	case 6:  // void PauseMotion(bool pause)
 		REQUIRE_INTS(1);
 		PE_PauseMotion(!!ints[0].i);
 		return 1;
-	case 4:  // void SetWantSave(int parts_no, bool want_save)
+	case 7:  // void SetWantSave(int parts_no, bool want_save)
 		REQUIRE_INTS(2);
 		PE_parts_set_want_save(ints[0].i, !!ints[1].i);
 		return 1;
-	case 6:  // bool SaveThumbnail(string filename, int reduction_factor)
+	case 8:  // bool IsWantSave(int parts_no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_parts_get_want_save(ints[0].i);
+		return 1;
+	case 9:  // bool SaveThumbnail(string filename, int reduction_factor)
 		REQUIRE_INTS(2);
 		REQUIRE_STRINGS(1);
 		ints[1].i = PE_save_thumbnail(heap_get_string(strings[0].i), ints[0].i);
 		return 1;
-	case 40:  // float PARTS_GetAbsoluteX(int number)
+	case 10:  // bool IsExistActivity(string name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_IsExistActivity(heap_get_string(strings[0].i));
+		return 1;
+	case 11:  // bool CreateActivity(string name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_CreateActivity(heap_get_string(strings[0].i));
+		return 1;
+	case 12:  // bool AddActivityParts(string name, string part_name, int no)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(2);
+		ints[1].i = PE_AddActivityParts(heap_get_string(strings[0].i), heap_get_string(strings[1].i), ints[0].i);
+		return 1;
+	case 13:  // bool RemoveActivityParts(string name, string part_name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_RemoveActivityParts(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 14:  // bool RemoveAllActivityParts(string name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_RemoveAllActivityParts(heap_get_string(strings[0].i));
+		return 1;
+	case 15:  // int NumofActivityParts(string name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_NumofActivityParts(heap_get_string(strings[0].i));
+		return 1;
+	case 16: {  // bool GetActivityParts(int index, string name, ref string part_name, ref int no)
+		REQUIRE_INTS(3);
+		REQUIRE_STRINGS(2);
+		struct string *pn = string_ref(&EMPTY_STRING);
+		ints[2].i = PE_GetActivityParts(ints[0].i, heap_get_string(strings[0].i), &pn, &ints[1].i);
+		pf_set_str(strings, 1, pn);
+		return 1;
+	}
+	case 17:  // bool IsExistActivityPartsByName(string name, string part_name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_IsExistActivityPartsByName(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 18:  // bool IsExistActivityPartsByNumber(string name, int no)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		ints[1].i = PE_IsExistActivityPartsByNumber(heap_get_string(strings[0].i), ints[0].i);
+		return 1;
+	case 19:  // int GetActivityPartsNumber(string name, string part_name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_GetActivityPartsNumber(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 20:  // string GetActivityPartsName(string name, int no)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		pf_set_str(strings, 1, PE_GetActivityPartsName(heap_get_string(strings[0].i), ints[0].i));
+		return 1;
+	case 21:  // bool ReadActivityFile(string name, string filename)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_ReadActivityFile(heap_get_string(strings[0].i), heap_get_string(strings[1].i), false);
+		return 1;
+	case 22:  // bool WriteActivityFile(string name, string filename)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PartsEngine_WriteActivityFile(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 23:  // bool IsExistActivityFile(string filename)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_IsExistActivityFile(heap_get_string(strings[0].i));
+		return 1;
+	case 24:  // void SetActivityIntentData(string name, string src, string dest, int type)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(3);
+		PE_SetActivityIntentData(heap_get_string(strings[0].i), heap_get_string(strings[1].i),
+				heap_get_string(strings[2].i), ints[0].i);
+		return 1;
+	case 25:  // void AddActivityIntentDataDestination(string name, string src, string dest)
+		REQUIRE_STRINGS(3);
+		PE_AddActivityIntentDataDestination(heap_get_string(strings[0].i),
+				heap_get_string(strings[1].i), heap_get_string(strings[2].i));
+		return 1;
+	case 26:  // bool IsExistActivityIntentData(string name, string src)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_IsExistActivityIntentData(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 27:  // int NumofActivityIntentDataDestination(string name, string src)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_NumofActivityIntentDataDestination(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 28:  // string GetActivityIntentDataDestination(int index, string name, string src)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(3);
+		pf_set_str(strings, 2, PE_GetActivityIntentDataDestination(ints[0].i,
+				heap_get_string(strings[0].i), heap_get_string(strings[1].i)));
+		return 1;
+	case 29:  // int GetActivityIntentDataType(string name, string src)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_GetActivityIntentDataType(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 30:  // void SetActivityFunc(string name, string part, int state, string id, string func)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(4);
+		PE_SetActivityFunc(heap_get_string(strings[0].i), heap_get_string(strings[1].i), ints[0].i,
+				heap_get_string(strings[2].i), heap_get_string(strings[3].i));
+		return 1;
+	case 31:  // string GetActivityFunc(string name, string part, int state, string id)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(4);
+		pf_set_str(strings, 3, PE_GetActivityFunc(heap_get_string(strings[0].i),
+				heap_get_string(strings[1].i), ints[0].i, heap_get_string(strings[2].i)));
+		return 1;
+	case 32:  // int NumofActivityFunc(string name, string part, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(2);
+		ints[1].i = PE_NumofActivityFunc(heap_get_string(strings[0].i), heap_get_string(strings[1].i), ints[0].i);
+		return 1;
+	case 33: {  // void GetActivityFuncPair(int idx, string name, string part, int state, ref string id, ref string fn)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(4);
+		struct string *oid = string_ref(&EMPTY_STRING);
+		struct string *ofn = string_ref(&EMPTY_STRING);
+		PE_GetActivityFuncPair(ints[0].i, heap_get_string(strings[0].i), heap_get_string(strings[1].i),
+				ints[1].i, &oid, &ofn);
+		pf_set_str(strings, 2, oid);
+		pf_set_str(strings, 3, ofn);
+		return 1;
+	}
+	case 34:  // void AddActivityCloseParts(string name, string part)
+		REQUIRE_STRINGS(2);
+		PE_AddActivityCloseParts(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 35:  // void RemoveActivityCloseParts(string name, string part)
+		REQUIRE_STRINGS(2);
+		PE_RemoveActivityCloseParts(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 36:  // void RemoveAllActivityCloseParts(string name)
+		REQUIRE_STRINGS(1);
+		PE_RemoveAllActivityCloseParts(heap_get_string(strings[0].i));
+		return 1;
+	case 37:  // bool IsExistActivityCloseParts(string name, string part)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(2);
+		ints[0].i = PE_IsExistActivityCloseParts(heap_get_string(strings[0].i), heap_get_string(strings[1].i));
+		return 1;
+	case 38:  // void SetActivityEndKey(string name, int key)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		PE_SetActivityEndKey(heap_get_string(strings[0].i), ints[0].i);
+		return 1;
+	case 39:  // void EraseActivityEndKey(string name, int key)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		PE_EraseActivityEndKey(heap_get_string(strings[0].i), ints[0].i);
+		return 1;
+	case 40:  // bool IsExistActivityEndKey(string name, int key)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		ints[1].i = PE_IsExistActivityEndKey(heap_get_string(strings[0].i), ints[0].i);
+		return 1;
+	case 41:  // int NumofActivityEndKey(string name)
+		REQUIRE_INTS(1);
+		REQUIRE_STRINGS(1);
+		ints[0].i = PE_NumofActivityEndKey(heap_get_string(strings[0].i));
+		return 1;
+	case 42:  // int GetActivityEndKey(string name, int index)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		ints[1].i = PE_GetActivityEndKey(heap_get_string(strings[0].i), ints[0].i);
+		return 1;
+	case 43:  // float PARTS_GetAbsoluteX(int number)
 		REQUIRE_INTS(1);
 		REQUIRE_FLOATS(1);
 		floats[0].f = PE_parts_get_absolute_x(ints[0].i);
 		return 1;
-	case 41:  // float PARTS_GetAbsoluteY(int number)
+	case 44:  // float PARTS_GetAbsoluteY(int number)
 		REQUIRE_INTS(1);
 		REQUIRE_FLOATS(1);
 		floats[0].f = PE_parts_get_absolute_y(ints[0].i);
 		return 1;
-	case 42:  // int PARTS_GetAbsoluteZ(int number)
+	case 45:  // int PARTS_GetAbsoluteZ(int number)
 		REQUIRE_INTS(2);
 		ints[1].i = PE_parts_get_absolute_z(ints[0].i);
 		return 1;
-	case 45:  // void PARTS_SetLockInputState(int number, bool lock)
+	case 46:  // int PARTS_GetAbsoluteMaxZ(int number)
+		REQUIRE_INTS(2);
+		ints[1].i = PartsEngine_GetComponentAbsoluteMaxPosZ(ints[0].i);
+		return 1;
+	case 47:  // void GetComponentAbsoluteSquarePos(int no, ref float x0..y3, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(8);
+		PE_GetComponentAbsoluteSquarePos(ints[0].i,
+				&floats[0].f, &floats[1].f, &floats[2].f, &floats[3].f,
+				&floats[4].f, &floats[5].f, &floats[6].f, &floats[7].f, ints[1].i);
+		return 1;
+	case 48:  // void PARTS_SetLockInputState(int number, bool lock)
 		REQUIRE_INTS(2);
 		PE_parts_set_lock_input_state(ints[0].i, !!ints[1].i);
 		return 1;
-	case 57:  // void AppendChild(int number, int child_number)
+	case 49:  // bool PARTS_IsLockInputState(int number)
 		REQUIRE_INTS(2);
-		PE_SetParentPartsNumber(ints[1].i, ints[0].i);
+		ints[1].i = PartsEngine_IsLockInputState(ints[0].i);
 		return 1;
-	case 91:  // void SetLayoutBoxPadding(int parts_no, int top, int bottom, int left, int right)
+	case 50:  // void SetComponentScrollPosXLinkNumber(int no, int link)
+		REQUIRE_INTS(2);
+		PE_SetComponentScrollPosXLinkNumber(ints[0].i, ints[1].i);
+		return 1;
+	case 51:  // void SetComponentScrollPosYLinkNumber(int no, int link)
+		REQUIRE_INTS(2);
+		PE_SetComponentScrollPosYLinkNumber(ints[0].i, ints[1].i);
+		return 1;
+	case 52:  // int GetComponentScrollPosXLinkNumber(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetComponentScrollPosXLinkNumber(ints[0].i);
+		return 1;
+	case 53:  // int GetComponentScrollPosYLinkNumber(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetComponentScrollPosYLinkNumber(ints[0].i);
+		return 1;
+	case 54:  // void SetComponentScrollAlphaLinkNumber(int no, int link)
+		REQUIRE_INTS(2);
+		PE_SetComponentScrollAlphaLinkNumber(ints[0].i, ints[1].i);
+		return 1;
+	case 55:  // int GetComponentScrollAlphaLinkNumber(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetComponentScrollAlphaLinkNumber(ints[0].i);
+		return 1;
+	case 56:  // void SetComponentCheckBoxShowLinkNumber(int no, int cb_no)
+		REQUIRE_INTS(2);
+		PE_SetComponentCheckBoxShowLinkNumber(ints[0].i, ints[1].i);
+		return 1;
+	case 57:  // int GetComponentCheckBoxShowLinkNumber(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetComponentCheckBoxShowLinkNumber(ints[0].i);
+		return 1;
+	case 58:  // bool IsExistChild(int no, int child)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_IsExistChild(ints[0].i, ints[1].i);
+		return 1;
+	case 59:  // void ClearChild(int no)
+		REQUIRE_INTS(1);
+		PE_ClearChild(ints[0].i);
+		return 1;
+	case 60:  // void AddChild(int number, int child_number)
+		REQUIRE_INTS(2);
+		PE_AddChild(ints[0].i, ints[1].i);
+		return 1;
+	case 61:  // void InsertChild(int no, int index, int child)
+		REQUIRE_INTS(3);
+		PE_InsertChild(ints[0].i, ints[1].i, ints[2].i);
+		return 1;
+	case 62:  // void RemoveChild(int no, int child)
+		REQUIRE_INTS(2);
+		PE_RemoveChild(ints[0].i, ints[1].i);
+		return 1;
+	case 63:  // int NumofChild(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_NumofChild(ints[0].i);
+		return 1;
+	case 64:  // int GetChildIndex(int no, int child)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetChildIndex(ints[0].i, ints[1].i);
+		return 1;
+	case 65:  // int GetChild(int no, int index)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetChild(ints[0].i, ints[1].i);
+		return 1;
+	case 66:  // void SetButtonTextOriginPosMode(int no, int mode)
+		REQUIRE_INTS(2);
+		PE_SetButtonTextOriginPosMode(ints[0].i, ints[1].i);
+		return 1;
+	case 67:  // int GetButtonTextOriginPosMode(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetButtonTextOriginPosMode(ints[0].i);
+		return 1;
+	case 68:  // void SetButtonCharSpace(int no, int space)
+		REQUIRE_INTS(2);
+		PE_SetButtonCharSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 69:  // int GetButtonCharSpace(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetButtonCharSpace(ints[0].i);
+		return 1;
+	case 70:  // void SetButtonLineSpace(int no, int space)
+		REQUIRE_INTS(2);
+		PE_SetButtonLineSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 71:  // int GetButtonLineSpace(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetButtonLineSpace(ints[0].i);
+		return 1;
+	case 72:  // int GetCheckBoxButtonWidth(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetCheckBoxButtonWidth(ints[0].i);
+		return 1;
+	case 73:  // int GetCheckBoxButtonHeight(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetCheckBoxButtonHeight(ints[0].i);
+		return 1;
+	case 74:  // void SetCheckBoxTextOriginPosMode(int no, int mode)
+		REQUIRE_INTS(2);
+		PE_SetCheckBoxTextOriginPosMode(ints[0].i, ints[1].i);
+		return 1;
+	case 75:  // int GetCheckBoxTextOriginPosMode(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetCheckBoxTextOriginPosMode(ints[0].i);
+		return 1;
+	case 76:  // void SetCheckBoxButtonMode(int no, bool mode)
+		REQUIRE_INTS(2);
+		PE_SetCheckBoxButtonMode(ints[0].i, !!ints[1].i);
+		return 1;
+	case 77:  // bool IsCheckBoxButtonMode(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_IsCheckBoxButtonMode(ints[0].i);
+		return 1;
+	case 78:  // void SetCheckBoxCharSpace(int no, int space)
+		REQUIRE_INTS(2);
+		PE_SetCheckBoxCharSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 79:  // int GetCheckBoxCharSpace(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetCheckBoxCharSpace(ints[0].i);
+		return 1;
+	case 80:  // void SetCheckBoxLineSpace(int no, int space)
+		REQUIRE_INTS(2);
+		PE_SetCheckBoxLineSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 81:  // int GetCheckBoxLineSpace(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_GetCheckBoxLineSpace(ints[0].i);
+		return 1;
+	case 82:  // void SetTextBoxReadOnly(int no, bool ro)
+		REQUIRE_INTS(2);
+		PartsEngine_WidgetStub_b(ints[0].i, !!ints[1].i);
+		return 1;
+	case 83:  // bool IsTextBoxReadOnly(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PartsEngine_WidgetGetFalse(ints[0].i);
+		return 1;
+	case 94:  // void SetLayoutBoxPadding(int parts_no, int top, int bottom, int left, int right)
 		REQUIRE_INTS(5);
 		PE_set_layoutbox_padding(ints[0].i, ints[1].i, ints[2].i, ints[3].i, ints[4].i);
 		return 1;
-	case 92:  // int GetLayoutBoxPaddingTop(int parts_no)
+	case 95:  // int GetLayoutBoxPaddingTop(int parts_no)
 		REQUIRE_INTS(2);
 		ints[1].i = PE_get_layoutbox_padding_top(ints[0].i);
 		return 1;
-	case 93:  // int GetLayoutBoxPaddingBottom(int parts_no)
+	case 96:  // int GetLayoutBoxPaddingBottom(int parts_no)
 		REQUIRE_INTS(2);
 		ints[1].i = PE_get_layoutbox_padding_bottom(ints[0].i);
 		return 1;
-	case 94:  // int GetLayoutBoxPaddingLeft(int parts_no)
+	case 97:  // int GetLayoutBoxPaddingLeft(int parts_no)
 		REQUIRE_INTS(2);
 		ints[1].i = PE_get_layoutbox_padding_left(ints[0].i);
 		return 1;
-	case 95:  // int GetLayoutBoxPaddingRight(int parts_no)
+	case 98:  // int GetLayoutBoxPaddingRight(int parts_no)
 		REQUIRE_INTS(2);
 		ints[1].i = PE_get_layoutbox_padding_right(ints[0].i);
 		return 1;
-	case 103:  // void GetPartsCGSurfaceArea(int parts_no, int *x, int *y, int *w, int *h, int state)
+	case 99:  // bool IsRadioButtonBoxExistGUI(int no, int child)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_IsRadioButtonBoxExistGUI(ints[0].i, ints[1].i);
+		return 1;
+	case 100:  // void ClearRadioButtonBoxChild(int no)
+		REQUIRE_INTS(1);
+		PE_ClearRadioButtonBoxChild(ints[0].i);
+		return 1;
+	case 101:  // void AddRadioButtonBoxChild(int no, int child)
+		REQUIRE_INTS(2);
+		PE_AddRadioButtonBoxChild(ints[0].i, ints[1].i);
+		return 1;
+	case 102:  // void RemoveRadioButtonBoxChild(int no, int child)
+		REQUIRE_INTS(2);
+		PE_RemoveRadioButtonBoxChild(ints[0].i, ints[1].i);
+		return 1;
+	case 103:  // int NumofRadioButtonBoxChild(int no)
+		REQUIRE_INTS(2);
+		ints[1].i = PE_NumofRadioButtonBoxChild(ints[0].i);
+		return 1;
+	case 104:  // int GetRadioButtonBoxChild(int no, int index)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetRadioButtonBoxChild(ints[0].i, ints[1].i);
+		return 1;
+	case 105:  // int Parts_GetPartsCGDeform(int parts_no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_Parts_GetPartsCGDeform(ints[0].i, ints[1].i);
+		return 1;
+	case 106:  // void GetPartsCGSurfaceArea(int parts_no, int *x, int *y, int *w, int *h, int state)
 		REQUIRE_INTS(6);
 		PE_GetPartsCGSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
 		return 1;
-	case 159:  // AddConstructProcess(ArrayInt[32], ArrayFloat[2], ArrayString[2])
+	case 107:  // void GetLoopCGSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetLoopCGSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 108:  // string GetLoopCGCGName(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PartsEngine_GetLoopCGCGName(ints[0].i, ints[1].i));
+		return 1;
+	case 109:  // int GetLoopCGStartNo(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_GetLoopCGStartNo(ints[0].i, ints[1].i);
+		return 1;
+	case 110:  // int GetLoopCGNumofCG(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_GetLoopCGNumofCG(ints[0].i, ints[1].i);
+		return 1;
+	case 111:  // int Parts_GetLoopCGTimeParCG(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_Parts_GetLoopCGTimeParCG(ints[0].i, ints[1].i);
+		return 1;
+	case 112:  // string GetTextPartsText(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PE_GetTextPartsText(ints[0].i, ints[1].i));
+		return 1;
+	case 113:  // void GetPartsTextSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PE_GetPartsTextSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 114:  // void GetPartsTextFontProperty(int no, ref int..., ref float..., int state)
+		REQUIRE_INTS(10);
+		REQUIRE_FLOATS(2);
+		PE_GetPartsTextFontProperty(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, &ints[5].i,
+				&floats[0].f, &ints[6].i, &ints[7].i, &ints[8].i, &floats[1].f, ints[9].i);
+		return 1;
+	case 115:  // int Parts_GetTextCharSpace(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetTextCharSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 116:  // int Parts_GetTextLineSpace(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetTextLineSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 117:  // string Parts_GetHGaugeCG(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PartsEngine_Parts_GetHGaugeCG(ints[0].i, ints[1].i));
+		return 1;
+	case 118:  // float Parts_GetHGaugeNumerator(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		floats[0].f = PE_GetHGaugeNumerator(ints[0].i, ints[1].i);
+		return 1;
+	case 119:  // float Parts_GetHGaugeDenominator(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		floats[0].f = PE_GetHGaugeDenominator(ints[0].i, ints[1].i);
+		return 1;
+	case 120:  // void GetHGaugeSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetHGaugeSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 121:  // string Parts_GetVGaugeCG(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PartsEngine_Parts_GetVGaugeCG(ints[0].i, ints[1].i));
+		return 1;
+	case 122:  // float Parts_GetVGaugeNumerator(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		floats[0].f = PE_GetVGaugeNumerator(ints[0].i, ints[1].i);
+		return 1;
+	case 123:  // float Parts_GetVGaugeDenominator(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		floats[0].f = PE_GetVGaugeDenominator(ints[0].i, ints[1].i);
+		return 1;
+	case 124:  // void GetVGaugeSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetVGaugeSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 125:  // string Parts_GetNumeralCGName(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PE_GetNumeralCGName(ints[0].i, ints[1].i));
+		return 1;
+	case 126:  // void GetNumeralCGNumberWidthList(int no, ref int w0..comma, int state)
+		REQUIRE_INTS(14);
+		PE_GetNumeralCGNumberWidthList(ints[0].i,
+				&ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, &ints[5].i, &ints[6].i,
+				&ints[7].i, &ints[8].i, &ints[9].i, &ints[10].i, &ints[11].i, &ints[12].i,
+				ints[13].i);
+		return 1;
+	case 127:  // void SetNumeralFont(int no, int face..eb, float bold, float edge, int state)
+		REQUIRE_INTS(10);
+		REQUIRE_FLOATS(2);
+		PE_SetNumeralFont(ints[0].i, ints[1].i, ints[2].i, ints[3].i, ints[4].i, ints[5].i,
+				floats[0].f, ints[6].i, ints[7].i, ints[8].i, floats[1].f, ints[9].i);
+		return 1;
+	case 128:  // void GetNumeralFont(int no, ref int..., ref float..., int state)
+		REQUIRE_INTS(10);
+		REQUIRE_FLOATS(2);
+		PE_GetNumeralFont(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, &ints[5].i,
+				&floats[0].f, &ints[6].i, &ints[7].i, &ints[8].i, &floats[1].f, ints[9].i);
+		return 1;
+	case 129:  // void SetNumeralFullPitch(int no, bool full, int state)
+		REQUIRE_INTS(3);
+		PE_SetNumeralFullPitch(ints[0].i, !!ints[1].i, ints[2].i);
+		return 1;
+	case 130:  // bool IsNumerarlFullPitch(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_IsNumerarlFullPitch(ints[0].i, ints[1].i);
+		return 1;
+	case 131:  // int Parts_GetNumeralNumber(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetNumeralNumber(ints[0].i, ints[1].i);
+		return 1;
+	case 132:  // bool Parts_IsNumeralShowComma(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_IsNumeralShowComma(ints[0].i, ints[1].i);
+		return 1;
+	case 133:  // int Parts_GetNumeralSpace(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetNumeralSpace(ints[0].i, ints[1].i);
+		return 1;
+	case 134:  // int GetNumeralLength(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetNumeralLength(ints[0].i, ints[1].i);
+		return 1;
+	case 135:  // void GetNumeralSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PE_GetNumeralSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 136:  // void SetNumeralShowType(int no, int type, int state)
+		REQUIRE_INTS(3);
+		PE_SetNumeralShowType(ints[0].i, ints[1].i, ints[2].i);
+		return 1;
+	case 137:  // int Parts_GetNumeralCGType(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetNumeralCGType(ints[0].i, ints[1].i);
+		return 1;
+	case 138:  // void SetNumeralShowPadding(int no, bool show, int state)
+		REQUIRE_INTS(3);
+		PE_SetNumeralShowPadding(ints[0].i, !!ints[1].i, ints[2].i);
+		return 1;
+	case 139:  // bool IsNumeralShowPadding(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_IsNumeralShowPadding(ints[0].i, ints[1].i);
+		return 1;
+	case 140:  // void GetRectangleDetectionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetRectangleDetectionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 141:  // void SetRectangleDetectionPoint(int no, int x0..y3, int state)
+		REQUIRE_INTS(10);
+		PE_SetRectangleDetectionPoint(ints[0].i,
+				ints[1].i, ints[2].i, ints[3].i, ints[4].i,
+				ints[5].i, ints[6].i, ints[7].i, ints[8].i, ints[9].i);
+		return 1;
+	case 142:  // void GetRectangleDetectionPoint(int no, int *x0..*y3, int state)
+		REQUIRE_INTS(10);
+		PE_GetRectangleDetectionPoint(ints[0].i,
+				&ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i,
+				&ints[5].i, &ints[6].i, &ints[7].i, &ints[8].i, ints[9].i);
+		return 1;
+	case 143:  // string Parts_GetPartsCGDetectionCGName(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PartsEngine_Parts_GetPartsCGDetectionCGName(ints[0].i, ints[1].i));
+		return 1;
+	case 144:  // void GetCGDetectionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetCGDetectionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 145:  // string Parts_GetPartsFlatName(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PE_GetPartsFlatName(ints[0].i, ints[1].i));
+		return 1;
+	case 146:  // bool Parts_IsPartsFlatStop(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_IsPartsFlatStop(ints[0].i, ints[1].i);
+		return 1;
+	case 147:  // void GetFlatSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PE_GetFlatSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 148:  // int NumofFlatCG(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_NumofFlatCG(ints[0].i, ints[1].i);
+		return 1;
+	case 149:  // string GetFlatCGName(int no, int index, int state)
+		REQUIRE_INTS(3);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PE_GetFlatCGName(ints[0].i, ints[1].i, ints[2].i));
+		return 1;
+	case 150:  // string GetProxyFlatCGName(int no, string old_name, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(2);
+		pf_set_str(strings, 1, PE_GetProxyFlatCGName(ints[0].i, heap_get_string(strings[0].i), ints[1].i));
+		return 1;
+	case 151:  // void ReturnChangeFlatCG(int no, string old_name, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		PE_ReturnChangeFlatCG(ints[0].i, heap_get_string(strings[0].i), ints[1].i);
+		return 1;
+	case 152:  // void ClearChangeFlatCG(int no, int state)
+		REQUIRE_INTS(2);
+		PE_ClearChangeFlatCG(ints[0].i, ints[1].i);
+		return 1;
+	case 153:  // int NumofFlatSound(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_NumofFlatSound(ints[0].i, ints[1].i);
+		return 1;
+	case 154:  // string GetFlatSoundName(int no, int index, int state)
+		REQUIRE_INTS(3);
+		REQUIRE_STRINGS(1);
+		pf_set_str(strings, 0, PE_GetFlatSoundName(ints[0].i, ints[1].i, ints[2].i));
+		return 1;
+	case 155:  // string GetProxyFlatSound(int no, string old_name, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(2);
+		pf_set_str(strings, 1, PE_GetProxyFlatSound(ints[0].i, heap_get_string(strings[0].i), ints[1].i));
+		return 1;
+	case 156:  // void ReturnChangeFlatSound(int no, string old_name, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_STRINGS(1);
+		PE_ReturnChangeFlatSound(ints[0].i, heap_get_string(strings[0].i), ints[1].i);
+		return 1;
+	case 157:  // void ClearChangeFlatSound(int no, int state)
+		REQUIRE_INTS(2);
+		PE_ClearChangeFlatSound(ints[0].i, ints[1].i);
+		return 1;
+	case 158:  // void SetFlatFPSRate(int no, float rate, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		PE_SetFlatFPSRate(ints[0].i, floats[0].f, ints[1].i);
+		return 1;
+	case 159:  // float GetFlatFPSRate(int no, int state)
+		REQUIRE_INTS(2);
+		REQUIRE_FLOATS(1);
+		floats[0].f = PE_GetFlatFPSRate(ints[0].i, ints[1].i);
+		return 1;
+	case 160:  // int GetFlatFPS(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PE_GetFlatFPS(ints[0].i, ints[1].i);
+		return 1;
+	case 161:  // int Parts_GetPartsConstructionProcessCount(int no, int state)
+		REQUIRE_INTS(3);
+		ints[2].i = PartsEngine_Parts_GetPartsConstructionProcessCount(ints[0].i, ints[1].i);
+		return 1;
+	case 162:  // AddConstructProcess(ArrayInt[32], ArrayFloat[2], ArrayString[2])
 		REQUIRE_INTS(32);
 		REQUIRE_FLOATS(2);
 		REQUIRE_STRINGS(2);
 		PartsEngine_add_construction_process(ints, floats, strings, 0, 0);
 		return 1;
-	case 162:  // bool InitPartsMovie(int parts_no, int width, int height, int bg_r, int bg_g, int bg_b, int state)
+	case 163: {  // GetConstructProcess(ArrayInt[33], ArrayFloat[2], ArrayString[2])
+		REQUIRE_INTS(33);
+		REQUIRE_FLOATS(2);
+		REQUIRE_STRINGS(2);
+		struct page *tmp_int = NULL;
+		PartsEngine_GetPartsConstructionProcess(ints[0].i, ints[1].i, &tmp_int,
+				array_float, array_string, ints[2].i);
+		if (tmp_int && tmp_int->nr_vars >= 32) {
+			memcpy(ints + 3, tmp_int->values, 19 * sizeof(*ints));
+			memcpy(ints + 22, tmp_int->values + 20, 11 * sizeof(*ints));
+		}
+		if (tmp_int) {
+			delete_page_vars(tmp_int);
+			free_page(tmp_int);
+		}
+		return 1;
+	}
+	case 164:  // void GetConstructionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
+		REQUIRE_INTS(6);
+		PartsEngine_GetConstructionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
+		return 1;
+	case 165:  // bool InitPartsMovie(int parts_no, int width, int height, int bg_r, int bg_g, int bg_b, int state)
 		REQUIRE_INTS(8);
 		ints[7].i = PE_init_parts_movie(ints[0].i, ints[1].i, ints[2].i, ints[3].i, ints[4].i, ints[5].i, ints[6].i);
 		return 1;
-	case 163:  // int GetMovieSprite(int parts_no, int state)
+	case 166:  // int GetMovieSprite(int parts_no, int state)
 		REQUIRE_INTS(3);
 		ints[2].i = PE_get_movie_sprite(ints[0].i, ints[1].i);
 		return 1;
@@ -1962,6 +2691,8 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		return 0;
 	}
 #undef REQUIRE_INTS
+#undef REQUIRE_FLOATS
+#undef REQUIRE_STRINGS
 }
 
 static void PartsEngine_PreLink(void);
@@ -2096,6 +2827,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(LoadBackScene, PE_LoadBackScene),
 	    HLL_EXPORT(ClearBackScene, PE_ClearBackScene),
 	    HLL_EXPORT(SetShowForBackScene, PE_SetShowForBackScene),
+	    HLL_EXPORT(SetMulColorForBackScene, PE_SetMulColorForBackScene),
+	    HLL_EXPORT(SetAlphaForBackScene, PE_SetAlphaForBackScene),
 	    HLL_EXPORT(SetFontColorForBackScene, PE_SetFontColorForBackScene),
 	    HLL_EXPORT(SetPanelSize, PE_SetPanelSize),
 	    HLL_EXPORT(SetPanelColor, PE_SetPanelColor),
@@ -2276,7 +3009,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetPassCursor, PE_SetPassCursor),
 	    HLL_EXPORT(SetClickable, PE_SetClickable),
 	    HLL_EXPORT(SetSpeedupRateByMessageSkip, PE_SetSpeedupRateByMessageSkip),
-	    HLL_TODO_EXPORT(SetResetTimerByChangeInputStatus, PartsEngine_SetResetTimerByChangeInputStatus),
+	    HLL_EXPORT(SetResetTimerByChangeInputStatus, PartsEngine_SetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(GetPartsX, PE_GetPartsX),
 	    HLL_EXPORT(GetPartsY, PE_GetPartsY),
 	    HLL_EXPORT(GetPartsZ, PE_GetPartsZ),
@@ -2286,8 +3019,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetMultiplyColor, PE_GetMultiplyColor),
 	    HLL_EXPORT(GetPartsPassCursor, PE_GetPartsPassCursor),
 	    HLL_EXPORT(GetPartsClickable, PE_GetPartsClickable),
-	    HLL_TODO_EXPORT(GetPartsSpeedupRateByMessageSkip, PartsEngine_GetPartsSpeedupRateByMessageSkip),
-	    HLL_TODO_EXPORT(GetResetTimerByChangeInputStatus, PartsEngine_GetResetTimerByChangeInputStatus),
+	    HLL_EXPORT(GetPartsSpeedupRateByMessageSkip, PE_GetSpeedupRateByMessageSkip),
+	    HLL_EXPORT(GetResetTimerByChangeInputStatus, PartsEngine_GetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(GetPartsUpperLeftPosX, PE_GetPartsUpperLeftPosX),
 	    HLL_EXPORT(GetPartsUpperLeftPosY, PE_GetPartsUpperLeftPosY),
 	    HLL_EXPORT(GetPartsWidth, PE_GetPartsWidth),
@@ -2367,8 +3100,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetClickNumber, PE_GetClickPartsNumber),
 	    HLL_EXPORT(StopSoundWithoutSystemSound, audio_stop_non_system_channels),
 	    HLL_EXPORT(ReleaseActivity, PE_ReleaseActivity),
-	    HLL_TODO_EXPORT(CrateActivityBinary, PartsEngine_CrateActivityBinary),
-	    HLL_TODO_EXPORT(ReadActivityBinary, PartsEngine_ReadActivityBinary),
+	    HLL_EXPORT(CrateActivityBinary, PE_CrateActivityBinary),
+	    HLL_EXPORT(ReadActivityBinary, PE_ReadActivityBinary),
 	    HLL_EXPORT(ReleaseMessage, PE_ReleaseMessage),
 	    HLL_EXPORT(PopMessage, PE_PopMessage),
 	    HLL_EXPORT(GetMessagePartsNumber, PE_GetMessagePartsNumber),
@@ -2473,12 +3206,14 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetMotionBeginFrame, PartsEngine_GetMotionBeginFrame),
 	    HLL_EXPORT(GetMotionEndFrame, PartsEngine_GetMotionEndFrame),
 	    HLL_EXPORT(SetComponentSpeedupRateByMessageSkip, PE_SetSpeedupRateByMessageSkip),
-	    HLL_TODO_EXPORT(GetComponentSpeedupRateByMessageSkip, PartsEngine_GetComponentSpeedupRateByMessageSkip),
+	    HLL_EXPORT(GetComponentSpeedupRateByMessageSkip, PE_GetSpeedupRateByMessageSkip),
 	    HLL_EXPORT(SetEnableSpeedUp, PE_SetEnableSpeedUp),
 	    HLL_EXPORT(IsEnableSpeedUp, PE_IsEnableSpeedUp),
 	    HLL_EXPORT(AddComponentMotionPos, PartsEngine_AddComponentMotionPos),
 	    HLL_EXPORT(AddComponentMotionAlpha, PE_AddMotionAlpha_curve),
-	    HLL_TODO_EXPORT(AddComponentMotionCG, PartsEngine_AddComponentMotionCG),
+	    HLL_EXPORT(AddComponentMotionAddColor, PE_AddMotionAddColor_curve),
+	    HLL_EXPORT(AddComponentMotionMulColor, PE_AddMotionMulColor_curve),
+	    HLL_EXPORT(AddComponentMotionCG, PE_AddMotionCG_curve),
 	    HLL_TODO_EXPORT(AddComponentMotionCGTermination, PartsEngine_AddComponentMotionCGTermination),
 	    HLL_EXPORT(AddComponentMotionHGaugeRate, PE_AddMotionHGaugeRate_curve),
 	    HLL_EXPORT(AddComponentMotionVGaugeRate, PE_AddMotionVGaugeRate_curve),
@@ -2489,9 +3224,9 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(AddComponentMotionRotateY, PE_AddMotionRotateY_curve),
 	    HLL_EXPORT(AddComponentMotionRotateZ, PE_AddMotionRotateZ_curve),
 	    HLL_EXPORT(AddComponentMotionVibrationSize, PE_AddMotionVibrationSize),
-	    HLL_TODO_EXPORT(SuspendBuildView, PartsEngine_SuspendBuildView),
-	    HLL_TODO_EXPORT(SuspendBuildViewAt, PartsEngine_SuspendBuildViewAt),
-	    HLL_TODO_EXPORT(ResumeBuildView, PartsEngine_ResumeBuildView),
+	    HLL_EXPORT(SuspendBuildView, PartsEngine_SelectTextBoxAll),
+	    HLL_EXPORT(SuspendBuildViewAt, PartsEngine_WidgetStub_i),
+	    HLL_EXPORT(ResumeBuildView, PartsEngine_SelectTextBoxAll),
 	    HLL_TODO_EXPORT(SetButtonSize, PartsEngine_SetButtonSize),
 	    HLL_TODO_EXPORT(SetButtonDrag, PartsEngine_SetButtonDrag),
 	    HLL_TODO_EXPORT(IsButtonDrag, PartsEngine_IsButtonDrag),
@@ -3045,7 +3780,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_ReleaseParts3DLayerPluginID, PE_ReleaseParts3DLayerPluginID),
 	    HLL_EXPORT(Parts_SetPassCursor, PE_SetPassCursor),
 	    HLL_EXPORT(Parts_SetClickable, PE_SetClickable),
-	    HLL_TODO_EXPORT(Parts_SetResetTimerByChangeInputStatus, PartsEngine_Parts_SetResetTimerByChangeInputStatus),
+	    HLL_EXPORT(Parts_SetResetTimerByChangeInputStatus, PartsEngine_Parts_SetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(Parts_SetDrag, PE_SetDrag),
 	    HLL_EXPORT(Parts_SetParentPartsNumber, PE_SetParentPartsNumber),
 	    HLL_EXPORT(Parts_SetInputState, PE_SetInputState),
@@ -3054,7 +3789,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_SetPartsPixelDecide, PE_SetPartsPixelDecide),
 	    HLL_EXPORT(Parts_GetPartsPassCursor, PE_GetPartsPassCursor),
 	    HLL_EXPORT(Parts_GetPartsClickable, PE_GetPartsClickable),
-	    HLL_TODO_EXPORT(Parts_GetResetTimerByChangeInputStatus, PartsEngine_Parts_GetResetTimerByChangeInputStatus),
+	    HLL_EXPORT(Parts_GetResetTimerByChangeInputStatus, PartsEngine_Parts_GetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(Parts_GetPartsDrag, PartsEngine_Parts_GetPartsDrag),
 	    HLL_EXPORT(Parts_SetSwipeType, PartsEngine_Parts_SetSwipeType),
 	    HLL_EXPORT(Parts_GetSwipeType, PartsEngine_Parts_GetSwipeType),
@@ -3087,14 +3822,19 @@ static void PartsEngine_PreLink(void)
 	struct ain_hll_function *fun;
 	int libno = ain_get_library(ain, "PartsEngine");
 	assert(libno >= 0);
+	parts_v2 = (ain->version >= 12
+		|| get_fun(libno, "GetControllerID") != NULL
+		|| get_fun(libno, "PartsFunc") != NULL);
+
 	if (ain->version >= 12) {
 		static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
 		static_library_replace(&lib_PartsEngine, "SetComponentType", PartsEngine_SetComponentType_v12);
 		static_library_replace(&lib_PartsEngine, "GetComponentType", PartsEngine_GetComponentType_v12);
 		static_library_replace(&lib_PartsEngine, "Parts_GetPartsCGName", PartsEngine_GetPartsCGName_v12);
 		static_library_replace(&lib_PartsEngine, "GetMessageVariableString", PartsEngine_GetMessageVariableString_v12);
-		static_library_replace(&lib_PartsEngine, "SetLayoutBoxReturn", PE_SetLayoutBoxReturnF);
-		static_library_replace(&lib_PartsEngine, "GetLayoutBoxReturnSize", PE_GetLayoutBoxReturnSizeF);
+	}
+
+	if (parts_v2) {
 #define BUTTON_API(name) static_library_replace(&lib_PartsEngine, #name, PE_##name)
 		BUTTON_API(SetButtonSize);
 		BUTTON_API(SetButtonEnable);
@@ -3111,6 +3851,49 @@ static void PartsEngine_PreLink(void)
 		BUTTON_API(GetButtonText);
 #undef BUTTON_API
 	}
+
+	fun = get_fun(libno, "SetLayoutBoxReturn");
+	if (fun && fun->nr_arguments >= 3 && fun->arguments[2].type.data == AIN_FLOAT) {
+		static_library_replace(&lib_PartsEngine, "SetLayoutBoxReturn", PE_SetLayoutBoxReturnF);
+	}
+	fun = get_fun(libno, "GetLayoutBoxReturnSize");
+	if (fun && fun->return_type.data == AIN_FLOAT) {
+		static_library_replace(&lib_PartsEngine, "GetLayoutBoxReturnSize", PE_GetLayoutBoxReturnSizeF);
+	}
+	fun = get_fun(libno, "AddMotionSound");
+	if (fun && fun->nr_arguments == 2 && fun->arguments[0].type.data == AIN_STRING) {
+		static_library_replace(&lib_PartsEngine, "AddMotionSound", PE_AddMotionSound_name);
+	}
+
+#define REPLACE_IF_VOID(hll_name, fn_ptr) do { \
+	fun = get_fun(libno, hll_name); \
+	if (fun && fun->return_type.data == AIN_VOID) \
+		static_library_replace(&lib_PartsEngine, hll_name, fn_ptr); \
+} while (0)
+	REPLACE_IF_VOID("GetClickMissSoundName", PartsEngine_GetClickMissSoundName_v6);
+	REPLACE_IF_VOID("Parts_GetSoundName", PartsEngine_Parts_GetSoundName_v6);
+	REPLACE_IF_VOID("Parts_GetPartsFlatDataInfo", PartsEngine_Parts_GetPartsFlatDataInfo_v6);
+	REPLACE_IF_VOID("GetButtonCGName", PartsEngine_GetButtonCGName_v6);
+	REPLACE_IF_VOID("GetButtonFlatName", PartsEngine_GetButtonFlatName_v6);
+	REPLACE_IF_VOID("GetButtonText", PartsEngine_GetButtonText_v6);
+	REPLACE_IF_VOID("GetCheckBoxCGName", PartsEngine_GetCheckBoxCGName_v6);
+	REPLACE_IF_VOID("GetCheckBoxFlatName", PartsEngine_GetCheckBoxFlatName_v6);
+	REPLACE_IF_VOID("GetCheckBoxText", PartsEngine_GetCheckBoxText_v6);
+	REPLACE_IF_VOID("GetVScrollbarCGName", PartsEngine_GetVScrollbarCGName_v6);
+	REPLACE_IF_VOID("GetVScrollbarFlatName", PartsEngine_GetVScrollbarFlatName_v6);
+	REPLACE_IF_VOID("GetHScrollbarCGName", PartsEngine_GetHScrollbarCGName_v6);
+	REPLACE_IF_VOID("GetHScrollbarFlatName", PartsEngine_GetHScrollbarFlatName_v6);
+	REPLACE_IF_VOID("GetTextBoxText", PartsEngine_GetTextBoxText_v6);
+	REPLACE_IF_VOID("GetMultiTextBoxText", PartsEngine_GetTextBoxText_v6);
+	REPLACE_IF_VOID("GetTextBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetListBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetListBoxOnCursorItem", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetComboBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetComboBoxText", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetMultiTextBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetListBoxItem", PartsEngine_WidgetGetItemEmptyString_v6);
+	REPLACE_IF_VOID("GetComboBoxListBoxItem", PartsEngine_WidgetGetItemEmptyString_v6);
+#undef REPLACE_IF_VOID
 
 	fun = get_fun(libno, "AddDrawCutCGToPartsConstructionProcess");
 	if (fun && fun->nr_arguments == 12) {

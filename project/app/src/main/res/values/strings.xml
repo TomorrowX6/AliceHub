@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name" translatable="false">AliceHub</string>
+    <string name="action_search">Search</string>
+    <string name="search_games_hint">Search games</string>
+    <string name="search_close">Clear or close search</string>
+    <string name="search_empty">No matching games</string>
     <string name="action_settings">Settings</string>
     <string name="settings_theme">Theme</string>
     <string name="theme_auto">Auto</string>
@@ -11,7 +15,7 @@
     <string name="lang_ja" translatable="false">日本語</string>
     <string name="lang_en" translatable="false">English</string>
     <string name="online_disclaimer_title">Disclaimer &amp; Terms of Use</string>
-    <string name="online_disclaimer_msg">Please read and accept all terms below before enabling Online Install:\n\nArticle 1 · Nature of Application\nAliceHub is an open-source cross-platform runtime engine and local asset manager intended for compatibility research and technical study. The application itself bundles no commercial game binaries, artwork, audio, or scripts.\n\nArticle 2 · Resource Origin &amp; Intellectual Property\nAll packages, patches, and mod archives indexed through online channels are aggregated from publicly accessible internet sources. All copyrights, trademarks, and related intellectual property rights belong solely to their respective original creators and publishers. AliceHub and its developers claim no ownership over third-party works and have no affiliation with or endorsement from any copyright holder.\n\nArticle 3 · Permitted Use &amp; Official Licensing\n1. Resources obtained through this feature are strictly limited to personal technical testing, compatibility verification, and backup restoration by users who hold a valid license for the original work;\n2. Commercial use, paid installation services, resale, public redistribution, or unauthorized streaming is strictly prohibited;\n3. Please support official releases. If you do not own a valid license for the corresponding title, you must delete all downloaded files within 24 hours.\n\nArticle 4 · Age &amp; Regional Compliance\nCertain titles may contain mature content intended for adults. By proceeding, you confirm that you have reached the legal age of majority in your jurisdiction and comply with all applicable local laws governing digital content access and possession.\n\nArticle 5 · Assumption of Risk &amp; Limitation of Liability\nOnline delivery is provided strictly on an as-is basis without warranties of availability, completeness, or fitness for any purpose. Users assume full sole responsibility for any network data usage, data loss, device issues, or legal liabilities arising from use of this feature or breach of these terms.\n\nArticle 6 · Acceptance &amp; Revocation\nSelecting Read &amp; Agree constitutes full acceptance of all articles above. Select Cancel to keep Online Install disabled. You may disable this feature at any time in Settings.\n\nArticle 7 · Resource Language\nOnline Install currently provides Chinese-language game packages and mod resources only. To play original Japanese or other language editions, please import your own files via Local Install.</string>
+    <string name="online_disclaimer_msg">Please read and accept all terms below before enabling Online Install:\n\nArticle 1 · Nature of Application\nAliceHub is an open-source cross-platform runtime engine and local asset manager intended for compatibility research and technical study. The application itself bundles no commercial game binaries, artwork, audio, or scripts.\n\nArticle 2 · Resource Origin &amp; Intellectual Property\nAll packages, patches, and mod archives indexed through online channels are aggregated from publicly accessible internet sources. All copyrights, trademarks, and related intellectual property rights belong solely to their respective original creators and publishers. AliceHub and its developers claim no ownership over third-party works and have no affiliation with or endorsement from any copyright holder.\n\nArticle 3 · Permitted Use &amp; Official Licensing\n1. Resources obtained through this feature are strictly limited to personal technical testing, compatibility verification, and backup restoration by users who hold a valid license for the original work;\n2. Commercial use, paid installation services, resale, public redistribution, or unauthorized streaming is strictly prohibited;\n3. Please support official releases. If you do not own a valid license for the corresponding title, you must delete all downloaded files within 24 hours.\n\nArticle 4 · Age &amp; Regional Compliance\nCertain titles may contain mature content intended for adults. By proceeding, you confirm that you have reached the legal age of majority in your jurisdiction and comply with all applicable local laws governing digital content access and possession.\n\nArticle 5 · Assumption of Risk &amp; Limitation of Liability\nOnline delivery is provided strictly on an as-is basis without warranties of availability, completeness, or fitness for any purpose. Users assume full sole responsibility for any network data usage, data loss, device issues, or legal liabilities arising from use of this feature or breach of these terms.\n\nArticle 6 · Acceptance &amp; Revocation\nSelecting Read &amp; Agree constitutes full acceptance of all articles above. Select Cancel to keep Online Install disabled. You may disable this feature at any time in Settings.\n\nArticle 7 · Resource Language\nOnline Install primarily provides Chinese-language game packages and mod resources, while select titles provide the original Japanese edition as labeled on each game page. To play other editions, please import your own files via Local Install.</string>
     <string name="online_disclaimer_agree">Read &amp; Agree</string>
     <string name="action_save_manager">Save Manager</string>
     <string name="action_game_modifier">Game Modifier</string>
@@ -122,13 +126,15 @@
     <string name="save_clear_confirm_msg">Delete all %1$d save files? This cannot be undone.</string>
     <string name="save_cleared_toast">Saves cleared</string>
 
-    <string name="action_online_install">Online Install (Chinese)</string>
-    <string name="action_online_install_with_size">Online Install (Chinese) · %1$s</string>
+    <string name="settings_online_install">Online Install (Chinese)</string>
+    <string name="action_online_install">Online Install</string>
+    <string name="action_online_install_with_size">Online Install · %1$s</string>
     <string name="action_local_install">Local Install</string>
+    <string name="action_import_other_game">Import Other Game</string>
     <string name="game_local_dialog_title">Local Install</string>
-    <string name="game_opt_zip">From Archive</string>
+    <string name="game_opt_zip">From Archive or Disc Image</string>
     <string name="game_opt_dir">From Folder</string>
-    <string name="online_base_confirm_title">Online Install (Chinese)</string>
+    <string name="online_base_confirm_title">Online Install</string>
     <string name="online_base_confirm_msg">Download and install %1$s base game? Supports resumable downloads.</string>
     <string name="online_base_confirm_msg_size">Download and install %1$s base game? Size: %2$s, supports resumable downloads.</string>
     <string name="online_fetching_manifest">Fetching manifest…</string>
@@ -146,6 +152,19 @@
     <string name="mod_invalid_package">No valid MOD files found</string>
     <string name="mod_install_error">MOD install failed. Check files and free space.</string>
     <string name="mod_restored_toast">MOD uninstalled</string>
+    <string name="action_install_cn_patch">Install CN Patch</string>
+    <string name="action_uninstall_cn_patch">Uninstall CN Patch</string>
+    <string name="uninstall_cn_patch_no_backup_msg">No original backup found. Delete base game and reinstall vanilla.</string>
+    <string name="cn_patch_local_dialog_title">Local Install CN Patch</string>
+    <string name="cn_patch_choose_zip">Select CN Patch Archive</string>
+    <string name="cn_patch_invalid_package">No valid patch files found</string>
+    <string name="cn_patch_install_error">CN patch install failed. Check files and free space.</string>
+    <string name="cn_patch_restored_toast">CN patch uninstalled</string>
+    <string name="cn_patch_mgr_status_none">No CN Patch</string>
+    <string name="cn_patch_mgr_status_installed">CN Patch Installed</string>
+    <string name="cn_patch_mgr_empty">No patch versions available</string>
+    <string name="cn_patch_mgr_restore_confirm">Uninstall CN patch and restore original edition? Saves will be kept.</string>
+    <string name="cn_patch_mgr_detail_type_full">Full CN Patch</string>
 
     <string name="mod_mgr_activity_title">MOD Manager</string>
     <string name="mod_mgr_status_none">No MOD</string>
@@ -196,8 +215,10 @@
     <string name="notif_channel_result_name">Install Alerts</string>
     <string name="notif_title_base_online">Downloading Base Game</string>
     <string name="notif_title_mod_online">Installing MOD · %1$s</string>
+    <string name="notif_title_cn_patch_online">Installing CN Patch · %1$s</string>
     <string name="notif_title_local_game">Importing Base Game</string>
     <string name="notif_title_local_mod">Importing MOD</string>
+    <string name="notif_title_local_cn_patch">Importing CN Patch</string>
     <string name="notif_action_pause">Pause</string>
     <string name="notif_done_title">Installation Complete</string>
     <string name="notif_done_msg">%1$s finished</string>
@@ -207,9 +228,11 @@
     <string name="select_game_title">AliceHub</string>
     <string name="game_rance10_title">Rance 10: Showdown</string>
     <string name="game_dohnadohna_title">Dohna Dohna: Let\'s Do Bad Things Together</string>
+    <string name="game_evenicle_title">Evenicle</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>
+    <string name="game_status_installed_cn_patch">Installed · CN %1$s</string>
     <string name="game_status_installing">Installing…</string>
     <string name="game_status_running">Running</string>
     <string name="game_status_error">Invalid Files</string>

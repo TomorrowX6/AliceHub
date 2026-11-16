@@ -394,6 +394,11 @@ static cJSON *parts_motion_param_to_json(union parts_motion_param param, enum pa
 	case PARTS_MOTION_ROTATE_Y:
 	case PARTS_MOTION_ROTATE_Z:
 		return cJSON_CreateNumber(param.f);
+	case PARTS_MOTION_ADD_COLOR:
+	case PARTS_MOTION_MUL_COLOR:
+		return color_to_json(&param.color, true);
+	case PARTS_MOTION_CG_NAME:
+		return cJSON_CreateNull();
 	}
 	return cJSON_CreateNull();
 }
@@ -412,7 +417,10 @@ static cJSON *parts_motion_to_json(struct parts_motion *motion)
 		[PARTS_MOTION_ROTATE_X] = "rotate_x",
 		[PARTS_MOTION_ROTATE_Y] = "rotate_y",
 		[PARTS_MOTION_ROTATE_Z] = "rotate_z",
-		[PARTS_MOTION_VIBRATION_SIZE] = "vibration_size"
+		[PARTS_MOTION_VIBRATION_SIZE] = "vibration_size",
+		[PARTS_MOTION_ADD_COLOR] = "add_color",
+		[PARTS_MOTION_MUL_COLOR] = "mul_color",
+		[PARTS_MOTION_CG_NAME] = "cg_name"
 	};
 
 	const char *type = "invalid";

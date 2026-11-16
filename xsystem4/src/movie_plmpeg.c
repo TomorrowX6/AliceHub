@@ -953,6 +953,14 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 			mc->pending_video_frame = frame;
 			return true;
 		}
+		while (frame && frame->time + 0.04 < now && !plm_video_has_ended(mc->plm->video_decoder)) {
+			SDL_LockMutex(mc->decoder_mutex);
+			plm_frame_t *next = plm_decode_video(mc->plm);
+			SDL_UnlockMutex(mc->decoder_mutex);
+			if (!next)
+				break;
+			frame = next;
+		}
 	}
 
 	// Render the frame.

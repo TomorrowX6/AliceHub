@@ -79,6 +79,12 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isDohnaDohnaGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isEvenicleGame(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        return GameModifierBridge.isEvenicleGameDir(root, saveDir?.name, saveDir)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ErrorReportKit.installUncaughtExceptionHandler(this)
         ErrorReportKit.ensureSeenBaselineInitialized(this, offsetMs = -1000L)
@@ -103,6 +109,7 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncUiScaleToNative(this)
             GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
             GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
+            GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
         } catch (_: Throwable) {
         }
@@ -311,6 +318,7 @@ class XSystem4Activity : SDLActivity() {
                 GameModifierBridge.syncUiScaleToNative(this)
                 GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
                 GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
+                GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }
@@ -333,6 +341,7 @@ class XSystem4Activity : SDLActivity() {
                 GameModifierBridge.syncUiScaleToNative(this)
                 GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
                 GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
+                GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }

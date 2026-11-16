@@ -208,7 +208,7 @@ static void parts_get_child_layout_size(struct parts *child, bool cached, int *w
 		return;
 	}
 	struct parts_state *state = &child->states[child->state];
-	if (ain->version >= 12 && child->widget) {
+	if (parts_v2 && child->widget) {
 		parts_widget_get_size(child, w, h);
 		return;
 	}
@@ -224,12 +224,12 @@ static void parts_get_child_layout_size(struct parts *child, bool cached, int *w
 static void parts_get_layout_size_impl(struct parts *parts, bool cached, int *w, int *h)
 {
 	struct parts_state *state = &parts->states[parts->state];
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (parts->widget) {
 			parts_widget_get_size(parts, w, h);
 			return;
 		}
-		if (parts->component_type == 15) {
+		if (ain->version >= 12 && parts->component_type == 15) {
 			// A user component takes its size from its first child (the activity root).
 			struct parts *child = TAILQ_FIRST(&parts->children);
 			if (child) parts_get_child_layout_size(child, cached, w, h);
@@ -300,7 +300,7 @@ static void parts_layout_calc_size_horizontal(struct parts_layout_box *lb, struc
 	float wrap_limit = layout_wrap_limit(lb, true);
 	struct parts *child;
 	PARTS_FOREACH_CHILD(child, parts) {
-		if (ain->version >= 12 && !child->local.show) continue;
+		if (parts_v2 && !child->local.show) continue;
 		int child_w, child_h;
 		parts_get_child_layout_size(child, cached, &child_w, &child_h);
 		int cw = child->margin_left + child_w + child->margin_right;
@@ -331,7 +331,7 @@ static void parts_layout_calc_size_vertical(struct parts_layout_box *lb, struct 
 	float wrap_limit = layout_wrap_limit(lb, false);
 	struct parts *child;
 	PARTS_FOREACH_CHILD(child, parts) {
-		if (ain->version >= 12 && !child->local.show) continue;
+		if (parts_v2 && !child->local.show) continue;
 		int child_w, child_h;
 		parts_get_child_layout_size(child, cached, &child_w, &child_h);
 		int cw = child->margin_left + child_w + child->margin_right;
@@ -360,7 +360,7 @@ static void parts_do_layout_impl(struct parts *parts, bool cached)
 		return;
 	struct parts_layout_box *lb = &parts->states[0].layout_box;
 	int total_w = 0, total_h = 0;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		parts_get_layout_size_impl(parts, cached, &total_w, &total_h);
 		if (lb->common.w != total_w || lb->common.h != total_h)
 			parts_set_dims(parts, &lb->common, total_w, total_h);
@@ -368,7 +368,7 @@ static void parts_do_layout_impl(struct parts *parts, bool cached)
 	if (lb->layout_type == PARTS_LAYOUT_FREE)
 		return;
 
-	if (ain->version < 12) {
+	if (!parts_v2) {
 		if (lb->layout_type == PARTS_LAYOUT_HORIZONTAL)
 			parts_layout_calc_size_horizontal(lb, parts, cached, &total_w, &total_h);
 		else
@@ -405,7 +405,7 @@ static void parts_do_layout_impl(struct parts *parts, bool cached)
 		parts_get_child_layout_size(child, cached, &child_w, &child_h);
 		int cw = child->margin_left + child_w + child->margin_right;
 		int ch = child->margin_top + child_h + child->margin_bottom;
-		if (ain->version >= 12 && !child->local.show) cw = ch = 0;
+		if (parts_v2 && !child->local.show) cw = ch = 0;
 
 		// The layout box forces the child's origin_mode to match its own align.
 		if (child->origin_mode != align) {
@@ -464,7 +464,7 @@ void parts_update_layout_tree(struct parts *parts)
 	struct parts *child;
 	PARTS_FOREACH_CHILD(child, parts) parts_update_layout_tree(child);
 	parts_do_layout_impl(parts, true);
-	if (parts->component_type == 15) {
+	if (ain->version >= 12 && parts->component_type == 15) {
 		int w, h;
 		parts_get_layout_size_impl(parts, true, &w, &h);
 		for (int i = 0; i < PARTS_NR_STATES; i++) {

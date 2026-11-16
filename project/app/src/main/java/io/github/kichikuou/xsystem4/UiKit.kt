@@ -152,13 +152,15 @@ internal object UiKit {
         frame.clipToOutline = true
 
         val pad = when (desc.id) {
-            GameCatalog.ID_RANCE10 -> 0
+            GameCatalog.ID_RANCE10, GameCatalog.ID_EVENICLE -> 0
             GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
             else -> frame.layoutParams.width / 10
         }
         frame.setPadding(pad, pad, pad, pad)
 
-        val builtIn = desc.id == GameCatalog.ID_RANCE10 || desc.id == GameCatalog.ID_DOHNA_DOHNA
+        val builtIn = desc.id == GameCatalog.ID_RANCE10 ||
+            desc.id == GameCatalog.ID_DOHNA_DOHNA ||
+            desc.id == GameCatalog.ID_EVENICLE
         val bitmap = if (builtIn) null else item?.getIconBitmap(frame.layoutParams.width - pad * 2)
         if (bitmap != null) {
             iconView.setImageBitmap(bitmap)

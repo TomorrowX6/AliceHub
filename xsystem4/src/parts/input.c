@@ -178,7 +178,7 @@ static bool parts_hittest(struct parts *parts, int state, Point pos)
 	}
 	bool checkbox_with_label = (parts->component_type == 1 && parts->widget
 			&& !parts->widget->button_mode && parts->widget->text->size);
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		int clipper_no = parts_get_effective_alpha_clipper(parts);
 		if (clipper_no > 0) {
 			static uint64_t cached_clip_gen = 0;
@@ -362,7 +362,7 @@ void parts_input_load_state(struct iarray_reader *r)
 
 void parts_input_load_legacy_state(void)
 {
-	if (ain && ain->version >= 12) {
+	if (parts_v2 && ain) {
 		int depth = 0;
 		for (int i = 0; i < call_stack_ptr; i++) {
 			int fno = call_stack[i].fno;
@@ -398,7 +398,7 @@ static bool parts_is_descendant_of(struct parts *child, struct parts *ancestor)
 
 static struct parts *find_swipe_target(Point pos)
 {
-	if (ain->version < 12 || !parts_began_click)
+	if (!parts_v2 || !parts_began_click)
 		return NULL;
 	struct parts *first_opaque = NULL;
 	struct parts *p;
@@ -441,7 +441,7 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 {
 	if (!parts->enable_input)
 		return;
-	if (ain->version >= 12 && parts->controller_no != ctrl_stack.active) {
+	if (parts_v2 && parts->controller_no != ctrl_stack.active) {
 		parts->is_hovered = false;
 		parts->hover_time = 0;
 		parts_set_state(parts, PARTS_STATE_DEFAULT);
@@ -449,7 +449,7 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 		return;
 	}
 	// Visibility affects automatic routing, not Parts_IsCursorIn's geometry query.
-	if (ain->version >= 12 && !parts_is_visible(parts)) {
+	if (parts_v2 && !parts_is_visible(parts)) {
 		parts->is_hovered = false;
 		parts->hover_time = 0;
 		parts_set_state(parts, PARTS_STATE_DEFAULT);
@@ -526,7 +526,7 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 	if (cur_clicking && !prev_clicking) {
 		click_down_parts = parts->no;
 		*click_consumed = true;
-		if (ain->version >= 12 && clickable) PE_SetFocus(parts->no);
+		if (parts_v2 && clickable) PE_SetFocus(parts->no);
 
 		drag_parts = parts;
 		drag_initial_pos = parts->local.pos;
@@ -571,7 +571,7 @@ static void update_drop_target(Point cur_pos)
 	struct parts *parts;
 	PARTS_LIST_FOREACH_REVERSE(parts) {
 		if (parts == drag_parts || !parts->enable_input
-				|| (ain->version >= 12 && (parts->controller_no != ctrl_stack.active || !parts_is_visible(parts))))
+				|| (parts_v2 && (parts->controller_no != ctrl_stack.active || !parts_is_visible(parts))))
 			continue;
 		if (parts_hittest(parts, PARTS_STATE_DEFAULT, cur_pos)) {
 			new_drop = parts;
@@ -635,7 +635,7 @@ void PE_UpdateInputState(int passed_time)
 
 	bool hover_consumed = false;
 	bool click_consumed = false;
-	if (ain->version >= 12 && parts_began_click && cur_clicking && !prev_clicking) {
+	if (parts_v2 && parts_began_click && cur_clicking && !prev_clicking) {
 		if (swipe_inertia && swipe_parts) {
 			parts_msg_push(swipe_parts, PARTS_MSG_SWIPE_END, "");
 			swipe_state_reset();
@@ -652,7 +652,7 @@ void PE_UpdateInputState(int passed_time)
 				wheel_forward, wheel_back, &hover_consumed, &click_consumed);
 	}
 
-	if (ain->version >= 12 && parts_began_click) {
+	if (parts_v2 && parts_began_click) {
 		if (cur_pos.x != parts_prev_pos.x || cur_pos.y != parts_prev_pos.y)
 			parts_msg_push(NULL, PARTS_MSG_MOUSE_MOVE, "ii", cur_pos.x, cur_pos.y);
 		if (wheel_forward || wheel_back)
@@ -904,7 +904,7 @@ void PE_UpdateInputState(int passed_time)
 	}
 	parts_prev_pos = cur_pos;
 	input_notify_parts_poll(parts_began_click, cur_clicking || cur_rclicking);
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		parts_update_focus(ctrl_stack.overlay_id);
 		for (int i = 0; i < ctrl_stack.nr_controllers; i++)
 			parts_update_focus(ctrl_stack.ids[i]);
@@ -1005,7 +1005,7 @@ void PE_SetOnCursorShowLinkPartsNumber(int parts_no, int link_parts_no)
 int PE_GetOnCursorShowLinkPartsNumber(int parts_no)
 {
 	int linked_to = parts_get(parts_no)->linked_to;
-	return ain->version >= 12 && linked_to < 0 ? 0 : linked_to;
+	return parts_v2 && linked_to < 0 ? 0 : linked_to;
 }
 
 bool PE_SetPartsOnCursorSoundNumber(int parts_no, int sound_no)
@@ -1052,7 +1052,7 @@ struct string *PE_GetClickMissSoundName(void)
 
 void PE_BeginInput(void)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		input_depth++;
 		parts_clear_focus(-1);
 	}
@@ -1061,7 +1061,7 @@ void PE_BeginInput(void)
 
 void PE_EndInput(void)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (input_depth > 0) input_depth--;
 		if (input_depth > 0) parts_clear_focus(-1);
 		parts_began_click = input_depth > 0;

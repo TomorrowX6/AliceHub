@@ -86,10 +86,11 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     .removeSuffix("[MOD]")
                     .trim()
                 val verLabel = modMeta?.version?.takeIf { it.isNotBlank() }
+                val tag = if (modMeta?.kind == InstalledModInfo.KIND_CN_PATCH) "汉化" else "MOD"
                 if (verLabel != null) {
-                    "$baseName [MOD · $verLabel]"
+                    "$baseName [$tag · $verLabel]"
                 } else {
-                    "$baseName [MOD]"
+                    "$baseName [$tag]"
                 }
             } else {
                 rawName
@@ -200,9 +201,26 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
     companion object {
         fun parse(file: File): System40Ini {
             val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
+            val raw = file.readBytes()
+            val latin = String(raw, Charsets.ISO_8859_1)
+            val gnMatch = Regex("""(?:^|\r?\n)\s*GameName\s*=\s*"([^\r\n"]*)"""").find(latin)
+            val chosenCharset = if (gnMatch != null) {
+                val gnRaw = gnMatch.groupValues[1].toByteArray(Charsets.ISO_8859_1)
+                val decoded = ArchiveExtractor.decodeBestCjkText(gnRaw, preferGbkOnTie = true)
+                when {
+                    decoded == String(gnRaw, Charsets.UTF_8) && gnRaw.any { (it.toInt() and 0x80) != 0 } ->
+                        Charsets.UTF_8
+                    decoded == String(gnRaw, Charset.forName("Shift_JIS")) &&
+                        decoded != String(gnRaw, Charset.forName("GBK")) ->
+                        Charset.forName("Shift_JIS")
+                    else -> Charset.forName("GBK")
+                }
+            } else {
+                Charset.forName("GBK")
+            }
             var gameName: String? = null
             var SaveFolder: String? = null
-            for (line in file.readLines(Charset.forName("GBK"))) {
+            for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
                         "GameName" -> gameName = it.groupValues[2]
@@ -694,6 +712,70 @@ class GameList(activity: Activity) {
         observer?.onInstallFailure(msgId)
     }
 
+    private fun shouldSkipBaseInstallEntry(relPath: String): Boolean {
+        if (NativeGameImport.skip(relPath)) return true
+        val fileName = relPath.substringAfterLast('/').lowercase()
+        val isArchive = fileName.endsWith(".rar") || fileName.endsWith(".zip") || fileName.endsWith(".7z")
+        if (isArchive && (fileName.contains("sound album") || fileName.contains("(flac)") || fileName.contains("ost"))) {
+            return true
+        }
+        return false
+    }
+
+    private fun findGameRootDir(root: File, expectedAinName: String?): File? {
+        val candidates = root.walkTopDown()
+            .filter { d ->
+                d.isDirectory && run {
+                    val files = d.listFiles()?.filter { it.isFile }.orEmpty()
+                    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+                    val hasAin = files.any { it.name.endsWith(".ain", true) }
+                    hasIni && hasAin
+                }
+            }
+            .sortedBy { it.relativeTo(root).path.length }
+            .toList()
+        if (!expectedAinName.isNullOrBlank()) {
+            candidates.firstOrNull { d ->
+                d.listFiles()?.any { it.isFile && it.name.equals(expectedAinName, true) } == true
+            }?.let { return it }
+        }
+        return candidates.firstOrNull()
+    }
+
+    private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
+        val ainName = destGameDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }?.name
+        val destCanonical = destGameDir.canonicalPath
+        val patchDirs = mutableListOf<File>()
+        for (root in searchRoots) {
+            if (!root.exists()) continue
+            root.walkTopDown()
+                .filter { d ->
+                    d.isDirectory && !d.canonicalPath.startsWith(destCanonical) && run {
+                        val p = d.path.replace('\\', '/').lowercase()
+                        p.endsWith("/updatefiles/files/commonfiles") || p.endsWith("/commonfiles")
+                    }
+                }
+                .forEach { patchDirs.add(it) }
+        }
+        for (pdir in patchDirs) {
+            val files = pdir.listFiles()?.filter { it.isFile }.orEmpty()
+            val hasAin = files.any { it.name.endsWith(".ain", true) }
+            if (ainName != null && hasAin && files.none { it.name.equals(ainName, true) }) continue
+            pdir.walkTopDown().forEach { f ->
+                checkCancelled()
+                val rel = f.relativeTo(pdir).path.replace('\\', '/')
+                if (rel.isEmpty() || NativeGameImport.skip(rel)) return@forEach
+                val out = File(destGameDir, rel)
+                if (f.isDirectory) {
+                    out.mkdirs()
+                } else if (f.isFile) {
+                    out.parentFile?.mkdirs()
+                    f.copyTo(out, overwrite = true)
+                }
+            }
+        }
+    }
+
     private fun doInstallArchive(
         uri: Uri,
         storagePath: File,
@@ -704,23 +786,16 @@ class GameList(activity: Activity) {
     ): File {
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
-        var gameRoot: File? = null
         try {
+            var currentStageDir = File(tempDir, "stage0")
             ArchiveExtractor.extractUriToDirectory(
                 context = context,
                 uri = uri,
-                destDir = tempDir,
+                destDir = currentStageDir,
                 tempScratchParent = storagePath,
-                shouldSkip = { rel -> NativeGameImport.skip(rel) },
+                shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
-                onEntryAccepted = { outFile, _ ->
-                    if (outFile.name.equals("System40.ini", ignoreCase = true) ||
-                        outFile.name.equals("AliceStart.ini", ignoreCase = true)
-                    ) {
-                        gameRoot = outFile.parentFile
-                    }
-                },
                 onProgress = { totalBytes, entryPath ->
                     progressCallback(
                         context.getString(
@@ -731,22 +806,93 @@ class GameList(activity: Activity) {
                     )
                 }
             )
-            var srcDir = gameRoot
-            if (srcDir == null || srcDir.listFiles()?.none { it.isFile && it.name.endsWith(".ain", true) } == true) {
-                srcDir = tempDir.walkTopDown().firstOrNull { d ->
-                    d.isDirectory &&
-                        (d.listFiles()?.any {
-                            it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
-                        } == true) &&
-                        (d.listFiles()?.any { it.isFile && it.name.endsWith(".ain", true) } == true)
-                } ?: srcDir
+
+            var srcDir: File? = findGameRootDir(currentStageDir, expectedAinName)
+            var stage = 1
+            while (srcDir == null && stage <= 3) {
+                checkCancelled()
+                val discs = currentStageDir.walkTopDown()
+                    .filter { it.isFile && Iso9660Extractor.isIsoOrMdfName(it.name) }
+                    .sortedByDescending { it.length() }
+                    .toList()
+                val chosenDisc = discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, expectedAinName) }
+                    ?: if (expectedAinName.isNullOrBlank()) {
+                        discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null) }
+                    } else null
+
+                if (chosenDisc != null) {
+                    val nextDir = File(tempDir, "stage$stage")
+                    ArchiveExtractor.extractFileToDirectory(
+                        archiveFile = chosenDisc,
+                        destDir = nextDir,
+                        shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                        throwInstallFailureOnNoSpace = true,
+                        checkCancelled = checkCancelled,
+                        onProgress = { totalBytes, entryPath ->
+                            progressCallback(
+                                context.getString(
+                                    R.string.import_extract_progress,
+                                    totalBytes / (1024L * 1024L),
+                                    entryPath
+                                )
+                            )
+                        }
+                    )
+                    // Delete extracted disc images immediately to reclaim space while preserving UpdateFiles
+                    for (d in discs) d.delete()
+                    currentStageDir.walkTopDown()
+                        .filter { it.isFile && it.name.lowercase().endsWith(".mds") }
+                        .forEach { it.delete() }
+                    currentStageDir = nextDir
+                    srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                    stage++
+                    continue
+                }
+
+                val archives = currentStageDir.walkTopDown()
+                    .filter {
+                        it.isFile &&
+                            ArchiveExtractor.isSupportedArchiveName(it.name) &&
+                            !shouldSkipBaseInstallEntry(it.name)
+                    }
+                    .sortedByDescending { it.length() }
+                    .toList()
+                val chosenArchive = archives.firstOrNull() ?: break
+                val nextDir = File(tempDir, "stage$stage")
+                ArchiveExtractor.extractFileToDirectory(
+                    archiveFile = chosenArchive,
+                    destDir = nextDir,
+                    shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                    throwInstallFailureOnNoSpace = true,
+                    checkCancelled = checkCancelled,
+                    onProgress = { totalBytes, entryPath ->
+                        progressCallback(
+                            context.getString(
+                                R.string.import_extract_progress,
+                                totalBytes / (1024L * 1024L),
+                                entryPath
+                            )
+                        )
+                    }
+                )
+                for (a in archives) a.delete()
+                currentStageDir = nextDir
+                srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                stage++
             }
-            if (srcDir == null) throw InstallFailureException(R.string.zip_no_ini)
+
+            if (srcDir == null) {
+                val hasIni = tempDir.walkTopDown().any {
+                    it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
+                }
+                throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
+            }
             val ainFile = srcDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
                 ?: throw InstallFailureException(R.string.directory_no_game)
             if (!expectedAinName.isNullOrBlank() && !ainFile.name.equals(expectedAinName, ignoreCase = true)) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
+            overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
             val baseName = ainFile.nameWithoutExtension.ifEmpty { "Game" }
             var dstDir = File(storagePath, baseName)
             var i = 1
@@ -820,14 +966,17 @@ class GameList(activity: Activity) {
 
     fun installModDirectory(targetItem: Item, uri: Uri) {
         if (installState is InstallState.Installing || installJob?.isActive == true) return
+        val gameId = GameCatalog.classifyItem(targetItem)
+        val isCnPatch = GameCatalog.descriptorFor(context, gameId).isCnPatch
+        val overlayKind = if (isCnPatch) InstalledModInfo.KIND_CN_PATCH else InstalledModInfo.KIND_MOD
         val prevBarrier = retiringBarrierJob
         val (sessionGen, abortHandle) = beginInstallSession(
-            notifTitle = context.getString(R.string.notif_title_local_mod),
+            notifTitle = context.getString(if (isCnPatch) R.string.notif_title_local_cn_patch else R.string.notif_title_local_mod),
             initialProgress = null,
             cancellable = true,
             resumable = false,
             targetGamePath = targetItem.path.path,
-            targetGameId = GameCatalog.classifyItem(targetItem)
+            targetGameId = gameId
         )
         installJob = scope.launch {
             val storage = targetItem.path.parentFile ?: storageDirs[0]
@@ -846,23 +995,30 @@ class GameList(activity: Activity) {
                             setInstallProgress(sessionGen, progress, cancellable = true, resumable = false)
                         }
                     }
-                    val wasFull = applyModStagingToGameDir(staging!!, targetItem.path, cleanReplaceIfStandalone = true)
-                    val inferredVer = OnlineInstaller.inferVersionFromFileName(
+                    val wasFull = applyModStagingToGameDir(
+                        stagingDir = staging!!,
+                        targetDir = targetItem.path,
+                        cleanReplaceIfStandalone = true,
+                        isCnPatch = isCnPatch
+                    )
+                    val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
                         isPatchHint = !wasFull,
-                        fallbackIniDir = if (wasFull) targetItem.path else null
+                        fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
+                        isCnPatch = isCnPatch
                     )
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
                             version = inferredVer,
-                            baseVersion = if (wasFull) inferredVer else prevInfo?.baseVersion,
+                            baseVersion = if (wasFull || isCnPatch) inferredVer else prevInfo?.baseVersion,
                             fileId = -1,
-                            baseFileId = if (wasFull) -1 else (prevInfo?.baseFileId ?: -1),
+                            baseFileId = if (wasFull || isCnPatch) -1 else (prevInfo?.baseFileId ?: -1),
                             fileName = srcLabel,
                             uploadedAt = "",
                             source = "local",
-                            installedAtMs = System.currentTimeMillis()
+                            installedAtMs = System.currentTimeMillis(),
+                            kind = overlayKind
                         )
                     )
                 }
@@ -874,7 +1030,7 @@ class GameList(activity: Activity) {
                 setInstallFailed(sessionGen, e.msgId)
             } catch (e: Exception) {
                 Log.e("GameList", "Failed to install MOD from directory", e)
-                setInstallFailed(sessionGen, R.string.mod_install_error)
+                setInstallFailed(sessionGen, if (isCnPatch) R.string.cn_patch_install_error else R.string.mod_install_error)
             } finally {
                 deleteDirAsyncViaTrash(staging)
             }
@@ -883,14 +1039,17 @@ class GameList(activity: Activity) {
 
     fun installModArchive(targetItem: Item, uri: Uri) {
         if (installState is InstallState.Installing || installJob?.isActive == true) return
+        val gameId = GameCatalog.classifyItem(targetItem)
+        val isCnPatch = GameCatalog.descriptorFor(context, gameId).isCnPatch
+        val overlayKind = if (isCnPatch) InstalledModInfo.KIND_CN_PATCH else InstalledModInfo.KIND_MOD
         val prevBarrier = retiringBarrierJob
         val (sessionGen, abortHandle) = beginInstallSession(
-            notifTitle = context.getString(R.string.notif_title_local_mod),
+            notifTitle = context.getString(if (isCnPatch) R.string.notif_title_local_cn_patch else R.string.notif_title_local_mod),
             initialProgress = null,
             cancellable = true,
             resumable = false,
             targetGamePath = targetItem.path.path,
-            targetGameId = GameCatalog.classifyItem(targetItem)
+            targetGameId = gameId
         )
         val mainHandler = Handler(Looper.getMainLooper())
         installJob = scope.launch {
@@ -931,23 +1090,30 @@ class GameList(activity: Activity) {
                             }
                         }
                     )
-                    val wasFull = applyModStagingToGameDir(tempDir, targetItem.path, cleanReplaceIfStandalone = true)
-                    val inferredVer = OnlineInstaller.inferVersionFromFileName(
+                    val wasFull = applyModStagingToGameDir(
+                        stagingDir = tempDir,
+                        targetDir = targetItem.path,
+                        cleanReplaceIfStandalone = true,
+                        isCnPatch = isCnPatch
+                    )
+                    val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
                         isPatchHint = !wasFull,
-                        fallbackIniDir = if (wasFull) targetItem.path else null
+                        fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
+                        isCnPatch = isCnPatch
                     )
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
                             version = inferredVer,
-                            baseVersion = if (wasFull) inferredVer else prevInfo?.baseVersion,
+                            baseVersion = if (wasFull || isCnPatch) inferredVer else prevInfo?.baseVersion,
                             fileId = -1,
-                            baseFileId = if (wasFull) -1 else (prevInfo?.baseFileId ?: -1),
+                            baseFileId = if (wasFull || isCnPatch) -1 else (prevInfo?.baseFileId ?: -1),
                             fileName = srcLabel,
                             uploadedAt = "",
                             source = "local",
-                            installedAtMs = System.currentTimeMillis()
+                            installedAtMs = System.currentTimeMillis(),
+                            kind = overlayKind
                         )
                     )
                 }
@@ -959,7 +1125,7 @@ class GameList(activity: Activity) {
                 setInstallFailed(sessionGen, e.msgId)
             } catch (e: Exception) {
                 Log.e("GameList", "Failed to install MOD from archive", e)
-                setInstallFailed(sessionGen, R.string.mod_install_error)
+                setInstallFailed(sessionGen, if (isCnPatch) R.string.cn_patch_install_error else R.string.mod_install_error)
             } finally {
                 deleteDirAsyncViaTrash(tempDir)
             }
@@ -972,23 +1138,35 @@ class GameList(activity: Activity) {
         fromModManager: Boolean = true
     ) {
         if (steps.isEmpty() || installState is InstallState.Installing || installJob?.isActive == true) return
+        val gameId = GameCatalog.classifyItem(targetItem)
+        val isCnPatch = GameCatalog.descriptorFor(context, gameId).isCnPatch
+        val overlayKind = if (isCnPatch) InstalledModInfo.KIND_CN_PATCH else InstalledModInfo.KIND_MOD
         val firstLabel = if (steps.size > 1) {
             "[1/${steps.size}] ${steps[0].version}"
         } else {
             steps[0].version
         }
         val targetVer = steps.last().version
+        val targetGroup = steps.last().group
+        val notifLabel = if (isCnPatch && targetGroup.isNotBlank()) {
+            "$targetGroup · $targetVer"
+        } else {
+            targetVer
+        }
         val storagePath = targetItem.path.parentFile ?: storageDirs[0]
         val prevBarrier = retiringBarrierJob
         val (sessionGen, abortHandle) = beginInstallSession(
-            notifTitle = context.getString(R.string.notif_title_mod_online, targetVer),
+            notifTitle = context.getString(
+                if (isCnPatch) R.string.notif_title_cn_patch_online else R.string.notif_title_mod_online,
+                notifLabel
+            ),
             initialProgress = context.getString(R.string.online_mod_starting_download, firstLabel),
             initialPermille = 0,
             cancellable = true,
             resumable = true,
             targetGamePath = targetItem.path.path,
             notifModManagerPath = if (fromModManager) targetItem.path.path else null,
-            targetGameId = GameCatalog.classifyItem(targetItem),
+            targetGameId = gameId,
             evictPartialOnCancel = {
                 OnlineInstaller.evictModCacheToTrash(storagePath, steps)
             }
@@ -1043,7 +1221,8 @@ class GameList(activity: Activity) {
                                 val wasFull = applyModStagingToGameDir(
                                     stagingDir = staging,
                                     targetDir = targetItem.path,
-                                    cleanReplaceIfStandalone = !release.isPatch
+                                    cleanReplaceIfStandalone = !release.isPatch,
+                                    isCnPatch = isCnPatch
                                 )
                                 val baseVer = if (!release.isPatch || wasFull) {
                                     release.version
@@ -1065,7 +1244,8 @@ class GameList(activity: Activity) {
                                         fileName = release.fileName,
                                         uploadedAt = release.uploadedAt,
                                         source = "online",
-                                        installedAtMs = System.currentTimeMillis()
+                                        installedAtMs = System.currentTimeMillis(),
+                                        kind = overlayKind
                                     )
                                 )
                             }
@@ -1146,7 +1326,7 @@ class GameList(activity: Activity) {
         return hasAin && hasModCg && hasModFlat
     }
 
-    private fun findModRoot(stagingDir: File): File {
+    private fun findModRoot(stagingDir: File, isCnPatch: Boolean = false): File {
         var cur = stagingDir
         while (true) {
             val children = cur.listFiles() ?: break
@@ -1165,7 +1345,7 @@ class GameList(activity: Activity) {
                 }
             }
         }
-        throw InstallFailureException(R.string.mod_invalid_package)
+        throw InstallFailureException(if (isCnPatch) R.string.cn_patch_invalid_package else R.string.mod_invalid_package)
     }
 
     private fun restoreVanillaFromMod(targetDir: File) {
@@ -1217,9 +1397,10 @@ class GameList(activity: Activity) {
     private fun applyModStagingToGameDir(
         stagingDir: File,
         targetDir: File,
-        cleanReplaceIfStandalone: Boolean = true
+        cleanReplaceIfStandalone: Boolean = true,
+        isCnPatch: Boolean = false
     ): Boolean {
-        val modRoot = findModRoot(stagingDir)
+        val modRoot = findModRoot(stagingDir, isCnPatch = isCnPatch)
         val isFullStandalone = isStandaloneFullMod(modRoot)
         if (cleanReplaceIfStandalone && isFullStandalone && hasInstalledModDir(targetDir)) {
             restoreVanillaFromMod(targetDir)
@@ -1264,7 +1445,9 @@ class GameList(activity: Activity) {
                 srcFile.delete()
             }
         }
-        addedFiles.add("AsraTest.ini")
+        if (File(targetDir, "Rance10.ain").isFile) {
+            addedFiles.add("AsraTest.ini")
+        }
         File(targetDir, ".mod_installed_files.txt").writeText(addedFiles.joinToString("\n"))
         return isFullStandalone
     }

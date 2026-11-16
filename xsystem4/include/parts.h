@@ -160,6 +160,7 @@ bool PE_GetPartsMessageWindowShowLink(int parts_no);
 void PE_SetEnableSpeedUp(int parts_no, bool enable);
 bool PE_IsEnableSpeedUp(int parts_no);
 void PE_SetSpeedupRateByMessageSkip(int parts_no, int rate);
+int PE_GetSpeedupRateByMessageSkip(int parts_no);
 void PE_SetPartsMagX(int parts_no, float scale_x);
 float PE_GetPartsMagX(int parts_no);
 void PE_SetPartsMagY(int parts_no, float scale_y);
@@ -189,6 +190,8 @@ bool PE_SaveBackScene(struct page **buffer);
 bool PE_LoadBackScene(struct page **buffer);
 void PE_ClearBackScene(void);
 void PE_SetShowForBackScene(int no, bool show);
+void PE_SetMulColorForBackScene(int no, int r, int g, int b);
+void PE_SetAlphaForBackScene(int no, int a);
 void PE_SetFontColorForBackScene(int no, int r, int g, int b, int state);
 int PE_AddController(int index);
 void PE_RemoveController(struct page **erase_number_list, int index);
@@ -363,7 +366,14 @@ void PE_AddMotionRotateZ(int parts_no, float begin, float end, int begin_t, int 
 void PE_AddMotionRotateZ_curve(int parts_no, float begin, float end, int begin_t, int end_t,
 		struct string *curve_name);
 void PE_AddMotionVibrationSize(int parts_no, int begin_w, int begin_h, int begin_t, int end_t);
+void PE_AddMotionAddColor_curve(int parts_no, int br, int bg, int bb,
+		int er, int eg, int eb, int begin_t, int end_t, struct string *curve_name);
+void PE_AddMotionMulColor_curve(int parts_no, int br, int bg, int bb,
+		int er, int eg, int eb, int begin_t, int end_t, struct string *curve_name);
+bool PE_AddMotionCG_curve(int parts_no, struct string *base_cg, int start_no,
+		int num_of_cg, int begin_t, int end_t, struct string *curve_name);
 void PE_AddMotionSound(int sound_no, int begin_t);
+void PE_AddMotionSound_name(struct string *sound_name, int begin_t);
 void PE_AddWholeMotionVibrationSize(int begin_w, int begin_h, int begin_t, int end_t);
 void PE_BeginMotion(void);
 void PE_EndMotion(void);

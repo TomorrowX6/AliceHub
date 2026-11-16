@@ -300,10 +300,30 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
             return false
         }
         return GameModifierBridge.isDohnaDohnaGameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetEvenicle(): Boolean {
+        if (scopedGameId == GameCatalog.ID_EVENICLE) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isEvenicleGameDir(
             currentTarget.externalGameDir,
             currentTarget.dirName,
             currentTarget.saveDir
@@ -325,12 +345,12 @@ class GameModifierActivity : ThemedActivity() {
         )
     }
 
-    private fun refreshTargetControlsVisibility(isRance10: Boolean, isDohnaDohna: Boolean) {
+    private fun refreshTargetControlsVisibility(isRance10: Boolean, isDohnaDohna: Boolean, isEvenicle: Boolean) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle
         floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
         (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.marginStart = if (showLocks) dp(4) else 0
@@ -342,28 +362,45 @@ class GameModifierActivity : ThemedActivity() {
         val saveDir = currentTarget.saveDir
         val isRance10 = isCurrentTargetRance10()
         val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
+        val isEvenicle = !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle)
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
         if (!isRance10) {
-            val asdCount = saveDir.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
+            val saveCount = saveDir.walkTopDown()
+                .filter {
+                    it.isFile && (
+                        it.name.endsWith(".asd", ignoreCase = true) ||
+                            (isEvenicle && it.name.endsWith(".sav", ignoreCase = true))
+                        )
+                }
                 .count()
-            if (isDohnaDohna) {
-                val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
-                findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                    "存档 $asdCount 个 · 锁定 $ddLockCount 项",
-                    "セーブ $asdCount 個 · ロック $ddLockCount 項目",
-                    "$asdCount saves · Locks: $ddLockCount"
-                )
-            } else {
-                findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                    "存档 $asdCount 个",
-                    "セーブ $asdCount 個",
-                    "$asdCount saves"
-                )
+            when {
+                isDohnaDohna -> {
+                    val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $ddLockCount 项",
+                        "セーブ $saveCount 個 · ロック $ddLockCount 項目",
+                        "$saveCount saves · Locks: $ddLockCount"
+                    )
+                }
+                isEvenicle -> {
+                    val evLockCount = GameModifierBridge.getEvenicleLiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $evLockCount 项",
+                        "セーブ $saveCount 個 · ロック $evLockCount 項目",
+                        "$saveCount saves · Locks: $evLockCount"
+                    )
+                }
+                else -> {
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个",
+                        "セーブ $saveCount 個",
+                        "$saveCount saves"
+                    )
+                }
             }
             return
         }
@@ -626,6 +663,38 @@ class GameModifierActivity : ThemedActivity() {
     // =========================================================================
     // 3. In-Game Live Locks Dialog
     // =========================================================================
+    private fun showBitmaskLockDialog(
+        lockDefs: List<Pair<Int, String>>,
+        initialMask: Int,
+        saveMask: (Int) -> Unit
+    ) {
+        var lockMask = initialMask
+        val labels = lockDefs.map { it.second }.toTypedArray()
+        val checked = BooleanArray(lockDefs.size) { idx ->
+            (lockMask and lockDefs[idx].first) != 0
+        }
+        AlertDialog.Builder(this)
+            .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val bit = lockDefs[which].first
+                lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
+            }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                saveMask(lockMask)
+                syncTopSwitches()
+                refreshSummaryText()
+                Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
+                saveMask(0)
+                syncTopSwitches()
+                refreshSummaryText()
+                Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun showFloatingLocksDialog() {
         if (!isCurrentTargetRance10() && isCurrentTargetDohnaDohna()) {
             val lockDefs = listOf(
@@ -638,31 +707,25 @@ class GameModifierActivity : ThemedActivity() {
                 GameModifierBridge.LOCK_DD_WORKER_BEST_COND to tr("人材最佳状态", "人材状態維持", "Keep Workers Healthy"),
                 GameModifierBridge.LOCK_DD_WORK_FREEZE_TIMER to tr("春销时间锁定", "ハルウリ時間固定", "Freeze Brothel Timer")
             )
-            var lockMask = GameModifierBridge.getSavedDohnaLockMask(this)
-            val labels = lockDefs.map { it.second }.toTypedArray()
-            val checked = BooleanArray(lockDefs.size) { idx ->
-                (lockMask and lockDefs[idx].first) != 0
-            }
-            AlertDialog.Builder(this)
-                .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
-                .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                    val bit = lockDefs[which].first
-                    lockMask = if (isChecked) (lockMask or bit) else (lockMask and bit.inv())
-                }
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    GameModifierBridge.setSavedDohnaLockMask(this, lockMask)
-                    syncTopSwitches()
-                    refreshSummaryText()
-                    Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
-                }
-                .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
-                    GameModifierBridge.setSavedDohnaLockMask(this, 0)
-                    syncTopSwitches()
-                    refreshSummaryText()
-                    Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedDohnaLockMask(this)
+            ) { GameModifierBridge.setSavedDohnaLockMask(this, it) }
+            return
+        }
+        if (!isCurrentTargetRance10() && isCurrentTargetEvenicle()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_EV_NO_ENCOUNT to tr("禁止随机遇敌", "ランダムエンカウント無効", "Disable Random Encounters"),
+                GameModifierBridge.LOCK_EV_ALLY_FULL_HP to tr("我方全员满 HP", "味方全員HP最大", "Party Full HP"),
+                GameModifierBridge.LOCK_EV_INF_SKILL_P to tr("无限技能点 SkillP", "スキルP無限", "Infinite Skill Points"),
+                GameModifierBridge.LOCK_EV_INF_BP to tr("无限 BP", "BP無限", "Infinite BP"),
+                GameModifierBridge.LOCK_EV_ONE_HIT_KILL to tr("战斗敌方 1 血秒杀", "敵全員HP1", "Enemy 1 HP"),
+                GameModifierBridge.LOCK_EV_INFINITE_MONEY to tr("无限所持金", "所持金無限", "Infinite Gold")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedEvenicleLockMask(this)
+            ) { GameModifierBridge.setSavedEvenicleLockMask(this, it) }
             return
         }
 

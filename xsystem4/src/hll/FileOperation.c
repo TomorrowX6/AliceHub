@@ -70,7 +70,7 @@ static bool FileOperation_DeleteFile(struct string *file_name)
 
 static char *fileop_resolve_write_path(const char *sjis_path)
 {
-	if (ain && ain->version >= 12 && config.game_dir)
+	if (config.game_dir)
 		return gamedir_path(sjis_path);
 	return unix_path(sjis_path);
 }
@@ -289,8 +289,7 @@ static bool FileOperation_CopyFolder(struct string *dest_folder_name, struct str
 
 static bool get_file_list(struct string *folder_name, struct page **out, bool folders)
 {
-	char *dir_name = ain->version >= 12 ? fileop_resolve_path(folder_name->text)
-		: unix_path(folder_name->text);
+	char *dir_name = fileop_resolve_path(folder_name->text);
 	if (!dir_name) return false;
 
 	UDIR *d = opendir_utf8(dir_name);
@@ -713,6 +712,11 @@ HLL_LIBRARY(TextFile,
 	    HLL_EXPORT(ReadLine, TextFile_ReadLine),
 	    HLL_EXPORT(IsEOF, TextFile_IsEOF));
 
+HLL_LIBRARY(TextFileWriter,
+	    HLL_EXPORT(Create, TextFile_Create),
+	    HLL_EXPORT(Close, TextFile_Close),
+	    HLL_EXPORT(Write, TextFile_Write));
+
 static int EXWriter_CreateHandle(void) { return 0; }
 static void EXWriter_ReleaseHandle(possibly_unused int id) {}
 static bool EXWriter_Load(possibly_unused int id, possibly_unused struct string *file_name) { return false; }
@@ -800,6 +804,16 @@ HLL_LIBRARY(FileDialog,
 	    HLL_EXPORT(OpenSaveDialog, FileDialog_OpenSaveDialog),
 	    HLL_EXPORT(OpenSelectFolderDialog, FileDialog_OpenSelectFolderDialog));
 
+static int ADVEngine_NumofFunctionName(void) { return 0; }
+static void ADVEngine_GetFunctionName(struct string **out, possibly_unused int idx)
+{
+	if (out) {
+		if (*out)
+			free_string(*out);
+		*out = string_ref(&EMPTY_STRING);
+	}
+}
+static bool ADVEngine_AnalyseFunction(possibly_unused struct string *func_name) { return false; }
 static void ADVEngine_GetFunctionList(possibly_unused struct string *file_path,
 		possibly_unused struct page **p_array)
 {
@@ -811,27 +825,93 @@ static bool ADVEngine_LoadByText(possibly_unused struct string *text) { return f
 static void ADVEngine_Release(void) {}
 static bool ADVEngine_IsExistLowerIf(void) { return false; }
 static int ADVEngine_NumofStep(void) { return 0; }
+static int ADVEngine_NumofStep_fn(possibly_unused struct string *fn) { return 0; }
+static void *ADVEngine_ResolveNumofStep(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)ADVEngine_NumofStep_fn : (void *)ADVEngine_NumofStep;
+}
 static struct string *ADVEngine_GetStepText(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void ADVEngine_GetStepText_v6(struct string **out, possibly_unused struct string *fn, possibly_unused int step)
+{
+	if (out) {
+		if (*out) free_string(*out);
+		*out = string_ref(&EMPTY_STRING);
+	}
+}
+static void *ADVEngine_ResolveGetStepText(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetStepText;
+}
 static void ADVEngine_OpenFunctionFile(possibly_unused int step) {}
+static void ADVEngine_OpenFunctionFile_v6(possibly_unused struct string *fn, possibly_unused int step) {}
+static void *ADVEngine_ResolveOpenFunctionFile(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)ADVEngine_OpenFunctionFile_v6 : (void *)ADVEngine_OpenFunctionFile;
+}
 static int ADVEngine_GetCodeType(possibly_unused int step) { return 0; }
+static int ADVEngine_GetCodeType_v6(possibly_unused struct string *fn, possibly_unused int step) { return 0; }
+static void *ADVEngine_ResolveGetCodeType(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)ADVEngine_GetCodeType_v6 : (void *)ADVEngine_GetCodeType;
+}
 static struct string *ADVEngine_GetMessage(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void *ADVEngine_ResolveGetMessage(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetMessage;
+}
 static bool ADVEngine_BindFunction(possibly_unused int step) { return false; }
+static bool ADVEngine_BindFunction_v6(possibly_unused struct string *fn, possibly_unused int step) { return false; }
+static void *ADVEngine_ResolveBindFunction(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)ADVEngine_BindFunction_v6 : (void *)ADVEngine_BindFunction;
+}
 static struct string *ADVEngine_GetFuncName(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void *ADVEngine_ResolveGetFuncName(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetFuncName;
+}
 static int ADVEngine_CreateDelegateObjectID(possibly_unused int step) { return -1; }
+static int ADVEngine_CreateDelegateObjectID_v6(possibly_unused struct string *fn, possibly_unused int step) { return -1; }
+static void *ADVEngine_ResolveCreateDelegateObjectID(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)ADVEngine_CreateDelegateObjectID_v6 : (void *)ADVEngine_CreateDelegateObjectID;
+}
 static bool ADVEngine_GetArgumentValue_int(int *value, possibly_unused int step, possibly_unused int index)
 {
 	if (value) *value = 0;
 	return false;
+}
+static bool ADVEngine_GetArgumentValue_int_v6(int *value, possibly_unused struct string *fn, possibly_unused int step, possibly_unused int index)
+{
+	if (value) *value = 0;
+	return false;
+}
+static void *ADVEngine_ResolveGetArgInt(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 4 ? (void *)ADVEngine_GetArgumentValue_int_v6 : (void *)ADVEngine_GetArgumentValue_int;
 }
 static bool ADVEngine_GetArgumentValue_float(float *value, possibly_unused int step, possibly_unused int index)
 {
 	if (value) *value = 0.0f;
 	return false;
 }
+static bool ADVEngine_GetArgumentValue_float_v6(float *value, possibly_unused struct string *fn, possibly_unused int step, possibly_unused int index)
+{
+	if (value) *value = 0.0f;
+	return false;
+}
+static void *ADVEngine_ResolveGetArgFloat(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 4 ? (void *)ADVEngine_GetArgumentValue_float_v6 : (void *)ADVEngine_GetArgumentValue_float;
+}
 static bool ADVEngine_GetArgumentValue_bool(int *value, possibly_unused int step, possibly_unused int index)
 {
 	if (value) *value = 0;
 	return false;
+}
+static void *ADVEngine_ResolveGetArgBool(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 4 ? (void *)ADVEngine_GetArgumentValue_int_v6 : (void *)ADVEngine_GetArgumentValue_bool;
 }
 static bool ADVEngine_GetArgumentValue_string(struct string **value, possibly_unused int step, possibly_unused int index)
 {
@@ -842,6 +922,19 @@ static bool ADVEngine_GetArgumentValue_string(struct string **value, possibly_un
 	}
 	return false;
 }
+static bool ADVEngine_GetArgumentValue_string_v6(struct string **value, possibly_unused struct string *fn, possibly_unused int step, possibly_unused int index)
+{
+	if (value) {
+		if (*value)
+			free_string(*value);
+		*value = string_ref(&EMPTY_STRING);
+	}
+	return false;
+}
+static void *ADVEngine_ResolveGetArgString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 4 ? (void *)ADVEngine_GetArgumentValue_string_v6 : (void *)ADVEngine_GetArgumentValue_string;
+}
 static struct string *ADVEngine_GetIfFuncName(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
 static struct string *ADVEngine_GetIfFuncArg(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
 static int ADVEngine_GetIfValue(possibly_unused int step) { return 0; }
@@ -849,24 +942,27 @@ static bool ADVEngine_IsLowerIf(possibly_unused int step) { return false; }
 static struct string *ADVEngine_GetAttribute(possibly_unused struct string *key) { return string_ref(&EMPTY_STRING); }
 
 HLL_LIBRARY(ADVEngine,
+	    HLL_EXPORT(NumofFunctionName, ADVEngine_NumofFunctionName),
+	    HLL_EXPORT(GetFunctionName, ADVEngine_GetFunctionName),
+	    HLL_EXPORT(AnalyseFunction, ADVEngine_AnalyseFunction),
 	    HLL_EXPORT(GetFunctionList, ADVEngine_GetFunctionList),
 	    HLL_EXPORT(Load, ADVEngine_Load),
 	    HLL_EXPORT(LoadByFile, ADVEngine_LoadByFile),
 	    HLL_EXPORT(LoadByText, ADVEngine_LoadByText),
 	    HLL_EXPORT(Release, ADVEngine_Release),
 	    HLL_EXPORT(IsExistLowerIf, ADVEngine_IsExistLowerIf),
-	    HLL_EXPORT(NumofStep, ADVEngine_NumofStep),
-	    HLL_EXPORT(GetStepText, ADVEngine_GetStepText),
-	    HLL_EXPORT(OpenFunctionFile, ADVEngine_OpenFunctionFile),
-	    HLL_EXPORT(GetCodeType, ADVEngine_GetCodeType),
-	    HLL_EXPORT(GetMessage, ADVEngine_GetMessage),
-	    HLL_EXPORT(BindFunction, ADVEngine_BindFunction),
-	    HLL_EXPORT(GetFuncName, ADVEngine_GetFuncName),
-	    HLL_EXPORT(CreateDelegateObjectID, ADVEngine_CreateDelegateObjectID),
-	    HLL_EXPORT(GetArgumentValue_int, ADVEngine_GetArgumentValue_int),
-	    HLL_EXPORT(GetArgumentValue_float, ADVEngine_GetArgumentValue_float),
-	    HLL_EXPORT(GetArgumentValue_bool, ADVEngine_GetArgumentValue_bool),
-	    HLL_EXPORT(GetArgumentValue_string, ADVEngine_GetArgumentValue_string),
+	    HLL_OVERLOAD(NumofStep, ADVEngine_ResolveNumofStep),
+	    HLL_OVERLOAD(GetStepText, ADVEngine_ResolveGetStepText),
+	    HLL_OVERLOAD(OpenFunctionFile, ADVEngine_ResolveOpenFunctionFile),
+	    HLL_OVERLOAD(GetCodeType, ADVEngine_ResolveGetCodeType),
+	    HLL_OVERLOAD(GetMessage, ADVEngine_ResolveGetMessage),
+	    HLL_OVERLOAD(BindFunction, ADVEngine_ResolveBindFunction),
+	    HLL_OVERLOAD(GetFuncName, ADVEngine_ResolveGetFuncName),
+	    HLL_OVERLOAD(CreateDelegateObjectID, ADVEngine_ResolveCreateDelegateObjectID),
+	    HLL_OVERLOAD(GetArgumentValue_int, ADVEngine_ResolveGetArgInt),
+	    HLL_OVERLOAD(GetArgumentValue_float, ADVEngine_ResolveGetArgFloat),
+	    HLL_OVERLOAD(GetArgumentValue_bool, ADVEngine_ResolveGetArgBool),
+	    HLL_OVERLOAD(GetArgumentValue_string, ADVEngine_ResolveGetArgString),
 	    HLL_EXPORT(GetIfFuncName, ADVEngine_GetIfFuncName),
 	    HLL_EXPORT(GetIfFuncArg, ADVEngine_GetIfFuncArg),
 	    HLL_EXPORT(GetIfValue, ADVEngine_GetIfValue),

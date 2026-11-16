@@ -107,8 +107,8 @@ void parts_scrollbar_rebuild(struct parts *parts)
 	};
 	static const char *const states[4][3] = {
 		{ "／一般", "／通常", "／普通" },
-		{ "／オン", NULL, NULL },
-		{ "／DOWN", "／ダウン", NULL },
+		{ "／オン", "／on", "／ON" },
+		{ "／DOWN", "／ダウン", "／down" },
 		{ "／无效", "／無効", "／无効" }
 	};
 	for (int piece = 0; piece < 4; piece++) {
@@ -269,7 +269,7 @@ void parts_scrollbar_hitbox(struct parts *parts, int state, Rectangle *out_hitbo
 	int length = 0, breadth = 0, cross_off = 0;
 	scrollbar_effective_cross_metrics(parts, &length, &breadth, &cross_off);
 	Point origin = parts->states[state].common.origin_offset;
-	bool v12 = ain && ain->version >= 12;
+	bool v12 = parts_v2;
 	int off_x = v12 ? 0 : (int)parts->local.pos.x;
 	int off_y = v12 ? 0 : (int)parts->local.pos.y;
 	if (parts->scrollbar->horizontal) {

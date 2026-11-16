@@ -862,10 +862,12 @@ struct collider {
 	uint32_t nr_edges;
 	vec3 *path_points;
 	uint32_t nr_path_points;
+	bool is_navmesh;
 };
 
 struct collider *collider_create(struct pol_mesh *mesh);
 struct collider *collider_create_raycast(struct pol_mesh **meshes, int nr_meshes);
+struct collider *collider_create_from_plugin(struct RE_plugin *plugin);
 void collider_free(struct collider *collider);
 bool collider_height(struct collider *collider, vec2 xz, float *h_out);
 bool check_collision(struct collider *collider, vec2 p0, vec2 p1, float radius, vec2 out);

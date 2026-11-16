@@ -7,6 +7,7 @@ import android.os.StatFs
 import android.os.SystemClock
 import android.util.Log
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -19,6 +20,7 @@ object ArchiveExtractor {
     private const val TAG = "ArchiveExtractor"
     private const val MIN_FREE_HEADROOM_BYTES = 32L * 1024L * 1024L
     private val GBK_CHARSET: Charset by lazy { Charset.forName("GBK") }
+    private val SJIS_CHARSET: Charset by lazy { Charset.forName("Shift_JIS") }
 
     @Volatile
     private var nativeLoaded = false
@@ -50,22 +52,108 @@ object ArchiveExtractor {
             lower.endsWith(".tar.gz") ||
             lower.endsWith(".tgz") ||
             lower.endsWith(".tar.xz") ||
-            lower.endsWith(".txz")
+            lower.endsWith(".txz") ||
+            lower.endsWith(".iso") ||
+            lower.endsWith(".mdf")
     }
 
-    fun decodeEntryPath(rawBytes: ByteArray): String {
-        return try {
+    fun decodeBestCjkText(rawBytes: ByteArray, preferGbkOnTie: Boolean = true): String {
+        try {
             val decoder = Charsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
-            decoder.decode(ByteBuffer.wrap(rawBytes)).toString()
+            return decoder.decode(ByteBuffer.wrap(rawBytes)).toString()
         } catch (_: CharacterCodingException) {
-            String(rawBytes, GBK_CHARSET)
+            val sjis = decodeStrict(rawBytes, SJIS_CHARSET) ?: String(rawBytes, SJIS_CHARSET)
+            val gbk = decodeStrict(rawBytes, GBK_CHARSET) ?: String(rawBytes, GBK_CHARSET)
+            val sjisScore = scoreCjkString(sjis) + gb2312TrailPenaltyForSjis(rawBytes)
+            val gbkScore = scoreCjkString(gbk) + gb2312Bonus(rawBytes)
+            return when {
+                sjisScore > gbkScore -> sjis
+                gbkScore > sjisScore -> gbk
+                preferGbkOnTie -> gbk
+                else -> sjis
+            }
         }
     }
 
+    private fun decodeStrict(rawBytes: ByteArray, cs: Charset): String? {
+        return try {
+            cs.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(rawBytes))
+                .toString()
+        } catch (_: CharacterCodingException) {
+            null
+        }
+    }
+
+    private fun scoreCjkString(s: String): Int {
+        var score = 0
+        for (ch in s) {
+            when {
+                ch == '\uFFFD' -> score -= 25
+                ch in '\u3041'..'\u309F' || ch in '\u30A1'..'\u30FF' -> score += 4
+                ch in '\uFF61'..'\uFF9F' -> score -= 6
+                ch in '\uFF01'..'\uFF5E' -> score += 2
+                ch in '\u4E00'..'\u9FFF' -> score += 1
+            }
+        }
+        return score
+    }
+
+    private fun gb2312Bonus(bytes: ByteArray): Int {
+        var bonus = 0
+        var i = 0
+        while (i < bytes.size) {
+            val b0 = bytes[i].toInt() and 0xFF
+            if (b0 < 0x80) {
+                i++
+                continue
+            }
+            if (i + 1 < bytes.size) {
+                val b1 = bytes[i + 1].toInt() and 0xFF
+                if (b0 in 0xB0..0xF7 && b1 in 0xA1..0xFE) {
+                    bonus += 3
+                } else if (b0 in 0x81..0x9F && b1 < 0xA1) {
+                    bonus -= 3
+                }
+                i += 2
+            } else {
+                bonus -= 10
+                i++
+            }
+        }
+        return bonus
+    }
+
+    private fun gb2312TrailPenaltyForSjis(bytes: ByteArray): Int {
+        // High byte pairs in 0xB0..0xDF followed by 0xA1..0xFE cannot be two-byte Shift-JIS chars
+        var penalty = 0
+        var i = 0
+        while (i + 1 < bytes.size) {
+            val b0 = bytes[i].toInt() and 0xFF
+            if (b0 < 0x80) {
+                i++
+                continue
+            }
+            val b1 = bytes[i + 1].toInt() and 0xFF
+            if (b0 in 0xB0..0xDF && b1 in 0xA1..0xFE) {
+                penalty -= 6
+                i += 2
+            } else {
+                i += if (b0 in 0xA1..0xDF) 1 else 2
+            }
+        }
+        return penalty
+    }
+
+    fun decodeEntryPath(rawBytes: ByteArray): String =
+        decodeBestCjkText(rawBytes, preferGbkOnTie = true)
+
     /**
-     * Extracts a `.zip`, `.rar` (RAR4/RAR5), `.7z`, or `.tar.*` archive from a local [archiveFile] into [destDir].
+     * Extracts a `.zip`, `.rar` (RAR4/RAR5), `.7z`, `.tar.*`, `.iso`, or `.mdf` archive from a local [archiveFile] into [destDir].
      */
     fun extractFileToDirectory(
         archiveFile: File,
@@ -76,6 +164,17 @@ object ArchiveExtractor {
         onEntryAccepted: ((outFile: File, normalizedRelPath: String) -> Unit)? = null,
         onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)? = null
     ): Int {
+        if (Iso9660Extractor.isIsoOrMdfName(archiveFile.name)) {
+            return Iso9660Extractor.extractFileToDirectory(
+                isoFile = archiveFile,
+                outDir = destDir,
+                shouldSkip = shouldSkip,
+                throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                checkCancelled = checkCancelled,
+                onEntryAccepted = onEntryAccepted,
+                onProgress = onProgress
+            )
+        }
         ensureLoaded()
         val trackingCallback = createTrackingCallback(
             destDir = destDir,
@@ -126,8 +225,35 @@ object ArchiveExtractor {
                 null
             }
 
-            if (directPfd != null && nativeIsFdSeekable(directPfd.fd)) {
-                return runNativeExtract(directPfd.fd, trackingCallback, throwInstallFailureOnNoSpace)
+            if (directPfd != null) {
+                val isIso = try {
+                    val ch = FileInputStream(directPfd.fileDescriptor).channel
+                    val detected = Iso9660Extractor.isIsoOrMdfChannel(ch)
+                    if (!detected) {
+                        try { ch.position(0L) } catch (_: Throwable) {}
+                    }
+                    detected
+                } catch (_: Throwable) {
+                    false
+                }
+                if (isIso) {
+                    directPfd.close()
+                    directPfd = null
+                    return Iso9660Extractor.extractUriToDirectory(
+                        context = context,
+                        uri = uri,
+                        outDir = destDir,
+                        tempScratchParent = tempScratchParent,
+                        shouldSkip = shouldSkip,
+                        throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                        checkCancelled = checkCancelled,
+                        onEntryAccepted = onEntryAccepted,
+                        onProgress = onProgress
+                    )
+                }
+                if (nativeIsFdSeekable(directPfd.fd)) {
+                    return runNativeExtract(directPfd.fd, trackingCallback, throwInstallFailureOnNoSpace)
+                }
             }
 
             directPfd?.close()

@@ -286,6 +286,19 @@ static bool ChipmunkSpriteEngine_SP_IsSuspend(int sp_no)
 //static void ChipmunkSpriteEngine_ReleaseCombinedTexture(void);
 
 
+static bool frame_skip_all_while_msg_skip = false;
+static void ChipmunkSpriteEngine_SYSTEM_SetConfigFrameSkipAllWhileMessageSkip(bool flag)
+{
+	frame_skip_all_while_msg_skip = flag;
+}
+static bool ChipmunkSpriteEngine_SYSTEM_GetConfigFrameSkipAllWhileMessageSkip(void)
+{
+	return frame_skip_all_while_msg_skip;
+}
+static int ChipmunkSpriteEngine_Debug_GetAllocatedMemorySize(void) { return 0; }
+static void ChipmunkSpriteEngine_CombineTexture(void) {}
+static void ChipmunkSpriteEngine_ReleaseCombinedTexture(void) {}
+
 static int ChipmunkSpriteEngine_Debug_GetFillRate(void) { return 0; }
 HLL_LIBRARY(ChipmunkSpriteEngine,
 	    HLL_EXPORT(Debug_GetFillRate, ChipmunkSpriteEngine_Debug_GetFillRate),
@@ -414,18 +427,19 @@ HLL_LIBRARY(ChipmunkSpriteEngine,
 	    HLL_EXPORT(SYSTEM_GetReadMessageSkipping, StoatSpriteEngine_SYSTEM_GetReadMessageSkipping),
 	    HLL_EXPORT(SYSTEM_SetConfigFrameSkipWhileMessageSkip, StoatSpriteEngine_SYSTEM_SetConfigFrameSkipWhileMessageSkip),
 	    HLL_EXPORT(SYSTEM_GetConfigFrameSkipWhileMessageSkip, StoatSpriteEngine_SYSTEM_GetConfigFrameSkipWhileMessageSkip),
+	    HLL_EXPORT(SYSTEM_SetConfigFrameSkipAllWhileMessageSkip, ChipmunkSpriteEngine_SYSTEM_SetConfigFrameSkipAllWhileMessageSkip),
+	    HLL_EXPORT(SYSTEM_GetConfigFrameSkipAllWhileMessageSkip, ChipmunkSpriteEngine_SYSTEM_GetConfigFrameSkipAllWhileMessageSkip),
 	    HLL_EXPORT(SYSTEM_SetInvalidateFrameSkipWhileMessageSkip, StoatSpriteEngine_SYSTEM_SetInvalidateFrameSkipWhileMessageSkip),
 	    HLL_EXPORT(SYSTEM_GetInvalidateFrameSkipWhileMessageSkip, StoatSpriteEngine_SYSTEM_GetInvalidateFrameSkipWhileMessageSkip),
-	    HLL_TODO_EXPORT(Debug_GetCurrentAllocatedMemorySize, StoatSpriteEngine_Debug_GetCurrentAllocatedMemorySize),
-	    HLL_TODO_EXPORT(Debug_GetMaxAllocatedMemorySize, StoatSpriteEngine_Debug_GetMaxAllocatedMemorySize),
-	    HLL_TODO_EXPORT(Debug_GetFillRate, StoatSpriteEngine_Debug_GetFillRate),
+	    HLL_EXPORT(Debug_GetCurrentAllocatedMemorySize, ChipmunkSpriteEngine_Debug_GetAllocatedMemorySize),
+	    HLL_EXPORT(Debug_GetMaxAllocatedMemorySize, ChipmunkSpriteEngine_Debug_GetAllocatedMemorySize),
 	    HLL_TODO_EXPORT(MUSIC_ReloadParam, StoatSpriteEngine_MUSIC_ReloadParam),
 	    HLL_EXPORT(SP_Suspend, ChipmunkSpriteEngine_SP_Suspend),
 	    HLL_EXPORT(SP_Resume, ChipmunkSpriteEngine_SP_Resume),
 	    HLL_EXPORT(SP_IsSuspend, ChipmunkSpriteEngine_SP_IsSuspend),
 	    HLL_TODO_EXPORT(Debug_GetVideoMemoryInfo, ChipmunkSpriteEngine_Debug_GetVideoMemoryInfo),
-	    HLL_TODO_EXPORT(CombineTexture, ChipmunkSpriteEngine_CombineTexture),
-	    HLL_TODO_EXPORT(ReleaseCombinedTexture, ChipmunkSpriteEngine_ReleaseCombinedTexture));
+	    HLL_EXPORT(CombineTexture, ChipmunkSpriteEngine_CombineTexture),
+	    HLL_EXPORT(ReleaseCombinedTexture, ChipmunkSpriteEngine_ReleaseCombinedTexture));
 
 static struct ain_hll_function *get_fun(int libno, const char *name)
 {

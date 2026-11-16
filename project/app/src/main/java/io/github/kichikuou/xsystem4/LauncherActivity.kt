@@ -5,30 +5,78 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import android.widget.BaseAdapter
 import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+
+private const val LAUNCHER_INSTALL_ARCHIVE_REQ = 31
+private const val LAUNCHER_INSTALL_DIR_REQ = 32
+private const val STATE_SEARCH_VISIBLE = "STATE_SEARCH_VISIBLE"
+private const val STATE_SEARCH_QUERY = "STATE_SEARCH_QUERY"
 
 private class GameSelectAdapter(
     private val activity: Activity,
     private val gameList: GameList
 ) : BaseAdapter() {
     private val context: Context = activity
-    private var entries: List<GameSelectEntry> = GameCatalog.buildSelectEntries(activity, gameList)
+    private var allEntries: List<GameSelectEntry> = GameCatalog.buildSelectEntries(activity, gameList)
+    private var entries: List<GameSelectEntry> = allEntries
+    private var filterQuery: String = ""
 
     fun reload() {
-        entries = GameCatalog.buildSelectEntries(context, gameList)
+        allEntries = GameCatalog.buildSelectEntries(context, gameList)
+        applyFilter()
+    }
+
+    fun setFilter(query: String) {
+        val trimmed = query.trim()
+        if (trimmed == filterQuery) return
+        filterQuery = trimmed
+        applyFilter()
+    }
+
+    fun hasQuery(): Boolean = filterQuery.isNotEmpty()
+
+    private fun applyFilter() {
+        entries = if (filterQuery.isEmpty()) {
+            allEntries
+        } else {
+            allEntries.filter { matchesQuery(it, filterQuery) }
+        }
         notifyDataSetChanged()
+    }
+
+    private fun matchesQuery(entry: GameSelectEntry, q: String): Boolean {
+        val desc = entry.descriptor
+        if (desc.title.contains(q, ignoreCase = true) ||
+            desc.defaultDirName.contains(q, ignoreCase = true) ||
+            desc.id.removePrefix(GameCatalog.PREFIX_CUSTOM).contains(q, ignoreCase = true) ||
+            (desc.expectedAinName?.contains(q, ignoreCase = true) == true)
+        ) {
+            return true
+        }
+        return entry.items.any {
+            it.name.contains(q, ignoreCase = true) || it.path.name.contains(q, ignoreCase = true)
+        }
     }
 
     override fun getCount(): Int = entries.size
@@ -79,8 +127,15 @@ private class GameSelectAdapter(
                 badgeTone = UiKit.Tone.DANGER
             }
             primary != null && gameList.hasInstalledMod(primary) -> {
-                val ver = gameList.getInstalledModInfo(primary)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
-                badgeLabel = context.getString(R.string.game_status_installed_mod, ver)
+                val modInfo = gameList.getInstalledModInfo(primary)
+                val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
+                val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
+                val statusRes = if (isCnPatch) {
+                    R.string.game_status_installed_cn_patch
+                } else {
+                    R.string.game_status_installed_mod
+                }
+                badgeLabel = context.getString(statusRes, ver)
                 badgeTone = UiKit.Tone.SUCCESS
             }
             primary != null -> {
@@ -114,8 +169,13 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     private lateinit var gameList: GameList
     private lateinit var adapter: GameSelectAdapter
+    private lateinit var listView: ListView
+    private lateinit var searchBarContainer: View
+    private lateinit var searchInput: EditText
+    private lateinit var searchEmptyView: TextView
     private var progressDialog: Dialog? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
+    private var searchBackCallback: Any? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,7 +189,41 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         val banner = findViewById<TextView>(R.id.active_install_banner)
         banner.setOnClickListener { onActiveInstallBannerClick() }
 
-        val listView = findViewById<ListView>(R.id.list)
+        searchBarContainer = findViewById(R.id.search_bar_container)
+        searchInput = findViewById(R.id.search_input)
+        searchEmptyView = findViewById(R.id.search_empty_view)
+        listView = findViewById(R.id.list)
+        UiKit.bindEmptyState(searchEmptyView, R.drawable.ic_search, getString(R.string.search_empty))
+
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                adapter.setFilter(s?.toString().orEmpty())
+                updateSearchEmptyState()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        searchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                hideSoftKeyboard()
+                searchInput.clearFocus()
+                true
+            } else {
+                false
+            }
+        }
+        findViewById<ImageButton>(R.id.btn_search_clear).setOnClickListener {
+            if (searchInput.text.isNotEmpty()) {
+                searchInput.setText("")
+            } else {
+                setSearchVisible(false)
+            }
+        }
+
+        findViewById<ImageButton>(R.id.fab_import_game).setOnClickListener {
+            onImportOtherGameClicked()
+        }
+
         listView.adapter = adapter
         listView.setOnItemClickListener { _, _, pos, _ ->
             val entry = adapter.getItem(pos)
@@ -139,7 +233,95 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
             )
         }
 
+        if (savedInstanceState != null) {
+            val savedVisible = savedInstanceState.getBoolean(STATE_SEARCH_VISIBLE, false)
+            val savedQuery = savedInstanceState.getString(STATE_SEARCH_QUERY, "")
+            if (savedVisible || savedQuery.isNotEmpty()) {
+                searchBarContainer.visibility = View.VISIBLE
+                searchInput.setText(savedQuery)
+                searchInput.setSelection(searchInput.text.length)
+                adapter.setFilter(savedQuery)
+                updateSearchEmptyState()
+                syncSearchBackCallback(true)
+            }
+        }
+
         handleRestoreDialogIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::searchBarContainer.isInitialized) {
+            outState.putBoolean(STATE_SEARCH_VISIBLE, searchBarContainer.visibility == View.VISIBLE)
+            outState.putString(STATE_SEARCH_QUERY, searchInput.text?.toString().orEmpty())
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (::searchBarContainer.isInitialized && searchBarContainer.visibility == View.VISIBLE) {
+            setSearchVisible(false)
+            return
+        }
+        super.onBackPressed()
+    }
+
+    private fun syncSearchBackCallback(active: Boolean) {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (active) {
+            if (searchBackCallback == null) {
+                val cb = OnBackInvokedCallback { setSearchVisible(false) }
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    cb
+                )
+                searchBackCallback = cb
+            }
+        } else {
+            val cb = searchBackCallback as? OnBackInvokedCallback ?: return
+            try {
+                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+            } catch (_: Throwable) {
+            }
+            searchBackCallback = null
+        }
+    }
+
+    private fun reloadEntries() {
+        adapter.reload()
+        updateSearchEmptyState()
+    }
+
+    private fun updateSearchEmptyState() {
+        val showEmpty = adapter.count == 0 && adapter.hasQuery()
+        searchEmptyView.visibility = if (showEmpty) View.VISIBLE else View.GONE
+        listView.visibility = if (showEmpty) View.GONE else View.VISIBLE
+    }
+
+    private fun setSearchVisible(visible: Boolean) {
+        if (visible) {
+            searchBarContainer.visibility = View.VISIBLE
+            syncSearchBackCallback(true)
+            searchInput.requestFocus()
+            searchInput.post {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        } else {
+            syncSearchBackCallback(false)
+            hideSoftKeyboard()
+            searchInput.setText("")
+            searchInput.clearFocus()
+            searchBarContainer.visibility = View.GONE
+            adapter.setFilter("")
+            updateSearchEmptyState()
+        }
+    }
+
+    private fun hideSoftKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -147,7 +329,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         setIntent(intent)
         handleRestoreDialogIntent(intent)
         if (::gameList.isInitialized) {
-            adapter.reload()
+            reloadEntries()
             renderInstallState(gameList.installState)
         }
     }
@@ -161,6 +343,43 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         if (requestCode == InstallForegroundService.REQ_POST_NOTIFICATIONS) {
             InstallForegroundService.flushLatestNotification(this)
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        when (requestCode) {
+            LAUNCHER_INSTALL_DIR_REQ -> {
+                pendingPostResumeAction = {
+                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+                    gameList.installDirectory(uri = uri)
+                    reloadEntries()
+                    renderInstallState(gameList.installState)
+                }
+            }
+            LAUNCHER_INSTALL_ARCHIVE_REQ -> {
+                pendingPostResumeAction = {
+                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+                    gameList.installArchive(uri = uri)
+                    reloadEntries()
+                    renderInstallState(gameList.installState)
+                }
+            }
+        }
+    }
+
+    private fun onImportOtherGameClicked() {
+        if (gameList.installState is InstallState.Installing) {
+            onActiveInstallBannerClick()
+            return
+        }
+        GameCatalog.showLocalGameImportDialog(
+            activity = this,
+            titleRes = R.string.action_import_other_game,
+            archiveReqCode = LAUNCHER_INSTALL_ARCHIVE_REQ,
+            dirReqCode = LAUNCHER_INSTALL_DIR_REQ
+        )
     }
 
     private fun handleRestoreDialogIntent(srcIntent: Intent?) {
@@ -186,7 +405,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
             setGameList(latestList)
         } else {
             gameList.observer = this
-            adapter.reload()
+            reloadEntries()
             renderInstallState(gameList.installState)
         }
         val postAction = pendingPostResumeAction
@@ -204,6 +423,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onDestroy() {
+        syncSearchBackCallback(false)
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null
         }
@@ -218,6 +438,10 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_search -> {
+                setSearchVisible(searchBarContainer.visibility != View.VISIBLE)
+                true
+            }
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
                 true
@@ -246,22 +470,22 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onInstallProgress(path: String) {
-        adapter.reload()
+        reloadEntries()
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallSuccess() {
-        adapter.reload()
+        reloadEntries()
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallCancelled() {
-        adapter.reload()
+        reloadEntries()
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallFailure(msgId: Int) {
-        adapter.reload()
+        reloadEntries()
         renderInstallState(gameList.installState)
     }
 
@@ -272,7 +496,9 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         gameList = newGameList
         gameList.observer = this
         adapter = GameSelectAdapter(this, gameList)
-        findViewById<ListView>(R.id.list).adapter = adapter
+        adapter.setFilter(searchInput.text?.toString().orEmpty())
+        listView.adapter = adapter
+        updateSearchEmptyState()
         renderInstallState(gameList.installState)
     }
 
@@ -297,13 +523,13 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
             }
             InstallState.Succeeded -> {
                 dismissProgressDialog()
-                adapter.reload()
+                reloadEntries()
                 Toast.makeText(this, R.string.install_done_toast, Toast.LENGTH_SHORT).show()
                 gameList.consumeInstallResult()
             }
             is InstallState.Cancelled -> {
                 dismissProgressDialog()
-                adapter.reload()
+                reloadEntries()
                 if (state.paused) {
                     Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_LONG).show()
                 } else {
@@ -313,7 +539,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
             }
             is InstallState.Failed -> {
                 dismissProgressDialog()
-                adapter.reload()
+                reloadEntries()
                 gameList.consumeInstallResult()
                 AlertDialog.Builder(this).setTitle(R.string.error)
                     .setMessage(state.msgId)

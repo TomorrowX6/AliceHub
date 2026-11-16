@@ -48,6 +48,7 @@ struct parts_context *parts_current = &live_context;
 #define root_pos (parts_current->origin)
 
 bool parts_multi_controller;
+bool parts_v2 = false;
 
 static void ctrl_stack_init(void);
 static void parts_change_controller(struct parts *parts, int index);
@@ -72,7 +73,7 @@ static void parts_init(struct parts *parts)
 	parts->sp.to_json = parts_sprite_to_json;
 	parts->local = PARTS_PARAMS_INITIALIZER;
 	parts->global = PARTS_PARAMS_INITIALIZER;
-	if (ain && ain->version >= 12) {
+	if (parts_v2) {
 		parts->local.z = 0;
 		parts->global.z = 0;
 	}
@@ -201,7 +202,7 @@ struct parts *parts_get(int parts_no)
 	parts->controller_no = ctrl_stack.active;
 	slot->value = parts;
 	parts_list_insert(parts);
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		int root = ctrl_stack.active == PARTS_CONTROLLER_SYSTEM_OVERLAY
 			? ctrl_stack.overlay_id : ctrl_stack.ids[ctrl_stack.active];
 		struct parts *parent = root != parts_no ? parts_try_get(root) : NULL;
@@ -523,7 +524,7 @@ void parts_state_reset(struct parts_state *state, enum parts_type type)
 		state->text.ruby_ts.size = 10.0f;
 		break;
 	case PARTS_NUMERAL:
-		state->num.length = ain->version >= 12 ? 0 : 1;
+		state->num.length = parts_v2 ? 0 : 1;
 		state->num.font_no = -1;
 		state->num.show_padding = true;
 		state->num.ts = default_text_style;
@@ -671,6 +672,7 @@ struct parts_3dlayer *parts_get_3dlayer(struct parts *parts, int state)
 static Point calculate_offset(int mode, int w, int h)
 {
 	switch (mode) {
+	case 0:  return (Point) {    0, 0    }; // unset -> top-left
 	case 1:  return (Point) {    0, 0    }; // top-left
 	case 2:  return (Point) { -w/2, 0    }; // top-center
 	case 3:  return (Point) {   -w, 0    }; // top-right
@@ -695,8 +697,8 @@ static void parts_common_recalculate_hitbox(struct parts *parts, struct parts_co
 	if (parts->states[0].type == PARTS_LAYOUT_BOX)
 		parts_render_gen++;
 	// v12 hitboxes stay in component space; transforms retain subpixel positions.
-	float x = ain->version >= 12 ? 0 : parts->local.pos.x;
-	float y = ain->version >= 12 ? 0 : parts->local.pos.y;
+	float x = parts_v2 ? 0 : parts->local.pos.x;
+	float y = parts_v2 ? 0 : parts->local.pos.y;
 	if (parts->component_type == 1 && parts->widget && common != &parts->widget->label.common) {
 		int width, height;
 		parts_widget_get_size(parts, &width, &height);
@@ -804,7 +806,7 @@ static void parts_update_global_pos_mat(struct parts *parts, SDL_FPoint parent_p
 		parent_pos.y + parts->local.pos.y
 	};
 	mat4 matrix;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		glm_mat4_copy(parent_matrix, matrix);
 		parts_apply_local_matrix(parts, matrix);
 		parts->global.pos = (SDL_FPoint){matrix[3][0], matrix[3][1]};
@@ -823,7 +825,7 @@ static void parts_update_global_pos_mat(struct parts *parts, SDL_FPoint parent_p
 static void parts_update_global_pos(struct parts *parts, SDL_FPoint parent_pos)
 {
 	mat4 parent_matrix = GLM_MAT4_IDENTITY_INIT;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (parts->parent) {
 			parts_world_matrix(parts->parent, parent_matrix);
 		} else if (root_pos.x != 0 || root_pos.y != 0) {
@@ -918,7 +920,7 @@ bool parts_is_visible(struct parts *parts)
 		}
 		if (p->checkbox_show_link > 0) {
 			struct parts *cb = parts_try_get(p->checkbox_show_link);
-			if (!cb || !cb->widget || !cb->widget->checked)
+			if (!cb || (cb->widget && !cb->widget->checked))
 				return false;
 		}
 		rot_x += p->local.rotation.x;
@@ -1409,7 +1411,7 @@ void parts_set_state(struct parts *parts, enum parts_state_type state)
 		return;
 	while (state > PARTS_STATE_DEFAULT) {
 		struct parts_state *s = &parts->states[state];
-		if (s->type != PARTS_UNINITIALIZED && !(ain->version >= 12
+		if (s->type != PARTS_UNINITIALIZED && !(parts_v2
 				&& s->type == PARTS_CG && !s->common.texture.handle)) break;
 		state--;
 	}
@@ -1709,7 +1711,7 @@ static void parts_update_component_mat(struct parts *parts, mat4 parent_matrix)
 		parts_combine_params(&parts->parent->global, &parts->local, &parts->global);
 	}
 	mat4 matrix;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		glm_mat4_copy(parent_matrix, matrix);
 		parts_apply_local_matrix(parts, matrix);
 		parts->global.pos = (SDL_FPoint){matrix[3][0], matrix[3][1]};
@@ -1728,7 +1730,7 @@ static void parts_update_component_mat(struct parts *parts, mat4 parent_matrix)
 		parts->dirty = false;
 	}
 
-	if (ain->version < 12) parts_do_layout(parts);
+	if (!parts_v2) parts_do_layout(parts);
 
 	struct parts *child;
 	PARTS_FOREACH_CHILD(child, parts) {
@@ -1739,7 +1741,7 @@ static void parts_update_component_mat(struct parts *parts, mat4 parent_matrix)
 static void parts_update_component(struct parts *parts)
 {
 	mat4 parent_matrix = GLM_MAT4_IDENTITY_INIT;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (parts->parent) {
 			parts_world_matrix(parts->parent, parent_matrix);
 		} else if (root_pos.x != 0 || root_pos.y != 0) {
@@ -1786,7 +1788,7 @@ void PE_UpdateComponent(possibly_unused int passed_time)
 		// update child params
 		parts_update_component(parts);
 	}
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		// Resolve all pending parent links first, then measure children before parents.
 		struct parts *parts;
 		PARTS_LIST_FOREACH(parts) {
@@ -2500,7 +2502,7 @@ bool PE_SetNumeralLength(int parts_no, int length, int state)
 	if (num->length == length)
 		return true;
 
-	num->length = max(ain->version >= 12 ? 0 : 1, length);
+	num->length = max(parts_v2 ? 0 : 1, length);
 	num->have_num = true;
 	parts_numeral_update(parts, num);
 	return true;
@@ -2626,7 +2628,7 @@ void PE_ReleaseParts(int parts_no)
 
 void parts_world_matrix(struct parts *parts, mat4 out)
 {
-	if (ain->version < 12) {
+	if (!parts_v2) {
 		glm_mat4_identity(out);
 		glm_translate(out, (vec3){parts->global.pos.x, parts->global.pos.y, 0});
 		glm_rotate_z(out, glm_rad(parts->local.rotation.z), out);
@@ -2667,8 +2669,8 @@ void PE_GetComponentAbsoluteSquarePos(int no, float *x0, float *y0,
 	struct parts_common *c = &parts->states[state].common;
 	mat4 matrix;
 	parts_world_matrix(parts, matrix);
-	float x = c->hitbox.x - (ain->version < 12 ? parts->local.pos.x : 0);
-	float y = c->hitbox.y - (ain->version < 12 ? parts->local.pos.y : 0);
+	float x = c->hitbox.x - (!parts_v2 ? parts->local.pos.x : 0);
+	float y = c->hitbox.y - (!parts_v2 ? parts->local.pos.y : 0);
 	float *xs[] = {x0, x1, x2, x3}, *ys[] = {y0, y1, y2, y3};
 	for (int i = 0; i < 4; i++) {
 		vec4 v = {x + (i & 1 ? c->hitbox.w : 0), y + (i & 2 ? c->hitbox.h : 0), 0, 1};
@@ -2823,7 +2825,7 @@ int PE_GetPartsWidth(int parts_no, int state)
 	if (!parts_state_valid(--state))
 		return 0;
 	struct parts *parts = parts_get(parts_no);
-	if (ain->version >= 12 && (parts->component_type == 15 || parts->widget
+	if (parts_v2 && ((ain->version >= 12 && parts->component_type == 15) || parts->widget
 			|| parts->states[state].type == PARTS_LAYOUT_BOX)) {
 		int w, h;
 		parts_get_layout_size(parts, &w, &h);
@@ -2837,7 +2839,7 @@ int PE_GetPartsHeight(int parts_no, int state)
 	if (!parts_state_valid(--state))
 		return 0;
 	struct parts *parts = parts_get(parts_no);
-	if (ain->version >= 12 && (parts->component_type == 15 || parts->widget
+	if (parts_v2 && ((ain->version >= 12 && parts->component_type == 15) || parts->widget
 			|| parts->states[state].type == PARTS_LAYOUT_BOX)) {
 		int w, h;
 		parts_get_layout_size(parts, &w, &h);
@@ -2852,7 +2854,7 @@ int PE_GetPartsUpperLeftPosX(int parts_no, int state)
 		return 0;
 	struct parts *parts = parts_get(parts_no);
 	int x = parts->states[state].common.hitbox.x;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
 		vec4 pos = {x, parts->states[state].common.hitbox.y, 0, 1};
@@ -2870,7 +2872,7 @@ int PE_GetPartsUpperLeftPosY(int parts_no, int state)
 		return 0;
 	struct parts *parts = parts_get(parts_no);
 	int y = parts->states[state].common.hitbox.y;
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
 		vec4 pos = {parts->states[state].common.hitbox.x, y, 0, 1};
@@ -2933,7 +2935,7 @@ int PE_GetPartsOriginPosMode(int parts_no)
 void PE_SetParentPartsNumber(int parts_no, int parent_parts_no)
 {
 	struct parts *parts = parts_get(parts_no);
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (parent_parts_no <= 0)
 			parent_parts_no = parts->controller_no == PARTS_CONTROLLER_SYSTEM_OVERLAY
 				? ctrl_stack.overlay_id : ctrl_stack.ids[parts->controller_no];
@@ -2961,12 +2963,12 @@ void PE_SetParentPartsNumber(int parts_no, int parent_parts_no)
 
 int PE_GetParentPartsNumber(int parts_no)
 {
-	if (ain->version >= 12 && parts_no <= 0)
+	if (parts_v2 && parts_no <= 0)
 		return 0;
 	struct parts *parts = parts_get(parts_no);
 	if (parts->parent)
 		return parts->parent->no;
-	return ain->version >= 12 ? 0 : -1;
+	return parts_v2 ? 0 : -1;
 }
 
 int PE_NumofChild(int no)
@@ -3119,7 +3121,7 @@ bool PE_save_thumbnail(struct string *filename, int reduction_factor)
 
 	Texture *src = gfx_main_surface();
 	int w, h;
-	if (ain->version >= 12) {
+	if (ain->version >= 12 || reduction_factor > 16) {
 		w = reduction_factor;
 		h = src->w > 0 ? (int)((int64_t)src->h * w / src->w) : 1;
 		if (h < 1)
@@ -3174,6 +3176,10 @@ int PE_GetInputState(int parts_no)
 
 void PE_SetComponentType(int parts_no, int type, int state)
 {
+	if ((type >= 0 && type <= 7) || type == 9) {
+		PE_SetSpecialComponentType(parts_no, type);
+		return;
+	}
 	if (!parts_state_valid(--state))
 		return;
 	struct parts *parts = parts_get(parts_no);
@@ -3185,13 +3191,17 @@ void PE_SetComponentType(int parts_no, int type, int state)
 	enum parts_type pt = PARTS_UNINITIALIZED;
 	switch (type) {
 	case 8:  pt = PARTS_LAYOUT_BOX; break;
+	case 10: pt = PARTS_UNINITIALIZED; break;
 	case 11: pt = PARTS_CG; break;
 	case 12: pt = PARTS_ANIMATION; break;
 	case 13: pt = PARTS_TEXT; break;
 	case 14: pt = PARTS_HGAUGE; break;
 	case 15: pt = PARTS_VGAUGE; break;
 	case 16: pt = PARTS_NUMERAL; break;
-	case 17: pt = PARTS_RECT_DETECTION; break;
+	case 17:
+	case 19:
+		pt = PARTS_RECT_DETECTION;
+		break;
 	case 18: pt = PARTS_CONSTRUCTION_PROCESS; break;
 	case 20: pt = PARTS_FLAT; break;
 	case 21: pt = PARTS_3DLAYER; break;
@@ -3201,6 +3211,8 @@ void PE_SetComponentType(int parts_no, int type, int state)
 	}
 	if (parts->states[state].type != pt)
 		parts_state_reset(&parts->states[state], pt);
+	if (type == 19)
+		parts->states[state].rect.is_cg_detection = true;
 }
 
 int PE_GetComponentType(int parts_no, int state)
@@ -3210,6 +3222,11 @@ int PE_GetComponentType(int parts_no, int state)
 	struct parts *parts = parts_try_get(parts_no);
 	if (!parts)
 		return -1;
+	if (!ain || ain->version < 12) {
+		int special = PE_GetSpecialComponentType(parts_no);
+		if (special >= 0)
+			return special;
+	}
 
 	switch (parts->states[state].type) {
 	case PARTS_LAYOUT_BOX: return 8;
@@ -3221,7 +3238,8 @@ int PE_GetComponentType(int parts_no, int state)
 	case PARTS_HGAUGE: return 14;
 	case PARTS_VGAUGE: return 15;
 	case PARTS_NUMERAL: return 16;
-	case PARTS_RECT_DETECTION: return 17;
+	case PARTS_RECT_DETECTION:
+		return parts->states[state].rect.is_cg_detection ? 19 : 17;
 	case PARTS_CONSTRUCTION_PROCESS: return 18;
 	case PARTS_FLAT: return 20;
 	case PARTS_3DLAYER: return 21;
@@ -3311,7 +3329,7 @@ bool PE_SetPartsCGDetectionSize(int parts_no, struct string *cg_name, int state)
 
 int PE_GetFreeNumber(void)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (parts_current->next_free_no < 1000010000)
 			parts_current->next_free_no = 1000010000;
 		int no = parts_current->next_free_no;
@@ -3336,7 +3354,7 @@ bool PE_IsExist(int parts_no)
 static void ctrl_stack_init(void)
 {
 	memset(&ctrl_stack, 0, sizeof(ctrl_stack));
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		ctrl_stack.active = PARTS_CONTROLLER_SYSTEM_OVERLAY;
 		ctrl_stack.overlay_id = PE_GetFreeNumber();
 		parts_get_layout_box(parts_get(ctrl_stack.overlay_id))->layout_type = PARTS_LAYOUT_FREE;
@@ -3371,7 +3389,7 @@ static void ctrl_stack_reindex(void)
 // degenerates to a simple push.
 int PE_AddController(int index)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (ctrl_stack.nr_controllers >= PARTS_CONTROLLER_STACK_MAX)
 			VM_ERROR("controller stack overflow");
 		// v12's misleadingly named Index is the ID to insert after.
@@ -3433,7 +3451,7 @@ static void parts_clear_int_output(struct page **output)
 // degenerates to a simple pop.
 void PE_RemoveController(struct page **erase_number_list, int index)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		// The original retains its last controller and omits the controller
 		// root itself from the list of erased delegates.
 		if (ctrl_stack.nr_controllers <= 1) return;
@@ -3505,7 +3523,7 @@ void PE_MoveController(int id, int index)
 
 void PE_set_active_controller(int controller_no)
 {
-	if (ain->version >= 12) {
+	if (parts_v2) {
 		if (controller_no == ctrl_stack.overlay_id) {
 			ctrl_stack.active = PARTS_CONTROLLER_SYSTEM_OVERLAY;
 			return;
@@ -3524,7 +3542,7 @@ void PE_set_active_controller(int controller_no)
 
 int PE_get_active_controller(void)
 {
-	if (ain->version >= 12)
+	if (parts_v2)
 		return ctrl_stack.active == PARTS_CONTROLLER_SYSTEM_OVERLAY
 			? ctrl_stack.overlay_id : ctrl_stack.ids[ctrl_stack.active];
 	return ctrl_stack.active;
@@ -3532,7 +3550,7 @@ int PE_get_active_controller(void)
 
 int PE_get_system_controller(void)
 {
-	if (ain->version >= 12) return ctrl_stack.overlay_id;
+	if (parts_v2) return ctrl_stack.overlay_id;
 	return PARTS_CONTROLLER_SYSTEM_OVERLAY;
 }
 

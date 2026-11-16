@@ -88,7 +88,19 @@ static bool vsfile_open(struct string *filename, bool read)
 		fclose(vs_file);
 	}
 	vs_read = read;
+	if (!read) {
+		char *dir = path_dirname(u);
+		if (dir && *dir)
+			mkdir_p(dir);
+	}
 	vs_file = file_open_utf8(u, read ? "rb" : "wb");
+	if (!vs_file && read) {
+		char *gu = gamedir_path_icase(filename->text);
+		if (gu) {
+			vs_file = file_open_utf8(gu, "rb");
+			free(gu);
+		}
+	}
 	if (!vs_file) {
 		WARNING("Failed to open '%s': %s", display_utf0(u), strerror(errno));
 	}

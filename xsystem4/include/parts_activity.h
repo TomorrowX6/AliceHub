@@ -25,9 +25,27 @@ struct string *PE_GetActivityEXText(struct string *name);
 void PE_SetActivityBG(struct string *name, struct string *cg);
 struct string *PE_GetActivityBG(struct string *name);
 void PE_AddActivityCloseParts(struct string *name, struct string *part_name);
+void PE_RemoveActivityCloseParts(struct string *name, struct string *part_name);
+void PE_RemoveAllActivityCloseParts(struct string *name);
 bool PE_IsExistActivityCloseParts(struct string *name, struct string *part_name);
 void PE_AddActivityLockedParts(struct string *name, struct string *part_name);
 bool PE_IsExistActivityLockedParts(struct string *name, struct string *part_name);
+void PE_SetActivityIntentData(struct string *name, struct string *part_name, struct string *dest, int type);
+void PE_AddActivityIntentDataDestination(struct string *name, struct string *part_name, struct string *dest);
+bool PE_IsExistActivityIntentData(struct string *name, struct string *part_name);
+int PE_NumofActivityIntentData(struct string *name);
+int PE_NumofActivityIntentDataDestination(struct string *name, struct string *part_name);
+struct string *PE_GetActivityIntentDataSource(struct string *name, int index);
+struct string *PE_GetActivityIntentDataDestination(int index, struct string *name, struct string *part_name);
+int PE_GetActivityIntentDataType(struct string *name, struct string *part_name);
+void PE_SetActivityFunc(struct string *name, struct string *part_name, int state,
+		struct string *fmap_id, struct string *func_name);
+struct string *PE_GetActivityFunc(struct string *name, struct string *part_name, int state, struct string *fmap_id);
+int PE_NumofActivityFunc(struct string *name, struct string *part_name, int state);
+void PE_GetActivityFuncPair(int index, struct string *name, struct string *part_name, int state,
+		struct string **fmap_id, struct string **func_name);
+bool PE_CrateActivityBinary(struct string *name, struct page **data);
+bool PE_ReadActivityBinary(struct string *name, struct page **data);
 void PE_SetActivityEndKey(struct string *name, int key);
 void PE_EraseActivityEndKey(struct string *name, int key);
 bool PE_IsExistActivityEndKey(struct string *name, int key);

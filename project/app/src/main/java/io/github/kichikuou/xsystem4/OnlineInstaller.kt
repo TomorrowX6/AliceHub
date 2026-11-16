@@ -34,7 +34,8 @@ data class ModReleaseEntry(
     val baseFileId: Int?,
     val baseVersion: String?,
     val expectedSize: Long = -1L,
-    val expectedSha256: String? = null
+    val expectedSha256: String? = null,
+    val group: String = ""
 ) {
     val formattedDate: String
         get() = uploadedAt.replace('T', ' ').take(16)
@@ -51,13 +52,16 @@ data class InstalledModInfo(
     val fileName: String,
     val uploadedAt: String,
     val source: String,
-    val installedAtMs: Long
+    val installedAtMs: Long,
+    val kind: String = KIND_MOD
 ) {
     val formattedDate: String
         get() = uploadedAt.replace('T', ' ').take(16)
 
     companion object {
         const val META_FILE_NAME = ".mod_version.json"
+        const val KIND_MOD = "mod"
+        const val KIND_CN_PATCH = "cn_patch"
 
         fun read(gameDir: File): InstalledModInfo? {
             val f = File(gameDir, META_FILE_NAME)
@@ -69,13 +73,14 @@ data class InstalledModInfo(
                 val rawBaseVer = j.optString("baseVersion", "").trim().takeIf { it.isNotEmpty() }
                 val source = j.optString("source", "online").trim().ifEmpty { "online" }
                 val fileName = j.optString("fileName", "").trim()
+                val kind = j.optString("kind", KIND_MOD).trim().ifEmpty { KIND_MOD }
                 val isPatchStored = rawBaseVer != null && rawBaseVer != rawVer
                 val isPatchHint = when {
                     rawBaseVer == null -> null
                     isPatchStored -> true
                     else -> false
                 }
-                val ver = if (source == "online") {
+                val ver = if (source == "online" || kind == KIND_CN_PATCH) {
                     rawVer
                 } else {
                     OnlineInstaller.inferVersionFromFileName(
@@ -86,7 +91,7 @@ data class InstalledModInfo(
                 }
                 val baseVer = when {
                     rawBaseVer == null -> null
-                    source == "online" -> rawBaseVer
+                    source == "online" || kind == KIND_CN_PATCH -> rawBaseVer
                     else -> OnlineInstaller.inferVersionFromFileName(
                         fileName = rawBaseVer,
                         isPatchHint = false,
@@ -101,7 +106,8 @@ data class InstalledModInfo(
                     fileName = fileName,
                     uploadedAt = j.optString("uploadedAt", "").trim(),
                     source = source,
-                    installedAtMs = j.optLong("installedAtMs", 0L)
+                    installedAtMs = j.optLong("installedAtMs", 0L),
+                    kind = kind
                 )
             } catch (_: Throwable) {
                 null
@@ -135,6 +141,7 @@ data class InstalledModInfo(
                     .put("uploadedAt", info.uploadedAt)
                     .put("source", info.source)
                     .put("installedAtMs", info.installedAtMs)
+                    .put("kind", info.kind)
                 File(gameDir, META_FILE_NAME).writeText(j.toString(), Charsets.UTF_8)
             } catch (_: Throwable) {
             }
@@ -239,8 +246,9 @@ class InstallAbortHandle {
 }
 
 object OnlineInstaller {
-    const val RANCE10_CDN_URL = "https://r10-src.000.moe"
-    const val DOHNA_DOHNA_CDN_URL = "https://dohnadohna.000.moe"
+    const val RANCE10_CDN_URL = "https://alicehub.000.moe/rance10"
+    const val DOHNA_DOHNA_CDN_URL = "https://alicehub.000.moe/dohnadohna"
+    const val EVENICLE_CDN_URL = "https://alicehub.000.moe/evenicle"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -464,6 +472,36 @@ object OnlineInstaller {
         return stripped
     }
 
+    /** Infers display version for a local overlay archive/folder. */
+    fun inferLocalOverlayVersion(
+        fileName: String,
+        isPatchHint: Boolean,
+        fallbackIniDir: File?,
+        isCnPatch: Boolean
+    ): String {
+        if (!isCnPatch) {
+            return inferVersionFromFileName(
+                fileName = fileName,
+                isPatchHint = isPatchHint,
+                fallbackIniDir = if (!isPatchHint) fallbackIniDir else null
+            )
+        }
+        val iniName = fallbackIniDir?.let { dir ->
+            val iniFile = File(dir, "AliceStart.ini").takeIf { it.isFile }
+                ?: File(dir, "System40.ini").takeIf { it.isFile }
+            iniFile?.let {
+                try {
+                    System40Ini.parse(it).gameName
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+        }.orEmpty()
+        val combined = "$iniName $fileName"
+        val verMatch = modVersionNumberRegex.find(combined)
+        return if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
+    }
+
     fun matchInstalledIndex(releases: List<ModReleaseEntry>, installed: InstalledModInfo?): Int {
         if (installed == null || releases.isEmpty()) return -1
         if (installed.fileId > 0) {
@@ -648,12 +686,16 @@ object OnlineInstaller {
         }
     }
 
-    fun fetchModCatalog(): List<ModReleaseEntry> {
-        val base = RANCE10_CDN_URL.trimEnd('/')
+    fun fetchModCatalog(
+        cdnBaseUrl: String = RANCE10_CDN_URL,
+        catalogRelPath: String = "files/mods/index.json"
+    ): List<ModReleaseEntry> {
+        val base = cdnBaseUrl.trimEnd('/')
+        val cleanRel = catalogRelPath.trimStart('/')
         var conn: HttpURLConnection? = null
         try {
             conn = openFollowingRedirects(
-                initialUrl = "$base/files/mods/index.json",
+                initialUrl = "$base/$cleanRel",
                 headers = mapOf(
                     "User-Agent" to DEFAULT_USER_AGENT,
                     "Accept" to "application/json",
@@ -677,6 +719,7 @@ object OnlineInstaller {
                 if (key.isEmpty() || fileName.isEmpty() || version.isEmpty()) continue
                 if (!ArchiveExtractor.isSupportedArchiveName(fileName)) continue
                 val fileId = obj.optInt("fileId", 1000 - i)
+                val group = sanitizeParenFree(obj.optString("group", ""), multiline = false)
                 val summary = sanitizeParenFree(obj.optString("summary", ""), multiline = false)
                 val changelog = sanitizeParenFree(obj.optString("changelog", ""), multiline = true)
                     .ifEmpty { summary }
@@ -700,7 +743,8 @@ object OnlineInstaller {
                         baseFileId = null,
                         baseVersion = null,
                         expectedSize = obj.optLong("size", -1L),
-                        expectedSha256 = obj.optString("sha256", "").trim().takeIf { it.isNotEmpty() }
+                        expectedSha256 = obj.optString("sha256", "").trim().takeIf { it.isNotEmpty() },
+                        group = group
                     )
                 )
             }
@@ -1047,6 +1091,7 @@ object OnlineInstaller {
                 val matches = when (targetGameId) {
                     GameCatalog.ID_RANCE10 -> lower.contains("rance10") || lower.contains("rance_10")
                     GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
+                    GameCatalog.ID_EVENICLE -> lower.contains("evenicle")
                     null, "" -> true
                     else -> false
                 }

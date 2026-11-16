@@ -32,8 +32,10 @@
 #include "asset_manager.h"
 #include "reign.h"
 #include "sact.h"
+#include "sprite.h"
 #include "vm.h"
 #include "xsystem4.h"
+#include "../hll/iarray.h"
 
 enum RE_plugin_version re_plugin_version;
 
@@ -41,6 +43,7 @@ static struct RE_instance *create_instance(struct RE_plugin *plugin)
 {
 	struct RE_instance *instance = xcalloc_aligned(1, struct RE_instance);
 	instance->plugin = plugin;
+	instance->draw = plugin->version >= RE_SEAL_PLUGIN;
 	instance->draw_edge = plugin->version == RE_TAPIR_PLUGIN;
 	for (int i = 0; i < RE_NR_INSTANCE_TARGETS; i++)
 		instance->target[i] = -1;
@@ -111,6 +114,8 @@ static void unload_instance(struct RE_instance *instance)
 		free_instance(instance->shadow_volume_instance);
 		instance->shadow_volume_instance = NULL;
 	}
+	free(instance->load_name);
+	instance->load_name = NULL;
 }
 
 static void free_instance(struct RE_instance *instance)
@@ -296,6 +301,8 @@ void RE_plugin_free(struct RE_plugin *plugin)
 	ht_free(plugin->effect_cache);
 	for (int i = 0; i < RE_NR_BACK_CGS; i++)
 		RE_back_cg_destroy(&plugin->back_cg[i]);
+	if (plugin->collider)
+		collider_free(plugin->collider);
 	xfree_aligned(plugin);
 }
 
@@ -329,10 +336,13 @@ bool RE_plugin_suspend(struct RE_plugin *plugin)
 {
 	if (!plugin)
 		return false;
+	if (!plugin->suspended) {
+		struct sact_sprite *sp = sact_try_get_sprite(plugin->sprite);
+		plugin->resume_show_sprite = sp && !sp->sp.hidden;
+		if (sp)
+			sprite_set_show(sp, false);
+	}
 	plugin->suspended = true;
-	struct sact_sprite *sp = sact_try_get_sprite(plugin->sprite);
-	if (sp)
-		sprite_set_show(sp, false);
 	return true;
 }
 
@@ -340,10 +350,13 @@ bool RE_plugin_resume(struct RE_plugin *plugin)
 {
 	if (!plugin)
 		return false;
+	if (plugin->suspended && plugin->resume_show_sprite) {
+		struct sact_sprite *sp = sact_try_get_sprite(plugin->sprite);
+		if (sp)
+			sprite_set_show(sp, true);
+	}
+	plugin->resume_show_sprite = false;
 	plugin->suspended = false;
-	struct sact_sprite *sp = sact_try_get_sprite(plugin->sprite);
-	if (sp)
-		sprite_set_show(sp, true);
 	return true;
 }
 
@@ -446,7 +459,7 @@ bool RE_instance_set_type(struct RE_instance *instance, int type)
 {
 	if (!instance)
 		return false;
-	if (instance->type != RE_ITYPE_UNINITIALIZED)
+	if (instance->type != RE_ITYPE_UNINITIALIZED && instance->type != (enum RE_instance_type)type)
 		ERROR("instance type cannot be changed");
 	switch (type) {
 	case RE_ITYPE_STATIC:
@@ -491,7 +504,11 @@ bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
 		ext = ".3de";
 		break;
 	default:
-		return archive_exists_by_name(instance->plugin->aar, name, NULL);
+		if (archive_exists_by_name(instance->plugin->aar, name, NULL))
+			return true;
+		if (!strncasecmp(name, "Data\\", 5))
+			return archive_exists_by_name(instance->plugin->aar, name + 4, NULL);
+		return false;
 	}
 	const char *basename = strrchr(name, '\\');
 	basename = basename ? basename + 1 : name;
@@ -537,9 +554,14 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 {
 	if (!instance)
 		return false;
+	char *name_copy = name ? xstrdup(name) : NULL;
 	unload_instance(instance);
-	if (name[0] == '\0')
+	if (!name_copy || name_copy[0] == '\0') {
+		free(name_copy);
 		return true;  // empty name just unloads the instance
+	}
+	instance->load_name = name_copy;
+	name = name_copy;
 
 	switch (instance->type) {
 	case RE_ITYPE_STATIC:
@@ -595,6 +617,8 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 	case RE_ITYPE_DIRECTIONAL_LIGHT:
 		if (re_plugin_version >= RE_SEAL_PLUGIN) {
 			struct archive_data *dfile = archive_get_by_name(instance->plugin->aar, name);
+			if (!dfile && !strncasecmp(name, "Data\\", 5))
+				dfile = archive_get_by_name(instance->plugin->aar, name + 4);
 			if (!dfile)
 				return false;
 			bool ok = lit_parse(dfile->data, dfile->size, instance->light_params);
@@ -714,26 +738,49 @@ bool RE_instance_trans_local_pos_to_world_pos_by_bone(struct RE_instance *instan
 	return true;
 }
 
-float RE_instance_calc_height(struct RE_instance *instance, float x, float z)
+bool RE_instance_calc_height_ex(struct RE_instance *instance, float x, float z, float *y_out)
 {
 	if (!instance || !instance->model)
-		return 0.0;
+		return false;
+
+	float sx = instance->scale[0] != 0.0f ? instance->scale[0] : 1.0f;
+	float sy = instance->scale[1] != 0.0f ? instance->scale[1] : 1.0f;
+	float sz = instance->scale[2] != 0.0f ? instance->scale[2] : 1.0f;
+	float lx = (x - instance->pos[0]) / sx;
+	float lz = (z - instance->pos[2]) / sz;
+
+	float y;
+	if (instance->model->collider && collider_height(instance->model->collider, (vec2){ lx, lz }, &y)) {
+		*y_out = y * sy + instance->pos[1];
+		return true;
+	}
+
 	if (!instance->height_detector) {
 		instance->height_detector = RE_renderer_create_height_detector(instance->plugin->renderer, instance->model);
 	}
 
-	float y;
-	if (RE_renderer_detect_height(instance->height_detector, x, z, &y))
-		return y;
+	if (RE_renderer_detect_height(instance->height_detector, lx, lz, &y)) {
+		*y_out = y * sy + instance->pos[1];
+		return true;
+	}
 
 	// Return the average of 4 neighbors.
 	int cnt = 0;
 	float total = 0.0f;
-	if (RE_renderer_detect_height(instance->height_detector, x - 0.5f, z, &y)) { cnt++; total += y; }
-	if (RE_renderer_detect_height(instance->height_detector, x + 0.5f, z, &y)) { cnt++; total += y; }
-	if (RE_renderer_detect_height(instance->height_detector, x, z - 0.5f, &y)) { cnt++; total += y; }
-	if (RE_renderer_detect_height(instance->height_detector, x, z + 0.5f, &y)) { cnt++; total += y; }
-	return cnt ? total / cnt : 0.0f;
+	if (RE_renderer_detect_height(instance->height_detector, lx - 0.5f, lz, &y)) { cnt++; total += y; }
+	if (RE_renderer_detect_height(instance->height_detector, lx + 0.5f, lz, &y)) { cnt++; total += y; }
+	if (RE_renderer_detect_height(instance->height_detector, lx, lz - 0.5f, &y)) { cnt++; total += y; }
+	if (RE_renderer_detect_height(instance->height_detector, lx, lz + 0.5f, &y)) { cnt++; total += y; }
+	if (!cnt)
+		return false;
+	*y_out = (total / cnt) * sy + instance->pos[1];
+	return true;
+}
+
+float RE_instance_calc_height(struct RE_instance *instance, float x, float z)
+{
+	float y = 0.0f;
+	return RE_instance_calc_height_ex(instance, x, z, &y) ? y : 0.0f;
 }
 
 float RE_instance_calc_2d_detection_height(struct RE_instance *instance, float x, float z)
@@ -799,19 +846,16 @@ bool RE_instance_optimize_path_line(struct RE_instance *inst)
 	return collider_optimize_path(inst->model->collider);
 }
 
-bool RE_instance_calc_path_finder_intersect_eye_vec(struct RE_instance *inst, int mouse_x, int mouse_y, vec3 out)
+static void calc_eye_ray(struct RE_plugin *plugin, int view_x, int view_y, vec3 origin, vec3 direction)
 {
-	if (!inst || !inst->model || !inst->model->collider)
-		return false;
-
-	float ndc_x = 2.f * mouse_x / inst->plugin->renderer->viewport_width - 1.f;
-	float ndc_y = 1.f - 2.f * mouse_y / inst->plugin->renderer->viewport_height;
+	float ndc_x = 2.f * view_x / plugin->renderer->viewport_width - 1.f;
+	float ndc_y = 1.f - 2.f * view_y / plugin->renderer->viewport_height;
 	vec4 near = { ndc_x, ndc_y, -1.f, 1.f };
 	vec4 far  = { ndc_x, ndc_y,  1.f, 1.f };
 
 	mat4 inv_vp;
-	RE_calc_view_matrix(&inst->plugin->camera, NULL, inv_vp);
-	glm_mat4_mul(inst->plugin->proj_transform, inv_vp, inv_vp);
+	RE_calc_view_matrix(&plugin->camera, NULL, inv_vp);
+	glm_mat4_mul(plugin->proj_transform, inv_vp, inv_vp);
 	glm_mat4_inv(inv_vp, inv_vp);
 
 	glm_mat4_mulv(inv_vp, near, near);
@@ -819,12 +863,165 @@ bool RE_instance_calc_path_finder_intersect_eye_vec(struct RE_instance *inst, in
 	glm_vec3_divs(near, near[3], near);
 	glm_vec3_divs(far, far[3], far);
 
-	vec3 origin, direction;
 	glm_vec3_copy(near, origin);
 	glm_vec3_sub(far, near, direction);
 	glm_vec3_normalize(direction);
+}
 
-	return collider_raycast(inst->model->collider, origin, direction, out);
+bool RE_instance_calc_path_finder_intersect_eye_vec(struct RE_instance *inst, int mouse_x, int mouse_y, vec3 out)
+{
+	if (!inst || !inst->model || !inst->model->collider || !inst->plugin || !inst->plugin->renderer)
+		return false;
+
+	vec3 origin, direction;
+	calc_eye_ray(inst->plugin, mouse_x, mouse_y, origin, direction);
+
+	if (inst->local_transform_needs_update)
+		RE_instance_update_local_transform(inst);
+	mat4 inv_local;
+	glm_mat4_inv(inst->local_transform, inv_local);
+
+	vec3 local_origin, far_pt, local_far, local_dir, local_hit;
+	glm_vec3_add(origin, direction, far_pt);
+	glm_mat4_mulv3(inv_local, origin, 1.0f, local_origin);
+	glm_mat4_mulv3(inv_local, far_pt, 1.0f, local_far);
+	glm_vec3_sub(local_far, local_origin, local_dir);
+	glm_vec3_normalize(local_dir);
+
+	if (!collider_raycast(inst->model->collider, local_origin, local_dir, local_hit))
+		return false;
+	glm_mat4_mulv3(inst->local_transform, local_hit, 1.0f, out);
+	return true;
+}
+
+static uint64_t fnv1a_bytes(uint64_t h, const void *data, size_t len)
+{
+	const uint8_t *p = (const uint8_t *)data;
+	for (size_t i = 0; i < len; i++) {
+		h ^= p[i];
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+static struct collider *RE_plugin_get_collider(struct RE_plugin *plugin)
+{
+	if (!plugin)
+		return NULL;
+
+	uint64_t h = 14695981039346656037ULL;
+	int count = 0;
+	for (int i = 0; i < plugin->nr_instances; i++) {
+		struct RE_instance *inst = plugin->instances[i];
+		if (!inst || !inst->draw || !inst->model || !inst->model->collider || !inst->model->collider->is_navmesh)
+			continue;
+		count++;
+		h = fnv1a_bytes(h, &i, sizeof(i));
+		h = fnv1a_bytes(h, &inst->model->collider, sizeof(inst->model->collider));
+		h = fnv1a_bytes(h, inst->pos, sizeof(inst->pos));
+		h = fnv1a_bytes(h, &inst->pitch, sizeof(inst->pitch));
+		h = fnv1a_bytes(h, &inst->roll, sizeof(inst->roll));
+		h = fnv1a_bytes(h, &inst->yaw, sizeof(inst->yaw));
+		h = fnv1a_bytes(h, inst->scale, sizeof(inst->scale));
+	}
+
+	if (count == 0) {
+		if (plugin->collider) {
+			collider_free(plugin->collider);
+			plugin->collider = NULL;
+		}
+		plugin->collider_hash_valid = false;
+		return NULL;
+	}
+
+	if (plugin->collider_hash_valid && plugin->collider_hash == h && plugin->collider)
+		return plugin->collider;
+
+	if (plugin->collider)
+		collider_free(plugin->collider);
+	plugin->collider = collider_create_from_plugin(plugin);
+	plugin->collider_hash = h;
+	plugin->collider_hash_valid = true;
+	return plugin->collider;
+}
+
+bool RE_plugin_calc_2d_detection_height(struct RE_plugin *plugin, float x, float z, float *height_out)
+{
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (!col)
+		return false;
+	return collider_height(col, (vec2){ x, -z }, height_out);
+}
+
+bool RE_plugin_calc_2d_detection(struct RE_plugin *plugin, float x0, float y0, float z0, float x1, float y1, float z1, float radius, float *x2, float *y2, float *z2)
+{
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (!col)
+		return false;
+	vec2 p0 = { x0, -z0 };
+	vec2 p1 = { x1, -z1 };
+	vec2 p2;
+	if (!check_collision(col, p0, p1, radius, p2))
+		return false;
+	*x2 = p2[0];
+	*z2 = -p2[1];
+	if (!collider_height(col, p2, y2)) {
+		if (!collider_height(col, p0, y2))
+			*y2 = y0;
+	}
+	return true;
+}
+
+bool RE_plugin_calc_2d_detection_intersect_eye_vec(struct RE_plugin *plugin, int view_x, int view_y, vec3 out)
+{
+	if (!plugin || !plugin->renderer)
+		return false;
+
+	vec3 origin, direction;
+	calc_eye_ray(plugin, view_x, view_y, origin, direction);
+
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (col)
+		return collider_raycast(col, origin, direction, out);
+
+	// Fallback for battle stages without a "collision" navmesh: intersect Y=0 plane.
+	if (fabsf(direction[1]) > 1e-5f) {
+		float t = -origin[1] / direction[1];
+		if (t > 0.0f) {
+			glm_vec3_scale(direction, t, out);
+			glm_vec3_add(origin, out, out);
+			return true;
+		}
+	}
+	return false;
+}
+
+bool RE_plugin_find_path(struct RE_plugin *plugin, vec3 start, vec3 goal)
+{
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (!col)
+		return false;
+	mat4 vp_transform;
+	RE_calc_view_matrix(&plugin->camera, NULL, vp_transform);
+	glm_mat4_mul(plugin->proj_transform, vp_transform, vp_transform);
+	return collider_find_path(col, start, goal, vp_transform);
+}
+
+const vec3 *RE_plugin_get_path_line(struct RE_plugin *plugin, int *nr_path_points)
+{
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (!col)
+		return NULL;
+	*nr_path_points = col->nr_path_points;
+	return col->path_points;
+}
+
+bool RE_plugin_optimize_path_line(struct RE_plugin *plugin)
+{
+	struct collider *col = RE_plugin_get_collider(plugin);
+	if (!col)
+		return false;
+	return collider_optimize_path(col);
 }
 
 bool RE_plugin_transform_pos_to_view_pos(struct RE_plugin *plugin, float x, float y, float z, int *view_x, int *view_y)
@@ -1467,5 +1664,523 @@ bool RE_back_cg_set_name(struct RE_back_cg *bcg, struct string *name, struct arc
 	}
 	gfx_init_texture_with_cg(&bcg->texture, cg);
 	cg_free(cg);
+	return true;
+}
+
+static void save_cstr(struct iarray_writer *w, const char *s)
+{
+	if (!s || !s[0]) {
+		iarray_write_string_or_null(w, NULL);
+		return;
+	}
+	struct string *str = make_string(s, strlen(s));
+	iarray_write_string_or_null(w, str);
+	free_string(str);
+}
+
+static char *load_cstr(struct iarray_reader *r)
+{
+	struct string *str = iarray_read_string_or_null(r);
+	if (!str)
+		return NULL;
+	char *out = xstrdup(str->text);
+	free_string(str);
+	return out;
+}
+
+static void save_vec2(struct iarray_writer *w, vec2 v)
+{
+	iarray_write_float(w, v[0]);
+	iarray_write_float(w, v[1]);
+}
+
+static void load_vec2(struct iarray_reader *r, vec2 v)
+{
+	v[0] = iarray_read_float(r);
+	v[1] = iarray_read_float(r);
+}
+
+static void save_vec3(struct iarray_writer *w, vec3 v)
+{
+	iarray_write_float(w, v[0]);
+	iarray_write_float(w, v[1]);
+	iarray_write_float(w, v[2]);
+}
+
+static void load_vec3(struct iarray_reader *r, vec3 v)
+{
+	v[0] = iarray_read_float(r);
+	v[1] = iarray_read_float(r);
+	v[2] = iarray_read_float(r);
+}
+
+static void save_re_motion(struct iarray_writer *w, const struct motion *m)
+{
+	iarray_write(w, m ? 1 : 0);
+	if (!m)
+		return;
+	save_cstr(w, m->mot ? m->mot->name : NULL);
+	iarray_write(w, m->state);
+	iarray_write_float(w, m->current_frame);
+	iarray_write_float(w, m->frame_begin);
+	iarray_write_float(w, m->frame_end);
+	iarray_write_float(w, m->loop_frame_begin);
+	iarray_write_float(w, m->loop_frame_end);
+	iarray_write(w, m->texture_index);
+}
+
+static void load_re_motion(struct iarray_reader *r, struct RE_instance *inst, bool is_next)
+{
+	if (!iarray_read(r))
+		return;
+	char *mot_name = load_cstr(r);
+	int state = iarray_read(r);
+	float cur_frame = iarray_read_float(r);
+	float fb = iarray_read_float(r);
+	float fe = iarray_read_float(r);
+	float lfb = iarray_read_float(r);
+	float lfe = iarray_read_float(r);
+	int tex_idx = iarray_read(r);
+
+	if (!inst) {
+		free(mot_name);
+		return;
+	}
+
+	struct motion *m = NULL;
+	if (!is_next) {
+		if (mot_name && mot_name[0] && inst->model)
+			RE_instance_load_motion(inst, mot_name);
+		if (!inst->motion && inst->type == RE_ITYPE_BILLBOARD) {
+			inst->motion = xcalloc(1, sizeof(struct motion));
+			inst->motion->instance = inst;
+		}
+		m = inst->motion;
+	} else {
+		if (mot_name && mot_name[0] && inst->model)
+			RE_instance_load_next_motion(inst, mot_name);
+		m = inst->next_motion;
+	}
+	if (m) {
+		if (!is_next && inst->type == RE_ITYPE_BILLBOARD && re_plugin_version < RE_SEAL_PLUGIN) {
+			RE_motion_set_frame_range(m, fb, fe);
+			RE_motion_set_loop_frame_range(m, lfb, lfe);
+		}
+		m->state = state;
+		m->current_frame = cur_frame;
+		m->frame_begin = fb;
+		m->frame_end = fe;
+		m->loop_frame_begin = lfb;
+		m->loop_frame_end = lfe;
+		m->texture_index = tex_idx;
+	}
+	free(mot_name);
+}
+
+static void save_re_instance(struct iarray_writer *w, struct RE_instance *inst)
+{
+	iarray_write(w, inst->type);
+	save_cstr(w, inst->load_name);
+	for (int i = 0; i < RE_NR_INSTANCE_TARGETS; i++)
+		iarray_write(w, inst->target[i]);
+	save_vec3(w, inst->pos);
+	iarray_write_float(w, inst->pitch);
+	iarray_write_float(w, inst->roll);
+	iarray_write_float(w, inst->yaw);
+	save_vec3(w, inst->scale);
+	iarray_write_float(w, inst->alpha);
+	iarray_write_float(w, inst->grayscale_rate);
+	iarray_write(w, inst->draw);
+	iarray_write(w, inst->draw_edge);
+	iarray_write(w, inst->draw_shadow);
+	iarray_write(w, inst->make_shadow);
+	iarray_write_float(w, inst->shadow_volume_bone_radius);
+	iarray_write(w, inst->draw_bump);
+	iarray_write_float(w, inst->fps);
+	iarray_write(w, inst->use_mag_speed);
+	iarray_write(w, inst->motion_blend);
+	iarray_write_float(w, inst->motion_blend_rate);
+	save_vec3(w, inst->diffuse);
+	save_vec3(w, inst->ambient);
+	save_vec3(w, inst->column_pos);
+	iarray_write_float(w, inst->column_height);
+	iarray_write_float(w, inst->column_radius);
+	iarray_write_float(w, inst->column_angle);
+	iarray_write(w, inst->draw_type);
+	for (int i = 0; i < 4; i++) {
+		save_vec3(w, inst->vertex_pos[i]);
+		save_vec2(w, inst->vertex_uv[i]);
+	}
+	save_vec3(w, inst->vec);
+	save_vec3(w, inst->globe_diffuse);
+	iarray_write(w, inst->light_params ? 1 : 0);
+	if (inst->light_params) {
+		for (int i = 0; i < RE_NR_LIGHT_PARAMS; i++)
+			iarray_write_float(w, inst->light_params[i]);
+	}
+	iarray_write(w, (inst->shadow_volume_instance && inst->shadow_volume_instance->draw) ? 1 : 0);
+	iarray_write(w, inst->texture_animation_index);
+
+	int nr_meshes = inst->model ? inst->model->nr_meshes : 0;
+	iarray_write(w, nr_meshes);
+	for (int i = 0; i < nr_meshes; i++)
+		iarray_write(w, inst->model->meshes[i].hidden);
+
+	save_re_motion(w, inst->motion);
+	save_re_motion(w, inst->next_motion);
+}
+
+static void load_re_instance(struct RE_plugin *plugin, int slot, struct iarray_reader *r)
+{
+	enum RE_instance_type type = iarray_read(r);
+	char *load_name = load_cstr(r);
+	struct RE_instance *inst = plugin ? create_instance(plugin) : NULL;
+	if (plugin)
+		plugin->instances[slot] = inst;
+	if (inst && type != RE_ITYPE_UNINITIALIZED)
+		RE_instance_set_type(inst, type);
+
+	vec3 dummy3;
+	vec2 dummy2;
+	for (int i = 0; i < RE_NR_INSTANCE_TARGETS; i++) {
+		int t = iarray_read(r);
+		if (inst) inst->target[i] = t;
+	}
+	load_vec3(r, inst ? inst->pos : dummy3);
+	float pitch = iarray_read_float(r);
+	float roll = iarray_read_float(r);
+	float yaw = iarray_read_float(r);
+	vec3 scale;
+	load_vec3(r, scale);
+	float alpha = iarray_read_float(r);
+	float gray = iarray_read_float(r);
+	bool draw = !!iarray_read(r);
+	bool draw_edge = !!iarray_read(r);
+	bool draw_shadow = !!iarray_read(r);
+	bool make_shadow = !!iarray_read(r);
+	float sh_rad = iarray_read_float(r);
+	bool draw_bump = !!iarray_read(r);
+	float fps = iarray_read_float(r);
+	bool use_mag = !!iarray_read(r);
+	bool mblend = !!iarray_read(r);
+	float mbrate = iarray_read_float(r);
+	vec3 diffuse, ambient, col_pos;
+	load_vec3(r, diffuse);
+	load_vec3(r, ambient);
+	load_vec3(r, col_pos);
+	float col_h = iarray_read_float(r);
+	float col_r = iarray_read_float(r);
+	float col_a = iarray_read_float(r);
+	int dtype = iarray_read(r);
+
+	if (inst) {
+		inst->pitch = pitch;
+		inst->roll = roll;
+		inst->yaw = yaw;
+		glm_vec3_copy(scale, inst->scale);
+		inst->alpha = alpha;
+		inst->grayscale_rate = gray;
+		inst->draw = draw;
+		inst->draw_edge = draw_edge;
+		inst->draw_shadow = draw_shadow;
+		inst->make_shadow = make_shadow;
+		inst->shadow_volume_bone_radius = sh_rad;
+		inst->draw_bump = draw_bump;
+		inst->fps = fps;
+		inst->use_mag_speed = use_mag;
+		inst->motion_blend = mblend;
+		inst->motion_blend_rate = mbrate;
+		glm_vec3_copy(diffuse, inst->diffuse);
+		glm_vec3_copy(ambient, inst->ambient);
+		glm_vec3_copy(col_pos, inst->column_pos);
+		inst->column_height = col_h;
+		inst->column_radius = col_r;
+		inst->column_angle = col_a;
+		inst->draw_type = dtype;
+	}
+	for (int i = 0; i < 4; i++) {
+		load_vec3(r, inst ? inst->vertex_pos[i] : dummy3);
+		load_vec2(r, inst ? inst->vertex_uv[i] : dummy2);
+	}
+	load_vec3(r, inst ? inst->vec : dummy3);
+	load_vec3(r, inst ? inst->globe_diffuse : dummy3);
+
+	int has_lp = iarray_read(r);
+	float lp_tmp[RE_NR_LIGHT_PARAMS];
+	if (has_lp) {
+		for (int i = 0; i < RE_NR_LIGHT_PARAMS; i++)
+			lp_tmp[i] = iarray_read_float(r);
+	}
+	bool debug_shvol = !!iarray_read(r);
+	int tex_anim_idx = iarray_read(r);
+
+	if (inst && load_name && load_name[0])
+		RE_instance_load(inst, load_name);
+	free(load_name);
+
+	if (inst && has_lp) {
+		if (!inst->light_params)
+			inst->light_params = xmalloc(RE_NR_LIGHT_PARAMS * sizeof(float));
+		memcpy(inst->light_params, lp_tmp, sizeof(lp_tmp));
+	}
+
+	int nr_meshes = iarray_read(r);
+	for (int i = 0; i < nr_meshes; i++) {
+		bool hidden = !!iarray_read(r);
+		if (inst && inst->model && i < inst->model->nr_meshes)
+			inst->model->meshes[i].hidden = hidden;
+	}
+
+	load_re_motion(r, inst, false);
+	load_re_motion(r, inst, true);
+
+	if (inst) {
+		inst->texture_animation_index = tex_anim_idx;
+		if (debug_shvol)
+			RE_instance_set_debug_draw_shadow_volume(inst, true);
+		RE_instance_update_local_transform(inst);
+		if (inst->type == RE_ITYPE_SKINNED && inst->model && inst->model->nr_bones > 0 && inst->motion)
+			update_bones(inst);
+	}
+}
+
+void RE_plugin_save(struct RE_plugin *p, struct iarray_writer *w)
+{
+	iarray_write(w, p->suspended);
+	save_vec3(w, p->camera.pos);
+	iarray_write_float(w, p->camera.pitch);
+	iarray_write_float(w, p->camera.roll);
+	iarray_write_float(w, p->camera.yaw);
+	iarray_write_float(w, p->camera.quake_pitch);
+	iarray_write_float(w, p->camera.quake_yaw);
+	iarray_write(w, p->camera.override_active);
+	save_vec3(w, p->camera.override_pos);
+	iarray_write_float(w, p->camera.override_pitch);
+	iarray_write_float(w, p->camera.override_yaw);
+	iarray_write_float(w, p->camera.override_roll);
+	for (int c = 0; c < 4; c++)
+		for (int r = 0; r < 4; r++)
+			iarray_write_float(w, p->proj_transform[c][r]);
+
+	for (int i = 0; i < RE_NR_BACK_CGS; i++) {
+		iarray_write(w, p->back_cg[i].no);
+		iarray_write_string_or_null(w, p->back_cg[i].name);
+		iarray_write_float(w, p->back_cg[i].blend_rate);
+		iarray_write_float(w, p->back_cg[i].x);
+		iarray_write_float(w, p->back_cg[i].y);
+		iarray_write_float(w, p->back_cg[i].mag);
+		iarray_write(w, p->back_cg[i].show);
+	}
+
+	iarray_write(w, p->render_mode);
+	iarray_write(w, p->shadow_mode);
+	save_vec3(w, p->shadow_map_light_dir);
+	iarray_write_float(w, p->shadow_bias);
+	iarray_write(w, p->bump_mode);
+	iarray_write(w, p->bloom_mode);
+	iarray_write(w, p->glare_mode);
+	iarray_write(w, p->fog_mode);
+	iarray_write(w, p->fog_type);
+	iarray_write_float(w, p->fog_near);
+	iarray_write_float(w, p->fog_far);
+	save_vec3(w, p->fog_color);
+	iarray_write_float(w, p->ls_beta_r);
+	iarray_write_float(w, p->ls_beta_m);
+	iarray_write_float(w, p->ls_g);
+	iarray_write_float(w, p->ls_distance);
+	save_vec3(w, p->ls_light_dir);
+	save_vec3(w, p->ls_light_color);
+	save_vec3(w, p->ls_sun_color);
+	iarray_write(w, p->specular_mode);
+	iarray_write(w, p->light_map_mode);
+	iarray_write(w, p->soft_fog_edge_mode);
+	iarray_write(w, p->ssao_mode);
+	iarray_write(w, p->vertex_blend_mode);
+	iarray_write(w, p->shader_precision_mode);
+	iarray_write(w, p->texture_filter_mode);
+	iarray_write(w, p->use_power2_texture);
+	iarray_write(w, p->shadow_map_resolution_level);
+	iarray_write(w, p->texture_resolution_level);
+	save_vec3(w, p->global_ambient);
+	iarray_write_float(w, p->post_effect_filter_y);
+	iarray_write_float(w, p->post_effect_filter_cb);
+	iarray_write_float(w, p->post_effect_filter_cr);
+	for (int i = 0; i < RE_DRAW_OPTION_MAX; i++)
+		iarray_write(w, p->draw_options[i]);
+	iarray_write(w, p->mag_speed);
+	for (int i = 0; i < RE_NR_LIGHT_PARAMS; i++)
+		iarray_write_float(w, p->light_params[i]);
+	iarray_write_float(w, p->edge_length);
+	iarray_write_float(w, p->edge_reduction_rate);
+	save_vec3(w, p->edge_color);
+
+	iarray_write(w, p->nr_instances);
+	for (int i = 0; i < p->nr_instances; i++) {
+		iarray_write(w, p->instances[i] ? 1 : 0);
+		if (p->instances[i])
+			save_re_instance(w, p->instances[i]);
+	}
+}
+
+bool RE_plugin_load(struct RE_plugin *p, struct iarray_reader *r)
+{
+	if (p)
+		re_plugin_version = p->version;
+	bool suspended = !!iarray_read(r);
+	vec3 dummy3;
+	load_vec3(r, p ? p->camera.pos : dummy3);
+	float cp = iarray_read_float(r);
+	float cr = iarray_read_float(r);
+	float cy = iarray_read_float(r);
+	float qp = iarray_read_float(r);
+	float qy = iarray_read_float(r);
+	bool oa = !!iarray_read(r);
+	vec3 op;
+	load_vec3(r, op);
+	float opp = iarray_read_float(r);
+	float opy = iarray_read_float(r);
+	float opr = iarray_read_float(r);
+	if (p) {
+		p->suspended = suspended;
+		p->camera.pitch = cp;
+		p->camera.roll = cr;
+		p->camera.yaw = cy;
+		p->camera.quake_pitch = qp;
+		p->camera.quake_yaw = qy;
+		p->camera.override_active = oa;
+		glm_vec3_copy(op, p->camera.override_pos);
+		p->camera.override_pitch = opp;
+		p->camera.override_yaw = opy;
+		p->camera.override_roll = opr;
+	}
+	for (int c = 0; c < 4; c++) {
+		for (int row = 0; row < 4; row++) {
+			float v = iarray_read_float(r);
+			if (p) p->proj_transform[c][row] = v;
+		}
+	}
+
+	for (int i = 0; i < RE_NR_BACK_CGS; i++) {
+		int no = iarray_read(r);
+		struct string *name = iarray_read_string_or_null(r);
+		float br = iarray_read_float(r);
+		float bx = iarray_read_float(r);
+		float by = iarray_read_float(r);
+		float bmag = iarray_read_float(r);
+		bool bshow = !!iarray_read(r);
+		if (p) {
+			if (name && name->size > 0)
+				RE_back_cg_set_name(&p->back_cg[i], name, p->aar);
+			else if (no != 0)
+				RE_back_cg_set(&p->back_cg[i], no);
+			p->back_cg[i].blend_rate = br;
+			p->back_cg[i].x = bx;
+			p->back_cg[i].y = by;
+			p->back_cg[i].mag = bmag;
+			p->back_cg[i].show = bshow;
+		}
+		if (name)
+			free_string(name);
+	}
+
+	int render_mode = iarray_read(r);
+	int shadow_mode = iarray_read(r);
+	vec3 sh_dir; load_vec3(r, sh_dir);
+	float sh_bias = iarray_read_float(r);
+	int bump_mode = iarray_read(r);
+	int bloom_mode = iarray_read(r);
+	int glare_mode = iarray_read(r);
+	int fog_mode = iarray_read(r);
+	int fog_type = iarray_read(r);
+	float fog_near = iarray_read_float(r);
+	float fog_far = iarray_read_float(r);
+	vec3 fog_color; load_vec3(r, fog_color);
+	float ls_br = iarray_read_float(r);
+	float ls_bm = iarray_read_float(r);
+	float ls_g = iarray_read_float(r);
+	float ls_dist = iarray_read_float(r);
+	vec3 ls_ld, ls_lc, ls_sc;
+	load_vec3(r, ls_ld);
+	load_vec3(r, ls_lc);
+	load_vec3(r, ls_sc);
+	int spec_mode = iarray_read(r);
+	int lm_mode = iarray_read(r);
+	int sfe_mode = iarray_read(r);
+	int ssao_mode = iarray_read(r);
+	int vb_mode = iarray_read(r);
+	int sp_mode = iarray_read(r);
+	int tf_mode = iarray_read(r);
+	bool p2_tex = !!iarray_read(r);
+	int sm_res = iarray_read(r);
+	int tex_res = iarray_read(r);
+	vec3 g_amb; load_vec3(r, g_amb);
+	float pef_y = iarray_read_float(r);
+	float pef_cb = iarray_read_float(r);
+	float pef_cr = iarray_read_float(r);
+	if (p) {
+		p->render_mode = render_mode;
+		p->shadow_mode = shadow_mode;
+		glm_vec3_copy(sh_dir, p->shadow_map_light_dir);
+		p->shadow_bias = sh_bias;
+		p->bump_mode = bump_mode;
+		p->bloom_mode = bloom_mode;
+		p->glare_mode = glare_mode;
+		p->fog_mode = fog_mode;
+		p->fog_type = fog_type;
+		p->fog_near = fog_near;
+		p->fog_far = fog_far;
+		glm_vec3_copy(fog_color, p->fog_color);
+		p->ls_beta_r = ls_br;
+		p->ls_beta_m = ls_bm;
+		p->ls_g = ls_g;
+		p->ls_distance = ls_dist;
+		glm_vec3_copy(ls_ld, p->ls_light_dir);
+		glm_vec3_copy(ls_lc, p->ls_light_color);
+		glm_vec3_copy(ls_sc, p->ls_sun_color);
+		p->specular_mode = spec_mode;
+		p->light_map_mode = lm_mode;
+		p->soft_fog_edge_mode = sfe_mode;
+		p->ssao_mode = ssao_mode;
+		p->vertex_blend_mode = vb_mode;
+		p->shader_precision_mode = sp_mode;
+		p->texture_filter_mode = tf_mode;
+		p->use_power2_texture = p2_tex;
+		p->shadow_map_resolution_level = sm_res;
+		p->texture_resolution_level = tex_res;
+		glm_vec3_copy(g_amb, p->global_ambient);
+		p->post_effect_filter_y = pef_y;
+		p->post_effect_filter_cb = pef_cb;
+		p->post_effect_filter_cr = pef_cr;
+	}
+	for (int i = 0; i < RE_DRAW_OPTION_MAX; i++) {
+		int opt = iarray_read(r);
+		if (p) p->draw_options[i] = opt;
+	}
+	int mag_spd = iarray_read(r);
+	if (p) p->mag_speed = mag_spd;
+	for (int i = 0; i < RE_NR_LIGHT_PARAMS; i++) {
+		float v = iarray_read_float(r);
+		if (p) p->light_params[i] = v;
+	}
+	float elen = iarray_read_float(r);
+	float erate = iarray_read_float(r);
+	vec3 ecol; load_vec3(r, ecol);
+	if (p) {
+		p->edge_length = elen;
+		p->edge_reduction_rate = erate;
+		glm_vec3_copy(ecol, p->edge_color);
+	}
+
+	int saved_nr = iarray_read(r);
+	if (saved_nr < 0)
+		return false;
+	if (p && saved_nr > p->nr_instances) {
+		p->instances = xrealloc_array(p->instances, p->nr_instances, saved_nr, sizeof(struct RE_instance *));
+		p->nr_instances = saved_nr;
+	}
+	for (int i = 0; i < saved_nr; i++) {
+		if (iarray_read(r))
+			load_re_instance(p, i, r);
+	}
 	return true;
 }

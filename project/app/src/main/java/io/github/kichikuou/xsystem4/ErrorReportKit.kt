@@ -1301,6 +1301,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_rance10_title)
             lower.contains("dohnadohna") || lower.contains("多娜多娜") ->
                 context.getString(R.string.game_dohnadohna_title)
+            lower.contains("evenicle") || lower.contains("イブニクル") || lower.contains("夏娃") ->
+                context.getString(R.string.game_evenicle_title)
             else -> null
         }
     }

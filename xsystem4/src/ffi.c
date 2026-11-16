@@ -621,6 +621,7 @@ extern struct static_library lib_FileOperation;
 extern struct static_library lib_Clipboard;
 extern struct static_library lib_EXWriter;
 extern struct static_library lib_TextFile;
+extern struct static_library lib_TextFileWriter;
 extern struct static_library lib_FillAngle;
 extern struct static_library lib_GoatGUIEngine;
 extern struct static_library lib_Gpx2Plus;
@@ -756,6 +757,7 @@ static struct static_library *static_libraries[] = {
 	&lib_Clipboard,
 	&lib_EXWriter,
 	&lib_TextFile,
+	&lib_TextFileWriter,
 	&lib_FillAngle,
 	&lib_GoatGUIEngine,
 	&lib_Gpx2Plus,
@@ -841,8 +843,13 @@ static struct static_library *static_libraries[] = {
 
 static struct static_library *find_static_library(const char *name)
 {
-	if (ain->version >= 12 && !strcmp(name, "KiwiSoundEngine"))
-		return &lib_KiwiSoundEngine_v12;
+	if (!strcmp(name, "KiwiSoundEngine")) {
+		if (ain->version >= 12)
+			return &lib_KiwiSoundEngine_v12;
+		int libno = ain_get_library(ain, "KiwiSoundEngine");
+		if (libno >= 0 && ain_get_library_function(ain, libno, "Prepare") >= 0)
+			return &lib_KiwiSoundEngine_v12;
+	}
 	for (int j = 0; static_libraries[j]; j++)
 		if (!strcmp(name, static_libraries[j]->name)) return static_libraries[j];
 	return NULL;

@@ -262,7 +262,7 @@ struct instruction instructions[NR_OPCODES] = {
         TODO ( S_LENGTHBYTE2,  0, (),                        (),                         () ),
         OP   ( NEW,            0, (T_STRUCT, T_INT),         (), /* varies */            () ), // FIXME: 2nd arg is T_FUNC *OR* -1
         OP   ( DELETE,         0, (),                        (T_PAGE),                   () ),
-        TODO ( CHECKUDO,       0, (),                        (),                         () ),
+        OP   ( CHECKUDO,       0, (),                        (),                         () ),
         OP   ( A_REF,          0, (),                        (T_PAGE),                   () ),
         OP   ( DUP,            0, (),                        (T_INT),                    (T_INT, T_INT) ),
         OP   ( DUP_U2,         0, (),                        (T_INT, T_INT),             (T_INT, T_INT, T_INT) ),

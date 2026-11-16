@@ -91,9 +91,12 @@ static void rebuild_background(struct parts *parts)
 	struct parts_widget *w = parts->widget;
 	static const char *const suffixes[4][3] = {
 		{ "／一般", "／通常", "／普通" },
-		{ "／オン", NULL, NULL },
-		{ "／DOWN", "／ダウン", NULL },
+		{ "／オン", "／on", "／ON" },
+		{ "／DOWN", "／ダウン", "／down" },
 		{ "／无效", "／無効", "／无効" }
+	};
+	static const char *const checked_suffixes[3] = {
+		"／检查", "／チェック", "／選択中"
 	};
 	bool checkbox = parts->component_type == 1;
 	for (int checked = 0; checked < (checkbox ? 2 : 1); checked++) {
@@ -102,10 +105,22 @@ static void rebuild_background(struct parts *parts)
 	struct string *base = flat ? w->flat_name : w->cg_name;
 	if (override->size) base = override;
 	struct string *checked_base = string_dup(base);
-	if (checked && !override->size) {
-		char *suffix = utf2sjis("／检查", strlen("／检查"));
-		string_append_cstr(&checked_base, suffix, strlen(suffix));
-		free(suffix);
+	if (checked && !override->size && base->size) {
+		for (int cs = 0; cs < 3; cs++) {
+			struct string *cand = string_dup(base);
+			char *suffix = utf2sjis(checked_suffixes[cs], strlen(checked_suffixes[cs]));
+			string_append_cstr(&cand, suffix, strlen(suffix));
+			free(suffix);
+			struct parts_state probe = {0};
+			if (load_skin_any(parts, &probe, cand, flat, suffixes[0], 3)
+					|| load_skin(parts, &probe, cand, flat, "")) {
+				parts_state_reset(&probe, PARTS_UNINITIALIZED);
+				free_string(checked_base);
+				checked_base = cand;
+				break;
+			}
+			free_string(cand);
+		}
 	}
 	for (int i = 0; i < 4; i++) {
 		struct parts_state *state = checked

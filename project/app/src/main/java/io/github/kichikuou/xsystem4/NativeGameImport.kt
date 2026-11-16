@@ -16,14 +16,19 @@ object NativeGameImport {
 
     fun skip(path: String): Boolean {
         val parts = path.replace('\\', '/').split('/')
-        if (parts.any { it.startsWith('.') || it.equals("android-port", true) || it.equals("SaveData", true) })
+        if (parts.any {
+                it.startsWith('.') ||
+                    it.equals("android-port", true) ||
+                    it.equals("SaveData", true) ||
+                    it.equals("DirectX", true)
+            })
             return true
         val fileName = parts.last()
         val lowerName = fileName.lowercase()
         if (lowerName == "opensavefolder.exe" || lowerName == "resetconfig.exe" || lowerName == "uninstaller.exe")
             return true
         return fileName.substringAfterLast('.', "").lowercase() in
-                setOf("dll", "lnk", "bat", "cmd", "ps1")
+                setOf("dll", "lnk", "bat", "cmd", "ps1", "mds")
     }
 
     private fun children(context: Context, tree: Uri, parent: Uri): List<Document> {

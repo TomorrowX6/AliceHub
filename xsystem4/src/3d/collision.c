@@ -35,6 +35,7 @@ struct collider_triangle {
 struct collider_edge {
 	vec2 vertices[2];  // xz coordinates
 	vec2 aabb[2];
+	int tri_index;
 };
 
 static struct collider_triangle *fill_triangles(struct collider_triangle *t, struct pol_mesh *mesh)
@@ -129,6 +130,7 @@ static void init_edges(struct collider *collider, struct pol_mesh *mesh)
 		edge->vertices[1][1] = mesh->vertices[v2].pos[2];
 		glm_vec2_minv(edge->vertices[0], edge->vertices[1], edge->aabb[0]);
 		glm_vec2_maxv(edge->vertices[0], edge->vertices[1], edge->aabb[1]);
+		edge->tri_index = table[i] - 1;
 		edge++;
 	}
 	assert(edge == collider->edges + nr_edges);
@@ -138,6 +140,7 @@ static void init_edges(struct collider *collider, struct pol_mesh *mesh)
 struct collider *collider_create(struct pol_mesh *mesh)
 {
 	struct collider *collider = xcalloc(1, sizeof(struct collider));
+	collider->is_navmesh = true;
 	init_triangles(collider, mesh);
 	init_edges(collider, mesh);
 	return collider;
@@ -192,6 +195,193 @@ static struct collider_triangle* find_triangle(struct collider *collider, vec2 x
 			return t;
 	}
 	return NULL;
+}
+
+static void link_unique_neighbors(struct collider *collider, int t1_index, int t2_index)
+{
+	struct collider_triangle *t1 = &collider->triangles[t1_index];
+	struct collider_triangle *t2 = &collider->triangles[t2_index];
+	bool has12 = false, has21 = false;
+	for (int i = 0; i < 3; i++) {
+		if (t1->neighbors[i] == t2_index) has12 = true;
+		if (t2->neighbors[i] == t1_index) has21 = true;
+	}
+	if (!has12) {
+		for (int i = 0; i < 3; i++) {
+			if (t1->neighbors[i] == -1) {
+				t1->neighbors[i] = t2_index;
+				break;
+			}
+		}
+	}
+	if (!has21) {
+		for (int i = 0; i < 3; i++) {
+			if (t2->neighbors[i] == -1) {
+				t2->neighbors[i] = t1_index;
+				break;
+			}
+		}
+	}
+}
+
+struct cand_boundary_edge {
+	vec2 v0;
+	vec2 v1;
+	int tri_index;
+	uint32_t tile_start;
+	uint32_t tile_end;
+};
+
+struct collider *collider_create_from_plugin(struct RE_plugin *plugin)
+{
+	if (!plugin)
+		return NULL;
+
+	int nr_inst = 0;
+	uint32_t total_tris = 0;
+	uint32_t total_cand_edges = 0;
+	for (int i = 0; i < plugin->nr_instances; i++) {
+		struct RE_instance *inst = plugin->instances[i];
+		if (!inst || !inst->draw || !inst->model || !inst->model->collider || !inst->model->collider->is_navmesh)
+			continue;
+		nr_inst++;
+		total_tris += inst->model->collider->nr_triangles;
+		total_cand_edges += inst->model->collider->nr_edges;
+	}
+	if (nr_inst == 0 || total_tris == 0)
+		return NULL;
+
+	struct collider *dst = xcalloc(1, sizeof(struct collider));
+	dst->is_navmesh = true;
+	dst->nr_triangles = total_tris;
+	dst->triangles = xcalloc(total_tris, sizeof(struct collider_triangle));
+
+	struct cand_boundary_edge *cands = xcalloc(total_cand_edges ? total_cand_edges : 1, sizeof(struct cand_boundary_edge));
+	uint32_t tri_base = 0;
+	uint32_t cand_count = 0;
+
+	for (int i = 0; i < plugin->nr_instances; i++) {
+		struct RE_instance *inst = plugin->instances[i];
+		if (!inst || !inst->draw || !inst->model || !inst->model->collider || !inst->model->collider->is_navmesh)
+			continue;
+		if (inst->local_transform_needs_update)
+			RE_instance_update_local_transform(inst);
+
+		struct collider *src = inst->model->collider;
+		for (uint32_t ti = 0; ti < src->nr_triangles; ti++) {
+			struct collider_triangle *st = &src->triangles[ti];
+			struct collider_triangle *dt = &dst->triangles[tri_base + ti];
+			glm_aabb2d_invalidate(dt->aabb);
+			glm_vec3_zero(dt->center);
+			for (int k = 0; k < 3; k++) {
+				glm_mat4_mulv3(inst->local_transform, st->vertices[k], 1.0f, dt->vertices[k]);
+				glm_vec3_add(dt->center, dt->vertices[k], dt->center);
+				vec2 xz = { dt->vertices[k][0], dt->vertices[k][2] };
+				glm_vec2_minv(xz, dt->aabb[0], dt->aabb[0]);
+				glm_vec2_maxv(xz, dt->aabb[1], dt->aabb[1]);
+			}
+			glm_vec3_divs(dt->center, 3.0f, dt->center);
+
+			vec3 v1, v2, normal;
+			glm_vec3_sub(dt->vertices[1], dt->vertices[0], v1);
+			glm_vec3_sub(dt->vertices[2], dt->vertices[0], v2);
+			glm_vec3_cross(v1, v2, normal);
+			if (fabsf(normal[1]) > 1e-6f) {
+				dt->slope[0] = -normal[0] / normal[1];
+				dt->slope[1] = -normal[2] / normal[1];
+				dt->intercept = glm_vec3_dot(normal, dt->vertices[0]) / normal[1];
+			} else {
+				dt->slope[0] = 0.0f;
+				dt->slope[1] = 0.0f;
+				dt->intercept = dt->center[1];
+			}
+
+			for (int k = 0; k < 3; k++) {
+				dt->neighbors[k] = st->neighbors[k] >= 0 ? (int)tri_base + st->neighbors[k] : -1;
+			}
+		}
+
+		for (uint32_t ei = 0; ei < src->nr_edges; ei++) {
+			struct collider_edge *se = &src->edges[ei];
+			struct cand_boundary_edge *ce = &cands[cand_count++];
+			vec3 p0_in = { se->vertices[0][0], 0.0f, se->vertices[0][1] };
+			vec3 p1_in = { se->vertices[1][0], 0.0f, se->vertices[1][1] };
+			vec3 p0_out, p1_out;
+			glm_mat4_mulv3(inst->local_transform, p0_in, 1.0f, p0_out);
+			glm_mat4_mulv3(inst->local_transform, p1_in, 1.0f, p1_out);
+			ce->v0[0] = p0_out[0];
+			ce->v0[1] = p0_out[2];
+			ce->v1[0] = p1_out[0];
+			ce->v1[1] = p1_out[2];
+			ce->tri_index = (int)tri_base + se->tri_index;
+			ce->tile_start = tri_base;
+			ce->tile_end = tri_base + src->nr_triangles;
+		}
+
+		tri_base += src->nr_triangles;
+	}
+
+	dst->edges = xcalloc(cand_count ? cand_count : 1, sizeof(struct collider_edge));
+	uint32_t out_edges = 0;
+
+	if (nr_inst == 1) {
+		for (uint32_t ei = 0; ei < cand_count; ei++) {
+			struct collider_edge *de = &dst->edges[out_edges++];
+			glm_vec2_copy(cands[ei].v0, de->vertices[0]);
+			glm_vec2_copy(cands[ei].v1, de->vertices[1]);
+			glm_vec2_minv(de->vertices[0], de->vertices[1], de->aabb[0]);
+			glm_vec2_maxv(de->vertices[0], de->vertices[1], de->aabb[1]);
+			de->tri_index = cands[ei].tri_index;
+		}
+	} else {
+		for (uint32_t ei = 0; ei < cand_count; ei++) {
+			struct cand_boundary_edge *ce = &cands[ei];
+			struct collider_triangle *t1 = &dst->triangles[ce->tri_index];
+			vec2 mid, ev, nrm, to_mid;
+			glm_vec2_center(ce->v0, ce->v1, mid);
+			glm_vec2_sub(ce->v1, ce->v0, ev);
+			nrm[0] = -ev[1];
+			nrm[1] = ev[0];
+			glm_vec2_normalize(nrm);
+			to_mid[0] = mid[0] - t1->center[0];
+			to_mid[1] = mid[1] - t1->center[2];
+			if (glm_vec2_dot(nrm, to_mid) < 0.0f) {
+				nrm[0] = -nrm[0];
+				nrm[1] = -nrm[1];
+			}
+			vec2 probe = { mid[0] + nrm[0] * 0.05f, mid[1] + nrm[1] * 0.05f };
+			float mid_y = glm_vec2_dot(t1->slope, mid) + t1->intercept;
+			int seam_tri = -1;
+			for (uint32_t ti = 0; ti < dst->nr_triangles; ti++) {
+				if (ti >= ce->tile_start && ti < ce->tile_end)
+					continue;
+				struct collider_triangle *t2 = &dst->triangles[ti];
+				if (!glm_aabb2d_point(t2->aabb, probe))
+					continue;
+				if (!in_triangle(t2, probe))
+					continue;
+				float y2 = glm_vec2_dot(t2->slope, probe) + t2->intercept;
+				if (fabsf(y2 - mid_y) < 2.0f) {
+					seam_tri = (int)ti;
+					break;
+				}
+			}
+			if (seam_tri >= 0) {
+				link_unique_neighbors(dst, ce->tri_index, seam_tri);
+			} else {
+				struct collider_edge *de = &dst->edges[out_edges++];
+				glm_vec2_copy(ce->v0, de->vertices[0]);
+				glm_vec2_copy(ce->v1, de->vertices[1]);
+				glm_vec2_minv(de->vertices[0], de->vertices[1], de->aabb[0]);
+				glm_vec2_maxv(de->vertices[0], de->vertices[1], de->aabb[1]);
+				de->tri_index = ce->tri_index;
+			}
+		}
+	}
+
+	dst->nr_edges = out_edges;
+	free(cands);
+	return dst;
 }
 
 bool collider_height(struct collider *collider, vec2 xz, float *h_out)
@@ -280,14 +470,21 @@ bool check_collision(struct collider *collider, vec2 p0, vec2 p1, float radius, 
 		float sq_distance = distance2_point_to_segment(out, e->vertices[0], e->vertices[1], q);
 		if (sq_distance < radius * radius) {
 			// out = q + normalize(out - q) * radius
-			vec2 v;
+			vec2 v, pushed;
 			glm_vec2_sub(out, q, v);
-			glm_vec2_normalize(v);
-			glm_vec2_copy(q, out);
-			glm_vec2_muladds(v, radius, out);
-			// update AABB
-			glm_vec2_subs(out, radius, aabb[0]);
-			glm_vec2_adds(out, radius, aabb[1]);
+			if (glm_vec2_norm2(v) < 1e-10f)
+				glm_vec2_sub(p0, q, v);
+			if (glm_vec2_norm2(v) >= 1e-10f) {
+				glm_vec2_normalize(v);
+				glm_vec2_copy(q, pushed);
+				glm_vec2_muladds(v, radius, pushed);
+				if (find_triangle(collider, pushed)) {
+					glm_vec2_copy(pushed, out);
+					// update AABB
+					glm_vec2_subs(out, radius, aabb[0]);
+					glm_vec2_adds(out, radius, aabb[1]);
+				}
+			}
 		}
 	}
 	return true;
@@ -380,10 +577,38 @@ static bool is_point_visible(vec3 point, mat4 vp_transform)
 {
 	vec4 p = { point[0], point[1], point[2], 1.f };
 	glm_mat4_mulv(vp_transform, p, p);
-	// Check if the point is in the view frustum.
-	return p[0] >= -p[3] && p[0] <= p[3] &&
-	       p[1] >= -p[3] && p[1] <= p[3] &&
+	// Check if the point is in the view frustum (with margin for large overworld triangles).
+	float xy_limit = p[3] * 1.25f;
+	return p[3] > 0.f &&
+	       p[0] >= -xy_limit && p[0] <= xy_limit &&
+	       p[1] >= -xy_limit && p[1] <= xy_limit &&
 	       p[2] >= -p[3] && p[2] <= p[3];
+}
+
+static struct collider_triangle *find_triangle_or_nearest(struct collider *collider, vec2 xz, float max_dist)
+{
+	struct collider_triangle *t = find_triangle(collider, xz);
+	if (t)
+		return t;
+	float best_d2 = max_dist * max_dist;
+	struct collider_triangle *best = NULL;
+	vec2 query_aabb[2] = { { xz[0] - max_dist, xz[1] - max_dist }, { xz[0] + max_dist, xz[1] + max_dist } };
+	for (uint32_t i = 0; i < collider->nr_triangles; i++) {
+		struct collider_triangle *cand = &collider->triangles[i];
+		if (!glm_aabb2d_aabb(cand->aabb, query_aabb))
+			continue;
+		for (int e = 0; e < 3; e++) {
+			vec2 a = { cand->vertices[e][0], cand->vertices[e][2] };
+			vec2 b = { cand->vertices[(e + 1) % 3][0], cand->vertices[(e + 1) % 3][2] };
+			vec2 cp;
+			float d2 = distance2_point_to_segment(xz, a, b, cp);
+			if (d2 < best_d2) {
+				best_d2 = d2;
+				best = cand;
+			}
+		}
+	}
+	return best;
 }
 
 bool collider_find_path(struct collider *collider, vec3 start, vec3 goal, mat4 vp_transform)
@@ -395,11 +620,11 @@ bool collider_find_path(struct collider *collider, vec3 start, vec3 goal, mat4 v
 	}
 
 	// A* search for a graph with triangle centers as nodes and neighbors as edges.
-	struct collider_triangle* start_t = find_triangle(collider, (vec2){ start[0], start[2] });
-	if (!start_t || !is_point_visible(start_t->center, vp_transform))
+	struct collider_triangle* start_t = find_triangle_or_nearest(collider, (vec2){ start[0], start[2] }, 0.5f);
+	if (!start_t || (!is_point_visible(start_t->center, vp_transform) && !is_point_visible(start, vp_transform)))
 		return false;
-	struct collider_triangle* goal_t = find_triangle(collider, (vec2){ goal[0], goal[2] });
-	if (!goal_t || !is_point_visible(goal_t->center, vp_transform))
+	struct collider_triangle* goal_t = find_triangle_or_nearest(collider, (vec2){ goal[0], goal[2] }, 0.5f);
+	if (!goal_t || (!is_point_visible(goal_t->center, vp_transform) && !is_point_visible(goal, vp_transform)))
 		return false;
 
 	int start_i = start_t - collider->triangles;

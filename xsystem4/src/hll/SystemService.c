@@ -15,6 +15,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 
@@ -175,7 +176,7 @@ static bool SystemService_SetHideMouseCursorByGame(bool hide)
 //bool SystemService_GetHideMouseCursorByGame(void);
 HLL_WARN_UNIMPLEMENTED(false, bool, SystemService, SetUsePower2Texture, bool use);
 //bool SystemService_GetUsePower2Texture(void);
-HLL_WARN_UNIMPLEMENTED(true, bool, SystemService, SetAntiAliasingMode, int mode);
+HLL_QUIET_UNIMPLEMENTED(true, bool, SystemService, SetAntiAliasingMode, int mode);
 //int SystemService_GetAntiAliasingMode(void);
 
 enum window_settings_asect_ratio {
@@ -829,6 +830,34 @@ static struct string *SystemService_GetCountryNo(void)
 	return cstr_to_string("86");
 }
 
+static bool SystemService_ScanFloat(struct string *s, float *out)
+{
+	if (!s || !s->text[0]) {
+		if (out)
+			*out = 0.0f;
+		return false;
+	}
+	char *end = NULL;
+	float val = strtof(s->text, &end);
+	if (end == s->text) {
+		if (out)
+			*out = 0.0f;
+		return false;
+	}
+	if (out)
+		*out = val;
+	return true;
+}
+
+static void SystemService_GetSystemName(struct string **out)
+{
+	if (!out)
+		return;
+	if (*out)
+		free_string(*out);
+	*out = cstr_to_string(game_evenicle ? "828pg55b349" : "System4.0");
+}
+
 static char **backup_save_files = NULL;
 static int nr_backup_save_files = 0;
 
@@ -889,8 +918,8 @@ static bool SystemService_Save(struct page **out)
 		memcpy(buf + pos, v->value->text, vlen);
 		pos += vlen;
 	}
-	struct ain_type int_type = { .data = AIN_INT, .struc = -1 };
-	struct page *page = v12_array_new(&int_type, nr_ints, false);
+	union vm_value dim = { .i = nr_ints };
+	struct page *page = alloc_array(1, &dim, AIN_ARRAY_INT, 0, false);
 	for (int i = 0; i < nr_ints; i++)
 		page->values[i].i = LittleEndian_getDW(buf, i * 4);
 	free(buf);
@@ -979,6 +1008,8 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(SetResizableUserControl, SystemService_SetResizableUserControl),
 	    HLL_EXPORT(IsResizableUserControl, SystemService_IsResizableUserControl),
 	    HLL_EXPORT(GetCountryNo, SystemService_GetCountryNo),
+	    HLL_EXPORT(ScanFloat, SystemService_ScanFloat),
+	    HLL_EXPORT(GetSystemName, SystemService_GetSystemName),
 	    HLL_EXPORT(AddBackupSaveFileName, SystemService_AddBackupSaveFileName),
 	    HLL_EXPORT(BackupSaveFile, SystemService_BackupSaveFile),
 	    HLL_EXPORT(Save, SystemService_Save),

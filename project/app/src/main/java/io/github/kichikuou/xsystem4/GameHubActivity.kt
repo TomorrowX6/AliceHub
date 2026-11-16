@@ -148,8 +148,12 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         deleteMenu?.isVisible = (cur != null)
         deleteMenu?.subMenu?.clearHeader()
         menu.findItem(R.id.uninstall_game)?.isVisible = (cur != null)
-        menu.findItem(R.id.uninstall_mod)?.isVisible =
+        val uninstallModItem = menu.findItem(R.id.uninstall_mod)
+        uninstallModItem?.isVisible =
             (cur != null && descriptor.supportsLocalMod && gameList.hasInstalledMod(cur))
+        uninstallModItem?.setTitle(
+            if (descriptor.isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod
+        )
         return super.onPrepareOptionsMenu(menu)
     }
 
@@ -236,10 +240,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         )
 
         findViewById<TextView>(R.id.hub_title).text =
-            if (descriptor.id == GameCatalog.ID_RANCE10 || descriptor.id == GameCatalog.ID_DOHNA_DOHNA) {
+            if (descriptor.id == GameCatalog.ID_RANCE10 ||
+                descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
+                descriptor.id == GameCatalog.ID_EVENICLE
+            ) {
                 descriptor.title
             } else {
-                curItem?.cleanGameTitle() ?: descriptor.title
+                curItem?.let { GameCatalog.cleanItemTitle(it.name) } ?: descriptor.title
             }
 
         val runningRoot = GameCatalog.getRunningGameRoot(this)
@@ -263,8 +270,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 statusTone = UiKit.Tone.DANGER
             }
             curItem != null && gameList.hasInstalledMod(curItem) -> {
-                val ver = gameList.getInstalledModInfo(curItem)?.version?.takeIf { it.isNotBlank() } ?: "MOD"
-                statusText = getString(R.string.game_status_installed_mod, ver)
+                val modInfo = gameList.getInstalledModInfo(curItem)
+                val isCnPatch = descriptor.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
+                val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
+                statusText = getString(
+                    if (isCnPatch) R.string.game_status_installed_cn_patch else R.string.game_status_installed_mod,
+                    ver
+                )
                 statusTone = UiKit.Tone.SUCCESS
             }
             curItem != null -> {
@@ -312,12 +324,18 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val onlineEnabled = descriptor.supportsOnlineBaseInstall && AppSettings.isOnlineInstallEnabled(this)
         onlineBtn.visibility = if (onlineEnabled) View.VISIBLE else View.GONE
         onlineBtn.text = onlineInstallLabel()
-        modMgrBtn.visibility = if (descriptor.supportsOnlineMod) View.VISIBLE else View.GONE
+        val hasOverlaySupport = descriptor.supportsOnlineMod || descriptor.supportsLocalMod
+        modMgrBtn.visibility = if (hasOverlaySupport) View.VISIBLE else View.GONE
+        modMgrBtn.setText(if (descriptor.isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
 
         val rowAccent = UiKit.accentOnSurface(this, descriptor.accentColor)
         UiKit.styleActionRow(onlineBtn, R.drawable.ic_cloud_download, rowAccent)
         UiKit.styleActionRow(localBtn, R.drawable.ic_folder_open, rowAccent)
-        UiKit.styleActionRow(modMgrBtn, R.drawable.ic_extension, rowAccent)
+        UiKit.styleActionRow(
+            modMgrBtn,
+            if (descriptor.isCnPatch) R.drawable.ic_language else R.drawable.ic_extension,
+            rowAccent
+        )
         UiKit.styleActionRow(findViewById(R.id.btn_hub_save_manager), R.drawable.ic_save, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_game_modifier), R.drawable.ic_tune, rowAccent)
     }
@@ -464,46 +482,19 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun openLocalInstallBaseDialog() {
         if (gameList.installState is InstallState.Installing) return
-        val options = arrayOf(
-            getString(R.string.game_opt_zip),
-            getString(R.string.game_opt_dir)
+        GameCatalog.showLocalGameImportDialog(
+            activity = this,
+            titleRes = R.string.game_local_dialog_title,
+            archiveReqCode = HUB_INSTALL_ARCHIVE_REQ,
+            dirReqCode = HUB_INSTALL_DIR_REQ
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.game_local_dialog_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivityForResult(
-                            Intent.createChooser(i, getString(R.string.choose_a_file)),
-                            HUB_INSTALL_ARCHIVE_REQ
-                        )
-                    }
-                    1 -> {
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, HUB_INSTALL_DIR_REQ)
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun Item.cleanGameTitle(): String {
-        val idx = name.indexOf(" [MOD")
-        return if (idx > 0) name.substring(0, idx) else name
     }
 
     private fun openModManager() {
         val target = selectedItem
         if (target == null) {
             AlertDialog.Builder(this)
-                .setTitle(R.string.mod_mgr_activity_title)
+                .setTitle(if (descriptor.isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
                 .setMessage(R.string.mod_no_game_installed)
                 .setPositiveButton(R.string.ok, null)
                 .show()
@@ -511,6 +502,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         }
         val intent = Intent(this, ModManagerActivity::class.java)
             .putExtra(ModManagerActivity.EXTRA_GAME_PATH, target.path.path)
+            .putExtra(ModManagerActivity.EXTRA_GAME_ID, descriptor.id)
         startActivity(intent)
     }
 
@@ -539,7 +531,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         ensureGameNotRunning(this) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.action_delete_base_game)
-                .setMessage(getString(R.string.delete_base_game_message, item.cleanGameTitle()))
+                .setMessage(getString(R.string.delete_base_game_message, GameCatalog.cleanItemTitle(item.name)))
                 .setPositiveButton(R.string.ok) { _, _ ->
                     gameList.uninstall(item)
                     rebindGameState()
@@ -560,23 +552,34 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             renderInstallState(gameList.installState)
             return
         }
+        val titleRes = if (descriptor.isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod
         if (!gameList.canRestoreVanilla(item)) {
             AlertDialog.Builder(this)
-                .setTitle(R.string.action_uninstall_mod)
-                .setMessage(R.string.uninstall_mod_no_backup_msg)
+                .setTitle(titleRes)
+                .setMessage(
+                    if (descriptor.isCnPatch) R.string.uninstall_cn_patch_no_backup_msg
+                    else R.string.uninstall_mod_no_backup_msg
+                )
                 .setPositiveButton(R.string.ok, null)
                 .show()
             return
         }
         AlertDialog.Builder(this)
-            .setTitle(R.string.action_uninstall_mod)
-            .setMessage(R.string.mod_mgr_restore_confirm)
+            .setTitle(titleRes)
+            .setMessage(
+                if (descriptor.isCnPatch) R.string.cn_patch_mgr_restore_confirm
+                else R.string.mod_mgr_restore_confirm
+            )
             .setPositiveButton(R.string.ok) { _, _ ->
                 ensureGameNotRunning(this) {
                     if (gameList.restoreMod(item)) {
                         rebindGameState()
                         refreshUi()
-                        Toast.makeText(this, R.string.mod_restored_toast, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this,
+                            if (descriptor.isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast,
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             }

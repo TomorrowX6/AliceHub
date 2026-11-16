@@ -21,6 +21,7 @@
 #define RE_NR_INSTANCE_TARGETS 2
 #define RE_NR_LIGHT_PARAMS 41  // .lit parameter count
 
+#include <stdint.h>
 #include <cglm/types.h>
 
 #include "gfx/gfx.h"
@@ -29,6 +30,9 @@
 typedef struct cJSON cJSON;
 struct hash_table;
 struct billboard_texture;
+struct collider;
+struct iarray_writer;
+struct iarray_reader;
 
 enum RE_plugin_version {
 	RE_REIGN_PLUGIN,  // Toushin Toshi 3
@@ -91,6 +95,7 @@ enum RE_draw_type {
 enum RE_draw_options {
 	RE_DRAW_OPTION_EDGE = 0,
 	RE_DRAW_OPTION_LIGHTING = 1,
+	RE_DRAW_OPTION_GLARE = 2,
 	RE_DRAW_OPTION_MAX
 };
 
@@ -176,6 +181,7 @@ struct RE_plugin {
 
 	// TapirEngine
 	bool suspended;
+	bool resume_show_sprite;
 
 	// SealEngine
 	int mag_speed;
@@ -183,6 +189,9 @@ struct RE_plugin {
 	float edge_length;
 	float edge_reduction_rate;
 	vec3 edge_color;
+	struct collider *collider;
+	uint64_t collider_hash;
+	bool collider_hash_valid;
 };
 
 struct RE_instance {
@@ -193,6 +202,7 @@ struct RE_instance {
 	struct motion *motion;
 	struct motion *next_motion;
 	struct height_detector *height_detector;
+	char *load_name;
 
 	enum RE_instance_type type;
 	int target[RE_NR_INSTANCE_TARGETS];
@@ -242,7 +252,7 @@ struct RE_instance {
 	int texture_animation_index;
 };
 
-#define RE_MAX_PLUGINS 2
+#define RE_MAX_PLUGINS 16
 struct RE_plugin *RE_get_plugin(int handle);
 
 struct RE_plugin *RE_plugin_new(enum RE_plugin_version version);
@@ -271,6 +281,7 @@ bool RE_instance_set_vertex_uv(struct RE_instance *instance, int index, float u,
 int RE_instance_get_bone_index(struct RE_instance *instance, const char *name);
 bool RE_instance_trans_local_pos_to_world_pos_by_bone(struct RE_instance *instance, int bone, vec3 offset, vec3 out);
 float RE_instance_calc_height(struct RE_instance *instance, float x, float z);
+bool RE_instance_calc_height_ex(struct RE_instance *instance, float x, float z, float *y_out);
 float RE_instance_calc_2d_detection_height(struct RE_instance *instance, float x, float z);
 bool RE_instance_calc_2d_detection(struct RE_instance *instance, float x0, float y0, float z0, float x1, float y1, float z1, float *x2, float *y2, float *z2, float radius);
 bool RE_instance_set_debug_draw_shadow_volume(struct RE_instance *instance, bool draw);
@@ -278,6 +289,12 @@ bool RE_instance_find_path(struct RE_instance *instance, vec3 start, vec3 goal);
 const vec3 *RE_instance_get_path_line(struct RE_instance *instance, int *nr_path_points);
 bool RE_instance_optimize_path_line(struct RE_instance *instance);
 bool RE_instance_calc_path_finder_intersect_eye_vec(struct RE_instance *instance, int mouse_x, int mouse_y, vec3 out);
+bool RE_plugin_calc_2d_detection_height(struct RE_plugin *plugin, float x, float z, float *height_out);
+bool RE_plugin_calc_2d_detection(struct RE_plugin *plugin, float x0, float y0, float z0, float x1, float y1, float z1, float radius, float *x2, float *y2, float *z2);
+bool RE_plugin_calc_2d_detection_intersect_eye_vec(struct RE_plugin *plugin, int view_x, int view_y, vec3 out);
+bool RE_plugin_find_path(struct RE_plugin *plugin, vec3 start, vec3 goal);
+const vec3 *RE_plugin_get_path_line(struct RE_plugin *plugin, int *nr_path_points);
+bool RE_plugin_optimize_path_line(struct RE_plugin *plugin);
 bool RE_plugin_transform_pos_to_view_pos(struct RE_plugin *plugin, float x, float y, float z, int *view_x, int *view_y);
 bool RE_plugin_get_camera_x_vector(struct RE_plugin *plugin, vec3 out);
 bool RE_plugin_get_camera_y_vector(struct RE_plugin *plugin, vec3 out);
@@ -366,8 +383,11 @@ cJSON *RE_to_json(struct sact_sprite *sp, bool verbose);
 
 // Exposed for PartsEngine 3DLayer
 int ReignEngine_create_plugin(enum RE_plugin_version version);
+int ReignEngine_create_plugin_at(int handle, enum RE_plugin_version version);
 bool ReignEngine_ReleasePlugin(int handle);
 bool ReignEngine_BindPlugin(int handle, int sprite);
+void RE_plugin_save(struct RE_plugin *plugin, struct iarray_writer *w);
+bool RE_plugin_load(struct RE_plugin *plugin, struct iarray_reader *r);
 
 // Exposed for MarmotModelEngine
 void ReignEngine_update_models(void);
