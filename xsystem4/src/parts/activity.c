@@ -9,6 +9,7 @@
 #include "system4/archive.h"
 #include "system4/ex.h"
 #include "system4/file.h"
+#include "system4/hashtable.h"
 #include "system4/string.h"
 #include "system4/utfsjis.h"
 #include "asset_manager.h"
@@ -556,10 +557,7 @@ struct string *PE_GetUserComponentData(int no, struct string *key)
 static struct ex_tree *node(struct ex_tree *tree, const char *key)
 {
 	if (!tree || tree->is_leaf) return NULL;
-	char *encoded = utf2sjis(key, strlen(key));
-	struct ex_tree *result = ex_tree_get_child(tree, encoded);
-	free(encoded);
-	return result;
+	return ex_tree_get_child(tree, parts_utf8_to_cjk_literal(key));
 }
 
 static struct ex_tree *node2(struct ex_tree *tree, const char *k1, const char *k2)
@@ -1183,10 +1181,7 @@ static void load_part_links(struct activity *a, struct ex_tree *tree)
 
 static struct ex_value *block(struct ex *ex, const char *key)
 {
-	char *encoded = utf2sjis(key, strlen(key));
-	struct ex_value *v = ex_get(ex, encoded);
-	free(encoded);
-	return v;
+	return ex_get(ex, parts_utf8_to_cjk_literal(key));
 }
 
 static struct ex_value *block2(struct ex *ex, const char *k1, const char *k2)
@@ -1195,11 +1190,25 @@ static struct ex_value *block2(struct ex *ex, const char *k1, const char *k2)
 	return v ? v : block(ex, k2);
 }
 
+static bool ascii_ends_with_ci(const char *s, size_t len, const char *sfx, size_t slen)
+{
+	if (len < slen)
+		return false;
+	const char *tail = s + (len - slen);
+	for (size_t i = 0; i < slen; i++) {
+		if (tolower((unsigned char)tail[i]) != tolower((unsigned char)sfx[i]))
+			return false;
+	}
+	return true;
+}
+
 static char *activity_file_path_cstr(const char *text, size_t size)
 {
 	char *path = gamedir_path_icase(text);
 	if (path && file_exists(path)) return path;
 	free(path);
+	if (ascii_ends_with_ci(text, size, ".pact", 5) || ascii_ends_with_ci(text, size, ".pactex", 7))
+		return NULL;
 	char *name = xmalloc(size + 8);
 	memcpy(name, text, size);
 	strcpy(name + size, ".pactex");
@@ -1229,13 +1238,36 @@ static const char *pact_leaf_name(const char *path)
 	return leaf;
 }
 
-static bool pact_has_asra_prefix(const char *path)
+static bool pact_has_dir_prefix(const char *path, const char *dir, size_t dlen)
 {
-	return tolower((unsigned char)path[0]) == 'a'
-		&& tolower((unsigned char)path[1]) == 's'
-		&& tolower((unsigned char)path[2]) == 'r'
-		&& tolower((unsigned char)path[3]) == 'a'
-		&& (path[4] == '\\' || path[4] == '/');
+	for (size_t i = 0; i < dlen; i++) {
+		if (tolower((unsigned char)path[i]) != tolower((unsigned char)dir[i]))
+			return false;
+	}
+	return path[dlen] == '\\' || path[dlen] == '/';
+}
+
+static bool pact_dir_exists(const char *dir, int *cached)
+{
+	if (*cached < 0) {
+		char *p = gamedir_path_icase(dir);
+		*cached = (p && is_directory(p)) ? 1 : 0;
+		free(p);
+	}
+	return *cached == 1;
+}
+
+static bool pact_try_asset(const char *name, struct archive_data **data_out)
+{
+	if (data_out) {
+		struct archive_data *d = asset_get_by_name(ASSET_PACT, name, NULL);
+		if (d) {
+			*data_out = d;
+			return true;
+		}
+		return false;
+	}
+	return asset_exists_by_name(ASSET_PACT, name, NULL);
 }
 
 /*
@@ -1250,7 +1282,7 @@ static size_t pact_build_candidates(const char *orig, char *out[5], char *scratc
 	size_t n = 0;
 	int s = 0;
 	out[n++] = (char *)orig;
-	if (pact_has_asra_prefix(orig)) {
+	if (pact_has_dir_prefix(orig, "asra", 4)) {
 		const char *rest = orig + 5;
 		if (rest[0]) {
 			out[n++] = (char *)rest;
@@ -1298,27 +1330,30 @@ static size_t pact_build_candidates(const char *orig, char *out[5], char *scratc
 
 static bool pact_lookup_asset(const char *orig, struct archive_data **data_out, char **fs_path_out)
 {
+	static struct hash_table *pact_miss_table = NULL;
+	static size_t nr_pact_misses = 0;
+	static int has_asra_dir = -1;
+	static int has_config_dir = -1;
+
 	if (data_out)
 		*data_out = NULL;
 	if (fs_path_out)
 		*fs_path_out = NULL;
 	if (!orig || !orig[0])
 		return false;
+	if (pact_miss_table && ht_get(pact_miss_table, orig, NULL))
+		return false;
+
+	if (pact_try_asset(orig, data_out))
+		return true;
 
 	char *cands[5];
 	char *scratch[4];
 	size_t ncands = pact_build_candidates(orig, cands, scratch);
 	bool found = false;
 
-	for (size_t i = 0; i < ncands; i++) {
-		if (data_out) {
-			struct archive_data *d = asset_get_by_name(ASSET_PACT, cands[i], NULL);
-			if (d) {
-				*data_out = d;
-				found = true;
-				break;
-			}
-		} else if (asset_exists_by_name(ASSET_PACT, cands[i], NULL)) {
+	for (size_t i = 1; i < ncands; i++) {
+		if (pact_try_asset(cands[i], data_out)) {
 			found = true;
 			break;
 		}
@@ -1326,6 +1361,10 @@ static bool pact_lookup_asset(const char *orig, struct archive_data **data_out, 
 
 	if (!found) {
 		for (size_t i = 0; i < ncands; i++) {
+			if (pact_has_dir_prefix(cands[i], "asra", 4) && !pact_dir_exists("asra", &has_asra_dir))
+				continue;
+			if (pact_has_dir_prefix(cands[i], "config", 6) && !pact_dir_exists("config", &has_config_dir))
+				continue;
 			char *path = activity_file_path_cstr(cands[i], strlen(cands[i]));
 			if (path && file_exists(path)) {
 				if (fs_path_out)
@@ -1341,6 +1380,18 @@ static bool pact_lookup_asset(const char *orig, struct archive_data **data_out, 
 
 	for (int i = 0; i < 4; i++)
 		free(scratch[i]);
+
+	if (!found) {
+		if (!pact_miss_table)
+			pact_miss_table = ht_create(256);
+		if (nr_pact_misses < 4096) {
+			struct ht_slot *ms = ht_put(pact_miss_table, orig, NULL);
+			if (!ms->value) {
+				ms->value = (void *)1;
+				nr_pact_misses++;
+			}
+		}
+	}
 	return found;
 }
 

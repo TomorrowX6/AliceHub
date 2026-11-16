@@ -162,21 +162,23 @@ static void encode_utf8_bmp(int u, uint8_t **dstp)
 }
 
 /* Decode SJIS (gbk=false) or GBK (gbk=true) to UTF-8 without mutating sys4_text_is_gbk.
+ * Writes into caller-supplied `buf` when `len * 3 + 1 <= buf_cap`, otherwise allocates.
  * Returns NULL and sets *valid_out=false if any byte sequence is invalid or unmapped. */
-char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
+char *cjk2utf_strict_buf(const char *_src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out)
 {
 	if (valid_out)
 		*valid_out = false;
 	if (!_src)
 		return NULL;
 	const uint8_t *src = (const uint8_t *)_src;
-	size_t len = strlen(_src);
-	uint8_t *dst = malloc(len * 3 + 1);
+	const uint8_t *end = src + len;
+	size_t need = len * 3 + 1;
+	uint8_t *dst = (buf && need <= buf_cap) ? (uint8_t *)buf : malloc(need);
 	if (!dst)
 		return NULL;
 	uint8_t *dstp = dst;
 
-	while (*src) {
+	while (src < end && *src) {
 		uint8_t b0 = *src;
 		if (b0 <= 0x7f) {
 			*dstp++ = b0;
@@ -188,7 +190,7 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 			if (b0 >= 0xa1 && b0 <= 0xdf) {
 				u = 0xff60 + (b0 - 0xa0);
 				src++;
-			} else if (b0 >= 0x81 && b0 != 0xa0 && ((b0 & 0xe0) == 0x80 || (b0 & 0xe0) == 0xe0) && src[1]) {
+			} else if (b0 >= 0x81 && b0 != 0xa0 && ((b0 & 0xe0) == 0x80 || (b0 & 0xe0) == 0xe0) && src + 1 < end && src[1]) {
 				uint8_t b1 = src[1];
 				size_t r = (size_t)(b0 - 0x80);
 				size_t c = (size_t)(b1 - 0x40);
@@ -197,7 +199,7 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 				src += 2;
 			}
 		} else {
-			if (b0 >= 0x81 && b0 <= 0xfe && src[1]) {
+			if (b0 >= 0x81 && b0 <= 0xfe && src + 1 < end && src[1]) {
 				uint8_t b1 = src[1];
 				size_t r = (size_t)(b0 - 0x81);
 				size_t c = (size_t)(b1 - 0x40);
@@ -208,7 +210,8 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 			}
 		}
 		if (u <= 0) {
-			free(dst);
+			if (dst != (uint8_t *)buf)
+				free(dst);
 			return NULL;
 		}
 		encode_utf8_bmp(u, &dstp);
@@ -217,6 +220,13 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 	if (valid_out)
 		*valid_out = true;
 	return (char *)dst;
+}
+
+/* Decode SJIS (gbk=false) or GBK (gbk=true) to UTF-8 without mutating sys4_text_is_gbk.
+ * Returns NULL and sets *valid_out=false if any byte sequence is invalid or unmapped. */
+char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
+{
+	return cjk2utf_strict_buf(_src, _src ? strlen(_src) : 0, gbk, NULL, 0, valid_out);
 }
 
 int cjk_encode_codepoint(int u, bool gbk)

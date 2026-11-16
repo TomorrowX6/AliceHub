@@ -63,9 +63,8 @@ static bool load_skin(struct parts *parts, struct parts_state *state, struct str
 	struct string *name = string_dup(base);
 	const char *names[] = {piece, suffix};
 	for (int i = 0; i < 2; i++) {
-		char *encoded = utf2sjis(names[i], strlen(names[i]));
+		const char *encoded = parts_utf8_to_cjk_literal(names[i]);
 		string_append_cstr(&name, encoded, strlen(encoded));
-		free(encoded);
 	}
 	parts_state_reset(state, flat ? PARTS_FLAT : PARTS_CG);
 	bool ok = flat ? parts_flat_load(parts, &state->flat, name)

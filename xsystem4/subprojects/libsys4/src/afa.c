@@ -83,9 +83,11 @@ struct afa_entry *afa_lookup_by_basename(struct afa_archive *ar, const char *nam
 		}
 	}
 
-	char *basename = archive_basename(name);
+	char buf[512];
+	char *basename = archive_basename_buf(name, buf, sizeof(buf));
 	struct afa_entry *entry = ht_get(ar->basename_index, basename, NULL);
-	free(basename);
+	if (basename != buf)
+		free(basename);
 	return entry;
 }
 

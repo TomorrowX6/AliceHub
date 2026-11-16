@@ -743,6 +743,7 @@ void parts_widget_create(struct parts *parts);
 void parts_checkbox_create(struct parts *parts);
 void parts_widget_create_deferred(struct parts *parts, int type);
 void parts_widget_end_batch(struct parts *parts);
+const char *parts_utf8_to_cjk_literal(const char *literal);
 void parts_widget_free(struct parts *parts);
 void parts_widget_rebuild(struct parts *parts);
 void parts_widget_get_size(struct parts *parts, int *width, int *height);

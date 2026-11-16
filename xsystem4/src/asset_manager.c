@@ -87,6 +87,8 @@ struct asset_manager_afa {
 	size_t nr_canon_entries;
 	size_t cap_canon_entries;
 	bool canon_index_valid;
+	struct hash_table *miss_table;
+	size_t nr_miss_entries;
 };
 
 static struct asset_manager *assets[ASSET_TYPE_MAX] = {0};
@@ -316,6 +318,11 @@ static void afa_invalidate_canon_index(struct asset_manager_afa *manager)
 		ht_free(manager->canon_basename_table);
 		manager->canon_basename_table = NULL;
 	}
+	if (manager->miss_table) {
+		ht_free(manager->miss_table);
+		manager->miss_table = NULL;
+	}
+	manager->nr_miss_entries = 0;
 	free(manager->canon_entries);
 	manager->canon_entries = NULL;
 	manager->nr_canon_entries = 0;
@@ -555,17 +562,24 @@ static void afa_ensure_canon_index(struct asset_manager_afa *manager)
 			const char *ename = ar->files[j].name->text;
 			if (!name_has_non_ascii(ename))
 				continue;
-			char *ebase = archive_basename(ename);
+			char base_buf[512];
+			char sjis_buf[1536];
+			char gbk_buf[1536];
+			char *ebase = archive_basename_buf(ename, base_buf, sizeof(base_buf));
 			char *sjis_form = NULL;
 			char *gbk_form = NULL;
-			save_cjk_canon_forms(ebase, &sjis_form, &gbk_form);
-			free(ebase);
+			save_cjk_canon_forms_buf(ebase, sjis_buf, sizeof(sjis_buf), &sjis_form,
+					gbk_buf, sizeof(gbk_buf), &gbk_form);
+			if (ebase != base_buf)
+				free(ebase);
 			if (sjis_form)
 				afa_canon_index_insert(manager, sjis_form, ar, &ar->files[j]);
 			if (gbk_form && (!sjis_form || strcmp(sjis_form, gbk_form) != 0))
 				afa_canon_index_insert(manager, gbk_form, ar, &ar->files[j]);
-			free(sjis_form);
-			free(gbk_form);
+			if (sjis_form != sjis_buf)
+				free(sjis_form);
+			if (gbk_form != gbk_buf)
+				free(gbk_form);
 		}
 	}
 	manager->canon_index_valid = true;
@@ -578,47 +592,81 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 	if (best_entry || !name || !name_has_non_ascii(name))
 		return best_entry;
 
-	size_t name_len = strlen(name);
-	// Fast O(1) opposite-encoding fallback (both native->opp and opp->native).
-	for (int dir = 0; dir < 2; dir++) {
-		bool src_gbk = (dir == 0) ? !sys4_text_is_gbk : sys4_text_is_gbk;
-		char *alt = save_transcode_cstr(name, name_len, src_gbk, !src_gbk, NULL);
-		best_entry = afa_find_best_raw(manager, alt, ar_out);
-		free(alt);
-		if (best_entry)
-			return best_entry;
-	}
+	if (manager->miss_table && ht_get(manager->miss_table, name, NULL))
+		return NULL;
 
 	// Lazily indexed O(1) canonical Shinjitai/Simplified fallback across non-ASCII entries.
 	afa_ensure_canon_index(manager);
-	char *target_base = archive_basename(name);
+
+	char base_buf[512];
+	char *target_base = archive_basename_buf(name, base_buf, sizeof(base_buf));
+	char q_sjis_buf[1536];
+	char q_gbk_buf[1536];
 	char *q_sjis = NULL;
 	char *q_gbk = NULL;
-	save_cjk_canon_forms(target_base, &q_sjis, &q_gbk);
-	free(target_base);
+	save_cjk_canon_forms_buf(target_base, q_sjis_buf, sizeof(q_sjis_buf), &q_sjis,
+			q_gbk_buf, sizeof(q_gbk_buf), &q_gbk);
+	if (target_base != base_buf)
+		free(target_base);
 
 	struct afa_archive *best_ar = NULL;
 	best_entry = NULL;
-	const char *queries[2] = { q_sjis, q_gbk };
-	for (int k = 0; k < 2; k++) {
-		if (!queries[k])
-			continue;
-		if (k == 1 && q_sjis && !strcmp(q_sjis, q_gbk))
-			continue;
-		void *val = ht_get(manager->canon_basename_table, queries[k], NULL);
-		if (!val)
-			continue;
-		size_t idx = (size_t)(uintptr_t)val - 1;
-		struct afa_canon_entry *ce = &manager->canon_entries[idx];
-		if (afa_candidate_beats(best_ar, best_entry, ce->ar, ce->entry)) {
-			best_ar = ce->ar;
-			best_entry = ce->entry;
+	if (manager->nr_canon_entries > 0) {
+		const char *queries[2] = { q_sjis, q_gbk };
+		for (int k = 0; k < 2; k++) {
+			if (!queries[k])
+				continue;
+			if (k == 1 && q_sjis && !strcmp(q_sjis, q_gbk))
+				continue;
+			void *val = ht_get(manager->canon_basename_table, queries[k], NULL);
+			if (!val)
+				continue;
+			size_t idx = (size_t)(uintptr_t)val - 1;
+			struct afa_canon_entry *ce = &manager->canon_entries[idx];
+			if (afa_candidate_beats(best_ar, best_entry, ce->ar, ce->entry)) {
+				best_ar = ce->ar;
+				best_entry = ce->entry;
+			}
 		}
 	}
-	free(q_sjis);
-	free(q_gbk);
-	if (best_entry)
+	if (best_entry) {
 		*ar_out = best_ar;
+		goto out_free;
+	}
+
+	// Strict opposite-encoding fallback for halfwidth kana / middot / wave dash pairs
+	// not normalized into canon_basename_table; skip directions that failed strict decode.
+	size_t name_len = strlen(name);
+	bool can_decode[2] = { q_sjis != NULL, q_gbk != NULL };
+	for (int dir = 0; dir < 2; dir++) {
+		bool src_gbk = (dir == 0) ? !sys4_text_is_gbk : sys4_text_is_gbk;
+		if (!can_decode[src_gbk ? 1 : 0])
+			continue;
+		char *alt = save_transcode_cstr_strict(name, name_len, src_gbk, !src_gbk, NULL);
+		if (alt) {
+			best_entry = afa_find_best_raw(manager, alt, ar_out);
+			free(alt);
+			if (best_entry)
+				goto out_free;
+		}
+	}
+
+out_free:
+	if (q_sjis != q_sjis_buf)
+		free(q_sjis);
+	if (q_gbk != q_gbk_buf)
+		free(q_gbk);
+	if (!best_entry) {
+		if (!manager->miss_table)
+			manager->miss_table = ht_create(1024);
+		if (manager->nr_miss_entries < 65536) {
+			struct ht_slot *ms = ht_put(manager->miss_table, name, NULL);
+			if (!ms->value) {
+				ms->value = (void *)1;
+				manager->nr_miss_entries++;
+			}
+		}
+	}
 	return best_entry;
 }
 

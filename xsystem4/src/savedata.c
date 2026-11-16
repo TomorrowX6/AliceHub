@@ -536,19 +536,24 @@ static void canon_kanji_utf8_inplace(char *utf8)
 	}
 }
 
-static void decode_cjk_forms(const char *s, bool canonicalize, char **sjis_out, char **gbk_out)
+static void decode_cjk_forms_buf(const char *s, bool canonicalize,
+		char *sjis_buf, size_t sjis_cap, char **sjis_out,
+		char *gbk_buf, size_t gbk_cap, char **gbk_out)
 {
 	bool ok_s = false, ok_g = false;
-	*sjis_out = cjk2utf_strict(s, false, &ok_s);
-	*gbk_out = cjk2utf_strict(s, true, &ok_g);
+	size_t slen = strlen(s);
+	*sjis_out = cjk2utf_strict_buf(s, slen, false, sjis_buf, sjis_cap, &ok_s);
+	*gbk_out = cjk2utf_strict_buf(s, slen, true, gbk_buf, gbk_cap, &ok_g);
 	if (!ok_s) {
-		free(*sjis_out);
+		if (*sjis_out != sjis_buf)
+			free(*sjis_out);
 		*sjis_out = NULL;
 	} else if (canonicalize) {
 		canon_kanji_utf8_inplace(*sjis_out);
 	}
 	if (!ok_g) {
-		free(*gbk_out);
+		if (*gbk_out != gbk_buf)
+			free(*gbk_out);
 		*gbk_out = NULL;
 	} else if (canonicalize) {
 		canon_kanji_utf8_inplace(*gbk_out);
@@ -566,19 +571,24 @@ static bool save_cjk_match_impl(const char *a, const char *b, bool canonicalize)
 	if (cjk_is_ascii_only(a) && cjk_is_ascii_only(b))
 		return false;
 
+	char as_buf[512], ag_buf[512], bs_buf[512], bg_buf[512];
 	char *as = NULL, *ag = NULL, *bs = NULL, *bg = NULL;
-	decode_cjk_forms(a, canonicalize, &as, &ag);
-	decode_cjk_forms(b, canonicalize, &bs, &bg);
+	decode_cjk_forms_buf(a, canonicalize, as_buf, sizeof(as_buf), &as, ag_buf, sizeof(ag_buf), &ag);
+	decode_cjk_forms_buf(b, canonicalize, bs_buf, sizeof(bs_buf), &bs, bg_buf, sizeof(bg_buf), &bg);
 
 	bool match = (as && bg && !strcmp(as, bg))
 		|| (ag && bs && !strcmp(ag, bs))
 		|| (as && bs && !strcmp(as, bs))
 		|| (ag && bg && !strcmp(ag, bg));
 
-	free(as);
-	free(ag);
-	free(bs);
-	free(bg);
+	if (as != as_buf)
+		free(as);
+	if (ag != ag_buf)
+		free(ag);
+	if (bs != bs_buf)
+		free(bs);
+	if (bg != bg_buf)
+		free(bg);
 	return match;
 }
 
@@ -592,14 +602,20 @@ bool save_symbols_equal(const char *a, const char *b)
 	return save_cjk_match_impl(a, b, true);
 }
 
-void save_cjk_canon_forms(const char *s, char **sjis_out, char **gbk_out)
+void save_cjk_canon_forms_buf(const char *s, char *sjis_buf, size_t sjis_cap, char **sjis_out,
+		char *gbk_buf, size_t gbk_cap, char **gbk_out)
 {
 	if (!s) {
 		*sjis_out = NULL;
 		*gbk_out = NULL;
 		return;
 	}
-	decode_cjk_forms(s, true, sjis_out, gbk_out);
+	decode_cjk_forms_buf(s, true, sjis_buf, sjis_cap, sjis_out, gbk_buf, gbk_cap, gbk_out);
+}
+
+void save_cjk_canon_forms(const char *s, char **sjis_out, char **gbk_out)
+{
+	save_cjk_canon_forms_buf(s, NULL, 0, sjis_out, NULL, 0, gbk_out);
 }
 
 bool save_symbol_prefix_equal(const char *full_sym, const char *prefix_buf, size_t prefix_len)
@@ -682,16 +698,14 @@ static int encode_utf8_cp_with_fallback(uint32_t u, bool dst_is_gbk)
 static char *decode_cjk_lenient(const char *s, size_t len, bool is_gbk)
 {
 	bool ok = false;
+	char *u = cjk2utf_strict_buf(s, len, is_gbk, NULL, 0, &ok);
+	if (ok && u)
+		return u;
+	free(u);
+	// Lenient fallback: step character-by-character so one stray byte never drops a whole string.
 	char *tmp = xmalloc(len + 1);
 	memcpy(tmp, s, len);
 	tmp[len] = '\0';
-	char *u = cjk2utf_strict(tmp, is_gbk, &ok);
-	if (ok && u) {
-		free(tmp);
-		return u;
-	}
-	free(u);
-	// Lenient fallback: step character-by-character so one stray byte never drops a whole string.
 	size_t cap = len * 3 + 4;
 	uint8_t *dst = xmalloc(cap);
 	uint8_t *dstp = dst;
@@ -802,30 +816,8 @@ int save_text_gbk_bias(const char *s)
 	return bias;
 }
 
-char *save_transcode_cstr(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len)
+static char *encode_utf8_to_cjk_fallback(const char *utf8, bool dst_is_gbk, size_t *out_len)
 {
-	if (!s) {
-		if (out_len)
-			*out_len = 0;
-		return xstrdup("");
-	}
-	bool ascii = true;
-	for (size_t i = 0; i < len; i++) {
-		if ((uint8_t)s[i] >= 0x80) {
-			ascii = false;
-			break;
-		}
-	}
-	if (ascii || src_is_gbk == dst_is_gbk || len == 0) {
-		char *copy = xmalloc(len + 1);
-		memcpy(copy, s, len);
-		copy[len] = '\0';
-		if (out_len)
-			*out_len = len;
-		return copy;
-	}
-
-	char *utf8 = decode_cjk_lenient(s, len, src_is_gbk);
 	size_t cap = strlen(utf8) * 2 + 4;
 	uint8_t *dst = xmalloc(cap);
 	uint8_t *dstp = dst;
@@ -856,10 +848,82 @@ char *save_transcode_cstr(const char *s, size_t len, bool src_is_gbk, bool dst_i
 		}
 	}
 	*dstp = '\0';
-	free(utf8);
 	if (out_len)
 		*out_len = (size_t)(dstp - dst);
 	return (char *)dst;
+}
+
+static char *copy_ascii_or_same_cstr(const char *s, size_t len, bool src_is_gbk,
+		bool dst_is_gbk, size_t *out_len, bool *handled_out)
+{
+	*handled_out = false;
+	bool ascii = true;
+	for (size_t i = 0; i < len; i++) {
+		if ((uint8_t)s[i] >= 0x80) {
+			ascii = false;
+			break;
+		}
+	}
+	if (ascii || src_is_gbk == dst_is_gbk || len == 0) {
+		char *copy = xmalloc(len + 1);
+		memcpy(copy, s, len);
+		copy[len] = '\0';
+		if (out_len)
+			*out_len = len;
+		*handled_out = true;
+		return copy;
+	}
+	return NULL;
+}
+
+char *save_transcode_cstr(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len)
+{
+	if (!s) {
+		if (out_len)
+			*out_len = 0;
+		return xstrdup("");
+	}
+	bool handled = false;
+	char *fast = copy_ascii_or_same_cstr(s, len, src_is_gbk, dst_is_gbk, out_len, &handled);
+	if (handled)
+		return fast;
+
+	char *utf8 = decode_cjk_lenient(s, len, src_is_gbk);
+	char *res = encode_utf8_to_cjk_fallback(utf8, dst_is_gbk, out_len);
+	free(utf8);
+	return res;
+}
+
+/*
+ * Like save_transcode_cstr, but fails fast (returns NULL) when strict SJIS/GBK
+ * decoding encounters an invalid byte sequence instead of leniently retrying per character.
+ */
+char *save_transcode_cstr_strict(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len)
+{
+	if (!s) {
+		if (out_len)
+			*out_len = 0;
+		return NULL;
+	}
+	bool handled = false;
+	char *fast = copy_ascii_or_same_cstr(s, len, src_is_gbk, dst_is_gbk, out_len, &handled);
+	if (handled)
+		return fast;
+
+	char utf_stack[1536];
+	bool ok = false;
+	char *utf8 = cjk2utf_strict_buf(s, len, src_is_gbk, utf_stack, sizeof(utf_stack), &ok);
+	if (!ok || !utf8) {
+		if (utf8 != utf_stack)
+			free(utf8);
+		if (out_len)
+			*out_len = 0;
+		return NULL;
+	}
+	char *res = encode_utf8_to_cjk_fallback(utf8, dst_is_gbk, out_len);
+	if (utf8 != utf_stack)
+		free(utf8);
+	return res;
 }
 
 struct string *save_decode_vm_string(const char *s, size_t len, bool src_is_gbk)
