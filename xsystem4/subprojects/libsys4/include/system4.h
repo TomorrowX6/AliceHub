@@ -47,6 +47,7 @@
 extern bool sys_silent;
 extern void (*sys_error_handler)(const char *msg);
 extern void (*sys_warning_handler)(const char *msg);
+extern void (*sys_exit_handler)(int code);
 _Noreturn void sys_verror(const char *fmt, va_list ap);
 _Noreturn void sys_error(const char *fmt, ...);
 void sys_vwarning(const char *fmt, va_list ap);

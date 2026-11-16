@@ -3477,6 +3477,8 @@ _Noreturn void vm_exit(int code)
 {
 	sys_warning("vm_exit(%d) at %s (0x%X) in:\n", code, current_instruction_name(), instr_ptr);
 	vm_stack_trace();
+	if (code == 0)
+		savedata_flush_on_background();
 	vm_free();
 #ifdef DEBUG_HEAP
 	for (size_t i = 0; i < heap_size; i++) {

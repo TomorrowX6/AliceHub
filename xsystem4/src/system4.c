@@ -37,6 +37,8 @@
 #endif
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <pthread.h>
+#include <setjmp.h>
 #endif
 
 #include "system4.h"
@@ -53,12 +55,40 @@
 #include "debugger.h"
 #include "gfx/gfx.h"
 #include "gfx/font.h"
+#include "mixer.h"
+#include "savedata.h"
 #include "vm.h"
 
 #include "version.h"
 
 void set_msgskip_delay(struct ain *ain, unsigned ms);
 void apply_game_specific_hacks(struct ain *ain);
+
+#ifdef __ANDROID__
+static pthread_t android_sdl_main_thread;
+static sigjmp_buf android_exit_jmp;
+static volatile sig_atomic_t android_exit_jmp_active = 0;
+static volatile int android_exit_code = 0;
+
+static void android_exit_handler(int code)
+{
+	if (android_exit_jmp_active && pthread_equal(pthread_self(), android_sdl_main_thread)) {
+		android_exit_code = code;
+		android_exit_jmp_active = 0;
+		siglongjmp(android_exit_jmp, 1);
+	}
+}
+
+static int android_clean_return(int code)
+{
+	android_exit_jmp_active = 0;
+	sys_exit_handler = NULL;
+	savedata_flush_on_background();
+	mixer_set_app_backgrounded(true);
+	gfx_android_fini();
+	return code;
+}
+#endif
 
 struct config config = {
 	.game_name = NULL,
@@ -900,6 +930,13 @@ int main(int argc, char *argv[])
 #ifndef _WIN32
 	install_crash_signal_handlers();
 #endif
+#ifdef __ANDROID__
+	android_sdl_main_thread = pthread_self();
+	sys_exit_handler = android_exit_handler;
+	if (sigsetjmp(android_exit_jmp, 0) != 0)
+		return android_clean_return(android_exit_code);
+	android_exit_jmp_active = 1;
+#endif
 
 	char *ainfile;
 	int err = AIN_SUCCESS;
@@ -1077,5 +1114,10 @@ int main(int argc, char *argv[])
 		set_msgskip_delay(ain, config.msgskip_delay);
 	asset_manager_init();
 	dbg_init(debug_info_path);
-	sys_exit(vm_execute_ain(ain));
+	int exec_rc = vm_execute_ain(ain);
+#ifdef __ANDROID__
+	return android_clean_return(exec_rc);
+#else
+	sys_exit(exec_rc);
+#endif
 }

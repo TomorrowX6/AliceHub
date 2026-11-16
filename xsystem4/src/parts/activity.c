@@ -1193,33 +1193,158 @@ static struct ex_value *block2(struct ex *ex, const char *k1, const char *k2)
 	return v ? v : block(ex, k2);
 }
 
-static char *activity_file_path(struct string *file)
+static char *activity_file_path_cstr(const char *text, size_t size)
 {
-	char *path = gamedir_path_icase(file->text);
+	char *path = gamedir_path_icase(text);
 	if (path && file_exists(path)) return path;
 	free(path);
-	char *name = xmalloc(file->size + 8);
-	memcpy(name, file->text, file->size);
-	strcpy(name + file->size, ".pactex");
+	char *name = xmalloc(size + 8);
+	memcpy(name, text, size);
+	strcpy(name + size, ".pactex");
 	path = gamedir_path_icase(name);
 	if (path && file_exists(path)) {
 		free(name);
 		return path;
 	}
 	free(path);
-	strcpy(name + file->size, ".pact");
+	strcpy(name + size, ".pact");
 	path = gamedir_path_icase(name);
 	free(name);
 	return path;
 }
 
+static const char *pact_leaf_name(const char *path)
+{
+	const char *leaf = path;
+	for (const uint8_t *p = (const uint8_t *)path; *p; p++) {
+		if (SJIS_2BYTE(*p) && p[1]) {
+			p++;
+			continue;
+		}
+		if (*p == '/' || *p == '\\')
+			leaf = (const char *)(p + 1);
+	}
+	return leaf;
+}
+
+static bool pact_has_asra_prefix(const char *path)
+{
+	return tolower((unsigned char)path[0]) == 'a'
+		&& tolower((unsigned char)path[1]) == 's'
+		&& tolower((unsigned char)path[2]) == 'r'
+		&& tolower((unsigned char)path[3]) == 'a'
+		&& (path[4] == '\\' || path[4] == '/');
+}
+
+/*
+ * Game scripts and PACT intents sometimes reference packaged .pact assets via
+ * the authoring prefix "Asra\" instead of "config\" or archive root (e.g.
+ * "Asra\コンフィグ／０４／サウンドページ.pact" or "Asra\バックログ").
+ * Because archive_basename preserves directory prefixes, resolve exact first
+ * and then fall back through stripped / "config\" / leaf forms.
+ */
+static size_t pact_build_candidates(const char *orig, char *out[5], char *scratch[4])
+{
+	size_t n = 0;
+	int s = 0;
+	out[n++] = (char *)orig;
+	if (pact_has_asra_prefix(orig)) {
+		const char *rest = orig + 5;
+		if (rest[0]) {
+			out[n++] = (char *)rest;
+			size_t rlen = strlen(rest);
+			char *cfg = xmalloc(7 + rlen + 1);
+			memcpy(cfg, "config\\", 7);
+			memcpy(cfg + 7, rest, rlen + 1);
+			scratch[s++] = cfg;
+			out[n++] = cfg;
+		}
+	}
+	const char *leaf = pact_leaf_name(orig);
+	if (leaf > orig && leaf[0]) {
+		bool dup = false;
+		for (size_t i = 0; i < n; i++) {
+			if (!strcmp(out[i], leaf)) {
+				dup = true;
+				break;
+			}
+		}
+		if (!dup)
+			out[n++] = (char *)leaf;
+		size_t llen = strlen(leaf);
+		char *cfg_leaf = xmalloc(7 + llen + 1);
+		memcpy(cfg_leaf, "config\\", 7);
+		memcpy(cfg_leaf + 7, leaf, llen + 1);
+		bool dup_cfg = false;
+		for (size_t i = 0; i < n; i++) {
+			if (!strcmp(out[i], cfg_leaf)) {
+				dup_cfg = true;
+				break;
+			}
+		}
+		if (dup_cfg) {
+			free(cfg_leaf);
+		} else {
+			scratch[s++] = cfg_leaf;
+			out[n++] = cfg_leaf;
+		}
+	}
+	while (s < 4)
+		scratch[s++] = NULL;
+	return n;
+}
+
+static bool pact_lookup_asset(const char *orig, struct archive_data **data_out, char **fs_path_out)
+{
+	if (data_out)
+		*data_out = NULL;
+	if (fs_path_out)
+		*fs_path_out = NULL;
+	if (!orig || !orig[0])
+		return false;
+
+	char *cands[5];
+	char *scratch[4];
+	size_t ncands = pact_build_candidates(orig, cands, scratch);
+	bool found = false;
+
+	for (size_t i = 0; i < ncands; i++) {
+		if (data_out) {
+			struct archive_data *d = asset_get_by_name(ASSET_PACT, cands[i], NULL);
+			if (d) {
+				*data_out = d;
+				found = true;
+				break;
+			}
+		} else if (asset_exists_by_name(ASSET_PACT, cands[i], NULL)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		for (size_t i = 0; i < ncands; i++) {
+			char *path = activity_file_path_cstr(cands[i], strlen(cands[i]));
+			if (path && file_exists(path)) {
+				if (fs_path_out)
+					*fs_path_out = path;
+				else
+					free(path);
+				found = true;
+				break;
+			}
+			free(path);
+		}
+	}
+
+	for (int i = 0; i < 4; i++)
+		free(scratch[i]);
+	return found;
+}
+
 bool PE_IsExistActivityFile(struct string *file)
 {
-	if (asset_exists_by_name(ASSET_PACT, file->text, NULL)) return true;
-	char *path = activity_file_path(file);
-	bool exists = path && file_exists(path);
-	free(path);
-	return exists;
+	return pact_lookup_asset(file->text, NULL, NULL);
 }
 
 struct pact_bin_reader {
@@ -1386,13 +1511,14 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 		free_string(pname);
 
 		int32_t st0 = pbr_i32(r);
-		bool show = pbr_bool(r);
+		bool editor_show = pbr_bool(r);
 		bool clickable = pbr_bool(r);
 		float x = pbr_f32(r);
 		float y = pbr_f32(r);
 		int32_t z = pbr_i32(r);
 		int32_t orig = pbr_i32(r);
-		bool pmove = pbr_bool(r);
+		// CAEPropertyPlain serializes IsShow ("表示") immediately after orig.
+		bool show = pbr_bool(r);
 		bool msgw = pbr_bool(r);
 		int32_t alpha = pbr_i32(r);
 		int32_t add_r = pbr_i32(r), add_g = pbr_i32(r), add_b = pbr_i32(r);
@@ -1444,9 +1570,8 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 		for (int i = 0; i < 4; i++) pbr_i32(r);
 		if (r->err) break;
 
-		(void)pmove;
 		if (st0 >= 1 && st0 <= 3) PE_SetInputState(no, st0);
-		PE_SetShow(no, show);
+		PE_SetShow(no, editor_show && show);
 		PE_SetClickable(no, clickable);
 		PE_SetComponentPos(no, x, y);
 		PE_SetZ(no, z);
@@ -2178,7 +2303,9 @@ static bool is_exf_buffer(const uint8_t *buf, size_t size)
 
 bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit)
 {
-	struct archive_data *data = asset_get_by_name(ASSET_PACT, file->text, NULL);
+	struct archive_data *data = NULL;
+	char *path = NULL;
+	pact_lookup_asset(file->text, &data, &path);
 	struct ex *ex = NULL;
 	if (data) {
 		if (!is_exf_buffer(data->data, data->size)) {
@@ -2188,22 +2315,19 @@ bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit)
 		}
 		ex = ex_read(data->data, data->size);
 		archive_free_data(data);
-	} else {
-		char *path = activity_file_path(file);
-		if (path) {
-			size_t raw_size = 0;
-			uint8_t *raw = file_read(path, &raw_size);
-			free(path);
-			if (!raw)
-				return false;
-			if (!is_exf_buffer(raw, raw_size)) {
-				bool ok = load_binary_pact(name, raw, raw_size);
-				free(raw);
-				return ok;
-			}
-			ex = ex_read(raw, raw_size);
+	} else if (path) {
+		size_t raw_size = 0;
+		uint8_t *raw = file_read(path, &raw_size);
+		free(path);
+		if (!raw)
+			return false;
+		if (!is_exf_buffer(raw, raw_size)) {
+			bool ok = load_binary_pact(name, raw, raw_size);
 			free(raw);
+			return ok;
 		}
+		ex = ex_read(raw, raw_size);
+		free(raw);
 	}
 	if (!ex) return false;
 	struct ex_value *layout = block(ex, "アクティビティ");
@@ -2379,21 +2503,20 @@ static void recover_legacy_activity_from_pact(struct string *handle, struct part
 			}
 		}
 	}
-	struct archive_data *data = asset_get_by_name(ASSET_PACT, file->text, NULL);
+	struct archive_data *data = NULL;
+	char *path = NULL;
+	pact_lookup_asset(file->text, &data, &path);
 	struct ex *ex = NULL;
 	if (data) {
 		if (is_exf_buffer(data->data, data->size))
 			ex = ex_read(data->data, data->size);
 		archive_free_data(data);
-	} else {
-		char *path = activity_file_path(file);
-		if (path) {
-			size_t raw_size = 0;
-			uint8_t *raw = file_read(path, &raw_size);
-			if (is_exf_buffer(raw, raw_size))
-				ex = ex_read(raw, raw_size);
-			free(raw);
-		}
+	} else if (path) {
+		size_t raw_size = 0;
+		uint8_t *raw = file_read(path, &raw_size);
+		if (is_exf_buffer(raw, raw_size))
+			ex = ex_read(raw, raw_size);
+		free(raw);
 		free(path);
 	}
 	free_string(file);

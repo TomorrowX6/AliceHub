@@ -288,22 +288,22 @@ static int resolve_array_leaf_symbol(enum ain_data_type leaf_data, struct rsave_
 	case AIN_ENUM:
 	case AIN_ENUM2:
 	case AIN_REF_ENUM:
-		id = ain_get_enum(ain, sym->name);
+		id = save_find_enum(sym->name);
 		break;
 	case AIN_DELEGATE:
 	case AIN_REF_DELEGATE:
-		id = ain_get_delegate(ain, sym->name);
+		id = save_find_delegate(sym->name);
 		break;
 	case AIN_FUNC_TYPE:
 	case AIN_REF_FUNC_TYPE:
-		id = ain_get_functype(ain, sym->name);
+		id = save_find_functype(sym->name);
 		break;
 	default:
 		break;
 	}
 	if (id >= 0)
 		return id;
-	return ain_get_struct(ain, sym->name);
+	return save_find_struct(sym->name);
 }
 
 static void append_str(struct string **out, const char *s)
@@ -423,7 +423,7 @@ static bool function_matches_criteria(int fno, const char *full_name, bool has_p
 		return false;
 	if (has_parens && ain->version >= 11) {
 		char *formatted = format_rsave_function_name(fno);
-		bool eq = !strcmp(formatted, full_name);
+		bool eq = save_symbols_equal(formatted, full_name);
 		free(formatted);
 		if (!eq)
 			return false;
@@ -431,14 +431,9 @@ static bool function_matches_criteria(int fno, const char *full_name, bool has_p
 	return true;
 }
 
-static int resolve_rsave_function(const char *name, int crc, bool check_crc, int nr_slots)
+static char *extract_rsave_base_name(const char *name, bool *has_parens_out)
 {
-	if (!name)
-		return -1;
-	int fno = ain_get_function(ain, (char *)name);
-	if (fno >= 0 && (!check_crc || ain->functions[fno].crc == crc) && (nr_slots < 0 || ain->functions[fno].nr_vars == nr_slots))
-		return fno;
-
+	*has_parens_out = false;
 	size_t len = strlen(name);
 	if (len >= 2 && name[len - 1] == ')') {
 		int depth = 0;
@@ -455,51 +450,144 @@ static int resolve_rsave_function(const char *name, int crc, bool check_crc, int
 			}
 		}
 		if (open < len) {
+			*has_parens_out = true;
 			char *base = xmalloc(open + 1);
 			memcpy(base, name, open);
 			base[open] = '\0';
-			int base_fno = ain_get_function(ain, base);
-			if (base_fno >= 0) {
-				if (function_matches_criteria(base_fno, name, true, crc, check_crc, nr_slots)) {
-					free(base);
-					return base_fno;
-				}
-				char *overload = xmalloc(open + 16);
-				for (int idx = 1; idx < 256; idx++) {
-					snprintf(overload, open + 16, "%s#%d", base, idx);
-					int cand = ain_get_function(ain, overload);
-					if (cand < 0)
-						break;
-					if (function_matches_criteria(cand, name, true, crc, check_crc, nr_slots)) {
-						free(overload);
-						free(base);
-						return cand;
-					}
-				}
-				if (function_matches_criteria(base_fno, name, false, crc, check_crc, nr_slots)) {
-					free(overload);
-					free(base);
-					return base_fno;
-				}
-				for (int idx = 1; idx < 256; idx++) {
-					snprintf(overload, open + 16, "%s#%d", base, idx);
-					int cand = ain_get_function(ain, overload);
-					if (cand < 0)
-						break;
-					if (function_matches_criteria(cand, name, false, crc, check_crc, nr_slots)) {
-						free(overload);
-						free(base);
-						return cand;
-					}
-				}
-				free(overload);
-				free(base);
-				return base_fno;
-			}
-			free(base);
+			return base;
 		}
 	}
+	return NULL;
+}
+
+static int resolve_rsave_function_ex(const char *name, int sym_id, int crc, bool check_crc, int nr_slots, bool allow_similarity)
+{
+	if (!name)
+		return -1;
+	int fno = ain_get_function(ain, (char *)name);
+	if (fno >= 0 && (!check_crc || ain->functions[fno].crc == crc) && (nr_slots < 0 || ain->functions[fno].nr_vars == nr_slots))
+		return fno;
+
+	bool has_parens = false;
+	char *base_alloc = extract_rsave_base_name(name, &has_parens);
+	if (base_alloc) {
+		size_t open = strlen(base_alloc);
+		int base_fno = ain_get_function(ain, base_alloc);
+		if (base_fno >= 0) {
+			if (function_matches_criteria(base_fno, name, true, crc, check_crc, nr_slots)) {
+				free(base_alloc);
+				return base_fno;
+			}
+			char *overload = xmalloc(open + 16);
+			for (int idx = 1; idx < 256; idx++) {
+				snprintf(overload, open + 16, "%s#%d", base_alloc, idx);
+				int cand = ain_get_function(ain, overload);
+				if (cand < 0)
+					break;
+				if (function_matches_criteria(cand, name, true, crc, check_crc, nr_slots)) {
+					free(overload);
+					free(base_alloc);
+					return cand;
+				}
+			}
+			if (function_matches_criteria(base_fno, name, false, crc, check_crc, nr_slots)) {
+				free(overload);
+				free(base_alloc);
+				return base_fno;
+			}
+			for (int idx = 1; idx < 256; idx++) {
+				snprintf(overload, open + 16, "%s#%d", base_alloc, idx);
+				int cand = ain_get_function(ain, overload);
+				if (cand < 0)
+					break;
+				if (function_matches_criteria(cand, name, false, crc, check_crc, nr_slots)) {
+					free(overload);
+					free(base_alloc);
+					return cand;
+				}
+			}
+			free(overload);
+			free(base_alloc);
+			return base_fno;
+		}
+	}
+
+	const char *base_name = base_alloc ? base_alloc : name;
+	// Cross-encoding + Kanji-normalized lookup: check sym_id first for O(1) resolution.
+	if (sym_id >= 0 && sym_id < ain->nr_functions && ain->functions[sym_id].name) {
+		if (function_matches_criteria(sym_id, name, has_parens, crc, check_crc, nr_slots)
+				&& save_symbols_equal(ain->functions[sym_id].name, base_name)) {
+			free(base_alloc);
+			return sym_id;
+		}
+	}
+	int canon_hit = -1;
+	for (int i = 0; i < ain->nr_functions; i++) {
+		if (!ain->functions[i].name)
+			continue;
+		if (!function_matches_criteria(i, name, has_parens, crc, check_crc, nr_slots))
+			continue;
+		if (save_symbols_equal(ain->functions[i].name, base_name)) {
+			canon_hit = i;
+			break;
+		}
+	}
+	if (canon_hit < 0 && has_parens) {
+		for (int i = 0; i < ain->nr_functions; i++) {
+			if (!ain->functions[i].name)
+				continue;
+			if (!function_matches_criteria(i, name, false, crc, check_crc, nr_slots))
+				continue;
+			if (save_symbols_equal(ain->functions[i].name, base_name)) {
+				canon_hit = i;
+				break;
+			}
+		}
+	}
+	if (canon_hit >= 0) {
+		free(base_alloc);
+		return canon_hit;
+	}
+
+	// Fallback when CRC is known (e.g. call stack record with localized term differences):
+	// pick unique CRC match or unique best similarity score among matching CRC entries.
+	if (allow_similarity && check_crc) {
+		int best_fno = -1;
+		int best_score = 0;
+		int tie_count = 0;
+		int crc_count = 0;
+		int single_crc_fno = -1;
+		for (int i = 0; i < ain->nr_functions; i++) {
+			if (!function_matches_criteria(i, name, false, crc, true, nr_slots))
+				continue;
+			crc_count++;
+			single_crc_fno = i;
+			int score = save_symbol_similarity(ain->functions[i].name, base_name);
+			if (best_fno < 0 || score > best_score) {
+				best_fno = i;
+				best_score = score;
+				tie_count = 1;
+			} else if (score == best_score) {
+				tie_count++;
+			}
+		}
+		if (crc_count == 1) {
+			free(base_alloc);
+			return single_crc_fno;
+		}
+		if (best_fno >= 0 && tie_count == 1) {
+			free(base_alloc);
+			return best_fno;
+		}
+	}
+
+	free(base_alloc);
 	return fno;
+}
+
+static int resolve_rsave_function(const char *name, int crc, bool check_crc, int nr_slots)
+{
+	return resolve_rsave_function_ex(name, -1, crc, check_crc, nr_slots, true);
 }
 
 /*
@@ -1163,17 +1251,70 @@ static int resolve_func_symbol(struct rsave_symbol *sym, int nr_slots)
 {
 	if (!sym->name)
 		return sym->id;
-	return resolve_rsave_function(sym->name, 0, false, nr_slots);
+	return resolve_rsave_function_ex(sym->name, sym->id, 0, false, nr_slots, false);
 }
 
 static int resolve_struct_symbol(struct rsave_symbol *sym)
 {
 	if (!sym->name)
 		return sym->id;
-	return ain_get_struct(ain, sym->name);
+	if (!sym->name[0])
+		return -1;
+	int id = ain_get_struct(ain, sym->name);
+	if (id >= 0)
+		return id;
+	if (sym->id >= 0 && sym->id < ain->nr_structures && ain->structures[sym->id].name
+			&& save_symbols_equal(ain->structures[sym->id].name, sym->name))
+		return sym->id;
+	return save_find_struct(sym->name);
 }
 
-static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t version)
+static bool rsave_check_id_alignment(const struct rsave *save)
+{
+	if (!save || !ain)
+		return false;
+	if (save->nr_heap_objs > 0 && save->heap[0]
+			&& *(enum rsave_heap_tag *)save->heap[0] == RSAVE_GLOBALS) {
+		const struct rsave_heap_frame *gf = save->heap[0];
+		if (gf->nr_slots != ain->nr_globals)
+			return false;
+	}
+	int aligned = 0;
+	int shifted = 0;
+	for (int slot = 0; slot < save->nr_heap_objs; slot++) {
+		enum rsave_heap_tag *tag = save->heap[slot];
+		if (!tag)
+			continue;
+		if (*tag == RSAVE_STRUCT) {
+			const struct rsave_heap_struct *s = save->heap[slot];
+			if (s->struct_type.name && s->struct_type.name[0]) {
+				int resolved = resolve_struct_symbol((struct rsave_symbol *)&s->struct_type);
+				if (resolved >= 0) {
+					if (resolved == s->struct_type.id)
+						aligned++;
+					else
+						shifted++;
+				}
+			}
+		} else if (*tag == RSAVE_LOCALS) {
+			const struct rsave_heap_frame *f = save->heap[slot];
+			if (f->func.name && f->func.name[0]) {
+				int resolved = resolve_rsave_function_ex(f->func.name, f->func.id, 0, false, f->nr_slots, false);
+				if (resolved < 0)
+					resolved = resolve_rsave_function_ex(f->func.name, f->func.id, 0, false, -1, false);
+				if (resolved >= 0) {
+					if (resolved == f->func.id)
+						aligned++;
+					else
+						shifted++;
+				}
+			}
+		}
+	}
+	return aligned > 0 && shifted == 0;
+}
+
+static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t version, bool id_aligned)
 {
 	struct page *page;
 	int nr_vars;
@@ -1186,6 +1327,22 @@ static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t versi
 		int func = resolve_func_symbol(&f->func, f->nr_slots);
 		if (func < 0)
 			func = resolve_func_symbol(&f->func, -1);
+		if (func < 0 && id_aligned && f->func.id >= 0 && f->func.id < ain->nr_functions) {
+			int cand = f->func.id;
+			if ((cand == 0 || ain->functions[cand].address != 0)
+					&& ain->functions[cand].nr_vars == f->nr_slots
+					&& ain->functions[cand].nr_vars >= f->nr_types) {
+				bool types_ok = true;
+				for (int i = 0; i < f->nr_types; i++) {
+					if (f->types[i] != ain->functions[cand].vars[i].type.data) {
+						types_ok = false;
+						break;
+					}
+				}
+				if (types_ok)
+					func = cand;
+			}
+		}
 		if (func < 0)
 			VM_ERROR("Failed to load VM image: function '%s' not found",
 				 display_sjis0(f->func.name ? f->func.name : ""));
@@ -1220,13 +1377,13 @@ static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t versi
 	return nr_vars > f->nr_slots;
 }
 
-static void load_rsave_string(int slot, struct rsave_heap_string *s, int32_t version)
+static void load_rsave_string(int slot, struct rsave_heap_string *s, int32_t version, bool src_is_gbk)
 {
 	alloc_heap_slot(slot);
 	heap[slot].ref = s->ref;
 	heap[slot].seq = version == 14 ? slot + 1 : s->seq;
 	heap[slot].type = VM_STRING;
-	heap[slot].s = make_string(s->text, s->len - 1);
+	heap[slot].s = save_decode_vm_string(s->text, s->len > 0 ? (size_t)(s->len - 1) : 0, src_is_gbk);
 }
 
 static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t version)
@@ -1271,9 +1428,23 @@ static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t versi
 	heap_set_page(slot, page);
 }
 
-static bool load_rsave_struct(int slot, struct rsave_heap_struct *s, int32_t version)
+static bool load_rsave_struct(int slot, struct rsave_heap_struct *s, int32_t version, bool id_aligned)
 {
 	int struct_index = resolve_struct_symbol(&s->struct_type);
+	if (struct_index < 0 && id_aligned && s->struct_type.id >= 0 && s->struct_type.id < ain->nr_structures) {
+		struct ain_struct *cand = &ain->structures[s->struct_type.id];
+		if (s->nr_types <= cand->nr_members) {
+			bool types_ok = true;
+			for (int i = 0; i < s->nr_types; i++) {
+				if (s->types[i] != cand->members[i].type.data) {
+					types_ok = false;
+					break;
+				}
+			}
+			if (types_ok)
+				struct_index = s->struct_type.id;
+		}
+	}
 	if (struct_index < 0 || struct_index >= ain->nr_structures) {
 		invalid_save_data("Unknown struct '%s' in VM image",
 			s->struct_type.name ? s->struct_type.name : "");
@@ -1334,12 +1505,11 @@ static bool delegate_target_matches_function(struct rsave *save, int obj, int fu
 		return true;
 	size_t struct_len = (size_t)(at - fname);
 	if (s->struct_type.name) {
-		return strlen(s->struct_type.name) == struct_len &&
-		       !strncmp(s->struct_type.name, fname, struct_len);
+		return save_symbol_prefix_equal(s->struct_type.name, fname, struct_len);
 	}
 	if (s->struct_type.id >= 0 && s->struct_type.id < ain->nr_structures) {
 		const char *sname = ain->structures[s->struct_type.id].name;
-		return strlen(sname) == struct_len && !strncmp(sname, fname, struct_len);
+		return save_symbol_prefix_equal(sname, fname, struct_len);
 	}
 	return true;
 }
@@ -1386,19 +1556,114 @@ static void load_rsave_delegate(int slot, struct rsave_heap_delegate *d, struct 
 	heap_set_page(slot, page);
 }
 
-static void load_rsave_heap(struct rsave *save)
+static bool rsave_detect_is_gbk(const struct rsave *save, const char *expected_key)
+{
+	int native_votes = 0;
+	int opp_votes = 0;
+	if (expected_key && save && save->key) {
+		bool ascii = true;
+		for (const unsigned char *p = (const unsigned char *)save->key; *p; p++) {
+			if (*p >= 0x80) {
+				ascii = false;
+				break;
+			}
+		}
+		if (!ascii) {
+			if (!strcmp(expected_key, save->key))
+				native_votes += 40;
+			else if (save_names_equal(expected_key, save->key))
+				opp_votes += 40;
+		}
+	}
+
+	int checked_syms = 0;
+	int checked_strs = 0;
+	int bias = 0;
+	for (int slot = 0; save && slot < save->nr_heap_objs; slot++) {
+		enum rsave_heap_tag *tag = save->heap[slot];
+		if (!tag)
+			continue;
+		if (*tag == RSAVE_STRUCT && checked_syms < 64) {
+			const struct rsave_heap_struct *s = save->heap[slot];
+			const char *name = s->struct_type.name;
+			if (name && name[0]) {
+				bool has_non_ascii = save_text_gbk_bias(name) != 0;
+				if (!has_non_ascii) {
+					for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+						if (*p >= 0x80) { has_non_ascii = true; break; }
+					}
+				}
+				if (has_non_ascii) {
+					checked_syms++;
+					if (ain_get_struct(ain, (char *)name) >= 0)
+						native_votes += 5;
+					else if (resolve_struct_symbol((struct rsave_symbol *)&s->struct_type) >= 0)
+						opp_votes += 5;
+				}
+			}
+		} else if (*tag == RSAVE_LOCALS && checked_syms < 64) {
+			const struct rsave_heap_frame *f = save->heap[slot];
+			const char *name = f->func.name;
+			if (name && name[0]) {
+				bool has_non_ascii = false;
+				for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+					if (*p >= 0x80) { has_non_ascii = true; break; }
+				}
+				if (has_non_ascii) {
+					checked_syms++;
+					if (ain_get_function(ain, (char *)name) >= 0)
+						native_votes += 5;
+					else if (resolve_rsave_function_ex(name, f->func.id, 0, false, f->nr_slots, false) >= 0)
+						opp_votes += 5;
+				}
+			}
+		} else if (*tag == RSAVE_STRING && checked_strs < 64) {
+			const struct rsave_heap_string *s = save->heap[slot];
+			if (s->len > 1) {
+				int b = save_text_gbk_bias(s->text);
+				if (b) {
+					bias += b;
+					checked_strs++;
+				}
+			}
+		}
+	}
+	for (int i = 0; save && i < save->nr_comments && checked_strs < 64; i++) {
+		if (save->comments[i] && save->comments[i][0]) {
+			int b = save_text_gbk_bias(save->comments[i]);
+			if (b) {
+				bias += b;
+				checked_strs++;
+			}
+		}
+	}
+
+	if (opp_votes > native_votes)
+		return !sys4_text_is_gbk;
+	if (native_votes > opp_votes)
+		return sys4_text_is_gbk;
+	if (bias > 12)
+		return true;
+	if (bias < -12)
+		return false;
+	return sys4_text_is_gbk;
+}
+
+static void load_rsave_heap(struct rsave *save, const char *expected_key)
 {
 	delete_heap();
 	bool need_pad_init = false;
+	bool id_aligned = rsave_check_id_alignment(save);
+	bool src_is_gbk = rsave_detect_is_gbk(save, expected_key);
 
 	for (int slot = 0; slot < save->nr_heap_objs; slot++) {
 		enum rsave_heap_tag *tag = save->heap[slot];
 		switch (*tag) {
 		case RSAVE_GLOBALS:
-		case RSAVE_LOCALS:   need_pad_init |= load_rsave_frame(slot, save->heap[slot], save->version);  break;
-		case RSAVE_STRING:   load_rsave_string(slot, save->heap[slot], save->version); break;
+		case RSAVE_LOCALS:   need_pad_init |= load_rsave_frame(slot, save->heap[slot], save->version, id_aligned);  break;
+		case RSAVE_STRING:   load_rsave_string(slot, save->heap[slot], save->version, src_is_gbk); break;
 		case RSAVE_ARRAY:    load_rsave_array(slot, save->heap[slot], save->version);  break;
-		case RSAVE_STRUCT:   need_pad_init |= load_rsave_struct(slot, save->heap[slot], save->version); break;
+		case RSAVE_STRUCT:   need_pad_init |= load_rsave_struct(slot, save->heap[slot], save->version, id_aligned); break;
 		case RSAVE_DELEGATE: load_rsave_delegate(slot, save->heap[slot], save);        break;
 		case RSAVE_NULL: break;
 		}
@@ -1493,7 +1758,20 @@ static void load_rsave_call_stack(struct rsave *save)
 	int32_t return_address = -1;
 	for (int i = 0; i < save->nr_call_frames; i++) {
 		if (save->call_frames[i].type != RSAVE_CALL_STACK_BOTTOM) {
-			int fno = resolve_rsave_function(rr->caller_func, rr->crc, true, -1);
+			int fno = resolve_rsave_function_ex(rr->caller_func, -1, rr->crc, true, -1, false);
+			if (fno < 0) {
+				int32_t lslot = save->call_frames[i].local_ptr;
+				if (lslot >= 0 && (size_t)lslot < heap_size && heap[lslot].type == VM_PAGE
+						&& heap[lslot].page && heap[lslot].page->type == LOCAL_PAGE) {
+					int lp_fno = heap[lslot].page->index;
+					if (lp_fno >= 0 && lp_fno < ain->nr_functions
+							&& (lp_fno == 0 || ain->functions[lp_fno].address != 0)
+							&& ain->functions[lp_fno].crc == rr->crc)
+						fno = lp_fno;
+				}
+			}
+			if (fno < 0)
+				fno = resolve_rsave_function(rr->caller_func, rr->crc, true, -1);
 			if (fno < 0)
 				fno = resolve_rsave_function(rr->caller_func, rr->crc, false, -1);
 			if (fno < 0)
@@ -1556,7 +1834,7 @@ static cJSON *read_json_image(const char *keyname, const char *path)
 
 	cJSON *save = cJSON_Parse(save_file);
 	cJSON *key = type_check(cJSON_String, cJSON_GetObjectItem(save, "key"));
-	if (strcmp(keyname, cJSON_GetStringValue(key)))
+	if (!save_names_equal(keyname, cJSON_GetStringValue(key)))
 		invalid_save_data("Key doesn't match");
 
 	free(save_file);
@@ -1592,9 +1870,9 @@ static enum savefile_error load_rsave_image(const char *key, const char *path)
 	free(full_path);
 	if (error != SAVEFILE_SUCCESS)
 		return error;
-	if (strcmp(key, save->key))
+	if (!save_names_equal(key, save->key))
 		invalid_save_data("Key doesn't match");
-	load_rsave_heap(save);
+	load_rsave_heap(save, key);
 	load_rsave_call_stack(save);
 	load_rsave_stack(save);
 	rsave_free(save);
@@ -1666,7 +1944,7 @@ static struct page *load_rsave_image_comments(const char *key, const char *path,
 	free(full_path);
 	if (*error != SAVEFILE_SUCCESS)
 		return NULL;
-	if (strcmp(key, save->key))
+	if (!save_names_equal(key, save->key))
 		invalid_save_data("Key doesn't match");
 	if (save->nr_comments == 0) {
 		rsave_free(save);
@@ -1674,12 +1952,13 @@ static struct page *load_rsave_image_comments(const char *key, const char *path,
 	}
 	union vm_value dims = { .i = save->nr_comments };
 	struct page *array = alloc_array(1, &dims, AIN_ARRAY_STRING, 0, false);
+	bool src_is_gbk = rsave_detect_is_gbk(save, key);
 	for (int i = 0; i < dims.i; i++) {
 		int slot = heap_alloc_slot(VM_STRING);
 		if (!save->comments[i][0]) {
 			heap[slot].s = string_ref(&EMPTY_STRING);
 		} else {
-			heap[slot].s = make_string(save->comments[i], strlen(save->comments[i]));
+			heap[slot].s = save_decode_vm_string(save->comments[i], strlen(save->comments[i]), src_is_gbk);
 		}
 		array->values[i].i = slot;
 	}
@@ -1712,7 +1991,7 @@ static int write_rsave_image_comments(const char *key, const char *path, struct 
 	struct rsave *save = rsave_read(full_path, RSAVE_READ_ALL, &error);
 	switch (error) {
 	case SAVEFILE_SUCCESS:
-		if (strcmp(key, save->key))
+		if (!save_names_equal(key, save->key))
 			invalid_save_data("Key doesn't match");
 		break;
 	case SAVEFILE_FILE_ERROR:

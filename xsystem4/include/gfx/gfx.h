@@ -75,6 +75,7 @@ struct gfx_vertex {
 
 int gfx_init(void);
 void gfx_fini(void);
+void gfx_android_fini(void);
 
 Texture *gfx_main_surface(void);
 void gfx_set_window_logical_size(int w, int h);

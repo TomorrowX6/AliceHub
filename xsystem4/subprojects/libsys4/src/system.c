@@ -33,6 +33,7 @@ bool sys_silent;
 
 void (*sys_error_handler)(const char *msg) = NULL;
 void (*sys_warning_handler)(const char *msg) = NULL;
+void (*sys_exit_handler)(int code) = NULL;
 
 mem_alloc void *_xmalloc(size_t size, const char *func)
 {
@@ -180,6 +181,8 @@ void sys_message(const char *fmt, ...)
 
 _Noreturn void sys_exit(int code)
 {
+	if (sys_exit_handler)
+		sys_exit_handler(code);
 	// TODO: cleanup
 	exit(code);
 }
