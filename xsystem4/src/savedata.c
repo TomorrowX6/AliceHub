@@ -592,6 +592,16 @@ bool save_symbols_equal(const char *a, const char *b)
 	return save_cjk_match_impl(a, b, true);
 }
 
+void save_cjk_canon_forms(const char *s, char **sjis_out, char **gbk_out)
+{
+	if (!s) {
+		*sjis_out = NULL;
+		*gbk_out = NULL;
+		return;
+	}
+	decode_cjk_forms(s, true, sjis_out, gbk_out);
+}
+
 bool save_symbol_prefix_equal(const char *full_sym, const char *prefix_buf, size_t prefix_len)
 {
 	if (!full_sym || !prefix_buf)

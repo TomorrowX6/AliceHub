@@ -71,12 +71,22 @@ struct asset_manager_ald {
 	struct archive *archive;
 };
 
+struct afa_canon_entry {
+	struct afa_archive *ar;
+	struct afa_entry *entry;
+};
+
 struct asset_manager_afa {
 	struct asset_manager manager;
 	struct afa_archive **archives;
 	size_t nr_archives;
 	struct afa_archive **id_archives;
 	size_t nr_id_archives;
+	struct hash_table *canon_basename_table;
+	struct afa_canon_entry *canon_entries;
+	size_t nr_canon_entries;
+	size_t cap_canon_entries;
+	bool canon_index_valid;
 };
 
 static struct asset_manager *assets[ASSET_TYPE_MAX] = {0};
@@ -300,6 +310,19 @@ static size_t afa_find_insert_pos(struct asset_manager_afa *manager, const char 
 	return pos;
 }
 
+static void afa_invalidate_canon_index(struct asset_manager_afa *manager)
+{
+	if (manager->canon_basename_table) {
+		ht_free(manager->canon_basename_table);
+		manager->canon_basename_table = NULL;
+	}
+	free(manager->canon_entries);
+	manager->canon_entries = NULL;
+	manager->nr_canon_entries = 0;
+	manager->cap_canon_entries = 0;
+	manager->canon_index_valid = false;
+}
+
 static bool afa_load_archive(struct asset_manager *_manager, const char *name)
 {
 	struct asset_manager_afa *manager = (struct asset_manager_afa*)_manager;
@@ -335,6 +358,7 @@ static bool afa_load_archive(struct asset_manager *_manager, const char *name)
 	manager->id_archives = xrealloc(manager->id_archives,
 		(manager->nr_id_archives + 1) * sizeof(*manager->id_archives));
 	manager->id_archives[manager->nr_id_archives++] = ar;
+	afa_invalidate_canon_index(manager);
 	return true;
 }
 
@@ -464,6 +488,89 @@ static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
 	return best_entry;
 }
 
+static bool afa_candidate_beats(struct afa_archive *cur_ar, struct afa_entry *cur_e,
+		struct afa_archive *cand_ar, struct afa_entry *cand_e)
+{
+	if (!cur_e)
+		return true;
+	bool cur_mod = afa_is_mod_archive(cur_ar->filename);
+	bool cand_mod = afa_is_mod_archive(cand_ar->filename);
+	if (cur_mod != cand_mod)
+		return cand_mod;
+	if (cur_mod)
+		return false;
+
+	bool cur_bak = afa_is_backup_archive(cur_ar->filename);
+	bool cand_bak = afa_is_backup_archive(cand_ar->filename);
+	if (cur_bak != cand_bak)
+		return cur_bak;
+
+	uint64_t cur_ts = afa_entry_timestamp(cur_e);
+	uint64_t cand_ts = afa_entry_timestamp(cand_e);
+	if (cur_ts == 0)
+		return false;
+	if (cand_ts == 0)
+		return true;
+	return cand_ts > cur_ts;
+}
+
+static void afa_canon_index_insert(struct asset_manager_afa *manager, const char *key,
+		struct afa_archive *ar, struct afa_entry *entry)
+{
+	struct ht_slot *slot = ht_put(manager->canon_basename_table, key, NULL);
+	if (!slot->value) {
+		if (manager->nr_canon_entries == manager->cap_canon_entries) {
+			size_t new_cap = manager->cap_canon_entries ? manager->cap_canon_entries * 2 : 256;
+			manager->canon_entries = xrealloc(manager->canon_entries,
+					new_cap * sizeof(*manager->canon_entries));
+			manager->cap_canon_entries = new_cap;
+		}
+		size_t idx = manager->nr_canon_entries++;
+		manager->canon_entries[idx].ar = ar;
+		manager->canon_entries[idx].entry = entry;
+		slot->value = (void *)(uintptr_t)(idx + 1);
+		return;
+	}
+	size_t idx = (size_t)(uintptr_t)slot->value - 1;
+	if (afa_candidate_beats(manager->canon_entries[idx].ar, manager->canon_entries[idx].entry, ar, entry)) {
+		manager->canon_entries[idx].ar = ar;
+		manager->canon_entries[idx].entry = entry;
+	}
+}
+
+static void afa_ensure_canon_index(struct asset_manager_afa *manager)
+{
+	if (manager->canon_index_valid)
+		return;
+	afa_invalidate_canon_index(manager);
+
+	size_t total_files = 0;
+	for (size_t i = 0; i < manager->nr_archives; i++)
+		total_files += manager->archives[i]->nr_files;
+	manager->canon_basename_table = ht_create(max((size_t)64, total_files * 2));
+
+	for (size_t i = 0; i < manager->nr_archives; i++) {
+		struct afa_archive *ar = manager->archives[i];
+		for (uint32_t j = 0; j < ar->nr_files; j++) {
+			const char *ename = ar->files[j].name->text;
+			if (!name_has_non_ascii(ename))
+				continue;
+			char *ebase = archive_basename(ename);
+			char *sjis_form = NULL;
+			char *gbk_form = NULL;
+			save_cjk_canon_forms(ebase, &sjis_form, &gbk_form);
+			free(ebase);
+			if (sjis_form)
+				afa_canon_index_insert(manager, sjis_form, ar, &ar->files[j]);
+			if (gbk_form && (!sjis_form || strcmp(sjis_form, gbk_form) != 0))
+				afa_canon_index_insert(manager, gbk_form, ar, &ar->files[j]);
+			free(sjis_form);
+			free(gbk_form);
+		}
+	}
+	manager->canon_index_valid = true;
+}
+
 static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *manager,
 		const char *name, struct afa_archive **ar_out)
 {
@@ -482,26 +589,37 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 			return best_entry;
 	}
 
-	// Canonical Shinjitai/Simplified fallback across non-ASCII entries on miss.
+	// Lazily indexed O(1) canonical Shinjitai/Simplified fallback across non-ASCII entries.
+	afa_ensure_canon_index(manager);
 	char *target_base = archive_basename(name);
-	for (size_t i = 0; i < manager->nr_archives; i++) {
-		struct afa_archive *ar = manager->archives[i];
-		for (uint32_t j = 0; j < ar->nr_files; j++) {
-			const char *ename = ar->files[j].name->text;
-			if (!name_has_non_ascii(ename))
-				continue;
-			char *ebase = archive_basename(ename);
-			bool eq = save_symbols_equal(ebase, target_base);
-			free(ebase);
-			if (eq) {
-				free(target_base);
-				*ar_out = ar;
-				return &ar->files[j];
-			}
+	char *q_sjis = NULL;
+	char *q_gbk = NULL;
+	save_cjk_canon_forms(target_base, &q_sjis, &q_gbk);
+	free(target_base);
+
+	struct afa_archive *best_ar = NULL;
+	best_entry = NULL;
+	const char *queries[2] = { q_sjis, q_gbk };
+	for (int k = 0; k < 2; k++) {
+		if (!queries[k])
+			continue;
+		if (k == 1 && q_sjis && !strcmp(q_sjis, q_gbk))
+			continue;
+		void *val = ht_get(manager->canon_basename_table, queries[k], NULL);
+		if (!val)
+			continue;
+		size_t idx = (size_t)(uintptr_t)val - 1;
+		struct afa_canon_entry *ce = &manager->canon_entries[idx];
+		if (afa_candidate_beats(best_ar, best_entry, ce->ar, ce->entry)) {
+			best_ar = ce->ar;
+			best_entry = ce->entry;
 		}
 	}
-	free(target_base);
-	return NULL;
+	free(q_sjis);
+	free(q_gbk);
+	if (best_entry)
+		*ar_out = best_ar;
+	return best_entry;
 }
 
 static struct archive_data *afa_get_by_name(struct asset_manager *_manager, const char *name,

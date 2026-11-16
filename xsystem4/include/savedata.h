@@ -44,6 +44,7 @@ void savedata_reset(void);
 
 bool save_names_equal(const char *a, const char *b);
 bool save_symbols_equal(const char *a, const char *b);
+void save_cjk_canon_forms(const char *s, char **sjis_out, char **gbk_out);
 bool save_symbol_prefix_equal(const char *full_sym, const char *prefix_buf, size_t prefix_len);
 int save_symbol_similarity(const char *a, const char *b);
 int save_text_gbk_bias(const char *s);

@@ -525,6 +525,7 @@ struct parts_user_value {
 struct parts_widget {
 	bool enabled;
 	bool checked, button_mode;
+	bool defer_rebuild, dirty_bg, dirty_label;
 	int width, height, color[3], text_origin;
 	struct string *cg_name, *flat_name, *text;
 	struct string *override_cg[2], *override_flat[2];
@@ -740,6 +741,8 @@ void parts_recalculate_hitbox(struct parts *parts);
 void parts_world_matrix(struct parts *parts, mat4 out);
 void parts_widget_create(struct parts *parts);
 void parts_checkbox_create(struct parts *parts);
+void parts_widget_create_deferred(struct parts *parts, int type);
+void parts_widget_end_batch(struct parts *parts);
 void parts_widget_free(struct parts *parts);
 void parts_widget_rebuild(struct parts *parts);
 void parts_widget_get_size(struct parts *parts, int *width, int *height);
