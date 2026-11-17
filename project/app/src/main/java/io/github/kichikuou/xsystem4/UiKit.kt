@@ -160,6 +160,39 @@ internal object UiKit {
         )
     }
 
+    /** White background + crisp red label danger button with subtle red-tinted border. */
+    fun styleWhiteDangerButton(button: Button) {
+        val ctx = button.context
+        val radius = ctx.resources.getDimension(R.dimen.ui_radius_button)
+        val dangerRed = 0xFFD32F2F.toInt()
+        val bgStates = android.graphics.drawable.StateListDrawable().apply {
+            addState(
+                intArrayOf(-android.R.attr.state_enabled),
+                GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(ctx.getColor(R.color.ui_btn_disabled))
+                }
+            )
+            addState(
+                IntArray(0),
+                GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(Color.WHITE)
+                    setStroke(dpInt(ctx, 1).coerceAtLeast(1), 0x44D32F2F)
+                }
+            )
+        }
+        button.background = RippleDrawable(
+            ColorStateList.valueOf(ctx.getColor(R.color.ui_ripple)), bgStates, null
+        )
+        button.setTextColor(
+            ColorStateList(
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), IntArray(0)),
+                intArrayOf(ctx.getColor(R.color.ui_text_disabled), dangerRed)
+            )
+        )
+    }
+
     fun styleAccentChip(view: TextView, accent: Int, dot: Boolean = false) {
         val ctx = view.context
         val fg = accentOnSurface(ctx, accent)

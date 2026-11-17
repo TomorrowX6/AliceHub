@@ -399,6 +399,7 @@ class SaveManagerActivity : ThemedActivity() {
         listOf(R.id.btn_import_saves, R.id.btn_export_saves, R.id.btn_switch_game).forEach { id ->
             findViewById<Button>(id)?.let { UiKit.styleTonalAccentButton(it, accent) }
         }
+        findViewById<Button>(R.id.btn_clear_saves)?.let { UiKit.styleWhiteDangerButton(it) }
     }
 
     private fun collectSaveFiles(root: File, current: File, out: MutableList<SaveFileEntry>) {
