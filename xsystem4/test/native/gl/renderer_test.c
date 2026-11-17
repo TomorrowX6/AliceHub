@@ -11,6 +11,7 @@ extern bool test_blur(struct parts_construction_process *, struct parts_cp_filte
 extern void test_render_cg(struct parts *, struct parts_common *);
 extern void parts_render_init(void);
 extern void test_set_reverse(bool, bool);
+extern void test_activity_scale(struct parts *, bool, bool, float, float);
 static struct parts *fixture_part;
 struct parts *__wrap_parts_get(int no) { assert(no==1 && fixture_part); return fixture_part; }
 
@@ -87,7 +88,7 @@ static void blur_tests(void) {
     }
     puts("PASS: GLES H/V blur, full/subrect, pinned/unpinned, RGBA preservation, two-pass blur");
 }
-static void sprite_tests(void) {
+static void sprite_tests(bool activity, bool v2) {
     enum { W=32,H=24,N=W*H*4,S=128 };
     unsigned char input[N];
     for(int y=0;y<H;y++)for(int x=0;x<W;x++) {
@@ -96,16 +97,24 @@ static void sprite_tests(void) {
         input[i+2]=(x>=8&&x<24&&abs(y-12)<x/3)?255:40; input[i+3]=255;
     }
     struct parts p={0}; struct parts_common c={0};
-    parts_v2=true;
-    p.local.pos=(SDL_FPoint){64,64}; p.local.scale.x=1; p.local.scale.y=1;
+    parts_v2=v2;
+    p.local.pos=p.global.pos=(SDL_FPoint){64,64}; p.local.scale.x=1; p.local.scale.y=1;
+    p.global.scale.x=p.global.scale.y=1;
     p.world_matrix_self=&p; fixture_part=&p;
     p.global.alpha=255; p.global.multiply_color=(SDL_Color){255,255,255,255};
     c.w=W; c.h=H; c.origin_offset=(Point){-W/2,-H/2};
     gfx_init_texture_with_pixels(&c.texture,W,H,input);
     // Use an RGBA offscreen target so clear/output has exact known channels.
     Texture target={0}; gfx_init_texture_blank(&target,S,S);
-    for(int flags=0;flags<4;flags++) {
-        test_set_reverse(flags&1,flags&2);
+    for(int mags=0;mags<(activity?4:1);mags++)for(int flags=0;flags<4;flags++) {
+        if (activity) {
+            test_activity_scale(&p, flags&1, flags&2, mags&1?-1:1, mags&2?-1:1);
+            assert(p.reverse_lr == !!(flags&1) && p.reverse_tb == !!(flags&2));
+            assert(p.local.scale.x == (((!v2 && (flags&1)) ^ !!(mags&1)) ? -1 : 1));
+            assert(p.local.scale.y == (((!v2 && (flags&2)) ^ !!(mags&2)) ? -1 : 1));
+        } else {
+            test_set_reverse(flags&1,flags&2);
+        }
         GLuint fb=gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER,&target,0,0,S,S);
         glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
         test_render_cg(&p,&c);
@@ -115,18 +124,21 @@ static void sprite_tests(void) {
         for(int y=0;y<S;y++)for(int x=0;x<S;x++) {
             int ox=x-(64-W/2), oy=y-(64-H/2);
             if(ox>=0&&ox<W&&oy>=0&&oy<H) {
-                int sx=(flags&1)?W-1-ox:ox, sy=(flags&2)?H-1-oy:oy;
+                int flip=flags^mags;
+                int sx=(flip&1)?W-1-ox:ox, sy=(flip&2)?H-1-oy:oy;
                 check_pixels(got+(y*S+x)*4,input+(sy*W+sx)*4,4,0);
             } else {
                 static const unsigned char black[4]={0,0,0,255};
                 check_pixels(got+(y*S+x)*4,black,4,0);
             }
         }
-        char name[64]; snprintf(name,sizeof name,"sprite-%d-gles-synthetic.ppm",flags);
+        char name[96]; snprintf(name,sizeof name,"sprite-%s-v%d-%d-mag%d-gles-synthetic.ppm",
+                               activity?"activity":"api",v2?2:1,flags,mags);
         write_ppm(name,got,S,S); free(got); no_error();
     }
     gfx_delete_texture(&target); gfx_delete_texture(&c.texture);
-    puts("PASS: actual Parts CG renderer normal/LR/TB/LR+TB pixels and placement");
+    printf("PASS: actual %s v%d CG renderer normal/LR/TB/LR+TB pixels and placement (no double flip)\n",
+           activity?"activity loader":"HLL API", v2?2:1);
 }
 int main(void) {
     assert(SDL_Init(SDL_INIT_VIDEO)==0);
@@ -140,7 +152,8 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    blur_tests(); sprite_tests(); no_error();
+    blur_tests(); sprite_tests(false,true);
+    sprite_tests(true,false); sprite_tests(true,true); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
     gfx_fini(); return 0;
 }

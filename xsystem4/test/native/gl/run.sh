@@ -16,6 +16,8 @@ OUT=$(cd "$OUT" && pwd)
     "$ROOT/test/native/gl/construction_wrapper.c" \
     "$ROOT/test/native/gl/render_wrapper.c" \
     "$ROOT/test/native/gl/api_wrapper.c" \
+    "$ROOT/test/native/gl/activity_wrapper.c" \
+    "$ROOT/subprojects/libsys4/src/ex.c" \
     "$ROOT/src/parts/parts.c" "$ROOT/src/draw.c" "$ROOT/subprojects/libsys4/src/hashtable.c" \
     -Wl,--gc-sections -Wl,--wrap=parts_get -Wl,--wrap=glDrawElements \
     -Wl,--wrap=parts_build_construction_process \

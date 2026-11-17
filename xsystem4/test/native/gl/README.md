@@ -4,13 +4,13 @@ This is a **synthetic renderer test, not a Dohna Dohna game-scene test**.
 No game assets, game scripts or saved games are used.
 
 The test compiles the production translation units (`video.c`, `draw.c`,
-`parts.c`, `render.c`, `construction.c`, `PartsEngine.c`) and loads the real
+`parts.c`, `render.c`, `construction.c`, `PartsEngine.c`, `activity.c`, EX lookup) and loads the real
 GLES shaders. Test-only wrappers expose file-local entry points; production
 rendering functions are not reimplemented or extracted as source text.
 Unused VM/audio/game entry points are discarded by the linker.
 
 Required on Linux: C compiler, SDL2 runtime/headers, cglm headers, GLES3 headers,
-Mesa EGL/GLES with an offscreen software context. For example:
+zlib headers, Mesa EGL/GLES with an offscreen software context. For example:
 
 ```sh
 SDL2_INCLUDE=/usr/include/SDL2 CGLM_INCLUDE=/usr/include \
@@ -23,13 +23,17 @@ The harness checks actual GPU readback against independently computed pixels:
   RGB results, alpha preservation, two-pass blur.
 * Normal/LR/TB/combined sprite rendering through the real HLL setters,
   cached world matrix and CG renderer, including exact output position.
+* Activity EX flag/list loading and CG output in **legacy and v2 modes**, all
+  four LR/TB states crossed with all four signed magnification combinations.
+  Exact placement/orientation checks ensure reversal is applied once, not twice.
 * Every actual `glDrawElements` is audited: texture unit 0 must not contain
   the texture attached to the draw framebuffer. The old blur implementation
   fails this invariant, regardless of whether a driver happens to look right.
 
-The only test-path substitutions are component lookup (returns the fixture
-component instead of running the VM) and an alpha-clipper construction guard
-(aborts if invoked; these fixtures intentionally have no alpha clipper).
+Test-path substitutions are component lookup (returns the fixture component
+instead of running the VM), UTF-8 key encoding identity for the in-memory EX
+fixture (no SJIS/GBK game file), and guards for alpha-clipper construction and
+widget sizing (abort if invoked; these fixtures only use unclipped CG parts).
 Actual component dirtying, transforms, shader compilation, framebuffer changes,
 texture copies, blend state and GL draws run unchanged production code.
 

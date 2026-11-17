@@ -222,10 +222,45 @@ class PartsRenderingTests(unittest.TestCase):
                             str(c), '-lm', '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
-    def test_activity_does_not_double_reverse(self):
-        activity = (ROOT / 'src/parts/activity.c').read_text()
-        self.assertIn('PE_SetPartsMagX(no, item(tree, "拡大縮小", 0, 1));', activity)
-        self.assertIn('PE_SetPartsMagY(no, item(tree, "拡大縮小", 1, 1));', activity)
+    def test_activity_scale_legacy_and_v2(self):
+        # Exercise the real activity scale helper instead of asserting that the
+        # loader never bakes reversal (that is only correct for PartsEngine2).
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <string.h>
+struct parts { bool reverse_lr, reverse_tb; float sx, sy; };
+struct ex_tree { bool lr, tb; float sx, sy; };
+static bool parts_v2;
+static float number(struct ex_tree *t, const char *key, float fallback) {
+    (void)fallback;
+    return !strcmp(key, "左右反转") ? t->lr : t->tb;
+}
+static float item(struct ex_tree *t, const char *key, int i, float fallback) {
+    (void)key; (void)fallback; return i ? t->sy : t->sx;
+}
+static void parts_set_scale_x(struct parts *p, float v) { p->sx = v; }
+static void parts_set_scale_y(struct parts *p, float v) { p->sy = v; }
+''' + function('src/parts/activity.c', 'load_part_scale') + r'''
+int main(void) {
+    for (int v2 = 0; v2 < 2; v2++) for (int f = 0; f < 4; f++)
+    for (int signs = 0; signs < 4; signs++) {
+        parts_v2 = v2;
+        struct parts p = {0};
+        struct ex_tree t = {f & 1, f & 2, signs & 1 ? -2 : 2, signs & 2 ? -3 : 3};
+        load_part_scale(&p, &t);
+        assert(p.reverse_lr == t.lr && p.reverse_tb == t.tb);
+        assert(p.sx == (v2 || !t.lr ? t.sx : -t.sx));
+        assert(p.sy == (v2 || !t.tb ? t.sy : -t.sy));
+    }
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'activity.c', Path(tmp) / 'activity'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
 
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
