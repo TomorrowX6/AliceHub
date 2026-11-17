@@ -867,7 +867,7 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun updateTopBarState() {
-        val presetName = if (profile.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON) "RPG" else "ADV"
+        val presetName = GamepadBridge.presetShortName(this, profile.virtual.presetId)
         presetPill.text = if (activeTab == TAB_VIRTUAL) {
             "$presetName ▾"
         } else {
@@ -1037,19 +1037,18 @@ class GamepadEditorActivity : Activity() {
         }
         row1.addView(visChip, wrapParams(rightMargin = dp(6)))
 
-        if (sel.isCustom) {
-            val delChip = makePill(tr("删除", "削除", "Del"), active = false) {
-                val remaining = profile.virtual.controls.filterNot { it.id == sel.id }
-                profile = profile.copy(virtual = profile.virtual.copy(controls = remaining))
-                selectedControlId = null
-                virtualLayer.setProfile(profile)
-                virtualLayer.setEditMode(true, null)
-                elementInspectorCard.visibility = View.GONE
-            }.apply {
-                setTextColor(COL_DANGER)
-            }
-            row1.addView(delChip, wrapParams(rightMargin = dp(6)))
+        // Both user-added and preset (ADV / RPG) controls can be deleted.
+        val delChip = makePill(tr("删除", "削除", "Del"), active = false) {
+            val remaining = profile.virtual.controls.filterNot { it.id == sel.id }
+            profile = profile.copy(virtual = profile.virtual.copy(controls = remaining))
+            selectedControlId = null
+            virtualLayer.setProfile(profile)
+            virtualLayer.setEditMode(true, null)
+            elementInspectorCard.visibility = View.GONE
+        }.apply {
+            setTextColor(COL_DANGER)
         }
+        row1.addView(delChip, wrapParams(rightMargin = dp(6)))
 
         val closeBtn = makePill("✕", active = false) {
             selectedControlId = null
@@ -1157,11 +1156,13 @@ class GamepadEditorActivity : Activity() {
         if (activeTab == TAB_VIRTUAL) {
             val names = arrayOf(
                 tr("ADV 鼠键布局", "ADV 標準", "ADV Mouse"),
-                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon")
+                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon"),
+                tr("空布局", "空レイアウト", "Empty Layout")
             )
             val ids = arrayOf(
                 GamepadBridge.PRESET_VN_MOUSE,
-                GamepadBridge.PRESET_RPG_DUNGEON
+                GamepadBridge.PRESET_RPG_DUNGEON,
+                GamepadBridge.PRESET_EMPTY
             )
             AlertDialog.Builder(this)
                 .setTitle(tr("选择布局预设", "プリセット", "Layout Preset"))

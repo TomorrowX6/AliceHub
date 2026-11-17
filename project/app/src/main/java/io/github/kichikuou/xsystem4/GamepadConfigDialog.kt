@@ -65,6 +65,7 @@ class GamepadConfigController(
 
     private var presetBtnVn: TextView? = null
     private var presetBtnRpg: TextView? = null
+    private var presetBtnEmpty: TextView? = null
 
     private var scaleValTv: TextView? = null
     private var scaleSeek: SeekBar? = null
@@ -239,10 +240,13 @@ class GamepadConfigController(
             }
             val btnVn = makePresetChip("ADV") { applyPreset(GamepadBridge.PRESET_VN_MOUSE) }
             val btnRpg = makePresetChip("RPG") { applyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
+            val btnEmpty = makePresetChip(tr("空布局", "空", "Empty")) { applyPreset(GamepadBridge.PRESET_EMPTY) }
             presetBtnVn = btnVn
             presetBtnRpg = btnRpg
+            presetBtnEmpty = btnEmpty
             presetRow.addView(btnVn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
-            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
+            presetRow.addView(btnEmpty, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(presetRow)
 
             addDivider(this)
@@ -293,10 +297,11 @@ class GamepadConfigController(
     }
 
     private fun applyPreset(presetId: String) {
-        val physBindings = if (presetId == GamepadBridge.PRESET_RPG_DUNGEON) {
-            GamepadBridge.rpgPhysicalBindings()
-        } else {
-            GamepadBridge.defaultPhysicalBindings()
+        val physBindings = when (presetId) {
+            GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.rpgPhysicalBindings()
+            // Empty layout only clears the virtual pad; keep current controller bindings.
+            GamepadBridge.PRESET_EMPTY -> draft.physical.bindings
+            else -> GamepadBridge.defaultPhysicalBindings()
         }
         draft = draft.copy(
             virtual = draft.virtual.copy(
@@ -419,8 +424,9 @@ class GamepadConfigController(
         opacitySeek?.progress = (draft.virtual.globalOpacityPct - 20).coerceIn(0, 80)
         opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
 
-        updatePresetChip(presetBtnVn, draft.virtual.presetId != GamepadBridge.PRESET_RPG_DUNGEON)
+        updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
         updatePresetChip(presetBtnRpg, draft.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON)
+        updatePresetChip(presetBtnEmpty, draft.virtual.presetId == GamepadBridge.PRESET_EMPTY)
         syncingUi = false
 
         refreshPadBadge()

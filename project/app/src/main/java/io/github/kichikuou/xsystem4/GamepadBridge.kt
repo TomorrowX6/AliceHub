@@ -205,13 +205,15 @@ data class VirtualPadConfig(
         fun fromJson(obj: JSONObject?): VirtualPadConfig {
             if (obj == null) return VirtualPadConfig()
             val rawPreset = obj.optString("presetId", GamepadBridge.PRESET_VN_MOUSE)
-            val preset = if (rawPreset == GamepadBridge.PRESET_RPG_DUNGEON) {
-                GamepadBridge.PRESET_RPG_DUNGEON
-            } else {
-                GamepadBridge.PRESET_VN_MOUSE
+            val preset = when (rawPreset) {
+                GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.PRESET_RPG_DUNGEON
+                GamepadBridge.PRESET_EMPTY -> GamepadBridge.PRESET_EMPTY
+                else -> GamepadBridge.PRESET_VN_MOUSE
             }
             val arr = obj.optJSONArray("controls")
-            val parsedControls = if (arr != null && arr.length() > 0) {
+            // An explicitly saved (possibly empty) control list is kept as-is so that
+            // deleted preset buttons and the empty layout are not re-populated on load.
+            val parsedControls = if (arr != null) {
                 val list = ArrayList<VirtualControlSpec>(arr.length())
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
@@ -352,6 +354,7 @@ object GamepadBridge {
 
     const val PRESET_VN_MOUSE = "vn_mouse"
     const val PRESET_RPG_DUNGEON = "rpg_dungeon"
+    const val PRESET_EMPTY = "empty"
 
     const val MAX_VPAD_SLOTS = 32
 
@@ -550,8 +553,15 @@ object GamepadBridge {
         PAD_DPAD_RIGHT to GamepadActionSpec(ACTION_NONE, 0)
     )
 
+    fun presetShortName(context: Context, presetId: String): String = when (presetId) {
+        PRESET_RPG_DUNGEON -> "RPG"
+        PRESET_EMPTY -> tr(context, "空布局", "空", "Empty")
+        else -> "ADV"
+    }
+
     fun buildPresetControls(presetId: String): List<VirtualControlSpec> {
         return when (presetId) {
+            PRESET_EMPTY -> emptyList()
             PRESET_RPG_DUNGEON -> listOf(
                 VirtualControlSpec("dpad", 0, VirtualControlKind.DPAD, "D-PAD", 0.12f, 0.68f, 1.05f, 1.0f, true, VirtualButtonShape.SQUARE, STICK_ARROWS),
                 VirtualControlSpec("stick_l", 1, VirtualControlKind.STICK, "L", 0.23f, 0.44f, 0.85f, 0.85f, false, VirtualButtonShape.CIRCLE, STICK_MOUSE),
