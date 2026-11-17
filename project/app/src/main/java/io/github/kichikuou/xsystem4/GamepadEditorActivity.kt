@@ -40,6 +40,7 @@ import org.json.JSONObject
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Landscape unified editor for virtual touch layout (Winlator / Yuzu style)
@@ -950,25 +951,27 @@ class GamepadEditorActivity : Activity() {
 
         globalPopoverCard.addView(makeHorizDivider())
         lateinit var scVal: TextView
-        val scRow = makeCompactSliderRow(tr("整体大小", "全体サイズ", "Scale"), 90) { p ->
-            val v = (p + 60).coerceIn(60, 150)
+        val scRow = makeCompactSliderRow(tr("整体大小", "全体サイズ", "Scale"), GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN) { p ->
+            val v = (p + GamepadBridge.GLOBAL_SCALE_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX)
             profile = profile.copy(virtual = profile.virtual.copy(globalScalePct = v))
             scVal.text = "${v}%"
             virtualLayer.setProfile(profile)
         }
-        scRow.first.progress = (profile.virtual.globalScalePct - 60).coerceIn(0, 90)
+        scRow.first.progress = (profile.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
         scVal = scRow.second
         scVal.text = "${profile.virtual.globalScalePct}%"
         globalPopoverCard.addView(scRow.third)
 
         lateinit var opVal: TextView
-        val opRow = makeCompactSliderRow(tr("整体透明", "不透明度", "Opacity"), 80) { p ->
-            val v = (p + 20).coerceIn(20, 100)
+        val opRow = makeCompactSliderRow(tr("整体透明", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+            val v = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
             profile = profile.copy(virtual = profile.virtual.copy(globalOpacityPct = v))
             opVal.text = "${v}%"
             virtualLayer.setProfile(profile)
         }
-        opRow.first.progress = (profile.virtual.globalOpacityPct - 20).coerceIn(0, 80)
+        opRow.first.progress = (profile.virtual.globalOpacityPct - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
         opVal = opRow.second
         opVal.text = "${profile.virtual.globalOpacityPct}%"
         globalPopoverCard.addView(opRow.third)
@@ -1094,10 +1097,12 @@ class GamepadEditorActivity : Activity() {
         }
         val sizeSeek = SeekBar(this).apply {
             tintSeekBar(this)
-            max = 100
-            progress = ((sel.scale - 0.6f) * 100f).toInt().coerceIn(0, 100)
+            val scaleSteps = ((GamepadBridge.CONTROL_SCALE_MAX - GamepadBridge.CONTROL_SCALE_MIN) * 100f).roundToInt()
+            max = scaleSteps
+            progress = ((sel.scale - GamepadBridge.CONTROL_SCALE_MIN) * 100f).roundToInt().coerceIn(0, scaleSteps)
             setOnSeekBarChangeListener(simpleSeekListener { p ->
-                val sc = (0.6f + p / 100f).coerceIn(0.6f, 1.6f)
+                val sc = (GamepadBridge.CONTROL_SCALE_MIN + p / 100f)
+                    .coerceIn(GamepadBridge.CONTROL_SCALE_MIN, GamepadBridge.CONTROL_SCALE_MAX)
                 sizeValTv.text = "${(sc * 100f).toInt()}%"
                 mutateControl(sel.id, rebuildBar = false) { it.copy(scale = sc) }
             })
@@ -1121,10 +1126,11 @@ class GamepadEditorActivity : Activity() {
         }
         val opSeek = SeekBar(this).apply {
             tintSeekBar(this)
-            max = 70
-            progress = ((sel.opacity - 0.3f) * 100f).toInt().coerceIn(0, 70)
+            val opSteps = ((1.0f - GamepadBridge.CONTROL_OPACITY_MIN) * 100f).roundToInt()
+            max = opSteps
+            progress = ((sel.opacity - GamepadBridge.CONTROL_OPACITY_MIN) * 100f).roundToInt().coerceIn(0, opSteps)
             setOnSeekBarChangeListener(simpleSeekListener { p ->
-                val op = (0.3f + p / 100f).coerceIn(0.3f, 1.0f)
+                val op = (GamepadBridge.CONTROL_OPACITY_MIN + p / 100f).coerceIn(GamepadBridge.CONTROL_OPACITY_MIN, 1.0f)
                 opValTv.text = "${(op * 100f).toInt()}%"
                 mutateControl(sel.id, rebuildBar = false) { it.copy(opacity = op) }
             })

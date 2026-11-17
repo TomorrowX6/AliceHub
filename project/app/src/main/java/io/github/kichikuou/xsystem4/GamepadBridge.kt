@@ -94,10 +94,10 @@ data class VirtualControlSpec(
                 slotId = obj.optInt("slotId", 0),
                 kind = VirtualControlKind.fromId(obj.optInt("kind", 0)),
                 label = obj.optString("label", ""),
-                xNorm = obj.optDouble("xNorm", 0.5).toFloat().coerceIn(0.03f, 0.97f),
-                yNorm = obj.optDouble("yNorm", 0.5).toFloat().coerceIn(0.04f, 0.96f),
-                scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(0.55f, 1.8f),
-                opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(0.2f, 1.0f),
+                xNorm = obj.optDouble("xNorm", 0.5).toFloat().coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX),
+                yNorm = obj.optDouble("yNorm", 0.5).toFloat().coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX),
+                scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(GamepadBridge.CONTROL_SCALE_MIN, GamepadBridge.CONTROL_SCALE_MAX),
+                opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(GamepadBridge.CONTROL_OPACITY_MIN, 1.0f),
                 visible = obj.optBoolean("visible", true),
                 shape = VirtualButtonShape.fromId(obj.optInt("shape", 0)),
                 stickMode = obj.optInt("stickMode", GamepadBridge.STICK_NONE),
@@ -192,8 +192,8 @@ data class VirtualPadConfig(
         return JSONObject()
             .put("enabled", enabled)
             .put("presetId", presetId)
-            .put("globalScalePct", globalScalePct.coerceIn(60, 150))
-            .put("globalOpacityPct", globalOpacityPct.coerceIn(20, 100))
+            .put("globalScalePct", globalScalePct.coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX))
+            .put("globalOpacityPct", globalOpacityPct.coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX))
             .put("hapticFeedback", hapticFeedback)
             .put("gridSnap", gridSnap)
             .put("leftStickMode", leftStickMode)
@@ -226,8 +226,8 @@ data class VirtualPadConfig(
             return VirtualPadConfig(
                 enabled = obj.optBoolean("enabled", false),
                 presetId = preset,
-                globalScalePct = obj.optInt("globalScalePct", 100).coerceIn(60, 150),
-                globalOpacityPct = obj.optInt("globalOpacityPct", 58).coerceIn(20, 100),
+                globalScalePct = obj.optInt("globalScalePct", 100).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX),
+                globalOpacityPct = obj.optInt("globalOpacityPct", 58).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX),
                 hapticFeedback = obj.optBoolean("hapticFeedback", false),
                 gridSnap = obj.optBoolean("gridSnap", false),
                 controls = parsedControls
@@ -357,6 +357,22 @@ object GamepadBridge {
     const val PRESET_EMPTY = "empty"
 
     const val MAX_VPAD_SLOTS = 32
+
+    // Shared value ranges for virtual controls. Loading, the editor and the quick dialog must
+    // all use these so values never jump when a profile is re-opened.
+    const val POS_X_MIN = 0.04f
+    const val POS_X_MAX = 0.96f
+    const val POS_Y_MIN = 0.06f
+    const val POS_Y_MAX = 0.94f
+    const val CONTROL_SCALE_MIN = 0.6f
+    const val CONTROL_SCALE_MAX = 1.6f
+    const val CONTROL_OPACITY_MIN = 0.3f
+    const val GLOBAL_SCALE_PCT_MIN = 60
+    const val GLOBAL_SCALE_PCT_MAX = 150
+    const val GLOBAL_OPACITY_PCT_MIN = 20
+    const val GLOBAL_OPACITY_PCT_MAX = 100
+    /** Editor snap step (normalized); the editor grid is drawn on the same step. */
+    const val GRID_STEP = 0.025f
 
     @JvmStatic
     external fun nativeSetGamepadConfigJson(json: String)

@@ -458,11 +458,12 @@ class VirtualGamepadView(context: Context) : View(context) {
                     }
                 }
                 if (active.dragging) {
-                    var nx = (active.origXNorm + dx / w).coerceIn(0.04f, 0.96f)
-                    var ny = (active.origYNorm + dy / h).coerceIn(0.06f, 0.94f)
+                    var nx = (active.origXNorm + dx / w).coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX)
+                    var ny = (active.origYNorm + dy / h).coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX)
                     if (profile.virtual.gridSnap) {
-                        nx = ((nx / 0.025f).roundToInt() * 0.025f).coerceIn(0.04f, 0.96f)
-                        ny = ((ny / 0.025f).roundToInt() * 0.025f).coerceIn(0.06f, 0.94f)
+                        val g = GamepadBridge.GRID_STEP
+                        nx = ((nx / g).roundToInt() * g).coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX)
+                        ny = ((ny / g).roundToInt() * g).coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX)
                     }
                     updateControlSpec(active.controlId) { it.copy(xNorm = nx, yNorm = ny) }
                     invalidate()
@@ -641,13 +642,14 @@ class VirtualGamepadView(context: Context) : View(context) {
     private fun drawEditorGrid(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        gridPaint.color = 0x16FFFFFF
-        val step = 0.05f
-        var f = step
-        while (f < 1f) {
+        // Draw exactly the snap lattice: faint lines every GRID_STEP, stronger every 2nd.
+        val step = GamepadBridge.GRID_STEP
+        val n = (1f / step).roundToInt()
+        for (i in 1 until n) {
+            val f = i * step
+            gridPaint.color = if (i % 2 == 0) 0x16FFFFFF else 0x0BFFFFFF
             canvas.drawLine(w * f, 0f, w * f, h, gridPaint)
             canvas.drawLine(0f, h * f, w, h * f, gridPaint)
-            f += step
         }
         gridPaint.color = 0x3BA9B6FF
         canvas.drawLine(w * 0.5f, 0f, w * 0.5f, h, gridPaint)

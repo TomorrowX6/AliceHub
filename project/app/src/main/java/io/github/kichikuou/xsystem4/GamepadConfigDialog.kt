@@ -268,8 +268,8 @@ class GamepadConfigController(
             }
             addDivider(this)
 
-            val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), 90) { p ->
-                val pct = (p + 60).coerceIn(60, 150)
+            val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.GLOBAL_SCALE_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX)
                 draft = draft.copy(virtual = draft.virtual.copy(globalScalePct = pct))
                 scaleValTv?.text = "${pct}%"
                 markDirty(true)
@@ -277,8 +277,8 @@ class GamepadConfigController(
             scaleSeek = scalePair.first
             scaleValTv = scalePair.second
 
-            val opPair = addInlineSliderRow(this, tr("透明度", "不透明度", "Opacity"), 80) { p ->
-                val pct = (p + 20).coerceIn(20, 100)
+            val opPair = addInlineSliderRow(this, tr("透明度", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
                 draft = draft.copy(virtual = draft.virtual.copy(globalOpacityPct = pct))
                 opacityValTv?.text = "${pct}%"
                 markDirty(true)
@@ -416,9 +416,11 @@ class GamepadConfigController(
         hapticSwitch?.isChecked = draft.virtual.hapticFeedback
         rumbleSwitch?.isChecked = draft.physical.rumbleEnabled
 
-        scaleSeek?.progress = (draft.virtual.globalScalePct - 60).coerceIn(0, 90)
+        scaleSeek?.progress = (draft.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
         scaleValTv?.text = "${draft.virtual.globalScalePct}%"
-        opacitySeek?.progress = (draft.virtual.globalOpacityPct - 20).coerceIn(0, 80)
+        opacitySeek?.progress = (draft.virtual.globalOpacityPct - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
         opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
 
         updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
