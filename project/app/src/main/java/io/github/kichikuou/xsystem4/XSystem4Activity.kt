@@ -671,6 +671,28 @@ class XSystem4Activity : SDLActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    private fun restoreWindowAndFrameRate(reapplyStyle: Boolean) {
+        if (isFinishing || isDestroyed || !hasWindowFocus()) {
+            return
+        }
+        if (reapplyStyle) {
+            try {
+                SDLActivity.setWindowStyle(true)
+            } catch (_: Throwable) {
+            }
+        }
+        mSurface?.reapplyPreferredFrameRate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && !isFinishing && !isDestroyed) {
+            restoreWindowAndFrameRate(reapplyStyle = true)
+            window.decorView.post { restoreWindowAndFrameRate(reapplyStyle = false) }
+            window.decorView.postDelayed({ restoreWindowAndFrameRate(reapplyStyle = true) }, 180L)
+        }
+    }
+
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         if (activeGamepadProfile.physical.enabled) {
             GamepadBridge.extractMotionAxes(ev)?.let { axes ->

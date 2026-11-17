@@ -33,6 +33,7 @@
 #include "system4/utfsjis.h"
 
 #include "debugger.h"
+#include "gfx/gfx.h"
 #include "input.h"
 #include "message_layout.h"
 #include "modifier.h"
@@ -3494,7 +3495,7 @@ int vm_time(void)
 
 void vm_sleep(int ms)
 {
-	SDL_Delay(ms);
+	gfx_android_delay(ms);
 }
 
 _Noreturn void vm_exit(int code)

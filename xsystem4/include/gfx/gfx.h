@@ -85,6 +85,9 @@ void gfx_toggle_fullscreen(void);
 void gfx_update_screen_scale(void);
 void gfx_set_wait_vsync(bool wait);
 void gfx_reset_frame_pacer(void);
+void gfx_android_on_background(void);
+void gfx_android_on_foreground(void);
+void gfx_android_delay(Uint32 ms);
 float gfx_get_frame_rate(void);
 
 void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const char *fragment_shader_path);

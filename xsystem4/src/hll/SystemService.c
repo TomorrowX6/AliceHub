@@ -216,7 +216,11 @@ static struct window_settings window_settings = {
 	.wait_vsync = false,
 #endif
 	.record_pos_size = false,
+#ifdef __ANDROID__
+	.minimize_by_full_screen_inactive = false,
+#else
 	.minimize_by_full_screen_inactive = true,
+#endif
 	.back_to_title_confirm = true,
 	.close_game_confirm = true,
 };
@@ -275,7 +279,12 @@ static bool SystemService_SetWindowSetting(int type, int value)
 		window_settings.record_pos_size = value;
 		break;
 	case WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE:
+#ifdef __ANDROID__
+		(void)value;
+		window_settings.minimize_by_full_screen_inactive = false;
+#else
 		window_settings.minimize_by_full_screen_inactive = value;
+#endif
 		break;
 	case WINDOW_SETTINGS_BACK_TO_TITLE_CONFIRM:
 		window_settings.back_to_title_confirm = value;
@@ -307,7 +316,11 @@ static bool SystemService_GetWindowSetting(int type, int *value)
 		*value = window_settings.record_pos_size;
 		break;
 	case WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE:
+#ifdef __ANDROID__
+		*value = false;
+#else
 		*value = window_settings.minimize_by_full_screen_inactive;
+#endif
 		break;
 	case WINDOW_SETTINGS_BACK_TO_TITLE_CONFIRM:
 		*value = window_settings.back_to_title_confirm;

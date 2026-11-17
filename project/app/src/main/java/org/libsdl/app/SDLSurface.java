@@ -74,6 +74,11 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         setOnKeyListener(this);
         setOnTouchListener(this);
         enableSensor(Sensor.TYPE_ACCELEROMETER, true);
+        reapplyPreferredFrameRate();
+    }
+
+    public void reapplyPreferredFrameRate() {
+        applyPreferredFrameRate(getHolder());
     }
 
     public Surface getNativeSurface() {

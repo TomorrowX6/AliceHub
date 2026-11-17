@@ -898,12 +898,21 @@ static bool config_sleep_by_inactive_window = false;
 
 void StoatSpriteEngine_SYSTEM_SetConfigSleepByInactiveWindow(bool on)
 {
+#ifdef __ANDROID__
+	(void)on;
+	config_sleep_by_inactive_window = false;
+#else
 	config_sleep_by_inactive_window = !!on;
+#endif
 }
 
 bool StoatSpriteEngine_SYSTEM_GetConfigSleepByInactiveWindow(void)
 {
+#ifdef __ANDROID__
+	return false;
+#else
 	return config_sleep_by_inactive_window;
+#endif
 }
 
 static bool read_message_skipping = false;

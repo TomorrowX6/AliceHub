@@ -2174,12 +2174,15 @@ static void handle_window_event(SDL_Event *e)
 		mouse_focus = false;
 #endif
 		break;
+	case SDL_WINDOWEVENT_RESTORED:
+		gfx_android_on_foreground();
+		break;
 	case SDL_WINDOWEVENT_FOCUS_GAINED:
 		mouse_focus = true;
 		keyboard_focus = true;
 		mixer_set_app_backgrounded(false);
 		mixer_set_window_focus(true);
-		gfx_reset_frame_pacer();
+		gfx_android_on_foreground();
 		break;
 	case SDL_WINDOWEVENT_FOCUS_LOST:
 #ifndef __ANDROID__
@@ -2240,12 +2243,12 @@ void handle_window_events(void)
 			reset_gamepad_transient_state();
 			reset_movie_hold_state();
 			mixer_set_app_backgrounded(true);
-			gfx_reset_frame_pacer();
+			gfx_android_on_background();
 			savedata_flush_on_background();
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
 			mixer_set_app_backgrounded(false);
-			gfx_reset_frame_pacer();
+			gfx_android_on_foreground();
 			break;
 		}
 	}
@@ -2289,12 +2292,12 @@ void handle_events(void)
 			reset_gamepad_transient_state();
 			reset_movie_hold_state();
 			mixer_set_app_backgrounded(true);
-			gfx_reset_frame_pacer();
+			gfx_android_on_background();
 			savedata_flush_on_background();
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
 			mixer_set_app_backgrounded(false);
-			gfx_reset_frame_pacer();
+			gfx_android_on_foreground();
 			gfx_swap();
 			break;
 		case SDL_AUDIODEVICEREMOVED:
