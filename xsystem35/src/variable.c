@@ -118,6 +118,21 @@ vmvar_t *v_ref_indexed(int var, int index, struct VarRef *ref) {
 	return varPage[page].value + index;
 }
 
+int v_boundSliceSize(const struct VarRef *ref) {
+	if (!ref || ref->page <= 0 || ref->page >= PAGE_MAX || !varPage[ref->page].value)
+		return 0;
+	int start = ref->index;
+	int end = varPage[ref->page].size;
+	if (start < 0 || start >= end)
+		return 0;
+	for (int i = 0; i < SYSVAR_MAX; i++) {
+		if (attributes[i].page == ref->page && attributes[i].offset > start && attributes[i].offset < end) {
+			end = attributes[i].offset;
+		}
+	}
+	return end - start;
+}
+
 // DC command
 bool v_allocatePage(int page, int size, bool saveflag) {
 	if (page <  0 || page >= PAGE_MAX) { return false; }

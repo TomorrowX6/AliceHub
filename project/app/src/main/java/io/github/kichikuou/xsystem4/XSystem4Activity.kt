@@ -1299,7 +1299,7 @@ class XSystem4Activity : SDLActivity() {
                 .setView(input)
                 .setPositiveButton(R.string.ok) { _, _ ->
                     val s = input.text.toString()
-                    result[0] = if (s.length <= maxLen) s else s.substring(0, maxLen)
+                    result[0] = if (maxLen <= 0) "" else if (s.length <= maxLen) s else s.substring(0, maxLen)
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .setOnDismissListener {
@@ -1352,7 +1352,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     @Suppress("unused")
-    fun midiStart(path: String, loop: Boolean) = xsystem35Midi.start(path, loop)
+    fun midiStart(path: String, loop: Int) = xsystem35Midi.start(path, loop)
 
     @Suppress("unused")
     fun midiStop() = xsystem35Midi.stop()
@@ -1398,6 +1398,8 @@ class XSystem4Activity : SDLActivity() {
         private var currentGain = 1.0f
         private var duckGain = 1.0f
         private var fadeGen = 0
+        private var startGen = 0
+        private var remainingRepeats = 0
         @Volatile
         private var fadingFlag = false
 
@@ -1492,14 +1494,18 @@ class XSystem4Activity : SDLActivity() {
             }
         }
 
-        fun start(path: String, loop: Boolean) {
+        fun start(path: String, loopCount: Int) {
             synchronized(lock) {
                 val mp = player ?: return
                 fadeGen++
+                startGen++
+                val myStartGen = startGen
                 fadingFlag = false
                 active = false
                 pausedByGame = false
                 pausedByFocus = false
+                val infinite = loopCount <= 0
+                remainingRepeats = if (infinite) 0 else (loopCount - 1).coerceAtLeast(0)
                 try {
                     mp.reset()
                     mp.setAudioAttributes(
@@ -1509,11 +1515,25 @@ class XSystem4Activity : SDLActivity() {
                             .build()
                     )
                     mp.setDataSource(path)
-                    mp.isLooping = loop
+                    mp.isLooping = infinite
                     mp.prepare()
                     mp.setOnCompletionListener {
                         synchronized(lock) {
-                            if (!loop) {
+                            if (myStartGen != startGen || !active || infinite) {
+                                return@setOnCompletionListener
+                            }
+                            if (remainingRepeats > 0) {
+                                remainingRepeats--
+                                try {
+                                    mp.seekTo(0)
+                                    syncPlaybackStateLocked()
+                                } catch (e: Exception) {
+                                    Log.w("XSystem35Midi", "Cannot repeat midi: $path", e)
+                                    active = false
+                                    fadingFlag = false
+                                    remainingRepeats = 0
+                                }
+                            } else {
                                 active = false
                                 fadingFlag = false
                             }
@@ -1527,6 +1547,7 @@ class XSystem4Activity : SDLActivity() {
                 } catch (e: Exception) {
                     Log.w("XSystem35Midi", "Cannot play midi: $path", e)
                     active = false
+                    remainingRepeats = 0
                     mp.reset()
                 }
             }
@@ -1535,7 +1556,9 @@ class XSystem4Activity : SDLActivity() {
         fun stop() {
             synchronized(lock) {
                 fadeGen++
+                startGen++
                 fadingFlag = false
+                remainingRepeats = 0
                 val mp = player ?: return
                 if (active) {
                     try {
@@ -1658,7 +1681,9 @@ class XSystem4Activity : SDLActivity() {
         fun release() {
             synchronized(lock) {
                 fadeGen++
+                startGen++
                 fadingFlag = false
+                remainingRepeats = 0
                 active = false
                 abandonFocusLocked()
                 player?.let { mp ->

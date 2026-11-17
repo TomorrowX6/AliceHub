@@ -37,7 +37,8 @@
 #define STRING "Ljava/lang/String;"
 
 bool input_modal_string(INPUTSTRING_PARAM *p) {
-	static char buf[256];
+	static char *buf = NULL;
+	static size_t buf_cap = 0;
 	JNIEnv *env = SDL_GetAndroidJNIEnv();
 	if ((*env)->PushLocalFrame(env, 16) < 0) {
 		WARNING("Failed to allocate JVM local references");
@@ -57,8 +58,29 @@ bool input_modal_string(INPUTSTRING_PARAM *p) {
 										"inputString", "(" STRING STRING "I)" STRING);
 	jstring newstring = (jstring)(*env)->CallObjectMethod(env, context, mid, msg, oldstring, p->max);
 	if (newstring) {
+		jsize utf8_len = (*env)->GetStringUTFLength(env, newstring);
 		const char *newstr_utf8 = (*env)->GetStringUTFChars(env, newstring, NULL);
-		strcpy(buf, newstr_utf8);
+		if (!newstr_utf8) {
+			(*env)->PopLocalFrame(env, NULL);
+			p->newstring = p->oldstring;
+			return false;
+		}
+		size_t cstr_len = strlen(newstr_utf8);
+		size_t copy_len = utf8_len >= 0 && (size_t)utf8_len < cstr_len ? (size_t)utf8_len : cstr_len;
+		size_t needed = copy_len + 1;
+		if (needed > buf_cap) {
+			char *new_buf = realloc(buf, needed);
+			if (!new_buf) {
+				(*env)->ReleaseStringUTFChars(env, newstring, newstr_utf8);
+				(*env)->PopLocalFrame(env, NULL);
+				p->newstring = p->oldstring;
+				return false;
+			}
+			buf = new_buf;
+			buf_cap = needed;
+		}
+		memcpy(buf, newstr_utf8, copy_len);
+		buf[copy_len] = '\0';
 		(*env)->ReleaseStringUTFChars(env, newstring, newstr_utf8);
 		(*env)->PopLocalFrame(env, NULL);
 		p->newstring = buf;

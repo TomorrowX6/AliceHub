@@ -102,8 +102,8 @@ static bool midi_start(int no, int loop, const uint8_t *data, int datalen) {
 	jclass cls = (*env)->GetObjectClass(env, context);
 	jmethodID setvol = (*env)->GetMethodID(env, cls, "midiSetVolume", "(F)V");
 	(*env)->CallVoidMethod(env, context, setvol, (jfloat)calc_midi_gain());
-	jmethodID mid = (*env)->GetMethodID(env, cls, "midiStart", "(Ljava/lang/String;Z)V");
-	(*env)->CallVoidMethod(env, context, mid, path_str, loop == 0);
+	jmethodID mid = (*env)->GetMethodID(env, cls, "midiStart", "(Ljava/lang/String;I)V");
+	(*env)->CallVoidMethod(env, context, mid, path_str, (jint)loop);
 	(*env)->PopLocalFrame(env, NULL);
 
 	return true;

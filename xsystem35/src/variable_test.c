@@ -80,11 +80,40 @@ static void string_variable_conversion_test(void) {
 		ASSERT_EQUAL(output[i], input[i]);
 }
 
+static void bound_slice_size_test(void) {
+	struct VarRef ref;
+	vmvar_t index = 0;
+
+	ASSERT_TRUE(v_allocatePage(1, 16, true));
+	ASSERT_TRUE(v_bindArray(10, &index, 0, 1));
+	ASSERT_TRUE(v_bindArray(11, &index, 4, 1));
+	ASSERT_TRUE(v_bindArray(12, &index, 10, 1));
+	ASSERT_TRUE(v_bindArray(13, &index, 4, 1));  // alias at same offset
+
+	ASSERT_TRUE(v_ref_indexed(10, 0, &ref) != NULL);
+	ASSERT_EQUAL(v_boundSliceSize(&ref), 4);
+	ASSERT_TRUE(v_ref_indexed(11, 0, &ref) != NULL);
+	ASSERT_EQUAL(v_boundSliceSize(&ref), 6);
+	ASSERT_TRUE(v_ref_indexed(12, 0, &ref) != NULL);
+	ASSERT_EQUAL(v_boundSliceSize(&ref), 6);
+
+	ASSERT_TRUE(v_unbindArray(11));
+	ASSERT_TRUE(v_unbindArray(13));
+	ASSERT_TRUE(v_ref_indexed(10, 0, &ref) != NULL);
+	ASSERT_EQUAL(v_boundSliceSize(&ref), 10);
+
+	// Unbound / page 0 refs return 0
+	ASSERT_TRUE(v_ref_indexed(20, 0, &ref) != NULL);
+	ASSERT_EQUAL(v_boundSliceSize(&ref), 0);
+}
+
 void variable_test(void) {
 	v_init();
 	allocate_page_test();
 	v_reset();
 	array_reference_test();
+	v_reset();
+	bound_slice_size_test();
 	v_reset();
 	string_variable_conversion_test();
 	v_reset();

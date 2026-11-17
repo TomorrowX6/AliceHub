@@ -511,13 +511,15 @@ static void esc_unlock_var_all(int var) {
 		return;
 	struct VarRef ref;
 	if (v_ref_indexed(var, 0, &ref) && ref.page > 0 && ref.page < 256 && varPage[ref.page].value) {
-		for (int i = ref.index; i < varPage[ref.page].size; i++) {
+		int len = v_boundSliceSize(&ref);
+		for (int i = ref.index; i < ref.index + len; i++) {
 			if (varPage[ref.page].value[i] == 0)
 				varPage[ref.page].value[i] = 1;
 		}
+	} else {
+		if (sysVar[var] == 0)
+			sysVar[var] = 1;
 	}
-	if (sysVar[var] == 0)
-		sysVar[var] = 1;
 }
 
 static int esc_count_unlocked(int var) {
@@ -525,8 +527,9 @@ static int esc_count_unlocked(int var) {
 		return 0;
 	struct VarRef ref;
 	if (v_ref_indexed(var, 0, &ref) && ref.page > 0 && ref.page < 256 && varPage[ref.page].value) {
+		int len = v_boundSliceSize(&ref);
 		int cnt = 0;
-		for (int i = ref.index; i < varPage[ref.page].size; i++) {
+		for (int i = ref.index; i < ref.index + len; i++) {
 			if (varPage[ref.page].value[i] != 0)
 				cnt++;
 		}
