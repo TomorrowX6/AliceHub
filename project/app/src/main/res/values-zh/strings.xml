@@ -278,5 +278,5 @@
 
     <string name="movie_skip_hint">长按屏幕跳过</string>
     <string name="movie_skip_holding">长按跳过…</string>
-    <string name="settings_gamepad">手柄与自定义按键</string>
+    <string name="settings_gamepad">手柄设置</string>
 </resources>

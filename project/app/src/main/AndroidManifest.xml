@@ -144,6 +144,14 @@
             android:exported="false">
         </activity>
 
+        <activity android:name="io.github.kichikuou.xsystem4.GamepadEditorActivity"
+            android:label="@string/settings_gamepad"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
+            android:theme="@style/Theme.Launcher"
+            android:exported="false">
+        </activity>
+
         <activity android:name="io.github.kichikuou.xsystem4.SettingsActivity"
             android:label="@string/action_settings"
             android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"

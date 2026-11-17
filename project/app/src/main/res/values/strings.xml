@@ -279,5 +279,5 @@
 
     <string name="movie_skip_hint">Hold screen to skip</string>
     <string name="movie_skip_holding">Hold to skip…</string>
-    <string name="settings_gamepad">Gamepad &amp; Custom Keys</string>
+    <string name="settings_gamepad">Gamepad</string>
 </resources>

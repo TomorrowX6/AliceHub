@@ -109,15 +109,15 @@ data class VirtualControlSpec(
 }
 
 data class PhysicalPadConfig(
-    val enabled: Boolean = true,
-    val autoHideVirtualPad: Boolean = true,
+    val enabled: Boolean = false,
+    val autoHideVirtualPad: Boolean = false,
     val swapAbXy: Boolean = false,
     val leftStickMode: Int = GamepadBridge.STICK_MOUSE,
     val rightStickMode: Int = GamepadBridge.STICK_WHEEL,
     val dpadMode: Int = GamepadBridge.STICK_ARROWS,
     val deadzonePct: Int = 18,
     val cursorSpeedPct: Int = 100,
-    val rumbleEnabled: Boolean = true,
+    val rumbleEnabled: Boolean = false,
     val bindings: Map<Int, GamepadActionSpec> = GamepadBridge.defaultPhysicalBindings()
 ) {
     fun toJson(): JSONObject {
@@ -152,15 +152,15 @@ data class PhysicalPadConfig(
                 }
             }
             return PhysicalPadConfig(
-                enabled = obj.optBoolean("enabled", true),
-                autoHideVirtualPad = obj.optBoolean("autoHideVirtualPad", true),
+                enabled = obj.optBoolean("enabled", false),
+                autoHideVirtualPad = obj.optBoolean("autoHideVirtualPad", false),
                 swapAbXy = obj.optBoolean("swapAbXy", false),
                 leftStickMode = obj.optInt("leftStickMode", GamepadBridge.STICK_MOUSE),
                 rightStickMode = obj.optInt("rightStickMode", GamepadBridge.STICK_WHEEL),
                 dpadMode = obj.optInt("dpadMode", GamepadBridge.STICK_ARROWS),
                 deadzonePct = obj.optInt("deadzonePct", 18).coerceIn(5, 45),
                 cursorSpeedPct = obj.optInt("cursorSpeedPct", 100).coerceIn(30, 250),
-                rumbleEnabled = obj.optBoolean("rumbleEnabled", true),
+                rumbleEnabled = obj.optBoolean("rumbleEnabled", false),
                 bindings = defaults
             )
         }
@@ -168,12 +168,12 @@ data class PhysicalPadConfig(
 }
 
 data class VirtualPadConfig(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     val presetId: String = GamepadBridge.PRESET_VN_MOUSE,
     val globalScalePct: Int = 100,
     val globalOpacityPct: Int = 58,
-    val hapticFeedback: Boolean = true,
-    val gridSnap: Boolean = true,
+    val hapticFeedback: Boolean = false,
+    val gridSnap: Boolean = false,
     val controls: List<VirtualControlSpec> = GamepadBridge.buildPresetControls(GamepadBridge.PRESET_VN_MOUSE)
 ) {
     val leftStickMode: Int
@@ -217,12 +217,12 @@ data class VirtualPadConfig(
                 GamepadBridge.buildPresetControls(preset)
             }
             return VirtualPadConfig(
-                enabled = obj.optBoolean("enabled", true),
+                enabled = obj.optBoolean("enabled", false),
                 presetId = preset,
                 globalScalePct = obj.optInt("globalScalePct", 100).coerceIn(60, 150),
                 globalOpacityPct = obj.optInt("globalOpacityPct", 58).coerceIn(20, 100),
-                hapticFeedback = obj.optBoolean("hapticFeedback", true),
-                gridSnap = obj.optBoolean("gridSnap", true),
+                hapticFeedback = obj.optBoolean("hapticFeedback", false),
+                gridSnap = obj.optBoolean("gridSnap", false),
                 controls = parsedControls
             )
         }
@@ -603,29 +603,29 @@ object GamepadBridge {
 
     fun buildKeyActionCatalog(): List<Pair<String, List<KeyActionEntry>>> {
         val common = listOf(
-            KeyActionEntry("鼠标左键 (点击/确定)", "左クリック", "Mouse Left Click", "LClick", GamepadActionSpec(ACTION_MOUSE_BTN, VK_LBUTTON)),
-            KeyActionEntry("鼠标右键 (取消/菜单)", "右クリック", "Mouse Right Click", "RClick", GamepadActionSpec(ACTION_MOUSE_BTN, VK_RBUTTON)),
-            KeyActionEntry("鼠标中键", "中クリック", "Mouse Middle Click", "MClick", GamepadActionSpec(ACTION_MOUSE_BTN, VK_MBUTTON)),
-            KeyActionEntry("滚轮向上 (历史记录)", "ホイール上 (ログ)", "Wheel Up (Backlog)", "轮↑", GamepadActionSpec(ACTION_MOUSE_WHEEL, 1)),
-            KeyActionEntry("滚轮向下", "ホイール下", "Wheel Down", "轮↓", GamepadActionSpec(ACTION_MOUSE_WHEEL, -1)),
-            KeyActionEntry("Ctrl 快进 (点按锁定开关)", "Ctrl 早送り切替", "Ctrl Skip (Toggle)", "Ctrl", GamepadActionSpec(ACTION_CTRL_TOGGLE, 0)),
+            KeyActionEntry("鼠标左键", "左クリック", "Left Click", "左键", GamepadActionSpec(ACTION_MOUSE_BTN, VK_LBUTTON)),
+            KeyActionEntry("鼠标右键", "右クリック", "Right Click", "右键", GamepadActionSpec(ACTION_MOUSE_BTN, VK_RBUTTON)),
+            KeyActionEntry("鼠标中键", "中クリック", "Middle Click", "中键", GamepadActionSpec(ACTION_MOUSE_BTN, VK_MBUTTON)),
+            KeyActionEntry("滚轮向上", "ホイール上", "Wheel Up", "滚轮↑", GamepadActionSpec(ACTION_MOUSE_WHEEL, 1)),
+            KeyActionEntry("滚轮向下", "ホイール下", "Wheel Down", "滚轮↓", GamepadActionSpec(ACTION_MOUSE_WHEEL, -1)),
+            KeyActionEntry("Ctrl 快进", "Ctrl 早送り", "Ctrl Skip", "Ctrl", GamepadActionSpec(ACTION_CTRL_TOGGLE, 0)),
             KeyActionEntry("按住 Ctrl", "Ctrl ホールド", "Hold Ctrl", "Ctrl", GamepadActionSpec(ACTION_VK, VK_CONTROL)),
-            KeyActionEntry("Enter 回车", "Enter", "Enter", "Enter", GamepadActionSpec(ACTION_VK, VK_RETURN)),
-            KeyActionEntry("Esc 退出/系统菜单", "Esc", "Escape", "Esc", GamepadActionSpec(ACTION_VK, VK_ESCAPE)),
-            KeyActionEntry("Space 空格 (隐藏对话框)", "Space", "Space", "Space", GamepadActionSpec(ACTION_VK, VK_SPACE)),
+            KeyActionEntry("Enter", "Enter", "Enter", "Enter", GamepadActionSpec(ACTION_VK, VK_RETURN)),
+            KeyActionEntry("Esc", "Esc", "Esc", "Esc", GamepadActionSpec(ACTION_VK, VK_ESCAPE)),
+            KeyActionEntry("Space", "Space", "Space", "Space", GamepadActionSpec(ACTION_VK, VK_SPACE)),
             KeyActionEntry("Shift", "Shift", "Shift", "Shift", GamepadActionSpec(ACTION_VK, VK_SHIFT)),
             KeyActionEntry("Tab", "Tab", "Tab", "Tab", GamepadActionSpec(ACTION_VK, VK_TAB)),
             KeyActionEntry("Alt", "Alt", "Alt", "Alt", GamepadActionSpec(ACTION_VK, VK_MENU)),
-            KeyActionEntry("Backspace 退格", "Backspace", "Backspace", "Bksp", GamepadActionSpec(ACTION_VK, VK_BACK))
+            KeyActionEntry("Backspace", "Backspace", "Backspace", "Bksp", GamepadActionSpec(ACTION_VK, VK_BACK))
         )
 
         val nav = listOf(
-            KeyActionEntry("方向键 上 ↑", "上矢印 ↑", "Arrow Up", "↑", GamepadActionSpec(ACTION_VK, VK_UP)),
-            KeyActionEntry("方向键 下 ↓", "下矢印 ↓", "Arrow Down", "↓", GamepadActionSpec(ACTION_VK, VK_DOWN)),
-            KeyActionEntry("方向键 左 ←", "左矢印 ←", "Arrow Left", "←", GamepadActionSpec(ACTION_VK, VK_LEFT)),
-            KeyActionEntry("方向键 右 →", "右矢印 →", "Arrow Right", "→", GamepadActionSpec(ACTION_VK, VK_RIGHT)),
-            KeyActionEntry("PageUp 上一页", "PageUp", "PageUp", "PgUp", GamepadActionSpec(ACTION_VK, VK_PRIOR)),
-            KeyActionEntry("PageDown 下一页", "PageDown", "PageDown", "PgDn", GamepadActionSpec(ACTION_VK, VK_NEXT)),
+            KeyActionEntry("方向 ↑", "上 ↑", "Up ↑", "↑", GamepadActionSpec(ACTION_VK, VK_UP)),
+            KeyActionEntry("方向 ↓", "下 ↓", "Down ↓", "↓", GamepadActionSpec(ACTION_VK, VK_DOWN)),
+            KeyActionEntry("方向 ←", "左 ←", "Left ←", "←", GamepadActionSpec(ACTION_VK, VK_LEFT)),
+            KeyActionEntry("方向 →", "右 →", "Right →", "→", GamepadActionSpec(ACTION_VK, VK_RIGHT)),
+            KeyActionEntry("PgUp", "PgUp", "PgUp", "PgUp", GamepadActionSpec(ACTION_VK, VK_PRIOR)),
+            KeyActionEntry("PgDn", "PgDn", "PgDn", "PgDn", GamepadActionSpec(ACTION_VK, VK_NEXT)),
             KeyActionEntry("Home", "Home", "Home", "Home", GamepadActionSpec(ACTION_VK, VK_HOME)),
             KeyActionEntry("End", "End", "End", "End", GamepadActionSpec(ACTION_VK, VK_END)),
             KeyActionEntry("Insert", "Insert", "Insert", "Ins", GamepadActionSpec(ACTION_VK, VK_INSERT)),
@@ -638,65 +638,65 @@ object GamepadBridge {
 
         val lettersAndNums = ArrayList<KeyActionEntry>().apply {
             for (c in 'A'..'Z') {
-                add(KeyActionEntry("按键 $c", "キー $c", "Key $c", c.toString(), GamepadActionSpec(ACTION_VK, c.code)))
+                add(KeyActionEntry(c.toString(), c.toString(), c.toString(), c.toString(), GamepadActionSpec(ACTION_VK, c.code)))
             }
             for (d in '0'..'9') {
-                add(KeyActionEntry("数字 $d", "数字 $d", "Digit $d", d.toString(), GamepadActionSpec(ACTION_VK, d.code)))
+                add(KeyActionEntry(d.toString(), d.toString(), d.toString(), d.toString(), GamepadActionSpec(ACTION_VK, d.code)))
             }
         }
 
         val emuAndCombos = listOf(
-            KeyActionEntry("显示 / 隐藏虚拟手柄", "仮想パッド表示切替", "Toggle Virtual Gamepad", "手柄", GamepadActionSpec(ACTION_EMU_CMD, EMU_TOGGLE_VPAD)),
-            KeyActionEntry("打开修改器与设置菜单", "メニューを開く", "Open Modifier Menu", "菜单", GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_MENU)),
-            KeyActionEntry("打开屏幕布局编辑器", "レイアウト編集", "Edit Touch Layout", "布局", GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_EDITOR)),
-            KeyActionEntry("显示 / 隐藏摇杆光标指针", "カーソル表示切替", "Toggle Stick Cursor", "光标", GamepadActionSpec(ACTION_EMU_CMD, EMU_TOGGLE_CURSOR)),
-            KeyActionEntry("立即截图 (Screenshot)", "スクリーンショット", "Save Screenshot", "截图", GamepadActionSpec(ACTION_EMU_CMD, EMU_SCREENSHOT)),
-            KeyActionEntry("组合键 Ctrl + S", "Ctrl + S", "Combo Ctrl + S", "C+S", GamepadActionSpec(ACTION_COMBO, 'S'.code, VK_CONTROL)),
-            KeyActionEntry("组合键 Ctrl + L", "Ctrl + L", "Combo Ctrl + L", "C+L", GamepadActionSpec(ACTION_COMBO, 'L'.code, VK_CONTROL)),
-            KeyActionEntry("组合键 Shift + Enter", "Shift + Enter", "Combo Shift + Enter", "S+Ent", GamepadActionSpec(ACTION_COMBO, VK_RETURN, VK_SHIFT)),
-            KeyActionEntry("原生手柄 A (SACT Joypad)", "Joypad A", "Native Joypad A", "JA", GamepadActionSpec(ACTION_JOYPAD_BTN, PAD_A)),
-            KeyActionEntry("原生手柄 B (SACT Joypad)", "Joypad B", "Native Joypad B", "JB", GamepadActionSpec(ACTION_JOYPAD_BTN, PAD_B)),
-            KeyActionEntry("无动作 (禁用)", "なし (無効)", "None (Unbound)", "无", GamepadActionSpec(ACTION_NONE, 0))
+            KeyActionEntry("显隐虚拟键", "仮想パッド切替", "Toggle Pad", "手柄", GamepadActionSpec(ACTION_EMU_CMD, EMU_TOGGLE_VPAD)),
+            KeyActionEntry("打开菜单", "メニュー", "Menu", "菜单", GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_MENU)),
+            KeyActionEntry("布局编辑", "レイアウト編集", "Editor", "编辑", GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_EDITOR)),
+            KeyActionEntry("切换光标", "カーソル切替", "Cursor", "光标", GamepadActionSpec(ACTION_EMU_CMD, EMU_TOGGLE_CURSOR)),
+            KeyActionEntry("截图", "スクショ", "Shot", "截图", GamepadActionSpec(ACTION_EMU_CMD, EMU_SCREENSHOT)),
+            KeyActionEntry("Ctrl+S", "Ctrl+S", "Ctrl+S", "C+S", GamepadActionSpec(ACTION_COMBO, 'S'.code, VK_CONTROL)),
+            KeyActionEntry("Ctrl+L", "Ctrl+L", "Ctrl+L", "C+L", GamepadActionSpec(ACTION_COMBO, 'L'.code, VK_CONTROL)),
+            KeyActionEntry("Shift+Ent", "Shift+Ent", "Shift+Ent", "S+Ent", GamepadActionSpec(ACTION_COMBO, VK_RETURN, VK_SHIFT)),
+            KeyActionEntry("手柄 A", "Joy A", "Joy A", "JA", GamepadActionSpec(ACTION_JOYPAD_BTN, PAD_A)),
+            KeyActionEntry("手柄 B", "Joy B", "Joy B", "JB", GamepadActionSpec(ACTION_JOYPAD_BTN, PAD_B)),
+            KeyActionEntry("无", "なし", "None", "无", GamepadActionSpec(ACTION_NONE, 0))
         )
 
         return listOf(
-            "鼠键与常用" to common,
-            "方向与翻页" to nav,
-            "功能键 F1-F12" to fkeys,
-            "字母与数字" to lettersAndNums,
-            "模拟器与组合键" to emuAndCombos
+            "常用" to common,
+            "方向" to nav,
+            "F1-F12" to fkeys,
+            "字母数字" to lettersAndNums,
+            "高级" to emuAndCombos
         )
     }
 
     fun formatActionLabel(context: Context, spec: GamepadActionSpec): String {
         val base = when (spec.type) {
-            ACTION_NONE -> tr(context, "未绑定", "未設定", "Unbound")
+            ACTION_NONE -> tr(context, "未设", "なし", "None")
             ACTION_MOUSE_BTN -> when (spec.code) {
-                VK_RBUTTON -> tr(context, "鼠标右键", "右クリック", "Right Click")
-                VK_MBUTTON -> tr(context, "鼠标中键", "中クリック", "Middle Click")
-                else -> tr(context, "鼠标左键", "左クリック", "Left Click")
+                VK_RBUTTON -> tr(context, "右键", "右クリック", "RClick")
+                VK_MBUTTON -> tr(context, "中键", "中クリック", "MClick")
+                else -> tr(context, "左键", "左クリック", "LClick")
             }
             ACTION_MOUSE_WHEEL -> if (spec.code >= 0) {
-                tr(context, "滚轮上 (回看)", "ホイール上", "Wheel Up")
+                tr(context, "滚轮↑", "ホイール上", "Wheel↑")
             } else {
-                tr(context, "滚轮下", "ホイール下", "Wheel Down")
+                tr(context, "滚轮↓", "ホイール下", "Wheel↓")
             }
-            ACTION_CTRL_TOGGLE -> tr(context, "Ctrl 快进开关", "Ctrl 早送り切替", "Ctrl Skip Toggle")
-            ACTION_JOYPAD_BTN -> "Joypad #${spec.code}"
-            ACTION_COMBO -> "${vkName(spec.code2)} + ${vkName(spec.code)}"
+            ACTION_CTRL_TOGGLE -> tr(context, "Ctrl快进", "Ctrl早送り", "CtrlSkip")
+            ACTION_JOYPAD_BTN -> "Joy#${spec.code}"
+            ACTION_COMBO -> "${vkName(spec.code2)}+${vkName(spec.code)}"
             ACTION_EMU_CMD -> when (spec.code) {
-                EMU_TOGGLE_VPAD -> tr(context, "显示/隐藏虚拟手柄", "仮想パッド切替", "Toggle Virtual Pad")
-                EMU_OPEN_MENU -> tr(context, "修改器菜单", "メニュー", "Modifier Menu")
-                EMU_TOGGLE_CURSOR -> tr(context, "切换光标指针", "カーソル切替", "Toggle Cursor")
-                EMU_SCREENSHOT -> tr(context, "截图", "スクショ", "Screenshot")
-                EMU_OPEN_EDITOR -> tr(context, "布局编辑器", "レイアウト編集", "Layout Editor")
+                EMU_TOGGLE_VPAD -> tr(context, "显隐手柄", "パッド切替", "TogglePad")
+                EMU_OPEN_MENU -> tr(context, "菜单", "メニュー", "Menu")
+                EMU_TOGGLE_CURSOR -> tr(context, "光标", "カーソル", "Cursor")
+                EMU_SCREENSHOT -> tr(context, "截图", "スクショ", "Shot")
+                EMU_OPEN_EDITOR -> tr(context, "编辑", "編集", "Editor")
                 else -> "Emu#${spec.code}"
             }
             ACTION_VK -> vkName(spec.code)
-            else -> tr(context, "未知", "不明", "Unknown")
+            else -> "?"
         }
         return if (spec.toggleMode && spec.type in listOf(ACTION_VK, ACTION_MOUSE_BTN, ACTION_COMBO)) {
-            "$base (${tr(context, "开关", "トグル", "Toggle")})"
+            "$base·${tr(context, "锁", "固定", "Lock")}"
         } else {
             base
         }
@@ -706,7 +706,7 @@ object GamepadBridge {
         VK_LBUTTON -> "LClick"
         VK_RBUTTON -> "RClick"
         VK_MBUTTON -> "MClick"
-        VK_BACK -> "Backspace"
+        VK_BACK -> "Bksp"
         VK_TAB -> "Tab"
         VK_RETURN -> "Enter"
         VK_SHIFT -> "Shift"
@@ -714,50 +714,73 @@ object GamepadBridge {
         VK_MENU -> "Alt"
         VK_ESCAPE -> "Esc"
         VK_SPACE -> "Space"
-        VK_PRIOR -> "PageUp"
-        VK_NEXT -> "PageDown"
+        VK_PRIOR -> "PgUp"
+        VK_NEXT -> "PgDn"
         VK_END -> "End"
         VK_HOME -> "Home"
-        VK_LEFT -> "← Left"
-        VK_UP -> "↑ Up"
-        VK_RIGHT -> "→ Right"
-        VK_DOWN -> "↓ Down"
-        VK_INSERT -> "Insert"
-        VK_DELETE -> "Delete"
+        VK_LEFT -> "←"
+        VK_UP -> "↑"
+        VK_RIGHT -> "→"
+        VK_DOWN -> "↓"
+        VK_INSERT -> "Ins"
+        VK_DELETE -> "Del"
         in '0'.code..'9'.code -> vk.toChar().toString()
         in 'A'.code..'Z'.code -> vk.toChar().toString()
         in 0x70..0x7B -> "F${vk - 0x6F}"
-        else -> String.format(Locale.US, "VK(0x%02X)", vk)
+        else -> String.format(Locale.US, "0x%02X", vk)
     }
 
     fun stickModeLabel(context: Context, mode: Int): String = when (mode) {
-        STICK_MOUSE -> tr(context, "控制鼠标光标", "マウスカーソル移動", "Mouse Cursor")
-        STICK_ARROWS -> tr(context, "方向键 ↑↓←→", "方向キー", "Arrow Keys")
+        STICK_MOUSE -> tr(context, "鼠标", "マウス", "Mouse")
+        STICK_ARROWS -> tr(context, "方向键", "方向キー", "Arrows")
         STICK_WASD -> "WASD"
-        STICK_WHEEL -> tr(context, "滚轮上下翻页", "ホイール上下", "Mouse Wheel")
-        STICK_JOYPAD -> tr(context, "原生手柄摇杆", "純正ジョイパッド", "Native Joypad")
-        else -> tr(context, "禁用", "無効", "Disabled")
+        STICK_WHEEL -> tr(context, "滚轮", "ホイール", "Wheel")
+        STICK_JOYPAD -> tr(context, "摇杆", "スティック", "Joypad")
+        else -> tr(context, "关闭", "OFF", "OFF")
     }
 
+    fun nextStickMode(current: Int, allowWheel: Boolean = true): Int {
+        val order = if (allowWheel) {
+            intArrayOf(STICK_MOUSE, STICK_ARROWS, STICK_WASD, STICK_WHEEL, STICK_JOYPAD, STICK_NONE)
+        } else {
+            intArrayOf(STICK_MOUSE, STICK_ARROWS, STICK_WASD, STICK_JOYPAD, STICK_NONE)
+        }
+        val idx = order.indexOf(current)
+        return order[(idx + 1) % order.size]
+    }
+
+    fun nextButtonShape(current: VirtualButtonShape): VirtualButtonShape = when (current) {
+        VirtualButtonShape.CIRCLE -> VirtualButtonShape.PILL
+        VirtualButtonShape.PILL -> VirtualButtonShape.SQUARE
+        VirtualButtonShape.SQUARE -> VirtualButtonShape.CIRCLE
+    }
+
+    fun shapeLabel(context: Context, shape: VirtualButtonShape): String = when (shape) {
+        VirtualButtonShape.CIRCLE -> tr(context, "圆", "丸", "Circle")
+        VirtualButtonShape.PILL -> tr(context, "条", "ピル", "Pill")
+        VirtualButtonShape.SQUARE -> tr(context, "方", "四角", "Square")
+    }
+
+    @Suppress("UNUSED_PARAMETER")
     fun physicalSlotName(context: Context, slot: Int): String = when (slot) {
-        PAD_A -> "A (Cross / ✕)"
-        PAD_B -> "B (Circle / ○)"
-        PAD_X -> "X (Square / □)"
-        PAD_Y -> "Y (Triangle / △)"
-        PAD_LB -> "L1 / LB"
-        PAD_RB -> "R1 / RB"
-        PAD_LT -> "L2 / LT"
-        PAD_RT -> "R2 / RT"
-        PAD_BACK -> "Select / Back"
-        PAD_START -> "Start / Options"
-        PAD_GUIDE -> "Home / Guide"
-        PAD_L3 -> "L3 (Stick Click)"
-        PAD_R3 -> "R3 (Stick Click)"
-        PAD_DPAD_UP -> tr(context, "十字键 ↑", "十字キー ↑", "D-Pad Up")
-        PAD_DPAD_DOWN -> tr(context, "十字键 ↓", "十字キー ↓", "D-Pad Down")
-        PAD_DPAD_LEFT -> tr(context, "十字键 ←", "十字キー ←", "D-Pad Left")
-        PAD_DPAD_RIGHT -> tr(context, "十字键 →", "十字キー →", "D-Pad Right")
-        else -> "Btn#$slot"
+        PAD_A -> "A"
+        PAD_B -> "B"
+        PAD_X -> "X"
+        PAD_Y -> "Y"
+        PAD_LB -> "LB / L1"
+        PAD_RB -> "RB / R1"
+        PAD_LT -> "LT / L2"
+        PAD_RT -> "RT / R2"
+        PAD_BACK -> "Select"
+        PAD_START -> "Start"
+        PAD_GUIDE -> "Home"
+        PAD_L3 -> "L3"
+        PAD_R3 -> "R3"
+        PAD_DPAD_UP -> "↑"
+        PAD_DPAD_DOWN -> "↓"
+        PAD_DPAD_LEFT -> "←"
+        PAD_DPAD_RIGHT -> "→"
+        else -> "#$slot"
     }
 
     fun isPhysicalGamepadDevice(deviceId: Int): Boolean {
