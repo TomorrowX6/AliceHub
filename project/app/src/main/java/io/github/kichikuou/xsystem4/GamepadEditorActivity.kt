@@ -957,6 +957,8 @@ class GamepadEditorActivity : Activity() {
             }
             globalPopoverCard.addView(makeSwitchRow(tr("本游戏独立配置", "ゲーム別設定", "Per-Game Profile"), gameSw) { checked ->
                 if (checked == perGameOverride) return@makeSwitchRow
+                // The pending undo belongs to the profile being swapped out.
+                hideUndoBar()
                 perGameOverride = checked
                 if (!checked) {
                     // Switching to the global profile: edit the global profile itself instead of
@@ -1190,8 +1192,11 @@ class GamepadEditorActivity : Activity() {
     private fun undoDelete() {
         val (idx, spec) = undoDeleted ?: return hideUndoBar()
         val controls = profile.virtual.controls
-        // Re-insert unless an equivalent control (same id, or a re-added D-Pad/stick) exists now.
-        if (controls.none { it.id == spec.id }) {
+        // Re-insert unless an equivalent control (same id, or a re-added D-Pad/stick) exists now,
+        // or a button already sits on the same native slot.
+        val slotTaken = spec.kind == VirtualControlKind.BUTTON && spec.slotId >= 0 &&
+            controls.any { it.kind == VirtualControlKind.BUTTON && it.slotId == spec.slotId }
+        if (controls.none { it.id == spec.id } && !slotTaken) {
             val restored = controls.toMutableList().apply { add(idx.coerceIn(0, size), spec) }
             profile = profile.copy(virtual = profile.virtual.copy(controls = restored))
             selectedControlId = spec.id
@@ -1317,7 +1322,12 @@ class GamepadEditorActivity : Activity() {
         val hasDpad = controls.any { it.id == "dpad" }
         val hasLeftStick = controls.any { it.id == "stick_l" }
         val hasRightStick = controls.any { it.id == "stick_r" }
-        val slotId = GamepadBridge.nextFreeCustomSlotId(controls)
+        // While an undo is pending, keep the deleted button's slot reserved so a new button
+        // can't take it and Undo can't bring back a second control on the same native slot.
+        val pendingUndo = undoDeleted?.second
+        val slotId = GamepadBridge.nextFreeCustomSlotId(
+            if (pendingUndo != null) controls + pendingUndo else controls
+        )
         // Built-in pad controls (D-Pad / sticks) can be re-added once each after deletion.
         // They don't send button events, so they never take a button slot.
         val options = ArrayList<Pair<String, () -> Unit>>()
@@ -1470,6 +1480,7 @@ class GamepadEditorActivity : Activity() {
             .setPositiveButton(R.string.ok) { _, _ ->
                 // Only the draft is reset. Files are touched on Save, in the current scope
                 // (per-game or global), so backing out loses nothing.
+                hideUndoBar()
                 profile = GamepadProfile()
                 selectedControlId = null
                 globalPopoverOpen = false
