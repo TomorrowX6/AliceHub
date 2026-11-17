@@ -61,10 +61,10 @@ class GamepadConfigController(
     private var swapAbXySwitch: Switch? = null
     private var autoHideSwitch: Switch? = null
     private var hapticSwitch: Switch? = null
-    private var rumbleSwitch: Switch? = null
 
     private var presetBtnVn: TextView? = null
     private var presetBtnRpg: TextView? = null
+    private var presetBtnEmpty: TextView? = null
 
     private var scaleValTv: TextView? = null
     private var scaleSeek: SeekBar? = null
@@ -107,12 +107,9 @@ class GamepadConfigController(
     }
 
     fun resetToDefaults() {
-        if (perGameMode && normalizedKey != null) {
-            GamepadBridge.clearPerGameOverride(uiCtx, normalizedKey)
-            perGameMode = false
-        }
+        // Only reset the draft; the per-game / global file is written on save, in the
+        // current scope, so cancelling the dialog loses nothing.
         draft = GamepadProfile()
-        GamepadBridge.syncProfileToNative(draft)
         markDirty(true)
         refreshAllUi()
     }
@@ -237,12 +234,15 @@ class GamepadConfigController(
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 0, 0, dp(4))
             }
-            val btnVn = makePresetChip("ADV") { applyPreset(GamepadBridge.PRESET_VN_MOUSE) }
-            val btnRpg = makePresetChip("RPG") { applyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
+            val btnVn = makePresetChip("ADV") { confirmApplyPreset(GamepadBridge.PRESET_VN_MOUSE) }
+            val btnRpg = makePresetChip("RPG") { confirmApplyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
+            val btnEmpty = makePresetChip(GamepadBridge.emptyPresetName(uiCtx)) { confirmApplyPreset(GamepadBridge.PRESET_EMPTY) }
             presetBtnVn = btnVn
             presetBtnRpg = btnRpg
+            presetBtnEmpty = btnEmpty
             presetRow.addView(btnVn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
-            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
+            presetRow.addView(btnEmpty, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(presetRow)
 
             addDivider(this)
@@ -261,14 +261,10 @@ class GamepadConfigController(
                 markDirty(true)
             }
             addDivider(this)
-            rumbleSwitch = addSwitchRow(this, tr("手柄震动", "振動", "Rumble"), null) { checked ->
-                draft = draft.copy(physical = draft.physical.copy(rumbleEnabled = checked))
-                markDirty(true)
-            }
-            addDivider(this)
+            // Rumble toggle hidden: rumbleEnabled is stored but not implemented natively yet.
 
-            val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), 90) { p ->
-                val pct = (p + 60).coerceIn(60, 150)
+            val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.GLOBAL_SCALE_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX)
                 draft = draft.copy(virtual = draft.virtual.copy(globalScalePct = pct))
                 scaleValTv?.text = "${pct}%"
                 markDirty(true)
@@ -276,8 +272,8 @@ class GamepadConfigController(
             scaleSeek = scalePair.first
             scaleValTv = scalePair.second
 
-            val opPair = addInlineSliderRow(this, tr("透明度", "不透明度", "Opacity"), 80) { p ->
-                val pct = (p + 20).coerceIn(20, 100)
+            val opPair = addInlineSliderRow(this, tr("不透明度", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
                 draft = draft.copy(virtual = draft.virtual.copy(globalOpacityPct = pct))
                 opacityValTv?.text = "${pct}%"
                 markDirty(true)
@@ -292,12 +288,49 @@ class GamepadConfigController(
         return outer
     }
 
-    private fun applyPreset(presetId: String) {
-        val physBindings = if (presetId == GamepadBridge.PRESET_RPG_DUNGEON) {
-            GamepadBridge.rpgPhysicalBindings()
-        } else {
-            GamepadBridge.defaultPhysicalBindings()
+    private fun presetPhysicalBindings(presetId: String): Map<Int, GamepadActionSpec> = when (presetId) {
+        GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.rpgPhysicalBindings()
+        // Empty layout only clears the virtual pad; keep current controller bindings.
+        GamepadBridge.PRESET_EMPTY -> draft.physical.bindings
+        else -> GamepadBridge.defaultPhysicalBindings()
+    }
+
+    /** Applies a preset, confirming first if it would discard a customised layout or mapping. */
+    private fun confirmApplyPreset(presetId: String) {
+        val losesLayout = GamepadBridge.presetSwitchLosesLayout(draft.virtual, presetId)
+        val losesMapping = draft.physical.bindings != presetPhysicalBindings(presetId) &&
+            draft.physical.bindings != GamepadBridge.defaultPhysicalBindings() &&
+            draft.physical.bindings != GamepadBridge.rpgPhysicalBindings()
+        if (!losesLayout && !losesMapping) {
+            applyPreset(presetId)
+            return
         }
+        val msg = when {
+            losesLayout && losesMapping -> tr(
+                "当前虚拟按键布局和实体手柄映射的修改都会被替换，确定吗？",
+                "現在の仮想パッド配置とコントローラ割当の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom virtual layout and controller mapping. Continue?"
+            )
+            losesLayout -> tr(
+                "当前虚拟按键布局的修改会被替换，确定吗？",
+                "現在の仮想パッド配置の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom virtual layout. Continue?"
+            )
+            else -> tr(
+                "当前实体手柄映射的修改会被替换，确定吗？",
+                "現在のコントローラ割当の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom controller mapping. Continue?"
+            )
+        }
+        AlertDialog.Builder(uiCtx)
+            .setMessage(msg)
+            .setPositiveButton(android.R.string.ok) { _, _ -> applyPreset(presetId) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyPreset(presetId: String) {
+        val physBindings = presetPhysicalBindings(presetId)
         draft = draft.copy(
             virtual = draft.virtual.copy(
                 presetId = presetId,
@@ -412,15 +445,17 @@ class GamepadConfigController(
         swapAbXySwitch?.isChecked = draft.physical.swapAbXy
         autoHideSwitch?.isChecked = draft.physical.autoHideVirtualPad
         hapticSwitch?.isChecked = draft.virtual.hapticFeedback
-        rumbleSwitch?.isChecked = draft.physical.rumbleEnabled
 
-        scaleSeek?.progress = (draft.virtual.globalScalePct - 60).coerceIn(0, 90)
+        scaleSeek?.progress = (draft.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
         scaleValTv?.text = "${draft.virtual.globalScalePct}%"
-        opacitySeek?.progress = (draft.virtual.globalOpacityPct - 20).coerceIn(0, 80)
+        opacitySeek?.progress = (draft.virtual.globalOpacityPct - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
         opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
 
-        updatePresetChip(presetBtnVn, draft.virtual.presetId != GamepadBridge.PRESET_RPG_DUNGEON)
+        updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
         updatePresetChip(presetBtnRpg, draft.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON)
+        updatePresetChip(presetBtnEmpty, draft.virtual.presetId == GamepadBridge.PRESET_EMPTY)
         syncingUi = false
 
         refreshPadBadge()

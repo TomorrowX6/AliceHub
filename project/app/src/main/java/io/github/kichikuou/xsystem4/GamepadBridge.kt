@@ -94,10 +94,10 @@ data class VirtualControlSpec(
                 slotId = obj.optInt("slotId", 0),
                 kind = VirtualControlKind.fromId(obj.optInt("kind", 0)),
                 label = obj.optString("label", ""),
-                xNorm = obj.optDouble("xNorm", 0.5).toFloat().coerceIn(0.03f, 0.97f),
-                yNorm = obj.optDouble("yNorm", 0.5).toFloat().coerceIn(0.04f, 0.96f),
-                scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(0.55f, 1.8f),
-                opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(0.2f, 1.0f),
+                xNorm = obj.optDouble("xNorm", 0.5).toFloat().coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX),
+                yNorm = obj.optDouble("yNorm", 0.5).toFloat().coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX),
+                scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(GamepadBridge.CONTROL_SCALE_MIN, GamepadBridge.CONTROL_SCALE_MAX),
+                opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(GamepadBridge.CONTROL_OPACITY_MIN, 1.0f),
                 visible = obj.optBoolean("visible", true),
                 shape = VirtualButtonShape.fromId(obj.optInt("shape", 0)),
                 stickMode = obj.optInt("stickMode", GamepadBridge.STICK_NONE),
@@ -117,6 +117,7 @@ data class PhysicalPadConfig(
     val dpadMode: Int = GamepadBridge.STICK_ARROWS,
     val deadzonePct: Int = 18,
     val cursorSpeedPct: Int = 100,
+    // Persisted for compatibility; no rumble output is implemented yet, so the UI hides it.
     val rumbleEnabled: Boolean = false,
     val bindings: Map<Int, GamepadActionSpec> = GamepadBridge.defaultPhysicalBindings()
 ) {
@@ -192,8 +193,8 @@ data class VirtualPadConfig(
         return JSONObject()
             .put("enabled", enabled)
             .put("presetId", presetId)
-            .put("globalScalePct", globalScalePct.coerceIn(60, 150))
-            .put("globalOpacityPct", globalOpacityPct.coerceIn(20, 100))
+            .put("globalScalePct", globalScalePct.coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX))
+            .put("globalOpacityPct", globalOpacityPct.coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX))
             .put("hapticFeedback", hapticFeedback)
             .put("gridSnap", gridSnap)
             .put("leftStickMode", leftStickMode)
@@ -205,13 +206,15 @@ data class VirtualPadConfig(
         fun fromJson(obj: JSONObject?): VirtualPadConfig {
             if (obj == null) return VirtualPadConfig()
             val rawPreset = obj.optString("presetId", GamepadBridge.PRESET_VN_MOUSE)
-            val preset = if (rawPreset == GamepadBridge.PRESET_RPG_DUNGEON) {
-                GamepadBridge.PRESET_RPG_DUNGEON
-            } else {
-                GamepadBridge.PRESET_VN_MOUSE
+            val preset = when (rawPreset) {
+                GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.PRESET_RPG_DUNGEON
+                GamepadBridge.PRESET_EMPTY -> GamepadBridge.PRESET_EMPTY
+                else -> GamepadBridge.PRESET_VN_MOUSE
             }
             val arr = obj.optJSONArray("controls")
-            val parsedControls = if (arr != null && arr.length() > 0) {
+            // An explicitly saved (possibly empty) control list is kept as-is so that
+            // deleted preset buttons and the empty layout are not re-populated on load.
+            val parsedControls = if (arr != null) {
                 val list = ArrayList<VirtualControlSpec>(arr.length())
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
@@ -224,8 +227,8 @@ data class VirtualPadConfig(
             return VirtualPadConfig(
                 enabled = obj.optBoolean("enabled", false),
                 presetId = preset,
-                globalScalePct = obj.optInt("globalScalePct", 100).coerceIn(60, 150),
-                globalOpacityPct = obj.optInt("globalOpacityPct", 58).coerceIn(20, 100),
+                globalScalePct = obj.optInt("globalScalePct", 100).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX),
+                globalOpacityPct = obj.optInt("globalOpacityPct", 58).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX),
                 hapticFeedback = obj.optBoolean("hapticFeedback", false),
                 gridSnap = obj.optBoolean("gridSnap", false),
                 controls = parsedControls
@@ -352,8 +355,25 @@ object GamepadBridge {
 
     const val PRESET_VN_MOUSE = "vn_mouse"
     const val PRESET_RPG_DUNGEON = "rpg_dungeon"
+    const val PRESET_EMPTY = "empty"
 
     const val MAX_VPAD_SLOTS = 32
+
+    // Shared value ranges for virtual controls. Loading, the editor and the quick dialog must
+    // all use these so values never jump when a profile is re-opened.
+    const val POS_X_MIN = 0.04f
+    const val POS_X_MAX = 0.96f
+    const val POS_Y_MIN = 0.06f
+    const val POS_Y_MAX = 0.94f
+    const val CONTROL_SCALE_MIN = 0.6f
+    const val CONTROL_SCALE_MAX = 1.6f
+    const val CONTROL_OPACITY_MIN = 0.3f
+    const val GLOBAL_SCALE_PCT_MIN = 60
+    const val GLOBAL_SCALE_PCT_MAX = 150
+    const val GLOBAL_OPACITY_PCT_MIN = 20
+    const val GLOBAL_OPACITY_PCT_MAX = 100
+    /** Editor snap step (normalized); the editor grid is drawn on the same step. */
+    const val GRID_STEP = 0.025f
 
     @JvmStatic
     external fun nativeSetGamepadConfigJson(json: String)
@@ -468,6 +488,10 @@ object GamepadBridge {
         return readProfileFile(defaultProfileFile(context)) ?: GamepadProfile()
     }
 
+    /** The global (non per-game) profile, ignoring any per-game override. */
+    fun loadGlobalProfile(context: Context): GamepadProfile =
+        readProfileFile(defaultProfileFile(context)) ?: GamepadProfile()
+
     fun saveProfile(
         context: Context,
         profile: GamepadProfile,
@@ -550,8 +574,43 @@ object GamepadBridge {
         PAD_DPAD_RIGHT to GamepadActionSpec(ACTION_NONE, 0)
     )
 
+    fun presetShortName(context: Context, presetId: String): String = when (presetId) {
+        PRESET_RPG_DUNGEON -> "RPG"
+        PRESET_EMPTY -> emptyPresetName(context)
+        else -> "ADV"
+    }
+
+    fun emptyPresetName(context: Context): String = tr(context, "空布局", "空レイアウト", "Empty")
+
+    /**
+     * Built-in ADV preset labels are stored in Chinese (and existing profiles already contain
+     * them). Show them localized as long as the user has not renamed the control.
+     */
+    fun displayLabel(context: Context, spec: VirtualControlSpec): String = when {
+        spec.id == "stick_l" && spec.label == "鼠标" -> tr(context, "鼠标", "マウス", "Mouse")
+        spec.id == "btn_l1" && spec.label == "回看↑" -> tr(context, "回看↑", "履歴↑", "Back↑")
+        spec.id == "btn_r1" && spec.label == "滚轮↓" -> tr(context, "滚轮↓", "ホイール↓", "Wheel↓")
+        spec.id == "btn_select" && spec.label == "光标" -> tr(context, "光标", "カーソル", "Cursor")
+        spec.id == "btn_start" && spec.label == "菜单" -> tr(context, "菜单", "メニュー", "Menu")
+        else -> spec.label
+    }
+
+    /**
+     * Whether replacing [current] with [targetPresetId] would throw away something the user
+     * cannot get back by re-picking a preset: a customised layout, or (for the empty preset)
+     * any controls at all.
+     */
+    fun presetSwitchLosesLayout(current: VirtualPadConfig, targetPresetId: String): Boolean {
+        if (current.controls.isEmpty()) return false
+        val target = buildPresetControls(targetPresetId)
+        if (current.controls == target) return false
+        if (targetPresetId == PRESET_EMPTY) return true
+        return current.controls != buildPresetControls(current.presetId)
+    }
+
     fun buildPresetControls(presetId: String): List<VirtualControlSpec> {
         return when (presetId) {
+            PRESET_EMPTY -> emptyList()
             PRESET_RPG_DUNGEON -> listOf(
                 VirtualControlSpec("dpad", 0, VirtualControlKind.DPAD, "D-PAD", 0.12f, 0.68f, 1.05f, 1.0f, true, VirtualButtonShape.SQUARE, STICK_ARROWS),
                 VirtualControlSpec("stick_l", 1, VirtualControlKind.STICK, "L", 0.23f, 0.44f, 0.85f, 0.85f, false, VirtualButtonShape.CIRCLE, STICK_MOUSE),
@@ -583,12 +642,50 @@ object GamepadBridge {
         }
     }
 
+    /** slotId for controls that never send button events (D-Pad / sticks). */
+    const val NO_SLOT = -1
+
+    /**
+     * First native button slot not used by another button. Only buttons occupy slots, so slots
+     * freed by deleted preset buttons (0-11) are reused and D-Pad / sticks never consume one.
+     */
     fun nextFreeCustomSlotId(controls: List<VirtualControlSpec>): Int {
-        val used = controls.map { it.slotId }.toSet()
-        for (id in 12 until MAX_VPAD_SLOTS) {
+        val used = controls.filter { it.kind == VirtualControlKind.BUTTON }.map { it.slotId }.toSet()
+        for (id in 0 until MAX_VPAD_SLOTS) {
             if (!used.contains(id)) return id
         }
         return -1
+    }
+
+    /** Smallest "K<n>" label not already used by a control. */
+    fun nextCustomButtonLabel(controls: List<VirtualControlSpec>): String {
+        val used = controls.map { it.label }.toSet()
+        var n = 1
+        while (used.contains("K$n")) n++
+        return "K$n"
+    }
+
+    /**
+     * Spawn position for a new control: the screen centre, or the nearest point on a small
+     * grid around it that is not already occupied, so repeated adds don't stack.
+     */
+    fun nextSpawnPosition(controls: List<VirtualControlSpec>): Pair<Float, Float> {
+        val minDist = 0.06f
+        val step = 0.08f
+        for (ring in 0..4) {
+            for (dy in -ring..ring) {
+                for (dx in -ring..ring) {
+                    if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) != ring) continue
+                    val x = (0.5f + dx * step).coerceIn(POS_X_MIN, POS_X_MAX)
+                    val y = (0.5f + dy * step).coerceIn(POS_Y_MIN, POS_Y_MAX)
+                    val free = controls.none {
+                        kotlin.math.abs(it.xNorm - x) < minDist && kotlin.math.abs(it.yNorm - y) < minDist
+                    }
+                    if (free) return x to y
+                }
+            }
+        }
+        return 0.5f to 0.5f
     }
 
     fun buildKeyActionCatalog(): List<Pair<String, List<KeyActionEntry>>> {
@@ -780,8 +877,9 @@ object GamepadBridge {
         val src = dev.sources
         val isGamepad = (src and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
         val isJoystick = (src and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        val isDpad = (src and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD
-        if (!isGamepad && !isJoystick && !isDpad) return false
+        // SOURCE_DPAD alone is not enough: many keyboards and TV remotes report it, and treating
+        // them as controllers swallowed their arrow / Enter keys.
+        if (!isGamepad && !isJoystick) return false
         val name = dev.name.orEmpty().lowercase(Locale.ROOT)
         if (name.contains("accelerometer") || name.contains("sensor") || name.contains("fingerprint") || name.contains("gpio")) {
             return false

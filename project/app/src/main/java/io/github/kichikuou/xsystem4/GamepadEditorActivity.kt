@@ -40,6 +40,7 @@ import org.json.JSONObject
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Landscape unified editor for virtual touch layout (Winlator / Yuzu style)
@@ -96,6 +97,11 @@ class GamepadEditorActivity : Activity() {
     private var profileKey: String? = null
     private var perGameOverride: Boolean = false
     private lateinit var profile: GamepadProfile
+    // Snapshot of what is on disk, used to detect unsaved edits on exit.
+    private lateinit var savedProfile: GamepadProfile
+    private var savedPerGameOverride: Boolean = false
+    // Per-game draft stashed while the per-game switch is off, so toggling back restores it.
+    private var stashedPerGameDraft: GamepadProfile? = null
     private var activeTab: Int = TAB_VIRTUAL
     private var selectedControlId: String? = null
     private var globalPopoverOpen: Boolean = false
@@ -118,11 +124,16 @@ class GamepadEditorActivity : Activity() {
     private lateinit var physEnabledSwitch: Switch
     private lateinit var physSwapSwitch: Switch
     private lateinit var physAutoHideSwitch: Switch
-    private lateinit var physRumbleSwitch: Switch
     private lateinit var deadzoneValTv: TextView
     private lateinit var deadzoneSeek: SeekBar
     private lateinit var speedValTv: TextView
     private lateinit var speedSeek: SeekBar
+
+    private lateinit var undoBar: LinearLayout
+    private lateinit var undoMsgTv: TextView
+    // Last deleted control and its index, restorable from the undo bar.
+    private var undoDeleted: Pair<Int, VirtualControlSpec>? = null
+    private val hideUndoRunnable = Runnable { hideUndoBar() }
 
     private lateinit var tabVirtualBtn: TextView
     private lateinit var tabPhysicalBtn: TextView
@@ -172,6 +183,8 @@ class GamepadEditorActivity : Activity() {
         activeTab = intent.getIntExtra(EXTRA_INITIAL_TAB, TAB_VIRTUAL)
         perGameOverride = GamepadBridge.hasPerGameOverride(this, profileKey)
         profile = GamepadBridge.loadProfile(this, profileKey)
+        savedProfile = profile
+        savedPerGameOverride = perGameOverride
 
         buildLayout()
         applyTab(activeTab)
@@ -341,6 +354,30 @@ class GamepadEditorActivity : Activity() {
             topMargin = dp(56)
         })
 
+        // 7. Undo bar shown after deleting a control
+        undoBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(8), dp(8))
+            background = floatingCardDrawable(99f)
+            visibility = View.GONE
+        }
+        undoMsgTv = TextView(this).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(COL_TEXT_MAIN)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        undoBar.addView(undoMsgTv, wrapParams(rightMargin = dp(12)))
+        undoBar.addView(makePill(tr("撤销", "元に戻す", "Undo"), active = true) { undoDelete() })
+        root.addView(undoBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            bottomMargin = dp(16)
+        })
+
         // Apply symmetric cutout safe insets to physical container so camera cutouts never clip cards
         root.setOnApplyWindowInsetsListener { _, insets ->
             var safeSide = dp(16)
@@ -367,7 +404,7 @@ class GamepadEditorActivity : Activity() {
             setPadding(dp(6), dp(4), dp(6), dp(4))
         }
 
-        val backBtn = makePill("←", active = false) { finish() }.apply {
+        val backBtn = makePill("←", active = false) { requestExit() }.apply {
             setPadding(dp(10), dp(5), dp(10), dp(5))
         }
         bar.addView(backBtn, wrapParams(rightMargin = dp(6)))
@@ -545,11 +582,7 @@ class GamepadEditorActivity : Activity() {
             })
             addView(makeHorizDivider())
 
-            physRumbleSwitch = Switch(this@GamepadEditorActivity).also { tintSwitch(it) }
-            addView(makeSwitchRow(tr("手柄震动", "振動", "Rumble"), physRumbleSwitch) { checked ->
-                profile = profile.copy(physical = profile.physical.copy(rumbleEnabled = checked))
-            })
-            addView(makeHorizDivider())
+            // Rumble toggle hidden: rumbleEnabled is stored but not implemented natively yet.
 
             val dzPair = makeCompactSliderRow(tr("死区", "デッドゾーン", "Deadzone"), 40) { p ->
                 val v = (p + 5).coerceIn(5, 45)
@@ -849,7 +882,6 @@ class GamepadEditorActivity : Activity() {
         physEnabledSwitch.isChecked = profile.physical.enabled
         physSwapSwitch.isChecked = profile.physical.swapAbXy
         physAutoHideSwitch.isChecked = profile.physical.autoHideVirtualPad
-        physRumbleSwitch.isChecked = profile.physical.rumbleEnabled
         deadzoneSeek.progress = (profile.physical.deadzonePct - 5).coerceIn(0, 40)
         deadzoneValTv.text = "${profile.physical.deadzonePct}%"
         speedSeek.progress = (profile.physical.cursorSpeedPct - 30).coerceIn(0, 220)
@@ -867,7 +899,7 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun updateTopBarState() {
-        val presetName = if (profile.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON) "RPG" else "ADV"
+        val presetName = GamepadBridge.presetShortName(this, profile.virtual.presetId)
         presetPill.text = if (activeTab == TAB_VIRTUAL) {
             "$presetName ▾"
         } else {
@@ -924,31 +956,48 @@ class GamepadEditorActivity : Activity() {
                 it.isChecked = perGameOverride
             }
             globalPopoverCard.addView(makeSwitchRow(tr("本游戏独立配置", "ゲーム別設定", "Per-Game Profile"), gameSw) { checked ->
+                if (checked == perGameOverride) return@makeSwitchRow
+                // The pending undo belongs to the profile being swapped out.
+                hideUndoBar()
                 perGameOverride = checked
+                if (!checked) {
+                    // Switching to the global profile: edit the global profile itself instead of
+                    // pushing this game's layout over it on save.
+                    stashedPerGameDraft = profile
+                    profile = GamepadBridge.loadGlobalProfile(this)
+                } else {
+                    // Start the per-game profile from the stashed draft, or from the global one.
+                    profile = stashedPerGameDraft ?: profile
+                    stashedPerGameDraft = null
+                }
+                selectedControlId = null
+                refreshAllUi()
             })
         }
 
         globalPopoverCard.addView(makeHorizDivider())
         lateinit var scVal: TextView
-        val scRow = makeCompactSliderRow(tr("整体大小", "全体サイズ", "Scale"), 90) { p ->
-            val v = (p + 60).coerceIn(60, 150)
+        val scRow = makeCompactSliderRow(tr("整体大小", "全体サイズ", "Scale"), GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN) { p ->
+            val v = (p + GamepadBridge.GLOBAL_SCALE_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX)
             profile = profile.copy(virtual = profile.virtual.copy(globalScalePct = v))
             scVal.text = "${v}%"
             virtualLayer.setProfile(profile)
         }
-        scRow.first.progress = (profile.virtual.globalScalePct - 60).coerceIn(0, 90)
+        scRow.first.progress = (profile.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
         scVal = scRow.second
         scVal.text = "${profile.virtual.globalScalePct}%"
         globalPopoverCard.addView(scRow.third)
 
         lateinit var opVal: TextView
-        val opRow = makeCompactSliderRow(tr("整体透明", "不透明度", "Opacity"), 80) { p ->
-            val v = (p + 20).coerceIn(20, 100)
+        val opRow = makeCompactSliderRow(tr("整体不透明度", "全体不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+            val v = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
             profile = profile.copy(virtual = profile.virtual.copy(globalOpacityPct = v))
             opVal.text = "${v}%"
             virtualLayer.setProfile(profile)
         }
-        opRow.first.progress = (profile.virtual.globalOpacityPct - 20).coerceIn(0, 80)
+        opRow.first.progress = (profile.virtual.globalOpacityPct - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
+            .coerceIn(0, GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
         opVal = opRow.second
         opVal.text = "${profile.virtual.globalOpacityPct}%"
         globalPopoverCard.addView(opRow.third)
@@ -986,7 +1035,8 @@ class GamepadEditorActivity : Activity() {
             setPadding(0, 0, 0, dp(8))
         }
 
-        val nameChip = makePill("${sel.label.ifBlank { "?" }} ✎", active = false) {
+        val selLabel = GamepadBridge.displayLabel(this, sel)
+        val nameChip = makePill("${selLabel.ifBlank { "?" }} ✎", active = false) {
             showRenameDialog(sel)
         }
         row1.addView(nameChip, wrapParams(rightMargin = dp(6)))
@@ -995,7 +1045,7 @@ class GamepadEditorActivity : Activity() {
             val actChip = makePill("${GamepadBridge.formatActionLabel(this, sel.action)} ▾", active = true) {
                 KeyPickerDialog.showActionPicker(
                     this,
-                    "${sel.label} · ${tr("绑定功能", "割当", "Bind")}",
+                    "$selLabel · ${tr("绑定功能", "割当", "Bind")}",
                     sel.action,
                     allowNone = true,
                     accentColor = themePrimary
@@ -1018,7 +1068,7 @@ class GamepadEditorActivity : Activity() {
             val modeChip = makePill("${GamepadBridge.stickModeLabel(this, sel.stickMode)} ▾", active = true) {
                 KeyPickerDialog.showStickModePicker(
                     this,
-                    sel.label,
+                    selLabel,
                     sel.stickMode,
                     allowWheel = true,
                     accentColor = themePrimary
@@ -1037,19 +1087,21 @@ class GamepadEditorActivity : Activity() {
         }
         row1.addView(visChip, wrapParams(rightMargin = dp(6)))
 
-        if (sel.isCustom) {
-            val delChip = makePill(tr("删除", "削除", "Del"), active = false) {
-                val remaining = profile.virtual.controls.filterNot { it.id == sel.id }
-                profile = profile.copy(virtual = profile.virtual.copy(controls = remaining))
-                selectedControlId = null
-                virtualLayer.setProfile(profile)
-                virtualLayer.setEditMode(true, null)
-                elementInspectorCard.visibility = View.GONE
-            }.apply {
-                setTextColor(COL_DANGER)
-            }
-            row1.addView(delChip, wrapParams(rightMargin = dp(6)))
+        // Both user-added and preset (ADV / RPG) controls can be deleted.
+        val delChip = makePill(tr("删除", "削除", "Del"), active = false) {
+            val idx = profile.virtual.controls.indexOfFirst { it.id == sel.id }
+            if (idx >= 0) undoDeleted = idx to profile.virtual.controls[idx]
+            val remaining = profile.virtual.controls.filterNot { it.id == sel.id }
+            profile = profile.copy(virtual = profile.virtual.copy(controls = remaining))
+            selectedControlId = null
+            virtualLayer.setProfile(profile)
+            virtualLayer.setEditMode(true, null)
+            elementInspectorCard.visibility = View.GONE
+            showUndoBar(tr("已删除「$selLabel」", "「$selLabel」を削除しました", "Deleted \"$selLabel\""))
+        }.apply {
+            setTextColor(COL_DANGER)
         }
+        row1.addView(delChip, wrapParams(rightMargin = dp(6)))
 
         val closeBtn = makePill("✕", active = false) {
             selectedControlId = null
@@ -1075,10 +1127,12 @@ class GamepadEditorActivity : Activity() {
         }
         val sizeSeek = SeekBar(this).apply {
             tintSeekBar(this)
-            max = 100
-            progress = ((sel.scale - 0.6f) * 100f).toInt().coerceIn(0, 100)
+            val scaleSteps = ((GamepadBridge.CONTROL_SCALE_MAX - GamepadBridge.CONTROL_SCALE_MIN) * 100f).roundToInt()
+            max = scaleSteps
+            progress = ((sel.scale - GamepadBridge.CONTROL_SCALE_MIN) * 100f).roundToInt().coerceIn(0, scaleSteps)
             setOnSeekBarChangeListener(simpleSeekListener { p ->
-                val sc = (0.6f + p / 100f).coerceIn(0.6f, 1.6f)
+                val sc = (GamepadBridge.CONTROL_SCALE_MIN + p / 100f)
+                    .coerceIn(GamepadBridge.CONTROL_SCALE_MIN, GamepadBridge.CONTROL_SCALE_MAX)
                 sizeValTv.text = "${(sc * 100f).toInt()}%"
                 mutateControl(sel.id, rebuildBar = false) { it.copy(scale = sc) }
             })
@@ -1102,16 +1156,17 @@ class GamepadEditorActivity : Activity() {
         }
         val opSeek = SeekBar(this).apply {
             tintSeekBar(this)
-            max = 70
-            progress = ((sel.opacity - 0.3f) * 100f).toInt().coerceIn(0, 70)
+            val opSteps = ((1.0f - GamepadBridge.CONTROL_OPACITY_MIN) * 100f).roundToInt()
+            max = opSteps
+            progress = ((sel.opacity - GamepadBridge.CONTROL_OPACITY_MIN) * 100f).roundToInt().coerceIn(0, opSteps)
             setOnSeekBarChangeListener(simpleSeekListener { p ->
-                val op = (0.3f + p / 100f).coerceIn(0.3f, 1.0f)
+                val op = (GamepadBridge.CONTROL_OPACITY_MIN + p / 100f).coerceIn(GamepadBridge.CONTROL_OPACITY_MIN, 1.0f)
                 opValTv.text = "${(op * 100f).toInt()}%"
                 mutateControl(sel.id, rebuildBar = false) { it.copy(opacity = op) }
             })
         }
         row2.addView(TextView(this).apply {
-            text = tr("透明", "不透明", "Alpha")
+            text = tr("不透明度", "不透明度", "Opacity")
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTextColor(COL_TEXT_SUB)
         })
@@ -1119,6 +1174,37 @@ class GamepadEditorActivity : Activity() {
         row2.addView(opValTv, LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         elementInspectorCard.addView(row2)
+    }
+
+    private fun showUndoBar(message: String) {
+        undoMsgTv.text = message
+        undoBar.visibility = View.VISIBLE
+        undoBar.removeCallbacks(hideUndoRunnable)
+        undoBar.postDelayed(hideUndoRunnable, 5000L)
+    }
+
+    private fun hideUndoBar() {
+        undoBar.removeCallbacks(hideUndoRunnable)
+        undoBar.visibility = View.GONE
+        undoDeleted = null
+    }
+
+    private fun undoDelete() {
+        val (idx, spec) = undoDeleted ?: return hideUndoBar()
+        val controls = profile.virtual.controls
+        // Re-insert unless an equivalent control (same id, or a re-added D-Pad/stick) exists now,
+        // or a button already sits on the same native slot.
+        val slotTaken = spec.kind == VirtualControlKind.BUTTON && spec.slotId >= 0 &&
+            controls.any { it.kind == VirtualControlKind.BUTTON && it.slotId == spec.slotId }
+        if (controls.none { it.id == spec.id } && !slotTaken) {
+            val restored = controls.toMutableList().apply { add(idx.coerceIn(0, size), spec) }
+            profile = profile.copy(virtual = profile.virtual.copy(controls = restored))
+            selectedControlId = spec.id
+            globalPopoverOpen = false
+            globalPopoverCard.visibility = View.GONE
+            refreshAllUi()
+        }
+        hideUndoBar()
     }
 
     private fun mutateControl(
@@ -1135,7 +1221,7 @@ class GamepadEditorActivity : Activity() {
 
     private fun showRenameDialog(spec: VirtualControlSpec) {
         val input = EditText(this).apply {
-            setText(spec.label)
+            setText(GamepadBridge.displayLabel(this@GamepadEditorActivity, spec))
             inputType = InputType.TYPE_CLASS_TEXT
             setTextColor(COL_TEXT_MAIN)
             setSelection(text.length)
@@ -1157,24 +1243,43 @@ class GamepadEditorActivity : Activity() {
         if (activeTab == TAB_VIRTUAL) {
             val names = arrayOf(
                 tr("ADV 鼠键布局", "ADV 標準", "ADV Mouse"),
-                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon")
+                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon"),
+                GamepadBridge.emptyPresetName(this)
             )
             val ids = arrayOf(
                 GamepadBridge.PRESET_VN_MOUSE,
-                GamepadBridge.PRESET_RPG_DUNGEON
+                GamepadBridge.PRESET_RPG_DUNGEON,
+                GamepadBridge.PRESET_EMPTY
             )
             AlertDialog.Builder(this)
                 .setTitle(tr("选择布局预设", "プリセット", "Layout Preset"))
                 .setItems(names) { _, which ->
                     val id = ids[which]
-                    profile = profile.copy(
-                        virtual = profile.virtual.copy(
-                            presetId = id,
-                            controls = GamepadBridge.buildPresetControls(id)
+                    val apply = {
+                        hideUndoBar()
+                        profile = profile.copy(
+                            virtual = profile.virtual.copy(
+                                presetId = id,
+                                controls = GamepadBridge.buildPresetControls(id)
+                            )
                         )
-                    )
-                    selectedControlId = null
-                    refreshAllUi()
+                        selectedControlId = null
+                        refreshAllUi()
+                    }
+                    if (GamepadBridge.presetSwitchLosesLayout(profile.virtual, id)) {
+                        AlertDialog.Builder(this)
+                            .setTitle(names[which])
+                            .setMessage(tr(
+                                "当前布局的修改会被替换，确定吗？（保存前仍可点返回放弃）",
+                                "現在のレイアウトの変更は置き換えられます。よろしいですか？",
+                                "This replaces your current layout changes. Continue?"
+                            ))
+                            .setPositiveButton(R.string.ok) { _, _ -> apply() }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    } else {
+                        apply()
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -1213,29 +1318,68 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun showAddControlSheet() {
-        val hasRightStick = profile.virtual.controls.any { it.id == "stick_r" }
-        val slotId = GamepadBridge.nextFreeCustomSlotId(profile.virtual.controls)
-        if (slotId < 0) {
-            Toast.makeText(this, tr("自定义按键已达上限", "上限に達しました", "Limit reached"), Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (hasRightStick) {
-            spawnCustomButton(slotId)
-            return
-        }
-        val items = arrayOf(
-            tr("添加自定义按键", "ボタン追加", "Add Button"),
-            tr("添加右摇杆", "右スティック追加", "Add Right Stick")
+        val controls = profile.virtual.controls
+        val hasDpad = controls.any { it.id == "dpad" }
+        val hasLeftStick = controls.any { it.id == "stick_l" }
+        val hasRightStick = controls.any { it.id == "stick_r" }
+        // While an undo is pending, keep the deleted button's slot reserved so a new button
+        // can't take it and Undo can't bring back a second control on the same native slot.
+        val pendingUndo = undoDeleted?.second
+        val slotId = GamepadBridge.nextFreeCustomSlotId(
+            if (pendingUndo != null) controls + pendingUndo else controls
         )
-        AlertDialog.Builder(this)
-            .setTitle(tr("添加控件", "追加", "Add Control"))
-            .setItems(items) { _, which ->
-                if (which == 0) {
-                    spawnCustomButton(slotId)
-                } else {
-                    val stick = VirtualControlSpec(
+        // Built-in pad controls (D-Pad / sticks) can be re-added once each after deletion.
+        // They don't send button events, so they never take a button slot.
+        val options = ArrayList<Pair<String, () -> Unit>>()
+        if (slotId >= 0) {
+            options.add(tr("添加自定义按键", "ボタン追加", "Add Button") to { spawnCustomButton(slotId) })
+        }
+        if (!hasDpad) {
+            options.add(tr("添加十字键", "十字キー追加", "Add D-Pad") to {
+                addPadControl(
+                    VirtualControlSpec(
+                        id = "dpad",
+                        slotId = GamepadBridge.NO_SLOT,
+                        kind = VirtualControlKind.DPAD,
+                        label = "D-PAD",
+                        xNorm = 0.12f,
+                        yNorm = 0.50f,
+                        scale = 0.95f,
+                        opacity = 1.0f,
+                        visible = true,
+                        shape = VirtualButtonShape.SQUARE,
+                        stickMode = GamepadBridge.STICK_ARROWS,
+                        isCustom = true
+                    )
+                )
+            })
+        }
+        if (!hasLeftStick) {
+            options.add(tr("添加左摇杆", "左スティック追加", "Add Left Stick") to {
+                addPadControl(
+                    VirtualControlSpec(
+                        id = "stick_l",
+                        slotId = GamepadBridge.NO_SLOT,
+                        kind = VirtualControlKind.STICK,
+                        label = "L",
+                        xNorm = 0.14f,
+                        yNorm = 0.76f,
+                        scale = 0.92f,
+                        opacity = 1.0f,
+                        visible = true,
+                        shape = VirtualButtonShape.CIRCLE,
+                        stickMode = GamepadBridge.STICK_MOUSE,
+                        isCustom = true
+                    )
+                )
+            })
+        }
+        if (!hasRightStick) {
+            options.add(tr("添加右摇杆", "右スティック追加", "Add Right Stick") to {
+                addPadControl(
+                    VirtualControlSpec(
                         id = "stick_r",
-                        slotId = slotId,
+                        slotId = GamepadBridge.NO_SLOT,
                         kind = VirtualControlKind.STICK,
                         label = "R",
                         xNorm = 0.72f,
@@ -1247,24 +1391,44 @@ class GamepadEditorActivity : Activity() {
                         stickMode = GamepadBridge.STICK_WHEEL,
                         isCustom = true
                     )
-                    profile = profile.copy(virtual = profile.virtual.copy(controls = profile.virtual.controls + stick))
-                    selectedControlId = stick.id
-                    refreshAllUi()
-                }
+                )
+            })
+        }
+        if (options.isEmpty()) {
+            Toast.makeText(this, tr("自定义按键已达上限", "上限に達しました", "Limit reached"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (options.size == 1) {
+            options[0].second()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(tr("添加控件", "追加", "Add Control"))
+            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
+    private fun addPadControl(spec: VirtualControlSpec) {
+        profile = profile.copy(virtual = profile.virtual.copy(controls = profile.virtual.controls + spec))
+        selectedControlId = spec.id
+        refreshAllUi()
+    }
+
     private fun spawnCustomButton(slotId: Int) {
-        val num = profile.virtual.controls.count { it.isCustom } + 1
+        val controls = profile.virtual.controls
+        val (spawnX, spawnY) = GamepadBridge.nextSpawnPosition(controls)
+        var newId = "custom_$slotId"
+        while (controls.any { it.id == newId }) newId += "_"
         val newBtn = VirtualControlSpec(
-            id = "custom_$slotId",
+            id = newId,
             slotId = slotId,
             kind = VirtualControlKind.BUTTON,
-            label = "K$num",
-            xNorm = 0.50f,
-            yNorm = 0.50f,
+            label = GamepadBridge.nextCustomButtonLabel(controls),
+            xNorm = spawnX,
+            yNorm = spawnY,
             scale = 0.95f,
             opacity = 1.0f,
             visible = true,
@@ -1308,12 +1472,15 @@ class GamepadEditorActivity : Activity() {
     private fun confirmReset() {
         AlertDialog.Builder(this)
             .setTitle(tr("恢复默认", "初期化", "Reset"))
-            .setMessage(tr("恢复默认布局并将所有开关重置为关闭？", "初期状態に戻しますか？", "Restore all defaults?"))
+            .setMessage(tr(
+                "恢复默认布局并将所有开关重置为关闭？点“保存”后才会生效。",
+                "初期状態に戻しますか？「保存」するまで反映されません。",
+                "Restore all defaults? Nothing is changed until you tap Save."
+            ))
             .setPositiveButton(R.string.ok) { _, _ ->
-                if (perGameOverride && profileKey != null) {
-                    GamepadBridge.clearPerGameOverride(this, profileKey)
-                    perGameOverride = false
-                }
+                // Only the draft is reset. Files are touched on Save, in the current scope
+                // (per-game or global), so backing out loses nothing.
+                hideUndoBar()
                 profile = GamepadProfile()
                 selectedControlId = null
                 globalPopoverOpen = false
@@ -1323,6 +1490,34 @@ class GamepadEditorActivity : Activity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun hasUnsavedChanges(): Boolean =
+        profile.copy(seq = 0L) != savedProfile.copy(seq = 0L) ||
+            perGameOverride != savedPerGameOverride
+
+    /** Leaves the editor, asking first when there are unsaved edits. */
+    private fun requestExit() {
+        if (!hasUnsavedChanges()) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(tr("保存修改？", "変更を保存しますか？", "Save changes?"))
+            .setMessage(tr("布局或映射有未保存的修改。", "未保存の変更があります。", "You have unsaved layout or mapping changes."))
+            .setPositiveButton(tr("保存", "保存", "Save")) { _, _ -> saveAndFinish() }
+            .setNegativeButton(tr("放弃", "破棄", "Discard")) { _, _ ->
+                // Live previews may have pushed the draft to native; restore the saved state.
+                GamepadBridge.syncProfileToNative(savedProfile)
+                finish()
+            }
+            .setNeutralButton(R.string.cancel, null)
+            .show()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        requestExit()
     }
 
     private fun saveAndFinish() {

@@ -99,7 +99,7 @@
             android:process=":game"
             android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
-            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:configChanges="density|fontScale|layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:theme="@style/AppTheme"
             android:preferMinimalPostProcessing="true"
             android:hardwareAccelerated="true"

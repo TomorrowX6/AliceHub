@@ -37,6 +37,8 @@
     <string name="toast_no_ini">Missing game config in %s</string>
     <string name="action_delete_base_game">Delete Base Game</string>
     <string name="delete_base_game_message">Delete %s base game? Saves will be kept.</string>
+    <string name="deleting_base_game">Deleting base game…</string>
+    <string name="delete_base_game_failed">Could not delete every file of the base game. Please try again.</string>
     <string name="action_uninstall_mod">Uninstall MOD</string>
     <string name="uninstall_mod_no_backup_msg">No vanilla backup found. Delete base game and reinstall vanilla.</string>
     <string name="zip_extraction_error">Extraction failed. Check archive and free space.</string>
@@ -91,6 +93,11 @@
     <string name="save_import_done_title">Import Complete</string>
     <string name="save_import_failed_title">Import Failed</string>
     <string name="save_import_dir_done_msg">Imported %1$d save files</string>
+    <string name="save_import_overwrite_msg">Saves with the same name will be overwritten. Your current saves are backed up first; use “Restore Backup” in Import to undo.</string>
+    <string name="save_import_opt_restore_backup">Restore Backup (%1$s)</string>
+    <string name="save_restore_backup_confirm_msg">Replace the current saves with the backup from %1$s? The current saves are backed up first.</string>
+    <string name="save_restore_backup_done_msg">Restored %1$d save files from the backup</string>
+    <string name="save_progress_restore_backup">Restoring backup…</string>
     <string name="save_import_files_done_msg">Imported %1$d save files</string>
 
     <string name="save_export_done_title">Export Complete</string>

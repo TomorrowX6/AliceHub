@@ -57,6 +57,19 @@ class VirtualGamepadView(context: Context) : View(context) {
 
     var listener: Listener? = null
 
+    /**
+     * Resolves the view (the SDL surface) that should receive touches which do not hit any
+     * control while this overlay already owns the gesture. Without this, once a finger holds a
+     * virtual control every additional finger is captured by this full-screen overlay and the
+     * game never sees it.
+     */
+    var passthroughTargetProvider: (() -> View?)? = null
+
+    private val passthroughIds = LinkedHashSet<Int>()
+    private val passthroughLastPos = HashMap<Int, android.graphics.PointF>() // in target coords
+    private var passthroughDownTime = 0L
+    private val tmpLoc = IntArray(2)
+
     private var profile: GamepadProfile = GamepadProfile()
     private var editMode: Boolean = false
     private var selectedControlId: String? = null
@@ -171,7 +184,10 @@ class VirtualGamepadView(context: Context) : View(context) {
 
     fun releaseAllInputs() {
         activeTouches.clear()
+        cancelPassthrough()
         pressedButtonIds.clear()
+        // Native reset clears toggle latches too; keep UI state in sync.
+        toggledLatchedIds.clear()
         stickPositions.clear()
         dpadDirs = BooleanArray(4)
         if (GameModifierBridge.ensureLoaded()) {
@@ -240,7 +256,15 @@ class VirtualGamepadView(context: Context) : View(context) {
                 val pid = event.getPointerId(actionIndex)
                 val x = event.getX(actionIndex)
                 val y = event.getY(actionIndex)
-                val hit = hitTestControl(geoms, x, y) ?: return (action == MotionEvent.ACTION_POINTER_DOWN && activeTouches.size() > 0)
+                val hit = hitTestControl(geoms, x, y)
+                if (hit == null) {
+                    if (action == MotionEvent.ACTION_DOWN) return false
+                    // Extra finger outside every control: hand it to the game surface.
+                    if (passthroughIds.isEmpty()) passthroughDownTime = event.eventTime
+                    passthroughIds.add(pid)
+                    forwardPassthrough(event, pid, isDown = true)
+                    return true
+                }
                 activeTouches.put(
                     pid,
                     ActiveTouch(
@@ -263,7 +287,8 @@ class VirtualGamepadView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (activeTouches.size() == 0) return false
+                if (passthroughIds.isNotEmpty()) forwardPassthrough(event, -1, isDown = false)
+                if (activeTouches.size() == 0) return passthroughIds.isNotEmpty()
                 for (i in 0 until event.pointerCount) {
                     val pid = event.getPointerId(i)
                     val active = activeTouches.get(pid) ?: continue
@@ -277,6 +302,12 @@ class VirtualGamepadView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val pid = event.getPointerId(actionIndex)
+                if (passthroughIds.contains(pid)) {
+                    forwardPassthrough(event, pid, isDown = false)
+                    passthroughIds.remove(pid)
+                    passthroughLastPos.remove(pid)
+                    return true
+                }
                 val active = activeTouches.get(pid)
                 if (active != null) {
                     activeTouches.remove(pid)
@@ -287,14 +318,96 @@ class VirtualGamepadView(context: Context) : View(context) {
                     invalidate()
                     return true
                 }
-                return activeTouches.size() > 0
+                return activeTouches.size() > 0 || passthroughIds.isNotEmpty()
             }
             MotionEvent.ACTION_CANCEL -> {
                 releaseAllInputs()
                 return false
             }
         }
-        return activeTouches.size() > 0
+        return activeTouches.size() > 0 || passthroughIds.isNotEmpty()
+    }
+
+    /**
+     * Re-dispatches the pointers tracked in [passthroughIds] to the game surface as a
+     * self-contained gesture. [actionPid] is the pointer going down/up (or -1 for MOVE).
+     */
+    private fun forwardPassthrough(event: MotionEvent, actionPid: Int, isDown: Boolean) {
+        val target = passthroughTargetProvider?.invoke() ?: return
+        val indices = ArrayList<Int>(passthroughIds.size)
+        for (i in 0 until event.pointerCount) {
+            if (passthroughIds.contains(event.getPointerId(i))) indices.add(i)
+        }
+        if (indices.isEmpty()) return
+        getLocationOnScreen(tmpLoc)
+        val ox = tmpLoc[0]
+        val oy = tmpLoc[1]
+        target.getLocationOnScreen(tmpLoc)
+        val dx = (ox - tmpLoc[0]).toFloat()
+        val dy = (oy - tmpLoc[1]).toFloat()
+        val props = Array(indices.size) { MotionEvent.PointerProperties() }
+        val coords = Array(indices.size) { MotionEvent.PointerCoords() }
+        var actionIdx = 0
+        for ((k, i) in indices.withIndex()) {
+            event.getPointerProperties(i, props[k])
+            event.getPointerCoords(i, coords[k])
+            coords[k].x += dx
+            coords[k].y += dy
+            if (props[k].id == actionPid) actionIdx = k
+            passthroughLastPos.getOrPut(props[k].id) { android.graphics.PointF() }.set(coords[k].x, coords[k].y)
+        }
+        val outAction = when {
+            actionPid < 0 -> MotionEvent.ACTION_MOVE
+            indices.size == 1 -> if (isDown) MotionEvent.ACTION_DOWN else MotionEvent.ACTION_UP
+            else -> (if (isDown) MotionEvent.ACTION_POINTER_DOWN else MotionEvent.ACTION_POINTER_UP) or
+                (actionIdx shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
+        }
+        val out = MotionEvent.obtain(
+            passthroughDownTime, event.eventTime, outAction, indices.size, props, coords,
+            event.metaState, event.buttonState, 1f, 1f, event.deviceId, 0, event.source, event.flags
+        )
+        try {
+            target.dispatchTouchEvent(out)
+        } catch (_: Throwable) {
+        } finally {
+            out.recycle()
+        }
+    }
+
+    private fun cancelPassthrough() {
+        if (passthroughIds.isEmpty()) return
+        val target = passthroughTargetProvider?.invoke()
+        val ids = passthroughIds.filter { passthroughLastPos.containsKey(it) }
+        if (target != null && ids.isNotEmpty()) {
+            val now = android.os.SystemClock.uptimeMillis()
+            val props = Array(ids.size) { k ->
+                MotionEvent.PointerProperties().apply {
+                    id = ids[k]
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                }
+            }
+            val coords = Array(ids.size) { k ->
+                MotionEvent.PointerCoords().apply {
+                    val pos = passthroughLastPos[ids[k]]!!
+                    x = pos.x
+                    y = pos.y
+                    pressure = 1f
+                    size = 1f
+                }
+            }
+            val out = MotionEvent.obtain(
+                passthroughDownTime, now, MotionEvent.ACTION_CANCEL, ids.size, props, coords,
+                0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0
+            )
+            try {
+                target.dispatchTouchEvent(out)
+            } catch (_: Throwable) {
+            } finally {
+                out.recycle()
+            }
+        }
+        passthroughIds.clear()
+        passthroughLastPos.clear()
     }
 
     private fun handleEditorTouch(
@@ -345,11 +458,12 @@ class VirtualGamepadView(context: Context) : View(context) {
                     }
                 }
                 if (active.dragging) {
-                    var nx = (active.origXNorm + dx / w).coerceIn(0.04f, 0.96f)
-                    var ny = (active.origYNorm + dy / h).coerceIn(0.06f, 0.94f)
+                    var nx = (active.origXNorm + dx / w).coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX)
+                    var ny = (active.origYNorm + dy / h).coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX)
                     if (profile.virtual.gridSnap) {
-                        nx = ((nx / 0.025f).roundToInt() * 0.025f).coerceIn(0.04f, 0.96f)
-                        ny = ((ny / 0.025f).roundToInt() * 0.025f).coerceIn(0.06f, 0.94f)
+                        val g = GamepadBridge.GRID_STEP
+                        nx = ((nx / g).roundToInt() * g).coerceIn(GamepadBridge.POS_X_MIN, GamepadBridge.POS_X_MAX)
+                        ny = ((ny / g).roundToInt() * g).coerceIn(GamepadBridge.POS_Y_MIN, GamepadBridge.POS_Y_MAX)
                     }
                     updateControlSpec(active.controlId) { it.copy(xNorm = nx, yNorm = ny) }
                     invalidate()
@@ -528,13 +642,14 @@ class VirtualGamepadView(context: Context) : View(context) {
     private fun drawEditorGrid(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        gridPaint.color = 0x16FFFFFF
-        val step = 0.05f
-        var f = step
-        while (f < 1f) {
+        // Draw exactly the snap lattice: faint lines every GRID_STEP, stronger every 2nd.
+        val step = GamepadBridge.GRID_STEP
+        val n = (1f / step).roundToInt()
+        for (i in 1 until n) {
+            val f = i * step
+            gridPaint.color = if (i % 2 == 0) 0x16FFFFFF else 0x0BFFFFFF
             canvas.drawLine(w * f, 0f, w * f, h, gridPaint)
             canvas.drawLine(0f, h * f, w, h * f, gridPaint)
-            f += step
         }
         gridPaint.color = 0x3BA9B6FF
         canvas.drawLine(w * 0.5f, 0f, w * 0.5f, h, gridPaint)
@@ -671,11 +786,12 @@ class VirtualGamepadView(context: Context) : View(context) {
         strokePaint.strokeWidth = dp(1.4f)
         canvas.drawCircle(kx, ky, knobR, strokePaint)
 
-        if (geom.spec.label.isNotBlank()) {
+        val stickLabel = GamepadBridge.displayLabel(context, geom.spec)
+        if (stickLabel.isNotBlank()) {
             subTextPaint.textSize = (r * 0.24f).coerceIn(dp(9f), dp(13f))
             subTextPaint.color = Color.argb((alphaInt * 0.85f).toInt(), 240, 246, 255)
             val fm = subTextPaint.fontMetrics
-            canvas.drawText(geom.spec.label, kx, ky - (fm.ascent + fm.descent) * 0.5f, subTextPaint)
+            canvas.drawText(stickLabel, kx, ky - (fm.ascent + fm.descent) * 0.5f, subTextPaint)
         }
     }
 
@@ -710,7 +826,7 @@ class VirtualGamepadView(context: Context) : View(context) {
             canvas.drawRoundRect(tmpRect, cr, cr, strokePaint)
         }
 
-        val label = spec.label.ifBlank { "?" }
+        val label = GamepadBridge.displayLabel(context, spec).ifBlank { "?" }
         val targetSize = if (spec.shape == VirtualButtonShape.PILL) {
             (geom.halfH * 0.76f).coerceIn(dp(7f), dp(15f))
         } else {

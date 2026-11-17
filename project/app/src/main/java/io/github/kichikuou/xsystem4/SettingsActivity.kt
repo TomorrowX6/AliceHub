@@ -231,10 +231,8 @@ class SettingsActivity : ThemedActivity() {
         context.externalCacheDirs?.filterNotNull()?.forEach { dir ->
             dir.listFiles()?.forEach { out.add(it) }
         }
-        val saveTmp = File(context.filesDir, ".save_import_tmp")
-        if (saveTmp.exists()) {
-            out.add(saveTmp)
-        }
+        context.filesDir.listFiles()?.filter { it.name.startsWith(SAVE_IMPORT_TMP_PREFIX) }
+            ?.forEach { out.add(it) }
 
         val storageRoots = LinkedHashSet<File>()
         context.getExternalFilesDirs(null)?.filterNotNull()?.forEach { storageRoots.add(it) }
