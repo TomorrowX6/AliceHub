@@ -483,9 +483,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 if (xsAct != null) {
                     xsAct.openGamepadConfigDialog()
                 } else {
-                    GamepadConfigDialog.show(activity, null) { saved ->
+                    GamepadConfigDialog.show(activity, null, onProfileUpdated = { saved ->
                         GamepadBridge.syncProfileToNative(saved)
-                    }
+                    })
                 }
             }
         )

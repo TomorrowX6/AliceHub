@@ -3,6 +3,7 @@ package io.github.kichikuou.xsystem4
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -41,6 +42,7 @@ private class ModSaveSlotAdapter(
     private val backupLabel: String
 ) : BaseAdapter() {
 
+    var accentColor: Int? = null
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
     fun update(newEntries: List<ModSaveSlotEntry>) {
@@ -58,11 +60,16 @@ private class ModSaveSlotAdapter(
         val entry = entries[position]
 
         view.findViewById<TextView>(R.id.title).text = entry.relativePath
-        val chips = mutableListOf(UiKit.Chip(entry.tag, slotTone(entry.slotNum)))
+        val primaryTone = slotTone(entry.slotNum)
+        val chips = mutableListOf(UiKit.Chip(entry.tag, primaryTone))
         if (GameModifierBridge.hasModBackup(entry.file)) {
             chips.add(UiKit.Chip(backupLabel, UiKit.Tone.SUCCESS))
         }
         UiKit.bindChips(view, chips)
+        val customAccent = accentColor
+        if (primaryTone == UiKit.Tone.PRIMARY && customAccent != null) {
+            view.findViewById<TextView>(R.id.chip1)?.let { UiKit.styleAccentChip(it, customAccent) }
+        }
         val sizeStr = String.format(Locale.US, "%.1f KB", entry.sizeBytes / 1024.0)
         val dateStr = dateFormat.format(Date(entry.lastModified))
         view.findViewById<TextView>(R.id.meta).text = "$sizeStr · $dateStr"
@@ -164,6 +171,7 @@ class GameModifierActivity : ThemedActivity() {
         findViewById<View>(R.id.btn_mod_floating_cfg).setOnClickListener { showFloatingLocksDialog() }
         findViewById<View>(R.id.btn_mod_font_size).setOnClickListener { showFontScaleDialog() }
         findViewById<View>(R.id.btn_mod_scrollbar).setOnClickListener { showScrollbarScaleDialog() }
+        findViewById<View>(R.id.btn_mod_gamepad)?.setOnClickListener { openGamepadSettings() }
 
         listView.setOnItemClickListener { _, _, pos, _ ->
             val index = pos - listView.headerViewsCount
@@ -476,6 +484,7 @@ class GameModifierActivity : ThemedActivity() {
         val isRance09 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && isCurrentTargetRance09()
         refreshUiScaleButtons()
         refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03, isRance08, isRance09)
+        applyThemeAccent()
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
@@ -555,6 +564,56 @@ class GameModifierActivity : ThemedActivity() {
             "進行セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · ロック $lockCount 項目",
             "${currentEntries.size} progress saves · Global: ${if (hasGlobal) "Yes" else "No"} · Locks: $lockCount"
         )
+    }
+
+    private fun resolvedGameIdForCurrentTarget(): String? =
+        scopedGameId ?: if (::currentTarget.isInitialized) {
+            GameCatalog.classifyDirectory(
+                gameDir = currentTarget.externalGameDir,
+                dirName = currentTarget.dirName,
+                saveDir = currentTarget.saveDir,
+                displayName = currentTarget.displayName
+            )
+        } else {
+            null
+        }
+
+    private fun applyThemeAccent() {
+        if (!::currentTarget.isInitialized) return
+        val accent = UiKit.resolveGameAccentColor(
+            this,
+            scopedGameId,
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+        adapter.accentColor = accent
+        findViewById<View>(R.id.mod_header_card)?.background =
+            UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)
+        findViewById<Switch>(R.id.switch_floating_modifier)?.let { UiKit.tintSwitch(it, accent) }
+        findViewById<Switch>(R.id.switch_ctrl_overlay)?.let { UiKit.tintSwitch(it, accent) }
+        listOf(
+            R.id.btn_mod_full_unlock,
+            R.id.btn_mod_global_save,
+            R.id.btn_mod_floating_cfg,
+            R.id.btn_mod_switch_dir,
+            R.id.btn_mod_font_size,
+            R.id.btn_mod_scrollbar,
+            R.id.btn_mod_gamepad
+        ).forEach { id ->
+            findViewById<Button>(id)?.let { UiKit.styleTonalAccentButton(it, accent) }
+        }
+    }
+
+    private fun openGamepadSettings() {
+        val dirName = if (::currentTarget.isInitialized) currentTarget.dirName else null
+        val gid = resolvedGameIdForCurrentTarget()
+        val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title } ?: dirName
+        val i = Intent(this, GamepadSettingsActivity::class.java)
+            .putExtra(GamepadSettingsActivity.EXTRA_PROFILE_KEY, dirName)
+            .putExtra(GamepadSettingsActivity.EXTRA_GAME_ID, gid)
+            .putExtra(GamepadSettingsActivity.EXTRA_GAME_TITLE, displayTitle)
+        startActivity(i)
     }
 
     private fun refreshList() {

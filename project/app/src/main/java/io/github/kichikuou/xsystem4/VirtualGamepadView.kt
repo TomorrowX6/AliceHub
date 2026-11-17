@@ -63,6 +63,12 @@ class VirtualGamepadView(context: Context) : View(context) {
     private var ctrlToggleLatched: Boolean = false
     private var autoHiddenByPhysicalPad: Boolean = false
     private var hiddenByMovie: Boolean = false
+    private var editorAccentColor: Int = 0xFFA9B6FF.toInt()
+
+    fun setEditorAccentColor(color: Int) {
+        editorAccentColor = color
+        invalidate()
+    }
 
     private val activeTouches = SparseArray<ActiveTouch>()
     private val pressedButtonIds = HashSet<String>()
@@ -493,7 +499,7 @@ class VirtualGamepadView(context: Context) : View(context) {
         super.onDraw(canvas)
         if (width <= 0 || height <= 0) return
 
-        if (editMode) {
+        if (editMode && profile.virtual.gridSnap) {
             drawEditorGrid(canvas)
         }
 
@@ -503,7 +509,11 @@ class VirtualGamepadView(context: Context) : View(context) {
         for (geom in geoms) {
             val spec = geom.spec
             val baseAlpha = (globalOpacity * spec.opacity).coerceIn(0.15f, 1.0f)
-            val alphaInt = if (!spec.visible) 90 else (baseAlpha * 255).toInt().coerceIn(30, 255)
+            val alphaInt = when {
+                !spec.visible -> 72
+                editMode -> (baseAlpha * 255).toInt().coerceIn(145, 255)
+                else -> (baseAlpha * 255).toInt().coerceIn(30, 255)
+            }
             when (spec.kind) {
                 VirtualControlKind.DPAD -> drawDPad(canvas, geom, alphaInt)
                 VirtualControlKind.STICK -> drawStick(canvas, geom, alphaInt)
@@ -518,6 +528,7 @@ class VirtualGamepadView(context: Context) : View(context) {
     private fun drawEditorGrid(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
+        gridPaint.color = 0x16FFFFFF
         val step = 0.05f
         var f = step
         while (f < 1f) {
@@ -525,34 +536,41 @@ class VirtualGamepadView(context: Context) : View(context) {
             canvas.drawLine(0f, h * f, w, h * f, gridPaint)
             f += step
         }
-        gridPaint.color = 0x554FC3F7
+        gridPaint.color = 0x3BA9B6FF
         canvas.drawLine(w * 0.5f, 0f, w * 0.5f, h, gridPaint)
         canvas.drawLine(0f, h * 0.5f, w, h * 0.5f, gridPaint)
-        gridPaint.color = 0x26FFFFFF
     }
 
     private fun drawEditorFrame(canvas: Canvas, geom: ControlGeometry) {
         val isSel = geom.spec.id == selectedControlId
-        editorDashPaint.color = when {
-            isSel -> 0xFF38BDF8.toInt()
-            !geom.spec.visible -> 0xAAFF8A65.toInt()
-            else -> 0x77CBD5E1
-        }
-        editorDashPaint.strokeWidth = if (isSel) dp(2.0f) else dp(1.1f)
+        if (!isSel && geom.spec.visible) return
+
         val pad = dp(5f)
         val left = geom.cx - geom.halfW - pad
         val top = geom.cy - geom.halfH - pad
         val right = geom.cx + geom.halfW + pad
         val bottom = geom.cy + geom.halfH + pad
         tmpRect.set(left, top, right, bottom)
-        canvas.drawRoundRect(tmpRect, dp(10f), dp(10f), editorDashPaint)
+
         if (isSel) {
-            fillPaint.color = 0xFF38BDF8.toInt()
-            val dotR = dp(3.0f)
+            strokePaint.color = editorAccentColor
+            strokePaint.strokeWidth = dp(1.8f)
+            val cr = if (geom.spec.kind == VirtualControlKind.BUTTON && geom.spec.shape == VirtualButtonShape.CIRCLE) {
+                (right - left) * 0.5f
+            } else {
+                dp(12f)
+            }
+            canvas.drawRoundRect(tmpRect, cr, cr, strokePaint)
+            fillPaint.color = editorAccentColor
+            val dotR = dp(3.2f)
             canvas.drawCircle(left, top, dotR, fillPaint)
             canvas.drawCircle(right, top, dotR, fillPaint)
             canvas.drawCircle(left, bottom, dotR, fillPaint)
             canvas.drawCircle(right, bottom, dotR, fillPaint)
+        } else {
+            editorDashPaint.color = 0x77FF9C92
+            editorDashPaint.strokeWidth = dp(1.1f)
+            canvas.drawRoundRect(tmpRect, dp(10f), dp(10f), editorDashPaint)
         }
     }
 

@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.BaseAdapter
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ListView
 import android.widget.TextView
@@ -65,6 +66,7 @@ private class SaveFileAdapter(
     private var entries: List<SaveFileEntry>
 ) : BaseAdapter() {
 
+    var accentColor: Int? = null
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     fun update(newEntries: List<SaveFileEntry>) {
@@ -82,14 +84,19 @@ private class SaveFileAdapter(
         val entry = entries[position]
 
         view.findViewById<TextView>(R.id.title).text = entry.relativePath
+        val tagToneValue = tagTone(entry.file.name)
         UiKit.bindChips(
             view,
             if (entry.tag.isNotEmpty()) {
-                listOf(UiKit.Chip(entry.tag, tagTone(entry.file.name)))
+                listOf(UiKit.Chip(entry.tag, tagToneValue))
             } else {
                 emptyList()
             }
         )
+        val customAccent = accentColor
+        if (entry.tag.isNotEmpty() && tagToneValue == UiKit.Tone.PRIMARY && customAccent != null) {
+            view.findViewById<TextView>(R.id.chip1)?.let { UiKit.styleAccentChip(it, customAccent) }
+        }
         val dateStr = dateFormat.format(Date(entry.lastModified))
         view.findViewById<TextView>(R.id.meta).text = "${formatFileSize(entry.sizeBytes)} · $dateStr"
         return view
@@ -367,6 +374,7 @@ class SaveManagerActivity : ThemedActivity() {
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
         findViewById<TextView>(R.id.save_target_summary).text =
             getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes))
+        applyThemeAccent()
 
         val emptyView = findViewById<TextView>(R.id.save_empty_view)
         if (list.isEmpty()) {
@@ -374,6 +382,22 @@ class SaveManagerActivity : ThemedActivity() {
             emptyView.visibility = View.VISIBLE
         } else {
             emptyView.visibility = View.GONE
+        }
+    }
+
+    private fun applyThemeAccent() {
+        val accent = UiKit.resolveGameAccentColor(
+            this,
+            scopedGameId,
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+        adapter.accentColor = accent
+        findViewById<View>(R.id.save_header_card)?.background =
+            UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)
+        listOf(R.id.btn_import_saves, R.id.btn_export_saves, R.id.btn_switch_game).forEach { id ->
+            findViewById<Button>(id)?.let { UiKit.styleTonalAccentButton(it, accent) }
         }
     }
 

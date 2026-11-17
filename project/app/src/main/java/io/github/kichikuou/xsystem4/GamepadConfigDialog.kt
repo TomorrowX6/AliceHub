@@ -21,16 +21,17 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * Clean card-based overview controller for [GamepadSettingsActivity] and in-game [GamepadConfigDialog].
- * Detailed layout & button remapping live in landscape [GamepadEditorActivity].
+ * Overview controller for [GamepadSettingsActivity] and in-game [GamepadConfigDialog].
+ * Single unified entry button launches landscape [GamepadEditorActivity].
  */
 class GamepadConfigController(
     context: Context,
     profileKey: String?,
+    private val gameId: String? = null,
     private val gameDisplayName: String? = null,
+    private val accentColor: Int? = null,
     private val embeddedInPage: Boolean = false,
-    private val onEnterLayoutEditor: ((GamepadProfile) -> Unit)? = null,
-    private val onEnterPhysicalEditor: ((GamepadProfile) -> Unit)? = null,
+    private val onEnterEditor: ((GamepadProfile, Int) -> Unit)? = null,
     private val onDirtyStateChanged: ((Boolean) -> Unit)? = null,
     private val onSaved: (GamepadProfile) -> Unit = {}
 ) {
@@ -50,7 +51,6 @@ class GamepadConfigController(
     private var pollActive = false
     private var pollAliveCheck: () -> Boolean = { true }
 
-    private var scopeRow: LinearLayout? = null
     private var scopeSwitch: Switch? = null
     private var scopeBadgeTv: TextView? = null
     private var restoreGlobalBtn: TextView? = null
@@ -67,21 +67,24 @@ class GamepadConfigController(
     private var presetBtnRpg: TextView? = null
     private var presetBtnBar: TextView? = null
 
-    private var scaleLabelTv: TextView? = null
+    private var scaleValTv: TextView? = null
     private var scaleSeek: SeekBar? = null
-    private var opacityLabelTv: TextView? = null
+    private var opacityValTv: TextView? = null
     private var opacitySeek: SeekBar? = null
 
     fun isDirty(): Boolean = dirty
 
     fun isPerGameMode(): Boolean = perGameMode
 
-    fun getDraft(): GamepadProfile = draft
-
     private fun tr(zh: String, ja: String, en: String): String =
         GamepadBridge.tr(uiCtx, zh, ja, en)
 
     private fun dp(v: Int): Int = UiKit.dpInt(uiCtx, v)
+
+    private fun rawAccent(): Int = accentColor ?: uiCtx.getColor(R.color.ui_primary)
+
+    private fun onAccentColor(fillColor: Int): Int =
+        if (accentColor != null) UiKit.contrastOn(fillColor) else uiCtx.getColor(R.color.ui_on_primary)
 
     private fun markDirty(value: Boolean = true) {
         dirty = value
@@ -142,13 +145,13 @@ class GamepadConfigController(
     fun buildRootView(): View {
         val outer = ScrollView(uiCtx).apply {
             isFillViewport = true
-            isVerticalScrollBarEnabled = true
+            isVerticalScrollBarEnabled = false
         }
         val body = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.VERTICAL
             val hPad = dp(16)
             val topPad = if (embeddedInPage) dp(12) else dp(8)
-            setPadding(hPad, topPad, hPad, dp(16))
+            setPadding(hPad, topPad, hPad, dp(20))
         }
 
         // 1. Scope & live connection status row
@@ -159,24 +162,21 @@ class GamepadConfigController(
             bottomMargin = dp(10)
         })
 
-        // 2. Per-game override bar (when a game profile key is present)
+        // 2. Per-game override card (when launched for a specific game)
         if (normalizedKey != null) {
-            val sr = buildScopeCard()
-            scopeRow = sr
-            body.addView(sr, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(10)
-            })
+            body.addView(buildScopeCard(), cardMarginParams())
         }
 
-        // 3. Master switches (both default OFF)
+        // 3. Master switches + Single Custom Key & Layout Button
+        val rawAcc = rawAccent()
         val masterCard = makeCard().apply {
+            if (accentColor != null) {
+                background = UiKit.accentCard(uiCtx, rawAcc, R.dimen.ui_radius_card, clickable = false)
+            }
             vpadEnabledSwitch = addSwitchRow(
                 this,
                 tr("虚拟手柄", "仮想パッド", "Virtual Pad"),
-                tr("屏幕触控按键", "画面タッチ操作", "On-screen keys")
+                tr("屏幕触控按键", "画面タッチ操作", "On-screen overlay")
             ) { checked ->
                 draft = draft.copy(virtual = draft.virtual.copy(enabled = checked))
                 markDirty(true)
@@ -190,61 +190,53 @@ class GamepadConfigController(
                 draft = draft.copy(physical = draft.physical.copy(enabled = checked))
                 markDirty(true)
             }
+
+            // Single unified CTA button -> enters Landscape Editor (switches Virtual / Physical inside)
+            val openEditorBtn = TextView(uiCtx).apply {
+                text = tr("自定义按键与布局", "キー配置・レイアウト編集", "Customize Keys & Layout")
+                gravity = Gravity.CENTER
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(onAccentColor(rawAcc))
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+                background = UiKit.accentButtonBackground(uiCtx, rawAcc, 12f)
+                setOnClickListener {
+                    val saved = saveAndApply()
+                    val initialTab = if (saved.physical.enabled && !saved.virtual.enabled) {
+                        GamepadEditorActivity.TAB_PHYSICAL
+                    } else {
+                        GamepadEditorActivity.TAB_VIRTUAL
+                    }
+                    if (onEnterEditor != null) {
+                        onEnterEditor.invoke(saved, initialTab)
+                    } else {
+                        uiCtx.startActivity(
+                            GamepadEditorActivity.createIntent(
+                                uiCtx,
+                                normalizedKey,
+                                gameDisplayName,
+                                initialTab,
+                                gameId
+                            )
+                        )
+                    }
+                }
+            }
+            addView(openEditorBtn, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(12)
+            })
         }
         body.addView(masterCard, cardMarginParams())
 
-        // 4. Hero CTA: GameSir-style Landscape Editors
-        val editorCard = makeCard().apply {
-            addView(sectionHeader(tr("横屏按键与布局编辑器", "横画面エディタ", "Landscape Editor")))
-            val ctaRow = LinearLayout(uiCtx).apply {
-                orientation = LinearLayout.HORIZONTAL
-            }
-
-            val virtualEditBtn = TextView(uiCtx).apply {
-                text = tr("自定义虚拟布局", "仮想レイアウト編集", "Virtual Layout")
-                gravity = Gravity.CENTER
-                textSize = 13.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                setPadding(dp(12), dp(11), dp(12), dp(11))
-                background = UiKit.accentButtonBackground(uiCtx, uiCtx.getColor(R.color.ui_primary), 12f)
-                setOnClickListener {
-                    val saved = saveAndApply()
-                    onEnterLayoutEditor?.invoke(saved) ?: launchEditorFallback(GamepadEditorActivity.TAB_VIRTUAL)
-                }
-            }
-            ctaRow.addView(virtualEditBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            })
-
-            val physEditBtn = TextView(uiCtx).apply {
-                text = tr("实体手柄改键图", "ボタン割当図", "Controller Map")
-                gravity = Gravity.CENTER
-                textSize = 13.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(uiCtx.getColor(R.color.ui_primary))
-                setPadding(dp(12), dp(11), dp(12), dp(11))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(12).toFloat()
-                    setColor(uiCtx.getColor(R.color.tone_primary_bg))
-                    setStroke(dp(1).coerceAtLeast(1), uiCtx.getColor(R.color.ui_primary))
-                }
-                setOnClickListener {
-                    val saved = saveAndApply()
-                    onEnterPhysicalEditor?.invoke(saved) ?: launchEditorFallback(GamepadEditorActivity.TAB_PHYSICAL)
-                }
-            }
-            ctaRow.addView(physEditBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(ctaRow)
-        }
-        body.addView(editorCard, cardMarginParams())
-
-        // 5. Quick options & sliders
+        // 4. Concise options card (compact inline sliders so nothing overflows)
         val optCard = makeCard().apply {
             addView(sectionHeader(tr("布局预设", "プリセット", "Preset")))
             val presetRow = LinearLayout(uiCtx).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 0, 0, dp(8))
+                setPadding(0, 0, 0, dp(4))
             }
             val btnVn = makePresetChip("ADV") { applyPreset(GamepadBridge.PRESET_VN_MOUSE) }
             val btnRpg = makePresetChip("RPG") { applyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
@@ -279,50 +271,29 @@ class GamepadConfigController(
             }
             addDivider(this)
 
-            scaleLabelTv = TextView(uiCtx).apply {
-                textSize = 12.5f
-                setTextColor(uiCtx.getColor(R.color.ui_text_secondary))
-                setPadding(0, dp(6), 0, dp(2))
+            val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), 90) { p ->
+                val pct = (p + 60).coerceIn(60, 150)
+                draft = draft.copy(virtual = draft.virtual.copy(globalScalePct = pct))
+                scaleValTv?.text = "${pct}%"
+                markDirty(true)
             }
-            scaleSeek = SeekBar(uiCtx).apply {
-                max = 90
-                setOnSeekBarChangeListener(simpleSeek { p ->
-                    val pct = (p + 60).coerceIn(60, 150)
-                    draft = draft.copy(virtual = draft.virtual.copy(globalScalePct = pct))
-                    scaleLabelTv?.text = "${tr("按键大小", "サイズ", "Size")} ${pct}%"
-                    markDirty(true)
-                })
-            }
-            addView(scaleLabelTv)
-            addView(scaleSeek)
+            scaleSeek = scalePair.first
+            scaleValTv = scalePair.second
 
-            opacityLabelTv = TextView(uiCtx).apply {
-                textSize = 12.5f
-                setTextColor(uiCtx.getColor(R.color.ui_text_secondary))
-                setPadding(0, dp(6), 0, dp(2))
+            val opPair = addInlineSliderRow(this, tr("透明度", "不透明度", "Opacity"), 80) { p ->
+                val pct = (p + 20).coerceIn(20, 100)
+                draft = draft.copy(virtual = draft.virtual.copy(globalOpacityPct = pct))
+                opacityValTv?.text = "${pct}%"
+                markDirty(true)
             }
-            opacitySeek = SeekBar(uiCtx).apply {
-                max = 80
-                setOnSeekBarChangeListener(simpleSeek { p ->
-                    val pct = (p + 20).coerceIn(20, 100)
-                    draft = draft.copy(virtual = draft.virtual.copy(globalOpacityPct = pct))
-                    opacityLabelTv?.text = "${tr("透明度", "不透明度", "Opacity")} ${pct}%"
-                    markDirty(true)
-                })
-            }
-            addView(opacityLabelTv)
-            addView(opacitySeek)
+            opacitySeek = opPair.first
+            opacityValTv = opPair.second
         }
         body.addView(optCard, cardMarginParams())
 
         outer.addView(body)
         refreshAllUi()
         return outer
-    }
-
-    private fun launchEditorFallback(tab: Int) {
-        val intent = GamepadEditorActivity.createIntent(uiCtx, normalizedKey, gameDisplayName, tab)
-        uiCtx.startActivity(intent)
     }
 
     private fun applyPreset(presetId: String) {
@@ -386,6 +357,7 @@ class GamepadConfigController(
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         val sw = Switch(uiCtx).apply {
+            if (accentColor != null) UiKit.tintSwitch(this, rawAccent())
             setOnCheckedChangeListener { _, isChecked ->
                 if (syncingUi) return@setOnCheckedChangeListener
                 perGameMode = isChecked
@@ -430,7 +402,13 @@ class GamepadConfigController(
                 tr("全局默认", "共通", "Global")
             }
             tv.text = label
-            UiKit.styleChip(tv, if (perGameMode) UiKit.Tone.PRIMARY else UiKit.Tone.NEUTRAL, dot = true)
+            if (perGameMode && accentColor != null) {
+                UiKit.styleAccentChip(tv, rawAccent(), dot = true)
+            } else if (perGameMode) {
+                UiKit.styleChip(tv, UiKit.Tone.PRIMARY, dot = true)
+            } else {
+                UiKit.styleChip(tv, UiKit.Tone.NEUTRAL, dot = true)
+            }
         }
 
         vpadEnabledSwitch?.isChecked = draft.virtual.enabled
@@ -441,9 +419,9 @@ class GamepadConfigController(
         rumbleSwitch?.isChecked = draft.physical.rumbleEnabled
 
         scaleSeek?.progress = (draft.virtual.globalScalePct - 60).coerceIn(0, 90)
-        scaleLabelTv?.text = "${tr("按键大小", "サイズ", "Size")} ${draft.virtual.globalScalePct}%"
+        scaleValTv?.text = "${draft.virtual.globalScalePct}%"
         opacitySeek?.progress = (draft.virtual.globalOpacityPct - 20).coerceIn(0, 80)
-        opacityLabelTv?.text = "${tr("透明度", "不透明度", "Opacity")} ${draft.virtual.globalOpacityPct}%"
+        opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
 
         updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
         updatePresetChip(presetBtnRpg, draft.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON)
@@ -532,6 +510,7 @@ class GamepadConfigController(
             })
         }
         val sw = Switch(uiCtx).apply {
+            if (accentColor != null) UiKit.tintSwitch(this, rawAccent())
             setOnCheckedChangeListener { _, isChecked ->
                 if (!syncingUi) onChanged(isChecked)
             }
@@ -540,6 +519,43 @@ class GamepadConfigController(
         row.addView(sw)
         parent.addView(row)
         return sw
+    }
+
+    private fun addInlineSliderRow(
+        parent: LinearLayout,
+        label: String,
+        maxProgress: Int,
+        onProgress: (Int) -> Unit
+    ): Pair<SeekBar, TextView> {
+        val row = LinearLayout(uiCtx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        val lbl = TextView(uiCtx).apply {
+            text = label
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(uiCtx.getColor(R.color.ui_text_primary))
+            layoutParams = LinearLayout.LayoutParams(dp(76), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        val seek = SeekBar(uiCtx).apply {
+            if (accentColor != null) UiKit.tintSeekBar(this, rawAccent())
+            max = maxProgress
+            setOnSeekBarChangeListener(simpleSeek(onProgress))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val valTv = TextView(uiCtx).apply {
+            textSize = 12.5f
+            gravity = Gravity.END
+            setTextColor(uiCtx.getColor(R.color.ui_text_secondary))
+            layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        row.addView(lbl)
+        row.addView(seek)
+        row.addView(valTv)
+        parent.addView(row)
+        return seek to valTv
     }
 
     private fun makePresetChip(label: String, onClick: () -> Unit): TextView = TextView(uiCtx).apply {
@@ -552,12 +568,12 @@ class GamepadConfigController(
 
     private fun updatePresetChip(tv: TextView?, active: Boolean) {
         if (tv == null) return
-        val accent = uiCtx.getColor(R.color.ui_primary)
-        tv.setTextColor(if (active) Color.WHITE else uiCtx.getColor(R.color.ui_text_primary))
+        val acc = rawAccent()
+        tv.setTextColor(if (active) onAccentColor(acc) else uiCtx.getColor(R.color.ui_text_primary))
         tv.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
         tv.background = GradientDrawable().apply {
             cornerRadius = dp(10).toFloat()
-            setColor(if (active) accent else uiCtx.getColor(R.color.ui_btn_tonal))
+            setColor(if (active) acc else uiCtx.getColor(R.color.ui_btn_tonal))
             if (!active) setStroke(dp(1).coerceAtLeast(1), uiCtx.getColor(R.color.ui_outline))
         }
     }
@@ -577,45 +593,33 @@ object GamepadConfigDialog {
     fun show(
         context: Context,
         profileKey: String?,
+        gameId: String? = null,
         gameDisplayName: String? = null,
+        accentColor: Int? = null,
         onProfileUpdated: (GamepadProfile) -> Unit = {},
-        onEnterLayoutEditor: ((GamepadProfile) -> Unit)? = null,
-        onEnterPhysicalEditor: ((GamepadProfile) -> Unit)? = null
+        onEnterEditor: ((GamepadProfile, Int) -> Unit)? = null
     ) {
         var dlgRef: AlertDialog? = null
         val controller = GamepadConfigController(
             context = context,
             profileKey = profileKey,
+            gameId = gameId,
             gameDisplayName = gameDisplayName,
+            accentColor = accentColor,
             embeddedInPage = false,
-            onEnterLayoutEditor = { saved ->
+            onEnterEditor = { saved, initialTab ->
                 onProfileUpdated(saved)
                 dlgRef?.dismiss()
-                if (onEnterLayoutEditor != null) {
-                    onEnterLayoutEditor.invoke(saved)
+                if (onEnterEditor != null) {
+                    onEnterEditor.invoke(saved, initialTab)
                 } else {
                     context.startActivity(
                         GamepadEditorActivity.createIntent(
                             context,
                             profileKey,
                             gameDisplayName,
-                            GamepadEditorActivity.TAB_VIRTUAL
-                        )
-                    )
-                }
-            },
-            onEnterPhysicalEditor = { saved ->
-                onProfileUpdated(saved)
-                dlgRef?.dismiss()
-                if (onEnterPhysicalEditor != null) {
-                    onEnterPhysicalEditor.invoke(saved)
-                } else {
-                    context.startActivity(
-                        GamepadEditorActivity.createIntent(
-                            context,
-                            profileKey,
-                            gameDisplayName,
-                            GamepadEditorActivity.TAB_PHYSICAL
+                            initialTab,
+                            gameId
                         )
                     )
                 }

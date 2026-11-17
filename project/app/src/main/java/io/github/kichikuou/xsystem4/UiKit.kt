@@ -19,7 +19,10 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
+import java.io.File
 
 /**
  * Shared look-and-feel helpers for the launcher screens.
@@ -71,6 +74,110 @@ internal object UiKit {
      */
     fun accentOnSurface(context: Context, accent: Int): Int =
         if (isNight(context)) blend(accent, Color.WHITE, 0.38f) else accent
+
+    fun contrastOn(color: Int): Int {
+        val luma = (0.299f * Color.red(color) + 0.587f * Color.green(color) + 0.114f * Color.blue(color)) / 255f
+        return if (luma > 0.62f) 0xFF10141C.toInt() else Color.WHITE
+    }
+
+    fun resolveGameAccentColor(
+        context: Context,
+        gameId: String?,
+        gameDir: File? = null,
+        dirName: String? = null,
+        saveDir: File? = null
+    ): Int {
+        val resolvedId = gameId?.takeIf { it.isNotBlank() }
+            ?: if (gameDir != null || !dirName.isNullOrBlank() || saveDir != null) {
+                GameCatalog.classifyDirectory(
+                    gameDir = gameDir,
+                    dirName = dirName ?: "",
+                    saveDir = saveDir,
+                    displayName = dirName ?: ""
+                )
+            } else {
+                null
+            }
+        return if (!resolvedId.isNullOrBlank()) {
+            GameCatalog.descriptorFor(context, resolvedId).accentColor
+        } else {
+            context.getColor(R.color.ui_primary)
+        }
+    }
+
+    fun tintSwitch(sw: Switch, accent: Int) {
+        val ctx = sw.context
+        val onColor = accentOnSurface(ctx, accent)
+        val states = arrayOf(
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_checked)
+        )
+        val offThumb = if (isNight(ctx)) 0xFF9CA3B4.toInt() else 0xFFECEEF3.toInt()
+        val offTrack = if (isNight(ctx)) 0xFF343946.toInt() else 0xFFB8BDC9.toInt()
+        sw.thumbTintList = ColorStateList(states, intArrayOf(onColor, offThumb))
+        sw.trackTintList = ColorStateList(states, intArrayOf(withAlpha(onColor, 0x66), offTrack))
+    }
+
+    fun tintSeekBar(sb: SeekBar, accent: Int) {
+        val ctx = sb.context
+        val onColor = accentOnSurface(ctx, accent)
+        sb.thumbTintList = ColorStateList.valueOf(onColor)
+        sb.progressTintList = ColorStateList.valueOf(onColor)
+        sb.progressBackgroundTintList = ColorStateList.valueOf(
+            withAlpha(onColor, if (isNight(ctx)) 0x3A else 0x26)
+        )
+    }
+
+    fun styleTonalAccentButton(button: Button, accent: Int) {
+        val ctx = button.context
+        val onColor = accentOnSurface(ctx, accent)
+        val radius = ctx.resources.getDimension(R.dimen.ui_radius_button)
+        val bgTint = blend(ctx.getColor(R.color.ui_surface), accent, if (isNight(ctx)) 0.22f else 0.11f)
+        val bgStates = android.graphics.drawable.StateListDrawable().apply {
+            addState(
+                intArrayOf(-android.R.attr.state_enabled),
+                GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(ctx.getColor(R.color.ui_btn_disabled))
+                }
+            )
+            addState(
+                IntArray(0),
+                GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(bgTint)
+                }
+            )
+        }
+        button.background = RippleDrawable(
+            ColorStateList.valueOf(ctx.getColor(R.color.ui_ripple)), bgStates, null
+        )
+        button.setTextColor(
+            ColorStateList(
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), IntArray(0)),
+                intArrayOf(ctx.getColor(R.color.ui_text_disabled), onColor)
+            )
+        )
+    }
+
+    fun styleAccentChip(view: TextView, accent: Int, dot: Boolean = false) {
+        val ctx = view.context
+        val fg = accentOnSurface(ctx, accent)
+        val bg = blend(ctx.getColor(R.color.ui_surface), accent, if (isNight(ctx)) 0.30f else 0.15f)
+        view.setTextColor(fg)
+        view.background = GradientDrawable().apply {
+            cornerRadius = dp(ctx, 100f)
+            setColor(bg)
+        }
+        if (dot) {
+            val dotDrawable = ctx.getDrawable(R.drawable.chip_dot)!!.mutate()
+            dotDrawable.setTint(fg)
+            view.setCompoundDrawablesRelativeWithIntrinsicBounds(dotDrawable, null, null, null)
+            view.compoundDrawablePadding = dpInt(ctx, 5)
+        } else {
+            view.setCompoundDrawablesRelative(null, null, null, null)
+        }
+    }
 
     /** Pill-shaped status/tag chip. With [dot], a small leading status dot is shown. */
     fun styleChip(view: TextView, tone: Tone, dot: Boolean = false) {

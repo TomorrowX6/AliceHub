@@ -29,6 +29,7 @@ class GamepadSettingsActivity : ThemedActivity() {
 
     private lateinit var controller: GamepadConfigController
     private var profileKey: String? = null
+    private var gameId: String? = null
     private var gameTitle: String? = null
     private var statusTv: TextView? = null
     private var saveBtn: Button? = null
@@ -45,26 +46,26 @@ class GamepadSettingsActivity : ThemedActivity() {
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
         profileKey = intent.getStringExtra(EXTRA_PROFILE_KEY)?.takeIf { it.isNotBlank() }
-        val gameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        val rawGameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+            ?: profileKey?.let { key -> GameCatalog.classifyDirectory(gameDir = null, dirName = key, saveDir = null, displayName = key) }
+        gameId = rawGameId
         gameTitle = intent.getStringExtra(EXTRA_GAME_TITLE)?.takeIf { it.isNotBlank() }
-            ?: gameId?.let { GameCatalog.descriptorFor(this, it).title }
+            ?: rawGameId?.let { GameCatalog.descriptorFor(this, it).title }
 
         val pageLabel = getString(R.string.settings_gamepad)
         title = if (!gameTitle.isNullOrBlank()) "$gameTitle · $pageLabel" else pageLabel
 
-        val accentColor = if (!gameId.isNullOrBlank()) {
-            UiKit.accentOnSurface(this, GameCatalog.descriptorFor(this, gameId).accentColor)
-        } else {
-            getColor(R.color.ui_primary)
-        }
+        val rawGameAccent = rawGameId?.let { GameCatalog.descriptorFor(this, it).accentColor }
+        val accentColor = rawGameAccent?.let { UiKit.accentOnSurface(this, it) } ?: getColor(R.color.ui_primary)
 
         controller = GamepadConfigController(
             context = this,
             profileKey = profileKey,
+            gameId = rawGameId,
             gameDisplayName = gameTitle,
+            accentColor = rawGameAccent,
             embeddedInPage = true,
-            onEnterLayoutEditor = { launchEditor(GamepadEditorActivity.TAB_VIRTUAL) },
-            onEnterPhysicalEditor = { launchEditor(GamepadEditorActivity.TAB_PHYSICAL) },
+            onEnterEditor = { _, tab -> launchEditor(tab) },
             onDirtyStateChanged = { refreshBottomBar() },
             onSaved = { refreshBottomBar() }
         )
@@ -122,10 +123,14 @@ class GamepadSettingsActivity : ThemedActivity() {
             isAllCaps = false
             setTextColor(getColor(R.color.ui_text_primary))
             setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(getColor(R.color.ui_btn_tonal))
-                setStroke(dp(1).coerceAtLeast(1), getColor(R.color.ui_outline))
+            if (rawGameAccent != null) {
+                UiKit.styleTonalAccentButton(this, rawGameAccent)
+            } else {
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(getColor(R.color.ui_btn_tonal))
+                    setStroke(dp(1).coerceAtLeast(1), getColor(R.color.ui_outline))
+                }
             }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -146,14 +151,21 @@ class GamepadSettingsActivity : ThemedActivity() {
         }
         bottomBar.addView(resetBtn)
 
+        val saveBgColor = rawGameAccent ?: accentColor
+        val onAccentColor = if (rawGameAccent != null) {
+            UiKit.contrastOn(saveBgColor)
+        } else {
+            getColor(R.color.ui_on_primary)
+        }
+
         val primarySaveBtn = Button(this).apply {
             text = tr("保存", "保存", "Save")
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             isAllCaps = false
-            setTextColor(Color.WHITE)
+            setTextColor(onAccentColor)
             setPadding(dp(20), dp(8), dp(20), dp(8))
-            background = UiKit.accentButtonBackground(this@GamepadSettingsActivity, accentColor, 10f)
+            background = UiKit.accentButtonBackground(this@GamepadSettingsActivity, saveBgColor, 10f)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -177,7 +189,7 @@ class GamepadSettingsActivity : ThemedActivity() {
     }
 
     private fun launchEditor(tab: Int) {
-        val intent = GamepadEditorActivity.createIntent(this, profileKey, gameTitle, tab)
+        val intent = GamepadEditorActivity.createIntent(this, profileKey, gameTitle, tab, gameId)
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQ_GAMEPAD_EDITOR)
     }

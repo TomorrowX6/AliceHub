@@ -199,34 +199,40 @@ class XSystem4Activity : SDLActivity() {
         return saved.virtual.enabled
     }
 
+    fun currentGamepadGameId(): String? {
+        val rootFile = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveFile = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val name = rootFile?.name ?: saveFile?.name ?: return null
+        return GameCatalog.classifyDirectory(rootFile, name, saveFile, name)
+    }
+
     fun openGamepadConfigDialog() {
         ensureOverlaysAttached()
         val key = currentGamepadProfileKey()
-        val displayTitle = intent?.getStringExtra(EXTRA_GAME_ROOT)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { java.io.File(it).name }
+        val gid = currentGamepadGameId()
+        val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
+            ?: intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+        val acc = gid?.let { GameCatalog.descriptorFor(this, it).accentColor }
         GamepadConfigDialog.show(
             context = this,
             profileKey = key,
+            gameId = gid,
             gameDisplayName = displayTitle,
+            accentColor = acc,
             onProfileUpdated = { saved -> applyGamepadProfile(saved) },
-            onEnterLayoutEditor = { updated ->
+            onEnterEditor = { updated, initialTab ->
                 applyGamepadProfile(updated)
-                openGamepadEditorActivity(GamepadEditorActivity.TAB_VIRTUAL)
-            },
-            onEnterPhysicalEditor = { updated ->
-                applyGamepadProfile(updated)
-                openGamepadEditorActivity(GamepadEditorActivity.TAB_PHYSICAL)
+                openGamepadEditorActivity(initialTab)
             }
         )
     }
 
     fun openGamepadEditorActivity(initialTab: Int = GamepadEditorActivity.TAB_VIRTUAL) {
         val key = currentGamepadProfileKey()
-        val displayTitle = intent?.getStringExtra(EXTRA_GAME_ROOT)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { java.io.File(it).name }
-        val intent = GamepadEditorActivity.createIntent(this, key, displayTitle, initialTab)
+        val gid = currentGamepadGameId()
+        val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
+            ?: intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+        val intent = GamepadEditorActivity.createIntent(this, key, displayTitle, initialTab, gid)
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQ_GAMEPAD_EDITOR)
     }

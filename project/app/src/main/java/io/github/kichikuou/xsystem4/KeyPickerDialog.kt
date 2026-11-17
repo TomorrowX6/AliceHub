@@ -2,6 +2,7 @@ package io.github.kichikuou.xsystem4
 
 import android.app.Dialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -20,24 +21,33 @@ import android.widget.Switch
 import android.widget.TextView
 
 /**
- * Compact dark-glass grid selector for controller buttons, keys, and stick modes.
+ * Clean Material 3 dark grid selector for controller buttons, keyboard keys, and stick modes.
  */
 object KeyPickerDialog {
 
-    private const val BG_SURFACE = 0xF50F172A.toInt()
-    private const val BG_CHIP = 0xFF1E293B.toInt()
-    private const val BG_CHIP_ACTIVE = 0xFF0EA5E9.toInt()
-    private const val STROKE_CARD = 0xFF334155.toInt()
-    private const val STROKE_CHIP = 0xFF2B3A4E.toInt()
-    private const val TEXT_PRIMARY = 0xFFF8FAFC.toInt()
-    private const val TEXT_MUTED = 0xFF94A3B8.toInt()
-    private const val TEXT_ON_ACCENT = 0xFF06121F.toInt()
+    private const val BG_SURFACE = 0xF71F232B.toInt()
+    private const val BG_CHIP = 0xFF282D38.toInt()
+    private const val BG_CHIP_ACTIVE = 0xFFA9B6FF.toInt()
+    private const val STROKE_CARD = 0x26FFFFFF
+    private const val STROKE_CHIP = 0x18FFFFFF
+    private const val TEXT_PRIMARY = 0xFFECEEF4.toInt()
+    private const val TEXT_MUTED = 0xFFA4AAB8.toInt()
+
+    private fun tintDarkSwitch(sw: Switch, accent: Int) {
+        val states = arrayOf(
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_checked)
+        )
+        sw.thumbTintList = ColorStateList(states, intArrayOf(accent, 0xFF9CA3B4.toInt()))
+        sw.trackTintList = ColorStateList(states, intArrayOf(UiKit.withAlpha(accent, 0x66), 0xFF323744.toInt()))
+    }
 
     fun showActionPicker(
         context: Context,
         title: String,
         current: GamepadActionSpec,
         allowNone: Boolean = true,
+        accentColor: Int = BG_CHIP_ACTIVE,
         onSelected: (GamepadActionSpec) -> Unit
     ) {
         val rawCatalog = GamepadBridge.buildKeyActionCatalog()
@@ -60,25 +70,24 @@ object KeyPickerDialog {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = UiKit.dpInt(context, 14)
-            setPadding(pad, UiKit.dpInt(context, 12), pad, UiKit.dpInt(context, 12))
+            val pad = UiKit.dpInt(context, 16)
+            setPadding(pad, UiKit.dpInt(context, 14), pad, UiKit.dpInt(context, 14))
             background = GradientDrawable().apply {
-                cornerRadius = UiKit.dp(context, 16f)
+                cornerRadius = UiKit.dp(context, 18f)
                 setColor(BG_SURFACE)
                 setStroke(UiKit.dpInt(context, 1), STROKE_CARD)
             }
         }
 
-        // Top title + lock toggle + cancel row
         var lockMode = current.toggleMode
         val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, UiKit.dpInt(context, 8))
+            setPadding(0, 0, 0, UiKit.dpInt(context, 10))
         }
         val titleTv = TextView(context).apply {
             text = title
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
             setTypeface(null, Typeface.BOLD)
             setTextColor(TEXT_PRIMARY)
             maxLines = 1
@@ -94,6 +103,7 @@ object KeyPickerDialog {
             setPadding(0, 0, UiKit.dpInt(context, 4), 0)
         }
         val lockSwitch = Switch(context).apply {
+            tintDarkSwitch(this, accentColor)
             isChecked = lockMode
             setOnCheckedChangeListener { _, isChecked -> lockMode = isChecked }
         }
@@ -118,7 +128,7 @@ object KeyPickerDialog {
         }
 
         val closeBtn = makePill(context, "✕", selected = false) { dialog.dismiss() }.apply {
-            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 4), UiKit.dpInt(context, 10), UiKit.dpInt(context, 4))
+            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 5), UiKit.dpInt(context, 10), UiKit.dpInt(context, 5))
         }
         topRow.addView(closeBtn, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -128,24 +138,22 @@ object KeyPickerDialog {
         })
         root.addView(topRow)
 
-        // Category tab pills
         val tabScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
-            setPadding(0, 0, 0, UiKit.dpInt(context, 8))
+            setPadding(0, 0, 0, UiKit.dpInt(context, 10))
         }
         val tabRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         tabScroll.addView(tabRow)
         root.addView(tabScroll)
 
-        // Scrollable grid area
         val gridScroll = ScrollView(context).apply {
-            isVerticalScrollBarEnabled = true
+            isVerticalScrollBarEnabled = false
         }
         val gridContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
         gridScroll.addView(gridContainer)
-        val maxGridH = UiKit.dpInt(context, if (isLandscape) 210 else 320)
+        val maxGridH = UiKit.dpInt(context, if (isLandscape) 204 else 310)
         root.addView(gridScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             maxGridH
@@ -155,11 +163,13 @@ object KeyPickerDialog {
             entries.any { it.action.type == current.type && it.action.code == current.code && it.action.code2 == current.code2 }
         }.coerceAtLeast(0)
 
+        val onAccent = UiKit.contrastOn(accentColor)
+
         fun renderGrid() {
             gridContainer.removeAllViews()
             tabRow.removeAllViews()
             categories.forEachIndexed { idx, (label, _) ->
-                val pill = makePill(context, label, selected = idx == selectedCat) {
+                val pill = makePill(context, label, selected = idx == selectedCat, accentColor = accentColor) {
                     selectedCat = idx
                     renderGrid()
                 }
@@ -172,7 +182,7 @@ object KeyPickerDialog {
             }
 
             val entries = categories.getOrNull(selectedCat)?.second ?: emptyList()
-            val gap = UiKit.dpInt(context, 6)
+            val gap = UiKit.dpInt(context, 7)
             var idx = 0
             while (idx < entries.size) {
                 val row = LinearLayout(context).apply {
@@ -197,12 +207,12 @@ object KeyPickerDialog {
                             ellipsize = TextUtils.TruncateAt.END
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
                             setTypeface(null, if (isMatch) Typeface.BOLD else Typeface.NORMAL)
-                            setTextColor(if (isMatch) TEXT_ON_ACCENT else TEXT_PRIMARY)
+                            setTextColor(if (isMatch) onAccent else TEXT_PRIMARY)
                             setPadding(UiKit.dpInt(context, 6), UiKit.dpInt(context, 9), UiKit.dpInt(context, 6), UiKit.dpInt(context, 9))
                             background = GradientDrawable().apply {
-                                cornerRadius = UiKit.dp(context, 9f)
-                                setColor(if (isMatch) BG_CHIP_ACTIVE else BG_CHIP)
-                                setStroke(UiKit.dpInt(context, 1), if (isMatch) BG_CHIP_ACTIVE else STROKE_CHIP)
+                                cornerRadius = UiKit.dp(context, 10f)
+                                setColor(if (isMatch) accentColor else BG_CHIP)
+                                setStroke(UiKit.dpInt(context, 1), if (isMatch) accentColor else STROKE_CHIP)
                             }
                             setOnClickListener {
                                 val chosen = entry.action.copy(
@@ -234,7 +244,7 @@ object KeyPickerDialog {
         renderGrid()
         dialog.setContentView(root)
         val dm = context.resources.displayMetrics
-        val targetW = minOf(UiKit.dpInt(context, if (isLandscape) 620 else 360), (dm.widthPixels * 0.92f).toInt())
+        val targetW = minOf(UiKit.dpInt(context, if (isLandscape) 600 else 360), (dm.widthPixels * 0.90f).toInt())
         dialog.window?.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.show()
     }
@@ -244,6 +254,7 @@ object KeyPickerDialog {
         title: String,
         currentMode: Int,
         allowWheel: Boolean = true,
+        accentColor: Int = BG_CHIP_ACTIVE,
         onSelected: (Int) -> Unit
     ) {
         val modes = if (allowWheel) {
@@ -271,10 +282,10 @@ object KeyPickerDialog {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val pad = UiKit.dpInt(context, 14)
-            setPadding(pad, UiKit.dpInt(context, 12), pad, UiKit.dpInt(context, 14))
+            val pad = UiKit.dpInt(context, 16)
+            setPadding(pad, UiKit.dpInt(context, 14), pad, UiKit.dpInt(context, 14))
             background = GradientDrawable().apply {
-                cornerRadius = UiKit.dp(context, 16f)
+                cornerRadius = UiKit.dp(context, 18f)
                 setColor(BG_SURFACE)
                 setStroke(UiKit.dpInt(context, 1), STROKE_CARD)
             }
@@ -286,16 +297,17 @@ object KeyPickerDialog {
         }
         header.addView(TextView(context).apply {
             text = title
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
             setTypeface(null, Typeface.BOLD)
             setTextColor(TEXT_PRIMARY)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
         header.addView(makePill(context, "✕", selected = false) { dialog.dismiss() }.apply {
-            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 4), UiKit.dpInt(context, 10), UiKit.dpInt(context, 4))
+            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 5), UiKit.dpInt(context, 10), UiKit.dpInt(context, 5))
         })
         root.addView(header)
 
+        val onAccent = UiKit.contrastOn(accentColor)
         val cols = 3
         val gap = UiKit.dpInt(context, 8)
         var i = 0
@@ -313,12 +325,12 @@ object KeyPickerDialog {
                         gravity = Gravity.CENTER
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                         setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
-                        setTextColor(if (sel) TEXT_ON_ACCENT else TEXT_PRIMARY)
+                        setTextColor(if (sel) onAccent else TEXT_PRIMARY)
                         setPadding(UiKit.dpInt(context, 8), UiKit.dpInt(context, 10), UiKit.dpInt(context, 8), UiKit.dpInt(context, 10))
                         background = GradientDrawable().apply {
                             cornerRadius = UiKit.dp(context, 10f)
-                            setColor(if (sel) BG_CHIP_ACTIVE else BG_CHIP)
-                            setStroke(UiKit.dpInt(context, 1), if (sel) BG_CHIP_ACTIVE else STROKE_CHIP)
+                            setColor(if (sel) accentColor else BG_CHIP)
+                            setStroke(UiKit.dpInt(context, 1), if (sel) accentColor else STROKE_CHIP)
                         }
                         setOnClickListener {
                             onSelected(m)
@@ -340,7 +352,7 @@ object KeyPickerDialog {
 
         dialog.setContentView(root)
         val dm = context.resources.displayMetrics
-        val targetW = minOf(UiKit.dpInt(context, 440), (dm.widthPixels * 0.88f).toInt())
+        val targetW = minOf(UiKit.dpInt(context, 420), (dm.widthPixels * 0.88f).toInt())
         dialog.window?.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.show()
     }
@@ -349,24 +361,25 @@ object KeyPickerDialog {
         context: Context,
         label: String,
         selected: Boolean,
+        accentColor: Int = BG_CHIP_ACTIVE,
         onClick: () -> Unit
     ): TextView = TextView(context).apply {
         text = label
         gravity = Gravity.CENTER
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-        setTextColor(if (selected) TEXT_ON_ACCENT else TEXT_PRIMARY)
-        setPadding(UiKit.dpInt(context, 12), UiKit.dpInt(context, 5), UiKit.dpInt(context, 12), UiKit.dpInt(context, 5))
+        setTextColor(if (selected) UiKit.contrastOn(accentColor) else TEXT_PRIMARY)
+        setPadding(UiKit.dpInt(context, 12), UiKit.dpInt(context, 6), UiKit.dpInt(context, 12), UiKit.dpInt(context, 6))
         background = GradientDrawable().apply {
             cornerRadius = UiKit.dp(context, 99f)
-            setColor(if (selected) BG_CHIP_ACTIVE else BG_CHIP)
-            setStroke(UiKit.dpInt(context, 1), if (selected) BG_CHIP_ACTIVE else STROKE_CHIP)
+            setColor(if (selected) accentColor else BG_CHIP)
+            setStroke(UiKit.dpInt(context, 1), if (selected) accentColor else STROKE_CHIP)
         }
         setOnClickListener { onClick() }
     }
 
     private fun translateCategory(context: Context, zhName: String): String = when (zhName) {
-        "常用" -> GamepadBridge.tr(context, "常用", "よく使う", "Common")
+        "常用" -> GamepadBridge.tr(context, "常用", "基本", "Common")
         "方向" -> GamepadBridge.tr(context, "方向", "方向", "Nav")
         "F1-F12" -> "F1-F12"
         "字母数字" -> GamepadBridge.tr(context, "字母数字", "英数字", "Keys")
