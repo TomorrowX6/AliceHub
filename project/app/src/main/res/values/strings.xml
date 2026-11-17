@@ -274,4 +274,7 @@
     <string name="settings_clear_cache_done_toast">Cache cleared · Freed %1$s</string>
     <string name="settings_clear_cache_empty_toast">Cache is already empty</string>
     <string name="settings_clear_cache_busy_toast">Pause or cancel the active installation first</string>
+
+    <string name="movie_skip_hint">Hold screen to skip</string>
+    <string name="movie_skip_holding">Hold to skip…</string>
 </resources>

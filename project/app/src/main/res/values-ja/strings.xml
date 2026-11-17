@@ -273,4 +273,7 @@
     <string name="settings_clear_cache_done_toast">キャッシュを削除しました · %1$s 解放</string>
     <string name="settings_clear_cache_empty_toast">キャッシュは空です</string>
     <string name="settings_clear_cache_busy_toast">進行中の導入タスクを一時停止またはキャンセルしてください</string>
+
+    <string name="movie_skip_hint">長押しでスキップ</string>
+    <string name="movie_skip_holding">長押しでスキップ…</string>
 </resources>

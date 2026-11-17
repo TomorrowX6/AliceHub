@@ -90,12 +90,54 @@ struct movie_context {
 	int voice;
 	int volume;
 
+	bool plm_playing;
+	bool skipped;
+
 	// Time keeping data. Written by audio handler and referenced by video
 	// handler (i.e. we sync the video to the audio).
 	double stream_time;  // in seconds
 	uint32_t wall_time_ms;
 	SDL_mutex *timer_mutex;
 };
+
+static struct movie_context **active_movies = NULL;
+static int nr_active_movies = 0;
+static int cap_active_movies = 0;
+static uint32_t movie_playback_seq = 0;
+
+static void register_movie(struct movie_context *mc)
+{
+	if (!mc)
+		return;
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (active_movies[i] == mc)
+			return;
+	}
+	if (nr_active_movies == cap_active_movies) {
+		cap_active_movies = cap_active_movies ? cap_active_movies * 2 : 4;
+		active_movies = xrealloc(active_movies, sizeof(struct movie_context*) * cap_active_movies);
+	}
+	active_movies[nr_active_movies++] = mc;
+}
+
+static void unregister_movie(struct movie_context *mc)
+{
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (active_movies[i] == mc) {
+			active_movies[i] = active_movies[--nr_active_movies];
+			return;
+		}
+	}
+}
+
+static bool movie_context_is_playing(struct movie_context *mc)
+{
+	if (!mc || mc->skipped)
+		return false;
+	if (mc->apeg)
+		return mc->apeg->playing && !movie_is_end(mc);
+	return mc->plm_playing && !movie_is_end(mc);
+}
 
 static void apeg_decode_block(plm_video_t *self, int block)
 {
@@ -640,6 +682,7 @@ struct movie_context *movie_load(const char *filename)
 	mc->decoder_mutex = SDL_CreateMutex();
 	mc->timer_mutex = SDL_CreateMutex();
 	mc->volume = 100;
+	register_movie(mc);
 	return mc;
 }
 
@@ -785,6 +828,7 @@ struct movie_context *movie_load_apeg(const char *filename, int sound_id, int so
 
 	apeg->seeked_time_ms = -1;
 	apeg_seek_to(mc, 0);
+	register_movie(mc);
 	return mc;
 }
 
@@ -792,8 +836,11 @@ void movie_free(struct movie_context *mc)
 {
 	if (!mc)
 		return;
-	if (mc->voice >= 0)
-		mixer_stream_stop(mc->voice);
+	unregister_movie(mc);
+	int voice = mc->voice;
+	mc->voice = -1;
+	if (voice >= 0)
+		mixer_stream_stop(voice);
 
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
@@ -827,14 +874,22 @@ bool movie_play(struct movie_context *mc)
 	if (mc->apeg)
 		return movie_play_at(mc, 0);
 
+	mc->skipped = false;
+	mc->plm_playing = true;
+	movie_playback_seq++;
+
 	// Start the audio stream.
 	mc->stream_time = 0.0;
 	mc->wall_time_ms = SDL_GetTicks();
-	mc->sts_stream.userdata = mc;
-	mc->sts_stream.callback = audio_callback;
-	mc->sts_stream.sample.frequency = plm_get_samplerate(mc->plm);
-	mc->sts_stream.sample.audio_format = STS_MIXER_SAMPLE_FORMAT_FLOAT;
-	mc->voice = mixer_stream_play(&mc->sts_stream, mc->volume);
+	if (plm_get_num_audio_streams(mc->plm) > 0 && plm_get_samplerate(mc->plm) > 0) {
+		mc->sts_stream.userdata = mc;
+		mc->sts_stream.callback = audio_callback;
+		mc->sts_stream.sample.frequency = plm_get_samplerate(mc->plm);
+		mc->sts_stream.sample.audio_format = STS_MIXER_SAMPLE_FORMAT_FLOAT;
+		mc->voice = mixer_stream_play(&mc->sts_stream, mc->volume);
+	} else {
+		mc->voice = -1;
+	}
 	return true;
 }
 
@@ -864,11 +919,13 @@ bool movie_play_at(struct movie_context *mc, int time_ms)
 			kiwi_seek_sound(apeg->sound_id, time_ms);
 	}
 
+	mc->skipped = false;
 	apeg->start_time_ms = time_ms;
 	apeg->start_ticks_ms = SDL_GetTicks();
 	apeg->current_time_ms = time_ms;
 	apeg->has_manual_time = false;
 	apeg->playing = true;
+	movie_playback_seq++;
 	return true;
 }
 
@@ -891,6 +948,7 @@ bool movie_set_time(struct movie_context *mc, int time_ms)
 	apeg_seek_to(mc, clamped_ms);
 	SDL_UnlockMutex(mc->decoder_mutex);
 
+	mc->skipped = false;
 	apeg->has_manual_time = true;
 	apeg->playing = false;
 	apeg->start_time_ms = clamped_ms;
@@ -903,6 +961,8 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 {
 	if (!mc)
 		return false;
+	if (mc->skipped)
+		return sprite != NULL;
 
 	plm_frame_t *frame = NULL;
 	if (mc->apeg) {
@@ -1007,7 +1067,7 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 
 bool movie_is_end(struct movie_context *mc)
 {
-	if (!mc)
+	if (!mc || mc->skipped)
 		return true;
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
@@ -1075,4 +1135,50 @@ bool movie_set_volume(struct movie_context *mc, int volume)
 	if (mc->voice >= 0)
 		mixer_stream_set_volume(mc->voice, volume);
 	return true;
+}
+
+static void movie_skip_one(struct movie_context *mc)
+{
+	if (!mc || mc->skipped)
+		return;
+	mc->skipped = true;
+	int voice = mc->voice;
+	mc->voice = -1;
+	if (voice >= 0)
+		mixer_stream_stop(voice);
+	if (mc->apeg) {
+		struct apeg_context *apeg = mc->apeg;
+		apeg->playing = false;
+		apeg->current_time_ms = apeg->end_time_ms;
+		if (apeg->has_audio && apeg->sound_id > 0)
+			kiwi_stop_sound(apeg->sound_id);
+	} else if (mc->plm) {
+		mc->plm_playing = false;
+	}
+}
+
+bool movie_has_active_playback(void)
+{
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (movie_context_is_playing(active_movies[i]))
+			return true;
+	}
+	return false;
+}
+
+uint32_t movie_get_playback_seq(void)
+{
+	return movie_playback_seq;
+}
+
+bool movie_skip_active(void)
+{
+	bool skipped_any = false;
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (movie_context_is_playing(active_movies[i])) {
+			movie_skip_one(active_movies[i]);
+			skipped_any = true;
+		}
+	}
+	return skipped_any;
 }

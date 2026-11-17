@@ -63,6 +63,8 @@ static int PlayMovie_IsPlay(void)
 {
 	if (!mc)
 		return false;
+	if (movie_is_end(mc))
+		return false;
 	if (!movie_draw(mc, NULL))
 		return false;
 	return !movie_is_end(mc);

@@ -1,14 +1,18 @@
 package io.github.kichikuou.xsystem4
 
+import android.animation.ValueAnimator
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ClipDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.util.SparseArray
@@ -22,6 +26,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -42,7 +47,12 @@ class XSystem4Activity : SDLActivity() {
         const val COMMAND_OPEN_PLAYING_MANUAL = 0x8000  // xsystem4/src/hll/SystemService.c
         const val COMMAND_SHOW_WAIT_MESSAGE = 0x8001
         const val COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002  // xsystem4/src/input.c
+        const val COMMAND_MOVIE_SKIP_STATE = 0x8003  // xsystem4/src/input.c
 
+        private const val MOVIE_SKIP_UI_HIDDEN = 0
+        private const val MOVIE_SKIP_UI_HINT = 1
+        private const val MOVIE_SKIP_UI_HOLDING = 2
+        private const val MOVIE_SKIP_HINT_TIMEOUT_MS = 1800L
         private const val SDL_MESSAGEBOX_ERROR = 0x00000010
         private const val SDL_BUTTON_RETURNKEY_DEFAULT = 0x00000001
         private const val SDL_BUTTON_ESCAPEKEY_DEFAULT = 0x00000002
@@ -54,6 +64,29 @@ class XSystem4Activity : SDLActivity() {
     private var ctrlOverlayContainer: FrameLayout? = null
     private var ctrlPill: TextView? = null
     private var ctrlSkipLatched: Boolean = false
+    private var movieSkipContainer: FrameLayout? = null
+    private var movieSkipPill: FrameLayout? = null
+    private var movieSkipFillClip: ClipDrawable? = null
+    private var movieSkipLabel: TextView? = null
+    private var movieSkipAnimator: ValueAnimator? = null
+    private var movieSkipFadeGen: Int = 0
+    private val movieSkipHideHandler = Handler(Looper.getMainLooper())
+    private val movieSkipHideRunnable = Runnable {
+        val pill = movieSkipPill ?: return@Runnable
+        val gen = movieSkipFadeGen
+        if (pill.visibility == View.VISIBLE) {
+            pill.animate()
+                .alpha(0f)
+                .setDuration(220L)
+                .withEndAction {
+                    if (gen == movieSkipFadeGen) {
+                        pill.visibility = View.GONE
+                        pill.alpha = 1f
+                    }
+                }
+                .start()
+        }
+    }
     private var lastSyncedConfigSeq: Int = -1
     private var activeMessageBoxDialog: Dialog? = null
     private var lastBackDispatchMs: Long = 0L
@@ -326,6 +359,147 @@ class XSystem4Activity : SDLActivity() {
         modifierOverlay?.syncVisibility()
     }
 
+    private fun ensureMovieSkipOverlayAttached() {
+        if (isFinishing || isDestroyed || movieSkipContainer != null) return
+        val container = FrameLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            isClickable = false
+            isFocusable = false
+        }
+        val radius = dp(18).toFloat()
+        val pill = FrameLayout(this).apply {
+            isClickable = false
+            isFocusable = false
+            visibility = View.GONE
+            background = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(0x9910141A.toInt())
+            }
+            foreground = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1), 0x66FFFFFF)
+            }
+            clipToOutline = true
+        }
+        val pillLp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            dp(36),
+            Gravity.TOP or Gravity.END
+        ).apply {
+            marginEnd = dp(16)
+            topMargin = dp(14)
+        }
+        pill.layoutParams = pillLp
+
+        val fillDrawable = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(0xBB257A4B.toInt())
+        }
+        val clip = ClipDrawable(fillDrawable, Gravity.START, ClipDrawable.HORIZONTAL).apply {
+            level = 0
+        }
+        val fillView = View(this).apply {
+            isClickable = false
+            isFocusable = false
+            background = clip
+        }
+        val label = TextView(this).apply {
+            isClickable = false
+            isFocusable = false
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(dp(14), 0, dp(14), 0)
+            maxLines = 1
+        }
+        pill.addView(
+            fillView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        pill.addView(
+            label,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        container.addView(pill)
+        addContentView(
+            container,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        movieSkipContainer = container
+        movieSkipPill = pill
+        movieSkipFillClip = clip
+        movieSkipLabel = label
+    }
+
+    private fun cancelMovieSkipAnimations() {
+        movieSkipHideHandler.removeCallbacks(movieSkipHideRunnable)
+        movieSkipFadeGen++
+        movieSkipAnimator?.cancel()
+        movieSkipAnimator = null
+        movieSkipPill?.animate()?.cancel()
+    }
+
+    private fun resetMovieSkipOverlay() {
+        cancelMovieSkipAnimations()
+        movieSkipFillClip?.level = 0
+        movieSkipPill?.apply {
+            alpha = 1f
+            visibility = View.GONE
+        }
+    }
+
+    private fun updateMovieSkipOverlay(stateParam: Int) {
+        if (isFinishing || isDestroyed) return
+        val state = stateParam and 0xFF
+        if (state == MOVIE_SKIP_UI_HIDDEN) {
+            resetMovieSkipOverlay()
+            return
+        }
+        ensureMovieSkipOverlayAttached()
+        val pill = movieSkipPill ?: return
+        val label = movieSkipLabel ?: return
+        cancelMovieSkipAnimations()
+        when (state) {
+            MOVIE_SKIP_UI_HINT -> {
+                movieSkipFillClip?.level = 0
+                label.text = getString(R.string.movie_skip_hint)
+                pill.alpha = 0.92f
+                pill.visibility = View.VISIBLE
+                movieSkipHideHandler.postDelayed(movieSkipHideRunnable, MOVIE_SKIP_HINT_TIMEOUT_MS)
+            }
+            MOVIE_SKIP_UI_HOLDING -> {
+                val durationMs = (stateParam ushr 8).coerceIn(100, 5000).toLong()
+                movieSkipFillClip?.level = 0
+                label.text = getString(R.string.movie_skip_holding)
+                pill.alpha = 1.0f
+                pill.visibility = View.VISIBLE
+                movieSkipAnimator = ValueAnimator.ofInt(0, 10000).apply {
+                    duration = durationMs
+                    interpolator = LinearInterpolator()
+                    addUpdateListener { anim ->
+                        movieSkipFillClip?.level = anim.animatedValue as Int
+                    }
+                    start()
+                }
+            }
+            else -> resetMovieSkipOverlay()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -344,6 +518,7 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onPause() {
         setCtrlSkipLatched(false)
+        resetMovieSkipOverlay()
         lastSyncedConfigSeq = GameModifierBridge.syncLockMaskFromNative(this)
         super.onPause()
     }
@@ -788,10 +963,15 @@ class XSystem4Activity : SDLActivity() {
         }
         activeMessageBoxDialog = null
         setCtrlSkipLatched(false)
+        resetMovieSkipOverlay()
         GameCatalog.clearRunningGameRoot(this)
         GameModifierBridge.syncLockMaskFromNative(this)
         ctrlPill = null
         ctrlOverlayContainer = null
+        movieSkipLabel = null
+        movieSkipFillClip = null
+        movieSkipPill = null
+        movieSkipContainer = null
         modifierOverlay?.detach()
         try {
             // Let SDL stop and join its native thread before terminating the game process.
@@ -815,6 +995,10 @@ class XSystem4Activity : SDLActivity() {
                 if (GameModifierBridge.isCtrlOverlayEnabled(this)) {
                     toggleCtrlOverlay()
                 }
+                return true
+            }
+            COMMAND_MOVIE_SKIP_STATE -> {
+                updateMovieSkipOverlay((param as? Number)?.toInt() ?: MOVIE_SKIP_UI_HIDDEN)
                 return true
             }
             COMMAND_OPEN_PLAYING_MANUAL -> {

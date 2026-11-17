@@ -273,4 +273,7 @@
     <string name="settings_clear_cache_done_toast">已清空缓存，释放 %1$s</string>
     <string name="settings_clear_cache_empty_toast">缓存已为空</string>
     <string name="settings_clear_cache_busy_toast">请先暂停或取消正在进行的安装任务</string>
+
+    <string name="movie_skip_hint">长按屏幕跳过</string>
+    <string name="movie_skip_holding">长按跳过…</string>
 </resources>

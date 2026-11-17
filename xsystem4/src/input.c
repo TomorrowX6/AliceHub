@@ -25,6 +25,7 @@
 #include "gfx/gfx.h"
 #include "gfx/private.h"
 #include "input.h"
+#include "movie.h"
 #include "parts.h"
 #include "savedata.h"
 #include "scene.h"
@@ -43,6 +44,102 @@ static unsigned pending_close_requests = 0;
 static uint32_t first_unpopped_close_tick = 0;
 static bool kbd_ctrl_down = false;
 static volatile bool touch_ctrl_skip = false;
+
+#define MOVIE_HOLD_SKIP_MS 800
+#define MOVIE_TOUCH_SLOP_SQ (0.05f * 0.05f)
+#ifdef __ANDROID__
+#define COMMAND_TOGGLE_CTRL_OVERLAY 0x8002
+#define COMMAND_MOVIE_SKIP_STATE    0x8003
+enum movie_skip_ui_state {
+	MOVIE_SKIP_UI_HIDDEN  = 0,
+	MOVIE_SKIP_UI_HINT    = 1,
+	MOVIE_SKIP_UI_HOLDING = 2,
+};
+#endif
+
+static bool movie_mode_active = false;
+static uint32_t movie_mode_seq = 0;
+
+static bool single_touch_down = false;
+static SDL_FingerID single_touch_finger_id = 0;
+static float single_touch_start_x = 0.0f;
+static float single_touch_start_y = 0.0f;
+static uint32_t single_touch_down_tick = 0;
+static bool movie_touch_hold_eligible = false;
+static bool suppress_touch_until_release = false;
+
+static bool movie_mouse_holding = false;
+static uint8_t movie_mouse_button = 0;
+static uint32_t movie_mouse_hold_start_tick = 0;
+static bool suppress_mouse_until_release = false;
+
+static bool movie_key_holding = false;
+static SDL_Scancode movie_key_scancode = SDL_SCANCODE_UNKNOWN;
+static uint32_t movie_key_hold_start_tick = 0;
+static bool suppressed_movie_keys[VK_NR_KEYCODES];
+static uint32_t movie_hold_token = 0;
+static bool movie_early_release_hint = false;
+
+static bool is_movie_skip_suppressed_key(enum sact_keycode code)
+{
+	switch (code) {
+	case VK_LBUTTON:
+	case VK_RBUTTON:
+	case VK_MBUTTON:
+	case VK_RETURN:
+	case VK_SPACE:
+	case VK_CONTROL:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool is_movie_hold_key(enum sact_keycode code)
+{
+	return code == VK_RETURN || code == VK_SPACE || code == VK_CONTROL;
+}
+
+static void send_movie_skip_ui_state(int mode, uint32_t seq, uint32_t token, int duration_ms, bool force)
+{
+#ifdef __ANDROID__
+	static int last_mode = MOVIE_SKIP_UI_HIDDEN;
+	static uint32_t last_seq = 0;
+	static uint32_t last_token = 0;
+	if (mode == MOVIE_SKIP_UI_HIDDEN) {
+		if (!force && last_mode == MOVIE_SKIP_UI_HIDDEN)
+			return;
+		last_mode = MOVIE_SKIP_UI_HIDDEN;
+		SDL_AndroidSendMessage(COMMAND_MOVIE_SKIP_STATE, MOVIE_SKIP_UI_HIDDEN);
+		return;
+	}
+	if (mode == MOVIE_SKIP_UI_HOLDING) {
+		if (!force && last_mode == MOVIE_SKIP_UI_HOLDING && last_seq == seq && last_token == token)
+			return;
+		last_mode = MOVIE_SKIP_UI_HOLDING;
+		last_seq = seq;
+		last_token = token;
+		if (duration_ms < 100)
+			duration_ms = 100;
+		if (duration_ms > 5000)
+			duration_ms = 5000;
+		SDL_AndroidSendMessage(COMMAND_MOVIE_SKIP_STATE,
+			MOVIE_SKIP_UI_HOLDING | (duration_ms << 8));
+		return;
+	}
+	if (!force && last_mode == MOVIE_SKIP_UI_HINT && last_seq == seq)
+		return;
+	last_mode = MOVIE_SKIP_UI_HINT;
+	last_seq = seq;
+	SDL_AndroidSendMessage(COMMAND_MOVIE_SKIP_STATE, MOVIE_SKIP_UI_HINT);
+#else
+	(void)mode;
+	(void)seq;
+	(void)token;
+	(void)duration_ms;
+	(void)force;
+#endif
+}
 
 void input_reset_close_hook(void)
 {
@@ -374,6 +471,12 @@ bool key_is_down(enum sact_keycode code)
 	if (code < 0 || code >= VK_NR_KEYCODES) {
 		return false;
 	}
+	if (movie_has_active_playback() && is_movie_skip_suppressed_key(code)) {
+		return false;
+	}
+	if (suppressed_movie_keys[code]) {
+		return false;
+	}
 	if (code == VK_CONTROL && touch_ctrl_skip) {
 		key_state[VK_CONTROL] = true;
 	}
@@ -453,6 +556,36 @@ static void key_event(SDL_KeyboardEvent *e, bool pressed)
 {
 	enum sact_keycode code = sdl_to_sact_key(e->keysym.scancode, e->keysym.mod);
 	if (code) {
+		if (movie_has_active_playback() && is_movie_hold_key(code)) {
+			if (code == VK_CONTROL) {
+				kbd_ctrl_down = pressed;
+				sync_ctrl_key_state();
+			} else {
+				suppressed_movie_keys[code] = pressed;
+				if (!pressed)
+					key_state[code] = false;
+			}
+			if (pressed) {
+				if (!e->repeat && (!movie_key_holding || movie_key_scancode != e->keysym.scancode)) {
+					movie_key_holding = true;
+					movie_key_scancode = e->keysym.scancode;
+					movie_key_hold_start_tick = SDL_GetTicks();
+					movie_hold_token++;
+				}
+			} else if (movie_key_holding && movie_key_scancode == e->keysym.scancode) {
+				movie_key_holding = false;
+				movie_early_release_hint = true;
+			}
+			return;
+		}
+		if (!pressed && suppressed_movie_keys[code]) {
+			if (movie_key_holding && movie_key_scancode == e->keysym.scancode) {
+				movie_key_holding = false;
+			}
+			suppressed_movie_keys[code] = false;
+			key_state[code] = false;
+			return;
+		}
 		if (code == VK_CONTROL) {
 			kbd_ctrl_down = pressed;
 			sync_ctrl_key_state();
@@ -500,7 +633,6 @@ static void synthetic_mouse_event(SDL_MouseButtonEvent *e)
 			key_state[VK_LBUTTON] = true;
 		} else {
 #ifdef __ANDROID__
-			const int COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002;
 			SDL_AndroidSendMessage(COMMAND_TOGGLE_CTRL_OVERLAY, 0);
 #else
 			key_state[VK_RBUTTON] = true;
@@ -870,6 +1002,123 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 #endif
 }
 
+static void reset_inputs_on_movie_start(void)
+{
+	key_state[VK_LBUTTON] = false;
+	key_state[VK_RBUTTON] = false;
+	key_state[VK_MBUTTON] = false;
+	mouse_down_unobserved[VK_LBUTTON] = false;
+	mouse_down_unobserved[VK_RBUTTON] = false;
+	mouse_down_unobserved[VK_MBUTTON] = false;
+	deferred_mouse_release[VK_LBUTTON] = false;
+	deferred_mouse_release[VK_RBUTTON] = false;
+	deferred_mouse_release[VK_MBUTTON] = false;
+	nr_deferred_synthetic_mouse_events = 0;
+	synthetic_mouse_hover_observed = false;
+	synthetic_mouse_down_observed = false;
+	synthetic_mouse_up_observed = true;
+	has_last_touch_down_pos = false;
+	two_finger_tap_candidate = false;
+	two_finger_scrolled = false;
+}
+
+static void reset_movie_hold_state(void)
+{
+	movie_mode_active = false;
+	single_touch_down = false;
+	movie_touch_hold_eligible = false;
+	suppress_touch_until_release = false;
+	movie_mouse_holding = false;
+	suppress_mouse_until_release = false;
+	movie_key_holding = false;
+	movie_early_release_hint = false;
+	memset(suppressed_movie_keys, 0, sizeof(suppressed_movie_keys));
+	send_movie_skip_ui_state(0, 0, 0, 0, false);
+}
+
+static void update_movie_skip_state(void)
+{
+	uint32_t now = SDL_GetTicks();
+	bool active = movie_has_active_playback();
+	uint32_t seq = movie_get_playback_seq();
+
+	if (!active) {
+		if (movie_mode_active) {
+			movie_mode_active = false;
+			movie_touch_hold_eligible = false;
+			movie_mouse_holding = false;
+			movie_key_holding = false;
+			movie_early_release_hint = false;
+			send_movie_skip_ui_state(0, seq, 0, 0, false);
+		}
+		return;
+	}
+
+	if (!movie_mode_active || seq != movie_mode_seq) {
+		bool new_seq = (seq != movie_mode_seq);
+		movie_mode_active = true;
+		movie_mode_seq = seq;
+		movie_early_release_hint = false;
+		reset_inputs_on_movie_start();
+
+		if (single_touch_down) {
+			single_touch_down_tick = now;
+			movie_touch_hold_eligible = true;
+			movie_hold_token++;
+			suppress_touch_until_release = true;
+		}
+		if (movie_mouse_holding && new_seq) {
+			movie_mouse_hold_start_tick = now;
+			movie_hold_token++;
+		}
+		if (movie_key_holding && new_seq) {
+			movie_key_hold_start_tick = now;
+			movie_hold_token++;
+		}
+		if (!movie_touch_hold_eligible && !movie_mouse_holding && !movie_key_holding) {
+			send_movie_skip_ui_state(1, seq, 0, 0, false);
+		}
+	}
+
+	bool holding = false;
+	uint32_t hold_elapsed = 0;
+	if (movie_touch_hold_eligible) {
+		holding = true;
+		hold_elapsed = now - single_touch_down_tick;
+	}
+	if (movie_mouse_holding) {
+		uint32_t e = now - movie_mouse_hold_start_tick;
+		if (!holding || e > hold_elapsed)
+			hold_elapsed = e;
+		holding = true;
+	}
+	if (movie_key_holding) {
+		uint32_t e = now - movie_key_hold_start_tick;
+		if (!holding || e > hold_elapsed)
+			hold_elapsed = e;
+		holding = true;
+	}
+
+	if (holding) {
+		movie_early_release_hint = false;
+		if (hold_elapsed >= MOVIE_HOLD_SKIP_MS) {
+			movie_touch_hold_eligible = false;
+			movie_mouse_holding = false;
+			movie_key_holding = false;
+			if (movie_skip_active()) {
+				movie_mode_active = false;
+				send_movie_skip_ui_state(0, seq, 0, 0, false);
+			}
+			return;
+		}
+		uint32_t remaining = MOVIE_HOLD_SKIP_MS - hold_elapsed;
+		send_movie_skip_ui_state(2, seq, movie_hold_token, (int)remaining, false);
+	} else if (movie_early_release_hint) {
+		movie_early_release_hint = false;
+		send_movie_skip_ui_state(1, seq, 0, 0, true);
+	}
+}
+
 static void handle_window_event(SDL_Event *e)
 {
 	switch (e->window.event) {
@@ -898,6 +1147,7 @@ static void handle_window_event(SDL_Event *e)
 		kbd_ctrl_down = false;
 		touch_ctrl_skip = false;
 		key_state[VK_CONTROL] = false;
+		reset_movie_hold_state();
 		mixer_set_window_focus(false);
 		break;
 	case SDL_WINDOWEVENT_SIZE_CHANGED:
@@ -941,6 +1191,7 @@ void handle_window_events(void)
 			kbd_ctrl_down = false;
 			touch_ctrl_skip = false;
 			key_state[VK_CONTROL] = false;
+			reset_movie_hold_state();
 			mixer_set_app_backgrounded(true);
 			gfx_reset_frame_pacer();
 			savedata_flush_on_background();
@@ -955,6 +1206,7 @@ void handle_window_events(void)
 
 void handle_events(void)
 {
+	update_movie_skip_state();
 	static const enum sact_keycode mouse_btns[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
 	uint32_t poll_now = SDL_GetTicks();
 	for (size_t i = 0; i < sizeof(mouse_btns) / sizeof(mouse_btns[0]); i++) {
@@ -985,6 +1237,7 @@ void handle_events(void)
 			kbd_ctrl_down = false;
 			touch_ctrl_skip = false;
 			key_state[VK_CONTROL] = false;
+			reset_movie_hold_state();
 			mixer_set_app_backgrounded(true);
 			gfx_reset_frame_pacer();
 			savedata_flush_on_background();
@@ -1029,6 +1282,10 @@ void handle_events(void)
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEBUTTONDOWN:
 			if (e.button.which == SDL_TOUCH_MOUSEID) {
+				if (movie_has_active_playback() || suppress_touch_until_release) {
+					has_last_touch_down_pos = false;
+					break;
+				}
 				if (multi_touch_active) {
 					has_last_touch_down_pos = false;
 					break;
@@ -1056,6 +1313,27 @@ void handle_events(void)
 				enqueue_synthetic_mouse_button(&e.button);
 			} else {
 				has_synthetic_mouse_pos = false;
+				if (movie_has_active_playback() || suppress_mouse_until_release) {
+					if (e.button.state == SDL_PRESSED && movie_has_active_playback()) {
+						if (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT) {
+							movie_mouse_holding = true;
+							movie_mouse_button = e.button.button;
+							movie_mouse_hold_start_tick = SDL_GetTicks();
+							movie_hold_token++;
+							suppress_mouse_until_release = true;
+						}
+					} else if (e.button.state == SDL_RELEASED) {
+						if (movie_mouse_holding && e.button.button == movie_mouse_button) {
+							movie_mouse_holding = false;
+							movie_early_release_hint = true;
+						}
+						if (suppress_mouse_until_release &&
+						    !(SDL_GetMouseState(NULL, NULL) & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK))) {
+							suppress_mouse_until_release = false;
+						}
+					}
+					break;
+				}
 				mouse_event(&e.button);
 			}
 			break;
@@ -1065,6 +1343,13 @@ void handle_events(void)
 		case SDL_FINGERDOWN: {
 			int num_fingers = SDL_GetNumTouchFingers(e.tfinger.touchId);
 			if (num_fingers >= 2) {
+				if (movie_touch_hold_eligible)
+					movie_early_release_hint = true;
+				single_touch_down = false;
+				movie_touch_hold_eligible = false;
+				if (movie_has_active_playback() || suppress_touch_until_release) {
+					suppress_touch_until_release = true;
+				}
 				// Multi-touch gesture: cancel single-finger mouse state and
 				// track 2-finger tap (right-click) vs 2-finger scroll.
 				multi_touch_active = true;
@@ -1086,14 +1371,48 @@ void handle_events(void)
 			} else {
 				multi_touch_active = false;
 				two_finger_tap_candidate = false;
+				single_touch_down = true;
+				single_touch_finger_id = e.tfinger.fingerId;
+				single_touch_start_x = e.tfinger.x;
+				single_touch_start_y = e.tfinger.y;
+				single_touch_down_tick = SDL_GetTicks();
+				if (movie_has_active_playback()) {
+					movie_touch_hold_eligible = true;
+					movie_hold_token++;
+					suppress_touch_until_release = true;
+				}
 			}
 			break;
 		}
 		case SDL_FINGERMOTION:
+			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id && movie_touch_hold_eligible) {
+				float dx = e.tfinger.x - single_touch_start_x;
+				float dy = e.tfinger.y - single_touch_start_y;
+				if (dx * dx + dy * dy > MOVIE_TOUCH_SLOP_SQ) {
+					movie_touch_hold_eligible = false;
+					movie_early_release_hint = true;
+				}
+			}
 			break;
 		case SDL_FINGERUP: {
+			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id) {
+				if (movie_touch_hold_eligible)
+					movie_early_release_hint = true;
+				single_touch_down = false;
+				movie_touch_hold_eligible = false;
+			}
 			int rem_fingers = SDL_GetNumTouchFingers(e.tfinger.touchId);
 			if (rem_fingers == 0) {
+				single_touch_down = false;
+				movie_touch_hold_eligible = false;
+				if (movie_has_active_playback() || suppress_touch_until_release) {
+					if (suppress_touch_until_release && movie_has_active_playback())
+						movie_early_release_hint = true;
+					suppress_touch_until_release = false;
+					two_finger_tap_candidate = false;
+					two_finger_scrolled = false;
+					break;
+				}
 				if (two_finger_tap_candidate && !two_finger_scrolled &&
 				    (SDL_GetTicks() - two_finger_tap_start_tick) <= TWO_FINGER_TAP_MAX_MS) {
 					int rx = has_synthetic_mouse_pos ? synthetic_mouse_x
@@ -1170,6 +1489,7 @@ void handle_events(void)
 			break;
 		}
 	}
+	update_movie_skip_state();
 	if (dbg_dap)
 		dbg_dap_handle_messages();
 }
