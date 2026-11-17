@@ -576,8 +576,23 @@ object GamepadBridge {
 
     fun presetShortName(context: Context, presetId: String): String = when (presetId) {
         PRESET_RPG_DUNGEON -> "RPG"
-        PRESET_EMPTY -> tr(context, "空布局", "空", "Empty")
+        PRESET_EMPTY -> emptyPresetName(context)
         else -> "ADV"
+    }
+
+    fun emptyPresetName(context: Context): String = tr(context, "空布局", "空レイアウト", "Empty")
+
+    /**
+     * Built-in ADV preset labels are stored in Chinese (and existing profiles already contain
+     * them). Show them localized as long as the user has not renamed the control.
+     */
+    fun displayLabel(context: Context, spec: VirtualControlSpec): String = when {
+        spec.id == "stick_l" && spec.label == "鼠标" -> tr(context, "鼠标", "マウス", "Mouse")
+        spec.id == "btn_l1" && spec.label == "回看↑" -> tr(context, "回看↑", "履歴↑", "Back↑")
+        spec.id == "btn_r1" && spec.label == "滚轮↓" -> tr(context, "滚轮↓", "ホイール↓", "Wheel↓")
+        spec.id == "btn_select" && spec.label == "光标" -> tr(context, "光标", "カーソル", "Cursor")
+        spec.id == "btn_start" && spec.label == "菜单" -> tr(context, "菜单", "メニュー", "Menu")
+        else -> spec.label
     }
 
     /**

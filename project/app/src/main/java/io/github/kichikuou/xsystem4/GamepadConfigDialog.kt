@@ -236,7 +236,7 @@ class GamepadConfigController(
             }
             val btnVn = makePresetChip("ADV") { confirmApplyPreset(GamepadBridge.PRESET_VN_MOUSE) }
             val btnRpg = makePresetChip("RPG") { confirmApplyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
-            val btnEmpty = makePresetChip(tr("空布局", "空", "Empty")) { confirmApplyPreset(GamepadBridge.PRESET_EMPTY) }
+            val btnEmpty = makePresetChip(GamepadBridge.emptyPresetName(uiCtx)) { confirmApplyPreset(GamepadBridge.PRESET_EMPTY) }
             presetBtnVn = btnVn
             presetBtnRpg = btnRpg
             presetBtnEmpty = btnEmpty
@@ -272,7 +272,7 @@ class GamepadConfigController(
             scaleSeek = scalePair.first
             scaleValTv = scalePair.second
 
-            val opPair = addInlineSliderRow(this, tr("透明度", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+            val opPair = addInlineSliderRow(this, tr("不透明度", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
                 val pct = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
                 draft = draft.copy(virtual = draft.virtual.copy(globalOpacityPct = pct))
                 opacityValTv?.text = "${pct}%"

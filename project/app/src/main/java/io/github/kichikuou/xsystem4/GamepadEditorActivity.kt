@@ -988,7 +988,7 @@ class GamepadEditorActivity : Activity() {
         globalPopoverCard.addView(scRow.third)
 
         lateinit var opVal: TextView
-        val opRow = makeCompactSliderRow(tr("整体透明", "不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
+        val opRow = makeCompactSliderRow(tr("整体不透明度", "全体不透明度", "Opacity"), GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN) { p ->
             val v = (p + GamepadBridge.GLOBAL_OPACITY_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_OPACITY_PCT_MIN, GamepadBridge.GLOBAL_OPACITY_PCT_MAX)
             profile = profile.copy(virtual = profile.virtual.copy(globalOpacityPct = v))
             opVal.text = "${v}%"
@@ -1033,7 +1033,8 @@ class GamepadEditorActivity : Activity() {
             setPadding(0, 0, 0, dp(8))
         }
 
-        val nameChip = makePill("${sel.label.ifBlank { "?" }} ✎", active = false) {
+        val selLabel = GamepadBridge.displayLabel(this, sel)
+        val nameChip = makePill("${selLabel.ifBlank { "?" }} ✎", active = false) {
             showRenameDialog(sel)
         }
         row1.addView(nameChip, wrapParams(rightMargin = dp(6)))
@@ -1042,7 +1043,7 @@ class GamepadEditorActivity : Activity() {
             val actChip = makePill("${GamepadBridge.formatActionLabel(this, sel.action)} ▾", active = true) {
                 KeyPickerDialog.showActionPicker(
                     this,
-                    "${sel.label} · ${tr("绑定功能", "割当", "Bind")}",
+                    "$selLabel · ${tr("绑定功能", "割当", "Bind")}",
                     sel.action,
                     allowNone = true,
                     accentColor = themePrimary
@@ -1065,7 +1066,7 @@ class GamepadEditorActivity : Activity() {
             val modeChip = makePill("${GamepadBridge.stickModeLabel(this, sel.stickMode)} ▾", active = true) {
                 KeyPickerDialog.showStickModePicker(
                     this,
-                    sel.label,
+                    selLabel,
                     sel.stickMode,
                     allowWheel = true,
                     accentColor = themePrimary
@@ -1094,7 +1095,7 @@ class GamepadEditorActivity : Activity() {
             virtualLayer.setProfile(profile)
             virtualLayer.setEditMode(true, null)
             elementInspectorCard.visibility = View.GONE
-            showUndoBar(tr("已删除「${sel.label}」", "「${sel.label}」を削除しました", "Deleted \"${sel.label}\""))
+            showUndoBar(tr("已删除「$selLabel」", "「$selLabel」を削除しました", "Deleted \"$selLabel\""))
         }.apply {
             setTextColor(COL_DANGER)
         }
@@ -1163,7 +1164,7 @@ class GamepadEditorActivity : Activity() {
             })
         }
         row2.addView(TextView(this).apply {
-            text = tr("透明", "不透明", "Alpha")
+            text = tr("不透明度", "不透明度", "Opacity")
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTextColor(COL_TEXT_SUB)
         })
@@ -1215,7 +1216,7 @@ class GamepadEditorActivity : Activity() {
 
     private fun showRenameDialog(spec: VirtualControlSpec) {
         val input = EditText(this).apply {
-            setText(spec.label)
+            setText(GamepadBridge.displayLabel(this@GamepadEditorActivity, spec))
             inputType = InputType.TYPE_CLASS_TEXT
             setTextColor(COL_TEXT_MAIN)
             setSelection(text.length)
@@ -1238,7 +1239,7 @@ class GamepadEditorActivity : Activity() {
             val names = arrayOf(
                 tr("ADV 鼠键布局", "ADV 標準", "ADV Mouse"),
                 tr("RPG 方向布局", "RPG 標準", "RPG Dungeon"),
-                tr("空布局", "空レイアウト", "Empty Layout")
+                GamepadBridge.emptyPresetName(this)
             )
             val ids = arrayOf(
                 GamepadBridge.PRESET_VN_MOUSE,

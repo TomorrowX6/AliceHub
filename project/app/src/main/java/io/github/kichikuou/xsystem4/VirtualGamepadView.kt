@@ -786,11 +786,12 @@ class VirtualGamepadView(context: Context) : View(context) {
         strokePaint.strokeWidth = dp(1.4f)
         canvas.drawCircle(kx, ky, knobR, strokePaint)
 
-        if (geom.spec.label.isNotBlank()) {
+        val stickLabel = GamepadBridge.displayLabel(context, geom.spec)
+        if (stickLabel.isNotBlank()) {
             subTextPaint.textSize = (r * 0.24f).coerceIn(dp(9f), dp(13f))
             subTextPaint.color = Color.argb((alphaInt * 0.85f).toInt(), 240, 246, 255)
             val fm = subTextPaint.fontMetrics
-            canvas.drawText(geom.spec.label, kx, ky - (fm.ascent + fm.descent) * 0.5f, subTextPaint)
+            canvas.drawText(stickLabel, kx, ky - (fm.ascent + fm.descent) * 0.5f, subTextPaint)
         }
     }
 
@@ -825,7 +826,7 @@ class VirtualGamepadView(context: Context) : View(context) {
             canvas.drawRoundRect(tmpRect, cr, cr, strokePaint)
         }
 
-        val label = spec.label.ifBlank { "?" }
+        val label = GamepadBridge.displayLabel(context, spec).ifBlank { "?" }
         val targetSize = if (spec.shape == VirtualButtonShape.PILL) {
             (geom.halfH * 0.76f).coerceIn(dp(7f), dp(15f))
         } else {
