@@ -251,6 +251,8 @@ object OnlineInstaller {
     const val EVENICLE_CDN_URL = "https://alicehub.000.moe/evenicle"
     const val SENGOKU_RANCE_CDN_URL = "https://alicehub.000.moe/sengokurance"
     const val RANCE03_CDN_URL = "https://alicehub.000.moe/rance03"
+    const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
+    const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -830,7 +832,8 @@ object OnlineInstaller {
                 continue
             }
 
-            val relParts = entry.path.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
+            val cleanPath = ArchiveExtractor.repairSjisAsGbkMojibake(entry.path)
+            val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
             if (relParts.isEmpty() || relParts.any { it == ".." }) {
                 throw IOException("Invalid manifest entry path: ${entry.path}")
             }
@@ -871,7 +874,7 @@ object OnlineInstaller {
                         speedStr,
                         doneMb,
                         totalGameMb,
-                        entry.path
+                        cleanPath
                     )
                     onProgress(OnlineProgressUpdate(msg, permille))
                 }
@@ -880,7 +883,7 @@ object OnlineInstaller {
             if (entry.extract) {
                 onProgress(
                     OnlineProgressUpdate(
-                        context.getString(R.string.online_verifying_extracting, entry.path),
+                        context.getString(R.string.online_verifying_extracting, cleanPath),
                         if (manifest.totalBytes > 0L) {
                             (((completedBeforeCurrent + entry.size) * 1000L) / manifest.totalBytes).toInt().coerceIn(0, 1000)
                         } else null
@@ -926,7 +929,14 @@ object OnlineInstaller {
             throw GameList.InstallFailureException(R.string.directory_no_game)
         }
 
-        val dirBaseName = ainFile.nameWithoutExtension.ifEmpty { manifest.baseName.ifEmpty { "Rance10" } }
+        val rawBaseName = ainFile.nameWithoutExtension
+        val dirBaseName = if (manifest.baseName.isNotEmpty() &&
+            (rawBaseName.isEmpty() || rawBaseName.any { it.code >= 0x80 })
+        ) {
+            manifest.baseName
+        } else {
+            rawBaseName.ifEmpty { manifest.baseName.ifEmpty { "Rance10" } }
+        }
         var dstDir = File(storagePath, dirBaseName)
         var suffix = 1
         while (dstDir.exists()) {
@@ -1054,10 +1064,25 @@ object OnlineInstaller {
             val marker = markerFileForExtractEntry(stagingDir, entry)
             return marker.isFile && marker.readText().trim().equals(entry.sha256, ignoreCase = true)
         }
-        val relParts = entry.path.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
+        val cleanPath = ArchiveExtractor.repairSjisAsGbkMojibake(entry.path)
+        val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (relParts.isEmpty() || relParts.any { it == ".." }) return false
         val f = File(stagingDir, relParts.joinToString(File.separator)).canonicalFile
-        return f.path.startsWith(stagingPrefix) && f.isFile && f.length() == entry.size
+        if (f.path.startsWith(stagingPrefix) && f.isFile && f.length() == entry.size) {
+            return true
+        }
+        if (cleanPath != entry.path) {
+            val rawParts = entry.path.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
+            if (rawParts.isNotEmpty() && rawParts.none { it == ".." }) {
+                val rawFile = File(stagingDir, rawParts.joinToString(File.separator)).canonicalFile
+                if (rawFile.path.startsWith(stagingPrefix) && rawFile.isFile && rawFile.length() == entry.size) {
+                    f.parentFile?.mkdirs()
+                    if (rawFile.renameTo(f)) return true
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private fun markerFileForExtractEntry(stagingDir: File, entry: ManifestEntry): File {
@@ -1096,6 +1121,8 @@ object OnlineInstaller {
                     GameCatalog.ID_EVENICLE -> lower.contains("evenicle")
                     GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
+                    GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
+                    GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
                     null, "" -> true
                     else -> false
                 }

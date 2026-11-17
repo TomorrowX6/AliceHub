@@ -284,6 +284,8 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_EVENICLE ||
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -309,6 +311,8 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_EVENICLE ||
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -328,6 +332,8 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -347,6 +353,8 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
             scopedGameId == GameCatalog.ID_EVENICLE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -366,11 +374,55 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
             scopedGameId == GameCatalog.ID_EVENICLE ||
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
         }
         return GameModifierBridge.isRance03GameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetRance08(): Boolean {
+        if (scopedGameId == GameCatalog.ID_RANCE08) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isRance08GameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetRance09(): Boolean {
+        if (scopedGameId == GameCatalog.ID_RANCE09) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isRance09GameDir(
             currentTarget.externalGameDir,
             currentTarget.dirName,
             currentTarget.saveDir
@@ -397,13 +449,15 @@ class GameModifierActivity : ThemedActivity() {
         isDohnaDohna: Boolean,
         isEvenicle: Boolean,
         isSengokuRance: Boolean,
-        isRance03: Boolean
+        isRance03: Boolean,
+        isRance08: Boolean,
+        isRance09: Boolean
     ) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance03
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance03 || isRance08 || isRance09
         floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
         (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.marginStart = if (showLocks) dp(4) else 0
@@ -418,8 +472,10 @@ class GameModifierActivity : ThemedActivity() {
         val isEvenicle = !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
         val isSengokuRance = !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance()
         val isRance03 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance03()
+        val isRance08 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && isCurrentTargetRance08()
+        val isRance09 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && isCurrentTargetRance09()
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03, isRance08, isRance09)
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
@@ -428,7 +484,7 @@ class GameModifierActivity : ThemedActivity() {
                 .filter {
                     it.isFile && (
                         it.name.endsWith(".asd", ignoreCase = true) ||
-                            ((isEvenicle || isRance03) && it.name.endsWith(".sav", ignoreCase = true))
+                            ((isEvenicle || isRance03 || isRance08 || isRance09) && it.name.endsWith(".sav", ignoreCase = true))
                         )
                 }
                 .count()
@@ -463,6 +519,22 @@ class GameModifierActivity : ThemedActivity() {
                         "存档 $saveCount 个 · 锁定 $r03LockCount 项",
                         "セーブ $saveCount 個 · ロック $r03LockCount 項目",
                         "$saveCount saves · Locks: $r03LockCount"
+                    )
+                }
+                isRance08 -> {
+                    val r08LockCount = GameModifierBridge.getR08LiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $r08LockCount 项",
+                        "セーブ $saveCount 個 · ロック $r08LockCount 項目",
+                        "$saveCount saves · Locks: $r08LockCount"
+                    )
+                }
+                isRance09 -> {
+                    val r09LockCount = GameModifierBridge.getR09LiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $r09LockCount 项",
+                        "セーブ $saveCount 個 · ロック $r09LockCount 項目",
+                        "$saveCount saves · Locks: $r09LockCount"
                     )
                 }
                 else -> {
@@ -826,6 +898,34 @@ class GameModifierActivity : ThemedActivity() {
                 lockDefs,
                 GameModifierBridge.getSavedR03LockMask(this)
             ) { GameModifierBridge.setSavedR03LockMask(this, it) }
+            return
+        }
+        if (!isCurrentTargetRance10() && isCurrentTargetRance08()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_R08_ALLY_FULL_HP to tr("无限体力 · 我方全员满 HP", "味方HP最大維持", "Party Full HP"),
+                GameModifierBridge.LOCK_R08_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill"),
+                GameModifierBridge.LOCK_R08_INF_SKILLS to tr("无限技能 · 使用次数不减", "スキル回数無限", "Infinite Skills"),
+                GameModifierBridge.LOCK_R08_MAGNUM_MAX to tr("魔剑蓄力 · 万能威力 MAX", "マグナム力最大", "Magnum Force Max"),
+                GameModifierBridge.LOCK_R08_INF_GOLD to tr("无限金钱 · 保底 9999999", "所持金無限", "Infinite Gold")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedR08LockMask(this)
+            ) { GameModifierBridge.setSavedR08LockMask(this, it) }
+            return
+        }
+        if (!isCurrentTargetRance10() && isCurrentTargetRance09()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_R09_ALLY_GOD to tr("无限防御 · 我方全员无伤满血", "味方無敵・HP最大", "Party God Mode & Full HP"),
+                GameModifierBridge.LOCK_R09_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill"),
+                GameModifierBridge.LOCK_R09_INF_ACTION to tr("无限行动 · 回合不消耗行动", "無限行動", "Infinite Actions"),
+                GameModifierBridge.LOCK_R09_DROP_100 to tr("金币必掉 · 战利金币高额掉落", "所持金ドロップ最大", "Max Gold Drop"),
+                GameModifierBridge.LOCK_R09_INF_RESOURCES to tr("无限资源 · 金币与圣魔点保底", "資源無限維持", "Infinite Gold & Seima")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedR09LockMask(this)
+            ) { GameModifierBridge.setSavedR09LockMask(this, it) }
             return
         }
 

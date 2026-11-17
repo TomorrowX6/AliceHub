@@ -223,8 +223,8 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
             for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
-                        "GameName" -> gameName = it.groupValues[2]
-                        "SaveFolder" -> SaveFolder = it.groupValues[2]
+                        "GameName" -> gameName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
+                        "SaveFolder" -> SaveFolder = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                     }
                 }
             }
@@ -893,7 +893,7 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val baseName = ainFile.nameWithoutExtension.ifEmpty { "Game" }
+            val baseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension).ifEmpty { "Game" }
             var dstDir = File(storagePath, baseName)
             var i = 1
             while (dstDir.exists()) {

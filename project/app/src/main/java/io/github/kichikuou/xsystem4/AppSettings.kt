@@ -34,6 +34,8 @@ object AppSettings {
     private const val DEFAULT_EVENICLE_BYTES = 2453622110L
     private const val DEFAULT_SENGOKU_RANCE_BYTES = 1885221320L
     private const val DEFAULT_RANCE03_BYTES = 2223244774L
+    private const val DEFAULT_RANCE08_BYTES = 1964252126L
+    private const val DEFAULT_RANCE09_BYTES = 2738534355L
 
     private val initialSystemLocale: Locale =
         Resources.getSystem().configuration.locales.takeIf { !it.isEmpty }?.get(0)
@@ -141,6 +143,8 @@ object AppSettings {
             OnlineInstaller.EVENICLE_CDN_URL -> DEFAULT_EVENICLE_BYTES
             OnlineInstaller.SENGOKU_RANCE_CDN_URL -> DEFAULT_SENGOKU_RANCE_BYTES
             OnlineInstaller.RANCE03_CDN_URL -> DEFAULT_RANCE03_BYTES
+            OnlineInstaller.RANCE08_CDN_URL -> DEFAULT_RANCE08_BYTES
+            OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
             else -> -1L
         }
     }

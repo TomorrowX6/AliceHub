@@ -200,7 +200,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val isEvenicle = !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
         val isSengokuRance = !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
         val isRance03 = !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
-        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
+        val isRance08 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
+        val isRance09 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
+        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)
@@ -209,6 +211,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val evenicleLockCount = GameModifierBridge.getEvenicleLiveLockCount(activity)
         val srLockCount = GameModifierBridge.getSrLiveLockCount(activity)
         val r03LockCount = GameModifierBridge.getR03LiveLockCount(activity)
+        val r08LockCount = GameModifierBridge.getR08LiveLockCount(activity)
+        val r09LockCount = GameModifierBridge.getR09LiveLockCount(activity)
         val streamerLockOff = (savedMask and GameModifierBridge.LOCK_DISABLE_STREAMER_MODE) != 0
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
@@ -293,6 +297,34 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     "Modifier · Party:$cnt · Gold:$gold"
                 )
             }
+        } else if (isRance08) {
+            if (!inGame) {
+                tr("修改器 · 未进入游戏", "改造 · 未開始", "Modifier · Not In Game")
+            } else {
+                val gold = j.optInt("gold", 0)
+                val fame = j.optInt("fame", 0)
+                val mag = j.optInt("magnum", 0)
+                val cnt = j.optInt("r08CharaCount", 0)
+                tr(
+                    "修改器 · 队友${cnt}人 · 金:$gold · 声望:$fame · 魔剑:$mag",
+                    "改造 · 仲間${cnt}人 · 金:$gold · 名声:$fame",
+                    "Modifier · Party:$cnt · Gold:$gold · Fame:$fame"
+                )
+            }
+        } else if (isRance09) {
+            if (!inGame) {
+                tr("修改器 · 未进入游戏", "改造 · 未開始", "Modifier · Not In Game")
+            } else {
+                val gold = j.optInt("gold", 0)
+                val sp = j.optInt("seimaPoint", 0)
+                val ss = j.optInt("seimaStone", 0)
+                val cnt = j.optInt("r09CharaCount", 0)
+                tr(
+                    "修改器 · 队员${cnt}人 · 金:$gold · 圣魔:$sp/$ss",
+                    "改造 · 隊員${cnt}人 · 金:$gold · 聖魔:$sp/$ss",
+                    "Modifier · Party:$cnt · Gold:$gold · Seima:$sp/$ss"
+                )
+            }
         } else if (!isRance10 || !inGame) {
             tr("修改器", "ゲーム改造", "Modifier")
         } else if (inBattle) {
@@ -365,6 +397,24 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     tr("常用作弊…", "定番チート…", "Common Cheats…") to { showR03CommonCheatsDialog() },
                     tr("修改所持金…", "所持金変更…", "Edit Gold…") to { showR03EditGoldDialog() },
                     tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showR03SelectCharDialog() }
+                )
+            )
+        } else if (isRance08) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $r08LockCount 项…", "リアルタイムロック · $r08LockCount 項目…", "Live Locks · $r08LockCount…") to { showR08LocksDialog() },
+                    tr("常用作弊…", "定番チート…", "Common Cheats…") to { showR08CommonCheatsDialog() },
+                    tr("金钱与声望…", "所持金・名声…", "Gold & Fame…") to { showR08EditResourcesDialog() },
+                    tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showR08SelectCharDialog() }
+                )
+            )
+        } else if (isRance09) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $r09LockCount 项…", "リアルタイムロック · $r09LockCount 項目…", "Live Locks · $r09LockCount…") to { showR09LocksDialog() },
+                    tr("常用作弊…", "定番チート…", "Common Cheats…") to { showR09CommonCheatsDialog() },
+                    tr("金钱与圣魔点…", "所持金・聖魔…", "Gold & Seima…") to { showR09EditResourcesDialog() },
+                    tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showR09SelectCharDialog() }
                 )
             )
         }
@@ -1172,7 +1222,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("所持金设为 9999999", "所持金 9999999", "Set Gold 9,999,999"),
             tr("全队回满 HP 并清零技能冷却", "全員HP全回復・CT0", "Full Heal & Clear Cooldowns"),
             tr("已入队全员经验值拉满 (满级)", "経験値カンスト・最大レベル化", "Max All Party EXP"),
-            tr("已入队全员超强化 (HP9999/Lv99/全能力999)", "全員超強化 (HP9999/能力999)", "Super Boost All Party")
+            tr("已入队全员超强化 · HP9999 Lv99 全能力999", "全員超強化 · HP9999 能力999", "Super Boost All Party")
         )
         dialogBuilder()
             .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
@@ -1294,6 +1344,346 @@ class FloatingModifierOverlay(private val activity: Activity) {
             for ((k, v) in vals) ce.put(k, v)
             sendDohnaInGameAction(
                 JSONObject().put("r03CharEdit", ce),
+                tr("角色属性已更新", "ステータスを更新しました", "Character updated")
+            )
+        }
+    }
+
+    private fun showR08LocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_R08_ALLY_FULL_HP to tr("无限体力 · 我方全员满 HP", "味方HP最大維持", "Party Full HP"),
+            GameModifierBridge.LOCK_R08_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill"),
+            GameModifierBridge.LOCK_R08_INF_SKILLS to tr("无限技能 · 使用次数不减", "スキル回数無限", "Infinite Skills"),
+            GameModifierBridge.LOCK_R08_MAGNUM_MAX to tr("魔剑蓄力 · 万能威力 MAX", "マグナム力最大", "Magnum Force Max"),
+            GameModifierBridge.LOCK_R08_INF_GOLD to tr("无限金钱 · 保底 9999999", "所持金無限", "Infinite Gold")
+        )
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedR08LockMask(activity)
+        ) { GameModifierBridge.setSavedR08LockMask(activity, it) }
+    }
+
+    private fun showR08CommonCheatsDialog() {
+        val items = arrayOf(
+            tr("所持金增加 1 万", "所持金 +10,000", "Add 10,000 Gold"),
+            tr("所持金增加 10 万", "所持金 +100,000", "Add 100,000 Gold"),
+            tr("所持金设为 9999999", "所持金 9999999", "Set Gold 9,999,999"),
+            tr("全队回满 HP 并刷新技能次数", "全員HP・スキル回数全回復", "Heal Party & Refresh Skills"),
+            tr("魔剑蓄力设为当前上限 MAX", "マグナム力を最大に設定", "Max Magnum Force"),
+            tr("已入队全员超强化 · HP9999 Lv99 全能力999", "全員超強化 · HP9999 能力999", "Super Boost All Party")
+        )
+        dialogBuilder()
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(JSONObject().put("r08AddGold", 10000), tr("所持金已增加 1 万", "所持金 +10,000 を適用", "Added 10,000 Gold"))
+                    1 -> sendDohnaInGameAction(JSONObject().put("r08AddGold", 100000), tr("所持金已增加 10 万", "所持金 +100,000 を適用", "Added 100,000 Gold"))
+                    2 -> sendDohnaInGameAction(JSONObject().put("r08Gold", 9999999), tr("所持金已设为 9999999", "所持金を9999999に設定", "Gold set to 9,999,999"))
+                    3 -> sendDohnaInGameAction(JSONObject().put("r08HealAllParty", true), tr("全队已回满并刷新技能", "全回復・スキル回復を適用", "Party healed & refreshed"))
+                    4 -> sendDohnaInGameAction(JSONObject().put("r08MagnumMax", true), tr("魔剑蓄力已设为最大", "マグナム力を最大にしました", "Magnum Force maxed"))
+                    5 -> sendDohnaInGameAction(
+                        JSONObject().put(
+                            "r08CharEdit",
+                            JSONObject().put("target", -1).put("hp", 9999).put("hpMax", 9999)
+                                .put("lv", 99).put("atk", 999).put("mag", 999)
+                                .put("def", 999).put("res", 999).put("spd", 999)
+                                .put("hit", 999).put("eva", 99).put("crt", 100)
+                                .put("skillPts", 99).put("fullHeal", true)
+                        ),
+                        tr("已入队全员超强化完成", "全員超強化を適用しました", "Party super boosted")
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR08EditResourcesDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fields = listOf(
+            Triple("r08Gold", tr("所持金 GOLD", "所持金 GOLD", "Gold"), j.optInt("gold", 0)),
+            Triple("r08Fame", tr("当前声望 Fame", "名声", "Fame"), j.optInt("fame", 0)),
+            Triple("r08FameMax", tr("声望上限 FameMax", "名声上限", "Fame Max"), j.optInt("fameMax", 0))
+        )
+        showDohnaFormDialog(
+            title = tr("金钱与声望", "所持金・名声", "Gold & Fame"),
+            summary = tr("当前魔剑：${j.optInt("magnum", 0)}/${j.optInt("magnumMax", 0)}", "マグナム：${j.optInt("magnum", 0)}/${j.optInt("magnumMax", 0)}", "Magnum: ${j.optInt("magnum", 0)}/${j.optInt("magnumMax", 0)}"),
+            fields = fields,
+            prefillValues = true
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val act = JSONObject()
+            for ((k, v) in vals) act.put(k, v)
+            sendDohnaInGameAction(act, tr("资源修改已生效", "資源を更新しました", "Resources updated"))
+        }
+    }
+
+    private fun showR08SelectCharDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val arr = j.optJSONArray("r08Characters")
+        if (arr == null || arr.length() == 0) {
+            Toast.makeText(activity, tr("暂无我方角色数据", "味方キャラデータなし", "No party characters"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val options = mutableListOf<Triple<Int, JSONObject?, String>>()
+        options.add(Triple(-1, null, tr("批量：全部我方角色", "一括：味方全員", "Batch: All Allies")))
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val idx = c.optInt("index", -1)
+            val name = c.optString("name", "#$idx")
+            val lv = c.optInt("lv", 1)
+            val hp = c.optInt("hp", 0)
+            val hpMax = c.optInt("hpMax", 0)
+            val atk = c.optInt("atk", 0)
+            val mag = c.optInt("mag", 0)
+            val tag = if (c.optBoolean("inParty", false)) tr("出战", "出撃", "Party") else tr("待命", "待機", "Wait")
+            options.add(Triple(idx, c, "[$tag] $name · Lv$lv · HP $hp/$hpMax · 物$atk 魔$mag"))
+        }
+        dialogBuilder()
+            .setTitle(tr("角色属性", "キャラ編集", "Characters"))
+            .setItems(options.map { it.third }.toTypedArray()) { _, which ->
+                val chosen = options.getOrNull(which) ?: return@setItems
+                showR08EditCharDialog(chosen.first, chosen.second, chosen.third)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR08EditCharDialog(target: Int, c: JSONObject?, title: String) {
+        val single = c != null
+        val fields = listOf(
+            Triple("hp", tr("当前 HP", "現在 HP", "HP"), c?.optInt("hp", 100) ?: 9999),
+            Triple("hpMax", tr("最大 HP", "最大 HP", "Max HP"), c?.optInt("hpMax", 100) ?: 9999),
+            Triple("lv", tr("等级 Lv", "レベル Lv", "Level"), c?.optInt("lv", 1) ?: 99),
+            Triple("lvMax", tr("等级上限 LvMax", "レベル上限", "Level Cap"), c?.optInt("lvMax", 50) ?: 99),
+            Triple("exp", tr("经验值 EXP", "経験値 EXP", "EXP"), c?.optInt("exp", 0) ?: 999999),
+            Triple("atk", tr("攻击力 ATK", "攻撃力", "ATK"), c?.optInt("atk", 10) ?: 999),
+            Triple("mag", tr("魔法力 MAG", "魔力", "MAG"), c?.optInt("mag", 0) ?: 999),
+            Triple("def", tr("物理防御 DEF", "防御力", "DEF"), c?.optInt("def", 10) ?: 999),
+            Triple("res", tr("魔法防御 RES", "魔防", "RES"), c?.optInt("res", 10) ?: 999),
+            Triple("spd", tr("速度 SPD", "速度", "SPD"), c?.optInt("spd", 10) ?: 999),
+            Triple("hit", tr("命中率 HIT", "命中", "HIT"), c?.optInt("hit", 100) ?: 999),
+            Triple("eva", tr("回避率 EVA", "回避", "EVA"), c?.optInt("eva", 0) ?: 99),
+            Triple("crt", tr("必杀率 CRT", "必殺", "CRT"), c?.optInt("crt", 0) ?: 100),
+            Triple("skillPts", tr("技能点 SkillP", "スキルP", "Skill Pts"), c?.optInt("skillPts", 0) ?: 99)
+        )
+        showDohnaFormDialog(
+            title = title,
+            summary = if (single) {
+                tr("角色编号 #${c!!.optInt("charaNo", 0)}", "キャラNo.${c.optInt("charaNo", 0)}", "Chara #${c.optInt("charaNo", 0)}")
+            } else {
+                tr("留空的项保持原值不变", "空欄の項目は変更しません", "Leave blank to keep value")
+            },
+            fields = fields,
+            prefillValues = single,
+            neutralActionLabel = tr("一键强化并回满", "最大強化・全回復", "Max Boost & Heal"),
+            onNeutralAction = {
+                val boost = JSONObject().apply {
+                    put("target", target)
+                    put("hp", 9999)
+                    put("hpMax", 9999)
+                    put("lv", 99)
+                    put("atk", 999)
+                    put("mag", 999)
+                    put("def", 999)
+                    put("res", 999)
+                    put("spd", 999)
+                    put("hit", 999)
+                    put("eva", 99)
+                    put("crt", 100)
+                    put("skillPts", 99)
+                    put("fullHeal", true)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("r08CharEdit", boost),
+                    tr("角色强化已生效", "キャラを強化しました", "Character boosted")
+                )
+            }
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val ce = JSONObject().put("target", target)
+            for ((k, v) in vals) ce.put(k, v)
+            sendDohnaInGameAction(
+                JSONObject().put("r08CharEdit", ce),
+                tr("角色属性已更新", "ステータスを更新しました", "Character updated")
+            )
+        }
+    }
+
+    private fun showR09LocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_R09_ALLY_GOD to tr("无限防御 · 我方全员无伤满血", "味方無敵・HP最大", "Party God Mode & Full HP"),
+            GameModifierBridge.LOCK_R09_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill"),
+            GameModifierBridge.LOCK_R09_INF_ACTION to tr("无限行动 · 回合不消耗行动", "無限行動", "Infinite Actions"),
+            GameModifierBridge.LOCK_R09_DROP_100 to tr("金币必掉 · 战利金币高额掉落", "所持金ドロップ最大", "Max Gold Drop"),
+            GameModifierBridge.LOCK_R09_INF_RESOURCES to tr("无限资源 · 金币与圣魔点保底", "資源無限維持", "Infinite Gold & Seima")
+        )
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedR09LockMask(activity)
+        ) { GameModifierBridge.setSavedR09LockMask(activity, it) }
+    }
+
+    private fun showR09CommonCheatsDialog() {
+        val items = arrayOf(
+            tr("军资金增加 1 万", "軍資金 +10,000", "Add 10,000 Gold"),
+            tr("军资金设为 999999", "軍資金 999999", "Set Gold 999,999"),
+            tr("圣魔点 9999 / 圣魔石 999", "聖魔P 9999 / 聖魔石 999", "Seima Pt 9999 & Stone 999"),
+            tr("全军回满 HP 与全部护盾", "全員HP・防壁全回復", "Heal Party HP & Shields"),
+            tr("全员技能强化全部拉满 MAX", "全員スキル強化 MAX", "Max All Skill Upgrades"),
+            tr("全员超强化 · HP9999 破坏力9999 移动12", "全員超強化 · HP9999 移動12", "Super Boost All Characters")
+        )
+        dialogBuilder()
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(JSONObject().put("r09AddGold", 10000), tr("军资金已增加 1 万", "軍資金 +10,000 を適用", "Added 10,000 Gold"))
+                    1 -> sendDohnaInGameAction(JSONObject().put("r09Gold", 999999), tr("军资金已设为 999999", "軍資金を999999に設定", "Gold set to 999,999"))
+                    2 -> sendDohnaInGameAction(
+                        JSONObject().put("r09SeimaPoint", 9999).put("r09SeimaStone", 999),
+                        tr("圣魔点与圣魔石已拉满", "聖魔ポイント・聖魔石を設定しました", "Seima maxed")
+                    )
+                    3 -> sendDohnaInGameAction(JSONObject().put("r09HealAllParty", true), tr("全军生命与护盾已回满", "全員全回復しました", "Party healed"))
+                    4 -> sendDohnaInGameAction(JSONObject().put("r09MaxAllSkillUp", true), tr("全员技能强化已拉满", "全員のスキル強化を最大にしました", "All skill upgrades maxed"))
+                    5 -> sendDohnaInGameAction(
+                        JSONObject().put(
+                            "r09CharEdit",
+                            JSONObject().put("target", -1).put("hp", 9999).put("hpMax", 9999)
+                                .put("atkMin", 5000).put("atkMax", 9999).put("magic", 9999)
+                                .put("resist", 999).put("move", 12).put("critical", 100)
+                                .put("speed", 999).put("evadeMax", 999).put("fendMax", 999)
+                                .put("armoredMax", 999).put("fullHeal", true)
+                        ),
+                        tr("全员超强化完成", "全員超強化を適用しました", "Party super boosted")
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR09EditResourcesDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fields = listOf(
+            Triple("r09Gold", tr("军资金 GOLD", "軍資金 GOLD", "Gold"), j.optInt("gold", 0)),
+            Triple("r09SeimaPoint", tr("圣魔点数 SeimaPt", "聖魔ポイント", "Seima Points"), j.optInt("seimaPoint", 0)),
+            Triple("r09SeimaStone", tr("圣魔石 SeimaStone", "聖魔石", "Seima Stones"), j.optInt("seimaStone", 0))
+        )
+        showDohnaFormDialog(
+            title = tr("金钱与圣魔点", "所持金・聖魔", "Gold & Seima"),
+            summary = tr("已加载角色 ${j.optInt("r09CharaCount", 0)} 名", "ロード済みキャラ ${j.optInt("r09CharaCount", 0)} 人", "Characters: ${j.optInt("r09CharaCount", 0)}"),
+            fields = fields,
+            prefillValues = true
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val act = JSONObject()
+            for ((k, v) in vals) act.put(k, v)
+            sendDohnaInGameAction(act, tr("资源修改已生效", "資源を更新しました", "Resources updated"))
+        }
+    }
+
+    private fun showR09SelectCharDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val arr = j.optJSONArray("r09Characters")
+        if (arr == null || arr.length() == 0) {
+            Toast.makeText(activity, tr("暂无角色数据", "キャラデータなし", "No character data"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val options = mutableListOf<Triple<Int, JSONObject?, String>>()
+        options.add(Triple(-1, null, tr("批量：全部角色", "一括：全キャラ", "Batch: All Characters")))
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val idx = c.optInt("index", -1)
+            val name = c.optString("name", "#$idx")
+            val hp = c.optInt("hp", 0)
+            val hpMax = c.optInt("hpMax", 0)
+            val atkMin = c.optInt("atkMin", 0)
+            val atkMax = c.optInt("atkMax", 0)
+            val move = c.optInt("move", 0)
+            options.add(Triple(idx, c, "$name · HP $hp/$hpMax · 破坏$atkMin~$atkMax · 移$move"))
+        }
+        dialogBuilder()
+            .setTitle(tr("角色属性", "キャラ編集", "Characters"))
+            .setItems(options.map { it.third }.toTypedArray()) { _, which ->
+                val chosen = options.getOrNull(which) ?: return@setItems
+                showR09EditCharDialog(chosen.first, chosen.second, chosen.third)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR09EditCharDialog(target: Int, c: JSONObject?, title: String) {
+        val single = c != null
+        val fields = listOf(
+            Triple("hp", tr("当前 HP", "現在 HP", "HP"), c?.optInt("hp", 100) ?: 9999),
+            Triple("hpMax", tr("最大 HP", "最大 HP", "Max HP"), c?.optInt("hpMax", 100) ?: 9999),
+            Triple("atkMin", tr("最小破坏力", "最小破壊力", "Min ATK"), c?.optInt("atkMin", 50) ?: 5000),
+            Triple("atkMax", tr("最大破坏力", "最大破壊力", "Max ATK"), c?.optInt("atkMax", 100) ?: 9999),
+            Triple("magic", tr("魔法力", "魔法力", "Magic"), c?.optInt("magic", 0) ?: 9999),
+            Triple("resist", tr("异常耐性", "状態耐性", "Resist"), c?.optInt("resist", 0) ?: 999),
+            Triple("move", tr("移动力", "移動力", "Move"), c?.optInt("move", 4) ?: 12),
+            Triple("range", tr("射程", "射程", "Range"), c?.optInt("range", 1) ?: 8),
+            Triple("critical", tr("必杀率", "クリティカル", "Critical"), c?.optInt("critical", 0) ?: 100),
+            Triple("speed", tr("行动速度", "行動速度", "Speed"), c?.optInt("speed", 10) ?: 999),
+            Triple("evadeMax", tr("回避计数上限", "見切り上限", "Evade Max"), c?.optInt("evadeMax", 0) ?: 999),
+            Triple("fendMax", tr("招架计数上限", "弾き上限", "Fend Max"), c?.optInt("fendMax", 0) ?: 999),
+            Triple("armoredMax", tr("装甲计数上限", "装甲上限", "Armored Max"), c?.optInt("armoredMax", 0) ?: 999),
+            Triple("skillBonus", tr("技能强化点", "スキル強化P", "Skill Bonus"), c?.optInt("skillBonus", 0) ?: 9999)
+        )
+        showDohnaFormDialog(
+            title = title,
+            summary = if (single) {
+                tr("角色ID #${c!!.optInt("charaId", 0)}", "キャラID #${c.optInt("charaId", 0)}", "CharaID #${c.optInt("charaId", 0)}")
+            } else {
+                tr("留空的项保持原值不变", "空欄の項目は変更しません", "Leave blank to keep value")
+            },
+            fields = fields,
+            prefillValues = single,
+            neutralActionLabel = tr("一键强化并回满", "最大強化・全回復", "Max Boost & Heal"),
+            onNeutralAction = {
+                val boost = JSONObject().apply {
+                    put("target", target)
+                    put("hp", 9999)
+                    put("hpMax", 9999)
+                    put("atkMin", 5000)
+                    put("atkMax", 9999)
+                    put("magic", 9999)
+                    put("resist", 999)
+                    put("move", 12)
+                    put("critical", 100)
+                    put("speed", 999)
+                    put("evadeMax", 999)
+                    put("fendMax", 999)
+                    put("armoredMax", 999)
+                    put("fullHeal", true)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("r09CharEdit", boost),
+                    tr("角色强化已生效", "キャラを強化しました", "Character boosted")
+                )
+            }
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val ce = JSONObject().put("target", target)
+            for ((k, v) in vals) ce.put(k, v)
+            sendDohnaInGameAction(
+                JSONObject().put("r09CharEdit", ce),
                 tr("角色属性已更新", "ステータスを更新しました", "Character updated")
             )
         }

@@ -364,9 +364,15 @@ static int scene_struct_no(void)
 {
 	static int no = -1;
 	if (no < 0) {
-		char *s = utf2sjis("画面保管_t", 0);
+		// Game scripts compiled in Shift-JIS keep struct names in Shift-JIS even on GBK ports.
+		char *s = utf2cjk("画面保管_t", 0, false);
 		no = ain_get_struct(ain, s);
 		free(s);
+		if (no < 0) {
+			s = utf2sjis("画面保管_t", 0);
+			no = ain_get_struct(ain, s);
+			free(s);
+		}
 		if (no < 0)
 			VM_ERROR("Missing definition for struct 画面保管_t");
 	}

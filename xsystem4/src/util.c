@@ -107,14 +107,19 @@ const char *display_utf2(const char *utf)
 #endif
 }
 
-char *unix_path(const char *path)
+static char *unix_path_with(const char *path, bool legacy_gbk)
 {
-	char *utf = sjis2utf(path, strlen(path));
+	char *utf = legacy_gbk ? sjis2utf(path, strlen(path)) : sjis_filename2utf(path, strlen(path));
 	for (int i = 0; utf[i]; i++) {
 		if (utf[i] == '\\')
 			utf[i] = '/';
 	}
 	return utf;
+}
+
+char *unix_path(const char *path)
+{
+	return unix_path_with(path, false);
 }
 
 bool is_absolute_path(const char *path)
@@ -127,41 +132,83 @@ bool is_absolute_path(const char *path)
 #endif
 }
 
-static char *resolve_path(const char *dir, const char *path)
+static bool strip_cjk_dir_prefix(const char *dir, const char *path, const char **rel_out)
 {
-	if (dir && *dir && path && *path) {
-		char *sjis_dir = utf2sjis(dir, strlen(dir));
-		size_t pfx = strlen(sjis_dir);
-		if (pfx > 0 && !strncmp(path, sjis_dir, pfx) &&
+	if (!dir || !*dir || !path || !*path)
+		return false;
+	for (int mode = 0; mode < 2; mode++) {
+		if (mode == 1 && !sys4_text_is_gbk)
+			break;
+		char *cjk_dir = (mode == 0) ? utf2sjis(dir, strlen(dir)) : utf2cjk(dir, strlen(dir), false);
+		size_t pfx = strlen(cjk_dir);
+		if (pfx > 0 && !strncmp(path, cjk_dir, pfx) &&
 		    (path[pfx] == '/' || path[pfx] == '\\' || path[pfx] == '\0')) {
 			const char *rel = path + pfx;
 			while (*rel == '/' || *rel == '\\')
 				rel++;
-			free(sjis_dir);
-			char *utf_rel = unix_path(rel);
-			char *resolved = xmalloc(strlen(dir) + strlen(utf_rel) + 2);
-			strcpy(resolved, dir);
-			if (*utf_rel) {
-				strcat(resolved, "/");
-				strcat(resolved, utf_rel);
-			}
-			free(utf_rel);
-			return resolved;
+			free(cjk_dir);
+			*rel_out = rel;
+			return true;
 		}
-		free(sjis_dir);
+		free(cjk_dir);
+	}
+	return false;
+}
+
+static char *join_dir_and_rel(const char *dir, const char *utf_rel)
+{
+	if (is_absolute_path(utf_rel))
+		return xstrdup(utf_rel);
+	char *resolved = xmalloc(strlen(dir) + strlen(utf_rel) + 2);
+	strcpy(resolved, dir);
+	if (*utf_rel) {
+		strcat(resolved, "/");
+		strcat(resolved, utf_rel);
+	}
+	return resolved;
+}
+
+static char *resolve_path(const char *dir, const char *path)
+{
+	const char *target = path;
+	const char *stripped_rel = NULL;
+	if (strip_cjk_dir_prefix(dir, path, &stripped_rel)) {
+		target = stripped_rel;
 	}
 
-	char *utf = unix_path(path);
-	if (is_absolute_path(utf))
-		return utf;
+	char *utf_primary = unix_path_with(target, false);
+	char *resolved_primary = join_dir_and_rel(dir, utf_primary);
+	free(utf_primary);
 
-	char *resolved = xmalloc(strlen(dir) + strlen(utf) + 2);
-	strcpy(resolved, dir);
-	strcat(resolved, "/");
-	strcat(resolved, utf);
+	if (file_exists(resolved_primary))
+		return resolved_primary;
 
-	free(utf);
-	return resolved;
+	char *icase_primary = path_get_icase(resolved_primary);
+	if (icase_primary) {
+		free(resolved_primary);
+		return icase_primary;
+	}
+
+	if (sys4_text_is_gbk) {
+		char *utf_legacy = unix_path_with(target, true);
+		char *resolved_legacy = join_dir_and_rel(dir, utf_legacy);
+		free(utf_legacy);
+		if (strcmp(resolved_legacy, resolved_primary) != 0) {
+			if (file_exists(resolved_legacy)) {
+				free(resolved_primary);
+				return resolved_legacy;
+			}
+			char *icase_legacy = path_get_icase(resolved_legacy);
+			if (icase_legacy) {
+				free(resolved_primary);
+				free(resolved_legacy);
+				return icase_legacy;
+			}
+		}
+		free(resolved_legacy);
+	}
+
+	return resolved_primary;
 }
 
 char *gamedir_path(const char *path)

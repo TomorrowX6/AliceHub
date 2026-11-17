@@ -84,7 +84,16 @@ static void init_monster(struct monster *m)
 	m->draw_shadow = true;
 }
 
-static bool parse_monster_info(char *text)
+static char *utf_to_vm_or_sjis(const char *s, bool use_gbk)
+{
+	bool prev = sys4_text_is_gbk;
+	sys4_set_text_gbk(use_gbk);
+	char *res = utf2sjis(s, 0);
+	sys4_set_text_gbk(prev);
+	return res;
+}
+
+static bool parse_monster_info(char *text, bool vm_is_gbk)
 {
 	struct monster *current_monster = NULL;
 	struct motion *current_motion = NULL;
@@ -125,7 +134,8 @@ static bool parse_monster_info(char *text)
 				init_monster(current_monster);
 			} else {
 				char *eol = strchr(text, '\n');
-				*eol = '\0';
+				if (eol)
+					*eol = '\0';
 				WARNING("Parse error in toplevel, near: \"%s\"", text);
 				return false;
 			}
@@ -144,7 +154,7 @@ static bool parse_monster_info(char *text)
 				}
 				current_motion = &current_monster->motions[n];
 			} else if (MATCH("名前 = " QUOTED_STRING, string_buf)) {
-				current_monster->name = utf2sjis(string_buf, 0);
+				current_monster->name = utf_to_vm_or_sjis(string_buf, vm_is_gbk);
 			} else if (MATCH("データ = " QUOTED_STRING, string_buf)) {
 				current_monster->poly_name = utf2sjis(string_buf, 0);
 			} else if (MATCH("スケール = %f", &f)) {
@@ -163,7 +173,8 @@ static bool parse_monster_info(char *text)
 				current_monster->wear_effect_name = utf2sjis(string_buf, 0);
 			} else {
 				char *eol = strchr(text, '\n');
-				*eol = '\0';
+				if (eol)
+					*eol = '\0';
 				WARNING("Parse error in monster, near: \"%s\"", text);
 				return false;
 			}
@@ -176,7 +187,7 @@ static bool parse_monster_info(char *text)
 			} else if (MATCH("}")) {
 				current_motion = NULL;
 			} else if (MATCH("名前 = " QUOTED_STRING, string_buf)) {
-				current_motion->name = utf2sjis(string_buf, 0);
+				current_motion->name = utf_to_vm_or_sjis(string_buf, vm_is_gbk);
 			} else if (MATCH("データ = " QUOTED_STRING, string_buf)) {
 				current_motion->data_name = utf2sjis(string_buf, 0);
 // XXX: sscanf doesn't match this string on Windows for some reason...
@@ -196,7 +207,8 @@ static bool parse_monster_info(char *text)
 				current_motion->effect_name = utf2sjis(string_buf, 0);
 			} else {
 				char *eol = strchr(text, '\n');
-				*eol = '\0';
+				if (eol)
+					*eol = '\0';
 				WARNING("Parse error in motion, near: \"%s\"", text);
 				return false;
 			}
@@ -225,11 +237,14 @@ static bool MonsterInfo_Load(struct string *filename)
 
 	// We could parse the SJIS text directly, but convert it to UTF-8 for code
 	// clarity.
+	bool prev_gbk = sys4_text_is_gbk;
+	sys4_set_text_gbk(false);
 	char *sjis_text = xmalloc(dfile->size + 1);
 	memcpy(sjis_text, dfile->data, dfile->size);
 	sjis_text[dfile->size] = '\0';
 	char *text = sjis2utf(sjis_text, dfile->size);
-	bool ok = parse_monster_info(text);
+	bool ok = parse_monster_info(text, prev_gbk);
+	sys4_set_text_gbk(prev_gbk);
 	free(text);
 	free(sjis_text);
 	archive_free_data(dfile);

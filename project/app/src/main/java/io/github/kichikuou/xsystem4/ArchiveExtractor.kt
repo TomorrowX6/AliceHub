@@ -21,6 +21,9 @@ object ArchiveExtractor {
     private const val MIN_FREE_HEADROOM_BYTES = 32L * 1024L * 1024L
     private val GBK_CHARSET: Charset by lazy { Charset.forName("GBK") }
     private val SJIS_CHARSET: Charset by lazy { Charset.forName("Shift_JIS") }
+    private val CP932_CHARSET: Charset by lazy {
+        runCatching { Charset.forName("windows-31j") }.getOrElse { SJIS_CHARSET }
+    }
 
     @Volatile
     private var nativeLoaded = false
@@ -149,8 +152,78 @@ object ArchiveExtractor {
         return penalty
     }
 
+    /**
+     * Repairs a filename or relative path whose Shift-JIS bytes were previously decoded as GBK
+     * (e.g. "愴崙儔儞僗_Sys.ASD" -> "戦国ランス_Sys.ASD", "儔儞僗丒僋僄僗僩.ain" -> "ランス・クエスト.ain").
+     * Leaves genuine Simplified Chinese and already-valid Japanese text untouched by requiring
+     * strict Shift-JIS structure with zero halfwidth katakana and zero GB2312 high-byte pairs.
+     */
+    fun repairSjisAsGbkMojibake(input: String): String {
+        if (input.isEmpty()) return input
+        var hasNonAscii = false
+        for (ch in input) {
+            if (ch.code >= 0x80) {
+                hasNonAscii = true
+                break
+            }
+        }
+        if (!hasNonAscii) return input
+
+        val normalized = input.replace('\\', '/')
+        val sep = if (input.contains('\\') && !input.contains('/')) '\\' else '/'
+        val repairedSegments = normalized.split('/').map { seg -> repairSegmentSjisAsGbk(seg) }
+        return repairedSegments.joinToString(sep.toString())
+    }
+
+    private fun repairSegmentSjisAsGbk(seg: String): String {
+        if (seg.isEmpty() || seg.none { it.code >= 0x80 }) return seg
+        val gbkBytes = encodeStrict(seg, GBK_CHARSET) ?: return seg
+        var i = 0
+        var cjkPairs = 0
+        var nonGb2312Pairs = 0
+        while (i < gbkBytes.size) {
+            val b0 = gbkBytes[i].toInt() and 0xFF
+            if (b0 < 0x80) {
+                i++
+                continue
+            }
+            if (b0 in 0xA1..0xDF) {
+                // Halfwidth katakana byte range inside Shift-JIS indicates normal GBK text, not SJIS mojibake.
+                return seg
+            }
+            if (!((b0 in 0x81..0x9F) || (b0 in 0xE0..0xEF)) || i + 1 >= gbkBytes.size) {
+                return seg
+            }
+            val b1 = gbkBytes[i + 1].toInt() and 0xFF
+            if (!((b1 in 0x40..0x7E) || (b1 in 0x80..0xFC))) {
+                return seg
+            }
+            cjkPairs++
+            if (b0 < 0xA1 || b1 < 0xA1) {
+                nonGb2312Pairs++
+            }
+            i += 2
+        }
+        if (cjkPairs == 0 || nonGb2312Pairs != cjkPairs) return seg
+        val decoded = decodeStrict(gbkBytes, CP932_CHARSET) ?: return seg
+        if (decoded.indexOf('\uFFFD') >= 0) return seg
+        return decoded
+    }
+
+    private fun encodeStrict(text: String, cs: Charset): ByteArray? {
+        return try {
+            val buf = cs.newEncoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .encode(java.nio.CharBuffer.wrap(text))
+            ByteArray(buf.remaining()).also { buf.get(it) }
+        } catch (_: CharacterCodingException) {
+            null
+        }
+    }
+
     fun decodeEntryPath(rawBytes: ByteArray): String =
-        decodeBestCjkText(rawBytes, preferGbkOnTie = true)
+        repairSjisAsGbkMojibake(decodeBestCjkText(rawBytes, preferGbkOnTie = true))
 
     /**
      * Extracts a `.zip`, `.rar` (RAR4/RAR5), `.7z`, `.tar.*`, `.iso`, or `.mdf` archive from a local [archiveFile] into [destDir].

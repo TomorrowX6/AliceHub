@@ -29,6 +29,7 @@
 #include "system4/png.h"
 #include "system4/qnt.h"
 #include "system4/rou.h"
+#include "system4/tga.h"
 #include "system4/webp.h"
 
 const char *cg_file_extensions[_ALCG_NR_FORMATS] = {
@@ -43,6 +44,7 @@ const char *cg_file_extensions[_ALCG_NR_FORMATS] = {
 	[ALCG_JPEG]    = "jpg",
 	[ALCG_PCF]     = "pcf",
 	[ALCG_ROU]     = "rou",
+	[ALCG_TGA]     = "tga",
 };
 
 /*
@@ -72,6 +74,8 @@ enum cg_type cg_check_format(uint8_t *data)
 		return ALCG_PCF;
 	} else if (rou_checkfmt(data)) {
 		return ALCG_ROU;
+	} else if (tga_checkfmt(data)) {
+		return ALCG_TGA;
 	}
 	return ALCG_UNKNOWN;
 }
@@ -106,6 +110,8 @@ bool cg_get_metrics_internal(uint8_t *buf, size_t buf_size, struct cg_metrics *d
 	case ALCG_ROU:
 		rou_get_metrics(buf, buf_size, dst);
 		break;
+	case ALCG_TGA:
+		return tga_get_metrics(buf, buf_size, dst);
 	default:
 		WARNING("Unknown CG type");
 		return false;
@@ -185,6 +191,9 @@ static struct cg *cg_load_internal(uint8_t *buf, size_t buf_size, struct archive
 		break;
 	case ALCG_ROU:
 		rou_extract(buf, buf_size, cg);
+		break;
+	case ALCG_TGA:
+		tga_extract(buf, buf_size, cg);
 		break;
 	default:
 		WARNING("Unknown CG type");

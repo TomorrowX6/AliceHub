@@ -304,17 +304,25 @@ static bool afa_determine_has_number(struct afa_archive *ar, struct buffer *in)
 
 static bool afa_read_file_table(FILE *f, struct afa_archive *ar, int *error, string_conv_fun conv)
 {
-	uint8_t *buf = xmalloc(ar->compressed_size);
+	uint32_t csize = ar->compressed_size;
+	uint8_t *buf = xmalloc(csize + 16);
 	uint8_t *table = xmalloc(ar->uncompressed_size);
 	fseek(f, 44, SEEK_SET);
-	if (fread(buf, ar->compressed_size, 1, f) != 1) {
+	if (fread(buf, csize, 1, f) != 1) {
 		*error = ARCHIVE_FILE_ERROR;
 		goto exit_err;
 	}
 
-	if (!zlib_decompress_exact(table, ar->uncompressed_size, buf, ar->compressed_size)) {
-		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
-		goto exit_err;
+	if (!zlib_decompress_exact(table, ar->uncompressed_size, buf, csize)) {
+		// Some fan-patched archives write exact compressed_size at offset 32 without +16.
+		uint64_t avail = ar->data_start > 44 ? (uint64_t)ar->data_start - 44 : 0;
+		if ((uint64_t)csize + 16 <= avail && fread(buf + csize, 16, 1, f) == 1
+				&& zlib_decompress_exact(table, ar->uncompressed_size, buf, csize + 16)) {
+			ar->compressed_size = csize + 16;
+		} else {
+			*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+			goto exit_err;
+		}
 	}
 
 	struct buffer r;

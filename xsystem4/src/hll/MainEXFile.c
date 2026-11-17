@@ -34,6 +34,11 @@ static struct ex *ex;
 static struct ex_value **handles = NULL;
 static unsigned nr_handles = 0;
 
+const struct ex *main_ex_get_file(void)
+{
+	return ex;
+}
+
 static int set_indices(struct ex_value *val, int id)
 {
 	val->id = id++;
