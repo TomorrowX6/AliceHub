@@ -61,7 +61,6 @@ class GamepadConfigController(
     private var swapAbXySwitch: Switch? = null
     private var autoHideSwitch: Switch? = null
     private var hapticSwitch: Switch? = null
-    private var rumbleSwitch: Switch? = null
 
     private var presetBtnVn: TextView? = null
     private var presetBtnRpg: TextView? = null
@@ -262,11 +261,7 @@ class GamepadConfigController(
                 markDirty(true)
             }
             addDivider(this)
-            rumbleSwitch = addSwitchRow(this, tr("手柄震动", "振動", "Rumble"), null) { checked ->
-                draft = draft.copy(physical = draft.physical.copy(rumbleEnabled = checked))
-                markDirty(true)
-            }
-            addDivider(this)
+            // Rumble toggle hidden: rumbleEnabled is stored but not implemented natively yet.
 
             val scalePair = addInlineSliderRow(this, tr("按键大小", "サイズ", "Size"), GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN) { p ->
                 val pct = (p + GamepadBridge.GLOBAL_SCALE_PCT_MIN).coerceIn(GamepadBridge.GLOBAL_SCALE_PCT_MIN, GamepadBridge.GLOBAL_SCALE_PCT_MAX)
@@ -450,7 +445,6 @@ class GamepadConfigController(
         swapAbXySwitch?.isChecked = draft.physical.swapAbXy
         autoHideSwitch?.isChecked = draft.physical.autoHideVirtualPad
         hapticSwitch?.isChecked = draft.virtual.hapticFeedback
-        rumbleSwitch?.isChecked = draft.physical.rumbleEnabled
 
         scaleSeek?.progress = (draft.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
             .coerceIn(0, GamepadBridge.GLOBAL_SCALE_PCT_MAX - GamepadBridge.GLOBAL_SCALE_PCT_MIN)

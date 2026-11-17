@@ -117,6 +117,7 @@ data class PhysicalPadConfig(
     val dpadMode: Int = GamepadBridge.STICK_ARROWS,
     val deadzonePct: Int = 18,
     val cursorSpeedPct: Int = 100,
+    // Persisted for compatibility; no rumble output is implemented yet, so the UI hides it.
     val rumbleEnabled: Boolean = false,
     val bindings: Map<Int, GamepadActionSpec> = GamepadBridge.defaultPhysicalBindings()
 ) {
