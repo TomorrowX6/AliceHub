@@ -24,10 +24,10 @@ object GameModifierBridge {
     private const val KEY_R03_LOCK_MASK = "rance03_lock_mask"
     private const val KEY_R08_LOCK_MASK = "rance08_lock_mask"
     private const val KEY_R09_LOCK_MASK = "rance09_lock_mask"
+    private const val KEY_ESC_LOCK_MASK = "escalayer_lock_mask"
     private const val KEY_FONT_SCALE_PCT = "font_scale_pct"
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
     private const val KEY_CONFIG_SEQ = "config_seq"
-    private const val FULL_UNLOCK_ASSET = "full_unlock_saves.zip"
     private const val UNLOCK_BAK_SUFFIX = ".unlock.bak"
     private const val MOD_BAK_SUFFIX = ".mod.bak"
 
@@ -97,6 +97,11 @@ object GameModifierBridge {
     const val LOCK_R09_DROP_100 = 1 shl 3
     const val LOCK_R09_INF_RESOURCES = 1 shl 4
     const val LOCK_R09_ALL_MASK = 0x1F
+    const val LOCK_ESC_HP_FULL = 1 shl 0
+    const val LOCK_ESC_LIBIDO_MAX = 1 shl 1
+    const val LOCK_ESC_ONEHIT = 1 shl 2
+    const val LOCK_ESC_LOVE_MAX = 1 shl 3
+    const val LOCK_ESC_ALL_MASK = 0x0F
 
     @Volatile
     private var loaded = false
@@ -124,6 +129,9 @@ object GameModifierBridge {
     }
 
     fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null): Boolean {
+        if (GameCatalog.isSystem3xGameDir(gameDir) || isEscalayerGameDir(gameDir, dirNameFallback)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -313,11 +321,35 @@ object GameModifierBridge {
         return false
     }
 
+    fun isEscalayerGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (GameCatalog.isEscalayerGameDir(gameDir)) return true
+        if (saveDir != null && saveDir.isDirectory) {
+            if (saveDir.listFiles()?.any {
+                    it.isFile && it.name.lowercase().startsWith("doki_s") && it.name.lowercase().endsWith(".asd")
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return true
+            }
+        }
+        if (!dirNameFallback.isNullOrBlank()) {
+            val lower = dirNameFallback.lowercase()
+            if (lower == "escalayer" || lower.startsWith("escalayer-") || lower.contains("escalayer") ||
+                lower.contains("超昂天使") || lower.contains("エスカレイヤー")
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun isEvenicleGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isRance03GameDir(gameDir, dirNameFallback, saveDir) ||
             isSengokuRanceGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance08GameDir(gameDir, dirNameFallback, saveDir) ||
-            isRance09GameDir(gameDir, dirNameFallback, saveDir)
+            isRance09GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEscalayerGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -377,6 +409,7 @@ object GameModifierBridge {
                 val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
                 val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
                 val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+                val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
                 json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
                 json.put(KEY_LOCK_MASK, mask)
                 json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
@@ -385,6 +418,7 @@ object GameModifierBridge {
                 json.put(KEY_R03_LOCK_MASK, r03Mask)
                 json.put(KEY_R08_LOCK_MASK, r08Mask)
                 json.put(KEY_R09_LOCK_MASK, r09Mask)
+                json.put(KEY_ESC_LOCK_MASK, escMask)
                 val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
                 val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
                 json.put(KEY_FONT_SCALE_PCT, fontPct)
@@ -441,6 +475,7 @@ object GameModifierBridge {
         val r03Mask = prefs.getInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
         val r08Mask = prefs.getInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
         val r09Mask = prefs.getInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+        val escMask = prefs.getInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
         val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val json = JSONObject().apply {
@@ -458,6 +493,7 @@ object GameModifierBridge {
             put(KEY_R03_LOCK_MASK, r03Mask)
             put(KEY_R08_LOCK_MASK, r08Mask)
             put(KEY_R09_LOCK_MASK, r09Mask)
+            put(KEY_ESC_LOCK_MASK, escMask)
             put(KEY_FONT_SCALE_PCT, fontPct)
             put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
@@ -489,6 +525,7 @@ object GameModifierBridge {
         val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
         val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
         val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+        val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
         val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
         val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
         val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
@@ -506,6 +543,7 @@ object GameModifierBridge {
         json.put(KEY_R03_LOCK_MASK, r03Mask)
         json.put(KEY_R08_LOCK_MASK, r08Mask)
         json.put(KEY_R09_LOCK_MASK, r09Mask)
+        json.put(KEY_ESC_LOCK_MASK, escMask)
         json.put(KEY_FONT_SCALE_PCT, fontPct)
         json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
         json.put(KEY_CONFIG_SEQ, nextSeq)
@@ -535,6 +573,7 @@ object GameModifierBridge {
             .putInt(KEY_R03_LOCK_MASK, r03Mask)
             .putInt(KEY_R08_LOCK_MASK, r08Mask)
             .putInt(KEY_R09_LOCK_MASK, r09Mask)
+            .putInt(KEY_ESC_LOCK_MASK, escMask)
             .putInt(KEY_FONT_SCALE_PCT, fontPct)
             .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
             .putInt(KEY_CONFIG_SEQ, nextSeq)
@@ -875,6 +914,34 @@ object GameModifierBridge {
     }
 
     fun getR09LiveLocks(): Int = safeGetNativeMask(LOCK_R09_ALL_MASK) { nativeGetR09LiveLocks() }
+
+    fun getSavedEscLockMask(context: Context): Int = getSavedMaskedLock(context, KEY_ESC_LOCK_MASK, LOCK_ESC_ALL_MASK)
+    fun getEscLiveLockCount(context: Context): Int = Integer.bitCount(getSavedEscLockMask(context))
+    fun setSavedEscLockMask(context: Context, mask: Int) =
+        setSavedMaskedLock(context, KEY_ESC_LOCK_MASK, LOCK_ESC_ALL_MASK, mask) { clean ->
+            if (loaded) {
+                try {
+                    nativeSetLiveLocks(clean)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+    fun syncEscLockMaskFromNative(context: Context): Int {
+        if (!loaded) return getConfigSeq(context)
+        return try {
+            val escLive = nativeGetLiveLocks() and LOCK_ESC_ALL_MASK
+            val json = readConfigJson(context)
+            val savedEsc = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+            if (escLive != savedEsc) {
+                json.put(KEY_ESC_LOCK_MASK, escLive)
+                writeConfigJson(context, json)
+            }
+            json.optInt(KEY_CONFIG_SEQ, 0)
+        } catch (_: Throwable) {
+            getConfigSeq(context)
+        }
+    }
 
     fun readStreamerModeForDir(saveDir: File): Int {
         val f1 = File(saveDir, "GameConfig.asd")

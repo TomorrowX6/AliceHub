@@ -109,7 +109,7 @@ private class SaveFileAdapter(
     private fun tagTone(fileName: String): UiKit.Tone {
         val lower = fileName.lowercase(Locale.ROOT)
         return when {
-            lower in GLOBAL_SAVE_FILES -> UiKit.Tone.PRIMARY
+            lower in GLOBAL_SAVE_FILES || lower.endsWith(".msgskip") -> UiKit.Tone.PRIMARY
             lower.endsWith(".log") -> UiKit.Tone.WARNING
             else -> UiKit.Tone.NEUTRAL
         }
@@ -120,7 +120,7 @@ private class SaveFileAdapter(
             "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
             "afcgmode.asd", "afcommon.asd", "afconfig.asd", "afbgmmode.asd",
             "共有.asd", "ｃｇモード.asd", "音楽モード.asd", "3dsetting.asd",
-            "gameenquete.asd", "commonsystemdata.sav"
+            "gameenquete.asd", "commonsystemdata.sav", "volume.sav"
         )
     }
 }
@@ -507,11 +507,12 @@ class SaveManagerActivity : ThemedActivity() {
             lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
                 lower == "afcommon.asd" || lower == "共有.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
-            lower == "msgskip.asd" -> getString(R.string.save_tag_msgskip)
+            lower == "msgskip.asd" || lower.endsWith(".msgskip") -> getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
                 lower == "ｃｇモード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
             lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
-            lower == "commonsystemdata.sav" || lower == "afconfig.asd" || lower == "3dsetting.asd" ->
+            lower == "commonsystemdata.sav" || lower == "afconfig.asd" ||
+                lower == "3dsetting.asd" || lower == "volume.sav" ->
                 getString(R.string.save_tag_common)
             lower.endsWith(".asd") || lower.endsWith(".sav") || lower.endsWith(".rsm") ||
                 lower.endsWith(".vsf") -> getString(R.string.save_tag_progress)

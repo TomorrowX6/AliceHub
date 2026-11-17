@@ -48,26 +48,40 @@ sealed class InstallState {
 data class Item(val name: String, val path: File, val homedir: File, val savedir: File?, val icon: File?, val error: String?) {
     companion object {
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
+            val isSys3x = GameCatalog.isSystem3xGameDir(dir)
             var iniFile = File(dir, "System40.ini")
             if (!iniFile.exists())
                 iniFile = File(dir, "AliceStart.ini")
+            if (!iniFile.exists())
+                iniFile = File(dir, "System39.ini")
             if (!iniFile.exists()) {
                 val ignoreCaseIni = dir.listFiles()?.firstOrNull {
                     it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
-                        it.name.equals("AliceStart.ini", ignoreCase = true))
+                        it.name.equals("AliceStart.ini", ignoreCase = true) ||
+                        it.name.equals("System39.ini", ignoreCase = true))
                 }
                 if (ignoreCaseIni != null) {
                     iniFile = ignoreCaseIni
                 }
             }
-            if (!iniFile.exists()) {
+            if (!iniFile.exists() && !isSys3x) {
                 val err = context.getString(R.string.toast_no_ini, dir.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, null, err)
             }
             val icon = findIcon(dir)
-            val ini = System40Ini.parse(iniFile)
-            if (ini.gameName == null) {
+            val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
+            val fallbackSys3Name = if (isSys3x) {
+                if (GameCatalog.isEscalayerGameDir(dir)) {
+                    context.getString(R.string.game_escalayer_title)
+                } else {
+                    dir.name
+                }
+            } else {
+                null
+            }
+            val effectiveGameName = ini.gameName?.takeIf { it.isNotBlank() } ?: fallbackSys3Name
+            if (effectiveGameName == null) {
                 val err = context.getString(R.string.toast_no_GameName, iniFile.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, icon, err)
@@ -76,7 +90,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             savedir.mkdirs()
             val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
-            val rawName = ini.gameName.replace("兰斯１０", "兰斯10")
+            val rawName = effectiveGameName.replace("兰斯１０", "兰斯10")
             val displayName = if (hasModMarker) {
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
@@ -203,7 +217,7 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
             val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
             val raw = file.readBytes()
             val latin = String(raw, Charsets.ISO_8859_1)
-            val gnMatch = Regex("""(?:^|\r?\n)\s*GameName\s*=\s*"([^\r\n"]*)"""").find(latin)
+            val gnMatch = Regex("""(?:^|\r?\n)\s*(?:GameName|Regist)\s*=\s*"([^\r\n"]*)"""").find(latin)
             val chosenCharset = if (gnMatch != null) {
                 val gnRaw = gnMatch.groupValues[1].toByteArray(Charsets.ISO_8859_1)
                 val decoded = ArchiveExtractor.decodeBestCjkText(gnRaw, preferGbkOnTie = true)
@@ -219,16 +233,18 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
                 Charset.forName("GBK")
             }
             var gameName: String? = null
+            var registName: String? = null
             var SaveFolder: String? = null
             for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
                         "GameName" -> gameName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
+                        "Regist" -> registName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                         "SaveFolder" -> SaveFolder = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                     }
                 }
             }
-            return System40Ini(gameName, SaveFolder)
+            return System40Ini(gameName ?: registName, SaveFolder)
         }
     }
 }
@@ -726,15 +742,23 @@ class GameList(activity: Activity) {
         return false
     }
 
+    private fun isSystem4GameRoot(dir: File): Boolean {
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+        val hasAin = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+        return hasIni && hasAin
+    }
+
+    private fun isSystem3GameRoot(dir: File): Boolean {
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        if (isSystem4GameRoot(dir)) return false
+        return files.any { it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true) }
+    }
+
     private fun findGameRootDir(root: File, expectedAinName: String?): File? {
         val candidates = root.walkTopDown()
             .filter { d ->
-                d.isDirectory && run {
-                    val files = d.listFiles()?.filter { it.isFile }.orEmpty()
-                    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
-                    val hasAin = files.any { it.name.endsWith(".ain", true) }
-                    hasIni && hasAin
-                }
+                d.isDirectory && (isSystem4GameRoot(d) || isSystem3GameRoot(d))
             }
             .sortedBy { it.relativeTo(root).path.length }
             .toList()
@@ -744,6 +768,53 @@ class GameList(activity: Activity) {
             }?.let { return it }
         }
         return candidates.firstOrNull()
+    }
+
+    /** Merges multi-disc System 3.x sibling directories (e.g. Disc1/GAMEDATA .. Disc3/GAMEDATA). */
+    private fun mergeSiblingMultiDiscDirs(
+        searchRoot: File,
+        primaryDir: File,
+        checkCancelled: () -> Unit
+    ) {
+        if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
+        val primaryCanonical = primaryDir.canonicalPath
+        val primaryScenario = primaryDir.listFiles()?.firstOrNull {
+            it.isFile && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }?.name
+        val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr")
+        searchRoot.walkTopDown()
+            .filter { d ->
+                d.isDirectory && d.canonicalPath != primaryCanonical && run {
+                    val lower = d.path.replace('\\', '/').lowercase()
+                    lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
+                }
+            }
+            .toList()
+            .forEach { sibling ->
+                checkCancelled()
+                val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
+                val otherScenario = files.firstOrNull {
+                    it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
+                }?.name
+                if (primaryScenario != null && otherScenario != null &&
+                    !otherScenario.equals(primaryScenario, ignoreCase = true)
+                ) {
+                    return@forEach
+                }
+                for (f in files) {
+                    checkCancelled()
+                    if (NativeGameImport.skip(f.name)) continue
+                    val ext = f.extension.lowercase()
+                    if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
+                    val target = File(primaryDir, f.name)
+                    if (!target.exists()) {
+                        if (!f.renameTo(target)) {
+                            f.copyTo(target, overwrite = false)
+                            f.delete()
+                        }
+                    }
+                }
+            }
     }
 
     private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
@@ -887,17 +958,33 @@ class GameList(activity: Activity) {
 
             if (srcDir == null) {
                 val hasIni = tempDir.walkTopDown().any {
-                    it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
+                    it.isFile && (it.name.equals("System40.ini", true) ||
+                        it.name.equals("AliceStart.ini", true) ||
+                        it.name.equals("System39.ini", true))
                 }
                 throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
             }
-            val ainFile = srcDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
-                ?: throw InstallFailureException(R.string.directory_no_game)
-            if (!expectedAinName.isNullOrBlank() && !ainFile.name.equals(expectedAinName, ignoreCase = true)) {
+            mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
+            val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
+            val ainFile = srcFiles.firstOrNull { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+            val sys3Scenario = srcFiles.firstOrNull {
+                it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
+            }
+            if (ainFile == null && sys3Scenario == null) {
+                throw InstallFailureException(R.string.directory_no_game)
+            }
+            if (!expectedAinName.isNullOrBlank() &&
+                srcFiles.none { it.name.equals(expectedAinName, ignoreCase = true) }
+            ) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val baseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension).ifEmpty { "Game" }
+            val baseName = when {
+                GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
+                ainFile != null -> ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension).ifEmpty { "Game" }
+                sys3Scenario != null -> ArchiveExtractor.repairSjisAsGbkMojibake(sys3Scenario.nameWithoutExtension).ifEmpty { "System3" }
+                else -> "Game"
+            }
             var dstDir = File(storagePath, baseName)
             var i = 1
             while (dstDir.exists()) {

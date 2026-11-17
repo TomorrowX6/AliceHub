@@ -49,8 +49,37 @@ object GameCatalog {
     const val ID_RANCE03 = "rance03"
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
+    const val ID_ESCALAYER = "escalayer"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
+
+    fun isSystem3xGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val hasSys4Ain = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+        val hasSys4Ini = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+        if (hasSys4Ain || hasSys4Ini) return false
+        return files.any {
+            it.name.endsWith("sa.ald", true) ||
+                it.name.equals("adisk.ald", true) ||
+                it.name.equals("System39.ini", true) ||
+                it.name.equals("System39.ain", true)
+        }
+    }
+
+    fun isEscalayerGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        if (files.any { it.name.equals("DOKI_SA.ALD", true) }) return true
+        val sys39Ini = files.firstOrNull { it.name.equals("System39.ini", true) }
+        if (sys39Ini != null) {
+            val title = System40Ini.parse(sys39Ini).gameName?.lowercase() ?: ""
+            if (title.contains("エスカレイヤー") || title.contains("escalayer") || title.contains("超昂天使")) {
+                return true
+            }
+        }
+        return false
+    }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
 
@@ -127,7 +156,13 @@ object GameCatalog {
                 ) {
                     return ID_SENGOKU_RANCE
                 }
-                if (ainFiles.isNotEmpty()) {
+                if (isEscalayerGameDir(gameDir)) {
+                    return ID_ESCALAYER
+                }
+                if (ainFiles.any { !it.name.equals("System39.ain", ignoreCase = true) }) {
+                    return "$PREFIX_CUSTOM$dirName"
+                }
+                if (isSystem3xGameDir(gameDir)) {
                     return "$PREFIX_CUSTOM$dirName"
                 }
             }
@@ -198,6 +233,12 @@ object GameCatalog {
             if (File(saveDir, "GlobalSave.asd").isFile) {
                 return ID_RANCE10
             }
+            if (saveDir.listFiles()?.any {
+                    it.isFile && it.name.lowercase().startsWith("doki_s") && it.name.lowercase().endsWith(".asd")
+                } == true
+            ) {
+                return ID_ESCALAYER
+            }
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
@@ -236,8 +277,18 @@ object GameCatalog {
         if (lowerDir == "rance10" || lowerDir.startsWith("rance10-") || lowerDir.contains("兰斯10")) {
             return ID_RANCE10
         }
+        if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
+            lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
+        ) {
+            return ID_ESCALAYER
+        }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
+        if (lowerDisp.contains("escalayer") || lowerDisp.contains("超昂天使") ||
+            lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
+        ) {
+            return ID_ESCALAYER
+        }
         if (lowerDisp.contains("rance09") || lowerDisp.contains("rance 09") ||
             lowerDisp.contains("rance9") || lowerDisp.contains("rance 9") || lowerDisp.contains("rance ix") ||
             lowerDisp.contains("兰斯09") || lowerDisp.contains("兰斯9") || lowerDisp.contains("ランス09") ||
@@ -401,6 +452,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_ESCALAYER -> GameDescriptor(
+                id = ID_ESCALAYER,
+                title = context.getString(R.string.game_escalayer_title),
+                defaultDirName = "Escalayer",
+                expectedAinName = "DOKI_SA.ALD",
+                iconRes = R.drawable.ic_game_escalayer,
+                accentColor = 0xFFC2185B.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF281224.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -457,12 +523,16 @@ object GameCatalog {
         val r09Items = matchingItems(gameList, ID_RANCE09)
         entries.add(GameSelectEntry(r09Desc, r09Items, r09Items.firstOrNull()))
 
+        val escDesc = descriptorFor(context, ID_ESCALAYER, gameList)
+        val escItems = matchingItems(gameList, ID_ESCALAYER)
+        entries.add(GameSelectEntry(escDesc, escItems, escItems.firstOrNull()))
+
         for (i in 0 until gameList.size) {
             val item = gameList[i]
             val cid = classifyItem(item)
             if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
                 cid != ID_SENGOKU_RANCE && cid != ID_RANCE03 &&
-                cid != ID_RANCE08 && cid != ID_RANCE09
+                cid != ID_RANCE08 && cid != ID_RANCE09 && cid != ID_ESCALAYER
             ) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))

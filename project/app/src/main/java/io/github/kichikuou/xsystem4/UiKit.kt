@@ -294,7 +294,8 @@ internal object UiKit {
         val pad = when (desc.id) {
             GameCatalog.ID_RANCE10, GameCatalog.ID_EVENICLE,
             GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_RANCE03,
-            GameCatalog.ID_RANCE08, GameCatalog.ID_RANCE09 -> 0
+            GameCatalog.ID_RANCE08, GameCatalog.ID_RANCE09,
+            GameCatalog.ID_ESCALAYER -> 0
             GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
             else -> frame.layoutParams.width / 10
         }
@@ -306,7 +307,8 @@ internal object UiKit {
             desc.id == GameCatalog.ID_SENGOKU_RANCE ||
             desc.id == GameCatalog.ID_RANCE03 ||
             desc.id == GameCatalog.ID_RANCE08 ||
-            desc.id == GameCatalog.ID_RANCE09
+            desc.id == GameCatalog.ID_RANCE09 ||
+            desc.id == GameCatalog.ID_ESCALAYER
         val bitmap = if (builtIn) null else item?.getIconBitmap(frame.layoutParams.width - pad * 2)
         if (bitmap != null) {
             iconView.setImageBitmap(bitmap)

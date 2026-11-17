@@ -294,6 +294,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -302,6 +303,9 @@ class GameModifierActivity : ThemedActivity() {
             return true
         }
         val extDir = currentTarget.externalGameDir
+        if (GameCatalog.isSystem3xGameDir(extDir)) {
+            return false
+        }
         if (extDir == null &&
             File(currentTarget.saveDir, "GlobalSaveData.asd").isFile &&
             !File(currentTarget.saveDir, "GlobalSave.asd").isFile
@@ -321,6 +325,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -342,6 +347,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -363,6 +369,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -384,6 +391,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -405,6 +413,7 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -426,11 +435,34 @@ class GameModifierActivity : ThemedActivity() {
             scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
             scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_ESCALAYER ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
         }
         return GameModifierBridge.isRance09GameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetEscalayer(): Boolean {
+        if (scopedGameId == GameCatalog.ID_ESCALAYER) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId == GameCatalog.ID_RANCE08 ||
+            scopedGameId == GameCatalog.ID_RANCE09 ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isEscalayerGameDir(
             currentTarget.externalGameDir,
             currentTarget.dirName,
             currentTarget.saveDir
@@ -459,13 +491,17 @@ class GameModifierActivity : ThemedActivity() {
         isSengokuRance: Boolean,
         isRance03: Boolean,
         isRance08: Boolean,
-        isRance09: Boolean
+        isRance09: Boolean,
+        isEscalayer: Boolean
     ) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance03 || isRance08 || isRance09
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance03 || isRance08 || isRance09 || isEscalayer
+        val isSys3x = isEscalayer || GameCatalog.isSystem3xGameDir(currentTarget.externalGameDir)
+        (findViewById<View>(R.id.btn_mod_font_size)?.parent as? View)?.visibility =
+            if (isSys3x) View.GONE else View.VISIBLE
         floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
         (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.marginStart = if (showLocks) dp(4) else 0
@@ -482,8 +518,9 @@ class GameModifierActivity : ThemedActivity() {
         val isRance03 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance03()
         val isRance08 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && isCurrentTargetRance08()
         val isRance09 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && isCurrentTargetRance09()
+        val isEscalayer = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 && isCurrentTargetEscalayer()
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03, isRance08, isRance09)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03, isRance08, isRance09, isEscalayer)
         applyThemeAccent()
 
         findViewById<TextView>(R.id.mod_target_title).text =
@@ -544,6 +581,14 @@ class GameModifierActivity : ThemedActivity() {
                         "存档 $saveCount 个 · 锁定 $r09LockCount 项",
                         "セーブ $saveCount 個 · ロック $r09LockCount 項目",
                         "$saveCount saves · Locks: $r09LockCount"
+                    )
+                }
+                isEscalayer -> {
+                    val escLockCount = GameModifierBridge.getEscLiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $escLockCount 项",
+                        "セーブ $saveCount 個 · ロック $escLockCount 項目",
+                        "$saveCount saves · Locks: $escLockCount"
                     )
                 }
                 else -> {
@@ -718,6 +763,7 @@ class GameModifierActivity : ThemedActivity() {
     // 1. Full Unlock Dialog
     // =========================================================================
     private fun showFullUnlockDialog() {
+        if (!isCurrentTargetRance10()) return
         val saveDir = currentTarget.saveDir
         val hasBak = GameModifierBridge.hasFullUnlockBackup(saveDir)
         val options = mutableListOf(
@@ -752,6 +798,7 @@ class GameModifierActivity : ThemedActivity() {
     // 2. Global Save Menu & Editor
     // =========================================================================
     private fun showGlobalSaveMenuDialog() {
+        if (!isCurrentTargetRance10()) return
         if (!GameModifierBridge.ensureLoaded()) {
             Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show()
             return
@@ -987,6 +1034,19 @@ class GameModifierActivity : ThemedActivity() {
             ) { GameModifierBridge.setSavedR09LockMask(this, it) }
             return
         }
+        if (!isCurrentTargetRance10() && isCurrentTargetEscalayer()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_ESC_HP_FULL to tr("锁定满 HP", "HP最大ロック", "Lock Full HP"),
+                GameModifierBridge.LOCK_ESC_LIBIDO_MAX to tr("锁定满 Libido (必杀槽)", "リビドー最大ロック", "Lock Max Libido"),
+                GameModifierBridge.LOCK_ESC_ONEHIT to tr("战斗敌方 1 血秒杀", "敵HP1・一撃撃破", "Enemy 1 HP"),
+                GameModifierBridge.LOCK_ESC_LOVE_MAX to tr("锁定满爱情度", "愛情度維持", "Keep High Love")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedEscLockMask(this)
+            ) { GameModifierBridge.setSavedEscLockMask(this, it) }
+            return
+        }
 
         val lockDefs = listOf(
             GameModifierBridge.LOCK_PARTY_MAX_HP to tr("锁定我方满生命", "味方HP最大ロック", "Lock Party Max HP"),
@@ -1034,6 +1094,7 @@ class GameModifierActivity : ThemedActivity() {
     // 4. LocalSave*.asd Slot Menu & Editors
     // =========================================================================
     private fun showLocalSaveMenuDialog(entry: ModSaveSlotEntry) {
+        if (!isCurrentTargetRance10()) return
         if (!GameModifierBridge.ensureLoaded()) {
             Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show()
             return
