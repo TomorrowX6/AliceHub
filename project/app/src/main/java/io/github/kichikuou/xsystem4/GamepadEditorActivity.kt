@@ -307,6 +307,8 @@ class GamepadEditorActivity : Activity() {
             Gravity.TOP or Gravity.CENTER_HORIZONTAL
         ).apply {
             topMargin = dp(8)
+            leftMargin = dp(12)
+            rightMargin = dp(12)
         })
 
         // 5. Winlator-style Smart-Positioned Floating Element Inspector Card
@@ -390,7 +392,7 @@ class GamepadEditorActivity : Activity() {
         segBox.addView(tabPhysicalBtn)
         bar.addView(segBox, wrapParams(rightMargin = dp(8)))
 
-        bar.addView(makeVertDivider(), wrapParams(rightMargin = dp(8)))
+        bar.addView(makeVertDivider(dp(8)))
 
         presetPill = makePill("ADV ▾", active = false) { showPresetPicker() }
         bar.addView(presetPill, wrapParams(rightMargin = dp(6)))
@@ -422,7 +424,7 @@ class GamepadEditorActivity : Activity() {
         }
         bar.addView(globalCfgBtn, wrapParams(rightMargin = dp(8)))
 
-        bar.addView(makeVertDivider(), wrapParams(rightMargin = dp(8)))
+        bar.addView(makeVertDivider(dp(8)))
 
         val resetBtn = makePill(tr("重置", "初期化", "Reset"), active = false) { confirmReset() }
         bar.addView(resetBtn, wrapParams(rightMargin = dp(6)))
@@ -430,7 +432,10 @@ class GamepadEditorActivity : Activity() {
         val saveBtn = makePill(tr("保存", "保存", "Save"), active = true) { saveAndFinish() }
         bar.addView(saveBtn)
 
-        scroll.addView(bar)
+        scroll.addView(bar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
         return scroll
     }
 
@@ -1487,9 +1492,11 @@ class GamepadEditorActivity : Activity() {
         }
     }
 
-    private fun makeVertDivider(): View = View(this).apply {
+    private fun makeVertDivider(rightMargin: Int = 0): View = View(this).apply {
         setBackgroundColor(COL_OUTLINE)
-        layoutParams = LinearLayout.LayoutParams(dp(1).coerceAtLeast(1), dp(16))
+        layoutParams = LinearLayout.LayoutParams(dp(1).coerceAtLeast(1), dp(16)).apply {
+            this.rightMargin = rightMargin
+        }
     }
 
     private fun makeHorizDivider(): View = View(this).apply {
