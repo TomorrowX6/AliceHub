@@ -982,8 +982,8 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	PE_SetPartsOriginPosMode(no, number(tree, "原点座標模式", 1));
 	p->reverse_lr = !!number(tree, "左右反转", 0);
 	p->reverse_tb = !!number(tree, "上下反转", 0);
-	PE_SetPartsMagX(no, item(tree, "拡大縮小", 0, 1) * (p->reverse_lr ? -1 : 1));
-	PE_SetPartsMagY(no, item(tree, "拡大縮小", 1, 1) * (p->reverse_tb ? -1 : 1));
+	PE_SetPartsMagX(no, item(tree, "拡大縮小", 0, 1));
+	PE_SetPartsMagY(no, item(tree, "拡大縮小", 1, 1));
 	PE_SetPartsRotateX(no, item(tree, "旋转", 0, 0));
 	PE_SetPartsRotateY(no, item(tree, "旋转", 1, 0));
 	PE_SetPartsRotateZ(no, item(tree, "旋转", 2, 0));

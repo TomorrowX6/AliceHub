@@ -772,10 +772,14 @@ static void parts_apply_local_matrix(struct parts *parts, mat4 out)
 	}
 	tx += pos.x;
 	ty += pos.y;
+	// Component reversal is independent of magnification. Apply it here so
+	// CG/FLAT rendering, child transforms and hit testing use the same axes.
+	float scale_x = parts->local.scale.x * (parts->reverse_lr ? -1.0f : 1.0f);
+	float scale_y = parts->local.scale.y * (parts->reverse_tb ? -1.0f : 1.0f);
 	if (parts->local.rotation.x == 0.0f && parts->local.rotation.y == 0.0f &&
 			parts->local.rotation.z == 0.0f) {
-		float sx = parts->local.scale.x;
-		float sy = parts->local.scale.y;
+		float sx = scale_x;
+		float sy = scale_y;
 		if (tx != 0.0f || ty != 0.0f || sx != 1.0f || sy != 1.0f) {
 			for (int r = 0; r < 4; r++) {
 				float m0 = out[0][r];
@@ -795,8 +799,8 @@ static void parts_apply_local_matrix(struct parts *parts, mat4 out)
 		glm_rotate_x(out, glm_rad(-parts->local.rotation.x), out);
 	if (parts->local.rotation.y != 0.0f)
 		glm_rotate_y(out, glm_rad(parts->local.rotation.y), out);
-	if (parts->local.scale.x != 1.0f || parts->local.scale.y != 1.0f)
-		glm_scale(out, (vec3){parts->local.scale.x, parts->local.scale.y, 1});
+	if (scale_x != 1.0f || scale_y != 1.0f)
+		glm_scale(out, (vec3){scale_x, scale_y, 1});
 }
 
 static void parts_update_global_pos_mat(struct parts *parts, SDL_FPoint parent_pos, mat4 parent_matrix)
