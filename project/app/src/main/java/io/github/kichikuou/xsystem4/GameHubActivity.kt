@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,6 +41,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private var selectedItem: Item? = null
 
     private var progressDialog: Dialog? = null
+    private var uninstallDialog: AlertDialog? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,6 +116,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         refreshOnlineSizeIfNeeded()
         refreshUi()
         renderInstallState(gameList.installState)
+        matchingItems.firstOrNull { gameList.isUninstalling(it) }?.let { watchUninstall(it) }
 
         val postAction = pendingPostResumeAction
         pendingPostResumeAction = null
@@ -134,6 +137,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissUninstallDialog()
         scope.cancel()
         super.onDestroy()
     }
@@ -540,6 +544,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun confirmUninstallGame(item: Item) {
+        if (gameList.isUninstalling(item)) {
+            watchUninstall(item)
+            return
+        }
         if (gameList.isInstallingInto(item) || gameList.isInstallingForGame(descriptor.id)) {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
@@ -550,13 +558,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 .setTitle(R.string.action_delete_base_game)
                 .setMessage(getString(R.string.delete_base_game_message, GameCatalog.cleanItemTitle(item.name)))
                 .setPositiveButton(R.string.ok) { _, _ ->
-                    gameList.uninstall(item)
-                    rebindGameState()
-                    if (descriptor.id.startsWith(GameCatalog.PREFIX_CUSTOM) && matchingItems.isEmpty()) {
-                        navigateBackToSelect()
-                    } else {
-                        refreshUi()
-                    }
+                    // Deleting several GB of files takes a while: do it off the main thread
+                    // behind a modal progress dialog (which also blocks a second tap).
+                    gameList.uninstallAsync(item) { _ -> }
+                    watchUninstall(item)
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -729,6 +734,58 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         if (cancelBtn != null) {
             cancelBtn.visibility = if (cancellable) View.VISIBLE else View.GONE
             cancelBtn.setText(R.string.cancel)
+        }
+    }
+
+    /**
+     * Shows the progress dialog until [item]'s deletion (running in GameList's scope) ends.
+     * Polling keeps this working when the activity is recreated mid-deletion.
+     */
+    private fun watchUninstall(item: Item) {
+        if (!gameList.isUninstalling(item) || uninstallDialog?.isShowing == true) return
+        showUninstallProgress()
+        scope.launch {
+            while (gameList.isUninstalling(item)) delay(200)
+            dismissUninstallDialog()
+            if (item.path.exists()) {
+                Toast.makeText(this@GameHubActivity, R.string.delete_base_game_failed, Toast.LENGTH_LONG).show()
+            }
+            rebindGameState()
+            if (descriptor.id.startsWith(GameCatalog.PREFIX_CUSTOM) && matchingItems.isEmpty()) {
+                navigateBackToSelect()
+            } else {
+                refreshUi()
+            }
+        }
+    }
+
+    private fun showUninstallProgress() {
+        if (uninstallDialog?.isShowing == true) return
+        val pad = UiKit.dpInt(this, 24)
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(pad, pad, pad, pad)
+            addView(ProgressBar(this@GameHubActivity).apply { isIndeterminate = true })
+            addView(TextView(this@GameHubActivity).apply {
+                setText(R.string.deleting_base_game)
+                setTextColor(getColor(R.color.ui_text_primary))
+                textSize = 15f
+                setPadding(pad, 0, 0, 0)
+            })
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        uninstallDialog = AlertDialog.Builder(this)
+            .setView(row)
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun dismissUninstallDialog() {
+        uninstallDialog?.dismiss()
+        uninstallDialog = null
+        if (progressDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 

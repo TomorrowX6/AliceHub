@@ -36,6 +36,8 @@
     <string name="toast_no_ini">%s に設定ファイルがありません</string>
     <string name="action_delete_base_game">ゲーム本体を削除</string>
     <string name="delete_base_game_message">%s のゲーム本体を削除しますか？セーブは保持されます。</string>
+    <string name="deleting_base_game">ゲーム本体を削除中…</string>
+    <string name="delete_base_game_failed">ゲーム本体の一部のファイルを削除できませんでした。もう一度お試しください。</string>
     <string name="action_uninstall_mod">MODを解除</string>
     <string name="uninstall_mod_no_backup_msg">元データのバックアップがありません。本体を削除して再導入してください。</string>
     <string name="zip_extraction_error">展開に失敗しました。ファイルと空き容量を確認してください</string>

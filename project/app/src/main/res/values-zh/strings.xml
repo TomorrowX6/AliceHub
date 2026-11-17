@@ -36,6 +36,8 @@
     <string name="toast_no_ini">%s 缺少启动配置文件</string>
     <string name="action_delete_base_game">删除游戏本体</string>
     <string name="delete_base_game_message">确定删除 %s 游戏本体吗？存档会保留。</string>
+    <string name="deleting_base_game">正在删除游戏本体…</string>
+    <string name="delete_base_game_failed">未能删除全部游戏本体文件，请重试。</string>
     <string name="action_uninstall_mod">卸载 MOD</string>
     <string name="uninstall_mod_no_backup_msg">整合包无原版备份，请删除游戏本体后重装原版。</string>
     <string name="zip_extraction_error">解压失败，请检查文件完整性与可用空间</string>

@@ -37,6 +37,8 @@
     <string name="toast_no_ini">Missing game config in %s</string>
     <string name="action_delete_base_game">Delete Base Game</string>
     <string name="delete_base_game_message">Delete %s base game? Saves will be kept.</string>
+    <string name="deleting_base_game">Deleting base game…</string>
+    <string name="delete_base_game_failed">Could not delete every file of the base game. Please try again.</string>
     <string name="action_uninstall_mod">Uninstall MOD</string>
     <string name="uninstall_mod_no_backup_msg">No vanilla backup found. Delete base game and reinstall vanilla.</string>
     <string name="zip_extraction_error">Extraction failed. Check archive and free space.</string>

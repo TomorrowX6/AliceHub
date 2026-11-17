@@ -233,6 +233,10 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
     }
 }
 
+// Game directories whose deletion is still running (absolute paths). Process-wide, so a
+// refreshed GameList instance still knows about a deletion started by an older one.
+private val uninstallingPaths = HashSet<String>()
+
 class GameList(activity: Activity) {
     private val appContext: Context = activity.applicationContext
     private val context: Context
@@ -908,9 +912,32 @@ class GameList(activity: Activity) {
         }
     }
 
-    fun uninstall(item: Item) {
-        item.path.deleteRecursively()
-        items.remove(item)
+    fun isUninstalling(item: Item): Boolean = uninstallingPaths.contains(item.path.absolutePath)
+
+    /**
+     * Deletes [item]'s directory on an IO thread and drops it from the list when done.
+     * A game can be several GB, so this must not run on the main thread. Runs in the
+     * GameList scope so leaving the screen doesn't strand a half-deleted entry.
+     * Returns false (and does nothing) if the same game is already being deleted.
+     */
+    fun uninstallAsync(item: Item, onDone: (deleted: Boolean) -> Unit): Boolean {
+        val key = item.path.absolutePath
+        if (!uninstallingPaths.add(key)) return false
+        scope.launch {
+            val deleted = try {
+                withContext(Dispatchers.IO) {
+                    item.path.deleteRecursively()
+                    !item.path.exists()
+                }
+            } catch (t: Throwable) {
+                Log.w("GameList", "uninstall failed: ${item.path}", t)
+                false
+            }
+            if (deleted) items.remove(item)
+            uninstallingPaths.remove(key)
+            onDone(deleted)
+        }
+        return true
     }
 
     private fun hasInstalledModDir(dir: File): Boolean = Item.detectInstalledMod(dir)
