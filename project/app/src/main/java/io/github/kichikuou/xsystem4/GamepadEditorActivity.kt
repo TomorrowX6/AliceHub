@@ -99,6 +99,8 @@ class GamepadEditorActivity : Activity() {
     // Snapshot of what is on disk, used to detect unsaved edits on exit.
     private lateinit var savedProfile: GamepadProfile
     private var savedPerGameOverride: Boolean = false
+    // Per-game draft stashed while the per-game switch is off, so toggling back restores it.
+    private var stashedPerGameDraft: GamepadProfile? = null
     private var activeTab: Int = TAB_VIRTUAL
     private var selectedControlId: String? = null
     private var globalPopoverOpen: Boolean = false
@@ -929,7 +931,20 @@ class GamepadEditorActivity : Activity() {
                 it.isChecked = perGameOverride
             }
             globalPopoverCard.addView(makeSwitchRow(tr("本游戏独立配置", "ゲーム別設定", "Per-Game Profile"), gameSw) { checked ->
+                if (checked == perGameOverride) return@makeSwitchRow
                 perGameOverride = checked
+                if (!checked) {
+                    // Switching to the global profile: edit the global profile itself instead of
+                    // pushing this game's layout over it on save.
+                    stashedPerGameDraft = profile
+                    profile = GamepadBridge.loadGlobalProfile(this)
+                } else {
+                    // Start the per-game profile from the stashed draft, or from the global one.
+                    profile = stashedPerGameDraft ?: profile
+                    stashedPerGameDraft = null
+                }
+                selectedControlId = null
+                refreshAllUi()
             })
         }
 
@@ -1362,12 +1377,14 @@ class GamepadEditorActivity : Activity() {
     private fun confirmReset() {
         AlertDialog.Builder(this)
             .setTitle(tr("恢复默认", "初期化", "Reset"))
-            .setMessage(tr("恢复默认布局并将所有开关重置为关闭？", "初期状態に戻しますか？", "Restore all defaults?"))
+            .setMessage(tr(
+                "恢复默认布局并将所有开关重置为关闭？点“保存”后才会生效。",
+                "初期状態に戻しますか？「保存」するまで反映されません。",
+                "Restore all defaults? Nothing is changed until you tap Save."
+            ))
             .setPositiveButton(R.string.ok) { _, _ ->
-                if (perGameOverride && profileKey != null) {
-                    GamepadBridge.clearPerGameOverride(this, profileKey)
-                    perGameOverride = false
-                }
+                // Only the draft is reset. Files are touched on Save, in the current scope
+                // (per-game or global), so backing out loses nothing.
                 profile = GamepadProfile()
                 selectedControlId = null
                 globalPopoverOpen = false

@@ -471,6 +471,10 @@ object GamepadBridge {
         return readProfileFile(defaultProfileFile(context)) ?: GamepadProfile()
     }
 
+    /** The global (non per-game) profile, ignoring any per-game override. */
+    fun loadGlobalProfile(context: Context): GamepadProfile =
+        readProfileFile(defaultProfileFile(context)) ?: GamepadProfile()
+
     fun saveProfile(
         context: Context,
         profile: GamepadProfile,

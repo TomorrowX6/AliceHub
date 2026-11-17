@@ -108,12 +108,9 @@ class GamepadConfigController(
     }
 
     fun resetToDefaults() {
-        if (perGameMode && normalizedKey != null) {
-            GamepadBridge.clearPerGameOverride(uiCtx, normalizedKey)
-            perGameMode = false
-        }
+        // Only reset the draft; the per-game / global file is written on save, in the
+        // current scope, so cancelling the dialog loses nothing.
         draft = GamepadProfile()
-        GamepadBridge.syncProfileToNative(draft)
         markDirty(true)
         refreshAllUi()
     }
