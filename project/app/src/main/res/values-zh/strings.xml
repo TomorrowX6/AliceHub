@@ -92,6 +92,11 @@
     <string name="save_import_done_title">导入完成</string>
     <string name="save_import_failed_title">导入失败</string>
     <string name="save_import_dir_done_msg">已导入 %1$d 个存档文件</string>
+    <string name="save_import_overwrite_msg">同名存档会被覆盖。导入前会先自动备份当前存档，可在“导入存档”里选择“恢复备份”撤销。</string>
+    <string name="save_import_opt_restore_backup">恢复备份（%1$s）</string>
+    <string name="save_restore_backup_confirm_msg">用 %1$s 的备份替换当前存档吗？当前存档会先自动备份。</string>
+    <string name="save_restore_backup_done_msg">已从备份恢复 %1$d 个存档文件</string>
+    <string name="save_progress_restore_backup">正在恢复备份…</string>
     <string name="save_import_files_done_msg">已导入 %1$d 个存档文件</string>
 
     <string name="save_export_done_title">导出成功</string>

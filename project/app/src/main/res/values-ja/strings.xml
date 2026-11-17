@@ -92,6 +92,11 @@
     <string name="save_import_done_title">インポート完了</string>
     <string name="save_import_failed_title">インポート失敗</string>
     <string name="save_import_dir_done_msg">%1$d 個のファイルをインポートしました</string>
+    <string name="save_import_overwrite_msg">同じ名前のセーブは上書きされます。現在のセーブは先に自動でバックアップされ、「インポート」の「バックアップを復元」で元に戻せます。</string>
+    <string name="save_import_opt_restore_backup">バックアップを復元（%1$s）</string>
+    <string name="save_restore_backup_confirm_msg">現在のセーブを %1$s のバックアップで置き換えますか？現在のセーブは先にバックアップされます。</string>
+    <string name="save_restore_backup_done_msg">バックアップから %1$d 個のファイルを復元しました</string>
+    <string name="save_progress_restore_backup">バックアップを復元中…</string>
     <string name="save_import_files_done_msg">%1$d 個のファイルをインポートしました</string>
 
     <string name="save_export_done_title">エクスポート完了</string>
