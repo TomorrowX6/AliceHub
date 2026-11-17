@@ -613,12 +613,50 @@ object GamepadBridge {
         }
     }
 
+    /** slotId for controls that never send button events (D-Pad / sticks). */
+    const val NO_SLOT = -1
+
+    /**
+     * First native button slot not used by another button. Only buttons occupy slots, so slots
+     * freed by deleted preset buttons (0-11) are reused and D-Pad / sticks never consume one.
+     */
     fun nextFreeCustomSlotId(controls: List<VirtualControlSpec>): Int {
-        val used = controls.map { it.slotId }.toSet()
-        for (id in 12 until MAX_VPAD_SLOTS) {
+        val used = controls.filter { it.kind == VirtualControlKind.BUTTON }.map { it.slotId }.toSet()
+        for (id in 0 until MAX_VPAD_SLOTS) {
             if (!used.contains(id)) return id
         }
         return -1
+    }
+
+    /** Smallest "K<n>" label not already used by a control. */
+    fun nextCustomButtonLabel(controls: List<VirtualControlSpec>): String {
+        val used = controls.map { it.label }.toSet()
+        var n = 1
+        while (used.contains("K$n")) n++
+        return "K$n"
+    }
+
+    /**
+     * Spawn position for a new control: the screen centre, or the nearest point on a small
+     * grid around it that is not already occupied, so repeated adds don't stack.
+     */
+    fun nextSpawnPosition(controls: List<VirtualControlSpec>): Pair<Float, Float> {
+        val minDist = 0.06f
+        val step = 0.08f
+        for (ring in 0..4) {
+            for (dy in -ring..ring) {
+                for (dx in -ring..ring) {
+                    if (maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy)) != ring) continue
+                    val x = (0.5f + dx * step).coerceIn(POS_X_MIN, POS_X_MAX)
+                    val y = (0.5f + dy * step).coerceIn(POS_Y_MIN, POS_Y_MAX)
+                    val free = controls.none {
+                        kotlin.math.abs(it.xNorm - x) < minDist && kotlin.math.abs(it.yNorm - y) < minDist
+                    }
+                    if (free) return x to y
+                }
+            }
+        }
+        return 0.5f to 0.5f
     }
 
     fun buildKeyActionCatalog(): List<Pair<String, List<KeyActionEntry>>> {

@@ -1245,19 +1245,18 @@ class GamepadEditorActivity : Activity() {
         val hasLeftStick = controls.any { it.id == "stick_l" }
         val hasRightStick = controls.any { it.id == "stick_r" }
         val slotId = GamepadBridge.nextFreeCustomSlotId(controls)
-        if (slotId < 0) {
-            Toast.makeText(this, tr("自定义按键已达上限", "上限に達しました", "Limit reached"), Toast.LENGTH_SHORT).show()
-            return
-        }
         // Built-in pad controls (D-Pad / sticks) can be re-added once each after deletion.
+        // They don't send button events, so they never take a button slot.
         val options = ArrayList<Pair<String, () -> Unit>>()
-        options.add(tr("添加自定义按键", "ボタン追加", "Add Button") to { spawnCustomButton(slotId) })
+        if (slotId >= 0) {
+            options.add(tr("添加自定义按键", "ボタン追加", "Add Button") to { spawnCustomButton(slotId) })
+        }
         if (!hasDpad) {
             options.add(tr("添加十字键", "十字キー追加", "Add D-Pad") to {
                 addPadControl(
                     VirtualControlSpec(
                         id = "dpad",
-                        slotId = slotId,
+                        slotId = GamepadBridge.NO_SLOT,
                         kind = VirtualControlKind.DPAD,
                         label = "D-PAD",
                         xNorm = 0.12f,
@@ -1277,7 +1276,7 @@ class GamepadEditorActivity : Activity() {
                 addPadControl(
                     VirtualControlSpec(
                         id = "stick_l",
-                        slotId = slotId,
+                        slotId = GamepadBridge.NO_SLOT,
                         kind = VirtualControlKind.STICK,
                         label = "L",
                         xNorm = 0.14f,
@@ -1297,7 +1296,7 @@ class GamepadEditorActivity : Activity() {
                 addPadControl(
                     VirtualControlSpec(
                         id = "stick_r",
-                        slotId = slotId,
+                        slotId = GamepadBridge.NO_SLOT,
                         kind = VirtualControlKind.STICK,
                         label = "R",
                         xNorm = 0.72f,
@@ -1312,8 +1311,12 @@ class GamepadEditorActivity : Activity() {
                 )
             })
         }
+        if (options.isEmpty()) {
+            Toast.makeText(this, tr("自定义按键已达上限", "上限に達しました", "Limit reached"), Toast.LENGTH_SHORT).show()
+            return
+        }
         if (options.size == 1) {
-            spawnCustomButton(slotId)
+            options[0].second()
             return
         }
         AlertDialog.Builder(this)
@@ -1332,14 +1335,17 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun spawnCustomButton(slotId: Int) {
-        val num = profile.virtual.controls.count { it.isCustom && it.kind == VirtualControlKind.BUTTON } + 1
+        val controls = profile.virtual.controls
+        val (spawnX, spawnY) = GamepadBridge.nextSpawnPosition(controls)
+        var newId = "custom_$slotId"
+        while (controls.any { it.id == newId }) newId += "_"
         val newBtn = VirtualControlSpec(
-            id = "custom_$slotId",
+            id = newId,
             slotId = slotId,
             kind = VirtualControlKind.BUTTON,
-            label = "K$num",
-            xNorm = 0.50f,
-            yNorm = 0.50f,
+            label = GamepadBridge.nextCustomButtonLabel(controls),
+            xNorm = spawnX,
+            yNorm = spawnY,
             scale = 0.95f,
             opacity = 1.0f,
             visible = true,
