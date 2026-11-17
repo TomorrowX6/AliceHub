@@ -861,8 +861,9 @@ object GamepadBridge {
         val src = dev.sources
         val isGamepad = (src and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
         val isJoystick = (src and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-        val isDpad = (src and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD
-        if (!isGamepad && !isJoystick && !isDpad) return false
+        // SOURCE_DPAD alone is not enough: many keyboards and TV remotes report it, and treating
+        // them as controllers swallowed their arrow / Enter keys.
+        if (!isGamepad && !isJoystick) return false
         val name = dev.name.orEmpty().lowercase(Locale.ROOT)
         if (name.contains("accelerometer") || name.contains("sensor") || name.contains("fingerprint") || name.contains("gpio")) {
             return false
