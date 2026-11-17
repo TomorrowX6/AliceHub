@@ -305,6 +305,7 @@ class XSystem4Activity : SDLActivity() {
         }
         if (virtualGamepadView == null) {
             val pad = VirtualGamepadView(this).apply {
+                passthroughTargetProvider = { findGameSurfaceView() }
                 setProfile(activeGamepadProfile)
                 setCtrlToggleLatched(ctrlSkipLatched)
             }
@@ -324,20 +325,17 @@ class XSystem4Activity : SDLActivity() {
         openGamepadEditorActivity(GamepadEditorActivity.TAB_VIRTUAL)
     }
 
-    private fun captureGameScreenshot() {
-        val surfaceView = SDLActivity.getContentView()?.let { root ->
-            var found: SurfaceView? = null
-            if (root is ViewGroup) {
-                for (i in 0 until root.childCount) {
-                    val child = root.getChildAt(i)
-                    if (child is SurfaceView) {
-                        found = child
-                        break
-                    }
-                }
-            }
-            found
+    private fun findGameSurfaceView(): SurfaceView? {
+        val root = SDLActivity.getContentView() as? ViewGroup ?: return null
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            if (child is SurfaceView) return child
         }
+        return null
+    }
+
+    private fun captureGameScreenshot() {
+        val surfaceView = findGameSurfaceView()
         val targetW = (surfaceView?.width?.takeIf { it > 0 } ?: window.decorView.width).coerceAtLeast(1)
         val targetH = (surfaceView?.height?.takeIf { it > 0 } ?: window.decorView.height).coerceAtLeast(1)
         val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
