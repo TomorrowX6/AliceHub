@@ -968,17 +968,43 @@ class SaveManagerActivity : ThemedActivity() {
         return result
     }
 
-    private fun copyDocumentTreeToInternal(treeUri: Uri, parentDocId: String, destDir: File): Int {
+    /**
+     * Turns a provider-supplied display name into a single safe path component, or null.
+     * DISPLAY_NAME comes from an arbitrary DocumentsProvider and may contain separators
+     * or be "..", which would let a copy escape the save folder.
+     */
+    private fun safeChildName(raw: String): String? {
+        val name = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+            .substringAfterLast('/').substringAfterLast('\\').trim()
+        if (name.isEmpty() || name == "." || name == ".." || name.contains('\u0000')) return null
+        return name
+    }
+
+    private fun isInside(root: File, file: File): Boolean {
+        val r = root.canonicalPath
+        val f = file.canonicalPath
+        return f.startsWith(r + File.separator)
+    }
+
+    private fun copyDocumentTreeToInternal(
+        treeUri: Uri,
+        parentDocId: String,
+        destDir: File,
+        rootDir: File = destDir
+    ): Int {
         destDir.mkdirs()
         var count = 0
         for (child in listDocumentChildren(treeUri, parentDocId)) {
             if (child.name.startsWith(".")) continue
-            val cleanName = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+            val cleanName = safeChildName(child.name) ?: continue
             if (child.isDirectory) {
-                count += copyDocumentTreeToInternal(treeUri, child.documentId, File(destDir, cleanName))
+                val subDir = File(destDir, cleanName)
+                if (!isInside(rootDir, subDir)) continue
+                count += copyDocumentTreeToInternal(treeUri, child.documentId, subDir, rootDir)
             } else {
                 val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
                 val outFile = File(destDir, cleanName)
+                if (!isInside(rootDir, outFile)) continue
                 contentResolver.openInputStream(docUri)?.use { input ->
                     outFile.outputStream().buffered().use { output ->
                         input.copyTo(output)
@@ -1002,8 +1028,7 @@ class SaveManagerActivity : ThemedActivity() {
                     var imported = 0
                     for (uri in uris) {
                         val fileName = queryDisplayName(uri) ?: "save_${System.currentTimeMillis()}.asd"
-                        val safeName = ArchiveExtractor.repairSjisAsGbkMojibake(File(fileName).name)
-                        if (safeName.isEmpty()) continue
+                        val safeName = safeChildName(fileName) ?: continue
                         if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
                             imported += extractSaveArchiveToTarget(uri, targetDir)
                         } else {
