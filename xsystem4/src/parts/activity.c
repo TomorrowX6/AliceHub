@@ -561,7 +561,18 @@ static const char *const pact_key_aliases[][3] = {
 	{ "レイアウト类型", "レイアウトタイプ", NULL },
 	{ "翻折許可", "折り返し許可", NULL },
 	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ" },
+	{ "翻折尺寸を率として認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する" },
 	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する" },
+	{ "原点座標模式", "原点座標モード", NULL },
+	{ "ミップ地图", "ミップマップ", NULL },
+	{ "減算色模式", "減算色モード", NULL },
+	{ "左右反转", "左右反転", NULL },
+	{ "上下反转", "上下反転", NULL },
+	{ "文本エリア", "テキストエリア", NULL },
+	{ "开始時シーク量", "開始時シーク量", NULL },
+	{ "线の幅", "線の幅", NULL },
+	{ "旋转角度", "回転角度", NULL },
+	{ "座標总览", "座標一覧", NULL },
 	{ "一般状态", "通常状態", NULL },
 	{ "光标选中状态", "オンカーソル状態", NULL },
 	{ "键DOWN状态", "キーダウン状態", NULL },
@@ -1032,13 +1043,22 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	PE_Parts_SetSoundName(no, str2(tree, "点击效果音", "点击音效"), 3);
 	if (parent) PE_SetParentPartsNumber(no, parent);
 	struct ex_value *destinations = field(tree, "遷移先");
+	int intent_type = (int)number(tree, "遷移方法", 0);
 	if (destinations && destinations->type == EX_LIST) {
-		PE_SetActivityIntentData(a->name, tree->name, &EMPTY_STRING, (int)number(tree, "遷移方法", 0));
+		bool initialized = false;
 		for (unsigned i = 0; i < destinations->list->nr_items; i++) {
 			struct ex_value *item = ex_list_get(destinations->list, i);
-			if (item && item->type == EX_STRING)
-				PE_AddActivityIntentDataDestination(a->name, tree->name, item->s);
+			if (item && item->type == EX_STRING) {
+				if (!initialized) {
+					PE_SetActivityIntentData(a->name, tree->name, item->s, intent_type);
+					initialized = true;
+				} else {
+					PE_AddActivityIntentDataDestination(a->name, tree->name, item->s);
+				}
+			}
 		}
+		if (!initialized)
+			PE_SetActivityIntentData(a->name, tree->name, &EMPTY_STRING, intent_type);
 	}
 	struct ex_tree *info = node2(tree, "种类別情报", "种类別情報");
 	char *kind = read_pact_kind(info);

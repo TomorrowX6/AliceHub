@@ -468,7 +468,9 @@ static void apply_rance03_skill_cooldown_layout(struct ain *ain)
 		p += size;
 	}
 	if (found) {
-		union { float f; uint32_t i; } x = { .f = 14.f }, y = { .f = 16.f };
+		// parts[8] uses origin_mode=2 (top-center, origin_offset.x=-45, y=0) after R03 remapping;
+		// pos=(59, 16) places the 90x90 cooldown overlay at (14, 16), centered on (59, 61).
+		union { float f; uint32_t i; } x = { .f = 59.f }, y = { .f = 16.f };
 		LittleEndian_putDW(ain->code, found + 2, x.i);
 		LittleEndian_putDW(ain->code, found + 8, y.i);
 	}

@@ -1946,6 +1946,23 @@ static void PartsEngine_GetPartsConstructionProcess_v14(int parts_no, int index,
 			array_float, array_string, array_pos, state);
 }
 
+static bool PartsEngine_get_construction_process_v6_arrays(union vm_value *ints,
+		struct page **array_float, struct page **array_string)
+{
+	struct page *tmp_int = NULL;
+	PartsEngine_GetPartsConstructionProcess(ints[0].i, ints[1].i, &tmp_int,
+			array_float, array_string, ints[2].i);
+	if (tmp_int && tmp_int->nr_vars >= 32) {
+		memcpy(ints + 3, tmp_int->values, 19 * sizeof(*ints));
+		memcpy(ints + 22, tmp_int->values + 20, 11 * sizeof(*ints));
+	}
+	if (tmp_int) {
+		delete_page_vars(tmp_int);
+		free_page(tmp_int);
+	}
+	return true;
+}
+
 static void pf_set_str(union vm_value *strings, int slot, struct string *s)
 {
 	free_string(heap[strings[slot].i].s);
@@ -2678,23 +2695,11 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		REQUIRE_STRINGS(2);
 		PartsEngine_add_construction_process(ints, floats, strings, 0, 0);
 		return 1;
-	case 163: {  // GetConstructProcess(ArrayInt[33], ArrayFloat[2], ArrayString[2])
+	case 163:  // GetConstructProcess(ArrayInt[33], ArrayFloat[2], ArrayString[2])
 		REQUIRE_INTS(33);
 		REQUIRE_FLOATS(2);
 		REQUIRE_STRINGS(2);
-		struct page *tmp_int = NULL;
-		PartsEngine_GetPartsConstructionProcess(ints[0].i, ints[1].i, &tmp_int,
-				array_float, array_string, ints[2].i);
-		if (tmp_int && tmp_int->nr_vars >= 32) {
-			memcpy(ints + 3, tmp_int->values, 19 * sizeof(*ints));
-			memcpy(ints + 22, tmp_int->values + 20, 11 * sizeof(*ints));
-		}
-		if (tmp_int) {
-			delete_page_vars(tmp_int);
-			free_page(tmp_int);
-		}
-		return 1;
-	}
+		return PartsEngine_get_construction_process_v6_arrays(ints, array_float, array_string) ? 1 : 0;
 	case 164:  // void GetConstructionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
 		REQUIRE_INTS(6);
 		PartsEngine_GetConstructionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
@@ -2714,6 +2719,80 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 #undef REQUIRE_INTS
 #undef REQUIRE_FLOATS
 #undef REQUIRE_STRINGS
+}
+
+static void PartsEngine_GetActivityPartsName_v6(struct string **out, struct string *name, int no)
+{
+	pf_assign_out_string(out, PE_GetActivityPartsName(name, no));
+}
+
+static bool PartsEngine_LoadActivityEXText_v6(struct string *name, struct string *text)
+{
+	PE_SetActivityEXText(name, text);
+	return true;
+}
+
+static bool PartsEngine_PlayPartsMovie_v6(int parts_no, int state)
+{
+	return PartsEngine_PlayPartsMovie(parts_no, 0, state);
+}
+
+static void PartsEngine_AddPartsConstructionProcess_v6(struct page **array_int,
+		struct page **array_float, struct page **array_string)
+{
+	if (!array_int || !*array_int || (*array_int)->nr_vars < 32
+			|| !array_float || !*array_float || (*array_float)->nr_vars < 2
+			|| !array_string || !*array_string || (*array_string)->nr_vars < 2)
+		VM_ERROR("Invalid v6 construction process arrays");
+	PartsEngine_add_construction_process((*array_int)->values,
+			(*array_float)->values, (*array_string)->values, 0, 0);
+}
+
+static void PartsEngine_GetPartsConstructionProcess_v6(struct page **array_int,
+		struct page **array_float, struct page **array_string)
+{
+	if (!array_int || !*array_int || (*array_int)->nr_vars < 33
+			|| !array_float || !*array_float || (*array_float)->nr_vars < 2
+			|| !array_string || !*array_string || (*array_string)->nr_vars < 2)
+		VM_ERROR("Invalid v6 construction process arrays");
+	PartsEngine_get_construction_process_v6_arrays((*array_int)->values,
+			array_float, array_string);
+}
+
+#define DEFINE_V6_OUT0_STATE_GETTER(name, fn) \
+static void PartsEngine_##name##_v6(struct string **out, int no, int state) \
+{ \
+	pf_assign_out_string(out, fn(no, state)); \
+}
+DEFINE_V6_OUT0_STATE_GETTER(GetLoopCGCGName, PartsEngine_GetLoopCGCGName)
+DEFINE_V6_OUT0_STATE_GETTER(GetTextPartsText, PE_GetTextPartsText)
+DEFINE_V6_OUT0_STATE_GETTER(Parts_GetHGaugeCG, PartsEngine_Parts_GetHGaugeCG)
+DEFINE_V6_OUT0_STATE_GETTER(Parts_GetVGaugeCG, PartsEngine_Parts_GetVGaugeCG)
+DEFINE_V6_OUT0_STATE_GETTER(Parts_GetNumeralCGName, PE_GetNumeralCGName)
+DEFINE_V6_OUT0_STATE_GETTER(Parts_GetPartsCGDetectionCGName, PartsEngine_Parts_GetPartsCGDetectionCGName)
+DEFINE_V6_OUT0_STATE_GETTER(Parts_GetPartsFlatName, PE_GetPartsFlatName)
+#undef DEFINE_V6_OUT0_STATE_GETTER
+
+static void PartsEngine_GetFlatCGName_v6(struct string **out, int no, int index, int state)
+{
+	pf_assign_out_string(out, PE_GetFlatCGName(no, index, state));
+}
+
+static void PartsEngine_GetProxyFlatCGName_v6(struct string **out, int no,
+		struct string *old_name, int state)
+{
+	pf_assign_out_string(out, PE_GetProxyFlatCGName(no, old_name, state));
+}
+
+static void PartsEngine_GetFlatSoundName_v6(struct string **out, int no, int index, int state)
+{
+	pf_assign_out_string(out, PE_GetFlatSoundName(no, index, state));
+}
+
+static void PartsEngine_GetProxyFlatSound_v6(struct string **out, int no,
+		struct string *old_name, int state)
+{
+	pf_assign_out_string(out, PE_GetProxyFlatSound(no, old_name, state));
 }
 
 static void PartsEngine_PreLink(void);
@@ -3925,6 +4004,42 @@ static void PartsEngine_PreLink(void)
 	REPLACE_IF_VOID("GetComboBoxListBoxItem", PartsEngine_WidgetGetItemEmptyString_v6);
 #undef REPLACE_IF_VOID
 
+#define REPLACE_IF_VOID_OUT0(hll_name, fn_ptr) do { \
+	fun = get_fun(libno, hll_name); \
+	if (fun && fun->return_type.data == AIN_VOID \
+			&& fun->nr_arguments >= 1 \
+			&& fun->arguments[0].type.data == AIN_REF_STRING) \
+		static_library_replace(&lib_PartsEngine, hll_name, fn_ptr); \
+} while (0)
+	REPLACE_IF_VOID_OUT0("GetActivityPartsName", PartsEngine_GetActivityPartsName_v6);
+	REPLACE_IF_VOID_OUT0("GetLoopCGCGName", PartsEngine_GetLoopCGCGName_v6);
+	REPLACE_IF_VOID_OUT0("GetTextPartsText", PartsEngine_GetTextPartsText_v6);
+	REPLACE_IF_VOID_OUT0("Parts_GetHGaugeCG", PartsEngine_Parts_GetHGaugeCG_v6);
+	REPLACE_IF_VOID_OUT0("Parts_GetVGaugeCG", PartsEngine_Parts_GetVGaugeCG_v6);
+	REPLACE_IF_VOID_OUT0("Parts_GetNumeralCGName", PartsEngine_Parts_GetNumeralCGName_v6);
+	REPLACE_IF_VOID_OUT0("Parts_GetPartsCGDetectionCGName", PartsEngine_Parts_GetPartsCGDetectionCGName_v6);
+	REPLACE_IF_VOID_OUT0("Parts_GetPartsFlatName", PartsEngine_Parts_GetPartsFlatName_v6);
+	REPLACE_IF_VOID_OUT0("GetFlatCGName", PartsEngine_GetFlatCGName_v6);
+	REPLACE_IF_VOID_OUT0("GetProxyFlatCGName", PartsEngine_GetProxyFlatCGName_v6);
+	REPLACE_IF_VOID_OUT0("GetFlatSoundName", PartsEngine_GetFlatSoundName_v6);
+	REPLACE_IF_VOID_OUT0("GetProxyFlatSound", PartsEngine_GetProxyFlatSound_v6);
+#undef REPLACE_IF_VOID_OUT0
+
+	fun = get_fun(libno, "LoadActivityEXText");
+	if (fun && fun->nr_arguments == 2) {
+		static_library_replace(&lib_PartsEngine, "LoadActivityEXText",
+				PartsEngine_LoadActivityEXText_v6);
+	}
+	fun = get_fun(libno, "GetComponentAbsolutePos");
+	if (fun && fun->nr_arguments == 10) {
+		static_library_replace(&lib_PartsEngine, "GetComponentAbsolutePos",
+				PE_GetComponentAbsoluteSquarePos);
+	}
+	fun = get_fun(libno, "PlayPartsMovie");
+	if (fun && fun->nr_arguments == 2) {
+		static_library_replace(&lib_PartsEngine, "PlayPartsMovie",
+				PartsEngine_PlayPartsMovie_v6);
+	}
 	fun = get_fun(libno, "AddDrawCutCGToPartsConstructionProcess");
 	if (fun && fun->nr_arguments == 12) {
 		static_library_replace(&lib_PartsEngine, "AddDrawCutCGToPartsConstructionProcess",
@@ -3946,12 +4061,18 @@ static void PartsEngine_PreLink(void)
 				PartsEngine_Save_v14);
 	}
 	fun = get_fun(libno, "AddPartsConstructionProcess");
-	if (fun && fun->nr_arguments == 6) {
+	if (fun && fun->nr_arguments == 3) {
+		static_library_replace(&lib_PartsEngine, "AddPartsConstructionProcess",
+				PartsEngine_AddPartsConstructionProcess_v6);
+	} else if (fun && fun->nr_arguments == 6) {
 		static_library_replace(&lib_PartsEngine, "AddPartsConstructionProcess",
 				PartsEngine_AddPartsConstructionProcess_v14);
 	}
 	fun = get_fun(libno, "GetPartsConstructionProcess");
-	if (fun && fun->nr_arguments == 7) {
+	if (fun && fun->nr_arguments == 3) {
+		static_library_replace(&lib_PartsEngine, "GetPartsConstructionProcess",
+				PartsEngine_GetPartsConstructionProcess_v6);
+	} else if (fun && fun->nr_arguments == 7) {
 		static_library_replace(&lib_PartsEngine, "GetPartsConstructionProcess",
 				PartsEngine_GetPartsConstructionProcess_v14);
 	}
