@@ -31,7 +31,7 @@
 #include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 31
+#define CURRENT_SAVE_VERSION 32
 
 static struct parts_context *back_scene;
 
@@ -1405,6 +1405,9 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	iarray_write(w, parts->event_unique_id);
 	iarray_write(w, parts->sub_color_mode);
 	iarray_write(w, parts->multi_textbox_mode);
+	// v32: retain component reversal across Save/Load and BackScene.
+	iarray_write(w, parts->reverse_lr);
+	iarray_write(w, parts->reverse_tb);
 	motion_count_pos = iarray_writer_pos(w);
 	iarray_write(w, 0); // size of motion list
 
@@ -1556,6 +1559,10 @@ static void load_parts(struct iarray_reader *r, int version)
 		parts->sub_color_mode = !!iarray_read(r);
 		parts->multi_textbox_mode = iarray_read(r);
 	}
+	// Older saves baked activity reversal into local.scale, and did not save
+	// the flags. Leave those scales intact and default the flags to false.
+	parts->reverse_lr = version >= 32 ? !!iarray_read(r) : false;
+	parts->reverse_tb = version >= 32 ? !!iarray_read(r) : false;
 	int motion_count = iarray_read(r);
 	for (int i = 0; i < motion_count; i++) {
 		struct parts_motion *motion = load_parts_motion(r);

@@ -963,6 +963,19 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 	free(kind);
 }
 
+// Legacy rendering only consumes global.scale; unlike PartsEngine2 it never
+// applies reverse_lr/reverse_tb in parts_apply_local_matrix. Preserve the old
+// signed activity scale there, but do not bake it into the v2 scale as well.
+static void load_part_scale(struct parts *p, struct ex_tree *tree)
+{
+	p->reverse_lr = !!number(tree, "左右反转", 0);
+	p->reverse_tb = !!number(tree, "上下反转", 0);
+	float sx = item(tree, "拡大縮小", 0, 1);
+	float sy = item(tree, "拡大縮小", 1, 1);
+	parts_set_scale_x(p, !parts_v2 && p->reverse_lr ? -sx : sx);
+	parts_set_scale_y(p, !parts_v2 && p->reverse_tb ? -sy : sy);
+}
+
 static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool edit)
 {
 	if (!edit && !number2(tree, "エディタ上表示", "编辑上表示", 1))
@@ -980,10 +993,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	PE_SetShow(no, number(tree, "表示", 1));
 	PE_SetAlpha(no, number(tree, "アルファ", 255));
 	PE_SetPartsOriginPosMode(no, number(tree, "原点座標模式", 1));
-	p->reverse_lr = !!number(tree, "左右反转", 0);
-	p->reverse_tb = !!number(tree, "上下反转", 0);
-	PE_SetPartsMagX(no, item(tree, "拡大縮小", 0, 1) * (p->reverse_lr ? -1 : 1));
-	PE_SetPartsMagY(no, item(tree, "拡大縮小", 1, 1) * (p->reverse_tb ? -1 : 1));
+	load_part_scale(p, tree);
 	PE_SetPartsRotateX(no, item(tree, "旋转", 0, 0));
 	PE_SetPartsRotateY(no, item(tree, "旋转", 1, 0));
 	PE_SetPartsRotateZ(no, item(tree, "旋转", 2, 0));

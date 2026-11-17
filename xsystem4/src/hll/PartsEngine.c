@@ -434,13 +434,21 @@ static int PartsEngine_GetComponentClipAreaPosHeight(int parts_no)
 static void PartsEngine_SetComponentReverseTB(int parts_no, bool reverse)
 {
 	struct parts *p = parts_get(parts_no);
+	if (p->reverse_tb == reverse)
+		return;
 	p->reverse_tb = reverse;
+	parts_component_dirty(p);
+	parts_dirty(p);
 }
 
 static void PartsEngine_SetComponentReverseLR(int parts_no, bool reverse)
 {
 	struct parts *p = parts_get(parts_no);
+	if (p->reverse_lr == reverse)
+		return;
 	p->reverse_lr = reverse;
+	parts_component_dirty(p);
+	parts_dirty(p);
 }
 
 static bool PartsEngine_GetComponentReverseTB(int parts_no)

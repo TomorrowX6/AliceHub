@@ -1094,10 +1094,19 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 	if (w <= 0 || h <= 0 || op->blur <= 0)
 		return true;
 
+	// Blur samples the source repeatedly. Sampling the same texture that is
+	// attached to the draw framebuffer is undefined (a framebuffer feedback
+	// loop), even if we unbind/rebind the FBO between draws. In particular,
+	// GLES drivers can turn Dohna Dohna's blurred dungeon background into
+	// black/streaky garbage. Keep an immutable source for the whole filter.
+	Texture source = {0};
+	gfx_init_texture_blank(&source, cproc->common.texture.w, cproc->common.texture.h);
+	gfx_copy_with_alpha_map(&source, 0, 0, &cproc->common.texture, 0, 0, source.w, source.h);
 	if (vertical)
-		gfx_copy_height_blur(&cproc->common.texture, x, y, &cproc->common.texture, x, y, w, h, op->blur);
+		gfx_copy_height_blur(&cproc->common.texture, x, y, &source, x, y, w, h, op->blur);
 	else
-		gfx_copy_width_blur(&cproc->common.texture, x, y, &cproc->common.texture, x, y, w, h, op->blur);
+		gfx_copy_width_blur(&cproc->common.texture, x, y, &source, x, y, w, h, op->blur);
+	gfx_delete_texture(&source);
 	return true;
 }
 
