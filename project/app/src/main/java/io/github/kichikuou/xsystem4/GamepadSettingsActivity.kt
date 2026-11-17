@@ -1,15 +1,14 @@
 package io.github.kichikuou.xsystem4
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.MenuItem
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -25,9 +24,12 @@ class GamepadSettingsActivity : ThemedActivity() {
         const val EXTRA_PROFILE_KEY = "EXTRA_PROFILE_KEY"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
         const val EXTRA_GAME_TITLE = "EXTRA_GAME_TITLE"
+        private const val REQ_GAMEPAD_EDITOR = 4096
     }
 
     private lateinit var controller: GamepadConfigController
+    private var profileKey: String? = null
+    private var gameTitle: String? = null
     private var statusTv: TextView? = null
     private var saveBtn: Button? = null
     private var backInvokedCallback: Any? = null
@@ -42,9 +44,9 @@ class GamepadSettingsActivity : ThemedActivity() {
         super.onCreate(savedInstanceState)
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
-        val profileKey = intent.getStringExtra(EXTRA_PROFILE_KEY)?.takeIf { it.isNotBlank() }
+        profileKey = intent.getStringExtra(EXTRA_PROFILE_KEY)?.takeIf { it.isNotBlank() }
         val gameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
-        val gameTitle = intent.getStringExtra(EXTRA_GAME_TITLE)?.takeIf { it.isNotBlank() }
+        gameTitle = intent.getStringExtra(EXTRA_GAME_TITLE)?.takeIf { it.isNotBlank() }
             ?: gameId?.let { GameCatalog.descriptorFor(this, it).title }
 
         val pageLabel = getString(R.string.settings_gamepad)
@@ -61,6 +63,8 @@ class GamepadSettingsActivity : ThemedActivity() {
             profileKey = profileKey,
             gameDisplayName = gameTitle,
             embeddedInPage = true,
+            onEnterLayoutEditor = { launchEditor(GamepadEditorActivity.TAB_VIRTUAL) },
+            onEnterPhysicalEditor = { launchEditor(GamepadEditorActivity.TAB_PHYSICAL) },
             onDirtyStateChanged = { refreshBottomBar() },
             onSaved = { refreshBottomBar() }
         )
@@ -83,7 +87,6 @@ class GamepadSettingsActivity : ThemedActivity() {
         }
         root.addView(configBody)
 
-        // Divider above persistent bottom bar
         val divider = View(this).apply {
             setBackgroundColor(getColor(R.color.ui_divider))
             layoutParams = LinearLayout.LayoutParams(
@@ -114,7 +117,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         bottomBar.addView(stTv)
 
         val resetBtn = Button(this).apply {
-            text = tr("恢复默认", "初期化", "Reset")
+            text = tr("重置", "初期化", "Reset")
             textSize = 13f
             isAllCaps = false
             setTextColor(getColor(R.color.ui_text_primary))
@@ -132,16 +135,10 @@ class GamepadSettingsActivity : ThemedActivity() {
             }
             setOnClickListener {
                 AlertDialog.Builder(this@GamepadSettingsActivity)
-                    .setTitle(tr("恢复默认配置", "デフォルトに戻す", "Reset to Defaults"))
-                    .setMessage(
-                        tr(
-                            "确定将当前标签页的手柄与按键配置恢复为默认值吗？",
-                            "現在のタブの設定をデフォルトに戻しますか？",
-                            "Reset the current tab's gamepad settings to defaults?"
-                        )
-                    )
+                    .setTitle(tr("恢复默认", "初期化", "Reset"))
+                    .setMessage(tr("全部开关将恢复关闭状态", "初期状態に戻します", "Restore all defaults"))
                     .setPositiveButton(R.string.ok) { _, _ ->
-                        controller.resetCurrentTabToDefaults()
+                        controller.resetToDefaults()
                     }
                     .setNegativeButton(R.string.cancel, null)
                     .show()
@@ -150,12 +147,12 @@ class GamepadSettingsActivity : ThemedActivity() {
         bottomBar.addView(resetBtn)
 
         val primarySaveBtn = Button(this).apply {
-            text = tr("保存并应用", "保存して適用", "Save & Apply")
+            text = tr("保存", "保存", "Save")
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             isAllCaps = false
             setTextColor(Color.WHITE)
-            setPadding(dp(18), dp(8), dp(18), dp(8))
+            setPadding(dp(20), dp(8), dp(20), dp(8))
             background = UiKit.accentButtonBackground(this@GamepadSettingsActivity, accentColor, 10f)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -165,7 +162,7 @@ class GamepadSettingsActivity : ThemedActivity() {
                 controller.saveAndApply()
                 Toast.makeText(
                     this@GamepadSettingsActivity,
-                    tr("手柄与按键配置已保存", "設定を保存しました", "Gamepad settings saved"),
+                    tr("已保存", "保存済み", "Saved"),
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -179,19 +176,35 @@ class GamepadSettingsActivity : ThemedActivity() {
         registerModernBackCallback()
     }
 
+    private fun launchEditor(tab: Int) {
+        val intent = GamepadEditorActivity.createIntent(this, profileKey, gameTitle, tab)
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, REQ_GAMEPAD_EDITOR)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_GAMEPAD_EDITOR) {
+            controller.reloadFromStorage()
+            refreshBottomBar()
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     private fun refreshBottomBar() {
         val stTv = statusTv ?: return
         val scopeName = if (controller.normalizedKey != null && controller.isPerGameMode()) {
-            tr("本游戏独立配置", "ゲーム別設定", "Per-game")
+            tr("本游戏", "専用", "Game")
         } else {
-            tr("全局默认配置", "共通プリセット", "Global")
+            tr("全局", "共通", "Global")
         }
         if (controller.isDirty()) {
-            stTv.text = tr("$scopeName · 有未保存修改", "$scopeName · 未保存の変更", "$scopeName · Unsaved")
+            stTv.text = tr("$scopeName · 未保存", "$scopeName · 未保存", "$scopeName · Unsaved")
             stTv.setTextColor(getColor(R.color.tone_warning_fg))
             saveBtn?.alpha = 1.0f
         } else {
-            stTv.text = tr("$scopeName · 已保存", "$scopeName · 保存済み", "$scopeName · Saved")
+            stTv.text = tr("$scopeName · 已保存", "$scopeName · 保存済", "$scopeName · Saved")
             stTv.setTextColor(getColor(R.color.ui_text_secondary))
             saveBtn?.alpha = 0.88f
         }
@@ -227,19 +240,12 @@ class GamepadSettingsActivity : ThemedActivity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle(tr("保存配置修改？", "変更を保存しますか？", "Save changes?"))
-            .setMessage(
-                tr(
-                    "手柄或自定义按键配置已修改，是否在退出前保存？",
-                    "変更が保存されていません。保存して戻りますか？",
-                    "You have unsaved gamepad configuration changes. Save before leaving?"
-                )
-            )
-            .setPositiveButton(tr("保存并退出", "保存して戻る", "Save")) { _, _ ->
+            .setTitle(tr("保存修改？", "保存しますか？", "Save changes?"))
+            .setPositiveButton(tr("保存", "保存", "Save")) { _, _ ->
                 controller.saveAndApply()
                 finish()
             }
-            .setNeutralButton(tr("不保存退出", "破棄して戻る", "Discard")) { _, _ ->
+            .setNeutralButton(tr("不保存", "破棄", "Discard")) { _, _ ->
                 finish()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -273,21 +279,5 @@ class GamepadSettingsActivity : ThemedActivity() {
         unregisterModernBackCallback()
         controller.stopPolling()
         super.onDestroy()
-    }
-
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (GamepadBridge.isGamepadKeyEvent(event)) {
-            if (controller.handlePhysicalKeyEvent(event.keyCode, event)) {
-                return true
-            }
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
-    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
-        if (controller.handlePhysicalMotionEvent(ev)) {
-            return true
-        }
-        return super.dispatchGenericMotionEvent(ev)
     }
 }

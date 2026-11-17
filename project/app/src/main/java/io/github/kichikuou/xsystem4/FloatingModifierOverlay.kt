@@ -454,9 +454,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
         )
         val curPadProfile = xsAct?.getActiveGamepadProfile() ?: GamepadBridge.loadProfile(activity, null)
         val vpadLabel = if (curPadProfile.virtual.enabled) {
-            tr("虚拟手柄 · 已开启 (点击关闭)", "仮想ゲームパッド · 表示中 (タップで隠す)", "Virtual Gamepad · ON (Tap to hide)")
+            tr("虚拟手柄 · 开", "仮想パッド · ON", "Virtual Pad · ON")
         } else {
-            tr("虚拟手柄 · 已隐藏 (点击开启)", "仮想ゲームパッド · 非表示 (タップで表示)", "Virtual Gamepad · OFF (Tap to show)")
+            tr("虚拟手柄 · 关", "仮想パッド · OFF", "Virtual Pad · OFF")
         }
         menuEntries.add(
             vpadLabel to {
@@ -472,14 +472,14 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 }
                 Toast.makeText(
                     activity,
-                    if (shown) tr("已显示屏幕虚拟手柄", "仮想ゲームパッドを表示しました", "Virtual Gamepad shown")
-                    else tr("已隐藏屏幕虚拟手柄", "仮想ゲームパッドを隠しました", "Virtual Gamepad hidden"),
+                    if (shown) tr("虚拟手柄已开启", "仮想パッドON", "Virtual Pad ON")
+                    else tr("虚拟手柄已关闭", "仮想パッドOFF", "Virtual Pad OFF"),
                     Toast.LENGTH_SHORT
                 ).show()
             }
         )
         menuEntries.add(
-            tr("手柄与自定义按键…", "ゲームパッド・キー設定…", "Gamepad & Custom Keys…") to {
+            tr("手柄与按键…", "パッド設定…", "Gamepad…") to {
                 if (xsAct != null) {
                     xsAct.openGamepadConfigDialog()
                 } else {

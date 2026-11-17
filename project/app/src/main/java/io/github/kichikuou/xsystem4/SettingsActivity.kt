@@ -139,9 +139,11 @@ class SettingsActivity : ThemedActivity() {
         val gp = GamepadBridge.loadProfile(this, null)
         val connectedPads = GamepadBridge.queryConnectedControllers(this).size
         findViewById<TextView>(R.id.value_settings_gamepad)?.text = when {
-            connectedPads > 0 -> GamepadBridge.tr(this, "已连接 ${connectedPads} 手柄", "${connectedPads}台接続", "${connectedPads} Pad")
-            gp.virtual.enabled -> GamepadBridge.tr(this, "虚拟手柄开", "仮想パッドON", "Virtual ON")
-            else -> GamepadBridge.tr(this, "仅实体适配", "物理のみ", "Pad OFF")
+            gp.physical.enabled && connectedPads > 0 -> GamepadBridge.tr(this, "已连 ${connectedPads} 手柄", "${connectedPads}台接続", "${connectedPads} Connected")
+            gp.virtual.enabled && gp.physical.enabled -> GamepadBridge.tr(this, "全开启", "すべてON", "All ON")
+            gp.virtual.enabled -> GamepadBridge.tr(this, "虚拟开", "仮想ON", "Virtual ON")
+            gp.physical.enabled -> GamepadBridge.tr(this, "实体开", "物理ON", "Physical ON")
+            else -> GamepadBridge.tr(this, "已关闭", "OFF", "OFF")
         }
         refreshCacheSizeAsync()
     }

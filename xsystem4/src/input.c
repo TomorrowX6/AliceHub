@@ -1331,7 +1331,7 @@ static void ensure_gamepad_config_defaults_locked(void)
 		return;
 	memset(&gp_cfg, 0, sizeof(gp_cfg));
 	gp_cfg.initialized = true;
-	gp_cfg.phys_enabled = true;
+	gp_cfg.phys_enabled = false;
 	gp_cfg.swap_ab_xy = false;
 	gp_cfg.phys_left_stick_mode = STICK_MODE_MOUSE;
 	gp_cfg.phys_right_stick_mode = STICK_MODE_WHEEL;
@@ -1340,7 +1340,7 @@ static void ensure_gamepad_config_defaults_locked(void)
 	gp_cfg.vpad_right_stick_mode = STICK_MODE_WHEEL;
 	gp_cfg.deadzone = 0.18f;
 	gp_cfg.cursor_speed = 720.0f;
-	gp_cfg.rumble_enabled = true;
+	gp_cfg.rumble_enabled = false;
 
 	gp_cfg.phys_bindings[PAD_SLOT_A] = (struct input_action_spec){ INPUT_ACTION_MOUSE_BTN, VK_LBUTTON, 0, false };
 	gp_cfg.phys_bindings[PAD_SLOT_B] = (struct input_action_spec){ INPUT_ACTION_MOUSE_BTN, VK_RBUTTON, 0, false };

@@ -1,362 +1,375 @@
 package io.github.kichikuou.xsystem4
 
-import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Context
-import android.view.ContextThemeWrapper
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
+import android.view.Window
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 
+/**
+ * Compact dark-glass grid selector for controller buttons, keys, and stick modes.
+ */
 object KeyPickerDialog {
 
-    private fun tr(ctx: Context, zh: String, ja: String, en: String): String =
-        GamepadBridge.tr(ctx, zh, ja, en)
-
-    private fun dp(ctx: Context, v: Int): Int =
-        (v * ctx.resources.displayMetrics.density).toInt()
+    private const val BG_SURFACE = 0xF50F172A.toInt()
+    private const val BG_CHIP = 0xFF1E293B.toInt()
+    private const val BG_CHIP_ACTIVE = 0xFF0EA5E9.toInt()
+    private const val STROKE_CARD = 0xFF334155.toInt()
+    private const val STROKE_CHIP = 0xFF2B3A4E.toInt()
+    private const val TEXT_PRIMARY = 0xFFF8FAFC.toInt()
+    private const val TEXT_MUTED = 0xFF94A3B8.toInt()
+    private const val TEXT_ON_ACCENT = 0xFF06121F.toInt()
 
     fun showActionPicker(
         context: Context,
         title: String,
-        initialAction: GamepadActionSpec,
-        onPicked: (GamepadActionSpec, String) -> Unit
+        current: GamepadActionSpec,
+        allowNone: Boolean = true,
+        onSelected: (GamepadActionSpec) -> Unit
     ) {
-        val uiCtx = ContextThemeWrapper(context, R.style.Theme_Launcher)
-        val catalog = GamepadBridge.buildKeyActionCatalog()
-        var currentCatIdx = 0
-        for (i in catalog.indices) {
-            if (catalog[i].second.any {
-                    it.action.type == initialAction.type &&
-                        it.action.code == initialAction.code &&
-                        it.action.code2 == initialAction.code2
-                }
-            ) {
-                currentCatIdx = i
-                break
+        val rawCatalog = GamepadBridge.buildKeyActionCatalog()
+        val categories = rawCatalog.map { (catName, entries) ->
+            val filtered = if (allowNone) {
+                entries
+            } else {
+                entries.filterNot { it.action.type == GamepadBridge.ACTION_NONE }
+            }
+            translateCategory(context, catName) to filtered
+        }.filter { it.second.isNotEmpty() }
+
+        val lang = AppSettings.resolveLocale(context).language
+        val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val columns = if (isLandscape) 5 else 3
+
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = UiKit.dpInt(context, 14)
+            setPadding(pad, UiKit.dpInt(context, 12), pad, UiKit.dpInt(context, 12))
+            background = GradientDrawable().apply {
+                cornerRadius = UiKit.dp(context, 16f)
+                setColor(BG_SURFACE)
+                setStroke(UiKit.dpInt(context, 1), STROKE_CARD)
             }
         }
 
-        var selectedToggle = initialAction.toggleMode
-
-        val root = LinearLayout(uiCtx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(uiCtx, 16), dp(uiCtx, 12), dp(uiCtx, 16), dp(uiCtx, 8))
-        }
-
-        val toggleCheck = CheckBox(uiCtx).apply {
-            text = tr(
-                context,
-                "切换开关模式（点一次保持按住，再点松开）",
-                "トグルモード（1回押しでホールド切替）",
-                "Toggle Latch Mode (tap to hold/release)"
-            )
-            isChecked = selectedToggle
-            setOnCheckedChangeListener { _, isChecked -> selectedToggle = isChecked }
-        }
-        root.addView(toggleCheck)
-
-        val tabScroll = HorizontalScrollView(uiCtx).apply {
-            isHorizontalScrollBarEnabled = false
-            setPadding(0, dp(uiCtx, 8), 0, dp(uiCtx, 8))
-        }
-        val tabRow = LinearLayout(uiCtx).apply {
+        // Top title + lock toggle + cancel row
+        var lockMode = current.toggleMode
+        val topRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, UiKit.dpInt(context, 8))
         }
+        val titleTv = TextView(context).apply {
+            text = title
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT_PRIMARY)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        topRow.addView(titleTv)
+
+        val lockLabel = TextView(context).apply {
+            text = GamepadBridge.tr(context, "锁定", "固定", "Lock")
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(TEXT_MUTED)
+            setPadding(0, 0, UiKit.dpInt(context, 4), 0)
+        }
+        val lockSwitch = Switch(context).apply {
+            isChecked = lockMode
+            setOnCheckedChangeListener { _, isChecked -> lockMode = isChecked }
+        }
+        topRow.addView(lockLabel)
+        topRow.addView(lockSwitch)
+
+        if (allowNone) {
+            val clearChip = makePill(
+                context,
+                GamepadBridge.tr(context, "清除", "クリア", "Clear"),
+                selected = false
+            ) {
+                onSelected(GamepadActionSpec(GamepadBridge.ACTION_NONE, 0, 0, false))
+                dialog.dismiss()
+            }
+            topRow.addView(clearChip, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = UiKit.dpInt(context, 8)
+            })
+        }
+
+        val closeBtn = makePill(context, "✕", selected = false) { dialog.dismiss() }.apply {
+            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 4), UiKit.dpInt(context, 10), UiKit.dpInt(context, 4))
+        }
+        topRow.addView(closeBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            leftMargin = UiKit.dpInt(context, 8)
+        })
+        root.addView(topRow)
+
+        // Category tab pills
+        val tabScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            setPadding(0, 0, 0, UiKit.dpInt(context, 8))
+        }
+        val tabRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
         tabScroll.addView(tabRow)
         root.addView(tabScroll)
 
-        val itemsScroll = ScrollView(uiCtx).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(uiCtx, 280)
-            )
+        // Scrollable grid area
+        val gridScroll = ScrollView(context).apply {
+            isVerticalScrollBarEnabled = true
         }
-        val itemsList = LinearLayout(uiCtx).apply {
+        val gridContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
-        itemsScroll.addView(itemsList)
-        root.addView(itemsScroll)
+        gridScroll.addView(gridContainer)
+        val maxGridH = UiKit.dpInt(context, if (isLandscape) 210 else 320)
+        root.addView(gridScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            maxGridH
+        ))
 
-        var dialog: AlertDialog? = null
-        val tabButtons = ArrayList<Button>()
+        var selectedCat = categories.indexOfFirst { (_, entries) ->
+            entries.any { it.action.type == current.type && it.action.code == current.code && it.action.code2 == current.code2 }
+        }.coerceAtLeast(0)
 
-        fun renderCategory(idx: Int) {
-            currentCatIdx = idx
-            for (i in tabButtons.indices) {
-                tabButtons[i].alpha = if (i == idx) 1.0f else 0.55f
-            }
-            itemsList.removeAllViews()
-            val entries = catalog[idx].second
-            for (entry in entries) {
-                val label = when {
-                    AppSettings.resolveLocale(context).language.startsWith("zh") -> entry.labelZh
-                    AppSettings.resolveLocale(context).language.startsWith("ja") -> entry.labelJa
-                    else -> entry.labelEn
+        fun renderGrid() {
+            gridContainer.removeAllViews()
+            tabRow.removeAllViews()
+            categories.forEachIndexed { idx, (label, _) ->
+                val pill = makePill(context, label, selected = idx == selectedCat) {
+                    selectedCat = idx
+                    renderGrid()
                 }
-                val isCur = entry.action.type == initialAction.type &&
-                    entry.action.code == initialAction.code &&
-                    entry.action.code2 == initialAction.code2
-                val btn = Button(uiCtx).apply {
-                    text = if (isCur) "✓ $label" else label
-                    isAllCaps = false
-                    gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = dp(uiCtx, 4)
-                    }
-                    setOnClickListener {
-                        val canToggle = entry.action.type == GamepadBridge.ACTION_VK ||
-                            entry.action.type == GamepadBridge.ACTION_MOUSE_BTN ||
-                            entry.action.type == GamepadBridge.ACTION_COMBO
-                        val finalAct = entry.action.copy(toggleMode = canToggle && selectedToggle)
-                        dialog?.dismiss()
-                        onPicked(finalAct, entry.shortBadge)
-                    }
-                }
-                itemsList.addView(btn)
-            }
-        }
-
-        for (i in catalog.indices) {
-            val catTitle = catalog[i].first
-            val tabBtn = Button(uiCtx).apply {
-                text = catTitle
-                isAllCaps = false
-                textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(
+                tabRow.addView(pill, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    marginEnd = dp(uiCtx, 6)
-                }
-                setOnClickListener { renderCategory(i) }
+                    rightMargin = UiKit.dpInt(context, 6)
+                })
             }
-            tabButtons.add(tabBtn)
-            tabRow.addView(tabBtn)
+
+            val entries = categories.getOrNull(selectedCat)?.second ?: emptyList()
+            val gap = UiKit.dpInt(context, 6)
+            var idx = 0
+            while (idx < entries.size) {
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 0, 0, gap)
+                }
+                for (c in 0 until columns) {
+                    val entry = entries.getOrNull(idx + c)
+                    if (entry != null) {
+                        val isMatch = entry.action.type == current.type &&
+                            entry.action.code == current.code &&
+                            entry.action.code2 == current.code2
+                        val label = when {
+                            lang.startsWith("zh") -> entry.labelZh
+                            lang.startsWith("ja") -> entry.labelJa
+                            else -> entry.labelEn
+                        }
+                        val btn = TextView(context).apply {
+                            text = label
+                            gravity = Gravity.CENTER
+                            maxLines = 1
+                            ellipsize = TextUtils.TruncateAt.END
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                            setTypeface(null, if (isMatch) Typeface.BOLD else Typeface.NORMAL)
+                            setTextColor(if (isMatch) TEXT_ON_ACCENT else TEXT_PRIMARY)
+                            setPadding(UiKit.dpInt(context, 6), UiKit.dpInt(context, 9), UiKit.dpInt(context, 6), UiKit.dpInt(context, 9))
+                            background = GradientDrawable().apply {
+                                cornerRadius = UiKit.dp(context, 9f)
+                                setColor(if (isMatch) BG_CHIP_ACTIVE else BG_CHIP)
+                                setStroke(UiKit.dpInt(context, 1), if (isMatch) BG_CHIP_ACTIVE else STROKE_CHIP)
+                            }
+                            setOnClickListener {
+                                val chosen = entry.action.copy(
+                                    toggleMode = lockMode && entry.action.type in listOf(
+                                        GamepadBridge.ACTION_VK,
+                                        GamepadBridge.ACTION_MOUSE_BTN,
+                                        GamepadBridge.ACTION_COMBO
+                                    )
+                                )
+                                onSelected(chosen)
+                                dialog.dismiss()
+                            }
+                        }
+                        row.addView(btn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            if (c < columns - 1) rightMargin = gap
+                        })
+                    } else {
+                        row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                            if (c < columns - 1) rightMargin = gap
+                        })
+                    }
+                }
+                gridContainer.addView(row)
+                idx += columns
+            }
+            gridScroll.scrollTo(0, 0)
         }
 
-        renderCategory(currentCatIdx)
-
-        dialog = AlertDialog.Builder(uiCtx)
-            .setTitle(title)
-            .setView(root)
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        renderGrid()
+        dialog.setContentView(root)
+        val dm = context.resources.displayMetrics
+        val targetW = minOf(UiKit.dpInt(context, if (isLandscape) 620 else 360), (dm.widthPixels * 0.92f).toInt())
+        dialog.window?.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
     }
 
-    fun showVirtualControlEditor(
+    fun showStickModePicker(
         context: Context,
-        control: VirtualControlSpec,
-        onSave: (VirtualControlSpec) -> Unit,
-        onDelete: (() -> Unit)? = null
+        title: String,
+        currentMode: Int,
+        allowWheel: Boolean = true,
+        onSelected: (Int) -> Unit
     ) {
-        val uiCtx = ContextThemeWrapper(context, R.style.Theme_Launcher)
-        var draft = control
-
-        val scroll = ScrollView(uiCtx)
-        val root = LinearLayout(uiCtx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(uiCtx, 18), dp(uiCtx, 12), dp(uiCtx, 18), dp(uiCtx, 8))
+        val modes = if (allowWheel) {
+            listOf(
+                GamepadBridge.STICK_MOUSE,
+                GamepadBridge.STICK_ARROWS,
+                GamepadBridge.STICK_WASD,
+                GamepadBridge.STICK_WHEEL,
+                GamepadBridge.STICK_JOYPAD,
+                GamepadBridge.STICK_NONE
+            )
+        } else {
+            listOf(
+                GamepadBridge.STICK_MOUSE,
+                GamepadBridge.STICK_ARROWS,
+                GamepadBridge.STICK_WASD,
+                GamepadBridge.STICK_JOYPAD,
+                GamepadBridge.STICK_NONE
+            )
         }
 
-        // Visible switch
-        val visRow = LinearLayout(uiCtx).apply {
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = UiKit.dpInt(context, 14)
+            setPadding(pad, UiKit.dpInt(context, 12), pad, UiKit.dpInt(context, 14))
+            background = GradientDrawable().apply {
+                cornerRadius = UiKit.dp(context, 16f)
+                setColor(BG_SURFACE)
+                setStroke(UiKit.dpInt(context, 1), STROKE_CARD)
+            }
+        }
+        val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(uiCtx, 4), 0, dp(uiCtx, 6))
+            setPadding(0, 0, 0, UiKit.dpInt(context, 10))
         }
-        val visLabel = TextView(uiCtx).apply {
-            text = tr(context, "在屏幕上显示此控件", "画面に表示", "Show on Screen")
-            textSize = 15f
+        header.addView(TextView(context).apply {
+            text = title
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(TEXT_PRIMARY)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val visSwitch = Switch(uiCtx).apply {
-            isChecked = draft.visible
-            setOnCheckedChangeListener { _, checked -> draft = draft.copy(visible = checked) }
-        }
-        visRow.addView(visLabel)
-        visRow.addView(visSwitch)
-        root.addView(visRow)
+        })
+        header.addView(makePill(context, "✕", selected = false) { dialog.dismiss() }.apply {
+            setPadding(UiKit.dpInt(context, 10), UiKit.dpInt(context, 4), UiKit.dpInt(context, 10), UiKit.dpInt(context, 4))
+        })
+        root.addView(header)
 
-        // Custom label
-        val labelTitle = TextView(uiCtx).apply {
-            text = tr(context, "按键显示名称", "ボタン表示名", "Display Label")
-            setPadding(0, dp(uiCtx, 6), 0, dp(uiCtx, 2))
-        }
-        val labelInput = EditText(uiCtx).apply {
-            setText(draft.label)
-            setSingleLine(true)
-            isEnabled = draft.kind == VirtualControlKind.BUTTON || draft.kind == VirtualControlKind.STICK
-        }
-        root.addView(labelTitle)
-        root.addView(labelInput)
-
-        // Binding / Stick Mode selector button
-        val actionTitle = TextView(uiCtx).apply {
-            text = if (draft.kind == VirtualControlKind.BUTTON) {
-                tr(context, "绑定按键 / 鼠标动作", "割り当てキー / 動作", "Bound Key / Action")
-            } else {
-                tr(context, "方向控制模式", "入力モード", "Direction Mode")
+        val cols = 3
+        val gap = UiKit.dpInt(context, 8)
+        var i = 0
+        while (i < modes.size) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, gap)
             }
-            setPadding(0, dp(uiCtx, 10), 0, dp(uiCtx, 4))
-        }
-        root.addView(actionTitle)
-
-        val actionBtn = Button(uiCtx).apply {
-            isAllCaps = false
-            fun refreshText() {
-                text = if (draft.kind == VirtualControlKind.BUTTON) {
-                    GamepadBridge.formatActionLabel(context, draft.action)
-                } else {
-                    GamepadBridge.stickModeLabel(context, draft.stickMode)
-                }
-            }
-            refreshText()
-            setOnClickListener {
-                if (draft.kind == VirtualControlKind.BUTTON) {
-                    showActionPicker(
-                        context,
-                        tr(context, "选择目标按键/动作", "キー・動作を選択", "Pick Key / Action"),
-                        draft.action
-                    ) { newAct, badge ->
-                        val prevAutoBadge = labelInput.text.toString().trim()
-                        val shouldUpdateLabel = prevAutoBadge.isEmpty() || draft.isCustom
-                        draft = draft.copy(action = newAct)
-                        if (shouldUpdateLabel) {
-                            labelInput.setText(badge)
+            for (c in 0 until cols) {
+                val m = modes.getOrNull(i + c)
+                if (m != null) {
+                    val sel = m == currentMode
+                    val chip = TextView(context).apply {
+                        text = GamepadBridge.stickModeLabel(context, m)
+                        gravity = Gravity.CENTER
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                        setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
+                        setTextColor(if (sel) TEXT_ON_ACCENT else TEXT_PRIMARY)
+                        setPadding(UiKit.dpInt(context, 8), UiKit.dpInt(context, 10), UiKit.dpInt(context, 8), UiKit.dpInt(context, 10))
+                        background = GradientDrawable().apply {
+                            cornerRadius = UiKit.dp(context, 10f)
+                            setColor(if (sel) BG_CHIP_ACTIVE else BG_CHIP)
+                            setStroke(UiKit.dpInt(context, 1), if (sel) BG_CHIP_ACTIVE else STROKE_CHIP)
                         }
-                        refreshText()
-                    }
-                } else {
-                    val modes = listOf(
-                        GamepadBridge.STICK_MOUSE,
-                        GamepadBridge.STICK_ARROWS,
-                        GamepadBridge.STICK_WASD,
-                        GamepadBridge.STICK_WHEEL,
-                        GamepadBridge.STICK_JOYPAD,
-                        GamepadBridge.STICK_NONE
-                    )
-                    val labels = modes.map { GamepadBridge.stickModeLabel(context, it) }.toTypedArray()
-                    AlertDialog.Builder(uiCtx)
-                        .setTitle(tr(context, "选择方向模式", "モード選択", "Select Mode"))
-                        .setItems(labels) { _, which ->
-                            draft = draft.copy(stickMode = modes[which])
-                            refreshText()
+                        setOnClickListener {
+                            onSelected(m)
+                            dialog.dismiss()
                         }
-                        .show()
-                }
-            }
-        }
-        root.addView(actionBtn)
-
-        // Shape picker for buttons
-        if (draft.kind == VirtualControlKind.BUTTON) {
-            val shapeTitle = TextView(uiCtx).apply {
-                text = tr(context, "按键外观样式", "ボタン形状", "Button Shape")
-                setPadding(0, dp(uiCtx, 10), 0, dp(uiCtx, 4))
-            }
-            root.addView(shapeTitle)
-            val shapeRow = LinearLayout(uiCtx).apply { orientation = LinearLayout.HORIZONTAL }
-            val shapes = listOf(
-                VirtualButtonShape.CIRCLE to tr(context, "圆形", "丸", "Circle"),
-                VirtualButtonShape.PILL to tr(context, "胶囊", "ピル", "Pill"),
-                VirtualButtonShape.SQUARE to tr(context, "圆角方框", "角丸", "Square")
-            )
-            val shapeBtns = ArrayList<Button>()
-            fun refreshShapes() {
-                for (i in shapes.indices) {
-                    shapeBtns[i].alpha = if (draft.shape == shapes[i].first) 1.0f else 0.5f
-                }
-            }
-            for ((sh, lbl) in shapes) {
-                val b = Button(uiCtx).apply {
-                    text = lbl
-                    isAllCaps = false
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                        marginEnd = dp(uiCtx, 4)
                     }
-                    setOnClickListener {
-                        draft = draft.copy(shape = sh)
-                        refreshShapes()
-                    }
+                    row.addView(chip, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (c < cols - 1) rightMargin = gap
+                    })
+                } else {
+                    row.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                        if (c < cols - 1) rightMargin = gap
+                    })
                 }
-                shapeBtns.add(b)
-                shapeRow.addView(b)
             }
-            refreshShapes()
-            root.addView(shapeRow)
+            root.addView(row)
+            i += cols
         }
 
-        // Size slider
-        val scalePct = (draft.scale * 100f).toInt().coerceIn(55, 180)
-        val scaleTv = TextView(uiCtx).apply {
-            text = "${tr(context, "控件大小", "サイズ", "Size")}: $scalePct%"
-            setPadding(0, dp(uiCtx, 10), 0, dp(uiCtx, 2))
-        }
-        val scaleBar = SeekBar(uiCtx).apply {
-            max = 180 - 55
-            progress = scalePct - 55
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, p: Int, fromUser: Boolean) {
-                    val pct = 55 + p
-                    scaleTv.text = "${tr(context, "控件大小", "サイズ", "Size")}: $pct%"
-                    draft = draft.copy(scale = pct / 100f)
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            })
-        }
-        root.addView(scaleTv)
-        root.addView(scaleBar)
+        dialog.setContentView(root)
+        val dm = context.resources.displayMetrics
+        val targetW = minOf(UiKit.dpInt(context, 440), (dm.widthPixels * 0.88f).toInt())
+        dialog.window?.setLayout(targetW, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
+    }
 
-        // Individual opacity slider
-        val opPct = (draft.opacity * 100f).toInt().coerceIn(20, 100)
-        val opTv = TextView(uiCtx).apply {
-            text = "${tr(context, "独立不透明度", "不透明度", "Opacity")}: $opPct%"
-            setPadding(0, dp(uiCtx, 8), 0, dp(uiCtx, 2))
+    private fun makePill(
+        context: Context,
+        label: String,
+        selected: Boolean,
+        onClick: () -> Unit
+    ): TextView = TextView(context).apply {
+        text = label
+        gravity = Gravity.CENTER
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+        setTextColor(if (selected) TEXT_ON_ACCENT else TEXT_PRIMARY)
+        setPadding(UiKit.dpInt(context, 12), UiKit.dpInt(context, 5), UiKit.dpInt(context, 12), UiKit.dpInt(context, 5))
+        background = GradientDrawable().apply {
+            cornerRadius = UiKit.dp(context, 99f)
+            setColor(if (selected) BG_CHIP_ACTIVE else BG_CHIP)
+            setStroke(UiKit.dpInt(context, 1), if (selected) BG_CHIP_ACTIVE else STROKE_CHIP)
         }
-        val opBar = SeekBar(uiCtx).apply {
-            max = 80
-            progress = opPct - 20
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, p: Int, fromUser: Boolean) {
-                    val pct = 20 + p
-                    opTv.text = "${tr(context, "独立不透明度", "不透明度", "Opacity")}: $pct%"
-                    draft = draft.copy(opacity = pct / 100f)
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            })
-        }
-        root.addView(opTv)
-        root.addView(opBar)
+        setOnClickListener { onClick() }
+    }
 
-        scroll.addView(root)
-
-        val builder = AlertDialog.Builder(uiCtx)
-            .setTitle("${tr(context, "编辑控件", "コントロール編集", "Edit Control")} · ${control.label}")
-            .setView(scroll)
-            .setPositiveButton(R.string.ok) { _, _ ->
-                val finalLabel = labelInput.text.toString().trim().ifEmpty { draft.label }
-                onSave(draft.copy(label = finalLabel))
-            }
-            .setNegativeButton(R.string.cancel, null)
-
-        if (control.isCustom && onDelete != null) {
-            builder.setNeutralButton(tr(context, "删除此按键", "削除", "Delete")) { _, _ ->
-                onDelete()
-            }
-        }
-        builder.show()
+    private fun translateCategory(context: Context, zhName: String): String = when (zhName) {
+        "常用" -> GamepadBridge.tr(context, "常用", "よく使う", "Common")
+        "方向" -> GamepadBridge.tr(context, "方向", "方向", "Nav")
+        "F1-F12" -> "F1-F12"
+        "字母数字" -> GamepadBridge.tr(context, "字母数字", "英数字", "Keys")
+        else -> GamepadBridge.tr(context, "高级", "拡張", "Extra")
     }
 }

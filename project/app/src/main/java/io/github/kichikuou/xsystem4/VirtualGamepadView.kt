@@ -22,6 +22,8 @@ class VirtualGamepadView(context: Context) : View(context) {
     interface Listener {
         fun onControlTappedInEditor(control: VirtualControlSpec)
         fun onControlMovedInEditor(control: VirtualControlSpec)
+        fun onSelectionClearedInEditor() {}
+        fun onControlDragChangedInEditor(dragging: Boolean) {}
     }
 
     private data class ControlGeometry(
@@ -302,8 +304,11 @@ class VirtualGamepadView(context: Context) : View(context) {
                 val y = event.y
                 val hit = hitTestControl(geoms, x, y)
                 if (hit == null) {
-                    selectedControlId = null
-                    invalidate()
+                    if (selectedControlId != null) {
+                        selectedControlId = null
+                        invalidate()
+                        listener?.onSelectionClearedInEditor()
+                    }
                     return true
                 }
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -328,7 +333,10 @@ class VirtualGamepadView(context: Context) : View(context) {
                 val dx = event.x - active.startX
                 val dy = event.y - active.startY
                 if (abs(dx) > dp(6f) || abs(dy) > dp(6f)) {
-                    active.dragging = true
+                    if (!active.dragging) {
+                        active.dragging = true
+                        listener?.onControlDragChangedInEditor(true)
+                    }
                 }
                 if (active.dragging) {
                     var nx = (active.origXNorm + dx / w).coerceIn(0.04f, 0.96f)
@@ -348,6 +356,9 @@ class VirtualGamepadView(context: Context) : View(context) {
                 val active = activeTouches.get(pid)
                 activeTouches.remove(pid)
                 if (active != null) {
+                    if (active.dragging) {
+                        listener?.onControlDragChangedInEditor(false)
+                    }
                     val current = profile.virtual.controls.firstOrNull { it.id == active.controlId }
                     if (current != null) {
                         if (active.dragging) {
@@ -523,14 +534,26 @@ class VirtualGamepadView(context: Context) : View(context) {
     private fun drawEditorFrame(canvas: Canvas, geom: ControlGeometry) {
         val isSel = geom.spec.id == selectedControlId
         editorDashPaint.color = when {
-            isSel -> 0xFF00E5FF.toInt()
+            isSel -> 0xFF38BDF8.toInt()
             !geom.spec.visible -> 0xAAFF8A65.toInt()
-            else -> 0x88FFFFFF.toInt()
+            else -> 0x77CBD5E1
         }
-        editorDashPaint.strokeWidth = if (isSel) dp(2.2f) else dp(1.2f)
-        val pad = dp(4f)
-        tmpRect.set(geom.cx - geom.halfW - pad, geom.cy - geom.halfH - pad, geom.cx + geom.halfW + pad, geom.cy + geom.halfH + pad)
-        canvas.drawRoundRect(tmpRect, dp(8f), dp(8f), editorDashPaint)
+        editorDashPaint.strokeWidth = if (isSel) dp(2.0f) else dp(1.1f)
+        val pad = dp(5f)
+        val left = geom.cx - geom.halfW - pad
+        val top = geom.cy - geom.halfH - pad
+        val right = geom.cx + geom.halfW + pad
+        val bottom = geom.cy + geom.halfH + pad
+        tmpRect.set(left, top, right, bottom)
+        canvas.drawRoundRect(tmpRect, dp(10f), dp(10f), editorDashPaint)
+        if (isSel) {
+            fillPaint.color = 0xFF38BDF8.toInt()
+            val dotR = dp(3.0f)
+            canvas.drawCircle(left, top, dotR, fillPaint)
+            canvas.drawCircle(right, top, dotR, fillPaint)
+            canvas.drawCircle(left, bottom, dotR, fillPaint)
+            canvas.drawCircle(right, bottom, dotR, fillPaint)
+        }
     }
 
     private fun drawDPad(canvas: Canvas, geom: ControlGeometry, alphaInt: Int) {
