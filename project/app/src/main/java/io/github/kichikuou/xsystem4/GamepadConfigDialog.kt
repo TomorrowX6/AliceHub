@@ -1,6 +1,5 @@
 package io.github.kichikuou.xsystem4
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
@@ -13,6 +12,7 @@ import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -35,11 +35,12 @@ class GamepadConfigController(
     private val onDirtyStateChanged: ((Boolean) -> Unit)? = null,
     private val onSaved: (GamepadProfile) -> Unit = {}
 ) {
-    val uiCtx: Context = if (context is Activity) {
-        context
-    } else {
-        ContextThemeWrapper(AppSettings.wrapThemeContext(context), R.style.Theme_Launcher)
-    }
+    // Game activities use the legacy fullscreen AppTheme, whose framework
+    // Switch has no Material thumb/track. Always use the Settings page theme
+    // for these views, without changing the running game's Activity theme.
+    val uiCtx: Context = ContextThemeWrapper(
+        AppSettings.wrapThemeContext(context), R.style.Theme_Launcher
+    )
     val normalizedKey: String? = GamepadBridge.normalizeGameProfileKey(profileKey)
 
     private var perGameMode: Boolean = GamepadBridge.hasPerGameOverride(uiCtx, normalizedKey)
@@ -385,8 +386,8 @@ class GamepadConfigController(
             setTextColor(uiCtx.getColor(R.color.ui_text_primary))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val sw = Switch(uiCtx).apply {
-            if (accentColor != null) UiKit.tintSwitch(this, rawAccent())
+        val sw = settingsSwitch().apply {
+            contentDescription = label.text
             setOnCheckedChangeListener { _, isChecked ->
                 if (syncingUi) return@setOnCheckedChangeListener
                 perGameMode = isChecked
@@ -511,6 +512,15 @@ class GamepadConfigController(
         })
     }
 
+    private fun settingsSwitch(): Switch = Switch(uiCtx).apply {
+        // Same platform Material switch as activity_settings.xml, not an ON/OFF
+        // text button. Do not shrink it when the adjacent label wraps.
+        showText = false
+        minimumWidth = dp(48)
+        minimumHeight = dp(48)
+        if (accentColor != null) UiKit.tintSwitch(this, rawAccent())
+    }
+
     private fun addSwitchRow(
         parent: LinearLayout,
         title: String,
@@ -520,11 +530,20 @@ class GamepadConfigController(
         val row = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(3), 0, dp(3))
+            minimumHeight = dp(60)
+            setPadding(0, dp(8), 0, dp(8))
+            setBackgroundResource(R.drawable.bg_row_action)
+            isFocusable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            contentDescription = listOfNotNull(title, subtitle?.takeIf { it.isNotBlank() })
+                .joinToString(", ")
         }
         val textCol = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(12)
+            }
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
         textCol.addView(TextView(uiCtx).apply {
             text = title
@@ -539,10 +558,23 @@ class GamepadConfigController(
                 setTextColor(uiCtx.getColor(R.color.ui_text_secondary))
             })
         }
-        val sw = Switch(uiCtx).apply {
-            if (accentColor != null) UiKit.tintSwitch(this, rawAccent())
+        val sw = settingsSwitch().apply {
+            // Like Settings, the whole row is the only click/focus target.
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setOnCheckedChangeListener { _, isChecked ->
                 if (!syncingUi) onChanged(isChecked)
+            }
+        }
+        row.setOnClickListener { sw.toggle() }
+        row.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.contentDescription = host.contentDescription
+                info.className = Switch::class.java.name
+                info.isCheckable = true
+                info.isChecked = sw.isChecked
             }
         }
         row.addView(textCol)
