@@ -12,6 +12,7 @@ extern void test_render_cg(struct parts *, struct parts_common *);
 extern void parts_render_init(void);
 extern void test_set_reverse(bool, bool);
 extern void test_activity_scale(struct parts *, bool, bool, float, float);
+extern GLuint test_load_3d_shader(const char *, const char *, int);
 static struct parts *fixture_part;
 struct parts *__wrap_parts_get(int no) { assert(no==1 && fixture_part); return fixture_part; }
 
@@ -113,6 +114,27 @@ static void resume_surface_tests(void) {
     assert(resumed_frames==32);
     puts("PASS: 32 real SDL/GLES drawable recreations retain and re-present the scene without script redraw");
 }
+static void shader3d_tests(void) {
+    // Compile/link the production 3D shader pairs through the real loader.
+    // UBO storage is separate from default-block vertex uniform limits.
+    GLint max_block=0;
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE,&max_block);
+    assert(max_block >= 308*48);
+    const char *names[]={"reign","reign_shadow","reign_outline"};
+    for (int engine=0;engine<3;engine++)for(int i=0;i<3;i++) {
+        char vertex[128],fragment[128];
+        snprintf(vertex,sizeof(vertex),"shaders/%s.v.glsl",names[i]);
+        snprintf(fragment,sizeof(fragment),"shaders/%s.f.glsl",names[i]);
+        GLuint program=test_load_3d_shader(vertex,fragment,engine);
+        GLuint block=glGetUniformBlockIndex(program,"BoneTransforms");
+        assert(block!=GL_INVALID_INDEX);
+        GLint bytes=0;
+        glGetActiveUniformBlockiv(program,block,GL_UNIFORM_BLOCK_DATA_SIZE,&bytes);
+        assert(bytes==308*48 && bytes<=max_block);
+        glDeleteProgram(program); no_error();
+    }
+    puts("PASS: 9 production 3D shader pairs link; 308-bone UBO is 14784 bytes");
+}
 static void blur_tests(void) {
     enum { W=15,H=11,N=W*H*4 };
     unsigned char input[N], expected[N], next[N];
@@ -205,7 +227,7 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    blur_tests(); sprite_tests(false,true);
+    shader3d_tests(); blur_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);

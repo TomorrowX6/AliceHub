@@ -15,6 +15,7 @@ OUT=$(cd "$OUT" && pwd)
     "$ROOT/test/native/gl/renderer_test.c" \
     "$ROOT/test/native/gl/construction_wrapper.c" \
     "$ROOT/test/native/gl/render_wrapper.c" \
+    "$ROOT/test/native/gl/renderer3d_wrapper.c" \
     "$ROOT/test/native/gl/api_wrapper.c" \
     "$ROOT/test/native/gl/activity_wrapper.c" \
     "$ROOT/subprojects/libsys4/src/ex.c" \

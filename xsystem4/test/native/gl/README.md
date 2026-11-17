@@ -17,8 +17,13 @@ SDL2_INCLUDE=/usr/include/SDL2 CGLM_INCLUDE=/usr/include \
   ./xsystem4/test/native/gl/run.sh /tmp/parts-gles-test
 ```
 
-The harness checks actual GPU readback against independently computed pixels:
+The harness checks production shader links and actual GPU readback against
+independently computed pixels:
 
+* Production 3D shader loader: Reign/Tapir/Seal × regular/shadow/outline
+  (9 pairs), including the full 308-bone, 14784-byte uniform block. This catches
+  capability/link failures that the 2D-only fixtures cannot detect. A successful
+  host run is not proof that every emulator GPU backend accepts the shader.
 * Construction H/V blur, full-size/subrect, pinned/unpinned draw target,
   RGB results, alpha preservation, two-pass blur.
 * Normal/LR/TB/combined sprite rendering through the real HLL setters,
