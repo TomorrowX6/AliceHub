@@ -204,7 +204,12 @@ data class VirtualPadConfig(
     companion object {
         fun fromJson(obj: JSONObject?): VirtualPadConfig {
             if (obj == null) return VirtualPadConfig()
-            val preset = obj.optString("presetId", GamepadBridge.PRESET_VN_MOUSE)
+            val rawPreset = obj.optString("presetId", GamepadBridge.PRESET_VN_MOUSE)
+            val preset = if (rawPreset == GamepadBridge.PRESET_RPG_DUNGEON) {
+                GamepadBridge.PRESET_RPG_DUNGEON
+            } else {
+                GamepadBridge.PRESET_VN_MOUSE
+            }
             val arr = obj.optJSONArray("controls")
             val parsedControls = if (arr != null && arr.length() > 0) {
                 val list = ArrayList<VirtualControlSpec>(arr.length())
@@ -347,7 +352,6 @@ object GamepadBridge {
 
     const val PRESET_VN_MOUSE = "vn_mouse"
     const val PRESET_RPG_DUNGEON = "rpg_dungeon"
-    const val PRESET_QUICK_BAR = "quick_bar"
 
     const val MAX_VPAD_SLOTS = 32
 
@@ -561,20 +565,6 @@ object GamepadBridge {
                 VirtualControlSpec("btn_a", 9, VirtualControlKind.BUTTON, "A", 0.87f, 0.80f, 1.02f, 1.0f, true, VirtualButtonShape.CIRCLE, action = GamepadActionSpec(ACTION_VK, VK_RETURN)),
                 VirtualControlSpec("btn_select", 10, VirtualControlKind.BUTTON, "SEL", 0.34f, 0.92f, 0.85f, 0.9f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_VK, VK_SHIFT, toggleMode = true)),
                 VirtualControlSpec("btn_start", 11, VirtualControlKind.BUTTON, "MENU", 0.66f, 0.92f, 0.85f, 0.9f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_MENU))
-            )
-            PRESET_QUICK_BAR -> listOf(
-                VirtualControlSpec("dpad", 0, VirtualControlKind.DPAD, "D-PAD", 0.11f, 0.46f, 0.90f, 1.0f, false, VirtualButtonShape.SQUARE, STICK_ARROWS),
-                VirtualControlSpec("stick_l", 1, VirtualControlKind.STICK, "L", 0.13f, 0.76f, 0.95f, 1.0f, false, VirtualButtonShape.CIRCLE, STICK_MOUSE),
-                VirtualControlSpec("btn_l2", 2, VirtualControlKind.BUTTON, "Esc", 0.06f, 0.88f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_VK, VK_ESCAPE)),
-                VirtualControlSpec("btn_l1", 3, VirtualControlKind.BUTTON, "回看↑", 0.14f, 0.88f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_MOUSE_WHEEL, 1)),
-                VirtualControlSpec("btn_r1", 4, VirtualControlKind.BUTTON, "下页↓", 0.85f, 0.88f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_MOUSE_WHEEL, -1)),
-                VirtualControlSpec("btn_r2", 5, VirtualControlKind.BUTTON, "Ctrl", 0.93f, 0.88f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_CTRL_TOGGLE, 0)),
-                VirtualControlSpec("btn_y", 6, VirtualControlKind.BUTTON, "隐藏", 0.93f, 0.73f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_VK, VK_SPACE)),
-                VirtualControlSpec("btn_x", 7, VirtualControlKind.BUTTON, "确定", 0.93f, 0.58f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_VK, VK_RETURN)),
-                VirtualControlSpec("btn_b", 8, VirtualControlKind.BUTTON, "B", 0.94f, 0.65f, 0.95f, 1.0f, false, VirtualButtonShape.CIRCLE, action = GamepadActionSpec(ACTION_MOUSE_BTN, VK_RBUTTON)),
-                VirtualControlSpec("btn_a", 9, VirtualControlKind.BUTTON, "A", 0.87f, 0.81f, 1.0f, 1.0f, false, VirtualButtonShape.CIRCLE, action = GamepadActionSpec(ACTION_MOUSE_BTN, VK_LBUTTON)),
-                VirtualControlSpec("btn_select", 10, VirtualControlKind.BUTTON, "布局", 0.22f, 0.88f, 0.85f, 0.9f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_EMU_CMD, EMU_OPEN_EDITOR)),
-                VirtualControlSpec("btn_start", 11, VirtualControlKind.BUTTON, "右键", 0.06f, 0.73f, 0.92f, 1.0f, true, VirtualButtonShape.PILL, action = GamepadActionSpec(ACTION_MOUSE_BTN, VK_RBUTTON))
             )
             else -> listOf( // PRESET_VN_MOUSE
                 VirtualControlSpec("dpad", 0, VirtualControlKind.DPAD, "D-PAD", 0.11f, 0.45f, 0.90f, 1.0f, true, VirtualButtonShape.SQUARE, STICK_ARROWS),

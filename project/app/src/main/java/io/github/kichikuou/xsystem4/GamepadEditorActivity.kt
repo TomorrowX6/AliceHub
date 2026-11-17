@@ -867,11 +867,7 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun updateTopBarState() {
-        val presetName = when (profile.virtual.presetId) {
-            GamepadBridge.PRESET_RPG_DUNGEON -> "RPG"
-            GamepadBridge.PRESET_QUICK_BAR -> tr("极简", "ミニ", "Bar")
-            else -> "ADV"
-        }
+        val presetName = if (profile.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON) "RPG" else "ADV"
         presetPill.text = if (activeTab == TAB_VIRTUAL) {
             "$presetName ▾"
         } else {
@@ -1161,13 +1157,11 @@ class GamepadEditorActivity : Activity() {
         if (activeTab == TAB_VIRTUAL) {
             val names = arrayOf(
                 tr("ADV 鼠键布局", "ADV 標準", "ADV Mouse"),
-                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon"),
-                tr("极简快捷栏", "ミニバー", "Quick Bar")
+                tr("RPG 方向布局", "RPG 標準", "RPG Dungeon")
             )
             val ids = arrayOf(
                 GamepadBridge.PRESET_VN_MOUSE,
-                GamepadBridge.PRESET_RPG_DUNGEON,
-                GamepadBridge.PRESET_QUICK_BAR
+                GamepadBridge.PRESET_RPG_DUNGEON
             )
             AlertDialog.Builder(this)
                 .setTitle(tr("选择布局预设", "プリセット", "Layout Preset"))

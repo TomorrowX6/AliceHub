@@ -65,7 +65,6 @@ class GamepadConfigController(
 
     private var presetBtnVn: TextView? = null
     private var presetBtnRpg: TextView? = null
-    private var presetBtnBar: TextView? = null
 
     private var scaleValTv: TextView? = null
     private var scaleSeek: SeekBar? = null
@@ -240,13 +239,10 @@ class GamepadConfigController(
             }
             val btnVn = makePresetChip("ADV") { applyPreset(GamepadBridge.PRESET_VN_MOUSE) }
             val btnRpg = makePresetChip("RPG") { applyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
-            val btnBar = makePresetChip(tr("极简", "ミニ", "Bar")) { applyPreset(GamepadBridge.PRESET_QUICK_BAR) }
             presetBtnVn = btnVn
             presetBtnRpg = btnRpg
-            presetBtnBar = btnBar
             presetRow.addView(btnVn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
-            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) })
-            presetRow.addView(btnBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            presetRow.addView(btnRpg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(presetRow)
 
             addDivider(this)
@@ -423,9 +419,8 @@ class GamepadConfigController(
         opacitySeek?.progress = (draft.virtual.globalOpacityPct - 20).coerceIn(0, 80)
         opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
 
-        updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
+        updatePresetChip(presetBtnVn, draft.virtual.presetId != GamepadBridge.PRESET_RPG_DUNGEON)
         updatePresetChip(presetBtnRpg, draft.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON)
-        updatePresetChip(presetBtnBar, draft.virtual.presetId == GamepadBridge.PRESET_QUICK_BAR)
         syncingUi = false
 
         refreshPadBadge()
