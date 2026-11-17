@@ -1,4 +1,7 @@
 if (NOT TARGET SDL2::SDL2)
+  find_package(SDL2 CONFIG QUIET PATHS ${CMAKE_FIND_ROOT_PATH}/lib/cmake/SDL2 NO_DEFAULT_PATH)
+endif()
+if (NOT TARGET SDL2::SDL2)
   include(FetchContent)
   FetchContent_Declare(
     SDL

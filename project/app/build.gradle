@@ -24,7 +24,6 @@ android {
         namespace "io.github.kichikuou.xsystem4"
     }
     compileSdkVersion 34
-    ndkVersion '26.1.10909125'
     defaultConfig {
         applicationId 'io.github.alicehub'
         minSdkVersion 26
@@ -58,7 +57,12 @@ android {
         checkReleaseBuilds false
     }
     aaptOptions {
-        noCompress 'ttf', 'ttc', 'otf', 'glsl', 'zip'
+        noCompress 'glsl', 'zip'
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     if (buildAsLibrary) {

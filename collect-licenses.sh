@@ -19,9 +19,25 @@ cp "$build_dir/libarchive-prefix/src/libarchive/COPYING" "$dest_dir/libarchive"
 
 xsystem4_deps_dir=$build_dir/xsystem4-prefix/src/xsystem4-build/_deps
 cp "$xsystem4_deps_dir/cglm-src/LICENSE" "$dest_dir/cglm"
-cp "$xsystem4_deps_dir/sdl-src/LICENSE.txt" "$dest_dir/SDL"
-cp "$xsystem4_deps_dir/freetype-src/docs/GPLv2.TXT" "$dest_dir/freetype"
+if [ -f "$build_dir/SDL2-prefix/src/SDL2/LICENSE.txt" ]; then
+  cp "$build_dir/SDL2-prefix/src/SDL2/LICENSE.txt" "$dest_dir/SDL"
+elif [ -f "$xsystem4_deps_dir/sdl-src/LICENSE.txt" ]; then
+  cp "$xsystem4_deps_dir/sdl-src/LICENSE.txt" "$dest_dir/SDL"
+fi
+if [ -f "$build_dir/SDL2_mixer-prefix/src/SDL2_mixer/LICENSE.txt" ]; then
+  cp "$build_dir/SDL2_mixer-prefix/src/SDL2_mixer/LICENSE.txt" "$dest_dir/SDL2_mixer"
+fi
+if [ -f "$xsystem4_deps_dir/freetype-src/docs/GPLv2.TXT" ]; then
+  cp "$xsystem4_deps_dir/freetype-src/docs/GPLv2.TXT" "$dest_dir/freetype"
+elif [ -f "$build_dir/freetype-prefix/src/freetype/docs/GPLv2.TXT" ]; then
+  cp "$build_dir/freetype-prefix/src/freetype/docs/GPLv2.TXT" "$dest_dir/freetype"
+fi
 cp "$source_dir/xsystem4/COPYING" "$dest_dir/xsystem4"
 cp "$source_dir/xsystem4/subprojects/libsys4/COPYING" "$dest_dir/libsys4"
 cp "$source_dir/xsystem4/fonts/VL-Gothic-Regular.license" "$dest_dir/VL-Gothic-Regular"
 cp "$source_dir/xsystem4/fonts/HanaMinA.license" "$dest_dir/HanaMinA"
+cp "$source_dir/xsystem35/COPYING" "$dest_dir/xsystem35"
+cp "$source_dir/xsystem35/licenses/MTLc3m.txt" "$dest_dir/MTLc3m"
+cp "$source_dir/xsystem35/licenses/mincho.txt" "$dest_dir/mincho"
+cp "$source_dir/xsystem35/licenses/nanojpeg.txt" "$dest_dir/nanojpeg"
+cp "$source_dir/xsystem35/licenses/microui.txt" "$dest_dir/microui"
