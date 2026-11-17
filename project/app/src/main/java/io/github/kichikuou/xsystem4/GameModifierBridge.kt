@@ -159,7 +159,9 @@ object GameModifierBridge {
                         it.isFile && it.name.startsWith("AFSaveData", ignoreCase = true) && it.name.endsWith(".asd", ignoreCase = true)
                     } == true) &&
                 !File(saveDir, "GlobalSave.asd").isFile &&
-                !File(saveDir, "GlobalSaveData.asd").isFile
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile
             ) {
                 return true
             }

@@ -69,19 +69,16 @@
     <string name="save_dir_invalid_name">無効なディレクトリ名です</string>
 
     <string name="save_import_title">インポート</string>
-    <string name="save_import_opt_zip">アーカイブから</string>
     <string name="save_import_opt_dir">フォルダから</string>
-    <string name="save_import_opt_files">ファイルを選択</string>
+    <string name="save_import_opt_files">ファイル・アーカイブから</string>
 
     <string name="save_export_empty_toast">エクスポート可能なセーブがありません</string>
     <string name="save_export_title">エクスポート</string>
     <string name="save_export_opt_zip">ZIPに出力</string>
     <string name="save_export_opt_dir">フォルダに出力</string>
 
-    <string name="save_chooser_import_zip">セーブアーカイブを選択</string>
-    <string name="save_chooser_import_files">セーブファイルを選択</string>
+    <string name="save_chooser_import_files">セーブファイル・アーカイブを選択</string>
 
-    <string name="save_progress_import_zip">インポート中…</string>
     <string name="save_progress_import_dir">インポート中…</string>
     <string name="save_progress_import_files">インポート中…</string>
     <string name="save_progress_export_zip">エクスポート中…</string>
@@ -90,7 +87,6 @@
 
     <string name="save_import_done_title">インポート完了</string>
     <string name="save_import_failed_title">インポート失敗</string>
-    <string name="save_import_zip_done_msg">%1$d 個のファイルをインポートしました</string>
     <string name="save_import_dir_done_msg">%1$d 個のファイルをインポートしました</string>
     <string name="save_import_files_done_msg">%1$d 個のファイルをインポートしました</string>
 

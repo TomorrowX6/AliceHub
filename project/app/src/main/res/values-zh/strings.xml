@@ -69,19 +69,16 @@
     <string name="save_dir_invalid_name">目录名称无效</string>
 
     <string name="save_import_title">导入存档</string>
-    <string name="save_import_opt_zip">从压缩包导入</string>
     <string name="save_import_opt_dir">从文件夹导入</string>
-    <string name="save_import_opt_files">导入存档文件</string>
+    <string name="save_import_opt_files">从文件或压缩包导入</string>
 
     <string name="save_export_empty_toast">无可导出存档</string>
     <string name="save_export_title">导出存档</string>
     <string name="save_export_opt_zip">导出为 ZIP</string>
     <string name="save_export_opt_dir">导出到文件夹</string>
 
-    <string name="save_chooser_import_zip">选择存档压缩包</string>
-    <string name="save_chooser_import_files">选择存档文件</string>
+    <string name="save_chooser_import_files">选择存档文件或压缩包</string>
 
-    <string name="save_progress_import_zip">正在导入…</string>
     <string name="save_progress_import_dir">正在导入…</string>
     <string name="save_progress_import_files">正在导入…</string>
     <string name="save_progress_export_zip">正在导出…</string>
@@ -90,7 +87,6 @@
 
     <string name="save_import_done_title">导入完成</string>
     <string name="save_import_failed_title">导入失败</string>
-    <string name="save_import_zip_done_msg">已导入 %1$d 个存档文件</string>
     <string name="save_import_dir_done_msg">已导入 %1$d 个存档文件</string>
     <string name="save_import_files_done_msg">已导入 %1$d 个存档文件</string>
 

@@ -39,7 +39,6 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-private const val REQ_IMPORT_ZIP = 101
 private const val REQ_IMPORT_DIR = 102
 private const val REQ_IMPORT_FILES = 103
 private const val REQ_EXPORT_ZIP = 104
@@ -463,17 +462,15 @@ class SaveManagerActivity : ThemedActivity() {
     private fun showImportDialog() {
         if (activeJob?.isActive == true) return
         val options = arrayOf(
-            getString(R.string.save_import_opt_zip),
-            getString(R.string.save_import_opt_dir),
-            getString(R.string.save_import_opt_files)
+            getString(R.string.save_import_opt_files),
+            getString(R.string.save_import_opt_dir)
         )
         AlertDialog.Builder(this)
             .setTitle(R.string.save_import_title)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> chooseImportZip()
+                    0 -> chooseImportFiles()
                     1 -> chooseImportDirectory()
-                    2 -> chooseImportFiles()
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -500,15 +497,6 @@ class SaveManagerActivity : ThemedActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
-    }
-
-    private fun chooseImportZip() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivityForResult(Intent.createChooser(intent, getString(R.string.save_chooser_import_zip)), REQ_IMPORT_ZIP)
     }
 
     private fun chooseImportDirectory() {
@@ -550,10 +538,6 @@ class SaveManagerActivity : ThemedActivity() {
         if (resultCode != RESULT_OK || data == null) return
 
         when (requestCode) {
-            REQ_IMPORT_ZIP -> {
-                val uri = data.data ?: return
-                runImportZip(uri)
-            }
             REQ_IMPORT_DIR -> {
                 val uri = data.data ?: return
                 runImportDirectory(uri)
@@ -585,31 +569,6 @@ class SaveManagerActivity : ThemedActivity() {
                 val srcFile = pendingSingleExportFile ?: return
                 pendingSingleExportFile = null
                 runExportSingleFile(srcFile, uri)
-            }
-        }
-    }
-
-    private fun runImportZip(uri: Uri) {
-        val targetDir = currentTarget.saveDir
-        showProgress(getString(R.string.save_progress_import_zip))
-        activeJob = scope.launch {
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    extractSaveArchiveToTarget(uri, targetDir)
-                }
-                dismissProgress()
-                refreshFileList()
-                showMessageDialog(
-                    getString(R.string.save_import_done_title),
-                    getString(R.string.save_import_zip_done_msg, count)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to import saves from archive", e)
-                dismissProgress()
-                showMessageDialog(
-                    getString(R.string.save_import_failed_title),
-                    formatArchiveImportError(e)
-                )
             }
         }
     }

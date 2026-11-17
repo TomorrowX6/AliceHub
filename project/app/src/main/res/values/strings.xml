@@ -70,19 +70,16 @@
     <string name="save_dir_invalid_name">Invalid directory name</string>
 
     <string name="save_import_title">Import Saves</string>
-    <string name="save_import_opt_zip">From Archive</string>
     <string name="save_import_opt_dir">From Folder</string>
-    <string name="save_import_opt_files">Select Save Files</string>
+    <string name="save_import_opt_files">From Files / Archive</string>
 
     <string name="save_export_empty_toast">No saves to export</string>
     <string name="save_export_title">Export Saves</string>
     <string name="save_export_opt_zip">Export as ZIP</string>
     <string name="save_export_opt_dir">Export to Folder</string>
 
-    <string name="save_chooser_import_zip">Select Save Archive</string>
-    <string name="save_chooser_import_files">Select Save Files</string>
+    <string name="save_chooser_import_files">Select Save Files or Archive</string>
 
-    <string name="save_progress_import_zip">Importing…</string>
     <string name="save_progress_import_dir">Importing…</string>
     <string name="save_progress_import_files">Importing…</string>
     <string name="save_progress_export_zip">Exporting…</string>
@@ -91,7 +88,6 @@
 
     <string name="save_import_done_title">Import Complete</string>
     <string name="save_import_failed_title">Import Failed</string>
-    <string name="save_import_zip_done_msg">Imported %1$d save files</string>
     <string name="save_import_dir_done_msg">Imported %1$d save files</string>
     <string name="save_import_files_done_msg">Imported %1$d save files</string>
 
