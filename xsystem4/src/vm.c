@@ -34,6 +34,8 @@
 
 #include "debugger.h"
 #include "input.h"
+#include "message_layout.h"
+#include "modifier.h"
 #include "savedata.h"
 #include "vm.h"
 #include "vm/heap.h"
@@ -701,6 +703,8 @@ static void method_call(int fno, int return_address)
 	int struct_page = stack_pop().i;
 	set_struct_page(struct_page);
 	heap[call_stack[call_stack_ptr-1].page_slot].page->local.struct_ptr = struct_page;
+	if (game_rance03)
+		modifier_before_method();
 }
 
 static void vm_execute(void);
@@ -812,8 +816,20 @@ void vm_call(int fno, int struct_page)
 	instr_ptr = saved_ip;
 }
 
+void vm_call_method_1(int fno, int struct_page, int value)
+{
+	size_t saved_ip = instr_ptr;
+	stack_push(struct_page);
+	stack_push(value);
+	method_call(fno, VM_RETURN);
+	vm_execute();
+	instr_ptr = saved_ip;
+}
+
 static void function_return(void)
 {
+	if (game_rance03)
+		modifier_after_method_return();
 	unref_call_frame(&call_stack[call_stack_ptr-1]);
 	instr_ptr = call_stack[call_stack_ptr-1].return_address;
 	call_stack_ptr--;
@@ -1109,6 +1125,9 @@ void vm_system_call(int code)
 		switch ((enum vm_extra_syscall)code) {
 		case VM_XSYS_KEY_IS_DOWN:
 			stack_push(key_is_down(stack_pop().i));
+			break;
+		case VM_XSYS_FIT_RANCE03_MESSAGE:
+			message_layout_fit_rance03(stack_pop().i);
 			break;
 		default:
 			VM_ERROR("Unimplemented syscall: 0x%X", code);
@@ -1648,7 +1667,9 @@ static enum opcode execute_instruction(enum opcode opcode)
 		break;
 	}
 	case DEC: {
-		stack_pop_var()[0].i--;
+		union vm_value *value = stack_pop_var();
+		if (!game_rance03 || !modifier_keep_dec_item(value))
+			value->i--;
 		break;
 	}
 	case ITOB: {
@@ -3227,6 +3248,7 @@ int vm_execute_ain(struct ain *program)
 	ain = program;
 	init_lambda_parents();
 	setjmp(reset_buf);
+	modifier_on_ain_init();
 
 	// initialize VM state
 	if (!stack) {

@@ -554,10 +554,82 @@ struct string *PE_GetUserComponentData(int no, struct string *key)
 }
 
 // Layout keys in the Chinese edition are GBK, including the Japanese field names.
+static const char *const pact_key_aliases[][3] = {
+	{ "种类別情报", "種類別情報", NULL },
+	{ "种类別情報", "種類別情報", NULL },
+	{ "パーツ类型", "パーツタイプ", NULL },
+	{ "レイアウト类型", "レイアウトタイプ", NULL },
+	{ "翻折許可", "折り返し許可", NULL },
+	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ" },
+	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する" },
+	{ "一般状态", "通常状態", NULL },
+	{ "光标选中状态", "オンカーソル状態", NULL },
+	{ "键DOWN状态", "キーダウン状態", NULL },
+	{ "光标选中透過", "オンカーソル透過", NULL },
+	{ "光标选中表示連動", "オンカーソル表示連動", NULL },
+	{ "复选框表示連動", "チェックボックス表示連動", NULL },
+	{ "α剪切器ー", "アルファクリッパー", NULL },
+	{ "点击許可", "クリック許可", NULL },
+	{ "光标选中效果音", "オンカーソル効果音", NULL },
+	{ "点击效果音", "クリック効果音", NULL },
+	{ "消息窗口表示連動", "メッセージウィンドウ表示連動", NULL },
+	{ "信息窗口視覚效果連動", "メッセージウィンドウ視覚効果連動", NULL },
+	{ "按钮の色", "ボタンの色", NULL },
+	{ "字体类型", "フォントタイプ", NULL },
+	{ "字体尺寸", "フォント尺寸", "フォントサイズ" },
+	{ "字体色", "フォント色", NULL },
+	{ "字体粗度", "フォント太さ", NULL },
+	{ "字体镶边", "フォント縁取り", NULL },
+	{ "字体镶边色", "フォント縁取り色", NULL },
+	{ "文本位置", "テキスト位置", NULL },
+	{ "文本装飾", "テキスト装飾", NULL },
+	{ "文本", "テキスト", NULL },
+	{ "文字间距", "文字間隔", NULL },
+	{ "行间距", "行間隔", NULL },
+	{ "字间距", "字間隔", NULL },
+	{ "有效", "有効", NULL },
+	{ "有效状态", "有効状態", "有効" },
+	{ "选择状态", "チェック状態", NULL },
+	{ "按钮模式", "ボタンモード", NULL },
+	{ "复选框リスト", "チェックボックスリスト", NULL },
+	{ "旋转", "回転", NULL },
+	{ "反转", "反転", NULL },
+	{ "数值", "数値", NULL },
+	{ "尺寸", "サイズ", NULL },
+	{ "前尺寸", "前サイズ", NULL },
+	{ "次尺寸", "次サイズ", NULL },
+	{ "全体滚动条量", "全体スクロール量", NULL },
+	{ "滚动条位置", "スクロール位置", NULL },
+	{ "滚动率", "スクロールレート", NULL },
+	{ "按钮点击移动量", "ボタンクリック移動量", NULL },
+	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", NULL },
+	{ "表示量尺寸連動", "表示量サイズ連動", NULL },
+	{ "表示类型", "表示タイプ", NULL },
+	{ "补间类型", "補間タイプ", NULL },
+	{ "原矩形", "元矩形", NULL },
+	{ "用户组件名", "ユーザコンポーネント名", NULL },
+	{ "数据", "データ", NULL },
+	{ "结束キー", "終了キー", NULL },
+	{ "扩大", "拡張", NULL },
+	{ "背景图片", "背景画像", NULL },
+	{ "边距", "マージン", NULL },
+	{ "开始時シーク量", "開始時シーク量", NULL },
+};
+
 static struct ex_tree *node(struct ex_tree *tree, const char *key)
 {
 	if (!tree || tree->is_leaf) return NULL;
-	return ex_tree_get_child(tree, parts_utf8_to_cjk_literal(key));
+	struct ex_tree *n = ex_tree_get_child(tree, parts_utf8_to_cjk_literal(key));
+	if (n) return n;
+	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
+		if (strcmp(pact_key_aliases[i][0], key))
+			continue;
+		for (size_t k = 1; k < 3 && pact_key_aliases[i][k]; k++) {
+			n = ex_tree_get_child(tree, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
+			if (n) return n;
+		}
+	}
+	return NULL;
 }
 
 static struct ex_tree *node2(struct ex_tree *tree, const char *k1, const char *k2)
@@ -616,11 +688,49 @@ static float item2(struct ex_tree *tree, const char *k1, const char *k2, int ind
 	return !v ? fallback : v->type == EX_INT ? v->i : v->type == EX_FLOAT ? v->f : fallback;
 }
 
+static char *read_pact_kind(struct ex_tree *tree)
+{
+	static const struct { int type; const char *kind; } kind_by_id[] = {
+		{ 0, "按钮" },
+		{ 1, "复选框" },
+		{ 2, "纵向滚动条栏" },
+		{ 3, "横向滚动条栏" },
+		{ 4, "面板" },
+		{ 5, "文本框" },
+		{ 6, "スピンボックス" },
+		{ 7, "多行文本框" },
+		{ 8, "レイアウトボックス" },
+		{ 9, "ラジオ按钮ボックス" },
+		{ 10, "低レベルパーツ" },
+		{ 11, "ＣＧパーツ" },
+		{ 13, "文本パーツ" },
+		{ 14, "横向计量パーツ" },
+		{ 15, "纵向计量パーツ" },
+		{ 16, "数字パーツ" },
+		{ 17, "矩形パーツ" },
+		{ 18, "構築パーツ" },
+		{ 19, "消息窗口" },
+		{ 20, "フラットパーツ" },
+		{ 1000, "用户组件" },
+	};
+	struct ex_value *v = field2(tree, "パーツ类型", "部件タイプ");
+	if (!v)
+		return xstrdup("");
+	if (v->type == EX_STRING)
+		return sjis2utf(v->s->text, v->s->size);
+	if (v->type == EX_INT) {
+		for (size_t i = 0; i < sizeof(kind_by_id) / sizeof(kind_by_id[0]); i++) {
+			if (kind_by_id[i].type == v->i)
+				return xstrdup(kind_by_id[i].kind);
+		}
+	}
+	return xstrdup("");
+}
+
 static void load_state(struct parts *p, struct ex_tree *tree, int state)
 {
 	if (!tree) return;
-	struct string *type = str2(tree, "パーツ类型", "部件タイプ");
-	char *kind = sjis2utf(type->text, type->size);
+	char *kind = read_pact_kind(tree);
 	int no = p->no;
 	if (!strcmp(kind, "ＣＧパーツ") || !strcmp(kind, "ＣＧ部件")) {
 		struct string *cg = str(tree, "ＣＧ名");
@@ -911,9 +1021,17 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	PE_Parts_SetSoundName(no, str2(tree, "光标选中效果音", "オン指针音效"), 2);
 	PE_Parts_SetSoundName(no, str2(tree, "点击效果音", "点击音效"), 3);
 	if (parent) PE_SetParentPartsNumber(no, parent);
+	struct ex_value *destinations = field(tree, "遷移先");
+	if (destinations && destinations->type == EX_LIST) {
+		PE_SetActivityIntentData(a->name, tree->name, &EMPTY_STRING, (int)number(tree, "遷移方法", 0));
+		for (unsigned i = 0; i < destinations->list->nr_items; i++) {
+			struct ex_value *item = ex_list_get(destinations->list, i);
+			if (item && item->type == EX_STRING)
+				PE_AddActivityIntentDataDestination(a->name, tree->name, item->s);
+		}
+	}
 	struct ex_tree *info = node2(tree, "种类別情报", "种类別情報");
-	struct string *type = str2(info, "パーツ类型", "部件タイプ");
-	char *kind = sjis2utf(type->text, type->size);
+	char *kind = read_pact_kind(info);
 	if (!strcmp(kind, "レイアウトボックス")) {
 		PE_SetLayoutBoxLayoutType(no, number2(info, "レイアウト类型", "レイアウトタイプ", 0));
 		PE_SetLayoutBoxAlign(no, number(info, "配置", 1));
@@ -1129,7 +1247,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 				}
 			}
 		}
-	} else {
+	} else if (*kind) {
 		VM_ERROR("Unsupported PACT component: %s", kind);
 	}
 	free(kind);
@@ -1181,7 +1299,17 @@ static void load_part_links(struct activity *a, struct ex_tree *tree)
 
 static struct ex_value *block(struct ex *ex, const char *key)
 {
-	return ex_get(ex, parts_utf8_to_cjk_literal(key));
+	struct ex_value *v = ex_get(ex, parts_utf8_to_cjk_literal(key));
+	if (v) return v;
+	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
+		if (strcmp(pact_key_aliases[i][0], key))
+			continue;
+		for (size_t k = 1; k < 3 && pact_key_aliases[i][k]; k++) {
+			v = ex_get(ex, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
+			if (v) return v;
+		}
+	}
+	return NULL;
 }
 
 static struct ex_value *block2(struct ex *ex, const char *k1, const char *k2)

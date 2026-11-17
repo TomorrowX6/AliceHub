@@ -228,6 +228,8 @@
     <string name="game_rance10_title">兰斯10 决战</string>
     <string name="game_dohnadohna_title">多娜多娜 一起来干坏事吧</string>
     <string name="game_evenicle_title">夏娃年代记</string>
+    <string name="game_sengokurance_title">战国兰斯</string>
+    <string name="game_rance03_title">兰斯03 利萨斯陷落</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

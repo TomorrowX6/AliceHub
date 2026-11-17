@@ -242,7 +242,9 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         findViewById<TextView>(R.id.hub_title).text =
             if (descriptor.id == GameCatalog.ID_RANCE10 ||
                 descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
-                descriptor.id == GameCatalog.ID_EVENICLE
+                descriptor.id == GameCatalog.ID_EVENICLE ||
+                descriptor.id == GameCatalog.ID_SENGOKU_RANCE ||
+                descriptor.id == GameCatalog.ID_RANCE03
             ) {
                 descriptor.title
             } else {

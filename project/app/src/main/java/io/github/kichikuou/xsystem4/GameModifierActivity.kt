@@ -280,7 +280,12 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun isCurrentTargetRance10(): Boolean {
-        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA || scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true) {
+        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
             return false
         }
         if (scopedGameId == GameCatalog.ID_RANCE10) {
@@ -302,6 +307,8 @@ class GameModifierActivity : ThemedActivity() {
         }
         if (scopedGameId == GameCatalog.ID_RANCE10 ||
             scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
@@ -319,11 +326,51 @@ class GameModifierActivity : ThemedActivity() {
         }
         if (scopedGameId == GameCatalog.ID_RANCE10 ||
             scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
             scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
         ) {
             return false
         }
         return GameModifierBridge.isEvenicleGameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetSengokuRance(): Boolean {
+        if (scopedGameId == GameCatalog.ID_SENGOKU_RANCE) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_RANCE03 ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isSengokuRanceGameDir(
+            currentTarget.externalGameDir,
+            currentTarget.dirName,
+            currentTarget.saveDir
+        )
+    }
+
+    private fun isCurrentTargetRance03(): Boolean {
+        if (scopedGameId == GameCatalog.ID_RANCE03) {
+            return true
+        }
+        if (scopedGameId == GameCatalog.ID_RANCE10 ||
+            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
+            scopedGameId == GameCatalog.ID_EVENICLE ||
+            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
+            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
+        ) {
+            return false
+        }
+        return GameModifierBridge.isRance03GameDir(
             currentTarget.externalGameDir,
             currentTarget.dirName,
             currentTarget.saveDir
@@ -345,12 +392,18 @@ class GameModifierActivity : ThemedActivity() {
         )
     }
 
-    private fun refreshTargetControlsVisibility(isRance10: Boolean, isDohnaDohna: Boolean, isEvenicle: Boolean) {
+    private fun refreshTargetControlsVisibility(
+        isRance10: Boolean,
+        isDohnaDohna: Boolean,
+        isEvenicle: Boolean,
+        isSengokuRance: Boolean,
+        isRance03: Boolean
+    ) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna || isEvenicle
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance03
         floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
         (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
             lp.marginStart = if (showLocks) dp(4) else 0
@@ -363,8 +416,10 @@ class GameModifierActivity : ThemedActivity() {
         val isRance10 = isCurrentTargetRance10()
         val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
         val isEvenicle = !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
+        val isSengokuRance = !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance()
+        val isRance03 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance03()
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance03)
 
         findViewById<TextView>(R.id.mod_target_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
@@ -373,7 +428,7 @@ class GameModifierActivity : ThemedActivity() {
                 .filter {
                     it.isFile && (
                         it.name.endsWith(".asd", ignoreCase = true) ||
-                            (isEvenicle && it.name.endsWith(".sav", ignoreCase = true))
+                            ((isEvenicle || isRance03) && it.name.endsWith(".sav", ignoreCase = true))
                         )
                 }
                 .count()
@@ -392,6 +447,22 @@ class GameModifierActivity : ThemedActivity() {
                         "存档 $saveCount 个 · 锁定 $evLockCount 项",
                         "セーブ $saveCount 個 · ロック $evLockCount 項目",
                         "$saveCount saves · Locks: $evLockCount"
+                    )
+                }
+                isSengokuRance -> {
+                    val srLockCount = GameModifierBridge.getSrLiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $srLockCount 项",
+                        "セーブ $saveCount 個 · ロック $srLockCount 項目",
+                        "$saveCount saves · Locks: $srLockCount"
+                    )
+                }
+                isRance03 -> {
+                    val r03LockCount = GameModifierBridge.getR03LiveLockCount(this)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $r03LockCount 项",
+                        "セーブ $saveCount 個 · ロック $r03LockCount 項目",
+                        "$saveCount saves · Locks: $r03LockCount"
                     )
                 }
                 else -> {
@@ -726,6 +797,35 @@ class GameModifierActivity : ThemedActivity() {
                 lockDefs,
                 GameModifierBridge.getSavedEvenicleLockMask(this)
             ) { GameModifierBridge.setSavedEvenicleLockMask(this, it) }
+            return
+        }
+        if (!isCurrentTargetRance10() && isCurrentTargetSengokuRance()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_SR_INF_GOLD to tr("无限金钱 · 保底 999999", "金無限・999999維持", "Infinite Gold"),
+                GameModifierBridge.LOCK_SR_INF_AP to tr("无限行动次数 · 锁定满行动点", "行動回数無限", "Infinite Actions (AP)"),
+                GameModifierBridge.LOCK_SR_MAX_SAT to tr("最大满足度 · 保底 999", "満足度999維持", "Max Satisfaction"),
+                GameModifierBridge.LOCK_SR_ALLY_FULL_HP to tr("我方合战满兵力与技数", "味方兵数・技回数維持", "Party Full Troops & Skills"),
+                GameModifierBridge.LOCK_SR_ONE_HIT_KILL to tr("敌方 1 兵秒杀", "敵兵数1", "Enemy 1 Troop"),
+                GameModifierBridge.LOCK_SR_UNLIM_ACTION to tr("我方全员无限行动", "味方全員無限行動", "Unlimited Char Actions")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedSrLockMask(this)
+            ) { GameModifierBridge.setSavedSrLockMask(this, it) }
+            return
+        }
+        if (!isCurrentTargetRance10() && isCurrentTargetRance03()) {
+            val lockDefs = listOf(
+                GameModifierBridge.LOCK_R03_HP to tr("无限体力 · 我方全员 HP 不减", "味方HP減らない", "Party Infinite HP"),
+                GameModifierBridge.LOCK_R03_NO_CD to tr("技能零冷却 · 无回合 CD", "スキルCT0", "Zero Skill Cooldown"),
+                GameModifierBridge.LOCK_R03_INF_ITEMS to tr("无限道具 · 消耗道具不减", "アイテム減らない", "Infinite Items"),
+                GameModifierBridge.LOCK_R03_DROP_100 to tr("战利品 100% 掉落", "ドロップ率100%", "100% Item Drop"),
+                GameModifierBridge.LOCK_R03_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill")
+            )
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedR03LockMask(this)
+            ) { GameModifierBridge.setSavedR03LockMask(this, it) }
             return
         }
 

@@ -229,6 +229,8 @@
     <string name="game_rance10_title">Rance 10: Showdown</string>
     <string name="game_dohnadohna_title">Dohna Dohna: Let\'s Do Bad Things Together</string>
     <string name="game_evenicle_title">Evenicle</string>
+    <string name="game_sengokurance_title">Sengoku Rance</string>
+    <string name="game_rance03_title">Rance 03: Fall of Leazas</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

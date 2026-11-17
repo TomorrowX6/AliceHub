@@ -228,6 +228,8 @@
     <string name="game_rance10_title">ランス10 決戦</string>
     <string name="game_dohnadohna_title">ドーナドーナ いっしょにわるいことをしよう</string>
     <string name="game_evenicle_title">イブニクル</string>
+    <string name="game_sengokurance_title">戦国ランス</string>
+    <string name="game_rance03_title">ランス03 リーザス陥落</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>
