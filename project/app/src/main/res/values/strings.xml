@@ -75,8 +75,10 @@
 
     <string name="save_export_empty_toast">No saves to export</string>
     <string name="save_export_title">Export Saves</string>
-    <string name="save_export_opt_zip">Export as ZIP</string>
-    <string name="save_export_opt_dir">Export to Folder</string>
+    <string name="save_export_opt_pc_zip">Export PC Save · ZIP</string>
+    <string name="save_export_opt_pc_dir">Export PC Save to Folder</string>
+    <string name="save_export_opt_zip">Export Raw Backup · ZIP</string>
+    <string name="save_export_opt_dir">Export Raw Backup to Folder</string>
 
     <string name="save_chooser_import_files">Select Save Files or Archive</string>
 
@@ -95,9 +97,11 @@
     <string name="save_export_failed_title">Export Failed</string>
     <string name="save_export_zip_done_msg">Exported %1$d save files</string>
     <string name="save_export_dir_done_msg">Exported %1$d save files</string>
+    <string name="save_export_pc_converted_done_msg">Exported %1$d PC-compatible save files, %2$d converted</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">Export File</string>
+    <string name="save_file_opt_export_pc">Export as PC Format</string>
     <string name="save_file_opt_backup">Create Backup</string>
     <string name="save_file_opt_rename">Rename</string>
     <string name="save_file_opt_delete">Delete</string>

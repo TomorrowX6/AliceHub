@@ -200,6 +200,8 @@ class SaveManagerActivity : ThemedActivity() {
     private lateinit var adapter: SaveFileAdapter
     private var currentEntries: List<SaveFileEntry> = emptyList()
     private var pendingSingleExportFile: File? = null
+    private var pendingSingleExportAsPc: Boolean = false
+    private var pendingExportAsPc: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -477,6 +479,14 @@ class SaveManagerActivity : ThemedActivity() {
             .show()
     }
 
+    private fun entriesForExport(asPc: Boolean): List<SaveFileEntry> {
+        if (!asPc) return currentEntries.toList()
+        return currentEntries.filter { entry ->
+            val lower = entry.file.name.lowercase(Locale.ROOT)
+            !lower.endsWith(".bak") && !lower.endsWith(".log")
+        }
+    }
+
     private fun showExportDialog() {
         if (activeJob?.isActive == true) return
         if (currentEntries.isEmpty()) {
@@ -484,6 +494,8 @@ class SaveManagerActivity : ThemedActivity() {
             return
         }
         val options = arrayOf(
+            getString(R.string.save_export_opt_pc_zip),
+            getString(R.string.save_export_opt_pc_dir),
             getString(R.string.save_export_opt_zip),
             getString(R.string.save_export_opt_dir)
         )
@@ -491,8 +503,10 @@ class SaveManagerActivity : ThemedActivity() {
             .setTitle(R.string.save_export_title)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> chooseExportZip()
-                    1 -> chooseExportDirectory()
+                    0 -> chooseExportZip(asPc = true)
+                    1 -> chooseExportDirectory(asPc = true)
+                    2 -> chooseExportZip(asPc = false)
+                    3 -> chooseExportDirectory(asPc = false)
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -515,9 +529,15 @@ class SaveManagerActivity : ThemedActivity() {
         startActivityForResult(Intent.createChooser(intent, getString(R.string.save_chooser_import_files)), REQ_IMPORT_FILES)
     }
 
-    private fun chooseExportZip() {
+    private fun chooseExportZip(asPc: Boolean) {
+        if (entriesForExport(asPc).isEmpty()) {
+            Toast.makeText(this, R.string.save_export_empty_toast, Toast.LENGTH_SHORT).show()
+            return
+        }
+        pendingExportAsPc = asPc
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val defaultName = "${currentTarget.dirName}_SaveData_${timestamp}.zip"
+        val suffix = if (asPc) "PC_SaveData" else "SaveData"
+        val defaultName = "${currentTarget.dirName}_${suffix}_${timestamp}.zip"
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/zip"
@@ -526,7 +546,12 @@ class SaveManagerActivity : ThemedActivity() {
         startActivityForResult(intent, REQ_EXPORT_ZIP)
     }
 
-    private fun chooseExportDirectory() {
+    private fun chooseExportDirectory(asPc: Boolean) {
+        if (entriesForExport(asPc).isEmpty()) {
+            Toast.makeText(this, R.string.save_export_empty_toast, Toast.LENGTH_SHORT).show()
+            return
+        }
+        pendingExportAsPc = asPc
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
@@ -558,17 +583,23 @@ class SaveManagerActivity : ThemedActivity() {
             }
             REQ_EXPORT_ZIP -> {
                 val uri = data.data ?: return
-                runExportZip(uri)
+                val asPc = pendingExportAsPc
+                pendingExportAsPc = false
+                runExportZip(uri, asPc)
             }
             REQ_EXPORT_DIR -> {
                 val uri = data.data ?: return
-                runExportDirectory(uri)
+                val asPc = pendingExportAsPc
+                pendingExportAsPc = false
+                runExportDirectory(uri, asPc)
             }
             REQ_EXPORT_SINGLE_FILE -> {
                 val uri = data.data ?: return
                 val srcFile = pendingSingleExportFile ?: return
+                val asPc = pendingSingleExportAsPc
                 pendingSingleExportFile = null
-                runExportSingleFile(srcFile, uri)
+                pendingSingleExportAsPc = false
+                runExportSingleFile(srcFile, uri, asPc)
             }
         }
     }
@@ -765,34 +796,53 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
-    private fun runExportZip(uri: Uri) {
-        val entriesToExport = currentEntries.toList()
+    private fun copyExportFile(srcFile: File, outStream: java.io.OutputStream, asPc: Boolean): Boolean {
+        if (asPc) {
+            return GameModifierBridge.copySaveFileForPc(srcFile, outStream, cacheDir)
+        }
+        srcFile.inputStream().buffered().use { input ->
+            input.copyTo(outStream)
+        }
+        return false
+    }
+
+    private fun formatExportDoneMessage(exported: Int, converted: Int, asPc: Boolean, defaultMsgResId: Int): String {
+        return if (asPc && converted > 0) {
+            getString(R.string.save_export_pc_converted_done_msg, exported, converted)
+        } else {
+            getString(defaultMsgResId, exported)
+        }
+    }
+
+    private fun runExportZip(uri: Uri, asPc: Boolean) {
+        val entriesToExport = entriesForExport(asPc)
         showProgress(getString(R.string.save_progress_export_zip))
         activeJob = scope.launch {
             try {
-                val count = withContext(Dispatchers.IO) {
+                val (count, converted) = withContext(Dispatchers.IO) {
                     val outStream = contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to create target ZIP file")
                     var exported = 0
+                    var convCount = 0
                     ZipOutputStream(outStream.buffered()).use { zos ->
                         for (entry in entriesToExport) {
                             if (!entry.file.exists()) continue
                             val zipEntry = ZipEntry("SaveData/${entry.relativePath}")
                             zipEntry.time = entry.lastModified
                             zos.putNextEntry(zipEntry)
-                            entry.file.inputStream().buffered().use { input ->
-                                input.copyTo(zos)
+                            if (copyExportFile(entry.file, zos, asPc)) {
+                                convCount++
                             }
                             zos.closeEntry()
                             exported++
                         }
                     }
-                    exported
+                    exported to convCount
                 }
                 dismissProgress()
                 showMessageDialog(
                     getString(R.string.save_export_done_title),
-                    getString(R.string.save_export_zip_done_msg, count)
+                    formatExportDoneMessage(count, converted, asPc, R.string.save_export_zip_done_msg)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to export saves to ZIP", e)
@@ -805,14 +855,15 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
-    private fun runExportDirectory(treeUri: Uri) {
-        val entriesToExport = currentEntries.toList()
+    private fun runExportDirectory(treeUri: Uri, asPc: Boolean) {
+        val entriesToExport = entriesForExport(asPc)
         showProgress(getString(R.string.save_progress_export_dir))
         activeJob = scope.launch {
             try {
-                val count = withContext(Dispatchers.IO) {
+                val (count, converted) = withContext(Dispatchers.IO) {
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     var exported = 0
+                    var convCount = 0
                     for (entry in entriesToExport) {
                         if (!entry.file.exists()) continue
                         val parts = entry.relativePath.split('/').filter { it.isNotEmpty() }
@@ -839,18 +890,18 @@ class SaveManagerActivity : ThemedActivity() {
                             fileName
                         ) ?: throw IOException("Failed to create file: $fileName")
                         contentResolver.openOutputStream(newDocUri)?.use { out ->
-                            entry.file.inputStream().buffered().use { input ->
-                                input.copyTo(out)
+                            if (copyExportFile(entry.file, out, asPc)) {
+                                convCount++
                             }
                         } ?: throw IOException("Failed to write file: $fileName")
                         exported++
                     }
-                    exported
+                    exported to convCount
                 }
                 dismissProgress()
                 showMessageDialog(
                     getString(R.string.save_export_done_title),
-                    getString(R.string.save_export_dir_done_msg, count)
+                    formatExportDoneMessage(count, converted, asPc, R.string.save_export_dir_done_msg)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to export saves to directory", e)
@@ -893,15 +944,7 @@ class SaveManagerActivity : ThemedActivity() {
                     when (which) {
                         0 -> ErrorReportKit.showFromFile(this, entry.file)
                         1 -> ErrorReportKit.shareFromFile(this, entry.file)
-                        2 -> {
-                            pendingSingleExportFile = entry.file
-                            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TITLE, entry.file.name)
-                            }
-                            startActivityForResult(intent, REQ_EXPORT_SINGLE_FILE)
-                        }
+                        2 -> startSingleFileExport(entry.file, mimeType = "text/plain", asPc = false)
                         3 -> ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
                     }
                 }
@@ -910,43 +953,51 @@ class SaveManagerActivity : ThemedActivity() {
             return
         }
 
-        val options = arrayOf(
-            getString(R.string.save_file_opt_export),
-            getString(R.string.save_file_opt_backup),
-            getString(R.string.save_file_opt_rename),
-            getString(R.string.save_file_opt_delete)
-        )
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        items.add(getString(R.string.save_file_opt_export) to {
+            startSingleFileExport(entry.file, mimeType = "application/octet-stream", asPc = false)
+        })
+        if (GameModifierBridge.isX4ssSaveFile(entry.file)) {
+            items.add(getString(R.string.save_file_opt_export_pc) to {
+                startSingleFileExport(entry.file, mimeType = "application/octet-stream", asPc = true)
+            })
+        }
+        items.add(getString(R.string.save_file_opt_backup) to { showDuplicateFileDialog(entry) })
+        items.add(getString(R.string.save_file_opt_rename) to {
+            ensureGameNotRunning(this) { showRenameFileDialog(entry) }
+        })
+        items.add(getString(R.string.save_file_opt_delete) to {
+            ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
+        })
+
+        val options = items.map { it.first }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
             .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        pendingSingleExportFile = entry.file
-                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "application/octet-stream"
-                            putExtra(Intent.EXTRA_TITLE, entry.file.name)
-                        }
-                        startActivityForResult(intent, REQ_EXPORT_SINGLE_FILE)
-                    }
-                    1 -> showDuplicateFileDialog(entry)
-                    2 -> ensureGameNotRunning(this) { showRenameFileDialog(entry) }
-                    3 -> ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
-                }
+                items[which].second()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun runExportSingleFile(srcFile: File, destUri: Uri) {
+    private fun startSingleFileExport(file: File, mimeType: String, asPc: Boolean) {
+        pendingSingleExportFile = file
+        pendingSingleExportAsPc = asPc
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, file.name)
+        }
+        startActivityForResult(intent, REQ_EXPORT_SINGLE_FILE)
+    }
+
+    private fun runExportSingleFile(srcFile: File, destUri: Uri, asPc: Boolean) {
         showProgress(getString(R.string.save_progress_export_file))
         activeJob = scope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(destUri)?.use { out ->
-                        srcFile.inputStream().buffered().use { input ->
-                            input.copyTo(out)
-                        }
+                        copyExportFile(srcFile, out, asPc)
                     } ?: throw IOException("Failed to write target file")
                 }
                 dismissProgress()

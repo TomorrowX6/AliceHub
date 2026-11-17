@@ -3415,20 +3415,865 @@ static bool x4ss_write_container(const char *path,
 	return atomic_save_commit(fp, path, tmp_path, is_critical_global_save(path));
 }
 
-int serialize_structs(const char *filename, struct page *struct_page_list, bool save_folder)
-{
-	if (!filename || !struct_page_list || struct_page_list->type != ARRAY_PAGE)
-		return 0;
+struct gd_ss_bschema_field {
+	int32_t type1;
+	int32_t type2;
+	char *name;
+	size_t name_len;
+};
 
-	int nr_roots = v12_array_length(struct_page_list);
-	for (int i = 0; i < nr_roots; i++) {
-		int s = struct_page_list->values[i].i;
-		if (!page_index_valid(s) || !heap[s].page || heap[s].page->type != STRUCT_PAGE) {
-			WARNING("SerializeStruct: invalid root page %d at index %d", s, i);
-			return 0;
+struct gd_ss_bschema {
+	char *name;
+	size_t name_len;
+	uint32_t nr_fields;
+	struct gd_ss_bschema_field *fields;
+};
+
+struct gd_ss_bobj {
+	int32_t struct_def;
+	uint32_t nr_vals;
+	uint32_t *val_idxs;
+};
+
+struct gd_ss_barray {
+	int32_t rank;
+	uint32_t total;
+	int32_t elem_type;
+	int32_t *elems;
+};
+
+struct gd_ss_builder {
+	char **strings;
+	size_t *string_lens;
+	uint32_t nr_strings;
+	uint32_t cap_strings;
+	uint32_t *str_ht;
+	uint32_t str_ht_cap;
+
+	int32_t *vals;
+	uint32_t nr_vals;
+	uint32_t cap_vals;
+
+	struct gd_ss_bschema *schemas;
+	uint32_t nr_schemas;
+	uint32_t cap_schemas;
+
+	struct gd_ss_bobj *objs;
+	uint32_t nr_objs;
+	uint32_t cap_objs;
+
+	int32_t *root_ids;
+	uint32_t nr_roots;
+
+	struct gd_ss_barray *arrays;
+	uint32_t nr_arrays;
+	uint32_t cap_arrays;
+
+	uint8_t *comment;
+	uint32_t comment_len;
+	bool has_comment;
+};
+
+static uint32_t gd_ss_fnv1a(const char *s, size_t len)
+{
+	uint32_t h = 2166136261u;
+	for (size_t i = 0; i < len; i++) {
+		h ^= (uint8_t)s[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+static void gd_ss_builder_init(struct gd_ss_builder *b)
+{
+	memset(b, 0, sizeof(*b));
+	b->cap_vals = 256;
+	b->vals = xmalloc(b->cap_vals * sizeof(int32_t));
+	b->vals[0] = 0;
+	b->nr_vals = 1;
+
+	b->cap_objs = 64;
+	b->objs = xcalloc(b->cap_objs, sizeof(*b->objs));
+	b->objs[0].struct_def = -1;
+	b->objs[0].nr_vals = 1;
+	b->objs[0].val_idxs = xcalloc(1, sizeof(uint32_t));
+	b->objs[0].val_idxs[0] = 0;
+	b->nr_objs = 1;
+
+	b->cap_arrays = 64;
+	b->arrays = xcalloc(b->cap_arrays, sizeof(*b->arrays));
+	b->arrays[0].rank = 1;
+	b->arrays[0].total = 0;
+	b->arrays[0].elem_type = AIN_INT;
+	b->arrays[0].elems = NULL;
+	b->nr_arrays = 1;
+}
+
+static void gd_ss_builder_free(struct gd_ss_builder *b)
+{
+	if (!b)
+		return;
+	for (uint32_t i = 0; i < b->nr_strings; i++)
+		free(b->strings[i]);
+	free(b->strings);
+	free(b->string_lens);
+	free(b->str_ht);
+	free(b->vals);
+	for (uint32_t si = 0; si < b->nr_schemas; si++) {
+		free(b->schemas[si].name);
+		for (uint32_t fi = 0; fi < b->schemas[si].nr_fields; fi++)
+			free(b->schemas[si].fields[fi].name);
+		free(b->schemas[si].fields);
+	}
+	free(b->schemas);
+	for (uint32_t i = 0; i < b->nr_objs; i++)
+		free(b->objs[i].val_idxs);
+	free(b->objs);
+	free(b->root_ids);
+	for (uint32_t i = 0; i < b->nr_arrays; i++)
+		free(b->arrays[i].elems);
+	free(b->arrays);
+	free(b->comment);
+	memset(b, 0, sizeof(*b));
+}
+
+static void gd_ss_str_rehash(struct gd_ss_builder *b, uint32_t new_cap)
+{
+	uint32_t *ht = xcalloc(new_cap, sizeof(uint32_t));
+	uint32_t mask = new_cap - 1;
+	for (uint32_t i = 0; i < b->nr_strings; i++) {
+		uint32_t slot = gd_ss_fnv1a(b->strings[i], b->string_lens[i]) & mask;
+		while (ht[slot] != 0)
+			slot = (slot + 1) & mask;
+		ht[slot] = i + 1;
+	}
+	free(b->str_ht);
+	b->str_ht = ht;
+	b->str_ht_cap = new_cap;
+}
+
+static int32_t gd_ss_builder_add_string(struct gd_ss_builder *b, const char *s, size_t len)
+{
+	if (!s || len == 0)
+		return INT32_MAX;
+	const void *nul = memchr(s, '\0', len);
+	if (nul)
+		len = (size_t)((const char *)nul - s);
+	if (len == 0)
+		return INT32_MAX;
+
+	if (!b->str_ht)
+		gd_ss_str_rehash(b, 256);
+	else if ((b->nr_strings + 1) * 2 >= b->str_ht_cap)
+		gd_ss_str_rehash(b, b->str_ht_cap * 2);
+
+	uint32_t mask = b->str_ht_cap - 1;
+	uint32_t slot = gd_ss_fnv1a(s, len) & mask;
+	while (b->str_ht[slot] != 0) {
+		uint32_t idx = b->str_ht[slot] - 1;
+		if (b->string_lens[idx] == len && memcmp(b->strings[idx], s, len) == 0)
+			return (int32_t)idx;
+		slot = (slot + 1) & mask;
+	}
+
+	if (b->nr_strings >= b->cap_strings) {
+		b->cap_strings = b->cap_strings ? b->cap_strings * 2 : 256;
+		b->strings = xrealloc(b->strings, b->cap_strings * sizeof(char *));
+		b->string_lens = xrealloc(b->string_lens, b->cap_strings * sizeof(size_t));
+	}
+	uint32_t idx = b->nr_strings++;
+	char *copy = xmalloc(len + 1);
+	memcpy(copy, s, len);
+	copy[len] = '\0';
+	b->strings[idx] = copy;
+	b->string_lens[idx] = len;
+	b->str_ht[slot] = idx + 1;
+	return (int32_t)idx;
+}
+
+static uint32_t gd_ss_builder_add_val(struct gd_ss_builder *b, int32_t v)
+{
+	if (b->nr_vals >= b->cap_vals) {
+		b->cap_vals *= 2;
+		b->vals = xrealloc(b->vals, b->cap_vals * sizeof(int32_t));
+	}
+	uint32_t idx = b->nr_vals++;
+	b->vals[idx] = v;
+	return idx;
+}
+
+static int32_t gd_ss_builder_intern_schema(struct gd_ss_builder *b, const struct gd_ss_bschema *cand)
+{
+	for (uint32_t si = 0; si < b->nr_schemas; si++) {
+		const struct gd_ss_bschema *ex = &b->schemas[si];
+		if (ex->nr_fields != cand->nr_fields || ex->name_len != cand->name_len)
+			continue;
+		if (cand->name_len && memcmp(ex->name, cand->name, cand->name_len) != 0)
+			continue;
+		bool match = true;
+		for (uint32_t fi = 0; fi < cand->nr_fields; fi++) {
+			const struct gd_ss_bschema_field *ef = &ex->fields[fi];
+			const struct gd_ss_bschema_field *cf = &cand->fields[fi];
+			if (ef->type1 != cf->type1 || ef->type2 != cf->type2 || ef->name_len != cf->name_len) {
+				match = false;
+				break;
+			}
+			if (cf->name_len && memcmp(ef->name, cf->name, cf->name_len) != 0) {
+				match = false;
+				break;
+			}
+		}
+		if (match)
+			return (int32_t)si;
+	}
+
+	if (b->nr_schemas >= b->cap_schemas) {
+		b->cap_schemas = b->cap_schemas ? b->cap_schemas * 2 : 32;
+		b->schemas = xrealloc(b->schemas, b->cap_schemas * sizeof(*b->schemas));
+	}
+	uint32_t si = b->nr_schemas++;
+	struct gd_ss_bschema *dst = &b->schemas[si];
+	dst->name_len = cand->name_len;
+	dst->name = xmalloc(cand->name_len + 1);
+	if (cand->name_len)
+		memcpy(dst->name, cand->name, cand->name_len);
+	dst->name[cand->name_len] = '\0';
+	dst->nr_fields = cand->nr_fields;
+	dst->fields = xcalloc(max(cand->nr_fields, 1u), sizeof(*dst->fields));
+	for (uint32_t fi = 0; fi < cand->nr_fields; fi++) {
+		const struct gd_ss_bschema_field *cf = &cand->fields[fi];
+		dst->fields[fi].type1 = cf->type1;
+		dst->fields[fi].type2 = cf->type2;
+		dst->fields[fi].name_len = cf->name_len;
+		dst->fields[fi].name = xmalloc(cf->name_len + 1);
+		if (cf->name_len)
+			memcpy(dst->fields[fi].name, cf->name, cf->name_len);
+		dst->fields[fi].name[cf->name_len] = '\0';
+	}
+	return (int32_t)si;
+}
+
+static void gd_ss_builder_reserve_objs(struct gd_ss_builder *b, uint32_t total_objs)
+{
+	if (total_objs <= b->nr_objs)
+		return;
+	if (total_objs > b->cap_objs) {
+		b->cap_objs = total_objs;
+		b->objs = xrealloc(b->objs, b->cap_objs * sizeof(*b->objs));
+	}
+	memset(b->objs + b->nr_objs, 0, (total_objs - b->nr_objs) * sizeof(*b->objs));
+	b->nr_objs = total_objs;
+}
+
+static void gd_ss_builder_reserve_arrays(struct gd_ss_builder *b, uint32_t total_arrays)
+{
+	if (total_arrays <= b->nr_arrays)
+		return;
+	if (total_arrays > b->cap_arrays) {
+		b->cap_arrays = total_arrays;
+		b->arrays = xrealloc(b->arrays, b->cap_arrays * sizeof(*b->arrays));
+	}
+	memset(b->arrays + b->nr_arrays, 0, (total_arrays - b->nr_arrays) * sizeof(*b->arrays));
+	b->nr_arrays = total_arrays;
+}
+
+static void gd_ss_builder_set_roots(struct gd_ss_builder *b, const int32_t *roots, uint32_t nr_roots)
+{
+	free(b->root_ids);
+	b->nr_roots = nr_roots;
+	b->root_ids = xcalloc(max(nr_roots, 1u), sizeof(int32_t));
+	if (nr_roots > 0)
+		memcpy(b->root_ids, roots, nr_roots * sizeof(int32_t));
+}
+
+static void gd_ss_builder_set_comment(struct gd_ss_builder *b, const uint8_t *comment, uint32_t len, bool has_comment)
+{
+	free(b->comment);
+	b->comment = NULL;
+	b->comment_len = 0;
+	b->has_comment = has_comment;
+	if (has_comment && len > 0 && comment) {
+		b->comment = xmalloc(len);
+		memcpy(b->comment, comment, len);
+		b->comment_len = len;
+	}
+}
+
+static bool gd_ss_builder_write_file(const struct gd_ss_builder *b, const char *path, bool keep_backup)
+{
+	struct x4ss_buf raw = {0};
+	/* Header layout (98 bytes): "serialize_struct\0", version=1000, unknown=9, t[0..6], "serialize_struct\0" */
+	x4ss_put_bytes(&raw, GDSS_INNER_MAGIC, 17);
+	x4ss_put_u32(&raw, 1000u);
+	x4ss_put_u32(&raw, 9u);
+	for (int i = 0; i < 7 * 2; i++)
+		x4ss_put_u32(&raw, 0u);
+	x4ss_put_bytes(&raw, GDSS_INNER_MAGIC, 17);
+
+	uint32_t c1_off = (uint32_t)raw.len;
+	for (uint32_t i = 0; i < b->nr_objs; i++) {
+		const struct gd_ss_bobj *o = &b->objs[i];
+		x4ss_put_i32(&raw, o->struct_def);
+		x4ss_put_u32(&raw, o->nr_vals);
+		for (uint32_t f = 0; f < o->nr_vals; f++)
+			x4ss_put_u32(&raw, o->val_idxs[f]);
+	}
+
+	uint32_t c2_off = (uint32_t)raw.len;
+	for (uint32_t r = 0; r < b->nr_roots; r++) {
+		x4ss_put_i32(&raw, AIN_STRUCT);
+		x4ss_put_i32(&raw, AIN_STRUCT);
+		x4ss_put_i32(&raw, b->root_ids[r]);
+		x4ss_put_i32(&raw, 0);
+		x4ss_put_u8(&raw, 0);
+	}
+	/* Sentinel terminator */
+	x4ss_put_i32(&raw, 0);
+	x4ss_put_i32(&raw, 0);
+	x4ss_put_i32(&raw, 0);
+	x4ss_put_i32(&raw, 0);
+	x4ss_put_u8(&raw, 0);
+
+	uint32_t c3_off = (uint32_t)raw.len;
+	for (uint32_t i = 0; i < b->nr_strings; i++) {
+		if (b->string_lens[i] > 0)
+			x4ss_put_bytes(&raw, b->strings[i], b->string_lens[i]);
+		x4ss_put_u8(&raw, 0);
+	}
+
+	uint32_t c4_off = (uint32_t)raw.len;
+	for (uint32_t i = 0; i < b->nr_arrays; i++) {
+		const struct gd_ss_barray *a = &b->arrays[i];
+		x4ss_put_i32(&raw, a->rank > 0 ? a->rank : 1);
+		x4ss_put_u32(&raw, a->total);
+		x4ss_put_u32(&raw, 1u);
+		x4ss_put_u32(&raw, a->total);
+		x4ss_put_i32(&raw, a->elem_type);
+		for (uint32_t k = 0; k < a->total; k++)
+			x4ss_put_i32(&raw, a->elems[k]);
+	}
+
+	uint32_t c5_off = (uint32_t)raw.len;
+	for (uint32_t i = 0; i < b->nr_vals; i++)
+		x4ss_put_i32(&raw, b->vals[i]);
+	x4ss_put_u32(&raw, b->nr_schemas);
+	for (uint32_t si = 0; si < b->nr_schemas; si++) {
+		const struct gd_ss_bschema *s = &b->schemas[si];
+		if (s->name_len > 0)
+			x4ss_put_bytes(&raw, s->name, s->name_len);
+		x4ss_put_u8(&raw, 0);
+		x4ss_put_u32(&raw, s->nr_fields);
+		for (uint32_t fi = 0; fi < s->nr_fields; fi++) {
+			const struct gd_ss_bschema_field *f = &s->fields[fi];
+			x4ss_put_i32(&raw, f->type1);
+			x4ss_put_i32(&raw, f->type2);
+			if (f->name_len > 0)
+				x4ss_put_bytes(&raw, f->name, f->name_len);
+			x4ss_put_u8(&raw, 0);
 		}
 	}
 
+	uint32_t c6_off = (uint32_t)raw.len;
+	if (b->has_comment) {
+		x4ss_put_u32(&raw, b->comment_len);
+		if (b->comment_len > 0 && b->comment)
+			x4ss_put_bytes(&raw, b->comment, b->comment_len);
+	}
+
+	uint32_t sec_off[7] = { 64u, c1_off, c2_off, c3_off, c4_off, c5_off, c6_off };
+	uint32_t sec_cnt[7] = {
+		1u,
+		b->nr_objs,
+		b->nr_roots + 1u,
+		b->nr_strings,
+		b->nr_arrays,
+		b->nr_vals,
+		b->has_comment ? 1u : 0u
+	};
+	for (int i = 0; i < 7; i++) {
+		gd_write_u32_le(raw.data + 25 + i * 8, sec_off[i]);
+		gd_write_u32_le(raw.data + 29 + i * 8, sec_cnt[i]);
+	}
+
+	uLongf comp_cap = compressBound((uLong)raw.len);
+	uint8_t *comp = xmalloc(comp_cap);
+	if (compress2(comp, &comp_cap, raw.data, (uLong)raw.len, Z_BEST_SPEED) != Z_OK) {
+		free(comp);
+		free(raw.data);
+		return false;
+	}
+	uint32_t ulen = (uint32_t)raw.len;
+	free(raw.data);
+
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
+	if (!fp) {
+		free(comp);
+		return false;
+	}
+	uint8_t hdr[8];
+	memcpy(hdr, GDSS_OUTER_MAGIC, 4);
+	gd_write_u32_le(hdr + 4, ulen);
+	bool ok = fwrite(hdr, 1, 8, fp) == 8;
+	if (ok && comp_cap > 0)
+		ok = fwrite(comp, 1, (size_t)comp_cap, fp) == (size_t)comp_cap;
+	free(comp);
+	if (!ok) {
+		atomic_save_abort(fp, tmp_path);
+		return false;
+	}
+	return atomic_save_commit(fp, path, tmp_path, keep_backup);
+}
+
+static int32_t gd_ss_normalize_type_code(const struct ain_type *t)
+{
+	if (!t)
+		return AIN_INT;
+	const struct ain_type *eff = t;
+	while (eff->data == AIN_WRAP && eff->array_type)
+		eff = eff->array_type;
+	switch (eff->data) {
+	case AIN_IFACE_WRAP:
+		return AIN_IFACE;
+	case AIN_ENUM2:
+	case AIN_REF_ENUM:
+		return AIN_ENUM;
+	case AIN_REF_STRUCT:
+		return AIN_STRUCT;
+	case AIN_REF_FUNC_TYPE:
+		return AIN_FUNC_TYPE;
+	case AIN_ARRAY_INT:
+	case AIN_ARRAY_FLOAT:
+	case AIN_ARRAY_STRING:
+	case AIN_ARRAY_STRUCT:
+	case AIN_ARRAY_FUNC_TYPE:
+	case AIN_ARRAY_BOOL:
+	case AIN_ARRAY_LONG_INT:
+	case AIN_ARRAY_DELEGATE:
+	case AIN_REF_ARRAY:
+	case AIN_REF_ARRAY_INT:
+	case AIN_REF_ARRAY_FLOAT:
+	case AIN_REF_ARRAY_STRING:
+	case AIN_REF_ARRAY_STRUCT:
+	case AIN_REF_ARRAY_FUNC_TYPE:
+	case AIN_REF_ARRAY_BOOL:
+	case AIN_REF_ARRAY_LONG_INT:
+	case AIN_REF_ARRAY_DELEGATE:
+		return AIN_ARRAY;
+	default:
+		return (int32_t)eff->data;
+	}
+}
+
+static bool gd_ss_vm_is_page_var(const struct ain_type *t)
+{
+	if (!t)
+		return false;
+	switch (t->data) {
+	case AIN_REF_INT:
+	case AIN_REF_FLOAT:
+	case AIN_REF_BOOL:
+	case AIN_REF_LONG_INT:
+	case AIN_REF_ENUM:
+	case AIN_REF_OPTION:
+		return true;
+	case AIN_WRAP:
+		if (!t->array_type)
+			return false;
+		if (t->array_type->data == AIN_STRING || t->array_type->data == AIN_DELEGATE
+				|| t->array_type->data == AIN_IFACE || t->array_type->data == AIN_IFACE_WRAP)
+			return false;
+		return ain_type_slot_width(t) == 2;
+	default:
+		return false;
+	}
+}
+
+struct gd_ss_vm_ctx {
+	int *slot_to_c1;
+	int *c1_to_slot;
+	uint32_t nr_c1;
+	uint32_t cap_c1;
+
+	int *slot_to_c4;
+	int *c4_to_slot;
+	uint32_t nr_c4;
+	uint32_t cap_c4;
+
+	bool unsupported;
+};
+
+static uint32_t gd_ss_vm_reg_struct(struct gd_ss_vm_ctx *ctx, int slot)
+{
+	if (slot < 0 || !page_index_valid(slot))
+		return 0;
+	struct page *p = heap[slot].page;
+	if (!p || p->type != STRUCT_PAGE)
+		return 0;
+	if (ctx->slot_to_c1[slot] > 0)
+		return (uint32_t)ctx->slot_to_c1[slot];
+	if (ctx->nr_c1 >= ctx->cap_c1) {
+		ctx->cap_c1 = ctx->cap_c1 ? ctx->cap_c1 * 2 : 128;
+		ctx->c1_to_slot = xrealloc(ctx->c1_to_slot, ctx->cap_c1 * sizeof(int));
+	}
+	uint32_t id = ctx->nr_c1++;
+	ctx->slot_to_c1[slot] = (int)id;
+	ctx->c1_to_slot[id] = slot;
+	return id;
+}
+
+static int32_t gd_ss_vm_reg_array(struct gd_ss_vm_ctx *ctx, int slot)
+{
+	if (slot < 0 || !page_index_valid(slot))
+		return -1;
+	struct page *p = heap[slot].page;
+	if (!p || p->type != ARRAY_PAGE)
+		return -1;
+	if (ctx->slot_to_c4[slot] > 0)
+		return (int32_t)ctx->slot_to_c4[slot];
+	if (p->array.rank > 1) {
+		ctx->unsupported = true;
+		return -1;
+	}
+	if (ctx->nr_c4 >= ctx->cap_c4) {
+		ctx->cap_c4 = ctx->cap_c4 ? ctx->cap_c4 * 2 : 128;
+		ctx->c4_to_slot = xrealloc(ctx->c4_to_slot, ctx->cap_c4 * sizeof(int));
+	}
+	uint32_t id = ctx->nr_c4++;
+	ctx->slot_to_c4[slot] = (int)id;
+	ctx->c4_to_slot[id] = slot;
+	return (int32_t)id;
+}
+
+static void gd_ss_vm_collect_value(struct gd_ss_vm_ctx *ctx, const union vm_value *vals, const struct ain_type *t)
+{
+	if (!t || ctx->unsupported)
+		return;
+	if (gd_ss_vm_is_page_var(t)) {
+		ctx->unsupported = true;
+		return;
+	}
+	if (t->data == AIN_OPTION) {
+		int w = ain_type_slot_width(t);
+		if (vals[w - 1].i == 0 && t->array_type)
+			gd_ss_vm_collect_value(ctx, vals, t->array_type);
+		return;
+	}
+	const struct ain_type *eff = t;
+	while (eff->data == AIN_WRAP && eff->array_type)
+		eff = eff->array_type;
+	switch (eff->data) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		gd_ss_vm_reg_struct(ctx, vals[0].i);
+		break;
+	case AIN_ARRAY:
+	case AIN_REF_ARRAY:
+	case AIN_ARRAY_TYPE:
+	case AIN_REF_ARRAY_TYPE:
+		gd_ss_vm_reg_array(ctx, vals[0].i);
+		break;
+	default:
+		break;
+	}
+}
+
+static int32_t gd_ss_vm_emit_value(struct gd_ss_vm_ctx *ctx, struct gd_ss_builder *b,
+		const union vm_value *vals, const struct ain_type *t)
+{
+	if (!t)
+		return 0;
+	const struct ain_type *eff = t;
+	while (eff->data == AIN_WRAP && eff->array_type)
+		eff = eff->array_type;
+	switch (eff->data) {
+	case AIN_STRING:
+		if (string_index_valid(vals[0].i)) {
+			struct string *s = heap_get_string(vals[0].i);
+			return gd_ss_builder_add_string(b, s->text, (size_t)s->size);
+		}
+		return INT32_MAX;
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		return (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_c1[vals[0].i] > 0)
+			? (int32_t)ctx->slot_to_c1[vals[0].i] : 0;
+	case AIN_ARRAY:
+	case AIN_REF_ARRAY:
+	case AIN_ARRAY_TYPE:
+	case AIN_REF_ARRAY_TYPE:
+		return (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_c4[vals[0].i] > 0)
+			? (int32_t)ctx->slot_to_c4[vals[0].i] : -1;
+	default:
+		return vals[0].i;
+	}
+}
+
+static void gd_ss_read_existing_comment(const char *path,
+		uint8_t **comment_out, uint32_t *len_out, bool *has_comment_out)
+{
+	*comment_out = NULL;
+	*len_out = 0;
+	*has_comment_out = false;
+
+	uint8_t *gd_raw = NULL;
+	uint32_t gd_ulen = 0;
+	if (gd_ss_decompress_file(path, &gd_raw, &gd_ulen)) {
+		struct gd_ss_parsed parsed;
+		if (gd_ss_parse(gd_raw, gd_ulen, &parsed)) {
+			if (parsed.has_comment) {
+				*has_comment_out = true;
+				if (parsed.comment_len > 0) {
+					bool src_is_gbk = gd_ss_detect_is_gbk(&parsed);
+					size_t out_len = 0;
+					char *conv = save_transcode_cstr(parsed.comment, parsed.comment_len,
+							src_is_gbk, sys4_text_is_gbk, &out_len);
+					*comment_out = (uint8_t *)conv;
+					*len_out = (uint32_t)out_len;
+				}
+			}
+			gd_ss_free_parsed(&parsed);
+			return;
+		}
+		free(gd_raw);
+	}
+
+	uint8_t *cbuf = NULL;
+	uint32_t clen = 0;
+	if (x4ss_read_existing_parts(path, &cbuf, &clen, NULL, NULL, NULL)) {
+		*comment_out = cbuf;
+		*len_out = clen;
+		*has_comment_out = (clen > 0);
+	}
+}
+
+static int serialize_gd_structs(const char *filename, struct page *struct_page_list, bool save_folder, bool *fallback_out)
+{
+	*fallback_out = false;
+	int nr_roots = v12_array_length(struct_page_list);
+	struct gd_ss_vm_ctx ctx = {
+		.slot_to_c1 = xcalloc((size_t)max(heap_size, 1), sizeof(int)),
+		.c1_to_slot = xcalloc(128, sizeof(int)),
+		.nr_c1 = 1,
+		.cap_c1 = 128,
+		.slot_to_c4 = xcalloc((size_t)max(heap_size, 1), sizeof(int)),
+		.c4_to_slot = xcalloc(128, sizeof(int)),
+		.nr_c4 = 1,
+		.cap_c4 = 128,
+		.unsupported = false,
+	};
+
+	int32_t *root_ids = xcalloc((size_t)max(nr_roots, 1), sizeof(int32_t));
+	for (int i = 0; i < nr_roots; i++)
+		root_ids[i] = (int32_t)gd_ss_vm_reg_struct(&ctx, struct_page_list->values[i].i);
+
+	uint32_t next_c1 = 1;
+	uint32_t next_c4 = 1;
+	while ((next_c1 < ctx.nr_c1 || next_c4 < ctx.nr_c4) && !ctx.unsupported) {
+		while (next_c1 < ctx.nr_c1 && !ctx.unsupported) {
+			struct page *p = heap[ctx.c1_to_slot[next_c1++]].page;
+			struct ain_struct *st = &ain->structures[p->index];
+			for (int m = 0; m < st->nr_members && !ctx.unsupported; m++) {
+				const struct ain_type *mt = &st->members[m].type;
+				if (mt->data == AIN_VOID || mt->data == AIN_DELEGATE || mt->data == AIN_REF_DELEGATE)
+					continue;
+				if (st->members[m].name && !strcmp(st->members[m].name, "<vtable>"))
+					continue;
+				gd_ss_vm_collect_value(&ctx, &p->values[m], mt);
+				if (mt->data == AIN_OPTION) {
+					int w = ain_type_slot_width(mt);
+					if (w > 1)
+						m += w - 1;
+				}
+			}
+		}
+		while (next_c4 < ctx.nr_c4 && !ctx.unsupported) {
+			struct page *p = heap[ctx.c4_to_slot[next_c4++]].page;
+			struct ain_type et = p->a_type == AIN_ARRAY
+				? p->array.element_type
+				: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
+			int32_t ec = gd_ss_normalize_type_code(&et);
+			if (ec == AIN_IFACE)
+				continue; /* PC writes -1 placeholders for AIN_IFACE arrays */
+			if (et.data == AIN_OPTION) {
+				ctx.unsupported = true;
+				break;
+			}
+			int w = ain_type_slot_width(&et);
+			int len = p->nr_vars / w;
+			for (int k = 0; k < len && !ctx.unsupported; k++)
+				gd_ss_vm_collect_value(&ctx, &p->values[k * w], &et);
+		}
+	}
+
+	if (ctx.unsupported) {
+		free(root_ids);
+		free(ctx.slot_to_c1);
+		free(ctx.c1_to_slot);
+		free(ctx.slot_to_c4);
+		free(ctx.c4_to_slot);
+		*fallback_out = true;
+		return 0;
+	}
+
+	struct gd_ss_builder b;
+	gd_ss_builder_init(&b);
+	gd_ss_builder_reserve_objs(&b, ctx.nr_c1);
+	gd_ss_builder_reserve_arrays(&b, ctx.nr_c4);
+	gd_ss_builder_set_roots(&b, root_ids, (uint32_t)nr_roots);
+	free(root_ids);
+
+	int *sno_to_schema = xmalloc((size_t)max(ain->nr_structures, 1) * sizeof(int));
+	for (int i = 0; i < ain->nr_structures; i++)
+		sno_to_schema[i] = -1;
+
+	for (uint32_t id = 1; id < ctx.nr_c1; id++) {
+		struct page *p = heap[ctx.c1_to_slot[id]].page;
+		struct ain_struct *st = &ain->structures[p->index];
+
+		if (sno_to_schema[p->index] < 0) {
+			struct gd_ss_bschema_field *fields = xcalloc((size_t)max(st->nr_members, 1), sizeof(*fields));
+			uint32_t nf = 0;
+			for (int m = 0; m < st->nr_members; m++) {
+				const char *mname = st->members[m].name ? st->members[m].name : "";
+				const struct ain_type *mt = &st->members[m].type;
+				if (!strcmp(mname, "<vtable>")) {
+					fields[nf].type1 = AIN_ARRAY;
+					fields[nf].type2 = AIN_ARRAY;
+					fields[nf].name = (char *)mname;
+					fields[nf].name_len = strlen(mname);
+					nf++;
+					continue;
+				}
+				if (mt->data == AIN_VOID || mt->data == AIN_REF_DELEGATE)
+					continue;
+				if (mt->data == AIN_DELEGATE) {
+					fields[nf].type1 = AIN_DELEGATE;
+					fields[nf].type2 = AIN_DELEGATE;
+					fields[nf].name = (char *)mname;
+					fields[nf].name_len = strlen(mname);
+					nf++;
+					continue;
+				}
+				if (mt->data == AIN_OPTION) {
+					fields[nf].type1 = AIN_OPTION;
+					fields[nf].type2 = gd_ss_normalize_type_code(mt->array_type);
+					fields[nf].name = (char *)mname;
+					fields[nf].name_len = strlen(mname);
+					nf++;
+					fields[nf].type1 = AIN_VOID;
+					fields[nf].type2 = AIN_VOID;
+					fields[nf].name = "";
+					fields[nf].name_len = 0;
+					nf++;
+					int w = ain_type_slot_width(mt);
+					if (w > 1)
+						m += w - 1;
+					continue;
+				}
+				int32_t tc = gd_ss_normalize_type_code(mt);
+				fields[nf].type1 = tc;
+				fields[nf].type2 = tc;
+				fields[nf].name = (char *)mname;
+				fields[nf].name_len = strlen(mname);
+				nf++;
+			}
+			struct gd_ss_bschema cand = {
+				.name = st->name ? st->name : "",
+				.name_len = st->name ? strlen(st->name) : 0,
+				.nr_fields = nf,
+				.fields = fields,
+			};
+			sno_to_schema[p->index] = gd_ss_builder_intern_schema(&b, &cand);
+			free(fields);
+		}
+
+		int32_t schema_id = sno_to_schema[p->index];
+		uint32_t nf = b.schemas[schema_id].nr_fields;
+		b.objs[id].struct_def = schema_id;
+		b.objs[id].nr_vals = nf;
+		b.objs[id].val_idxs = xcalloc(max(nf, 1u), sizeof(uint32_t));
+
+		uint32_t fi = 0;
+		for (int m = 0; m < st->nr_members && fi < nf; m++) {
+			const char *mname = st->members[m].name ? st->members[m].name : "";
+			const struct ain_type *mt = &st->members[m].type;
+			if (!strcmp(mname, "<vtable>")) {
+				b.objs[id].val_idxs[fi++] = 0; /* vals[0] = 0 -> empty arr[0] */
+				continue;
+			}
+			if (mt->data == AIN_VOID || mt->data == AIN_REF_DELEGATE)
+				continue;
+			if (mt->data == AIN_DELEGATE) {
+				b.objs[id].val_idxs[fi++] = 0;
+				continue;
+			}
+			if (mt->data == AIN_OPTION) {
+				int w = ain_type_slot_width(mt);
+				bool is_none = (p->values[m + w - 1].i != 0);
+				int32_t iv = (is_none || !mt->array_type)
+					? -1
+					: gd_ss_vm_emit_value(&ctx, &b, &p->values[m], mt->array_type);
+				b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, iv);
+				if (fi < nf)
+					b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, is_none ? 1 : 0);
+				if (w > 1)
+					m += w - 1;
+				continue;
+			}
+			int32_t v = gd_ss_vm_emit_value(&ctx, &b, &p->values[m], mt);
+			b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, v);
+		}
+	}
+	free(sno_to_schema);
+
+	for (uint32_t aid = 1; aid < ctx.nr_c4; aid++) {
+		struct page *p = heap[ctx.c4_to_slot[aid]].page;
+		struct ain_type et = p->a_type == AIN_ARRAY
+			? p->array.element_type
+			: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
+		int32_t ec = gd_ss_normalize_type_code(&et);
+		int w = ain_type_slot_width(&et);
+		int len = p->nr_vars / w;
+
+		b.arrays[aid].rank = 1;
+		b.arrays[aid].total = (uint32_t)len;
+		b.arrays[aid].elem_type = ec;
+		b.arrays[aid].elems = xcalloc((size_t)max(len, 1), sizeof(int32_t));
+		if (ec == AIN_IFACE) {
+			for (int k = 0; k < len; k++)
+				b.arrays[aid].elems[k] = -1;
+		} else {
+			for (int k = 0; k < len; k++)
+				b.arrays[aid].elems[k] = gd_ss_vm_emit_value(&ctx, &b, &p->values[k * w], &et);
+		}
+	}
+
+	free(ctx.slot_to_c1);
+	free(ctx.c1_to_slot);
+	free(ctx.slot_to_c4);
+	free(ctx.c4_to_slot);
+
+	char *path = resolve_struct_save_path(filename, save_folder);
+	uint8_t *existing_comment = NULL;
+	uint32_t existing_comment_len = 0;
+	bool has_comment = false;
+	gd_ss_read_existing_comment(path, &existing_comment, &existing_comment_len, &has_comment);
+	gd_ss_builder_set_comment(&b, existing_comment, existing_comment_len, has_comment);
+	free(existing_comment);
+
+	bool ok = gd_ss_builder_write_file(&b, path, is_critical_global_save(path));
+	free(path);
+	gd_ss_builder_free(&b);
+	return ok ? 1 : 0;
+}
+
+static int serialize_x4ss_structs(const char *filename, struct page *struct_page_list, bool save_folder)
+{
+	int nr_roots = v12_array_length(struct_page_list);
 	struct x4ss_save_ctx ctx = {
 		.slot_to_id = xcalloc((size_t)max(heap_size, 1), sizeof(int)),
 		.id_to_slot = xcalloc(256, sizeof(int)),
@@ -3548,7 +4393,8 @@ int serialize_structs(const char *filename, struct page *struct_page_list, bool 
 	char *path = resolve_struct_save_path(filename, save_folder);
 	uint8_t *existing_comment = NULL;
 	uint32_t existing_comment_len = 0;
-	x4ss_read_existing_parts(path, &existing_comment, &existing_comment_len, NULL, NULL, NULL);
+	bool has_comment = false;
+	gd_ss_read_existing_comment(path, &existing_comment, &existing_comment_len, &has_comment);
 
 	bool ok = x4ss_write_container(path, existing_comment, existing_comment_len,
 			(uint32_t)payload.len, comp, (uint32_t)comp_cap);
@@ -3558,6 +4404,27 @@ int serialize_structs(const char *filename, struct page *struct_page_list, bool 
 	free(comp);
 	free(payload.data);
 	return ok ? 1 : 0;
+}
+
+int serialize_structs(const char *filename, struct page *struct_page_list, bool save_folder)
+{
+	if (!filename || !struct_page_list || struct_page_list->type != ARRAY_PAGE)
+		return 0;
+
+	int nr_roots = v12_array_length(struct_page_list);
+	for (int i = 0; i < nr_roots; i++) {
+		int s = struct_page_list->values[i].i;
+		if (!page_index_valid(s) || !heap[s].page || heap[s].page->type != STRUCT_PAGE) {
+			WARNING("SerializeStruct: invalid root page %d at index %d", s, i);
+			return 0;
+		}
+	}
+
+	bool fallback = false;
+	int gd_ret = serialize_gd_structs(filename, struct_page_list, save_folder, &fallback);
+	if (!fallback)
+		return gd_ret;
+	return serialize_x4ss_structs(filename, struct_page_list, save_folder);
 }
 
 struct x4ss_obj_meta {
@@ -3961,4 +4828,634 @@ int read_group_save_comment(const char *keyname, const char *filename, struct st
 	*log_out = make_string((const char *)data, (unsigned int)len);
 	free(data);
 	return 1;
+}
+
+/* =========================================================================
+ * Standalone X4SS -> Windows PC "GD\x01\x01 serialize_struct" Converter
+ * (Must not dereference VM globals such as `ain` or `heap`.)
+ * ========================================================================= */
+
+static bool x4ss_get_cstr_slice(struct x4ss_reader *r, uint32_t *off_out, uint32_t *len_out)
+{
+	uint32_t n = x4ss_get_u32(r);
+	if (r->error || n > r->len - r->pos) {
+		r->error = true;
+		*off_out = 0;
+		*len_out = 0;
+		return false;
+	}
+	*off_out = (uint32_t)r->pos;
+	*len_out = n;
+	r->pos += n;
+	return true;
+}
+
+static int32_t x4ss_conv_norm_code(int32_t data)
+{
+	switch (data) {
+	case AIN_IFACE_WRAP:
+		return AIN_IFACE;
+	case AIN_ENUM2:
+	case AIN_REF_ENUM:
+		return AIN_ENUM;
+	case AIN_ARRAY_INT:
+	case AIN_ARRAY_FLOAT:
+	case AIN_ARRAY_STRING:
+	case AIN_ARRAY_STRUCT:
+	case AIN_ARRAY_FUNC_TYPE:
+	case AIN_ARRAY_BOOL:
+	case AIN_ARRAY_LONG_INT:
+	case AIN_ARRAY_DELEGATE:
+	case AIN_REF_ARRAY:
+	case AIN_REF_ARRAY_INT:
+	case AIN_REF_ARRAY_FLOAT:
+	case AIN_REF_ARRAY_STRING:
+	case AIN_REF_ARRAY_STRUCT:
+	case AIN_REF_ARRAY_FUNC_TYPE:
+	case AIN_REF_ARRAY_BOOL:
+	case AIN_REF_ARRAY_LONG_INT:
+	case AIN_REF_ARRAY_DELEGATE:
+		return AIN_ARRAY;
+	case AIN_REF_FUNC_TYPE:
+		return AIN_FUNC_TYPE;
+	default:
+		return data;
+	}
+}
+
+static bool x4ss_conv_read_type(struct x4ss_reader *r, int32_t *eff_data_out, int depth)
+{
+	if (depth > 8) {
+		r->error = true;
+		return false;
+	}
+	int32_t dt = x4ss_get_i32(r);
+	(void)x4ss_get_i32(r); /* fallback_id */
+	(void)x4ss_get_i32(r); /* rank */
+	uint32_t sym_off = 0, sym_len = 0;
+	if (!x4ss_get_cstr_slice(r, &sym_off, &sym_len))
+		return false;
+	uint8_t has_inner = x4ss_get_u8(r);
+	if (r->error)
+		return false;
+	int32_t inner_dt = 0;
+	if (has_inner) {
+		if (!x4ss_conv_read_type(r, &inner_dt, depth + 1))
+			return false;
+	}
+	if (dt == AIN_WRAP && has_inner)
+		*eff_data_out = inner_dt;
+	else
+		*eff_data_out = dt;
+	return true;
+}
+
+struct x4ss_conv_val {
+	uint8_t tag;
+	int32_t i;
+	uint32_t str_off;
+	uint32_t str_len;
+	bool opt_is_none;
+	uint8_t opt_tag;
+};
+
+struct x4ss_conv_field {
+	uint32_t name_off;
+	uint32_t name_len;
+	struct x4ss_conv_val val;
+};
+
+struct x4ss_conv_obj {
+	uint8_t kind;
+	uint32_t gd_id; /* C1 id for STRUCT, C4 id for ARRAY */
+	uint32_t sname_off;
+	uint32_t sname_len;
+	int32_t elem_type;
+	uint32_t count; /* nr_fields for STRUCT, nr_elems for ARRAY */
+	uint32_t group_id;
+	struct x4ss_conv_field *fields;
+	struct x4ss_conv_val *elems;
+};
+
+struct x4ss_conv_ftype {
+	int32_t t1;
+	int32_t t2;
+	bool resolved_nonnull;
+};
+
+struct x4ss_conv_group {
+	uint32_t rep_oid;
+	uint32_t hash;
+	int32_t schema_id;
+	struct x4ss_conv_ftype *ftypes;
+};
+
+static bool x4ss_conv_read_val(struct x4ss_reader *r, struct x4ss_conv_val *v, bool in_option)
+{
+	memset(v, 0, sizeof(*v));
+	v->tag = x4ss_get_u8(r);
+	if (r->error)
+		return false;
+	switch (v->tag) {
+	case X4SS_VAL_NONE:
+		return true;
+	case X4SS_VAL_SCALAR:
+		v->i = x4ss_get_i32(r);
+		return !r->error;
+	case X4SS_VAL_STRING:
+		return x4ss_get_cstr_slice(r, &v->str_off, &v->str_len);
+	case X4SS_VAL_OBJ:
+		v->i = (int32_t)x4ss_get_u32(r);
+		return !r->error;
+	case X4SS_VAL_IFACE:
+		v->i = (int32_t)x4ss_get_u32(r);
+		(void)x4ss_get_i32(r); /* saved vtable offset */
+		return !r->error;
+	case X4SS_VAL_OPTION: {
+		if (in_option) {
+			r->error = true;
+			return false;
+		}
+		v->opt_is_none = (x4ss_get_u8(r) != 0);
+		if (r->error)
+			return false;
+		if (!v->opt_is_none) {
+			struct x4ss_conv_val inner;
+			if (!x4ss_conv_read_val(r, &inner, true))
+				return false;
+			v->opt_tag = inner.tag;
+			v->i = inner.i;
+			v->str_off = inner.str_off;
+			v->str_len = inner.str_len;
+		}
+		return true;
+	}
+	default:
+		r->error = true;
+		return false;
+	}
+}
+
+static uint32_t x4ss_conv_group_hash(const uint8_t *raw, const struct x4ss_conv_obj *obj)
+{
+	uint32_t h = gd_ss_fnv1a((const char *)(raw + obj->sname_off), obj->sname_len);
+	h ^= obj->count * 2654435761u;
+	for (uint32_t f = 0; f < obj->count; f++) {
+		h ^= gd_ss_fnv1a((const char *)(raw + obj->fields[f].name_off), obj->fields[f].name_len);
+		h = (h << 5) | (h >> 27);
+	}
+	return h;
+}
+
+static bool x4ss_conv_group_equal(const uint8_t *raw, const struct x4ss_conv_obj *a, const struct x4ss_conv_obj *b)
+{
+	if (a->sname_len != b->sname_len || a->count != b->count)
+		return false;
+	if (a->sname_len && memcmp(raw + a->sname_off, raw + b->sname_off, a->sname_len) != 0)
+		return false;
+	for (uint32_t f = 0; f < a->count; f++) {
+		if (a->fields[f].name_len != b->fields[f].name_len)
+			return false;
+		if (a->fields[f].name_len &&
+		    memcmp(raw + a->fields[f].name_off, raw + b->fields[f].name_off, a->fields[f].name_len) != 0)
+			return false;
+	}
+	return true;
+}
+
+static void x4ss_conv_infer_val_type(const struct x4ss_conv_obj *objs, uint32_t nr_objs,
+		const struct x4ss_conv_val *v, struct x4ss_conv_ftype *out)
+{
+	memset(out, 0, sizeof(*out));
+	switch (v->tag) {
+	case X4SS_VAL_NONE:
+		out->t1 = AIN_VOID;
+		out->t2 = AIN_VOID;
+		break;
+	case X4SS_VAL_SCALAR:
+		out->t1 = AIN_INT;
+		out->t2 = AIN_INT;
+		out->resolved_nonnull = true;
+		break;
+	case X4SS_VAL_STRING:
+		out->t1 = AIN_STRING;
+		out->t2 = AIN_STRING;
+		out->resolved_nonnull = true;
+		break;
+	case X4SS_VAL_IFACE:
+		out->t1 = AIN_IFACE;
+		out->t2 = AIN_IFACE;
+		out->resolved_nonnull = (v->i > 0);
+		break;
+	case X4SS_VAL_OBJ: {
+		uint32_t oid = (v->i > 0) ? (uint32_t)v->i : 0;
+		if (oid > 0 && oid <= nr_objs && objs[oid].kind == X4SS_OBJ_ARRAY) {
+			out->t1 = AIN_ARRAY;
+			out->t2 = AIN_ARRAY;
+			out->resolved_nonnull = true;
+		} else if (oid > 0 && oid <= nr_objs && objs[oid].kind == X4SS_OBJ_STRUCT) {
+			out->t1 = AIN_STRUCT;
+			out->t2 = AIN_STRUCT;
+			out->resolved_nonnull = true;
+		} else {
+			out->t1 = AIN_STRUCT;
+			out->t2 = AIN_STRUCT;
+			out->resolved_nonnull = false;
+		}
+		break;
+	}
+	case X4SS_VAL_OPTION:
+		out->t1 = AIN_OPTION;
+		out->t2 = AIN_INT;
+		if (!v->opt_is_none) {
+			out->resolved_nonnull = true;
+			switch (v->opt_tag) {
+			case X4SS_VAL_STRING: out->t2 = AIN_STRING; break;
+			case X4SS_VAL_IFACE:  out->t2 = AIN_IFACE;  break;
+			case X4SS_VAL_OBJ: {
+				uint32_t oid = (v->i > 0) ? (uint32_t)v->i : 0;
+				out->t2 = (oid > 0 && oid <= nr_objs && objs[oid].kind == X4SS_OBJ_ARRAY)
+					? AIN_ARRAY : AIN_STRUCT;
+				break;
+			}
+			default: out->t2 = AIN_INT; break;
+			}
+		}
+		break;
+	default:
+		out->t1 = AIN_INT;
+		out->t2 = AIN_INT;
+		break;
+	}
+}
+
+static int32_t x4ss_conv_emit_scalar_or_ref(struct gd_ss_builder *b, const uint8_t *raw,
+		const struct x4ss_conv_obj *objs, uint32_t nr_objs,
+		uint8_t tag, int32_t raw_i, uint32_t str_off, uint32_t str_len, int32_t expected_type)
+{
+	switch (tag) {
+	case X4SS_VAL_NONE:
+		if (expected_type == AIN_ARRAY || expected_type == AIN_IFACE)
+			return -1;
+		if (expected_type == AIN_STRING)
+			return INT32_MAX;
+		return 0;
+	case X4SS_VAL_SCALAR:
+		return raw_i;
+	case X4SS_VAL_STRING:
+		return gd_ss_builder_add_string(b, (const char *)(raw + str_off), str_len);
+	case X4SS_VAL_OBJ:
+	case X4SS_VAL_IFACE: {
+		uint32_t oid = (raw_i > 0) ? (uint32_t)raw_i : 0;
+		if (oid > 0 && oid <= nr_objs && objs[oid].kind != X4SS_OBJ_NULL)
+			return (int32_t)objs[oid].gd_id;
+		return (expected_type == AIN_ARRAY || expected_type == AIN_IFACE) ? -1 : 0;
+	}
+	default:
+		return 0;
+	}
+}
+
+bool x4ss_is_container_file(const char *path)
+{
+	if (!path)
+		return false;
+	FILE *fp = file_open_utf8(path, "rb");
+	if (!fp)
+		return false;
+	uint8_t hdr[8];
+	bool is_x4ss = (fread(hdr, 1, 8, fp) == 8 && memcmp(hdr, X4SS_MAGIC, 8) == 0);
+	fclose(fp);
+	return is_x4ss;
+}
+
+bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path)
+{
+	if (!src_path || !dst_path)
+		return false;
+
+	uint8_t *comment = NULL;
+	uint32_t clen = 0, uncomp_len = 0, comp_len = 0;
+	uint8_t *comp = NULL;
+	if (!x4ss_read_existing_parts(src_path, &comment, &clen, &uncomp_len, &comp, &comp_len))
+		return false;
+	if (uncomp_len == 0 || uncomp_len > 256u * 1024u * 1024u || comp_len == 0 || !comp) {
+		free(comment);
+		free(comp);
+		return false;
+	}
+
+	uint8_t *raw = xmalloc(uncomp_len);
+	uLongf dst_len = (uLongf)uncomp_len;
+	int zret = uncompress(raw, &dst_len, comp, (uLong)comp_len);
+	free(comp);
+	if (zret != Z_OK || dst_len != uncomp_len) {
+		free(raw);
+		free(comment);
+		return false;
+	}
+
+	bool ok = false;
+	struct x4ss_reader r = { .data = raw, .len = uncomp_len, .pos = 0, .error = false };
+	uint32_t nr_roots = x4ss_get_u32(&r);
+	if (r.error || nr_roots > 1024u * 1024u || nr_roots * 4u > r.len - r.pos) {
+		free(raw);
+		free(comment);
+		return false;
+	}
+	uint32_t *raw_roots = xcalloc(max(nr_roots, 1u), sizeof(uint32_t));
+	for (uint32_t i = 0; i < nr_roots; i++)
+		raw_roots[i] = x4ss_get_u32(&r);
+
+	uint32_t nr_objs = x4ss_get_u32(&r);
+	if (r.error || nr_objs > 16u * 1024u * 1024u || nr_objs > r.len - r.pos) {
+		free(raw_roots);
+		free(raw);
+		free(comment);
+		return false;
+	}
+
+	struct x4ss_conv_obj *objs = xcalloc((size_t)nr_objs + 1, sizeof(*objs));
+	uint32_t nr_c1 = 1;
+	uint32_t nr_c4 = 1;
+	struct x4ss_conv_group *groups = NULL;
+	uint32_t nr_groups = 0, cap_groups = 0;
+	uint32_t *grp_ht = NULL;
+	uint32_t grp_ht_cap = 0;
+
+	/* Pass 1: X4SS object headers */
+	for (uint32_t oid = 1; oid <= nr_objs && !r.error; oid++) {
+		uint8_t kind = x4ss_get_u8(&r);
+		objs[oid].kind = kind;
+		if (kind == X4SS_OBJ_NULL) {
+			objs[oid].gd_id = 0;
+		} else if (kind == X4SS_OBJ_STRUCT) {
+			if (!x4ss_get_cstr_slice(&r, &objs[oid].sname_off, &objs[oid].sname_len))
+				break;
+			objs[oid].gd_id = nr_c1++;
+		} else if (kind == X4SS_OBJ_ARRAY) {
+			(void)x4ss_get_i32(&r); /* a_type */
+			int32_t rank = x4ss_get_i32(&r);
+			int32_t eff_dt = 0;
+			if (!x4ss_conv_read_type(&r, &eff_dt, 0))
+				break;
+			uint32_t cnt = x4ss_get_u32(&r);
+			int32_t norm_et = x4ss_conv_norm_code(eff_dt);
+			if (r.error || rank != 1 || norm_et == AIN_OPTION || cnt > r.len - r.pos) {
+				r.error = true;
+				break;
+			}
+			objs[oid].elem_type = norm_et;
+			objs[oid].count = cnt;
+			objs[oid].gd_id = nr_c4++;
+		} else {
+			r.error = true;
+		}
+	}
+	if (r.error)
+		goto fail;
+
+	for (uint32_t i = 0; i < nr_roots; i++) {
+		uint32_t rid = raw_roots[i];
+		if (rid == 0 || rid > nr_objs || objs[rid].kind != X4SS_OBJ_STRUCT)
+			goto fail;
+	}
+
+	/* Pass 2: X4SS object bodies */
+	for (uint32_t oid = 1; oid <= nr_objs && !r.error; oid++) {
+		struct x4ss_conv_obj *o = &objs[oid];
+		if (o->kind == X4SS_OBJ_STRUCT) {
+			uint32_t nf = x4ss_get_u32(&r);
+			if (r.error || nf > 1024u * 1024u || nf > (r.len - r.pos) / 5u) {
+				r.error = true;
+				break;
+			}
+			o->count = nf;
+			o->fields = xcalloc(max(nf, 1u), sizeof(*o->fields));
+			for (uint32_t f = 0; f < nf && !r.error; f++) {
+				if (!x4ss_get_cstr_slice(&r, &o->fields[f].name_off, &o->fields[f].name_len))
+					break;
+				x4ss_conv_read_val(&r, &o->fields[f].val, false);
+			}
+		} else if (o->kind == X4SS_OBJ_ARRAY) {
+			o->elems = xcalloc(max(o->count, 1u), sizeof(*o->elems));
+			for (uint32_t k = 0; k < o->count && !r.error; k++)
+				x4ss_conv_read_val(&r, &o->elems[k], false);
+		}
+	}
+	if (r.error)
+		goto fail;
+
+	/* Group structs with identical (sname, field names) and infer unified field types */
+	for (uint32_t oid = 1; oid <= nr_objs; oid++) {
+		struct x4ss_conv_obj *o = &objs[oid];
+		if (o->kind != X4SS_OBJ_STRUCT)
+			continue;
+		if (!grp_ht) {
+			grp_ht_cap = 256;
+			grp_ht = xcalloc(grp_ht_cap, sizeof(uint32_t));
+		} else if ((nr_groups + 1) * 2 >= grp_ht_cap) {
+			uint32_t new_cap = grp_ht_cap * 2;
+			uint32_t *nht = xcalloc(new_cap, sizeof(uint32_t));
+			uint32_t nmask = new_cap - 1;
+			for (uint32_t gi = 0; gi < nr_groups; gi++) {
+				uint32_t s = groups[gi].hash & nmask;
+				while (nht[s] != 0)
+					s = (s + 1) & nmask;
+				nht[s] = gi + 1;
+			}
+			free(grp_ht);
+			grp_ht = nht;
+			grp_ht_cap = new_cap;
+		}
+		uint32_t h = x4ss_conv_group_hash(raw, o);
+		uint32_t mask = grp_ht_cap - 1;
+		uint32_t slot = h & mask;
+		uint32_t gid = UINT32_MAX;
+		while (grp_ht[slot] != 0) {
+			uint32_t cand = grp_ht[slot] - 1;
+			if (groups[cand].hash == h && x4ss_conv_group_equal(raw, &objs[groups[cand].rep_oid], o)) {
+				gid = cand;
+				break;
+			}
+			slot = (slot + 1) & mask;
+		}
+		if (gid == UINT32_MAX) {
+			if (nr_groups >= cap_groups) {
+				cap_groups = cap_groups ? cap_groups * 2 : 64;
+				groups = xrealloc(groups, cap_groups * sizeof(*groups));
+			}
+			gid = nr_groups++;
+			groups[gid].rep_oid = oid;
+			groups[gid].hash = h;
+			groups[gid].schema_id = -1;
+			groups[gid].ftypes = xcalloc(max(o->count, 1u), sizeof(struct x4ss_conv_ftype));
+			for (uint32_t f = 0; f < o->count; f++)
+				groups[gid].ftypes[f].t1 = -1;
+			grp_ht[slot] = gid + 1;
+		}
+		o->group_id = gid;
+
+		struct x4ss_conv_ftype *gft = groups[gid].ftypes;
+		for (uint32_t f = 0; f < o->count; f++) {
+			struct x4ss_conv_ftype cand;
+			x4ss_conv_infer_val_type(objs, nr_objs, &o->fields[f].val, &cand);
+			if (gft[f].t1 < 0 || (gft[f].t1 == AIN_VOID && cand.t1 != AIN_VOID)) {
+				gft[f] = cand;
+			} else if (cand.t1 == AIN_OPTION && gft[f].t1 != AIN_OPTION) {
+				if (!gft[f].resolved_nonnull)
+					gft[f] = cand;
+			} else if (gft[f].t1 == AIN_OPTION && cand.t1 == AIN_OPTION) {
+				if (!gft[f].resolved_nonnull && cand.resolved_nonnull)
+					gft[f] = cand;
+			} else if (!gft[f].resolved_nonnull && cand.resolved_nonnull) {
+				gft[f] = cand;
+			}
+		}
+	}
+
+	struct gd_ss_builder b;
+	gd_ss_builder_init(&b);
+	gd_ss_builder_reserve_objs(&b, nr_c1);
+	gd_ss_builder_reserve_arrays(&b, nr_c4);
+
+	int32_t *gd_roots = xcalloc(max(nr_roots, 1u), sizeof(int32_t));
+	for (uint32_t i = 0; i < nr_roots; i++)
+		gd_roots[i] = (int32_t)objs[raw_roots[i]].gd_id;
+	gd_ss_builder_set_roots(&b, gd_roots, nr_roots);
+	free(gd_roots);
+
+	for (uint32_t gi = 0; gi < nr_groups; gi++) {
+		const struct x4ss_conv_obj *rep = &objs[groups[gi].rep_oid];
+		const struct x4ss_conv_ftype *gft = groups[gi].ftypes;
+		uint32_t schema_nf = 0;
+		for (uint32_t f = 0; f < rep->count; f++)
+			schema_nf += (gft[f].t1 == AIN_OPTION) ? 2u : 1u;
+
+		struct gd_ss_bschema_field *fields = xcalloc(max(schema_nf, 1u), sizeof(*fields));
+		uint32_t fi = 0;
+		for (uint32_t f = 0; f < rep->count; f++) {
+			int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
+			int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
+			fields[fi].type1 = ft1;
+			fields[fi].type2 = ft2;
+			fields[fi].name = (char *)(raw + rep->fields[f].name_off);
+			fields[fi].name_len = rep->fields[f].name_len;
+			fi++;
+			if (ft1 == AIN_OPTION) {
+				fields[fi].type1 = AIN_VOID;
+				fields[fi].type2 = AIN_VOID;
+				fields[fi].name = "";
+				fields[fi].name_len = 0;
+				fi++;
+			}
+		}
+		struct gd_ss_bschema cand = {
+			.name = (char *)(raw + rep->sname_off),
+			.name_len = rep->sname_len,
+			.nr_fields = schema_nf,
+			.fields = fields,
+		};
+		groups[gi].schema_id = gd_ss_builder_intern_schema(&b, &cand);
+		free(fields);
+	}
+
+	for (uint32_t oid = 1; oid <= nr_objs; oid++) {
+		const struct x4ss_conv_obj *o = &objs[oid];
+		if (o->kind == X4SS_OBJ_STRUCT) {
+			const struct x4ss_conv_group *g = &groups[o->group_id];
+			const struct x4ss_conv_ftype *gft = g->ftypes;
+			uint32_t schema_nf = b.schemas[g->schema_id].nr_fields;
+			struct gd_ss_bobj *dst = &b.objs[o->gd_id];
+			dst->struct_def = g->schema_id;
+			dst->nr_vals = schema_nf;
+			dst->val_idxs = xcalloc(max(schema_nf, 1u), sizeof(uint32_t));
+
+			uint32_t fi = 0;
+			for (uint32_t f = 0; f < o->count && fi < schema_nf; f++) {
+				const struct x4ss_conv_val *v = &o->fields[f].val;
+				int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
+				int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
+				if (ft1 == AIN_OPTION) {
+					bool is_none = (v->tag != X4SS_VAL_OPTION) || v->opt_is_none;
+					int32_t iv = is_none
+						? -1
+						: x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+								v->opt_tag, v->i, v->str_off, v->str_len, ft2);
+					dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, iv);
+					if (fi < schema_nf)
+						dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, is_none ? 1 : 0);
+				} else {
+					int32_t gv = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+							v->tag, v->i, v->str_off, v->str_len, ft1);
+					dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, gv);
+				}
+			}
+		} else if (o->kind == X4SS_OBJ_ARRAY) {
+			struct gd_ss_barray *dst = &b.arrays[o->gd_id];
+			dst->rank = 1;
+			dst->total = o->count;
+			dst->elem_type = o->elem_type;
+			dst->elems = xcalloc(max(o->count, 1u), sizeof(int32_t));
+			for (uint32_t k = 0; k < o->count; k++) {
+				const struct x4ss_conv_val *ev = &o->elems[k];
+				dst->elems[k] = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+						ev->tag, ev->i, ev->str_off, ev->str_len, o->elem_type);
+			}
+		}
+	}
+
+	gd_ss_builder_set_comment(&b, comment, clen, clen > 0);
+	ok = gd_ss_builder_write_file(&b, dst_path, false);
+	gd_ss_builder_free(&b);
+
+fail:
+	for (uint32_t gi = 0; gi < nr_groups; gi++)
+		free(groups[gi].ftypes);
+	free(groups);
+	free(grp_ht);
+	for (uint32_t oid = 1; oid <= nr_objs; oid++) {
+		free(objs[oid].fields);
+		free(objs[oid].elems);
+	}
+	free(objs);
+	free(raw_roots);
+	free(raw);
+	free(comment);
+	return ok;
+}
+
+bool savedata_export_pc_file(const char *src_path, const char *dst_path)
+{
+	if (!src_path || !dst_path)
+		return false;
+	if (x4ss_is_container_file(src_path))
+		return x4ss_convert_to_gdss_file(src_path, dst_path);
+
+	FILE *in = file_open_utf8(src_path, "rb");
+	if (!in)
+		return false;
+	char *tmp_path = NULL;
+	FILE *out = atomic_save_open(dst_path, "wb", &tmp_path);
+	if (!out) {
+		fclose(in);
+		return false;
+	}
+	uint8_t buf[16384];
+	size_t n;
+	bool ok = true;
+	while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+		if (fwrite(buf, 1, n, out) != n) {
+			ok = false;
+			break;
+		}
+	}
+	if (ferror(in))
+		ok = false;
+	fclose(in);
+	if (!ok) {
+		atomic_save_abort(out, tmp_path);
+		return false;
+	}
+	return atomic_save_commit(out, dst_path, tmp_path, false);
 }

@@ -925,4 +925,56 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetScrollbarScale(): Int
+
+    @JvmStatic
+    external fun nativeExportPcSaveFile(srcPath: String, dstPath: String): Boolean
+
+    fun isX4ssSaveFile(file: File): Boolean {
+        if (!file.isFile || file.length() < 8L) return false
+        return try {
+            file.inputStream().use { input ->
+                val hdr = ByteArray(8)
+                if (input.read(hdr) != 8) return@use false
+                hdr[0] == 'X'.code.toByte() &&
+                    hdr[1] == '4'.code.toByte() &&
+                    hdr[2] == 'S'.code.toByte() &&
+                    hdr[3] == 'S'.code.toByte() &&
+                    hdr[4].toInt() == 1 &&
+                    hdr[5].toInt() == 0 &&
+                    hdr[6].toInt() == 0 &&
+                    hdr[7].toInt() == 0
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Streams [srcFile] to [dstStream], converting X4SS StructSave files to Windows PC
+     * GD\x01\x01 serialize_struct format when needed. Returns true when converted.
+     */
+    fun copySaveFileForPc(srcFile: File, dstStream: java.io.OutputStream, scratchDir: File): Boolean {
+        if (!isX4ssSaveFile(srcFile)) {
+            srcFile.inputStream().buffered().use { input ->
+                input.copyTo(dstStream)
+            }
+            return false
+        }
+        if (!ensureLoaded()) {
+            throw java.io.IOException("Failed to load native library for PC save conversion")
+        }
+        scratchDir.mkdirs()
+        val tmpOut = File.createTempFile("pc_conv_", ".bin", scratchDir)
+        try {
+            if (!nativeExportPcSaveFile(srcFile.absolutePath, tmpOut.absolutePath)) {
+                throw java.io.IOException("Failed to convert ${srcFile.name} to PC format")
+            }
+            tmpOut.inputStream().buffered().use { input ->
+                input.copyTo(dstStream)
+            }
+            return true
+        } finally {
+            tmpOut.delete()
+        }
+    }
 }

@@ -74,8 +74,10 @@
 
     <string name="save_export_empty_toast">エクスポート可能なセーブがありません</string>
     <string name="save_export_title">エクスポート</string>
-    <string name="save_export_opt_zip">ZIPに出力</string>
-    <string name="save_export_opt_dir">フォルダに出力</string>
+    <string name="save_export_opt_pc_zip">PC用セーブ · ZIPに出力</string>
+    <string name="save_export_opt_pc_dir">PC用セーブをフォルダに出力</string>
+    <string name="save_export_opt_zip">元データ · ZIPに出力</string>
+    <string name="save_export_opt_dir">元データをフォルダに出力</string>
 
     <string name="save_chooser_import_files">セーブファイル・アーカイブを選択</string>
 
@@ -94,9 +96,11 @@
     <string name="save_export_failed_title">エクスポート失敗</string>
     <string name="save_export_zip_done_msg">%1$d 個のファイルを出力しました</string>
     <string name="save_export_dir_done_msg">%1$d 個のファイルを出力しました</string>
+    <string name="save_export_pc_converted_done_msg">PC互換セーブ %1$d 個を出力しました・%2$d 個を変換</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">エクスポート</string>
+    <string name="save_file_opt_export_pc">PC互換形式で出力</string>
     <string name="save_file_opt_backup">バックアップ作成</string>
     <string name="save_file_opt_rename">名前変更</string>
     <string name="save_file_opt_delete">削除</string>

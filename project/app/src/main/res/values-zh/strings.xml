@@ -74,8 +74,10 @@
 
     <string name="save_export_empty_toast">无可导出存档</string>
     <string name="save_export_title">导出存档</string>
-    <string name="save_export_opt_zip">导出为 ZIP</string>
-    <string name="save_export_opt_dir">导出到文件夹</string>
+    <string name="save_export_opt_pc_zip">导出 PC 存档 · ZIP</string>
+    <string name="save_export_opt_pc_dir">导出 PC 存档到文件夹</string>
+    <string name="save_export_opt_zip">导出原始存档 · ZIP</string>
+    <string name="save_export_opt_dir">导出原始存档到文件夹</string>
 
     <string name="save_chooser_import_files">选择存档文件或压缩包</string>
 
@@ -94,9 +96,11 @@
     <string name="save_export_failed_title">导出失败</string>
     <string name="save_export_zip_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_dir_done_msg">已导出 %1$d 个存档文件</string>
+    <string name="save_export_pc_converted_done_msg">已导出 %1$d 个 PC 兼容存档文件，其中 %2$d 个已自动转换</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">导出文件</string>
+    <string name="save_file_opt_export_pc">导出为 PC 兼容格式</string>
     <string name="save_file_opt_backup">创建备份</string>
     <string name="save_file_opt_rename">重命名</string>
     <string name="save_file_opt_delete">删除</string>

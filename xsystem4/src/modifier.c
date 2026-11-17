@@ -6634,4 +6634,23 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetScrollbarScale(
 	return (jint)sp;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
+	JNIEnv *env, jclass clazz, jstring jsrcPath, jstring jdstPath)
+{
+	(void)clazz;
+	if (!jsrcPath || !jdstPath) return JNI_FALSE;
+	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
+	if (!src_path || !dst_path) {
+		if (src_path) (*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+		if (dst_path) (*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+		return JNI_FALSE;
+	}
+	bool ok = savedata_export_pc_file(src_path, dst_path);
+	(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+	(*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+	return ok ? JNI_TRUE : JNI_FALSE;
+}
+
 #endif /* __ANDROID__ */
