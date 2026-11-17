@@ -774,22 +774,28 @@ int sact_Joypad_IsKeyDown(int num, int key)
 	return joy_key_is_down(key);
 }
 
-//int SACT2_Joypad_GetNumof(void);
-HLL_WARN_UNIMPLEMENTED( , void, SACT2, JoypadQuake_Set, int num, int type, int magnitude);
+int sact_Joypad_GetNumof(void)
+{
+	handle_events();
+	return joy_get_num_controllers();
+}
+
+void sact_JoypadQuake_Set(int num, int type, int magnitude)
+{
+	(void)type;
+	joy_rumble(num, magnitude, 250);
+}
 
 bool sact_Joypad_GetAnalogStickStatus(int num, int type, float *degree, float *power)
 {
+	handle_events();
 	return joy_get_stick_status(num, type, degree, power);
 }
 
 bool sact_Joypad_GetDigitalStickStatus(int num, int type, bool *left, bool *right, bool *up, bool *down)
 {
-	//hll_unimplemented_warning(SACT2, Joypad_GetDigitalStickStatus);
-	*left  = false;
-	*right = false;
-	*up    = false;
-	*down  = false;
-	return 1;
+	handle_events();
+	return joy_get_digital_stick_status(num, type, left, right, up, down);
 }
 
 int sact_Key_ClearFlag(void)
@@ -938,8 +944,8 @@ HLL_WARN_UNIMPLEMENTED(0, int, SACT2, Music_AnalyzeSampleData, struct page **l, 
 	    HLL_EXPORT(Mouse_GetWheel, mouse_get_wheel), \
 	    HLL_EXPORT(Joypad_ClearKeyDownFlag, sact_Joypad_ClearKeyDownFlag), \
 	    HLL_EXPORT(Joypad_IsKeyDown, sact_Joypad_IsKeyDown), \
-	    HLL_TODO_EXPORT(Joypad_GetNumof, SACT2_Joypad_GetNumof), \
-	    HLL_EXPORT(JoypadQuake_Set, SACT2_JoypadQuake_Set), \
+	    HLL_EXPORT(Joypad_GetNumof, sact_Joypad_GetNumof), \
+	    HLL_EXPORT(JoypadQuake_Set, sact_JoypadQuake_Set), \
 	    HLL_EXPORT(Joypad_GetAnalogStickStatus, sact_Joypad_GetAnalogStickStatus), \
 	    HLL_EXPORT(Joypad_GetDigitalStickStatus, sact_Joypad_GetDigitalStickStatus), \
 	    HLL_EXPORT(Key_ClearFlag, sact_Key_ClearFlag), \

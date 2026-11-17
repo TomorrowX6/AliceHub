@@ -161,6 +161,10 @@ class FloatingModifierOverlay(private val activity: Activity) {
         return btn
     }
 
+    fun openMainMenu() {
+        showMainModifierDialog()
+    }
+
     private fun readLiveJson(): JSONObject {
         return try {
             JSONObject(GameModifierBridge.nativeGetLiveStateJson())
@@ -446,6 +450,43 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     else tr("已隐藏 Ctrl 快进键", "Ctrl早送りを非表示にしました", "Ctrl skip hidden"),
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+        )
+        val curPadProfile = xsAct?.getActiveGamepadProfile() ?: GamepadBridge.loadProfile(activity, null)
+        val vpadLabel = if (curPadProfile.virtual.enabled) {
+            tr("虚拟手柄 · 已开启 (点击关闭)", "仮想ゲームパッド · 表示中 (タップで隠す)", "Virtual Gamepad · ON (Tap to hide)")
+        } else {
+            tr("虚拟手柄 · 已隐藏 (点击开启)", "仮想ゲームパッド · 非表示 (タップで表示)", "Virtual Gamepad · OFF (Tap to show)")
+        }
+        menuEntries.add(
+            vpadLabel to {
+                val shown = if (xsAct != null) {
+                    xsAct.toggleVirtualGamepadEnabled()
+                } else {
+                    val next = curPadProfile.copy(
+                        virtual = curPadProfile.virtual.copy(enabled = !curPadProfile.virtual.enabled)
+                    )
+                    GamepadBridge.saveProfile(activity, next, null, false)
+                    GamepadBridge.syncProfileToNative(next)
+                    next.virtual.enabled
+                }
+                Toast.makeText(
+                    activity,
+                    if (shown) tr("已显示屏幕虚拟手柄", "仮想ゲームパッドを表示しました", "Virtual Gamepad shown")
+                    else tr("已隐藏屏幕虚拟手柄", "仮想ゲームパッドを隠しました", "Virtual Gamepad hidden"),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+        menuEntries.add(
+            tr("手柄与自定义按键…", "ゲームパッド・キー設定…", "Gamepad & Custom Keys…") to {
+                if (xsAct != null) {
+                    xsAct.openGamepadConfigDialog()
+                } else {
+                    GamepadConfigDialog.show(activity, null) { saved ->
+                        GamepadBridge.syncProfileToNative(saved)
+                    }
+                }
             }
         )
         if (isRance10) {

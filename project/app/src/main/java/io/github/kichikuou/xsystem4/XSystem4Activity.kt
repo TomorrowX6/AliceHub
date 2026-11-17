@@ -1,16 +1,17 @@
 package io.github.kichikuou.xsystem4
 
-import android.animation.ValueAnimator
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.ClipDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -22,16 +23,18 @@ import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.PixelCopy
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
-import android.view.animation.LinearInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import org.libsdl.app.SDLActivity
@@ -48,11 +51,12 @@ class XSystem4Activity : SDLActivity() {
         const val COMMAND_SHOW_WAIT_MESSAGE = 0x8001
         const val COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002  // xsystem4/src/input.c
         const val COMMAND_MOVIE_SKIP_STATE = 0x8003  // xsystem4/src/input.c
+        const val COMMAND_CURSOR_STATE = 0x8004      // xsystem4/src/input.c
+        const val COMMAND_GAMEPAD_UI_EVENT = 0x8005  // xsystem4/src/input.c
 
+        private const val GAMEPAD_UI_EMU_CMD = 1
+        private const val GAMEPAD_UI_CONTROLLER_COUNT = 2
         private const val MOVIE_SKIP_UI_HIDDEN = 0
-        private const val MOVIE_SKIP_UI_HINT = 1
-        private const val MOVIE_SKIP_UI_HOLDING = 2
-        private const val MOVIE_SKIP_HINT_TIMEOUT_MS = 1800L
         private const val SDL_MESSAGEBOX_ERROR = 0x00000010
         private const val SDL_BUTTON_RETURNKEY_DEFAULT = 0x00000001
         private const val SDL_BUTTON_ESCAPEKEY_DEFAULT = 0x00000002
@@ -64,34 +68,21 @@ class XSystem4Activity : SDLActivity() {
     private var ctrlOverlayContainer: FrameLayout? = null
     private var ctrlPill: TextView? = null
     private var ctrlSkipLatched: Boolean = false
-    private var movieSkipContainer: FrameLayout? = null
-    private var movieSkipPill: FrameLayout? = null
-    private var movieSkipFillClip: ClipDrawable? = null
-    private var movieSkipLabel: TextView? = null
-    private var movieSkipAnimator: ValueAnimator? = null
-    private var movieSkipFadeGen: Int = 0
-    private val movieSkipHideHandler = Handler(Looper.getMainLooper())
-    private val movieSkipHideRunnable = Runnable {
-        val pill = movieSkipPill ?: return@Runnable
-        val gen = movieSkipFadeGen
-        if (pill.visibility == View.VISIBLE) {
-            pill.animate()
-                .alpha(0f)
-                .setDuration(220L)
-                .withEndAction {
-                    if (gen == movieSkipFadeGen) {
-                        pill.visibility = View.GONE
-                        pill.alpha = 1f
-                    }
-                }
-                .start()
-        }
-    }
     private var lastSyncedConfigSeq: Int = -1
     private var activeMessageBoxDialog: Dialog? = null
     private var lastBackDispatchMs: Long = 0L
     private var backHandledInCurrentGesture: Boolean = false
     private var backInvokedCallback: Any? = null
+
+    private var virtualCursorView: VirtualCursorOverlayView? = null
+    private var virtualGamepadView: VirtualGamepadView? = null
+    private var layoutEditorContainer: FrameLayout? = null
+    private var layoutEditorGridBtn: Button? = null
+    private var layoutEditorHintTv: TextView? = null
+    private var activeGamepadProfile: GamepadProfile = GamepadProfile()
+    private var nativePadCount: Int = 0
+    private var lastReportedConnectedPads: Int = 0
+    private var inputDeviceListener: InputManager.InputDeviceListener? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppSettings.wrapThemeContext(newBase))
@@ -176,10 +167,448 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncUiScaleToNative(this)
             syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
+            activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
         } catch (_: Throwable) {
         }
+        registerControllerListener()
         window.decorView.postDelayed({ ensureOverlaysAttached() }, 1800L)
         registerModernBackCallback()
+    }
+
+    fun currentGamepadProfileKey(): String? =
+        GamepadBridge.normalizeGameProfileKey(intent?.getStringExtra(EXTRA_GAME_ROOT))
+
+    fun getActiveGamepadProfile(): GamepadProfile = activeGamepadProfile
+
+    fun applyGamepadProfile(profile: GamepadProfile) {
+        activeGamepadProfile = profile
+        GamepadBridge.syncProfileToNative(profile)
+        virtualGamepadView?.setProfile(profile)
+        updatePhysicalPadPresence(showToast = false)
+    }
+
+    fun toggleVirtualGamepadEnabled(): Boolean {
+        val toggled = activeGamepadProfile.copy(
+            virtual = activeGamepadProfile.virtual.copy(enabled = !activeGamepadProfile.virtual.enabled)
+        )
+        val saved = GamepadBridge.saveProfile(
+            this,
+            toggled,
+            currentGamepadProfileKey(),
+            activeGamepadProfile.perGameOverride
+        )
+        applyGamepadProfile(saved)
+        return saved.virtual.enabled
+    }
+
+    fun openGamepadConfigDialog() {
+        ensureOverlaysAttached()
+        val key = currentGamepadProfileKey()
+        val displayTitle = intent?.getStringExtra(EXTRA_GAME_ROOT)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it).name }
+        GamepadConfigDialog.show(
+            context = this,
+            profileKey = key,
+            gameDisplayName = displayTitle,
+            onProfileUpdated = { saved -> applyGamepadProfile(saved) },
+            onEnterLayoutEditor = { updated ->
+                applyGamepadProfile(updated)
+                enterLayoutEditorMode()
+            }
+        )
+    }
+
+    private fun registerControllerListener() {
+        if (inputDeviceListener != null) return
+        val im = getSystemService(Context.INPUT_SERVICE) as? InputManager ?: return
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) {
+                window.decorView.post { updatePhysicalPadPresence(showToast = true) }
+            }
+
+            override fun onInputDeviceRemoved(deviceId: Int) {
+                try {
+                    GamepadBridge.nativeSetAndroidControllerKey(deviceId, -1, false)
+                } catch (_: Throwable) {
+                }
+                window.decorView.post { updatePhysicalPadPresence(showToast = false) }
+            }
+
+            override fun onInputDeviceChanged(deviceId: Int) {
+                window.decorView.post { updatePhysicalPadPresence(showToast = false) }
+            }
+        }
+        im.registerInputDeviceListener(listener, Handler(Looper.getMainLooper()))
+        inputDeviceListener = listener
+        lastReportedConnectedPads = GamepadBridge.queryConnectedControllers(this).size
+    }
+
+    private fun unregisterControllerListener() {
+        val listener = inputDeviceListener ?: return
+        inputDeviceListener = null
+        try {
+            val im = getSystemService(Context.INPUT_SERVICE) as? InputManager ?: return
+            im.unregisterInputDeviceListener(listener)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun updatePhysicalPadPresence(showToast: Boolean) {
+        val connected = GamepadBridge.queryConnectedControllers(this)
+        val effectiveCount = maxOf(connected.size, nativePadCount)
+        val hideVpad = effectiveCount > 0 && activeGamepadProfile.physical.autoHideVirtualPad
+        virtualGamepadView?.setAutoHiddenByPhysicalPad(hideVpad)
+        if (showToast && effectiveCount > lastReportedConnectedPads && connected.isNotEmpty()) {
+            val name = connected.last().name
+            val msg = GamepadBridge.tr(
+                this,
+                "已连接手柄：$name",
+                "コントローラ接続：$name",
+                "Controller connected: $name"
+            )
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+        lastReportedConnectedPads = effectiveCount
+    }
+
+    private fun attachVirtualGamepadOverlays() {
+        if (virtualCursorView == null) {
+            val cursor = VirtualCursorOverlayView(this)
+            virtualCursorView = cursor
+            addContentView(
+                cursor,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+        if (virtualGamepadView == null) {
+            val pad = VirtualGamepadView(this).apply {
+                setProfile(activeGamepadProfile)
+                setCtrlToggleLatched(ctrlSkipLatched)
+                listener = object : VirtualGamepadView.Listener {
+                    override fun onControlTappedInEditor(control: VirtualControlSpec) {
+                        setSelectedControlId(control.id)
+                        layoutEditorHintTv?.text = "${control.label} (${(control.xNorm * 100).toInt()}%, ${(control.yNorm * 100).toInt()}%) · " +
+                            GamepadBridge.tr(this@XSystem4Activity, "点击编辑属性", "タップで設定編集", "Editing control")
+                        KeyPickerDialog.showVirtualControlEditor(
+                            context = this@XSystem4Activity,
+                            control = control,
+                            onSave = { edited ->
+                                val list = activeGamepadProfile.virtual.controls.toMutableList()
+                                val idx = list.indexOfFirst { it.id == control.id }
+                                if (idx >= 0) {
+                                    list[idx] = edited
+                                    activeGamepadProfile = activeGamepadProfile.copy(
+                                        virtual = activeGamepadProfile.virtual.copy(controls = list)
+                                    )
+                                    virtualGamepadView?.setProfile(activeGamepadProfile)
+                                    virtualGamepadView?.setEditMode(true, edited.id)
+                                }
+                            },
+                            onDelete = if (control.isCustom) {
+                                {
+                                    val list = activeGamepadProfile.virtual.controls.filterNot { it.id == control.id }
+                                    activeGamepadProfile = activeGamepadProfile.copy(
+                                        virtual = activeGamepadProfile.virtual.copy(controls = list)
+                                    )
+                                    virtualGamepadView?.setProfile(activeGamepadProfile)
+                                    virtualGamepadView?.setEditMode(true, null)
+                                }
+                            } else null
+                        )
+                    }
+
+                    override fun onControlMovedInEditor(control: VirtualControlSpec) {
+                        val list = activeGamepadProfile.virtual.controls.toMutableList()
+                        val idx = list.indexOfFirst { it.id == control.id }
+                        if (idx >= 0) {
+                            list[idx] = control
+                            activeGamepadProfile = activeGamepadProfile.copy(
+                                virtual = activeGamepadProfile.virtual.copy(controls = list)
+                            )
+                        }
+                        layoutEditorHintTv?.text =
+                            "${control.label}  X:${(control.xNorm * 100).toInt()}%  Y:${(control.yNorm * 100).toInt()}%"
+                    }
+                }
+            }
+            virtualGamepadView = pad
+            addContentView(
+                pad,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            updatePhysicalPadPresence(showToast = false)
+        }
+    }
+
+    fun enterLayoutEditorMode() {
+        ensureOverlaysAttached()
+        if (!activeGamepadProfile.virtual.enabled) {
+            activeGamepadProfile = activeGamepadProfile.copy(
+                virtual = activeGamepadProfile.virtual.copy(enabled = true)
+            )
+            virtualGamepadView?.setProfile(activeGamepadProfile)
+        }
+        virtualGamepadView?.setEditMode(true, null)
+        if (layoutEditorContainer == null) {
+            val container = FrameLayout(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                isClickable = false
+                isFocusable = false
+            }
+
+            val topBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(0xDD111827.toInt())
+                    setStroke(dp(1), 0x8838BDF8.toInt())
+                }
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    topMargin = dp(10)
+                }
+            }
+
+            fun barBtn(label: String, bgColor: Int, onClick: () -> Unit): Button {
+                return Button(this).apply {
+                    text = label
+                    textSize = 11.5f
+                    setTextColor(Color.WHITE)
+                    minHeight = 0
+                    minWidth = 0
+                    setPadding(dp(10), dp(6), dp(10), dp(6))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(bgColor)
+                    }
+                    val lp = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                    lp.marginStart = dp(4)
+                    lp.marginEnd = dp(4)
+                    layoutParams = lp
+                    setOnClickListener { onClick() }
+                }
+            }
+
+            val addBtn = barBtn(
+                GamepadBridge.tr(this, "+ 添加按键", "+ 追加", "+ Add"),
+                0xFF2563EB.toInt()
+            ) {
+                val slotId = GamepadBridge.nextFreeCustomSlotId(activeGamepadProfile.virtual.controls)
+                if (slotId < 0) {
+                    Toast.makeText(
+                        this,
+                        GamepadBridge.tr(this, "已达自定义按键上限", "上限に達しました", "Limit reached"),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@barBtn
+                }
+                KeyPickerDialog.showActionPicker(
+                    this,
+                    GamepadBridge.tr(this, "选择新增按键功能", "機能を選択", "New Button Action"),
+                    GamepadActionSpec(GamepadBridge.ACTION_VK, GamepadBridge.VK_RETURN)
+                ) { spec, shortBadge ->
+                    val idx = slotId - 12
+                    val newCtrl = VirtualControlSpec(
+                        id = "custom_$slotId",
+                        slotId = slotId,
+                        kind = VirtualControlKind.BUTTON,
+                        label = shortBadge.ifBlank { "K${idx + 1}" },
+                        xNorm = (0.35f + (idx % 5) * 0.08f).coerceIn(0.12f, 0.88f),
+                        yNorm = (0.30f + (idx / 5) * 0.12f).coerceIn(0.15f, 0.85f),
+                        scale = 0.95f,
+                        opacity = 1.0f,
+                        visible = true,
+                        shape = VirtualButtonShape.PILL,
+                        action = spec,
+                        isCustom = true
+                    )
+                    val list = activeGamepadProfile.virtual.controls.toMutableList().apply { add(newCtrl) }
+                    activeGamepadProfile = activeGamepadProfile.copy(
+                        virtual = activeGamepadProfile.virtual.copy(controls = list)
+                    )
+                    virtualGamepadView?.setProfile(activeGamepadProfile)
+                    virtualGamepadView?.setEditMode(true, newCtrl.id)
+                }
+            }
+
+            val gridLabel = {
+                val on = activeGamepadProfile.virtual.gridSnap
+                GamepadBridge.tr(this, if (on) "网格:开" else "网格:关", if (on) "グリッド:ON" else "グリッド:OFF", if (on) "Grid:ON" else "Grid:OFF")
+            }
+            val gridBtn = barBtn(gridLabel(), 0xFF374151.toInt()) {
+                val next = !activeGamepadProfile.virtual.gridSnap
+                activeGamepadProfile = activeGamepadProfile.copy(
+                    virtual = activeGamepadProfile.virtual.copy(gridSnap = next)
+                )
+                virtualGamepadView?.setProfile(activeGamepadProfile)
+                virtualGamepadView?.setEditMode(true, null)
+                layoutEditorGridBtn?.text = gridLabel()
+            }
+            layoutEditorGridBtn = gridBtn
+
+            val resetBtn = barBtn(
+                GamepadBridge.tr(this, "重置", "初期化", "Reset"),
+                0xFF7C2D12.toInt()
+            ) {
+                val presetId = activeGamepadProfile.virtual.presetId
+                activeGamepadProfile = activeGamepadProfile.copy(
+                    virtual = activeGamepadProfile.virtual.copy(
+                        controls = GamepadBridge.buildPresetControls(presetId)
+                    )
+                )
+                virtualGamepadView?.setProfile(activeGamepadProfile)
+                virtualGamepadView?.setEditMode(true, null)
+            }
+
+            val doneBtn = barBtn(
+                GamepadBridge.tr(this, "保存完成", "完了・保存", "Done"),
+                0xFF059669.toInt()
+            ) {
+                exitLayoutEditorMode(save = true)
+            }
+
+            topBar.addView(addBtn)
+            topBar.addView(gridBtn)
+            topBar.addView(resetBtn)
+            topBar.addView(doneBtn)
+
+            val hintTv = TextView(this).apply {
+                text = GamepadBridge.tr(
+                    this@XSystem4Activity,
+                    "拖拽调整按键位置 · 点按任意按键编辑大小/动作/隐藏 · 完成后点“保存完成”",
+                    "ドラッグで位置調整 · タップで機能・サイズ編集 · 完了で保存",
+                    "Drag to move · Tap any control to edit size/action · Tap Done to save"
+                )
+                textSize = 11.5f
+                setTextColor(0xFFE0F2FE.toInt())
+                setPadding(dp(12), dp(5), dp(12), dp(5))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(0xCC111827.toInt())
+                }
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    bottomMargin = dp(10)
+                }
+            }
+            layoutEditorHintTv = hintTv
+
+            container.addView(topBar)
+            container.addView(hintTv)
+            addContentView(
+                container,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            layoutEditorContainer = container
+        } else {
+            layoutEditorContainer?.visibility = View.VISIBLE
+            layoutEditorGridBtn?.text = GamepadBridge.tr(
+                this,
+                if (activeGamepadProfile.virtual.gridSnap) "网格:开" else "网格:关",
+                if (activeGamepadProfile.virtual.gridSnap) "グリッド:ON" else "グリッド:OFF",
+                if (activeGamepadProfile.virtual.gridSnap) "Grid:ON" else "Grid:OFF"
+            )
+        }
+    }
+
+    fun exitLayoutEditorMode(save: Boolean) {
+        virtualGamepadView?.setEditMode(false, null)
+        layoutEditorContainer?.visibility = View.GONE
+        if (save) {
+            val saved = GamepadBridge.saveProfile(
+                this,
+                activeGamepadProfile,
+                currentGamepadProfileKey(),
+                activeGamepadProfile.perGameOverride
+            )
+            applyGamepadProfile(saved)
+            Toast.makeText(
+                this,
+                GamepadBridge.tr(this, "虚拟手柄布局已保存", "レイアウトを保存しました", "Layout saved"),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun captureGameScreenshot() {
+        val surfaceView = SDLActivity.getContentView()?.let { root ->
+            var found: SurfaceView? = null
+            if (root is ViewGroup) {
+                for (i in 0 until root.childCount) {
+                    val child = root.getChildAt(i)
+                    if (child is SurfaceView) {
+                        found = child
+                        break
+                    }
+                }
+            }
+            found
+        }
+        val targetW = (surfaceView?.width?.takeIf { it > 0 } ?: window.decorView.width).coerceAtLeast(1)
+        val targetH = (surfaceView?.height?.takeIf { it > 0 } ?: window.decorView.height).coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+        val handler = Handler(Looper.getMainLooper())
+        val onCopied = PixelCopy.OnPixelCopyFinishedListener { copyResult ->
+            if (copyResult == PixelCopy.SUCCESS) {
+                try {
+                    val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: java.io.File(filesDir, "screenshots")
+                    dir.mkdirs()
+                    val name = "screenshot_${System.currentTimeMillis()}.png"
+                    val outFile = java.io.File(dir, name)
+                    java.io.FileOutputStream(outFile).use { fos ->
+                        bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    }
+                    bmp.recycle()
+                    Toast.makeText(
+                        this,
+                        GamepadBridge.tr(
+                            this,
+                            "截图已保存: ${outFile.name}",
+                            "スクショ保存: ${outFile.name}",
+                            "Saved: ${outFile.name}"
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } catch (_: Throwable) {
+                    bmp.recycle()
+                }
+            } else {
+                bmp.recycle()
+            }
+        }
+        try {
+            if (surfaceView != null && surfaceView.holder.surface.isValid) {
+                PixelCopy.request(surfaceView, bmp, onCopied, handler)
+            } else {
+                PixelCopy.request(window, bmp, onCopied, handler)
+            }
+        } catch (_: Throwable) {
+            bmp.recycle()
+        }
     }
 
     private fun registerModernBackCallback() {
@@ -208,6 +637,7 @@ class XSystem4Activity : SDLActivity() {
 
     private fun ensureOverlaysAttached() {
         if (isFinishing || isDestroyed) return
+        attachVirtualGamepadOverlays()
         if (ctrlOverlayContainer == null) {
             attachCtrlOverlay()
         }
@@ -333,6 +763,7 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.nativeSetCtrlSkip(latched)
         } catch (_: Throwable) {
         }
+        virtualGamepadView?.setCtrlToggleLatched(latched)
         updateCtrlPillAppearance()
     }
 
@@ -373,144 +804,17 @@ class XSystem4Activity : SDLActivity() {
         modifierOverlay?.syncVisibility()
     }
 
-    private fun ensureMovieSkipOverlayAttached() {
-        if (isFinishing || isDestroyed || movieSkipContainer != null) return
-        val container = FrameLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            isClickable = false
-            isFocusable = false
-        }
-        val radius = dp(18).toFloat()
-        val pill = FrameLayout(this).apply {
-            isClickable = false
-            isFocusable = false
-            visibility = View.GONE
-            background = GradientDrawable().apply {
-                cornerRadius = radius
-                setColor(0x9910141A.toInt())
-            }
-            foreground = GradientDrawable().apply {
-                cornerRadius = radius
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(1), 0x66FFFFFF)
-            }
-            clipToOutline = true
-        }
-        val pillLp = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            dp(36),
-            Gravity.TOP or Gravity.END
-        ).apply {
-            marginEnd = dp(16)
-            topMargin = dp(14)
-        }
-        pill.layoutParams = pillLp
-
-        val fillDrawable = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(0xBB257A4B.toInt())
-        }
-        val clip = ClipDrawable(fillDrawable, Gravity.START, ClipDrawable.HORIZONTAL).apply {
-            level = 0
-        }
-        val fillView = View(this).apply {
-            isClickable = false
-            isFocusable = false
-            background = clip
-        }
-        val label = TextView(this).apply {
-            isClickable = false
-            isFocusable = false
-            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f)
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setPadding(dp(14), 0, dp(14), 0)
-            maxLines = 1
-        }
-        pill.addView(
-            fillView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-        pill.addView(
-            label,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-        container.addView(pill)
-        addContentView(
-            container,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-        movieSkipContainer = container
-        movieSkipPill = pill
-        movieSkipFillClip = clip
-        movieSkipLabel = label
-    }
-
-    private fun cancelMovieSkipAnimations() {
-        movieSkipHideHandler.removeCallbacks(movieSkipHideRunnable)
-        movieSkipFadeGen++
-        movieSkipAnimator?.cancel()
-        movieSkipAnimator = null
-        movieSkipPill?.animate()?.cancel()
-    }
-
     private fun resetMovieSkipOverlay() {
-        cancelMovieSkipAnimations()
-        movieSkipFillClip?.level = 0
-        movieSkipPill?.apply {
-            alpha = 1f
-            visibility = View.GONE
-        }
+        virtualGamepadView?.setHiddenByMovie(false)
     }
 
     private fun updateMovieSkipOverlay(stateParam: Int) {
         if (isFinishing || isDestroyed) return
         val state = stateParam and 0xFF
-        if (state == MOVIE_SKIP_UI_HIDDEN) {
-            resetMovieSkipOverlay()
-            return
-        }
-        ensureMovieSkipOverlayAttached()
-        val pill = movieSkipPill ?: return
-        val label = movieSkipLabel ?: return
-        cancelMovieSkipAnimations()
-        when (state) {
-            MOVIE_SKIP_UI_HINT -> {
-                movieSkipFillClip?.level = 0
-                label.text = getString(R.string.movie_skip_hint)
-                pill.alpha = 0.92f
-                pill.visibility = View.VISIBLE
-                movieSkipHideHandler.postDelayed(movieSkipHideRunnable, MOVIE_SKIP_HINT_TIMEOUT_MS)
-            }
-            MOVIE_SKIP_UI_HOLDING -> {
-                val durationMs = (stateParam ushr 8).coerceIn(100, 5000).toLong()
-                movieSkipFillClip?.level = 0
-                label.text = getString(R.string.movie_skip_holding)
-                pill.alpha = 1.0f
-                pill.visibility = View.VISIBLE
-                movieSkipAnimator = ValueAnimator.ofInt(0, 10000).apply {
-                    duration = durationMs
-                    interpolator = LinearInterpolator()
-                    addUpdateListener { anim ->
-                        movieSkipFillClip?.level = anim.animatedValue as Int
-                    }
-                    start()
-                }
-            }
-            else -> resetMovieSkipOverlay()
+        val active = state != MOVIE_SKIP_UI_HIDDEN
+        virtualGamepadView?.setHiddenByMovie(active)
+        if (active) {
+            virtualCursorView?.hide()
         }
     }
 
@@ -526,12 +830,18 @@ class XSystem4Activity : SDLActivity() {
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }
+            applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
         } catch (_: Throwable) {
         }
     }
 
     override fun onPause() {
         setCtrlSkipLatched(false)
+        virtualGamepadView?.releaseAllInputs()
+        try {
+            GamepadBridge.nativeClearVirtualInputs()
+        } catch (_: Throwable) {
+        }
         resetMovieSkipOverlay()
         lastSyncedConfigSeq = GameModifierBridge.syncLockMaskFromNative(this)
         super.onPause()
@@ -548,11 +858,16 @@ class XSystem4Activity : SDLActivity() {
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }
+            applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
         } catch (_: Throwable) {
         }
     }
 
     private fun handleGameBackPressed() {
+        if (virtualGamepadView?.isLayoutEditMode() == true) {
+            exitLayoutEditorMode(save = false)
+            return
+        }
         setCtrlSkipLatched(false)
         if (activeMessageBoxDialog?.isShowing == true) {
             return
@@ -565,9 +880,49 @@ class XSystem4Activity : SDLActivity() {
         SDLActivity.nativeSendQuit()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (GamepadBridge.isGamepadKeyEvent(event)) {
+            val isDown = event.action == KeyEvent.ACTION_DOWN
+            val isUp = event.action == KeyEvent.ACTION_UP
+            val mappedCode = if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                KeyEvent.KEYCODE_BUTTON_B
+            } else {
+                event.keyCode
+            }
+            if ((isDown && event.repeatCount == 0) || isUp) {
+                try {
+                    GamepadBridge.nativeSetAndroidControllerKey(event.deviceId, mappedCode, isDown)
+                } catch (_: Throwable) {
+                }
+            }
+            val handled = super.dispatchKeyEvent(event)
+            if (handled || event.keyCode == KeyEvent.KEYCODE_BACK ||
+                GamepadBridge.androidKeyCodeToPadSlot(mappedCode) != null
+            ) {
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        GamepadBridge.extractMotionAxes(ev)?.let { axes ->
+            try {
+                GamepadBridge.nativeSetAndroidControllerMotion(
+                    ev.deviceId,
+                    axes[0], axes[1], axes[2], axes[3],
+                    axes[4], axes[5], axes[6], axes[7]
+                )
+            } catch (_: Throwable) {
+            }
+        }
+        return super.dispatchGenericMotionEvent(ev)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK &&
-            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE
+            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE &&
+            !GamepadBridge.isGamepadKeyEvent(event)
         ) {
             if (event.repeatCount == 0) {
                 backHandledInCurrentGesture = false
@@ -580,7 +935,8 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK &&
-            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE
+            (event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE &&
+            !GamepadBridge.isGamepadKeyEvent(event)
         ) {
             if (!event.isCanceled && !backHandledInCurrentGesture) {
                 backHandledInCurrentGesture = true
@@ -960,6 +1316,7 @@ class XSystem4Activity : SDLActivity() {
             val lockMask = GameModifierBridge.getSavedLockMask(this)
             GameModifierBridge.nativeSetLiveLocks(lockMask)
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
+            activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
         } catch (_: Throwable) {
         }
         return arrayOf("--save-folder", saveFolder, "--save-format=rsm", gameRoot)
@@ -967,6 +1324,12 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onDestroy() {
         unregisterModernBackCallback()
+        unregisterControllerListener()
+        virtualGamepadView?.releaseAllInputs()
+        try {
+            GamepadBridge.nativeClearVirtualInputs()
+        } catch (_: Throwable) {
+        }
         activeMessageBoxDialog?.let { dlg ->
             if (dlg.isShowing) {
                 try {
@@ -980,12 +1343,13 @@ class XSystem4Activity : SDLActivity() {
         resetMovieSkipOverlay()
         GameCatalog.clearRunningGameRoot(this)
         GameModifierBridge.syncLockMaskFromNative(this)
+        virtualGamepadView = null
+        virtualCursorView = null
+        layoutEditorContainer = null
+        layoutEditorGridBtn = null
+        layoutEditorHintTv = null
         ctrlPill = null
         ctrlOverlayContainer = null
-        movieSkipLabel = null
-        movieSkipFillClip = null
-        movieSkipPill = null
-        movieSkipContainer = null
         modifierOverlay?.detach()
         try {
             // Let SDL stop and join its native thread before terminating the game process.
@@ -1013,6 +1377,43 @@ class XSystem4Activity : SDLActivity() {
             }
             COMMAND_MOVIE_SKIP_STATE -> {
                 updateMovieSkipOverlay((param as? Number)?.toInt() ?: MOVIE_SKIP_UI_HIDDEN)
+                return true
+            }
+            COMMAND_CURSOR_STATE -> {
+                virtualCursorView?.updateFromPackedParam((param as? Number)?.toInt() ?: 0)
+                return true
+            }
+            COMMAND_GAMEPAD_UI_EVENT -> {
+                val p = (param as? Number)?.toInt() ?: 0
+                val evType = p and 0xFF
+                val arg = (p ushr 8) and 0xFF
+                when (evType) {
+                    GAMEPAD_UI_EMU_CMD -> when (arg) {
+                        GamepadBridge.EMU_TOGGLE_VPAD -> {
+                            val shown = toggleVirtualGamepadEnabled()
+                            Toast.makeText(
+                                this,
+                                GamepadBridge.tr(
+                                    this,
+                                    if (shown) "已显示屏幕虚拟手柄" else "已隐藏屏幕虚拟手柄",
+                                    if (shown) "仮想ゲームパッドを表示" else "仮想ゲームパッドを非表示",
+                                    if (shown) "Virtual Gamepad shown" else "Virtual Gamepad hidden"
+                                ),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        GamepadBridge.EMU_OPEN_MENU -> {
+                            ensureOverlaysAttached()
+                            modifierOverlay?.openMainMenu()
+                        }
+                        GamepadBridge.EMU_SCREENSHOT -> captureGameScreenshot()
+                        GamepadBridge.EMU_OPEN_EDITOR -> enterLayoutEditorMode()
+                    }
+                    GAMEPAD_UI_CONTROLLER_COUNT -> {
+                        nativePadCount = arg
+                        updatePhysicalPadPresence(showToast = false)
+                    }
+                }
                 return true
             }
             COMMAND_OPEN_PLAYING_MANUAL -> {

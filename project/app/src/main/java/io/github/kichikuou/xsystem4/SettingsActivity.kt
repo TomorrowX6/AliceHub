@@ -62,6 +62,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_language, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
+        findViewById<ImageView>(R.id.icon_settings_gamepad)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_gamepad, accent))
         findViewById<ImageView>(R.id.icon_settings_clear_cache)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_clear_cache, accent))
 
@@ -80,6 +82,9 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
+        }
+        findViewById<View>(R.id.row_settings_gamepad).setOnClickListener {
+            startActivity(Intent(this, GamepadSettingsActivity::class.java))
         }
         findViewById<View>(R.id.row_settings_clear_cache).setOnClickListener {
             onClearCacheClicked()
@@ -131,6 +136,13 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+        val gp = GamepadBridge.loadProfile(this, null)
+        val connectedPads = GamepadBridge.queryConnectedControllers(this).size
+        findViewById<TextView>(R.id.value_settings_gamepad)?.text = when {
+            connectedPads > 0 -> GamepadBridge.tr(this, "已连接 ${connectedPads} 手柄", "${connectedPads}台接続", "${connectedPads} Pad")
+            gp.virtual.enabled -> GamepadBridge.tr(this, "虚拟手柄开", "仮想パッドON", "Virtual ON")
+            else -> GamepadBridge.tr(this, "仅实体适配", "物理のみ", "Pad OFF")
+        }
         refreshCacheSizeAsync()
     }
 

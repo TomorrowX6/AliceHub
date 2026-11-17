@@ -100,6 +100,8 @@ int sact_Mouse_GetPos(int *x, int *y);
 int sact_Mouse_SetPos(int x, int y);
 void sact_Joypad_ClearKeyDownFlag(int n);
 int sact_Joypad_IsKeyDown(int num, int key);
+int sact_Joypad_GetNumof(void);
+void sact_JoypadQuake_Set(int num, int type, int magnitude);
 bool sact_Joypad_GetAnalogStickStatus(int num, int type, float *degree, float *power);
 bool sact_Joypad_GetDigitalStickStatus(int num, int type, bool *left, bool *right, bool *up, bool *down);
 int sact_Key_ClearFlag(void);
