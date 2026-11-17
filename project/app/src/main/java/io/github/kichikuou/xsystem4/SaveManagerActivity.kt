@@ -40,6 +40,7 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+internal const val SAVE_IMPORT_TMP_PREFIX = ".save_import_tmp"
 private const val SAVE_BACKUP_ROOT = "save_backups"
 private const val SAVE_BACKUP_KEEP = 5
 private const val REQ_IMPORT_DIR = 102
@@ -199,10 +200,25 @@ class SaveManagerActivity : ThemedActivity() {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
+
+        private const val STATE_TARGET_DIR = "save_mgr_target_dir"
+        private const val STATE_EXPORT_AS_PC = "save_mgr_export_as_pc"
+        private const val STATE_SINGLE_EXPORT_FILE = "save_mgr_single_export_file"
+        private const val STATE_SINGLE_EXPORT_AS_PC = "save_mgr_single_export_as_pc"
+
+        // Import/export/restore jobs outlive the activity instance: rotating or switching
+        // dark mode must not orphan a half-done copy (or let a second one start alongside
+        // it). Results go to whichever instance is current when the job ends.
+        private val opScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        private var opJob: Job? = null
+        private var opProgressMessage: String? = null
+        private var liveHost: SaveManagerActivity? = null
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var activeJob: Job? = null
+    private var activeJob: Job?
+        get() = opJob
+        set(value) { opJob = value }
     private var progressDialog: Dialog? = null
 
     private var scopedGameId: String? = null
@@ -234,7 +250,22 @@ class SaveManagerActivity : ThemedActivity() {
         )
         listView.adapter = adapter
 
-        discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME))
+        liveHost = this
+        if (savedInstanceState != null) {
+            pendingExportAsPc = savedInstanceState.getBoolean(STATE_EXPORT_AS_PC, false)
+            pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
+            pendingSingleExportAsPc = savedInstanceState.getBoolean(STATE_SINGLE_EXPORT_AS_PC, false)
+        }
+        discoverSaveTargets(
+            savedInstanceState?.getString(STATE_TARGET_DIR) ?: intent.getStringExtra(EXTRA_DIR_NAME)
+        )
+        if (opJob?.isActive == true) {
+            showProgress(opProgressMessage ?: getString(R.string.action_save_manager))
+        } else {
+            // Leftovers of an import interrupted by a process death.
+            filesDir.listFiles()?.filter { it.name.startsWith(SAVE_IMPORT_TMP_PREFIX) }
+                ?.forEach { it.deleteRecursively() }
+        }
 
         findViewById<View>(R.id.btn_switch_game).setOnClickListener { showSwitchTargetDialog() }
         findViewById<View>(R.id.btn_import_saves).setOnClickListener {
@@ -262,7 +293,34 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::currentTarget.isInitialized) outState.putString(STATE_TARGET_DIR, currentTarget.dirName)
+        outState.putBoolean(STATE_EXPORT_AS_PC, pendingExportAsPc)
+        pendingSingleExportFile?.let { outState.putString(STATE_SINGLE_EXPORT_FILE, it.absolutePath) }
+        outState.putBoolean(STATE_SINGLE_EXPORT_AS_PC, pendingSingleExportAsPc)
+    }
+
+    private fun launchSaveOp(block: suspend CoroutineScope.() -> Unit): Job = opScope.launch(block = block)
+
+    /** Runs [action] on the live SaveManager instance; skipped if none is showing. */
+    private fun onHost(action: (SaveManagerActivity) -> Unit) {
+        val host = liveHost
+        if (host != null && !host.isDestroyed) action(host)
+    }
+
+    /** Shows an operation result on the live instance, or as a toast if the screen is gone. */
+    private fun hostMessage(title: String, message: String) {
+        val host = liveHost
+        if (host != null && !host.isFinishing && !host.isDestroyed) {
+            host.showMessageDialog(title, message)
+        } else {
+            Toast.makeText(applicationContext, "$title: $message", Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onDestroy() {
+        if (liveHost === this) liveHost = null
         dismissProgress()
         scope.cancel()
         super.onDestroy()
@@ -610,24 +668,24 @@ class SaveManagerActivity : ThemedActivity() {
     private fun runRestoreBackup(backup: File) {
         val target = currentTarget
         showProgress(getString(R.string.save_progress_restore_backup))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 val count = withContext(Dispatchers.IO) {
                     // Back up the current saves first so the restore itself can be undone.
                     backupSaves(target.saveDir, target.dirName)
                     restoreSavesFromBackup(backup, target.saveDir)
                 }
-                dismissProgress()
-                refreshFileList()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                onHost { it.refreshFileList() }
+                hostMessage(
                     getString(R.string.save_import_done_title),
                     getString(R.string.save_restore_backup_done_msg, count)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to restore save backup", e)
-                dismissProgress()
-                refreshFileList()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                onHost { it.refreshFileList() }
+                hostMessage(
                     getString(R.string.save_import_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -781,8 +839,8 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun extractSaveArchiveToTarget(uri: Uri, targetDir: File): Int {
-        val tempDir = File(filesDir, ".save_import_tmp")
-        tempDir.deleteRecursively()
+        // Unique per import, so a second import can never wipe the folder of one still running.
+        val tempDir = File(filesDir, "$SAVE_IMPORT_TMP_PREFIX${System.nanoTime()}")
         tempDir.mkdirs()
         try {
             ArchiveExtractor.extractUriToDirectory(
@@ -849,7 +907,7 @@ class SaveManagerActivity : ThemedActivity() {
         val targetDir = currentTarget.saveDir
         val targetDirName = currentTarget.dirName
         showProgress(getString(R.string.save_progress_import_dir))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 val count = withContext(Dispatchers.IO) {
                     backupSaves(targetDir, targetDirName)
@@ -868,16 +926,16 @@ class SaveManagerActivity : ThemedActivity() {
                     }
                     copyDocumentTreeToInternal(treeUri, sourceDocId, targetDir)
                 }
-                dismissProgress()
-                refreshFileList()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                onHost { it.refreshFileList() }
+                hostMessage(
                     getString(R.string.save_import_done_title),
                     getString(R.string.save_import_dir_done_msg, count)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to import saves from directory", e)
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_import_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -936,7 +994,7 @@ class SaveManagerActivity : ThemedActivity() {
         val targetDir = currentTarget.saveDir
         val targetDirName = currentTarget.dirName
         showProgress(getString(R.string.save_progress_import_files))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 val count = withContext(Dispatchers.IO) {
                     targetDir.mkdirs()
@@ -960,16 +1018,16 @@ class SaveManagerActivity : ThemedActivity() {
                     }
                     imported
                 }
-                dismissProgress()
-                refreshFileList()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                onHost { it.refreshFileList() }
+                hostMessage(
                     getString(R.string.save_import_done_title),
                     getString(R.string.save_import_files_done_msg, count)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to import save files", e)
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_import_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -998,7 +1056,7 @@ class SaveManagerActivity : ThemedActivity() {
     private fun runExportZip(uri: Uri, asPc: Boolean) {
         val entriesToExport = entriesForExport(asPc)
         showProgress(getString(R.string.save_progress_export_zip))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
                     val outStream = contentResolver.openOutputStream(uri)
@@ -1020,15 +1078,15 @@ class SaveManagerActivity : ThemedActivity() {
                     }
                     exported to convCount
                 }
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_export_done_title),
                     formatExportDoneMessage(count, converted, asPc, R.string.save_export_zip_done_msg)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to export saves to ZIP", e)
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_export_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -1039,7 +1097,7 @@ class SaveManagerActivity : ThemedActivity() {
     private fun runExportDirectory(treeUri: Uri, asPc: Boolean) {
         val entriesToExport = entriesForExport(asPc)
         showProgress(getString(R.string.save_progress_export_dir))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
@@ -1079,15 +1137,15 @@ class SaveManagerActivity : ThemedActivity() {
                     }
                     exported to convCount
                 }
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_export_done_title),
                     formatExportDoneMessage(count, converted, asPc, R.string.save_export_dir_done_msg)
                 )
             } catch (e: Exception) {
                 Log.e("SaveManager", "Failed to export saves to directory", e)
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_export_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -1174,22 +1232,22 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun runExportSingleFile(srcFile: File, destUri: Uri, asPc: Boolean) {
         showProgress(getString(R.string.save_progress_export_file))
-        activeJob = scope.launch {
+        activeJob = launchSaveOp {
             try {
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(destUri)?.use { out ->
                         copyExportFile(srcFile, out, asPc)
                     } ?: throw IOException("Failed to write target file")
                 }
-                dismissProgress()
+                onHost { it.dismissProgress() }
                 Toast.makeText(
-                    this@SaveManagerActivity,
+                    applicationContext,
                     getString(R.string.save_file_exported_toast, srcFile.name),
                     Toast.LENGTH_SHORT
                 ).show()
             } catch (e: Exception) {
-                dismissProgress()
-                showMessageDialog(
+                onHost { it.dismissProgress() }
+                hostMessage(
                     getString(R.string.save_export_failed_title),
                     e.localizedMessage ?: getString(R.string.error)
                 )
@@ -1318,6 +1376,7 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun showProgress(message: String) {
+        opProgressMessage = message
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (progressDialog == null) {
             progressDialog = Dialog(this).apply {
