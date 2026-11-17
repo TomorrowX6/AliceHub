@@ -1214,27 +1214,62 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun showAddControlSheet() {
-        val hasRightStick = profile.virtual.controls.any { it.id == "stick_r" }
-        val slotId = GamepadBridge.nextFreeCustomSlotId(profile.virtual.controls)
+        val controls = profile.virtual.controls
+        val hasDpad = controls.any { it.id == "dpad" }
+        val hasLeftStick = controls.any { it.id == "stick_l" }
+        val hasRightStick = controls.any { it.id == "stick_r" }
+        val slotId = GamepadBridge.nextFreeCustomSlotId(controls)
         if (slotId < 0) {
             Toast.makeText(this, tr("自定义按键已达上限", "上限に達しました", "Limit reached"), Toast.LENGTH_SHORT).show()
             return
         }
-        if (hasRightStick) {
-            spawnCustomButton(slotId)
-            return
+        // Built-in pad controls (D-Pad / sticks) can be re-added once each after deletion.
+        val options = ArrayList<Pair<String, () -> Unit>>()
+        options.add(tr("添加自定义按键", "ボタン追加", "Add Button") to { spawnCustomButton(slotId) })
+        if (!hasDpad) {
+            options.add(tr("添加十字键", "十字キー追加", "Add D-Pad") to {
+                addPadControl(
+                    VirtualControlSpec(
+                        id = "dpad",
+                        slotId = slotId,
+                        kind = VirtualControlKind.DPAD,
+                        label = "D-PAD",
+                        xNorm = 0.12f,
+                        yNorm = 0.50f,
+                        scale = 0.95f,
+                        opacity = 1.0f,
+                        visible = true,
+                        shape = VirtualButtonShape.SQUARE,
+                        stickMode = GamepadBridge.STICK_ARROWS,
+                        isCustom = true
+                    )
+                )
+            })
         }
-        val items = arrayOf(
-            tr("添加自定义按键", "ボタン追加", "Add Button"),
-            tr("添加右摇杆", "右スティック追加", "Add Right Stick")
-        )
-        AlertDialog.Builder(this)
-            .setTitle(tr("添加控件", "追加", "Add Control"))
-            .setItems(items) { _, which ->
-                if (which == 0) {
-                    spawnCustomButton(slotId)
-                } else {
-                    val stick = VirtualControlSpec(
+        if (!hasLeftStick) {
+            options.add(tr("添加左摇杆", "左スティック追加", "Add Left Stick") to {
+                addPadControl(
+                    VirtualControlSpec(
+                        id = "stick_l",
+                        slotId = slotId,
+                        kind = VirtualControlKind.STICK,
+                        label = "L",
+                        xNorm = 0.14f,
+                        yNorm = 0.76f,
+                        scale = 0.92f,
+                        opacity = 1.0f,
+                        visible = true,
+                        shape = VirtualButtonShape.CIRCLE,
+                        stickMode = GamepadBridge.STICK_MOUSE,
+                        isCustom = true
+                    )
+                )
+            })
+        }
+        if (!hasRightStick) {
+            options.add(tr("添加右摇杆", "右スティック追加", "Add Right Stick") to {
+                addPadControl(
+                    VirtualControlSpec(
                         id = "stick_r",
                         slotId = slotId,
                         kind = VirtualControlKind.STICK,
@@ -1248,17 +1283,30 @@ class GamepadEditorActivity : Activity() {
                         stickMode = GamepadBridge.STICK_WHEEL,
                         isCustom = true
                     )
-                    profile = profile.copy(virtual = profile.virtual.copy(controls = profile.virtual.controls + stick))
-                    selectedControlId = stick.id
-                    refreshAllUi()
-                }
+                )
+            })
+        }
+        if (options.size == 1) {
+            spawnCustomButton(slotId)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(tr("添加控件", "追加", "Add Control"))
+            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
+    private fun addPadControl(spec: VirtualControlSpec) {
+        profile = profile.copy(virtual = profile.virtual.copy(controls = profile.virtual.controls + spec))
+        selectedControlId = spec.id
+        refreshAllUi()
+    }
+
     private fun spawnCustomButton(slotId: Int) {
-        val num = profile.virtual.controls.count { it.isCustom } + 1
+        val num = profile.virtual.controls.count { it.isCustom && it.kind == VirtualControlKind.BUTTON } + 1
         val newBtn = VirtualControlSpec(
             id = "custom_$slotId",
             slotId = slotId,
