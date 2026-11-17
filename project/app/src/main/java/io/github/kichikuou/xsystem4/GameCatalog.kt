@@ -461,8 +461,8 @@ object GameCatalog {
                 accentColor = 0xFFC2185B.toInt(),
                 accentBorderColor = 0x66F06292,
                 iconFrameColor = 0xFF281224.toInt(),
-                supportsOnlineBaseInstall = false,
-                onlineBaseCdnUrl = null,
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ESCALAYER_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
