@@ -172,6 +172,8 @@ class VirtualGamepadView(context: Context) : View(context) {
     fun releaseAllInputs() {
         activeTouches.clear()
         pressedButtonIds.clear()
+        // Native reset clears toggle latches too; keep UI state in sync.
+        toggledLatchedIds.clear()
         stickPositions.clear()
         dpadDirs = BooleanArray(4)
         if (GameModifierBridge.ensureLoaded()) {
