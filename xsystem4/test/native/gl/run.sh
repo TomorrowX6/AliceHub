@@ -20,7 +20,7 @@ OUT=$(cd "$OUT" && pwd)
     "$ROOT/subprojects/libsys4/src/ex.c" \
     "$ROOT/src/parts/parts.c" "$ROOT/src/draw.c" "$ROOT/subprojects/libsys4/src/hashtable.c" \
     -Wl,--gc-sections -Wl,--wrap=parts_get -Wl,--wrap=glDrawElements \
-    -Wl,--wrap=parts_build_construction_process \
+    -Wl,--wrap=parts_build_construction_process -Wl,--wrap=SDL_GL_SwapWindow \
     -l:libSDL2-2.0.so.0 -l:libGLESv2.so.2 -lm -o "$OUT/renderer-test"
 cd "$OUT"
 SDL_VIDEODRIVER=offscreen LIBGL_ALWAYS_SOFTWARE=1 ./renderer-test

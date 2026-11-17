@@ -775,6 +775,19 @@ void gfx_swap(void)
 	modifier_on_frame();
 }
 
+// SDL can recreate Android's EGL window surface while retaining the GL context
+// and our last composited frame. RESTORED does not imply EXPOSED in SDL2, so a
+// script waiting for input may otherwise leave the new surface blank forever.
+// Called on the SDL/render thread after its pause loop restores the context;
+// never recreate GL resources or present from Activity/JNI callbacks.
+void gfx_restore_window(void)
+{
+	if (!gfx_initialized)
+		return;
+	gfx_update_screen_scale();
+	gfx_swap();
+}
+
 void gfx_set_view(struct texture *t)
 {
 	view = t;

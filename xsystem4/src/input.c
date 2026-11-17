@@ -2176,6 +2176,7 @@ static void handle_window_event(SDL_Event *e)
 		break;
 	case SDL_WINDOWEVENT_RESTORED:
 		gfx_android_on_foreground();
+		gfx_restore_window();
 		break;
 	case SDL_WINDOWEVENT_FOCUS_GAINED:
 		mouse_focus = true;

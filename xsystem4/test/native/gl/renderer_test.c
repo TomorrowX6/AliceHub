@@ -60,6 +60,59 @@ static void check_pixels(unsigned char *got,const unsigned char *expected,size_t
         fprintf(stderr,"pixel byte %zu: got %d expected %d\n",i,got[i],expected[i]); abort();
     }
 }
+// modifier_on_frame is a post-present gameplay hook, not part of rendering.
+void modifier_on_frame(void) {}
+static bool expect_resumed_frame;
+static int resumed_frames;
+void __real_SDL_GL_SwapWindow(SDL_Window *window);
+void __wrap_SDL_GL_SwapWindow(SDL_Window *window) {
+    if (expect_resumed_frame) {
+        unsigned char pixels[128*128*4];
+        glReadPixels(0,0,128,128,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        for (int i=0;i<128*128;i++) {
+            const unsigned char expected[4]={37,91,173,255};
+            check_pixels(pixels+4*i,expected,4,0);
+        }
+        if (!resumed_frames) write_ppm("resume-surface-gles-synthetic.ppm",pixels,128,128);
+        resumed_frames++;
+        expect_resumed_frame=false;
+    }
+    __real_SDL_GL_SwapWindow(window);
+}
+static void resume_surface_tests(void) {
+    // Keep the production context and its scene texture, but replace the real
+    // window/drawable repeatedly: the Android surface recreation case, not a
+    // context-loss simulation and not a full game/Activity lifecycle test.
+    glBindFramebuffer(GL_FRAMEBUFFER,main_surface_fb);
+    glClearColor(37/255.f,91/255.f,173/255.f,1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_initialized=true;
+    gfx_reset_view();
+    for (int n=0;n<32;n++) {
+        SDL_Window *previous=sdl.window;
+        sdl.window=SDL_CreateWindow("Synthetic recreated surface",0,0,128,128,
+                                   SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+        assert(sdl.window);
+        assert(SDL_GL_MakeCurrent(sdl.window,sdl.gl.context)==0);
+        SDL_DestroyWindow(previous);
+        assert(glIsTexture(main_surface.handle));
+        glBindFramebuffer(GL_FRAMEBUFFER,0);
+        glViewport(0,0,128,128);
+        glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+        unsigned char black[4];
+        glReadPixels(64,64,1,1,GL_RGBA,GL_UNSIGNED_BYTE,black);
+        const unsigned char expected_black[4]={0,0,0,255};
+        check_pixels(black,expected_black,4,0);
+        expect_resumed_frame=true;
+        gfx_restore_window();
+        assert(!expect_resumed_frame); // Must present without a new script frame.
+        GLint framebuffer=0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING,&framebuffer);
+        assert(framebuffer==(GLint)main_surface_fb);
+        no_error();
+    }
+    assert(resumed_frames==32);
+    puts("PASS: 32 real SDL/GLES drawable recreations retain and re-present the scene without script redraw");
+}
 static void blur_tests(void) {
     enum { W=15,H=11,N=W*H*4 };
     unsigned char input[N], expected[N], next[N];
@@ -153,7 +206,8 @@ int main(void) {
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
     blur_tests(); sprite_tests(false,true);
-    sprite_tests(true,false); sprite_tests(true,true); no_error();
+    sprite_tests(true,false); sprite_tests(true,true);
+    resume_surface_tests(); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
     gfx_fini(); return 0;
 }

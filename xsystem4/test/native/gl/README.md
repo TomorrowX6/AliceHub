@@ -26,6 +26,10 @@ The harness checks actual GPU readback against independently computed pixels:
 * Activity EX flag/list loading and CG output in **legacy and v2 modes**, all
   four LR/TB states crossed with all four signed magnification combinations.
   Exact placement/orientation checks ensure reversal is applied once, not twice.
+* 32 actual SDL/GLES window/drawable replacements **with the GL context retained**.
+  Verify the new surface starts black, then the production restore path presents
+  the retained composited frame before any new script rendering. This does not
+  simulate GL context loss or prove the reported Android game lifecycle race.
 * Every actual `glDrawElements` is audited: texture unit 0 must not contain
   the texture attached to the draw framebuffer. The old blur implementation
   fails this invariant, regardless of whether a driver happens to look right.
@@ -34,6 +38,8 @@ Test-path substitutions are component lookup (returns the fixture component
 instead of running the VM), UTF-8 key encoding identity for the in-memory EX
 fixture (no SJIS/GBK game file), and guards for alpha-clipper construction and
 widget sizing (abort if invoked; these fixtures only use unclipped CG parts).
+A post-present modifier gameplay hook is a no-op in this renderer-only harness.
+The SDL swap wrapper checks the rendered frame immediately before real swap.
 Actual component dirtying, transforms, shader compilation, framebuffer changes,
 texture copies, blend state and GL draws run unchanged production code.
 
