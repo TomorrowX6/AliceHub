@@ -96,6 +96,9 @@ class GamepadEditorActivity : Activity() {
     private var profileKey: String? = null
     private var perGameOverride: Boolean = false
     private lateinit var profile: GamepadProfile
+    // Snapshot of what is on disk, used to detect unsaved edits on exit.
+    private lateinit var savedProfile: GamepadProfile
+    private var savedPerGameOverride: Boolean = false
     private var activeTab: Int = TAB_VIRTUAL
     private var selectedControlId: String? = null
     private var globalPopoverOpen: Boolean = false
@@ -172,6 +175,8 @@ class GamepadEditorActivity : Activity() {
         activeTab = intent.getIntExtra(EXTRA_INITIAL_TAB, TAB_VIRTUAL)
         perGameOverride = GamepadBridge.hasPerGameOverride(this, profileKey)
         profile = GamepadBridge.loadProfile(this, profileKey)
+        savedProfile = profile
+        savedPerGameOverride = perGameOverride
 
         buildLayout()
         applyTab(activeTab)
@@ -367,7 +372,7 @@ class GamepadEditorActivity : Activity() {
             setPadding(dp(6), dp(4), dp(6), dp(4))
         }
 
-        val backBtn = makePill("←", active = false) { finish() }.apply {
+        val backBtn = makePill("←", active = false) { requestExit() }.apply {
             setPadding(dp(10), dp(5), dp(10), dp(5))
         }
         bar.addView(backBtn, wrapParams(rightMargin = dp(6)))
@@ -1372,6 +1377,34 @@ class GamepadEditorActivity : Activity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun hasUnsavedChanges(): Boolean =
+        profile.copy(seq = 0L) != savedProfile.copy(seq = 0L) ||
+            perGameOverride != savedPerGameOverride
+
+    /** Leaves the editor, asking first when there are unsaved edits. */
+    private fun requestExit() {
+        if (!hasUnsavedChanges()) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(tr("保存修改？", "変更を保存しますか？", "Save changes?"))
+            .setMessage(tr("布局或映射有未保存的修改。", "未保存の変更があります。", "You have unsaved layout or mapping changes."))
+            .setPositiveButton(tr("保存", "保存", "Save")) { _, _ -> saveAndFinish() }
+            .setNegativeButton(tr("放弃", "破棄", "Discard")) { _, _ ->
+                // Live previews may have pushed the draft to native; restore the saved state.
+                GamepadBridge.syncProfileToNative(savedProfile)
+                finish()
+            }
+            .setNeutralButton(R.string.cancel, null)
+            .show()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        requestExit()
     }
 
     private fun saveAndFinish() {
