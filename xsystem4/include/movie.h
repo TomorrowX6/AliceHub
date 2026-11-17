@@ -17,6 +17,9 @@
 #ifndef SYSTEM4_MOVIE_H
 #define SYSTEM4_MOVIE_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 struct movie_context;
 struct sact_sprite;
 
@@ -33,5 +36,8 @@ int movie_get_end_time(struct movie_context *mc);
 int movie_get_width(struct movie_context *mc);
 int movie_get_height(struct movie_context *mc);
 bool movie_set_volume(struct movie_context *mc, int volume /* 0-100 */);
+bool movie_has_active_playback(void);
+uint32_t movie_get_playback_seq(void);
+bool movie_skip_active(void);
 
 #endif /* SYSTEM4_MOVIE_H */

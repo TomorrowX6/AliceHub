@@ -108,7 +108,9 @@ private class SaveFileAdapter(
     private companion object {
         val GLOBAL_SAVE_FILES = setOf(
             "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
-            "afcgmode.asd", "gameenquete.asd", "commonsystemdata.sav"
+            "afcgmode.asd", "afcommon.asd", "afconfig.asd", "afbgmmode.asd",
+            "共有.asd", "ｃｇモード.asd", "音楽モード.asd", "3dsetting.asd",
+            "gameenquete.asd", "commonsystemdata.sav"
         )
     }
 }
@@ -342,6 +344,7 @@ class SaveManagerActivity : ThemedActivity() {
     private fun refreshFileList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
+        migrateMojibakeSaveTree(saveDir)
 
         val list = mutableListOf<SaveFileEntry>()
         collectSaveFiles(saveDir, saveDir, list)
@@ -395,16 +398,38 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
+    /** Renames legacy Shift-JIS-as-GBK mojibake save filenames/dirs in [dir] without clobbering existing targets. */
+    private fun migrateMojibakeSaveTree(dir: File) {
+        val children = dir.listFiles() ?: return
+        for (child in children) {
+            if (child.name.startsWith(".")) continue
+            if (child.isDirectory) {
+                migrateMojibakeSaveTree(child)
+            }
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+            if (repaired != child.name && !repaired.contains('/') && !repaired.contains('\\')) {
+                val target = File(dir, repaired)
+                if (!target.exists()) {
+                    child.renameTo(target)
+                }
+            }
+        }
+    }
+
     private fun classifySaveFile(name: String): String {
-        val lower = name.lowercase(Locale.ROOT)
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(name).lowercase(Locale.ROOT)
         return when {
-            lower == "globalsave.asd" || lower == "globalsavedata.asd" -> getString(R.string.save_tag_global)
+            lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
+                lower == "afcommon.asd" || lower == "共有.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" -> getString(R.string.save_tag_msgskip)
-            lower == "afcgmode.asd" -> getString(R.string.save_tag_afcg)
+            lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
+                lower == "ｃｇモード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
             lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
-            lower == "commonsystemdata.sav" -> getString(R.string.save_tag_common)
-            lower.endsWith(".asd") || lower.endsWith(".sav") || lower.endsWith(".rsm") -> getString(R.string.save_tag_progress)
+            lower == "commonsystemdata.sav" || lower == "afconfig.asd" || lower == "3dsetting.asd" ->
+                getString(R.string.save_tag_common)
+            lower.endsWith(".asd") || lower.endsWith(".sav") || lower.endsWith(".rsm") ||
+                lower.endsWith(".vsf") -> getString(R.string.save_tag_progress)
             lower.endsWith(".qnt") || lower.endsWith(".png") -> getString(R.string.save_tag_thumbnail)
             lower.endsWith(".log") -> getString(R.string.save_tag_log)
             else -> getString(R.string.save_tag_other)
@@ -619,7 +644,7 @@ class SaveManagerActivity : ThemedActivity() {
             var copied = 0
             normalizedRoot.walkTopDown().forEach { src ->
                 if (src.isFile && !src.name.startsWith(".")) {
-                    val relPath = src.relativeTo(normalizedRoot).path
+                    val relPath = ArchiveExtractor.repairSjisAsGbkMojibake(src.relativeTo(normalizedRoot).path)
                     val dst = File(targetDir, relPath)
                     dst.parentFile?.mkdirs()
                     src.copyTo(dst, overwrite = true)
@@ -737,11 +762,12 @@ class SaveManagerActivity : ThemedActivity() {
         var count = 0
         for (child in listDocumentChildren(treeUri, parentDocId)) {
             if (child.name.startsWith(".")) continue
+            val cleanName = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
             if (child.isDirectory) {
-                count += copyDocumentTreeToInternal(treeUri, child.documentId, File(destDir, child.name))
+                count += copyDocumentTreeToInternal(treeUri, child.documentId, File(destDir, cleanName))
             } else {
                 val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
-                val outFile = File(destDir, child.name)
+                val outFile = File(destDir, cleanName)
                 contentResolver.openInputStream(docUri)?.use { input ->
                     outFile.outputStream().buffered().use { output ->
                         input.copyTo(output)
@@ -763,7 +789,7 @@ class SaveManagerActivity : ThemedActivity() {
                     var imported = 0
                     for (uri in uris) {
                         val fileName = queryDisplayName(uri) ?: "save_${System.currentTimeMillis()}.asd"
-                        val safeName = File(fileName).name
+                        val safeName = ArchiveExtractor.repairSjisAsGbkMojibake(File(fileName).name)
                         if (safeName.isEmpty()) continue
                         if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
                             imported += extractSaveArchiveToTarget(uri, targetDir)

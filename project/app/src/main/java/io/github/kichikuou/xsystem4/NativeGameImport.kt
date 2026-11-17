@@ -65,7 +65,8 @@ object NativeGameImport {
         if (!expectedAinName.isNullOrBlank() && !ainDoc.name.equals(expectedAinName, ignoreCase = true)) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
-        val baseName = ainDoc.name.substringBeforeLast('.').ifEmpty { "Game" }
+        val rawBaseName = ainDoc.name.substringBeforeLast('.')
+        val baseName = ArchiveExtractor.repairSjisAsGbkMojibake(rawBaseName).ifEmpty { "Game" }
         val staging = File(storage, ".import-${UUID.randomUUID()}").canonicalFile
         if (staging.parentFile != storage.canonicalFile || !staging.mkdir())
             throw IOException("Cannot create import directory")
@@ -75,10 +76,10 @@ object NativeGameImport {
             suspend fun copy(documents: List<Document>, destination: File) {
                 for (document in documents) {
                     currentCoroutineContext().ensureActive()
-                    val name = document.name
+                    val name = ArchiveExtractor.repairSjisAsGbkMojibake(document.name)
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
-                    if (skip(name)) continue
+                    if (skip(document.name)) continue
                     val target = File(destination, name)
                     if (document.folder) {
                         if (!target.mkdir()) throw IOException("Cannot create directory: $name")
@@ -137,10 +138,10 @@ object NativeGameImport {
             suspend fun copy(documents: List<Document>, destination: File) {
                 for (document in documents) {
                     currentCoroutineContext().ensureActive()
-                    val name = document.name
+                    val name = ArchiveExtractor.repairSjisAsGbkMojibake(document.name)
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
-                    if (skip(name)) continue
+                    if (skip(document.name)) continue
                     val target = File(destination, name)
                     if (document.folder) {
                         if (!target.mkdir()) throw IOException("Cannot create directory: $name")

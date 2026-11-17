@@ -41,6 +41,7 @@ bool game_rance7_mg = false;
 bool game_sengokurance = false;
 bool game_rance8 = false;
 bool game_rance8_mg = false;
+bool game_rance9 = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
@@ -520,7 +521,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_rance02_hacks(ain);
 	} else if (!strcmp(game_name, "Rance6")) {
 		apply_rance6_hacks(ain);
-	} else if (!strcmp(game_name, "ランス・クエスト")) {
+	} else if (!strcmp(game_name, "ランス・クエスト") || !strcmp(game_name, "兰斯8")) {
 		game_rance8 = true;
 	} else if (!strcmp(game_name, "Rance Quest")) {
 		game_rance8 = true;
@@ -528,10 +529,34 @@ void apply_game_specific_hacks(struct ain *ain)
 	} else if (!strcmp(game_name, "ＤＵＮＧＥＯＮＳ＆ＤＯＬＬＳ")) {
 		game_dungeons_and_dolls = true;
 	} else if (!strcmp(game_name, "ランス９")
-			|| !strcmp(game_name, "Rance 9 - The Helmanian Revolution")) {
+			|| !strcmp(game_name, "Rance 9 - The Helmanian Revolution")
+			|| !strcmp(game_name, "兰斯9")) {
+		game_rance9 = true;
 		apply_rance9_hacks(ain);
 	}
 	free(game_name);
+
+	if (!game_rance8 && !game_dungeons_and_dolls && ain->version == 6
+			&& ain_get_library(ain, "TapirEngine") >= 0
+			&& ain_get_library(ain, "MonsterInfo") >= 0
+			&& ain_get_library(ain, "GoatGUIEngine") >= 0) {
+		game_rance8 = true;
+	}
+	if (!game_rance9 && ain->version == 6
+			&& ain_get_library(ain, "SealEngine") >= 0
+			&& ain_get_library(ain, "DrawMovie3") >= 0
+			&& ain_get_struct(ain, "T_PartsNo") >= 0) {
+		game_rance9 = true;
+		apply_rance9_hacks(ain);
+	}
+	if (game_rance8 && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1024;
+		config.view_height = 768;
+	}
+	if (game_rance9 && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1280;
+		config.view_height = 720;
+	}
 
 	// XXX: we don't rely on game_name because mods change it
 	if (ain_get_library(ain, "SengokuRanceFont") >= 0)

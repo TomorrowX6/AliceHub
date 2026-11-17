@@ -230,6 +230,8 @@
     <string name="game_evenicle_title">夏娃年代记</string>
     <string name="game_sengokurance_title">战国兰斯</string>
     <string name="game_rance03_title">兰斯03 利萨斯陷落</string>
+    <string name="game_rance08_title">兰斯08 兰斯Quest Magnum</string>
+    <string name="game_rance09_title">兰斯09 赫尔曼革命</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>
@@ -273,4 +275,7 @@
     <string name="settings_clear_cache_done_toast">已清空缓存，释放 %1$s</string>
     <string name="settings_clear_cache_empty_toast">缓存已为空</string>
     <string name="settings_clear_cache_busy_toast">请先暂停或取消正在进行的安装任务</string>
+
+    <string name="movie_skip_hint">长按屏幕跳过</string>
+    <string name="movie_skip_holding">长按跳过…</string>
 </resources>

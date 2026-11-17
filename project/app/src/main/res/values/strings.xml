@@ -231,6 +231,8 @@
     <string name="game_evenicle_title">Evenicle</string>
     <string name="game_sengokurance_title">Sengoku Rance</string>
     <string name="game_rance03_title">Rance 03: Fall of Leazas</string>
+    <string name="game_rance08_title">Rance 08: Rance Quest Magnum</string>
+    <string name="game_rance09_title">Rance 09: The Helman Revolution</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>
@@ -274,4 +276,7 @@
     <string name="settings_clear_cache_done_toast">Cache cleared · Freed %1$s</string>
     <string name="settings_clear_cache_empty_toast">Cache is already empty</string>
     <string name="settings_clear_cache_busy_toast">Pause or cancel the active installation first</string>
+
+    <string name="movie_skip_hint">Hold screen to skip</string>
+    <string name="movie_skip_holding">Hold to skip…</string>
 </resources>

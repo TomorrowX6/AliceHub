@@ -79,14 +79,20 @@ static struct sprite_shader {
 	GLuint blend_rate;
 	GLuint multiply_color;
 	GLuint add_color;
-	GLuint bot_left;
-	GLuint top_right;
+	GLuint draw_filter;
+	GLuint uv_rect;
 } sprite_shader = {0};
+
+struct sprite_render_data {
+	struct sact_sprite *sp;
+	float uv_rect[4];
+};
 
 static void prepare_sact_shader(struct gfx_render_job *job, void *data)
 {
 	struct sprite_shader *s = (struct sprite_shader*)job->shader;
-	struct sact_sprite *sp = (struct sact_sprite*)data;
+	struct sprite_render_data *rd = (struct sprite_render_data*)data;
+	struct sact_sprite *sp = rd->sp;
 	glUniform1f(s->blend_rate, sp->blend_rate / 255.0f);
 	glUniform3f(s->multiply_color,
 			sp->multiply_color.r / 255.0f,
@@ -97,7 +103,8 @@ static void prepare_sact_shader(struct gfx_render_job *job, void *data)
 static void prepare_chipmunk_shader(struct gfx_render_job *job, void *data)
 {
 	struct sprite_shader *s = (struct sprite_shader*)job->shader;
-	struct sact_sprite *sp = (struct sact_sprite*)data;
+	struct sprite_render_data *rd = (struct sprite_render_data*)data;
+	struct sact_sprite *sp = rd->sp;
 	glUniform1f(s->blend_rate, sp->blend_rate / 255.0f);
 	glUniform3f(s->multiply_color,
 			sp->multiply_color.r / 255.0f,
@@ -107,14 +114,13 @@ static void prepare_chipmunk_shader(struct gfx_render_job *job, void *data)
 			sp->add_color.r / 255.0f,
 			sp->add_color.g / 255.0f,
 			sp->add_color.b / 255.0f);
-
-	Rectangle r = sp->surface_area;
-	if (!r.w && !r.h) {
-		r = (Rectangle) { 0, 0, sp->rect.w, sp->rect.h };
-	}
-
-	glUniform2f(s->bot_left, r.x, r.y);
-	glUniform2f(s->top_right, r.x + r.w, r.y + r.h);
+	int filter = 0;
+	if (sp->draw_method == DRAW_METHOD_MULTIPLY)
+		filter = 2;
+	else if (sp->draw_method == DRAW_METHOD_SCREEN)
+		filter = 3;
+	glUniform1i(s->draw_filter, filter);
+	glUniform4fv(s->uv_rect, 1, rd->uv_rect);
 }
 
 void sprite_init_sact(void)
@@ -145,12 +151,60 @@ void sprite_init_chipmunk(void)
 	sprite_shader.blend_rate = glGetUniformLocation(sprite_shader.s.program, "blend_rate");
 	sprite_shader.multiply_color = glGetUniformLocation(sprite_shader.s.program, "multiply_color");
 	sprite_shader.add_color = glGetUniformLocation(sprite_shader.s.program, "add_color");
-	sprite_shader.bot_left = glGetUniformLocation(sprite_shader.s.program, "bot_left");
-	sprite_shader.top_right = glGetUniformLocation(sprite_shader.s.program, "top_right");
+	sprite_shader.draw_filter = glGetUniformLocation(sprite_shader.s.program, "draw_filter");
+	sprite_shader.uv_rect = glGetUniformLocation(sprite_shader.s.program, "uv_rect");
 	sprite_shader.s.prepare = prepare_chipmunk_shader;
 	glUseProgram(sprite_shader.s.program);
 	glUniform1i(glGetUniformLocation(sprite_shader.s.program, "use_clipper"), 0);
 	glUseProgram(0);
+}
+
+static void sprite_render_tex(struct sact_sprite *sp, struct texture *t)
+{
+	if (!t->handle || t->w <= 0 || t->h <= 0)
+		return;
+
+	struct sprite_render_data rd = {
+		.sp = sp,
+		.uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }
+	};
+
+	if (sprite_shader.s.prepare == prepare_chipmunk_shader
+			&& (sp->surface_area.w > 0 || sp->surface_area.h > 0)) {
+		int cx0 = max(0, sp->surface_area.x);
+		int cy0 = max(0, sp->surface_area.y);
+		int cx1 = min(t->w, sp->surface_area.x + sp->surface_area.w);
+		int cy1 = min(t->h, sp->surface_area.y + sp->surface_area.h);
+		if (cx1 <= cx0 || cy1 <= cy0)
+			return;
+		float cw = (float)(cx1 - cx0);
+		float ch = (float)(cy1 - cy0);
+		rd.uv_rect[0] = (float)cx0 / (float)t->w;
+		rd.uv_rect[1] = (float)cy0 / (float)t->h;
+		rd.uv_rect[2] = cw / (float)t->w;
+		rd.uv_rect[3] = ch / (float)t->h;
+		mat4 world_transform = WORLD_TRANSFORM(cw, ch,
+			sp->rect.x + cx0 - sp->surface_area.x,
+			sp->rect.y + cy0 - sp->surface_area.y);
+		mat4 view_transform = WV_TRANSFORM(config.view_width, config.view_height);
+		struct gfx_render_job job = {
+			.shader = &sprite_shader.s,
+			.shape = GFX_RECTANGLE,
+			.texture = t->handle,
+			.world_transform = world_transform[0],
+			.view_transform = view_transform[0],
+			.data = &rd
+		};
+		gfx_render(&job);
+		return;
+	}
+
+	Rectangle r = sp->rect;
+	if (sp->surface_area.x || sp->surface_area.y) {
+		r.x -= sp->surface_area.x;
+		r.y -= sp->surface_area.y;
+	}
+	_gfx_render_texture(&sprite_shader.s, t, &r, &rd);
 }
 
 static void sprite_render(struct sprite *_sp)
@@ -177,15 +231,9 @@ static void sprite_render(struct sprite *_sp)
 		break;
 	}
 
-	Rectangle r = sp->rect;
-	if (sp->surface_area.x || sp->surface_area.y) {
-		r.x -= sp->surface_area.x;
-		r.y -= sp->surface_area.y;
-	}
-
-	_gfx_render_texture(&sprite_shader.s, &sp->texture, &r, sp);
+	sprite_render_tex(sp, &sp->texture);
 	if (sp->text.texture.handle) {
-		_gfx_render_texture(&sprite_shader.s, &sp->text.texture, &r, sp);
+		sprite_render_tex(sp, &sp->text.texture);
 	}
 
 	if (sp->draw_method != DRAW_METHOD_NORMAL)

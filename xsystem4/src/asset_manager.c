@@ -788,7 +788,7 @@ static void afa_init(enum asset_type type, char *file)
 
 static char *get_base_name(const char *ain_filename)
 {
-	char *path = sjis2utf(ain_filename, 0);
+	char *path = sjis_filename2utf(ain_filename, 0);
 	char *dot = strrchr(path, '.');
 	if (dot)
 		*dot = '\0';
@@ -854,11 +854,13 @@ void asset_manager_init(void)
 
 	// get ALD filenames
 	while ((d_name = readdir_utf8(dir))) {
-		const char *ext = file_extension(d_name);
+		char *repaired = cjk_repair_sjis_as_gbk_utf8(d_name);
+		const char *match_name = repaired ? repaired : d_name;
+		const char *ext = file_extension(match_name);
 		if (!ext)
 			goto loop_next;
 		// archive filename must normally begin with ain filename; retain *.ald candidates for renamed CN AINs
-		if (strncasecmp(base, d_name, base_len)) {
+		if (strncasecmp(base, match_name, base_len)) {
 			if (!strcasecmp(ext, "ald")) {
 				fallback_alds = xrealloc(fallback_alds, (nr_fallback_alds + 1) * sizeof(*fallback_alds));
 				fallback_alds[nr_fallback_alds++] = xstrdup(d_name);
@@ -866,8 +868,13 @@ void asset_manager_init(void)
 			goto loop_next;
 		}
 		if (!strcasecmp(ext, "ald")) {
-			if (strlen(d_name) > base_len + 1 && register_ald_file(ald_filenames, ald_count, d_name, base_len))
-				has_base_ald = true;
+			size_t mlen = strlen(match_name);
+			size_t dlen = strlen(d_name);
+			if (mlen > base_len + 1 && dlen >= mlen - base_len) {
+				size_t d_prefix_len = dlen - (mlen - base_len);
+				if (register_ald_file(ald_filenames, ald_count, d_name, d_prefix_len))
+					has_base_ald = true;
+			}
 		} else if (!strcasecmp(ext, "bgi")) {
 			if (config.bgi_path) {
 				WARNING("Multiple bgi files");
@@ -881,7 +888,7 @@ void asset_manager_init(void)
 			}
 			config.wai_path = path_join(config.game_dir, d_name);
 		} else if (!strcasecmp(ext, "ex")) {
-			const char *suffix = d_name + base_len;
+			const char *suffix = match_name + base_len;
 			bool canonical = !strcasecmp(suffix, "EX.ex") || !strcasecmp(suffix, ".ex");
 			if (config.ex_path) {
 				WARNING("Multiple ex files");
@@ -892,7 +899,7 @@ void asset_manager_init(void)
 			config.ex_path = path_join(config.game_dir, d_name);
 			ex_is_canonical = canonical;
 		} else if (!strcasecmp(ext, "afa")) {
-			const char *type = d_name + base_len;
+			const char *type = match_name + base_len;
 			if (!strcasecmp(type, "BA.afa")) {
 				afa_filenames[ASSET_BGM] = path_join(config.game_dir, d_name);
 			} else if (!strcasecmp(type, "WA.afa") || !strcasecmp(type, "Sound.afa")) {
@@ -913,6 +920,7 @@ void asset_manager_init(void)
 				config.fnl_path = path_join(config.game_dir, d_name);
 		}
 	loop_next:
+		free(repaired);
 		free(d_name);
 	}
 	closedir_utf8(dir);

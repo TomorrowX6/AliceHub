@@ -64,6 +64,8 @@ struct movie_context {
 	int bytes_per_sample;
 	int voice;
 	int volume;
+	bool playing;
+	bool skipped;
 
 	// Time keeping data. Written by audio handler and referenced by video
 	// handler (i.e. we sync the video to the audio).
@@ -202,6 +204,36 @@ static int audio_callback(sts_mixer_sample_t *sample, void *data)
 	return STS_STREAM_CONTINUE;
 }
 
+static struct movie_context **active_movies = NULL;
+static int nr_active_movies = 0;
+static int cap_active_movies = 0;
+static uint32_t movie_playback_seq = 0;
+
+static void register_movie(struct movie_context *mc)
+{
+	if (!mc)
+		return;
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (active_movies[i] == mc)
+			return;
+	}
+	if (nr_active_movies == cap_active_movies) {
+		cap_active_movies = cap_active_movies ? cap_active_movies * 2 : 4;
+		active_movies = xrealloc(active_movies, sizeof(struct movie_context*) * cap_active_movies);
+	}
+	active_movies[nr_active_movies++] = mc;
+}
+
+static void unregister_movie(struct movie_context *mc)
+{
+	for (int i = 0; i < nr_active_movies; i++) {
+		if (active_movies[i] == mc) {
+			active_movies[i] = active_movies[--nr_active_movies];
+			return;
+		}
+	}
+}
+
 struct movie_context *movie_load(const char *filename)
 {
 	struct movie_context *mc = xcalloc(1, sizeof(struct movie_context));
@@ -262,13 +294,19 @@ struct movie_context *movie_load(const char *filename)
 	mc->volume = 100;
 
 	preload_packets(mc);
+	register_movie(mc);
 	return mc;
 }
 
 void movie_free(struct movie_context *mc)
 {
-	if (mc->voice >= 0)
-		mixer_stream_stop(mc->voice);
+	if (!mc)
+		return;
+	unregister_movie(mc);
+	int voice = mc->voice;
+	mc->voice = -1;
+	if (voice >= 0)
+		mixer_stream_stop(voice);
 	if (mc->sts_stream.sample.data)
 		free(mc->sts_stream.sample.data);
 
@@ -296,6 +334,11 @@ void movie_free(struct movie_context *mc)
 
 bool movie_play(struct movie_context *mc)
 {
+	if (!mc)
+		return false;
+	mc->skipped = false;
+	mc->playing = true;
+	movie_playback_seq++;
 	// Start the audio stream.
 	mc->stream_time = 0.0;
 	mc->wall_time_ms = SDL_GetTicks();
@@ -325,6 +368,10 @@ bool movie_play(struct movie_context *mc)
 
 bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 {
+	if (!mc)
+		return false;
+	if (mc->skipped)
+		return sprite != NULL;
 	struct texture *texture;
 	if (sprite) {
 		texture = sprite_get_texture(sprite);
@@ -382,6 +429,8 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 
 bool movie_is_end(struct movie_context *mc)
 {
+	if (!mc || mc->skipped)
+		return true;
 	return mc->video.finished && mc->audio.finished;
 }
 
@@ -434,4 +483,37 @@ int movie_get_width(struct movie_context *mc)
 int movie_get_height(struct movie_context *mc)
 {
 	return mc && mc->video.ctx ? mc->video.ctx->height : 0;
+}
+
+bool movie_has_active_playback(void)
+{
+	for (int i = 0; i < nr_active_movies; i++) {
+		struct movie_context *mc = active_movies[i];
+		if (mc && mc->playing && !mc->skipped && !movie_is_end(mc))
+			return true;
+	}
+	return false;
+}
+
+uint32_t movie_get_playback_seq(void)
+{
+	return movie_playback_seq;
+}
+
+bool movie_skip_active(void)
+{
+	bool skipped_any = false;
+	for (int i = 0; i < nr_active_movies; i++) {
+		struct movie_context *mc = active_movies[i];
+		if (mc && mc->playing && !mc->skipped && !movie_is_end(mc)) {
+			mc->skipped = true;
+			mc->playing = false;
+			int voice = mc->voice;
+			mc->voice = -1;
+			if (voice >= 0)
+				mixer_stream_stop(voice);
+			skipped_any = true;
+		}
+	}
+	return skipped_any;
 }

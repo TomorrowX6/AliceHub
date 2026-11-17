@@ -55,6 +55,7 @@ target_sources(sys4 PRIVATE
   src/savefile.c
   src/string.c
   src/system.c
+  src/tga.c
   src/utfsjis.c
   src/webp.c
   src/zlib.c

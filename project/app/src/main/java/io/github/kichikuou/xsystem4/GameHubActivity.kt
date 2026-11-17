@@ -244,7 +244,9 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
                 descriptor.id == GameCatalog.ID_EVENICLE ||
                 descriptor.id == GameCatalog.ID_SENGOKU_RANCE ||
-                descriptor.id == GameCatalog.ID_RANCE03
+                descriptor.id == GameCatalog.ID_RANCE03 ||
+                descriptor.id == GameCatalog.ID_RANCE08 ||
+                descriptor.id == GameCatalog.ID_RANCE09
             ) {
                 descriptor.title
             } else {
