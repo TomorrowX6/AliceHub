@@ -795,6 +795,42 @@ static char *get_base_name(const char *ain_filename)
 	return path;
 }
 
+static bool register_ald_file(char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX],
+		int ald_count[ASSET_TYPE_MAX], const char *d_name, size_t prefix_len)
+{
+	int dno = toupper((unsigned char)d_name[prefix_len + 1]) - 'A';
+	if (dno < 0 || dno >= ALD_FILEMAX) {
+		WARNING("Invalid ALD index: %s", display_utf0(d_name));
+		return false;
+	}
+
+	switch (d_name[prefix_len]) {
+	case 'b':
+	case 'B':
+		ald_filenames[ASSET_BGM][dno] = path_join(config.game_dir, d_name);
+		ald_count[ASSET_BGM] = max(ald_count[ASSET_BGM], dno + 1);
+		return true;
+	case 'g':
+	case 'G':
+		ald_filenames[ASSET_CG][dno] = path_join(config.game_dir, d_name);
+		ald_count[ASSET_CG] = max(ald_count[ASSET_CG], dno + 1);
+		return true;
+	case 'w':
+	case 'W':
+		ald_filenames[ASSET_SOUND][dno] = path_join(config.game_dir, d_name);
+		ald_count[ASSET_SOUND] = max(ald_count[ASSET_SOUND], dno + 1);
+		return true;
+	case 'd':
+	case 'D':
+		ald_filenames[ASSET_DATA][dno] = path_join(config.game_dir, d_name);
+		ald_count[ASSET_DATA] = max(ald_count[ASSET_DATA], dno + 1);
+		return true;
+	default:
+		WARNING("Unhandled ALD file: %s", display_utf0(d_name));
+		return false;
+	}
+}
+
 void asset_manager_init(void)
 {
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
@@ -812,47 +848,26 @@ void asset_manager_init(void)
 	size_t base_len = strlen(base);
 
 	bool ex_is_canonical = false;
+	bool has_base_ald = false;
+	char **fallback_alds = NULL;
+	size_t nr_fallback_alds = 0;
 
 	// get ALD filenames
 	while ((d_name = readdir_utf8(dir))) {
-		// archive filename must begin with ain filename
-		if (strncasecmp(base, d_name, base_len))
-			goto loop_next;
 		const char *ext = file_extension(d_name);
 		if (!ext)
 			goto loop_next;
+		// archive filename must normally begin with ain filename; retain *.ald candidates for renamed CN AINs
+		if (strncasecmp(base, d_name, base_len)) {
+			if (!strcasecmp(ext, "ald")) {
+				fallback_alds = xrealloc(fallback_alds, (nr_fallback_alds + 1) * sizeof(*fallback_alds));
+				fallback_alds[nr_fallback_alds++] = xstrdup(d_name);
+			}
+			goto loop_next;
+		}
 		if (!strcasecmp(ext, "ald")) {
-			int dno = toupper(d_name[base_len+1]) - 'A';
-			if (dno < 0 || dno >= ALD_FILEMAX) {
-				WARNING("Invalid ALD index: %s", display_utf0(d_name));
-				goto loop_next;
-			}
-
-			switch (d_name[base_len]) {
-			case 'b':
-			case 'B':
-				ald_filenames[ASSET_BGM][dno] = path_join(config.game_dir, d_name);
-				ald_count[ASSET_BGM] = max(ald_count[ASSET_BGM], dno+1);
-				break;
-			case 'g':
-			case 'G':
-				ald_filenames[ASSET_CG][dno] = path_join(config.game_dir, d_name);
-				ald_count[ASSET_CG] = max(ald_count[ASSET_CG], dno+1);
-				break;
-			case 'w':
-			case 'W':
-				ald_filenames[ASSET_SOUND][dno] = path_join(config.game_dir, d_name);
-				ald_count[ASSET_SOUND] = max(ald_count[ASSET_SOUND], dno+1);
-				break;
-			case 'd':
-			case 'D':
-				ald_filenames[ASSET_DATA][dno] = path_join(config.game_dir, d_name);
-				ald_count[ASSET_DATA] = max(ald_count[ASSET_DATA], dno+1);
-				break;
-			default:
-				WARNING("Unhandled ALD file: %s", display_utf0(d_name));
-				break;
-			}
+			if (strlen(d_name) > base_len + 1 && register_ald_file(ald_filenames, ald_count, d_name, base_len))
+				has_base_ald = true;
 		} else if (!strcasecmp(ext, "bgi")) {
 			if (config.bgi_path) {
 				WARNING("Multiple bgi files");
@@ -902,6 +917,34 @@ void asset_manager_init(void)
 	}
 	closedir_utf8(dir);
 	free(base);
+
+	if (!has_base_ald && nr_fallback_alds > 0) {
+		char *fallback_prefix = NULL;
+		size_t fallback_prefix_len = 0;
+		for (size_t i = 0; i < nr_fallback_alds; i++) {
+			const char *fn = fallback_alds[i];
+			size_t len = strlen(fn);
+			if (len <= 6 || strcasecmp(fn + len - 4, ".ald"))
+				continue;
+			size_t plen = len - 6;
+			char kind = (char)toupper((unsigned char)fn[plen]);
+			char disk = (char)toupper((unsigned char)fn[plen + 1]);
+			if ((kind != 'B' && kind != 'G' && kind != 'W' && kind != 'D') || disk < 'A' || disk > 'Z')
+				continue;
+			if (!fallback_prefix) {
+				fallback_prefix = xmalloc(plen + 1);
+				memcpy(fallback_prefix, fn, plen);
+				fallback_prefix[plen] = '\0';
+				fallback_prefix_len = plen;
+			}
+			if (plen == fallback_prefix_len && !strncasecmp(fn, fallback_prefix, fallback_prefix_len))
+				register_ald_file(ald_filenames, ald_count, fn, plen);
+		}
+		free(fallback_prefix);
+	}
+	for (size_t i = 0; i < nr_fallback_alds; i++)
+		free(fallback_alds[i]);
+	free(fallback_alds);
 
 	// open ALD archives
 	ald_init(ASSET_BGM, ald_filenames[ASSET_BGM], ald_count[ASSET_BGM]);

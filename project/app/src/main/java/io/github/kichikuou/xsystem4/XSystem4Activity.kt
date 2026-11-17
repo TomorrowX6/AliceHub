@@ -85,6 +85,26 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isEvenicleGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isSengokuRanceGame(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        return GameModifierBridge.isSengokuRanceGameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isRance03Game(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        return GameModifierBridge.isRance03GameDir(root, saveDir?.name, saveDir)
+    }
+
+    private fun syncAllLocksToNative() {
+        GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
+        GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
+        GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
+        GameModifierBridge.setSrLiveLocks(GameModifierBridge.getSavedSrLockMask(this))
+        GameModifierBridge.setR03LiveLocks(GameModifierBridge.getSavedR03LockMask(this))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ErrorReportKit.installUncaughtExceptionHandler(this)
         ErrorReportKit.ensureSeenBaselineInitialized(this, offsetMs = -1000L)
@@ -107,9 +127,7 @@ class XSystem4Activity : SDLActivity() {
         try {
             GameModifierBridge.syncNativeConfigPath(this)
             GameModifierBridge.syncUiScaleToNative(this)
-            GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
-            GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
-            GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
+            syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
         } catch (_: Throwable) {
         }
@@ -316,9 +334,7 @@ class XSystem4Activity : SDLActivity() {
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
                 GameModifierBridge.syncUiScaleToNative(this)
-                GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
-                GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
-                GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
+                syncAllLocksToNative()
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }
@@ -339,9 +355,7 @@ class XSystem4Activity : SDLActivity() {
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
                 GameModifierBridge.syncUiScaleToNative(this)
-                GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
-                GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
-                GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
+                syncAllLocksToNative()
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
             }

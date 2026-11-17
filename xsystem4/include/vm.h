@@ -30,6 +30,7 @@ struct string;
 // xsystem4-specific system calls (used for hacks)
 enum vm_extra_syscall {
 	VM_XSYS_KEY_IS_DOWN = 0x80000000,
+	VM_XSYS_FIT_RANCE03_MESSAGE,
 };
 
 // Non-heap values. Stored in pages and on the stack.

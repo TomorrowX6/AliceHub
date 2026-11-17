@@ -70,19 +70,18 @@
     <string name="save_dir_invalid_name">Invalid directory name</string>
 
     <string name="save_import_title">Import Saves</string>
-    <string name="save_import_opt_zip">From Archive</string>
     <string name="save_import_opt_dir">From Folder</string>
-    <string name="save_import_opt_files">Select Save Files</string>
+    <string name="save_import_opt_files">From Files / Archive</string>
 
     <string name="save_export_empty_toast">No saves to export</string>
     <string name="save_export_title">Export Saves</string>
-    <string name="save_export_opt_zip">Export as ZIP</string>
-    <string name="save_export_opt_dir">Export to Folder</string>
+    <string name="save_export_opt_pc_zip">Export PC Save · ZIP</string>
+    <string name="save_export_opt_pc_dir">Export PC Save to Folder</string>
+    <string name="save_export_opt_zip">Export Raw Backup · ZIP</string>
+    <string name="save_export_opt_dir">Export Raw Backup to Folder</string>
 
-    <string name="save_chooser_import_zip">Select Save Archive</string>
-    <string name="save_chooser_import_files">Select Save Files</string>
+    <string name="save_chooser_import_files">Select Save Files or Archive</string>
 
-    <string name="save_progress_import_zip">Importing…</string>
     <string name="save_progress_import_dir">Importing…</string>
     <string name="save_progress_import_files">Importing…</string>
     <string name="save_progress_export_zip">Exporting…</string>
@@ -91,7 +90,6 @@
 
     <string name="save_import_done_title">Import Complete</string>
     <string name="save_import_failed_title">Import Failed</string>
-    <string name="save_import_zip_done_msg">Imported %1$d save files</string>
     <string name="save_import_dir_done_msg">Imported %1$d save files</string>
     <string name="save_import_files_done_msg">Imported %1$d save files</string>
 
@@ -99,9 +97,11 @@
     <string name="save_export_failed_title">Export Failed</string>
     <string name="save_export_zip_done_msg">Exported %1$d save files</string>
     <string name="save_export_dir_done_msg">Exported %1$d save files</string>
+    <string name="save_export_pc_converted_done_msg">Exported %1$d PC-compatible save files, %2$d converted</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">Export File</string>
+    <string name="save_file_opt_export_pc">Export as PC Format</string>
     <string name="save_file_opt_backup">Create Backup</string>
     <string name="save_file_opt_rename">Rename</string>
     <string name="save_file_opt_delete">Delete</string>
@@ -229,6 +229,8 @@
     <string name="game_rance10_title">Rance 10: Showdown</string>
     <string name="game_dohnadohna_title">Dohna Dohna: Let\'s Do Bad Things Together</string>
     <string name="game_evenicle_title">Evenicle</string>
+    <string name="game_sengokurance_title">Sengoku Rance</string>
+    <string name="game_rance03_title">Rance 03: Fall of Leazas</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

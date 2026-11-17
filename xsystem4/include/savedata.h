@@ -38,6 +38,9 @@ int serialize_structs(const char *filename, struct page *struct_page_list, bool 
 int deserialize_structs(const char *filename, struct page *struct_page_list, bool save_folder);
 int write_serialize_struct_comment(const char *filename, const struct string *comment, bool save_folder);
 int read_serialize_struct_comment(const char *filename, struct string **comment_out, bool save_folder);
+bool x4ss_is_container_file(const char *path);
+bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path);
+bool savedata_export_pc_file(const char *src_path, const char *dst_path);
 int delete_save_file(const char *filename);
 void savedata_flush_on_background(void);
 void savedata_reset(void);

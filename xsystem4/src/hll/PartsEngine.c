@@ -164,6 +164,19 @@ static struct string *PartsEngine_GetMessageVariableString_v12(int index)
 	return text;
 }
 
+static void PartsEngine_GetActivityIntentDataDestination_v6(struct string **out, int index,
+		struct string *name, struct string *part)
+{
+	struct string *s = PE_GetActivityIntentDataDestination(index, name, part);
+	if (out) {
+		if (*out)
+			free_string(*out);
+		*out = s;
+	} else if (s) {
+		free_string(s);
+	}
+}
+
 // These entry points complete their work on the render thread, which owns GL.
 // When they return there is no pending upload for the script to wait for.
 static bool PartsEngine_SetPartsCGThread(int no, struct string *name, int state)
@@ -2901,10 +2914,19 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetActivityBG, PE_SetActivityBG),
 	    HLL_EXPORT(GetActivityBG, PE_GetActivityBG),
 	    HLL_EXPORT(AddActivityCloseParts, PE_AddActivityCloseParts),
+	    HLL_EXPORT(RemoveActivityCloseParts, PE_RemoveActivityCloseParts),
+	    HLL_EXPORT(RemoveAllActivityCloseParts, PE_RemoveAllActivityCloseParts),
 	    HLL_EXPORT(IsExistActivityCloseParts, PE_IsExistActivityCloseParts),
+	    HLL_EXPORT(SetActivityIntentData, PE_SetActivityIntentData),
+	    HLL_EXPORT(AddActivityIntentDataDestination, PE_AddActivityIntentDataDestination),
+	    HLL_EXPORT(IsExistActivityIntentData, PE_IsExistActivityIntentData),
+	    HLL_EXPORT(NumofActivityIntentDataDestination, PE_NumofActivityIntentDataDestination),
+	    HLL_EXPORT(GetActivityIntentDataDestination, PartsEngine_GetActivityIntentDataDestination_v6),
+	    HLL_EXPORT(GetActivityIntentDataType, PE_GetActivityIntentDataType),
 	    HLL_EXPORT(AddActivityLockedParts, PE_AddActivityLockedParts),
 	    HLL_EXPORT(IsExistActivityLockedParts, PE_IsExistActivityLockedParts),
 	    HLL_EXPORT(SetActivityEndKey, PE_SetActivityEndKey),
+	    HLL_EXPORT(PauseMotion, PE_PauseMotion),
 	    HLL_EXPORT(EraseActivityEndKey, PE_EraseActivityEndKey),
 	    HLL_EXPORT(IsExistActivityEndKey, PE_IsExistActivityEndKey),
 	    HLL_EXPORT(NumofActivityEndKey, PE_NumofActivityEndKey),

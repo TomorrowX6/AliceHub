@@ -74,6 +74,23 @@ static int s_last_observed_summary_mode = -1;
 #define LOCK_EV_ONE_HIT_KILL      (1 << 4)
 #define LOCK_EV_INFINITE_MONEY    (1 << 5)
 
+/* Lock bitmask flags (Sengoku Rance) */
+#define LOCK_SR_INF_GOLD          (1 << 0)
+#define LOCK_SR_INF_AP            (1 << 1)
+#define LOCK_SR_MAX_SAT           (1 << 2)
+#define LOCK_SR_ALLY_FULL_HP      (1 << 3)
+#define LOCK_SR_ONE_HIT_KILL      (1 << 4)
+#define LOCK_SR_UNLIM_ACTION      (1 << 5)
+
+/* Lock bitmask flags (Rance 03) */
+#define LOCK_R03_HP               (1 << 0)
+#define LOCK_R03_NO_CD            (1 << 1)
+#define LOCK_R03_INF_ITEMS        (1 << 2)
+#define LOCK_R03_DROP_100         (1 << 3)
+#define LOCK_R03_ONE_HIT_KILL     (1 << 4)
+
+void vm_call_method_1(int fno, int struct_page, int value);
+
 /* Shift-JIS global/member names for Evenicle (Evenicle.ain v6) */
 /* NOTE: split hex escapes before [0-9a-fA-F] so C doesn't fold them into >0xFF. */
 #define EV_G_CHARA_DATA   "g_a\x83L\x83\x83\x83\x89\x83" "f\x81[\x83^"
@@ -145,6 +162,10 @@ static int g_dohna_lock_mask = 0;
 static bool g_has_dohna_lock_mask_init = false;
 static int g_evenicle_lock_mask = 0;
 static bool g_has_evenicle_lock_mask_init = false;
+static int g_sr_lock_mask = 0;
+static bool g_has_sr_lock_mask_init = false;
+static int g_r03_lock_mask = 0;
+static bool g_has_r03_lock_mask_init = false;
 static int g_font_scale_pct = 100;
 static int g_scrollbar_scale_pct = 100;
 static bool g_has_ui_scale_init = false;
@@ -330,6 +351,8 @@ static void persist_modifier_config_from_native(int lock_mask)
 	int cur_sb_pct = 100;
 	int cur_dd_mask = 0;
 	int cur_ev_mask = 0;
+	int cur_sr_mask = 0;
+	int cur_r03_mask = 0;
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_modifier_config_path && g_modifier_config_path[0])
 		cfg_path = strdup(g_modifier_config_path);
@@ -337,6 +360,8 @@ static void persist_modifier_config_from_native(int lock_mask)
 	cur_sb_pct = g_scrollbar_scale_pct;
 	cur_dd_mask = g_dohna_lock_mask;
 	cur_ev_mask = g_evenicle_lock_mask;
+	cur_sr_mask = g_sr_lock_mask;
+	cur_r03_mask = g_r03_lock_mask;
 	pthread_mutex_unlock(&g_mod_mutex);
 
 #ifndef __ANDROID__
@@ -375,17 +400,23 @@ static void persist_modifier_config_from_native(int lock_mask)
 	cJSON *j_mask = cJSON_GetObjectItem(root, "lock_mask");
 	cJSON *j_dd_mask = cJSON_GetObjectItem(root, "dohna_lock_mask");
 	cJSON *j_ev_mask = cJSON_GetObjectItem(root, "evenicle_lock_mask");
+	cJSON *j_sr_mask = cJSON_GetObjectItem(root, "sengokurance_lock_mask");
+	cJSON *j_r03_mask = cJSON_GetObjectItem(root, "rance03_lock_mask");
 	cJSON *j_font = cJSON_GetObjectItem(root, "font_scale_pct");
 	cJSON *j_sb = cJSON_GetObjectItem(root, "scrollbar_scale_pct");
 	bool cur_dis = j_dis ? cJSON_IsTrue(j_dis) : false;
 	int cur_mask = (j_mask && cJSON_IsNumber(j_mask)) ? j_mask->valueint : -1;
 	int disk_dd_mask = (j_dd_mask && cJSON_IsNumber(j_dd_mask)) ? j_dd_mask->valueint : 0;
 	int disk_ev_mask = (j_ev_mask && cJSON_IsNumber(j_ev_mask)) ? j_ev_mask->valueint : 0;
+	int disk_sr_mask = (j_sr_mask && cJSON_IsNumber(j_sr_mask)) ? j_sr_mask->valueint : 0;
+	int disk_r03_mask = (j_r03_mask && cJSON_IsNumber(j_r03_mask)) ? j_r03_mask->valueint : 0;
 	int disk_font = (j_font && cJSON_IsNumber(j_font)) ? j_font->valueint : -1;
 	int disk_sb = (j_sb && cJSON_IsNumber(j_sb)) ? j_sb->valueint : -1;
 	if (j_dis && j_mask && cur_dis == want_dis && cur_mask == lock_mask &&
 	    (!g_has_dohna_lock_mask_init || (j_dd_mask && disk_dd_mask == cur_dd_mask)) &&
 	    (!g_has_evenicle_lock_mask_init || (j_ev_mask && disk_ev_mask == cur_ev_mask)) &&
+	    (!g_has_sr_lock_mask_init || (j_sr_mask && disk_sr_mask == cur_sr_mask)) &&
+	    (!g_has_r03_lock_mask_init || (j_r03_mask && disk_r03_mask == cur_r03_mask)) &&
 	    disk_font == cur_font_pct && disk_sb == cur_sb_pct) {
 		cJSON_Delete(root);
 		free(cfg_path);
@@ -406,6 +437,14 @@ static void persist_modifier_config_from_native(int lock_mask)
 	if (g_has_evenicle_lock_mask_init || j_ev_mask) {
 		cJSON_DeleteItemFromObject(root, "evenicle_lock_mask");
 		cJSON_AddNumberToObject(root, "evenicle_lock_mask", g_has_evenicle_lock_mask_init ? cur_ev_mask : disk_ev_mask);
+	}
+	if (g_has_sr_lock_mask_init || j_sr_mask) {
+		cJSON_DeleteItemFromObject(root, "sengokurance_lock_mask");
+		cJSON_AddNumberToObject(root, "sengokurance_lock_mask", g_has_sr_lock_mask_init ? cur_sr_mask : disk_sr_mask);
+	}
+	if (g_has_r03_lock_mask_init || j_r03_mask) {
+		cJSON_DeleteItemFromObject(root, "rance03_lock_mask");
+		cJSON_AddNumberToObject(root, "rance03_lock_mask", g_has_r03_lock_mask_init ? cur_r03_mask : disk_r03_mask);
 	}
 	cJSON_DeleteItemFromObject(root, "font_scale_pct");
 	cJSON_AddNumberToObject(root, "font_scale_pct", cur_font_pct);
@@ -2259,7 +2298,8 @@ static void maybe_load_initial_modifier_config(void)
 {
 	char *cfg_path = NULL;
 	pthread_mutex_lock(&g_mod_mutex);
-	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init && g_has_ui_scale_init) {
+	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init &&
+	    g_has_sr_lock_mask_init && g_has_r03_lock_mask_init && g_has_ui_scale_init) {
 		pthread_mutex_unlock(&g_mod_mutex);
 		return;
 	}
@@ -2294,12 +2334,16 @@ static void maybe_load_initial_modifier_config(void)
 	cJSON *j_mask = cJSON_GetObjectItem(root, "lock_mask");
 	cJSON *j_dd   = cJSON_GetObjectItem(root, "dohna_lock_mask");
 	cJSON *j_ev   = cJSON_GetObjectItem(root, "evenicle_lock_mask");
+	cJSON *j_sr   = cJSON_GetObjectItem(root, "sengokurance_lock_mask");
+	cJSON *j_r03  = cJSON_GetObjectItem(root, "rance03_lock_mask");
 	cJSON *j_dis  = cJSON_GetObjectItem(root, "disable_streamer_mode");
 	cJSON *j_font = cJSON_GetObjectItem(root, "font_scale_pct");
 	cJSON *j_sb   = cJSON_GetObjectItem(root, "scrollbar_scale_pct");
 	int mask = (j_mask && cJSON_IsNumber(j_mask)) ? j_mask->valueint : 0;
 	int dd_mask = (j_dd && cJSON_IsNumber(j_dd)) ? j_dd->valueint : 0;
 	int ev_mask = (j_ev && cJSON_IsNumber(j_ev)) ? j_ev->valueint : 0;
+	int sr_mask = (j_sr && cJSON_IsNumber(j_sr)) ? j_sr->valueint : 0;
+	int r03_mask = (j_r03 && cJSON_IsNumber(j_r03)) ? j_r03->valueint : 0;
 	if (j_dis && cJSON_IsTrue(j_dis))
 		mask |= LOCK_DISABLE_STREAMER_MODE;
 	int font_pct = (j_font && cJSON_IsNumber(j_font)) ? clamp_font_scale_pct(j_font->valueint) : 100;
@@ -2320,6 +2364,14 @@ static void maybe_load_initial_modifier_config(void)
 	if (!g_has_evenicle_lock_mask_init) {
 		g_has_evenicle_lock_mask_init = true;
 		g_evenicle_lock_mask = ev_mask;
+	}
+	if (!g_has_sr_lock_mask_init) {
+		g_has_sr_lock_mask_init = true;
+		g_sr_lock_mask = sr_mask;
+	}
+	if (!g_has_r03_lock_mask_init) {
+		g_has_r03_lock_mask_init = true;
+		g_r03_lock_mask = r03_mask;
 	}
 	if (!g_has_ui_scale_init) {
 		g_has_ui_scale_init = true;
@@ -4932,21 +4984,834 @@ static void vm_ev_populate_live_state_json(cJSON *root)
 	cJSON_AddItemToObject(root, "evCharacters", j_chars);
 }
 
+/* =========================================================================
+ * Sengoku Rance Live In-Game Modifier Support (AliceCN.ain / Rance7 v5)
+ * ========================================================================= */
+
+#define SR_G_SEIRYOKU     "\x90\xa8\x97\xcd"
+#define SR_G_TURN         "\x81\x9f\x83^\x81[\x83\x93"
+#define SR_G_SATISFACTION "\x81\x9f\x96\x9e\x91\xab\x93x"
+#define SR_G_GOLD         "\x81\x9f\x8b\xe0"
+#define SR_G_TROOP_LIMIT  "\x81\x9f\x95\xba\x90\x94\x90\xa7\x8c\xc0"
+#define SR_G_AP           "\x81\x9f\x83R\x83}\x83\x93\x83h\x8e\xc0\x8ds\x90\x94"
+#define SR_G_AP_MAX       "\x81\x9f\x83R\x83}\x83\x93\x83h\x8e\xc0\x8ds\x90\x94\x8d\xc5\x91\xe5"
+
+static struct ain *s_sr_inspected_ain = NULL;
+static bool s_sr_compatible = false;
+static int s_sr_glob_seiryoku = -1;
+static int s_sr_glob_gs = -1;
+static int s_sr_glob_turn = -1;
+static int s_sr_glob_sat = -1;
+static int s_sr_glob_gold = -1;
+static int s_sr_glob_troop_lim = -1;
+static int s_sr_glob_ap = -1;
+static int s_sr_glob_ap_max = -1;
+static int s_sr_glob_sansen = -1;
+static int s_sr_glob_teki = -1;
+static int s_sr_glob_battle = -1;
+static int s_sr_st_chara = -1;
+static int s_sr_st_seiryoku = -1;
+
+static int sr_find_member_idx(int st_idx, const char *sjis_name, int fallback)
+{
+	if (!ain || st_idx < 0 || st_idx >= ain->nr_structures)
+		return fallback;
+	struct ain_struct *st = &ain->structures[st_idx];
+	if (sjis_name) {
+		for (int i = 0; i < st->nr_members; i++) {
+			if (st->members[i].name && !strcmp(st->members[i].name, sjis_name))
+				return i;
+		}
+	}
+	return (fallback >= 0 && fallback < st->nr_members) ? fallback : -1;
+}
+
+static void vm_inspect_sr_ain(void)
+{
+	if (!vm_globals_ready() || ain == s_sr_inspected_ain)
+		return;
+	s_sr_inspected_ain = ain;
+	s_sr_compatible = false;
+	if (!game_sengokurance)
+		return;
+	s_sr_glob_seiryoku = vm_find_global_idx(SR_G_SEIRYOKU, NULL);
+	s_sr_glob_gs = vm_find_global_idx("gs", NULL);
+	s_sr_glob_turn = vm_find_global_idx(SR_G_TURN, NULL);
+	s_sr_glob_sat = vm_find_global_idx(SR_G_SATISFACTION, NULL);
+	s_sr_glob_gold = vm_find_global_idx(SR_G_GOLD, NULL);
+	s_sr_glob_troop_lim = vm_find_global_idx(SR_G_TROOP_LIMIT, NULL);
+	s_sr_glob_ap = vm_find_global_idx(SR_G_AP, NULL);
+	s_sr_glob_ap_max = vm_find_global_idx(SR_G_AP_MAX, NULL);
+	s_sr_glob_sansen = vm_find_global_idx("g_sSansen", NULL);
+	s_sr_glob_teki = vm_find_global_idx("g_sTeki", NULL);
+	s_sr_glob_battle = vm_find_global_idx("g_sBattle", NULL);
+	s_sr_st_chara = ain_get_struct(ain, "s\x83L\x83\x83\x83\x89");
+	s_sr_st_seiryoku = ain_get_struct(ain, "s\x90\xa8\x97\xcd");
+	if (s_sr_glob_gs >= 0 && s_sr_glob_gold >= 0 && s_sr_glob_ap >= 0 && s_sr_glob_ap_max >= 0
+			&& s_sr_st_chara >= 0 && sr_find_member_idx(s_sr_st_chara, "\x95\xba\x90\x94", 21) == 21
+			&& sr_find_member_idx(s_sr_st_chara, "\x95\xba\x90\x94\x8d\x87\x90\xed", 23) == 23) {
+		s_sr_compatible = true;
+	}
+}
+
+static struct page *sr_faction_char_array(int faction)
+{
+	struct page *gs = s_sr_glob_gs >= 0 ? vm_get_global_page_idx(s_sr_glob_gs) : NULL;
+	if (!gs || gs->type != ARRAY_PAGE || gs->array.rank != 2)
+		return NULL;
+	if (faction < 0 || faction >= gs->nr_vars)
+		return NULL;
+	struct page *row = vm_safe_get_page(gs->values[faction].i);
+	return (row && row->type == ARRAY_PAGE && row->array.rank == 1) ? row : NULL;
+}
+
+static struct page *sr_get_chara_page(int faction, int char_idx)
+{
+	struct page *row = sr_faction_char_array(faction);
+	if (!row || char_idx < 1 || char_idx >= row->nr_vars)
+		return NULL;
+	struct page *ch = vm_safe_get_page(row->values[char_idx].i);
+	if (!ch || ch->type != STRUCT_PAGE || ch->index != s_sr_st_chara || ch->nr_vars < 70)
+		return NULL;
+	if (ch->values[1].i <= 0)
+		return NULL;
+	return ch;
+}
+
+static int sr_detect_player_faction(void)
+{
+	struct page *bt = s_sr_glob_battle >= 0 ? vm_get_global_page_idx(s_sr_glob_battle) : NULL;
+	if (bt && vm_get_field_int(bt, "m_nEnable", NULL, 0) != 0) {
+		int m = vm_get_field_int(bt, "m_nMikataNo", NULL, 1);
+		if (m > 0 && sr_faction_char_array(m))
+			return m;
+	}
+	if (sr_faction_char_array(1))
+		return 1;
+	return 1;
+}
+
+static bool sr_has_active_roster_unit(int glob_idx)
+{
+	struct page *list = glob_idx >= 0 ? vm_get_global_page_idx(glob_idx) : NULL;
+	struct page *arr = list ? vm_get_field_page(list, "m_asBusho", NULL) : NULL;
+	if (!arr || arr->type != ARRAY_PAGE)
+		return false;
+	for (int i = 0; i < arr->nr_vars; i++) {
+		struct page *bb = vm_safe_get_page(arr->values[i].i);
+		if (bb && vm_get_field_int(bb, "m_bBattle", NULL, 0)
+				&& !vm_get_field_int(bb, "m_bDestroy", NULL, 0))
+			return true;
+	}
+	return false;
+}
+
+static bool sr_is_in_battle(void)
+{
+	struct page *bt = s_sr_glob_battle >= 0 ? vm_get_global_page_idx(s_sr_glob_battle) : NULL;
+	if (!bt || vm_get_field_int(bt, "m_nEnable", NULL, 0) <= 0)
+		return false;
+	return sr_has_active_roster_unit(s_sr_glob_teki) || sr_has_active_roster_unit(s_sr_glob_sansen);
+}
+
+static void sr_iterate_battle_roster(int glob_idx, bool heal_allies, bool drain_enemies,
+		int *out_cnt, int *out_total_troops)
+{
+	struct page *list = glob_idx >= 0 ? vm_get_global_page_idx(glob_idx) : NULL;
+	struct page *arr = list ? vm_get_field_page(list, "m_asBusho", NULL) : NULL;
+	if (!arr || arr->type != ARRAY_PAGE)
+		return;
+	int cnt = 0, total = 0;
+	for (int i = 0; i < arr->nr_vars; i++) {
+		struct page *bb = vm_safe_get_page(arr->values[i].i);
+		if (!bb || !vm_get_field_int(bb, "m_bBattle", NULL, 0)
+				|| vm_get_field_int(bb, "m_bDestroy", NULL, 0))
+			continue;
+		struct page *bno = vm_get_field_page(bb, "m_sBushoNo", NULL);
+		if (!bno)
+			continue;
+		int f = vm_get_field_int(bno, "m_nSeiryokuNo", NULL, -1);
+		int c = vm_get_field_int(bno, "m_nCharaNo", NULL, -1);
+		struct page *ch = sr_get_chara_page(f, c);
+		if (!ch)
+			continue;
+		if (heal_allies) {
+			int32_t mx = ch->values[22].i > 0 ? ch->values[22].i : 1;
+			if (ch->values[21].i < mx)
+				ch->values[21].i = mx;
+			if (ch->values[23].i < mx)
+				ch->values[23].i = mx;
+			if (ch->values[30].i < ch->values[29].i)
+				ch->values[30].i = ch->values[29].i;
+		}
+		if (drain_enemies && ch->values[23].i > 1)
+			ch->values[23].i = 1;
+		cnt++;
+		total += ch->values[23].i;
+	}
+	if (out_cnt) *out_cnt = cnt;
+	if (out_total_troops) *out_total_troops = total;
+}
+
+static void vm_enforce_sr_locks(int sr_mask)
+{
+	vm_inspect_sr_ain();
+	if (!s_sr_compatible || !sr_mask)
+		return;
+	int turn = s_sr_glob_turn >= 0 ? global_get(s_sr_glob_turn).i : 0;
+	int pf = sr_detect_player_faction();
+	struct page *row = sr_faction_char_array(pf);
+	if (turn <= 0 && !row)
+		return;
+
+	if ((sr_mask & LOCK_SR_INF_GOLD) && s_sr_glob_gold >= 0) {
+		if (global_get(s_sr_glob_gold).i < 999999)
+			heap[0].page->values[s_sr_glob_gold].i = 999999;
+	}
+	if ((sr_mask & LOCK_SR_INF_AP) && s_sr_glob_ap >= 0 && s_sr_glob_ap_max >= 0) {
+		int32_t ap_max = global_get(s_sr_glob_ap_max).i;
+		if (ap_max > 0 && global_get(s_sr_glob_ap).i < ap_max)
+			heap[0].page->values[s_sr_glob_ap].i = ap_max;
+	}
+	if ((sr_mask & LOCK_SR_MAX_SAT) && s_sr_glob_sat >= 0) {
+		if (global_get(s_sr_glob_sat).i < 999)
+			heap[0].page->values[s_sr_glob_sat].i = 999;
+	}
+	if (row && (sr_mask & (LOCK_SR_ALLY_FULL_HP | LOCK_SR_UNLIM_ACTION))) {
+		for (int c = 1; c < row->nr_vars; c++) {
+			struct page *ch = sr_get_chara_page(pf, c);
+			if (!ch)
+				continue;
+			if (sr_mask & LOCK_SR_ALLY_FULL_HP) {
+				int32_t mx = ch->values[22].i;
+				if (mx > 0 && ch->values[21].i < mx)
+					ch->values[21].i = mx;
+				if (ch->values[30].i < ch->values[29].i)
+					ch->values[30].i = ch->values[29].i;
+			}
+			if (sr_mask & LOCK_SR_UNLIM_ACTION)
+				ch->values[8].i = 0;
+		}
+	}
+	if (sr_is_in_battle()) {
+		if (sr_mask & LOCK_SR_ALLY_FULL_HP)
+			sr_iterate_battle_roster(s_sr_glob_sansen, true, false, NULL, NULL);
+		if (sr_mask & LOCK_SR_ONE_HIT_KILL)
+			sr_iterate_battle_roster(s_sr_glob_teki, false, true, NULL, NULL);
+	}
+}
+
+static void sr_apply_char_edit(struct page *ch, cJSON *ce)
+{
+	if (!ch || !ce)
+		return;
+	cJSON *it;
+	if ((it = cJSON_GetObjectItem(ce, "troopsMax")) && cJSON_IsNumber(it))
+		ch->values[22].i = vm_dd_clamp(it->valueint, 1, 99999);
+	if ((it = cJSON_GetObjectItem(ce, "troops")) && cJSON_IsNumber(it)) {
+		int32_t tv = vm_dd_clamp(it->valueint, 0, 99999);
+		if (tv > ch->values[22].i)
+			ch->values[22].i = tv;
+		ch->values[21].i = tv;
+		if (sr_is_in_battle())
+			ch->values[23].i = tv;
+	}
+	if ((it = cJSON_GetObjectItem(ce, "atk")) && cJSON_IsNumber(it))
+		ch->values[32].i = vm_dd_clamp(it->valueint, 0, 999);
+	if ((it = cJSON_GetObjectItem(ce, "def")) && cJSON_IsNumber(it))
+		ch->values[33].i = vm_dd_clamp(it->valueint, 0, 999);
+	if ((it = cJSON_GetObjectItem(ce, "intel")) && cJSON_IsNumber(it))
+		ch->values[34].i = vm_dd_clamp(it->valueint, 0, 999);
+	if ((it = cJSON_GetObjectItem(ce, "spd")) && cJSON_IsNumber(it))
+		ch->values[35].i = vm_dd_clamp(it->valueint, 0, 999);
+	if ((it = cJSON_GetObjectItem(ce, "love")) && cJSON_IsNumber(it))
+		ch->values[11].i = vm_dd_clamp(it->valueint, 0, 99999);
+	if ((it = cJSON_GetObjectItem(ce, "wazaMax")) && cJSON_IsNumber(it))
+		ch->values[29].i = vm_dd_clamp(it->valueint, 0, 99);
+	if ((it = cJSON_GetObjectItem(ce, "wazaNow")) && cJSON_IsNumber(it))
+		ch->values[30].i = vm_dd_clamp(it->valueint, 0, 99);
+	if ((it = cJSON_GetObjectItem(ce, "resetAction")) && cJSON_IsTrue(it))
+		ch->values[8].i = 0;
+}
+
+static void vm_execute_sr_action(const char *json_str)
+{
+	if (!json_str || !json_str[0])
+		return;
+	cJSON *act = cJSON_Parse(json_str);
+	if (!act)
+		return;
+
+	vm_inspect_sr_ain();
+	cJSON *it;
+	bool persist_cfg = false;
+	int save_r10_mask = 0;
+	pthread_mutex_lock(&g_mod_mutex);
+	if ((it = cJSON_GetObjectItem(act, "setSrLockMask")) && cJSON_IsNumber(it)) {
+		g_sr_lock_mask = it->valueint;
+		g_has_sr_lock_mask_init = true;
+		persist_cfg = true;
+	}
+	save_r10_mask = g_live_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	vm_apply_ui_scale_from_json(act, &persist_cfg, &save_r10_mask);
+	if (persist_cfg)
+		persist_modifier_config_from_native(save_r10_mask);
+
+	if (!s_sr_compatible) {
+		cJSON_Delete(act);
+		return;
+	}
+	int pf = sr_detect_player_faction();
+	struct page *row = sr_faction_char_array(pf);
+
+	if ((it = cJSON_GetObjectItem(act, "srAddGold")) && cJSON_IsNumber(it) && s_sr_glob_gold >= 0) {
+		int64_t next = (int64_t)global_get(s_sr_glob_gold).i + (int64_t)it->valueint;
+		heap[0].page->values[s_sr_glob_gold].i = vm_dd_clamp((int32_t)(next > 99999999LL ? 99999999LL : next), 0, 99999999);
+	}
+	if ((it = cJSON_GetObjectItem(act, "srGold")) && cJSON_IsNumber(it) && s_sr_glob_gold >= 0)
+		heap[0].page->values[s_sr_glob_gold].i = vm_dd_clamp(it->valueint, 0, 99999999);
+	if ((it = cJSON_GetObjectItem(act, "srAp")) && cJSON_IsNumber(it) && s_sr_glob_ap >= 0)
+		heap[0].page->values[s_sr_glob_ap].i = vm_dd_clamp(it->valueint, 0, 999);
+	if ((it = cJSON_GetObjectItem(act, "srApMax")) && cJSON_IsNumber(it) && s_sr_glob_ap_max >= 0)
+		heap[0].page->values[s_sr_glob_ap_max].i = vm_dd_clamp(it->valueint, 1, 99);
+	if ((it = cJSON_GetObjectItem(act, "srRefillAp")) && cJSON_IsTrue(it) && s_sr_glob_ap >= 0 && s_sr_glob_ap_max >= 0)
+		heap[0].page->values[s_sr_glob_ap].i = global_get(s_sr_glob_ap_max).i;
+	if ((it = cJSON_GetObjectItem(act, "srSatisfaction")) && cJSON_IsNumber(it) && s_sr_glob_sat >= 0)
+		heap[0].page->values[s_sr_glob_sat].i = vm_dd_clamp(it->valueint, 0, 9999);
+	if ((it = cJSON_GetObjectItem(act, "srTroopLimit")) && cJSON_IsNumber(it) && s_sr_glob_troop_lim >= 0)
+		heap[0].page->values[s_sr_glob_troop_lim].i = vm_dd_clamp(it->valueint, 0, 99999);
+
+	if ((it = cJSON_GetObjectItem(act, "srResetAllActions")) && cJSON_IsTrue(it) && row) {
+		for (int c = 1; c < row->nr_vars; c++) {
+			struct page *ch = sr_get_chara_page(pf, c);
+			if (ch) ch->values[8].i = 0;
+		}
+	}
+	if ((it = cJSON_GetObjectItem(act, "srHealAllTroops")) && cJSON_IsTrue(it) && row) {
+		for (int c = 1; c < row->nr_vars; c++) {
+			struct page *ch = sr_get_chara_page(pf, c);
+			if (!ch) continue;
+			if (ch->values[22].i > 0) {
+				ch->values[21].i = ch->values[22].i;
+				if (sr_is_in_battle()) ch->values[23].i = ch->values[22].i;
+			}
+			if (ch->values[29].i > 0)
+				ch->values[30].i = ch->values[29].i;
+		}
+		if (sr_is_in_battle())
+			sr_iterate_battle_roster(s_sr_glob_sansen, true, false, NULL, NULL);
+	}
+	if ((it = cJSON_GetObjectItem(act, "srBoostAllParty")) && cJSON_IsTrue(it) && row) {
+		for (int c = 1; c < row->nr_vars; c++) {
+			struct page *ch = sr_get_chara_page(pf, c);
+			if (!ch) continue;
+			if (ch->values[22].i < 9999) ch->values[22].i = 9999;
+			ch->values[21].i = ch->values[22].i;
+			if (sr_is_in_battle()) ch->values[23].i = ch->values[22].i;
+			for (int st_m = 32; st_m <= 35; st_m++) {
+				if (ch->values[st_m].i < 99) ch->values[st_m].i = 99;
+			}
+			if (ch->values[29].i > 0) ch->values[30].i = ch->values[29].i;
+			if (ch->values[11].i < 99) ch->values[11].i = 99;
+		}
+	}
+	if ((it = cJSON_GetObjectItem(act, "srBattle1HpEnemies")) && cJSON_IsTrue(it) && sr_is_in_battle()) {
+		sr_iterate_battle_roster(s_sr_glob_teki, false, true, NULL, NULL);
+	}
+
+	cJSON *ce = cJSON_GetObjectItem(act, "srCharEdit");
+	if (ce && cJSON_IsObject(ce) && row) {
+		cJSON *jc = cJSON_GetObjectItem(ce, "charIdx");
+		cJSON *jf = cJSON_GetObjectItem(ce, "factionIdx");
+		int target_f = (jf && cJSON_IsNumber(jf)) ? jf->valueint : pf;
+		int target_c = (jc && cJSON_IsNumber(jc)) ? jc->valueint : -1;
+		if (target_c >= 1) {
+			sr_apply_char_edit(sr_get_chara_page(target_f, target_c), ce);
+		} else {
+			struct page *frow = sr_faction_char_array(target_f);
+			if (frow) {
+				for (int c = 1; c < frow->nr_vars; c++)
+					sr_apply_char_edit(sr_get_chara_page(target_f, c), ce);
+			}
+		}
+	}
+
+	cJSON_Delete(act);
+}
+
+static void vm_sr_populate_live_state_json(cJSON *root)
+{
+	vm_inspect_sr_ain();
+	int pf = sr_detect_player_faction();
+	struct page *row = sr_faction_char_array(pf);
+	int turn = s_sr_glob_turn >= 0 ? global_get(s_sr_glob_turn).i : 0;
+	bool in_game = s_sr_compatible && row != NULL && turn >= 0;
+	if (!in_game) {
+		cJSON_AddBoolToObject(root, "inGame", false);
+		return;
+	}
+	bool in_battle = sr_is_in_battle();
+	cJSON_AddBoolToObject(root, "inGame", true);
+	cJSON_AddBoolToObject(root, "inBattle", in_battle);
+	cJSON_AddNumberToObject(root, "turn", turn);
+	cJSON_AddNumberToObject(root, "gold", s_sr_glob_gold >= 0 ? global_get(s_sr_glob_gold).i : 0);
+	cJSON_AddNumberToObject(root, "ap", s_sr_glob_ap >= 0 ? global_get(s_sr_glob_ap).i : 0);
+	cJSON_AddNumberToObject(root, "apMax", s_sr_glob_ap_max >= 0 ? global_get(s_sr_glob_ap_max).i : 0);
+	cJSON_AddNumberToObject(root, "satisfaction", s_sr_glob_sat >= 0 ? global_get(s_sr_glob_sat).i : 0);
+	cJSON_AddNumberToObject(root, "troopLimit", s_sr_glob_troop_lim >= 0 ? global_get(s_sr_glob_troop_lim).i : 0);
+	if (in_battle) {
+		int ec = 0, et = 0;
+		sr_iterate_battle_roster(s_sr_glob_teki, false, false, &ec, &et);
+		cJSON_AddNumberToObject(root, "enemyCount", ec);
+		cJSON_AddNumberToObject(root, "enemyTotalTroops", et);
+	}
+
+	cJSON *j_chars = cJSON_CreateArray();
+	int added = 0;
+	for (int c = 1; c < row->nr_vars && added < 80; c++) {
+		struct page *ch = sr_get_chara_page(pf, c);
+		if (!ch || !string_index_valid(ch->values[0].i))
+			continue;
+		struct string *ns = heap_get_string(ch->values[0].i);
+		char *name_u = (ns && ns->text[0]) ? sjis2utf(ns->text, ns->size) : NULL;
+		if (!name_u || !name_u[0]) {
+			free(name_u);
+			continue;
+		}
+		cJSON *jc = cJSON_CreateObject();
+		cJSON_AddNumberToObject(jc, "factionIdx", pf);
+		cJSON_AddNumberToObject(jc, "charIdx", c);
+		cJSON_AddStringToObject(jc, "name", name_u);
+		free(name_u);
+		cJSON_AddNumberToObject(jc, "troops", ch->values[21].i);
+		cJSON_AddNumberToObject(jc, "troopsMax", ch->values[22].i);
+		cJSON_AddNumberToObject(jc, "battleTroops", ch->values[23].i);
+		cJSON_AddNumberToObject(jc, "atk", ch->values[32].i);
+		cJSON_AddNumberToObject(jc, "def", ch->values[33].i);
+		cJSON_AddNumberToObject(jc, "intel", ch->values[34].i);
+		cJSON_AddNumberToObject(jc, "spd", ch->values[35].i);
+		cJSON_AddNumberToObject(jc, "love", ch->values[11].i);
+		cJSON_AddNumberToObject(jc, "actionDone", ch->values[8].i);
+		cJSON_AddNumberToObject(jc, "wazaMax", ch->values[29].i);
+		cJSON_AddNumberToObject(jc, "wazaNow", ch->values[30].i);
+		cJSON_AddItemToArray(j_chars, jc);
+		added++;
+	}
+	cJSON_AddItemToObject(root, "srCharacters", j_chars);
+}
+
+/* =========================================================================
+ * Rance 03 Live In-Game Modifier Support (Rance03.ain v6)
+ * ========================================================================= */
+
+enum {
+	R03_FN_HP = 0, R03_FN_SET_CD, R03_FN_OVER_CD, R03_FN_GET_CD,
+	R03_FN_PARTY_CD, R03_FN_GET_PARTY_CD, R03_FN_SET_EXP, R03_FN_ADD_EXP,
+	R03_FN_SET_GOLD, R03_FN_ADD_GOLD, R03_FN_USE_ITEM, R03_FN_DEC_ITEM,
+	R03_FN_CAMP_LION, R03_FN_DROP, R03_FN_MON_SET_HP, R03_FN_DEC_MON_HP,
+	R03_HOOK_COUNT
+};
+
+static const struct { const char *name; int32_t crc; int args; } s_r03_sigs[R03_HOOK_COUNT] = {
+	{ "Player@setHp", -1617599902, 1 },
+	{ "Player@setCoolTime", -729587211, 1 },
+	{ "Player@setOverCoolTime", -1464921706, 2 },
+	{ "Player@getCoolTime", -1471100255, 1 },
+	{ "PlayerCommonParam@setPartyCoolTime", 1629503482, 1 },
+	{ "PlayerCommonParam@getPartyCoolTime", 1212459943, 0 },
+	{ "Player@setExp", -534610734, 1 },
+	{ "Player@addExp", -2065683727, 1 },
+	{ "PlayerCommonParam@setGold", 1119748456, 1 },
+	{ "PlayerCommonParam@addGold", 549543388, 1 },
+	{ "PlayerCommonParam@useItem", -310161395, 1 },
+	{ "PlayerCommonParam@decItem", -1220549445, 1 },
+	{ "SceneCamp@onClickSaveLion", -36293420, 1 },
+	{ "BattleResult@isGetItemByLot", -181551202, 0 },
+	{ "MonsterInstance@setHp", 675961301, 1 },
+	{ "BattleModel@decMonsterHp", -1430746262, 0 },
+};
+
+static struct ain *s_r03_inspected_ain = NULL;
+static bool s_r03_compatible = false;
+static bool s_r03_applying = false;
+static int s_r03_player_type = -1, s_r03_common_type = -1, s_r03_result_type = -1;
+static int s_r03_item_type = -1, s_r03_count_type = -1, s_r03_mon_type = -1;
+static int s_r03_players_glob = -1, s_r03_common_glob = -1, s_r03_items_glob = -1;
+static int s_r03_funcs[R03_HOOK_COUNT];
+
+static struct page *r03_checked_page(int slot, enum page_type kind, int type, int min_vars)
+{
+	if (!page_index_valid(slot))
+		return NULL;
+	struct page *p = heap[slot].page;
+	if (!p || p->type != kind || p->nr_vars < min_vars || (type >= 0 && p->index != type))
+		return NULL;
+	return p;
+}
+
+static bool r03_member_is(int st_idx, int m_idx, const char *name, enum ain_data_type dt)
+{
+	if (!ain || st_idx < 0 || st_idx >= ain->nr_structures || m_idx < 0)
+		return false;
+	struct ain_struct *s = &ain->structures[st_idx];
+	return m_idx < s->nr_members && !strcmp(s->members[m_idx].name, name) && s->members[m_idx].type.data == dt;
+}
+
+void modifier_on_ain_init(void)
+{
+	s_r03_compatible = false;
+	s_r03_applying = false;
+	s_r03_inspected_ain = ain;
+	if (!ain || !game_rance03)
+		return;
+	s_r03_player_type = ain_get_struct(ain, "Player");
+	s_r03_common_type = ain_get_struct(ain, "PlayerCommonParam");
+	s_r03_result_type = ain_get_struct(ain, "BattleResult");
+	s_r03_item_type   = ain_get_struct(ain, "Item");
+	s_r03_count_type  = ain_get_struct(ain, "ItemCount");
+	s_r03_mon_type    = ain_get_struct(ain, "MonsterInstance");
+	s_r03_players_glob = ain_get_global(ain, "g_player");
+	s_r03_common_glob  = ain_get_global(ain, "g_playerCommonParam");
+	s_r03_items_glob   = ain_get_global(ain, "g_item");
+	if (s_r03_players_glob < 0 || s_r03_common_glob < 0 || s_r03_items_glob < 0
+			|| !r03_member_is(s_r03_player_type, 10, "hp_", AIN_INT)
+			|| !r03_member_is(s_r03_player_type, 11, "maxHp_", AIN_INT)
+			|| !r03_member_is(s_r03_player_type, 14, "exp_", AIN_INT)
+			|| !r03_member_is(s_r03_player_type, 24, "isJoin_", AIN_BOOL)
+			|| !r03_member_is(s_r03_player_type, 27, "coolTime_", AIN_ARRAY_INT)
+			|| !r03_member_is(s_r03_common_type, 0, "gold_", AIN_INT)
+			|| !r03_member_is(s_r03_common_type, 2, "itemCount_", AIN_ARRAY_STRUCT)
+			|| !r03_member_is(s_r03_common_type, 6, "partyCoolTime_", AIN_INT)
+			|| !r03_member_is(s_r03_item_type, 0, "id_", AIN_STRING)
+			|| !r03_member_is(s_r03_count_type, 1, "count", AIN_INT)
+			|| !r03_member_is(s_r03_result_type, 5, "itemId_", AIN_STRING)
+			|| !r03_member_is(s_r03_mon_type, 1, "hp_", AIN_INT))
+		return;
+	for (unsigned i = 0; i < R03_HOOK_COUNT; i++) {
+		s_r03_funcs[i] = -1;
+		int f = ain_get_function(ain, (char *)s_r03_sigs[i].name);
+		if (f < 0 || ain->functions[f].nr_args != s_r03_sigs[i].args || ain->functions[f].crc != s_r03_sigs[i].crc)
+			return;
+		s_r03_funcs[i] = f;
+	}
+	s_r03_compatible = true;
+}
+
+static inline int32_t r03_clamp_sum(int32_t old, int32_t delta)
+{
+	int64_t sum = (int64_t)old + delta;
+	return sum < 0 ? 0 : (sum > INT32_MAX ? INT32_MAX : (int32_t)sum);
+}
+
+static int r03_current_mask(void)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int mask = g_r03_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	return mask;
+}
+
+void modifier_before_method(void)
+{
+	if (!s_r03_compatible || s_r03_applying || call_stack_ptr <= 0)
+		return;
+	struct function_call *f = &call_stack[call_stack_ptr - 1];
+	struct page *local = r03_checked_page(f->page_slot, LOCAL_PAGE, f->fno, 1);
+	if (!local)
+		return;
+	int enabled = r03_current_mask();
+
+	struct page *p = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_player_type, 31);
+	if (p && f->fno == s_r03_funcs[R03_FN_HP] && (enabled & LOCK_R03_HP) && local->values[0].i < p->values[10].i)
+		local->values[0].i = p->values[10].i;
+	if (p && f->fno == s_r03_funcs[R03_FN_ADD_EXP] && p->values[14].i >= 0)
+		local->values[0].i = r03_clamp_sum(p->values[14].i, local->values[0].i) - p->values[14].i;
+
+	struct page *c = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_common_type, 16);
+	if (c && f->fno == s_r03_funcs[R03_FN_ADD_GOLD] && c->values[0].i >= 0)
+		local->values[0].i = r03_clamp_sum(c->values[0].i, local->values[0].i) - c->values[0].i;
+
+	if ((enabled & LOCK_R03_ONE_HIT_KILL) && f->fno == s_r03_funcs[R03_FN_MON_SET_HP]
+			&& call_stack_ptr >= 2 && call_stack[call_stack_ptr - 2].fno == s_r03_funcs[R03_FN_DEC_MON_HP]) {
+		struct page *m = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_mon_type, 4);
+		if (m && local->values[0].i > 0)
+			local->values[0].i = 0;
+	}
+}
+
+static void r03_clear_cooldowns(struct page *p)
+{
+	struct page *a = r03_checked_page(p->values[27].i, ARRAY_PAGE, AIN_ARRAY_INT, 0);
+	if (a && a->array.rank == 1 && a->nr_vars <= 4096) {
+		for (int i = 0; i < a->nr_vars; i++)
+			a->values[i].i = 0;
+	}
+}
+
+static bool r03_valid_drop(struct page *result)
+{
+	int id = result->values[5].i;
+	if (!string_index_valid(id) || !heap[id].s->size)
+		return false;
+	struct page *items = (s_r03_items_glob >= 0 && vm_globals_ready())
+		? r03_checked_page(heap[0].page->values[s_r03_items_glob].i, ARRAY_PAGE, AIN_ARRAY_STRUCT, 0) : NULL;
+	if (!items || items->array.rank != 1 || items->array.struct_type != s_r03_item_type)
+		return false;
+	for (int i = 0; i < items->nr_vars; i++) {
+		struct page *it = r03_checked_page(items->values[i].i, STRUCT_PAGE, s_r03_item_type, 12);
+		if (it && string_index_valid(it->values[0].i) && !strcmp(heap[it->values[0].i].s->text, heap[id].s->text))
+			return true;
+	}
+	return false;
+}
+
+void modifier_after_method_return(void)
+{
+	if (!s_r03_compatible || s_r03_applying || call_stack_ptr <= 0)
+		return;
+	struct function_call *f = &call_stack[call_stack_ptr - 1];
+	int enabled = r03_current_mask();
+	if (enabled & LOCK_R03_NO_CD) {
+		struct page *p = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_player_type, 31);
+		if (p && (f->fno == s_r03_funcs[R03_FN_SET_CD] || f->fno == s_r03_funcs[R03_FN_OVER_CD]))
+			r03_clear_cooldowns(p);
+		if (p && f->fno == s_r03_funcs[R03_FN_GET_CD] && stack_ptr > 0)
+			stack_set(0, 0);
+		struct page *c = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_common_type, 16);
+		if (c && f->fno == s_r03_funcs[R03_FN_PARTY_CD])
+			c->values[6].i = 0;
+		if (c && f->fno == s_r03_funcs[R03_FN_GET_PARTY_CD] && stack_ptr > 0)
+			stack_set(0, 0);
+	}
+	if ((enabled & LOCK_R03_DROP_100) && f->fno == s_r03_funcs[R03_FN_DROP] && stack_ptr > 0) {
+		struct page *r = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_result_type, 10);
+		if (r && r03_valid_drop(r))
+			stack_set(0, 1);
+	}
+}
+
+bool modifier_keep_dec_item(union vm_value *value)
+{
+	if (!s_r03_compatible || !(r03_current_mask() & LOCK_R03_INF_ITEMS) || call_stack_ptr <= 0)
+		return false;
+	struct function_call *f = &call_stack[call_stack_ptr - 1];
+	bool normal_use = (f->fno == s_r03_funcs[R03_FN_USE_ITEM]);
+	bool quick_lion = (f->fno == s_r03_funcs[R03_FN_DEC_ITEM] && call_stack_ptr >= 2
+		&& call_stack[call_stack_ptr - 2].fno == s_r03_funcs[R03_FN_CAMP_LION]);
+	if (!normal_use && !quick_lion)
+		return false;
+	struct page *c = r03_checked_page(f->struct_page, STRUCT_PAGE, s_r03_common_type, 16);
+	struct page *local = r03_checked_page(f->page_slot, LOCAL_PAGE, f->fno, 3);
+	struct page *counts = c ? r03_checked_page(c->values[2].i, ARRAY_PAGE, AIN_ARRAY_STRUCT, 0) : NULL;
+	int index = local ? local->values[1].i : -1;
+	if (!counts || counts->array.rank != 1 || counts->array.struct_type != s_r03_count_type
+			|| index < 0 || index >= counts->nr_vars)
+		return false;
+	struct page *item = r03_checked_page(counts->values[index].i, STRUCT_PAGE, s_r03_count_type, 2);
+	return item && value == &item->values[1] && value->i > 0;
+}
+
+static struct page *r03_get_players_array(void)
+{
+	if (!s_r03_compatible || !vm_globals_ready() || s_r03_players_glob < 0)
+		return NULL;
+	struct page *p = r03_checked_page(heap[0].page->values[s_r03_players_glob].i, ARRAY_PAGE, AIN_ARRAY_STRUCT, 0);
+	return (p && p->array.rank == 1 && p->array.struct_type == s_r03_player_type && p->nr_vars <= 4096) ? p : NULL;
+}
+
+static struct page *r03_get_common(int *out_slot)
+{
+	if (!s_r03_compatible || !vm_globals_ready() || s_r03_common_glob < 0)
+		return NULL;
+	int slot = heap[0].page->values[s_r03_common_glob].i;
+	struct page *c = r03_checked_page(slot, STRUCT_PAGE, s_r03_common_type, 16);
+	if (out_slot) *out_slot = c ? slot : -1;
+	return c;
+}
+
+static void vm_enforce_r03_locks(int r03_mask)
+{
+	if (!s_r03_compatible || s_r03_applying || !(r03_mask & LOCK_R03_NO_CD))
+		return;
+	struct page *players = r03_get_players_array();
+	struct page *common = r03_get_common(NULL);
+	if (!players || !common)
+		return;
+	for (int i = 0; i < players->nr_vars; i++) {
+		struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+		if (p) r03_clear_cooldowns(p);
+	}
+	common->values[6].i = 0;
+}
+
+static void vm_execute_r03_action(const char *json_str)
+{
+	if (!json_str || !json_str[0])
+		return;
+	cJSON *act = cJSON_Parse(json_str);
+	if (!act)
+		return;
+
+	cJSON *it;
+	bool persist_cfg = false;
+	int save_r10_mask = 0;
+	pthread_mutex_lock(&g_mod_mutex);
+	if ((it = cJSON_GetObjectItem(act, "setRance03LockMask")) && cJSON_IsNumber(it)) {
+		g_r03_lock_mask = it->valueint;
+		g_has_r03_lock_mask_init = true;
+		persist_cfg = true;
+	}
+	save_r10_mask = g_live_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	vm_apply_ui_scale_from_json(act, &persist_cfg, &save_r10_mask);
+	if (persist_cfg)
+		persist_modifier_config_from_native(save_r10_mask);
+
+	int common_slot = -1;
+	struct page *players = r03_get_players_array();
+	struct page *common = r03_get_common(&common_slot);
+	if (!s_r03_compatible || !players || !common || s_r03_applying) {
+		cJSON_Delete(act);
+		return;
+	}
+
+	s_r03_applying = true;
+	if ((it = cJSON_GetObjectItem(act, "r03AddGold")) && cJSON_IsNumber(it)) {
+		int32_t next = r03_clamp_sum(common->values[0].i, it->valueint);
+		vm_call_method_1(s_r03_funcs[R03_FN_SET_GOLD], common_slot, next);
+	}
+	if ((it = cJSON_GetObjectItem(act, "r03Gold")) && cJSON_IsNumber(it)) {
+		vm_call_method_1(s_r03_funcs[R03_FN_SET_GOLD], common_slot, vm_dd_clamp(it->valueint, 0, INT32_MAX));
+	}
+	if ((it = cJSON_GetObjectItem(act, "r03MaxAllExp")) && cJSON_IsTrue(it)) {
+		for (int i = 0; ; i++) {
+			players = r03_get_players_array();
+			if (!players || i >= players->nr_vars) break;
+			struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+			if (p && p->values[24].i)
+				vm_call_method_1(s_r03_funcs[R03_FN_SET_EXP], players->values[i].i, INT32_MAX);
+		}
+	}
+	if ((it = cJSON_GetObjectItem(act, "r03HealAllParty")) && cJSON_IsTrue(it)) {
+		for (int i = 0; ; i++) {
+			players = r03_get_players_array();
+			if (!players || i >= players->nr_vars) break;
+			struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+			if (p && p->values[24].i) {
+				r03_clear_cooldowns(p);
+				int32_t mhp = p->values[11].i > 0 ? p->values[11].i : 1;
+				vm_call_method_1(s_r03_funcs[R03_FN_HP], players->values[i].i, mhp);
+			}
+		}
+		common = r03_get_common(&common_slot);
+		if (common) common->values[6].i = 0;
+	}
+	cJSON *ce = cJSON_GetObjectItem(act, "r03CharEdit");
+	if (ce && cJSON_IsObject(ce)) {
+		cJSON *jt = cJSON_GetObjectItem(ce, "target");
+		int target = (jt && cJSON_IsNumber(jt)) ? jt->valueint : -1;
+		for (int i = 0; ; i++) {
+			players = r03_get_players_array();
+			if (!players || i >= players->nr_vars) break;
+			if (target >= 0 && i != target) continue;
+			struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+			if (!p || (target < 0 && !p->values[24].i)) continue;
+			cJSON *f;
+			if ((f = cJSON_GetObjectItem(ce, "hpMax")) && cJSON_IsNumber(f))
+				p->values[11].i = vm_dd_clamp(f->valueint, 1, 999999);
+			if ((f = cJSON_GetObjectItem(ce, "lv")) && cJSON_IsNumber(f))
+				p->values[12].i = vm_dd_clamp(f->valueint, 1, 9999);
+			if ((f = cJSON_GetObjectItem(ce, "str")) && cJSON_IsNumber(f))
+				p->values[16].i = vm_dd_clamp(f->valueint, 0, 99999);
+			if ((f = cJSON_GetObjectItem(ce, "mind")) && cJSON_IsNumber(f))
+				p->values[17].i = vm_dd_clamp(f->valueint, 0, 99999);
+			if ((f = cJSON_GetObjectItem(ce, "dex")) && cJSON_IsNumber(f))
+				p->values[15].i = vm_dd_clamp(f->valueint, 0, 99999);
+			if ((f = cJSON_GetObjectItem(ce, "exp")) && cJSON_IsNumber(f))
+				vm_call_method_1(s_r03_funcs[R03_FN_SET_EXP], players->values[i].i, vm_dd_clamp(f->valueint, 0, INT32_MAX));
+			if ((f = cJSON_GetObjectItem(ce, "hp")) && cJSON_IsNumber(f)) {
+				players = r03_get_players_array();
+				int slot = (players && i < players->nr_vars) ? players->values[i].i : -1;
+				if (slot >= 0)
+					vm_call_method_1(s_r03_funcs[R03_FN_HP], slot, vm_dd_clamp(f->valueint, 1, 999999));
+			}
+			if (target >= 0) break;
+		}
+	}
+	s_r03_applying = false;
+	cJSON_Delete(act);
+}
+
+static void vm_r03_populate_live_state_json(cJSON *root)
+{
+	struct page *players = r03_get_players_array();
+	struct page *common = r03_get_common(NULL);
+	bool joined = false;
+	if (players) {
+		for (int i = 0; i < players->nr_vars; i++) {
+			struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+			if (p && p->values[24].i) {
+				joined = true;
+				break;
+			}
+		}
+	}
+	if (!s_r03_compatible || !joined || !common) {
+		cJSON_AddBoolToObject(root, "inGame", false);
+		return;
+	}
+	cJSON_AddBoolToObject(root, "inGame", true);
+	cJSON_AddNumberToObject(root, "gold", common->values[0].i);
+	cJSON_AddNumberToObject(root, "partyCoolTime", common->values[6].i);
+
+	cJSON *j_chars = cJSON_CreateArray();
+	int joined_cnt = 0;
+	for (int i = 0; i < players->nr_vars && joined_cnt < 64; i++) {
+		struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
+		if (!p || !p->values[24].i)
+			continue;
+		char *name_u = string_index_valid(p->values[1].i) ? sjis2utf(heap[p->values[1].i].s->text, heap[p->values[1].i].s->size) : NULL;
+		cJSON *jc = cJSON_CreateObject();
+		cJSON_AddNumberToObject(jc, "index", i);
+		cJSON_AddStringToObject(jc, "name", (name_u && name_u[0]) ? name_u : "?");
+		free(name_u);
+		cJSON_AddNumberToObject(jc, "lv", p->values[12].i);
+		cJSON_AddNumberToObject(jc, "lvMax", p->values[13].i);
+		cJSON_AddNumberToObject(jc, "hp", p->values[10].i);
+		cJSON_AddNumberToObject(jc, "hpMax", p->values[11].i);
+		cJSON_AddNumberToObject(jc, "exp", p->values[14].i);
+		cJSON_AddNumberToObject(jc, "str", p->values[16].i);
+		cJSON_AddNumberToObject(jc, "mind", p->values[17].i);
+		cJSON_AddNumberToObject(jc, "dex", p->values[15].i);
+		cJSON_AddItemToArray(j_chars, jc);
+		joined_cnt++;
+	}
+	cJSON_AddNumberToObject(root, "r03JoinedCount", joined_cnt);
+	cJSON_AddItemToObject(root, "r03Characters", j_chars);
+}
+
 static char *vm_build_live_state_json(int lock_mask)
 {
 	cJSON *root = cJSON_CreateObject();
 	cJSON_AddBoolToObject(root, "isRance10", game_rance10);
 	cJSON_AddBoolToObject(root, "isDohnaDohna", game_dohnadohna);
 	cJSON_AddBoolToObject(root, "isEvenicle", game_evenicle);
+	cJSON_AddBoolToObject(root, "isSengokuRance", game_sengokurance);
+	cJSON_AddBoolToObject(root, "isRance03", game_rance03);
 	cJSON_AddNumberToObject(root, "lockMask", lock_mask);
 	pthread_mutex_lock(&g_mod_mutex);
 	int cur_dd_mask = g_dohna_lock_mask;
 	int cur_ev_mask = g_evenicle_lock_mask;
+	int cur_sr_mask = g_sr_lock_mask;
+	int cur_r03_mask = g_r03_lock_mask;
 	int cur_font_pct = g_font_scale_pct;
 	int cur_sb_pct = g_scrollbar_scale_pct;
 	pthread_mutex_unlock(&g_mod_mutex);
 	cJSON_AddNumberToObject(root, "dohnaLockMask", cur_dd_mask);
 	cJSON_AddNumberToObject(root, "evenicleLockMask", cur_ev_mask);
+	cJSON_AddNumberToObject(root, "srLockMask", cur_sr_mask);
+	cJSON_AddNumberToObject(root, "r03LockMask", cur_r03_mask);
 	cJSON_AddNumberToObject(root, "fontScalePct", cur_font_pct);
 	cJSON_AddNumberToObject(root, "scrollbarScalePct", cur_sb_pct);
 
@@ -4959,6 +5824,20 @@ static char *vm_build_live_state_json(int lock_mask)
 
 	if (game_evenicle) {
 		vm_ev_populate_live_state_json(root);
+		char *out = cJSON_PrintUnformatted(root);
+		cJSON_Delete(root);
+		return out;
+	}
+
+	if (game_sengokurance) {
+		vm_sr_populate_live_state_json(root);
+		char *out = cJSON_PrintUnformatted(root);
+		cJSON_Delete(root);
+		return out;
+	}
+
+	if (game_rance03) {
+		vm_r03_populate_live_state_json(root);
 		char *out = cJSON_PrintUnformatted(root);
 		cJSON_Delete(root);
 		return out;
@@ -5160,6 +6039,12 @@ void modifier_on_frame(void)
 			} else if (game_evenicle) {
 				vm_execute_evenicle_action(pending);
 				action_applied = true;
+			} else if (game_sengokurance) {
+				vm_execute_sr_action(pending);
+				action_applied = true;
+			} else if (game_rance03) {
+				vm_execute_r03_action(pending);
+				action_applied = true;
 			}
 			free(pending);
 		}
@@ -5168,11 +6053,15 @@ void modifier_on_frame(void)
 		int desired_sb_pct = 100;
 		int dd_lock_mask = 0;
 		int ev_lock_mask = 0;
+		int sr_lock_mask = 0;
+		int r03_lock_mask = 0;
 		pthread_mutex_lock(&g_mod_mutex);
 		desired_font_pct = g_font_scale_pct;
 		desired_sb_pct = g_scrollbar_scale_pct;
 		dd_lock_mask = g_dohna_lock_mask;
 		ev_lock_mask = g_evenicle_lock_mask;
+		sr_lock_mask = g_sr_lock_mask;
+		r03_lock_mask = g_r03_lock_mask;
 		pthread_mutex_unlock(&g_mod_mutex);
 
 		bool ui_changed = action_applied;
@@ -5193,6 +6082,10 @@ void modifier_on_frame(void)
 			vm_enforce_dohna_locks(dd_lock_mask, s_frame_tick);
 		} else if (game_evenicle && ev_lock_mask != 0) {
 			vm_enforce_evenicle_locks(ev_lock_mask);
+		} else if (game_sengokurance && sr_lock_mask != 0) {
+			vm_enforce_sr_locks(sr_lock_mask);
+		} else if (game_rance03 && r03_lock_mask != 0) {
+			vm_enforce_r03_locks(r03_lock_mask);
 		}
 
 		pthread_mutex_lock(&g_mod_mutex);
@@ -5557,19 +6450,32 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveLocks(
 	return (jint)mask;
 }
 
+static void set_game_lock_mask(bool *init_flag, int *target, int mask)
+{
+	int save_r10_mask;
+	pthread_mutex_lock(&g_mod_mutex);
+	*init_flag = true;
+	*target = mask;
+	save_r10_mask = g_live_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	persist_modifier_config_from_native(save_r10_mask);
+}
+
+static int get_game_lock_mask(const int *target)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int mask = *target;
+	pthread_mutex_unlock(&g_mod_mutex);
+	return mask;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetDohnaLiveLocks(
 	JNIEnv *env, jclass clazz, jint mask)
 {
 	(void)env;
 	(void)clazz;
-	int save_r10_mask;
-	pthread_mutex_lock(&g_mod_mutex);
-	g_has_dohna_lock_mask_init = true;
-	g_dohna_lock_mask = (int)mask;
-	save_r10_mask = g_live_lock_mask;
-	pthread_mutex_unlock(&g_mod_mutex);
-	persist_modifier_config_from_native(save_r10_mask);
+	set_game_lock_mask(&g_has_dohna_lock_mask_init, &g_dohna_lock_mask, (int)mask);
 }
 
 JNIEXPORT jint JNICALL
@@ -5578,10 +6484,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetDohnaLiveLocks(
 {
 	(void)env;
 	(void)clazz;
-	pthread_mutex_lock(&g_mod_mutex);
-	int mask = g_dohna_lock_mask;
-	pthread_mutex_unlock(&g_mod_mutex);
-	return (jint)mask;
+	return (jint)get_game_lock_mask(&g_dohna_lock_mask);
 }
 
 JNIEXPORT void JNICALL
@@ -5590,13 +6493,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetEvenicleLiveLocks(
 {
 	(void)env;
 	(void)clazz;
-	int save_r10_mask;
-	pthread_mutex_lock(&g_mod_mutex);
-	g_has_evenicle_lock_mask_init = true;
-	g_evenicle_lock_mask = (int)mask;
-	save_r10_mask = g_live_lock_mask;
-	pthread_mutex_unlock(&g_mod_mutex);
-	persist_modifier_config_from_native(save_r10_mask);
+	set_game_lock_mask(&g_has_evenicle_lock_mask_init, &g_evenicle_lock_mask, (int)mask);
 }
 
 JNIEXPORT jint JNICALL
@@ -5605,10 +6502,43 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetEvenicleLiveLocks(
 {
 	(void)env;
 	(void)clazz;
-	pthread_mutex_lock(&g_mod_mutex);
-	int mask = g_evenicle_lock_mask;
-	pthread_mutex_unlock(&g_mod_mutex);
-	return (jint)mask;
+	return (jint)get_game_lock_mask(&g_evenicle_lock_mask);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetSrLiveLocks(
+	JNIEnv *env, jclass clazz, jint mask)
+{
+	(void)env;
+	(void)clazz;
+	set_game_lock_mask(&g_has_sr_lock_mask_init, &g_sr_lock_mask, (int)mask);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetSrLiveLocks(
+	JNIEnv *env, jclass clazz)
+{
+	(void)env;
+	(void)clazz;
+	return (jint)get_game_lock_mask(&g_sr_lock_mask);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetR03LiveLocks(
+	JNIEnv *env, jclass clazz, jint mask)
+{
+	(void)env;
+	(void)clazz;
+	set_game_lock_mask(&g_has_r03_lock_mask_init, &g_r03_lock_mask, (int)mask);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetR03LiveLocks(
+	JNIEnv *env, jclass clazz)
+{
+	(void)env;
+	(void)clazz;
+	return (jint)get_game_lock_mask(&g_r03_lock_mask);
 }
 
 JNIEXPORT void JNICALL
@@ -5702,6 +6632,25 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetScrollbarScale(
 	int sp = g_scrollbar_scale_pct;
 	pthread_mutex_unlock(&g_mod_mutex);
 	return (jint)sp;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
+	JNIEnv *env, jclass clazz, jstring jsrcPath, jstring jdstPath)
+{
+	(void)clazz;
+	if (!jsrcPath || !jdstPath) return JNI_FALSE;
+	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
+	if (!src_path || !dst_path) {
+		if (src_path) (*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+		if (dst_path) (*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+		return JNI_FALSE;
+	}
+	bool ok = savedata_export_pc_file(src_path, dst_path);
+	(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+	(*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 #endif /* __ANDROID__ */

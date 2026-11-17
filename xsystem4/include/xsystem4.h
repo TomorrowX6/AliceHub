@@ -93,11 +93,13 @@ extern bool game_daibanchou_en;
 extern bool game_rance02_mg;
 extern bool game_rance6_mg;
 extern bool game_rance7_mg;
+extern bool game_sengokurance;
 extern bool game_rance8;
 extern bool game_rance8_mg;
 extern bool game_rance10;
 extern bool game_dohnadohna;
 extern bool game_evenicle;
+extern bool game_rance03;
 extern bool game_dungeons_and_dolls;
 
 #endif /* XSYSTEM4_H */

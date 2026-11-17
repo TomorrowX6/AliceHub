@@ -28,6 +28,8 @@
 
 #include "gfx/gfx.h"
 #include "input.h"
+#include "system4/little_endian.h"
+#include "message_layout.h"
 #include "xsystem4.h"
 
 #include "hll/hll.h"
@@ -36,11 +38,13 @@ bool game_daibanchou_en = false;
 bool game_rance02_mg = false;
 bool game_rance6_mg = false;
 bool game_rance7_mg = false;
+bool game_sengokurance = false;
 bool game_rance8 = false;
 bool game_rance8_mg = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
+bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
@@ -293,6 +297,182 @@ static void apply_daibanchou_hacks(struct ain *ain)
 	}
 }
 
+
+static bool ain_has_gbk_r03_strings(struct ain *ain)
+{
+	for (int i = 0; i < ain->nr_strings && i < 10000; i++) {
+		if (!strncmp(ain->strings[i]->text, "\xc3\xd4\xb9\xac/", 5))
+			return true;
+	}
+	return false;
+}
+
+static void apply_rance03_message_layout(struct ain *ain)
+{
+	// Reflow raw glyph positions before the script applies centre/right alignment.
+	int fno = ain_get_function(ain, "CMessageTextView@MoveTextPosForLayout");
+	if (fno < 0 || ain->functions[fno].nr_args != 1 || !message_layout_init_rance03(ain))
+		return;
+	int original = ain_dup_function(ain, fno);
+	struct buffer out;
+	buffer_init(&out, NULL, 0);
+	write_instruction1(&out, FUNC, fno);
+	write_instruction0(&out, PUSHSTRUCTPAGE);
+	write_instruction1(&out, CALLSYS, VM_XSYS_FIT_RANCE03_MESSAGE);
+	write_instruction0(&out, PUSHSTRUCTPAGE);
+	write_instruction1(&out, SH_LOCALREF, 0);
+	write_instruction1(&out, CALLMETHOD, original);
+	write_instruction0(&out, RETURN);
+	write_instruction1(&out, ENDFUNC, fno);
+	ain->functions[fno].address = ain->code_size + 6;
+	ain->code = xrealloc(ain->code, ain->code_size + out.index);
+	memcpy(ain->code + ain->code_size, out.buf, out.index);
+	ain->code_size += out.index;
+	free(out.buf);
+}
+
+static uint32_t find_func_end_addr(struct ain *ain, int fno)
+{
+	uint32_t begin = ain->functions[fno].address;
+	uint32_t end = ain->code_size;
+	for (int i = 0; i < ain->nr_functions; i++) {
+		uint32_t addr = ain->functions[i].address;
+		if (addr > begin && addr < end)
+			end = addr;
+	}
+	return end;
+}
+
+static void apply_rance03_card_caption_layout(struct ain *ain)
+{
+	int fno = ain_get_function(ain, "AdvSelectionButton@setPartsPos");
+	int set_pos = ain_get_function(ain, "Parts@setPos");
+	if (fno < 0 || set_pos < 0)
+		return;
+	uint32_t end = find_func_end_addr(ain, fno);
+	uint32_t found = 0;
+	union { float f; uint32_t i; } old = { .f = 125.f }, replacement = { .f = 121.f };
+	for (uint32_t address = ain->functions[fno].address; address + 2 <= end;) {
+		enum opcode op = LittleEndian_getW(ain->code, address);
+		if (op >= NR_OPCODES)
+			return;
+		int size = instruction_width(op);
+		if (size <= 0 || address + size > end)
+			return;
+		if (op == F_PUSH && LittleEndian_getDW(ain->code, address + 2) == old.i
+				&& address + size + 6 <= end && LittleEndian_getW(ain->code, address + size) == CALLMETHOD
+				&& LittleEndian_getDW(ain->code, address + size + 2) == (uint32_t)set_pos) {
+			if (found)
+				return;
+			found = address + 2;
+		}
+		address += size;
+	}
+	if (found)
+		LittleEndian_putDW(ain->code, found, replacement.i);
+}
+
+static void fix_rance03_effect_sound_prefix(struct ain *ain, const char *method,
+		const char *folder, int old_skip, int nr_args)
+{
+	int fno = ain_get_function(ain, (char *)method);
+	if (fno < 0 || ain->functions[fno].nr_args != nr_args)
+		return;
+	char *prefix = utf2sjis(folder, 0);
+	size_t prefix_bytes = strlen(prefix);
+	bool found_prefix = false;
+	for (int i = 0; i < ain->nr_strings; i++) {
+		const char *s = ain->strings[i]->text;
+		if (!strncmp(s, prefix, prefix_bytes) && (s[prefix_bytes] == '/' || s[prefix_bytes] == '\\')) {
+			found_prefix = true;
+			break;
+		}
+	}
+	int replacement = sjis_count_char(prefix) + 1;
+	free(prefix);
+	if (!found_prefix || replacement == old_skip)
+		return;
+	uint32_t begin = ain->functions[fno].address;
+	uint32_t end = find_func_end_addr(ain, fno);
+	uint32_t operands[2];
+	int count = 0;
+	uint32_t length = 0, substring = 0;
+	for (uint32_t p = begin; p + 2 <= end;) {
+		enum opcode op = LittleEndian_getW(ain->code, p);
+		if (op >= NR_OPCODES)
+			return;
+		int size = instruction_width(op);
+		if (size <= 0 || p + size > end)
+			return;
+		if (op == PUSH && LittleEndian_getDW(ain->code, p + 2) == (uint32_t)old_skip) {
+			if (count == 2)
+				return;
+			operands[count++] = p;
+		}
+		if (op == S_LENGTH) {
+			if (length)
+				return;
+			length = p;
+		}
+		if (op == S_GETPART) {
+			if (substring)
+				return;
+			substring = p;
+		}
+		p += size;
+	}
+	if (count != 2 || !length || !substring || !(operands[0] < length && length < operands[1])
+			|| operands[1] + 8 != substring || LittleEndian_getW(ain->code, operands[1] + 6) != SUB)
+		return;
+	for (int i = 0; i < 2; i++)
+		LittleEndian_putDW(ain->code, operands[i] + 2, replacement);
+}
+
+static void apply_rance03_effect_sound_paths(struct ain *ain)
+{
+	fix_rance03_effect_sound_prefix(ain, "DamageEffect@playSound", "戦闘效果", 8, 0);
+	fix_rance03_effect_sound_prefix(ain, "SceneDungeon@openDungeonEffectFlat", "迷宫", 6, 1);
+}
+
+static void apply_rance03_skill_cooldown_layout(struct ain *ain)
+{
+	int fno = ain_get_function(ain, "SkillSelector@setPartsPos");
+	int set_pos = ain_get_function(ain, "Parts@setPos");
+	if (fno < 0 || set_pos < 0 || ain->functions[fno].nr_args)
+		return;
+	uint32_t begin = ain->functions[fno].address;
+	uint32_t end = find_func_end_addr(ain, fno);
+	uint32_t found = 0;
+	union { float f; uint32_t i; } old_x = { .f = -30.f }, old_y = { .f = 18.f };
+	for (uint32_t p = begin; p + 2 <= end;) {
+		enum opcode op = LittleEndian_getW(ain->code, p);
+		if (op >= NR_OPCODES)
+			return;
+		int size = instruction_width(op);
+		if (size <= 0 || p + size > end)
+			return;
+		if (op == F_PUSH && p >= begin + 8 && p + 18 <= end
+				&& LittleEndian_getW(ain->code, p - 8) == PUSH
+				&& LittleEndian_getDW(ain->code, p - 6) == 8
+				&& LittleEndian_getW(ain->code, p - 2) == REF
+				&& LittleEndian_getDW(ain->code, p + 2) == old_x.i
+				&& LittleEndian_getW(ain->code, p + 6) == F_PUSH
+				&& LittleEndian_getDW(ain->code, p + 8) == old_y.i
+				&& LittleEndian_getW(ain->code, p + 12) == CALLMETHOD
+				&& LittleEndian_getDW(ain->code, p + 14) == (uint32_t)set_pos) {
+			if (found)
+				return;
+			found = p;
+		}
+		p += size;
+	}
+	if (found) {
+		union { float f; uint32_t i; } x = { .f = 14.f }, y = { .f = 16.f };
+		LittleEndian_putDW(ain->code, found + 2, x.i);
+		LittleEndian_putDW(ain->code, found + 8, y.i);
+	}
+}
+
 void apply_game_specific_hacks(struct ain *ain)
 {
 	game_rance10 = ain->version == 12
@@ -302,6 +482,10 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle = ain->version == 6
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_get_function(ain, "CMapPlayer@RunPathFindMove") >= 0;
+	game_rance03 = ain->version == 6
+		&& ain_get_struct(ain, "CMessageTextView") >= 0
+		&& ain_get_global(ain, "g_playerCommonParam") >= 0
+		&& ain_get_function(ain, "SceneCamp@onClickSaveLion") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
@@ -312,7 +496,14 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
 		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
-			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0)));
+			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
+		|| (game_rance03 && ain_has_gbk_r03_strings(ain)));
+	if (game_rance03) {
+		apply_rance03_message_layout(ain);
+		apply_rance03_card_caption_layout(ain);
+		apply_rance03_effect_sound_paths(ain);
+		apply_rance03_skill_cooldown_layout(ain);
+	}
 	if (game_rance10 && config.view_width == 800 && config.view_height == 600) {
 		// The original Rance X executable stores this outside AliceStart.ini.
 		config.view_width = 1920;
@@ -345,4 +536,10 @@ void apply_game_specific_hacks(struct ain *ain)
 	// XXX: we don't rely on game_name because mods change it
 	if (ain_get_library(ain, "SengokuRanceFont") >= 0)
 		game_rance7_mg = true;
+	game_sengokurance = game_rance7_mg || (
+		ain->version == 5 &&
+		ain_get_struct(ain, "s\x83L\x83\x83\x83\x89") >= 0 &&
+		ain_get_global(ain, "g_sBattle") >= 0 &&
+		ain_get_global(ain, "\x81\x9f\x8b\xe0") >= 0
+	);
 }

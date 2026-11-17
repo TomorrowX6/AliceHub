@@ -85,6 +85,14 @@ static void SystemService_GetGameName(struct string **game_name)
 	*game_name = cstr_to_string(config.game_name);
 }
 
+// Rance 03 validates this 49-byte engine identifier via SystemService.GetGameTitle.
+static void SystemService_GetGameTitle(struct string **name)
+{
+	if (*name)
+		free_string(*name);
+	*name = cstr_to_string("4aluoi@64sdfg354di87sd6f5g4s8e46zd5f4gs987gas.2f1");
+}
+
 static struct string *SystemService_GetGameName_v12(void)
 {
 	return cstr_to_string(config.game_name);
@@ -986,6 +994,7 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(GetGameVersion, SystemService_GetGameVersion),
 	    HLL_EXPORT(GetGameVersionByText, SystemService_GetGameVersionByText),
 	    HLL_OVERLOAD(GetGameName, SystemService_ResolveGameName),
+	    HLL_EXPORT(GetGameTitle, SystemService_GetGameTitle),
 	    HLL_EXPORT(AddURLMenu, SystemService_AddURLMenu),
 	    HLL_EXPORT(IsFullScreen, SystemService_IsFullScreen),
 	    HLL_EXPORT(ChangeNormalScreen, SystemService_ChangeNormalScreen),

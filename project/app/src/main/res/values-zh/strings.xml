@@ -69,19 +69,18 @@
     <string name="save_dir_invalid_name">目录名称无效</string>
 
     <string name="save_import_title">导入存档</string>
-    <string name="save_import_opt_zip">从压缩包导入</string>
     <string name="save_import_opt_dir">从文件夹导入</string>
-    <string name="save_import_opt_files">导入存档文件</string>
+    <string name="save_import_opt_files">从文件或压缩包导入</string>
 
     <string name="save_export_empty_toast">无可导出存档</string>
     <string name="save_export_title">导出存档</string>
-    <string name="save_export_opt_zip">导出为 ZIP</string>
-    <string name="save_export_opt_dir">导出到文件夹</string>
+    <string name="save_export_opt_pc_zip">导出 PC 存档 · ZIP</string>
+    <string name="save_export_opt_pc_dir">导出 PC 存档到文件夹</string>
+    <string name="save_export_opt_zip">导出原始存档 · ZIP</string>
+    <string name="save_export_opt_dir">导出原始存档到文件夹</string>
 
-    <string name="save_chooser_import_zip">选择存档压缩包</string>
-    <string name="save_chooser_import_files">选择存档文件</string>
+    <string name="save_chooser_import_files">选择存档文件或压缩包</string>
 
-    <string name="save_progress_import_zip">正在导入…</string>
     <string name="save_progress_import_dir">正在导入…</string>
     <string name="save_progress_import_files">正在导入…</string>
     <string name="save_progress_export_zip">正在导出…</string>
@@ -90,7 +89,6 @@
 
     <string name="save_import_done_title">导入完成</string>
     <string name="save_import_failed_title">导入失败</string>
-    <string name="save_import_zip_done_msg">已导入 %1$d 个存档文件</string>
     <string name="save_import_dir_done_msg">已导入 %1$d 个存档文件</string>
     <string name="save_import_files_done_msg">已导入 %1$d 个存档文件</string>
 
@@ -98,9 +96,11 @@
     <string name="save_export_failed_title">导出失败</string>
     <string name="save_export_zip_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_dir_done_msg">已导出 %1$d 个存档文件</string>
+    <string name="save_export_pc_converted_done_msg">已导出 %1$d 个 PC 兼容存档文件，其中 %2$d 个已自动转换</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">导出文件</string>
+    <string name="save_file_opt_export_pc">导出为 PC 兼容格式</string>
     <string name="save_file_opt_backup">创建备份</string>
     <string name="save_file_opt_rename">重命名</string>
     <string name="save_file_opt_delete">删除</string>
@@ -228,6 +228,8 @@
     <string name="game_rance10_title">兰斯10 决战</string>
     <string name="game_dohnadohna_title">多娜多娜 一起来干坏事吧</string>
     <string name="game_evenicle_title">夏娃年代记</string>
+    <string name="game_sengokurance_title">战国兰斯</string>
+    <string name="game_rance03_title">兰斯03 利萨斯陷落</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

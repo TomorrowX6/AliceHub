@@ -102,24 +102,45 @@ static void map_handles(struct ex_value *val)
 	}
 }
 
+static void rebuild_handles(void)
+{
+	int id = 1;
+	for (unsigned i = 0; i < ex->nr_blocks; i++) {
+		id = set_indices(&ex->blocks[i].val, id);
+	}
+
+	nr_handles = id;
+	free(handles);
+	handles = xcalloc(nr_handles, sizeof(struct ex_value*));
+	for (unsigned i = 0; i < ex->nr_blocks; i++) {
+		map_handles(&ex->blocks[i].val);
+	}
+}
+
 static void MainEXFile_ModuleInit(void)
 {
 	// load .ex file
 	if (!config.ex_path || !(ex = ex_read_file(config.ex_path)))
 		ERROR("Failed to load .ex file: %s", display_utf0(config.ex_path));
 
-	// assign IDs to each ex_value
-	int id = 1;
-	for (unsigned i = 0; i <  ex->nr_blocks; i++) {
-		id = set_indices(&ex->blocks[i].val, id);
-	}
+	rebuild_handles();
+}
 
-	// create index mapping IDs to ex_values
-	nr_handles = id;
-	handles = xcalloc(nr_handles, sizeof(struct ex_value*));
-	for (unsigned i = 0; i < ex->nr_blocks; i++) {
-		map_handles(&ex->blocks[i].val);
-	}
+static bool MainEXFile_AddEXText(struct string *file_path)
+{
+	if (!ex || !file_path || !file_path->text[0])
+		return false;
+	char *path = gamedir_path_icase(file_path->text);
+	if (!path)
+		path = gamedir_path(file_path->text);
+	struct ex *add_ex = ex_read_file(path);
+	free(path);
+	if (!add_ex)
+		return false;
+	ex_append(ex, add_ex);
+	ex_free(add_ex);
+	rebuild_handles();
+	return true;
 }
 
 static void MainEXFile_ModuleFini(void)
@@ -782,7 +803,7 @@ HLL_LIBRARY(MainEXFile,
 	    HLL_TODO_EXPORT(AddEXReader, NULL),
 	    HLL_TODO_EXPORT(EraseEXReader, NULL),
 	    HLL_TODO_EXPORT(AddEX, NULL),
-	    HLL_TODO_EXPORT(AddEXText, NULL),
+	    HLL_EXPORT(AddEXText, MainEXFile_AddEXText),
 	    HLL_TODO_EXPORT(Save, NULL),
 	    HLL_TODO_EXPORT(Load, NULL),
 	    HLL_TODO_EXPORT(GetColAtFormatName, NULL),

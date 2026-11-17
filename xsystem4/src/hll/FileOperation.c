@@ -814,6 +814,21 @@ static void ADVEngine_GetFunctionName(struct string **out, possibly_unused int i
 	}
 }
 static bool ADVEngine_AnalyseFunction(possibly_unused struct string *func_name) { return false; }
+static bool ADVEngine_AnalyseFunction_v6(possibly_unused struct string *func_name, possibly_unused struct string *if_data) { return false; }
+static void *ADVEngine_ResolveAnalyseFunction(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)ADVEngine_AnalyseFunction_v6 : (void *)ADVEngine_AnalyseFunction;
+}
+static bool ADVEngine_AnalyseIf(possibly_unused struct string *func_name) { return false; }
+static int ADVEngine_NumofIf(possibly_unused struct string *func_name) { return 0; }
+static void ADVEngine_GetIf(struct string **out, possibly_unused struct string *func_name, possibly_unused int idx)
+{
+	if (out) {
+		if (*out)
+			free_string(*out);
+		*out = string_ref(&EMPTY_STRING);
+	}
+}
 static void ADVEngine_GetFunctionList(possibly_unused struct string *file_path,
 		possibly_unused struct page **p_array)
 {
@@ -944,7 +959,10 @@ static struct string *ADVEngine_GetAttribute(possibly_unused struct string *key)
 HLL_LIBRARY(ADVEngine,
 	    HLL_EXPORT(NumofFunctionName, ADVEngine_NumofFunctionName),
 	    HLL_EXPORT(GetFunctionName, ADVEngine_GetFunctionName),
-	    HLL_EXPORT(AnalyseFunction, ADVEngine_AnalyseFunction),
+	    HLL_EXPORT(AnalyseIf, ADVEngine_AnalyseIf),
+	    HLL_EXPORT(NumofIf, ADVEngine_NumofIf),
+	    HLL_EXPORT(GetIf, ADVEngine_GetIf),
+	    HLL_OVERLOAD(AnalyseFunction, ADVEngine_ResolveAnalyseFunction),
 	    HLL_EXPORT(GetFunctionList, ADVEngine_GetFunctionList),
 	    HLL_EXPORT(Load, ADVEngine_Load),
 	    HLL_EXPORT(LoadByFile, ADVEngine_LoadByFile),
