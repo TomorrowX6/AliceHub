@@ -180,6 +180,13 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/action_game_modifier" />
+
+            <Button
+                android:id="@+id/btn_hub_gamepad_settings"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_gamepad" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

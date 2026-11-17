@@ -138,6 +138,12 @@
             android:exported="false">
         </activity>
 
+        <activity android:name="io.github.kichikuou.xsystem4.GamepadSettingsActivity"
+            android:label="@string/settings_gamepad"
+            android:parentActivityName="io.github.kichikuou.xsystem4.GameHubActivity"
+            android:exported="false">
+        </activity>
+
         <activity android:name="io.github.kichikuou.xsystem4.SettingsActivity"
             android:label="@string/action_settings"
             android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"

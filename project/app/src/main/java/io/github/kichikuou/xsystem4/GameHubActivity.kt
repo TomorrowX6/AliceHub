@@ -63,6 +63,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         findViewById<View>(R.id.btn_hub_mod_manager).setOnClickListener { openModManager() }
         findViewById<View>(R.id.btn_hub_save_manager).setOnClickListener { openSaveManager() }
         findViewById<View>(R.id.btn_hub_game_modifier).setOnClickListener { openGameModifier() }
+        findViewById<View>(R.id.btn_hub_gamepad_settings).setOnClickListener { openGamepadSettings() }
 
         handleRestoreDialogIntent(intent)
         refreshUi()
@@ -342,6 +343,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         )
         UiKit.styleActionRow(findViewById(R.id.btn_hub_save_manager), R.drawable.ic_save, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_game_modifier), R.drawable.ic_tune, rowAccent)
+        UiKit.styleActionRow(findViewById(R.id.btn_hub_gamepad_settings), R.drawable.ic_gamepad, rowAccent)
     }
 
     private fun onlineBaseSizeText(): String {
@@ -523,6 +525,17 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val intent = Intent(this, GameModifierActivity::class.java)
             .putExtra(GameModifierActivity.EXTRA_DIR_NAME, targetDirName)
             .putExtra(GameModifierActivity.EXTRA_GAME_ID, descriptor.id)
+        startActivity(intent)
+    }
+
+    private fun openGamepadSettings() {
+        val targetDirName = selectedItem?.path?.name ?: descriptor.defaultDirName
+        val displayTitle = findViewById<TextView>(R.id.hub_title).text?.toString()?.takeIf { it.isNotBlank() }
+            ?: descriptor.title
+        val intent = Intent(this, GamepadSettingsActivity::class.java)
+            .putExtra(GamepadSettingsActivity.EXTRA_PROFILE_KEY, targetDirName)
+            .putExtra(GamepadSettingsActivity.EXTRA_GAME_ID, descriptor.id)
+            .putExtra(GamepadSettingsActivity.EXTRA_GAME_TITLE, displayTitle)
         startActivity(intent)
     }
 

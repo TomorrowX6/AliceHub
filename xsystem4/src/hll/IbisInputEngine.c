@@ -38,20 +38,26 @@ HLL_QUIET_UNIMPLEMENTED(, void, IbisInputEngine, Mouse_HideByStepMessage);
 
 static void IbisInputEngine_Joystick_ClearCaptureFlag(void)
 {
-	// TODO
+	joy_clear_flag();
 }
 
-//int IbisInputEngine_Joystick_GetNumofDevice(void);
-HLL_QUIET_UNIMPLEMENTED(0, int,  IbisInputEngine, Joystick_GetNumofDevice);
+static int IbisInputEngine_Joystick_GetNumofDevice(void)
+{
+	handle_events();
+	return joy_get_num_controllers();
+}
 
 bool IbisInputEngine_Joystick_IsKeyDown(int DeviceNumber, int JoystickCode)
 {
-	// TODO
-	return false;
+	handle_events();
+	return joy_is_button_down(DeviceNumber, JoystickCode);
 }
 
-//float IbisInputEngine_Joystick_GetAxis(int DeviceNumber, int AxisType);
-HLL_QUIET_UNIMPLEMENTED(0.0, float, IbisInputEngine, Joystick_GetAxis, int dev, int axis);
+static float IbisInputEngine_Joystick_GetAxis(int DeviceNumber, int AxisType)
+{
+	handle_events();
+	return joy_get_axis_value(DeviceNumber, AxisType);
+}
 
 HLL_LIBRARY(IbisInputEngine,
 	    HLL_EXPORT(Mouse_GetPos, sact_Mouse_GetPos),
