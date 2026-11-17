@@ -579,6 +579,19 @@ object GamepadBridge {
         else -> "ADV"
     }
 
+    /**
+     * Whether replacing [current] with [targetPresetId] would throw away something the user
+     * cannot get back by re-picking a preset: a customised layout, or (for the empty preset)
+     * any controls at all.
+     */
+    fun presetSwitchLosesLayout(current: VirtualPadConfig, targetPresetId: String): Boolean {
+        if (current.controls.isEmpty()) return false
+        val target = buildPresetControls(targetPresetId)
+        if (current.controls == target) return false
+        if (targetPresetId == PRESET_EMPTY) return true
+        return current.controls != buildPresetControls(current.presetId)
+    }
+
     fun buildPresetControls(presetId: String): List<VirtualControlSpec> {
         return when (presetId) {
             PRESET_EMPTY -> emptyList()

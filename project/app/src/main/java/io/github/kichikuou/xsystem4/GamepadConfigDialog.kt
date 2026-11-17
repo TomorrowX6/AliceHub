@@ -235,9 +235,9 @@ class GamepadConfigController(
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 0, 0, dp(4))
             }
-            val btnVn = makePresetChip("ADV") { applyPreset(GamepadBridge.PRESET_VN_MOUSE) }
-            val btnRpg = makePresetChip("RPG") { applyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
-            val btnEmpty = makePresetChip(tr("空布局", "空", "Empty")) { applyPreset(GamepadBridge.PRESET_EMPTY) }
+            val btnVn = makePresetChip("ADV") { confirmApplyPreset(GamepadBridge.PRESET_VN_MOUSE) }
+            val btnRpg = makePresetChip("RPG") { confirmApplyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
+            val btnEmpty = makePresetChip(tr("空布局", "空", "Empty")) { confirmApplyPreset(GamepadBridge.PRESET_EMPTY) }
             presetBtnVn = btnVn
             presetBtnRpg = btnRpg
             presetBtnEmpty = btnEmpty
@@ -293,13 +293,49 @@ class GamepadConfigController(
         return outer
     }
 
-    private fun applyPreset(presetId: String) {
-        val physBindings = when (presetId) {
-            GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.rpgPhysicalBindings()
-            // Empty layout only clears the virtual pad; keep current controller bindings.
-            GamepadBridge.PRESET_EMPTY -> draft.physical.bindings
-            else -> GamepadBridge.defaultPhysicalBindings()
+    private fun presetPhysicalBindings(presetId: String): Map<Int, GamepadActionSpec> = when (presetId) {
+        GamepadBridge.PRESET_RPG_DUNGEON -> GamepadBridge.rpgPhysicalBindings()
+        // Empty layout only clears the virtual pad; keep current controller bindings.
+        GamepadBridge.PRESET_EMPTY -> draft.physical.bindings
+        else -> GamepadBridge.defaultPhysicalBindings()
+    }
+
+    /** Applies a preset, confirming first if it would discard a customised layout or mapping. */
+    private fun confirmApplyPreset(presetId: String) {
+        val losesLayout = GamepadBridge.presetSwitchLosesLayout(draft.virtual, presetId)
+        val losesMapping = draft.physical.bindings != presetPhysicalBindings(presetId) &&
+            draft.physical.bindings != GamepadBridge.defaultPhysicalBindings() &&
+            draft.physical.bindings != GamepadBridge.rpgPhysicalBindings()
+        if (!losesLayout && !losesMapping) {
+            applyPreset(presetId)
+            return
         }
+        val msg = when {
+            losesLayout && losesMapping -> tr(
+                "当前虚拟按键布局和实体手柄映射的修改都会被替换，确定吗？",
+                "現在の仮想パッド配置とコントローラ割当の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom virtual layout and controller mapping. Continue?"
+            )
+            losesLayout -> tr(
+                "当前虚拟按键布局的修改会被替换，确定吗？",
+                "現在の仮想パッド配置の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom virtual layout. Continue?"
+            )
+            else -> tr(
+                "当前实体手柄映射的修改会被替换，确定吗？",
+                "現在のコントローラ割当の変更は置き換えられます。よろしいですか？",
+                "This replaces your custom controller mapping. Continue?"
+            )
+        }
+        AlertDialog.Builder(uiCtx)
+            .setMessage(msg)
+            .setPositiveButton(android.R.string.ok) { _, _ -> applyPreset(presetId) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyPreset(presetId: String) {
+        val physBindings = presetPhysicalBindings(presetId)
         draft = draft.copy(
             virtual = draft.virtual.copy(
                 presetId = presetId,

@@ -130,6 +130,12 @@ class GamepadEditorActivity : Activity() {
     private lateinit var speedValTv: TextView
     private lateinit var speedSeek: SeekBar
 
+    private lateinit var undoBar: LinearLayout
+    private lateinit var undoMsgTv: TextView
+    // Last deleted control and its index, restorable from the undo bar.
+    private var undoDeleted: Pair<Int, VirtualControlSpec>? = null
+    private val hideUndoRunnable = Runnable { hideUndoBar() }
+
     private lateinit var tabVirtualBtn: TextView
     private lateinit var tabPhysicalBtn: TextView
     private lateinit var presetPill: TextView
@@ -347,6 +353,30 @@ class GamepadEditorActivity : Activity() {
             Gravity.TOP or Gravity.CENTER_HORIZONTAL
         ).apply {
             topMargin = dp(56)
+        })
+
+        // 7. Undo bar shown after deleting a control
+        undoBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(8), dp(8))
+            background = floatingCardDrawable(99f)
+            visibility = View.GONE
+        }
+        undoMsgTv = TextView(this).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(COL_TEXT_MAIN)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        undoBar.addView(undoMsgTv, wrapParams(rightMargin = dp(12)))
+        undoBar.addView(makePill(tr("撤销", "元に戻す", "Undo"), active = true) { undoDelete() })
+        root.addView(undoBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            bottomMargin = dp(16)
         })
 
         // Apply symmetric cutout safe insets to physical container so camera cutouts never clip cards
@@ -1062,12 +1092,15 @@ class GamepadEditorActivity : Activity() {
 
         // Both user-added and preset (ADV / RPG) controls can be deleted.
         val delChip = makePill(tr("删除", "削除", "Del"), active = false) {
+            val idx = profile.virtual.controls.indexOfFirst { it.id == sel.id }
+            if (idx >= 0) undoDeleted = idx to profile.virtual.controls[idx]
             val remaining = profile.virtual.controls.filterNot { it.id == sel.id }
             profile = profile.copy(virtual = profile.virtual.copy(controls = remaining))
             selectedControlId = null
             virtualLayer.setProfile(profile)
             virtualLayer.setEditMode(true, null)
             elementInspectorCard.visibility = View.GONE
+            showUndoBar(tr("已删除「${sel.label}」", "「${sel.label}」を削除しました", "Deleted \"${sel.label}\""))
         }.apply {
             setTextColor(COL_DANGER)
         }
@@ -1146,6 +1179,34 @@ class GamepadEditorActivity : Activity() {
         elementInspectorCard.addView(row2)
     }
 
+    private fun showUndoBar(message: String) {
+        undoMsgTv.text = message
+        undoBar.visibility = View.VISIBLE
+        undoBar.removeCallbacks(hideUndoRunnable)
+        undoBar.postDelayed(hideUndoRunnable, 5000L)
+    }
+
+    private fun hideUndoBar() {
+        undoBar.removeCallbacks(hideUndoRunnable)
+        undoBar.visibility = View.GONE
+        undoDeleted = null
+    }
+
+    private fun undoDelete() {
+        val (idx, spec) = undoDeleted ?: return hideUndoBar()
+        val controls = profile.virtual.controls
+        // Re-insert unless an equivalent control (same id, or a re-added D-Pad/stick) exists now.
+        if (controls.none { it.id == spec.id }) {
+            val restored = controls.toMutableList().apply { add(idx.coerceIn(0, size), spec) }
+            profile = profile.copy(virtual = profile.virtual.copy(controls = restored))
+            selectedControlId = spec.id
+            globalPopoverOpen = false
+            globalPopoverCard.visibility = View.GONE
+            refreshAllUi()
+        }
+        hideUndoBar()
+    }
+
     private fun mutateControl(
         id: String,
         rebuildBar: Boolean = true,
@@ -1194,14 +1255,31 @@ class GamepadEditorActivity : Activity() {
                 .setTitle(tr("选择布局预设", "プリセット", "Layout Preset"))
                 .setItems(names) { _, which ->
                     val id = ids[which]
-                    profile = profile.copy(
-                        virtual = profile.virtual.copy(
-                            presetId = id,
-                            controls = GamepadBridge.buildPresetControls(id)
+                    val apply = {
+                        hideUndoBar()
+                        profile = profile.copy(
+                            virtual = profile.virtual.copy(
+                                presetId = id,
+                                controls = GamepadBridge.buildPresetControls(id)
+                            )
                         )
-                    )
-                    selectedControlId = null
-                    refreshAllUi()
+                        selectedControlId = null
+                        refreshAllUi()
+                    }
+                    if (GamepadBridge.presetSwitchLosesLayout(profile.virtual, id)) {
+                        AlertDialog.Builder(this)
+                            .setTitle(names[which])
+                            .setMessage(tr(
+                                "当前布局的修改会被替换，确定吗？（保存前仍可点返回放弃）",
+                                "現在のレイアウトの変更は置き換えられます。よろしいですか？",
+                                "This replaces your current layout changes. Continue?"
+                            ))
+                            .setPositiveButton(R.string.ok) { _, _ -> apply() }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    } else {
+                        apply()
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
