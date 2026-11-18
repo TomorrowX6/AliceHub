@@ -14,12 +14,16 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <cglm/cglm.h>
 
 #include "system4.h"
+#include "system4/ex.h"
+#include "system4/string.h"
 
 #include "3d_internal.h"
 
@@ -76,6 +80,32 @@ static void sort_track_set(struct mpr_track_set *ts)
 		qsort(ts->add_ambient, ts->nr_add_ambient, sizeof(struct mpr_vec3_key), cmp_key_by_frame);
 	if (ts->nr_texture_anime)
 		qsort(ts->texture_anime, ts->nr_texture_anime, sizeof(struct mpr_int_key), cmp_key_by_frame);
+}
+
+static struct mpr_track_set *ensure_mesh_track(struct mpr *mpr, struct model *model, const char *mesh_name)
+{
+	int mi = resolve_mesh_index(model, mesh_name);
+	if (mi < 0)
+		return NULL;
+	if (!mpr->mesh_tracks[mi])
+		mpr->mesh_tracks[mi] = xcalloc(1, sizeof(struct mpr_track_set));
+	return mpr->mesh_tracks[mi];
+}
+
+static bool mpr_finalize(struct mpr *mpr)
+{
+	bool has_any = mpr->object.nr_mul_alpha || mpr->object.nr_mul_diffuse ||
+	               mpr->object.nr_add_ambient || mpr->object.nr_texture_anime;
+	for (int i = 0; i < mpr->nr_meshes; i++) {
+		if (!mpr->mesh_tracks[i])
+			continue;
+		sort_track_set(mpr->mesh_tracks[i]);
+		if (mpr->mesh_tracks[i]->nr_mul_alpha > 0)
+			mpr->has_mesh_alpha = true;
+		has_any = true;
+	}
+	sort_track_set(&mpr->object);
+	return has_any;
 }
 
 struct mpr *mpr_load(uint8_t *data, size_t size, struct model *model)
@@ -142,14 +172,119 @@ struct mpr *mpr_load(uint8_t *data, size_t size, struct model *model)
 		}
 	}
 
-	for (int i = 0; i < mpr->nr_meshes; i++) {
-		if (!mpr->mesh_tracks[i])
+	mpr_finalize(mpr);
+	return mpr;
+}
+
+static void txtex_collect_mesh_vec3(struct mpr *mpr, struct model *model, struct ex_tree *frame_node,
+                                    const char *utf8_key, bool is_ambient, int frame)
+{
+	struct ex_tree *sub = RE_ex_child(frame_node, utf8_key);
+	if (!sub || sub->is_leaf)
+		return;
+	for (unsigned i = 0; i < sub->nr_children; i++) {
+		struct ex_tree *c = &sub->children[i];
+		if (!c->is_leaf || !c->name)
 			continue;
-		sort_track_set(mpr->mesh_tracks[i]);
-		if (mpr->mesh_tracks[i]->nr_mul_alpha > 0)
-			mpr->has_mesh_alpha = true;
+		struct ex_value *val = &c->leaf.value;
+		if (val->type != EX_LIST || val->list->nr_items < 3)
+			continue;
+		vec3 v;
+		for (int k = 0; k < 3; k++) {
+			struct ex_value *ev = ex_list_get(val->list, k);
+			v[k] = ev && ev->type == EX_FLOAT ? ev->f : (ev && ev->type == EX_INT ? (float)ev->i : 0.0f);
+		}
+		struct mpr_track_set *ts = ensure_mesh_track(mpr, model, c->name->text);
+		if (!ts)
+			continue;
+		if (is_ambient)
+			append_vec3_key(&ts->add_ambient, &ts->nr_add_ambient, frame, v[0], v[1], v[2]);
+		else
+			append_vec3_key(&ts->mul_diffuse, &ts->nr_mul_diffuse, frame, v[0], v[1], v[2]);
 	}
-	sort_track_set(&mpr->object);
+}
+
+struct mpr *mpr_load_txtex(uint8_t *data, size_t size, struct model *model, const char *motion_name)
+{
+	if (!RE_is_exf(data, size) || !motion_name)
+		return NULL;
+	struct ex *ex = ex_read(data, size);
+	if (!ex)
+		return NULL;
+	struct ex_value *all_v = RE_ex_block(ex, "モーション追加データ");
+	if (!all_v || all_v->type != EX_TREE || all_v->tree->is_leaf) {
+		ex_free(ex);
+		return NULL;
+	}
+	struct ex_tree *mot_node = NULL;
+	for (unsigned i = 0; i < all_v->tree->nr_children; i++) {
+		struct ex_tree *c = &all_v->tree->children[i];
+		if (!c->is_leaf && c->name && !strcasecmp(c->name->text, motion_name)) {
+			mot_node = c;
+			break;
+		}
+	}
+	if (!mot_node) {
+		ex_free(ex);
+		return NULL;
+	}
+	struct mpr *mpr = xcalloc(1, sizeof(struct mpr));
+	mpr->nr_meshes = model->nr_meshes;
+	mpr->mesh_tracks = xcalloc(model->nr_meshes, sizeof(struct mpr_track_set *));
+
+	for (unsigned i = 0; i < mot_node->nr_children; i++) {
+		struct ex_tree *fn = &mot_node->children[i];
+		if (fn->is_leaf || !fn->name || !isdigit((unsigned char)fn->name->text[0]))
+			continue;
+		int frame = atoi(fn->name->text);
+		float fv;
+		vec3 v3;
+		if (RE_ex_float(fn, "オブジェクトアルファ乗算カラー", &fv))
+			append_float_key(&mpr->object, frame, fv);
+		if (RE_ex_vec3(fn, "オブジェクトディフューズ乗算カラー", v3))
+			append_vec3_key(&mpr->object.mul_diffuse, &mpr->object.nr_mul_diffuse, frame, v3[0], v3[1], v3[2]);
+		if (RE_ex_vec3(fn, "オブジェクトアンビエント加算カラー", v3))
+			append_vec3_key(&mpr->object.add_ambient, &mpr->object.nr_add_ambient, frame, v3[0], v3[1], v3[2]);
+
+		struct ex_tree *ma = RE_ex_child(fn, "メッシュアルファ乗算カラー");
+		if (ma && !ma->is_leaf) {
+			for (unsigned j = 0; j < ma->nr_children; j++) {
+				struct ex_tree *mc = &ma->children[j];
+				if (!mc->is_leaf || !mc->name)
+					continue;
+				struct ex_value *val = &mc->leaf.value;
+				float a = val->type == EX_FLOAT ? val->f : (val->type == EX_INT ? (float)val->i : 1.0f);
+				if (val->type != EX_FLOAT && val->type != EX_INT)
+					continue;
+				struct mpr_track_set *ts = ensure_mesh_track(mpr, model, mc->name->text);
+				if (ts)
+					append_float_key(ts, frame, a);
+			}
+		}
+		txtex_collect_mesh_vec3(mpr, model, fn, "メッシュディフューズ乗算カラー", false, frame);
+		txtex_collect_mesh_vec3(mpr, model, fn, "メッシュアンビエント加算カラー", true, frame);
+
+		struct ex_tree *mta = RE_ex_child(fn, "メッシュテクスチャアニメーション");
+		if (mta && !mta->is_leaf) {
+			for (unsigned j = 0; j < mta->nr_children; j++) {
+				struct ex_tree *mc = &mta->children[j];
+				if (!mc->is_leaf || !mc->name)
+					continue;
+				struct ex_value *val = &mc->leaf.value;
+				if (val->type != EX_INT && val->type != EX_FLOAT)
+					continue;
+				int ti = val->type == EX_INT ? val->i : (int)val->f;
+				struct mpr_track_set *ts = ensure_mesh_track(mpr, model, mc->name->text);
+				if (ts)
+					append_int_key(&ts->texture_anime, &ts->nr_texture_anime, frame, ti);
+			}
+		}
+	}
+	ex_free(ex);
+	if (!mpr_finalize(mpr)) {
+		mpr_free(mpr);
+		return NULL;
+	}
 	return mpr;
 }
 

@@ -15,24 +15,32 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <cglm/cglm.h>
+#include <zlib.h>
 
 #include "system4.h"
 #include "system4/aar.h"
+#include "system4/afa.h"
 #include "system4/archive.h"
 #include "system4/cg.h"
+#include "system4/file.h"
 #include "system4/hashtable.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 
 #include "3d_internal.h"
 #include "asset_manager.h"
 #include "reign.h"
 #include "sact.h"
 #include "sprite.h"
+#include "xsystem4.h"
 #include "vm.h"
 #include "xsystem4.h"
 #include "../hll/iarray.h"
@@ -383,17 +391,381 @@ static void re_plugin_on_gl_reset(void *user)
 		RE_renderer_reload_billboard_textures_by_path(plugin->renderer, plugin->aar);
 }
 
+struct re_afa_archive {
+	struct archive ar;
+	struct archive *raw;
+	struct hash_table *by_name; // normalized path -> (void *)(intptr_t)(no + 1)
+	struct hash_table *txtex_by_dir; // normalized model dir -> (void *)(intptr_t)(no + 1)
+};
+
+struct re_afa_data {
+	struct archive_data base;
+	struct archive_data *raw_d;
+	uint8_t *owned_buf;
+};
+
+static uint32_t read_u32_le(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static char *normalize_3d_key(const char *s)
+{
+	size_t len = strlen(s);
+	char *out = xmalloc(len + 1);
+	size_t j = 0;
+	const uint8_t *p = (const uint8_t *)s;
+	while (*p == '/' || *p == '\\')
+		p++;
+	if (p[0] == '.' && (p[1] == '/' || p[1] == '\\'))
+		p += 2;
+	while (*p) {
+		if (SJIS_2BYTE(*p) && p[1]) {
+			out[j++] = (char)*p++;
+			out[j++] = (char)*p++;
+			continue;
+		}
+		if (*p == '\\' || *p == '/') {
+			if (j > 0 && out[j - 1] != '/')
+				out[j++] = '/';
+			p++;
+			continue;
+		}
+		out[j++] = (char)tolower(*p++);
+	}
+	out[j] = '\0';
+	return out;
+}
+
+static void re_afa_index_cb(struct archive_data *d, void *user)
+{
+	struct re_afa_archive *w = user;
+	if (!d->name)
+		return;
+	char *norm = normalize_3d_key(d->name);
+	struct ht_slot *slot = ht_put(w->by_name, norm, NULL);
+	if (!slot->value)
+		slot->value = (void *)(intptr_t)(d->no + 1);
+	size_t nlen = strlen(norm);
+	if (w->txtex_by_dir && nlen > 9 && !strcmp(norm + nlen - 9, ".txtex.ex")) {
+		const char *sl = strrchr(norm, '/');
+		if (sl && sl > norm) {
+			char *dir = xmalloc((size_t)(sl - norm) + 1);
+			memcpy(dir, norm, (size_t)(sl - norm));
+			dir[sl - norm] = '\0';
+			struct ht_slot *dslot = ht_put(w->txtex_by_dir, dir, NULL);
+			if (!dslot->value)
+				dslot->value = (void *)(intptr_t)(d->no + 1);
+			free(dir);
+		}
+	}
+	free(norm);
+}
+
+static int re_afa_find_exact(struct re_afa_archive *w, const char *norm_key)
+{
+	void *v = ht_get(w->by_name, norm_key, NULL);
+	return v ? (int)(intptr_t)v - 1 : -1;
+}
+
+static int re_afa_lookup_variants(struct re_afa_archive *w, const char *norm)
+{
+	int no = re_afa_find_exact(w, norm);
+	if (no >= 0)
+		return no;
+
+	size_t len = strlen(norm);
+	char *buf = xmalloc(len + 16);
+
+	static const char *const append_exts[] = { ".zlb", ".qnt", ".ogg" };
+	for (size_t i = 0; i < sizeof(append_exts) / sizeof(append_exts[0]); i++) {
+		memcpy(buf, norm, len);
+		strcpy(buf + len, append_exts[i]);
+		no = re_afa_find_exact(w, buf);
+		if (no >= 0) {
+			free(buf);
+			return no;
+		}
+	}
+
+	if (len >= 4 && !strcmp(norm + len - 4, ".3de")) {
+		memcpy(buf, norm, len - 4);
+		strcpy(buf + len - 4, ".txtex.ex");
+		no = re_afa_find_exact(w, buf);
+		if (no >= 0) {
+			free(buf);
+			return no;
+		}
+	}
+
+	if (len >= 4 && (!strcmp(norm + len - 4, ".tga") || !strcmp(norm + len - 4, ".bmp") ||
+	                 !strcmp(norm + len - 4, ".dds") || !strcmp(norm + len - 4, ".jpg") ||
+	                 !strcmp(norm + len - 4, ".psd"))) {
+		memcpy(buf, norm, len - 4);
+		strcpy(buf + len - 4, ".png.qnt");
+		no = re_afa_find_exact(w, buf);
+		if (no >= 0) {
+			free(buf);
+			return no;
+		}
+	}
+
+	free(buf);
+	return -1;
+}
+
+static int re_afa_find_no(struct re_afa_archive *w, const char *name)
+{
+	if (!name || !*name)
+		return -1;
+	char *norm = normalize_3d_key(name);
+	int no = re_afa_lookup_variants(w, norm);
+	if (no < 0 && !strncmp(norm, "data/", 5))
+		no = re_afa_lookup_variants(w, norm + 5);
+	free(norm);
+	return no;
+}
+
+static bool re_afa_exists(struct archive *ar, int no)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	return archive_exists(w->raw, no);
+}
+
+static bool re_afa_exists_by_name(struct archive *ar, const char *name, int *id_out)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	int no = re_afa_find_no(w, name);
+	if (no < 0)
+		return false;
+	if (id_out)
+		*id_out = no;
+	return true;
+}
+
+static struct archive_data *re_afa_wrap_data(struct archive *ar, struct archive_data *raw_d)
+{
+	if (!raw_d)
+		return NULL;
+	if (!archive_load_file(raw_d)) {
+		archive_free_data(raw_d);
+		return NULL;
+	}
+	struct re_afa_data *wd = xcalloc(1, sizeof(*wd));
+	if (raw_d->size >= 16 && !memcmp(raw_d->data, "ZLB\0", 4)) {
+		uint32_t raw_sz = read_u32_le(raw_d->data + 8);
+		uint32_t comp_sz = read_u32_le(raw_d->data + 12);
+		if (comp_sz > raw_d->size - 16)
+			comp_sz = (uint32_t)(raw_d->size - 16);
+		uLongf destlen = raw_sz;
+		uint8_t *out = xmalloc((size_t)raw_sz + 1);
+		int rc = uncompress(out, &destlen, raw_d->data + 16, comp_sz);
+		if (rc != Z_OK) {
+			WARNING("ZLB decompression failed for %s: %d", raw_d->name, rc);
+			free(out);
+			free(wd);
+			archive_free_data(raw_d);
+			return NULL;
+		}
+		out[destlen] = '\0';
+		wd->owned_buf = out;
+		wd->base.data = out;
+		wd->base.size = destlen;
+		wd->base.name = strdup(raw_d->name);
+		wd->base.no = raw_d->no;
+		wd->base.archive = ar;
+		archive_free_data(raw_d);
+		return &wd->base;
+	}
+	wd->raw_d = raw_d;
+	wd->base = *raw_d;
+	wd->base.archive = ar;
+	return &wd->base;
+}
+
+static struct archive_data *re_afa_get(struct archive *ar, int no)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	return re_afa_wrap_data(ar, archive_get(w->raw, no));
+}
+
+static struct archive_data *re_afa_get_by_name(struct archive *ar, const char *name)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	int no = re_afa_find_no(w, name);
+	if (no < 0)
+		return NULL;
+	return re_afa_wrap_data(ar, archive_get(w->raw, no));
+}
+
+static unsigned re_afa_nr_files(struct archive *ar)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	return archive_nr_files(w->raw);
+}
+
+static void re_afa_for_each(struct archive *ar, void (*iter)(struct archive_data *data, void *user), void *user)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	archive_for_each(w->raw, iter, user);
+}
+
+static void re_afa_free_data(struct archive_data *d)
+{
+	struct re_afa_data *wd = (struct re_afa_data *)d;
+	if (wd->owned_buf) {
+		free(wd->owned_buf);
+		free(wd->base.name);
+	}
+	if (wd->raw_d)
+		archive_free_data(wd->raw_d);
+	free(wd);
+}
+
+static void re_afa_free(struct archive *ar)
+{
+	struct re_afa_archive *w = (struct re_afa_archive *)ar;
+	ht_free(w->by_name);
+	ht_free(w->txtex_by_dir);
+	archive_free(w->raw);
+	free(w);
+}
+
+static struct archive_ops re_afa_ops = {
+	.exists = re_afa_exists,
+	.exists_by_name = re_afa_exists_by_name,
+	.get = re_afa_get,
+	.get_by_name = re_afa_get_by_name,
+	.nr_files = re_afa_nr_files,
+	.for_each = re_afa_for_each,
+	.free_data = re_afa_free_data,
+	.free = re_afa_free,
+};
+
+static struct archive *re_afa_archive_wrap(struct archive *raw)
+{
+	struct re_afa_archive *w = xcalloc(1, sizeof(*w));
+	w->ar.mmapped = raw->mmapped;
+	w->ar.ops = &re_afa_ops;
+	w->ar.conv = raw->conv;
+	w->raw = raw;
+	unsigned n = archive_nr_files(raw);
+	size_t buckets = 256;
+	while (buckets < n * 2 && buckets < (1u << 16))
+		buckets <<= 1;
+	w->by_name = ht_create(buckets);
+	w->txtex_by_dir = ht_create(buckets / 2 > 256 ? buckets / 2 : 256);
+	archive_for_each(raw, re_afa_index_cb, w);
+	return &w->ar;
+}
+
+static char *find_3d_afa_path(void);
+
+struct archive *RE_open_3d_archive(void)
+{
+	char *afa_path = find_3d_afa_path();
+	if (!afa_path)
+		return NULL;
+	int afa_err = ARCHIVE_SUCCESS;
+	struct afa_archive *afa = afa_open(afa_path, MMAP_IF_64BIT, &afa_err);
+	free(afa_path);
+	if (!afa)
+		return NULL;
+	return re_afa_archive_wrap(&afa->ar);
+}
+
+static char *dup_strip_trailing_seps(const char *s)
+{
+	size_t len = strlen(s);
+	size_t end = 0;
+	for (size_t i = 0; i < len; ) {
+		if (SJIS_2BYTE((uint8_t)s[i]) && i + 1 < len) {
+			i += 2;
+			end = i;
+			continue;
+		}
+		if (s[i] != '/' && s[i] != '\\')
+			end = i + 1;
+		i++;
+	}
+	char *out = xmalloc(end + 1);
+	memcpy(out, s, end);
+	out[end] = '\0';
+	return out;
+}
+
+struct archive_data *RE_archive_find_txtex(struct archive *ar, const char *model_dir)
+{
+	if (!ar || !model_dir || !*model_dir)
+		return NULL;
+	char *clean = dup_strip_trailing_seps(model_dir);
+	if (!*clean) {
+		free(clean);
+		return NULL;
+	}
+	const char *bn = RE_path_basename(clean);
+	char *exact = xmalloc(strlen(clean) + strlen(bn) + 12);
+	sprintf(exact, "%s\\%s.txtex.ex", clean, bn);
+	struct archive_data *d = archive_get_by_name(ar, exact);
+	free(exact);
+	if (!d && ar->ops == &re_afa_ops) {
+		struct re_afa_archive *w = (struct re_afa_archive *)ar;
+		char *norm = normalize_3d_key(clean);
+		void *v = w->txtex_by_dir ? ht_get(w->txtex_by_dir, norm, NULL) : NULL;
+		if (!v && w->txtex_by_dir && !strncmp(norm, "data/", 5))
+			v = ht_get(w->txtex_by_dir, norm + 5, NULL);
+		free(norm);
+		if (v)
+			d = archive_get(ar, (int)(intptr_t)v - 1);
+	}
+	free(clean);
+	return d;
+}
+
+static char *find_3d_afa_path(void)
+{
+	const char *candidates[2] = { config.ain_filename, config.boot_name };
+	for (int i = 0; i < 2; i++) {
+		if (!candidates[i] || !*candidates[i])
+			continue;
+		const char *base = RE_path_basename(candidates[i]);
+		const char *dot = strrchr(base, '.');
+		size_t blen = dot ? (size_t)(dot - base) : strlen(base);
+		if (blen == 0)
+			continue;
+		char *rel = xmalloc(blen + 7);
+		memcpy(rel, base, blen);
+		strcpy(rel + blen, "3D.afa");
+		char *p = gamedir_path_icase(rel);
+		free(rel);
+		if (p)
+			return p;
+	}
+	return gamedir_path_icase("Data/3D.afa");
+}
+
 struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 {
 	re_debug_init();
 
 	char *aar_path = gamedir_path(version <= RE_TAPIR_PLUGIN ? "Data/ReignData.red" : "Data/3DData.red");
 	int error = ARCHIVE_SUCCESS;
-	struct archive *aar = (struct archive *)aar_open(aar_path, MMAP_IF_64BIT, &error);
-	if (error == ARCHIVE_FILE_ERROR) {
-		WARNING("aar_open(\"%s\"): %s", display_utf0(aar_path), strerror(errno));
-	} else if (error == ARCHIVE_BAD_ARCHIVE_ERROR) {
-		WARNING("aar_open(\"%s\"): invalid AAR archive", display_utf0(aar_path));
+	struct archive *aar = NULL;
+	if (file_exists(aar_path)) {
+		aar = (struct archive *)aar_open(aar_path, MMAP_IF_64BIT, &error);
+	} else {
+		error = ARCHIVE_FILE_ERROR;
+		errno = ENOENT;
+	}
+	if (!aar && error == ARCHIVE_FILE_ERROR) {
+		aar = RE_open_3d_archive();
+	}
+	if (!aar) {
+		if (error == ARCHIVE_FILE_ERROR) {
+			WARNING("aar_open(\"%s\"): %s", display_utf0(aar_path), strerror(errno));
+		} else if (error == ARCHIVE_BAD_ARCHIVE_ERROR) {
+			WARNING("aar_open(\"%s\"): invalid AAR archive", display_utf0(aar_path));
+		}
 	}
 	free(aar_path);
 	if (!aar)
@@ -401,6 +773,7 @@ struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 
 	struct RE_plugin *plugin = xcalloc_aligned(1, struct RE_plugin);
 	plugin->version = version;
+	plugin->thread_loading_mode = version >= RE_SEAL_PLUGIN;
 	plugin->plugin.name = "ReignEngine";
 	plugin->plugin.update = RE_render;
 	plugin->plugin.to_json = RE_to_json;
@@ -629,6 +1002,8 @@ bool RE_instance_set_type(struct RE_instance *instance, int type)
 	if (instance->type != RE_ITYPE_UNINITIALIZED && instance->type != (enum RE_instance_type)type)
 		ERROR("instance type cannot be changed");
 	switch (type) {
+	case RE_ITYPE_UNINITIALIZED:
+		break;
 	case RE_ITYPE_STATIC:
 		break;
 	case RE_ITYPE_SKINNED:
@@ -658,33 +1033,83 @@ bool RE_instance_set_type(struct RE_instance *instance, int type)
 	return true;
 }
 
-bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
+bool RE_plugin_data_exists(struct RE_plugin *plugin, int type, const char *name)
 {
-	if (!instance || !name)
+	if (!plugin || !plugin->aar || !name || !*name)
 		return false;
+	char *clean = dup_strip_trailing_seps(name);
+	if (!*clean) {
+		free(clean);
+		return false;
+	}
 	const char *ext;
-	switch (instance->type) {
+	switch (type) {
 	case RE_ITYPE_STATIC:
 	case RE_ITYPE_SKINNED:
 		ext = ".POL";
 		break;
 	case RE_ITYPE_PARTICLE_EFFECT:
-		ext = instance->plugin && instance->plugin->version >= RE_SEAL_PLUGIN ? ".3de" : ".pae";
+		ext = plugin->version >= RE_SEAL_PLUGIN ? ".3de" : ".pae";
 		break;
 	default:
-		if (archive_exists_by_name(instance->plugin->aar, name, NULL))
+		if (archive_exists_by_name(plugin->aar, clean, NULL)) {
+			free(clean);
 			return true;
-		if (!strncasecmp(name, "Data\\", 5))
-			return archive_exists_by_name(instance->plugin->aar, name + 4, NULL);
+		}
+		if (!strncasecmp(clean, "Data\\", 5) && archive_exists_by_name(plugin->aar, clean + 4, NULL)) {
+			free(clean);
+			return true;
+		}
+		if (type == RE_ITYPE_BILLBOARD) {
+			const char *bn = RE_path_basename(clean);
+			char *bp = xmalloc(strlen(clean) + strlen(bn) + 6);
+			sprintf(bp, "%s\\%s.png", clean, bn);
+			bool ok = archive_exists_by_name(plugin->aar, bp, NULL);
+			free(bp);
+			free(clean);
+			return ok;
+		}
+		free(clean);
 		return false;
 	}
-	const char *basename = strrchr(name, '\\');
-	basename = basename ? basename + 1 : name;
-	char *path = xmalloc(strlen(name) + strlen(basename) + strlen(ext) + 2);
-	sprintf(path, "%s\\%s%s", name, basename, ext);
-	bool exists = archive_exists_by_name(instance->plugin->aar, path, NULL);
+	const char *basename = RE_path_basename(clean);
+	char *path = xmalloc(strlen(clean) + strlen(basename) + strlen(ext) + 2);
+	sprintf(path, "%s\\%s%s", clean, basename, ext);
+	bool exists = archive_exists_by_name(plugin->aar, path, NULL);
 	free(path);
+	free(clean);
 	return exists;
+}
+
+bool RE_plugin_poly_motion_exists(struct RE_plugin *plugin, const char *name)
+{
+	if (!plugin || !plugin->aar || !name || !*name)
+		return false;
+	char *clean = dup_strip_trailing_seps(name);
+	if (!*clean) {
+		free(clean);
+		return false;
+	}
+	char *hm_path = xmalloc(strlen(clean) + 14);
+	sprintf(hm_path, "%s\\HasMotion.hm", clean);
+	bool exists = archive_exists_by_name(plugin->aar, hm_path, NULL);
+	free(hm_path);
+	if (!exists) {
+		const char *basename = RE_path_basename(clean);
+		char *mot_path = xmalloc(strlen(clean) + strlen(basename) + 6);
+		sprintf(mot_path, "%s\\%s.MOT", clean, basename);
+		exists = archive_exists_by_name(plugin->aar, mot_path, NULL);
+		free(mot_path);
+	}
+	free(clean);
+	return exists;
+}
+
+bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
+{
+	if (!instance)
+		return false;
+	return RE_plugin_data_exists(instance->plugin, instance->type, name);
 }
 
 // Loads the frame images of a billboard instance. They are stored in the
@@ -693,8 +1118,7 @@ static bool load_billboard_frames(struct RE_instance *instance, const char *name
 {
 	if (!instance->plugin || !instance->plugin->renderer)
 		return false;
-	const char *basename = strrchr(name, '\\');
-	basename = basename ? basename + 1 : name;
+	const char *basename = RE_path_basename(name);
 	char *path = xmalloc(strlen(name) + strlen(basename) + 22);
 
 	int capacity = 8;

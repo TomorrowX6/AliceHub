@@ -47,6 +47,7 @@ bool game_rance9 = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
+bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 
@@ -505,6 +506,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_rance10 = false;
 	game_dohnadohna = false;
 	game_evenicle = false;
+	game_evenicle2 = false;
 	game_rance03 = false;
 	game_dungeons_and_dolls = false;
 
@@ -515,6 +517,8 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle = ain->version == 6
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_get_function(ain, "CMapPlayer@RunPathFindMove") >= 0;
+	game_evenicle2 = ain->version == 14
+		&& ain_get_function(ain, "C_MedicaMenu@0") >= 0;
 	game_rance01 = ain->version == 6
 		&& ain_get_struct(ain, "Player") >= 0
 		&& ain_get_struct(ain, "DungeonLine") >= 0
@@ -553,6 +557,10 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_height = 1080;
 	}
 	if (game_dohnadohna && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1280;
+		config.view_height = 720;
+	}
+	if (game_evenicle2 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;
 	}
