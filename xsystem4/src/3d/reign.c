@@ -24,6 +24,13 @@
 #include <strings.h>
 #include <cglm/cglm.h>
 #include <zlib.h>
+// Android NDK <zconf.h> defines `far` to empty, breaking 3D parameter/local names.
+#ifdef far
+#undef far
+#endif
+#ifdef near
+#undef near
+#endif
 
 #include "system4.h"
 #include "system4/aar.h"
