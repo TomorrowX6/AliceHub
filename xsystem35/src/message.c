@@ -151,7 +151,10 @@ void msg_nextLine() {
 	// puts("next Line");
 	if (msg.mg_getString) {
 		msgget_at_r();
-		return;
+		// Capturing a backlog and displaying it are independent. Keep the
+		// visible cursor in sync with R even when MG also captures the text.
+		if (!msg.mg_dspMsg)
+			return;
 	}
 	
 	msgcur.x  = msg.win->x;
