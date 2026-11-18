@@ -302,4 +302,8 @@
     <string name="game_sort_name">名称（升序）</string>
     <string name="game_sort_rating">评分（高到低）</string>
     <string name="game_sort_release_date">发行时间（由新到旧）</string>
+    <string name="game_sort_catalog_short">默认</string>
+    <string name="game_sort_name_short">名称</string>
+    <string name="game_sort_rating_short">评分</string>
+    <string name="game_sort_release_date_short">发行时间</string>
 </resources>

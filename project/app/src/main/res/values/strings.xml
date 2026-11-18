@@ -303,4 +303,8 @@
     <string name="game_sort_name">Name (A–Z)</string>
     <string name="game_sort_rating">Score (highest first)</string>
     <string name="game_sort_release_date">Release date (newest first)</string>
+    <string name="game_sort_catalog_short">Default</string>
+    <string name="game_sort_name_short">Name</string>
+    <string name="game_sort_rating_short">Score</string>
+    <string name="game_sort_release_date_short">Release date</string>
 </resources>

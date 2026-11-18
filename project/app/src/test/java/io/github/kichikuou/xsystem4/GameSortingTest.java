@@ -191,12 +191,16 @@ public class GameSortingTest {
             android.app.AlertDialog dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
             assertTrue(dialog.isShowing());
             assertEquals(GameSortMode.values().length, dialog.getListView().getCount());
+            int[] fullLabels = {R.string.game_sort_catalog, R.string.game_sort_name, R.string.game_sort_rating, R.string.game_sort_release_date};
+            for (int i = 0; i < fullLabels.length; i++) {
+                assertEquals(settings.getString(fullLabels[i]), dialog.getListView().getAdapter().getItem(i));
+            }
             assertNotEquals(View.VISIBLE, dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).getVisibility());
             int rating = GameSortMode.RATING.ordinal();
             dialog.getListView().performItemClick(dialog.getListView().getChildAt(rating), rating, rating);
             assertEquals(GameSortMode.RATING, AppSettings.INSTANCE.getGameSortMode(settings));
             assertFalse(dialog.isShowing());
-            String label = settings.getString(R.string.game_sort_rating);
+            String label = settings.getString(R.string.game_sort_rating_short);
             assertEquals(label, ((TextView) settings.findViewById(R.id.value_settings_game_sort)).getText().toString());
             assertEquals(settings.getString(R.string.settings_game_sort) + ", " + label, row.getContentDescription().toString());
         } finally { controller.pause().stop().destroy(); }
@@ -248,23 +252,37 @@ public class GameSortingTest {
             list.close(); new File(dir, "AliceStart.ini").delete(); new File(dir, "Rance10.ain").delete(); dir.delete();
         }
     }
-    @Test public void settingsRowIsKeyboardAccessibleAndWrapsInAllLanguages() {
+    @Test public void settingsRowIsInlineAccessibleAndEllipsizesShortValuesInAllLanguages() {
+        int[] shortLabels = {R.string.game_sort_catalog_short, R.string.game_sort_name_short, R.string.game_sort_rating_short, R.string.game_sort_release_date_short};
         for (String language : Arrays.asList("en", "zh", "ja")) {
-            Configuration config = new Configuration(activity.getResources().getConfiguration());
-            config.setLocale(new Locale(language)); config.fontScale = 2f;
-            Context ctx = new ContextThemeWrapper(activity.createConfigurationContext(config), R.style.Theme_Launcher);
-            View root = LayoutInflater.from(ctx).inflate(R.layout.activity_settings, null);
-            View row = root.findViewById(R.id.row_settings_game_sort);
-            assertTrue(row.isFocusable()); assertTrue(row.isClickable());
-            TextView value = root.findViewById(R.id.value_settings_game_sort);
-            value.setText(ctx.getString(R.string.game_sort_rating));
-            root.measure(View.MeasureSpec.makeMeasureSpec((int) (320 * ctx.getResources().getDisplayMetrics().density), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            root.layout(0, 0, root.getMeasuredWidth(), root.getMeasuredHeight());
-            assertNull(value.getEllipsize());
-            assertEquals(Integer.MAX_VALUE, value.getMaxLines());
-            assertTrue(value.getWidth() > 0);
-            assertTrue(value.getHeight() >= value.getLayout().getHeight());
-            assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, root.findViewById(R.id.icon_settings_game_sort).getImportantForAccessibility());
+            for (float fontScale : new float[]{1f, 2f}) {
+                Configuration config = new Configuration(activity.getResources().getConfiguration());
+                config.setLocale(new Locale(language)); config.fontScale = fontScale;
+                Context ctx = new ContextThemeWrapper(activity.createConfigurationContext(config), R.style.Theme_Launcher);
+                View root = LayoutInflater.from(ctx).inflate(R.layout.activity_settings, null);
+                android.widget.LinearLayout row = root.findViewById(R.id.row_settings_game_sort);
+                assertTrue(row.isFocusable()); assertTrue(row.isClickable());
+                assertEquals(android.widget.LinearLayout.HORIZONTAL, row.getOrientation());
+                TextView title = (TextView) row.getChildAt(1);
+                TextView value = root.findViewById(R.id.value_settings_game_sort);
+                assertSame(row, value.getParent());
+                assertEquals(android.text.TextUtils.TruncateAt.END, value.getEllipsize());
+                assertEquals(1, value.getMaxLines());
+                assertEquals(android.view.Gravity.END, value.getGravity() & android.view.Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK);
+                for (int width : new int[]{240, 320}) for (int labelId : shortLabels) {
+                    String text = ctx.getString(labelId);
+                    assertFalse(text.matches(".*[()（）].*"));
+                    value.setText(text);
+                    root.measure(View.MeasureSpec.makeMeasureSpec((int) (width * ctx.getResources().getDisplayMetrics().density), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    root.layout(0, 0, root.getMeasuredWidth(), root.getMeasuredHeight());
+                    assertTrue(value.getWidth() > 0);
+                    assertTrue(title.getWidth() > 0);
+                    assertTrue(value.getLeft() >= title.getRight());
+                    assertEquals(1, value.getLineCount());
+                    assertTrue(value.getRight() <= row.getWidth() - row.getPaddingRight());
+                }
+                assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, root.findViewById(R.id.icon_settings_game_sort).getImportantForAccessibility());
+            }
         }
     }
 }

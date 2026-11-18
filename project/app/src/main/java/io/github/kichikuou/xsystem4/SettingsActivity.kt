@@ -165,7 +165,7 @@ class SettingsActivity : ThemedActivity() {
             AppSettings.THEME_DARK -> getString(R.string.theme_dark)
             else -> getString(R.string.theme_auto)
         }
-        val sortLabel = gameSortLabel(AppSettings.getGameSortMode(this))
+        val sortLabel = gameSortSummaryLabel(AppSettings.getGameSortMode(this))
         findViewById<TextView>(R.id.value_settings_game_sort).text = sortLabel
         findViewById<View>(R.id.row_settings_game_sort).contentDescription =
             getString(R.string.settings_game_sort) + ", " + sortLabel
@@ -662,6 +662,13 @@ class SettingsActivity : ThemedActivity() {
         dialog.show()
         trackDialog(dialog)
     }
+
+    private fun gameSortSummaryLabel(mode: GameSortMode): String = getString(when (mode) {
+        GameSortMode.CATALOG -> R.string.game_sort_catalog_short
+        GameSortMode.NAME -> R.string.game_sort_name_short
+        GameSortMode.RATING -> R.string.game_sort_rating_short
+        GameSortMode.RELEASE_DATE -> R.string.game_sort_release_date_short
+    })
 
     private fun gameSortLabel(mode: GameSortMode): String = getString(when (mode) {
         GameSortMode.CATALOG -> R.string.game_sort_catalog
