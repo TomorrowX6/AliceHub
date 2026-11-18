@@ -23,6 +23,7 @@ object GameSortMetadata {
         GameCatalog.ID_RANCE08 to GameSortInfo("2012-02-24", 80.0, "https://vndb.org/v6985", "https://www.alicesoft.com/rance8/magnum.html"),
         GameCatalog.ID_RANCE09 to GameSortInfo("2014-04-25", 83.5, "https://vndb.org/v13802", "https://www.alicesoft.com/rance35th/"),
         GameCatalog.ID_KICHIKUOU to GameSortInfo("1996-12-19", 84.0, "https://vndb.org/v2045", "https://vndb.org/v2045"),
+        GameCatalog.ID_DAIAKUJI to GameSortInfo("2001-11-30", 77.2, "https://vndb.org/v298", "https://www.alicesoft.com/akuji/index.html"),
         GameCatalog.ID_ESCALAYER to GameSortInfo("2002-08-02", 71.7, "https://vndb.org/v311", "https://www.alicesoft.com/information/2022/entry003043.html"),
         GameCatalog.ID_ESCALAYER_REBOOT to GameSortInfo("2014-07-25", 71.7, "https://vndb.org/v311", "https://www.alicesoft.com/escalayerreboot/")
     )

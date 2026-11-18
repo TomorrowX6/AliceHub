@@ -99,6 +99,9 @@ object NativeGameImport {
         ) {
             return "KichikuRance"
         }
+        if (GameCatalog.isDaiakujiGameFiles(activeFiles)) {
+            return "Daiakuji"
+        }
         if (activeFiles.any { it.equals("Evenicle2.ain", true) }) {
             return "Evenicle2"
         }
@@ -197,6 +200,7 @@ object NativeGameImport {
                     for (sub in docs) {
                         if (sub.folder && !skip(sub.name) &&
                             !sub.name.equals("BackData", ignoreCase = true) &&
+                            !sub.name.equals("OLD", ignoreCase = true) &&
                             sub.name != "补丁" &&
                             sub.name != "备份" &&
                             sub.name != "备份文件"
@@ -220,7 +224,10 @@ object NativeGameImport {
         val primaryFileNames = resolvedPrimary
             .filter { !it.folder && !skip(it.name) }
             .map { ArchiveExtractor.repairSjisAsGbkMojibake(it.name) }
-        val bgmFileNames = if (targetGameId == GameCatalog.ID_KICHIKUOU) {
+        val bgmFileNames = if (targetGameId == GameCatalog.ID_KICHIKUOU ||
+            targetGameId == GameCatalog.ID_DAIAKUJI ||
+            (targetGameId.isNullOrBlank() && GameCatalog.isSystem3xGameFiles(primaryFileNames))
+        ) {
             val bgmDoc = resolvedPrimary.firstOrNull { it.folder && it.name.equals("bgm", ignoreCase = true) }
             if (bgmDoc != null) {
                 children(context, tree, bgmDoc.uri).filter { !it.folder }.map { it.name }
@@ -230,30 +237,42 @@ object NativeGameImport {
         } else {
             emptyList()
         }
-        val matchesTarget = GameCatalog.matchesTargetGameFiles(
-            targetGameId = targetGameId,
+        val readPrimarySmallFile: (String) -> ByteArray? = { fileName ->
+            val doc = resolvedPrimary.firstOrNull {
+                !it.folder && !skip(it.name) &&
+                    ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
+            }
+            if (doc != null && (doc.size < 0 || doc.size <= 256L * 1024L)) {
+                readBoundedDocumentBytes(context, doc.uri)
+            } else {
+                null
+            }
+        }
+        val detectedGameId = GameCatalog.classifyGameRootFiles(
             fileNames = primaryFileNames,
             bgmFileNames = bgmFileNames,
-            readSmallFile = { fileName ->
-                val doc = resolvedPrimary.firstOrNull {
-                    !it.folder && !skip(it.name) &&
-                        ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
-                }
-                if (doc != null && (doc.size < 0 || doc.size <= 256L * 1024L)) {
-                    readBoundedDocumentBytes(context, doc.uri)
-                } else {
-                    null
-                }
-            }
+            readSmallFile = readPrimarySmallFile
         )
+        val matchesTarget = if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
+            true
+        } else {
+            detectedGameId == targetGameId
+        }
         if (!matchesTarget) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
         val isEscalayerReboot = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT ||
-            GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
+            detectedGameId == GameCatalog.ID_ESCALAYER_REBOOT
         val isRance06Import = targetGameId == GameCatalog.ID_RANCE06 ||
-            GameCatalog.isRance06GameFiles(primaryFileNames)
-        val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
+            detectedGameId == GameCatalog.ID_RANCE06
+        val isDaiakujiImport = targetGameId == GameCatalog.ID_DAIAKUJI ||
+            detectedGameId == GameCatalog.ID_DAIAKUJI
+        val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
+        val baseName = if (isDaiakujiImport) {
+            "Daiakuji"
+        } else {
+            resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
+        }
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
         if (staging.parentFile != storageCanonical || !staging.mkdir())
@@ -270,7 +289,8 @@ object NativeGameImport {
                     val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
                     if (skip(document.name) ||
                         (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath)) ||
-                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true))
+                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
+                        (isDaiakujiImport && isDaiakujiBloatRelPath(relPath, skipDDemo0Backup = hasPrimaryDDemo))
                     ) {
                         continue
                     }

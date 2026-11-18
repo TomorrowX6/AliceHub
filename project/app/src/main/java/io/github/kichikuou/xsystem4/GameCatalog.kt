@@ -55,6 +55,7 @@ object GameCatalog {
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
     const val ID_KICHIKUOU = "kichikuou"
+    const val ID_DAIAKUJI = "daiakuji"
     const val ID_ESCALAYER = "escalayer"
     const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
     const val PREFIX_CUSTOM = "custom:"
@@ -171,6 +172,119 @@ object GameCatalog {
         }
     }
 
+    private val DAIAKUJI_ALIAS_TOKENS = listOf(
+        "daiakuji",
+        "daiakuzi",
+        "大悪司",
+        "大恶司",
+        "戭埆巌",
+        "戝埆巌"
+    )
+
+    private val DAIAKUJI_ALD_NAMES = setOf(
+        "大悪司sa.ald",
+        "大悪司ga.ald",
+        "大悪司wa.ald",
+        "大悪司da.ald",
+        "大恶司sa.ald",
+        "大恶司ga.ald",
+        "大恶司wa.ald",
+        "大恶司da.ald",
+        "daiakujisa.ald",
+        "daiakujiga.ald",
+        "daiakujiwa.ald",
+        "daiakujida.ald",
+        "daiakuji_sa.ald",
+        "daiakuji_ga.ald",
+        "daiakuzisa.ald",
+        "daiakuziga.ald",
+        "戭埆巌sa.ald",
+        "戭埆巌ga.ald",
+        "戭埆巌wa.ald",
+        "戭埆巌da.ald",
+        "戝埆巌sa.ald",
+        "戝埆巌ga.ald",
+        "戝埆巌wa.ald",
+        "戝埆巌da.ald"
+    )
+
+    fun isDaiakujiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        return DAIAKUJI_ALIAS_TOKENS.any { token ->
+            repaired.contains(token) || rawLower.contains(token)
+        }
+    }
+
+    @JvmOverloads
+    fun isDaiakujiGameFiles(
+        fileNames: Collection<String>,
+        bgmFileNames: Collection<String> = emptyList(),
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val lower = it.lowercase()
+                val repairedLower = ArchiveExtractor.repairSjisAsGbkMojibake(it).lowercase()
+                lower in DAIAKUJI_ALD_NAMES || repairedLower in DAIAKUJI_ALD_NAMES
+            }
+        ) {
+            return true
+        }
+        if (bgmFileNames.any {
+                val lower = it.lowercase()
+                lower.startsWith("daiakuji_") || lower.startsWith("daiakuzi_")
+            }
+        ) {
+            return true
+        }
+        if (readSmallFile != null) {
+            for (listName in listOf("_inmm.ini", "playlist.txt")) {
+                val matchName = fileNames.firstOrNull { it.equals(listName, true) } ?: continue
+                try {
+                    val raw = readSmallFile(matchName) ?: continue
+                    val latin = String(raw, Charsets.ISO_8859_1).lowercase()
+                    if (latin.contains("daiakuji_") || latin.contains("daiakuzi_")) {
+                        return true
+                    }
+                    val decoded = ArchiveExtractor.decodeBestCjkText(raw)
+                    if (isDaiakujiAlias(decoded)) {
+                        return true
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+            if (iniName != null) {
+                try {
+                    val raw = readSmallFile(iniName)
+                    if (raw != null) {
+                        val title = System40Ini.parse(raw).gameName ?: ""
+                        if (isDaiakujiAlias(title)) {
+                            return true
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        return false
+    }
+
+    fun isDaiakujiGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val fileNames = files.map { it.name }
+        if (!isSystem3xGameFiles(fileNames)) return false
+        val bgmDir = dir.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("bgm", true) }
+        val bgmFileNames = bgmDir?.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        return isDaiakujiGameFiles(fileNames, bgmFileNames) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) f.readBytes() else null
+        }
+    }
+
     /**
      * Classifies a game root strictly from its files (never directory/display names), returning
      * a built-in game ID if recognized or null for custom/unrecognized roots.
@@ -274,6 +388,9 @@ object GameCatalog {
         }
         if (isKichikuouGameFiles(fileNames, bgmFileNames, readSmallFile)) {
             return ID_KICHIKUOU
+        }
+        if (isDaiakujiGameFiles(fileNames, bgmFileNames, readSmallFile)) {
+            return ID_DAIAKUJI
         }
         return null
     }
@@ -647,6 +764,16 @@ object GameCatalog {
             ) {
                 return ID_KICHIKUOU
             }
+            if (!File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                saveDir.listFiles()?.any {
+                    if (!it.isFile) return@any false
+                    val lower = it.name.lowercase()
+                    (lower.endsWith(".asd") || lower.endsWith(".msgskip")) && isDaiakujiAlias(it.name)
+                } == true
+            ) {
+                return ID_DAIAKUJI
+            }
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
@@ -720,6 +847,9 @@ object GameCatalog {
         ) {
             return ID_KICHIKUOU
         }
+        if (isDaiakujiAlias(dirName)) {
+            return ID_DAIAKUJI
+        }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
         if (isEscalayerRebootAlias(lowerDisp)) {
@@ -732,6 +862,9 @@ object GameCatalog {
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
+        }
+        if (!displayName.isNullOrBlank() && isDaiakujiAlias(displayName)) {
+            return ID_DAIAKUJI
         }
         if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
             lowerDisp.contains("ランス１０") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
@@ -1018,6 +1151,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_DAIAKUJI -> GameDescriptor(
+                id = ID_DAIAKUJI,
+                title = context.getString(R.string.game_daiakuji_title),
+                defaultDirName = "Daiakuji",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_daiakuji,
+                accentColor = 0xFFC62828.toInt(),
+                accentBorderColor = 0x66EF5350,
+                iconFrameColor = 0xFF1E1010.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DAIAKUJI_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -1057,6 +1205,7 @@ object GameCatalog {
         ID_RANCE08,
         ID_RANCE09,
         ID_KICHIKUOU,
+        ID_DAIAKUJI,
         ID_ESCALAYER,
         ID_ESCALAYER_REBOOT
     )

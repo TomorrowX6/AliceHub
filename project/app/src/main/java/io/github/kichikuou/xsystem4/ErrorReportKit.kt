@@ -1312,6 +1312,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_escalayer_title)
             lower.contains("evenicle") || lower.contains("イブニクル") || lower.contains("夏娃") ->
                 context.getString(R.string.game_evenicle_title)
+            GameCatalog.isDaiakujiAlias(lower) ->
+                context.getString(R.string.game_daiakuji_title)
             else -> null
         }
     }
