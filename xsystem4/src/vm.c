@@ -172,9 +172,6 @@ static int32_t struct_page_slot(void)
 	for (int i = call_stack_ptr - 1; i >= 0; i--) {
 		if (call_stack[i].has_struct_page)
 			return call_stack[i].struct_page;
-		int fno = call_stack[i].fno;
-		if (!ain || fno < 0 || fno >= ain->nr_functions || !ain->functions[fno].is_lambda)
-			break;
 	}
 	return -1;
 }
@@ -191,10 +188,13 @@ struct page *get_struct_page(int frame_no)
 {
 	if (frame_no < 0 || frame_no >= call_stack_ptr)
 		return NULL;
-	struct function_call *frame = &call_stack[call_stack_ptr - (frame_no + 1)];
-	if (!frame->has_struct_page)
-		return NULL;
-	int slot = frame->struct_page;
+	int slot = -1;
+	for (int i = call_stack_ptr - (frame_no + 1); i >= 0; i--) {
+		if (call_stack[i].has_struct_page) {
+			slot = call_stack[i].struct_page;
+			break;
+		}
+	}
 	return page_index_valid(slot) && slot >= 1 ? heap[slot].page : NULL;
 }
 
@@ -3228,17 +3228,11 @@ static enum opcode execute_instruction(enum opcode opcode)
 		}
 		int arr_slot = heap_alloc_page(arr);
 		if (page_index_valid(pageno) && heap[pageno].page && varno >= 0 && varno < heap[pageno].page->nr_vars) {
-			int old_slot = heap[pageno].page->values[varno].i;
 			heap[pageno].page->values[varno].i = arr_slot;
-			if (old_slot > 0 && heap_index_valid(old_slot))
-				heap_unref(old_slot);
-			stack_push(arr_slot);
-		} else {
-			if (invalid_var_warn_count++ < INVALID_VAR_WARN_LIMIT)
-				WARNING("Out of bounds X_A_INIT(%d): %d/%d", init_elems, pageno, varno);
-			heap_unref(arr_slot);
-			stack_push(-1);
+		} else if (invalid_var_warn_count++ < INVALID_VAR_WARN_LIMIT) {
+			WARNING("Out of bounds X_A_INIT(%d): %d/%d", init_elems, pageno, varno);
 		}
+		stack_push(arr_slot);
 		break;
 	}
 	case X_A_SIZE: {

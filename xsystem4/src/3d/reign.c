@@ -578,8 +578,12 @@ bool RE_set_viewport(struct RE_plugin *plugin, int x, int y, int width, int heig
 
 bool RE_set_projection(struct RE_plugin *plugin, float width, float height, float near, float far, float deg)
 {
-	if (!plugin || height == 0.0f)
+	if (!plugin)
 		return false;
+	if (height == 0.0f) {
+		glm_mat4_identity(plugin->proj_transform);
+		return true;
+	}
 
 	float aspect = width / height;
 	glm_perspective(glm_rad(deg), aspect, near, far, plugin->proj_transform);
