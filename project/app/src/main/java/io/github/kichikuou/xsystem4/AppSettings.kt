@@ -15,6 +15,7 @@ object AppSettings {
     private const val PREFS_NAME = "alicehub_settings"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_LANGUAGE = "app_language"
+    private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
@@ -135,6 +136,16 @@ object AppSettings {
 
     fun resolveLocale(context: Context): Locale =
         resolveLocaleForMode(getLanguageMode(context))
+
+    fun getGameSortMode(context: Context): GameSortMode = try {
+        GameSortMode.fromKey(prefs(context).getString(KEY_GAME_SORT, null))
+    } catch (_: ClassCastException) {
+        GameSortMode.CATALOG
+    }
+
+    fun setGameSortMode(context: Context, mode: GameSortMode) {
+        prefs(context).edit().putString(KEY_GAME_SORT, mode.key).apply()
+    }
 
     fun isOnlineInstallEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ONLINE_INSTALL, false)

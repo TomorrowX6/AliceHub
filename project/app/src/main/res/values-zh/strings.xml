@@ -295,4 +295,14 @@
     <string name="movie_skip_hint">长按屏幕跳过</string>
     <string name="movie_skip_holding">长按跳过…</string>
     <string name="settings_gamepad">手柄设置</string>
+
+    <!-- Game sorting: offline public metadata, never a synthetic popularity score. -->
+    <string name="settings_game_sort">游戏排序</string>
+    <string name="game_sort_catalog">默认（目录顺序）</string>
+    <string name="game_sort_name">名称（升序）</string>
+    <string name="game_sort_popularity">热度（VNDB 评分人数）</string>
+    <string name="game_sort_release_date">发行时间（由新到旧）</string>
+    <string name="game_sort_summary">%1$s · 已安装优先</string>
+    <string name="game_sort_sources">排序规则与数据来源</string>
+    <string name="game_sort_source_details">已安装游戏始终在前，两组内按所选方式排序。同值保留目录／导入顺序；缺少数据的排在各组末尾。\n\n热度采用所映射 VNDB 作品条目的评分人数，不是评分高低、销量或实时在线人数。离线快照日期：%1$s。人数可能合并多个版本：超昂天使原版与重制版共用条目，兰斯 Quest 包含 Magnum。兰斯02支持的版本分属多个条目，无法确定统一人数，留空；自定义游戏没有网络数据。\n\n发行时间为所列游戏／版本的日本首次发行日期：兰斯01／02／03为重制版，Quest Magnum 为2012年，超昂天使重制版为2014年；不采用后续移植、汉化或 MOD 上传日期。\n\n人数数据：VNDB（ODbL／Database Contents License）\nhttps://vndb.org/d17\nhttps://api.vndb.org/kana\n发行日期来源：AliceSoft 官方产品页及 VNDB（鬼畜王）。逐游戏来源链接与快照见源码 docs/game-sorting.md。</string>
 </resources>

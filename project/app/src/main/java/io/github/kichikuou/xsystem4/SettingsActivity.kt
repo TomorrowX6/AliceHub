@@ -92,6 +92,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_theme, accent))
         findViewById<ImageView>(R.id.icon_settings_language)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_language, accent))
+        findViewById<ImageView>(R.id.icon_settings_game_sort)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_sort, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
         findViewById<ImageView>(R.id.icon_settings_gamepad)
@@ -111,6 +113,9 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_language).setOnClickListener {
             showLanguageDialog()
+        }
+        findViewById<View>(R.id.row_settings_game_sort).setOnClickListener {
+            showGameSortDialog()
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
@@ -160,6 +165,11 @@ class SettingsActivity : ThemedActivity() {
             AppSettings.THEME_DARK -> getString(R.string.theme_dark)
             else -> getString(R.string.theme_auto)
         }
+        val sortLabel = gameSortLabel(AppSettings.getGameSortMode(this))
+        val sortSummary = getString(R.string.game_sort_summary, sortLabel)
+        findViewById<TextView>(R.id.value_settings_game_sort).text = sortSummary
+        findViewById<View>(R.id.row_settings_game_sort).contentDescription =
+            getString(R.string.settings_game_sort) + ", " + sortSummary
         val lang = AppSettings.getLanguageMode(this)
         findViewById<TextView>(R.id.value_settings_language).text = when (lang) {
             AppSettings.LANG_ZH -> getString(R.string.lang_zh)
@@ -652,6 +662,44 @@ class SettingsActivity : ThemedActivity() {
 
         dialog.show()
         trackDialog(dialog)
+    }
+
+    private fun gameSortLabel(mode: GameSortMode): String = getString(when (mode) {
+        GameSortMode.CATALOG -> R.string.game_sort_catalog
+        GameSortMode.NAME -> R.string.game_sort_name
+        GameSortMode.POPULARITY -> R.string.game_sort_popularity
+        GameSortMode.RELEASE_DATE -> R.string.game_sort_release_date
+    })
+
+    private fun showGameSortDialog() {
+        val modes = GameSortMode.values()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_game_sort)
+                .setSingleChoiceItems(modes.map { gameSortLabel(it) }.toTypedArray(),
+                    modes.indexOf(AppSettings.getGameSortMode(this))) { dlg, which ->
+                    AppSettings.setGameSortMode(this, modes[which])
+                    dlg.dismiss()
+                    refreshSettingsUi()
+                }
+                .setNeutralButton(R.string.game_sort_sources) { _, _ -> showGameSortSources() }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun showGameSortSources() {
+        val dialog = trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.game_sort_sources)
+                .setMessage(getString(R.string.game_sort_source_details, GameSortMetadata.AS_OF_DATE))
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        )
+        dialog.findViewById<TextView>(android.R.id.message)?.let {
+            android.text.util.Linkify.addLinks(it, android.text.util.Linkify.WEB_URLS)
+            it.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+        }
     }
 
     private fun showThemeDialog() {
