@@ -18,7 +18,7 @@
 
 static bool Sys43VM_WriteGroupSaveComment(struct string *key_name, struct string *file_name, struct string *comment)
 {
-	if (!comment || comment->size == 0)
+	if (!key_name || !file_name || !comment || comment->size == 0)
 		return false;
 
 	char *path = savedir_path(file_name->text);
@@ -30,7 +30,8 @@ static bool Sys43VM_WriteGroupSaveComment(struct string *key_name, struct string
 		return false;
 	}
 	if (!save_names_equal(key_name->text, gs->key)) {
-		char *expected = strdup(gs->key);
+		char expected[256];
+		snprintf(expected, sizeof(expected), "%s", gs->key ? gs->key : "");
 		gsave_free(gs);
 		free(path);
 		VM_ERROR("Attempted to write save comment with wrong key: expected '%s', got '%s'",
@@ -47,27 +48,34 @@ static bool Sys43VM_WriteGroupSaveComment(struct string *key_name, struct string
 	gs->comments = xcalloc(1, sizeof(struct string *));
 	gs->comments[0] = string_dup(comment);
 
-	FILE *fp = file_open_utf8(path, "wb");
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
 	if (!fp) {
 		WARNING("Failed to open save file %s: %s", display_utf0(path), strerror(errno));
 		free(path);
 		gsave_free(gs);
 		return false;
 	}
-	free(path);
 
 	bool encrypt = !AIN_VERSION_GTE(ain, 6, 0);
 	int compression_level = AIN_VERSION_GTE(ain, 6, 0) ? 1 : 9;
 	err = gsave_write(gs, fp, encrypt, compression_level);
-	if (err != SAVEFILE_SUCCESS)
-		WARNING("Failed to write save file: %s", savefile_strerror(err));
-	fclose(fp);
 	gsave_free(gs);
-	return err == SAVEFILE_SUCCESS;
+	if (err != SAVEFILE_SUCCESS) {
+		WARNING("Failed to write save file: %s", savefile_strerror(err));
+		atomic_save_abort(fp, tmp_path);
+		free(path);
+		return false;
+	}
+	bool ok = atomic_save_commit(fp, path, tmp_path, false);
+	free(path);
+	return ok;
 }
 
 static bool Sys43VM_ReadGroupSaveComment(struct string *key_name, struct string *file_name, struct string **comment)
 {
+	if (!key_name || !file_name || !comment)
+		return false;
 	char *path = savedir_path(file_name->text);
 	enum savefile_error err;
 	struct gsave *gs = gsave_read(path, &err);
@@ -76,7 +84,8 @@ static bool Sys43VM_ReadGroupSaveComment(struct string *key_name, struct string 
 		return false;
 
 	if (!save_names_equal(key_name->text, gs->key)) {
-		char *expected = strdup(gs->key);
+		char expected[256];
+		snprintf(expected, sizeof(expected), "%s", gs->key ? gs->key : "");
 		gsave_free(gs);
 		VM_ERROR("Attempted to read save comment with wrong key: expected '%s', got '%s'",
 				display_sjis0(expected), display_sjis1(key_name->text));
@@ -93,6 +102,8 @@ static bool Sys43VM_ReadGroupSaveComment(struct string *key_name, struct string 
 
 static bool Sys43VM_GetFunctionNameList(struct page **out)
 {
+	if (!out)
+		return false;
 	union vm_value dim = { .i = ain->nr_functions };
 	struct page *list = alloc_array(1, &dim, AIN_ARRAY_STRING, 0, false);
 	for (int i = 0; i < ain->nr_functions; i++) {

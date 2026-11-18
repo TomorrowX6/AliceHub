@@ -151,20 +151,40 @@ static bool afa_load_file(struct archive_data *data)
 		return true;
 
 	struct afa_archive *ar = (struct afa_archive*)data->archive;
+	if (!ar)
+		return false;
 	struct afa_entry *e = afa_get_entry_by_number(ar, data->no);
+	if (!e)
+		return false;
+
+	uint64_t start = ar->data_start;
+	uint64_t off = e->off;
+	uint64_t sz = e->size;
+	if (start > ar->file_size || off > ar->file_size - start || sz > ar->file_size - start - off) {
+		WARNING("AFA entry out of bounds in '%s'", ar->filename ? ar->filename : "<afa>");
+		return false;
+	}
 
 	if (ar->ar.mmapped) {
-		data->data = (uint8_t*)ar->mmap_ptr + ar->data_start + e->off;
+		data->data = (uint8_t*)ar->mmap_ptr + start + off;
 		return true;
 	}
 
-	fseek(ar->f, ar->data_start + e->off, SEEK_SET);
+	if (e->size == 0) {
+		data->data = xcalloc(1, 1);
+		return true;
+	}
+
+	if (!ar->f || fseek(ar->f, (long)(start + off), SEEK_SET) != 0) {
+		WARNING("Failed to seek '%s': %s", ar->filename ? ar->filename : "<afa>", strerror(errno));
+		return false;
+	}
 
 	data->data = xmalloc(e->size);
 	if (fread(data->data, e->size, 1, ar->f) != 1) {
-		WARNING("Failed to read '%s': %s", ar->filename, strerror(errno));
+		WARNING("Failed to read '%s': %s", ar->filename ? ar->filename : "<afa>", strerror(errno));
 		free(data->data);
-		free(data);
+		data->data = NULL;
 		return false;
 	}
 
@@ -228,7 +248,9 @@ static void afa_for_each(struct archive *_ar, void (*iter)(struct archive_data *
 
 static void afa_free_data(struct archive_data *data)
 {
-	if (data->data && !data->archive->mmapped)
+	if (!data)
+		return;
+	if (data->data && (!data->archive || !data->archive->mmapped))
 		free(data->data);
 	free(data->name);
 	free(data);
@@ -236,10 +258,19 @@ static void afa_free_data(struct archive_data *data)
 
 static void afa_free(struct archive *_ar)
 {
+	if (!_ar)
+		return;
 	struct afa_archive *ar = (struct afa_archive*)_ar;
-	for (uint32_t i = 0; i < ar->nr_files; i++) {
-		free_string(ar->files[i].name);
+	if (ar->files) {
+		for (uint32_t i = 0; i < ar->nr_files; i++) {
+			if (ar->files[i].name)
+				free_string(ar->files[i].name);
+		}
 	}
+#ifndef _WIN32
+	if (ar->ar.mmapped && ar->mmap_ptr && ar->mmap_ptr != MAP_FAILED)
+		munmap(ar->mmap_ptr, ar->file_size);
+#endif
 	if (ar->f)
 		fclose(ar->f);
 	if (ar->name_index)
@@ -256,19 +287,39 @@ static void afa_free(struct archive *_ar)
 static bool afa_read_entry(struct buffer *in, struct afa_archive *ar, struct afa_entry *entry,
 			   int *error, string_conv_fun conv)
 {
-	uint32_t name_len = buffer_read_int32(in);
-	entry->name = buffer_conv_pascal_string(in, conv); // NOTE: length is padded
+	if (buffer_remaining(in) < 8) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		return false;
+	}
+	int32_t name_len = buffer_read_int32(in);
+	int32_t padded_len = buffer_read_int32(in);
+	if (name_len < 0 || padded_len < 0 || (size_t)padded_len > buffer_remaining(in)) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		return false;
+	}
+	size_t raw_len = (uint32_t)name_len <= (uint32_t)padded_len ? (size_t)name_len : (size_t)padded_len;
+	entry->name = conv(buffer_strdata(in), raw_len);
+	buffer_skip(in, (size_t)padded_len);
 	if (!entry->name) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
 		return false;
 	}
-	entry->name->size = name_len; // fix length
+	entry->name->size = strlen(entry->name->text);
+
+	size_t meta_bytes = ar->has_number ? 20 : 16;
+	if (buffer_remaining(in) < meta_bytes) {
+		free_string(entry->name);
+		entry->name = NULL;
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		return false;
+	}
 
 	if (ar->has_number) {
 		// XXX: Oyako Rankan is AFAv1 but all IDs are 0, which breaks load_file.
 		//      English version of RanceQuestAFF.afa is similar (one ID is 3, rest 0).
 		//      We revert to using negative sequential indices in these cases
-		int32_t no = buffer_read_int32(in) - 1;
+		int32_t raw_no = buffer_read_int32(in);
+		int32_t no = raw_no > INT32_MIN ? raw_no - 1 : -1;
 		if (no >= 0) {
 			entry->no = no;
 		} else {
@@ -289,15 +340,15 @@ static bool afa_determine_has_number(struct afa_archive *ar, struct buffer *in)
 		return true;
 	// The presence or absence of the ID field cannot be determined from the
 	// file header, so we need to scan the file table.
-	int nr_files = ar->nr_files;
+	uint32_t nr_files = ar->nr_files;
 	while (nr_files--) {
 		if (buffer_remaining(in) < 8)
 			return false;
 		buffer_skip(in, 4);
-		uint32_t name_len = buffer_read_int32(in);
-		if (buffer_remaining(in) < name_len + 20)
+		int32_t name_len = buffer_read_int32(in);
+		if (name_len < 0 || buffer_remaining(in) < (size_t)name_len + 20)
 			return false;
-		buffer_skip(in, name_len + 20);
+		buffer_skip(in, (size_t)name_len + 20);
 	}
 	return buffer_remaining(in) == 0;
 }
@@ -305,10 +356,14 @@ static bool afa_determine_has_number(struct afa_archive *ar, struct buffer *in)
 static bool afa_read_file_table(FILE *f, struct afa_archive *ar, int *error, string_conv_fun conv)
 {
 	uint32_t csize = ar->compressed_size;
-	uint8_t *buf = xmalloc(csize + 16);
-	uint8_t *table = xmalloc(ar->uncompressed_size);
-	fseek(f, 44, SEEK_SET);
-	if (fread(buf, csize, 1, f) != 1) {
+	if (csize > ar->file_size || ar->uncompressed_size > 256u * 1024u * 1024u ||
+	    ar->nr_files > ar->uncompressed_size / 24 + 1) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		return false;
+	}
+	uint8_t *buf = xmalloc((size_t)csize + 16);
+	uint8_t *table = xmalloc(ar->uncompressed_size ? ar->uncompressed_size : 1);
+	if (fseek(f, 44, SEEK_SET) != 0 || (csize > 0 && fread(buf, csize, 1, f) != 1)) {
 		*error = ARCHIVE_FILE_ERROR;
 		goto exit_err;
 	}
@@ -329,11 +384,15 @@ static bool afa_read_file_table(FILE *f, struct afa_archive *ar, int *error, str
 	buffer_init(&r, table, ar->uncompressed_size);
 	ar->has_number = afa_determine_has_number(ar, &r);
 	buffer_seek(&r, 0);
-	ar->files = xcalloc(ar->nr_files, sizeof(struct afa_entry));
+	ar->files = xcalloc(ar->nr_files ? ar->nr_files : 1, sizeof(struct afa_entry));
 	for (uint32_t i = 0; i < ar->nr_files; i++) {
 		ar->files[i].no = i;
 		if (!afa_read_entry(&r, ar, &ar->files[i], error, conv)) {
+			for (uint32_t j = 0; j < i; j++) {
+				free_string(ar->files[j].name);
+			}
 			free(ar->files);
+			ar->files = NULL;
 			goto exit_err;
 		}
 	}
@@ -372,9 +431,16 @@ static bool afa_read_metadata(FILE *f, struct afa_archive *ar, int *error, strin
 		return false;
 	}
 
-	fseek(f, 0, SEEK_END);
-	ar->file_size = ftell(f);
-	fseek(f, 0, SEEK_SET);
+	if (fseek(f, 0, SEEK_END) != 0) {
+		*error = ARCHIVE_FILE_ERROR;
+		return false;
+	}
+	long fsize = ftell(f);
+	if (fsize < 44 || fseek(f, 0, SEEK_SET) != 0) {
+		*error = ARCHIVE_FILE_ERROR;
+		return false;
+	}
+	ar->file_size = (size_t)fsize;
 
 	if (strncmp(buf, "AFAH", 4)) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
@@ -395,20 +461,25 @@ static bool afa_read_metadata(FILE *f, struct afa_archive *ar, int *error, strin
 		return false;
 	}
 
+	uint32_t info_size = (uint32_t)LittleEndian_getDW((uint8_t*)buf, 32);
+	if (info_size < 16) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		return false;
+	}
+
 	ar->version = LittleEndian_getDW((uint8_t*)buf, 16);
 	ar->unknown = LittleEndian_getDW((uint8_t*)buf, 20);
 	ar->data_start = LittleEndian_getDW((uint8_t*)buf, 24);
-	ar->compressed_size = LittleEndian_getDW((uint8_t*)buf, 32) - 16;
+	ar->compressed_size = info_size - 16;
 	ar->uncompressed_size = LittleEndian_getDW((uint8_t*)buf, 36);
 	ar->nr_files = LittleEndian_getDW((uint8_t*)buf, 40);
 
-	if (ar->data_start+8 >= ar->file_size) {
+	if ((uint64_t)ar->data_start + 8 > ar->file_size) {
 		*error = ARCHIVE_FILE_ERROR;
 		return false;
 	}
 
-	fseek(f, ar->data_start, SEEK_SET);
-	if (fread(buf, 8, 1, f) != 1) {
+	if (fseek(f, ar->data_start, SEEK_SET) != 0 || fread(buf, 8, 1, f) != 1) {
 		*error = ARCHIVE_FILE_ERROR;
 		return false;
 	}
@@ -420,7 +491,7 @@ static bool afa_read_metadata(FILE *f, struct afa_archive *ar, int *error, strin
 	}
 
 	ar->data_size = LittleEndian_getDW((uint8_t*)buf, 4);
-	if (ar->data_start + ar->data_size > ar->file_size) {
+	if ((uint64_t)ar->data_start + (uint64_t)ar->data_size > ar->file_size) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
 		return false;
 	}

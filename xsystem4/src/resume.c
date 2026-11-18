@@ -97,6 +97,8 @@ static struct ain_type make_v12_element_type(enum ain_data_type leaf_data, int s
 			.array_type = NULL,
 		};
 	}
+	if (depth > 32)
+		VM_ERROR("Invalid array element depth %d", depth);
 	return *intern_v12_type(leaf_data, struct_type, depth);
 }
 
@@ -194,8 +196,10 @@ static char *encode_x4_type(const struct ain_type *t)
 
 static int resolve_array_leaf_symbol(enum ain_data_type leaf_data, struct rsave_symbol *sym);
 
-static const struct ain_type *intern_x4_type_node(const char **p)
+static const struct ain_type *intern_x4_type_node(const char **p, int depth)
 {
+	if (depth > 16)
+		return NULL;
 	const char *start = *p;
 	char *end = NULL;
 	int data = (int)strtol(*p, &end, 10);
@@ -206,7 +210,8 @@ static const struct ain_type *intern_x4_type_node(const char **p)
 	if (!end || *end != ':')
 		return NULL;
 	*p = end + 1;
-	if (strlen(*p) < sym_len + 2 || (*p)[sym_len] != ':')
+	size_t rem = strlen(*p);
+	if (rem < 2 || sym_len > rem - 2 || (*p)[sym_len] != ':')
 		return NULL;
 	char *sym_name = xmalloc(sym_len + 1);
 	memcpy(sym_name, *p, sym_len);
@@ -226,7 +231,7 @@ static const struct ain_type *intern_x4_type_node(const char **p)
 			return NULL;
 		}
 		(*p)++;
-		child = intern_x4_type_node(p);
+		child = intern_x4_type_node(p, depth + 1);
 		if (!child) {
 			free(sym_name);
 			return NULL;
@@ -270,7 +275,7 @@ static bool decode_x4_type(const char *s, struct ain_type *out)
 	if (!s || strncmp(s, "@x4t:", 5) != 0)
 		return false;
 	const char *p = s + 5;
-	const struct ain_type *t = intern_x4_type_node(&p);
+	const struct ain_type *t = intern_x4_type_node(&p, 0);
 	if (!t)
 		return false;
 	*out = *t;
@@ -604,6 +609,8 @@ static const char * const page_type_strtab[] = {
 
 static enum page_type string_to_page_type(const char *str)
 {
+	if (!str)
+		VM_ERROR("Invalid page type: NULL");
 	if (!strcmp(str, "globals"))  return GLOBAL_PAGE;
 	if (!strcmp(str, "locals"))   return LOCAL_PAGE;
 	if (!strcmp(str, "struct"))   return STRUCT_PAGE;
@@ -626,6 +633,8 @@ static cJSON *resume_page_to_json(struct page *page)
 {
 	if (!page)
 		return cJSON_CreateNull();
+	if ((unsigned)page->type >= NR_PAGE_TYPES)
+		ERROR("Invalid page type %d", page->type);
 
 	cJSON *json = cJSON_CreateObject();
 	cJSON_AddStringToObject(json, "type", page_type_strtab[page->type]);
@@ -681,7 +690,7 @@ static cJSON *heap_item_to_json(int i, possibly_unused void *_)
 		cJSON_AddItemToArray(item, resume_page_to_json(heap[i].page));
 		break;
 	case VM_STRING:
-		cJSON_AddItemToArray(item, cJSON_CreateString(heap[i].s->text));
+		cJSON_AddItemToArray(item, cJSON_CreateString(heap[i].s ? heap[i].s->text : ""));
 		break;
 	}
 	if (ain->nr_delegates > 0) {
@@ -787,15 +796,17 @@ static struct rsave_heap_struct *struct_page_to_rsave(struct page *page, int slo
 	o->ref = heap[slot].ref;
 	o->seq = heap[slot].seq;
 	struct ain_struct *s = &ain->structures[page->index];
-	o->ctor.name = strdup(s->constructor >= 0 ? ain->functions[s->constructor].name : "");
-	o->dtor.name = strdup(s->destructor >= 0 ? ain->functions[s->destructor].name : "");
+	o->ctor.name = xstrdup((s->constructor >= 0 && s->constructor < ain->nr_functions)
+		? ain->functions[s->constructor].name : "");
+	o->dtor.name = xstrdup((s->destructor >= 0 && s->destructor < ain->nr_functions)
+		? ain->functions[s->destructor].name : "");
 	o->uk = 0;
 	if (s->constructor >= 0) {
 		o->nr_ctor_flags = 1;
 		o->ctor_flags = xmalloc(sizeof(int32_t));
 		o->ctor_flags[0] = 1;
 	}
-	o->struct_type.name = strdup(s->name);
+	o->struct_type.name = xstrdup(s->name ? s->name : "");
 	o->nr_types = s->nr_members;
 	o->types = xcalloc(o->nr_types, sizeof(int32_t));
 	for (int i = 0; i < o->nr_types; i++)
@@ -822,7 +833,7 @@ static struct rsave_heap_array *array_page_to_rsave(struct page *page, int slot)
 		if (ain->version >= 14) {
 			o->struct_type.name = encode_x4_type(&page->array.element_type);
 		} else {
-			o->struct_type.name = strdup(array_leaf_type_name(leaf_data, struct_type));
+			o->struct_type.name = xstrdup(array_leaf_type_name(leaf_data, struct_type));
 		}
 		o->root_rank = depth + 1;
 	} else if (ain->version >= 11) {
@@ -831,15 +842,15 @@ static struct rsave_heap_array *array_page_to_rsave(struct page *page, int slot)
 		int depth = page->array.rank > 0 ? page->array.rank - 1 : 0;
 		o->rank_minus_1 = depth;
 		o->data_type = leaf_data;
-		o->struct_type.name = strdup(array_leaf_type_name(leaf_data, struct_type));
+		o->struct_type.name = xstrdup(array_leaf_type_name(leaf_data, struct_type));
 		o->root_rank = depth + 1;
 	} else {
 		o->rank_minus_1 = page->array.rank - 1;
 		o->data_type = page->index;
-		if (page->array.struct_type >= 0)
-			o->struct_type.name = strdup(ain->structures[page->array.struct_type].name);
+		if (page->array.struct_type >= 0 && page->array.struct_type < ain->nr_structures)
+			o->struct_type.name = xstrdup(ain->structures[page->array.struct_type].name);
 		else
-			o->struct_type.name = strdup("");
+			o->struct_type.name = xstrdup("");
 		o->root_rank = page->array.rank;  // FIXME: this is incorrect for subarrays
 	}
 	o->is_not_empty = page->nr_vars ? 1 : 0;
@@ -880,14 +891,15 @@ static void *heap_item_to_rsave(int i)
 	if (!heap[i].ref)
 		return rsave_null;
 	if (heap[i].type == VM_STRING) {
-		int len = heap[i].s->size + 1;
-		struct rsave_heap_string *s = xmalloc(sizeof(struct rsave_heap_string) + len);
+		const char *txt = heap[i].s ? heap[i].s->text : "";
+		int len = heap[i].s ? heap[i].s->size + 1 : 1;
+		struct rsave_heap_string *s = xmalloc(sizeof(struct rsave_heap_string) + (size_t)len);
 		s->tag = RSAVE_STRING;
 		s->ref = heap[i].ref;
 		s->seq = heap[i].seq;
 		s->uk = 0;
 		s->len = len;
-		memcpy(s->text, heap[i].s->text, len);
+		memcpy(s->text, txt, (size_t)len);
 		return s;
 	}
 	struct page *page = heap[i].page;
@@ -902,7 +914,7 @@ static void *heap_item_to_rsave(int i)
 		// FIXME: System40.exe populates them but we don't have the type
 		// information of the array here.
 		o->data_type = 0;
-		o->struct_type.name = strdup("");
+		o->struct_type.name = xstrdup("");
 
 		o->root_rank = -1;
 		o->is_not_empty = 0;
@@ -957,7 +969,7 @@ static void save_call_stack_to_rsave(struct rsave *rs)
 		}
 		rs->call_frames[i + 1].local_ptr = call->page_slot;
 		rs->call_frames[i + 1].struct_ptr = call->struct_page;
-		if (i > 0) {
+		if (i > 0 && prev_func) {
 			rs->return_records[i].return_addr = call->return_address;
 			rs->return_records[i].local_addr = call->return_address - prev_func->address;
 		}
@@ -965,10 +977,15 @@ static void save_call_stack_to_rsave(struct rsave *rs)
 		rs->return_records[i + 1].crc = func->crc;
 		prev_func = func;
 	}
-	int width = instruction_width(get_opcode(instr_ptr));
+	int width = 0;
+	if (instr_ptr + 2 <= ain->code_size) {
+		int16_t op = get_opcode(instr_ptr);
+		if (op >= 0 && op < NR_OPCODES)
+			width = instruction_width(op);
+	}
 	rs->ip = rs->return_records[call_stack_ptr];
-	rs->ip.return_addr = instr_ptr + width;
-	rs->ip.local_addr = instr_ptr - prev_func->address + width;
+	rs->ip.return_addr = (int32_t)(instr_ptr + width);
+	rs->ip.local_addr = prev_func ? (int32_t)(instr_ptr - prev_func->address + width) : -1;
 }
 
 static void save_stack_to_rsave(struct rsave *rs)
@@ -986,7 +1003,7 @@ static void save_func_names_to_rsave(struct rsave *rs)
 	rs->nr_func_names = ain->nr_functions;
 	rs->func_names = xcalloc(rs->nr_func_names, sizeof(char *));
 	for (int i = 0; i < ain->nr_functions; i++) {
-		rs->func_names[i] = strdup(ain->functions[i].name);
+		rs->func_names[i] = xstrdup(ain->functions[i].name ? ain->functions[i].name : "");
 	}
 }
 
@@ -1002,7 +1019,7 @@ static struct rsave *make_rsave(const char *key)
 		//        but uses RSM v7.
 		save->version = ain->version <= 4 ? 6 : 7;
 	}
-	save->key = strdup(key);
+	save->key = xstrdup(key ? key : "");
 	return save;
 }
 
@@ -1105,9 +1122,12 @@ static void load_json_page(int slot, cJSON *json)
 	cJSON *values  = type_check(cJSON_Array,  cJSON_GetObjectItem(json, "values"));
 
 	enum page_type page_type = string_to_page_type(cJSON_GetStringValue(type));
+	int nr_vals = cJSON_GetArraySize(values);
+	if (nr_vals < 0 || nr_vals > 64 * 1024 * 1024)
+		invalid_save_data("Invalid page size %d", nr_vals);
 
 	// allocate page
-	struct page *page = alloc_page(page_type, subtype->valueint, cJSON_GetArraySize(values));
+	struct page *page = alloc_page(page_type, subtype->valueint, nr_vals);
 	if (page_type == LOCAL_PAGE) {
 		cJSON *struct_page = cJSON_GetObjectItem(json, "struct-page");
 		cJSON *parent_page = cJSON_GetObjectItem(json, "parent-page");
@@ -1136,6 +1156,10 @@ static void load_json_page(int slot, cJSON *json)
 				int depth = elem_depth
 					? type_check(cJSON_Number, elem_depth)->valueint
 					: (page->a_type == AIN_ARRAY ? 0 : (page->array.rank > 0 ? page->array.rank - 1 : 0));
+				if (depth < 0 || depth > 32) {
+					free_page(page);
+					invalid_save_data("Invalid array element depth %d", depth);
+				}
 				page->a_type = AIN_ARRAY;
 				page->array.rank = 1;
 				page->array.element_type = make_v12_element_type(dt, st, depth);
@@ -1152,6 +1176,9 @@ static void load_json_page(int slot, cJSON *json)
 	int i = 0;
 	cJSON *item;
 	cJSON_ArrayForEach(item, values) {
+		if (i >= page->nr_vars)
+			break;
+		type_check(cJSON_Number, item);
 		page->values[i].i = item->valueint;
 		i++;
 	}
@@ -1163,6 +1190,8 @@ static void load_json_page(int slot, cJSON *json)
 static void load_json_string(int slot, cJSON *json)
 {
 	const char *str = cJSON_GetStringValue(json);
+	if (!str)
+		str = "";
 	heap[slot].s = make_string(str, strlen(str));
 	heap[slot].type = VM_STRING;
 }
@@ -1196,20 +1225,32 @@ static void delete_heap(void)
 	}
 }
 
-// Allocate a specific heap slot
-// XXX: This only works while heap_free_stack[i]=i
-//      After calling delete_heap, this can be called for INCREASING indices.
-//      Out-of-order allocations would break the above assumption!
 static void alloc_heap_slot(int slot)
 {
+	if (slot < 0 || slot > 64 * 1024 * 1024)
+		invalid_save_data("Invalid heap slot %d", slot);
 	if ((size_t)slot >= heap_size) {
-		size_t next_size = heap_size * 2;
-		while ((size_t)slot >= next_size)
+		size_t next_size = heap_size ? heap_size * 2 : 1024;
+		while ((size_t)slot >= next_size) {
+			if (next_size > SIZE_MAX / 2)
+				invalid_save_data("Heap slot overflow %d", slot);
 			next_size *= 2;
+		}
 		heap_grow(next_size);
 	}
-	heap_free_stack[slot] = heap_free_stack[heap_free_ptr];
-	heap_free_ptr++;
+	if (heap[slot].ref != 0)
+		invalid_save_data("Duplicate heap slot %d", slot);
+}
+
+static void rebuild_heap_free_stack(void)
+{
+	size_t free_idx = heap_size;
+	for (size_t i = heap_size; i > 0; i--) {
+		size_t slot = i - 1;
+		if (heap[slot].ref == 0)
+			heap_free_stack[--free_idx] = (int32_t)slot;
+	}
+	heap_free_ptr = free_idx;
 }
 
 static void load_json_heap(cJSON *json)
@@ -1224,6 +1265,8 @@ static void load_json_heap(cJSON *json)
 
 		int slot = type_check(cJSON_Number, cJSON_GetArrayItem(item, 0))->valueint;
 		int ref  = type_check(cJSON_Number, cJSON_GetArrayItem(item, 1))->valueint;
+		if (slot < 0 || ref <= 0)
+			invalid_save_data("Invalid heap slot (%d) or refcount (%d)", slot, ref);
 		cJSON *value = cJSON_GetArrayItem(item, 2);
 		int seq = ain->nr_delegates > 0
 			? type_check(cJSON_Number, cJSON_GetArrayItem(item, 3))->valueint
@@ -1244,6 +1287,7 @@ static void load_json_heap(cJSON *json)
 			invalid_save_data("Invalid heap data");
 		}
 	}
+	rebuild_heap_free_stack();
 	heap_refresh_delegate_targets();
 }
 
@@ -1316,6 +1360,8 @@ static bool rsave_check_id_alignment(const struct rsave *save)
 
 static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t version, bool id_aligned)
 {
+	if (f->ref <= 0 || f->nr_slots < 0 || f->nr_slots > 64 * 1024 * 1024 || f->nr_types < 0)
+		invalid_save_data("Invalid call frame metadata");
 	struct page *page;
 	int nr_vars;
 	struct ain_variable *vars;
@@ -1355,10 +1401,12 @@ static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t versi
 
 	// type check
 	if (nr_vars < f->nr_types) {
+		free_page(page);
 		invalid_save_data("call frame has too many variables");
 	}
 	for (int i = 0; i < f->nr_types; i++) {
 		if (f->types[i] != vars[i].type.data) {
+			free_page(page);
 			invalid_save_data(
 				"variable type mismatch. Expected %d, got %d",
 				vars[i].type.data, f->types[i]);
@@ -1379,6 +1427,8 @@ static bool load_rsave_frame(int slot, struct rsave_heap_frame *f, int32_t versi
 
 static void load_rsave_string(int slot, struct rsave_heap_string *s, int32_t version, bool src_is_gbk)
 {
+	if (s->ref <= 0 || s->len < 0)
+		invalid_save_data("Invalid string metadata in VM image");
 	alloc_heap_slot(slot);
 	heap[slot].ref = s->ref;
 	heap[slot].seq = version == 14 ? slot + 1 : s->seq;
@@ -1388,6 +1438,8 @@ static void load_rsave_string(int slot, struct rsave_heap_string *s, int32_t ver
 
 static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t version)
 {
+	if (a->ref <= 0 || a->nr_slots < 0 || a->nr_slots > 64 * 1024 * 1024)
+		invalid_save_data("Invalid array metadata in VM image");
 	if (a->rank_minus_1 < 0) {
 		alloc_heap_slot(slot);
 		heap[slot].ref = a->ref;
@@ -1396,6 +1448,8 @@ static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t versi
 		heap[slot].page = NULL;
 		return;
 	}
+	if (a->rank_minus_1 > 32)
+		invalid_save_data("Invalid array rank in VM image");
 	enum ain_data_type data_type = a->data_type;
 	if (ain->version >= 11)
 		data_type = normalize_v12_array_leaf_type(data_type);
@@ -1430,6 +1484,8 @@ static void load_rsave_array(int slot, struct rsave_heap_array *a, int32_t versi
 
 static bool load_rsave_struct(int slot, struct rsave_heap_struct *s, int32_t version, bool id_aligned)
 {
+	if (s->ref <= 0 || s->nr_slots < 0 || s->nr_slots > 64 * 1024 * 1024 || s->nr_types < 0)
+		invalid_save_data("Invalid struct metadata in VM image");
 	int struct_index = resolve_struct_symbol(&s->struct_type);
 	if (struct_index < 0 && id_aligned && s->struct_type.id >= 0 && s->struct_type.id < ain->nr_structures) {
 		struct ain_struct *cand = &ain->structures[s->struct_type.id];
@@ -1516,7 +1572,11 @@ static bool delegate_target_matches_function(struct rsave *save, int obj, int fu
 
 static void load_rsave_delegate(int slot, struct rsave_heap_delegate *d, struct rsave *save)
 {
+	if (d->ref <= 0)
+		invalid_save_data("Invalid delegate refcount %d", d->ref);
 	if (save->version == 14) {
+		if (d->nr_entries < 0 || d->nr_entries > 16 * 1024 * 1024)
+			invalid_save_data("Invalid delegate entry count %d", d->nr_entries);
 		struct page *page = alloc_page(DELEGATE_PAGE, 0, d->nr_entries * 4);
 		page->delegate.cursor = d->cursor;
 		page->delegate.end = d->end;
@@ -1545,6 +1605,8 @@ static void load_rsave_delegate(int slot, struct rsave_heap_delegate *d, struct 
 		heap_set_page(slot, page);
 		return;
 	}
+	if (d->nr_slots < 0 || d->nr_slots > 64 * 1024 * 1024)
+		invalid_save_data("Invalid delegate slot count %d", d->nr_slots);
 	struct page *page = alloc_page(DELEGATE_PAGE, 0, d->nr_slots);
 	for (int i = 0; i < d->nr_slots; i++)
 		page->values[i].i = d->slots[i];
@@ -1658,6 +1720,8 @@ static void load_rsave_heap(struct rsave *save, const char *expected_key)
 
 	for (int slot = 0; slot < save->nr_heap_objs; slot++) {
 		enum rsave_heap_tag *tag = save->heap[slot];
+		if (!tag)
+			continue;
 		switch (*tag) {
 		case RSAVE_GLOBALS:
 		case RSAVE_LOCALS:   need_pad_init |= load_rsave_frame(slot, save->heap[slot], save->version, id_aligned);  break;
@@ -1668,6 +1732,7 @@ static void load_rsave_heap(struct rsave *save, const char *expected_key)
 		case RSAVE_NULL: break;
 		}
 	}
+	rebuild_heap_free_stack();
 	heap_next_seq = save->version == 14 ? save->nr_heap_objs + 1 : save->next_seq;
 	if (unlikely(need_pad_init)) {
 		for (int slot = 0; slot < save->nr_heap_objs; slot++) {
@@ -1727,8 +1792,12 @@ static void load_json_call_stack(cJSON *json)
 	call_stack_ptr = 0;
 	cJSON *item;
 	cJSON_ArrayForEach(item, json) {
+		if (call_stack_ptr >= (int32_t)(sizeof(call_stack) / sizeof(call_stack[0])))
+			invalid_save_data("Call stack overflow");
 		type_check(cJSON_Object, item);
 		int32_t fno = type_check(cJSON_Number, cJSON_GetObjectItem(item, "function"))->valueint;
+		if (fno < 0 || fno >= ain->nr_functions)
+			invalid_save_data("Invalid function index %d", fno);
 		int32_t return_address = type_check(cJSON_Number, cJSON_GetObjectItem(item, "return-address"))->valueint;
 		int32_t struct_page = type_check(cJSON_Number, cJSON_GetObjectItem(item, "struct-page"))->valueint;
 		cJSON *has_sp = cJSON_GetObjectItem(item, "has-struct-page");
@@ -1747,18 +1816,21 @@ static void load_rsave_call_stack(struct rsave *save)
 {
 	call_stack_ptr = 0;
 
-	if (save->nr_return_records == 0 || save->return_records[0].return_addr != -1)
-		ERROR("invalid resume save");
+	if (save->nr_return_records <= 0 || save->nr_call_frames <= 0 || save->return_records[0].return_addr != -1)
+		invalid_save_data("invalid resume save");
 	struct rsave_return_record *rr = save->return_records;
 	if (save->nr_return_records == save->nr_call_frames)
 		rr++;
 	else if (save->nr_return_records != save->nr_call_frames - 1)
-		ERROR("invalid resume save");
+		invalid_save_data("invalid resume save");
 
 	int32_t return_address = -1;
 	for (int i = 0; i < save->nr_call_frames; i++) {
 		if (save->call_frames[i].type != RSAVE_CALL_STACK_BOTTOM) {
-			int fno = resolve_rsave_function_ex(rr->caller_func, -1, rr->crc, true, -1, false);
+			if (call_stack_ptr >= (int32_t)(sizeof(call_stack) / sizeof(call_stack[0])))
+				invalid_save_data("Call stack overflow");
+			const char *cfunc = rr->caller_func ? rr->caller_func : "";
+			int fno = resolve_rsave_function_ex(cfunc, -1, rr->crc, true, -1, false);
 			if (fno < 0) {
 				int32_t lslot = save->call_frames[i].local_ptr;
 				if (lslot >= 0 && (size_t)lslot < heap_size && heap[lslot].type == VM_PAGE
@@ -1771,13 +1843,13 @@ static void load_rsave_call_stack(struct rsave *save)
 				}
 			}
 			if (fno < 0)
-				fno = resolve_rsave_function(rr->caller_func, rr->crc, true, -1);
+				fno = resolve_rsave_function(cfunc, rr->crc, true, -1);
 			if (fno < 0)
-				fno = resolve_rsave_function(rr->caller_func, rr->crc, false, -1);
+				fno = resolve_rsave_function(cfunc, rr->crc, false, -1);
 			if (fno < 0)
-				VM_ERROR("Failed to load VM image: function '%s' not found", display_sjis0(rr->caller_func));
+				VM_ERROR("Failed to load VM image: function '%s' not found", display_sjis0(cfunc));
 			if (ain->functions[fno].crc != rr->crc)
-				VM_ERROR("Failed to load VM image: CRC mismatch for function '%s'", display_sjis0(rr->caller_func));
+				VM_ERROR("Failed to load VM image: CRC mismatch for function '%s'", display_sjis0(cfunc));
 			int32_t struct_page = save->call_frames[i].struct_ptr;
 			bool has_struct_page = save->call_frames[i].type != RSAVE_FUNCTION_CALL
 				|| infer_frame_has_struct_page(fno, struct_page);
@@ -1799,7 +1871,15 @@ static void load_rsave_call_stack(struct rsave *save)
 	// RSM records instruction pointer after the CALLSYS/CALLHLL instruction,
 	// whereas vm_execute advances instr_ptr by instructions[opcode].ip_inc after
 	// returning from execute_instruction.
-	instr_ptr = return_address - instructions[get_opcode(instr_ptr)].ip_inc;
+	int ip_inc = 0;
+	if (instr_ptr + 2 <= ain->code_size) {
+		int16_t op = get_opcode(instr_ptr);
+		if (op >= 0 && op < NR_OPCODES)
+			ip_inc = instructions[op].ip_inc;
+	}
+	if (return_address < ip_inc || (size_t)(return_address - ip_inc) > ain->code_size)
+		invalid_save_data("Invalid resume instruction pointer %d", return_address);
+	instr_ptr = (size_t)(return_address - ip_inc);
 }
 
 static void load_json_stack(cJSON *json)
@@ -1808,6 +1888,8 @@ static void load_json_stack(cJSON *json)
 
 	cJSON *item;
 	cJSON_ArrayForEach(item, json) {
+		if (stack_ptr >= 4096)
+			invalid_save_data("VM stack overflow");
 		type_check(cJSON_Number, item);
 		stack_push_value(vm_int(item->valueint));
 	}
@@ -1816,6 +1898,8 @@ static void load_json_stack(cJSON *json)
 static void load_rsave_stack(struct rsave *save)
 {
 	stack_ptr = 0;
+	if (save->stack_size < 0 || save->stack_size > 4096)
+		invalid_save_data("Invalid VM stack size %d", save->stack_size);
 
 	for (int i = 0; i < save->stack_size; i++) {
 		stack_push_value(vm_int(save->stack[i]));
@@ -1826,20 +1910,27 @@ static cJSON *read_json_image(const char *keyname, const char *path)
 {
 	char *full_path = savedir_path(path);
 	char *save_file = file_read(full_path, NULL);
-	if (!save_file) {
-		free(save_file);
-		free(full_path);
+	free(full_path);
+	if (!save_file)
 		return NULL;
-	}
 
 	cJSON *save = cJSON_Parse(save_file);
-	cJSON *key = type_check(cJSON_String, cJSON_GetObjectItem(save, "key"));
-	if (!save_names_equal(keyname, cJSON_GetStringValue(key)))
-		invalid_save_data("Key doesn't match");
-
 	free(save_file);
-	free(full_path);
-	return type_check(cJSON_Object, save);
+	if (!save || !cJSON_IsObject(save)) {
+		cJSON_Delete(save);
+		return NULL;
+	}
+	cJSON *key = cJSON_GetObjectItem(save, "key");
+	if (!key || !cJSON_IsString(key)) {
+		cJSON_Delete(save);
+		invalid_save_data("Missing or invalid key");
+	}
+	if (!save_names_equal(keyname, cJSON_GetStringValue(key))) {
+		cJSON_Delete(save);
+		invalid_save_data("Key doesn't match");
+	}
+
+	return save;
 }
 
 static void load_json_image(const char *key, const char *path)
@@ -1849,10 +1940,14 @@ static void load_json_image(const char *key, const char *path)
 		VM_ERROR("Failed to read VM image: '%s'", display_sjis0(path));
 	}
 	cJSON *ip = type_check(cJSON_Number, cJSON_GetObjectItem(save, "ip"));
+	if (ip->valueint < 0 || (size_t)ip->valueint > ain->code_size) {
+		cJSON_Delete(save);
+		invalid_save_data("Invalid instruction pointer %d", ip->valueint);
+	}
 	load_json_heap(type_check(cJSON_Array, cJSON_GetObjectItem(save, "heap")));
 	load_json_call_stack(type_check(cJSON_Array, cJSON_GetObjectItem(save, "call-stack")));
 	load_json_stack(type_check(cJSON_Array, cJSON_GetObjectItem(save, "stack")));
-	instr_ptr = ip->valueint;
+	instr_ptr = (size_t)ip->valueint;
 	if (ain->nr_delegates > 0) {
 		cJSON *next_seq = type_check(cJSON_Number, cJSON_GetObjectItem(save, "next_seq"));
 		heap_next_seq = next_seq->valueint;
@@ -1870,8 +1965,10 @@ static enum savefile_error load_rsave_image(const char *key, const char *path)
 	free(full_path);
 	if (error != SAVEFILE_SUCCESS)
 		return error;
-	if (!save_names_equal(key, save->key))
+	if (!save_names_equal(key, save->key)) {
+		rsave_free(save);
 		invalid_save_data("Key doesn't match");
+	}
 	load_rsave_heap(save, key);
 	load_rsave_call_stack(save);
 	load_rsave_stack(save);
@@ -1910,11 +2007,10 @@ static struct page *load_json_image_comments(const char *key, const char *path, 
 	cJSON *comments = cJSON_GetObjectItem(save, "comments");
 	if (comments)
 		type_check(cJSON_Array, comments);
-	if (!comments || cJSON_GetArraySize(comments) == 0) {
+	if (!comments || cJSON_GetArraySize(comments) <= 0) {
 		*success = 1;
+		cJSON_Delete(save);
 		return NULL;
-		//union vm_value dims = { .i = 0 };
-		//return alloc_array(1, &dims, AIN_ARRAY_STRING, 0, false);
 	}
 
 	// read comments from JSON array into VM array
@@ -1924,7 +2020,7 @@ static struct page *load_json_image_comments(const char *key, const char *path, 
 		int slot = heap_alloc_slot(VM_STRING);
 		cJSON *jstr = type_check(cJSON_String, cJSON_GetArrayItem(comments, i));
 		char *str = cJSON_GetStringValue(jstr);
-		if (!str[0]) {
+		if (!str || !str[0]) {
 			heap[slot].s = string_ref(&EMPTY_STRING);
 		} else {
 			heap[slot].s = make_string(str, strlen(str));
@@ -1944,9 +2040,11 @@ static struct page *load_rsave_image_comments(const char *key, const char *path,
 	free(full_path);
 	if (*error != SAVEFILE_SUCCESS)
 		return NULL;
-	if (!save_names_equal(key, save->key))
+	if (!save_names_equal(key, save->key)) {
+		rsave_free(save);
 		invalid_save_data("Key doesn't match");
-	if (save->nr_comments == 0) {
+	}
+	if (save->nr_comments <= 0) {
 		rsave_free(save);
 		return NULL;
 	}
@@ -1955,7 +2053,7 @@ static struct page *load_rsave_image_comments(const char *key, const char *path,
 	bool src_is_gbk = rsave_detect_is_gbk(save, key);
 	for (int i = 0; i < dims.i; i++) {
 		int slot = heap_alloc_slot(VM_STRING);
-		if (!save->comments[i][0]) {
+		if (!save->comments[i] || !save->comments[i][0]) {
 			heap[slot].s = string_ref(&EMPTY_STRING);
 		} else {
 			heap[slot].s = save_decode_vm_string(save->comments[i], strlen(save->comments[i]), src_is_gbk);
@@ -1991,8 +2089,11 @@ static int write_rsave_image_comments(const char *key, const char *path, struct 
 	struct rsave *save = rsave_read(full_path, RSAVE_READ_ALL, &error);
 	switch (error) {
 	case SAVEFILE_SUCCESS:
-		if (!save_names_equal(key, save->key))
+		if (!save_names_equal(key, save->key)) {
+			free(full_path);
+			rsave_free(save);
 			invalid_save_data("Key doesn't match");
+		}
 		break;
 	case SAVEFILE_FILE_ERROR:
 		save = make_rsave(key);
@@ -2012,10 +2113,12 @@ static int write_rsave_image_comments(const char *key, const char *path, struct 
 		free(save->comments[i]);
 	}
 	free(save->comments);
-	save->nr_comments = comments->nr_vars;
+	save->nr_comments = comments ? comments->nr_vars : 0;
 	save->comments = xcalloc(save->nr_comments, sizeof(char*));
 	for (int i = 0; i < save->nr_comments; i++) {
-		save->comments[i] = xstrdup(heap_get_string(comments->values[i].i)->text);
+		struct string *cs = string_index_valid(comments->values[i].i)
+			? heap_get_string(comments->values[i].i) : &EMPTY_STRING;
+		save->comments[i] = xstrdup(cs->text);
 	}
 
 	char *tmp_path = NULL;
@@ -2052,17 +2155,19 @@ static int write_json_image_comments(const char *key, const char *path, struct p
 	}
 	cJSON_DeleteItemFromObject(save, "comments");
 
-	// TODO: check that comments is an array of strings
+	int nr_comments = comments ? comments->nr_vars : 0;
 	cJSON *array = cJSON_CreateArray();
-	for (int i = 0; i < comments->nr_vars; i++) {
-		cJSON *s = cJSON_CreateString(heap_get_string(comments->values[i].i)->text);
+	for (int i = 0; i < nr_comments; i++) {
+		struct string *cs = string_index_valid(comments->values[i].i)
+			? heap_get_string(comments->values[i].i) : &EMPTY_STRING;
+		cJSON *s = cJSON_CreateString(cs->text);
 		cJSON_AddItemToArray(array, s);
 	}
 	cJSON_AddItemToObject(save, "comments", array);
 
-	save_json(path, save);
+	int ok = save_json(path, save);
 	cJSON_Delete(save);
-	return 1;
+	return ok;
 }
 
 int vm_write_image_comments(const char *key, const char *path, struct page *comments)

@@ -191,6 +191,7 @@ int ain_get_function(struct ain *ain, char *name)
 {
 	size_t len;
 	long n = 0;
+	bool has_index = false;
 
 	// handle name#index syntax
 	for (len = 0; name[len]; len++) {
@@ -201,12 +202,23 @@ int ain_get_function(struct ain *ain, char *name)
 				WARNING("Invalid function name: '%s'", name);
 				n = 0;
 			}
-			name[len] = '\0';
+			has_index = true;
 			break;
 		}
 	}
 
-	struct func_list *funs = get_function(ain, name);
+	struct func_list *funs;
+	if (has_index) {
+		char stack_buf[512];
+		char *base = len < sizeof(stack_buf) ? stack_buf : xmalloc(len + 1);
+		memcpy(base, name, len);
+		base[len] = '\0';
+		funs = get_function(ain, base);
+		if (base != stack_buf)
+			free(base);
+	} else {
+		funs = get_function(ain, name);
+	}
 	if (!funs || n >= funs->nr_slots)
 		return -1;
 	return funs->slots[n];
@@ -680,26 +692,31 @@ char *ain_strtype_d(struct ain *ain, struct ain_type *v)
 
 const char *ain_variable_to_string(struct ain *ain, struct ain_variable *v)
 {
-	static char buf[2048] = { [2047] = '\0' };
+	static char buf[2048];
 	char *type = ain_strtype_d(ain, &v->type);
-	int i = snprintf(buf, 2047, "%s %s", type, v->name);
+	int i = snprintf(buf, sizeof(buf), "%s %s", type, v->name);
 	free(type);
+	if (i < 0)
+		i = 0;
+	else if ((size_t)i >= sizeof(buf))
+		i = sizeof(buf) - 1;
 
-	if (v->has_initval) {
+	if (v->has_initval && (size_t)i + 1 < sizeof(buf)) {
+		size_t rem = sizeof(buf) - (size_t)i;
 		switch (v->type.data) {
 		case AIN_STRING: {
 			// FIXME: string needs escaping
-			snprintf(buf+i, 2047-i, " = \"%s\"", v->initval.s);
+			snprintf(buf+i, rem, " = \"%s\"", v->initval.s ? v->initval.s : "");
 			break;
 		}
 		case AIN_DELEGATE:
 		case AIN_REF_TYPE:
 			break;
 		case AIN_FLOAT:
-			snprintf(buf+i, 2047-i, " = %f", v->initval.f);
+			snprintf(buf+i, rem, " = %f", v->initval.f);
 			break;
 		default:
-			snprintf(buf+i, 2047-i, " = %d", v->initval.i);
+			snprintf(buf+i, rem, " = %d", v->initval.i);
 			break;
 		}
 	}
@@ -717,6 +734,11 @@ struct ain_reader {
 
 static int32_t read_int32(struct ain_reader *r)
 {
+	if (r->index + 4 > r->size) {
+		WARNING("AIN section truncated");
+		r->index = r->size;
+		return 0;
+	}
 	int32_t v = LittleEndian_getDW(r->buf, r->index);
 	r->index += 4;
 	return v;
@@ -724,17 +746,35 @@ static int32_t read_int32(struct ain_reader *r)
 
 static uint8_t *read_bytes(struct ain_reader *r, size_t len)
 {
-	uint8_t *bytes = xmalloc(len);
-	memcpy(bytes, r->buf + r->index, len);
+	if (len > r->size - r->index) {
+		WARNING("AIN byte block truncated");
+		len = r->size - r->index;
+	}
+	uint8_t *bytes = xmalloc(len ? len : 1);
+	if (len)
+		memcpy(bytes, r->buf + r->index, len);
 	r->index += len;
 	return bytes;
 }
 
 static char *read_string(struct ain_reader *r)
 {
-	char *input_str = (char*)r->buf + r->index;
+	if (r->index >= r->size)
+		return xstrdup("");
+	size_t rem = r->size - r->index;
+	const char *input_str = (const char*)r->buf + r->index;
+	const char *nul = memchr(input_str, '\0', rem);
+	if (!nul) {
+		char *tmp = xmalloc(rem + 1);
+		memcpy(tmp, input_str, rem);
+		tmp[rem] = '\0';
+		r->index = r->size;
+		char *str = r->conv(tmp);
+		free(tmp);
+		return str;
+	}
 	char *str = r->conv(input_str);
-	r->index += strlen(input_str) + 1;
+	r->index += (size_t)(nul - input_str) + 1;
 	return str;
 }
 
@@ -771,10 +811,15 @@ static struct string **read_vm_strings(struct ain_reader *r, int count)
 static struct string *read_msg1_string(struct ain_reader *r)
 {
 	int32_t len = read_int32(r);
-	char *bytes = xmalloc(len+1);
-	memcpy(bytes, r->buf + r->index, len);
+	if (len < 0 || (size_t)len > r->size - r->index) {
+		WARNING("Invalid MSG1 string length: %d", len);
+		r->index = r->size;
+		return make_string("", 0);
+	}
+	char *bytes = xmalloc((size_t)len + 1);
+	memcpy(bytes, r->buf + r->index, (size_t)len);
 	bytes[len] = '\0';
-	r->index += len;
+	r->index += (size_t)len;
 
 	// why...
 	for (int i = 0; i < len; i++) {
@@ -1099,14 +1144,14 @@ static struct ain_function_type *read_function_types(struct ain_reader *r, int c
 #define for_each_instruction(ain, addr, instr, start, user_code)	\
 	do {								\
 		const struct instruction *instr;			\
-		for (size_t addr = start; addr < ain->code_size; addr += instruction_width(instr->opcode)) { \
-			uint16_t _fei_opcode = LittleEndian_getW(ain->code, addr); \
+		for (size_t addr = (start); (ain)->code_size >= 2 && addr <= (ain)->code_size - 2; addr += instruction_width(instr->opcode)) { \
+			uint16_t _fei_opcode = LittleEndian_getW((ain)->code, addr); \
 			if (_fei_opcode >= NR_OPCODES) {		\
 				WARNING("Unknown/invalid opcode: %u", _fei_opcode); \
 				break;					\
 			}						\
 			instr = &instructions[_fei_opcode];		\
-			if (addr + instr->nr_args * 4 >= ain->code_size) { \
+			if (instr->nr_args < 0 || (size_t)instr->nr_args > ((ain)->code_size - addr - 2) / 4) { \
 				WARNING("CODE section truncated?");	\
 				break;					\
 			}						\
@@ -1295,9 +1340,29 @@ static bool read_tag(struct ain_reader *r, struct ain *ain)
 static void distribute_initvals(struct ain *ain)
 {
 	for (int i = 0; i < ain->nr_initvals; i++) {
-		struct ain_variable *g = &ain->globals[ain->global_initvals[i].global_index];
+		int32_t idx = ain->global_initvals[i].global_index;
+		bool init_is_str = ain->global_initvals[i].data_type == AIN_STRING;
+		if (idx < 0 || idx >= ain->nr_globals) {
+			WARNING("Global initval %d has out-of-bounds global index %d", i, idx);
+			if (init_is_str)
+				free(ain->global_initvals[i].string_value);
+			ain->global_initvals[i].string_value = NULL;
+			continue;
+		}
+		struct ain_variable *g = &ain->globals[idx];
+		bool var_is_str = g->type.data == AIN_STRING;
+		if (init_is_str != var_is_str) {
+			WARNING("Global initval %d type (%d) mismatches global %d type (%d)",
+			        i, ain->global_initvals[i].data_type, idx, g->type.data);
+			if (init_is_str)
+				free(ain->global_initvals[i].string_value);
+			ain->global_initvals[i].string_value = NULL;
+			continue;
+		}
+		if (g->has_initval && var_is_str)
+			free(g->initval.s);
 		g->has_initval = true;
-		if (ain->global_initvals[i].data_type == AIN_STRING)
+		if (var_is_str)
 			g->initval.s = ain->global_initvals[i].string_value;
 		else
 			g->initval.i = ain->global_initvals[i].int_value;
@@ -1306,11 +1371,13 @@ static void distribute_initvals(struct ain *ain)
 
 static uint8_t *decompress_ain(uint8_t *in, long *len)
 {
+	if (*len < 16)
+		return NULL;
 	uint8_t *out;
 	long out_len = LittleEndian_getDW(in, 8);
 	long in_len  = LittleEndian_getDW(in, 12);
 
-	if (out_len < 0 || in_len < 0)
+	if (out_len < 0 || in_len < 0 || in_len > *len - 16 || out_len > 512L * 1024 * 1024)
 		return NULL;
 
 	out = xmalloc(out_len);
@@ -1353,6 +1420,11 @@ uint8_t *ain_read(const char *path, long *len, int *error)
 	fseek(fp, 0, SEEK_END);
 	*len = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
+	if (*len < 8) {
+		*error = AIN_FILE_ERROR;
+		fclose(fp);
+		goto err;
+	}
 
 	// read AIN file into memory
 	buf = xmalloc(*len + 4); // why +4?

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.widget.Toast
 import java.io.File
 
 data class GameDescriptor(
@@ -677,6 +678,59 @@ object GameCatalog {
         }
     }
 
+    fun isGameProcessRunning(context: Context): Boolean {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        val targetProcName = "${context.packageName}:game"
+        return try {
+            am.runningAppProcesses?.any { it.processName == targetProcName } == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun showGameStopFailedToast(context: Context) {
+        val msg = GamepadBridge.tr(
+            context,
+            "无法终止正在运行的游戏进程，请稍后重试",
+            "実行中のゲームを終了できませんでした。しばらくしてから再試行してください",
+            "Failed to stop running game process. Please try again."
+        )
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    fun waitForGameProcessExit(
+        activity: Activity,
+        maxRetries: Int = 30,
+        intervalMs: Long = 50L,
+        onExited: () -> Unit,
+        onTimeout: () -> Unit = { showGameStopFailedToast(activity) }
+    ) {
+        val handler = Handler(Looper.getMainLooper())
+        var attempts = 0
+        val checkRunnable = object : Runnable {
+            override fun run() {
+                if (activity.isFinishing || activity.isDestroyed) return
+                if (!isGameProcessRunning(activity)) {
+                    clearRunningGameRoot(activity)
+                    onExited()
+                    return
+                }
+                attempts++
+                if (attempts >= maxRetries) {
+                    onTimeout()
+                } else {
+                    handler.postDelayed(this, intervalMs)
+                }
+            }
+        }
+        if (!isGameProcessRunning(activity)) {
+            clearRunningGameRoot(activity)
+            onExited()
+        } else {
+            handler.postDelayed(checkRunnable, intervalMs)
+        }
+    }
+
     fun getRunningGameRoot(context: Context): String? {
         if (!isGameProcessRunning(context)) {
             clearRunningGameRoot(context)
@@ -701,30 +755,43 @@ object GameCatalog {
         }
         val saveDir = item.savedir ?: return
         val targetRoot = item.path.path
-        val runningRoot = getRunningGameRoot(activity)
+        val running = isGameProcessRunning(activity)
+        val runningRoot = if (running) getRunningGameRoot(activity) else null
 
-        if (isGameProcessRunning(activity) && runningRoot != null && runningRoot != targetRoot) {
+        if (running && runningRoot != null && runningRoot != targetRoot) {
             val cleanName = cleanItemTitle(item.name)
             AlertDialog.Builder(activity)
                 .setTitle(R.string.switch_running_game_title)
                 .setMessage(activity.getString(R.string.switch_running_game_msg, cleanName))
                 .setPositiveButton(R.string.switch_running_game_confirm) { _, _ ->
                     killRunningGameProcess(activity)
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        if (!activity.isFinishing && !activity.isDestroyed) {
+                    waitForGameProcessExit(
+                        activity = activity,
+                        onExited = {
                             startXSystem4Activity(activity, targetRoot, saveDir.path)
                         }
-                    }, 160L)
+                    )
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
             return
         }
 
+        if (running && runningRoot == null) {
+            // Previous :game process is in final teardown; wait until it fully exits before launching.
+            waitForGameProcessExit(
+                activity = activity,
+                onExited = {
+                    startXSystem4Activity(activity, targetRoot, saveDir.path)
+                }
+            )
+            return
+        }
+
         startXSystem4Activity(activity, targetRoot, saveDir.path)
     }
 
-    private fun killRunningGameProcess(context: Context) {
+    fun killRunningGameProcess(context: Context) {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val targetProcName = "${context.packageName}:game"
         try {

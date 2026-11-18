@@ -51,6 +51,7 @@ class GamepadConfigController(
     private val handler = Handler(Looper.getMainLooper())
     private var pollActive = false
     private var pollAliveCheck: () -> Boolean = { true }
+    private var presetConfirmDialog: AlertDialog? = null
 
     private var scopeSwitch: Switch? = null
     private var scopeBadgeTv: TextView? = null
@@ -137,6 +138,13 @@ class GamepadConfigController(
     fun stopPolling() {
         pollActive = false
         handler.removeCallbacks(pollRunnable)
+        presetConfirmDialog?.let { dlg ->
+            presetConfirmDialog = null
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     fun buildRootView(): View {
@@ -323,7 +331,13 @@ class GamepadConfigController(
                 "This replaces your custom controller mapping. Continue?"
             )
         }
-        AlertDialog.Builder(uiCtx)
+        presetConfirmDialog?.let { prev ->
+            try {
+                if (prev.isShowing) prev.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+        presetConfirmDialog = AlertDialog.Builder(uiCtx)
             .setMessage(msg)
             .setPositiveButton(android.R.string.ok) { _, _ -> applyPreset(presetId) }
             .setNegativeButton(android.R.string.cancel, null)
@@ -651,6 +665,27 @@ class GamepadConfigController(
 }
 
 object GamepadConfigDialog {
+    private var activeDialogRef: java.lang.ref.WeakReference<AlertDialog>? = null
+    private var activeContextRef: java.lang.ref.WeakReference<Context>? = null
+
+    fun dismissActive() {
+        val dlg = activeDialogRef?.get()
+        activeDialogRef = null
+        activeContextRef = null
+        if (dlg != null) {
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun dismissForContext(context: Context) {
+        val activeCtx = activeContextRef?.get()
+        if (activeCtx === context || activeCtx == null) {
+            dismissActive()
+        }
+    }
 
     fun show(
         context: Context,
@@ -661,6 +696,7 @@ object GamepadConfigDialog {
         onProfileUpdated: (GamepadProfile) -> Unit = {},
         onEnterEditor: ((GamepadProfile, Int) -> Unit)? = null
     ) {
+        dismissActive()
         var dlgRef: AlertDialog? = null
         val controller = GamepadConfigController(
             context = context,
@@ -703,11 +739,17 @@ object GamepadConfigDialog {
             }
             .create()
         dlgRef = built
+        activeDialogRef = java.lang.ref.WeakReference(built)
+        activeContextRef = java.lang.ref.WeakReference(context)
 
         built.setOnShowListener {
             controller.startPolling { built.isShowing }
         }
         built.setOnDismissListener {
+            if (activeDialogRef?.get() === built) {
+                activeDialogRef = null
+                activeContextRef = null
+            }
             controller.stopPolling()
         }
         built.show()

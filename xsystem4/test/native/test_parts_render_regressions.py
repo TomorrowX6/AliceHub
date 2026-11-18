@@ -123,6 +123,21 @@ static void gfx_copy_height_blur(Texture *d, int dx, int dy, Texture *s, int sx,
                                 int w, int h, int r) { blur(d,dx,dy,s,sx,sy,w,h,r,true); }
 static void gfx_copy_width_blur(Texture *d, int dx, int dy, Texture *s, int sx, int sy,
                                int w, int h, int r) { blur(d,dx,dy,s,sx,sy,w,h,r,false); }
+static int grays;
+static void gfx_copy_grayscale(Texture *d, int dx, int dy, Texture *s, int sx, int sy,
+                               int w, int h) {
+    // GLES invariant: source MUST NOT be attached as destination.
+    assert(s->handle != d->handle);
+    assert(w > 0 && h > 0);
+    grays++;
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+        unsigned char *sp = s->pixels + ((sy + y) * s->w + sx + x) * 4;
+        unsigned char *dp = d->pixels + ((dy + y) * d->w + dx + x) * 4;
+        unsigned char g = (unsigned char)roundf(0.299f * sp[0] + 0.587f * sp[1] + 0.114f * sp[2]);
+        dp[0] = dp[1] = dp[2] = g;
+        // Preserve destination alpha.
+    }
+}
 '''
 
 TESTS = r'''
@@ -202,7 +217,36 @@ static void test_blur(void) {
     assert(!build_blur_filter(&missing, &op, false));
     assert(allocated == deleted);
 }
-int main(void) { test_reversal(); test_blur(); puts("parts render regression fixtures passed"); }
+static void test_gray(void) {
+    for (int full = 0; full < 2; full++) {
+        struct parts_construction_process cp = {0};
+        gfx_init_texture_blank(&cp.common.texture, 7, 5);
+        unsigned char original[7*5*4];
+        for (int i = 0; i < 7*5*4; i++) original[i] = cp.common.texture.pixels[i] = (i * 37) % 251;
+        Texture expected = {0}, source = {0};
+        gfx_init_texture_blank(&expected, 7, 5);
+        gfx_init_texture_blank(&source, 7, 5);
+        memcpy(expected.pixels, original, sizeof original);
+        memcpy(source.pixels, original, sizeof original);
+        struct parts_cp_filter op = {1, 1, 4, 3, 0, full};
+        gfx_copy_grayscale(&expected, full ? 0 : 1, full ? 0 : 1, &source,
+                           full ? 0 : 1, full ? 0 : 1, full ? 7 : 4, full ? 5 : 3);
+        assert(build_gray_filter(&cp, &op));
+        assert(!memcmp(expected.pixels, cp.common.texture.pixels, sizeof original));
+        int before = allocated;
+        struct parts_cp_filter empty = {1, 1, 0, 3, 0, false};
+        assert(build_gray_filter(&cp, &empty) && allocated == before);
+        assert(!memcmp(expected.pixels, cp.common.texture.pixels, sizeof original));
+        gfx_delete_texture(&cp.common.texture);
+        gfx_delete_texture(&expected);
+        gfx_delete_texture(&source);
+    }
+    struct parts_construction_process missing = {0};
+    struct parts_cp_filter op = {0, 0, 7, 5, 0, true};
+    assert(!build_gray_filter(&missing, &op));
+    assert(allocated == deleted);
+}
+int main(void) { test_reversal(); test_blur(); test_gray(); puts("parts render regression fixtures passed"); }
 '''
 
 
@@ -213,6 +257,7 @@ class PartsRenderingTests(unittest.TestCase):
             function('src/hll/PartsEngine.c', 'PartsEngine_SetComponentReverseLR'),
             function('src/hll/PartsEngine.c', 'PartsEngine_SetComponentReverseTB'),
             function('src/parts/construction.c', 'build_blur_filter'),
+            function('src/parts/construction.c', 'build_gray_filter'),
         ]) + TESTS
         with tempfile.TemporaryDirectory() as tmp:
             c = Path(tmp) / 'test.c'
@@ -267,13 +312,15 @@ int main(void) {
         # The GLES integration suite tests the actual presentation separately.
         code = r'''
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <string.h>
 enum { SDL_WINDOWEVENT_EXPOSED, SDL_WINDOWEVENT_ENTER, SDL_WINDOWEVENT_LEAVE,
        SDL_WINDOWEVENT_RESTORED, SDL_WINDOWEVENT_FOCUS_GAINED,
        SDL_WINDOWEVENT_FOCUS_LOST, SDL_WINDOWEVENT_SIZE_CHANGED, VK_CONTROL = 17 };
 typedef struct { struct { int event; } window; } SDL_Event;
-static bool mouse_focus, keyboard_focus, kbd_ctrl_down, touch_ctrl_skip;
+static bool mouse_focus, keyboard_focus, kbd_ctrl_down;
+static atomic_bool touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
 static int restored, foreground, swaps, traces;
 static void gfx_trace_resume(const char *phase) { (void)phase; traces++; }

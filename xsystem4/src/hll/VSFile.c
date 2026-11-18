@@ -64,6 +64,8 @@ static bool vsf_read_type(enum vsf_valuetype type)
 	}
 
 	int c = fgetc(vs_file);
+	if (c == EOF)
+		return false;
 	if ((enum vsf_valuetype)c != type) {
 		ungetc(c, vs_file);
 		return false;
@@ -83,10 +85,13 @@ static bool vsf_write_type(enum vsf_valuetype type)
 
 static bool vsfile_open(struct string *filename, bool read)
 {
+	if (!filename)
+		return false;
 	char *u = savedir_path(filename->text);
 	if (vs_file) {
 		WARNING("VSFile is already opened");
 		fclose(vs_file);
+		vs_file = NULL;
 	}
 	vs_read = read;
 	if (!read) {
@@ -155,7 +160,8 @@ static bool VSFile_Close(void)
 
 static bool VSFile_WriteByte(int data)
 {
-	vsf_write_type(VSF_BYTE);
+	if (!vsf_write_type(VSF_BYTE))
+		return false;
 
 	uint8_t b = data;
 	return vsf_write(&b, 1);
@@ -163,7 +169,8 @@ static bool VSFile_WriteByte(int data)
 
 static bool VSFile_WriteInt(int data)
 {
-	vsf_write_type(VSF_INT);
+	if (!vsf_write_type(VSF_INT))
+		return false;
 
 	uint8_t b[4];
 	LittleEndian_putDW(b, 0, data);
@@ -172,7 +179,8 @@ static bool VSFile_WriteInt(int data)
 
 static bool VSFile_WriteFloat(float data)
 {
-	vsf_write_type(VSF_FLOAT);
+	if (!vsf_write_type(VSF_FLOAT))
+		return false;
 
 	uint8_t b[4];
 	union {
@@ -186,18 +194,18 @@ static bool VSFile_WriteFloat(float data)
 
 static bool VSFile_WriteString(struct string *str)
 {
-	vsf_write_type(VSF_STRING);
-
-	if (fwrite(str->text, str->size+1, 1, vs_file) != 1) {
-		WARNING("fwrite failed: %s", strerror(errno));
+	if (!vsf_write_type(VSF_STRING))
 		return false;
-	}
-	return true;
+
+	const char *text = str ? str->text : "";
+	size_t len = str ? (size_t)str->size + 1 : 1;
+	return vsf_write(text, len);
 }
 
 static bool VSFile_ReadByte(int *data)
 {
-	vsf_read_type(VSF_BYTE);
+	if (!data || !vsf_read_type(VSF_BYTE))
+		return false;
 
 	uint8_t b;
 	if (!vsf_read(&b, 1))
@@ -208,7 +216,8 @@ static bool VSFile_ReadByte(int *data)
 
 static bool VSFile_ReadInt(int *data)
 {
-	vsf_read_type(VSF_INT);
+	if (!data || !vsf_read_type(VSF_INT))
+		return false;
 
 	uint8_t b[4];
 	if (!vsf_read(b, 4))
@@ -219,7 +228,8 @@ static bool VSFile_ReadInt(int *data)
 
 static bool VSFile_ReadFloat(float *data)
 {
-	vsf_read_type(VSF_FLOAT);
+	if (!data || !vsf_read_type(VSF_FLOAT))
+		return false;
 
 	uint8_t b[4];
 	union {
@@ -235,7 +245,8 @@ static bool VSFile_ReadFloat(float *data)
 
 static bool VSFile_ReadString(struct string **str)
 {
-	vsf_read_type(VSF_STRING);
+	if (!str || !vsf_read_type(VSF_STRING))
+		return false;
 
 	char b;
 	struct string *s = make_string("", 0);

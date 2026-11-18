@@ -37,10 +37,12 @@
 
 const char *display_sjis0(const char *sjis)
 {
+	if (!sjis)
+		return "";
 #ifdef NATIVE_SJIS
 	return sjis;
 #else
-	static char *utf = NULL;
+	static _Thread_local char *utf = NULL;
 	free(utf);
 	utf = sjis2utf(sjis, 0);
 	return utf;
@@ -49,10 +51,12 @@ const char *display_sjis0(const char *sjis)
 
 const char *display_sjis1(const char *sjis)
 {
+	if (!sjis)
+		return "";
 #ifdef NATIVE_SJIS
 	return sjis;
 #else
-	static char *utf = NULL;
+	static _Thread_local char *utf = NULL;
 	free(utf);
 	utf = sjis2utf(sjis, 0);
 	return utf;
@@ -61,10 +65,12 @@ const char *display_sjis1(const char *sjis)
 
 const char *display_sjis2(const char *sjis)
 {
+	if (!sjis)
+		return "";
 #ifdef NATIVE_SJIS
 	return sjis;
 #else
-	static char *utf = NULL;
+	static _Thread_local char *utf = NULL;
 	free(utf);
 	utf = sjis2utf(sjis, 0);
 	return utf;
@@ -73,8 +79,10 @@ const char *display_sjis2(const char *sjis)
 
 const char *display_utf0(const char *utf)
 {
+	if (!utf)
+		return "";
 #ifdef NATIVE_SJIS
-	static char *sjis = NULL;
+	static _Thread_local char *sjis = NULL;
 	free(sjis);
 	sjis = utf2sjis(utf, 0);
 	return sjis;
@@ -85,8 +93,10 @@ const char *display_utf0(const char *utf)
 
 const char *display_utf1(const char *utf)
 {
+	if (!utf)
+		return "";
 #ifdef NATIVE_SJIS
-	static char *sjis = NULL;
+	static _Thread_local char *sjis = NULL;
 	free(sjis);
 	sjis = utf2sjis(utf, 0);
 	return sjis;
@@ -97,8 +107,10 @@ const char *display_utf1(const char *utf)
 
 const char *display_utf2(const char *utf)
 {
+	if (!utf)
+		return "";
 #ifdef NATIVE_SJIS
-	static char *sjis = NULL;
+	static _Thread_local char *sjis = NULL;
 	free(sjis);
 	sjis = utf2sjis(utf, 0);
 	return sjis;
@@ -109,6 +121,8 @@ const char *display_utf2(const char *utf)
 
 static char *unix_path_with(const char *path, bool legacy_gbk)
 {
+	if (!path)
+		return xstrdup("");
 	char *utf = legacy_gbk ? sjis2utf(path, strlen(path)) : sjis_filename2utf(path, strlen(path));
 	for (int i = 0; utf[i]; i++) {
 		if (utf[i] == '\\')
@@ -124,8 +138,10 @@ char *unix_path(const char *path)
 
 bool is_absolute_path(const char *path)
 {
+	if (!path || !path[0])
+		return false;
 #if (defined(_WIN32) || defined(__WIN32__))
-	int i = (isalpha(path[0]) && path[1] == ':') ? 2 : 0;
+	int i = (isalpha((unsigned char)path[0]) && path[1] == ':') ? 2 : 0;
 	return path[i] == '/' || path[i] == '\\';
 #else
 	return path[0] == '/';
@@ -232,28 +248,42 @@ char *savedir_path(const char *path)
 	return resolve_path(config.save_dir, path);
 }
 
+static void get_local_tm(struct tm *tm_out, long *nsec_out)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	time_t t = ts.tv_sec;
+	memset(tm_out, 0, sizeof(*tm_out));
+#if (defined(_WIN32) || defined(__WIN32__))
+	localtime_s(tm_out, &t);
+#else
+	localtime_r(&t, tm_out);
+#endif
+	if (nsec_out)
+		*nsec_out = ts.tv_nsec;
+}
+
 void get_date(int *year, int *month, int *mday, int *wday)
 {
-	time_t t = time(NULL);
-	struct tm *tm = localtime(&t);
+	struct tm tm;
+	get_local_tm(&tm, NULL);
 
-	*year  = tm->tm_year + 1900;
-	*month = tm->tm_mon + 1;
-	*mday  = tm->tm_mday;
-	*wday  = tm->tm_wday;
+	*year  = tm.tm_year + 1900;
+	*month = tm.tm_mon + 1;
+	*mday  = tm.tm_mday;
+	*wday  = tm.tm_wday;
 }
 
 void get_time(int *hour, int *min, int *sec, int *ms)
 {
-	time_t t = time(NULL);
-	struct tm *tm = localtime(&t);
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
+	struct tm tm;
+	long nsec = 0;
+	get_local_tm(&tm, &nsec);
 
-	*hour = tm->tm_hour;
-	*min  = tm->tm_min;
-	*sec  = tm->tm_sec;
-	*ms   = ts.tv_nsec / 1000000;
+	*hour = tm.tm_hour;
+	*min  = tm.tm_min;
+	*sec  = tm.tm_sec;
+	*ms   = (int)(nsec / 1000000);
 }
 
 void indent_message(int indent, const char *fmt, ...)

@@ -35,11 +35,16 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
+        private const val STATE_TARGET_PATH = "STATE_MOD_MGR_TARGET_PATH"
+        private const val STATE_TARGET_GAME_ID = "STATE_MOD_MGR_TARGET_GAME_ID"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var catalogJob: Job? = null
     private var progressDialog: Dialog? = null
+    private var restoreProgressDialog: Dialog? = null
+    private val trackedDialogs = mutableListOf<Dialog>()
+    private var lastProgressRenderMs: Long = 0L
 
     private lateinit var gameList: GameList
     private var targetGameId: String = GameCatalog.ID_RANCE10
@@ -56,12 +61,38 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
     private var pendingPostResumeAction: (() -> Unit)? = null
 
-    private fun resolveGameContext(srcIntent: Intent?) {
-        val pathExtra = srcIntent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
+    private fun <T : Dialog> trackDialog(dlg: T): T {
+        trackedDialogs.removeAll { !it.isShowing }
+        trackedDialogs.add(dlg)
+        return dlg
+    }
+
+    private fun dismissTrackedDialogs() {
+        for (dlg in trackedDialogs.toList()) {
+            if (dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        trackedDialogs.clear()
+    }
+
+    private fun isInstallingCurrentTarget(): Boolean {
+        if (!::gameList.isInitialized) return false
+        return gameList.isInstallingForGame(targetGameId) ||
+            (::currentTarget.isInitialized && gameList.isInstallingInto(currentTarget))
+    }
+
+    private fun resolveGameContext(srcIntent: Intent?, savedInstanceState: Bundle? = null) {
+        val pathExtra = savedInstanceState?.getString(STATE_TARGET_PATH)?.takeIf { it.isNotBlank() }
+            ?: srcIntent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
         if (pathExtra != null) {
             currentTargetPath = pathExtra
         }
-        val idExtra = srcIntent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        val idExtra = savedInstanceState?.getString(STATE_TARGET_GAME_ID)?.takeIf { it.isNotBlank() }
+            ?: srcIntent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
         targetGameId = idExtra ?: if (currentTargetPath.isNotBlank()) {
             val f = File(currentTargetPath)
             GameCatalog.classifyDirectory(f, f.name)
@@ -85,7 +116,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         )
 
         gameList = LauncherActivity.obtainGameList(this)
-        resolveGameContext(intent)
+        resolveGameContext(intent, savedInstanceState)
         val candidates = overlayGameItems()
         if (candidates.isEmpty()) {
             Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
@@ -129,9 +160,21 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (currentTargetPath.isNotBlank()) {
+            outState.putString(STATE_TARGET_PATH, currentTargetPath)
+        }
+        if (targetGameId.isNotBlank()) {
+            outState.putString(STATE_TARGET_GAME_ID, targetGameId)
+        }
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        setIntent(intent)
+        if (intent != null && (intent.hasExtra(EXTRA_GAME_ID) || intent.hasExtra(EXTRA_GAME_PATH))) {
+            setIntent(intent)
+        }
         val prevGameId = targetGameId
         resolveGameContext(intent)
         if (targetGameId != prevGameId) {
@@ -163,7 +206,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private fun handleRestoreDialogIntent(srcIntent: Intent?) {
         if (srcIntent?.getBooleanExtra(InstallForegroundService.EXTRA_RESTORE_INSTALL_DIALOG, false) == true) {
             srcIntent.removeExtra(InstallForegroundService.EXTRA_RESTORE_INSTALL_DIALOG)
-            if (::gameList.isInitialized) {
+            if (isInstallingCurrentTarget()) {
                 gameList.restoreInstallProgress()
             }
         }
@@ -188,6 +231,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         } else if (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError) {
             loadCatalog()
         }
+        if (gameList.isRestoringMod) {
+            showRestoreProgressDialog()
+        } else {
+            dismissRestoreProgressDialog()
+        }
         updateUi()
         renderInstallState(gameList.installState)
 
@@ -201,11 +249,14 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissRestoreProgressDialog()
         super.onPause()
     }
 
     override fun onDestroy() {
         dismissProgressDialog()
+        dismissRestoreProgressDialog()
+        dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
     }
@@ -358,16 +409,19 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
         summaryView.visibility = View.VISIBLE
 
-        val isInstalling = gameList.installState is InstallState.Installing
+        val isInstallingAny = gameList.installState is InstallState.Installing
+        val isInstallingThis = isInstallingCurrentTarget()
+        val isRestoring = gameList.isRestoringMod
+        val isBusy = isInstallingAny || isRestoring
         val btnLocal = findViewById<Button>(R.id.btn_mod_mgr_local)
-        findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isInstalling
-        btnLocal.isEnabled = !isInstalling
+        findViewById<Button>(R.id.btn_mod_mgr_switch_game).isEnabled = !isBusy
+        btnLocal.isEnabled = !isBusy
         val btnRestore = findViewById<Button>(R.id.btn_mod_mgr_restore)
         btnRestore.setText(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
-        btnRestore.isEnabled = gameList.canRestoreVanilla(currentTarget) && !isInstalling
+        btnRestore.isEnabled = gameList.canRestoreVanilla(currentTarget) && !isBusy
 
         val btnUpdate = findViewById<Button>(R.id.btn_mod_mgr_update)
-        val showUpdateBtn = onlineEnabled || isInstalling
+        val showUpdateBtn = onlineEnabled || isInstallingThis
         btnUpdate.visibility = if (showUpdateBtn) View.VISIBLE else View.GONE
         val targetStartMargin = if (showUpdateBtn) UiKit.dpInt(this, 4) else 0
         (btnLocal.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
@@ -378,9 +432,15 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         when {
-            isInstalling -> {
+            isInstallingThis -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_downloading)
                 btnUpdate.isEnabled = true
+            }
+            isBusy -> {
+                btnUpdate.text = getString(
+                    if (!hasMod) R.string.mod_mgr_btn_install_latest else R.string.mod_mgr_btn_update_latest
+                )
+                btnUpdate.isEnabled = false
             }
             !onlineEnabled -> {
                 btnUpdate.isEnabled = false
@@ -435,9 +495,22 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         adapter.notifyDataSetChanged()
     }
 
+    private fun showOtherInstallBusyToast() {
+        Toast.makeText(
+            this,
+            GamepadBridge.tr(
+                this,
+                "后台正在进行其他安装任务，请稍候",
+                "別のインストールタスクが進行中です",
+                "Another installation is currently in progress"
+            ),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     private fun showSwitchGameDialog() {
         val candidates = overlayGameItems()
-        if (gameList.installState is InstallState.Installing || candidates.isEmpty()) return
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod || candidates.isEmpty()) return
         val fallbackTag = if (isCnPatch) "CN" else "MOD"
         val names = Array(candidates.size) { idx ->
             val it = candidates[idx]
@@ -449,63 +522,77 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             if (ver != null) "${it.path.name} · $ver" else it.path.name
         }
         val curIdx = candidates.indexOfFirst { it.path.path == currentTargetPath }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.mod_select_game_title)
-            .setSingleChoiceItems(names, curIdx) { dlg, which ->
-                if (which in candidates.indices) {
-                    currentTarget = candidates[which]
-                    currentTargetPath = currentTarget.path.path
-                    updateUi()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.mod_select_game_title)
+                .setSingleChoiceItems(names, curIdx) { dlg, which ->
+                    if (which in candidates.indices) {
+                        currentTarget = candidates[which]
+                        currentTargetPath = currentTarget.path.path
+                        updateUi()
+                    }
+                    dlg.dismiss()
                 }
-                dlg.dismiss()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showLocalModInstallDialog() {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentTarget()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         val options = arrayOf(
             getString(R.string.mod_opt_zip),
             getString(R.string.mod_opt_dir)
         )
-        AlertDialog.Builder(this)
-            .setTitle(if (isCnPatch) R.string.cn_patch_local_dialog_title else R.string.mod_local_dialog_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "*/*"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(if (isCnPatch) R.string.cn_patch_local_dialog_title else R.string.mod_local_dialog_title)
+                .setItems(options) { _, which ->
+                    when (which) {
+                        0 -> {
+                            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            val chooseTitle = getString(
+                                if (isCnPatch) R.string.cn_patch_choose_zip else R.string.mod_choose_zip
+                            )
+                            startActivityForResult(
+                                Intent.createChooser(i, chooseTitle),
+                                REQ_MOD_LOCAL_ARCHIVE
+                            )
                         }
-                        val chooseTitle = getString(
-                            if (isCnPatch) R.string.cn_patch_choose_zip else R.string.mod_choose_zip
-                        )
-                        startActivityForResult(
-                            Intent.createChooser(i, chooseTitle),
-                            REQ_MOD_LOCAL_ARCHIVE
-                        )
-                    }
-                    1 -> {
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, REQ_MOD_LOCAL_DIR)
+                        1 -> {
+                            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }, REQ_MOD_LOCAL_DIR)
+                        }
                     }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun onPrimaryUpdateClicked() {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentTarget()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         if (catalogLoadError && releases.isEmpty()) {
@@ -519,32 +606,91 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun confirmRestoreVanilla() {
-        if (gameList.installState is InstallState.Installing) return
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
         if (!gameList.canRestoreVanilla(currentTarget)) return
-        AlertDialog.Builder(this)
-            .setTitle(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
-            .setMessage(if (isCnPatch) R.string.cn_patch_mgr_restore_confirm else R.string.mod_mgr_restore_confirm)
-            .setPositiveButton(R.string.ok) { _, _ ->
-                ensureGameNotRunning(this) {
-                    if (gameList.restoreMod(currentTarget)) {
-                        rebindCurrentTarget()
-                        updateUi()
-                        Toast.makeText(
-                            this,
-                            if (isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast,
-                            Toast.LENGTH_SHORT
-                        ).show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
+                .setMessage(if (isCnPatch) R.string.cn_patch_mgr_restore_confirm else R.string.mod_mgr_restore_confirm)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) {
+                        startRestoreVanillaAsync()
                     }
                 }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun startRestoreVanillaAsync() {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
+        val restoredToastRes = if (isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
+        val started = gameList.launchRestoreMod(currentTarget) { ok ->
+            if (!isFinishing && !isDestroyed) {
+                dismissRestoreProgressDialog()
+                rebindCurrentTarget()
+                updateUi()
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+            if (ok) {
+                Toast.makeText(appCtx, restoredToastRes, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(appCtx, R.string.error, Toast.LENGTH_SHORT).show()
+            }
+        }
+        if (started) {
+            showRestoreProgressDialog()
+            updateUi()
+        }
+    }
+
+    private fun showRestoreProgressDialog() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (restoreProgressDialog == null) {
+            restoreProgressDialog = Dialog(this).apply {
+                setTitle(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
+                setCancelable(false)
+                setContentView(R.layout.progress_dialog)
+                findViewById<View>(R.id.action_bar)?.visibility = View.GONE
+                findViewById<ProgressBar>(R.id.progress_bar)?.visibility = View.GONE
+                findViewById<TextView>(R.id.text)?.text = GamepadBridge.tr(
+                    this@ModManagerActivity,
+                    "正在还原原版文件…",
+                    "バニラファイルを復元中…",
+                    "Restoring vanilla files…"
+                )
+                show()
+            }
+            scope.launch {
+                while (gameList.isRestoringMod) {
+                    kotlinx.coroutines.delay(150)
+                }
+                if (!isFinishing && !isDestroyed && restoreProgressDialog != null) {
+                    dismissRestoreProgressDialog()
+                    rebindCurrentTarget()
+                    updateUi()
+                }
+            }
+        }
+    }
+
+    private fun dismissRestoreProgressDialog() {
+        restoreProgressDialog?.dismiss()
+        restoreProgressDialog = null
+        if (progressDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun showReleaseDetailDialog(index: Int) {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentTarget()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         if (index !in releases.indices) return
@@ -650,12 +796,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
         }
 
-        builder.show()
+        trackDialog(builder.show())
     }
 
     private fun executeSteps(steps: List<ModReleaseEntry>) {
         if (!AppSettings.isOnlineInstallEnabled(this)) return
-        if (steps.isEmpty() || gameList.installState is InstallState.Installing) return
+        if (steps.isEmpty() || gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
         ensureGameNotRunning(this) {
             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
             rebindCurrentTarget()
@@ -665,7 +811,24 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onInstallProgress(path: String) {
-        renderInstallState(gameList.installState)
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastProgressRenderMs < 80L) return
+        lastProgressRenderMs = now
+        val state = gameList.installState
+        if (state is InstallState.Installing) {
+            if (!isInstallingCurrentTarget() || gameList.isProgressMinimized) {
+                dismissProgressDialog()
+            } else {
+                showProgressDialog(
+                    progress = state.progress,
+                    permille = state.permille,
+                    cancellable = state.cancellable,
+                    resumable = state.resumable
+                )
+            }
+        } else {
+            renderInstallState(state)
+        }
     }
 
     override fun onInstallSuccess() {
@@ -688,7 +851,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
             is InstallState.Installing -> {
                 updateUi()
-                if (gameList.isProgressMinimized) {
+                if (!isInstallingCurrentTarget() || gameList.isProgressMinimized) {
                     dismissProgressDialog()
                 } else {
                     showProgressDialog(
@@ -722,11 +885,13 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 rebindCurrentTarget()
                 updateUi()
                 gameList.consumeInstallResult()
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.error)
-                    .setMessage(state.msgId)
-                    .setPositiveButton(R.string.ok, null)
-                    .show()
+                trackDialog(
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.error)
+                        .setMessage(state.msgId)
+                        .setPositiveButton(R.string.ok, null)
+                        .show()
+                )
             }
         }
     }
@@ -791,9 +956,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun dismissProgressDialog() {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         progressDialog?.dismiss()
         progressDialog = null
+        if (restoreProgressDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private inner class ModReleaseAdapter : BaseAdapter() {

@@ -70,6 +70,7 @@ void bgi_read(const char *path)
 		bgi_data[bgi_nfile].volume = 100;
 		bgi_nfile++;
 	}
+	fclose(fp);
 	return;
 new_format:
 	fseek(fp, 0, SEEK_SET);
@@ -86,6 +87,7 @@ new_format:
 		}
 		bgi_nfile++;
 	}
+	fclose(fp);
 }
 
 struct bgi *bgi_get(int no)
@@ -102,8 +104,10 @@ static int nr_wai = 0;
 
 void wai_load(const char *path)
 {
-	size_t len;
+	size_t len = 0;
 	uint8_t *file = file_read(path, &len);
+	if (!file)
+		return;
 
 	if (len < 48 || file[0] != 'X' || file[1] != 'I' || file[2] != '2' || file[3] != '\0') {
 		WARNING("Not a .wai file: %s", display_utf0(path));
@@ -135,6 +139,7 @@ void wai_load(const char *path)
 		goto end;
 	}
 
+	free(wai_data);
 	wai_data = xcalloc(count, sizeof(struct wai));
 	for (int i = 0; i < count; i++) {
 		wai_data[i].channel = LittleEndian_getDW(data, i*record_size + 8);

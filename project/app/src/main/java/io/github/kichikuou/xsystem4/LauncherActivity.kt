@@ -160,10 +160,14 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         private var savedGameList: GameList? = null
 
         fun obtainGameList(activity: Activity, refresh: Boolean = false): GameList {
-            if (savedGameList == null || (refresh && savedGameList?.installState is InstallState.Idle)) {
-                savedGameList = GameList(activity)
+            val existing = savedGameList
+            if (existing == null || (refresh && existing.installState is InstallState.Idle && !existing.isRestoringMod)) {
+                existing?.close()
+                val created = GameList(activity)
+                savedGameList = created
+                return created
             }
-            return savedGameList!!
+            return existing
         }
     }
 
@@ -176,6 +180,8 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     private var progressDialog: Dialog? = null
     private var pendingPostResumeAction: (() -> Unit)? = null
     private var searchBackCallback: Any? = null
+    private var lastProgressRenderMs: Long = 0L
+    private var lastRenderedInstallingGameId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -470,21 +476,34 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onInstallProgress(path: String) {
-        reloadEntries()
+        val now = android.os.SystemClock.uptimeMillis()
+        val curTargetId = gameList.activeTargetGameId
+        if (curTargetId != lastRenderedInstallingGameId) {
+            lastRenderedInstallingGameId = curTargetId
+            adapter.notifyDataSetChanged()
+        }
+        if (now - lastProgressRenderMs < 80L) return
+        lastProgressRenderMs = now
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallSuccess() {
+        lastProgressRenderMs = 0L
+        lastRenderedInstallingGameId = null
         reloadEntries()
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallCancelled() {
+        lastProgressRenderMs = 0L
+        lastRenderedInstallingGameId = null
         reloadEntries()
         renderInstallState(gameList.installState)
     }
 
     override fun onInstallFailure(msgId: Int) {
+        lastProgressRenderMs = 0L
+        lastRenderedInstallingGameId = null
         reloadEntries()
         renderInstallState(gameList.installState)
     }

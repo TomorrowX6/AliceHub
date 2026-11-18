@@ -1,15 +1,20 @@
 package io.github.kichikuou.xsystem4
 
 import android.content.Context
+import android.os.Process
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
 
 object GameModifierBridge {
     private const val TAG = "GameModifierBridge"
     private const val PREFS_NAME = "game_modifier_prefs"
     private const val CONFIG_FILE_NAME = "modifier_config.json"
+    private val configLock = Any()
+    private val configTmpSeq = AtomicLong(0L)
     private const val KEY_FLOATING_ENABLED = "floating_enabled"
     private const val KEY_FLOATING_DEFAULT_ON_V1 = "floating_default_on_v1"
     private const val KEY_CTRL_OVERLAY_ENABLED = "ctrl_overlay_enabled"
@@ -143,20 +148,74 @@ object GameModifierBridge {
         return File(context.filesDir, CONFIG_FILE_NAME).absolutePath
     }
 
-    fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null): Boolean {
-        if (GameCatalog.isSystem3xGameDir(gameDir) || isEscalayerGameDir(gameDir, dirNameFallback)) {
+    private fun hasRance10SaveMarkers(dir: File): Boolean {
+        if (!dir.isDirectory) return false
+        val subSaveData = File(dir, "SaveData")
+        if (File(dir, "GlobalSave.asd").isFile ||
+            File(dir, "Collection.asd").isFile ||
+            File(subSaveData, "GlobalSave.asd").isFile ||
+            File(subSaveData, "Collection.asd").isFile
+        ) {
+            return true
+        }
+        if (File(dir, "GlobalSaveData.asd").isFile) {
+            return false
+        }
+        return dir.listFiles()?.any {
+            it.isFile &&
+                it.name.startsWith("LocalSave", ignoreCase = true) &&
+                it.name.endsWith(".asd", ignoreCase = true)
+        } == true
+    }
+
+    private fun matchesRance10Name(rawName: String?): Boolean {
+        if (rawName.isNullOrBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(rawName).trim().lowercase(Locale.ROOT)
+        return lower == "rance10" ||
+            lower.startsWith("rance10-") ||
+            lower.startsWith("rance10_") ||
+            lower.contains("rance10") ||
+            lower.contains("rance 10") ||
+            lower == "rancex" ||
+            lower.startsWith("rancex-") ||
+            lower.startsWith("rancex_") ||
+            lower.contains("rance x") ||
+            lower.contains("ランス10") ||
+            lower.contains("ランス１０") ||
+            lower.contains("兰斯10") ||
+            lower.contains("兰斯１０") ||
+            lower.contains("儔儞僗10")
+    }
+
+    @JvmOverloads
+    fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (GameCatalog.isSystem3xGameDir(gameDir) || isEscalayerGameDir(gameDir, dirNameFallback, saveDir)) {
             return false
         }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
-                return files.any { it.isFile && it.name.equals("Rance10.ain", ignoreCase = true) }
+                return files.any {
+                    if (!it.isFile) return@any false
+                    val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                    it.name.equals("Rance10.ain", ignoreCase = true) ||
+                        repaired.equals("Rance10.ain", ignoreCase = true) ||
+                        it.name.contains("ランス10") ||
+                        repaired.contains("ランス10") ||
+                        it.name.contains("兰斯10")
+                }
+            }
+            if (hasRance10SaveMarkers(gameDir)) {
+                return true
             }
         }
-        if (!dirNameFallback.isNullOrBlank()) {
-            return dirNameFallback.startsWith("Rance10", ignoreCase = true)
+        if (saveDir != null && hasRance10SaveMarkers(saveDir)) {
+            return true
         }
-        return true
+        if (matchesRance10Name(dirNameFallback) || matchesRance10Name(gameDir?.name)) {
+            return true
+        }
+        return false
     }
 
     fun isDohnaDohnaGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
@@ -361,6 +420,8 @@ object GameModifierBridge {
         return false
     }
 
+    private const val MOD_ABSENT_SUFFIX = ".mod.absent"
+
     fun isEscalayerGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (GameCatalog.isEscalayerGameDir(gameDir)) return true
         if (saveDir != null && saveDir.isDirectory) {
@@ -385,7 +446,8 @@ object GameModifierBridge {
     }
 
     fun isEvenicleGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
-        if (isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
+        if (isRance10GameDir(gameDir, dirNameFallback, saveDir) ||
+            isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||
             isSengokuRanceGameDir(gameDir, dirNameFallback, saveDir) ||
@@ -403,7 +465,10 @@ object GameModifierBridge {
         }
         if (saveDir != null && saveDir.isDirectory) {
             if ((File(saveDir, "CommonSystemData.sav").isFile || File(saveDir, "CommonOtherData.sav").isFile) &&
-                !File(saveDir, "AFCommon.asd").isFile && !File(saveDir, "AFBGMMode.asd").isFile
+                !File(saveDir, "AFCommon.asd").isFile &&
+                !File(saveDir, "AFBGMMode.asd").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "Collection.asd").isFile
             ) {
                 return true
             }
@@ -428,212 +493,224 @@ object GameModifierBridge {
     }
 
     private fun readConfigJson(context: Context): JSONObject {
-        val cfgFile = File(context.filesDir, CONFIG_FILE_NAME)
-        if (cfgFile.isFile) {
-            try {
-                val json = JSONObject(cfgFile.readText())
-                val migratedV1 = json.optBoolean(KEY_FLOATING_DEFAULT_ON_V1, false)
-                val ctrlDefaultOffV2 = json.optBoolean(KEY_CTRL_DEFAULT_OFF_V2, false)
-                val disableStreamer = if (json.has(KEY_DISABLE_STREAMER_MODE)) {
-                    json.optBoolean(KEY_DISABLE_STREAMER_MODE, false)
-                } else {
-                    (json.optInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
-                }
-                val rawMask = json.optInt(KEY_LOCK_MASK, 0)
-                val mask = if (disableStreamer) {
-                    rawMask or LOCK_DISABLE_STREAMER_MODE
-                } else {
-                    rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
-                }
-                val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
-                val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
-                val srMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
-                val r01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
-                val r02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
-                val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
-                val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
-                val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
-                val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-                json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
-                json.put(KEY_LOCK_MASK, mask)
-                json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
-                json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
-                json.put(KEY_SR_LOCK_MASK, srMask)
-                json.put(KEY_R01_LOCK_MASK, r01Mask)
-                json.put(KEY_R02_LOCK_MASK, r02Mask)
-                json.put(KEY_R03_LOCK_MASK, r03Mask)
-                json.put(KEY_R08_LOCK_MASK, r08Mask)
-                json.put(KEY_R09_LOCK_MASK, r09Mask)
-                json.put(KEY_ESC_LOCK_MASK, escMask)
-                val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-                val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
-                json.put(KEY_FONT_SCALE_PCT, fontPct)
-                json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
-                var needsSave = false
-                if (!migratedV1) {
-                    json.put(KEY_FLOATING_ENABLED, true)
-                    json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
-                    needsSave = true
-                } else if (!json.has(KEY_FLOATING_ENABLED)) {
-                    json.put(KEY_FLOATING_ENABLED, true)
-                }
-                if (!ctrlDefaultOffV2) {
-                    json.put(KEY_CTRL_OVERLAY_ENABLED, false)
-                    json.put(KEY_CTRL_OVERLAY_VISIBLE, false)
-                    json.put(KEY_CTRL_DEFAULT_ON_V1, true)
-                    json.put(KEY_CTRL_DEFAULT_OFF_V2, true)
-                    needsSave = true
-                } else {
-                    if (!json.has(KEY_CTRL_OVERLAY_ENABLED)) {
+        synchronized(configLock) {
+            val cfgFile = File(context.filesDir, CONFIG_FILE_NAME)
+            if (cfgFile.isFile) {
+                try {
+                    val json = JSONObject(cfgFile.readText(Charsets.UTF_8))
+                    val migratedV1 = json.optBoolean(KEY_FLOATING_DEFAULT_ON_V1, false)
+                    val ctrlDefaultOffV2 = json.optBoolean(KEY_CTRL_DEFAULT_OFF_V2, false)
+                    val disableStreamer = if (json.has(KEY_DISABLE_STREAMER_MODE)) {
+                        json.optBoolean(KEY_DISABLE_STREAMER_MODE, false)
+                    } else {
+                        (json.optInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
+                    }
+                    val rawMask = json.optInt(KEY_LOCK_MASK, 0)
+                    val mask = if (disableStreamer) {
+                        rawMask or LOCK_DISABLE_STREAMER_MODE
+                    } else {
+                        rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
+                    }
+                    val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+                    val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
+                    val srMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
+                    val r01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
+                    val r02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
+                    val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
+                    val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
+                    val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+                    val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+                    json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
+                    json.put(KEY_LOCK_MASK, mask)
+                    json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+                    json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
+                    json.put(KEY_SR_LOCK_MASK, srMask)
+                    json.put(KEY_R01_LOCK_MASK, r01Mask)
+                    json.put(KEY_R02_LOCK_MASK, r02Mask)
+                    json.put(KEY_R03_LOCK_MASK, r03Mask)
+                    json.put(KEY_R08_LOCK_MASK, r08Mask)
+                    json.put(KEY_R09_LOCK_MASK, r09Mask)
+                    json.put(KEY_ESC_LOCK_MASK, escMask)
+                    val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
+                    val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+                    json.put(KEY_FONT_SCALE_PCT, fontPct)
+                    json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+                    var needsSave = false
+                    if (!migratedV1) {
+                        json.put(KEY_FLOATING_ENABLED, true)
+                        json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
+                        needsSave = true
+                    } else if (!json.has(KEY_FLOATING_ENABLED)) {
+                        json.put(KEY_FLOATING_ENABLED, true)
+                    }
+                    if (!ctrlDefaultOffV2) {
                         json.put(KEY_CTRL_OVERLAY_ENABLED, false)
-                    }
-                    if (!json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)) {
                         json.put(KEY_CTRL_OVERLAY_VISIBLE, false)
+                        json.put(KEY_CTRL_DEFAULT_ON_V1, true)
+                        json.put(KEY_CTRL_DEFAULT_OFF_V2, true)
+                        needsSave = true
+                    } else {
+                        if (!json.has(KEY_CTRL_OVERLAY_ENABLED)) {
+                            json.put(KEY_CTRL_OVERLAY_ENABLED, false)
+                        }
+                        if (!json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)) {
+                            json.put(KEY_CTRL_OVERLAY_VISIBLE, false)
+                        }
                     }
+                    if (needsSave) {
+                        writeConfigJson(context, json)
+                    }
+                    return json
+                } catch (_: Throwable) {
                 }
-                if (needsSave) {
-                    writeConfigJson(context, json)
-                }
-                return json
-            } catch (_: Throwable) {
             }
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val migratedV1 = prefs.getBoolean(KEY_FLOATING_DEFAULT_ON_V1, false)
+            val ctrlDefaultOffV2 = prefs.getBoolean(KEY_CTRL_DEFAULT_OFF_V2, false)
+            val floatingEnabled = if (!migratedV1) true else prefs.getBoolean(KEY_FLOATING_ENABLED, true)
+            val ctrlEnabled = if (!ctrlDefaultOffV2) false else prefs.getBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
+            val ctrlVisible = if (!ctrlDefaultOffV2) false else (ctrlEnabled && prefs.getBoolean(KEY_CTRL_OVERLAY_VISIBLE, false))
+            val disableStreamer = if (prefs.contains(KEY_DISABLE_STREAMER_MODE)) {
+                prefs.getBoolean(KEY_DISABLE_STREAMER_MODE, false)
+            } else {
+                (prefs.getInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
+            }
+            val rawMask = prefs.getInt(KEY_LOCK_MASK, 0)
+            val mask = if (disableStreamer) {
+                rawMask or LOCK_DISABLE_STREAMER_MODE
+            } else {
+                rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
+            }
+            val dohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+            val evenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
+            val srMask = prefs.getInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
+            val r01Mask = prefs.getInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
+            val r02Mask = prefs.getInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
+            val r03Mask = prefs.getInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
+            val r08Mask = prefs.getInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
+            val r09Mask = prefs.getInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+            val escMask = prefs.getInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+            val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
+            val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            val json = JSONObject().apply {
+                put(KEY_FLOATING_ENABLED, floatingEnabled)
+                put(KEY_FLOATING_DEFAULT_ON_V1, true)
+                put(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
+                put(KEY_CTRL_DEFAULT_ON_V1, true)
+                put(KEY_CTRL_DEFAULT_OFF_V2, true)
+                put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
+                put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
+                put(KEY_LOCK_MASK, mask)
+                put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+                put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
+                put(KEY_SR_LOCK_MASK, srMask)
+                put(KEY_R01_LOCK_MASK, r01Mask)
+                put(KEY_R02_LOCK_MASK, r02Mask)
+                put(KEY_R03_LOCK_MASK, r03Mask)
+                put(KEY_R08_LOCK_MASK, r08Mask)
+                put(KEY_R09_LOCK_MASK, r09Mask)
+                put(KEY_ESC_LOCK_MASK, escMask)
+                put(KEY_FONT_SCALE_PCT, fontPct)
+                put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+                put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
+            }
+            if (!migratedV1 || !ctrlDefaultOffV2) {
+                writeConfigJson(context, json)
+            }
+            return json
         }
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val migratedV1 = prefs.getBoolean(KEY_FLOATING_DEFAULT_ON_V1, false)
-        val ctrlDefaultOffV2 = prefs.getBoolean(KEY_CTRL_DEFAULT_OFF_V2, false)
-        val floatingEnabled = if (!migratedV1) true else prefs.getBoolean(KEY_FLOATING_ENABLED, true)
-        val ctrlEnabled = if (!ctrlDefaultOffV2) false else prefs.getBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
-        val ctrlVisible = if (!ctrlDefaultOffV2) false else (ctrlEnabled && prefs.getBoolean(KEY_CTRL_OVERLAY_VISIBLE, false))
-        val disableStreamer = if (prefs.contains(KEY_DISABLE_STREAMER_MODE)) {
-            prefs.getBoolean(KEY_DISABLE_STREAMER_MODE, false)
-        } else {
-            (prefs.getInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
-        }
-        val rawMask = prefs.getInt(KEY_LOCK_MASK, 0)
-        val mask = if (disableStreamer) {
-            rawMask or LOCK_DISABLE_STREAMER_MODE
-        } else {
-            rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
-        }
-        val dohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
-        val evenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
-        val srMask = prefs.getInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
-        val r01Mask = prefs.getInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
-        val r02Mask = prefs.getInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
-        val r03Mask = prefs.getInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
-        val r08Mask = prefs.getInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
-        val r09Mask = prefs.getInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
-        val escMask = prefs.getInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-        val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-        val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
-        val json = JSONObject().apply {
-            put(KEY_FLOATING_ENABLED, floatingEnabled)
-            put(KEY_FLOATING_DEFAULT_ON_V1, true)
-            put(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
-            put(KEY_CTRL_DEFAULT_ON_V1, true)
-            put(KEY_CTRL_DEFAULT_OFF_V2, true)
-            put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
-            put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
-            put(KEY_LOCK_MASK, mask)
-            put(KEY_DOHNA_LOCK_MASK, dohnaMask)
-            put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
-            put(KEY_SR_LOCK_MASK, srMask)
-            put(KEY_R01_LOCK_MASK, r01Mask)
-            put(KEY_R02_LOCK_MASK, r02Mask)
-            put(KEY_R03_LOCK_MASK, r03Mask)
-            put(KEY_R08_LOCK_MASK, r08Mask)
-            put(KEY_R09_LOCK_MASK, r09Mask)
-            put(KEY_ESC_LOCK_MASK, escMask)
-            put(KEY_FONT_SCALE_PCT, fontPct)
-            put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
-            put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
-        }
-        if (!migratedV1 || !ctrlDefaultOffV2) {
-            writeConfigJson(context, json)
-        }
-        return json
     }
 
     private fun writeConfigJson(context: Context, json: JSONObject) {
-        val floatingEnabled = json.optBoolean(KEY_FLOATING_ENABLED, true)
-        val ctrlEnabled = json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
-        val ctrlVisible = ctrlEnabled && json.optBoolean(KEY_CTRL_OVERLAY_VISIBLE, false)
-        val disableStreamer = if (json.has(KEY_DISABLE_STREAMER_MODE)) {
-            json.optBoolean(KEY_DISABLE_STREAMER_MODE, false)
-        } else {
-            (json.optInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
-        }
-        val rawMask = json.optInt(KEY_LOCK_MASK, 0)
-        val mask = if (disableStreamer) {
-            rawMask or LOCK_DISABLE_STREAMER_MODE
-        } else {
-            rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
-        }
-        val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
-        val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
-        val srMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
-        val r01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
-        val r02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
-        val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
-        val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
-        val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
-        val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-        val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-        val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
-        val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
-        json.put(KEY_FLOATING_ENABLED, floatingEnabled)
-        json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
-        json.put(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
-        json.put(KEY_CTRL_DEFAULT_ON_V1, true)
-        json.put(KEY_CTRL_DEFAULT_OFF_V2, true)
-        json.put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
-        json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
-        json.put(KEY_LOCK_MASK, mask)
-        json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
-        json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
-        json.put(KEY_SR_LOCK_MASK, srMask)
-        json.put(KEY_R01_LOCK_MASK, r01Mask)
-        json.put(KEY_R02_LOCK_MASK, r02Mask)
-        json.put(KEY_R03_LOCK_MASK, r03Mask)
-        json.put(KEY_R08_LOCK_MASK, r08Mask)
-        json.put(KEY_R09_LOCK_MASK, r09Mask)
-        json.put(KEY_ESC_LOCK_MASK, escMask)
-        json.put(KEY_FONT_SCALE_PCT, fontPct)
-        json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
-        json.put(KEY_CONFIG_SEQ, nextSeq)
-        try {
-            val cfgFile = File(context.filesDir, CONFIG_FILE_NAME)
-            val tmpFile = File(context.filesDir, "$CONFIG_FILE_NAME.tmp")
-            tmpFile.writeText(json.toString())
-            if (!tmpFile.renameTo(cfgFile)) {
-                cfgFile.writeText(json.toString())
-                tmpFile.delete()
+        synchronized(configLock) {
+            val floatingEnabled = json.optBoolean(KEY_FLOATING_ENABLED, true)
+            val ctrlEnabled = json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
+            val ctrlVisible = ctrlEnabled && json.optBoolean(KEY_CTRL_OVERLAY_VISIBLE, false)
+            val disableStreamer = if (json.has(KEY_DISABLE_STREAMER_MODE)) {
+                json.optBoolean(KEY_DISABLE_STREAMER_MODE, false)
+            } else {
+                (json.optInt(KEY_LOCK_MASK, 0) and LOCK_DISABLE_STREAMER_MODE) != 0
             }
-        } catch (_: Throwable) {
+            val rawMask = json.optInt(KEY_LOCK_MASK, 0)
+            val mask = if (disableStreamer) {
+                rawMask or LOCK_DISABLE_STREAMER_MODE
+            } else {
+                rawMask and LOCK_DISABLE_STREAMER_MODE.inv()
+            }
+            val dohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+            val evenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
+            val srMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
+            val r01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
+            val r02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
+            val r03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
+            val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
+            val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+            val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+            val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
+            val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
+            json.put(KEY_FLOATING_ENABLED, floatingEnabled)
+            json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
+            json.put(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
+            json.put(KEY_CTRL_DEFAULT_ON_V1, true)
+            json.put(KEY_CTRL_DEFAULT_OFF_V2, true)
+            json.put(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
+            json.put(KEY_DISABLE_STREAMER_MODE, disableStreamer)
+            json.put(KEY_LOCK_MASK, mask)
+            json.put(KEY_DOHNA_LOCK_MASK, dohnaMask)
+            json.put(KEY_EVENICLE_LOCK_MASK, evenicleMask)
+            json.put(KEY_SR_LOCK_MASK, srMask)
+            json.put(KEY_R01_LOCK_MASK, r01Mask)
+            json.put(KEY_R02_LOCK_MASK, r02Mask)
+            json.put(KEY_R03_LOCK_MASK, r03Mask)
+            json.put(KEY_R08_LOCK_MASK, r08Mask)
+            json.put(KEY_R09_LOCK_MASK, r09Mask)
+            json.put(KEY_ESC_LOCK_MASK, escMask)
+            json.put(KEY_FONT_SCALE_PCT, fontPct)
+            json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+            json.put(KEY_CONFIG_SEQ, nextSeq)
+            val pid = Process.myPid()
+            val tid = Thread.currentThread().id
+            val seq = configTmpSeq.incrementAndGet()
+            val cfgFile = File(context.filesDir, CONFIG_FILE_NAME)
+            val tmpFile = File(context.filesDir, "$CONFIG_FILE_NAME.$pid.$tid.$seq.tmp")
+            val payload = json.toString()
+            try {
+                context.filesDir.mkdirs()
+                tmpFile.writeText(payload, Charsets.UTF_8)
+                if (!tmpFile.renameTo(cfgFile)) {
+                    cfgFile.writeText(payload, Charsets.UTF_8)
+                }
+            } catch (_: Throwable) {
+            } finally {
+                if (tmpFile.exists()) {
+                    tmpFile.delete()
+                }
+            }
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit()
+                .putBoolean(KEY_FLOATING_ENABLED, floatingEnabled)
+                .putBoolean(KEY_FLOATING_DEFAULT_ON_V1, true)
+                .putBoolean(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
+                .putBoolean(KEY_CTRL_DEFAULT_ON_V1, true)
+                .putBoolean(KEY_CTRL_DEFAULT_OFF_V2, true)
+                .putBoolean(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
+                .putBoolean(KEY_DISABLE_STREAMER_MODE, disableStreamer)
+                .putInt(KEY_LOCK_MASK, mask)
+                .putInt(KEY_DOHNA_LOCK_MASK, dohnaMask)
+                .putInt(KEY_EVENICLE_LOCK_MASK, evenicleMask)
+                .putInt(KEY_SR_LOCK_MASK, srMask)
+                .putInt(KEY_R01_LOCK_MASK, r01Mask)
+                .putInt(KEY_R02_LOCK_MASK, r02Mask)
+                .putInt(KEY_R03_LOCK_MASK, r03Mask)
+                .putInt(KEY_R08_LOCK_MASK, r08Mask)
+                .putInt(KEY_R09_LOCK_MASK, r09Mask)
+                .putInt(KEY_ESC_LOCK_MASK, escMask)
+                .putInt(KEY_FONT_SCALE_PCT, fontPct)
+                .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+                .putInt(KEY_CONFIG_SEQ, nextSeq)
+                .commit()
         }
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putBoolean(KEY_FLOATING_ENABLED, floatingEnabled)
-            .putBoolean(KEY_FLOATING_DEFAULT_ON_V1, true)
-            .putBoolean(KEY_CTRL_OVERLAY_ENABLED, ctrlEnabled)
-            .putBoolean(KEY_CTRL_DEFAULT_ON_V1, true)
-            .putBoolean(KEY_CTRL_DEFAULT_OFF_V2, true)
-            .putBoolean(KEY_CTRL_OVERLAY_VISIBLE, ctrlVisible)
-            .putBoolean(KEY_DISABLE_STREAMER_MODE, disableStreamer)
-            .putInt(KEY_LOCK_MASK, mask)
-            .putInt(KEY_DOHNA_LOCK_MASK, dohnaMask)
-            .putInt(KEY_EVENICLE_LOCK_MASK, evenicleMask)
-            .putInt(KEY_SR_LOCK_MASK, srMask)
-            .putInt(KEY_R01_LOCK_MASK, r01Mask)
-            .putInt(KEY_R02_LOCK_MASK, r02Mask)
-            .putInt(KEY_R03_LOCK_MASK, r03Mask)
-            .putInt(KEY_R08_LOCK_MASK, r08Mask)
-            .putInt(KEY_R09_LOCK_MASK, r09Mask)
-            .putInt(KEY_ESC_LOCK_MASK, escMask)
-            .putInt(KEY_FONT_SCALE_PCT, fontPct)
-            .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
-            .putInt(KEY_CONFIG_SEQ, nextSeq)
-            .commit()
     }
 
     fun clampFontScale(pct: Int): Int = pct.coerceIn(MIN_FONT_SCALE_PCT, MAX_FONT_SCALE_PCT)
@@ -646,9 +723,11 @@ object GameModifierBridge {
 
     fun setFontScalePercent(context: Context, pct: Int) {
         val clamped = clampFontScale(pct)
-        val json = readConfigJson(context)
-        json.put(KEY_FONT_SCALE_PCT, clamped)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_FONT_SCALE_PCT, clamped)
+            writeConfigJson(context, json)
+        }
         syncUiScaleToNative(context)
     }
 
@@ -658,18 +737,22 @@ object GameModifierBridge {
 
     fun setScrollbarScalePercent(context: Context, pct: Int) {
         val clamped = clampScrollbarScale(pct)
-        val json = readConfigJson(context)
-        json.put(KEY_SCROLLBAR_SCALE_PCT, clamped)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_SCROLLBAR_SCALE_PCT, clamped)
+            writeConfigJson(context, json)
+        }
         syncUiScaleToNative(context)
     }
 
     fun syncUiScaleToNative(context: Context) {
         if (!loaded) return
         try {
-            val json = readConfigJson(context)
-            val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-            val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            val (fontPct, sbPct) = synchronized(configLock) {
+                val json = readConfigJson(context)
+                clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT)) to
+                    clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            }
             nativeSetConfigPath(getConfigFilePath(context))
             nativeSetUiScale(fontPct, sbPct)
         } catch (_: Throwable) {
@@ -692,49 +775,51 @@ object GameModifierBridge {
             val r03LiveMask = getR03LiveLocks()
             val r08LiveMask = getR08LiveLocks()
             val r09LiveMask = getR09LiveLocks()
-            val json = readConfigJson(context)
-            val savedMask = json.optInt(KEY_LOCK_MASK, 0)
-            val savedDohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
-            val savedEvenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
-            val savedSrMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
-            val savedR01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
-            val savedR02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
-            val savedR03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
-            val savedR08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
-            val savedR09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val prefsMask = prefs.getInt(KEY_LOCK_MASK, -1)
-            val prefsDohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, -1)
-            val prefsEvenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, -1)
-            val prefsSrMask = prefs.getInt(KEY_SR_LOCK_MASK, -1)
-            val prefsR01Mask = prefs.getInt(KEY_R01_LOCK_MASK, -1)
-            val prefsR02Mask = prefs.getInt(KEY_R02_LOCK_MASK, -1)
-            val prefsR03Mask = prefs.getInt(KEY_R03_LOCK_MASK, -1)
-            val prefsR08Mask = prefs.getInt(KEY_R08_LOCK_MASK, -1)
-            val prefsR09Mask = prefs.getInt(KEY_R09_LOCK_MASK, -1)
-            if (liveMask != savedMask || liveMask != prefsMask ||
-                dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask ||
-                evenicleLiveMask != savedEvenicleMask || evenicleLiveMask != prefsEvenicleMask ||
-                srLiveMask != savedSrMask || srLiveMask != prefsSrMask ||
-                r01LiveMask != savedR01Mask || r01LiveMask != prefsR01Mask ||
-                r02LiveMask != savedR02Mask || r02LiveMask != prefsR02Mask ||
-                r03LiveMask != savedR03Mask || r03LiveMask != prefsR03Mask ||
-                r08LiveMask != savedR08Mask || r08LiveMask != prefsR08Mask ||
-                r09LiveMask != savedR09Mask || r09LiveMask != prefsR09Mask
-            ) {
-                json.put(KEY_DISABLE_STREAMER_MODE, (liveMask and LOCK_DISABLE_STREAMER_MODE) != 0)
-                json.put(KEY_LOCK_MASK, liveMask)
-                json.put(KEY_DOHNA_LOCK_MASK, dohnaLiveMask)
-                json.put(KEY_EVENICLE_LOCK_MASK, evenicleLiveMask)
-                json.put(KEY_SR_LOCK_MASK, srLiveMask)
-                json.put(KEY_R01_LOCK_MASK, r01LiveMask)
-                json.put(KEY_R02_LOCK_MASK, r02LiveMask)
-                json.put(KEY_R03_LOCK_MASK, r03LiveMask)
-                json.put(KEY_R08_LOCK_MASK, r08LiveMask)
-                json.put(KEY_R09_LOCK_MASK, r09LiveMask)
-                writeConfigJson(context, json)
+            synchronized(configLock) {
+                val json = readConfigJson(context)
+                val savedMask = json.optInt(KEY_LOCK_MASK, 0)
+                val savedDohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
+                val savedEvenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
+                val savedSrMask = json.optInt(KEY_SR_LOCK_MASK, 0) and LOCK_SR_ALL_MASK
+                val savedR01Mask = json.optInt(KEY_R01_LOCK_MASK, 0) and LOCK_R01_ALL_MASK
+                val savedR02Mask = json.optInt(KEY_R02_LOCK_MASK, 0) and LOCK_R02_ALL_MASK
+                val savedR03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
+                val savedR08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
+                val savedR09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val prefsMask = prefs.getInt(KEY_LOCK_MASK, -1)
+                val prefsDohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, -1)
+                val prefsEvenicleMask = prefs.getInt(KEY_EVENICLE_LOCK_MASK, -1)
+                val prefsSrMask = prefs.getInt(KEY_SR_LOCK_MASK, -1)
+                val prefsR01Mask = prefs.getInt(KEY_R01_LOCK_MASK, -1)
+                val prefsR02Mask = prefs.getInt(KEY_R02_LOCK_MASK, -1)
+                val prefsR03Mask = prefs.getInt(KEY_R03_LOCK_MASK, -1)
+                val prefsR08Mask = prefs.getInt(KEY_R08_LOCK_MASK, -1)
+                val prefsR09Mask = prefs.getInt(KEY_R09_LOCK_MASK, -1)
+                if (liveMask != savedMask || liveMask != prefsMask ||
+                    dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask ||
+                    evenicleLiveMask != savedEvenicleMask || evenicleLiveMask != prefsEvenicleMask ||
+                    srLiveMask != savedSrMask || srLiveMask != prefsSrMask ||
+                    r01LiveMask != savedR01Mask || r01LiveMask != prefsR01Mask ||
+                    r02LiveMask != savedR02Mask || r02LiveMask != prefsR02Mask ||
+                    r03LiveMask != savedR03Mask || r03LiveMask != prefsR03Mask ||
+                    r08LiveMask != savedR08Mask || r08LiveMask != prefsR08Mask ||
+                    r09LiveMask != savedR09Mask || r09LiveMask != prefsR09Mask
+                ) {
+                    json.put(KEY_DISABLE_STREAMER_MODE, (liveMask and LOCK_DISABLE_STREAMER_MODE) != 0)
+                    json.put(KEY_LOCK_MASK, liveMask)
+                    json.put(KEY_DOHNA_LOCK_MASK, dohnaLiveMask)
+                    json.put(KEY_EVENICLE_LOCK_MASK, evenicleLiveMask)
+                    json.put(KEY_SR_LOCK_MASK, srLiveMask)
+                    json.put(KEY_R01_LOCK_MASK, r01LiveMask)
+                    json.put(KEY_R02_LOCK_MASK, r02LiveMask)
+                    json.put(KEY_R03_LOCK_MASK, r03LiveMask)
+                    json.put(KEY_R08_LOCK_MASK, r08LiveMask)
+                    json.put(KEY_R09_LOCK_MASK, r09LiveMask)
+                    writeConfigJson(context, json)
+                }
+                json.optInt(KEY_CONFIG_SEQ, 0)
             }
-            json.optInt(KEY_CONFIG_SEQ, 0)
         } catch (_: Throwable) {
             getConfigSeq(context)
         }
@@ -745,9 +830,11 @@ object GameModifierBridge {
     }
 
     fun setFloatingEnabled(context: Context, enabled: Boolean) {
-        val json = readConfigJson(context)
-        json.put(KEY_FLOATING_ENABLED, enabled)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_FLOATING_ENABLED, enabled)
+            writeConfigJson(context, json)
+        }
     }
 
     fun isCtrlOverlayEnabled(context: Context): Boolean {
@@ -755,23 +842,29 @@ object GameModifierBridge {
     }
 
     fun setCtrlOverlayEnabled(context: Context, enabled: Boolean) {
-        val json = readConfigJson(context)
-        json.put(KEY_CTRL_OVERLAY_ENABLED, enabled)
-        json.put(KEY_CTRL_OVERLAY_VISIBLE, enabled)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_CTRL_OVERLAY_ENABLED, enabled)
+            json.put(KEY_CTRL_OVERLAY_VISIBLE, enabled)
+            writeConfigJson(context, json)
+        }
     }
 
     fun isCtrlOverlayVisible(context: Context): Boolean {
-        val json = readConfigJson(context)
-        return json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false) &&
-            json.optBoolean(KEY_CTRL_OVERLAY_VISIBLE, false)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            return json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false) &&
+                json.optBoolean(KEY_CTRL_OVERLAY_VISIBLE, false)
+        }
     }
 
     fun setCtrlOverlayVisible(context: Context, visible: Boolean) {
-        val json = readConfigJson(context)
-        val enabled = json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
-        json.put(KEY_CTRL_OVERLAY_VISIBLE, enabled && visible)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            val enabled = json.optBoolean(KEY_CTRL_OVERLAY_ENABLED, false)
+            json.put(KEY_CTRL_OVERLAY_VISIBLE, enabled && visible)
+            writeConfigJson(context, json)
+        }
     }
 
     fun getSavedLockMask(context: Context): Int {
@@ -783,10 +876,12 @@ object GameModifierBridge {
     }
 
     fun setSavedLockMask(context: Context, mask: Int) {
-        val json = readConfigJson(context)
-        json.put(KEY_DISABLE_STREAMER_MODE, (mask and LOCK_DISABLE_STREAMER_MODE) != 0)
-        json.put(KEY_LOCK_MASK, mask)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_DISABLE_STREAMER_MODE, (mask and LOCK_DISABLE_STREAMER_MODE) != 0)
+            json.put(KEY_LOCK_MASK, mask)
+            writeConfigJson(context, json)
+        }
         if (loaded) {
             try {
                 nativeSetConfigPath(getConfigFilePath(context))
@@ -797,11 +892,13 @@ object GameModifierBridge {
     }
 
     fun setLiveLocksOnlyMask(context: Context, liveMask: Int) {
-        val keepStreamer = isDisableStreamerModeEnabled(context)
-        val merged = if (keepStreamer) {
-            (liveMask and LOCK_DISABLE_STREAMER_MODE.inv()) or LOCK_DISABLE_STREAMER_MODE
-        } else {
-            liveMask and LOCK_DISABLE_STREAMER_MODE.inv()
+        val merged = synchronized(configLock) {
+            val keepStreamer = isDisableStreamerModeEnabled(context)
+            if (keepStreamer) {
+                (liveMask and LOCK_DISABLE_STREAMER_MODE.inv()) or LOCK_DISABLE_STREAMER_MODE
+            } else {
+                liveMask and LOCK_DISABLE_STREAMER_MODE.inv()
+            }
         }
         setSavedLockMask(context, merged)
     }
@@ -811,8 +908,10 @@ object GameModifierBridge {
     }
 
     fun setDisableStreamerModeEnabled(context: Context, enabled: Boolean) {
-        val cur = getSavedLockMask(context)
-        val next = if (enabled) (cur or LOCK_DISABLE_STREAMER_MODE) else (cur and LOCK_DISABLE_STREAMER_MODE.inv())
+        val next = synchronized(configLock) {
+            val cur = getSavedLockMask(context)
+            if (enabled) (cur or LOCK_DISABLE_STREAMER_MODE) else (cur and LOCK_DISABLE_STREAMER_MODE.inv())
+        }
         setSavedLockMask(context, next)
     }
 
@@ -826,9 +925,11 @@ object GameModifierBridge {
 
     fun setSavedDohnaLockMask(context: Context, mask: Int) {
         val clean = mask and LOCK_DD_ALL_MASK
-        val json = readConfigJson(context)
-        json.put(KEY_DOHNA_LOCK_MASK, clean)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_DOHNA_LOCK_MASK, clean)
+            writeConfigJson(context, json)
+        }
         if (loaded) {
             try {
                 nativeSetConfigPath(getConfigFilePath(context))
@@ -865,9 +966,11 @@ object GameModifierBridge {
 
     fun setSavedEvenicleLockMask(context: Context, mask: Int) {
         val clean = mask and LOCK_EV_ALL_MASK
-        val json = readConfigJson(context)
-        json.put(KEY_EVENICLE_LOCK_MASK, clean)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(KEY_EVENICLE_LOCK_MASK, clean)
+            writeConfigJson(context, json)
+        }
         if (loaded) {
             try {
                 nativeSetConfigPath(getConfigFilePath(context))
@@ -900,9 +1003,11 @@ object GameModifierBridge {
 
     private fun setSavedMaskedLock(context: Context, key: String, allMask: Int, mask: Int, pushNative: (Int) -> Unit) {
         val clean = mask and allMask
-        val json = readConfigJson(context)
-        json.put(key, clean)
-        writeConfigJson(context, json)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            json.put(key, clean)
+            writeConfigJson(context, json)
+        }
         if (loaded) {
             try {
                 nativeSetConfigPath(getConfigFilePath(context))
@@ -1041,13 +1146,17 @@ object GameModifierBridge {
         if (!loaded) return getConfigSeq(context)
         return try {
             val escLive = nativeGetLiveLocks() and LOCK_ESC_ALL_MASK
-            val json = readConfigJson(context)
-            val savedEsc = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-            if (escLive != savedEsc) {
-                json.put(KEY_ESC_LOCK_MASK, escLive)
-                writeConfigJson(context, json)
+            synchronized(configLock) {
+                val json = readConfigJson(context)
+                val savedEsc = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val prefsEsc = prefs.getInt(KEY_ESC_LOCK_MASK, -1)
+                if (escLive != savedEsc || escLive != prefsEsc) {
+                    json.put(KEY_ESC_LOCK_MASK, escLive)
+                    writeConfigJson(context, json)
+                }
+                json.optInt(KEY_CONFIG_SEQ, 0)
             }
-            json.optInt(KEY_CONFIG_SEQ, 0)
         } catch (_: Throwable) {
             getConfigSeq(context)
         }
@@ -1120,7 +1229,11 @@ object GameModifierBridge {
 
     fun hasFullUnlockBackup(saveDir: File): Boolean {
         val names = listOf("Collection.asd", "GlobalSave.asd", "AFCGMode.asd", "AFBGMMode.asd")
-        return names.any { File(saveDir, it + UNLOCK_BAK_SUFFIX).isFile }
+        val subSaveData = File(saveDir, "SaveData")
+        return names.any {
+            File(saveDir, it + UNLOCK_BAK_SUFFIX).isFile ||
+                File(subSaveData, it + UNLOCK_BAK_SUFFIX).isFile
+        }
     }
 
     fun restoreFullUnlockBackup(saveDir: File): Int {
@@ -1147,43 +1260,143 @@ object GameModifierBridge {
         return restored
     }
 
-    fun backupSaveFileBeforeMod(file: File): File {
+    @JvmOverloads
+    fun backupSaveFileBeforeMod(file: File, recordAbsent: Boolean = false): File {
         val bak = File(file.parentFile, file.name + MOD_BAK_SUFFIX)
+        val absent = File(file.parentFile, file.name + MOD_ABSENT_SUFFIX)
         if (file.isFile) {
+            absent.delete()
             file.copyTo(bak, overwrite = true)
+        } else if (recordAbsent && !bak.isFile) {
+            file.parentFile?.mkdirs()
+            absent.writeText("", Charsets.UTF_8)
         }
         return bak
     }
 
     fun hasModBackup(file: File): Boolean {
-        return File(file.parentFile, file.name + MOD_BAK_SUFFIX).isFile
+        if (File(file.parentFile, file.name + MOD_BAK_SUFFIX).isFile) return true
+        return File(file.parentFile, file.name + MOD_ABSENT_SUFFIX).isFile && file.isFile
     }
 
     fun restoreModBackup(file: File): Boolean {
         val bak = File(file.parentFile, file.name + MOD_BAK_SUFFIX)
-        if (!bak.isFile) return false
-        bak.copyTo(file, overwrite = true)
-        return true
+        val absent = File(file.parentFile, file.name + MOD_ABSENT_SUFFIX)
+        if (bak.isFile) {
+            bak.copyTo(file, overwrite = true)
+            absent.delete()
+            return true
+        }
+        if (absent.isFile) {
+            val deleted = !file.exists() || file.delete()
+            absent.delete()
+            return deleted
+        }
+        return false
+    }
+
+    private fun resolveActiveGlobalSaveDir(saveDir: File): File {
+        val sub = File(saveDir, "SaveData")
+        if (File(saveDir, "GlobalSave.asd").isFile ||
+            File(saveDir, "Collection.asd").isFile ||
+            File(saveDir, "CommonSystemData.sav").isFile
+        ) {
+            return saveDir
+        }
+        if (File(sub, "GlobalSave.asd").isFile ||
+            File(sub, "Collection.asd").isFile ||
+            File(sub, "CommonSystemData.sav").isFile
+        ) {
+            return sub
+        }
+        return saveDir
+    }
+
+    fun hasGlobalSaveFiles(saveDir: File): Boolean {
+        val sub = File(saveDir, "SaveData")
+        return File(saveDir, "GlobalSave.asd").isFile ||
+            File(saveDir, "Collection.asd").isFile ||
+            File(saveDir, "CommonSystemData.sav").isFile ||
+            File(sub, "GlobalSave.asd").isFile ||
+            File(sub, "Collection.asd").isFile ||
+            File(sub, "CommonSystemData.sav").isFile
+    }
+
+    fun backupGlobalSaveFilesBeforeMod(saveDir: File) {
+        val activeDir = resolveActiveGlobalSaveDir(saveDir)
+        val sub = File(saveDir, "SaveData")
+        for (dir in listOf(saveDir, sub)) {
+            if (!dir.isDirectory && dir != activeDir) continue
+            val g = File(dir, "GlobalSave.asd")
+            val c = File(dir, "Collection.asd")
+            val s = File(dir, "CommonSystemData.sav")
+            if (g.isFile) backupSaveFileBeforeMod(g)
+            if (c.isFile) backupSaveFileBeforeMod(c)
+            if (s.isFile || dir == activeDir) {
+                backupSaveFileBeforeMod(s, recordAbsent = true)
+            }
+        }
+    }
+
+    fun hasGlobalSaveModBackup(saveDir: File): Boolean {
+        val sub = File(saveDir, "SaveData")
+        val names = listOf("GlobalSave.asd", "Collection.asd", "CommonSystemData.sav")
+        return names.any { name ->
+            hasModBackup(File(saveDir, name)) ||
+                (sub.isDirectory && hasModBackup(File(sub, name)))
+        }
+    }
+
+    fun restoreGlobalSaveModBackup(saveDir: File): Boolean {
+        val sub = File(saveDir, "SaveData")
+        val names = listOf("GlobalSave.asd", "Collection.asd", "CommonSystemData.sav")
+        var anyOk = false
+        for (name in names) {
+            if (restoreModBackup(File(saveDir, name))) anyOk = true
+            if (sub.isDirectory && restoreModBackup(File(sub, name))) anyOk = true
+        }
+        return anyOk
     }
 
     fun readGlobalSaveSummaryForDir(saveDir: File): String {
+        val sub = File(saveDir, "SaveData")
         val g1 = File(saveDir, "GlobalSave.asd")
-        val g2 = File(File(saveDir, "SaveData"), "GlobalSave.asd")
+        val g2 = File(sub, "GlobalSave.asd")
         val c1 = File(saveDir, "Collection.asd")
-        val c2 = File(File(saveDir, "SaveData"), "Collection.asd")
-        val gp = if (g1.isFile) g1.absolutePath else if (g2.isFile) g2.absolutePath else ""
+        val c2 = File(sub, "Collection.asd")
+        val s1 = File(saveDir, "CommonSystemData.sav")
+        val s2 = File(sub, "CommonSystemData.sav")
+        var gp = if (g1.isFile) g1.absolutePath else if (g2.isFile) g2.absolutePath else ""
         val cp = if (c1.isFile) c1.absolutePath else if (c2.isFile) c2.absolutePath else ""
+        if (gp.isEmpty() && cp.isEmpty()) {
+            if (s1.isFile) {
+                gp = g1.absolutePath
+            } else if (s2.isFile) {
+                gp = g2.absolutePath
+            }
+        }
         return nativeReadGlobalSaveSummary(gp, cp)
     }
 
     fun writeGlobalSaveModForDir(saveDir: File, modSpec: String): Boolean {
+        val sub = File(saveDir, "SaveData")
         val g1 = File(saveDir, "GlobalSave.asd")
-        val g2 = File(File(saveDir, "SaveData"), "GlobalSave.asd")
+        val g2 = File(sub, "GlobalSave.asd")
         val c1 = File(saveDir, "Collection.asd")
-        val c2 = File(File(saveDir, "SaveData"), "Collection.asd")
-        val gp = if (g1.isFile) g1.absolutePath else if (g2.isFile) g2.absolutePath else ""
+        val c2 = File(sub, "Collection.asd")
+        val s1 = File(saveDir, "CommonSystemData.sav")
+        val s2 = File(sub, "CommonSystemData.sav")
+        var gp = if (g1.isFile) g1.absolutePath else if (g2.isFile) g2.absolutePath else ""
         val cp = if (c1.isFile) c1.absolutePath else if (c2.isFile) c2.absolutePath else ""
-        if (gp.isEmpty() && cp.isEmpty()) return false
+        if (gp.isEmpty() && cp.isEmpty()) {
+            if (s1.isFile) {
+                gp = g1.absolutePath
+            } else if (s2.isFile) {
+                gp = g2.absolutePath
+            } else {
+                return false
+            }
+        }
         return nativeWriteGlobalSaveMod(gp, cp, modSpec)
     }
 

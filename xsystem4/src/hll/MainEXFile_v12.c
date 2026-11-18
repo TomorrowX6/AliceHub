@@ -82,6 +82,8 @@ static struct ex *reader(int id)
 
 static struct ex_value *value(struct string *name, int id)
 {
+	if (!name)
+		return NULL;
 	struct ex *ex = reader(id);
 	return ex ? ex_get(ex, name->text) : NULL;
 }
@@ -154,7 +156,9 @@ EX_NUMERIC_GETTERS(floating, float, EX_FLOAT, f)
 
 static struct string *string_value(struct ex_value *v, struct string *fallback)
 {
-	return string_dup(v && v->type == EX_STRING ? v->s : fallback);
+	if (v && v->type == EX_STRING && v->s)
+		return string_dup(v->s);
+	return fallback ? string_dup(fallback) : string_ref(&EMPTY_STRING);
 }
 
 static struct string *mainex_string(struct string *name, struct string *fallback, int id)
@@ -180,12 +184,16 @@ static int mainex_int_key(struct string *name, int key, int id)
 
 static int mainex_string_key(struct string *name, struct string *key, int id)
 {
+	if (!key)
+		return -1;
 	struct ex_value *v = value(name, id);
 	return v && v->type == EX_TABLE ? ex_row_at_string_key(v->t, key->text) : -1;
 }
 
 static int mainex_column(struct string *name, struct string *field, int id)
 {
+	if (!field)
+		return -1;
 	struct ex_value *v = value(name, id);
 	return v && v->type == EX_TABLE ? ex_col_from_name(v->t, field->text) : -1;
 }
@@ -202,6 +210,8 @@ static struct ex *read_ex_cstr(const char *filename)
 
 static struct ex *read_ex(struct string *file)
 {
+	if (!file)
+		return NULL;
 	return read_ex_cstr(file->text);
 }
 
@@ -244,6 +254,8 @@ int mainex_v12_register_at(int preferred_id, struct ex *ex)
 
 static int mainex_add_reader(struct string *file)
 {
+	if (!file)
+		return -1;
 	int id = mainex_v12_register(read_ex(file));
 	if (id >= 2) {
 		free(reader_paths[id]);
@@ -278,6 +290,8 @@ static void append_string_entry(char ***list, int *count, const char *s)
 
 static bool mainex_add_cstr(const char *filename)
 {
+	if (!filename || nr_readers < 2 || !readers[1])
+		return false;
 	struct ex *ex = read_ex_cstr(filename);
 	if (!ex) return false;
 	ex_append(readers[1], ex);
@@ -288,11 +302,15 @@ static bool mainex_add_cstr(const char *filename)
 
 static bool mainex_add(struct string *file)
 {
+	if (!file)
+		return false;
 	return mainex_add_cstr(file->text);
 }
 
 static bool mainex_add_text_cstr(const char *filename)
 {
+	if (!filename || nr_readers < 2 || !readers[1])
+		return false;
 	struct ex *ex = read_ex_cstr(filename);
 	if (!ex) return false;
 	ex_append(readers[1], ex);
@@ -303,11 +321,15 @@ static bool mainex_add_text_cstr(const char *filename)
 
 static bool mainex_add_text(struct string *file)
 {
+	if (!file)
+		return false;
 	return mainex_add_text_cstr(file->text);
 }
 
 static bool mainex_save(struct page **out)
 {
+	if (!out)
+		return false;
 	size_t byte_len = 12;
 	for (int i = 0; i < nr_added_ex_files; i++)
 		byte_len += strlen(added_ex_files[i]) + 1;
@@ -449,7 +471,7 @@ static bool mainex_load(struct page **in)
 static struct string *child_name(struct ex *ex, struct string *path, bool leaf, int target, int *count)
 {
 	*count = 0;
-	if (!ex) return NULL;
+	if (!ex || !path) return NULL;
 	struct string *found = NULL;
 	if (!path->size) {
 		for (unsigned i = 0; i < ex->nr_blocks; i++) {
@@ -477,17 +499,20 @@ static int name_count(struct string *path, int id, bool leaf)
 
 static bool get_name(struct string *path, int index, struct string **out, int id, bool leaf)
 {
+	if (!out)
+		return false;
 	int count;
 	struct string *name = child_name(reader(id), path, leaf, index, &count);
 	if (!name) return false;
-	free_string(*out);
+	if (*out)
+		free_string(*out);
 	*out = string_dup(name);
 	return true;
 }
 
 static bool name_list(struct string *path, struct page **out, int id, bool leaf)
 {
-	if (!reader(id)) return false;
+	if (!out || !reader(id)) return false;
 	int count = name_count(path, id, leaf);
 	struct ain_type type = { .data = AIN_STRING, .struc = -1 };
 	struct page *page = v12_array_new(&type, count, false);
@@ -496,7 +521,7 @@ static bool name_list(struct string *path, struct page **out, int id, bool leaf)
 		struct string *s = child_name(reader(id), path, leaf, i, &unused);
 		int slot = page->values[i].i;
 		free_string(heap[slot].s);
-		heap[slot].s = string_dup(s);
+		heap[slot].s = s ? string_dup(s) : string_ref(&EMPTY_STRING);
 	}
 	if (*out) { delete_page_vars(*out); free_page(*out); }
 	*out = page;
@@ -512,6 +537,8 @@ static bool mainex_names(struct string *p, struct page **a, int id) { return nam
 
 static bool mainex_format_names(struct string *name, struct page **out, int id)
 {
+	if (!out)
+		return false;
 	struct ex_value *v = value(name, id);
 	if (!v || v->type != EX_TABLE || !v->t)
 		return false;

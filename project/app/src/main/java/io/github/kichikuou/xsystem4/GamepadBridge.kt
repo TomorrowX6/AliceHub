@@ -451,23 +451,38 @@ object GamepadBridge {
     private fun gameProfileFile(context: Context, profileKey: String): File =
         File(profileDir(context), "game_$profileKey.json")
 
+    private val profileIoLock = Any()
+
     private fun readProfileFile(file: File): GamepadProfile? {
-        if (!file.isFile) return null
-        return try {
-            val raw = file.readText(Charsets.UTF_8)
-            if (raw.isBlank()) null else GamepadProfile.fromJson(JSONObject(raw))
-        } catch (_: Throwable) {
-            null
+        synchronized(profileIoLock) {
+            if (!file.isFile) return null
+            return try {
+                val raw = file.readText(Charsets.UTF_8)
+                if (raw.isBlank()) null else GamepadProfile.fromJson(JSONObject(raw))
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 
     private fun writeProfileFile(file: File, profile: GamepadProfile) {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, "${file.name}.tmp")
-        tmp.writeText(profile.toJson().toString(), Charsets.UTF_8)
-        if (!tmp.renameTo(file)) {
-            file.writeText(profile.toJson().toString(), Charsets.UTF_8)
-            tmp.delete()
+        synchronized(profileIoLock) {
+            file.parentFile?.mkdirs()
+            val pid = android.os.Process.myPid()
+            val tid = Thread.currentThread().id
+            val nano = System.nanoTime()
+            val tmp = File(file.parentFile, "${file.name}.$pid.$tid.$nano.tmp")
+            val payload = profile.toJson().toString()
+            try {
+                tmp.writeText(payload, Charsets.UTF_8)
+                if (!tmp.renameTo(file)) {
+                    file.writeText(payload, Charsets.UTF_8)
+                }
+            } finally {
+                if (tmp.exists()) {
+                    tmp.delete()
+                }
+            }
         }
     }
 
@@ -508,7 +523,9 @@ object GamepadBridge {
             writeProfileFile(gameProfileFile(context, key), stamped)
         } else {
             if (key != null) {
-                gameProfileFile(context, key).delete()
+                synchronized(profileIoLock) {
+                    gameProfileFile(context, key).delete()
+                }
             }
             writeProfileFile(defaultProfileFile(context), stamped.copy(perGameOverride = false))
         }
@@ -517,7 +534,9 @@ object GamepadBridge {
 
     fun clearPerGameOverride(context: Context, profileKey: String?) {
         val key = normalizeGameProfileKey(profileKey) ?: return
-        gameProfileFile(context, key).delete()
+        synchronized(profileIoLock) {
+            gameProfileFile(context, key).delete()
+        }
     }
 
     fun syncProfileToNative(profile: GamepadProfile) {

@@ -28,6 +28,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     companion object {
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
+        private const val STATE_HUB_GAME_ID = "STATE_HUB_GAME_ID"
+        private const val STATE_HUB_SELECTED_PATH = "STATE_HUB_SELECTED_PATH"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -41,8 +43,36 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private var selectedItem: Item? = null
 
     private var progressDialog: Dialog? = null
+    private var restoreModDialog: Dialog? = null
     private var uninstallDialog: AlertDialog? = null
+    private val trackedDialogs = mutableListOf<Dialog>()
+    private var lastProgressRenderMs: Long = 0L
     private var pendingPostResumeAction: (() -> Unit)? = null
+
+    private fun <T : Dialog> trackDialog(dlg: T): T {
+        trackedDialogs.removeAll { !it.isShowing }
+        trackedDialogs.add(dlg)
+        return dlg
+    }
+
+    private fun dismissTrackedDialogs() {
+        for (dlg in trackedDialogs.toList()) {
+            if (dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        trackedDialogs.clear()
+    }
+
+    private fun isInstallingCurrentHubGame(): Boolean {
+        if (!::gameList.isInitialized || !::descriptor.isInitialized) return false
+        val cur = selectedItem
+        return gameList.isInstallingForGame(descriptor.id) ||
+            (cur != null && gameList.isInstallingInto(cur))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,8 +82,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         findViewById<View>(R.id.hub_install_card).clipToOutline = true
         findViewById<View>(R.id.hub_tools_card).clipToOutline = true
 
-        gameId = intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() } ?: GameCatalog.ID_RANCE10
-        selectedPath = intent.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
+        gameId = savedInstanceState?.getString(STATE_HUB_GAME_ID)?.takeIf { it.isNotBlank() }
+            ?: intent.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+            ?: GameCatalog.ID_RANCE10
+        selectedPath = savedInstanceState?.getString(STATE_HUB_SELECTED_PATH)?.takeIf { it.isNotBlank() }
+            ?: intent.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
 
         gameList = LauncherActivity.obtainGameList(this, refresh = false)
         rebindGameState()
@@ -71,9 +104,24 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         refreshUi()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_HUB_GAME_ID, gameId)
+        selectedPath?.takeIf { it.isNotBlank() }?.let {
+            outState.putString(STATE_HUB_SELECTED_PATH, it)
+        }
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        setIntent(intent)
+        if (intent != null && (
+                intent.hasExtra(EXTRA_GAME_ID) ||
+                    intent.hasExtra(EXTRA_GAME_PATH) ||
+                    intent.hasExtra(InstallForegroundService.EXTRA_RESTORE_INSTALL_DIALOG)
+                )
+        ) {
+            setIntent(intent)
+        }
         intent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }?.let {
             gameId = it
         }
@@ -102,7 +150,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun handleRestoreDialogIntent(srcIntent: Intent?) {
         if (srcIntent?.getBooleanExtra(InstallForegroundService.EXTRA_RESTORE_INSTALL_DIALOG, false) == true) {
             srcIntent.removeExtra(InstallForegroundService.EXTRA_RESTORE_INSTALL_DIALOG)
-            if (::gameList.isInitialized) {
+            if (isInstallingCurrentHubGame()) {
                 gameList.restoreInstallProgress()
             }
         }
@@ -114,6 +162,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         gameList.observer = this
         rebindGameState()
         refreshOnlineSizeIfNeeded()
+        if (gameList.isRestoringMod) {
+            showRestoreModProgress()
+        } else {
+            dismissRestoreModProgress()
+        }
         refreshUi()
         renderInstallState(gameList.installState)
         matchingItems.firstOrNull { gameList.isUninstalling(it) }?.let { watchUninstall(it) }
@@ -129,6 +182,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissRestoreModProgress()
         super.onPause()
     }
 
@@ -137,7 +191,9 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissRestoreModProgress()
         dismissUninstallDialog()
+        dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
     }
@@ -263,7 +319,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
         val runningRoot = GameCatalog.getRunningGameRoot(this)
         val isRunning = curItem != null && runningRoot == curItem.path.path
-        val isInstallingHere = gameList.isInstallingForGame(descriptor.id)
+        val isInstallingHere = isInstallingCurrentHubGame()
 
         val statusView = findViewById<TextView>(R.id.hub_status)
         val statusText: String
@@ -353,6 +409,19 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         UiKit.styleActionRow(findViewById(R.id.btn_hub_gamepad_settings), R.drawable.ic_gamepad, rowAccent)
     }
 
+    private fun showOtherInstallBusyToast() {
+        Toast.makeText(
+            this,
+            GamepadBridge.tr(
+                this,
+                "后台正在进行其他安装任务，请稍候",
+                "別のインストールタスクが進行中です",
+                "Another installation is currently in progress"
+            ),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     private fun onlineBaseSizeText(): String {
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return ""
         val bytes = AppSettings.getCachedBaseGameSize(this, cdnUrl)
@@ -403,22 +472,25 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             if (ver != null) "${it.path.name} · $ver" else it.path.name
         }
         val curIdx = matchingItems.indexOfFirst { it.path.path == selectedItem?.path?.path }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.hub_select_instance_title)
-            .setSingleChoiceItems(labels, curIdx) { dlg, which ->
-                if (which in matchingItems.indices) {
-                    selectedItem = matchingItems[which]
-                    selectedPath = selectedItem?.path?.path
-                    refreshUi()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.hub_select_instance_title)
+                .setSingleChoiceItems(labels, curIdx) { dlg, which ->
+                    if (which in matchingItems.indices) {
+                        selectedItem = matchingItems[which]
+                        selectedPath = selectedItem?.path?.path
+                        refreshUi()
+                    }
+                    dlg.dismiss()
                 }
-                dlg.dismiss()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun onPrimaryPlayClicked() {
-        if (gameList.installState is InstallState.Installing) {
+        if (gameList.isRestoringMod) return
+        if (isInstallingCurrentHubGame()) {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
             return
@@ -428,39 +500,55 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             GameCatalog.launchGameItem(this, curItem)
             return
         }
+        if (gameList.installState is InstallState.Installing) {
+            showOtherInstallBusyToast()
+            return
+        }
         if (descriptor.supportsOnlineBaseInstall && AppSettings.isOnlineInstallEnabled(this)) {
             val opts = arrayOf(
                 onlineInstallLabel(),
                 getString(R.string.action_local_install)
             )
-            AlertDialog.Builder(this)
-                .setTitle(R.string.hub_btn_install_first)
-                .setItems(opts) { _, which ->
-                    when (which) {
-                        0 -> confirmOnlineBaseGameInstall()
-                        1 -> openLocalInstallBaseDialog()
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.hub_btn_install_first)
+                    .setItems(opts) { _, which ->
+                        when (which) {
+                            0 -> confirmOnlineBaseGameInstall()
+                            1 -> openLocalInstallBaseDialog()
+                        }
                     }
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            )
         } else {
             openLocalInstallBaseDialog()
         }
     }
 
     private fun openOnlineInstall() {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentHubGame()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         confirmOnlineBaseGameInstall()
     }
 
     private fun confirmOnlineBaseGameInstall() {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentHubGame()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         if (!AppSettings.isOnlineInstallEnabled(this)) return
@@ -471,30 +559,37 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         } else {
             getString(R.string.online_base_confirm_msg, descriptor.title)
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.online_base_confirm_title)
-            .setMessage(msg)
-            .setPositiveButton(R.string.ok) { _, _ ->
-                InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                gameList.installOnlineBaseGame(cdnBaseUrl = cdnUrl, targetGameId = descriptor.id)
-                refreshUi()
-                renderInstallState(gameList.installState)
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.online_base_confirm_title)
+                .setMessage(msg)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+                    gameList.installOnlineBaseGame(cdnBaseUrl = cdnUrl, targetGameId = descriptor.id)
+                    refreshUi()
+                    renderInstallState(gameList.installState)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun openLocalInstall() {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentHubGame()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         openLocalInstallBaseDialog()
     }
 
     private fun openLocalInstallBaseDialog() {
-        if (gameList.installState is InstallState.Installing) return
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
         GameCatalog.showLocalGameImportDialog(
             activity = this,
             titleRes = R.string.game_local_dialog_title,
@@ -506,11 +601,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun openModManager() {
         val target = selectedItem
         if (target == null) {
-            AlertDialog.Builder(this)
-                .setTitle(if (descriptor.isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
-                .setMessage(R.string.mod_no_game_installed)
-                .setPositiveButton(R.string.ok, null)
-                .show()
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(if (descriptor.isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
+                    .setMessage(R.string.mod_no_game_installed)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            )
             return
         }
         val intent = Intent(this, ModManagerActivity::class.java)
@@ -547,6 +644,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun confirmUninstallGame(item: Item) {
+        if (gameList.isRestoringMod) return
         if (gameList.isUninstalling(item)) {
             watchUninstall(item)
             return
@@ -557,62 +655,129 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             return
         }
         ensureGameNotRunning(this) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.action_delete_base_game)
-                .setMessage(getString(R.string.delete_base_game_message, GameCatalog.cleanItemTitle(item.name)))
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    // Deleting several GB of files takes a while: do it off the main thread
-                    // behind a modal progress dialog (which also blocks a second tap).
-                    gameList.uninstallAsync(item) { _ -> }
-                    watchUninstall(item)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.action_delete_base_game)
+                    .setMessage(getString(R.string.delete_base_game_message, GameCatalog.cleanItemTitle(item.name)))
+                    .setPositiveButton(R.string.ok) { _, _ ->
+                        // Deleting several GB of files takes a while: do it off the main thread
+                        // behind a modal progress dialog (which also blocks a second tap).
+                        gameList.uninstallAsync(item) { _ -> }
+                        watchUninstall(item)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            )
         }
     }
 
     private fun confirmUninstallMod(item: Item) {
+        if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
-            gameList.restoreInstallProgress()
-            renderInstallState(gameList.installState)
+            if (isInstallingCurrentHubGame()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
             return
         }
         val titleRes = if (descriptor.isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod
         if (!gameList.canRestoreVanilla(item)) {
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(titleRes)
+                    .setMessage(
+                        if (descriptor.isCnPatch) R.string.uninstall_cn_patch_no_backup_msg
+                        else R.string.uninstall_mod_no_backup_msg
+                    )
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            )
+            return
+        }
+        trackDialog(
             AlertDialog.Builder(this)
                 .setTitle(titleRes)
                 .setMessage(
-                    if (descriptor.isCnPatch) R.string.uninstall_cn_patch_no_backup_msg
-                    else R.string.uninstall_mod_no_backup_msg
+                    if (descriptor.isCnPatch) R.string.cn_patch_mgr_restore_confirm
+                    else R.string.mod_mgr_restore_confirm
                 )
-                .setPositiveButton(R.string.ok, null)
-                .show()
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle(titleRes)
-            .setMessage(
-                if (descriptor.isCnPatch) R.string.cn_patch_mgr_restore_confirm
-                else R.string.mod_mgr_restore_confirm
-            )
-            .setPositiveButton(R.string.ok) { _, _ ->
-                ensureGameNotRunning(this) {
-                    if (gameList.restoreMod(item)) {
-                        rebindGameState()
-                        refreshUi()
-                        Toast.makeText(
-                            this,
-                            if (descriptor.isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast,
-                            Toast.LENGTH_SHORT
-                        ).show()
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) {
+                        startUninstallModAsync(item)
                     }
                 }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun startUninstallModAsync(item: Item) {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
+        val restoredToastRes = if (descriptor.isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
+        val started = gameList.launchRestoreMod(item) { ok ->
+            if (!isFinishing && !isDestroyed) {
+                dismissRestoreModProgress()
+                rebindGameState()
+                refreshUi()
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+            if (ok) {
+                Toast.makeText(appCtx, restoredToastRes, Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(appCtx, R.string.error, Toast.LENGTH_SHORT).show()
+            }
+        }
+        if (started) {
+            showRestoreModProgress()
+            refreshUi()
+        }
+    }
+
+    private fun showRestoreModProgress() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (restoreModDialog == null) {
+            val titleRes = if (descriptor.isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod
+            restoreModDialog = Dialog(this).apply {
+                setTitle(titleRes)
+                setCancelable(false)
+                setContentView(R.layout.progress_dialog)
+                findViewById<View>(R.id.action_bar)?.visibility = View.GONE
+                findViewById<ProgressBar>(R.id.progress_bar)?.visibility = View.GONE
+                findViewById<TextView>(R.id.text)?.text = GamepadBridge.tr(
+                    this@GameHubActivity,
+                    "正在还原原版文件…",
+                    "バニラファイルを復元中…",
+                    "Restoring vanilla files…"
+                )
+                show()
+            }
+            scope.launch {
+                while (gameList.isRestoringMod) {
+                    delay(150)
+                }
+                if (!isFinishing && !isDestroyed && restoreModDialog != null) {
+                    dismissRestoreModProgress()
+                    rebindGameState()
+                    refreshUi()
+                }
+            }
+        }
+    }
+
+    private fun dismissRestoreModProgress() {
+        restoreModDialog?.dismiss()
+        restoreModDialog = null
+        if (progressDialog == null && uninstallDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     override fun onInstallProgress(path: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastProgressRenderMs < 80L) return
+        lastProgressRenderMs = now
         renderInstallState(gameList.installState)
     }
 
@@ -638,7 +803,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         when (state) {
             InstallState.Idle -> dismissProgressDialog()
             is InstallState.Installing -> {
-                if (gameList.isProgressMinimized) {
+                if (!isInstallingCurrentHubGame() || gameList.isProgressMinimized) {
                     dismissProgressDialog()
                 } else {
                     showProgressDialog(
@@ -672,11 +837,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 rebindGameState()
                 refreshUi()
                 gameList.consumeInstallResult()
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.error)
-                    .setMessage(state.msgId)
-                    .setPositiveButton(R.string.ok, null)
-                    .show()
+                trackDialog(
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.error)
+                        .setMessage(state.msgId)
+                        .setPositiveButton(R.string.ok, null)
+                        .show()
+                )
             }
         }
     }
@@ -787,14 +954,16 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun dismissUninstallDialog() {
         uninstallDialog?.dismiss()
         uninstallDialog = null
-        if (progressDialog == null) {
+        if (progressDialog == null && restoreModDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
     private fun dismissProgressDialog() {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         progressDialog?.dismiss()
         progressDialog = null
+        if (uninstallDialog == null && restoreModDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }

@@ -41,8 +41,40 @@ class FloatingModifierOverlay(private val activity: Activity) {
     private fun dp(v: Int): Int =
         (v * activity.resources.displayMetrics.density).toInt()
 
+    private val trackedDialogs = mutableListOf<android.app.Dialog>()
+
+    private fun trackDialog(dlg: android.app.Dialog) {
+        trackedDialogs.removeAll { !it.isShowing }
+        if (!trackedDialogs.contains(dlg)) {
+            trackedDialogs.add(dlg)
+        }
+    }
+
+    private fun dismissTrackedDialogs() {
+        val copy = trackedDialogs.toList()
+        trackedDialogs.clear()
+        for (dlg in copy) {
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     private fun dialogBuilder(): AlertDialog.Builder =
-        AlertDialog.Builder(ContextThemeWrapper(activity, R.style.Theme_Launcher))
+        object : AlertDialog.Builder(ContextThemeWrapper(activity, R.style.Theme_Launcher)) {
+            override fun create(): AlertDialog {
+                val dlg = super.create()
+                trackDialog(dlg)
+                return dlg
+            }
+
+            override fun show(): AlertDialog {
+                val dlg = super.show()
+                trackDialog(dlg)
+                return dlg
+            }
+        }
 
     fun attach() {
         if (!GameModifierBridge.isFloatingEnabled(activity)) {
@@ -73,6 +105,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
     }
 
     fun detach() {
+        dismissTrackedDialogs()
+        GamepadConfigDialog.dismissForContext(activity)
         floatingBtn = null
         rootOverlay = null
     }
@@ -212,7 +246,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             (j.optString("game") == "escalayer" || (xsAct?.isEscalayerGame() ?: false))
         val isSys3x = xsAct?.isSystem3xGame() ?: isEscalayer
         val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
-            j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
+            j.optBoolean("isRance10", xsAct?.isRance10Game() ?: false)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)

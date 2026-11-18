@@ -40,6 +40,24 @@ static int state = 0;
 static char *save_path;
 static uint8_t *flags;
 static int nr_flags;
+static bool save_hook_registered = false;
+
+struct adv_skip_entry {
+	char *name;
+	int version;
+	int step;
+};
+static struct adv_skip_entry *adv_flags;
+static size_t nr_adv_flags;
+
+static void free_adv_flags(void)
+{
+	for (size_t i = 0; i < nr_adv_flags; i++)
+		free(adv_flags[i].name);
+	free(adv_flags);
+	adv_flags = NULL;
+	nr_adv_flags = 0;
+}
 
 static void msgskip_save(void)
 {
@@ -78,11 +96,20 @@ static int msgskip_event_handler(possibly_unused void *user_data, SDL_Event *e) 
 
 static int MsgSkip_Init(struct string *name)
 {
-	if (flags)
-		return 1;
+	if (!name)
+		return 0;
 
-	nr_flags = ain->nr_messages;
-	flags = xcalloc((nr_flags + 7) / 8, 1);
+	if (flags && save_path)
+		msgskip_save();
+	free(flags);
+	flags = NULL;
+	free(save_path);
+	save_path = NULL;
+	free_adv_flags();
+
+	nr_flags = ain && ain->nr_messages > 0 ? ain->nr_messages : 0;
+	size_t alloc_bytes = (size_t)((nr_flags + 7) / 8);
+	flags = xcalloc(alloc_bytes ? alloc_bytes : 1, 1);
 
 	// Most games have system.GetSaveFolderName() prepended to `name`, but some
 	// games pass a constant string "SaveData\\MsgSkip.asd". If you pass it to
@@ -96,45 +123,51 @@ static int MsgSkip_Init(struct string *name)
 	size_t data_size;
 	uint8_t *data = file_read(save_path, &data_size);
 	if (data) {
-		if (data_size == (size_t)ain->nr_messages) {
+		if (ain && ain->nr_messages > 0 && data_size == (size_t)ain->nr_messages) {
 			// Migrate from the old format.
-			for (int i = 0; i < data_size; i++) {
+			for (size_t i = 0; i < data_size; i++) {
 				if (data[i])
 					flags[i >> 3] |= 0x80 >> (i & 7);
 			}
+		} else if (data_size < 4) {
+			WARNING("Corrupted MsgSkip file '%s'", display_utf0(save_path));
 		} else {
 			int n = LittleEndian_getDW(data, 0);
-			if ((n + 7) / 8 != data_size - 4) {
+			if (n < 0 || (size_t)(((uint64_t)(uint32_t)n + 7) / 8) != data_size - 4) {
 				WARNING("Corrupted MsgSkip file '%s'", display_utf0(save_path));
 			} else if (n != nr_flags) {
 				WARNING("Incorrect size for MsgSkip file '%s'", display_utf0(save_path));
 				if (n > nr_flags)
 					n = nr_flags;
-				memcpy(flags, data + 4, (n + 7) / 8);
-			} else {
-				memcpy(flags, data + 4, (nr_flags + 7) / 8);
+				if (n > 0)
+					memcpy(flags, data + 4, (size_t)((n + 7) / 8));
+			} else if (nr_flags > 0) {
+				memcpy(flags, data + 4, (size_t)((nr_flags + 7) / 8));
 			}
 		}
 		free(data);
 	}
+	if (!save_hook_registered) {
 #ifdef __ANDROID__
-	SDL_AddEventWatch(msgskip_event_handler, NULL);
+		SDL_AddEventWatch(msgskip_event_handler, NULL);
 #else
-	atexit(msgskip_save);
+		atexit(msgskip_save);
 #endif
+		save_hook_registered = true;
+	}
 	return 1;
 }
 
 static void MsgSkip_SetFlag(int msgnum)
 {
-	if (msgnum < 0 || msgnum >= nr_flags)
+	if (!flags || msgnum < 0 || msgnum >= nr_flags)
 		return;
 	flags[msgnum >> 3] |= 0x80 >> (msgnum & 7);
 }
 
 static int MsgSkip_GetFlag(int msgnum)
 {
-	if (msgnum < 0 || msgnum >= nr_flags)
+	if (!flags || msgnum < 0 || msgnum >= nr_flags)
 		return 0;
 	return !!(flags[msgnum >> 3] & 0x80 >> (msgnum & 7));
 }
@@ -174,14 +207,6 @@ static void MsgSkip_PreLink(void)
 	}
 }
 
-struct adv_skip_entry {
-	char *name;
-	int version;
-	int step;
-};
-static struct adv_skip_entry *adv_flags;
-static size_t nr_adv_flags;
-
 static void MsgSkip_SetAdvFlag(struct string *adv_name, int version, int step)
 {
 	if (!adv_name)
@@ -213,10 +238,18 @@ static int MsgSkip_GetAdvFlag(struct string *adv_name, int version, int step)
 static void MsgSkip_ModuleFini(void)
 {
 	msgskip_save();
+#ifdef __ANDROID__
+	if (save_hook_registered) {
+		SDL_DelEventWatch(msgskip_event_handler, NULL);
+		save_hook_registered = false;
+	}
+#endif
 	free(flags);
 	flags = NULL;
+	nr_flags = 0;
 	free(save_path);
 	save_path = NULL;
+	free_adv_flags();
 }
 
 HLL_LIBRARY(MsgSkip,
@@ -252,6 +285,9 @@ static void vmMsgSkip_Close(possibly_unused int handle)
 	msgskip_save();
 	free(flags);
 	flags = NULL;
+	nr_flags = 0;
+	free(save_path);
+	save_path = NULL;
 }
 
 static int vmMsgSkip_Query(possibly_unused int handle, int msgnum)
@@ -263,6 +299,7 @@ static int vmMsgSkip_Query(possibly_unused int handle, int msgnum)
 }
 
 HLL_LIBRARY(vmMsgSkip,
+	    HLL_EXPORT(_ModuleFini, MsgSkip_ModuleFini),
 	    HLL_EXPORT(Init, vmMsgSkip_Init),
 	    HLL_EXPORT(EnumHandle, vmMsgSkip_EnumHandle),
 	    HLL_EXPORT(Open, vmMsgSkip_Open),

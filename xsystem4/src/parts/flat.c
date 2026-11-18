@@ -343,7 +343,7 @@ static bool flat_advance_layer(struct flat *fl,
 		struct flat_timeline *timelines, size_t nr_timelines,
 		struct flat_key_stack *key_stack)
 {
-	int max_end_frame = flat_compute_max_frame(timelines, nr_timelines) - 1;
+	int max_end_frame = max(0, flat_compute_max_frame(timelines, nr_timelines) - 1);
 	int prev_frame = state->current_frame;
 
 	do {
@@ -607,7 +607,7 @@ static struct parts_flat_asset *flat_asset_acquire(struct string *filename)
 	a->name_len = len;
 	a->ref = 1;
 	a->flat = fl;
-	a->end_frame = flat_compute_max_frame(fl->timelines, fl->nr_timelines) - 1;
+	a->end_frame = max(0, flat_compute_max_frame(fl->timelines, fl->nr_timelines) - 1);
 
 	size_t nr_libl = fl->nr_libraries;
 	a->nr_libraries = nr_libl;
@@ -766,13 +766,18 @@ unsigned parts_flat_key_count(const struct flat_timeline *tl, int frame)
 {
 	if (frame < 0 || frame >= tl->frame_count) return 0;
 	if (tl->graphic.frames) return tl->graphic.frames[frame].count;
-	return (unsigned)frame < tl->graphic.count ? 1 : 0;
+	return (tl->graphic.keys && (unsigned)frame < tl->graphic.count) ? 1 : 0;
 }
 
 const struct flat_key_data_graphic *parts_flat_key(const struct flat_timeline *tl, int frame, unsigned instance)
 {
 	if (instance >= parts_flat_key_count(tl, frame)) return NULL;
-	return tl->graphic.frames ? &tl->graphic.frames[frame].keys[instance] : &tl->graphic.keys[frame];
+	if (tl->graphic.frames) {
+		if (!tl->graphic.frames[frame].keys)
+			return NULL;
+		return &tl->graphic.frames[frame].keys[instance];
+	}
+	return tl->graphic.keys ? &tl->graphic.keys[frame] : NULL;
 }
 
 // Build a layer matrix from a single key's properties.
@@ -1392,7 +1397,7 @@ void parts_flat_foreach_emitter_particle(struct parts_flat *f, int emitter_lib_i
 	mt19937_init(&mt, (uint32_t)em->rand_seed * (uint32_t)(birth_frame + 1));
 
 	int fps = fl->hdr.fps;
-	float pixels_per_meter = (float)fl->hdr.game_view_width / fl->hdr.meter;
+	float pixels_per_meter = fl->hdr.meter != 0.0f ? (float)fl->hdr.game_view_width / fl->hdr.meter : 0.0f;
 	float t = em->particle_lifetime > 0 ? (float)age / em->particle_lifetime : 0;
 	float gravity_y = emitter_gravity_displacement(age, em, fps);
 
@@ -1896,16 +1901,26 @@ void PE_ClearChangeFlatSound(int parts_no, int state)
 	(void)state;
 }
 
-static void flat_set_enable_layer_recursive(struct flat_layer_state *s,
+static void flat_set_enable_layer_recursive(struct flat *fl, struct flat_layer_state *s,
 		struct flat_timeline *timelines, size_t nr_timelines,
-		const char *name, bool enable)
+		const char *name, bool enable, int depth)
 {
-	if (!s || !timelines)
+	if (!fl || !s || !timelines || depth > FLAT_MAX_ANCESTOR_DEPTH)
 		return;
 	size_t n = min(s->nr_timelines, nr_timelines);
 	for (size_t i = 0; i < n; i++) {
 		if (timelines[i].name && !strcmp(timelines[i].name->text, name))
 			s->disabled_timelines[i] = !enable;
+		if (timelines[i].type == FLAT_TIMELINE_GRAPHIC && s->children && s->children[i]
+				&& timelines[i].library_name) {
+			int lib_idx = parts_flat_find_library(fl, timelines[i].library_name->text);
+			if (lib_idx >= 0 && fl->libraries[lib_idx].type == FLAT_LIB_TIMELINE) {
+				flat_set_enable_layer_recursive(fl, s->children[i],
+						fl->libraries[lib_idx].timeline.timelines,
+						fl->libraries[lib_idx].timeline.nr_timelines,
+						name, enable, depth + 1);
+			}
+		}
 	}
 }
 
@@ -1919,9 +1934,37 @@ void PE_SetFlatEnableLayer(int parts_no, struct string *name, bool enable, int s
 	struct parts_flat *f = &parts->states[state].flat;
 	if (!f->flat || !f->root_state)
 		return;
-	flat_set_enable_layer_recursive(f->root_state, f->flat->timelines, f->flat->nr_timelines,
-			name->text, enable);
+	flat_set_enable_layer_recursive(f->flat, f->root_state, f->flat->timelines,
+			f->flat->nr_timelines, name->text, enable, 0);
 	parts_dirty(parts);
+}
+
+static bool flat_is_enable_layer_recursive(struct flat *fl, struct flat_layer_state *s,
+		struct flat_timeline *timelines, size_t nr_timelines,
+		const char *name, bool *found, int depth)
+{
+	if (!fl || !s || !timelines || depth > FLAT_MAX_ANCESTOR_DEPTH)
+		return true;
+	size_t n = min(s->nr_timelines, nr_timelines);
+	for (size_t i = 0; i < n; i++) {
+		if (timelines[i].name && !strcmp(timelines[i].name->text, name)) {
+			*found = true;
+			return !s->disabled_timelines[i];
+		}
+		if (timelines[i].type == FLAT_TIMELINE_GRAPHIC && s->children && s->children[i]
+				&& timelines[i].library_name) {
+			int lib_idx = parts_flat_find_library(fl, timelines[i].library_name->text);
+			if (lib_idx >= 0 && fl->libraries[lib_idx].type == FLAT_LIB_TIMELINE) {
+				bool res = flat_is_enable_layer_recursive(fl, s->children[i],
+						fl->libraries[lib_idx].timeline.timelines,
+						fl->libraries[lib_idx].timeline.nr_timelines,
+						name, found, depth + 1);
+				if (*found)
+					return res;
+			}
+		}
+	}
+	return true;
 }
 
 bool PE_IsFlatEnableLayer(int parts_no, struct string *name, int state)
@@ -1934,12 +1977,9 @@ bool PE_IsFlatEnableLayer(int parts_no, struct string *name, int state)
 	struct parts_flat *f = &parts->states[state].flat;
 	if (!f->flat || !f->root_state)
 		return false;
-	size_t n = min(f->root_state->nr_timelines, f->flat->nr_timelines);
-	for (size_t i = 0; i < n; i++) {
-		if (f->flat->timelines[i].name && !strcmp(f->flat->timelines[i].name->text, name->text))
-			return !f->root_state->disabled_timelines[i];
-	}
-	return true;
+	bool found = false;
+	return flat_is_enable_layer_recursive(f->flat, f->root_state, f->flat->timelines,
+			f->flat->nr_timelines, name->text, &found, 0);
 }
 
 int PE_GetFlatGameViewWidth(int parts_no, int state)

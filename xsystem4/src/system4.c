@@ -143,15 +143,20 @@ static void read_mixer_channels(struct ini_entry *entry)
 	if (entry->value.type != INI_LIST)
 		ERROR("ini value for 'VolumeValancer' is not a list");
 
+	for (size_t i = 0; i < config.mixer_nr_channels; i++)
+		free(config.mixer_channels[i]);
+	free(config.mixer_channels);
+	free(config.mixer_volumes);
+
 	config.mixer_nr_channels = entry->value.list_size;
 	config.mixer_channels = xcalloc(entry->value.list_size, sizeof(char*));
 	config.mixer_volumes = xcalloc(entry->value.list_size, sizeof(int));
 	for (size_t i = 0; i < entry->value.list_size; i++) {
 		if (entry->value.list[i].type == INI_NULL) {
-			config.mixer_channels[i] = strdup("Unnamed");
+			config.mixer_channels[i] = xstrdup("Unnamed");
 			config.mixer_volumes[i] = 0;
 		} else if (entry->value.list[i].type == INI_STRING) {
-			config.mixer_channels[i] = strdup(entry->value.list[i].s->text);
+			config.mixer_channels[i] = xstrdup(entry->value.list[i].s->text);
 			// XXX: assumes default_volume was already initialized
 			config.mixer_volumes[i] = config.default_volume;
 		} else if (entry->value.list[i].type == INI_LIST) {
@@ -161,7 +166,7 @@ static void read_mixer_channels(struct ini_entry *entry)
 				ERROR("ini value for 'VolumeValancer' name is not a string");
 			if (entry->value.list[i].list[1].type != INI_INTEGER)
 				ERROR("ini value for 'VolumeValancer' level is not an integer");
-			config.mixer_channels[i] = strdup(entry->value.list[i].list[0].s->text);
+			config.mixer_channels[i] = xstrdup(entry->value.list[i].list[0].s->text);
 			config.mixer_volumes[i] = entry->value.list[i].list[1].i;
 		}
 	}
@@ -176,15 +181,20 @@ static bool read_config(const char *path)
 
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "GameName")) {
-			config.game_name = strdup(ini_string(&ini[i])->text);
+			free(config.game_name);
+			config.game_name = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "BootName")) {
-			config.boot_name = strdup(ini_string(&ini[i])->text);
+			free(config.boot_name);
+			config.boot_name = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "CodeName")) {
-			config.ain_filename = strdup(ini_string(&ini[i])->text);
+			free(config.ain_filename);
+			config.ain_filename = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "MainVM")) {
-			config.vm_name = strdup(ini_string(&ini[i])->text);
+			free(config.vm_name);
+			config.vm_name = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "SaveFolder")) {
-			config.save_dir = strdup(ini_string(&ini[i])->text);
+			free(config.save_dir);
+			config.save_dir = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "ViewWidth")) {
 			config.view_width = ini_integer(&ini[i]);
 		} else if (!strcmp(ini[i].name->text, "ViewHeight")) {
@@ -240,8 +250,8 @@ static void read_user_config_file(const char *path, const char *basedir)
 		} else if (!strcmp(ini[i].name->text, "msgskip-delay")) {
 			config.msgskip_delay = ini_integer(&ini[i]);
 			if (config.msgskip_delay < 0) {
-				WARNING("Invalid value for msgskip-delay in config: \"%s\"",
-						ini_string(&ini[i])->text);
+				WARNING("Invalid value for msgskip-delay in config: %d",
+						config.msgskip_delay);
 				config.msgskip_delay = 0;
 			}
 		} else if (!strcmp(ini[i].name->text, "save-folder")) {
@@ -268,7 +278,7 @@ static void read_user_config(void)
 
 	// global config
 	path = xmalloc(PATH_MAX);
-	snprintf(path, PATH_MAX-1, "%s/.xsys4rc", config.home_dir);
+	snprintf(path, PATH_MAX, "%s/.xsys4rc", config.home_dir);
 	read_user_config_file(path, NULL);
 	free(path);
 
@@ -330,7 +340,7 @@ static void config_init(void)
 {
 	config.home_dir = get_xsystem4_home();
 	if (!config.game_name)
-		config.game_name = strdup(config.ain_filename);
+		config.game_name = xstrdup(config.ain_filename);
 	if ((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
 				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
 				|| strstr(config.game_name, "\xcf\xc4\xcd\xde")))
@@ -354,8 +364,8 @@ static bool config_init_with_ini(const char *ini_path)
 		return false;
 	if (!config.ain_filename)
 		ERROR("No AIN filename specified in %s", ini_path);
-	char *tmp = strdup(ini_path);
-	config.game_dir = strdup(path_dirname(tmp));
+	char *tmp = xstrdup(ini_path);
+	config.game_dir = xstrdup(path_dirname(tmp));
 	free(tmp);
 	config_init();
 	return true;
@@ -383,8 +393,8 @@ static bool config_init_with_dir(const char *dir)
 
 static void config_init_with_ain(const char *ain_path)
 {
-	config.ain_filename = strdup(path_basename(ain_path));
-	config.game_dir = strdup(path_dirname(ain_path));
+	config.ain_filename = xstrdup(path_basename(ain_path));
+	config.game_dir = xstrdup(path_dirname(ain_path));
 	config_init();
 }
 
@@ -769,12 +779,18 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	cbuf_put_i64(crash_report_buf, cap, &off, config.view_height);
 	cbuf_puts(crash_report_buf, cap, &off, "\n\n[AIN VM State & Call Stack]\n");
 
-	off += vm_format_stack_trace(crash_report_buf + off, cap - off, safe_signal);
+	if (off + 1 < cap)
+		off += vm_format_stack_trace(crash_report_buf + off, cap - off, safe_signal);
+	if (off >= cap)
+		off = cap - 1;
 
 #ifndef _WIN32
-	if (!safe_signal) {
+	if (!safe_signal && off + 1 < cap) {
 		cbuf_puts(crash_report_buf, cap, &off, "\n[Native C Backtrace]\n");
-		off += format_native_backtrace(crash_report_buf + off, cap - off);
+		if (off + 1 < cap)
+			off += format_native_backtrace(crash_report_buf + off, cap - off);
+		if (off >= cap)
+			off = cap - 1;
 	}
 #endif
 
@@ -795,6 +811,20 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 
 #ifndef _WIN32
 	char path_buf[PATH_MAX];
+	const char *env_crash_log = cached_env_crash_log;
+	if (!safe_signal && (!env_crash_log || !*env_crash_log)) {
+		env_crash_log = getenv("XSYSTEM4_CRASH_LOG_PATH");
+		if (!env_crash_log || !*env_crash_log)
+			env_crash_log = getenv("XSYSTEM4_CRASH_LOG");
+	}
+	if (env_crash_log && *env_crash_log) {
+		if (write_file_raw(env_crash_log, crash_report_buf, off, false)) {
+			if (out_primary_path && out_primary_size > 0 && !out_primary_path[0]) {
+				size_t p_off = 0;
+				cbuf_puts(out_primary_path, out_primary_size, &p_off, env_crash_log);
+			}
+		}
+	}
 #ifdef __ANDROID__
 	{
 		const char *ext_crash = "/storage/emulated/0/Android/data/io.github.alicehub/files/crash.log";
@@ -810,15 +840,6 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	if (!safe_signal)
 		__android_log_write(ANDROID_LOG_FATAL, "XSystem4Crash", crash_report_buf);
 #endif
-	const char *env_crash_log = safe_signal ? cached_env_crash_log : getenv("XSYSTEM4_CRASH_LOG");
-	if (env_crash_log && *env_crash_log) {
-		if (write_file_raw(env_crash_log, crash_report_buf, off, false)) {
-			if (out_primary_path && out_primary_size > 0 && !out_primary_path[0]) {
-				size_t p_off = 0;
-				cbuf_puts(out_primary_path, out_primary_size, &p_off, env_crash_log);
-			}
-		}
-	}
 	if (config.game_dir && *config.game_dir) {
 		build_dir_file_path(path_buf, sizeof(path_buf), config.game_dir, "crash.log");
 		if (write_file_raw(path_buf, crash_report_buf, off, false)) {
@@ -849,18 +870,43 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 
 #ifndef _WIN32
 static uint8_t crash_alt_stack_mem[65536];
+static const int crash_signals[] = { SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL };
+#define NR_CRASH_SIGNALS (sizeof(crash_signals) / sizeof(crash_signals[0]))
+static struct sigaction old_sigactions[NR_CRASH_SIGNALS];
 
 static void crash_signal_handler(int sig, siginfo_t *info, void *ucontext)
 {
 	char saved_path[PATH_MAX];
 	write_crash_report("FATAL SIGNAL", NULL, sig, info, ucontext, true, saved_path, sizeof(saved_path));
+
+	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++) {
+		if (crash_signals[i] != sig)
+			continue;
+		const struct sigaction *prev = &old_sigactions[i];
+		sigaction(sig, prev, NULL);
+		if ((prev->sa_flags & SA_SIGINFO) && prev->sa_sigaction &&
+		    prev->sa_sigaction != crash_signal_handler) {
+			prev->sa_sigaction(sig, info, ucontext);
+			return;
+		}
+		if (!(prev->sa_flags & SA_SIGINFO) &&
+		    prev->sa_handler != SIG_DFL && prev->sa_handler != SIG_IGN &&
+		    prev->sa_handler != NULL) {
+			prev->sa_handler(sig);
+			return;
+		}
+		break;
+	}
 	signal(sig, SIG_DFL);
 	raise(sig);
+	_exit(128 + sig);
 }
 
 static void install_crash_signal_handlers(void)
 {
-	cached_env_crash_log = getenv("XSYSTEM4_CRASH_LOG");
+	cached_env_crash_log = getenv("XSYSTEM4_CRASH_LOG_PATH");
+	if (!cached_env_crash_log || !*cached_env_crash_log)
+		cached_env_crash_log = getenv("XSYSTEM4_CRASH_LOG");
 
 	stack_t ss;
 	ss.ss_sp = crash_alt_stack_mem;
@@ -872,13 +918,11 @@ static void install_crash_signal_handlers(void)
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = crash_signal_handler;
 	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+	sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
 
-	sigaction(SIGSEGV, &sa, NULL);
-	sigaction(SIGABRT, &sa, NULL);
-	sigaction(SIGBUS,  &sa, NULL);
-	sigaction(SIGFPE,  &sa, NULL);
-	sigaction(SIGILL,  &sa, NULL);
+	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++) {
+		sigaction(crash_signals[i], &sa, &old_sigactions[i]);
+	}
 }
 #endif
 
@@ -1070,16 +1114,19 @@ int main(int argc, char *argv[])
 		}
 	} else if (argc > 1) {
 		usage_error("Too many arguments");
-	} else if (is_directory(argv[0])) {
-		if (!config_init_with_dir(argv[0]))
-			usage_error("Failed to find game in '%s'", argv[0]);
-	} else if (!strcasecmp(file_extension(argv[0]), "ini")) {
-		if (!config_init_with_ini(argv[0]))
-			usage_error("Failed to read .ini file '%s'", argv[0]);
-	} else if (!strcasecmp(file_extension(argv[0]), "ain")) {
-		config_init_with_ain(argv[0]);
 	} else {
-		usage_error("Can't initialize game with argument '%s'", argv[0]);
+		const char *arg_ext = file_extension(argv[0]);
+		if (is_directory(argv[0])) {
+			if (!config_init_with_dir(argv[0]))
+				usage_error("Failed to find game in '%s'", argv[0]);
+		} else if (arg_ext && !strcasecmp(arg_ext, "ini")) {
+			if (!config_init_with_ini(argv[0]))
+				usage_error("Failed to read .ini file '%s'", argv[0]);
+		} else if (arg_ext && !strcasecmp(arg_ext, "ain")) {
+			config_init_with_ain(argv[0]);
+		} else {
+			usage_error("Can't initialize game with argument '%s'", argv[0]);
+		}
 	}
 	ainfile = gamedir_path(config.ain_filename);
 	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
@@ -1115,12 +1162,14 @@ int main(int argc, char *argv[])
 	}
 	if (savedir) {
 		free(config.save_dir);
-		config.save_dir = strdup(savedir);
+		config.save_dir = xstrdup(savedir);
 	}
 
 	if (!(ain = ain_open(ainfile, &err))) {
+		free(ainfile);
 		ERROR("%s", ain_strerror(err));
 	}
+	free(ainfile);
 
 	if (audit) {
 		ain_audit(stdout, ain);

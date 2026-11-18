@@ -37,7 +37,72 @@
 #include "xsystem4.h"
 #include "../hll/iarray.h"
 
-enum RE_plugin_version re_plugin_version;
+struct instance_mesh_vis {
+	const struct RE_instance *inst;
+	int nr_meshes;
+	uint8_t *hidden;
+};
+
+static struct instance_mesh_vis *mesh_vis_entries;
+static int nr_mesh_vis_entries;
+static int cap_mesh_vis_entries;
+
+bool RE_instance_is_mesh_hidden(const struct RE_instance *inst, int mesh_index)
+{
+	if (!inst || mesh_index < 0)
+		return false;
+	for (int i = 0; i < nr_mesh_vis_entries; i++) {
+		if (mesh_vis_entries[i].inst == inst)
+			return mesh_index < mesh_vis_entries[i].nr_meshes && mesh_vis_entries[i].hidden[mesh_index];
+	}
+	return false;
+}
+
+static void set_instance_mesh_hidden(struct RE_instance *inst, int mesh_index, bool hidden)
+{
+	if (!inst || !inst->model || mesh_index < 0 || mesh_index >= inst->model->nr_meshes)
+		return;
+	struct instance_mesh_vis *entry = NULL;
+	for (int i = 0; i < nr_mesh_vis_entries; i++) {
+		if (mesh_vis_entries[i].inst == inst) {
+			entry = &mesh_vis_entries[i];
+			break;
+		}
+	}
+	if (!entry) {
+		if (!hidden)
+			return;
+		if (nr_mesh_vis_entries == cap_mesh_vis_entries) {
+			int new_cap = cap_mesh_vis_entries ? cap_mesh_vis_entries * 2 : 16;
+			mesh_vis_entries = xrealloc_array(mesh_vis_entries, cap_mesh_vis_entries, new_cap, sizeof(*mesh_vis_entries));
+			cap_mesh_vis_entries = new_cap;
+		}
+		entry = &mesh_vis_entries[nr_mesh_vis_entries++];
+		entry->inst = inst;
+		entry->nr_meshes = inst->model->nr_meshes;
+		entry->hidden = xcalloc(entry->nr_meshes, 1);
+	} else if (mesh_index >= entry->nr_meshes) {
+		entry->hidden = xrealloc_array(entry->hidden, entry->nr_meshes, inst->model->nr_meshes, 1);
+		entry->nr_meshes = inst->model->nr_meshes;
+	}
+	entry->hidden[mesh_index] = hidden ? 1 : 0;
+}
+
+static void clear_instance_mesh_hidden(const struct RE_instance *inst)
+{
+	for (int i = 0; i < nr_mesh_vis_entries; i++) {
+		if (mesh_vis_entries[i].inst == inst) {
+			free(mesh_vis_entries[i].hidden);
+			mesh_vis_entries[i] = mesh_vis_entries[--nr_mesh_vis_entries];
+			if (nr_mesh_vis_entries == 0) {
+				free(mesh_vis_entries);
+				mesh_vis_entries = NULL;
+				cap_mesh_vis_entries = 0;
+			}
+			return;
+		}
+	}
+}
 
 static struct RE_instance *create_instance(struct RE_plugin *plugin)
 {
@@ -73,6 +138,7 @@ static void free_instance(struct RE_instance *instance);
 
 static void unload_instance(struct RE_instance *instance)
 {
+	clear_instance_mesh_hidden(instance);
 	// A billboard's motion holds frame animation state that the game can set
 	// before loading the instance data, so it must survive unloads.
 	if (instance->motion && instance->type != RE_ITYPE_BILLBOARD) {
@@ -161,7 +227,7 @@ static void update_motion(struct motion *m, float delta_frame)
 		}
 		break;
 	case RE_MOTION_STATE_LOOP:
-		if (m->loop_frame_begin == m->loop_frame_end)
+		if (m->loop_frame_end <= m->loop_frame_begin)
 			m->current_frame = m->loop_frame_begin;
 		else if (m->current_frame > m->loop_frame_end)
 			m->current_frame = m->loop_frame_begin + fmodf(m->current_frame - m->loop_frame_begin, m->loop_frame_end - m->loop_frame_begin);
@@ -170,27 +236,34 @@ static void update_motion(struct motion *m, float delta_frame)
 		VM_ERROR("Invalid motion state %d", m->state);
 	}
 
-	uint32_t anim_frame = m->current_frame - m->frame_begin;
+	float anim_f = m->current_frame - m->frame_begin;
+	uint32_t anim_frame = anim_f >= 0.0f ? (uint32_t)anim_f : 0;
 	m->texture_index = (m->mot && anim_frame < m->mot->nr_texture_indices)
 		? m->mot->texture_indices[anim_frame] : 0;
 }
 
 static void calc_motion_frame(struct motion *m, int bone, struct mot_frame *out)
 {
-	uint32_t cur_frame = m->current_frame;
-	uint32_t next_frame = ceilf(m->current_frame);
+	if (!m->mot || m->mot->nr_frames == 0) {
+		glm_vec3_zero(out->pos);
+		glm_quat_identity(out->rotq);
+		return;
+	}
+	float cf = m->current_frame >= 0.0f ? m->current_frame : 0.0f;
+	uint32_t cur_frame = (uint32_t)cf;
+	uint32_t next_frame = (uint32_t)ceilf(cf);
 	if (next_frame >= m->mot->nr_frames) {
 		*out = m->mot->motions[bone]->frames[m->mot->nr_frames - 1];
 		return;
 	}
-	float t = m->current_frame - cur_frame;
+	float t = cf - cur_frame;
 	struct mot_frame *frames = m->mot->motions[bone]->frames;
 	interpolate_motion_frame(&frames[cur_frame], &frames[next_frame], t, out);
 }
 
 static void update_bones(struct RE_instance *inst)
 {
-	if (!inst->motion)
+	if (!inst->motion || !inst->model || !inst->bone_transforms)
 		return;
 
 	mat4 parent_transforms[MAX_BONES];
@@ -246,7 +319,6 @@ static void update_bones(struct RE_instance *inst)
 struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 {
 	re_debug_init();
-	re_plugin_version = version;
 
 	char *aar_path = gamedir_path(version <= RE_TAPIR_PLUGIN ? "Data/ReignData.red" : "Data/3DData.red");
 	int error = ARCHIVE_SUCCESS;
@@ -287,6 +359,8 @@ struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 
 void RE_plugin_free(struct RE_plugin *plugin)
 {
+	if (!plugin)
+		return;
 	RE_plugin_unbind(plugin);
 	for (int i = 0; i < plugin->nr_instances; i++) {
 		if (plugin->instances[i])
@@ -296,7 +370,7 @@ void RE_plugin_free(struct RE_plugin *plugin)
 	archive_free(plugin->aar);
 	ht_foreach_value(plugin->model_cache, (void(*)(void*))model_free);
 	ht_free(plugin->model_cache);
-	ht_foreach_value(plugin->effect_cache, re_plugin_version < RE_SEAL_PLUGIN ?
+	ht_foreach_value(plugin->effect_cache, plugin->version < RE_SEAL_PLUGIN ?
 		(void(*)(void*))pae_free : (void(*)(void*))s3de_free);
 	ht_free(plugin->effect_cache);
 	for (int i = 0; i < RE_NR_BACK_CGS; i++)
@@ -306,12 +380,30 @@ void RE_plugin_free(struct RE_plugin *plugin)
 	xfree_aligned(plugin);
 }
 
+void RE_plugin_detach_sprite(struct draw_plugin *dp)
+{
+	if (!dp)
+		return;
+	struct RE_plugin *plugin = (struct RE_plugin *)((char *)dp - offsetof(struct RE_plugin, plugin));
+	if (plugin->renderer) {
+		struct RE_renderer *r = plugin->renderer;
+		plugin->renderer = NULL;
+		RE_renderer_free(r);
+	}
+	plugin->sprite = 0;
+}
+
 bool RE_plugin_bind(struct RE_plugin *plugin, int sprite)
 {
+	if (!plugin)
+		return false;
 	struct sact_sprite *sp = sact_try_get_sprite(sprite);
 	if (!sp)
 		return false;
-	plugin->renderer = RE_renderer_new();
+	if (plugin->renderer)
+		RE_plugin_unbind(plugin);
+	sprite_bind_plugin(sp, NULL);
+	plugin->renderer = RE_renderer_new(plugin->version);
 	plugin->sprite = sprite;
 	sprite_bind_plugin(sp, &plugin->plugin);
 	struct texture *texture = sprite_get_texture(sp);
@@ -323,12 +415,14 @@ bool RE_plugin_unbind(struct RE_plugin *plugin)
 {
 	if (!plugin || !plugin->renderer)
 		return false;
-	struct sact_sprite *sp = sact_try_get_sprite(plugin->sprite);
-	if (sp)
-		sprite_bind_plugin(sp, NULL);
-	RE_renderer_free(plugin->renderer);
+	struct RE_renderer *r = plugin->renderer;
+	int sp_no = plugin->sprite;
 	plugin->renderer = NULL;
 	plugin->sprite = 0;
+	struct sact_sprite *sp = sact_try_get_sprite(sp_no);
+	if (sp && sp->plugin == &plugin->plugin)
+		sprite_bind_plugin(sp, NULL);
+	RE_renderer_free(r);
 	return true;
 }
 
@@ -415,7 +509,7 @@ bool RE_set_viewport(struct RE_plugin *plugin, int x, int y, int width, int heig
 
 bool RE_set_projection(struct RE_plugin *plugin, float width, float height, float near, float far, float deg)
 {
-	if (!plugin)
+	if (!plugin || height == 0.0f)
 		return false;
 
 	float aspect = width / height;
@@ -448,7 +542,7 @@ int RE_create_instance(struct RE_plugin *plugin)
 
 bool RE_release_instance(struct RE_plugin *plugin, int instance)
 {
-	if (!plugin || !plugin->instances[instance])
+	if (!plugin || (unsigned)instance >= (unsigned)plugin->nr_instances || !plugin->instances[instance])
 		return false;
 	free_instance(plugin->instances[instance]);
 	plugin->instances[instance] = NULL;
@@ -467,12 +561,13 @@ bool RE_instance_set_type(struct RE_instance *instance, int type)
 	case RE_ITYPE_SKINNED:
 		break;
 	case RE_ITYPE_BILLBOARD:
-		assert(!instance->motion);
-		instance->motion = xcalloc(1, sizeof(struct motion));
-		instance->motion->instance = instance;
+		if (!instance->motion) {
+			instance->motion = xcalloc(1, sizeof(struct motion));
+			instance->motion->instance = instance;
+		}
 		break;
 	case RE_ITYPE_DIRECTIONAL_LIGHT:
-		if (re_plugin_version >= RE_SEAL_PLUGIN) {
+		if (instance->plugin && instance->plugin->version >= RE_SEAL_PLUGIN && !instance->light_params) {
 			instance->light_params = xmalloc(RE_NR_LIGHT_PARAMS * sizeof(float));
 			lit_reset(instance->light_params);
 		}
@@ -492,7 +587,7 @@ bool RE_instance_set_type(struct RE_instance *instance, int type)
 
 bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
 {
-	if (!instance)
+	if (!instance || !name)
 		return false;
 	const char *ext;
 	switch (instance->type) {
@@ -501,7 +596,7 @@ bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
 		ext = ".POL";
 		break;
 	case RE_ITYPE_PARTICLE_EFFECT:
-		ext = ".3de";
+		ext = instance->plugin && instance->plugin->version >= RE_SEAL_PLUGIN ? ".3de" : ".pae";
 		break;
 	default:
 		if (archive_exists_by_name(instance->plugin->aar, name, NULL))
@@ -523,6 +618,8 @@ bool RE_instance_data_exists(struct RE_instance *instance, const char *name)
 // archive as "<name>\<basename>.png", "<name>\<basename>[1].png", ...
 static bool load_billboard_frames(struct RE_instance *instance, const char *name)
 {
+	if (!instance->plugin || !instance->plugin->renderer)
+		return false;
 	const char *basename = strrchr(name, '\\');
 	basename = basename ? basename + 1 : name;
 	char *path = xmalloc(strlen(name) + strlen(basename) + 22);
@@ -552,8 +649,9 @@ static bool load_billboard_frames(struct RE_instance *instance, const char *name
 
 bool RE_instance_load(struct RE_instance *instance, const char *name)
 {
-	if (!instance)
+	if (!instance || !instance->plugin)
 		return false;
+	enum RE_plugin_version version = instance->plugin->version;
 	char *name_copy = name ? xstrdup(name) : NULL;
 	unload_instance(instance);
 	if (!name_copy || name_copy[0] == '\0') {
@@ -568,7 +666,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 	case RE_ITYPE_SKINNED:
 		instance->model = ht_get(instance->plugin->model_cache, name, NULL);
 		if (!instance->model) {
-			instance->model = model_load(instance->plugin->aar, name);
+			instance->model = model_load(instance->plugin->aar, name, version);
 			if (instance->model)
 				ht_put(instance->plugin->model_cache, name, instance->model);
 		}
@@ -581,7 +679,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 		}
 		return !!instance->model;
 	case RE_ITYPE_PARTICLE_EFFECT:
-		if (re_plugin_version >= RE_SEAL_PLUGIN) {
+		if (version >= RE_SEAL_PLUGIN) {
 			struct s3de *s3de = ht_get(instance->plugin->effect_cache, name, NULL);
 			if (!s3de) {
 				s3de = s3de_load(instance->plugin->aar, name);
@@ -598,7 +696,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 		} else {
 			struct pae *pae = ht_get(instance->plugin->effect_cache, name, NULL);
 			if (!pae) {
-				pae = pae_load(instance->plugin->aar, name);
+				pae = pae_load(instance->plugin->aar, name, version);
 				if (!pae)
 					return false;
 				ht_put(instance->plugin->effect_cache, name, pae);
@@ -612,10 +710,11 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 		}
 		return true;
 	case RE_ITYPE_BILLBOARD:
-		if (re_plugin_version >= RE_SEAL_PLUGIN)
+		if (version >= RE_SEAL_PLUGIN)
 			return load_billboard_frames(instance, name);
+		return false;
 	case RE_ITYPE_DIRECTIONAL_LIGHT:
-		if (re_plugin_version >= RE_SEAL_PLUGIN) {
+		if (version >= RE_SEAL_PLUGIN && instance->light_params) {
 			struct archive_data *dfile = archive_get_by_name(instance->plugin->aar, name);
 			if (!dfile && !strncasecmp(name, "Data\\", 5))
 				dfile = archive_get_by_name(instance->plugin->aar, name + 4);
@@ -634,7 +733,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 
 bool RE_instance_motion_exists(struct RE_instance *instance, const char *name)
 {
-	if (!instance || !instance->model)
+	if (!instance || !instance->model || !name)
 		return false;
 	if (instance->model->mot_cache && ht_get(instance->model->mot_cache, name, NULL))
 		return true;
@@ -647,7 +746,7 @@ bool RE_instance_motion_exists(struct RE_instance *instance, const char *name)
 
 bool RE_instance_load_motion(struct RE_instance *instance, const char *name)
 {
-	if (!instance)
+	if (!instance || !name)
 		return false;
 	if (instance->motion)
 		motion_free(instance->motion);
@@ -657,7 +756,7 @@ bool RE_instance_load_motion(struct RE_instance *instance, const char *name)
 
 bool RE_instance_load_next_motion(struct RE_instance *instance, const char *name)
 {
-	if (!instance)
+	if (!instance || !name)
 		return false;
 	if (instance->next_motion)
 		motion_free(instance->next_motion);
@@ -676,15 +775,16 @@ bool RE_instance_free_next_motion(struct RE_instance *instance)
 
 bool RE_instance_set_mesh_show(struct RE_instance *instance, const char *mesh_name, bool show)
 {
-	if (!instance || !instance->model)
+	if (!instance || !instance->model || !mesh_name)
 		return false;
+	bool found = false;
 	for (int i = 0; i < instance->model->nr_meshes; i++) {
 		if (!strcmp(instance->model->meshes[i].name, mesh_name)) {
-			instance->model->meshes[i].hidden = !show;
-			return true;
+			set_instance_mesh_hidden(instance, i, !show);
+			found = true;
 		}
 	}
-	return false;
+	return found;
 }
 
 // Converts from the (top-left, top-right, bottom-left, bottom-right) order used
@@ -713,7 +813,7 @@ bool RE_instance_set_vertex_uv(struct RE_instance *instance, int index, float u,
 
 int RE_instance_get_bone_index(struct RE_instance *instance, const char *name)
 {
-	if (!instance || !instance->model)
+	if (!instance || !instance->model || !name)
 		return -1;
 	for (int i = 0; i < instance->model->nr_bones; i++) {
 		if (!strcmp(instance->model->bones[i].name, name))
@@ -724,7 +824,7 @@ int RE_instance_get_bone_index(struct RE_instance *instance, const char *name)
 
 bool RE_instance_trans_local_pos_to_world_pos_by_bone(struct RE_instance *instance, int bone, vec3 offset, vec3 out)
 {
-	if (!instance || !instance->bone_transforms || (unsigned)bone >= (unsigned)instance->model->nr_bones)
+	if (!instance || !instance->model || !instance->bone_transforms || (unsigned)bone >= (unsigned)instance->model->nr_bones)
 		return false;
 
 	if (instance->local_transform_needs_update)
@@ -756,6 +856,8 @@ bool RE_instance_calc_height_ex(struct RE_instance *instance, float x, float z, 
 	}
 
 	if (!instance->height_detector) {
+		if (!instance->plugin || !instance->plugin->renderer)
+			return false;
 		instance->height_detector = RE_renderer_create_height_detector(instance->plugin->renderer, instance->model);
 	}
 
@@ -785,8 +887,8 @@ float RE_instance_calc_height(struct RE_instance *instance, float x, float z)
 
 float RE_instance_calc_2d_detection_height(struct RE_instance *instance, float x, float z)
 {
-	if (!instance || !instance->model->collider)
-		return false;
+	if (!instance || !instance->model || !instance->model->collider)
+		return 0.f;
 	vec2 xz = { x, -z };
 	float h;
 	if (collider_height(instance->model->collider, xz, &h))
@@ -796,7 +898,7 @@ float RE_instance_calc_2d_detection_height(struct RE_instance *instance, float x
 
 bool RE_instance_calc_2d_detection(struct RE_instance *instance, float x0, float y0, float z0, float x1, float y1, float z1, float *x2, float *y2, float *z2, float radius)
 {
-	if (!instance || !instance->model->collider)
+	if (!instance || !instance->model || !instance->model->collider)
 		return false;
 	vec2 p0 = { x0, -z0 };
 	vec2 p1 = { x1, -z1 };
@@ -823,7 +925,7 @@ bool RE_instance_set_debug_draw_shadow_volume(struct RE_instance *inst, bool dra
 
 bool RE_instance_find_path(struct RE_instance *inst, vec3 start, vec3 goal)
 {
-	if (!inst || !inst->model->collider)
+	if (!inst || !inst->model || !inst->model->collider)
 		return false;
 	mat4 vp_transform;
 	RE_calc_view_matrix(&inst->plugin->camera, NULL, vp_transform);
@@ -833,7 +935,7 @@ bool RE_instance_find_path(struct RE_instance *inst, vec3 start, vec3 goal)
 
 const vec3 *RE_instance_get_path_line(struct RE_instance *inst, int *nr_path_points)
 {
-	if (!inst || !inst->model->collider)
+	if (!inst || !inst->model || !inst->model->collider)
 		return NULL;
 	*nr_path_points = inst->model->collider->nr_path_points;
 	return inst->model->collider->path_points;
@@ -841,15 +943,17 @@ const vec3 *RE_instance_get_path_line(struct RE_instance *inst, int *nr_path_poi
 
 bool RE_instance_optimize_path_line(struct RE_instance *inst)
 {
-	if (!inst || !inst->model->collider)
+	if (!inst || !inst->model || !inst->model->collider)
 		return false;
 	return collider_optimize_path(inst->model->collider);
 }
 
 static void calc_eye_ray(struct RE_plugin *plugin, int view_x, int view_y, vec3 origin, vec3 direction)
 {
-	float ndc_x = 2.f * view_x / plugin->renderer->viewport_width - 1.f;
-	float ndc_y = 1.f - 2.f * view_y / plugin->renderer->viewport_height;
+	float vw = plugin->renderer->viewport_width > 0 ? plugin->renderer->viewport_width : 1.f;
+	float vh = plugin->renderer->viewport_height > 0 ? plugin->renderer->viewport_height : 1.f;
+	float ndc_x = 2.f * view_x / vw - 1.f;
+	float ndc_y = 1.f - 2.f * view_y / vh;
 	vec4 near = { ndc_x, ndc_y, -1.f, 1.f };
 	vec4 far  = { ndc_x, ndc_y,  1.f, 1.f };
 
@@ -1026,7 +1130,7 @@ bool RE_plugin_optimize_path_line(struct RE_plugin *plugin)
 
 bool RE_plugin_transform_pos_to_view_pos(struct RE_plugin *plugin, float x, float y, float z, int *view_x, int *view_y)
 {
-	if (!plugin)
+	if (!plugin || !plugin->renderer)
 		return false;
 
 	mat4 vp;
@@ -1085,12 +1189,15 @@ bool RE_plugin_get_camera_z_vector(struct RE_plugin *plugin, vec3 out)
 
 void RE_plugin_reset_light_param(struct RE_plugin *plugin)
 {
-	lit_reset(plugin->light_params);
+	if (plugin)
+		lit_reset(plugin->light_params);
 }
 
 bool RE_plugin_set_fog_type(struct RE_plugin *plugin, int type)
 {
-	if (re_plugin_version == RE_REIGN_PLUGIN) {
+	if (!plugin)
+		return false;
+	if (plugin->version == RE_REIGN_PLUGIN) {
 		switch (type) {
 		case 0: plugin->fog_type = RE_FOG_NONE; return true;
 		case 1: plugin->fog_type = RE_FOG_LINEAR; return true;
@@ -1110,7 +1217,9 @@ bool RE_plugin_set_fog_type(struct RE_plugin *plugin, int type)
 
 int RE_plugin_get_fog_type(struct RE_plugin *plugin)
 {
-	if (re_plugin_version == RE_REIGN_PLUGIN) {
+	if (!plugin)
+		return 0;
+	if (plugin->version == RE_REIGN_PLUGIN) {
 		switch (plugin->fog_type) {
 		case RE_FOG_NONE: return 0;
 		case RE_FOG_LINEAR: return 1;
@@ -1181,7 +1290,9 @@ bool RE_motion_set_frame_range(struct motion *motion, float begin, float end)
 		return false;
 	motion->frame_begin = begin;
 	motion->frame_end = end;
-	if (motion->instance->type == RE_ITYPE_BILLBOARD && re_plugin_version < RE_SEAL_PLUGIN) {
+	if (motion->instance && motion->instance->type == RE_ITYPE_BILLBOARD &&
+	    motion->instance->plugin && motion->instance->plugin->version < RE_SEAL_PLUGIN &&
+	    motion->instance->plugin->renderer) {
 		for (int i = begin; i < end; i++) {
 			if (!RE_renderer_load_billboard_texture_by_no(motion->instance->plugin->renderer, i))
 				return false;
@@ -1196,7 +1307,9 @@ bool RE_motion_set_loop_frame_range(struct motion *motion, float begin, float en
 		return false;
 	motion->loop_frame_begin = begin;
 	motion->loop_frame_end = end;
-	if (motion->instance->type == RE_ITYPE_BILLBOARD && re_plugin_version < RE_SEAL_PLUGIN) {
+	if (motion->instance && motion->instance->type == RE_ITYPE_BILLBOARD &&
+	    motion->instance->plugin && motion->instance->plugin->version < RE_SEAL_PLUGIN &&
+	    motion->instance->plugin->renderer) {
 		for (int i = begin; i < end; i++) {
 			if (!RE_renderer_load_billboard_texture_by_no(motion->instance->plugin->renderer, i))
 				return false;
@@ -1280,7 +1393,7 @@ int RE_particle_get_num_pos_unit(struct particle_object *po, int pos)
 
 static struct particle_position_unit *get_position_unit(struct particle_object *po, int pos, int unit)
 {
-	if (!po || pos >= NR_PARTICLE_POSITIONS || !po->pae_obj->position[pos] || unit >= NR_PARTICLE_POSITION_UNITS)
+	if (!po || pos < 0 || pos >= NR_PARTICLE_POSITIONS || !po->pae_obj->position[pos] || unit < 0 || unit >= NR_PARTICLE_POSITION_UNITS)
 		return NULL;
 	return &po->pae_obj->position[pos]->units[unit];
 }
@@ -1313,7 +1426,7 @@ int RE_particle_get_num_texture(struct particle_object *po)
 
 const char *RE_particle_get_texture(struct particle_object *po, int texture)
 {
-	if (!po || texture >= po->pae_obj->nr_textures)
+	if (!po || texture < 0 || texture >= po->pae_obj->nr_textures)
 		return NULL;
 	return po->pae_obj->textures[texture];
 }
@@ -1329,7 +1442,7 @@ bool RE_particle_get_size(struct particle_object *po, float *begin_size, float *
 
 bool RE_particle_get_size2(struct particle_object *po, int frame, float *size)
 {
-	if (!po || frame >= po->pae_obj->nr_sizes2)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_sizes2)
 		return false;
 	*size = po->pae_obj->sizes2[frame];
 	return true;
@@ -1337,7 +1450,7 @@ bool RE_particle_get_size2(struct particle_object *po, int frame, float *size)
 
 bool RE_particle_get_size_x(struct particle_object *po, int frame, float *size)
 {
-	if (!po || frame >= po->pae_obj->nr_sizes_x)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_sizes_x)
 		return false;
 	*size = po->pae_obj->sizes_x[frame];
 	return true;
@@ -1345,7 +1458,7 @@ bool RE_particle_get_size_x(struct particle_object *po, int frame, float *size)
 
 bool RE_particle_get_size_y(struct particle_object *po, int frame, float *size)
 {
-	if (!po || frame >= po->pae_obj->nr_sizes_y)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_sizes_y)
 		return false;
 	*size = po->pae_obj->sizes_y[frame];
 	return true;
@@ -1353,7 +1466,7 @@ bool RE_particle_get_size_y(struct particle_object *po, int frame, float *size)
 
 bool RE_particle_get_size_type(struct particle_object *po, int frame, int *type)
 {
-	if (!po || frame >= po->pae_obj->nr_size_types)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_size_types)
 		return false;
 	*type = po->pae_obj->size_types[frame];
 	return true;
@@ -1361,7 +1474,7 @@ bool RE_particle_get_size_type(struct particle_object *po, int frame, int *type)
 
 bool RE_particle_get_size_x_type(struct particle_object *po, int frame, int *type)
 {
-	if (!po || frame >= po->pae_obj->nr_size_x_types)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_size_x_types)
 		return false;
 	*type = po->pae_obj->size_x_types[frame];
 	return true;
@@ -1369,7 +1482,7 @@ bool RE_particle_get_size_x_type(struct particle_object *po, int frame, int *typ
 
 bool RE_particle_get_size_y_type(struct particle_object *po, int frame, int *type)
 {
-	if (!po || frame >= po->pae_obj->nr_size_y_types)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_size_y_types)
 		return false;
 	*type = po->pae_obj->size_y_types[frame];
 	return true;
@@ -1587,7 +1700,7 @@ int RE_particle_get_num_damage(struct particle_object *po)
 
 int RE_particle_get_damage(struct particle_object *po, int frame)
 {
-	if (!po || frame >= po->pae_obj->nr_damages)
+	if (!po || frame < 0 || frame >= po->pae_obj->nr_damages)
 		return 0;
 	return po->pae_obj->damages[frame];
 }
@@ -1762,7 +1875,7 @@ static void load_re_motion(struct iarray_reader *r, struct RE_instance *inst, bo
 		m = inst->next_motion;
 	}
 	if (m) {
-		if (!is_next && inst->type == RE_ITYPE_BILLBOARD && re_plugin_version < RE_SEAL_PLUGIN) {
+		if (!is_next && inst->type == RE_ITYPE_BILLBOARD && inst->plugin && inst->plugin->version < RE_SEAL_PLUGIN) {
 			RE_motion_set_frame_range(m, fb, fe);
 			RE_motion_set_loop_frame_range(m, lfb, lfe);
 		}
@@ -1824,7 +1937,7 @@ static void save_re_instance(struct iarray_writer *w, struct RE_instance *inst)
 	int nr_meshes = inst->model ? inst->model->nr_meshes : 0;
 	iarray_write(w, nr_meshes);
 	for (int i = 0; i < nr_meshes; i++)
-		iarray_write(w, inst->model->meshes[i].hidden);
+		iarray_write(w, RE_instance_is_mesh_hidden(inst, i));
 
 	save_re_motion(w, inst->motion);
 	save_re_motion(w, inst->next_motion);
@@ -1928,7 +2041,7 @@ static void load_re_instance(struct RE_plugin *plugin, int slot, struct iarray_r
 	for (int i = 0; i < nr_meshes; i++) {
 		bool hidden = !!iarray_read(r);
 		if (inst && inst->model && i < inst->model->nr_meshes)
-			inst->model->meshes[i].hidden = hidden;
+			set_instance_mesh_hidden(inst, i, hidden);
 	}
 
 	load_re_motion(r, inst, false);
@@ -2024,8 +2137,6 @@ void RE_plugin_save(struct RE_plugin *p, struct iarray_writer *w)
 
 bool RE_plugin_load(struct RE_plugin *p, struct iarray_reader *r)
 {
-	if (p)
-		re_plugin_version = p->version;
 	bool suspended = !!iarray_read(r);
 	vec3 dummy3;
 	load_vec3(r, p ? p->camera.pos : dummy3);

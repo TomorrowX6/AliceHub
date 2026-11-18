@@ -1238,6 +1238,35 @@ class GamepadEditorActivity : Activity() {
         if (rebuildBar) rebuildElementInspector()
     }
 
+    private val trackedDialogs = mutableListOf<android.app.Dialog>()
+
+    private fun trackDialog(dlg: android.app.Dialog) {
+        trackedDialogs.removeAll { !it.isShowing }
+        if (!trackedDialogs.contains(dlg)) {
+            trackedDialogs.add(dlg)
+        }
+    }
+
+    private fun dismissTrackedDialogs() {
+        val copy = trackedDialogs.toList()
+        trackedDialogs.clear()
+        for (dlg in copy) {
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        uiHandler.removeCallbacks(livePollRunnable)
+        if (::undoBar.isInitialized) {
+            undoBar.removeCallbacks(hideUndoRunnable)
+        }
+        dismissTrackedDialogs()
+        super.onDestroy()
+    }
+
     private fun showRenameDialog(spec: VirtualControlSpec) {
         val input = EditText(this).apply {
             setText(GamepadBridge.displayLabel(this@GamepadEditorActivity, spec))
@@ -1256,6 +1285,7 @@ class GamepadEditorActivity : Activity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+            .also(::trackDialog)
     }
 
     private fun showPresetPicker() {
@@ -1296,12 +1326,14 @@ class GamepadEditorActivity : Activity() {
                             .setPositiveButton(R.string.ok) { _, _ -> apply() }
                             .setNegativeButton(R.string.cancel, null)
                             .show()
+                            .also(::trackDialog)
                     } else {
                         apply()
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+                .also(::trackDialog)
         } else {
             val names = arrayOf(
                 tr("ADV 鼠键映射", "ADV マップ", "ADV Mapping"),
@@ -1333,6 +1365,7 @@ class GamepadEditorActivity : Activity() {
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+                .also(::trackDialog)
         }
     }
 
@@ -1428,6 +1461,7 @@ class GamepadEditorActivity : Activity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+            .also(::trackDialog)
     }
 
     private fun addPadControl(spec: VirtualControlSpec) {
@@ -1509,6 +1543,7 @@ class GamepadEditorActivity : Activity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+            .also(::trackDialog)
     }
 
     private fun hasUnsavedChanges(): Boolean =
@@ -1532,6 +1567,7 @@ class GamepadEditorActivity : Activity() {
             }
             .setNeutralButton(R.string.cancel, null)
             .show()
+            .also(::trackDialog)
     }
 
     @Deprecated("Deprecated in Java")
@@ -1610,7 +1646,15 @@ class GamepadEditorActivity : Activity() {
             if (raw.isNotBlank()) {
                 val obj = JSONObject(raw)
                 val mask = obj.optInt("buttonsMask", 0)
-                if (mask != 0 || pads.isNotEmpty()) {
+                val nativeCount = obj.optInt("connectedCount", 0)
+                if (pads.isEmpty() && nativeCount > 0) {
+                    val cArr = obj.optJSONArray("controllers")
+                    val cName = cArr?.optJSONObject(0)?.optString("name")?.takeIf { it.isNotBlank() }
+                        ?: "Game Controller"
+                    physStatusTv.text = "● $cName"
+                    physStatusTv.setTextColor(COL_SUCCESS)
+                }
+                if (mask != 0 || pads.isNotEmpty() || nativeCount > 0) {
                     pressedMask = mask
                 }
                 val axesArr = obj.optJSONArray("axes")
@@ -1618,6 +1662,13 @@ class GamepadEditorActivity : Activity() {
                     for (i in 0 until 6) {
                         stickScopeView.axes[i] = axesArr.optDouble(i, 0.0).toFloat()
                     }
+                } else if (obj.has("lx") || obj.has("ly") || obj.has("rx") || obj.has("ry") || obj.has("lt") || obj.has("rt")) {
+                    stickScopeView.axes[0] = obj.optDouble("lx", 0.0).toFloat()
+                    stickScopeView.axes[1] = obj.optDouble("ly", 0.0).toFloat()
+                    stickScopeView.axes[2] = obj.optDouble("rx", 0.0).toFloat()
+                    stickScopeView.axes[3] = obj.optDouble("ry", 0.0).toFloat()
+                    stickScopeView.axes[4] = obj.optDouble("lt", 0.0).toFloat()
+                    stickScopeView.axes[5] = obj.optDouble("rt", 0.0).toFloat()
                 }
                 stickScopeView.invalidate()
                 if (pressedMask != prevVisualPressedMask) {

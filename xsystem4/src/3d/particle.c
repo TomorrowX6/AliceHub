@@ -14,6 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <ctype.h>
 #include <limits.h>
 #include <cglm/cglm.h>
 
@@ -284,7 +285,7 @@ static struct pae *parse_pae(char *text)
 			// Object context
 			if (!*text) {
 				WARNING("unexpected EOF");
-				return false;
+				goto err;
 			} else if (MATCH("}")) {
 				current_object = NULL;
 			} else if (MATCH("種類 = " KEYWORD, string_buf)) {
@@ -351,7 +352,7 @@ static struct pae *parse_pae(char *text)
 				if (current_object->blend_type < 0)
 					goto err;
 			} else if (MATCH("テクスチャアニメフレーム = %f", &f)) {
-				current_object->texture_anime_frame = f;
+				current_object->texture_anime_frame = f > 0.0f ? f : 1.0f;
 			} else if (MATCH("テクスチャアニメ時間 = %d", &n)) {
 				current_object->texture_anime_time = n;
 			} else if (MATCH("ポリゴン = ")) {
@@ -630,7 +631,7 @@ static void init_particle_instances(struct particle_object *po)
 	}
 }
 
-struct pae *pae_load(struct archive *aar, const char *path)
+struct pae *pae_load(struct archive *aar, const char *path, enum RE_plugin_version version)
 {
 	const char *basename = strrchr(path, '\\');
 	basename = basename ? basename + 1 : path;
@@ -671,7 +672,7 @@ struct pae *pae_load(struct archive *aar, const char *path)
 		if (po->polygon_name && *po->polygon_name) {
 			char *pol_path = xmalloc(strlen(path) + strlen(po->polygon_name) + 2);
 			sprintf(pol_path, "%s\\%s", path, po->polygon_name);
-			po->model = model_load(aar, pol_path);
+			po->model = model_load(aar, pol_path, version);
 			free(pol_path);
 		}
 	}

@@ -3,11 +3,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <strings.h>
+#include <unistd.h>
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
 #include <time.h>
 #include <pthread.h>
+#include <zlib.h>
 
 #ifdef __ANDROID__
 #include <jni.h>
@@ -186,6 +191,9 @@ void vm_call_method_1(int fno, int struct_page, int value);
 
 static pthread_mutex_t g_mod_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_mod_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t g_cfg_io_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint32_t g_cfg_tmp_seq = 0;
+static bool g_vm_ready_cached = false;
 static int g_live_lock_mask = 0;
 static bool g_has_lock_mask_init = false;
 static int g_dohna_lock_mask = 0;
@@ -229,6 +237,94 @@ static char *g_cached_live_state_json = NULL;
 static char *g_modifier_config_path = NULL;
 static uint32_t g_live_state_req_seq = 0;
 static uint32_t g_live_state_built_seq = 0;
+
+/* Validate UTF-8 and replace any invalid/truncated/overlong/surrogate byte
+ * sequence with U+FFFD (EF BF BD) so cJSON and JNI never see invalid UTF-8. */
+static char *sanitize_utf8_alloc(const char *src, size_t len)
+{
+	if (!src || len == 0)
+		return strdup("");
+	const unsigned char *s = (const unsigned char *)src;
+	char *out = malloc(len * 3u + 1u);
+	if (!out)
+		return strdup("");
+	size_t o = 0;
+	size_t i = 0;
+	while (i < len && s[i] != 0) {
+		unsigned char b0 = s[i];
+		if (b0 < 0x80u) {
+			out[o++] = (char)b0;
+			i++;
+		} else if (b0 >= 0xC2u && b0 <= 0xDFu) {
+			if (i + 1 < len && (s[i + 1] & 0xC0u) == 0x80u) {
+				out[o++] = (char)b0;
+				out[o++] = (char)s[i + 1];
+				i += 2;
+			} else {
+				out[o++] = (char)0xEF;
+				out[o++] = (char)0xBF;
+				out[o++] = (char)0xBD;
+				i++;
+			}
+		} else if (b0 >= 0xE0u && b0 <= 0xEFu) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xE0u) ? (s[i + 1] >= 0xA0u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xEDu) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x9Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			if (b1_ok && i + 2 < len && (s[i + 2] & 0xC0u) == 0x80u) {
+				out[o++] = (char)b0;
+				out[o++] = (char)s[i + 1];
+				out[o++] = (char)s[i + 2];
+				i += 3;
+			} else {
+				out[o++] = (char)0xEF;
+				out[o++] = (char)0xBF;
+				out[o++] = (char)0xBD;
+				i += b1_ok ? 2 : 1;
+			}
+		} else if (b0 >= 0xF0u && b0 <= 0xF4u) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xF0u) ? (s[i + 1] >= 0x90u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xF4u) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x8Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			bool b2_ok = b1_ok && (i + 2 < len) && ((s[i + 2] & 0xC0u) == 0x80u);
+			if (b2_ok && i + 3 < len && (s[i + 3] & 0xC0u) == 0x80u) {
+				out[o++] = (char)b0;
+				out[o++] = (char)s[i + 1];
+				out[o++] = (char)s[i + 2];
+				out[o++] = (char)s[i + 3];
+				i += 4;
+			} else {
+				out[o++] = (char)0xEF;
+				out[o++] = (char)0xBF;
+				out[o++] = (char)0xBD;
+				i += b2_ok ? 3 : (b1_ok ? 2 : 1);
+			}
+		} else {
+			out[o++] = (char)0xEF;
+			out[o++] = (char)0xBF;
+			out[o++] = (char)0xBD;
+			i++;
+		}
+	}
+	out[o] = '\0';
+	return out;
+}
+
+/* Convert Shift-JIS / GBK VM text to guaranteed-valid UTF-8 without ever
+ * falling back to raw non-ASCII bytes. */
+static char *mod_sjis2utf_safe(const char *src, size_t len)
+{
+	if (!src || len == 0 || !src[0])
+		return strdup("");
+	char *u = sjis2utf(src, len);
+	if (u) {
+		char *clean = sanitize_utf8_alloc(u, strlen(u));
+		free(u);
+		return clean;
+	}
+	return sanitize_utf8_alloc(src, len);
+}
 
 /* =========================================================================
  * Cross-Platform & Out-of-Game gsave (.asd) Helpers
@@ -382,6 +478,47 @@ static void persist_streamer_mode_to_savedir(bool streamer_mode_enabled)
 	free(cfg_path);
 }
 
+static bool write_config_atomic_unique(const char *cfg_path, const char *data, size_t len, uint32_t seq)
+{
+	if (!cfg_path || !cfg_path[0] || !data)
+		return false;
+#ifdef _WIN32
+	unsigned long pid_v = 0;
+#else
+	unsigned long pid_v = (unsigned long)getpid();
+#endif
+	unsigned long tid_v = (unsigned long)(uintptr_t)pthread_self();
+	size_t cap = strlen(cfg_path) + 64;
+	char *tmp_path = malloc(cap);
+	if (!tmp_path)
+		return false;
+	snprintf(tmp_path, cap, "%s.%lu.%lu.%u.tmp", cfg_path, pid_v, tid_v, seq);
+
+	FILE *fp = fopen(tmp_path, "wb");
+	if (!fp) {
+		free(tmp_path);
+		return false;
+	}
+	bool ok = (len == 0 || fwrite(data, 1, len, fp) == len) && fflush(fp) == 0;
+#ifndef _WIN32
+	if (ok) {
+		int fd = fileno(fp);
+		if (fd >= 0)
+			(void)fsync(fd);
+	}
+#endif
+	if (fclose(fp) != 0)
+		ok = false;
+	if (ok) {
+		if (rename(tmp_path, cfg_path) != 0)
+			ok = false;
+	}
+	if (!ok)
+		remove(tmp_path);
+	free(tmp_path);
+	return ok;
+}
+
 static void persist_modifier_config_from_native(int lock_mask)
 {
 	char *cfg_path = NULL;
@@ -395,6 +532,15 @@ static void persist_modifier_config_from_native(int lock_mask)
 	int cur_r09_mask = 0;
 	int cur_r01_mask = 0;
 	int cur_r02_mask = 0;
+	bool has_dd_init = false;
+	bool has_ev_init = false;
+	bool has_sr_init = false;
+	bool has_r03_init = false;
+	bool has_r08_init = false;
+	bool has_r09_init = false;
+	bool has_r01_init = false;
+	bool has_r02_init = false;
+
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_modifier_config_path && g_modifier_config_path[0])
 		cfg_path = strdup(g_modifier_config_path);
@@ -408,6 +554,14 @@ static void persist_modifier_config_from_native(int lock_mask)
 	cur_r09_mask = g_r09_lock_mask;
 	cur_r01_mask = g_r01_lock_mask;
 	cur_r02_mask = g_r02_lock_mask;
+	has_dd_init = g_has_dohna_lock_mask_init;
+	has_ev_init = g_has_evenicle_lock_mask_init;
+	has_sr_init = g_has_sr_lock_mask_init;
+	has_r03_init = g_has_r03_lock_mask_init;
+	has_r08_init = g_has_r08_lock_mask_init;
+	has_r09_init = g_has_r09_lock_mask_init;
+	has_r01_init = g_has_r01_lock_mask_init;
+	has_r02_init = g_has_r02_lock_mask_init;
 	pthread_mutex_unlock(&g_mod_mutex);
 
 #ifndef __ANDROID__
@@ -419,6 +573,9 @@ static void persist_modifier_config_from_native(int lock_mask)
 #endif
 	if (!cfg_path)
 		return;
+
+	pthread_mutex_lock(&g_cfg_io_mutex);
+	uint32_t tmp_seq = ++g_cfg_tmp_seq;
 
 	cJSON *root = NULL;
 	if (file_exists(cfg_path)) {
@@ -434,9 +591,10 @@ static void persist_modifier_config_from_native(int lock_mask)
 		root = cJSON_CreateObject();
 		cJSON_AddBoolToObject(root, "floating_enabled", true);
 		cJSON_AddBoolToObject(root, "floating_default_on_v1", true);
-		cJSON_AddBoolToObject(root, "ctrl_overlay_enabled", true);
+		cJSON_AddBoolToObject(root, "ctrl_overlay_enabled", false);
 		cJSON_AddBoolToObject(root, "ctrl_default_on_v1", true);
-		cJSON_AddBoolToObject(root, "ctrl_overlay_visible", true);
+		cJSON_AddBoolToObject(root, "ctrl_default_off_v2", true);
+		cJSON_AddBoolToObject(root, "ctrl_overlay_visible", false);
 		cJSON_AddNumberToObject(root, "font_scale_pct", cur_font_pct);
 		cJSON_AddNumberToObject(root, "scrollbar_scale_pct", cur_sb_pct);
 	}
@@ -467,16 +625,17 @@ static void persist_modifier_config_from_native(int lock_mask)
 	int disk_font = (j_font && cJSON_IsNumber(j_font)) ? j_font->valueint : -1;
 	int disk_sb = (j_sb && cJSON_IsNumber(j_sb)) ? j_sb->valueint : -1;
 	if (j_dis && j_mask && cur_dis == want_dis && cur_mask == lock_mask &&
-	    (!g_has_dohna_lock_mask_init || (j_dd_mask && disk_dd_mask == cur_dd_mask)) &&
-	    (!g_has_evenicle_lock_mask_init || (j_ev_mask && disk_ev_mask == cur_ev_mask)) &&
-	    (!g_has_sr_lock_mask_init || (j_sr_mask && disk_sr_mask == cur_sr_mask)) &&
-	    (!g_has_r03_lock_mask_init || (j_r03_mask && disk_r03_mask == cur_r03_mask)) &&
-	    (!g_has_r08_lock_mask_init || (j_r08_mask && disk_r08_mask == cur_r08_mask)) &&
-	    (!g_has_r09_lock_mask_init || (j_r09_mask && disk_r09_mask == cur_r09_mask)) &&
-	    (!g_has_r01_lock_mask_init || (j_r01_mask && disk_r01_mask == cur_r01_mask)) &&
-	    (!g_has_r02_lock_mask_init || (j_r02_mask && disk_r02_mask == cur_r02_mask)) &&
+	    (!has_dd_init || (j_dd_mask && disk_dd_mask == cur_dd_mask)) &&
+	    (!has_ev_init || (j_ev_mask && disk_ev_mask == cur_ev_mask)) &&
+	    (!has_sr_init || (j_sr_mask && disk_sr_mask == cur_sr_mask)) &&
+	    (!has_r03_init || (j_r03_mask && disk_r03_mask == cur_r03_mask)) &&
+	    (!has_r08_init || (j_r08_mask && disk_r08_mask == cur_r08_mask)) &&
+	    (!has_r09_init || (j_r09_mask && disk_r09_mask == cur_r09_mask)) &&
+	    (!has_r01_init || (j_r01_mask && disk_r01_mask == cur_r01_mask)) &&
+	    (!has_r02_init || (j_r02_mask && disk_r02_mask == cur_r02_mask)) &&
 	    disk_font == cur_font_pct && disk_sb == cur_sb_pct) {
 		cJSON_Delete(root);
+		pthread_mutex_unlock(&g_cfg_io_mutex);
 		free(cfg_path);
 		return;
 	}
@@ -488,37 +647,37 @@ static void persist_modifier_config_from_native(int lock_mask)
 	cJSON_AddBoolToObject(root, "disable_streamer_mode", want_dis);
 	cJSON_DeleteItemFromObject(root, "lock_mask");
 	cJSON_AddNumberToObject(root, "lock_mask", lock_mask);
-	if (g_has_dohna_lock_mask_init || j_dd_mask) {
+	if (has_dd_init || j_dd_mask) {
 		cJSON_DeleteItemFromObject(root, "dohna_lock_mask");
-		cJSON_AddNumberToObject(root, "dohna_lock_mask", g_has_dohna_lock_mask_init ? cur_dd_mask : disk_dd_mask);
+		cJSON_AddNumberToObject(root, "dohna_lock_mask", has_dd_init ? cur_dd_mask : disk_dd_mask);
 	}
-	if (g_has_evenicle_lock_mask_init || j_ev_mask) {
+	if (has_ev_init || j_ev_mask) {
 		cJSON_DeleteItemFromObject(root, "evenicle_lock_mask");
-		cJSON_AddNumberToObject(root, "evenicle_lock_mask", g_has_evenicle_lock_mask_init ? cur_ev_mask : disk_ev_mask);
+		cJSON_AddNumberToObject(root, "evenicle_lock_mask", has_ev_init ? cur_ev_mask : disk_ev_mask);
 	}
-	if (g_has_sr_lock_mask_init || j_sr_mask) {
+	if (has_sr_init || j_sr_mask) {
 		cJSON_DeleteItemFromObject(root, "sengokurance_lock_mask");
-		cJSON_AddNumberToObject(root, "sengokurance_lock_mask", g_has_sr_lock_mask_init ? cur_sr_mask : disk_sr_mask);
+		cJSON_AddNumberToObject(root, "sengokurance_lock_mask", has_sr_init ? cur_sr_mask : disk_sr_mask);
 	}
-	if (g_has_r03_lock_mask_init || j_r03_mask) {
+	if (has_r03_init || j_r03_mask) {
 		cJSON_DeleteItemFromObject(root, "rance03_lock_mask");
-		cJSON_AddNumberToObject(root, "rance03_lock_mask", g_has_r03_lock_mask_init ? cur_r03_mask : disk_r03_mask);
+		cJSON_AddNumberToObject(root, "rance03_lock_mask", has_r03_init ? cur_r03_mask : disk_r03_mask);
 	}
-	if (g_has_r08_lock_mask_init || j_r08_mask) {
+	if (has_r08_init || j_r08_mask) {
 		cJSON_DeleteItemFromObject(root, "rance08_lock_mask");
-		cJSON_AddNumberToObject(root, "rance08_lock_mask", g_has_r08_lock_mask_init ? cur_r08_mask : disk_r08_mask);
+		cJSON_AddNumberToObject(root, "rance08_lock_mask", has_r08_init ? cur_r08_mask : disk_r08_mask);
 	}
-	if (g_has_r09_lock_mask_init || j_r09_mask) {
+	if (has_r09_init || j_r09_mask) {
 		cJSON_DeleteItemFromObject(root, "rance09_lock_mask");
-		cJSON_AddNumberToObject(root, "rance09_lock_mask", g_has_r09_lock_mask_init ? cur_r09_mask : disk_r09_mask);
+		cJSON_AddNumberToObject(root, "rance09_lock_mask", has_r09_init ? cur_r09_mask : disk_r09_mask);
 	}
-	if (g_has_r01_lock_mask_init || j_r01_mask) {
+	if (has_r01_init || j_r01_mask) {
 		cJSON_DeleteItemFromObject(root, "rance01_lock_mask");
-		cJSON_AddNumberToObject(root, "rance01_lock_mask", g_has_r01_lock_mask_init ? cur_r01_mask : disk_r01_mask);
+		cJSON_AddNumberToObject(root, "rance01_lock_mask", has_r01_init ? cur_r01_mask : disk_r01_mask);
 	}
-	if (g_has_r02_lock_mask_init || j_r02_mask) {
+	if (has_r02_init || j_r02_mask) {
 		cJSON_DeleteItemFromObject(root, "rance02_lock_mask");
-		cJSON_AddNumberToObject(root, "rance02_lock_mask", g_has_r02_lock_mask_init ? cur_r02_mask : disk_r02_mask);
+		cJSON_AddNumberToObject(root, "rance02_lock_mask", has_r02_init ? cur_r02_mask : disk_r02_mask);
 	}
 	cJSON_DeleteItemFromObject(root, "font_scale_pct");
 	cJSON_AddNumberToObject(root, "font_scale_pct", cur_font_pct);
@@ -533,31 +692,24 @@ static void persist_modifier_config_from_native(int lock_mask)
 	if (!cJSON_GetObjectItem(root, "ctrl_default_on_v1"))
 		cJSON_AddBoolToObject(root, "ctrl_default_on_v1", true);
 	if (!cJSON_GetObjectItem(root, "ctrl_overlay_enabled"))
-		cJSON_AddBoolToObject(root, "ctrl_overlay_enabled", true);
+		cJSON_AddBoolToObject(root, "ctrl_overlay_enabled", false);
 	if (!cJSON_GetObjectItem(root, "ctrl_overlay_visible")) {
 		cJSON *j_ctrl_en = cJSON_GetObjectItem(root, "ctrl_overlay_enabled");
-		bool ctrl_en = j_ctrl_en ? cJSON_IsTrue(j_ctrl_en) : true;
+		bool ctrl_en = j_ctrl_en ? cJSON_IsTrue(j_ctrl_en) : false;
 		cJSON_AddBoolToObject(root, "ctrl_overlay_visible", ctrl_en);
 	}
 
 	char *out = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
 	if (out) {
-		char *tmp_path = NULL;
-		FILE *fp = atomic_save_open(cfg_path, "wb", &tmp_path);
-		if (fp) {
-			size_t len = strlen(out);
-			if (fwrite(out, 1, len, fp) == len)
-				atomic_save_commit(fp, cfg_path, tmp_path, true);
-			else
-				atomic_save_abort(fp, tmp_path);
-		}
+		write_config_atomic_unique(cfg_path, out, strlen(out), tmp_seq);
 		free(out);
 	}
+	pthread_mutex_unlock(&g_cfg_io_mutex);
 	free(cfg_path);
 }
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(MODIFIER_STANDALONE_TEST)
 
 static int32_t gs_get_field_int(struct gsave *gs, int32_t rec_idx, const char *name1, const char *name2, int32_t def_val)
 {
@@ -718,7 +870,7 @@ static char *read_local_save_summary_str(const char *path)
 	cJSON_AddBoolToObject(root, "valid", true);
 	cJSON_AddBoolToObject(root, "ok", true);
 	if (gs->nr_comments > 0 && gs->comments[0] && gs->comments[0]->size > 0) {
-		char *utf = sjis2utf(gs->comments[0]->text, gs->comments[0]->size);
+		char *utf = mod_sjis2utf_safe(gs->comments[0]->text, (size_t)gs->comments[0]->size);
 		cJSON_AddStringToObject(root, "comment", utf ? utf : "");
 		free(utf);
 	} else {
@@ -971,18 +1123,521 @@ static bool write_local_save_mod_str(const char *path, const char *mod_json_str)
 	return ok;
 }
 
+enum csd_value_type {
+	CSD_INT    = 1,
+	CSD_FLOAT  = 2,
+	CSD_STRING = 3,
+	CSD_BOOL   = 4,
+};
+
+struct csd_entry {
+	char *key;
+	int32_t type;
+	int32_t i_val;
+	float f_val;
+	char *s_val;
+};
+
+struct csd_table {
+	struct csd_entry *entries;
+	size_t count;
+	size_t cap;
+};
+
+struct csd_buf {
+	uint8_t *data;
+	size_t len;
+	size_t cap;
+};
+
+static const struct {
+	const char *key;
+	bool default_bool;
+} s_csd_r10_keys[] = {
+	{ "totalClearPoint",    false },
+	{ "clearBPointMax",     false },
+	{ "TotalClearCount",    false },
+	{ "Clear_A_Count",      false },
+	{ "Clear_B_Count",      false },
+	{ "Clear_C_Count",      false },
+	{ "AutoBattleMedal",    false },
+	{ "AchievementPoint",   false },
+	{ "BestScore",          false },
+	{ "LeaderSmallestTurn", false },
+	{ "RealSmallestTurn",   false },
+	{ "CollectionClearB",   true  },
+	{ "OpenMonsterpedia",   true  },
+	{ "TrophyComplete",     true  },
+	{ "CardComplete",       true  },
+};
+
+#define NR_CSD_R10_KEYS (sizeof(s_csd_r10_keys) / sizeof(s_csd_r10_keys[0]))
+
+static uint32_t csd_read_u32_le(const uint8_t *p)
+{
+	return (uint32_t)p[0] |
+	       ((uint32_t)p[1] << 8) |
+	       ((uint32_t)p[2] << 16) |
+	       ((uint32_t)p[3] << 24);
+}
+
+static int32_t csd_read_i32_le(const uint8_t *p)
+{
+	uint32_t u = csd_read_u32_le(p);
+	int32_t v;
+	memcpy(&v, &u, sizeof(v));
+	return v;
+}
+
+static float csd_read_f32_le(const uint8_t *p)
+{
+	uint32_t u = csd_read_u32_le(p);
+	float f;
+	memcpy(&f, &u, sizeof(f));
+	return f;
+}
+
+static bool csd_buf_append(struct csd_buf *b, const void *src, size_t n)
+{
+	if (n == 0)
+		return true;
+	if (b->len + n > b->cap) {
+		size_t new_cap = b->cap ? b->cap * 2 : 256;
+		while (new_cap < b->len + n)
+			new_cap *= 2;
+		uint8_t *nd = realloc(b->data, new_cap);
+		if (!nd)
+			return false;
+		b->data = nd;
+		b->cap = new_cap;
+	}
+	memcpy(b->data + b->len, src, n);
+	b->len += n;
+	return true;
+}
+
+static bool csd_buf_append_u32_le(struct csd_buf *b, uint32_t u)
+{
+	uint8_t tmp[4] = {
+		(uint8_t)(u & 0xFFu),
+		(uint8_t)((u >> 8) & 0xFFu),
+		(uint8_t)((u >> 16) & 0xFFu),
+		(uint8_t)((u >> 24) & 0xFFu),
+	};
+	return csd_buf_append(b, tmp, 4);
+}
+
+static bool csd_buf_append_i32_le(struct csd_buf *b, int32_t v)
+{
+	uint32_t u;
+	memcpy(&u, &v, sizeof(u));
+	return csd_buf_append_u32_le(b, u);
+}
+
+static bool csd_buf_append_f32_le(struct csd_buf *b, float f)
+{
+	uint32_t u;
+	memcpy(&u, &f, sizeof(u));
+	return csd_buf_append_u32_le(b, u);
+}
+
+static void csd_table_free(struct csd_table *tbl)
+{
+	if (!tbl)
+		return;
+	for (size_t i = 0; i < tbl->count; i++) {
+		free(tbl->entries[i].key);
+		free(tbl->entries[i].s_val);
+	}
+	free(tbl->entries);
+	tbl->entries = NULL;
+	tbl->count = 0;
+	tbl->cap = 0;
+}
+
+static struct csd_entry *csd_table_find(struct csd_table *tbl, const char *key)
+{
+	if (!tbl || !key)
+		return NULL;
+	for (size_t i = 0; i < tbl->count; i++) {
+		if (tbl->entries[i].key && strcmp(tbl->entries[i].key, key) == 0)
+			return &tbl->entries[i];
+	}
+	return NULL;
+}
+
+static bool csd_table_set_int_or_bool(struct csd_table *tbl, const char *key, int32_t val, bool default_bool)
+{
+	struct csd_entry *existing = csd_table_find(tbl, key);
+	if (existing) {
+		free(existing->s_val);
+		existing->s_val = NULL;
+		existing->f_val = 0.0f;
+		if (existing->type == CSD_BOOL && (val == 0 || val == 1)) {
+			existing->i_val = val ? 1 : 0;
+		} else if (existing->type == CSD_INT) {
+			existing->i_val = val;
+		} else if (default_bool && (val == 0 || val == 1)) {
+			existing->type = CSD_BOOL;
+			existing->i_val = val ? 1 : 0;
+		} else {
+			existing->type = CSD_INT;
+			existing->i_val = val;
+		}
+		return true;
+	}
+	if (tbl->count == tbl->cap) {
+		size_t new_cap = tbl->cap ? tbl->cap * 2 : 32;
+		struct csd_entry *ne = realloc(tbl->entries, new_cap * sizeof(struct csd_entry));
+		if (!ne)
+			return false;
+		tbl->entries = ne;
+		tbl->cap = new_cap;
+	}
+	char *kcopy = strdup(key);
+	if (!kcopy)
+		return false;
+	struct csd_entry *e = &tbl->entries[tbl->count++];
+	memset(e, 0, sizeof(*e));
+	e->key = kcopy;
+	if (default_bool && (val == 0 || val == 1)) {
+		e->type = CSD_BOOL;
+		e->i_val = val ? 1 : 0;
+	} else {
+		e->type = CSD_INT;
+		e->i_val = val;
+	}
+	return true;
+}
+
+static int csd_entry_cmp(const void *a, const void *b)
+{
+	const struct csd_entry *ea = (const struct csd_entry *)a;
+	const struct csd_entry *eb = (const struct csd_entry *)b;
+	return strcmp(ea->key ? ea->key : "", eb->key ? eb->key : "");
+}
+
+static bool csd_table_load_file(const char *path, struct csd_table *tbl)
+{
+	memset(tbl, 0, sizeof(*tbl));
+	if (!path || !path[0] || !file_exists(path))
+		return false;
+	size_t fsize = 0;
+	uint8_t *fbuf = (uint8_t *)file_read(path, &fsize);
+	if (!fbuf)
+		return false;
+	if (fsize < 16 || memcmp(fbuf, "CSD\0", 4) != 0) {
+		free(fbuf);
+		return false;
+	}
+	uint32_t version = csd_read_u32_le(fbuf + 4);
+	uint32_t raw_size = csd_read_u32_le(fbuf + 8);
+	uint32_t comp_size = csd_read_u32_le(fbuf + 12);
+	if (version != 0 || (size_t)comp_size > fsize - 16u || raw_size > 64u * 1024u * 1024u) {
+		free(fbuf);
+		return false;
+	}
+	if (raw_size == 0) {
+		free(fbuf);
+		return true;
+	}
+	uint8_t *raw_buf = malloc(raw_size);
+	if (!raw_buf) {
+		free(fbuf);
+		return false;
+	}
+	uLongf dest_len = (uLongf)raw_size;
+	int zrc = uncompress(raw_buf, &dest_len, fbuf + 16, (uLong)comp_size);
+	free(fbuf);
+	if (zrc != Z_OK || dest_len != (uLongf)raw_size || raw_size < 4) {
+		free(raw_buf);
+		return false;
+	}
+
+	int32_t count = csd_read_i32_le(raw_buf);
+	if (count < 0 || (size_t)count > raw_size / 6u) {
+		free(raw_buf);
+		return false;
+	}
+	if (count > 0) {
+		tbl->entries = calloc((size_t)count, sizeof(struct csd_entry));
+		if (!tbl->entries) {
+			free(raw_buf);
+			return false;
+		}
+		tbl->cap = (size_t)count;
+	}
+
+	size_t pos = 4;
+	for (int32_t idx = 0; idx < count; idx++) {
+		if (pos >= raw_size) {
+			csd_table_free(tbl);
+			free(raw_buf);
+			return false;
+		}
+		const uint8_t *knul = memchr(raw_buf + pos, 0, raw_size - pos);
+		if (!knul) {
+			csd_table_free(tbl);
+			free(raw_buf);
+			return false;
+		}
+		size_t klen = (size_t)(knul - (raw_buf + pos));
+		char *key = malloc(klen + 1);
+		if (!key) {
+			csd_table_free(tbl);
+			free(raw_buf);
+			return false;
+		}
+		memcpy(key, raw_buf + pos, klen + 1);
+		pos += klen + 1;
+
+		if (pos + 4 > raw_size) {
+			free(key);
+			csd_table_free(tbl);
+			free(raw_buf);
+			return false;
+		}
+		int32_t type = csd_read_i32_le(raw_buf + pos);
+		pos += 4;
+
+		struct csd_entry *e = &tbl->entries[tbl->count];
+		e->key = key;
+		e->type = type;
+
+		switch (type) {
+		case CSD_INT:
+			if (pos + 4 > raw_size) {
+				tbl->count++;
+				csd_table_free(tbl);
+				free(raw_buf);
+				return false;
+			}
+			e->i_val = csd_read_i32_le(raw_buf + pos);
+			pos += 4;
+			break;
+		case CSD_FLOAT:
+			if (pos + 4 > raw_size) {
+				tbl->count++;
+				csd_table_free(tbl);
+				free(raw_buf);
+				return false;
+			}
+			e->f_val = csd_read_f32_le(raw_buf + pos);
+			pos += 4;
+			break;
+		case CSD_STRING: {
+			const uint8_t *snul = memchr(raw_buf + pos, 0, raw_size - pos);
+			if (!snul) {
+				tbl->count++;
+				csd_table_free(tbl);
+				free(raw_buf);
+				return false;
+			}
+			size_t slen = (size_t)(snul - (raw_buf + pos));
+			e->s_val = malloc(slen + 1);
+			if (!e->s_val) {
+				tbl->count++;
+				csd_table_free(tbl);
+				free(raw_buf);
+				return false;
+			}
+			memcpy(e->s_val, raw_buf + pos, slen + 1);
+			pos += slen + 1;
+			break;
+		}
+		case CSD_BOOL:
+			if (pos + 4 > raw_size) {
+				tbl->count++;
+				csd_table_free(tbl);
+				free(raw_buf);
+				return false;
+			}
+			e->i_val = csd_read_i32_le(raw_buf + pos) != 0 ? 1 : 0;
+			pos += 4;
+			break;
+		default:
+			tbl->count++;
+			csd_table_free(tbl);
+			free(raw_buf);
+			return false;
+		}
+		tbl->count++;
+	}
+
+	free(raw_buf);
+	return true;
+}
+
+static bool csd_table_save_file(const char *path, struct csd_table *tbl)
+{
+	if (!path || !path[0] || !tbl)
+		return false;
+	if (tbl->count > 1)
+		qsort(tbl->entries, tbl->count, sizeof(struct csd_entry), csd_entry_cmp);
+
+	struct csd_buf raw = { NULL, 0, 0 };
+	uint8_t *comp_buf = NULL;
+	uint32_t raw_size = 0;
+	uint32_t comp_size = 0;
+
+	if (tbl->count > 0) {
+		if (!csd_buf_append_i32_le(&raw, (int32_t)tbl->count))
+			goto fail;
+		for (size_t i = 0; i < tbl->count; i++) {
+			const struct csd_entry *e = &tbl->entries[i];
+			const char *k = e->key ? e->key : "";
+			if (!csd_buf_append(&raw, k, strlen(k) + 1))
+				goto fail;
+			if (!csd_buf_append_i32_le(&raw, e->type))
+				goto fail;
+			switch (e->type) {
+			case CSD_INT:
+				if (!csd_buf_append_i32_le(&raw, e->i_val))
+					goto fail;
+				break;
+			case CSD_FLOAT:
+				if (!csd_buf_append_f32_le(&raw, e->f_val))
+					goto fail;
+				break;
+			case CSD_STRING: {
+				const char *sv = e->s_val ? e->s_val : "";
+				if (!csd_buf_append(&raw, sv, strlen(sv) + 1))
+					goto fail;
+				break;
+			}
+			case CSD_BOOL:
+				if (!csd_buf_append_i32_le(&raw, e->i_val != 0 ? 1 : 0))
+					goto fail;
+				break;
+			default:
+				goto fail;
+			}
+		}
+		raw_size = (uint32_t)raw.len;
+		uLongf bound = compressBound((uLong)raw.len);
+		comp_buf = malloc((size_t)bound);
+		if (!comp_buf)
+			goto fail;
+		uLongf dest_len = bound;
+		if (compress2(comp_buf, &dest_len, raw.data, (uLong)raw.len, Z_DEFAULT_COMPRESSION) != Z_OK)
+			goto fail;
+		comp_size = (uint32_t)dest_len;
+	}
+
+	uint8_t hdr[16];
+	hdr[0] = 'C';
+	hdr[1] = 'S';
+	hdr[2] = 'D';
+	hdr[3] = '\0';
+	hdr[4] = 0; hdr[5] = 0; hdr[6] = 0; hdr[7] = 0;
+	hdr[8]  = (uint8_t)(raw_size & 0xFFu);
+	hdr[9]  = (uint8_t)((raw_size >> 8) & 0xFFu);
+	hdr[10] = (uint8_t)((raw_size >> 16) & 0xFFu);
+	hdr[11] = (uint8_t)((raw_size >> 24) & 0xFFu);
+	hdr[12] = (uint8_t)(comp_size & 0xFFu);
+	hdr[13] = (uint8_t)((comp_size >> 8) & 0xFFu);
+	hdr[14] = (uint8_t)((comp_size >> 16) & 0xFFu);
+	hdr[15] = (uint8_t)((comp_size >> 24) & 0xFFu);
+
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
+	bool ok = false;
+	if (fp) {
+		bool wrote = (fwrite(hdr, 1, 16, fp) == 16) &&
+			(comp_size == 0 || fwrite(comp_buf, 1, comp_size, fp) == comp_size);
+		if (wrote && atomic_save_commit(fp, path, tmp_path, true))
+			ok = true;
+		else
+			atomic_save_abort(fp, tmp_path);
+	}
+	free(comp_buf);
+	free(raw.data);
+	return ok;
+
+fail:
+	free(comp_buf);
+	free(raw.data);
+	return false;
+}
+
+static char *csd_join_path(const char *dir, size_t dir_len, const char *rel)
+{
+	size_t rlen = strlen(rel);
+	char *out = malloc(dir_len + 1 + rlen + 1);
+	if (!out)
+		return NULL;
+	if (dir_len > 0) {
+		memcpy(out, dir, dir_len);
+		out[dir_len] = '/';
+		memcpy(out + dir_len + 1, rel, rlen + 1);
+	} else {
+		memcpy(out, rel, rlen + 1);
+	}
+	return out;
+}
+
+static char *csd_resolve_path(const char *global_path, const char *collection_path, bool for_write)
+{
+	const char *anchor = (global_path && global_path[0]) ? global_path :
+		((collection_path && collection_path[0]) ? collection_path : NULL);
+	if (!anchor)
+		return NULL;
+
+	const char *slash = strrchr(anchor, '/');
+	const char *bslash = strrchr(anchor, '\\');
+	if (bslash && (!slash || bslash > slash))
+		slash = bslash;
+	size_t dir_len = slash ? (size_t)(slash - anchor) : 0;
+
+	char *cand1 = csd_join_path(anchor, dir_len, "CommonSystemData.sav");
+	if (cand1 && file_exists(cand1))
+		return cand1;
+
+	char *cand2 = csd_join_path(anchor, dir_len, "SaveData/CommonSystemData.sav");
+	if (cand2 && file_exists(cand2)) {
+		free(cand1);
+		return cand2;
+	}
+	free(cand2);
+
+	/* Also check parent directory if anchor is inside .../SaveData/... */
+	if (dir_len >= 8) {
+		const char *tail = anchor + dir_len - 8;
+		if ((dir_len == 8 || tail[-1] == '/' || tail[-1] == '\\') &&
+		    strncasecmp(tail, "SaveData", 8) == 0) {
+			size_t p_len = (dir_len > 8) ? (dir_len - 9) : 0;
+			char *cand3 = csd_join_path(anchor, p_len, "CommonSystemData.sav");
+			if (cand3 && file_exists(cand3)) {
+				free(cand1);
+				return cand3;
+			}
+			free(cand3);
+		}
+	}
+
+	if (for_write)
+		return cand1;
+	free(cand1);
+	return NULL;
+}
+
 static char *read_global_save_summary_str(const char *global_path, const char *collection_path)
 {
 	sys4_set_text_gbk(true);
 	cJSON *root = cJSON_CreateObject();
 	enum savefile_error serr;
+	bool has_global = false;
+	int32_t game_play_count = 0;
 
-	struct gsave *gs_g = (global_path && global_path[0]) ? gsave_read(global_path, &serr) : NULL;
+	struct gsave *gs_g = (global_path && global_path[0] && file_exists(global_path))
+		? gsave_read(global_path, &serr) : NULL;
 	if (gs_g) {
+		has_global = true;
 		cJSON_AddBoolToObject(root, "hasGlobal", true);
 		struct gsave_global *g_gc = gs_find_global(gs_g, "g_globalContext", NULL);
 		int32_t gc_rec = g_gc ? g_gc->value : -1;
-		cJSON_AddNumberToObject(root, "gamePlayCount", gs_get_field_int(gs_g, gc_rec, "m_gamePlayCount", NULL, 0));
+		game_play_count = gs_get_field_int(gs_g, gc_rec, "m_gamePlayCount", NULL, 0);
+		cJSON_AddNumberToObject(root, "gamePlayCount", game_play_count);
 		cJSON_AddNumberToObject(root, "itemStarRank", gs_get_field_int(gs_g, gc_rec, "m_itemStarRank", NULL, 0));
 		struct gsave_flat_array *fa_cards = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_cardIds", NULL, -1));
 		struct gsave_flat_array *fa_ranks = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_characterRank", NULL, -1));
@@ -995,7 +1650,8 @@ static char *read_global_save_summary_str(const char *global_path, const char *c
 		cJSON_AddBoolToObject(root, "hasGlobal", false);
 	}
 
-	struct gsave *gs_c = (collection_path && collection_path[0]) ? gsave_read(collection_path, &serr) : NULL;
+	struct gsave *gs_c = (collection_path && collection_path[0] && file_exists(collection_path))
+		? gsave_read(collection_path, &serr) : NULL;
 	if (gs_c) {
 		cJSON_AddBoolToObject(root, "hasCollection", true);
 		struct gsave_global *g_ct = gs_find_global(gs_c, "g_completedTrophy", NULL);
@@ -1022,9 +1678,45 @@ static char *read_global_save_summary_str(const char *global_path, const char *c
 		cJSON_AddBoolToObject(root, "hasCollection", false);
 	}
 
+	struct csd_table csd_tbl;
+	memset(&csd_tbl, 0, sizeof(csd_tbl));
+	char *csd_path = csd_resolve_path(global_path, collection_path, false);
+	bool has_csd = csd_path && csd_table_load_file(csd_path, &csd_tbl);
+	free(csd_path);
+	cJSON_AddBoolToObject(root, "hasCommonSystemData", has_csd);
+
+	for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
+		const char *kname = s_csd_r10_keys[k].key;
+		struct csd_entry *e = has_csd ? csd_table_find(&csd_tbl, kname) : NULL;
+		int32_t val = 0;
+		if (e && (e->type == CSD_INT || e->type == CSD_BOOL)) {
+			val = e->i_val;
+		} else if (has_global && strcmp(kname, "TotalClearCount") == 0) {
+			val = game_play_count;
+		}
+		cJSON_AddNumberToObject(root, kname, val);
+	}
+	csd_table_free(&csd_tbl);
+
 	char *out = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
 	return out;
+}
+
+static bool json_get_int_or_bool_item(cJSON *obj, const char *key, int32_t *out_val)
+{
+	cJSON *it = cJSON_GetObjectItemCaseSensitive(obj, key);
+	if (!it)
+		return false;
+	if (cJSON_IsNumber(it)) {
+		*out_val = it->valueint;
+		return true;
+	}
+	if (cJSON_IsBool(it)) {
+		*out_val = cJSON_IsTrue(it) ? 1 : 0;
+		return true;
+	}
+	return false;
 }
 
 static bool write_global_save_mod_str(const char *global_path, const char *collection_path, const char *mod_json_str)
@@ -1035,16 +1727,24 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 	bool any_ok = false;
 	enum savefile_error serr;
 
-	if (global_path && global_path[0]) {
+	int32_t total_clear_val = 0;
+	bool has_total_clear_mod = json_get_int_or_bool_item(mod, "TotalClearCount", &total_clear_val);
+	bool has_game_play_mod = cJSON_GetObjectItemCaseSensitive(mod, "gamePlayCount") != NULL;
+
+	if (global_path && global_path[0] && file_exists(global_path)) {
 		struct gsave *gs_g = gsave_read(global_path, &serr);
 		if (gs_g) {
 			struct gsave_global *g_gc = gs_find_global(gs_g, "g_globalContext", NULL);
 			int32_t gc_rec = g_gc ? g_gc->value : -1;
-			json_write_int_if_present(mod, "gamePlayCount", gs_g, gc_rec, "m_gamePlayCount", NULL);
+			if (has_game_play_mod) {
+				json_write_int_if_present(mod, "gamePlayCount", gs_g, gc_rec, "m_gamePlayCount", NULL);
+			} else if (has_total_clear_mod) {
+				gs_set_field_int(gs_g, gc_rec, "m_gamePlayCount", NULL, total_clear_val);
+			}
 			json_write_int_if_present(mod, "itemStarRank", gs_g, gc_rec, "m_itemStarRank", NULL);
 
-			cJSON *j_rank = cJSON_GetObjectItem(mod, "setAllCharRank");
-			if (j_rank && cJSON_IsNumber(j_rank) && j_rank->valueint > 0) {
+			cJSON *j_rank = cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank");
+			if (j_rank && cJSON_IsNumber(j_rank) && j_rank->valueint >= 0) {
 				struct gsave_flat_array *fa_ranks = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_characterRank", NULL, -1));
 				if (fa_ranks) {
 					for (int i = 0; i < fa_ranks->nr_values; i++) {
@@ -1054,8 +1754,8 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 					}
 				}
 			}
-			cJSON *j_to = cJSON_GetObjectItem(mod, "setTakeOverCardCount");
-			if (j_to && cJSON_IsNumber(j_to) && j_to->valueint > 0) {
+			cJSON *j_to = cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");
+			if (j_to && cJSON_IsNumber(j_to) && j_to->valueint >= 0) {
 				struct gsave_flat_array *fa_info = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_cardInfo", NULL, -1));
 				if (fa_info) {
 					for (int i = 0; i < fa_info->nr_values; i++) {
@@ -1077,12 +1777,12 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 		}
 	}
 
-	if (collection_path && collection_path[0]) {
+	if (collection_path && collection_path[0] && file_exists(collection_path)) {
 		struct gsave *gs_c = gsave_read(collection_path, &serr);
 		if (gs_c) {
 			struct gsave_global *g_ct = gs_find_global(gs_c, "g_completedTrophy", NULL);
 			int32_t ct_rec = g_ct ? g_ct->value : -1;
-			cJSON *j_lar = cJSON_GetObjectItem(mod, "leaderAtkRatio");
+			cJSON *j_lar = cJSON_GetObjectItemCaseSensitive(mod, "leaderAtkRatio");
 			if (j_lar && cJSON_IsNumber(j_lar)) {
 				union { float f; int32_t i; } u;
 				u.f = (float)j_lar->valuedouble;
@@ -1101,6 +1801,39 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 					atomic_save_abort(fp, tmp_path);
 			}
 			gsave_free(gs_c);
+		}
+	}
+
+	bool want_csd_write = false;
+	for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
+		int32_t dummy = 0;
+		if (json_get_int_or_bool_item(mod, s_csd_r10_keys[k].key, &dummy)) {
+			want_csd_write = true;
+			break;
+		}
+	}
+	if (want_csd_write) {
+		char *csd_path = csd_resolve_path(global_path, collection_path, true);
+		if (csd_path) {
+			struct csd_table tbl;
+			memset(&tbl, 0, sizeof(tbl));
+			bool load_ok = !file_exists(csd_path) || csd_table_load_file(csd_path, &tbl);
+			if (load_ok) {
+				bool set_ok = true;
+				for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
+					int32_t val = 0;
+					if (json_get_int_or_bool_item(mod, s_csd_r10_keys[k].key, &val)) {
+						if (!csd_table_set_int_or_bool(&tbl, s_csd_r10_keys[k].key, val, s_csd_r10_keys[k].default_bool)) {
+							set_ok = false;
+							break;
+						}
+					}
+				}
+				if (set_ok && csd_table_save_file(csd_path, &tbl))
+					any_ok = true;
+			}
+			csd_table_free(&tbl);
+			free(csd_path);
 		}
 	}
 
@@ -1128,7 +1861,7 @@ static int read_game_config_streamer_mode(const char *config_path)
 	return val != 0 ? 1 : 0;
 }
 
-#endif /* __ANDROID__ */
+#endif /* __ANDROID__ || MODIFIER_STANDALONE_TEST */
 
 /* =========================================================================
  * Live In-Game VM Memory Helpers (Executed on VM Thread in modifier_on_frame)
@@ -2373,7 +3106,9 @@ static void maybe_load_initial_modifier_config(void)
 	char *cfg_path = NULL;
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init &&
-	    g_has_sr_lock_mask_init && g_has_r03_lock_mask_init && g_has_ui_scale_init) {
+	    g_has_sr_lock_mask_init && g_has_r01_lock_mask_init && g_has_r02_lock_mask_init &&
+	    g_has_r03_lock_mask_init && g_has_r08_lock_mask_init && g_has_r09_lock_mask_init &&
+	    g_has_ui_scale_init) {
 		pthread_mutex_unlock(&g_mod_mutex);
 		return;
 	}
@@ -2432,6 +3167,7 @@ static void maybe_load_initial_modifier_config(void)
 	int sb_pct   = (j_sb && cJSON_IsNumber(j_sb)) ? clamp_scrollbar_scale_pct(j_sb->valueint) : 100;
 	cJSON_Delete(root);
 
+	bool apply_initial_scale = false;
 	pthread_mutex_lock(&g_mod_mutex);
 	if (!g_has_lock_mask_init) {
 		g_has_lock_mask_init = true;
@@ -2475,10 +3211,15 @@ static void maybe_load_initial_modifier_config(void)
 		g_has_ui_scale_init = true;
 		g_font_scale_pct = font_pct;
 		g_scrollbar_scale_pct = sb_pct;
+		apply_initial_scale = true;
+	}
+	pthread_mutex_unlock(&g_mod_mutex);
+	if (apply_initial_scale) {
+		s_applied_font_scale_pct = font_pct;
+		s_applied_scrollbar_scale_pct = sb_pct;
 		parts_set_modifier_font_scale(font_pct);
 		parts_set_modifier_scrollbar_scale(sb_pct);
 	}
-	pthread_mutex_unlock(&g_mod_mutex);
 }
 
 void modifier_on_config_loaded(void)
@@ -3438,8 +4179,7 @@ static char *vm_dd_read_utf8(int str_slot)
 	struct string *s = heap_get_string(str_slot);
 	if (!s || s->size <= 0)
 		return strdup("");
-	char *u = sjis2utf(s->text, (size_t)s->size);
-	return u ? u : strdup(s->text);
+	return mod_sjis2utf_safe(s->text, (size_t)s->size);
 }
 
 static char *vm_dd_get_field_utf8(struct page *page, const char *name1, const char *name2)
@@ -5472,7 +6212,7 @@ static void vm_sr_populate_live_state_json(cJSON *root)
 		if (!ch || !string_index_valid(ch->values[0].i))
 			continue;
 		struct string *ns = heap_get_string(ch->values[0].i);
-		char *name_u = (ns && ns->text[0]) ? sjis2utf(ns->text, ns->size) : NULL;
+		char *name_u = (ns && ns->size > 0 && ns->text[0]) ? mod_sjis2utf_safe(ns->text, (size_t)ns->size) : NULL;
 		if (!name_u || !name_u[0]) {
 			free(name_u);
 			continue;
@@ -5747,7 +6487,7 @@ static char *r09_lookup_chara_name(int chara_id)
 		for (unsigned r = 0; r < t->nr_rows; r++) {
 			if (t->fields[0].type == EX_INT && t->rows[r][0].i == chara_id
 					&& t->fields[1].type == EX_STRING && t->rows[r][1].s) {
-				return sjis2utf(t->rows[r][1].s->text, t->rows[r][1].s->size);
+				return mod_sjis2utf_safe(t->rows[r][1].s->text, (size_t)t->rows[r][1].s->size);
 			}
 		}
 		return NULL;
@@ -5908,6 +6648,9 @@ static struct page *r02_get_cd_array(void)
 
 void modifier_on_ain_init(void)
 {
+	pthread_mutex_lock(&g_mod_mutex);
+	g_vm_ready_cached = false;
+	pthread_mutex_unlock(&g_mod_mutex);
 	s_r03_compatible = false;
 	s_r03_applying = false;
 	s_r03_inspected_ain = ain;
@@ -6366,7 +7109,7 @@ static void vm_r03_populate_live_state_json(cJSON *root)
 		struct page *p = r03_checked_page(players->values[i].i, STRUCT_PAGE, s_r03_player_type, 31);
 		if (!p || !p->values[24].i)
 			continue;
-		char *name_u = string_index_valid(p->values[1].i) ? sjis2utf(heap[p->values[1].i].s->text, heap[p->values[1].i].s->size) : NULL;
+		char *name_u = string_index_valid(p->values[1].i) ? mod_sjis2utf_safe(heap[p->values[1].i].s->text, (size_t)heap[p->values[1].i].s->size) : NULL;
 		cJSON *jc = cJSON_CreateObject();
 		cJSON_AddNumberToObject(jc, "index", i);
 		cJSON_AddStringToObject(jc, "name", (name_u && name_u[0]) ? name_u : "?");
@@ -6554,7 +7297,7 @@ static void vm_r08_populate_live_state_json(cJSON *root)
 		struct page *c = r03_checked_page(carr->values[i].i, STRUCT_PAGE, s_r08_sc_type, 45);
 		if (!c || c->values[0].i <= 0) continue;
 		bool in_pt = r08_index_in_pt(s_r08_pta_glob, i);
-		char *name_u = string_index_valid(c->values[4].i) ? sjis2utf(heap[c->values[4].i].s->text, heap[c->values[4].i].s->size) : NULL;
+		char *name_u = string_index_valid(c->values[4].i) ? mod_sjis2utf_safe(heap[c->values[4].i].s->text, (size_t)heap[c->values[4].i].s->size) : NULL;
 		cJSON *jc = cJSON_CreateObject();
 		cJSON_AddNumberToObject(jc, "index", i);
 		cJSON_AddNumberToObject(jc, "charaNo", c->values[0].i);
@@ -7522,6 +8265,10 @@ void modifier_on_frame(void)
 		return;
 	s_in_modifier_frame = true;
 
+	pthread_mutex_lock(&g_mod_mutex);
+	g_vm_ready_cached = true;
+	pthread_mutex_unlock(&g_mod_mutex);
+
 	static uint32_t s_frame_tick = 0;
 	s_frame_tick++;
 
@@ -7885,14 +8632,95 @@ void modifier_on_frame(void)
  * ========================================================================= */
 #ifdef __ANDROID__
 
+static jstring jni_new_string_utf8_safe(JNIEnv *env, const char *utf8)
+{
+	if (!env)
+		return NULL;
+	if (!utf8 || !utf8[0]) {
+		jchar empty = 0;
+		return (*env)->NewString(env, &empty, 0);
+	}
+	size_t len = strlen(utf8);
+	jchar stack_buf[256];
+	jchar *u16 = (len <= 256) ? stack_buf : (jchar *)malloc(len * sizeof(jchar));
+	if (!u16) {
+		jchar empty = 0;
+		return (*env)->NewString(env, &empty, 0);
+	}
+	size_t out = 0;
+	const unsigned char *s = (const unsigned char *)utf8;
+	size_t i = 0;
+	while (i < len) {
+		unsigned char b0 = s[i];
+		if (b0 < 0x80u) {
+			u16[out++] = (jchar)b0;
+			i++;
+		} else if (b0 >= 0xC2u && b0 <= 0xDFu) {
+			if (i + 1 < len && (s[i + 1] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(s[i + 1] & 0x3Fu);
+				u16[out++] = (jchar)cp;
+				i += 2;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i++;
+			}
+		} else if (b0 >= 0xE0u && b0 <= 0xEFu) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xE0u) ? (s[i + 1] >= 0xA0u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xEDu) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x9Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			if (b1_ok && i + 2 < len && (s[i + 2] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x0Fu) << 12) |
+				              ((uint32_t)(s[i + 1] & 0x3Fu) << 6) |
+				              (uint32_t)(s[i + 2] & 0x3Fu);
+				u16[out++] = (jchar)cp;
+				i += 3;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i += b1_ok ? 2 : 1;
+			}
+		} else if (b0 >= 0xF0u && b0 <= 0xF4u) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xF0u) ? (s[i + 1] >= 0x90u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xF4u) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x8Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			bool b2_ok = b1_ok && (i + 2 < len) && ((s[i + 2] & 0xC0u) == 0x80u);
+			if (b2_ok && i + 3 < len && (s[i + 3] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x07u) << 18) |
+				              ((uint32_t)(s[i + 1] & 0x3Fu) << 12) |
+				              ((uint32_t)(s[i + 2] & 0x3Fu) << 6) |
+				              (uint32_t)(s[i + 3] & 0x3Fu);
+				uint32_t v = cp - 0x10000u;
+				u16[out++] = (jchar)(0xD800u | (v >> 10));
+				u16[out++] = (jchar)(0xDC00u | (v & 0x3FFu));
+				i += 4;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i += b2_ok ? 3 : (b1_ok ? 2 : 1);
+			}
+		} else {
+			u16[out++] = (jchar)0xFFFDu;
+			i++;
+		}
+	}
+	jstring ret = (*env)->NewString(env, u16, (jsize)out);
+	if (u16 != stack_buf)
+		free(u16);
+	return ret;
+}
+
 JNIEXPORT jstring JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeReadLocalSaveSummary(
 	JNIEnv *env, jclass clazz, jstring jpath)
 {
+	(void)clazz;
+	if (!jpath)
+		return jni_new_string_utf8_safe(env, "{}");
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	char *json = read_local_save_summary_str(path);
-	(*env)->ReleaseStringUTFChars(env, jpath, path);
-	jstring ret = (*env)->NewStringUTF(env, json ? json : "{}");
+	char *json = path ? read_local_save_summary_str(path) : NULL;
+	if (path)
+		(*env)->ReleaseStringUTFChars(env, jpath, path);
+	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{}");
 	free(json);
 	return ret;
 }
@@ -7901,11 +8729,14 @@ JNIEXPORT jboolean JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteLocalSaveMod(
 	JNIEnv *env, jclass clazz, jstring jpath, jstring jmod)
 {
+	(void)clazz;
+	if (!jpath || !jmod)
+		return JNI_FALSE;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
 	const char *mod  = (*env)->GetStringUTFChars(env, jmod, NULL);
-	bool ok = write_local_save_mod_str(path, mod);
-	(*env)->ReleaseStringUTFChars(env, jpath, path);
-	(*env)->ReleaseStringUTFChars(env, jmod, mod);
+	bool ok = (path && mod) ? write_local_save_mod_str(path, mod) : false;
+	if (path) (*env)->ReleaseStringUTFChars(env, jpath, path);
+	if (mod)  (*env)->ReleaseStringUTFChars(env, jmod, mod);
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -7913,12 +8744,13 @@ JNIEXPORT jstring JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeReadGlobalSaveSummary(
 	JNIEnv *env, jclass clazz, jstring jglobal_path, jstring jcollection_path)
 {
-	const char *gp = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : "";
-	const char *cp = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : "";
-	char *json = read_global_save_summary_str(gp, cp);
-	if (jglobal_path) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
-	if (jcollection_path) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
-	jstring ret = (*env)->NewStringUTF(env, json ? json : "{}");
+	(void)clazz;
+	const char *gp = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : NULL;
+	const char *cp = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : NULL;
+	char *json = read_global_save_summary_str(gp ? gp : "", cp ? cp : "");
+	if (jglobal_path && gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+	if (jcollection_path && cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
+	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{}");
 	free(json);
 	return ret;
 }
@@ -7927,13 +8759,16 @@ JNIEXPORT jboolean JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteGlobalSaveMod(
 	JNIEnv *env, jclass clazz, jstring jglobal_path, jstring jcollection_path, jstring jmod)
 {
-	const char *gp  = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : "";
-	const char *cp  = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : "";
+	(void)clazz;
+	if (!jmod)
+		return JNI_FALSE;
+	const char *gp  = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : NULL;
+	const char *cp  = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : NULL;
 	const char *mod = (*env)->GetStringUTFChars(env, jmod, NULL);
-	bool ok = write_global_save_mod_str(gp, cp, mod);
-	if (jglobal_path) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
-	if (jcollection_path) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
-	(*env)->ReleaseStringUTFChars(env, jmod, mod);
+	bool ok = mod ? write_global_save_mod_str(gp ? gp : "", cp ? cp : "", mod) : false;
+	if (jglobal_path && gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+	if (jcollection_path && cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
+	if (mod) (*env)->ReleaseStringUTFChars(env, jmod, mod);
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -7943,7 +8778,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
 {
 	(void)clazz;
 	pthread_mutex_lock(&g_mod_mutex);
-	if (vm_is_ready()) {
+	if (g_vm_ready_cached) {
 		uint32_t target_seq = ++g_live_state_req_seq;
 		struct timespec ts;
 		if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
@@ -7959,7 +8794,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
 		}
 	}
 	const char *snap = g_cached_live_state_json ? g_cached_live_state_json : "{\"inGame\":false}";
-	jstring ret = (*env)->NewStringUTF(env, snap);
+	jstring ret = jni_new_string_utf8_safe(env, snap);
 	pthread_mutex_unlock(&g_mod_mutex);
 	return ret;
 }
@@ -7978,7 +8813,8 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetConfigPath(
 		g_modifier_config_path = strdup(path);
 		pthread_mutex_unlock(&g_mod_mutex);
 	}
-	(*env)->ReleaseStringUTFChars(env, jpath, path);
+	if (path)
+		(*env)->ReleaseStringUTFChars(env, jpath, path);
 }
 
 JNIEXPORT void JNICALL
@@ -8007,6 +8843,8 @@ JNIEXPORT jint JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveLocks(
 	JNIEnv *env, jclass clazz)
 {
+	(void)env;
+	(void)clazz;
 	pthread_mutex_lock(&g_mod_mutex);
 	int mask = g_live_lock_mask;
 	pthread_mutex_unlock(&g_mod_mutex);
@@ -8180,22 +9018,28 @@ JNIEXPORT void JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeApplyLiveAction(
 	JNIEnv *env, jclass clazz, jstring jaction)
 {
+	(void)clazz;
+	if (!jaction)
+		return;
 	const char *act = (*env)->GetStringUTFChars(env, jaction, NULL);
-	pthread_mutex_lock(&g_mod_mutex);
-	free(g_pending_action_json);
-	g_pending_action_json = strdup(act);
-	pthread_mutex_unlock(&g_mod_mutex);
-	(*env)->ReleaseStringUTFChars(env, jaction, act);
+	if (act) {
+		pthread_mutex_lock(&g_mod_mutex);
+		free(g_pending_action_json);
+		g_pending_action_json = strdup(act);
+		pthread_mutex_unlock(&g_mod_mutex);
+		(*env)->ReleaseStringUTFChars(env, jaction, act);
+	}
 }
 
 JNIEXPORT jint JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeReadStreamerMode(
 	JNIEnv *env, jclass clazz, jstring jpath)
 {
+	(void)clazz;
 	if (!jpath) return -1;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	int res = read_game_config_streamer_mode(path);
-	(*env)->ReleaseStringUTFChars(env, jpath, path);
+	int res = path ? read_game_config_streamer_mode(path) : -1;
+	if (path) (*env)->ReleaseStringUTFChars(env, jpath, path);
 	return (jint)res;
 }
 
@@ -8203,10 +9047,11 @@ JNIEXPORT jboolean JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteStreamerMode(
 	JNIEnv *env, jclass clazz, jstring jpath, jboolean jenabled)
 {
+	(void)clazz;
 	if (!jpath) return JNI_FALSE;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	bool ok = write_game_config_streamer_mode(path, jenabled == JNI_TRUE);
-	(*env)->ReleaseStringUTFChars(env, jpath, path);
+	bool ok = path ? write_game_config_streamer_mode(path, jenabled == JNI_TRUE) : false;
+	if (path) (*env)->ReleaseStringUTFChars(env, jpath, path);
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -8241,8 +9086,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetUiScale(
 	g_font_scale_pct = fp;
 	g_scrollbar_scale_pct = sp;
 	pthread_mutex_unlock(&g_mod_mutex);
-	parts_set_modifier_font_scale(fp);
-	parts_set_modifier_scrollbar_scale(sp);
+	/* Actual parts_set_modifier_* + live refresh run on SDLThread in modifier_on_frame. */
 }
 
 JNIEXPORT jint JNICALL

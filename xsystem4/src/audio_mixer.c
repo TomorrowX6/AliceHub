@@ -49,6 +49,7 @@
 
 struct fade {
 	atomic_bool fading;
+	bool pending;
 	bool stop;
 	uint_least32_t start_pos;
 	uint_least32_t frames;
@@ -190,7 +191,10 @@ static bool cb_seek(struct channel *ch, uint_least32_t pos)
  */
 static bool cb_loop(struct channel *ch)
 {
-	if (!cb_seek(ch, ch->loop_start) || ch->loop_count == 1) {
+	if (ch->loop_count == 1 || ch->loop_end <= ch->loop_start) {
+		return false;
+	}
+	if (!cb_seek(ch, ch->loop_start)) {
 		return false;
 	}
 	if (ch->loop_count > 1) {
@@ -207,39 +211,43 @@ static int cb_read_frames(struct channel *ch, float *out, sf_count_t frame_count
 {
 	*num_read = 0;
 
-	// handle case where chunk crosses loop point (seamless)
-	// NOTE: it's assumed that the length of the loop is greater than the chunk length
-	if (ch->frame + frame_count >= ch->loop_end) {
-		// read frames up to loop_end
-		*num_read = sf_readf_float(ch->file, out, ch->loop_end - ch->frame);
-		// adjust parameters for later
-		ch->frame += *num_read;
-		out += *num_read;
-		frame_count -= *num_read;
-		// seek to loop_start
-		if (!cb_loop(ch))
-			return STS_STREAM_COMPLETE;
-	} else if (ch->frame >= ch->loop_end) {
-		// seek to loop_start
-		if (!cb_loop(ch))
-			return STS_STREAM_COMPLETE;
-	}
+	while (frame_count > 0) {
+		bool looping = (ch->loop_count != 1) && (ch->loop_end > ch->loop_start);
+		if (looping) {
+			if (ch->frame >= ch->loop_end) {
+				if (!cb_loop(ch))
+					return STS_STREAM_COMPLETE;
+				looping = (ch->loop_count != 1) && (ch->loop_end > ch->loop_start);
+			}
+			if (looping && ch->frame + (uint64_t)frame_count >= ch->loop_end) {
+				sf_count_t to_read = (sf_count_t)(ch->loop_end - ch->frame);
+				sf_count_t n = to_read > 0 ? sf_readf_float(ch->file, out, to_read) : 0;
+				*num_read += (uint_least32_t)n;
+				ch->frame += (uint_least32_t)n;
+				out += n * ch->info.channels;
+				frame_count -= n;
+				if (n < to_read) {
+					if (n == 0 && !cb_loop(ch))
+						return STS_STREAM_COMPLETE;
+					continue;
+				}
+				if (!cb_loop(ch))
+					return STS_STREAM_COMPLETE;
+				continue;
+			}
+		}
 
-	// read remaining data
-	sf_count_t n = sf_readf_float(ch->file, out, frame_count);
-	*num_read += n;
-	ch->frame += n;
-	out += *num_read;
-	frame_count -= *num_read;
+		sf_count_t n = sf_readf_float(ch->file, out, frame_count);
+		*num_read += (uint_least32_t)n;
+		ch->frame += (uint_least32_t)n;
+		out += n * ch->info.channels;
+		frame_count -= n;
 
-	// XXX: This *shouldn't* be necessary, but sometimes libsndfile seems to stop reading
-	//      just before the end of file (i.e. ch->frame + frame_count is < ch->info.frames,
-	//      yet sf_readf_float returns less that the requested amount of frames).
-	//      Not sure if this is a bug in xsystem4 or libsndfile
-	if (frame_count > 0) {
-		if (!cb_loop(ch))
+		if (n == 0) {
+			if (looping && ch->frame > ch->loop_start && cb_loop(ch))
+				continue;
 			return STS_STREAM_COMPLETE;
-		*num_read += sf_readf_float(ch->file, out, frame_count);
+		}
 	}
 
 	return STS_STREAM_CONTINUE;
@@ -250,23 +258,28 @@ static int cb_read_frames(struct channel *ch, float *out, sf_count_t frame_count
  */
 static float cb_calc_fade(struct fade *fade)
 {
-	if (fade->elapsed >= fade->frames)
-		return fade->stop ? 0.0 : fade->end_volume;
+	if (fade->frames == 0 || fade->elapsed >= fade->frames)
+		return fade->stop ? 0.0f : fade->end_volume;
 
 	float progress = audio_fade_curve(fade->curve, (float)fade->elapsed / (float)fade->frames);
 	float delta_v = fade->end_volume - fade->start_volume;
 	float gain = fade->start_volume + delta_v * progress;
-	if (gain < 0.0) return 0.0;
-	if (gain > 1.0) return 1.0;
+	if (gain < 0.0f) return 0.0f;
+	if (gain > 1.0f) return 1.0f;
 	return gain;
 }
 
 static int refill_stream(sts_mixer_sample_t *sample, void *data)
 {
 	struct channel *ch = data;
-	uint_least32_t frames_read;
-	memset(ch->data, 0, sizeof(float) * sample->length);
+	uint_least32_t frames_read = 0;
+	sample->length = CHUNK_SIZE * 2;
+	memset(ch->data, 0, sizeof(ch->data));
 	if (ch->paused) return STS_STREAM_CONTINUE;
+	if (nr_mixers <= 0 || ch->mixer_no < 0 || ch->mixer_no >= nr_mixers || ch->voice < 0) {
+		ch->voice = -1;
+		return STS_STREAM_COMPLETE;
+	}
 
 	// read audio data from file
 	int r = cb_read_frames(ch, ch->data, CHUNK_SIZE, &frames_read);
@@ -288,6 +301,7 @@ static int refill_stream(sts_mixer_sample_t *sample, void *data)
 		}
 	}
 
+	bool fade_stopped = false;
 	// set gain for fade
 	if (ch->fade.fading) {
 		float gain = cb_calc_fade(&ch->fade);
@@ -301,6 +315,7 @@ static int refill_stream(sts_mixer_sample_t *sample, void *data)
 			if (ch->fade.stop) {
 				cb_seek(ch, 0);
 				r = STS_STREAM_COMPLETE;
+				fade_stopped = true;
 			}
 		}
 	} else {
@@ -309,6 +324,12 @@ static int refill_stream(sts_mixer_sample_t *sample, void *data)
 	}
 
 	if (r == STS_STREAM_COMPLETE) {
+		if (!fade_stopped && frames_read > 0) {
+			sample->length = frames_read * 2;
+			return STS_STREAM_CONTINUE;
+		}
+		ch->fade.fading = false;
+		ch->fade.pending = false;
 		ch->voice = -1;
 	}
 
@@ -328,28 +349,50 @@ static int refill_mixer(sts_mixer_sample_t *sample, void *data)
 
 int channel_play(struct channel *ch)
 {
+	if (!ch || nr_mixers <= 0 || ch->mixer_no < 0 || ch->mixer_no >= nr_mixers)
+		return 0;
 	audio_lock();
 	ch->paused = false;
 	if (ch->voice >= 0) {
+		if (ch->fade.pending && audio_device != 0) {
+			ch->fade.fading = true;
+			ch->fade.pending = false;
+		}
 		audio_unlock();
 		return 1;
 	}
+	ch->stream.sample.length = CHUNK_SIZE * 2;
 	memset(ch->data, 0, sizeof(ch->data));
-	ch->voice = sts_mixer_play_stream(&mixers[ch->mixer_no].mixer, &ch->stream, 1.0f);
+	ch->voice = sts_mixer_play_stream(&mixers[ch->mixer_no].mixer, &ch->stream, (float)ch->volume / 100.0f);
+	if (ch->fade.pending) {
+		ch->fade.pending = false;
+		if (ch->voice >= 0 && audio_device != 0) {
+			ch->fade.start_pos = ch->frame;
+			ch->fade.fading = true;
+		} else {
+			ch->fade.fading = false;
+			ch->volume = ch->fade.end_volume * 100.0f;
+		}
+	}
 	audio_unlock();
 	return 1;
 }
 
 int channel_stop(struct channel *ch)
 {
+	if (!ch)
+		return 0;
 	audio_lock();
 	ch->paused = false;
+	ch->fade.fading = false;
+	ch->fade.pending = false;
 	if (ch->voice < 0) {
 		audio_unlock();
 		return 1;
 	}
 	cb_seek(ch, 0);
-	sts_mixer_stop_voice(&mixers[ch->mixer_no].mixer, ch->voice);
+	if (nr_mixers > 0 && ch->mixer_no >= 0 && ch->mixer_no < nr_mixers)
+		sts_mixer_stop_voice(&mixers[ch->mixer_no].mixer, ch->voice);
 	ch->voice = -1;
 	audio_unlock();
 	return 1;
@@ -376,7 +419,7 @@ int channel_get_loop_count(struct channel *ch)
 int channel_set_loop_start_pos(struct channel *ch, int pos)
 {
 	audio_lock();
-	ch->loop_start = pos;
+	ch->loop_start = max(0, pos);
 	audio_unlock();
 	return 1;
 }
@@ -384,18 +427,20 @@ int channel_set_loop_start_pos(struct channel *ch, int pos)
 int channel_set_loop_end_pos(struct channel *ch, int pos)
 {
 	audio_lock();
-	ch->loop_end = pos;
+	ch->loop_end = max(0, pos);
 	audio_unlock();
 	return 1;
 }
 
 int channel_fade_with_curve(struct channel *ch, int time, int volume, bool stop, int curve)
 {
-	if (!time && stop)
+	if (!ch)
+		return 0;
+	if (time <= 0 && stop)
 		return channel_stop(ch);
 
 	audio_lock();
-	if (!time) {
+	if (time <= 0 || ch->info.samplerate <= 0) {
 		// XXX: Fade with time=0 is used to set volume. This needs to
 		//      take effect immediately, not via the audio callback
 		//      because the stream isn't necessarily playing yet.
@@ -405,16 +450,39 @@ int channel_fade_with_curve(struct channel *ch, int time, int volume, bool stop,
 		//          SACT2.Music_Fade(ch, 33, 4000, 0);
 		//          SACT2.Music_Play(ch);
 		ch->fade.fading = false;
+		ch->fade.pending = false;
 		ch->volume = max(0, min(100, volume));
+		if (ch->voice >= 0 && nr_mixers > 0 && ch->mixer_no >= 0 && ch->mixer_no < nr_mixers) {
+			mixers[ch->mixer_no].mixer.voices[ch->voice].gain = (float)ch->volume / 100.0f;
+		}
 	} else {
-		ch->fade.fading = true;
 		ch->fade.stop = stop;
 		ch->fade.start_pos = ch->frame;
-		ch->fade.start_volume = (float)ch->volume / 100.0;
+		ch->fade.start_volume = (float)ch->volume / 100.0f;
 		ch->fade.frames = muldiv(time, ch->info.samplerate, 1000);
 		ch->fade.elapsed = 0;
 		ch->fade.end_volume = clamp(0.0f, 1.0f, (float)volume / 100.0f);
 		ch->fade.curve = curve;
+		if (ch->voice >= 0 && !ch->paused && audio_device != 0 && ch->fade.frames > 0) {
+			ch->fade.fading = true;
+			ch->fade.pending = false;
+		} else if (!stop && ch->voice < 0 && audio_device != 0 && ch->fade.frames > 0) {
+			// Armed pre-play fade-in: starts when channel_play() is called,
+			// without reporting fading=true while idle.
+			ch->fade.fading = false;
+			ch->fade.pending = true;
+		} else {
+			ch->fade.fading = false;
+			ch->fade.pending = false;
+			ch->volume = max(0, min(100, volume));
+			if (stop) {
+				if (ch->voice >= 0 && nr_mixers > 0 && ch->mixer_no >= 0 && ch->mixer_no < nr_mixers)
+					sts_mixer_stop_voice(&mixers[ch->mixer_no].mixer, ch->voice);
+				ch->voice = -1;
+				ch->paused = false;
+				cb_seek(ch, 0);
+			}
+		}
 	}
 	audio_unlock();
 	return 1;
@@ -427,10 +495,24 @@ int channel_fade(struct channel *ch, int time, int volume, bool stop)
 
 int channel_stop_fade(struct channel *ch)
 {
+	if (!ch)
+		return 0;
 	audio_lock();
-	// XXX: we need to set the volume to end_volume and potentially stop the
-	//      stream here; better to let the callback do it
-	ch->fade.elapsed = ch->fade.frames;
+	ch->fade.pending = false;
+	if (ch->fade.fading) {
+		ch->fade.fading = false;
+		ch->fade.elapsed = ch->fade.frames;
+		ch->volume = ch->fade.end_volume * 100.0f;
+		if (ch->fade.stop) {
+			cb_seek(ch, 0);
+			if (ch->voice >= 0 && nr_mixers > 0 && ch->mixer_no >= 0 && ch->mixer_no < nr_mixers)
+				sts_mixer_stop_voice(&mixers[ch->mixer_no].mixer, ch->voice);
+			ch->voice = -1;
+			ch->paused = false;
+		} else if (ch->voice >= 0 && nr_mixers > 0 && ch->mixer_no >= 0 && ch->mixer_no < nr_mixers) {
+			mixers[ch->mixer_no].mixer.voices[ch->voice].gain = ch->fade.end_volume;
+		}
+	}
 	audio_unlock();
 	return 1;
 }
@@ -470,11 +552,15 @@ bool channel_set_group(struct channel *ch, int group)
 
 int channel_get_pos(struct channel *ch)
 {
+	if (!ch || ch->info.samplerate <= 0)
+		return 0;
 	return muldiv(ch->frame, 1000, ch->info.samplerate);
 }
 
 int channel_get_length(struct channel *ch)
 {
+	if (!ch || ch->info.samplerate <= 0)
+		return 0;
 	// FIXME: how is this different than channel_get_time_length?
 	return muldiv(ch->info.frames, 1000, ch->info.samplerate);
 }
@@ -491,9 +577,11 @@ int channel_get_sample_length(struct channel *ch)
 
 int channel_seek(struct channel *ch, int pos)
 {
+	if (!ch || ch->info.samplerate <= 0)
+		return 0;
 	// NOTE: SACT2.Music_Seek doesn't seem to do anything in Sengoku Rance...
 	audio_lock();
-	int r = cb_seek(ch, muldiv(pos, ch->info.samplerate, 1000));
+	int r = cb_seek(ch, muldiv(max(0, pos), ch->info.samplerate, 1000));
 	audio_unlock();
 	return r;
 }
@@ -511,6 +599,8 @@ int channel_get_volume(struct channel *ch)
 
 int channel_get_time_length(struct channel *ch)
 {
+	if (!ch || ch->info.samplerate <= 0)
+		return 0;
 	return muldiv(ch->info.frames, 1000, ch->info.samplerate);
 }
 
@@ -591,12 +681,12 @@ struct channel *channel_open(enum asset_type type, int no)
 
 static bool init_channel(struct channel *ch)
 {
-	if (sf_error(ch->file) != SF_ERR_NO_ERROR) {
+	if (!ch->file || sf_error(ch->file) != SF_ERR_NO_ERROR) {
 		WARNING("sf_open_virtual failed: %s", sf_strerror(ch->file));
 		return false;
 	}
-	if (ch->info.channels > 2) {
-		WARNING("Audio file has more than 2 channels");
+	if (ch->info.samplerate <= 0 || ch->info.channels <= 0 || ch->info.channels > 2) {
+		WARNING("Invalid audio format (samplerate=%d, channels=%d)", ch->info.samplerate, ch->info.channels);
 		return false;
 	}
 
@@ -611,7 +701,7 @@ static bool init_channel(struct channel *ch)
 
 	ch->volume = 100;
 	ch->loop_start = 0;
-	ch->loop_end = ch->info.frames;
+	ch->loop_end = max(0, ch->info.frames);
 	ch->loop_count = 1;
 	ch->mixer_no = 0;
 
@@ -635,20 +725,22 @@ struct channel *channel_open_archive_data(struct archive_data *dfile,
 		free(ch);
 		return NULL;
 	}
+	int max_mixer = nr_mixers > 0 ? nr_mixers - 1 : 0;
 	if (metadata_no >= 0) {
 		if (type == ASSET_SOUND) {
 			struct wai *wai = wai_get(metadata_no);
-			ch->mixer_no = wai ? wai->channel : 1;
+			ch->mixer_no = clamp(0, max_mixer, wai ? wai->channel : 1);
 		} else if (type == ASSET_BGM) {
 			struct bgi *bgi = bgi_get(metadata_no);
 			if (bgi) {
 				ch->volume = clamp(0, 100, bgi->volume);
-				ch->loop_start = clamp(0, ch->info.frames, bgi->loop_start);
-				ch->loop_end = clamp(0, ch->info.frames, bgi->loop_end);
+				ch->loop_start = clamp(0, max(0, ch->info.frames), bgi->loop_start);
+				ch->loop_end = clamp(0, max(0, ch->info.frames), bgi->loop_end);
 				ch->loop_count = max(0, bgi->loop_count);
-				ch->mixer_no = clamp(0, nr_mixers, bgi->channel);
+				ch->mixer_no = clamp(0, max_mixer, bgi->channel);
 			} else {
 				ch->loop_count = 0;
+				ch->mixer_no = clamp(0, max_mixer, 0);
 			}
 		}
 		ch->no = metadata_no;
@@ -703,7 +795,7 @@ static void open_default_audio_device(void)
 		WARNING("SDL_OpenAudioDevice failed: %s", SDL_GetError());
 		return;
 	}
-	SDL_PauseAudioDevice(audio_device, !global_focus && !window_focused);
+	SDL_PauseAudioDevice(audio_device, (app_backgrounded || (!global_focus && !window_focused)) ? 1 : 0);
 }
 
 void mixer_handle_device_removed(uint32_t dev)
@@ -802,14 +894,14 @@ int mixer_get_numof(void)
 
 const char *mixer_get_name(int n)
 {
-	if (n < 0 || n >= config.mixer_nr_channels)
+	if (!mixers || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers)
 		return NULL;
 	return mixers[n].name;
 }
 
 int mixer_set_name(int n, const char *name)
 {
-	if (n < 0 || n >= config.mixer_nr_channels)
+	if (!mixers || !name || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers)
 		return 0;
 	free(mixers[n].name);
 	mixers[n].name = strdup(name);
@@ -818,7 +910,7 @@ int mixer_set_name(int n, const char *name)
 
 int mixer_get_volume(int n, int *volume)
 {
-	if (n < 0 || n >= config.mixer_nr_channels) {
+	if (!mixers || !volume || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers) {
 		return 0;
 	}
 	audio_lock();
@@ -829,7 +921,7 @@ int mixer_get_volume(int n, int *volume)
 
 int mixer_set_volume(int n, int volume)
 {
-	if (n < 0 || n >= config.mixer_nr_channels)
+	if (!mixers || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers)
 		return 0;
 	audio_lock();
 	mixers[n].mixer.gain = clamp(0.0f, 1.0f, (float)volume / 100.0f);
@@ -838,7 +930,7 @@ int mixer_set_volume(int n, int volume)
 }
 int mixer_get_mute(int n, int *mute)
 {
-	if (n < 0 || n >= config.mixer_nr_channels)
+	if (!mixers || !mute || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers)
 		return 0;
 	*mute = mixers[n].muted;
 	return 1;
@@ -846,7 +938,7 @@ int mixer_get_mute(int n, int *mute)
 
 int mixer_set_mute(int n, int mute)
 {
-	if (n < 0 || n >= config.mixer_nr_channels)
+	if (!mixers || n < 0 || n >= (int)config.mixer_nr_channels || n >= nr_mixers)
 		return 0;
 	mixers[n].muted = !!mute;
 	return 1;
@@ -854,6 +946,8 @@ int mixer_set_mute(int n, int mute)
 
 int mixer_stream_play(sts_mixer_stream_t* stream, int volume)
 {
+	if (!master || !stream)
+		return -1;
 	audio_lock();
 	float gain = clamp(0.0f, 1.0f, (float)volume / 100.0f);
 	int voice = sts_mixer_play_stream(&master->mixer, stream, gain);
@@ -863,7 +957,7 @@ int mixer_stream_play(sts_mixer_stream_t* stream, int volume)
 
 bool mixer_stream_set_volume(int voice, int volume)
 {
-	if (voice < 0 || voice >= STS_MIXER_VOICES)
+	if (!master || voice < 0 || voice >= STS_MIXER_VOICES)
 		return false;
 	audio_lock();
 	master->mixer.voices[voice].gain = clamp(0.0f, 1.0f, (float)volume / 100.0f);
@@ -873,6 +967,8 @@ bool mixer_stream_set_volume(int voice, int volume)
 
 void mixer_stream_stop(int voice)
 {
+	if (!master || voice < 0 || voice >= STS_MIXER_VOICES)
+		return;
 	audio_lock();
 	sts_mixer_stop_voice(&master->mixer, voice);
 	audio_unlock();

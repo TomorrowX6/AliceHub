@@ -800,11 +800,12 @@ object OnlineInstaller {
         checkCancelled()
         AppSettings.setCachedBaseGameSize(context, cleanBaseUrl, manifest.totalBytes)
 
-        val safeBase = manifest.baseName
+        val safeBase = sanitizeInstallDirName(manifest.baseName, fallback = "Game")
             .replace(Regex("[^A-Za-z0-9_\\-]"), "_")
-            .ifEmpty { "Rance10" }
-        val stagingDir = File(storagePath, ".online_base_staging_$safeBase").canonicalFile
+            .trim('_')
+            .ifEmpty { "Game" }
         val storageCanonical = storagePath.canonicalFile
+        val stagingDir = File(storageCanonical, ".online_base_staging_$safeBase").canonicalFile
         if (stagingDir.parentFile != storageCanonical) {
             throw IOException("Invalid staging path")
         }
@@ -813,11 +814,12 @@ object OnlineInstaller {
         stagingDir.mkdirs()
         onStagingDirReady?.invoke(stagingDir)
         val stagingPrefix = stagingDir.path + File.separator
+        val verifiedDoneEntries = HashSet<String>()
 
         var alreadyCompletedBytes = 0L
         for (entry in manifest.entries) {
             checkCancelled()
-            if (isManifestEntryDone(stagingDir, stagingPrefix, entry)) {
+            if (isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)) {
                 alreadyCompletedBytes += entry.size
             }
         }
@@ -831,7 +833,7 @@ object OnlineInstaller {
 
         for ((index, entry) in manifest.entries.withIndex()) {
             checkCancelled()
-            if (isManifestEntryDone(stagingDir, stagingPrefix, entry)) {
+            if (isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)) {
                 continue
             }
 
@@ -903,12 +905,11 @@ object OnlineInstaller {
                 partFile.delete()
                 partMetaFile.delete()
             } else {
-                if (finalFile.exists()) {
-                    finalFile.delete()
+                if (finalFile.exists() && !finalFile.delete()) {
+                    throw IOException("Cannot overwrite target file: $finalFile")
                 }
-                if (!partFile.renameTo(finalFile)) {
-                    partFile.copyTo(finalFile, overwrite = true)
-                    partFile.delete()
+                if (!moveFileOrDir(partFile, finalFile)) {
+                    throw IOException("Failed to finalize downloaded file: $partFile -> $finalFile")
                 }
                 partMetaFile.delete()
             }
@@ -928,6 +929,8 @@ object OnlineInstaller {
                 it.isFile && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
             } == true)
         val sys4AinFile = stagingDir.listFiles()?.firstOrNull {
+            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        } ?: stagingDir.listFiles()?.firstOrNull {
             it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
         }
         val isSys3x = GameCatalog.isSystem3xGameDir(stagingDir)
@@ -935,23 +938,99 @@ object OnlineInstaller {
             throw GameList.InstallFailureException(R.string.directory_no_game)
         }
 
-        val rawBaseName = sys4AinFile?.nameWithoutExtension.orEmpty()
-        val dirBaseName = if (manifest.baseName.isNotEmpty() &&
-            (isSys3x || rawBaseName.isEmpty() || rawBaseName.any { it.code >= 0x80 })
+        val rawAinBase = sys4AinFile?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it.nameWithoutExtension) }.orEmpty()
+        val sanitizedManifestBase = sanitizeInstallDirName(manifest.baseName, fallback = "")
+        val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
+        val dirBaseName = if (sanitizedManifestBase.isNotEmpty() &&
+            (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 })
         ) {
-            manifest.baseName
+            sanitizedManifestBase
         } else {
-            rawBaseName.ifEmpty { manifest.baseName.ifEmpty { "Rance10" } }
+            sanitizedAinBase.ifEmpty { sanitizedManifestBase.ifEmpty { "Game" } }
         }
-        var dstDir = File(storagePath, dirBaseName)
+        var dstDir = File(storageCanonical, dirBaseName).canonicalFile
         var suffix = 1
         while (dstDir.exists()) {
-            dstDir = File(storagePath, "$dirBaseName-${suffix++}")
+            dstDir = File(storageCanonical, "$dirBaseName-${suffix++}").canonicalFile
         }
-        if (!stagingDir.renameTo(dstDir)) {
+        if (dstDir.parentFile != storageCanonical) {
+            throw IOException("Destination directory escapes storage path: $dstDir")
+        }
+        if (!moveFileOrDir(stagingDir, dstDir)) {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
         return dstDir
+    }
+
+    fun sanitizeInstallDirName(raw: String, fallback: String = "Game"): String {
+        var cleaned = raw.filter { it != '/' && it != '\\' && it.code >= 0x20 }
+        cleaned = cleaned.trim { it.isWhitespace() || it == '.' }
+        while (cleaned.contains("..")) {
+            cleaned = cleaned.replace("..", "_")
+        }
+        cleaned = cleaned.trim { it.isWhitespace() || it == '.' }
+        return if (cleaned.isBlank() || cleaned == "." || cleaned == "..") fallback else cleaned
+    }
+
+    fun moveFileOrDir(src: File, dst: File): Boolean {
+        if (!src.exists()) return false
+        return try {
+            val srcCanonical = src.canonicalFile
+            val dstCanonical = dst.canonicalFile
+            if (srcCanonical == dstCanonical) return true
+            dstCanonical.parentFile?.mkdirs()
+            if (src.renameTo(dst)) {
+                return dst.exists()
+            }
+            if (dst.exists() && !dst.deleteRecursively()) {
+                return false
+            }
+            if (!copyRecursivelyVerified(src, dst)) {
+                dst.deleteRecursively()
+                return false
+            }
+            if (!src.deleteRecursively() || src.exists()) {
+                return false
+            }
+            dst.exists()
+        } catch (_: Throwable) {
+            try {
+                if (src.exists() && dst.exists() && src.canonicalFile != dst.canonicalFile) {
+                    dst.deleteRecursively()
+                }
+            } catch (_: Throwable) {
+            }
+            false
+        }
+    }
+
+    private fun copyRecursivelyVerified(src: File, dst: File): Boolean {
+        if (src.isDirectory) {
+            if (!dst.exists() && !dst.mkdirs()) return false
+            val children = src.listFiles() ?: return false
+            for (child in children) {
+                if (!copyRecursivelyVerified(child, File(dst, child.name))) {
+                    return false
+                }
+            }
+            return dst.isDirectory
+        } else if (src.isFile) {
+            dst.parentFile?.mkdirs()
+            val expectedLen = src.length()
+            FileInputStream(src).use { input ->
+                FileOutputStream(dst, false).use { output ->
+                    val buf = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        if (n > 0) output.write(buf, 0, n)
+                    }
+                    output.fd.sync()
+                }
+            }
+            return dst.isFile && dst.length() == expectedLen
+        }
+        return false
     }
 
     fun downloadAndExtractMod(
@@ -1065,7 +1144,39 @@ object OnlineInstaller {
         }
     }
 
-    private fun isManifestEntryDone(stagingDir: File, stagingPrefix: String, entry: ManifestEntry): Boolean {
+    private fun verifyStagedEntryHash(
+        file: File,
+        entry: ManifestEntry,
+        verifiedCache: MutableSet<String>,
+        checkCancelled: () -> Unit
+    ): Boolean {
+        if (!file.isFile || file.length() != entry.size) {
+            return false
+        }
+        if (entry.sha256.isBlank()) {
+            return true
+        }
+        val cacheKey = "${file.path}:${file.length()}:${file.lastModified()}:${entry.sha256.lowercase(Locale.ROOT)}"
+        if (cacheKey in verifiedCache) {
+            return true
+        }
+        val actualSha = computeFileSha256(file, checkCancelled)
+        return if (actualSha.equals(entry.sha256, ignoreCase = true)) {
+            verifiedCache.add(cacheKey)
+            true
+        } else {
+            file.delete()
+            false
+        }
+    }
+
+    private fun isManifestEntryDone(
+        stagingDir: File,
+        stagingPrefix: String,
+        entry: ManifestEntry,
+        verifiedCache: MutableSet<String>,
+        checkCancelled: () -> Unit
+    ): Boolean {
         if (entry.extract) {
             val marker = markerFileForExtractEntry(stagingDir, entry)
             return marker.isFile && marker.readText().trim().equals(entry.sha256, ignoreCase = true)
@@ -1074,17 +1185,32 @@ object OnlineInstaller {
         val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (relParts.isEmpty() || relParts.any { it == ".." }) return false
         val f = File(stagingDir, relParts.joinToString(File.separator)).canonicalFile
-        if (f.path.startsWith(stagingPrefix) && f.isFile && f.length() == entry.size) {
-            return true
+        if (!f.path.startsWith(stagingPrefix)) return false
+        if (f.isFile) {
+            if (verifyStagedEntryHash(f, entry, verifiedCache, checkCancelled)) {
+                return true
+            }
+            if (f.exists() && f.length() != entry.size) {
+                f.delete()
+            }
         }
         if (cleanPath != entry.path) {
             val rawParts = entry.path.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
             if (rawParts.isNotEmpty() && rawParts.none { it == ".." }) {
                 val rawFile = File(stagingDir, rawParts.joinToString(File.separator)).canonicalFile
-                if (rawFile.path.startsWith(stagingPrefix) && rawFile.isFile && rawFile.length() == entry.size) {
-                    f.parentFile?.mkdirs()
-                    if (rawFile.renameTo(f)) return true
-                    return true
+                if (rawFile.path.startsWith(stagingPrefix) && rawFile.isFile) {
+                    if (verifyStagedEntryHash(rawFile, entry, verifiedCache, checkCancelled)) {
+                        f.parentFile?.mkdirs()
+                        if (!moveFileOrDir(rawFile, f)) {
+                            return false
+                        }
+                        if (entry.sha256.isNotBlank()) {
+                            verifiedCache.add(
+                                "${f.path}:${f.length()}:${f.lastModified()}:${entry.sha256.lowercase(Locale.ROOT)}"
+                            )
+                        }
+                        return true
+                    }
                 }
             }
         }
@@ -1296,7 +1422,7 @@ object OnlineInstaller {
         var knownTotal = expectedSize
 
         val savedMeta = readSavedMeta(metaFile, url, expectedSha256)
-        if (savedMeta == null && metaFile.isFile) {
+        if (savedMeta == null && (metaFile.isFile || (expectedSha256.isNullOrBlank() && destPartFile.isFile))) {
             destPartFile.delete()
             metaFile.delete()
         }
@@ -1305,22 +1431,39 @@ object OnlineInstaller {
         }
 
         var lastIoError: Exception? = null
-        for (attempt in 0 until MAX_HTTP_RETRIES) {
+        var retriedCleanAfterCorruptPart = false
+        var attempt = 0
+        while (attempt < MAX_HTTP_RETRIES) {
             if (abortHandle?.isAborted == true) throw CancellationException()
             checkCancelled()
             var curLen = if (destPartFile.isFile) destPartFile.length() else 0L
             if (knownTotal > 0L && curLen > knownTotal) {
                 destPartFile.delete()
+                metaFile.delete()
                 curLen = 0L
             }
             if (knownTotal > 0L && curLen == knownTotal) {
-                break
+                if (!expectedSha256.isNullOrBlank()) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        onProgress(curLen, knownTotal, 0L)
+                        return
+                    }
+                    // Pre-existing file matches expected size but failed SHA-256; delete and re-download.
+                    destPartFile.delete()
+                    metaFile.delete()
+                    curLen = 0L
+                } else {
+                    lastIoError = null
+                    break
+                }
             }
 
             if (knownTotal > 0L) {
                 ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, (knownTotal - curLen).coerceAtLeast(0L))
             }
 
+            val startedWithPartial = curLen > 0L
             var conn: HttpURLConnection? = null
             var completedNormally = false
             try {
@@ -1349,6 +1492,7 @@ object OnlineInstaller {
                             conn = null
                             destPartFile.delete()
                             metaFile.delete()
+                            attempt++
                             continue
                         }
                         val cr = conn.getHeaderField("Content-Range")
@@ -1359,6 +1503,8 @@ object OnlineInstaller {
                                 conn.disconnect()
                                 conn = null
                                 destPartFile.delete()
+                                metaFile.delete()
+                                attempt++
                                 continue
                             }
                             if (parsed.second > 0L) {
@@ -1386,10 +1532,30 @@ object OnlineInstaller {
                         if (slashTotal > 0L && curLen == slashTotal) {
                             knownTotal = slashTotal
                             completedNormally = true
+                            abortHandle?.unregister(conn)
+                            conn.disconnect()
+                            conn = null
+                            if (!expectedSha256.isNullOrBlank()) {
+                                val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                                if (actualSha.equals(expectedSha256, ignoreCase = true)) {
+                                    onProgress(curLen, knownTotal, 0L)
+                                    return
+                                }
+                                destPartFile.delete()
+                                metaFile.delete()
+                                if (expectedSize > 0L) knownTotal = expectedSize
+                                if (!retriedCleanAfterCorruptPart) {
+                                    retriedCleanAfterCorruptPart = true
+                                    continue
+                                }
+                                throw IOException("SHA-256 verification failed for ${destPartFile.name}")
+                            }
+                            lastIoError = null
                             break
                         }
                         destPartFile.delete()
                         metaFile.delete()
+                        attempt++
                         continue
                     }
                     else -> throw IOException("Unexpected HTTP status $code")
@@ -1464,8 +1630,24 @@ object OnlineInstaller {
                 if (knownTotal > 0L && curLen < knownTotal) {
                     throw IOException("Premature EOF at $curLen / $knownTotal bytes")
                 }
-                lastIoError = null
-                break
+
+                if (!expectedSha256.isNullOrBlank()) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        destPartFile.delete()
+                        metaFile.delete()
+                        if (expectedSize > 0L) {
+                            knownTotal = expectedSize
+                        }
+                        if (startedWithPartial && !retriedCleanAfterCorruptPart) {
+                            retriedCleanAfterCorruptPart = true
+                            continue
+                        }
+                        throw IOException("SHA-256 verification failed for ${destPartFile.name}")
+                    }
+                }
+
+                return
             } catch (e: CancellationException) {
                 throw e
             } catch (e: GameList.InstallFailureException) {
@@ -1477,6 +1659,7 @@ object OnlineInstaller {
                 if (attempt + 1 < MAX_HTTP_RETRIES) {
                     sleepCancellable(1000L * (attempt + 1).coerceAtMost(5), checkCancelled)
                 }
+                attempt++
             } finally {
                 abortHandle?.unregister(conn)
                 if (conn != null) {
@@ -1491,7 +1674,7 @@ object OnlineInstaller {
 
         if (lastIoError != null) {
             val finalLen = if (destPartFile.isFile) destPartFile.length() else 0L
-            if (knownTotal <= 0L || finalLen < knownTotal) {
+            if (knownTotal <= 0L || finalLen < knownTotal || !expectedSha256.isNullOrBlank()) {
                 throw lastIoError
             }
         }

@@ -8,6 +8,8 @@
 
 struct config config = { .view_width = 128, .view_height = 128 };
 extern bool test_blur(struct parts_construction_process *, struct parts_cp_filter *, bool);
+extern bool test_gray(struct parts_construction_process *, struct parts_cp_filter *);
+extern bool test_v14(struct parts_construction_process *, struct parts_cp_v14 *);
 extern void test_render_cg(struct parts *, struct parts_common *);
 extern void parts_render_init(void);
 extern void test_set_reverse(bool, bool);
@@ -181,6 +183,96 @@ static void blur_tests(void) {
     }
     puts("PASS: GLES H/V blur, full/subrect, pinned/unpinned, RGBA preservation, two-pass blur");
 }
+static void gray_v14_and_fill_shader_tests(void) {
+    enum { W=15,H=11,N=W*H*4 };
+    unsigned char input[N], expected[N];
+    for(int y=0;y<H;y++)for(int x=0;x<W;x++) {
+        int i=(y*W+x)*4;
+        input[i]=(unsigned char)((x*17+y*3)%256);
+        input[i+1]=(unsigned char)((x*5+y*23)%256);
+        input[i+2]=(unsigned char)((x*13+y*7)%256);
+        input[i+3]=(unsigned char)((x*19+y*29)%256);
+    }
+    // 1. build_gray_filter (full_size & subrect, pinned & unpinned, no feedback loop)
+    for(int full=0;full<2;full++)for(int pinned=0;pinned<2;pinned++) {
+        struct parts_construction_process cp={0};
+        gfx_init_texture_with_pixels(&cp.common.texture,W,H,input);
+        struct parts_cp_filter op={.x=2,.y=1,.w=10,.h=8,.full_size=full};
+        memcpy(expected,input,N);
+        int x0=full?0:2, y0=full?0:1, rw=full?W:10, rh=full?H:8;
+        for(int y=0;y<rh;y++)for(int x=0;x<rw;x++) {
+            int idx=((y0+y)*W+(x0+x))*4;
+            unsigned char g=(unsigned char)round(0.299*input[idx]+0.587*input[idx+1]+0.114*input[idx+2]);
+            expected[idx]=expected[idx+1]=expected[idx+2]=g;
+        }
+        if(pinned)gfx_begin_draw_target(&cp.common.texture);
+        assert(test_gray(&cp,&op));
+        if(pinned)gfx_end_draw_target();
+        unsigned char *got=gfx_get_pixels(&cp.common.texture);
+        check_pixels(got,expected,N,1); free(got);
+        gfx_delete_texture(&cp.common.texture); no_error();
+    }
+    // 2. build_v14 cmd 132 color reverse (full_size & subrect, no feedback loop)
+    for(int full=0;full<2;full++) {
+        struct parts_construction_process cp={0};
+        gfx_init_texture_with_pixels(&cp.common.texture,W,H,input);
+        struct parts_cp_v14 op={.command=132,.dx=2,.dy=1,.dw=10,.dh=8,.full_size=full};
+        memcpy(expected,input,N);
+        int x0=full?0:2, y0=full?0:1, rw=full?W:10, rh=full?H:8;
+        for(int y=0;y<rh;y++)for(int x=0;x<rw;x++) {
+            int idx=((y0+y)*W+(x0+x))*4;
+            expected[idx]=255-input[idx];
+            expected[idx+1]=255-input[idx+1];
+            expected[idx+2]=255-input[idx+2];
+        }
+        assert(test_v14(&cp,&op));
+        unsigned char *got=gfx_get_pixels(&cp.common.texture);
+        check_pixels(got,expected,N,1); free(got);
+        gfx_delete_texture(&cp.common.texture); no_error();
+    }
+    // 3. run_fill_shader callers: gfx_fill_amap_over_border, under_border, gradation_ud
+    {
+        Texture dst={0};
+        gfx_init_texture_with_pixels(&dst,W,H,input);
+        memcpy(expected,input,N);
+        for(int y=1;y<1+8;y++)for(int x=2;x<2+10;x++) {
+            int idx=(y*W+x)*4;
+            if(input[idx+3]>=120) expected[idx+3]=42;
+        }
+        gfx_fill_amap_over_border(&dst,2,1,10,8,42,120);
+        unsigned char *got=gfx_get_pixels(&dst);
+        check_pixels(got,expected,N,1); free(got);
+        gfx_delete_texture(&dst); no_error();
+    }
+    {
+        Texture dst={0};
+        gfx_init_texture_with_pixels(&dst,W,H,input);
+        memcpy(expected,input,N);
+        for(int y=1;y<1+8;y++)for(int x=2;x<2+10;x++) {
+            int idx=(y*W+x)*4;
+            if(input[idx+3]<=120) expected[idx+3]=210;
+        }
+        gfx_fill_amap_under_border(&dst,2,1,10,8,210,120);
+        unsigned char *got=gfx_get_pixels(&dst);
+        check_pixels(got,expected,N,1); free(got);
+        gfx_delete_texture(&dst); no_error();
+    }
+    {
+        Texture dst={0};
+        gfx_init_texture_with_pixels(&dst,W,H,input);
+        memcpy(expected,input,N);
+        for(int y=0;y<8;y++)for(int x=0;x<10;x++) {
+            int idx=((1+y)*W+(2+x))*4;
+            double ty=((double)y+0.5)/8.0;
+            expected[idx+3]=(unsigned char)round(20.0+(220.0-20.0)*ty);
+        }
+        gfx_fill_amap_gradation_ud(&dst,2,1,10,8,20,220);
+        unsigned char *got=gfx_get_pixels(&dst);
+        check_pixels(got,expected,N,2); free(got);
+        gfx_delete_texture(&dst); no_error();
+    }
+    puts("PASS: GLES gray filter, v14 color reverse, and fill_amap shaders (0 feedback loops)");
+}
 static void sprite_tests(bool activity, bool v2) {
     enum { W=32,H=24,N=W*H*4,S=128 };
     unsigned char input[N];
@@ -245,7 +337,7 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    shader3d_tests(); blur_tests(); sprite_tests(false,true);
+    shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); replacement_context_negative_control(); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);

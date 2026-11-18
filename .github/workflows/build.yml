@@ -62,23 +62,31 @@ jobs:
           cd project
           sed -i 's/\r$//' ./gradlew
           chmod +x ./gradlew
-          if [ -n "${KEYSTORE_BASE64}" ]; then
+          if [ -n "${KEYSTORE_BASE64}" ] && [ -n "${KEYSTORE_PASSWORD}" ] && [ -n "${KEY_ALIAS}" ] && [ -n "${KEY_PASSWORD}" ]; then
             echo "${KEYSTORE_BASE64}" | base64 -d > keystore.jks
           else
-            keytool -genkeypair -v \
-              -keystore keystore.jks \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android \
-              -dname "CN=re-xsystem4,O=Android,C=CN"
+            rm -f keystore.jks
+            echo "::warning::Release signing secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) are missing; building with debug signing config unless CI_REQUIRE_RELEASE_SIGNING=true."
           fi
-          ./gradlew assembleRelease
+          SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ -n "${REF_NAME}" ]; then
+            APP_VER="${REF_NAME}"
+          elif [ -n "${REF_NAME}" ]; then
+            APP_VER="${REF_NAME}-${SHORT_SHA}"
+          else
+            APP_VER="${SHORT_SHA}"
+          fi
+          ./gradlew assembleRelease \
+            "-PAPP_VERSION_NAME=${APP_VER}" \
+            "-PCI_REQUIRE_RELEASE_SIGNING=${CI_REQUIRE_RELEASE_SIGNING}"
           cp app/build/outputs/apk/release/app-release.apk ../re-xsystem4-arm64-v8a.apk
         env:
+          REF_NAME: ${{ github.ref_name }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'androiddebugkey' }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'android' }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          CI_REQUIRE_RELEASE_SIGNING: ${{ vars.CI_REQUIRE_RELEASE_SIGNING || 'false' }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

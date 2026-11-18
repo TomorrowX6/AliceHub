@@ -311,6 +311,8 @@ static void delete_material(struct material *m)
 
 static struct material *get_material(struct dungeon_renderer *r, int type, int index)
 {
+	if (type < 0 || type >= DTX_NR_CELL_TEXTURE_TYPES || index < 0 || index >= r->nr_dtx_columns)
+		return NULL;
 	struct material *m = &r->materials[type * r->nr_dtx_columns + index];
 	if (!m->texture)
 		return NULL;
@@ -339,6 +341,12 @@ static void init_object3d(struct object3d *o3d, struct dungeon_renderer *r, cons
 		const struct polyobj_part *part = &obj->parts[i];
 		for (int j = 0; j < part->nr_triangles; j++) {
 			const struct polyobj_triangle *triangle = &part->triangles[j];
+			if (triangle->material < 0 || triangle->material >= obj->nr_materials)
+				continue;
+			if (triangle->index[0] < 0 || triangle->index[0] >= part->nr_vertices ||
+			    triangle->index[1] < 0 || triangle->index[1] >= part->nr_vertices ||
+			    triangle->index[2] < 0 || triangle->index[2] >= part->nr_vertices)
+				continue;
 			for (int k = 0; k < 3; k++) {
 				const int ltor[] = {0, 2, 1};  // left->right handed system
 				const vec3 *pos = &part->vertices[triangle->index[ltor[k]]];
@@ -372,6 +380,8 @@ static void init_polyobjs(struct dungeon_renderer *r, struct polyobj *po)
 	r->polyobj_materials = xcalloc(po->nr_textures, sizeof(struct material));
 	for (int i = 0; i < po->nr_textures; i++) {
 		struct cg *cg = polyobj_get_texture(po, i);
+		if (!cg)
+			continue;
 		init_material(&r->polyobj_materials[i], cg);
 		cg_free(cg);
 	}
@@ -455,7 +465,7 @@ struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version versi
 	if (version == DRAW_DUNGEON_2 && is_dolls_boss_floor(num)) {
 		// Use special marker table for Dungeons & Dolls boss floor
 		r->marker_table = dolls_boss_marker_info;
-	} else {
+	} else if ((unsigned)version < sizeof(marker_tables) / sizeof(marker_tables[0])) {
 		r->marker_table = marker_tables[version];
 	}
 
@@ -550,6 +560,8 @@ static void draw_door(struct dungeon_renderer *r, GLuint texture, float angle, m
 
 static void draw_floor_marker(struct dungeon_renderer *r, const struct marker_info *info, float x, float y, float z, uint32_t t)
 {
+	if (!r->event_textures || info->floor_marker < 0 || info->floor_marker >= r->nr_event_textures)
+		return;
 	float rad = t / 400.0;
 	mat4 rot;
 	glm_euler((vec3){0, 0, rad}, rot);
@@ -577,17 +589,20 @@ static void draw_floating_marker(struct dungeon_renderer *r, const struct marker
 		0,  1,  0,  y,
 		0,  0,  1,  z,
 		0,  0,  0,  1);
-	if (info->texture_count) {
+	if (info->texture_count > 0) {
 		int frame = t / 100;   // 100ms per frame
 		texture += frame % info->texture_count;
 		// Make a billboard matrix
-		mat3 r;
-		glm_mat4_pick3t(view_mat, r);
-		glm_mat4_ins3(r, m);
+		mat3 r_bill;
+		glm_mat4_pick3t(view_mat, r_bill);
+		glm_mat4_ins3(r_bill, m);
 	} else {
 		float angle = t / -(GLM_PIf * 100.f);
 		glm_rotate_y(m, angle, m);
 	}
+
+	if (!r->event_textures || texture < 0 || texture >= r->nr_event_textures)
+		return;
 
 	glUniform1f(r->alpha_mod, blend_rate / 255.0);
 	draw(r, r->floating_marker_geometry, r->event_textures[texture], m);
@@ -603,8 +618,10 @@ static void draw_object3d(struct dungeon_renderer *r, struct object3d *o3d, bool
 
 	for (int i = 0; i < o3d->nr_meshes; i++) {
 		struct mesh *mesh = &o3d->meshes[i];
+		if (mesh->material < 0 || mesh->material >= r->nr_polyobj_materials)
+			continue;
 		struct material *material = &r->polyobj_materials[mesh->material];
-		if (material->opaque != render_opaque)
+		if (!material->texture || material->opaque != render_opaque)
 			continue;
 		draw(r, mesh->geometry, material->texture, m);
 	}
@@ -616,10 +633,11 @@ static void stairs_matrix(mat4 dst, float x, float y, float z, int orientation)
 	glm_translate_make(dst, pos);
 	const float cos[4] = {1, 0, -1, 0};
 	const float sin[4] = {0, 1, 0, -1};
-	dst[0][0] =  cos[orientation % 4];
-	dst[0][2] = -sin[orientation % 4];
-	dst[2][0] =  sin[orientation % 4];
-	dst[2][2] =  cos[orientation % 4];
+	int ori = ((orientation % 4) + 4) % 4;
+	dst[0][0] =  cos[ori];
+	dst[0][2] = -sin[ori];
+	dst[2][0] =  sin[ori];
+	dst[2][2] =  cos[ori];
 }
 
 static void draw_cell(struct dungeon_renderer *r, struct dgn_cell *cell, bool render_opaque, mat4 view_transform)
@@ -790,7 +808,7 @@ static void draw_cell(struct dungeon_renderer *r, struct dgn_cell *cell, bool re
 			glCullFace(GL_BACK);
 		}
 	}
-	if (cell->polyobj_index >= 0 && r->draw_obj_flags & (1 << DRAW_POLYOBJ)) {
+	if (cell->polyobj_index >= 0 && cell->polyobj_index < r->nr_polyobjs && r->draw_obj_flags & (1 << DRAW_POLYOBJ)) {
 		vec3 pos = {
 			x + cell->polyobj_position_x,
 			y + cell->polyobj_position_y - 1,
@@ -816,10 +834,11 @@ static void draw_character(struct dungeon_renderer *r, struct drawfield_characte
 	if (!sp || !sp->texture.handle)
 		return;
 
-	if (chara->cols == 0) chara->cols = 1;
-	if (chara->rows == 0) chara->rows = 1;
+	if (chara->cols <= 0) chara->cols = 1;
+	if (chara->rows <= 0) chara->rows = 1;
+	int cg_index = max(0, chara->cg_index);
 	glUseProgram(r->shader.program);
-	glUniform2f(r->uv_offset, (float)(chara->cg_index % chara->cols) / chara->cols, (float)(chara->cg_index / chara->cols) / chara->rows);
+	glUniform2f(r->uv_offset, (float)(cg_index % chara->cols) / chara->cols, (float)(cg_index / chara->cols) / chara->rows);
 	glUniform2f(r->uv_scale, 1.0f / chara->cols, 1.0f / chara->rows);
 
 	mat4 m;
@@ -903,6 +922,7 @@ void dungeon_renderer_render(struct dungeon_renderer *r, struct dgn_cell **cells
 	for (int i = nr_cells - 1; i >= 0; i--)
 		draw_cell(r, cells[i], false, view_transform);
 
+	glActiveTexture(GL_TEXTURE0);
 	glUseProgram(0);
 }
 
@@ -928,7 +948,7 @@ static void prepare_raster_shader(struct gfx_render_job *job, void *data)
 {
 	struct dungeon_renderer *r = data;
 	float width = job->world_transform[0];
-	glUniform1f(r->raster_shader.amp, r->raster_amp / width);
+	glUniform1f(r->raster_shader.amp, width != 0.0f ? r->raster_amp / width : 0.0f);
 	glUniform1f(r->raster_shader.t, SDL_GetTicks() / 1000.f);
 }
 

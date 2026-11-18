@@ -330,7 +330,7 @@ void sts_mixer_mix_audio(sts_mixer_t* mixer, void* output, unsigned int samples)
           position = 0;
         }
         // added in xsystem4: allow stopping stream via callback return value
-        if (status == STS_STREAM_COMPLETE) {
+        if (status == STS_STREAM_COMPLETE || voice->stream->sample.length <= 0) {
           sts_mixer_stop_voice(mixer, i);
         } else {
           left += sts_mixer__clamp_sample(sts_mixer__get_sample(&voice->stream->sample, position) * voice->gain);

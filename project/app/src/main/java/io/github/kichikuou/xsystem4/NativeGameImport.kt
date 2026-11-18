@@ -51,30 +51,43 @@ object NativeGameImport {
 
     private fun isSys4Root(docs: List<Document>): Boolean {
         val hasIni = docs.any {
-            !it.folder && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
+            !it.folder && !skip(it.name) &&
+                (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
         }
         val hasAin = docs.any {
-            !it.folder && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+            !it.folder && !skip(it.name) &&
+                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
         }
         return hasIni && hasAin
     }
 
     private fun isSys3Root(docs: List<Document>): Boolean {
         if (isSys4Root(docs)) return false
-        return docs.any { !it.folder && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)) }
+        return docs.any {
+            !it.folder && !skip(it.name) &&
+                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }
     }
 
     private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
-        if (docs.any { !it.folder && it.name.equals("DOKI_SA.ALD", true) }) return "Escalayer"
+        if (docs.any { !it.folder && !skip(it.name) && it.name.equals("DOKI_SA.ALD", true) }) {
+            return "Escalayer"
+        }
         val sys4Ain = docs.firstOrNull {
-            !it.folder && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+            !it.folder && !skip(it.name) &&
+                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
         }
         if (sys4Ain != null) {
-            return ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.name.substringBeforeLast('.')).ifEmpty { "Game" }
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.name.substringBeforeLast('.'))
+            return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")
         }
-        val sa = docs.firstOrNull { !it.folder && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)) }
+        val sa = docs.firstOrNull {
+            !it.folder && !skip(it.name) &&
+                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }
         if (sa != null) {
-            return ArchiveExtractor.repairSjisAsGbkMojibake(sa.name.substringBeforeLast('.')).ifEmpty { "System3" }
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sa.name.substringBeforeLast('.'))
+            return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "System3")
         }
         return if (isMultiDiscSys3) "System3" else "Game"
     }
@@ -108,7 +121,7 @@ object NativeGameImport {
                     primaryDocs = docs
                     discRoots.add(dirUri to docs)
                 } else if (docs.any {
-                        !it.folder && (it.name.endsWith(".ald", true) ||
+                        !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
                             it.name.endsWith(".bgi", true) || it.name.endsWith(".alk", true))
                     }
                 ) {
@@ -126,13 +139,14 @@ object NativeGameImport {
 
         val resolvedPrimary = primaryDocs ?: throw GameList.InstallFailureException(R.string.directory_no_game)
         if (!expectedAinName.isNullOrBlank() &&
-            resolvedPrimary.none { !it.folder && it.name.equals(expectedAinName, ignoreCase = true) }
+            resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
         ) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
-        val staging = File(storage, ".import-${UUID.randomUUID()}").canonicalFile
-        if (staging.parentFile != storage.canonicalFile || !staging.mkdir())
+        val storageCanonical = storage.canonicalFile
+        val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
+        if (staging.parentFile != storageCanonical || !staging.mkdir())
             throw IOException("Cannot create import directory")
         var copied = 0L
         var lastUpdate = 0L
@@ -182,10 +196,17 @@ object NativeGameImport {
                 copy(docs, staging)
             }
             currentCoroutineContext().ensureActive()
-            var destination = File(storage, baseName)
+            var destination = File(storageCanonical, baseName).canonicalFile
             var index = 1
-            while (destination.exists()) destination = File(storage, "$baseName-${index++}")
-            if (!staging.renameTo(destination)) throw IOException("Cannot finish game import")
+            while (destination.exists()) {
+                destination = File(storageCanonical, "$baseName-${index++}").canonicalFile
+            }
+            if (destination.parentFile != storageCanonical) {
+                throw IOException("Invalid destination directory")
+            }
+            if (!OnlineInstaller.moveFileOrDir(staging, destination)) {
+                throw IOException("Cannot finish game import")
+            }
             return destination
         } finally {
             // Staging is a newly created direct child of this app's storage.

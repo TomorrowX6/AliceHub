@@ -22,6 +22,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.text.Editable;
 import android.text.InputType;
@@ -582,6 +583,12 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             mCurrentLocale = newConfig.locale;
             SDLActivity.onNativeLocaleChanged();
         }
+
+        int newOrientation = SDLActivity.getCurrentOrientation();
+        if (newOrientation != SDL_ORIENTATION_UNKNOWN && newOrientation != mCurrentOrientation) {
+            mCurrentOrientation = newOrientation;
+            SDLActivity.onNativeOrientationChanged(newOrientation);
+        }
     }
 
     @Override
@@ -734,7 +741,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     // FIXME: Why aren't we enabling sensor input at start?
 
                     mSDLThread = new Thread(new SDLMain(), "SDLThread");
-                    mSurface.enableSensor(Sensor.TYPE_ACCELEROMETER, true);
                     mSDLThread.start();
 
                     // No nativeResume(), don't signal Android_ResumeSem
@@ -868,6 +874,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Message msg = commandHandler.obtainMessage();
         msg.arg1 = command;
         msg.obj = data;
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            commandHandler.handleMessage(msg);
+            return true;
+        }
         boolean result = commandHandler.sendMessage(msg);
 
         if (Build.VERSION.SDK_INT >= 19 /* Android 4.4 (KITKAT) */) {
@@ -877,7 +887,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
                 boolean bShouldWait = false;
 
-                if (data instanceof Integer) {
+                if (data instanceof Integer && mSurface != null) {
                     // Let's figure out if we're already laid out fullscreen or not.
                     Display display = ((WindowManager) getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
                     DisplayMetrics realMetrics = new DisplayMetrics();

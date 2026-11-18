@@ -203,9 +203,13 @@ int sact_Effect(int type, int time, possibly_unused int key)
 	if (!effect_init(type))
 		return 0;
 	scene_render();
+	if (time <= 0) {
+		effect_fini();
+		return 1;
+	}
 
 	uint32_t t = SDL_GetTicks() - start;
-	while (t < time) {
+	while (t < (uint32_t)time) {
 		effect_update((float)t / (float)time);
 		uint32_t t2 = SDL_GetTicks() - start;
 		if (t2 < t + 16) {
@@ -225,21 +229,28 @@ HLL_WARN_UNIMPLEMENTED(1, int, SACT2, EffectSetMask, int cg);
 
 void sact_QuakeScreen(int amp_x, int amp_y, int time, int key)
 {
+	(void)key;
+	if (time <= 0)
+		return;
+
 	Texture tex;
 	scene_render();
 	gfx_copy_main_surface(&tex);
 
 	Texture *dst = gfx_main_surface();
+	int ax = abs(amp_x);
+	int ay = abs(amp_y);
 
 	for (int i = 0; i < time; i+= 16) {
 		float rate = 1.0f - ((float)i / (float)time);
-		int delta_x = amp_x ? (rand() % amp_x - amp_x/2) * rate : 0;
-		int delta_y = amp_y ? (rand() % amp_y - amp_y/2) * rate : 0;
+		int delta_x = ax ? (int)((rand() % ax - ax/2) * rate) : 0;
+		int delta_y = ay ? (int)((rand() % ay - ay/2) * rate) : 0;
 		gfx_clear();
 		gfx_copy(dst, delta_x, delta_y, &tex, 0, 0, dst->w, dst->h);
 		gfx_swap();
 		SDL_Delay(16);
 	}
+	gfx_delete_texture(&tex);
 }
 
 //void SACT2_QUAKE_SET_CROSS(int amp_x, int amp_y);
@@ -247,6 +258,7 @@ void sact_QuakeScreen(int amp_x, int amp_y, int time, int key)
 
 int sact_SP_GetUnuseNum(int min)
 {
+	min = max(1, min);
 	for (int i = min; i < nr_sprites; i++) {
 		if (!sprites[i])
 			return i;
@@ -269,6 +281,8 @@ int sact_SP_Count(void)
 
 int sact_SP_Enum(struct page **array)
 {
+	if (!array || !*array)
+		return 0;
 	int count = 0;
 	int size = (*array)->nr_vars;
 	for (int i = 0; i < nr_sprites && count < size; i++) {
@@ -305,9 +319,12 @@ int sact_SP_SetCG2X(int sp_no, int cg_no)
 
 int sact_SP_SetCGFromFile(int sp_no, struct string *filename)
 {
+	if (!filename) return 0;
 	struct sact_sprite *sp = sact_get_sprite(sp_no);
 	if (!sp) return 0;
-	char *path = gamedir_path(filename->text);
+	char *path = gamedir_path_icase(filename->text);
+	if (!path)
+		path = gamedir_path(filename->text);
 	int r = sprite_set_cg_from_file(sp, path);
 	free(path);
 	return r;
@@ -315,6 +332,7 @@ int sact_SP_SetCGFromFile(int sp_no, struct string *filename)
 
 int sact_SP_SaveCG(int sp_no, struct string *filename)
 {
+	if (!filename) return 0;
 	struct sact_sprite *sp = sact_try_get_sprite(sp_no);
 	if (!sp) return 0;
 	char *path = gamedir_path(filename->text);
@@ -584,6 +602,8 @@ int _sact_SP_TextDraw(int sp_no, struct string *text, struct text_style *ts)
 
 int sact_SP_TextDraw(int sp_no, struct string *text, struct page *_tm)
 {
+	if (!text || !_tm || _tm->type != STRUCT_PAGE || _tm->nr_vars < 13)
+		return 0;
 	struct text_style ts;
 	sact_text_metrics_to_text_style(&ts, _tm->values);
 	_sact_SP_TextDraw(sp_no, text, &ts);
@@ -696,6 +716,8 @@ int sact_SP_IsPtInRect(int sp_no, int x, int y)
 
 int sact_CG_GetMetrics(int cg_no, struct page **page)
 {
+	if (!page || !*page || (*page)->type != STRUCT_PAGE || (*page)->nr_vars < 7)
+		return 0;
 	union vm_value *cgm = (*page)->values;
 	struct cg_metrics metrics;
 	if (!asset_cg_get_metrics(cg_no, &metrics))

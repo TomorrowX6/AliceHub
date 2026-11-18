@@ -40,7 +40,7 @@ static Texture wp = {0};
 
 void scene_register_sprite(struct sprite *sp)
 {
-	if (sp->in_scene)
+	if (!sp || sp->in_scene)
 		return;
 
 	if (!sp->id)
@@ -62,7 +62,7 @@ void scene_register_sprite(struct sprite *sp)
 
 void scene_unregister_sprite(struct sprite *sp)
 {
-	if (!sp->in_scene)
+	if (!sp || !sp->in_scene)
 		return;
 	TAILQ_REMOVE(&sprite_list, sp, entry);
 	sp->in_scene = false;
@@ -90,7 +90,9 @@ void scene_render(void)
 	}
 
 	bool in_parts_pass = false;
-	for (sp = start_sp; sp; sp = TAILQ_NEXT(sp, entry)) {
+	struct sprite *next;
+	for (sp = start_sp; sp; sp = next) {
+		next = TAILQ_NEXT(sp, entry);
 		if (sp->render) {
 			bool is_parts = (sp->render == parts_sprite_render || sp->render == parts_background_render);
 			if (is_parts && !in_parts_pass) {
@@ -137,6 +139,10 @@ int scene_set_wp_color(int r, int g, int b)
 int scene_set_wp_texture(Texture *tex)
 {
 	gfx_delete_texture(&wp);
+	if (!tex || !tex->handle || tex->w <= 0 || tex->h <= 0) {
+		scene_dirty();
+		return 0;
+	}
 	gfx_init_texture_rgb(&wp, tex->w, tex->h, (SDL_Color){ 0, 0, 0, 255 });
 	gfx_copy(&wp, 0, 0, tex, 0, 0, tex->w, tex->h);
 
@@ -146,6 +152,8 @@ int scene_set_wp_texture(Texture *tex)
 
 void scene_set_sprite_z(struct sprite *sp, int z)
 {
+	if (!sp)
+		return;
 	sp->z = z;
 	if (sp->in_scene) {
 		scene_unregister_sprite(sp);
@@ -155,6 +163,8 @@ void scene_set_sprite_z(struct sprite *sp, int z)
 
 void scene_set_sprite_z2(struct sprite *sp, int z, int z2)
 {
+	if (!sp)
+		return;
 	sp->z = z;
 	sp->z2 = z2;
 	if (sp->in_scene) {
@@ -165,7 +175,7 @@ void scene_set_sprite_z2(struct sprite *sp, int z, int z2)
 
 bool scene_sprite_check_z_order(struct sprite *sp, int z, int z2)
 {
-	if (!sp->in_scene)
+	if (!sp || !sp->in_scene)
 		return false;
 	struct sprite *prev = TAILQ_PREV(sp, listhead, entry);
 	struct sprite *next = TAILQ_NEXT(sp, entry);

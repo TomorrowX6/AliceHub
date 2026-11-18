@@ -33,6 +33,7 @@ static inline float rad2deg(float rad)
 }
 
 static void GoatGUIEngine_PreLink(void);
+bool PE_DeletePartsTopTextLine(int parts_no, int state);
 
 static void GoatGUIEngine_AddMotionHGaugeRate(int parts_no, int begin_numerator, int begin_denominator, int end_numerator, int end_denominator, int begin_t, int end_t)
 {
@@ -88,7 +89,7 @@ HLL_LIBRARY(GoatGUIEngine,
 	    HLL_EXPORT(SetLoopCG, PE_SetLoopCG),
 	    HLL_EXPORT(SetText, PE_SetText),
 	    HLL_EXPORT(AddPartsText, PE_AddPartsText),
-	    HLL_TODO_EXPORT(DeletePartsTopTextLine, PE_DeletePartsTopTextLine),
+	    HLL_EXPORT(DeletePartsTopTextLine, PE_DeletePartsTopTextLine),
 	    HLL_EXPORT(SetFont, PE_SetFont),
 	    HLL_EXPORT(SetPartsFontType, PE_SetPartsFontType),
 	    HLL_EXPORT(SetPartsFontSize, PE_SetPartsFontSize),

@@ -179,6 +179,11 @@ void heap_unref(int slot)
 	if (unlikely(slot == 0 && heap[0].ref <= 1)) {
 		VM_ERROR("Attempted to free global page (slot 0)");
 	}
+	if (heap[slot].exiting) {
+		if (heap[slot].ref > 1)
+			heap[slot].ref--;
+		return;
+	}
 	if (unlikely(heap[slot].ref <= 0)) {
 		heap_double_free(slot);
 		VM_ERROR("double free");
@@ -193,17 +198,28 @@ void heap_unref(int slot)
 #ifdef DEBUG_HEAP
 	heap[slot].free_addr = instr_ptr;
 #endif
+	heap[slot].exiting = true;
 	switch (heap[slot].type) {
 	case VM_PAGE:
 		if (heap[slot].page) {
 			delete_page(slot);
 		}
+		if (heap[slot].ref > 1) {
+			heap[slot].ref--;
+			heap[slot].exiting = false;
+			return;
+		}
 		break;
 	case VM_STRING:
-		free_string(heap[slot].s);
+		if (heap[slot].s) {
+			struct string *s = heap[slot].s;
+			heap[slot].s = NULL;
+			free_string(s);
+		}
 		break;
 	}
 	heap[slot].ref = 0;
+	heap[slot].exiting = false;
 	heap_free_slot(slot);
 }
 
@@ -421,10 +437,18 @@ void heap_struct_assign(int lval, int rval)
 	if (unlikely(heap[lval].page && heap[rval].page && heap[lval].page->index != heap[rval].page->index))
 		VM_ERROR("SR_ASSIGN with different struct types");
 #endif
+	heap_ref(rval);
 	if (heap[lval].page) {
 		delete_page(lval);
 	}
-	heap_set_page(lval, copy_page(heap[rval].page));
+	struct page *copied = page_index_valid(rval) ? copy_page(heap[rval].page) : NULL;
+	if (page_index_valid(lval)) {
+		heap_set_page(lval, copied);
+	} else if (copied) {
+		delete_page_vars(copied);
+		free_page(copied);
+	}
+	heap_unref(rval);
 }
 
 int32_t heap_alloc_string(struct string *s)

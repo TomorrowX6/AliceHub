@@ -613,7 +613,7 @@ static void load_polygons(struct s3de *s, struct archive *aar)
 		if (o->polygon_name && *o->polygon_name) {
 			char *pol_path = xmalloc(strlen(s->path) + strlen(o->polygon_name) + 2);
 			sprintf(pol_path, "%s\\%s", s->path, o->polygon_name);
-			o->model = model_load(aar, pol_path);
+			o->model = model_load(aar, pol_path, RE_SEAL_PLUGIN);
 			free(pol_path);
 		}
 	}
@@ -758,8 +758,8 @@ static void interp_pos_bezier(struct s3de_position_entry *list, int n, float fra
 		// evaluate the Bezier curve.
 		if (frame < list[seg_end].frame || seg_end == n - 1) {
 			// For simplicity, t is mapped linearly within a segment.
-			float t = (frame - list[k].frame) /
-				  (float)(list[seg_end].frame - list[k].frame);
+			int denom = list[seg_end].frame - list[k].frame;
+			float t = denom > 0 ? (frame - list[k].frame) / (float)denom : 0.0f;
 			// De Casteljau's algorithm.
 			vec3 tmp[4];
 			for (int i = 0; i <= degree; i++)
@@ -786,13 +786,14 @@ static void find_pos_segment(struct s3de_position_entry *list, int n, float fram
 	while (k + 1 < n && list[k + 1].frame <= frame)
 		k++;
 	*k_out = k;
-	if (list[k].interp == S3DE_INTERP_NONE) {
+	int denom = list[k + 1].frame - list[k].frame;
+	if (list[k].interp == S3DE_INTERP_NONE || denom <= 0) {
 		// t <- 0, so the caller can lerp unconditionally and naturally hold
 		// list[k]'s value.
 		*t_out = 0.0f;
 	} else {
 		// Linear interpolation.
-		*t_out = (frame - list[k].frame) / (float)(list[k + 1].frame - list[k].frame);
+		*t_out = (frame - list[k].frame) / (float)denom;
 	}
 }
 

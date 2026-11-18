@@ -48,7 +48,9 @@ static const GLchar glsl_preamble[] =
 #ifdef USE_GLES
 	"#version 300 es\n"
 	"precision highp float;\n"
-	"precision highp int;\n";
+	"precision highp int;\n"
+	"precision highp sampler2D;\n"
+	"precision highp usampler2D;\n";
 #else
 	"#version 140\n";
 #endif
@@ -515,12 +517,16 @@ void gfx_fini(void)
 		glDeleteFramebuffers(1, &offscreen_draw_fbo);
 	if (offscreen_read_fbo)
 		glDeleteFramebuffers(1, &offscreen_read_fbo);
+	if (main_surface_fb)
+		glDeleteFramebuffers(1, &main_surface_fb);
 	offscreen_draw_fbo = 0;
 	offscreen_read_fbo = 0;
+	main_surface_fb = 0;
 	offscreen_draw_tex = 0;
 	offscreen_read_tex = 0;
 	pinned_draw_tex = 0;
 	pinned_draw_bound = false;
+	gfx_delete_texture(&main_surface);
 	glDeleteProgram(default_shader.program);
 	SDL_DestroyWindow(sdl.window);
 	SDL_FreeFormat(sdl.format);
@@ -541,6 +547,8 @@ static void main_surface_init(int w, int h)
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	main_surface.w = w;
@@ -1109,6 +1117,7 @@ void gfx_init_texture_blank(struct texture *t, int w, int h)
 void gfx_copy_main_surface(struct texture *dst)
 {
 	init_texture(dst, main_surface.w, main_surface.h);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, main_surface_fb);
 	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, main_surface.w, main_surface.h, 0);
 	dst->opaque = true;
 }

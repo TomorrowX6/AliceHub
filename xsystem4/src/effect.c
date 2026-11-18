@@ -139,6 +139,7 @@ static void render_effect_shader(struct effect_shader *shader, Texture *dst, Tex
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0,
 			dst->w, dst->h);
 	gfx_render(&job);
+	glActiveTexture(GL_TEXTURE0);
 	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 }
 
@@ -285,6 +286,10 @@ static effect_fun effect_functions[NR_EFFECTS] = {
 
 void effect_update_texture(int type, Texture *dst, Texture *old, Texture *new, float rate)
 {
+	if (type <= 0 || type >= NR_EFFECTS) {
+		WARNING("Invalid or unknown effect: %d", type);
+		return;
+	}
 	if (effect_functions[type]) {
 		effect_functions[type](dst, old, new, rate);
 	} else {

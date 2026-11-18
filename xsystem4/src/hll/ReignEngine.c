@@ -2036,7 +2036,18 @@ static bool TapirEngine_IsExistPlugin(int plugin_number)
 
 //int TapirEngine_GetNumofInstance(int PluginNumber);
 
+static void ReignEngine_ModuleFini(void)
+{
+	for (int i = 0; i < RE_MAX_PLUGINS; i++) {
+		if (plugins[i]) {
+			RE_plugin_free(plugins[i]);
+			plugins[i] = NULL;
+		}
+	}
+}
+
 #define REIGN_EXPORTS \
+	    HLL_EXPORT(_ModuleFini, ReignEngine_ModuleFini), \
 	    HLL_EXPORT(ReleasePlugin, ReignEngine_ReleasePlugin), \
 	    HLL_EXPORT(BindPlugin, ReignEngine_BindPlugin), \
 	    HLL_EXPORT(UnbindPlugin, ReignEngine_UnbindPlugin), \

@@ -1435,7 +1435,7 @@ void parts_set_surface_area(struct parts *parts, struct parts_common *common, in
 
 static bool parts_animation_update(struct parts_animation *anim, int passed_time)
 {
-	if (passed_time <= 0 || !anim->nr_frames)
+	if (passed_time <= 0 || !anim->nr_frames || !anim->frame_time)
 		return false;
 
 	const unsigned elapsed = anim->elapsed + passed_time;
@@ -1771,15 +1771,24 @@ void PE_UpdateComponent(possibly_unused int passed_time)
 		// update parent
 		struct parts *parent;
 		if (parts->pending_parent >= 0 && (parent = parts_try_get(parts->pending_parent))) {
-			if (parts->parent) {
-				TAILQ_REMOVE(&parts->parent->children, parts, child_list_entry);
+			bool creates_cycle = (parent == parts);
+			for (struct parts *anc = parent; !creates_cycle && anc; anc = anc->parent) {
+				if (anc == parts)
+					creates_cycle = true;
 			}
-			parts->parent = parent;
-			TAILQ_INSERT_TAIL(&parent->children, parts, child_list_entry);
+			if (!creates_cycle) {
+				if (parts->parent) {
+					TAILQ_REMOVE(&parts->parent->children, parts, child_list_entry);
+				}
+				parts->parent = parent;
+				TAILQ_INSERT_TAIL(&parent->children, parts, child_list_entry);
 
-			// if parent is layout box, mark it dirty so that it can re-layout its children
-			if (parent->states[0].type == PARTS_LAYOUT_BOX)
-				parts_component_dirty(parent);
+				// if parent is layout box, mark it dirty so that it can re-layout its children
+				if (parent->states[0].type == PARTS_LAYOUT_BOX)
+					parts_component_dirty(parent);
+			} else {
+				WARNING("Ignoring cyclic parent %d for parts %d", parts->pending_parent, parts->no);
+			}
 		}
 		// TODO: should the child be orphaned if it already has a parent and an invalid
 		//       parent no is given?

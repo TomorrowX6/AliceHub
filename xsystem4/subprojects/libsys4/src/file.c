@@ -262,14 +262,26 @@ FILE *file_open_utf8(const char *path, const char *mode)
 char *path_dirname(const char *path)
 {
 	static char buf[PATH_MAX];
-	strncpy(buf, path, PATH_MAX-1);
+	if (!path)
+		return ".";
+	size_t n = strlen(path);
+	if (n >= PATH_MAX)
+		n = PATH_MAX - 1;
+	memmove(buf, path, n);
+	buf[n] = '\0';
 	return dirname(buf);
 }
 
 char *path_basename(const char *path)
 {
 	static char buf[PATH_MAX];
-	strncpy(buf, path, PATH_MAX-1);
+	if (!path)
+		return ".";
+	size_t n = strlen(path);
+	if (n >= PATH_MAX)
+		n = PATH_MAX - 1;
+	memmove(buf, path, n);
+	buf[n] = '\0';
 	return basename(buf);
 }
 #endif
@@ -281,7 +293,7 @@ void *file_read(const char *path, size_t *len_out)
 	uint8_t *buf;
 
 	ustat s;
-	if (stat_utf8(path, &s) < 0) {
+	if (!path || stat_utf8(path, &s) < 0) {
 		return NULL;
 	}
 	if (!S_ISREG(s.st_mode)) {
@@ -292,12 +304,19 @@ void *file_read(const char *path, size_t *len_out)
 	if (!(fp = file_open_utf8(path, "rb")))
 		return NULL;
 
-	fseek(fp, 0, SEEK_END);
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return NULL;
+	}
 	len = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
+	if (len < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+		fclose(fp);
+		return NULL;
+	}
 
-	buf = xmalloc(len + 1);
-	if (fread(buf, len, 1, fp) != 1) {
+	buf = xmalloc((size_t)len + 1);
+	if (len > 0 && fread(buf, (size_t)len, 1, fp) != 1) {
+		fclose(fp);
 		free(buf);
 		return NULL;
 	}
@@ -307,7 +326,7 @@ void *file_read(const char *path, size_t *len_out)
 	}
 
 	if (len_out)
-		*len_out = len;
+		*len_out = (size_t)len;
 
 	buf[len] = 0;
 	return buf;
@@ -318,7 +337,7 @@ bool file_write(const char *path, uint8_t *data, size_t data_size)
 	FILE *fp = file_open_utf8(path, "wb");
 	if (!fp)
 		return false;
-	int r = fwrite(data, data_size, 1, fp);
+	int r = data_size == 0 ? 1 : (int)fwrite(data, data_size, 1, fp);
 	int tmp = errno;
 	fclose(fp);
 	errno = tmp;
@@ -417,14 +436,16 @@ const char *file_extension(const char *path)
 bool is_directory(const char *path)
 {
 	ustat s;
-	stat_utf8(path, &s);
+	if (!path || stat_utf8(path, &s) < 0)
+		return false;
 	return S_ISDIR(s.st_mode);
 }
 
 off_t file_size(const char *path)
 {
 	ustat s;
-	stat_utf8(path, &s);
+	if (!path || stat_utf8(path, &s) < 0)
+		return -1;
 	if (!S_ISREG(s.st_mode))
 		return -1;
 	return s.st_size;

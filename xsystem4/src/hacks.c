@@ -104,6 +104,19 @@ void set_msgskip_delay(struct ain *ain, unsigned ms)
 	ain->code = xrealloc(ain->code, ain->code_size + out.index);
 	memcpy(ain->code + ain->code_size, out.buf, out.index);
 	ain->code_size += out.index;
+	free(out.buf);
+}
+
+static uint32_t find_func_end_addr(struct ain *ain, int fno)
+{
+	uint32_t begin = ain->functions[fno].address;
+	uint32_t end = ain->code_size > 0 ? (uint32_t)ain->code_size : 0;
+	for (int i = 0; i < ain->nr_functions; i++) {
+		uint32_t addr = ain->functions[i].address;
+		if (addr > begin && addr < end)
+			end = addr;
+	}
+	return end;
 }
 
 // Rance 02 (MangaGamer version)
@@ -128,10 +141,11 @@ static void apply_rance02_hacks(struct ain *ain)
 		config.text_x_scale = 0.9375;
 	}
 
-	// rewrite function
+	// rewrite function via temporary buffer and verify bounds before writing
+	uint32_t base = (uint32_t)f->address;
+	uint32_t end = find_func_end_addr(ain, fno);
 	struct buffer out;
-	buffer_init(&out, ain->code, ain->code_size);
-	buffer_seek(&out, f->address);
+	buffer_init(&out, NULL, 0);
 
 	// _CalculateWidth(ref string str, int nFontSize, int nWeightSize) {
 	//     if (str[0] > 255 || str[0] == '}')
@@ -150,18 +164,18 @@ static void apply_rance02_hacks(struct ain *ain)
 	write_instruction1(&out, PUSH, '}');
 	write_instruction0(&out, EQUALE);
 	write_instruction0(&out, OR);
-	int ifz_addr = out.index;
+	size_t ifz_addr = out.index;
 	write_instruction1(&out, IFZ, 0);
 
 	// return nFontSize + nWeightSize
 	write_instruction1(&out, SH_LOCALREF, 1);
 	write_instruction1(&out, SH_LOCALREF, 2);
 	write_instruction0(&out, ADD);
-	int jump_addr = out.index;
+	size_t jump_addr = out.index;
 	write_instruction1(&out, JUMP, 0);
 
 	// return nFontSize / 2 + nWeightSize;
-	buffer_write_int32_at(&out, ifz_addr + 2, out.index);
+	buffer_write_int32_at(&out, ifz_addr + 2, (int32_t)(base + out.index));
 	write_instruction1(&out, SH_LOCALREF, 1);
 	write_instruction1(&out, PUSH, 2);
 	write_instruction0(&out, DIV);
@@ -169,7 +183,7 @@ static void apply_rance02_hacks(struct ain *ain)
 	write_instruction0(&out, ADD);
 
 	// multiply by config.text_x_scale (if not 1.0)
-	buffer_write_int32_at(&out, jump_addr + 2, out.index);
+	buffer_write_int32_at(&out, jump_addr + 2, (int32_t)(base + out.index));
 	if (fabsf(1.0f - config.text_x_scale) > 0.01) {
 		union { int32_t i; float f; } cast = { .f = config.text_x_scale };
 		write_instruction0(&out, ITOF);
@@ -181,7 +195,13 @@ static void apply_rance02_hacks(struct ain *ain)
 	write_instruction0(&out, RETURN);
 	write_instruction1(&out, ENDFUNC, fno);
 
-	game_rance02_mg = true;
+	if (f->address >= 0 && end >= base && out.index <= end - base) {
+		memcpy(ain->code + base, out.buf, out.index);
+		game_rance02_mg = true;
+	} else {
+		WARNING("Rance 02 '_CalculateWidth' function body too small to patch safely");
+	}
+	free(out.buf);
 }
 
 // Rance VI (MangaGamer version)
@@ -209,83 +229,80 @@ static void apply_rance9_hacks(struct ain *ain)
 		return;
 	}
 
-	struct buffer out;
-	buffer_init(&out, ain->code, ain->code_size);
+	struct buffer add_buf, erase_buf;
+	buffer_init(&add_buf, NULL, 0);
+	buffer_init(&erase_buf, NULL, 0);
 
-	// bool T_PartsNo::add(int nNo)
-	// {
-	//     if (nNo < 10000 || nNo > 999999)
-	//         return false;
-	//     int idx = nNo - 10000;
-	//     if (this.m_abUsed[idx])
-	//         return false;
-	//     return (this.m_abUsed[idx] = true);
-	// }
-	int32_t return_false_addr[3];
-	struct ain_function *f = &ain->functions[add_fno];
-	buffer_seek(&out, f->address);
+	size_t return_false_addr[3];
+	struct ain_function *add_f = &ain->functions[add_fno];
+	uint32_t add_base = (uint32_t)add_f->address;
+	uint32_t add_end = find_func_end_addr(ain, add_fno);
 	// if (nNo < 10000 || nNo > 999999) return false;
-	write_instruction3(&out, SH_IF_LOC_LT_IMM, 0, 10000, 0);
-	return_false_addr[0] = out.index - 4;
-	write_instruction3(&out, SH_IF_LOC_GT_IMM, 0, 999999, 0);
-	return_false_addr[1] = out.index - 4;
+	write_instruction3(&add_buf, SH_IF_LOC_LT_IMM, 0, 10000, 0);
+	return_false_addr[0] = add_buf.index - 4;
+	write_instruction3(&add_buf, SH_IF_LOC_GT_IMM, 0, 999999, 0);
+	return_false_addr[1] = add_buf.index - 4;
 	// int idx = nNo - 10000;
-	write_instruction0(&out, PUSHLOCALPAGE);
-	write_instruction1(&out, PUSH, 1);
-	write_instruction1(&out, SH_LOCALREF, 0);
-	write_instruction1(&out, PUSH, 10000);
-	write_instruction0(&out, SUB);
-	write_instruction0(&out, ASSIGN);
-	write_instruction0(&out, POP);
+	write_instruction0(&add_buf, PUSHLOCALPAGE);
+	write_instruction1(&add_buf, PUSH, 1);
+	write_instruction1(&add_buf, SH_LOCALREF, 0);
+	write_instruction1(&add_buf, PUSH, 10000);
+	write_instruction0(&add_buf, SUB);
+	write_instruction0(&add_buf, ASSIGN);
+	write_instruction0(&add_buf, POP);
 	// if (this.m_abUsed[idx]) return false;
-	write_instruction1(&out, SH_STRUCTREF, 1);
-	write_instruction1(&out, SH_LOCALREF, 1);
-	write_instruction0(&out, REF);
-	write_instruction1(&out, IFNZ, 0);
-	return_false_addr[2] = out.index - 4;
+	write_instruction1(&add_buf, SH_STRUCTREF, 1);
+	write_instruction1(&add_buf, SH_LOCALREF, 1);
+	write_instruction0(&add_buf, REF);
+	write_instruction1(&add_buf, IFNZ, 0);
+	return_false_addr[2] = add_buf.index - 4;
 	// return (this.m_abUsed[idx] = true);
-	write_instruction1(&out, SH_STRUCTREF, 1);
-	write_instruction1(&out, SH_LOCALREF, 1);
-	write_instruction1(&out, PUSH, 1);
-	write_instruction0(&out, ASSIGN);
-	write_instruction0(&out, RETURN);
+	write_instruction1(&add_buf, SH_STRUCTREF, 1);
+	write_instruction1(&add_buf, SH_LOCALREF, 1);
+	write_instruction1(&add_buf, PUSH, 1);
+	write_instruction0(&add_buf, ASSIGN);
+	write_instruction0(&add_buf, RETURN);
 	// [return false]
-	buffer_write_int32_at(&out, return_false_addr[0], out.index);
-	buffer_write_int32_at(&out, return_false_addr[1], out.index);
-	buffer_write_int32_at(&out, return_false_addr[2], out.index);
-	write_instruction1(&out, PUSH, 0);
-	write_instruction0(&out, RETURN);
+	buffer_write_int32_at(&add_buf, return_false_addr[0], (int32_t)(add_base + add_buf.index));
+	buffer_write_int32_at(&add_buf, return_false_addr[1], (int32_t)(add_base + add_buf.index));
+	buffer_write_int32_at(&add_buf, return_false_addr[2], (int32_t)(add_base + add_buf.index));
+	write_instruction1(&add_buf, PUSH, 0);
+	write_instruction0(&add_buf, RETURN);
 
-	// bool T_PartsNo::erase(int nNo)
-	// {
-	//     if (nNo < 10000 || nNo > 999999)
-	//         return false;
-	//     this.m_abUsed[nNo - 10000] = false;
-	//     return true;
-	// }
-	f = &ain->functions[erase_fno];
-	buffer_seek(&out, f->address);
+	struct ain_function *erase_f = &ain->functions[erase_fno];
+	uint32_t erase_base = (uint32_t)erase_f->address;
+	uint32_t erase_end = find_func_end_addr(ain, erase_fno);
 	// if (nNo < 10000 || nNo > 999999) return false;
-	write_instruction3(&out, SH_IF_LOC_LT_IMM, 0, 10000, 0);
-	return_false_addr[0] = out.index - 4;
-	write_instruction3(&out, SH_IF_LOC_GT_IMM, 0, 999999, 0);
-	return_false_addr[1] = out.index - 4;
+	write_instruction3(&erase_buf, SH_IF_LOC_LT_IMM, 0, 10000, 0);
+	return_false_addr[0] = erase_buf.index - 4;
+	write_instruction3(&erase_buf, SH_IF_LOC_GT_IMM, 0, 999999, 0);
+	return_false_addr[1] = erase_buf.index - 4;
 	// this.m_abUsed[nNo - 10000] = false;
-	write_instruction1(&out, SH_STRUCTREF, 1);
-	write_instruction1(&out, SH_LOCALREF, 0);
-	write_instruction1(&out, PUSH, 10000);
-	write_instruction0(&out, SUB);
-	write_instruction1(&out, PUSH, 0);
-	write_instruction0(&out, ASSIGN);
-	write_instruction0(&out, POP);
+	write_instruction1(&erase_buf, SH_STRUCTREF, 1);
+	write_instruction1(&erase_buf, SH_LOCALREF, 0);
+	write_instruction1(&erase_buf, PUSH, 10000);
+	write_instruction0(&erase_buf, SUB);
+	write_instruction1(&erase_buf, PUSH, 0);
+	write_instruction0(&erase_buf, ASSIGN);
+	write_instruction0(&erase_buf, POP);
 	// return true;
-	write_instruction1(&out, PUSH, 1);
-	write_instruction0(&out, RETURN);
+	write_instruction1(&erase_buf, PUSH, 1);
+	write_instruction0(&erase_buf, RETURN);
 	// [return false]
-	buffer_write_int32_at(&out, return_false_addr[0], out.index);
-	buffer_write_int32_at(&out, return_false_addr[1], out.index);
-	write_instruction1(&out, PUSH, 0);
-	write_instruction0(&out, RETURN);
+	buffer_write_int32_at(&erase_buf, return_false_addr[0], (int32_t)(erase_base + erase_buf.index));
+	buffer_write_int32_at(&erase_buf, return_false_addr[1], (int32_t)(erase_base + erase_buf.index));
+	write_instruction1(&erase_buf, PUSH, 0);
+	write_instruction0(&erase_buf, RETURN);
+
+	if (add_f->address >= 0 && add_end >= add_base && add_buf.index <= add_end - add_base &&
+	    erase_f->address >= 0 && erase_end >= erase_base && erase_buf.index <= erase_end - erase_base) {
+		memcpy(ain->code + add_base, add_buf.buf, add_buf.index);
+		memcpy(ain->code + erase_base, erase_buf.buf, erase_buf.index);
+	} else {
+		WARNING("Rance 9 T_PartsNo functions too small to patch safely");
+	}
+	free(add_buf.buf);
+	free(erase_buf.buf);
 }
 
 // Daibanchou (English fan translation)
@@ -341,18 +358,6 @@ static void apply_rance03_message_layout(struct ain *ain)
 	memcpy(ain->code + ain->code_size, out.buf, out.index);
 	ain->code_size += out.index;
 	free(out.buf);
-}
-
-static uint32_t find_func_end_addr(struct ain *ain, int fno)
-{
-	uint32_t begin = ain->functions[fno].address;
-	uint32_t end = ain->code_size;
-	for (int i = 0; i < ain->nr_functions; i++) {
-		uint32_t addr = ain->functions[i].address;
-		if (addr > begin && addr < end)
-			end = addr;
-	}
-	return end;
 }
 
 static void apply_rance03_card_caption_layout(struct ain *ain)
@@ -489,6 +494,20 @@ static void apply_rance03_skill_cooldown_layout(struct ain *ain)
 
 void apply_game_specific_hacks(struct ain *ain)
 {
+	game_daibanchou_en = false;
+	game_rance02_mg = false;
+	game_rance6_mg = false;
+	game_rance7_mg = false;
+	game_sengokurance = false;
+	game_rance8 = false;
+	game_rance8_mg = false;
+	game_rance9 = false;
+	game_rance10 = false;
+	game_dohnadohna = false;
+	game_evenicle = false;
+	game_rance03 = false;
+	game_dungeons_and_dolls = false;
+
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
 	game_dohnadohna = ain->version == 14
@@ -537,7 +556,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1280;
 		config.view_height = 720;
 	}
-	char *game_name = sjis2utf(config.game_name, 0);
+	char *game_name = config.game_name ? sjis2utf(config.game_name, 0) : xstrdup("");
 	if (!strcmp(game_name, "大番長")) {
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {

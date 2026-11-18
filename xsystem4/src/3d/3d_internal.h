@@ -222,13 +222,12 @@ struct billboard_texture {
 
 // reign.c
 
-extern enum RE_plugin_version re_plugin_version;
-
 void RE_instance_update_local_transform(struct RE_instance *inst);
+bool RE_instance_is_mesh_hidden(const struct RE_instance *inst, int mesh_index);
 
 // model.c
 
-struct model *model_load(struct archive *aar, const char *path);
+struct model *model_load(struct archive *aar, const char *path, enum RE_plugin_version version);
 void model_free(struct model *model);
 struct model *model_create_sphere(int r, int g, int b, int a);
 
@@ -239,7 +238,7 @@ struct archive_data *RE_get_aar_entry(struct archive *aar, const char *dir, cons
 
 // renderer.c
 
-struct RE_renderer *RE_renderer_new(void);
+struct RE_renderer *RE_renderer_new(enum RE_plugin_version version);
 void RE_renderer_free(struct RE_renderer *r);
 void RE_renderer_set_viewport_size(struct RE_renderer *r, int width, int height);
 bool RE_renderer_load_billboard_texture_by_no(struct RE_renderer *r, int cg_no);
@@ -409,7 +408,7 @@ struct particle_instance {
 	float pitch_angle;
 };
 
-struct pae *pae_load(struct archive *aar, const char *path);
+struct pae *pae_load(struct archive *aar, const char *path, enum RE_plugin_version version);
 void pae_free(struct pae *pae);
 void pae_calc_frame_range(struct pae *pae, struct motion *motion);
 float pae_object_calc_alpha(struct pae_object *po, struct particle_instance *pi, float frame);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 project(archive_jni C)
 
 find_library(LIBARCHIVE_LIB NAMES archive PATHS "${CMAKE_FIND_ROOT_PATH}/lib" "${CMAKE_INSTALL_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
@@ -18,6 +18,7 @@ target_link_libraries(archive_jni PRIVATE
 )
 if(ANDROID)
   target_link_libraries(archive_jni PRIVATE log)
+  target_link_options(archive_jni PRIVATE "LINKER:-z,max-page-size=16384")
 endif()
 target_link_options(archive_jni PRIVATE "-Wl,--gc-sections")
 

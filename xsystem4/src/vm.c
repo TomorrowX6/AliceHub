@@ -172,6 +172,9 @@ static int32_t struct_page_slot(void)
 	for (int i = call_stack_ptr - 1; i >= 0; i--) {
 		if (call_stack[i].has_struct_page)
 			return call_stack[i].struct_page;
+		int fno = call_stack[i].fno;
+		if (!ain || fno < 0 || fno >= ain->nr_functions || !ain->functions[fno].is_lambda)
+			break;
 	}
 	return -1;
 }
@@ -188,7 +191,10 @@ struct page *get_struct_page(int frame_no)
 {
 	if (frame_no < 0 || frame_no >= call_stack_ptr)
 		return NULL;
-	int slot = call_stack[call_stack_ptr - (frame_no + 1)].struct_page;
+	struct function_call *frame = &call_stack[call_stack_ptr - (frame_no + 1)];
+	if (!frame->has_struct_page)
+		return NULL;
+	int slot = frame->struct_page;
 	return page_index_valid(slot) && slot >= 1 ? heap[slot].page : NULL;
 }
 
@@ -1045,14 +1051,21 @@ void vm_system_call(int code)
 		break;
 	}
 	case SYS_RESUME_READ_COMMENT: {// system.ResumeReadComment(string szKeyName, string szFileName, ref array@string aszComment)
-		int success;
+		int success = 0;
 		int comment = stack_pop().i;
 		int filename = stack_pop().i;
 		int keyname = stack_pop().i;
-		// FIXME: free ref'd array if allocated
-		heap_set_page(comment, vm_load_image_comments(heap_get_string(keyname)->text,
-							      heap_get_string(filename)->text,
-							      &success));
+		struct page *loaded = vm_load_image_comments(heap_get_string(keyname)->text,
+							     heap_get_string(filename)->text,
+							     &success);
+		if (page_index_valid(comment)) {
+			if (heap[comment].page)
+				delete_page(comment);
+			heap_set_page(comment, loaded);
+		} else if (loaded) {
+			delete_page_vars(loaded);
+			free_page(loaded);
+		}
 		heap_unref(filename);
 		heap_unref(keyname);
 		stack_push(success);
@@ -1064,7 +1077,7 @@ void vm_system_call(int code)
 		int keyname = stack_pop().i;
 		stack_push(vm_write_image_comments(heap_get_string(keyname)->text,
 						   heap_get_string(filename)->text,
-						   heap_get_page(comment)));
+						   page_index_valid(comment) ? heap_get_page(comment) : NULL));
 		heap_unref(filename);
 		heap_unref(keyname);
 		break;
@@ -1508,7 +1521,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	// --- Arithmetic ---
 	//
 	case INV: {
-		stack[stack_ptr-1].i = -stack[stack_ptr-1].i;
+		stack[stack_ptr-1].i = (int32_t)-(uint32_t)stack[stack_ptr-1].i;
 		break;
 	}
 	case NOT: {
@@ -1520,34 +1533,40 @@ static enum opcode execute_instruction(enum opcode opcode)
 		break;
 	}
 	case ADD: {
-		stack[stack_ptr-2].i += stack[stack_ptr-1].i;
+		stack[stack_ptr-2].i = (int32_t)((uint32_t)stack[stack_ptr-2].i + (uint32_t)stack[stack_ptr-1].i);
 		stack_ptr--;
 		break;
 	}
 	case SUB: {
-		stack[stack_ptr-2].i -= stack[stack_ptr-1].i;
+		stack[stack_ptr-2].i = (int32_t)((uint32_t)stack[stack_ptr-2].i - (uint32_t)stack[stack_ptr-1].i);
 		stack_ptr--;
 		break;
 	}
 	case MUL: {
-		stack[stack_ptr-2].i *= stack[stack_ptr-1].i;
+		stack[stack_ptr-2].i = (int32_t)((uint32_t)stack[stack_ptr-2].i * (uint32_t)stack[stack_ptr-1].i);
 		stack_ptr--;
 		break;
 	}
 	case DIV: {
-		if (!stack[stack_ptr-1].i) {
+		int32_t a = stack[stack_ptr-2].i;
+		int32_t b = stack[stack_ptr-1].i;
+		if (!b) {
 			stack[stack_ptr-2].i = 0;
+		} else if (a == INT32_MIN && b == -1) {
+			stack[stack_ptr-2].i = INT32_MIN;
 		} else {
-			stack[stack_ptr-2].i /= stack[stack_ptr-1].i;
+			stack[stack_ptr-2].i = a / b;
 		}
 		stack_ptr--;
 		break;
 	}
 	case MOD: {
-		if (!stack[stack_ptr-1].i) {
+		int32_t a = stack[stack_ptr-2].i;
+		int32_t b = stack[stack_ptr-1].i;
+		if (!b || (a == INT32_MIN && b == -1)) {
 			stack[stack_ptr-2].i = 0;
 		} else {
-			stack[stack_ptr-2].i %= stack[stack_ptr-1].i;
+			stack[stack_ptr-2].i = a % b;
 		}
 		stack_ptr--;
 		break;
@@ -1568,12 +1587,22 @@ static enum opcode execute_instruction(enum opcode opcode)
 		break;
 	}
 	case LSHIFT: {
-		stack[stack_ptr-2].i <<= stack[stack_ptr-1].i;
+		int32_t sh = stack[stack_ptr-1].i;
+		if (sh < 0 || sh >= 32) {
+			stack[stack_ptr-2].i = 0;
+		} else {
+			stack[stack_ptr-2].i = (int32_t)((uint32_t)stack[stack_ptr-2].i << sh);
+		}
 		stack_ptr--;
 		break;
 	}
 	case RSHIFT: {
-		stack[stack_ptr-2].i >>= stack[stack_ptr-1].i;
+		int32_t sh = stack[stack_ptr-1].i;
+		if (sh < 0 || sh >= 32) {
+			stack[stack_ptr-2].i = (stack[stack_ptr-2].i < 0 && sh >= 32) ? -1 : 0;
+		} else {
+			stack[stack_ptr-2].i >>= sh;
+		}
 		stack_ptr--;
 		break;
 	}
@@ -1617,27 +1646,49 @@ static enum opcode execute_instruction(enum opcode opcode)
 	// +=, -=, etc.
 	case PLUSA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i += n);
+		union vm_value *v = stack_pop_var();
+		v->i = (int32_t)((uint32_t)v->i + (uint32_t)n);
+		stack_push(v->i);
 		break;
 	}
 	case MINUSA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i -= n);
+		union vm_value *v = stack_pop_var();
+		v->i = (int32_t)((uint32_t)v->i - (uint32_t)n);
+		stack_push(v->i);
 		break;
 	}
 	case MULA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i *= n);
+		union vm_value *v = stack_pop_var();
+		v->i = (int32_t)((uint32_t)v->i * (uint32_t)n);
+		stack_push(v->i);
 		break;
 	}
 	case DIVA: {
 		int32_t n = stack_pop().i;
-		stack_push(n ? stack_pop_var()->i /= n : 0);
+		union vm_value *v = stack_pop_var();
+		if (!n) {
+			stack_push(0);
+		} else if (v->i == INT32_MIN && n == -1) {
+			v->i = INT32_MIN;
+			stack_push(v->i);
+		} else {
+			stack_push(v->i /= n);
+		}
 		break;
 	}
 	case MODA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i %= n);
+		union vm_value *v = stack_pop_var();
+		if (!n) {
+			stack_push(0);
+		} else if (v->i == INT32_MIN && n == -1) {
+			v->i = 0;
+			stack_push(0);
+		} else {
+			stack_push(v->i %= n);
+		}
 		break;
 	}
 	case ANDA: {
@@ -1657,22 +1708,35 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case LSHIFTA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i <<= n);
+		union vm_value *v = stack_pop_var();
+		if (n < 0 || n >= 32) {
+			v->i = 0;
+		} else {
+			v->i = (int32_t)((uint32_t)v->i << n);
+		}
+		stack_push(v->i);
 		break;
 	}
 	case RSHIFTA: {
 		int32_t n = stack_pop().i;
-		stack_push(stack_pop_var()->i >>= n);
+		union vm_value *v = stack_pop_var();
+		if (n < 0 || n >= 32) {
+			v->i = (v->i < 0 && n >= 32) ? -1 : 0;
+		} else {
+			v->i >>= n;
+		}
+		stack_push(v->i);
 		break;
 	}
 	case INC: {
-		stack_pop_var()[0].i++;
+		union vm_value *v = stack_pop_var();
+		v->i = (int32_t)((uint32_t)v->i + 1u);
 		break;
 	}
 	case DEC: {
 		union vm_value *value = stack_pop_var();
 		if (!game_rance03 || !modifier_keep_dec_item(value))
-			value->i--;
+			value->i = (int32_t)((uint32_t)value->i - 1u);
 		break;
 	}
 	case ITOB: {
@@ -1717,7 +1781,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case LI_MOD: {
 		int64_t a = stack[stack_ptr-2].i;
 		int64_t b = stack[stack_ptr-1].i;
-		stack[stack_ptr-2].i = lint_clamp(a % b);
+		stack[stack_ptr-2].i = b ? lint_clamp(a % b) : 0;
 		stack_ptr--;
 		break;
 	}
@@ -1753,7 +1817,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case LI_MODA: {
 		int64_t n = stack_pop().i;
 		union vm_value *v = stack_pop_var();
-		stack_push(v->i = lint_clamp((int64_t)v->i % n));
+		stack_push(v->i = (n ? lint_clamp((int64_t)v->i % n) : 0));
 		break;
 	}
 	case LI_ANDA: {
@@ -1777,13 +1841,15 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case LI_LSHIFTA: {
 		int64_t n = stack_pop().i;
 		union vm_value *v = stack_pop_var();
-		stack_push(v->i = lint_clamp((int64_t)v->i << n));
+		int64_t res = (n < 0 || n >= 64) ? 0 : (int64_t)((uint64_t)(int64_t)v->i << n);
+		stack_push(v->i = lint_clamp(res));
 		break;
 	}
 	case LI_RSHIFTA: {
 		int64_t n = stack_pop().i;
 		union vm_value *v = stack_pop_var();
-		stack_push(v->i = lint_clamp((int64_t)v->i >> n));
+		int64_t res = (n < 0 || n >= 64) ? ((v->i < 0 && n >= 64) ? -1 : 0) : ((int64_t)v->i >> n);
+		stack_push(v->i = lint_clamp(res));
 		break;
 	}
 	case LI_INC: {
@@ -1800,7 +1866,18 @@ static enum opcode execute_instruction(enum opcode opcode)
 	// --- Floating Point Arithmetic ---
 	//
 	case FTOI: {
-		stack_set(0, (int32_t)stack_peek(0).f);
+		float f = stack_peek(0).f;
+		int32_t res;
+		if (f != f) {
+			res = 0;
+		} else if (f >= 2147483648.0f) {
+			res = INT32_MAX;
+		} else if (f < -2147483648.0f) {
+			res = INT32_MIN;
+		} else {
+			res = (int32_t)f;
+		}
+		stack_set(0, res);
 		break;
 	}
 	case ITOF: {
@@ -2338,10 +2415,33 @@ static enum opcode execute_instruction(enum opcode opcode)
 		union vm_value v = stack_pop();
 		int end = stack_pop().i;
 		int start = stack_pop().i;
+		int32_t arr_heap = stack_peek(1).i;
+		int32_t arr_var = stack_peek(0).i;
 		struct page *array = heap_get_page(stack_pop_var()->i);
+		bool is_str_array = false;
+		if (array) {
+			enum ain_data_type et = (array->a_type == AIN_ARRAY)
+				? array->array.element_type.data
+				: array_type(array->a_type);
+			is_str_array = (et == AIN_STRING);
+		} else {
+			const struct ain_type *vt = lookup_expected_var_type(arr_heap, arr_var);
+			if (vt && vt->data == AIN_WRAP)
+				vt = vt->array_type;
+			if (vt) {
+				if (vt->data == AIN_ARRAY_STRING || vt->data == AIN_REF_ARRAY_STRING)
+					is_str_array = true;
+				else if ((vt->data == AIN_ARRAY || vt->data == AIN_REF_ARRAY)
+						&& vt->array_type && vt->array_type->data == AIN_STRING)
+					is_str_array = true;
+			} else if (page_index_valid(arr_heap) && heap[arr_heap].page
+					&& heap[arr_heap].page->type == ARRAY_PAGE
+					&& array_type(heap[arr_heap].page->a_type) == AIN_STRING) {
+				is_str_array = true;
+			}
+		}
 		stack_push(array_find(array, start, end, v, fno));
-		// FIXME: string key isn't freed if array is empty
-		if (array && array_type(array->a_type) == AIN_STRING) {
+		if (is_str_array) {
 			heap_unref(v.i);
 		}
 		break;
@@ -2385,7 +2485,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case SH_LOCALASSIGN_SUB_IMM: {
 		int n = get_argument(0);
-		local_set(n, local_get(n).i - get_argument(1));
+		local_set(n, (int32_t)((uint32_t)local_get(n).i - (uint32_t)get_argument(1)));
 		break;
 	}
 	case SH_IF_LOC_LT_IMM: {
@@ -2778,7 +2878,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case DG_CLEAR: {
 		int slot = stack_pop().i;
-		if (!slot)
+		if (slot <= 0 || !page_index_valid(slot))
 			break;
 		heap_set_page(slot, delegate_clear(heap_get_delegate_page(slot)));
 		break;
@@ -3128,11 +3228,17 @@ static enum opcode execute_instruction(enum opcode opcode)
 		}
 		int arr_slot = heap_alloc_page(arr);
 		if (page_index_valid(pageno) && heap[pageno].page && varno >= 0 && varno < heap[pageno].page->nr_vars) {
+			int old_slot = heap[pageno].page->values[varno].i;
 			heap[pageno].page->values[varno].i = arr_slot;
-		} else if (invalid_var_warn_count++ < INVALID_VAR_WARN_LIMIT) {
-			WARNING("Out of bounds X_A_INIT(%d): %d/%d", init_elems, pageno, varno);
+			if (old_slot > 0 && heap_index_valid(old_slot))
+				heap_unref(old_slot);
+			stack_push(arr_slot);
+		} else {
+			if (invalid_var_warn_count++ < INVALID_VAR_WARN_LIMIT)
+				WARNING("Out of bounds X_A_INIT(%d): %d/%d", init_elems, pageno, varno);
+			heap_unref(arr_slot);
+			stack_push(-1);
 		}
-		stack_push(arr_slot);
 		break;
 	}
 	case X_A_SIZE: {
@@ -3189,11 +3295,15 @@ static void vm_execute(void)
 		uint16_t opcode;
 		if (instr_ptr == VM_RETURN)
 			return;
-		if (unlikely(instr_ptr >= ain->code_size)) {
+		if (unlikely(instr_ptr + 2 > ain->code_size)) {
 			VM_ERROR("Illegal instruction pointer: 0x%08lX", instr_ptr);
 		}
 		stack_ensure(64);
 		opcode = get_opcode(instr_ptr);
+		uint16_t raw_op = opcode & ~OPTYPE_MASK;
+		if (unlikely(raw_op < NR_OPCODES && instr_ptr + (size_t)instruction_width(raw_op) > ain->code_size)) {
+			VM_ERROR("Truncated instruction 0x%04x at 0x%08lX", opcode, instr_ptr);
+		}
 		opcode = execute_instruction(opcode);
 		instr_ptr += instructions[opcode].ip_inc;
 	}
@@ -3290,12 +3400,22 @@ int vm_execute_ain(struct ain *program)
 	for (int i = 0; i < ain->nr_initvals; i++) {
 		int32_t index;
 		struct ain_initval *v = &ain->global_initvals[i];
+		if (v->global_index < 0 || v->global_index >= ain->nr_globals) {
+			WARNING("Out of bounds global initval index: %d", v->global_index);
+			continue;
+		}
 		switch (v->data_type) {
-		case AIN_STRING:
+		case AIN_STRING: {
+			int32_t old_slot = heap[0].page->values[v->global_index].i;
 			index = heap_alloc_slot(VM_STRING);
 			heap[0].page->values[v->global_index].i = index;
-			heap[index].s = make_string(v->string_value, strlen(v->string_value));
+			heap[index].s = v->string_value
+				? make_string(v->string_value, strlen(v->string_value))
+				: string_ref(&EMPTY_STRING);
+			if (old_slot > 0 && heap_index_valid(old_slot))
+				exit_unref(old_slot);
 			break;
+		}
 		case AIN_REF_STRING:
 		case AIN_REF_STRUCT:
 		case AIN_REF_DELEGATE:
@@ -3303,27 +3423,50 @@ int vm_execute_ain(struct ain *program)
 		case AIN_REF_ARRAY:
 			// Resolved in the second pass once target globals have valid heap slots.
 			break;
-		default:
+		default: {
+			enum ain_data_type gdt = ain->globals[v->global_index].type.data;
+			switch (gdt) {
+			case AIN_STRING:
+			case AIN_STRUCT:
+			case AIN_DELEGATE:
+			case AIN_ARRAY_TYPE:
+			case AIN_ARRAY: {
+				int32_t old_slot = heap[0].page->values[v->global_index].i;
+				if (old_slot > 0 && heap_index_valid(old_slot))
+					exit_unref(old_slot);
+				break;
+			}
+			default:
+				break;
+			}
 			heap[0].page->values[v->global_index].i = v->int_value;
 			break;
+		}
 		}
 	}
 	for (int i = 0; i < ain->nr_initvals; i++) {
 		struct ain_initval *v = &ain->global_initvals[i];
+		if (v->global_index < 0 || v->global_index >= ain->nr_globals)
+			continue;
 		switch (v->data_type) {
 		case AIN_REF_STRING:
 		case AIN_REF_STRUCT:
 		case AIN_REF_DELEGATE:
 		case AIN_REF_ARRAY_TYPE:
-		case AIN_REF_ARRAY:
+		case AIN_REF_ARRAY: {
+			int32_t old_slot = heap[0].page->values[v->global_index].i;
 			if (v->int_value >= 0 && v->int_value < ain->nr_globals) {
 				int32_t slot = heap[0].page->values[v->int_value].i;
 				heap[0].page->values[v->global_index].i = slot;
-				heap_ref(slot);
+				if (slot > 0 && heap_index_valid(slot))
+					heap_ref(slot);
 			} else {
 				heap[0].page->values[v->global_index].i = -1;
 			}
+			if (old_slot > 0 && heap_index_valid(old_slot))
+				exit_unref(old_slot);
 			break;
+		}
 		default:
 			break;
 		}
