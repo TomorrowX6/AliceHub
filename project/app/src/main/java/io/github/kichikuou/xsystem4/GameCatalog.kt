@@ -46,6 +46,8 @@ object GameCatalog {
     const val ID_DOHNA_DOHNA = "dohnadohna"
     const val ID_EVENICLE = "evenicle"
     const val ID_SENGOKU_RANCE = "sengokurance"
+    const val ID_RANCE01 = "rance01"
+    const val ID_RANCE02 = "rance02"
     const val ID_RANCE03 = "rance03"
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
@@ -82,6 +84,11 @@ object GameCatalog {
     }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
+    private val RANCE01_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?1(?![0-9０-９])")
+    private val RANCE02_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?2(?![0-9０-９])")
+    private val RANCE03_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?3(?![0-9０-９])")
+    private val RANCE08_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?8(?![0-9０-９])")
+    private val RANCE09_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?9(?![0-9０-９])")
 
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
@@ -119,6 +126,27 @@ object GameCatalog {
                 }
                 if (ainFiles.any { it.name.equals("Evenicle.ain", ignoreCase = true) }) {
                     return ID_EVENICLE
+                }
+                if (ainFiles.any { it.name.equals("Rance01.ain", ignoreCase = true) } ||
+                    files.any { it.isFile && it.name.startsWith("Rance01", ignoreCase = true) && it.name.endsWith(".ald", ignoreCase = true) }
+                ) {
+                    return ID_RANCE01
+                }
+                if (ainFiles.any {
+                        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                        it.name.equals("Rance02.ain", ignoreCase = true) ||
+                            it.name.equals("ランス０２.ain", ignoreCase = true) ||
+                            it.name.equals("ランス02.ain", ignoreCase = true) ||
+                            repaired.equals("ランス０２.ain", ignoreCase = true) ||
+                            repaired.equals("ランス02.ain", ignoreCase = true)
+                    } || files.any {
+                        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                        it.isFile && it.name.endsWith(".ald", ignoreCase = true) &&
+                            (it.name.startsWith("ランス０２") || it.name.startsWith("ランス02") ||
+                                repaired.startsWith("ランス０２") || repaired.startsWith("ランス02"))
+                    }
+                ) {
+                    return ID_RANCE02
                 }
                 if (ainFiles.any { it.name.equals("Rance03.ain", ignoreCase = true) }) {
                     return ID_RANCE03
@@ -179,6 +207,21 @@ object GameCatalog {
             ) {
                 return ID_RANCE09
             }
+            if ((File(saveDir, "ＣＧモード.asd").isFile ||
+                    File(saveDir, "回想モード.asd").isFile ||
+                    File(saveDir, "QC.asd").isFile) &&
+                !File(saveDir, "共有.asd").isFile &&
+                !File(saveDir, "嫟桳.asd").isFile &&
+                !File(saveDir, "音楽モード.asd").isFile &&
+                !File(saveDir, "壒妝儌乕僪.asd").isFile &&
+                !File(saveDir, "3DSetting.asd").isFile &&
+                !File(saveDir, "顔ＣＧ").isDirectory &&
+                !File(saveDir, "婄俠俧").isDirectory &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_RANCE02
+            }
             if ((File(saveDir, "共有.asd").isFile ||
                     File(saveDir, "嫟桳.asd").isFile ||
                     File(saveDir, "ＣＧモード.asd").isFile ||
@@ -193,11 +236,23 @@ object GameCatalog {
             ) {
                 return ID_RANCE08
             }
+            if (File(saveDir, "CommonSystemData.sav").isFile &&
+                (File(saveDir, "AFCommon.asd").isFile ||
+                    File(saveDir, "AFCGMode.asd").isFile ||
+                    File(saveDir, "AFBGMMode.asd").isFile) &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile
+            ) {
+                return ID_RANCE01
+            }
             if ((File(saveDir, "AFBGMMode.asd").isFile ||
                     File(saveDir, "AFCommon.asd").isFile ||
                     saveDir.listFiles()?.any {
                         it.isFile && it.name.startsWith("AFSaveData", ignoreCase = true) && it.name.endsWith(".asd", ignoreCase = true)
                     } == true) &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
                 !File(saveDir, "GlobalSave.asd").isFile &&
                 !File(saveDir, "GlobalSaveData.asd").isFile &&
                 !File(saveDir, "AFInfo.asd").isFile &&
@@ -219,7 +274,10 @@ object GameCatalog {
                 !File(saveDir, "GlobalSaveData.asd").isFile &&
                 !File(saveDir, "3DSetting.asd").isFile &&
                 !File(saveDir, "共有.asd").isFile &&
-                !File(saveDir, "嫟桳.asd").isFile
+                !File(saveDir, "嫟桳.asd").isFile &&
+                !File(saveDir, "AFCommon.asd").isFile &&
+                !File(saveDir, "AFCGMode.asd").isFile &&
+                !File(saveDir, "AFBGMMode.asd").isFile
             ) {
                 return ID_EVENICLE
             }
@@ -242,10 +300,17 @@ object GameCatalog {
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
+        if (lowerDir == "rance10" || lowerDir.startsWith("rance10-") ||
+            lowerDir.contains("rance 10") ||
+            lowerDir.contains("兰斯10") || lowerDir.contains("兰斯１０") ||
+            lowerDir.contains("ランス10") || lowerDir.contains("ランス１０")
+        ) {
+            return ID_RANCE10
+        }
         if (lowerDir == "rance09" || lowerDir.startsWith("rance09-") ||
             lowerDir == "rance9" || lowerDir.startsWith("rance9-") ||
             lowerDir.contains("rance 09") || lowerDir.contains("rance 9") || lowerDir.contains("rance ix") ||
-            lowerDir.contains("兰斯09") || lowerDir.contains("兰斯9") || lowerDir.contains("ランス09") ||
+            RANCE09_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス09") ||
             lowerDir.contains("ランス9") || lowerDir.contains("ヘルマン") || lowerDir.contains("赫尔曼")
         ) {
             return ID_RANCE09
@@ -253,13 +318,23 @@ object GameCatalog {
         if (lowerDir == "rance08" || lowerDir.startsWith("rance08-") ||
             lowerDir == "rance8" || lowerDir.startsWith("rance8-") ||
             lowerDir.contains("rance 08") || lowerDir.contains("rancequest") || lowerDir.contains("rance quest") ||
-            lowerDir.contains("兰斯08") || lowerDir.contains("兰斯8") || lowerDir.contains("ランス08") ||
+            RANCE08_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス08") ||
             lowerDir.contains("ランス8") || lowerDir.contains("ランス・クエスト")
         ) {
             return ID_RANCE08
         }
+        if (lowerDir == "rance01" || lowerDir.startsWith("rance01-") || lowerDir.contains("rance 01") ||
+            RANCE01_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス01") ||
+            lowerDir.contains("ランス０１")) {
+            return ID_RANCE01
+        }
+        if (lowerDir == "rance02" || lowerDir.startsWith("rance02-") || lowerDir.contains("rance 02") ||
+            RANCE02_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス02") ||
+            lowerDir.contains("ランス０２")) {
+            return ID_RANCE02
+        }
         if (lowerDir == "rance03" || lowerDir.startsWith("rance03-") || lowerDir.contains("rance 03") ||
-            lowerDir.contains("兰斯03") || lowerDir.contains("兰斯3") || lowerDir.contains("ランス03")
+            RANCE03_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス03")
         ) {
             return ID_RANCE03
         }
@@ -274,9 +349,6 @@ object GameCatalog {
         if (lowerDir == "dohnadohna" || lowerDir.startsWith("dohnadohna-") || lowerDir.contains("多娜多娜")) {
             return ID_DOHNA_DOHNA
         }
-        if (lowerDir == "rance10" || lowerDir.startsWith("rance10-") || lowerDir.contains("兰斯10")) {
-            return ID_RANCE10
-        }
         if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
             lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
         ) {
@@ -289,23 +361,39 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
+            lowerDisp.contains("ランス１０") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
+        ) {
+            return ID_RANCE10
+        }
         if (lowerDisp.contains("rance09") || lowerDisp.contains("rance 09") ||
             lowerDisp.contains("rance9") || lowerDisp.contains("rance 9") || lowerDisp.contains("rance ix") ||
-            lowerDisp.contains("兰斯09") || lowerDisp.contains("兰斯9") || lowerDisp.contains("ランス09") ||
+            RANCE09_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス09") ||
             lowerDisp.contains("ランス9") || lowerDisp.contains("ヘルマン") || lowerDisp.contains("赫尔曼")
         ) {
             return ID_RANCE09
         }
         if (lowerDisp.contains("rance08") || lowerDisp.contains("rance 08") ||
             lowerDisp.contains("rancequest") || lowerDisp.contains("rance quest") ||
-            lowerDisp.contains("兰斯08") || lowerDisp.contains("兰斯8") || lowerDisp.contains("ランス08") ||
+            RANCE08_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス08") ||
             lowerDisp.contains("ランス8") || lowerDisp.contains("ランス・クエスト") ||
             lowerDisp.contains("ランスクエスト") || lowerDisp.contains("マグナム") || lowerDisp.contains("magnum")
         ) {
             return ID_RANCE08
         }
+        if (lowerDisp.contains("rance01") || lowerDisp.contains("rance 01") ||
+            RANCE01_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス01") ||
+            lowerDisp.contains("ランス０１") ||
+            lowerDisp.contains("光をもとめて") || lowerDisp.contains("寻找小光")) {
+            return ID_RANCE01
+        }
+        if (lowerDisp.contains("rance02") || lowerDisp.contains("rance 02") ||
+            RANCE02_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス02") ||
+            lowerDisp.contains("ランス０２") || lowerDisp.contains("反叛的少女") || lowerDisp.contains("反逆の少女")) {
+            return ID_RANCE02
+        }
         if (lowerDisp.contains("rance03") || lowerDisp.contains("rance 03") ||
-            lowerDisp.contains("兰斯03") || lowerDisp.contains("兰斯3") || lowerDisp.contains("ランス03") ||
+            RANCE03_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス03") ||
             lowerDisp.contains("リーザス") || lowerDisp.contains("利萨斯")
         ) {
             return ID_RANCE03
@@ -320,11 +408,6 @@ object GameCatalog {
         }
         if (lowerDisp.contains("多娜多娜") || lowerDisp.contains("ドーナドーナ") || lowerDisp.contains("dohna")) {
             return ID_DOHNA_DOHNA
-        }
-        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
-            lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
-        ) {
-            return ID_RANCE10
         }
 
         return "$PREFIX_CUSTOM$dirName"
@@ -403,6 +486,36 @@ object GameCatalog {
                 iconFrameColor = 0xFF1F1410.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.SENGOKU_RANCE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE01 -> GameDescriptor(
+                id = ID_RANCE01,
+                title = context.getString(R.string.game_rance01_title),
+                defaultDirName = "Rance01",
+                expectedAinName = "Rance01.ain",
+                iconRes = R.drawable.ic_game_rance01,
+                accentColor = 0xFFD99B26.toInt(),
+                accentBorderColor = 0x66F5C451,
+                iconFrameColor = 0xFF211A0E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE01_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE02 -> GameDescriptor(
+                id = ID_RANCE02,
+                title = context.getString(R.string.game_rance02_title),
+                defaultDirName = "Rance02",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance02,
+                accentColor = 0xFF3FA67A.toInt(),
+                accentBorderColor = 0x666BD4A6,
+                iconFrameColor = 0xFF102018.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE02_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -511,6 +624,14 @@ object GameCatalog {
         val srItems = matchingItems(gameList, ID_SENGOKU_RANCE)
         entries.add(GameSelectEntry(srDesc, srItems, srItems.firstOrNull()))
 
+        val r01Desc = descriptorFor(context, ID_RANCE01, gameList)
+        val r01Items = matchingItems(gameList, ID_RANCE01)
+        entries.add(GameSelectEntry(r01Desc, r01Items, r01Items.firstOrNull()))
+
+        val r02Desc = descriptorFor(context, ID_RANCE02, gameList)
+        val r02Items = matchingItems(gameList, ID_RANCE02)
+        entries.add(GameSelectEntry(r02Desc, r02Items, r02Items.firstOrNull()))
+
         val r03Desc = descriptorFor(context, ID_RANCE03, gameList)
         val r03Items = matchingItems(gameList, ID_RANCE03)
         entries.add(GameSelectEntry(r03Desc, r03Items, r03Items.firstOrNull()))
@@ -531,8 +652,9 @@ object GameCatalog {
             val item = gameList[i]
             val cid = classifyItem(item)
             if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
-                cid != ID_SENGOKU_RANCE && cid != ID_RANCE03 &&
-                cid != ID_RANCE08 && cid != ID_RANCE09 && cid != ID_ESCALAYER
+                cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
+                cid != ID_RANCE03 && cid != ID_RANCE08 && cid != ID_RANCE09 &&
+                cid != ID_ESCALAYER
             ) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))

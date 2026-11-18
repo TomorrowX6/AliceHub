@@ -203,13 +203,15 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val isDohnaDohna = j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
         val isEvenicle = !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
         val isSengokuRance = !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
-        val isRance03 = !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
-        val isRance08 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
-        val isRance09 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
-        val isEscalayer = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 &&
+        val isRance01 = !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance01", xsAct?.isRance01Game() ?: false)
+        val isRance02 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && j.optBoolean("isRance02", xsAct?.isRance02Game() ?: false)
+        val isRance03 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
+        val isRance08 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
+        val isRance09 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
+        val isEscalayer = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 &&
             (j.optString("game") == "escalayer" || (xsAct?.isEscalayerGame() ?: false))
         val isSys3x = xsAct?.isSystem3xGame() ?: isEscalayer
-        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
+        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
             j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
@@ -218,6 +220,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val dohnaLockCount = GameModifierBridge.getDohnaLiveLockCount(activity)
         val evenicleLockCount = GameModifierBridge.getEvenicleLiveLockCount(activity)
         val srLockCount = GameModifierBridge.getSrLiveLockCount(activity)
+        val r01LockCount = GameModifierBridge.getR01LiveLockCount(activity)
+        val r02LockCount = GameModifierBridge.getR02LiveLockCount(activity)
         val r03LockCount = GameModifierBridge.getR03LiveLockCount(activity)
         val r08LockCount = GameModifierBridge.getR08LiveLockCount(activity)
         val r09LockCount = GameModifierBridge.getR09LiveLockCount(activity)
@@ -292,6 +296,44 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     "修改器 · T$turn · 金:$gold · 行:$ap/$apMax · 满足:$sat",
                     "改造 · T$turn · 金:$gold · 行:$ap/$apMax · 満足:$sat",
                     "Modifier · T$turn · Gold:$gold · AP:$ap/$apMax"
+                )
+            }
+        } else if (isRance01) {
+            if (j.optBoolean("inGame", false)) {
+                val lv = j.optInt("level", 1)
+                val maxLv = j.optInt("maxLevel", 1)
+                val hp = j.optInt("hp", 0)
+                val maxHp = j.optInt("maxHp", 0)
+                val gold = j.optInt("gold", 0)
+                val luck = j.optInt("luck", 0)
+                val day = j.optInt("day", 1)
+                tr(
+                    "兰斯 Lv$lv/$maxLv · HP $hp/$maxHp · 幸运$luck · 金$gold · 第${day}天 · 锁定$r01LockCount",
+                    "Lv$lv/$maxLv · HP $hp/$maxHp · 運$luck · 金$gold · ${day}日目 · ロック$r01LockCount",
+                    "Lv$lv/$maxLv · HP $hp/$maxHp · Gold $gold · Day $day · Locks:$r01LockCount"
+                )
+            } else {
+                tr(
+                    "兰斯01 · 标题界面 · 锁定$r01LockCount",
+                    "ランス01 · タイトル画面 · ロック$r01LockCount",
+                    "Rance 01 · Title · Locks:$r01LockCount"
+                )
+            }
+        } else if (isRance02) {
+            if (j.optBoolean("inGame", false)) {
+                val gold = j.optInt("gold", 0)
+                val karma = j.optInt("karma", 0)
+                val cnt = j.optInt("r02CharaCount", 0)
+                tr(
+                    "兰斯02 · 金币$gold · 因果$karma · ${cnt}人 · 锁定$r02LockCount",
+                    "ランス02 · 金$gold · カルマ$karma · ${cnt}人 · ロック$r02LockCount",
+                    "Rance 02 · Gold $gold · Karma $karma · Party:$cnt · Locks:$r02LockCount"
+                )
+            } else {
+                tr(
+                    "兰斯02 · 标题界面 · 锁定$r02LockCount",
+                    "ランス02 · タイトル画面 · ロック$r02LockCount",
+                    "Rance 02 · Title · Locks:$r02LockCount"
                 )
             }
         } else if (isRance03) {
@@ -409,6 +451,23 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     tr("战斗指令…", "戦闘クイック…", "Battle Actions…") to { showSrBattleQuickDialog() },
                     tr("资源与合战数值…", "資源・行動設定…", "Resources & AP…") to { showSrEditResourcesDialog() },
                     tr("武将属性…", "武将編集…", "Edit Generals…") to { showSrSelectCharDialog() }
+                )
+            )
+        } else if (isRance01) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $r01LockCount 项…", "リアルタイムロック · $r01LockCount 項目…", "Live Locks · $r01LockCount…") to { showR01LocksDialog() },
+                    tr("常用作弊与全CG解锁…", "定番チート・CG解放…", "Common Cheats & CG…") to { showR01CommonCheatsDialog() },
+                    tr("数值与芯片编辑…", "能力・チップ編集…", "Edit Stats & Chips…") to { showR01EditStatsDialog() }
+                )
+            )
+        } else if (isRance02) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $r02LockCount 项…", "リアルタイムロック · $r02LockCount 項目…", "Live Locks · $r02LockCount…") to { showR02LocksDialog() },
+                    tr("常用作弊与全CG解锁…", "定番チート・CG解放…", "Common Cheats & CG…") to { showR02CommonCheatsDialog() },
+                    tr("金币与因果律…", "所持金・カルマ変更…", "Edit Gold & Karma…") to { showR02EditResourcesDialog() },
+                    tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showR02SelectCharDialog() }
                 )
             )
         } else if (isRance03) {
@@ -1329,6 +1388,276 @@ class FloatingModifierOverlay(private val activity: Activity) {
             sendDohnaInGameAction(
                 JSONObject().put("srCharEdit", ce),
                 tr("武将属性已更新", "武将ステータスを更新しました", "General updated")
+            )
+        }
+    }
+
+    private fun showR01LocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_R01_FULL_HP to tr("满血锁血 · 保持最大 HP", "HP最大維持", "Keep Full HP"),
+            GameModifierBridge.LOCK_R01_ONE_HIT_KILL to tr("战斗秒杀 · 敌人 1 血", "敵HP1・一撃撃破", "One-Hit Kill"),
+            GameModifierBridge.LOCK_R01_INF_GOLD to tr("无限金钱 · 保底 888888", "所持金888888維持", "Infinite Gold"),
+            GameModifierBridge.LOCK_R01_DROP_100 to tr("100% 宝箱与卡片掉落", "ドロップ率100%", "100% Drop Rate"),
+            GameModifierBridge.LOCK_R01_NO_DEBUFF to tr("免疫异常状态", "状態異常無効", "Immunity to Debuffs")
+        )
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedR01LockMask(activity)
+        ) { GameModifierBridge.setSavedR01LockMask(activity, it) }
+    }
+
+    private fun showR01CommonCheatsDialog() {
+        val items = arrayOf(
+            tr("所持金增加 1 万", "所持金 +10,000", "Add 10,000 Gold"),
+            tr("所持金增加 10 万", "所持金 +100,000", "Add 100,000 Gold"),
+            tr("所持金设为 999999", "所持金 999999", "Set Gold 999,999"),
+            tr("恢复满 HP", "HP全回復", "Full Heal HP"),
+            tr("手持与仓库芯片容量拉满 (99 / 999)", "チップ所持枠最大化 (99 / 999)", "Max Chip Capacity (99 / 999)"),
+            tr("兰斯超强化 · Lv50 上限999 HP999 幸运99", "ランス超強化 · Lv50 HP999 運99", "Super Boost Rance"),
+            tr("解锁全 CG / 音乐 / 回想鉴赏", "CG・音楽・回想モード全解放", "Unlock All CG & Gallery")
+        )
+        dialogBuilder()
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(JSONObject().put("r01AddGold", 10000), tr("所持金已增加 1 万", "所持金 +10,000 を適用", "Added 10,000 Gold"))
+                    1 -> sendDohnaInGameAction(JSONObject().put("r01AddGold", 100000), tr("所持金已增加 10 万", "所持金 +100,000 を適用", "Added 100,000 Gold"))
+                    2 -> sendDohnaInGameAction(JSONObject().put("r01Gold", 999999), tr("所持金已设为 999999", "所持金を999999に設定", "Gold set to 999,999"))
+                    3 -> sendDohnaInGameAction(JSONObject().put("r01HealFull", true), tr("HP 已恢复满值", "HPを全回復しました", "HP fully healed"))
+                    4 -> sendDohnaInGameAction(JSONObject().put("r01MaxChipCap", true), tr("芯片容量上限已拉满", "チップ容量を最大化しました", "Chip capacity maxed"))
+                    5 -> sendDohnaInGameAction(
+                        JSONObject()
+                            .put("r01MaxLevelCap", 999)
+                            .put("r01Level", 50)
+                            .put("r01MaxHp", 999)
+                            .put("r01Hp", 999)
+                            .put("r01Luck", 99),
+                        tr("兰斯超强化已生效", "ランス超強化を適用しました", "Rance super boosted")
+                    )
+                    6 -> sendAction(
+                        JSONObject().put("r01UnlockGallery", true),
+                        tr("已解锁全部 CG 与鉴赏存档（重新进入鉴赏页生效）", "全CG・回想を解放しました", "Unlocked all CG & Gallery")
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR01EditStatsDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fields = listOf(
+            Triple("r01Gold", tr("所持金 GOLD", "所持金 GOLD", "Gold"), j.optInt("gold", 0)),
+            Triple("r01Level", tr("当前等级 Lv", "現在レベル Lv", "Level"), j.optInt("level", 1)),
+            Triple("r01MaxLevelCap", tr("等级上限 MaxLv", "レベル上限", "Max Level Cap"), j.optInt("maxLevel", 10)),
+            Triple("r01Exp", tr("经验值 EXP", "経験値 EXP", "EXP"), j.optInt("exp", 0)),
+            Triple("r01Hp", tr("当前 HP", "現在 HP", "HP"), j.optInt("hp", 0)),
+            Triple("r01MaxHp", tr("最大 HP", "最大 HP", "Max HP"), j.optInt("maxHp", 0)),
+            Triple("r01Luck", tr("幸运 Luck", "運 Luck", "Luck"), j.optInt("luck", 0))
+        )
+        showDohnaFormDialog(
+            title = tr("数值与芯片编辑", "能力・チップ編集", "Edit Stats & Chips"),
+            summary = tr(
+                "第${j.optInt("day", 1)}天 · 芯片 手持 ${j.optInt("handChips", 0)}/${j.optInt("handChipCap", 0)} · 仓库 ${j.optInt("storageChips", 0)}/${j.optInt("storageChipCap", 0)}",
+                "${j.optInt("day", 1)}日目 · チップ 手持 ${j.optInt("handChips", 0)}/${j.optInt("handChipCap", 0)} · 倉庫 ${j.optInt("storageChips", 0)}/${j.optInt("storageChipCap", 0)}",
+                "Day ${j.optInt("day", 1)} · Hand ${j.optInt("handChips", 0)}/${j.optInt("handChipCap", 0)} · Box ${j.optInt("storageChips", 0)}/${j.optInt("storageChipCap", 0)}"
+            ),
+            fields = fields,
+            prefillValues = true,
+            neutralActionLabel = tr("芯片容量拉满并回血", "チップ最大・全回復", "Max Chips & Heal"),
+            onNeutralAction = {
+                sendDohnaInGameAction(
+                    JSONObject().put("r01MaxChipCap", true).put("r01HealFull", true),
+                    tr("芯片上限已扩展并回满 HP", "チップ最大・HP全回復を適用", "Chips maxed & healed")
+                )
+            }
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val act = JSONObject()
+            for ((k, v) in vals) act.put(k, v)
+            sendDohnaInGameAction(act, tr("兰斯属性已更新", "ステータスを更新しました", "Stats updated"))
+        }
+    }
+
+    private fun showR02LocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_R02_ALLY_FULL_HP_SP to tr("我方全员满 HP / 满 SP", "味方HP・SP最大維持", "Party Full HP & SP"),
+            GameModifierBridge.LOCK_R02_ONE_HIT_KILL to tr("敌方秒杀 · 一击必杀", "敵一撃撃破", "One-Hit Kill"),
+            GameModifierBridge.LOCK_R02_INF_GOLD to tr("无限金钱 · 保底 888888", "所持金888888維持", "Infinite Gold"),
+            GameModifierBridge.LOCK_R02_INF_ITEMS to tr("无限常用消耗道具 (全99/世界药9)", "消耗アイテム補充維持", "Infinite Consumable Items")
+        )
+        showBitmaskLocksDialog(
+            lockDefs,
+            GameModifierBridge.getSavedR02LockMask(activity)
+        ) { GameModifierBridge.setSavedR02LockMask(activity, it) }
+    }
+
+    private fun showR02CommonCheatsDialog() {
+        val items = arrayOf(
+            tr("所持金增加 1 万", "所持金 +10,000", "Add 10,000 Gold"),
+            tr("所持金设为 999999", "所持金 999999", "Set Gold 999,999"),
+            tr("补满回复与冒险道具 (99 / 9)", "消耗アイテム補充 (99 / 9)", "Refill Consumable Items"),
+            tr("我方全员满 HP / 满 SP 恢复", "味方全員HP・SP全回復", "Full Heal Party HP & SP"),
+            tr("全队超强化 · Lv50 HP999 SP200 全能力500", "全員超強化 · Lv50 能力500", "Super Boost All Party"),
+            tr("解锁全 CG / 回想模式", "CG・回想モード全解放", "Unlock All CG & Replay")
+        )
+        dialogBuilder()
+            .setTitle(tr("常用作弊", "定番チート", "Common Cheats"))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> sendDohnaInGameAction(JSONObject().put("r02AddGold", 10000), tr("所持金已增加 1 万", "所持金 +10,000 を適用", "Added 10,000 Gold"))
+                    1 -> sendDohnaInGameAction(JSONObject().put("r02Gold", 999999), tr("所持金已设为 999999", "所持金を999999に設定", "Gold set to 999,999"))
+                    2 -> sendDohnaInGameAction(JSONObject().put("r02SupplyItems", true), tr("冒险道具已补满", "アイテムを補充しました", "Items refilled"))
+                    3 -> sendDohnaInGameAction(JSONObject().put("r02HealAll", true), tr("全员 HP/SP 已回满", "全員全回復しました", "Party healed"))
+                    4 -> sendDohnaInGameAction(
+                        JSONObject().put(
+                            "r02CharEdit",
+                            JSONObject().put("target", -1)
+                                .put("lv", 50).put("hp", 999).put("hpMax", 999)
+                                .put("sp", 200).put("spMax", 200)
+                                .put("atk", 500).put("def", 500).put("know", 500)
+                                .put("hit", 200).put("eva", 100).put("luck", 99)
+                                .put("fullHeal", true)
+                        ),
+                        tr("全队超强化已生效", "全員超強化を適用しました", "Party super boosted")
+                    )
+                    5 -> sendAction(
+                        JSONObject().put("r02UnlockGallery", true),
+                        tr("已解锁全 CG 与回想模式（重新进入标题鉴赏生效）", "全CG・回想を解放しました", "Unlocked all CG & Replay")
+                    )
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR02EditResourcesDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fields = listOf(
+            Triple("r02Gold", tr("所持金 GOLD", "所持金 GOLD", "Gold"), j.optInt("gold", 0)),
+            Triple("r02Karma", tr("因果律 Karma", "カルマ Karma", "Karma"), j.optInt("karma", 0))
+        )
+        showDohnaFormDialog(
+            title = tr("金币与因果律", "所持金・カルマ変更", "Gold & Karma"),
+            summary = tr(
+                "世界药 ${j.optInt("worldDrug", 0)} · 回城树 ${j.optInt("returnTree", 0)} · 伤药 ${j.optInt("potion", 0)} · 光玉 ${j.optInt("light", 0)} · 绳 ${j.optInt("rope", 0)}",
+                "世界薬 ${j.optInt("worldDrug", 0)} · 帰還樹 ${j.optInt("returnTree", 0)} · 薬 ${j.optInt("potion", 0)}",
+                "Elixir ${j.optInt("worldDrug", 0)} · Tree ${j.optInt("returnTree", 0)} · Potion ${j.optInt("potion", 0)}"
+            ),
+            fields = fields,
+            prefillValues = true,
+            neutralActionLabel = tr("补满道具并回血", "アイテム補充・全回復", "Refill Items & Heal"),
+            onNeutralAction = {
+                sendDohnaInGameAction(
+                    JSONObject().put("r02SupplyItems", true).put("r02HealAll", true),
+                    tr("道具已补满且全员满状态", "アイテム補充・全回復を適用", "Items refilled & healed")
+                )
+            }
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val act = JSONObject()
+            for ((k, v) in vals) act.put(k, v)
+            sendDohnaInGameAction(act, tr("资源修改已生效", "資源を更新しました", "Resources updated"))
+        }
+    }
+
+    private fun showR02SelectCharDialog() {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Start game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val arr = j.optJSONArray("r02Characters")
+        if (arr == null || arr.length() == 0) {
+            Toast.makeText(activity, tr("暂无角色数据", "キャラデータなし", "No characters"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val options = mutableListOf<Triple<Int, JSONObject?, String>>()
+        options.add(Triple(-1, null, tr("批量：全部在籍角色", "一括：味方全員", "Batch: All Party")))
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val idx = c.optInt("index", -1)
+            val name = c.optString("name", "#$idx")
+            val lv = c.optInt("lv", 1)
+            val hp = c.optInt("hp", 0)
+            val hpMax = c.optInt("hpMax", 0)
+            val sp = c.optInt("sp", 0)
+            val spMax = c.optInt("spMax", 0)
+            val atk = c.optInt("atk", 0)
+            options.add(Triple(idx, c, "$name · Lv$lv · HP $hp/$hpMax · SP $sp/$spMax · 攻$atk"))
+        }
+        dialogBuilder()
+            .setTitle(tr("角色属性", "キャラ編集", "Characters"))
+            .setItems(options.map { it.third }.toTypedArray()) { _, which ->
+                val chosen = options.getOrNull(which) ?: return@setItems
+                showR02EditCharDialog(chosen.first, chosen.second, chosen.third)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showR02EditCharDialog(target: Int, c: JSONObject?, title: String) {
+        val single = c != null
+        val fields = listOf(
+            Triple("lv", tr("等级 Lv", "レベル Lv", "Level"), c?.optInt("lv", 1) ?: 50),
+            Triple("exp", tr("经验值 EXP", "経験値 EXP", "EXP"), c?.optInt("exp", 0) ?: 99999),
+            Triple("hp", tr("当前 HP", "現在 HP", "HP"), c?.optInt("hp", 100) ?: 999),
+            Triple("hpMax", tr("最大 HP", "最大 HP", "Max HP"), c?.optInt("hpMax", 100) ?: 999),
+            Triple("sp", tr("当前 SP", "現在 SP", "SP"), c?.optInt("sp", 20) ?: 200),
+            Triple("spMax", tr("最大 SP", "最大 SP", "Max SP"), c?.optInt("spMax", 20) ?: 200),
+            Triple("atk", tr("攻击力 ATK", "攻撃力 ATK", "ATK"), c?.optInt("atk", 10) ?: 500),
+            Triple("def", tr("防御力 DEF", "防御力 DEF", "DEF"), c?.optInt("def", 10) ?: 500),
+            Triple("know", tr("魔力知性 Know", "魔力・知識", "Know"), c?.optInt("know", 10) ?: 500),
+            Triple("hit", tr("命中 Hit", "命中", "Hit"), c?.optInt("hit", 10) ?: 200),
+            Triple("eva", tr("回避 Eva", "回避", "Eva"), c?.optInt("eva", 10) ?: 100),
+            Triple("luck", tr("幸运 Luck", "運", "Luck"), c?.optInt("luck", 10) ?: 99)
+        )
+        showDohnaFormDialog(
+            title = title,
+            summary = if (c != null) {
+                tr("槽位 #${c.optInt("index", target)}", "枠 #${c.optInt("index", target)}", "Slot #${c.optInt("index", target)}")
+            } else {
+                tr("留空的项保持原值不变", "空欄の項目は変更しません", "Leave blank to keep value")
+            },
+            fields = fields,
+            prefillValues = single,
+            neutralActionLabel = tr("一键强化并回满", "最大強化・全回復", "Max Boost & Heal"),
+            onNeutralAction = {
+                val boost = JSONObject().apply {
+                    put("target", target)
+                    put("lv", 50)
+                    put("hp", 999)
+                    put("hpMax", 999)
+                    put("sp", 200)
+                    put("spMax", 200)
+                    put("atk", 500)
+                    put("def", 500)
+                    put("know", 500)
+                    put("hit", 200)
+                    put("eva", 100)
+                    put("luck", 99)
+                    put("fullHeal", true)
+                }
+                sendDohnaInGameAction(
+                    JSONObject().put("r02CharEdit", boost),
+                    tr("角色强化已生效", "キャラを強化しました", "Character boosted")
+                )
+            }
+        ) { vals ->
+            if (vals.isEmpty()) return@showDohnaFormDialog
+            val ce = JSONObject().put("target", target)
+            for ((k, v) in vals) ce.put(k, v)
+            sendDohnaInGameAction(
+                JSONObject().put("r02CharEdit", ce),
+                tr("角色属性已更新", "ステータスを更新しました", "Character updated")
             )
         }
     }

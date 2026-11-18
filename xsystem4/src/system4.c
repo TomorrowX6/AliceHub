@@ -363,14 +363,22 @@ static bool config_init_with_ini(const char *ini_path)
 
 static bool config_init_with_dir(const char *dir)
 {
-	char path[PATH_MAX];
-	snprintf(path, PATH_MAX, "%s/System40.ini", dir);
-	if (!file_exists(path)) {
-		snprintf(path, PATH_MAX, "%s/AliceStart.ini", dir);
-		if (!file_exists(path))
-			return false;
+	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini" };
+	for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); i++) {
+		char *path = path_join(dir, ini_names[i]);
+		if (!file_exists(path)) {
+			char *icase = path_get_icase(path);
+			free(path);
+			path = icase;
+		}
+		if (path && file_exists(path)) {
+			bool ok = config_init_with_ini(path);
+			free(path);
+			return ok;
+		}
+		free(path);
 	}
-	return config_init_with_ini(path);
+	return false;
 }
 
 static void config_init_with_ain(const char *ain_path)
@@ -1074,6 +1082,18 @@ int main(int argc, char *argv[])
 		usage_error("Can't initialize game with argument '%s'", argv[0]);
 	}
 	ainfile = gamedir_path(config.ain_filename);
+	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
+		sys4_set_text_gbk(true);
+		char *gbk_ain = gamedir_path(config.ain_filename);
+		sys4_set_text_gbk(false);
+		if (file_exists(gbk_ain)) {
+			free(ainfile);
+			ainfile = gbk_ain;
+		} else {
+			free(gbk_ain);
+		}
+	}
 
 	read_user_config();
 

@@ -356,7 +356,7 @@ struct instruction instructions[NR_OPCODES] = {
         OP   ( SH_LOCAL_A_PUSHBACK_LOCAL_STRUCT,  2, (T_LOCAL, T_LOCAL),          (), () ),
         JMP  ( SH_IF_SREF_NE_STR0,                2, (T_STRING, T_ADDR),          (T_PAGE, T_VAR), () ),
         OP   ( SH_S_ASSIGN_REF,                   0, (),                          (T_STRING, T_PAGE, T_VAR), () ),
-        TODO ( SH_A_FIND_SREF,                    0, (),                          (), () ),
+        OP   ( SH_A_FIND_SREF,                    0, (),                          (T_PAGE, T_VAR, T_INT, T_INT, T_PAGE, T_VAR), (T_INT) ),
         OP   ( SH_SREF_EMPTY,                     0, (),                          (T_PAGE, T_VAR), (T_INT) ),
         OP   ( SH_STRUCTSREF_EQ_LOCALSREF,        2, (T_MEMB, T_LOCAL),           (), (T_INT) ),
         OP   ( SH_LOCALSREF_EQ_STR0,              2, (T_LOCAL, T_STRING),         (), (T_INT) ),
