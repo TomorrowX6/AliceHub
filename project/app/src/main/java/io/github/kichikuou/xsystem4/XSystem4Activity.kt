@@ -178,6 +178,12 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isRance03GameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isRance06Game(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isRance06GameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isRance08Game(): Boolean {
         val root = effectiveGameRootFile()
         val saveDir = effectiveSaveDirFile()

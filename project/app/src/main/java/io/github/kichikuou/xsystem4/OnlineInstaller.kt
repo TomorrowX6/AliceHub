@@ -253,6 +253,7 @@ object OnlineInstaller {
     const val RANCE01_CDN_URL = "https://alicehub.000.moe/rance01"
     const val RANCE02_CDN_URL = "https://alicehub.000.moe/rance02"
     const val RANCE03_CDN_URL = "https://alicehub.000.moe/rance03"
+    const val RANCE06_CDN_URL = "https://alicehub.000.moe/rance06"
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
     const val KICHIKUOU_CDN_URL = "https://alicehub.000.moe/kichikuou"
@@ -942,12 +943,13 @@ object OnlineInstaller {
         val rawAinBase = sys4AinFile?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it.nameWithoutExtension) }.orEmpty()
         val sanitizedManifestBase = sanitizeInstallDirName(manifest.baseName, fallback = "")
         val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
-        val dirBaseName = if (sanitizedManifestBase.isNotEmpty() &&
-            (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 })
-        ) {
-            sanitizedManifestBase
-        } else {
-            sanitizedAinBase.ifEmpty { sanitizedManifestBase.ifEmpty { "Game" } }
+        val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
+        val dirBaseName = when {
+            classifiedStagedId == GameCatalog.ID_RANCE06 -> sanitizedManifestBase.ifEmpty { "Rance06" }
+            sanitizedManifestBase.isNotEmpty() &&
+                (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
+                sanitizedManifestBase
+            else -> sanitizedAinBase.ifEmpty { sanitizedManifestBase.ifEmpty { "Game" } }
         }
         var dstDir = File(storageCanonical, dirBaseName).canonicalFile
         var suffix = 1
@@ -1256,6 +1258,8 @@ object OnlineInstaller {
                     GameCatalog.ID_RANCE01 -> lower.contains("rance01") || lower.contains("rance_01")
                     GameCatalog.ID_RANCE02 -> lower.contains("rance02") || lower.contains("rance_02")
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
+                    GameCatalog.ID_RANCE06 -> lower.contains("rance06") || lower.contains("rance_06") ||
+                        Regex("(?<![a-z0-9])rance_?6(?![0-9])").containsMatchIn(lower)
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
                     GameCatalog.ID_KICHIKUOU -> lower.contains("kichiku")

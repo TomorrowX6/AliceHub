@@ -189,7 +189,10 @@ object GameModifierBridge {
 
     @JvmOverloads
     fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
-        if (GameCatalog.isSystem3xGameDir(gameDir) || isEscalayerGameDir(gameDir, dirNameFallback, saveDir)) {
+        if (GameCatalog.isSystem3xGameDir(gameDir) ||
+            isEscalayerGameDir(gameDir, dirNameFallback, saveDir) ||
+            isRance06GameDir(gameDir, dirNameFallback, saveDir)
+        ) {
             return false
         }
         if (gameDir != null && gameDir.isDirectory) {
@@ -299,6 +302,19 @@ object GameModifierBridge {
             saveDir = saveDir,
             displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
         ) == GameCatalog.ID_RANCE02
+
+    @JvmOverloads
+    fun isRance06GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_RANCE06
 
     fun isSengokuRanceGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (gameDir != null && gameDir.isDirectory) {
@@ -450,6 +466,7 @@ object GameModifierBridge {
             isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||
+            isRance06GameDir(gameDir, dirNameFallback, saveDir) ||
             isSengokuRanceGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance08GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance09GameDir(gameDir, dirNameFallback, saveDir) ||

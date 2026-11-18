@@ -119,6 +119,8 @@ private class SaveFileAdapter(
         val GLOBAL_SAVE_FILES = setOf(
             "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
             "afcgmode.asd", "afcommon.asd", "afconfig.asd", "afbgmmode.asd",
+            "config.asd", "progress.asd", "joypad.asd",
+            "已读文本跳过.asd", "既読スキップ.asd",
             "共有.asd", "ｃｇモード.asd", "音楽モード.asd", "3dsetting.asd",
             "gameenquete.asd", "commonsystemdata.sav", "volume.sav"
         )
@@ -1219,13 +1221,17 @@ class SaveManagerActivity : ThemedActivity() {
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(name).lowercase(Locale.ROOT)
         return when {
             lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
-                lower == "afcommon.asd" || lower == "共有.asd" -> getString(R.string.save_tag_global)
+                lower == "afcommon.asd" || lower == "progress.asd" ||
+                lower == "共有.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
-            lower == "msgskip.asd" || lower.endsWith(".msgskip") -> getString(R.string.save_tag_msgskip)
+            lower == "msgskip.asd" || lower == "已读文本跳过.asd" ||
+                lower == "既読スキップ.asd" || lower.endsWith(".msgskip") ->
+                getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
                 lower == "ｃｇモード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
             lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
             lower == "commonsystemdata.sav" || lower == "afconfig.asd" ||
+                lower == "config.asd" || lower == "joypad.asd" ||
                 lower == "3dsetting.asd" || lower == "volume.sav" ->
                 getString(R.string.save_tag_common)
             lower.endsWith(".asd") || lower.endsWith(".sav") || lower.endsWith(".rsm") ||
