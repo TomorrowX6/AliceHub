@@ -14,6 +14,8 @@ SDL/input fixtures to verify:
    unchanged (hover -> press -> release).
 4. Pure non-Parts loops without PE_UpdateInputState and RBUTTON/multi-touch reset
    paths preserve correct synthetic cursor tracking.
+5. Disabling Parts input releases observed touches promptly without enabling new
+   presses or consuming an unobserved press.
 
 Run: python3 xsystem4/test/native/test_touch_drag_regressions.py
 """
@@ -476,6 +478,89 @@ class TouchDragRegressionTests(unittest.TestCase):
     fake_ticks += 16;
     sim_pe_update(true, &x2, &y2, &c2);
     assert(!c2);
+""")
+        compile_and_run(c_code)
+
+    def test_parts_input_disabled_releases_observed_touches_promptly(self) -> None:
+        c_code = build_input_harness("""
+    const uint8_t buttons[] = { SDL_BUTTON_LEFT, SDL_BUTTON_RIGHT };
+    const enum sact_keycode keys[] = { VK_LBUTTON, VK_RBUTTON };
+    for (int b = 0; b < 2; b++) {
+        for (int moved = 0; moved < 2; moved++) {
+            reset_test_state();
+            sim_touch_down_btn(300, 500, buttons[b]);
+            fake_ticks += 16;
+            sim_pe_update(true, NULL, NULL, NULL); // hover
+            fake_ticks += 16;
+            sim_pe_update(true, NULL, NULL, NULL); // observed press
+            assert(key_is_down(keys[b]));
+            assert(synthetic_mouse_down_observed);
+
+            // EndInput disables new presses, not release of this observed press.
+            int drop_x = moved ? 700 : 300;
+            int drop_y = moved ? 300 : 500;
+            sim_touch_up_btn(drop_x, drop_y, buttons[b]);
+            uint32_t lifted_at = fake_ticks;
+            fake_ticks += 16;
+            int x = 0, y = 0;
+            sim_pe_update(false, &x, &y, NULL);
+            assert(x == drop_x && y == drop_y);
+            if (moved) {
+                // Preserve one pressed frame at the final drag coordinates.
+                assert(key_is_down(keys[b]));
+                fake_ticks += 16;
+                sim_pe_update(false, &x, &y, NULL);
+            }
+            assert(!key_is_down(keys[b]));
+            assert(nr_deferred_synthetic_mouse_events == 0);
+            assert(fake_ticks - lifted_at <= 32);
+            assert(fake_ticks - last_parts_poll_timestamp < 500);
+
+            // A queued new touch must still not become pressed while disabled.
+            sim_touch_down_btn(120, 180, buttons[b]);
+            for (int f = 0; f < 4; f++) {
+                fake_ticks += 16;
+                sim_pe_update(false, NULL, NULL, NULL);
+                assert(!key_is_down(keys[b]));
+                assert(nr_deferred_synthetic_mouse_events == 1);
+            }
+            // Re-enabling still follows hover -> press, with no stale release.
+            sim_pe_update(true, NULL, NULL, NULL);
+            assert(!key_is_down(keys[b]));
+            fake_ticks += 16;
+            sim_pe_update(true, NULL, NULL, NULL);
+            assert(key_is_down(keys[b]));
+        }
+    }
+""")
+        compile_and_run(c_code)
+
+    def test_parts_input_disabled_does_not_release_an_unobserved_press(self) -> None:
+        c_code = build_input_harness("""
+    reset_test_state();
+    sim_touch_down(300, 500);
+    fake_ticks += 16;
+    sim_pe_update(true, NULL, NULL, NULL); // hover
+    fake_ticks += 16;
+    input_parts_poll_begin(true); // press delivered, not yet observed by caller
+    assert(key_state[VK_LBUTTON]);
+    assert(!synthetic_mouse_down_observed);
+    input_notify_parts_poll(false, true);
+    sim_touch_up(300, 500);
+    for (int f = 0; f < 3; f++) {
+        fake_ticks += 16;
+        sim_pe_update(false, NULL, NULL, NULL);
+        assert(key_state[VK_LBUTTON]);
+        assert(!synthetic_mouse_down_observed);
+        assert(nr_deferred_synthetic_mouse_events == 1);
+    }
+    // An enabled poll observes the press before the next poll releases it.
+    sim_pe_update(true, NULL, NULL, NULL);
+    assert(synthetic_mouse_down_observed);
+    fake_ticks += 16;
+    sim_pe_update(false, NULL, NULL, NULL);
+    assert(!key_state[VK_LBUTTON]);
+    assert(nr_deferred_synthetic_mouse_events == 0);
 """)
         compile_and_run(c_code)
 

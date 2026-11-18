@@ -2373,7 +2373,9 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 					}
 				}
 			} else {
-				if (allow_press && synthetic_mouse_down_observed) {
+				// Keep releasing an observed Parts press after EndInput, but leave
+				// non-Parts drags on their fallback timing so they see the drop position.
+				if ((allow_press || parts_active) && synthetic_mouse_down_observed) {
 					if (has_synthetic_mouse_pos &&
 					    (synthetic_mouse_x != ev->x || synthetic_mouse_y != ev->y)) {
 						synthetic_mouse_x = ev->x;
