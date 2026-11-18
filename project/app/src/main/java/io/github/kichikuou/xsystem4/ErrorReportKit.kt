@@ -1301,6 +1301,11 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_rance10_title)
             lower.contains("dohnadohna") || lower.contains("多娜多娜") ->
                 context.getString(R.string.game_dohnadohna_title)
+            GameCatalog.isEscalayerRebootAlias(lower) ->
+                context.getString(R.string.game_escalayer_reboot_title)
+            lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
+                lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
+                context.getString(R.string.game_escalayer_title)
             lower.contains("evenicle") || lower.contains("イブニクル") || lower.contains("夏娃") ->
                 context.getString(R.string.game_evenicle_title)
             else -> null

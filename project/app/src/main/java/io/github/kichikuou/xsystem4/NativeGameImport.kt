@@ -80,37 +80,53 @@ object NativeGameImport {
         }
     }
 
-    private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
-        if (docs.any { !it.folder && !skip(it.name) && it.name.equals("DOKI_SA.ALD", true) }) {
+    fun resolveImportBaseNameFromFileNames(
+        fileNames: Collection<String>,
+        isMultiDiscSys3: Boolean = false
+    ): String {
+        if (fileNames.any { it.equals("DOKI_SA.ALD", true) }) {
             return "Escalayer"
         }
-        if (docs.any {
-                if (it.folder || skip(it.name)) return@any false
-                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
-                it.name.equals("KichikuRanceSA.ALD", true) ||
-                    it.name.equals("KichikuRanceGA.ald", true) ||
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("KichikuRanceSA.ALD", true) ||
+                    it.equals("KichikuRanceGA.ald", true) ||
                     repaired.equals("鬼畜王SA.ALD", true) ||
-                    it.name.equals("鬼畜王SA.ALD", true)
+                    it.equals("鬼畜王SA.ALD", true)
             }) {
             return "KichikuRance"
         }
-        val sys4Ain = docs.firstOrNull {
-            !it.folder && !skip(it.name) &&
-                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("EscalayerReboot.ain", true) ||
+                    repaired.equals("EscalayerReboot.ain", true) ||
+                    it.equals("エスカレイヤー・リブート.ain", true) ||
+                    it.equals("エスカレイヤーリブート.ain", true)
+            }) {
+            return "EscalayerReboot"
+        }
+        val sys4Ain = fileNames.firstOrNull {
+            it.endsWith(".ain", true) && !it.equals("System39.ain", true)
         }
         if (sys4Ain != null) {
-            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.name.substringBeforeLast('.'))
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.substringBeforeLast('.'))
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")
         }
-        val sa = docs.firstOrNull {
-            !it.folder && !skip(it.name) &&
-                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        val sa = fileNames.firstOrNull {
+            it.endsWith("sa.ald", true) || it.equals("adisk.ald", true)
         }
         if (sa != null) {
-            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sa.name.substringBeforeLast('.'))
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sa.substringBeforeLast('.'))
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "System3")
         }
         return if (isMultiDiscSys3) "System3" else "Game"
+    }
+
+    private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
+        return resolveImportBaseNameFromFileNames(
+            fileNames = docs.filter { !it.folder && !skip(it.name) }.map { it.name },
+            isMultiDiscSys3 = isMultiDiscSys3
+        )
     }
 
     private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
@@ -168,7 +184,7 @@ object NativeGameImport {
                     }
                 ) {
                     discRoots.add(dirUri to docs)
-                } else if (depth < 2) {
+                } else if (depth < 3) {
                     for (sub in docs) {
                         if (sub.folder && !skip(sub.name)) queue.add(sub.uri to (depth + 1))
                     }
@@ -217,6 +233,8 @@ object NativeGameImport {
         if (!matchesTarget) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
+        val isEscalayerReboot = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT ||
+            GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -225,17 +243,18 @@ object NativeGameImport {
         var copied = 0L
         var lastUpdate = 0L
         try {
-            suspend fun copy(documents: List<Document>, destination: File) {
+            suspend fun copy(documents: List<Document>, destination: File, relPrefix: String = "") {
                 for (document in documents) {
                     currentCoroutineContext().ensureActive()
                     val name = ArchiveExtractor.repairSjisAsGbkMojibake(document.name)
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
-                    if (skip(document.name)) continue
+                    val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
+                    if (skip(document.name) || (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath))) continue
                     val target = File(destination, name)
                     if (document.folder) {
                         if (!target.exists() && !target.mkdir()) throw IOException("Cannot create directory: $name")
-                        copy(children(context, tree, document.uri), target)
+                        copy(children(context, tree, document.uri), target, relPath)
                         continue
                     }
                     if (target.exists()) continue

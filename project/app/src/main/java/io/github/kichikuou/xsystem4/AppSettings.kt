@@ -40,10 +40,14 @@ object AppSettings {
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
     private const val DEFAULT_KICHIKUOU_BYTES = 198596468L
     private const val DEFAULT_ESCALAYER_BYTES = 1563994084L
+    private const val DEFAULT_ESCALAYER_REBOOT_BYTES = 2470174002L
 
-    private val initialSystemLocale: Locale =
-        Resources.getSystem().configuration.locales.takeIf { !it.isEmpty }?.get(0)
+    private val initialSystemLocale: Locale = try {
+        Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
             ?: Locale.getDefault()
+    } catch (_: Throwable) {
+        Locale.getDefault()
+    }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -137,11 +141,8 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_ONLINE_INSTALL, enabled).apply()
     }
 
-    fun getCachedBaseGameSize(context: Context, cdnBaseUrl: String): Long {
-        val clean = cdnBaseUrl.trimEnd('/')
-        val saved = prefs(context).getLong(KEY_BASE_SIZE_PREFIX + clean, -1L)
-        if (saved > 0L) return saved
-        return when (clean) {
+    fun defaultBaseGameSizeForUrl(cdnBaseUrl: String): Long {
+        return when (cdnBaseUrl.trimEnd('/')) {
             OnlineInstaller.RANCE10_CDN_URL -> DEFAULT_RANCE10_BYTES
             OnlineInstaller.DOHNA_DOHNA_CDN_URL -> DEFAULT_DOHNA_BYTES
             OnlineInstaller.EVENICLE_CDN_URL -> DEFAULT_EVENICLE_BYTES
@@ -153,8 +154,16 @@ object AppSettings {
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
             OnlineInstaller.KICHIKUOU_CDN_URL -> DEFAULT_KICHIKUOU_BYTES
             OnlineInstaller.ESCALAYER_CDN_URL -> DEFAULT_ESCALAYER_BYTES
+            OnlineInstaller.ESCALAYER_REBOOT_CDN_URL -> DEFAULT_ESCALAYER_REBOOT_BYTES
             else -> -1L
         }
+    }
+
+    fun getCachedBaseGameSize(context: Context, cdnBaseUrl: String): Long {
+        val clean = cdnBaseUrl.trimEnd('/')
+        val saved = prefs(context).getLong(KEY_BASE_SIZE_PREFIX + clean, -1L)
+        if (saved > 0L) return saved
+        return defaultBaseGameSizeForUrl(clean)
     }
 
     fun setCachedBaseGameSize(context: Context, cdnBaseUrl: String, totalBytes: Long) {

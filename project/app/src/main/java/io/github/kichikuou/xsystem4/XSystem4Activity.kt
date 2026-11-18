@@ -196,6 +196,12 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isEscalayerGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isEscalayerRebootGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isEscalayerRebootGameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isSystem3xGame(): Boolean {
         val root = effectiveGameRootFile()
         return GameCatalog.isSystem3xGameDir(root)

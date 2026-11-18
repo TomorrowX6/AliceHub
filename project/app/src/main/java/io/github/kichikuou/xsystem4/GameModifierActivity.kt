@@ -340,6 +340,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RANCE09 ||
                 id == GameCatalog.ID_KICHIKUOU ||
                 id == GameCatalog.ID_ESCALAYER ||
+                id == GameCatalog.ID_ESCALAYER_REBOOT ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }
