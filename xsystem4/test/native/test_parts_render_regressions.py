@@ -556,7 +556,15 @@ static void glBindBuffer(GLenum t, GLuint b) { (void)t; (void)b; }
 static void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) { (void)t; (void)s; (void)d; (void)u; }
 static void glEnableVertexAttribArray(GLuint i) { (void)i; }
 static void glVertexAttribPointer(GLuint i, GLint s, GLenum t, GLboolean n, GLsizei st, const void *p) { (void)i; (void)s; (void)t; (void)n; (void)st; (void)p; }
-static void glBindTexture(GLenum t, GLuint tx) { (void)t; (void)tx; }
+static int last_skybox_indices[6] = { -1, -1, -1, -1, -1, -1 };
+static int skybox_load_pos = 0;
+static bool in_cubemap_bind = false;
+static void glBindTexture(GLenum t, GLuint tx) {
+    if (t == GL_TEXTURE_CUBE_MAP) {
+        in_cubemap_bind = (tx != 0);
+        if (tx != 0) skybox_load_pos = 0;
+    }
+}
 static void glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum fmt, GLenum tp, const void *px) { (void)t; (void)l; (void)ifmt; (void)w; (void)h; (void)b; (void)fmt; (void)tp; (void)px; }
 static void glTexParameteri(GLenum t, GLenum p, GLint v) { (void)t; (void)p; (void)v; }
 static void glBindRenderbuffer(GLenum t, GLuint r) { (void)t; (void)r; }
@@ -570,7 +578,15 @@ static void sys_warning(const char *fmt, ...) { (void)fmt; }
 #define WARNING(...) sys_warning(__VA_ARGS__)
 static void *xcalloc(size_t n, size_t s) { return calloc(n, s); }
 static char *gamedir_path(const char *p) { return strdup(p); }
-static struct cg *dtx_create_cg(struct dtx *d, int type, int idx) { (void)d; (void)type; return idx == 0 ? calloc(1, sizeof(struct cg)) : NULL; }
+static struct cg *dtx_create_cg(struct dtx *d, int type, int idx) {
+    (void)d;
+    if (type == DTX_SKYBOX && in_cubemap_bind) {
+        last_skybox_indices[skybox_load_pos % 6] = idx;
+        skybox_load_pos++;
+        return calloc(1, sizeof(struct cg));
+    }
+    return idx == 0 ? calloc(1, sizeof(struct cg)) : NULL;
+}
 static void cg_free(struct cg *cg) { free(cg); }
 static struct polyobj *polyobj_load(const char *p) { (void)p; struct polyobj *po = calloc(1, sizeof(*po)); po->nr_textures = 1; return po; }
 static void polyobj_free(struct polyobj *p) { free(p); }
@@ -582,9 +598,11 @@ static bool gfx_remap_texture(Texture *t) {
 static void gfx_init_texture_blank(Texture *t, int w, int h) { t->handle = ++next_id; t->w = w; t->h = h; }
 static GLuint *load_event_textures(int *n) { *n = 2; GLuint *tx = xcalloc(2, sizeof(GLuint)); glGenTextures(2, tx); return tx; }
 
-struct skybox { struct shader shader; GLint proj_transform; GLuint vao, attr_buffer, index_buffer, texture; int nr_indices; };
+struct skybox { struct shader shader; GLint proj_transform; GLuint vao, attr_buffer, index_buffer, texture; int nr_indices; int texture_set; };
 ''' + '\n'.join([
+            function('src/dungeon/skybox.c', 'static void skybox_load_textures'),
             function('src/dungeon/skybox.c', 'static void skybox_init_gl'),
+            function('src/dungeon/skybox.c', 'void skybox_set_texture_set'),
             function('src/dungeon/skybox.c', 'void skybox_reset_gl'),
         ]) + r'''
 struct raster_shader { struct shader s; GLint amp, t; };
@@ -658,11 +676,22 @@ int main(void) {
     assert(mats[0].texture >= 1000 && pmats[0].texture >= 1000);
     assert(r.nr_event_textures == 2 && r.event_textures[0] >= 1000 && r.event_textures[1] >= 1000);
     assert(sb.shader.program >= 1000 && sb.vao >= 1000 && sb.attr_buffer >= 1000 && sb.index_buffer >= 1000 && sb.texture >= 1000);
+    for (int i = 0; i < 6; i++)
+        assert(last_skybox_indices[i] == i);
+
+    // Switching skybox texture set (e.g. Rance VI Dungeon 16 set 1 -> DTX indices 6..11) persists across GL reset.
+    skybox_set_texture_set(&sb, &dtx, 1);
+    for (int i = 0; i < 6; i++)
+        assert(last_skybox_indices[i] == 6 + i);
 
     // Unbacked reset re-initializes ctx->texture and ctx->map via dungeon_map_init cleanly.
     remap_succeeds = false;
+    memset(last_skybox_indices, -1, sizeof(last_skybox_indices));
     dungeon_context_on_gl_reset(&ctx);
     assert(ctx.texture.handle >= 1000 && map_init_calls == 1 && map_tex.handle >= 1000);
+    assert(sb.texture_set == 1);
+    for (int i = 0; i < 6; i++)
+        assert(last_skybox_indices[i] == 6 + i);
     free(r.event_textures);
 }
 '''
@@ -963,6 +992,130 @@ int main(void) {
         for axis in ('lr', 'tb'):
             self.assertIn(f'iarray_write(w, parts->reverse_{axis});', save)
             self.assertIn(f'parts->reverse_{axis} = version >= 32 ? !!iarray_read(r) : false;', save)
+
+    def test_rance6_draw_font_and_hll_helpers(self):
+        code = r'''
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef unsigned int GLenum;
+typedef float mat4[4][4];
+enum { GL_ZERO = 0, GL_ONE = 1, FONT_GOTHIC = 0, FONT_MINCHO = 1 };
+
+typedef struct texture { int w, h; } Texture;
+struct copy_data { int dx, dy, sx, sy, w, h; };
+struct shader { int dummy; };
+static struct { struct shader s; } copy_shader;
+#define MAT4(m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33) \
+    { {m00, m10, m20, m30}, {m01, m11, m21, m31}, {m02, m12, m22, m32}, {m03, m13, m23, m33} }
+#define WV_TRANSFORM(w, h) { {w, 0, 0, 0}, {0, h, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1} }
+#define COPY_DATA(_dx, _dy, _sx, _sy, _w, _h) { _dx, _dy, _sx, _sy, _w, _h }
+
+static GLenum last_blend[4];
+static float last_m11 = 0.f, last_m31 = 0.f, last_m00 = 0.f, last_m30 = 0.f;
+static int restore_calls = 0;
+static void glBlendFuncSeparate(GLenum sr, GLenum dr, GLenum sa, GLenum da) {
+    last_blend[0] = sr; last_blend[1] = dr; last_blend[2] = sa; last_blend[3] = da;
+}
+static void run_draw_shader(struct shader *s, Texture *dst, Texture *src, mat4 mw, mat4 wv, struct copy_data *d) {
+    (void)s; (void)dst; (void)src; (void)wv; (void)d;
+    last_m00 = mw[0][0]; last_m30 = mw[3][0];
+    last_m11 = mw[1][1]; last_m31 = mw[3][1];
+}
+static void restore_blend_mode(void) { restore_calls++; }
+
+static bool sys4_text_is_gbk = false;
+static struct { int face; } font_metrics;
+static int font_warnings = 0;
+static const char *display_sjis0(const char *s) { return s; }
+static void sys_warning(const char *fmt, ...) { (void)fmt; font_warnings++; }
+#define WARNING(...) sys_warning(__VA_ARGS__)
+
+struct dungeon_renderer { int dummy; };
+struct dtx { int dummy; };
+struct dungeon_context { bool loaded; struct dungeon_renderer *renderer; struct dtx *dtx; };
+static struct dungeon_context mock_dgn_ctx;
+static struct dungeon_context *dungeon_get_context(int surface) {
+    return surface == 1 ? &mock_dgn_ctx : NULL;
+}
+static int last_sky_set = -1;
+static void dungeon_renderer_set_sky_texture_set(struct dungeon_renderer *r, struct dtx *dtx, int set) {
+    (void)r; (void)dtx;
+    last_sky_set = set;
+}
+
+struct string { int size; char *text; };
+static char *last_wav_path = NULL;
+static char *gamedir_path_icase(const char *p) { return strcmp(p, "hit.wav") == 0 ? strdup("/game/HIT.WAV") : NULL; }
+static char *gamedir_path(const char *p) { (void)p; return strdup("/game/fallback.wav"); }
+static int wav_prepare_from_file(int ch, char *path) {
+    (void)ch;
+    free(last_wav_path);
+    last_wav_path = strdup(path);
+    return 1;
+}
+''' + '\n'.join([
+            function('src/draw.c', 'void gfx_copy_reverse_amap_UD'),
+            function('src/text.c', 'void gfx_set_font_name'),
+            function('src/hll/DrawDungeon.c', 'static float DrawDungeon_GetLoadingPercent'),
+            function('src/hll/DrawDungeon.c', 'static void DrawDungeon_SetSkyTextureSet'),
+            function('src/hll/SACT2.c', 'static int sact_Sound_PrepareFromFile'),
+        ]) + r'''
+int main(void) {
+    Texture dst = { 64, 64 }, src = { 32, 48 };
+    gfx_copy_reverse_amap_UD(&dst, 4, 6, &src, 2, 10, 16, 20);
+    assert(last_blend[0] == GL_ZERO && last_blend[1] == GL_ONE);
+    assert(last_blend[2] == GL_ONE && last_blend[3] == GL_ZERO);
+    assert(last_m00 == 32.f && last_m30 == -2.f);
+    assert(last_m11 == -48.f && last_m31 == 30.f);
+    assert(restore_calls == 1);
+
+    // Font names in Shift-JIS and GBK (both v1.10 黑体/宋体 and v0.90 GBK MS Gothic/Mincho)
+    sys4_text_is_gbk = true;
+    font_metrics.face = -1;
+    gfx_set_font_name("\xba\xda\xcc\xe5");
+    assert(font_metrics.face == FONT_GOTHIC && font_warnings == 0);
+    gfx_set_font_name("\xcb\xce\xcc\xe5");
+    assert(font_metrics.face == FONT_MINCHO && font_warnings == 0);
+    gfx_set_font_name("\xa3\xcd\xa3\xd3\x20\xa5\xb4\xa5\xb7\xa5\xc3\xa5\xaf");
+    assert(font_metrics.face == FONT_GOTHIC && font_warnings == 0);
+    gfx_set_font_name("\xa3\xcd\xa3\xd3\x20\xc3\xf7\xb3\xaf");
+    assert(font_metrics.face == FONT_MINCHO && font_warnings == 0);
+
+    // DrawDungeon helpers
+    mock_dgn_ctx.loaded = false;
+    assert(DrawDungeon_GetLoadingPercent(0) == 0.0f);
+    assert(DrawDungeon_GetLoadingPercent(1) == 0.0f);
+    mock_dgn_ctx.loaded = true;
+    assert(DrawDungeon_GetLoadingPercent(1) == 100.0f);
+
+    struct dungeon_renderer dr = {0};
+    struct dtx dtx = {0};
+    mock_dgn_ctx.renderer = &dr;
+    mock_dgn_ctx.dtx = &dtx;
+    DrawDungeon_SetSkyTextureSet(1, 1);
+    assert(last_sky_set == 1);
+
+    // SACT2 Sound_PrepareFromFile
+    struct string empty_s = { 0, "" }, hit_s = { 7, "hit.wav" };
+    assert(sact_Sound_PrepareFromFile(3, NULL) == 0);
+    assert(sact_Sound_PrepareFromFile(3, &empty_s) == 0);
+    assert(sact_Sound_PrepareFromFile(3, &hit_s) == 1);
+    assert(last_wav_path && strcmp(last_wav_path, "/game/HIT.WAV") == 0);
+    free(last_wav_path);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'r06_helpers.c', Path(tmp) / 'r06_helpers'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
 
 
 if __name__ == '__main__':

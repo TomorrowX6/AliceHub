@@ -38,6 +38,7 @@ bool game_daibanchou_en = false;
 bool game_rance01 = false;
 bool game_rance02 = false;
 bool game_rance02_mg = false;
+bool game_rance6 = false;
 bool game_rance6_mg = false;
 bool game_rance7_mg = false;
 bool game_sengokurance = false;
@@ -496,6 +497,7 @@ void apply_game_specific_hacks(struct ain *ain)
 {
 	game_daibanchou_en = false;
 	game_rance02_mg = false;
+	game_rance6 = false;
 	game_rance6_mg = false;
 	game_rance7_mg = false;
 	game_sengokurance = false;
@@ -527,11 +529,18 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "CMessageTextView") >= 0
 		&& ain_get_global(ain, "g_playerCommonParam") >= 0
 		&& ain_get_function(ain, "SceneCamp@onClickSaveLion") >= 0;
+	game_rance6 = ain->version == 4
+		&& ain_get_library(ain, "DrawDungeon") >= 0
+		&& ain_get_library(ain, "ACXLoader") >= 0
+		&& ain_get_struct(ain, "CDungeon") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
 			|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
-			|| strstr(config.game_name, "\xcf\xc4\xcd\xde")))
+			|| strstr(config.game_name, "\xcf\xc4\xcd\xde")
+			|| strstr(config.game_name, "\xd6\xd0\xce\xc4")
+			|| strstr(config.game_name, "\xba\xba\xbb\xaf")
+			|| strstr(config.game_name, "\x9e\x61\xbb\xaf")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -540,12 +549,19 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
-		|| (game_rance03 && ain_has_gbk_r03_strings(ain)));
+		|| (game_rance03 && ain_has_gbk_r03_strings(ain))
+		|| (game_rance6 && (ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")
+			|| ain_has_gbk_string(ain, "\xd6\xd5\xc1\xcb")
+			|| ain_has_gbk_string(ain, "\xa3\xcd\xa3\xd3\x20\xa5\xb4\xa5\xb7\xa5\xc3\xa5\xaf"))));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);
 		apply_rance03_effect_sound_paths(ain);
 		apply_rance03_skill_cooldown_layout(ain);
+	}
+	if (game_rance6 && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 640;
+		config.view_height = 480;
 	}
 	if (game_rance10 && config.view_width == 800 && config.view_height == 600) {
 		// The original Rance X executable stores this outside AliceStart.ini.
@@ -561,7 +577,11 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {
 		apply_rance02_hacks(ain);
-	} else if (!strcmp(game_name, "Rance6")) {
+	} else if (game_rance6 || !strncmp(game_name, "Rance6", 6)
+			|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
+			|| !strncmp(game_name, "兰斯6", strlen("兰斯6"))
+			|| !strncmp(game_name, "兰斯06", strlen("兰斯06"))) {
+		game_rance6 = true;
 		apply_rance6_hacks(ain);
 	} else if (!strcmp(game_name, "ランス・クエスト") || !strcmp(game_name, "兰斯8")) {
 		game_rance8 = true;

@@ -32,7 +32,37 @@ struct skybox {
 	GLuint index_buffer;
 	GLuint texture;
 	int nr_indices;
+	int texture_set;
 };
+
+static void skybox_load_textures(struct skybox *s, struct dtx *dtx)
+{
+	glBindTexture(GL_TEXTURE_CUBE_MAP, s->texture);
+	const GLenum targets[6] = {
+		GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // north
+		GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // west
+		GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,  // south
+		GL_TEXTURE_CUBE_MAP_POSITIVE_X,  // east
+		GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,  // bottom
+		GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // top
+	};
+	int base = s->texture_set >= 0 ? s->texture_set * 6 : 0;
+	for (int i = 0; i < 6; i++) {
+		struct cg *cg = dtx ? dtx_create_cg(dtx, DTX_SKYBOX, base + i) : NULL;
+		if (!cg) {
+			WARNING("Cannot load skybox texture %d", base + i);
+			continue;
+		}
+		glTexImage2D(targets[i], 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
+		cg_free(cg);
+	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+}
 
 static void skybox_init_gl(struct skybox *s, struct dtx *dtx)
 {
@@ -73,30 +103,16 @@ static void skybox_init_gl(struct skybox *s, struct dtx *dtx)
 
 	// Set up a cubemap texture.
 	glGenTextures(1, &s->texture);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, s->texture);
-	const GLenum targets[6] = {
-		GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // north
-		GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // west
-		GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,  // south
-		GL_TEXTURE_CUBE_MAP_POSITIVE_X,  // east
-		GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,  // bottom
-		GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // top
-	};
-	for (int i = 0; i < 6; i++) {
-		struct cg *cg = dtx ? dtx_create_cg(dtx, DTX_SKYBOX, i) : NULL;
-		if (!cg) {
-			WARNING("Cannot load skybox texture %d", i);
-			continue;
-		}
-		glTexImage2D(targets[i], 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-		cg_free(cg);
-	}
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	skybox_load_textures(s, dtx);
+}
+
+void skybox_set_texture_set(struct skybox *s, struct dtx *dtx, int set)
+{
+	if (!s || set < 0)
+		return;
+	s->texture_set = set;
+	if (s->texture)
+		skybox_load_textures(s, dtx);
 }
 
 void skybox_reset_gl(struct skybox *s, struct dtx *dtx)
