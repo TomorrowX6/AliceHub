@@ -598,6 +598,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 ).show()
             }
         )
+        // Keep the menu entry so players can learn where to edit, but both
+        // branches refuse in-session button/layout changes (settings/hub only).
         menuEntries.add(
             tr("手柄与按键…", "パッド設定…", "Gamepad…") to {
                 if (xsAct != null) {

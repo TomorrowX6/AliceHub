@@ -1,7 +1,10 @@
 package io.github.kichikuou.xsystem4
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.hardware.input.InputManager
+import android.widget.Toast
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -432,6 +435,36 @@ object GamepadBridge {
             lang.startsWith("ja") -> ja
             else -> en
         }
+    }
+
+    /**
+     * Button/layout customization is only allowed outside a running game session
+     * (launcher, settings, game hub, and the standalone gamepad editor).
+     * Context wrappers around [XSystem4Activity] are treated as in-session.
+     */
+    fun resolveActivity(context: Context): Activity? {
+        var ctx: Context? = context
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) return ctx
+            ctx = ctx.baseContext
+        }
+        return null
+    }
+
+    fun canEditButtonsAndLayout(context: Context): Boolean =
+        resolveActivity(context) !is XSystem4Activity
+
+    fun notifyButtonsAndLayoutEditingBlocked(context: Context) {
+        Toast.makeText(
+            context,
+            tr(
+                context,
+                "游戏进行中无法自定义按键与布局，请先退出游戏，在「设置 → 手柄设置」中修改。",
+                "プレイ中はキー配置とレイアウトを編集できません。ゲームを終了し、「設定 → パッド設定」から変更してください。",
+                "Buttons and layout can't be customized while a game is running. Exit the game and change them in Settings → Gamepad."
+            ),
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     fun normalizeGameProfileKey(gameRootOrId: String?): String? {

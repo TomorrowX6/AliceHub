@@ -334,24 +334,9 @@ class XSystem4Activity : SDLActivity() {
     }
 
     fun openGamepadConfigDialog() {
-        ensureOverlaysAttached()
-        val key = currentGamepadProfileKey()
-        val gid = currentGamepadGameId()
-        val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
-            ?: currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
-        val acc = gid?.let { GameCatalog.descriptorFor(this, it).accentColor }
-        GamepadConfigDialog.show(
-            context = this,
-            profileKey = key,
-            gameId = gid,
-            gameDisplayName = displayTitle,
-            accentColor = acc,
-            onProfileUpdated = { saved -> applyGamepadProfile(saved) },
-            onEnterEditor = { updated, initialTab ->
-                applyGamepadProfile(updated)
-                openGamepadEditorActivity(initialTab)
-            }
-        )
+        // Button/layout customization is launcher/settings only; do not open the
+        // in-game config dialog or editor from the floating overlay or pad commands.
+        GamepadBridge.notifyButtonsAndLayoutEditingBlocked(this)
     }
 
     private val resumeTraceVersion by lazy {
@@ -365,15 +350,9 @@ class XSystem4Activity : SDLActivity() {
             "finishing=$isFinishing pad=${virtualGamepadView?.resumeVisibilityState()}")
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun openGamepadEditorActivity(initialTab: Int = GamepadEditorActivity.TAB_VIRTUAL) {
-        traceEditorReturn("editor.launch")
-        val key = currentGamepadProfileKey()
-        val gid = currentGamepadGameId()
-        val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
-            ?: currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
-        val intent = GamepadEditorActivity.createIntent(this, key, displayTitle, initialTab, gid)
-        @Suppress("DEPRECATION")
-        startActivityForResult(intent, REQ_GAMEPAD_EDITOR)
+        GamepadBridge.notifyButtonsAndLayoutEditingBlocked(this)
     }
 
     private fun registerControllerListener() {
@@ -461,7 +440,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     fun enterLayoutEditorMode() {
-        openGamepadEditorActivity(GamepadEditorActivity.TAB_VIRTUAL)
+        GamepadBridge.notifyButtonsAndLayoutEditingBlocked(this)
     }
 
     private fun findGameSurfaceView(): SurfaceView? {

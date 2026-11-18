@@ -713,6 +713,10 @@ object GamepadConfigDialog {
         onProfileUpdated: (GamepadProfile) -> Unit = {},
         onEnterEditor: ((GamepadProfile, Int) -> Unit)? = null
     ) {
+        if (!GamepadBridge.canEditButtonsAndLayout(context)) {
+            GamepadBridge.notifyButtonsAndLayoutEditingBlocked(context)
+            return
+        }
         dismissActive()
         var dlgRef: AlertDialog? = null
         val controller = GamepadConfigController(
