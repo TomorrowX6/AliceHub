@@ -1080,7 +1080,7 @@ object GameCatalog {
                 entries.add(GameSelectEntry(desc, listOf(item), item))
             }
         }
-        return entries
+        return GameSorting.sorted(entries, AppSettings.getGameSortMode(context), AppSettings.resolveLocale(context))
     }
 
     fun writeRunningGameRoot(context: Context, gameRoot: String) {

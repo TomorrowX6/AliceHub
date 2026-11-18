@@ -295,4 +295,15 @@
     <string name="movie_skip_hint">长按屏幕跳过</string>
     <string name="movie_skip_holding">长按跳过…</string>
     <string name="settings_gamepad">手柄设置</string>
+
+    <!-- Game sorting: offline sourced release dates and rating scores. -->
+    <string name="settings_game_sort">游戏排序</string>
+    <string name="game_sort_catalog">默认（目录顺序）</string>
+    <string name="game_sort_name">名称（升序）</string>
+    <string name="game_sort_rating">评分（高到低）</string>
+    <string name="game_sort_release_date">发行时间（由新到旧）</string>
+    <string name="game_sort_catalog_short">默认</string>
+    <string name="game_sort_name_short">名称</string>
+    <string name="game_sort_rating_short">评分</string>
+    <string name="game_sort_release_date_short">发行时间</string>
 </resources>

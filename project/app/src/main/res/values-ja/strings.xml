@@ -295,4 +295,15 @@
     <string name="movie_skip_hint">長押しでスキップ</string>
     <string name="movie_skip_holding">長押しでスキップ…</string>
     <string name="settings_gamepad">パッド設定</string>
+
+    <!-- Game sorting: offline sourced release dates and rating scores. -->
+    <string name="settings_game_sort">ゲームの並び順</string>
+    <string name="game_sort_catalog">標準（カタログ順）</string>
+    <string name="game_sort_name">名前（昇順）</string>
+    <string name="game_sort_rating">評価（高い順）</string>
+    <string name="game_sort_release_date">発売日（新しい順）</string>
+    <string name="game_sort_catalog_short">標準</string>
+    <string name="game_sort_name_short">名前</string>
+    <string name="game_sort_rating_short">評価</string>
+    <string name="game_sort_release_date_short">発売日</string>
 </resources>
