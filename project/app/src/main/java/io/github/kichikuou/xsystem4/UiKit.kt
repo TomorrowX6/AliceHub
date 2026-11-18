@@ -301,10 +301,11 @@ internal object UiKit {
 
         val pad = when (desc.id) {
             GameCatalog.ID_RANCE10, GameCatalog.ID_EVENICLE,
-            GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_RANCE01,
-            GameCatalog.ID_RANCE02, GameCatalog.ID_RANCE03,
-            GameCatalog.ID_RANCE08, GameCatalog.ID_RANCE09,
-            GameCatalog.ID_KICHIKUOU, GameCatalog.ID_ESCALAYER -> 0
+            GameCatalog.ID_EVENICLE2, GameCatalog.ID_SENGOKU_RANCE,
+            GameCatalog.ID_RANCE01, GameCatalog.ID_RANCE02,
+            GameCatalog.ID_RANCE03, GameCatalog.ID_RANCE08,
+            GameCatalog.ID_RANCE09, GameCatalog.ID_KICHIKUOU,
+            GameCatalog.ID_ESCALAYER -> 0
             GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
             else -> frame.layoutParams.width / 10
         }
@@ -313,6 +314,7 @@ internal object UiKit {
         val builtIn = desc.id == GameCatalog.ID_RANCE10 ||
             desc.id == GameCatalog.ID_DOHNA_DOHNA ||
             desc.id == GameCatalog.ID_EVENICLE ||
+            desc.id == GameCatalog.ID_EVENICLE2 ||
             desc.id == GameCatalog.ID_SENGOKU_RANCE ||
             desc.id == GameCatalog.ID_RANCE01 ||
             desc.id == GameCatalog.ID_RANCE02 ||

@@ -304,6 +304,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             if (descriptor.id == GameCatalog.ID_RANCE10 ||
                 descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
                 descriptor.id == GameCatalog.ID_EVENICLE ||
+                descriptor.id == GameCatalog.ID_EVENICLE2 ||
                 descriptor.id == GameCatalog.ID_SENGOKU_RANCE ||
                 descriptor.id == GameCatalog.ID_RANCE01 ||
                 descriptor.id == GameCatalog.ID_RANCE02 ||

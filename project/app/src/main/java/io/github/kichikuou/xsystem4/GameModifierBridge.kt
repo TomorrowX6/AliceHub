@@ -219,6 +219,9 @@ object GameModifierBridge {
     }
 
     fun isDohnaDohnaGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -244,6 +247,9 @@ object GameModifierBridge {
     }
 
     fun isRance03GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -383,6 +389,9 @@ object GameModifierBridge {
     }
 
     fun isRance09GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -445,8 +454,21 @@ object GameModifierBridge {
         return false
     }
 
+    fun isEvenicle2GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_EVENICLE2
+
     fun isEvenicleGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isRance10GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||
