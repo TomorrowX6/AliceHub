@@ -1,52 +1,52 @@
-# Game sorting: rules and public metadata
+# Game sorting: VNDB rating and release metadata
 
 ## Behaviour
 
-- Installed games always precede uninstalled games, for every mode (including Default). Presence comes from the current `GameList` scan / `GameSelectEntry.primaryItem`, exactly as in the launcher badge. It is not inferred from MOD metadata, file timestamps, saved history or downloads. A detected installation with a launch error remains in the installed group, retaining its existing error badge.
-- Default keeps the existing built-in catalog order, then custom import order **within each installation group**. This fourth option preserves the existing ordering for upgrades while allowing the three requested sorts.
-- Name: active app locale collator, ascending, secondary strength (case-insensitive).
-- Popularity: descending **VNDB work-level vote count**, not average/Bayesian rating, sales, download count, local play frequency or concurrent players.
-- Release date: newest first, first Japanese release of the listed game/edition. Dates are not port/translation/MOD upload/install dates.
-- Null/missing metadata: last **within its installation group**; equal values and missing values retain source order via stable sorting. Custom games have no network metadata; this is unknown, not zero popularity.
-- Choice uses stable string keys in `alicehub_settings/game_sort`. Missing, unrecognized or wrongly typed values safely use Default.
-- Sorting happens in `GameCatalog.buildSelectEntries`, before the existing adapter search. Adapter reload preserves the search string. Existing install success, uninstall and resume paths rescan/reload and therefore reapply sorting with current settings and installation state.
-- Settings uses a keyboard-focusable action row and native single-choice dialog. English, Simplified Chinese and Japanese strings, a wrapping summary, and a rules/source dialog are included. No new runtime network calls, permissions, backend or services.
+- Installed games always precede uninstalled games, in every mode. Presence comes from the existing `GameList` scan / `GameSelectEntry.primaryItem`, exactly as in the launcher badge, not from dates, download history or MOD metadata. A detected installation with a launch error retains its existing error badge and installation grouping.
+- Default retains built-in catalog order, then custom import order, within each installation group. Name is ascending using the active app locale collator (secondary strength).
+- **Score** sorts by the VNDB API **`rating` (Bayesian rating)**, descending. It does not sort by `votecount` or `average`, and is not an ErogameScape median. The documented raw scale is **10–100**; it is kept as a nullable Double without rounding. Conventional ten-point equivalents in the table are raw / 10. The UI does not display per-game numeric scores, so there is no rounded display value used as a sorting key.
+- Release date is newest first, first Japanese release of the listed game/edition; dates are not later ports, translations, MOD uploads or install dates.
+- Missing scores/dates are last within each installation group, not treated as zero. Equal keys (including missing keys) preserve source order through stable sorting. Custom games have no assigned network metadata.
+- Stable preference keys in `alicehub_settings/game_sort`: catalog/name/rating/release_date. The legacy `popularity` key is migrated to `rating` on read, so an existing selection is not lost. Unknown/wrongly typed values safely fall back to Default.
+- Sorting runs in `GameCatalog.buildSelectEntries` before the adapter search. Existing install success, uninstall, resume and refresh paths reload/rescan and reapply sorting; search is preserved.
+- Settings is a focusable row plus native single-choice dialog, localized in English, Simplified Chinese and Japanese. It shows only the selected mode. The user-requested removal of the source/rules entry, explanatory popup and installed-first wording remains in place, including accessibility copy. Source provenance stays in this repository.
+- No runtime network calls, permissions, backend services or dependencies added. Tests can inject synthetic metadata, but production uses only `GameSortMetadata`.
 
-## Snapshot and reproducibility
+## Source and reproducibility
 
-Collected 2026-11-18T08:13:16.237509-08:00 (America/Los_Angeles, PST). Not live data; compiled into `GameSortMetadata.kt`. All counts below came from the same public unauthenticated [VNDB Kana API](https://api.vndb.org/kana) endpoint and `votecount` field. API docs define it as number of votes. `docs/game-sort-vndb-snapshot.json` retains the exact successful request/response and selected edition mapping results. Re-run its `request` as JSON POST to its `source` to refresh; review title/edition mappings and update snapshot, Kotlin metadata and `AS_OF_DATE` together. Do not query VNDB during builds or tests.
+Snapshot collected 2026-11-18T08:43:35.220395-08:00 (America/Los_Angeles, PST), using the public unauthenticated [VNDB Kana API](https://api.vndb.org/kana). The API documentation defines `rating` as Bayesian rating between 10 and 100, null when nobody voted (cached). `average` is the raw vote average; `votecount` is number of votes. Neither is used as the score. This response happens to return equal `rating` and `average` values for these entries; the selected field is still explicitly `rating`.
 
-VNDB attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Contents License](https://vndb.org/d17). No images, game descriptions or personal lists are included. These counts are an explicitly labelled, internationally biased popularity proxy, not a claim about total popularity across all markets.
+`docs/game-sort-vndb-snapshot.json` retains the exact request/response, collection timestamp, field definition and edition-release mapping evidence (retained from 08:13 PST on the same date, with its own source/timestamp). Re-run its `request` as JSON POST to its `source` to refresh, review edition mappings, then update the snapshot and Kotlin constants together. Do not call the API during builds/tests. This is an offline dated snapshot, not a live-rating claim.
 
-## Source table
+Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Contents License](https://vndb.org/d17). No images, descriptions or personal user lists are included. Date sources remain primarily official AliceSoft pages; Kichikuou uses the fetched VNDB release date.
 
-Dates and votes were read from source pages/API in this session; dates prefer official AliceSoft pages. Source keys below link directly to the relevant official page. Kichikuou uses the fetched VNDB entry release date because an original dated official product page was not found.
+## Current source table
 
-| Catalog ID | Listed edition | Release date | VNDB vote count | Vote source | Date source |
-|---|---|---|---:|---|---|
-| `rance10` | Rance 10 | 2018-02-23 | 1284 | [v20802](https://vndb.org/v20802) | [source](https://www.alicesoft.com/rance35th/) |
-| `dohnadohna` | Dohna Dohna | 2020-11-27 | 2768 | [v27519](https://vndb.org/v27519) | [source](https://www.alicesoft.com/dohnadohna/) |
-| `evenicle` | Evenicle | 2015-04-24 | 3498 | [v16640](https://vndb.org/v16640) | [source](https://www.alicesoft.com/information/game/evenicle/index_2.html) |
-| `evenicle2` | Evenicle 2 | 2019-02-22 | 878 | [v23742](https://vndb.org/v23742) | [source](https://www.alicesoft.com/evenicle2/) |
-| `sengokurance` | Sengoku Rance | 2006-12-15 | 6129 | [v487](https://vndb.org/v487) | [source](https://www.alicesoft.com/rance35th/) |
-| `rance01` | Rance 01 (remake) | 2013-09-27 | 3619 | [v14022](https://vndb.org/v14022) | [source](https://www.alicesoft.com/rance35th/) |
-| `rance02` | Rance 02 (remake) | 2009-12-18 | unknown | not assigned | [source](https://www.alicesoft.com/rance35th/) |
-| `rance03` | Rance 03 (remake) | 2015-08-28 | 2007 | [v17642](https://vndb.org/v17642) | [source](https://www.alicesoft.com/rance35th/) |
-| `rance06` | Rance VI | 2004-08-27 | 2315 | [v2047](https://vndb.org/v2047) | [source](https://www.alicesoft.com/rance35th/) |
-| `rance08` | Rance Quest Magnum | 2012-02-24 | 1736 | [v6985](https://vndb.org/v6985) | [source](https://www.alicesoft.com/rance8/magnum.html) |
-| `rance09` | Rance IX | 2014-04-25 | 1538 | [v13802](https://vndb.org/v13802) | [source](https://www.alicesoft.com/rance35th/) |
-| `kichikuou` | Kichikuou Rance | 1996-12-19 | 1134 | [v2045](https://vndb.org/v2045) | [source](https://vndb.org/v2045) |
-| `escalayer` | Beat Angel Escalayer | 2002-08-02 | 427 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/information/2022/entry003043.html) |
-| `escalayer_reboot` | Beat Angel Escalayer Reboot | 2014-07-25 | 427 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/escalayerreboot/) |
+| Catalog ID | Listed edition | Japanese release | Raw rating /100 | Equivalent /10 | Rating source | Date source |
+|---|---|---|---:|---:|---|---|
+| `rance10` | Rance 10 | 2018-02-23 | 90.7 | 9.07 | [v20802](https://vndb.org/v20802) | [source](https://www.alicesoft.com/rance35th/) |
+| `dohnadohna` | Dohna Dohna | 2020-11-27 | 80.4 | 8.04 | [v27519](https://vndb.org/v27519) | [source](https://www.alicesoft.com/dohnadohna/) |
+| `evenicle` | Evenicle | 2015-04-24 | 76.8 | 7.68 | [v16640](https://vndb.org/v16640) | [source](https://www.alicesoft.com/information/game/evenicle/index_2.html) |
+| `evenicle2` | Evenicle 2 | 2019-02-22 | 74.1 | 7.41 | [v23742](https://vndb.org/v23742) | [source](https://www.alicesoft.com/evenicle2/) |
+| `sengokurance` | Sengoku Rance | 2006-12-15 | 83.7 | 8.37 | [v487](https://vndb.org/v487) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance01` | Rance 01 (remake) | 2013-09-27 | 70.9 | 7.09 | [v14022](https://vndb.org/v14022) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance02` | Rance 02 (remake) | 2009-12-18 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/rance35th/) |
+| `rance03` | Rance 03 (remake) | 2015-08-28 | 85.4 | 8.54 | [v17642](https://vndb.org/v17642) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance06` | Rance VI | 2004-08-27 | 79.3 | 7.93 | [v2047](https://vndb.org/v2047) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance08` | Rance Quest Magnum | 2012-02-24 | 80 | 8.00 | [v6985](https://vndb.org/v6985) | [source](https://www.alicesoft.com/rance8/magnum.html) |
+| `rance09` | Rance IX | 2014-04-25 | 83.5 | 8.35 | [v13802](https://vndb.org/v13802) | [source](https://www.alicesoft.com/rance35th/) |
+| `kichikuou` | Kichikuou Rance | 1996-12-19 | 84 | 8.40 | [v2045](https://vndb.org/v2045) | [source](https://vndb.org/v2045) |
+| `escalayer` | Beat Angel Escalayer | 2002-08-02 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/information/2022/entry003043.html) |
+| `escalayer_reboot` | Beat Angel Escalayer Reboot | 2014-07-25 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/escalayerreboot/) |
 
-## Edition mapping caveats (also disclosed in Settings)
+## Edition mapping / missing-score decisions
 
-- Rance 01/03 are the 2013/2015 remakes, not the 1989/1991 originals. Rance VI is the 2004 game (not Rance 06 fan naming as a new edition). Rance IX and X are their original Japanese releases.
-- `rance02` accepts multiple variants under one catalog card. VNDB groups the original II / standard 02 under [v1427](https://vndb.org/v1427), but revised 02 Kai under [v18970](https://vndb.org/v18970). The release mapping API confirms both can occur in the same commercial bundle (r64811), with standalone 02 under v1427 (r85823) and revised 02 under v18970 (r130324). Do not add their counts (voters could overlap), pick one arbitrarily, or use the unrelated 1990 original release date. Keep vote count null for this ambiguous catalog card. The official AliceSoft history explicitly dates the 02 remake to 2009-12-18.
-- `rance08` is titled Quest Magnum in the app. Its date is **2012-02-24**, the first Magnum expansion release, not Quest base (2011-08-26), integrated reissue (2018-09-28), English release or Android port. The official [Magnum product page](https://www.alicesoft.com/rance8/magnum.html) confirms it; VNDB release r18068 maps Magnum to work v6985. The **vote count is work-wide and includes base Quest**, not a separate Magnum-only count.
-- VNDB has **one work entry v311 for Escalayer and Reboot**: release r35452 maps Reboot explicitly to v311. Consequently the two catalog cards use the same genuine work-level count (427), not two independent edition counts. They retain their relative source order on a popularity tie. Dates remain distinct: 2002-08-02 original (official 20th anniversary article) vs 2014-07-25 Reboot (official release announcement), not 2016 Android release. Mapping independently corroborated by [r35452](https://vndb.org/r35452).
-- No edition-specific vote count has been invented, no title digits/catalog positions/download sizes have been turned into dates or heat scores. Do not interpret a missing vote count as zero.
+- Rance 01/03 are the 2013/2015 remakes, not the 1989/1991 originals. Rance VI/IX/X use their original work entries.
+- `rance02` groups variants under one card. VNDB splits original II / standard 02 under [v1427](https://vndb.org/v1427) and revised 02 Kai under [v18970](https://vndb.org/v18970). The preserved release evidence maps r85823 to standard 02, r130324 to revised 02, and bundle r64811 to both. The fetched ratings are 61.9 and 60.3 respectively; neither unambiguously describes the whole card. Keep rating/source null, rather than choose one, average them, or substitute the older original. Official remake release date remains 2009-12-18.
+- `rance08` is titled Quest Magnum in the app. Date **2012-02-24** is the first Magnum expansion release, not Quest base (2011) or integrated reissue (2018). Official [Magnum page](https://www.alicesoft.com/rance8/magnum.html) confirms it; VNDB release r18068 maps Magnum to work [v6985](https://vndb.org/v6985). Its **rating is work-wide including base Quest**, not an invented separate Magnum rating.
+- Escalayer and Reboot share work **v311**, with Reboot release r35452 explicitly mapping there. Both cards therefore use the same real work rating 71.7, not separate edition-only ratings. Their dates remain 2002-08-02 vs 2014-07-25 (not the 2016 Android port). They retain source order on rating ties.
+- No ErogameScape score or search-cache value is integrated. That source was superseded by the user and research stopped. No popularity count is reused as a rating.
 
-## Validation
+## Validation scope
 
-See the accompanying review report for actual run results. `GameSortingTest` covers stable-key settings persistence and corrupt fallback; installed-first in all modes, independent within-group ordering, localized name collation, descending votes/dates, equal/missing/zero key handling, source coverage, scanner installation/removal, adapter search retained on reload, and localized wrapping/focusability. It is headless Android testing, not emulator/device visual validation.
+`GameSortingTest` covers preference persistence and invalid fallback, legacy popularity→rating migration, all installed-first modes, independent within-group ordering, locale/name ties, descending fractional rating scores, missing/equal/zero comparator keys, captured API rating parity, edition dates, scanner installation/removal, preserved search on reload, native dialog selection without the removed rules button, and accessible localized layout constraints. Synthetic test-only rating fixtures are labelled and never written into production metadata. See the review report for actual run results and device/native-build limitations.

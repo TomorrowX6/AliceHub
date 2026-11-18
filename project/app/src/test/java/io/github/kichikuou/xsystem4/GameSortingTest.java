@@ -83,9 +83,33 @@ public class GameSortingTest {
         assertEquals("custom:a", GameSorting.INSTANCE.sorted(localized, GameSortMode.NAME, Locale.GERMAN).get(0).getDescriptor().getId());
         assertEquals("custom:z", GameSorting.INSTANCE.sorted(localized, GameSortMode.NAME, new Locale("sv")).get(0).getDescriptor().getId());
     }
-    @Test public void popularityIsDescendingVoteCountNotReleaseDateOrName() {
+    private Map<String, GameSortInfo> scoreFixture() {
+        // Synthetic test-only rating scores. These are never written to the production snapshot.
+        Map<String, GameSortInfo> fixture = new HashMap<>();
+        fixture.put(GameCatalog.ID_DOHNA_DOHNA, new GameSortInfo("2020-11-27", 70.03, null, "test-only"));
+        fixture.put(GameCatalog.ID_SENGOKU_RANCE, new GameSortInfo("2006-12-15", 70.02, null, "test-only"));
+        fixture.put(GameCatalog.ID_EVENICLE, new GameSortInfo("2015-04-24", 70.04, null, "test-only"));
+        fixture.put(GameCatalog.ID_ESCALAYER, new GameSortInfo("2002-08-02", 85.0, null, "test-only"));
+        fixture.put(GameCatalog.ID_ESCALAYER_REBOOT, new GameSortInfo("2014-07-25", 85.0, null, "test-only"));
+        return fixture;
+    }
+    @Test public void ratingIsDescendingRatingNotVotesReleaseDateOrName() {
         List<GameSelectEntry> entries = Arrays.asList(entry(GameCatalog.ID_DOHNA_DOHNA, "A", false), entry(GameCatalog.ID_SENGOKU_RANCE, "Z", false), entry(GameCatalog.ID_EVENICLE, "B", false));
-        assertEquals(Arrays.asList(GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_EVENICLE, GameCatalog.ID_DOHNA_DOHNA), ids(sort(entries, GameSortMode.POPULARITY)));
+        Map<String, GameSortInfo> fixture = scoreFixture();
+        // Distinct fractional scores must not be rounded to an integer before sorting.
+        // This also differs from the previous VNDB vote-count order and from release/name order.
+        assertEquals(Arrays.asList(GameCatalog.ID_EVENICLE, GameCatalog.ID_DOHNA_DOHNA, GameCatalog.ID_SENGOKU_RANCE),
+            ids(GameSorting.INSTANCE.sorted(entries, GameSortMode.RATING, Locale.ENGLISH, fixture::get)));
+    }
+    @Test public void legacyPopularityPreferenceMigratesToRatingWithoutResettingOtherModes() {
+        android.content.SharedPreferences prefs = activity.getSharedPreferences("alicehub_settings", 0);
+        prefs.edit().putString("game_sort", "popularity").commit();
+        assertEquals(GameSortMode.RATING, GameSortMode.Companion.fromKey("popularity"));
+        assertEquals(GameSortMode.RATING, AppSettings.INSTANCE.getGameSortMode(activity));
+        assertEquals("rating", prefs.getString("game_sort", null));
+        assertEquals(GameSortMode.RATING, AppSettings.INSTANCE.getGameSortMode(activity));
+        prefs.edit().putString("game_sort", "release_date").commit();
+        assertEquals(GameSortMode.RELEASE_DATE, AppSettings.INSTANCE.getGameSortMode(activity));
     }
     @Test public void releaseNewestFirstUsesListedEditionNotOriginalOrPort() {
         List<GameSelectEntry> entries = Arrays.asList(entry(GameCatalog.ID_ESCALAYER), entry(GameCatalog.ID_RANCE08), entry(GameCatalog.ID_ESCALAYER_REBOOT), entry(GameCatalog.ID_DOHNA_DOHNA));
@@ -94,12 +118,11 @@ public class GameSortingTest {
         assertEquals("2009-12-18", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE02).getReleaseDate());
         assertEquals("2014-07-25", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_ESCALAYER_REBOOT).getReleaseDate());
     }
-    @Test public void equalAndMissingPopularityRemainStableAndDoNotMutateInput() {
+    @Test public void equalAndMissingRatingsRemainStableAndDoNotMutateInput() {
         List<GameSelectEntry> entries = Arrays.asList(entry("custom:first"), entry(GameCatalog.ID_ESCALAYER_REBOOT), entry(GameCatalog.ID_RANCE02), entry(GameCatalog.ID_ESCALAYER), entry("custom:last"));
         List<GameSelectEntry> before = new ArrayList<>(entries);
-        assertEquals(Arrays.asList(GameCatalog.ID_ESCALAYER_REBOOT, GameCatalog.ID_ESCALAYER, "custom:first", GameCatalog.ID_RANCE02, "custom:last"), ids(sort(entries, GameSortMode.POPULARITY)));
+        assertEquals(Arrays.asList(GameCatalog.ID_ESCALAYER_REBOOT, GameCatalog.ID_ESCALAYER, "custom:first", GameCatalog.ID_RANCE02, "custom:last"), ids(GameSorting.INSTANCE.sorted(entries, GameSortMode.RATING, Locale.ENGLISH, scoreFixture()::get)));
         assertEquals(before, entries);
-        assertNull(GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE02).getVoteCount());
         assertNull(GameSortMetadata.INSTANCE.forGame("custom:first"));
     }
     @Test public void equalAndMissingKeysCompareSafelyIncludingZeroVotes() throws Exception {
@@ -116,7 +139,7 @@ public class GameSortingTest {
         assertEquals(Arrays.asList(GameCatalog.ID_EVENICLE, "custom:two", "custom:one"), ids(sort(missing, GameSortMode.RELEASE_DATE)));
     }
     @Test public void installedGroupsApplyEachSelectedSortIndependently() {
-        for (GameSortMode mode : Arrays.asList(GameSortMode.NAME, GameSortMode.POPULARITY, GameSortMode.RELEASE_DATE)) {
+        for (GameSortMode mode : Arrays.asList(GameSortMode.NAME, GameSortMode.RATING, GameSortMode.RELEASE_DATE)) {
             List<GameSelectEntry> uninstalled = Arrays.asList(entry(GameCatalog.ID_DOHNA_DOHNA, "Z", false), entry(GameCatalog.ID_SENGOKU_RANCE, "A", false), entry("custom:u", "M", false));
             List<GameSelectEntry> installed = Arrays.asList(entry(GameCatalog.ID_ESCALAYER, "Z", true), entry(GameCatalog.ID_EVENICLE, "A", true), entry("custom:i", "M", true));
             List<String> expected = ids(sort(installed, mode)); expected.addAll(ids(sort(uninstalled, mode)));
@@ -129,28 +152,35 @@ public class GameSortingTest {
             GameSortInfo data = GameSortMetadata.INSTANCE.forGame(id);
             assertNotNull(data); LocalDate.parse(data.getReleaseDate());
             assertTrue(data.getReleaseSourceUrl().startsWith("https://"));
-            if (data.getVoteCount() != null) {
-                assertTrue(data.getVoteCount() >= 0);
-                assertTrue(data.getVoteSourceUrl().startsWith("https://vndb.org/v"));
+            if (data.getRating() != null) {
+                assertTrue(data.getRating() >= 0 && data.getRating() <= 100);
+                assertTrue(data.getScoreSourceUrl().startsWith("https://vndb.org/v"));
             }
         }
-        assertEquals(GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_ESCALAYER).getVoteSourceUrl(), GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_ESCALAYER_REBOOT).getVoteSourceUrl());
     }
-    @Test public void voteCountsMatchPreservedPublicApiSnapshot() throws Exception {
+    @Test public void ratingsMatchPreservedPublicApiSnapshotNotVoteCounts() throws Exception {
         File file = new File("../docs/game-sort-vndb-snapshot.json");
         if (!file.isFile()) file = new File("../../docs/game-sort-vndb-snapshot.json");
         org.json.JSONObject snapshot = new org.json.JSONObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+        assertTrue(snapshot.getString("metric").startsWith("rating (Bayesian rating"));
         org.json.JSONArray results = snapshot.getJSONObject("response").getJSONArray("results");
-        Map<String, Integer> counts = new HashMap<>();
+        Map<String, Double> ratings = new HashMap<>();
         for (int i = 0; i < results.length(); i++) {
             org.json.JSONObject row = results.getJSONObject(i);
-            counts.put("https://vndb.org/" + row.getString("id"), row.getInt("votecount"));
+            ratings.put("https://vndb.org/" + row.getString("id"), row.isNull("rating") ? null : row.getDouble("rating"));
         }
         for (String id : GameCatalog.INSTANCE.builtInSelectOrder()) {
             GameSortInfo data = GameSortMetadata.INSTANCE.forGame(id);
-            if (data.getVoteCount() != null) assertEquals(counts.get(data.getVoteSourceUrl()), data.getVoteCount());
+            if (data.getRating() != null) assertEquals(ratings.get(data.getScoreSourceUrl()), data.getRating());
         }
-        assertTrue(snapshot.getString("collected_at").startsWith(GameSortMetadata.AS_OF_DATE));
+        assertNull(GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE02).getRating());
+        assertNull(GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE02).getScoreSourceUrl());
+        assertEquals("https://vndb.org/v311", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_ESCALAYER_REBOOT).getScoreSourceUrl());
+        List<GameSelectEntry> entries = Arrays.asList(entry(GameCatalog.ID_SENGOKU_RANCE), entry(GameCatalog.ID_RANCE10), entry("custom:unknown"));
+        // Actual X rating exceeds Sengoku, although Sengoku has far more votes.
+        assertEquals(Arrays.asList(GameCatalog.ID_RANCE10, GameCatalog.ID_SENGOKU_RANCE, "custom:unknown"), ids(sort(entries, GameSortMode.RATING)));
+        List<GameSelectEntry> missing = Arrays.asList(entry("custom:b"), entry(GameCatalog.ID_RANCE02), entry("custom:a"));
+        assertEquals(ids(missing), ids(sort(missing, GameSortMode.RATING)));
     }
     @Test public void settingsDialogSelectsPersistsAndAnnouncesCurrentMode() {
         org.robolectric.android.controller.ActivityController<SettingsActivity> controller = Robolectric.buildActivity(SettingsActivity.class).setup();
@@ -161,11 +191,14 @@ public class GameSortingTest {
             android.app.AlertDialog dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
             assertTrue(dialog.isShowing());
             assertEquals(GameSortMode.values().length, dialog.getListView().getCount());
-            int popularity = GameSortMode.POPULARITY.ordinal();
-            dialog.getListView().performItemClick(dialog.getListView().getChildAt(popularity), popularity, popularity);
-            assertEquals(GameSortMode.POPULARITY, AppSettings.INSTANCE.getGameSortMode(settings));
+            assertNotEquals(View.VISIBLE, dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).getVisibility());
+            int rating = GameSortMode.RATING.ordinal();
+            dialog.getListView().performItemClick(dialog.getListView().getChildAt(rating), rating, rating);
+            assertEquals(GameSortMode.RATING, AppSettings.INSTANCE.getGameSortMode(settings));
             assertFalse(dialog.isShowing());
-            assertTrue(row.getContentDescription().toString().contains(settings.getString(R.string.game_sort_popularity)));
+            String label = settings.getString(R.string.game_sort_rating);
+            assertEquals(label, ((TextView) settings.findViewById(R.id.value_settings_game_sort)).getText().toString());
+            assertEquals(settings.getString(R.string.settings_game_sort) + ", " + label, row.getContentDescription().toString());
         } finally { controller.pause().stop().destroy(); }
     }
     private BaseAdapter adapter(GameList list) throws Exception {
@@ -195,7 +228,7 @@ public class GameSortingTest {
         try {
             list = new GameList(activity);
             assertTrue("Scanner must see the fixture installation", list.getSize() > 0);
-            AppSettings.INSTANCE.setGameSortMode(activity, GameSortMode.POPULARITY);
+            AppSettings.INSTANCE.setGameSortMode(activity, GameSortMode.RATING);
             BaseAdapter adapter = adapter(list);
             assertEquals(GameCatalog.ID_RANCE10, ((GameSelectEntry) adapter.getItem(0)).getDescriptor().getId());
             call(adapter, "setFilter", "rance");
@@ -224,7 +257,7 @@ public class GameSortingTest {
             View row = root.findViewById(R.id.row_settings_game_sort);
             assertTrue(row.isFocusable()); assertTrue(row.isClickable());
             TextView value = root.findViewById(R.id.value_settings_game_sort);
-            value.setText(ctx.getString(R.string.game_sort_summary, ctx.getString(R.string.game_sort_popularity)));
+            value.setText(ctx.getString(R.string.game_sort_rating));
             root.measure(View.MeasureSpec.makeMeasureSpec((int) (320 * ctx.getResources().getDisplayMetrics().density), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
             root.layout(0, 0, root.getMeasuredWidth(), root.getMeasuredHeight());
             assertNull(value.getEllipsize());

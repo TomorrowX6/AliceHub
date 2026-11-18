@@ -138,7 +138,12 @@ object AppSettings {
         resolveLocaleForMode(getLanguageMode(context))
 
     fun getGameSortMode(context: Context): GameSortMode = try {
-        GameSortMode.fromKey(prefs(context).getString(KEY_GAME_SORT, null))
+        val raw = prefs(context).getString(KEY_GAME_SORT, null)
+        val mode = GameSortMode.fromKey(raw)
+        if (raw == "popularity") {
+            prefs(context).edit().putString(KEY_GAME_SORT, mode.key).apply()
+        }
+        mode
     } catch (_: ClassCastException) {
         GameSortMode.CATALOG
     }

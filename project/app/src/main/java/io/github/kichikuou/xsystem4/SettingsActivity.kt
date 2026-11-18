@@ -166,10 +166,9 @@ class SettingsActivity : ThemedActivity() {
             else -> getString(R.string.theme_auto)
         }
         val sortLabel = gameSortLabel(AppSettings.getGameSortMode(this))
-        val sortSummary = getString(R.string.game_sort_summary, sortLabel)
-        findViewById<TextView>(R.id.value_settings_game_sort).text = sortSummary
+        findViewById<TextView>(R.id.value_settings_game_sort).text = sortLabel
         findViewById<View>(R.id.row_settings_game_sort).contentDescription =
-            getString(R.string.settings_game_sort) + ", " + sortSummary
+            getString(R.string.settings_game_sort) + ", " + sortLabel
         val lang = AppSettings.getLanguageMode(this)
         findViewById<TextView>(R.id.value_settings_language).text = when (lang) {
             AppSettings.LANG_ZH -> getString(R.string.lang_zh)
@@ -667,7 +666,7 @@ class SettingsActivity : ThemedActivity() {
     private fun gameSortLabel(mode: GameSortMode): String = getString(when (mode) {
         GameSortMode.CATALOG -> R.string.game_sort_catalog
         GameSortMode.NAME -> R.string.game_sort_name
-        GameSortMode.POPULARITY -> R.string.game_sort_popularity
+        GameSortMode.RATING -> R.string.game_sort_rating
         GameSortMode.RELEASE_DATE -> R.string.game_sort_release_date
     })
 
@@ -682,24 +681,9 @@ class SettingsActivity : ThemedActivity() {
                     dlg.dismiss()
                     refreshSettingsUi()
                 }
-                .setNeutralButton(R.string.game_sort_sources) { _, _ -> showGameSortSources() }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         )
-    }
-
-    private fun showGameSortSources() {
-        val dialog = trackDialog(
-            AlertDialog.Builder(this)
-                .setTitle(R.string.game_sort_sources)
-                .setMessage(getString(R.string.game_sort_source_details, GameSortMetadata.AS_OF_DATE))
-                .setPositiveButton(R.string.ok, null)
-                .show()
-        )
-        dialog.findViewById<TextView>(android.R.id.message)?.let {
-            android.text.util.Linkify.addLinks(it, android.text.util.Linkify.WEB_URLS)
-            it.movementMethod = android.text.method.LinkMovementMethod.getInstance()
-        }
     }
 
     private fun showThemeDialog() {

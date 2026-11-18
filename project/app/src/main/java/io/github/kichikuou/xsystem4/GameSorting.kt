@@ -5,18 +5,21 @@ import java.util.Locale
 
 /** Persist stable keys, never enum ordinals. Default retains the catalog order within each group. */
 enum class GameSortMode(val key: String) {
-    CATALOG("catalog"), NAME("name"), POPULARITY("popularity"), RELEASE_DATE("release_date");
+    CATALOG("catalog"), NAME("name"), RATING("rating"), RELEASE_DATE("release_date");
 
     companion object {
-        fun fromKey(key: String?): GameSortMode = values().firstOrNull { it.key == key } ?: CATALOG
+        fun fromKey(key: String?): GameSortMode =
+            if (key == "popularity") RATING else values().firstOrNull { it.key == key } ?: CATALOG
     }
 }
 
 object GameSorting {
+    @JvmOverloads
     fun sorted(
         entries: List<GameSelectEntry>,
         mode: GameSortMode,
-        locale: Locale
+        locale: Locale,
+        metadata: (String) -> GameSortInfo? = GameSortMetadata::forGame
     ): List<GameSelectEntry> {
         val collator = Collator.getInstance(locale).apply { strength = Collator.SECONDARY }
         // sortedWith is stable: equal keys (including missing keys) retain catalog/import order.
@@ -26,13 +29,13 @@ object GameSorting {
             if (installed != 0) installed else when (mode) {
                 GameSortMode.CATALOG -> 0
                 GameSortMode.NAME -> collator.compare(a.descriptor.title, b.descriptor.title)
-                GameSortMode.POPULARITY -> descendingKnownFirst(
-                    GameSortMetadata.forGame(a.descriptor.id)?.voteCount,
-                    GameSortMetadata.forGame(b.descriptor.id)?.voteCount
+                GameSortMode.RATING -> descendingKnownFirst(
+                    metadata(a.descriptor.id)?.rating,
+                    metadata(b.descriptor.id)?.rating
                 )
                 GameSortMode.RELEASE_DATE -> descendingKnownFirst(
-                    GameSortMetadata.forGame(a.descriptor.id)?.releaseDate,
-                    GameSortMetadata.forGame(b.descriptor.id)?.releaseDate
+                    metadata(a.descriptor.id)?.releaseDate,
+                    metadata(b.descriptor.id)?.releaseDate
                 )
             }
         })

@@ -296,13 +296,10 @@
     <string name="movie_skip_holding">長押しでスキップ…</string>
     <string name="settings_gamepad">パッド設定</string>
 
-    <!-- Game sorting: offline public metadata, never a synthetic popularity score. -->
+    <!-- Game sorting: offline sourced release dates and rating scores. -->
     <string name="settings_game_sort">ゲームの並び順</string>
     <string name="game_sort_catalog">標準（カタログ順）</string>
     <string name="game_sort_name">名前（昇順）</string>
-    <string name="game_sort_popularity">人気（VNDB 投票数）</string>
+    <string name="game_sort_rating">評価（高い順）</string>
     <string name="game_sort_release_date">発売日（新しい順）</string>
-    <string name="game_sort_summary">%1$s · インストール済み優先</string>
-    <string name="game_sort_sources">並び順のルールと出典</string>
-    <string name="game_sort_source_details">インストール済みゲームを常に先頭にし、各グループ内で並べ替えます。同値はカタログ／取り込み順を維持し、不明なデータは各グループの最後になります。\n\n人気は対応する VNDB 作品の投票数です。評価点、売上、リアルタイム接続数ではありません。オフライン集計日：%1$s。複数の版を含む場合があります。エスカレイヤーとリブートは同じ項目、Quest は Magnum を含みます。ランス02は対応版が複数の項目に分かれるため投票数は不明扱いです。カスタムゲームにはネットのデータがありません。\n\n発売日は対象作品・版の日本初発売日です。ランス01／02／03はリメイク、Quest Magnum は2012年、エスカレイヤー・リブートは2014年です。移植、翻訳、MOD の公開日は使いません。\n\n投票数：VNDB（ODbL／Database Contents License）\nhttps://vndb.org/d17\nhttps://api.vndb.org/kana\n発売日：AliceSoft 公式製品ページおよび VNDB（鬼畜王）。各出典と集計データはソースコードの docs/game-sorting.md を参照。</string>
 </resources>

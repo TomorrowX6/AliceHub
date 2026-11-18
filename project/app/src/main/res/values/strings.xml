@@ -297,13 +297,10 @@
     <string name="movie_skip_holding">Hold to skip…</string>
     <string name="settings_gamepad">Gamepad</string>
 
-    <!-- Game sorting: offline public metadata, never a synthetic popularity score. -->
+    <!-- Game sorting: offline sourced release dates and rating scores. -->
     <string name="settings_game_sort">Game sorting</string>
     <string name="game_sort_catalog">Default (catalog order)</string>
     <string name="game_sort_name">Name (A–Z)</string>
-    <string name="game_sort_popularity">Popularity (VNDB votes)</string>
+    <string name="game_sort_rating">Score (highest first)</string>
     <string name="game_sort_release_date">Release date (newest first)</string>
-    <string name="game_sort_summary">%1$s · Installed first</string>
-    <string name="game_sort_sources">Sorting rules and sources</string>
-    <string name="game_sort_source_details">Installed games always come first; each group uses the selected order. Equal values keep catalog/import order. Missing data goes last within its group.\n\nPopularity is the number of votes on the mapped VNDB work, not its rating, sales or live player count. Offline snapshot: %1$s. Counts may combine editions: Escalayer and Reboot share one VNDB entry; Quest includes Magnum. Rance 02 has no unambiguous count because its supported variants span multiple entries. Custom games have no network metadata.\n\nRelease dates are the first Japanese release of the listed game/edition: Rance 01/02/03 remakes, Quest Magnum (2012), and Escalayer Reboot (2014), not later ports, translations or MOD uploads.\n\nVote data: VNDB (ODbL / Database Contents License)\nhttps://vndb.org/d17\nhttps://api.vndb.org/kana\nRelease sources: AliceSoft product pages and VNDB (Kichikuou). Per-game links and the snapshot are documented in docs/game-sorting.md in the source code.</string>
 </resources>
