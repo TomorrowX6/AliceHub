@@ -75,6 +75,8 @@ static void parts_motion_list_clear(struct parts_motion_list *motion_list)
 
 static void parts_motion_list_add(struct parts_motion_list *motion_list, struct parts_motion *motion)
 {
+	if (motion->end_time > motion_end_t)
+		motion_end_t = motion->end_time;
 	struct parts_motion *p;
 	TAILQ_FOREACH(p, motion_list, entry) {
 		if (p->begin_time > motion->begin_time) {
@@ -83,8 +85,6 @@ static void parts_motion_list_add(struct parts_motion_list *motion_list, struct 
 		}
 	}
 	TAILQ_INSERT_TAIL(motion_list, motion, entry);
-	if (motion->end_time > motion_end_t)
-		motion_end_t = motion->end_time;
 	// FIXME? What happens if we add a motion while is_motion=true?
 	//        Should we call parts_update_motion here?
 }
@@ -101,6 +101,8 @@ void parts_add_motion(struct parts *parts, struct parts_motion *motion)
 
 static inline float motion_progress(struct parts_motion *m, int t)
 {
+	if (t < m->begin_time)
+		return 0.0f;
 	if (m->end_time <= m->begin_time)
 		return 1.0f;
 	return (float)(t - m->begin_time) / (m->end_time - m->begin_time);
@@ -244,6 +246,8 @@ static void parts_update_global_motion(void)
 {
 	struct parts_motion *motion;
 	TAILQ_FOREACH(motion, &global_motion_list, entry) {
+		if (motion->begin_time > motion_t)
+			break;
 		switch (motion->type) {
 		case PARTS_MOTION_VIBRATION_SIZE:
 			parts_set_global_pos(motion_vibration_point(motion, motion_t));
@@ -298,6 +302,10 @@ static void parts_init_all_motion(void)
 		bool initialized[PARTS_NR_MOTION_TYPES] = {0};
 		TAILQ_FOREACH(motion, &parts->motion, entry) {
 			if (!initialized[motion->type]) {
+				if (motion->type == PARTS_MOTION_VIBRATION_SIZE && motion->begin_time > motion_t) {
+					initialized[motion->type] = true;
+					continue;
+				}
 				parts_update_with_motion(parts, motion);
 				initialized[motion->type] = true;
 			}
@@ -372,8 +380,8 @@ void PE_AddMotionHGaugeRate(int parts_no, float begin_numerator, float begin_den
 {
 	struct parts *parts = parts_get(parts_no);
 	struct parts_motion *motion = parts_motion_alloc(PARTS_MOTION_HGAUGE_RATE, begin_t, end_t);
-	motion->begin.f = begin_numerator / begin_denominator;
-	motion->end.f = end_numerator / end_denominator;
+	motion->begin.f = begin_denominator > 0.0f ? begin_numerator / begin_denominator : 0.0f;
+	motion->end.f = end_denominator > 0.0f ? end_numerator / end_denominator : 0.0f;
 	parts_add_motion(parts, motion);
 }
 
@@ -391,8 +399,8 @@ void PE_AddMotionVGaugeRate(int parts_no, float begin_numerator, float begin_den
 {
 	struct parts *parts = parts_get(parts_no);
 	struct parts_motion *motion = parts_motion_alloc(PARTS_MOTION_VGAUGE_RATE, begin_t, end_t);
-	motion->begin.f = begin_numerator / begin_denominator;
-	motion->end.f = end_numerator / end_denominator;
+	motion->begin.f = begin_denominator > 0.0f ? begin_numerator / begin_denominator : 0.0f;
+	motion->end.f = end_denominator > 0.0f ? end_numerator / end_denominator : 0.0f;
 	parts_add_motion(parts, motion);
 }
 
@@ -564,6 +572,8 @@ void PE_AddMotionSound_name(struct string *sound_name, int begin_t)
 	struct sound_motion *m = xcalloc(1, sizeof(struct sound_motion));
 	m->sound_name = sound_name ? string_dup(sound_name) : string_ref(&EMPTY_STRING);
 	m->begin_time = begin_t;
+	if (m->begin_time > motion_end_t)
+		motion_end_t = m->begin_time;
 
 	struct sound_motion *p;
 	TAILQ_FOREACH(p, &sound_motion_list, entry) {
@@ -573,8 +583,6 @@ void PE_AddMotionSound_name(struct string *sound_name, int begin_t)
 		}
 	}
 	TAILQ_INSERT_TAIL(&sound_motion_list, m, entry);
-	if (m->begin_time > motion_end_t)
-		motion_end_t = m->begin_time;
 }
 
 void PE_AddMotionSound(int sound_no, int begin_t)
@@ -582,6 +590,8 @@ void PE_AddMotionSound(int sound_no, int begin_t)
 	struct sound_motion *m = xcalloc(1, sizeof(struct sound_motion));
 	m->sound_no = sound_no;
 	m->begin_time = begin_t;
+	if (m->begin_time > motion_end_t)
+		motion_end_t = m->begin_time;
 
 	struct sound_motion *p;
 	TAILQ_FOREACH(p, &sound_motion_list, entry) {
@@ -591,8 +601,6 @@ void PE_AddMotionSound(int sound_no, int begin_t)
 		}
 	}
 	TAILQ_INSERT_TAIL(&sound_motion_list, m, entry);
-	if (m->begin_time > motion_end_t)
-		motion_end_t = m->begin_time;
 }
 
 void PE_BeginMotion(void)

@@ -100,6 +100,40 @@ class GameModifierActivity : ThemedActivity() {
     private lateinit var adapter: ModSaveSlotAdapter
     private var currentEntries: List<ModSaveSlotEntry> = emptyList()
     private var updatingSwitches = false
+    private val trackedDialogs = mutableListOf<android.app.Dialog>()
+
+    private fun trackDialog(dlg: android.app.Dialog) {
+        trackedDialogs.removeAll { !it.isShowing }
+        if (!trackedDialogs.contains(dlg)) {
+            trackedDialogs.add(dlg)
+        }
+    }
+
+    private fun dismissTrackedDialogs() {
+        val copy = trackedDialogs.toList()
+        trackedDialogs.clear()
+        for (dlg in copy) {
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun dialogBuilder(): AlertDialog.Builder =
+        object : AlertDialog.Builder(this) {
+            override fun create(): AlertDialog {
+                val dlg = super.create()
+                trackDialog(dlg)
+                return dlg
+            }
+
+            override fun show(): AlertDialog {
+                val dlg = super.show()
+                trackDialog(dlg)
+                return dlg
+            }
+        }
 
     private val isZh: Boolean
         get() = AppSettings.resolveLocale(this).language.startsWith("zh")
@@ -191,6 +225,11 @@ class GameModifierActivity : ThemedActivity() {
             discoverSaveTargets(currentTarget.dirName)
             refreshList()
         }
+    }
+
+    override fun onDestroy() {
+        dismissTrackedDialogs()
+        super.onDestroy()
     }
 
     private fun syncTopSwitches() {
@@ -308,7 +347,7 @@ class GameModifierActivity : ThemedActivity() {
         ) {
             return false
         }
-        return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName)
+        return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName, currentTarget.saveDir)
     }
 
     private fun isCurrentTargetDohnaDohna(): Boolean {
@@ -557,7 +596,7 @@ class GameModifierActivity : ThemedActivity() {
             return
         }
 
-        val hasGlobal = File(saveDir, "GlobalSave.asd").isFile || File(saveDir, "Collection.asd").isFile
+        val hasGlobal = GameModifierBridge.hasGlobalSaveFiles(saveDir)
         val lockCount = GameModifierBridge.getLiveLockCount(this)
         findViewById<TextView>(R.id.mod_target_summary).text = tr(
             "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "有" else "无"} · 锁定 $lockCount 项",
@@ -674,7 +713,7 @@ class GameModifierActivity : ThemedActivity() {
         }.toMutableList()
         labels.add(getString(R.string.save_dir_new_option))
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(R.string.save_dir_select_title)
             .setItems(labels.toTypedArray()) { _, which ->
                 if (which == targets.size) {
@@ -695,7 +734,7 @@ class GameModifierActivity : ThemedActivity() {
             hint = getString(R.string.save_dir_create_hint)
             setText(defaultPrefix)
         }
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(R.string.save_dir_create_title)
             .setView(UiKit.dialogContent(this, input))
             .setPositiveButton(R.string.ok) { _, _ ->
@@ -727,7 +766,7 @@ class GameModifierActivity : ThemedActivity() {
             options.add(tr("恢复解锁前备份", "解放前のバックアップを復元", "Restore Pre-Unlock Backup"))
         }
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(tr("全解锁存档", "全解放セーブ", "Full Unlock Save"))
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == 0) {
@@ -757,10 +796,8 @@ class GameModifierActivity : ThemedActivity() {
             return
         }
         val saveDir = currentTarget.saveDir
-        val gFile = File(saveDir, "GlobalSave.asd")
-        val cFile = File(saveDir, "Collection.asd")
-        if (!gFile.isFile && !cFile.isFile) {
-            AlertDialog.Builder(this)
+        if (!GameModifierBridge.hasGlobalSaveFiles(saveDir)) {
+            dialogBuilder()
                 .setTitle(tr("无全局存档", "全体セーブなし", "No Global Save"))
                 .setMessage(tr("当前无全局存档，是否写入全解锁存档？", "先に全解放セーブを適用しますか？", "Install Full Unlock Save first?"))
                 .setPositiveButton(R.string.ok) { _, _ ->
@@ -781,7 +818,7 @@ class GameModifierActivity : ThemedActivity() {
         val cp = info.optInt("totalClearPoint", 0)
         val medal = info.optInt("AutoBattleMedal", 0)
         val expUp = info.optInt("trophyExpBonus", 0)
-        val hasBak = GameModifierBridge.hasModBackup(gFile) || GameModifierBridge.hasModBackup(cFile)
+        val hasBak = GameModifierBridge.hasGlobalSaveModBackup(saveDir)
 
         val options = mutableListOf(
             tr("一键满 CP / 勋章 / 实绩加成", "CP・メダル・実績最大", "Max CP, Medals & Bonuses"),
@@ -791,7 +828,7 @@ class GameModifierActivity : ThemedActivity() {
             options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(tr("全局存档 · CP:$cp · 勋章:$medal · 经验+$expUp%", "全体セーブ · CP:$cp · メダル:$medal", "Global Save · CP:$cp"))
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
@@ -812,6 +849,10 @@ class GameModifierActivity : ThemedActivity() {
                             put("OpenMonsterpedia", 1)
                             put("TrophyComplete", 1)
                             put("CardComplete", 1)
+                            put("gamePlayCount", 50)
+                            put("itemStarRank", 20)
+                            put("setAllCharRank", 10)
+                            put("setTakeOverCardCount", 99)
                             put("leaderAtkRatio", 10.0)
                             put("trophyExpBonus", 9999)
                             put("trophyStatusMaxPer", 999)
@@ -820,10 +861,10 @@ class GameModifierActivity : ThemedActivity() {
                     }
                     1 -> showGlobalSaveCustomDialog(info)
                     2 -> {
-                        var ok = false
-                        if (GameModifierBridge.restoreModBackup(gFile)) ok = true
-                        if (GameModifierBridge.restoreModBackup(cFile)) ok = true
-                        if (ok) Toast.makeText(this, tr("已恢复备份", "復元しました", "Backup restored"), Toast.LENGTH_SHORT).show()
+                        if (GameModifierBridge.restoreGlobalSaveModBackup(saveDir)) {
+                            refreshList()
+                            Toast.makeText(this, tr("已恢复备份", "復元しました", "Backup restored"), Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -831,29 +872,129 @@ class GameModifierActivity : ThemedActivity() {
             .show()
     }
 
+    private data class GlobalFieldSpec(
+        val key: String,
+        val label: String,
+        val initialText: String,
+        val hintText: String = "",
+        val isDecimal: Boolean = false
+    )
+
     private fun showGlobalSaveCustomDialog(info: JSONObject) {
-        val fields = listOf(
-            Triple("totalClearPoint", tr("周回CP点", "周回CP", "Clear CP"), info.optInt("totalClearPoint", 0)),
-            Triple("clearBPointMax", tr("第二部最高CP", "第2部最大CP", "Part 2 Max CP"), info.optInt("clearBPointMax", 0)),
-            Triple("AutoBattleMedal", tr("自动战斗勋章", "自動戦闘メダル", "Auto Medals"), info.optInt("AutoBattleMedal", 0)),
-            Triple("AchievementPoint", tr("实绩点数", "実績ポイント", "Achievement Pt"), info.optInt("AchievementPoint", 0)),
-            Triple("TotalClearCount", tr("总通关次数", "総クリア回数", "Total Clears"), info.optInt("TotalClearCount", 0)),
-            Triple("BestScore", tr("最高得分", "最高スコア", "Best Score"), info.optInt("BestScore", 0)),
-            Triple("trophyExpBonus", tr("实绩经验加成%", "経験値ボーナス%", "EXP Bonus %"), info.optInt("trophyExpBonus", 0)),
-            Triple("trophyStatusMaxPer", tr("属性上限加成%", "ステータス上限%", "Stat Cap %"), info.optInt("trophyStatusMaxPer", 0))
-        )
-        showNumberEditDialog(tr("自定义全局存档", "全体セーブ編集", "Edit Global Save"), fields) { mod ->
-            applyGlobalSaveMod(mod)
+        val ratioVal = info.optDouble("leaderAtkRatio", 1.0)
+        val ratioStr = if (ratioVal == ratioVal.toLong().toDouble()) {
+            String.format(Locale.US, "%.1f", ratioVal)
+        } else {
+            String.format(Locale.US, "%.2f", ratioVal)
         }
+        val charCount = info.optInt("charRankCount", 0)
+        val cardCount = info.optInt("takeOverCardCount", 0)
+        val specs = listOf(
+            GlobalFieldSpec("totalClearPoint", tr("周回CP点", "周回CP", "Clear CP"), info.optInt("totalClearPoint", 0).toString()),
+            GlobalFieldSpec("clearBPointMax", tr("第二部最高CP", "第2部最大CP", "Part 2 Max CP"), info.optInt("clearBPointMax", 0).toString()),
+            GlobalFieldSpec("AutoBattleMedal", tr("自动战斗勋章", "自動戦闘メダル", "Auto Medals"), info.optInt("AutoBattleMedal", 0).toString()),
+            GlobalFieldSpec("AchievementPoint", tr("实绩点数", "実績ポイント", "Achievement Pt"), info.optInt("AchievementPoint", 0).toString()),
+            GlobalFieldSpec("TotalClearCount", tr("总通关次数", "総クリア回数", "Total Clears"), info.optInt("TotalClearCount", 0).toString()),
+            GlobalFieldSpec("Clear_A_Count", tr("A路线通关数", "Aクリア回数", "Route A Clears"), info.optInt("Clear_A_Count", 0).toString()),
+            GlobalFieldSpec("Clear_B_Count", tr("B路线通关数", "Bクリア回数", "Route B Clears"), info.optInt("Clear_B_Count", 0).toString()),
+            GlobalFieldSpec("Clear_C_Count", tr("C路线通关数", "Cクリア回数", "Route C Clears"), info.optInt("Clear_C_Count", 0).toString()),
+            GlobalFieldSpec("BestScore", tr("最高得分", "最高スコア", "Best Score"), info.optInt("BestScore", 0).toString()),
+            GlobalFieldSpec("LeaderSmallestTurn", tr("魔王最少回合", "魔王最小ターン", "Demon Lord Min Turn"), info.optInt("LeaderSmallestTurn", 0).toString()),
+            GlobalFieldSpec("RealSmallestTurn", tr("第二部最少回合", "第2部最小ターン", "Part 2 Min Turn"), info.optInt("RealSmallestTurn", 0).toString()),
+            GlobalFieldSpec("CollectionClearB", tr("第二部通关标记 0/1", "第2部クリア 0/1", "Part 2 Clear 0/1"), info.optInt("CollectionClearB", 0).toString()),
+            GlobalFieldSpec("OpenMonsterpedia", tr("魔物图鉴开启 0/1", "魔物図鑑解放 0/1", "Monsterpedia 0/1"), info.optInt("OpenMonsterpedia", 0).toString()),
+            GlobalFieldSpec("TrophyComplete", tr("实绩全达成标记 0/1", "実績コンプ 0/1", "Trophy Complete 0/1"), info.optInt("TrophyComplete", 0).toString()),
+            GlobalFieldSpec("CardComplete", tr("卡牌全收集标记 0/1", "カードコンプ 0/1", "Card Complete 0/1"), info.optInt("CardComplete", 0).toString()),
+            GlobalFieldSpec("gamePlayCount", tr("全局周回计数", "周回プレイ数", "Global Play Count"), info.optInt("gamePlayCount", 0).toString()),
+            GlobalFieldSpec("itemStarRank", tr("全局装备星级上限", "装備★ランク", "Global Item Star Rank"), info.optInt("itemStarRank", 0).toString()),
+            GlobalFieldSpec("leaderAtkRatio", tr("食券/首领攻击倍率", "リーダー攻撃倍率", "Leader ATK Ratio"), ratioStr, isDecimal = true),
+            GlobalFieldSpec("trophyExpBonus", tr("实绩经验加成%", "経験値ボーナス%", "EXP Bonus %"), info.optInt("trophyExpBonus", 0).toString()),
+            GlobalFieldSpec("trophyStatusMaxPer", tr("属性上限加成%", "ステータス上限%", "Stat Cap %"), info.optInt("trophyStatusMaxPer", 0).toString()),
+            GlobalFieldSpec(
+                "setAllCharRank",
+                tr("批量设全角色阶级", "全キャラランク一括", "Set All Char Ranks"),
+                "",
+                hintText = tr("留空不改 ($charCount)", "空欄で維持 ($charCount)", "Blank=keep ($charCount)")
+            ),
+            GlobalFieldSpec(
+                "setTakeOverCardCount",
+                tr("批量设继承卡张数", "引継カード枚数一括", "Set Takeover Cards"),
+                "",
+                hintText = tr("留空不改 ($cardCount)", "空欄で維持 ($cardCount)", "Blank=keep ($cardCount)")
+            )
+        )
+
+        val scroll = ScrollView(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPaddingRelative(dp(24), dp(8), dp(20), dp(4))
+        }
+        val inputs = LinkedHashMap<GlobalFieldSpec, EditText>()
+        for (spec in specs) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(48)
+            }
+            val tv = TextView(this).apply {
+                text = spec.label
+                setTextAppearance(R.style.TextAppearance_Launcher_Body)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f)
+            }
+            val et = EditText(this).apply {
+                inputType = if (spec.isDecimal) {
+                    InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+                } else {
+                    InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                }
+                if (spec.hintText.isNotEmpty()) {
+                    hint = spec.hintText
+                }
+                if (spec.initialText.isNotEmpty()) {
+                    setText(spec.initialText)
+                }
+                setSingleLine(true)
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginStart = dp(12)
+                }
+            }
+            inputs[spec] = et
+            row.addView(tv)
+            row.addView(et)
+            container.addView(row)
+        }
+        scroll.addView(container)
+
+        dialogBuilder()
+            .setTitle(tr("自定义全局存档", "全体セーブ編集", "Edit Global Save"))
+            .setView(scroll)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val mod = JSONObject()
+                for ((spec, et) in inputs) {
+                    val raw = et.text.toString().trim()
+                    if (raw.isEmpty()) continue
+                    if (spec.isDecimal) {
+                        val d = raw.toDoubleOrNull()
+                        if (d != null && d.isFinite()) mod.put(spec.key, d)
+                    } else {
+                        val v = raw.toIntOrNull()
+                        if (v != null) mod.put(spec.key, v)
+                    }
+                }
+                applyGlobalSaveMod(mod)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun applyGlobalSaveMod(mod: JSONObject) {
         val saveDir = currentTarget.saveDir
-        val g1 = File(saveDir, "GlobalSave.asd")
-        val c1 = File(saveDir, "Collection.asd")
-        if (g1.isFile) GameModifierBridge.backupSaveFileBeforeMod(g1)
-        if (c1.isFile) GameModifierBridge.backupSaveFileBeforeMod(c1)
+        GameModifierBridge.backupGlobalSaveFilesBeforeMod(saveDir)
         val ok = GameModifierBridge.writeGlobalSaveModForDir(saveDir, mod.toString())
+        if (ok) {
+            refreshSummaryText()
+        }
         Toast.makeText(
             this,
             if (ok) tr("全局存档修改成功", "全体セーブを更新しました", "Global save updated")
@@ -875,7 +1016,7 @@ class GameModifierActivity : ThemedActivity() {
         val checked = BooleanArray(lockDefs.size) { idx ->
             (lockMask and lockDefs[idx].first) != 0
         }
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
@@ -1008,7 +1149,7 @@ class GameModifierActivity : ThemedActivity() {
             (lockMask and lockDefs[idx].first) != 0
         }
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(tr("实时锁定", "リアルタイムロック", "Live Locks"))
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 val bit = lockDefs[which].first
@@ -1069,7 +1210,7 @@ class GameModifierActivity : ThemedActivity() {
             options.add(tr("恢复备份", "バックアップを復元", "Restore Backup"))
         }
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle("${entry.file.name} · ${tr("回合", "T", "Turn")} $turn · ${tr("食券", "食券", "Food")} $food · ${tr("勋章", "勲章", "Medal")} $honor · HP $hp/$maxHp")
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
@@ -1289,7 +1430,7 @@ class GameModifierActivity : ThemedActivity() {
         }
         scroll.addView(container)
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->
@@ -1478,7 +1619,7 @@ class GameModifierActivity : ThemedActivity() {
         updateSelected(selectedPct, true)
         scroll.addView(container)
 
-        AlertDialog.Builder(this)
+        dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->

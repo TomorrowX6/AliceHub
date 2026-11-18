@@ -160,11 +160,18 @@ internal object UiKit {
         )
     }
 
-    /** White background + crisp red label danger button with subtle red-tinted border. */
+    /** Surface/tonal background + crisp danger label button with subtle danger-tinted border. */
     fun styleWhiteDangerButton(button: Button) {
         val ctx = button.context
+        val night = isNight(ctx)
         val radius = ctx.resources.getDimension(R.dimen.ui_radius_button)
-        val dangerRed = 0xFFD32F2F.toInt()
+        val dangerFg = ctx.getColor(R.color.tone_danger_fg)
+        val surfaceBg = if (night) {
+            ctx.getColor(R.color.tone_danger_bg)
+        } else {
+            ctx.getColor(R.color.ui_surface)
+        }
+        val borderColor = withAlpha(dangerFg, if (night) 0x55 else 0x44)
         val bgStates = android.graphics.drawable.StateListDrawable().apply {
             addState(
                 intArrayOf(-android.R.attr.state_enabled),
@@ -177,8 +184,8 @@ internal object UiKit {
                 IntArray(0),
                 GradientDrawable().apply {
                     cornerRadius = radius
-                    setColor(Color.WHITE)
-                    setStroke(dpInt(ctx, 1).coerceAtLeast(1), 0x44D32F2F)
+                    setColor(surfaceBg)
+                    setStroke(dpInt(ctx, 1).coerceAtLeast(1), borderColor)
                 }
             )
         }
@@ -188,7 +195,7 @@ internal object UiKit {
         button.setTextColor(
             ColorStateList(
                 arrayOf(intArrayOf(-android.R.attr.state_enabled), IntArray(0)),
-                intArrayOf(ctx.getColor(R.color.ui_text_disabled), dangerRed)
+                intArrayOf(ctx.getColor(R.color.ui_text_disabled), dangerFg)
             )
         )
     }

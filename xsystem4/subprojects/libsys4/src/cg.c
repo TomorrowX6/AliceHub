@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include "system4.h"
 #include "system4/archive.h"
 #include "system4/cg.h"
@@ -80,16 +81,34 @@ enum cg_type cg_check_format(uint8_t *data)
 	return ALCG_UNKNOWN;
 }
 
+static enum cg_type cg_check_format_sized(uint8_t *buf, size_t buf_size)
+{
+	if (!buf || buf_size < 2)
+		return ALCG_UNKNOWN;
+	if (buf_size < 18) {
+		uint8_t hdr[18] = {0};
+		memcpy(hdr, buf, buf_size);
+		return cg_check_format(hdr);
+	}
+	return cg_check_format(buf);
+}
+
 bool cg_get_metrics_internal(uint8_t *buf, size_t buf_size, struct cg_metrics *dst)
 {
-	switch (cg_check_format(buf)) {
+	if (!dst)
+		return false;
+	switch (cg_check_format_sized(buf, buf_size)) {
 	case ALCG_QNT:
-		qnt_get_metrics(buf, dst);
+		if (!qnt_get_metrics_sized(buf, buf_size, dst))
+			return false;
 		break;
 	case ALCG_AJP:
-		return ajp_get_metrics(buf, buf_size, dst);
+		if (!ajp_get_metrics(buf, buf_size, dst))
+			return false;
+		break;
 	case ALCG_PNG:
-		png_cg_get_metrics(buf, buf_size, dst);
+		if (!png_cg_get_metrics(buf, buf_size, dst))
+			return false;
 		break;
 	case ALCG_WEBP:
 		webp_get_metrics(buf, buf_size, dst);
@@ -99,24 +118,30 @@ bool cg_get_metrics_internal(uint8_t *buf, size_t buf_size, struct cg_metrics *d
 		break;
 	case ALCG_PMS8:
 	case ALCG_PMS16:
+		if (buf_size < 48)
+			return false;
 		pms_get_metrics(buf, dst);
 		break;
 	case ALCG_JPEG:
-		jpeg_cg_get_metrics(buf, buf_size, dst);
+		if (!jpeg_cg_get_metrics(buf, buf_size, dst))
+			return false;
 		break;
 	case ALCG_PCF:
-		pcf_get_metrics(buf, buf_size, dst);
+		if (!pcf_get_metrics(buf, buf_size, dst))
+			return false;
 		break;
 	case ALCG_ROU:
 		rou_get_metrics(buf, buf_size, dst);
 		break;
 	case ALCG_TGA:
-		return tga_get_metrics(buf, buf_size, dst);
+		if (!tga_get_metrics(buf, buf_size, dst))
+			return false;
+		break;
 	default:
 		WARNING("Unknown CG type");
 		return false;
 	}
-	return true;
+	return dst->w > 0 && dst->h > 0 && dst->w <= 32768 && dst->h <= 32768;
 }
 
 bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst)
@@ -163,9 +188,9 @@ static struct cg *cg_load_internal(uint8_t *buf, size_t buf_size, struct archive
 {
 	struct cg *cg = xcalloc(1, sizeof(struct cg));
 
-	switch (cg_check_format(buf)) {
+	switch (cg_check_format_sized(buf, buf_size)) {
 	case ALCG_QNT:
-		qnt_extract(buf, cg);
+		qnt_extract_sized(buf, buf_size, cg);
 		break;
 	case ALCG_AJP:
 		ajp_extract(buf, buf_size, cg);

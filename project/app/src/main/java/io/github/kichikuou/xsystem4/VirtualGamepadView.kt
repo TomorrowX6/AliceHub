@@ -68,6 +68,8 @@ class VirtualGamepadView(context: Context) : View(context) {
     private val passthroughIds = LinkedHashSet<Int>()
     private val passthroughLastPos = HashMap<Int, android.graphics.PointF>() // in target coords
     private var passthroughDownTime = 0L
+    private var lastPassthroughDeviceId = 0
+    private var lastPassthroughSource = android.view.InputDevice.SOURCE_TOUCHSCREEN
     private val tmpLoc = IntArray(2)
 
     private var profile: GamepadProfile = GamepadProfile()
@@ -362,6 +364,12 @@ class VirtualGamepadView(context: Context) : View(context) {
             else -> (if (isDown) MotionEvent.ACTION_POINTER_DOWN else MotionEvent.ACTION_POINTER_UP) or
                 (actionIdx shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
         }
+        lastPassthroughDeviceId = event.deviceId
+        lastPassthroughSource = if (event.source != 0) {
+            event.source
+        } else {
+            android.view.InputDevice.SOURCE_TOUCHSCREEN
+        }
         val out = MotionEvent.obtain(
             passthroughDownTime, event.eventTime, outAction, indices.size, props, coords,
             event.metaState, event.buttonState, 1f, 1f, event.deviceId, 0, event.source, event.flags
@@ -397,7 +405,7 @@ class VirtualGamepadView(context: Context) : View(context) {
             }
             val out = MotionEvent.obtain(
                 passthroughDownTime, now, MotionEvent.ACTION_CANCEL, ids.size, props, coords,
-                0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0
+                0, 0, 1f, 1f, lastPassthroughDeviceId, 0, lastPassthroughSource, 0
             )
             try {
                 target.dispatchTouchEvent(out)

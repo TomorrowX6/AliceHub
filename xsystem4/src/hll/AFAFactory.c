@@ -184,18 +184,26 @@ static struct string *AFAFactory_GetSearchTitleByIndex_v12(int type, int at)
 
 static void AFAFactory_GetTitleByIndex(int type, int at, struct string **out)
 {
-	free_string(*out);
+	if (!out)
+		return;
+	if (*out)
+		free_string(*out);
 	*out = AFAFactory_GetTitleByIndex_v12(type, at);
 }
 
 static void AFAFactory_GetSearchTitleByIndex(int type, int at, struct string **out)
 {
-	free_string(*out);
+	if (!out)
+		return;
+	if (*out)
+		free_string(*out);
 	*out = AFAFactory_GetSearchTitleByIndex_v12(type, at);
 }
 
 static void AFAFactory_GetSearchTitleList(int type, struct string *name, struct page **out)
 {
+	if (!out)
+		return;
 	int count = AFAFactory_SearchTitle(type, name);
 	struct ain_type str_type = { .data = AIN_STRING, .struc = -1 };
 	struct page *page = v12_array_new(&str_type, count, false);

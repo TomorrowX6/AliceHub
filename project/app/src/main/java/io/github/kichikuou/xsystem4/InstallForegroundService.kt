@@ -29,6 +29,7 @@ class InstallForegroundService : Service() {
         private const val ACTION_START_FOREGROUND = "io.github.kichikuou.xsystem4.ACTION_START_INSTALL_FG"
         private const val ACTION_PAUSE_INSTALL = "io.github.kichikuou.xsystem4.ACTION_PAUSE_INSTALL"
         private const val ACTION_CANCEL_INSTALL = "io.github.kichikuou.xsystem4.ACTION_CANCEL_INSTALL"
+        private const val ACTION_STOP = "io.github.kichikuou.xsystem4.ACTION_STOP_INSTALL_FG"
 
         private const val CHANNEL_PROGRESS = "install_progress"
         private const val CHANNEL_RESULT = "install_result"
@@ -40,8 +41,15 @@ class InstallForegroundService : Service() {
         private const val PREFS_NOTIF_PERM = "notif_perm_prefs"
         private const val KEY_ASKED_ONCE = "asked_once"
 
+        private val stateLock = Any()
+
         @Volatile
         private var activeSession: Boolean = false
+
+        @Volatile
+        private var pendingStop: Boolean = false
+
+        private var pendingForegroundStarts: Int = 0
 
         @Volatile
         private var taskTitle: String = ""
@@ -107,22 +115,31 @@ class InstallForegroundService : Service() {
             ensureChannels(appCtx)
             clearResultNotification(appCtx)
 
-            taskTitle = title
-            progressText = initialText ?: ""
-            permille = initialPermille
-            cancellable = isCancellable
-            resumable = isResumable
-            modTargetPath = targetGamePathForMod
-            hubTargetGameId = targetGameId
-            lastNotifyElapsedMs = SystemClock.elapsedRealtime()
-            activeSession = true
-
             val svcIntent = Intent(appCtx, InstallForegroundService::class.java).apply {
                 action = ACTION_START_FOREGROUND
             }
+            synchronized(stateLock) {
+                taskTitle = title
+                progressText = initialText ?: ""
+                permille = initialPermille
+                cancellable = isCancellable
+                resumable = isResumable
+                modTargetPath = targetGamePathForMod
+                hubTargetGameId = targetGameId
+                lastNotifyElapsedMs = SystemClock.elapsedRealtime()
+                activeSession = true
+                pendingStop = false
+                pendingForegroundStarts++
+            }
+
             try {
                 appCtx.startForegroundService(svcIntent)
             } catch (t: Throwable) {
+                synchronized(stateLock) {
+                    if (pendingForegroundStarts > 0) {
+                        pendingForegroundStarts--
+                    }
+                }
                 Log.w(TAG, "startForegroundService failed, falling back to notification", t)
                 postProgressNotification(appCtx)
             }
@@ -205,10 +222,22 @@ class InstallForegroundService : Service() {
         }
 
         private fun stopSessionInternal(appCtx: Context) {
-            activeSession = false
-            runningInstance?.stopFromSession()
+            val instanceToStop: InstallForegroundService?
+            synchronized(stateLock) {
+                activeSession = false
+                pendingStop = true
+                instanceToStop = if (pendingForegroundStarts == 0) runningInstance else null
+            }
+            if (instanceToStop != null) {
+                instanceToStop.stopFromSession()
+            } else if (runningInstance == null && synchronized(stateLock) { pendingForegroundStarts == 0 }) {
+                cancelProgressNotification(appCtx)
+            }
+        }
+
+        private fun cancelProgressNotification(context: Context) {
             try {
-                val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 nm?.cancel(NOTIF_ID_PROGRESS)
             } catch (_: Throwable) {
             }
@@ -378,22 +407,45 @@ class InstallForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    @Volatile
+    private var promotedInForeground: Boolean = false
+
     override fun onCreate() {
         super.onCreate()
+        promotedInForeground = false
         runningInstance = this
         ensureChannels(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         runningInstance = this
-        when (intent?.action) {
+        val action = intent?.action
+
+        // Always promote to foreground FIRST on every onStartCommand so Android's 5s FGS timer is
+        // satisfied even when the session already ended or ACTION_STOP was requested.
+        val promoted = promoteToForeground(buildProgressNotification(this))
+        val shouldStopNow: Boolean
+        synchronized(stateLock) {
+            if (action == ACTION_START_FOREGROUND && pendingForegroundStarts > 0) {
+                pendingForegroundStarts--
+            }
+            if (action == ACTION_STOP) {
+                activeSession = false
+                pendingStop = true
+            }
+            shouldStopNow = (!activeSession || pendingStop) && pendingForegroundStarts == 0
+        }
+
+        if (!promoted) {
+            releaseLocks()
+            return START_NOT_STICKY
+        }
+
+        when (action) {
             ACTION_PAUSE_INSTALL -> {
                 val cb = pauseCallback ?: cancelCallback
                 if (cb != null) {
                     Handler(Looper.getMainLooper()).post { cb() }
-                }
-                if (!activeSession) {
-                    stopFromSession()
                 }
             }
             ACTION_CANCEL_INSTALL -> {
@@ -401,35 +453,55 @@ class InstallForegroundService : Service() {
                 if (cb != null) {
                     Handler(Looper.getMainLooper()).post { cb() }
                 }
-                if (!activeSession) {
-                    stopFromSession()
-                }
-            }
-            else -> {
-                val notif = buildProgressNotification(this)
-                startForegroundSafe(notif)
-                if (activeSession) {
-                    acquireLocks()
-                } else {
-                    stopFromSession()
-                }
             }
         }
+
+        if (shouldStopNow) {
+            stopNow()
+        } else if (activeSession) {
+            acquireLocks()
+        }
         return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int) {
+        Log.w(TAG, "Foreground service timeout reached (startId=$startId); pausing active install")
+        val cb = pauseCallback ?: cancelCallback
+        if (cb != null) {
+            Handler(Looper.getMainLooper()).post { cb() }
+        }
+        synchronized(stateLock) {
+            activeSession = false
+            pendingStop = true
+        }
+        releaseLocks()
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Throwable) {
+        }
+        cancelProgressNotification(applicationContext)
+        stopSelf(startId)
+    }
+
+    fun onTimeout(startId: Int, @Suppress("UNUSED_PARAMETER") fgsType: Int) {
+        onTimeout(startId)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        if (runningInstance === this) {
-            runningInstance = null
+        synchronized(stateLock) {
+            if (runningInstance === this) {
+                runningInstance = null
+            }
         }
+        promotedInForeground = false
         releaseLocks()
         super.onDestroy()
     }
 
-    private fun startForegroundSafe(notif: Notification) {
-        try {
+    private fun promoteToForeground(notif: Notification): Boolean {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIF_ID_PROGRESS,
@@ -439,17 +511,44 @@ class InstallForegroundService : Service() {
             } else {
                 startForeground(NOTIF_ID_PROGRESS, notif)
             }
+            promotedInForeground = true
+            true
         } catch (t: Throwable) {
-            Log.w(TAG, "startForeground failed", t)
+            Log.e(TAG, "startForeground failed; calling stopSelf() to avoid FGS timeout crash", t)
+            try {
+                stopSelf()
+            } catch (_: Throwable) {
+            }
+            false
         }
     }
 
     private fun stopFromSession() {
+        val canStopImmediately = synchronized(stateLock) {
+            pendingStop = true
+            pendingForegroundStarts == 0
+        }
+        if (!canStopImmediately) {
+            // Defer stopNow() until the in-flight onStartCommand promotes to foreground first.
+            return
+        }
+        if (!promotedInForeground) {
+            if (!promoteToForeground(buildProgressNotification(this))) {
+                releaseLocks()
+                return
+            }
+        }
+        stopNow()
+    }
+
+    private fun stopNow() {
         releaseLocks()
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (_: Throwable) {
         }
+        promotedInForeground = false
+        cancelProgressNotification(applicationContext)
         stopSelf()
     }
 

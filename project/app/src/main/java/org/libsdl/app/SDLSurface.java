@@ -33,6 +33,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     // Sensors
     protected SensorManager mSensorManager;
     protected Display mDisplay;
+    private boolean mAccelerometerEnabled;
 
     // Keep track of the surface size to normalize touch events
     protected float mWidth, mHeight;
@@ -63,8 +64,22 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mIsSurfaceReady = false;
     }
 
+    private static boolean shouldEnableAccelerometer() {
+        if (SDLActivity.mBrokenLibraries) {
+            return false;
+        }
+        try {
+            return SDLActivity.nativeGetHintBoolean("SDL_ACCELEROMETER_AS_JOYSTICK", false) ||
+                   SDLActivity.nativeGetHintBoolean("SDL_ACCEL_AS_JOYSTICK", false);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     public void handlePause() {
-        enableSensor(Sensor.TYPE_ACCELEROMETER, false);
+        if (mAccelerometerEnabled) {
+            enableSensor(Sensor.TYPE_ACCELEROMETER, false);
+        }
     }
 
     public void handleResume() {
@@ -73,7 +88,11 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         requestFocus();
         setOnKeyListener(this);
         setOnTouchListener(this);
-        enableSensor(Sensor.TYPE_ACCELEROMETER, true);
+        if (shouldEnableAccelerometer()) {
+            enableSensor(Sensor.TYPE_ACCELEROMETER, true);
+        } else if (mAccelerometerEnabled) {
+            enableSensor(Sensor.TYPE_ACCELEROMETER, false);
+        }
         reapplyPreferredFrameRate();
     }
 
@@ -327,14 +346,21 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
     // Sensor events
     public void enableSensor(int sensortype, boolean enabled) {
+        if (mSensorManager == null) {
+            return;
+        }
+        Sensor sensor = mSensorManager.getDefaultSensor(sensortype);
+        if (sensor == null) {
+            return;
+        }
         // TODO: This uses getDefaultSensor - what if we have >1 accels?
         if (enabled) {
-            mSensorManager.registerListener(this,
-                            mSensorManager.getDefaultSensor(sensortype),
-                            SensorManager.SENSOR_DELAY_GAME, null);
+            mSensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME, null);
         } else {
-            mSensorManager.unregisterListener(this,
-                            mSensorManager.getDefaultSensor(sensortype));
+            mSensorManager.unregisterListener(this, sensor);
+        }
+        if (sensortype == Sensor.TYPE_ACCELEROMETER) {
+            mAccelerometerEnabled = enabled;
         }
     }
 

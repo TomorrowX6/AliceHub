@@ -61,7 +61,7 @@ struct text_style parts_get_effective_text_style(const struct text_style *src)
 
 static int extract_sjis_char(const char *src, char *dst)
 {
-	if (SJIS_2BYTE(*src)) {
+	if (SJIS_2BYTE(*src) && src[1] != '\0') {
 		dst[0] = src[0];
 		dst[1] = src[1];
 		dst[2] = '\0';
@@ -211,6 +211,11 @@ static uint32_t glyph_key_hash(const struct parts_glyph_key *k)
 	return h;
 }
 
+static inline float canon_zero(float v)
+{
+	return v == 0.0f ? 0.0f : v;
+}
+
 const char *parts_text_append_char(struct parts_text *t, const char *str)
 {
 	struct text_style eff_ts = parts_get_effective_text_style(&t->ts);
@@ -242,18 +247,18 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 	memset(&key, 0, sizeof(key));
 	memcpy(key.ch, ch->ch, sizeof(key.ch));
 	key.face = eff_ts.face;
-	key.size = eff_ts.size;
-	key.bold_width = eff_ts.bold_width;
+	key.size = canon_zero(eff_ts.size);
+	key.bold_width = canon_zero(eff_ts.bold_width);
 	key.weight = eff_ts.weight;
-	key.edge_left = eff_ts.edge_left;
-	key.edge_up = eff_ts.edge_up;
-	key.edge_right = eff_ts.edge_right;
-	key.edge_down = eff_ts.edge_down;
+	key.edge_left = canon_zero(eff_ts.edge_left);
+	key.edge_up = canon_zero(eff_ts.edge_up);
+	key.edge_right = canon_zero(eff_ts.edge_right);
+	key.edge_down = canon_zero(eff_ts.edge_down);
 	key.color = eff_ts.color;
 	key.edge_color = eff_ts.edge_color;
-	key.scale_x = eff_ts.scale_x;
-	key.space_scale_x = eff_ts.space_scale_x;
-	key.font_spacing = eff_ts.font_spacing;
+	key.scale_x = canon_zero(eff_ts.scale_x);
+	key.space_scale_x = canon_zero(eff_ts.space_scale_x);
+	key.font_spacing = canon_zero(eff_ts.font_spacing);
 	key.advance_edges = gfx_text_advance_edges;
 
 	uint32_t hash = glyph_key_hash(&key);
@@ -354,6 +359,10 @@ void parts_text_append(struct parts *parts, struct parts_text *t, struct string 
 
 void parts_text_update_dims(struct parts *parts, struct parts_text *t)
 {
+	if (!t->nr_lines) {
+		parts_set_dims(parts, &t->common, 0, 0);
+		return;
+	}
 	// calculate dimensions of the text
 	float f_width = 0;
 	int height = 0;
@@ -370,22 +379,28 @@ void parts_text_update_dims(struct parts *parts, struct parts_text *t)
 	parts_set_dims(parts, &t->common, width, height);
 }
 
+static void parts_text_line_free(struct parts_text_line *line)
+{
+	for (int j = 0; j < line->nr_chars; j++) {
+		int idx = line->chars[j].cache_idx;
+		if (idx >= 0 && idx < PARTS_GLYPH_CACHE_SIZE && glyph_cache[idx].valid) {
+			if (glyph_cache[idx].refcount > 0)
+				glyph_cache[idx].refcount--;
+		} else {
+			gfx_delete_texture(&line->chars[j].t);
+			gfx_delete_texture(&line->chars[j].t_edge);
+		}
+	}
+	free(line->chars);
+	line->chars = NULL;
+	line->nr_chars = 0;
+}
+
 void parts_text_free(struct parts_text *t)
 {
 	gfx_delete_texture(&t->common.texture);
 	for (int i = 0; i < t->nr_lines; i++) {
-		struct parts_text_line *line = &t->lines[i];
-		for (int j = 0; j < line->nr_chars; j++) {
-			int idx = line->chars[j].cache_idx;
-			if (idx >= 0 && idx < PARTS_GLYPH_CACHE_SIZE && glyph_cache[idx].valid) {
-				if (glyph_cache[idx].refcount > 0)
-					glyph_cache[idx].refcount--;
-			} else {
-				gfx_delete_texture(&line->chars[j].t);
-				gfx_delete_texture(&line->chars[j].t_edge);
-			}
-		}
-		free(line->chars);
+		parts_text_line_free(&t->lines[i]);
 	}
 	free(t->lines);
 }
@@ -446,6 +461,7 @@ bool PE_AddPartsText(int parts_no, struct string *text, int state)
 
 	struct parts *parts = parts_get(parts_no);
 	parts_text_append(parts, parts_get_text(parts, state), text);
+	parts_dirty(parts);
 	return true;
 }
 
@@ -460,7 +476,30 @@ bool PE_SetPartsTextSurfaceArea(int parts_no, int x, int y, int w, int h, int st
 	return true;
 }
 
-//bool PE_DeletePartsTopTextLine(int PartsNumber, int State);
+bool PE_DeletePartsTopTextLine(int parts_no, int state)
+{
+	if (!parts_state_valid(--state))
+		return false;
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_TEXT || parts->states[state].text.nr_lines <= 0)
+		return false;
+
+	struct parts_text *t = &parts->states[state].text;
+	parts_text_line_free(&t->lines[0]);
+	t->nr_lines--;
+	if (t->nr_lines > 0) {
+		memmove(&t->lines[0], &t->lines[1], t->nr_lines * sizeof(struct parts_text_line));
+	} else {
+		free(t->lines);
+		t->lines = NULL;
+		t->cursor.x = 0;
+		t->cursor.y = 0;
+	}
+	parts_text_update_dims(parts, t);
+	parts_component_dirty(parts);
+	parts_dirty(parts);
+	return true;
+}
 
 bool PE_SetFont(int parts_no, int type, int size, int r, int g, int b, float bold_weight, int edge_r, int edge_g, int edge_b, float edge_weight, int state)
 {

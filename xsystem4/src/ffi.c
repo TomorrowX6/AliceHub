@@ -64,16 +64,21 @@ void vm_get_last_hll_call(const char **lib_name, const char **func_name)
 
 bool library_exists(int libno)
 {
+	if (!ain || libno < 0 || libno >= ain->nr_libraries)
+		return false;
 	if (ain->version >= 11 && v12_builtin_library(ain->libraries[libno].name))
 		return true;
-	return libraries[libno];
+	return libraries && libraries[libno];
 }
 
 bool library_function_exists(int libno, int fno)
 {
+	if (!ain || libno < 0 || libno >= ain->nr_libraries ||
+	    fno < 0 || fno >= ain->libraries[libno].nr_functions)
+		return false;
 	if (ain->version >= 11 && v12_builtin_library(ain->libraries[libno].name))
 		return true;
-	return libraries[libno] && libraries[libno][fno].fun;
+	return libraries && libraries[libno] && libraries[libno][fno].fun;
 }
 
 /*
@@ -322,6 +327,10 @@ static void trace_hll_call(struct ain_library *lib, struct ain_hll_function *f,
 
 void hll_call(int libno, int fno)
 {
+	if (unlikely(!ain || libno < 0 || libno >= ain->nr_libraries ||
+	             fno < 0 || fno >= ain->libraries[libno].nr_functions)) {
+		VM_ERROR("Invalid HLL call index: %d.%d", libno, fno);
+	}
 	int prev_hll_libno = current_hll_libno;
 	int prev_hll_fno = current_hll_fno;
 	current_hll_libno = libno;
@@ -339,7 +348,11 @@ void hll_call(int libno, int fno)
 	}
 
 	struct ain_hll_function *f = &ain->libraries[libno].functions[fno];
-	struct hll_function *fun = libraries[libno] ? &libraries[libno][fno] : NULL;
+	if (unlikely(f->nr_arguments < 0 || f->nr_arguments > HLL_MAX_ARGS)) {
+		VM_ERROR("Too many arguments to HLL function %s.%s: %d",
+			ain->libraries[libno].name, f->name, f->nr_arguments);
+	}
+	struct hll_function *fun = (libraries && libraries[libno]) ? &libraries[libno][fno] : NULL;
 	bool unimplemented = !fun || !fun->fun;
 
 	void *args[HLL_MAX_ARGS];
@@ -347,10 +360,17 @@ void hll_call(int libno, int fno)
 	// A native function may call back into AIN. Its popped arguments must
 	// survive reuse (or reallocation) of the VM stack until finalization.
 	union vm_value argument_values[HLL_MAX_ARGS];
+	uint64_t dummy_vals[HLL_MAX_ARGS];
 	// Copy reference arguments to the stack to protect against heap
 	// reallocation during HLL calls.
 	void *heap_ptrs[HLL_MAX_ARGS];
 	int heap_slots[HLL_MAX_ARGS];
+
+	for (int i = 0; i < f->nr_arguments; i++) {
+		heap_slots[i] = -1;
+		heap_ptrs[i] = NULL;
+		dummy_vals[i] = 0;
+	}
 
 	for (int i = f->nr_arguments - 1; i >= 0; i--) {
 		switch (f->arguments[i].type.data) {
@@ -363,62 +383,98 @@ void hll_call(int libno, int fno)
 			stack_ptr -= 2;
 			int pageno = stack[stack_ptr].i;
 			int varno  = stack[stack_ptr+1].i;
-			ptrs[i] = &heap[pageno].page->values[varno];
+			if (page_index_valid(pageno) && heap[pageno].page &&
+			    varno >= 0 && varno < heap[pageno].page->nr_vars) {
+				ptrs[i] = &heap[pageno].page->values[varno];
+			} else {
+				ptrs[i] = &dummy_vals[i];
+			}
 			args[i] = &ptrs[i];
 			break;
 		}
-		case AIN_STRING:
+		case AIN_STRING: {
 			stack_ptr--;
-			args[i] = &heap[stack[stack_ptr].i].s;
+			int s_slot = stack[stack_ptr].i;
+			if (string_index_valid(s_slot) && heap[s_slot].s) {
+				args[i] = &heap[s_slot].s;
+			} else {
+				stack[stack_ptr].i = -1;
+				heap_ptrs[i] = &EMPTY_STRING;
+				args[i] = &heap_ptrs[i];
+			}
 			break;
-		case AIN_REF_STRING:
+		}
+		case AIN_REF_STRING: {
 			stack_ptr--;
-			heap_slots[i] = stack[stack_ptr].i;
-			heap_ptrs[i] = heap[stack[stack_ptr].i].s;
+			int s_slot = stack[stack_ptr].i;
+			heap_slots[i] = s_slot;
+			heap_ptrs[i] = string_index_valid(s_slot) ? heap[s_slot].s : NULL;
 			ptrs[i] = &heap_ptrs[i];
 			args[i] = &ptrs[i];
 			break;
+		}
 		case AIN_STRUCT:
+		case AIN_DELEGATE:
 		case AIN_ARRAY_TYPE:
-		case AIN_ARRAY:
+		case AIN_ARRAY: {
 			stack_ptr--;
-			args[i] = &heap[stack[stack_ptr].i].page;
+			int p_slot = stack[stack_ptr].i;
+			if (page_index_valid(p_slot)) {
+				args[i] = &heap[p_slot].page;
+			} else {
+				stack[stack_ptr].i = -1;
+				heap_ptrs[i] = NULL;
+				args[i] = &heap_ptrs[i];
+			}
 			break;
+		}
 		case AIN_REF_STRUCT:
+		case AIN_REF_DELEGATE:
 		case AIN_REF_ARRAY_TYPE:
-		case AIN_REF_ARRAY:
+		case AIN_REF_ARRAY: {
 			stack_ptr--;
-			heap_slots[i] = stack[stack_ptr].i;
-			heap_ptrs[i] = heap[stack[stack_ptr].i].page;
+			int p_slot = stack[stack_ptr].i;
+			heap_slots[i] = p_slot;
+			heap_ptrs[i] = page_index_valid(p_slot) ? heap[p_slot].page : NULL;
 			ptrs[i] = &heap_ptrs[i];
 			args[i] = &ptrs[i];
 			break;
+		}
 		case AIN_WRAP: {
 			enum ain_data_type inner = f->arguments[i].type.array_type
 				? f->arguments[i].type.array_type->data : AIN_INT;
 			switch (inner) {
-			case AIN_STRING:
+			case AIN_STRING: {
 				stack_ptr--;
-				heap_slots[i] = stack[stack_ptr].i;
-				heap_ptrs[i] = heap[stack[stack_ptr].i].s;
+				int s_slot = stack[stack_ptr].i;
+				heap_slots[i] = s_slot;
+				heap_ptrs[i] = string_index_valid(s_slot) ? heap[s_slot].s : NULL;
 				ptrs[i] = &heap_ptrs[i];
 				args[i] = &ptrs[i];
 				break;
+			}
 			case AIN_STRUCT:
 			case AIN_ARRAY:
 			case AIN_DELEGATE:
-			case AIN_ARRAY_TYPE:
+			case AIN_ARRAY_TYPE: {
 				stack_ptr--;
-				heap_slots[i] = stack[stack_ptr].i;
-				heap_ptrs[i] = heap[stack[stack_ptr].i].page;
+				int p_slot = stack[stack_ptr].i;
+				heap_slots[i] = p_slot;
+				heap_ptrs[i] = page_index_valid(p_slot) ? heap[p_slot].page : NULL;
 				ptrs[i] = &heap_ptrs[i];
 				args[i] = &ptrs[i];
 				break;
+			}
 			default: {
 				stack_ptr -= 2;
 				int pageno = stack[stack_ptr].i;
 				int varno  = stack[stack_ptr+1].i;
-				ptrs[i] = &heap[pageno].page->values[varno];
+				if (page_index_valid(pageno) && heap[pageno].page &&
+				    varno >= 0 && varno < heap[pageno].page->nr_vars) {
+					ptrs[i] = &heap[pageno].page->values[varno];
+				} else {
+					ptrs[i] = &dummy_vals[i];
+				}
 				args[i] = &ptrs[i];
 				break;
 			}
@@ -505,25 +561,44 @@ void hll_call(int libno, int fno)
 		case AIN_REF_ENUM:
 			break;
 		case AIN_REF_STRING:
-			heap[heap_slots[i]].s = heap_ptrs[i];
+			if (string_index_valid(heap_slots[i])) {
+				heap[heap_slots[i]].s = heap_ptrs[i] ? heap_ptrs[i] : string_ref(&EMPTY_STRING);
+			} else if (heap_ptrs[i]) {
+				free_string(heap_ptrs[i]);
+			}
 			break;
 		case AIN_REF_STRUCT:
+		case AIN_REF_DELEGATE:
 		case AIN_REF_ARRAY_TYPE:
 		case AIN_REF_ARRAY:
-			heap[heap_slots[i]].page = heap_ptrs[i];
+			if (page_index_valid(heap_slots[i])) {
+				heap_set_page(heap_slots[i], heap_ptrs[i]);
+			} else if (heap_ptrs[i]) {
+				delete_page_vars(heap_ptrs[i]);
+				free_page(heap_ptrs[i]);
+			}
 			break;
 		case AIN_WRAP: {
 			enum ain_data_type inner = f->arguments[i].type.array_type
 				? f->arguments[i].type.array_type->data : AIN_INT;
 			switch (inner) {
 			case AIN_STRING:
-				heap[heap_slots[i]].s = heap_ptrs[i];
+				if (string_index_valid(heap_slots[i])) {
+					heap[heap_slots[i]].s = heap_ptrs[i] ? heap_ptrs[i] : string_ref(&EMPTY_STRING);
+				} else if (heap_ptrs[i]) {
+					free_string(heap_ptrs[i]);
+				}
 				break;
 			case AIN_STRUCT:
 			case AIN_ARRAY:
 			case AIN_DELEGATE:
 			case AIN_ARRAY_TYPE:
-				heap[heap_slots[i]].page = heap_ptrs[i];
+				if (page_index_valid(heap_slots[i])) {
+					heap_set_page(heap_slots[i], heap_ptrs[i]);
+				} else if (heap_ptrs[i]) {
+					delete_page_vars(heap_ptrs[i]);
+					free_page(heap_ptrs[i]);
+				}
 				break;
 			default:
 				break;
@@ -549,18 +624,18 @@ void hll_call(int libno, int fno)
 		break;
 	case AIN_STRING:
 		slot = heap_alloc_slot(VM_STRING);
-		heap[slot].s = r.ref;
+		heap[slot].s = r.ref ? r.ref : string_ref(&EMPTY_STRING);
 		stack_push(slot);
 		break;
 	case AIN_ARRAY:
 		stack_push(heap_alloc_page(r.ref));
 		break;
-	case AIN_BOOL:
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-		stack_push(*(bool*)&r);
-#pragma GCC diagnostic pop
+	case AIN_BOOL: {
+		uint8_t b = 0;
+		memcpy(&b, &r, sizeof(b));
+		stack_push(b != 0);
 		break;
+	}
 	default:
 		stack_push(r);
 		break;
@@ -907,6 +982,8 @@ static struct hll_function *link_static_library(struct ain_library *ainlib, stru
 	struct hll_function *dst = xcalloc(ainlib->nr_functions, sizeof(struct hll_function));
 
 	for (int i = 0; i < ainlib->nr_functions; i++) {
+		if (ainlib->functions[i].nr_arguments < 0 || ainlib->functions[i].nr_arguments > HLL_MAX_ARGS)
+			ERROR("Too many arguments to library function: %s", ainlib->functions[i].name);
 		for (int j = 0; lib->functions[j].name; j++) {
 			if (!strcmp(ainlib->functions[i].name, lib->functions[j].name)) {
 				struct static_hll_function *entry = &lib->functions[j];
@@ -916,10 +993,6 @@ static struct hll_function *link_static_library(struct ain_library *ainlib, stru
 				break;
 			}
 		}
-		if (!dst[i].fun)
-			;//WARNING("Unimplemented library function: %s.%s", ainlib->name, ainlib->functions[i].name);
-		else if (ainlib->functions[i].nr_arguments >= HLL_MAX_ARGS)
-			ERROR("Too many arguments to library function: %s", ainlib->functions[i].name);
 	}
 
 	return dst;

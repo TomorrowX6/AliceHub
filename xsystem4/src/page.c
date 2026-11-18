@@ -50,17 +50,21 @@ struct page_cache page_cache[NR_CACHES];
 
 struct page *_alloc_page(int nr_vars)
 {
+	if (unlikely(nr_vars < 0 || (size_t)nr_vars > (SIZE_MAX - sizeof(struct page)) / sizeof(union vm_value)))
+		VM_ERROR("Invalid page allocation size: %d", nr_vars);
 	int cache_nr = nr_vars - 1;
 	if (cache_nr >= 0 && cache_nr < NR_CACHES && page_cache[cache_nr].cached) {
 		struct page *page = page_cache[cache_nr].pages[--page_cache[cache_nr].cached];
 		memset(page->values, 0, sizeof(union vm_value) * nr_vars);
 		return page;
 	}
-	return xcalloc(1, sizeof(struct page) + sizeof(union vm_value) * nr_vars);
+	return xcalloc(1, sizeof(struct page) + sizeof(union vm_value) * (size_t)nr_vars);
 }
 
 void free_page(struct page *page)
 {
+	if (!page)
+		return;
 	int cache_no = page->nr_vars - 1;
 	if (cache_no < 0 || cache_no >= NR_CACHES || page_cache[cache_no].cached >= CACHE_SIZE) {
 		free(page);
@@ -410,7 +414,15 @@ void delete_page(int slot)
 		return;
 	if (page->type == STRUCT_PAGE) {
 		delete_struct(page->index, slot);
+		if (!page_index_valid(slot))
+			return;
+		if (heap[slot].exiting && heap[slot].ref > 1)
+			return;
+		page = heap[slot].page;
+		if (!page)
+			return;
 	}
+	heap_set_page(slot, NULL);
 	delete_page_vars(page);
 	free_page(page);
 }
@@ -840,24 +852,39 @@ struct sortable {
 };
 
 static int current_sort_function;
+static enum ain_data_type current_sort_elem_type;
+
+static enum ain_data_type page_array_elem_type(const struct page *page)
+{
+	if (page->a_type == AIN_ARRAY)
+		return page->array.element_type.data;
+	return page->array.rank > 1 ? page->a_type : array_type(page->a_type);
+}
+
+static union vm_value prepare_compare_arg(int fno, int arg_idx, union vm_value val, enum ain_data_type elem_type)
+{
+	enum ain_data_type param_type = elem_type;
+	if (ain && fno >= 0 && fno < ain->nr_functions && arg_idx >= 0 && arg_idx < ain->functions[fno].nr_args) {
+		param_type = ain->functions[fno].vars[arg_idx].type.data;
+	}
+	switch (param_type) {
+	case AIN_STRING:
+	case AIN_STRUCT:
+	case AIN_DELEGATE:
+	case AIN_ARRAY_TYPE:
+	case AIN_ARRAY:
+		return vm_copy(val, param_type);
+	default:
+		return val;
+	}
+}
 
 static int array_compare_custom(const void *_a, const void *_b)
 {
 	const struct sortable *a = _a;
 	const struct sortable *b = _b;
-	stack_push(a->v);
-	stack_push(b->v);
-	vm_call(current_sort_function, -1);
-	int d = stack_pop().i;
-	return d ? d : a->index - b->index;
-}
-
-static int array_compare_custom_string(const void *_a, const void *_b)
-{
-	const struct sortable *a = _a;
-	const struct sortable *b = _b;
-	stack_push(vm_string_ref(heap_get_string(a->v.i)));
-	stack_push(vm_string_ref(heap_get_string(b->v.i)));
+	stack_push(prepare_compare_arg(current_sort_function, 0, a->v, current_sort_elem_type));
+	stack_push(prepare_compare_arg(current_sort_function, 1, b->v, current_sort_elem_type));
 	vm_call(current_sort_function, -1);
 	int d = stack_pop().i;
 	return d ? d : a->index - b->index;
@@ -868,29 +895,37 @@ void array_sort(struct page *page, int compare_fno)
 	if (!page)
 		return;
 
+	enum ain_data_type elem_type = page_array_elem_type(page);
 	if (compare_fno) {
 		struct sortable *values = xcalloc(page->nr_vars, sizeof(struct sortable));
 		for (int i = 0; i < page->nr_vars; i++) {
 			values[i].v = page->values[i];
 			values[i].index = i;
 		}
+		int prev_fn = current_sort_function;
+		enum ain_data_type prev_elem = current_sort_elem_type;
 		current_sort_function = compare_fno;
-		qsort(values, page->nr_vars, sizeof(struct sortable),
-			page->a_type == AIN_ARRAY_STRING ? array_compare_custom_string : array_compare_custom);
+		current_sort_elem_type = elem_type;
+		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_custom);
+		current_sort_function = prev_fn;
+		current_sort_elem_type = prev_elem;
 		for (int i = 0; i < page->nr_vars; i++) {
 			page->values[i] = values[i].v;
 		}
 		free(values);
 	} else {
-		switch (page->a_type) {
-		case AIN_ARRAY_INT:
-		case AIN_ARRAY_LONG_INT:
+		switch (elem_type) {
+		case AIN_INT:
+		case AIN_LONG_INT:
+		case AIN_BOOL:
+		case AIN_ENUM:
+		case AIN_ENUM2:
 			qsort(page->values, page->nr_vars, sizeof(union vm_value), array_compare_int);
 			break;
-		case AIN_ARRAY_FLOAT:
+		case AIN_FLOAT:
 			qsort(page->values, page->nr_vars, sizeof(union vm_value), array_compare_float);
 			break;
-		case AIN_ARRAY_STRING:
+		case AIN_STRING:
 			qsort(page->values, page->nr_vars, sizeof(union vm_value), array_compare_string);
 			break;
 		default:
@@ -904,7 +939,7 @@ static int current_sort_member;
 static int array_compare_member(const void *_a, const void *_b)
 {
 	const struct sortable *a = _a;
-	const struct sortable *b = _b;
+	const struct sortable *b = _a == _b ? _a : _b;
 	int32_t a_i = heap_get_page(a->v.i)->values[current_sort_member].i;
 	int32_t b_i = heap_get_page(b->v.i)->values[current_sort_member].i;
 	int d = (a_i > b_i) - (a_i < b_i);
@@ -925,8 +960,10 @@ void array_sort_mem(struct page *page, int member_no)
 {
 	if (!page)
 		return;
-	if (page->type != ARRAY_PAGE || array_type(page->a_type) != AIN_STRUCT)
+	if (page->type != ARRAY_PAGE || page_array_elem_type(page) != AIN_STRUCT)
 		VM_ERROR("A_SORT_MEM called on something other than an array of structs");
+	if (page->array.struct_type < 0 || page->array.struct_type >= ain->nr_structures)
+		VM_ERROR("A_SORT_MEM called on array with invalid struct_type");
 
 	struct ain_struct *s = &ain->structures[page->array.struct_type];
 	if (member_no < 0 || member_no >= s->nr_members)
@@ -937,11 +974,13 @@ void array_sort_mem(struct page *page, int member_no)
 		values[i].v = page->values[i];
 		values[i].index = i;
 	}
+	int prev_member = current_sort_member;
 	current_sort_member = member_no;
 	if (s->members[member_no].type.data == AIN_STRING)
 		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_member_string);
 	else
 		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_member);
+	current_sort_member = prev_member;
 	for (int i = 0; i < page->nr_vars; i++) {
 		page->values[i] = values[i].v;
 	}
@@ -955,10 +994,11 @@ int array_find(struct page *page, int start, int end, union vm_value v, int comp
 
 	start = max(start, 0);
 	end = min(end, page->nr_vars);
+	enum ain_data_type elem_type = page_array_elem_type(page);
 
 	// if no compare function given, compare integer/string values
 	if (!compare_fno) {
-		if (array_type(page->a_type) == AIN_STRING) {
+		if (elem_type == AIN_STRING) {
 			struct string *v_str = heap_get_string(v.i);
 			for (int i = start; i < end; i++) {
 				if (!strcmp(v_str->text, heap_get_string(page->values[i].i)->text))
@@ -974,8 +1014,8 @@ int array_find(struct page *page, int start, int end, union vm_value v, int comp
 	}
 
 	for (int i = start; i < end; i++) {
-		stack_push(v);
-		stack_push(page->values[i]);
+		stack_push(prepare_compare_arg(compare_fno, 0, v, elem_type));
+		stack_push(prepare_compare_arg(compare_fno, 1, page->values[i], elem_type));
 		vm_call(compare_fno, -1);
 		if (stack_pop().i)
 			return i;

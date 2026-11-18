@@ -114,12 +114,14 @@ static void read_packet(struct movie_context *mc)
 		return;
 
 	AVPacket *packet = av_packet_alloc();
+	if (!packet)
+		return;
 
 	while (av_read_frame(mc->format_ctx, packet) == 0) {
-		if (packet->stream_index == mc->video.stream->index) {
+		if (mc->video.stream && packet->stream_index == mc->video.stream->index) {
 			av_fifo_write(mc->video.queue, &packet, 1);
 			return;
-		} else if (packet->stream_index == mc->audio.stream->index) {
+		} else if (mc->audio.stream && packet->stream_index == mc->audio.stream->index) {
 			av_fifo_write(mc->audio.queue, &packet, 1);
 			return;
 		}
@@ -128,34 +130,53 @@ static void read_packet(struct movie_context *mc)
 	av_packet_free(&packet);
 	packet = NULL;
 	mc->format_eof = true;
-	av_fifo_write(mc->video.queue, &packet, 1);
-	av_fifo_write(mc->audio.queue, &packet, 1);
+	if (mc->video.queue)
+		av_fifo_write(mc->video.queue, &packet, 1);
+	if (mc->audio.queue)
+		av_fifo_write(mc->audio.queue, &packet, 1);
 }
 
 static void preload_packets(struct movie_context *mc)
 {
 	SDL_LockMutex(mc->format_mutex);
-	while (!mc->format_eof && (av_fifo_can_read(mc->video.queue) + av_fifo_can_read(mc->audio.queue) < PRELOAD_PACKETS))
+	while (!mc->format_eof) {
+		size_t queued = (mc->video.queue ? av_fifo_can_read(mc->video.queue) : 0)
+			+ (mc->audio.queue ? av_fifo_can_read(mc->audio.queue) : 0);
+		if (queued >= PRELOAD_PACKETS)
+			break;
 		read_packet(mc);
+	}
 	SDL_UnlockMutex(mc->format_mutex);
 }
 
 static bool decode_frame(struct decoder *dec, struct movie_context *mc)
 {
+	if (!dec->ctx || !dec->queue) {
+		dec->finished = true;
+		return false;
+	}
 	int ret;
 	while ((ret = avcodec_receive_frame(dec->ctx, dec->frame)) == AVERROR(EAGAIN)) {
 		SDL_LockMutex(mc->format_mutex);
-		AVPacket *packet;
-		while (av_fifo_can_read(dec->queue) == 0)
+		AVPacket *packet = NULL;
+		while (av_fifo_can_read(dec->queue) == 0 && !mc->format_eof)
 			read_packet(mc);
+		if (av_fifo_can_read(dec->queue) == 0) {
+			SDL_UnlockMutex(mc->format_mutex);
+			dec->finished = true;
+			return false;
+		}
 		av_fifo_read(dec->queue, &packet, 1);
 		SDL_UnlockMutex(mc->format_mutex);
 
 		if ((ret = avcodec_send_packet(dec->ctx, packet)) != 0) {
+			if (packet)
+				av_packet_free(&packet);
 			WARNING("avcodec_send_packet failed: %d", ret);
 			return false;
 		}
-		av_packet_free(&packet);
+		if (packet)
+			av_packet_free(&packet);
 	}
 	if (ret == AVERROR_EOF)
 		dec->finished = true;
@@ -169,31 +190,96 @@ static int audio_callback(sts_mixer_sample_t *sample, void *data)
 	struct movie_context *mc = data;
 	assert(sample == &mc->sts_stream.sample);
 
-	if (!decode_frame(&mc->audio, mc)) {
+	if (!mc->audio.ctx || mc->audio.ctx->sample_rate <= 0 || !decode_frame(&mc->audio, mc)) {
 		free(sample->data);
 		sample->length = 0;
 		sample->data = NULL;
 		mc->voice = -1;
 		return STS_STREAM_COMPLETE;
 	}
-	const int nr_channels = 2;
-	unsigned samples = mc->audio.frame->nb_samples;
-	if (samples * nr_channels != sample->length) {
+	const int out_channels = 2;
+	int in_channels = mc->audio.ctx->ch_layout.nb_channels;
+	if (in_channels <= 0) {
 		free(sample->data);
-		sample->length = samples * nr_channels;
-		sample->data = xmalloc(sample->length * mc->bytes_per_sample);
+		sample->length = 0;
+		sample->data = NULL;
+		mc->voice = -1;
+		return STS_STREAM_COMPLETE;
 	}
-	// Interleave.
-	uint8_t *l = mc->audio.frame->data[0];
-	uint8_t *r = mc->audio.frame->data[mc->audio.ctx->ch_layout.nb_channels > 1 ? 1 : 0];
+	unsigned samples = mc->audio.frame->nb_samples;
+	if (samples == 0) {
+		sample->length = 0;
+		return STS_STREAM_COMPLETE;
+	}
+	if (samples * out_channels != sample->length) {
+		free(sample->data);
+		sample->length = samples * out_channels;
+		sample->data = xmalloc((size_t)sample->length * mc->bytes_per_sample);
+	}
+
+	enum AVSampleFormat fmt = mc->audio.ctx->sample_fmt;
 	uint8_t *out = sample->data;
-	for (unsigned i = 0; i < samples; i++) {
-		memcpy(out, l, mc->bytes_per_sample);
-		out += mc->bytes_per_sample;
-		l += mc->bytes_per_sample;
-		memcpy(out, r, mc->bytes_per_sample);
-		out += mc->bytes_per_sample;
-		r += mc->bytes_per_sample;
+	if (fmt == AV_SAMPLE_FMT_U8 || fmt == AV_SAMPLE_FMT_U8P) {
+		int16_t *out16 = (int16_t *)out;
+		if (av_sample_fmt_is_planar(fmt)) {
+			const uint8_t *l = mc->audio.frame->data[0];
+			const uint8_t *r = mc->audio.frame->data[in_channels > 1 ? 1 : 0];
+			for (unsigned i = 0; i < samples; i++) {
+				out16[i * 2 + 0] = (int16_t)(((int)l[i] - 128) << 8);
+				out16[i * 2 + 1] = (int16_t)(((int)r[i] - 128) << 8);
+			}
+		} else {
+			const uint8_t *in = mc->audio.frame->data[0];
+			int r_ch = in_channels > 1 ? 1 : 0;
+			for (unsigned i = 0; i < samples; i++) {
+				out16[i * 2 + 0] = (int16_t)(((int)in[i * in_channels + 0] - 128) << 8);
+				out16[i * 2 + 1] = (int16_t)(((int)in[i * in_channels + r_ch] - 128) << 8);
+			}
+		}
+	} else if (fmt == AV_SAMPLE_FMT_DBL || fmt == AV_SAMPLE_FMT_DBLP) {
+		float *outf = (float *)out;
+		if (av_sample_fmt_is_planar(fmt)) {
+			const double *l = (const double *)mc->audio.frame->data[0];
+			const double *r = (const double *)mc->audio.frame->data[in_channels > 1 ? 1 : 0];
+			for (unsigned i = 0; i < samples; i++) {
+				outf[i * 2 + 0] = (float)l[i];
+				outf[i * 2 + 1] = (float)r[i];
+			}
+		} else {
+			const double *in = (const double *)mc->audio.frame->data[0];
+			int r_ch = in_channels > 1 ? 1 : 0;
+			for (unsigned i = 0; i < samples; i++) {
+				outf[i * 2 + 0] = (float)in[i * in_channels + 0];
+				outf[i * 2 + 1] = (float)in[i * in_channels + r_ch];
+			}
+		}
+	} else if (av_sample_fmt_is_planar(fmt)) {
+		const uint8_t *l = mc->audio.frame->data[0];
+		const uint8_t *r = mc->audio.frame->data[in_channels > 1 ? 1 : 0];
+		for (unsigned i = 0; i < samples; i++) {
+			memcpy(out, l, mc->bytes_per_sample);
+			out += mc->bytes_per_sample;
+			l += mc->bytes_per_sample;
+			memcpy(out, r, mc->bytes_per_sample);
+			out += mc->bytes_per_sample;
+			r += mc->bytes_per_sample;
+		}
+	} else {
+		const uint8_t *in = mc->audio.frame->data[0];
+		if (in_channels == 2) {
+			memcpy(out, in, (size_t)samples * 2 * mc->bytes_per_sample);
+		} else {
+			int r_ch = in_channels > 1 ? 1 : 0;
+			size_t frame_stride = (size_t)in_channels * mc->bytes_per_sample;
+			size_t r_off = (size_t)r_ch * mc->bytes_per_sample;
+			for (unsigned i = 0; i < samples; i++) {
+				memcpy(out, in, mc->bytes_per_sample);
+				out += mc->bytes_per_sample;
+				memcpy(out, in + r_off, mc->bytes_per_sample);
+				out += mc->bytes_per_sample;
+				in += frame_stride;
+			}
+		}
 	}
 
 	// Update the timestamp.
@@ -236,6 +322,8 @@ static void unregister_movie(struct movie_context *mc)
 
 struct movie_context *movie_load(const char *filename)
 {
+	if (!filename)
+		return NULL;
 	struct movie_context *mc = xcalloc(1, sizeof(struct movie_context));
 	mc->voice = -1;
 	char *path = gamedir_path_icase(filename);
@@ -280,14 +368,23 @@ struct movie_context *movie_load(const char *filename)
 		movie_free(mc);
 		return NULL;
 	}
-	if (!init_decoder(&mc->audio, audio_stream)) {
-		WARNING("Cannot initialize audio decoder");
-		movie_free(mc);
-		return NULL;
+	if (audio_stream) {
+		if (!init_decoder(&mc->audio, audio_stream)) {
+			WARNING("Cannot initialize audio decoder; continuing without audio");
+			free_decoder(&mc->audio);
+			memset(&mc->audio, 0, sizeof(mc->audio));
+			mc->audio.finished = true;
+		}
+	} else {
+		mc->audio.finished = true;
 	}
 
 	NOTICE("video: %d x %d, %s", mc->video.ctx->width, mc->video.ctx->height, av_get_pix_fmt_name(mc->video.ctx->pix_fmt));
-	NOTICE("audio: %d hz, %d channels, %s", mc->audio.ctx->sample_rate, mc->audio.ctx->ch_layout.nb_channels, av_get_sample_fmt_name(mc->audio.ctx->sample_fmt));
+	if (mc->audio.ctx) {
+		NOTICE("audio: %d hz, %d channels, %s", mc->audio.ctx->sample_rate, mc->audio.ctx->ch_layout.nb_channels, av_get_sample_fmt_name(mc->audio.ctx->sample_fmt));
+	} else {
+		NOTICE("audio: none");
+	}
 
 	mc->format_mutex = SDL_CreateMutex();
 	mc->timer_mutex = SDL_CreateMutex();
@@ -336,31 +433,50 @@ bool movie_play(struct movie_context *mc)
 {
 	if (!mc)
 		return false;
+	if (mc->voice >= 0) {
+		int prev_voice = mc->voice;
+		mc->voice = -1;
+		mixer_stream_stop(prev_voice);
+	}
 	mc->skipped = false;
 	mc->playing = true;
 	movie_playback_seq++;
-	// Start the audio stream.
 	mc->stream_time = 0.0;
 	mc->wall_time_ms = SDL_GetTicks();
+	if (!mc->audio.ctx || mc->audio.ctx->sample_rate <= 0 || mc->audio.ctx->ch_layout.nb_channels <= 0) {
+		mc->audio.finished = true;
+		mc->voice = -1;
+		return true;
+	}
+	// Start the audio stream.
 	mc->sts_stream.userdata = mc;
 	mc->sts_stream.callback = audio_callback;
 	mc->sts_stream.sample.frequency = mc->audio.ctx->sample_rate;
 	switch (mc->audio.ctx->sample_fmt) {
+	case AV_SAMPLE_FMT_U8:
+	case AV_SAMPLE_FMT_U8P:
+	case AV_SAMPLE_FMT_S16:
 	case AV_SAMPLE_FMT_S16P:
 		mc->sts_stream.sample.audio_format = STS_MIXER_SAMPLE_FORMAT_16;
 		mc->bytes_per_sample = 2;
 		break;
+	case AV_SAMPLE_FMT_S32:
 	case AV_SAMPLE_FMT_S32P:
 		mc->sts_stream.sample.audio_format = STS_MIXER_SAMPLE_FORMAT_32;
 		mc->bytes_per_sample = 4;
 		break;
+	case AV_SAMPLE_FMT_FLT:
 	case AV_SAMPLE_FMT_FLTP:
+	case AV_SAMPLE_FMT_DBL:
+	case AV_SAMPLE_FMT_DBLP:
 		mc->sts_stream.sample.audio_format = STS_MIXER_SAMPLE_FORMAT_FLOAT;
 		mc->bytes_per_sample = 4;
 		break;
 	default:
-		WARNING("Unsupported audio format %d", mc->audio.ctx->sample_fmt);
-		return false;
+		WARNING("Unsupported audio format %d; playing silently", mc->audio.ctx->sample_fmt);
+		mc->audio.finished = true;
+		mc->voice = -1;
+		return true;
 	}
 	mc->voice = mixer_stream_play(&mc->sts_stream, mc->volume);
 	return true;
@@ -382,12 +498,21 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 	}
 
 	if (!mc->sws_ctx) {
+		if (!mc->video.ctx || mc->video.ctx->width <= 0 || mc->video.ctx->height <= 0 ||
+		    !texture || texture->w <= 0 || texture->h <= 0)
+			return false;
 		mc->sws_ctx = sws_getContext(
 			mc->video.ctx->width, mc->video.ctx->height, mc->video.ctx->pix_fmt,
 			texture->w, texture->h, AV_PIX_FMT_RGBA, SWS_BICUBIC, NULL, NULL, NULL);
+		if (!mc->sws_ctx)
+			return false;
 		mc->sws_frame = av_frame_alloc();
 		int size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, texture->w, texture->h, 1);
+		if (!mc->sws_frame || size <= 0)
+			return false;
 		mc->sws_buf = av_malloc(size);
+		if (!mc->sws_buf)
+			return false;
 		av_image_fill_arrays(
 			mc->sws_frame->data, mc->sws_frame->linesize,
 			mc->sws_buf, AV_PIX_FMT_RGBA, texture->w, texture->h, 1);
@@ -398,7 +523,8 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 		return mc->video.finished;
 
 	// If the frame's timestamp is in the future, save the frame and return.
-	double pts = av_q2d(mc->video.stream->time_base) * mc->video.frame->best_effort_timestamp;
+	int64_t ts = mc->video.frame->best_effort_timestamp;
+	double pts = (ts != AV_NOPTS_VALUE) ? av_q2d(mc->video.stream->time_base) * (double)ts : 0.0;
 	SDL_LockMutex(mc->timer_mutex);
 	double now = mc->stream_time + (SDL_GetTicks() - mc->wall_time_ms) / 1000.0;
 	SDL_UnlockMutex(mc->timer_mutex);
@@ -436,6 +562,8 @@ bool movie_is_end(struct movie_context *mc)
 
 int movie_get_position(struct movie_context *mc)
 {
+	if (!mc)
+		return 0;
 	SDL_LockMutex(mc->timer_mutex);
 	int ms = mc->wall_time_ms ? mc->stream_time * 1000 + SDL_GetTicks() - mc->wall_time_ms : 0;
 	SDL_UnlockMutex(mc->timer_mutex);
@@ -444,6 +572,8 @@ int movie_get_position(struct movie_context *mc)
 
 bool movie_set_volume(struct movie_context *mc, int volume)
 {
+	if (!mc)
+		return false;
 	mc->volume = volume;
 	if (mc->voice >= 0)
 		mixer_stream_set_volume(mc->voice, volume);

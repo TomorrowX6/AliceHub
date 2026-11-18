@@ -91,6 +91,8 @@ ExternalProject_Add(
   CONFIGURE_COMMAND <SOURCE_DIR>/configure
     --host ${CMAKE_C_COMPILER_TARGET}
     --prefix=${stagingDir}
+    --with-pic
+    --disable-exec-static-tramp
     --disable-shared
     --disable-dependency-tracking
     --disable-builddir

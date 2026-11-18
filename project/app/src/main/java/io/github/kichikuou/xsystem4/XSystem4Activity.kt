@@ -62,7 +62,16 @@ class XSystem4Activity : SDLActivity() {
         private const val SDL_BUTTON_RETURNKEY_DEFAULT = 0x00000001
         private const val SDL_BUTTON_ESCAPEKEY_DEFAULT = 0x00000002
         private const val SENTINEL_ALICEHUB_QUIT = "__ALICEHUB_QUIT__"
+
+        private val screenshotExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "XSystem4Screenshot").apply { isDaemon = true }
+        }
     }
+
+    @Volatile
+    private var launchedGameRoot: String? = null
+    @Volatile
+    private var launchedSaveDir: String? = null
 
     private var loadingLabel: TextView? = null
     private var modifierOverlay: FloatingModifierOverlay? = null
@@ -82,6 +91,10 @@ class XSystem4Activity : SDLActivity() {
     private var lastReportedConnectedPads: Int = 0
     private var inputDeviceListener: InputManager.InputDeviceListener? = null
 
+    fun currentGameRoot(): String? = launchedGameRoot
+
+    fun currentSaveDir(): String? = launchedSaveDir
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppSettings.wrapThemeContext(newBase))
     }
@@ -90,44 +103,44 @@ class XSystem4Activity : SDLActivity() {
         (v * resources.displayMetrics.density).toInt()
 
     fun isRance10Game(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveName = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveName = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
         return GameModifierBridge.isRance10GameDir(root, saveName)
     }
 
     fun isDohnaDohnaGame(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isDohnaDohnaGameDir(root, saveDir?.name, saveDir)
     }
 
     fun isEvenicleGame(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isEvenicleGameDir(root, saveDir?.name, saveDir)
     }
 
     fun isSengokuRanceGame(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isSengokuRanceGameDir(root, saveDir?.name, saveDir)
     }
 
     fun isRance03Game(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isRance03GameDir(root, saveDir?.name, saveDir)
     }
 
     fun isRance08Game(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isRance08GameDir(root, saveDir?.name, saveDir)
     }
 
     fun isRance09Game(): Boolean {
-        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         return GameModifierBridge.isRance09GameDir(root, saveDir?.name, saveDir)
     }
 
@@ -141,12 +154,43 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.setR09LiveLocks(GameModifierBridge.getSavedR09LockMask(this))
     }
 
+    private fun applyImmersiveFullscreen() {
+        val win = window ?: return
+        @Suppress("DEPRECATION")
+        val flags = View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        @Suppress("DEPRECATION")
+        win.decorView.systemUiVisibility = flags
+        win.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        win.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
+        mFullscreenModeActive = true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ErrorReportKit.installUncaughtExceptionHandler(this)
         ErrorReportKit.ensureSeenBaselineInitialized(this, offsetMs = -1000L)
+        val root = (intent?.getStringExtra(EXTRA_GAME_ROOT)
+            ?: savedInstanceState?.getString(EXTRA_GAME_ROOT))
+            ?.takeIf { it.isNotBlank() }
+        val saveDir = (intent?.getStringExtra(EXTRA_SAVE_DIR)
+            ?: savedInstanceState?.getString(EXTRA_SAVE_DIR))
+            ?.takeIf { it.isNotBlank() }
+        if (root.isNullOrEmpty() || saveDir.isNullOrEmpty()) {
+            super.onCreate(savedInstanceState)
+            finish()
+            return
+        }
+        launchedGameRoot = root
+        launchedSaveDir = saveDir
+        GameCatalog.writeRunningGameRoot(this, root)
+
         super.onCreate(savedInstanceState)
-        // Workaround for https://github.com/libsdl-org/SDL/issues/8995
-        SDLActivity.setWindowStyle(true)
+        // Apply immersive fullscreen directly without blocking UI thread on SDL wait(500)
+        applyImmersiveFullscreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val label = TextView(this).apply {
             text = getString(R.string.loading_game)
@@ -173,8 +217,14 @@ class XSystem4Activity : SDLActivity() {
         registerModernBackCallback()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        launchedGameRoot?.let { outState.putString(EXTRA_GAME_ROOT, it) }
+        launchedSaveDir?.let { outState.putString(EXTRA_SAVE_DIR, it) }
+    }
+
     fun currentGamepadProfileKey(): String? =
-        GamepadBridge.normalizeGameProfileKey(intent?.getStringExtra(EXTRA_GAME_ROOT))
+        GamepadBridge.normalizeGameProfileKey(currentGameRoot())
 
     fun getActiveGamepadProfile(): GamepadProfile = activeGamepadProfile
 
@@ -200,8 +250,8 @@ class XSystem4Activity : SDLActivity() {
     }
 
     fun currentGamepadGameId(): String? {
-        val rootFile = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveFile = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val rootFile = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val saveFile = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         val name = rootFile?.name ?: saveFile?.name ?: return null
         return GameCatalog.classifyDirectory(rootFile, name, saveFile, name)
     }
@@ -211,7 +261,7 @@ class XSystem4Activity : SDLActivity() {
         val key = currentGamepadProfileKey()
         val gid = currentGamepadGameId()
         val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
-            ?: intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+            ?: currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
         val acc = gid?.let { GameCatalog.descriptorFor(this, it).accentColor }
         GamepadConfigDialog.show(
             context = this,
@@ -231,7 +281,7 @@ class XSystem4Activity : SDLActivity() {
         val key = currentGamepadProfileKey()
         val gid = currentGamepadGameId()
         val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
-            ?: intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
+            ?: currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
         val intent = GamepadEditorActivity.createIntent(this, key, displayTitle, initialTab, gid)
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQ_GAMEPAD_EDITOR)
@@ -340,27 +390,37 @@ class XSystem4Activity : SDLActivity() {
         val targetH = (surfaceView?.height?.takeIf { it > 0 } ?: window.decorView.height).coerceAtLeast(1)
         val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val handler = Handler(Looper.getMainLooper())
+        val appCtx = applicationContext
+        val picturesDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            ?: java.io.File(filesDir, "screenshots")
         val onCopied = PixelCopy.OnPixelCopyFinishedListener { copyResult ->
             if (copyResult == PixelCopy.SUCCESS) {
                 try {
-                    val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: java.io.File(filesDir, "screenshots")
-                    dir.mkdirs()
-                    val name = "screenshot_${System.currentTimeMillis()}.png"
-                    val outFile = java.io.File(dir, name)
-                    java.io.FileOutputStream(outFile).use { fos ->
-                        bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    screenshotExecutor.execute {
+                        try {
+                            picturesDir.mkdirs()
+                            val name = "screenshot_${System.currentTimeMillis()}.png"
+                            val outFile = java.io.File(picturesDir, name)
+                            java.io.FileOutputStream(outFile).use { fos ->
+                                bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                            }
+                            handler.post {
+                                Toast.makeText(
+                                    appCtx,
+                                    GamepadBridge.tr(
+                                        appCtx,
+                                        "截图已保存: ${outFile.name}",
+                                        "スクショ保存: ${outFile.name}",
+                                        "Saved: ${outFile.name}"
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        } catch (_: Throwable) {
+                        } finally {
+                            bmp.recycle()
+                        }
                     }
-                    bmp.recycle()
-                    Toast.makeText(
-                        this,
-                        GamepadBridge.tr(
-                            this,
-                            "截图已保存: ${outFile.name}",
-                            "スクショ保存: ${outFile.name}",
-                            "Saved: ${outFile.name}"
-                        ),
-                        Toast.LENGTH_SHORT
-                    ).show()
                 } catch (_: Throwable) {
                     bmp.recycle()
                 }
@@ -588,7 +648,17 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
+        val incomingRoot = intent.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }
+        val activeRoot = launchedGameRoot
+        if (incomingRoot != null && activeRoot != null && incomingRoot == activeRoot) {
+            setIntent(intent)
+        } else if (incomingRoot != null && activeRoot != null && incomingRoot != activeRoot) {
+            android.util.Log.w(
+                "XSystem4Activity",
+                "Ignoring mismatched EXTRA_GAME_ROOT in onNewIntent while VM is active"
+            )
+            return
+        }
         try {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
@@ -675,7 +745,7 @@ class XSystem4Activity : SDLActivity() {
         }
         if (reapplyStyle) {
             try {
-                SDLActivity.setWindowStyle(true)
+                applyImmersiveFullscreen()
             } catch (_: Throwable) {
             }
         }
@@ -851,8 +921,8 @@ class XSystem4Activity : SDLActivity() {
                 context = this,
                 rawTitle = rawTitle,
                 rawMessage = rawMessage,
-                gameRoot = intent?.getStringExtra(EXTRA_GAME_ROOT),
-                saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR),
+                gameRoot = currentGameRoot(),
+                saveDir = currentSaveDir(),
                 hasMultipleChoices = orderedSpecs.size > 1
             )
             val errorSpecs = orderedSpecs.map { spec ->
@@ -1096,9 +1166,17 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun getArguments(): Array<String> {
-        val saveFolder = intent.getStringExtra(EXTRA_SAVE_DIR)!!
-        val gameRoot = intent.getStringExtra(EXTRA_GAME_ROOT)!!
+        val saveFolder = currentSaveDir()?.takeIf { it.isNotEmpty() } ?: run {
+            runOnUiThread { finish() }
+            return emptyArray()
+        }
+        val gameRoot = currentGameRoot()?.takeIf { it.isNotEmpty() } ?: run {
+            runOnUiThread { finish() }
+            return emptyArray()
+        }
         GameCatalog.writeRunningGameRoot(this, gameRoot)
+        val crashLogPath = java.io.File(getExternalFilesDir(null) ?: filesDir, "crash.log").absolutePath
+        SDLActivity.nativeSetenv("XSYSTEM4_CRASH_LOG_PATH", crashLogPath)
         if (Build.SUPPORTED_ABIS.any { it == "x86_64" || it == "x86" }) {
             // x86/x86_64 Android emulators can hang in AAudio STARTING on first write;
             // fall back to SDL's Java AudioTrack backend on x86 hosts.
@@ -1108,8 +1186,7 @@ class XSystem4Activity : SDLActivity() {
         try {
             GameModifierBridge.syncNativeConfigPath(this)
             GameModifierBridge.syncUiScaleToNative(this)
-            val lockMask = GameModifierBridge.getSavedLockMask(this)
-            GameModifierBridge.nativeSetLiveLocks(lockMask)
+            syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
         } catch (_: Throwable) {
@@ -1136,8 +1213,13 @@ class XSystem4Activity : SDLActivity() {
         activeMessageBoxDialog = null
         setCtrlSkipLatched(false)
         resetMovieSkipOverlay()
-        GameCatalog.clearRunningGameRoot(this)
-        GameModifierBridge.syncLockMaskFromNative(this)
+        if (launchedGameRoot != null) {
+            GameCatalog.clearRunningGameRoot(this)
+            try {
+                GameModifierBridge.syncLockMaskFromNative(this)
+            } catch (_: Throwable) {
+            }
+        }
         virtualGamepadView = null
         virtualCursorView = null
         ctrlPill = null
@@ -1209,14 +1291,14 @@ class XSystem4Activity : SDLActivity() {
                 return true
             }
             COMMAND_OPEN_PLAYING_MANUAL -> {
-                val gameRoot = intent.getStringExtra(EXTRA_GAME_ROOT)!!
+                val gameRoot = launchedGameRoot?.takeIf { it.isNotEmpty() } ?: return true
                 val manualDir = java.io.File(gameRoot, "Manual")
                 if (manualDir.isDirectory) {
-                    val intent = android.content.Intent(this, ManualActivity::class.java).apply {
-                        val url = "file://${manualDir.absolutePath}/index.html"
+                    val manualIntent = android.content.Intent(this, ManualActivity::class.java).apply {
+                        val url = android.net.Uri.fromFile(java.io.File(manualDir, "index.html")).toString()
                         putExtra(ManualActivity.EXTRA_URL, url)
                     }
-                    startActivity(intent)
+                    startActivity(manualIntent)
                 }
                 return true
             }

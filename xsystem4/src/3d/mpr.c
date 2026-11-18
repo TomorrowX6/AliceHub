@@ -255,7 +255,9 @@ void mpr_evaluate_object(const struct mpr *mpr, float frame,
 	vec3 add;
 	eval_vec3(mpr->object.add_ambient, mpr->object.nr_add_ambient, frame, (vec3){0,0,0}, add);
 	glm_vec3_add(out->ambient, add, out->ambient);
-	eval_vec3(mpr->object.mul_diffuse, mpr->object.nr_mul_diffuse, frame, (vec3){1,1,1}, out->diffuse);
+	vec3 mul;
+	eval_vec3(mpr->object.mul_diffuse, mpr->object.nr_mul_diffuse, frame, (vec3){1,1,1}, mul);
+	glm_vec3_mul(out->diffuse, mul, out->diffuse);
 }
 
 // Combine the object-scope values with .mpr Mesh-scope keyframes for one mesh.
@@ -284,11 +286,14 @@ void mpr_build_mat_tex_index(const struct model *model, const struct RE_instance
 		mat_tex_index[m] = inst->texture_animation_index;
 	if (!mpr)
 		return;
-	for (int i = 0; i < mpr->nr_meshes; i++) {
+	int nr_meshes = mpr->nr_meshes < model->nr_meshes ? mpr->nr_meshes : model->nr_meshes;
+	for (int i = 0; i < nr_meshes; i++) {
 		const struct mpr_track_set *t = mpr->mesh_tracks[i];
 		if (!t || t->nr_texture_anime == 0)
 			continue;
 		int mat = model->meshes[i].material;
+		if (mat < 0 || mat >= model->nr_materials)
+			continue;
 		mat_tex_index[mat] = eval_int(t->texture_anime, t->nr_texture_anime, frame, mat_tex_index[mat]);
 	}
 }

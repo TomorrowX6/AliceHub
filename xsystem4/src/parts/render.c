@@ -832,8 +832,10 @@ static void parts_render_3dlayer(struct parts *parts, struct parts_3dlayer *l)
 	struct sact_sprite *sp = sact_try_get_sprite(l->sprite_no);
 	if (!sp)
 		return;
+	bool resume_pass = parts_render_pass_suspend();
 	struct texture *tex = sprite_get_texture(sp);
-	if (!tex->handle)
+	parts_render_pass_resume(resume_pass);
+	if (!tex || !tex->handle)
 		return;
 	// The bound sprite's texture is recreated by RE_set_viewport, so
 	// refresh the parts_common's view of it each frame.
@@ -846,8 +848,10 @@ static void parts_render_3dlayer(struct parts *parts, struct parts_3dlayer *l)
 static void parts_render_flash_shape(struct parts *parts, struct parts_flash *f, struct parts_flash_object *obj, struct swf_tag_define_shape *tag)
 {
 	struct texture *src = ht_get_int(f->bitmaps, tag->fill_style.bitmap_id, NULL);
-	if (!src)
-		ERROR("undefined bitmap id %d", tag->fill_style.bitmap_id);
+	if (!src) {
+		WARNING("undefined bitmap id %d", tag->fill_style.bitmap_id);
+		return;
+	}
 
 	mat4 mw_transform = GLM_MAT4_IDENTITY_INIT;
 	glm_translate(mw_transform, (vec3) { parts->global.pos.x, parts->global.pos.y, 0 });
@@ -889,10 +893,14 @@ static void parts_render_flash_sprite(struct parts *parts, struct parts_flash *f
 		return;  // sprite has no visual elements.
 
 	struct swf_tag *child = ht_get_int(f->dictionary, obj2->character_id, NULL);
-	if (!child)
-		ERROR("character %d is not defined", obj2->character_id);
-	if (child->type != TAG_DEFINE_SHAPE)
-		ERROR("unexpected child type %d", child->type);
+	if (!child) {
+		WARNING("character %d is not defined", obj2->character_id);
+		return;
+	}
+	if (child->type != TAG_DEFINE_SHAPE) {
+		WARNING("unexpected child type %d", child->type);
+		return;
+	}
 
 	struct parts_flash_object transform;
 	glm_mul(obj->matrix, obj2->matrix, transform.matrix);
@@ -948,10 +956,20 @@ static void parts_render_flash(struct parts *parts, struct parts_flash *f)
 			parts_render_flash_sprite(parts, f, obj, (struct swf_tag_define_sprite*)tag);
 			break;
 		default:
-			ERROR("unknown tag %d", tag->type);
+			WARNING("unknown tag %d", tag->type);
+			break;
 		}
 		pass_flash_blend = false;
+		if (parts_pass_active) {
+			if (!pass_blend_enabled) {
+				glEnable(GL_BLEND);
+				pass_blend_enabled = true;
+			}
+			pass_draw_filter = PARTS_DRAW_FILTER_NORMAL;
+			glUniform1i(parts_shader.draw_filter, PARTS_DRAW_FILTER_NORMAL);
+		}
 		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+		glActiveTexture(GL_TEXTURE0);
 	}
 }
 

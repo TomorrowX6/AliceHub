@@ -186,7 +186,7 @@ static void _run_copy_shader(Shader *s, Texture *dst, Texture *src, GLfloat src_
 	GLfloat scale_y = (GLfloat)data->h / data->sh;
 
 	mat4 mw_transform = MAT4(
-	     src_w * scale_x, 0,               0, -data->sx * scale_y,
+	     src_w * scale_x, 0,               0, -data->sx * scale_x,
 	     0,               src_h * scale_y, 0, -data->sy * scale_y,
 	     0,               0,               1, 0,
 	     0,               0,               0, 1);
@@ -203,9 +203,22 @@ static void run_copy_shader(Shader *s, Texture *dst, Texture *src, struct copy_d
 
 static void run_fill_shader(Shader *s, Texture *dst, struct copy_data *data)
 {
-	// NOTE: this differs from `run_copy_shader(s, dst, NULL, data)` in that
-	//       `dst` can be sampled in the shader
-	_run_copy_shader(s, dst, dst, data->w, data->h, data);
+	if (!dst || !dst->handle || data->w <= 0 || data->h <= 0)
+		return;
+	// Copy the target sub-region of `dst` into a temporary texture first so `dst`
+	// is never simultaneously bound as the draw FBO attachment and GL_TEXTURE0
+	// (avoiding GLES 3.0 feedback loops) and UVs map directly to `(dx, dy, w, h)`.
+	Texture tmp = {0};
+	gfx_init_texture_blank(&tmp, data->w, data->h);
+	glBindTexture(GL_TEXTURE_2D, tmp.handle);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
+	struct copy_data copy = COPY_DATA(0, 0, data->dx, data->dy, data->w, data->h);
+	run_copy_shader(&copy_shader.s, &tmp, dst, &copy);
+	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ONE, GL_ZERO);
+	_run_copy_shader(s, dst, &tmp, data->w, data->h, data);
+	gfx_delete_texture(&tmp);
 }
 
 static void restore_blend_mode(void)

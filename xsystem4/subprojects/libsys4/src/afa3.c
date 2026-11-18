@@ -194,13 +194,16 @@ static int bs_read_bits(struct bitstream *bs, int count)
 /*
  * Read a 32-bit little endian integer from a bitstream.
  */
-static int bs_read_int32(struct bitstream *bs)
+static bool bs_read_u32(struct bitstream *bs, uint32_t *out)
 {
 	int b0 = bs_read_bits(bs, 8);
 	int b1 = bs_read_bits(bs, 8);
 	int b2 = bs_read_bits(bs, 8);
 	int b3 = bs_read_bits(bs, 8);
-	return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
+	if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0)
+		return false;
+	*out = ((uint32_t)b3 << 24) | ((uint32_t)b2 << 16) | ((uint32_t)b1 << 8) | (uint32_t)b0;
+	return true;
 }
 
 /*
@@ -211,18 +214,31 @@ struct {
 	size_t size;
 } dict;
 
+static void free_dict(void)
+{
+	free(dict.bytes);
+	dict.bytes = NULL;
+	dict.size = 0;
+}
+
 /*
  * Read the string decoding dictionary.
  * Encrypted via a PRNG seeded by the dictionary size.
  */
-static void read_dict(struct bitstream *bs)
+static bool read_dict(struct bitstream *bs)
 {
-	dict.size = bs_read_int32(bs);
-	dict.bytes = xmalloc(dict.size);
+	free_dict();
 
-	rnd_init(dict.size);
+	uint32_t raw_size = 0;
+	if (!bs_read_u32(bs, &raw_size) || raw_size > 64u * 1024u * 1024u) {
+		return false;
+	}
+	dict.size = raw_size;
+	dict.bytes = xmalloc(dict.size ? dict.size : 1);
+
+	rnd_init((uint32_t)dict.size);
 	for (unsigned dst = 0; dst < dict.size; dst++) {
-		int count = (int)rnd_get_next() & 3;
+		int count = (int)(rnd_get_next() & 3u);
 		int skipped = bs_read_bits(bs, count+1);
 		if (skipped == -1) {
 			goto err;
@@ -235,9 +251,10 @@ static void read_dict(struct bitstream *bs)
 		}
 		dict.bytes[dst] = (uint8_t)v;
 	}
-	return;
+	return true;
 err:
-	free(dict.bytes);
+	free_dict();
+	return false;
 }
 
 /*
@@ -247,12 +264,15 @@ err:
  */
 static uint16_t *afa3_read_encrypted_chars(struct bitstream *bs, size_t *size)
 {
-	uint32_t buf_size = bs_read_int32(bs);
-	uint16_t *buf = xmalloc(buf_size * 2);
+	uint32_t buf_size = 0;
+	if (!bs_read_u32(bs, &buf_size) || buf_size > 64u * 1024u * 1024u) {
+		return NULL;
+	}
+	uint16_t *buf = xmalloc(buf_size ? (size_t)buf_size * 2 : 2);
 
 	rnd_init(buf_size);
 	for (unsigned dst = 0; dst < buf_size; dst++) {
-		int count = (int)rnd_get_next() & 3;
+		int count = (int)(rnd_get_next() & 3u);
 		int skipped = bs_read_bits(bs, count+1);
 		if (skipped == -1) {
 			goto err;
@@ -279,8 +299,10 @@ err:
  */
 static char *afa3_decrypt_string(uint16_t *chars, size_t size)
 {
+	if (!dict.bytes && size > 0)
+		return NULL;
 	char *buf = xmalloc(size+1);
-	for (unsigned i = 0; i < size; i++) {
+	for (size_t i = 0; i < size; i++) {
 		if (chars[i] >= dict.size) {
 			free(buf);
 			return NULL;
@@ -312,11 +334,18 @@ static bool afa3_read_entry(struct bitstream *bs, struct afa_entry *entry, int *
 		goto err;
 	}
 
+	uint32_t uk0, uk1, off, fsize;
+	if (!bs_read_u32(bs, &uk0) || !bs_read_u32(bs, &uk1) ||
+	    !bs_read_u32(bs, &off) || !bs_read_u32(bs, &fsize)) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		goto err;
+	}
+
 	entry->name = conv(name, strlen(name));
-	entry->unknown0 = bs_read_int32(bs);
-	entry->unknown1 = bs_read_int32(bs);
-	entry->off = bs_read_int32(bs);
-	entry->size = bs_read_int32(bs);
+	entry->unknown0 = uk0;
+	entry->unknown1 = uk1;
+	entry->off = off;
+	entry->size = fsize;
 	free(chars);
 	free(name);
 	return true;
@@ -337,33 +366,59 @@ bool afa3_read_metadata(char *hdr, FILE *f, struct afa_archive *ar, int *error, 
 
 	struct bitstream bs;
 	bs_init_file(&bs, f, 12);
-	bs_read_bits(&bs, 1); // skip first bit (obfuscation)
-	read_dict(&bs);
-	unsigned long packed_size = bs_read_int32(&bs);
-	unsigned long unpacked_size = bs_read_int32(&bs);
+	if (bs_read_bits(&bs, 1) == -1 || !read_dict(&bs)) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		goto err;
+	}
+	uint32_t packed_size = 0, unpacked_size = 0;
+	if (!bs_read_u32(&bs, &packed_size) || !bs_read_u32(&bs, &unpacked_size) ||
+	    packed_size > 256u * 1024u * 1024u || unpacked_size > 256u * 1024u * 1024u) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		goto err;
+	}
 
 	// read zlib compressed data
-	packed = xmalloc(packed_size);
-	for (unsigned i = 0; i < packed_size; i++) {
-		packed[i] = (uint8_t)bs_read_bits(&bs, 8);
+	packed = xmalloc(packed_size ? packed_size : 1);
+	for (uint32_t i = 0; i < packed_size; i++) {
+		int b = bs_read_bits(&bs, 8);
+		if (b < 0) {
+			*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+			goto err;
+		}
+		packed[i] = (uint8_t)b;
 	}
 
 	// decompress
-	unpacked = xmalloc(unpacked_size);
+	unpacked = xmalloc(unpacked_size ? unpacked_size : 1);
 	if (!zlib_decompress_exact(unpacked, unpacked_size, packed, packed_size)) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
 		goto err;
 	}
 
 	bs_init_buffer(&bs, unpacked, unpacked_size);
-	bs_read_bits(&bs, 1); // skip first bit (obfuscation)
-	ar->nr_files = bs_read_int32(&bs);
-	ar->files = xcalloc(ar->nr_files, sizeof(struct afa_entry));
-	for (unsigned i = 0; i < ar->nr_files; i++) {
-		if (bs_read_bits(&bs, 2) == -1)
+	if (bs_read_bits(&bs, 1) == -1) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		goto err;
+	}
+	uint32_t nr_files = 0;
+	if (!bs_read_u32(&bs, &nr_files) || nr_files > unpacked_size / 16 + 1) {
+		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
+		goto err;
+	}
+	ar->nr_files = nr_files;
+	ar->files = xcalloc(ar->nr_files ? ar->nr_files : 1, sizeof(struct afa_entry));
+	for (uint32_t i = 0; i < ar->nr_files; i++) {
+		if (bs_read_bits(&bs, 2) == -1) {
+			ar->nr_files = i;
 			break;
+		}
 		if (!afa3_read_entry(&bs, &ar->files[i], error, conv)) {
+			for (uint32_t j = 0; j < i; j++) {
+				free_string(ar->files[j].name);
+			}
 			free(ar->files);
+			ar->files = NULL;
+			ar->nr_files = 0;
 			goto err;
 		}
 		ar->files[i].no = i;
@@ -374,10 +429,12 @@ bool afa3_read_metadata(char *hdr, FILE *f, struct afa_archive *ar, int *error, 
 	ar->compressed_size = packed_size;
 	ar->uncompressed_size = unpacked_size;
 
+	free_dict();
 	free(packed);
 	free(unpacked);
 	return true;
 err:
+	free_dict();
 	free(packed);
 	free(unpacked);
 	return false;

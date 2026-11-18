@@ -70,7 +70,7 @@ object Iso9660Extractor {
                     for (e in entries) {
                         if (e.isDir) {
                             if (e.extents.isNotEmpty()) queue.add(e.extents[0])
-                        } else {
+                        } else if (!e.name.startsWith('.')) {
                             if (e.name.equals("AliceStart.ini", ignoreCase = true) ||
                                 e.name.equals("System40.ini", ignoreCase = true)
                             ) {

@@ -59,17 +59,17 @@ struct vertex_blend {
 	GLfloat blend_uv[2];
 };
 
-static bool is_transparent_mesh(const struct pol_mesh *mesh)
+static bool is_transparent_mesh(const struct pol_mesh *mesh, enum RE_plugin_version version)
 {
-	if (re_plugin_version == RE_REIGN_PLUGIN)
+	if (version == RE_REIGN_PLUGIN)
 		return !(mesh->flags & MESH_SPRITE);
 	else
 		return mesh->flags & MESH_ALPHA;
 }
 
-static bool is_transparent_material(const struct pol_material *material)
+static bool is_transparent_material(const struct pol_material *material, enum RE_plugin_version version)
 {
-	if (re_plugin_version == RE_REIGN_PLUGIN)
+	if (version == RE_REIGN_PLUGIN)
 		return !(material->flags & MATERIAL_SPRITE);
 	else
 		return material->flags & MATERIAL_ALPHA;
@@ -143,7 +143,7 @@ static GLuint *load_texture_list(struct archive *aar, const char *path, const ch
 	return textures;
 }
 
-static bool init_material(struct material *material, struct pol_material *m, struct amt *amt, struct archive *aar, const char *path)
+static bool init_material(struct material *material, struct pol_material *m, struct amt *amt, struct archive *aar, const char *path, enum RE_plugin_version version)
 {
 	material->flags = m->flags;
 	glm_vec2_copy(m->uv_tiling, material->uv_tiling);
@@ -171,7 +171,7 @@ static bool init_material(struct material *material, struct pol_material *m, str
 	if (m->textures[NORMAL_MAP])
 		material->normal_map = load_texture(aar, path, m->textures[NORMAL_MAP], NULL);
 
-	material->is_transparent = (has_alpha || material->alpha_map) && is_transparent_material(m);
+	material->is_transparent = (has_alpha || material->alpha_map) && is_transparent_material(m, version);
 	material->shadow_darkness = 1.0f;
 
 	struct amt_material *amt_m = amt ? amt_find_material(amt, m->name) : NULL;
@@ -227,8 +227,10 @@ static void sort_and_normalize_bone_weights(struct pol_vertex *v)
 	for (uint32_t i = 0; i < v->nr_weights && i < NR_WEIGHTS; i++) {
 		total += v->weights[i].weight;
 	}
-	for (uint32_t i = 0; i < v->nr_weights && i < NR_WEIGHTS; i++) {
-		v->weights[i].weight /= total;
+	if (total > 0.0f) {
+		for (uint32_t i = 0; i < v->nr_weights && i < NR_WEIGHTS; i++) {
+			v->weights[i].weight /= total;
+		}
 	}
 }
 
@@ -279,8 +281,10 @@ static void *buf_alloc(uint8_t **ptr, int size)
 	return p;
 }
 
-static void add_mesh(struct model *model, struct pol_mesh *m, uint32_t material_group_index, int material)
+static void add_mesh(struct model *model, struct pol_mesh *m, uint32_t material_group_index, int material, enum RE_plugin_version version)
 {
+	if (material < 0 || material >= model->nr_materials || !model->materials[material].color_maps)
+		return;
 	bool has_light_map = m->light_uvs && model->materials[material].light_map;
 	bool has_vertex_colors = m->nr_colors > 0 || m->nr_alphas > 0;
 	bool has_normal_map = model->materials[material].normal_map != 0;
@@ -370,10 +374,10 @@ static void add_mesh(struct model *model, struct pol_mesh *m, uint32_t material_
 	mesh->name = xstrdup(m->name);
 	mesh->flags = m->flags;
 	mesh->material = material;
-	if (re_plugin_version == RE_REIGN_PLUGIN)
-		mesh->is_transparent = model->materials[material].is_transparent && is_transparent_mesh(m);
+	if (version == RE_REIGN_PLUGIN)
+		mesh->is_transparent = model->materials[material].is_transparent && is_transparent_mesh(m, version);
 	else
-		mesh->is_transparent = model->materials[material].is_transparent || is_transparent_mesh(m);
+		mesh->is_transparent = model->materials[material].is_transparent || is_transparent_mesh(m, version);
 	if (mesh->is_transparent)
 		model->has_transparent_mesh = true;
 	mesh->outline_color[0] = m->edge_color.r / 255.f;
@@ -498,7 +502,7 @@ static void destroy_bone(struct bone *bone)
 	free(bone->name);
 }
 
-struct model *model_load(struct archive *aar, const char *path)
+struct model *model_load(struct archive *aar, const char *path, enum RE_plugin_version version)
 {
 	const char *basename = strrchr(path, '\\');
 	basename = basename ? basename + 1 : path;
@@ -565,16 +569,16 @@ struct model *model_load(struct archive *aar, const char *path)
 	for (uint32_t i = 0; i < pol->nr_materials; i++) {
 		if (pol->materials[i].nr_children == 0) {
 			init_material(&model->materials[material_offsets[i]],
-				      &pol->materials[i].m, amt, aar, path);
+				      &pol->materials[i].m, amt, aar, path, version);
 			continue;
 		}
 		for (uint32_t j = 0; j < pol->materials[i].nr_children; j++) {
 			struct pol_material_group *child = &pol->materials[i].children[j];
 			if (child->nr_children >= 2) {
 				// Group node: texture blending (base + blend)
-				init_material(&model->materials[material_offsets[i] + j],
-					      &child->children[0].m, amt, aar, path);
-				if (child->children[1].m.textures[COLOR_MAP]) {
+				if (init_material(&model->materials[material_offsets[i] + j],
+						  &child->children[0].m, amt, aar, path, version) &&
+				    child->children[1].m.textures[COLOR_MAP]) {
 					model->materials[material_offsets[i] + j].blend_texture =
 						load_texture(aar, path, child->children[1].m.textures[COLOR_MAP], NULL);
 					glm_vec2_copy(child->children[1].m.uv_tiling,
@@ -582,7 +586,7 @@ struct model *model_load(struct archive *aar, const char *path)
 				}
 			} else {
 				init_material(&model->materials[material_offsets[i] + j],
-					      &child->m, amt, aar, path);
+					      &child->m, amt, aar, path, version);
 			}
 		}
 	}
@@ -602,14 +606,18 @@ struct model *model_load(struct archive *aar, const char *path)
 		}
 		if (pol->meshes[i]->flags & MESH_HEIGHT_DETECTION)
 			hd_meshes[nr_hd_meshes++] = pol->meshes[i];
+		if (pol->meshes[i]->material >= pol->nr_materials) {
+			WARNING("%s: mesh \"%s\" has out-of-range material %u", model->path, pol->meshes[i]->name, pol->meshes[i]->material);
+			continue;
+		}
 		struct pol_material_group *mg = &pol->materials[pol->meshes[i]->material];
 		int m_off = material_offsets[pol->meshes[i]->material];
 		if (mg->nr_children == 0) {
-			add_mesh(model, pol->meshes[i], 0, m_off);
+			add_mesh(model, pol->meshes[i], 0, m_off, version);
 			continue;
 		}
 		for (uint32_t j = 0; j < mg->nr_children; j++) {
-			add_mesh(model, pol->meshes[i], j, m_off + j);
+			add_mesh(model, pol->meshes[i], j, m_off + j, version);
 		}
 	}
 
@@ -753,7 +761,7 @@ struct model *model_create_sphere(int r, int g, int b, int a)
 	return model;
 }
 
-static struct mot *mot_load(const char *name, struct model *model, struct archive *aar)
+static struct mot *mot_load(const char *name, struct model *model, struct archive *aar, enum RE_plugin_version version)
 {
 	struct archive_data *mot_file = RE_get_aar_entry(aar, model->path, name, ".MOT");
 	if (!mot_file) {
@@ -782,7 +790,7 @@ static struct mot *mot_load(const char *name, struct model *model, struct archiv
 	free(reordered);
 
 	// Load optional sidecar file.
-	if (re_plugin_version <= RE_TAPIR_PLUGIN) {
+	if (version <= RE_TAPIR_PLUGIN) {
 		struct archive_data *txa_file = RE_get_aar_entry(aar, model->path, name, ".txa");
 		if (txa_file) {
 			txa_load(txa_file->data, txa_file->size, mot);
@@ -806,7 +814,8 @@ struct motion *motion_load(const char *name, struct RE_instance *instance, struc
 		return NULL;
 	struct mot *mot = ht_get(model->mot_cache, name, NULL);
 	if (!mot) {
-		mot = mot_load(name, model, aar);
+		enum RE_plugin_version version = instance->plugin ? instance->plugin->version : RE_REIGN_PLUGIN;
+		mot = mot_load(name, model, aar, version);
 		if (!mot)
 			return NULL;
 		ht_put(model->mot_cache, name, mot);

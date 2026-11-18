@@ -11,12 +11,14 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
+import android.util.LruCache
 import android.widget.Toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,6 +26,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.Charset
+import java.util.concurrent.ConcurrentHashMap
 
 interface GameListObserver {
     fun onInstallProgress(path: String)
@@ -47,6 +50,11 @@ sealed class InstallState {
 
 data class Item(val name: String, val path: File, val homedir: File, val savedir: File?, val icon: File?, val error: String?) {
     companion object {
+        private val iconBitmapCache = object : LruCache<String, Bitmap>(8 * 1024) {
+            override fun sizeOf(key: String, value: Bitmap): Int =
+                (value.allocationByteCount / 1024).coerceAtLeast(1)
+        }
+
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
             var iniFile = File(dir, "System40.ini")
             if (!iniFile.exists())
@@ -148,22 +156,29 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
         private fun findIcon(dir: File): File? {
             dir.listFiles()?.forEach {
-                if (it.extension.equals("ico", ignoreCase = true)) { return it }
+                if (it.isFile && it.extension.equals("ico", ignoreCase = true)) {
+                    return it
+                }
             }
             try {
                 dir.listFiles { file ->
-                    file.extension.equals("exe", ignoreCase = true) &&
-                            !file.name.equals("OpenSaveFolder.exe", ignoreCase = true) &&
-                            !file.name.equals("ResetConfig.exe", ignoreCase = true) &&
-                            !file.name.equals("Uninstaller.exe", ignoreCase = true)
+                    file.isFile && file.extension.equals("exe", ignoreCase = true) &&
+                        !file.name.equals("OpenSaveFolder.exe", ignoreCase = true) &&
+                        !file.name.equals("ResetConfig.exe", ignoreCase = true) &&
+                        !file.name.equals("Uninstaller.exe", ignoreCase = true)
                 }?.forEach { exeFile ->
                     PEResourceExtractor.create(exeFile)?.extractIcon()?.let { bytes ->
                         val f = File(dir, ".xsystem4.ico")
-                        f.writeBytes(bytes)
+                        val tmp = File(dir, ".xsystem4.ico.tmp")
+                        tmp.writeBytes(bytes)
+                        if (!tmp.renameTo(f)) {
+                            f.writeBytes(bytes)
+                            tmp.delete()
+                        }
                         return f
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("GameList", "Failed to extract or write icon", e)
             }
             return null
@@ -171,29 +186,77 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     }
 
     fun getIconBitmap(reqSize: Int): Bitmap? {
-        val bytes = icon?.readBytes() ?: return null
-        val buf = ByteBuffer.wrap(bytes)
-        buf.order(ByteOrder.LITTLE_ENDIAN)
-        buf.skip(4)
-        val numIcons = buf.short.toInt()
+        return try {
+            val iconFile = icon ?: return null
+            if (!iconFile.isFile) return null
+            val cacheKey = "${iconFile.absolutePath}:${iconFile.lastModified()}"
+            synchronized(iconBitmapCache) {
+                iconBitmapCache.get(cacheKey)?.takeIf { !it.isRecycled }
+            }?.let { return it }
 
-        if (numIcons > 1) {
-            val bestMatchEntry = Array(numIcons) {
-                val entryBytes = ByteArray(16)
-                buf.get(entryBytes)
-                entryBytes
-            }.minWith(compareBy({
-                val rawW = it[0].toInt() and 0xff
-                val width = if (rawW == 0) 256 else rawW
-                kotlin.math.abs(width - reqSize)
-            }, {
-                -(it[6].toInt() and 0xff)
-            }))
-            buf.position(4)
-            buf.putShort(1)
-            buf.put(bestMatchEntry)
+            val bytes = iconFile.readBytes()
+            if (bytes.size < 6) return null
+            val isPngHeader = bytes.size >= 8 &&
+                bytes[0] == 0x89.toByte() &&
+                bytes[1] == 0x50.toByte() &&
+                bytes[2] == 0x4E.toByte() &&
+                bytes[3] == 0x47.toByte()
+            if (!isPngHeader) {
+                val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                val reserved = buf.short.toInt() and 0xFFFF
+                val icoType = buf.short.toInt() and 0xFFFF
+                val count = buf.short.toInt() and 0xFFFF
+                if (reserved != 0 || (icoType != 1 && icoType != 2) || count <= 0) {
+                    return null
+                }
+                if (6L + count.toLong() * 16L > bytes.size.toLong()) {
+                    return null
+                }
+                val validEntries = ArrayList<ByteArray>(count)
+                for (idx in 0 until count) {
+                    val entryBytes = ByteArray(16)
+                    buf.get(entryBytes)
+                    val entryBuf = ByteBuffer.wrap(entryBytes).order(ByteOrder.LITTLE_ENDIAN)
+                    val planes = entryBuf.getShort(4).toInt() and 0xFFFF
+                    val bitCount = entryBuf.getShort(6).toInt() and 0xFFFF
+                    val size = entryBuf.getInt(8)
+                    val offset = entryBuf.getInt(12)
+                    if (offset >= 0 && size > 0 && offset.toLong() + size.toLong() <= bytes.size.toLong() &&
+                        planes >= 0 && bitCount >= 0
+                    ) {
+                        validEntries.add(entryBytes)
+                    }
+                }
+                if (validEntries.isEmpty()) {
+                    return null
+                }
+                if (count > 1) {
+                    val bestMatchEntry = validEntries.minWith(compareBy({
+                        val rawW = it[0].toInt() and 0xFF
+                        val width = if (rawW == 0) 256 else rawW
+                        kotlin.math.abs(width - reqSize)
+                    }, {
+                        val entryBuf = ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN)
+                        val planes = entryBuf.getShort(4).toInt() and 0xFFFF
+                        val bitCount = entryBuf.getShort(6).toInt() and 0xFFFF
+                        -(bitCount * 16 + planes.coerceAtMost(15))
+                    }))
+                    buf.position(4)
+                    buf.putShort(1)
+                    buf.put(bestMatchEntry)
+                }
+            }
+
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (decoded != null) {
+                synchronized(iconBitmapCache) {
+                    iconBitmapCache.put(cacheKey, decoded)
+                }
+            }
+            decoded
+        } catch (_: Throwable) {
+            null
         }
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 }
 
@@ -233,9 +296,10 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
     }
 }
 
-// Game directories whose deletion is still running (absolute paths). Process-wide, so a
-// refreshed GameList instance still knows about a deletion started by an older one.
-private val uninstallingPaths = HashSet<String>()
+// Game directories whose deletion is still running (absolute paths). Process-wide and thread-safe,
+// so concurrent GameList rescans exclude paths currently being uninstalled.
+private val uninstallingPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
+private val backgroundCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
 class GameList(activity: Activity) {
     private val appContext: Context = activity.applicationContext
@@ -255,6 +319,9 @@ class GameList(activity: Activity) {
     var installState: InstallState = InstallState.Idle
         private set
     var isProgressMinimized: Boolean = false
+        private set
+    @Volatile
+    var isRestoringMod: Boolean = false
         private set
     private var activeInstallResumable: Boolean = false
     @Volatile
@@ -278,7 +345,7 @@ class GameList(activity: Activity) {
             val homedir = File(storagePath, ".xsystem4")
             val files = storagePath.listFiles() ?: continue
             for (path in files) {
-                if (!path.name.startsWith(".") && path.isDirectory) {
+                if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
                     items.add(Item.fromDirectory(path, homedir, context))
                 }
             }
@@ -297,9 +364,18 @@ class GameList(activity: Activity) {
             val storage = File(context.filesDir, "games")
             storage.mkdirs()
             storageDirs.add(storage)
-            storage.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach {
-                items.add(Item.fromDirectory(it, File(storage, ".xsystem4"), context))
-            }
+            storage.listFiles()
+                ?.filter { it.isDirectory && !it.name.startsWith('.') && !uninstallingPaths.contains(it.absolutePath) }
+                ?.forEach {
+                    items.add(Item.fromDirectory(it, File(storage, ".xsystem4"), context))
+                }
+        }
+    }
+
+    fun close() {
+        if (installState !is InstallState.Installing && installJob?.isActive != true && !isRestoringMod) {
+            observer = null
+            scope.cancel()
         }
     }
 
@@ -352,7 +428,7 @@ class GameList(activity: Activity) {
             emptyList()
         }
 
-        retiringBarrierJob = scope.launch(Dispatchers.IO) {
+        retiringBarrierJob = backgroundCleanupScope.launch(Dispatchers.IO) {
             try {
                 prevBarrier?.join()
             } catch (_: Throwable) {
@@ -368,7 +444,7 @@ class GameList(activity: Activity) {
                     addAll(lateTrash)
                 }
                 if (allTrash.isNotEmpty()) {
-                    scope.launch(Dispatchers.IO) {
+                    backgroundCleanupScope.launch(Dispatchers.IO) {
                         for (t in allTrash) {
                             try {
                                 t.deleteRecursively()
@@ -385,7 +461,7 @@ class GameList(activity: Activity) {
 
     private fun deleteDirAsyncViaTrash(dir: File?) {
         val trashed = OnlineInstaller.evictFileToTrash(dir) ?: return
-        scope.launch(Dispatchers.IO) {
+        backgroundCleanupScope.launch(Dispatchers.IO) {
             try {
                 trashed.deleteRecursively()
             } catch (_: Throwable) {
@@ -897,7 +973,8 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val baseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension).ifEmpty { "Game" }
+            val rawBaseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension)
+            val baseName = sanitizeDerivedGameDirName(rawBaseName)
             var dstDir = File(storagePath, baseName)
             var i = 1
             while (dstDir.exists()) {
@@ -912,29 +989,46 @@ class GameList(activity: Activity) {
         }
     }
 
+    private fun sanitizeDerivedGameDirName(raw: String): String {
+        val cleaned = raw
+            .replace('/', '_')
+            .replace('\\', '_')
+            .replace('\u0000', '_')
+            .filter { it >= ' ' }
+            .trim()
+            .trimStart('.', ' ', '\t')
+            .trimEnd(' ', '.')
+        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") "Game" else cleaned
+    }
+
     fun isUninstalling(item: Item): Boolean = uninstallingPaths.contains(item.path.absolutePath)
 
     /**
      * Deletes [item]'s directory on an IO thread and drops it from the list when done.
      * A game can be several GB, so this must not run on the main thread. Runs in the
-     * GameList scope so leaving the screen doesn't strand a half-deleted entry.
+     * process-wide cleanup scope so leaving or refreshing the screen doesn't strand a
+     * half-deleted entry or resurface a ghost item.
      * Returns false (and does nothing) if the same game is already being deleted.
      */
     fun uninstallAsync(item: Item, onDone: (deleted: Boolean) -> Unit): Boolean {
         val key = item.path.absolutePath
         if (!uninstallingPaths.add(key)) return false
-        scope.launch {
-            val deleted = try {
-                withContext(Dispatchers.IO) {
+        backgroundCleanupScope.launch {
+            var deleted: Boolean
+            try {
+                deleted = withContext(Dispatchers.IO) {
                     item.path.deleteRecursively()
                     !item.path.exists()
                 }
+                if (deleted) {
+                    items.removeAll { it.path.absolutePath == key }
+                }
             } catch (t: Throwable) {
                 Log.w("GameList", "uninstall failed: ${item.path}", t)
-                false
+                deleted = false
+            } finally {
+                uninstallingPaths.remove(key)
             }
-            if (deleted) items.remove(item)
-            uninstallingPaths.remove(key)
             onDone(deleted)
         }
         return true
@@ -980,7 +1074,8 @@ class GameList(activity: Activity) {
     }
 
     fun restoreMod(item: Item): Boolean {
-        if (installJob?.isActive == true) return false
+        if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) return false
+        isRestoringMod = true
         return try {
             restoreVanillaFromMod(item.path)
             refreshTargetItemInList(item)
@@ -988,7 +1083,32 @@ class GameList(activity: Activity) {
         } catch (e: Exception) {
             Log.e("GameList", "Failed to restore vanilla game", e)
             false
+        } finally {
+            isRestoringMod = false
         }
+    }
+
+    fun launchRestoreMod(item: Item, onDone: (Boolean) -> Unit): Boolean {
+        if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) {
+            return false
+        }
+        isRestoringMod = true
+        backgroundCleanupScope.launch {
+            val ok = try {
+                withContext(Dispatchers.IO) {
+                    restoreVanillaFromMod(item.path)
+                }
+                refreshTargetItemInList(item)
+                true
+            } catch (e: Throwable) {
+                Log.e("GameList", "Failed to restore vanilla game", e)
+                false
+            } finally {
+                isRestoringMod = false
+            }
+            onDone(ok)
+        }
+        return true
     }
 
     fun installModDirectory(targetItem: Item, uri: Uri) {
@@ -1377,29 +1497,66 @@ class GameList(activity: Activity) {
 
     private fun restoreVanillaFromMod(targetDir: File) {
         InstalledModInfo.delete(targetDir)
+        val canonicalTarget = try {
+            targetDir.canonicalPath
+        } catch (_: Throwable) {
+            targetDir.absolutePath
+        }
+        targetDir.walkBottomUp()
+            .filter {
+                it.isFile && (it.name.endsWith(".vanilla.bak.tmp") ||
+                    (it.name.startsWith(".mod_apply_") && it.name.endsWith(".tmp")))
+            }
+            .forEach { it.delete() }
+
         val manifestFile = File(targetDir, ".mod_installed_files.txt")
         if (manifestFile.exists()) {
             for (rel in manifestFile.readLines()) {
-                val trimmed = rel.trim()
-                if (trimmed.isEmpty() || trimmed.contains("..")) continue
+                val trimmed = rel.trim().replace('\\', '/')
+                if (trimmed.isEmpty() || trimmed.startsWith("/") || trimmed.contains("..")) continue
                 val f = File(targetDir, trimmed)
-                if (f.exists() && f.isFile) {
-                    f.delete()
+                val safeInside = try {
+                    val cp = f.canonicalPath
+                    cp.startsWith("$canonicalTarget${File.separator}")
+                } catch (_: Throwable) {
+                    false
+                }
+                if (safeInside && f.exists() && f.isFile) {
+                    val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
+                    if (!hasBak) {
+                        f.delete()
+                    }
                 }
             }
             manifestFile.delete()
         }
-        File(targetDir, "AsraTest.ini").delete()
+        val asraIni = File(targetDir, "AsraTest.ini")
+        if (asraIni.isFile && !File(targetDir, "AsraTest.ini.vanilla.bak").isFile) {
+            asraIni.delete()
+        }
         val bakFiles = targetDir.walkBottomUp().filter { it.isFile && it.name.endsWith(".vanilla.bak") }.toList()
         for (bak in bakFiles) {
             val origName = bak.name.removeSuffix(".vanilla.bak")
             val origFile = File(bak.parentFile, origName)
+            val tmpRestore = File(bak.parentFile, ".restore_${origName}.tmp")
+            tmpRestore.delete()
             if (origFile.exists()) {
                 origFile.delete()
             }
             if (!bak.renameTo(origFile)) {
-                bak.copyTo(origFile, overwrite = true)
-                bak.delete()
+                try {
+                    bak.copyTo(tmpRestore, overwrite = true)
+                    if (origFile.exists()) {
+                        origFile.delete()
+                    }
+                    if (!tmpRestore.renameTo(origFile)) {
+                        tmpRestore.copyTo(origFile, overwrite = true)
+                        tmpRestore.delete()
+                    }
+                    bak.delete()
+                } finally {
+                    tmpRestore.delete()
+                }
             }
         }
     }
@@ -1411,7 +1568,10 @@ class GameList(activity: Activity) {
             val isLast = idx == parts.lastIndex
             val matched = cur.listFiles()?.firstOrNull { child ->
                 if (isLast) {
-                    child.isFile && !child.name.endsWith(".vanilla.bak") && child.name.equals(seg, ignoreCase = true)
+                    child.isFile &&
+                        !child.name.endsWith(".vanilla.bak") &&
+                        !child.name.endsWith(".vanilla.bak.tmp") &&
+                        child.name.equals(seg, ignoreCase = true)
                 } else {
                     child.isDirectory && child.name.equals(seg, ignoreCase = true)
                 }
@@ -1429,7 +1589,7 @@ class GameList(activity: Activity) {
     ): Boolean {
         val modRoot = findModRoot(stagingDir, isCnPatch = isCnPatch)
         val isFullStandalone = isStandaloneFullMod(modRoot)
-        if (cleanReplaceIfStandalone && isFullStandalone && hasInstalledModDir(targetDir)) {
+        if (cleanReplaceIfStandalone && (hasInstalledModDir(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
             restoreVanillaFromMod(targetDir)
         }
 
@@ -1441,41 +1601,83 @@ class GameList(activity: Activity) {
                 .forEach { addedFiles.add(it) }
         }
         val modFiles = modRoot.walkTopDown().filter { it.isFile }.toList()
-        for (srcFile in modFiles) {
-            val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
-            if (relPath.isEmpty() || relPath.startsWith(".") || relPath.endsWith(".vanilla.bak") || NativeGameImport.skip(relPath)) {
-                continue
-            }
-            val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
-            val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
-            val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
-            destFile.parentFile?.mkdirs()
-            if (destFile.exists()) {
-                if (wasAddedByMod) {
-                    destFile.delete()
-                } else {
-                    val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
-                    if (!bakFile.exists()) {
-                        if (!destFile.renameTo(bakFile)) {
-                            destFile.copyTo(bakFile, overwrite = true)
-                            destFile.delete()
-                        }
-                    } else {
-                        destFile.delete()
-                    }
+        try {
+            for (srcFile in modFiles) {
+                val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
+                if (relPath.isEmpty() ||
+                    relPath.startsWith(".") ||
+                    relPath.contains("..") ||
+                    relPath.endsWith(".vanilla.bak") ||
+                    relPath.endsWith(".vanilla.bak.tmp") ||
+                    NativeGameImport.skip(relPath)
+                ) {
+                    continue
                 }
-            } else if (!wasAddedByMod) {
-                addedFiles.add(destRelPath)
+                val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
+                val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
+                val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
+                destFile.parentFile?.mkdirs()
+                if (destFile.exists()) {
+                    if (!wasAddedByMod) {
+                        val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
+                        if (!bakFile.exists()) {
+                            val tmpBak = File(destFile.parentFile, "${destFile.name}.vanilla.bak.tmp")
+                            tmpBak.delete()
+                            try {
+                                destFile.copyTo(tmpBak, overwrite = true)
+                            } catch (t: Throwable) {
+                                tmpBak.delete()
+                                throw t
+                            }
+                            if (!bakFile.exists()) {
+                                if (!tmpBak.renameTo(bakFile)) {
+                                    tmpBak.delete()
+                                    throw IOException("Failed to commit vanilla backup: $bakFile")
+                                }
+                            } else {
+                                tmpBak.delete()
+                            }
+                        }
+                    }
+                } else if (!wasAddedByMod) {
+                    addedFiles.add(destRelPath)
+                }
+
+                val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
+                tmpDest.delete()
+                if (!srcFile.renameTo(tmpDest)) {
+                    try {
+                        srcFile.copyTo(tmpDest, overwrite = true)
+                    } catch (t: Throwable) {
+                        tmpDest.delete()
+                        throw t
+                    }
+                    srcFile.delete()
+                }
+                if (destFile.exists()) {
+                    destFile.delete()
+                }
+                if (!tmpDest.renameTo(destFile)) {
+                    tmpDest.copyTo(destFile, overwrite = true)
+                    tmpDest.delete()
+                }
             }
-            if (!srcFile.renameTo(destFile)) {
-                srcFile.copyTo(destFile, overwrite = true)
-                srcFile.delete()
+            if (File(targetDir, "Rance10.ain").isFile &&
+                !File(targetDir, "AsraTest.ini.vanilla.bak").isFile
+            ) {
+                addedFiles.add("AsraTest.ini")
+            }
+        } finally {
+            if (addedFiles.isNotEmpty() || manifestFile.exists()) {
+                val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
+                val content = addedFiles.joinToString("\n")
+                manifestTmp.writeText(content)
+                if (!manifestTmp.renameTo(manifestFile)) {
+                    manifestFile.writeText(content)
+                    manifestTmp.delete()
+                }
             }
         }
-        if (File(targetDir, "Rance10.ain").isFile) {
-            addedFiles.add("AsraTest.ini")
-        }
-        File(targetDir, ".mod_installed_files.txt").writeText(addedFiles.joinToString("\n"))
-        return isFullStandalone
+        return cleanReplaceIfStandalone || isFullStandalone
     }
 }

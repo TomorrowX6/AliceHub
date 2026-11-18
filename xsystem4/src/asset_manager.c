@@ -123,8 +123,73 @@ bool asset_manager_load_archive(enum asset_type type, const char *archive_name)
 	return r;
 }
 
+#define SAVE_CG_ID_TAG 0x7f000000u
+
+static char **save_cg_names = NULL;
+static size_t nr_save_cg_names = 0;
+static size_t cap_save_cg_names = 0;
+
+static char *asset_cg_save_path(const char *name)
+{
+	if (!name || strncmp(name, "<save>", 6) != 0)
+		return NULL;
+	const char *rel = name + 6;
+	while (*rel == '/' || *rel == '\\')
+		rel++;
+	char *resolved = savedir_path(rel);
+	if (resolved && !file_exists(resolved)) {
+		char *icase = path_get_icase(resolved);
+		if (icase) {
+			free(resolved);
+			resolved = icase;
+		}
+	}
+	return resolved;
+}
+
+static bool is_save_cg_id(int id)
+{
+	return id > 0 && (((uint32_t)id & SAVE_CG_ID_TAG) == SAVE_CG_ID_TAG) && ((uint32_t)id & 0x00ffffffu) != 0;
+}
+
+static int save_cg_intern_name(const char *name)
+{
+	for (size_t i = 0; i < nr_save_cg_names; i++) {
+		if (!strcmp(save_cg_names[i], name))
+			return (int)(SAVE_CG_ID_TAG | (uint32_t)(i + 1));
+	}
+	if (nr_save_cg_names >= 0x00fffffeu)
+		return 0;
+	if (nr_save_cg_names == cap_save_cg_names) {
+		size_t new_cap = cap_save_cg_names ? cap_save_cg_names * 2 : 32;
+		save_cg_names = xrealloc(save_cg_names, new_cap * sizeof(*save_cg_names));
+		cap_save_cg_names = new_cap;
+	}
+	save_cg_names[nr_save_cg_names] = xstrdup(name);
+	nr_save_cg_names++;
+	return (int)(SAVE_CG_ID_TAG | (uint32_t)nr_save_cg_names);
+}
+
+static char *save_cg_resolve_id(int id)
+{
+	if (!is_save_cg_id(id))
+		return NULL;
+	size_t idx = (size_t)((uint32_t)id & 0x00ffffffu) - 1;
+	if (idx >= nr_save_cg_names)
+		return NULL;
+	return asset_cg_save_path(save_cg_names[idx]);
+}
+
 bool asset_exists(enum asset_type type, int id)
 {
+	if (type < 0 || type >= ASSET_TYPE_MAX)
+		return false;
+	if (type == ASSET_CG && is_save_cg_id(id)) {
+		char *save_path = save_cg_resolve_id(id);
+		bool exists = save_path && file_exists(save_path);
+		free(save_path);
+		return exists;
+	}
 	if (!assets[type])
 		return false;
 	return assets[type]->exists_by_id(assets[type], id);
@@ -157,27 +222,9 @@ static bool asset_cg_format_special_org_fallback(const char *name, char *buf, si
 	return false;
 }
 
-static char *asset_cg_save_path(const char *name)
-{
-	if (!name || strncmp(name, "<save>", 6) != 0)
-		return NULL;
-	const char *rel = name + 6;
-	while (*rel == '/' || *rel == '\\')
-		rel++;
-	char *resolved = savedir_path(rel);
-	if (resolved && !file_exists(resolved)) {
-		char *icase = path_get_icase(resolved);
-		if (icase) {
-			free(resolved);
-			resolved = icase;
-		}
-	}
-	return resolved;
-}
-
 bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out)
 {
-	if (!name || !name[0])
+	if (type < 0 || type >= ASSET_TYPE_MAX || !name || !name[0])
 		return false;
 	if (type == ASSET_CG) {
 		char *save_path = asset_cg_save_path(name);
@@ -185,7 +232,7 @@ bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out)
 			bool exists = file_exists(save_path);
 			free(save_path);
 			if (exists && id_out)
-				*id_out = 0;
+				*id_out = save_cg_intern_name(name);
 			return exists;
 		}
 	}
@@ -203,14 +250,14 @@ bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out)
 
 struct archive_data *asset_get(enum asset_type type, int id)
 {
-	if (!assets[type])
+	if (type < 0 || type >= ASSET_TYPE_MAX || !assets[type])
 		return NULL;
 	return assets[type]->get_by_id(assets[type], id);
 }
 
 struct archive_data *asset_get_by_name(enum asset_type type, const char *name, int *id_out)
 {
-	if (!assets[type] || !name || !name[0])
+	if (type < 0 || type >= ASSET_TYPE_MAX || !assets[type] || !name || !name[0])
 		return NULL;
 	if (!assets[type]->get_by_name)
 		ERROR("get_by_name not supported on this archive type");
@@ -225,6 +272,12 @@ struct archive_data *asset_get_by_name(enum asset_type type, const char *name, i
 
 struct cg *asset_cg_load(int id)
 {
+	if (is_save_cg_id(id)) {
+		char *save_path = save_cg_resolve_id(id);
+		struct cg *cg = (save_path && file_exists(save_path)) ? cg_load_file(save_path) : NULL;
+		free(save_path);
+		return cg;
+	}
 	struct archive_data *data = asset_get(ASSET_CG, id);
 	if (!data)
 		return NULL;
@@ -237,10 +290,10 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out)
 {
 	char *save_path = asset_cg_save_path(name);
 	if (save_path) {
-		if (id_out)
-			*id_out = 0;
-		struct cg *cg = cg_load_file(save_path);
+		struct cg *cg = file_exists(save_path) ? cg_load_file(save_path) : NULL;
 		free(save_path);
+		if (cg && id_out)
+			*id_out = save_cg_intern_name(name);
 		return cg;
 	}
 	struct archive_data *data = asset_get_by_name(ASSET_CG, name, id_out);
@@ -253,6 +306,12 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out)
 
 bool asset_cg_get_metrics(int id, struct cg_metrics *metrics)
 {
+	if (is_save_cg_id(id)) {
+		char *save_path = save_cg_resolve_id(id);
+		bool r = (save_path && file_exists(save_path)) ? cg_get_metrics_file(save_path, metrics) : false;
+		free(save_path);
+		return r;
+	}
 	struct archive_data *data = asset_get(ASSET_CG, id);
 	if (!data)
 		return false;
@@ -265,7 +324,7 @@ bool asset_cg_get_metrics_by_name(const char *name, struct cg_metrics *metrics)
 {
 	char *save_path = asset_cg_save_path(name);
 	if (save_path) {
-		bool r = cg_get_metrics_file(save_path, metrics);
+		bool r = file_exists(save_path) ? cg_get_metrics_file(save_path, metrics) : false;
 		free(save_path);
 		return r;
 	}
@@ -330,6 +389,18 @@ static void afa_invalidate_canon_index(struct asset_manager_afa *manager)
 	manager->canon_index_valid = false;
 }
 
+static size_t afa_register_id_archive(struct asset_manager_afa *manager, struct afa_archive *ar)
+{
+	for (size_t i = 0; i < manager->nr_id_archives; i++) {
+		if (manager->id_archives[i] == ar)
+			return i;
+	}
+	manager->id_archives = xrealloc(manager->id_archives,
+		(manager->nr_id_archives + 1) * sizeof(*manager->id_archives));
+	manager->id_archives[manager->nr_id_archives] = ar;
+	return manager->nr_id_archives++;
+}
+
 static bool afa_load_archive(struct asset_manager *_manager, const char *name)
 {
 	struct asset_manager_afa *manager = (struct asset_manager_afa*)_manager;
@@ -362,31 +433,19 @@ static bool afa_load_archive(struct asset_manager *_manager, const char *name)
 		(manager->nr_archives - pos) * sizeof(*manager->archives));
 	manager->archives[pos] = ar;
 	manager->nr_archives++;
-	manager->id_archives = xrealloc(manager->id_archives,
-		(manager->nr_id_archives + 1) * sizeof(*manager->id_archives));
-	manager->id_archives[manager->nr_id_archives++] = ar;
+	afa_register_id_archive(manager, ar);
 	afa_invalidate_canon_index(manager);
 	return true;
 }
 
-static size_t afa_register_id_archive(struct asset_manager_afa *manager, struct afa_archive *ar)
-{
-	for (size_t i = 0; i < manager->nr_id_archives; i++) {
-		if (manager->id_archives[i] == ar)
-			return i;
-	}
-	manager->id_archives = xrealloc(manager->id_archives,
-		(manager->nr_id_archives + 1) * sizeof(*manager->id_archives));
-	manager->id_archives[manager->nr_id_archives] = ar;
-	return manager->nr_id_archives++;
-}
-
 static int afa_encode_id(struct asset_manager_afa *manager, struct afa_archive *ar, int local_no)
 {
+	if (local_no < 0 || (uint32_t)local_no >= 0x00fffffeu)
+		return 0;
 	size_t idx = afa_register_id_archive(manager, ar);
-	if (idx > 127)
-		idx = 0;
-	return ((int)idx << 24) | ((local_no + 1) & 0x00ffffff);
+	// 1..126 identify id_archives[ar_tag - 1]; 0 means priority-order scan; 127 is reserved for <save> CGs.
+	uint32_t ar_tag = (idx < 126) ? (uint32_t)(idx + 1) : 0u;
+	return (int)((ar_tag << 24) | ((uint32_t)(local_no + 1) & 0x00ffffffu));
 }
 
 static bool afa_exists_by_id(struct asset_manager *_manager, int id)
@@ -394,19 +453,22 @@ static bool afa_exists_by_id(struct asset_manager *_manager, int id)
 	struct asset_manager_afa *manager = (struct asset_manager_afa*)_manager;
 	if (id <= 0)
 		return false;
-	size_t ar_idx = ((unsigned int)id >> 24) & 0x7f;
-	int local_id = id & 0x00ffffff;
+	uint32_t uid = (uint32_t)id;
+	size_t ar_tag = (uid >> 24) & 0x7fu;
+	int local_id = (int)(uid & 0x00ffffffu);
 	if (local_id <= 0)
 		return false;
-	if (ar_idx < manager->nr_id_archives) {
-		if (archive_exists(&manager->id_archives[ar_idx]->ar, local_id - 1))
-			return true;
+	if (ar_tag == 0) {
+		for (size_t i = 0; i < manager->nr_archives; i++) {
+			if (archive_exists(&manager->archives[i]->ar, local_id - 1))
+				return true;
+		}
+		return false;
 	}
-	for (size_t i = 0; i < manager->nr_archives; i++) {
-		if (archive_exists(&manager->archives[i]->ar, local_id - 1))
-			return true;
-	}
-	return false;
+	size_t idx = ar_tag - 1;
+	if (idx >= manager->nr_id_archives)
+		return false;
+	return archive_exists(&manager->id_archives[idx]->ar, local_id - 1);
 }
 
 static struct archive_data *afa_get_by_id(struct asset_manager *_manager, int id)
@@ -414,21 +476,23 @@ static struct archive_data *afa_get_by_id(struct asset_manager *_manager, int id
 	struct asset_manager_afa *manager = (struct asset_manager_afa*)_manager;
 	if (id <= 0)
 		return NULL;
-	size_t ar_idx = ((unsigned int)id >> 24) & 0x7f;
-	int local_id = id & 0x00ffffff;
+	uint32_t uid = (uint32_t)id;
+	size_t ar_tag = (uid >> 24) & 0x7fu;
+	int local_id = (int)(uid & 0x00ffffffu);
 	if (local_id <= 0)
 		return NULL;
-	if (ar_idx < manager->nr_id_archives) {
-		struct archive_data *data = archive_get(&manager->id_archives[ar_idx]->ar, local_id - 1);
-		if (data)
-			return data;
+	if (ar_tag == 0) {
+		for (size_t i = 0; i < manager->nr_archives; i++) {
+			struct archive_data *data = archive_get(&manager->archives[i]->ar, local_id - 1);
+			if (data)
+				return data;
+		}
+		return NULL;
 	}
-	for (size_t i = 0; i < manager->nr_archives; i++) {
-		struct archive_data *data = archive_get(&manager->archives[i]->ar, local_id - 1);
-		if (data)
-			return data;
-	}
-	return NULL;
+	size_t idx = ar_tag - 1;
+	if (idx >= manager->nr_id_archives)
+		return NULL;
+	return archive_get(&manager->id_archives[idx]->ar, local_id - 1);
 }
 
 static bool afa_is_backup_archive(const char *filepath)

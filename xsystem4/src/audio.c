@@ -17,6 +17,7 @@
 #include <assert.h>
 
 #include "system4.h"
+#include "system4/archive.h"
 
 #include "asset_manager.h"
 #include "audio.h"
@@ -35,7 +36,7 @@ static struct id_pool bgm;
 // Anonymous channels for playing sounds in-engine. audio_update must be called
 // periodically to clean up channels that have finished playing.
 #define NR_ANONYMOUS_CHANNELS 64
-static int anonymous_channels[NR_ANONYMOUS_CHANNELS];
+static struct channel *anonymous_channels[NR_ANONYMOUS_CHANNELS];
 static bool anonymous_is_system[NR_ANONYMOUS_CHANNELS];
 
 void audio_init(void)
@@ -48,7 +49,7 @@ void audio_init(void)
 	id_pool_init(&bgm, 0);
 
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		anonymous_channels[i] = -1;
+		anonymous_channels[i] = NULL;
 		anonymous_is_system[i] = false;
 	}
 
@@ -65,7 +66,10 @@ void audio_reset(void)
 		bgm_unprepare(i);
 	}
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		anonymous_channels[i] = -1;
+		if (anonymous_channels[i]) {
+			channel_close(anonymous_channels[i]);
+			anonymous_channels[i] = NULL;
+		}
 		anonymous_is_system[i] = false;
 	}
 }
@@ -73,10 +77,10 @@ void audio_reset(void)
 void audio_update(void)
 {
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		if (anonymous_channels[i] >= 0) {
-			if (!wav_is_playing(anonymous_channels[i])) {
-				wav_unprepare(anonymous_channels[i]);
-				anonymous_channels[i] = -1;
+		if (anonymous_channels[i]) {
+			if (!channel_is_playing(anonymous_channels[i])) {
+				channel_close(anonymous_channels[i]);
+				anonymous_channels[i] = NULL;
 				anonymous_is_system[i] = false;
 			}
 		}
@@ -86,12 +90,12 @@ void audio_update(void)
 static bool audio_play_sound_ex(int sound_no, bool is_system)
 {
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		if (anonymous_channels[i] == -1) {
-			int ch = wav_get_unused_channel();
-			if (!wav_prepare(ch, sound_no))
+		if (!anonymous_channels[i]) {
+			struct channel *ch = channel_open(ASSET_SOUND, sound_no);
+			if (!ch)
 				return false;
-			if (!wav_play(ch)) {
-				wav_unprepare(ch);
+			if (!channel_play(ch)) {
+				channel_close(ch);
 				return false;
 			}
 			anonymous_channels[i] = ch;
@@ -115,13 +119,15 @@ bool audio_play_system_sound(int sound_no)
 
 bool audio_play_archive_data(struct archive_data *dfile)
 {
+	if (!dfile)
+		return false;
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		if (anonymous_channels[i] == -1) {
-			int ch = wav_get_unused_channel();
-			if (!wav_prepare_from_archive_data(ch, AUDIO_NO_METADATA, dfile))
+		if (!anonymous_channels[i]) {
+			struct channel *ch = channel_open_archive_data(dfile, ASSET_SOUND, AUDIO_NO_METADATA);
+			if (!ch)
 				return false;
-			if (!wav_play(ch)) {
-				wav_unprepare(ch);
+			if (!channel_play(ch)) {
+				channel_close(ch);
 				return false;
 			}
 			anonymous_channels[i] = ch;
@@ -129,6 +135,7 @@ bool audio_play_archive_data(struct archive_data *dfile)
 			return true;
 		}
 	}
+	archive_free_data(dfile);
 	WARNING("Failed to allocate anonymous audio channel");
 	return false;
 }
@@ -136,9 +143,9 @@ bool audio_play_archive_data(struct archive_data *dfile)
 void audio_stop_non_system_channels(void)
 {
 	for (int i = 0; i < NR_ANONYMOUS_CHANNELS; i++) {
-		if (anonymous_channels[i] >= 0 && !anonymous_is_system[i]) {
-			wav_unprepare(anonymous_channels[i]);
-			anonymous_channels[i] = -1;
+		if (anonymous_channels[i] && !anonymous_is_system[i]) {
+			channel_close(anonymous_channels[i]);
+			anonymous_channels[i] = NULL;
 		}
 	}
 }
@@ -434,8 +441,12 @@ static int audio_prepare_from_archive_data(struct id_pool *pool, int id,
 					   enum asset_type type, int metadata_no,
 					   struct archive_data *dfile)
 {
-	if (id < 0)
+	if (!dfile)
 		return 0;
+	if (id < 0) {
+		archive_free_data(dfile);
+		return 0;
+	}
 	struct channel *ch = channel_open_archive_data(dfile, type, metadata_no);
 	struct channel *old = id_pool_set(pool, id, ch);
 	if (old)

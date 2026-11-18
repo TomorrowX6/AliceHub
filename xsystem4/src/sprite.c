@@ -41,6 +41,8 @@ bool sact_dirty = true;
 LIST_HEAD(listhead, sact_sprite) sprites_with_plugins =
 	LIST_HEAD_INITIALIZER(sprites_with_plugins);
 
+void RE_plugin_detach_sprite(struct draw_plugin *plugin);
+
 // XXX: sprites should typically be set to zero and then initialized with this
 //      function upon allocation.
 void sprite_init(struct sact_sprite *sp)
@@ -55,9 +57,13 @@ void sprite_free(struct sact_sprite *sp)
 	gfx_delete_texture(&sp->texture);
 	gfx_delete_texture(&sp->text.texture);
 	if (sp->plugin) {
-		if (sp->plugin->free)
-			sp->plugin->free(sp->plugin);
+		struct draw_plugin *plugin = sp->plugin;
+		sp->plugin = NULL;
 		LIST_REMOVE(sp, entry);
+		if (plugin->free)
+			plugin->free(plugin);
+		else if (plugin->name && !strcmp(plugin->name, "ReignEngine"))
+			RE_plugin_detach_sprite(plugin);
 	}
 	// restore to initial state
 	memset(sp, 0, sizeof(struct sact_sprite));
@@ -128,14 +134,13 @@ void sprite_init_sact(void)
 	if (sprite_shader.s.prepare) {
 		if (sprite_shader.s.prepare != prepare_sact_shader) {
 			WARNING("mixed SACT2/ChipmunkSpriteEngine initialization");
-			return;
 		}
+		return;
 	}
 	gfx_load_shader(&sprite_shader.s, "shaders/render.v.glsl", "shaders/sprite.f.glsl");
 	sprite_shader.blend_rate = glGetUniformLocation(sprite_shader.s.program, "blend_rate");
 	sprite_shader.multiply_color = glGetUniformLocation(sprite_shader.s.program, "multiply_color");
 	sprite_shader.s.prepare = prepare_sact_shader;
-
 }
 
 void sprite_init_chipmunk(void)
@@ -530,20 +535,28 @@ void sprite_get_pixel_value(struct sact_sprite *sp, int x, int y, int *r, int *g
 
 void sprite_bind_plugin(struct sact_sprite *sp, struct draw_plugin *plugin)
 {
-	if (!sp->plugin && plugin)
+	if (sp->plugin == plugin)
+		return;
+	struct draw_plugin *old = sp->plugin;
+	if (!old && plugin)
 		LIST_INSERT_HEAD(&sprites_with_plugins, sp, entry);
-	else if (sp->plugin && !plugin)
+	else if (old && !plugin)
 		LIST_REMOVE(sp, entry);
-	if (sp->plugin != plugin && sp->plugin && sp->plugin->free)
-		sp->plugin->free(sp->plugin);
 	sp->plugin = plugin;
+	if (old) {
+		if (old->free)
+			old->free(old);
+		else if (old->name && !strcmp(old->name, "ReignEngine"))
+			RE_plugin_detach_sprite(old);
+	}
 }
 
 void sprite_call_plugins(void)
 {
-	struct sact_sprite *sp;
-	LIST_FOREACH(sp, &sprites_with_plugins, entry) {
-		if (sp->plugin->update)
+	struct sact_sprite *sp, *next;
+	for (sp = LIST_FIRST(&sprites_with_plugins); sp; sp = next) {
+		next = LIST_NEXT(sp, entry);
+		if (sp->plugin && sp->plugin->update)
 			sp->plugin->update(sp);
 	}
 }

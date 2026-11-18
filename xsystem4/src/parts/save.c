@@ -1431,7 +1431,8 @@ static void load_parts(struct iarray_reader *r, int version)
 		TAILQ_REMOVE(&parts->parent->children, parts, child_list_entry);
 		parts->parent = NULL;
 	}
-	parts->state = iarray_read(r);
+	int state = iarray_read(r);
+	parts->state = parts_state_valid(state) ? state : PARTS_STATE_DEFAULT;
 	for (int i = 0; i < PARTS_NR_STATES; i++) {
 		load_parts_state(r, parts, &parts->states[i], version);
 	}

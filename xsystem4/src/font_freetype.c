@@ -118,19 +118,25 @@ static float ft_font_get_actual_size(struct font *_, float size)
 static Rectangle init_glyph_texture(Texture *dst, FT_Bitmap *glyph, int bitmap_left, int bitmap_top, int size, bool half_width)
 {
 	// calculate block size and offsets
-	int block_width = max(half_width ? size/2 : size, max(0, bitmap_left) + glyph->width);
-	int block_height = size + size/2;
+	int block_width = max(half_width ? size/2 : size, max(0, bitmap_left) + (int)glyph->width);
+	int block_height = max(1, size + size/2);
+	block_width = max(1, block_width);
 	int width = block_width + GLYPH_BORDER_SIZE*2;
 	int height = block_height + GLYPH_BORDER_SIZE*2;
 	int off_x = max(0, bitmap_left) + GLYPH_BORDER_SIZE;
 	int off_y = max(0, size - bitmap_top) + GLYPH_BORDER_SIZE;
-	uint8_t *bitmap = xcalloc(1, width * height);
+	uint8_t *bitmap = xcalloc(1, (size_t)width * height);
 
-	// Expand the glyph bitmap to block size
-	for (int row = 0; row < glyph->rows && row + off_y < height; row++) {
-		for (int col = 0; col < glyph->width && col + off_x < width; col++) {
-			uint8_t p = glyph->buffer[row*glyph->width + col];
-			bitmap[(row+off_y)*width + (col+off_x)] = p;
+	// Expand the glyph bitmap to block size using abs(pitch) row stride
+	if (glyph->buffer && glyph->rows > 0 && glyph->width > 0) {
+		size_t stride = (size_t)abs(glyph->pitch);
+		for (int row = 0; row < (int)glyph->rows && row + off_y < height; row++) {
+			const uint8_t *src_row = glyph->pitch >= 0
+				? glyph->buffer + (size_t)row * stride
+				: glyph->buffer + (size_t)((int)glyph->rows - 1 - row) * stride;
+			for (int col = 0; col < (int)glyph->width && col + off_x < width; col++) {
+				bitmap[(row+off_y)*width + (col+off_x)] = src_row[col];
+			}
 		}
 	}
 
@@ -199,9 +205,17 @@ static bool ft_font_get_glyph(struct font_size *size, struct glyph *glyph, uint3
 			return false;
 		}
 		// round non-zero values up to 255 because FreeType doesn't
-		for (int i = 0; i < tmp.rows * tmp.width; i++) {
-			if (tmp.buffer[i])
-				tmp.buffer[i] = 255;
+		if (tmp.buffer) {
+			size_t stride = (size_t)abs(tmp.pitch);
+			for (unsigned int r = 0; r < tmp.rows; r++) {
+				uint8_t *row_ptr = tmp.pitch >= 0
+					? tmp.buffer + (size_t)r * stride
+					: tmp.buffer + (size_t)(tmp.rows - 1 - r) * stride;
+				for (unsigned int c = 0; c < tmp.width; c++) {
+					if (row_ptr[c])
+						row_ptr[c] = 255;
+				}
+			}
 		}
 		glyph->rect = init_glyph_texture(t, &tmp, font->font->glyph->bitmap_left,
 				font->font->glyph->bitmap_top, size->size, half_width);

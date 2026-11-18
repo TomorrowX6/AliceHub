@@ -963,19 +963,7 @@ static int PartsEngine_Parts_GetLoopCGTimeParCG(int parts_no, int state)
 
 static bool PartsEngine_Parts_DeletePartsTopTextLine(int parts_no, int state)
 {
-	if (!parts_state_valid(--state))
-		return false;
-	struct parts *p = parts_try_get(parts_no);
-	if (!p || p->states[state].type != PARTS_TEXT || p->states[state].text.nr_lines == 0)
-		return false;
-	struct parts_text *t = &p->states[state].text;
-	for (int i = 0; i < t->lines[0].nr_chars; i++)
-		gfx_delete_texture(&t->lines[0].chars[i].t);
-	free(t->lines[0].chars);
-	t->nr_lines--;
-	memmove(&t->lines[0], &t->lines[1], t->nr_lines * sizeof(struct parts_text_line));
-	parts_text_update_dims(p, t);
-	return true;
+	return PE_DeletePartsTopTextLine(parts_no, state);
 }
 
 static void PartsEngine_Parts_SetPartsTextHighlight(int parts_no, int start, int length,

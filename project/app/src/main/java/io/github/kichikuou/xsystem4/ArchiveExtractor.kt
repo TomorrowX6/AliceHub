@@ -386,6 +386,10 @@ object ArchiveExtractor {
             override fun onEntry(rawPath: ByteArray, entrySize: Long): String? {
                 checkCancelled?.invoke()
                 val decoded = decodeEntryPath(rawPath)
+                if ('\u0000' in decoded) {
+                    throw IOException("Archive entry contains NUL character")
+                }
+                val isDirBySuffix = decoded.endsWith('/') || decoded.endsWith('\\')
                 val normalized = decoded.replace('\\', '/').trimStart('/')
                 val parts = normalized.split('/').filter { it.isNotEmpty() && it != "." }
                 if (parts.isEmpty()) return null
@@ -396,6 +400,16 @@ object ArchiveExtractor {
 
                 val relPath = parts.joinToString("/")
                 if (shouldSkip(relPath)) {
+                    return null
+                }
+                if (isDirBySuffix) {
+                    val dirFile = File(destCanonical, parts.joinToString(File.separator)).canonicalFile
+                    if (dirFile != destCanonical && !dirFile.path.startsWith(rootPrefix)) {
+                        throw IOException("Archive directory escapes destination directory: $decoded")
+                    }
+                    if (createdDirs.add(dirFile.path)) {
+                        dirFile.mkdirs()
+                    }
                     return null
                 }
 

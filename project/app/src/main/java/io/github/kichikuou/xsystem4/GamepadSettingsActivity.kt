@@ -34,6 +34,23 @@ class GamepadSettingsActivity : ThemedActivity() {
     private var statusTv: TextView? = null
     private var saveBtn: Button? = null
     private var backInvokedCallback: Any? = null
+    private val trackedDialogs = mutableListOf<android.app.Dialog>()
+
+    private fun trackDialog(dlg: android.app.Dialog) {
+        trackedDialogs.removeAll { !it.isShowing }
+        trackedDialogs.add(dlg)
+    }
+
+    private fun dismissTrackedDialogs() {
+        val copy = trackedDialogs.toList()
+        trackedDialogs.clear()
+        for (dlg in copy) {
+            try {
+                if (dlg.isShowing) dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
 
     private fun tr(zh: String, ja: String, en: String): String =
         GamepadBridge.tr(this, zh, ja, en)
@@ -147,6 +164,7 @@ class GamepadSettingsActivity : ThemedActivity() {
                     }
                     .setNegativeButton(R.string.cancel, null)
                     .show()
+                    .also(::trackDialog)
             }
         }
         bottomBar.addView(resetBtn)
@@ -262,6 +280,7 @@ class GamepadSettingsActivity : ThemedActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+            .also(::trackDialog)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -288,8 +307,11 @@ class GamepadSettingsActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
+        dismissTrackedDialogs()
         unregisterModernBackCallback()
-        controller.stopPolling()
+        if (::controller.isInitialized) {
+            controller.stopPolling()
+        }
         super.onDestroy()
     }
 }

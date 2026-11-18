@@ -27,16 +27,262 @@ static void init_utf8_locale(void)
 	}
 }
 
+static int is_valid_utf8(const char *s, size_t len)
+{
+	const uint8_t *p = (const uint8_t *)s;
+	size_t i = 0;
+	while (i < len) {
+		uint8_t b0 = p[i];
+		if (b0 < 0x80) {
+			if (b0 == 0) {
+				return 0;
+			}
+			i += 1;
+		} else if (b0 >= 0xC2 && b0 <= 0xDF) {
+			if (i + 1 >= len || (p[i + 1] & 0xC0) != 0x80) {
+				return 0;
+			}
+			i += 2;
+		} else if (b0 >= 0xE0 && b0 <= 0xEF) {
+			if (i + 2 >= len) {
+				return 0;
+			}
+			uint8_t b1 = p[i + 1];
+			uint8_t b2 = p[i + 2];
+			if ((b2 & 0xC0) != 0x80) {
+				return 0;
+			}
+			if (b0 == 0xE0) {
+				if (b1 < 0xA0 || b1 > 0xBF) return 0;
+			} else if (b0 == 0xED) {
+				if (b1 < 0x80 || b1 > 0x9F) return 0;
+			} else {
+				if ((b1 & 0xC0) != 0x80) return 0;
+			}
+			i += 3;
+		} else if (b0 >= 0xF0 && b0 <= 0xF4) {
+			if (i + 3 >= len) {
+				return 0;
+			}
+			uint8_t b1 = p[i + 1];
+			uint8_t b2 = p[i + 2];
+			uint8_t b3 = p[i + 3];
+			if ((b2 & 0xC0) != 0x80 || (b3 & 0xC0) != 0x80) {
+				return 0;
+			}
+			if (b0 == 0xF0) {
+				if (b1 < 0x90 || b1 > 0xBF) return 0;
+			} else if (b0 == 0xF4) {
+				if (b1 < 0x80 || b1 > 0x8F) return 0;
+			} else {
+				if ((b1 & 0xC0) != 0x80) return 0;
+			}
+			i += 4;
+		} else {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static char *mutf8_to_utf8_alloc(const char *mutf8)
+{
+	if (!mutf8) {
+		return NULL;
+	}
+	size_t in_len = strlen(mutf8);
+	if (in_len > (SIZE_MAX - 1) / 3) {
+		return NULL;
+	}
+	char *out = (char *)malloc(in_len * 3 + 1);
+	if (!out) {
+		return NULL;
+	}
+	const uint8_t *p = (const uint8_t *)mutf8;
+	size_t i = 0;
+	size_t j = 0;
+	while (i < in_len) {
+		uint8_t b0 = p[i];
+		if (b0 == 0xC0 && i + 1 < in_len && p[i + 1] == 0x80) {
+			/* Modified UTF-8 overlong NUL (0xC0 0x80) -> 0x00 */
+			out[j++] = '\0';
+			i += 2;
+		} else if (b0 < 0x80) {
+			out[j++] = (char)b0;
+			i += 1;
+		} else if (b0 >= 0xC2 && b0 <= 0xDF && i + 1 < in_len && (p[i + 1] & 0xC0) == 0x80) {
+			out[j++] = (char)b0;
+			out[j++] = (char)p[i + 1];
+			i += 2;
+		} else if (b0 == 0xED && i + 5 < in_len &&
+			p[i + 1] >= 0xA0 && p[i + 1] <= 0xAF && (p[i + 2] & 0xC0) == 0x80 &&
+			p[i + 3] == 0xED &&
+			p[i + 4] >= 0xB0 && p[i + 4] <= 0xBF && (p[i + 5] & 0xC0) == 0x80) {
+			/* CESU-8 6-byte surrogate pair -> standard 4-byte UTF-8 */
+			uint32_t hi = 0xD800U | ((uint32_t)(p[i + 1] & 0x0FU) << 6) | (uint32_t)(p[i + 2] & 0x3FU);
+			uint32_t lo = 0xDC00U | ((uint32_t)(p[i + 4] & 0x0FU) << 6) | (uint32_t)(p[i + 5] & 0x3FU);
+			uint32_t cp = 0x10000U + (((hi - 0xD800U) << 10) | (lo - 0xDC00U));
+			out[j++] = (char)(0xF0U | (cp >> 18));
+			out[j++] = (char)(0x80U | ((cp >> 12) & 0x3FU));
+			out[j++] = (char)(0x80U | ((cp >> 6) & 0x3FU));
+			out[j++] = (char)(0x80U | (cp & 0x3FU));
+			i += 6;
+		} else if (b0 == 0xED && i + 2 < in_len &&
+			p[i + 1] >= 0xA0 && p[i + 1] <= 0xBF && (p[i + 2] & 0xC0) == 0x80) {
+			/* Unpaired UTF-16 surrogate -> U+FFFD */
+			out[j++] = (char)0xEF;
+			out[j++] = (char)0xBF;
+			out[j++] = (char)0xBD;
+			i += 3;
+		} else if (b0 >= 0xE0 && b0 <= 0xEF && i + 2 < in_len &&
+			(p[i + 2] & 0xC0) == 0x80 &&
+			((b0 == 0xE0 && p[i + 1] >= 0xA0 && p[i + 1] <= 0xBF) ||
+			 (b0 == 0xED && p[i + 1] >= 0x80 && p[i + 1] <= 0x9F) ||
+			 (b0 != 0xE0 && b0 != 0xED && (p[i + 1] & 0xC0) == 0x80))) {
+			out[j++] = (char)b0;
+			out[j++] = (char)p[i + 1];
+			out[j++] = (char)p[i + 2];
+			i += 3;
+		} else if (b0 >= 0xF0 && b0 <= 0xF4 && i + 3 < in_len &&
+			(p[i + 2] & 0xC0) == 0x80 && (p[i + 3] & 0xC0) == 0x80 &&
+			((b0 == 0xF0 && p[i + 1] >= 0x90 && p[i + 1] <= 0xBF) ||
+			 (b0 == 0xF4 && p[i + 1] >= 0x80 && p[i + 1] <= 0x8F) ||
+			 (b0 >= 0xF1 && b0 <= 0xF3 && (p[i + 1] & 0xC0) == 0x80))) {
+			out[j++] = (char)b0;
+			out[j++] = (char)p[i + 1];
+			out[j++] = (char)p[i + 2];
+			out[j++] = (char)p[i + 3];
+			i += 4;
+		} else {
+			/* Malformed byte -> U+FFFD */
+			out[j++] = (char)0xEF;
+			out[j++] = (char)0xBF;
+			out[j++] = (char)0xBD;
+			i += 1;
+		}
+	}
+	out[j] = '\0';
+	return out;
+}
+
+static jstring jni_new_string_from_utf8(JNIEnv *env, const char *utf8)
+{
+	if (!utf8) {
+		return NULL;
+	}
+	size_t len = strlen(utf8);
+	if (len == 0) {
+		jchar empty = 0;
+		return (*env)->NewString(env, &empty, 0);
+	}
+	if (len > (size_t)INT32_MAX) {
+		len = (size_t)INT32_MAX;
+	}
+
+	jchar stack_buf[256];
+	jchar *u16_buf = stack_buf;
+	if (len > 256) {
+		u16_buf = (jchar *)malloc(len * sizeof(jchar));
+		if (!u16_buf) {
+			return NULL;
+		}
+	}
+
+	const uint8_t *p = (const uint8_t *)utf8;
+	size_t i = 0;
+	size_t u16_len = 0;
+	while (i < len) {
+		uint8_t b0 = p[i];
+		uint32_t cp = 0xFFFDU;
+		if (b0 < 0x80) {
+			cp = b0;
+			i += 1;
+		} else if (b0 >= 0xC2 && b0 <= 0xDF) {
+			if (i + 1 < len && (p[i + 1] & 0xC0) == 0x80) {
+				cp = ((uint32_t)(b0 & 0x1FU) << 6) | (uint32_t)(p[i + 1] & 0x3FU);
+				i += 2;
+			} else {
+				i += 1;
+			}
+		} else if (b0 >= 0xE0 && b0 <= 0xEF) {
+			if (i + 2 < len && (p[i + 2] & 0xC0) == 0x80 &&
+				((b0 == 0xE0 && p[i + 1] >= 0xA0 && p[i + 1] <= 0xBF) ||
+				 (b0 == 0xED && p[i + 1] >= 0x80 && p[i + 1] <= 0x9F) ||
+				 (b0 != 0xE0 && b0 != 0xED && (p[i + 1] & 0xC0) == 0x80))) {
+				cp = ((uint32_t)(b0 & 0x0FU) << 12) |
+				     ((uint32_t)(p[i + 1] & 0x3FU) << 6) |
+				     (uint32_t)(p[i + 2] & 0x3FU);
+				i += 3;
+			} else {
+				i += 1;
+			}
+		} else if (b0 >= 0xF0 && b0 <= 0xF4) {
+			if (i + 3 < len &&
+				(p[i + 2] & 0xC0) == 0x80 && (p[i + 3] & 0xC0) == 0x80 &&
+				((b0 == 0xF0 && p[i + 1] >= 0x90 && p[i + 1] <= 0xBF) ||
+				 (b0 == 0xF4 && p[i + 1] >= 0x80 && p[i + 1] <= 0x8F) ||
+				 (b0 >= 0xF1 && b0 <= 0xF3 && (p[i + 1] & 0xC0) == 0x80))) {
+				cp = ((uint32_t)(b0 & 0x07U) << 18) |
+				     ((uint32_t)(p[i + 1] & 0x3FU) << 12) |
+				     ((uint32_t)(p[i + 2] & 0x3FU) << 6) |
+				     (uint32_t)(p[i + 3] & 0x3FU);
+				i += 4;
+			} else {
+				i += 1;
+			}
+		} else {
+			i += 1;
+		}
+
+		if (cp <= 0xFFFFU) {
+			u16_buf[u16_len++] = (jchar)cp;
+		} else {
+			uint32_t adj = cp - 0x10000U;
+			u16_buf[u16_len++] = (jchar)(0xD800U + (adj >> 10));
+			u16_buf[u16_len++] = (jchar)(0xDC00U + (adj & 0x3FFU));
+		}
+	}
+
+	jstring result = (*env)->NewString(env, u16_buf, (jsize)u16_len);
+	if (u16_buf != stack_buf) {
+		free(u16_buf);
+	}
+	return result;
+}
+
 static void throw_io_exception(JNIEnv *env, const char *msg)
 {
 	if ((*env)->ExceptionCheck(env)) {
 		return;
 	}
 	jclass ioExCls = (*env)->FindClass(env, "java/io/IOException");
-	if (ioExCls) {
-		(*env)->ThrowNew(env, ioExCls, msg ? msg : "Archive extraction error");
-		(*env)->DeleteLocalRef(env, ioExCls);
+	if (!ioExCls || (*env)->ExceptionCheck(env)) {
+		return;
 	}
+	const char *safe_msg = msg ? msg : "Archive extraction error";
+	jmethodID ctor = (*env)->GetMethodID(env, ioExCls, "<init>", "(Ljava/lang/String;)V");
+	if (ctor && !(*env)->ExceptionCheck(env)) {
+		jstring jMsg = jni_new_string_from_utf8(env, safe_msg);
+		if (jMsg && !(*env)->ExceptionCheck(env)) {
+			jthrowable exObj = (jthrowable)(*env)->NewObject(env, ioExCls, ctor, jMsg);
+			(*env)->DeleteLocalRef(env, jMsg);
+			if (exObj && !(*env)->ExceptionCheck(env)) {
+				(*env)->Throw(env, exObj);
+				(*env)->DeleteLocalRef(env, exObj);
+				(*env)->DeleteLocalRef(env, ioExCls);
+				return;
+			}
+			if (exObj) {
+				(*env)->DeleteLocalRef(env, exObj);
+			}
+		} else if (jMsg) {
+			(*env)->DeleteLocalRef(env, jMsg);
+		}
+	}
+	if (!(*env)->ExceptionCheck(env)) {
+		(*env)->ThrowNew(env, ioExCls, "Archive extraction error");
+	}
+	(*env)->DeleteLocalRef(env, ioExCls);
 }
 
 static int write_all_fd(int fd, const uint8_t *buf, size_t len, int *out_errno)
@@ -100,15 +346,20 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 	}
 
 	jclass cbCls = (*env)->GetObjectClass(env, callback);
-	if (!cbCls) {
+	if (!cbCls || (*env)->ExceptionCheck(env)) {
 		return -1;
 	}
 	jmethodID midOnEntry = (*env)->GetMethodID(env, cbCls, "onEntry", "([BJ)Ljava/lang/String;");
-	jmethodID midOnProgress = (*env)->GetMethodID(env, cbCls, "onProgress", "(J)V");
-	(*env)->DeleteLocalRef(env, cbCls);
-	if (!midOnEntry || !midOnProgress) {
+	if (!midOnEntry || (*env)->ExceptionCheck(env)) {
+		(*env)->DeleteLocalRef(env, cbCls);
 		return -1;
 	}
+	jmethodID midOnProgress = (*env)->GetMethodID(env, cbCls, "onProgress", "(J)V");
+	if (!midOnProgress || (*env)->ExceptionCheck(env)) {
+		(*env)->DeleteLocalRef(env, cbCls);
+		return -1;
+	}
+	(*env)->DeleteLocalRef(env, cbCls);
 
 	(void)lseek((int)fd, 0, SEEK_SET);
 
@@ -165,7 +416,7 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 		}
 
 		mode_t ft = archive_entry_filetype(entry);
-		if (ft != AE_IFREG && ft != 0) {
+		if (ft == AE_IFDIR || (ft != AE_IFREG && ft != 0)) {
 			archive_read_data_skip(a);
 			continue;
 		}
@@ -180,16 +431,27 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 		}
 
 		size_t path_len = strlen(raw_path);
-		if (raw_path[path_len - 1] == '/' || raw_path[path_len - 1] == '\\') {
+		if (path_len > (size_t)INT32_MAX) {
+			throw_io_exception(env, "Archive entry pathname exceeds maximum length");
+			goto cleanup;
+		}
+		/* Only treat trailing '\\' (0x5C) as directory separator when raw_path is valid UTF-8,
+		 * because 0x5C is a valid trail byte in Shift-JIS / GBK (e.g. ソ, 表, 十). */
+		if (raw_path[path_len - 1] == '/' ||
+			(raw_path[path_len - 1] == '\\' && is_valid_utf8(raw_path, path_len))) {
 			archive_read_data_skip(a);
 			continue;
 		}
 
 		jbyteArray jPathBytes = (*env)->NewByteArray(env, (jsize)path_len);
-		if (!jPathBytes) {
+		if (!jPathBytes || (*env)->ExceptionCheck(env)) {
 			goto cleanup;
 		}
 		(*env)->SetByteArrayRegion(env, jPathBytes, 0, (jsize)path_len, (const jbyte *)raw_path);
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->DeleteLocalRef(env, jPathBytes);
+			goto cleanup;
+		}
 
 		jlong entry_size = archive_entry_size_is_set(entry) ? (jlong)archive_entry_size(entry) : (jlong)-1;
 		jstring jOutPath = (jstring)(*env)->CallObjectMethod(env, callback, midOnEntry, jPathBytes, entry_size);
@@ -205,19 +467,39 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 			continue;
 		}
 
-		const char *out_path = (*env)->GetStringUTFChars(env, jOutPath, NULL);
-		if (!out_path) {
+		const char *mutf8_out_path = (*env)->GetStringUTFChars(env, jOutPath, NULL);
+		if (!mutf8_out_path || (*env)->ExceptionCheck(env)) {
 			(*env)->DeleteLocalRef(env, jOutPath);
+			if (!(*env)->ExceptionCheck(env)) {
+				throw_io_exception(env, "Out of memory reading output path");
+			}
 			goto cleanup;
 		}
-		int out_fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-		int open_err = errno;
-		(*env)->ReleaseStringUTFChars(env, jOutPath, out_path);
+		jsize u16_out_len = (*env)->GetStringLength(env, jOutPath);
+		int has_embedded_nul = (strstr(mutf8_out_path, "\xc0\x80") != NULL);
+		char *utf8_out_path = has_embedded_nul ? NULL : mutf8_to_utf8_alloc(mutf8_out_path);
+		(*env)->ReleaseStringUTFChars(env, jOutPath, mutf8_out_path);
 		(*env)->DeleteLocalRef(env, jOutPath);
+
+		if (has_embedded_nul || (u16_out_len > 0 && (!utf8_out_path || utf8_out_path[0] == '\0'))) {
+			free(utf8_out_path);
+			throw_io_exception(env, has_embedded_nul
+				? "Invalid NUL character in output path"
+				: "Out of memory converting output path to UTF-8");
+			goto cleanup;
+		}
+		if (!utf8_out_path) {
+			throw_io_exception(env, "Out of memory converting output path to UTF-8");
+			goto cleanup;
+		}
+
+		int out_fd = open(utf8_out_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+		int open_err = errno;
+		free(utf8_out_path);
 
 		if (out_fd < 0) {
 			char msg[512];
-			if (open_err == ENOSPC) {
+			if (open_err == ENOSPC || open_err == EDQUOT) {
 				snprintf(msg, sizeof(msg), "ENOSPC: No space left on device");
 			} else {
 				snprintf(msg, sizeof(msg), "Cannot create output file: %s", strerror(open_err));
@@ -254,7 +536,9 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 				if (lseek(out_fd, (off_t)chunk_off, SEEK_SET) == (off_t)-1) {
 					int seek_err = errno;
 					close(out_fd);
-					throw_io_exception(env, seek_err == ENOSPC ? "ENOSPC: No space left on device" : strerror(seek_err));
+					throw_io_exception(env, (seek_err == ENOSPC || seek_err == EDQUOT)
+						? "ENOSPC: No space left on device"
+						: strerror(seek_err));
 					goto cleanup;
 				}
 				cur_off = chunk_off;
@@ -264,7 +548,7 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 				if (write_all_fd(out_fd, (const uint8_t *)chunk, chunk_len, &write_err) != 0) {
 					close(out_fd);
 					char msg[512];
-					if (write_err == ENOSPC) {
+					if (write_err == ENOSPC || write_err == EDQUOT) {
 						snprintf(msg, sizeof(msg), "ENOSPC: No space left on device");
 					} else {
 						snprintf(msg, sizeof(msg), "Write failed: %s", strerror(write_err));
@@ -287,15 +571,35 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 		}
 
 		if (entry_size > cur_off) {
-			if (ftruncate(out_fd, (off_t)entry_size) != 0 && errno == ENOSPC) {
+			int tr_ret;
+			do {
+				tr_ret = ftruncate(out_fd, (off_t)entry_size);
+			} while (tr_ret != 0 && errno == EINTR);
+			if (tr_ret != 0) {
+				int tr_err = errno;
 				close(out_fd);
-				throw_io_exception(env, "ENOSPC: No space left on device");
+				char msg[512];
+				if (tr_err == ENOSPC || tr_err == EDQUOT) {
+					snprintf(msg, sizeof(msg), "ENOSPC: No space left on device");
+				} else {
+					snprintf(msg, sizeof(msg), "ftruncate failed: %s", strerror(tr_err));
+				}
+				LOGE("%s", msg);
+				throw_io_exception(env, msg);
 				goto cleanup;
 			}
 		}
 
-		if (close(out_fd) != 0 && errno == ENOSPC) {
-			throw_io_exception(env, "ENOSPC: No space left on device");
+		if (close(out_fd) != 0) {
+			int close_err = errno;
+			char msg[512];
+			if (close_err == ENOSPC || close_err == EDQUOT) {
+				snprintf(msg, sizeof(msg), "ENOSPC: No space left on device");
+			} else {
+				snprintf(msg, sizeof(msg), "Close failed: %s", strerror(close_err));
+			}
+			LOGE("%s", msg);
+			throw_io_exception(env, msg);
 			goto cleanup;
 		}
 		count++;

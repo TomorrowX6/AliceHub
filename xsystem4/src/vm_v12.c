@@ -140,12 +140,13 @@ static void resize_array(int slot, int count)
 
 static void alloc_dimensions(int slot, const int *dimensions, int remaining)
 {
+	int dim0 = max(dimensions[0], 0);
 	resize_array(slot, 0);
-	resize_array(slot, dimensions[0]);
-	if (remaining < 2 || dimensions[1] == -1) return;
+	resize_array(slot, dim0);
+	if (remaining < 2 || dimensions[1] < 0) return;
 	if (element_type(heap_get_page(slot)).data != AIN_ARRAY)
 		VM_ERROR("Too many dimensions in Array.Alloc");
-	for (int i = 0; i < dimensions[0]; i++)
+	for (int i = 0; i < dim0; i++)
 		alloc_dimensions(heap_get_page(slot)->values[i].i, dimensions + 1, remaining - 1);
 }
 
@@ -574,6 +575,8 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 	int size = v12_array_length(p);
 	const char *name = f->name;
 	if (!strcmp(name, "Alloc")) {
+		if (f->nr_arguments < 2 || f->nr_arguments > 8)
+			VM_ERROR("Invalid Array.Alloc argument count: %d", f->nr_arguments);
 		int dimensions[7];
 		for (int i = 1; i < f->nr_arguments; i++) dimensions[i - 1] = args[i][0].i;
 		alloc_dimensions(slot, dimensions, f->nr_arguments - 1);
@@ -711,23 +714,26 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		free(copy);
 		stack_push(count);
 	} else if (!strcmp(name, "ShallowCopy")) {
-		struct page *copy = alloc_page(ARRAY_PAGE, AIN_ARRAY, p->nr_vars);
-		copy->array = p->array;
+		struct ain_type src_type = element_type(p);
+		struct ain_type dst_type = p->array.element_type;
 		if (ain->version >= 14) {
-			if (copy->array.element_type.data == AIN_STRUCT)
-				copy->array.element_type.data = AIN_REF_STRUCT;
+			if (dst_type.data == AIN_STRUCT)
+				dst_type.data = AIN_REF_STRUCT;
 		} else {
-			if (copy->array.element_type.data == AIN_STRUCT
+			if (dst_type.data == AIN_STRUCT
 					|| parameter == AIN_STRUCT || parameter == AIN_REF_STRUCT)
-				copy->array.element_type.data = AIN_REF_STRUCT;
+				dst_type.data = AIN_REF_STRUCT;
 			else if (parameter >= 0)
-				copy->array.element_type.data = parameter;
+				dst_type.data = parameter;
 		}
-		struct ain_type dst_type = copy->array.element_type;
-		int width = type_stride(&dst_type);
+		int src_width = type_stride(&src_type);
+		int dst_width = type_stride(&dst_type);
+		struct page *copy = alloc_page(ARRAY_PAGE, AIN_ARRAY, size * dst_width);
+		copy->array = p->array;
+		copy->array.element_type = dst_type;
 		for (int i = 0; i < size; i++) {
 			p = heap_get_page(slot);
-			elem_value_copy(&copy->values[i * width], &p->values[i * width], &dst_type);
+			elem_value_copy(&copy->values[i * dst_width], &p->values[i * src_width], &dst_type);
 		}
 		stack_push(heap_alloc_page(copy));
 	} else if (!strcmp(name, "Where")) {
@@ -1133,10 +1139,19 @@ static void re_class_add_range(struct re_class *cls, uint32_t lo, uint32_t hi)
 	cls->ranges[cls->nr_ranges++] = (struct re_range){ lo, hi };
 }
 
+#define RE_MAX_INSTS 65536
+
 static int re_emit(struct re_prog *p, enum re_opcode op, int arg1, int arg2)
 {
+	if (p->error || p->nr_insts >= RE_MAX_INSTS) {
+		p->error = true;
+		return 0;
+	}
 	if (p->nr_insts >= p->cap_insts) {
-		p->cap_insts = p->cap_insts ? p->cap_insts * 2 : 32;
+		int next_cap = p->cap_insts ? p->cap_insts * 2 : 32;
+		if (next_cap > RE_MAX_INSTS)
+			next_cap = RE_MAX_INSTS;
+		p->cap_insts = next_cap;
 		p->insts = xrealloc(p->insts, (size_t)p->cap_insts * sizeof(*p->insts));
 	}
 	int idx = p->nr_insts++;
@@ -1147,6 +1162,8 @@ static int re_emit(struct re_prog *p, enum re_opcode op, int arg1, int arg2)
 static void re_insert_at(struct re_prog *p, int pos, enum re_opcode op, int arg1, int arg2)
 {
 	re_emit(p, RE_OP_MATCH, 0, 0);
+	if (p->error)
+		return;
 	memmove(&p->insts[pos + 1], &p->insts[pos], (size_t)(p->nr_insts - 1 - pos) * sizeof(*p->insts));
 	p->insts[pos] = (struct re_inst){ op, arg1, arg2 };
 	for (int i = pos + 1; i < p->nr_insts; i++) {
@@ -1163,7 +1180,7 @@ static void re_append_relocated(struct re_prog *p, const struct re_inst *tpl, in
 {
 	int dst_base = p->nr_insts;
 	int delta = dst_base - orig_base;
-	for (int i = 0; i < tpl_len; i++) {
+	for (int i = 0; i < tpl_len && !p->error; i++) {
 		struct re_inst in = tpl[i];
 		if (in.op == RE_OP_JMP && in.arg1 >= orig_base)
 			in.arg1 += delta;
@@ -1413,14 +1430,17 @@ static void re_compile_seq(struct re_prog *p, const char *pat, size_t len, size_
 			re_insert_at(p, atom_start, RE_OP_SPLIT, 0, 0);
 			int body = atom_start + 1;
 			re_emit(p, RE_OP_JMP, atom_start, 0);
+			if (p->error) return;
 			int after = p->nr_insts;
 			p->insts[atom_start].arg1 = greedy ? body : after;
 			p->insts[atom_start].arg2 = greedy ? after : body;
 		} else if (min_r == 1 && max_r == -1) {
 			int after = p->nr_insts + 1;
 			re_emit(p, RE_OP_SPLIT, greedy ? atom_start : after, greedy ? after : atom_start);
+			if (p->error) return;
 		} else if (min_r == 0 && max_r == 1) {
 			re_insert_at(p, atom_start, RE_OP_SPLIT, 0, 0);
+			if (p->error) return;
 			int body = atom_start + 1;
 			int after = p->nr_insts;
 			p->insts[atom_start].arg1 = greedy ? body : after;
@@ -1430,24 +1450,28 @@ static void re_compile_seq(struct re_prog *p, const char *pat, size_t len, size_
 			struct re_inst *tpl = xmalloc((size_t)tpl_len * sizeof(*tpl));
 			memcpy(tpl, &p->insts[atom_start], (size_t)tpl_len * sizeof(*tpl));
 			p->nr_insts = atom_start;
-			for (int k = 0; k < min_r; k++)
+			for (int k = 0; k < min_r && !p->error; k++)
 				re_append_relocated(p, tpl, tpl_len, atom_start);
-			if (max_r == -1) {
+			if (!p->error && max_r == -1) {
 				int sp = re_emit(p, RE_OP_SPLIT, 0, 0);
 				int body = p->nr_insts;
 				re_append_relocated(p, tpl, tpl_len, atom_start);
 				re_emit(p, RE_OP_JMP, sp, 0);
-				int after = p->nr_insts;
-				p->insts[sp].arg1 = greedy ? body : after;
-				p->insts[sp].arg2 = greedy ? after : body;
-			} else {
-				for (int k = min_r; k < max_r; k++) {
-					int sp = re_emit(p, RE_OP_SPLIT, 0, 0);
-					int body = p->nr_insts;
-					re_append_relocated(p, tpl, tpl_len, atom_start);
+				if (!p->error) {
 					int after = p->nr_insts;
 					p->insts[sp].arg1 = greedy ? body : after;
 					p->insts[sp].arg2 = greedy ? after : body;
+				}
+			} else if (!p->error) {
+				for (int k = min_r; k < max_r && !p->error; k++) {
+					int sp = re_emit(p, RE_OP_SPLIT, 0, 0);
+					int body = p->nr_insts;
+					re_append_relocated(p, tpl, tpl_len, atom_start);
+					if (!p->error) {
+						int after = p->nr_insts;
+						p->insts[sp].arg1 = greedy ? body : after;
+						p->insts[sp].arg2 = greedy ? after : body;
+					}
 				}
 			}
 			free(tpl);
@@ -1464,10 +1488,13 @@ static void re_compile_alt(struct re_prog *p, const char *pat, size_t len, size_
 	(*off)++; // consume '|'
 	re_insert_at(p, alt_start, RE_OP_SPLIT, alt_start + 1, 0);
 	int jmp_end = re_emit(p, RE_OP_JMP, 0, 0);
+	if (p->error)
+		return;
 	int rhs_start = p->nr_insts;
 	p->insts[alt_start].arg2 = rhs_start;
 	re_compile_alt(p, pat, len, off, in_group);
-	p->insts[jmp_end].arg1 = p->nr_insts;
+	if (!p->error)
+		p->insts[jmp_end].arg1 = p->nr_insts;
 }
 
 static bool re_compile(struct re_prog *p, const char *pat_utf)
@@ -1491,6 +1518,13 @@ static void re_free(struct re_prog *p)
 	free(p->insts);
 }
 
+struct re_bt_entry {
+	bool is_save_undo;
+	int slot_or_pc;
+	int old_val;
+	size_t off;
+};
+
 struct re_exec_ctx {
 	const struct re_prog *prog;
 	const char *text;
@@ -1499,7 +1533,19 @@ struct re_exec_ctx {
 	int *saved;
 	uint32_t *visited;
 	uint32_t gen;
+	struct re_bt_entry *bt_stack;
+	size_t bt_len;
+	size_t bt_cap;
 };
+
+static inline void re_bt_push(struct re_exec_ctx *ctx, struct re_bt_entry e)
+{
+	if (ctx->bt_len >= ctx->bt_cap) {
+		ctx->bt_cap = ctx->bt_cap ? ctx->bt_cap * 2 : 256;
+		ctx->bt_stack = xrealloc(ctx->bt_stack, ctx->bt_cap * sizeof(*ctx->bt_stack));
+	}
+	ctx->bt_stack[ctx->bt_len++] = e;
+}
 
 static bool re_at_word_boundary(const char *s, size_t len, size_t off)
 {
@@ -1521,10 +1567,11 @@ static bool re_at_word_boundary(const char *s, size_t len, size_t off)
 
 static bool re_exec_dfs(struct re_exec_ctx *ctx, int pc, size_t off)
 {
+	ctx->bt_len = 0;
 	for (;;) {
 		size_t vidx = (size_t)pc * (ctx->text_len + 1) + off;
 		if (ctx->visited[vidx] == ctx->gen)
-			return false;
+			goto backtrack;
 		ctx->visited[vidx] = ctx->gen;
 
 		const struct re_inst *in = &ctx->prog->insts[pc];
@@ -1532,7 +1579,7 @@ static bool re_exec_dfs(struct re_exec_ctx *ctx, int pc, size_t off)
 		case RE_OP_CHAR: {
 			uint32_t cp = 0;
 			int step = re_utf8_decode(ctx->text, ctx->text_len, off, &cp);
-			if (!step || cp != (uint32_t)in->arg1) return false;
+			if (!step || cp != (uint32_t)in->arg1) goto backtrack;
 			off += (size_t)step;
 			pc++;
 			break;
@@ -1540,7 +1587,7 @@ static bool re_exec_dfs(struct re_exec_ctx *ctx, int pc, size_t off)
 		case RE_OP_DOT: {
 			uint32_t cp = 0;
 			int step = re_utf8_decode(ctx->text, ctx->text_len, off, &cp);
-			if (!step || cp == '\n' || cp == '\r') return false;
+			if (!step || cp == '\n' || cp == '\r') goto backtrack;
 			off += (size_t)step;
 			pc++;
 			break;
@@ -1548,7 +1595,7 @@ static bool re_exec_dfs(struct re_exec_ctx *ctx, int pc, size_t off)
 		case RE_OP_SHORTHAND: {
 			uint32_t cp = 0;
 			int step = re_utf8_decode(ctx->text, ctx->text_len, off, &cp);
-			if (!step || !re_shorthand_matches((unsigned)in->arg1, cp)) return false;
+			if (!step || !re_shorthand_matches((unsigned)in->arg1, cp)) goto backtrack;
 			off += (size_t)step;
 			pc++;
 			break;
@@ -1556,45 +1603,69 @@ static bool re_exec_dfs(struct re_exec_ctx *ctx, int pc, size_t off)
 		case RE_OP_CLASS: {
 			uint32_t cp = 0;
 			int step = re_utf8_decode(ctx->text, ctx->text_len, off, &cp);
-			if (!step || !re_class_matches(&ctx->prog->classes[in->arg1], cp)) return false;
+			if (!step || !re_class_matches(&ctx->prog->classes[in->arg1], cp)) goto backtrack;
 			off += (size_t)step;
 			pc++;
 			break;
 		}
 		case RE_OP_BOL:
-			if (off != 0 && ctx->text[off - 1] != '\n') return false;
+			if (off != 0 && ctx->text[off - 1] != '\n') goto backtrack;
 			pc++;
 			break;
 		case RE_OP_EOL:
-			if (off != ctx->text_len && ctx->text[off] != '\n' && ctx->text[off] != '\r') return false;
+			if (off != ctx->text_len && ctx->text[off] != '\n' && ctx->text[off] != '\r') goto backtrack;
 			pc++;
 			break;
 		case RE_OP_WB:
-			if (!re_at_word_boundary(ctx->text, ctx->text_len, off)) return false;
+			if (!re_at_word_boundary(ctx->text, ctx->text_len, off)) goto backtrack;
 			pc++;
 			break;
 		case RE_OP_NWB:
-			if (re_at_word_boundary(ctx->text, ctx->text_len, off)) return false;
+			if (re_at_word_boundary(ctx->text, ctx->text_len, off)) goto backtrack;
 			pc++;
 			break;
 		case RE_OP_SAVE: {
-			int old = ctx->saved[in->arg1];
+			re_bt_push(ctx, (struct re_bt_entry){
+				.is_save_undo = true,
+				.slot_or_pc = in->arg1,
+				.old_val = ctx->saved[in->arg1],
+				.off = 0,
+			});
 			ctx->saved[in->arg1] = (int)off;
-			if (re_exec_dfs(ctx, pc + 1, off))
-				return true;
-			ctx->saved[in->arg1] = old;
-			return false;
+			pc++;
+			break;
 		}
 		case RE_OP_JMP:
 			pc = in->arg1;
 			break;
 		case RE_OP_SPLIT:
-			if (re_exec_dfs(ctx, in->arg1, off))
-				return true;
-			pc = in->arg2;
+			re_bt_push(ctx, (struct re_bt_entry){
+				.is_save_undo = false,
+				.slot_or_pc = in->arg2,
+				.old_val = 0,
+				.off = off,
+			});
+			pc = in->arg1;
 			break;
 		case RE_OP_MATCH:
-			return !ctx->full_match || off == ctx->text_len;
+			if (!ctx->full_match || off == ctx->text_len)
+				return true;
+			goto backtrack;
+		}
+		continue;
+
+backtrack:
+		for (;;) {
+			if (ctx->bt_len == 0)
+				return false;
+			struct re_bt_entry e = ctx->bt_stack[--ctx->bt_len];
+			if (e.is_save_undo) {
+				ctx->saved[e.slot_or_pc] = e.old_val;
+			} else {
+				pc = e.slot_or_pc;
+				off = e.off;
+				break;
+			}
 		}
 	}
 }
@@ -1624,8 +1695,18 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	size_t text_len = strlen(text_utf);
 	size_t rep_len = strlen(rep_utf);
 
+	size_t n_states = 0;
+	if (__builtin_mul_overflow((size_t)prog.nr_insts, text_len + 1, &n_states)
+			|| n_states > 64u * 1024u * 1024u) {
+		WARNING("Regex state space too large (%d insts, %zu bytes)", prog.nr_insts, text_len);
+		free(rep_utf);
+		free(text_utf);
+		re_free(&prog);
+		return string_dup(s);
+	}
+
 	int saved[RE_MAX_GROUPS * 2];
-	uint32_t *visited = xcalloc((size_t)prog.nr_insts * (text_len + 1), sizeof(*visited));
+	uint32_t *visited = xcalloc(n_states, sizeof(*visited));
 	struct re_exec_ctx ctx = {
 		.prog = &prog, .text = text_utf, .text_len = text_len,
 		.full_match = false, .saved = saved, .visited = visited, .gen = 0
@@ -1709,6 +1790,7 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	struct string *res = make_string(out_sjis, strlen(out_sjis));
 	free(out_sjis);
 	free(out_utf);
+	free(ctx.bt_stack);
 	free(visited);
 	free(rep_utf);
 	free(text_utf);
@@ -1739,8 +1821,17 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 	bool full_match = !strcmp(op_name, "Match");
 	bool search_all = !strcmp(op_name, "SearchAll");
 
+	size_t n_states = 0;
+	if (__builtin_mul_overflow((size_t)prog.nr_insts, text_len + 1, &n_states)
+			|| n_states > 64u * 1024u * 1024u) {
+		WARNING("Regex state space too large (%d insts, %zu bytes)", prog.nr_insts, text_len);
+		free(text_utf);
+		re_free(&prog);
+		return false;
+	}
+
 	int saved[RE_MAX_GROUPS * 2];
-	uint32_t *visited = xcalloc((size_t)prog.nr_insts * (text_len + 1), sizeof(*visited));
+	uint32_t *visited = xcalloc(n_states, sizeof(*visited));
 	struct re_exec_ctx ctx = {
 		.prog = &prog, .text = text_utf, .text_len = text_len,
 		.full_match = full_match, .saved = saved, .visited = visited, .gen = 0
@@ -1838,6 +1929,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 		}
 	}
 
+	free(ctx.bt_stack);
 	free(visited);
 	free(text_utf);
 	re_free(&prog);
@@ -2037,12 +2129,14 @@ static bool string_call(struct ain_hll_function *f)
 static bool delegate_call_hll(struct ain_hll_function *f)
 {
 	int fn = -1, object = -1, other_slot = -1;
+	bool unref_other = false;
 	if (f->nr_arguments == 2) {
 		if (f->arguments[1].type.data == AIN_HLL_FUNC) {
 			fn = stack_pop().i;
 			object = stack_pop().i;
 		} else {
 			other_slot = stack_pop().i;
+			unref_other = (f->arguments[1].type.data == AIN_DELEGATE);
 		}
 	}
 	int slot = stack_pop().i;
@@ -2057,6 +2151,8 @@ static bool delegate_call_hll(struct ain_hll_function *f)
 			stack_push(1);
 		else if (!strcmp(f->name, "ToString"))
 			stack_push(heap_alloc_string(string_ref(&EMPTY_STRING)));
+		if (unref_other && other_slot > 0 && page_index_valid(other_slot))
+			heap_unref(other_slot);
 		return true;
 	}
 	struct page *page = heap_get_page(slot);
@@ -2091,6 +2187,8 @@ static bool delegate_call_hll(struct ain_hll_function *f)
 		}
 		stack_push(heap_alloc_string(out));
 	} else VM_ERROR("Unimplemented AIN v12 Delegate.%s", f->name);
+	if (unref_other && other_slot > 0 && page_index_valid(other_slot))
+		heap_unref(other_slot);
 	return true;
 }
 

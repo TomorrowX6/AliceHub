@@ -252,7 +252,7 @@ public class SDLAudioManager {
                 }
 
                 if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && deviceId != 0) {
-                    mAudioRecord.setPreferredDevice(getOutputAudioDeviceInfo(deviceId));
+                    mAudioRecord.setPreferredDevice(getInputAudioDeviceInfo(deviceId));
                 }
 
                 try {
@@ -286,7 +286,7 @@ public class SDLAudioManager {
                 }
 
                 if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && deviceId != 0) {
-                    mAudioTrack.setPreferredDevice(getInputAudioDeviceInfo(deviceId));
+                    mAudioTrack.setPreferredDevice(getOutputAudioDeviceInfo(deviceId));
                 }
 
                 mAudioTrack.play();
@@ -304,8 +304,11 @@ public class SDLAudioManager {
     }
 
     private static AudioDeviceInfo getInputAudioDeviceInfo(int deviceId) {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && mContext != null) {
             AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) {
+                return null;
+            }
             return Arrays.stream(audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS))
                     .filter(deviceInfo -> deviceInfo.getId() == deviceId)
                     .findFirst()
@@ -316,8 +319,11 @@ public class SDLAudioManager {
     }
 
     private static AudioDeviceInfo getOutputAudioDeviceInfo(int deviceId) {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && mContext != null) {
             AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) {
+                return null;
+            }
             return Arrays.stream(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
                     .filter(deviceInfo -> deviceInfo.getId() == deviceId)
                     .findFirst()
@@ -328,16 +334,20 @@ public class SDLAudioManager {
     }
 
     private static void registerAudioDeviceCallback() {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && mContext != null && mAudioDeviceCallback != null) {
             AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
-            audioManager.registerAudioDeviceCallback(mAudioDeviceCallback, null);
+            if (audioManager != null) {
+                audioManager.registerAudioDeviceCallback(mAudioDeviceCallback, null);
+            }
         }
     }
 
     private static void unregisterAudioDeviceCallback(Context context) {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && context != null && mAudioDeviceCallback != null) {
             AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            audioManager.unregisterAudioDeviceCallback(mAudioDeviceCallback);
+            if (audioManager != null) {
+                audioManager.unregisterAudioDeviceCallback(mAudioDeviceCallback);
+            }
         }
     }
 
@@ -345,8 +355,11 @@ public class SDLAudioManager {
      * This method is called by SDL using JNI.
      */
     public static int[] getAudioOutputDevices() {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && mContext != null) {
             AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) {
+                return NO_DEVICES;
+            }
             return Arrays.stream(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)).mapToInt(AudioDeviceInfo::getId).toArray();
         } else {
             return NO_DEVICES;
@@ -357,8 +370,11 @@ public class SDLAudioManager {
      * This method is called by SDL using JNI.
      */
     public static int[] getAudioInputDevices() {
-        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */) {
+        if (Build.VERSION.SDK_INT >= 24 /* Android 7.0 (N) */ && mContext != null) {
             AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) {
+                return NO_DEVICES;
+            }
             return Arrays.stream(audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)).mapToInt(AudioDeviceInfo::getId).toArray();
         } else {
             return NO_DEVICES;
@@ -464,6 +480,13 @@ public class SDLAudioManager {
 
     /** This method is called by SDL using JNI. */
     public static int captureReadFloatBuffer(float[] buffer, boolean blocking) {
+        if (mAudioRecord == null) {
+            Log.e(TAG, "Attempted to make capture call with uninitialized audio!");
+            return -1;
+        }
+        if (buffer == null) {
+            return 0;
+        }
         if (Build.VERSION.SDK_INT < 23 /* Android 6.0 (M) */) {
             return 0;
         } else {
@@ -473,6 +496,13 @@ public class SDLAudioManager {
 
     /** This method is called by SDL using JNI. */
     public static int captureReadShortBuffer(short[] buffer, boolean blocking) {
+        if (mAudioRecord == null) {
+            Log.e(TAG, "Attempted to make capture call with uninitialized audio!");
+            return -1;
+        }
+        if (buffer == null) {
+            return 0;
+        }
         if (Build.VERSION.SDK_INT < 23 /* Android 6.0 (M) */) {
             return mAudioRecord.read(buffer, 0, buffer.length);
         } else {
@@ -482,6 +512,13 @@ public class SDLAudioManager {
 
     /** This method is called by SDL using JNI. */
     public static int captureReadByteBuffer(byte[] buffer, boolean blocking) {
+        if (mAudioRecord == null) {
+            Log.e(TAG, "Attempted to make capture call with uninitialized audio!");
+            return -1;
+        }
+        if (buffer == null) {
+            return 0;
+        }
         if (Build.VERSION.SDK_INT < 23 /* Android 6.0 (M) */) {
             return mAudioRecord.read(buffer, 0, buffer.length);
         } else {

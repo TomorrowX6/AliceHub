@@ -109,7 +109,11 @@ struct string *string_dup(const struct string *in)
 struct string *integer_to_string(int n)
 {
 	char buf[512];
-	int len = snprintf(buf, 512, "%d", n);
+	int len = snprintf(buf, sizeof(buf), "%d", n);
+	if (len < 0)
+		len = 0;
+	else if ((size_t)len >= sizeof(buf))
+		len = sizeof(buf) - 1;
 	return make_string(buf, len);
 }
 
@@ -165,7 +169,11 @@ struct string *float_to_string(float f, int precision)
 		precision = 6;
 	}
 
-	len = snprintf(buf, 512, "%.*f", precision, f);
+	len = snprintf(buf, sizeof(buf), "%.*f", precision, f);
+	if (len < 0)
+		len = 0;
+	else if ((size_t)len >= sizeof(buf))
+		len = sizeof(buf) - 1;
 	return make_string(buf, len);
 }
 
@@ -199,18 +207,26 @@ void string_append_cstr(struct string **_a, const char *b, size_t b_size)
 {
 	if (!b_size)
 		return;
-	size_t a_size = (*_a)->size;
-	struct string *a = string_realloc(*_a, a_size + b_size);
-	memcpy(a->text + a_size, b, b_size);
+	struct string *old_a = *_a;
+	size_t a_size = old_a->size;
+	uintptr_t old_start = (uintptr_t)old_a->text;
+	uintptr_t old_end = (uintptr_t)(old_a->text + a_size + 1);
+	bool aliased = (uintptr_t)b >= old_start && (uintptr_t)b < old_end;
+	size_t b_off = aliased ? (size_t)((uintptr_t)b - old_start) : 0;
+
+	struct string *a = string_realloc(old_a, a_size + b_size);
+	const char *src = aliased ? (a->text + b_off) : b;
+	memmove(a->text + a_size, src, b_size);
+	a->text[a_size + b_size] = '\0';
 	*_a = a;
 }
 
 void string_append(struct string **_a, const struct string *b)
 {
-	size_t a_size = (*_a)->size;
-	struct string *a = string_realloc(*_a, a_size + b->size);
-	memcpy(a->text + a_size, b->text, b->size);
-	*_a = a;
+	size_t b_size = b->size;
+	if (!b_size)
+		return;
+	string_append_cstr(_a, b->text, b_size);
 }
 
 void string_push_back(struct string **_s, int c)
@@ -233,7 +249,7 @@ void string_pop_back(struct string **s)
 	int c = 0;
 	for (int i = 0; i < (*s)->size; i++) {
 		c = i;
-		if (SJIS_2BYTE((*s)->text[i])) {
+		if (SJIS_2BYTE((*s)->text[i]) && i + 1 < (*s)->size && (*s)->text[i + 1] != '\0') {
 			i++;
 		}
 	}
@@ -248,15 +264,13 @@ void string_erase(struct string **s, int index)
 		index = 0;
 	if (index >= (*s)->size)
 		return;
-	if ((index = sjis_index((*s)->text, index)) < 0)
+	if ((index = sjis_index((*s)->text, index)) < 0 || index >= (*s)->size)
 		return;
-	bytes = SJIS_2BYTE((*s)->text[index]) ? 2 : 1;
+	bytes = (SJIS_2BYTE((*s)->text[index]) && index + 1 < (*s)->size && (*s)->text[index + 1] != '\0') ? 2 : 1;
 
 	*s = cow_check(*s);
 	size_t size = (*s)->size - index - bytes;
-	for (size_t i = 0; i < size; i++) {
-		(*s)->text[index+i] = (*s)->text[index+bytes+i];
-	}
+	memmove((*s)->text + index, (*s)->text + index + bytes, size);
 	(*s)->size -= bytes;
 	(*s)->text[(*s)->size] = '\0';
 }
@@ -273,7 +287,7 @@ int string_find(const struct string *haystack, const struct string *needle)
 	for (int i = 0; i < haystack->size; i++, c++) {
 		if (!strncmp(haystack->text+i, needle->text, needle->size))
 			return c;
-		if (SJIS_2BYTE(haystack->text[i])) {
+		if (SJIS_2BYTE(haystack->text[i]) && i + 1 < haystack->size && haystack->text[i + 1] != '\0') {
 			i++;
 		}
 	}
@@ -285,12 +299,12 @@ int string_get_char(const struct string *str, int i)
 	// Comparing with the byte length is weird but this is how System4.0 works.
 	if (i < 0 || i > str->size)
 		ERROR("String index out of bounds");
-	if ((i = sjis_index(str->text, i)) < 0)
+	if ((i = sjis_index(str->text, i)) < 0 || i >= str->size)
 		return 0;
 
-	if (SJIS_2BYTE(str->text[i]))
+	if (SJIS_2BYTE(str->text[i]) && i + 1 < str->size && str->text[i + 1] != '\0')
 		return (uint8_t)str->text[i] | ((uint8_t)str->text[i+1] << 8);
-	return str->text[i];
+	return (uint8_t)str->text[i];
 }
 
 void string_set_char(struct string **_str, int i, unsigned int c)
@@ -301,7 +315,7 @@ void string_set_char(struct string **_str, int i, unsigned int c)
 	// Comparing with the byte length is weird but this is how System4.0 works.
 	if (i < 0 || i >= str->size)
 		ERROR("String index out of bounds");
-	if ((i = sjis_index(str->text, i)) < 0)
+	if ((i = sjis_index(str->text, i)) < 0 || i >= str->size)
 		return;
 
 	if (c == 0) {
@@ -312,7 +326,7 @@ void string_set_char(struct string **_str, int i, unsigned int c)
 	}
 
 	bytes_src = SJIS_2BYTE(c) ? 2 : 1;
-	bytes_dst = SJIS_2BYTE(str->text[i]) ? 2 : 1;
+	bytes_dst = (SJIS_2BYTE(str->text[i]) && i + 1 < str->size && str->text[i + 1] != '\0') ? 2 : 1;
 
 	if (bytes_src == 1 && bytes_dst == 1) {
 		str->text[i] = c;

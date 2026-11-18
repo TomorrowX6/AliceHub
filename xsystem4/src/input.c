@@ -16,6 +16,7 @@
 
 #include <math.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,11 +46,11 @@
 #endif
 
 bool key_state[VK_NR_KEYCODES];
-static bool hook_close_app = false;
+static atomic_bool hook_close_app = false;
 static unsigned pending_close_requests = 0;
 static uint32_t first_unpopped_close_tick = 0;
 static bool kbd_ctrl_down = false;
-static volatile bool touch_ctrl_skip = false;
+static atomic_bool touch_ctrl_skip = false;
 
 #define MOVIE_HOLD_SKIP_MS 800
 #define MOVIE_TOUCH_SLOP_SQ (0.05f * 0.05f)
@@ -83,19 +84,31 @@ struct input_action_spec {
 	bool toggle_mode;
 };
 
-struct vpad_slot_state {
+// Protected by gp_mutex (written by UI thread / JNI, snapshotted by SDLThread)
+struct vpad_ui_slot_state {
 	bool phys_down;
 	bool pending_press_edge;
 	struct input_action_spec pending_action;
+	struct input_action_spec active_action;
+};
+
+// Private to SDLThread
+struct vpad_rt_slot_state {
 	bool prev_effective_phys;
 	bool latched;
 	bool movie_suppressed;
 	uint32_t last_wheel_tick;
-	struct input_action_spec active_action;
 };
 
 static pthread_mutex_t gp_mutex = PTHREAD_MUTEX_INITIALIZER;
-static struct vpad_slot_state vpad_slots[MAX_VPAD_SLOTS];
+static struct vpad_ui_slot_state vpad_ui_slots[MAX_VPAD_SLOTS];
+static struct vpad_rt_slot_state vpad_rt_slots[MAX_VPAD_SLOTS];
+static uint32_t vpad_latch_reset_gen = 0;
+static uint32_t phys_latch_reset_gen = 0;
+static uint32_t seen_vpad_latch_reset_gen = 0;
+static uint32_t seen_phys_latch_reset_gen = 0;
+static bool pending_cursor_reset = false;
+static bool pending_cursor_reset_visible = false;
 static float vpad_stick_x[2] = { 0.0f, 0.0f };
 static float vpad_stick_y[2] = { 0.0f, 0.0f };
 static int vpad_dpad_cfg_mode = STICK_MODE_ARROWS;
@@ -211,14 +224,14 @@ static void send_movie_skip_ui_state(int mode, uint32_t seq, uint32_t token, int
 
 void input_reset_close_hook(void)
 {
-	hook_close_app = false;
+	atomic_store(&hook_close_app, false);
 	pending_close_requests = 0;
 	first_unpopped_close_tick = 0;
 }
 
 void input_set_close_hook(bool enabled)
 {
-	hook_close_app = enabled;
+	atomic_store(&hook_close_app, enabled);
 	if (!enabled) {
 		pending_close_requests = 0;
 		first_unpopped_close_tick = 0;
@@ -227,7 +240,7 @@ void input_set_close_hook(bool enabled)
 
 bool input_get_close_hook(void)
 {
-	return hook_close_app;
+	return atomic_load(&hook_close_app);
 }
 
 bool input_has_system_message(void)
@@ -246,7 +259,7 @@ bool input_pop_system_message(int *message)
 
 static bool input_hook_close_request(void)
 {
-	if (!hook_close_app)
+	if (!atomic_load(&hook_close_app))
 		return false;
 	uint32_t now = SDL_GetTicks();
 	if (pending_close_requests == 0) {
@@ -292,18 +305,19 @@ static void handle_quit_event(void)
 static void sync_ctrl_key_state(void)
 {
 	kbd_key_state[VK_CONTROL] = kbd_ctrl_down;
-	key_state[VK_CONTROL] = kbd_ctrl_down || touch_ctrl_skip || vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
+	key_state[VK_CONTROL] = kbd_ctrl_down || atomic_load(&touch_ctrl_skip)
+		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
 }
 
 void input_set_touch_ctrl_skip(bool enabled)
 {
-	touch_ctrl_skip = enabled;
-	sync_ctrl_key_state();
+	// Safe to call from Android UI thread; SDLThread observes touch_ctrl_skip atomically.
+	atomic_store(&touch_ctrl_skip, enabled);
 }
 
 bool input_get_touch_ctrl_skip(void)
 {
-	return touch_ctrl_skip;
+	return atomic_load(&touch_ctrl_skip);
 }
 static enum sact_keycode sdl_keytable[] = {
 	[SDL_SCANCODE_0] = VK_0,
@@ -492,6 +506,9 @@ static struct gamepad_config gp_cfg;
 static bool phys_slot_latched[NR_PAD_SLOTS];
 static bool phys_slot_prev_raw[NR_PAD_SLOTS];
 static bool phys_slot_movie_suppressed[NR_PAD_SLOTS];
+static bool prev_mapped_joybtn[NR_PAD_SLOTS];
+static bool prev_mapped_joyaxis_active = false;
+static bool prev_raw_joyaxis_suppressed = false;
 static bool phys_pad_had_any_down = false;
 static uint32_t phys_slot_wheel_tick[NR_PAD_SLOTS];
 static uint32_t stick_wheel_tick = 0;
@@ -607,8 +624,9 @@ bool key_is_down(enum sact_keycode code)
 	if (suppressed_movie_keys[code]) {
 		return false;
 	}
-	if (code == VK_CONTROL && touch_ctrl_skip) {
-		key_state[VK_CONTROL] = true;
+	if (code == VK_CONTROL) {
+		key_state[VK_CONTROL] = kbd_ctrl_down || atomic_load(&touch_ctrl_skip)
+			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
 	}
 	bool is_mouse_btn = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 	bool parts_polling = last_parts_poll_timestamp != 0 &&
@@ -633,7 +651,7 @@ void key_clear_flag(bool no_ctrl)
 		mouse_down_unobserved[i] = false;
 		deferred_mouse_release[i] = false;
 	}
-	if (touch_ctrl_skip)
+	if (atomic_load(&touch_ctrl_skip))
 		key_state[VK_CONTROL] = true;
 }
 
@@ -827,7 +845,32 @@ struct joyaxis {
 
 struct joyaxis joyaxis_state[2] = { 0 };
 
-bool joybutton_state[SDL_CONTROLLER_BUTTON_MAX];
+#define NR_JOYBUTTON_STATES 32
+bool joybutton_state[NR_JOYBUTTON_STATES];
+
+static int sact_joy_code_to_pad_slot(int code)
+{
+	switch (code) {
+	case 5:  return PAD_SLOT_A;
+	case 6:  return PAD_SLOT_B;
+	case 7:  return PAD_SLOT_X;
+	case 8:  return PAD_SLOT_Y;
+	case 9:  return PAD_SLOT_LB;
+	case 10: return PAD_SLOT_RB;
+	case 11: return PAD_SLOT_BACK;
+	case 12: return PAD_SLOT_START;
+	case 13: return PAD_SLOT_GUIDE;
+	case 14: return PAD_SLOT_L3;
+	case 15: return PAD_SLOT_R3;
+	case 16: return PAD_SLOT_DPAD_LEFT;
+	case 17: return PAD_SLOT_DPAD_RIGHT;
+	case 18: return PAD_SLOT_DPAD_UP;
+	case 19: return PAD_SLOT_DPAD_DOWN;
+	case 20: return PAD_SLOT_LT;
+	case 21: return PAD_SLOT_RT;
+	default: return -1;
+	}
+}
 
 static unsigned long joy_time(void)
 {
@@ -863,38 +906,12 @@ bool joy_key_is_down(uint8_t code)
 		return joy_check_axis(&joyaxis_state[JOYAXIS_Y], JOYAXIS_DIR_LEFT_UP);
 	case 4: // Down Arrow
 		return joy_check_axis(&joyaxis_state[JOYAXIS_Y], JOYAXIS_DIR_RIGHT_DOWN);
-	case 5: // Esc
-		return joybutton_state[SDL_CONTROLLER_BUTTON_A];
-	case 6: // Enter
-		return joybutton_state[SDL_CONTROLLER_BUTTON_B];
-	case 7: // Space
-		return joybutton_state[SDL_CONTROLLER_BUTTON_X];
-	case 8: // Ctrl
-		return joybutton_state[SDL_CONTROLLER_BUTTON_Y];
-	case 9: // a
-		return joybutton_state[SDL_CONTROLLER_BUTTON_LEFTSHOULDER];
-	case 10: // z
-		return joybutton_state[SDL_CONTROLLER_BUTTON_RIGHTSHOULDER];
-	case 11: // Page Up
-		return joybutton_state[SDL_CONTROLLER_BUTTON_BACK];
-	case 12: // Page Down
-		return joybutton_state[SDL_CONTROLLER_BUTTON_START];
-	case 13:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_GUIDE];
-	case 14:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_LEFTSTICK];
-	case 15:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
-	case 16:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_DPAD_LEFT];
-	case 17:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_DPAD_RIGHT];
-	case 18:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_DPAD_UP];
-	case 19:
-		return joybutton_state[SDL_CONTROLLER_BUTTON_DPAD_DOWN];
-	default:
+	default: {
+		int slot = sact_joy_code_to_pad_slot(code);
+		if (slot >= 0 && slot < NR_JOYBUTTON_STATES)
+			return joybutton_state[slot];
 		return false;
+	}
 	}
 }
 
@@ -933,7 +950,7 @@ static float joy_calc_trigger(int left, int right)
 	return v;
 }
 
-static struct pad_device_slot *get_active_pad_slot(int controller)
+static struct pad_device_slot *get_active_pad_slot_locked(int controller)
 {
 	if (controller < 0)
 		return NULL;
@@ -951,67 +968,118 @@ static struct pad_device_slot *get_active_pad_slot(int controller)
 int joy_get_num_controllers(void)
 {
 	int count = 0;
+	pthread_mutex_lock(&gp_mutex);
 	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 		if (pad_slots[i].active)
 			count++;
 	}
-	pthread_mutex_lock(&gp_mutex);
 	if (count == 0 && android_pad.active)
 		count = 1;
 	pthread_mutex_unlock(&gp_mutex);
 	return count;
 }
 
-static bool raw_joy_btn_at(int slot_idx, int sdl_btn)
+static bool raw_joy_btn_slot_locked(const struct pad_device_slot *s, int pad_slot)
 {
-	if (sdl_btn < 0 || sdl_btn >= NR_PAD_SLOTS)
+	if (!s || !s->active || pad_slot < 0 || pad_slot >= NR_PAD_SLOTS)
 		return false;
-	for (int i = 0; i < MAX_CONTROLLERS; i++) {
-		if (pad_slots[i].active && i == slot_idx) {
-			if (sdl_btn == PAD_SLOT_DPAD_UP && pad_slots[i].hat_dir[0]) return true;
-			if (sdl_btn == PAD_SLOT_DPAD_DOWN && pad_slots[i].hat_dir[1]) return true;
-			if (sdl_btn == PAD_SLOT_DPAD_LEFT && pad_slots[i].hat_dir[2]) return true;
-			if (sdl_btn == PAD_SLOT_DPAD_RIGHT && pad_slots[i].hat_dir[3]) return true;
-			return pad_slots[i].btn_down[sdl_btn];
-		}
-	}
-	return false;
+	if (pad_slot == PAD_SLOT_DPAD_UP && s->hat_dir[0]) return true;
+	if (pad_slot == PAD_SLOT_DPAD_DOWN && s->hat_dir[1]) return true;
+	if (pad_slot == PAD_SLOT_DPAD_LEFT && s->hat_dir[2]) return true;
+	if (pad_slot == PAD_SLOT_DPAD_RIGHT && s->hat_dir[3]) return true;
+	return s->btn_down[pad_slot];
+}
+
+static bool raw_android_pad_btn_locked(int pad_slot)
+{
+	if (!android_pad.active || pad_slot < 0 || pad_slot >= NR_PAD_SLOTS)
+		return false;
+	if (pad_slot == PAD_SLOT_DPAD_UP && android_pad.hat_y < -0.5f) return true;
+	if (pad_slot == PAD_SLOT_DPAD_DOWN && android_pad.hat_y > 0.5f) return true;
+	if (pad_slot == PAD_SLOT_DPAD_LEFT && android_pad.hat_x < -0.5f) return true;
+	if (pad_slot == PAD_SLOT_DPAD_RIGHT && android_pad.hat_x > 0.5f) return true;
+	if (pad_slot == PAD_SLOT_LT && android_pad.axes[4] > 0.35f) return true;
+	if (pad_slot == PAD_SLOT_RT && android_pad.axes[5] > 0.35f) return true;
+	return android_pad.btn_down[pad_slot];
 }
 
 bool joy_is_button_down(int controller, int code)
 {
-	struct pad_device_slot *slot = get_active_pad_slot(controller);
+	if (controller < 0)
+		return false;
+	if (controller == 0 && code >= 1 && code <= 21 && joy_key_is_down((uint8_t)code))
+		return true;
+
+	bool down = false;
+	const float axis_thresh = (float)JOYAXIS_DEADZONE / 32767.0f;
+	pthread_mutex_lock(&gp_mutex);
+	struct pad_device_slot *slot = get_active_pad_slot_locked(controller);
 	if (slot) {
-		int idx = (int)(slot - pad_slots);
-		if (code >= 0 && code < NR_PAD_SLOTS)
-			return raw_joy_btn_at(idx, code);
+		switch (code) {
+		case 1: down = slot->axes[0] < -axis_thresh; break;
+		case 2: down = slot->axes[0] >  axis_thresh; break;
+		case 3: down = slot->axes[1] < -axis_thresh; break;
+		case 4: down = slot->axes[1] >  axis_thresh; break;
+		default: {
+			int pad_slot = sact_joy_code_to_pad_slot(code);
+			if (pad_slot >= 0)
+				down = raw_joy_btn_slot_locked(slot, pad_slot);
+			break;
+		}
+		}
+	} else if (controller == 0 && android_pad.active) {
+		switch (code) {
+		case 1: down = android_pad.axes[0] < -axis_thresh; break;
+		case 2: down = android_pad.axes[0] >  axis_thresh; break;
+		case 3: down = android_pad.axes[1] < -axis_thresh; break;
+		case 4: down = android_pad.axes[1] >  axis_thresh; break;
+		default: {
+			int pad_slot = sact_joy_code_to_pad_slot(code);
+			if (pad_slot >= 0)
+				down = raw_android_pad_btn_locked(pad_slot);
+			break;
+		}
+		}
 	}
-	return joy_key_is_down((uint8_t)code);
+	pthread_mutex_unlock(&gp_mutex);
+	return down;
 }
 
 float joy_get_axis_value(int controller, int axis)
 {
 	if (axis < 0 || axis >= 6)
 		return 0.0f;
-	struct pad_device_slot *slot = get_active_pad_slot(controller);
-	if (slot)
-		return slot->axes[axis];
 	float v = 0.0f;
 	pthread_mutex_lock(&gp_mutex);
-	if (android_pad.active)
+	struct pad_device_slot *slot = get_active_pad_slot_locked(controller);
+	if (slot) {
+		v = slot->axes[axis];
+	} else if (controller == 0 && android_pad.active) {
 		v = android_pad.axes[axis];
+	}
 	pthread_mutex_unlock(&gp_mutex);
 	return v;
 }
 
 bool joy_get_stick_status(int controller, int type, float *deg, float *pow)
 {
-	struct pad_device_slot *slot = get_active_pad_slot(controller);
-	if (!slot)
+	float ax[6] = { 0 };
+	bool valid = false;
+	pthread_mutex_lock(&gp_mutex);
+	struct pad_device_slot *slot = get_active_pad_slot_locked(controller);
+	if (slot) {
+		memcpy(ax, slot->axes, sizeof(ax));
+		valid = true;
+	} else if (controller == 0 && android_pad.active) {
+		memcpy(ax, android_pad.axes, sizeof(ax));
+		valid = true;
+	}
+	pthread_mutex_unlock(&gp_mutex);
+	if (!valid)
 		goto invalid;
 	if (type == 0) {
-		int x = (int)(slot->axes[0] * 32767.0f);
-		int y = (int)(slot->axes[1] * 32767.0f);
+		int x = (int)(ax[0] * 32767.0f);
+		int y = (int)(ax[1] * 32767.0f);
 		if (abs(x) < JOYAXIS_DEADZONE && abs(y) < JOYAXIS_DEADZONE) {
 			*pow = 0.0f;
 			*deg = 0.0f;
@@ -1022,8 +1090,8 @@ bool joy_get_stick_status(int controller, int type, float *deg, float *pow)
 		return true;
 	}
 	if (type == 1) {
-		int left = (int)(slot->axes[4] * 32767.0f);
-		int right = (int)(slot->axes[5] * 32767.0f);
+		int left = (int)(ax[4] * 32767.0f);
+		int right = (int)(ax[5] * 32767.0f);
 		*pow = 1.0f;
 		*deg = joy_calc_trigger(left, right);
 		return true;
@@ -1036,33 +1104,45 @@ invalid:
 
 bool joy_get_digital_stick_status(int controller, int type, bool *left, bool *right, bool *up, bool *down)
 {
-	struct pad_device_slot *slot = get_active_pad_slot(controller);
 	float ax = 0.0f, ay = 0.0f;
+	bool valid = false;
+	int base = (type == 1) ? 2 : 0;
+	pthread_mutex_lock(&gp_mutex);
+	struct pad_device_slot *slot = get_active_pad_slot_locked(controller);
 	if (slot) {
-		int base = (type == 1) ? 2 : 0;
 		ax = slot->axes[base];
 		ay = slot->axes[base + 1];
+		valid = true;
+	} else if (controller == 0 && android_pad.active) {
+		ax = android_pad.axes[base];
+		ay = android_pad.axes[base + 1];
+		valid = true;
 	}
+	pthread_mutex_unlock(&gp_mutex);
 	*left = ax < -0.45f;
 	*right = ax > 0.45f;
 	*up = ay < -0.45f;
 	*down = ay > 0.45f;
-	return slot != NULL;
+	return valid;
 }
 
 void joy_rumble(int controller, int magnitude, int duration_ms)
 {
+	if (magnitude <= 0 || duration_ms <= 0)
+		return;
+	SDL_GameController *ctrl = NULL;
 	pthread_mutex_lock(&gp_mutex);
 	ensure_gamepad_config_defaults_locked();
-	bool allowed = gp_cfg.rumble_enabled;
+	if (gp_cfg.rumble_enabled) {
+		struct pad_device_slot *slot = get_active_pad_slot_locked(controller);
+		if (slot && slot->is_game_controller && slot->ctrl && slot->has_rumble)
+			ctrl = slot->ctrl;
+	}
 	pthread_mutex_unlock(&gp_mutex);
-	if (!allowed || magnitude <= 0 || duration_ms <= 0)
-		return;
-	struct pad_device_slot *slot = get_active_pad_slot(controller);
-	if (!slot || !slot->is_game_controller || !slot->ctrl || !slot->has_rumble)
+	if (!ctrl)
 		return;
 	uint16_t amp = (uint16_t)(min(100, magnitude) * 655);
-	SDL_GameControllerRumble(slot->ctrl, amp, amp, (Uint32)min(2000, duration_ms));
+	SDL_GameControllerRumble(ctrl, amp, amp, (Uint32)min(2000, duration_ms));
 }
 
 static void joyaxis_clear_flag(struct joyaxis *joy)
@@ -1080,7 +1160,7 @@ static void joyaxis_clear_flag(struct joyaxis *joy)
 
 void joy_clear_flag(void)
 {
-	for (int i = 0; i < SDL_CONTROLLER_BUTTON_MAX; i++) {
+	for (int i = 0; i < NR_JOYBUTTON_STATES; i++) {
 		joybutton_state[i] = false;
 	}
 	joyaxis_clear_flag(&joyaxis_state[JOYAXIS_X]);
@@ -1118,7 +1198,67 @@ static float normalize_sdl_axis(int16_t v, bool is_trigger)
 	return f;
 }
 
-static struct pad_device_slot *find_pad_by_instance(SDL_JoystickID id)
+static void sanitize_utf8_copy(const char *src, char *dst, size_t dst_size)
+{
+	if (!dst || dst_size == 0)
+		return;
+	if (!src) {
+		dst[0] = '\0';
+		return;
+	}
+	const unsigned char *s = (const unsigned char *)src;
+	size_t di = 0;
+	while (*s && di + 1 < dst_size) {
+		unsigned char b0 = s[0];
+		if (b0 < 0x80) {
+			dst[di++] = (char)b0;
+			s += 1;
+		} else if (b0 >= 0xC2 && b0 <= 0xDF && (s[1] & 0xC0) == 0x80) {
+			if (di + 2 >= dst_size) break;
+			dst[di++] = (char)b0;
+			dst[di++] = (char)s[1];
+			s += 2;
+		} else if (b0 >= 0xE0 && b0 <= 0xEF &&
+		           (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+			uint32_t cp = ((uint32_t)(b0 & 0x0F) << 12) |
+			              ((uint32_t)(s[1] & 0x3F) << 6) |
+			              (uint32_t)(s[2] & 0x3F);
+			if (cp >= 0x800 && !(cp >= 0xD800 && cp <= 0xDFFF)) {
+				if (di + 3 >= dst_size) break;
+				dst[di++] = (char)b0;
+				dst[di++] = (char)s[1];
+				dst[di++] = (char)s[2];
+				s += 3;
+			} else {
+				dst[di++] = '?';
+				s += 1;
+			}
+		} else if (b0 >= 0xF0 && b0 <= 0xF4 &&
+		           (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80) {
+			uint32_t cp = ((uint32_t)(b0 & 0x07) << 18) |
+			              ((uint32_t)(s[1] & 0x3F) << 12) |
+			              ((uint32_t)(s[2] & 0x3F) << 6) |
+			              (uint32_t)(s[3] & 0x3F);
+			if (cp >= 0x10000 && cp <= 0x10FFFF) {
+				if (di + 4 >= dst_size) break;
+				dst[di++] = (char)b0;
+				dst[di++] = (char)s[1];
+				dst[di++] = (char)s[2];
+				dst[di++] = (char)s[3];
+				s += 4;
+			} else {
+				dst[di++] = '?';
+				s += 1;
+			}
+		} else {
+			dst[di++] = '?';
+			s += 1;
+		}
+	}
+	dst[di] = '\0';
+}
+
+static struct pad_device_slot *find_pad_by_instance_locked(SDL_JoystickID id)
 {
 	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 		if (pad_slots[i].active && pad_slots[i].instance_id == id)
@@ -1132,10 +1272,12 @@ static void notify_android_controller_count(void)
 #ifdef __ANDROID__
 	static int last_notified = -1;
 	int sdl_cnt = 0;
+	pthread_mutex_lock(&gp_mutex);
 	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 		if (pad_slots[i].active)
 			sdl_cnt++;
 	}
+	pthread_mutex_unlock(&gp_mutex);
 	if (sdl_cnt != last_notified) {
 		last_notified = sdl_cnt;
 		SDL_AndroidSendMessage(COMMAND_GAMEPAD_UI_EVENT,
@@ -1147,30 +1289,48 @@ static void notify_android_controller_count(void)
 static void open_game_controller_index(int device_index)
 {
 	SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(device_index);
-	if (id >= 0 && find_pad_by_instance(id))
+	pthread_mutex_lock(&gp_mutex);
+	bool already_open = (id >= 0 && find_pad_by_instance_locked(id) != NULL);
+	pthread_mutex_unlock(&gp_mutex);
+	if (already_open)
 		return;
+
 	SDL_GameController *ctrl = SDL_GameControllerOpen(device_index);
 	if (!ctrl)
 		return;
 	SDL_Joystick *joy = SDL_GameControllerGetJoystick(ctrl);
 	SDL_JoystickID real_id = SDL_JoystickInstanceID(joy);
-	for (int i = 0; i < MAX_CONTROLLERS; i++) {
-		if (!pad_slots[i].active) {
-			struct pad_device_slot *s = &pad_slots[i];
-			memset(s, 0, sizeof(*s));
-			s->active = true;
-			s->is_game_controller = true;
-			s->ctrl = ctrl;
-			s->joy = joy;
-			s->instance_id = real_id;
-			const char *nm = SDL_GameControllerName(ctrl);
-			snprintf(s->name, sizeof(s->name), "%s", (nm && nm[0]) ? nm : "Game Controller");
-			s->vendor_id = SDL_GameControllerGetVendor(ctrl);
-			s->product_id = SDL_GameControllerGetProduct(ctrl);
-			s->has_rumble = SDL_GameControllerHasRumble(ctrl) == SDL_TRUE;
-			notify_android_controller_count();
-			return;
+	const char *nm = SDL_GameControllerName(ctrl);
+	uint16_t vendor_id = SDL_GameControllerGetVendor(ctrl);
+	uint16_t product_id = SDL_GameControllerGetProduct(ctrl);
+	bool has_rumble = SDL_GameControllerHasRumble(ctrl) == SDL_TRUE;
+
+	bool inserted = false;
+	pthread_mutex_lock(&gp_mutex);
+	if (!find_pad_by_instance_locked(real_id)) {
+		for (int i = 0; i < MAX_CONTROLLERS; i++) {
+			if (!pad_slots[i].active) {
+				struct pad_device_slot *s = &pad_slots[i];
+				memset(s, 0, sizeof(*s));
+				s->active = true;
+				s->is_game_controller = true;
+				s->ctrl = ctrl;
+				s->joy = joy;
+				s->instance_id = real_id;
+				sanitize_utf8_copy((nm && nm[0]) ? nm : "Game Controller", s->name, sizeof(s->name));
+				s->vendor_id = vendor_id;
+				s->product_id = product_id;
+				s->has_rumble = has_rumble;
+				inserted = true;
+				break;
+			}
 		}
+	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (inserted) {
+		notify_android_controller_count();
+		return;
 	}
 	SDL_GameControllerClose(ctrl);
 }
@@ -1180,8 +1340,12 @@ static void open_generic_joystick_index(int device_index)
 	if (SDL_IsGameController(device_index))
 		return;
 	SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(device_index);
-	if (id >= 0 && find_pad_by_instance(id))
+	pthread_mutex_lock(&gp_mutex);
+	bool already_open = (id >= 0 && find_pad_by_instance_locked(id) != NULL);
+	pthread_mutex_unlock(&gp_mutex);
+	if (already_open)
 		return;
+
 	SDL_Joystick *joy = SDL_JoystickOpen(device_index);
 	if (!joy)
 		return;
@@ -1192,50 +1356,88 @@ static void open_generic_joystick_index(int device_index)
 		SDL_JoystickClose(joy);
 		return;
 	}
-	for (int i = 0; i < MAX_CONTROLLERS; i++) {
-		if (!pad_slots[i].active) {
-			struct pad_device_slot *s = &pad_slots[i];
-			memset(s, 0, sizeof(*s));
-			s->active = true;
-			s->is_game_controller = false;
-			s->ctrl = NULL;
-			s->joy = joy;
-			s->instance_id = SDL_JoystickInstanceID(joy);
-			snprintf(s->name, sizeof(s->name), "%s", (nm && nm[0]) ? nm : "Generic Gamepad");
-			s->vendor_id = SDL_JoystickGetVendor(joy);
-			s->product_id = SDL_JoystickGetProduct(joy);
-			notify_android_controller_count();
-			return;
+	SDL_JoystickID real_id = SDL_JoystickInstanceID(joy);
+	uint16_t vendor_id = SDL_JoystickGetVendor(joy);
+	uint16_t product_id = SDL_JoystickGetProduct(joy);
+
+	bool inserted = false;
+	pthread_mutex_lock(&gp_mutex);
+	if (!find_pad_by_instance_locked(real_id)) {
+		for (int i = 0; i < MAX_CONTROLLERS; i++) {
+			if (!pad_slots[i].active) {
+				struct pad_device_slot *s = &pad_slots[i];
+				memset(s, 0, sizeof(*s));
+				s->active = true;
+				s->is_game_controller = false;
+				s->ctrl = NULL;
+				s->joy = joy;
+				s->instance_id = real_id;
+				sanitize_utf8_copy((nm && nm[0]) ? nm : "Generic Gamepad", s->name, sizeof(s->name));
+				s->vendor_id = vendor_id;
+				s->product_id = product_id;
+				inserted = true;
+				break;
+			}
 		}
+	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (inserted) {
+		notify_android_controller_count();
+		return;
 	}
 	SDL_JoystickClose(joy);
 }
 
 static void close_controller_instance(SDL_JoystickID id)
 {
-	struct pad_device_slot *s = find_pad_by_instance(id);
-	if (!s)
-		return;
-	if (s->is_game_controller && s->ctrl) {
-		SDL_GameControllerClose(s->ctrl);
-	} else if (s->joy) {
-		SDL_JoystickClose(s->joy);
+	SDL_GameController *ctrl = NULL;
+	SDL_Joystick *joy = NULL;
+	bool was_gc = false;
+	bool found = false;
+
+	pthread_mutex_lock(&gp_mutex);
+	struct pad_device_slot *s = find_pad_by_instance_locked(id);
+	if (s) {
+		was_gc = s->is_game_controller;
+		ctrl = s->ctrl;
+		joy = s->joy;
+		memset(s, 0, sizeof(*s));
+		found = true;
 	}
-	memset(s, 0, sizeof(*s));
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (!found)
+		return;
+	if (was_gc && ctrl) {
+		SDL_GameControllerClose(ctrl);
+	} else if (joy) {
+		SDL_JoystickClose(joy);
+	}
 	notify_android_controller_count();
+}
+
+static bool raw_left_stick_drives_joyaxis_locked(void)
+{
+	return !gp_cfg.initialized || !gp_cfg.phys_enabled || gp_cfg.phys_left_stick_mode == STICK_MODE_JOYPAD;
 }
 
 static void controller_axis_event(SDL_ControllerAxisEvent *e)
 {
-	struct pad_device_slot *s = find_pad_by_instance(e->which);
+	bool update_raw_joyaxis = false;
+	bool trig_edge = false;
+	int trig_slot = -1;
+	bool trig_state = false;
+
+	pthread_mutex_lock(&gp_mutex);
+	update_raw_joyaxis = raw_left_stick_drives_joyaxis_locked();
+	struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
 	switch (e->axis) {
 	case SDL_CONTROLLER_AXIS_LEFTX:
 		if (s) s->axes[0] = normalize_sdl_axis(e->value, false);
-		joyaxis_update(JOYAXIS_X, e->value);
 		break;
 	case SDL_CONTROLLER_AXIS_LEFTY:
 		if (s) s->axes[1] = normalize_sdl_axis(e->value, false);
-		joyaxis_update(JOYAXIS_Y, e->value);
 		break;
 	case SDL_CONTROLLER_AXIS_RIGHTX:
 		if (s) s->axes[2] = normalize_sdl_axis(e->value, false);
@@ -1246,83 +1448,160 @@ static void controller_axis_event(SDL_ControllerAxisEvent *e)
 	case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
 		if (s) {
 			float v = normalize_sdl_axis(e->value, true);
+			bool prev = s->trigger_latched[0];
 			s->axes[4] = v;
 			if (!s->trigger_latched[0] && v > 0.35f) s->trigger_latched[0] = true;
 			else if (s->trigger_latched[0] && v < 0.25f) s->trigger_latched[0] = false;
 			s->btn_down[PAD_SLOT_LT] = s->trigger_latched[0];
+			if (s->trigger_latched[0] != prev) {
+				trig_edge = true;
+				trig_slot = PAD_SLOT_LT;
+				trig_state = s->trigger_latched[0];
+			}
 		}
 		break;
 	case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
 		if (s) {
 			float v = normalize_sdl_axis(e->value, true);
+			bool prev = s->trigger_latched[1];
 			s->axes[5] = v;
 			if (!s->trigger_latched[1] && v > 0.35f) s->trigger_latched[1] = true;
 			else if (s->trigger_latched[1] && v < 0.25f) s->trigger_latched[1] = false;
 			s->btn_down[PAD_SLOT_RT] = s->trigger_latched[1];
+			if (s->trigger_latched[1] != prev) {
+				trig_edge = true;
+				trig_slot = PAD_SLOT_RT;
+				trig_state = s->trigger_latched[1];
+			}
 		}
 		break;
 	default:
 		break;
 	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (update_raw_joyaxis) {
+		if (e->axis == SDL_CONTROLLER_AXIS_LEFTX)
+			joyaxis_update(JOYAXIS_X, e->value);
+		else if (e->axis == SDL_CONTROLLER_AXIS_LEFTY)
+			joyaxis_update(JOYAXIS_Y, e->value);
+	}
+	if (trig_edge && trig_slot >= 0 && trig_slot < NR_JOYBUTTON_STATES)
+		joybutton_state[trig_slot] = trig_state;
 }
 
 static void controller_button_event(SDL_ControllerButtonEvent *e)
 {
 	bool pressed = e->state == SDL_PRESSED;
-	joybutton_state[e->button] = pressed;
-	struct pad_device_slot *s = find_pad_by_instance(e->which);
-	if (s && e->button < 15) {
-		s->btn_down[e->button] = pressed;
+	// Only SDL_CONTROLLER_BUTTON_A (0) .. SDL_CONTROLLER_BUTTON_DPAD_RIGHT (14)
+	// correspond to PAD_SLOT_A .. PAD_SLOT_DPAD_RIGHT; 15/16 are MISC1/PADDLE1, not LT/RT.
+	if (e->button < 15) {
+		joybutton_state[e->button] = pressed;
+		pthread_mutex_lock(&gp_mutex);
+		struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+		if (s)
+			s->btn_down[e->button] = pressed;
+		pthread_mutex_unlock(&gp_mutex);
 	}
 }
 
 static void generic_joy_axis_event(SDL_JoyAxisEvent *e)
 {
-	struct pad_device_slot *s = find_pad_by_instance(e->which);
-	if (!s || s->is_game_controller)
+	bool update_raw_joyaxis = false;
+	bool valid_generic = false;
+	bool trig_edge = false;
+	int trig_slot = -1;
+	bool trig_state = false;
+
+	pthread_mutex_lock(&gp_mutex);
+	update_raw_joyaxis = raw_left_stick_drives_joyaxis_locked();
+	struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+	if (s && !s->is_game_controller) {
+		valid_generic = true;
+		if (e->axis < 4) {
+			s->axes[e->axis] = normalize_sdl_axis(e->value, false);
+		} else if (e->axis == 4 || e->axis == 5) {
+			int idx = (e->axis == 4) ? 0 : 1;
+			bool prev = s->trigger_latched[idx];
+			float v = (normalize_sdl_axis(e->value, false) + 1.0f) * 0.5f;
+			s->axes[4 + idx] = v;
+			if (!s->trigger_latched[idx] && v > 0.35f) s->trigger_latched[idx] = true;
+			else if (s->trigger_latched[idx] && v < 0.25f) s->trigger_latched[idx] = false;
+			s->btn_down[PAD_SLOT_LT + idx] = s->trigger_latched[idx];
+			if (s->trigger_latched[idx] != prev) {
+				trig_edge = true;
+				trig_slot = PAD_SLOT_LT + idx;
+				trig_state = s->trigger_latched[idx];
+			}
+		}
+	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (!valid_generic)
 		return;
-	if (e->axis < 4) {
-		s->axes[e->axis] = normalize_sdl_axis(e->value, false);
+	if (update_raw_joyaxis) {
 		if (e->axis == 0) joyaxis_update(JOYAXIS_X, e->value);
 		else if (e->axis == 1) joyaxis_update(JOYAXIS_Y, e->value);
-	} else if (e->axis == 4 || e->axis == 5) {
-		int idx = (e->axis == 4) ? 0 : 1;
-		float v = (normalize_sdl_axis(e->value, false) + 1.0f) * 0.5f;
-		s->axes[4 + idx] = v;
-		if (!s->trigger_latched[idx] && v > 0.35f) s->trigger_latched[idx] = true;
-		else if (s->trigger_latched[idx] && v < 0.25f) s->trigger_latched[idx] = false;
-		s->btn_down[PAD_SLOT_LT + idx] = s->trigger_latched[idx];
 	}
+	if (trig_edge && trig_slot >= 0 && trig_slot < NR_JOYBUTTON_STATES)
+		joybutton_state[trig_slot] = trig_state;
 }
 
 static void generic_joy_hat_event(SDL_JoyHatEvent *e)
 {
-	struct pad_device_slot *s = find_pad_by_instance(e->which);
-	if (!s || s->is_game_controller || e->hat != 0)
+	if (e->hat != 0)
 		return;
-	s->hat_dir[0] = (e->value & SDL_HAT_UP) != 0;
-	s->hat_dir[1] = (e->value & SDL_HAT_DOWN) != 0;
-	s->hat_dir[2] = (e->value & SDL_HAT_LEFT) != 0;
-	s->hat_dir[3] = (e->value & SDL_HAT_RIGHT) != 0;
+	bool prev_hat[4] = { false, false, false, false };
+	bool next_hat[4] = {
+		(e->value & SDL_HAT_UP) != 0,
+		(e->value & SDL_HAT_DOWN) != 0,
+		(e->value & SDL_HAT_LEFT) != 0,
+		(e->value & SDL_HAT_RIGHT) != 0,
+	};
+	bool valid_generic = false;
+	bool sync_raw_btns = false;
+
+	pthread_mutex_lock(&gp_mutex);
+	sync_raw_btns = !gp_cfg.initialized || !gp_cfg.phys_enabled;
+	struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+	if (s && !s->is_game_controller) {
+		memcpy(prev_hat, s->hat_dir, sizeof(prev_hat));
+		memcpy(s->hat_dir, next_hat, sizeof(s->hat_dir));
+		valid_generic = true;
+	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (valid_generic && sync_raw_btns) {
+		for (int d = 0; d < 4; d++) {
+			if (next_hat[d] != prev_hat[d])
+				joybutton_state[PAD_SLOT_DPAD_UP + d] = next_hat[d];
+		}
+	}
 }
 
 static void generic_joy_button_event(SDL_JoyButtonEvent *e)
 {
-	struct pad_device_slot *s = find_pad_by_instance(e->which);
-	if (!s || s->is_game_controller)
+	if (e->button >= 12)
 		return;
 	static const int fallback_map[12] = {
 		PAD_SLOT_A, PAD_SLOT_B, PAD_SLOT_X, PAD_SLOT_Y,
 		PAD_SLOT_LB, PAD_SLOT_RB, PAD_SLOT_LT, PAD_SLOT_RT,
 		PAD_SLOT_BACK, PAD_SLOT_START, PAD_SLOT_L3, PAD_SLOT_R3
 	};
-	if (e->button < 12) {
-		int slot = fallback_map[e->button];
-		bool pressed = e->state == SDL_PRESSED;
+	int slot = fallback_map[e->button];
+	bool pressed = e->state == SDL_PRESSED;
+	bool valid_generic = false;
+
+	pthread_mutex_lock(&gp_mutex);
+	struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+	if (s && !s->is_game_controller) {
 		s->btn_down[slot] = pressed;
-		if (slot < SDL_CONTROLLER_BUTTON_MAX)
-			joybutton_state[slot] = pressed;
+		valid_generic = true;
 	}
+	pthread_mutex_unlock(&gp_mutex);
+
+	if (valid_generic && slot >= 0 && slot < NR_JOYBUTTON_STATES)
+		joybutton_state[slot] = pressed;
 }
 
 static void ensure_gamepad_config_defaults_locked(void)
@@ -1383,10 +1662,12 @@ static bool is_movie_skip_action(const struct input_action_spec *act)
 
 static void emit_emu_cmd_to_ui(int cmd)
 {
+#ifndef __ANDROID__
 	if (cmd == INPUT_EMU_SCREENSHOT) {
 		screenshot_save();
 		return;
 	}
+#endif
 	if (cmd == INPUT_EMU_TOGGLE_CURSOR) {
 		gamepad_cursor_visible = !gamepad_cursor_visible;
 		if (gamepad_cursor_visible) {
@@ -1406,7 +1687,7 @@ static void emit_emu_cmd_to_ui(int cmd)
 }
 
 static void apply_action_output(const struct input_action_spec *act, bool active, bool edge_rising,
-		uint32_t now, uint32_t *wheel_tick, bool *vk_down_arr)
+		uint32_t now, uint32_t *wheel_tick, bool *vk_down_arr, bool *mapped_joybtn_arr)
 {
 	switch (act->type) {
 	case INPUT_ACTION_VK:
@@ -1448,14 +1729,15 @@ static void apply_action_output(const struct input_action_spec *act, bool active
 		break;
 	case INPUT_ACTION_CTRL_TOGGLE:
 		if (edge_rising) {
-			touch_ctrl_skip = !touch_ctrl_skip;
+			bool next = !atomic_load(&touch_ctrl_skip);
+			atomic_store(&touch_ctrl_skip, next);
 			sync_ctrl_key_state();
 		}
 		break;
 	case INPUT_ACTION_JOYPAD_BTN:
-		if (act->code >= 0 && act->code < SDL_CONTROLLER_BUTTON_MAX) {
-			if (active)
-				joybutton_state[act->code] = true;
+		if (act->code >= 0 && act->code < NR_PAD_SLOTS) {
+			if (active && mapped_joybtn_arr)
+				mapped_joybtn_arr[act->code] = true;
 		}
 		break;
 	case INPUT_ACTION_EMU_CMD:
@@ -1468,10 +1750,13 @@ static void apply_action_output(const struct input_action_spec *act, bool active
 }
 
 static void apply_directional_stick(int mode, float x, float y, float deadzone, uint32_t now,
-		bool *vk_down_arr, float *out_mouse_vx, float *out_mouse_vy)
+		bool *vk_down_arr, float *out_mouse_vx, float *out_mouse_vy,
+		float *out_joy_vx, float *out_joy_vy, bool *out_has_joy_source)
 {
 	if (mode == STICK_MODE_NONE)
 		return;
+	if (mode == STICK_MODE_JOYPAD && out_has_joy_source)
+		*out_has_joy_source = true;
 	float mag = sqrtf(x * x + y * y);
 	if (mag < deadzone)
 		return;
@@ -1507,8 +1792,8 @@ static void apply_directional_stick(int mode, float x, float y, float deadzone, 
 			stick_wheel_prev_dir = 0;
 		}
 	} else if (mode == STICK_MODE_JOYPAD) {
-		joyaxis_update(JOYAXIS_X, (int)(x * 32767.0f));
-		joyaxis_update(JOYAXIS_Y, (int)(y * 32767.0f));
+		if (out_joy_vx) *out_joy_vx += nx;
+		if (out_joy_vy) *out_joy_vy += ny;
 	}
 }
 
@@ -1549,6 +1834,7 @@ static void send_cursor_ui_state(bool force)
 static void rebuild_effective_keys(uint32_t now)
 {
 	bool in_movie = movie_has_active_playback();
+	bool ctrl_skip = atomic_load(&touch_ctrl_skip);
 	for (int code = 1; code < VK_NR_KEYCODES; code++) {
 		bool is_mouse = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 		bool pad_mouse = is_mouse && (vpad_vk_down[code] || pad_vk_down[code]);
@@ -1571,7 +1857,7 @@ static void rebuild_effective_keys(uint32_t now)
 				key_state[code] = false;
 		} else {
 			bool down = kbd_key_state[code] || vpad_vk_down[code] || pad_vk_down[code];
-			if (code == VK_CONTROL && touch_ctrl_skip)
+			if (code == VK_CONTROL && ctrl_skip)
 				down = true;
 			if ((in_movie && is_movie_skip_suppressed_key(code)) || suppressed_movie_keys[code])
 				down = false;
@@ -1586,19 +1872,33 @@ static void reset_gamepad_transient_state(void)
 {
 	pthread_mutex_lock(&gp_mutex);
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-		vpad_slots[i].phys_down = false;
-		vpad_slots[i].pending_press_edge = false;
-		vpad_slots[i].prev_effective_phys = false;
-		vpad_slots[i].latched = false;
-		vpad_slots[i].movie_suppressed = false;
+		vpad_ui_slots[i].phys_down = false;
+		vpad_ui_slots[i].pending_press_edge = false;
 	}
 	vpad_stick_x[0] = vpad_stick_y[0] = 0.0f;
 	vpad_stick_x[1] = vpad_stick_y[1] = 0.0f;
 	memset(vpad_dpad_dir, 0, sizeof(vpad_dpad_dir));
+	vpad_latch_reset_gen++;
+	phys_latch_reset_gen++;
+	seen_vpad_latch_reset_gen = vpad_latch_reset_gen;
+	seen_phys_latch_reset_gen = phys_latch_reset_gen;
+	pthread_mutex_unlock(&gp_mutex);
+
+	memset(vpad_rt_slots, 0, sizeof(vpad_rt_slots));
 	memset(phys_slot_latched, 0, sizeof(phys_slot_latched));
 	memset(phys_slot_prev_raw, 0, sizeof(phys_slot_prev_raw));
 	memset(phys_slot_movie_suppressed, 0, sizeof(phys_slot_movie_suppressed));
-	pthread_mutex_unlock(&gp_mutex);
+	for (int b = 0; b < NR_PAD_SLOTS; b++) {
+		if (prev_mapped_joybtn[b]) {
+			joybutton_state[b] = false;
+			prev_mapped_joybtn[b] = false;
+		}
+	}
+	if (prev_mapped_joyaxis_active) {
+		joyaxis_update(JOYAXIS_X, 0);
+		joyaxis_update(JOYAXIS_Y, 0);
+		prev_mapped_joyaxis_active = false;
+	}
 	memset(vpad_vk_down, 0, sizeof(vpad_vk_down));
 	memset(pad_vk_down, 0, sizeof(pad_vk_down));
 	memset(prev_gamepad_mouse, 0, sizeof(prev_gamepad_mouse));
@@ -1613,7 +1913,7 @@ static void process_gamepad_frame(void)
 	memset(pad_vk_down, 0, sizeof(pad_vk_down));
 
 	struct gamepad_config cfg;
-	struct vpad_slot_state local_vpad[MAX_VPAD_SLOTS];
+	struct vpad_ui_slot_state local_vpad[MAX_VPAD_SLOTS];
 	float vsx[2], vsy[2];
 	int vdmode;
 	bool vddir[4];
@@ -1623,7 +1923,14 @@ static void process_gamepad_frame(void)
 	float phys_lx = 0.0f, phys_ly = 0.0f, phys_rx = 0.0f, phys_ry = 0.0f;
 	float phys_lt = 0.0f, phys_rt = 0.0f;
 	bool has_sdl_pad = false;
+	bool has_android_pad = false;
+	uint32_t cur_vpad_gen = 0;
+	uint32_t cur_phys_gen = 0;
+	bool do_cursor_reset = false;
+	bool cursor_reset_vis = false;
 
+	pthread_mutex_lock(&gp_mutex);
+	ensure_gamepad_config_defaults_locked();
 	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 		if (!pad_slots[i].active)
 			continue;
@@ -1644,9 +1951,8 @@ static void process_gamepad_frame(void)
 		if (pad_slots[i].axes[5] > phys_rt) phys_rt = pad_slots[i].axes[5];
 	}
 
-	pthread_mutex_lock(&gp_mutex);
-	ensure_gamepad_config_defaults_locked();
 	if (!has_sdl_pad && android_pad.active) {
+		has_android_pad = true;
 		for (int b = 0; b < NR_PAD_SLOTS; b++) {
 			if (android_pad.btn_down[b]) raw_phys[b] = true;
 		}
@@ -1680,15 +1986,22 @@ static void process_gamepad_frame(void)
 	live_status_axes[5] = phys_rt;
 
 	cfg = gp_cfg;
+	cur_vpad_gen = vpad_latch_reset_gen;
+	cur_phys_gen = phys_latch_reset_gen;
+	if (pending_cursor_reset) {
+		do_cursor_reset = true;
+		cursor_reset_vis = pending_cursor_reset_visible;
+		pending_cursor_reset = false;
+	}
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-		if (vpad_slots[i].pending_press_edge) {
+		if (vpad_ui_slots[i].pending_press_edge) {
 			// Consume short intra-frame tap edge so this frame registers press even if released early.
-			vpad_slots[i].pending_press_edge = false;
-			local_vpad[i] = vpad_slots[i];
+			vpad_ui_slots[i].pending_press_edge = false;
+			local_vpad[i] = vpad_ui_slots[i];
 			local_vpad[i].phys_down = true;
-			local_vpad[i].active_action = vpad_slots[i].pending_action;
+			local_vpad[i].active_action = vpad_ui_slots[i].pending_action;
 		} else {
-			local_vpad[i] = vpad_slots[i];
+			local_vpad[i] = vpad_ui_slots[i];
 		}
 	}
 	vsx[0] = vpad_stick_x[0]; vsy[0] = vpad_stick_y[0];
@@ -1697,42 +2010,68 @@ static void process_gamepad_frame(void)
 	memcpy(vddir, vpad_dpad_dir, sizeof(vddir));
 	pthread_mutex_unlock(&gp_mutex);
 
+	if (cur_vpad_gen != seen_vpad_latch_reset_gen) {
+		seen_vpad_latch_reset_gen = cur_vpad_gen;
+		for (int i = 0; i < MAX_VPAD_SLOTS; i++)
+			vpad_rt_slots[i].latched = false;
+	}
+	if (cur_phys_gen != seen_phys_latch_reset_gen) {
+		seen_phys_latch_reset_gen = cur_phys_gen;
+		memset(phys_slot_latched, 0, sizeof(phys_slot_latched));
+	}
+	if (do_cursor_reset) {
+		gamepad_cursor_visible = cursor_reset_vis;
+		if (cursor_reset_vis) {
+			gamepad_cursor_active = true;
+			has_synthetic_mouse_pos = true;
+			last_cursor_move_tick = now;
+			if (sdl.viewport.w > 0 && sdl.viewport.h > 0) {
+				synthetic_mouse_x = sdl.viewport.x + (int)(gamepad_cursor_norm_x * max(1, sdl.viewport.w - 1));
+				synthetic_mouse_y = sdl.viewport.y + (int)(gamepad_cursor_norm_y * max(1, sdl.viewport.h - 1));
+			}
+		}
+	}
+
 	bool in_movie = movie_has_active_playback();
 	float mouse_vx = 0.0f, mouse_vy = 0.0f;
+	float joy_vx = 0.0f, joy_vy = 0.0f;
+	bool has_joy_stick_source = false;
+	bool mapped_joybtn[NR_PAD_SLOTS];
+	memset(mapped_joybtn, 0, sizeof(mapped_joybtn));
 
 	// Virtual buttons
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
 		bool eff_phys = local_vpad[i].phys_down;
-		bool edge = eff_phys && !vpad_slots[i].prev_effective_phys;
+		bool edge = eff_phys && !vpad_rt_slots[i].prev_effective_phys;
 		if (in_movie && is_movie_skip_action(&local_vpad[i].active_action)) {
 			if (!eff_phys) {
-				vpad_slots[i].movie_suppressed = false;
-			} else if (edge && !vpad_slots[i].movie_suppressed) {
+				vpad_rt_slots[i].movie_suppressed = false;
+			} else if (edge && !vpad_rt_slots[i].movie_suppressed) {
 				if (!movie_pad_holding) {
 					movie_pad_holding = true;
 					movie_pad_hold_start_tick = now;
 					movie_hold_token++;
 				}
 			}
-			vpad_slots[i].prev_effective_phys = eff_phys;
+			vpad_rt_slots[i].prev_effective_phys = eff_phys;
 			continue;
 		}
 		if (!eff_phys)
-			vpad_slots[i].movie_suppressed = false;
-		vpad_slots[i].prev_effective_phys = eff_phys;
-		if (vpad_slots[i].movie_suppressed)
+			vpad_rt_slots[i].movie_suppressed = false;
+		vpad_rt_slots[i].prev_effective_phys = eff_phys;
+		if (vpad_rt_slots[i].movie_suppressed)
 			continue;
 
 		bool out_active = eff_phys;
 		bool out_edge = edge;
 		if (local_vpad[i].active_action.toggle_mode) {
 			if (edge)
-				vpad_slots[i].latched = !vpad_slots[i].latched;
-			out_active = vpad_slots[i].latched;
+				vpad_rt_slots[i].latched = !vpad_rt_slots[i].latched;
+			out_active = vpad_rt_slots[i].latched;
 			out_edge = edge && out_active;
 		}
 		apply_action_output(&local_vpad[i].active_action, out_active, out_edge, now,
-				&vpad_slots[i].last_wheel_tick, vpad_vk_down);
+				&vpad_rt_slots[i].last_wheel_tick, vpad_vk_down, mapped_joybtn);
 	}
 
 	// Virtual D-Pad & Virtual Sticks
@@ -1743,10 +2082,13 @@ static void process_gamepad_frame(void)
 			mouse_vx += vdx * 0.65f;
 			mouse_vy += vdy * 0.65f;
 		} else if (vdmode != STICK_MODE_NONE) {
-			apply_directional_stick(vdmode, vdx, vdy, 0.25f, now, vpad_vk_down, &mouse_vx, &mouse_vy);
+			apply_directional_stick(vdmode, vdx, vdy, 0.25f, now, vpad_vk_down,
+					&mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 		}
-		apply_directional_stick(cfg.vpad_left_stick_mode, vsx[0], vsy[0], cfg.deadzone, now, vpad_vk_down, &mouse_vx, &mouse_vy);
-		apply_directional_stick(cfg.vpad_right_stick_mode, vsx[1], vsy[1], cfg.deadzone, now, vpad_vk_down, &mouse_vx, &mouse_vy);
+		apply_directional_stick(cfg.vpad_left_stick_mode, vsx[0], vsy[0], cfg.deadzone, now,
+				vpad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
+		apply_directional_stick(cfg.vpad_right_stick_mode, vsx[1], vsy[1], cfg.deadzone, now,
+				vpad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 	}
 
 	// Physical Controller Mapping
@@ -1758,6 +2100,16 @@ static void process_gamepad_frame(void)
 			int mapped_slot = remap_abxy_slot(s, cfg.swap_ab_xy);
 			if (raw_phys[s])
 				logical_phys[mapped_slot] = true;
+		}
+
+		if (!in_movie && cfg.phys_dpad_mode == STICK_MODE_JOYPAD) {
+			has_joy_stick_source = true;
+			float pdx = (logical_phys[PAD_SLOT_DPAD_RIGHT] ? 1.0f : 0.0f)
+				- (logical_phys[PAD_SLOT_DPAD_LEFT] ? 1.0f : 0.0f);
+			float pdy = (logical_phys[PAD_SLOT_DPAD_DOWN] ? 1.0f : 0.0f)
+				- (logical_phys[PAD_SLOT_DPAD_UP] ? 1.0f : 0.0f);
+			joy_vx += pdx;
+			joy_vy += pdy;
 		}
 
 		for (int s = 0; s < NR_PAD_SLOTS; s++) {
@@ -1802,7 +2154,7 @@ static void process_gamepad_frame(void)
 					act.code = wasd_vk[s - PAD_SLOT_DPAD_UP];
 				} else if (cfg.phys_dpad_mode == STICK_MODE_JOYPAD) {
 					act.type = INPUT_ACTION_JOYPAD_BTN;
-					act.code = SDL_CONTROLLER_BUTTON_DPAD_UP + (s - PAD_SLOT_DPAD_UP);
+					act.code = (int16_t)s;
 				} else if (cfg.phys_dpad_mode == STICK_MODE_MOUSE && down) {
 					if (s == PAD_SLOT_DPAD_LEFT) mouse_vx -= 0.55f;
 					if (s == PAD_SLOT_DPAD_RIGHT) mouse_vx += 0.55f;
@@ -1820,21 +2172,75 @@ static void process_gamepad_frame(void)
 				out_active = phys_slot_latched[s];
 				out_edge = edge && out_active;
 			}
-			apply_action_output(&act, out_active, out_edge, now, &phys_slot_wheel_tick[s], pad_vk_down);
+			apply_action_output(&act, out_active, out_edge, now,
+					&phys_slot_wheel_tick[s], pad_vk_down, mapped_joybtn);
 		}
 
 		if (!in_movie) {
 			apply_directional_stick(cfg.phys_left_stick_mode, phys_lx, phys_ly, cfg.deadzone,
-					now, pad_vk_down, &mouse_vx, &mouse_vy);
+					now, pad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 			apply_directional_stick(cfg.phys_right_stick_mode, phys_rx, phys_ry, cfg.deadzone,
-					now, pad_vk_down, &mouse_vx, &mouse_vy);
+					now, pad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 		}
+	} else if (!has_sdl_pad && has_android_pad && !in_movie) {
+		// Native Android fallback controller pass-through to SACT joypad when custom mapping is disabled
+		for (int b = 0; b < NR_PAD_SLOTS; b++) {
+			if (raw_phys[b])
+				mapped_joybtn[b] = true;
+		}
+		apply_directional_stick(STICK_MODE_JOYPAD, phys_lx, phys_ly, cfg.deadzone,
+				now, pad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
+	}
+
+	// Update joybutton_state on rising AND falling edges of mapped JOYPAD_BTN actions
+	// so releasing a button cleanly resets its joybutton_state bit.
+	for (int b = 0; b < NR_PAD_SLOTS; b++) {
+		bool cur = !in_movie && mapped_joybtn[b];
+		if (cur && !prev_mapped_joybtn[b]) {
+			joybutton_state[b] = true;
+		} else if (!cur && prev_mapped_joybtn[b]) {
+			joybutton_state[b] = false;
+		}
+		prev_mapped_joybtn[b] = cur;
+	}
+
+	// Update joyaxis_state for STICK_MODE_JOYPAD sticks/D-Pads and reset cleanly to 0 on release.
+	bool suppress_raw_joyaxis = cfg.phys_enabled && cfg.phys_left_stick_mode != STICK_MODE_JOYPAD;
+	if (suppress_raw_joyaxis && !prev_raw_joyaxis_suppressed && !has_joy_stick_source) {
+		joyaxis_update(JOYAXIS_X, 0);
+		joyaxis_update(JOYAXIS_Y, 0);
+	}
+	prev_raw_joyaxis_suppressed = suppress_raw_joyaxis;
+
+	bool joy_active = !in_movie && has_joy_stick_source &&
+		(fabsf(joy_vx) > 0.25f || fabsf(joy_vy) > 0.25f);
+	if (joy_active) {
+		float jx = joy_vx < -1.0f ? -1.0f : (joy_vx > 1.0f ? 1.0f : joy_vx);
+		float jy = joy_vy < -1.0f ? -1.0f : (joy_vy > 1.0f ? 1.0f : joy_vy);
+		int ix = 0, iy = 0;
+		if (fabsf(jx) > 0.25f) {
+			ix = (int)(jx * 32767.0f);
+			if (abs(ix) <= JOYAXIS_DEADZONE)
+				ix = (ix > 0) ? (JOYAXIS_DEADZONE + 1000) : -(JOYAXIS_DEADZONE + 1000);
+		}
+		if (fabsf(jy) > 0.25f) {
+			iy = (int)(jy * 32767.0f);
+			if (abs(iy) <= JOYAXIS_DEADZONE)
+				iy = (iy > 0) ? (JOYAXIS_DEADZONE + 1000) : -(JOYAXIS_DEADZONE + 1000);
+		}
+		joyaxis_update(JOYAXIS_X, ix);
+		joyaxis_update(JOYAXIS_Y, iy);
+		prev_mapped_joyaxis_active = true;
+	} else if (prev_mapped_joyaxis_active) {
+		joyaxis_update(JOYAXIS_X, 0);
+		joyaxis_update(JOYAXIS_Y, 0);
+		prev_mapped_joyaxis_active = false;
 	}
 
 	if (in_movie) {
 		bool any_vpad_skip_down = false;
 		for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-			if (local_vpad[i].phys_down && !vpad_slots[i].movie_suppressed &&
+			if (local_vpad[i].phys_down && !vpad_rt_slots[i].movie_suppressed &&
 			    is_movie_skip_action(&local_vpad[i].active_action)) {
 				any_vpad_skip_down = true;
 				break;
@@ -1879,7 +2285,7 @@ static void process_gamepad_frame(void)
 	    !vpad_vk_down[VK_LBUTTON] && !pad_vk_down[VK_LBUTTON]) {
 		gamepad_cursor_visible = false;
 	}
-	send_cursor_ui_state(false);
+	send_cursor_ui_state(do_cursor_reset);
 	rebuild_effective_keys(now);
 }
 
@@ -2036,12 +2442,15 @@ static void reset_inputs_on_movie_start(void)
 		if (phys_slot_prev_raw[s])
 			phys_slot_movie_suppressed[s] = true;
 	}
+	bool ui_down[MAX_VPAD_SLOTS];
 	pthread_mutex_lock(&gp_mutex);
-	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-		if (vpad_slots[i].prev_effective_phys)
-			vpad_slots[i].movie_suppressed = true;
-	}
+	for (int i = 0; i < MAX_VPAD_SLOTS; i++)
+		ui_down[i] = vpad_ui_slots[i].phys_down;
 	pthread_mutex_unlock(&gp_mutex);
+	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
+		if (vpad_rt_slots[i].prev_effective_phys || ui_down[i])
+			vpad_rt_slots[i].movie_suppressed = true;
+	}
 }
 
 static void reset_movie_hold_state(void)
@@ -2140,12 +2549,15 @@ static void update_movie_skip_state(void)
 				if (phys_slot_prev_raw[s])
 					phys_slot_movie_suppressed[s] = true;
 			}
+			bool ui_down[MAX_VPAD_SLOTS];
 			pthread_mutex_lock(&gp_mutex);
-			for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-				if (vpad_slots[i].phys_down)
-					vpad_slots[i].movie_suppressed = true;
-			}
+			for (int i = 0; i < MAX_VPAD_SLOTS; i++)
+				ui_down[i] = vpad_ui_slots[i].phys_down;
 			pthread_mutex_unlock(&gp_mutex);
+			for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
+				if (ui_down[i] || vpad_rt_slots[i].prev_effective_phys)
+					vpad_rt_slots[i].movie_suppressed = true;
+			}
 			if (movie_skip_active()) {
 				movie_mode_active = false;
 				send_movie_skip_ui_state(0, seq, 0, 0, false);
@@ -2189,7 +2601,7 @@ static void handle_window_event(SDL_Event *e)
 		keyboard_focus = false;
 #endif
 		kbd_ctrl_down = false;
-		touch_ctrl_skip = false;
+		atomic_store(&touch_ctrl_skip, false);
 		memset(kbd_key_state, 0, sizeof(kbd_key_state));
 		memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
 		key_state[VK_CONTROL] = false;
@@ -2236,7 +2648,7 @@ void handle_window_events(void)
 			break;
 		case SDL_APP_WILLENTERBACKGROUND:
 			kbd_ctrl_down = false;
-			touch_ctrl_skip = false;
+			atomic_store(&touch_ctrl_skip, false);
 			memset(kbd_key_state, 0, sizeof(kbd_key_state));
 			memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
 			key_state[VK_CONTROL] = false;
@@ -2285,7 +2697,7 @@ void handle_events(void)
 			break;
 		case SDL_APP_WILLENTERBACKGROUND:
 			kbd_ctrl_down = false;
-			touch_ctrl_skip = false;
+			atomic_store(&touch_ctrl_skip, false);
 			memset(kbd_key_state, 0, sizeof(kbd_key_state));
 			memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
 			key_state[VK_CONTROL] = false;
@@ -2311,7 +2723,11 @@ void handle_events(void)
 				gfx_toggle_fullscreen();
 			} else if (e.key.keysym.scancode == SDL_SCANCODE_S) {
 				if (e.key.keysym.mod & (KMOD_LALT | KMOD_RALT)) {
+#ifdef __ANDROID__
+					emit_emu_cmd_to_ui(INPUT_EMU_SCREENSHOT);
+#else
 					screenshot_save();
+#endif
 				}
 			}
 			// fallthrough
@@ -2640,7 +3056,7 @@ void input_set_gamepad_config_json(const char *json)
 		cJSON *bindings = cJSON_GetObjectItemCaseSensitive(phys, "bindings");
 		if (cJSON_IsObject(bindings)) {
 			for (int s = 0; s < NR_PAD_SLOTS; s++) {
-				char key[8];
+				char key[16];
 				snprintf(key, sizeof(key), "%d", s);
 				cJSON *item = cJSON_GetObjectItemCaseSensitive(bindings, key);
 				if (item)
@@ -2657,9 +3073,8 @@ void input_set_gamepad_config_json(const char *json)
 		if (cJSON_IsNumber(vrs)) gp_cfg.vpad_right_stick_mode = vrs->valueint;
 	}
 
-	memset(phys_slot_latched, 0, sizeof(phys_slot_latched));
-	for (int i = 0; i < MAX_VPAD_SLOTS; i++)
-		vpad_slots[i].latched = false;
+	phys_latch_reset_gen++;
+	vpad_latch_reset_gen++;
 
 	pthread_mutex_unlock(&gp_mutex);
 	cJSON_Delete(root);
@@ -2695,7 +3110,7 @@ void input_set_virtual_button(int slot_id, int action_type, int code, int code2,
 	if (slot_id < 0 || slot_id >= MAX_VPAD_SLOTS)
 		return;
 	pthread_mutex_lock(&gp_mutex);
-	struct vpad_slot_state *st = &vpad_slots[slot_id];
+	struct vpad_ui_slot_state *st = &vpad_ui_slots[slot_id];
 	struct input_action_spec act = {
 		.type = (uint8_t)action_type,
 		.code = (int16_t)code,
@@ -2715,10 +3130,10 @@ void input_clear_virtual_inputs(void)
 {
 	pthread_mutex_lock(&gp_mutex);
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-		vpad_slots[i].phys_down = false;
-		vpad_slots[i].pending_press_edge = false;
-		vpad_slots[i].latched = false;
+		vpad_ui_slots[i].phys_down = false;
+		vpad_ui_slots[i].pending_press_edge = false;
 	}
+	vpad_latch_reset_gen++;
 	vpad_stick_x[0] = vpad_stick_y[0] = 0.0f;
 	vpad_stick_y[1] = vpad_stick_x[1] = 0.0f;
 	memset(vpad_dpad_dir, 0, sizeof(vpad_dpad_dir));
@@ -2801,45 +3216,99 @@ void input_set_android_pad_motion(int device_id, float lx, float ly, float rx, f
 
 void input_reset_gamepad_cursor(bool visible)
 {
-	gamepad_cursor_visible = visible;
-	if (visible) {
-		gamepad_cursor_active = true;
-		has_synthetic_mouse_pos = true;
-		last_cursor_move_tick = SDL_GetTicks();
-		if (sdl.viewport.w > 0 && sdl.viewport.h > 0) {
-			synthetic_mouse_x = sdl.viewport.x + (int)(gamepad_cursor_norm_x * max(1, sdl.viewport.w - 1));
-			synthetic_mouse_y = sdl.viewport.y + (int)(gamepad_cursor_norm_y * max(1, sdl.viewport.h - 1));
-		}
-	}
-	send_cursor_ui_state(true);
+	pthread_mutex_lock(&gp_mutex);
+	pending_cursor_reset = true;
+	pending_cursor_reset_visible = visible;
+	pthread_mutex_unlock(&gp_mutex);
 }
 
 char *input_get_controller_status_json(void)
 {
-	cJSON *root = cJSON_CreateObject();
-	cJSON *arr = cJSON_CreateArray();
+	struct {
+		char name[128];
+		uint16_t vendor_id;
+		uint16_t product_id;
+		bool is_game_controller;
+	} snap_pads[MAX_CONTROLLERS + 1];
+
 	int count = 0;
+	bool raw_phys[NR_PAD_SLOTS];
+	memset(raw_phys, 0, sizeof(raw_phys));
+	float ax[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
+	pthread_mutex_lock(&gp_mutex);
 	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 		if (!pad_slots[i].active)
 			continue;
-		cJSON *item = cJSON_CreateObject();
-		cJSON_AddNumberToObject(item, "index", count);
-		cJSON_AddStringToObject(item, "name", pad_slots[i].name);
-		cJSON_AddNumberToObject(item, "vendorId", pad_slots[i].vendor_id);
-		cJSON_AddNumberToObject(item, "productId", pad_slots[i].product_id);
-		cJSON_AddBoolToObject(item, "isGameController", pad_slots[i].is_game_controller);
-		cJSON_AddItemToArray(arr, item);
+		sanitize_utf8_copy(pad_slots[i].name, snap_pads[count].name, sizeof(snap_pads[count].name));
+		snap_pads[count].vendor_id = pad_slots[i].vendor_id;
+		snap_pads[count].product_id = pad_slots[i].product_id;
+		snap_pads[count].is_game_controller = pad_slots[i].is_game_controller;
 		count++;
+
+		for (int b = 0; b < NR_PAD_SLOTS; b++) {
+			if (pad_slots[i].btn_down[b])
+				raw_phys[b] = true;
+		}
+		if (pad_slots[i].hat_dir[0]) raw_phys[PAD_SLOT_DPAD_UP] = true;
+		if (pad_slots[i].hat_dir[1]) raw_phys[PAD_SLOT_DPAD_DOWN] = true;
+		if (pad_slots[i].hat_dir[2]) raw_phys[PAD_SLOT_DPAD_LEFT] = true;
+		if (pad_slots[i].hat_dir[3]) raw_phys[PAD_SLOT_DPAD_RIGHT] = true;
+		if (fabsf(pad_slots[i].axes[0]) > fabsf(ax[0])) ax[0] = pad_slots[i].axes[0];
+		if (fabsf(pad_slots[i].axes[1]) > fabsf(ax[1])) ax[1] = pad_slots[i].axes[1];
+		if (fabsf(pad_slots[i].axes[2]) > fabsf(ax[2])) ax[2] = pad_slots[i].axes[2];
+		if (fabsf(pad_slots[i].axes[3]) > fabsf(ax[3])) ax[3] = pad_slots[i].axes[3];
+		if (pad_slots[i].axes[4] > ax[4]) ax[4] = pad_slots[i].axes[4];
+		if (pad_slots[i].axes[5] > ax[5]) ax[5] = pad_slots[i].axes[5];
 	}
-	pthread_mutex_lock(&gp_mutex);
-	uint32_t bmask = live_status_buttons_mask;
-	float ax[6];
-	memcpy(ax, live_status_axes, sizeof(ax));
+	if (count == 0 && android_pad.active) {
+		sanitize_utf8_copy("Android Gamepad", snap_pads[0].name, sizeof(snap_pads[0].name));
+		snap_pads[0].vendor_id = 0;
+		snap_pads[0].product_id = 0;
+		snap_pads[0].is_game_controller = true;
+		count = 1;
+
+		for (int b = 0; b < NR_PAD_SLOTS; b++) {
+			if (android_pad.btn_down[b])
+				raw_phys[b] = true;
+		}
+		if (android_pad.hat_y < -0.5f) raw_phys[PAD_SLOT_DPAD_UP] = true;
+		if (android_pad.hat_y > 0.5f)  raw_phys[PAD_SLOT_DPAD_DOWN] = true;
+		if (android_pad.hat_x < -0.5f) raw_phys[PAD_SLOT_DPAD_LEFT] = true;
+		if (android_pad.hat_x > 0.5f)  raw_phys[PAD_SLOT_DPAD_RIGHT] = true;
+		memcpy(ax, android_pad.axes, sizeof(ax));
+		if (ax[4] > 0.35f || android_pad.trigger_latched[0]) raw_phys[PAD_SLOT_LT] = true;
+		if (ax[5] > 0.35f || android_pad.trigger_latched[1]) raw_phys[PAD_SLOT_RT] = true;
+	}
+	uint32_t bmask = 0;
+	for (int b = 0; b < NR_PAD_SLOTS; b++) {
+		if (raw_phys[b])
+			bmask |= (1u << b);
+	}
+	live_status_buttons_mask = bmask;
+	memcpy(live_status_axes, ax, sizeof(ax));
 	pthread_mutex_unlock(&gp_mutex);
 
+	cJSON *root = cJSON_CreateObject();
+	cJSON *arr = cJSON_CreateArray();
+	for (int i = 0; i < count; i++) {
+		cJSON *item = cJSON_CreateObject();
+		cJSON_AddNumberToObject(item, "index", i);
+		cJSON_AddStringToObject(item, "name", snap_pads[i].name);
+		cJSON_AddNumberToObject(item, "vendorId", snap_pads[i].vendor_id);
+		cJSON_AddNumberToObject(item, "productId", snap_pads[i].product_id);
+		cJSON_AddBoolToObject(item, "isGameController", snap_pads[i].is_game_controller);
+		cJSON_AddItemToArray(arr, item);
+	}
+	cJSON *axes_arr = cJSON_CreateArray();
+	for (int i = 0; i < 6; i++)
+		cJSON_AddItemToArray(axes_arr, cJSON_CreateNumber(ax[i]));
+
 	cJSON_AddNumberToObject(root, "count", count);
+	cJSON_AddNumberToObject(root, "connectedCount", count);
 	cJSON_AddItemToObject(root, "controllers", arr);
 	cJSON_AddNumberToObject(root, "buttonsMask", (double)bmask);
+	cJSON_AddItemToObject(root, "axes", axes_arr);
 	cJSON_AddNumberToObject(root, "lx", ax[0]);
 	cJSON_AddNumberToObject(root, "ly", ax[1]);
 	cJSON_AddNumberToObject(root, "rx", ax[2]);
@@ -2852,6 +3321,83 @@ char *input_get_controller_status_json(void)
 }
 
 #ifdef __ANDROID__
+static jstring jni_new_string_utf8_safe(JNIEnv *env, const char *utf8)
+{
+	if (!env)
+		return NULL;
+	if (!utf8 || !utf8[0]) {
+		jchar empty = 0;
+		return (*env)->NewString(env, &empty, 0);
+	}
+	size_t len = strlen(utf8);
+	jchar stack_buf[256];
+	jchar *u16 = (len <= 256) ? stack_buf : (jchar *)malloc(len * sizeof(jchar));
+	if (!u16) {
+		jchar empty = 0;
+		return (*env)->NewString(env, &empty, 0);
+	}
+	size_t out = 0;
+	const unsigned char *s = (const unsigned char *)utf8;
+	size_t i = 0;
+	while (i < len) {
+		unsigned char b0 = s[i];
+		if (b0 < 0x80u) {
+			u16[out++] = (jchar)b0;
+			i++;
+		} else if (b0 >= 0xC2u && b0 <= 0xDFu) {
+			if (i + 1 < len && (s[i + 1] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(s[i + 1] & 0x3Fu);
+				u16[out++] = (jchar)cp;
+				i += 2;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i++;
+			}
+		} else if (b0 >= 0xE0u && b0 <= 0xEFu) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xE0u) ? (s[i + 1] >= 0xA0u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xEDu) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x9Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			if (b1_ok && i + 2 < len && (s[i + 2] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x0Fu) << 12) |
+				              ((uint32_t)(s[i + 1] & 0x3Fu) << 6) |
+				              (uint32_t)(s[i + 2] & 0x3Fu);
+				u16[out++] = (jchar)cp;
+				i += 3;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i += b1_ok ? 2 : 1;
+			}
+		} else if (b0 >= 0xF0u && b0 <= 0xF4u) {
+			bool b1_ok = (i + 1 < len) && (
+				(b0 == 0xF0u) ? (s[i + 1] >= 0x90u && s[i + 1] <= 0xBFu) :
+				(b0 == 0xF4u) ? (s[i + 1] >= 0x80u && s[i + 1] <= 0x8Fu) :
+				((s[i + 1] & 0xC0u) == 0x80u));
+			bool b2_ok = b1_ok && (i + 2 < len) && ((s[i + 2] & 0xC0u) == 0x80u);
+			if (b2_ok && i + 3 < len && (s[i + 3] & 0xC0u) == 0x80u) {
+				uint32_t cp = ((uint32_t)(b0 & 0x07u) << 18) |
+				              ((uint32_t)(s[i + 1] & 0x3Fu) << 12) |
+				              ((uint32_t)(s[i + 2] & 0x3Fu) << 6) |
+				              (uint32_t)(s[i + 3] & 0x3Fu);
+				uint32_t v = cp - 0x10000u;
+				u16[out++] = (jchar)(0xD800u | (v >> 10));
+				u16[out++] = (jchar)(0xDC00u | (v & 0x3FFu));
+				i += 4;
+			} else {
+				u16[out++] = (jchar)0xFFFDu;
+				i += b2_ok ? 3 : (b1_ok ? 2 : 1);
+			}
+		} else {
+			u16[out++] = (jchar)0xFFFDu;
+			i++;
+		}
+	}
+	jstring ret = (*env)->NewString(env, u16, (jsize)out);
+	if (u16 != stack_buf)
+		free(u16);
+	return ret;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 	JNIEnv *env, jclass clazz, jstring jjson)
@@ -2931,7 +3477,7 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeGetControllerStatusJson(
 {
 	(void)clazz;
 	char *json = input_get_controller_status_json();
-	jstring ret = (*env)->NewStringUTF(env, json ? json : "{\"count\":0,\"controllers\":[]}");
+	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{\"count\":0,\"connectedCount\":0,\"controllers\":[],\"axes\":[0,0,0,0,0,0]}");
 	free(json);
 	return ret;
 }

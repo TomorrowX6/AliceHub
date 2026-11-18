@@ -30,23 +30,50 @@ android {
         minSdkVersion 26
         targetSdkVersion 34
         ndk { abiFilters 'arm64-v8a' }
-        def ciRunNumber = System.getenv('APP_VERSION_CODE') ?: System.getenv('GITHUB_RUN_NUMBER')
+        def ciRunNumber = (project.findProperty('APP_VERSION_CODE')
+                ?: System.getenv('APP_VERSION_CODE')
+                ?: System.getenv('GITHUB_RUN_NUMBER'))?.toString()?.trim()
         versionCode (ciRunNumber ? (100 + ciRunNumber.toInteger()) : 4)
-        versionName (System.getenv('APP_VERSION_NAME') ?: gitCommitHash)
+        def configuredVersionName = (project.findProperty('APP_VERSION_NAME')
+                ?: System.getenv('APP_VERSION_NAME'))?.toString()?.trim()
+        versionName (configuredVersionName ? configuredVersionName : gitCommitHash)
+    }
+    def releaseKeystoreFile = rootProject.file('keystore.jks')
+    def releaseStorePassword = (project.findProperty('KEYSTORE_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD'))?.toString()?.trim()
+    def releaseKeyAlias = (project.findProperty('KEY_ALIAS') ?: System.getenv('KEY_ALIAS'))?.toString()?.trim()
+    def releaseKeyPassword = (project.findProperty('KEY_PASSWORD') ?: System.getenv('KEY_PASSWORD'))?.toString()?.trim()
+    def hasReleaseSigning = releaseKeystoreFile.isFile() &&
+            releaseStorePassword &&
+            releaseKeyAlias &&
+            releaseKeyPassword
+    def requireReleaseSigning = (project.findProperty('CI_REQUIRE_RELEASE_SIGNING')
+            ?: System.getenv('CI_REQUIRE_RELEASE_SIGNING'))?.toString()?.trim()?.equalsIgnoreCase('true') ?: false
+    def isReleaseTaskRequested = gradle.startParameter.taskNames.any {
+        it.toLowerCase().contains('release')
+    }
+    if (buildAsApplication && !hasReleaseSigning && (isReleaseTaskRequested || requireReleaseSigning)) {
+        def missingSigningMsg = "Release keystore credentials are missing (expected project/keystore.jks and KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)."
+        if (requireReleaseSigning) {
+            throw new GradleException("${missingSigningMsg} Failing build because CI_REQUIRE_RELEASE_SIGNING=true.")
+        } else {
+            logger.warn("WARNING: ${missingSigningMsg} Falling back to debug signing config for release APK.")
+        }
     }
     signingConfigs {
         release {
-            storeFile rootProject.file('keystore.jks')
-            storePassword System.getenv('KEYSTORE_PASSWORD') ?: 'android'
-            keyAlias System.getenv('KEY_ALIAS') ?: 'androiddebugkey'
-            keyPassword System.getenv('KEY_PASSWORD') ?: 'android'
+            if (hasReleaseSigning) {
+                storeFile releaseKeystoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (rootProject.file('keystore.jks').exists()) {
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig signingConfigs.debug

@@ -1046,8 +1046,14 @@ static bool build_gray_filter(struct parts_construction_process *cproc, struct p
 		w = cproc->common.texture.w;
 		h = cproc->common.texture.h;
 	}
+	if (w <= 0 || h <= 0)
+		return true;
 
-	gfx_copy_grayscale(&cproc->common.texture, x, y, &cproc->common.texture, x, y, w, h);
+	Texture source = {0};
+	gfx_init_texture_blank(&source, cproc->common.texture.w, cproc->common.texture.h);
+	gfx_copy_with_alpha_map(&source, 0, 0, &cproc->common.texture, 0, 0, source.w, source.h);
+	gfx_copy_grayscale(&cproc->common.texture, x, y, &source, x, y, w, h);
+	gfx_delete_texture(&source);
 	return true;
 }
 
@@ -1186,8 +1192,13 @@ static bool build_v14(struct parts_construction_process *cproc, struct parts_cp_
 		int y = op->full_size ? 0 : op->dy;
 		int w = op->full_size ? dst->w : op->dw;
 		int h = op->full_size ? dst->h : op->dh;
-		if (w > 0 && h > 0)
-			gfx_copy_color_reverse(dst, x, y, dst, x, y, w, h);
+		if (w > 0 && h > 0) {
+			Texture source = {0};
+			gfx_init_texture_blank(&source, dst->w, dst->h);
+			gfx_copy_with_alpha_map(&source, 0, 0, dst, 0, 0, source.w, source.h);
+			gfx_copy_color_reverse(dst, x, y, &source, x, y, w, h);
+			gfx_delete_texture(&source);
+		}
 		return true;
 	}
 

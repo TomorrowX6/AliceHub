@@ -58,17 +58,20 @@ object NativeGameImport {
     ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val files = children(context, tree, root)
-        val ainDoc = files.firstOrNull { !it.folder && it.name.endsWith(".ain", true) }
-        if (files.none { !it.folder && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true)) } ||
-            ainDoc == null)
+        val ainDoc = files.firstOrNull { !it.folder && !skip(it.name) && it.name.endsWith(".ain", true) }
+        if (files.none {
+                !it.folder && !skip(it.name) &&
+                    (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
+            } || ainDoc == null)
             throw GameList.InstallFailureException(R.string.directory_no_game)
         if (!expectedAinName.isNullOrBlank() && !ainDoc.name.equals(expectedAinName, ignoreCase = true)) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
-        val rawBaseName = ainDoc.name.substringBeforeLast('.')
-        val baseName = ArchiveExtractor.repairSjisAsGbkMojibake(rawBaseName).ifEmpty { "Game" }
-        val staging = File(storage, ".import-${UUID.randomUUID()}").canonicalFile
-        if (staging.parentFile != storage.canonicalFile || !staging.mkdir())
+        val rawBaseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainDoc.name.substringBeforeLast('.'))
+        val baseName = OnlineInstaller.sanitizeInstallDirName(rawBaseName)
+        val storageCanonical = storage.canonicalFile
+        val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
+        if (staging.parentFile != storageCanonical || !staging.mkdir())
             throw IOException("Cannot create import directory")
         var copied = 0L
         var lastUpdate = 0L
@@ -115,10 +118,17 @@ object NativeGameImport {
             }
             copy(files, staging)
             currentCoroutineContext().ensureActive()
-            var destination = File(storage, baseName)
+            var destination = File(storageCanonical, baseName).canonicalFile
             var index = 1
-            while (destination.exists()) destination = File(storage, "$baseName-${index++}")
-            if (!staging.renameTo(destination)) throw IOException("Cannot finish game import")
+            while (destination.exists()) {
+                destination = File(storageCanonical, "$baseName-${index++}").canonicalFile
+            }
+            if (destination.parentFile != storageCanonical) {
+                throw IOException("Invalid destination directory")
+            }
+            if (!OnlineInstaller.moveFileOrDir(staging, destination)) {
+                throw IOException("Cannot finish game import")
+            }
             return destination
         } finally {
             // Staging is a newly created direct child of this app's storage.

@@ -70,12 +70,12 @@ static bool should_preserve_static_global(int global_index)
 	return false;
 }
 
-#define invalid_save_data(msg, data) {					\
-		char *str = data ? cJSON_Print(data) : strdup("NULL");	\
-		if (!str) str = strdup("PRINTING FAILED");		\
-		WARNING("Invalid save data (%d): " msg ": %s", current_global, data); \
+#define invalid_save_data(msg, data) do {				\
+		char *str = (data) ? cJSON_Print(data) : xstrdup("NULL"); \
+		if (!str) str = xstrdup("PRINTING FAILED");		\
+		WARNING("Invalid save data (%d): " msg ": %s", current_global, str); \
 		free(str);						\
-	}
+	} while (0)
 
 static char *make_atomic_tmp_path(const char *path)
 {
@@ -1097,22 +1097,79 @@ static int page_array_rank(struct page *page)
 	return rank;
 }
 
-static struct gsave_flat_array *collect_flat_arrays(struct page *page, struct gsave_flat_array *fa, struct gsave *save)
+static enum ain_data_type page_array_leaf_type(struct page *page)
 {
-	if (nested_array(page)) {
-		for (int i = 0; i < page->nr_vars; i++)
-			fa = collect_flat_arrays(heap_get_page(page->values[i].i), fa, save);
+	if (!page)
+		return AIN_INT;
+	if (page->a_type != AIN_ARRAY)
+		return array_type(page->a_type);
+	const struct ain_type *t = &page->array.element_type;
+	while (t && t->data == AIN_ARRAY)
+		t = t->array_type;
+	return t ? t->data : AIN_INT;
+}
+
+static bool is_gsave_heap_type(enum ain_data_type type)
+{
+	switch (type) {
+	case AIN_STRING:
+	case AIN_STRUCT:
+	case AIN_ARRAY:
+	case AIN_ARRAY_TYPE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static struct gsave_flat_array *collect_flat_arrays(struct page *page, struct gsave_flat_array *fa,
+		struct gsave_flat_array *fa_end, int dim, const int32_t *dims,
+		enum ain_data_type leaf_type, struct gsave *save)
+{
+	if (dim > 0) {
+		int count = dims[dim];
+		for (int i = 0; i < count; i++) {
+			struct page *child = (page && page->type == ARRAY_PAGE && i < page->nr_vars)
+				? heap_get_page(page->values[i].i) : NULL;
+			fa = collect_flat_arrays(child, fa, fa_end, dim - 1, dims, leaf_type, save);
+		}
 		return fa;
 	}
-	enum ain_data_type type = variable_type(page, 0, NULL, NULL);
-	fa->nr_values = page->nr_vars;
+	if (fa >= fa_end)
+		return fa;
+	int count = dims[0];
+	enum ain_data_type type = (page && page->type == ARRAY_PAGE && page->nr_vars > 0)
+		? variable_type(page, 0, NULL, NULL) : leaf_type;
+	fa->nr_values = count;
 	fa->type = type;
-	fa->values = xcalloc(fa->nr_values, sizeof(struct gsave_array_value));
-	for (int i = 0; i < page->nr_vars; i++) {
+	fa->values = xcalloc(count, sizeof(struct gsave_array_value));
+	for (int i = 0; i < count; i++) {
+		bool has_elem = (page && page->type == ARRAY_PAGE && i < page->nr_vars);
+		union vm_value elem = has_elem ? page->values[i] : (union vm_value){ .i = is_gsave_heap_type(type) ? -1 : 0 };
 		fa->values[i].type = type;
-		fa->values[i].value = add_value_to_gsave(type, page->values[i], save);
+		fa->values[i].value = add_value_to_gsave(type, elem, save);
 	}
-	return ++fa;
+	return fa + 1;
+}
+
+static int32_t add_empty_struct_to_gsave(struct gsave *save)
+{
+	int32_t sidx = 0;
+	if (save->version >= 7) {
+		sidx = gsave_get_struct_def(save, "");
+		if (sidx < 0) {
+			struct ain_struct dummy = { .name = "" };
+			sidx = gsave_add_struct_def(save, &dummy);
+		}
+	}
+	struct gsave_record rec = {
+		.type = GSAVE_RECORD_STRUCT,
+		.struct_name = xstrdup(""),
+		.struct_index = sidx,
+		.nr_indices = 0,
+		.indices = NULL,
+	};
+	return gsave_add_record(save, &rec);
 }
 
 static int32_t add_value_to_gsave(enum ain_data_type type, union vm_value val, struct gsave *save)
@@ -1131,31 +1188,33 @@ static int32_t add_value_to_gsave(enum ain_data_type type, union vm_value val, s
 		// Group saves contain persistent data; the original v12 engine clears events.
 		return ain->version >= 11 ? 0 : val.i;
 	case AIN_STRING:
-		return gsave_add_string(save, heap[val.i].s);
+		return gsave_add_string(save, string_index_valid(val.i) ? heap[val.i].s : &EMPTY_STRING);
 	case AIN_STRUCT:
 		{
 			struct page *page = heap_get_page(val.i);
-			assert(page->type == STRUCT_PAGE);
+			if (!page || page->type != STRUCT_PAGE || page->index < 0 || page->index >= ain->nr_structures)
+				return add_empty_struct_to_gsave(save);
 			struct ain_struct *st = &ain->structures[page->index];
-			assert(st->nr_members == page->nr_vars);
+			int nr_members = st->nr_members;
 			struct gsave_record rec = {
 				.type = GSAVE_RECORD_STRUCT,
-				.struct_name = strdup(st->name),
-				.nr_indices = st->nr_members,
-				.indices = xcalloc(st->nr_members, sizeof(int32_t)),
+				.struct_name = xstrdup(st->name),
+				.nr_indices = nr_members,
+				.indices = xcalloc(nr_members, sizeof(int32_t)),
 			};
 			if (save->version >= 7) {
 				rec.struct_index = gsave_get_struct_def(save, st->name);
 				if (rec.struct_index < 0)
 					rec.struct_index = gsave_add_struct_def(save, st);
 			}
-			for (int i = 0; i < page->nr_vars; i++) {
-				enum ain_data_type type = st->members[i].type.data;
+			for (int i = 0; i < nr_members; i++) {
+				enum ain_data_type ftype = st->members[i].type.data;
 				const char *field_name = st->members[i].name2 ? st->members[i].name2 : st->members[i].name;
-				int32_t value = field_name[0] ? add_value_to_gsave(type, page->values[i], save) : 0;
+				int32_t value = (field_name && field_name[0] && i < page->nr_vars)
+					? add_value_to_gsave(ftype, page->values[i], save) : 0;
 				struct gsave_keyval kv = {
-					.name = strdup(field_name),
-					.type = type,
+					.name = xstrdup(field_name ? field_name : ""),
+					.type = ftype,
 					.value = value,
 				};
 				rec.indices[i] = gsave_add_keyval(save, &kv);
@@ -1166,12 +1225,15 @@ static int32_t add_value_to_gsave(enum ain_data_type type, union vm_value val, s
 	case AIN_ARRAY:
 		{
 			struct page *page = heap_get_page(val.i);
-			if (!page) {
+			if (!page || page->type != ARRAY_PAGE) {
 				struct gsave_array array = { .rank = -1 };
 				return gsave_add_array(save, &array);
 			}
-			assert(page->type == ARRAY_PAGE);
 			int rank = page_array_rank(page);
+			if (rank <= 0 || rank > 16) {
+				struct gsave_array array = { .rank = -1 };
+				return gsave_add_array(save, &array);
+			}
 			struct gsave_array array = {
 				.rank = rank,
 				.dimensions = xcalloc(rank, sizeof(int32_t)),
@@ -1179,15 +1241,28 @@ static int32_t add_value_to_gsave(enum ain_data_type type, union vm_value val, s
 			};
 			struct page *p = page;
 			for (int dim = rank - 1; dim >= 0; dim--) {
-				int count = p ? p->nr_vars : 0;
+				int count = (p && p->type == ARRAY_PAGE && p->nr_vars >= 0) ? p->nr_vars : 0;
 				array.dimensions[dim] = count;
 				if (dim) {
-					array.nr_flat_arrays *= count;
-					p = count ? heap_get_page(p->values[0].i) : NULL;
+					if (__builtin_mul_overflow(array.nr_flat_arrays, count, &array.nr_flat_arrays)) {
+						free(array.dimensions);
+						struct gsave_array empty_arr = { .rank = -1 };
+						return gsave_add_array(save, &empty_arr);
+					}
+					struct page *next_p = NULL;
+					if (p && p->type == ARRAY_PAGE) {
+						for (int j = 0; j < count; j++) {
+							next_p = heap_get_page(p->values[j].i);
+							if (next_p && next_p->type == ARRAY_PAGE)
+								break;
+						}
+					}
+					p = next_p;
 				}
 			}
 			array.flat_arrays = xcalloc(array.nr_flat_arrays, sizeof(struct gsave_flat_array));
-			collect_flat_arrays(page, array.flat_arrays, save);
+			collect_flat_arrays(page, array.flat_arrays, array.flat_arrays + array.nr_flat_arrays,
+				rank - 1, array.dimensions, page_array_leaf_type(page), save);
 			return gsave_add_array(save, &array);
 		}
 	case AIN_REF_TYPE:
@@ -1240,7 +1315,7 @@ int save_globals(const char *keyname, const char *filename, const char *group_na
 			if (group >= 0 && ain->globals[i].group_index != group)
 				continue;
 			const char *gname = (ain->globals[i].name2 && ain->globals[i].name2[0]) ? ain->globals[i].name2 : ain->globals[i].name;
-			global->name = strdup(gname);
+			global->name = xstrdup(gname);
 			global->type = ain->globals[i].type.data;
 			global->value = add_value_to_gsave(global->type, global_get(i), save);
 			global++;
@@ -1283,6 +1358,11 @@ void get_array_dims(cJSON *json, int rank, union vm_value *dims)
 {
 	cJSON *array = json;
 	for (int i = 0; i < rank; i++) {
+		if (!array || !cJSON_IsArray(array)) {
+			dims[i].i = 0;
+			array = NULL;
+			continue;
+		}
 		dims[i].i = cJSON_GetArraySize(array);
 		array = cJSON_GetArrayItem(array, 0);
 	}
@@ -1290,9 +1370,13 @@ void get_array_dims(cJSON *json, int rank, union vm_value *dims)
 
 void json_load_page(struct page *page, cJSON *vars, bool call_dtors)
 {
+	if (!page || !vars)
+		return;
 	int i = 0;
 	cJSON *v;
 	cJSON_ArrayForEach(v, vars) {
+		if (i >= page->nr_vars)
+			break;
 		int struct_type, array_rank;
 		enum ain_data_type data_type = variable_type(page, i, &struct_type, &array_rank);
 		union vm_value val = json_to_vm_value(data_type, struct_type, array_rank, v);
@@ -1333,13 +1417,17 @@ static union vm_value json_to_vm_value(enum ain_data_type type, enum ain_data_ty
 			return vm_int(slot);
 		}
 		str = cJSON_GetStringValue(json);
-		if (!str[0]) {
+		if (!str || !str[0]) {
 			heap[slot].s = string_ref(&EMPTY_STRING);
 		} else {
 			heap[slot].s = make_string(str, strlen(str));
 		}
 		return vm_int(slot);
 	case AIN_STRUCT:
+		if ((int)struct_type < 0 || (int)struct_type >= ain->nr_structures) {
+			invalid_save_data("Invalid struct type", json);
+			return vm_int(-1);
+		}
 		slot = alloc_struct(struct_type);
 		if (!cJSON_IsArray(json) || cJSON_GetArraySize(json) != ain->structures[struct_type].nr_members) {
 			invalid_save_data("Not an array", json);
@@ -1353,7 +1441,7 @@ static union vm_value json_to_vm_value(enum ain_data_type type, enum ain_data_ty
 			heap[slot].page = NULL;
 			return vm_int(slot);
 		}
-		if (!cJSON_IsArray(json)) {
+		if (!cJSON_IsArray(json) || array_rank <= 0 || array_rank > 16) {
 			invalid_save_data("Not an array", json);
 			heap[slot].page = NULL;
 			return vm_int(slot);
@@ -1363,7 +1451,8 @@ static union vm_value json_to_vm_value(enum ain_data_type type, enum ain_data_ty
 		page = alloc_array(array_rank, dims, type, struct_type, false);
 		heap[slot].page = page;
 		free(dims);
-		json_load_page(heap[slot].page, json, false);
+		if (page)
+			json_load_page(page, json, false);
 		return vm_int(slot);
 	case AIN_REF_TYPE:
 		return vm_int(-1);
@@ -1384,16 +1473,19 @@ static cJSON *read_save_file(const char *path)
 		return NULL;
 	}
 
-	fseek(f, 0, SEEK_END);
-	len = ftell(f);
-	fseek(f, 0, SEEK_SET);
+	if (fseek(f, 0, SEEK_END) != 0 || (len = ftell(f)) < 0 || len > 256L * 1024L * 1024L || fseek(f, 0, SEEK_SET) != 0) {
+		WARNING("Failed to determine save file size: %s", display_utf0(path));
+		fclose(f);
+		return NULL;
+	}
 
-	buf = xmalloc(len+1);
+	buf = xmalloc((size_t)len + 1);
 	buf[len] = '\0';
-	if (fread(buf, len, 1, f) != 1) {
+	if (len > 0 && fread(buf, (size_t)len, 1, f) != 1) {
 		WARNING("Failed to read save file: %s", display_utf0(path));
+		fclose(f);
 		free(buf);
-		return 0;
+		return NULL;
 	}
 	fclose(f);
 
@@ -1444,7 +1536,7 @@ static int load_globals_from_json(const char *path, const char *keyname, const c
 		}
 
 		int i = index->valueint;
-		if (i < 0 || i > ain->nr_globals) {
+		if (i < 0 || i >= ain->nr_globals) {
 			invalid_save_data("Invalid global index", index);
 			goto cleanup;
 		}
@@ -1494,7 +1586,11 @@ static bool gsave_struct_matches(const struct ain_struct *st, const char *struct
 		return true;
 	if (!rec || rec->nr_indices != st->nr_members || st->nr_members <= 0)
 		return false;
+	if (sd && sd->nr_fields < rec->nr_indices)
+		return false;
 	for (int i = 0; i < rec->nr_indices; i++) {
+		if (rec->indices[i] < 0 || rec->indices[i] >= save->nr_keyvals)
+			return false;
 		const struct gsave_keyval *kv = &save->keyvals[rec->indices[i]];
 		const char *field_name = sd ? sd->fields[i].name : kv->name;
 		enum ain_data_type field_type = sd ? sd->fields[i].type : kv->type;
@@ -1512,16 +1608,20 @@ static bool gsave_struct_matches(const struct ain_struct *st, const char *struct
 static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type type, int struct_type, int array_rank, int32_t value, bool src_is_gbk);
 static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct ain_type *type, int32_t value, bool src_is_gbk);
 
-static struct gsave_flat_array *gsave_load_array(struct gsave *save, struct page *page, struct gsave_flat_array *flat_array, bool src_is_gbk)
+static struct gsave_flat_array *gsave_load_array(struct gsave *save, struct page *page,
+		struct gsave_flat_array *flat_array, struct gsave_flat_array *flat_end, bool src_is_gbk)
 {
-	assert(page->type == ARRAY_PAGE);
+	if (!page || page->type != ARRAY_PAGE)
+		VM_ERROR("Bad save file: invalid array page");
 	if (nested_array(page)) {
 		for (int i = 0; i < page->nr_vars; i++)
-			flat_array = gsave_load_array(save, heap_get_page(page->values[i].i), flat_array, src_is_gbk);
+			flat_array = gsave_load_array(save, heap_get_page(page->values[i].i), flat_array, flat_end, src_is_gbk);
 		return flat_array;
 	}
 
-	if (page->nr_vars != flat_array->nr_values)
+	if (!flat_array || flat_array >= flat_end)
+		VM_ERROR("Bad save file: truncated flat array table");
+	if (flat_array->nr_values < 0 || page->nr_vars != flat_array->nr_values)
 		VM_ERROR("Bad save file: unexpected number of array elements");
 	for (int i = 0; i < page->nr_vars; i++) {
 		int struct_type, array_rank;
@@ -1555,26 +1655,46 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 	case AIN_STRING:
 		{
 			int slot = heap_alloc_slot(VM_STRING);
-			if (value == GSAVE7_EMPTY_STRING || !save->strings[value]->size) {
+			if (value == GSAVE7_EMPTY_STRING) {
 				heap[slot].s = string_ref(&EMPTY_STRING);
 			} else {
-				heap[slot].s = save_decode_vm_string(save->strings[value]->text,
-					save->strings[value]->size, src_is_gbk);
+				if (value < 0 || value >= save->nr_strings || !save->strings[value]) {
+					heap[slot].s = string_ref(&EMPTY_STRING);
+					VM_ERROR("Bad save file: invalid string index %d", value);
+				}
+				if (!save->strings[value]->size) {
+					heap[slot].s = string_ref(&EMPTY_STRING);
+				} else {
+					heap[slot].s = save_decode_vm_string(save->strings[value]->text,
+						save->strings[value]->size, src_is_gbk);
+				}
 			}
 			return vm_int(slot);
 		}
 	case AIN_STRUCT:
 		{
+			if (value < 0 || value >= save->nr_records)
+				VM_ERROR("Bad save file: invalid record index %d", value);
+			if (struct_type < 0 || struct_type >= ain->nr_structures)
+				VM_ERROR("Bad save file: invalid struct type %d", struct_type);
 			struct gsave_record *rec = &save->records[value];
 			struct ain_struct *st = &ain->structures[struct_type];
-			struct gsave_struct_def *sd =
-				save->version >= 7 ? &save->struct_defs[rec->struct_index] : NULL;
+			struct gsave_struct_def *sd = NULL;
+			if (save->version >= 7) {
+				if (rec->struct_index < 0 || rec->struct_index >= save->nr_struct_defs)
+					VM_ERROR("Bad save file: invalid struct_def index %d", rec->struct_index);
+				sd = &save->struct_defs[rec->struct_index];
+				if (sd->nr_fields < rec->nr_indices)
+					VM_ERROR("Bad save file: struct_def field count mismatch");
+			}
 			const char *struct_name = sd ? sd->name : rec->struct_name;
 			if (!gsave_struct_matches(st, struct_name, rec, save, sd))
 				VM_ERROR("Bad save file: structure name mismatch");
 			int slot = alloc_struct(struct_type);
 			struct page *page = heap[slot].page;
 			for (int i = 0; i < rec->nr_indices; i++) {
+				if (rec->indices[i] < 0 || rec->indices[i] >= save->nr_keyvals)
+					VM_ERROR("Bad save file: invalid keyval index %d", rec->indices[i]);
 				struct gsave_keyval *kv = &save->keyvals[rec->indices[i]];
 				const char *field_name = sd ? sd->fields[i].name : kv->name;
 				enum ain_data_type field_type = sd ? sd->fields[i].type : kv->type;
@@ -1591,8 +1711,8 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 					WARNING("structure %s has no member named %s", display_sjis0(struct_name), display_sjis1(field_name));
 					continue;
 				}
-				int struct_type, array_rank;
-				enum ain_data_type data_type = variable_type(page, index, &struct_type, &array_rank);
+				int m_struct_type, m_array_rank;
+				enum ain_data_type data_type = variable_type(page, index, &m_struct_type, &m_array_rank);
 				if (data_type != field_type)
 					VM_ERROR("Bad save file: structure member type mismatch");
 				union vm_value val = gsave_to_vm_value_typed(save, &st->members[index].type, kv->value, src_is_gbk);
@@ -1603,21 +1723,31 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 		}
 	case AIN_ARRAY_TYPE:
 		{
+			if (value < 0 || value >= save->nr_arrays)
+				VM_ERROR("Bad save file: invalid array index %d", value);
 			struct gsave_array *array = &save->arrays[value];
 			int slot = heap_alloc_slot(VM_PAGE);
-			if (array->rank == -1) {
+			if (array->rank < 0) {
 				heap[slot].page = NULL;
 				return vm_int(slot);
 			}
-			if (array_rank != array->rank)
+			if (array_rank <= 0 || array_rank != array->rank)
 				VM_ERROR("Bad save file: array rank mismatch");
 			union vm_value *dims = xmalloc(sizeof(union vm_value) * array_rank);
-			for (int i = 0; i < array_rank; i++)
-				dims[i].i = array->dimensions[array_rank - 1 - i];
+			for (int i = 0; i < array_rank; i++) {
+				int32_t d = array->dimensions[array_rank - 1 - i];
+				if (d < 0 || d > 16 * 1024 * 1024) {
+					free(dims);
+					VM_ERROR("Bad save file: invalid array dimension %d", d);
+				}
+				dims[i].i = d;
+			}
 			struct page *page = alloc_array(array_rank, dims, type, struct_type, false);
 			heap[slot].page = page;
 			free(dims);
-			gsave_load_array(save, page, array->flat_arrays, src_is_gbk);
+			struct gsave_flat_array *flat_end = array->flat_arrays
+				? array->flat_arrays + array->nr_flat_arrays : NULL;
+			gsave_load_array(save, page, array->flat_arrays, flat_end, src_is_gbk);
 			return vm_int(slot);
 		}
 	case AIN_REF_TYPE:
@@ -1630,8 +1760,10 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 
 static struct page *v12_saved_array_new(const struct ain_type *type, int rank, int32_t *dimensions)
 {
-	if (type->data != AIN_ARRAY || rank < 1 || !type->array_type)
+	if (type->data != AIN_ARRAY || rank < 1 || rank > 16 || !type->array_type)
 		VM_ERROR("Bad save file: nested array type mismatch");
+	if (dimensions[rank - 1] < 0 || dimensions[rank - 1] > 16 * 1024 * 1024)
+		VM_ERROR("Bad save file: invalid array dimension %d", dimensions[rank - 1]);
 	struct page *page = v12_array_new(type->array_type, dimensions[rank - 1], false);
 	if (rank > 1) {
 		for (int i = 0; i < page->nr_vars; i++) {
@@ -1653,7 +1785,9 @@ static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct a
 	struct gsave_array *array = &save->arrays[value];
 	if (array->rank < 1) return variable_initval_typed(type);
 	struct page *page = v12_saved_array_new(type, array->rank, array->dimensions);
-	gsave_load_array(save, page, array->flat_arrays, src_is_gbk);
+	struct gsave_flat_array *flat_end = array->flat_arrays
+		? array->flat_arrays + array->nr_flat_arrays : NULL;
+	gsave_load_array(save, page, array->flat_arrays, flat_end, src_is_gbk);
 	return vm_int(heap_alloc_page(page));
 }
 
@@ -1826,7 +1960,7 @@ int load_globals_from_gsave(struct gsave *save, const char *keyname, const char 
 	if (!group_name)
 		group_name = "";
 	if (!save->group)
-		save->group = strdup("");
+		save->group = xstrdup("");
 	if (!save_names_equal(group_name, save->group))
 		VM_ERROR("Attempted to load save data with wrong group name: '%s'", display_sjis0(group_name));
 
@@ -1877,20 +2011,19 @@ int load_globals(const char *keyname, const char *filename, const char *group_na
 	enum savefile_error error;
 	struct gsave *save = gsave_read(path, &error);
 	if (error == SAVEFILE_SUCCESS) {
-		free(path);
 		retval = load_globals_from_gsave(save, keyname, group_name, n);
 		gsave_free(save);
 		if (retval) {
+			free(path);
 			track_global_save(keyname, filename, group_name);
 			if (is_cfg)
 				modifier_on_config_loaded();
 			modifier_on_globals_loaded();
-		} else if (is_cfg) {
-			modifier_on_config_loaded();
+			return retval;
 		}
-		return retval;
-	}
-	if (error == SAVEFILE_INVALID_SIGNATURE) {
+		if (n)
+			*n = 0;
+	} else if (error == SAVEFILE_INVALID_SIGNATURE) {
 		// If not a System4 save file, try reading as a json.
 		retval = load_globals_from_json(path, keyname, group_name, n);
 		if (retval) {
@@ -1901,6 +2034,8 @@ int load_globals(const char *keyname, const char *filename, const char *group_na
 			modifier_on_globals_loaded();
 			return retval;
 		}
+		if (n)
+			*n = 0;
 	} else {
 		WARNING("%s: %s", display_utf0(path), savefile_strerror(error));
 	}
@@ -2005,11 +2140,19 @@ struct x4ss_buf {
 
 static void x4ss_buf_ensure(struct x4ss_buf *b, size_t extra)
 {
-	if (b->len + extra <= b->cap)
+	if (extra > SIZE_MAX - b->len)
+		ERROR("x4ss buffer size overflow");
+	size_t needed = b->len + extra;
+	if (needed <= b->cap)
 		return;
-	size_t new_cap = b->cap ? b->cap * 2 : 4096;
-	while (new_cap < b->len + extra)
+	size_t new_cap = b->cap ? b->cap : 4096;
+	while (new_cap < needed) {
+		if (new_cap > SIZE_MAX / 2) {
+			new_cap = needed;
+			break;
+		}
 		new_cap *= 2;
+	}
 	b->data = xrealloc(b->data, new_cap);
 	b->cap = new_cap;
 }
@@ -2061,7 +2204,7 @@ struct x4ss_reader {
 
 static bool x4ss_get_bytes(struct x4ss_reader *r, void *dst, size_t n)
 {
-	if (r->error || r->pos + n > r->len) {
+	if (r->error || n > r->len - r->pos) {
 		r->error = true;
 		return false;
 	}
@@ -2095,13 +2238,13 @@ static int32_t x4ss_get_i32(struct x4ss_reader *r)
 static char *x4ss_get_cstr(struct x4ss_reader *r, uint32_t *out_len)
 {
 	uint32_t n = x4ss_get_u32(r);
-	if (r->error || r->pos + n > r->len) {
+	if (r->error || n > 64u * 1024u * 1024u || n > r->len - r->pos) {
 		r->error = true;
 		if (out_len)
 			*out_len = 0;
 		return NULL;
 	}
-	char *s = xmalloc(n + 1);
+	char *s = xmalloc((size_t)n + 1);
 	if (n)
 		memcpy(s, r->data + r->pos, n);
 	s[n] = '\0';
@@ -2208,9 +2351,13 @@ static void x4ss_write_ain_type(struct x4ss_buf *b, const struct ain_type *t)
 	}
 }
 
-static struct ain_type x4ss_read_ain_type(struct x4ss_reader *r)
+static struct ain_type x4ss_read_ain_type_depth(struct x4ss_reader *r, int depth)
 {
 	struct ain_type t = {0};
+	if (depth > 16) {
+		r->error = true;
+		return t;
+	}
 	t.data = (enum ain_data_type)x4ss_get_i32(r);
 	int fallback_id = x4ss_get_i32(r);
 	t.rank = x4ss_get_i32(r);
@@ -2219,12 +2366,17 @@ static struct ain_type x4ss_read_ain_type(struct x4ss_reader *r)
 	free(sym);
 	uint8_t has_inner = x4ss_get_u8(r);
 	if (has_inner && !r->error) {
-		struct ain_type inner = x4ss_read_ain_type(r);
+		struct ain_type inner = x4ss_read_ain_type_depth(r, depth + 1);
 		t.array_type = x4ss_intern_ain_type(&inner);
 	} else {
 		t.array_type = NULL;
 	}
 	return t;
+}
+
+static struct ain_type x4ss_read_ain_type(struct x4ss_reader *r)
+{
+	return x4ss_read_ain_type_depth(r, 0);
 }
 
 struct x4ss_save_ctx {
@@ -2407,8 +2559,12 @@ static void x4ss_write_value(struct x4ss_save_ctx *ctx, struct x4ss_buf *b, cons
 	}
 }
 
-static void x4ss_skip_value(struct x4ss_reader *r)
+static void x4ss_skip_value_depth(struct x4ss_reader *r, int depth)
 {
+	if (depth > 16) {
+		r->error = true;
+		return;
+	}
 	uint8_t tag = x4ss_get_u8(r);
 	if (r->error)
 		return;
@@ -2434,13 +2590,18 @@ static void x4ss_skip_value(struct x4ss_reader *r)
 	case X4SS_VAL_OPTION: {
 		uint8_t is_none = x4ss_get_u8(r);
 		if (!is_none && !r->error)
-			x4ss_skip_value(r);
+			x4ss_skip_value_depth(r, depth + 1);
 		break;
 	}
 	default:
 		r->error = true;
 		break;
 	}
+}
+
+static void x4ss_skip_value(struct x4ss_reader *r)
+{
+	x4ss_skip_value_depth(r, 0);
 }
 
 static int x4ss_resolve_vtable_offset(int concrete_sno, int iface_sno, int saved_voff)
@@ -2461,9 +2622,13 @@ struct x4ss_load_ctx {
 	bool *is_root;
 };
 
-static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
-		union vm_value *dst, const struct ain_type *t, bool has_existing)
+static void x4ss_read_value_depth(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
+		union vm_value *dst, const struct ain_type *t, bool has_existing, int depth)
 {
+	if (depth > 16) {
+		r->error = true;
+		return;
+	}
 	uint8_t tag = x4ss_get_u8(r);
 	if (r->error)
 		return;
@@ -2475,7 +2640,7 @@ static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
 		case X4SS_VAL_STRING: { uint32_t l = x4ss_get_u32(r); x4ss_get_bytes(r, NULL, l); break; }
 		case X4SS_VAL_OBJ: x4ss_get_u32(r); break;
 		case X4SS_VAL_IFACE: case X4SS_VAL_PAGE_VAR: x4ss_get_u32(r); x4ss_get_i32(r); break;
-		case X4SS_VAL_OPTION: if (!x4ss_get_u8(r)) x4ss_skip_value(r); break;
+		case X4SS_VAL_OPTION: if (!x4ss_get_u8(r)) x4ss_skip_value_depth(r, depth + 1); break;
 		default: r->error = true; break;
 		}
 		return;
@@ -2503,7 +2668,7 @@ static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
 				dst[k].i = -1;
 			dst[w - 1].i = 1;
 		} else {
-			x4ss_read_value(ctx, r, dst, t->array_type, false);
+			x4ss_read_value_depth(ctx, r, dst, t->array_type, false, depth + 1);
 			dst[w - 1].i = 0;
 		}
 		return;
@@ -2518,7 +2683,7 @@ static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
 		break;
 	case X4SS_VAL_STRING: {
 		uint32_t len = x4ss_get_u32(r);
-		if (r->error || r->pos + len > r->len) {
+		if (r->error || len > r->len - r->pos) {
 			r->error = true;
 			dst[0].i = heap_alloc_string(string_ref(&EMPTY_STRING));
 			break;
@@ -2570,6 +2735,12 @@ static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
 		r->error = true;
 		break;
 	}
+}
+
+static void x4ss_read_value(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
+		union vm_value *dst, const struct ain_type *t, bool has_existing)
+{
+	x4ss_read_value_depth(ctx, r, dst, t, has_existing, 0);
 }
 
 static char *resolve_struct_save_path(const char *filename, bool save_folder)
@@ -2992,6 +3163,11 @@ static int gd_ss_materialize_array(struct gd_ss_load_ctx *ctx, int32_t arr_idx,
 	}
 
 	int w = ain_type_slot_width(et);
+	if (w <= 0 || arr->count > 16u * 1024u * 1024u || arr->count > (uint32_t)(INT_MAX / w)) {
+		int slot = heap_alloc_slot(VM_PAGE);
+		heap_set_page(slot, NULL);
+		return slot;
+	}
 	struct page *ap = alloc_page(ARRAY_PAGE, a_type, (int)arr->count * w);
 	ap->array.rank = arr->rank > 0 ? arr->rank : 1;
 	ap->array.struct_type = et->struc;
@@ -3237,7 +3413,7 @@ static bool deserialize_gd_structs(const char *path, const char *filename,
 			continue;
 		if (ctx.is_root[id]) {
 			struct ain_struct *rst = &ain->structures[sp->index];
-			for (int m = 0; m < rst->nr_members; m++) {
+			for (int m = 0; m < rst->nr_members && m < sp->nr_vars; m++) {
 				if (rst->members[m].type.data == AIN_DELEGATE) {
 					int dslot = sp->values[m].i;
 					if (page_index_valid(dslot) && heap[dslot].page)
@@ -3261,12 +3437,15 @@ static bool deserialize_gd_structs(const char *path, const char *filename,
 			int m_idx = use_cached_map ? schema_fmap[sd_idx][fi] : struct_member_index(st, f->name);
 			if (m_idx < 0 || m_idx >= st->nr_members)
 				continue;
+			const struct ain_type *mt = &st->members[m_idx].type;
+			int mw = ain_type_slot_width(mt);
+			if (mw <= 0 || m_idx + mw > sp->nr_vars)
+				continue;
 			uint32_t v_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + fi * 4);
 			if (v_idx >= parsed.nr_vals)
 				continue;
 			int32_t raw_val = gd_read_i32_le(parsed.vals_le + v_idx * 4);
 
-			const struct ain_type *mt = &st->members[m_idx].type;
 			bool is_none = false;
 			bool has_opt_none = false;
 			if (mt->data == AIN_OPTION && fi + 1 < nfields && sd->fields[fi + 1].type1 == AIN_VOID) {
@@ -3364,6 +3543,16 @@ static bool x4ss_read_existing_parts(const char *path,
 		| ((uint32_t)phdr[2] << 16) | ((uint32_t)phdr[3] << 24);
 	uint32_t zlen = (uint32_t)phdr[4] | ((uint32_t)phdr[5] << 8)
 		| ((uint32_t)phdr[6] << 16) | ((uint32_t)phdr[7] << 24);
+	if (ulen > 256u * 1024u * 1024u || zlen > 256u * 1024u * 1024u) {
+		if (comment_out && *comment_out) {
+			free(*comment_out);
+			*comment_out = NULL;
+		}
+		if (comment_len_out)
+			*comment_len_out = 0;
+		fclose(fp);
+		return false;
+	}
 	if (uncomp_len_out)
 		*uncomp_len_out = ulen;
 	if (comp_len_out)
@@ -3372,6 +3561,12 @@ static bool x4ss_read_existing_parts(const char *path,
 		uint8_t *zbuf = xmalloc(zlen);
 		if (fread(zbuf, 1, zlen, fp) != zlen) {
 			free(zbuf);
+			if (comment_out && *comment_out) {
+				free(*comment_out);
+				*comment_out = NULL;
+			}
+			if (comment_len_out)
+				*comment_len_out = 0;
 			fclose(fp);
 			return false;
 		}
@@ -4460,7 +4655,8 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 	uint32_t uncomp_len = 0, comp_len = 0;
 	uint8_t *comp = NULL;
 	if (!x4ss_read_existing_parts(path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
-	    uncomp_len == 0 || comp_len == 0 || !comp) {
+	    uncomp_len == 0 || uncomp_len > 256u * 1024u * 1024u ||
+	    comp_len == 0 || comp_len > 256u * 1024u * 1024u || !comp) {
 		/* Try .bak recovery if critical save */
 		char *bak_path = make_backup_path(path);
 		free(comp);
@@ -4475,7 +4671,8 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 		}
 		if (!file_exists(bak_path) ||
 		    !x4ss_read_existing_parts(bak_path, NULL, NULL, &uncomp_len, &comp, &comp_len) ||
-		    uncomp_len == 0 || comp_len == 0 || !comp) {
+		    uncomp_len == 0 || uncomp_len > 256u * 1024u * 1024u ||
+		    comp_len == 0 || comp_len > 256u * 1024u * 1024u || !comp) {
 			free(comp);
 			free(bak_path);
 			free(path);
@@ -4499,7 +4696,8 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 
 	struct x4ss_reader r = { .data = raw, .len = uncomp_len, .pos = 0, .error = false };
 	uint32_t nr_saved_roots = x4ss_get_u32(&r);
-	if (r.error || (int)nr_saved_roots != nr_caller_roots) {
+	if (r.error || nr_saved_roots > 1024u * 1024u ||
+	    nr_saved_roots > (r.len - r.pos) / 4u || (int)nr_saved_roots != nr_caller_roots) {
 		free(raw);
 		WARNING("DeserializeStruct: root count mismatch (%u vs %d)", nr_saved_roots, nr_caller_roots);
 		return 0;
@@ -4509,7 +4707,7 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 		root_ids[i] = x4ss_get_u32(&r);
 
 	uint32_t nr_objs = x4ss_get_u32(&r);
-	if (r.error || nr_objs > 16 * 1024 * 1024) {
+	if (r.error || nr_objs > 16u * 1024u * 1024u || nr_objs > r.len - r.pos) {
 		free(root_ids);
 		free(raw);
 		return 0;
@@ -4555,10 +4753,15 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 			int32_t rank = x4ss_get_i32(&r);
 			struct ain_type et = x4ss_read_ain_type(&r);
 			uint32_t count = x4ss_get_u32(&r);
+			int w = ain_type_slot_width(&et);
+			if (r.error || w <= 0 || count > 16u * 1024u * 1024u ||
+			    count > (uint32_t)(INT_MAX / w)) {
+				r.error = true;
+				break;
+			}
 			metas[id].elem_type = et;
 			metas[id].elem_count = count;
-			if (!r.error && !ctx.is_root[id]) {
-				int w = ain_type_slot_width(&et);
+			if (!ctx.is_root[id]) {
 				struct page *ap = alloc_page(ARRAY_PAGE, a_type, (int)count * w);
 				ap->array.rank = rank > 0 ? rank : 1;
 				ap->array.struct_type = et.struc;
@@ -4580,12 +4783,16 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 			continue;
 		} else if (kind == X4SS_OBJ_STRUCT) {
 			uint32_t nr_fields = x4ss_get_u32(&r);
+			if (r.error || nr_fields > 1024u * 1024u || nr_fields > (r.len - r.pos) / 5u) {
+				r.error = true;
+				break;
+			}
 			int sno = metas[id].struct_no;
 			struct page *sp = (slot >= 0 && page_index_valid(slot)) ? heap[slot].page : NULL;
 			if (sp && sp->type == STRUCT_PAGE && ctx.is_root[id]) {
 				/* Clear any existing delegate listeners on root struct */
 				struct ain_struct *rst = &ain->structures[sp->index];
-				for (int m = 0; m < rst->nr_members; m++) {
+				for (int m = 0; m < rst->nr_members && m < sp->nr_vars; m++) {
 					if (rst->members[m].type.data == AIN_DELEGATE) {
 						int dslot = sp->values[m].i;
 						if (page_index_valid(dslot) && heap[dslot].page)
@@ -4601,7 +4808,11 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 				free(fname);
 				if (m_idx >= 0) {
 					struct ain_struct *st = &ain->structures[sp->index];
-					x4ss_read_value(&ctx, &r, &sp->values[m_idx], &st->members[m_idx].type, true);
+					int mw = ain_type_slot_width(&st->members[m_idx].type);
+					if (mw > 0 && m_idx + mw <= sp->nr_vars)
+						x4ss_read_value(&ctx, &r, &sp->values[m_idx], &st->members[m_idx].type, true);
+					else
+						x4ss_skip_value(&r);
 				} else {
 					x4ss_skip_value(&r);
 				}
@@ -4610,7 +4821,8 @@ int deserialize_structs(const char *filename, struct page *struct_page_list, boo
 			struct page *ap = (slot >= 0 && page_index_valid(slot)) ? heap[slot].page : NULL;
 			int w = ain_type_slot_width(&metas[id].elem_type);
 			for (uint32_t k = 0; k < metas[id].elem_count && !r.error; k++) {
-				if (ap && ap->type == ARRAY_PAGE) {
+				if (ap && ap->type == ARRAY_PAGE && w > 0 &&
+				    (size_t)(k + 1) * (size_t)w <= (size_t)ap->nr_vars) {
 					x4ss_read_value(&ctx, &r, &ap->values[k * w], &metas[id].elem_type, true);
 				} else {
 					x4ss_skip_value(&r);

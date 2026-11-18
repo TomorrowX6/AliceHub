@@ -36,15 +36,19 @@ static char *fileop_resolve_path(const char *sjis_path);
 
 static bool FileOperation_ExistFile(struct string *file_name)
 {
+	if (!file_name)
+		return false;
 	char *path = fileop_resolve_path(file_name->text);
 	ustat s;
-	bool result = stat_utf8(path, &s) == 0 && S_ISREG(s.st_mode);
+	bool result = path && stat_utf8(path, &s) == 0 && S_ISREG(s.st_mode);
 	free(path);
 	return result;
 }
 
 static char *fileop_resolve_path(const char *sjis_path)
 {
+	if (!sjis_path)
+		return NULL;
 	char *path = unix_path(sjis_path);
 	ustat s;
 	if (path && stat_utf8(path, &s) == 0)
@@ -62,6 +66,8 @@ static char *fileop_resolve_path(const char *sjis_path)
 
 static bool FileOperation_DeleteFile(struct string *file_name)
 {
+	if (!file_name)
+		return false;
 	char *path = fileop_resolve_path(file_name->text);
 	bool result = path && remove_utf8(path) == 0;
 	free(path);
@@ -70,13 +76,62 @@ static bool FileOperation_DeleteFile(struct string *file_name)
 
 static char *fileop_resolve_write_path(const char *sjis_path)
 {
-	if (config.game_dir)
-		return gamedir_path(sjis_path);
-	return unix_path(sjis_path);
+	if (!sjis_path)
+		return NULL;
+	if (!config.game_dir)
+		return unix_path(sjis_path);
+
+	char *existing = gamedir_path_icase(sjis_path);
+	if (existing)
+		return existing;
+
+	/* Walk SJIS-safe path separators from longest parent prefix to shortest
+	 * so writes into existing differently-cased folders reuse them on Linux. */
+	size_t len = strlen(sjis_path);
+	size_t *seps = NULL;
+	size_t nr_seps = 0;
+	for (size_t i = 0; i < len; ) {
+		if (SJIS_2BYTE(sjis_path[i]) && sjis_path[i + 1] != '\0') {
+			i += 2;
+			continue;
+		}
+		if ((sjis_path[i] == '/' || sjis_path[i] == '\\') && i > 0) {
+			seps = xrealloc(seps, (nr_seps + 1) * sizeof(*seps));
+			seps[nr_seps++] = i;
+		}
+		i++;
+	}
+
+	for (size_t k = nr_seps; k > 0; k--) {
+		size_t sep_idx = seps[k - 1];
+		char *parent_sjis = xmalloc(sep_idx + 1);
+		memcpy(parent_sjis, sjis_path, sep_idx);
+		parent_sjis[sep_idx] = '\0';
+		char *parent_dir = gamedir_path_icase(parent_sjis);
+		free(parent_sjis);
+		if (parent_dir && is_directory(parent_dir)) {
+			free(seps);
+			const char *rest = sjis_path + sep_idx + 1;
+			while (*rest == '/' || *rest == '\\')
+				rest++;
+			if (!*rest)
+				return parent_dir;
+			char *tail_utf8 = unix_path(rest);
+			char *joined = path_join(parent_dir, tail_utf8);
+			free(tail_utf8);
+			free(parent_dir);
+			return joined;
+		}
+		free(parent_dir);
+	}
+	free(seps);
+	return gamedir_path(sjis_path);
 }
 
 static bool FileOperation_CopyFile(struct string *dest_file_name, struct string *src_file_name)
 {
+	if (!dest_file_name || !src_file_name)
+		return false;
 	char *dest = fileop_resolve_write_path(dest_file_name->text);
 	char *src = fileop_resolve_path(src_file_name->text);
 	if (dest) {
@@ -115,7 +170,7 @@ static bool fileop_time_to_fields(time_t t, int *year, int *month, int *day,
 static bool FileOperation_GetFileCreationTime(struct string *file_name,
 		int *year, int *month, int *day, int *week, int *hour, int *min, int *second)
 {
-	char *path = fileop_resolve_path(file_name->text);
+	char *path = file_name ? fileop_resolve_path(file_name->text) : NULL;
 	ustat s;
 	if (!path || stat_utf8(path, &s) < 0 || !S_ISREG(s.st_mode)) {
 		free(path);
@@ -129,7 +184,7 @@ static bool FileOperation_GetFileCreationTime(struct string *file_name,
 static bool FileOperation_GetFileLastAccessTime(struct string *file_name,
 		int *year, int *month, int *day, int *week, int *hour, int *min, int *second)
 {
-	char *path = fileop_resolve_path(file_name->text);
+	char *path = file_name ? fileop_resolve_path(file_name->text) : NULL;
 	ustat s;
 	if (!path || stat_utf8(path, &s) < 0 || !S_ISREG(s.st_mode)) {
 		free(path);
@@ -143,7 +198,7 @@ static bool FileOperation_GetFileLastAccessTime(struct string *file_name,
 static bool FileOperation_GetFileLastWriteTime(struct string *file_name,
 		int *year, int *month, int *day, int *week, int *hour, int *min, int *second)
 {
-	char *path = fileop_resolve_path(file_name->text);
+	char *path = file_name ? fileop_resolve_path(file_name->text) : NULL;
 	ustat s;
 	if (!path || stat_utf8(path, &s) < 0 || !S_ISREG(s.st_mode)) {
 		free(path);
@@ -156,10 +211,12 @@ static bool FileOperation_GetFileLastWriteTime(struct string *file_name,
 
 static bool FileOperation_GetFileSize(struct string *file_name, int *size)
 {
+	if (!file_name || !size)
+		return false;
 	char *path = fileop_resolve_path(file_name->text);
 	ustat s;
-	if (stat_utf8(path, &s) < 0) {
-		WARNING("stat(\"%s\"): %s", display_utf0(path), strerror(errno));
+	if (!path || stat_utf8(path, &s) < 0) {
+		WARNING("stat(\"%s\"): %s", display_utf0(path ? path : ""), strerror(errno));
 		free(path);
 		return false;
 	}
@@ -175,6 +232,8 @@ static bool FileOperation_GetFileSize(struct string *file_name, int *size)
 
 static bool FileOperation_ExistFolder(struct string *folder_name)
 {
+	if (!folder_name)
+		return false;
 	char *path = fileop_resolve_path(folder_name->text);
 	bool result = path && is_directory(path);
 	free(path);
@@ -183,6 +242,8 @@ static bool FileOperation_ExistFolder(struct string *folder_name)
 
 static bool FileOperation_CreateFolder(struct string *folder_name)
 {
+	if (!folder_name)
+		return false;
 	char *path = fileop_resolve_write_path(folder_name->text);
 	bool result = path && mkdir_p(path) == 0;
 	if (!result && path)
@@ -237,6 +298,8 @@ static bool rmtree(const char *path)
 
 static bool FileOperation_DeleteFolder(struct string *folder_name)
 {
+	if (!folder_name)
+		return false;
 	char *path = fileop_resolve_path(folder_name->text);
 	bool result = path && rmtree(path);
 	free(path);
@@ -287,53 +350,112 @@ static bool FileOperation_CopyFolder(struct string *dest_folder_name, struct str
 	return ok;
 }
 
-static bool get_file_list(struct string *folder_name, struct page **out, bool folders)
+static void collect_files_recursive(const char *dir_utf8, const char *rel_prefix, int depth,
+		struct string ***names, int *nr_names)
 {
-	char *dir_name = fileop_resolve_path(folder_name->text);
-	if (!dir_name) return false;
-
-	UDIR *d = opendir_utf8(dir_name);
-	if (!d) {
-		if (errno != ENOENT)
-			WARNING("opendir(\"%s\"): %s", display_utf0(dir_name), strerror(errno));
-		free(dir_name);
-		return false;
-	}
-
-	struct string **names = NULL;
-	int nr_names = 0;
-
+	if (depth > 32)
+		return;
+	UDIR *d = opendir_utf8(dir_utf8);
+	if (!d)
+		return;
 	char *d_name;
 	while ((d_name = readdir_utf8(d)) != NULL) {
 		if (d_name[0] == '.') {
 			free(d_name);
 			continue;
 		}
-
-		char *utf8_path = path_join(dir_name, d_name);
+		char *utf8_path = path_join(dir_utf8, d_name);
 		ustat s;
 		if (stat_utf8(utf8_path, &s) < 0) {
 			WARNING("stat(\"%s\"): %s", display_utf0(utf8_path), strerror(errno));
-			goto loop_next;
+			free(utf8_path);
+			free(d_name);
+			continue;
 		}
-		if (folders) {
-			if (!S_ISDIR(s.st_mode))
-				goto loop_next;
+		char *sjis_comp = utf2filename_cjk(d_name, 0);
+		char *rel_sjis;
+		if (rel_prefix && rel_prefix[0]) {
+			size_t plen = strlen(rel_prefix);
+			size_t clen = strlen(sjis_comp);
+			rel_sjis = xmalloc(plen + 1 + clen + 1);
+			memcpy(rel_sjis, rel_prefix, plen);
+			rel_sjis[plen] = '\\';
+			memcpy(rel_sjis + plen + 1, sjis_comp, clen + 1);
 		} else {
-			if (!S_ISREG(s.st_mode))
-				goto loop_next;
+			rel_sjis = xstrdup(sjis_comp);
 		}
-
-		char *sjis_name = utf2filename_cjk(d_name, 0);
-		names = xrealloc_array(names, nr_names, nr_names+1, sizeof(struct string*));
-		names[nr_names++] = cstr_to_string(sjis_name);
-		free(sjis_name);
-	loop_next:
+		free(sjis_comp);
+		if (S_ISDIR(s.st_mode)) {
+			collect_files_recursive(utf8_path, rel_sjis, depth + 1, names, nr_names);
+		} else if (S_ISREG(s.st_mode)) {
+			*names = xrealloc_array(*names, *nr_names, *nr_names + 1, sizeof(struct string *));
+			(*names)[(*nr_names)++] = cstr_to_string(rel_sjis);
+		}
+		free(rel_sjis);
 		free(utf8_path);
 		free(d_name);
 	}
 	closedir_utf8(d);
-	free(dir_name);
+}
+
+static bool get_file_list(struct string *folder_name, struct page **out, bool folders, bool recursive)
+{
+	if (!folder_name || !out)
+		return false;
+	char *dir_name = fileop_resolve_path(folder_name->text);
+	if (!dir_name) return false;
+
+	struct string **names = NULL;
+	int nr_names = 0;
+
+	if (recursive && !folders) {
+		if (!is_directory(dir_name)) {
+			free(dir_name);
+			return false;
+		}
+		collect_files_recursive(dir_name, "", 0, &names, &nr_names);
+		free(dir_name);
+	} else {
+		UDIR *d = opendir_utf8(dir_name);
+		if (!d) {
+			if (errno != ENOENT)
+				WARNING("opendir(\"%s\"): %s", display_utf0(dir_name), strerror(errno));
+			free(dir_name);
+			return false;
+		}
+
+		char *d_name;
+		while ((d_name = readdir_utf8(d)) != NULL) {
+			if (d_name[0] == '.') {
+				free(d_name);
+				continue;
+			}
+
+			char *utf8_path = path_join(dir_name, d_name);
+			ustat s;
+			if (stat_utf8(utf8_path, &s) < 0) {
+				WARNING("stat(\"%s\"): %s", display_utf0(utf8_path), strerror(errno));
+				goto loop_next;
+			}
+			if (folders) {
+				if (!S_ISDIR(s.st_mode))
+					goto loop_next;
+			} else {
+				if (!S_ISREG(s.st_mode))
+					goto loop_next;
+			}
+
+			char *sjis_name = utf2filename_cjk(d_name, 0);
+			names = xrealloc_array(names, nr_names, nr_names+1, sizeof(struct string*));
+			names[nr_names++] = cstr_to_string(sjis_name);
+			free(sjis_name);
+		loop_next:
+			free(utf8_path);
+			free(d_name);
+		}
+		closedir_utf8(d);
+		free(dir_name);
+	}
 
 	union vm_value dim = { .i = nr_names };
 	struct page *page = alloc_array(1, &dim, AIN_ARRAY_STRING, 0, false);
@@ -352,18 +474,31 @@ static bool get_file_list(struct string *folder_name, struct page **out, bool fo
 
 static bool FileOperation_GetFileList(struct string *folder_name, struct page **out)
 {
-	return get_file_list(folder_name, out, false);
+	return get_file_list(folder_name, out, false, false);
+}
+
+static bool FileOperation_GetFileListWithSubFolder(struct string *folder_name, struct page **out)
+{
+	return get_file_list(folder_name, out, false, true);
 }
 
 static bool FileOperation_GetFolderList(struct string *folder_name, struct page **out)
 {
-	return get_file_list(folder_name, out, true);
+	return get_file_list(folder_name, out, true, false);
 }
 
 static struct page *FileOperation_GetFileList_v12(struct string *folder_name)
 {
 	struct page *out = NULL;
-	if (!get_file_list(folder_name, &out, false))
+	if (!get_file_list(folder_name, &out, false, false))
+		out = v12_array_new(&(struct ain_type){ .data = AIN_STRING }, 0, false);
+	return out;
+}
+
+static struct page *FileOperation_GetFileListWithSubFolder_v12(struct string *folder_name)
+{
+	struct page *out = NULL;
+	if (!get_file_list(folder_name, &out, false, true))
 		out = v12_array_new(&(struct ain_type){ .data = AIN_STRING }, 0, false);
 	return out;
 }
@@ -371,7 +506,7 @@ static struct page *FileOperation_GetFileList_v12(struct string *folder_name)
 static struct page *FileOperation_GetFolderList_v12(struct string *folder_name)
 {
 	struct page *out = NULL;
-	if (!get_file_list(folder_name, &out, true))
+	if (!get_file_list(folder_name, &out, true, false))
 		out = v12_array_new(&(struct ain_type){ .data = AIN_STRING }, 0, false);
 	return out;
 }
@@ -379,10 +514,17 @@ static struct page *FileOperation_GetFolderList_v12(struct string *folder_name)
 static void *FileOperation_ResolveList(const struct ain_hll_function *function)
 {
 	bool folders = !strcmp(function->name, "GetFolderList");
-	if (function->nr_arguments == 1 && function->return_type.data == AIN_ARRAY)
-		return folders ? FileOperation_GetFolderList_v12 : FileOperation_GetFileList_v12;
-	if (function->nr_arguments == 2)
-		return folders ? FileOperation_GetFolderList : FileOperation_GetFileList;
+	bool recursive = !strcmp(function->name, "GetFileListWithSubFolder");
+	if (function->nr_arguments == 1 && function->return_type.data == AIN_ARRAY) {
+		if (folders)
+			return FileOperation_GetFolderList_v12;
+		return recursive ? FileOperation_GetFileListWithSubFolder_v12 : FileOperation_GetFileList_v12;
+	}
+	if (function->nr_arguments == 2) {
+		if (folders)
+			return FileOperation_GetFolderList;
+		return recursive ? FileOperation_GetFileListWithSubFolder : FileOperation_GetFileList;
+	}
 	return NULL;
 }
 
@@ -410,6 +552,12 @@ HLL_LIBRARY(FileOperation,
 
 static char *clipboard_buf = NULL;
 
+static void Clipboard_ModuleFini(void)
+{
+	free(clipboard_buf);
+	clipboard_buf = NULL;
+}
+
 static void Clipboard_SetText(struct string *text)
 {
 	free(clipboard_buf);
@@ -422,6 +570,7 @@ static struct string *Clipboard_GetText(void)
 }
 
 HLL_LIBRARY(Clipboard,
+	    HLL_EXPORT(_ModuleFini, Clipboard_ModuleFini),
 	    HLL_EXPORT(SetText, Clipboard_SetText),
 	    HLL_EXPORT(GetText, Clipboard_GetText));
 
@@ -524,6 +673,26 @@ static bool TextFile_Close(void)
 	fclose(text_file_fp);
 	text_file_fp = NULL;
 	return true;
+}
+
+static void TextFile_ModuleFini(void)
+{
+	TextFile_Close();
+	for (int i = 1; i < nr_tf_entries; i++) {
+		if (tf_entries[i].used) {
+			if (tf_entries[i].fp)
+				fclose(tf_entries[i].fp);
+			free(tf_entries[i].buf);
+		}
+	}
+	free(tf_entries);
+	tf_entries = NULL;
+	nr_tf_entries = 0;
+}
+
+static void TextFileWriter_ModuleFini(void)
+{
+	TextFile_Close();
 }
 
 static bool TextFile_Close_v14(int handle)
@@ -700,6 +869,7 @@ static bool TextFile_ReadLine(int handle, struct string **text)
 }
 
 HLL_LIBRARY(TextFile,
+	    HLL_EXPORT(_ModuleFini, TextFile_ModuleFini),
 	    HLL_EXPORT(Create, TextFile_Create),
 	    HLL_EXPORT(CreateWriter, TextFile_CreateWriter),
 	    HLL_OVERLOAD(Close, TextFile_ResolveClose),
@@ -713,6 +883,7 @@ HLL_LIBRARY(TextFile,
 	    HLL_EXPORT(IsEOF, TextFile_IsEOF));
 
 HLL_LIBRARY(TextFileWriter,
+	    HLL_EXPORT(_ModuleFini, TextFileWriter_ModuleFini),
 	    HLL_EXPORT(Create, TextFile_Create),
 	    HLL_EXPORT(Close, TextFile_Close),
 	    HLL_EXPORT(Write, TextFile_Write));

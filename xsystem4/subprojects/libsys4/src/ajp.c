@@ -81,10 +81,10 @@ static void ajp_init_metrics(struct ajp_header *ajp, struct cg_metrics *dst)
 
 bool ajp_get_metrics(const uint8_t *data, size_t size, struct cg_metrics *dst)
 {
-	if (size < 36 || !ajp_checkfmt(data)) return false;
+	if (!data || size < 36 || !ajp_checkfmt(data)) return false;
 	struct ajp_header header;
 	ajp_extract_header(data, &header);
-	if (!header.width || !header.height || header.width > INT_MAX / 4 || header.height > INT_MAX)
+	if (!header.width || !header.height || header.width > 32768 || header.height > 32768)
 		return false;
 	ajp_init_metrics(&header, dst);
 	return true;
@@ -92,28 +92,30 @@ bool ajp_get_metrics(const uint8_t *data, size_t size, struct cg_metrics *dst)
 
 static uint8_t *read_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header *ajp)
 {
+	(void)pixels;
 	if (ajp->mask_size == 0)
 		return NULL;
-	if (pms8_checkfmt(mask_data)) {
+	if (ajp->mask_size >= 4 && pms8_checkfmt(mask_data)) {
 		return pms_extract_mask(mask_data, ajp->mask_size);
-	} else if (webp_checkfmt(mask_data)) {
-		int w, h;
+	} else if (ajp->mask_size >= 12 && webp_checkfmt(mask_data)) {
+		int w = 0, h = 0;
 		uint8_t *tmp = WebPDecodeRGBA(mask_data, ajp->mask_size, &w, &h);
-		if (w != ajp->width || h != ajp->height) {
+		if (!tmp || w <= 0 || h <= 0 || (uint32_t)w != ajp->width || (uint32_t)h != ajp->height) {
 			WARNING("Unexpected AJP mask size");
 			WebPFree(tmp);
 			return NULL;
 		}
 		// discard pixel data
-		uint8_t *mask = xmalloc(ajp->width * ajp->height);
-		for (int i = 0; i < ajp->width * ajp->height; i++) {
+		size_t npix = (size_t)ajp->width * (size_t)ajp->height;
+		uint8_t *mask = xmalloc(npix);
+		for (size_t i = 0; i < npix; i++) {
 			mask[i] = tmp[i*4+3];
 		}
 		WebPFree(tmp);
 		return mask;
 	} else if (mask_data[0] == 0x78) {
 		// compressed
-		size_t uncompressed_size = ajp->width * ajp->height;
+		size_t uncompressed_size = (size_t)ajp->width * (size_t)ajp->height;
 		uint8_t *mask = xmalloc(uncompressed_size);
 		if (!zlib_decompress_exact(mask, uncompressed_size, mask_data, ajp->mask_size)) {
 			WARNING("uncompress failed");
@@ -121,7 +123,7 @@ static uint8_t *read_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header
 			return NULL;
 		}
 		return mask;
-	} else {
+	} else if (ajp->mask_size >= 4) {
 		WARNING("Unsupported AJP mask format: %02x %02x %02x %02x",
 				mask_data[0], mask_data[1], mask_data[2], mask_data[3]);
 	}
@@ -131,14 +133,15 @@ static uint8_t *read_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header
 
 static uint8_t *load_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header *ajp)
 {
+	size_t npix = (size_t)ajp->width * (size_t)ajp->height;
 	uint8_t *mask = read_mask(pixels, mask_data, ajp);
 	if (!mask) {
-		mask = xmalloc(ajp->width * ajp->height);
-		memset(mask, 0xFF, ajp->width * ajp->height);
+		mask = xmalloc(npix);
+		memset(mask, 0xFF, npix);
 	}
 
-	uint8_t *out = xmalloc(ajp->width * ajp->height * 4);
-	for (int i = 0; i < ajp->width * ajp->height; i++) {
+	uint8_t *out = xmalloc(npix * 4);
+	for (size_t i = 0; i < npix; i++) {
 		out[i*4+0] = pixels[i*3+0];
 		out[i*4+1] = pixels[i*3+1];
 		out[i*4+2] = pixels[i*3+2];
@@ -152,43 +155,50 @@ static uint8_t *load_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header
 void ajp_extract(const uint8_t *data, size_t size, struct cg *cg)
 {
 	uint8_t *buf = NULL, *jpeg_data = NULL, *mask_data = NULL;
-	int width, height, subsamp;
+	int width = 0, height = 0, subsamp = 0;
 	struct ajp_header ajp;
+	if (!data || size < 36 || !ajp_checkfmt(data))
+		return;
 	ajp_extract_header(data, &ajp);
+	if (!ajp.width || !ajp.height || ajp.width > 32768 || ajp.height > 32768) {
+		WARNING("Invalid AJP dimensions: %ux%u", ajp.width, ajp.height);
+		return;
+	}
+
+	if (ajp.jpeg_off > size || ajp.jpeg_size > size - ajp.jpeg_off || ajp.jpeg_size < 2) {
+		WARNING("AJP JPEG range invalid");
+		return;
+	}
+	if (ajp.mask_off > size || ajp.mask_size > size - ajp.mask_off) {
+		WARNING("AJP mask range invalid");
+		return;
+	}
+
 	ajp_init_metrics(&ajp, &cg->metrics);
 
-	if (ajp.jpeg_off > size) {
-		WARNING("AJP JPEG offset invalid");
-		return;
-	}
-	if (ajp.jpeg_off + ajp.jpeg_size > size) {
-		WARNING("AJP JPEG size invalid");
-		return;
-	}
-	if (ajp.mask_off > size) {
-		WARNING("AJP mask offset invalid");
-		return;
-	}
-	if (ajp.mask_off + ajp.mask_size > size) {
-		WARNING("AJP mask size invalid");
-		return;
-	}
-
 	jpeg_data = xmalloc(ajp.jpeg_size);
-	mask_data = xmalloc(ajp.mask_size);
+	mask_data = xmalloc(ajp.mask_size ? ajp.mask_size : 1);
 	memcpy(jpeg_data, data + ajp.jpeg_off, ajp.jpeg_size);
-	memcpy(mask_data, data + ajp.mask_off, ajp.mask_size);
+	if (ajp.mask_size > 0)
+		memcpy(mask_data, data + ajp.mask_off, ajp.mask_size);
 	ajp_decrypt(jpeg_data, ajp.jpeg_size);
 	ajp_decrypt(mask_data, ajp.mask_size);
 
 	tjhandle decompressor = tjInitDecompress();
-	tjDecompressHeader2(decompressor, jpeg_data, ajp.jpeg_size, &width, &height, &subsamp);
-	if ((uint32_t)width != ajp.width)
-		WARNING("AJP width doesn't match JPEG width (%d vs. %u)", width, ajp.width);
-	if ((uint32_t)height != ajp.height)
-		WARNING("AJP height doesn't match JPEG height (%d vs. %u)", height, ajp.height);
+	if (!decompressor) {
+		free(jpeg_data);
+		free(mask_data);
+		return;
+	}
+	if (tjDecompressHeader2(decompressor, jpeg_data, ajp.jpeg_size, &width, &height, &subsamp) < 0 ||
+	    width <= 0 || height <= 0 || width > 32768 || height > 32768 ||
+	    (uint32_t)width != ajp.width || (uint32_t)height != ajp.height) {
+		WARNING("AJP JPEG header invalid or dimension mismatch (%dx%d vs. %ux%u)",
+			width, height, ajp.width, ajp.height);
+		goto cleanup;
+	}
 
-	buf = xmalloc(width * height * 3);
+	buf = xmalloc((size_t)width * (size_t)height * 3);
 	if (tjDecompress2(decompressor, jpeg_data, ajp.jpeg_size, buf, width, 0, height, TJPF_RGB, TJFLAG_FASTDCT) < 0) {
 		WARNING("JPEG decompression failed: %s", tjGetErrorStr());
 		free(buf);

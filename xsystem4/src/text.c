@@ -14,6 +14,8 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <math.h>
+
 #include "system4.h"
 #include "system4/ain.h"
 #include "system4/fnl.h"
@@ -161,17 +163,67 @@ static struct font_size *text_style_font_size(struct text_style *ts)
 	return ts->font_size = gfx_font_get_size(ts->face, ts->size);
 }
 
+#define MAX_CACHED_GLYPHS_PER_SIZE 4096
+
+struct glyph_cache_tracker {
+	struct font_size *fs;
+	unsigned count;
+};
+
+static struct glyph_cache_tracker *glyph_cache_trackers = NULL;
+static size_t nr_glyph_cache_trackers = 0;
+static size_t cap_glyph_cache_trackers = 0;
+
+static unsigned *get_glyph_cache_count(struct font_size *fs)
+{
+	for (size_t i = 0; i < nr_glyph_cache_trackers; i++) {
+		if (glyph_cache_trackers[i].fs == fs)
+			return &glyph_cache_trackers[i].count;
+	}
+	if (nr_glyph_cache_trackers == cap_glyph_cache_trackers) {
+		cap_glyph_cache_trackers = cap_glyph_cache_trackers ? cap_glyph_cache_trackers * 2 : 16;
+		glyph_cache_trackers = xrealloc(glyph_cache_trackers,
+			cap_glyph_cache_trackers * sizeof(*glyph_cache_trackers));
+	}
+	struct glyph_cache_tracker *t = &glyph_cache_trackers[nr_glyph_cache_trackers++];
+	t->fs = fs;
+	t->count = 0;
+	return &t->count;
+}
+
+static void free_cached_glyph(void *val)
+{
+	struct glyph *g = val;
+	if (!g)
+		return;
+	for (size_t i = 0; i < sizeof(g->t) / sizeof(g->t[0]); i++)
+		gfx_delete_texture(&g->t[i]);
+	free(g);
+}
+
 static struct glyph *font_get_glyph(struct font_size *size, uint32_t code, enum font_weight weight)
 {
+	if (!size)
+		return NULL;
 	if (!size->glyph_table)
 		size->glyph_table = ht_create(4096);
+	unsigned *cached_count = get_glyph_cache_count(size);
 	// return cached glyph if available
 	struct ht_slot *slot = ht_put_int(size->glyph_table, code, NULL);
 	if (slot->value && ((struct glyph*)slot->value)->t[weight].handle)
 		return slot->value;
+	if (!slot->value && *cached_count >= MAX_CACHED_GLYPHS_PER_SIZE) {
+		ht_foreach_value(size->glyph_table, free_cached_glyph);
+		ht_free(size->glyph_table);
+		size->glyph_table = ht_create(4096);
+		*cached_count = 0;
+		slot = ht_put_int(size->glyph_table, code, NULL);
+	}
 	// alloc if necessary
-	if (!slot->value)
+	if (!slot->value) {
 		slot->value = xcalloc(1, sizeof(struct glyph));
+		(*cached_count)++;
+	}
 	// render glyph
 	if (!size->font->get_glyph(size, slot->value, code, weight))
 		return NULL;
@@ -180,11 +232,13 @@ static struct glyph *font_get_glyph(struct font_size *size, uint32_t code, enum 
 
 static float font_size_char(struct font_size *size, uint32_t code)
 {
-	return size->font->size_char(size, code);
+	return size ? size->font->size_char(size, code) : 0.0f;
 }
 
 static uint32_t char_to_code(const char *ch, enum charmap charmap)
 {
+	if (SJIS_2BYTE(*ch) && ch[1] == '\0')
+		return (uint8_t)*ch;
 	if (charmap == CHARMAP_SJIS)
 		return sjis_code(ch);
 	int c;
@@ -200,6 +254,8 @@ static uint32_t char_to_code(const char *ch, enum charmap charmap)
 float gfx_size_char_unstyled(struct text_style *ts, const char *ch)
 {
 	struct font_size *size = text_style_font_size(ts);
+	if (!size)
+		return 0.0f;
 	return font_size_char(size, char_to_code(ch, size->font->charmap));
 }
 
@@ -214,6 +270,8 @@ float gfx_size_char(struct text_style *ts, const char *ch)
 float gfx_size_text(struct text_style *ts, const char *text)
 {
 	struct font_size *size = text_style_font_size(ts);
+	if (!size)
+		return 0.0f;
 	float edge_advance = gfx_text_advance_edges
 		? ts->edge_left + ts->edge_right + ceilf(ts->bold_width)*2
 		: 0.0f;
@@ -221,9 +279,9 @@ float gfx_size_text(struct text_style *ts, const char *text)
 	while (*text) {
 		x += font_size_char(size, char_to_code(text, size->font->charmap));
 		x += edge_advance;
-		text = sjis_skip_char(text);
+		text += (SJIS_2BYTE(*text) && text[1] != '\0') ? 2 : 1;
 	}
-	return x * ts->scale_x;;
+	return x * ts->scale_x;
 }
 
 float gfx_get_actual_font_size(unsigned face, float size)
@@ -240,6 +298,8 @@ float gfx_get_actual_font_size_round_down(unsigned face, float size)
 
 float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm)
 {
+	if (!tm || !tm->font_size || !msg)
+		return 0.0f;
 	float pos_x = tm->x;
 	int pos_y = tm->y + tm->font_size->y_offset;
 
@@ -247,8 +307,9 @@ float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm)
 		pos_x += tm->edge_spacing;
 		// get glyph for character
 		float scale_x = *msg == ' ' ? tm->space_scale_x : tm->scale_x;
+		float draw_scale_x = scale_x * config.text_x_scale;
 		uint32_t code = char_to_code(msg, tm->font_size->font->charmap);
-		msg += SJIS_2BYTE(*msg) ? 2 : 1;
+		msg += (SJIS_2BYTE(*msg) && msg[1] != '\0') ? 2 : 1;
 		struct glyph *glyph = font_get_glyph(tm->font_size, code, tm->weight);
 		if (!glyph)
 			continue;
@@ -256,20 +317,20 @@ float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm)
 		// render glyph
 		Texture *t = &glyph->t[tm->weight];
 		if (tm->mode == RENDER_COPY) {
-			float x = pos_x - glyph->rect.x;
+			float x = pos_x - glyph->rect.x * draw_scale_x;
 			int y = pos_y - glyph->rect.y;
-			gfx_draw_glyph(dst, x, y, t, tm->color, config.text_x_scale, tm->edge_width, false);
+			gfx_draw_glyph(dst, x, y, t, tm->color, draw_scale_x, tm->edge_width, false);
 		} else if (tm->mode == RENDER_BLENDED) {
-			float x = pos_x - glyph->rect.x;
+			float x = pos_x - glyph->rect.x * draw_scale_x;
 			int y = pos_y - glyph->rect.y;
-			gfx_draw_glyph(dst, x, y, t, tm->color, config.text_x_scale, tm->edge_width, true);
+			gfx_draw_glyph(dst, x, y, t, tm->color, draw_scale_x, tm->edge_width, true);
 		} else if (tm->mode == RENDER_PMAP) {
-			gfx_draw_glyph_to_pmap(dst, pos_x, pos_y, t, glyph->rect, tm->color, config.text_x_scale);
+			gfx_draw_glyph_to_pmap(dst, pos_x, pos_y, t, glyph->rect, tm->color, draw_scale_x);
 		} else if (tm->mode == RENDER_AMAP) {
-			gfx_draw_glyph_to_amap(dst, pos_x, pos_y, t, glyph->rect, config.text_x_scale);
+			gfx_draw_glyph_to_amap(dst, pos_x, pos_y, t, glyph->rect, draw_scale_x);
 		} else if (tm->mode == RENDER_BLEND_ALPHA || tm->mode == RENDER_ALPHA_ONLY) {
-			gfx_draw_glyph_mode(dst, pos_x - glyph->rect.x, pos_y - glyph->rect.y,
-					t, tm->color, config.text_x_scale, tm->edge_width,
+			gfx_draw_glyph_mode(dst, pos_x - glyph->rect.x * draw_scale_x, pos_y - glyph->rect.y,
+					t, tm->color, draw_scale_x, tm->edge_width,
 					tm->mode == RENDER_BLEND_ALPHA ? GLYPH_BLEND_ALPHA : GLYPH_ALPHA_ONLY);
 		}
 

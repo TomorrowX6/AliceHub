@@ -38,21 +38,29 @@ bool tga_checkfmt(const uint8_t *data)
 		return false;
 	if ((data[17] & 0xc0) != 0)
 		return false;
-	uint16_t w = LittleEndian_getW(data, 12);
-	uint16_t h = LittleEndian_getW(data, 14);
-	return w > 0 && h > 0;
+	uint16_t w = (uint16_t)LittleEndian_getW(data, 12);
+	uint16_t h = (uint16_t)LittleEndian_getW(data, 14);
+	return w > 0 && h > 0 && w <= 32768 && h <= 32768;
 }
 
 bool tga_get_metrics(const uint8_t *data, size_t size, struct cg_metrics *metrics)
 {
-	if (size < TGA_HEADER_SIZE) {
+	if (!data || size < TGA_HEADER_SIZE) {
 		WARNING("Data size too small for TGA header");
 		return false;
 	}
-	metrics->x = LittleEndian_getW(data, 8);
-	metrics->y = LittleEndian_getW(data, 10);
-	metrics->w = LittleEndian_getW(data, 12);
-	metrics->h = LittleEndian_getW(data, 14);
+	if (data[16] != 24 && data[16] != 32) {
+		WARNING("Unsupported TGA bpp: %u", data[16]);
+		return false;
+	}
+	metrics->x = (uint16_t)LittleEndian_getW(data, 8);
+	metrics->y = (uint16_t)LittleEndian_getW(data, 10);
+	metrics->w = (uint16_t)LittleEndian_getW(data, 12);
+	metrics->h = (uint16_t)LittleEndian_getW(data, 14);
+	if (metrics->w <= 0 || metrics->h <= 0 || metrics->w > 32768 || metrics->h > 32768) {
+		WARNING("Invalid TGA dimensions: %dx%d", metrics->w, metrics->h);
+		return false;
+	}
 	metrics->bpp = data[16];
 	metrics->has_pixel = true;
 	metrics->has_alpha = (metrics->bpp == 32);
@@ -76,9 +84,9 @@ void tga_extract(const uint8_t *data, size_t size, struct cg *cg)
 
 	uint8_t id_len = data[0];
 	uint8_t img_type = data[2];
-	int w = cg->metrics.w;
-	int h = cg->metrics.h;
-	int channels = cg->metrics.bpp / 8;
+	size_t w = (size_t)cg->metrics.w;
+	size_t h = (size_t)cg->metrics.h;
+	size_t channels = (size_t)(cg->metrics.bpp / 8);
 	uint8_t desc = data[17];
 	bool top_down = (desc & 0x20) != 0;
 	bool right_to_left = (desc & 0x10) != 0;
@@ -90,9 +98,9 @@ void tga_extract(const uint8_t *data, size_t size, struct cg *cg)
 
 	const uint8_t *src = data + TGA_HEADER_SIZE + id_len;
 	const uint8_t *end = data + size;
-	size_t nr_pixels = (size_t)w * h;
+	size_t nr_pixels = w * h;
 
-	uint8_t *dst = xcalloc(1, nr_pixels * 4);
+	uint8_t *dst = xcalloc(1, w * h * 4);
 
 	if (img_type == 2) {
 		if ((size_t)(end - src) < nr_pixels * channels) {
@@ -101,14 +109,14 @@ void tga_extract(const uint8_t *data, size_t size, struct cg *cg)
 			free(dst);
 			return;
 		}
-		for (int y = 0; y < h; y++) {
-			int dst_y = top_down ? y : (h - 1 - y);
-			const uint8_t *row_src = src + (size_t)y * w * channels;
-			uint8_t *row_dst = dst + (size_t)dst_y * w * 4;
-			for (int x = 0; x < w; x++) {
-				int dst_x = right_to_left ? (w - 1 - x) : x;
-				write_tga_pixel(row_dst + (size_t)dst_x * 4,
-					row_src + (size_t)x * channels, channels);
+		for (size_t y = 0; y < h; y++) {
+			size_t dst_y = top_down ? y : (h - 1 - y);
+			const uint8_t *row_src = src + y * w * channels;
+			uint8_t *row_dst = dst + dst_y * w * 4;
+			for (size_t x = 0; x < w; x++) {
+				size_t dst_x = right_to_left ? (w - 1 - x) : x;
+				write_tga_pixel(row_dst + dst_x * 4,
+					row_src + x * channels, (int)channels);
 			}
 		}
 	} else if (img_type == 10) {
@@ -120,21 +128,21 @@ void tga_extract(const uint8_t *data, size_t size, struct cg *cg)
 				return;
 			}
 			uint8_t pkt = *src++;
-			size_t count = (pkt & 0x7f) + 1;
+			size_t count = (size_t)(pkt & 0x7f) + 1;
 			if (idx + count > nr_pixels)
 				count = nr_pixels - idx;
 			if (pkt & 0x80) {
-				if ((size_t)(end - src) < (size_t)channels) {
+				if ((size_t)(end - src) < channels) {
 					WARNING("TGA RLE packet truncated");
 					free(dst);
 					return;
 				}
 				for (size_t k = 0; k < count; k++, idx++) {
-					int y = (int)(idx / w);
-					int x = (int)(idx % w);
-					int dst_y = top_down ? y : (h - 1 - y);
-					int dst_x = right_to_left ? (w - 1 - x) : x;
-					write_tga_pixel(dst + ((size_t)dst_y * w + dst_x) * 4, src, channels);
+					size_t y = idx / w;
+					size_t x = idx % w;
+					size_t dst_y = top_down ? y : (h - 1 - y);
+					size_t dst_x = right_to_left ? (w - 1 - x) : x;
+					write_tga_pixel(dst + (dst_y * w + dst_x) * 4, src, (int)channels);
 				}
 				src += channels;
 			} else {
@@ -144,11 +152,11 @@ void tga_extract(const uint8_t *data, size_t size, struct cg *cg)
 					return;
 				}
 				for (size_t k = 0; k < count; k++, idx++) {
-					int y = (int)(idx / w);
-					int x = (int)(idx % w);
-					int dst_y = top_down ? y : (h - 1 - y);
-					int dst_x = right_to_left ? (w - 1 - x) : x;
-					write_tga_pixel(dst + ((size_t)dst_y * w + dst_x) * 4, src, channels);
+					size_t y = idx / w;
+					size_t x = idx % w;
+					size_t dst_y = top_down ? y : (h - 1 - y);
+					size_t dst_x = right_to_left ? (w - 1 - x) : x;
+					write_tga_pixel(dst + (dst_y * w + dst_x) * 4, src, (int)channels);
 					src += channels;
 				}
 			}

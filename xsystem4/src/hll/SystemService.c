@@ -40,16 +40,20 @@
 
 static int SystemService_GetMixerName(int n, struct string **name)
 {
+	if (!name)
+		return 0;
 	const char *r = mixer_get_name(n);
 	if (!r)
 		return 0;
+	if (*name)
+		free_string(*name);
 	*name = make_string(r, strlen(r));
 	return 1;
 }
 
 static bool SystemService_GetMixerDefaultVolume(int n, int *volume)
 {
-	if (n < 0 || (unsigned)n >= config.mixer_nr_channels)
+	if (!volume || n < 0 || (unsigned)n >= config.mixer_nr_channels)
 		return false;
 	*volume = config.mixer_volumes[n];
 	return true;
@@ -57,6 +61,8 @@ static bool SystemService_GetMixerDefaultVolume(int n, int *volume)
 
 static bool SystemService_SetMixerName(int n, struct string *name)
 {
+	if (!name)
+		return false;
 	return mixer_set_name(n, name->text);
 }
 
@@ -80,14 +86,18 @@ static struct string *SystemService_GetGameVersionByText(void)
 
 static void SystemService_GetGameName(struct string **game_name)
 {
+	if (!game_name)
+		return;
 	if (*game_name)
 		free_string(*game_name);
-	*game_name = cstr_to_string(config.game_name);
+	*game_name = cstr_to_string(config.game_name ? config.game_name : "");
 }
 
 // Rance 03 validates this 49-byte engine identifier via SystemService.GetGameTitle.
 static void SystemService_GetGameTitle(struct string **name)
 {
+	if (!name)
+		return;
 	if (*name)
 		free_string(*name);
 	*name = cstr_to_string("4aluoi@64sdfg354di87sd6f5g4s8e46zd5f4gs987gas.2f1");
@@ -95,7 +105,7 @@ static void SystemService_GetGameTitle(struct string **name)
 
 static struct string *SystemService_GetGameName_v12(void)
 {
-	return cstr_to_string(config.game_name);
+	return cstr_to_string(config.game_name ? config.game_name : "");
 }
 
 static void *SystemService_ResolveGameName(const struct ain_hll_function *f)
@@ -364,7 +374,11 @@ static bool SystemService_GetMouseCursorConfig(int type, int *value)
 
 void SystemService_GetGameFolderPath(struct string **folder_path)
 {
-	char *sjis = utf2sjis(config.game_dir, 0);
+	if (!folder_path)
+		return;
+	if (*folder_path)
+		free_string(*folder_path);
+	char *sjis = utf2sjis(config.game_dir ? config.game_dir : ".", 0);
 	size_t len = strlen(sjis);
 	if (len > 0 && sjis[len - 1] != '/' && sjis[len - 1] != '\\') {
 		struct string *s = make_string(sjis, len);
@@ -404,9 +418,18 @@ static bool SystemService_IsResetOnce(void)
 	return vm_reset_once;
 }
 
+static void set_out_cstr(struct string **text, const char *s)
+{
+	if (!text)
+		return;
+	if (*text)
+		free_string(*text);
+	*text = cstr_to_string(s);
+}
+
 static bool SystemService_IsResetOnce_Drapeko(struct string **text)
 {
-	*text = cstr_to_string("XXX TTT YYY"); // ???
+	set_out_cstr(text, "XXX TTT YYY"); // ???
 	return vm_reset_once;
 }
 
@@ -499,35 +522,35 @@ static void SystemService_RestrainScreensaver(void) { }
 // Rance 01
 static void SystemService_Rance0123456789(struct string **text)
 {
-	*text = cstr_to_string("-RANCE010ECNAR-");
+	set_out_cstr(text, "-RANCE010ECNAR-");
 }
 
 // Rance 01 trial edition
 static void SystemService_XXXXX01XXXXXXXX(struct string **text)
 {
-	*text = cstr_to_string("RANCE01RANCEKAKKOII");
+	set_out_cstr(text, "RANCE01RANCEKAKKOII");
 }
 
 // Drapeko
 static void SystemService_Test(struct string **text)
 {
-	*text = cstr_to_string("DELETE ALL 758490275489207548093");
+	set_out_cstr(text, "DELETE ALL 758490275489207548093");
 }
 
 // Drapeko trial edition
 static void SystemService_DRPKT(struct string **text)
 {
-	*text = cstr_to_string("DRPKT QWERTY NUFUAUEO 75849027582754829");
+	set_out_cstr(text, "DRPKT QWERTY NUFUAUEO 75849027582754829");
 }
 
 // Rance 9
 static void SystemService_Rance96161988(struct string **text) {
-	*text = cstr_to_string("=Rance99/RANCE99=");
+	set_out_cstr(text, "=Rance99/RANCE99=");
 }
 
 // Pascha3 Plus Contents
 static void SystemService_XXX(struct string **text) {
-	*text = cstr_to_string("FORMAT HDD ERASE 578205024758284076520478254092784789752384758204687293");
+	set_out_cstr(text, "FORMAT HDD ERASE 578205024758284076520478254092784789752384758204687293");
 }
 
 static void SystemService_PreLink(void);
@@ -1108,6 +1131,8 @@ HLL_LIBRARY(InstallInfo,
 
 static bool PCInfo_GetEmpty(struct string **info)
 {
+	if (!info)
+		return false;
 	if (*info)
 		free_string(*info);
 	*info = string_ref(&EMPTY_STRING);

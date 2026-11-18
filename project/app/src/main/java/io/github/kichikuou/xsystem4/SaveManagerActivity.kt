@@ -133,25 +133,11 @@ private fun formatFileSize(bytes: Long): String {
     }
 }
 
-internal fun isGameProcessRunning(context: Context): Boolean {
-    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-    val targetProcName = "${context.packageName}:game"
-    return try {
-        am?.runningAppProcesses?.any { it.processName == targetProcName } == true
-    } catch (_: Throwable) {
-        false
-    }
-}
+internal fun isGameProcessRunning(context: Context): Boolean =
+    GameCatalog.isGameProcessRunning(context)
 
 internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
-    val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-    val targetProcName = "${activity.packageName}:game"
-    val gameProc = try {
-        am?.runningAppProcesses?.firstOrNull { it.processName == targetProcName }
-    } catch (_: Throwable) {
-        null
-    }
-    if (gameProc == null) {
+    if (!GameCatalog.isGameProcessRunning(activity)) {
         onProceed()
         return
     }
@@ -175,19 +161,12 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         .setTitle(title)
         .setMessage(message)
         .setPositiveButton(confirmLabel) { _, _ ->
-            try {
-                Process.killProcess(gameProc.pid)
-            } catch (_: Throwable) {
-            }
-            for (attempt in 0 until 20) {
-                if (!isGameProcessRunning(activity)) break
-                try {
-                    Thread.sleep(25)
-                } catch (_: InterruptedException) {
-                    break
-                }
-            }
-            onProceed()
+            GameCatalog.killRunningGameProcess(activity)
+            GameCatalog.waitForGameProcessExit(
+                activity = activity,
+                onExited = { onProceed() },
+                onTimeout = { GameCatalog.showGameStopFailedToast(activity) }
+            )
         }
         .setNegativeButton(R.string.cancel, null)
         .show()
@@ -208,11 +187,737 @@ class SaveManagerActivity : ThemedActivity() {
 
         // Import/export/restore jobs outlive the activity instance: rotating or switching
         // dark mode must not orphan a half-done copy (or let a second one start alongside
-        // it). Results go to whichever instance is current when the job ends.
+        // it). Results go to whichever instance is current when the job ends via WeakReference.
         private val opScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private var opJob: Job? = null
         private var opProgressMessage: String? = null
-        private var liveHost: SaveManagerActivity? = null
+        private var liveHostRef: java.lang.ref.WeakReference<SaveManagerActivity>? = null
+
+        private fun launchSaveOp(block: suspend CoroutineScope.() -> Unit): Job =
+            opScope.launch(block = block)
+
+        private fun onHost(action: (SaveManagerActivity) -> Unit) {
+            val host = liveHostRef?.get()
+            if (host != null && !host.isFinishing && !host.isDestroyed) {
+                action(host)
+            }
+        }
+
+        private fun hostMessage(appCtx: Context, title: String, message: String) {
+            val host = liveHostRef?.get()
+            if (host != null && !host.isFinishing && !host.isDestroyed) {
+                host.showMessageDialog(title, message)
+            } else {
+                Toast.makeText(appCtx, "$title: $message", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        private fun gameRunningAbortMessage(context: Context): String =
+            GamepadBridge.tr(
+                context,
+                "游戏正在运行，已取消存档写入以防损坏",
+                "ゲームが実行中のため、セーブデータの書き込みを中止しました",
+                "Game is running; save modification aborted to prevent corruption"
+            )
+
+        private fun ensureProcessStoppedOnIo(context: Context) {
+            if (GameCatalog.isGameProcessRunning(context)) {
+                throw IOException(gameRunningAbortMessage(context))
+            }
+        }
+
+        private fun hasExistingSavesInDir(dir: File): Boolean =
+            dir.walkTopDown().any { it.isFile && !it.name.startsWith(".") }
+
+        private fun saveBackupDirFor(filesDir: File, dirName: String): File =
+            File(File(filesDir, SAVE_BACKUP_ROOT), File(dirName).name)
+
+        private fun listSaveBackupsFor(filesDir: File, dirName: String): List<File> =
+            saveBackupDirFor(filesDir, dirName).listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".zip") }
+                ?.sortedByDescending { it.name }
+                .orEmpty()
+
+        /**
+         * Zips every save in [saveDir] into the backup folder before an import, clear, or restore
+         * overwrites them, keeping the newest [SAVE_BACKUP_KEEP]. Returns null if there was
+         * nothing to back up. Runs on an IO thread without capturing an Activity reference.
+         */
+        private fun backupSavesInDir(filesDir: File, saveDir: File, dirName: String): File? {
+            val files = saveDir.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.toList()
+            if (files.isEmpty()) return null
+            val dir = saveBackupDirFor(filesDir, dirName)
+            dir.mkdirs()
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+            val out = File(dir, "SaveData_$stamp.zip")
+            val tmp = File(dir, ".${out.name}.tmp")
+            try {
+                ZipOutputStream(tmp.outputStream().buffered()).use { zos ->
+                    for (f in files) {
+                        zos.putNextEntry(ZipEntry("SaveData/" + f.relativeTo(saveDir).invariantSeparatorsPath))
+                        f.inputStream().buffered().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                }
+                if (!tmp.isFile || tmp.length() <= 0L) {
+                    throw IOException("Backup archive is empty")
+                }
+                if (!tmp.renameTo(out)) {
+                    throw IOException("Cannot write save backup")
+                }
+            } catch (e: Exception) {
+                tmp.delete()
+                throw e
+            }
+            listSaveBackupsFor(filesDir, dirName).drop(SAVE_BACKUP_KEEP).forEach { it.delete() }
+            return out
+        }
+
+        /**
+         * Validates and extracts 100% of [backup] into a temporary staging directory FIRST,
+         * and ONLY deletes existing live save files and moves staged files into [saveDir]
+         * after extraction succeeds completely.
+         */
+        private fun restoreSavesFromBackupSafely(
+            appCtx: Context,
+            backup: File,
+            saveDir: File,
+            dirName: String
+        ): Int {
+            ensureProcessStoppedOnIo(appCtx)
+            if (!backup.isFile || backup.length() <= 0L) {
+                throw IOException("Backup archive does not exist or is empty")
+            }
+            saveDir.mkdirs()
+            val stagingParent = saveDir.parentFile ?: appCtx.filesDir
+            val stagingDir = File(stagingParent, ".restore_staging_${System.nanoTime()}")
+            if (stagingDir.exists()) {
+                stagingDir.deleteRecursively()
+            }
+            stagingDir.mkdirs()
+            try {
+                val stagingRoot = stagingDir.canonicalFile
+                var count = 0
+                java.util.zip.ZipFile(backup).use { zipFile ->
+                    val entries = zipFile.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (entry.isDirectory) continue
+                        val rel = entry.name.replace('\\', '/').removePrefix("SaveData/").trimStart('/')
+                        if (rel.isEmpty() || rel.startsWith(".")) continue
+                        val dst = File(stagingRoot, rel).canonicalFile
+                        if (!dst.path.startsWith(stagingRoot.path + File.separator)) {
+                            throw IOException("Unsafe path in backup archive: ${entry.name}")
+                        }
+                        dst.parentFile?.mkdirs()
+                        var written: Long
+                        zipFile.getInputStream(entry).buffered().use { input ->
+                            dst.outputStream().buffered().use { output ->
+                                written = input.copyTo(output)
+                            }
+                        }
+                        if (entry.size >= 0L && written != entry.size) {
+                            throw IOException("Truncated entry in backup archive: ${entry.name}")
+                        }
+                        count++
+                    }
+                }
+
+                ensureProcessStoppedOnIo(appCtx)
+                // Back up current live saves before swapping so the restore itself can be undone.
+                backupSavesInDir(appCtx.filesDir, saveDir, dirName)
+
+                saveDir.listFiles()?.filter { !it.name.startsWith(".") }?.forEach {
+                    it.deleteRecursively()
+                }
+                val stagedFiles = stagingDir.walkTopDown().filter { it.isFile }.toList()
+                for (staged in stagedFiles) {
+                    val rel = staged.relativeTo(stagingDir).path
+                    val finalDst = File(saveDir, rel)
+                    finalDst.parentFile?.mkdirs()
+                    if (!staged.renameTo(finalDst)) {
+                        staged.copyTo(finalDst, overwrite = true)
+                        staged.delete()
+                    }
+                }
+                return count
+            } finally {
+                try {
+                    stagingDir.deleteRecursively()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        private fun formatArchiveImportErrorForContext(context: Context, e: Throwable): String {
+            val raw = e.message ?: ""
+            val lang = AppSettings.resolveLocale(context).language
+            if (raw.startsWith("ENCRYPTED:")) {
+                return when {
+                    lang.startsWith("zh") -> "不支持加密压缩包，请解压后导入"
+                    lang.startsWith("ja") -> "パスワード付きアーカイブには非対応です"
+                    else -> "Password-protected archives are not supported"
+                }
+            }
+            if (raw.startsWith("ENOSPC:")) {
+                return context.getString(R.string.import_no_space)
+            }
+            return e.localizedMessage ?: context.getString(R.string.error)
+        }
+
+        private data class DocNode(val documentId: String, val name: String, val isDirectory: Boolean)
+
+        private fun listDocumentChildrenFor(
+            context: Context,
+            treeUri: Uri,
+            parentDocId: String
+        ): List<DocNode> {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            val result = mutableListOf<DocNode>()
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(idIdx) ?: continue
+                    val name = cursor.getString(nameIdx) ?: continue
+                    val mime = cursor.getString(mimeIdx)
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    result.add(DocNode(id, name, isDir))
+                }
+            }
+            return result
+        }
+
+        private fun safeChildNameStatic(raw: String): String? {
+            val name = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+                .substringAfterLast('/').substringAfterLast('\\').trim()
+            if (name.isEmpty() || name.startsWith(".") || name == "." || name == ".." || name.contains('\u0000')) {
+                return null
+            }
+            return name
+        }
+
+        private fun isInsideStatic(root: File, file: File): Boolean {
+            val r = root.canonicalPath
+            val f = file.canonicalPath
+            return f.startsWith(r + File.separator)
+        }
+
+        private fun findNormalizedSaveRootStatic(tempDir: File): File {
+            val saveDataDir = tempDir.walkTopDown().maxDepth(3).firstOrNull {
+                it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
+            }
+            if (saveDataDir != null) {
+                return saveDataDir
+            }
+            var cur = tempDir
+            while (true) {
+                val children = cur.listFiles()?.filter { !it.name.startsWith(".") } ?: break
+                val files = children.filter { it.isFile }
+                val dirs = children.filter { it.isDirectory }
+                if (files.isEmpty() && dirs.size == 1) {
+                    cur = dirs[0]
+                } else {
+                    break
+                }
+            }
+            return cur
+        }
+
+        private fun extractSaveArchiveToTargetStatic(
+            context: Context,
+            uri: Uri,
+            targetDir: File
+        ): Int {
+            val tempDir = File(context.filesDir, "$SAVE_IMPORT_TMP_PREFIX${System.nanoTime()}")
+            tempDir.mkdirs()
+            try {
+                ArchiveExtractor.extractUriToDirectory(
+                    context = context,
+                    uri = uri,
+                    destDir = tempDir,
+                    tempScratchParent = context.cacheDir
+                )
+                ensureProcessStoppedOnIo(context)
+                val normalizedRoot = findNormalizedSaveRootStatic(tempDir)
+                val rootCanonical = targetDir.canonicalFile
+                var copied = 0
+                normalizedRoot.walkTopDown().forEach { src ->
+                    if (src.isFile && !src.name.startsWith(".")) {
+                        val relPath = ArchiveExtractor.repairSjisAsGbkMojibake(src.relativeTo(normalizedRoot).path)
+                        val dst = File(rootCanonical, relPath).canonicalFile
+                        if (!dst.path.startsWith(rootCanonical.path + File.separator)) return@forEach
+                        dst.parentFile?.mkdirs()
+                        val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
+                        try {
+                            src.copyTo(tmpDst, overwrite = true)
+                            if (!tmpDst.renameTo(dst)) {
+                                tmpDst.copyTo(dst, overwrite = true)
+                                tmpDst.delete()
+                            }
+                            copied++
+                        } finally {
+                            tmpDst.delete()
+                        }
+                    }
+                }
+                return copied
+            } finally {
+                tempDir.deleteRecursively()
+            }
+        }
+
+        private fun copyDocumentTreeToInternalStatic(
+            context: Context,
+            treeUri: Uri,
+            parentDocId: String,
+            destDir: File,
+            rootDir: File = destDir
+        ): Int {
+            destDir.mkdirs()
+            var count = 0
+            for (child in listDocumentChildrenFor(context, treeUri, parentDocId)) {
+                if (child.name.startsWith(".")) continue
+                val cleanName = safeChildNameStatic(child.name) ?: continue
+                if (child.isDirectory) {
+                    val subDir = File(destDir, cleanName)
+                    if (!isInsideStatic(rootDir, subDir)) continue
+                    count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, rootDir)
+                } else {
+                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
+                    val outFile = File(destDir, cleanName)
+                    if (!isInsideStatic(rootDir, outFile)) continue
+                    val tmpFile = File(destDir, ".imp_${System.nanoTime()}.tmp")
+                    try {
+                        context.contentResolver.openInputStream(docUri)?.use { input ->
+                            tmpFile.outputStream().buffered().use { output ->
+                                input.copyTo(output)
+                            }
+                            if (!tmpFile.renameTo(outFile)) {
+                                tmpFile.copyTo(outFile, overwrite = true)
+                                tmpFile.delete()
+                            }
+                            count++
+                        }
+                    } finally {
+                        tmpFile.delete()
+                    }
+                }
+            }
+            return count
+        }
+
+        private fun queryDisplayNameStatic(context: Context, uri: Uri): String? {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    return cursor.getString(idx)
+                }
+            }
+            return uri.lastPathSegment
+        }
+
+        private fun copyExportFileStatic(
+            context: Context,
+            srcFile: File,
+            outStream: java.io.OutputStream,
+            asPc: Boolean
+        ): Boolean {
+            if (asPc) {
+                return GameModifierBridge.copySaveFileForPc(srcFile, outStream, context.cacheDir)
+            }
+            srcFile.inputStream().buffered().use { input ->
+                input.copyTo(outStream)
+            }
+            return false
+        }
+
+        private fun getOrCreateSubdirStatic(
+            context: Context,
+            treeUri: Uri,
+            parentDocId: String,
+            dirName: String
+        ): String {
+            val existing = listDocumentChildrenFor(context, treeUri, parentDocId)
+                .firstOrNull { it.isDirectory && it.name == dirName }
+            if (existing != null) return existing.documentId
+
+            val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+            val createdUri = DocumentsContract.createDocument(
+                context.contentResolver,
+                parentUri,
+                DocumentsContract.Document.MIME_TYPE_DIR,
+                dirName
+            ) ?: throw IOException("Failed to create directory: $dirName")
+            return DocumentsContract.getDocumentId(createdUri)
+        }
+
+        private fun formatExportDoneMessageForContext(
+            context: Context,
+            exported: Int,
+            converted: Int,
+            asPc: Boolean,
+            defaultMsgResId: Int
+        ): String {
+            return if (asPc && converted > 0) {
+                context.getString(R.string.save_export_pc_converted_done_msg, exported, converted)
+            } else {
+                context.getString(defaultMsgResId, exported)
+            }
+        }
+
+        private fun startRestoreBackupOp(
+            appCtx: Context,
+            backup: File,
+            targetDir: File,
+            targetDirName: String
+        ): Job = launchSaveOp {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    restoreSavesFromBackupSafely(appCtx, backup, targetDir, targetDirName)
+                }
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_done_title),
+                    appCtx.getString(R.string.save_restore_backup_done_msg, count)
+                )
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to restore save backup", e)
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_failed_title),
+                    formatArchiveImportErrorForContext(appCtx, e)
+                )
+            }
+        }
+
+        private fun startImportDirectoryOp(
+            appCtx: Context,
+            treeUri: Uri,
+            targetDir: File,
+            targetDirName: String
+        ): Job = launchSaveOp {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    ensureProcessStoppedOnIo(appCtx)
+                    targetDir.mkdirs()
+                    backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                    val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                    val children = listDocumentChildrenFor(appCtx, treeUri, rootDocId)
+                    val saveDataSubdir = children.firstOrNull {
+                        it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
+                    }
+                    val hasDirectSaveFiles = children.any {
+                        !it.isDirectory && (
+                            it.name.endsWith(".asd", true) ||
+                                it.name.endsWith(".sav", true) ||
+                                it.name.endsWith(".rsm", true)
+                            )
+                    }
+                    val sourceDocId = if (saveDataSubdir != null && !hasDirectSaveFiles) {
+                        saveDataSubdir.documentId
+                    } else {
+                        rootDocId
+                    }
+                    ensureProcessStoppedOnIo(appCtx)
+                    copyDocumentTreeToInternalStatic(appCtx, treeUri, sourceDocId, targetDir)
+                }
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_done_title),
+                    appCtx.getString(R.string.save_import_dir_done_msg, count)
+                )
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to import saves from directory", e)
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_failed_title),
+                    formatArchiveImportErrorForContext(appCtx, e)
+                )
+            }
+        }
+
+        private fun startImportFilesOp(
+            appCtx: Context,
+            uris: List<Uri>,
+            targetDir: File,
+            targetDirName: String
+        ): Job = launchSaveOp {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    ensureProcessStoppedOnIo(appCtx)
+                    targetDir.mkdirs()
+                    backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                    val rootCanonical = targetDir.canonicalFile
+                    var imported = 0
+                    for (uri in uris) {
+                        ensureProcessStoppedOnIo(appCtx)
+                        val fileName = queryDisplayNameStatic(appCtx, uri)
+                            ?: "save_${System.currentTimeMillis()}.asd"
+                        val safeName = safeChildNameStatic(fileName) ?: continue
+                        if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
+                            imported += extractSaveArchiveToTargetStatic(appCtx, uri, targetDir)
+                        } else {
+                            val dst = File(rootCanonical, safeName).canonicalFile
+                            if (!dst.path.startsWith(rootCanonical.path + File.separator)) continue
+                            val tmpDst = File(rootCanonical, ".imp_${System.nanoTime()}.tmp")
+                            try {
+                                appCtx.contentResolver.openInputStream(uri)?.use { input ->
+                                    tmpDst.outputStream().buffered().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                    if (!tmpDst.renameTo(dst)) {
+                                        tmpDst.copyTo(dst, overwrite = true)
+                                        tmpDst.delete()
+                                    }
+                                    imported++
+                                }
+                            } finally {
+                                tmpDst.delete()
+                            }
+                        }
+                    }
+                    imported
+                }
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_done_title),
+                    appCtx.getString(R.string.save_import_files_done_msg, count)
+                )
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to import save files", e)
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_import_failed_title),
+                    formatArchiveImportErrorForContext(appCtx, e)
+                )
+            }
+        }
+
+        private fun startExportZipOp(
+            appCtx: Context,
+            uri: Uri,
+            entriesToExport: List<SaveFileEntry>,
+            asPc: Boolean
+        ): Job = launchSaveOp {
+            try {
+                val (count, converted) = withContext(Dispatchers.IO) {
+                    val outStream = appCtx.contentResolver.openOutputStream(uri)
+                        ?: throw IOException("Failed to create target ZIP file")
+                    var exported = 0
+                    var convCount = 0
+                    ZipOutputStream(outStream.buffered()).use { zos ->
+                        for (entry in entriesToExport) {
+                            if (!entry.file.exists()) continue
+                            val zipEntry = ZipEntry("SaveData/${entry.relativePath}")
+                            zipEntry.time = entry.lastModified
+                            zos.putNextEntry(zipEntry)
+                            if (copyExportFileStatic(appCtx, entry.file, zos, asPc)) {
+                                convCount++
+                            }
+                            zos.closeEntry()
+                            exported++
+                        }
+                    }
+                    exported to convCount
+                }
+                onHost { it.dismissProgress() }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_export_done_title),
+                    formatExportDoneMessageForContext(
+                        appCtx,
+                        count,
+                        converted,
+                        asPc,
+                        R.string.save_export_zip_done_msg
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to export saves to ZIP", e)
+                onHost { it.dismissProgress() }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_export_failed_title),
+                    e.localizedMessage ?: appCtx.getString(R.string.error)
+                )
+            }
+        }
+
+        private fun startExportDirectoryOp(
+            appCtx: Context,
+            treeUri: Uri,
+            entriesToExport: List<SaveFileEntry>,
+            asPc: Boolean
+        ): Job = launchSaveOp {
+            try {
+                val (count, converted) = withContext(Dispatchers.IO) {
+                    val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                    var exported = 0
+                    var convCount = 0
+                    for (entry in entriesToExport) {
+                        if (!entry.file.exists()) continue
+                        val parts = entry.relativePath.split('/').filter { it.isNotEmpty() }
+                        if (parts.isEmpty()) continue
+                        var parentDocId = rootDocId
+                        for (i in 0 until parts.size - 1) {
+                            parentDocId = getOrCreateSubdirStatic(appCtx, treeUri, parentDocId, parts[i])
+                        }
+                        val fileName = parts.last()
+                        val existing = listDocumentChildrenFor(appCtx, treeUri, parentDocId)
+                            .firstOrNull { !it.isDirectory && it.name == fileName }
+                        if (existing != null) {
+                            val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
+                            try {
+                                DocumentsContract.deleteDocument(appCtx.contentResolver, existingUri)
+                            } catch (_: Exception) {
+                            }
+                        }
+                        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+                        val newDocUri = DocumentsContract.createDocument(
+                            appCtx.contentResolver,
+                            parentUri,
+                            "application/octet-stream",
+                            fileName
+                        ) ?: throw IOException("Failed to create file: $fileName")
+                        appCtx.contentResolver.openOutputStream(newDocUri)?.use { out ->
+                            if (copyExportFileStatic(appCtx, entry.file, out, asPc)) {
+                                convCount++
+                            }
+                        } ?: throw IOException("Failed to write file: $fileName")
+                        exported++
+                    }
+                    exported to convCount
+                }
+                onHost { it.dismissProgress() }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_export_done_title),
+                    formatExportDoneMessageForContext(
+                        appCtx,
+                        count,
+                        converted,
+                        asPc,
+                        R.string.save_export_dir_done_msg
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to export saves to directory", e)
+                onHost { it.dismissProgress() }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_export_failed_title),
+                    e.localizedMessage ?: appCtx.getString(R.string.error)
+                )
+            }
+        }
+
+        private fun startExportSingleFileOp(
+            appCtx: Context,
+            srcFile: File,
+            destUri: Uri,
+            asPc: Boolean
+        ): Job = launchSaveOp {
+            try {
+                withContext(Dispatchers.IO) {
+                    appCtx.contentResolver.openOutputStream(destUri)?.use { out ->
+                        copyExportFileStatic(appCtx, srcFile, out, asPc)
+                    } ?: throw IOException("Failed to write target file")
+                }
+                onHost { it.dismissProgress() }
+                Toast.makeText(
+                    appCtx,
+                    appCtx.getString(R.string.save_file_exported_toast, srcFile.name),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: Exception) {
+                onHost { it.dismissProgress() }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.save_export_failed_title),
+                    e.localizedMessage ?: appCtx.getString(R.string.error)
+                )
+            }
+        }
+
+        private fun startClearSavesOp(
+            appCtx: Context,
+            targetDir: File,
+            targetDirName: String
+        ): Job = launchSaveOp {
+            try {
+                withContext(Dispatchers.IO) {
+                    ensureProcessStoppedOnIo(appCtx)
+                    if (hasExistingSavesInDir(targetDir)) {
+                        val backup = backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                        if (backup == null || !backup.isFile || backup.length() <= 0L) {
+                            throw IOException(
+                                GamepadBridge.tr(
+                                    appCtx,
+                                    "清空前自动备份失败，已中止删除",
+                                    "消去前の自動バックアップに失敗したため中止しました",
+                                    "Automatic backup failed; aborted clearing saves"
+                                )
+                            )
+                        }
+                    }
+                    ensureProcessStoppedOnIo(appCtx)
+                    targetDir.listFiles()
+                        ?.filter { !it.name.startsWith(".") }
+                        ?.forEach { child ->
+                            if (!child.deleteRecursively() && child.exists()) {
+                                throw IOException("Failed to delete save file: ${child.name}")
+                            }
+                        }
+                }
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                Toast.makeText(appCtx, R.string.save_cleared_toast, Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e("SaveManager", "Failed to clear saves", e)
+                onHost {
+                    it.dismissProgress()
+                    it.refreshFileList()
+                }
+                hostMessage(
+                    appCtx,
+                    appCtx.getString(R.string.error),
+                    formatArchiveImportErrorForContext(appCtx, e)
+                )
+            }
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -220,6 +925,7 @@ class SaveManagerActivity : ThemedActivity() {
         get() = opJob
         set(value) { opJob = value }
     private var progressDialog: Dialog? = null
+    private val trackedDialogs = mutableListOf<Dialog>()
 
     private var scopedGameId: String? = null
     private var targets: MutableList<SaveTarget> = mutableListOf()
@@ -229,6 +935,24 @@ class SaveManagerActivity : ThemedActivity() {
     private var pendingSingleExportFile: File? = null
     private var pendingSingleExportAsPc: Boolean = false
     private var pendingExportAsPc: Boolean = false
+
+    private fun <T : Dialog> trackDialog(dlg: T): T {
+        trackedDialogs.removeAll { !it.isShowing }
+        trackedDialogs.add(dlg)
+        return dlg
+    }
+
+    private fun dismissTrackedDialogs() {
+        for (dlg in trackedDialogs.toList()) {
+            if (dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        trackedDialogs.clear()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -250,7 +974,7 @@ class SaveManagerActivity : ThemedActivity() {
         )
         listView.adapter = adapter
 
-        liveHost = this
+        liveHostRef = java.lang.ref.WeakReference(this)
         if (savedInstanceState != null) {
             pendingExportAsPc = savedInstanceState.getBoolean(STATE_EXPORT_AS_PC, false)
             pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
@@ -288,6 +1012,7 @@ class SaveManagerActivity : ThemedActivity() {
 
     override fun onResume() {
         super.onResume()
+        liveHostRef = java.lang.ref.WeakReference(this)
         if (::currentTarget.isInitialized) {
             refreshFileList()
         }
@@ -301,27 +1026,12 @@ class SaveManagerActivity : ThemedActivity() {
         outState.putBoolean(STATE_SINGLE_EXPORT_AS_PC, pendingSingleExportAsPc)
     }
 
-    private fun launchSaveOp(block: suspend CoroutineScope.() -> Unit): Job = opScope.launch(block = block)
-
-    /** Runs [action] on the live SaveManager instance; skipped if none is showing. */
-    private fun onHost(action: (SaveManagerActivity) -> Unit) {
-        val host = liveHost
-        if (host != null && !host.isDestroyed) action(host)
-    }
-
-    /** Shows an operation result on the live instance, or as a toast if the screen is gone. */
-    private fun hostMessage(title: String, message: String) {
-        val host = liveHost
-        if (host != null && !host.isFinishing && !host.isDestroyed) {
-            host.showMessageDialog(title, message)
-        } else {
-            Toast.makeText(applicationContext, "$title: $message", Toast.LENGTH_LONG).show()
-        }
-    }
-
     override fun onDestroy() {
-        if (liveHost === this) liveHost = null
+        if (liveHostRef?.get() === this) {
+            liveHostRef = null
+        }
         dismissProgress()
+        dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
     }
@@ -340,68 +1050,72 @@ class SaveManagerActivity : ThemedActivity() {
 
         val found = LinkedHashMap<String, SaveTarget>()
         val gameList = GameList(this)
-        for (i in 0 until gameList.size) {
-            val item = gameList[i]
-            val dirName = item.path.name
-            val saveDir = item.savedir ?: File(savesRoot, dirName)
-            saveDir.mkdirs()
-            found[dirName] = SaveTarget(
-                displayName = dirName,
-                dirName = dirName,
-                saveDir = saveDir,
-                externalGameDir = item.path
-            )
-        }
-
-        savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
-            if (!found.containsKey(dir.name)) {
-                val extDir = getExternalFilesDir(null)?.let { File(it, dir.name) }?.takeIf { it.exists() }
-                found[dir.name] = SaveTarget(
-                    displayName = dir.name,
-                    dirName = dir.name,
-                    saveDir = dir,
-                    externalGameDir = extDir
+        try {
+            for (i in 0 until gameList.size) {
+                val item = gameList[i]
+                val dirName = item.path.name
+                val saveDir = item.savedir ?: File(savesRoot, dirName)
+                saveDir.mkdirs()
+                found[dirName] = SaveTarget(
+                    displayName = dirName,
+                    dirName = dirName,
+                    saveDir = saveDir,
+                    externalGameDir = item.path
                 )
             }
-        }
 
-        val gid = scopedGameId
-        if (!gid.isNullOrBlank()) {
-            val iter = found.entries.iterator()
-            while (iter.hasNext()) {
-                val entry = iter.next().value
-                val classified = GameCatalog.classifyDirectory(
-                    gameDir = entry.externalGameDir,
-                    dirName = entry.dirName,
-                    saveDir = entry.saveDir,
-                    displayName = entry.displayName
-                )
-                if (classified != gid && entry.dirName != preferredDirName) {
-                    iter.remove()
+            savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
+                if (!found.containsKey(dir.name)) {
+                    val extDir = getExternalFilesDir(null)?.let { File(it, dir.name) }?.takeIf { it.exists() }
+                    found[dir.name] = SaveTarget(
+                        displayName = dir.name,
+                        dirName = dir.name,
+                        saveDir = dir,
+                        externalGameDir = extDir
+                    )
                 }
             }
-            if (found.isEmpty()) {
-                val desc = GameCatalog.descriptorFor(this, gid, gameList)
-                val defaultDir = File(savesRoot, desc.defaultDirName)
+
+            val gid = scopedGameId
+            if (!gid.isNullOrBlank()) {
+                val iter = found.entries.iterator()
+                while (iter.hasNext()) {
+                    val entry = iter.next().value
+                    val classified = GameCatalog.classifyDirectory(
+                        gameDir = entry.externalGameDir,
+                        dirName = entry.dirName,
+                        saveDir = entry.saveDir,
+                        displayName = entry.displayName
+                    )
+                    if (classified != gid && entry.dirName != preferredDirName) {
+                        iter.remove()
+                    }
+                }
+                if (found.isEmpty()) {
+                    val desc = GameCatalog.descriptorFor(this, gid, gameList)
+                    val defaultDir = File(savesRoot, desc.defaultDirName)
+                    defaultDir.mkdirs()
+                    val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                    found[desc.defaultDirName] = SaveTarget(
+                        displayName = desc.defaultDirName,
+                        dirName = desc.defaultDirName,
+                        saveDir = defaultDir,
+                        externalGameDir = extDir
+                    )
+                }
+            } else if (found.isEmpty()) {
+                val defaultDir = File(savesRoot, "Rance10")
                 defaultDir.mkdirs()
-                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
-                found[desc.defaultDirName] = SaveTarget(
-                    displayName = desc.defaultDirName,
-                    dirName = desc.defaultDirName,
+                val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
+                found["Rance10"] = SaveTarget(
+                    displayName = "Rance10",
+                    dirName = "Rance10",
                     saveDir = defaultDir,
                     externalGameDir = extDir
                 )
             }
-        } else if (found.isEmpty()) {
-            val defaultDir = File(savesRoot, "Rance10")
-            defaultDir.mkdirs()
-            val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
-            found["Rance10"] = SaveTarget(
-                displayName = "Rance10",
-                dirName = "Rance10",
-                saveDir = defaultDir,
-                externalGameDir = extDir
-            )
+        } finally {
+            gameList.close()
         }
 
         targets = found.values.toMutableList()
@@ -531,18 +1245,20 @@ class SaveManagerActivity : ThemedActivity() {
         }.toMutableList()
         labels.add(getString(R.string.save_dir_new_option))
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_dir_select_title)
-            .setItems(labels.toTypedArray()) { _, which ->
-                if (which == targets.size) {
-                    showCreateTargetDialog()
-                } else {
-                    currentTarget = targets[which]
-                    refreshFileList()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_dir_select_title)
+                .setItems(labels.toTypedArray()) { _, which ->
+                    if (which == targets.size) {
+                        showCreateTargetDialog()
+                    } else {
+                        currentTarget = targets[which]
+                        refreshFileList()
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showCreateTargetDialog() {
@@ -552,28 +1268,30 @@ class SaveManagerActivity : ThemedActivity() {
             hint = getString(R.string.save_dir_create_hint)
             setText(defaultPrefix)
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_dir_create_title)
-            .setView(UiKit.dialogContent(this, input))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                val rawName = input.text.toString().trim()
-                val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                if (safeName.isEmpty() || safeName.startsWith(".")) {
-                    Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_dir_create_title)
+                .setView(UiKit.dialogContent(this, input))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val rawName = input.text.toString().trim()
+                    val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                    if (safeName.isEmpty() || safeName.startsWith(".")) {
+                        Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    val newDir = File(File(filesDir, "saves"), safeName)
+                    newDir.mkdirs()
+                    discoverSaveTargets(safeName)
+                    refreshFileList()
                 }
-                val newDir = File(File(filesDir, "saves"), safeName)
-                newDir.mkdirs()
-                discoverSaveTargets(safeName)
-                refreshFileList()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showImportDialog() {
         if (activeJob?.isActive == true) return
-        val latestBackup = listSaveBackups(currentTarget.dirName).firstOrNull()
+        val latestBackup = listSaveBackupsFor(filesDir, currentTarget.dirName).firstOrNull()
         val options = mutableListOf(
             getString(R.string.save_import_opt_files),
             getString(R.string.save_import_opt_dir)
@@ -581,136 +1299,59 @@ class SaveManagerActivity : ThemedActivity() {
         if (latestBackup != null) {
             options.add(getString(R.string.save_import_opt_restore_backup, formatBackupTime(latestBackup)))
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_import_title)
-            .setItems(options.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> confirmImportOverwrite { chooseImportFiles() }
-                    1 -> confirmImportOverwrite { chooseImportDirectory() }
-                    2 -> latestBackup?.let { confirmRestoreBackup(it) }
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_import_title)
+                .setItems(options.toTypedArray()) { _, which ->
+                    when (which) {
+                        0 -> confirmImportOverwrite { chooseImportFiles() }
+                        1 -> confirmImportOverwrite { chooseImportDirectory() }
+                        2 -> latestBackup?.let { confirmRestoreBackup(it) }
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
-
-    private fun hasExistingSaves(dir: File): Boolean =
-        dir.walkTopDown().any { it.isFile && !it.name.startsWith(".") }
 
     /** Importing overwrites same-named saves; say so (and that a backup is made) first. */
     private fun confirmImportOverwrite(proceed: () -> Unit) {
-        if (!hasExistingSaves(currentTarget.saveDir)) {
+        if (!hasExistingSavesInDir(currentTarget.saveDir)) {
             proceed()
             return
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_import_title)
-            .setMessage(R.string.save_import_overwrite_msg)
-            .setPositiveButton(R.string.ok) { _, _ -> proceed() }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_import_title)
+                .setMessage(R.string.save_import_overwrite_msg)
+                .setPositiveButton(R.string.ok) { _, _ -> proceed() }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
-
-    private fun saveBackupDir(dirName: String): File =
-        File(File(filesDir, SAVE_BACKUP_ROOT), File(dirName).name)
-
-    /** Backups for [dirName], newest first. */
-    private fun listSaveBackups(dirName: String): List<File> =
-        saveBackupDir(dirName).listFiles()
-            ?.filter { it.isFile && it.name.endsWith(".zip") }
-            ?.sortedByDescending { it.name }
-            .orEmpty()
 
     private fun formatBackupTime(backup: File): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(backup.lastModified()))
 
-    /**
-     * Zips every save in [saveDir] into the backup folder before an import or restore
-     * overwrites them, keeping the newest [SAVE_BACKUP_KEEP]. Returns null if there was
-     * nothing to back up. Runs on an IO thread.
-     */
-    private fun backupSaves(saveDir: File, dirName: String): File? {
-        val files = saveDir.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.toList()
-        if (files.isEmpty()) return null
-        val dir = saveBackupDir(dirName)
-        dir.mkdirs()
-        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
-        val out = File(dir, "SaveData_$stamp.zip")
-        val tmp = File(dir, ".${out.name}.tmp")
-        try {
-            ZipOutputStream(tmp.outputStream().buffered()).use { zos ->
-                for (f in files) {
-                    zos.putNextEntry(ZipEntry("SaveData/" + f.relativeTo(saveDir).invariantSeparatorsPath))
-                    f.inputStream().buffered().use { it.copyTo(zos) }
-                    zos.closeEntry()
-                }
-            }
-            if (!tmp.renameTo(out)) throw IOException("Cannot write save backup")
-        } catch (e: Exception) {
-            tmp.delete()
-            throw e
-        }
-        listSaveBackups(dirName).drop(SAVE_BACKUP_KEEP).forEach { it.delete() }
-        return out
-    }
-
     private fun confirmRestoreBackup(backup: File) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_import_title)
-            .setMessage(getString(R.string.save_restore_backup_confirm_msg, formatBackupTime(backup)))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                ensureGameNotRunning(this) { runRestoreBackup(backup) }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_import_title)
+                .setMessage(getString(R.string.save_restore_backup_confirm_msg, formatBackupTime(backup)))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) { runRestoreBackup(backup) }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun runRestoreBackup(backup: File) {
+        if (activeJob?.isActive == true) return
         val target = currentTarget
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_restore_backup))
-        activeJob = launchSaveOp {
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    // Back up the current saves first so the restore itself can be undone.
-                    backupSaves(target.saveDir, target.dirName)
-                    restoreSavesFromBackup(backup, target.saveDir)
-                }
-                onHost { it.dismissProgress() }
-                onHost { it.refreshFileList() }
-                hostMessage(
-                    getString(R.string.save_import_done_title),
-                    getString(R.string.save_restore_backup_done_msg, count)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to restore save backup", e)
-                onHost { it.dismissProgress() }
-                onHost { it.refreshFileList() }
-                hostMessage(
-                    getString(R.string.save_import_failed_title),
-                    e.localizedMessage ?: getString(R.string.error)
-                )
-            }
-        }
-    }
-
-    /** Replaces the saves in [saveDir] with the contents of one of our backup zips. */
-    private fun restoreSavesFromBackup(backup: File, saveDir: File): Int {
-        val root = saveDir.canonicalFile
-        saveDir.listFiles()?.filter { !it.name.startsWith(".") }?.forEach { it.deleteRecursively() }
-        var count = 0
-        java.util.zip.ZipInputStream(backup.inputStream().buffered()).use { zis ->
-            while (true) {
-                val entry = zis.nextEntry ?: break
-                if (entry.isDirectory) continue
-                val rel = entry.name.removePrefix("SaveData/")
-                val dst = File(root, rel).canonicalFile
-                if (!dst.path.startsWith(root.path + File.separator)) continue
-                dst.parentFile?.mkdirs()
-                dst.outputStream().buffered().use { zis.copyTo(it) }
-                count++
-            }
-        }
-        return count
+        activeJob = startRestoreBackupOp(appCtx, backup, target.saveDir, target.dirName)
     }
 
     private fun entriesForExport(asPc: Boolean): List<SaveFileEntry> {
@@ -733,18 +1374,20 @@ class SaveManagerActivity : ThemedActivity() {
             getString(R.string.save_export_opt_zip),
             getString(R.string.save_export_opt_dir)
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_export_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> chooseExportZip(asPc = true)
-                    1 -> chooseExportDirectory(asPc = true)
-                    2 -> chooseExportZip(asPc = false)
-                    3 -> chooseExportDirectory(asPc = false)
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_export_title)
+                .setItems(options) { _, which ->
+                    when (which) {
+                        0 -> chooseExportZip(asPc = true)
+                        1 -> chooseExportDirectory(asPc = true)
+                        2 -> chooseExportZip(asPc = false)
+                        3 -> chooseExportDirectory(asPc = false)
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun chooseImportDirectory() {
@@ -799,7 +1442,11 @@ class SaveManagerActivity : ThemedActivity() {
         when (requestCode) {
             REQ_IMPORT_DIR -> {
                 val uri = data.data ?: return
-                runImportDirectory(uri)
+                if (GameCatalog.isGameProcessRunning(this)) {
+                    ensureGameNotRunning(this) { runImportDirectory(uri) }
+                } else {
+                    runImportDirectory(uri)
+                }
             }
             REQ_IMPORT_FILES -> {
                 val uris = mutableListOf<Uri>()
@@ -812,7 +1459,11 @@ class SaveManagerActivity : ThemedActivity() {
                     data.data?.let { uris.add(it) }
                 }
                 if (uris.isNotEmpty()) {
-                    runImportFiles(uris)
+                    if (GameCatalog.isGameProcessRunning(this)) {
+                        ensureGameNotRunning(this) { runImportFiles(uris) }
+                    } else {
+                        runImportFiles(uris)
+                    }
                 }
             }
             REQ_EXPORT_ZIP -> {
@@ -838,359 +1489,38 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
-    private fun extractSaveArchiveToTarget(uri: Uri, targetDir: File): Int {
-        // Unique per import, so a second import can never wipe the folder of one still running.
-        val tempDir = File(filesDir, "$SAVE_IMPORT_TMP_PREFIX${System.nanoTime()}")
-        tempDir.mkdirs()
-        try {
-            ArchiveExtractor.extractUriToDirectory(
-                context = this,
-                uri = uri,
-                destDir = tempDir,
-                tempScratchParent = cacheDir
-            )
-            val normalizedRoot = findNormalizedSaveRoot(tempDir)
-            var copied = 0
-            normalizedRoot.walkTopDown().forEach { src ->
-                if (src.isFile && !src.name.startsWith(".")) {
-                    val relPath = ArchiveExtractor.repairSjisAsGbkMojibake(src.relativeTo(normalizedRoot).path)
-                    val dst = File(targetDir, relPath)
-                    dst.parentFile?.mkdirs()
-                    src.copyTo(dst, overwrite = true)
-                    copied++
-                }
-            }
-            return copied
-        } finally {
-            tempDir.deleteRecursively()
-        }
-    }
-
-    private fun formatArchiveImportError(e: Exception): String {
-        val raw = e.message ?: ""
-        val lang = AppSettings.resolveLocale(this).language
-        if (raw.startsWith("ENCRYPTED:")) {
-            return when {
-                lang.startsWith("zh") -> "不支持加密压缩包，请解压后导入"
-                lang.startsWith("ja") -> "パスワード付きアーカイブには非対応です"
-                else -> "Password-protected archives are not supported"
-            }
-        }
-        if (raw.startsWith("ENOSPC:")) {
-            return getString(R.string.import_no_space)
-        }
-        return e.localizedMessage ?: getString(R.string.error)
-    }
-
-    private fun findNormalizedSaveRoot(tempDir: File): File {
-        val saveDataDir = tempDir.walkTopDown().maxDepth(3).firstOrNull {
-            it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
-        }
-        if (saveDataDir != null) {
-            return saveDataDir
-        }
-        var cur = tempDir
-        while (true) {
-            val children = cur.listFiles()?.filter { !it.name.startsWith(".") } ?: break
-            val files = children.filter { it.isFile }
-            val dirs = children.filter { it.isDirectory }
-            if (files.isEmpty() && dirs.size == 1) {
-                cur = dirs[0]
-            } else {
-                break
-            }
-        }
-        return cur
-    }
-
     private fun runImportDirectory(treeUri: Uri) {
+        if (activeJob?.isActive == true) return
         val targetDir = currentTarget.saveDir
         val targetDirName = currentTarget.dirName
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_import_dir))
-        activeJob = launchSaveOp {
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    backupSaves(targetDir, targetDirName)
-                    val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-                    val children = listDocumentChildren(treeUri, rootDocId)
-                    val saveDataSubdir = children.firstOrNull {
-                        it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
-                    }
-                    val hasDirectSaveFiles = children.any {
-                        !it.isDirectory && (it.name.endsWith(".asd", true) || it.name.endsWith(".sav", true) || it.name.endsWith(".rsm", true))
-                    }
-                    val sourceDocId = if (saveDataSubdir != null && !hasDirectSaveFiles) {
-                        saveDataSubdir.documentId
-                    } else {
-                        rootDocId
-                    }
-                    copyDocumentTreeToInternal(treeUri, sourceDocId, targetDir)
-                }
-                onHost { it.dismissProgress() }
-                onHost { it.refreshFileList() }
-                hostMessage(
-                    getString(R.string.save_import_done_title),
-                    getString(R.string.save_import_dir_done_msg, count)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to import saves from directory", e)
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_import_failed_title),
-                    e.localizedMessage ?: getString(R.string.error)
-                )
-            }
-        }
-    }
-
-    private data class DocNode(val documentId: String, val name: String, val isDirectory: Boolean)
-
-    private fun listDocumentChildren(treeUri: Uri, parentDocId: String): List<DocNode> {
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
-        val projection = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE
-        )
-        val result = mutableListOf<DocNode>()
-        contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
-            val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-            val nameIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-            val mimeIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-            while (cursor.moveToNext()) {
-                val id = cursor.getString(idIdx) ?: continue
-                val name = cursor.getString(nameIdx) ?: continue
-                val mime = cursor.getString(mimeIdx)
-                val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
-                result.add(DocNode(id, name, isDir))
-            }
-        }
-        return result
-    }
-
-    /**
-     * Turns a provider-supplied display name into a single safe path component, or null.
-     * DISPLAY_NAME comes from an arbitrary DocumentsProvider and may contain separators
-     * or be "..", which would let a copy escape the save folder.
-     */
-    private fun safeChildName(raw: String): String? {
-        val name = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
-            .substringAfterLast('/').substringAfterLast('\\').trim()
-        if (name.isEmpty() || name == "." || name == ".." || name.contains('\u0000')) return null
-        return name
-    }
-
-    private fun isInside(root: File, file: File): Boolean {
-        val r = root.canonicalPath
-        val f = file.canonicalPath
-        return f.startsWith(r + File.separator)
-    }
-
-    private fun copyDocumentTreeToInternal(
-        treeUri: Uri,
-        parentDocId: String,
-        destDir: File,
-        rootDir: File = destDir
-    ): Int {
-        destDir.mkdirs()
-        var count = 0
-        for (child in listDocumentChildren(treeUri, parentDocId)) {
-            if (child.name.startsWith(".")) continue
-            val cleanName = safeChildName(child.name) ?: continue
-            if (child.isDirectory) {
-                val subDir = File(destDir, cleanName)
-                if (!isInside(rootDir, subDir)) continue
-                count += copyDocumentTreeToInternal(treeUri, child.documentId, subDir, rootDir)
-            } else {
-                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
-                val outFile = File(destDir, cleanName)
-                if (!isInside(rootDir, outFile)) continue
-                contentResolver.openInputStream(docUri)?.use { input ->
-                    outFile.outputStream().buffered().use { output ->
-                        input.copyTo(output)
-                    }
-                    count++
-                }
-            }
-        }
-        return count
+        activeJob = startImportDirectoryOp(appCtx, treeUri, targetDir, targetDirName)
     }
 
     private fun runImportFiles(uris: List<Uri>) {
+        if (activeJob?.isActive == true) return
         val targetDir = currentTarget.saveDir
         val targetDirName = currentTarget.dirName
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_import_files))
-        activeJob = launchSaveOp {
-            try {
-                val count = withContext(Dispatchers.IO) {
-                    targetDir.mkdirs()
-                    backupSaves(targetDir, targetDirName)
-                    var imported = 0
-                    for (uri in uris) {
-                        val fileName = queryDisplayName(uri) ?: "save_${System.currentTimeMillis()}.asd"
-                        val safeName = safeChildName(fileName) ?: continue
-                        if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
-                            imported += extractSaveArchiveToTarget(uri, targetDir)
-                        } else {
-                            val dst = File(targetDir, safeName)
-                            contentResolver.openInputStream(uri)?.use { input ->
-                                dst.outputStream().buffered().use { output ->
-                                    input.copyTo(output)
-                                }
-                                imported++
-                            }
-                        }
-                    }
-                    imported
-                }
-                onHost { it.dismissProgress() }
-                onHost { it.refreshFileList() }
-                hostMessage(
-                    getString(R.string.save_import_done_title),
-                    getString(R.string.save_import_files_done_msg, count)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to import save files", e)
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_import_failed_title),
-                    e.localizedMessage ?: getString(R.string.error)
-                )
-            }
-        }
-    }
-
-    private fun copyExportFile(srcFile: File, outStream: java.io.OutputStream, asPc: Boolean): Boolean {
-        if (asPc) {
-            return GameModifierBridge.copySaveFileForPc(srcFile, outStream, cacheDir)
-        }
-        srcFile.inputStream().buffered().use { input ->
-            input.copyTo(outStream)
-        }
-        return false
-    }
-
-    private fun formatExportDoneMessage(exported: Int, converted: Int, asPc: Boolean, defaultMsgResId: Int): String {
-        return if (asPc && converted > 0) {
-            getString(R.string.save_export_pc_converted_done_msg, exported, converted)
-        } else {
-            getString(defaultMsgResId, exported)
-        }
+        activeJob = startImportFilesOp(appCtx, uris, targetDir, targetDirName)
     }
 
     private fun runExportZip(uri: Uri, asPc: Boolean) {
+        if (activeJob?.isActive == true) return
         val entriesToExport = entriesForExport(asPc)
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_zip))
-        activeJob = launchSaveOp {
-            try {
-                val (count, converted) = withContext(Dispatchers.IO) {
-                    val outStream = contentResolver.openOutputStream(uri)
-                        ?: throw IOException("Failed to create target ZIP file")
-                    var exported = 0
-                    var convCount = 0
-                    ZipOutputStream(outStream.buffered()).use { zos ->
-                        for (entry in entriesToExport) {
-                            if (!entry.file.exists()) continue
-                            val zipEntry = ZipEntry("SaveData/${entry.relativePath}")
-                            zipEntry.time = entry.lastModified
-                            zos.putNextEntry(zipEntry)
-                            if (copyExportFile(entry.file, zos, asPc)) {
-                                convCount++
-                            }
-                            zos.closeEntry()
-                            exported++
-                        }
-                    }
-                    exported to convCount
-                }
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_export_done_title),
-                    formatExportDoneMessage(count, converted, asPc, R.string.save_export_zip_done_msg)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to export saves to ZIP", e)
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_export_failed_title),
-                    e.localizedMessage ?: getString(R.string.error)
-                )
-            }
-        }
+        activeJob = startExportZipOp(appCtx, uri, entriesToExport, asPc)
     }
 
     private fun runExportDirectory(treeUri: Uri, asPc: Boolean) {
+        if (activeJob?.isActive == true) return
         val entriesToExport = entriesForExport(asPc)
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_dir))
-        activeJob = launchSaveOp {
-            try {
-                val (count, converted) = withContext(Dispatchers.IO) {
-                    val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-                    var exported = 0
-                    var convCount = 0
-                    for (entry in entriesToExport) {
-                        if (!entry.file.exists()) continue
-                        val parts = entry.relativePath.split('/').filter { it.isNotEmpty() }
-                        if (parts.isEmpty()) continue
-                        var parentDocId = rootDocId
-                        for (i in 0 until parts.size - 1) {
-                            parentDocId = getOrCreateSubdir(treeUri, parentDocId, parts[i])
-                        }
-                        val fileName = parts.last()
-                        val existing = listDocumentChildren(treeUri, parentDocId)
-                            .firstOrNull { !it.isDirectory && it.name == fileName }
-                        if (existing != null) {
-                            val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
-                            try {
-                                DocumentsContract.deleteDocument(contentResolver, existingUri)
-                            } catch (_: Exception) {
-                            }
-                        }
-                        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
-                        val newDocUri = DocumentsContract.createDocument(
-                            contentResolver,
-                            parentUri,
-                            "application/octet-stream",
-                            fileName
-                        ) ?: throw IOException("Failed to create file: $fileName")
-                        contentResolver.openOutputStream(newDocUri)?.use { out ->
-                            if (copyExportFile(entry.file, out, asPc)) {
-                                convCount++
-                            }
-                        } ?: throw IOException("Failed to write file: $fileName")
-                        exported++
-                    }
-                    exported to convCount
-                }
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_export_done_title),
-                    formatExportDoneMessage(count, converted, asPc, R.string.save_export_dir_done_msg)
-                )
-            } catch (e: Exception) {
-                Log.e("SaveManager", "Failed to export saves to directory", e)
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_export_failed_title),
-                    e.localizedMessage ?: getString(R.string.error)
-                )
-            }
-        }
-    }
-
-    private fun getOrCreateSubdir(treeUri: Uri, parentDocId: String, dirName: String): String {
-        val existing = listDocumentChildren(treeUri, parentDocId)
-            .firstOrNull { it.isDirectory && it.name == dirName }
-        if (existing != null) return existing.documentId
-
-        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
-        val createdUri = DocumentsContract.createDocument(
-            contentResolver,
-            parentUri,
-            DocumentsContract.Document.MIME_TYPE_DIR,
-            dirName
-        ) ?: throw IOException("Failed to create directory: $dirName")
-        return DocumentsContract.getDocumentId(createdUri)
+        activeJob = startExportDirectoryOp(appCtx, treeUri, entriesToExport, asPc)
     }
 
     private fun showSingleFileManageDialog(entry: SaveFileEntry) {
@@ -1202,18 +1532,20 @@ class SaveManagerActivity : ThemedActivity() {
                 getString(R.string.save_file_opt_export),
                 getString(R.string.save_file_opt_delete)
             )
-            AlertDialog.Builder(this)
-                .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
-                .setItems(logOptions) { _, which ->
-                    when (which) {
-                        0 -> ErrorReportKit.showFromFile(this, entry.file)
-                        1 -> ErrorReportKit.shareFromFile(this, entry.file)
-                        2 -> startSingleFileExport(entry.file, mimeType = "text/plain", asPc = false)
-                        3 -> ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
+                    .setItems(logOptions) { _, which ->
+                        when (which) {
+                            0 -> ErrorReportKit.showFromFile(this, entry.file)
+                            1 -> ErrorReportKit.shareFromFile(this, entry.file)
+                            2 -> startSingleFileExport(entry.file, mimeType = "text/plain", asPc = false)
+                            3 -> ensureGameNotRunning(this) { showDeleteSingleFileDialog(entry) }
+                        }
                     }
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            )
             return
         }
 
@@ -1226,7 +1558,9 @@ class SaveManagerActivity : ThemedActivity() {
                 startSingleFileExport(entry.file, mimeType = "application/octet-stream", asPc = true)
             })
         }
-        items.add(getString(R.string.save_file_opt_backup) to { showDuplicateFileDialog(entry) })
+        items.add(getString(R.string.save_file_opt_backup) to {
+            ensureGameNotRunning(this) { showDuplicateFileDialog(entry) }
+        })
         items.add(getString(R.string.save_file_opt_rename) to {
             ensureGameNotRunning(this) { showRenameFileDialog(entry) }
         })
@@ -1235,13 +1569,15 @@ class SaveManagerActivity : ThemedActivity() {
         })
 
         val options = items.map { it.first }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
-            .setItems(options) { _, which ->
-                items[which].second()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.save_file_dialog_title, entry.relativePath, formatFileSize(entry.sizeBytes)))
+                .setItems(options) { _, which ->
+                    items[which].second()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun startSingleFileExport(file: File, mimeType: String, asPc: Boolean) {
@@ -1256,24 +1592,41 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun runExportSingleFile(srcFile: File, destUri: Uri, asPc: Boolean) {
+        if (activeJob?.isActive == true) return
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_file))
-        activeJob = launchSaveOp {
+        activeJob = startExportSingleFileOp(appCtx, srcFile, destUri, asPc)
+    }
+
+    private fun isValidUserSaveFileName(name: String): Boolean {
+        if (name.isEmpty() || name.startsWith(".") || name == "." || name == "..") return false
+        if (name.contains('/') || name.contains('\\') || name.contains('\u0000')) return false
+        return true
+    }
+
+    private fun performDuplicateFileCopy(entry: SaveFileEntry, dst: File, newName: String) {
+        ensureGameNotRunning(this) {
             try {
-                withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(destUri)?.use { out ->
-                        copyExportFile(srcFile, out, asPc)
-                    } ?: throw IOException("Failed to write target file")
+                val parent = dst.parentFile ?: throw IOException("Invalid target directory")
+                val tmp = File(parent, ".dup_${System.nanoTime()}.tmp")
+                try {
+                    entry.file.copyTo(tmp, overwrite = true)
+                    if (!tmp.renameTo(dst)) {
+                        tmp.copyTo(dst, overwrite = true)
+                        tmp.delete()
+                    }
+                } finally {
+                    tmp.delete()
                 }
-                onHost { it.dismissProgress() }
+                refreshFileList()
                 Toast.makeText(
-                    applicationContext,
-                    getString(R.string.save_file_exported_toast, srcFile.name),
+                    this,
+                    getString(R.string.save_backup_created_toast, newName),
                     Toast.LENGTH_SHORT
                 ).show()
             } catch (e: Exception) {
-                onHost { it.dismissProgress() }
-                hostMessage(
-                    getString(R.string.save_export_failed_title),
+                showMessageDialog(
+                    getString(R.string.error),
                     e.localizedMessage ?: getString(R.string.error)
                 )
             }
@@ -1285,33 +1638,55 @@ class SaveManagerActivity : ThemedActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             setText("${entry.file.name}.bak")
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_backup_title)
-            .setView(UiKit.dialogContent(this, input))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                val newName = input.text.toString().trim()
-                if (newName.isEmpty() || newName.contains('/') || newName.contains('\\')) {
-                    Toast.makeText(this, R.string.save_invalid_filename, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_backup_title)
+                .setView(UiKit.dialogContent(this, input))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val newName = input.text.toString().trim()
+                    if (!isValidUserSaveFileName(newName)) {
+                        Toast.makeText(this, R.string.save_invalid_filename, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    val parent = entry.file.parentFile
+                    if (parent == null) {
+                        Toast.makeText(this, R.string.save_invalid_filename, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    val dst = File(parent, newName)
+                    val sameFile = try {
+                        dst.canonicalPath == entry.file.canonicalPath
+                    } catch (_: IOException) {
+                        dst.absolutePath == entry.file.absolutePath
+                    }
+                    if (sameFile) {
+                        Toast.makeText(this, R.string.save_invalid_filename, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    if (dst.exists()) {
+                        val confirmMsg = GamepadBridge.tr(
+                            this,
+                            "文件“$newName”已存在，是否覆盖？",
+                            "「$newName」は既に存在します。上書きしますか？",
+                            "\"$newName\" already exists. Overwrite?"
+                        )
+                        trackDialog(
+                            AlertDialog.Builder(this)
+                                .setTitle(R.string.save_backup_title)
+                                .setMessage(confirmMsg)
+                                .setPositiveButton(R.string.ok) { _, _ ->
+                                    performDuplicateFileCopy(entry, dst, newName)
+                                }
+                                .setNegativeButton(R.string.cancel, null)
+                                .show()
+                        )
+                    } else {
+                        performDuplicateFileCopy(entry, dst, newName)
+                    }
                 }
-                try {
-                    val dst = File(entry.file.parentFile, newName)
-                    entry.file.copyTo(dst, overwrite = true)
-                    refreshFileList()
-                    Toast.makeText(
-                        this,
-                        getString(R.string.save_backup_created_toast, newName),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } catch (e: Exception) {
-                    showMessageDialog(
-                        getString(R.string.error),
-                        e.localizedMessage ?: getString(R.string.error)
-                    )
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showRenameFileDialog(entry: SaveFileEntry) {
@@ -1319,55 +1694,68 @@ class SaveManagerActivity : ThemedActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(entry.file.name)
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_rename_title)
-            .setView(UiKit.dialogContent(this, input))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                val newName = input.text.toString().trim()
-                if (newName.isEmpty() || newName == entry.file.name || newName.contains('/') || newName.contains('\\')) {
-                    return@setPositiveButton
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_rename_title)
+                .setView(UiKit.dialogContent(this, input))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val newName = input.text.toString().trim()
+                    if (newName == entry.file.name) {
+                        return@setPositiveButton
+                    }
+                    if (!isValidUserSaveFileName(newName)) {
+                        Toast.makeText(this, R.string.save_invalid_filename, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    ensureGameNotRunning(this) {
+                        val dst = File(entry.file.parentFile, newName)
+                        if (dst.exists()) {
+                            Toast.makeText(this, R.string.save_rename_exists_toast, Toast.LENGTH_SHORT).show()
+                            return@ensureGameNotRunning
+                        }
+                        if (entry.file.renameTo(dst)) {
+                            refreshFileList()
+                            Toast.makeText(
+                                this,
+                                getString(R.string.save_renamed_toast, newName),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(this, R.string.save_rename_failed_toast, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-                val dst = File(entry.file.parentFile, newName)
-                if (dst.exists()) {
-                    Toast.makeText(this, R.string.save_rename_exists_toast, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                if (entry.file.renameTo(dst)) {
-                    refreshFileList()
-                    Toast.makeText(
-                        this,
-                        getString(R.string.save_renamed_toast, newName),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(this, R.string.save_rename_failed_toast, Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showDeleteSingleFileDialog(entry: SaveFileEntry) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_delete_title)
-            .setMessage(getString(R.string.save_delete_confirm_msg, entry.relativePath))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                if (entry.file.delete()) {
-                    refreshFileList()
-                    Toast.makeText(
-                        this,
-                        getString(R.string.save_deleted_toast, entry.relativePath),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    Toast.makeText(this, R.string.save_delete_failed_toast, Toast.LENGTH_SHORT).show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_delete_title)
+                .setMessage(getString(R.string.save_delete_confirm_msg, entry.relativePath))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) {
+                        if (entry.file.delete()) {
+                            refreshFileList()
+                            Toast.makeText(
+                                this,
+                                getString(R.string.save_deleted_toast, entry.relativePath),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(this, R.string.save_delete_failed_toast, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showClearSavesDialog() {
+        if (activeJob?.isActive == true) return
         if (currentEntries.isEmpty()) {
             Toast.makeText(this, R.string.save_clear_already_empty, Toast.LENGTH_SHORT).show()
             return
@@ -1376,28 +1764,33 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun confirmDeleteAllSaves() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.save_clear_confirm_title)
-            .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size))
-            .setPositiveButton(R.string.ok) { _, _ ->
-                currentTarget.saveDir.listFiles()?.forEach { child ->
-                    child.deleteRecursively()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.save_clear_confirm_title)
+                .setMessage(getString(R.string.save_clear_confirm_msg, currentEntries.size))
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) {
+                        runClearAllSaves()
+                    }
                 }
-                refreshFileList()
-                Toast.makeText(this, R.string.save_cleared_toast, Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
-    private fun queryDisplayName(uri: Uri): String? {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (idx >= 0 && cursor.moveToFirst()) {
-                return cursor.getString(idx)
-            }
-        }
-        return uri.lastPathSegment
+    private fun runClearAllSaves() {
+        if (activeJob?.isActive == true) return
+        val target = currentTarget
+        val appCtx = AppSettings.wrapThemeContext(applicationContext)
+        showProgress(
+            GamepadBridge.tr(
+                this,
+                "正在备份并清空存档…",
+                "セーブデータをバックアップして消去中…",
+                "Backing up and clearing saves…"
+            )
+        )
+        activeJob = startClearSavesOp(appCtx, target.saveDir, target.dirName)
     }
 
     private fun showProgress(message: String) {
@@ -1423,10 +1816,12 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun showMessageDialog(title: String, message: String) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message)
-            .setPositiveButton(R.string.ok, null)
-            .show()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        )
     }
 }

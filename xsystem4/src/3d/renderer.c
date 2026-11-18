@@ -61,7 +61,7 @@ enum draw_phase {
 	DRAW_TRANSPARENT,
 };
 
-static GLuint load_shader(const char *vertex_shader_path, const char *fragment_shader_path)
+static GLuint load_shader(const char *vertex_shader_path, const char *fragment_shader_path, enum RE_plugin_version version)
 {
 	char defines[256];
 	snprintf(defines, sizeof(defines),
@@ -72,7 +72,7 @@ static GLuint load_shader(const char *vertex_shader_path, const char *fragment_s
 			 RE_REIGN_PLUGIN,
 			 RE_TAPIR_PLUGIN,
 			 RE_SEAL_PLUGIN,
-			 re_plugin_version);
+			 version);
 	GLuint program = glCreateProgram();
 	GLuint vertex_shader = gfx_load_shader_file(vertex_shader_path, GL_VERTEX_SHADER, defines);
 	GLuint fragment_shader = gfx_load_shader_file(fragment_shader_path, GL_FRAGMENT_SHADER, defines);
@@ -94,6 +94,10 @@ static GLuint load_shader(const char *vertex_shader_path, const char *fragment_s
 	glBindAttribLocation(program, VATTR_BLEND_UV, "vertex_blend_uv");
 
 	glLinkProgram(program);
+	glDetachShader(program, vertex_shader);
+	glDetachShader(program, fragment_shader);
+	glDeleteShader(vertex_shader);
+	glDeleteShader(fragment_shader);
 
 	GLint link_success;
 	glGetProgramiv(program, GL_LINK_STATUS, &link_success);
@@ -107,12 +111,12 @@ static GLuint load_shader(const char *vertex_shader_path, const char *fragment_s
 	return program;
 }
 
-static void init_shadow_renderer(struct shadow_renderer *sr)
+static void init_shadow_renderer(struct shadow_renderer *sr, enum RE_plugin_version version)
 {
 	GLint orig_fbo;
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &orig_fbo);
 
-	sr->program = load_shader("shaders/reign_shadow.v.glsl", "shaders/reign_shadow.f.glsl");
+	sr->program = load_shader("shaders/reign_shadow.v.glsl", "shaders/reign_shadow.f.glsl", version);
 	sr->local_transform = glGetUniformLocation(sr->program, "local_transform");
 	sr->view_transform = glGetUniformLocation(sr->program, "view_transform");
 	sr->has_bones = glGetUniformLocation(sr->program, "has_bones");
@@ -142,13 +146,13 @@ static void destroy_shadow_renderer(struct shadow_renderer *sr)
 	glDeleteProgram(sr->program);
 }
 
-static void init_outline_renderer(struct outline_renderer *or)
+static void init_outline_renderer(struct outline_renderer *or, enum RE_plugin_version version)
 {
-	if (re_plugin_version < RE_TAPIR_PLUGIN) {
+	if (version < RE_TAPIR_PLUGIN) {
 		or->program = 0;
 		return;
 	}
-	or->program = load_shader("shaders/reign_outline.v.glsl", "shaders/reign_outline.f.glsl");
+	or->program = load_shader("shaders/reign_outline.v.glsl", "shaders/reign_outline.f.glsl", version);
 	or->local_transform = glGetUniformLocation(or->program, "local_transform");
 	or->view_transform = glGetUniformLocation(or->program, "view_transform");
 	or->proj_transform = glGetUniformLocation(or->program, "proj_transform");
@@ -226,11 +230,11 @@ static void destroy_billboard_mesh(struct RE_renderer *r)
 	glDeleteBuffers(1, &r->billboard_instance_attr_buffer);
 }
 
-struct RE_renderer *RE_renderer_new(void)
+struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
 {
 	struct RE_renderer *r = xcalloc(1, sizeof(struct RE_renderer));
 
-	r->program = load_shader("shaders/reign.v.glsl", "shaders/reign.f.glsl");
+	r->program = load_shader("shaders/reign.v.glsl", "shaders/reign.f.glsl", version);
 	r->view_transform = glGetUniformLocation(r->program, "view_transform");
 	r->texture = glGetUniformLocation(r->program, "tex");
 	r->local_transform = glGetUniformLocation(r->program, "local_transform");
@@ -293,8 +297,8 @@ struct RE_renderer *RE_renderer_new(void)
 
 	glGenRenderbuffers(1, &r->depth_buffer);
 
-	init_shadow_renderer(&r->shadow);
-	init_outline_renderer(&r->outline);
+	init_shadow_renderer(&r->shadow, version);
+	init_outline_renderer(&r->outline, version);
 	init_billboard_mesh(r);
 	r->billboard_textures_by_no = ht_create(256);
 	r->billboard_textures_by_path = ht_create(256);
@@ -447,8 +451,9 @@ static void render_model(struct RE_instance *inst, struct RE_renderer *r, enum d
 	if ((phase == DRAW_OPAQUE && all_transparent) || (phase == DRAW_TRANSPARENT && all_opaque))
 		return;
 
-	int mat_tex_index[model->nr_materials];
-	mpr_build_mat_tex_index(model, inst, mpr, frame, mat_tex_index);
+	int mat_tex_index[model->nr_materials > 0 ? model->nr_materials : 1];
+	if (model->nr_materials > 0)
+		mpr_build_mat_tex_index(model, inst, mpr, frame, mat_tex_index);
 
 	if (inst->local_transform_needs_update)
 		RE_instance_update_local_transform(inst);
@@ -465,11 +470,13 @@ static void render_model(struct RE_instance *inst, struct RE_renderer *r, enum d
 
 	for (int i = 0; i < model->nr_meshes; i++) {
 		struct mesh *mesh = &model->meshes[i];
-		if (mesh->hidden)
+		if (mesh->hidden || RE_instance_is_mesh_hidden(inst, i))
+			continue;
+		if (mesh->material < 0 || mesh->material >= model->nr_materials)
 			continue;
 		struct material *material = &model->materials[mesh->material];
 
-		const struct mpr_track_set *mt = mpr ? mpr->mesh_tracks[i] : NULL;
+		const struct mpr_track_set *mt = (mpr && i < mpr->nr_meshes) ? mpr->mesh_tracks[i] : NULL;
 		struct mpr_modulation mesh_mod;
 		mpr_evaluate_mesh(mt, frame, &obj_mod, &mesh_mod);
 		if (mesh_mod.alpha <= 0.0f)
@@ -491,7 +498,7 @@ static void render_model(struct RE_instance *inst, struct RE_renderer *r, enum d
 
 		bool nolighting = is_nolighting(inst->plugin, mesh);
 		int fog_type = inst->plugin->fog_type;
-		if (!inst->plugin->fog_mode || (re_plugin_version == RE_REIGN_PLUGIN && nolighting)) {
+		if (!inst->plugin->fog_mode || (inst->plugin->version == RE_REIGN_PLUGIN && nolighting)) {
 			fog_type = RE_FOG_NONE;
 		}
 		glUniform1i(r->fog_type, fog_type);
@@ -523,8 +530,9 @@ static void render_model(struct RE_instance *inst, struct RE_renderer *r, enum d
 
 		glActiveTexture(GL_TEXTURE0 + COLOR_TEXTURE_UNIT);
 		int tex_index = mat_tex_index[mesh->material];
-		int animation_index = tex_index < material->nr_color_maps ? tex_index : 0;
-		glBindTexture(GL_TEXTURE_2D, material->color_maps[animation_index]);
+		int animation_index = (tex_index >= 0 && tex_index < material->nr_color_maps) ? tex_index : 0;
+		GLuint color_tex = (material->color_maps && material->nr_color_maps > 0) ? material->color_maps[animation_index] : 0;
+		glBindTexture(GL_TEXTURE_2D, color_tex);
 		glUniform1i(r->texture, COLOR_TEXTURE_UNIT);
 
 		if (draw_shadow && should_draw_shadow(mesh, material))
@@ -652,7 +660,7 @@ static void reset_draw_uniforms(struct RE_renderer *r, struct RE_plugin *plugin)
 
 static void render_billboard(struct RE_instance *inst, struct RE_renderer *r, mat4 view_mat, enum draw_phase phase)
 {
-	if (!inst->draw)
+	if (!inst->draw || !inst->motion)
 		return;
 	int frame = inst->motion->current_frame;
 	struct billboard_texture *bt;
@@ -719,7 +727,7 @@ static void render_billboard(struct RE_instance *inst, struct RE_renderer *r, ma
 static void render_billboard_particles(struct RE_renderer *r, struct RE_instance *inst, struct particle_object *po, float frame)
 {
 	struct pae_object *pae_obj = po->pae_obj;
-	if (pae_obj->nr_textures == 0)
+	if (pae_obj->nr_textures <= 0)
 		return;
 
 	glUniform1i(r->diffuse_type, DIFFUSE_EMISSIVE);
@@ -734,7 +742,11 @@ static void render_billboard_particles(struct RE_renderer *r, struct RE_instance
 		if (frame < pi->begin_frame || pi->end_frame <= frame)
 			continue;
 
-		int step = (int)((frame - pi->begin_frame) / pae_obj->texture_anime_frame);
+		int step = pae_obj->texture_anime_frame > 0.0f
+			? (int)((frame - pi->begin_frame) / pae_obj->texture_anime_frame)
+			: 0;
+		if (step < 0)
+			step = 0;
 		struct billboard_texture *bt = ht_get(inst->effect->pae->textures, pae_obj->textures[step % pae_obj->nr_textures], NULL);
 		if (!bt)
 			continue;
@@ -783,13 +795,15 @@ static void render_polygon_particles(struct RE_renderer *r, struct RE_instance *
 
 		for (int i = 0; i < model->nr_meshes; i++) {
 			struct mesh *mesh = &model->meshes[i];
+			if (mesh->hidden || mesh->material < 0 || mesh->material >= model->nr_materials)
+				continue;
 			struct material *material = &model->materials[mesh->material];
 			glUniform4f(r->uv_tiling,
 				material->uv_tiling[0], material->uv_tiling[1],
 				material->blend_uv_tiling[0], material->blend_uv_tiling[1]);
 
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, material->color_maps[0]);
+			glBindTexture(GL_TEXTURE_2D, (material->color_maps && material->nr_color_maps > 0) ? material->color_maps[0] : 0);
 			glUniform1i(r->texture, 0);
 
 			glBindVertexArray(mesh->vao);
@@ -886,6 +900,8 @@ static void render_s3de_polygon_particles(struct RE_renderer *r, struct RE_insta
 
 		for (int j = 0; j < model->nr_meshes; j++) {
 			struct mesh *mesh = &model->meshes[j];
+			if (mesh->hidden || mesh->material < 0 || mesh->material >= model->nr_materials)
+				continue;
 			bool is_transparent = mesh->is_transparent || alpha < 1.0f;
 			if (phase != (is_transparent ? DRAW_TRANSPARENT : DRAW_OPAQUE))
 				continue;
@@ -895,7 +911,7 @@ static void render_s3de_polygon_particles(struct RE_renderer *r, struct RE_insta
 				material->blend_uv_tiling[0], material->blend_uv_tiling[1]);
 
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, material->color_maps[0]);
+			glBindTexture(GL_TEXTURE_2D, (material->color_maps && material->nr_color_maps > 0) ? material->color_maps[0] : 0);
 			glUniform1i(r->texture, 0);
 			glBindVertexArray(mesh->vao);
 
@@ -929,7 +945,11 @@ static int cmp_s3de_obj(const void *lhs, const void *rhs)
 
 static void render_s3de_effect(struct RE_instance *inst, struct RE_renderer *r, enum draw_phase phase)
 {
-	if (!inst->s3de_effect || !inst->draw)
+	if (!inst->s3de_effect || !inst->draw || !inst->motion)
+		return;
+
+	struct s3de *s = inst->s3de_effect->s3de;
+	if (!s || s->nr_objects <= 0)
 		return;
 
 	if (inst->local_transform_needs_update)
@@ -945,8 +965,6 @@ static void render_s3de_effect(struct RE_instance *inst, struct RE_renderer *r, 
 	RE_calc_view_matrix(&inst->plugin->camera, NULL, view_mat);
 	mat3 camera_rot;
 	glm_mat4_pick3t(view_mat, camera_rot);
-
-	struct s3de *s = inst->s3de_effect->s3de;
 
 	// Sort objects by their emitter's world-space distance to the camera.
 	// The transparent phase draws back-to-front, the opaque phase draws
@@ -1002,7 +1020,7 @@ static void render_s3de_effect(struct RE_instance *inst, struct RE_renderer *r, 
 static void render_particle_effect(struct RE_instance *inst, struct RE_renderer *r, enum draw_phase phase)
 {
 	// NOTE: inst->draw flag has no effect for particle effects.
-	if (!inst->effect || phase == DRAW_OPAQUE)
+	if (!inst->effect || !inst->motion || phase == DRAW_OPAQUE)
 		return;
 
 	glUniform3fv(r->instance_ambient, 1, inst->ambient);
@@ -1145,7 +1163,7 @@ static void render_shadow_map(struct RE_plugin *plugin, mat4 light_space_transfo
 		glUniformMatrix4fv(r->shadow.local_transform, 1, GL_FALSE, inst->local_transform[0]);
 		for (int j = 0; j < model->nr_meshes; j++) {
 			struct mesh *mesh = &model->meshes[j];
-			if (mesh->flags & MESH_NOMAKESHADOW)
+			if ((mesh->flags & MESH_NOMAKESHADOW) || mesh->hidden || RE_instance_is_mesh_hidden(inst, j))
 				continue;
 			glBindVertexArray(mesh->vao);
 			glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
@@ -1171,7 +1189,7 @@ static void render_outlines(struct RE_plugin *plugin, mat4 view_transform)
 
 	// SealEngine ignores the per-mesh edge parameters from .opr and uses
 	// a single plugin-wide edge length and color.
-	bool seal_edge = re_plugin_version >= RE_SEAL_PLUGIN;
+	bool seal_edge = plugin->version >= RE_SEAL_PLUGIN;
 	if (seal_edge) {
 		glUniform3fv(or->outline_color, 1, plugin->edge_color);
 		float thickness = plugin->edge_length * (1.f - plugin->edge_reduction_rate);
@@ -1181,12 +1199,10 @@ static void render_outlines(struct RE_plugin *plugin, mat4 view_transform)
 	glCullFace(GL_FRONT);
 	for (int i = 0; i < plugin->nr_instances; i++) {
 		struct RE_instance *inst = plugin->instances[i];
-		if (!inst || !inst->draw)
-			continue;
-		if (!inst->draw_edge)
+		if (!inst || !inst->draw || !inst->draw_edge || !inst->model)
 			continue;
 		struct model *model = inst->model;
-		if (inst->model && model->nr_bones > 0) {
+		if (model->nr_bones > 0) {
 			glUniform1i(or->has_bones, GL_TRUE);
 			glBindBufferBase(GL_UNIFORM_BUFFER, BONE_TRANSFORMS_BINDING, inst->bone_transforms_ubo);
 		} else {
@@ -1196,7 +1212,7 @@ static void render_outlines(struct RE_plugin *plugin, mat4 view_transform)
 		glUniformMatrix3fv(or->normal_transform, 1, GL_FALSE, inst->normal_transform[0]);
 		for (int j = 0; j < model->nr_meshes; j++) {
 			struct mesh *mesh = &model->meshes[j];
-			if (mesh->flags & MESH_NO_EDGE)
+			if ((mesh->flags & MESH_NO_EDGE) || mesh->hidden || RE_instance_is_mesh_hidden(inst, j))
 				continue;
 			if (!seal_edge) {
 				glUniform3fv(or->outline_color, 1, mesh->outline_color);
@@ -1223,7 +1239,7 @@ static void render_back_cg(struct texture *dst, struct RE_back_cg *bcg, struct R
 static void setup_light_scattering(struct RE_plugin *plugin)
 {
 	struct RE_renderer *r = plugin->renderer;
-	if (re_plugin_version >= RE_SEAL_PLUGIN) {
+	if (plugin->version >= RE_SEAL_PLUGIN) {
 		const float *lp = plugin->light_params;
 		glUniform4f(r->ls_params, lp[SEAL_LP_LS_BETA_R], lp[SEAL_LP_LS_BETA_M],
 			lp[SEAL_LP_LS_G], lp[SEAL_LP_LS_DISTANCE]);
@@ -1303,7 +1319,7 @@ static void setup_lights(struct RE_plugin *plugin)
 		glUniform3fv(r->dir_lights[light_index].globe_diffuse, 1, zero);
 	}
 
-	if (re_plugin_version >= RE_SEAL_PLUGIN)
+	if (plugin->version >= RE_SEAL_PLUGIN)
 		setup_hemisphere_light(plugin);
 }
 
@@ -1420,7 +1436,7 @@ void RE_render(struct sact_sprite *sp)
 	glEnable(GL_BLEND);
 
 	setup_lights(plugin);
-	if (re_plugin_version >= RE_SEAL_PLUGIN)
+	if (plugin->version >= RE_SEAL_PLUGIN)
 		setup_tone_mapping(plugin);
 
 	// Sort instances by z-order.
@@ -1455,6 +1471,7 @@ void RE_render(struct sact_sprite *sp)
 	glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
 	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glActiveTexture(GL_TEXTURE0);
 }
 
 struct height_detector {
@@ -1488,8 +1505,13 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	// color texture and render depth values into it.
 	GLuint color_texture;
 	glGenTextures(1, &color_texture);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, color_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, r->shadow.fbo);
 	GLenum draw_buffers[1] = { GL_COLOR_ATTACHMENT0 };
@@ -1498,6 +1520,8 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_texture, 0);
 
 	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	GLuint zero[4] = { 0, 0, 0, 0 };
+	glClearBufferuiv(GL_COLOR, 0, zero);
 	glClear(GL_DEPTH_BUFFER_BIT);
 	glUseProgram(r->shadow.program);
 	glUniformMatrix4fv(r->shadow.local_transform, 1, GL_FALSE, view_matrix[0]);
@@ -1527,35 +1551,52 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	glReadPixels(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT, GL_RED_INTEGER, GL_UNSIGNED_SHORT, hd->buf);
 
 	glDisable(GL_DEPTH_TEST);
+	glUseProgram(0);
 	glDrawBuffers(0, NULL);
 	glReadBuffer(GL_NONE);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, orig_fbo);
 	glViewport(orig_viewport[0], orig_viewport[1], orig_viewport[2], orig_viewport[3]);
 
+	glBindTexture(GL_TEXTURE_2D, 0);
 	glDeleteBuffers(1, &bone_transforms_ubo);
 	glDeleteTextures(1, &color_texture);
+	glActiveTexture(GL_TEXTURE0);
 	return hd;
 }
 
 void RE_renderer_free_height_detector(struct height_detector *hd)
 {
+	if (!hd)
+		return;
 	free(hd->buf);
 	free(hd);
 }
 
 bool RE_renderer_detect_height(struct height_detector *hd, float x, float z, float *y_out)
 {
+	if (!hd || !hd->buf)
+		return false;
 	float minx = hd->aabb[0][0];
 	float maxx = hd->aabb[1][0];
 	float miny = hd->aabb[0][1];
 	float maxy = hd->aabb[1][1];
 	float minz = hd->aabb[0][2];
 	float maxz = hd->aabb[1][2];
+	if (maxx <= minx || maxz <= minz)
+		return false;
 	if (x < minx || x > maxx || z < minz || z > maxz)
 		return false;
 	int px = glm_percent(minx, maxx, x) * SHADOW_WIDTH;
 	int pz = glm_percent(maxz, minz, z) * SHADOW_HEIGHT;
+	if (px < 0)
+		px = 0;
+	else if (px >= SHADOW_WIDTH)
+		px = SHADOW_WIDTH - 1;
+	if (pz < 0)
+		pz = 0;
+	else if (pz >= SHADOW_HEIGHT)
+		pz = SHADOW_HEIGHT - 1;
 	GLushort val = hd->buf[pz * SHADOW_WIDTH + px];
 	if (!val)
 		return false;

@@ -164,12 +164,14 @@ static struct ex_value *sound_row(const char *name)
 
 static int sound_group(struct string *name)
 {
+	if (!name) return 0;
 	struct ex_value *row = sound_row(name->text);
 	return row && sound_info->nr_columns >= 2 && row[1].type == EX_INT ? row[1].i : 0;
 }
 
 static struct channel *open_sound(struct string *name)
 {
+	if (!name) return NULL;
 	struct channel *channel = NULL;
 	const enum asset_type types[] = { ASSET_SOUND, ASSET_BGM, ASSET_VOICE };
 	for (unsigned i = 0; i < sizeof(types) / sizeof(*types); i++) {
@@ -186,9 +188,11 @@ static struct channel *open_sound(struct string *name)
 	if (!channel) return NULL;
 	struct ex_value *row = sound_row(name->text);
 	if (row && sound_info->nr_columns >= 4) {
-		channel_set_group(channel, row[1].i);
-		if (row[2].i >= 0 && row[3].i > row[2].i
-				&& row[3].i <= channel_get_sample_length(channel)) {
+		if (row[1].type == EX_INT)
+			channel_set_group(channel, row[1].i);
+		if (row[2].type == EX_INT && row[3].type == EX_INT &&
+				row[2].i >= 0 && row[3].i > row[2].i &&
+				row[3].i <= channel_get_sample_length(channel)) {
 			channel_set_loop_start_pos(channel, row[2].i);
 			channel_set_loop_end_pos(channel, row[3].i);
 		}
@@ -212,7 +216,7 @@ static bool kiwi_exists_se(int id) { return id_pool_get(&effects, id); }
 
 static bool kiwi_prepare(int id, struct string *name, struct string *filter, bool streaming)
 {
-	if (id < 0) return false;
+	if (id < 0 || !name) return false;
 	if (filter && filter->size) WARNING("Unimplemented sound filter: %s", display_sjis0(filter->text));
 	// libsndfile streams both archive and filesystem data on demand.
 	(void)streaming;
@@ -361,8 +365,9 @@ static bool kiwi_set_se(int id, int span, bool multi)
 
 static bool play_effect(struct effect *effect, struct string *name)
 {
+	if (!effect || !name) return false;
 	uint32_t now = SDL_GetTicks();
-	if (effect->started && now - effect->last_play < effect->span) return true;
+	if (effect->started && now - effect->last_play < (uint32_t)effect->span) return true;
 	for (struct effect_voice **p = &effect->voices; *p;) {
 		struct effect_voice *voice = *p;
 		if (!channel_is_playing(voice->channel)) {
@@ -406,7 +411,7 @@ static void *kiwi_resolve_play_se(const struct ain_hll_function *f)
 
 bool kiwi_play_system_sound(struct string *name)
 {
-	return !name->size || play_effect(&system_effect, name);
+	return !name || !name->size || play_effect(&system_effect, name);
 }
 
 void kiwi_stop_non_system_sound(void)
@@ -436,6 +441,7 @@ static bool kiwi_playing_se(int id)
 
 static bool kiwi_file_exists(struct string *name)
 {
+	if (!name) return false;
 	if (asset_exists_by_name(ASSET_SOUND, name->text, NULL)
 			|| asset_exists_by_name(ASSET_BGM, name->text, NULL)
 			|| asset_exists_by_name(ASSET_VOICE, name->text, NULL)) return true;
@@ -465,17 +471,19 @@ static int kiwi_samples(int time, int rate) { return (int64_t)time * rate / 1000
 
 static bool kiwi_mixer_name(int index, struct string **out)
 {
+	if (!out) return false;
 	const char *name = mixer_get_name(index);
 	if (!name) return false;
-	free_string(*out);
+	if (*out)
+		free_string(*out);
 	*out = cstr_to_string(name);
 	return true;
 }
 
-static bool kiwi_mixer_set_name(int index, struct string *name) { return mixer_set_name(index, name->text); }
+static bool kiwi_mixer_set_name(int index, struct string *name) { return name && mixer_set_name(index, name->text); }
 static bool kiwi_mixer_default(int index, int *volume)
 {
-	if (index < 0 || index >= config.mixer_nr_channels) return false;
+	if (!volume || index < 0 || (unsigned)index >= config.mixer_nr_channels) return false;
 	*volume = config.mixer_volumes[index];
 	return true;
 }

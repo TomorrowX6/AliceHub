@@ -32,9 +32,16 @@
 #define EX_ERROR(reader, fmt, ...) ERROR("At 0x%08x: " fmt, (uint32_t)(reader)->buf.index, ##__VA_ARGS__)
 #define EX_WARNING(reader, fmt, ...) WARNING("At 0x%08x: " fmt, (uint32_t)(reader)->buf.index, ##__VA_ARGS__)
 
+enum table_layout {
+	TABLE_DEFAULT,
+	TABLE_COLUMNS_FIRST,
+	TABLE_ROWS_FIRST
+};
+
 struct ex_reader {
 	struct buffer buf;
 	struct string *(*conv)(const char*, size_t);
+	enum table_layout table_layout;
 };
 
 static struct ex_block *ex_get_block(struct ex *ex, const char *name, enum ex_value_type type);
@@ -115,16 +122,26 @@ static uint8_t *ex_decode(uint8_t *data, size_t *len, uint32_t *nr_blocks)
 	uint32_t compressed_size;
 	uint32_t uncompressed_size;
 
+	if (!data)
+		return NULL;
+
 	if (!ex_initialized)
 		ex_init();
 
 	buffer_init(&r, data, *len);
-	if (strncmp(buffer_strdata(&r), "HEAD", 4))
-		_EX_ERROR(&r, "Missing HEAD section marker");
+	if (buffer_remaining(&r) < 32) {
+		WARNING("ex: header truncated (%zu bytes)", *len);
+		return NULL;
+	}
+	if (memcmp(buffer_strdata(&r), "HEAD", 4) != 0) {
+		WARNING("ex: missing HEAD section marker");
+		return NULL;
+	}
 	buffer_skip(&r, 8);
 
-	if (strncmp(buffer_strdata(&r), "EXTF", 4)) {
-		_EX_ERROR(&r, "Missing EXTF section marker");
+	if (memcmp(buffer_strdata(&r), "EXTF", 4) != 0) {
+		WARNING("ex: missing EXTF section marker");
+		return NULL;
 	}
 	buffer_skip(&r, 8);
 
@@ -133,13 +150,19 @@ static uint8_t *ex_decode(uint8_t *data, size_t *len, uint32_t *nr_blocks)
 	else
 		buffer_read_int32(&r);
 
-	if (strncmp(buffer_strdata(&r), "DATA", 4)) {
-		_EX_ERROR(&r, "Missing DATA section marker");
+	if (memcmp(buffer_strdata(&r), "DATA", 4) != 0) {
+		WARNING("ex: missing DATA section marker");
+		return NULL;
 	}
 	buffer_skip(&r, 4);
 
 	compressed_size = buffer_read_int32(&r);
 	uncompressed_size = buffer_read_int32(&r);
+	if (compressed_size > buffer_remaining(&r) || uncompressed_size > 256u * 1024u * 1024u) {
+		WARNING("ex: invalid DATA sizes (compressed=%u, remaining=%zu, uncompressed=%u)",
+			compressed_size, buffer_remaining(&r), uncompressed_size);
+		return NULL;
+	}
 
 	// decode compressed data
 	for (size_t i = 0; i < compressed_size; i++) {
@@ -147,9 +170,12 @@ static uint8_t *ex_decode(uint8_t *data, size_t *len, uint32_t *nr_blocks)
 	}
 
 	// decompress
-	uint8_t *out = xmalloc(uncompressed_size);
-	if (!zlib_decompress_exact(out, uncompressed_size, (uint8_t*)buffer_strdata(&r), compressed_size))
-		ERROR("ex: zlib_decompress failed");
+	uint8_t *out = xmalloc(uncompressed_size ? uncompressed_size : 1);
+	if (!zlib_decompress_exact(out, uncompressed_size, (uint8_t*)buffer_strdata(&r), compressed_size)) {
+		WARNING("ex: zlib_decompress failed");
+		free(out);
+		return NULL;
+	}
 
 	*len = uncompressed_size;
 	return out;
@@ -238,18 +264,10 @@ static void ex_read_fields(struct ex_reader *r, struct ex_table *table)
 	}
 }
 
-enum table_layout {
-	TABLE_DEFAULT,
-	TABLE_COLUMNS_FIRST,
-	TABLE_ROWS_FIRST
-};
-
-static enum table_layout table_layout = TABLE_DEFAULT;
-
 static void ex_read_table(struct ex_reader *r, struct ex_table *table, struct ex_field *fields, uint32_t nr_fields)
 {
 	// NOTE: Starting in Evenicle, the rows/columns quantities are reversed
-	if (table_layout == TABLE_ROWS_FIRST) {
+	if (r->table_layout == TABLE_ROWS_FIRST) {
 		table->nr_rows = buffer_read_int32(&r->buf);
 		table->nr_columns = buffer_read_int32(&r->buf);
 	} else {
@@ -258,12 +276,12 @@ static void ex_read_table(struct ex_reader *r, struct ex_table *table, struct ex
 	}
 
 	// try switching to column-major order if fields don't make sense
-	if (table_layout == TABLE_DEFAULT && table->nr_columns != nr_fields) {
+	if (r->table_layout == TABLE_DEFAULT && table->nr_columns != nr_fields) {
 		if (table->nr_rows == nr_fields) {
 			uint32_t tmp = table->nr_columns;
 			table->nr_columns = table->nr_rows;
 			table->nr_rows = tmp;
-			table_layout = TABLE_ROWS_FIRST;
+			r->table_layout = TABLE_ROWS_FIRST;
 		} else {
 			EX_ERROR(r, "Number of fields doesn't match number of columns: %u, %u", table->nr_columns, nr_fields);
 		}
@@ -414,6 +432,8 @@ static void ex_read_block(struct ex_reader *r, struct ex_block *block)
 uint8_t *ex_decrypt(const char *path, size_t *size, uint32_t *nr_blocks)
 {
 	uint8_t *file_data = file_read(path, size);
+	if (!file_data)
+		return NULL;
 	uint8_t *decoded = ex_decode(file_data, size, nr_blocks);
 	free(file_data);
 	return decoded;
@@ -421,20 +441,23 @@ uint8_t *ex_decrypt(const char *path, size_t *size, uint32_t *nr_blocks)
 
 static struct ex *_ex_read(uint8_t *data, size_t size, struct string*(*conv)(const char*,size_t))
 {
-	uint32_t nr_blocks;
+	uint32_t nr_blocks = 0;
 	uint8_t *decoded;
 	struct ex *ex;
 
 	struct ex_reader r = {
 		.conv = conv,
+		.table_layout = TABLE_DEFAULT,
 	};
 
 	decoded = ex_decode(data, &size, &nr_blocks);
+	if (!decoded)
+		return NULL;
 	buffer_init(&r.buf, decoded, size);
 
 	ex = xmalloc(sizeof(struct ex));
 	ex->nr_blocks = nr_blocks;
-	ex->blocks = xcalloc(nr_blocks, sizeof(struct ex_block));
+	ex->blocks = xcalloc(nr_blocks ? nr_blocks : 1, sizeof(struct ex_block));
 	for (size_t i = 0; i < nr_blocks; i++) {
 		ex_read_block(&r, &ex->blocks[i]);
 	}
@@ -445,8 +468,11 @@ static struct ex *_ex_read(uint8_t *data, size_t size, struct string*(*conv)(con
 
 struct ex *ex_read_conv(const uint8_t *data, size_t size, struct string*(*conv)(const char*,size_t))
 {
-	uint8_t *copy = xmalloc(size);
-	memcpy(copy, data, size);
+	if (!data)
+		return NULL;
+	uint8_t *copy = xmalloc(size ? size : 1);
+	if (size)
+		memcpy(copy, data, size);
 	struct ex *ex = _ex_read(copy, size, conv);
 	free(copy);
 	return ex;
@@ -506,6 +532,7 @@ static struct ex_value *ex_copy_values(struct ex_value *values, unsigned nr_valu
 static struct ex_table *ex_copy_table(struct ex_table *t)
 {
 	struct ex_table *out = xmalloc(sizeof(struct ex_table));
+	out->borrowed_fields = false;
 	out->nr_fields = t->nr_fields;
 	out->fields = ex_copy_fields(t->fields, t->nr_fields);
 	out->nr_columns = t->nr_columns;
@@ -734,9 +761,13 @@ void ex_append(struct ex *base, struct ex *append)
 			switch (src->val.type) {
 			case EX_INT:    src->val.i = append->blocks[i].val.i; break;
 			case EX_FLOAT:  src->val.f = append->blocks[i].val.f; break;
-			case EX_STRING: src->val.s = string_ref(append->blocks[i].val.s); break;
+			case EX_STRING:
+				if (src->val.s)
+					free_string(src->val.s);
+				src->val.s = string_ref(append->blocks[i].val.s);
+				break;
 			case EX_TABLE:  ex_append_table(src->val.t, append->blocks[i].val.t); break;
-			case EX_LIST:   ex_append_list(src->val.list, append->blocks[i].val.list); break;
+			case EX_LIST:   ex_append_list(src->val.list, src->val.list == append->blocks[i].val.list ? src->val.list : append->blocks[i].val.list); break;
 			case EX_TREE:   ex_append_tree(src->val.tree, append->blocks[i].val.tree); break;
 			}
 		} else {

@@ -44,8 +44,40 @@ import java.io.File
 
 class SettingsActivity : ThemedActivity() {
 
+    private companion object {
+        const val RECENT_SHARED_REPORT_PROTECT_MS = 3_600_000L
+    }
+
+    private data class CacheScanResult(
+        val routineTargets: List<File>,
+        val routineBytes: Long,
+        val resumableTargets: List<File>,
+        val resumableBytes: Long
+    ) {
+        val totalBytes: Long get() = routineBytes + resumableBytes
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var clearingCache: Boolean = false
+    private val trackedDialogs = mutableListOf<Dialog>()
+
+    private fun <T : Dialog> trackDialog(dlg: T): T {
+        trackedDialogs.removeAll { !it.isShowing }
+        trackedDialogs.add(dlg)
+        return dlg
+    }
+
+    private fun dismissTrackedDialogs() {
+        for (dlg in trackedDialogs.toList()) {
+            if (dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        trackedDialogs.clear()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,6 +140,7 @@ class SettingsActivity : ThemedActivity() {
     }
 
     override fun onDestroy() {
+        dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
     }
@@ -151,27 +184,27 @@ class SettingsActivity : ThemedActivity() {
     private fun refreshCacheSizeAsync() {
         val appCtx = applicationContext
         scope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                computeTotalCacheBytes(appCtx)
+            val scan = withContext(Dispatchers.IO) {
+                scanCacheTargets(appCtx)
             }
-            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(bytes)
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(scan.totalBytes)
         }
     }
 
     private fun onClearCacheClicked() {
         if (clearingCache) return
         val gameList = LauncherActivity.obtainGameList(this, refresh = false)
-        if (gameList.installState is InstallState.Installing) {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) {
             Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
             return
         }
         val appCtx = applicationContext
         scope.launch {
-            val totalBytes = withContext(Dispatchers.IO) {
-                computeTotalCacheBytes(appCtx)
+            val scan = withContext(Dispatchers.IO) {
+                scanCacheTargets(appCtx)
             }
-            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(totalBytes)
-            if (totalBytes <= 0L) {
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(scan.totalBytes)
+            if (scan.totalBytes <= 0L) {
                 Toast.makeText(
                     this@SettingsActivity,
                     R.string.settings_clear_cache_empty_toast,
@@ -179,38 +212,117 @@ class SettingsActivity : ThemedActivity() {
                 ).show()
                 return@launch
             }
-            val sizeLabel = formatCacheSize(totalBytes)
-            AlertDialog.Builder(this@SettingsActivity)
-                .setTitle(R.string.settings_clear_cache)
-                .setMessage(getString(R.string.settings_clear_cache_confirm_msg, sizeLabel))
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    performClearCache(totalBytes)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            if (scan.routineBytes > 0L && scan.resumableBytes <= 0L) {
+                val sizeLabel = formatCacheSize(scan.routineBytes)
+                trackDialog(
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle(R.string.settings_clear_cache)
+                        .setMessage(getString(R.string.settings_clear_cache_confirm_msg, sizeLabel))
+                        .setPositiveButton(R.string.ok) { _, _ ->
+                            performClearCache(includeResumable = false, expectedBytes = scan.routineBytes)
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                )
+            } else if (scan.routineBytes > 0L && scan.resumableBytes > 0L) {
+                val routineLabel = formatCacheSize(scan.routineBytes)
+                val resumableLabel = formatCacheSize(scan.resumableBytes)
+                val msg = GamepadBridge.tr(
+                    this@SettingsActivity,
+                    "${getString(R.string.settings_clear_cache_confirm_msg, routineLabel)}\n\n已自动保留暂停的断点续传下载数据（$resumableLabel）。",
+                    "${getString(R.string.settings_clear_cache_confirm_msg, routineLabel)}\n\n一時停止中のダウンロードデータ（$resumableLabel）は保持されます。",
+                    "${getString(R.string.settings_clear_cache_confirm_msg, routineLabel)}\n\nPaused download progress ($resumableLabel) will be preserved."
+                )
+                val clearAllLabel = GamepadBridge.tr(
+                    this@SettingsActivity,
+                    "连同续传数据一起清除",
+                    "再開データも削除",
+                    "Also Clear Paused Data"
+                )
+                trackDialog(
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle(R.string.settings_clear_cache)
+                        .setMessage(msg)
+                        .setPositiveButton(R.string.ok) { _, _ ->
+                            performClearCache(includeResumable = false, expectedBytes = scan.routineBytes)
+                        }
+                        .setNeutralButton(clearAllLabel) { _, _ ->
+                            confirmDiscardResumableDownloads(
+                                includeRoutine = true,
+                                resumableBytes = scan.resumableBytes,
+                                expectedTotalBytes = scan.totalBytes
+                            )
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                )
+            } else {
+                confirmDiscardResumableDownloads(
+                    includeRoutine = false,
+                    resumableBytes = scan.resumableBytes,
+                    expectedTotalBytes = scan.resumableBytes
+                )
+            }
         }
     }
 
-    private fun performClearCache(expectedBytes: Long) {
+    private fun confirmDiscardResumableDownloads(
+        includeRoutine: Boolean,
+        resumableBytes: Long,
+        expectedTotalBytes: Long
+    ) {
+        val resumableLabel = formatCacheSize(resumableBytes)
+        val warnMsg = GamepadBridge.tr(
+            this,
+            "检测到 $resumableLabel 未完成的断点续传下载缓存。清除后下载进度将全部丢失，需要从头重新下载。确定要删除吗？",
+            "一時停止中のダウンロードデータ（$resumableLabel）があります。削除すると進捗が失われ、最初から再ダウンロードが必要になります。削除しますか？",
+            "Found $resumableLabel of paused download data. Deleting it will discard your download progress and require starting over. Delete anyway?"
+        )
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_clear_cache)
+                .setMessage(warnMsg)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    performClearCache(includeResumable = true, expectedBytes = expectedTotalBytes, includeRoutine = includeRoutine)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun performClearCache(
+        includeResumable: Boolean,
+        expectedBytes: Long,
+        includeRoutine: Boolean = true
+    ) {
         if (clearingCache) return
         val gameList = LauncherActivity.obtainGameList(this, refresh = false)
-        if (gameList.installState is InstallState.Installing) {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) {
             Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
             return
         }
         clearingCache = true
         val appCtx = applicationContext
         scope.launch {
-            val remainingBytes = try {
+            val (beforeTotal, afterTotal) = try {
                 withContext(Dispatchers.IO) {
-                    clearAllCacheTargets(appCtx)
-                    computeTotalCacheBytes(appCtx)
+                    val before = scanCacheTargets(appCtx)
+                    val toDelete = ArrayList<File>()
+                    if (includeRoutine) {
+                        toDelete.addAll(before.routineTargets)
+                    }
+                    if (includeResumable) {
+                        toDelete.addAll(before.resumableTargets)
+                    }
+                    deleteCacheTargetList(toDelete)
+                    val after = scanCacheTargets(appCtx)
+                    before.totalBytes to after.totalBytes
                 }
             } finally {
                 clearingCache = false
             }
-            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(remainingBytes)
-            val freed = (expectedBytes - remainingBytes).coerceAtLeast(0L)
+            findViewById<TextView>(R.id.value_settings_clear_cache)?.text = formatCacheSize(afterTotal)
+            val freed = (beforeTotal - afterTotal).coerceAtLeast(0L)
             val freedLabel = formatCacheSize(if (freed > 0L) freed else expectedBytes)
             Toast.makeText(
                 this@SettingsActivity,
@@ -225,14 +337,36 @@ class SettingsActivity : ThemedActivity() {
         return OnlineInstaller.formatSize(bytes).ifEmpty { "0 B" }
     }
 
-    private fun collectCacheTargets(context: Context): List<File> {
-        val out = LinkedHashSet<File>()
-        context.cacheDir?.listFiles()?.forEach { out.add(it) }
-        context.externalCacheDirs?.filterNotNull()?.forEach { dir ->
-            dir.listFiles()?.forEach { out.add(it) }
+    private fun collectCacheRootChildren(cacheRoot: File?, nowMs: Long, out: MutableSet<File>) {
+        val children = cacheRoot?.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory && child.name == "shared_reports") {
+                val reports = child.listFiles().orEmpty()
+                for (rep in reports) {
+                    val modified = rep.lastModified()
+                    if (modified <= 0L || nowMs - modified >= RECENT_SHARED_REPORT_PROTECT_MS) {
+                        out.add(rep)
+                    }
+                }
+            } else {
+                out.add(child)
+            }
         }
-        context.filesDir.listFiles()?.filter { it.name.startsWith(SAVE_IMPORT_TMP_PREFIX) }
-            ?.forEach { out.add(it) }
+    }
+
+    private fun scanCacheTargets(context: Context): CacheScanResult {
+        val nowMs = System.currentTimeMillis()
+        val routine = LinkedHashSet<File>()
+        val resumable = LinkedHashSet<File>()
+
+        collectCacheRootChildren(context.cacheDir, nowMs, routine)
+        context.externalCacheDirs?.filterNotNull()?.forEach { dir ->
+            collectCacheRootChildren(dir, nowMs, routine)
+        }
+        context.filesDir.listFiles()?.filter { f ->
+            f.name.startsWith(SAVE_IMPORT_TMP_PREFIX) &&
+                (f.lastModified() <= 0L || nowMs - f.lastModified() >= 600_000L)
+        }?.forEach { routine.add(it) }
 
         val storageRoots = LinkedHashSet<File>()
         context.getExternalFilesDirs(null)?.filterNotNull()?.forEach { storageRoots.add(it) }
@@ -245,29 +379,42 @@ class SettingsActivity : ThemedActivity() {
             val children = root.listFiles() ?: continue
             for (f in children) {
                 val n = f.name
-                val isTempTarget = n.startsWith(".online_base_staging_") ||
-                    n == ".online_mod_cache" ||
-                    n.startsWith(".mod_online_extract_temp") ||
+                val isResumableDir = n.startsWith(".online_base_staging_") || n == ".online_mod_cache"
+                if (isResumableDir) {
+                    if (computeFileTreeBytes(f) > 0L) {
+                        resumable.add(f)
+                    } else {
+                        routine.add(f)
+                    }
+                    continue
+                }
+                val isRoutineTemp = n.startsWith(".mod_online_extract_temp") ||
                     n.startsWith(".install_temp") ||
                     n.startsWith(".mod_install_temp") ||
                     n.startsWith(".trash_") ||
                     n.startsWith(".import-") ||
                     n.startsWith(".mod-import-") ||
                     (f.isFile && n.startsWith(".archive_src_") && n.endsWith(".tmp"))
-                if (isTempTarget) {
-                    out.add(f)
+                if (isRoutineTemp) {
+                    routine.add(f)
                 }
             }
         }
-        return out.toList()
-    }
 
-    private fun computeTotalCacheBytes(context: Context): Long {
-        var sum = 0L
-        for (target in collectCacheTargets(context)) {
-            sum += computeFileTreeBytes(target)
+        var routineSum = 0L
+        for (target in routine) {
+            routineSum += computeFileTreeBytes(target)
         }
-        return sum
+        var resumableSum = 0L
+        for (target in resumable) {
+            resumableSum += computeFileTreeBytes(target)
+        }
+        return CacheScanResult(
+            routineTargets = routine.toList(),
+            routineBytes = routineSum,
+            resumableTargets = resumable.toList(),
+            resumableBytes = resumableSum
+        )
     }
 
     private fun computeFileTreeBytes(file: File): Long {
@@ -281,8 +428,8 @@ class SettingsActivity : ThemedActivity() {
         return sum
     }
 
-    private fun clearAllCacheTargets(context: Context) {
-        for (target in collectCacheTargets(context)) {
+    private fun deleteCacheTargetList(targets: List<File>) {
+        for (target in targets) {
             try {
                 if (target.isDirectory) {
                     target.deleteRecursively()
@@ -504,6 +651,7 @@ class SettingsActivity : ThemedActivity() {
         })
 
         dialog.show()
+        trackDialog(dialog)
     }
 
     private fun showThemeDialog() {
@@ -520,18 +668,20 @@ class SettingsActivity : ThemedActivity() {
         val currentMode = AppSettings.getThemeMode(this)
         val checkedIdx = modes.indexOf(currentMode).coerceAtLeast(0)
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.settings_theme)
-            .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
-                val nextMode = modes.getOrElse(which) { AppSettings.THEME_AUTO }
-                dlg.dismiss()
-                if (nextMode != currentMode) {
-                    AppSettings.setThemeMode(this, nextMode)
-                    recreate()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_theme)
+                .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
+                    val nextMode = modes.getOrElse(which) { AppSettings.THEME_AUTO }
+                    dlg.dismiss()
+                    if (nextMode != currentMode) {
+                        AppSettings.setThemeMode(this, nextMode)
+                        recreate()
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showLanguageDialog() {
@@ -550,18 +700,20 @@ class SettingsActivity : ThemedActivity() {
         val currentLang = AppSettings.getLanguageMode(this)
         val checkedIdx = codes.indexOf(currentLang).coerceAtLeast(0)
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.settings_language)
-            .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
-                val nextLang = codes.getOrElse(which) { AppSettings.LANG_AUTO }
-                dlg.dismiss()
-                if (nextLang != currentLang) {
-                    AppSettings.setLanguageMode(this, nextLang)
-                    recreate()
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_language)
+                .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
+                    val nextLang = codes.getOrElse(which) { AppSettings.LANG_AUTO }
+                    dlg.dismiss()
+                    if (nextLang != currentLang) {
+                        AppSettings.setLanguageMode(this, nextLang)
+                        recreate()
+                    }
                 }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun onOnlineInstallClicked() {
@@ -572,20 +724,22 @@ class SettingsActivity : ThemedActivity() {
             return
         }
 
-        val dlg = AlertDialog.Builder(this)
-            .setTitle(R.string.online_disclaimer_title)
-            .setMessage(buildDisclaimerText())
-            .setPositiveButton(R.string.online_disclaimer_agree) { _, _ ->
-                AppSettings.setOnlineInstallEnabled(this, true)
-                refreshSettingsUi()
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                refreshSettingsUi()
-            }
-            .setOnCancelListener {
-                refreshSettingsUi()
-            }
-            .show()
+        val dlg = trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.online_disclaimer_title)
+                .setMessage(buildDisclaimerText())
+                .setPositiveButton(R.string.online_disclaimer_agree) { _, _ ->
+                    AppSettings.setOnlineInstallEnabled(this, true)
+                    refreshSettingsUi()
+                }
+                .setNegativeButton(R.string.cancel) { _, _ ->
+                    refreshSettingsUi()
+                }
+                .setOnCancelListener {
+                    refreshSettingsUi()
+                }
+                .show()
+        )
         dlg.findViewById<TextView>(android.R.id.message)?.apply {
             textSize = 13.5f
             setLineSpacing(0f, 1.28f)

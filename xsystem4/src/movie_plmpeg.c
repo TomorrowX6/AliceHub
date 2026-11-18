@@ -152,8 +152,10 @@ static void apeg_decode_block(plm_video_t *self, int block)
 
 		int size = plm_buffer_read_vlc(self->buffer,
 			block < 4 ? APEG_VLC_DC_LUMA : APEG_VLC_DC_CHROMA);
-		if (size < 0)
+		if (size < 0) {
+			memset(self->block_data, 0, sizeof(self->block_data));
 			return;
+		}
 
 		if (size > 0) {
 			int val = plm_buffer_read(self->buffer, size);
@@ -178,6 +180,7 @@ static void apeg_decode_block(plm_video_t *self, int block)
 			break;
 		}
 		if (run_coeff == -4) {
+			memset(self->block_data, 0, sizeof(self->block_data));
 			return;
 		}
 
@@ -616,6 +619,7 @@ static void prepare_movie_shader(struct gfx_render_job *job, void *data)
 	glBindTexture(GL_TEXTURE_2D, mc->textures[1]);
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, mc->textures[2]);
+	glActiveTexture(GL_TEXTURE0);
 }
 
 static void load_movie_shader(void)
@@ -874,6 +878,11 @@ bool movie_play(struct movie_context *mc)
 	if (mc->apeg)
 		return movie_play_at(mc, 0);
 
+	if (mc->voice >= 0) {
+		int prev_voice = mc->voice;
+		mc->voice = -1;
+		mixer_stream_stop(prev_voice);
+	}
 	mc->skipped = false;
 	mc->plm_playing = true;
 	movie_playback_seq++;
@@ -1000,9 +1009,10 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 		if (!frame) {
 			SDL_LockMutex(mc->decoder_mutex);
 			frame = plm_decode_video(mc->plm);
+			bool ended = !frame && plm_video_has_ended(mc->plm->video_decoder);
 			SDL_UnlockMutex(mc->decoder_mutex);
 			if (!frame)
-				return plm_video_has_ended(mc->plm->video_decoder);
+				return ended;
 		}
 
 		// If the frame's timestamp is in the future, save the frame and return.
@@ -1013,9 +1023,10 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 			mc->pending_video_frame = frame;
 			return true;
 		}
-		while (frame && frame->time + 0.04 < now && !plm_video_has_ended(mc->plm->video_decoder)) {
+		while (frame && frame->time + 0.04 < now) {
 			SDL_LockMutex(mc->decoder_mutex);
-			plm_frame_t *next = plm_decode_video(mc->plm);
+			bool ended = plm_video_has_ended(mc->plm->video_decoder);
+			plm_frame_t *next = ended ? NULL : plm_decode_video(mc->plm);
 			SDL_UnlockMutex(mc->decoder_mutex);
 			if (!next)
 				break;
@@ -1027,6 +1038,7 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 	update_texture(GL_TEXTURE0, mc->textures[0], &frame->y);
 	update_texture(GL_TEXTURE1, mc->textures[1], &frame->cb);
 	update_texture(GL_TEXTURE2, mc->textures[2], &frame->cr);
+	glActiveTexture(GL_TEXTURE0);
 
 	float w, h;
 	GLuint fbo;
@@ -1080,7 +1092,10 @@ bool movie_is_end(struct movie_context *mc)
 		int pos = movie_get_position(mc);
 		return pos >= 0 && pos >= apeg->end_time_ms;
 	}
-	return plm_has_ended(mc->plm);
+	SDL_LockMutex(mc->decoder_mutex);
+	bool ended = plm_has_ended(mc->plm);
+	SDL_UnlockMutex(mc->decoder_mutex);
+	return ended;
 }
 
 int movie_get_position(struct movie_context *mc)

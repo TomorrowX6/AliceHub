@@ -53,8 +53,10 @@ static struct hashmap_obj *hm_get(int id)
 
 static void hm_rehash(struct hashmap_obj *m, int new_nbuckets)
 {
-	if (new_nbuckets < 16)
-		new_nbuckets = 16;
+	int pow2 = 16;
+	while (pow2 < new_nbuckets && pow2 < (1 << 30))
+		pow2 <<= 1;
+	new_nbuckets = pow2;
 	free(m->buckets);
 	m->nbuckets = new_nbuckets;
 	m->buckets = xmalloc((size_t)new_nbuckets * sizeof(int));
@@ -271,7 +273,7 @@ static bool HashMap_Save(struct page **buf_ptr)
 		total_ints += 2; /* id, count */
 		for (int i = 0; i < s_maps[id].count; i++) {
 			int klen = s_maps[id].entries[i].key->size;
-			total_ints += 2 + (size_t)((klen + 3) / 4); /* klen, packed_bytes, val */
+			total_ints += 2 + (size_t)(((uint64_t)(uint32_t)klen + 3) / 4); /* klen, packed_bytes, val */
 		}
 	}
 	struct ain_type int_t = { .data = AIN_INT, .struc = -1 };
@@ -288,7 +290,7 @@ static bool HashMap_Save(struct page **buf_ptr)
 		for (int i = 0; i < s_maps[id].count; i++) {
 			struct string *k = s_maps[id].entries[i].key;
 			int klen = k->size;
-			int words = (klen + 3) / 4;
+			int words = (int)(((uint64_t)(uint32_t)klen + 3) / 4);
 			out->values[p++].i = klen;
 			for (int w = 0; w < words; w++) {
 				uint32_t word = 0;
@@ -315,30 +317,41 @@ static bool HashMap_Load(struct page **buf_ptr)
 	int n = in->nr_vars;
 	if (n < 3 || in->values[0].i != HMAP_MAGIC || in->values[1].i != 1)
 		return false;
+	int active_maps = in->values[2].i;
+	if (active_maps < 0)
+		return false;
 	for (int id = 1; id < s_nr_maps; id++) {
 		if (s_maps[id].active)
 			HashMap_Release(id);
 	}
-	int p = 2;
-	int active_maps = in->values[p++].i;
+	int p = 3;
 	for (int m_idx = 0; m_idx < active_maps; m_idx++) {
-		if (p + 2 > n)
+		if (n - p < 2)
 			return false;
 		int id = in->values[p++].i;
 		int count = in->values[p++].i;
-		if (id <= 0 || count < 0)
+		if (id <= 0 || count < 0 || count > n - p)
 			return false;
 		hm_ensure_slot(id);
+		if (s_maps[id].active)
+			HashMap_Release(id);
 		memset(&s_maps[id], 0, sizeof(struct hashmap_obj));
 		s_maps[id].active = true;
-		hm_rehash(&s_maps[id], max(16, count * 2));
+		int target_buckets = count > (1 << 29) ? (1 << 30) : max(16, count * 2);
+		hm_rehash(&s_maps[id], target_buckets);
 		for (int i = 0; i < count; i++) {
 			if (p >= n)
 				return false;
 			int klen = in->values[p++].i;
-			int words = (klen + 3) / 4;
-			if (klen < 0 || p + words + 1 > n)
+			if (klen < 0)
 				return false;
+			int remain = n - p;
+			if (remain < 1)
+				return false;
+			uint64_t words64 = ((uint64_t)(uint32_t)klen + 3) / 4;
+			if (words64 > (uint64_t)(remain - 1))
+				return false;
+			int words = (int)words64;
 			char *kbuf = xmalloc((size_t)klen + 1);
 			for (int w = 0; w < words; w++) {
 				uint32_t word = (uint32_t)in->values[p++].i;
@@ -356,7 +369,19 @@ static bool HashMap_Load(struct page **buf_ptr)
 	return true;
 }
 
+static void HashMap_ModuleFini(void)
+{
+	for (int id = 1; id < s_nr_maps; id++) {
+		if (s_maps[id].active)
+			HashMap_Release(id);
+	}
+	free(s_maps);
+	s_maps = NULL;
+	s_nr_maps = 0;
+}
+
 HLL_LIBRARY(HashMap,
+	    HLL_EXPORT(_ModuleFini, HashMap_ModuleFini),
 	    HLL_EXPORT(Create, HashMap_Create),
 	    HLL_EXPORT(Release, HashMap_Release),
 	    HLL_EXPORT(Free, HashMap_Free),

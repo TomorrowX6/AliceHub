@@ -122,24 +122,32 @@ char *sjis_char2unicode(const char *_src, int *dst)
 }
 
 char *sjis2utf(const char *_src, size_t len) {
+	if (!_src)
+		return NULL;
+	const uint8_t *src = (const uint8_t*)_src;
 	if (!len)
 		len = strlen(_src);
-	const uint8_t *src = (uint8_t*)_src;
-	uint8_t* dst = malloc(len * 3 + 1);
+	const uint8_t *end = src + len;
+	uint8_t* dst = xmalloc(len * 3 + 1);
 	uint8_t* dstp = dst;
 
-	while (*src) {
+	while (src < end && *src) {
 		int c;
-		src = (uint8_t*)sjis_char2unicode((const char*)src, &c);
+		if (SJIS_2BYTE(*src) && !(src + 1 < end && src[1] != '\0')) {
+			c = sys4_text_is_gbk ? 0xfffd : '?';
+			src++;
+		} else {
+			src = (const uint8_t*)sjis_char2unicode((const char*)src, &c);
+		}
 
 		if (c <= 0x7f) {
 			*dstp++ = c;
 		} else if (c <= 0x7ff) {
-			*dstp++ = 0xc0 | c >> 6;
+			*dstp++ = 0xc0 | (c >> 6);
 			*dstp++ = 0x80 | (c & 0x3f);
 		} else {
-			*dstp++ = 0xe0 | c >> 12;
-			*dstp++ = 0x80 | (c >> 6 & 0x3f);
+			*dstp++ = 0xe0 | (c >> 12);
+			*dstp++ = 0x80 | ((c >> 6) & 0x3f);
 			*dstp++ = 0x80 | (c & 0x3f);
 		}
 	}
@@ -248,37 +256,54 @@ int cjk_encode_codepoint(int u, bool gbk)
 }
 
 char *utf2cjk(const char *_src, size_t len, bool gbk) {
+	if (!_src)
+		return NULL;
+	const uint8_t *src = (const uint8_t*)_src;
 	if (!len)
 		len = strlen(_src);
-	const uint8_t *src = (uint8_t*)_src;
-	uint8_t* dst = malloc(len + 1);
+	const uint8_t *end = src + len;
+	uint8_t* dst = xmalloc(len * 2 + 1);
 	uint8_t* dstp = dst;
 
-	while (*src) {
+	while (src < end && *src) {
 		if (*src <= 0x7f) {
 			*dstp++ = *src++;
 			continue;
 		}
 
 		int u;
-		if (*src <= 0xdf) {
-			u = (src[0] & 0x1f) << 6 | (src[1] & 0x3f);
+		if ((*src & 0xe0) == 0xc0) {
+			if (src + 1 >= end || (src[1] & 0xc0) != 0x80) {
+				*dstp++ = '?';
+				src++;
+				continue;
+			}
+			u = ((src[0] & 0x1f) << 6) | (src[1] & 0x3f);
 			src += 2;
-		} else if (*src <= 0xef) {
-			u = (src[0] & 0xf) << 12 | (src[1] & 0x3f) << 6 | (src[2] & 0x3f);
+		} else if ((*src & 0xf0) == 0xe0) {
+			if (src + 2 >= end || (src[1] & 0xc0) != 0x80 || (src[2] & 0xc0) != 0x80) {
+				*dstp++ = '?';
+				src++;
+				while (src < end && (*src & 0xc0) == 0x80)
+					src++;
+				continue;
+			}
+			u = ((src[0] & 0x0f) << 12) | ((src[1] & 0x3f) << 6) | (src[2] & 0x3f);
 			src += 3;
 		} else {
 			*dstp++ = '?';
-			do src++; while ((*src & 0xc0) == 0x80);
+			src++;
+			while (src < end && (*src & 0xc0) == 0x80)
+				src++;
 			continue;
 		}
 
 		int c = cjk_encode_codepoint(u, gbk);
 		if (c > 0xff) {
-			*dstp++ = c >> 8;
-			*dstp++ = c & 0xff;
+			*dstp++ = (uint8_t)(c >> 8);
+			*dstp++ = (uint8_t)(c & 0xff);
 		} else if (c) {
-			*dstp++ = c & 0xff;
+			*dstp++ = (uint8_t)(c & 0xff);
 		} else {
 			*dstp++ = '?';
 		}
@@ -330,7 +355,7 @@ static char *decode_cjk_raw_seg(const uint8_t *seg, size_t seg_len, bool use_sji
 	if (u && ok)
 		return u;
 	free(u);
-	char *tmp = malloc(seg_len + 1);
+	char *tmp = xmalloc(seg_len + 1);
 	memcpy(tmp, seg, seg_len);
 	tmp[seg_len] = '\0';
 	char *fallback = sjis2utf(tmp, seg_len);
@@ -353,7 +378,7 @@ char *sjis_filename2utf(const char *_src, size_t len)
 
 	const uint8_t *src = (const uint8_t *)_src;
 	size_t out_cap = len * 3 + 1;
-	char *out = malloc(out_cap);
+	char *out = xmalloc(out_cap);
 	size_t out_len = 0;
 
 	size_t i = 0;
@@ -374,7 +399,7 @@ char *sjis_filename2utf(const char *_src, size_t len)
 			size_t slen = strlen(seg_utf);
 			if (out_len + slen + 2 > out_cap) {
 				out_cap = out_len + slen + 64;
-				out = realloc(out, out_cap);
+				out = xrealloc(out, out_cap);
 			}
 			memcpy(out + out_len, seg_utf, slen);
 			out_len += slen;
@@ -383,7 +408,7 @@ char *sjis_filename2utf(const char *_src, size_t len)
 		if (i < len && (src[i] == '/' || src[i] == '\\')) {
 			if (out_len + 2 > out_cap) {
 				out_cap += 64;
-				out = realloc(out, out_cap);
+				out = xrealloc(out, out_cap);
 			}
 			out[out_len++] = (char)src[i++];
 		}
@@ -394,7 +419,7 @@ char *sjis_filename2utf(const char *_src, size_t len)
 
 static bool encode_utf8_to_gbk_strict(const char *seg, size_t seg_len, uint8_t **out_buf, size_t *out_len)
 {
-	uint8_t *dst = malloc(seg_len + 1);
+	uint8_t *dst = xmalloc(seg_len + 1);
 	size_t pos = 0;
 	const uint8_t *p = (const uint8_t *)seg;
 	const uint8_t *end = p + seg_len;
@@ -448,7 +473,7 @@ char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
 
 	size_t len = strlen(utf);
 	size_t out_cap = len * 2 + 1;
-	char *out = malloc(out_cap);
+	char *out = xmalloc(out_cap);
 	size_t out_len = 0;
 	bool changed = false;
 
@@ -470,7 +495,7 @@ char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
 					size_t rlen = strlen(sjis_utf);
 					if (out_len + rlen + 2 > out_cap) {
 						out_cap = out_len + rlen + 64;
-						out = realloc(out, out_cap);
+						out = xrealloc(out, out_cap);
 					}
 					memcpy(out + out_len, sjis_utf, rlen);
 					out_len += rlen;
@@ -483,7 +508,7 @@ char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
 			if (!seg_repaired) {
 				if (out_len + seg_len + 2 > out_cap) {
 					out_cap = out_len + seg_len + 64;
-					out = realloc(out, out_cap);
+					out = xrealloc(out, out_cap);
 				}
 				memcpy(out + out_len, utf + seg_start, seg_len);
 				out_len += seg_len;
@@ -492,7 +517,7 @@ char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
 		if (i < len && (utf[i] == '/' || utf[i] == '\\')) {
 			if (out_len + 2 > out_cap) {
 				out_cap += 64;
-				out = realloc(out, out_cap);
+				out = xrealloc(out, out_cap);
 			}
 			out[out_len++] = utf[i++];
 		}

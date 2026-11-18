@@ -799,6 +799,7 @@ const char *parts_text_append_char(struct parts_text *t, const char *str);
 void parts_text_update_dims(struct parts *parts, struct parts_text *t);
 struct string *parts_text_line_get(struct parts_text_line *line);
 struct string *parts_text_get(struct parts_text *t);
+bool PE_DeletePartsTopTextLine(int parts_no, int state);
 
 // render.c
 void parts_render_init(void);

@@ -56,9 +56,15 @@ static struct collider_triangle *fill_triangles(struct collider_triangle *t, str
 		glm_vec3_sub(t->vertices[1], t->vertices[0], v1);
 		glm_vec3_sub(t->vertices[2], t->vertices[0], v2);
 		glm_vec3_cross(v1, v2, normal);
-		t->slope[0] = -normal[0] / normal[1];
-		t->slope[1] = -normal[2] / normal[1];
-		t->intercept = glm_vec3_dot(normal, t->vertices[0]) / normal[1];
+		if (fabsf(normal[1]) > 1e-6f) {
+			t->slope[0] = -normal[0] / normal[1];
+			t->slope[1] = -normal[2] / normal[1];
+			t->intercept = glm_vec3_dot(normal, t->vertices[0]) / normal[1];
+		} else {
+			t->slope[0] = 0.0f;
+			t->slope[1] = 0.0f;
+			t->intercept = t->center[1];
+		}
 
 		for (int i = 0; i < 3; i++) {
 			t->neighbors[i] = -1;
@@ -524,6 +530,7 @@ struct pathfinder {
 	struct pathfinder_node *nodes;  // indexed by triangle index
 	struct frontier *frontiers;  // min-heap
 	int nr_frontiers;
+	int frontiers_cap;
 };
 
 static int frontier_pop(struct pathfinder *pf)
@@ -559,6 +566,11 @@ static int frontier_pop(struct pathfinder *pf)
 
 static void frontier_push(struct pathfinder *pf, int index, float f_score)
 {
+	if (pf->nr_frontiers >= pf->frontiers_cap) {
+		int new_cap = pf->frontiers_cap > 0 ? pf->frontiers_cap * 2 : 16;
+		pf->frontiers = xrealloc(pf->frontiers, (size_t)new_cap * sizeof(struct frontier));
+		pf->frontiers_cap = new_cap;
+	}
 	pf->frontiers[pf->nr_frontiers++] = (struct frontier){ index, f_score };
 	int i = pf->nr_frontiers - 1;
 	while (i > 0) {
@@ -635,7 +647,8 @@ bool collider_find_path(struct collider *collider, vec3 start, vec3 goal, mat4 v
 	pf.nodes[start_i].pred = -1;
 	pf.nodes[start_i].g_score = 0.f;
 	pf.nodes[start_i].state = IN_FRONTIER;
-	pf.frontiers = xcalloc(collider->nr_triangles, sizeof(struct frontier));
+	pf.frontiers_cap = collider->nr_triangles > 16 ? (int)collider->nr_triangles : 16;
+	pf.frontiers = xcalloc(pf.frontiers_cap, sizeof(struct frontier));
 	pf.nr_frontiers = 0;
 	frontier_push(&pf, start_i, glm_vec3_distance(start_t->center, goal_t->center));
 
