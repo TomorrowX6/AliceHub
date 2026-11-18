@@ -219,5 +219,11 @@ else()  # non-emscripten, non-android
       TEST_FONT_DIR="${PROJECT_SOURCE_DIR}/fonts")
   target_link_libraries(src_tests PRIVATE src_lib sdl)
   add_test(NAME src_tests COMMAND src_tests)
+
+  # Exercise message cursor/capture state without a window or game assets.
+  add_executable(message_tests message_test.c message.c)
+  target_compile_options(message_tests PRIVATE -Wno-pointer-sign -Wall)
+  target_link_libraries(message_tests PRIVATE sdl)
+  add_test(NAME message_tests COMMAND message_tests)
   file(COPY testdata DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif()
