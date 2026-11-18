@@ -33,9 +33,12 @@ object AppSettings {
     private const val DEFAULT_DOHNA_BYTES = 3310231215L
     private const val DEFAULT_EVENICLE_BYTES = 2453622110L
     private const val DEFAULT_SENGOKU_RANCE_BYTES = 1885221320L
+    private const val DEFAULT_RANCE01_BYTES = 611603977L
+    private const val DEFAULT_RANCE02_BYTES = 273186363L
     private const val DEFAULT_RANCE03_BYTES = 2223244774L
     private const val DEFAULT_RANCE08_BYTES = 1964252126L
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
+    private const val DEFAULT_ESCALAYER_BYTES = 1563994084L
 
     private val initialSystemLocale: Locale =
         Resources.getSystem().configuration.locales.takeIf { !it.isEmpty }?.get(0)
@@ -142,9 +145,12 @@ object AppSettings {
             OnlineInstaller.DOHNA_DOHNA_CDN_URL -> DEFAULT_DOHNA_BYTES
             OnlineInstaller.EVENICLE_CDN_URL -> DEFAULT_EVENICLE_BYTES
             OnlineInstaller.SENGOKU_RANCE_CDN_URL -> DEFAULT_SENGOKU_RANCE_BYTES
+            OnlineInstaller.RANCE01_CDN_URL -> DEFAULT_RANCE01_BYTES
+            OnlineInstaller.RANCE02_CDN_URL -> DEFAULT_RANCE02_BYTES
             OnlineInstaller.RANCE03_CDN_URL -> DEFAULT_RANCE03_BYTES
             OnlineInstaller.RANCE08_CDN_URL -> DEFAULT_RANCE08_BYTES
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
+            OnlineInstaller.ESCALAYER_CDN_URL -> DEFAULT_ESCALAYER_BYTES
             else -> -1L
         }
     }

@@ -710,7 +710,7 @@ static void method_call(int fno, int return_address)
 	int struct_page = stack_pop().i;
 	set_struct_page(struct_page);
 	heap[call_stack[call_stack_ptr-1].page_slot].page->local.struct_ptr = struct_page;
-	if (game_rance03 || game_rance8 || game_rance9)
+	if (game_rance01 || game_rance02 || game_rance03 || game_rance8 || game_rance9)
 		modifier_before_method();
 }
 
@@ -835,7 +835,7 @@ void vm_call_method_1(int fno, int struct_page, int value)
 
 static void function_return(void)
 {
-	if (game_rance03 || game_rance8 || game_rance9)
+	if (game_rance01 || game_rance02 || game_rance03 || game_rance8 || game_rance9)
 		modifier_after_method_return();
 	unref_call_frame(&call_stack[call_stack_ptr-1]);
 	instr_ptr = call_stack[call_stack_ptr-1].return_address;
@@ -1402,7 +1402,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	//
 	case CALLFUNC: {
 		function_call(get_argument(0), instr_ptr + instruction_width(CALLFUNC));
-		if (game_rance8 || game_rance9)
+		if (game_rance02 || game_rance8 || game_rance9)
 			modifier_before_method();
 		break;
 	}

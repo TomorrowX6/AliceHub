@@ -373,21 +373,20 @@ static bool config_init_with_ini(const char *ini_path)
 
 static bool config_init_with_dir(const char *dir)
 {
-	const char *ini_names[] = { "System40.ini", "AliceStart.ini" };
+	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini" };
 	for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); i++) {
-		char *joined = path_join(dir, ini_names[i]);
-		if (file_exists(joined)) {
-			bool ok = config_init_with_ini(joined);
-			free(joined);
+		char *path = path_join(dir, ini_names[i]);
+		if (!file_exists(path)) {
+			char *icase = path_get_icase(path);
+			free(path);
+			path = icase;
+		}
+		if (path && file_exists(path)) {
+			bool ok = config_init_with_ini(path);
+			free(path);
 			return ok;
 		}
-		char *icase = path_get_icase(joined);
-		free(joined);
-		if (icase) {
-			bool ok = config_init_with_ini(icase);
-			free(icase);
-			return ok;
-		}
+		free(path);
 	}
 	return false;
 }
@@ -1130,6 +1129,18 @@ int main(int argc, char *argv[])
 		}
 	}
 	ainfile = gamedir_path(config.ain_filename);
+	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
+		sys4_set_text_gbk(true);
+		char *gbk_ain = gamedir_path(config.ain_filename);
+		sys4_set_text_gbk(false);
+		if (file_exists(gbk_ain)) {
+			free(ainfile);
+			ainfile = gbk_ain;
+		} else {
+			free(gbk_ain);
+		}
+	}
 
 	read_user_config();
 

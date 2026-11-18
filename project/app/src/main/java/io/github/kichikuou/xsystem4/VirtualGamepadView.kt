@@ -178,6 +178,11 @@ class VirtualGamepadView(context: Context) : View(context) {
         }
     }
 
+    internal fun resumeVisibilityState(): String =
+        "visible=$visibility enabled=${profile.virtual.enabled} " +
+            "movie=$hiddenByMovie physical=$autoHiddenByPhysicalPad edit=$editMode " +
+            "controls=${profile.virtual.controls.size}"
+
     private fun updateVisibilityState() {
         val shouldShow = editMode ||
             (profile.virtual.enabled && !autoHiddenByPhysicalPad && !hiddenByMovie)

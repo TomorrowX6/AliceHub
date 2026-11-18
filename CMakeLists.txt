@@ -184,6 +184,42 @@ ExternalProject_Add(
 ExternalProject_Add_StepDependencies(libarchive configure xz)
 
 ExternalProject_Add(
+  SDL2
+  URL https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz
+  URL_HASH SHA1=9403df0573d47f62f2de074b582b87576bb4abbc
+  CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+             -DSDL_SHARED=ON
+             -DSDL_STATIC=OFF
+             -DSDL_TEST=OFF
+             -DSDL_TESTS=OFF
+             "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+)
+
+ExternalProject_Add(
+  SDL2_mixer
+  URL https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1.tar.gz
+  URL_HASH SHA1=b38a337de10b04c51053ca0d17b57c31f5dcdd96
+  CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+             -DBUILD_SHARED_LIBS=OFF
+             -DSDL2MIXER_VENDORED=OFF
+             -DSDL2MIXER_DEPS_SHARED=OFF
+             -DSDL2MIXER_INSTALL=ON
+             -DSDL2MIXER_SAMPLES=OFF
+             -DSDL2MIXER_FLAC=OFF
+             -DSDL2MIXER_GME=OFF
+             -DSDL2MIXER_MOD=OFF
+             -DSDL2MIXER_MIDI=OFF
+             -DSDL2MIXER_OPUS=OFF
+             -DSDL2MIXER_WAVPACK=OFF
+             -DSDL2MIXER_MP3=ON
+             -DSDL2MIXER_MP3_MINIMP3=ON
+             -DSDL2MIXER_VORBIS=VORBISFILE
+             -DSDL2MIXER_VORBIS_VORBISFILE_SHARED=OFF
+)
+
+ExternalProject_Add_StepDependencies(SDL2_mixer configure SDL2 libvorbis libogg)
+
+ExternalProject_Add(
   archive_jni
   SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/archive_jni
   CMAKE_ARGS ${COMMON_CMAKE_ARGS}
@@ -201,11 +237,24 @@ ExternalProject_Add(
 )
 
 ExternalProject_Add_StepDependencies(xsystem4 configure
-  libjpeg-turbo libwebp libpng libffi libsndfile libdeflate)
+  SDL2 libjpeg-turbo libwebp libpng libffi libsndfile libdeflate)
 
+ExternalProject_Add(
+  xsystem35
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/xsystem35
+  CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+             -DXSYSTEM35_SDL_VERSION=2
+             -DENABLE_DEBUGGER=OFF
+             -DCMAKE_MODULE_PATH=${CMAKE_CURRENT_LIST_DIR}/cmake
+  BUILD_ALWAYS YES
+)
+
+ExternalProject_Add_StepDependencies(xsystem35 configure
+  SDL2 SDL2_mixer libwebp libogg libvorbis xsystem4)
 
 install(
   FILES ${stagingDir}/lib/libxsystem4.so
+        ${stagingDir}/lib/libxsystem35.so
         ${stagingDir}/lib/libSDL2.so
         ${stagingDir}/lib/libcglm.so
         ${stagingDir}/lib/libarchive_jni.so
@@ -214,3 +263,7 @@ install(
 install(
   DIRECTORY xsystem4/shaders xsystem4/fonts
   DESTINATION ${androidProjectDir}/app/src/main/assets)
+
+install(
+  FILES xsystem35/fonts/MTLc3m.ttf xsystem35/fonts/mincho.ttf
+  DESTINATION ${androidProjectDir}/app/src/main/assets/fonts)

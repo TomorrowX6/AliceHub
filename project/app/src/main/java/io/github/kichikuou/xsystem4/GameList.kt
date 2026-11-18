@@ -56,26 +56,40 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         }
 
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
+            val isSys3x = GameCatalog.isSystem3xGameDir(dir)
             var iniFile = File(dir, "System40.ini")
             if (!iniFile.exists())
                 iniFile = File(dir, "AliceStart.ini")
+            if (!iniFile.exists())
+                iniFile = File(dir, "System39.ini")
             if (!iniFile.exists()) {
                 val ignoreCaseIni = dir.listFiles()?.firstOrNull {
                     it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
-                        it.name.equals("AliceStart.ini", ignoreCase = true))
+                        it.name.equals("AliceStart.ini", ignoreCase = true) ||
+                        it.name.equals("System39.ini", ignoreCase = true))
                 }
                 if (ignoreCaseIni != null) {
                     iniFile = ignoreCaseIni
                 }
             }
-            if (!iniFile.exists()) {
+            if (!iniFile.exists() && !isSys3x) {
                 val err = context.getString(R.string.toast_no_ini, dir.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, null, err)
             }
             val icon = findIcon(dir)
-            val ini = System40Ini.parse(iniFile)
-            if (ini.gameName == null) {
+            val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
+            val fallbackSys3Name = if (isSys3x) {
+                if (GameCatalog.isEscalayerGameDir(dir)) {
+                    context.getString(R.string.game_escalayer_title)
+                } else {
+                    dir.name
+                }
+            } else {
+                null
+            }
+            val effectiveGameName = ini.gameName?.takeIf { it.isNotBlank() } ?: fallbackSys3Name
+            if (effectiveGameName == null) {
                 val err = context.getString(R.string.toast_no_GameName, iniFile.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, icon, err)
@@ -84,7 +98,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             savedir.mkdirs()
             val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
-            val rawName = ini.gameName.replace("兰斯１０", "兰斯10")
+            val rawName = effectiveGameName.replace("兰斯１０", "兰斯10")
             val displayName = if (hasModMarker) {
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
@@ -189,7 +203,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         return try {
             val iconFile = icon ?: return null
             if (!iconFile.isFile) return null
-            val cacheKey = "${iconFile.absolutePath}:${iconFile.lastModified()}"
+            val cacheKey = "${iconFile.absolutePath}:${iconFile.lastModified()}:$reqSize"
             synchronized(iconBitmapCache) {
                 iconBitmapCache.get(cacheKey)?.takeIf { !it.isRecycled }
             }?.let { return it }
@@ -266,7 +280,7 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
             val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
             val raw = file.readBytes()
             val latin = String(raw, Charsets.ISO_8859_1)
-            val gnMatch = Regex("""(?:^|\r?\n)\s*GameName\s*=\s*"([^\r\n"]*)"""").find(latin)
+            val gnMatch = Regex("""(?:^|\r?\n)\s*(?:GameName|Regist)\s*=\s*"([^\r\n"]*)"""").find(latin)
             val chosenCharset = if (gnMatch != null) {
                 val gnRaw = gnMatch.groupValues[1].toByteArray(Charsets.ISO_8859_1)
                 val decoded = ArchiveExtractor.decodeBestCjkText(gnRaw, preferGbkOnTie = true)
@@ -282,16 +296,18 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
                 Charset.forName("GBK")
             }
             var gameName: String? = null
+            var registName: String? = null
             var SaveFolder: String? = null
             for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
                         "GameName" -> gameName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
+                        "Regist" -> registName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                         "SaveFolder" -> SaveFolder = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                     }
                 }
             }
-            return System40Ini(gameName, SaveFolder)
+            return System40Ini(gameName ?: registName, SaveFolder)
         }
     }
 }
@@ -623,6 +639,13 @@ class GameList(activity: Activity) {
                             setInstallProgress(sessionGen, progress, cancellable = true, resumable = false)
                         }
                     }
+                    val isRance02 = GameCatalog.classifyDirectory(imported, imported.name) == GameCatalog.ID_RANCE02
+                    mergeInstallSetData(listOf(imported), imported, skipRance02Bloat = isRance02) {
+                        if (abortHandle.isAborted) throw CancellationException()
+                    }
+                    if (isRance02) {
+                        pruneRedundantBaseBloat(imported)
+                    }
                     maybeRecordPreinstalledModMeta(imported, uri)
                     imported
                 }
@@ -670,6 +693,7 @@ class GameList(activity: Activity) {
                         storagePath = storagePath,
                         sessionGen = sessionGen,
                         expectedAinName = expectedAinName,
+                        targetGameId = targetGameId,
                         checkCancelled = {
                             if (abortHandle.isAborted || myJob?.isActive == false) {
                                 throw CancellationException()
@@ -802,15 +826,23 @@ class GameList(activity: Activity) {
         return false
     }
 
+    private fun isSystem4GameRoot(dir: File): Boolean {
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+        val hasAin = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+        return hasIni && hasAin
+    }
+
+    private fun isSystem3GameRoot(dir: File): Boolean {
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        if (isSystem4GameRoot(dir)) return false
+        return files.any { it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true) }
+    }
+
     private fun findGameRootDir(root: File, expectedAinName: String?): File? {
         val candidates = root.walkTopDown()
             .filter { d ->
-                d.isDirectory && run {
-                    val files = d.listFiles()?.filter { it.isFile }.orEmpty()
-                    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
-                    val hasAin = files.any { it.name.endsWith(".ain", true) }
-                    hasIni && hasAin
-                }
+                d.isDirectory && (isSystem4GameRoot(d) || isSystem3GameRoot(d))
             }
             .sortedBy { it.relativeTo(root).path.length }
             .toList()
@@ -820,6 +852,53 @@ class GameList(activity: Activity) {
             }?.let { return it }
         }
         return candidates.firstOrNull()
+    }
+
+    /** Merges multi-disc System 3.x sibling directories (e.g. Disc1/GAMEDATA .. Disc3/GAMEDATA). */
+    private fun mergeSiblingMultiDiscDirs(
+        searchRoot: File,
+        primaryDir: File,
+        checkCancelled: () -> Unit
+    ) {
+        if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
+        val primaryCanonical = primaryDir.canonicalPath
+        val primaryScenario = primaryDir.listFiles()?.firstOrNull {
+            it.isFile && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }?.name
+        val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr")
+        searchRoot.walkTopDown()
+            .filter { d ->
+                d.isDirectory && d.canonicalPath != primaryCanonical && run {
+                    val lower = d.path.replace('\\', '/').lowercase()
+                    lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
+                }
+            }
+            .toList()
+            .forEach { sibling ->
+                checkCancelled()
+                val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
+                val otherScenario = files.firstOrNull {
+                    it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
+                }?.name
+                if (primaryScenario != null && otherScenario != null &&
+                    !otherScenario.equals(primaryScenario, ignoreCase = true)
+                ) {
+                    return@forEach
+                }
+                for (f in files) {
+                    checkCancelled()
+                    if (NativeGameImport.skip(f.name)) continue
+                    val ext = f.extension.lowercase()
+                    if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
+                    val target = File(primaryDir, f.name)
+                    if (!target.exists()) {
+                        if (!f.renameTo(target)) {
+                            f.copyTo(target, overwrite = false)
+                            f.delete()
+                        }
+                    }
+                }
+            }
     }
 
     private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
@@ -861,9 +940,11 @@ class GameList(activity: Activity) {
         storagePath: File,
         sessionGen: Long,
         expectedAinName: String? = null,
+        targetGameId: String? = null,
         checkCancelled: () -> Unit,
         progressCallback: (String) -> Unit
     ): File {
+        val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -873,7 +954,10 @@ class GameList(activity: Activity) {
                 uri = uri,
                 destDir = currentStageDir,
                 tempScratchParent = storagePath,
-                shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                shouldSkip = { rel ->
+                    shouldSkipBaseInstallEntry(rel) ||
+                        (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
                 onProgress = { totalBytes, entryPath ->
@@ -887,7 +971,7 @@ class GameList(activity: Activity) {
                 }
             )
 
-            var srcDir: File? = findGameRootDir(currentStageDir, expectedAinName)
+            var srcDir: File? = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
             var stage = 1
             while (srcDir == null && stage <= 3) {
                 checkCancelled()
@@ -905,7 +989,10 @@ class GameList(activity: Activity) {
                     ArchiveExtractor.extractFileToDirectory(
                         archiveFile = chosenDisc,
                         destDir = nextDir,
-                        shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                        shouldSkip = { rel ->
+                            shouldSkipBaseInstallEntry(rel) ||
+                                (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                        },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
                         onProgress = { totalBytes, entryPath ->
@@ -924,7 +1011,7 @@ class GameList(activity: Activity) {
                         .filter { it.isFile && it.name.lowercase().endsWith(".mds") }
                         .forEach { it.delete() }
                     currentStageDir = nextDir
-                    srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                    srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
                     stage++
                     continue
                 }
@@ -933,7 +1020,11 @@ class GameList(activity: Activity) {
                     .filter {
                         it.isFile &&
                             ArchiveExtractor.isSupportedArchiveName(it.name) &&
-                            !shouldSkipBaseInstallEntry(it.name)
+                            !shouldSkipBaseInstallEntry(it.name) &&
+                            (!isRance02Target || !isBaseInstallBloatRelPath(
+                                it.relativeTo(currentStageDir).path.replace('\\', '/'),
+                                skipPatchSubdir = true
+                            ))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -942,7 +1033,10 @@ class GameList(activity: Activity) {
                 ArchiveExtractor.extractFileToDirectory(
                     archiveFile = chosenArchive,
                     destDir = nextDir,
-                    shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                    shouldSkip = { rel ->
+                        shouldSkipBaseInstallEntry(rel) ||
+                            (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                    },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
                     onProgress = { totalBytes, entryPath ->
@@ -957,24 +1051,50 @@ class GameList(activity: Activity) {
                 )
                 for (a in archives) a.delete()
                 currentStageDir = nextDir
-                srcDir = findGameRootDir(currentStageDir, expectedAinName)
+                srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
                 stage++
             }
 
             if (srcDir == null) {
                 val hasIni = tempDir.walkTopDown().any {
-                    it.isFile && (it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true))
+                    it.isFile && (it.name.equals("System40.ini", true) ||
+                        it.name.equals("AliceStart.ini", true) ||
+                        it.name.equals("System39.ini", true))
                 }
                 throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
             }
-            val ainFile = srcDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
-                ?: throw InstallFailureException(R.string.directory_no_game)
-            if (!expectedAinName.isNullOrBlank() && !ainFile.name.equals(expectedAinName, ignoreCase = true)) {
+            mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
+            val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
+            val ainFile = srcFiles.firstOrNull { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+            val sys3Scenario = srcFiles.firstOrNull {
+                it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
+            }
+            if (ainFile == null && sys3Scenario == null) {
+                throw InstallFailureException(R.string.directory_no_game)
+            }
+            if (!expectedAinName.isNullOrBlank() &&
+                srcFiles.none { it.name.equals(expectedAinName, ignoreCase = true) }
+            ) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val rawBaseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension)
-            val baseName = sanitizeDerivedGameDirName(rawBaseName)
+            val isRance02 = GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
+            mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (isRance02) {
+                pruneRedundantBaseBloat(srcDir)
+            }
+            val baseName = when {
+                GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
+                ainFile != null -> sanitizeDerivedGameDirName(
+                    ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension),
+                    fallback = "Game"
+                )
+                sys3Scenario != null -> sanitizeDerivedGameDirName(
+                    ArchiveExtractor.repairSjisAsGbkMojibake(sys3Scenario.nameWithoutExtension),
+                    fallback = "System3"
+                )
+                else -> "Game"
+            }
             var dstDir = File(storagePath, baseName)
             var i = 1
             while (dstDir.exists()) {
@@ -989,7 +1109,7 @@ class GameList(activity: Activity) {
         }
     }
 
-    private fun sanitizeDerivedGameDirName(raw: String): String {
+    private fun sanitizeDerivedGameDirName(raw: String, fallback: String = "Game"): String {
         val cleaned = raw
             .replace('/', '_')
             .replace('\\', '_')
@@ -998,7 +1118,7 @@ class GameList(activity: Activity) {
             .trim()
             .trimStart('.', ' ', '\t')
             .trimEnd(' ', '.')
-        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") "Game" else cleaned
+        return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") fallback else cleaned
     }
 
     fun isUninstalling(item: Item): Boolean = uninstallingPaths.contains(item.path.absolutePath)
@@ -1561,26 +1681,6 @@ class GameList(activity: Activity) {
         }
     }
 
-    private fun resolveCaseInsensitiveDest(targetDir: File, relPath: String): File {
-        val parts = relPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
-        var cur = targetDir
-        for ((idx, seg) in parts.withIndex()) {
-            val isLast = idx == parts.lastIndex
-            val matched = cur.listFiles()?.firstOrNull { child ->
-                if (isLast) {
-                    child.isFile &&
-                        !child.name.endsWith(".vanilla.bak") &&
-                        !child.name.endsWith(".vanilla.bak.tmp") &&
-                        child.name.equals(seg, ignoreCase = true)
-                } else {
-                    child.isDirectory && child.name.equals(seg, ignoreCase = true)
-                }
-            }
-            cur = matched ?: File(cur, seg)
-        }
-        return cur
-    }
-
     private fun applyModStagingToGameDir(
         stagingDir: File,
         targetDir: File,
@@ -1679,5 +1779,157 @@ class GameList(activity: Activity) {
             }
         }
         return cleanReplaceIfStandalone || isFullStandalone
+    }
+}
+
+internal fun resolveCaseInsensitiveDest(targetDir: File, relPath: String): File {
+    val parts = relPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
+    var cur = targetDir
+    for ((idx, seg) in parts.withIndex()) {
+        val isLast = idx == parts.lastIndex
+        val matched = cur.listFiles()?.firstOrNull { child ->
+            if (isLast) {
+                child.isFile &&
+                    !child.name.endsWith(".vanilla.bak") &&
+                    !child.name.endsWith(".vanilla.bak.tmp") &&
+                    child.name.equals(seg, ignoreCase = true)
+            } else {
+                child.isDirectory && child.name.equals(seg, ignoreCase = true)
+            }
+        }
+        cur = matched ?: File(cur, seg)
+    }
+    return cur
+}
+
+internal fun isBaseInstallBloatRelPath(relPath: String, skipPatchSubdir: Boolean = true): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val fileNameLower = segments.last().lowercase()
+    if (fileNameLower.endsWith(".bak") && !fileNameLower.endsWith(".vanilla.bak")) {
+        return true
+    }
+    if (fileNameLower.contains("翻墙软件")) {
+        return true
+    }
+    val matchSeg = { seg: String ->
+        seg == "cgpatch" || seg == "directx" || (skipPatchSubdir && seg == "补丁")
+    }
+    for (i in 0 until segments.size - 1) {
+        if (matchSeg(segments[i].lowercase())) {
+            return true
+        }
+    }
+    return matchSeg(segments.last().lowercase())
+}
+
+internal fun preferCnRootOverInstallData(candidate: File?): File? {
+    if (candidate != null &&
+        candidate.name.equals("InstallData", ignoreCase = true) &&
+        candidate.parentFile?.name.equals("InstallSet", ignoreCase = true)
+    ) {
+        val outerCnRoot = candidate.parentFile?.parentFile
+        if (outerCnRoot != null && outerCnRoot.isDirectory &&
+            outerCnRoot.listFiles()?.any {
+                it.isFile && (it.name.endsWith(".ain", ignoreCase = true) ||
+                    it.name.equals("AliceStart.ini", ignoreCase = true) ||
+                    it.name.equals("System40.ini", ignoreCase = true))
+            } == true
+        ) {
+            return outerCnRoot
+        }
+    }
+    return candidate
+}
+
+internal fun mergeInstallSetData(
+    searchRoots: List<File>,
+    destGameDir: File,
+    skipRance02Bloat: Boolean = false,
+    checkCancelled: () -> Unit = {}
+) {
+    if (!skipRance02Bloat &&
+        GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_RANCE02
+    ) {
+        return
+    }
+    val destCanonical = try {
+        destGameDir.canonicalPath
+    } catch (_: Throwable) {
+        destGameDir.absolutePath
+    }
+    val installDataDirs = mutableListOf<File>()
+    for (root in searchRoots) {
+        if (!root.exists()) continue
+        root.walkTopDown()
+            .filter { d ->
+                d.isDirectory &&
+                    d.name.equals("InstallData", ignoreCase = true) &&
+                    d.parentFile?.name.equals("InstallSet", ignoreCase = true)
+            }
+            .forEach { d ->
+                val dCanon = try { d.canonicalPath } catch (_: Throwable) { d.absolutePath }
+                if (dCanon != destCanonical) {
+                    installDataDirs.add(d)
+                }
+            }
+    }
+    for (dataDir in installDataDirs.distinctBy { try { it.canonicalPath } catch (_: Throwable) { it.absolutePath } }) {
+        dataDir.walkTopDown().forEach { f ->
+            checkCancelled()
+            if (!f.isFile) return@forEach
+            val rel = f.relativeTo(dataDir).path.replace('\\', '/')
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || (skipRance02Bloat && isBaseInstallBloatRelPath(rel))) {
+                return@forEach
+            }
+            val destFile = resolveCaseInsensitiveDest(destGameDir, rel)
+            if (!destFile.exists()) {
+                destFile.parentFile?.mkdirs()
+                f.copyTo(destFile, overwrite = false)
+            }
+        }
+        val installSetDir = dataDir.parentFile
+        if (installSetDir != null && installSetDir.name.equals("InstallSet", ignoreCase = true)) {
+            val setCanon = try { installSetDir.canonicalPath } catch (_: Throwable) { installSetDir.absolutePath }
+            if (setCanon.startsWith(destCanonical + File.separator) && setCanon != destCanonical) {
+                installSetDir.deleteRecursively()
+            }
+        }
+    }
+}
+
+internal fun pruneRedundantBaseBloat(destGameDir: File) {
+    if (GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_RANCE02) {
+        return
+    }
+    val topFiles = destGameDir.listFiles()?.filter { it.isFile }.orEmpty()
+    val hasGameData = topFiles.any {
+        it.name.endsWith(".ain", ignoreCase = true) ||
+            it.name.endsWith(".ald", ignoreCase = true) ||
+            it.name.endsWith(".afa", ignoreCase = true)
+    }
+    if (!hasGameData) return
+    val dirsToDelete = mutableListOf<File>()
+    val filesToDelete = mutableListOf<File>()
+    destGameDir.walkTopDown().forEach { f ->
+        if (f == destGameDir) return@forEach
+        val rel = f.relativeTo(destGameDir).path.replace('\\', '/')
+        if (f.isDirectory) {
+            if (f.name.equals("CGpatch", ignoreCase = true) ||
+                f.name.equals("补丁", ignoreCase = true) ||
+                f.name.equals("DirectX", ignoreCase = true)
+            ) {
+                dirsToDelete.add(f)
+            }
+        } else if (f.isFile && isBaseInstallBloatRelPath(rel)) {
+            filesToDelete.add(f)
+        }
+    }
+    for (f in filesToDelete) {
+        try { f.delete() } catch (_: Throwable) {}
+    }
+    for (d in dirsToDelete) {
+        try { d.deleteRecursively() } catch (_: Throwable) {}
     }
 }

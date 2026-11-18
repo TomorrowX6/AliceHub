@@ -2574,6 +2574,12 @@ static void update_movie_skip_state(void)
 
 static void handle_window_event(SDL_Event *e)
 {
+	if (e->window.event == SDL_WINDOWEVENT_RESTORED)
+		gfx_trace_resume("window.restored");
+	else if (e->window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+		gfx_trace_resume("window.focus_gained");
+	else if (e->window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+		gfx_trace_resume("window.focus_lost");
 	switch (e->window.event) {
 	case SDL_WINDOWEVENT_EXPOSED:
 		gfx_swap();
@@ -2588,6 +2594,7 @@ static void handle_window_event(SDL_Event *e)
 		break;
 	case SDL_WINDOWEVENT_RESTORED:
 		gfx_android_on_foreground();
+		gfx_restore_window();
 		break;
 	case SDL_WINDOWEVENT_FOCUS_GAINED:
 		mouse_focus = true;
@@ -2646,7 +2653,14 @@ void handle_window_events(void)
 		case SDL_WINDOWEVENT:
 			handle_window_event(&e);
 			break;
+		case SDL_RENDER_DEVICE_RESET:
+			gfx_trace_resume("device_reset.resources_not_rebuilt");
+			break;
+		case SDL_RENDER_TARGETS_RESET:
+			gfx_trace_resume("targets_reset");
+			break;
 		case SDL_APP_WILLENTERBACKGROUND:
+			gfx_trace_resume("app.background");
 			kbd_ctrl_down = false;
 			atomic_store(&touch_ctrl_skip, false);
 			memset(kbd_key_state, 0, sizeof(kbd_key_state));
@@ -2659,6 +2673,7 @@ void handle_window_events(void)
 			savedata_flush_on_background();
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
+			gfx_trace_resume("app.foreground");
 			mixer_set_app_backgrounded(false);
 			gfx_android_on_foreground();
 			break;
@@ -2695,7 +2710,14 @@ void handle_events(void)
 		case SDL_APP_LOWMEMORY:
 			PE_FlushCGCache();
 			break;
+		case SDL_RENDER_DEVICE_RESET:
+			gfx_trace_resume("device_reset.resources_not_rebuilt");
+			break;
+		case SDL_RENDER_TARGETS_RESET:
+			gfx_trace_resume("targets_reset");
+			break;
 		case SDL_APP_WILLENTERBACKGROUND:
+			gfx_trace_resume("app.background");
 			kbd_ctrl_down = false;
 			atomic_store(&touch_ctrl_skip, false);
 			memset(kbd_key_state, 0, sizeof(kbd_key_state));
@@ -2708,6 +2730,7 @@ void handle_events(void)
 			savedata_flush_on_background();
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
+			gfx_trace_resume("app.foreground");
 			mixer_set_app_backgrounded(false);
 			gfx_android_on_foreground();
 			gfx_swap();

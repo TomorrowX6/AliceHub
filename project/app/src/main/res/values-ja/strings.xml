@@ -236,9 +236,12 @@
     <string name="game_dohnadohna_title">ドーナドーナ いっしょにわるいことをしよう</string>
     <string name="game_evenicle_title">イブニクル</string>
     <string name="game_sengokurance_title">戦国ランス</string>
+    <string name="game_rance01_title">ランス01 光をもとめて</string>
+    <string name="game_rance02_title">ランス02 －反逆の少女たち－</string>
     <string name="game_rance03_title">ランス03 リーザス陥落</string>
     <string name="game_rance08_title">ランス08 ランスクエスト マグナム</string>
     <string name="game_rance09_title">ランス09 ヘルマン革命</string>
+    <string name="game_escalayer_title">超昂天使エスカレイヤー</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>
@@ -258,6 +261,8 @@
     <string name="switch_running_game_confirm">終了して起動</string>
     <string name="game_exit_title">ゲーム終了</string>
     <string name="game_exit_message">ゲームを終了しますか？\n※未保存のデータは失われます</string>
+    <string name="game_reset_title">リスタート</string>
+    <string name="game_reset_message">ゲームを最初からやり直しますか？\n※未保存のデータは失われます</string>
     <string name="dialog_btn_stop">終了</string>
     <string name="dialog_btn_continue">続行</string>
 

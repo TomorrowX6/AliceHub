@@ -37,6 +37,7 @@
 #include "vm/page.h"
 #include "dungeon/dungeon.h"
 #include "xsystem4.h"
+#include "modifier.h"
 
 static enum sprite_engine_type engine_type = UNINITIALIZED_SPRITE_ENGINE;
 static struct sact_sprite **sprites = NULL;
@@ -178,12 +179,20 @@ int sact_GetMainSurfaceNumber(void)
 
 int sact_Update(void)
 {
+	static uint32_t s_last_idle_mod_ms = 0;
 	handle_events();
 	sprite_call_plugins();
 	if (scene_is_dirty) {
 		scene_render();
 		gfx_swap();
 		scene_is_dirty = false;
+		s_last_idle_mod_ms = SDL_GetTicks();
+	} else {
+		uint32_t now = SDL_GetTicks();
+		if (now - s_last_idle_mod_ms >= 30) {
+			s_last_idle_mod_ms = now;
+			modifier_on_frame();
+		}
 	}
 	return 1;
 }

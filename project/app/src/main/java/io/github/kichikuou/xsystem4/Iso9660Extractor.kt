@@ -67,6 +67,7 @@ object Iso9660Extractor {
                     val entries = parseDirectory(readExtentBytes(ch, desc.layout, dlba, dsize), desc.joliet)
                     var hasIni = false
                     var hasMatchingAin = false
+                    var hasSys3Scenario = false
                     for (e in entries) {
                         if (e.isDir) {
                             if (e.extents.isNotEmpty()) queue.add(e.extents[0])
@@ -76,16 +77,27 @@ object Iso9660Extractor {
                             ) {
                                 hasIni = true
                             }
-                            if (e.name.endsWith(".ain", ignoreCase = true)) {
+                            if (e.name.endsWith(".ain", ignoreCase = true) &&
+                                !e.name.equals("System39.ain", ignoreCase = true)
+                            ) {
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true)
                                 ) {
                                     hasMatchingAin = true
                                 }
                             }
+                            if (e.name.endsWith("sa.ald", ignoreCase = true) ||
+                                e.name.equals("adisk.ald", ignoreCase = true)
+                            ) {
+                                if (expectedAinName.isNullOrBlank() ||
+                                    e.name.equals(expectedAinName, ignoreCase = true)
+                                ) {
+                                    hasSys3Scenario = true
+                                }
+                            }
                         }
                     }
-                    if (hasIni && hasMatchingAin) return true
+                    if ((hasIni && hasMatchingAin) || hasSys3Scenario) return true
                 }
                 false
             }

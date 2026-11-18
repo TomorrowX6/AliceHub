@@ -237,9 +237,12 @@
     <string name="game_dohnadohna_title">Dohna Dohna: Let\'s Do Bad Things Together</string>
     <string name="game_evenicle_title">Evenicle</string>
     <string name="game_sengokurance_title">Sengoku Rance</string>
+    <string name="game_rance01_title">Rance 01: Quest for Hikari</string>
+    <string name="game_rance02_title">Rance 02: The Rebellious Maidens</string>
     <string name="game_rance03_title">Rance 03: Fall of Leazas</string>
     <string name="game_rance08_title">Rance 08: Rance Quest Magnum</string>
     <string name="game_rance09_title">Rance 09: The Helman Revolution</string>
+    <string name="game_escalayer_title">Beat Angel Escalayer</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>
@@ -259,6 +262,8 @@
     <string name="switch_running_game_confirm">Close &amp; Launch</string>
     <string name="game_exit_title">Exit Game</string>
     <string name="game_exit_message">Exit the current game?\nUnsaved progress will be lost.</string>
+    <string name="game_reset_title">Restart Game</string>
+    <string name="game_reset_message">Restart the current game?\nAny unsaved progress will be lost.</string>
     <string name="dialog_btn_stop">Stop</string>
     <string name="dialog_btn_continue">Continue</string>
 

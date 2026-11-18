@@ -368,16 +368,16 @@ static int number_han2zen(char *buf, size_t size)
 			tmp[i++] = (sys4_text_is_gbk ? 0xb0 : 0x4f) + (*p - '0');
 			break;
 		case '-':
-			tmp[i++] = 0x81;
-			tmp[i++] = 0x7c;
+			tmp[i++] = sys4_text_is_gbk ? 0xa3 : 0x81;
+			tmp[i++] = sys4_text_is_gbk ? 0xad : 0x7c;
 			break;
 		case '.':
-			tmp[i++] = 0x81;
-			tmp[i++] = 0x44;
+			tmp[i++] = sys4_text_is_gbk ? 0xa3 : 0x81;
+			tmp[i++] = sys4_text_is_gbk ? 0xae : 0x44;
 			break;
 		case ' ':
-			tmp[i++] = 0x81;
-			tmp[i++] = 0x40;
+			tmp[i++] = sys4_text_is_gbk ? 0xa1 : 0x81;
+			tmp[i++] = sys4_text_is_gbk ? 0xa1 : 0x40;
 			break;
 		default:
 			tmp[i++] = *p;

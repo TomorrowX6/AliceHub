@@ -1,4 +1,7 @@
 if (NOT TARGET Freetype::Freetype)
+  find_package(freetype CONFIG QUIET PATHS ${CMAKE_FIND_ROOT_PATH}/lib/cmake/freetype NO_DEFAULT_PATH)
+endif()
+if (NOT TARGET Freetype::Freetype)
   include(FetchContent)
   FetchContent_Declare(
     freetype

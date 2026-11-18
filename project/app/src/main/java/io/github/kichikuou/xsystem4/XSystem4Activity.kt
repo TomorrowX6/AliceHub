@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.hardware.input.InputManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -16,6 +21,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
+import android.text.InputType
+import android.util.Log
 import android.util.SparseArray
 import android.util.TypedValue
 import android.view.ContextThemeWrapper
@@ -30,8 +37,10 @@ import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -62,6 +71,7 @@ class XSystem4Activity : SDLActivity() {
         private const val SDL_BUTTON_RETURNKEY_DEFAULT = 0x00000001
         private const val SDL_BUTTON_ESCAPEKEY_DEFAULT = 0x00000002
         private const val SENTINEL_ALICEHUB_QUIT = "__ALICEHUB_QUIT__"
+        private const val SENTINEL_ALICEHUB_RESET = "__ALICEHUB_RESET__"
 
         private val screenshotExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
             Thread(r, "XSystem4Screenshot").apply { isDaemon = true }
@@ -90,10 +100,21 @@ class XSystem4Activity : SDLActivity() {
     private var nativePadCount: Int = 0
     private var lastReportedConnectedPads: Int = 0
     private var inputDeviceListener: InputManager.InputDeviceListener? = null
+    private val xsystem35Midi by lazy { XSystem35MidiPlayer(this) }
 
     fun currentGameRoot(): String? = launchedGameRoot
 
     fun currentSaveDir(): String? = launchedSaveDir
+
+    private fun effectiveGameRootFile(): java.io.File? =
+        (currentGameRoot() ?: intent?.getStringExtra(EXTRA_GAME_ROOT))
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it) }
+
+    private fun effectiveSaveDirFile(): java.io.File? =
+        (currentSaveDir() ?: intent?.getStringExtra(EXTRA_SAVE_DIR))
+            ?.takeIf { it.isNotBlank() }
+            ?.let { java.io.File(it) }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppSettings.wrapThemeContext(newBase))
@@ -103,52 +124,81 @@ class XSystem4Activity : SDLActivity() {
         (v * resources.displayMetrics.density).toInt()
 
     fun isRance10Game(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveName = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it).name }
-        return GameModifierBridge.isRance10GameDir(root, saveName)
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isRance10GameDir(root, saveDir?.name, saveDir)
     }
 
     fun isDohnaDohnaGame(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isDohnaDohnaGameDir(root, saveDir?.name, saveDir)
     }
 
     fun isEvenicleGame(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isEvenicleGameDir(root, saveDir?.name, saveDir)
     }
 
     fun isSengokuRanceGame(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isSengokuRanceGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isRance01Game(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isRance01GameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isRance02Game(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isRance02GameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isRance03Game(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isRance03GameDir(root, saveDir?.name, saveDir)
     }
 
     fun isRance08Game(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isRance08GameDir(root, saveDir?.name, saveDir)
     }
 
     fun isRance09Game(): Boolean {
-        val root = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
-        val saveDir = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
         return GameModifierBridge.isRance09GameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isEscalayerGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isEscalayerGameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isSystem3xGame(): Boolean {
+        val root = effectiveGameRootFile()
+        return GameCatalog.isSystem3xGameDir(root)
+    }
+
     private fun syncAllLocksToNative() {
+        if (isSystem3xGame()) {
+            GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedEscLockMask(this))
+            return
+        }
         GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
         GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
         GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
         GameModifierBridge.setSrLiveLocks(GameModifierBridge.getSavedSrLockMask(this))
+        GameModifierBridge.setR01LiveLocks(GameModifierBridge.getSavedR01LockMask(this))
+        GameModifierBridge.setR02LiveLocks(GameModifierBridge.getSavedR02LockMask(this))
         GameModifierBridge.setR03LiveLocks(GameModifierBridge.getSavedR03LockMask(this))
         GameModifierBridge.setR08LiveLocks(GameModifierBridge.getSavedR08LockMask(this))
         GameModifierBridge.setR09LiveLocks(GameModifierBridge.getSavedR09LockMask(this))
@@ -230,8 +280,10 @@ class XSystem4Activity : SDLActivity() {
 
     fun applyGamepadProfile(profile: GamepadProfile) {
         activeGamepadProfile = profile
+        traceEditorReturn("profile.begin")
         GamepadBridge.syncProfileToNative(profile)
         virtualGamepadView?.setProfile(profile)
+        traceEditorReturn("profile.end")
         updatePhysicalPadPresence(showToast = false)
     }
 
@@ -277,7 +329,19 @@ class XSystem4Activity : SDLActivity() {
         )
     }
 
+    private val resumeTraceVersion by lazy {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionName
+    }
+
+    private fun traceEditorReturn(phase: String) {
+        if (!android.util.Log.isLoggable("AliceHubResume", android.util.Log.DEBUG)) return
+        SDLActivity.traceResumeState("game.$phase version=${resumeTraceVersion} " +
+            "finishing=$isFinishing pad=${virtualGamepadView?.resumeVisibilityState()}")
+    }
+
     fun openGamepadEditorActivity(initialTab: Int = GamepadEditorActivity.TAB_VIRTUAL) {
+        traceEditorReturn("editor.launch")
         val key = currentGamepadProfileKey()
         val gid = currentGamepadGameId()
         val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
@@ -647,6 +711,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
+        traceEditorReturn("onNewIntent.begin")
         super.onNewIntent(intent)
         val incomingRoot = intent.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }
         val activeRoot = launchedGameRoot
@@ -674,6 +739,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onPause() {
+        traceEditorReturn("onPause.begin")
         setCtrlSkipLatched(false)
         virtualGamepadView?.releaseAllInputs()
         try {
@@ -681,12 +747,26 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         resetMovieSkipOverlay()
-        lastSyncedConfigSeq = GameModifierBridge.syncLockMaskFromNative(this)
+        if (isSystem3xGame()) {
+            xsystem35Midi.onActivityPause()
+        }
+        if (launchedGameRoot != null) {
+            lastSyncedConfigSeq = if (isSystem3xGame()) {
+                GameModifierBridge.syncEscLockMaskFromNative(this)
+            } else {
+                GameModifierBridge.syncLockMaskFromNative(this)
+            }
+        }
         super.onPause()
+        traceEditorReturn("onPause.end")
     }
 
     override fun onResume() {
+        traceEditorReturn("onResume.begin")
         super.onResume()
+        if (isSystem3xGame()) {
+            xsystem35Midi.onActivityResume()
+        }
         try {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
@@ -813,6 +893,7 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == REQ_GAMEPAD_EDITOR) {
+            traceEditorReturn("editor.result=$resultCode")
             try {
                 applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
             } catch (_: Throwable) {
@@ -851,6 +932,7 @@ class XSystem4Activity : SDLActivity() {
         val buttonTexts = args.getStringArray("buttonTexts") ?: emptyArray()
 
         val isSentinelQuit = rawTitle == SENTINEL_ALICEHUB_QUIT
+        val isSentinelReset = rawTitle == SENTINEL_ALICEHUB_RESET
         val isQuitDialog = isSentinelQuit || (
             rawTitle.equals("xsystem4", ignoreCase = true) && (
                 rawMessage.contains("结束游戏") ||
@@ -863,6 +945,7 @@ class XSystem4Activity : SDLActivity() {
             rawTitle.contains("Error", ignoreCase = true)
 
         val displayTitle = when {
+            isSentinelReset -> uiCtx.getString(R.string.game_reset_title)
             isQuitDialog -> uiCtx.getString(R.string.game_exit_title)
             isErrorDialog -> uiCtx.getString(R.string.error)
             rawTitle.isBlank() || rawTitle.equals("xsystem4", ignoreCase = true) ->
@@ -870,10 +953,10 @@ class XSystem4Activity : SDLActivity() {
             else -> rawTitle
         }
 
-        val displayMessage = if (isSentinelQuit) {
-            uiCtx.getString(R.string.game_exit_message)
-        } else {
-            rawMessage
+        val displayMessage = when {
+            isSentinelReset -> uiCtx.getString(R.string.game_reset_message)
+            isSentinelQuit -> uiCtx.getString(R.string.game_exit_message)
+            else -> rawMessage
                 .replace("\r\n", "\n")
                 .replace(Regex("\n{2,}"), "\n")
                 .trim()
@@ -1162,7 +1245,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun getLibraries(): Array<String> {
-        return arrayOf("SDL2", "xsystem4")
+        return if (isSystem3xGame()) arrayOf("SDL2", "xsystem35") else arrayOf("SDL2", "xsystem4")
     }
 
     override fun getArguments(): Array<String> {
@@ -1191,6 +1274,20 @@ class XSystem4Activity : SDLActivity() {
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
         } catch (_: Throwable) {
         }
+        if (isSystem3xGame()) {
+            val rootFile = java.io.File(gameRoot)
+            val isSys39 = rootFile.listFiles()?.any { f ->
+                f.isFile && (
+                    f.name.equals("System39.ini", ignoreCase = true) ||
+                        f.name.equals("System39.ain", ignoreCase = true)
+                    )
+            } == true
+            return if (isSys39) {
+                arrayOf("-gamedir", gameRoot, "-savedir", saveFolder, "-saveformat", "system39")
+            } else {
+                arrayOf("-gamedir", gameRoot, "-savedir", saveFolder)
+            }
+        }
         return arrayOf("--save-folder", saveFolder, "--save-format=rsm", gameRoot)
     }
 
@@ -1216,7 +1313,11 @@ class XSystem4Activity : SDLActivity() {
         if (launchedGameRoot != null) {
             GameCatalog.clearRunningGameRoot(this)
             try {
-                GameModifierBridge.syncLockMaskFromNative(this)
+                if (isSystem3xGame()) {
+                    GameModifierBridge.syncEscLockMaskFromNative(this)
+                } else {
+                    GameModifierBridge.syncLockMaskFromNative(this)
+                }
             } catch (_: Throwable) {
             }
         }
@@ -1229,7 +1330,13 @@ class XSystem4Activity : SDLActivity() {
             // Let SDL stop and join its native thread before terminating the game process.
             super.onDestroy()
         } finally {
-            Process.killProcess(Process.myPid())
+            try {
+                if (isSystem3xGame()) {
+                    xsystem35Midi.release()
+                }
+            } finally {
+                Process.killProcess(Process.myPid())
+            }
         }
     }
 
@@ -1304,5 +1411,420 @@ class XSystem4Activity : SDLActivity() {
             }
         }
         return super.onUnhandledMessage(command, param)
+    }
+
+    // Native JNI helpers invoked from xsystem35's SDL thread (midi.android.c / input_modal.c)
+    @Suppress("unused")
+    fun inputString(msg: String, oldVal: String, maxLen: Int): String? {
+        val result = arrayOfNulls<String?>(1)
+        runOnUiThread {
+            val input = EditText(this).apply {
+                inputType = InputType.TYPE_CLASS_TEXT
+                setText(oldVal)
+            }
+            AlertDialog.Builder(this)
+                .setMessage(msg)
+                .setView(input)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val s = input.text.toString()
+                    result[0] = if (maxLen <= 0) "" else if (s.length <= maxLen) s else s.substring(0, maxLen)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .setOnDismissListener {
+                    synchronized(result) {
+                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).notify()
+                    }
+                }
+                .show()
+        }
+        synchronized(result) {
+            try {
+                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).wait()
+            } catch (_: InterruptedException) {
+            }
+        }
+        return result[0]
+    }
+
+    @Suppress("unused")
+    fun inputNumber(msg: String, min: Int, max: Int, initial: Int): Int {
+        val result = intArrayOf(-1)
+        runOnUiThread {
+            val input = NumberPicker(this).apply {
+                minValue = min
+                maxValue = max
+                value = initial.coerceIn(min, max)
+            }
+            AlertDialog.Builder(this)
+                .setMessage(msg)
+                .setView(input)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    input.clearFocus()
+                    result[0] = input.value
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .setOnDismissListener {
+                    synchronized(result) {
+                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).notify()
+                    }
+                }
+                .show()
+        }
+        synchronized(result) {
+            try {
+                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).wait()
+            } catch (_: InterruptedException) {
+            }
+        }
+        return result[0]
+    }
+
+    @Suppress("unused")
+    fun midiStart(path: String, loop: Int) = xsystem35Midi.start(path, loop)
+
+    @Suppress("unused")
+    fun midiStop() = xsystem35Midi.stop()
+
+    @Suppress("unused")
+    fun midiPause() = xsystem35Midi.pause()
+
+    @Suppress("unused")
+    fun midiUnpause() = xsystem35Midi.unpause()
+
+    @Suppress("unused")
+    fun midiSetVolume(gain: Float) = xsystem35Midi.setVolume(gain)
+
+    @Suppress("unused")
+    fun midiFadeStart(durationMs: Int, targetGain: Float, stopAfter: Boolean) =
+        xsystem35Midi.fadeStart(durationMs, targetGain, stopAfter)
+
+    @Suppress("unused")
+    fun midiIsFading(): Boolean = xsystem35Midi.isFading()
+
+    @Suppress("unused")
+    fun midiCurrentPosition(): Int = xsystem35Midi.currentPosition()
+
+    private class XSystem35MidiPlayer(context: Context) {
+        private val lock = Any()
+        private val appContext = context.applicationContext
+        private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        private val mainHandler = Handler(Looper.getMainLooper())
+        private var player: MediaPlayer? = MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+        }
+        private var focusRequest: AudioFocusRequest? = null
+        private var hasAudioFocus = false
+        private var active = false
+        private var pausedByGame = false
+        private var pausedByActivity = false
+        private var pausedByFocus = false
+        private var currentGain = 1.0f
+        private var duckGain = 1.0f
+        private var fadeGen = 0
+        private var startGen = 0
+        private var remainingRepeats = 0
+        @Volatile
+        private var fadingFlag = false
+
+        private val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+            synchronized(lock) {
+                when (focusChange) {
+                    AudioManager.AUDIOFOCUS_GAIN -> {
+                        hasAudioFocus = true
+                        pausedByFocus = false
+                        duckGain = 1.0f
+                        applyVolumeLocked()
+                        syncPlaybackStateLocked()
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        duckGain = 0.25f
+                        applyVolumeLocked()
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                        pausedByFocus = true
+                        syncPlaybackStateLocked()
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS -> {
+                        hasAudioFocus = false
+                        pausedByFocus = true
+                        syncPlaybackStateLocked()
+                    }
+                }
+            }
+        }
+
+        private fun requestFocusLocked(): Boolean {
+            val am = audioManager ?: return true
+            if (hasAudioFocus) return true
+            val res = if (Build.VERSION.SDK_INT >= 26) {
+                val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener(focusListener, mainHandler)
+                    .build().also { focusRequest = it }
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    focusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                )
+            }
+            hasAudioFocus = (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            return hasAudioFocus
+        }
+
+        private fun abandonFocusLocked() {
+            val am = audioManager ?: return
+            if (!hasAudioFocus) return
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    focusRequest?.let { am.abandonAudioFocusRequest(it) }
+                } else {
+                    @Suppress("DEPRECATION")
+                    am.abandonAudioFocus(focusListener)
+                }
+            } catch (_: Exception) {
+            }
+            hasAudioFocus = false
+        }
+
+        private fun applyVolumeLocked() {
+            val mp = player ?: return
+            val g = (currentGain * duckGain).coerceIn(0.0f, 1.0f)
+            try {
+                mp.setVolume(g, g)
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun syncPlaybackStateLocked() {
+            val mp = player ?: return
+            if (!active) return
+            val shouldPlay = !pausedByGame && !pausedByActivity && !pausedByFocus
+            try {
+                if (shouldPlay && !mp.isPlaying) {
+                    mp.start()
+                } else if (!shouldPlay && mp.isPlaying) {
+                    mp.pause()
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        fun start(path: String, loopCount: Int) {
+            synchronized(lock) {
+                val mp = player ?: return
+                fadeGen++
+                startGen++
+                val myStartGen = startGen
+                fadingFlag = false
+                active = false
+                pausedByGame = false
+                pausedByFocus = false
+                val infinite = loopCount <= 0
+                remainingRepeats = if (infinite) 0 else (loopCount - 1).coerceAtLeast(0)
+                try {
+                    mp.reset()
+                    mp.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    mp.setDataSource(path)
+                    mp.isLooping = infinite
+                    mp.prepare()
+                    mp.setOnCompletionListener {
+                        synchronized(lock) {
+                            if (myStartGen != startGen || !active || infinite) {
+                                return@setOnCompletionListener
+                            }
+                            if (remainingRepeats > 0) {
+                                remainingRepeats--
+                                try {
+                                    mp.seekTo(0)
+                                    syncPlaybackStateLocked()
+                                } catch (e: Exception) {
+                                    Log.w("XSystem35Midi", "Cannot repeat midi: $path", e)
+                                    active = false
+                                    fadingFlag = false
+                                    remainingRepeats = 0
+                                }
+                            } else {
+                                active = false
+                                fadingFlag = false
+                            }
+                        }
+                    }
+                    duckGain = 1.0f
+                    applyVolumeLocked()
+                    requestFocusLocked()
+                    active = true
+                    syncPlaybackStateLocked()
+                } catch (e: Exception) {
+                    Log.w("XSystem35Midi", "Cannot play midi: $path", e)
+                    active = false
+                    remainingRepeats = 0
+                    mp.reset()
+                }
+            }
+        }
+
+        fun stop() {
+            synchronized(lock) {
+                fadeGen++
+                startGen++
+                fadingFlag = false
+                remainingRepeats = 0
+                val mp = player ?: return
+                if (active) {
+                    try {
+                        mp.stop()
+                    } catch (_: Exception) {
+                    }
+                    active = false
+                }
+                pausedByGame = false
+                pausedByFocus = false
+                abandonFocusLocked()
+            }
+        }
+
+        fun pause() {
+            synchronized(lock) {
+                pausedByGame = true
+                syncPlaybackStateLocked()
+            }
+        }
+
+        fun unpause() {
+            synchronized(lock) {
+                pausedByGame = false
+                if (active && !pausedByActivity) {
+                    requestFocusLocked()
+                    pausedByFocus = false
+                }
+                syncPlaybackStateLocked()
+            }
+        }
+
+        fun setVolume(gain: Float) {
+            synchronized(lock) {
+                fadeGen++
+                fadingFlag = false
+                currentGain = gain.coerceIn(0.0f, 1.0f)
+                applyVolumeLocked()
+            }
+        }
+
+        fun fadeStart(durationMs: Int, targetGain: Float, stopAfter: Boolean) {
+            val clampedTarget = targetGain.coerceIn(0.0f, 1.0f)
+            synchronized(lock) {
+                fadeGen++
+                val myGen = fadeGen
+                if (durationMs <= 0 || !active) {
+                    fadingFlag = false
+                    currentGain = clampedTarget
+                    applyVolumeLocked()
+                    if (stopAfter) stop()
+                    return
+                }
+                val startGain = currentGain
+                val startMs = SystemClock.uptimeMillis()
+                val dur = durationMs.toLong().coerceAtLeast(1L)
+                fadingFlag = true
+                val step = object : Runnable {
+                    override fun run() {
+                        synchronized(lock) {
+                            if (myGen != fadeGen || !active) {
+                                if (myGen == fadeGen) fadingFlag = false
+                                return
+                            }
+                            val elapsed = SystemClock.uptimeMillis() - startMs
+                            val frac = (elapsed.toFloat() / dur.toFloat()).coerceIn(0.0f, 1.0f)
+                            currentGain = startGain + (clampedTarget - startGain) * frac
+                            applyVolumeLocked()
+                            if (frac >= 1.0f) {
+                                fadingFlag = false
+                                if (stopAfter) {
+                                    stop()
+                                }
+                            } else {
+                                mainHandler.postDelayed(this, 20L)
+                            }
+                            Unit
+                        }
+                    }
+                }
+                mainHandler.post(step)
+            }
+        }
+
+        fun isFading(): Boolean = fadingFlag
+
+        fun currentPosition(): Int {
+            synchronized(lock) {
+                val mp = player ?: return -1
+                return if (active) {
+                    try {
+                        mp.currentPosition
+                    } catch (_: Exception) {
+                        -1
+                    }
+                } else {
+                    -1
+                }
+            }
+        }
+
+        fun onActivityPause() {
+            synchronized(lock) {
+                pausedByActivity = true
+                syncPlaybackStateLocked()
+            }
+        }
+
+        fun onActivityResume() {
+            synchronized(lock) {
+                pausedByActivity = false
+                if (active && !pausedByGame) {
+                    requestFocusLocked()
+                    pausedByFocus = false
+                }
+                syncPlaybackStateLocked()
+            }
+        }
+
+        fun release() {
+            synchronized(lock) {
+                fadeGen++
+                startGen++
+                fadingFlag = false
+                remainingRepeats = 0
+                active = false
+                abandonFocusLocked()
+                player?.let { mp ->
+                    try {
+                        mp.release()
+                    } catch (_: Exception) {
+                    }
+                }
+                player = null
+                pausedByGame = false
+                pausedByActivity = false
+                pausedByFocus = false
+            }
+        }
     }
 }

@@ -22,5 +22,9 @@ for abi in ${ABI_NAMES}; do
       -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
       -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake
     ninja -C build/${abi} install
+    LLVM_STRIP=$(ls -d "${ANDROID_NDK_HOME}"/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -n 1 || true)
+    if [ -n "$LLVM_STRIP" ] && [ -d "project/app/src/main/jniLibs/${abi}" ]; then
+        "$LLVM_STRIP" --strip-unneeded project/app/src/main/jniLibs/${abi}/*.so
+    fi
     ./collect-licenses.sh build/${abi} project/app/src/main/assets/licenses
 done

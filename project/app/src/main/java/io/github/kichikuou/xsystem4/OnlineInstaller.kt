@@ -250,9 +250,12 @@ object OnlineInstaller {
     const val DOHNA_DOHNA_CDN_URL = "https://alicehub.000.moe/dohnadohna"
     const val EVENICLE_CDN_URL = "https://alicehub.000.moe/evenicle"
     const val SENGOKU_RANCE_CDN_URL = "https://alicehub.000.moe/sengokurance"
+    const val RANCE01_CDN_URL = "https://alicehub.000.moe/rance01"
+    const val RANCE02_CDN_URL = "https://alicehub.000.moe/rance02"
     const val RANCE03_CDN_URL = "https://alicehub.000.moe/rance03"
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
+    const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -920,23 +923,26 @@ object OnlineInstaller {
             .toList()
             .forEach { it.delete() }
 
-        val hasIni = File(stagingDir, "AliceStart.ini").isFile ||
+        val hasSys4Ini = File(stagingDir, "AliceStart.ini").isFile ||
             File(stagingDir, "System40.ini").isFile ||
             (stagingDir.listFiles()?.any {
                 it.isFile && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
             } == true)
-        val ainFile = stagingDir.listFiles()?.firstOrNull {
-            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true)
-        } ?: stagingDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
-        if (!hasIni || ainFile == null) {
+        val sys4AinFile = stagingDir.listFiles()?.firstOrNull {
+            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        } ?: stagingDir.listFiles()?.firstOrNull {
+            it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        }
+        val isSys3x = GameCatalog.isSystem3xGameDir(stagingDir)
+        if (!(hasSys4Ini && sys4AinFile != null) && !isSys3x) {
             throw GameList.InstallFailureException(R.string.directory_no_game)
         }
 
-        val rawAinBase = ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension)
+        val rawAinBase = sys4AinFile?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it.nameWithoutExtension) }.orEmpty()
         val sanitizedManifestBase = sanitizeInstallDirName(manifest.baseName, fallback = "")
         val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
         val dirBaseName = if (sanitizedManifestBase.isNotEmpty() &&
-            (sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 })
+            (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 })
         ) {
             sanitizedManifestBase
         } else {
@@ -1246,9 +1252,12 @@ object OnlineInstaller {
                     GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
                     GameCatalog.ID_EVENICLE -> lower.contains("evenicle")
                     GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
+                    GameCatalog.ID_RANCE01 -> lower.contains("rance01") || lower.contains("rance_01")
+                    GameCatalog.ID_RANCE02 -> lower.contains("rance02") || lower.contains("rance_02")
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
+                    GameCatalog.ID_ESCALAYER -> lower.contains("escalayer")
                     null, "" -> true
                     else -> false
                 }

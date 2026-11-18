@@ -49,6 +49,49 @@ object NativeGameImport {
         return result
     }
 
+    private fun isSys4Root(docs: List<Document>): Boolean {
+        val hasIni = docs.any {
+            !it.folder && !skip(it.name) &&
+                (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
+        }
+        val hasAin = docs.any {
+            !it.folder && !skip(it.name) &&
+                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        }
+        return hasIni && hasAin
+    }
+
+    private fun isSys3Root(docs: List<Document>): Boolean {
+        if (isSys4Root(docs)) return false
+        return docs.any {
+            !it.folder && !skip(it.name) &&
+                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }
+    }
+
+    private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
+        if (docs.any { !it.folder && !skip(it.name) && it.name.equals("DOKI_SA.ALD", true) }) {
+            return "Escalayer"
+        }
+        val sys4Ain = docs.firstOrNull {
+            !it.folder && !skip(it.name) &&
+                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        }
+        if (sys4Ain != null) {
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.name.substringBeforeLast('.'))
+            return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")
+        }
+        val sa = docs.firstOrNull {
+            !it.folder && !skip(it.name) &&
+                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+        }
+        if (sa != null) {
+            val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sa.name.substringBeforeLast('.'))
+            return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "System3")
+        }
+        return if (isMultiDiscSys3) "System3" else "Game"
+    }
+
     suspend fun copyTree(
         context: Context,
         tree: Uri,
@@ -57,18 +100,50 @@ object NativeGameImport {
         progress: suspend (String) -> Unit
     ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        val files = children(context, tree, root)
-        val ainDoc = files.firstOrNull { !it.folder && !skip(it.name) && it.name.endsWith(".ain", true) }
-        if (files.none {
-                !it.folder && !skip(it.name) &&
-                    (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
-            } || ainDoc == null)
-            throw GameList.InstallFailureException(R.string.directory_no_game)
-        if (!expectedAinName.isNullOrBlank() && !ainDoc.name.equals(expectedAinName, ignoreCase = true)) {
+        val rootFiles = children(context, tree, root)
+        var sourceTrees: List<Pair<Uri, List<Document>>> = emptyList()
+        var primaryDocs: List<Document>? = null
+
+        if (isSys4Root(rootFiles) || isSys3Root(rootFiles)) {
+            primaryDocs = rootFiles
+            sourceTrees = listOf(root to rootFiles)
+        } else {
+            // Also support picking a container folder holding Disc1/GAMEDATA .. Disc3/GAMEDATA
+            val discRoots = mutableListOf<Pair<Uri, List<Document>>>()
+            val queue = ArrayDeque<Pair<Uri, Int>>()
+            for (d in rootFiles) {
+                if (d.folder && !skip(d.name)) queue.add(d.uri to 1)
+            }
+            while (queue.isNotEmpty()) {
+                val (dirUri, depth) = queue.removeFirst()
+                val docs = children(context, tree, dirUri)
+                if (isSys4Root(docs) || isSys3Root(docs)) {
+                    primaryDocs = docs
+                    discRoots.add(dirUri to docs)
+                } else if (docs.any {
+                        !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
+                            it.name.endsWith(".bgi", true) || it.name.endsWith(".alk", true))
+                    }
+                ) {
+                    discRoots.add(dirUri to docs)
+                } else if (depth < 2) {
+                    for (sub in docs) {
+                        if (sub.folder && !skip(sub.name)) queue.add(sub.uri to (depth + 1))
+                    }
+                }
+            }
+            if (primaryDocs != null) {
+                sourceTrees = discRoots
+            }
+        }
+
+        val resolvedPrimary = primaryDocs ?: throw GameList.InstallFailureException(R.string.directory_no_game)
+        if (!expectedAinName.isNullOrBlank() &&
+            resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
+        ) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
-        val rawBaseName = ArchiveExtractor.repairSjisAsGbkMojibake(ainDoc.name.substringBeforeLast('.'))
-        val baseName = OnlineInstaller.sanitizeInstallDirName(rawBaseName)
+        val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
         if (staging.parentFile != storageCanonical || !staging.mkdir())
@@ -85,10 +160,11 @@ object NativeGameImport {
                     if (skip(document.name)) continue
                     val target = File(destination, name)
                     if (document.folder) {
-                        if (!target.mkdir()) throw IOException("Cannot create directory: $name")
+                        if (!target.exists() && !target.mkdir()) throw IOException("Cannot create directory: $name")
                         copy(children(context, tree, document.uri), target)
                         continue
                     }
+                    if (target.exists()) continue
                     if (document.size > StatFs(storage.path).availableBytes - 32L * 1024 * 1024)
                         throw GameList.InstallFailureException(R.string.import_no_space)
                     var fileBytes = 0L
@@ -116,7 +192,9 @@ object NativeGameImport {
                         throw IOException("Incomplete document: $name")
                 }
             }
-            copy(files, staging)
+            for ((_, docs) in sourceTrees) {
+                copy(docs, staging)
+            }
             currentCoroutineContext().ensureActive()
             var destination = File(storageCanonical, baseName).canonicalFile
             var index = 1

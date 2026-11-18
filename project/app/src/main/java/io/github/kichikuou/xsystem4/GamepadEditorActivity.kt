@@ -191,7 +191,25 @@ class GamepadEditorActivity : Activity() {
         refreshAllUi()
     }
 
+    private val resumeTraceVersion by lazy {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionName
+    }
+
+    private fun traceEditor(phase: String) {
+        if (android.util.Log.isLoggable("AliceHubResume", android.util.Log.DEBUG)) {
+            android.util.Log.d("AliceHubResume", "editor.$phase version=${resumeTraceVersion} finishing=$isFinishing")
+        }
+    }
+
+    override fun finish() {
+        traceEditor("finish.begin")
+        super.finish()
+        traceEditor("finish.end")
+    }
+
     override fun onResume() {
+        traceEditor("onResume")
         super.onResume()
         applyImmersiveDarkWindow()
         uiHandler.removeCallbacks(livePollRunnable)
@@ -199,6 +217,7 @@ class GamepadEditorActivity : Activity() {
     }
 
     override fun onPause() {
+        traceEditor("onPause")
         super.onPause()
         uiHandler.removeCallbacks(livePollRunnable)
     }
@@ -1557,8 +1576,10 @@ class GamepadEditorActivity : Activity() {
     }
 
     private fun saveAndFinish() {
+        traceEditor("save.begin")
         val saved = GamepadBridge.saveProfile(this, profile, profileKey, perGameOverride)
         GamepadBridge.syncProfileToNative(saved)
+        traceEditor("save.end")
         setResult(RESULT_OK)
         finish()
     }

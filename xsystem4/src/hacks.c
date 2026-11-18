@@ -35,6 +35,8 @@
 #include "hll/hll.h"
 
 bool game_daibanchou_en = false;
+bool game_rance01 = false;
+bool game_rance02 = false;
 bool game_rance02_mg = false;
 bool game_rance6_mg = false;
 bool game_rance7_mg = false;
@@ -316,6 +318,15 @@ static void apply_daibanchou_hacks(struct ain *ain)
 }
 
 
+static bool ain_has_gbk_string(struct ain *ain, const char *needle)
+{
+	for (int i = 0; i < ain->nr_strings && i < 10000; i++) {
+		if (strstr(ain->strings[i]->text, needle))
+			return true;
+	}
+	return false;
+}
+
 static bool ain_has_gbk_r03_strings(struct ain *ain)
 {
 	for (int i = 0; i < ain->nr_strings && i < 10000; i++) {
@@ -504,6 +515,14 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle = ain->version == 6
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_get_function(ain, "CMapPlayer@RunPathFindMove") >= 0;
+	game_rance01 = ain->version == 6
+		&& ain_get_struct(ain, "Player") >= 0
+		&& ain_get_struct(ain, "DungeonLine") >= 0
+		&& ain_get_global(ain, "g_chipDepository") >= 0;
+	game_rance02 = ain->version == 6
+		&& ain_get_struct(ain, "\x83\x4c\x83\x83\x83\x89\x83\x66\x81\x5b\x83\x5e") >= 0
+		&& ain_get_global(ain, "\x90\xa2\x90\x46\x8a\xe0") >= 0
+		&& ain_get_global(ain, "\xb6\xd9\xcf") >= 0;
 	game_rance03 = ain->version == 6
 		&& ain_get_struct(ain, "CMessageTextView") >= 0
 		&& ain_get_global(ain, "g_playerCommonParam") >= 0
@@ -519,6 +538,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
+		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
+		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
 		|| (game_rance03 && ain_has_gbk_r03_strings(ain)));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
