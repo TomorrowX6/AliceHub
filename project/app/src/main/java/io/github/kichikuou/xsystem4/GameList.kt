@@ -1305,7 +1305,8 @@ class GameList(activity: Activity) {
                         stagingDir = staging!!,
                         targetDir = targetItem.path,
                         cleanReplaceIfStandalone = true,
-                        isCnPatch = isCnPatch
+                        isCnPatch = isCnPatch,
+                        allowEvenicle2IncrementalDetect = true
                     )
                     val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
@@ -1400,7 +1401,8 @@ class GameList(activity: Activity) {
                         stagingDir = tempDir,
                         targetDir = targetItem.path,
                         cleanReplaceIfStandalone = true,
-                        isCnPatch = isCnPatch
+                        isCnPatch = isCnPatch,
+                        allowEvenicle2IncrementalDetect = true
                     )
                     val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
@@ -1618,207 +1620,311 @@ class GameList(activity: Activity) {
             ?.takeIf { it.isNotEmpty() } ?: "MOD"
     }
 
-    private fun isModAssetFile(file: File): Boolean {
-        if (!file.isFile) return false
-        val ext = file.extension.lowercase()
-        return ext == "ain" || ext == "afa" || ext == "ex" || ext == "ald" || ext == "bgi" || ext == "wai" || ext == "fnl"
-    }
-
-    private fun isStandaloneFullMod(modRoot: File): Boolean {
-        val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
-        val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
-        val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
-        val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
-        return hasAin && hasModCg && hasModFlat
-    }
-
-    private fun findModRoot(stagingDir: File, isCnPatch: Boolean = false): File {
-        var cur = stagingDir
-        while (true) {
-            val children = cur.listFiles() ?: break
-            if (children.any { isModAssetFile(it) }) {
-                return cur
-            }
-            val dirs = children.filter { it.isDirectory && !it.name.startsWith(".") }
-            if (dirs.size == 1) {
-                cur = dirs[0]
-            } else {
-                val found = dirs.firstOrNull { d -> d.walkTopDown().any { isModAssetFile(it) } }
-                if (found != null) {
-                    cur = found
-                } else {
-                    break
-                }
-            }
-        }
-        throw InstallFailureException(if (isCnPatch) R.string.cn_patch_invalid_package else R.string.mod_invalid_package)
-    }
-
     private fun restoreVanillaFromMod(targetDir: File) {
-        InstalledModInfo.delete(targetDir)
-        val canonicalTarget = try {
-            targetDir.canonicalPath
-        } catch (_: Throwable) {
-            targetDir.absolutePath
-        }
-        targetDir.walkBottomUp()
-            .filter {
-                it.isFile && (it.name.endsWith(".vanilla.bak.tmp") ||
-                    (it.name.startsWith(".mod_apply_") && it.name.endsWith(".tmp")))
-            }
-            .forEach { it.delete() }
-
-        val manifestFile = File(targetDir, ".mod_installed_files.txt")
-        if (manifestFile.exists()) {
-            for (rel in manifestFile.readLines()) {
-                val trimmed = rel.trim().replace('\\', '/')
-                if (trimmed.isEmpty() || trimmed.startsWith("/") || trimmed.contains("..")) continue
-                val f = File(targetDir, trimmed)
-                val safeInside = try {
-                    val cp = f.canonicalPath
-                    cp.startsWith("$canonicalTarget${File.separator}")
-                } catch (_: Throwable) {
-                    false
-                }
-                if (safeInside && f.exists() && f.isFile) {
-                    val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
-                    if (!hasBak) {
-                        f.delete()
-                    }
-                }
-            }
-            manifestFile.delete()
-        }
-        val asraIni = File(targetDir, "AsraTest.ini")
-        if (asraIni.isFile && !File(targetDir, "AsraTest.ini.vanilla.bak").isFile) {
-            asraIni.delete()
-        }
-        val bakFiles = targetDir.walkBottomUp().filter { it.isFile && it.name.endsWith(".vanilla.bak") }.toList()
-        for (bak in bakFiles) {
-            val origName = bak.name.removeSuffix(".vanilla.bak")
-            val origFile = File(bak.parentFile, origName)
-            val tmpRestore = File(bak.parentFile, ".restore_${origName}.tmp")
-            tmpRestore.delete()
-            if (origFile.exists()) {
-                origFile.delete()
-            }
-            if (!bak.renameTo(origFile)) {
-                try {
-                    bak.copyTo(tmpRestore, overwrite = true)
-                    if (origFile.exists()) {
-                        origFile.delete()
-                    }
-                    if (!tmpRestore.renameTo(origFile)) {
-                        tmpRestore.copyTo(origFile, overwrite = true)
-                        tmpRestore.delete()
-                    }
-                    bak.delete()
-                } finally {
-                    tmpRestore.delete()
-                }
-            }
-        }
+        restoreVanillaFromModDir(targetDir)
     }
 
     private fun applyModStagingToGameDir(
         stagingDir: File,
         targetDir: File,
         cleanReplaceIfStandalone: Boolean = true,
-        isCnPatch: Boolean = false
-    ): Boolean {
-        val modRoot = findModRoot(stagingDir, isCnPatch = isCnPatch)
-        val isFullStandalone = isStandaloneFullMod(modRoot)
-        if (cleanReplaceIfStandalone && (hasInstalledModDir(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
-            restoreVanillaFromMod(targetDir)
-        }
+        isCnPatch: Boolean = false,
+        allowEvenicle2IncrementalDetect: Boolean = false
+    ): Boolean = applyModStagingToGameDirInternal(
+        stagingDir = stagingDir,
+        targetDir = targetDir,
+        cleanReplaceIfStandalone = cleanReplaceIfStandalone,
+        isCnPatch = isCnPatch,
+        allowEvenicle2IncrementalDetect = allowEvenicle2IncrementalDetect
+    )
+}
 
-        val manifestFile = File(targetDir, ".mod_installed_files.txt")
-        val addedFiles = linkedSetOf<String>()
-        if (manifestFile.exists()) {
-            manifestFile.readLines().map { it.trim() }
-                .filter { it.isNotEmpty() && !it.contains("..") }
-                .forEach { addedFiles.add(it) }
+private fun isModAssetFile(file: File): Boolean {
+    if (!file.isFile) return false
+    val ext = file.extension.lowercase()
+    return ext == "ain" || ext == "afa" || ext == "ex" || ext == "ald" || ext == "bgi" || ext == "wai" || ext == "fnl"
+}
+
+private fun isStandaloneFullModDir(modRoot: File): Boolean {
+    val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
+    val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
+    val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
+    val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
+    return hasAin && hasModCg && hasModFlat
+}
+
+private fun findModRootDir(stagingDir: File, isCnPatch: Boolean = false): File {
+    var cur = stagingDir
+    while (true) {
+        val children = cur.listFiles() ?: break
+        if (children.any { isModAssetFile(it) }) {
+            return cur
         }
-        val modFiles = modRoot.walkTopDown().filter { it.isFile }.toList()
-        try {
-            for (srcFile in modFiles) {
-                val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
-                if (relPath.isEmpty() ||
-                    relPath.startsWith(".") ||
-                    relPath.contains("..") ||
-                    relPath.endsWith(".vanilla.bak") ||
-                    relPath.endsWith(".vanilla.bak.tmp") ||
-                    NativeGameImport.skip(relPath)
-                ) {
-                    continue
+        val dirs = children.filter { it.isDirectory && !it.name.startsWith(".") }
+        if (dirs.size == 1) {
+            cur = dirs[0]
+        } else {
+            val found = dirs.firstOrNull { d -> d.walkTopDown().any { isModAssetFile(it) } }
+            if (found != null) {
+                cur = found
+            } else {
+                break
+            }
+        }
+    }
+    throw GameList.InstallFailureException(
+        if (isCnPatch) R.string.cn_patch_invalid_package else R.string.mod_invalid_package
+    )
+}
+
+private fun pruneEmptyParentDirs(startDir: File?, stopDir: File) {
+    val stopCanonical = try { stopDir.canonicalFile } catch (_: Throwable) { stopDir.absoluteFile }
+    var cur = startDir
+    while (cur != null) {
+        val curCanonical = try { cur.canonicalFile } catch (_: Throwable) { cur.absoluteFile }
+        if (curCanonical == stopCanonical ||
+            !curCanonical.path.startsWith("${stopCanonical.path}${File.separator}")
+        ) {
+            break
+        }
+        val children = cur.listFiles()
+        if (children == null || children.isNotEmpty() || !cur.delete()) {
+            break
+        }
+        cur = cur.parentFile
+    }
+}
+
+internal fun isEvenicle2CnPatchJunkRelPath(relPath: String): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val fileNameLower = norm.substringAfterLast('/').lowercase()
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".torrent") ||
+        fileNameLower == "staff.png" ||
+        (fileNameLower.startsWith("请读我") && fileNameLower.endsWith(".png"))
+}
+
+/**
+ * PC Evenicle 2 CN patch archives place `Evenicle2.ain` and `Evenicle2EX.ex` under `mai/sc/`
+ * alongside `mai/word.mai` for `mai.dll` redirection. Promote `mai/sc/` script/ex files up to
+ * the patch root so `xsystem4` loads the patched files directly while keeping `mai/word.mai`.
+ */
+internal fun normalizeEvenicle2CnPatchStaging(stagingDir: File) {
+    if (!stagingDir.isDirectory) return
+    val maiDirs = stagingDir.walkTopDown()
+        .filter { it.isDirectory && it.name.equals("mai", ignoreCase = true) }
+        .toList()
+    for (maiDir in maiDirs) {
+        val patchRoot = maiDir.parentFile ?: continue
+        val maiChildren = maiDir.listFiles() ?: continue
+        val scDir = maiChildren.firstOrNull { it.isDirectory && it.name.equals("sc", ignoreCase = true) }
+            ?: continue
+        val scFiles = scDir.listFiles()?.filter { it.isFile }.orEmpty()
+        if (scFiles.none {
+                it.name.endsWith(".ain", ignoreCase = true) ||
+                    it.name.endsWith(".ex", ignoreCase = true)
+            }
+        ) {
+            continue
+        }
+        for (f in scFiles) {
+            val dest = File(patchRoot, f.name)
+            if (dest.exists() && !dest.delete()) {
+                throw IOException("Failed to replace staging file: $dest")
+            }
+            if (!f.renameTo(dest)) {
+                f.copyTo(dest, overwrite = true)
+                f.delete()
+            }
+        }
+        for (subName in arrayOf("sc", "enc", "org", "pic")) {
+            val subDir = maiChildren.firstOrNull { it.isDirectory && it.name.equals(subName, ignoreCase = true) }
+            if (subDir != null && subDir.listFiles()?.isEmpty() == true) {
+                subDir.delete()
+            }
+        }
+    }
+}
+
+internal fun restoreVanillaFromModDir(targetDir: File) {
+    InstalledModInfo.delete(targetDir)
+    val canonicalTarget = try {
+        targetDir.canonicalPath
+    } catch (_: Throwable) {
+        targetDir.absolutePath
+    }
+    targetDir.walkBottomUp()
+        .filter {
+            it.isFile && (it.name.endsWith(".vanilla.bak.tmp") ||
+                (it.name.startsWith(".mod_apply_") && it.name.endsWith(".tmp")))
+        }
+        .forEach { it.delete() }
+
+    val manifestFile = File(targetDir, ".mod_installed_files.txt")
+    if (manifestFile.exists()) {
+        for (rel in manifestFile.readLines()) {
+            val trimmed = rel.trim().replace('\\', '/')
+            if (trimmed.isEmpty() || trimmed.startsWith("/") || trimmed.contains("..")) continue
+            val f = File(targetDir, trimmed)
+            val safeInside = try {
+                val cp = f.canonicalPath
+                cp.startsWith("$canonicalTarget${File.separator}")
+            } catch (_: Throwable) {
+                false
+            }
+            if (safeInside && f.exists() && f.isFile) {
+                val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
+                if (!hasBak) {
+                    f.delete()
+                    pruneEmptyParentDirs(f.parentFile, targetDir)
                 }
-                val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
-                val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
-                val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
-                destFile.parentFile?.mkdirs()
-                if (destFile.exists()) {
-                    if (!wasAddedByMod) {
-                        val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
-                        if (!bakFile.exists()) {
-                            val tmpBak = File(destFile.parentFile, "${destFile.name}.vanilla.bak.tmp")
+            }
+        }
+        manifestFile.delete()
+    }
+    val asraIni = File(targetDir, "AsraTest.ini")
+    if (asraIni.isFile && !File(targetDir, "AsraTest.ini.vanilla.bak").isFile) {
+        asraIni.delete()
+    }
+    val bakFiles = targetDir.walkBottomUp().filter { it.isFile && it.name.endsWith(".vanilla.bak") }.toList()
+    for (bak in bakFiles) {
+        val origName = bak.name.removeSuffix(".vanilla.bak")
+        val origFile = File(bak.parentFile, origName)
+        val tmpRestore = File(bak.parentFile, ".restore_${origName}.tmp")
+        tmpRestore.delete()
+        if (origFile.exists()) {
+            origFile.delete()
+        }
+        if (!bak.renameTo(origFile)) {
+            try {
+                bak.copyTo(tmpRestore, overwrite = true)
+                if (origFile.exists()) {
+                    origFile.delete()
+                }
+                if (!tmpRestore.renameTo(origFile)) {
+                    tmpRestore.copyTo(origFile, overwrite = true)
+                    tmpRestore.delete()
+                }
+                bak.delete()
+            } finally {
+                tmpRestore.delete()
+            }
+        }
+    }
+}
+
+internal fun applyModStagingToGameDirInternal(
+    stagingDir: File,
+    targetDir: File,
+    cleanReplaceIfStandalone: Boolean = true,
+    isCnPatch: Boolean = false,
+    allowEvenicle2IncrementalDetect: Boolean = false
+): Boolean {
+    val isEvenicle2Target = isCnPatch &&
+        GameCatalog.classifyDirectory(targetDir, targetDir.name) == GameCatalog.ID_EVENICLE2
+    if (isEvenicle2Target) {
+        normalizeEvenicle2CnPatchStaging(stagingDir)
+    }
+    val modRoot = findModRootDir(stagingDir, isCnPatch = isCnPatch)
+    val isFullStandalone = isStandaloneFullModDir(modRoot)
+    val modFiles = modRoot.walkTopDown().filter { it.isFile }.toList()
+    val effectiveCleanReplace = if (isEvenicle2Target && cleanReplaceIfStandalone && allowEvenicle2IncrementalDetect) {
+        modFiles.any { it.name.equals("Evenicle2CG.afa", ignoreCase = true) }
+    } else {
+        cleanReplaceIfStandalone
+    }
+    if (effectiveCleanReplace && (Item.detectInstalledMod(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
+        restoreVanillaFromModDir(targetDir)
+    }
+
+    val manifestFile = File(targetDir, ".mod_installed_files.txt")
+    val addedFiles = linkedSetOf<String>()
+    if (manifestFile.exists()) {
+        manifestFile.readLines().map { it.trim() }
+            .filter { it.isNotEmpty() && !it.contains("..") }
+            .forEach { addedFiles.add(it) }
+    }
+    try {
+        for (srcFile in modFiles) {
+            val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
+            if (relPath.isEmpty() ||
+                relPath.startsWith(".") ||
+                relPath.contains("..") ||
+                relPath.endsWith(".vanilla.bak") ||
+                relPath.endsWith(".vanilla.bak.tmp") ||
+                NativeGameImport.skip(relPath) ||
+                (isEvenicle2Target && isEvenicle2CnPatchJunkRelPath(relPath))
+            ) {
+                continue
+            }
+            val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
+            val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
+            val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
+            destFile.parentFile?.mkdirs()
+            if (destFile.exists()) {
+                if (!wasAddedByMod) {
+                    val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
+                    if (!bakFile.exists()) {
+                        val tmpBak = File(destFile.parentFile, "${destFile.name}.vanilla.bak.tmp")
+                        tmpBak.delete()
+                        try {
+                            destFile.copyTo(tmpBak, overwrite = true)
+                        } catch (t: Throwable) {
                             tmpBak.delete()
-                            try {
-                                destFile.copyTo(tmpBak, overwrite = true)
-                            } catch (t: Throwable) {
+                            throw t
+                        }
+                        if (!bakFile.exists()) {
+                            if (!tmpBak.renameTo(bakFile)) {
                                 tmpBak.delete()
-                                throw t
+                                throw IOException("Failed to commit vanilla backup: $bakFile")
                             }
-                            if (!bakFile.exists()) {
-                                if (!tmpBak.renameTo(bakFile)) {
-                                    tmpBak.delete()
-                                    throw IOException("Failed to commit vanilla backup: $bakFile")
-                                }
-                            } else {
-                                tmpBak.delete()
-                            }
+                        } else {
+                            tmpBak.delete()
                         }
                     }
-                } else if (!wasAddedByMod) {
-                    addedFiles.add(destRelPath)
                 }
+            } else if (!wasAddedByMod) {
+                addedFiles.add(destRelPath)
+            }
 
-                val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
-                tmpDest.delete()
-                if (!srcFile.renameTo(tmpDest)) {
-                    try {
-                        srcFile.copyTo(tmpDest, overwrite = true)
-                    } catch (t: Throwable) {
-                        tmpDest.delete()
-                        throw t
-                    }
-                    srcFile.delete()
-                }
-                if (destFile.exists()) {
-                    destFile.delete()
-                }
-                if (!tmpDest.renameTo(destFile)) {
-                    tmpDest.copyTo(destFile, overwrite = true)
+            val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
+            tmpDest.delete()
+            if (!srcFile.renameTo(tmpDest)) {
+                try {
+                    srcFile.copyTo(tmpDest, overwrite = true)
+                } catch (t: Throwable) {
                     tmpDest.delete()
+                    throw t
                 }
+                srcFile.delete()
             }
-            if (File(targetDir, "Rance10.ain").isFile &&
-                !File(targetDir, "AsraTest.ini.vanilla.bak").isFile
-            ) {
-                addedFiles.add("AsraTest.ini")
+            if (destFile.exists()) {
+                destFile.delete()
             }
-        } finally {
-            if (addedFiles.isNotEmpty() || manifestFile.exists()) {
-                val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
-                val content = addedFiles.joinToString("\n")
-                manifestTmp.writeText(content)
-                if (!manifestTmp.renameTo(manifestFile)) {
-                    manifestFile.writeText(content)
-                    manifestTmp.delete()
-                }
+            if (!tmpDest.renameTo(destFile)) {
+                tmpDest.copyTo(destFile, overwrite = true)
+                tmpDest.delete()
             }
         }
-        return cleanReplaceIfStandalone || isFullStandalone
+        if (File(targetDir, "Rance10.ain").isFile &&
+            !File(targetDir, "AsraTest.ini.vanilla.bak").isFile
+        ) {
+            addedFiles.add("AsraTest.ini")
+        }
+    } finally {
+        if (addedFiles.isNotEmpty() || manifestFile.exists()) {
+            val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
+            val content = addedFiles.joinToString("\n")
+            manifestTmp.writeText(content)
+            if (!manifestTmp.renameTo(manifestFile)) {
+                manifestFile.writeText(content)
+                manifestTmp.delete()
+            }
+        }
     }
+    return effectiveCleanReplace || isFullStandalone
 }
 
 internal fun resolveCaseInsensitiveDest(targetDir: File, relPath: String): File {

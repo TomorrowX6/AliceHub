@@ -508,8 +508,8 @@ object OnlineInstaller {
                 }
             }
         }.orEmpty()
-        val combined = "$iniName $fileName"
-        val verMatch = modVersionNumberRegex.find(combined)
+        val verMatch = modVersionNumberRegex.find(fileName)
+            ?: modVersionNumberRegex.find(iniName)
         return if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
     }
 
