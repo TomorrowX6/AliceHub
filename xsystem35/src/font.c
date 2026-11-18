@@ -78,7 +78,8 @@ static struct {
 	const char *name[FONTTYPEMAX];
 	int index[FONTTYPEMAX];
 	FT_Face face[FONTTYPEMAX];  // opened on first use, shared between all sizes
-	FT_Face fallback_face[FONTTYPEMAX][2];  // [0] default/SJIS, [1] GBK (SC)
+	bool face_is_fallback[FONTTYPEMAX];
+	FT_Face fallback_face[FONTTYPEMAX][2];  // [0] default/SJIS, [1] GBK/UTF8 (SC)
 	bool fallback_checked[FONTTYPEMAX][2];
 } this = {
 	.encoding = SHIFT_JIS,
@@ -154,9 +155,9 @@ static bool is_sc_face_name(const char *family) {
 	return strstr(family, " SC") != NULL || strstr(family, "CN") != NULL;
 }
 
-static void select_gbk_ttc_face(const char *path, FT_Face *face_io) {
+static void select_sc_ttc_face(const char *path, FT_Face *face_io) {
 	FT_Face cur = *face_io;
-	if (this.encoding != GBK || !cur || cur->num_faces <= 1)
+	if ((this.encoding != GBK && this.encoding != UTF8) || !cur || cur->num_faces <= 1)
 		return;
 	if (is_sc_face_name(cur->family_name) && strstr(cur->family_name, "Mono") != NULL)
 		return;
@@ -191,7 +192,7 @@ static void select_gbk_ttc_face(const char *path, FT_Face *face_io) {
 static FT_Face get_fallback_face(FontType type) {
 	if (type >= FONTTYPEMAX)
 		return NULL;
-	int slot = (this.encoding == GBK) ? 1 : 0;
+	int slot = (this.encoding == GBK || this.encoding == UTF8) ? 1 : 0;
 	if (this.fallback_checked[type][slot])
 		return this.fallback_face[type][slot];
 	this.fallback_checked[type][slot] = true;
@@ -240,7 +241,7 @@ static FT_Face get_fallback_face(FontType type) {
 		if (!face)
 			continue;
 		if (candidates[i][0] == '/')
-			select_gbk_ttc_face(candidates[i], &face);
+			select_sc_ttc_face(candidates[i], &face);
 		// Verify the candidate actually contains Simplified Chinese glyphs (e.g. U+8FD9 "这").
 		if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
 			this.fallback_face[type][slot] = face;
@@ -270,10 +271,26 @@ static bool font_select(FontSpec spec, Font *font) {
 	}
 	if (!this.face[spec.type]) {
 		this.face[spec.type] = open_face(this.name[spec.type], this.index[spec.type]);
-		if (!this.face[spec.type])
-			SYSERROR("Cannot open font %s", this.name[spec.type]);
+		this.face_is_fallback[spec.type] = false;
+		if (!this.face[spec.type]) {
+			const char *fallback_name = spec.type == FONT_MINCHO ? DEFAULT_MINCHO_TTF : DEFAULT_GOTHIC_TTF;
+			FT_Face fallback = get_fallback_face(spec.type);
+			if (!fallback)
+				fallback = open_face(fallback_name, 0);
+			if (fallback) {
+				WARNING("Cannot open font %s; using fallback font", this.name[spec.type]);
+				this.face[spec.type] = fallback;
+				this.face_is_fallback[spec.type] = true;
+			} else {
+				SYSERROR("Cannot open font %s", this.name[spec.type]);
+			}
+		}
 	}
 	FT_Face face = this.face[spec.type];
+	// GBK always denotes Simplified Chinese, so replace an incomplete primary
+	// face with the SC fallback font. UTF-8 is encoding-only (used by Japanese,
+	// Latin, and Chinese games alike), so preserve the configured primary face
+	// here and fall back per-glyph in get_glyph().
 	if (this.encoding == GBK && FT_Get_Char_Index(face, 0x8fd9) == 0) {
 		FT_Face cjk = get_fallback_face(spec.type);
 		if (cjk)
@@ -529,9 +546,24 @@ void font_init(void) {
 	}
 }
 
+static void clear_primary_face(FontType type) {
+	FT_Face face = this.face[type];
+	if (face &&
+	    face != this.fallback_face[type][0] &&
+	    face != this.fallback_face[type][1]) {
+		FT_Done_Face(face);
+	}
+	this.face[type] = NULL;
+	this.face_is_fallback[type] = false;
+}
+
 void font_set_encoding(CharacterEncoding encoding) {
 	if (this.encoding != encoding) {
 		this.encoding = encoding;
+		for (int i = 0; i < FONTTYPEMAX; i++) {
+			if (this.face_is_fallback[i])
+				clear_primary_face(i);
+		}
 		font_clear_cache();
 	}
 }
@@ -550,7 +582,7 @@ void font_set_name_and_index(FontType type, const char *name, int index) {
 	cache_clear(glyph_cache);
 	this.name[type] = name;
 	this.index[type] = index;
-	this.face[type] = NULL;
+	clear_primary_face(type);
 }
 
 void font_set_antialias(bool enable) {
