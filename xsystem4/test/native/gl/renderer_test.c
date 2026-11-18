@@ -12,6 +12,7 @@ extern void test_render_cg(struct parts *, struct parts_common *);
 extern void parts_render_init(void);
 extern void test_set_reverse(bool, bool);
 extern void test_activity_scale(struct parts *, bool, bool, float, float);
+extern GLuint test_load_3d_shader(const char *, const char *, int);
 static struct parts *fixture_part;
 struct parts *__wrap_parts_get(int no) { assert(no==1 && fixture_part); return fixture_part; }
 
@@ -59,6 +60,98 @@ static void check_pixels(unsigned char *got,const unsigned char *expected,size_t
     for(size_t i=0;i<n;i++) if(abs(got[i]-expected[i])>tolerance) {
         fprintf(stderr,"pixel byte %zu: got %d expected %d\n",i,got[i],expected[i]); abort();
     }
+}
+// modifier_on_frame is a post-present gameplay hook, not part of rendering.
+void modifier_on_frame(void) {}
+static bool expect_resumed_frame;
+static int resumed_frames;
+void __real_SDL_GL_SwapWindow(SDL_Window *window);
+void __wrap_SDL_GL_SwapWindow(SDL_Window *window) {
+    if (expect_resumed_frame) {
+        unsigned char pixels[128*128*4];
+        glReadPixels(0,0,128,128,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        for (int i=0;i<128*128;i++) {
+            const unsigned char expected[4]={37,91,173,255};
+            check_pixels(pixels+4*i,expected,4,0);
+        }
+        if (!resumed_frames) write_ppm("resume-surface-gles-synthetic.ppm",pixels,128,128);
+        resumed_frames++;
+        expect_resumed_frame=false;
+    }
+    __real_SDL_GL_SwapWindow(window);
+}
+static void resume_surface_tests(void) {
+    // Keep the production context and its scene texture, but replace the real
+    // window/drawable repeatedly: the Android surface recreation case, not a
+    // context-loss simulation and not a full game/Activity lifecycle test.
+    glBindFramebuffer(GL_FRAMEBUFFER,main_surface_fb);
+    glClearColor(37/255.f,91/255.f,173/255.f,1); glClear(GL_COLOR_BUFFER_BIT);
+    gfx_initialized=true;
+    gfx_reset_view();
+    for (int n=0;n<32;n++) {
+        SDL_Window *previous=sdl.window;
+        sdl.window=SDL_CreateWindow("Synthetic recreated surface",0,0,128,128,
+                                   SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+        assert(sdl.window);
+        assert(SDL_GL_MakeCurrent(sdl.window,sdl.gl.context)==0);
+        SDL_DestroyWindow(previous);
+        assert(glIsTexture(main_surface.handle));
+        glBindFramebuffer(GL_FRAMEBUFFER,0);
+        glViewport(0,0,128,128);
+        glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+        unsigned char black[4];
+        glReadPixels(64,64,1,1,GL_RGBA,GL_UNSIGNED_BYTE,black);
+        const unsigned char expected_black[4]={0,0,0,255};
+        check_pixels(black,expected_black,4,0);
+        expect_resumed_frame=true;
+        gfx_restore_window();
+        assert(!expect_resumed_frame); // Must present without a new script frame.
+        GLint framebuffer=0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING,&framebuffer);
+        assert(framebuffer==(GLint)main_surface_fb);
+        no_error();
+    }
+    assert(resumed_frames==32);
+    puts("PASS: 32 real SDL/GLES drawable recreations retain and re-present the scene without script redraw");
+}
+static void replacement_context_negative_control(void) {
+    // A new *unshared* context is different from the retained-context drawable
+    // test. It intentionally has none of the game's textures. This does not
+    // claim to reproduce a particular phone's context loss or recover from it.
+    GLuint retained_texture=gfx_main_surface()->handle;
+    assert(glIsTexture(retained_texture));
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext replacement=SDL_GL_CreateContext(sdl.window);
+    assert(replacement && replacement!=sdl.gl.context);
+    assert(SDL_GL_GetCurrentContext()==replacement);
+    assert(!glIsTexture(retained_texture));
+    no_error();
+    assert(SDL_GL_MakeCurrent(sdl.window,sdl.gl.context)==0);
+    assert(glIsTexture(retained_texture));
+    SDL_GL_DeleteContext(replacement);
+    no_error();
+    puts("PASS: replacement-context negative control has no retained texture; re-present is not context recovery");
+}
+static void shader3d_tests(void) {
+    // Compile/link the production 3D shader pairs through the real loader.
+    // UBO storage is separate from default-block vertex uniform limits.
+    GLint max_block=0;
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE,&max_block);
+    assert(max_block >= 308*48);
+    const char *names[]={"reign","reign_shadow","reign_outline"};
+    for (int engine=0;engine<3;engine++)for(int i=0;i<3;i++) {
+        char vertex[128],fragment[128];
+        snprintf(vertex,sizeof(vertex),"shaders/%s.v.glsl",names[i]);
+        snprintf(fragment,sizeof(fragment),"shaders/%s.f.glsl",names[i]);
+        GLuint program=test_load_3d_shader(vertex,fragment,engine);
+        GLuint block=glGetUniformBlockIndex(program,"BoneTransforms");
+        assert(block!=GL_INVALID_INDEX);
+        GLint bytes=0;
+        glGetActiveUniformBlockiv(program,block,GL_UNIFORM_BLOCK_DATA_SIZE,&bytes);
+        assert(bytes==308*48 && bytes<=max_block);
+        glDeleteProgram(program); no_error();
+    }
+    puts("PASS: 9 production 3D shader pairs link; 308-bone UBO is 14784 bytes");
 }
 static void blur_tests(void) {
     enum { W=15,H=11,N=W*H*4 };
@@ -152,8 +245,9 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    blur_tests(); sprite_tests(false,true);
-    sprite_tests(true,false); sprite_tests(true,true); no_error();
+    shader3d_tests(); blur_tests(); sprite_tests(false,true);
+    sprite_tests(true,false); sprite_tests(true,true);
+    resume_surface_tests(); replacement_context_negative_control(); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
     gfx_fini(); return 0;
 }

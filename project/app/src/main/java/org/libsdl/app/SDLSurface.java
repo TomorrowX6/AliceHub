@@ -110,7 +110,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     public void surfaceCreated(SurfaceHolder holder) {
         Log.v("SDL", "surfaceCreated()");
         applyPreferredFrameRate(holder);
+        SDLActivity.traceResumeState("onNativeSurfaceCreated.begin");
         SDLActivity.onNativeSurfaceCreated();
+        SDLActivity.traceResumeState("onNativeSurfaceCreated.end");
     }
 
     // Called when we lose the surface
@@ -123,7 +125,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         SDLActivity.handleNativeState();
 
         mIsSurfaceReady = false;
+        SDLActivity.traceResumeState("onNativeSurfaceDestroyed.begin");
         SDLActivity.onNativeSurfaceDestroyed();
+        SDLActivity.traceResumeState("onNativeSurfaceDestroyed.end");
     }
 
     // Called when the surface is resized
@@ -205,7 +209,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         /* If the surface has been previously destroyed by onNativeSurfaceDestroyed, recreate it here */
+        SDLActivity.traceResumeState("onNativeSurfaceChanged.begin");
         SDLActivity.onNativeSurfaceChanged();
+        SDLActivity.traceResumeState("onNativeSurfaceChanged.end");
 
         /* Surface is ready */
         mIsSurfaceReady = true;

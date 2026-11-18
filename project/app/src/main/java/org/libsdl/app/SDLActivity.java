@@ -455,6 +455,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onPause() {
         Log.v(TAG, "onPause()");
+        traceResumeState("onPause");
         super.onPause();
 
         if (mHIDDeviceManager != null) {
@@ -468,6 +469,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onResume() {
         Log.v(TAG, "onResume()");
+        traceResumeState("onResume");
         super.onResume();
 
         if (mHIDDeviceManager != null) {
@@ -481,6 +483,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onStop() {
         Log.v(TAG, "onStop()");
+        traceResumeState("onStop");
         super.onStop();
         if (mHasMultiWindow) {
             pauseNativeThread();
@@ -490,6 +493,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     @Override
     protected void onStart() {
         Log.v(TAG, "onStart()");
+        traceResumeState("onStart");
         super.onStart();
         if (mHasMultiWindow) {
             resumeNativeThread();
@@ -536,6 +540,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
 
         mHasFocus = hasFocus;
+        traceResumeState("windowFocus=" + hasFocus);
         if (hasFocus) {
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
@@ -675,7 +680,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     /* Transition to next state */
+    // Opt in with: adb shell setprop log.tag.AliceHubResume DEBUG
+    // No JNI/GL calls here: this must also work while the render thread is stuck.
+    public static void traceResumeState(String phase) {
+        if (!Log.isLoggable("AliceHubResume", Log.DEBUG)) return;
+        SDLSurface surface = mSurface;
+        Thread thread = mSDLThread;
+        Log.d("AliceHubResume", phase
+            + " current=" + mCurrentNativeState + " next=" + mNextNativeState
+            + " resumed=" + mIsResumedCalled + " focus=" + mHasFocus
+            + " ready=" + (surface != null && surface.mIsSurfaceReady)
+            + " surfaceValid=" + (surface != null && surface.getHolder().getSurface().isValid())
+            + " thread=" + (thread == null ? "none" : thread.getState()));
+    }
+
     public static void handleNativeState() {
+        traceResumeState("state.enter");
 
         if (mNextNativeState == mCurrentNativeState) {
             // Already in same state, discard.
@@ -686,18 +706,22 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mNextNativeState == NativeState.INIT) {
 
             mCurrentNativeState = mNextNativeState;
+            traceResumeState("state.applied");
             return;
         }
 
         // Try a transition to paused state
         if (mNextNativeState == NativeState.PAUSED) {
             if (mSDLThread != null) {
+                traceResumeState("nativePause.begin");
                 nativePause();
+                traceResumeState("nativePause.end");
             }
             if (mSurface != null) {
                 mSurface.handlePause();
             }
             mCurrentNativeState = mNextNativeState;
+            traceResumeState("state.applied");
             return;
         }
 
@@ -715,11 +739,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
                     // No nativeResume(), don't signal Android_ResumeSem
                 } else {
+                    traceResumeState("nativeResume.begin");
                     nativeResume();
+                    traceResumeState("nativeResume.end");
                 }
                 mSurface.handleResume();
 
                 mCurrentNativeState = mNextNativeState;
+                traceResumeState("state.applied");
             }
         }
     }
