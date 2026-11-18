@@ -431,10 +431,12 @@ object Iso9660Extractor {
                 }
             }
             onEntryAccepted?.invoke(task.target, task.relPath)
-            val nowStart = SystemClock.elapsedRealtime()
-            if (onProgress != null && nowStart - lastTick >= 150) {
-                onProgress(doneBytes, task.relPath)
-                lastTick = nowStart
+            if (onProgress != null) {
+                val nowStart = SystemClock.elapsedRealtime()
+                if (nowStart - lastTick >= 150) {
+                    onProgress(doneBytes, task.relPath)
+                    lastTick = nowStart
+                }
             }
             task.target.outputStream().buffered(256 * 1024).use { out ->
                 for ((extLba, extLen) in task.extents) {
@@ -465,10 +467,12 @@ object Iso9660Extractor {
                             }
                             curLba += sectors
                         }
-                        val now = SystemClock.elapsedRealtime()
-                        if (onProgress != null && now - lastTick >= 150) {
-                            onProgress(doneBytes, task.relPath)
-                            lastTick = now
+                        if (onProgress != null) {
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastTick >= 150) {
+                                onProgress(doneBytes, task.relPath)
+                                lastTick = now
+                            }
                         }
                     }
                 }

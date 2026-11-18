@@ -46,6 +46,7 @@ object GameCatalog {
     const val ID_RANCE10 = "rance10"
     const val ID_DOHNA_DOHNA = "dohnadohna"
     const val ID_EVENICLE = "evenicle"
+    const val ID_EVENICLE2 = "evenicle2"
     const val ID_SENGOKU_RANCE = "sengokurance"
     const val ID_RANCE01 = "rance01"
     const val ID_RANCE02 = "rance02"
@@ -184,6 +185,9 @@ object GameCatalog {
         }
         if (ainNames.any { it.equals("dohnadohna.ain", ignoreCase = true) }) {
             return ID_DOHNA_DOHNA
+        }
+        if (ainNames.any { it.equals("Evenicle2.ain", ignoreCase = true) }) {
+            return ID_EVENICLE2
         }
         if (ainNames.any { it.equals("Evenicle.ain", ignoreCase = true) }) {
             return ID_EVENICLE
@@ -324,6 +328,27 @@ object GameCatalog {
     private val RANCE08_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?8(?![0-9０-９])")
     private val RANCE09_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?9(?![0-9０-９])")
 
+    fun isEvenicle2Alias(lowerText: String): Boolean {
+        return lowerText.contains("evenicle2") ||
+            lowerText.contains("evenicle 2") ||
+            lowerText.contains("evenicle_2") ||
+            lowerText.contains("evenicle ii") ||
+            lowerText.contains("evenicleii") ||
+            lowerText.contains("evenicle ⅱ") ||
+            lowerText.contains("evenicleⅱ") ||
+            lowerText.contains("イブニクル2") ||
+            lowerText.contains("イブニクル２") ||
+            lowerText.contains("イブニクル 2") ||
+            lowerText.contains("イブニクル ２") ||
+            lowerText.contains("イブニクルⅱ") ||
+            lowerText.contains("夏娃年代记2") ||
+            lowerText.contains("夏娃年代记 2") ||
+            lowerText.contains("夏娃年代记ii") ||
+            lowerText.contains("夏娃年代记ⅱ") ||
+            lowerText.contains("夏娃年代記2") ||
+            lowerText.contains("夏娃2")
+    }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -363,6 +388,20 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
+            if ((File(saveDir, "CommonOtherData.sav").isFile ||
+                    File(saveDir, "AFMemMode.asd").isFile ||
+                    File(saveDir, "3DConfig.vsf").isFile) &&
+                (File(saveDir, "AFCommon.asd").isFile ||
+                    File(saveDir, "AFConfig.asd").isFile ||
+                    File(saveDir, "AFInfo.asd").isFile ||
+                    File(saveDir, "AFCGMode.asd").isFile ||
+                    File(saveDir, "AFBGMMode.asd").isFile) &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile
+            ) {
+                return ID_EVENICLE2
+            }
             if (File(saveDir, "AFConfig.asd").isFile &&
                 (File(saveDir, "AFCGMode.asd").isFile ||
                     File(saveDir, "Thumb0000.qnt").isFile ||
@@ -520,6 +559,9 @@ object GameCatalog {
         ) {
             return ID_SENGOKU_RANCE
         }
+        if (isEvenicle2Alias(lowerDir)) {
+            return ID_EVENICLE2
+        }
         if (lowerDir == "evenicle" || lowerDir.startsWith("evenicle-") || lowerDir.contains("イブニクル") || lowerDir.contains("夏娃")) {
             return ID_EVENICLE
         }
@@ -589,6 +631,9 @@ object GameCatalog {
             lowerDisp.contains("戦国ランス")
         ) {
             return ID_SENGOKU_RANCE
+        }
+        if (isEvenicle2Alias(lowerDisp)) {
+            return ID_EVENICLE2
         }
         if (lowerDisp.contains("イブニクル") || lowerDisp.contains("evenicle") || lowerDisp.contains("夏娃")) {
             return ID_EVENICLE
@@ -661,6 +706,21 @@ object GameCatalog {
                 isCnPatch = true,
                 overlayCdnBaseUrl = OnlineInstaller.EVENICLE_CDN_URL,
                 overlayCatalogRelPath = "files/cn-patch/index.json"
+            )
+            ID_EVENICLE2 -> GameDescriptor(
+                id = ID_EVENICLE2,
+                title = context.getString(R.string.game_evenicle2_title),
+                defaultDirName = "Evenicle2",
+                expectedAinName = "Evenicle2.ain",
+                iconRes = R.drawable.ic_game_evenicle2,
+                accentColor = 0xFF00838F.toInt(),
+                accentBorderColor = 0x6626C6DA,
+                iconFrameColor = 0xFF0F2026.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLE2_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
             )
             ID_SENGOKU_RANCE -> GameDescriptor(
                 id = ID_SENGOKU_RANCE,
@@ -822,6 +882,10 @@ object GameCatalog {
         val evItems = matchingItems(gameList, ID_EVENICLE)
         entries.add(GameSelectEntry(evDesc, evItems, evItems.firstOrNull()))
 
+        val ev2Desc = descriptorFor(context, ID_EVENICLE2, gameList)
+        val ev2Items = matchingItems(gameList, ID_EVENICLE2)
+        entries.add(GameSelectEntry(ev2Desc, ev2Items, ev2Items.firstOrNull()))
+
         val srDesc = descriptorFor(context, ID_SENGOKU_RANCE, gameList)
         val srItems = matchingItems(gameList, ID_SENGOKU_RANCE)
         entries.add(GameSelectEntry(srDesc, srItems, srItems.firstOrNull()))
@@ -858,7 +922,7 @@ object GameCatalog {
             val item = gameList[i]
             val cid = classifyItem(item)
             if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
-                cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
+                cid != ID_EVENICLE2 && cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
                 cid != ID_RANCE03 && cid != ID_RANCE08 && cid != ID_RANCE09 &&
                 cid != ID_KICHIKUOU && cid != ID_ESCALAYER
             ) {
