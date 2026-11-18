@@ -26,6 +26,7 @@
 #include "system4/ex.h"
 #include "system4/file.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "system4/zlib.h"
 
 #define _EX_ERROR(buf, fmt, ...) ERROR("At 0x%08x: " fmt, (uint32_t)(buf)->index, ##__VA_ARGS__)
@@ -902,13 +903,59 @@ void ex_free(struct ex *ex)
 	free(ex);
 }
 
+static bool ex_bytes_has_non_ascii(const char *s, size_t len)
+{
+	for (size_t i = 0; i < len; i++) {
+		if ((uint8_t)s[i] >= 0x80)
+			return true;
+	}
+	return false;
+}
+
+static bool ex_cjk_equals_n(const char *a, size_t a_len, const char *b, size_t b_len)
+{
+	if (!sys4_text_is_gbk)
+		return false;
+	if (!ex_bytes_has_non_ascii(a, a_len) && !ex_bytes_has_non_ascii(b, b_len))
+		return false;
+
+	char a_norm_buf[512], b_norm_buf[512];
+	char *a_norm = cjk_gbk_zenkaku_to_sjis_buf(a, a_len, a_norm_buf, sizeof(a_norm_buf), NULL);
+	char *b_norm = cjk_gbk_zenkaku_to_sjis_buf(b, b_len, b_norm_buf, sizeof(b_norm_buf), NULL);
+	bool eq = (a_len == b_len && !memcmp(a_norm, b_norm, a_len));
+
+	if (!eq) {
+		char as_buf[1536], ag_buf[1536], bs_buf[1536], bg_buf[1536];
+		bool ok_as = false, ok_ag = false, ok_bs = false, ok_bg = false;
+		char *as = cjk2utf_strict_buf(a_norm, a_len, false, as_buf, sizeof(as_buf), &ok_as);
+		char *ag = cjk2utf_strict_buf(a_norm, a_len, true,  ag_buf, sizeof(ag_buf), &ok_ag);
+		char *bs = cjk2utf_strict_buf(b_norm, b_len, false, bs_buf, sizeof(bs_buf), &ok_bs);
+		char *bg = cjk2utf_strict_buf(b_norm, b_len, true,  bg_buf, sizeof(bg_buf), &ok_bg);
+		if ((ok_as && ok_bg && !strcmp(as, bg))
+				|| (ok_ag && ok_bs && !strcmp(ag, bs))
+				|| (ok_as && ok_bs && !strcmp(as, bs))
+				|| (ok_ag && ok_bg && !strcmp(ag, bg))) {
+			eq = true;
+		}
+		if (as != as_buf) free(as);
+		if (ag != ag_buf) free(ag);
+		if (bs != bs_buf) free(bs);
+		if (bg != bg_buf) free(bg);
+	}
+
+	if (a_norm != a_norm_buf) free(a_norm);
+	if (b_norm != b_norm_buf) free(b_norm);
+	return eq;
+}
+
 static struct ex_value *ex_tree_get_path(struct ex_tree *tree, const char *path)
 {
 	char *next = strchr(path, '.');
 	size_t len = next ? (size_t)(next - path) : strlen(path);
 
 	if (tree->is_leaf) {
-		if (!next && !strcmp(tree->leaf.name->text, path))
+		if (!next && (!strcmp(tree->leaf.name->text, path)
+				|| ex_cjk_equals_n(tree->leaf.name->text, tree->leaf.name->size, path, len)))
 			return &tree->leaf.value;
 		return NULL;
 	}
@@ -924,6 +971,18 @@ static struct ex_value *ex_tree_get_path(struct ex_tree *tree, const char *path)
 			return &tree->_children[i];
 		}
 	}
+	if (sys4_text_is_gbk) {
+		for (unsigned i = 0; i < tree->nr_children; i++) {
+			if (ex_cjk_equals_n(tree->children[i].name->text, tree->children[i].name->size, path, len)) {
+				if (next) {
+					return ex_tree_get_path(&tree->children[i], next+1);
+				}
+				if (tree->children[i].is_leaf)
+					return &tree->children[i].leaf.value;
+				return &tree->_children[i];
+			}
+		}
+	}
 
 	return NULL;
 }
@@ -935,6 +994,12 @@ static struct ex_value *_ex_get(struct ex *ex, const char *name, size_t name_len
 		if (ex->blocks[i].name->size == name_len &&
 		    !strncmp(ex->blocks[i].name->text, name, name_len))
 			return &ex->blocks[i].val;
+	}
+	if (sys4_text_is_gbk) {
+		for (unsigned i = 0; i < ex->nr_blocks; i++) {
+			if (ex_cjk_equals_n(ex->blocks[i].name->text, ex->blocks[i].name->size, name, name_len))
+				return &ex->blocks[i].val;
+		}
 	}
 	return NULL;
 }
@@ -960,6 +1025,15 @@ static struct ex_block *ex_get_block(struct ex *ex, const char *name, enum ex_va
 			continue;
 		if (!strcmp(ex->blocks[i].name->text, name))
 			return &ex->blocks[i];
+	}
+	if (sys4_text_is_gbk) {
+		size_t len = strlen(name);
+		for (unsigned i = 0; i < ex->nr_blocks; i++) {
+			if (ex->blocks[i].val.type != type)
+				continue;
+			if (ex_cjk_equals_n(ex->blocks[i].name->text, ex->blocks[i].name->size, name, len))
+				return &ex->blocks[i];
+		}
 	}
 	return NULL;
 }
@@ -1035,6 +1109,13 @@ struct ex_tree *ex_tree_get_child(struct ex_tree *tree, const char *name)
 			return &tree->children[i];
 		}
 	}
+	if (sys4_text_is_gbk) {
+		size_t len = strlen(name);
+		for (unsigned i = 0; i < tree->nr_children; i++) {
+			if (ex_cjk_equals_n(tree->children[i].name->text, tree->children[i].name->size, name, len))
+				return &tree->children[i];
+		}
+	}
 	return NULL;
 }
 
@@ -1088,6 +1169,14 @@ int ex_row_at_string_key(struct ex_table *t, const char *key)
 			return row;
 		}
 	}
+	if (sys4_text_is_gbk) {
+		size_t len = strlen(key);
+		for (unsigned row = 0; row < t->nr_rows; row++) {
+			struct string *cell = t->rows[row][col].s;
+			if (cell && ex_cjk_equals_n(cell->text, cell->size, key, len))
+				return row;
+		}
+	}
 	return -1;
 }
 
@@ -1096,6 +1185,13 @@ int ex_col_from_name(struct ex_table *t, const char *name)
 	for (unsigned i = 0; i < t->nr_fields; i++) {
 		if (!strcmp(t->fields[i].name->text, name))
 			return i;
+	}
+	if (sys4_text_is_gbk) {
+		size_t len = strlen(name);
+		for (unsigned i = 0; i < t->nr_fields; i++) {
+			if (ex_cjk_equals_n(t->fields[i].name->text, t->fields[i].name->size, name, len))
+				return i;
+		}
 	}
 	return -1;
 }

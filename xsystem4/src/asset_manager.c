@@ -659,11 +659,34 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 	if (manager->miss_table && ht_get(manager->miss_table, name, NULL))
 		return NULL;
 
+	// Normalize GBK fullwidth digits/punctuation (e.g. %D/%F spliced into SJIS paths)
+	// back to Shift-JIS before canonical/opposite-encoding fallback.
+	char norm_buf[512];
+	char *norm_alloc = NULL;
+	const char *lookup_name = name;
+	if (sys4_text_is_gbk) {
+		bool norm_changed = false;
+		norm_alloc = cjk_gbk_zenkaku_to_sjis_buf(name, strlen(name), norm_buf, sizeof(norm_buf), &norm_changed);
+		if (norm_changed) {
+			best_entry = afa_find_best_raw(manager, norm_alloc, ar_out);
+			if (best_entry) {
+				if (norm_alloc != norm_buf)
+					free(norm_alloc);
+				return best_entry;
+			}
+			lookup_name = norm_alloc;
+		} else {
+			if (norm_alloc != norm_buf)
+				free(norm_alloc);
+			norm_alloc = NULL;
+		}
+	}
+
 	// Lazily indexed O(1) canonical Shinjitai/Simplified fallback across non-ASCII entries.
 	afa_ensure_canon_index(manager);
 
 	char base_buf[512];
-	char *target_base = archive_basename_buf(name, base_buf, sizeof(base_buf));
+	char *target_base = archive_basename_buf(lookup_name, base_buf, sizeof(base_buf));
 	char q_sjis_buf[1536];
 	char q_gbk_buf[1536];
 	char *q_sjis = NULL;
@@ -700,13 +723,13 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 
 	// Strict opposite-encoding fallback for halfwidth kana / middot / wave dash pairs
 	// not normalized into canon_basename_table; skip directions that failed strict decode.
-	size_t name_len = strlen(name);
+	size_t lookup_len = strlen(lookup_name);
 	bool can_decode[2] = { q_sjis != NULL, q_gbk != NULL };
 	for (int dir = 0; dir < 2; dir++) {
 		bool src_gbk = (dir == 0) ? !sys4_text_is_gbk : sys4_text_is_gbk;
 		if (!can_decode[src_gbk ? 1 : 0])
 			continue;
-		char *alt = save_transcode_cstr_strict(name, name_len, src_gbk, !src_gbk, NULL);
+		char *alt = save_transcode_cstr_strict(lookup_name, lookup_len, src_gbk, !src_gbk, NULL);
 		if (alt) {
 			best_entry = afa_find_best_raw(manager, alt, ar_out);
 			free(alt);
@@ -716,6 +739,8 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 	}
 
 out_free:
+	if (norm_alloc && norm_alloc != norm_buf)
+		free(norm_alloc);
 	if (q_sjis != q_sjis_buf)
 		free(q_sjis);
 	if (q_gbk != q_gbk_buf)

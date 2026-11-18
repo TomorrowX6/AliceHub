@@ -105,6 +105,7 @@ extern bool game_evenicle;
 extern bool game_evenicle2;
 extern bool game_rance03;
 extern bool game_dungeons_and_dolls;
+extern bool game_escalayer_reboot;
 
 bool sys_is_sdl_main_thread(void);
 
