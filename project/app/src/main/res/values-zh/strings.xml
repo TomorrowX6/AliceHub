@@ -246,6 +246,7 @@
     <string name="game_kichikuou_title">鬼畜王兰斯</string>
     <string name="game_escalayer_title">超昂天使 艾斯卡蕾雅</string>
     <string name="game_escalayer_reboot_title">超昂天使 艾斯卡蕾雅 Reboot</string>
+    <string name="game_ixseal_title">超昂神骑</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

@@ -112,6 +112,9 @@ object NativeGameImport {
         ) {
             return "EscalayerReboot"
         }
+        if (GameCatalog.isIxsealGameFiles(activeFiles)) {
+            return "Ixseal"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
@@ -170,6 +173,19 @@ object NativeGameImport {
         val rootFiles = children(context, tree, root)
         var sourceTrees: List<Pair<Uri, List<Document>>> = emptyList()
         var primaryDocs: List<Document>? = null
+        val ixsealPatchTrees = mutableListOf<List<Document>>()
+
+        fun isBackupOrPatchContainer(name: String): Boolean =
+            name.equals("BackData", ignoreCase = true) ||
+                name == "补丁" ||
+                name == "备份" ||
+                name == "备份文件" ||
+                name == "原版有码备份" ||
+                name == "无码补丁备份" ||
+                name == "汉化补丁备份" ||
+                name == "特典相关" ||
+                name == "全CG存档" ||
+                name.equals("patchWM", ignoreCase = true)
 
         if (isSys4Root(rootFiles) || isSys3Root(rootFiles)) {
             primaryDocs = rootFiles
@@ -178,14 +194,31 @@ object NativeGameImport {
             // Also support picking a container folder holding Disc1/GAMEDATA .. Disc3/GAMEDATA
             val discRoots = mutableListOf<Pair<Uri, List<Document>>>()
             val queue = ArrayDeque<Pair<Uri, Int>>()
+            val patchQueue = ArrayDeque<Pair<Uri, Int>>()
             for (d in rootFiles) {
-                if (d.folder && !skip(d.name)) queue.add(d.uri to 1)
+                if (!d.folder || skip(d.name)) continue
+                if (d.name.equals("patchCN", ignoreCase = true)) {
+                    patchQueue.add(d.uri to 1)
+                } else if (!isBackupOrPatchContainer(d.name)) {
+                    queue.add(d.uri to 1)
+                }
+            }
+            while (patchQueue.isNotEmpty()) {
+                val (dirUri, depth) = patchQueue.removeFirst()
+                val docs = children(context, tree, dirUri)
+                if (isSys4Root(docs)) {
+                    ixsealPatchTrees.add(docs)
+                } else if (depth < 3) {
+                    for (sub in docs) {
+                        if (sub.folder && !skip(sub.name)) patchQueue.add(sub.uri to (depth + 1))
+                    }
+                }
             }
             while (queue.isNotEmpty()) {
                 val (dirUri, depth) = queue.removeFirst()
                 val docs = children(context, tree, dirUri)
                 if (isSys4Root(docs) || isSys3Root(docs)) {
-                    primaryDocs = docs
+                    if (primaryDocs == null) primaryDocs = docs
                     discRoots.add(dirUri to docs)
                 } else if (docs.any {
                         !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
@@ -195,11 +228,8 @@ object NativeGameImport {
                     discRoots.add(dirUri to docs)
                 } else if (depth < 3) {
                     for (sub in docs) {
-                        if (sub.folder && !skip(sub.name) &&
-                            !sub.name.equals("BackData", ignoreCase = true) &&
-                            sub.name != "补丁" &&
-                            sub.name != "备份" &&
-                            sub.name != "备份文件"
+                        if (sub.folder && !skip(sub.name) && !isBackupOrPatchContainer(sub.name) &&
+                            !sub.name.equals("patchCN", ignoreCase = true)
                         ) {
                             queue.add(sub.uri to (depth + 1))
                         }
@@ -253,6 +283,8 @@ object NativeGameImport {
             GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
         val isRance06Import = targetGameId == GameCatalog.ID_RANCE06 ||
             GameCatalog.isRance06GameFiles(primaryFileNames)
+        val isIxsealImport = targetGameId == GameCatalog.ID_IXSEAL ||
+            GameCatalog.isIxsealGameFiles(primaryFileNames)
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -270,7 +302,8 @@ object NativeGameImport {
                     val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
                     if (skip(document.name) ||
                         (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath)) ||
-                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true))
+                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
+                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true))
                     ) {
                         continue
                     }
@@ -306,6 +339,11 @@ object NativeGameImport {
                     }
                     if (document.size >= 0 && document.size != fileBytes)
                         throw IOException("Incomplete document: $name")
+                }
+            }
+            if (isIxsealImport && ixsealPatchTrees.isNotEmpty()) {
+                for (patchDocs in ixsealPatchTrees) {
+                    copy(patchDocs, staging)
                 }
             }
             for ((_, docs) in sourceTrees) {
