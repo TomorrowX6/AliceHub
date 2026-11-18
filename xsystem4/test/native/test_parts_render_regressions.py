@@ -324,6 +324,7 @@ static atomic_bool touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
 static int restored, foreground, swaps, traces, recovered, backup_released;
 static bool next_recover_result = false;
+static bool mock_gl_ready = true;
 static atomic_bool android_redraw_requested = false;
 static void gfx_trace_resume(const char *phase) { (void)phase; traces++; }
 static void gfx_restore_window(void) { restored++; }
@@ -332,7 +333,11 @@ static void gfx_swap(void) { swaps++; }
 static void gfx_update_screen_scale(void) {}
 static void gfx_reset_frame_pacer(void) {}
 static bool gfx_recover_gl_if_needed(void) { recovered++; return next_recover_result; }
-static void gfx_release_context_backup(void) { backup_released++; }
+static bool gfx_release_context_backup_if_ready(void) {
+    if (!mock_gl_ready) return false;
+    backup_released++;
+    return true;
+}
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
 static void mixer_set_window_focus(bool v) { (void)v; }
 static void reset_gamepad_transient_state(void) {}
@@ -358,7 +363,14 @@ int main(void) {
     on_render_device_reset(&did_swap);
     assert(recovered == 1 && restored == 2 && did_swap);
 
-    // Pending nativeRequestRedraw presents once if no swap already ran, and backup frees in fg.
+    // Early foreground drain before GL context is ready must retain backups.
+    mock_gl_ready = false;
+    atomic_store(&android_redraw_requested, false);
+    finish_event_drain(true, true);
+    assert(backup_released == 0);
+
+    // Pending nativeRequestRedraw presents once if no swap already ran, and backup frees in fg when GL is ready.
+    mock_gl_ready = true;
     atomic_store(&android_redraw_requested, true);
     finish_event_drain(false, true);
     assert(restored == 3 && backup_released == 1 && !atomic_load(&android_redraw_requested));

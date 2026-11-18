@@ -107,6 +107,7 @@ GLuint gfx_remap_texture_handle(GLuint old_handle);
 bool gfx_remap_texture(struct texture *t);
 void gfx_prepare_context_backup(void);
 void gfx_release_context_backup(void);
+bool gfx_release_context_backup_if_ready(void);
 bool gfx_recover_gl_if_needed(void);
 void gfx_restore_window(void);
 void gfx_trace_resume(const char *phase);

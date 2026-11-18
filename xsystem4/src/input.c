@@ -2618,7 +2618,7 @@ static void finish_event_drain(bool did_swap, bool returned_foreground)
 	if (atomic_exchange(&android_redraw_requested, false) && !did_swap)
 		gfx_restore_window();
 	if (returned_foreground)
-		gfx_release_context_backup();
+		gfx_release_context_backup_if_ready();
 }
 
 static void handle_window_event(SDL_Event *e, bool *did_swap, bool *returned_foreground)

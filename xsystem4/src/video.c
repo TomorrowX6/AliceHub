@@ -420,15 +420,21 @@ static bool snapshot_texture_pixels(GLuint handle, int w, int h, GLenum internal
 
 void gfx_end_draw_target(void);
 
+static SDL_GLContext ensure_current_gl_context(void)
+{
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	if (!current && sdl.window && sdl.gl.context) {
+		if (SDL_GL_MakeCurrent(sdl.window, sdl.gl.context) == 0)
+			current = SDL_GL_GetCurrentContext();
+	}
+	return current;
+}
+
 void gfx_prepare_context_backup(void)
 {
 	if (!gfx_initialized || !sdl.window)
 		return;
-	SDL_GLContext current = SDL_GL_GetCurrentContext();
-	if (!current && sdl.gl.context) {
-		if (SDL_GL_MakeCurrent(sdl.window, sdl.gl.context) == 0)
-			current = SDL_GL_GetCurrentContext();
-	}
+	SDL_GLContext current = ensure_current_gl_context();
 	if (!current || current != sdl.gl.context || !offscreen_read_fbo || !glIsFramebuffer(offscreen_read_fbo))
 		return;
 
@@ -1185,6 +1191,15 @@ static void gfx_update_frame_rate_counter(void)
 	}
 }
 
+static bool is_app_in_background(void)
+{
+#ifdef __ANDROID__
+	return s_android_in_background;
+#else
+	return false;
+#endif
+}
+
 void gfx_swap(void)
 {
 #ifdef __ANDROID__
@@ -1200,6 +1215,8 @@ void gfx_swap(void)
 	if (!SDL_GL_GetCurrentContext() || !glIsProgram(default_shader.program) ||
 	    !glIsFramebuffer(main_surface_fb) || !glIsTexture(main_surface.handle))
 		return;
+	if ((backup_tex_list || has_backup_main_surface) && !is_app_in_background())
+		gfx_release_context_backup();
 	if (!view)
 		view = &main_surface;
 	else if (view != &main_surface && !gfx_remap_texture(view))
@@ -1355,15 +1372,29 @@ static void upload_backup_entry(const struct backup_tex_entry *b, GLuint handle)
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+bool gfx_release_context_backup_if_ready(void)
+{
+	if (!backup_tex_list && !has_backup_main_surface)
+		return true;
+	if (!gfx_initialized || !sdl.window || is_app_in_background())
+		return false;
+	SDL_GLContext current = ensure_current_gl_context();
+	if (!current)
+		return false;
+	if (gfx_needs_gl_reset()) {
+		gfx_recover_gl_if_needed();
+		if (gfx_needs_gl_reset())
+			return false;
+	}
+	gfx_release_context_backup();
+	return true;
+}
+
 bool gfx_recover_gl_if_needed(void)
 {
 	if (!gfx_initialized || !sdl.window || gfx_recovering)
 		return false;
-	SDL_GLContext current = SDL_GL_GetCurrentContext();
-	if (!current && sdl.gl.context) {
-		if (SDL_GL_MakeCurrent(sdl.window, sdl.gl.context) == 0)
-			current = SDL_GL_GetCurrentContext();
-	}
+	SDL_GLContext current = ensure_current_gl_context();
 	if (!current || !gfx_needs_gl_reset())
 		return false;
 

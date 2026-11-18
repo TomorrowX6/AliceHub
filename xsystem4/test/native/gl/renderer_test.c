@@ -182,6 +182,46 @@ static void replacement_context_recovery_with_backup(void) {
     no_error();
     puts("PASS: replacement EGLContext recovery with backup restores non-black surface and sprites");
 }
+static void replacement_context_deferred_until_surface_ready(void) {
+    gfx_initialized=true;
+    gfx_reset_view();
+    glBindFramebuffer(GL_FRAMEBUFFER,main_surface_fb);
+    glViewport(0,0,128,128);
+    glClearColor(180/255.f,75/255.f,210/255.f,1); glClear(GL_COLOR_BUFFER_BIT);
+    unsigned char px[8*8*4];
+    for (int i=0;i<8*8;i++) { px[i*4+0]=45; px[i*4+1]=215; px[i*4+2]=95; px[i*4+3]=255; }
+    Texture tex={0}; gfx_init_texture_with_pixels(&tex,8,8,px);
+    SDL_GLContext old_ctx=sdl.gl.context;
+    gfx_prepare_context_backup();
+    assert(has_backup_main_surface && backup_tex_count>=1);
+
+    // Simulate foreground drain before EGLSurface / replacement EGLContext is current.
+    assert(SDL_GL_MakeCurrent(sdl.window,NULL)==0);
+    sdl.gl.context=NULL;
+    assert(!gfx_release_context_backup_if_ready());
+    assert(has_backup_main_surface && backup_tex_count>=1);
+    gfx_restore_window();
+    assert(has_backup_main_surface && backup_tex_count>=1);
+
+    // Replacement context becomes current later (e.g., SDL_RENDER_DEVICE_RESET).
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext rep=SDL_GL_CreateContext(sdl.window);
+    assert(rep && rep!=old_ctx && SDL_GL_GetCurrentContext()==rep);
+    expected_resumed_rgba[0]=180; expected_resumed_rgba[1]=75;
+    expected_resumed_rgba[2]=210; expected_resumed_rgba[3]=255;
+    expect_resumed_frame=true;
+    gfx_restore_window();
+    assert(!expect_resumed_frame);
+    assert(!has_backup_main_surface && backup_tex_count==0);
+    assert(gfx_remap_texture(&tex));
+    assert(tex.handle && glIsTexture(tex.handle));
+    unsigned char *got=gfx_get_pixels(&tex);
+    check_pixels(got,px,sizeof(px),0); free(got);
+    gfx_delete_texture(&tex);
+    SDL_GL_DeleteContext(old_ctx);
+    no_error();
+    puts("PASS: deferred EGLContext recovery retains backup across early foreground drain");
+}
 static void replacement_context_recovery_without_backup(void) {
     gfx_release_context_backup();
     unsigned char stale_px[8*8*4]; memset(stale_px,99,sizeof(stale_px));
@@ -416,7 +456,7 @@ int main(void) {
     shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); replacement_context_negative_control();
-    replacement_context_recovery_with_backup(); replacement_context_recovery_without_backup();
+    replacement_context_recovery_with_backup(); replacement_context_deferred_until_surface_ready(); replacement_context_recovery_without_backup();
     blur_tests(); sprite_tests(false,true); no_error();
     puts("PASS: 2D copy shaders and Parts CG shader render cleanly on recovered replacement context");
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
