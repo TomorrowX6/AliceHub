@@ -84,6 +84,11 @@ object GameCatalog {
     }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
+    private val RANCE01_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?1(?![0-9０-９])")
+    private val RANCE02_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?2(?![0-9０-９])")
+    private val RANCE03_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?3(?![0-9０-９])")
+    private val RANCE08_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?8(?![0-9０-９])")
+    private val RANCE09_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?9(?![0-9０-９])")
 
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
@@ -295,10 +300,17 @@ object GameCatalog {
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
+        if (lowerDir == "rance10" || lowerDir.startsWith("rance10-") ||
+            lowerDir.contains("rance 10") ||
+            lowerDir.contains("兰斯10") || lowerDir.contains("兰斯１０") ||
+            lowerDir.contains("ランス10") || lowerDir.contains("ランス１０")
+        ) {
+            return ID_RANCE10
+        }
         if (lowerDir == "rance09" || lowerDir.startsWith("rance09-") ||
             lowerDir == "rance9" || lowerDir.startsWith("rance9-") ||
             lowerDir.contains("rance 09") || lowerDir.contains("rance 9") || lowerDir.contains("rance ix") ||
-            lowerDir.contains("兰斯09") || lowerDir.contains("兰斯9") || lowerDir.contains("ランス09") ||
+            RANCE09_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス09") ||
             lowerDir.contains("ランス9") || lowerDir.contains("ヘルマン") || lowerDir.contains("赫尔曼")
         ) {
             return ID_RANCE09
@@ -306,22 +318,23 @@ object GameCatalog {
         if (lowerDir == "rance08" || lowerDir.startsWith("rance08-") ||
             lowerDir == "rance8" || lowerDir.startsWith("rance8-") ||
             lowerDir.contains("rance 08") || lowerDir.contains("rancequest") || lowerDir.contains("rance quest") ||
-            lowerDir.contains("兰斯08") || lowerDir.contains("兰斯8") || lowerDir.contains("ランス08") ||
+            RANCE08_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス08") ||
             lowerDir.contains("ランス8") || lowerDir.contains("ランス・クエスト")
         ) {
             return ID_RANCE08
         }
         if (lowerDir == "rance01" || lowerDir.startsWith("rance01-") || lowerDir.contains("rance 01") ||
-            lowerDir.contains("兰斯01") || lowerDir.contains("兰斯1") || lowerDir.contains("ランス01")) {
+            RANCE01_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス01") ||
+            lowerDir.contains("ランス０１")) {
             return ID_RANCE01
         }
         if (lowerDir == "rance02" || lowerDir.startsWith("rance02-") || lowerDir.contains("rance 02") ||
-            lowerDir.contains("兰斯02") || lowerDir.contains("兰斯2") || lowerDir.contains("ランス02") ||
+            RANCE02_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス02") ||
             lowerDir.contains("ランス０２")) {
             return ID_RANCE02
         }
         if (lowerDir == "rance03" || lowerDir.startsWith("rance03-") || lowerDir.contains("rance 03") ||
-            lowerDir.contains("兰斯03") || lowerDir.contains("兰斯3") || lowerDir.contains("ランス03")
+            RANCE03_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス03")
         ) {
             return ID_RANCE03
         }
@@ -336,9 +349,6 @@ object GameCatalog {
         if (lowerDir == "dohnadohna" || lowerDir.startsWith("dohnadohna-") || lowerDir.contains("多娜多娜")) {
             return ID_DOHNA_DOHNA
         }
-        if (lowerDir == "rance10" || lowerDir.startsWith("rance10-") || lowerDir.contains("兰斯10")) {
-            return ID_RANCE10
-        }
         if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
             lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
         ) {
@@ -351,33 +361,39 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
+            lowerDisp.contains("ランス１０") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
+        ) {
+            return ID_RANCE10
+        }
         if (lowerDisp.contains("rance09") || lowerDisp.contains("rance 09") ||
             lowerDisp.contains("rance9") || lowerDisp.contains("rance 9") || lowerDisp.contains("rance ix") ||
-            lowerDisp.contains("兰斯09") || lowerDisp.contains("兰斯9") || lowerDisp.contains("ランス09") ||
+            RANCE09_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス09") ||
             lowerDisp.contains("ランス9") || lowerDisp.contains("ヘルマン") || lowerDisp.contains("赫尔曼")
         ) {
             return ID_RANCE09
         }
         if (lowerDisp.contains("rance08") || lowerDisp.contains("rance 08") ||
             lowerDisp.contains("rancequest") || lowerDisp.contains("rance quest") ||
-            lowerDisp.contains("兰斯08") || lowerDisp.contains("兰斯8") || lowerDisp.contains("ランス08") ||
+            RANCE08_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス08") ||
             lowerDisp.contains("ランス8") || lowerDisp.contains("ランス・クエスト") ||
             lowerDisp.contains("ランスクエスト") || lowerDisp.contains("マグナム") || lowerDisp.contains("magnum")
         ) {
             return ID_RANCE08
         }
         if (lowerDisp.contains("rance01") || lowerDisp.contains("rance 01") ||
-            lowerDisp.contains("兰斯01") || lowerDisp.contains("兰斯1") || lowerDisp.contains("ランス01") ||
+            RANCE01_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス01") ||
+            lowerDisp.contains("ランス０１") ||
             lowerDisp.contains("光をもとめて") || lowerDisp.contains("寻找小光")) {
             return ID_RANCE01
         }
         if (lowerDisp.contains("rance02") || lowerDisp.contains("rance 02") ||
-            lowerDisp.contains("兰斯02") || lowerDisp.contains("兰斯2") || lowerDisp.contains("ランス02") ||
+            RANCE02_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス02") ||
             lowerDisp.contains("ランス０２") || lowerDisp.contains("反叛的少女") || lowerDisp.contains("反逆の少女")) {
             return ID_RANCE02
         }
         if (lowerDisp.contains("rance03") || lowerDisp.contains("rance 03") ||
-            lowerDisp.contains("兰斯03") || lowerDisp.contains("兰斯3") || lowerDisp.contains("ランス03") ||
+            RANCE03_CN_ALIAS_REGEX.containsMatchIn(lowerDisp) || lowerDisp.contains("ランス03") ||
             lowerDisp.contains("リーザス") || lowerDisp.contains("利萨斯")
         ) {
             return ID_RANCE03
@@ -392,11 +408,6 @@ object GameCatalog {
         }
         if (lowerDisp.contains("多娜多娜") || lowerDisp.contains("ドーナドーナ") || lowerDisp.contains("dohna")) {
             return ID_DOHNA_DOHNA
-        }
-        if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
-            lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
-        ) {
-            return ID_RANCE10
         }
 
         return "$PREFIX_CUSTOM$dirName"

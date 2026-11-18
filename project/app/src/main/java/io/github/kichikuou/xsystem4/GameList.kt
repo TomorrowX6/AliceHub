@@ -563,10 +563,13 @@ class GameList(activity: Activity) {
                             setInstallProgress(sessionGen, progress, cancellable = true, resumable = false)
                         }
                     }
-                    mergeInstallSetData(listOf(imported), imported) {
+                    val isRance02 = GameCatalog.classifyDirectory(imported, imported.name) == GameCatalog.ID_RANCE02
+                    mergeInstallSetData(listOf(imported), imported, skipRance02Bloat = isRance02) {
                         if (abortHandle.isAborted) throw CancellationException()
                     }
-                    pruneRedundantBaseBloat(imported)
+                    if (isRance02) {
+                        pruneRedundantBaseBloat(imported)
+                    }
                     maybeRecordPreinstalledModMeta(imported, uri)
                     imported
                 }
@@ -614,6 +617,7 @@ class GameList(activity: Activity) {
                         storagePath = storagePath,
                         sessionGen = sessionGen,
                         expectedAinName = expectedAinName,
+                        targetGameId = targetGameId,
                         checkCancelled = {
                             if (abortHandle.isAborted || myJob?.isActive == false) {
                                 throw CancellationException()
@@ -860,9 +864,11 @@ class GameList(activity: Activity) {
         storagePath: File,
         sessionGen: Long,
         expectedAinName: String? = null,
+        targetGameId: String? = null,
         checkCancelled: () -> Unit,
         progressCallback: (String) -> Unit
     ): File {
+        val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -872,7 +878,10 @@ class GameList(activity: Activity) {
                 uri = uri,
                 destDir = currentStageDir,
                 tempScratchParent = storagePath,
-                shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) || isBaseInstallBloatRelPath(rel, skipPatchSubdir = false) },
+                shouldSkip = { rel ->
+                    shouldSkipBaseInstallEntry(rel) ||
+                        (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
                 onProgress = { totalBytes, entryPath ->
@@ -904,7 +913,10 @@ class GameList(activity: Activity) {
                     ArchiveExtractor.extractFileToDirectory(
                         archiveFile = chosenDisc,
                         destDir = nextDir,
-                        shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) || isBaseInstallBloatRelPath(rel, skipPatchSubdir = false) },
+                        shouldSkip = { rel ->
+                            shouldSkipBaseInstallEntry(rel) ||
+                                (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                        },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
                         onProgress = { totalBytes, entryPath ->
@@ -933,10 +945,10 @@ class GameList(activity: Activity) {
                         it.isFile &&
                             ArchiveExtractor.isSupportedArchiveName(it.name) &&
                             !shouldSkipBaseInstallEntry(it.name) &&
-                            !isBaseInstallBloatRelPath(
+                            (!isRance02Target || !isBaseInstallBloatRelPath(
                                 it.relativeTo(currentStageDir).path.replace('\\', '/'),
                                 skipPatchSubdir = true
-                            )
+                            ))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -945,7 +957,10 @@ class GameList(activity: Activity) {
                 ArchiveExtractor.extractFileToDirectory(
                     archiveFile = chosenArchive,
                     destDir = nextDir,
-                    shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) || isBaseInstallBloatRelPath(rel, skipPatchSubdir = false) },
+                    shouldSkip = { rel ->
+                        shouldSkipBaseInstallEntry(rel) ||
+                            (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                    },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
                     onProgress = { totalBytes, entryPath ->
@@ -987,8 +1002,11 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            mergeInstallSetData(listOf(tempDir, srcDir), srcDir, checkCancelled)
-            pruneRedundantBaseBloat(srcDir)
+            val isRance02 = GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
+            mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (isRance02) {
+                pruneRedundantBaseBloat(srcDir)
+            }
             val baseName = when {
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
                 ainFile != null -> ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension).ifEmpty { "Game" }
@@ -1621,8 +1639,14 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
 internal fun mergeInstallSetData(
     searchRoots: List<File>,
     destGameDir: File,
+    skipRance02Bloat: Boolean = false,
     checkCancelled: () -> Unit = {}
 ) {
+    if (!skipRance02Bloat &&
+        GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_RANCE02
+    ) {
+        return
+    }
     val destCanonical = try {
         destGameDir.canonicalPath
     } catch (_: Throwable) {
@@ -1649,7 +1673,7 @@ internal fun mergeInstallSetData(
             checkCancelled()
             if (!f.isFile) return@forEach
             val rel = f.relativeTo(dataDir).path.replace('\\', '/')
-            if (rel.isEmpty() || NativeGameImport.skip(rel) || isBaseInstallBloatRelPath(rel)) {
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || (skipRance02Bloat && isBaseInstallBloatRelPath(rel))) {
                 return@forEach
             }
             val destFile = resolveCaseInsensitiveDest(destGameDir, rel)
@@ -1669,6 +1693,9 @@ internal fun mergeInstallSetData(
 }
 
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
+    if (GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_RANCE02) {
+        return
+    }
     val topFiles = destGameDir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasGameData = topFiles.any {
         it.name.endsWith(".ain", ignoreCase = true) ||
