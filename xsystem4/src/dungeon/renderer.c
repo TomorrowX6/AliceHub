@@ -137,6 +137,7 @@ struct dungeon_renderer {
 
 	GLuint *event_textures;
 	int nr_event_textures;
+	bool has_event_textures;
 	const struct marker_info *marker_table;
 	bool draw_event_markers;
 
@@ -251,16 +252,14 @@ static const struct vertex floating_marker_vertices[] = {
 struct geometry {
 	GLuint vao;
 	GLuint attr_buffer;
+	void *vertices;
+	size_t vertices_size;
 	int nr_vertices;
 	GLenum mode;
 };
 
-static struct geometry *geometry_create(struct dungeon_renderer *r, const struct vertex *vertices, size_t size, GLenum mode)
+static void geometry_init_gl(struct geometry *g, struct dungeon_renderer *r)
 {
-	struct geometry *g = xcalloc(1, sizeof(struct geometry));
-	g->nr_vertices = size / sizeof(struct vertex);
-	g->mode = mode;
-
 	glGenVertexArrays(1, &g->vao);
 	glBindVertexArray(g->vao);
 	glGenBuffers(1, &g->attr_buffer);
@@ -270,10 +269,23 @@ static struct geometry *geometry_create(struct dungeon_renderer *r, const struct
 	glVertexAttribPointer(r->shader.vertex_pos, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)0);
 	glEnableVertexAttribArray(r->shader.vertex_uv);
 	glVertexAttribPointer(r->shader.vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)(3 * sizeof(GLfloat)));
-	glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, g->vertices_size, g->vertices, GL_STATIC_DRAW);
 
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+static struct geometry *geometry_create(struct dungeon_renderer *r, const struct vertex *vertices, size_t size, GLenum mode)
+{
+	struct geometry *g = xcalloc(1, sizeof(struct geometry));
+	g->nr_vertices = size / sizeof(struct vertex);
+	g->mode = mode;
+	g->vertices_size = size;
+	if (size > 0 && vertices) {
+		g->vertices = xmalloc(size);
+		memcpy(g->vertices, vertices, size);
+	}
+	geometry_init_gl(g, r);
 	return g;
 }
 
@@ -281,6 +293,7 @@ static void geometry_free(struct geometry *g)
 {
 	glDeleteVertexArrays(1, &g->vao);
 	glDeleteBuffers(1, &g->attr_buffer);
+	free(g->vertices);
 	free(g);
 }
 
@@ -374,17 +387,25 @@ static void delete_object3d(struct object3d *o3d)
 	free(o3d->meshes);
 }
 
-static void init_polyobjs(struct dungeon_renderer *r, struct polyobj *po)
+static void load_polyobj_materials(struct dungeon_renderer *r, struct polyobj *po)
 {
-	r->nr_polyobj_materials = po->nr_textures;
-	r->polyobj_materials = xcalloc(po->nr_textures, sizeof(struct material));
-	for (int i = 0; i < po->nr_textures; i++) {
+	if (!po || !r->polyobj_materials)
+		return;
+	int count = min(r->nr_polyobj_materials, po->nr_textures);
+	for (int i = 0; i < count; i++) {
 		struct cg *cg = polyobj_get_texture(po, i);
 		if (!cg)
 			continue;
 		init_material(&r->polyobj_materials[i], cg);
 		cg_free(cg);
 	}
+}
+
+static void init_polyobjs(struct dungeon_renderer *r, struct polyobj *po)
+{
+	r->nr_polyobj_materials = po->nr_textures;
+	r->polyobj_materials = xcalloc(po->nr_textures, sizeof(struct material));
+	load_polyobj_materials(r, po);
 
 	r->nr_polyobjs = po->nr_objects;
 	r->polyobjs = xcalloc(po->nr_objects, sizeof(struct object3d));
@@ -419,10 +440,8 @@ static bool is_dolls_boss_floor(int num)
 	}
 }
 
-struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version version, int num, struct dtx *dtx, GLuint *event_textures, int nr_event_textures, struct polyobj *po)
+static void dungeon_renderer_load_shader(struct dungeon_renderer *r)
 {
-	struct dungeon_renderer *r = xcalloc(1, sizeof(struct dungeon_renderer));
-	r->version = version;
 	gfx_load_shader(&r->shader, "shaders/dungeon.v.glsl", "shaders/dungeon.f.glsl");
 	r->local_transform = glGetUniformLocation(r->shader.program, "local_transform");
 	r->proj_transform = glGetUniformLocation(r->shader.program, "proj_transform");
@@ -433,10 +452,97 @@ struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version versi
 	r->uv_offset = glGetUniformLocation(r->shader.program, "uv_offset");
 	r->uv_scale = glGetUniformLocation(r->shader.program, "uv_scale");
 	glUseProgram(r->shader.program);
-	glUniform1i(r->use_fog, version != DRAW_FIELD);
+	glUniform1i(r->use_fog, r->version != DRAW_FIELD);
 	glUniform2f(r->uv_offset, 0.0f, 0.0f);
 	glUniform2f(r->uv_scale, 1.0f, 1.0f);
 	glUseProgram(0);
+}
+
+static void load_dtx_materials(struct dungeon_renderer *r, struct dtx *dtx)
+{
+	if (!dtx || !r->materials)
+		return;
+	int nr_cols = min(r->nr_dtx_columns, dtx->nr_columns);
+	for (int type = 0; type < DTX_NR_CELL_TEXTURE_TYPES; type++) {
+		for (int i = 0; i < nr_cols; i++) {
+			struct cg *cg = dtx_create_cg(dtx, type, i);
+			if (!cg)
+				continue;
+			init_material(&r->materials[type * r->nr_dtx_columns + i], cg);
+			cg_free(cg);
+		}
+	}
+}
+
+static void load_raster_shader(struct raster_shader *s);
+
+bool dungeon_renderer_has_event_textures(const struct dungeon_renderer *r)
+{
+	return r && r->has_event_textures;
+}
+
+void dungeon_renderer_reset_gl(struct dungeon_renderer *r, struct dtx *dtx, GLuint *event_textures, int nr_event_textures, struct polyobj *po)
+{
+	if (!r)
+		return;
+	r->shader.program = 0;
+	r->raster_shader.s.program = 0;
+	dungeon_renderer_load_shader(r);
+	if (r->raster_scroll)
+		load_raster_shader(&r->raster_shader);
+
+	struct geometry *geoms[] = {
+		r->wall_geometry,
+		r->door_left_geometry,
+		r->door_right_geometry,
+		r->roof_geometry,
+		r->stairs_geometry,
+		r->floating_marker_geometry,
+	};
+	for (size_t i = 0; i < sizeof(geoms) / sizeof(geoms[0]); i++) {
+		if (!geoms[i])
+			continue;
+		geoms[i]->vao = 0;
+		geoms[i]->attr_buffer = 0;
+		geometry_init_gl(geoms[i], r);
+	}
+
+	for (int i = 0; i < r->nr_materials; i++) {
+		r->materials[i].texture = 0;
+		r->materials[i].opaque = false;
+	}
+	load_dtx_materials(r, dtx);
+
+	free(r->event_textures);
+	r->event_textures = event_textures;
+	r->nr_event_textures = nr_event_textures;
+
+	for (int i = 0; i < r->nr_polyobj_materials; i++) {
+		r->polyobj_materials[i].texture = 0;
+		r->polyobj_materials[i].opaque = false;
+	}
+	load_polyobj_materials(r, po);
+
+	for (int i = 0; i < r->nr_polyobjs; i++) {
+		for (int j = 0; j < r->polyobjs[i].nr_meshes; j++) {
+			struct geometry *g = r->polyobjs[i].meshes[j].geometry;
+			if (!g)
+				continue;
+			g->vao = 0;
+			g->attr_buffer = 0;
+			geometry_init_gl(g, r);
+		}
+	}
+
+	if (r->skybox)
+		skybox_reset_gl(r->skybox, dtx);
+}
+
+struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version version, int num, struct dtx *dtx, GLuint *event_textures, int nr_event_textures, struct polyobj *po)
+{
+	struct dungeon_renderer *r = xcalloc(1, sizeof(struct dungeon_renderer));
+	r->version = version;
+	dungeon_renderer_load_shader(r);
 
 	r->wall_geometry = geometry_create(r, wall_vertices, sizeof(wall_vertices), GL_TRIANGLE_STRIP);
 	r->door_left_geometry = geometry_create(r, door_left_vertices, sizeof(door_left_vertices), GL_TRIANGLE_STRIP);
@@ -445,21 +551,14 @@ struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version versi
 	r->stairs_geometry = geometry_create(r, stairs_vertices, sizeof(stairs_vertices), GL_TRIANGLE_STRIP);
 	r->floating_marker_geometry = geometry_create(r, floating_marker_vertices, sizeof(floating_marker_vertices), GL_TRIANGLE_STRIP);
 
-	r->materials = xcalloc(DTX_NR_CELL_TEXTURE_TYPES * dtx->nr_columns, sizeof(struct material));
-	for (int type = 0; type < DTX_NR_CELL_TEXTURE_TYPES; type++) {
-		for (int i = 0; i < dtx->nr_columns; i++) {
-			struct cg *cg = dtx_create_cg(dtx, type, i);
-			if (!cg)
-				continue;
-			init_material(&r->materials[type * dtx->nr_columns + i], cg);
-			cg_free(cg);
-		}
-	}
 	r->nr_dtx_columns = dtx->nr_columns;
 	r->nr_materials = DTX_NR_CELL_TEXTURE_TYPES * dtx->nr_columns;
+	r->materials = xcalloc(r->nr_materials, sizeof(struct material));
+	load_dtx_materials(r, dtx);
 
 	r->event_textures = event_textures;
 	r->nr_event_textures = nr_event_textures;
+	r->has_event_textures = !!event_textures;
 	r->draw_event_markers = true;
 
 	if (version == DRAW_DUNGEON_2 && is_dolls_boss_floor(num)) {

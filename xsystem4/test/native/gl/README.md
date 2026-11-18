@@ -53,7 +53,9 @@ They are useful diagnostic images, **not proof of the supplied game scenes**.
 The plain C fixture/source-contract suite in the parent directory remains
 complementary coverage for rotation and save-version handling.
 
-A replacement-context negative control additionally verifies that a new unshared
-context has no retained game texture. This bounds the surface-restoration test: it
-is **not** a context-loss recovery test or verification of an intermittent phone
-black screen. See `docs/gamepad-editor-resume-diagnostics.md` in the repository root.
+A replacement-context negative control verifies that a new unshared context
+starts with none of the previous context's textures. Two replacement-context
+recovery tests then verify that `gfx_restore_window()` recovers shaders, FBOs,
+the composited `main_surface`, and tracked textures (when backed up) or clears
+stale handles and rebuilds rendering cleanly (when unbacked) on an unshared
+replacement `EGLContext`.

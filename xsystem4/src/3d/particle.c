@@ -464,38 +464,50 @@ static void load_textures(struct pae *effect, struct archive *aar)
 			if (ht_get(effect->textures, name, NULL))
 				continue;  // already loaded.
 
-			struct archive_data *dfile = RE_get_aar_entry(aar, effect->path, name, ".bmp");
-			if (!dfile)
-				dfile = RE_get_aar_entry(aar, effect->path, name, ".tga");
-			if (!dfile) {
+			static const char *pae_exts[] = { ".bmp", ".tga" };
+			bool has_alpha = false;
+			GLuint texture = RE_load_aar_texture(aar, effect->path, name, pae_exts, 2, &has_alpha);
+			if (!texture) {
 				WARNING("cannot load texture %s\\%s", effect->path, name);
 				continue;
 			}
-			struct cg *cg = cg_load_data(dfile);
-			if (!cg) {
-				WARNING("cg_load_data failed: %s", dfile->name);
-				archive_free_data(dfile);
-				continue;
-			}
-			archive_free_data(dfile);
-
-			GLuint texture;
-			glGenTextures(1, &texture);
-			glBindTexture(GL_TEXTURE_2D, texture);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glGenerateMipmap(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, 0);
-
 			struct billboard_texture *bt = xcalloc(1, sizeof(struct billboard_texture));
 			bt->texture = texture;
-			bt->has_alpha = cg->metrics.has_alpha;
+			bt->has_alpha = has_alpha;
 			ht_put(effect->textures, name, bt);
-			cg_free(cg);
 		}
+	}
+}
+
+struct pae_tex_reset_ctx {
+	struct pae *pae;
+	struct archive *aar;
+};
+
+static void reset_pae_texture_cb(struct ht_slot *slot, void *data)
+{
+	struct pae_tex_reset_ctx *rc = data;
+	struct billboard_texture *bt = slot->value;
+	if (!bt)
+		return;
+	bt->texture = 0;
+	if (!rc->aar || !rc->pae || !rc->pae->path || !slot->key)
+		return;
+	static const char *pae_exts[] = { ".bmp", ".tga" };
+	bt->texture = RE_load_aar_texture(rc->aar, rc->pae->path, slot->key, pae_exts, 2, &bt->has_alpha);
+}
+
+void pae_reset_gl(struct pae *pae, struct archive *aar, enum RE_plugin_version version)
+{
+	if (!pae)
+		return;
+	if (pae->textures) {
+		struct pae_tex_reset_ctx rc = { .pae = pae, .aar = aar };
+		ht_foreach(pae->textures, reset_pae_texture_cb, &rc);
+	}
+	for (int i = 0; i < pae->nr_objects; i++) {
+		if (pae->objects[i].model)
+			model_reset_gl(pae->objects[i].model, aar, version);
 	}
 }
 

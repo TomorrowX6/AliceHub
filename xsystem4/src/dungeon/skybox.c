@@ -34,14 +34,8 @@ struct skybox {
 	int nr_indices;
 };
 
-struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
+static void skybox_init_gl(struct skybox *s, struct dtx *dtx)
 {
-	if (version == DRAW_DUNGEON_2 || version == DRAW_FIELD) {
-		// Skybox is not used in these games.
-		return NULL;
-	};
-
-	struct skybox *s = xcalloc(1, sizeof(struct skybox));
 	gfx_load_shader(&s->shader, "shaders/dungeon_skybox.v.glsl", "shaders/dungeon_skybox.f.glsl");
 	s->proj_transform = glGetUniformLocation(s->shader.program, "proj_transform");
 
@@ -89,7 +83,7 @@ struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
 		GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // top
 	};
 	for (int i = 0; i < 6; i++) {
-		struct cg *cg = dtx_create_cg(dtx, DTX_SKYBOX, i);
+		struct cg *cg = dtx ? dtx_create_cg(dtx, DTX_SKYBOX, i) : NULL;
 		if (!cg) {
 			WARNING("Cannot load skybox texture %d", i);
 			continue;
@@ -103,6 +97,29 @@ struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+}
+
+void skybox_reset_gl(struct skybox *s, struct dtx *dtx)
+{
+	if (!s)
+		return;
+	s->shader.program = 0;
+	s->vao = 0;
+	s->attr_buffer = 0;
+	s->index_buffer = 0;
+	s->texture = 0;
+	skybox_init_gl(s, dtx);
+}
+
+struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
+{
+	if (version == DRAW_DUNGEON_2 || version == DRAW_FIELD) {
+		// Skybox is not used in these games.
+		return NULL;
+	};
+
+	struct skybox *s = xcalloc(1, sizeof(struct skybox));
+	skybox_init_gl(s, dtx);
 
 	return s;
 }
@@ -121,7 +138,7 @@ void skybox_free(struct skybox *s)
 
 void skybox_render(struct skybox *s, const mat4 view_transform, const mat4 proj_transform)
 {
-	if (!s)
+	if (!s || !glIsVertexArray(s->vao) || !glIsTexture(s->texture))
 		return;
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(s->shader.program);

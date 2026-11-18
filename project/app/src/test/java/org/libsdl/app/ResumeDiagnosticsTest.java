@@ -1,9 +1,11 @@
 package org.libsdl.app;
 
+import android.app.Activity;
 import android.util.Log;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLog;
@@ -42,5 +44,21 @@ public class ResumeDiagnosticsTest {
         assertEquals(SDLActivity.NativeState.PAUSED, SDLActivity.mCurrentNativeState);
         assertEquals(SDLActivity.NativeState.RESUMED, SDLActivity.mNextNativeState);
         assertNull(SDLActivity.mSDLThread);
+    }
+
+    @Test public void setWindowStyleOnMainThreadDoesNotSelfDeadlock() {
+        SDLActivity activity = Robolectric.buildActivity(SDLActivity.class).get();
+        activity.setTheme(android.R.style.Theme_NoTitleBar);
+        SDL.setContext(activity);
+        SDLActivity.mSingleton = activity;
+        SDLActivity.mSurface = new SDLSurface(activity);
+        SDLActivity.mFullscreenModeActive = false;
+
+        long startMs = System.currentTimeMillis();
+        SDLActivity.setWindowStyle(true);
+        long elapsedMs = System.currentTimeMillis() - startMs;
+
+        assertTrue("setWindowStyle(true) on UI thread stalled for " + elapsedMs + "ms", elapsedMs < 250L);
+        assertTrue(SDLActivity.mFullscreenModeActive);
     }
 }

@@ -21,7 +21,7 @@ struct parts_texture_backup {
 
 static void suspend_texture(struct parts_state *state, Texture *texture)
 {
-	if (!texture->handle || texture->w <= 0 || texture->h <= 0) return;
+	if (!gfx_remap_texture(texture) || !texture->handle || texture->w <= 0 || texture->h <= 0) return;
 	if ((size_t)texture->w > INT_MAX / 4 / (size_t)texture->h)
 		VM_ERROR("Parts texture is too large to suspend");
 	struct parts_texture_backup *b = xcalloc(1, sizeof(*b));
@@ -119,6 +119,7 @@ int parts_copy_texture_pixels(struct parts_state *state, Texture *texture, struc
 	memset(out, 0, sizeof(*out));
 	if (!texture)
 		return 0;
+	gfx_remap_texture(texture);
 	if (texture->handle && texture->w > 0 && texture->h > 0) {
 		if ((size_t)texture->w > INT_MAX / 4 / (size_t)texture->h)
 			return -1;

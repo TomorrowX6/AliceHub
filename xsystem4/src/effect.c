@@ -125,6 +125,13 @@ static void load_effect_shader(struct effect_shader *s)
 
 static void render_effect_shader(struct effect_shader *shader, Texture *dst, Texture *old, Texture *new, float progress)
 {
+	gfx_remap_texture(dst);
+	gfx_remap_texture(old);
+	gfx_remap_texture(new);
+	if (!dst->handle || !old->handle || !new->handle)
+		return;
+	if (!shader->s.program)
+		load_effect_shader(shader);
 	struct effect_data data = { .old = old, .new = new, .progress = progress };
 	mat4 world_transform = WORLD_TRANSFORM(new->w, new->h, 0, 0);
 	mat4 wv_transform = WV_TRANSFORM(config.view_width, config.view_height);
@@ -284,12 +291,34 @@ static effect_fun effect_functions[NR_EFFECTS] = {
 	[EFFECT_ZOOM_IN_CROSSFADE] = effect_zoom_in_crossfade,
 };
 
+static bool effect_reset_registered = false;
+
+static void effect_on_gl_reset(void *user)
+{
+	(void)user;
+	for (int i = 0; i < NR_EFFECTS; i++) {
+		if (effect_shaders[i])
+			effect_shaders[i]->s.program = 0;
+	}
+	gfx_remap_texture(&effect.old);
+	gfx_remap_texture(&effect.view);
+}
+
+static void ensure_effect_reset_registered(void)
+{
+	if (!effect_reset_registered) {
+		gfx_register_reset_callback(effect_on_gl_reset, NULL);
+		effect_reset_registered = true;
+	}
+}
+
 void effect_update_texture(int type, Texture *dst, Texture *old, Texture *new, float rate)
 {
 	if (type <= 0 || type >= NR_EFFECTS) {
 		WARNING("Invalid or unknown effect: %d", type);
 		return;
 	}
+	ensure_effect_reset_registered();
 	if (effect_functions[type]) {
 		effect_functions[type](dst, old, new, rate);
 	} else {
@@ -313,6 +342,7 @@ int effect_init(enum effect type)
 		WARNING("Invalid or unknown effect: %d", type);
 		return 0;
 	}
+	ensure_effect_reset_registered();
 
 	if (effect_functions[type]) {
 		// nothing to do

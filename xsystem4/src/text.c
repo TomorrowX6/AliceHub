@@ -210,6 +210,8 @@ static struct glyph *font_get_glyph(struct font_size *size, uint32_t code, enum 
 	unsigned *cached_count = get_glyph_cache_count(size);
 	// return cached glyph if available
 	struct ht_slot *slot = ht_put_int(size->glyph_table, code, NULL);
+	if (slot->value)
+		gfx_remap_texture(&((struct glyph*)slot->value)->t[weight]);
 	if (slot->value && ((struct glyph*)slot->value)->t[weight].handle)
 		return slot->value;
 	if (!slot->value && *cached_count >= MAX_CACHED_GLYPHS_PER_SIZE) {

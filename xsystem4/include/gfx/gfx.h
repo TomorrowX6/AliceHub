@@ -38,6 +38,7 @@ typedef struct texture {
 	GLuint handle;
 	int w, h;
 	bool opaque;
+	uint32_t ctx_gen;
 } Texture;
 
 struct gfx_render_job;
@@ -88,6 +89,7 @@ void gfx_reset_frame_pacer(void);
 void gfx_android_on_background(void);
 void gfx_android_on_foreground(void);
 void gfx_android_delay(Uint32 ms);
+bool gfx_android_consume_lifecycle_event(Uint32 event_type);
 float gfx_get_frame_rate(void);
 
 void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const char *fragment_shader_path);
@@ -98,6 +100,15 @@ void gfx_set_clear_color(int r, int g, int b, int a);
 void gfx_set_view_offset(int x, int y);
 void gfx_clear(void);
 void gfx_swap(void);
+typedef void (*gfx_reset_callback)(void *user);
+void gfx_register_reset_callback(gfx_reset_callback cb, void *user);
+void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user);
+GLuint gfx_remap_texture_handle(GLuint old_handle);
+bool gfx_remap_texture(struct texture *t);
+void gfx_prepare_context_backup(void);
+void gfx_release_context_backup(void);
+bool gfx_release_context_backup_if_ready(void);
+bool gfx_recover_gl_if_needed(void);
 void gfx_restore_window(void);
 void gfx_trace_resume(const char *phase);
 void gfx_set_view(struct texture *t);

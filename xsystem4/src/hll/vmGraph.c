@@ -165,6 +165,10 @@ static void vmGraph_CopyStretch(int surface, int dx, int dy, int d_width, int d_
 	if (!dst || !src)
 		return;
 
+	gfx_remap_texture(&dst->texture);
+	if (!gfx_remap_texture(&src->texture))
+		return;
+
 	// Use nearest neighbor interpolation to avoid magenta edges.
 	glBindTexture(GL_TEXTURE_2D, src->texture.handle);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);

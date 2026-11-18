@@ -229,6 +229,7 @@ static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **in
 		glm_scale(clip_mw, (vec3){ c_common->w, c_common->h, 1.0 });
 		glm_mat4_inv(clip_mw, cached_clip_inv);
 		quad_screen_aabb(clip_mw, &clip_min_x, &clip_max_x, &clip_min_y, &clip_max_y);
+		gfx_remap_texture(&c_common->texture);
 		cached_clip_tex = c_common->texture.handle;
 		cached_clip_gen = parts_render_gen;
 		cached_clip_no = alpha_clipper;
@@ -246,7 +247,7 @@ static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **in
 
 static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rectangle *rect, float blend_rate, vec3 add_color, vec3 multiply_color, int draw_filter, int alpha_clipper)
 {
-	if (!texture || !texture->handle || blend_rate <= 0.0f)
+	if (!texture || !gfx_remap_texture(texture) || !texture->handle || blend_rate <= 0.0f)
 		return;
 
 	mat4 sub_mw;
@@ -1352,7 +1353,7 @@ void parts_dirty(possibly_unused struct parts *parts)
 	parts_render_gen++;
 }
 
-void parts_render_init(void)
+static void parts_render_load_shader(void)
 {
 	gfx_load_shader(&parts_shader.shader, "shaders/parts.v.glsl", "shaders/parts.f.glsl");
 	parts_shader.uv_rect = glGetUniformLocation(parts_shader.shader.program, "uv_rect");
@@ -1363,4 +1364,23 @@ void parts_render_init(void)
 	parts_shader.use_clipper = glGetUniformLocation(parts_shader.shader.program, "use_clipper");
 	parts_shader.clipper_tex = glGetUniformLocation(parts_shader.shader.program, "clipper_tex");
 	parts_shader.inv_clipper_transform = glGetUniformLocation(parts_shader.shader.program, "inv_clipper_transform");
+}
+
+static void parts_render_on_gl_reset(possibly_unused void *user)
+{
+	pass_tex0 = 0;
+	pass_tex1 = 0;
+	pass_draw_filter = -1;
+	pass_use_clipper = -1;
+	pass_clip_no = 0;
+	pass_clip_gen = 0;
+	pass_clip_ctx = NULL;
+	parts_render_load_shader();
+	parts_dirty(NULL);
+}
+
+void parts_render_init(void)
+{
+	parts_render_load_shader();
+	gfx_register_reset_callback(parts_render_on_gl_reset, NULL);
 }

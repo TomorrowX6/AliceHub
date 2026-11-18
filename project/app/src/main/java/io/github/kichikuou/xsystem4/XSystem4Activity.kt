@@ -83,6 +83,19 @@ class XSystem4Activity : SDLActivity() {
     @Volatile
     private var launchedSaveDir: String? = null
 
+    private external fun nativeRequestRedraw()
+
+    private fun requestNativeRedrawSafely() {
+        if (isFinishing || isDestroyed || isSystem3xGame()) {
+            return
+        }
+        try {
+            nativeRequestRedraw()
+        } catch (_: UnsatisfiedLinkError) {
+        } catch (_: Throwable) {
+        }
+    }
+
     private var loadingLabel: TextView? = null
     private var modifierOverlay: FloatingModifierOverlay? = null
     private var ctrlOverlayContainer: FrameLayout? = null
@@ -734,6 +747,7 @@ class XSystem4Activity : SDLActivity() {
                 lastSyncedConfigSeq = curSeq
             }
             applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
+            requestNativeRedrawSafely()
         } catch (_: Throwable) {
         }
     }
@@ -777,6 +791,7 @@ class XSystem4Activity : SDLActivity() {
                 lastSyncedConfigSeq = curSeq
             }
             applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
+            requestNativeRedrawSafely()
         } catch (_: Throwable) {
         }
     }
@@ -830,6 +845,7 @@ class XSystem4Activity : SDLActivity() {
             }
         }
         mSurface?.reapplyPreferredFrameRate()
+        requestNativeRedrawSafely()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -837,7 +853,6 @@ class XSystem4Activity : SDLActivity() {
         if (hasFocus && !isFinishing && !isDestroyed) {
             restoreWindowAndFrameRate(reapplyStyle = true)
             window.decorView.post { restoreWindowAndFrameRate(reapplyStyle = false) }
-            window.decorView.postDelayed({ restoreWindowAndFrameRate(reapplyStyle = true) }, 180L)
         }
     }
 
@@ -896,6 +911,7 @@ class XSystem4Activity : SDLActivity() {
             traceEditorReturn("editor.result=$resultCode")
             try {
                 applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
+                requestNativeRedrawSafely()
             } catch (_: Throwable) {
             }
             return

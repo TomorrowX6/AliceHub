@@ -316,6 +316,73 @@ static void update_bones(struct RE_instance *inst)
 	}
 }
 
+static void init_instance_bone_ubo(struct RE_instance *instance)
+{
+	glGenBuffers(1, &instance->bone_transforms_ubo);
+	glBindBuffer(GL_UNIFORM_BUFFER, instance->bone_transforms_ubo);
+	glBufferData(GL_UNIFORM_BUFFER, MAX_BONES * sizeof(mat3x4), NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+static void reset_cached_model_cb(struct ht_slot *slot, void *data)
+{
+	struct RE_plugin *plugin = data;
+	model_reset_gl((struct model *)slot->value, plugin->aar, plugin->version);
+}
+
+static void reset_cached_effect_cb(struct ht_slot *slot, void *data)
+{
+	struct RE_plugin *plugin = data;
+	if (!slot->value)
+		return;
+	if (plugin->version < RE_SEAL_PLUGIN)
+		pae_reset_gl((struct pae *)slot->value, plugin->aar, plugin->version);
+	else
+		s3de_reset_gl((struct s3de *)slot->value, plugin->aar);
+}
+
+static void reset_instance_gl(struct RE_instance *inst, struct archive *aar, enum RE_plugin_version version)
+{
+	if (!inst)
+		return;
+	if (inst->bone_transforms) {
+		inst->bone_transforms_ubo = 0;
+		init_instance_bone_ubo(inst);
+	}
+	if (inst->shadow_volume_instance) {
+		reset_instance_gl(inst->shadow_volume_instance, aar, version);
+		if (inst->shadow_volume_instance->model)
+			model_reset_gl(inst->shadow_volume_instance->model, aar, version);
+	}
+}
+
+static void re_plugin_on_gl_reset(void *user)
+{
+	struct RE_plugin *plugin = user;
+	if (!plugin)
+		return;
+	if (plugin->model_cache)
+		ht_foreach(plugin->model_cache, reset_cached_model_cb, plugin);
+	if (plugin->effect_cache)
+		ht_foreach(plugin->effect_cache, reset_cached_effect_cb, plugin);
+	for (int i = 0; i < plugin->nr_instances; i++)
+		reset_instance_gl(plugin->instances[i], plugin->aar, plugin->version);
+	for (int i = 0; i < RE_NR_BACK_CGS; i++) {
+		struct RE_back_cg *bcg = &plugin->back_cg[i];
+		if (!bcg->texture.handle || gfx_remap_texture(&bcg->texture))
+			continue;
+		if (bcg->name && bcg->name->size > 0) {
+			struct string *name = string_ref(bcg->name);
+			RE_back_cg_set_name(bcg, name, plugin->aar);
+			free_string(name);
+		} else if (bcg->no) {
+			RE_back_cg_set(bcg, bcg->no);
+		}
+	}
+	if (plugin->renderer)
+		RE_renderer_reload_billboard_textures_by_path(plugin->renderer, plugin->aar);
+}
+
 struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 {
 	re_debug_init();
@@ -354,6 +421,7 @@ struct RE_plugin *RE_plugin_new(enum RE_plugin_version version)
 	plugin->fog_far = 10.0f;
 	glm_vec3_one(plugin->fog_color);
 	lit_reset(plugin->light_params);
+	gfx_register_reset_callback(re_plugin_on_gl_reset, plugin);
 	return plugin;
 }
 
@@ -361,6 +429,7 @@ void RE_plugin_free(struct RE_plugin *plugin)
 {
 	if (!plugin)
 		return;
+	gfx_unregister_reset_callback(re_plugin_on_gl_reset, plugin);
 	RE_plugin_unbind(plugin);
 	for (int i = 0; i < plugin->nr_instances; i++) {
 		if (plugin->instances[i])
@@ -672,10 +741,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 		}
 		if (instance->model && instance->model->nr_bones > 0) {
 			instance->bone_transforms = xcalloc(instance->model->nr_bones, sizeof(mat3x4));
-			glGenBuffers(1, &instance->bone_transforms_ubo);
-			glBindBuffer(GL_UNIFORM_BUFFER, instance->bone_transforms_ubo);
-			glBufferData(GL_UNIFORM_BUFFER, MAX_BONES * sizeof(mat3x4), NULL, GL_DYNAMIC_DRAW);
-			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+			init_instance_bone_ubo(instance);
 		}
 		return !!instance->model;
 	case RE_ITYPE_PARTICLE_EFFECT:

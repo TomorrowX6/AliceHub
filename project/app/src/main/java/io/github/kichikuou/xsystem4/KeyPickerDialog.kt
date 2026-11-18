@@ -34,6 +34,7 @@ object KeyPickerDialog {
     private const val TEXT_MUTED = 0xFFA4AAB8.toInt()
 
     private fun tintDarkSwitch(sw: Switch, accent: Int) {
+        sw.showText = false
         val states = arrayOf(
             intArrayOf(android.R.attr.state_checked),
             intArrayOf(-android.R.attr.state_checked)

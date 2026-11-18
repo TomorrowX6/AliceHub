@@ -37,6 +37,14 @@ bool scene_is_dirty = true;
 static TAILQ_HEAD(listhead, sprite) sprite_list = TAILQ_HEAD_INITIALIZER(sprite_list);
 
 static Texture wp = {0};
+static bool scene_reset_registered = false;
+
+static void scene_on_gl_reset(void *user)
+{
+	(void)user;
+	gfx_remap_texture(&wp);
+	scene_dirty();
+}
 
 void scene_register_sprite(struct sprite *sp)
 {
@@ -82,6 +90,7 @@ void scene_render(void)
 
 	if (!start_sp) {
 		gfx_clear();
+		gfx_remap_texture(&wp);
 		if (wp.handle) {
 			Rectangle r = RECT(0, 0, wp.w, wp.h);
 			gfx_render_texture(&wp, &r);
@@ -138,6 +147,10 @@ int scene_set_wp_color(int r, int g, int b)
 
 int scene_set_wp_texture(Texture *tex)
 {
+	if (!scene_reset_registered) {
+		gfx_register_reset_callback(scene_on_gl_reset, NULL);
+		scene_reset_registered = true;
+	}
 	gfx_delete_texture(&wp);
 	if (!tex || !tex->handle || tex->w <= 0 || tex->h <= 0) {
 		scene_dirty();

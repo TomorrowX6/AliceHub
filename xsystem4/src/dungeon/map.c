@@ -107,6 +107,19 @@ void dungeon_map_free(struct dungeon_map *map)
 	free(map);
 }
 
+void dungeon_map_on_gl_reset(struct dungeon_context *ctx)
+{
+	if (!ctx || !ctx->map || !ctx->map->textures)
+		return;
+	bool need_reinit = false;
+	for (int i = 0; i < ctx->map->nr_textures; i++) {
+		if (!gfx_remap_texture(&ctx->map->textures[i]))
+			need_reinit = true;
+	}
+	if (need_reinit && ctx->dgn)
+		dungeon_map_init(ctx);
+}
+
 void dungeon_map_init(struct dungeon_context *ctx)
 {
 	if (!ctx || !ctx->map || !ctx->dgn)

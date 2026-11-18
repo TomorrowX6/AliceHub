@@ -28,6 +28,13 @@ struct fill_angele_shader {
 	GLint color;
 };
 static struct fill_angele_shader shader;
+static bool fill_angle_reset_registered = false;
+
+static void fill_angle_on_gl_reset(void *user)
+{
+	(void)user;
+	shader.s.program = 0;
+}
 
 static void load_shader(void)
 {
@@ -36,6 +43,10 @@ static void load_shader(void)
 	shader.start_angle = glGetUniformLocation(shader.s.program, "start_angle");
 	shader.angle = glGetUniformLocation(shader.s.program, "angle");
 	shader.color = glGetUniformLocation(shader.s.program, "color");
+	if (!fill_angle_reset_registered) {
+		gfx_register_reset_callback(fill_angle_on_gl_reset, NULL);
+		fill_angle_reset_registered = true;
+	}
 }
 
 static bool FillAngle_FillAngleAMAP(int sprite, int center_x, int center_y, int start_angle, int angle, int alpha)

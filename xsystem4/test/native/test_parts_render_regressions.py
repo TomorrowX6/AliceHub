@@ -308,8 +308,8 @@ int main(void) {
             subprocess.run([str(exe)], check=True)
 
     def test_restored_window_requests_a_present(self):
-        # Compile the actual event dispatch function, not a text-only assertion.
-        # The GLES integration suite tests the actual presentation separately.
+        # Compile the actual event dispatch helpers, not text-only assertions.
+        # The GLES integration suite tests actual GL context loss & presentation separately.
         code = r'''
 #include <assert.h>
 #include <stdatomic.h>
@@ -322,29 +322,636 @@ typedef struct { struct { int event; } window; } SDL_Event;
 static bool mouse_focus, keyboard_focus, kbd_ctrl_down;
 static atomic_bool touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
-static int restored, foreground, swaps, traces;
+static int restored, foreground, swaps, traces, recovered, backup_released;
+static bool next_recover_result = false;
+static bool mock_gl_ready = true;
+static atomic_bool android_redraw_requested = false;
 static void gfx_trace_resume(const char *phase) { (void)phase; traces++; }
 static void gfx_restore_window(void) { restored++; }
 static void gfx_android_on_foreground(void) { foreground++; }
 static void gfx_swap(void) { swaps++; }
 static void gfx_update_screen_scale(void) {}
 static void gfx_reset_frame_pacer(void) {}
+static bool gfx_recover_gl_if_needed(void) { recovered++; return next_recover_result; }
+static bool gfx_release_context_backup_if_ready(void) {
+    if (!mock_gl_ready) return false;
+    backup_released++;
+    return true;
+}
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
 static void mixer_set_window_focus(bool v) { (void)v; }
 static void reset_gamepad_transient_state(void) {}
 static void reset_movie_hold_state(void) {}
-''' + function('src/input.c', 'handle_window_event') + r'''
+''' + '\n'.join([
+            function('src/input.c', 'on_render_device_reset'),
+            function('src/input.c', 'finish_event_drain'),
+            function('src/input.c', 'handle_window_event'),
+        ]) + r'''
 int main(void) {
+    bool did_swap = false, returned_fg = false;
     SDL_Event event = {.window.event = SDL_WINDOWEVENT_RESTORED};
-    handle_window_event(&event);
-    assert(restored == 1 && foreground == 1 && swaps == 0 && traces == 1);
+    handle_window_event(&event, &did_swap, &returned_fg);
+    assert(restored == 1 && foreground == 1 && swaps == 0 && traces == 1 && did_swap && returned_fg);
+
     event.window.event = SDL_WINDOWEVENT_EXPOSED;
-    handle_window_event(&event);
+    handle_window_event(&event, &did_swap, &returned_fg);
     assert(restored == 1 && swaps == 1 && traces == 1);
+
+    // SDL_RENDER_DEVICE_RESET invokes GL recovery and restores when needed.
+    did_swap = false;
+    next_recover_result = true;
+    on_render_device_reset(&did_swap);
+    assert(recovered == 1 && restored == 2 && did_swap);
+
+    // Early foreground drain before GL context is ready must retain backups.
+    mock_gl_ready = false;
+    atomic_store(&android_redraw_requested, false);
+    finish_event_drain(true, true);
+    assert(backup_released == 0);
+
+    // Pending nativeRequestRedraw presents once if no swap already ran, and backup frees in fg when GL is ready.
+    mock_gl_ready = true;
+    atomic_store(&android_redraw_requested, true);
+    finish_event_drain(false, true);
+    assert(restored == 3 && backup_released == 1 && !atomic_load(&android_redraw_requested));
+    atomic_store(&android_redraw_requested, true);
+    finish_event_drain(true, false);
+    assert(restored == 3 && backup_released == 1);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
             c, exe = Path(tmp) / 'event.c', Path(tmp) / 'event'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_update_screen_scale_ignores_zero_drawable(self):
+        code = r'''
+#include <assert.h>
+struct { void *window; int w, h; struct { int x, y, w, h; } viewport; } sdl = {
+    .w = 1280, .h = 720, .viewport = { 10, 20, 800, 450 }
+};
+static int mock_dw = 0, mock_dh = 0;
+static void SDL_GL_GetDrawableSize(void *win, int *w, int *h) {
+    (void)win; *w = mock_dw; *h = mock_dh;
+}
+''' + function('src/video.c', 'void gfx_update_screen_scale') + r'''
+int main(void) {
+    gfx_update_screen_scale();
+    assert(sdl.viewport.w == 800 && sdl.viewport.h == 450);
+    mock_dw = 1920; mock_dh = 0;
+    gfx_update_screen_scale();
+    assert(sdl.viewport.w == 800 && sdl.viewport.h == 450);
+    mock_dw = 1920; mock_dh = 1080;
+    gfx_update_screen_scale();
+    assert(sdl.viewport.w == 1920 && sdl.viewport.h == 1080);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'scale.c', Path(tmp) / 'scale'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_android_delay_processes_each_lifecycle_event_once(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdatomic.h>
+#include <string.h>
+typedef uint32_t Uint32;
+typedef int64_t int64_t;
+enum { SDL_PEEKEVENT = 1, SDL_APP_WILLENTERBACKGROUND = 0x103, SDL_APP_DIDENTERFOREGROUND = 0x106, VK_CONTROL = 17 };
+typedef struct { Uint32 type; } SDL_Event;
+static SDL_Event queue[32];
+static int queue_len = 0;
+static Uint32 fake_ticks = 0;
+static int bg_calls = 0, fg_calls = 0, restore_calls = 0;
+static bool kbd_ctrl_down, kbd_key_state[256], sdl_mouse_down[8], key_state[256];
+static atomic_bool touch_ctrl_skip = false;
+static bool s_android_in_background = false;
+static int s_delay_will_bg_handled = 0, s_delay_did_fg_handled = 0;
+static int64_t s_frame_sleep_ns = 0;
+static int on_iter_hook = 0;
+static bool sys_is_sdl_main_thread(void) { return true; }
+static int64_t android_monotonic_ns(void) { return (int64_t)fake_ticks * 1000000LL; }
+static Uint32 SDL_GetTicks(void) { return fake_ticks; }
+static void SDL_Delay(Uint32 ms) { fake_ticks += ms; }
+static void SDL_PumpEvents(void) {
+    if (on_iter_hook == 1 && fake_ticks == 16) {
+        queue[queue_len++] = (SDL_Event){ .type = SDL_APP_WILLENTERBACKGROUND };
+    } else if (on_iter_hook == 1 && fake_ticks == 48) {
+        queue[queue_len++] = (SDL_Event){ .type = SDL_APP_DIDENTERFOREGROUND };
+    } else if (on_iter_hook == 2 && fake_ticks == 316) {
+        queue[queue_len++] = (SDL_Event){ .type = SDL_APP_WILLENTERBACKGROUND };
+        queue[queue_len++] = (SDL_Event){ .type = SDL_APP_DIDENTERFOREGROUND };
+    }
+}
+static int SDL_PeepEvents(SDL_Event *events, int numevents, int action, Uint32 minType, Uint32 maxType) {
+    assert(action == SDL_PEEKEVENT);
+    int out = 0;
+    for (int i = 0; i < queue_len && out < numevents; i++) {
+        if (queue[i].type >= minType && queue[i].type <= maxType)
+            events[out++] = queue[i];
+    }
+    return out;
+}
+static void gfx_android_on_background(void) { s_android_in_background = true; bg_calls++; }
+static void gfx_android_on_foreground(void) { s_android_in_background = false; fg_calls++; }
+static void gfx_restore_window(void) { restore_calls++; }
+static void gfx_trace_resume(const char *p) { (void)p; }
+static void reset_gamepad_transient_state(void) {}
+static void reset_movie_hold_state(void) {}
+static void mixer_set_app_backgrounded(bool v) { (void)v; }
+static void savedata_flush_on_background(void) {}
+''' + '\n'.join([
+            function('src/video.c', 'bool gfx_android_consume_lifecycle_event'),
+            function('src/video.c', 'void gfx_android_delay'),
+            function('src/input.c', 'static void on_app_will_enter_background'),
+            function('src/input.c', 'static void on_app_did_enter_foreground'),
+        ]) + r'''
+int main(void) {
+    on_iter_hook = 1;
+    gfx_android_delay(128);
+    assert(bg_calls == 1 && fg_calls == 1 && restore_calls == 1);
+
+    // Calling gfx_android_delay again before handle_events drains the queue must not re-fire.
+    on_iter_hook = 0;
+    gfx_android_delay(64);
+    assert(bg_calls == 1 && fg_calls == 1 && restore_calls == 1);
+
+    // Draining queued WILL + DID in input.c consumes them without re-running backup readback.
+    bool returned_fg = false;
+    assert(queue_len == 2);
+    on_app_will_enter_background(&returned_fg);
+    assert(!returned_fg && bg_calls == 1);
+    on_app_did_enter_foreground(&returned_fg);
+    assert(returned_fg && fg_calls == 1 && s_delay_will_bg_handled == 0 && s_delay_did_fg_handled == 0);
+    queue_len = 0;
+
+    // A second lifecycle pair after draining fires cleanly once.
+    fake_ticks = 300;
+    on_iter_hook = 2;
+    gfx_android_delay(64);
+    assert(bg_calls == 2 && fg_calls == 2 && restore_calls == 2);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'delay.c', Path(tmp) / 'delay'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-D__ANDROID__', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_dungeon_reset_rebuilds_context_and_renderer(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#define min(a, b) ((a) < (b) ? (a) : (b))
+typedef unsigned int GLuint;
+typedef int GLint;
+typedef unsigned int GLenum;
+typedef size_t GLsizeiptr;
+typedef int GLsizei;
+typedef float GLfloat;
+typedef unsigned short GLushort;
+typedef uint8_t GLboolean;
+enum {
+    GL_ARRAY_BUFFER = 1, GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_FALSE,
+    GL_UNSIGNED_SHORT, GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP,
+    GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+    GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+    GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+    GL_RGBA, GL_UNSIGNED_BYTE, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_MIN_FILTER,
+    GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_TEXTURE_WRAP_R,
+    GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, GL_CLAMP_TO_EDGE,
+    GL_RENDERBUFFER, GL_DEPTH_COMPONENT16,
+    DTX_SKYBOX = 5, DTX_NR_CELL_TEXTURE_TYPES = 7, DRAW_FIELD = 3, DRAW_DUNGEON_14 = 2
+};
+typedef struct texture { GLuint handle; int w, h; bool opaque; uint32_t ctx_gen; } Texture;
+struct shader { GLuint program, world_transform, view_transform, texture, vertex_pos, vertex_uv; void (*prepare)(void*, void*); };
+struct dtx { int nr_columns; };
+struct polyobj { int nr_textures; };
+struct dgn { int size_y; };
+struct cg { struct { int w, h; bool has_alpha; } metrics; uint8_t pixels[4]; };
+struct dungeon_map { Texture *textures; int nr_textures; };
+struct vertex { float x, y, z, u, v; };
+static GLuint next_id = 1000;
+static int gl_delete_calls = 0;
+static int map_init_calls = 0;
+static bool remap_succeeds = true;
+static void glGenVertexArrays(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glGenBuffers(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glGenTextures(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glGenRenderbuffers(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glBindVertexArray(GLuint v) { (void)v; }
+static void glBindBuffer(GLenum t, GLuint b) { (void)t; (void)b; }
+static void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) { (void)t; (void)s; (void)d; (void)u; }
+static void glEnableVertexAttribArray(GLuint i) { (void)i; }
+static void glVertexAttribPointer(GLuint i, GLint s, GLenum t, GLboolean n, GLsizei st, const void *p) { (void)i; (void)s; (void)t; (void)n; (void)st; (void)p; }
+static void glBindTexture(GLenum t, GLuint tx) { (void)t; (void)tx; }
+static void glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum fmt, GLenum tp, const void *px) { (void)t; (void)l; (void)ifmt; (void)w; (void)h; (void)b; (void)fmt; (void)tp; (void)px; }
+static void glTexParameteri(GLenum t, GLenum p, GLint v) { (void)t; (void)p; (void)v; }
+static void glBindRenderbuffer(GLenum t, GLuint r) { (void)t; (void)r; }
+static void glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h) { (void)t; (void)f; (void)w; (void)h; }
+static GLint glGetUniformLocation(GLuint p, const char *n) { (void)p; (void)n; return 1; }
+static void glUseProgram(GLuint p) { (void)p; }
+static void glUniform1i(GLint l, GLint v) { (void)l; (void)v; }
+static void glUniform2f(GLint l, GLfloat a, GLfloat b) { (void)l; (void)a; (void)b; }
+static void gfx_load_shader(struct shader *s, const char *v, const char *f) { (void)v; (void)f; s->program = ++next_id; s->vertex_pos = 1; s->vertex_uv = 2; }
+static void sys_warning(const char *fmt, ...) { (void)fmt; }
+#define WARNING(...) sys_warning(__VA_ARGS__)
+static void *xcalloc(size_t n, size_t s) { return calloc(n, s); }
+static char *gamedir_path(const char *p) { return strdup(p); }
+static struct cg *dtx_create_cg(struct dtx *d, int type, int idx) { (void)d; (void)type; return idx == 0 ? calloc(1, sizeof(struct cg)) : NULL; }
+static void cg_free(struct cg *cg) { free(cg); }
+static struct polyobj *polyobj_load(const char *p) { (void)p; struct polyobj *po = calloc(1, sizeof(*po)); po->nr_textures = 1; return po; }
+static void polyobj_free(struct polyobj *p) { free(p); }
+static struct cg *polyobj_get_texture(struct polyobj *p, int i) { (void)p; (void)i; return calloc(1, sizeof(struct cg)); }
+static bool gfx_remap_texture(Texture *t) {
+    if (!remap_succeeds) { t->handle = 0; return false; }
+    t->handle = ++next_id; return true;
+}
+static void gfx_init_texture_blank(Texture *t, int w, int h) { t->handle = ++next_id; t->w = w; t->h = h; }
+static GLuint *load_event_textures(int *n) { *n = 2; GLuint *tx = xcalloc(2, sizeof(GLuint)); glGenTextures(2, tx); return tx; }
+
+struct skybox { struct shader shader; GLint proj_transform; GLuint vao, attr_buffer, index_buffer, texture; int nr_indices; };
+''' + '\n'.join([
+            function('src/dungeon/skybox.c', 'static void skybox_init_gl'),
+            function('src/dungeon/skybox.c', 'void skybox_reset_gl'),
+        ]) + r'''
+struct raster_shader { struct shader s; GLint amp, t; };
+struct geometry { GLuint vao, attr_buffer; void *vertices; size_t vertices_size; int nr_vertices; GLenum mode; };
+struct material { GLuint texture; bool opaque; };
+struct mesh { struct geometry *geometry; int material; };
+struct object3d { int nr_meshes; struct mesh *meshes; };
+struct dungeon_renderer {
+    int version; struct shader shader;
+    GLint local_transform, proj_transform, alpha_mod, use_lightmap, light_texture, use_fog, uv_offset, uv_scale;
+    struct geometry *wall_geometry, *door_left_geometry, *door_right_geometry, *roof_geometry, *stairs_geometry, *floating_marker_geometry;
+    struct material *materials; int nr_materials, nr_dtx_columns;
+    GLuint *event_textures; int nr_event_textures; bool has_event_textures;
+    int nr_polyobjs; struct object3d *polyobjs;
+    int nr_polyobj_materials; struct material *polyobj_materials;
+    struct skybox *skybox;
+    struct raster_shader raster_shader; bool raster_scroll; float raster_amp;
+};
+struct dungeon_context {
+    int version; struct dungeon_map *map; struct dgn *dgn; struct dtx *dtx;
+    struct dungeon_renderer *renderer; Texture texture; GLuint depth_buffer;
+};
+static void dungeon_map_init(struct dungeon_context *ctx) { map_init_calls++; ctx->map->textures[0].handle = ++next_id; }
+static void prepare_raster_shader(void *j, void *d) { (void)j; (void)d; }
+static void load_raster_shader(struct raster_shader *s) { gfx_load_shader(&s->s, "", ""); (void)prepare_raster_shader; }
+static void init_material(struct material *m, struct cg *cg) { (void)cg; glGenTextures(1, &m->texture); }
+''' + '\n'.join([
+            function('src/dungeon/renderer.c', 'static void geometry_init_gl'),
+            function('src/dungeon/renderer.c', 'static void load_polyobj_materials'),
+            function('src/dungeon/renderer.c', 'static void dungeon_renderer_load_shader'),
+            function('src/dungeon/renderer.c', 'static void load_dtx_materials'),
+            function('src/dungeon/renderer.c', 'bool dungeon_renderer_has_event_textures'),
+            function('src/dungeon/renderer.c', 'void dungeon_renderer_reset_gl'),
+            function('src/dungeon/map.c', 'void dungeon_map_on_gl_reset'),
+            function('src/dungeon/dungeon.c', 'static void init_depth_buffer'),
+            function('src/dungeon/dungeon.c', 'static void dungeon_context_on_gl_reset'),
+        ]) + r'''
+int main(void) {
+    struct vertex dummy_verts[2] = { {0, 0, 0, 0, 0}, {1, 0, 0, 0, 0} };
+    struct geometry g_wall = { .vao = 11, .attr_buffer = 12, .vertices = dummy_verts, .vertices_size = sizeof(dummy_verts) };
+    struct geometry g_poly = { .vao = 13, .attr_buffer = 14, .vertices = dummy_verts, .vertices_size = sizeof(dummy_verts) };
+    struct mesh poly_mesh = { .geometry = &g_poly, .material = 0 };
+    struct object3d polyobj = { .nr_meshes = 1, .meshes = &poly_mesh };
+    struct material mats[7] = { { .texture = 21, .opaque = true } };
+    struct material pmats[1] = { { .texture = 22, .opaque = true } };
+    GLuint *ev_tex = xcalloc(1, sizeof(GLuint)); ev_tex[0] = 23;
+    struct skybox sb = { .shader.program = 31, .vao = 32, .attr_buffer = 33, .index_buffer = 34, .texture = 35 };
+    struct dungeon_renderer r = {
+        .version = DRAW_DUNGEON_14,
+        .shader.program = 41, .raster_shader.s.program = 42, .raster_scroll = true,
+        .wall_geometry = &g_wall, .materials = mats, .nr_materials = 7, .nr_dtx_columns = 1,
+        .event_textures = ev_tex, .nr_event_textures = 1, .has_event_textures = true,
+        .nr_polyobjs = 1, .polyobjs = &polyobj, .nr_polyobj_materials = 1, .polyobj_materials = pmats,
+        .skybox = &sb
+    };
+    Texture map_tex = { .handle = 51, .w = 32, .h = 32 };
+    struct dungeon_map map = { .textures = &map_tex, .nr_textures = 1 };
+    struct dgn dgn = { .size_y = 1 };
+    struct dtx dtx = { .nr_columns = 1 };
+    struct dungeon_context ctx = {
+        .version = DRAW_DUNGEON_14, .map = &map, .dgn = &dgn, .dtx = &dtx,
+        .renderer = &r, .texture = { .handle = 61, .w = 640, .h = 480 }, .depth_buffer = 62
+    };
+    dungeon_context_on_gl_reset(&ctx);
+    assert(gl_delete_calls == 0);
+    assert(ctx.texture.handle >= 1000 && ctx.depth_buffer >= 1000);
+    assert(map_tex.handle >= 1000 && map_init_calls == 0);
+    assert(r.shader.program >= 1000 && r.raster_shader.s.program >= 1000);
+    assert(g_wall.vao >= 1000 && g_wall.attr_buffer >= 1000);
+    assert(g_poly.vao >= 1000 && g_poly.attr_buffer >= 1000);
+    assert(mats[0].texture >= 1000 && pmats[0].texture >= 1000);
+    assert(r.nr_event_textures == 2 && r.event_textures[0] >= 1000 && r.event_textures[1] >= 1000);
+    assert(sb.shader.program >= 1000 && sb.vao >= 1000 && sb.attr_buffer >= 1000 && sb.index_buffer >= 1000 && sb.texture >= 1000);
+
+    // Unbacked reset re-initializes ctx->texture and ctx->map via dungeon_map_init cleanly.
+    remap_succeeds = false;
+    dungeon_context_on_gl_reset(&ctx);
+    assert(ctx.texture.handle >= 1000 && map_init_calls == 1 && map_tex.handle >= 1000);
+    free(r.event_textures);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'dungeon_reset.c', Path(tmp) / 'dungeon_reset'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_reign_reset_rebuilds_models_effects_and_ubos(self):
+        code = r'''
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#define MAX_BONES 308
+#define RE_NR_BACK_CGS 2
+enum RE_plugin_version { RE_REIGN_PLUGIN = 0, RE_TAPIR_PLUGIN = 1, RE_SEAL_PLUGIN = 2 };
+typedef unsigned int GLuint;
+typedef int GLint;
+typedef unsigned int GLenum;
+typedef size_t GLsizeiptr;
+typedef int GLsizei;
+typedef float mat3x4[3][4];
+typedef struct texture { GLuint handle; int w, h; bool opaque; uint32_t ctx_gen; } Texture;
+struct string { int size; char text[1]; };
+struct archive { int dummy; };
+struct archive_data { int dummy; };
+struct ht_slot { union { char *key; int ikey; }; void *value; };
+struct hash_table { struct ht_slot slots[4]; int count; };
+struct pol_material_group { uint32_t nr_children; };
+struct pol_mesh { char *name; uint32_t material; };
+struct pol { uint32_t nr_materials; struct pol_material_group *materials; uint32_t nr_meshes; struct pol_mesh **meshes; };
+struct mesh { char *name; GLuint vao, attr_buffer, index_buffer; int nr_vertices, nr_indices, material; };
+struct material { int nr_color_maps; GLuint *color_maps; GLuint specular_map, alpha_map, light_map, normal_map, blend_texture; };
+struct model { char *path; int nr_meshes; struct mesh *meshes; int nr_materials; struct material *materials; uint8_t sphere_color[4]; };
+struct billboard_texture { GLuint texture; bool has_alpha; };
+struct pae_object { struct model *model; };
+struct pae { char *path; struct hash_table *textures; int nr_objects; struct pae_object *objects; };
+struct pae_tex_reset_ctx { struct pae *pae; struct archive *aar; };
+struct s3de_object { struct model *model; };
+struct s3de { char *path; struct hash_table *textures; int nr_objects; struct s3de_object *objects; };
+struct s3de_tex_reset_ctx { struct s3de *s3de; struct archive *aar; };
+struct RE_back_cg { int no; struct string *name; Texture texture; };
+struct RE_renderer { int dummy; };
+struct RE_instance { struct model *model; mat3x4 *bone_transforms; GLuint bone_transforms_ubo; struct RE_instance *shadow_volume_instance; };
+struct RE_plugin {
+    enum RE_plugin_version version; struct archive *aar; struct hash_table *model_cache; struct hash_table *effect_cache;
+    struct RE_instance **instances; int nr_instances;
+    struct RE_back_cg back_cg[RE_NR_BACK_CGS]; struct RE_renderer *renderer;
+};
+enum { GL_UNIFORM_BUFFER = 1, GL_DYNAMIC_DRAW, GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE };
+static GLuint next_id = 2000;
+static int gl_delete_calls = 0;
+static int billboard_path_reloads = 0, back_cg_no_reloads = 0, back_cg_name_reloads = 0;
+static int pol_mat_reloads = 0, pol_mesh_resets = 0;
+static void *xmalloc(size_t n) { return malloc(n ? n : 1); }
+static void glGenBuffers(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glBindBuffer(GLenum t, GLuint b) { (void)t; (void)b; }
+static void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) { (void)t; (void)s; (void)d; (void)u; }
+static void glGenTextures(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glBindTexture(GLenum t, GLuint tx) { (void)t; (void)tx; }
+static void glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum fmt, GLenum tp, const void *px) { (void)t; (void)l; (void)ifmt; (void)w; (void)h; (void)b; (void)fmt; (void)tp; (void)px; }
+static void ht_foreach(struct hash_table *ht, void(*fun)(struct ht_slot*, void*), void *data) {
+    for (int i = 0; i < ht->count; i++) fun(&ht->slots[i], data);
+}
+static struct string *string_ref(struct string *s) { return s; }
+static void free_string(struct string *s) { (void)s; }
+static bool gfx_remap_texture(Texture *t) { (void)t; return false; }
+static void RE_renderer_reload_billboard_textures_by_path(struct RE_renderer *r, struct archive *aar) { (void)r; (void)aar; billboard_path_reloads++; }
+static bool RE_back_cg_set(struct RE_back_cg *bcg, int no) { (void)no; back_cg_no_reloads++; bcg->texture.handle = ++next_id; return true; }
+static bool RE_back_cg_set_name(struct RE_back_cg *bcg, struct string *n, struct archive *aar) { (void)n; (void)aar; back_cg_name_reloads++; bcg->texture.handle = ++next_id; return true; }
+static void init_sphere_mesh(struct mesh *m) { m->vao = ++next_id; m->attr_buffer = ++next_id; m->index_buffer = ++next_id; }
+static GLuint RE_load_aar_texture(struct archive *a, const char *d, const char *n, const char **e, int ne, bool *ha) {
+    (void)a; (void)d; (void)n; (void)e; (void)ne; if (ha) *ha = true; return ++next_id;
+}
+static struct pol_material_group fake_pol_mat_group = { .nr_children = 0 };
+static struct pol_mesh fake_pol_mesh = { .name = "body", .material = 0 };
+static struct pol_mesh *fake_pol_meshes[1] = { &fake_pol_mesh };
+static struct pol fake_pol = { .nr_materials = 1, .materials = &fake_pol_mat_group, .nr_meshes = 1, .meshes = fake_pol_meshes };
+static struct pol *load_pol_with_opr(struct archive *a, const char *p) { (void)a; return strcmp(p, "HERO") == 0 ? &fake_pol : NULL; }
+static void pol_free(struct pol *p) { (void)p; }
+static void load_model_materials_from_pol(struct model *m, struct pol *p, void *amt, struct archive *a, const char *path, enum RE_plugin_version v, const int *o, bool r) {
+    (void)p; (void)amt; (void)a; (void)path; (void)v; (void)o; (void)r;
+    pol_mat_reloads++;
+    m->materials[0].color_maps = xmalloc(sizeof(GLuint));
+    m->materials[0].nr_color_maps = 1;
+    m->materials[0].color_maps[0] = ++next_id;
+}
+static void reset_pol_mesh_gl(struct model *m, struct pol_mesh *pm, uint32_t gi, int mat, int *mi) {
+    (void)pm; (void)gi; (void)mat;
+    pol_mesh_resets++;
+    m->meshes[*mi].vao = ++next_id;
+    m->meshes[*mi].attr_buffer = ++next_id;
+    (*mi)++;
+}
+''' + '\n'.join([
+            function('src/3d/model.c', 'static void clear_material_gl_handles'),
+            function('src/3d/model.c', 'static void clear_mesh_gl_handles'),
+            function('src/3d/model.c', 'static void init_sphere_material_gl'),
+            function('src/3d/model.c', 'void model_reset_gl'),
+            function('src/3d/particle.c', 'static void reset_pae_texture_cb'),
+            function('src/3d/particle.c', 'void pae_reset_gl'),
+            function('src/3d/s3de.c', 'static void reset_s3de_texture_cb'),
+            function('src/3d/s3de.c', 'void s3de_reset_gl'),
+            function('src/3d/reign.c', 'static void init_instance_bone_ubo'),
+            function('src/3d/reign.c', 'static void reset_cached_model_cb'),
+            function('src/3d/reign.c', 'static void reset_cached_effect_cb'),
+            function('src/3d/reign.c', 'static void reset_instance_gl'),
+            function('src/3d/reign.c', 'static void re_plugin_on_gl_reset'),
+        ]) + r'''
+int main(void) {
+    GLuint *cm = xmalloc(sizeof(GLuint)); cm[0] = 91;
+    struct mesh sphere_mesh = { .vao = 71, .attr_buffer = 72, .index_buffer = 73 };
+    struct material sphere_mat = { .nr_color_maps = 1, .color_maps = cm };
+    struct model sphere = { .path = NULL, .nr_meshes = 1, .meshes = &sphere_mesh, .nr_materials = 1, .materials = &sphere_mat, .sphere_color = {255,0,0,64} };
+    GLuint *hm_cm = xmalloc(sizeof(GLuint)); hm_cm[0] = 95;
+    struct mesh pol_mesh = { .vao = 74, .attr_buffer = 75 };
+    struct material pol_mat = { .nr_color_maps = 1, .color_maps = hm_cm };
+    struct model pol_model = { .path = "HERO", .nr_meshes = 1, .meshes = &pol_mesh, .nr_materials = 1, .materials = &pol_mat };
+    struct billboard_texture pae_bt = { .texture = 81 };
+    struct hash_table pae_ht = { .slots = { { .key = "fx", .value = &pae_bt } }, .count = 1 };
+    struct pae_object pae_obj = { .model = &sphere };
+    struct pae pae = { .path = "FX", .textures = &pae_ht, .nr_objects = 1, .objects = &pae_obj };
+    struct billboard_texture s3de_bt = { .texture = 82 };
+    struct hash_table s3de_ht = { .slots = { { .key = "s3", .value = &s3de_bt } }, .count = 1 };
+    struct s3de_object s3de_obj = { .model = &sphere };
+    struct s3de s3de = { .path = "S3", .textures = &s3de_ht, .nr_objects = 1, .objects = &s3de_obj };
+
+    mat3x4 bone_buf;
+    struct RE_instance shvol = { .model = &sphere };
+    struct RE_instance inst = { .bone_transforms = &bone_buf, .bone_transforms_ubo = 92, .shadow_volume_instance = &shvol };
+    struct RE_instance *inst_arr[1] = { &inst };
+    struct hash_table model_ht = { .slots = { { .key = "m0", .value = &sphere }, { .key = "m1", .value = &pol_model } }, .count = 2 };
+    struct hash_table effect_ht = { .slots = { { .key = "e", .value = &pae } }, .count = 1 };
+    struct archive dummy_aar = {0};
+    struct RE_renderer dummy_r = {0};
+    struct string sname = { .size = 2 };
+    struct RE_plugin plugin = {
+        .version = RE_REIGN_PLUGIN, .aar = &dummy_aar, .model_cache = &model_ht, .effect_cache = &effect_ht,
+        .instances = inst_arr, .nr_instances = 1, .renderer = &dummy_r,
+        .back_cg = { { .no = 5, .texture.handle = 93 }, { .name = &sname, .texture.handle = 94 } }
+    };
+    re_plugin_on_gl_reset(&plugin);
+    assert(gl_delete_calls == 0);
+    assert(sphere_mesh.vao >= 2000 && sphere_mesh.attr_buffer >= 2000 && sphere_mesh.index_buffer >= 2000);
+    assert(sphere_mat.color_maps && sphere_mat.color_maps[0] >= 2000);
+    assert(pol_mat_reloads == 1 && pol_mesh_resets == 1);
+    assert(pol_mesh.vao >= 2000 && pol_mesh.attr_buffer >= 2000 && pol_mat.color_maps && pol_mat.color_maps[0] >= 2000);
+    assert(inst.bone_transforms_ubo >= 2000);
+    assert(pae_bt.texture >= 2000);
+    assert(billboard_path_reloads == 1 && back_cg_no_reloads == 1 && back_cg_name_reloads == 1);
+
+    effect_ht.slots[0].value = &s3de;
+    plugin.version = RE_SEAL_PLUGIN;
+    re_plugin_on_gl_reset(&plugin);
+    assert(s3de_bt.texture >= 2000);
+    free(sphere_mat.color_maps);
+    free(pol_mat.color_maps);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'reign_reset.c', Path(tmp) / 'reign_reset'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_effect_init_registers_gl_reset_callback(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+typedef unsigned int GLuint;
+typedef int GLint;
+typedef struct texture { GLuint handle; int w, h; bool opaque; unsigned int ctx_gen; } Texture;
+struct shader { GLuint program; void (*prepare)(void *, void *); };
+struct effect_shader { struct shader s; const char *f_path; GLint old, resolution, progress; };
+typedef void (*gfx_reset_callback)(void *);
+enum effect { EFFECT_CROSSFADE = 1, EFFECT_BLUR_CROSSFADE = 2, NR_EFFECTS = 3 };
+static const char *effect_names[NR_EFFECTS] = { NULL, "CROSSFADE", "BLUR_CROSSFADE" };
+static void (*effect_functions[NR_EFFECTS])(Texture *, Texture *, Texture *, float) = {0};
+static struct effect_shader crossfade_shader = { .f_path = "cf" };
+static struct effect_shader blur_crossfade_shader = { .f_path = "bcf" };
+static struct effect_shader *effect_shaders[NR_EFFECTS] = {
+    [EFFECT_CROSSFADE] = &crossfade_shader,
+    [EFFECT_BLUR_CROSSFADE] = &blur_crossfade_shader,
+};
+static struct { bool on; enum effect type; Texture old, view; } effect = {0};
+static bool effect_reset_registered = false;
+static gfx_reset_callback registered_cb = NULL;
+static int register_calls = 0, shader_loads = 0, remap_calls = 0;
+static GLuint next_prog = 500;
+static void sys_warning(const char *fmt, ...) { (void)fmt; }
+#define WARNING(...) sys_warning(__VA_ARGS__)
+static void gfx_register_reset_callback(gfx_reset_callback cb, void *user) { (void)user; registered_cb = cb; register_calls++; }
+static void load_effect_shader(struct effect_shader *s) { s->s.program = ++next_prog; shader_loads++; }
+static bool gfx_remap_texture(Texture *t) {
+    remap_calls++;
+    if (t->handle && t->handle < 1000) t->handle += 1000;
+    return t->handle != 0;
+}
+static void gfx_delete_texture(Texture *t) { t->handle = 0; }
+static void gfx_copy_main_surface(Texture *dst) { static GLuint h = 10; dst->handle = ++h; dst->w = 64; dst->h = 64; }
+static void gfx_set_view(Texture *t) { (void)t; }
+''' + '\n'.join([
+            function('src/effect.c', 'static void effect_on_gl_reset'),
+            function('src/effect.c', 'static void ensure_effect_reset_registered'),
+            function('src/effect.c', 'int effect_init'),
+        ]) + r'''
+int main(void) {
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(effect_reset_registered && registered_cb == effect_on_gl_reset && register_calls == 1);
+    assert(shader_loads == 1 && crossfade_shader.s.program == 501);
+    GLuint orig_old = effect.old.handle, orig_view = effect.view.handle;
+
+    // Context reset clears cached shader program and remaps active effect textures.
+    registered_cb(NULL);
+    assert(crossfade_shader.s.program == 0);
+    assert(effect.old.handle == orig_old + 1000);
+    assert(effect.view.handle == orig_view + 1000);
+
+    // Next effect_init lazily reloads the shader program cleanly and does not duplicate registration.
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(register_calls == 1 && shader_loads == 2 && crossfade_shader.s.program == 502);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'effect_reset.c', Path(tmp) / 'effect_reset'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_vmgraph_copy_stretch_remaps_source_before_filter(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+typedef unsigned int GLuint;
+typedef unsigned int GLenum;
+typedef int GLint;
+enum { GL_TEXTURE_2D = 1, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_NEAREST, GL_LINEAR };
+typedef struct texture { GLuint handle; int w, h; bool opaque; unsigned int ctx_gen; } Texture;
+struct vm_surface { Texture texture; };
+static struct vm_surface dst_surf = { .texture = { .handle = 11, .ctx_gen = 1 } };
+static struct vm_surface src_surf = { .texture = { .handle = 17, .ctx_gen = 1 } };
+static struct vm_surface *vm_surface_get(int no) {
+    if (no == 1) return &dst_surf;
+    if (no == 2) return &src_surf;
+    return 0;
+}
+static GLuint bound_tex = 0;
+static int near_binds_on_remapped = 0, lin_binds_on_remapped = 0, copy_calls = 0;
+static void glBindTexture(GLenum target, GLuint tex) {
+    assert(target == GL_TEXTURE_2D);
+    if (tex != 0) assert(tex == 402 || tex == 401);
+    bound_tex = tex;
+}
+static void glTexParameteri(GLenum target, GLenum pname, GLint param) {
+    assert(target == GL_TEXTURE_2D);
+    (void)pname;
+    if (bound_tex == 402 && param == GL_NEAREST) near_binds_on_remapped++;
+    if (bound_tex == 402 && param == GL_LINEAR) lin_binds_on_remapped++;
+}
+static bool gfx_remap_texture(Texture *t) {
+    if (t == &dst_surf.texture) t->handle = 401;
+    if (t == &src_surf.texture) t->handle = 402;
+    t->ctx_gen = 2;
+    return true;
+}
+static void gfx_copy_stretch(Texture *d, int dx, int dy, int dw, int dh, Texture *s, float sx, float sy, float sw, float sh) {
+    (void)dx; (void)dy; (void)dw; (void)dh; (void)sx; (void)sy; (void)sw; (void)sh;
+    assert(d->handle == 401 && s->handle == 402);
+    assert(near_binds_on_remapped == 2 && lin_binds_on_remapped == 0);
+    copy_calls++;
+}
+''' + function('src/hll/vmGraph.c', 'static void vmGraph_CopyStretch') + r'''
+int main(void) {
+    vmGraph_CopyStretch(1, 0, 0, 10, 10, 2, 0.f, 0.f, 5.f, 5.f);
+    assert(copy_calls == 1 && near_binds_on_remapped == 2 && lin_binds_on_remapped == 2);
+    assert(bound_tex == 0);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'vmgraph.c', Path(tmp) / 'vmgraph'
             c.write_text(code)
             subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                             str(c), '-o', str(exe)], check=True)

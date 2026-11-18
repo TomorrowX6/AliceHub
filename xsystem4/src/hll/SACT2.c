@@ -98,6 +98,36 @@ struct sact_sprite *sact_try_get_sprite(int sp)
 	return sprites[sp];
 }
 
+static void sact_on_gl_reset(void *user)
+{
+	(void)user;
+	if (!sprites)
+		return;
+	if (sprites[-1]) {
+		Texture *ms = gfx_main_surface();
+		sprites[-1]->texture = *ms;
+		gfx_remap_texture(&sprites[-1]->text.texture);
+		sprite_dirty(sprites[-1]);
+	}
+	for (int i = 0; i < nr_sprites; i++) {
+		struct sact_sprite *sp = sprites[i];
+		if (!sp)
+			continue;
+		bool had_cg = sp->cg_no > 0;
+		bool remap_ok = gfx_remap_texture(&sp->texture);
+		gfx_remap_texture(&sp->text.texture);
+		if (!remap_ok && had_cg) {
+			struct cg *cg = asset_cg_load(sp->cg_no);
+			if (cg) {
+				gfx_init_texture_with_cg(&sp->texture, cg);
+				cg_free(cg);
+			}
+		}
+		sprite_dirty(sp);
+	}
+	scene_dirty();
+}
+
 int sact_init(possibly_unused int cg_cache_size, enum sprite_engine_type engine)
 {
 	if (engine_type != UNINITIALIZED_SPRITE_ENGINE) {
@@ -130,6 +160,7 @@ int sact_init(possibly_unused int cg_cache_size, enum sprite_engine_type engine)
 	else
 		sprite_init_sact();
 
+	gfx_register_reset_callback(sact_on_gl_reset, NULL);
 	return 1;
 }
 

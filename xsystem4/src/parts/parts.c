@@ -1651,6 +1651,8 @@ void PE_enable_multi_controller(void)
 	parts_multi_controller = true;
 }
 
+static void parts_on_gl_reset(void *user);
+
 bool PE_Init(void)
 {
 	if (parts_engine_initialized)
@@ -1662,6 +1664,7 @@ bool PE_Init(void)
 	parts_render_init();
 	parts_debug_init();
 	ctrl_stack_init();
+	gfx_register_reset_callback(parts_on_gl_reset, NULL);
 	parts_engine_initialized = true;
 	return true;
 }
@@ -3780,6 +3783,152 @@ void parts_refresh_live_font_scale(void)
 	if (bs && bs != parts_current) {
 		struct parts_context *prev = parts_context_select(bs);
 		refresh_font_in_current_context();
+		parts_context_select(prev);
+	}
+	scene_dirty();
+}
+
+static void remap_flash_bitmap(void *val)
+{
+	Texture *t = val;
+	if (t && t->handle)
+		gfx_remap_texture(t);
+}
+
+static void recover_parts_in_current_context(void)
+{
+	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
+		struct parts_numeral_font *font = &parts_numeral_fonts[i];
+		for (int j = 0; j < 12; j++) {
+			if (font->cg[j].handle)
+				gfx_remap_texture(&font->cg[j]);
+		}
+	}
+	if (!parts_table)
+		return;
+	struct parts *p;
+	PARTS_LIST_FOREACH(p) {
+		for (int st = 0; st < PARTS_NR_STATES; st++) {
+			struct parts_state *s = &p->states[st];
+			switch (s->type) {
+			case PARTS_CG: {
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (!s->common.texture.handle && !p->textures_suspended) {
+					struct cg *cg = NULL;
+					if (s->cg.no > 0) {
+						cg = asset_cg_load(s->cg.no);
+					} else if (s->cg.name && s->cg.name->size > 0) {
+						int no = 0;
+						cg = asset_cg_load_by_name(s->cg.name->text, &no);
+					}
+					if (cg) {
+						gfx_init_texture_with_cg(&s->common.texture, cg);
+						cg_free(cg);
+					}
+				}
+				break;
+			}
+			case PARTS_TEXT: {
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				bool need_text_rerender = false;
+				for (unsigned li = 0; li < s->text.nr_lines; li++) {
+					struct parts_text_line *line = &s->text.lines[li];
+					for (int ci = 0; ci < line->nr_chars; ci++) {
+						struct parts_text_char *ch = &line->chars[ci];
+						bool had_t = ch->t.handle != 0;
+						bool had_edge = ch->t_edge.handle != 0;
+						if (had_t && !gfx_remap_texture(&ch->t))
+							need_text_rerender = true;
+						if (had_edge && !gfx_remap_texture(&ch->t_edge))
+							need_text_rerender = true;
+					}
+				}
+				if (need_text_rerender && !p->textures_suspended)
+					parts_text_rerender_all(p, &s->text);
+				break;
+			}
+			case PARTS_ANIMATION:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				for (unsigned fi = 0; fi < s->anim.nr_frames; fi++) {
+					if (s->anim.frames[fi].handle)
+						gfx_remap_texture(&s->anim.frames[fi]);
+				}
+				break;
+			case PARTS_NUMERAL:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (!s->common.texture.handle && s->num.have_num && !p->textures_suspended)
+					parts_numeral_update(p, &s->num);
+				break;
+			case PARTS_HGAUGE:
+			case PARTS_VGAUGE:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (s->gauge.cg.handle)
+					gfx_remap_texture(&s->gauge.cg);
+				break;
+			case PARTS_CONSTRUCTION_PROCESS:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (!s->common.texture.handle && !p->textures_suspended &&
+				    !TAILQ_EMPTY(&s->cproc.ops)) {
+					s->cproc.needs_build = true;
+				}
+				break;
+			case PARTS_FLASH:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (s->flash.bitmaps)
+					ht_foreach_value(s->flash.bitmaps, remap_flash_bitmap);
+				break;
+			case PARTS_FLAT:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				if (s->flat.textures) {
+					for (size_t li = 0; li < s->flat.nr_libraries; li++) {
+						if (s->flat.textures[li].handle)
+							gfx_remap_texture(&s->flat.textures[li]);
+					}
+				}
+				break;
+			default:
+				if (s->common.texture.handle)
+					gfx_remap_texture(&s->common.texture);
+				break;
+			}
+		}
+		parts_component_dirty(p);
+		parts_dirty(p);
+	}
+	parts_engine_dirty();
+}
+
+static void parts_on_gl_reset(void *user)
+{
+	(void)user;
+	if (!parts_engine_initialized)
+		return;
+	int out = 0;
+	for (int i = 0; i < nr_parts_cg_cache; i++) {
+		if (gfx_remap_texture(&parts_cg_cache[i].texture) && parts_cg_cache[i].texture.handle) {
+			if (out != i)
+				parts_cg_cache[out] = parts_cg_cache[i];
+			out++;
+		} else {
+			free(parts_cg_cache[i].alpha_mask);
+			if (parts_cg_cache[i].name)
+				free_string(parts_cg_cache[i].name);
+		}
+	}
+	nr_parts_cg_cache = out;
+	recover_parts_in_current_context();
+	struct parts_context *bs = parts_get_back_scene();
+	if (bs && bs != parts_current) {
+		struct parts_context *prev = parts_context_select(bs);
+		recover_parts_in_current_context();
 		parts_context_select(prev);
 	}
 	scene_dirty();

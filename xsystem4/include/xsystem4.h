@@ -105,4 +105,6 @@ extern bool game_evenicle;
 extern bool game_rance03;
 extern bool game_dungeons_and_dolls;
 
+bool sys_is_sdl_main_thread(void);
+
 #endif /* XSYSTEM4_H */

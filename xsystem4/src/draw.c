@@ -102,7 +102,7 @@ static void load_copy_shader(struct copy_shader *s, const char *v_path, const ch
 }
 
 // load shaders
-void gfx_draw_init(void)
+static void draw_load_shaders(void)
 {
 	// generic copy shader; discards fragments outside of a given rectangle
 	load_copy_shader(&copy_shader, "shaders/render.v.glsl", "shaders/copy.f.glsl");
@@ -161,8 +161,23 @@ void gfx_draw_init(void)
 	load_copy_shader(&dilate_shader, "shaders/render.v.glsl", "shaders/dilate.f.glsl");
 }
 
+static void draw_on_gl_reset(possibly_unused void *user)
+{
+	draw_load_shaders();
+}
+
+void gfx_draw_init(void)
+{
+	draw_load_shaders();
+	gfx_register_reset_callback(draw_on_gl_reset, NULL);
+}
+
 static void run_draw_shader(Shader *s, Texture *dst, Texture *src, mat4 mw_transform, mat4 wv_transform, struct copy_data *data)
 {
+	if (dst && !gfx_remap_texture(dst) && !dst->handle)
+		return;
+	if (src && !gfx_remap_texture(src) && !src->handle)
+		return;
 	if (src && dst && src->handle && src->handle == dst->handle)
 		gfx_flush_draw_target(dst);
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, data->vpx, data->vpy, data->vpw, data->vph);
@@ -773,6 +788,8 @@ void gfx_copy_stretch_blend_amap_alpha(struct texture *dst, int dx, int dy, int 
 // FIXME: this doesn't work correctly when the src rectangle crosses the edge of the CG.
 static void copy_rot_zoom(Texture *dst, Texture *src, int sx, int sy, int w, int h, float rotate, float mag, Shader *shader)
 {
+	if (!gfx_remap_texture(dst) || !gfx_remap_texture(src))
+		return;
 	w = min(w, src->w - sx);
 	h = min(h, src->h - sy);
 	// 1. scale src vertices to texture size
@@ -1295,7 +1312,7 @@ void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy,
 
 void gfx_draw_shape_mask(Texture *dst, int dx, int dy, int w, int h, const uint8_t *cov, SDL_Color color, int mode)
 {
-	if (!dst || !dst->handle || w <= 0 || h <= 0 || !cov)
+	if (!dst || (!gfx_remap_texture(dst) && !dst->handle) || w <= 0 || h <= 0 || !cov)
 		return;
 	size_t n = (size_t)w * h;
 	SDL_Color *pixels = xmalloc(n * sizeof(SDL_Color));

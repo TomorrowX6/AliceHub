@@ -574,35 +574,49 @@ static void load_textures(struct s3de *s, struct archive *aar)
 		if (!name || ht_get(s->textures, name, NULL))
 			continue;
 
-		struct archive_data *dfile = RE_get_aar_entry(aar, s->path, name, ".png");
-		if (!dfile) {
+		static const char *s3de_exts[] = { ".png" };
+		bool has_alpha = false;
+		GLuint texture = RE_load_aar_texture(aar, s->path, name, s3de_exts, 1, &has_alpha);
+		if (!texture) {
 			WARNING("cannot load texture %s\\%s", s->path, name);
 			continue;
 		}
-		struct cg *cg = cg_load_data(dfile);
-		if (!cg) {
-			WARNING("cg_load_data failed: %s", dfile->name);
-			archive_free_data(dfile);
-			continue;
-		}
-		archive_free_data(dfile);
-
-		GLuint texture;
-		glGenTextures(1, &texture);
-		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glGenerateMipmap(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, 0);
-
 		struct billboard_texture *bt = xcalloc(1, sizeof(struct billboard_texture));
 		bt->texture = texture;
-		bt->has_alpha = cg->metrics.has_alpha;
+		bt->has_alpha = has_alpha;
 		ht_put(s->textures, name, bt);
-		cg_free(cg);
+	}
+}
+
+struct s3de_tex_reset_ctx {
+	struct s3de *s3de;
+	struct archive *aar;
+};
+
+static void reset_s3de_texture_cb(struct ht_slot *slot, void *data)
+{
+	struct s3de_tex_reset_ctx *rc = data;
+	struct billboard_texture *bt = slot->value;
+	if (!bt)
+		return;
+	bt->texture = 0;
+	if (!rc->aar || !rc->s3de || !rc->s3de->path || !slot->key)
+		return;
+	static const char *s3de_exts[] = { ".png" };
+	bt->texture = RE_load_aar_texture(rc->aar, rc->s3de->path, slot->key, s3de_exts, 1, &bt->has_alpha);
+}
+
+void s3de_reset_gl(struct s3de *s, struct archive *aar)
+{
+	if (!s)
+		return;
+	if (s->textures) {
+		struct s3de_tex_reset_ctx rc = { .s3de = s, .aar = aar };
+		ht_foreach(s->textures, reset_s3de_texture_cb, &rc);
+	}
+	for (int i = 0; i < s->nr_objects; i++) {
+		if (s->objects[i].model)
+			model_reset_gl(s->objects[i].model, aar, RE_SEAL_PLUGIN);
 	}
 }
 
