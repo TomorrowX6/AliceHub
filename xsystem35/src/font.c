@@ -78,7 +78,8 @@ static struct {
 	const char *name[FONTTYPEMAX];
 	int index[FONTTYPEMAX];
 	FT_Face face[FONTTYPEMAX];  // opened on first use, shared between all sizes
-	FT_Face fallback_face[FONTTYPEMAX][2];  // [0] default/SJIS, [1] GBK (SC)
+	bool face_is_fallback[FONTTYPEMAX];
+	FT_Face fallback_face[FONTTYPEMAX][2];  // [0] default/SJIS, [1] GBK/UTF8 (SC)
 	bool fallback_checked[FONTTYPEMAX][2];
 } this = {
 	.encoding = SHIFT_JIS,
@@ -270,6 +271,7 @@ static bool font_select(FontSpec spec, Font *font) {
 	}
 	if (!this.face[spec.type]) {
 		this.face[spec.type] = open_face(this.name[spec.type], this.index[spec.type]);
+		this.face_is_fallback[spec.type] = false;
 		if (!this.face[spec.type]) {
 			const char *fallback_name = spec.type == FONT_MINCHO ? DEFAULT_MINCHO_TTF : DEFAULT_GOTHIC_TTF;
 			FT_Face fallback = get_fallback_face(spec.type);
@@ -278,13 +280,18 @@ static bool font_select(FontSpec spec, Font *font) {
 			if (fallback) {
 				WARNING("Cannot open font %s; using fallback font", this.name[spec.type]);
 				this.face[spec.type] = fallback;
+				this.face_is_fallback[spec.type] = true;
 			} else {
 				SYSERROR("Cannot open font %s", this.name[spec.type]);
 			}
 		}
 	}
 	FT_Face face = this.face[spec.type];
-	if ((this.encoding == GBK || this.encoding == UTF8) && FT_Get_Char_Index(face, 0x8fd9) == 0) {
+	// GBK always denotes Simplified Chinese, so replace an incomplete primary
+	// face with the SC fallback font. UTF-8 is encoding-only (used by Japanese,
+	// Latin, and Chinese games alike), so preserve the configured primary face
+	// here and fall back per-glyph in get_glyph().
+	if (this.encoding == GBK && FT_Get_Char_Index(face, 0x8fd9) == 0) {
 		FT_Face cjk = get_fallback_face(spec.type);
 		if (cjk)
 			face = cjk;
@@ -539,9 +546,24 @@ void font_init(void) {
 	}
 }
 
+static void clear_primary_face(FontType type) {
+	FT_Face face = this.face[type];
+	if (face &&
+	    face != this.fallback_face[type][0] &&
+	    face != this.fallback_face[type][1]) {
+		FT_Done_Face(face);
+	}
+	this.face[type] = NULL;
+	this.face_is_fallback[type] = false;
+}
+
 void font_set_encoding(CharacterEncoding encoding) {
 	if (this.encoding != encoding) {
 		this.encoding = encoding;
+		for (int i = 0; i < FONTTYPEMAX; i++) {
+			if (this.face_is_fallback[i])
+				clear_primary_face(i);
+		}
 		font_clear_cache();
 	}
 }
@@ -560,7 +582,7 @@ void font_set_name_and_index(FontType type, const char *name, int index) {
 	cache_clear(glyph_cache);
 	this.name[type] = name;
 	this.index[type] = index;
-	this.face[type] = NULL;
+	clear_primary_face(type);
 }
 
 void font_set_antialias(bool enable) {

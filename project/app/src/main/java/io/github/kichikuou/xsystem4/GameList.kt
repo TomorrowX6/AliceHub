@@ -276,9 +276,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
 data class System40Ini(val gameName: String?, val SaveFolder: String?) {
     companion object {
-        fun parse(file: File): System40Ini {
+        fun parse(file: File): System40Ini = parse(file.readBytes())
+
+        fun parse(raw: ByteArray): System40Ini {
             val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
-            val raw = file.readBytes()
             val latin = String(raw, Charsets.ISO_8859_1)
             val gnMatch = Regex("""(?:^|\r?\n)\s*(?:GameName|Regist)\s*=\s*"([^\r\n"]*)"""").find(latin)
             val chosenCharset = if (gnMatch != null) {
@@ -633,7 +634,13 @@ class GameList(activity: Activity) {
                         prevBarrier?.join()
                     } catch (_: Throwable) {
                     }
-                    val imported = NativeGameImport.copyTree(context, uri, storage, expectedAinName) { progress ->
+                    val imported = NativeGameImport.copyTree(
+                        context = context,
+                        tree = uri,
+                        storage = storage,
+                        expectedAinName = expectedAinName,
+                        targetGameId = targetGameId
+                    ) { progress ->
                         if (abortHandle.isAborted) throw CancellationException()
                         withContext(Dispatchers.Main) {
                             setInstallProgress(sessionGen, progress, cancellable = true, resumable = false)
@@ -839,7 +846,11 @@ class GameList(activity: Activity) {
         return files.any { it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true) }
     }
 
-    private fun findGameRootDir(root: File, expectedAinName: String?): File? {
+    private fun findGameRootDir(
+        root: File,
+        expectedAinName: String?,
+        targetGameId: String? = null
+    ): File? {
         val candidates = root.walkTopDown()
             .filter { d ->
                 d.isDirectory && (isSystem4GameRoot(d) || isSystem3GameRoot(d))
@@ -849,6 +860,11 @@ class GameList(activity: Activity) {
         if (!expectedAinName.isNullOrBlank()) {
             candidates.firstOrNull { d ->
                 d.listFiles()?.any { it.isFile && it.name.equals(expectedAinName, true) } == true
+            }?.let { return it }
+        }
+        if (!targetGameId.isNullOrBlank() && !targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
+            candidates.firstOrNull { d ->
+                GameCatalog.classifyGameRootDir(d) == targetGameId
             }?.let { return it }
         }
         return candidates.firstOrNull()
@@ -973,7 +989,7 @@ class GameList(activity: Activity) {
                 }
             )
 
-            var srcDir: File? = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
+            var srcDir: File? = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
             var stage = 1
             while (srcDir == null && stage <= 3) {
                 checkCancelled()
@@ -981,10 +997,18 @@ class GameList(activity: Activity) {
                     .filter { it.isFile && Iso9660Extractor.isIsoOrMdfName(it.name) }
                     .sortedByDescending { it.length() }
                     .toList()
-                val chosenDisc = discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, expectedAinName) }
-                    ?: if (expectedAinName.isNullOrBlank()) {
-                        discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null) }
-                    } else null
+                val chosenDisc = discs.firstOrNull {
+                    Iso9660Extractor.containsGameRoot(it, expectedAinName, targetGameId)
+                } ?: if (expectedAinName.isNullOrBlank() &&
+                    (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
+                ) {
+                    discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null, null) }
+                } else {
+                    null
+                }
+                if (chosenDisc == null && discs.any { Iso9660Extractor.containsGameRoot(it, null, null) }) {
+                    throw InstallFailureException(R.string.import_wrong_game)
+                }
 
                 if (chosenDisc != null) {
                     val nextDir = File(tempDir, "stage$stage")
@@ -993,7 +1017,8 @@ class GameList(activity: Activity) {
                         destDir = nextDir,
                         shouldSkip = { rel ->
                             shouldSkipBaseInstallEntry(rel) ||
-                                (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                                (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
+                                (isKichikuouTarget && isKichikuouBloatRelPath(rel))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1013,7 +1038,7 @@ class GameList(activity: Activity) {
                         .filter { it.isFile && it.name.lowercase().endsWith(".mds") }
                         .forEach { it.delete() }
                     currentStageDir = nextDir
-                    srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
+                    srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
                     stage++
                     continue
                 }
@@ -1037,7 +1062,8 @@ class GameList(activity: Activity) {
                     destDir = nextDir,
                     shouldSkip = { rel ->
                         shouldSkipBaseInstallEntry(rel) ||
-                            (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                            (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
+                            (isKichikuouTarget && isKichikuouBloatRelPath(rel))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1053,7 +1079,7 @@ class GameList(activity: Activity) {
                 )
                 for (a in archives) a.delete()
                 currentStageDir = nextDir
-                srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName))
+                srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
                 stage++
             }
 
@@ -1080,10 +1106,14 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
-            val isRance02 = classifiedId == GameCatalog.ID_RANCE02
+            val isRance02 = isRance02Target ||
+                GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
             mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
-            if (isRance02 || classifiedId == GameCatalog.ID_KICHIKUOU) {
+            if (!GameCatalog.validateImportedGameDir(srcDir, expectedAinName, targetGameId)) {
+                throw InstallFailureException(R.string.import_wrong_game)
+            }
+            val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
+            if (classifiedId == GameCatalog.ID_RANCE02 || classifiedId == GameCatalog.ID_KICHIKUOU) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {

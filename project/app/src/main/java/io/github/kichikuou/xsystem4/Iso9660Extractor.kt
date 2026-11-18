@@ -54,24 +54,44 @@ object Iso9660Extractor {
         }
     }
 
-    /** Fast metadata-only check to test if an ISO/MDF disc image contains a System4 game directory. */
-    fun containsGameRoot(file: File, expectedAinName: String? = null): Boolean {
+    /** Fast metadata-only check to test if an ISO/MDF disc image contains a matching game directory. */
+    @JvmOverloads
+    fun containsGameRoot(
+        file: File,
+        expectedAinName: String? = null,
+        targetGameId: String? = null
+    ): Boolean {
         return try {
             FileInputStream(file).use { fis ->
                 val ch = fis.channel
                 val desc = openRootDescriptor(ch) ?: return false
                 val queue = ArrayDeque<Pair<Long, Long>>()
                 queue.add(desc.rootLba to desc.rootSize)
+                var hasUnclassifiedSys3Root = false
+                var hasIsoKichikuMarker = false
                 while (queue.isNotEmpty()) {
                     val (dlba, dsize) = queue.removeFirst()
                     val entries = parseDirectory(readExtentBytes(ch, desc.layout, dlba, dsize), desc.joliet)
                     var hasIni = false
                     var hasMatchingAin = false
                     var hasSys3Scenario = false
+                    val dirFileNames = ArrayList<String>()
+                    val entryByLowerName = HashMap<String, DirEntry>()
+                    var bgmDirEntry: DirEntry? = null
                     for (e in entries) {
                         if (e.isDir) {
-                            if (e.extents.isNotEmpty()) queue.add(e.extents[0])
+                            if (e.extents.isNotEmpty()) {
+                                queue.add(e.extents[0])
+                                if (e.name.equals("bgm", ignoreCase = true)) {
+                                    bgmDirEntry = e
+                                }
+                            }
                         } else if (!e.name.startsWith('.')) {
+                            dirFileNames.add(e.name)
+                            entryByLowerName[e.name.lowercase(Locale.ROOT)] = e
+                            if (e.name.lowercase(Locale.ROOT).startsWith("kichiku_")) {
+                                hasIsoKichikuMarker = true
+                            }
                             if (e.name.equals("AliceStart.ini", ignoreCase = true) ||
                                 e.name.equals("System40.ini", ignoreCase = true)
                             ) {
@@ -97,13 +117,79 @@ object Iso9660Extractor {
                             }
                         }
                     }
-                    if ((hasIni && hasMatchingAin) || hasSys3Scenario) return true
+                    if (targetGameId == GameCatalog.ID_KICHIKUOU) {
+                        val playlistEntry = entryByLowerName["playlist.txt"]
+                        if (playlistEntry != null) {
+                            val raw = readEntrySmallBytes(ch, desc.layout, playlistEntry)
+                            if (raw != null && String(raw, Charsets.ISO_8859_1).lowercase(Locale.ROOT).contains("kichiku_")) {
+                                hasIsoKichikuMarker = true
+                            }
+                        }
+                    }
+                    if ((hasIni && hasMatchingAin) || hasSys3Scenario) {
+                        if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
+                            return true
+                        }
+                        val bgmNames = if (targetGameId == GameCatalog.ID_KICHIKUOU &&
+                            bgmDirEntry != null &&
+                            bgmDirEntry.extents.isNotEmpty()
+                        ) {
+                            val (blba, bsize) = bgmDirEntry.extents[0]
+                            parseDirectory(readExtentBytes(ch, desc.layout, blba, bsize), desc.joliet)
+                                .filter { !it.isDir }
+                                .map { it.name }
+                        } else {
+                            emptyList()
+                        }
+                        val readSmallFile: (String) -> ByteArray? = { name ->
+                            entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
+                                readEntrySmallBytes(ch, desc.layout, it)
+                            }
+                        }
+                        if (GameCatalog.matchesTargetGameFiles(
+                                targetGameId = targetGameId,
+                                fileNames = dirFileNames,
+                                bgmFileNames = bgmNames,
+                                readSmallFile = readSmallFile
+                            )
+                        ) {
+                            return true
+                        }
+                        if (hasSys3Scenario &&
+                            GameCatalog.classifyGameRootFiles(dirFileNames, bgmNames, readSmallFile) == null
+                        ) {
+                            hasUnclassifiedSys3Root = true
+                        }
+                    }
+                }
+                if (targetGameId == GameCatalog.ID_KICHIKUOU && hasUnclassifiedSys3Root && hasIsoKichikuMarker) {
+                    return true
                 }
                 false
             }
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun readEntrySmallBytes(
+        ch: FileChannel,
+        layout: SectorLayout,
+        entry: DirEntry,
+        maxBytes: Long = 256L * 1024L
+    ): ByteArray? {
+        if (entry.extents.isEmpty()) return null
+        val total = entry.extents.sumOf { it.second }
+        if (total <= 0L || total > maxBytes) return null
+        if (entry.extents.size == 1) {
+            val (lba, len) = entry.extents[0]
+            return readExtentBytes(ch, layout, lba, len)
+        }
+        val out = ByteArrayOutputStream(total.toInt())
+        for ((lba, len) in entry.extents) {
+            out.write(readExtentBytes(ch, layout, lba, len))
+        }
+        return out.toByteArray()
     }
 
     fun extractFileToDirectory(

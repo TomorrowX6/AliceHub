@@ -113,11 +113,32 @@ object NativeGameImport {
         return if (isMultiDiscSys3) "System3" else "Game"
     }
 
+    private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val buf = ByteArray(8192)
+                val out = java.io.ByteArrayOutputStream()
+                var total = 0
+                while (total < maxBytes) {
+                    val toRead = minOf(buf.size, maxBytes - total)
+                    val n = input.read(buf, 0, toRead)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    total += n
+                }
+                out.toByteArray()
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     suspend fun copyTree(
         context: Context,
         tree: Uri,
         storage: File,
         expectedAinName: String? = null,
+        targetGameId: String? = null,
         progress: suspend (String) -> Unit
     ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -162,6 +183,38 @@ object NativeGameImport {
         if (!expectedAinName.isNullOrBlank() &&
             resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
         ) {
+            throw GameList.InstallFailureException(R.string.import_wrong_game)
+        }
+        val primaryFileNames = resolvedPrimary
+            .filter { !it.folder && !skip(it.name) }
+            .map { ArchiveExtractor.repairSjisAsGbkMojibake(it.name) }
+        val bgmFileNames = if (targetGameId == GameCatalog.ID_KICHIKUOU) {
+            val bgmDoc = resolvedPrimary.firstOrNull { it.folder && it.name.equals("bgm", ignoreCase = true) }
+            if (bgmDoc != null) {
+                children(context, tree, bgmDoc.uri).filter { !it.folder }.map { it.name }
+            } else {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+        val matchesTarget = GameCatalog.matchesTargetGameFiles(
+            targetGameId = targetGameId,
+            fileNames = primaryFileNames,
+            bgmFileNames = bgmFileNames,
+            readSmallFile = { fileName ->
+                val doc = resolvedPrimary.firstOrNull {
+                    !it.folder && !skip(it.name) &&
+                        ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
+                }
+                if (doc != null && (doc.size < 0 || doc.size <= 256L * 1024L)) {
+                    readBoundedDocumentBytes(context, doc.uri)
+                } else {
+                    null
+                }
+            }
+        )
+        if (!matchesTarget) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
@@ -217,6 +270,9 @@ object NativeGameImport {
                 copy(docs, staging)
             }
             currentCoroutineContext().ensureActive()
+            if (!GameCatalog.validateImportedGameDir(staging, expectedAinName, targetGameId)) {
+                throw GameList.InstallFailureException(R.string.import_wrong_game)
+            }
             var destination = File(storageCanonical, baseName).canonicalFile
             var index = 1
             while (destination.exists()) {
