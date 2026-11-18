@@ -835,6 +835,128 @@ int main(void) {
                             str(c), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_effect_init_registers_gl_reset_callback(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+typedef unsigned int GLuint;
+typedef int GLint;
+typedef struct texture { GLuint handle; int w, h; bool opaque; unsigned int ctx_gen; } Texture;
+struct shader { GLuint program; void (*prepare)(void *, void *); };
+struct effect_shader { struct shader s; const char *f_path; GLint old, resolution, progress; };
+typedef void (*gfx_reset_callback)(void *);
+enum effect { EFFECT_CROSSFADE = 1, EFFECT_BLUR_CROSSFADE = 2, NR_EFFECTS = 3 };
+static const char *effect_names[NR_EFFECTS] = { NULL, "CROSSFADE", "BLUR_CROSSFADE" };
+static void (*effect_functions[NR_EFFECTS])(Texture *, Texture *, Texture *, float) = {0};
+static struct effect_shader crossfade_shader = { .f_path = "cf" };
+static struct effect_shader blur_crossfade_shader = { .f_path = "bcf" };
+static struct effect_shader *effect_shaders[NR_EFFECTS] = {
+    [EFFECT_CROSSFADE] = &crossfade_shader,
+    [EFFECT_BLUR_CROSSFADE] = &blur_crossfade_shader,
+};
+static struct { bool on; enum effect type; Texture old, view; } effect = {0};
+static bool effect_reset_registered = false;
+static gfx_reset_callback registered_cb = NULL;
+static int register_calls = 0, shader_loads = 0, remap_calls = 0;
+static GLuint next_prog = 500;
+static void sys_warning(const char *fmt, ...) { (void)fmt; }
+#define WARNING(...) sys_warning(__VA_ARGS__)
+static void gfx_register_reset_callback(gfx_reset_callback cb, void *user) { (void)user; registered_cb = cb; register_calls++; }
+static void load_effect_shader(struct effect_shader *s) { s->s.program = ++next_prog; shader_loads++; }
+static bool gfx_remap_texture(Texture *t) {
+    remap_calls++;
+    if (t->handle && t->handle < 1000) t->handle += 1000;
+    return t->handle != 0;
+}
+static void gfx_delete_texture(Texture *t) { t->handle = 0; }
+static void gfx_copy_main_surface(Texture *dst) { static GLuint h = 10; dst->handle = ++h; dst->w = 64; dst->h = 64; }
+static void gfx_set_view(Texture *t) { (void)t; }
+''' + '\n'.join([
+            function('src/effect.c', 'static void effect_on_gl_reset'),
+            function('src/effect.c', 'static void ensure_effect_reset_registered'),
+            function('src/effect.c', 'int effect_init'),
+        ]) + r'''
+int main(void) {
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(effect_reset_registered && registered_cb == effect_on_gl_reset && register_calls == 1);
+    assert(shader_loads == 1 && crossfade_shader.s.program == 501);
+    GLuint orig_old = effect.old.handle, orig_view = effect.view.handle;
+
+    // Context reset clears cached shader program and remaps active effect textures.
+    registered_cb(NULL);
+    assert(crossfade_shader.s.program == 0);
+    assert(effect.old.handle == orig_old + 1000);
+    assert(effect.view.handle == orig_view + 1000);
+
+    // Next effect_init lazily reloads the shader program cleanly and does not duplicate registration.
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(register_calls == 1 && shader_loads == 2 && crossfade_shader.s.program == 502);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'effect_reset.c', Path(tmp) / 'effect_reset'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_vmgraph_copy_stretch_remaps_source_before_filter(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+typedef unsigned int GLuint;
+typedef unsigned int GLenum;
+typedef int GLint;
+enum { GL_TEXTURE_2D = 1, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_NEAREST, GL_LINEAR };
+typedef struct texture { GLuint handle; int w, h; bool opaque; unsigned int ctx_gen; } Texture;
+struct vm_surface { Texture texture; };
+static struct vm_surface dst_surf = { .texture = { .handle = 11, .ctx_gen = 1 } };
+static struct vm_surface src_surf = { .texture = { .handle = 17, .ctx_gen = 1 } };
+static struct vm_surface *vm_surface_get(int no) {
+    if (no == 1) return &dst_surf;
+    if (no == 2) return &src_surf;
+    return 0;
+}
+static GLuint bound_tex = 0;
+static int near_binds_on_remapped = 0, lin_binds_on_remapped = 0, copy_calls = 0;
+static void glBindTexture(GLenum target, GLuint tex) {
+    assert(target == GL_TEXTURE_2D);
+    if (tex != 0) assert(tex == 402 || tex == 401);
+    bound_tex = tex;
+}
+static void glTexParameteri(GLenum target, GLenum pname, GLint param) {
+    assert(target == GL_TEXTURE_2D);
+    (void)pname;
+    if (bound_tex == 402 && param == GL_NEAREST) near_binds_on_remapped++;
+    if (bound_tex == 402 && param == GL_LINEAR) lin_binds_on_remapped++;
+}
+static bool gfx_remap_texture(Texture *t) {
+    if (t == &dst_surf.texture) t->handle = 401;
+    if (t == &src_surf.texture) t->handle = 402;
+    t->ctx_gen = 2;
+    return true;
+}
+static void gfx_copy_stretch(Texture *d, int dx, int dy, int dw, int dh, Texture *s, float sx, float sy, float sw, float sh) {
+    (void)dx; (void)dy; (void)dw; (void)dh; (void)sx; (void)sy; (void)sw; (void)sh;
+    assert(d->handle == 401 && s->handle == 402);
+    assert(near_binds_on_remapped == 2 && lin_binds_on_remapped == 0);
+    copy_calls++;
+}
+''' + function('src/hll/vmGraph.c', 'static void vmGraph_CopyStretch') + r'''
+int main(void) {
+    vmGraph_CopyStretch(1, 0, 0, 10, 10, 2, 0.f, 0.f, 5.f, 5.f);
+    assert(copy_calls == 1 && near_binds_on_remapped == 2 && lin_binds_on_remapped == 2);
+    assert(bound_tex == 0);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'vmgraph.c', Path(tmp) / 'vmgraph'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
         self.assertIn('#define CURRENT_SAVE_VERSION 32', save)

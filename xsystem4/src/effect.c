@@ -304,16 +304,21 @@ static void effect_on_gl_reset(void *user)
 	gfx_remap_texture(&effect.view);
 }
 
+static void ensure_effect_reset_registered(void)
+{
+	if (!effect_reset_registered) {
+		gfx_register_reset_callback(effect_on_gl_reset, NULL);
+		effect_reset_registered = true;
+	}
+}
+
 void effect_update_texture(int type, Texture *dst, Texture *old, Texture *new, float rate)
 {
 	if (type <= 0 || type >= NR_EFFECTS) {
 		WARNING("Invalid or unknown effect: %d", type);
 		return;
 	}
-	if (!effect_reset_registered) {
-		gfx_register_reset_callback(effect_on_gl_reset, NULL);
-		effect_reset_registered = true;
-	}
+	ensure_effect_reset_registered();
 	if (effect_functions[type]) {
 		effect_functions[type](dst, old, new, rate);
 	} else {
@@ -337,6 +342,7 @@ int effect_init(enum effect type)
 		WARNING("Invalid or unknown effect: %d", type);
 		return 0;
 	}
+	ensure_effect_reset_registered();
 
 	if (effect_functions[type]) {
 		// nothing to do

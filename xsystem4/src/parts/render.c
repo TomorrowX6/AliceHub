@@ -229,6 +229,7 @@ static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **in
 		glm_scale(clip_mw, (vec3){ c_common->w, c_common->h, 1.0 });
 		glm_mat4_inv(clip_mw, cached_clip_inv);
 		quad_screen_aabb(clip_mw, &clip_min_x, &clip_max_x, &clip_min_y, &clip_max_y);
+		gfx_remap_texture(&c_common->texture);
 		cached_clip_tex = c_common->texture.handle;
 		cached_clip_gen = parts_render_gen;
 		cached_clip_no = alpha_clipper;
@@ -246,7 +247,7 @@ static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **in
 
 static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rectangle *rect, float blend_rate, vec3 add_color, vec3 multiply_color, int draw_filter, int alpha_clipper)
 {
-	if (!texture || !texture->handle || blend_rate <= 0.0f)
+	if (!texture || !gfx_remap_texture(texture) || !texture->handle || blend_rate <= 0.0f)
 		return;
 
 	mat4 sub_mw;
