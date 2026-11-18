@@ -38,6 +38,7 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `kichikuou` | Kichikuou Rance | 1996-12-19 | 84 | 8.40 | [v2045](https://vndb.org/v2045) | [source](https://vndb.org/v2045) |
 | `escalayer` | Beat Angel Escalayer | 2002-08-02 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/information/2022/entry003043.html) |
 | `escalayer_reboot` | Beat Angel Escalayer Reboot | 2014-07-25 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/escalayerreboot/) |
+| `ixseal` | Beat Valkyrie Ixseal | 2017-07-28 | 72 | 7.20 | [v21142](https://vndb.org/v21142) | [source](https://www.alicesoft.com/ixseal/) |
 
 ## Edition mapping / missing-score decisions
 
