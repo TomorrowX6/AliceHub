@@ -24,6 +24,7 @@
 
 #include "hll.h"
 #include "reign.h"
+#include "vm/heap.h"
 #include "vm/page.h"
 
 struct RE_options RE_options;
@@ -2002,7 +2003,14 @@ static int TapirEngine_GetDrawOption(int plugin_number, int draw_option)
 
 //bool TapirEngine_SetDebugMode(int Plugin, int DebugModeType, int Mode);
 //int TapirEngine_GetDebugMode(int Plugin, int DebugModeType);
-HLL_WARN_UNIMPLEMENTED(false, bool, TapirEngine, SetThreadLoadingMode, int plugin_number, bool thread_loading_mode);
+static bool TapirEngine_SetThreadLoadingMode(int plugin_number, bool thread_loading_mode)
+{
+	struct RE_plugin *p = RE_get_plugin(plugin_number);
+	if (!p)
+		return false;
+	p->thread_loading_mode = thread_loading_mode;
+	return true;
+}
 
 static bool TapirEngine_Suspend(int plugin_number)
 {
@@ -2440,6 +2448,43 @@ static void SealEngine_SetMagSpeed(int mag_speed)
 static bool SealEngine_IsExistInstanceData(int plugin, int instance, struct string *filename)
 {
 	return RE_instance_data_exists(get_instance(plugin, instance), filename->text);
+}
+
+static struct RE_plugin *first_active_plugin(void)
+{
+	for (int i = 0; i < RE_MAX_PLUGINS; i++) {
+		if (plugins[i])
+			return plugins[i];
+	}
+	return NULL;
+}
+
+static bool SealEngine_IsExist3DFile(struct string *filename, int type)
+{
+	struct RE_plugin *plugin = filename ? first_active_plugin() : NULL;
+	return plugin ? RE_plugin_data_exists(plugin, type, filename->text) : false;
+}
+
+static bool SealEngine_IsExistPolyMotion(struct string *filename)
+{
+	struct RE_plugin *plugin = filename ? first_active_plugin() : NULL;
+	return plugin ? RE_plugin_poly_motion_exists(plugin, filename->text) : false;
+}
+
+static bool SealEngine_ThreadLoadPolyInstanceList(int plugin, struct page **instance_list, struct page **name_list)
+{
+	if (!instance_list || !*instance_list || !name_list || !*name_list)
+		return false;
+	int n = (*instance_list)->nr_vars < (*name_list)->nr_vars
+		? (*instance_list)->nr_vars : (*name_list)->nr_vars;
+	bool ok = true;
+	for (int i = 0; i < n; i++) {
+		struct RE_instance *ri = get_instance(plugin, (*instance_list)->values[i].i);
+		struct string *name = heap_get_string((*name_list)->values[i].i);
+		if (!ri || !name || !RE_instance_load(ri, name->text))
+			ok = false;
+	}
+	return ok;
 }
 
 //bool SealEngine_GetInstanceName(int PluginNumber, int InstanceNumber, struct string **pIName);
@@ -2881,7 +2926,11 @@ static float SealEngine_GetLightParam(int plugin, int type)
 		return 0.0f;
 	return rp->light_params[type];
 }
-HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, IsThreadLoadingMode, int PluginNumber);
+static bool SealEngine_IsThreadLoadingMode(int PluginNumber)
+{
+	struct RE_plugin *p = RE_get_plugin(PluginNumber);
+	return p ? p->thread_loading_mode : false;
+}
 HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, IsInstanceLoading, int PluginNumber, int InstanceNumber);
 static bool SealEngine_ClearCache(int PluginNumber)
 {
@@ -2893,6 +2942,9 @@ static bool SealEngine_ClearCache(int PluginNumber)
 	    HLL_EXPORT(CreatePlugin, SealEngine_CreatePlugin), \
 	    HLL_EXPORT(SetMagSpeed, SealEngine_SetMagSpeed), \
 	    HLL_TODO_EXPORT(SaveInstance, SealEngine_SaveInstance), \
+	    HLL_EXPORT(IsExist3DFile, SealEngine_IsExist3DFile), \
+	    HLL_EXPORT(IsExistPolyMotion, SealEngine_IsExistPolyMotion), \
+	    HLL_EXPORT(ThreadLoadPolyInstanceList, SealEngine_ThreadLoadPolyInstanceList), \
 	    HLL_EXPORT(IsExistInstanceData, SealEngine_IsExistInstanceData), \
 	    HLL_EXPORT(GetInstanceName, SealEngine_GetInstanceName), \
 	    HLL_EXPORT(GetInstancePos, SealEngine_GetInstancePos), \

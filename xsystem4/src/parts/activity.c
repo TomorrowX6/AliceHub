@@ -625,6 +625,13 @@ static const char *const pact_key_aliases[][3] = {
 	{ "背景图片", "背景画像", NULL },
 	{ "边距", "マージン", NULL },
 	{ "开始時シーク量", "開始時シーク量", NULL },
+	{ "上書き检查ＣＧ名", "上書きチェックＣＧ名", NULL },
+	{ "上書き检查フラット名", "上書きチェックフラット名", NULL },
+	{ "消息编号", "メッセージ番号", NULL },
+	{ "循环ＣＧ开始编号", "ループＣＧ開始番号", NULL },
+	{ "循环ＣＧ张数", "ループＣＧ枚数", NULL },
+	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", NULL },
+	{ "子パーツ列表", "子パーツ", "子部件" },
 };
 
 static struct ex_tree *node(struct ex_tree *tree, const char *key)
@@ -762,16 +769,25 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 				item(tree, "右下", 0, 0), item(tree, "右下", 1, 0), state);
 	} else if (!strcmp(kind, "ＣＧ判定パーツ") || !strcmp(kind, "ＣＧ判定部件")) {
 		PE_SetPartsCGDetectionSize(no, str(tree, "ＣＧ名"), state);
-	} else if (!strcmp(kind, "横向计量パーツ") || !strcmp(kind, "横ゲージ部件")) {
+	} else if (!strcmp(kind, "横向计量パーツ") || !strcmp(kind, "横ゲージ部件") || !strcmp(kind, "横ゲージパーツ")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		if (cg->size) PE_SetHGaugeCG(no, cg, state);
 		PE_SetHGaugeReverse(no, !!number(tree, "反转", 0), state);
 		PE_SetHGaugeRate(no, number(tree, "分子", 0), number(tree, "分母", 100), state);
-	} else if (!strcmp(kind, "纵向计量パーツ") || !strcmp(kind, "縦ゲージ部件") || !strcmp(kind, "竖ゲージ部件")) {
+	} else if (!strcmp(kind, "纵向计量パーツ") || !strcmp(kind, "縦ゲージ部件") || !strcmp(kind, "竖ゲージ部件") || !strcmp(kind, "縦ゲージパーツ")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		if (cg->size) PE_SetVGaugeCG(no, cg, state);
 		PE_SetVGaugeReverse(no, !!number(tree, "反转", 0), state);
 		PE_SetVGaugeRate(no, number(tree, "分子", 0), number(tree, "分母", 100), state);
+	} else if (!strcmp(kind, "ループＣＧパーツ") || !strcmp(kind, "循环ＣＧパーツ")) {
+		struct string *cg = str(tree, "ＣＧ名");
+		if (cg->size) {
+			PE_SetLoopCG(no, cg,
+					number2(tree, "循环ＣＧ开始编号", "循环ＣＧ开始番号", 0),
+					number2(tree, "循环ＣＧ张数", "循环ＣＧ枚数", 0),
+					number2(tree, "循环ＣＧ切り替え时间", "循环ＣＧ切换時間", 0),
+					state);
+		}
 	} else if (!strcmp(kind, "数字パーツ") || !strcmp(kind, "数字部件")) {
 		PE_SetNumeralFont(no,
 				number2(tree, "字体类型", "フォントタイプ", 0),
@@ -800,7 +816,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 		PE_SetNumeralShowPadding(no, number(tree, "ゼロパディング", 1), state);
 		PE_SetNumeralLength(no, number(tree, "桁数", 0), state);
 		PE_SetNumeralNumber(no, number(tree, "数值", 0), state);
-	} else if (!strcmp(kind, "文本パーツ") || !strcmp(kind, "文本部件")) {
+	} else if (!strcmp(kind, "文本パーツ") || !strcmp(kind, "文本部件") || !strcmp(kind, "テキストパーツ")) {
 		struct ex_tree *style = node(tree, "文本装飾");
 		PE_SetPartsFontType(no, number2(style, "字体类型", "フォントタイプ", 0), state);
 		PE_SetPartsFontSize(no, number2(style, "字体尺寸", "フォントサイズ", 16), state);
@@ -1073,7 +1089,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		load_state(p, node2(info, "一般状态", "普通状態"), 1);
 		load_state(p, node2(info, "光标选中状态", "オン指针状態"), 2);
 		load_state(p, node2(info, "键DOWN状态", "キーダウン状態"), 3);
-	} else if (!strcmp(kind, "按钮")) {
+	} else if (!strcmp(kind, "按钮") || !strcmp(kind, "ボタン")) {
 		parts_widget_create_deferred(p, 0);
 		PE_SetButtonSize(no, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 30));
 		PE_SetButtonEnable(no, number2(info, "有效", "有効", 1));
@@ -1097,7 +1113,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		if (cg->size) PE_SetButtonCGName(no, cg);
 		if (flat->size) PE_SetButtonFlatName(no, flat);
 		parts_widget_end_batch(p);
-	} else if (!strcmp(kind, "复选框") || !strcmp(kind, "检查ボックス")) {
+	} else if (!strcmp(kind, "复选框") || !strcmp(kind, "检查ボックス") || !strcmp(kind, "チェックボックス")) {
 		parts_widget_create_deferred(p, 1);
 		p->widget->checked = number2(info, "选择状态", "检查状態", 0);
 		p->widget->button_mode = number(info, "按钮模式", 0);
@@ -1134,12 +1150,16 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		parts_widget_end_batch(p);
 	} else if (!strcmp(kind, "纵向滚动条栏") || !strcmp(kind, "横向滚动条栏") ||
 	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") ||
+	           !strcmp(kind, "縦スクロールバー") || !strcmp(kind, "横スクロールバー") ||
 	           !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
+	           !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー") ||
 	           !strcmp(kind, "纵向滑动条") || !strcmp(kind, "横向滑动条")) {
 		bool horizontal = !strcmp(kind, "横向滚动条栏") || !strcmp(kind, "横滚动条") ||
+		                  !strcmp(kind, "横スクロールバー") ||
 		                  !strcmp(kind, "横スライダー") || !strcmp(kind, "横向滑动条");
 		bool is_slider = !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
-		                 !strcmp(kind, "纵向滑动条") || !strcmp(kind, "横向滑动条");
+		                 !strcmp(kind, "縦スライダー") || !strcmp(kind, "横向滑动条") ||
+		                 !strcmp(kind, "纵向滑动条");
 		if (is_slider)
 			parts_sliderbar_create(p, horizontal);
 		else
@@ -1178,7 +1198,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		PE_SetPanelAlphaGradationBottom(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 1, 0));
 		PE_SetPanelAlphaGradationLeft(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 2, 0));
 		PE_SetPanelAlphaGradationRight(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 3, 0));
-	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "信息窗口")) {
+	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "信息窗口") || !strcmp(kind, "メッセージウィンドウ")) {
 		PE_SetSpecialComponentType(no, 10);
 		PE_SetMessageWindowActive(no, number(info, "アクティブ", 0));
 		PE_SetMessageWindowInactiveMultipleColor(no,
@@ -1232,7 +1252,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 			flat = str(key, "フラット名");
 			if (flat->size) PE_SetKeyWaitFlatName(no, flat);
 		}
-	} else if (!strcmp(kind, "ラジオ按钮ボックス") || !strcmp(kind, "单选按钮框")) {
+	} else if (!strcmp(kind, "ラジオ按钮ボックス") || !strcmp(kind, "单选按钮框") || !strcmp(kind, "ラジオボタンボックス")) {
 		PE_SetSpecialComponentType(no, 9);
 	} else if (!strcmp(kind, "文本框") || !strcmp(kind, "テキストボックス")) {
 		PE_SetSpecialComponentType(no, 4);
@@ -1254,6 +1274,8 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	} else if (!strcmp(kind, "フォーム")) {
 		PE_SetSpecialComponentType(no, 13);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 200));
+	} else if (!strcmp(kind, "フォームグループ")) {
+		PE_SetSpecialComponentType(no, 14);
 	} else if (!strcmp(kind, "用户组件") || !strcmp(kind, "ユーザコンポーネント")) {
 		PE_SetSpecialComponentType(no, 15);
 		PE_SetUserComponentName(no, str2(info, "用户组件名", "ユーザコンポーネント名"));

@@ -77,6 +77,19 @@ static void kiwi_prelink(void)
 			config.mixer_channels[i] = strdup(names[i]);
 			config.mixer_volumes[i] = (i == 3) ? 100 : 80;
 		}
+	} else if (game_evenicle2 && !config.mixer_nr_channels) {
+		const char *names[] = {
+			"Master", "BGM", "SE", "Voice", "Movie", "BackVoice",
+			"Group6", "Group7", "Group8", "Group9",
+			"VoiceChara1", "VoiceChara2", "BackVoiceChara1", "BackVoiceChara2"
+		};
+		config.mixer_nr_channels = 14;
+		config.mixer_channels = xcalloc(14, sizeof(char *));
+		config.mixer_volumes = xcalloc(14, sizeof(int));
+		for (int i = 0; i < 14; i++) {
+			config.mixer_channels[i] = strdup(names[i]);
+			config.mixer_volumes[i] = (i == 3) ? 100 : 80;
+		}
 	}
 }
 

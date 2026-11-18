@@ -850,7 +850,7 @@ void mixer_init(void)
 		mixers[i].parent = parent;
 		parent->children = xrealloc_array(parent->children, parent->nr_children, parent->nr_children+1, sizeof(struct mixer*));
 		parent->children[parent->nr_children++] = &mixers[i];
-		if (!game_rance10 && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
+		if (!game_rance10 && !game_evenicle2 && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
 			parent = &mixers[i];
 		}
 	}

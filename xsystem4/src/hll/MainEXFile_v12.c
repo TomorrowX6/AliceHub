@@ -1,13 +1,18 @@
 /* AIN v12 name-based EX readers, GPL-2.0-or-later. */
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include "system4/ain.h"
+#include "system4/archive.h"
 #include "system4/ex.h"
+#include "system4/hashtable.h"
 #include "system4/little_endian.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 #include "vm/v12.h"
+#include "reign.h"
 #include "xsystem4.h"
 #include "mainex_v12.h"
 #include "hll.h"
@@ -19,6 +24,133 @@ static char **added_ex_files;
 static int nr_added_ex_files;
 static char **added_ex_texts;
 static int nr_added_ex_texts;
+static struct archive *poly_ex_ar;
+static bool poly_ex_ar_failed;
+static struct hash_table *poly_ex_cache;
+static struct ex missing_poly_ex;
+
+static void free_poly_ex_cb(void *val)
+{
+	if (val && val != &missing_poly_ex)
+		ex_free((struct ex *)val);
+}
+
+static void poly_ex_fini(void)
+{
+	if (poly_ex_cache) {
+		ht_foreach_value(poly_ex_cache, free_poly_ex_cb);
+		ht_free(poly_ex_cache);
+		poly_ex_cache = NULL;
+	}
+	if (poly_ex_ar) {
+		archive_free(poly_ex_ar);
+		poly_ex_ar = NULL;
+	}
+	poly_ex_ar_failed = false;
+}
+
+static const char *find_first_dot_sjis(const char *p)
+{
+	const uint8_t *u = (const uint8_t *)p;
+	while (*u == '/' || *u == '\\')
+		u++;
+	if (u[0] == '.' && (u[1] == '/' || u[1] == '\\'))
+		u += 2;
+	while (*u) {
+		if (SJIS_2BYTE(*u) && u[1]) {
+			u += 2;
+			continue;
+		}
+		if (*u == '.')
+			return (const char *)u;
+		u++;
+	}
+	return NULL;
+}
+
+static char *normalize_poly_ex_dir(const char *s, size_t len)
+{
+	size_t i = 0;
+	while (i < len && (s[i] == '/' || s[i] == '\\'))
+		i++;
+	if (i + 1 < len && s[i] == '.' && (s[i + 1] == '/' || s[i + 1] == '\\'))
+		i += 2;
+	char *out = xmalloc(len - i + 1);
+	size_t j = 0;
+	while (i < len) {
+		uint8_t c = (uint8_t)s[i];
+		if (SJIS_2BYTE(c) && i + 1 < len) {
+			out[j++] = (char)c;
+			out[j++] = s[i + 1];
+			i += 2;
+			continue;
+		}
+		if (c == '\\' || c == '/') {
+			if (j > 0 && out[j - 1] != '/')
+				out[j++] = '/';
+			i++;
+			continue;
+		}
+		out[j++] = (char)tolower(c);
+		i++;
+	}
+	while (j > 0 && out[j - 1] == '/')
+		j--;
+	out[j] = '\0';
+	return out;
+}
+
+static bool poly_ex_resolve(const char *path, struct ex **ex_out, const char **subpath_out)
+{
+	*ex_out = NULL;
+	*subpath_out = "";
+	if (!path || !*path)
+		return false;
+	const char *dot = find_first_dot_sjis(path);
+	size_t dir_len = dot ? (size_t)(dot - path) : strlen(path);
+	*subpath_out = dot ? dot + 1 : "";
+
+	char *key = normalize_poly_ex_dir(path, dir_len);
+	if (!*key) {
+		free(key);
+		return false;
+	}
+	if (!poly_ex_cache)
+		poly_ex_cache = ht_create(256);
+
+	struct ex *cached = ht_get(poly_ex_cache, key, NULL);
+	if (cached) {
+		free(key);
+		if (cached == &missing_poly_ex)
+			return false;
+		*ex_out = cached;
+		return true;
+	}
+
+	if (!poly_ex_ar && !poly_ex_ar_failed) {
+		poly_ex_ar = RE_open_3d_archive();
+		if (!poly_ex_ar)
+			poly_ex_ar_failed = true;
+	}
+
+	struct ex *ex = NULL;
+	if (poly_ex_ar) {
+		char *raw_dir = xmalloc(dir_len + 1);
+		memcpy(raw_dir, path, dir_len);
+		raw_dir[dir_len] = '\0';
+		struct archive_data *d = RE_archive_find_txtex(poly_ex_ar, raw_dir);
+		free(raw_dir);
+		if (d) {
+			ex = ex_read(d->data, d->size);
+			archive_free_data(d);
+		}
+	}
+
+	ht_put(poly_ex_cache, key, NULL)->value = ex ? (void *)ex : (void *)&missing_poly_ex;
+	free(key);
+	*ex_out = ex;
+	return ex != NULL;
+}
 
 static void free_string_list(char ***list, int *count)
 {
@@ -43,6 +175,7 @@ static void clear_dynamic_readers(void)
 
 static void mainex_init(void)
 {
+	poly_ex_ar_failed = false;
 	if (!readers) {
 		readers = xcalloc(2, sizeof(*readers));
 		reader_paths = xcalloc(2, sizeof(*reader_paths));
@@ -58,6 +191,7 @@ static void mainex_init(void)
 
 static void mainex_fini(void)
 {
+	poly_ex_fini();
 	for (int i = 0; i < nr_readers; i++) {
 		if (readers && readers[i])
 			ex_free(readers[i]);
@@ -80,12 +214,31 @@ static struct ex *reader(int id)
 	return id > 0 && id < nr_readers ? readers[id] : NULL;
 }
 
+static bool resolve_ex(struct string *path, int id, struct ex **ex_out, const char **subpath_out)
+{
+	if (game_evenicle2 && id == 1) {
+		if (!path || !path->size) {
+			*ex_out = NULL;
+			*subpath_out = "";
+			return false;
+		}
+		return poly_ex_resolve(path->text, ex_out, subpath_out);
+	}
+	struct ex *ex = reader(id);
+	*ex_out = ex;
+	*subpath_out = path ? path->text : "";
+	return ex != NULL;
+}
+
 static struct ex_value *value(struct string *name, int id)
 {
 	if (!name)
 		return NULL;
-	struct ex *ex = reader(id);
-	return ex ? ex_get(ex, name->text) : NULL;
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!resolve_ex(name, id, &ex, &subpath) || !*subpath)
+		return NULL;
+	return ex_get(ex, subpath);
 }
 
 static struct ex_value *avalue(struct string *name, int index, int id)
@@ -117,7 +270,13 @@ static int mainex_col(struct string *name, int id)
 
 static int mainex_type(struct string *name, int id)
 {
-	struct ex_value *v = value(name, id);
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!name || !resolve_ex(name, id, &ex, &subpath))
+		return 0;
+	if (!*subpath)
+		return (game_evenicle2 && id == 1) ? EX_TREE : 0;
+	struct ex_value *v = ex_get(ex, subpath);
 	return v ? v->type : 0;
 }
 
@@ -133,7 +292,16 @@ static int mainex_a2type(struct string *name, int row, int col, int id)
 	return v ? v->type : 0;
 }
 
-static bool mainex_exists(struct string *name, int id) { return value(name, id); }
+static bool mainex_exists(struct string *name, int id)
+{
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!name || !resolve_ex(name, id, &ex, &subpath))
+		return false;
+	if (!*subpath)
+		return game_evenicle2 && id == 1;
+	return ex_get(ex, subpath) != NULL;
+}
 static bool mainex_aexists(struct string *name, int index, int id) { return avalue(name, index, id); }
 static bool mainex_a2exists(struct string *name, int row, int col, int id) { return a2value(name, row, col, id); }
 
@@ -468,19 +636,19 @@ static bool mainex_load(struct page **in)
 	return ok;
 }
 
-static struct string *child_name(struct ex *ex, struct string *path, bool leaf, int target, int *count)
+static struct string *child_name_cstr(struct ex *ex, const char *path, bool leaf, int target, int *count)
 {
 	*count = 0;
 	if (!ex || !path) return NULL;
 	struct string *found = NULL;
-	if (!path->size) {
+	if (!*path) {
 		for (unsigned i = 0; i < ex->nr_blocks; i++) {
 			if ((ex->blocks[i].val.type != EX_TREE) != leaf) continue;
 			if ((*count)++ == target) found = ex->blocks[i].name;
 		}
 		return found;
 	}
-	struct ex_value *v = ex_get(ex, path->text);
+	struct ex_value *v = ex_get(ex, path);
 	if (!v || v->type != EX_TREE || v->tree->is_leaf) return NULL;
 	for (unsigned i = 0; i < v->tree->nr_children; i++) {
 		struct ex_tree *node = &v->tree->children[i];
@@ -492,8 +660,12 @@ static struct string *child_name(struct ex *ex, struct string *path, bool leaf, 
 
 static int name_count(struct string *path, int id, bool leaf)
 {
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!resolve_ex(path, id, &ex, &subpath))
+		return 0;
 	int count;
-	child_name(reader(id), path, leaf, -1, &count);
+	child_name_cstr(ex, subpath, leaf, -1, &count);
 	return count;
 }
 
@@ -501,8 +673,12 @@ static bool get_name(struct string *path, int index, struct string **out, int id
 {
 	if (!out)
 		return false;
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!resolve_ex(path, id, &ex, &subpath))
+		return false;
 	int count;
-	struct string *name = child_name(reader(id), path, leaf, index, &count);
+	struct string *name = child_name_cstr(ex, subpath, leaf, index, &count);
 	if (!name) return false;
 	if (*out)
 		free_string(*out);
@@ -512,13 +688,16 @@ static bool get_name(struct string *path, int index, struct string **out, int id
 
 static bool name_list(struct string *path, struct page **out, int id, bool leaf)
 {
-	if (!out || !reader(id)) return false;
-	int count = name_count(path, id, leaf);
+	struct ex *ex = NULL;
+	const char *subpath = "";
+	if (!out || !resolve_ex(path, id, &ex, &subpath)) return false;
+	int count;
+	child_name_cstr(ex, subpath, leaf, -1, &count);
 	struct ain_type type = { .data = AIN_STRING, .struc = -1 };
 	struct page *page = v12_array_new(&type, count, false);
 	for (int i = 0; i < count; i++) {
 		int unused;
-		struct string *s = child_name(reader(id), path, leaf, i, &unused);
+		struct string *s = child_name_cstr(ex, subpath, leaf, i, &unused);
 		int slot = page->values[i].i;
 		free_string(heap[slot].s);
 		heap[slot].s = s ? string_dup(s) : string_ref(&EMPTY_STRING);
