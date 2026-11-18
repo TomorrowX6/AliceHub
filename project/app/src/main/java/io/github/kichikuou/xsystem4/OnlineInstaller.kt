@@ -260,6 +260,7 @@ object OnlineInstaller {
     const val KICHIKUOU_CDN_URL = "https://alicehub.000.moe/kichikuou"
     const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
+    const val GALZOO_CDN_URL = "https://alicehub.000.moe/galzoo"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -948,6 +949,7 @@ object OnlineInstaller {
         val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
         val dirBaseName = when {
             classifiedStagedId == GameCatalog.ID_RANCE06 -> sanitizedManifestBase.ifEmpty { "Rance06" }
+            classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1273,6 +1275,7 @@ object OnlineInstaller {
                     GameCatalog.ID_ESCALAYER_REBOOT -> lower.contains("escalayerreboot") ||
                         lower.contains("escalayer_reboot") ||
                         (lower.contains("escalayer") && lower.contains("reboot"))
+                    GameCatalog.ID_GALZOO -> lower.contains("galzoo")
                     null, "" -> true
                     else -> false
                 }
