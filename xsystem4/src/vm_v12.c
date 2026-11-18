@@ -551,6 +551,11 @@ static bool array_call_invalid_slot(struct ain_hll_function *f, int parameter, i
 	return true;
 }
 
+static inline bool is_hll_func_type(enum ain_data_type type)
+{
+	return type == AIN_HLL_FUNC || type == AIN_HLL_FUNC_71;
+}
+
 static bool array_call(struct ain_hll_function *f, int parameter)
 {
 	union vm_value args[8][3] = {0};
@@ -558,7 +563,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 	for (int i = f->nr_arguments - 1; i >= 0; i--) {
 		int type = f->arguments[i].type.data;
 		int width = 1;
-		if (type == AIN_HLL_FUNC)
+		if (is_hll_func_type(type))
 			width = 2;
 		else if (type == AIN_HLL_PARAM)
 			width = array_hll_param_width(parameter);
@@ -787,7 +792,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		}
 	} else if (!strcmp(name, "At") || !strcmp(name, "First") || !strcmp(name, "Last")) {
 		int index = !strcmp(name, "At") ? args[1][0].i : !strcmp(name, "Last") ? size - 1 : 0;
-		if (f->nr_arguments == 2 && f->arguments[1].type.data == AIN_HLL_FUNC) {
+		if (f->nr_arguments == 2 && is_hll_func_type(f->arguments[1].type.data)) {
 			int step = !strcmp(name, "Last") ? -1 : 1;
 			for (; index >= 0 && index < size; index += step)
 				if (predicate(slot, index, args[1])) break;
@@ -817,14 +822,14 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		int end = f->nr_arguments == 4 ? min(args[2][0].i, size) : size;
 		bool backwards = !strcmp(name, "FindLast");
 		for (int i = backwards ? end - 1 : begin; i >= begin && i < end; i += backwards ? -1 : 1) {
-			bool match = f->arguments[arg].type.data == AIN_HLL_FUNC
+			bool match = is_hll_func_type(f->arguments[arg].type.data)
 				? predicate(slot, i, args[arg]) : equal_element(slot, i, args[arg]);
 			if (match) { found = i; break; }
 		}
 		if (!strcmp(name, "IsExist")) stack_push(found >= 0); else stack_push(found);
 	} else if (!strcmp(name, "BinarySearch") || !strcmp(name, "LowerBound") || !strcmp(name, "UpperBound")) {
 		int first = 0, last = size;
-		bool callback = f->arguments[1].type.data == AIN_HLL_FUNC;
+		bool callback = is_hll_func_type(f->arguments[1].type.data);
 		bool upper = !strcmp(name, "UpperBound");
 		while (first < last) {
 			int mid = first + (last - first) / 2;
@@ -846,7 +851,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 				erase_elements_range(slot, index, len);
 				erased = true;
 			}
-		} else if (f->arguments[1].type.data == AIN_HLL_FUNC) {
+		} else if (is_hll_func_type(f->arguments[1].type.data)) {
 			for (int i = 0; i < size; ) {
 				if (predicate(slot, i, args[1])) {
 					erase_element(slot, i); size--; erased = true;
@@ -2098,7 +2103,8 @@ static bool string_call(struct ain_hll_function *f)
 		if (valid_slot) string_pop_back(&heap[slot].s);
 	} else if (!strcmp(name, "Erase")) {
 		if (valid_slot) {
-			for (int i = 0; i < args[2].i; i++) string_erase(&heap[slot].s, args[1].i);
+			int count = f->nr_arguments >= 3 ? args[2].i : 1;
+			for (int i = 0; i < count; i++) string_erase(&heap[slot].s, args[1].i);
 		}
 	} else if (!strcmp(name, "ToUpper") || !strcmp(name, "ToLower")) {
 		result = string_dup(s);
@@ -2131,7 +2137,7 @@ static bool delegate_call_hll(struct ain_hll_function *f)
 	int fn = -1, object = -1, other_slot = -1;
 	bool unref_other = false;
 	if (f->nr_arguments == 2) {
-		if (f->arguments[1].type.data == AIN_HLL_FUNC) {
+		if (is_hll_func_type(f->arguments[1].type.data)) {
 			fn = stack_pop().i;
 			object = stack_pop().i;
 		} else {

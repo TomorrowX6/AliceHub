@@ -229,7 +229,7 @@ static void parts_get_layout_size_impl(struct parts *parts, bool cached, int *w,
 			parts_widget_get_size(parts, w, h);
 			return;
 		}
-		if (ain->version >= 12 && parts->component_type == 15) {
+		if (ain->version >= 11 && parts->component_type == 15) {
 			// A user component takes its size from its first child (the activity root).
 			struct parts *child = TAILQ_FIRST(&parts->children);
 			if (child) parts_get_child_layout_size(child, cached, w, h);
@@ -464,7 +464,7 @@ void parts_update_layout_tree(struct parts *parts)
 	struct parts *child;
 	PARTS_FOREACH_CHILD(child, parts) parts_update_layout_tree(child);
 	parts_do_layout_impl(parts, true);
-	if (ain->version >= 12 && parts->component_type == 15) {
+	if (ain->version >= 11 && parts->component_type == 15) {
 		int w, h;
 		parts_get_layout_size_impl(parts, true, &w, &h);
 		for (int i = 0; i < PARTS_NR_STATES; i++) {

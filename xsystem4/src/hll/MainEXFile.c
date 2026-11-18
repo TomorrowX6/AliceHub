@@ -818,14 +818,16 @@ HLL_LIBRARY(MainEXFile,
 
 static void MainEXFile_PreLink(void)
 {
-	if (ain->version >= 12) {
-		mainex_v12_prelink(&lib_MainEXFile);
-		return;
-	}
 	int libno = ain_get_library(ain, "MainEXFile");
 	if (libno < 0)
 		return;
 	int fno = ain_get_library_function(ain, libno, "Row");
+	if (ain->version >= 12 || ain_get_library_function(ain, libno, "AddEXReader") >= 0
+			|| (fno >= 0 && ain->libraries[libno].functions[fno].nr_arguments == 2
+				&& ain->libraries[libno].functions[fno].arguments[0].type.data == AIN_STRING)) {
+		mainex_v12_prelink(&lib_MainEXFile);
+		return;
+	}
 	if (fno >= 0 && ain->libraries[libno].functions[fno].nr_arguments == 1 &&
 	    ain->libraries[libno].functions[fno].arguments[0].type.data == AIN_STRING) {
 		const struct static_hll_function functions[] = {

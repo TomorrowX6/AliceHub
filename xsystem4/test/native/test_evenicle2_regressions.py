@@ -261,6 +261,7 @@ struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle2 = true;
+bool game_ixseal = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {
