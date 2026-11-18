@@ -312,7 +312,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_RANCE08 ||
                 descriptor.id == GameCatalog.ID_RANCE09 ||
                 descriptor.id == GameCatalog.ID_KICHIKUOU ||
-                descriptor.id == GameCatalog.ID_ESCALAYER
+                descriptor.id == GameCatalog.ID_ESCALAYER ||
+                descriptor.id == GameCatalog.ID_ESCALAYER_REBOOT
             ) {
                 descriptor.title
             } else {

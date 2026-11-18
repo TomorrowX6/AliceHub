@@ -99,6 +99,15 @@ object NativeGameImport {
         if (fileNames.any { it.equals("Evenicle2.ain", true) }) {
             return "Evenicle2"
         }
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("EscalayerReboot.ain", true) ||
+                    repaired.equals("EscalayerReboot.ain", true) ||
+                    it.equals("エスカレイヤー・リブート.ain", true) ||
+                    it.equals("エスカレイヤーリブート.ain", true)
+            }) {
+            return "EscalayerReboot"
+        }
         val sys4Ain = fileNames.firstOrNull {
             it.endsWith(".ain", true) && !it.equals("System39.ain", true)
         }
@@ -227,6 +236,8 @@ object NativeGameImport {
         if (!matchesTarget) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
         }
+        val isEscalayerReboot = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT ||
+            GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -235,17 +246,18 @@ object NativeGameImport {
         var copied = 0L
         var lastUpdate = 0L
         try {
-            suspend fun copy(documents: List<Document>, destination: File) {
+            suspend fun copy(documents: List<Document>, destination: File, relPrefix: String = "") {
                 for (document in documents) {
                     currentCoroutineContext().ensureActive()
                     val name = ArchiveExtractor.repairSjisAsGbkMojibake(document.name)
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
-                    if (skip(document.name)) continue
+                    val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
+                    if (skip(document.name) || (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath))) continue
                     val target = File(destination, name)
                     if (document.folder) {
                         if (!target.exists() && !target.mkdir()) throw IOException("Cannot create directory: $name")
-                        copy(children(context, tree, document.uri), target)
+                        copy(children(context, tree, document.uri), target, relPath)
                         continue
                     }
                     if (target.exists()) continue

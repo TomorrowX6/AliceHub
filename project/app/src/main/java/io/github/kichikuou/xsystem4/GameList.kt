@@ -653,7 +653,8 @@ class GameList(activity: Activity) {
                     }
                     if (isRance02 ||
                         classifiedId == GameCatalog.ID_KICHIKUOU ||
-                        classifiedId == GameCatalog.ID_EVENICLE2
+                        classifiedId == GameCatalog.ID_EVENICLE2 ||
+                        classifiedId == GameCatalog.ID_ESCALAYER_REBOOT
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -942,6 +943,7 @@ class GameList(activity: Activity) {
         val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
         val isKichikuouTarget = targetGameId == GameCatalog.ID_KICHIKUOU
         val isEvenicle2Target = targetGameId == GameCatalog.ID_EVENICLE2
+        val isEscalayerRebootTarget = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -955,7 +957,8 @@ class GameList(activity: Activity) {
                     shouldSkipBaseInstallEntry(rel) ||
                         (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                         (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
-                        (isEvenicle2Target && isEvenicle2BloatRelPath(rel))
+                        (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
+                        (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1000,7 +1003,8 @@ class GameList(activity: Activity) {
                             shouldSkipBaseInstallEntry(rel) ||
                                 (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                                 (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
-                                (isEvenicle2Target && isEvenicle2BloatRelPath(rel))
+                                (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
+                                (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1033,6 +1037,10 @@ class GameList(activity: Activity) {
                             (!isRance02Target || !isBaseInstallBloatRelPath(
                                 it.relativeTo(currentStageDir).path.replace('\\', '/'),
                                 skipPatchSubdir = true
+                            )) &&
+                            (!isEscalayerRebootTarget || !isEscalayerRebootBloatRelPath(
+                                it.relativeTo(currentStageDir).path.replace('\\', '/'),
+                                skipArchives = false
                             ))
                     }
                     .sortedByDescending { it.length() }
@@ -1046,7 +1054,8 @@ class GameList(activity: Activity) {
                         shouldSkipBaseInstallEntry(rel) ||
                             (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                             (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
-                            (isEvenicle2Target && isEvenicle2BloatRelPath(rel))
+                            (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
+                            (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1098,7 +1107,8 @@ class GameList(activity: Activity) {
             val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
             if (classifiedId == GameCatalog.ID_RANCE02 ||
                 classifiedId == GameCatalog.ID_KICHIKUOU ||
-                classifiedId == GameCatalog.ID_EVENICLE2
+                classifiedId == GameCatalog.ID_EVENICLE2 ||
+                classifiedId == GameCatalog.ID_ESCALAYER_REBOOT
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
@@ -1106,6 +1116,11 @@ class GameList(activity: Activity) {
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
                 GameCatalog.isKichikuouGameDir(srcDir) -> "KichikuRance"
                 ainFile != null && ainFile.name.equals("Evenicle2.ain", ignoreCase = true) -> "Evenicle2"
+                ainFile != null && (
+                    ainFile.name.equals("EscalayerReboot.ain", ignoreCase = true) ||
+                        ainFile.name.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
+                        ainFile.name.equals("エスカレイヤーリブート.ain", ignoreCase = true)
+                    ) -> "EscalayerReboot"
                 ainFile != null -> sanitizeDerivedGameDirName(
                     ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension),
                     fallback = "Game"
@@ -1983,11 +1998,45 @@ internal fun isEvenicle2BloatRelPath(relPath: String): Boolean {
         fileNameLower == "installfiles.ini"
 }
 
+@JvmOverloads
+internal fun isEscalayerRebootBloatRelPath(relPath: String, skipArchives: Boolean = true): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    if (segments.any {
+            it.equals("directx", ignoreCase = true) ||
+                it.equals("dll", ignoreCase = true) ||
+                it.equals("备份文件", ignoreCase = true) ||
+                it.equals("savedata", ignoreCase = true)
+        }
+    ) {
+        return true
+    }
+    val fileNameLower = segments.last().lowercase()
+    if (fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower == "autorun.inf" ||
+        fileNameLower == "startmenu.bmp" ||
+        fileNameLower.endsWith(".docx") ||
+        fileNameLower == "战力对比数字对照表.txt" ||
+        fileNameLower == "战斗技能表.txt"
+    ) {
+        return true
+    }
+    if (fileNameLower.endsWith(".rar")) {
+        return skipArchives ||
+            fileNameLower.contains("存档") ||
+            fileNameLower.contains("补丁")
+    }
+    return false
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
         gameId != GameCatalog.ID_KICHIKUOU &&
-        gameId != GameCatalog.ID_EVENICLE2
+        gameId != GameCatalog.ID_EVENICLE2 &&
+        gameId != GameCatalog.ID_ESCALAYER_REBOOT
     ) {
         return
     }
@@ -2009,14 +2058,21 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                         f.name.equals("补丁", ignoreCase = true) ||
                         f.name.equals("DirectX", ignoreCase = true)
                     )) ||
-                (gameId == GameCatalog.ID_EVENICLE2 && f.name.equals("DirectX", ignoreCase = true))
+                (gameId == GameCatalog.ID_EVENICLE2 && f.name.equals("DirectX", ignoreCase = true)) ||
+                (gameId == GameCatalog.ID_ESCALAYER_REBOOT && (
+                    f.name.equals("备份文件", ignoreCase = true) ||
+                        f.name.equals("DLL", ignoreCase = true) ||
+                        f.name.equals("DirectX", ignoreCase = true) ||
+                        f.name.equals("SaveData", ignoreCase = true)
+                    ))
             ) {
                 dirsToDelete.add(f)
             }
         } else if (f.isFile && (
                 (gameId == GameCatalog.ID_RANCE02 && isBaseInstallBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_KICHIKUOU && isKichikuouBloatRelPath(rel)) ||
-                    (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel))
+                    (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_ESCALAYER_REBOOT && isEscalayerRebootBloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)

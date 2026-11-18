@@ -55,6 +55,7 @@ object GameCatalog {
     const val ID_RANCE09 = "rance09"
     const val ID_KICHIKUOU = "kichikuou"
     const val ID_ESCALAYER = "escalayer"
+    const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -192,6 +193,18 @@ object GameCatalog {
         if (ainNames.any { it.equals("Evenicle.ain", ignoreCase = true) }) {
             return ID_EVENICLE
         }
+        if (ainNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("EscalayerReboot.ain", ignoreCase = true) ||
+                    repaired.equals("EscalayerReboot.ain", ignoreCase = true) ||
+                    it.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
+                    it.equals("エスカレイヤーリブート.ain", ignoreCase = true) ||
+                    repaired.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
+                    repaired.equals("エスカレイヤーリブート.ain", ignoreCase = true)
+            }
+        ) {
+            return ID_ESCALAYER_REBOOT
+        }
         if (ainNames.any { it.equals("Rance01.ain", ignoreCase = true) } ||
             fileNames.any { it.startsWith("Rance01", ignoreCase = true) && it.endsWith(".ald", ignoreCase = true) }
         ) {
@@ -327,6 +340,27 @@ object GameCatalog {
     private val RANCE03_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?3(?![0-9０-９])")
     private val RANCE08_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?8(?![0-9０-９])")
     private val RANCE09_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?9(?![0-9０-９])")
+    private val ESCALAYER_R_JA_ALIAS_REGEX = Regex("エスカレイヤー[\\s・_-]*r(?![a-z0-9])")
+    private val ESCALAYER_R_CN_ALIAS_REGEX = Regex("艾斯卡蕾雅[\\s・_-]*r(?![a-z0-9])")
+    private val ESCALAYER_R_EN_ALIAS_REGEX = Regex("(?<![a-z0-9])escalayer[\\s._-]*r(?![a-z0-9])")
+
+    fun isEscalayerRebootAlias(lowerText: String): Boolean {
+        return lowerText.contains("escalayerreboot") ||
+            lowerText.contains("escalayer reboot") ||
+            lowerText.contains("escalayer_reboot") ||
+            lowerText.contains("escalayer-reboot") ||
+            lowerText.contains("escalayer・reboot") ||
+            lowerText.contains("escalayerr") ||
+            lowerText.contains("エスカレイヤー・リブート") ||
+            lowerText.contains("エスカレイヤーリブート") ||
+            lowerText.contains("エスカレイヤー リブート") ||
+            lowerText.contains("リブート") ||
+            ((lowerText.contains("超昂天使") || lowerText.contains("艾斯卡蕾雅") || lowerText.contains("escalayer")) &&
+                (lowerText.contains("reboot") || lowerText.contains("重制") || lowerText.contains("重启"))) ||
+            ESCALAYER_R_JA_ALIAS_REGEX.containsMatchIn(lowerText) ||
+            ESCALAYER_R_CN_ALIAS_REGEX.containsMatchIn(lowerText) ||
+            ESCALAYER_R_EN_ALIAS_REGEX.containsMatchIn(lowerText)
+    }
 
     fun isEvenicle2Alias(lowerText: String): Boolean {
         return lowerText.contains("evenicle2") ||
@@ -388,6 +422,17 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
+            if (saveDir.listFiles()?.any {
+                    it.isFile && (
+                        it.name.equals("Esca.sav", ignoreCase = true) ||
+                            it.name.lowercase().startsWith("escalayerreboot_")
+                        )
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_ESCALAYER_REBOOT
+            }
             val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
             val hasGlobalSave = saveFiles.any {
                 it.name.equals("GlobalSave.asd", ignoreCase = true) ||
@@ -497,7 +542,9 @@ object GameCatalog {
                 !File(saveDir, "嫟桳.asd").isFile &&
                 !File(saveDir, "AFCommon.asd").isFile &&
                 !File(saveDir, "AFCGMode.asd").isFile &&
-                !File(saveDir, "AFBGMMode.asd").isFile
+                !File(saveDir, "AFBGMMode.asd").isFile &&
+                !File(saveDir, "Esca.sav").isFile &&
+                saveDir.listFiles()?.any { it.isFile && it.name.lowercase().startsWith("escalayerreboot_") } != true
             ) {
                 return ID_EVENICLE
             }
@@ -583,6 +630,9 @@ object GameCatalog {
         if (lowerDir == "dohnadohna" || lowerDir.startsWith("dohnadohna-") || lowerDir.contains("多娜多娜")) {
             return ID_DOHNA_DOHNA
         }
+        if (isEscalayerRebootAlias(lowerDir)) {
+            return ID_ESCALAYER_REBOOT
+        }
         if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
             lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
         ) {
@@ -597,6 +647,9 @@ object GameCatalog {
         }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
+        if (isEscalayerRebootAlias(lowerDisp)) {
+            return ID_ESCALAYER_REBOOT
+        }
         if (lowerDisp.contains("escalayer") || lowerDisp.contains("超昂天使") ||
             lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
         ) {
@@ -842,6 +895,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_ESCALAYER_REBOOT -> GameDescriptor(
+                id = ID_ESCALAYER_REBOOT,
+                title = context.getString(R.string.game_escalayer_reboot_title),
+                defaultDirName = "EscalayerReboot",
+                expectedAinName = "EscalayerReboot.ain",
+                iconRes = R.drawable.ic_game_escalayer_reboot,
+                accentColor = 0xFF8E24AA.toInt(),
+                accentBorderColor = 0x66BA68C8,
+                iconFrameColor = 0xFF24122B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ESCALAYER_REBOOT_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = context.getString(R.string.game_kichikuou_title),
@@ -933,13 +1001,17 @@ object GameCatalog {
         val escItems = matchingItems(gameList, ID_ESCALAYER)
         entries.add(GameSelectEntry(escDesc, escItems, escItems.firstOrNull()))
 
+        val escRebootDesc = descriptorFor(context, ID_ESCALAYER_REBOOT, gameList)
+        val escRebootItems = matchingItems(gameList, ID_ESCALAYER_REBOOT)
+        entries.add(GameSelectEntry(escRebootDesc, escRebootItems, escRebootItems.firstOrNull()))
+
         for (i in 0 until gameList.size) {
             val item = gameList[i]
             val cid = classifyItem(item)
             if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
                 cid != ID_EVENICLE2 && cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
                 cid != ID_RANCE03 && cid != ID_RANCE08 && cid != ID_RANCE09 &&
-                cid != ID_KICHIKUOU && cid != ID_ESCALAYER
+                cid != ID_KICHIKUOU && cid != ID_ESCALAYER && cid != ID_ESCALAYER_REBOOT
             ) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))
