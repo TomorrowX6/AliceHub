@@ -253,6 +253,7 @@ object OnlineInstaller {
     const val RANCE03_CDN_URL = "https://alicehub.000.moe/rance03"
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
+    const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -919,19 +920,22 @@ object OnlineInstaller {
             .toList()
             .forEach { it.delete() }
 
-        val hasIni = File(stagingDir, "AliceStart.ini").isFile ||
+        val hasSys4Ini = File(stagingDir, "AliceStart.ini").isFile ||
             File(stagingDir, "System40.ini").isFile ||
             (stagingDir.listFiles()?.any {
                 it.isFile && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
             } == true)
-        val ainFile = stagingDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }
-        if (!hasIni || ainFile == null) {
+        val sys4AinFile = stagingDir.listFiles()?.firstOrNull {
+            it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        }
+        val isSys3x = GameCatalog.isSystem3xGameDir(stagingDir)
+        if (!(hasSys4Ini && sys4AinFile != null) && !isSys3x) {
             throw GameList.InstallFailureException(R.string.directory_no_game)
         }
 
-        val rawBaseName = ainFile.nameWithoutExtension
+        val rawBaseName = sys4AinFile?.nameWithoutExtension.orEmpty()
         val dirBaseName = if (manifest.baseName.isNotEmpty() &&
-            (rawBaseName.isEmpty() || rawBaseName.any { it.code >= 0x80 })
+            (isSys3x || rawBaseName.isEmpty() || rawBaseName.any { it.code >= 0x80 })
         ) {
             manifest.baseName
         } else {
@@ -1123,6 +1127,7 @@ object OnlineInstaller {
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
+                    GameCatalog.ID_ESCALAYER -> lower.contains("escalayer")
                     null, "" -> true
                     else -> false
                 }

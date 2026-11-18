@@ -206,7 +206,11 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val isRance03 = !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
         val isRance08 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
         val isRance09 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
-        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 && j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
+        val isEscalayer = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 &&
+            (j.optString("game") == "escalayer" || (xsAct?.isEscalayerGame() ?: false))
+        val isSys3x = xsAct?.isSystem3xGame() ?: isEscalayer
+        val isRance10 = !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
+            j.optBoolean("isRance10", xsAct?.isRance10Game() ?: true)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
         val savedMask = GameModifierBridge.getSavedLockMask(activity)
@@ -217,6 +221,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val r03LockCount = GameModifierBridge.getR03LiveLockCount(activity)
         val r08LockCount = GameModifierBridge.getR08LiveLockCount(activity)
         val r09LockCount = GameModifierBridge.getR09LiveLockCount(activity)
+        val escLockCount = GameModifierBridge.getEscLiveLockCount(activity)
         val streamerLockOff = (savedMask and GameModifierBridge.LOCK_DISABLE_STREAMER_MODE) != 0
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
@@ -329,6 +334,18 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     "Modifier · Party:$cnt · Gold:$gold · Seima:$sp/$ss"
                 )
             }
+        } else if (isEscalayer) {
+            val hp = j.optInt("hp", 0)
+            val hpMax = j.optInt("hpMax", 0)
+            val atk = j.optInt("atk", 0)
+            val def = j.optInt("def", 0)
+            val love = j.optInt("love", 0)
+            val lib = j.optInt("libido", 0)
+            tr(
+                "修改器 · HP:$hp/$hpMax · 攻:$atk 防:$def · 欲:$lib · 爱:$love",
+                "改造 · HP:$hp/$hpMax · 攻:$atk 防:$def · 愛:$love",
+                "Modifier · HP:$hp/$hpMax · ATK:$atk DEF:$def"
+            )
         } else if (!isRance10 || !inGame) {
             tr("修改器", "ゲーム改造", "Modifier")
         } else if (inBattle) {
@@ -421,13 +438,22 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showR09SelectCharDialog() }
                 )
             )
+        } else if (isEscalayer) {
+            menuEntries.addAll(
+                listOf(
+                    tr("实时锁定 · $escLockCount 项…", "リアルタイムロック · $escLockCount 項目…", "Live Locks · $escLockCount…") to { showEscalayerLocksDialog() },
+                    tr("属性与战斗修改…", "能力・戦闘チート…", "Stats & Battle Cheats…") to { showEscalayerCheatsDialog(j) }
+                )
+            )
         }
-        menuEntries.add(
-            tr("字体大小 · $fontPct%…", "文字サイズ · $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() }
-        )
-        menuEntries.add(
-            tr("滚动条 · $sbPct%…", "スクロールバー · $sbPct%…", "Scrollbar · $sbPct%…") to { showScrollbarScaleDialog() }
-        )
+        if (!isSys3x) {
+            menuEntries.add(
+                tr("字体大小 · $fontPct%…", "文字サイズ · $fontPct%…", "Font Size · $fontPct%…") to { showFontScaleDialog() }
+            )
+            menuEntries.add(
+                tr("滚动条 · $sbPct%…", "スクロールバー · $sbPct%…", "Scrollbar · $sbPct%…") to { showScrollbarScaleDialog() }
+            )
+        }
         if (isRance10) {
             menuEntries.add(streamerItemLabel to { triggerDisableStreamerModeInGame(inGame) })
         }
@@ -515,6 +541,71 @@ class FloatingModifierOverlay(private val activity: Activity) {
             .setTitle(titleText)
             .setItems(items) { _, which ->
                 menuEntries.getOrNull(which)?.second?.invoke()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEscalayerLocksDialog() {
+        val lockDefs = listOf(
+            GameModifierBridge.LOCK_ESC_HP_FULL to tr("锁定满 HP", "HP最大ロック", "Lock Full HP"),
+            GameModifierBridge.LOCK_ESC_LIBIDO_MAX to tr("锁定满 Libido (必杀槽)", "リビドー最大ロック", "Lock Max Libido"),
+            GameModifierBridge.LOCK_ESC_ONEHIT to tr("战斗敌方 1 血秒杀", "敵HP1・一撃撃破", "Enemy 1 HP"),
+            GameModifierBridge.LOCK_ESC_LOVE_MAX to tr("锁定高爱情度", "愛情度維持", "Keep High Love")
+        )
+        var mask = GameModifierBridge.getSavedEscLockMask(activity)
+        val labels = lockDefs.map { it.second }.toTypedArray()
+        val checked = BooleanArray(lockDefs.size) { idx -> (mask and lockDefs[idx].first) != 0 }
+        dialogBuilder()
+            .setTitle(tr("超昂天使 · 实时锁定", "エスカレイヤー · ロック", "Escalayer · Live Locks"))
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val bit = lockDefs[which].first
+                mask = if (isChecked) (mask or bit) else (mask and bit.inv())
+            }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                GameModifierBridge.setSavedEscLockMask(activity, mask)
+                Toast.makeText(activity, tr("已更新锁定项", "ロックを更新しました", "Locks updated"), Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(tr("全部关闭", "全解除", "Clear All")) { _, _ ->
+                GameModifierBridge.setSavedEscLockMask(activity, 0)
+                Toast.makeText(activity, tr("已关闭全部锁定", "全解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEscalayerCheatsDialog(liveJson: JSONObject) {
+        val hp = liveJson.optInt("hp", 0)
+        val hpMax = liveJson.optInt("hpMax", 0)
+        val atk = liveJson.optInt("atk", 0)
+        val def = liveJson.optInt("def", 0)
+        val rsp = liveJson.optInt("rsp", 0)
+        val d2 = liveJson.optInt("d2", 0)
+        val love = liveJson.optInt("love", 0)
+        val peace = liveJson.optInt("peace", 0)
+        val eHp = liveJson.optInt("enemyHp", 0)
+        val actions = listOf(
+            tr("恢复满 HP ($hp/$hpMax)", "HP全回復 ($hp/$hpMax)", "Full HP ($hp/$hpMax)") to "esc_heal",
+            tr("Libido 能量全满", "リビドー全快", "Max Libido") to "esc_libido_max",
+            tr("当前敌人 1 HP (当前:$eHp)", "敵HPを1にする (現在:$eHp)", "Enemy HP = 1 (now:$eHp)") to "esc_enemy_onehit",
+            tr("全能力大幅强化 (攻:$atk 防:$def 敏:$rsp)", "全ステータス強化", "Boost All Stats") to "esc_stats_boost",
+            tr("攻击力 +100 (当前:$atk)", "攻撃力 +100 (現在:$atk)", "ATK +100 (now:$atk)") to "esc_atk_add=100",
+            tr("防御力 +100 (当前:$def)", "防御力 +100 (現在:$def)", "DEF +100 (now:$def)") to "esc_def_add=100",
+            tr("反应速度 +50 (当前:$rsp)", "反応力 +50 (現在:$rsp)", "RSP +50 (now:$rsp)") to "esc_rsp_add=50",
+            tr("清除 D2 污染值 (当前:$d2)", "D2リセット (現在:$d2)", "Clear D2 (now:$d2)") to "esc_d2_set=0",
+            tr("和平度满 100 (当前:$peace)", "ピース100 (現在:$peace)", "Peace = 100 (now:$peace)") to "esc_peace_100",
+            tr("爱情/调教强化 (爱:$love)", "愛情・調教強化", "Boost Love/Training") to "esc_love_max",
+            tr("解锁鉴赏模式 / 通关标记", "おまけ/回想フラグ解放", "Unlock Gallery Flag") to "esc_unlock_gallery"
+        )
+        dialogBuilder()
+            .setTitle(tr("超昂天使 · 修改选项", "エスカレイヤー · 改造", "Escalayer · Cheats"))
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
+                val (_, cmd) = actions[which]
+                try {
+                    GameModifierBridge.nativeApplyLiveAction(cmd)
+                    Toast.makeText(activity, tr("已应用修改", "適用しました", "Applied"), Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

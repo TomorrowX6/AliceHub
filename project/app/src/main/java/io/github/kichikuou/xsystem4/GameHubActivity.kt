@@ -251,7 +251,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_SENGOKU_RANCE ||
                 descriptor.id == GameCatalog.ID_RANCE03 ||
                 descriptor.id == GameCatalog.ID_RANCE08 ||
-                descriptor.id == GameCatalog.ID_RANCE09
+                descriptor.id == GameCatalog.ID_RANCE09 ||
+                descriptor.id == GameCatalog.ID_ESCALAYER
             ) {
                 descriptor.title
             } else {
