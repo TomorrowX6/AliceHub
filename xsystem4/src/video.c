@@ -27,6 +27,8 @@
 #include <unistd.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
+#include <sys/system_properties.h>
+#include <android/log.h>
 #endif
 
 #include "system4.h"
@@ -355,6 +357,54 @@ static void set_window_title(void)
 
 static bool gfx_initialized = false;
 
+#ifdef __ANDROID__
+static unsigned resume_trace_swaps;
+static unsigned resume_trace_seq;
+
+static bool resume_trace_enabled(void)
+{
+	char value[PROP_VALUE_MAX];
+	__system_property_get("log.tag.AliceHubResume", value);
+	return !strcmp(value, "DEBUG") || !strcmp(value, "VERBOSE");
+}
+
+static void trace_resume_gl_state(const char *phase)
+{
+	// Render-thread only. Do not read pixels, wait for the GPU, clear GL/SDL
+	// errors, make a context current, or attempt any recovery from this hook.
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	GLint framebuffer = -1;
+	bool ready = gfx_initialized && current;
+	if (ready)
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+	const GLubyte *renderer = ready ? glGetString(GL_RENDERER) : NULL;
+	__android_log_print(ANDROID_LOG_DEBUG, "AliceHubResume",
+		"render.%s seq=%u ticks=%u context=%d retained=%d texture=%d program=%d fbo=%d bound=%d viewport=%dx%d renderer=%s sdl_error_may_be_stale=%s",
+		phase, resume_trace_seq, SDL_GetTicks(), current != NULL,
+		current && current == sdl.gl.context,
+		ready && glIsTexture(view->handle), ready && glIsProgram(default_shader.program),
+		ready && glIsFramebuffer(main_surface_fb), framebuffer,
+		sdl.viewport.w, sdl.viewport.h,
+		renderer ? (const char *)renderer : "none", SDL_GetError());
+}
+#endif
+
+void gfx_trace_resume(const char *phase)
+{
+#ifdef __ANDROID__
+	if (!resume_trace_enabled()) {
+		resume_trace_swaps = 0;
+		return;
+	}
+	resume_trace_seq++;
+	resume_trace_swaps = 2; // Bounded: no per-frame logging after this window.
+	trace_resume_gl_state(phase);
+#else
+	(void)phase;
+#endif
+}
+
+
 /*
  * Reduce window size if the display resolution is smaller than the game
  * resolution.
@@ -672,6 +722,13 @@ static void gfx_update_frame_rate_counter(void)
 
 void gfx_swap(void)
 {
+#ifdef __ANDROID__
+	bool trace_swap = resume_trace_swaps > 0;
+	if (trace_swap) {
+		resume_trace_swaps--;
+		trace_resume_gl_state("swap.begin");
+	}
+#endif
 	pinned_draw_tex = 0;
 	pinned_draw_bound = false;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -739,6 +796,10 @@ void gfx_swap(void)
 #endif
 
 	SDL_GL_SwapWindow(sdl.window);
+#ifdef __ANDROID__
+	if (trace_swap)
+		trace_resume_gl_state("swap.end");
+#endif
 
 #ifdef __ANDROID__
 	int64_t after_swap_ns = android_monotonic_ns();

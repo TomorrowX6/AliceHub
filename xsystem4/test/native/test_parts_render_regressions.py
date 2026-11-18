@@ -275,7 +275,8 @@ enum { SDL_WINDOWEVENT_EXPOSED, SDL_WINDOWEVENT_ENTER, SDL_WINDOWEVENT_LEAVE,
 typedef struct { struct { int event; } window; } SDL_Event;
 static bool mouse_focus, keyboard_focus, kbd_ctrl_down, touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
-static int restored, foreground, swaps;
+static int restored, foreground, swaps, traces;
+static void gfx_trace_resume(const char *phase) { (void)phase; traces++; }
 static void gfx_restore_window(void) { restored++; }
 static void gfx_android_on_foreground(void) { foreground++; }
 static void gfx_swap(void) { swaps++; }
@@ -289,10 +290,10 @@ static void reset_movie_hold_state(void) {}
 int main(void) {
     SDL_Event event = {.window.event = SDL_WINDOWEVENT_RESTORED};
     handle_window_event(&event);
-    assert(restored == 1 && foreground == 1 && swaps == 0);
+    assert(restored == 1 && foreground == 1 && swaps == 0 && traces == 1);
     event.window.event = SDL_WINDOWEVENT_EXPOSED;
     handle_window_event(&event);
-    assert(restored == 1 && swaps == 1);
+    assert(restored == 1 && swaps == 1 && traces == 1);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:

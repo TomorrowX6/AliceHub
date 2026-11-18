@@ -114,6 +114,24 @@ static void resume_surface_tests(void) {
     assert(resumed_frames==32);
     puts("PASS: 32 real SDL/GLES drawable recreations retain and re-present the scene without script redraw");
 }
+static void replacement_context_negative_control(void) {
+    // A new *unshared* context is different from the retained-context drawable
+    // test. It intentionally has none of the game's textures. This does not
+    // claim to reproduce a particular phone's context loss or recover from it.
+    GLuint retained_texture=gfx_main_surface()->handle;
+    assert(glIsTexture(retained_texture));
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext replacement=SDL_GL_CreateContext(sdl.window);
+    assert(replacement && replacement!=sdl.gl.context);
+    assert(SDL_GL_GetCurrentContext()==replacement);
+    assert(!glIsTexture(retained_texture));
+    no_error();
+    assert(SDL_GL_MakeCurrent(sdl.window,sdl.gl.context)==0);
+    assert(glIsTexture(retained_texture));
+    SDL_GL_DeleteContext(replacement);
+    no_error();
+    puts("PASS: replacement-context negative control has no retained texture; re-present is not context recovery");
+}
 static void shader3d_tests(void) {
     // Compile/link the production 3D shader pairs through the real loader.
     // UBO storage is separate from default-block vertex uniform limits.
@@ -229,7 +247,7 @@ int main(void) {
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
     shader3d_tests(); blur_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
-    resume_surface_tests(); no_error();
+    resume_surface_tests(); replacement_context_negative_control(); no_error();
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
     gfx_fini(); return 0;
 }

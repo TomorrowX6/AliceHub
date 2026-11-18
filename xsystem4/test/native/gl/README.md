@@ -52,3 +52,8 @@ Generated `*-gles-synthetic.ppm` files are raw GL readbacks of synthetic art.
 They are useful diagnostic images, **not proof of the supplied game scenes**.
 The plain C fixture/source-contract suite in the parent directory remains
 complementary coverage for rotation and save-version handling.
+
+A replacement-context negative control additionally verifies that a new unshared
+context has no retained game texture. This bounds the surface-restoration test: it
+is **not** a context-loss recovery test or verification of an intermittent phone
+black screen. See `docs/gamepad-editor-resume-diagnostics.md` in the repository root.

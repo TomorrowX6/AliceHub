@@ -180,8 +180,10 @@ class XSystem4Activity : SDLActivity() {
 
     fun applyGamepadProfile(profile: GamepadProfile) {
         activeGamepadProfile = profile
+        traceEditorReturn("profile.begin")
         GamepadBridge.syncProfileToNative(profile)
         virtualGamepadView?.setProfile(profile)
+        traceEditorReturn("profile.end")
         updatePhysicalPadPresence(showToast = false)
     }
 
@@ -227,7 +229,19 @@ class XSystem4Activity : SDLActivity() {
         )
     }
 
+    private val resumeTraceVersion by lazy {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionName
+    }
+
+    private fun traceEditorReturn(phase: String) {
+        if (!android.util.Log.isLoggable("AliceHubResume", android.util.Log.DEBUG)) return
+        SDLActivity.traceResumeState("game.$phase version=${resumeTraceVersion} " +
+            "finishing=$isFinishing pad=${virtualGamepadView?.resumeVisibilityState()}")
+    }
+
     fun openGamepadEditorActivity(initialTab: Int = GamepadEditorActivity.TAB_VIRTUAL) {
+        traceEditorReturn("editor.launch")
         val key = currentGamepadProfileKey()
         val gid = currentGamepadGameId()
         val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title }
@@ -587,6 +601,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onNewIntent(intent: Intent) {
+        traceEditorReturn("onNewIntent.begin")
         super.onNewIntent(intent)
         setIntent(intent)
         try {
@@ -604,6 +619,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun onPause() {
+        traceEditorReturn("onPause.begin")
         setCtrlSkipLatched(false)
         virtualGamepadView?.releaseAllInputs()
         try {
@@ -613,9 +629,11 @@ class XSystem4Activity : SDLActivity() {
         resetMovieSkipOverlay()
         lastSyncedConfigSeq = GameModifierBridge.syncLockMaskFromNative(this)
         super.onPause()
+        traceEditorReturn("onPause.end")
     }
 
     override fun onResume() {
+        traceEditorReturn("onResume.begin")
         super.onResume()
         try {
             GameModifierBridge.syncNativeConfigPath(this)
@@ -743,6 +761,7 @@ class XSystem4Activity : SDLActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == REQ_GAMEPAD_EDITOR) {
+            traceEditorReturn("editor.result=$resultCode")
             try {
                 applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
             } catch (_: Throwable) {
