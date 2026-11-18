@@ -44,6 +44,15 @@ extern int   cjk_encode_codepoint(int u, bool gbk);
 extern char* utf2cjk(const char *src, size_t len, bool gbk);
 extern char* utf2sjis(const char *src, size_t len);
 extern char* utf2filename_cjk(const char *src, size_t len);
+/* Optional Mai/word.mai custom Shift-JIS table for patched text/UI/saves */
+extern bool  sys4_load_mai_word_table_mem(const void *data, size_t size);
+extern bool  sys4_load_mai_word_table(const char *path);
+extern void  sys4_reset_mai_word_table(void);
+extern bool  sys4_has_mai_word_table(void);
+extern char* mai_sjis_char2unicode(const char *src, int *dst);
+extern char* mai_sjis2utf(const char *src, size_t len);
+extern char* mai_cjk2utf_strict(const char *src, bool *valid_out);
+extern char* mai_utf2sjis(const char *src, size_t len);
 extern bool  sjis_has_hankaku(const char *src);
 extern bool  sjis_has_zenkaku(const char *src);
 extern int   sjis_count_char(const char *src);

@@ -985,6 +985,19 @@ bool sys_is_sdl_main_thread(void)
 }
 #endif
 
+static void init_mai_word_table(void)
+{
+	sys4_reset_mai_word_table();
+	if (sys4_text_is_gbk || !config.game_dir)
+		return;
+	char *path = gamedir_path_icase("mai/word.mai");
+	if (path && file_exists(path)) {
+		if (!sys4_load_mai_word_table(path))
+			WARNING("Failed to load mai word table: %s", path);
+	}
+	free(path);
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef __ANDROID__
@@ -1198,6 +1211,7 @@ int main(int argc, char *argv[])
 
 	mkdir_p(config.save_dir);
 	apply_game_specific_hacks(ain);
+	init_mai_word_table();
 	if (config.msgskip_delay)
 		set_msgskip_delay(ain, config.msgskip_delay);
 	asset_manager_init();

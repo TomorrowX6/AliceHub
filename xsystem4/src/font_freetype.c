@@ -303,7 +303,7 @@ static bool is_sc_face_name(const char *family)
 static void select_gbk_ttc_face(const char *path, const FT_Byte *mem, FT_Long mem_size, FT_Face *face_io)
 {
 	FT_Face cur = *face_io;
-	if (!sys4_text_is_gbk || !cur || cur->num_faces <= 1)
+	if ((!sys4_text_is_gbk && !sys4_has_mai_word_table()) || !cur || cur->num_faces <= 1)
 		return;
 	if (is_sc_face_name(cur->family_name) && strstr(cur->family_name, "Mono") != NULL)
 		return;
