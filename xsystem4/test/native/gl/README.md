@@ -4,7 +4,7 @@ This is a **synthetic renderer test, not a Dohna Dohna game-scene test**.
 No game assets, game scripts or saved games are used.
 
 The test compiles the production translation units (`video.c`, `draw.c`,
-`parts.c`, `render.c`, `construction.c`, `PartsEngine.c`, `activity.c`, EX lookup) and loads the real
+`parts.c`, `render.c`, `flat.c`, `construction.c`, `PartsEngine.c`, `activity.c`, EX lookup) and loads the real
 GLES shaders. Test-only wrappers expose file-local entry points; production
 rendering functions are not reimplemented or extracted as source text.
 Unused VM/audio/game entry points are discarded by the linker.
@@ -24,6 +24,10 @@ independently computed pixels:
   (9 pairs), including the full 308-bone, 14784-byte uniform block. This catches
   capability/link failures that the 2D-only fixtures cannot detect. A successful
   host run is not proof that every emulator GPU backend accepts the shader.
+* FLAT particle position modes 0/1/2, direct and nested timelines, two
+  component placements with nonzero origin offsets, three animation frames,
+  legacy and v2 transforms. Checks complete GPU readbacks rather than just
+  matrix arithmetic; no game-specific offsets or assets are included.
 * Construction H/V blur, full-size/subrect, pinned/unpinned draw target,
   RGB results, alpha preservation, two-pass blur.
 * Normal/LR/TB/combined sprite rendering through the real HLL setters,

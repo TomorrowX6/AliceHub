@@ -560,7 +560,7 @@ static void render_flat_emitter(struct parts *parts, struct parts_flat *f,
 		for (unsigned instance = 0; instance < parts_flat_key_count(timeline, birth_frame); instance++) {
 
 		// Color, opacity and inherited scale/rotation follow the current key.
-		// Position tracking is independent: 0 = world origin, 1 = current
+		// Position tracking is independent: 0 = FLAT-local origin, 1 = current
 		// emitter position, 2 = emitter position when the particle was born.
 		const struct flat_key_data_graphic *birth_key = parts_flat_key(timeline, birth_frame, instance);
 		const struct flat_key_data_graphic *key = parts_flat_key(timeline, local, instance);
@@ -624,12 +624,14 @@ static void render_flat_emitter(struct parts *parts, struct parts_flat *f,
 		glm_vec3_copy(eff.add_color, ud.add_color);
 		glm_vec3_copy(eff.mul_color, ud.mul_color);
 		glm_mat4_mul(base, layer_m, ud.transform);
-		glm_mat4_mul(root, ud.transform, ud.transform);
 		if (em->pos_track_mode == 0) {
 			ud.transform[3][0] = 0;
 			ud.transform[3][1] = 0;
 			ud.transform[3][2] = 0;
-		} else if (em->pos_track_mode == 2 && birth) {
+		}
+		// Tracking must not discard the owning Parts placement/origin offset.
+		glm_mat4_mul(root, ud.transform, ud.transform);
+		if (em->pos_track_mode == 2 && birth) {
 			if (!birth->has_position) {
 				if (key_stack->count > 0 && birth->has_ancestor_keys && em->parent_key_mode != 2) {
 					struct flat_key_stack birth_stack = { .count = birth->ancestor_count };

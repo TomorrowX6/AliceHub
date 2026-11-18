@@ -3,6 +3,7 @@
  */
 #include <assert.h>
 #include <stdarg.h>
+#include "system4/string.h"
 #include "../../../src/video.c"
 #include "../../../src/parts/parts_internal.h"
 
@@ -12,6 +13,7 @@ extern bool test_gray(struct parts_construction_process *, struct parts_cp_filte
 extern bool test_v14(struct parts_construction_process *, struct parts_cp_v14 *);
 extern void test_render_cg(struct parts *, struct parts_common *);
 extern void parts_render_init(void);
+extern void test_render_flat(struct parts *, struct parts_flat *);
 extern void test_set_reverse(bool, bool);
 extern void test_activity_scale(struct parts *, bool, bool, float, float);
 extern GLuint test_load_3d_shader(const char *, const char *, int);
@@ -451,6 +453,82 @@ static void sprite_tests(bool activity, bool v2) {
     printf("PASS: actual %s v%d CG renderer normal/LR/TB/LR+TB pixels and placement (no double flip)\n",
            activity?"activity loader":"HLL API", v2?2:1);
 }
+
+/* Position tracking is inside the FLAT's coordinate system. The component
+ * transform (including its origin offset) must still place mode-0 particles.
+ * Mode 1 follows animated emitter keys; mode 2 keeps its captured birth point.
+ */
+static void flat_emitter_origin_tests(void) {
+    struct string *cg_name=calloc(1,sizeof(struct string)+3);
+    struct string *em_name=calloc(1,sizeof(struct string)+5);
+    cg_name->size=2; em_name->size=4;
+    strcpy(cg_name->text,"cg"); strcpy(em_name->text,"emit");
+    unsigned char art[8*8*4];
+    for(int i=0;i<8*8;i++) { art[i*4]=255; art[i*4+1]=art[i*4+2]=0; art[i*4+3]=255; }
+    Texture textures[3]={{0}}; gfx_init_texture_with_pixels(&textures[0],8,8,art);
+    Texture target={0}; gfx_init_texture_blank(&target,128,128);
+    struct string *group_name=calloc(1,sizeof(struct string)+6);
+    group_name->size=5; strcpy(group_name->text,"group");
+    struct flat_library libs[3]={{.name=cg_name,.type=FLAT_LIB_CG},
+        {.name=em_name,.type=FLAT_LIB_EMITTER}};
+    struct flat_emitter *em=&libs[1].emitter;
+    *em=(struct flat_emitter){.library_name=cg_name,.particle_align=5,
+        .create_count=1,.particle_lifetime=3,.direction_type=1,
+        .begin_scale=1,.end_scale=1,.begin_x_scale=1,.end_x_scale=1,
+        .begin_y_scale=1,.end_y_scale=1};
+    struct flat_key_data_graphic keys[3];
+    for(int i=0;i<3;i++) keys[i]=(struct flat_key_data_graphic){
+        .pos_x=12+i*4,.pos_y=16+i*4,.scale_x=1,.scale_y=1,
+        .alpha=255,.mul_r=255,.mul_g=255,.mul_b=255};
+    struct flat_timeline tl={.library_name=em_name,.type=FLAT_TIMELINE_GRAPHIC,
+        .frame_count=3,.graphic={.count=3,.keys=keys}};
+    struct flat fl={.hdr={.fps=60,.meter=128,.game_view_width=128,.version=11},
+        .nr_libraries=3,.libraries=libs,.nr_timelines=1,.timelines=&tl};
+    struct flat_key_data_graphic parent_keys[3];
+    for(int i=0;i<3;i++)parent_keys[i]=(struct flat_key_data_graphic){
+        .pos_x=8,.pos_y=10,.scale_x=1,.scale_y=1,
+        .alpha=255,.mul_r=255,.mul_g=255,.mul_b=255};
+    struct flat_timeline parent_tl={.library_name=group_name,.type=FLAT_TIMELINE_GRAPHIC,
+        .frame_count=3,.graphic={.count=3,.keys=parent_keys}};
+    libs[2]=(struct flat_library){.name=group_name,.type=FLAT_LIB_TIMELINE,
+        .timeline={.nr_timelines=1,.timelines=&tl}};
+    for(int v2=0;v2<2;v2++)for(int mode=0;mode<3;mode++)for(int placement=0;placement<2;placement++)for(int nested=0;nested<2;nested++) {
+        parts_v2=v2; em->pos_track_mode=mode; em->parent_key_mode=1;
+        fl.timelines=nested?&parent_tl:&tl;
+        struct parts p={0}; p.local.pos=p.global.pos=(SDL_FPoint){32+placement*24,40+placement*16};
+        p.local.scale.x=p.local.scale.y=p.global.scale.x=p.global.scale.y=1;
+        p.global.alpha=255; p.global.multiply_color=(SDL_Color){255,255,255,255};
+        p.world_matrix_self=&p;
+        struct parts_flat f={.flat=&fl,.textures=textures,.nr_libraries=3,
+            .common={.origin_offset={-3,-5}},.root_state=parts_flat_layer_state_new(1)};
+        if(nested)f.root_state->children[0]=parts_flat_layer_state_new(1);
+        for(int frame=0;frame<3;frame++) {
+            f.root_state->current_frame=frame;
+            if(nested)f.root_state->children[0]->current_frame=frame;
+            GLuint fb=gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER,&target,0,0,128,128);
+            glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+            test_render_flat(&p,&f); gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER,fb);
+            unsigned char *got=gfx_get_pixels(&target);
+            int key_frame=mode==1?frame:0;
+            int cx=p.local.pos.x-3+(mode?keys[key_frame].pos_x:0);
+            int cy=p.local.pos.y-5+(mode?keys[key_frame].pos_y:0);
+            if(mode&&nested){cx+=8;cy+=10;}
+            for(int y=0;y<128;y++)for(int x=0;x<128;x++) {
+                unsigned char expected[4]={0,0,0,255};
+                if(x>=cx-4&&x<cx+4&&y>=cy-4&&y<cy+4)expected[0]=255;
+                if(memcmp(got+(y*128+x)*4,expected,4))
+                    fprintf(stderr,"FLAT v2=%d mode=%d placement=%d nested=%d frame=%d pixel=(%d,%d)\n",
+                        v2,mode,placement,nested,frame,x,y);
+                check_pixels(got+(y*128+x)*4,expected,4,0);
+            }
+            free(got); no_error();
+        }
+        parts_flat_layer_state_free(f.root_state);
+    }
+    gfx_delete_texture(&target); gfx_delete_texture(&textures[0]); free(cg_name); free(em_name); free(group_name);
+    puts("PASS: FLAT emitter modes 0/1/2 retain component placement across hierarchy/frames in legacy/v2 rendering");
+}
+
 int main(void) {
     assert(SDL_Init(SDL_INIT_VIDEO)==0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);
@@ -463,7 +541,7 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
+    flat_emitter_origin_tests(); shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); replacement_context_negative_control();
     replacement_context_recovery_with_backup(); replacement_context_deferred_until_surface_ready(); replacement_context_recovery_without_backup();
