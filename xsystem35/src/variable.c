@@ -382,10 +382,10 @@ int svar_toVars(int no, vmvar_t *vars) {
 int svar_getCharType(int no, int pos) {
 	const char *p = svar_get(no);
 	for (; *p && pos > 0; pos--)
-		p += CHECKCJK1BYTE(*p, encoding) ? 2 : 1;
+		p = advance_char(p, encoding);
 	if (!*p)
 		return 0;
-	return CHECKCJK1BYTE(*p, encoding) ? 2 : 1;
+	return advance_char(p, encoding) - p > 1 ? 2 : 1;
 }
 
 void svar_replaceAll(int no, int pattern, int replacement) {

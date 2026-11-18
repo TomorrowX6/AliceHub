@@ -48,9 +48,10 @@ static char         *playlist[PLAYLIST_MAX];
 static mixer_music  *music;
 static int          trackno; // 現在演奏中のトラック
 static int          start_time;
+static int          fade_volume = 100;
 
 static void apply_volume(void) {
-	mixer_music_set_gain(music, prv.volval[BGM_VOLVAL_CH] / 100.0f);
+	mixer_music_set_gain(music, (fade_volume * prv.volval[BGM_VOLVAL_CH]) / 10000.0f);
 }
 
 #ifdef __ANDROID__
@@ -267,6 +268,12 @@ static void cdrom_reapply_volume(void) {
 		apply_volume();
 }
 
+static void cdrom_set_volume(int level) {
+	fade_volume = level < 0 ? 0 : (level > 100 ? 100 : level);
+	if (music)
+		apply_volume();
+}
+
 cdromdevice_t cdrom_mp3 = {
 	.init = cdrom_init,
 	.exit = cdrom_exit,
@@ -276,4 +283,5 @@ cdromdevice_t cdrom_mp3 = {
 	.getpos = cdrom_getPlayingInfo,
 	.is_available = cdrom_is_available,
 	.reapply_volume = cdrom_reapply_volume,
+	.set_volume = cdrom_set_volume,
 };
