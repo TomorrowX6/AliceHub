@@ -903,7 +903,7 @@ void vm_system_call(int code)
 	}
 	case SYS_MSGBOX: {
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 		SDL_ShowSimpleMessageBox(0, "xsystem4", utf, NULL);
 		free(utf);
 		// XXX: caller S_POPs
@@ -912,7 +912,7 @@ void vm_system_call(int code)
 	case SYS_MSGBOX_OK_CANCEL: {
 		int result = 0;
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 
 		const SDL_MessageBoxData mbox = {
 			SDL_MESSAGEBOX_INFORMATION,
@@ -1003,7 +1003,7 @@ void vm_system_call(int code)
 	case SYS_ERROR: {// system.Error(string szText)
 		int result = 0;
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 		sys_warning("*GAME ERROR*: %s\n", utf);
 		const SDL_MessageBoxData mbox = {
 			SDL_MESSAGEBOX_ERROR,
