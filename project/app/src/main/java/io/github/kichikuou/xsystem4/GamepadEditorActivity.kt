@@ -255,6 +255,7 @@ class GamepadEditorActivity : Activity() {
     private fun dp(v: Int): Int = UiKit.dpInt(this, v)
 
     private fun tintSwitch(sw: Switch) {
+        sw.showText = false
         val states = arrayOf(
             intArrayOf(android.R.attr.state_checked),
             intArrayOf(-android.R.attr.state_checked)

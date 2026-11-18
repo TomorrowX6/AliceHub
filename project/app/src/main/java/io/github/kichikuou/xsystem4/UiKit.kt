@@ -106,6 +106,7 @@ internal object UiKit {
     }
 
     fun tintSwitch(sw: Switch, accent: Int) {
+        sw.showText = false
         val ctx = sw.context
         val onColor = accentOnSurface(ctx, accent)
         val states = arrayOf(

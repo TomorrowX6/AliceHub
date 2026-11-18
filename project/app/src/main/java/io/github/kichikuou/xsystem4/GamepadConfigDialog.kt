@@ -392,16 +392,21 @@ class GamepadConfigController(
         val row = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(48)
         }
         val label = TextView(uiCtx).apply {
             text = tr("本游戏独立配置", "ゲーム別設定", "Per-Game Profile")
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setTextColor(uiCtx.getColor(R.color.ui_text_primary))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         val sw = settingsSwitch().apply {
             contentDescription = label.text
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setOnCheckedChangeListener { _, isChecked ->
                 if (syncingUi) return@setOnCheckedChangeListener
                 perGameMode = isChecked
@@ -428,6 +433,18 @@ class GamepadConfigController(
             }
         }
         restoreGlobalBtn = restore
+        row.isClickable = true
+        row.isFocusable = true
+        row.contentDescription = label.text
+        row.setOnClickListener { sw.toggle() }
+        row.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = Switch::class.java.name
+                info.isCheckable = true
+                info.isChecked = sw.isChecked
+            }
+        }
         row.addView(label)
         row.addView(restore)
         row.addView(sw)
