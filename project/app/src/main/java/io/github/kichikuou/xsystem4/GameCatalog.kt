@@ -388,18 +388,33 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
-            if ((File(saveDir, "CommonOtherData.sav").isFile ||
-                    File(saveDir, "AFMemMode.asd").isFile ||
-                    File(saveDir, "3DConfig.vsf").isFile) &&
-                (File(saveDir, "AFCommon.asd").isFile ||
-                    File(saveDir, "AFConfig.asd").isFile ||
-                    File(saveDir, "AFInfo.asd").isFile ||
-                    File(saveDir, "AFCGMode.asd").isFile ||
-                    File(saveDir, "AFBGMMode.asd").isFile) &&
-                !File(saveDir, "CommonSystemData.sav").isFile &&
-                !File(saveDir, "GlobalSaveData.asd").isFile &&
-                !File(saveDir, "GlobalSave.asd").isFile
-            ) {
+            val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
+            val hasGlobalSave = saveFiles.any {
+                it.name.equals("GlobalSave.asd", ignoreCase = true) ||
+                    it.name.equals("GlobalSaveData.asd", ignoreCase = true)
+            }
+            val hasPrefixedE2Af = saveFiles.any { f ->
+                val lowerRepaired = ArchiveExtractor.repairSjisAsGbkMojibake(f.name).lowercase()
+                isEvenicle2Alias(lowerRepaired) && (
+                    lowerRepaired.endsWith("afinfo.asd") ||
+                        lowerRepaired.endsWith("afcgmode.asd") ||
+                        lowerRepaired.endsWith("afbgmmode.asd") ||
+                        lowerRepaired.endsWith("afmemmode.asd") ||
+                        lowerRepaired.endsWith("afcommon.asd")
+                    )
+            }
+            val hasE2AfMarker = saveFiles.any { f ->
+                val lower = f.name.lowercase()
+                lower.endsWith("afcommon.asd") ||
+                    lower.endsWith("afconfig.asd") ||
+                    lower.endsWith("afinfo.asd") ||
+                    lower.endsWith("afcgmode.asd") ||
+                    lower.endsWith("afbgmmode.asd") ||
+                    lower.endsWith("afmemmode.asd")
+            }
+            val hasCommonOther = saveFiles.any { it.name.equals("CommonOtherData.sav", ignoreCase = true) }
+            val has3DConfig = saveFiles.any { it.name.equals("3DConfig.vsf", ignoreCase = true) }
+            if (!hasGlobalSave && (hasPrefixedE2Af || ((hasCommonOther || has3DConfig) && hasE2AfMarker))) {
                 return ID_EVENICLE2
             }
             if (File(saveDir, "AFConfig.asd").isFile &&

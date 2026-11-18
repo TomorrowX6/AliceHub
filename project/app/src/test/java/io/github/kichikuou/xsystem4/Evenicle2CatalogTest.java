@@ -116,15 +116,20 @@ public class Evenicle2CatalogTest {
                     GameCatalog.INSTANCE.isEvenicle2Alias(alias.toLowerCase()));
         }
 
-        // Save directory disambiguation: Evenicle 2 uses CommonOtherData.sav + AF*.asd (and even QC.asd),
-        // never CommonSystemData.sav / GlobalSaveData.asd.
+        // Save directory disambiguation using the real runtime output files of Evenicle 2
+        // (including CommonSystemData.sav, 3DConfig.vsf, AFConfig.asd, CommonOtherData.sav,
+        // Thumb0000.qnt, and GameName-prefixed イブニクル２AF*.asd).
         File e2Save = tmp.newFolder("e2_save");
-        writeFile(new File(e2Save, "CommonOtherData.sav"), new byte[]{1});
-        writeFile(new File(e2Save, "AFCommon.asd"), new byte[]{1});
+        writeFile(new File(e2Save, "3DConfig.vsf"), new byte[]{1});
         writeFile(new File(e2Save, "AFConfig.asd"), new byte[]{1});
-        writeFile(new File(e2Save, "AFInfo.asd"), new byte[]{1});
-        writeFile(new File(e2Save, "AFMemMode.asd"), new byte[]{1});
-        writeFile(new File(e2Save, "QC.asd"), new byte[]{1});
+        writeFile(new File(e2Save, "CommonOtherData.sav"), new byte[]{1});
+        writeFile(new File(e2Save, "CommonSystemData.sav"), new byte[]{1});
+        writeFile(new File(e2Save, "MsgSkip.asd"), new byte[]{1});
+        writeFile(new File(e2Save, "Thumb0000.qnt"), new byte[]{1});
+        writeFile(new File(e2Save, "WindowSetting.json"), new byte[]{1});
+        writeFile(new File(e2Save, "イブニクル２AFBGMMode.asd"), new byte[]{1});
+        writeFile(new File(e2Save, "イブニクル２AFCGMode.asd"), new byte[]{1});
+        writeFile(new File(e2Save, "イブニクル２AFInfo.asd"), new byte[]{1});
         assertEquals(
                 GameCatalog.ID_EVENICLE2,
                 GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", e2Save, null)
@@ -132,6 +137,41 @@ public class Evenicle2CatalogTest {
         assertTrue(GameModifierBridge.INSTANCE.isEvenicle2GameDir(null, "UnknownDir", e2Save));
         assertFalse(GameModifierBridge.INSTANCE.isEvenicleGameDir(null, "イブニクル2", e2Save));
         assertFalse(GameModifierBridge.INSTANCE.isDohnaDohnaGameDir(null, "UnknownDir", e2Save));
+        assertFalse(GameModifierBridge.INSTANCE.isRance09GameDir(null, "UnknownDir", e2Save));
+        assertFalse(GameModifierBridge.INSTANCE.isRance03GameDir(null, "UnknownDir", e2Save));
+
+        // Also verify SJIS-as-GBK mojibake-repaired イブニクル２AF*.asd save dirs (e.g. Windows import)
+        File e2MojibakeSave = tmp.newFolder("e2_mojibake_save");
+        writeFile(new File(e2MojibakeSave, "僀僽僯僋儖俀AFInfo.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_EVENICLE2,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", e2MojibakeSave, null)
+        );
+
+        // Escalayer Reboot saves must NOT be misclassified as Evenicle 2
+        File erSave = tmp.newFolder("er_save");
+        writeFile(new File(erSave, "CommonSystemData.sav"), new byte[]{1});
+        writeFile(new File(erSave, "AFConfig.asd"), new byte[]{1});
+        writeFile(new File(erSave, "Esca.sav"), new byte[]{1});
+        writeFile(new File(erSave, "EscalayerReboot_87.asd"), new byte[]{1});
+        writeFile(new File(erSave, "EscalayerReboot_87.vsf"), new byte[]{1});
+        assertFalse(
+                GameCatalog.ID_EVENICLE2.equals(
+                        GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", erSave, null)
+                )
+        );
+        assertFalse(GameModifierBridge.INSTANCE.isEvenicle2GameDir(null, "UnknownDir", erSave));
+
+        // Rance 09 saves must still classify as Rance 09
+        File r09Save = tmp.newFolder("r09_save");
+        writeFile(new File(r09Save, "AFConfig.asd"), new byte[]{1});
+        writeFile(new File(r09Save, "AFCGMode.asd"), new byte[]{1});
+        writeFile(new File(r09Save, "Thumb0000.qnt"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_RANCE09,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", r09Save, null)
+        );
+        assertTrue(GameModifierBridge.INSTANCE.isRance09GameDir(null, "UnknownDir", r09Save));
 
         File e1Save = tmp.newFolder("e1_save");
         writeFile(new File(e1Save, "CommonSystemData.sav"), new byte[]{1});

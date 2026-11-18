@@ -247,6 +247,9 @@ object GameModifierBridge {
     }
 
     fun isRance03GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -386,6 +389,9 @@ object GameModifierBridge {
     }
 
     fun isRance09GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
