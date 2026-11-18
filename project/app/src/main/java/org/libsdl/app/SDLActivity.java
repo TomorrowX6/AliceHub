@@ -874,7 +874,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Message msg = commandHandler.obtainMessage();
         msg.arg1 = command;
         msg.obj = data;
-        if (Looper.myLooper() == Looper.getMainLooper()) {
+        // Handle synchronously when already on commandHandler's thread (UI thread),
+        // otherwise wait(500) below deadlocks the very Looper supposed to run msg.
+        if (Looper.myLooper() == commandHandler.getLooper()) {
             commandHandler.handleMessage(msg);
             return true;
         }
