@@ -925,14 +925,16 @@ int main(void) {
                 kids.extend(extra)
             return _ex_tree(_sjis("通常状態"), kids)
 
-        def part_node(name: str, kind: str, info_children: list[bytes], children_list: list[bytes] | None = None) -> bytes:
+        def part_node(name: str, kind: str, info_children: list[bytes],
+                      children_list: list[bytes] | None = None,
+                      children_key: str = "子パーツ") -> bytes:
             info = [_ex_leaf(_sjis("パーツタイプ"), 3, _ex_pstr(_sjis(kind))), *info_children]
             fields = [
                 _ex_leaf(_sjis("名前"), 3, _ex_pstr(_sjis(name))),
                 _ex_tree(_sjis("種類別情報"), info),
             ]
             if children_list is not None:
-                fields.append(_ex_tree(_sjis("子パーツ"), children_list))
+                fields.append(_ex_tree(_sjis(children_key), children_list))
             return _ex_tree(_sjis(name), fields)
 
         root_part = part_node("fg", "フォームグループ", [], children_list=[
@@ -963,7 +965,9 @@ int main(void) {
             part_node("vsb", "縦スクロールバー", []),
             part_node("vsld", "縦スライダー", []),
             part_node("rb", "ラジオボタンボックス", []),
-            part_node("mw", "メッセージウィンドウ", []),
+            part_node("mw", "メッセージウィンドウ", [], children_list=[
+                part_node("mw_child_btn", "ボタン", []),
+            ], children_key="子パーツ列表"),
         ])
         pact_ex = build_extf([
             _ex_block(b"PactData", 6, _ex_tree(b"PactData", [root_part])),
@@ -1271,7 +1275,7 @@ int main(int argc, char **argv) {
     }
     assert(special_14 == 1);
     assert(got_text == 1);
-    assert(got_button == 1);
+    assert(got_button == 2);
     assert(got_checkbox == 1);
     assert(got_override_cg == 1);
     assert(got_loop_cg == 1);
@@ -1281,7 +1285,7 @@ int main(int argc, char **argv) {
     assert(got_slider == 1);
     assert(special_9 == 1);
     assert(got_special_10 == 1);
-    assert(got_child_parent == 10);
+    assert(got_child_parent == 11);
 
     ex_free(ex);
     free_string(act_name);
