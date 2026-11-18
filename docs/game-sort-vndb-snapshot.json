@@ -3,7 +3,7 @@
   "documentation": "https://api.vndb.org/kana",
   "license": "https://vndb.org/d17",
   "metric": "rating (Bayesian rating, raw 10–100 scale, not average or votecount)",
-  "collected_at": "2026-11-18T08:43:35.220395-08:00",
+  "collected_at": "2026-11-18T11:30:25.392139-08:00",
   "request": {
     "filters": [
       "or",
@@ -76,6 +76,11 @@
         "id",
         "=",
         "v18970"
+      ],
+      [
+        "id",
+        "=",
+        "v334"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -92,6 +97,15 @@
         "released": "2002-08-02",
         "title": "Choukou Tenshi Escalayer",
         "votecount": 427
+      },
+      {
+        "alttitle": "GALZOOアイランド",
+        "average": 76.8,
+        "id": "v334",
+        "rating": 76.8,
+        "released": "2005-12-09",
+        "title": "Galzoo Island",
+        "votecount": 159
       },
       {
         "alttitle": "戦国ランス",

@@ -115,6 +115,9 @@ object NativeGameImport {
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
+        if (GameCatalog.isGalzooGameFiles(activeFiles)) {
+            return "GALZOO"
+        }
         val sys4Ain = activeFiles.firstOrNull {
             it.endsWith(".ain", true) && !it.equals("System39.ain", true)
         }
@@ -168,40 +171,60 @@ object NativeGameImport {
     ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val rootFiles = children(context, tree, root)
-        var sourceTrees: List<Pair<Uri, List<Document>>> = emptyList()
+        var sourceTrees: List<Triple<Uri, List<Document>, String>> = emptyList()
         var primaryDocs: List<Document>? = null
 
         if (isSys4Root(rootFiles) || isSys3Root(rootFiles)) {
             primaryDocs = rootFiles
-            sourceTrees = listOf(root to rootFiles)
+            sourceTrees = listOf(Triple(root, rootFiles, ""))
         } else {
             // Also support picking a container folder holding Disc1/GAMEDATA .. Disc3/GAMEDATA
-            val discRoots = mutableListOf<Pair<Uri, List<Document>>>()
-            val queue = ArrayDeque<Pair<Uri, Int>>()
+            // or sibling companion folders such as GALZOO/ + 三合一/Data/.
+            val discRoots = mutableListOf<Triple<Uri, List<Document>, String>>()
+            val queue = ArrayDeque<Triple<Uri, String, Int>>()
             for (d in rootFiles) {
-                if (d.folder && !skip(d.name)) queue.add(d.uri to 1)
+                if (d.folder && !skip(d.name) &&
+                    !d.name.equals("DLL", ignoreCase = true) &&
+                    !d.name.equals("BackData", ignoreCase = true) &&
+                    d.name != "补丁" &&
+                    d.name != "备份" &&
+                    d.name != "备份文件"
+                ) {
+                    queue.add(Triple(d.uri, d.name, 1))
+                }
             }
             while (queue.isNotEmpty()) {
-                val (dirUri, depth) = queue.removeFirst()
+                val (dirUri, dirName, depth) = queue.removeFirst()
                 val docs = children(context, tree, dirUri)
                 if (isSys4Root(docs) || isSys3Root(docs)) {
                     primaryDocs = docs
-                    discRoots.add(dirUri to docs)
+                    discRoots.add(Triple(dirUri, docs, ""))
+                } else if (dirName.equals("Data", ignoreCase = true) &&
+                    docs.any {
+                        !it.folder && !skip(it.name) && (
+                            it.name.equals("PolyObj.lin", true) ||
+                                it.name.equals("Event.alk", true) ||
+                                it.name.endsWith(".dgn", true)
+                            )
+                    }
+                ) {
+                    discRoots.add(Triple(dirUri, docs, "Data"))
                 } else if (docs.any {
                         !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
                             it.name.endsWith(".bgi", true) || it.name.endsWith(".alk", true))
                     }
                 ) {
-                    discRoots.add(dirUri to docs)
+                    discRoots.add(Triple(dirUri, docs, ""))
                 } else if (depth < 3) {
                     for (sub in docs) {
                         if (sub.folder && !skip(sub.name) &&
+                            !sub.name.equals("DLL", ignoreCase = true) &&
                             !sub.name.equals("BackData", ignoreCase = true) &&
                             sub.name != "补丁" &&
                             sub.name != "备份" &&
                             sub.name != "备份文件"
                         ) {
-                            queue.add(sub.uri to (depth + 1))
+                            queue.add(Triple(sub.uri, sub.name, depth + 1))
                         }
                     }
                 }
@@ -253,6 +276,8 @@ object NativeGameImport {
             GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
         val isRance06Import = targetGameId == GameCatalog.ID_RANCE06 ||
             GameCatalog.isRance06GameFiles(primaryFileNames)
+        val isGalzooImport = targetGameId == GameCatalog.ID_GALZOO ||
+            GameCatalog.isGalzooGameFiles(primaryFileNames)
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -270,7 +295,8 @@ object NativeGameImport {
                     val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
                     if (skip(document.name) ||
                         (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath)) ||
-                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true))
+                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
+                        (isGalzooImport && isGalzooBloatRelPath(relPath))
                     ) {
                         continue
                     }
@@ -308,8 +334,14 @@ object NativeGameImport {
                         throw IOException("Incomplete document: $name")
                 }
             }
-            for ((_, docs) in sourceTrees) {
-                copy(docs, staging)
+            for ((_, docs, targetSubdir) in sourceTrees) {
+                if (targetSubdir.isEmpty()) {
+                    copy(docs, staging)
+                } else if (isGalzooImport) {
+                    val subDest = File(staging, targetSubdir)
+                    if (!subDest.exists() && !subDest.mkdirs()) throw IOException("Cannot create directory: $targetSubdir")
+                    copy(docs, subDest, targetSubdir)
+                }
             }
             currentCoroutineContext().ensureActive()
             if (!GameCatalog.validateImportedGameDir(staging, expectedAinName, targetGameId)) {
