@@ -49,6 +49,7 @@ bool game_dohnadohna = false;
 bool game_evenicle = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
+bool game_escalayer_reboot = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -507,6 +508,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle = false;
 	game_rance03 = false;
 	game_dungeons_and_dolls = false;
+	game_escalayer_reboot = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -527,6 +529,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "CMessageTextView") >= 0
 		&& ain_get_global(ain, "g_playerCommonParam") >= 0
 		&& ain_get_function(ain, "SceneCamp@onClickSaveLion") >= 0;
+	game_escalayer_reboot = ain->version == 6
+		&& ain_get_function(ain, "C_BATTLE_PLAYER_RESULT_COMMAND@SetEscalayerPunch") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
@@ -540,7 +544,9 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
-		|| (game_rance03 && ain_has_gbk_r03_strings(ain)));
+		|| (game_rance03 && ain_has_gbk_r03_strings(ain))
+		|| (game_escalayer_reboot && (ain_has_gbk_string(ain, "\xbd\xf8\xd0\xd0\xbf\xec\xcb\xd9\xb1\xa3\xb4\xe6\xc2\xf0\xa3\xbf")
+			|| ain_has_gbk_string(ain, "\xb0\xac\xcb\xb9\xbf\xa8\xc0\xd9\xb6\xfb"))));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);
@@ -598,6 +604,10 @@ void apply_game_specific_hacks(struct ain *ain)
 	if (game_rance9 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;
+	}
+	if (game_escalayer_reboot && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1024;
+		config.view_height = 768;
 	}
 
 	// XXX: we don't rely on game_name because mods change it
