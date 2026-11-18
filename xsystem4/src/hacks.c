@@ -31,6 +31,7 @@
 #include "system4/little_endian.h"
 #include "message_layout.h"
 #include "xsystem4.h"
+#include "escalayer_reboot_cn_ui.h"
 
 #include "hll/hll.h"
 
@@ -637,6 +638,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1024;
 		config.view_height = 768;
 	}
+	/* Leftover SJIS *display* strings in the CN edition. Exact matches only. */
+	if (game_escalayer_reboot && sys4_text_is_gbk)
+		escalayer_reboot_replace_cn_ui_text(ain->strings, ain->nr_strings);
 
 	// XXX: we don't rely on game_name because mods change it
 	if (ain_get_library(ain, "SengokuRanceFont") >= 0)
