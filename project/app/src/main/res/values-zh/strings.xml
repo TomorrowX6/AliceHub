@@ -235,14 +235,17 @@
     <string name="game_rance10_title">兰斯10 决战</string>
     <string name="game_dohnadohna_title">多娜多娜 一起来干坏事吧</string>
     <string name="game_evenicle_title">夏娃年代记</string>
+    <string name="game_evenicle2_title">夏娃年代记2</string>
     <string name="game_sengokurance_title">战国兰斯</string>
     <string name="game_rance01_title">兰斯01 寻找小光</string>
     <string name="game_rance02_title">兰斯02 反叛的少女们</string>
     <string name="game_rance03_title">兰斯03 利萨斯陷落</string>
+    <string name="game_rance06_title">兰斯06 赛斯崩坏</string>
     <string name="game_rance08_title">兰斯08 兰斯Quest Magnum</string>
     <string name="game_rance09_title">兰斯09 赫尔曼革命</string>
     <string name="game_kichikuou_title">鬼畜王兰斯</string>
     <string name="game_escalayer_title">超昂天使 艾斯卡蕾雅</string>
+    <string name="game_escalayer_reboot_title">超昂天使 艾斯卡蕾雅 Reboot</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

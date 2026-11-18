@@ -81,6 +81,9 @@ static struct string *SystemService_GetGameVersionByText(void)
 	if (game_dohnadohna) {
 		return cstr_to_string("sd40006sd00000008f6300004");
 	}
+	if (game_evenicle2) {
+		return cstr_to_string("8938gohds983ogh1223fg086qirkcvn36");
+	}
 	VM_ERROR("Unknown game version text for this title");
 }
 
@@ -551,6 +554,11 @@ static void SystemService_Rance96161988(struct string **text) {
 // Pascha3 Plus Contents
 static void SystemService_XXX(struct string **text) {
 	set_out_cstr(text, "FORMAT HDD ERASE 578205024758284076520478254092784789752384758204687293");
+}
+
+// Beat Angel Escalayer Reboot
+static void SystemService_EscalayerReboot011116(struct string **text) {
+	set_out_cstr(text, "k0k0r0000sre00");
 }
 
 static void SystemService_PreLink(void);
@@ -1105,7 +1113,8 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(XXX, SystemService_XXX),
 	    HLL_EXPORT(Test, SystemService_Test),
 	    HLL_EXPORT(DRPKT, SystemService_DRPKT),
-	    HLL_EXPORT(Rance96161988, SystemService_Rance96161988)
+	    HLL_EXPORT(Rance96161988, SystemService_Rance96161988),
+	    HLL_EXPORT(EscalayerReboot011116, SystemService_EscalayerReboot011116)
 	);
 
 static struct ain_hll_function *get_fun(int libno, const char *name)

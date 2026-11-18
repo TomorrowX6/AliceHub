@@ -23,6 +23,7 @@
 #include "system4/aar.h"
 #include "system4/cg.h"
 #include "system4/hashtable.h"
+#include "system4/utfsjis.h"
 
 #include "3d_internal.h"
 #include "reign.h"
@@ -75,10 +76,27 @@ static bool is_transparent_material(const struct pol_material *material, enum RE
 		return material->flags & MATERIAL_ALPHA;
 }
 
+const char *RE_path_basename(const char *path)
+{
+	const char *base = path;
+	for (const uint8_t *p = (const uint8_t *)path; *p; p++) {
+		if (SJIS_2BYTE(*p) && p[1]) {
+			p++;
+			continue;
+		}
+		if (*p == '/' || *p == '\\')
+			base = (const char *)(p + 1);
+	}
+	return base;
+}
+
 struct archive_data *RE_get_aar_entry(struct archive *aar, const char *dir, const char *name, const char *ext)
 {
 	char *path = xmalloc(strlen(dir) + strlen(name) + strlen(ext) + 2);
-	sprintf(path, "%s\\%s%s", dir, name, ext);
+	if (dir && *dir)
+		sprintf(path, "%s\\%s%s", dir, name, ext);
+	else
+		sprintf(path, "%s%s", name, ext);
 	struct archive_data *dfile = archive_get_by_name(aar, path);
 	free(path);
 	return dfile;
@@ -570,8 +588,7 @@ static void destroy_bone(struct bone *bone)
 
 static struct pol *load_pol_with_opr(struct archive *aar, const char *path)
 {
-	const char *basename = strrchr(path, '\\');
-	basename = basename ? basename + 1 : path;
+	const char *basename = RE_path_basename(path);
 
 	struct archive_data *pol_file = RE_get_aar_entry(aar, path, basename, ".POL");
 	if (!pol_file) {
@@ -590,6 +607,11 @@ static struct pol *load_pol_with_opr(struct archive *aar, const char *path)
 	if (opr_file) {
 		opr_load(opr_file->data, opr_file->size, pol);
 		archive_free_data(opr_file);
+	}
+	struct archive_data *txtex_file = RE_get_aar_entry(aar, path, basename, ".txtex.ex");
+	if (txtex_file) {
+		txtex_opr_load(txtex_file->data, txtex_file->size, pol);
+		archive_free_data(txtex_file);
 	}
 	return pol;
 }
@@ -969,6 +991,13 @@ static struct mot *mot_load(const char *name, struct model *model, struct archiv
 		if (mpr_file) {
 			mot->mpr = mpr_load(mpr_file->data, mpr_file->size, model);
 			archive_free_data(mpr_file);
+		} else {
+			const char *mb = RE_path_basename(model->path);
+			struct archive_data *txtex_file = RE_get_aar_entry(aar, model->path, mb, ".txtex.ex");
+			if (txtex_file) {
+				mot->mpr = mpr_load_txtex(txtex_file->data, txtex_file->size, model, name);
+				archive_free_data(txtex_file);
+			}
 		}
 	}
 

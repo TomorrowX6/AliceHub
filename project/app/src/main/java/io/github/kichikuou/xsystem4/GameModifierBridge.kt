@@ -189,7 +189,12 @@ object GameModifierBridge {
 
     @JvmOverloads
     fun isRance10GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
-        if (GameCatalog.isSystem3xGameDir(gameDir) || isEscalayerGameDir(gameDir, dirNameFallback, saveDir)) {
+        if (GameCatalog.isSystem3xGameDir(gameDir) ||
+            isEscalayerGameDir(gameDir, dirNameFallback, saveDir) ||
+            isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
+            isRance06GameDir(gameDir, dirNameFallback, saveDir)
+        ) {
             return false
         }
         if (gameDir != null && gameDir.isDirectory) {
@@ -219,6 +224,11 @@ object GameModifierBridge {
     }
 
     fun isDohnaDohnaGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir)
+        ) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -244,6 +254,9 @@ object GameModifierBridge {
     }
 
     fun isRance03GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -299,6 +312,19 @@ object GameModifierBridge {
             saveDir = saveDir,
             displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
         ) == GameCatalog.ID_RANCE02
+
+    @JvmOverloads
+    fun isRance06GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_RANCE06
 
     fun isSengokuRanceGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (gameDir != null && gameDir.isDirectory) {
@@ -383,6 +409,9 @@ object GameModifierBridge {
     }
 
     fun isRance09GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir)) {
+            return false
+        }
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }) {
@@ -422,8 +451,27 @@ object GameModifierBridge {
 
     private const val MOD_ABSENT_SUFFIX = ".mod.absent"
 
+    fun isEscalayerRebootGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_ESCALAYER_REBOOT
+
     fun isEscalayerGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        if (isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir)) return false
         if (GameCatalog.isEscalayerGameDir(gameDir)) return true
+        if (gameDir != null && gameDir.isDirectory) {
+            val files = gameDir.listFiles()
+            if (files != null && files.any { it.isFile && it.name.endsWith(".ain", ignoreCase = true) && !it.name.equals("System39.ain", ignoreCase = true) }) {
+                return false
+            }
+        }
         if (saveDir != null && saveDir.isDirectory) {
             if (saveDir.listFiles()?.any {
                     it.isFile && it.name.lowercase().startsWith("doki_s") && it.name.lowercase().endsWith(".asd")
@@ -436,6 +484,9 @@ object GameModifierBridge {
         }
         if (!dirNameFallback.isNullOrBlank()) {
             val lower = dirNameFallback.lowercase()
+            if (GameCatalog.isEscalayerRebootAlias(lower)) {
+                return false
+            }
             if (lower == "escalayer" || lower.startsWith("escalayer-") || lower.contains("escalayer") ||
                 lower.contains("超昂天使") || lower.contains("エスカレイヤー")
             ) {
@@ -445,11 +496,26 @@ object GameModifierBridge {
         return false
     }
 
+    fun isEvenicle2GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_EVENICLE2
+
     fun isEvenicleGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isRance10GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
+            isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||
+            isRance06GameDir(gameDir, dirNameFallback, saveDir) ||
             isSengokuRanceGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance08GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance09GameDir(gameDir, dirNameFallback, saveDir) ||

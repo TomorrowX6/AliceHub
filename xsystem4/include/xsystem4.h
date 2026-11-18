@@ -93,6 +93,7 @@ extern bool game_daibanchou_en;
 extern bool game_rance01;
 extern bool game_rance02;
 extern bool game_rance02_mg;
+extern bool game_rance6;
 extern bool game_rance6_mg;
 extern bool game_rance7_mg;
 extern bool game_sengokurance;
@@ -102,8 +103,10 @@ extern bool game_rance9;
 extern bool game_rance10;
 extern bool game_dohnadohna;
 extern bool game_evenicle;
+extern bool game_evenicle2;
 extern bool game_rance03;
 extern bool game_dungeons_and_dolls;
+extern bool game_escalayer_reboot;
 
 bool sys_is_sdl_main_thread(void);
 

@@ -1975,9 +1975,9 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 	int nr_strings = (array_string && *array_string) ? (*array_string)->nr_vars : 0;
 	union vm_value *strings = nr_strings ? (*array_string)->values : NULL;
 
-	// AIN v12+ and Rance 9 omitted IDs 3..5 (GetControllerIndex/ID/Length) from PartsFunc,
-	// shifting all subsequent PartsFunc IDs down by 3.
-	if (ain && (ain->version >= 12 || game_rance9) && func_id >= 3)
+	// AIN v12+, Rance 9, and Beat Angel Escalayer Reboot omitted IDs 3..5
+	// (GetControllerIndex/ID/Length) from PartsFunc, shifting all subsequent IDs down by 3.
+	if (ain && (ain->version >= 12 || game_rance9 || game_escalayer_reboot) && func_id >= 3)
 		func_id += 3;
 
 #define REQUIRE_INTS(n) \

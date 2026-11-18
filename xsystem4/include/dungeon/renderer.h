@@ -49,5 +49,6 @@ void dungeon_renderer_set_raster_amp(struct dungeon_renderer *r, float amp);
 void dungeon_renderer_enable_lightmap(struct dungeon_renderer *r, bool enable);
 bool dungeon_renderer_get_draw_obj_flag(struct dungeon_renderer *r, int type);
 void dungeon_renderer_set_draw_obj_flag(struct dungeon_renderer *r, int type, bool flag);
+void dungeon_renderer_set_sky_texture_set(struct dungeon_renderer *r, struct dtx *dtx, int set);
 
 #endif /* SYSTEM4_DUNGEON_RENDERER_H */

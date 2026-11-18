@@ -841,11 +841,15 @@ static void parts_render_3dlayer(struct parts *parts, struct parts_3dlayer *l)
 	if (!tex || !tex->handle)
 		return;
 	// The bound sprite's texture is recreated by RE_set_viewport, so
-	// refresh the parts_common's view of it each frame.
+	// refresh the parts_common's view of it each frame, and apply the
+	// viewport offset set on the backing sprite via RE_set_viewport.
 	l->common.texture = *tex;
 	l->common.w = tex->w;
 	l->common.h = tex->h;
-	parts_render_cg(parts, &l->common);
+	struct parts_common common = l->common;
+	common.origin_offset.x += sp->rect.x;
+	common.origin_offset.y += sp->rect.y;
+	parts_render_cg(parts, &common);
 }
 
 static void parts_render_flash_shape(struct parts *parts, struct parts_flash *f, struct parts_flash_object *obj, struct swf_tag_define_shape *tag)

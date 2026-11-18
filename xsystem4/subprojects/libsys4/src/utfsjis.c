@@ -615,6 +615,71 @@ void sjis_normalize_path(char *_src) {
 	}
 }
 
+char *cjk_gbk_zenkaku_to_sjis_buf(const char *src, size_t len, char *buf, size_t cap, bool *changed_out)
+{
+	if (changed_out)
+		*changed_out = false;
+	if (!src)
+		return NULL;
+	char *out = (buf && len < cap) ? buf : xmalloc(len + 1);
+	bool changed = false;
+	size_t i = 0;
+	while (i < len) {
+		uint8_t b = (uint8_t)src[i];
+		if (b < 0x80) {
+			out[i] = (char)b;
+			i++;
+			continue;
+		}
+		if (i + 1 < len) {
+			uint8_t b2 = (uint8_t)src[i + 1];
+			if (b == 0xa3 && b2 >= 0xb0 && b2 <= 0xb9) {
+				out[i] = (char)0x82;
+				out[i + 1] = (char)(0x4f + (b2 - 0xb0));
+				changed = true;
+				i += 2;
+				continue;
+			}
+			if (b == 0xa3 && b2 == 0xad) {
+				out[i] = (char)0x81;
+				out[i + 1] = (char)0x7c;
+				changed = true;
+				i += 2;
+				continue;
+			}
+			if (b == 0xa3 && b2 == 0xae) {
+				out[i] = (char)0x81;
+				out[i + 1] = (char)0x44;
+				changed = true;
+				i += 2;
+				continue;
+			}
+			if (b == 0xa1 && b2 == 0xa1) {
+				out[i] = (char)0x81;
+				out[i + 1] = (char)0x40;
+				changed = true;
+				i += 2;
+				continue;
+			}
+			bool sjis_lead = ((b >= 0x81 && b <= 0x9f) || (b >= 0xe0 && b <= 0xfc));
+			bool sjis_trail = ((b2 >= 0x40 && b2 <= 0x7e) || (b2 >= 0x80 && b2 <= 0xfc));
+			bool gbk_2byte = (sys4_text_is_gbk && b >= 0xa1 && b <= 0xdf && b2 >= 0xa1 && b2 <= 0xfe);
+			if ((sjis_lead && sjis_trail) || gbk_2byte) {
+				out[i] = (char)b;
+				out[i + 1] = (char)b2;
+				i += 2;
+				continue;
+			}
+		}
+		out[i] = (char)b;
+		i++;
+	}
+	out[len] = '\0';
+	if (changed_out)
+		*changed_out = changed;
+	return out;
+}
+
 #ifdef _WIN32
 #include <windows.h>
 

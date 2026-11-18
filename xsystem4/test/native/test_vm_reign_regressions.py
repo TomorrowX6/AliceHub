@@ -380,6 +380,199 @@ int main(void) {{
 """
         compile_and_run(c_code)
 
+    def test_rance6_hacks_and_gbk_detection(self) -> None:
+        fn_r6 = extract_function("src/hacks.c", "apply_rance6_hacks")
+        fn_gbk_str = extract_function("src/hacks.c", "ain_has_gbk_string")
+        fn_r03_str = extract_function("src/hacks.c", "ain_has_gbk_r03_strings")
+        fn_hacks = extract_function("src/hacks.c", "apply_game_specific_hacks")
+        fn_cfg = extract_function("src/system4.c", "config_init")
+        c_code = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+struct string {{
+    char *text;
+}};
+
+struct ain {{
+    int version;
+    int nr_strings;
+    struct string **strings;
+    const char *const *funcs;
+    const char *const *globals;
+    const char *const *structs;
+    const char *const *libs;
+}};
+
+struct config {{
+    char *game_name;
+    char *ain_filename;
+    char *save_dir;
+    char *home_dir;
+    int view_width;
+    int view_height;
+}} config;
+
+bool game_daibanchou_en = false;
+bool game_rance01 = false;
+bool game_rance02 = false;
+bool game_rance02_mg = false;
+bool game_rance6 = false;
+bool game_rance6_mg = false;
+bool game_rance7_mg = false;
+bool game_sengokurance = false;
+bool game_rance8 = false;
+bool game_rance8_mg = false;
+bool game_rance9 = false;
+bool game_rance10 = false;
+bool game_dohnadohna = false;
+bool game_evenicle = false;
+bool game_evenicle2 = false;
+bool game_rance03 = false;
+bool game_dungeons_and_dolls = false;
+bool game_escalayer_reboot = false;
+
+static bool sys4_text_is_gbk = false;
+static bool gbk_at_get_save_path = false;
+static void sys4_set_text_gbk(bool enabled) {{ sys4_text_is_gbk = enabled; }}
+static char *xstrdup(const char *s) {{
+    if (!s) s = "";
+    size_t n = strlen(s) + 1;
+    char *p = malloc(n);
+    memcpy(p, s, n);
+    return p;
+}}
+static char *get_xsystem4_home(void) {{ return xstrdup("/tmp/xsys4_home"); }}
+static char *get_save_path(const char *dir) {{
+    gbk_at_get_save_path = sys4_text_is_gbk;
+    return xstrdup(dir ? dir : "SaveData");
+}}
+static char *sjis2utf(const char *s, size_t len) {{
+    (void)len;
+    if (!s) return xstrdup("");
+    if (!strcmp(s, "\\x83\\x89\\x83\\x93\\x83\\x58\\x82\\x55")) return xstrdup("ランス６");
+    return xstrdup(s);
+}}
+
+static int list_find(const char *const *list, const char *name) {{
+    if (!list || !name) return -1;
+    for (int i = 0; list[i]; i++) {{
+        if (!strcmp(list[i], name)) return i;
+    }}
+    return -1;
+}}
+static int ain_get_function(struct ain *ain, const char *name) {{ return list_find(ain->funcs, name); }}
+static int ain_get_global(struct ain *ain, const char *name) {{ return list_find(ain->globals, name); }}
+static int ain_get_struct(struct ain *ain, const char *name) {{ return list_find(ain->structs, name); }}
+static int ain_get_library(struct ain *ain, const char *name) {{ return list_find(ain->libs, name); }}
+
+static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
+static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
+static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
+static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
+static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
+static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
+static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
+
+{fn_r6}
+{fn_gbk_str}
+{fn_r03_str}
+{fn_hacks}
+{fn_cfg}
+
+static void reset_config_for_test(const char *game_name, const char *ain_name) {{
+    free(config.game_name);
+    free(config.ain_filename);
+    free(config.save_dir);
+    free(config.home_dir);
+    config.game_name = game_name ? xstrdup(game_name) : NULL;
+    config.ain_filename = xstrdup(ain_name);
+    config.save_dir = xstrdup("SaveData");
+    config.home_dir = NULL;
+    config.view_width = 800;
+    config.view_height = 600;
+    sys4_text_is_gbk = false;
+    gbk_at_get_save_path = false;
+}}
+
+int main(void) {{
+    const char *r6_libs[] = {{ "SACT2", "DrawGraph", "ACXLoader", "DrawDungeon", "PlayMovie", NULL }};
+    const char *r6_structs[] = {{ "CDungeon", "CScreenBattle", NULL }};
+    const char *jp_funcs[] = {{ "main", NULL }};
+    const char *mg_funcs[] = {{ "main", "GetTextWidth", NULL }};
+
+    // 1. JP Rance VI: Shift-JIS MS Gothic ("\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e"), GameName = "Rance6"
+    struct string jp_s0 = {{ "\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e" }};
+    struct string *jp_strs[] = {{ &jp_s0 }};
+    struct ain jp_ain = {{
+        .version = 4, .nr_strings = 1, .strings = jp_strs,
+        .funcs = jp_funcs, .globals = NULL, .structs = r6_structs, .libs = r6_libs
+    }};
+    reset_config_for_test("Rance6", "Rance6.ain");
+    config_init();
+    assert(!gbk_at_get_save_path);
+    assert(!sys4_text_is_gbk);
+    apply_game_specific_hacks(&jp_ain);
+    assert(game_rance6 && !game_rance6_mg && !sys4_text_is_gbk);
+    assert(config.view_width == 640 && config.view_height == 480);
+
+    // 2. MangaGamer English Rance VI (even with customized GameName!)
+    struct ain mg_ain = jp_ain;
+    mg_ain.funcs = mg_funcs;
+    reset_config_for_test("Rance VI - The Collapse of Zeth", "Rance6.ain");
+    config_init();
+    apply_game_specific_hacks(&mg_ain);
+    assert(game_rance6 && game_rance6_mg && !sys4_text_is_gbk);
+
+    // 3. CN Rance VI v1.10 Simplified System40.ini:
+    // GameName = "Rance6中文版 v1.10（哈尼喵汉化组×爱丽丝汉化组 制作）" in GBK
+    struct string cn_s0 = {{ "\\xba\\xda\\xcc\\xe5" }}; // 黑体
+    struct string *cn_strs[] = {{ &cn_s0 }};
+    struct ain cn_ain = {{
+        .version = 4, .nr_strings = 1, .strings = cn_strs,
+        .funcs = jp_funcs, .globals = NULL, .structs = r6_structs, .libs = r6_libs
+    }};
+    reset_config_for_test("Rance6\\xd6\\xd0\\xce\\xc4\\xb0\\xe6 v1.10\\xa3\\xa8\\xba\\xba\\xbb\\xaf\\xd7\\xe9\\xa3\\xa9", "Rance6.ain");
+    config_init();
+    assert(gbk_at_get_save_path && sys4_text_is_gbk);
+    apply_game_specific_hacks(&cn_ain);
+    assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
+
+    // 4. CN Rance VI v1.10 Traditional System40Tcn.ini ("中文版" + "漢化組")
+    reset_config_for_test("Rance6\\xd6\\xd0\\xce\\xc4\\xb0\\xe6 v1.10\\xa3\\xa8\\x9e\\x61\\xbb\\xaf\\xbf\\x82\\xa3\\xa9", "Rance6.ain");
+    config_init();
+    assert(gbk_at_get_save_path && sys4_text_is_gbk);
+    apply_game_specific_hacks(&cn_ain);
+    assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
+
+    // 5. CN Rance VI with unpatched JP GameName = "Rance6" (both v1.10 "黑体" and v0.90 GBK "ＭＳ ゴシック")
+    reset_config_for_test("Rance6", "Rance6.ain");
+    config_init();
+    apply_game_specific_hacks(&cn_ain);
+    assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
+
+    struct string cn_v090_s0 = {{ "\\xa3\\xcd\\xa3\\xd3\\x20\\xa5\\xb4\\xa5\\xb7\\xa5\\xc3\\xa5\\xaf" }};
+    struct string *cn_v090_strs[] = {{ &cn_v090_s0 }};
+    struct ain cn_v090_ain = cn_ain;
+    cn_v090_ain.strings = cn_v090_strs;
+    reset_config_for_test("Rance6", "Rance6.ain");
+    config_init();
+    apply_game_specific_hacks(&cn_v090_ain);
+    assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
+
+    free(config.game_name);
+    free(config.ain_filename);
+    free(config.save_dir);
+    free(config.home_dir);
+    return 0;
+}}
+"""
+        compile_and_run(c_code)
+
 
 if __name__ == "__main__":
     unittest.main()

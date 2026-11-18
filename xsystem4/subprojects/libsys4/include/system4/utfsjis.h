@@ -48,6 +48,7 @@ extern bool  sjis_has_hankaku(const char *src);
 extern bool  sjis_has_zenkaku(const char *src);
 extern int   sjis_count_char(const char *src);
 extern void  sjis_normalize_path(char *src);
+extern char *cjk_gbk_zenkaku_to_sjis_buf(const char *src, size_t len, char *buf, size_t cap, bool *changed_out);
 
 #ifdef _WIN32
 wchar_t *utf8_to_wchar(const char *str);

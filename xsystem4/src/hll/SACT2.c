@@ -907,7 +907,19 @@ void sact_CG_BlendAMapBin(int dst, int dx, int dy, int src, int sx, int sy, int 
 }
 
 //void SACT2_Debug_Pause(void);
-//void SACT2_Debug_GetFuncStack(struct string **s, int nest);
+HLL_QUIET_UNIMPLEMENTED(, void, SACT2, Debug_GetFuncStack, struct string **s, int nest);
+
+static int sact_Sound_PrepareFromFile(int ch, struct string *filename)
+{
+	if (!filename || !filename->size)
+		return 0;
+	char *path = gamedir_path_icase(filename->text);
+	if (!path)
+		path = gamedir_path(filename->text);
+	int r = wav_prepare_from_file(ch, path);
+	free(path);
+	return r;
+}
 
 int sact_SP_SetBrightness(int sp_no, int brightness)
 {
@@ -1070,13 +1082,13 @@ HLL_WARN_UNIMPLEMENTED(0, int, SACT2, Music_AnalyzeSampleData, struct page **l, 
 	    HLL_EXPORT(Sound_GetVolume, wav_get_volume), \
 	    HLL_EXPORT(Sound_GetTimeLength, wav_get_time_length), \
 	    HLL_EXPORT(Sound_GetGroupNum, wav_get_group_num), \
-	    HLL_TODO_EXPORT(Sound_PrepareFromFile, SACT2_Sound_PrepareFromFile), \
+	    HLL_EXPORT(Sound_PrepareFromFile, sact_Sound_PrepareFromFile), \
 	    HLL_EXPORT(System_GetDate, get_date), \
 	    HLL_EXPORT(System_GetTime, get_time), \
 	    HLL_TODO_EXPORT(CG_RotateRGB, SACT2_CG_RotateRGB), \
 	    HLL_EXPORT(CG_BlendAMapBin, sact_CG_BlendAMapBin), \
 	    HLL_TODO_EXPORT(Debug_Pause, SACT2_Debug_Pause), \
-	    HLL_TODO_EXPORT(Debug_GetFuncStack, SACT2_Debug_GetFuncStack), \
+	    HLL_EXPORT(Debug_GetFuncStack, SACT2_Debug_GetFuncStack), \
 	    HLL_EXPORT(SP_GetAMapValue, sact_SP_GetAMapValue), \
 	    HLL_EXPORT(SP_GetPixelValue, sact_SP_GetPixelValue), \
 	    HLL_EXPORT(SP_SetBrightness, sact_SP_SetBrightness), \

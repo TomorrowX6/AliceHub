@@ -17,6 +17,7 @@
 #ifndef SYSTEM4_3D_3D_INTERNAL_H
 #define SYSTEM4_3D_3D_INTERNAL_H
 
+#include <string.h>
 #include <cglm/types.h>
 
 #include "system4/archive.h"
@@ -240,6 +241,7 @@ GLuint RE_load_aar_texture(struct archive *aar, const char *dir, const char *nam
 struct motion *motion_load(const char *name, struct RE_instance *instance, struct archive *aar);
 void motion_free(struct motion *motion);
 
+const char *RE_path_basename(const char *path);
 struct archive_data *RE_get_aar_entry(struct archive *aar, const char *dir, const char *name, const char *ext);
 
 // renderer.c
@@ -549,6 +551,7 @@ struct s3de_object {
 	float x_revolution_distance[2], y_revolution_distance[2], z_revolution_distance[2];
 
 	int child_frame;
+	float child_frame_random;
 	float texture_anime_frame;
 
 	struct s3de_range alpha_fade_in_frame, alpha_fade_out_frame;
@@ -814,7 +817,24 @@ void amt_free(struct amt *amt);
 struct amt_material *amt_find_material(struct amt *amt, const char *name);
 
 void opr_load(uint8_t *data, size_t size, struct pol *pol);
+void txtex_opr_load(uint8_t *data, size_t size, struct pol *pol);
 void txa_load(uint8_t *data, size_t size, struct mot *mot);
+
+struct ex;
+struct ex_tree;
+struct ex_value;
+static inline bool RE_is_exf(const uint8_t *buf, size_t size)
+{
+	return buf && size >= 12 && !memcmp(buf, "HEAD", 4) && !memcmp(buf + 8, "EXTF", 4);
+}
+struct ex_value *RE_ex_block(struct ex *ex, const char *utf8_key);
+struct ex_tree *RE_ex_child(const struct ex_tree *tree, const char *utf8_key);
+struct ex_value *RE_ex_field(const struct ex_tree *tree, const char *utf8_key);
+bool RE_ex_int(const struct ex_tree *tree, const char *utf8_key, int *out);
+bool RE_ex_float(const struct ex_tree *tree, const char *utf8_key, float *out);
+bool RE_ex_vec2(const struct ex_tree *tree, const char *utf8_key, vec2 out);
+bool RE_ex_vec3(const struct ex_tree *tree, const char *utf8_key, vec3 out);
+const char *RE_ex_sjis_str(const struct ex_tree *tree, const char *utf8_key);
 
 void lit_reset(float *out);
 bool lit_parse(uint8_t *data, size_t size, float *out);
@@ -851,6 +871,7 @@ struct mpr_modulation {
 };
 
 struct mpr *mpr_load(uint8_t *data, size_t size, struct model *model);
+struct mpr *mpr_load_txtex(uint8_t *data, size_t size, struct model *model, const char *motion_name);
 void mpr_free(struct mpr *mpr);
 void mpr_evaluate_object(const struct mpr *mpr, float frame,
 		struct RE_instance *inst, struct mpr_modulation *out);

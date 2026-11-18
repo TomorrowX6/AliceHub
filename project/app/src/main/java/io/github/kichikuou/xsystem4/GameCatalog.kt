@@ -46,14 +46,17 @@ object GameCatalog {
     const val ID_RANCE10 = "rance10"
     const val ID_DOHNA_DOHNA = "dohnadohna"
     const val ID_EVENICLE = "evenicle"
+    const val ID_EVENICLE2 = "evenicle2"
     const val ID_SENGOKU_RANCE = "sengokurance"
     const val ID_RANCE01 = "rance01"
     const val ID_RANCE02 = "rance02"
     const val ID_RANCE03 = "rance03"
+    const val ID_RANCE06 = "rance06"
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
     const val ID_KICHIKUOU = "kichikuou"
     const val ID_ESCALAYER = "escalayer"
+    const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -185,8 +188,23 @@ object GameCatalog {
         if (ainNames.any { it.equals("dohnadohna.ain", ignoreCase = true) }) {
             return ID_DOHNA_DOHNA
         }
+        if (ainNames.any { it.equals("Evenicle2.ain", ignoreCase = true) }) {
+            return ID_EVENICLE2
+        }
         if (ainNames.any { it.equals("Evenicle.ain", ignoreCase = true) }) {
             return ID_EVENICLE
+        }
+        if (ainNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("EscalayerReboot.ain", ignoreCase = true) ||
+                    repaired.equals("EscalayerReboot.ain", ignoreCase = true) ||
+                    it.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
+                    it.equals("エスカレイヤーリブート.ain", ignoreCase = true) ||
+                    repaired.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
+                    repaired.equals("エスカレイヤーリブート.ain", ignoreCase = true)
+            }
+        ) {
+            return ID_ESCALAYER_REBOOT
         }
         if (ainNames.any { it.equals("Rance01.ain", ignoreCase = true) } ||
             fileNames.any { it.startsWith("Rance01", ignoreCase = true) && it.endsWith(".ald", ignoreCase = true) }
@@ -211,6 +229,9 @@ object GameCatalog {
         }
         if (ainNames.any { it.equals("Rance03.ain", ignoreCase = true) }) {
             return ID_RANCE03
+        }
+        if (isRance06GameFiles(fileNames)) {
+            return ID_RANCE06
         }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
@@ -321,8 +342,101 @@ object GameCatalog {
     private val RANCE01_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?1(?![0-9０-９])")
     private val RANCE02_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?2(?![0-9０-９])")
     private val RANCE03_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?3(?![0-9０-９])")
+    private val RANCE06_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯[0０]?[6６](?![0-9０-９])")
+    private val RANCE06_JP_ALIAS_REGEX = Regex("(?<![0-9０-９])ランス[0０]?[6６](?![0-9０-９])")
+    private val RANCE06_EN_ALIAS_REGEX = Regex("(?<![a-z])rance\\s*(?:0?6(?![0-9])|vi(?![a-z]))", RegexOption.IGNORE_CASE)
+    private val RANCE06_ALD_REGEX = Regex("^(?:rance0?6|ランス[0０]?[6６])(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
+    private val RANCE06_SAVE_SLOT_REGEX = Regex("^Save[A-La-l]\\.asd$")
     private val RANCE08_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?8(?![0-9０-９])")
     private val RANCE09_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?9(?![0-9０-９])")
+    private val ESCALAYER_R_JA_ALIAS_REGEX = Regex("エスカレイヤー[\\s・_-]*r(?![a-z0-9])")
+    private val ESCALAYER_R_CN_ALIAS_REGEX = Regex("艾斯卡蕾雅[\\s・_-]*r(?![a-z0-9])")
+    private val ESCALAYER_R_EN_ALIAS_REGEX = Regex("(?<![a-z0-9])escalayer[\\s._-]*r(?![a-z0-9])")
+
+    fun isEscalayerRebootAlias(lowerText: String): Boolean {
+        return lowerText.contains("escalayerreboot") ||
+            lowerText.contains("escalayer reboot") ||
+            lowerText.contains("escalayer_reboot") ||
+            lowerText.contains("escalayer-reboot") ||
+            lowerText.contains("escalayer・reboot") ||
+            lowerText.contains("escalayerr") ||
+            lowerText.contains("エスカレイヤー・リブート") ||
+            lowerText.contains("エスカレイヤーリブート") ||
+            lowerText.contains("エスカレイヤー リブート") ||
+            lowerText.contains("リブート") ||
+            ((lowerText.contains("超昂天使") || lowerText.contains("艾斯卡蕾雅") || lowerText.contains("escalayer")) &&
+                (lowerText.contains("reboot") || lowerText.contains("重制") || lowerText.contains("重启"))) ||
+            ESCALAYER_R_JA_ALIAS_REGEX.containsMatchIn(lowerText) ||
+            ESCALAYER_R_CN_ALIAS_REGEX.containsMatchIn(lowerText) ||
+            ESCALAYER_R_EN_ALIAS_REGEX.containsMatchIn(lowerText)
+    }
+
+    fun isEvenicle2Alias(lowerText: String): Boolean {
+        return lowerText.contains("evenicle2") ||
+            lowerText.contains("evenicle 2") ||
+            lowerText.contains("evenicle_2") ||
+            lowerText.contains("evenicle ii") ||
+            lowerText.contains("evenicleii") ||
+            lowerText.contains("evenicle ⅱ") ||
+            lowerText.contains("evenicleⅱ") ||
+            lowerText.contains("イブニクル2") ||
+            lowerText.contains("イブニクル２") ||
+            lowerText.contains("イブニクル 2") ||
+            lowerText.contains("イブニクル ２") ||
+            lowerText.contains("イブニクルⅱ") ||
+            lowerText.contains("夏娃年代记2") ||
+            lowerText.contains("夏娃年代记 2") ||
+            lowerText.contains("夏娃年代记ii") ||
+            lowerText.contains("夏娃年代记ⅱ") ||
+            lowerText.contains("夏娃年代記2") ||
+            lowerText.contains("夏娃2")
+    }
+
+    fun isRance06GameFiles(fileNames: Collection<String>): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
+        if (ainNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("Rance6.ain", ignoreCase = true) ||
+                    it.equals("Rance06.ain", ignoreCase = true) ||
+                    it.equals("RanceVI.ain", ignoreCase = true) ||
+                    it.equals("ランス6.ain", ignoreCase = true) ||
+                    it.equals("ランス６.ain", ignoreCase = true) ||
+                    it.equals("ランス06.ain", ignoreCase = true) ||
+                    it.equals("ランス０６.ain", ignoreCase = true) ||
+                    repaired.equals("Rance6.ain", ignoreCase = true) ||
+                    repaired.equals("Rance06.ain", ignoreCase = true) ||
+                    repaired.equals("ランス6.ain", ignoreCase = true) ||
+                    repaired.equals("ランス６.ain", ignoreCase = true) ||
+                    repaired.equals("ランス06.ain", ignoreCase = true) ||
+                    repaired.equals("ランス０６.ain", ignoreCase = true) ||
+                    it.contains("ゼス崩壊") ||
+                    repaired.contains("ゼス崩壊") ||
+                    it.contains("赛斯崩坏") ||
+                    repaired.contains("赛斯崩坏")
+            }
+        ) {
+            return true
+        }
+        return fileNames.any {
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+            it.equals("Rance6DLL.inc", ignoreCase = true) ||
+                RANCE06_ALD_REGEX.matches(it) ||
+                RANCE06_ALD_REGEX.matches(repaired)
+        }
+    }
+
+    fun isRance06Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        return RANCE06_EN_ALIAS_REGEX.containsMatchIn(lower) ||
+            RANCE06_CN_ALIAS_REGEX.containsMatchIn(lower) ||
+            RANCE06_JP_ALIAS_REGEX.containsMatchIn(lower) ||
+            lower.contains("ゼス崩壊") ||
+            lower.contains("赛斯崩坏") ||
+            lower.contains("賽斯崩壞") ||
+            lower.contains("collapse of zeth")
+    }
 
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
@@ -363,6 +477,46 @@ object GameCatalog {
         }
 
         if (saveDir != null && saveDir.isDirectory) {
+            if (saveDir.listFiles()?.any {
+                    it.isFile && (
+                        it.name.equals("Esca.sav", ignoreCase = true) ||
+                            it.name.lowercase().startsWith("escalayerreboot_")
+                        )
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_ESCALAYER_REBOOT
+            }
+            val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
+            val hasGlobalSave = saveFiles.any {
+                it.name.equals("GlobalSave.asd", ignoreCase = true) ||
+                    it.name.equals("GlobalSaveData.asd", ignoreCase = true)
+            }
+            val hasPrefixedE2Af = saveFiles.any { f ->
+                val lowerRepaired = ArchiveExtractor.repairSjisAsGbkMojibake(f.name).lowercase()
+                isEvenicle2Alias(lowerRepaired) && (
+                    lowerRepaired.endsWith("afinfo.asd") ||
+                        lowerRepaired.endsWith("afcgmode.asd") ||
+                        lowerRepaired.endsWith("afbgmmode.asd") ||
+                        lowerRepaired.endsWith("afmemmode.asd") ||
+                        lowerRepaired.endsWith("afcommon.asd")
+                    )
+            }
+            val hasE2AfMarker = saveFiles.any { f ->
+                val lower = f.name.lowercase()
+                lower.endsWith("afcommon.asd") ||
+                    lower.endsWith("afconfig.asd") ||
+                    lower.endsWith("afinfo.asd") ||
+                    lower.endsWith("afcgmode.asd") ||
+                    lower.endsWith("afbgmmode.asd") ||
+                    lower.endsWith("afmemmode.asd")
+            }
+            val hasCommonOther = saveFiles.any { it.name.equals("CommonOtherData.sav", ignoreCase = true) }
+            val has3DConfig = saveFiles.any { it.name.equals("3DConfig.vsf", ignoreCase = true) }
+            if (!hasGlobalSave && (hasPrefixedE2Af || ((hasCommonOther || has3DConfig) && hasE2AfMarker))) {
+                return ID_EVENICLE2
+            }
             if (File(saveDir, "AFConfig.asd").isFile &&
                 (File(saveDir, "AFCGMode.asd").isFile ||
                     File(saveDir, "Thumb0000.qnt").isFile ||
@@ -426,6 +580,23 @@ object GameCatalog {
             ) {
                 return ID_RANCE03
             }
+            if ((File(saveDir, "Progress.asd").isFile ||
+                    (File(saveDir, "Config.asd").isFile &&
+                        (File(saveDir, "Joypad.asd").isFile ||
+                            File(saveDir, "已读文本跳过.asd").isFile ||
+                            File(saveDir, "既読スキップ.asd").isFile)) ||
+                    saveDir.listFiles()?.any {
+                        it.isFile && RANCE06_SAVE_SLOT_REGEX.matches(it.name)
+                    } == true) &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile &&
+                !File(saveDir, "AFCommon.asd").isFile
+            ) {
+                return ID_RANCE06
+            }
             if ((File(saveDir, "key0104.dat").isFile ||
                     saveDir.listFiles()?.any {
                         it.isFile && it.name.endsWith("_Sys.ASD", ignoreCase = true)
@@ -443,7 +614,9 @@ object GameCatalog {
                 !File(saveDir, "嫟桳.asd").isFile &&
                 !File(saveDir, "AFCommon.asd").isFile &&
                 !File(saveDir, "AFCGMode.asd").isFile &&
-                !File(saveDir, "AFBGMMode.asd").isFile
+                !File(saveDir, "AFBGMMode.asd").isFile &&
+                !File(saveDir, "Esca.sav").isFile &&
+                saveDir.listFiles()?.any { it.isFile && it.name.lowercase().startsWith("escalayerreboot_") } != true
             ) {
                 return ID_EVENICLE
             }
@@ -515,16 +688,25 @@ object GameCatalog {
         ) {
             return ID_RANCE03
         }
+        if (isRance06Alias(lowerDir)) {
+            return ID_RANCE06
+        }
         if (lowerDir == "sengokurance" || lowerDir.startsWith("sengokurance-") || lowerDir.contains("sengoku") ||
             lowerDir.contains("战国兰斯") || lowerDir.contains("戦国ランス") || lowerDir.contains("愴崙儔儞僗")
         ) {
             return ID_SENGOKU_RANCE
+        }
+        if (isEvenicle2Alias(lowerDir)) {
+            return ID_EVENICLE2
         }
         if (lowerDir == "evenicle" || lowerDir.startsWith("evenicle-") || lowerDir.contains("イブニクル") || lowerDir.contains("夏娃")) {
             return ID_EVENICLE
         }
         if (lowerDir == "dohnadohna" || lowerDir.startsWith("dohnadohna-") || lowerDir.contains("多娜多娜")) {
             return ID_DOHNA_DOHNA
+        }
+        if (isEscalayerRebootAlias(lowerDir)) {
+            return ID_ESCALAYER_REBOOT
         }
         if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
             lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
@@ -540,6 +722,9 @@ object GameCatalog {
         }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
+        if (isEscalayerRebootAlias(lowerDisp)) {
+            return ID_ESCALAYER_REBOOT
+        }
         if (lowerDisp.contains("escalayer") || lowerDisp.contains("超昂天使") ||
             lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
         ) {
@@ -585,10 +770,16 @@ object GameCatalog {
         ) {
             return ID_RANCE03
         }
+        if (isRance06Alias(lowerDisp)) {
+            return ID_RANCE06
+        }
         if (lowerDisp.contains("sengoku") || lowerDisp.contains("战国兰斯") || lowerDisp.contains("戰國蘭斯") ||
             lowerDisp.contains("戦国ランス")
         ) {
             return ID_SENGOKU_RANCE
+        }
+        if (isEvenicle2Alias(lowerDisp)) {
+            return ID_EVENICLE2
         }
         if (lowerDisp.contains("イブニクル") || lowerDisp.contains("evenicle") || lowerDisp.contains("夏娃")) {
             return ID_EVENICLE
@@ -662,6 +853,21 @@ object GameCatalog {
                 overlayCdnBaseUrl = OnlineInstaller.EVENICLE_CDN_URL,
                 overlayCatalogRelPath = "files/cn-patch/index.json"
             )
+            ID_EVENICLE2 -> GameDescriptor(
+                id = ID_EVENICLE2,
+                title = context.getString(R.string.game_evenicle2_title),
+                defaultDirName = "Evenicle2",
+                expectedAinName = "Evenicle2.ain",
+                iconRes = R.drawable.ic_game_evenicle2,
+                accentColor = 0xFF00838F.toInt(),
+                accentBorderColor = 0x6626C6DA,
+                iconFrameColor = 0xFF0F2026.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLE2_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_SENGOKU_RANCE -> GameDescriptor(
                 id = ID_SENGOKU_RANCE,
                 title = context.getString(R.string.game_sengokurance_title),
@@ -722,6 +928,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_RANCE06 -> GameDescriptor(
+                id = ID_RANCE06,
+                title = context.getString(R.string.game_rance06_title),
+                defaultDirName = "Rance06",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance06,
+                accentColor = 0xFF00796B.toInt(),
+                accentBorderColor = 0x664DB6AC,
+                iconFrameColor = 0xFF0E1F1D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE06_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_RANCE08 -> GameDescriptor(
                 id = ID_RANCE08,
                 title = context.getString(R.string.game_rance08_title),
@@ -767,6 +988,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_ESCALAYER_REBOOT -> GameDescriptor(
+                id = ID_ESCALAYER_REBOOT,
+                title = context.getString(R.string.game_escalayer_reboot_title),
+                defaultDirName = "EscalayerReboot",
+                expectedAinName = "EscalayerReboot.ain",
+                iconRes = R.drawable.ic_game_escalayer_reboot,
+                accentColor = 0xFF8E24AA.toInt(),
+                accentBorderColor = 0x66BA68C8,
+                iconFrameColor = 0xFF24122B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ESCALAYER_REBOOT_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = context.getString(R.string.game_kichikuou_title),
@@ -807,61 +1043,39 @@ object GameCatalog {
         }
     }
 
+    @JvmStatic
+    fun builtInSelectOrder(): List<String> = listOf(
+        ID_RANCE10,
+        ID_DOHNA_DOHNA,
+        ID_EVENICLE,
+        ID_EVENICLE2,
+        ID_RANCE01,
+        ID_RANCE02,
+        ID_RANCE03,
+        ID_RANCE06,
+        ID_SENGOKU_RANCE,
+        ID_RANCE08,
+        ID_RANCE09,
+        ID_KICHIKUOU,
+        ID_ESCALAYER,
+        ID_ESCALAYER_REBOOT
+    )
+
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {
         val entries = ArrayList<GameSelectEntry>()
+        val builtInIds = builtInSelectOrder()
+        val builtInSet = builtInIds.toHashSet()
 
-        val r10Desc = descriptorFor(context, ID_RANCE10, gameList)
-        val r10Items = matchingItems(gameList, ID_RANCE10)
-        entries.add(GameSelectEntry(r10Desc, r10Items, r10Items.firstOrNull()))
-
-        val ddDesc = descriptorFor(context, ID_DOHNA_DOHNA, gameList)
-        val ddItems = matchingItems(gameList, ID_DOHNA_DOHNA)
-        entries.add(GameSelectEntry(ddDesc, ddItems, ddItems.firstOrNull()))
-
-        val evDesc = descriptorFor(context, ID_EVENICLE, gameList)
-        val evItems = matchingItems(gameList, ID_EVENICLE)
-        entries.add(GameSelectEntry(evDesc, evItems, evItems.firstOrNull()))
-
-        val srDesc = descriptorFor(context, ID_SENGOKU_RANCE, gameList)
-        val srItems = matchingItems(gameList, ID_SENGOKU_RANCE)
-        entries.add(GameSelectEntry(srDesc, srItems, srItems.firstOrNull()))
-
-        val r01Desc = descriptorFor(context, ID_RANCE01, gameList)
-        val r01Items = matchingItems(gameList, ID_RANCE01)
-        entries.add(GameSelectEntry(r01Desc, r01Items, r01Items.firstOrNull()))
-
-        val r02Desc = descriptorFor(context, ID_RANCE02, gameList)
-        val r02Items = matchingItems(gameList, ID_RANCE02)
-        entries.add(GameSelectEntry(r02Desc, r02Items, r02Items.firstOrNull()))
-
-        val r03Desc = descriptorFor(context, ID_RANCE03, gameList)
-        val r03Items = matchingItems(gameList, ID_RANCE03)
-        entries.add(GameSelectEntry(r03Desc, r03Items, r03Items.firstOrNull()))
-
-        val r08Desc = descriptorFor(context, ID_RANCE08, gameList)
-        val r08Items = matchingItems(gameList, ID_RANCE08)
-        entries.add(GameSelectEntry(r08Desc, r08Items, r08Items.firstOrNull()))
-
-        val r09Desc = descriptorFor(context, ID_RANCE09, gameList)
-        val r09Items = matchingItems(gameList, ID_RANCE09)
-        entries.add(GameSelectEntry(r09Desc, r09Items, r09Items.firstOrNull()))
-
-        val kichikuDesc = descriptorFor(context, ID_KICHIKUOU, gameList)
-        val kichikuItems = matchingItems(gameList, ID_KICHIKUOU)
-        entries.add(GameSelectEntry(kichikuDesc, kichikuItems, kichikuItems.firstOrNull()))
-
-        val escDesc = descriptorFor(context, ID_ESCALAYER, gameList)
-        val escItems = matchingItems(gameList, ID_ESCALAYER)
-        entries.add(GameSelectEntry(escDesc, escItems, escItems.firstOrNull()))
+        for (gid in builtInIds) {
+            val desc = descriptorFor(context, gid, gameList)
+            val matched = matchingItems(gameList, gid)
+            entries.add(GameSelectEntry(desc, matched, matched.firstOrNull()))
+        }
 
         for (i in 0 until gameList.size) {
             val item = gameList[i]
             val cid = classifyItem(item)
-            if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
-                cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
-                cid != ID_RANCE03 && cid != ID_RANCE08 && cid != ID_RANCE09 &&
-                cid != ID_KICHIKUOU && cid != ID_ESCALAYER
-            ) {
+            if (cid !in builtInSet) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))
             }

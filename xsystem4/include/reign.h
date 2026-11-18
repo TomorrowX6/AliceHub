@@ -182,6 +182,7 @@ struct RE_plugin {
 	// TapirEngine
 	bool suspended;
 	bool resume_show_sprite;
+	bool thread_loading_mode;
 
 	// SealEngine
 	int mag_speed;
@@ -269,6 +270,10 @@ int RE_create_instance(struct RE_plugin *plugin);
 bool RE_release_instance(struct RE_plugin *plugin, int instance);
 
 bool RE_instance_set_type(struct RE_instance *instance, int type);
+bool RE_plugin_data_exists(struct RE_plugin *plugin, int type, const char *name);
+bool RE_plugin_poly_motion_exists(struct RE_plugin *plugin, const char *name);
+struct archive *RE_open_3d_archive(void);
+struct archive_data *RE_archive_find_txtex(struct archive *ar, const char *model_dir);
 bool RE_instance_data_exists(struct RE_instance *instance, const char *name);
 bool RE_instance_load(struct RE_instance *instance, const char *name);
 bool RE_instance_motion_exists(struct RE_instance *instance, const char *name);

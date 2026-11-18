@@ -70,7 +70,8 @@ private class GameSelectAdapter(
         if (desc.title.contains(q, ignoreCase = true) ||
             desc.defaultDirName.contains(q, ignoreCase = true) ||
             desc.id.removePrefix(GameCatalog.PREFIX_CUSTOM).contains(q, ignoreCase = true) ||
-            (desc.expectedAinName?.contains(q, ignoreCase = true) == true)
+            (desc.expectedAinName?.contains(q, ignoreCase = true) == true) ||
+            (desc.id == GameCatalog.ID_RANCE06 && GameCatalog.isRance06Alias(q))
         ) {
             return true
         }
