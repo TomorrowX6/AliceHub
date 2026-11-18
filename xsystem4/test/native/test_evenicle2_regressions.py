@@ -234,7 +234,7 @@ int main(void) {
     return 0;
 }
 """
-        out = compile_and_run(harness, [ROOT / "src/hacks.c", *LIBSYS4_CORE], ["-lz", "-lm"])
+        out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
 
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):

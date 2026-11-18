@@ -62,6 +62,7 @@ target_sources(xsystem4 PRIVATE
   src/font_fnl.c
   src/format.c
   src/hacks.c
+  src/escalayer_reboot_cn_ui.c
   src/heap.c
   src/icon.c
   src/id_pool.c
