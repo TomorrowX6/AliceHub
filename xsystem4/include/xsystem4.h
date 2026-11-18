@@ -93,6 +93,7 @@ extern bool game_daibanchou_en;
 extern bool game_rance01;
 extern bool game_rance02;
 extern bool game_rance02_mg;
+extern bool game_rance6;
 extern bool game_rance6_mg;
 extern bool game_rance7_mg;
 extern bool game_sengokurance;

@@ -113,7 +113,11 @@ static bool DrawDungeon_IsSucceededLoading(int surface)
 	return ctx->loaded;
 }
 
-//float DrawDungeon_GetLoadingPercent(int surface);
+static float DrawDungeon_GetLoadingPercent(int surface)
+{
+	struct dungeon_context *ctx = dungeon_get_context(surface);
+	return (ctx && ctx->loaded) ? 100.0f : 0.0f;
+}
 
 static int DrawDungeon_LoadFromFile(int surface, struct string *file_name, int num)
 {
@@ -269,7 +273,13 @@ CELL_SETTER(DrawDungeon_SetTexDoorN, int, cell->north_door, true);
 CELL_SETTER(DrawDungeon_SetTexDoorW, int, cell->west_door, true);
 CELL_SETTER(DrawDungeon_SetTexDoorS, int, cell->south_door, true);
 CELL_SETTER(DrawDungeon_SetTexDoorE, int, cell->east_door, true);
-//void DrawDungeon_SetSkyTextureSet(int surface, int set);
+static void DrawDungeon_SetSkyTextureSet(int surface, int set)
+{
+	struct dungeon_context *ctx = dungeon_get_context(surface);
+	if (!ctx || !ctx->renderer)
+		return;
+	dungeon_renderer_set_sky_texture_set(ctx->renderer, ctx->dtx, set);
+}
 
 HLL_QUIET_UNIMPLEMENTED( , void, DrawDungeon, SetDrawHalfFlag, int surface, int flag);
 HLL_QUIET_UNIMPLEMENTED(0, int,  DrawDungeon, GetDrawHalfFlag, int surface);
@@ -308,7 +318,7 @@ HLL_QUIET_UNIMPLEMENTED( , void, DrawDungeon, RestartTimer, void);
 	HLL_EXPORT(BeginLoad, DrawDungeon_BeginLoad), \
 	HLL_EXPORT(IsLoading, DrawDungeon_IsLoading), \
 	HLL_EXPORT(IsSucceededLoading, DrawDungeon_IsSucceededLoading), \
-	HLL_TODO_EXPORT(GetLoadingPercent, DrawDungeon_GetLoadingPercent), \
+	HLL_EXPORT(GetLoadingPercent, DrawDungeon_GetLoadingPercent), \
 	HLL_EXPORT(LoadFromFile, DrawDungeon_LoadFromFile), \
 	HLL_EXPORT(LoadTexture, DrawDungeon_LoadTexture), \
 	HLL_TODO_EXPORT(LoadEventTexture, DrawDungeon_LoadEventTexture), \
@@ -390,7 +400,7 @@ HLL_QUIET_UNIMPLEMENTED( , void, DrawDungeon, RestartTimer, void);
 	HLL_EXPORT(SetTexDoorW, DrawDungeon_SetTexDoorW), \
 	HLL_EXPORT(SetTexDoorS, DrawDungeon_SetTexDoorS), \
 	HLL_EXPORT(SetTexDoorE, DrawDungeon_SetTexDoorE), \
-	HLL_TODO_EXPORT(SetSkyTextureSet, DrawDungeon_SetSkyTextureSet), \
+	HLL_EXPORT(SetSkyTextureSet, DrawDungeon_SetSkyTextureSet), \
 	HLL_EXPORT(DrawMap, dungeon_map_draw), \
 	HLL_EXPORT(SetMapAllViewFlag, dungeon_map_set_all_view), \
 	HLL_EXPORT(SetDrawMapFloor, dungeon_map_set_small_map_floor), \

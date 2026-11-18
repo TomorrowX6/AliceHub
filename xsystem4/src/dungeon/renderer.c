@@ -1124,3 +1124,10 @@ void dungeon_renderer_set_draw_obj_flag(struct dungeon_renderer *r, int type, bo
 	else
 		r->draw_obj_flags &= ~(1 << type);
 }
+
+void dungeon_renderer_set_sky_texture_set(struct dungeon_renderer *r, struct dtx *dtx, int set)
+{
+	if (!r || !r->skybox)
+		return;
+	skybox_set_texture_set(r->skybox, dtx, set);
+}
