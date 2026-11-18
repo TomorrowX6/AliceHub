@@ -147,8 +147,10 @@ static void replacement_context_recovery_with_backup(void) {
     unsigned char cg_px[16*16*4];
     for (int i=0;i<16*16;i++) { cg_px[i*4+0]=30; cg_px[i*4+1]=200; cg_px[i*4+2]=170; cg_px[i*4+3]=255; }
     Texture cg_tex={0}; gfx_init_texture_with_pixels(&cg_tex,16,16,cg_px);
+    Texture lazy_tex={0}; gfx_init_texture_with_pixels(&lazy_tex,16,16,cg_px);
     GLuint old_main_handle=main_surface.handle;
     GLuint old_cg_handle=cg_tex.handle;
+    GLuint old_lazy_handle=lazy_tex.handle;
     SDL_GLContext old_ctx=sdl.gl.context;
     gfx_prepare_context_backup();
     assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
@@ -169,6 +171,14 @@ static void replacement_context_recovery_with_backup(void) {
     assert(glIsProgram(default_shader.program));
     assert(glIsFramebuffer(main_surface_fb));
     assert(glIsTexture(main_surface.handle));
+    GLuint rec_lazy_handle=gfx_remap_texture_handle(old_lazy_handle);
+    assert(rec_lazy_handle && glIsTexture(rec_lazy_handle));
+    size_t live_before_delete=live_tex_count;
+    gfx_delete_texture(&lazy_tex);
+    assert(lazy_tex.handle==0 && lazy_tex.ctx_gen==0);
+    assert(!glIsTexture(rec_lazy_handle));
+    assert(live_tex_count+1==live_before_delete);
+    assert(gfx_remap_texture_handle(old_lazy_handle)==0);
     assert(gfx_remap_texture(&cg_tex));
     assert(cg_tex.handle && glIsTexture(cg_tex.handle));
     gfx_copy(&main_surface,0,0,&cg_tex,0,0,16,16);

@@ -303,6 +303,19 @@ void gfx_register_reset_callback(gfx_reset_callback cb, void *user)
 	reset_callbacks[nr_reset_callbacks++] = (struct reset_cb_entry){ .cb = cb, .user = user };
 }
 
+static void invalidate_remap_target(GLuint handle)
+{
+	if (!handle || remap_count == 0)
+		return;
+	for (size_t i = 0; i < remap_cap; i++) {
+		if (remap_table[i].state == 1 &&
+		    remap_table[i].cur_gen == gfx_ctx_gen &&
+		    remap_table[i].cur_handle == handle) {
+			remap_table[i].cur_handle = 0;
+		}
+	}
+}
+
 void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user)
 {
 	if (!cb || !reset_callbacks)
@@ -1773,18 +1786,15 @@ void gfx_delete_texture(struct texture *t)
 	if (!t)
 		return;
 	if (t->handle) {
-		if (t->ctx_gen != 0 && t->ctx_gen != gfx_ctx_gen) {
-			t->handle = 0;
-			t->opaque = false;
-			t->ctx_gen = 0;
+		if (t->ctx_gen != 0 && t->ctx_gen != gfx_ctx_gen && !gfx_remap_texture(t))
 			return;
-		}
 		if (pinned_draw_tex == t->handle)
 			gfx_end_draw_target();
 		if (offscreen_draw_tex == t->handle)
 			offscreen_draw_tex = 0;
 		if (offscreen_read_tex == t->handle)
 			offscreen_read_tex = 0;
+		invalidate_remap_target(t->handle);
 		untrack_live_texture(t->handle);
 		glDeleteTextures(1, &t->handle);
 	}
