@@ -431,8 +431,10 @@ bool game_rance9 = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
+bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
+bool game_escalayer_reboot = false;
 
 static bool sys4_text_is_gbk = false;
 static bool gbk_at_get_save_path = false;
