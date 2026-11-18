@@ -86,6 +86,392 @@ static bool pinned_draw_bound;
 static struct texture main_surface;
 static struct texture *view = &main_surface;
 static GLint max_texture_size;
+
+struct tracked_tex_entry {
+	GLuint handle;
+	int w, h;
+	GLenum internal_format;
+	bool skip_backup;
+	uint8_t state; /* 0 = empty, 1 = occupied, 2 = tombstone */
+};
+
+struct backup_tex_entry {
+	GLuint old_handle;
+	int w, h;
+	GLenum internal_format;
+	GLint min_filter;
+	GLint mag_filter;
+	GLint wrap_s;
+	GLint wrap_t;
+	uint8_t *pixels;
+};
+
+struct remap_tex_entry {
+	uint32_t orig_gen;
+	GLuint orig_handle;
+	uint32_t cur_gen;
+	GLuint cur_handle;
+	uint8_t state; /* 0 = empty, 1 = occupied */
+};
+
+struct reset_cb_entry {
+	gfx_reset_callback cb;
+	void *user;
+};
+
+static uint32_t gfx_ctx_gen = 1;
+static struct tracked_tex_entry *live_tex_table = NULL;
+static size_t live_tex_cap = 0;
+static size_t live_tex_count = 0;
+static size_t live_tex_used = 0;
+static struct backup_tex_entry *backup_tex_list = NULL;
+static size_t backup_tex_count = 0;
+static size_t backup_tex_cap = 0;
+static struct backup_tex_entry backup_main_surface = {0};
+static bool has_backup_main_surface = false;
+static struct remap_tex_entry *remap_table = NULL;
+static size_t remap_cap = 0;
+static size_t remap_count = 0;
+static struct reset_cb_entry *reset_callbacks = NULL;
+static size_t nr_reset_callbacks = 0;
+static bool gfx_initialized = false;
+static bool gfx_recovering = false;
+
+static uint32_t hash_u32(uint32_t x)
+{
+	x ^= x >> 16;
+	x *= 0x7feb352du;
+	x ^= x >> 15;
+	x *= 0x846ca68bu;
+	x ^= x >> 16;
+	return x;
+}
+
+static void live_tex_rehash(size_t new_cap)
+{
+	struct tracked_tex_entry *nt = xcalloc(new_cap, sizeof(*nt));
+	size_t mask = new_cap - 1;
+	for (size_t i = 0; i < live_tex_cap; i++) {
+		if (live_tex_table[i].state != 1)
+			continue;
+		size_t idx = hash_u32(live_tex_table[i].handle) & mask;
+		while (nt[idx].state == 1)
+			idx = (idx + 1) & mask;
+		nt[idx] = live_tex_table[i];
+	}
+	free(live_tex_table);
+	live_tex_table = nt;
+	live_tex_cap = new_cap;
+	live_tex_used = live_tex_count;
+}
+
+static void track_live_texture(GLuint handle, int w, int h, GLenum internal_format, bool skip_backup)
+{
+	if (!handle)
+		return;
+	if (!live_tex_cap)
+		live_tex_rehash(128);
+	else if ((live_tex_used + 1) * 10 >= live_tex_cap * 7)
+		live_tex_rehash(live_tex_count * 2 >= live_tex_cap ? live_tex_cap * 2 : live_tex_cap);
+	size_t mask = live_tex_cap - 1;
+	size_t idx = hash_u32(handle) & mask;
+	size_t first_tomb = (size_t)-1;
+	while (live_tex_table[idx].state != 0) {
+		if (live_tex_table[idx].state == 1 && live_tex_table[idx].handle == handle) {
+			live_tex_table[idx].w = w;
+			live_tex_table[idx].h = h;
+			live_tex_table[idx].internal_format = internal_format;
+			live_tex_table[idx].skip_backup = skip_backup;
+			return;
+		}
+		if (live_tex_table[idx].state == 2 && first_tomb == (size_t)-1)
+			first_tomb = idx;
+		idx = (idx + 1) & mask;
+	}
+	size_t dst = first_tomb != (size_t)-1 ? first_tomb : idx;
+	if (live_tex_table[dst].state == 0)
+		live_tex_used++;
+	live_tex_table[dst] = (struct tracked_tex_entry){
+		.handle = handle,
+		.w = w,
+		.h = h,
+		.internal_format = internal_format,
+		.skip_backup = skip_backup,
+		.state = 1,
+	};
+	live_tex_count++;
+}
+
+static void untrack_live_texture(GLuint handle)
+{
+	if (!handle || !live_tex_cap)
+		return;
+	size_t mask = live_tex_cap - 1;
+	size_t idx = hash_u32(handle) & mask;
+	while (live_tex_table[idx].state != 0) {
+		if (live_tex_table[idx].state == 1 && live_tex_table[idx].handle == handle) {
+			live_tex_table[idx].state = 2;
+			live_tex_table[idx].handle = 0;
+			live_tex_count--;
+			return;
+		}
+		idx = (idx + 1) & mask;
+	}
+}
+
+static void clear_live_textures(void)
+{
+	if (live_tex_table && live_tex_cap)
+		memset(live_tex_table, 0, live_tex_cap * sizeof(*live_tex_table));
+	live_tex_count = 0;
+	live_tex_used = 0;
+}
+
+static uint32_t hash_gen_handle(uint32_t gen, GLuint handle)
+{
+	return hash_u32(gen * 0x9e3779b1u ^ handle);
+}
+
+static void remap_rehash(size_t new_cap)
+{
+	struct remap_tex_entry *nt = xcalloc(new_cap, sizeof(*nt));
+	size_t mask = new_cap - 1;
+	for (size_t i = 0; i < remap_cap; i++) {
+		if (remap_table[i].state != 1)
+			continue;
+		size_t idx = hash_gen_handle(remap_table[i].orig_gen, remap_table[i].orig_handle) & mask;
+		while (nt[idx].state == 1)
+			idx = (idx + 1) & mask;
+		nt[idx] = remap_table[i];
+	}
+	free(remap_table);
+	remap_table = nt;
+	remap_cap = new_cap;
+}
+
+static void remap_insert(uint32_t orig_gen, GLuint orig_handle, uint32_t cur_gen, GLuint cur_handle)
+{
+	if (!orig_gen || !orig_handle)
+		return;
+	if (!remap_cap)
+		remap_rehash(128);
+	else if ((remap_count + 1) * 10 >= remap_cap * 7)
+		remap_rehash(remap_cap * 2);
+	size_t mask = remap_cap - 1;
+	size_t idx = hash_gen_handle(orig_gen, orig_handle) & mask;
+	while (remap_table[idx].state == 1) {
+		if (remap_table[idx].orig_gen == orig_gen && remap_table[idx].orig_handle == orig_handle) {
+			remap_table[idx].cur_gen = cur_gen;
+			remap_table[idx].cur_handle = cur_handle;
+			return;
+		}
+		idx = (idx + 1) & mask;
+	}
+	remap_table[idx] = (struct remap_tex_entry){
+		.orig_gen = orig_gen,
+		.orig_handle = orig_handle,
+		.cur_gen = cur_gen,
+		.cur_handle = cur_handle,
+		.state = 1,
+	};
+	remap_count++;
+}
+
+static struct remap_tex_entry *remap_find(uint32_t orig_gen, GLuint orig_handle)
+{
+	if (!remap_cap || !orig_gen || !orig_handle)
+		return NULL;
+	size_t mask = remap_cap - 1;
+	size_t idx = hash_gen_handle(orig_gen, orig_handle) & mask;
+	while (remap_table[idx].state == 1) {
+		if (remap_table[idx].orig_gen == orig_gen && remap_table[idx].orig_handle == orig_handle)
+			return &remap_table[idx];
+		idx = (idx + 1) & mask;
+	}
+	return NULL;
+}
+
+void gfx_register_reset_callback(gfx_reset_callback cb, void *user)
+{
+	if (!cb)
+		return;
+	for (size_t i = 0; i < nr_reset_callbacks; i++) {
+		if (reset_callbacks[i].cb == cb && reset_callbacks[i].user == user)
+			return;
+	}
+	reset_callbacks = xrealloc(reset_callbacks, (nr_reset_callbacks + 1) * sizeof(*reset_callbacks));
+	reset_callbacks[nr_reset_callbacks++] = (struct reset_cb_entry){ .cb = cb, .user = user };
+}
+
+void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user)
+{
+	if (!cb || !reset_callbacks)
+		return;
+	for (size_t i = 0; i < nr_reset_callbacks; i++) {
+		if (reset_callbacks[i].cb == cb && reset_callbacks[i].user == user) {
+			if (i + 1 < nr_reset_callbacks) {
+				memmove(&reset_callbacks[i], &reset_callbacks[i + 1],
+				        (nr_reset_callbacks - i - 1) * sizeof(*reset_callbacks));
+			}
+			nr_reset_callbacks--;
+			return;
+		}
+	}
+}
+
+GLuint gfx_remap_texture_handle(GLuint old_handle)
+{
+	if (!old_handle || gfx_ctx_gen <= 1)
+		return 0;
+	struct remap_tex_entry *e = remap_find(gfx_ctx_gen - 1, old_handle);
+	if (e && e->cur_gen == gfx_ctx_gen)
+		return e->cur_handle;
+	return 0;
+}
+
+bool gfx_remap_texture(struct texture *t)
+{
+	if (!t || !t->handle)
+		return false;
+	if (t->ctx_gen == gfx_ctx_gen)
+		return true;
+	if (t->ctx_gen == 0)
+		return glIsTexture(t->handle) == GL_TRUE;
+	struct remap_tex_entry *e = remap_find(t->ctx_gen, t->handle);
+	if (e && e->cur_gen == gfx_ctx_gen && e->cur_handle) {
+		t->handle = e->cur_handle;
+		t->ctx_gen = gfx_ctx_gen;
+		return true;
+	}
+	t->handle = 0;
+	t->opaque = false;
+	t->ctx_gen = 0;
+	return false;
+}
+
+void gfx_release_context_backup(void)
+{
+	for (size_t i = 0; i < backup_tex_count; i++)
+		free(backup_tex_list[i].pixels);
+	free(backup_tex_list);
+	backup_tex_list = NULL;
+	backup_tex_count = 0;
+	backup_tex_cap = 0;
+	free(backup_main_surface.pixels);
+	memset(&backup_main_surface, 0, sizeof(backup_main_surface));
+	has_backup_main_surface = false;
+}
+
+static bool snapshot_texture_pixels(GLuint handle, int w, int h, GLenum internal_format, struct backup_tex_entry *out)
+{
+	if (!handle || w <= 0 || h <= 0 || !glIsTexture(handle))
+		return false;
+	if ((size_t)w > (size_t)SIZE_MAX / (size_t)h / 4)
+		return false;
+
+	GLint min_filter = GL_LINEAR;
+	GLint mag_filter = GL_LINEAR;
+	GLint wrap_s = GL_CLAMP_TO_EDGE;
+	GLint wrap_t = GL_CLAMP_TO_EDGE;
+	glBindTexture(GL_TEXTURE_2D, handle);
+	glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &min_filter);
+	glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, &mag_filter);
+	glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &wrap_s);
+	glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wrap_t);
+
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, handle, 0);
+	if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		while (glGetError() != GL_NO_ERROR) {}
+		return false;
+	}
+
+	size_t n = (size_t)w * (size_t)h;
+	uint8_t *rgba = xmalloc(n * 4);
+	while (glGetError() != GL_NO_ERROR) {}
+	glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+	if (glGetError() != GL_NO_ERROR) {
+		while (glGetError() != GL_NO_ERROR) {}
+		free(rgba);
+		return false;
+	}
+
+	uint8_t *pixels = rgba;
+	if (internal_format == GL_RGB) {
+		for (size_t i = 0; i < n; i++) {
+			pixels[i * 3 + 0] = rgba[i * 4 + 0];
+			pixels[i * 3 + 1] = rgba[i * 4 + 1];
+			pixels[i * 3 + 2] = rgba[i * 4 + 2];
+		}
+	}
+
+	*out = (struct backup_tex_entry){
+		.old_handle = handle,
+		.w = w,
+		.h = h,
+		.internal_format = internal_format,
+		.min_filter = min_filter,
+		.mag_filter = mag_filter,
+		.wrap_s = wrap_s,
+		.wrap_t = wrap_t,
+		.pixels = pixels,
+	};
+	return true;
+}
+
+void gfx_end_draw_target(void);
+
+void gfx_prepare_context_backup(void)
+{
+	if (!gfx_initialized || !sdl.window)
+		return;
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	if (!current && sdl.gl.context) {
+		if (SDL_GL_MakeCurrent(sdl.window, sdl.gl.context) == 0)
+			current = SDL_GL_GetCurrentContext();
+	}
+	if (!current || current != sdl.gl.context || !offscreen_read_fbo || !glIsFramebuffer(offscreen_read_fbo))
+		return;
+
+	gfx_release_context_backup();
+	gfx_end_draw_target();
+	glFlush();
+
+	GLint prev_read_fbo = 0, prev_active_tex = GL_TEXTURE0, prev_tex2d = 0, prev_pack_align = 4;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &prev_active_tex);
+	glActiveTexture(GL_TEXTURE0);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev_tex2d);
+	glGetIntegerv(GL_PACK_ALIGNMENT, &prev_pack_align);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, offscreen_read_fbo);
+
+	if (main_surface.handle) {
+		has_backup_main_surface = snapshot_texture_pixels(
+			main_surface.handle, main_surface.w, main_surface.h, GL_RGB, &backup_main_surface);
+	}
+
+	for (size_t i = 0; i < live_tex_cap; i++) {
+		struct tracked_tex_entry *e = &live_tex_table[i];
+		if (e->state != 1 || e->skip_backup || !e->handle || e->handle == main_surface.handle)
+			continue;
+		struct backup_tex_entry snap;
+		if (!snapshot_texture_pixels(e->handle, e->w, e->h, e->internal_format, &snap))
+			continue;
+		if (backup_tex_count == backup_tex_cap) {
+			size_t ncap = backup_tex_cap ? backup_tex_cap * 2 : 64;
+			backup_tex_list = xrealloc(backup_tex_list, ncap * sizeof(*backup_tex_list));
+			backup_tex_cap = ncap;
+		}
+		backup_tex_list[backup_tex_count++] = snap;
+	}
+
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+	offscreen_read_tex = 0;
+	glPixelStorei(GL_PACK_ALIGNMENT, prev_pack_align);
+	glBindTexture(GL_TEXTURE_2D, prev_tex2d);
+	glActiveTexture(prev_active_tex);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
+}
 static SDL_Color clear_color = { 0, 0, 0, 255 };
 static float frame_rate;
 #ifdef __ANDROID__
@@ -357,8 +743,6 @@ static void set_window_title(void)
 	SDL_SetWindowTitle(sdl.window, title);
 }
 
-static bool gfx_initialized = false;
-
 #ifdef __ANDROID__
 static unsigned resume_trace_swaps;
 static unsigned resume_trace_seq;
@@ -528,6 +912,18 @@ void gfx_fini(void)
 	pinned_draw_bound = false;
 	gfx_delete_texture(&main_surface);
 	glDeleteProgram(default_shader.program);
+	gfx_release_context_backup();
+	clear_live_textures();
+	free(live_tex_table);
+	live_tex_table = NULL;
+	live_tex_cap = 0;
+	free(remap_table);
+	remap_table = NULL;
+	remap_cap = 0;
+	remap_count = 0;
+	free(reset_callbacks);
+	reset_callbacks = NULL;
+	nr_reset_callbacks = 0;
 	SDL_DestroyWindow(sdl.window);
 	SDL_FreeFormat(sdl.format);
 	SDL_Quit();
@@ -554,6 +950,8 @@ static void main_surface_init(int w, int h)
 	main_surface.w = w;
 	main_surface.h = h;
 	main_surface.opaque = true;
+	main_surface.ctx_gen = gfx_ctx_gen;
+	track_live_texture(main_surface.handle, w, h, GL_RGB, false);
 
 	if (main_surface_fb)
 		glDeleteFramebuffers(1, &main_surface_fb);
@@ -595,8 +993,10 @@ void gfx_toggle_fullscreen(void)
 
 void gfx_update_screen_scale(void)
 {
-	int display_w, display_h;
+	int display_w = 0, display_h = 0;
 	SDL_GL_GetDrawableSize(sdl.window, &display_w, &display_h);
+	if (display_w <= 0 || display_h <= 0 || sdl.w <= 0 || sdl.h <= 0)
+		return;
 
 	if (display_w * sdl.h == display_h * sdl.w) {
 		// The aspect ratios are the same, just scale appropriately.
@@ -647,6 +1047,7 @@ void gfx_reset_frame_pacer(void)
 void gfx_android_on_background(void)
 {
 #ifdef __ANDROID__
+	gfx_prepare_context_backup();
 	s_android_in_background = true;
 	s_adpf_needs_focus_refresh = true;
 	android_adpf_close_session();
@@ -675,7 +1076,36 @@ void gfx_android_delay(Uint32 ms)
 {
 #ifdef __ANDROID__
 	int64_t t0 = android_monotonic_ns();
-	SDL_Delay(ms);
+	if (ms > 16 && sys_is_sdl_main_thread()) {
+		Uint32 start = SDL_GetTicks();
+		bool restored_on_wake = false;
+		for (;;) {
+			Uint32 elapsed = SDL_GetTicks() - start;
+			if (elapsed >= ms)
+				break;
+			Uint32 remaining = ms - elapsed;
+			SDL_Delay(remaining > 16 ? 16 : remaining);
+			SDL_PumpEvents();
+			SDL_Event ev;
+			if (!s_android_in_background &&
+			    SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT,
+			                   SDL_APP_WILLENTERBACKGROUND,
+			                   SDL_APP_WILLENTERBACKGROUND) > 0) {
+				gfx_android_on_background();
+				restored_on_wake = false;
+			}
+			if (!restored_on_wake &&
+			    SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT,
+			                   SDL_APP_DIDENTERFOREGROUND,
+			                   SDL_APP_DIDENTERFOREGROUND) > 0) {
+				gfx_android_on_foreground();
+				gfx_restore_window();
+				restored_on_wake = true;
+			}
+		}
+	} else {
+		SDL_Delay(ms);
+	}
 	int64_t t1 = android_monotonic_ns();
 	if (t0 > 0 && t1 > t0)
 		s_frame_sleep_ns += (t1 - t0);
@@ -737,6 +1167,20 @@ void gfx_swap(void)
 		trace_resume_gl_state("swap.begin");
 	}
 #endif
+	if (!gfx_initialized)
+		return;
+	gfx_recover_gl_if_needed();
+	if (!SDL_GL_GetCurrentContext() || !glIsProgram(default_shader.program) ||
+	    !glIsFramebuffer(main_surface_fb) || !glIsTexture(main_surface.handle))
+		return;
+	if (!view)
+		view = &main_surface;
+	else if (view != &main_surface && !gfx_remap_texture(view))
+		view = &main_surface;
+	if (sdl.viewport.w <= 0 || sdl.viewport.h <= 0)
+		gfx_update_screen_scale();
+	if (sdl.viewport.w <= 0 || sdl.viewport.h <= 0)
+		return;
 	pinned_draw_tex = 0;
 	pinned_draw_bound = false;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -849,17 +1293,149 @@ void gfx_swap(void)
 // script waiting for input may otherwise leave the new surface blank forever.
 // Called on the SDL/render thread after its pause loop restores the context;
 // never recreate GL resources or present from Activity/JNI callbacks.
+static bool gfx_needs_gl_reset(void)
+{
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	if (!current)
+		return false;
+	if (current != sdl.gl.context)
+		return true;
+	if (!default_shader.program || !glIsProgram(default_shader.program))
+		return true;
+	if (!sdl.gl.vao || !glIsVertexArray(sdl.gl.vao))
+		return true;
+	if (!main_surface_fb || !glIsFramebuffer(main_surface_fb))
+		return true;
+	if (!main_surface.handle || !glIsTexture(main_surface.handle))
+		return true;
+	return false;
+}
+
+static void upload_backup_entry(const struct backup_tex_entry *b, GLuint handle)
+{
+	glBindTexture(GL_TEXTURE_2D, handle);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, b->min_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, b->mag_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, b->wrap_s);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, b->wrap_t);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	GLenum fmt = b->internal_format == GL_RGB ? GL_RGB : GL_RGBA;
+	glTexImage2D(GL_TEXTURE_2D, 0, fmt, b->w, b->h, 0, fmt, GL_UNSIGNED_BYTE, b->pixels);
+	if (b->min_filter == GL_LINEAR_MIPMAP_LINEAR || b->min_filter == GL_LINEAR_MIPMAP_NEAREST ||
+	    b->min_filter == GL_NEAREST_MIPMAP_LINEAR || b->min_filter == GL_NEAREST_MIPMAP_NEAREST) {
+		glGenerateMipmap(GL_TEXTURE_2D);
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+bool gfx_recover_gl_if_needed(void)
+{
+	if (!gfx_initialized || !sdl.window || gfx_recovering)
+		return false;
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	if (!current && sdl.gl.context) {
+		if (SDL_GL_MakeCurrent(sdl.window, sdl.gl.context) == 0)
+			current = SDL_GL_GetCurrentContext();
+	}
+	if (!current || !gfx_needs_gl_reset())
+		return false;
+
+	gfx_recovering = true;
+	sdl.gl.context = current;
+	for (int i = 0; i < 16 && glGetError() != GL_NO_ERROR; i++) {}
+
+	uint32_t prev_gen = gfx_ctx_gen;
+	gfx_ctx_gen = (gfx_ctx_gen + 1) ? (gfx_ctx_gen + 1) : 1;
+	clear_live_textures();
+
+	memset(&default_shader, 0, sizeof(default_shader));
+	sdl.gl.vao = 0;
+	sdl.gl.vbo = 0;
+	sdl.gl.quad_vbo = 0;
+	sdl.gl.rect_ibo = 0;
+	sdl.gl.line_ibo = 0;
+	offscreen_draw_fbo = 0;
+	offscreen_read_fbo = 0;
+	offscreen_draw_tex = 0;
+	offscreen_read_tex = 0;
+	pinned_draw_tex = 0;
+	pinned_draw_bound = false;
+	main_surface_fb = 0;
+
+	GLuint old_main_handle = main_surface.handle;
+	int mw = main_surface.w > 0 ? main_surface.w : (sdl.w > 0 ? sdl.w : config.view_width);
+	int mh = main_surface.h > 0 ? main_surface.h : (sdl.h > 0 ? sdl.h : config.view_height);
+	main_surface.handle = 0;
+	main_surface.ctx_gen = 0;
+
+	gl_initialize();
+	if (mw > 0 && mh > 0) {
+		main_surface_init(mw, mh);
+		if (has_backup_main_surface && backup_main_surface.pixels &&
+		    backup_main_surface.w == mw && backup_main_surface.h == mh) {
+			upload_backup_entry(&backup_main_surface, main_surface.handle);
+		} else {
+			glBindFramebuffer(GL_FRAMEBUFFER, main_surface_fb);
+			glClearColor(0.f, 0.f, 0.f, 1.f);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+	}
+
+	if (old_main_handle && main_surface.handle)
+		remap_insert(prev_gen, old_main_handle, gfx_ctx_gen, main_surface.handle);
+	for (size_t i = 0; i < backup_tex_count; i++) {
+		const struct backup_tex_entry *b = &backup_tex_list[i];
+		GLuint new_handle = 0;
+		glGenTextures(1, &new_handle);
+		upload_backup_entry(b, new_handle);
+		track_live_texture(new_handle, b->w, b->h, b->internal_format, false);
+		remap_insert(prev_gen, b->old_handle, gfx_ctx_gen, new_handle);
+	}
+	// Advance pre-existing multi-reset remap chains using the new mappings.
+	for (size_t i = 0; i < remap_cap; i++) {
+		if (remap_table[i].state != 1 || remap_table[i].cur_gen != prev_gen)
+			continue;
+		struct remap_tex_entry *step = remap_find(prev_gen, remap_table[i].cur_handle);
+		remap_table[i].cur_gen = gfx_ctx_gen;
+		remap_table[i].cur_handle = (step && step->cur_gen == gfx_ctx_gen) ? step->cur_handle : 0;
+	}
+
+	if (!view)
+		view = &main_surface;
+	else if (view != &main_surface && !gfx_remap_texture(view))
+		view = &main_surface;
+
+	gfx_release_context_backup();
+	gfx_update_screen_scale();
+	for (size_t i = 0; i < nr_reset_callbacks; i++)
+		reset_callbacks[i].cb(reset_callbacks[i].user);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, main_surface_fb);
+	if (sdl.w > 0 && sdl.h > 0)
+		glViewport(0, 0, sdl.w, sdl.h);
+#ifdef __ANDROID__
+	SDL_GL_SetSwapInterval(wait_vsync ? 1 : 0);
+#endif
+	gfx_recovering = false;
+	return true;
+}
+
 void gfx_restore_window(void)
 {
 	if (!gfx_initialized)
 		return;
+	gfx_recover_gl_if_needed();
 	gfx_update_screen_scale();
+	if (!SDL_GL_GetCurrentContext() || sdl.viewport.w <= 0 || sdl.viewport.h <= 0)
+		return;
 	gfx_swap();
 }
 
 void gfx_set_view(struct texture *t)
 {
-	view = t;
+	if (t)
+		gfx_remap_texture(t);
+	view = (t && t->handle) ? t : &main_surface;
 }
 
 void gfx_reset_view(void)
@@ -931,7 +1507,8 @@ void gfx_render(struct gfx_render_job *job)
 
 void _gfx_render_texture(struct shader *s, struct texture *t, Rectangle *r, void *data)
 {
-	if (!t->handle) {
+	gfx_remap_texture(t);
+	if (!t || !t->handle) {
 		WARNING("Attempted to render uninitialized texture");
 		return;
 	}
@@ -956,7 +1533,8 @@ void gfx_render_texture(struct texture *t, Rectangle *r)
 
 void gfx_render_quadrilateral(struct texture *t, struct gfx_vertex vertices[4])
 {
-	if (!t->handle) {
+	gfx_remap_texture(t);
+	if (!t || !t->handle) {
 		WARNING("Attempted to render uninitialized texture");
 		return;
 	}
@@ -996,16 +1574,23 @@ static void init_texture(struct texture *t, int w, int h)
 	t->w = w;
 	t->h = h;
 	t->opaque = false;
+	t->ctx_gen = gfx_ctx_gen;
 }
 
 void gfx_init_texture_with_pixels(struct texture *t, int w, int h, void *pixels)
 {
 	init_texture(t, w, h);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	track_live_texture(t->handle, w, h, GL_RGBA, false);
 }
 
 void gfx_update_texture_with_pixels(struct texture *t, void *pixels)
 {
+	if (!gfx_remap_texture(t)) {
+		if (t && t->w > 0 && t->h > 0)
+			gfx_init_texture_with_pixels(t, t->w, t->h, pixels);
+		return;
+	}
 	t->opaque = false;
 	glBindTexture(GL_TEXTURE_2D, t->handle);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t->w, t->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
@@ -1082,6 +1667,7 @@ void gfx_init_texture_rgb(struct texture *t, int w, int h, SDL_Color color)
 	}
 	init_texture(t, w, h);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+	track_live_texture(t->handle, w, h, GL_RGB, false);
 	if (w <= 0 || h <= 0)
 		return;
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, t, 0, 0, w, h);
@@ -1107,6 +1693,7 @@ void gfx_init_texture_rmap(struct texture *t, int w, int h, uint8_t *rmap)
 {
 	init_texture(t, w, h);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, rmap);
+	track_live_texture(t->handle, w, h, GL_R8, true);
 }
 
 void gfx_init_texture_blank(struct texture *t, int w, int h)
@@ -1120,25 +1707,37 @@ void gfx_copy_main_surface(struct texture *dst)
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, main_surface_fb);
 	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, main_surface.w, main_surface.h, 0);
 	dst->opaque = true;
+	track_live_texture(dst->handle, main_surface.w, main_surface.h, GL_RGB, false);
 }
 
 void gfx_delete_texture(struct texture *t)
 {
+	if (!t)
+		return;
 	if (t->handle) {
+		if (t->ctx_gen != 0 && t->ctx_gen != gfx_ctx_gen) {
+			t->handle = 0;
+			t->opaque = false;
+			t->ctx_gen = 0;
+			return;
+		}
 		if (pinned_draw_tex == t->handle)
 			gfx_end_draw_target();
 		if (offscreen_draw_tex == t->handle)
 			offscreen_draw_tex = 0;
 		if (offscreen_read_tex == t->handle)
 			offscreen_read_tex = 0;
+		untrack_live_texture(t->handle);
 		glDeleteTextures(1, &t->handle);
 	}
 	t->handle = 0;
 	t->opaque = false;
+	t->ctx_gen = 0;
 }
 
 void gfx_begin_draw_target(Texture *t)
 {
+	gfx_remap_texture(t);
 	if (!t || !t->handle)
 		return;
 	t->opaque = false;
@@ -1163,6 +1762,7 @@ void gfx_end_draw_target(void)
 
 void gfx_flush_draw_target(Texture *t)
 {
+	gfx_remap_texture(t);
 	if (!t || !t->handle || offscreen_draw_tex != t->handle)
 		return;
 	pinned_draw_bound = false;
@@ -1171,6 +1771,7 @@ void gfx_flush_draw_target(Texture *t)
 
 GLuint gfx_set_framebuffer(GLenum target, Texture *t, int x, int y, int w, int h)
 {
+	gfx_remap_texture(t);
 	if (target == GL_READ_FRAMEBUFFER) {
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, offscreen_read_fbo);
 		if (offscreen_read_tex != t->handle) {
@@ -1223,6 +1824,8 @@ void gfx_reset_framebuffer(GLenum target, GLuint fbo)
 
 SDL_Color gfx_get_pixel(Texture *t, int x, int y)
 {
+	if (!gfx_remap_texture(t) && (!t || !t->handle))
+		return (SDL_Color){0};
 	GLuint fbo = gfx_set_framebuffer(GL_READ_FRAMEBUFFER, t, 0, 0, t->w, t->h);
 
 	uint8_t pixel[4];
@@ -1240,6 +1843,8 @@ SDL_Color gfx_get_pixel(Texture *t, int x, int y)
 
 void *gfx_get_pixels(Texture *t)
 {
+	if (!gfx_remap_texture(t) && (!t || !t->handle))
+		return xcalloc(1, (t && t->w > 0 && t->h > 0) ? (size_t)t->w * (size_t)t->h * 4 : 4);
 	gfx_flush_draw_target(t);
 	GLuint fbo = gfx_set_framebuffer(GL_READ_FRAMEBUFFER, t, 0, 0, t->w, t->h);
 	void *pixels = xmalloc((size_t)t->w * t->h * 4);

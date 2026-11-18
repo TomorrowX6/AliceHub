@@ -1352,7 +1352,7 @@ void parts_dirty(possibly_unused struct parts *parts)
 	parts_render_gen++;
 }
 
-void parts_render_init(void)
+static void parts_render_load_shader(void)
 {
 	gfx_load_shader(&parts_shader.shader, "shaders/parts.v.glsl", "shaders/parts.f.glsl");
 	parts_shader.uv_rect = glGetUniformLocation(parts_shader.shader.program, "uv_rect");
@@ -1363,4 +1363,23 @@ void parts_render_init(void)
 	parts_shader.use_clipper = glGetUniformLocation(parts_shader.shader.program, "use_clipper");
 	parts_shader.clipper_tex = glGetUniformLocation(parts_shader.shader.program, "clipper_tex");
 	parts_shader.inv_clipper_transform = glGetUniformLocation(parts_shader.shader.program, "inv_clipper_transform");
+}
+
+static void parts_render_on_gl_reset(possibly_unused void *user)
+{
+	pass_tex0 = 0;
+	pass_tex1 = 0;
+	pass_draw_filter = -1;
+	pass_use_clipper = -1;
+	pass_clip_no = 0;
+	pass_clip_gen = 0;
+	pass_clip_ctx = NULL;
+	parts_render_load_shader();
+	parts_dirty(NULL);
+}
+
+void parts_render_init(void)
+{
+	parts_render_load_shader();
+	gfx_register_reset_callback(parts_render_on_gl_reset, NULL);
 }

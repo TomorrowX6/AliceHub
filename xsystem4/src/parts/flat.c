@@ -181,8 +181,26 @@ static void flat_asset_unlink(struct parts_flat_asset *a)
 	a->prev = a->next = NULL;
 }
 
+static void parts_flat_on_gl_reset(void *user)
+{
+	(void)user;
+	for (struct parts_flat_asset *a = flat_asset_head; a; a = a->next) {
+		if (!a->base_textures)
+			continue;
+		for (size_t i = 0; i < a->nr_libraries; i++) {
+			if (a->base_textures[i].handle)
+				gfx_remap_texture(&a->base_textures[i]);
+		}
+	}
+}
+
 static void flat_asset_push_front(struct parts_flat_asset *a)
 {
+	static bool flat_reset_registered = false;
+	if (!flat_reset_registered) {
+		gfx_register_reset_callback(parts_flat_on_gl_reset, NULL);
+		flat_reset_registered = true;
+	}
 	a->prev = NULL;
 	a->next = flat_asset_head;
 	if (flat_asset_head)

@@ -144,6 +144,25 @@ static int glyph_lru_head = -1;
 static int glyph_lru_tail = -1;
 static int glyph_cache_used = 0;
 static bool glyph_cache_initialized = false;
+static void glyph_hash_remove(int idx);
+
+static void parts_text_on_gl_reset(void *user)
+{
+	(void)user;
+	for (int i = 0; i < glyph_cache_used; i++) {
+		struct parts_glyph_cache_entry *e = &glyph_cache[i];
+		if (e->hash == 0 && !e->t.handle && !e->t_edge.handle)
+			continue;
+		bool ok_t = !e->t.handle || gfx_remap_texture(&e->t);
+		bool ok_e = !e->t_edge.handle || gfx_remap_texture(&e->t_edge);
+		if (!ok_t || !ok_e) {
+			e->t.handle = 0;
+			e->t_edge.handle = 0;
+			glyph_hash_remove(i);
+			e->hash = 0;
+		}
+	}
+}
 
 static void glyph_cache_init(void)
 {
@@ -157,6 +176,7 @@ static void glyph_cache_init(void)
 		glyph_cache[i].next_hash = -1;
 	}
 	glyph_cache_initialized = true;
+	gfx_register_reset_callback(parts_text_on_gl_reset, NULL);
 }
 
 static void glyph_lru_remove(int idx)
@@ -265,7 +285,10 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 	uint32_t bucket = hash & (PARTS_GLYPH_HASH_BUCKETS - 1);
 	for (int idx = glyph_hash_buckets[bucket]; idx >= 0; idx = glyph_cache[idx].next_hash) {
 		struct parts_glyph_cache_entry *e = &glyph_cache[idx];
-		if (e->hash == hash && !memcmp(&e->key, &key, sizeof(key))) {
+		if (e->hash == hash && !memcmp(&e->key, &key, sizeof(key)) &&
+		    (!e->t.handle || gfx_remap_texture(&e->t)) &&
+		    (!e->t_edge.handle || gfx_remap_texture(&e->t_edge)) &&
+		    e->t.handle) {
 			glyph_lru_remove(idx);
 			glyph_lru_insert_head(idx);
 			e->refcount++;

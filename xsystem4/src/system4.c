@@ -967,6 +967,21 @@ static void error_handler(const char *msg)
 	}
 }
 
+#ifdef __ANDROID__
+static bool android_sdl_main_thread_ready = false;
+
+bool sys_is_sdl_main_thread(void)
+{
+	return android_sdl_main_thread_ready &&
+	       pthread_equal(pthread_self(), android_sdl_main_thread);
+}
+#else
+bool sys_is_sdl_main_thread(void)
+{
+	return false;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
 #ifdef __ANDROID__
@@ -984,6 +999,7 @@ int main(int argc, char *argv[])
 #endif
 #ifdef __ANDROID__
 	android_sdl_main_thread = pthread_self();
+	android_sdl_main_thread_ready = true;
 	sys_exit_handler = android_exit_handler;
 	if (sigsetjmp(android_exit_jmp, 0) != 0)
 		return android_clean_return(android_exit_code);

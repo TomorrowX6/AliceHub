@@ -89,6 +89,12 @@ static struct sprite_shader {
 	GLuint uv_rect;
 } sprite_shader = {0};
 
+static enum {
+	SPRITE_SHADER_NONE,
+	SPRITE_SHADER_SACT,
+	SPRITE_SHADER_CHIPMUNK,
+} sprite_shader_mode = SPRITE_SHADER_NONE;
+
 struct sprite_render_data {
 	struct sact_sprite *sp;
 	float uv_rect[4];
@@ -129,29 +135,16 @@ static void prepare_chipmunk_shader(struct gfx_render_job *job, void *data)
 	glUniform4fv(s->uv_rect, 1, rd->uv_rect);
 }
 
-void sprite_init_sact(void)
+static void sprite_load_sact_shader(void)
 {
-	if (sprite_shader.s.prepare) {
-		if (sprite_shader.s.prepare != prepare_sact_shader) {
-			WARNING("mixed SACT2/ChipmunkSpriteEngine initialization");
-		}
-		return;
-	}
 	gfx_load_shader(&sprite_shader.s, "shaders/render.v.glsl", "shaders/sprite.f.glsl");
 	sprite_shader.blend_rate = glGetUniformLocation(sprite_shader.s.program, "blend_rate");
 	sprite_shader.multiply_color = glGetUniformLocation(sprite_shader.s.program, "multiply_color");
 	sprite_shader.s.prepare = prepare_sact_shader;
 }
 
-void sprite_init_chipmunk(void)
+static void sprite_load_chipmunk_shader(void)
 {
-	if (sprite_shader.s.prepare) {
-		if (sprite_shader.s.prepare != prepare_chipmunk_shader) {
-			WARNING("mixed SACT2/ChipmunkSpriteEngine initialization");
-		} else {
-			return;
-		}
-	}
 	gfx_load_shader(&sprite_shader.s, "shaders/parts.v.glsl", "shaders/parts.f.glsl");
 	sprite_shader.blend_rate = glGetUniformLocation(sprite_shader.s.program, "blend_rate");
 	sprite_shader.multiply_color = glGetUniformLocation(sprite_shader.s.program, "multiply_color");
@@ -164,9 +157,45 @@ void sprite_init_chipmunk(void)
 	glUseProgram(0);
 }
 
+static void sprite_on_gl_reset(possibly_unused void *user)
+{
+	if (sprite_shader_mode == SPRITE_SHADER_SACT)
+		sprite_load_sact_shader();
+	else if (sprite_shader_mode == SPRITE_SHADER_CHIPMUNK)
+		sprite_load_chipmunk_shader();
+}
+
+void sprite_init_sact(void)
+{
+	if (sprite_shader.s.prepare) {
+		if (sprite_shader.s.prepare != prepare_sact_shader) {
+			WARNING("mixed SACT2/ChipmunkSpriteEngine initialization");
+		}
+		return;
+	}
+	sprite_shader_mode = SPRITE_SHADER_SACT;
+	sprite_load_sact_shader();
+	gfx_register_reset_callback(sprite_on_gl_reset, NULL);
+}
+
+void sprite_init_chipmunk(void)
+{
+	if (sprite_shader.s.prepare) {
+		if (sprite_shader.s.prepare != prepare_chipmunk_shader) {
+			WARNING("mixed SACT2/ChipmunkSpriteEngine initialization");
+		} else {
+			return;
+		}
+	}
+	sprite_shader_mode = SPRITE_SHADER_CHIPMUNK;
+	sprite_load_chipmunk_shader();
+	gfx_register_reset_callback(sprite_on_gl_reset, NULL);
+}
+
 static void sprite_render_tex(struct sact_sprite *sp, struct texture *t)
 {
-	if (!t->handle || t->w <= 0 || t->h <= 0)
+	gfx_remap_texture(t);
+	if (!t || !t->handle || t->w <= 0 || t->h <= 0)
 		return;
 
 	struct sprite_render_data rd = {

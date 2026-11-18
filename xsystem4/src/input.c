@@ -2572,7 +2572,54 @@ static void update_movie_skip_state(void)
 	}
 }
 
-static void handle_window_event(SDL_Event *e)
+static atomic_bool android_redraw_requested = false;
+
+static void on_render_device_reset(bool *did_swap)
+{
+	bool recovered = gfx_recover_gl_if_needed();
+	gfx_trace_resume(recovered ? "device_reset.recovered" : "device_reset.checked");
+	if (recovered || (did_swap && !*did_swap)) {
+		gfx_restore_window();
+		if (did_swap)
+			*did_swap = true;
+	}
+}
+
+static void on_app_will_enter_background(bool *returned_foreground)
+{
+	if (returned_foreground)
+		*returned_foreground = false;
+	gfx_trace_resume("app.background");
+	kbd_ctrl_down = false;
+	atomic_store(&touch_ctrl_skip, false);
+	memset(kbd_key_state, 0, sizeof(kbd_key_state));
+	memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+	key_state[VK_CONTROL] = false;
+	reset_gamepad_transient_state();
+	reset_movie_hold_state();
+	mixer_set_app_backgrounded(true);
+	gfx_android_on_background();
+	savedata_flush_on_background();
+}
+
+static void on_app_did_enter_foreground(bool *returned_foreground)
+{
+	if (returned_foreground)
+		*returned_foreground = true;
+	gfx_trace_resume("app.foreground");
+	mixer_set_app_backgrounded(false);
+	gfx_android_on_foreground();
+}
+
+static void finish_event_drain(bool did_swap, bool returned_foreground)
+{
+	if (atomic_exchange(&android_redraw_requested, false) && !did_swap)
+		gfx_restore_window();
+	if (returned_foreground)
+		gfx_release_context_backup();
+}
+
+static void handle_window_event(SDL_Event *e, bool *did_swap, bool *returned_foreground)
 {
 	if (e->window.event == SDL_WINDOWEVENT_RESTORED)
 		gfx_trace_resume("window.restored");
@@ -2583,6 +2630,8 @@ static void handle_window_event(SDL_Event *e)
 	switch (e->window.event) {
 	case SDL_WINDOWEVENT_EXPOSED:
 		gfx_swap();
+		if (did_swap)
+			*did_swap = true;
 		break;
 	case SDL_WINDOWEVENT_ENTER:
 		mouse_focus = true;
@@ -2593,14 +2642,20 @@ static void handle_window_event(SDL_Event *e)
 #endif
 		break;
 	case SDL_WINDOWEVENT_RESTORED:
+		if (returned_foreground)
+			*returned_foreground = true;
 		gfx_android_on_foreground();
 		gfx_restore_window();
+		if (did_swap)
+			*did_swap = true;
 		break;
 	case SDL_WINDOWEVENT_FOCUS_GAINED:
 		mouse_focus = true;
 		keyboard_focus = true;
 		mixer_set_app_backgrounded(false);
 		mixer_set_window_focus(true);
+		if (returned_foreground)
+			*returned_foreground = true;
 		gfx_android_on_foreground();
 		break;
 	case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -2620,6 +2675,8 @@ static void handle_window_event(SDL_Event *e)
 		gfx_update_screen_scale();
 		gfx_reset_frame_pacer();
 		gfx_swap();
+		if (did_swap)
+			*did_swap = true;
 		break;
 	}
 }
@@ -2644,6 +2701,8 @@ static void enqueue_synthetic_mouse_button(const SDL_MouseButtonEvent *btn)
 
 void handle_window_events(void)
 {
+	bool did_swap = false;
+	bool returned_foreground = false;
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
@@ -2651,34 +2710,27 @@ void handle_window_events(void)
 			handle_quit_event();
 			break;
 		case SDL_WINDOWEVENT:
-			handle_window_event(&e);
+			handle_window_event(&e, &did_swap, &returned_foreground);
 			break;
 		case SDL_RENDER_DEVICE_RESET:
-			gfx_trace_resume("device_reset.resources_not_rebuilt");
+			on_render_device_reset(&did_swap);
 			break;
 		case SDL_RENDER_TARGETS_RESET:
 			gfx_trace_resume("targets_reset");
 			break;
 		case SDL_APP_WILLENTERBACKGROUND:
-			gfx_trace_resume("app.background");
-			kbd_ctrl_down = false;
-			atomic_store(&touch_ctrl_skip, false);
-			memset(kbd_key_state, 0, sizeof(kbd_key_state));
-			memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
-			key_state[VK_CONTROL] = false;
-			reset_gamepad_transient_state();
-			reset_movie_hold_state();
-			mixer_set_app_backgrounded(true);
-			gfx_android_on_background();
-			savedata_flush_on_background();
+			on_app_will_enter_background(&returned_foreground);
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
-			gfx_trace_resume("app.foreground");
-			mixer_set_app_backgrounded(false);
-			gfx_android_on_foreground();
+			on_app_did_enter_foreground(&returned_foreground);
+			if (!did_swap) {
+				gfx_restore_window();
+				did_swap = true;
+			}
 			break;
 		}
 	}
+	finish_event_drain(did_swap, returned_foreground);
 }
 
 void handle_events(void)
@@ -2698,6 +2750,8 @@ void handle_events(void)
 
 	fire_deferred_events(false, false);
 
+	bool did_swap = false;
+	bool returned_foreground = false;
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 		switch (e.type) {
@@ -2705,35 +2759,24 @@ void handle_events(void)
 			handle_quit_event();
 			break;
 		case SDL_WINDOWEVENT:
-			handle_window_event(&e);
+			handle_window_event(&e, &did_swap, &returned_foreground);
 			break;
 		case SDL_APP_LOWMEMORY:
 			PE_FlushCGCache();
 			break;
 		case SDL_RENDER_DEVICE_RESET:
-			gfx_trace_resume("device_reset.resources_not_rebuilt");
+			on_render_device_reset(&did_swap);
 			break;
 		case SDL_RENDER_TARGETS_RESET:
 			gfx_trace_resume("targets_reset");
 			break;
 		case SDL_APP_WILLENTERBACKGROUND:
-			gfx_trace_resume("app.background");
-			kbd_ctrl_down = false;
-			atomic_store(&touch_ctrl_skip, false);
-			memset(kbd_key_state, 0, sizeof(kbd_key_state));
-			memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
-			key_state[VK_CONTROL] = false;
-			reset_gamepad_transient_state();
-			reset_movie_hold_state();
-			mixer_set_app_backgrounded(true);
-			gfx_android_on_background();
-			savedata_flush_on_background();
+			on_app_will_enter_background(&returned_foreground);
 			break;
 		case SDL_APP_DIDENTERFOREGROUND:
-			gfx_trace_resume("app.foreground");
-			mixer_set_app_backgrounded(false);
-			gfx_android_on_foreground();
-			gfx_swap();
+			on_app_did_enter_foreground(&returned_foreground);
+			gfx_restore_window();
+			did_swap = true;
 			break;
 		case SDL_AUDIODEVICEREMOVED:
 			if (!e.adevice.iscapture)
@@ -3009,6 +3052,7 @@ void handle_events(void)
 			break;
 		}
 	}
+	finish_event_drain(did_swap, returned_foreground);
 	process_gamepad_frame();
 	update_movie_skip_state();
 	if (movie_has_active_playback()) {
@@ -3512,5 +3556,14 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeResetGamepadCursor(
 	(void)env;
 	(void)clazz;
 	input_reset_gamepad_cursor(visible == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_XSystem4Activity_nativeRequestRedraw(
+	JNIEnv *env, jobject thiz)
+{
+	(void)env;
+	(void)thiz;
+	atomic_store(&android_redraw_requested, true);
 }
 #endif /* __ANDROID__ */

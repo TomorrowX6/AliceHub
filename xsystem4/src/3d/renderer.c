@@ -230,11 +230,9 @@ static void destroy_billboard_mesh(struct RE_renderer *r)
 	glDeleteBuffers(1, &r->billboard_instance_attr_buffer);
 }
 
-struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
+static void init_renderer_gl_resources(struct RE_renderer *r)
 {
-	struct RE_renderer *r = xcalloc(1, sizeof(struct RE_renderer));
-
-	r->program = load_shader("shaders/reign.v.glsl", "shaders/reign.f.glsl", version);
+	r->program = load_shader("shaders/reign.v.glsl", "shaders/reign.f.glsl", r->version);
 	r->view_transform = glGetUniformLocation(r->program, "view_transform");
 	r->texture = glGetUniformLocation(r->program, "tex");
 	r->local_transform = glGetUniformLocation(r->program, "local_transform");
@@ -297,12 +295,38 @@ struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
 
 	glGenRenderbuffers(1, &r->depth_buffer);
 
-	init_shadow_renderer(&r->shadow, version);
-	init_outline_renderer(&r->outline, version);
+	init_shadow_renderer(&r->shadow, r->version);
+	init_outline_renderer(&r->outline, r->version);
 	init_billboard_mesh(r);
+}
+
+static void re_renderer_on_gl_reset(void *user)
+{
+	struct RE_renderer *r = user;
+	if (!r)
+		return;
+	r->program = 0;
+	r->depth_buffer = 0;
+	memset(&r->shadow, 0, sizeof(r->shadow));
+	memset(&r->outline, 0, sizeof(r->outline));
+	r->billboard_particle_vao = 0;
+	r->billboard_particle_attr_buffer = 0;
+	r->billboard_instance_vao = 0;
+	r->billboard_instance_attr_buffer = 0;
+	init_renderer_gl_resources(r);
+	if (r->viewport_width > 0 && r->viewport_height > 0)
+		RE_renderer_set_viewport_size(r, r->viewport_width, r->viewport_height);
+}
+
+struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
+{
+	struct RE_renderer *r = xcalloc(1, sizeof(struct RE_renderer));
+	r->version = version;
+	init_renderer_gl_resources(r);
 	r->billboard_textures_by_no = ht_create(256);
 	r->billboard_textures_by_path = ht_create(256);
 	r->last_frame_timestamp = SDL_GetTicks();
+	gfx_register_reset_callback(re_renderer_on_gl_reset, r);
 	return r;
 }
 
@@ -376,6 +400,7 @@ static void free_billboard_texture(void *value)
 
 void RE_renderer_free(struct RE_renderer *r)
 {
+	gfx_unregister_reset_callback(re_renderer_on_gl_reset, r);
 	glDeleteProgram(r->program);
 	glDeleteRenderbuffers(1, &r->depth_buffer);
 	ht_foreach_value(r->billboard_textures_by_no, free_billboard_texture);

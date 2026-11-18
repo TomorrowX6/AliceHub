@@ -817,8 +817,30 @@ void parts_cproc_cache_clear(void)
 	nr_cproc_cg_cache = 0;
 }
 
+static void cproc_cg_cache_on_gl_reset(void *user)
+{
+	(void)user;
+	int out = 0;
+	for (int i = 0; i < nr_cproc_cg_cache; i++) {
+		if (gfx_remap_texture(&cproc_cg_cache[i].texture) && cproc_cg_cache[i].texture.handle) {
+			if (out != i)
+				cproc_cg_cache[out] = cproc_cg_cache[i];
+			out++;
+		} else {
+			if (cproc_cg_cache[i].name)
+				free_string(cproc_cg_cache[i].name);
+		}
+	}
+	nr_cproc_cg_cache = out;
+}
+
 static Texture *cproc_get_cached_texture(struct string *cg_name)
 {
+	static bool cproc_reset_registered = false;
+	if (!cproc_reset_registered) {
+		gfx_register_reset_callback(cproc_cg_cache_on_gl_reset, NULL);
+		cproc_reset_registered = true;
+	}
 	if (!cg_name || !cg_name->size)
 		return NULL;
 	for (int i = 0; i < nr_cproc_cg_cache; i++) {
@@ -829,7 +851,14 @@ static Texture *cproc_get_cached_texture(struct string *cg_name)
 						i * sizeof(struct cproc_cg_cache_entry));
 				cproc_cg_cache[0] = hit;
 			}
-			return &cproc_cg_cache[0].texture;
+			if (gfx_remap_texture(&cproc_cg_cache[0].texture) && cproc_cg_cache[0].texture.handle)
+				return &cproc_cg_cache[0].texture;
+			if (cproc_cg_cache[0].name)
+				free_string(cproc_cg_cache[0].name);
+			nr_cproc_cg_cache--;
+			if (nr_cproc_cg_cache > 0)
+				memmove(&cproc_cg_cache[0], &cproc_cg_cache[1], nr_cproc_cg_cache * sizeof(struct cproc_cg_cache_entry));
+			break;
 		}
 	}
 

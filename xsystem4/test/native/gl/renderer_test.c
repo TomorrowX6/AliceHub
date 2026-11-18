@@ -67,14 +67,14 @@ static void check_pixels(unsigned char *got,const unsigned char *expected,size_t
 void modifier_on_frame(void) {}
 static bool expect_resumed_frame;
 static int resumed_frames;
+static unsigned char expected_resumed_rgba[4]={37,91,173,255};
 void __real_SDL_GL_SwapWindow(SDL_Window *window);
 void __wrap_SDL_GL_SwapWindow(SDL_Window *window) {
     if (expect_resumed_frame) {
         unsigned char pixels[128*128*4];
         glReadPixels(0,0,128,128,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
         for (int i=0;i<128*128;i++) {
-            const unsigned char expected[4]={37,91,173,255};
-            check_pixels(pixels+4*i,expected,4,0);
+            check_pixels(pixels+4*i,expected_resumed_rgba,4,0);
         }
         if (!resumed_frames) write_ppm("resume-surface-gles-synthetic.ppm",pixels,128,128);
         resumed_frames++;
@@ -133,6 +133,71 @@ static void replacement_context_negative_control(void) {
     SDL_GL_DeleteContext(replacement);
     no_error();
     puts("PASS: replacement-context negative control has no retained texture; re-present is not context recovery");
+}
+static void replacement_context_recovery_with_backup(void) {
+    gfx_initialized=true;
+    gfx_reset_view();
+    glBindFramebuffer(GL_FRAMEBUFFER,main_surface_fb);
+    glViewport(0,0,128,128);
+    glClearColor(220/255.f,110/255.f,40/255.f,1); glClear(GL_COLOR_BUFFER_BIT);
+    unsigned char cg_px[16*16*4];
+    for (int i=0;i<16*16;i++) { cg_px[i*4+0]=30; cg_px[i*4+1]=200; cg_px[i*4+2]=170; cg_px[i*4+3]=255; }
+    Texture cg_tex={0}; gfx_init_texture_with_pixels(&cg_tex,16,16,cg_px);
+    GLuint old_main_handle=main_surface.handle;
+    GLuint old_cg_handle=cg_tex.handle;
+    SDL_GLContext old_ctx=sdl.gl.context;
+    gfx_prepare_context_backup();
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext rep=SDL_GL_CreateContext(sdl.window);
+    assert(rep && rep!=old_ctx);
+    assert(SDL_GL_GetCurrentContext()==rep);
+    assert(!glIsTexture(old_main_handle));
+    assert(!glIsTexture(old_cg_handle));
+    glBindFramebuffer(GL_FRAMEBUFFER,0);
+    glViewport(0,0,128,128);
+    glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+    expected_resumed_rgba[0]=220; expected_resumed_rgba[1]=110;
+    expected_resumed_rgba[2]=40;  expected_resumed_rgba[3]=255;
+    expect_resumed_frame=true;
+    gfx_restore_window();
+    assert(!expect_resumed_frame);
+    assert(sdl.gl.context==rep);
+    assert(glIsProgram(default_shader.program));
+    assert(glIsFramebuffer(main_surface_fb));
+    assert(glIsTexture(main_surface.handle));
+    assert(gfx_remap_texture(&cg_tex));
+    assert(cg_tex.handle && glIsTexture(cg_tex.handle));
+    gfx_copy(&main_surface,0,0,&cg_tex,0,0,16,16);
+    SDL_Color px=gfx_get_pixel(&main_surface,8,8);
+    if (!(px.r==30 && px.g==200 && px.b==170)) {
+        fprintf(stderr,"restored cg_tex pixel got (%d,%d,%d,%d) expected (30,200,170,255)\n",px.r,px.g,px.b,px.a);
+        abort();
+    }
+    gfx_delete_texture(&cg_tex);
+    SDL_GL_DeleteContext(old_ctx);
+    no_error();
+    puts("PASS: replacement EGLContext recovery with backup restores non-black surface and sprites");
+}
+static void replacement_context_recovery_without_backup(void) {
+    gfx_release_context_backup();
+    unsigned char stale_px[8*8*4]; memset(stale_px,99,sizeof(stale_px));
+    Texture stale={0}; gfx_init_texture_with_pixels(&stale,8,8,stale_px);
+    SDL_GLContext old_ctx=sdl.gl.context;
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext rep2=SDL_GL_CreateContext(sdl.window);
+    assert(rep2 && rep2!=old_ctx);
+    assert(SDL_GL_GetCurrentContext()==rep2);
+    assert(!glIsTexture(stale.handle));
+    gfx_restore_window();
+    assert(sdl.gl.context==rep2);
+    assert(glIsProgram(default_shader.program));
+    assert(glIsFramebuffer(main_surface_fb));
+    assert(glIsTexture(main_surface.handle));
+    assert(!gfx_remap_texture(&stale));
+    assert(stale.handle==0);
+    SDL_GL_DeleteContext(old_ctx);
+    no_error();
+    puts("PASS: unbacked replacement EGLContext recovery rebuilds GL objects and clears stale handles");
 }
 static void shader3d_tests(void) {
     // Compile/link the production 3D shader pairs through the real loader.
@@ -339,7 +404,10 @@ int main(void) {
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
     shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
-    resume_surface_tests(); replacement_context_negative_control(); no_error();
+    resume_surface_tests(); replacement_context_negative_control();
+    replacement_context_recovery_with_backup(); replacement_context_recovery_without_backup();
+    blur_tests(); sprite_tests(false,true); no_error();
+    puts("PASS: 2D copy shaders and Parts CG shader render cleanly on recovered replacement context");
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);
     gfx_fini(); return 0;
 }

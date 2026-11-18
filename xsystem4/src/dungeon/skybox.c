@@ -34,6 +34,16 @@ struct skybox {
 	int nr_indices;
 };
 
+static void skybox_on_gl_reset(void *user)
+{
+	struct skybox *s = user;
+	if (!s)
+		return;
+	s->shader.program = 0;
+	gfx_load_shader(&s->shader, "shaders/dungeon_skybox.v.glsl", "shaders/dungeon_skybox.f.glsl");
+	s->proj_transform = glGetUniformLocation(s->shader.program, "proj_transform");
+}
+
 struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
 {
 	if (version == DRAW_DUNGEON_2 || version == DRAW_FIELD) {
@@ -103,6 +113,7 @@ struct skybox *skybox_create(enum draw_dungeon_version version, struct dtx *dtx)
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	gfx_register_reset_callback(skybox_on_gl_reset, s);
 
 	return s;
 }
@@ -111,6 +122,7 @@ void skybox_free(struct skybox *s)
 {
 	if (!s)
 		return;
+	gfx_unregister_reset_callback(skybox_on_gl_reset, s);
 	glDeleteVertexArrays(1, &s->vao);
 	glDeleteBuffers(1, &s->attr_buffer);
 	glDeleteBuffers(1, &s->index_buffer);
@@ -121,7 +133,7 @@ void skybox_free(struct skybox *s)
 
 void skybox_render(struct skybox *s, const mat4 view_transform, const mat4 proj_transform)
 {
-	if (!s)
+	if (!s || !glIsVertexArray(s->vao) || !glIsTexture(s->texture))
 		return;
 	glDepthFunc(GL_LEQUAL);
 	glUseProgram(s->shader.program);

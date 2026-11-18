@@ -622,6 +622,12 @@ static void prepare_movie_shader(struct gfx_render_job *job, void *data)
 	glActiveTexture(GL_TEXTURE0);
 }
 
+static void movie_shader_on_gl_reset(void *user)
+{
+	(void)user;
+	movie_shader.program = 0;
+}
+
 static void load_movie_shader(void)
 {
 	gfx_load_shader(&movie_shader, "shaders/render.v.glsl", "shaders/movie.f.glsl");
@@ -630,13 +636,11 @@ static void load_movie_shader(void)
 	glUniform1i(glGetUniformLocation(movie_shader.program, "texture_cb"), 1);
 	glUniform1i(glGetUniformLocation(movie_shader.program, "texture_cr"), 2);
 	movie_shader.prepare = prepare_movie_shader;
+	gfx_register_reset_callback(movie_shader_on_gl_reset, NULL);
 }
 
-static void init_movie_textures(struct movie_context *mc)
+static void movie_alloc_yuv_textures(struct movie_context *mc)
 {
-	if (!movie_shader.program)
-		load_movie_shader();
-
 	glGenTextures(3, mc->textures);
 	for (int i = 0; i < 3; i++) {
 		glBindTexture(GL_TEXTURE_2D, mc->textures[i]);
@@ -645,6 +649,24 @@ static void init_movie_textures(struct movie_context *mc)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
+}
+
+static void movie_mc_on_gl_reset(void *user)
+{
+	struct movie_context *mc = user;
+	if (!mc)
+		return;
+	memset(mc->textures, 0, sizeof(mc->textures));
+	movie_alloc_yuv_textures(mc);
+}
+
+static void init_movie_textures(struct movie_context *mc)
+{
+	if (!movie_shader.program)
+		load_movie_shader();
+
+	movie_alloc_yuv_textures(mc);
+	gfx_register_reset_callback(movie_mc_on_gl_reset, mc);
 }
 
 static void update_texture(GLuint unit, GLuint texture, plm_plane_t *plane)
@@ -862,7 +884,8 @@ void movie_free(struct movie_context *mc)
 	}
 	if (mc->plm)
 		plm_destroy(mc->plm);
-	if (mc->textures[0])
+	gfx_unregister_reset_callback(movie_mc_on_gl_reset, mc);
+	if (mc->textures[0] && glIsTexture(mc->textures[0]))
 		glDeleteTextures(3, mc->textures);
 	if (mc->decoder_mutex)
 		SDL_DestroyMutex(mc->decoder_mutex);
@@ -1034,6 +1057,10 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 		}
 	}
 
+	if (!movie_shader.program)
+		load_movie_shader();
+	if (!mc->textures[0] || !glIsTexture(mc->textures[0]))
+		movie_alloc_yuv_textures(mc);
 	// Render the frame.
 	update_texture(GL_TEXTURE0, mc->textures[0], &frame->y);
 	update_texture(GL_TEXTURE1, mc->textures[1], &frame->cb);

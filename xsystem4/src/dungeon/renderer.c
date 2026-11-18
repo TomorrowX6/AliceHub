@@ -419,10 +419,8 @@ static bool is_dolls_boss_floor(int num)
 	}
 }
 
-struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version version, int num, struct dtx *dtx, GLuint *event_textures, int nr_event_textures, struct polyobj *po)
+static void dungeon_renderer_load_shader(struct dungeon_renderer *r)
 {
-	struct dungeon_renderer *r = xcalloc(1, sizeof(struct dungeon_renderer));
-	r->version = version;
 	gfx_load_shader(&r->shader, "shaders/dungeon.v.glsl", "shaders/dungeon.f.glsl");
 	r->local_transform = glGetUniformLocation(r->shader.program, "local_transform");
 	r->proj_transform = glGetUniformLocation(r->shader.program, "proj_transform");
@@ -433,10 +431,28 @@ struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version versi
 	r->uv_offset = glGetUniformLocation(r->shader.program, "uv_offset");
 	r->uv_scale = glGetUniformLocation(r->shader.program, "uv_scale");
 	glUseProgram(r->shader.program);
-	glUniform1i(r->use_fog, version != DRAW_FIELD);
+	glUniform1i(r->use_fog, r->version != DRAW_FIELD);
 	glUniform2f(r->uv_offset, 0.0f, 0.0f);
 	glUniform2f(r->uv_scale, 1.0f, 1.0f);
 	glUseProgram(0);
+}
+
+static void dungeon_renderer_on_gl_reset(void *user)
+{
+	struct dungeon_renderer *r = user;
+	if (!r)
+		return;
+	r->shader.program = 0;
+	r->raster_shader.s.program = 0;
+	dungeon_renderer_load_shader(r);
+}
+
+struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version version, int num, struct dtx *dtx, GLuint *event_textures, int nr_event_textures, struct polyobj *po)
+{
+	struct dungeon_renderer *r = xcalloc(1, sizeof(struct dungeon_renderer));
+	r->version = version;
+	dungeon_renderer_load_shader(r);
+	gfx_register_reset_callback(dungeon_renderer_on_gl_reset, r);
 
 	r->wall_geometry = geometry_create(r, wall_vertices, sizeof(wall_vertices), GL_TRIANGLE_STRIP);
 	r->door_left_geometry = geometry_create(r, door_left_vertices, sizeof(door_left_vertices), GL_TRIANGLE_STRIP);
@@ -481,6 +497,7 @@ struct dungeon_renderer *dungeon_renderer_create(enum draw_dungeon_version versi
 
 void dungeon_renderer_free(struct dungeon_renderer *r)
 {
+	gfx_unregister_reset_callback(dungeon_renderer_on_gl_reset, r);
 	glDeleteProgram(r->shader.program);
 
 	geometry_free(r->wall_geometry);

@@ -142,6 +142,7 @@ struct outline_renderer {
 };
 
 struct RE_renderer {
+	enum RE_plugin_version version;
 	int viewport_width;
 	int viewport_height;
 	GLuint program;
