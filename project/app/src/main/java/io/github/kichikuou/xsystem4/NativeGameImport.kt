@@ -80,42 +80,49 @@ object NativeGameImport {
         }
     }
 
+    @JvmOverloads
     fun resolveImportBaseNameFromFileNames(
         fileNames: Collection<String>,
         isMultiDiscSys3: Boolean = false
     ): String {
-        if (fileNames.any { it.equals("DOKI_SA.ALD", true) }) {
+        val activeFiles = fileNames.filter { !skip(it) }
+        if (activeFiles.any { it.equals("DOKI_SA.ALD", true) }) {
             return "Escalayer"
         }
-        if (fileNames.any {
+        if (activeFiles.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("KichikuRanceSA.ALD", true) ||
                     it.equals("KichikuRanceGA.ald", true) ||
                     repaired.equals("鬼畜王SA.ALD", true) ||
                     it.equals("鬼畜王SA.ALD", true)
-            }) {
+            }
+        ) {
             return "KichikuRance"
         }
-        if (fileNames.any { it.equals("Evenicle2.ain", true) }) {
+        if (activeFiles.any { it.equals("Evenicle2.ain", true) }) {
             return "Evenicle2"
         }
-        if (fileNames.any {
+        if (activeFiles.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("EscalayerReboot.ain", true) ||
                     repaired.equals("EscalayerReboot.ain", true) ||
                     it.equals("エスカレイヤー・リブート.ain", true) ||
                     it.equals("エスカレイヤーリブート.ain", true)
-            }) {
+            }
+        ) {
             return "EscalayerReboot"
         }
-        val sys4Ain = fileNames.firstOrNull {
+        if (GameCatalog.isRance06GameFiles(activeFiles)) {
+            return "Rance06"
+        }
+        val sys4Ain = activeFiles.firstOrNull {
             it.endsWith(".ain", true) && !it.equals("System39.ain", true)
         }
         if (sys4Ain != null) {
             val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.substringBeforeLast('.'))
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")
         }
-        val sa = fileNames.firstOrNull {
+        val sa = activeFiles.firstOrNull {
             it.endsWith("sa.ald", true) || it.equals("adisk.ald", true)
         }
         if (sa != null) {
@@ -125,12 +132,11 @@ object NativeGameImport {
         return if (isMultiDiscSys3) "System3" else "Game"
     }
 
-    private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
-        return resolveImportBaseNameFromFileNames(
-            fileNames = docs.filter { !it.folder && !skip(it.name) }.map { it.name },
-            isMultiDiscSys3 = isMultiDiscSys3
+    private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String =
+        resolveImportBaseNameFromFileNames(
+            docs.filter { !it.folder }.map { it.name },
+            isMultiDiscSys3
         )
-    }
 
     private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
         return try {
@@ -189,7 +195,14 @@ object NativeGameImport {
                     discRoots.add(dirUri to docs)
                 } else if (depth < 3) {
                     for (sub in docs) {
-                        if (sub.folder && !skip(sub.name)) queue.add(sub.uri to (depth + 1))
+                        if (sub.folder && !skip(sub.name) &&
+                            !sub.name.equals("BackData", ignoreCase = true) &&
+                            sub.name != "补丁" &&
+                            sub.name != "备份" &&
+                            sub.name != "备份文件"
+                        ) {
+                            queue.add(sub.uri to (depth + 1))
+                        }
                     }
                 }
             }
@@ -238,6 +251,8 @@ object NativeGameImport {
         }
         val isEscalayerReboot = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT ||
             GameCatalog.classifyGameRootFiles(primaryFileNames) == GameCatalog.ID_ESCALAYER_REBOOT
+        val isRance06Import = targetGameId == GameCatalog.ID_RANCE06 ||
+            GameCatalog.isRance06GameFiles(primaryFileNames)
         val baseName = resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -253,7 +268,12 @@ object NativeGameImport {
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
                     val relPath = if (relPrefix.isEmpty()) name else "$relPrefix/$name"
-                    if (skip(document.name) || (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath))) continue
+                    if (skip(document.name) ||
+                        (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath)) ||
+                        (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true))
+                    ) {
+                        continue
+                    }
                     val target = File(destination, name)
                     if (document.folder) {
                         if (!target.exists() && !target.mkdir()) throw IOException("Cannot create directory: $name")

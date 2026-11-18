@@ -337,6 +337,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RANCE01 ||
                 id == GameCatalog.ID_RANCE02 ||
                 id == GameCatalog.ID_RANCE03 ||
+                id == GameCatalog.ID_RANCE06 ||
                 id == GameCatalog.ID_RANCE08 ||
                 id == GameCatalog.ID_RANCE09 ||
                 id == GameCatalog.ID_KICHIKUOU ||

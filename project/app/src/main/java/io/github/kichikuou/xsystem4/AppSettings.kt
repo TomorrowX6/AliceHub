@@ -37,6 +37,7 @@ object AppSettings {
     private const val DEFAULT_RANCE01_BYTES = 611603977L
     private const val DEFAULT_RANCE02_BYTES = 273186363L
     private const val DEFAULT_RANCE03_BYTES = 2223244774L
+    internal const val DEFAULT_RANCE06_BYTES = 2260544882L
     private const val DEFAULT_RANCE08_BYTES = 1964252126L
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
     private const val DEFAULT_KICHIKUOU_BYTES = 198596468L
@@ -142,6 +143,7 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_ONLINE_INSTALL, enabled).apply()
     }
 
+    @JvmStatic
     fun defaultBaseGameSizeForUrl(cdnBaseUrl: String): Long {
         return when (cdnBaseUrl.trimEnd('/')) {
             OnlineInstaller.RANCE10_CDN_URL -> DEFAULT_RANCE10_BYTES
@@ -152,6 +154,7 @@ object AppSettings {
             OnlineInstaller.RANCE01_CDN_URL -> DEFAULT_RANCE01_BYTES
             OnlineInstaller.RANCE02_CDN_URL -> DEFAULT_RANCE02_BYTES
             OnlineInstaller.RANCE03_CDN_URL -> DEFAULT_RANCE03_BYTES
+            OnlineInstaller.RANCE06_CDN_URL -> DEFAULT_RANCE06_BYTES
             OnlineInstaller.RANCE08_CDN_URL -> DEFAULT_RANCE08_BYTES
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
             OnlineInstaller.KICHIKUOU_CDN_URL -> DEFAULT_KICHIKUOU_BYTES
