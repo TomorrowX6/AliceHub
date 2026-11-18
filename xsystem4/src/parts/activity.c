@@ -634,20 +634,43 @@ static const char *const pact_key_aliases[][3] = {
 	{ "子パーツ列表", "子パーツ", "子部件" },
 };
 
-static struct ex_tree *node(struct ex_tree *tree, const char *key)
+typedef void *(*pact_lookup_fn)(void *ctx, const char *key);
+
+static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key)
 {
-	if (!tree || tree->is_leaf) return NULL;
-	struct ex_tree *n = ex_tree_get_child(tree, parts_utf8_to_cjk_literal(key));
-	if (n) return n;
+	void *res = lookup(ctx, parts_utf8_to_cjk_literal(key));
+	if (res)
+		return res;
 	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
-		if (strcmp(pact_key_aliases[i][0], key))
+		bool matched = false;
+		for (size_t k = 0; k < 3 && pact_key_aliases[i][k]; k++) {
+			if (!strcmp(pact_key_aliases[i][k], key)) {
+				matched = true;
+				break;
+			}
+		}
+		if (!matched)
 			continue;
-		for (size_t k = 1; k < 3 && pact_key_aliases[i][k]; k++) {
-			n = ex_tree_get_child(tree, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
-			if (n) return n;
+		for (size_t k = 0; k < 3 && pact_key_aliases[i][k]; k++) {
+			if (!strcmp(pact_key_aliases[i][k], key))
+				continue;
+			res = lookup(ctx, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
+			if (res)
+				return res;
 		}
 	}
 	return NULL;
+}
+
+static void *node_lookup_cb(void *ctx, const char *key)
+{
+	return ex_tree_get_child((struct ex_tree *)ctx, key);
+}
+
+static struct ex_tree *node(struct ex_tree *tree, const char *key)
+{
+	if (!tree || tree->is_leaf) return NULL;
+	return pact_lookup_alias(tree, node_lookup_cb, key);
 }
 
 static struct ex_tree *node2(struct ex_tree *tree, const char *k1, const char *k2)
@@ -1349,19 +1372,14 @@ static void load_part_links(struct activity *a, struct ex_tree *tree)
 	if (children) for (unsigned i = 0; i < children->nr_children; i++) load_part_links(a, &children->children[i]);
 }
 
+static void *block_lookup_cb(void *ctx, const char *key)
+{
+	return ex_get((struct ex *)ctx, key);
+}
+
 static struct ex_value *block(struct ex *ex, const char *key)
 {
-	struct ex_value *v = ex_get(ex, parts_utf8_to_cjk_literal(key));
-	if (v) return v;
-	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
-		if (strcmp(pact_key_aliases[i][0], key))
-			continue;
-		for (size_t k = 1; k < 3 && pact_key_aliases[i][k]; k++) {
-			v = ex_get(ex, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
-			if (v) return v;
-		}
-	}
-	return NULL;
+	return pact_lookup_alias(ex, block_lookup_cb, key);
 }
 
 static struct ex_value *block2(struct ex *ex, const char *k1, const char *k2)
