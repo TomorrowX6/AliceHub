@@ -633,6 +633,10 @@ bool key_is_down(enum sact_keycode code)
 		(SDL_GetTicks() - last_parts_poll_timestamp) < 250;
 	if (!in_parts_poll && !(is_mouse_btn && parts_polling) && key_state[code]) {
 		mouse_down_unobserved[code] = false;
+		// Non-PartsEngine polling loops (e.g. IbisInputEngine/SACT2 Key_IsDown)
+		// must mark synthetic touch presses observed so mouse_get_pos() tracks drags.
+		if (code == VK_LBUTTON || code == VK_RBUTTON)
+			synthetic_mouse_down_observed = true;
 	}
 	return key_state[code];
 }
@@ -2369,7 +2373,7 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 					}
 				}
 			} else {
-				if (synthetic_mouse_down_observed) {
+				if (allow_press && synthetic_mouse_down_observed) {
 					if (has_synthetic_mouse_pos &&
 					    (synthetic_mouse_x != ev->x || synthetic_mouse_y != ev->y)) {
 						synthetic_mouse_x = ev->x;
@@ -2387,6 +2391,13 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 				has_synthetic_mouse_pos = true;
 				ready = now >= ev->timestamp + SYNTHETIC_MOUSE_EVENT_DELAY;
 			} else {
+				// If the down state was already observed before lift, expose the
+				// final touch release position while the fallback hold keeps the button down.
+				if (synthetic_mouse_down_observed && has_synthetic_mouse_pos &&
+				    (synthetic_mouse_x != ev->x || synthetic_mouse_y != ev->y)) {
+					synthetic_mouse_x = ev->x;
+					synthetic_mouse_y = ev->y;
+				}
 				ready = now >= ev->timestamp + SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY;
 			}
 			if (ready) {
