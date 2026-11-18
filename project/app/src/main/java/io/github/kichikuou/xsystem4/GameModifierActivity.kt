@@ -341,6 +341,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RANCE08 ||
                 id == GameCatalog.ID_RANCE09 ||
                 id == GameCatalog.ID_KICHIKUOU ||
+                id == GameCatalog.ID_DAIAKUJI ||
                 id == GameCatalog.ID_ESCALAYER ||
                 id == GameCatalog.ID_ESCALAYER_REBOOT ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
@@ -525,7 +526,11 @@ class GameModifierActivity : ThemedActivity() {
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
         val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance01 || isRance02 || isRance03 || isRance08 || isRance09 || isEscalayer
-        val isSys3x = isEscalayer || GameCatalog.isSystem3xGameDir(currentTarget.externalGameDir)
+        val resolvedGameId = resolvedGameIdForCurrentTarget()
+        val isSys3x = isEscalayer ||
+            resolvedGameId == GameCatalog.ID_KICHIKUOU ||
+            resolvedGameId == GameCatalog.ID_DAIAKUJI ||
+            GameCatalog.isSystem3xGameDir(currentTarget.externalGameDir)
         (findViewById<View>(R.id.btn_mod_font_size)?.parent as? View)?.visibility =
             if (isSys3x) View.GONE else View.VISIBLE
         floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE

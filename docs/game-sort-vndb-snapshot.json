@@ -65,6 +65,11 @@
       [
         "id",
         "=",
+        "v298"
+      ],
+      [
+        "id",
+        "=",
         "v311"
       ],
       [
@@ -84,6 +89,15 @@
   "response": {
     "more": false,
     "results": [
+      {
+        "alttitle": "大悪司",
+        "average": 77.2,
+        "id": "v298",
+        "rating": 77.2,
+        "released": "2001-11-30",
+        "title": "Daiakuji",
+        "votecount": 137
+      },
       {
         "alttitle": "超昂天使エスカレイヤー",
         "average": 71.7,
