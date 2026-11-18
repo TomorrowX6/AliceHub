@@ -969,6 +969,56 @@ object GameModifierBridge {
         setSavedLockMask(context, merged)
     }
 
+    /**
+     * Returns the Rance 10 field updates required for 100% treasure drops without mutating
+     * combat stats such as `itemStar` or `partyIsFixStatus`.
+     */
+    fun treasure100ActionParams(): Map<String, Int> = linkedMapOf(
+        "perFindTreasure" to 999,
+        "treasureNotGetCount" to 99,
+        "rareLuck" to 999,
+    )
+
+    /**
+     * Builds the Rance 10 action / save-mod JSON for 100% treasure drops from
+     * [treasure100ActionParams].
+     */
+    fun createTreasure100ActionJson(): JSONObject = JSONObject().apply {
+        for ((key, value) in treasure100ActionParams()) {
+            put(key, value)
+        }
+    }
+
+    /**
+     * Computes the updated Rance 10 bitmask when enabling a live lock bit, preserving all
+     * existing live lock bits and [LOCK_DISABLE_STREAMER_MODE].
+     */
+    fun computeEnabledLiveLockMask(
+        currentMask: Int,
+        disableStreamerMode: Boolean,
+        lockBit: Int,
+    ): Int {
+        val liveBits = (currentMask or lockBit) and LOCK_DISABLE_STREAMER_MODE.inv()
+        val keepStreamer = disableStreamerMode || (currentMask and LOCK_DISABLE_STREAMER_MODE) != 0
+        return if (keepStreamer) (liveBits or LOCK_DISABLE_STREAMER_MODE) else liveBits
+    }
+
+    /**
+     * Persistently enables a Rance 10 live lock bit while preserving existing live locks and
+     * the streamer-mode flag, pushing the merged mask to native when loaded.
+     */
+    fun enableLiveLockBit(context: Context, lockBit: Int): Int {
+        val merged = synchronized(configLock) {
+            computeEnabledLiveLockMask(
+                getSavedLockMask(context),
+                isDisableStreamerModeEnabled(context),
+                lockBit,
+            )
+        }
+        setSavedLockMask(context, merged)
+        return merged
+    }
+
     fun isDisableStreamerModeEnabled(context: Context): Boolean {
         return readConfigJson(context).optBoolean(KEY_DISABLE_STREAMER_MODE, false)
     }
