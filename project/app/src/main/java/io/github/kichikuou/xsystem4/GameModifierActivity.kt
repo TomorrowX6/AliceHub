@@ -1329,16 +1329,7 @@ class GameModifierActivity : ThemedActivity() {
                         }
                         applyLocalSaveMod(entry, mod)
                     }
-                    1 -> {
-                        val mod = JSONObject().apply {
-                            put("perFindTreasure", 999)
-                            put("treasureNotGetCount", 99)
-                            put("rareLuck", 999)
-                            put("itemStar", 99)
-                            put("partyIsFixStatus", 1)
-                        }
-                        applyLocalSaveMod(entry, mod)
-                    }
+                    1 -> applyLocalSaveMod(entry, GameModifierBridge.createTreasure100ActionJson())
                     2 -> {
                         val mod = JSONObject().apply {
                             put("setCardCount", 99)

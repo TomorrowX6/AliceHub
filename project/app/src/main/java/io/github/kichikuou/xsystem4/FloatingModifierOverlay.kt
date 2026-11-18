@@ -853,16 +853,13 @@ class FloatingModifierOverlay(private val activity: Activity) {
                         JSONObject().put("cureAndBoostLeaders", true),
                         tr("全员已蓄力必暴并重置技能", "全員強化・スキル回復完了", "Leaders boosted")
                     )
-                    5 -> sendAction(
-                        JSONObject().apply {
-                            put("perFindTreasure", 999)
-                            put("treasureNotGetCount", 99)
-                            put("rareLuck", 999)
-                            put("itemStar", 99)
-                            put("partyIsFixStatus", 1)
-                        },
-                        tr("已开启宝箱100%掉落", "宝箱100%ドロップを適用", "100% Treasure Drop applied")
-                    )
+                    5 -> {
+                        GameModifierBridge.enableLiveLockBit(activity, GameModifierBridge.LOCK_TREASURE_100)
+                        sendAction(
+                            GameModifierBridge.createTreasure100ActionJson(),
+                            tr("已锁定宝箱100%掉落", "宝箱100%ドロップをロック", "100% Treasure Drop locked")
+                        )
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -899,16 +896,13 @@ class FloatingModifierOverlay(private val activity: Activity) {
                         },
                         tr("已生效：满资源与满经验", "全リソース最大を適用", "Max resources applied")
                     )
-                    1 -> sendAction(
-                        JSONObject().apply {
-                            put("perFindTreasure", 999)
-                            put("treasureNotGetCount", 99)
-                            put("rareLuck", 999)
-                            put("itemStar", 99)
-                            put("partyIsFixStatus", 1)
-                        },
-                        tr("已生效：宝箱100%掉落", "宝箱100%ドロップを適用", "100% Treasure Drop applied")
-                    )
+                    1 -> {
+                        GameModifierBridge.enableLiveLockBit(activity, GameModifierBridge.LOCK_TREASURE_100)
+                        sendAction(
+                            GameModifierBridge.createTreasure100ActionJson(),
+                            tr("已锁定：宝箱100%掉落", "宝箱100%ドロップをロック", "Locked: 100% Treasure Drop")
+                        )
+                    }
                     2 -> sendAction(
                         JSONObject().apply {
                             put("partyHp", 999999)
