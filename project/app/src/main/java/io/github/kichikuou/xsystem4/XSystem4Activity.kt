@@ -124,6 +124,18 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isSengokuRanceGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isRance01Game(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.let { java.io.File(it) }
+        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.let { java.io.File(it) }
+        return GameModifierBridge.isRance01GameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isRance02Game(): Boolean {
+        val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.let { java.io.File(it) }
+        val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.let { java.io.File(it) }
+        return GameModifierBridge.isRance02GameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isRance03Game(): Boolean {
         val root = intent?.getStringExtra(EXTRA_GAME_ROOT)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         val saveDir = intent?.getStringExtra(EXTRA_SAVE_DIR)?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
@@ -162,6 +174,8 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.setDohnaLiveLocks(GameModifierBridge.getSavedDohnaLockMask(this))
         GameModifierBridge.setEvenicleLiveLocks(GameModifierBridge.getSavedEvenicleLockMask(this))
         GameModifierBridge.setSrLiveLocks(GameModifierBridge.getSavedSrLockMask(this))
+        GameModifierBridge.setR01LiveLocks(GameModifierBridge.getSavedR01LockMask(this))
+        GameModifierBridge.setR02LiveLocks(GameModifierBridge.getSavedR02LockMask(this))
         GameModifierBridge.setR03LiveLocks(GameModifierBridge.getSavedR03LockMask(this))
         GameModifierBridge.setR08LiveLocks(GameModifierBridge.getSavedR08LockMask(this))
         GameModifierBridge.setR09LiveLocks(GameModifierBridge.getSavedR09LockMask(this))

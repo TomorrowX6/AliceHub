@@ -250,6 +250,8 @@ object OnlineInstaller {
     const val DOHNA_DOHNA_CDN_URL = "https://alicehub.000.moe/dohnadohna"
     const val EVENICLE_CDN_URL = "https://alicehub.000.moe/evenicle"
     const val SENGOKU_RANCE_CDN_URL = "https://alicehub.000.moe/sengokurance"
+    const val RANCE01_CDN_URL = "https://alicehub.000.moe/rance01"
+    const val RANCE02_CDN_URL = "https://alicehub.000.moe/rance02"
     const val RANCE03_CDN_URL = "https://alicehub.000.moe/rance03"
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
@@ -1124,6 +1126,8 @@ object OnlineInstaller {
                     GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
                     GameCatalog.ID_EVENICLE -> lower.contains("evenicle")
                     GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
+                    GameCatalog.ID_RANCE01 -> lower.contains("rance01") || lower.contains("rance_01")
+                    GameCatalog.ID_RANCE02 -> lower.contains("rance02") || lower.contains("rance_02")
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
