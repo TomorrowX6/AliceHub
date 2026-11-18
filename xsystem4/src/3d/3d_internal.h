@@ -47,6 +47,7 @@ struct model {
 	struct collider *collider;
 	vec3 aabb[2];  // axis-aligned bounding box
 	bool has_transparent_mesh;
+	uint8_t sphere_color[4];
 };
 
 struct mesh {
@@ -226,11 +227,15 @@ struct billboard_texture {
 void RE_instance_update_local_transform(struct RE_instance *inst);
 bool RE_instance_is_mesh_hidden(const struct RE_instance *inst, int mesh_index);
 
+struct cg;
+
 // model.c
 
 struct model *model_load(struct archive *aar, const char *path, enum RE_plugin_version version);
+void model_reset_gl(struct model *model, struct archive *aar, enum RE_plugin_version version);
 void model_free(struct model *model);
 struct model *model_create_sphere(int r, int g, int b, int a);
+GLuint RE_load_aar_texture(struct archive *aar, const char *dir, const char *name, const char **exts, int nr_exts, bool *has_alpha_out);
 
 struct motion *motion_load(const char *name, struct RE_instance *instance, struct archive *aar);
 void motion_free(struct motion *motion);
@@ -239,8 +244,10 @@ struct archive_data *RE_get_aar_entry(struct archive *aar, const char *dir, cons
 
 // renderer.c
 
+GLuint RE_create_texture_from_cg(struct cg *cg, GLint wrap, bool *has_alpha_out);
 struct RE_renderer *RE_renderer_new(enum RE_plugin_version version);
 void RE_renderer_free(struct RE_renderer *r);
+void RE_renderer_reload_billboard_textures_by_path(struct RE_renderer *r, struct archive *aar);
 void RE_renderer_set_viewport_size(struct RE_renderer *r, int width, int height);
 bool RE_renderer_load_billboard_texture_by_no(struct RE_renderer *r, int cg_no);
 struct billboard_texture *RE_renderer_load_billboard_texture_by_path(struct RE_renderer *r, struct archive *aar, const char *path);
@@ -410,6 +417,7 @@ struct particle_instance {
 };
 
 struct pae *pae_load(struct archive *aar, const char *path, enum RE_plugin_version version);
+void pae_reset_gl(struct pae *pae, struct archive *aar, enum RE_plugin_version version);
 void pae_free(struct pae *pae);
 void pae_calc_frame_range(struct pae *pae, struct motion *motion);
 float pae_object_calc_alpha(struct pae_object *po, struct particle_instance *pi, float frame);
@@ -578,6 +586,7 @@ struct s3de {
 };
 
 struct s3de *s3de_load(struct archive *aar, const char *path);
+void s3de_reset_gl(struct s3de *s, struct archive *aar);
 void s3de_free(struct s3de *s);
 
 struct s3de_particle {

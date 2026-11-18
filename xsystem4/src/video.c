@@ -1072,13 +1072,34 @@ void gfx_android_on_foreground(void)
 #endif
 }
 
+#ifdef __ANDROID__
+static int s_delay_will_bg_handled = 0;
+static int s_delay_did_fg_handled = 0;
+#endif
+
+bool gfx_android_consume_lifecycle_event(Uint32 event_type)
+{
+#ifdef __ANDROID__
+	if (event_type == SDL_APP_WILLENTERBACKGROUND && s_delay_will_bg_handled > 0) {
+		s_delay_will_bg_handled--;
+		return true;
+	}
+	if (event_type == SDL_APP_DIDENTERFOREGROUND && s_delay_did_fg_handled > 0) {
+		s_delay_did_fg_handled--;
+		return true;
+	}
+#else
+	(void)event_type;
+#endif
+	return false;
+}
+
 void gfx_android_delay(Uint32 ms)
 {
 #ifdef __ANDROID__
 	int64_t t0 = android_monotonic_ns();
 	if (ms > 16 && sys_is_sdl_main_thread()) {
 		Uint32 start = SDL_GetTicks();
-		bool restored_on_wake = false;
 		for (;;) {
 			Uint32 elapsed = SDL_GetTicks() - start;
 			if (elapsed >= ms)
@@ -1086,21 +1107,27 @@ void gfx_android_delay(Uint32 ms)
 			Uint32 remaining = ms - elapsed;
 			SDL_Delay(remaining > 16 ? 16 : remaining);
 			SDL_PumpEvents();
-			SDL_Event ev;
-			if (!s_android_in_background &&
-			    SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT,
-			                   SDL_APP_WILLENTERBACKGROUND,
-			                   SDL_APP_WILLENTERBACKGROUND) > 0) {
-				gfx_android_on_background();
-				restored_on_wake = false;
-			}
-			if (!restored_on_wake &&
-			    SDL_PeepEvents(&ev, 1, SDL_PEEKEVENT,
-			                   SDL_APP_DIDENTERFOREGROUND,
-			                   SDL_APP_DIDENTERFOREGROUND) > 0) {
-				gfx_android_on_foreground();
-				gfx_restore_window();
-				restored_on_wake = true;
+			SDL_Event evs[64];
+			int n = SDL_PeepEvents(evs, 64, SDL_PEEKEVENT,
+			                       SDL_APP_WILLENTERBACKGROUND,
+			                       SDL_APP_DIDENTERFOREGROUND);
+			int will_idx = 0;
+			int did_idx = 0;
+			for (int i = 0; i < n; i++) {
+				if (evs[i].type == SDL_APP_WILLENTERBACKGROUND) {
+					if (will_idx >= s_delay_will_bg_handled) {
+						gfx_android_on_background();
+						s_delay_will_bg_handled = will_idx + 1;
+					}
+					will_idx++;
+				} else if (evs[i].type == SDL_APP_DIDENTERFOREGROUND) {
+					if (did_idx >= s_delay_did_fg_handled) {
+						gfx_android_on_foreground();
+						gfx_restore_window();
+						s_delay_did_fg_handled = did_idx + 1;
+					}
+					did_idx++;
+				}
 			}
 		}
 	} else {

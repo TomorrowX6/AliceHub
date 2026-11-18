@@ -89,6 +89,7 @@ void gfx_reset_frame_pacer(void);
 void gfx_android_on_background(void);
 void gfx_android_on_foreground(void);
 void gfx_android_delay(Uint32 ms);
+bool gfx_android_consume_lifecycle_event(Uint32 event_type);
 float gfx_get_frame_rate(void);
 
 void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const char *fragment_shader_path);

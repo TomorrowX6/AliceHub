@@ -2598,7 +2598,8 @@ static void on_app_will_enter_background(bool *returned_foreground)
 	reset_gamepad_transient_state();
 	reset_movie_hold_state();
 	mixer_set_app_backgrounded(true);
-	gfx_android_on_background();
+	if (!gfx_android_consume_lifecycle_event(SDL_APP_WILLENTERBACKGROUND))
+		gfx_android_on_background();
 	savedata_flush_on_background();
 }
 
@@ -2608,7 +2609,8 @@ static void on_app_did_enter_foreground(bool *returned_foreground)
 		*returned_foreground = true;
 	gfx_trace_resume("app.foreground");
 	mixer_set_app_backgrounded(false);
-	gfx_android_on_foreground();
+	if (!gfx_android_consume_lifecycle_event(SDL_APP_DIDENTERFOREGROUND))
+		gfx_android_on_foreground();
 }
 
 static void finish_event_drain(bool did_swap, bool returned_foreground)

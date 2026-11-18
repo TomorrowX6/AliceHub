@@ -58,6 +58,47 @@ struct dungeon_context *dungeon_get_context(int surface)
 	return (struct dungeon_context *)sp->plugin;
 }
 
+static void init_depth_buffer(struct dungeon_context *ctx, int width, int height)
+{
+	glGenRenderbuffers(1, &ctx->depth_buffer);
+	glBindRenderbuffer(GL_RENDERBUFFER, ctx->depth_buffer);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+}
+
+static GLuint *load_event_textures(int *nr_textures_out);
+
+static void dungeon_context_on_gl_reset(void *user)
+{
+	struct dungeon_context *ctx = user;
+	if (!ctx)
+		return;
+	int w = ctx->texture.w;
+	int h = ctx->texture.h;
+	if (!gfx_remap_texture(&ctx->texture) && w > 0 && h > 0)
+		gfx_init_texture_blank(&ctx->texture, w, h);
+	ctx->depth_buffer = 0;
+	if (w > 0 && h > 0)
+		init_depth_buffer(ctx, w, h);
+	dungeon_map_on_gl_reset(ctx);
+
+	if (!ctx->renderer || !ctx->dtx)
+		return;
+	int nr_event_textures = 0;
+	GLuint *event_textures = NULL;
+	if (dungeon_renderer_has_event_textures(ctx->renderer))
+		event_textures = load_event_textures(&nr_event_textures);
+	struct polyobj *po = NULL;
+	if (ctx->version == DRAW_DUNGEON_14) {
+		char *polyobj_path = gamedir_path("Data/PolyObj.lin");
+		po = polyobj_load(polyobj_path);
+		free(polyobj_path);
+	}
+	dungeon_renderer_reset_gl(ctx->renderer, ctx->dtx, event_textures, nr_event_textures, po);
+	if (po)
+		polyobj_free(po);
+}
+
 struct dungeon_context *dungeon_context_create(enum draw_dungeon_version version, int width, int height)
 {
 	struct dungeon_context *ctx = xcalloc_aligned(1, struct dungeon_context);
@@ -68,10 +109,7 @@ struct dungeon_context *dungeon_context_create(enum draw_dungeon_version version
 	ctx->version = version;
 
 	gfx_init_texture_blank(&ctx->texture, width, height);
-	glGenRenderbuffers(1, &ctx->depth_buffer);
-	glBindRenderbuffer(GL_RENDERBUFFER, ctx->depth_buffer);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
-	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	init_depth_buffer(ctx, width, height);
 	glm_perspective(GLM_PIf / 3.f, height > 0 ? (float)width / height : 1.0f, 0.5f, 100.f, ctx->proj_transform);
 
 	ctx->map = dungeon_map_create(version);
@@ -79,12 +117,14 @@ struct dungeon_context *dungeon_context_create(enum draw_dungeon_version version
 	if (version == DRAW_FIELD) {
 		ctx->characters = xcalloc(DRAWFIELD_NR_CHARACTERS, sizeof(struct drawfield_character));
 	}
+	gfx_register_reset_callback(dungeon_context_on_gl_reset, ctx);
 	return ctx;
 }
 
 static void dungeon_context_free(struct draw_plugin *plugin)
 {
 	struct dungeon_context *ctx = (struct dungeon_context *)plugin;
+	gfx_unregister_reset_callback(dungeon_context_on_gl_reset, ctx);
 	if (ctx->dgn)
 		dgn_free(ctx->dgn);
 	if (ctx->dtx)

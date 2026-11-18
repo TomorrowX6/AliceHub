@@ -15,6 +15,10 @@ extern void parts_render_init(void);
 extern void test_set_reverse(bool, bool);
 extern void test_activity_scale(struct parts *, bool, bool, float, float);
 extern GLuint test_load_3d_shader(const char *, const char *, int);
+extern void *test_re_renderer_create_with_billboard(int);
+extern GLuint test_re_renderer_get_billboard_tex(void *, int);
+extern void test_re_renderer_assert_valid(void *, int);
+extern void test_re_renderer_destroy(void *);
 static struct parts *fixture_part;
 struct parts *__wrap_parts_get(int no) { assert(no==1 && fixture_part); return fixture_part; }
 
@@ -182,12 +186,17 @@ static void replacement_context_recovery_without_backup(void) {
     gfx_release_context_backup();
     unsigned char stale_px[8*8*4]; memset(stale_px,99,sizeof(stale_px));
     Texture stale={0}; gfx_init_texture_with_pixels(&stale,8,8,stale_px);
+    void *r3d=test_re_renderer_create_with_billboard(77);
+    test_re_renderer_assert_valid(r3d,77);
+    GLuint old_bb_tex=test_re_renderer_get_billboard_tex(r3d,77);
+    assert(old_bb_tex && glIsTexture(old_bb_tex));
     SDL_GLContext old_ctx=sdl.gl.context;
     assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
     SDL_GLContext rep2=SDL_GL_CreateContext(sdl.window);
     assert(rep2 && rep2!=old_ctx);
     assert(SDL_GL_GetCurrentContext()==rep2);
     assert(!glIsTexture(stale.handle));
+    assert(!glIsTexture(old_bb_tex));
     gfx_restore_window();
     assert(sdl.gl.context==rep2);
     assert(glIsProgram(default_shader.program));
@@ -195,6 +204,8 @@ static void replacement_context_recovery_without_backup(void) {
     assert(glIsTexture(main_surface.handle));
     assert(!gfx_remap_texture(&stale));
     assert(stale.handle==0);
+    test_re_renderer_assert_valid(r3d,77);
+    test_re_renderer_destroy(r3d);
     SDL_GL_DeleteContext(old_ctx);
     no_error();
     puts("PASS: unbacked replacement EGLContext recovery rebuilds GL objects and clears stale handles");

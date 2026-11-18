@@ -300,6 +300,66 @@ static void init_renderer_gl_resources(struct RE_renderer *r)
 	init_billboard_mesh(r);
 }
 
+GLuint RE_create_texture_from_cg(struct cg *cg, GLint wrap, bool *has_alpha_out)
+{
+	GLuint texture;
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	if (has_alpha_out)
+		*has_alpha_out = cg->metrics.has_alpha;
+	return texture;
+}
+
+static struct billboard_texture *create_billboard_texture(struct cg *cg);
+
+static void reload_billboard_texture_no_cb(struct ht_slot *slot, void *data)
+{
+	(void)data;
+	struct billboard_texture *bt = slot->value;
+	if (!bt)
+		return;
+	bt->texture = 0;
+	struct cg *cg = asset_cg_load(slot->ikey);
+	if (!cg)
+		return;
+	bt->texture = RE_create_texture_from_cg(cg, GL_CLAMP_TO_EDGE, &bt->has_alpha);
+	cg_free(cg);
+}
+
+static void reload_billboard_texture_path_cb(struct ht_slot *slot, void *data)
+{
+	struct archive *aar = data;
+	struct billboard_texture *bt = slot->value;
+	if (!bt)
+		return;
+	bt->texture = 0;
+	if (!aar || !slot->key)
+		return;
+	struct archive_data *dfile = archive_get_by_name(aar, slot->key);
+	if (!dfile)
+		return;
+	struct cg *cg = cg_load_data(dfile);
+	archive_free_data(dfile);
+	if (!cg)
+		return;
+	bt->texture = RE_create_texture_from_cg(cg, GL_CLAMP_TO_EDGE, &bt->has_alpha);
+	cg_free(cg);
+}
+
+void RE_renderer_reload_billboard_textures_by_path(struct RE_renderer *r, struct archive *aar)
+{
+	if (!r || !r->billboard_textures_by_path)
+		return;
+	ht_foreach(r->billboard_textures_by_path, reload_billboard_texture_path_cb, aar);
+}
+
 static void re_renderer_on_gl_reset(void *user)
 {
 	struct RE_renderer *r = user;
@@ -316,6 +376,8 @@ static void re_renderer_on_gl_reset(void *user)
 	init_renderer_gl_resources(r);
 	if (r->viewport_width > 0 && r->viewport_height > 0)
 		RE_renderer_set_viewport_size(r, r->viewport_width, r->viewport_height);
+	if (r->billboard_textures_by_no)
+		ht_foreach(r->billboard_textures_by_no, reload_billboard_texture_no_cb, NULL);
 }
 
 struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
@@ -342,16 +404,7 @@ void RE_renderer_set_viewport_size(struct RE_renderer *r, int width, int height)
 static struct billboard_texture *create_billboard_texture(struct cg *cg)
 {
 	struct billboard_texture *bt = xcalloc(1, sizeof(struct billboard_texture));
-	glGenTextures(1, &bt->texture);
-	glBindTexture(GL_TEXTURE_2D, bt->texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glGenerateMipmap(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	bt->has_alpha = cg->metrics.has_alpha;
+	bt->texture = RE_create_texture_from_cg(cg, GL_CLAMP_TO_EDGE, &bt->has_alpha);
 	return bt;
 }
 
