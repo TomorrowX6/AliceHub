@@ -52,6 +52,7 @@ object GameCatalog {
     const val ID_RANCE03 = "rance03"
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
+    const val ID_KICHIKUOU = "kichikuou"
     const val ID_ESCALAYER = "escalayer"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
@@ -82,6 +83,33 @@ object GameCatalog {
             }
         }
         return false
+    }
+
+    fun isKichikuouGameDir(dir: File?): Boolean {
+        if (!isSystem3xGameDir(dir)) return false
+        val files = dir?.listFiles()?.filter { it.isFile }.orEmpty()
+        if (files.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                it.name.equals("KichikuRanceSA.ALD", true) ||
+                    it.name.equals("KichikuRanceGA.ald", true) ||
+                    repaired.equals("鬼畜王SA.ALD", true) ||
+                    it.name.equals("鬼畜王SA.ALD", true)
+            }
+        ) {
+            return true
+        }
+        val playlistFile = files.firstOrNull { it.name.equals("playlist.txt", true) }
+        if (playlistFile != null) {
+            try {
+                val content = playlistFile.readText(Charsets.ISO_8859_1).lowercase()
+                if (content.contains("kichiku_")) return true
+            } catch (_: Throwable) {
+            }
+        }
+        val bgmDir = dir?.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("bgm", true) }
+        return bgmDir?.listFiles()?.any {
+            it.isFile && it.name.lowercase().startsWith("kichiku_")
+        } == true
     }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
@@ -187,6 +215,9 @@ object GameCatalog {
                 }
                 if (isEscalayerGameDir(gameDir)) {
                     return ID_ESCALAYER
+                }
+                if (isKichikuouGameDir(gameDir)) {
+                    return ID_KICHIKUOU
                 }
                 if (ainFiles.any { !it.name.equals("System39.ain", ignoreCase = true) }) {
                     return "$PREFIX_CUSTOM$dirName"
@@ -298,6 +329,17 @@ object GameCatalog {
             ) {
                 return ID_ESCALAYER
             }
+            if (!File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                saveDir.listFiles()?.any {
+                    if (!it.isFile) return@any false
+                    val lower = ArchiveExtractor.repairSjisAsGbkMojibake(it.name).lowercase()
+                    (lower.startsWith("kichikurance") && (lower.endsWith(".asd") || lower.endsWith(".msgskip"))) ||
+                        ((lower.startsWith("鬼畜王") || lower.startsWith("婼抺墹")) && lower.endsWith(".asd"))
+                } == true
+            ) {
+                return ID_KICHIKUOU
+            }
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
@@ -355,12 +397,22 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
+            lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
+            lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
+            lowerDir.contains("鬼畜王")
+        ) {
+            return ID_KICHIKUOU
+        }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
         if (lowerDisp.contains("escalayer") || lowerDisp.contains("超昂天使") ||
             lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
         ) {
             return ID_ESCALAYER
+        }
+        if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
+            return ID_KICHIKUOU
         }
         if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
             lowerDisp.contains("ランス１０") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
@@ -581,6 +633,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_KICHIKUOU -> GameDescriptor(
+                id = ID_KICHIKUOU,
+                title = context.getString(R.string.game_kichikuou_title),
+                defaultDirName = "KichikuRance",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_kichikuou,
+                accentColor = 0xFFB71C1C.toInt(),
+                accentBorderColor = 0x66EF5350,
+                iconFrameColor = 0xFF1E1111.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.KICHIKUOU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -645,6 +712,10 @@ object GameCatalog {
         val r09Items = matchingItems(gameList, ID_RANCE09)
         entries.add(GameSelectEntry(r09Desc, r09Items, r09Items.firstOrNull()))
 
+        val kichikuDesc = descriptorFor(context, ID_KICHIKUOU, gameList)
+        val kichikuItems = matchingItems(gameList, ID_KICHIKUOU)
+        entries.add(GameSelectEntry(kichikuDesc, kichikuItems, kichikuItems.firstOrNull()))
+
         val escDesc = descriptorFor(context, ID_ESCALAYER, gameList)
         val escItems = matchingItems(gameList, ID_ESCALAYER)
         entries.add(GameSelectEntry(escDesc, escItems, escItems.firstOrNull()))
@@ -655,7 +726,7 @@ object GameCatalog {
             if (cid != ID_RANCE10 && cid != ID_DOHNA_DOHNA && cid != ID_EVENICLE &&
                 cid != ID_SENGOKU_RANCE && cid != ID_RANCE01 && cid != ID_RANCE02 &&
                 cid != ID_RANCE03 && cid != ID_RANCE08 && cid != ID_RANCE09 &&
-                cid != ID_ESCALAYER
+                cid != ID_KICHIKUOU && cid != ID_ESCALAYER
             ) {
                 val desc = descriptorFor(context, cid, gameList)
                 entries.add(GameSelectEntry(desc, listOf(item), item))

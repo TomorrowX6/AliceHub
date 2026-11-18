@@ -326,18 +326,26 @@ class GameModifierActivity : ThemedActivity() {
         currentTarget = targets.firstOrNull { it.dirName == preferredDirName } ?: targets.first()
     }
 
+    private fun isOtherScopedGame(expectedGameId: String): Boolean {
+        val id = scopedGameId ?: return false
+        return id != expectedGameId && (
+            id == GameCatalog.ID_RANCE10 ||
+                id == GameCatalog.ID_DOHNA_DOHNA ||
+                id == GameCatalog.ID_EVENICLE ||
+                id == GameCatalog.ID_SENGOKU_RANCE ||
+                id == GameCatalog.ID_RANCE01 ||
+                id == GameCatalog.ID_RANCE02 ||
+                id == GameCatalog.ID_RANCE03 ||
+                id == GameCatalog.ID_RANCE08 ||
+                id == GameCatalog.ID_RANCE09 ||
+                id == GameCatalog.ID_KICHIKUOU ||
+                id == GameCatalog.ID_ESCALAYER ||
+                id.startsWith(GameCatalog.PREFIX_CUSTOM)
+            )
+    }
+
     private fun isCurrentTargetRance10(): Boolean {
-        if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE10)) {
             return false
         }
         if (scopedGameId == GameCatalog.ID_RANCE10) {
@@ -360,17 +368,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_DOHNA_DOHNA)) {
             return false
         }
         return GameModifierBridge.isDohnaDohnaGameDir(
@@ -384,17 +382,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_EVENICLE) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_EVENICLE)) {
             return false
         }
         return GameModifierBridge.isEvenicleGameDir(
@@ -408,17 +396,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_SENGOKU_RANCE) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_SENGOKU_RANCE)) {
             return false
         }
         return GameModifierBridge.isSengokuRanceGameDir(
@@ -432,17 +410,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_RANCE01) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            (scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true)
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE01)) {
             return false
         }
         return GameModifierBridge.isRance01GameDir(
@@ -456,17 +424,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_RANCE02) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            (scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true)
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE02)) {
             return false
         }
         return GameModifierBridge.isRance02GameDir(
@@ -480,17 +438,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_RANCE03) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE03)) {
             return false
         }
         return GameModifierBridge.isRance03GameDir(
@@ -504,17 +452,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_RANCE08) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE08)) {
             return false
         }
         return GameModifierBridge.isRance08GameDir(
@@ -528,17 +466,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_RANCE09) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_ESCALAYER ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_RANCE09)) {
             return false
         }
         return GameModifierBridge.isRance09GameDir(
@@ -552,17 +480,7 @@ class GameModifierActivity : ThemedActivity() {
         if (scopedGameId == GameCatalog.ID_ESCALAYER) {
             return true
         }
-        if (scopedGameId == GameCatalog.ID_RANCE10 ||
-            scopedGameId == GameCatalog.ID_DOHNA_DOHNA ||
-            scopedGameId == GameCatalog.ID_EVENICLE ||
-            scopedGameId == GameCatalog.ID_SENGOKU_RANCE ||
-            scopedGameId == GameCatalog.ID_RANCE01 ||
-            scopedGameId == GameCatalog.ID_RANCE02 ||
-            scopedGameId == GameCatalog.ID_RANCE03 ||
-            scopedGameId == GameCatalog.ID_RANCE08 ||
-            scopedGameId == GameCatalog.ID_RANCE09 ||
-            scopedGameId?.startsWith(GameCatalog.PREFIX_CUSTOM) == true
-        ) {
+        if (isOtherScopedGame(GameCatalog.ID_ESCALAYER)) {
             return false
         }
         return GameModifierBridge.isEscalayerGameDir(

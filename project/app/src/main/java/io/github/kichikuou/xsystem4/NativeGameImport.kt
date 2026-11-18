@@ -15,15 +15,26 @@ object NativeGameImport {
     private data class Document(val uri: Uri, val name: String, val folder: Boolean, val size: Long)
 
     fun skip(path: String): Boolean {
-        val parts = path.replace('\\', '/').split('/')
-        if (parts.any {
+        val parts = path.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return false
+        val fileName = parts.last()
+        // System 3.x games (e.g. Kichikuou Rance CN) rely on .xsys35rc for playlist/font/encoding config.
+        val isXsys35RcLeaf = fileName.equals(".xsys35rc", true)
+        if (parts.dropLast(1).any {
                 it.startsWith('.') ||
                     it.equals("android-port", true) ||
                     it.equals("SaveData", true) ||
                     it.equals("DirectX", true)
-            })
+            }) {
             return true
-        val fileName = parts.last()
+        }
+        if ((fileName.startsWith('.') && !isXsys35RcLeaf) ||
+            fileName.equals("android-port", true) ||
+            fileName.equals("SaveData", true) ||
+            fileName.equals("DirectX", true)
+        ) {
+            return true
+        }
         val lowerName = fileName.lowercase()
         if (lowerName == "opensavefolder.exe" || lowerName == "resetconfig.exe" || lowerName == "uninstaller.exe")
             return true
@@ -72,6 +83,16 @@ object NativeGameImport {
     private fun resolveImportBaseName(docs: List<Document>, isMultiDiscSys3: Boolean): String {
         if (docs.any { !it.folder && !skip(it.name) && it.name.equals("DOKI_SA.ALD", true) }) {
             return "Escalayer"
+        }
+        if (docs.any {
+                if (it.folder || skip(it.name)) return@any false
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                it.name.equals("KichikuRanceSA.ALD", true) ||
+                    it.name.equals("KichikuRanceGA.ald", true) ||
+                    repaired.equals("鬼畜王SA.ALD", true) ||
+                    it.name.equals("鬼畜王SA.ALD", true)
+            }) {
+            return "KichikuRance"
         }
         val sys4Ain = docs.firstOrNull {
             !it.folder && !skip(it.name) &&

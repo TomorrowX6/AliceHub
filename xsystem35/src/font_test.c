@@ -123,6 +123,15 @@ static void invariants_test(void) {
 	}
 }
 
+static void utf8_encoding_test(void) {
+	FontSpec f = {FONT_GOTHIC, FONT_WEIGHT_NORMAL, 24};
+	font_set_encoding(UTF8);
+	SDL_Surface *s = font_render_text(f, "\xe9\xac\xbc\xe7\x95\x9c\xe7\x8e\x8b\xe5\x85\xb0\xe6\x96\xaf", white, false);  // 鬼畜王兰斯
+	ASSERT_TRUE(s);
+	SDL_DestroySurface(s);
+	font_set_encoding(SHIFT_JIS);
+}
+
 void font_test(void) {
 	font_init();
 	font_set_name_and_index(FONT_GOTHIC, TEST_FONT_DIR "/MTLc3m.ttf", 0);
@@ -130,4 +139,5 @@ void font_test(void) {
 
 	invariants_test();
 	glyph_cache_test();
+	utf8_encoding_test();
 }

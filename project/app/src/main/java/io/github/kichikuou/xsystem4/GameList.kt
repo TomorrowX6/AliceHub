@@ -80,10 +80,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             val icon = findIcon(dir)
             val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
             val fallbackSys3Name = if (isSys3x) {
-                if (GameCatalog.isEscalayerGameDir(dir)) {
-                    context.getString(R.string.game_escalayer_title)
-                } else {
-                    dir.name
+                when {
+                    GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
+                    GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
+                    else -> dir.name
                 }
             } else {
                 null
@@ -945,6 +945,7 @@ class GameList(activity: Activity) {
         progressCallback: (String) -> Unit
     ): File {
         val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
+        val isKichikuouTarget = targetGameId == GameCatalog.ID_KICHIKUOU
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -956,7 +957,8 @@ class GameList(activity: Activity) {
                 tempScratchParent = storagePath,
                 shouldSkip = { rel ->
                     shouldSkipBaseInstallEntry(rel) ||
-                        (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false))
+                        (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
+                        (isKichikuouTarget && isKichikuouBloatRelPath(rel))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1078,13 +1080,15 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
-            val isRance02 = GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
+            val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
+            val isRance02 = classifiedId == GameCatalog.ID_RANCE02
             mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
-            if (isRance02) {
+            if (isRance02 || classifiedId == GameCatalog.ID_KICHIKUOU) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
+                GameCatalog.isKichikuouGameDir(srcDir) -> "KichikuRance"
                 ainFile != null -> sanitizeDerivedGameDirName(
                     ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension),
                     fallback = "Game"
@@ -1899,8 +1903,14 @@ internal fun mergeInstallSetData(
     }
 }
 
+internal fun isKichikuouBloatRelPath(relPath: String): Boolean {
+    val fileNameLower = relPath.replace('\\', '/').trim('/').substringAfterLast('/').lowercase()
+    return fileNameLower == "xsystem35.exe" || fileNameLower == "system35.exe"
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
-    if (GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_RANCE02) {
+    val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
+    if (gameId != GameCatalog.ID_RANCE02 && gameId != GameCatalog.ID_KICHIKUOU) {
         return
     }
     val topFiles = destGameDir.listFiles()?.filter { it.isFile }.orEmpty()
@@ -1916,13 +1926,19 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         if (f == destGameDir) return@forEach
         val rel = f.relativeTo(destGameDir).path.replace('\\', '/')
         if (f.isDirectory) {
-            if (f.name.equals("CGpatch", ignoreCase = true) ||
-                f.name.equals("补丁", ignoreCase = true) ||
-                f.name.equals("DirectX", ignoreCase = true)
+            if (gameId == GameCatalog.ID_RANCE02 && (
+                    f.name.equals("CGpatch", ignoreCase = true) ||
+                        f.name.equals("补丁", ignoreCase = true) ||
+                        f.name.equals("DirectX", ignoreCase = true)
+                    )
             ) {
                 dirsToDelete.add(f)
             }
-        } else if (f.isFile && isBaseInstallBloatRelPath(rel)) {
+        } else if (f.isFile && (
+                (gameId == GameCatalog.ID_RANCE02 && isBaseInstallBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_KICHIKUOU && isKichikuouBloatRelPath(rel))
+                )
+        ) {
             filesToDelete.add(f)
         }
     }
