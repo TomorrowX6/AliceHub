@@ -49,6 +49,7 @@ struct parts_context *parts_current = &live_context;
 
 bool parts_multi_controller;
 bool parts_v2 = false;
+bool parts_hierarchical_matrix = true;
 
 static void ctrl_stack_init(void);
 static void parts_change_controller(struct parts *parts, int index);
@@ -803,6 +804,59 @@ static void parts_apply_local_matrix(struct parts *parts, mat4 out)
 		glm_scale(out, (vec3){scale_x, scale_y, 1});
 }
 
+static void parts_apply_local_transform(struct parts *parts, mat4 out)
+{
+	if (parts_hierarchical_matrix) {
+		parts_apply_local_matrix(parts, out);
+		return;
+	}
+	float tx = 0.0f, ty = 0.0f;
+	if (parts->parent && parts->parent->states[0].type == PARTS_LAYOUT_BOX &&
+			parts->parent->states[0].layout_box.layout_type == PARTS_LAYOUT_FREE) {
+		Point off = parts->parent->states[0].common.origin_offset;
+		tx += off.x;
+		ty += off.y;
+	}
+	SDL_FPoint pos = parts_local_position(parts);
+	for (int axis = 0; axis < 2; axis++) {
+		int link_no = parts->scroll_links[axis];
+		if (link_no > 0) {
+			struct parts *link = parts_try_get(link_no);
+			if (link && link->scrollbar) {
+				if (axis) pos.y -= link->scrollbar->pos;
+				else pos.x -= link->scrollbar->pos;
+			}
+		}
+	}
+	tx += pos.x;
+	ty += pos.y;
+	// Pre-UpdateMatrix PartsEngine (AIN v6.1: Rance 03, Rance 9, Evenicle,
+	// Escalayer Reboot) applies child positions additively in world space
+	// rather than transforming them through the parent's scale/rotation.
+	out[3][0] += tx;
+	out[3][1] += ty;
+	float scale_x = parts->local.scale.x * (parts->reverse_lr ? -1.0f : 1.0f);
+	float scale_y = parts->local.scale.y * (parts->reverse_tb ? -1.0f : 1.0f);
+	if (parts->local.rotation.x == 0.0f && parts->local.rotation.y == 0.0f &&
+			parts->local.rotation.z == 0.0f) {
+		if (scale_x != 1.0f || scale_y != 1.0f) {
+			for (int r = 0; r < 4; r++) {
+				out[0][r] *= scale_x;
+				out[1][r] *= scale_y;
+			}
+		}
+		return;
+	}
+	if (parts->local.rotation.z != 0.0f)
+		glm_rotate_z(out, glm_rad(parts->local.rotation.z), out);
+	if (parts->local.rotation.x != 0.0f)
+		glm_rotate_x(out, glm_rad(-parts->local.rotation.x), out);
+	if (parts->local.rotation.y != 0.0f)
+		glm_rotate_y(out, glm_rad(parts->local.rotation.y), out);
+	if (scale_x != 1.0f || scale_y != 1.0f)
+		glm_scale(out, (vec3){scale_x, scale_y, 1});
+}
+
 static void parts_update_global_pos_mat(struct parts *parts, SDL_FPoint parent_pos, mat4 parent_matrix)
 {
 	parts->global.pos = (SDL_FPoint) {
@@ -812,7 +866,7 @@ static void parts_update_global_pos_mat(struct parts *parts, SDL_FPoint parent_p
 	mat4 matrix;
 	if (parts_v2) {
 		glm_mat4_copy(parent_matrix, matrix);
-		parts_apply_local_matrix(parts, matrix);
+		parts_apply_local_transform(parts, matrix);
 		parts->global.pos = (SDL_FPoint){matrix[3][0], matrix[3][1]};
 		if (parts->world_matrix_self == parts) {
 			glm_mat4_copy(matrix, parts->world_matrix);
@@ -1720,7 +1774,7 @@ static void parts_update_component_mat(struct parts *parts, mat4 parent_matrix)
 	mat4 matrix;
 	if (parts_v2) {
 		glm_mat4_copy(parent_matrix, matrix);
-		parts_apply_local_matrix(parts, matrix);
+		parts_apply_local_transform(parts, matrix);
 		parts->global.pos = (SDL_FPoint){matrix[3][0], matrix[3][1]};
 		if (parts->world_matrix_self == parts) {
 			glm_mat4_copy(matrix, parts->world_matrix);
@@ -2668,7 +2722,7 @@ void parts_world_matrix(struct parts *parts, mat4 out)
 		if (root_pos.x != 0 || root_pos.y != 0)
 			glm_translate(out, (vec3){root_pos.x, root_pos.y, 0});
 	}
-	parts_apply_local_matrix(parts, out);
+	parts_apply_local_transform(parts, out);
 	if (parts->world_matrix_self == parts) {
 		glm_mat4_copy(out, parts->world_matrix);
 		parts->world_matrix_gen = parts_render_gen;
@@ -2873,6 +2927,8 @@ int PE_GetPartsUpperLeftPosX(int parts_no, int state)
 	if (parts_v2) {
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
+		if (!parts_hierarchical_matrix)
+			return matrix[3][0] + x;
 		vec4 pos = {x, parts->states[state].common.hitbox.y, 0, 1};
 		glm_mat4_mulv(matrix, pos, pos);
 		return pos[0];
@@ -2891,6 +2947,8 @@ int PE_GetPartsUpperLeftPosY(int parts_no, int state)
 	if (parts_v2) {
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
+		if (!parts_hierarchical_matrix)
+			return matrix[3][1] + y;
 		vec4 pos = {parts->states[state].common.hitbox.x, y, 0, 1};
 		glm_mat4_mulv(matrix, pos, pos);
 		return pos[1];
