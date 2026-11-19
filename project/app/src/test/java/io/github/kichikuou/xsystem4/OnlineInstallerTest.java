@@ -42,7 +42,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -462,6 +462,12 @@ public class OnlineInstallerTest {
         registerSpace(storage, new File(storage, ".online_base_staging_TestGame"));
 
         // A read-only storage dir lets staging downloads succeed but makes the final move fail.
+        // Root ignores directory permissions, so skip there instead of failing.
+        storage.setWritable(false);
+        boolean readOnlyHonored = !storage.canWrite();
+        storage.setWritable(true);
+        assumeTrue("read-only directories are not enforced (running as root?)", readOnlyHonored);
+
         File[] staging = new File[1];
         try {
             installFromCdn(storage, dir -> {
@@ -469,11 +475,9 @@ public class OnlineInstallerTest {
                 storage.setWritable(false);
                 return Unit.INSTANCE;
             });
-            assumeFalse("storage stayed writable (running as root?)", storage.canWrite());
             fail("Install succeeded although the final move could not happen");
         } catch (Exception e) {
             assertTrue(e instanceof java.io.IOException);
-            assumeFalse("storage stayed writable (running as root?)", storage.canWrite());
         } finally {
             storage.setWritable(true);
         }
