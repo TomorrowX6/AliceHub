@@ -33,7 +33,11 @@ public class ModJournalTest {
                     assertTrue("Journal must exist before staging or live writes", journal.isFile());
                     try {
                         assertTrue(Files.readAllLines(journal.toPath()).contains("new.afa"));
+                        assertTrue("Later files must already be journaled",
+                                Files.readAllLines(journal.toPath()).contains("later.afa"));
+                        assertFalse(Files.readAllLines(journal.toPath()).contains(".hidden.afa"));
                         assertFalse(live.exists());
+                        assertFalse(new File(game, "later.afa").exists());
                         if (partiallyPublished) write(live, "partial mod content");
                     } catch (IOException error) {
                         throw new AssertionError(error);
@@ -42,8 +46,12 @@ public class ModJournalTest {
                 }
             };
             write(source, "mod content");
+            File later = new File(staging, "later.afa");
+            write(later, "later mod content");
+            File skipped = new File(staging, ".hidden.afa");
+            write(skipped, "skipped content");
             File interruptedStaging = new File(staging.getPath()) {
-                @Override public File[] listFiles() { return new File[]{source}; }
+                @Override public File[] listFiles() { return new File[]{source, later, skipped}; }
             };
 
             assertThrows(InterruptedInstall.class, () -> GameListKt.applyModStagingToGameDirInternal(
@@ -51,6 +59,7 @@ public class ModJournalTest {
             assertTrue(Files.readAllLines(journal.toPath()).contains("new.afa"));
             GameListKt.restoreVanillaFromModDir(game);
             assertFalse(live.exists());
+            assertFalse(new File(game, "later.afa").exists());
             assertFalse(journal.exists());
             assertEquals("vanilla", new String(Files.readAllBytes(vanilla.toPath()), StandardCharsets.UTF_8));
             assertEquals(Arrays.asList("vanilla.txt"), Arrays.asList(game.list()));
@@ -64,8 +73,10 @@ public class ModJournalTest {
         write(source, "mod content");
         assertTrue(new File(game, ".mod_installed_files.txt.tmp").mkdir());
 
-        assertThrows(IOException.class, () -> GameListKt.applyModStagingToGameDirInternal(
+        IOException error = assertThrows(IOException.class, () -> GameListKt.applyModStagingToGameDirInternal(
                 staging, game, false, false, false));
+        assertEquals(1, error.getSuppressed().length);
+        assertTrue(error.getSuppressed()[0] instanceof IOException);
         assertTrue(source.isFile());
         assertFalse(new File(game, "new.afa").exists());
     }
@@ -92,5 +103,21 @@ public class ModJournalTest {
         GameListKt.restoreVanillaFromModDir(game);
         assertFalse(new File(game, "new.afa").exists());
         assertEquals("vanilla", new String(Files.readAllBytes(new File(game, "original.afa").toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test public void prepassKeepsCaseInsensitiveParentResolutionConsistent() throws Exception {
+        File game = temp.newFolder();
+        File staging = temp.newFolder();
+        assertTrue(new File(staging, "Data").mkdir());
+        assertTrue(new File(staging, "data").mkdir());
+        write(new File(staging, "Data/first.afa"), "first");
+        write(new File(staging, "data/second.afa"), "second");
+
+        GameListKt.applyModStagingToGameDirInternal(staging, game, false, false, false);
+        for (String rel : Files.readAllLines(new File(game, ".mod_installed_files.txt").toPath())) {
+            assertTrue("Journal path must match the live file: " + rel, new File(game, rel).isFile());
+        }
+        GameListKt.restoreVanillaFromModDir(game);
+        assertEquals(0, game.list().length);
     }
 }
