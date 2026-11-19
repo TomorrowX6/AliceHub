@@ -45,6 +45,7 @@ object AppSettings {
     private const val DEFAULT_DAIAKUJI_BYTES = 923623502L
     private const val DEFAULT_ESCALAYER_BYTES = 1563994084L
     private const val DEFAULT_ESCALAYER_REBOOT_BYTES = 2470174002L
+    internal const val DEFAULT_GALZOO_BYTES = 4027583522L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -178,6 +179,7 @@ object AppSettings {
             OnlineInstaller.DAIAKUJI_CDN_URL -> DEFAULT_DAIAKUJI_BYTES
             OnlineInstaller.ESCALAYER_CDN_URL -> DEFAULT_ESCALAYER_BYTES
             OnlineInstaller.ESCALAYER_REBOOT_CDN_URL -> DEFAULT_ESCALAYER_REBOOT_BYTES
+            OnlineInstaller.GALZOO_CDN_URL -> DEFAULT_GALZOO_BYTES
             else -> -1L
         }
     }

@@ -344,6 +344,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_DAIAKUJI ||
                 id == GameCatalog.ID_ESCALAYER ||
                 id == GameCatalog.ID_ESCALAYER_REBOOT ||
+                id == GameCatalog.ID_GALZOO ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

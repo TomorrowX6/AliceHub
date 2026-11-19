@@ -248,6 +248,7 @@
     <string name="game_daiakuji_title">Daiakuji</string>
     <string name="game_escalayer_title">Beat Angel Escalayer</string>
     <string name="game_escalayer_reboot_title">Beat Angel Escalayer Reboot</string>
+    <string name="game_galzoo_title">GALZOO Island</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

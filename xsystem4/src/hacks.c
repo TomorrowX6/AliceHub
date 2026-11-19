@@ -53,6 +53,7 @@ bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
+bool game_galzoo = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -514,6 +515,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_rance03 = false;
 	game_dungeons_and_dolls = false;
 	game_escalayer_reboot = false;
+	game_galzoo = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -542,6 +544,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_library(ain, "DrawDungeon") >= 0
 		&& ain_get_library(ain, "ACXLoader") >= 0
 		&& ain_get_struct(ain, "CDungeon") >= 0;
+	game_galzoo = ain->version == 5
+		&& ain_get_library(ain, "DrawDungeon14") >= 0
+		&& ain_get_struct(ain, "CDungeon") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
@@ -563,7 +568,10 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_has_gbk_string(ain, "\xb0\xac\xcb\xb9\xbf\xa8\xc0\xd9\xb6\xfb")))
 		|| (game_rance6 && (ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")
 			|| ain_has_gbk_string(ain, "\xd6\xd5\xc1\xcb")
-			|| ain_has_gbk_string(ain, "\xa3\xcd\xa3\xd3\x20\xa5\xb4\xa5\xb7\xa5\xc3\xa5\xaf"))));
+			|| ain_has_gbk_string(ain, "\xa3\xcd\xa3\xd3\x20\xa5\xb4\xa5\xb7\xa5\xc3\xa5\xaf")))
+		|| (game_galzoo && (ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")
+			|| ain_has_gbk_string(ain, "\xcd\xf2\xc0\xef\xb3\xa4\xb3\xc7")
+			|| ain_has_gbk_string(ain, "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd"))));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

@@ -58,6 +58,7 @@ object GameCatalog {
     const val ID_DAIAKUJI = "daiakuji"
     const val ID_ESCALAYER = "escalayer"
     const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
+    const val ID_GALZOO = "galzoo"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -347,6 +348,9 @@ object GameCatalog {
         if (isRance06GameFiles(fileNames)) {
             return ID_RANCE06
         }
+        if (isGalzooGameFiles(fileNames)) {
+            return ID_GALZOO
+        }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance09.ain", ignoreCase = true) ||
@@ -469,6 +473,12 @@ object GameCatalog {
     private val ESCALAYER_R_JA_ALIAS_REGEX = Regex("エスカレイヤー[\\s・_-]*r(?![a-z0-9])")
     private val ESCALAYER_R_CN_ALIAS_REGEX = Regex("艾斯卡蕾雅[\\s・_-]*r(?![a-z0-9])")
     private val ESCALAYER_R_EN_ALIAS_REGEX = Regex("(?<![a-z0-9])escalayer[\\s._-]*r(?![a-z0-9])")
+    private val GALZOO_EN_ALIAS_REGEX =
+        Regex("(?<![a-z0-9])galzoo(?:[\\s._-]*(?:island|cn))?(?![a-z0-9])", RegexOption.IGNORE_CASE)
+    private val GALZOO_ALD_REGEX =
+        Regex("^(?:galzoo(?:island)?|galzooアイランド|ギャルズーアイランド)(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
+    private val GALZOO_SAVE_SLOT_REGEX =
+        Regex("^(?:galzoo|ギャルズー).*\\.(?:asd|sav|rsm)$", RegexOption.IGNORE_CASE)
 
     fun isEscalayerRebootAlias(lowerText: String): Boolean {
         return lowerText.contains("escalayerreboot") ||
@@ -553,6 +563,59 @@ object GameCatalog {
             lower.contains("赛斯崩坏") ||
             lower.contains("賽斯崩壞") ||
             lower.contains("collapse of zeth")
+    }
+
+    fun isGalzooGameFiles(fileNames: Collection<String>): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
+        val isGalzooAin = { rawAin: String ->
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(rawAin)
+            rawAin.equals("GALZOO.ain", ignoreCase = true) ||
+                repaired.equals("GALZOO.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOOIsland.ain", ignoreCase = true) ||
+                repaired.equals("GALZOOIsland.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOO Island.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOO_Island.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOOアイランド.ain", ignoreCase = true) ||
+                repaired.equals("GALZOOアイランド.ain", ignoreCase = true) ||
+                rawAin.equals("ギャルズーアイランド.ain", ignoreCase = true) ||
+                repaired.equals("ギャルズーアイランド.ain", ignoreCase = true)
+        }
+        if (ainNames.any(isGalzooAin)) {
+            return true
+        }
+        val nonSpecialAins = ainNames.filter {
+            !it.equals("System39.ain", ignoreCase = true) && !it.equals("AliceCN.ain", ignoreCase = true)
+        }
+        if (nonSpecialAins.isNotEmpty()) {
+            return false
+        }
+        return fileNames.any {
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+            it.equals("GALZOODLL.inc", ignoreCase = true) ||
+                GALZOO_ALD_REGEX.matches(it) ||
+                GALZOO_ALD_REGEX.matches(repaired)
+        }
+    }
+
+    fun isGalzooGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isGalzooGameFiles(files.map { it.name })
+    }
+
+    fun isGalzooAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        return GALZOO_EN_ALIAS_REGEX.containsMatchIn(lower) ||
+            lower.contains("galzooisland") ||
+            lower.contains("galzooアイランド") ||
+            lower.contains("galzoo アイランド") ||
+            lower.contains("ギャルズー") ||
+            lower.contains("galzoo岛") ||
+            lower.contains("galzoo 岛") ||
+            lower.contains("galzoo艾兰德") ||
+            lower.contains("galzoo 艾兰德")
     }
 
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
@@ -714,6 +777,25 @@ object GameCatalog {
             ) {
                 return ID_RANCE06
             }
+            if ((File(saveDir, "keyfile.dat").isFile ||
+                    File(saveDir, "MsgSkipFlag.sav").isFile ||
+                    saveDir.listFiles()?.any {
+                        if (!it.isFile) return@any false
+                        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                        GALZOO_SAVE_SLOT_REGEX.matches(it.name) ||
+                            GALZOO_SAVE_SLOT_REGEX.matches(repaired)
+                    } == true) &&
+                !File(saveDir, "Progress.asd").isFile &&
+                !File(saveDir, "Config.asd").isFile &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile &&
+                !File(saveDir, "AFCommon.asd").isFile
+            ) {
+                return ID_GALZOO
+            }
             if ((File(saveDir, "key0104.dat").isFile ||
                     saveDir.listFiles()?.any {
                         it.isFile && it.name.endsWith("_Sys.ASD", ignoreCase = true)
@@ -818,6 +900,9 @@ object GameCatalog {
         if (isRance06Alias(lowerDir)) {
             return ID_RANCE06
         }
+        if (isGalzooAlias(lowerDir)) {
+            return ID_GALZOO
+        }
         if (lowerDir == "sengokurance" || lowerDir.startsWith("sengokurance-") || lowerDir.contains("sengoku") ||
             lowerDir.contains("战国兰斯") || lowerDir.contains("戦国ランス") || lowerDir.contains("愴崙儔儞僗")
         ) {
@@ -905,6 +990,9 @@ object GameCatalog {
         }
         if (isRance06Alias(lowerDisp)) {
             return ID_RANCE06
+        }
+        if (isGalzooAlias(lowerDisp)) {
+            return ID_GALZOO
         }
         if (lowerDisp.contains("sengoku") || lowerDisp.contains("战国兰斯") || lowerDisp.contains("戰國蘭斯") ||
             lowerDisp.contains("戦国ランス")
@@ -1147,6 +1235,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_GALZOO -> GameDescriptor(
+                id = ID_GALZOO,
+                title = context.getString(R.string.game_galzoo_title),
+                defaultDirName = "GALZOO",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_galzoo,
+                accentColor = 0xFF0288D1.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0D2136.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.GALZOO_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = stringResolver(R.string.game_kichikuou_title),
@@ -1218,7 +1321,8 @@ object GameCatalog {
         ID_KICHIKUOU,
         ID_DAIAKUJI,
         ID_ESCALAYER,
-        ID_ESCALAYER_REBOOT
+        ID_ESCALAYER_REBOOT,
+        ID_GALZOO
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

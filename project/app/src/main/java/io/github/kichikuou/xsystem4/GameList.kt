@@ -652,12 +652,18 @@ class GameList(activity: Activity) {
                     mergeInstallSetData(listOf(imported), imported, skipRance02Bloat = isRance02) {
                         if (abortHandle.isAborted) throw CancellationException()
                     }
+                    if (classifiedId == GameCatalog.ID_GALZOO) {
+                        mergeGalzooCompanionData(listOf(imported), imported) {
+                            if (abortHandle.isAborted) throw CancellationException()
+                        }
+                    }
                     if (isRance02 ||
                         classifiedId == GameCatalog.ID_KICHIKUOU ||
                         classifiedId == GameCatalog.ID_DAIAKUJI ||
                         classifiedId == GameCatalog.ID_EVENICLE2 ||
                         classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
-                        classifiedId == GameCatalog.ID_RANCE06
+                        classifiedId == GameCatalog.ID_RANCE06 ||
+                        classifiedId == GameCatalog.ID_GALZOO
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -945,6 +951,7 @@ class GameList(activity: Activity) {
     ): File {
         val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
         val isRance06Target = targetGameId == GameCatalog.ID_RANCE06
+        val isGalzooTarget = targetGameId == GameCatalog.ID_GALZOO
         val isKichikuouTarget = targetGameId == GameCatalog.ID_KICHIKUOU
         val isDaiakujiTarget = targetGameId == GameCatalog.ID_DAIAKUJI
         val isEvenicle2Target = targetGameId == GameCatalog.ID_EVENICLE2
@@ -965,7 +972,8 @@ class GameList(activity: Activity) {
                         (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                         (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                         (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                        (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                        (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                        (isGalzooTarget && isGalzooBloatRelPath(rel))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1013,7 +1021,8 @@ class GameList(activity: Activity) {
                                 (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                                 (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                                 (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                                (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                                (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                                (isGalzooTarget && isGalzooBloatRelPath(rel))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1047,7 +1056,8 @@ class GameList(activity: Activity) {
                             (!isRance02Target || !isBaseInstallBloatRelPath(rel, skipPatchSubdir = true)) &&
                             (!isDaiakujiTarget || !isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) &&
                             (!isEscalayerRebootTarget || !isEscalayerRebootBloatRelPath(rel, skipArchives = false)) &&
-                            (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true))
+                            (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true)) &&
+                            (!isGalzooTarget || !isGalzooBloatRelPath(rel))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -1063,7 +1073,8 @@ class GameList(activity: Activity) {
                             (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                             (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                             (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                            (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                            (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                            (isGalzooTarget && isGalzooBloatRelPath(rel))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1109,6 +1120,9 @@ class GameList(activity: Activity) {
             val isRance02 = isRance02Target ||
                 GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
             mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (isGalzooTarget || GameCatalog.classifyGameRootDir(srcDir) == GameCatalog.ID_GALZOO) {
+                mergeGalzooCompanionData(listOf(tempDir, srcDir), srcDir, checkCancelled = checkCancelled)
+            }
             if (!GameCatalog.validateImportedGameDir(srcDir, expectedAinName, targetGameId)) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
@@ -1118,7 +1132,8 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_DAIAKUJI ||
                 classifiedId == GameCatalog.ID_EVENICLE2 ||
                 classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
-                classifiedId == GameCatalog.ID_RANCE06
+                classifiedId == GameCatalog.ID_RANCE06 ||
+                classifiedId == GameCatalog.ID_GALZOO
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
@@ -1133,6 +1148,7 @@ class GameList(activity: Activity) {
                         ainFile.name.equals("エスカレイヤーリブート.ain", ignoreCase = true)
                     ) -> "EscalayerReboot"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
+                classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
                     ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension),
                     fallback = "Game"
@@ -2053,6 +2069,71 @@ internal fun mergeInstallSetData(
     }
 }
 
+@JvmOverloads
+internal fun mergeGalzooCompanionData(
+    searchRoots: List<File>,
+    destGameDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (GameCatalog.classifyGameRootDir(destGameDir) != GameCatalog.ID_GALZOO) {
+        return
+    }
+    val destDataDir = File(destGameDir, "Data")
+    val destDataCanon = try { destDataDir.canonicalPath } catch (_: Throwable) { destDataDir.absolutePath }
+    val destCanon = try { destGameDir.canonicalPath } catch (_: Throwable) { destGameDir.absolutePath }
+    val companionDataDirs = mutableListOf<File>()
+    for (root in searchRoots) {
+        if (!root.exists()) continue
+        root.walkTopDown()
+            .filter { d ->
+                if (!d.isDirectory || !d.name.equals("Data", ignoreCase = true)) return@filter false
+                val dCanon = try { d.canonicalPath } catch (_: Throwable) { d.absolutePath }
+                if (dCanon == destDataCanon) return@filter false
+                val relSegs = d.relativeTo(root).path.replace('\\', '/').split('/')
+                if (relSegs.any {
+                        it.equals("BackData", ignoreCase = true) ||
+                            it == "补丁" ||
+                            it == "备份" ||
+                            it == "备份文件"
+                    }
+                ) {
+                    return@filter false
+                }
+                d.listFiles()?.any { f ->
+                    f.isFile && (
+                        f.name.equals("PolyObj.lin", ignoreCase = true) ||
+                            f.name.equals("Event.alk", ignoreCase = true) ||
+                            f.name.endsWith(".dgn", ignoreCase = true)
+                        )
+                } == true
+            }
+            .forEach { companionDataDirs.add(it) }
+    }
+    for (dataDir in companionDataDirs.distinctBy { try { it.canonicalPath } catch (_: Throwable) { it.absolutePath } }) {
+        dataDir.walkTopDown().forEach { f ->
+            checkCancelled()
+            if (!f.isFile) return@forEach
+            val rel = f.relativeTo(dataDir).path.replace('\\', '/')
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || isGalzooBloatRelPath("Data/$rel")) {
+                return@forEach
+            }
+            val destFile = resolveCaseInsensitiveDest(destDataDir, rel)
+            if (!destFile.exists()) {
+                destFile.parentFile?.mkdirs()
+                f.copyTo(destFile, overwrite = false)
+            }
+        }
+        val parent = dataDir.parentFile
+        val dataCanon = try { dataDir.canonicalPath } catch (_: Throwable) { dataDir.absolutePath }
+        if (dataCanon.startsWith(destCanon + File.separator)) {
+            dataDir.deleteRecursively()
+            if (parent != null && parent != destGameDir && parent.listFiles()?.isEmpty() == true) {
+                parent.delete()
+            }
+        }
+    }
+}
+
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
@@ -2226,6 +2307,44 @@ internal fun isRance06BloatRelPath(relPath: String, skipPatchSubdir: Boolean = t
     return matchDirSeg(fileNameLower)
 }
 
+internal fun isGalzooBloatRelPath(relPath: String): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val fileNameLower = segments.last().lowercase()
+    if (fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower.endsWith(".cmd") ||
+        fileNameLower.endsWith(".lnk") ||
+        fileNameLower.endsWith(".mrk") ||
+        fileNameLower == "galzoo.ico" ||
+        fileNameLower == "desktop.ini" ||
+        fileNameLower == "autorun.inf"
+    ) {
+        return true
+    }
+    if (fileNameLower.endsWith(".bak") && !fileNameLower.endsWith(".vanilla.bak")) {
+        return true
+    }
+    val matchDirSeg = { seg: String ->
+        seg == "backdata" ||
+            seg == "dll" ||
+            seg == "savedata" ||
+            seg == "cgpatch" ||
+            seg == "directx" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "补丁"
+    }
+    for (i in 0 until segments.size - 1) {
+        if (matchDirSeg(segments[i].lowercase())) {
+            return true
+        }
+    }
+    return matchDirSeg(fileNameLower)
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
@@ -2233,7 +2352,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         gameId != GameCatalog.ID_DAIAKUJI &&
         gameId != GameCatalog.ID_EVENICLE2 &&
         gameId != GameCatalog.ID_ESCALAYER_REBOOT &&
-        gameId != GameCatalog.ID_RANCE06
+        gameId != GameCatalog.ID_RANCE06 &&
+        gameId != GameCatalog.ID_GALZOO
     ) {
         return
     }
@@ -2270,11 +2390,12 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     ))
             ) {
                 dirsToDelete.add(f)
-            } else if (gameId == GameCatalog.ID_RANCE06 && (
+            } else if ((gameId == GameCatalog.ID_RANCE06 || gameId == GameCatalog.ID_GALZOO) && (
                     f.name.equals("BackData", ignoreCase = true) ||
                         f.name.equals("DLL", ignoreCase = true) ||
                         f.name.equals("CGpatch", ignoreCase = true) ||
                         f.name.equals("DirectX", ignoreCase = true) ||
+                        (gameId == GameCatalog.ID_GALZOO && f.name.equals("SaveData", ignoreCase = true)) ||
                         f.name == "补丁" ||
                         f.name == "备份" ||
                         f.name == "备份文件"
@@ -2288,7 +2409,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     (gameId == GameCatalog.ID_DAIAKUJI && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = hasDDemoAlk)) ||
                     (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_ESCALAYER_REBOOT && isEscalayerRebootBloatRelPath(rel)) ||
-                    (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true))
+                    (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true)) ||
+                    (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)
