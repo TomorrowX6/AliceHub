@@ -931,15 +931,10 @@ object OnlineInstaller {
             completedBeforeCurrent += entry.size
         }
 
-        // Clean up internal marker/meta files before finalizing game directory
+        // Clean up internal marker/meta files before finalizing game directory. The staging
+        // identity stays until the move succeeds so a failed move keeps verified downloads reusable.
         stagingDir.walkTopDown()
-            .filter {
-                it.isFile && (
-                    it.name.startsWith(".extracted_") ||
-                        it.name.endsWith(".part.meta") ||
-                        it.name == BASE_STAGING_IDENTITY_FILE
-                    )
-            }
+            .filter { it.isFile && (it.name.startsWith(".extracted_") || it.name.endsWith(".part.meta")) }
             .toList()
             .forEach { it.delete() }
 
@@ -971,6 +966,7 @@ object OnlineInstaller {
         if (!moveFileOrDir(stagingDir, dstDir)) {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
+        File(dstDir, BASE_STAGING_IDENTITY_FILE).delete()
         return dstDir
     }
 
