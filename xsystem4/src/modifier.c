@@ -455,9 +455,8 @@ static bool write_game_config_streamer_mode(const char *config_path, bool stream
 	FILE *fp = atomic_save_open(config_path, "wb", &tmp_path);
 	bool ok = false;
 	if (fp) {
-		if (gsave_write(gs, fp, false, 1) == SAVEFILE_SUCCESS &&
-		    atomic_save_commit(fp, config_path, tmp_path, true))
-			ok = true;
+		if (gsave_write(gs, fp, false, 1) == SAVEFILE_SUCCESS)
+			ok = atomic_save_commit(fp, config_path, tmp_path, true);
 		else
 			atomic_save_abort(fp, tmp_path);
 	}
@@ -1545,8 +1544,8 @@ static bool csd_table_save_file(const char *path, struct csd_table *tbl)
 	if (fp) {
 		bool wrote = (fwrite(hdr, 1, 16, fp) == 16) &&
 			(comp_size == 0 || fwrite(comp_buf, 1, comp_size, fp) == comp_size);
-		if (wrote && atomic_save_commit(fp, path, tmp_path, true))
-			ok = true;
+		if (wrote)
+			ok = atomic_save_commit(fp, path, tmp_path, true);
 		else
 			atomic_save_abort(fp, tmp_path);
 	}
@@ -1767,11 +1766,12 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 			char *tmp_path = NULL;
 			FILE *fp = atomic_save_open(global_path, "wb", &tmp_path);
 			if (fp) {
-				if (gsave_write(gs_g, fp, false, 1) == SAVEFILE_SUCCESS &&
-				    atomic_save_commit(fp, global_path, tmp_path, true))
-					any_ok = true;
-				else
+				if (gsave_write(gs_g, fp, false, 1) == SAVEFILE_SUCCESS) {
+					if (atomic_save_commit(fp, global_path, tmp_path, true))
+						any_ok = true;
+				} else {
 					atomic_save_abort(fp, tmp_path);
+				}
 			}
 			gsave_free(gs_g);
 		}
@@ -1794,11 +1794,12 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 			char *tmp_path = NULL;
 			FILE *fp = atomic_save_open(collection_path, "wb", &tmp_path);
 			if (fp) {
-				if (gsave_write(gs_c, fp, false, 1) == SAVEFILE_SUCCESS &&
-				    atomic_save_commit(fp, collection_path, tmp_path, true))
-					any_ok = true;
-				else
+				if (gsave_write(gs_c, fp, false, 1) == SAVEFILE_SUCCESS) {
+					if (atomic_save_commit(fp, collection_path, tmp_path, true))
+						any_ok = true;
+				} else {
 					atomic_save_abort(fp, tmp_path);
+				}
 			}
 			gsave_free(gs_c);
 		}
