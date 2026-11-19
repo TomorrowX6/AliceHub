@@ -55,6 +55,7 @@ bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
 bool game_galzoo = false;
 bool game_ixseal = false;
+bool game_tsumashibori = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -518,6 +519,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_escalayer_reboot = false;
 	game_galzoo = false;
 	game_ixseal = false;
+	game_tsumashibori = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -551,6 +553,10 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_galzoo = ain->version == 5
 		&& ain_get_library(ain, "DrawDungeon14") >= 0
 		&& ain_get_struct(ain, "CDungeon") >= 0;
+	game_tsumashibori = ain->version == 5
+		&& ain_get_struct(ain, "PLAY_TABLE_SAKURA") >= 0
+		&& ain_get_struct(ain, "PLAY_TABLE_MADOKA") >= 0
+		&& ain_get_struct(ain, "SAKURA_SIDE_SPRITE") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
@@ -559,7 +565,8 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| strstr(config.game_name, "\xd6\xd0\xce\xc4")
 			|| strstr(config.game_name, "\xba\xba\xbb\xaf")
 			|| strstr(config.game_name, "\x9e\x61\xbb\xaf")
-			|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")))
+			|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")
+			|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -577,6 +584,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_galzoo && (ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")
 			|| ain_has_gbk_string(ain, "\xcd\xf2\xc0\xef\xb3\xa4\xb3\xc7")
 			|| ain_has_gbk_string(ain, "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd")))
+		|| (game_tsumashibori && (ain_has_gbk_string(ain, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
+			|| ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")))
 		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);

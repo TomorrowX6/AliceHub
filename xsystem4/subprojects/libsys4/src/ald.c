@@ -152,11 +152,11 @@ static bool get_filemap(struct ald_archive *archive, FILE *fp)
 	archive->maxfile = (mapsize * 256) / 3;
 
 	// map of disk
-	archive->map_disk = malloc(archive->maxfile);
+	archive->map_disk = malloc(sizeof(*archive->map_disk) * archive->maxfile);
 	archive->map_ptr = malloc(sizeof(short) * archive->maxfile);
 
 	for (int i = 0; i < archive->maxfile; i++) {
-		archive->map_disk[i] = b[i * 3] - 1;
+		archive->map_disk[i] = (int16_t)b[i * 3] - 1;
 		archive->map_ptr[i] = LittleEndian_getW(b, i * 3 + 1) - 1;
 	}
 
@@ -220,7 +220,7 @@ static int __attribute__((optimize("O0"))) _ald_get(struct ald_archive *ar, int 
 	// look up data in file map
 	disk = ar->map_disk[no];
 	ptr  = ar->map_ptr[no];
-	if (disk < 0 || ptr < 0)
+	if (disk < 0 || disk >= ALD_FILEMAX || ptr < 0)
 		return 0;
 
 	// no file registered
@@ -414,8 +414,11 @@ static void ald_free(struct archive *_ar)
 			fclose(ar->files[i].fp);
 		}
 		free(ar->files[i].name);
+		free(ar->fileptr[i]);
 	}
 
+	free(ar->map_disk);
+	free(ar->map_ptr);
 	free(ar);
 }
 
