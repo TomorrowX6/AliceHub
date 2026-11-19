@@ -42,6 +42,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeFalse;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -296,8 +297,12 @@ public class OnlineInstallerTest {
     }
 
     private File installFromCdn(File storage) {
+        return installFromCdn(storage, null);
+    }
+
+    private File installFromCdn(File storage, kotlin.jvm.functions.Function1<File, Unit> onStagingDirReady) {
         return OnlineInstaller.INSTANCE.installBaseGameFromCloud(
-            RuntimeEnvironment.getApplication(), storage, url("/cdn"), null, null,
+            RuntimeEnvironment.getApplication(), storage, url("/cdn"), null, onStagingDirReady,
             () -> Unit.INSTANCE,
             update -> Unit.INSTANCE
         );
@@ -442,6 +447,46 @@ public class OnlineInstallerTest {
         assertArrayEquals(ain, Files.readAllBytes(new File(installed, "TestGame.ain").toPath()));
         for (Map<String, String> req : requests) {
             assertNotEquals("/cdn/files/System40.ini", req.get("path"));
+        }
+    }
+
+    @Test
+    public void failedFinalMoveKeepsStagingReusable() throws Exception {
+        File storage = tmp.newFolder("storage").getCanonicalFile();
+        byte[] ini = "[Game]\n".getBytes(StandardCharsets.UTF_8);
+        byte[] ain = "ain".getBytes(StandardCharsets.UTF_8);
+        Map<String, byte[]> files = new HashMap<>();
+        files.put("System40.ini", ini);
+        files.put("TestGame.ain", ain);
+        serveCdn(manifestJson(fileEntry("System40.ini", ini), fileEntry("TestGame.ain", ain)), files);
+        registerSpace(storage, new File(storage, ".online_base_staging_TestGame"));
+
+        // A read-only storage dir lets staging downloads succeed but makes the final move fail.
+        File[] staging = new File[1];
+        try {
+            installFromCdn(storage, dir -> {
+                staging[0] = dir;
+                storage.setWritable(false);
+                return Unit.INSTANCE;
+            });
+            assumeFalse("storage stayed writable (running as root?)", storage.canWrite());
+            fail("Install succeeded although the final move could not happen");
+        } catch (Exception e) {
+            assertTrue(e instanceof java.io.IOException);
+            assumeFalse("storage stayed writable (running as root?)", storage.canWrite());
+        } finally {
+            storage.setWritable(true);
+        }
+        assertTrue(new File(staging[0], OnlineInstaller.BASE_STAGING_IDENTITY_FILE).isFile());
+        assertTrue(new File(staging[0], "TestGame.ain").isFile());
+
+        requests.clear();
+        File installed = installFromCdn(storage);
+
+        assertArrayEquals(ain, Files.readAllBytes(new File(installed, "TestGame.ain").toPath()));
+        assertFalse(new File(installed, OnlineInstaller.BASE_STAGING_IDENTITY_FILE).exists());
+        for (Map<String, String> req : requests) {
+            assertFalse(req.get("path").startsWith("/cdn/files/"));
         }
     }
 }
