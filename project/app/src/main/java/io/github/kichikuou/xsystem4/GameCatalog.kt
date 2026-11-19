@@ -491,6 +491,18 @@ object GameCatalog {
         Regex("(?<![a-z0-9])(?:beat\\s+blades\\s+haruka|choukou\\s+sennin\\s+haruka|haruka)(?![a-z0-9])", RegexOption.IGNORE_CASE)
     private val HARUKA_ALD_REGEX =
         Regex("^(?:超昂閃忍ハルカ|超昂闪忍遥|超昂閃忍遥|haruka)(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
+    private val HARUKA_SYSTEM_SAVE_REGEX =
+        Regex("^(?:超昂閃忍ハルカ|超昂闪忍遥|超昂閃忍遥|beat\\s*blades\\s*haruka|choukou\\s*sennin\\s*haruka|haruka)(?:sf|sys|fn)\\.asd$", RegexOption.IGNORE_CASE)
+
+    fun isHarukaSystemSaveFileName(fileName: String): Boolean {
+        val raw = fileName.trim()
+        if (raw.isEmpty()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        return raw.equals("システム共通データ.asd", ignoreCase = true) ||
+            repaired.equals("システム共通データ.asd", ignoreCase = true) ||
+            HARUKA_SYSTEM_SAVE_REGEX.matches(raw) ||
+            HARUKA_SYSTEM_SAVE_REGEX.matches(repaired)
+    }
 
     fun isEscalayerRebootAlias(lowerText: String): Boolean {
         return lowerText.contains("escalayerreboot") ||
@@ -863,10 +875,7 @@ object GameCatalog {
                 return ID_IXSEAL
             }
             if (saveDir.listFiles()?.any {
-                    if (!it.isFile) return@any false
-                    val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
-                    it.name.equals("システム共通データ.asd", ignoreCase = true) ||
-                        repaired.equals("システム共通データ.asd", ignoreCase = true)
+                    it.isFile && isHarukaSystemSaveFileName(it.name)
                 } == true &&
                 !File(saveDir, "GlobalSave.asd").isFile &&
                 !File(saveDir, "GlobalSaveData.asd").isFile &&

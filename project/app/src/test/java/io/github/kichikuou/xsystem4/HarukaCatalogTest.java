@@ -195,6 +195,73 @@ public class HarukaCatalogTest {
                 GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaSaveDir, null)
         );
 
+        // Live boot + prologue save dir without システム共通データ.asd yet: must classify as ID_HARUKA (never ID_RANCE02).
+        File harukaBootSaveDir = tmp.newFolder("HarukaBootSaves");
+        writeFile(new File(harukaBootSaveDir, "超昂閃忍ハルカSF.asd"), new byte[]{1});
+        writeFile(new File(harukaBootSaveDir, "ＣＧモード.asd"), new byte[]{1});
+        writeFile(new File(harukaBootSaveDir, "MsgSkip.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaBootSaveDir, null)
+        );
+        assertTrue(GameModifierBridge.INSTANCE.isHarukaGameDir(null, "UnknownDir", harukaBootSaveDir));
+        assertFalse(GameModifierBridge.INSTANCE.isRance02GameDir(null, "UnknownDir", harukaBootSaveDir));
+
+        File harukaSysSaveDir = tmp.newFolder("HarukaSysSaves");
+        writeFile(new File(harukaSysSaveDir, "超昂閃忍ハルカSYS.asd"), new byte[]{1});
+        writeFile(new File(harukaSysSaveDir, "ＣＧモード.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaSysSaveDir, null)
+        );
+
+        File harukaFnSaveDir = tmp.newFolder("HarukaFnSaves");
+        writeFile(new File(harukaFnSaveDir, "超昂閃忍ハルカFN.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaFnSaveDir, null)
+        );
+
+        File harukaMojibakeBootSaveDir = tmp.newFolder("HarukaMojibakeBootSaves");
+        writeFile(new File(harukaMojibakeBootSaveDir, "挻峍慚擡僴儖僇SF.asd"), new byte[]{1});
+        writeFile(new File(harukaMojibakeBootSaveDir, "俠俧儌乕僪.asd"), new byte[]{1});
+        writeFile(new File(harukaMojibakeBootSaveDir, "MsgSkip.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaMojibakeBootSaveDir, null)
+        );
+
+        File harukaCnSaveDir = tmp.newFolder("HarukaCnSaves");
+        writeFile(new File(harukaCnSaveDir, "超昂闪忍遥SF.asd"), new byte[]{1});
+        writeFile(new File(harukaCnSaveDir, "ＣＧモード.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaCnSaveDir, null)
+        );
+
+        File harukaEnSaveDir = tmp.newFolder("HarukaEnSaves");
+        writeFile(new File(harukaEnSaveDir, "HarukaSYS.asd"), new byte[]{1});
+        writeFile(new File(harukaEnSaveDir, "ＣＧモード.asd"), new byte[]{1});
+        assertEquals(
+                GameCatalog.ID_HARUKA,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", harukaEnSaveDir, null)
+        );
+
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("超昂閃忍ハルカSF.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("超昂閃忍ハルカSYS.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("超昂閃忍ハルカFN.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("挻峍慚擡僴儖僇SF.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("超昂闪忍遥SF.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("HarukaSYS.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("Beat Blades HarukaSF.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("システム共通データ.asd"));
+        assertTrue(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("僔僗僥儉嫟捠僨乕僞.asd"));
+        assertFalse(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("01.asd"));
+        assertFalse(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("QC.asd"));
+        assertFalse(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("ＣＧモード.asd"));
+        assertFalse(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("妻しぼりSYS.asd"));
+        assertFalse(GameCatalog.INSTANCE.isHarukaSystemSaveFileName("Ixseal_Extra.sav"));
+
         File mojibakeHarukaSaveDir = tmp.newFolder("HarukaMojibakeSaves");
         writeFile(new File(mojibakeHarukaSaveDir, "僔僗僥儉嫟捠僨乕僞.asd"), new byte[]{1});
         writeFile(new File(mojibakeHarukaSaveDir, "嫟桳.asd"), new byte[]{1});
