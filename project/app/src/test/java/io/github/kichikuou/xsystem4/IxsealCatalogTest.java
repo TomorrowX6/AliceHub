@@ -168,10 +168,14 @@ public class IxsealCatalogTest {
         );
 
         List<String> order = GameCatalog.builtInSelectOrder();
+        assertEquals(17, order.size());
         int erIdx = order.indexOf(GameCatalog.ID_ESCALAYER_REBOOT);
+        int galIdx = order.indexOf(GameCatalog.ID_GALZOO);
         int ixIdx = order.indexOf(GameCatalog.ID_IXSEAL);
         assertTrue(erIdx >= 0);
-        assertEquals(erIdx + 1, ixIdx);
+        assertTrue(galIdx > erIdx);
+        assertTrue(ixIdx > galIdx);
+        assertTrue(order.contains(GameCatalog.ID_DAIAKUJI));
         for (String id : order) {
             assertNotNull("Missing GameSortMetadata for " + id, GameSortMetadata.INSTANCE.forGame(id));
         }
