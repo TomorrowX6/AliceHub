@@ -69,6 +69,7 @@ object Iso9660Extractor {
                 queue.add(desc.rootLba to desc.rootSize)
                 var hasUnclassifiedSys3Root = false
                 var hasIsoKichikuMarker = false
+                var hasIsoDaiakujiMarker = false
                 while (queue.isNotEmpty()) {
                     val (dlba, dsize) = queue.removeFirst()
                     val entries = parseDirectory(readExtentBytes(ch, desc.layout, dlba, dsize), desc.joliet)
@@ -88,9 +89,13 @@ object Iso9660Extractor {
                             }
                         } else if (!e.name.startsWith('.')) {
                             dirFileNames.add(e.name)
-                            entryByLowerName[e.name.lowercase(Locale.ROOT)] = e
-                            if (e.name.lowercase(Locale.ROOT).startsWith("kichiku_")) {
+                            val lowerName = e.name.lowercase(Locale.ROOT)
+                            entryByLowerName[lowerName] = e
+                            if (lowerName.startsWith("kichiku_")) {
                                 hasIsoKichikuMarker = true
+                            }
+                            if (lowerName.startsWith("daiakuji_") || lowerName.startsWith("daiakuzi_")) {
+                                hasIsoDaiakujiMarker = true
                             }
                             if (e.name.equals("AliceStart.ini", ignoreCase = true) ||
                                 e.name.equals("System40.ini", ignoreCase = true)
@@ -126,11 +131,24 @@ object Iso9660Extractor {
                             }
                         }
                     }
+                    if (targetGameId == GameCatalog.ID_DAIAKUJI) {
+                        val inmmEntry = entryByLowerName["_inmm.ini"] ?: entryByLowerName["playlist.txt"]
+                        if (inmmEntry != null) {
+                            val raw = readEntrySmallBytes(ch, desc.layout, inmmEntry)
+                            if (raw != null) {
+                                val lowerText = String(raw, Charsets.ISO_8859_1).lowercase(Locale.ROOT)
+                                if (lowerText.contains("daiakuji_") || lowerText.contains("daiakuzi_")) {
+                                    hasIsoDaiakujiMarker = true
+                                }
+                            }
+                        }
+                    }
                     if ((hasIni && hasMatchingAin) || hasSys3Scenario) {
                         if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
                             return true
                         }
-                        val bgmNames = if (targetGameId == GameCatalog.ID_KICHIKUOU &&
+                        val bgmNames = if ((targetGameId == GameCatalog.ID_KICHIKUOU ||
+                                targetGameId == GameCatalog.ID_DAIAKUJI) &&
                             bgmDirEntry != null &&
                             bgmDirEntry.extents.isNotEmpty()
                         ) {
@@ -163,6 +181,9 @@ object Iso9660Extractor {
                     }
                 }
                 if (targetGameId == GameCatalog.ID_KICHIKUOU && hasUnclassifiedSys3Root && hasIsoKichikuMarker) {
+                    return true
+                }
+                if (targetGameId == GameCatalog.ID_DAIAKUJI && hasUnclassifiedSys3Root && hasIsoDaiakujiMarker) {
                     return true
                 }
                 false

@@ -14,7 +14,7 @@
 
 ## Source and reproducibility
 
-Snapshot collected 2026-11-18T08:43:35.220395-08:00 (America/Los_Angeles, PST), using the public unauthenticated [VNDB Kana API](https://api.vndb.org/kana). The API documentation defines `rating` as Bayesian rating between 10 and 100, null when nobody voted (cached). `average` is the raw vote average; `votecount` is number of votes. Neither is used as the score. This response happens to return equal `rating` and `average` values for these entries; the selected field is still explicitly `rating`.
+Snapshot collected 2026-11-18T11:30:25.392139-08:00 (America/Los_Angeles, PST), using the public unauthenticated [VNDB Kana API](https://api.vndb.org/kana). The API documentation defines `rating` as Bayesian rating between 10 and 100, null when nobody voted (cached). `average` is the raw vote average; `votecount` is number of votes. Neither is used as the score. This response happens to return equal `rating` and `average` values for these entries; the selected field is still explicitly `rating`.
 
 `docs/game-sort-vndb-snapshot.json` retains the exact request/response, collection timestamp, field definition and edition-release mapping evidence (retained from 08:13 PST on the same date, with its own source/timestamp). Re-run its `request` as JSON POST to its `source` to refresh, review edition mappings, then update the snapshot and Kotlin constants together. Do not call the API during builds/tests. This is an offline dated snapshot, not a live-rating claim.
 
@@ -36,8 +36,11 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `rance08` | Rance Quest Magnum | 2012-02-24 | 80 | 8.00 | [v6985](https://vndb.org/v6985) | [source](https://www.alicesoft.com/rance8/magnum.html) |
 | `rance09` | Rance IX | 2014-04-25 | 83.5 | 8.35 | [v13802](https://vndb.org/v13802) | [source](https://www.alicesoft.com/rance35th/) |
 | `kichikuou` | Kichikuou Rance | 1996-12-19 | 84 | 8.40 | [v2045](https://vndb.org/v2045) | [source](https://vndb.org/v2045) |
+| `daiakuji` | Daiakuji | 2001-11-30 | 77.2 | 7.72 | [v298](https://vndb.org/v298) | [source](https://www.alicesoft.com/akuji/index.html) |
 | `escalayer` | Beat Angel Escalayer | 2002-08-02 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/information/2022/entry003043.html) |
 | `escalayer_reboot` | Beat Angel Escalayer Reboot | 2014-07-25 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/escalayerreboot/) |
+| `galzoo` | GALZOO Island | 2005-12-09 | 76.8 | 7.68 | [v334](https://vndb.org/v334) | [source](https://www.alicesoft.com/galzoo/) |
+| `ixseal` | Beat Valkyrie Ixseal | 2017-07-28 | 72 | 7.20 | [v21142](https://vndb.org/v21142) | [source](https://www.alicesoft.com/ixseal/) |
 
 ## Edition mapping / missing-score decisions
 

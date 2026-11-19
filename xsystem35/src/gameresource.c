@@ -85,8 +85,13 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 		} else if (len >= 4 && strcasecmp(filename + len - 4, ".bgi") == 0) {
 			gr->bgi = strdup(filename);
 		} else if (len >= 5 && strcasecmp(filename + len - 4, ".alk") == 0) {
-			int idx = isdigit(filename[len - 5]) ? filename[len - 5] - '0' : 0;
-			gr->alk[idx] = strdup(filename);
+			bool numbered = isdigit((unsigned char)filename[len - 5]);
+			int idx = numbered ? filename[len - 5] - '0' : 0;
+			// Prefer unnumbered <name>.alk (e.g. dDemo.alk) over <name>0.alk backups (e.g. dDemo0.alk).
+			if (!gr->alk[idx] || (!numbered && isdigit((unsigned char)gr->alk[idx][strlen(gr->alk[idx]) - 5]))) {
+				free((char *)gr->alk[idx]);
+				gr->alk[idx] = strdup(filename);
+			}
 		} else if (len >= 6 && strcasecmp(filename + len - 4, ".ald") == 0) {
 			int dno = toupper(filename[len - 5]) - 'A';
 			if (dno < 0 || dno >= DRIFILEMAX) continue;

@@ -107,6 +107,32 @@ static void bound_slice_size_test(void) {
 	ASSERT_EQUAL(v_boundSliceSize(&ref), 0);
 }
 
+static void string_variable_char_type_test(void) {
+	// GBK: 'A' (1 byte), "大" 0xb4 0xf3 (2 bytes), "司" 0xcb 0xbe (2 bytes), plus dangling lead byte 0x81
+	v_set_encoding(GBK);
+	svar_set(0, "A\xb4\xf3\xcb\xbe" "B");
+	ASSERT_EQUAL(svar_getCharType(0, 0), 1);
+	ASSERT_EQUAL(svar_getCharType(0, 1), 2);
+	ASSERT_EQUAL(svar_getCharType(0, 2), 2);
+	ASSERT_EQUAL(svar_getCharType(0, 3), 1);
+	ASSERT_EQUAL(svar_getCharType(0, 4), 0);
+
+	// Truncated trailing GBK lead byte must not advance past NUL.
+	svar_set(1, "A\x81");
+	ASSERT_EQUAL(svar_getCharType(1, 0), 1);
+	ASSERT_EQUAL(svar_getCharType(1, 1), 1);
+	ASSERT_EQUAL(svar_getCharType(1, 2), 0);
+
+	// UTF-8: 'A' (1 byte), "大" (3 bytes)
+	v_set_encoding(UTF8);
+	svar_set(2, "A\xe5\xa4\xa7");
+	ASSERT_EQUAL(svar_getCharType(2, 0), 1);
+	ASSERT_EQUAL(svar_getCharType(2, 1), 2);
+	ASSERT_EQUAL(svar_getCharType(2, 2), 0);
+
+	v_set_encoding(SHIFT_JIS);
+}
+
 void variable_test(void) {
 	v_init();
 	allocate_page_test();
@@ -116,5 +142,7 @@ void variable_test(void) {
 	bound_slice_size_test();
 	v_reset();
 	string_variable_conversion_test();
+	v_reset();
+	string_variable_char_type_test();
 	v_reset();
 }

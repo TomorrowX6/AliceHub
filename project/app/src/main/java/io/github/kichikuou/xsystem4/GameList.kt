@@ -83,6 +83,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 when {
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
+                    GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
                     else -> dir.name
                 }
             } else {
@@ -651,11 +652,19 @@ class GameList(activity: Activity) {
                     mergeInstallSetData(listOf(imported), imported, skipRance02Bloat = isRance02) {
                         if (abortHandle.isAborted) throw CancellationException()
                     }
+                    if (classifiedId == GameCatalog.ID_GALZOO) {
+                        mergeGalzooCompanionData(listOf(imported), imported) {
+                            if (abortHandle.isAborted) throw CancellationException()
+                        }
+                    }
                     if (isRance02 ||
                         classifiedId == GameCatalog.ID_KICHIKUOU ||
+                        classifiedId == GameCatalog.ID_DAIAKUJI ||
                         classifiedId == GameCatalog.ID_EVENICLE2 ||
                         classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
-                        classifiedId == GameCatalog.ID_RANCE06
+                        classifiedId == GameCatalog.ID_RANCE06 ||
+                        classifiedId == GameCatalog.ID_GALZOO ||
+                        classifiedId == GameCatalog.ID_IXSEAL
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -943,9 +952,12 @@ class GameList(activity: Activity) {
     ): File {
         val isRance02Target = targetGameId == GameCatalog.ID_RANCE02
         val isRance06Target = targetGameId == GameCatalog.ID_RANCE06
+        val isGalzooTarget = targetGameId == GameCatalog.ID_GALZOO
         val isKichikuouTarget = targetGameId == GameCatalog.ID_KICHIKUOU
+        val isDaiakujiTarget = targetGameId == GameCatalog.ID_DAIAKUJI
         val isEvenicle2Target = targetGameId == GameCatalog.ID_EVENICLE2
         val isEscalayerRebootTarget = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT
+        val isIxsealTarget = targetGameId == GameCatalog.ID_IXSEAL
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -959,9 +971,12 @@ class GameList(activity: Activity) {
                     shouldSkipBaseInstallEntry(rel) ||
                         (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                         (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
+                        (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                         (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                         (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                        (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                        (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                        (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                        (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1006,9 +1021,12 @@ class GameList(activity: Activity) {
                             shouldSkipBaseInstallEntry(rel) ||
                                 (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                                 (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
+                                (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                                 (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                                 (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                                (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                                (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                                (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                                (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1040,8 +1058,11 @@ class GameList(activity: Activity) {
                             ArchiveExtractor.isSupportedArchiveName(it.name) &&
                             !shouldSkipBaseInstallEntry(it.name) &&
                             (!isRance02Target || !isBaseInstallBloatRelPath(rel, skipPatchSubdir = true)) &&
+                            (!isDaiakujiTarget || !isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) &&
                             (!isEscalayerRebootTarget || !isEscalayerRebootBloatRelPath(rel, skipArchives = false)) &&
-                            (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true))
+                            (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true)) &&
+                            (!isGalzooTarget || !isGalzooBloatRelPath(rel)) &&
+                            (!isIxsealTarget || !isIxsealBloatRelPath(rel, skipPatchCnSubdir = true))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -1054,9 +1075,12 @@ class GameList(activity: Activity) {
                         shouldSkipBaseInstallEntry(rel) ||
                             (isRance02Target && isBaseInstallBloatRelPath(rel, skipPatchSubdir = false)) ||
                             (isKichikuouTarget && isKichikuouBloatRelPath(rel)) ||
+                            (isDaiakujiTarget && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) ||
                             (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                             (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
-                            (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false))
+                            (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
+                            (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                            (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1102,28 +1126,40 @@ class GameList(activity: Activity) {
             val isRance02 = isRance02Target ||
                 GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
             mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (isGalzooTarget || GameCatalog.classifyGameRootDir(srcDir) == GameCatalog.ID_GALZOO) {
+                mergeGalzooCompanionData(listOf(tempDir, srcDir), srcDir, checkCancelled = checkCancelled)
+            }
+            if (isIxsealTarget || GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_IXSEAL) {
+                overlayIxsealCnPatchIfPresent(listOf(tempDir), srcDir, checkCancelled)
+            }
             if (!GameCatalog.validateImportedGameDir(srcDir, expectedAinName, targetGameId)) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
             if (classifiedId == GameCatalog.ID_RANCE02 ||
                 classifiedId == GameCatalog.ID_KICHIKUOU ||
+                classifiedId == GameCatalog.ID_DAIAKUJI ||
                 classifiedId == GameCatalog.ID_EVENICLE2 ||
                 classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
-                classifiedId == GameCatalog.ID_RANCE06
+                classifiedId == GameCatalog.ID_RANCE06 ||
+                classifiedId == GameCatalog.ID_GALZOO ||
+                classifiedId == GameCatalog.ID_IXSEAL
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
                 GameCatalog.isKichikuouGameDir(srcDir) -> "KichikuRance"
+                GameCatalog.isDaiakujiGameDir(srcDir) -> "Daiakuji"
                 ainFile != null && ainFile.name.equals("Evenicle2.ain", ignoreCase = true) -> "Evenicle2"
                 ainFile != null && (
                     ainFile.name.equals("EscalayerReboot.ain", ignoreCase = true) ||
                         ainFile.name.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
                         ainFile.name.equals("エスカレイヤーリブート.ain", ignoreCase = true)
                     ) -> "EscalayerReboot"
+                classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
+                classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
                     ArchiveExtractor.repairSjisAsGbkMojibake(ainFile.nameWithoutExtension),
                     fallback = "Game"
@@ -1305,7 +1341,8 @@ class GameList(activity: Activity) {
                         stagingDir = staging!!,
                         targetDir = targetItem.path,
                         cleanReplaceIfStandalone = true,
-                        isCnPatch = isCnPatch
+                        isCnPatch = isCnPatch,
+                        allowEvenicle2IncrementalDetect = true
                     )
                     val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
@@ -1400,7 +1437,8 @@ class GameList(activity: Activity) {
                         stagingDir = tempDir,
                         targetDir = targetItem.path,
                         cleanReplaceIfStandalone = true,
-                        isCnPatch = isCnPatch
+                        isCnPatch = isCnPatch,
+                        allowEvenicle2IncrementalDetect = true
                     )
                     val inferredVer = OnlineInstaller.inferLocalOverlayVersion(
                         fileName = srcLabel,
@@ -1618,207 +1656,311 @@ class GameList(activity: Activity) {
             ?.takeIf { it.isNotEmpty() } ?: "MOD"
     }
 
-    private fun isModAssetFile(file: File): Boolean {
-        if (!file.isFile) return false
-        val ext = file.extension.lowercase()
-        return ext == "ain" || ext == "afa" || ext == "ex" || ext == "ald" || ext == "bgi" || ext == "wai" || ext == "fnl"
-    }
-
-    private fun isStandaloneFullMod(modRoot: File): Boolean {
-        val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
-        val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
-        val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
-        val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
-        return hasAin && hasModCg && hasModFlat
-    }
-
-    private fun findModRoot(stagingDir: File, isCnPatch: Boolean = false): File {
-        var cur = stagingDir
-        while (true) {
-            val children = cur.listFiles() ?: break
-            if (children.any { isModAssetFile(it) }) {
-                return cur
-            }
-            val dirs = children.filter { it.isDirectory && !it.name.startsWith(".") }
-            if (dirs.size == 1) {
-                cur = dirs[0]
-            } else {
-                val found = dirs.firstOrNull { d -> d.walkTopDown().any { isModAssetFile(it) } }
-                if (found != null) {
-                    cur = found
-                } else {
-                    break
-                }
-            }
-        }
-        throw InstallFailureException(if (isCnPatch) R.string.cn_patch_invalid_package else R.string.mod_invalid_package)
-    }
-
     private fun restoreVanillaFromMod(targetDir: File) {
-        InstalledModInfo.delete(targetDir)
-        val canonicalTarget = try {
-            targetDir.canonicalPath
-        } catch (_: Throwable) {
-            targetDir.absolutePath
-        }
-        targetDir.walkBottomUp()
-            .filter {
-                it.isFile && (it.name.endsWith(".vanilla.bak.tmp") ||
-                    (it.name.startsWith(".mod_apply_") && it.name.endsWith(".tmp")))
-            }
-            .forEach { it.delete() }
-
-        val manifestFile = File(targetDir, ".mod_installed_files.txt")
-        if (manifestFile.exists()) {
-            for (rel in manifestFile.readLines()) {
-                val trimmed = rel.trim().replace('\\', '/')
-                if (trimmed.isEmpty() || trimmed.startsWith("/") || trimmed.contains("..")) continue
-                val f = File(targetDir, trimmed)
-                val safeInside = try {
-                    val cp = f.canonicalPath
-                    cp.startsWith("$canonicalTarget${File.separator}")
-                } catch (_: Throwable) {
-                    false
-                }
-                if (safeInside && f.exists() && f.isFile) {
-                    val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
-                    if (!hasBak) {
-                        f.delete()
-                    }
-                }
-            }
-            manifestFile.delete()
-        }
-        val asraIni = File(targetDir, "AsraTest.ini")
-        if (asraIni.isFile && !File(targetDir, "AsraTest.ini.vanilla.bak").isFile) {
-            asraIni.delete()
-        }
-        val bakFiles = targetDir.walkBottomUp().filter { it.isFile && it.name.endsWith(".vanilla.bak") }.toList()
-        for (bak in bakFiles) {
-            val origName = bak.name.removeSuffix(".vanilla.bak")
-            val origFile = File(bak.parentFile, origName)
-            val tmpRestore = File(bak.parentFile, ".restore_${origName}.tmp")
-            tmpRestore.delete()
-            if (origFile.exists()) {
-                origFile.delete()
-            }
-            if (!bak.renameTo(origFile)) {
-                try {
-                    bak.copyTo(tmpRestore, overwrite = true)
-                    if (origFile.exists()) {
-                        origFile.delete()
-                    }
-                    if (!tmpRestore.renameTo(origFile)) {
-                        tmpRestore.copyTo(origFile, overwrite = true)
-                        tmpRestore.delete()
-                    }
-                    bak.delete()
-                } finally {
-                    tmpRestore.delete()
-                }
-            }
-        }
+        restoreVanillaFromModDir(targetDir)
     }
 
     private fun applyModStagingToGameDir(
         stagingDir: File,
         targetDir: File,
         cleanReplaceIfStandalone: Boolean = true,
-        isCnPatch: Boolean = false
-    ): Boolean {
-        val modRoot = findModRoot(stagingDir, isCnPatch = isCnPatch)
-        val isFullStandalone = isStandaloneFullMod(modRoot)
-        if (cleanReplaceIfStandalone && (hasInstalledModDir(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
-            restoreVanillaFromMod(targetDir)
-        }
+        isCnPatch: Boolean = false,
+        allowEvenicle2IncrementalDetect: Boolean = false
+    ): Boolean = applyModStagingToGameDirInternal(
+        stagingDir = stagingDir,
+        targetDir = targetDir,
+        cleanReplaceIfStandalone = cleanReplaceIfStandalone,
+        isCnPatch = isCnPatch,
+        allowEvenicle2IncrementalDetect = allowEvenicle2IncrementalDetect
+    )
+}
 
-        val manifestFile = File(targetDir, ".mod_installed_files.txt")
-        val addedFiles = linkedSetOf<String>()
-        if (manifestFile.exists()) {
-            manifestFile.readLines().map { it.trim() }
-                .filter { it.isNotEmpty() && !it.contains("..") }
-                .forEach { addedFiles.add(it) }
+private fun isModAssetFile(file: File): Boolean {
+    if (!file.isFile) return false
+    val ext = file.extension.lowercase()
+    return ext == "ain" || ext == "afa" || ext == "ex" || ext == "ald" || ext == "bgi" || ext == "wai" || ext == "fnl"
+}
+
+private fun isStandaloneFullModDir(modRoot: File): Boolean {
+    val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
+    val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
+    val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
+    val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
+    return hasAin && hasModCg && hasModFlat
+}
+
+private fun findModRootDir(stagingDir: File, isCnPatch: Boolean = false): File {
+    var cur = stagingDir
+    while (true) {
+        val children = cur.listFiles() ?: break
+        if (children.any { isModAssetFile(it) }) {
+            return cur
         }
-        val modFiles = modRoot.walkTopDown().filter { it.isFile }.toList()
-        try {
-            for (srcFile in modFiles) {
-                val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
-                if (relPath.isEmpty() ||
-                    relPath.startsWith(".") ||
-                    relPath.contains("..") ||
-                    relPath.endsWith(".vanilla.bak") ||
-                    relPath.endsWith(".vanilla.bak.tmp") ||
-                    NativeGameImport.skip(relPath)
-                ) {
-                    continue
+        val dirs = children.filter { it.isDirectory && !it.name.startsWith(".") }
+        if (dirs.size == 1) {
+            cur = dirs[0]
+        } else {
+            val found = dirs.firstOrNull { d -> d.walkTopDown().any { isModAssetFile(it) } }
+            if (found != null) {
+                cur = found
+            } else {
+                break
+            }
+        }
+    }
+    throw GameList.InstallFailureException(
+        if (isCnPatch) R.string.cn_patch_invalid_package else R.string.mod_invalid_package
+    )
+}
+
+private fun pruneEmptyParentDirs(startDir: File?, stopDir: File) {
+    val stopCanonical = try { stopDir.canonicalFile } catch (_: Throwable) { stopDir.absoluteFile }
+    var cur = startDir
+    while (cur != null) {
+        val curCanonical = try { cur.canonicalFile } catch (_: Throwable) { cur.absoluteFile }
+        if (curCanonical == stopCanonical ||
+            !curCanonical.path.startsWith("${stopCanonical.path}${File.separator}")
+        ) {
+            break
+        }
+        val children = cur.listFiles()
+        if (children == null || children.isNotEmpty() || !cur.delete()) {
+            break
+        }
+        cur = cur.parentFile
+    }
+}
+
+internal fun isEvenicle2CnPatchJunkRelPath(relPath: String): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val fileNameLower = norm.substringAfterLast('/').lowercase()
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".torrent") ||
+        fileNameLower == "staff.png" ||
+        (fileNameLower.startsWith("请读我") && fileNameLower.endsWith(".png"))
+}
+
+/**
+ * PC Evenicle 2 CN patch archives place `Evenicle2.ain` and `Evenicle2EX.ex` under `mai/sc/`
+ * alongside `mai/word.mai` for `mai.dll` redirection. Promote `mai/sc/` script/ex files up to
+ * the patch root so `xsystem4` loads the patched files directly while keeping `mai/word.mai`.
+ */
+internal fun normalizeEvenicle2CnPatchStaging(stagingDir: File) {
+    if (!stagingDir.isDirectory) return
+    val maiDirs = stagingDir.walkTopDown()
+        .filter { it.isDirectory && it.name.equals("mai", ignoreCase = true) }
+        .toList()
+    for (maiDir in maiDirs) {
+        val patchRoot = maiDir.parentFile ?: continue
+        val maiChildren = maiDir.listFiles() ?: continue
+        val scDir = maiChildren.firstOrNull { it.isDirectory && it.name.equals("sc", ignoreCase = true) }
+            ?: continue
+        val scFiles = scDir.listFiles()?.filter { it.isFile }.orEmpty()
+        if (scFiles.none {
+                it.name.endsWith(".ain", ignoreCase = true) ||
+                    it.name.endsWith(".ex", ignoreCase = true)
+            }
+        ) {
+            continue
+        }
+        for (f in scFiles) {
+            val dest = File(patchRoot, f.name)
+            if (dest.exists() && !dest.delete()) {
+                throw IOException("Failed to replace staging file: $dest")
+            }
+            if (!f.renameTo(dest)) {
+                f.copyTo(dest, overwrite = true)
+                f.delete()
+            }
+        }
+        for (subName in arrayOf("sc", "enc", "org", "pic")) {
+            val subDir = maiChildren.firstOrNull { it.isDirectory && it.name.equals(subName, ignoreCase = true) }
+            if (subDir != null && subDir.listFiles()?.isEmpty() == true) {
+                subDir.delete()
+            }
+        }
+    }
+}
+
+internal fun restoreVanillaFromModDir(targetDir: File) {
+    InstalledModInfo.delete(targetDir)
+    val canonicalTarget = try {
+        targetDir.canonicalPath
+    } catch (_: Throwable) {
+        targetDir.absolutePath
+    }
+    targetDir.walkBottomUp()
+        .filter {
+            it.isFile && (it.name.endsWith(".vanilla.bak.tmp") ||
+                (it.name.startsWith(".mod_apply_") && it.name.endsWith(".tmp")))
+        }
+        .forEach { it.delete() }
+
+    val manifestFile = File(targetDir, ".mod_installed_files.txt")
+    if (manifestFile.exists()) {
+        for (rel in manifestFile.readLines()) {
+            val trimmed = rel.trim().replace('\\', '/')
+            if (trimmed.isEmpty() || trimmed.startsWith("/") || trimmed.contains("..")) continue
+            val f = File(targetDir, trimmed)
+            val safeInside = try {
+                val cp = f.canonicalPath
+                cp.startsWith("$canonicalTarget${File.separator}")
+            } catch (_: Throwable) {
+                false
+            }
+            if (safeInside && f.exists() && f.isFile) {
+                val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
+                if (!hasBak) {
+                    f.delete()
+                    pruneEmptyParentDirs(f.parentFile, targetDir)
                 }
-                val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
-                val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
-                val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
-                destFile.parentFile?.mkdirs()
-                if (destFile.exists()) {
-                    if (!wasAddedByMod) {
-                        val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
-                        if (!bakFile.exists()) {
-                            val tmpBak = File(destFile.parentFile, "${destFile.name}.vanilla.bak.tmp")
+            }
+        }
+        manifestFile.delete()
+    }
+    val asraIni = File(targetDir, "AsraTest.ini")
+    if (asraIni.isFile && !File(targetDir, "AsraTest.ini.vanilla.bak").isFile) {
+        asraIni.delete()
+    }
+    val bakFiles = targetDir.walkBottomUp().filter { it.isFile && it.name.endsWith(".vanilla.bak") }.toList()
+    for (bak in bakFiles) {
+        val origName = bak.name.removeSuffix(".vanilla.bak")
+        val origFile = File(bak.parentFile, origName)
+        val tmpRestore = File(bak.parentFile, ".restore_${origName}.tmp")
+        tmpRestore.delete()
+        if (origFile.exists()) {
+            origFile.delete()
+        }
+        if (!bak.renameTo(origFile)) {
+            try {
+                bak.copyTo(tmpRestore, overwrite = true)
+                if (origFile.exists()) {
+                    origFile.delete()
+                }
+                if (!tmpRestore.renameTo(origFile)) {
+                    tmpRestore.copyTo(origFile, overwrite = true)
+                    tmpRestore.delete()
+                }
+                bak.delete()
+            } finally {
+                tmpRestore.delete()
+            }
+        }
+    }
+}
+
+internal fun applyModStagingToGameDirInternal(
+    stagingDir: File,
+    targetDir: File,
+    cleanReplaceIfStandalone: Boolean = true,
+    isCnPatch: Boolean = false,
+    allowEvenicle2IncrementalDetect: Boolean = false
+): Boolean {
+    val isEvenicle2Target = isCnPatch &&
+        GameCatalog.classifyDirectory(targetDir, targetDir.name) == GameCatalog.ID_EVENICLE2
+    if (isEvenicle2Target) {
+        normalizeEvenicle2CnPatchStaging(stagingDir)
+    }
+    val modRoot = findModRootDir(stagingDir, isCnPatch = isCnPatch)
+    val isFullStandalone = isStandaloneFullModDir(modRoot)
+    val modFiles = modRoot.walkTopDown().filter { it.isFile }.toList()
+    val effectiveCleanReplace = if (isEvenicle2Target && cleanReplaceIfStandalone && allowEvenicle2IncrementalDetect) {
+        modFiles.any { it.name.equals("Evenicle2CG.afa", ignoreCase = true) }
+    } else {
+        cleanReplaceIfStandalone
+    }
+    if (effectiveCleanReplace && (Item.detectInstalledMod(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
+        restoreVanillaFromModDir(targetDir)
+    }
+
+    val manifestFile = File(targetDir, ".mod_installed_files.txt")
+    val addedFiles = linkedSetOf<String>()
+    if (manifestFile.exists()) {
+        manifestFile.readLines().map { it.trim() }
+            .filter { it.isNotEmpty() && !it.contains("..") }
+            .forEach { addedFiles.add(it) }
+    }
+    try {
+        for (srcFile in modFiles) {
+            val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
+            if (relPath.isEmpty() ||
+                relPath.startsWith(".") ||
+                relPath.contains("..") ||
+                relPath.endsWith(".vanilla.bak") ||
+                relPath.endsWith(".vanilla.bak.tmp") ||
+                NativeGameImport.skip(relPath) ||
+                (isEvenicle2Target && isEvenicle2CnPatchJunkRelPath(relPath))
+            ) {
+                continue
+            }
+            val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
+            val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
+            val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
+            destFile.parentFile?.mkdirs()
+            if (destFile.exists()) {
+                if (!wasAddedByMod) {
+                    val bakFile = File(destFile.parentFile, "${destFile.name}.vanilla.bak")
+                    if (!bakFile.exists()) {
+                        val tmpBak = File(destFile.parentFile, "${destFile.name}.vanilla.bak.tmp")
+                        tmpBak.delete()
+                        try {
+                            destFile.copyTo(tmpBak, overwrite = true)
+                        } catch (t: Throwable) {
                             tmpBak.delete()
-                            try {
-                                destFile.copyTo(tmpBak, overwrite = true)
-                            } catch (t: Throwable) {
+                            throw t
+                        }
+                        if (!bakFile.exists()) {
+                            if (!tmpBak.renameTo(bakFile)) {
                                 tmpBak.delete()
-                                throw t
+                                throw IOException("Failed to commit vanilla backup: $bakFile")
                             }
-                            if (!bakFile.exists()) {
-                                if (!tmpBak.renameTo(bakFile)) {
-                                    tmpBak.delete()
-                                    throw IOException("Failed to commit vanilla backup: $bakFile")
-                                }
-                            } else {
-                                tmpBak.delete()
-                            }
+                        } else {
+                            tmpBak.delete()
                         }
                     }
-                } else if (!wasAddedByMod) {
-                    addedFiles.add(destRelPath)
                 }
+            } else if (!wasAddedByMod) {
+                addedFiles.add(destRelPath)
+            }
 
-                val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
-                tmpDest.delete()
-                if (!srcFile.renameTo(tmpDest)) {
-                    try {
-                        srcFile.copyTo(tmpDest, overwrite = true)
-                    } catch (t: Throwable) {
-                        tmpDest.delete()
-                        throw t
-                    }
-                    srcFile.delete()
-                }
-                if (destFile.exists()) {
-                    destFile.delete()
-                }
-                if (!tmpDest.renameTo(destFile)) {
-                    tmpDest.copyTo(destFile, overwrite = true)
+            val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
+            tmpDest.delete()
+            if (!srcFile.renameTo(tmpDest)) {
+                try {
+                    srcFile.copyTo(tmpDest, overwrite = true)
+                } catch (t: Throwable) {
                     tmpDest.delete()
+                    throw t
                 }
+                srcFile.delete()
             }
-            if (File(targetDir, "Rance10.ain").isFile &&
-                !File(targetDir, "AsraTest.ini.vanilla.bak").isFile
-            ) {
-                addedFiles.add("AsraTest.ini")
+            if (destFile.exists()) {
+                destFile.delete()
             }
-        } finally {
-            if (addedFiles.isNotEmpty() || manifestFile.exists()) {
-                val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
-                val content = addedFiles.joinToString("\n")
-                manifestTmp.writeText(content)
-                if (!manifestTmp.renameTo(manifestFile)) {
-                    manifestFile.writeText(content)
-                    manifestTmp.delete()
-                }
+            if (!tmpDest.renameTo(destFile)) {
+                tmpDest.copyTo(destFile, overwrite = true)
+                tmpDest.delete()
             }
         }
-        return cleanReplaceIfStandalone || isFullStandalone
+        if (File(targetDir, "Rance10.ain").isFile &&
+            !File(targetDir, "AsraTest.ini.vanilla.bak").isFile
+        ) {
+            addedFiles.add("AsraTest.ini")
+        }
+    } finally {
+        if (addedFiles.isNotEmpty() || manifestFile.exists()) {
+            val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
+            val content = addedFiles.joinToString("\n")
+            manifestTmp.writeText(content)
+            if (!manifestTmp.renameTo(manifestFile)) {
+                manifestFile.writeText(content)
+                manifestTmp.delete()
+            }
+        }
     }
+    return effectiveCleanReplace || isFullStandalone
 }
 
 internal fun resolveCaseInsensitiveDest(targetDir: File, relPath: String): File {
@@ -1882,6 +2024,70 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
     return candidate
 }
 
+internal fun overlayIxsealCnPatchIfPresent(
+    searchRoots: List<File>,
+    destGameDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_IXSEAL) {
+        return
+    }
+    val destCanonical = try {
+        destGameDir.canonicalPath
+    } catch (_: Throwable) {
+        destGameDir.absolutePath
+    }
+    val patchRoots = mutableListOf<File>()
+    for (root in searchRoots) {
+        if (!root.exists()) continue
+        root.walkTopDown()
+            .filter { d ->
+                d.isDirectory &&
+                    d.name.equals("patchCN", ignoreCase = true) &&
+                    !d.canonicalPath.startsWith(destCanonical + File.separator) &&
+                    d.canonicalPath != destCanonical
+            }
+            .forEach { d ->
+                val hasDirectFiles = d.listFiles()?.any {
+                    it.isFile && (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
+                } == true
+                if (hasDirectFiles) {
+                    patchRoots.add(d)
+                } else {
+                    d.walkTopDown()
+                        .filter { sub ->
+                            sub.isDirectory && sub != d && sub.listFiles()?.any {
+                                it.isFile && (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
+                            } == true
+                        }
+                        .sortedBy { it.name }
+                        .forEach { patchRoots.add(it) }
+                }
+            }
+    }
+    for (pdir in patchRoots.distinctBy { try { it.canonicalPath } catch (_: Throwable) { it.absolutePath } }) {
+        pdir.walkTopDown().forEach { f ->
+            checkCancelled()
+            val rel = f.relativeTo(pdir).path.replace('\\', '/')
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) {
+                return@forEach
+            }
+            val destFile = resolveCaseInsensitiveDest(destGameDir, rel)
+            if (f.isDirectory) {
+                destFile.mkdirs()
+            } else if (f.isFile) {
+                destFile.parentFile?.mkdirs()
+                if (destFile.isFile) {
+                    destFile.delete()
+                }
+                if (!OnlineInstaller.moveFileOrDir(f, destFile)) {
+                    f.copyTo(destFile, overwrite = true)
+                }
+            }
+        }
+    }
+}
+
 internal fun mergeInstallSetData(
     searchRoots: List<File>,
     destGameDir: File,
@@ -1938,6 +2144,71 @@ internal fun mergeInstallSetData(
     }
 }
 
+@JvmOverloads
+internal fun mergeGalzooCompanionData(
+    searchRoots: List<File>,
+    destGameDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (GameCatalog.classifyGameRootDir(destGameDir) != GameCatalog.ID_GALZOO) {
+        return
+    }
+    val destDataDir = File(destGameDir, "Data")
+    val destDataCanon = try { destDataDir.canonicalPath } catch (_: Throwable) { destDataDir.absolutePath }
+    val destCanon = try { destGameDir.canonicalPath } catch (_: Throwable) { destGameDir.absolutePath }
+    val companionDataDirs = mutableListOf<File>()
+    for (root in searchRoots) {
+        if (!root.exists()) continue
+        root.walkTopDown()
+            .filter { d ->
+                if (!d.isDirectory || !d.name.equals("Data", ignoreCase = true)) return@filter false
+                val dCanon = try { d.canonicalPath } catch (_: Throwable) { d.absolutePath }
+                if (dCanon == destDataCanon) return@filter false
+                val relSegs = d.relativeTo(root).path.replace('\\', '/').split('/')
+                if (relSegs.any {
+                        it.equals("BackData", ignoreCase = true) ||
+                            it == "补丁" ||
+                            it == "备份" ||
+                            it == "备份文件"
+                    }
+                ) {
+                    return@filter false
+                }
+                d.listFiles()?.any { f ->
+                    f.isFile && (
+                        f.name.equals("PolyObj.lin", ignoreCase = true) ||
+                            f.name.equals("Event.alk", ignoreCase = true) ||
+                            f.name.endsWith(".dgn", ignoreCase = true)
+                        )
+                } == true
+            }
+            .forEach { companionDataDirs.add(it) }
+    }
+    for (dataDir in companionDataDirs.distinctBy { try { it.canonicalPath } catch (_: Throwable) { it.absolutePath } }) {
+        dataDir.walkTopDown().forEach { f ->
+            checkCancelled()
+            if (!f.isFile) return@forEach
+            val rel = f.relativeTo(dataDir).path.replace('\\', '/')
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || isGalzooBloatRelPath("Data/$rel")) {
+                return@forEach
+            }
+            val destFile = resolveCaseInsensitiveDest(destDataDir, rel)
+            if (!destFile.exists()) {
+                destFile.parentFile?.mkdirs()
+                f.copyTo(destFile, overwrite = false)
+            }
+        }
+        val parent = dataDir.parentFile
+        val dataCanon = try { dataDir.canonicalPath } catch (_: Throwable) { dataDir.absolutePath }
+        if (dataCanon.startsWith(destCanon + File.separator)) {
+            dataDir.deleteRecursively()
+            if (parent != null && parent != destGameDir && parent.listFiles()?.isEmpty() == true) {
+                parent.delete()
+            }
+        }
+    }
+}
+
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
@@ -1960,9 +2231,17 @@ internal fun findGameRootDirInternal(
         val rel = dir.relativeTo(root).path.replace('\\', '/')
         return rel.split('/').any { seg ->
             seg.equals("BackData", ignoreCase = true) ||
+                seg.equals("OLD", ignoreCase = true) ||
                 seg == "补丁" ||
                 seg == "备份" ||
-                seg == "备份文件"
+                seg == "备份文件" ||
+                seg == "原版有码备份" ||
+                seg == "无码补丁备份" ||
+                seg == "汉化补丁备份" ||
+                seg == "特典相关" ||
+                seg == "全CG存档" ||
+                seg.equals("patchCN", ignoreCase = true) ||
+                seg.equals("patchWM", ignoreCase = true)
         }
     }
     val candidates = root.walkTopDown()
@@ -1992,6 +2271,30 @@ internal fun findGameRootDirInternal(
 internal fun isKichikuouBloatRelPath(relPath: String): Boolean {
     val fileNameLower = relPath.replace('\\', '/').trim('/').substringAfterLast('/').lowercase()
     return fileNameLower == "xsystem35.exe" || fileNameLower == "system35.exe"
+}
+
+@JvmOverloads
+internal fun isDaiakujiBloatRelPath(relPath: String, skipDDemo0Backup: Boolean = false): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    if (segments.any {
+            it.equals("dll", ignoreCase = true) ||
+                it.equals("全cg存档", ignoreCase = true)
+        }
+    ) {
+        return true
+    }
+    val fileNameLower = segments.last().lowercase()
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower == "_inmmcnf.ini" ||
+        fileNameLower == "staff.jpg" ||
+        fileNameLower == "请读我.jpg" ||
+        fileNameLower == "运行游戏前必看进入方法.txt" ||
+        fileNameLower == "@vieira.txt" ||
+        (skipDDemo0Backup && fileNameLower == "ddemo0.alk")
 }
 
 internal fun isEvenicle2BloatRelPath(relPath: String): Boolean {
@@ -2086,13 +2389,92 @@ internal fun isRance06BloatRelPath(relPath: String, skipPatchSubdir: Boolean = t
     return matchDirSeg(fileNameLower)
 }
 
+internal fun isGalzooBloatRelPath(relPath: String): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val fileNameLower = segments.last().lowercase()
+    if (fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower.endsWith(".cmd") ||
+        fileNameLower.endsWith(".lnk") ||
+        fileNameLower.endsWith(".mrk") ||
+        fileNameLower == "galzoo.ico" ||
+        fileNameLower == "desktop.ini" ||
+        fileNameLower == "autorun.inf"
+    ) {
+        return true
+    }
+    if (fileNameLower.endsWith(".bak") && !fileNameLower.endsWith(".vanilla.bak")) {
+        return true
+    }
+    val matchDirSeg = { seg: String ->
+        seg == "backdata" ||
+            seg == "dll" ||
+            seg == "savedata" ||
+            seg == "cgpatch" ||
+            seg == "directx" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "补丁"
+    }
+    for (i in 0 until segments.size - 1) {
+        if (matchDirSeg(segments[i].lowercase())) {
+            return true
+        }
+    }
+    return matchDirSeg(fileNameLower)
+}
+
+@JvmOverloads
+internal fun isIxsealBloatRelPath(relPath: String, skipPatchCnSubdir: Boolean = true): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val dirMatch: (String) -> Boolean = { seg ->
+        seg == "directx" ||
+            seg == "dll" ||
+            seg == "backdata" ||
+            seg == "savedata" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "原版有码备份" ||
+            seg == "无码补丁备份" ||
+            seg == "汉化补丁备份" ||
+            seg == "特典相关" ||
+            seg == "全cg存档" ||
+            seg == "patchwm" ||
+            (skipPatchCnSubdir && seg == "patchcn")
+    }
+    for (i in 0 until segments.size - 1) {
+        if (dirMatch(segments[i].lowercase())) {
+            return true
+        }
+    }
+    val fileNameLower = segments.last().lowercase()
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower.endsWith(".cmd") ||
+        fileNameLower.endsWith(".lnk") ||
+        fileNameLower == "autorun.inf" ||
+        fileNameLower == "desktop.ini" ||
+        fileNameLower == "@vieira.txt" ||
+        fileNameLower == "game uploaded by the user vieira" ||
+        dirMatch(fileNameLower)
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
         gameId != GameCatalog.ID_KICHIKUOU &&
+        gameId != GameCatalog.ID_DAIAKUJI &&
         gameId != GameCatalog.ID_EVENICLE2 &&
         gameId != GameCatalog.ID_ESCALAYER_REBOOT &&
-        gameId != GameCatalog.ID_RANCE06
+        gameId != GameCatalog.ID_RANCE06 &&
+        gameId != GameCatalog.ID_GALZOO &&
+        gameId != GameCatalog.ID_IXSEAL
     ) {
         return
     }
@@ -2103,6 +2485,7 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
             it.name.endsWith(".afa", ignoreCase = true)
     }
     if (!hasGameData) return
+    val hasDDemoAlk = topFiles.any { it.name.equals("dDemo.alk", ignoreCase = true) }
     val dirsToDelete = mutableListOf<File>()
     val filesToDelete = mutableListOf<File>()
     destGameDir.walkTopDown().forEach { f ->
@@ -2115,19 +2498,26 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                         f.name.equals("DirectX", ignoreCase = true)
                     )) ||
                 (gameId == GameCatalog.ID_EVENICLE2 && f.name.equals("DirectX", ignoreCase = true)) ||
+                (gameId == GameCatalog.ID_DAIAKUJI && (
+                    f.name.equals("DLL", ignoreCase = true) ||
+                        f.name.equals("全CG存档", ignoreCase = true) ||
+                        f.name.equals("OLD", ignoreCase = true)
+                    )) ||
                 (gameId == GameCatalog.ID_ESCALAYER_REBOOT && (
                     f.name.equals("备份文件", ignoreCase = true) ||
                         f.name.equals("DLL", ignoreCase = true) ||
                         f.name.equals("DirectX", ignoreCase = true) ||
                         f.name.equals("SaveData", ignoreCase = true)
-                    ))
+                    )) ||
+                (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
             ) {
                 dirsToDelete.add(f)
-            } else if (gameId == GameCatalog.ID_RANCE06 && (
+            } else if ((gameId == GameCatalog.ID_RANCE06 || gameId == GameCatalog.ID_GALZOO) && (
                     f.name.equals("BackData", ignoreCase = true) ||
                         f.name.equals("DLL", ignoreCase = true) ||
                         f.name.equals("CGpatch", ignoreCase = true) ||
                         f.name.equals("DirectX", ignoreCase = true) ||
+                        (gameId == GameCatalog.ID_GALZOO && f.name.equals("SaveData", ignoreCase = true)) ||
                         f.name == "补丁" ||
                         f.name == "备份" ||
                         f.name == "备份文件"
@@ -2138,9 +2528,12 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         } else if (f.isFile && (
                 (gameId == GameCatalog.ID_RANCE02 && isBaseInstallBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_KICHIKUOU && isKichikuouBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_DAIAKUJI && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = hasDDemoAlk)) ||
                     (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_ESCALAYER_REBOOT && isEscalayerRebootBloatRelPath(rel)) ||
-                    (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true))
+                    (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true)) ||
+                    (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)

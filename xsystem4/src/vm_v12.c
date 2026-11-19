@@ -551,6 +551,11 @@ static bool array_call_invalid_slot(struct ain_hll_function *f, int parameter, i
 	return true;
 }
 
+static inline bool is_hll_func_type(enum ain_data_type type)
+{
+	return type == AIN_HLL_FUNC || type == AIN_HLL_FUNC_71;
+}
+
 static bool array_call(struct ain_hll_function *f, int parameter)
 {
 	union vm_value args[8][3] = {0};
@@ -558,7 +563,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 	for (int i = f->nr_arguments - 1; i >= 0; i--) {
 		int type = f->arguments[i].type.data;
 		int width = 1;
-		if (type == AIN_HLL_FUNC)
+		if (is_hll_func_type(type))
 			width = 2;
 		else if (type == AIN_HLL_PARAM)
 			width = array_hll_param_width(parameter);
@@ -787,7 +792,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		}
 	} else if (!strcmp(name, "At") || !strcmp(name, "First") || !strcmp(name, "Last")) {
 		int index = !strcmp(name, "At") ? args[1][0].i : !strcmp(name, "Last") ? size - 1 : 0;
-		if (f->nr_arguments == 2 && f->arguments[1].type.data == AIN_HLL_FUNC) {
+		if (f->nr_arguments == 2 && is_hll_func_type(f->arguments[1].type.data)) {
 			int step = !strcmp(name, "Last") ? -1 : 1;
 			for (; index >= 0 && index < size; index += step)
 				if (predicate(slot, index, args[1])) break;
@@ -817,14 +822,14 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		int end = f->nr_arguments == 4 ? min(args[2][0].i, size) : size;
 		bool backwards = !strcmp(name, "FindLast");
 		for (int i = backwards ? end - 1 : begin; i >= begin && i < end; i += backwards ? -1 : 1) {
-			bool match = f->arguments[arg].type.data == AIN_HLL_FUNC
+			bool match = is_hll_func_type(f->arguments[arg].type.data)
 				? predicate(slot, i, args[arg]) : equal_element(slot, i, args[arg]);
 			if (match) { found = i; break; }
 		}
 		if (!strcmp(name, "IsExist")) stack_push(found >= 0); else stack_push(found);
 	} else if (!strcmp(name, "BinarySearch") || !strcmp(name, "LowerBound") || !strcmp(name, "UpperBound")) {
 		int first = 0, last = size;
-		bool callback = f->arguments[1].type.data == AIN_HLL_FUNC;
+		bool callback = is_hll_func_type(f->arguments[1].type.data);
 		bool upper = !strcmp(name, "UpperBound");
 		while (first < last) {
 			int mid = first + (last - first) / 2;
@@ -846,7 +851,7 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 				erase_elements_range(slot, index, len);
 				erased = true;
 			}
-		} else if (f->arguments[1].type.data == AIN_HLL_FUNC) {
+		} else if (is_hll_func_type(f->arguments[1].type.data)) {
 			for (int i = 0; i < size; ) {
 				if (predicate(slot, i, args[1])) {
 					erase_element(slot, i); size--; erased = true;
@@ -1681,7 +1686,7 @@ static bool re_match_at(struct re_exec_ctx *ctx, size_t start_off)
 static struct string *replace_regex_string(struct string *s, struct string *pattern, struct string *replacement)
 {
 	if (!pattern->size) return string_dup(s);
-	char *pat_utf = sjis2utf(pattern->text, pattern->size);
+	char *pat_utf = mai_sjis2utf(pattern->text, pattern->size);
 	struct re_prog prog;
 	if (!re_compile(&prog, pat_utf)) {
 		free(pat_utf);
@@ -1690,8 +1695,8 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	}
 	free(pat_utf);
 
-	char *text_utf = sjis2utf(s->text, s->size);
-	char *rep_utf = sjis2utf(replacement->text, replacement->size);
+	char *text_utf = mai_sjis2utf(s->text, s->size);
+	char *rep_utf = mai_sjis2utf(replacement->text, replacement->size);
 	size_t text_len = strlen(text_utf);
 	size_t rep_len = strlen(rep_utf);
 
@@ -1786,7 +1791,7 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	out_len += tail;
 	out_utf[out_len] = '\0';
 
-	char *out_sjis = utf2sjis(out_utf, out_len);
+	char *out_sjis = mai_utf2sjis(out_utf, out_len);
 	struct string *res = make_string(out_sjis, strlen(out_sjis));
 	free(out_sjis);
 	free(out_utf);
@@ -1807,7 +1812,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 		match_list_slot = -1;
 	}
 
-	char *pat_utf = sjis2utf(pattern->text, pattern->size);
+	char *pat_utf = mai_sjis2utf(pattern->text, pattern->size);
 	struct re_prog prog;
 	if (!re_compile(&prog, pat_utf)) {
 		free(pat_utf);
@@ -1816,7 +1821,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 	}
 	free(pat_utf);
 
-	char *text_utf = sjis2utf(s->text, s->size);
+	char *text_utf = mai_sjis2utf(s->text, s->size);
 	size_t text_len = strlen(text_utf);
 	bool full_match = !strcmp(op_name, "Match");
 	bool search_all = !strcmp(op_name, "SearchAll");
@@ -1848,7 +1853,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 					char *sub_utf = xmalloc(eo - so + 1);
 					memcpy(sub_utf, text_utf + so, eo - so);
 					sub_utf[eo - so] = '\0';
-					char *sub_sjis = utf2sjis(sub_utf, eo - so);
+					char *sub_sjis = mai_utf2sjis(sub_utf, eo - so);
 					free(sub_utf);
 					int cur_len = v12_array_length(heap_get_page(match_list_slot));
 					resize_array(match_list_slot, cur_len + 1);
@@ -1882,7 +1887,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 						char *sub_utf = xmalloc(glen + 1);
 						memcpy(sub_utf, text_utf + saved[g * 2], glen);
 						sub_utf[glen] = '\0';
-						char *sub_sjis = utf2sjis(sub_utf, glen);
+						char *sub_sjis = mai_utf2sjis(sub_utf, glen);
 						free(sub_utf);
 						gs = make_string(sub_sjis, strlen(sub_sjis));
 						free(sub_sjis);
@@ -1909,7 +1914,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 							char *sub_utf = xmalloc(glen + 1);
 							memcpy(sub_utf, text_utf + saved[g * 2], glen);
 							sub_utf[glen] = '\0';
-							char *sub_sjis = utf2sjis(sub_utf, glen);
+							char *sub_sjis = mai_utf2sjis(sub_utf, glen);
 							free(sub_utf);
 							gs = make_string(sub_sjis, strlen(sub_sjis));
 							free(sub_sjis);
@@ -2098,7 +2103,8 @@ static bool string_call(struct ain_hll_function *f)
 		if (valid_slot) string_pop_back(&heap[slot].s);
 	} else if (!strcmp(name, "Erase")) {
 		if (valid_slot) {
-			for (int i = 0; i < args[2].i; i++) string_erase(&heap[slot].s, args[1].i);
+			int count = f->nr_arguments >= 3 ? args[2].i : 1;
+			for (int i = 0; i < count; i++) string_erase(&heap[slot].s, args[1].i);
 		}
 	} else if (!strcmp(name, "ToUpper") || !strcmp(name, "ToLower")) {
 		result = string_dup(s);
@@ -2131,7 +2137,7 @@ static bool delegate_call_hll(struct ain_hll_function *f)
 	int fn = -1, object = -1, other_slot = -1;
 	bool unref_other = false;
 	if (f->nr_arguments == 2) {
-		if (f->arguments[1].type.data == AIN_HLL_FUNC) {
+		if (is_hll_func_type(f->arguments[1].type.data)) {
 			fn = stack_pop().i;
 			object = stack_pop().i;
 		} else {

@@ -84,6 +84,9 @@ static struct string *SystemService_GetGameVersionByText(void)
 	if (game_evenicle2) {
 		return cstr_to_string("8938gohds983ogh1223fg086qirkcvn36");
 	}
+	if (game_ixseal) {
+		return cstr_to_string("a8k345es394fx4mg3q2p8ts68nk5zwr7");
+	}
 	VM_ERROR("Unknown game version text for this title");
 }
 

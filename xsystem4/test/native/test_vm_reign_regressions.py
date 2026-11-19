@@ -435,6 +435,8 @@ bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
+bool game_galzoo = false;
+bool game_ixseal = false;
 
 static bool sys4_text_is_gbk = false;
 static bool gbk_at_get_save_path = false;
@@ -477,6 +479,7 @@ static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
+static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
 
 {fn_r6}
 {fn_gbk_str}

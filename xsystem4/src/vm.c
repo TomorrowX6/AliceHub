@@ -560,8 +560,11 @@ static bool is_callback_binding_op(unsigned op, size_t address)
 		if (lib >= 0 && lib < ain->nr_libraries &&
 		    fn >= 0 && fn < ain->libraries[lib].nr_functions) {
 			struct ain_hll_function *hf = &ain->libraries[lib].functions[fn];
-			return hf->nr_arguments > 0 &&
-			       hf->arguments[hf->nr_arguments - 1].type.data == AIN_HLL_FUNC;
+			if (hf->nr_arguments > 0) {
+				enum ain_data_type t = hf->arguments[hf->nr_arguments - 1].type.data;
+				return t == AIN_HLL_FUNC || t == AIN_HLL_FUNC_71;
+			}
+			return false;
 		}
 	}
 	return false;
@@ -903,7 +906,7 @@ void vm_system_call(int code)
 	}
 	case SYS_MSGBOX: {
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 		SDL_ShowSimpleMessageBox(0, "xsystem4", utf, NULL);
 		free(utf);
 		// XXX: caller S_POPs
@@ -912,7 +915,7 @@ void vm_system_call(int code)
 	case SYS_MSGBOX_OK_CANCEL: {
 		int result = 0;
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 
 		const SDL_MessageBoxData mbox = {
 			SDL_MESSAGEBOX_INFORMATION,
@@ -1003,7 +1006,7 @@ void vm_system_call(int code)
 	case SYS_ERROR: {// system.Error(string szText)
 		int result = 0;
 		struct string *str = stack_peek_string(0);
-		char *utf = sjis2utf(str->text, str->size);
+		char *utf = mai_sjis2utf(str->text, str->size);
 		sys_warning("*GAME ERROR*: %s\n", utf);
 		const SDL_MessageBoxData mbox = {
 			SDL_MESSAGEBOX_ERROR,

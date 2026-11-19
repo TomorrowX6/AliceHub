@@ -84,10 +84,11 @@ static struct font *load_font(enum font_face type)
 	};
 
 	struct font *font;
+	bool use_sc_fonts = sys4_text_is_gbk || sys4_has_mai_word_table();
 	// user specified font
 	if (config.font_paths[type] && (font = ft_font_load(config.font_paths[type])))
 		return font;
-	if (sys4_text_is_gbk) {
+	if (use_sc_fonts) {
 		const char *const *paths = type == FONT_GOTHIC ? gbk_gothic_paths : gbk_mincho_paths;
 		size_t nr_paths = type == FONT_GOTHIC
 			? sizeof(gbk_gothic_paths) / sizeof(gbk_gothic_paths[0])
@@ -118,7 +119,7 @@ void gfx_font_init(void)
 	font_ttf[FONT_GOTHIC] = load_font(FONT_GOTHIC);
 	font_ttf[FONT_MINCHO] = load_font(FONT_MINCHO);
 
-	if (config.fnl_path && !sys4_text_is_gbk) {
+	if (config.fnl_path && !sys4_text_is_gbk && !sys4_has_mai_word_table()) {
 		struct fnl *fnl = fnl_open(config.fnl_path);
 		if (!fnl)
 			ERROR("Failed to load .fnl font library '%s'", config.fnl_path);
@@ -136,7 +137,7 @@ void gfx_font_init(void)
 static struct font *get_font(unsigned face)
 {
 	if (face > 255) {
-		if (sys4_text_is_gbk || !config.fnl_path)
+		if (sys4_text_is_gbk || sys4_has_mai_word_table() || !config.fnl_path)
 			return font_ttf[0];
 		face -= 256;
 		if (face >= MAX_FNL_FONTS || !font_fnl[face]) {
@@ -244,7 +245,7 @@ static uint32_t char_to_code(const char *ch, enum charmap charmap)
 	if (charmap == CHARMAP_SJIS)
 		return sjis_code(ch);
 	int c;
-	sjis_char2unicode(ch, &c);
+	mai_sjis_char2unicode(ch, &c);
 	if (c == '^' && game_rance02_mg)
 		return 0xE9; // é
 	// half-width katakana 'no' (ﾉ)

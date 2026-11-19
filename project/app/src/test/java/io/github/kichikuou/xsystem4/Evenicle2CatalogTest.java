@@ -7,7 +7,9 @@ import org.junit.rules.TemporaryFolder;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -16,9 +18,11 @@ import java.util.Map;
 
 import kotlin.jvm.functions.Function1;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class Evenicle2CatalogTest {
@@ -441,5 +445,294 @@ public class Evenicle2CatalogTest {
                 2453622110L,
                 AppSettings.INSTANCE.defaultBaseGameSizeForUrl(OnlineInstaller.EVENICLE_CDN_URL)
         );
+    }
+
+    @Test
+    public void exposesCnPatchDescriptorAndOverlayCatalogConfig() {
+        GameDescriptor e2 = GameCatalog.INSTANCE.descriptorForWithResolver(
+                GameCatalog.ID_EVENICLE2,
+                null,
+                resId -> "res:" + resId
+        );
+        assertEquals(GameCatalog.ID_EVENICLE2, e2.getId());
+        assertEquals("Evenicle2", e2.getDefaultDirName());
+        assertEquals("Evenicle2.ain", e2.getExpectedAinName());
+        assertTrue(e2.getSupportsOnlineBaseInstall());
+        assertEquals(OnlineInstaller.EVENICLE2_CDN_URL, e2.getOnlineBaseCdnUrl());
+        assertTrue(e2.getSupportsOnlineMod());
+        assertTrue(e2.getSupportsLocalMod());
+        assertFalse(e2.isRance10());
+        assertTrue(e2.isCnPatch());
+        assertEquals(OnlineInstaller.EVENICLE2_CDN_URL, e2.getOverlayCdnBaseUrl());
+        assertEquals(OnlineInstaller.EVENICLE2_CDN_URL, e2.getEffectiveOverlayCdnUrl());
+        assertEquals("files/cn-patch/index.json", e2.getOverlayCatalogRelPath());
+        assertEquals(InstalledModInfo.KIND_CN_PATCH, e2.getOverlayKind());
+
+        GameDescriptor e1 = GameCatalog.INSTANCE.descriptorForWithResolver(
+                GameCatalog.ID_EVENICLE,
+                null,
+                resId -> "res:" + resId
+        );
+        assertTrue(e1.isCnPatch());
+        assertEquals(OnlineInstaller.EVENICLE_CDN_URL, e1.getOverlayCdnBaseUrl());
+        assertEquals("files/cn-patch/index.json", e1.getOverlayCatalogRelPath());
+    }
+
+    @Test
+    public void installsAndUninstallsEvenicle2CnPatchWithBackupsAndClassification() throws Exception {
+        File gameDir = tmp.newFolder("Evenicle2");
+        byte[] iniBytes = "GameName = \"イブニクル２\"\r\nCodeName = \"Evenicle2.ain\"\r\n"
+                .getBytes(Charset.forName("Shift_JIS"));
+        byte[] vanillaAin = "VANILLA_AIN".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaEx = "VANILLA_EX".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaCg = "VANILLA_CG".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaFlat = "VANILLA_FLAT".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaPact = "VANILLA_PACT".getBytes(StandardCharsets.US_ASCII);
+
+        writeFile(new File(gameDir, "AliceStart.ini"), iniBytes);
+        writeFile(new File(gameDir, "Evenicle2.ain"), vanillaAin);
+        writeFile(new File(gameDir, "Evenicle2EX.ex"), vanillaEx);
+        writeFile(new File(gameDir, "Evenicle2CG.afa"), vanillaCg);
+        writeFile(new File(gameDir, "Evenicle2Flat.afa"), vanillaFlat);
+        writeFile(new File(gameDir, "Evenicle2Pact.afa"), vanillaPact);
+
+        File staging = tmp.newFolder("cn_patch_online_staging");
+        byte[] cnAin = "CN_V102_AIN".getBytes(StandardCharsets.US_ASCII);
+        byte[] cnEx = "CN_V102_EX".getBytes(StandardCharsets.US_ASCII);
+        byte[] cnCg = "CN_V10_CG".getBytes(StandardCharsets.US_ASCII);
+        byte[] cnFlat = "CN_FLAT".getBytes(StandardCharsets.US_ASCII);
+        byte[] cnWordMai = "CN_WORD_MAI".getBytes(StandardCharsets.US_ASCII);
+
+        writeFile(new File(staging, "Evenicle2.ain"), cnAin);
+        writeFile(new File(staging, "Evenicle2EX.ex"), cnEx);
+        writeFile(new File(staging, "Evenicle2CG.afa"), cnCg);
+        writeFile(new File(staging, "Evenicle2Flat.afa"), cnFlat);
+        writeFile(new File(staging, "mai/word.mai"), cnWordMai);
+
+        boolean wasFull = GameListKt.applyModStagingToGameDirInternal(staging, gameDir, true, true, false);
+        assertTrue(wasFull);
+
+        // Simulate metadata written after online install
+        writeFile(
+                new File(gameDir, InstalledModInfo.META_FILE_NAME),
+                "{\"version\":\"V1.02\",\"kind\":\"cn_patch\"}".getBytes(StandardCharsets.UTF_8)
+        );
+
+        // Classification and validation still recognize Evenicle 2 after CN patch overlay
+        assertEquals(
+                GameCatalog.ID_EVENICLE2,
+                GameCatalog.INSTANCE.classifyDirectory(gameDir, gameDir.getName(), null, null)
+        );
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(gameDir, "Evenicle2.ain", GameCatalog.ID_EVENICLE2));
+        assertTrue(Item.Companion.detectInstalledMod(gameDir, null));
+        assertTrue(Item.Companion.canRestoreVanillaDir(gameDir));
+
+        // Overwritten vanilla files are backed up and CN files are active
+        assertArrayEquals(cnAin, Files.readAllBytes(new File(gameDir, "Evenicle2.ain").toPath()));
+        assertArrayEquals(cnEx, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex").toPath()));
+        assertArrayEquals(cnCg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa").toPath()));
+        assertArrayEquals(cnFlat, Files.readAllBytes(new File(gameDir, "Evenicle2Flat.afa").toPath()));
+        assertArrayEquals(cnWordMai, Files.readAllBytes(new File(gameDir, "mai/word.mai").toPath()));
+        assertArrayEquals(vanillaPact, Files.readAllBytes(new File(gameDir, "Evenicle2Pact.afa").toPath()));
+
+        assertArrayEquals(vanillaAin, Files.readAllBytes(new File(gameDir, "Evenicle2.ain.vanilla.bak").toPath()));
+        assertArrayEquals(vanillaEx, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex.vanilla.bak").toPath()));
+        assertArrayEquals(vanillaCg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa.vanilla.bak").toPath()));
+        assertArrayEquals(vanillaFlat, Files.readAllBytes(new File(gameDir, "Evenicle2Flat.afa.vanilla.bak").toPath()));
+        assertFalse(new File(gameDir, "Evenicle2Pact.afa.vanilla.bak").exists());
+        assertFalse(new File(gameDir, "mai/word.mai.vanilla.bak").exists());
+
+        String manifestContent = new String(
+                Files.readAllBytes(new File(gameDir, ".mod_installed_files.txt").toPath()),
+                StandardCharsets.UTF_8
+        );
+        assertTrue(manifestContent.contains("mai/word.mai"));
+
+        // Uninstall restores original Japanese files and deletes added CN files + empty mai/ dir
+        GameListKt.restoreVanillaFromModDir(gameDir);
+
+        assertArrayEquals(vanillaAin, Files.readAllBytes(new File(gameDir, "Evenicle2.ain").toPath()));
+        assertArrayEquals(vanillaEx, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex").toPath()));
+        assertArrayEquals(vanillaCg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa").toPath()));
+        assertArrayEquals(vanillaFlat, Files.readAllBytes(new File(gameDir, "Evenicle2Flat.afa").toPath()));
+        assertArrayEquals(vanillaPact, Files.readAllBytes(new File(gameDir, "Evenicle2Pact.afa").toPath()));
+
+        assertFalse(new File(gameDir, "mai/word.mai").exists());
+        assertFalse(new File(gameDir, "mai").exists());
+        assertFalse(new File(gameDir, "Evenicle2.ain.vanilla.bak").exists());
+        assertFalse(new File(gameDir, ".mod_installed_files.txt").exists());
+        assertFalse(new File(gameDir, InstalledModInfo.META_FILE_NAME).exists());
+        assertFalse(Item.Companion.detectInstalledMod(gameDir, null));
+        assertFalse(Item.Companion.canRestoreVanillaDir(gameDir));
+        assertEquals(
+                GameCatalog.ID_EVENICLE2,
+                GameCatalog.INSTANCE.classifyDirectory(gameDir, gameDir.getName(), null, null)
+        );
+    }
+
+    @Test
+    public void normalizesLocalPcMaiScCnPatchAndSupportsIncrementalUpdate() throws Exception {
+        File gameDir = tmp.newFolder("Evenicle2Local");
+        byte[] vanillaAin = "VANILLA_AIN".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaEx = "VANILLA_EX".getBytes(StandardCharsets.US_ASCII);
+        byte[] vanillaCg = "VANILLA_CG".getBytes(StandardCharsets.US_ASCII);
+        writeFile(new File(gameDir, "AliceStart.ini"), "GameName = \"イブニクル２\"\n".getBytes(StandardCharsets.UTF_8));
+        writeFile(new File(gameDir, "Evenicle2.ain"), vanillaAin);
+        writeFile(new File(gameDir, "Evenicle2EX.ex"), vanillaEx);
+        writeFile(new File(gameDir, "Evenicle2CG.afa"), vanillaCg);
+
+        // Local PC V1.0 zip layout: CG at root + ain/ex inside mai/sc/ + Windows junk
+        File v10Staging = tmp.newFolder("pc_v10_staging");
+        byte[] v10Cg = "V10_CG".getBytes(StandardCharsets.US_ASCII);
+        byte[] v10Ain = "V10_AIN".getBytes(StandardCharsets.US_ASCII);
+        byte[] v10Ex = "V10_EX".getBytes(StandardCharsets.US_ASCII);
+        byte[] v10Word = "V10_WORD".getBytes(StandardCharsets.US_ASCII);
+        writeFile(new File(v10Staging, "Evenicle2CG.afa"), v10Cg);
+        writeFile(new File(v10Staging, "Evenicle2_cn.exe"), new byte[]{1});
+        writeFile(new File(v10Staging, "mai.dll"), new byte[]{2});
+        writeFile(new File(v10Staging, "libfusionex.dll"), new byte[]{3});
+        writeFile(new File(v10Staging, "Staff.png"), new byte[]{4});
+        writeFile(new File(v10Staging, "请读我（转载请务必保留）.png"), new byte[]{5});
+        writeFile(new File(v10Staging, "9E4FAB614BE2E943BE448BA7E89CFFD68BEEBDE0.torrent"), new byte[]{6});
+        writeFile(new File(v10Staging, "mai/word.mai"), v10Word);
+        writeFile(new File(v10Staging, "mai/sc/Evenicle2.ain"), v10Ain);
+        writeFile(new File(v10Staging, "mai/sc/Evenicle2EX.ex"), v10Ex);
+
+        assertTrue(GameListKt.applyModStagingToGameDirInternal(v10Staging, gameDir, true, true, true));
+        assertArrayEquals(v10Cg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa").toPath()));
+        assertArrayEquals(v10Ain, Files.readAllBytes(new File(gameDir, "Evenicle2.ain").toPath()));
+        assertArrayEquals(v10Ex, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex").toPath()));
+        assertArrayEquals(v10Word, Files.readAllBytes(new File(gameDir, "mai/word.mai").toPath()));
+        assertFalse(new File(gameDir, "Evenicle2_cn.exe").exists());
+        assertFalse(new File(gameDir, "mai.dll").exists());
+        assertFalse(new File(gameDir, "libfusionex.dll").exists());
+        assertFalse(new File(gameDir, "Staff.png").exists());
+        assertFalse(new File(gameDir, "请读我（转载请务必保留）.png").exists());
+        assertFalse(new File(gameDir, "9E4FAB614BE2E943BE448BA7E89CFFD68BEEBDE0.torrent").exists());
+        assertFalse(new File(gameDir, "mai/sc").exists());
+
+        // Local PC V1.02 incremental zip layout: only mai/word.mai + mai/sc/{ain,ex} + Windows junk
+        File v102Staging = tmp.newFolder("pc_v102_staging");
+        byte[] v102Ain = "V102_AIN".getBytes(StandardCharsets.US_ASCII);
+        byte[] v102Ex = "V102_EX".getBytes(StandardCharsets.US_ASCII);
+        byte[] v102Word = "V102_WORD".getBytes(StandardCharsets.US_ASCII);
+        writeFile(new File(v102Staging, "Evenicle2_cn.exe"), new byte[]{1});
+        writeFile(new File(v102Staging, "mai.dll"), new byte[]{2});
+        writeFile(new File(v102Staging, "mai/word.mai"), v102Word);
+        writeFile(new File(v102Staging, "mai/sc/Evenicle2.ain"), v102Ain);
+        writeFile(new File(v102Staging, "mai/sc/Evenicle2EX.ex"), v102Ex);
+
+        assertFalse(GameListKt.applyModStagingToGameDirInternal(v102Staging, gameDir, true, true, true));
+        assertArrayEquals(v10Cg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa").toPath()));
+        assertArrayEquals(v102Ain, Files.readAllBytes(new File(gameDir, "Evenicle2.ain").toPath()));
+        assertArrayEquals(v102Ex, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex").toPath()));
+        assertArrayEquals(v102Word, Files.readAllBytes(new File(gameDir, "mai/word.mai").toPath()));
+        assertArrayEquals(vanillaAin, Files.readAllBytes(new File(gameDir, "Evenicle2.ain.vanilla.bak").toPath()));
+        assertArrayEquals(vanillaEx, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex.vanilla.bak").toPath()));
+        assertArrayEquals(vanillaCg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa.vanilla.bak").toPath()));
+
+        GameListKt.restoreVanillaFromModDir(gameDir);
+        assertArrayEquals(vanillaAin, Files.readAllBytes(new File(gameDir, "Evenicle2.ain").toPath()));
+        assertArrayEquals(vanillaEx, Files.readAllBytes(new File(gameDir, "Evenicle2EX.ex").toPath()));
+        assertArrayEquals(vanillaCg, Files.readAllBytes(new File(gameDir, "Evenicle2CG.afa").toPath()));
+        assertFalse(new File(gameDir, "mai").exists());
+    }
+
+    @Test
+    public void infersAndMatchesCnPatchVersionsForLocalAndOnlineCatalog() throws Exception {
+        File iniDir = tmp.newFolder("e2_ini");
+        writeFile(
+                new File(iniDir, "AliceStart.ini"),
+                "GameName = \"夏娃年代记2 汉化版 V1.0\"\n".getBytes(StandardCharsets.UTF_8)
+        );
+        assertEquals(
+                "V1.02",
+                OnlineInstaller.INSTANCE.inferLocalOverlayVersion(
+                        "【天之圣杯汉化组】夏娃年代记2V1.02.zip",
+                        false,
+                        iniDir,
+                        true
+                )
+        );
+        assertEquals(
+                "V1.02",
+                OnlineInstaller.INSTANCE.inferLocalOverlayVersion(
+                        "evenicle2-cn-v1.02.zip",
+                        false,
+                        iniDir,
+                        true
+                )
+        );
+        assertEquals(
+                "V1.0",
+                OnlineInstaller.INSTANCE.inferLocalOverlayVersion(
+                        "cn_patch.zip",
+                        false,
+                        iniDir,
+                        true
+                )
+        );
+
+        ModReleaseEntry release = new ModReleaseEntry(
+                1,
+                "V1.02",
+                "夏娃年代记2汉化补丁_V1.02.zip",
+                "简体中文汉化补丁 V1.02",
+                "changelog",
+                "2019-09-27 15:56",
+                "https://alicehub.000.moe/evenicle2/files/cn-patch/evenicle2-cn-v1.02.zip",
+                false,
+                null,
+                null,
+                562251373L,
+                "b8d4ce1990245982195e6bc2a287368fd4a07d9b928296d4ee44b721fefae5ad",
+                "天之圣杯汉化组"
+        );
+        List<ModReleaseEntry> catalog = Collections.singletonList(release);
+
+        InstalledModInfo installedLatest = new InstalledModInfo(
+                "V1.02",
+                "V1.02",
+                1,
+                1,
+                "夏娃年代记2汉化补丁_V1.02.zip",
+                "2019-09-27 15:56",
+                "online",
+                1234L,
+                InstalledModInfo.KIND_CN_PATCH
+        );
+        assertEquals(0, OnlineInstaller.INSTANCE.matchInstalledIndex(catalog, installedLatest));
+        assertNull(OnlineInstaller.INSTANCE.computeUpdatePlan(catalog, true, installedLatest));
+
+        InstalledModInfo installedLocalV102 = new InstalledModInfo(
+                "V1.02",
+                "V1.02",
+                -1,
+                -1,
+                "【天之圣杯汉化组】夏娃年代记2V1.02.zip",
+                "",
+                "local",
+                1234L,
+                InstalledModInfo.KIND_CN_PATCH
+        );
+        assertEquals(0, OnlineInstaller.INSTANCE.matchInstalledIndex(catalog, installedLocalV102));
+        assertNull(OnlineInstaller.INSTANCE.computeUpdatePlan(catalog, true, installedLocalV102));
+
+        InstalledModInfo installedOld = new InstalledModInfo(
+                "V1.0",
+                "V1.0",
+                -1,
+                -1,
+                "【天之圣杯汉化组】夏娃年代记2 V1.0汉化补丁.zip",
+                "",
+                "local",
+                1234L,
+                InstalledModInfo.KIND_CN_PATCH
+        );
+        assertEquals(-1, OnlineInstaller.INSTANCE.matchInstalledIndex(catalog, installedOld));
+        ModUpdatePlan plan = OnlineInstaller.INSTANCE.computeUpdatePlan(catalog, true, installedOld);
+        assertNotNull(plan);
+        assertEquals(1, plan.getSteps().size());
+        assertEquals(release, plan.getSteps().get(0));
     }
 }

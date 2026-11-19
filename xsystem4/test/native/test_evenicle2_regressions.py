@@ -118,6 +118,12 @@ def sdl_cflags() -> list[str]:
     return subprocess.check_output(["pkg-config", "--cflags", "sdl2"], text=True).split()
 
 
+def freetype_flags() -> tuple[list[str], list[str]]:
+    cflags = subprocess.check_output(["pkg-config", "--cflags", "freetype2"], text=True).split()
+    libs = subprocess.check_output(["pkg-config", "--libs", "freetype2"], text=True).split()
+    return cflags, libs
+
+
 def compile_and_run(c_src: str, extra_sources: list[Path], extra_flags: list[str] | None = None, args: list[str] | None = None):
     cc = shutil.which("cc") or shutil.which("gcc")
     assert cc, "C compiler required"
@@ -261,6 +267,7 @@ struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle2 = true;
+bool game_ixseal = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {
@@ -1298,6 +1305,294 @@ int main(int argc, char **argv) {
             ex_path.write_bytes(pact_ex)
             out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"], [str(ex_path)])
             self.assertEqual(out.strip(), "OK")
+
+    def test_mai_word_table_remapping_and_cp932_preservation(self):
+        # Backslash paths inside Evenicle2Flat.afa normalize cleanly via archive_basename_buf.
+        afa_payload = b"TALT_PAYLOAD_CN"
+        flat_afa = build_afa_v2([(b"test_dir\\flat_item01", afa_payload)])
+
+        harness = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4/archive.h"
+#include "system4/afa.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+
+static uint8_t word_table[65536];
+
+static void mark_utf8_chars(const char *s)
+{
+    const uint8_t *p = (const uint8_t *)s;
+    while (*p) {
+        int u = 0;
+        if (*p < 0x80) {
+            u = *p++;
+        } else if ((*p & 0xe0) == 0xc0) {
+            u = ((p[0] & 0x1f) << 6) | (p[1] & 0x3f);
+            p += 2;
+        } else {
+            u = ((p[0] & 0x0f) << 12) | ((p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+            p += 3;
+        }
+        if (u >= 0 && u < 65536)
+            word_table[u] = 1;
+    }
+}
+
+int main(int argc, char **argv)
+{
+    assert(argc == 3);
+    sys4_reset_mai_word_table();
+    sys4_set_text_gbk(false);
+
+    /* Reject malformed/empty tables without activating mai mode. */
+    assert(!sys4_load_mai_word_table_mem(NULL, 65536));
+    assert(!sys4_load_mai_word_table_mem(word_table, 65535));
+    assert(!sys4_load_mai_word_table_mem(word_table, 65536));
+    assert(!sys4_load_mai_word_table("/nonexistent/word.mai"));
+    assert(!sys4_has_mai_word_table());
+
+    /* Unmapped SC chars: 请这说对们个爱边 + shared CP932/punct: 名前人、・ｱ
+     * Omit 傾 (0x8c58) and 遷 (0x914a) so they occupy 0x88a0.. if needed/absent. */
+    const char *cn_sample = "请这里说对们个爱边 名前人、・ｱ";
+    mark_utf8_chars(cn_sample);
+
+    FILE *fp = fopen(argv[1], "wb");
+    assert(fp && fwrite(word_table, 1, sizeof(word_table), fp) == sizeof(word_table));
+    fclose(fp);
+
+    assert(sys4_load_mai_word_table(argv[1]));
+    assert(sys4_has_mai_word_table());
+    assert(!sys4_text_is_gbk);
+
+    /* CN text round-trips identically through mai_utf2sjis <-> mai_sjis2utf & strict check. */
+    char *enc = mai_utf2sjis(cn_sample, strlen(cn_sample));
+    assert(enc);
+    /* '请' is unmapped in CP932, so it gets first free slot >= 0x88A0. */
+    assert((uint8_t)enc[0] == 0x88 && (uint8_t)enc[1] >= 0xa0);
+    bool strict_ok = false;
+    char *strict_dec = mai_cjk2utf_strict(enc, &strict_ok);
+    assert(strict_ok && strict_dec && strcmp(strict_dec, cn_sample) == 0);
+    char *dec = mai_sjis2utf(enc, strlen(enc));
+    assert(dec && strcmp(dec, cn_sample) == 0);
+
+    int cp = 0;
+    mai_sjis_char2unicode(enc, &cp);
+    assert(cp == 0x8BF7); /* '请' */
+
+    /* U+30FB (0x8145) is preserved; unmapped 0x81ad and cleared 0xED40 fail strict decode. */
+    bool dot_ok = false;
+    char *dot_u = mai_cjk2utf_strict("\x81\x45", &dot_ok);
+    assert(dot_ok && dot_u && strcmp(dot_u, "・") == 0);
+    free(dot_u);
+    bool empty_ok = true;
+    assert(mai_cjk2utf_strict("\x81\xad", &empty_ok) == NULL && !empty_ok);
+    bool ed_ok = true;
+    assert(mai_cjk2utf_strict("\xed\x40", &ed_ok) == NULL && !ed_ok);
+    int ed_cp = 0;
+    mai_sjis_char2unicode("\xed\x40", &ed_cp);
+    assert(ed_cp == 0xfffd);
+
+    /* Base CP932 conversion used by PACT/3D/archive lookups remains untouched! */
+    const char *pact_key_utf8 = "遷移先";
+    char *pact_sjis = utf2sjis(pact_key_utf8, strlen(pact_key_utf8));
+    assert(strcmp(pact_sjis, "\x91\x4a\x88\xda\x90\xe6") == 0);
+    char *pact_back = sjis2utf(pact_sjis, strlen(pact_sjis));
+    assert(strcmp(pact_back, pact_key_utf8) == 0);
+    free(pact_sjis);
+    free(pact_back);
+
+    /* Evenicle2Flat.afa backslash paths resolve cleanly with '/' queries via basename lookup. */
+    int err = 0;
+    struct afa_archive *afa = afa_open(argv[2], ARCHIVE_MMAP, &err);
+    assert(afa && err == ARCHIVE_SUCCESS);
+    int entry_id = -1;
+    assert(afa->ar.ops->exists_by_basename(&afa->ar, "test_dir/flat_item01", &entry_id));
+    struct archive_data *d = afa->ar.ops->get_by_basename(&afa->ar, "test_dir/flat_item01");
+    assert(d && d->size == 15 && memcmp(d->data, "TALT_PAYLOAD_CN", 15) == 0);
+    archive_free_data(d);
+    archive_free(&afa->ar);
+
+    /* Reset restores CP932/GBK behavior cleanly. */
+    sys4_reset_mai_word_table();
+    assert(!sys4_has_mai_word_table());
+
+    /* When no mai table is active and sys4_text_is_gbk is enabled, mai_* helpers must preserve GBK. */
+    sys4_set_text_gbk(true);
+    const char *gbk_sample = "请这里说对们";
+    char *gbk_expected = utf2sjis(gbk_sample, strlen(gbk_sample));
+    char *gbk_via_mai = mai_utf2sjis(gbk_sample, strlen(gbk_sample));
+    assert(gbk_expected && gbk_via_mai);
+    assert(strcmp(gbk_via_mai, gbk_expected) == 0);
+    assert(strchr(gbk_via_mai, '?') == NULL);
+    bool gbk_strict_ok = false;
+    char *gbk_strict_dec = mai_cjk2utf_strict(gbk_via_mai, &gbk_strict_ok);
+    assert(gbk_strict_ok && gbk_strict_dec && strcmp(gbk_strict_dec, gbk_sample) == 0);
+    char *gbk_dec = mai_sjis2utf(gbk_via_mai, strlen(gbk_via_mai));
+    assert(gbk_dec && strcmp(gbk_dec, gbk_sample) == 0);
+    free(gbk_expected);
+    free(gbk_via_mai);
+    free(gbk_strict_dec);
+    free(gbk_dec);
+    sys4_set_text_gbk(false);
+
+    free(enc);
+    free(strict_dec);
+    free(dec);
+    puts("OK");
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            word_path = Path(tmpdir) / "word.mai"
+            afa_path = Path(tmpdir) / "Evenicle2Flat.afa"
+            afa_path.write_bytes(flat_afa)
+            out = compile_and_run(
+                harness,
+                LIBSYS4_CORE,
+                ["-lz", "-lm"],
+                [str(word_path), str(afa_path)],
+            )
+            self.assertEqual(out.strip(), "OK")
+
+    def test_mai_font_fnl_bypass_sc_face_and_save_bias(self):
+        ft_cflags, ft_libs = freetype_flags()
+        text_src = (ROOT / "src/savedata.c").read_text(encoding="utf-8")
+        # Extract real save_text_gbk_bias & cjk_is_ascii_only helper check via simple snippet
+        start = text_src.index("int save_text_gbk_bias(const char *s)")
+        end = text_src.index("\nstatic char *encode_utf8_to_cjk_fallback", start)
+        save_bias_fn = text_src[start:end]
+
+        noto_sc_exists = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc").exists()
+        harness = f"""
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/ain.h"
+#include "system4/fnl.h"
+#include "system4/hashtable.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "gfx/gfx.h"
+#include "gfx/font.h"
+#include "xsystem4.h"
+
+struct ain *ain = NULL;
+struct config config;
+bool game_rance02_mg = false;
+bool game_rance6_mg = false;
+bool game_rance7_mg = false;
+
+static int fnl_open_calls = 0;
+static int rendered_glyph_count = 0;
+static int nonzero_glyph_pixels = 0;
+
+struct fnl *fnl_open(const char *path) {{ (void)path; fnl_open_calls++; return NULL; }}
+struct font *fnl_font_load(struct fnl *lib, unsigned index) {{ (void)lib; (void)index; return NULL; }}
+
+const char *display_sjis0(const char *sjis) {{ return sjis ? sjis : ""; }}
+
+void gfx_init_texture_rmap(Texture *t, int w, int h, uint8_t *bitmap) {{
+    t->w = w; t->h = h; t->handle = 1;
+    rendered_glyph_count++;
+    for (int i = 0; i < w * h; i++) {{
+        if (bitmap[i] > 0)
+            nonzero_glyph_pixels++;
+    }}
+}}
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) {{ (void)color; t->w = w; t->h = h; t->handle = 1; }}
+void gfx_delete_texture(Texture *t) {{ if (t) t->handle = 0; }}
+bool gfx_remap_texture(Texture *t) {{ return t && t->handle != 0; }}
+void gfx_fill(struct texture *dst, int x, int y, int w, int h, int r, int g, int b) {{ (void)dst; (void)x; (void)y; (void)w; (void)h; (void)r; (void)g; (void)b; }}
+void gfx_draw_glyph(Texture *dst, float x, int y, Texture *glyph, SDL_Color color, float scale_x, float edge_width, bool blend) {{ (void)dst; (void)x; (void)y; (void)glyph; (void)color; (void)scale_x; (void)edge_width; (void)blend; }}
+void gfx_draw_glyph_mode(Texture *dst, float x, int y, Texture *glyph, SDL_Color color, float scale_x, float edge_width, enum glyph_blend_mode mode) {{ (void)dst; (void)x; (void)y; (void)glyph; (void)color; (void)scale_x; (void)edge_width; (void)mode; }}
+void gfx_draw_glyph_to_amap(Texture *dst, float x, int y, Texture *glyph, Rectangle r, float scale_x) {{ (void)dst; (void)x; (void)y; (void)glyph; (void)r; (void)scale_x; }}
+void gfx_draw_glyph_to_pmap(Texture *dst, float x, int y, Texture *glyph, Rectangle r, SDL_Color color, float scale_x) {{ (void)dst; (void)x; (void)y; (void)glyph; (void)r; (void)color; (void)scale_x; }}
+
+static bool cjk_is_ascii_only(const char *s) {{
+    if (!s) return true;
+    for (const uint8_t *p = (const uint8_t *)s; *p; p++) {{
+        if (*p >= 0x80) return false;
+    }}
+    return true;
+}}
+
+{save_bias_fn}
+
+#include "font_freetype.c"
+#include "text.c"
+
+int main(void)
+{{
+    uint8_t word[65536] = {{0}};
+    word[0x8bf7] = 1; /* 请 (not in CP932) */
+    word[0x8fd9] = 1; /* 这 (not in CP932) */
+    word[0x540d] = 1; /* 名 */
+    assert(sys4_load_mai_word_table_mem(word, sizeof(word)));
+
+    memset(&config, 0, sizeof(config));
+    config.text_x_scale = 1.0f;
+    /* Point to a nonexistent .fnl to prove mai mode skips fnl_open completely. */
+    config.fnl_path = "/nonexistent/Evenicle2Font.fnl";
+
+    struct ain dummy_ain = {{ .version = 14 }};
+    ain = &dummy_ain;
+
+    gfx_font_init();
+    assert(fnl_open_calls == 0);
+    assert(font_ttf[FONT_GOTHIC] != NULL);
+    assert(font_ttf[FONT_MINCHO] != NULL);
+    assert(font_fnl[0] == NULL);
+    assert(get_font(256) == font_ttf[FONT_GOTHIC]);
+    assert(gfx_text_advance_edges == true);
+
+    if ({1 if noto_sc_exists else 0}) {{
+        struct font_ft *gft = (struct font_ft *)font_ttf[FONT_GOTHIC];
+        assert(gft->font && gft->font->family_name);
+        assert(strstr(gft->font->family_name, " SC") != NULL);
+        assert(strstr(gft->font->family_name, "Mono") != NULL);
+    }}
+
+    char *mai_cn = mai_utf2sjis("请这A", strlen("请这A"));
+    assert(mai_cn && strlen(mai_cn) == 5);
+    /* Custom mai pair must behave as fullwidth 2-byte char in PartsEngine/text width checks. */
+    struct text_style ts = {{ .face = 256, .size = 24.0f, .scale_x = 1.0f, .space_scale_x = 1.0f }};
+    assert(fabsf(gfx_size_char(&ts, mai_cn) - 24.0f) < 0.01f);
+    assert(fabsf(gfx_size_char(&ts, mai_cn + 4) - 12.0f) < 0.01f);
+    assert(fabsf(gfx_size_text(&ts, mai_cn) - 60.0f) < 0.01f);
+
+    /* Ensure char_to_code decodes custom mai slot to Unicode U+8BF7 and renders pixels. */
+    Texture dummy = {{ .w = 128, .h = 64, .handle = 1 }};
+    gfx_render_text_core_only(&dummy, 0.0f, 0.0f, mai_cn, &ts);
+    assert(rendered_glyph_count == 3);
+    assert(nonzero_glyph_pixels > 0);
+
+    /* save_text_gbk_bias must treat valid mai CN save strings/comments as non-GBK. */
+    assert(save_text_gbk_bias(mai_cn) < 0);
+
+    free(mai_cn);
+    sys4_reset_mai_word_table();
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(
+            harness,
+            LIBSYS4_CORE,
+            [*ft_cflags, f'-DXSYS4_DATA_DIR="{ROOT}"', *ft_libs, "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":

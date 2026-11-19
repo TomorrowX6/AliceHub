@@ -23,10 +23,18 @@
 #include "mixer.h"
 #include "xsystem4.h"
 
-#define BGI_MAX 100
-
 static int bgi_nfile;
-static struct bgi bgi_data[BGI_MAX];
+static int bgi_cap;
+static struct bgi *bgi_data;
+
+static void bgi_push(const struct bgi *entry)
+{
+	if (bgi_nfile >= bgi_cap) {
+		bgi_cap = bgi_cap ? bgi_cap * 2 : 128;
+		bgi_data = xrealloc(bgi_data, (size_t)bgi_cap * sizeof(*bgi_data));
+	}
+	bgi_data[bgi_nfile++] = *entry;
+}
 
 static char *bgi_gets(char *buf, int n, FILE *fp)
 {
@@ -54,38 +62,40 @@ void bgi_read(const char *path)
 
 	char buf[256];
 	bgi_nfile = 0;
-	while (bgi_nfile < BGI_MAX && bgi_gets(buf, sizeof(buf), fp)) {
+	while (bgi_gets(buf, sizeof(buf), fp)) {
+		struct bgi entry;
 		int terminator;
 		if (sscanf(buf, " %d, %d, %d, %d, %d",
-			   &bgi_data[bgi_nfile].no,
-			   &bgi_data[bgi_nfile].loop_count,
-			   &bgi_data[bgi_nfile].loop_start,
-			   &bgi_data[bgi_nfile].loop_end,
+			   &entry.no,
+			   &entry.loop_count,
+			   &entry.loop_start,
+			   &entry.loop_end,
 			   &terminator) != 5) {
 			continue;
 		} else if (terminator != -1) {
 			goto new_format;
 		}
-		bgi_data[bgi_nfile].channel = -1;
-		bgi_data[bgi_nfile].volume = 100;
-		bgi_nfile++;
+		entry.channel = -1;
+		entry.volume = 100;
+		bgi_push(&entry);
 	}
 	fclose(fp);
 	return;
 new_format:
 	fseek(fp, 0, SEEK_SET);
 	bgi_nfile = 0;
-	while (bgi_nfile < BGI_MAX && bgi_gets(buf, sizeof(buf), fp)) {
+	while (bgi_gets(buf, sizeof(buf), fp)) {
+		struct bgi entry;
 		if (sscanf(buf, " %d, %d, %d, %d, %d, %d",
-			   &bgi_data[bgi_nfile].no,
-			   &bgi_data[bgi_nfile].loop_count,
-			   &bgi_data[bgi_nfile].loop_start,
-			   &bgi_data[bgi_nfile].loop_end,
-			   &bgi_data[bgi_nfile].channel,
-			   &bgi_data[bgi_nfile].volume) != 6) {
+			   &entry.no,
+			   &entry.loop_count,
+			   &entry.loop_start,
+			   &entry.loop_end,
+			   &entry.channel,
+			   &entry.volume) != 6) {
 			continue;
 		}
-		bgi_nfile++;
+		bgi_push(&entry);
 	}
 	fclose(fp);
 }

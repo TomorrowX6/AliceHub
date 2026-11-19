@@ -258,8 +258,11 @@ object OnlineInstaller {
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
     const val KICHIKUOU_CDN_URL = "https://alicehub.000.moe/kichikuou"
+    const val DAIAKUJI_CDN_URL = "https://alicehub.000.moe/daiakuji"
     const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
+    const val GALZOO_CDN_URL = "https://alicehub.000.moe/galzoo"
+    const val IXSEAL_CDN_URL = "https://alicehub.000.moe/ixseal"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -508,8 +511,8 @@ object OnlineInstaller {
                 }
             }
         }.orEmpty()
-        val combined = "$iniName $fileName"
-        val verMatch = modVersionNumberRegex.find(combined)
+        val verMatch = modVersionNumberRegex.find(fileName)
+            ?: modVersionNumberRegex.find(iniName)
         return if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
     }
 
@@ -948,6 +951,7 @@ object OnlineInstaller {
         val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
         val dirBaseName = when {
             classifiedStagedId == GameCatalog.ID_RANCE06 -> sanitizedManifestBase.ifEmpty { "Rance06" }
+            classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1266,6 +1270,9 @@ object OnlineInstaller {
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
                     GameCatalog.ID_KICHIKUOU -> lower.contains("kichiku")
+                    GameCatalog.ID_DAIAKUJI -> lower.contains("daiakuji") ||
+                        lower.contains("大悪司") ||
+                        lower.contains("大恶司")
                     GameCatalog.ID_ESCALAYER -> lower.contains("escalayer") &&
                         !lower.contains("escalayerreboot") &&
                         !lower.contains("escalayer_reboot") &&
@@ -1273,6 +1280,8 @@ object OnlineInstaller {
                     GameCatalog.ID_ESCALAYER_REBOOT -> lower.contains("escalayerreboot") ||
                         lower.contains("escalayer_reboot") ||
                         (lower.contains("escalayer") && lower.contains("reboot"))
+                    GameCatalog.ID_GALZOO -> lower.contains("galzoo")
+                    GameCatalog.ID_IXSEAL -> lower.contains("ixseal")
                     null, "" -> true
                     else -> false
                 }

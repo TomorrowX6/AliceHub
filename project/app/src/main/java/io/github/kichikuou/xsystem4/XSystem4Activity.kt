@@ -208,6 +208,18 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isEscalayerRebootGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isGalzooGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isGalzooGameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isIxsealGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isIxsealGameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isSystem3xGame(): Boolean {
         val root = effectiveGameRootFile()
         return GameCatalog.isSystem3xGameDir(root)

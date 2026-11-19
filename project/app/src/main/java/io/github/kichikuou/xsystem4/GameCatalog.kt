@@ -55,8 +55,11 @@ object GameCatalog {
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
     const val ID_KICHIKUOU = "kichikuou"
+    const val ID_DAIAKUJI = "daiakuji"
     const val ID_ESCALAYER = "escalayer"
     const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
+    const val ID_GALZOO = "galzoo"
+    const val ID_IXSEAL = "ixseal"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -171,6 +174,119 @@ object GameCatalog {
         }
     }
 
+    private val DAIAKUJI_ALIAS_TOKENS = listOf(
+        "daiakuji",
+        "daiakuzi",
+        "大悪司",
+        "大恶司",
+        "戭埆巌",
+        "戝埆巌"
+    )
+
+    private val DAIAKUJI_ALD_NAMES = setOf(
+        "大悪司sa.ald",
+        "大悪司ga.ald",
+        "大悪司wa.ald",
+        "大悪司da.ald",
+        "大恶司sa.ald",
+        "大恶司ga.ald",
+        "大恶司wa.ald",
+        "大恶司da.ald",
+        "daiakujisa.ald",
+        "daiakujiga.ald",
+        "daiakujiwa.ald",
+        "daiakujida.ald",
+        "daiakuji_sa.ald",
+        "daiakuji_ga.ald",
+        "daiakuzisa.ald",
+        "daiakuziga.ald",
+        "戭埆巌sa.ald",
+        "戭埆巌ga.ald",
+        "戭埆巌wa.ald",
+        "戭埆巌da.ald",
+        "戝埆巌sa.ald",
+        "戝埆巌ga.ald",
+        "戝埆巌wa.ald",
+        "戝埆巌da.ald"
+    )
+
+    fun isDaiakujiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        return DAIAKUJI_ALIAS_TOKENS.any { token ->
+            repaired.contains(token) || rawLower.contains(token)
+        }
+    }
+
+    @JvmOverloads
+    fun isDaiakujiGameFiles(
+        fileNames: Collection<String>,
+        bgmFileNames: Collection<String> = emptyList(),
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val lower = it.lowercase()
+                val repairedLower = ArchiveExtractor.repairSjisAsGbkMojibake(it).lowercase()
+                lower in DAIAKUJI_ALD_NAMES || repairedLower in DAIAKUJI_ALD_NAMES
+            }
+        ) {
+            return true
+        }
+        if (bgmFileNames.any {
+                val lower = it.lowercase()
+                lower.startsWith("daiakuji_") || lower.startsWith("daiakuzi_")
+            }
+        ) {
+            return true
+        }
+        if (readSmallFile != null) {
+            for (listName in listOf("_inmm.ini", "playlist.txt")) {
+                val matchName = fileNames.firstOrNull { it.equals(listName, true) } ?: continue
+                try {
+                    val raw = readSmallFile(matchName) ?: continue
+                    val latin = String(raw, Charsets.ISO_8859_1).lowercase()
+                    if (latin.contains("daiakuji_") || latin.contains("daiakuzi_")) {
+                        return true
+                    }
+                    val decoded = ArchiveExtractor.decodeBestCjkText(raw)
+                    if (isDaiakujiAlias(decoded)) {
+                        return true
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+            val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+            if (iniName != null) {
+                try {
+                    val raw = readSmallFile(iniName)
+                    if (raw != null) {
+                        val title = System40Ini.parse(raw).gameName ?: ""
+                        if (isDaiakujiAlias(title)) {
+                            return true
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        return false
+    }
+
+    fun isDaiakujiGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val fileNames = files.map { it.name }
+        if (!isSystem3xGameFiles(fileNames)) return false
+        val bgmDir = dir.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("bgm", true) }
+        val bgmFileNames = bgmDir?.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        return isDaiakujiGameFiles(fileNames, bgmFileNames) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) f.readBytes() else null
+        }
+    }
+
     /**
      * Classifies a game root strictly from its files (never directory/display names), returning
      * a built-in game ID if recognized or null for custom/unrecognized roots.
@@ -233,6 +349,9 @@ object GameCatalog {
         if (isRance06GameFiles(fileNames)) {
             return ID_RANCE06
         }
+        if (isGalzooGameFiles(fileNames)) {
+            return ID_GALZOO
+        }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance09.ain", ignoreCase = true) ||
@@ -269,11 +388,17 @@ object GameCatalog {
         ) {
             return ID_SENGOKU_RANCE
         }
+        if (isIxsealGameFiles(fileNames, readSmallFile)) {
+            return ID_IXSEAL
+        }
         if (isEscalayerGameFiles(fileNames, readSmallFile)) {
             return ID_ESCALAYER
         }
         if (isKichikuouGameFiles(fileNames, bgmFileNames, readSmallFile)) {
             return ID_KICHIKUOU
+        }
+        if (isDaiakujiGameFiles(fileNames, bgmFileNames, readSmallFile)) {
+            return ID_DAIAKUJI
         }
         return null
     }
@@ -352,6 +477,12 @@ object GameCatalog {
     private val ESCALAYER_R_JA_ALIAS_REGEX = Regex("エスカレイヤー[\\s・_-]*r(?![a-z0-9])")
     private val ESCALAYER_R_CN_ALIAS_REGEX = Regex("艾斯卡蕾雅[\\s・_-]*r(?![a-z0-9])")
     private val ESCALAYER_R_EN_ALIAS_REGEX = Regex("(?<![a-z0-9])escalayer[\\s._-]*r(?![a-z0-9])")
+    private val GALZOO_EN_ALIAS_REGEX =
+        Regex("(?<![a-z0-9])galzoo(?:[\\s._-]*(?:island|cn))?(?![a-z0-9])", RegexOption.IGNORE_CASE)
+    private val GALZOO_ALD_REGEX =
+        Regex("^(?:galzoo(?:island)?|galzooアイランド|ギャルズーアイランド)(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
+    private val GALZOO_SAVE_SLOT_REGEX =
+        Regex("^(?:galzoo|ギャルズー).*\\.(?:asd|sav|rsm)$", RegexOption.IGNORE_CASE)
 
     fun isEscalayerRebootAlias(lowerText: String): Boolean {
         return lowerText.contains("escalayerreboot") ||
@@ -369,6 +500,86 @@ object GameCatalog {
             ESCALAYER_R_JA_ALIAS_REGEX.containsMatchIn(lowerText) ||
             ESCALAYER_R_CN_ALIAS_REGEX.containsMatchIn(lowerText) ||
             ESCALAYER_R_EN_ALIAS_REGEX.containsMatchIn(lowerText)
+    }
+
+    fun isIxsealAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        if (lower.contains("escalayer") || lower.contains("超昂天使") || lower.contains("エスカレイヤー")) {
+            return false
+        }
+        return lower.contains("ixseal") ||
+            lower.contains("エクシール") ||
+            lower.contains("超昂神騎") ||
+            lower.contains("超昂神骑") ||
+            lower.contains("beat valkyrie")
+    }
+
+    @JvmOverloads
+    fun isIxsealGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val sys4AinNames = fileNames.filter {
+            it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true)
+        }
+        if (sys4AinNames.isEmpty()) return false
+        if (sys4AinNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("Ixseal.ain", ignoreCase = true) ||
+                    repaired.equals("Ixseal.ain", ignoreCase = true) ||
+                    it.equals("エクシール.ain", ignoreCase = true) ||
+                    repaired.equals("エクシール.ain", ignoreCase = true) ||
+                    it.equals("超昂神騎エクシール.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神騎エクシール.ain", ignoreCase = true) ||
+                    it.equals("超昂神骑.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神骑.ain", ignoreCase = true) ||
+                    it.equals("超昂神騎.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神騎.ain", ignoreCase = true)
+            }
+        ) {
+            return true
+        }
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("IxsealCG.afa", ignoreCase = true) ||
+                    repaired.equals("IxsealCG.afa", ignoreCase = true) ||
+                    it.equals("IxsealFont.fnl", ignoreCase = true) ||
+                    it.equals("IxsealVoice.afa", ignoreCase = true) ||
+                    it.equals("IxsealFlat.afa", ignoreCase = true)
+            }
+        ) {
+            return true
+        }
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", ignoreCase = true) }
+        if (iniName != null && readSmallFile != null) {
+            try {
+                val raw = readSmallFile(iniName)
+                if (raw != null) {
+                    val parsed = System40Ini.parse(raw)
+                    val title = parsed.gameName?.trim().orEmpty()
+                    if (title.isNotEmpty() && isIxsealAlias(title)) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return false
+    }
+
+    fun isIxsealGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isIxsealGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) {
+                try { f.readBytes() } catch (_: Throwable) { null }
+            } else {
+                null
+            }
+        }
     }
 
     fun isEvenicle2Alias(lowerText: String): Boolean {
@@ -438,6 +649,59 @@ object GameCatalog {
             lower.contains("collapse of zeth")
     }
 
+    fun isGalzooGameFiles(fileNames: Collection<String>): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
+        val isGalzooAin = { rawAin: String ->
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(rawAin)
+            rawAin.equals("GALZOO.ain", ignoreCase = true) ||
+                repaired.equals("GALZOO.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOOIsland.ain", ignoreCase = true) ||
+                repaired.equals("GALZOOIsland.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOO Island.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOO_Island.ain", ignoreCase = true) ||
+                rawAin.equals("GALZOOアイランド.ain", ignoreCase = true) ||
+                repaired.equals("GALZOOアイランド.ain", ignoreCase = true) ||
+                rawAin.equals("ギャルズーアイランド.ain", ignoreCase = true) ||
+                repaired.equals("ギャルズーアイランド.ain", ignoreCase = true)
+        }
+        if (ainNames.any(isGalzooAin)) {
+            return true
+        }
+        val nonSpecialAins = ainNames.filter {
+            !it.equals("System39.ain", ignoreCase = true) && !it.equals("AliceCN.ain", ignoreCase = true)
+        }
+        if (nonSpecialAins.isNotEmpty()) {
+            return false
+        }
+        return fileNames.any {
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+            it.equals("GALZOODLL.inc", ignoreCase = true) ||
+                GALZOO_ALD_REGEX.matches(it) ||
+                GALZOO_ALD_REGEX.matches(repaired)
+        }
+    }
+
+    fun isGalzooGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isGalzooGameFiles(files.map { it.name })
+    }
+
+    fun isGalzooAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        return GALZOO_EN_ALIAS_REGEX.containsMatchIn(lower) ||
+            lower.contains("galzooisland") ||
+            lower.contains("galzooアイランド") ||
+            lower.contains("galzoo アイランド") ||
+            lower.contains("ギャルズー") ||
+            lower.contains("galzoo岛") ||
+            lower.contains("galzoo 岛") ||
+            lower.contains("galzoo艾兰德") ||
+            lower.contains("galzoo 艾兰德")
+    }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -487,6 +751,17 @@ object GameCatalog {
                 !File(saveDir, "GlobalSaveData.asd").isFile
             ) {
                 return ID_ESCALAYER_REBOOT
+            }
+            if (saveDir.listFiles()?.any {
+                    it.isFile && (
+                        it.name.equals("Ixseal_Extra.sav", ignoreCase = true) ||
+                            it.name.lowercase().startsWith("ixseal_")
+                        )
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_IXSEAL
             }
             val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
             val hasGlobalSave = saveFiles.any {
@@ -597,6 +872,25 @@ object GameCatalog {
             ) {
                 return ID_RANCE06
             }
+            if ((File(saveDir, "keyfile.dat").isFile ||
+                    File(saveDir, "MsgSkipFlag.sav").isFile ||
+                    saveDir.listFiles()?.any {
+                        if (!it.isFile) return@any false
+                        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                        GALZOO_SAVE_SLOT_REGEX.matches(it.name) ||
+                            GALZOO_SAVE_SLOT_REGEX.matches(repaired)
+                    } == true) &&
+                !File(saveDir, "Progress.asd").isFile &&
+                !File(saveDir, "Config.asd").isFile &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile &&
+                !File(saveDir, "AFCommon.asd").isFile
+            ) {
+                return ID_GALZOO
+            }
             if ((File(saveDir, "key0104.dat").isFile ||
                     saveDir.listFiles()?.any {
                         it.isFile && it.name.endsWith("_Sys.ASD", ignoreCase = true)
@@ -647,6 +941,16 @@ object GameCatalog {
             ) {
                 return ID_KICHIKUOU
             }
+            if (!File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                saveDir.listFiles()?.any {
+                    if (!it.isFile) return@any false
+                    val lower = it.name.lowercase()
+                    (lower.endsWith(".asd") || lower.endsWith(".msgskip")) && isDaiakujiAlias(it.name)
+                } == true
+            ) {
+                return ID_DAIAKUJI
+            }
         }
 
         val lowerDir = ArchiveExtractor.repairSjisAsGbkMojibake(dirName).lowercase()
@@ -691,6 +995,9 @@ object GameCatalog {
         if (isRance06Alias(lowerDir)) {
             return ID_RANCE06
         }
+        if (isGalzooAlias(lowerDir)) {
+            return ID_GALZOO
+        }
         if (lowerDir == "sengokurance" || lowerDir.startsWith("sengokurance-") || lowerDir.contains("sengoku") ||
             lowerDir.contains("战国兰斯") || lowerDir.contains("戦国ランス") || lowerDir.contains("愴崙儔儞僗")
         ) {
@@ -713,12 +1020,18 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (isIxsealAlias(lowerDir)) {
+            return ID_IXSEAL
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
             lowerDir.contains("鬼畜王")
         ) {
             return ID_KICHIKUOU
+        }
+        if (isDaiakujiAlias(dirName)) {
+            return ID_DAIAKUJI
         }
 
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
@@ -730,8 +1043,14 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (isIxsealAlias(lowerDisp)) {
+            return ID_IXSEAL
+        }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
+        }
+        if (!displayName.isNullOrBlank() && isDaiakujiAlias(displayName)) {
+            return ID_DAIAKUJI
         }
         if (lowerDisp.contains("兰斯10") || lowerDisp.contains("兰斯１０") || lowerDisp.contains("ランス10") ||
             lowerDisp.contains("ランス１０") || lowerDisp.contains("rance10") || lowerDisp.contains("rance 10")
@@ -773,6 +1092,9 @@ object GameCatalog {
         if (isRance06Alias(lowerDisp)) {
             return ID_RANCE06
         }
+        if (isGalzooAlias(lowerDisp)) {
+            return ID_GALZOO
+        }
         if (lowerDisp.contains("sengoku") || lowerDisp.contains("战国兰斯") || lowerDisp.contains("戰國蘭斯") ||
             lowerDisp.contains("戦国ランス")
         ) {
@@ -803,11 +1125,19 @@ object GameCatalog {
         return result
     }
 
-    fun descriptorFor(context: Context, gameId: String, gameList: GameList? = null): GameDescriptor {
+    fun descriptorFor(context: Context, gameId: String, gameList: GameList? = null): GameDescriptor =
+        descriptorForWithResolver(gameId, gameList) { resId -> context.getString(resId) }
+
+    @JvmOverloads
+    fun descriptorForWithResolver(
+        gameId: String,
+        gameList: GameList? = null,
+        stringResolver: (Int) -> String
+    ): GameDescriptor {
         return when (gameId) {
             ID_RANCE10 -> GameDescriptor(
                 id = ID_RANCE10,
-                title = context.getString(R.string.game_rance10_title),
+                title = stringResolver(R.string.game_rance10_title),
                 defaultDirName = "Rance10",
                 expectedAinName = "Rance10.ain",
                 iconRes = R.drawable.ic_game_rance10,
@@ -822,7 +1152,7 @@ object GameCatalog {
             )
             ID_DOHNA_DOHNA -> GameDescriptor(
                 id = ID_DOHNA_DOHNA,
-                title = context.getString(R.string.game_dohnadohna_title),
+                title = stringResolver(R.string.game_dohnadohna_title),
                 defaultDirName = "dohnadohna",
                 expectedAinName = "dohnadohna.ain",
                 iconRes = R.drawable.ic_game_dohnadohna,
@@ -837,7 +1167,7 @@ object GameCatalog {
             )
             ID_EVENICLE -> GameDescriptor(
                 id = ID_EVENICLE,
-                title = context.getString(R.string.game_evenicle_title),
+                title = stringResolver(R.string.game_evenicle_title),
                 defaultDirName = "Evenicle",
                 expectedAinName = "Evenicle.ain",
                 iconRes = R.drawable.ic_game_evenicle,
@@ -855,7 +1185,7 @@ object GameCatalog {
             )
             ID_EVENICLE2 -> GameDescriptor(
                 id = ID_EVENICLE2,
-                title = context.getString(R.string.game_evenicle2_title),
+                title = stringResolver(R.string.game_evenicle2_title),
                 defaultDirName = "Evenicle2",
                 expectedAinName = "Evenicle2.ain",
                 iconRes = R.drawable.ic_game_evenicle2,
@@ -864,13 +1194,16 @@ object GameCatalog {
                 iconFrameColor = 0xFF0F2026.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLE2_CDN_URL,
-                supportsOnlineMod = false,
-                supportsLocalMod = false,
-                isRance10 = false
+                supportsOnlineMod = true,
+                supportsLocalMod = true,
+                isRance10 = false,
+                isCnPatch = true,
+                overlayCdnBaseUrl = OnlineInstaller.EVENICLE2_CDN_URL,
+                overlayCatalogRelPath = "files/cn-patch/index.json"
             )
             ID_SENGOKU_RANCE -> GameDescriptor(
                 id = ID_SENGOKU_RANCE,
-                title = context.getString(R.string.game_sengokurance_title),
+                title = stringResolver(R.string.game_sengokurance_title),
                 defaultDirName = "SengokuRance",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_sengokurance,
@@ -885,7 +1218,7 @@ object GameCatalog {
             )
             ID_RANCE01 -> GameDescriptor(
                 id = ID_RANCE01,
-                title = context.getString(R.string.game_rance01_title),
+                title = stringResolver(R.string.game_rance01_title),
                 defaultDirName = "Rance01",
                 expectedAinName = "Rance01.ain",
                 iconRes = R.drawable.ic_game_rance01,
@@ -900,7 +1233,7 @@ object GameCatalog {
             )
             ID_RANCE02 -> GameDescriptor(
                 id = ID_RANCE02,
-                title = context.getString(R.string.game_rance02_title),
+                title = stringResolver(R.string.game_rance02_title),
                 defaultDirName = "Rance02",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance02,
@@ -915,7 +1248,7 @@ object GameCatalog {
             )
             ID_RANCE03 -> GameDescriptor(
                 id = ID_RANCE03,
-                title = context.getString(R.string.game_rance03_title),
+                title = stringResolver(R.string.game_rance03_title),
                 defaultDirName = "Rance03",
                 expectedAinName = "Rance03.ain",
                 iconRes = R.drawable.ic_game_rance03,
@@ -930,7 +1263,7 @@ object GameCatalog {
             )
             ID_RANCE06 -> GameDescriptor(
                 id = ID_RANCE06,
-                title = context.getString(R.string.game_rance06_title),
+                title = stringResolver(R.string.game_rance06_title),
                 defaultDirName = "Rance06",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance06,
@@ -945,7 +1278,7 @@ object GameCatalog {
             )
             ID_RANCE08 -> GameDescriptor(
                 id = ID_RANCE08,
-                title = context.getString(R.string.game_rance08_title),
+                title = stringResolver(R.string.game_rance08_title),
                 defaultDirName = "Rance08",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance08,
@@ -960,7 +1293,7 @@ object GameCatalog {
             )
             ID_RANCE09 -> GameDescriptor(
                 id = ID_RANCE09,
-                title = context.getString(R.string.game_rance09_title),
+                title = stringResolver(R.string.game_rance09_title),
                 defaultDirName = "Rance09",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance09,
@@ -975,7 +1308,7 @@ object GameCatalog {
             )
             ID_ESCALAYER -> GameDescriptor(
                 id = ID_ESCALAYER,
-                title = context.getString(R.string.game_escalayer_title),
+                title = stringResolver(R.string.game_escalayer_title),
                 defaultDirName = "Escalayer",
                 expectedAinName = "DOKI_SA.ALD",
                 iconRes = R.drawable.ic_game_escalayer,
@@ -990,7 +1323,7 @@ object GameCatalog {
             )
             ID_ESCALAYER_REBOOT -> GameDescriptor(
                 id = ID_ESCALAYER_REBOOT,
-                title = context.getString(R.string.game_escalayer_reboot_title),
+                title = stringResolver(R.string.game_escalayer_reboot_title),
                 defaultDirName = "EscalayerReboot",
                 expectedAinName = "EscalayerReboot.ain",
                 iconRes = R.drawable.ic_game_escalayer_reboot,
@@ -1003,9 +1336,39 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_GALZOO -> GameDescriptor(
+                id = ID_GALZOO,
+                title = stringResolver(R.string.game_galzoo_title),
+                defaultDirName = "GALZOO",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_galzoo,
+                accentColor = 0xFF0288D1.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0D2136.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.GALZOO_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_IXSEAL -> GameDescriptor(
+                id = ID_IXSEAL,
+                title = stringResolver(R.string.game_ixseal_title),
+                defaultDirName = "Ixseal",
+                expectedAinName = "Ixseal.ain",
+                iconRes = R.drawable.ic_game_ixseal,
+                accentColor = 0xFF0277BD.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0E1B28.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.IXSEAL_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
-                title = context.getString(R.string.game_kichikuou_title),
+                title = stringResolver(R.string.game_kichikuou_title),
                 defaultDirName = "KichikuRance",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_kichikuou,
@@ -1014,6 +1377,21 @@ object GameCatalog {
                 iconFrameColor = 0xFF1E1111.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.KICHIKUOU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DAIAKUJI -> GameDescriptor(
+                id = ID_DAIAKUJI,
+                title = stringResolver(R.string.game_daiakuji_title),
+                defaultDirName = "Daiakuji",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_daiakuji,
+                accentColor = 0xFFC62828.toInt(),
+                accentBorderColor = 0x66EF5350,
+                iconFrameColor = 0xFF1E1010.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DAIAKUJI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -1057,8 +1435,11 @@ object GameCatalog {
         ID_RANCE08,
         ID_RANCE09,
         ID_KICHIKUOU,
+        ID_DAIAKUJI,
         ID_ESCALAYER,
-        ID_ESCALAYER_REBOOT
+        ID_ESCALAYER_REBOOT,
+        ID_GALZOO,
+        ID_IXSEAL
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

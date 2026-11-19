@@ -313,8 +313,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_RANCE08 ||
                 descriptor.id == GameCatalog.ID_RANCE09 ||
                 descriptor.id == GameCatalog.ID_KICHIKUOU ||
+                descriptor.id == GameCatalog.ID_DAIAKUJI ||
                 descriptor.id == GameCatalog.ID_ESCALAYER ||
-                descriptor.id == GameCatalog.ID_ESCALAYER_REBOOT
+                descriptor.id == GameCatalog.ID_ESCALAYER_REBOOT ||
+                descriptor.id == GameCatalog.ID_GALZOO ||
+                descriptor.id == GameCatalog.ID_IXSEAL
             ) {
                 descriptor.title
             } else {
@@ -466,10 +469,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun showSwitchInstanceDialog() {
         if (matchingItems.size <= 1) return
+        val fallbackTag = if (descriptor.isCnPatch) "CN" else "MOD"
         val labels = Array(matchingItems.size) { idx ->
             val it = matchingItems[idx]
             val ver = if (gameList.hasInstalledMod(it)) {
-                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: fallbackTag
             } else {
                 null
             }

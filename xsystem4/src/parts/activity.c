@@ -554,84 +554,106 @@ struct string *PE_GetUserComponentData(int no, struct string *key)
 }
 
 // Layout keys in the Chinese edition are GBK, including the Japanese field names.
-static const char *const pact_key_aliases[][3] = {
-	{ "种类別情报", "種類別情報", NULL },
-	{ "种类別情報", "種類別情報", NULL },
-	{ "パーツ类型", "パーツタイプ", NULL },
-	{ "レイアウト类型", "レイアウトタイプ", NULL },
-	{ "翻折許可", "折り返し許可", NULL },
-	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ" },
-	{ "翻折尺寸を率として認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する" },
-	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する" },
-	{ "原点座標模式", "原点座標モード", NULL },
-	{ "ミップ地图", "ミップマップ", NULL },
-	{ "減算色模式", "減算色モード", NULL },
-	{ "左右反转", "左右反転", NULL },
-	{ "上下反转", "上下反転", NULL },
-	{ "文本エリア", "テキストエリア", NULL },
-	{ "开始時シーク量", "開始時シーク量", NULL },
-	{ "线の幅", "線の幅", NULL },
-	{ "旋转角度", "回転角度", NULL },
-	{ "座標总览", "座標一覧", NULL },
-	{ "一般状态", "通常状態", NULL },
-	{ "光标选中状态", "オンカーソル状態", NULL },
-	{ "键DOWN状态", "キーダウン状態", NULL },
-	{ "光标选中透過", "オンカーソル透過", NULL },
-	{ "光标选中表示連動", "オンカーソル表示連動", NULL },
-	{ "复选框表示連動", "チェックボックス表示連動", NULL },
-	{ "α剪切器ー", "アルファクリッパー", NULL },
-	{ "点击許可", "クリック許可", NULL },
-	{ "光标选中效果音", "オンカーソル効果音", NULL },
-	{ "点击效果音", "クリック効果音", NULL },
-	{ "消息窗口表示連動", "メッセージウィンドウ表示連動", NULL },
-	{ "信息窗口視覚效果連動", "メッセージウィンドウ視覚効果連動", NULL },
-	{ "按钮の色", "ボタンの色", NULL },
-	{ "字体类型", "フォントタイプ", NULL },
-	{ "字体尺寸", "フォント尺寸", "フォントサイズ" },
-	{ "字体色", "フォント色", NULL },
-	{ "字体粗度", "フォント太さ", NULL },
-	{ "字体镶边", "フォント縁取り", NULL },
-	{ "字体镶边色", "フォント縁取り色", NULL },
-	{ "文本位置", "テキスト位置", NULL },
-	{ "文本装飾", "テキスト装飾", NULL },
-	{ "文本", "テキスト", NULL },
-	{ "文字间距", "文字間隔", NULL },
-	{ "行间距", "行間隔", NULL },
-	{ "字间距", "字間隔", NULL },
-	{ "有效", "有効", NULL },
-	{ "有效状态", "有効状態", "有効" },
-	{ "选择状态", "チェック状態", NULL },
-	{ "按钮模式", "ボタンモード", NULL },
-	{ "复选框リスト", "チェックボックスリスト", NULL },
-	{ "旋转", "回転", NULL },
-	{ "反转", "反転", NULL },
-	{ "数值", "数値", NULL },
-	{ "尺寸", "サイズ", NULL },
-	{ "前尺寸", "前サイズ", NULL },
-	{ "次尺寸", "次サイズ", NULL },
-	{ "全体滚动条量", "全体スクロール量", NULL },
-	{ "滚动条位置", "スクロール位置", NULL },
-	{ "滚动率", "スクロールレート", NULL },
-	{ "按钮点击移动量", "ボタンクリック移動量", NULL },
-	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", NULL },
-	{ "表示量尺寸連動", "表示量サイズ連動", NULL },
-	{ "表示类型", "表示タイプ", NULL },
-	{ "补间类型", "補間タイプ", NULL },
-	{ "原矩形", "元矩形", NULL },
-	{ "用户组件名", "ユーザコンポーネント名", NULL },
-	{ "数据", "データ", NULL },
-	{ "结束キー", "終了キー", NULL },
-	{ "扩大", "拡張", NULL },
-	{ "背景图片", "背景画像", NULL },
-	{ "边距", "マージン", NULL },
-	{ "开始時シーク量", "開始時シーク量", NULL },
-	{ "上書き检查ＣＧ名", "上書きチェックＣＧ名", NULL },
-	{ "上書き检查フラット名", "上書きチェックフラット名", NULL },
-	{ "消息编号", "メッセージ番号", NULL },
-	{ "循环ＣＧ开始编号", "ループＣＧ開始番号", NULL },
-	{ "循环ＣＧ张数", "ループＣＧ枚数", NULL },
-	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", NULL },
-	{ "子パーツ列表", "子パーツ", "子部件" },
+static const char *const pact_key_aliases[][4] = {
+	{ "种类別情报", "種類別情報", "种类別情報", "种类别情报" },
+	{ "パーツ类型", "パーツタイプ", NULL, NULL },
+	{ "レイアウト类型", "レイアウトタイプ", NULL, NULL },
+	{ "翻折許可", "折り返し許可", "折り返し许可", NULL },
+	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ", NULL },
+	{ "翻折尺寸を率として認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", NULL },
+	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", "折り返しサイズをレートとして认识する" },
+	{ "原点座標模式", "原点座標モード", "原点座标模式", NULL },
+	{ "ミップ地图", "ミップマップ", NULL, NULL },
+	{ "減算色模式", "減算色モード", NULL, NULL },
+	{ "左右反转", "左右反転", NULL, NULL },
+	{ "上下反转", "上下反転", NULL, NULL },
+	{ "文本エリア", "テキストエリア", "テキスト区域", NULL },
+	{ "开始時シーク量", "開始時シーク量", NULL, NULL },
+	{ "线の幅", "線の幅", NULL, NULL },
+	{ "旋转角度", "回転角度", NULL, NULL },
+	{ "座標总览", "座標一覧", NULL, NULL },
+	{ "一般状态", "通常状態", "通常状态", NULL },
+	{ "光标选中状态", "オンカーソル状態", "オンカーソル状态", NULL },
+	{ "键DOWN状态", "キーダウン状態", "キーダウン状态", NULL },
+	{ "光标选中透過", "オンカーソル透過", "オンカーソル透过", NULL },
+	{ "光标选中表示連動", "オンカーソル表示連動", "オンカーソル表示连动", NULL },
+	{ "复选框表示連動", "チェックボックス表示連動", "チェックボックス表示连动", NULL },
+	{ "α剪切器ー", "アルファクリッパー", NULL, NULL },
+	{ "点击許可", "クリック許可", "クリック许可", NULL },
+	{ "光标选中效果音", "オンカーソル効果音", "オンカーソル音效", NULL },
+	{ "点击效果音", "クリック効果音", "クリック音效", NULL },
+	{ "消息窗口表示連動", "メッセージウィンドウ表示連動", "文本窗口表示连动", NULL },
+	{ "信息窗口視覚效果連動", "メッセージウィンドウ視覚効果連動", "文本窗口视觉效果连动", NULL },
+	{ "按钮の色", "ボタンの色", NULL, NULL },
+	{ "字体类型", "フォントタイプ", NULL, NULL },
+	{ "字体尺寸", "フォント尺寸", "フォントサイズ", NULL },
+	{ "字体色", "フォント色", NULL, NULL },
+	{ "字体粗度", "フォント太さ", NULL, NULL },
+	{ "字体镶边", "フォント縁取り", "フォント缘取り", NULL },
+	{ "字体镶边色", "フォント縁取り色", "フォント缘取り色", NULL },
+	{ "文本位置", "テキスト位置", NULL, NULL },
+	{ "文本装飾", "テキスト装飾", "テキスト装饰", NULL },
+	{ "文本", "テキスト", NULL, NULL },
+	{ "文字间距", "文字間隔", "文字间隔", NULL },
+	{ "行间距", "行間隔", "行间隔", NULL },
+	{ "字间距", "字間隔", "字间隔", NULL },
+	{ "有效", "有効", NULL, NULL },
+	{ "有效状态", "有効状態", "有効", NULL },
+	{ "选择状态", "チェック状態", "チェック状态", NULL },
+	{ "按钮模式", "ボタンモード", "ボタン模式", NULL },
+	{ "复选框リスト", "チェックボックスリスト", NULL, NULL },
+	{ "旋转", "回転", "回转", NULL },
+	{ "反转", "反転", NULL, NULL },
+	{ "数值", "数値", NULL, NULL },
+	{ "尺寸", "サイズ", NULL, NULL },
+	{ "前尺寸", "前サイズ", NULL, NULL },
+	{ "次尺寸", "次サイズ", NULL, NULL },
+	{ "全体滚动条量", "全体スクロール量", NULL, NULL },
+	{ "滚动条位置", "スクロール位置", NULL, NULL },
+	{ "滚动率", "スクロールレート", NULL, NULL },
+	{ "按钮点击移动量", "ボタンクリック移動量", "ボタンクリック移动量", NULL },
+	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", "全体スクロール量サイズ连动", NULL },
+	{ "表示量尺寸連動", "表示量サイズ連動", "表示量サイズ连动", NULL },
+	{ "表示类型", "表示タイプ", NULL, NULL },
+	{ "补间类型", "補間タイプ", "辅间タイプ", NULL },
+	{ "原矩形", "元矩形", NULL, NULL },
+	{ "用户组件名", "ユーザコンポーネント名", NULL, NULL },
+	{ "数据", "データ", NULL, NULL },
+	{ "结束キー", "終了キー", "终了キー", NULL },
+	{ "扩大", "拡張", "扩张", NULL },
+	{ "背景图片", "背景画像", NULL, NULL },
+	{ "边距", "マージン", NULL, NULL },
+	{ "上書き检查ＣＧ名", "上書きチェックＣＧ名", NULL, NULL },
+	{ "上書き检查フラット名", "上書きチェックフラット名", NULL, NULL },
+	{ "消息编号", "メッセージ番号", "文本番号", NULL },
+	{ "循环ＣＧ开始编号", "ループＣＧ開始番号", "ループＣＧ开始番号", NULL },
+	{ "循环ＣＧ张数", "ループＣＧ枚数", NULL, NULL },
+	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", "ループＣＧ切り替え时间", NULL },
+	{ "子パーツ列表", "子パーツ", "子部件", "子パーツリスト" },
+	{ "サーフェイスエリア", "サーフェイス区域", NULL, NULL },
+	{ "スクロールＸ座標連動", "スクロールＸ座标连动", NULL, NULL },
+	{ "スクロールＹ座標連動", "スクロールＹ座标连动", NULL, NULL },
+	{ "スクロールアルファ連動", "スクロールアルファ连动", NULL, NULL },
+	{ "タグ処理有効", "タグ处理有效", NULL, NULL },
+	{ "ホイール有効", "ホイール有效", NULL, NULL },
+	{ "マウスカーソルピクセル判定", "鼠标光标ピクセル判定", NULL, NULL },
+	{ "ルビ装飾", "ルビ装饰", NULL, NULL },
+	{ "一文字辺りの表示時間", "一文字边りの表示时间", NULL, NULL },
+	{ "乗算色", "乘算色", NULL, NULL },
+	{ "座標", "座标", NULL, NULL },
+	{ "座標をレートとして認識する", "座标をレートとして认识する", NULL, NULL },
+	{ "手順リスト", "手顺リスト", NULL, NULL },
+	{ "拡大縮小", "扩大缩小", NULL, NULL },
+	{ "注視点更新", "注视点更新", NULL, NULL },
+	{ "遷移先", "迁移先", NULL, NULL },
+	{ "遷移方法", "迁移方法", NULL, NULL },
+	{ "長さ", "长さ", NULL, NULL },
+	{ "閉じている", "闭じている", NULL, NULL },
+	{ "非アクティブ時の乗算カラー", "非アクティブ时の乘算カラー", NULL, NULL },
+	{ "コメント", "评论", NULL, NULL },
+	{ "クリップ許可", "クリップ许可", NULL, NULL },
+	{ "クリップ領域", "クリップ领域", NULL, NULL },
+	{ "原点座標", "原点座标", NULL, NULL },
 };
 
 typedef void *(*pact_lookup_fn)(void *ctx, const char *key);
@@ -643,7 +665,7 @@ static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key
 		return res;
 	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
 		bool matched = false;
-		for (size_t k = 0; k < 3 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < 4 && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key)) {
 				matched = true;
 				break;
@@ -651,7 +673,7 @@ static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key
 		}
 		if (!matched)
 			continue;
-		for (size_t k = 0; k < 3 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < 4 && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key))
 				continue;
 			res = lookup(ctx, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
@@ -879,7 +901,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 			pt->ruby_char_space = number2(rstyle, "字间距", "字間隔", 0);
 		}
 		PE_SetText(no, str(tree, "文本"), state);
-	} else if (!strcmp(kind, "構築パーツ") || !strcmp(kind, "構築部件")) {
+	} else if (!strcmp(kind, "構築パーツ") || !strcmp(kind, "构筑パーツ") || !strcmp(kind, "構築部件")) {
 		parts_get_construction_process(p, state - 1);
 		struct ex_tree *steps = node(tree, "手順リスト");
 		if (steps && !steps->is_leaf) {
@@ -1173,7 +1195,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		parts_widget_end_batch(p);
 	} else if (!strcmp(kind, "纵向滚动条栏") || !strcmp(kind, "横向滚动条栏") ||
 	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") ||
-	           !strcmp(kind, "縦スクロールバー") || !strcmp(kind, "横スクロールバー") ||
+	           !strcmp(kind, "縦スクロールバー") || !strcmp(kind, "纵スクロールバー") || !strcmp(kind, "横スクロールバー") ||
 	           !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
 	           !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー") ||
 	           !strcmp(kind, "纵向滑动条") || !strcmp(kind, "横向滑动条")) {
@@ -1221,7 +1243,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		PE_SetPanelAlphaGradationBottom(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 1, 0));
 		PE_SetPanelAlphaGradationLeft(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 2, 0));
 		PE_SetPanelAlphaGradationRight(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 3, 0));
-	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "信息窗口") || !strcmp(kind, "メッセージウィンドウ")) {
+	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "文本窗口") || !strcmp(kind, "信息窗口") || !strcmp(kind, "メッセージウィンドウ")) {
 		PE_SetSpecialComponentType(no, 10);
 		PE_SetMessageWindowActive(no, number(info, "アクティブ", 0));
 		PE_SetMessageWindowInactiveMultipleColor(no,

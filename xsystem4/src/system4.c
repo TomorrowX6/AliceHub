@@ -346,7 +346,8 @@ static void config_init(void)
 				|| strstr(config.game_name, "\xcf\xc4\xcd\xde")
 				|| strstr(config.game_name, "\xd6\xd0\xce\xc4")
 				|| strstr(config.game_name, "\xba\xba\xbb\xaf")
-				|| strstr(config.game_name, "\x9e\x61\xbb\xaf")))
+				|| strstr(config.game_name, "\x9e\x61\xbb\xaf")
+				|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "dohnadohna.ain")
@@ -985,6 +986,19 @@ bool sys_is_sdl_main_thread(void)
 }
 #endif
 
+static void init_mai_word_table(void)
+{
+	sys4_reset_mai_word_table();
+	if (sys4_text_is_gbk || !config.game_dir)
+		return;
+	char *path = gamedir_path_icase("mai/word.mai");
+	if (path && file_exists(path)) {
+		if (!sys4_load_mai_word_table(path))
+			WARNING("Failed to load mai word table: %s", path);
+	}
+	free(path);
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef __ANDROID__
@@ -1198,6 +1212,7 @@ int main(int argc, char *argv[])
 
 	mkdir_p(config.save_dir);
 	apply_game_specific_hacks(ain);
+	init_mai_word_table();
 	if (config.msgskip_delay)
 		set_msgskip_delay(ain, config.msgskip_delay);
 	asset_manager_init();
