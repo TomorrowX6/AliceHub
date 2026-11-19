@@ -1725,6 +1725,12 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 	if (!mod) return false;
 	bool all_ok = true;
 	enum savefile_error serr;
+	cJSON *rank = cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank");
+	if (cJSON_IsNumber(rank) && rank->valueint < 0)
+		cJSON_DeleteItemFromObjectCaseSensitive(mod, "setAllCharRank");
+	cJSON *cards = cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");
+	if (cJSON_IsNumber(cards) && cards->valueint < 0)
+		cJSON_DeleteItemFromObjectCaseSensitive(mod, "setTakeOverCardCount");
 
 	int32_t total_clear_val = 0;
 	bool has_total_clear_mod = json_get_int_or_bool_item(mod, "TotalClearCount", &total_clear_val);
@@ -1837,7 +1843,7 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 		if (csd_path) {
 			struct csd_table tbl;
 			memset(&tbl, 0, sizeof(tbl));
-			bool load_ok = csd_table_load_file(csd_path, &tbl);
+			bool load_ok = !file_exists(csd_path) || csd_table_load_file(csd_path, &tbl);
 			if (load_ok) {
 				bool set_ok = true;
 				for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
