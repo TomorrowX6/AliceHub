@@ -310,6 +310,75 @@ static int write_all_fd(int fd, const uint8_t *buf, size_t len, int *out_errno)
 	return 0;
 }
 
+struct extracted_path {
+	char *name;
+	char *path;
+	struct extracted_path *next;
+};
+
+static int copy_link_target(const char *source, const char *destination)
+{
+	int in_fd = open(source, O_RDONLY | O_CLOEXEC);
+	if (in_fd < 0) return -1;
+	int out_fd = open(destination, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+	if (out_fd < 0) {
+		int saved_errno = errno;
+		close(in_fd);
+		errno = saved_errno;
+		return -1;
+	}
+	uint8_t buffer[131072];
+	int error = 0;
+	for (;;) {
+		ssize_t n = read(in_fd, buffer, sizeof(buffer));
+		if (n < 0 && errno == EINTR) continue;
+		if (n < 0) {
+			error = errno;
+			break;
+		}
+		if (n == 0) break;
+		if (write_all_fd(out_fd, buffer, (size_t)n, &error) != 0) break;
+	}
+	close(in_fd);
+	if (close(out_fd) != 0 && !error) error = errno;
+	if (error) {
+		unlink(destination);
+		errno = error;
+		return -1;
+	}
+	return 0;
+}
+
+static char *relative_link_name(const char *name)
+{
+	if (!name || !*name || *name == '/' || *name == '\\' || strchr(name, ':')) return NULL;
+	char *result = strdup(name);
+	if (!result) return NULL;
+	char *out = result;
+	const char *p = name;
+	while (*p) {
+		const char *start = p;
+		while (*p && *p != '/' && *p != '\\') p++;
+		size_t len = (size_t)(p - start);
+		if (len == 2 && start[0] == '.' && start[1] == '.') {
+			free(result);
+			return NULL;
+		}
+		if (len && !(len == 1 && start[0] == '.')) {
+			if (out != result) *out++ = '/';
+			memcpy(out, start, len);
+			out += len;
+		}
+		if (*p) p++;
+	}
+	*out = '\0';
+	if (out == result) {
+		free(result);
+		return NULL;
+	}
+	return result;
+}
+
 JNIEXPORT jboolean JNICALL
 Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeIsFdSeekable(
 	JNIEnv *env, jclass clazz, jint fd)
@@ -377,6 +446,8 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 	archive_read_support_filter_all(a);
 
 	int extracted_files = -1;
+	struct extracted_path *paths = NULL;
+	char *pending_path = NULL;
 
 	if (archive_read_open_fd(a, (int)fd, 131072) != ARCHIVE_OK) {
 		const char *err = archive_error_string(a);
@@ -493,9 +564,41 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 			goto cleanup;
 		}
 
+		pending_path = utf8_out_path;
+		const char *hardlink = archive_entry_hardlink(entry);
+		if (hardlink) {
+			char *target = relative_link_name(hardlink);
+			if (!target) {
+				throw_io_exception(env, "Invalid or escaping archive hard link target");
+				goto cleanup;
+			}
+			struct extracted_path *source = paths;
+			while (source && strcmp(source->name, target)) source = source->next;
+			free(target);
+			if (!source) {
+				throw_io_exception(env, "Archive hard link target was not previously extracted");
+				goto cleanup;
+			}
+			if (link(source->path, pending_path) != 0) {
+				int link_error = errno;
+				if ((link_error != EPERM && link_error != EXDEV && link_error != ENOTSUP &&
+					link_error != EOPNOTSUPP && link_error != EMLINK) ||
+					copy_link_target(source->path, pending_path) != 0) {
+					int copy_error = errno;
+					char msg[512];
+					snprintf(msg, sizeof(msg), "Cannot create archive hard link: %s%s",
+						(copy_error == ENOSPC || copy_error == EDQUOT) ? "ENOSPC: " : "",
+						strerror(copy_error));
+					throw_io_exception(env, msg);
+					goto cleanup;
+				}
+			}
+			archive_read_data_skip(a);
+			goto entry_complete;
+		}
+
 		int out_fd = open(utf8_out_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 		int open_err = errno;
-		free(utf8_out_path);
 
 		if (out_fd < 0) {
 			char msg[512];
@@ -602,6 +705,23 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 			throw_io_exception(env, msg);
 			goto cleanup;
 		}
+	entry_complete:;
+		char *name = relative_link_name(raw_path);
+		if (name) {
+			struct extracted_path *saved = malloc(sizeof(*saved));
+			if (!saved) {
+				free(name);
+				throw_io_exception(env, "Out of memory recording extracted archive path");
+				goto cleanup;
+			}
+			saved->name = name;
+			saved->path = pending_path;
+			saved->next = paths;
+			paths = saved;
+			pending_path = NULL;
+		}
+		free(pending_path);
+		pending_path = NULL;
 		count++;
 	}
 
@@ -615,6 +735,14 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 	extracted_files = count;
 
 cleanup:
+	free(pending_path);
+	while (paths) {
+		struct extracted_path *next = paths->next;
+		free(paths->name);
+		free(paths->path);
+		free(paths);
+		paths = next;
+	}
 	archive_read_free(a);
 	return (jint)extracted_files;
 }
