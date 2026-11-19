@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "system4.h"
+#include "system4/file.h"
 #include "system4/utfsjis.h"
 #include "system4/s2utbl.h"
 #include "gbk_table.h"
@@ -62,6 +64,163 @@ static void ensure_unicode_to_sjis(void)
 	}
 }
 
+#define MAI_WORD_TABLE_SIZE 65536
+#define MAI_NR_ROWS 128
+#define MAI_NR_COLS 192
+
+static bool sys4_mai_active = false;
+static uint16_t mai_s2u[MAI_NR_ROWS][MAI_NR_COLS];
+static uint16_t mai_u2s[MAI_WORD_TABLE_SIZE];
+
+void sys4_reset_mai_word_table(void)
+{
+	sys4_mai_active = false;
+	memset(mai_s2u, 0, sizeof(mai_s2u));
+	memset(mai_u2s, 0, sizeof(mai_u2s));
+}
+
+bool sys4_has_mai_word_table(void)
+{
+	return sys4_mai_active;
+}
+
+static bool mai_valid_slot_lead(int hi)
+{
+	return (hi >= 0x81 && hi <= 0x9f) || (hi >= 0xe0 && hi <= 0xef);
+}
+
+static bool mai_valid_slot_trail(int lo)
+{
+	return (lo >= 0x40 && lo <= 0x7e) || (lo >= 0x80 && lo <= 0x9e) || (lo >= 0xa0 && lo <= 0xfc);
+}
+
+/* Build mai.dll-compatible custom Shift-JIS <-> UCS-2 mapping tables from
+ * a 65536-byte word.mai BMP bitmap without mutating the base CP932 tables. */
+bool sys4_load_mai_word_table_mem(const void *data, size_t size)
+{
+	if (!data || size != MAI_WORD_TABLE_SIZE)
+		return false;
+
+	const uint8_t *raw = (const uint8_t *)data;
+	bool has_entry = false;
+	for (int u = 0x80; u < MAI_WORD_TABLE_SIZE; u++) {
+		if (raw[u]) {
+			has_entry = true;
+			break;
+		}
+	}
+	if (!has_entry)
+		return false;
+
+	uint8_t *needed = xmalloc(MAI_WORD_TABLE_SIZE);
+	uint8_t *free_slots = xcalloc(1, MAI_WORD_TABLE_SIZE);
+	uint16_t *base_u2s = xcalloc(MAI_WORD_TABLE_SIZE, sizeof(uint16_t));
+	for (int u = 0; u < MAI_WORD_TABLE_SIZE; u++)
+		needed[u] = raw[u] ? 1 : 0;
+
+	sys4_reset_mai_word_table();
+
+	for (int c = 0xa1; c <= 0xdf; c++)
+		base_u2s[0xff60 + (c - 0xa0)] = (uint16_t)c;
+
+	/* Mirror mai.dll: retain CP932 in 0x81..0xEC, clear 0xED00..0xFCFF,
+	 * and drop s2utbl.h's 0x30FB placeholder from unmapped cells. */
+	for (int b1 = 0x81; b1 <= 0xec; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t u = (uint16_t)s2u[b1 - 0x80][b2 - 0x40];
+			uint16_t sjis = (uint16_t)((b1 << 8) | b2);
+			if (u == 0x30fb && sjis != 0x8145)
+				continue;
+			mai_s2u[b1 - 0x80][b2 - 0x40] = u;
+			if (u >= 0x80)
+				base_u2s[u] = sjis;
+		}
+	}
+
+	for (int hi = 0x88; hi <= 0xef; hi++) {
+		if (!mai_valid_slot_lead(hi))
+			continue;
+		for (int lo = 0x40; lo <= 0xfc; lo++) {
+			if (!mai_valid_slot_trail(lo))
+				continue;
+			int slot = (hi << 8) | lo;
+			if (slot >= 0x889f)
+				free_slots[slot] = 1;
+		}
+	}
+
+	/* Pass 1: preserve existing CP932 codes required by word.mai. */
+	for (int u = 0x80; u < MAI_WORD_TABLE_SIZE; u++) {
+		if (needed[u] && base_u2s[u]) {
+			uint16_t s = base_u2s[u];
+			mai_u2s[u] = s;
+			free_slots[s] = 0;
+			needed[u] = 0;
+		}
+	}
+
+	/* Pass 2: assign unmapped word.mai characters into unused 2-byte slots. */
+	int slot = 0x889f;
+	for (int u = 0x80; u < MAI_WORD_TABLE_SIZE; u++) {
+		if (!needed[u])
+			continue;
+		while (slot < MAI_WORD_TABLE_SIZE && !free_slots[slot])
+			slot++;
+		if (slot >= MAI_WORD_TABLE_SIZE) {
+			free(base_u2s);
+			free(free_slots);
+			free(needed);
+			sys4_reset_mai_word_table();
+			return false;
+		}
+		mai_u2s[u] = (uint16_t)slot;
+		mai_s2u[(slot >> 8) - 0x80][(slot & 0xff) - 0x40] = (uint16_t)u;
+		free_slots[slot] = 0;
+		slot++;
+	}
+
+	/* Pass 3: populate reverse lookup for unallocated surviving CP932 chars. */
+	for (int c = 0xa1; c <= 0xdf; c++) {
+		uint16_t u = (uint16_t)(0xff60 + (c - 0xa0));
+		if (!mai_u2s[u])
+			mai_u2s[u] = (uint16_t)c;
+	}
+	for (int b1 = 0x81; b1 <= 0xef; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t u = mai_s2u[b1 - 0x80][b2 - 0x40];
+			if (u >= 0x80 && !mai_u2s[u])
+				mai_u2s[u] = (uint16_t)((b1 << 8) | b2);
+		}
+	}
+
+	free(base_u2s);
+	free(free_slots);
+	free(needed);
+	sys4_mai_active = true;
+	return true;
+}
+
+bool sys4_load_mai_word_table(const char *path)
+{
+	if (!path || !*path)
+		return false;
+	size_t size = 0;
+	void *buf = file_read(path, &size);
+	if (!buf)
+		return false;
+	bool ok = sys4_load_mai_word_table_mem(buf, size);
+	free(buf);
+	return ok;
+}
+
 void sys4_set_text_gbk(bool enabled)
 {
 	sys4_text_is_gbk = enabled;
@@ -85,16 +244,14 @@ int sjis_index(const char *_src, int index)
 	return src[i] ? i : -1;
 }
 
-#include "system4.h"
-
-char *sjis_char2unicode(const char *_src, int *dst)
+static char *sjis_char2unicode_impl(const char *_src, int *dst, bool use_mai)
 {
 	const uint8_t *src = (const uint8_t*)_src;
 	if (*src <= 0x7f) {
 		*dst = *src;
 		return (char*)src + 1;
 	}
-	if (sys4_text_is_gbk) {
+	if (!use_mai && sys4_text_is_gbk) {
 		if (*src == 0x80) { *dst = 0x20ac; return (char*)src + 1; }
 		if (*src >= 0x81 && *src <= 0xfe && src[1] >= 0x40 && src[1] <= 0xfe) {
 			*dst = gbk_to_unicode[*src - 0x81][src[1] - 0x40];
@@ -117,11 +274,26 @@ char *sjis_char2unicode(const char *_src, int *dst)
 		return (char*)src + 1;
 	}
 
-	*dst = s2u[*src - 0x80][*(src+1) - 0x40];
+	if (use_mai) {
+		uint16_t u = mai_s2u[*src - 0x80][c - 0x40];
+		*dst = u ? u : 0xfffd;
+	} else {
+		*dst = s2u[*src - 0x80][c - 0x40];
+	}
 	return (char*)src + 2;
 }
 
-char *sjis2utf(const char *_src, size_t len) {
+char *sjis_char2unicode(const char *_src, int *dst)
+{
+	return sjis_char2unicode_impl(_src, dst, false);
+}
+
+char *mai_sjis_char2unicode(const char *_src, int *dst)
+{
+	return sjis_char2unicode_impl(_src, dst, sys4_mai_active);
+}
+
+static char *sjis2utf_impl(const char *_src, size_t len, bool use_mai) {
 	if (!_src)
 		return NULL;
 	const uint8_t *src = (const uint8_t*)_src;
@@ -133,11 +305,12 @@ char *sjis2utf(const char *_src, size_t len) {
 
 	while (src < end && *src) {
 		int c;
-		if (SJIS_2BYTE(*src) && !(src + 1 < end && src[1] != '\0')) {
-			c = sys4_text_is_gbk ? 0xfffd : '?';
+		bool is_2b = use_mai ? (((*src) & 0xe0) == 0x80 || ((*src) & 0xe0) == 0xe0) : SJIS_2BYTE(*src);
+		if (is_2b && !(src + 1 < end && src[1] != '\0')) {
+			c = (!use_mai && sys4_text_is_gbk) ? 0xfffd : '?';
 			src++;
 		} else {
-			src = (const uint8_t*)sjis_char2unicode((const char*)src, &c);
+			src = (const uint8_t*)sjis_char2unicode_impl((const char*)src, &c, use_mai);
 		}
 
 		if (c <= 0x7f) {
@@ -153,6 +326,14 @@ char *sjis2utf(const char *_src, size_t len) {
 	}
 	*dstp = '\0';
 	return (char*)dst;
+}
+
+char *sjis2utf(const char *_src, size_t len) {
+	return sjis2utf_impl(_src, len, false);
+}
+
+char *mai_sjis2utf(const char *_src, size_t len) {
+	return sjis2utf_impl(_src, len, sys4_mai_active);
 }
 
 static void encode_utf8_bmp(int u, uint8_t **dstp)
@@ -172,7 +353,7 @@ static void encode_utf8_bmp(int u, uint8_t **dstp)
 /* Decode SJIS (gbk=false) or GBK (gbk=true) to UTF-8 without mutating sys4_text_is_gbk.
  * Writes into caller-supplied `buf` when `len * 3 + 1 <= buf_cap`, otherwise allocates.
  * Returns NULL and sets *valid_out=false if any byte sequence is invalid or unmapped. */
-char *cjk2utf_strict_buf(const char *_src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out)
+static char *cjk2utf_strict_buf_impl(const char *_src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out, bool use_mai)
 {
 	if (valid_out)
 		*valid_out = false;
@@ -203,7 +384,7 @@ char *cjk2utf_strict_buf(const char *_src, size_t len, bool gbk, char *buf, size
 				size_t r = (size_t)(b0 - 0x80);
 				size_t c = (size_t)(b1 - 0x40);
 				if (b1 >= 0x40 && r < sizeof(s2u) / sizeof(s2u[0]) && c < sizeof(s2u_80) / sizeof(s2u_80[0]))
-					u = s2u[r][c];
+					u = use_mai ? mai_s2u[r][c] : s2u[r][c];
 				src += 2;
 			}
 		} else {
@@ -230,6 +411,11 @@ char *cjk2utf_strict_buf(const char *_src, size_t len, bool gbk, char *buf, size
 	return (char *)dst;
 }
 
+char *cjk2utf_strict_buf(const char *_src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out)
+{
+	return cjk2utf_strict_buf_impl(_src, len, gbk, buf, buf_cap, valid_out, false);
+}
+
 /* Decode SJIS (gbk=false) or GBK (gbk=true) to UTF-8 without mutating sys4_text_is_gbk.
  * Returns NULL and sets *valid_out=false if any byte sequence is invalid or unmapped. */
 char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
@@ -237,7 +423,12 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 	return cjk2utf_strict_buf(_src, _src ? strlen(_src) : 0, gbk, NULL, 0, valid_out);
 }
 
-int cjk_encode_codepoint(int u, bool gbk)
+char *mai_cjk2utf_strict(const char *_src, bool *valid_out)
+{
+	return cjk2utf_strict_buf_impl(_src, _src ? strlen(_src) : 0, false, NULL, 0, valid_out, sys4_mai_active);
+}
+
+static int cjk_encode_codepoint_impl(int u, bool gbk, bool use_mai)
 {
 	if (u <= 0x7f)
 		return u >= 0 ? u : 0;
@@ -247,6 +438,8 @@ int cjk_encode_codepoint(int u, bool gbk)
 		return 0x80;
 	if (u >= 65536)
 		return 0;
+	if (use_mai && !gbk)
+		return mai_u2s[u];
 	if (gbk) {
 		ensure_unicode_to_gbk();
 		return unicode_to_gbk[u];
@@ -255,7 +448,12 @@ int cjk_encode_codepoint(int u, bool gbk)
 	return unicode_to_sjis_tbl[u];
 }
 
-char *utf2cjk(const char *_src, size_t len, bool gbk) {
+int cjk_encode_codepoint(int u, bool gbk)
+{
+	return cjk_encode_codepoint_impl(u, gbk, false);
+}
+
+static char *utf2cjk_impl(const char *_src, size_t len, bool gbk, bool use_mai) {
 	if (!_src)
 		return NULL;
 	const uint8_t *src = (const uint8_t*)_src;
@@ -298,7 +496,7 @@ char *utf2cjk(const char *_src, size_t len, bool gbk) {
 			continue;
 		}
 
-		int c = cjk_encode_codepoint(u, gbk);
+		int c = cjk_encode_codepoint_impl(u, gbk, use_mai);
 		if (c > 0xff) {
 			*dstp++ = (uint8_t)(c >> 8);
 			*dstp++ = (uint8_t)(c & 0xff);
@@ -312,8 +510,16 @@ char *utf2cjk(const char *_src, size_t len, bool gbk) {
 	return (char*)dst;
 }
 
+char *utf2cjk(const char *_src, size_t len, bool gbk) {
+	return utf2cjk_impl(_src, len, gbk, false);
+}
+
 char *utf2sjis(const char *_src, size_t len) {
-	return utf2cjk(_src, len, sys4_text_is_gbk);
+	return utf2cjk_impl(_src, len, sys4_text_is_gbk, false);
+}
+
+char *mai_utf2sjis(const char *_src, size_t len) {
+	return utf2cjk_impl(_src, len, false, sys4_mai_active);
 }
 
 static bool seg_is_strict_sjis_non_gb2312(const uint8_t *src, size_t len)

@@ -1681,7 +1681,7 @@ static bool re_match_at(struct re_exec_ctx *ctx, size_t start_off)
 static struct string *replace_regex_string(struct string *s, struct string *pattern, struct string *replacement)
 {
 	if (!pattern->size) return string_dup(s);
-	char *pat_utf = sjis2utf(pattern->text, pattern->size);
+	char *pat_utf = mai_sjis2utf(pattern->text, pattern->size);
 	struct re_prog prog;
 	if (!re_compile(&prog, pat_utf)) {
 		free(pat_utf);
@@ -1690,8 +1690,8 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	}
 	free(pat_utf);
 
-	char *text_utf = sjis2utf(s->text, s->size);
-	char *rep_utf = sjis2utf(replacement->text, replacement->size);
+	char *text_utf = mai_sjis2utf(s->text, s->size);
+	char *rep_utf = mai_sjis2utf(replacement->text, replacement->size);
 	size_t text_len = strlen(text_utf);
 	size_t rep_len = strlen(rep_utf);
 
@@ -1786,7 +1786,7 @@ static struct string *replace_regex_string(struct string *s, struct string *patt
 	out_len += tail;
 	out_utf[out_len] = '\0';
 
-	char *out_sjis = utf2sjis(out_utf, out_len);
+	char *out_sjis = mai_utf2sjis(out_utf, out_len);
 	struct string *res = make_string(out_sjis, strlen(out_sjis));
 	free(out_sjis);
 	free(out_utf);
@@ -1807,7 +1807,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 		match_list_slot = -1;
 	}
 
-	char *pat_utf = sjis2utf(pattern->text, pattern->size);
+	char *pat_utf = mai_sjis2utf(pattern->text, pattern->size);
 	struct re_prog prog;
 	if (!re_compile(&prog, pat_utf)) {
 		free(pat_utf);
@@ -1816,7 +1816,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 	}
 	free(pat_utf);
 
-	char *text_utf = sjis2utf(s->text, s->size);
+	char *text_utf = mai_sjis2utf(s->text, s->size);
 	size_t text_len = strlen(text_utf);
 	bool full_match = !strcmp(op_name, "Match");
 	bool search_all = !strcmp(op_name, "SearchAll");
@@ -1848,7 +1848,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 					char *sub_utf = xmalloc(eo - so + 1);
 					memcpy(sub_utf, text_utf + so, eo - so);
 					sub_utf[eo - so] = '\0';
-					char *sub_sjis = utf2sjis(sub_utf, eo - so);
+					char *sub_sjis = mai_utf2sjis(sub_utf, eo - so);
 					free(sub_utf);
 					int cur_len = v12_array_length(heap_get_page(match_list_slot));
 					resize_array(match_list_slot, cur_len + 1);
@@ -1882,7 +1882,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 						char *sub_utf = xmalloc(glen + 1);
 						memcpy(sub_utf, text_utf + saved[g * 2], glen);
 						sub_utf[glen] = '\0';
-						char *sub_sjis = utf2sjis(sub_utf, glen);
+						char *sub_sjis = mai_utf2sjis(sub_utf, glen);
 						free(sub_utf);
 						gs = make_string(sub_sjis, strlen(sub_sjis));
 						free(sub_sjis);
@@ -1909,7 +1909,7 @@ static bool string_regex_op(const char *op_name, const struct string *s, const s
 							char *sub_utf = xmalloc(glen + 1);
 							memcpy(sub_utf, text_utf + saved[g * 2], glen);
 							sub_utf[glen] = '\0';
-							char *sub_sjis = utf2sjis(sub_utf, glen);
+							char *sub_sjis = mai_utf2sjis(sub_utf, glen);
 							free(sub_utf);
 							gs = make_string(sub_sjis, strlen(sub_sjis));
 							free(sub_sjis);

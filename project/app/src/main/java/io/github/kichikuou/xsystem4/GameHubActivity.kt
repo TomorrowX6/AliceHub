@@ -467,10 +467,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun showSwitchInstanceDialog() {
         if (matchingItems.size <= 1) return
+        val fallbackTag = if (descriptor.isCnPatch) "CN" else "MOD"
         val labels = Array(matchingItems.size) { idx ->
             val it = matchingItems[idx]
             val ver = if (gameList.hasInstalledMod(it)) {
-                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: "MOD"
+                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: fallbackTag
             } else {
                 null
             }

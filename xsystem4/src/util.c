@@ -44,7 +44,7 @@ const char *display_sjis0(const char *sjis)
 #else
 	static _Thread_local char *utf = NULL;
 	free(utf);
-	utf = sjis2utf(sjis, 0);
+	utf = mai_sjis2utf(sjis, 0);
 	return utf;
 #endif
 }
@@ -58,7 +58,7 @@ const char *display_sjis1(const char *sjis)
 #else
 	static _Thread_local char *utf = NULL;
 	free(utf);
-	utf = sjis2utf(sjis, 0);
+	utf = mai_sjis2utf(sjis, 0);
 	return utf;
 #endif
 }
@@ -72,7 +72,7 @@ const char *display_sjis2(const char *sjis)
 #else
 	static _Thread_local char *utf = NULL;
 	free(utf);
-	utf = sjis2utf(sjis, 0);
+	utf = mai_sjis2utf(sjis, 0);
 	return utf;
 #endif
 }

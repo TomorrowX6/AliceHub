@@ -745,9 +745,9 @@ int save_text_gbk_bias(const char *s)
 	if (!s || !s[0] || cjk_is_ascii_only(s))
 		return 0;
 	bool ok_s = false, ok_g = false;
-	char *us = cjk2utf_strict(s, false, &ok_s);
+	char *us = sys4_has_mai_word_table() ? mai_cjk2utf_strict(s, &ok_s) : cjk2utf_strict(s, false, &ok_s);
 	char *ug = cjk2utf_strict(s, true, &ok_g);
-	if (ok_s && !ok_g) {
+	if (ok_s && (sys4_has_mai_word_table() || !ok_g)) {
 		free(us);
 		free(ug);
 		return -100;

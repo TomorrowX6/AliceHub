@@ -936,11 +936,19 @@ object GameCatalog {
         return result
     }
 
-    fun descriptorFor(context: Context, gameId: String, gameList: GameList? = null): GameDescriptor {
+    fun descriptorFor(context: Context, gameId: String, gameList: GameList? = null): GameDescriptor =
+        descriptorForWithResolver(gameId, gameList) { resId -> context.getString(resId) }
+
+    @JvmOverloads
+    fun descriptorForWithResolver(
+        gameId: String,
+        gameList: GameList? = null,
+        stringResolver: (Int) -> String
+    ): GameDescriptor {
         return when (gameId) {
             ID_RANCE10 -> GameDescriptor(
                 id = ID_RANCE10,
-                title = context.getString(R.string.game_rance10_title),
+                title = stringResolver(R.string.game_rance10_title),
                 defaultDirName = "Rance10",
                 expectedAinName = "Rance10.ain",
                 iconRes = R.drawable.ic_game_rance10,
@@ -955,7 +963,7 @@ object GameCatalog {
             )
             ID_DOHNA_DOHNA -> GameDescriptor(
                 id = ID_DOHNA_DOHNA,
-                title = context.getString(R.string.game_dohnadohna_title),
+                title = stringResolver(R.string.game_dohnadohna_title),
                 defaultDirName = "dohnadohna",
                 expectedAinName = "dohnadohna.ain",
                 iconRes = R.drawable.ic_game_dohnadohna,
@@ -970,7 +978,7 @@ object GameCatalog {
             )
             ID_EVENICLE -> GameDescriptor(
                 id = ID_EVENICLE,
-                title = context.getString(R.string.game_evenicle_title),
+                title = stringResolver(R.string.game_evenicle_title),
                 defaultDirName = "Evenicle",
                 expectedAinName = "Evenicle.ain",
                 iconRes = R.drawable.ic_game_evenicle,
@@ -988,7 +996,7 @@ object GameCatalog {
             )
             ID_EVENICLE2 -> GameDescriptor(
                 id = ID_EVENICLE2,
-                title = context.getString(R.string.game_evenicle2_title),
+                title = stringResolver(R.string.game_evenicle2_title),
                 defaultDirName = "Evenicle2",
                 expectedAinName = "Evenicle2.ain",
                 iconRes = R.drawable.ic_game_evenicle2,
@@ -997,13 +1005,16 @@ object GameCatalog {
                 iconFrameColor = 0xFF0F2026.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLE2_CDN_URL,
-                supportsOnlineMod = false,
-                supportsLocalMod = false,
-                isRance10 = false
+                supportsOnlineMod = true,
+                supportsLocalMod = true,
+                isRance10 = false,
+                isCnPatch = true,
+                overlayCdnBaseUrl = OnlineInstaller.EVENICLE2_CDN_URL,
+                overlayCatalogRelPath = "files/cn-patch/index.json"
             )
             ID_SENGOKU_RANCE -> GameDescriptor(
                 id = ID_SENGOKU_RANCE,
-                title = context.getString(R.string.game_sengokurance_title),
+                title = stringResolver(R.string.game_sengokurance_title),
                 defaultDirName = "SengokuRance",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_sengokurance,
@@ -1018,7 +1029,7 @@ object GameCatalog {
             )
             ID_RANCE01 -> GameDescriptor(
                 id = ID_RANCE01,
-                title = context.getString(R.string.game_rance01_title),
+                title = stringResolver(R.string.game_rance01_title),
                 defaultDirName = "Rance01",
                 expectedAinName = "Rance01.ain",
                 iconRes = R.drawable.ic_game_rance01,
@@ -1033,7 +1044,7 @@ object GameCatalog {
             )
             ID_RANCE02 -> GameDescriptor(
                 id = ID_RANCE02,
-                title = context.getString(R.string.game_rance02_title),
+                title = stringResolver(R.string.game_rance02_title),
                 defaultDirName = "Rance02",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance02,
@@ -1048,7 +1059,7 @@ object GameCatalog {
             )
             ID_RANCE03 -> GameDescriptor(
                 id = ID_RANCE03,
-                title = context.getString(R.string.game_rance03_title),
+                title = stringResolver(R.string.game_rance03_title),
                 defaultDirName = "Rance03",
                 expectedAinName = "Rance03.ain",
                 iconRes = R.drawable.ic_game_rance03,
@@ -1063,7 +1074,7 @@ object GameCatalog {
             )
             ID_RANCE06 -> GameDescriptor(
                 id = ID_RANCE06,
-                title = context.getString(R.string.game_rance06_title),
+                title = stringResolver(R.string.game_rance06_title),
                 defaultDirName = "Rance06",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance06,
@@ -1078,7 +1089,7 @@ object GameCatalog {
             )
             ID_RANCE08 -> GameDescriptor(
                 id = ID_RANCE08,
-                title = context.getString(R.string.game_rance08_title),
+                title = stringResolver(R.string.game_rance08_title),
                 defaultDirName = "Rance08",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance08,
@@ -1093,7 +1104,7 @@ object GameCatalog {
             )
             ID_RANCE09 -> GameDescriptor(
                 id = ID_RANCE09,
-                title = context.getString(R.string.game_rance09_title),
+                title = stringResolver(R.string.game_rance09_title),
                 defaultDirName = "Rance09",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance09,
@@ -1108,7 +1119,7 @@ object GameCatalog {
             )
             ID_ESCALAYER -> GameDescriptor(
                 id = ID_ESCALAYER,
-                title = context.getString(R.string.game_escalayer_title),
+                title = stringResolver(R.string.game_escalayer_title),
                 defaultDirName = "Escalayer",
                 expectedAinName = "DOKI_SA.ALD",
                 iconRes = R.drawable.ic_game_escalayer,
@@ -1123,7 +1134,7 @@ object GameCatalog {
             )
             ID_ESCALAYER_REBOOT -> GameDescriptor(
                 id = ID_ESCALAYER_REBOOT,
-                title = context.getString(R.string.game_escalayer_reboot_title),
+                title = stringResolver(R.string.game_escalayer_reboot_title),
                 defaultDirName = "EscalayerReboot",
                 expectedAinName = "EscalayerReboot.ain",
                 iconRes = R.drawable.ic_game_escalayer_reboot,
@@ -1138,7 +1149,7 @@ object GameCatalog {
             )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
-                title = context.getString(R.string.game_kichikuou_title),
+                title = stringResolver(R.string.game_kichikuou_title),
                 defaultDirName = "KichikuRance",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_kichikuou,
