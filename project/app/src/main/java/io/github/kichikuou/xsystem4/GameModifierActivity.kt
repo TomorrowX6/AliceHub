@@ -992,6 +992,7 @@ class GameModifierActivity : ThemedActivity() {
         }
         val inputs = LinkedHashMap<GlobalFieldSpec, EditText>()
         for (spec in specs) {
+            if (!GameModifierBridge.isGlobalSaveModFieldAvailable(currentTarget.saveDir, spec.key)) continue
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1051,6 +1052,9 @@ class GameModifierActivity : ThemedActivity() {
 
     private fun applyGlobalSaveMod(mod: JSONObject) {
         val saveDir = currentTarget.saveDir
+        for (key in mod.keys().asSequence().toList()) {
+            if (!GameModifierBridge.isGlobalSaveModFieldAvailable(saveDir, key)) mod.remove(key)
+        }
         GameModifierBridge.backupGlobalSaveFilesBeforeMod(saveDir)
         val ok = GameModifierBridge.writeGlobalSaveModForDir(saveDir, mod.toString())
         if (ok) {
