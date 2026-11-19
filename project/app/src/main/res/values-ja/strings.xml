@@ -249,6 +249,7 @@
     <string name="game_escalayer_reboot_title">超昂天使エスカレイヤー・リブート</string>
     <string name="game_galzoo_title">GALZOOアイランド</string>
     <string name="game_ixseal_title">超昂神騎エクシール</string>
+    <string name="game_haruka_title">超昂閃忍ハルカ</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>
