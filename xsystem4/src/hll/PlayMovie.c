@@ -70,6 +70,11 @@ static int PlayMovie_IsPlay(void)
 	return !movie_is_end(mc);
 }
 
+static bool PlayMovie_SetVolume(int volume)
+{
+	return movie_set_volume(mc, volume);
+}
+
 static void PlayMovie_Release(void)
 {
 	if (mc)
@@ -78,10 +83,12 @@ static void PlayMovie_Release(void)
 }
 
 HLL_LIBRARY(PlayMovie,
+	    HLL_EXPORT(_ModuleFini, PlayMovie_Release),
 	    HLL_EXPORT(Init, PlayMovie_Init),
 	    HLL_EXPORT(Load, PlayMovie_Load),
 	    HLL_EXPORT(Play, PlayMovie_Play),
 	    HLL_EXPORT(Stop, PlayMovie_Stop),
 	    HLL_EXPORT(IsPlay, PlayMovie_IsPlay),
+	    HLL_EXPORT(SetVolume, PlayMovie_SetVolume),
 	    HLL_EXPORT(Release, PlayMovie_Release)
 	);
