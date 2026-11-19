@@ -122,7 +122,7 @@ static uint32_t last_cursor_step_tick = 0;
 static uint32_t last_cursor_move_tick = 0;
 static bool vpad_cursor_btn_down = false;
 
-static void sync_gamepad_cursor_from_window(int wx, int wy)
+static void sync_gamepad_cursor_norm_from_window(int wx, int wy)
 {
 	if (sdl.viewport.w > 1 && sdl.viewport.h > 1) {
 		float nx = (float)(wx - sdl.viewport.x) / (float)(sdl.viewport.w - 1);
@@ -134,6 +134,11 @@ static void sync_gamepad_cursor_from_window(int wx, int wy)
 		gamepad_cursor_norm_x = nx;
 		gamepad_cursor_norm_y = ny;
 	}
+}
+
+static void sync_gamepad_cursor_from_window(int wx, int wy)
+{
+	sync_gamepad_cursor_norm_from_window(wx, wy);
 	gamepad_cursor_active = false;
 	gamepad_cursor_visible = false;
 }
@@ -786,6 +791,7 @@ void mouse_set_pos(int x, int y)
 {
 	int wx = x * sdl.viewport.w / sdl.w + sdl.viewport.x;
 	int wy = y * sdl.viewport.h / sdl.h + sdl.viewport.y;
+	sync_gamepad_cursor_norm_from_window(wx, wy);
 	if (has_synthetic_mouse_pos) {
 		synthetic_mouse_x = wx;
 		synthetic_mouse_y = wy;
@@ -2384,6 +2390,7 @@ static void process_gamepad_frame(void)
 			synthetic_mouse_x = sdl.viewport.x + (int)(gamepad_cursor_norm_x * max(1, sdl.viewport.w - 1));
 			synthetic_mouse_y = sdl.viewport.y + (int)(gamepad_cursor_norm_y * max(1, sdl.viewport.h - 1));
 			has_synthetic_mouse_pos = true;
+			synthetic_mouse_warped = false;
 			synthetic_mouse_hover_observed = true;
 		}
 		gamepad_cursor_active = true;

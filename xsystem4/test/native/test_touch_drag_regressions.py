@@ -71,6 +71,8 @@ def compile_and_run(c_source: str) -> None:
 
 def build_input_harness(body: str) -> str:
     fns = "\n\n".join([
+        extract_function("src/input.c", "sync_gamepad_cursor_norm_from_window"),
+        extract_function("src/input.c", "sync_gamepad_cursor_from_window"),
         extract_function("src/input.c", "input_parts_poll_begin"),
         extract_function("src/input.c", "input_notify_parts_poll"),
         extract_function("src/input.c", "clear_active_touch_fingers"),
@@ -89,6 +91,7 @@ def build_input_harness(body: str) -> str:
     ])
     return f"""
 #include <assert.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -185,10 +188,6 @@ static int SDL_GetNumTouchFingers(SDL_TouchID touchId) {{
     (void)touchId;
     return fake_num_touch_fingers;
 }}
-static void sync_gamepad_cursor_from_window(int wx, int wy) {{
-    (void)wx;
-    (void)wy;
-}}
 
 static bool key_state[VK_NR_KEYCODES];
 static bool kbd_key_state[VK_NR_KEYCODES];
@@ -201,6 +200,8 @@ static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
 static bool gamepad_cursor_active = false;
 static bool gamepad_cursor_visible = false;
+static float gamepad_cursor_norm_x = 0.5f;
+static float gamepad_cursor_norm_y = 0.5f;
 static bool vpad_cursor_btn_down = false;
 static bool single_touch_down = false;
 static SDL_FingerID single_touch_finger_id = 0;
@@ -378,6 +379,8 @@ static void reset_test_state(void) {{
     in_parts_poll = false;
     gamepad_cursor_active = false;
     gamepad_cursor_visible = false;
+    gamepad_cursor_norm_x = 0.5f;
+    gamepad_cursor_norm_y = 0.5f;
     vpad_cursor_btn_down = false;
     clear_active_touch_fingers();
     fake_num_touch_fingers = 0;
@@ -1344,6 +1347,46 @@ class TouchDragRegressionTests(unittest.TestCase):
     assert(fake_sdl_mouse_x == 640 && fake_sdl_mouse_y == 360);
     mouse_get_pos(&mx, &my);
     assert(mx == 640 && my == 360);
+    assert(fabsf(gamepad_cursor_norm_x - (640.0f / 1279.0f)) < 1e-5f);
+    assert(fabsf(gamepad_cursor_norm_y - (360.0f / 719.0f)) < 1e-5f);
+
+    // Case 4: Active virtual gamepad cursor keeps active/visible state while syncing
+    // gamepad_cursor_norm_x/y on Mouse_SetPos edge clamps (including letterboxed viewport).
+    reset_test_state();
+    gamepad_cursor_active = true;
+    gamepad_cursor_visible = true;
+    gamepad_cursor_norm_x = 0.01f;
+    gamepad_cursor_norm_y = 0.02f;
+    has_synthetic_mouse_pos = true;
+    synthetic_mouse_x = 12;
+    synthetic_mouse_y = 14;
+    mouse_set_pos(100, 80);
+    assert(warp_calls == 0);
+    assert(has_synthetic_mouse_pos);
+    assert(gamepad_cursor_active && gamepad_cursor_visible);
+    assert(fabsf(gamepad_cursor_norm_x - (100.0f / 1279.0f)) < 1e-5f);
+    assert(fabsf(gamepad_cursor_norm_y - (80.0f / 719.0f)) < 1e-5f);
+    mouse_get_pos(&mx, &my);
+    assert(mx == 100 && my == 80);
+
+    // Next gamepad stick step integrates from the clamped normalized coordinates, not 0.01/0.02.
+    gamepad_cursor_norm_x += 16.0f / 1280.0f;
+    gamepad_cursor_norm_y += 12.0f / 720.0f;
+    synthetic_mouse_x = sdl.viewport.x + (int)(gamepad_cursor_norm_x * max(1, sdl.viewport.w - 1));
+    synthetic_mouse_y = sdl.viewport.y + (int)(gamepad_cursor_norm_y * max(1, sdl.viewport.h - 1));
+    mouse_get_pos(&mx, &my);
+    assert(mx >= 115 && mx <= 116);
+    assert(my >= 91 && my <= 92);
+
+    // Letterboxed viewport & out-of-bounds clamp stay within [0.0f, 1.0f].
+    SDL_Rect saved_vp = sdl.viewport;
+    sdl.viewport = (SDL_Rect){ .x = 160, .y = 40, .w = 960, .h = 640 };
+    mouse_set_pos(640, 360);
+    assert(fabsf(gamepad_cursor_norm_x - (480.0f / 959.0f)) < 1e-5f);
+    assert(fabsf(gamepad_cursor_norm_y - (320.0f / 639.0f)) < 1e-5f);
+    mouse_set_pos(-50, 2000);
+    assert(gamepad_cursor_norm_x == 0.0f && gamepad_cursor_norm_y == 1.0f);
+    sdl.viewport = saved_vp;
 """)
         compile_and_run(c_code)
 
