@@ -197,10 +197,15 @@ bool mus_pcm_get_state() {
  *           1: する
  */ 
 bool mus_mixer_fadeout_start(int device, int time, int volume, int stop) {
-	if (device == MIX_MIDI)
+	switch (device) {
+	case MIX_CD:
+		return muscd_fadestart(time, volume, stop);
+	case MIX_MIDI:
 		return musmidi_fadestart(time, volume, stop);
-	WARNING("(device=%d, time=%d, volume=%d, stop=%d) not implemented", device, time, volume, stop);
-	return false;
+	default:
+		WARNING("(device=%d, time=%d, volume=%d, stop=%d) not implemented", device, time, volume, stop);
+		return false;
+	}
 }
 
 /*
@@ -211,10 +216,15 @@ bool mus_mixer_fadeout_start(int device, int time, int volume, int stop) {
  *           false -> フェード中でない
  */
 bool mus_mixer_fadeout_get_state(int device) {
-	if (device == MIX_MIDI)
+	switch (device) {
+	case MIX_CD:
+		return muscd_fading();
+	case MIX_MIDI:
 		return musmidi_fading();
-	WARNING("(device=%d) not implemented", device);
-	return false;
+	default:
+		WARNING("(device=%d) not implemented", device);
+		return false;
+	}
 }
 
 /*
@@ -222,7 +232,18 @@ bool mus_mixer_fadeout_get_state(int device) {
  *   device: 指定デバイス
  */
 void mus_mixer_fadeout_stop(int device) {
-	WARNING("not implemented");
+	switch (device) {
+	case MIX_CD:
+		muscd_fadestop();
+		break;
+	default:
+		WARNING("(device=%d) not implemented", device);
+		break;
+	}
+}
+
+void mus_update(void) {
+	muscd_fading();
 }
 
 /*

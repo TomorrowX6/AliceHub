@@ -25,10 +25,60 @@
 #include <string.h>
 
 #include "portab.h"
+#include "sdl_compat.h"
 #include "ald_manager.h"
 #include "music_private.h"
 #include "music_cdrom.h"
 #include "cdrom.h"
+
+static struct {
+	bool active;
+	bool stop_on_end;
+	uint32_t start_ms;
+	int duration_ms;
+	int start_vol;
+	int target_vol;
+	int current_vol;
+} cd_fade = { .current_vol = 100 };
+
+static int clamp_vol(int vol) {
+	if (vol < 0) return 0;
+	if (vol > 100) return 100;
+	return vol;
+}
+
+static void reset_cd_fade(void) {
+	cd_fade.active = false;
+	cd_fade.stop_on_end = false;
+	cd_fade.current_vol = 100;
+	if (prv.cddev && prv.cddev->set_volume)
+		prv.cddev->set_volume(100);
+}
+
+static bool update_cd_fade(uint32_t now) {
+	if (!cd_fade.active)
+		return false;
+
+	uint32_t elapsed = now - cd_fade.start_ms;
+	if (elapsed >= (uint32_t)cd_fade.duration_ms) {
+		cd_fade.active = false;
+		cd_fade.current_vol = cd_fade.target_vol;
+		if (prv.cddev && prv.cddev->set_volume)
+			prv.cddev->set_volume(cd_fade.current_vol);
+		if (cd_fade.stop_on_end)
+			muscd_stop();
+		return false;
+	}
+
+	int vol = cd_fade.start_vol +
+	          (int)(((int64_t)(cd_fade.target_vol - cd_fade.start_vol) * elapsed) / cd_fade.duration_ms);
+	if (vol != cd_fade.current_vol) {
+		cd_fade.current_vol = vol;
+		if (prv.cddev && prv.cddev->set_volume)
+			prv.cddev->set_volume(vol);
+	}
+	return true;
+}
 
 #ifdef __EMSCRIPTEN__
 extern cdromdevice_t cdrom_emscripten;
@@ -66,12 +116,16 @@ void muscd_exit(void) {
 		prv.cddev->exit();
 		prv.cddev = NULL;
 	}
+	cd_fade.active = false;
+	cd_fade.stop_on_end = false;
+	cd_fade.current_vol = 100;
 }
 
 void muscd_reset(void) {
 	if (prv.cddev) {
 		prv.cddev->reset();
 		prv.cd_current_track = 0;
+		reset_cd_fade();
 	}
 }
 
@@ -81,6 +135,7 @@ bool muscd_start(int trk, int loop) {
 	if (trk == prv.cd_current_track)
 		return true;
 	prv.cddev->stop();
+	reset_cd_fade();
 
 	prv.cd_current_track = trk;
 	return prv.cddev->start(trk, loop);
@@ -91,9 +146,11 @@ void muscd_stop(void) {
 		return;
 	prv.cddev->stop();
 	prv.cd_current_track = 0;
+	reset_cd_fade();
 }
 
 bool muscd_getpos(int *t, int *m, int *s, int *f) {
+	update_cd_fade(SDL_GetTicks());
 	if (!prv.cddev)
 		return false;
 	cd_time info;
@@ -119,4 +176,51 @@ bool muscd_is_available(void) {
 void muscd_reapply_valance(void) {
 	if (prv.cddev && prv.cddev->reapply_volume)
 		prv.cddev->reapply_volume();
+}
+
+bool muscd_fadestart(int time, int volume, int stop) {
+	volume = clamp_vol(volume);
+	if (!prv.cddev || !prv.cddev->is_available() || prv.cd_current_track == 0) {
+		reset_cd_fade();
+		return false;
+	}
+
+	cd_time info;
+	if (!prv.cddev->getpos(&info)) {
+		prv.cd_current_track = 0;
+		reset_cd_fade();
+		return false;
+	}
+
+	uint32_t now = SDL_GetTicks();
+	update_cd_fade(now);
+	if (prv.cd_current_track == 0)
+		return false;
+
+	if (time <= 0 || (volume == cd_fade.current_vol && !stop)) {
+		cd_fade.active = false;
+		cd_fade.current_vol = volume;
+		if (prv.cddev->set_volume)
+			prv.cddev->set_volume(volume);
+		if (stop)
+			muscd_stop();
+		return true;
+	}
+
+	cd_fade.active = true;
+	cd_fade.stop_on_end = (stop != 0);
+	cd_fade.start_ms = now;
+	cd_fade.duration_ms = time;
+	cd_fade.start_vol = cd_fade.current_vol;
+	cd_fade.target_vol = volume;
+	return true;
+}
+
+bool muscd_fading(void) {
+	return update_cd_fade(SDL_GetTicks());
+}
+
+void muscd_fadestop(void) {
+	cd_fade.active = false;
+	cd_fade.stop_on_end = false;
 }

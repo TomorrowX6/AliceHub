@@ -154,6 +154,20 @@ static void initGameResourceFromDir_test(void) {
 			ASSERT_STRCMP(gr.save_fname[i], buf);
 		}
 	}
+	{
+		// Unnumbered dDemo.alk must take precedence over backup dDemo0.alk regardless of directory order.
+		const char *files1[] = {"foosa.ald", "dDemo.alk", "dDemo0.alk", NULL};
+		const char **dir1 = files1;
+		GameResource gr1;
+		ASSERT_TRUE(initGameResourceFromDir(&gr1, (DIR *)&dir1, NULL, mockReaddir));
+		ASSERT_STRCMP(gr1.alk[0], "dDemo.alk");
+
+		const char *files2[] = {"foosa.ald", "dDemo0.alk", "dDemo.alk", NULL};
+		const char **dir2 = files2;
+		GameResource gr2;
+		ASSERT_TRUE(initGameResourceFromDir(&gr2, (DIR *)&dir2, NULL, mockReaddir));
+		ASSERT_STRCMP(gr2.alk[0], "dDemo.alk");
+	}
 }
 
 void gameresource_test(void) {

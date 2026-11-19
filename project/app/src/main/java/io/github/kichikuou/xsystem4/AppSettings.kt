@@ -42,6 +42,7 @@ object AppSettings {
     private const val DEFAULT_RANCE08_BYTES = 1964252126L
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
     private const val DEFAULT_KICHIKUOU_BYTES = 198596468L
+    private const val DEFAULT_DAIAKUJI_BYTES = 923623502L
     private const val DEFAULT_ESCALAYER_BYTES = 1563994084L
     private const val DEFAULT_ESCALAYER_REBOOT_BYTES = 2470174002L
 
@@ -174,6 +175,7 @@ object AppSettings {
             OnlineInstaller.RANCE08_CDN_URL -> DEFAULT_RANCE08_BYTES
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
             OnlineInstaller.KICHIKUOU_CDN_URL -> DEFAULT_KICHIKUOU_BYTES
+            OnlineInstaller.DAIAKUJI_CDN_URL -> DEFAULT_DAIAKUJI_BYTES
             OnlineInstaller.ESCALAYER_CDN_URL -> DEFAULT_ESCALAYER_BYTES
             OnlineInstaller.ESCALAYER_REBOOT_CDN_URL -> DEFAULT_ESCALAYER_REBOOT_BYTES
             else -> -1L

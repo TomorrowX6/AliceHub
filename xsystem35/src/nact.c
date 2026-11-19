@@ -43,6 +43,7 @@
 #include "input.h"
 #include "menu.h"
 #include "hankaku.h"
+#include "music.h"
 
 /*
 
@@ -148,6 +149,7 @@ void nact_main() {
 }
 
 static void nact_callback() {
+	mus_update();
 	if (nact->is_va_animation) {
 		va_animation();
 	}

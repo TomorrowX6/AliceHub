@@ -206,9 +206,9 @@ static void ResetAnimeData() {
 	TRACE("ShGraph.ResetAnimeData %d:", no);
 	
 	if (no > 0 && no <= SLOT) {
-		memset(&src[no-1], 0, sizeof(struct animsrc));
-		memset(&s0[no-1],  0, sizeof(struct _s2));
-		memset(&s2[no-1],  0, sizeof(struct _s0));
+		memset(&src[no-1], 0, sizeof(src[no-1]));
+		memset(&s0[no-1],  0, sizeof(s0[no-1]));
+		memset(&s2[no-1],  0, sizeof(s2[no-1]));
 	} else {
 		memset(src, 0, sizeof(struct animsrc) * SLOT);
 		memset(s0,  0, sizeof(struct _s0) * SLOT);

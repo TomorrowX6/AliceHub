@@ -258,6 +258,7 @@ object OnlineInstaller {
     const val RANCE08_CDN_URL = "https://alicehub.000.moe/rance08"
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
     const val KICHIKUOU_CDN_URL = "https://alicehub.000.moe/kichikuou"
+    const val DAIAKUJI_CDN_URL = "https://alicehub.000.moe/daiakuji"
     const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
     const val DEFAULT_USER_AGENT =
@@ -1266,6 +1267,9 @@ object OnlineInstaller {
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
                     GameCatalog.ID_KICHIKUOU -> lower.contains("kichiku")
+                    GameCatalog.ID_DAIAKUJI -> lower.contains("daiakuji") ||
+                        lower.contains("大悪司") ||
+                        lower.contains("大恶司")
                     GameCatalog.ID_ESCALAYER -> lower.contains("escalayer") &&
                         !lower.contains("escalayerreboot") &&
                         !lower.contains("escalayer_reboot") &&

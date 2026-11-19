@@ -36,6 +36,7 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `rance08` | Rance Quest Magnum | 2012-02-24 | 80 | 8.00 | [v6985](https://vndb.org/v6985) | [source](https://www.alicesoft.com/rance8/magnum.html) |
 | `rance09` | Rance IX | 2014-04-25 | 83.5 | 8.35 | [v13802](https://vndb.org/v13802) | [source](https://www.alicesoft.com/rance35th/) |
 | `kichikuou` | Kichikuou Rance | 1996-12-19 | 84 | 8.40 | [v2045](https://vndb.org/v2045) | [source](https://vndb.org/v2045) |
+| `daiakuji` | Daiakuji | 2001-11-30 | 77.2 | 7.72 | [v298](https://vndb.org/v298) | [source](https://www.alicesoft.com/akuji/index.html) |
 | `escalayer` | Beat Angel Escalayer | 2002-08-02 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/information/2022/entry003043.html) |
 | `escalayer_reboot` | Beat Angel Escalayer Reboot | 2014-07-25 | 71.7 | 7.17 | [v311](https://vndb.org/v311) | [source](https://www.alicesoft.com/escalayerreboot/) |
 
