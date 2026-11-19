@@ -108,8 +108,11 @@ object NativeGameImport {
 
         fun isBackupOrPatchContainer(name: String): Boolean {
             val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(name)
-            return name.equals("BackData", ignoreCase = true) ||
+            return name.equals("backup", ignoreCase = true) ||
+                name.equals("BackData", ignoreCase = true) ||
                 name == "补丁" ||
+                name == "汉化补丁" ||
+                name == "解答集" ||
                 name == "备份" ||
                 name == "备份文件" ||
                 name == "原版有码备份" ||
@@ -254,6 +257,9 @@ object NativeGameImport {
         if (GameCatalog.isHarukaGameFiles(activeFiles)) {
             return "Haruka"
         }
+        if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
+            return "Tsumashibori"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
@@ -384,6 +390,8 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_IXSEAL
         val isHarukaImport = targetGameId == GameCatalog.ID_HARUKA ||
             detectedGameId == GameCatalog.ID_HARUKA
+        val isTsumashiboriImport = targetGameId == GameCatalog.ID_TSUMASHIBORI ||
+            detectedGameId == GameCatalog.ID_TSUMASHIBORI
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
         val baseName = when {
             isDaiakujiImport -> "Daiakuji"
@@ -410,7 +418,8 @@ object NativeGameImport {
                         (isDaiakujiImport && isDaiakujiBloatRelPath(relPath, skipDDemo0Backup = hasPrimaryDDemo)) ||
                         (isGalzooImport && isGalzooBloatRelPath(relPath)) ||
                         (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true)) ||
-                        (isHarukaImport && isHarukaBloatRelPath(relPath))
+                        (isHarukaImport && isHarukaBloatRelPath(relPath)) ||
+                        (isTsumashiboriImport && isTsumashiboriBloatRelPath(relPath))
                     ) {
                         continue
                     }

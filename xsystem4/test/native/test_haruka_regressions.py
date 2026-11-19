@@ -556,6 +556,7 @@ bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
 bool game_galzoo = false;
 bool game_ixseal = false;
+bool game_tsumashibori = false;
 
 const char *display_utf0(const char *utf) {{ return utf; }}
 
@@ -647,7 +648,7 @@ int main(int argc, char **argv) {{
     apply_game_specific_hacks(ain);
     assert(!sys4_text_is_gbk);
     assert(config.view_width == 800 && config.view_height == 600);
-    assert(!game_galzoo && !game_sengokurance && !game_rance6 && !game_ixseal && !game_escalayer_reboot);
+    assert(!game_galzoo && !game_sengokurance && !game_rance6 && !game_ixseal && !game_escalayer_reboot && !game_tsumashibori);
 
     char *utf_name = sjis2utf(config.game_name, 0);
     assert(utf_name && !strcmp(utf_name, "超昂閃忍ハルカ"));

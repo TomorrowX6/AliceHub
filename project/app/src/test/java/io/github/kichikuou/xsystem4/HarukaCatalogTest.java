@@ -289,7 +289,7 @@ public class HarukaCatalogTest {
         );
 
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(18, order.size());
+        assertEquals(19, order.size());
         int ixIdx = order.indexOf(GameCatalog.ID_IXSEAL);
         int harukaIdx = order.indexOf(GameCatalog.ID_HARUKA);
         assertTrue(ixIdx >= 0);

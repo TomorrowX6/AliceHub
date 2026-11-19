@@ -226,6 +226,7 @@ bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
 bool game_galzoo = false;
 bool game_ixseal = false;
+bool game_tsumashibori = false;
 
 static bool ain_has_gbk_r03_strings(struct ain *ain) {{ (void)ain; return false; }}
 static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}

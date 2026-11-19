@@ -124,6 +124,7 @@ private class SaveFileAdapter(
             "ixseal_afcgmode.asd", "ixseal_afcommon.asd", "ixseal_afconfig.asd",
             "ixseal_afbgmmode.asd", "ixseal_afinfo.asd", "ixseal_afmemmode.asd",
             "ixseal_extra.sav",
+            "妻しぼりsys.asd", "嵢偟傏傝sys.asd", "tsumashiborisys.asd",
             "config.asd", "progress.asd", "joypad.asd",
             "keyfile.dat", "msgskipflag.sav",
             "已读文本跳过.asd", "既読スキップ.asd",
@@ -1232,6 +1233,7 @@ class SaveManagerActivity : ThemedActivity() {
         return when {
             lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
                 lower == "afcommon.asd" || lower == "progress.asd" ||
+                lower == "妻しぼりsys.asd" || lower == "tsumashiborisys.asd" ||
                 lower == "共有.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" || lower == "已读文本跳过.asd" ||

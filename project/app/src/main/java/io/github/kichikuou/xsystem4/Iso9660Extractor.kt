@@ -106,7 +106,8 @@ object Iso9660Extractor {
                                 !e.name.equals("System39.ain", ignoreCase = true)
                             ) {
                                 if (expectedAinName.isNullOrBlank() ||
-                                    e.name.equals(expectedAinName, ignoreCase = true)
+                                    e.name.equals(expectedAinName, ignoreCase = true) ||
+                                    ArchiveExtractor.repairSjisAsGbkMojibake(e.name).equals(expectedAinName, ignoreCase = true)
                                 ) {
                                     hasMatchingAin = true
                                 }

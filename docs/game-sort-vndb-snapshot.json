@@ -96,6 +96,11 @@
         "id",
         "=",
         "v284"
+      ],
+      [
+        "id",
+        "=",
+        "v887"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -148,6 +153,15 @@
         "released": "2006-12-15",
         "title": "Sengoku Rance",
         "votecount": 6129
+      },
+      {
+        "alttitle": "妻しぼり",
+        "average": 79,
+        "id": "v887",
+        "rating": 79,
+        "released": "2006-08-04",
+        "title": "Tsuma Shibori",
+        "votecount": 237
       },
       {
         "alttitle": "ランスII　－反逆の少女たち－",

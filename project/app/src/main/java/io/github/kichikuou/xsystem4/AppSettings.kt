@@ -48,6 +48,7 @@ object AppSettings {
     internal const val DEFAULT_GALZOO_BYTES = 4027583522L
     internal const val DEFAULT_IXSEAL_BYTES = 4729863037L
     internal const val DEFAULT_HARUKA_BYTES = 3797821541L
+    internal const val DEFAULT_TSUMASHIBORI_BYTES = 2850964030L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -184,6 +185,7 @@ object AppSettings {
             OnlineInstaller.GALZOO_CDN_URL -> DEFAULT_GALZOO_BYTES
             OnlineInstaller.IXSEAL_CDN_URL -> DEFAULT_IXSEAL_BYTES
             OnlineInstaller.HARUKA_CDN_URL -> DEFAULT_HARUKA_BYTES
+            OnlineInstaller.TSUMASHIBORI_CDN_URL -> DEFAULT_TSUMASHIBORI_BYTES
             else -> -1L
         }
     }
