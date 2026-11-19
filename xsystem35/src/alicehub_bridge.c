@@ -1098,6 +1098,13 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteGlobalSaveMod(
 }
 
 static void update_live_state_sdl_thread(int locks) {
+	static bool initialized;
+	static uint32_t last_publish_tick;
+	uint32_t now = SDL_GetTicks();
+	if (initialized && (uint32_t)(now - last_publish_tick) < 250)
+		return;
+	initialized = true;
+	last_publish_tick = now;
 	refresh_escalayer_cache();
 	if (!esc_cache.is_escalayer) {
 		publish_live_state_json(strdup("{\"game\":\"system3\",\"ready\":true}"));
