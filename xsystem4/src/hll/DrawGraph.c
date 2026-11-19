@@ -50,7 +50,7 @@ static void DrawGraph_CopyBright(int dst, int dx, int dy, int src, int sx, int s
 
 static void DrawGraph_CopyAMap(int dst, int dx, int dy, int src, int sx, int sy, int w, int h)
 {
-	gfx_copy_amap(STEX(dst), dx, dy, STEX(src), sx, sy, w, h);
+	gfx_copy_amap(DTEX(dst), dx, dy, STEX(src), sx, sy, w, h);
 }
 
 static void DrawGraph_CopySprite(int dst, int dx, int dy, int src, int sx, int sy, int w, int h, int r, int g, int b)
