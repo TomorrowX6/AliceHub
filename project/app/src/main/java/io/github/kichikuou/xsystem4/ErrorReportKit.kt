@@ -1311,6 +1311,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_escalayer_reboot_title)
             GameCatalog.isIxsealAlias(lower) ->
                 context.getString(R.string.game_ixseal_title)
+            GameCatalog.isTsumashiboriAlias(lower) ->
+                context.getString(R.string.game_tsumashibori_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)
