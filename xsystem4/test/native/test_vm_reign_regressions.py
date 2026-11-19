@@ -479,6 +479,7 @@ static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
 static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
+static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
 
 {fn_r6}
 {fn_gbk_str}

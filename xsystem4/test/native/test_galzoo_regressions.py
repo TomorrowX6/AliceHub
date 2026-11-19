@@ -225,6 +225,7 @@ bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
 bool game_galzoo = false;
+bool game_ixseal = false;
 
 static bool ain_has_gbk_r03_strings(struct ain *ain) {{ (void)ain; return false; }}
 static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
@@ -235,6 +236,7 @@ static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
 static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
 static void apply_rance6_hacks(struct ain *ain) {{ (void)ain; }}
 static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
+static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
 
 {extracted}
 
@@ -328,7 +330,12 @@ int main(void) {
 """
         out = compile_and_run(
             harness,
-            [ROOT / "subprojects/libsys4/src/utfsjis.c", ROOT / "subprojects/libsys4/src/system.c"],
+            [
+                ROOT / "subprojects/libsys4/src/utfsjis.c",
+                ROOT / "subprojects/libsys4/src/file.c",
+                ROOT / "subprojects/libsys4/src/string.c",
+                ROOT / "subprojects/libsys4/src/system.c",
+            ],
         )
         self.assertEqual(out.strip(), "OK")
 
