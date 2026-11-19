@@ -560,8 +560,11 @@ static bool is_callback_binding_op(unsigned op, size_t address)
 		if (lib >= 0 && lib < ain->nr_libraries &&
 		    fn >= 0 && fn < ain->libraries[lib].nr_functions) {
 			struct ain_hll_function *hf = &ain->libraries[lib].functions[fn];
-			return hf->nr_arguments > 0 &&
-			       hf->arguments[hf->nr_arguments - 1].type.data == AIN_HLL_FUNC;
+			if (hf->nr_arguments > 0) {
+				enum ain_data_type t = hf->arguments[hf->nr_arguments - 1].type.data;
+				return t == AIN_HLL_FUNC || t == AIN_HLL_FUNC_71;
+			}
+			return false;
 		}
 	}
 	return false;

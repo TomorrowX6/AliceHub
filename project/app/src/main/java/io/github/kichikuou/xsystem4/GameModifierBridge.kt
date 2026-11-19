@@ -194,7 +194,8 @@ object GameModifierBridge {
             isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance06GameDir(gameDir, dirNameFallback, saveDir) ||
-            isGalzooGameDir(gameDir, dirNameFallback, saveDir)
+            isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -227,7 +228,8 @@ object GameModifierBridge {
     fun isDohnaDohnaGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
-            isGalzooGameDir(gameDir, dirNameFallback, saveDir)
+            isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -257,7 +259,8 @@ object GameModifierBridge {
 
     fun isRance03GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
-            isGalzooGameDir(gameDir, dirNameFallback, saveDir)
+            isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -433,7 +436,8 @@ object GameModifierBridge {
 
     fun isRance09GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
-            isGalzooGameDir(gameDir, dirNameFallback, saveDir)
+            isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -476,6 +480,18 @@ object GameModifierBridge {
 
     private const val MOD_ABSENT_SUFFIX = ".mod.absent"
 
+    fun isIxsealGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_IXSEAL
+
     fun isEscalayerRebootGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -490,7 +506,8 @@ object GameModifierBridge {
 
     fun isEscalayerGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
-            isGalzooGameDir(gameDir, dirNameFallback, saveDir)
+            isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
         ) return false
         if (GameCatalog.isEscalayerGameDir(gameDir)) return true
         if (gameDir != null && gameDir.isDirectory) {
@@ -539,6 +556,7 @@ object GameModifierBridge {
         if (isRance10GameDir(gameDir, dirNameFallback, saveDir) ||
             isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||

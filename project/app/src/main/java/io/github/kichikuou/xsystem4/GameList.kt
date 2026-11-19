@@ -663,7 +663,8 @@ class GameList(activity: Activity) {
                         classifiedId == GameCatalog.ID_EVENICLE2 ||
                         classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
                         classifiedId == GameCatalog.ID_RANCE06 ||
-                        classifiedId == GameCatalog.ID_GALZOO
+                        classifiedId == GameCatalog.ID_GALZOO ||
+                        classifiedId == GameCatalog.ID_IXSEAL
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -956,6 +957,7 @@ class GameList(activity: Activity) {
         val isDaiakujiTarget = targetGameId == GameCatalog.ID_DAIAKUJI
         val isEvenicle2Target = targetGameId == GameCatalog.ID_EVENICLE2
         val isEscalayerRebootTarget = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT
+        val isIxsealTarget = targetGameId == GameCatalog.ID_IXSEAL
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -973,7 +975,8 @@ class GameList(activity: Activity) {
                         (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                         (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                         (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
-                        (isGalzooTarget && isGalzooBloatRelPath(rel))
+                        (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                        (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1022,7 +1025,8 @@ class GameList(activity: Activity) {
                                 (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                                 (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                                 (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
-                                (isGalzooTarget && isGalzooBloatRelPath(rel))
+                                (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                                (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1057,7 +1061,8 @@ class GameList(activity: Activity) {
                             (!isDaiakujiTarget || !isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) &&
                             (!isEscalayerRebootTarget || !isEscalayerRebootBloatRelPath(rel, skipArchives = false)) &&
                             (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true)) &&
-                            (!isGalzooTarget || !isGalzooBloatRelPath(rel))
+                            (!isGalzooTarget || !isGalzooBloatRelPath(rel)) &&
+                            (!isIxsealTarget || !isIxsealBloatRelPath(rel, skipPatchCnSubdir = true))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -1074,7 +1079,8 @@ class GameList(activity: Activity) {
                             (isEvenicle2Target && isEvenicle2BloatRelPath(rel)) ||
                             (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                             (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
-                            (isGalzooTarget && isGalzooBloatRelPath(rel))
+                            (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
+                            (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1123,6 +1129,9 @@ class GameList(activity: Activity) {
             if (isGalzooTarget || GameCatalog.classifyGameRootDir(srcDir) == GameCatalog.ID_GALZOO) {
                 mergeGalzooCompanionData(listOf(tempDir, srcDir), srcDir, checkCancelled = checkCancelled)
             }
+            if (isIxsealTarget || GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_IXSEAL) {
+                overlayIxsealCnPatchIfPresent(listOf(tempDir), srcDir, checkCancelled)
+            }
             if (!GameCatalog.validateImportedGameDir(srcDir, expectedAinName, targetGameId)) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
@@ -1133,7 +1142,8 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_EVENICLE2 ||
                 classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
                 classifiedId == GameCatalog.ID_RANCE06 ||
-                classifiedId == GameCatalog.ID_GALZOO
+                classifiedId == GameCatalog.ID_GALZOO ||
+                classifiedId == GameCatalog.ID_IXSEAL
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
@@ -1147,6 +1157,7 @@ class GameList(activity: Activity) {
                         ainFile.name.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
                         ainFile.name.equals("エスカレイヤーリブート.ain", ignoreCase = true)
                     ) -> "EscalayerReboot"
+                classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
@@ -2013,6 +2024,70 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
     return candidate
 }
 
+internal fun overlayIxsealCnPatchIfPresent(
+    searchRoots: List<File>,
+    destGameDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (GameCatalog.classifyDirectory(destGameDir, destGameDir.name) != GameCatalog.ID_IXSEAL) {
+        return
+    }
+    val destCanonical = try {
+        destGameDir.canonicalPath
+    } catch (_: Throwable) {
+        destGameDir.absolutePath
+    }
+    val patchRoots = mutableListOf<File>()
+    for (root in searchRoots) {
+        if (!root.exists()) continue
+        root.walkTopDown()
+            .filter { d ->
+                d.isDirectory &&
+                    d.name.equals("patchCN", ignoreCase = true) &&
+                    !d.canonicalPath.startsWith(destCanonical + File.separator) &&
+                    d.canonicalPath != destCanonical
+            }
+            .forEach { d ->
+                val hasDirectFiles = d.listFiles()?.any {
+                    it.isFile && (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
+                } == true
+                if (hasDirectFiles) {
+                    patchRoots.add(d)
+                } else {
+                    d.walkTopDown()
+                        .filter { sub ->
+                            sub.isDirectory && sub != d && sub.listFiles()?.any {
+                                it.isFile && (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
+                            } == true
+                        }
+                        .sortedBy { it.name }
+                        .forEach { patchRoots.add(it) }
+                }
+            }
+    }
+    for (pdir in patchRoots.distinctBy { try { it.canonicalPath } catch (_: Throwable) { it.absolutePath } }) {
+        pdir.walkTopDown().forEach { f ->
+            checkCancelled()
+            val rel = f.relativeTo(pdir).path.replace('\\', '/')
+            if (rel.isEmpty() || NativeGameImport.skip(rel) || isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) {
+                return@forEach
+            }
+            val destFile = resolveCaseInsensitiveDest(destGameDir, rel)
+            if (f.isDirectory) {
+                destFile.mkdirs()
+            } else if (f.isFile) {
+                destFile.parentFile?.mkdirs()
+                if (destFile.isFile) {
+                    destFile.delete()
+                }
+                if (!OnlineInstaller.moveFileOrDir(f, destFile)) {
+                    f.copyTo(destFile, overwrite = true)
+                }
+            }
+        }
+    }
+}
+
 internal fun mergeInstallSetData(
     searchRoots: List<File>,
     destGameDir: File,
@@ -2159,7 +2234,14 @@ internal fun findGameRootDirInternal(
                 seg.equals("OLD", ignoreCase = true) ||
                 seg == "补丁" ||
                 seg == "备份" ||
-                seg == "备份文件"
+                seg == "备份文件" ||
+                seg == "原版有码备份" ||
+                seg == "无码补丁备份" ||
+                seg == "汉化补丁备份" ||
+                seg == "特典相关" ||
+                seg == "全CG存档" ||
+                seg.equals("patchCN", ignoreCase = true) ||
+                seg.equals("patchWM", ignoreCase = true)
         }
     }
     val candidates = root.walkTopDown()
@@ -2345,6 +2427,44 @@ internal fun isGalzooBloatRelPath(relPath: String): Boolean {
     return matchDirSeg(fileNameLower)
 }
 
+@JvmOverloads
+internal fun isIxsealBloatRelPath(relPath: String, skipPatchCnSubdir: Boolean = true): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val dirMatch: (String) -> Boolean = { seg ->
+        seg == "directx" ||
+            seg == "dll" ||
+            seg == "backdata" ||
+            seg == "savedata" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "原版有码备份" ||
+            seg == "无码补丁备份" ||
+            seg == "汉化补丁备份" ||
+            seg == "特典相关" ||
+            seg == "全cg存档" ||
+            seg == "patchwm" ||
+            (skipPatchCnSubdir && seg == "patchcn")
+    }
+    for (i in 0 until segments.size - 1) {
+        if (dirMatch(segments[i].lowercase())) {
+            return true
+        }
+    }
+    val fileNameLower = segments.last().lowercase()
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower.endsWith(".cmd") ||
+        fileNameLower.endsWith(".lnk") ||
+        fileNameLower == "autorun.inf" ||
+        fileNameLower == "desktop.ini" ||
+        fileNameLower == "@vieira.txt" ||
+        fileNameLower == "game uploaded by the user vieira" ||
+        dirMatch(fileNameLower)
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
@@ -2353,7 +2473,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         gameId != GameCatalog.ID_EVENICLE2 &&
         gameId != GameCatalog.ID_ESCALAYER_REBOOT &&
         gameId != GameCatalog.ID_RANCE06 &&
-        gameId != GameCatalog.ID_GALZOO
+        gameId != GameCatalog.ID_GALZOO &&
+        gameId != GameCatalog.ID_IXSEAL
     ) {
         return
     }
@@ -2387,7 +2508,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                         f.name.equals("DLL", ignoreCase = true) ||
                         f.name.equals("DirectX", ignoreCase = true) ||
                         f.name.equals("SaveData", ignoreCase = true)
-                    ))
+                    )) ||
+                (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
             ) {
                 dirsToDelete.add(f)
             } else if ((gameId == GameCatalog.ID_RANCE06 || gameId == GameCatalog.ID_GALZOO) && (
@@ -2410,7 +2532,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_ESCALAYER_REBOOT && isEscalayerRebootBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true)) ||
-                    (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel))
+                    (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)

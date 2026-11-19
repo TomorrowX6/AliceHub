@@ -50,7 +50,7 @@ static void AFAFactory_ModuleFini(void)
 	for (int i = 0; i < ASSET_TYPE_MAX; i++) clear_index(&indices[i]);
 }
 
-static enum asset_type get_asset_type(int type)
+static int get_asset_type(int type)
 {
 	switch (type) {
 	case 2: return ASSET_CG;
@@ -79,8 +79,8 @@ static bool AFAFactory_IsExistArchive(struct string *name)
 
 bool AFAFactory_LoadArchive(int type, struct string *archive_name)
 {
-	enum asset_type t = get_asset_type(type);
-	if (t < 0) {
+	int t = get_asset_type(type);
+	if (t < 0 || t >= ASSET_TYPE_MAX) {
 		WARNING("Unknown asset type: %d", type);
 		return false;
 	}
@@ -124,8 +124,8 @@ static int compare_title(const void *a, const void *b)
 
 static struct title_index *title_index(int type)
 {
-	enum asset_type t = get_asset_type(type);
-	if (t < 0) return NULL;
+	int t = get_asset_type(type);
+	if (t < 0 || t >= ASSET_TYPE_MAX) return NULL;
 	struct title_index *index = &indices[t];
 	if (index->ready) return index;
 	asset_foreach_file(t, collect_title, index);
@@ -238,9 +238,19 @@ HLL_LIBRARY(AFAFactory,
 	    HLL_EXPORT(GetSuffixSearchTitleList, AFAFactory_GetSearchTitleList)
 	    );
 
+static bool afa_fun_returns_string(int libno, const char *name)
+{
+	int fno = ain_get_library_function(ain, libno, name);
+	return fno >= 0 && ain->libraries[libno].functions[fno].return_type.data == AIN_STRING;
+}
+
 static void AFAFactory_PreLink(void)
 {
-	if (ain->version < 12) return;
-	static_library_replace(&lib_AFAFactory, "GetTitleByIndex", AFAFactory_GetTitleByIndex_v12);
-	static_library_replace(&lib_AFAFactory, "GetSearchTitleByIndex", AFAFactory_GetSearchTitleByIndex_v12);
+	int libno = ain_get_library(ain, "AFAFactory");
+	if (libno < 0)
+		return;
+	if (ain->version >= 12 || afa_fun_returns_string(libno, "GetTitleByIndex"))
+		static_library_replace(&lib_AFAFactory, "GetTitleByIndex", AFAFactory_GetTitleByIndex_v12);
+	if (ain->version >= 12 || afa_fun_returns_string(libno, "GetSearchTitleByIndex"))
+		static_library_replace(&lib_AFAFactory, "GetSearchTitleByIndex", AFAFactory_GetSearchTitleByIndex_v12);
 }

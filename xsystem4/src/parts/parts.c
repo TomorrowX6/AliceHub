@@ -2841,7 +2841,7 @@ int PE_GetPartsWidth(int parts_no, int state)
 	if (!parts_state_valid(--state))
 		return 0;
 	struct parts *parts = parts_get(parts_no);
-	if (parts_v2 && ((ain->version >= 12 && parts->component_type == 15) || parts->widget
+	if (parts_v2 && ((ain->version >= 11 && parts->component_type == 15) || parts->widget
 			|| parts->states[state].type == PARTS_LAYOUT_BOX)) {
 		int w, h;
 		parts_get_layout_size(parts, &w, &h);
@@ -2855,7 +2855,7 @@ int PE_GetPartsHeight(int parts_no, int state)
 	if (!parts_state_valid(--state))
 		return 0;
 	struct parts *parts = parts_get(parts_no);
-	if (parts_v2 && ((ain->version >= 12 && parts->component_type == 15) || parts->widget
+	if (parts_v2 && ((ain->version >= 11 && parts->component_type == 15) || parts->widget
 			|| parts->states[state].type == PARTS_LAYOUT_BOX)) {
 		int w, h;
 		parts_get_layout_size(parts, &w, &h);
@@ -3545,7 +3545,10 @@ void PE_set_active_controller(int controller_no)
 			return;
 		}
 		int index = PE_GetControllerIndex(controller_no);
-		if (index < 0) VM_ERROR("Invalid controller ID: %d", controller_no);
+		if (index < 0) {
+			WARNING("Invalid controller ID: %d", controller_no);
+			return;
+		}
 		ctrl_stack.active = index;
 		return;
 	}

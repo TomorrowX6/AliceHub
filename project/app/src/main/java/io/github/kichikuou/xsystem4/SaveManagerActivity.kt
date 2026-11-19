@@ -119,6 +119,9 @@ private class SaveFileAdapter(
         val GLOBAL_SAVE_FILES = setOf(
             "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
             "afcgmode.asd", "afcommon.asd", "afconfig.asd", "afbgmmode.asd",
+            "ixseal_afcgmode.asd", "ixseal_afcommon.asd", "ixseal_afconfig.asd",
+            "ixseal_afbgmmode.asd", "ixseal_afinfo.asd", "ixseal_afmemmode.asd",
+            "ixseal_extra.sav",
             "config.asd", "progress.asd", "joypad.asd",
             "keyfile.dat", "msgskipflag.sav",
             "已读文本跳过.asd", "既読スキップ.asd",

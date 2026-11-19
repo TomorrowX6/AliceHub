@@ -345,6 +345,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_ESCALAYER ||
                 id == GameCatalog.ID_ESCALAYER_REBOOT ||
                 id == GameCatalog.ID_GALZOO ||
+                id == GameCatalog.ID_IXSEAL ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

@@ -59,6 +59,7 @@ object GameCatalog {
     const val ID_ESCALAYER = "escalayer"
     const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
     const val ID_GALZOO = "galzoo"
+    const val ID_IXSEAL = "ixseal"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -387,6 +388,9 @@ object GameCatalog {
         ) {
             return ID_SENGOKU_RANCE
         }
+        if (isIxsealGameFiles(fileNames, readSmallFile)) {
+            return ID_IXSEAL
+        }
         if (isEscalayerGameFiles(fileNames, readSmallFile)) {
             return ID_ESCALAYER
         }
@@ -496,6 +500,86 @@ object GameCatalog {
             ESCALAYER_R_JA_ALIAS_REGEX.containsMatchIn(lowerText) ||
             ESCALAYER_R_CN_ALIAS_REGEX.containsMatchIn(lowerText) ||
             ESCALAYER_R_EN_ALIAS_REGEX.containsMatchIn(lowerText)
+    }
+
+    fun isIxsealAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        if (lower.contains("escalayer") || lower.contains("超昂天使") || lower.contains("エスカレイヤー")) {
+            return false
+        }
+        return lower.contains("ixseal") ||
+            lower.contains("エクシール") ||
+            lower.contains("超昂神騎") ||
+            lower.contains("超昂神骑") ||
+            lower.contains("beat valkyrie")
+    }
+
+    @JvmOverloads
+    fun isIxsealGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val sys4AinNames = fileNames.filter {
+            it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true)
+        }
+        if (sys4AinNames.isEmpty()) return false
+        if (sys4AinNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("Ixseal.ain", ignoreCase = true) ||
+                    repaired.equals("Ixseal.ain", ignoreCase = true) ||
+                    it.equals("エクシール.ain", ignoreCase = true) ||
+                    repaired.equals("エクシール.ain", ignoreCase = true) ||
+                    it.equals("超昂神騎エクシール.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神騎エクシール.ain", ignoreCase = true) ||
+                    it.equals("超昂神骑.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神骑.ain", ignoreCase = true) ||
+                    it.equals("超昂神騎.ain", ignoreCase = true) ||
+                    repaired.equals("超昂神騎.ain", ignoreCase = true)
+            }
+        ) {
+            return true
+        }
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("IxsealCG.afa", ignoreCase = true) ||
+                    repaired.equals("IxsealCG.afa", ignoreCase = true) ||
+                    it.equals("IxsealFont.fnl", ignoreCase = true) ||
+                    it.equals("IxsealVoice.afa", ignoreCase = true) ||
+                    it.equals("IxsealFlat.afa", ignoreCase = true)
+            }
+        ) {
+            return true
+        }
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", ignoreCase = true) }
+        if (iniName != null && readSmallFile != null) {
+            try {
+                val raw = readSmallFile(iniName)
+                if (raw != null) {
+                    val parsed = System40Ini.parse(raw)
+                    val title = parsed.gameName?.trim().orEmpty()
+                    if (title.isNotEmpty() && isIxsealAlias(title)) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return false
+    }
+
+    fun isIxsealGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isIxsealGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) {
+                try { f.readBytes() } catch (_: Throwable) { null }
+            } else {
+                null
+            }
+        }
     }
 
     fun isEvenicle2Alias(lowerText: String): Boolean {
@@ -667,6 +751,17 @@ object GameCatalog {
                 !File(saveDir, "GlobalSaveData.asd").isFile
             ) {
                 return ID_ESCALAYER_REBOOT
+            }
+            if (saveDir.listFiles()?.any {
+                    it.isFile && (
+                        it.name.equals("Ixseal_Extra.sav", ignoreCase = true) ||
+                            it.name.lowercase().startsWith("ixseal_")
+                        )
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_IXSEAL
             }
             val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
             val hasGlobalSave = saveFiles.any {
@@ -925,6 +1020,9 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER
         }
+        if (isIxsealAlias(lowerDir)) {
+            return ID_IXSEAL
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
@@ -944,6 +1042,9 @@ object GameCatalog {
             lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
         ) {
             return ID_ESCALAYER
+        }
+        if (isIxsealAlias(lowerDisp)) {
+            return ID_IXSEAL
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -1250,6 +1351,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_IXSEAL -> GameDescriptor(
+                id = ID_IXSEAL,
+                title = context.getString(R.string.game_ixseal_title),
+                defaultDirName = "Ixseal",
+                expectedAinName = "Ixseal.ain",
+                iconRes = R.drawable.ic_game_ixseal,
+                accentColor = 0xFF0277BD.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0E1B28.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.IXSEAL_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = stringResolver(R.string.game_kichikuou_title),
@@ -1322,7 +1438,8 @@ object GameCatalog {
         ID_DAIAKUJI,
         ID_ESCALAYER,
         ID_ESCALAYER_REBOOT,
-        ID_GALZOO
+        ID_GALZOO,
+        ID_IXSEAL
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

@@ -57,39 +57,49 @@ struct effect {
 
 static struct effect system_effect = { .multi = true };
 
+static void set_default_mixers(const char *const *names, const int *volumes, unsigned count)
+{
+	config.mixer_nr_channels = count;
+	config.mixer_channels = xcalloc(count, sizeof(char *));
+	config.mixer_volumes = xcalloc(count, sizeof(int));
+	for (unsigned i = 0; i < count; i++) {
+		config.mixer_channels[i] = strdup(names[i]);
+		config.mixer_volumes[i] = volumes ? volumes[i] : 80;
+	}
+}
+
 static void kiwi_prelink(void)
 {
-	if (game_rance10 && !config.mixer_nr_channels) {
-		const char *names[] = { "Master", "BGM", "SE", "Voice", "Ambient", "BackVoice" };
-		config.mixer_nr_channels = 6;
-		config.mixer_channels = xcalloc(6, sizeof(char *));
-		config.mixer_volumes = xcalloc(6, sizeof(int));
-		for (int i = 0; i < 6; i++) {
-			config.mixer_channels[i] = strdup(names[i]);
-			config.mixer_volumes[i] = 100;
-		}
-	} else if (game_dohnadohna && !config.mixer_nr_channels) {
-		const char *names[] = { "Master", "BGM", "SE", "Voice", "SubVoice", "Ambient", "System", "Movie", "Extra" };
-		config.mixer_nr_channels = 9;
-		config.mixer_channels = xcalloc(9, sizeof(char *));
-		config.mixer_volumes = xcalloc(9, sizeof(int));
-		for (int i = 0; i < 9; i++) {
-			config.mixer_channels[i] = strdup(names[i]);
-			config.mixer_volumes[i] = (i == 3) ? 100 : 80;
-		}
-	} else if (game_evenicle2 && !config.mixer_nr_channels) {
-		const char *names[] = {
+	if (config.mixer_nr_channels)
+		return;
+	if (game_rance10) {
+		static const char *const names[] = { "Master", "BGM", "SE", "Voice", "Ambient", "BackVoice" };
+		static const int vols[] = { 100, 100, 100, 100, 100, 100 };
+		set_default_mixers(names, vols, 6);
+	} else if (game_dohnadohna) {
+		static const char *const names[] = { "Master", "BGM", "SE", "Voice", "SubVoice", "Ambient", "System", "Movie", "Extra" };
+		static const int vols[] = { 80, 80, 80, 100, 80, 80, 80, 80, 80 };
+		set_default_mixers(names, vols, 9);
+	} else if (game_evenicle2) {
+		static const char *const names[] = {
 			"Master", "BGM", "SE", "Voice", "Movie", "BackVoice",
 			"Group6", "Group7", "Group8", "Group9",
 			"VoiceChara1", "VoiceChara2", "BackVoiceChara1", "BackVoiceChara2"
 		};
-		config.mixer_nr_channels = 14;
-		config.mixer_channels = xcalloc(14, sizeof(char *));
-		config.mixer_volumes = xcalloc(14, sizeof(int));
-		for (int i = 0; i < 14; i++) {
-			config.mixer_channels[i] = strdup(names[i]);
-			config.mixer_volumes[i] = (i == 3) ? 100 : 80;
-		}
+		static const int vols[] = { 80, 80, 80, 100, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80 };
+		set_default_mixers(names, vols, 14);
+	} else if (game_ixseal) {
+		static const char *const names[] = {
+			"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice",
+			"VoiceChara1", "VoiceChara2", "VoiceChara3", "VoiceChara4", "VoiceChara5", "VoiceChara6",
+			"BackVoiceChara1", "BackVoiceChara2", "BackVoiceChara3", "BackVoiceChara4", "BackVoiceChara5", "BackVoiceChara6"
+		};
+		static const int vols[] = {
+			80, 80, 80, 100, 80, 18,
+			80, 80, 80, 80, 80, 80,
+			80, 80, 80, 80, 80, 80
+		};
+		set_default_mixers(names, vols, 18);
 	}
 }
 

@@ -705,7 +705,7 @@ void PE_UpdateInputState(int passed_time)
 			}
 
 			bool can_drag_part = drag_parts && (drag_parts->draggable
-					|| (ain->version >= 12 && (drag_parts->clickable || !drag_parts->pass_cursor)));
+					|| (ain->version >= 11 && (drag_parts->clickable || !drag_parts->pass_cursor)));
 			if (swipe_axis_match && (!can_drag_part || press_hold_ms < 180)) {
 				if (click_down_parts > 0) {
 					struct parts *cdp = parts_try_get(click_down_parts);
@@ -731,7 +731,7 @@ void PE_UpdateInputState(int passed_time)
 				parts_msg_push(swipe_parts, PARTS_MSG_SWIPING, "iiiib",
 						swipe_begin_pos.x, swipe_begin_pos.y, mx, my, false);
 			} else if (can_drag_part) {
-				if (ain->version < 12) {
+				if (ain->version < 11) {
 					if (cursor_moved && drag_parts->draggable) {
 						SDL_FPoint new_pos = {
 							drag_initial_pos.x + (cur_pos.x - drag_start_cursor.x),
@@ -802,7 +802,7 @@ void PE_UpdateInputState(int passed_time)
 				};
 				parts_set_posf(drag_parts, new_pos);
 			}
-			if (ain->version >= 12) {
+			if (ain->version >= 11) {
 				parts_msg_push(drag_parts, PARTS_MSG_DRAGGING, "iiiii",
 						drag_start_cursor.x, drag_start_cursor.y,
 						cur_pos.x, cur_pos.y, VK_LBUTTON);
@@ -831,7 +831,7 @@ void PE_UpdateInputState(int passed_time)
 			}
 		} else {
 			if (is_dragging && drag_parts) {
-				if (ain->version >= 12 && drag_parts->clickable
+				if (ain->version >= 11 && drag_parts->clickable
 						&& click_down_parts == drag_parts->no && !click_fired_this_frame
 						&& (drag_parts->local.pos.x != drag_initial_pos.x || drag_parts->local.pos.y != drag_initial_pos.y)
 						&& parts_hittest(drag_parts, PARTS_STATE_DEFAULT, cur_pos)) {
@@ -846,6 +846,8 @@ void PE_UpdateInputState(int passed_time)
 				}
 				if (ain->version >= 12) {
 					parts_msg_push(drag_parts, PARTS_MSG_DRAG_END, "ib", VK_LBUTTON, false);
+				} else if (ain->version >= 11) {
+					parts_msg_push(drag_parts, PARTS_MSG_DRAG_END, "i", VK_LBUTTON);
 				} else if (drag_parts->draggable) {
 					parts_msg_push(drag_parts, PARTS_MSG_DRAG_END, "");
 				}

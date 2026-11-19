@@ -3923,12 +3923,25 @@ static void PartsEngine_PreLink(void)
 		|| get_fun(libno, "GetControllerID") != NULL
 		|| get_fun(libno, "PartsFunc") != NULL);
 
-	if (ain->version >= 12) {
-		static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
+	if (ain->version >= 11) {
 		static_library_replace(&lib_PartsEngine, "SetComponentType", PartsEngine_SetComponentType_v12);
 		static_library_replace(&lib_PartsEngine, "GetComponentType", PartsEngine_GetComponentType_v12);
+	}
+	fun = get_fun(libno, "UpdateComponent");
+	if (fun && fun->nr_arguments == 5) {
+		static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
+	}
+	fun = get_fun(libno, "Parts_GetPartsCGName");
+	if (fun && fun->return_type.data == AIN_STRING) {
 		static_library_replace(&lib_PartsEngine, "Parts_GetPartsCGName", PartsEngine_GetPartsCGName_v12);
+	}
+	fun = get_fun(libno, "GetMessageVariableString");
+	if (fun && fun->nr_arguments == 1 && fun->return_type.data == AIN_STRING) {
 		static_library_replace(&lib_PartsEngine, "GetMessageVariableString", PartsEngine_GetMessageVariableString_v12);
+	}
+	fun = get_fun(libno, "GetActivityIntentDataDestination");
+	if (fun && fun->nr_arguments == 3 && fun->return_type.data == AIN_STRING) {
+		static_library_replace(&lib_PartsEngine, "GetActivityIntentDataDestination", PE_GetActivityIntentDataDestination);
 	}
 
 	if (parts_v2) {

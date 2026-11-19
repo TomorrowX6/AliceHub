@@ -115,6 +115,9 @@ object NativeGameImport {
         ) {
             return "EscalayerReboot"
         }
+        if (GameCatalog.isIxsealGameFiles(activeFiles)) {
+            return "Ixseal"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
@@ -176,6 +179,19 @@ object NativeGameImport {
         val rootFiles = children(context, tree, root)
         var sourceTrees: List<Triple<Uri, List<Document>, String>> = emptyList()
         var primaryDocs: List<Document>? = null
+        val ixsealPatchTrees = mutableListOf<List<Document>>()
+
+        fun isBackupOrPatchContainer(name: String): Boolean =
+            name.equals("BackData", ignoreCase = true) ||
+                name == "补丁" ||
+                name == "备份" ||
+                name == "备份文件" ||
+                name == "原版有码备份" ||
+                name == "无码补丁备份" ||
+                name == "汉化补丁备份" ||
+                name == "特典相关" ||
+                name == "全CG存档" ||
+                name.equals("patchWM", ignoreCase = true)
 
         if (isSys4Root(rootFiles) || isSys3Root(rootFiles)) {
             primaryDocs = rootFiles
@@ -185,22 +201,35 @@ object NativeGameImport {
             // or sibling companion folders such as GALZOO/ + 三合一/Data/.
             val discRoots = mutableListOf<Triple<Uri, List<Document>, String>>()
             val queue = ArrayDeque<Triple<Uri, String, Int>>()
+            val patchQueue = ArrayDeque<Pair<Uri, Int>>()
             for (d in rootFiles) {
-                if (d.folder && !skip(d.name) &&
+                if (!d.folder || skip(d.name)) continue
+                if (d.name.equals("patchCN", ignoreCase = true)) {
+                    patchQueue.add(d.uri to 1)
+                } else if (
                     !d.name.equals("DLL", ignoreCase = true) &&
-                    !d.name.equals("BackData", ignoreCase = true) &&
-                    d.name != "补丁" &&
-                    d.name != "备份" &&
-                    d.name != "备份文件"
+                    !d.name.equals("OLD", ignoreCase = true) &&
+                    !isBackupOrPatchContainer(d.name)
                 ) {
                     queue.add(Triple(d.uri, d.name, 1))
+                }
+            }
+            while (patchQueue.isNotEmpty()) {
+                val (dirUri, depth) = patchQueue.removeFirst()
+                val docs = children(context, tree, dirUri)
+                if (isSys4Root(docs)) {
+                    ixsealPatchTrees.add(docs)
+                } else if (depth < 3) {
+                    for (sub in docs) {
+                        if (sub.folder && !skip(sub.name)) patchQueue.add(sub.uri to (depth + 1))
+                    }
                 }
             }
             while (queue.isNotEmpty()) {
                 val (dirUri, dirName, depth) = queue.removeFirst()
                 val docs = children(context, tree, dirUri)
                 if (isSys4Root(docs) || isSys3Root(docs)) {
-                    primaryDocs = docs
+                    if (primaryDocs == null) primaryDocs = docs
                     discRoots.add(Triple(dirUri, docs, ""))
                 } else if (dirName.equals("Data", ignoreCase = true) &&
                     docs.any {
@@ -222,11 +251,9 @@ object NativeGameImport {
                     for (sub in docs) {
                         if (sub.folder && !skip(sub.name) &&
                             !sub.name.equals("DLL", ignoreCase = true) &&
-                            !sub.name.equals("BackData", ignoreCase = true) &&
                             !sub.name.equals("OLD", ignoreCase = true) &&
-                            sub.name != "补丁" &&
-                            sub.name != "备份" &&
-                            sub.name != "备份文件"
+                            !isBackupOrPatchContainer(sub.name) &&
+                            !sub.name.equals("patchCN", ignoreCase = true)
                         ) {
                             queue.add(Triple(sub.uri, sub.name, depth + 1))
                         }
@@ -292,6 +319,8 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_DAIAKUJI
         val isGalzooImport = targetGameId == GameCatalog.ID_GALZOO ||
             detectedGameId == GameCatalog.ID_GALZOO
+        val isIxsealImport = targetGameId == GameCatalog.ID_IXSEAL ||
+            detectedGameId == GameCatalog.ID_IXSEAL
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
         val baseName = if (isDaiakujiImport) {
             "Daiakuji"
@@ -316,7 +345,8 @@ object NativeGameImport {
                         (isEscalayerReboot && isEscalayerRebootBloatRelPath(relPath)) ||
                         (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
                         (isDaiakujiImport && isDaiakujiBloatRelPath(relPath, skipDDemo0Backup = hasPrimaryDDemo)) ||
-                        (isGalzooImport && isGalzooBloatRelPath(relPath))
+                        (isGalzooImport && isGalzooBloatRelPath(relPath)) ||
+                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true))
                     ) {
                         continue
                     }
@@ -352,6 +382,11 @@ object NativeGameImport {
                     }
                     if (document.size >= 0 && document.size != fileBytes)
                         throw IOException("Incomplete document: $name")
+                }
+            }
+            if (isIxsealImport && ixsealPatchTrees.isNotEmpty()) {
+                for (patchDocs in ixsealPatchTrees) {
+                    copy(patchDocs, staging)
                 }
             }
             for ((_, docs, targetSubdir) in sourceTrees) {

@@ -262,6 +262,7 @@ object OnlineInstaller {
     const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
     const val GALZOO_CDN_URL = "https://alicehub.000.moe/galzoo"
+    const val IXSEAL_CDN_URL = "https://alicehub.000.moe/ixseal"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1280,6 +1281,7 @@ object OnlineInstaller {
                         lower.contains("escalayer_reboot") ||
                         (lower.contains("escalayer") && lower.contains("reboot"))
                     GameCatalog.ID_GALZOO -> lower.contains("galzoo")
+                    GameCatalog.ID_IXSEAL -> lower.contains("ixseal")
                     null, "" -> true
                     else -> false
                 }

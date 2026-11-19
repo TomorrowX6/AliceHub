@@ -89,7 +89,7 @@ void parts_msg_push(struct parts* parts, int type, const char *fmt, ...)
 	msg->parts_no = parts ? parts->no : 0;
 	msg->delegate_index = parts ? parts->delegate_index : -1;
 	msg->unique_id = parts ? parts->event_unique_id : -1;
-	msg->type = ain->version >= 12 ? message_type_v12(type) : type;
+	msg->type = ain->version >= 11 ? message_type_v12(type) : type;
 	msg->nr_variables = 0;
 
 	va_list ap;
@@ -177,7 +177,7 @@ int PE_GetMessageType(void)
 {
 	struct parts_message *msg = STAILQ_FIRST(&msg_queue);
 	// v12 scripts drain the queue until -1. Zero is a valid message type.
-	return msg ? msg->type : (ain->version >= 12 ? -1 : 0);
+	return msg ? msg->type : (ain->version >= 11 ? -1 : 0);
 }
 
 int PE_GetMessagePartsNumber(void)

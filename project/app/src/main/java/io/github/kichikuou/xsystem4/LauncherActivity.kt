@@ -73,7 +73,8 @@ private class GameSelectAdapter(
             (desc.expectedAinName?.contains(q, ignoreCase = true) == true) ||
             (desc.id == GameCatalog.ID_RANCE06 && GameCatalog.isRance06Alias(q)) ||
             (desc.id == GameCatalog.ID_DAIAKUJI && GameCatalog.isDaiakujiAlias(q)) ||
-            (desc.id == GameCatalog.ID_GALZOO && GameCatalog.isGalzooAlias(q))
+            (desc.id == GameCatalog.ID_GALZOO && GameCatalog.isGalzooAlias(q)) ||
+            (desc.id == GameCatalog.ID_IXSEAL && GameCatalog.isIxsealAlias(q))
         ) {
             return true
         }
