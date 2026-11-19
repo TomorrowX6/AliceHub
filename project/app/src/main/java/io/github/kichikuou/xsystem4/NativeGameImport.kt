@@ -106,8 +106,9 @@ object NativeGameImport {
         val ixsealPatchTrees = mutableListOf<List<TreeEntry<T, D>>>()
         val seenPatchIds = HashSet<T>()
 
-        fun isBackupOrPatchContainer(name: String): Boolean =
-            name.equals("BackData", ignoreCase = true) ||
+        fun isBackupOrPatchContainer(name: String): Boolean {
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(name)
+            return name.equals("BackData", ignoreCase = true) ||
                 name == "补丁" ||
                 name == "备份" ||
                 name == "备份文件" ||
@@ -116,7 +117,11 @@ object NativeGameImport {
                 name == "汉化补丁备份" ||
                 name == "特典相关" ||
                 name == "全CG存档" ||
+                name == "広告" ||
+                name == "广告" ||
+                repaired == "広告" ||
                 name.equals("patchWM", ignoreCase = true)
+        }
 
         fun collectPatchCn(entries: List<TreeEntry<T, D>>) {
             val patchQueue = ArrayDeque<Pair<T, Int>>()
@@ -246,6 +251,9 @@ object NativeGameImport {
         if (GameCatalog.isIxsealGameFiles(activeFiles)) {
             return "Ixseal"
         }
+        if (GameCatalog.isHarukaGameFiles(activeFiles)) {
+            return "Haruka"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
@@ -374,11 +382,13 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_GALZOO
         val isIxsealImport = targetGameId == GameCatalog.ID_IXSEAL ||
             detectedGameId == GameCatalog.ID_IXSEAL
+        val isHarukaImport = targetGameId == GameCatalog.ID_HARUKA ||
+            detectedGameId == GameCatalog.ID_HARUKA
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
-        val baseName = if (isDaiakujiImport) {
-            "Daiakuji"
-        } else {
-            resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
+        val baseName = when {
+            isDaiakujiImport -> "Daiakuji"
+            isHarukaImport -> "Haruka"
+            else -> resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         }
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
@@ -399,7 +409,8 @@ object NativeGameImport {
                         (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
                         (isDaiakujiImport && isDaiakujiBloatRelPath(relPath, skipDDemo0Backup = hasPrimaryDDemo)) ||
                         (isGalzooImport && isGalzooBloatRelPath(relPath)) ||
-                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true))
+                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true)) ||
+                        (isHarukaImport && isHarukaBloatRelPath(relPath))
                     ) {
                         continue
                     }

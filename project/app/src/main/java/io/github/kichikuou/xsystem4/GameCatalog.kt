@@ -60,6 +60,7 @@ object GameCatalog {
     const val ID_ESCALAYER_REBOOT = "escalayer_reboot"
     const val ID_GALZOO = "galzoo"
     const val ID_IXSEAL = "ixseal"
+    const val ID_HARUKA = "haruka"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -352,6 +353,9 @@ object GameCatalog {
         if (isGalzooGameFiles(fileNames)) {
             return ID_GALZOO
         }
+        if (isHarukaGameFiles(fileNames, readSmallFile)) {
+            return ID_HARUKA
+        }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance09.ain", ignoreCase = true) ||
@@ -483,6 +487,10 @@ object GameCatalog {
         Regex("^(?:galzoo(?:island)?|galzooアイランド|ギャルズーアイランド)(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
     private val GALZOO_SAVE_SLOT_REGEX =
         Regex("^(?:galzoo|ギャルズー).*\\.(?:asd|sav|rsm)$", RegexOption.IGNORE_CASE)
+    private val HARUKA_EN_ALIAS_REGEX =
+        Regex("(?<![a-z0-9])(?:beat\\s+blades\\s+haruka|choukou\\s+sennin\\s+haruka|haruka)(?![a-z0-9])", RegexOption.IGNORE_CASE)
+    private val HARUKA_ALD_REGEX =
+        Regex("^(?:超昂閃忍ハルカ|超昂闪忍遥|超昂閃忍遥|haruka)(?:|[a-z_].*)\\.ald$", RegexOption.IGNORE_CASE)
 
     fun isEscalayerRebootAlias(lowerText: String): Boolean {
         return lowerText.contains("escalayerreboot") ||
@@ -573,6 +581,97 @@ object GameCatalog {
         if (dir == null || !dir.isDirectory) return false
         val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
         return isIxsealGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) {
+                try { f.readBytes() } catch (_: Throwable) { null }
+            } else {
+                null
+            }
+        }
+    }
+
+    fun isHarukaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        if (lower.contains("escalayer") || lower.contains("超昂天使") || lower.contains("エスカレイヤー") ||
+            lower.contains("ixseal") || lower.contains("超昂神騎") || lower.contains("超昂神骑") ||
+            lower.contains("エクシール") || lower.contains("beat angel") || lower.contains("beat valkyrie")
+        ) {
+            return false
+        }
+        return HARUKA_EN_ALIAS_REGEX.containsMatchIn(lower) ||
+            lower.contains("beatbladesharuka") ||
+            lower.contains("choukousennin") ||
+            lower.contains("超昂閃忍") ||
+            lower.contains("超昂闪忍") ||
+            lower.contains("閃忍ハルカ") ||
+            lower.contains("闪忍遥") ||
+            lower.contains("ハルカ") ||
+            rawLower.contains("挻峍慚擡") ||
+            rawLower.contains("僴儖僇")
+    }
+
+    @JvmOverloads
+    fun isHarukaGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val sys4AinNames = fileNames.filter {
+            it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true)
+        }
+        if (sys4AinNames.isEmpty()) return false
+        if (sys4AinNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("超昂閃忍ハルカ.ain", ignoreCase = true) ||
+                    repaired.equals("超昂閃忍ハルカ.ain", ignoreCase = true) ||
+                    it.equals("超昂闪忍遥.ain", ignoreCase = true) ||
+                    repaired.equals("超昂闪忍遥.ain", ignoreCase = true) ||
+                    it.equals("超昂閃忍遥.ain", ignoreCase = true) ||
+                    repaired.equals("超昂閃忍遥.ain", ignoreCase = true) ||
+                    it.equals("ハルカ.ain", ignoreCase = true) ||
+                    repaired.equals("ハルカ.ain", ignoreCase = true) ||
+                    it.equals("Haruka.ain", ignoreCase = true) ||
+                    repaired.equals("Haruka.ain", ignoreCase = true) ||
+                    it.equals("BeatBladesHaruka.ain", ignoreCase = true) ||
+                    it.equals("ChoukouSenninHaruka.ain", ignoreCase = true)
+            }
+        ) {
+            return true
+        }
+        if (fileNames.any {
+                val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("HarukaDll.inc", ignoreCase = true) ||
+                    repaired.equals("HarukaDll.inc", ignoreCase = true) ||
+                    HARUKA_ALD_REGEX.matches(it) ||
+                    HARUKA_ALD_REGEX.matches(repaired)
+            }
+        ) {
+            return true
+        }
+        val iniName = fileNames.firstOrNull {
+            it.equals("System40.ini", ignoreCase = true) || it.equals("AliceStart.ini", ignoreCase = true)
+        }
+        if (iniName != null && readSmallFile != null) {
+            try {
+                val raw = readSmallFile(iniName)
+                if (raw != null) {
+                    val title = System40Ini.parse(raw).gameName?.trim().orEmpty()
+                    if (title.isNotEmpty() && isHarukaAlias(title)) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return false
+    }
+
+    fun isHarukaGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isHarukaGameFiles(files.map { it.name }) { name ->
             val f = files.firstOrNull { it.name.equals(name, true) }
             if (f != null && f.length() <= 256L * 1024L) {
                 try { f.readBytes() } catch (_: Throwable) { null }
@@ -762,6 +861,26 @@ object GameCatalog {
                 !File(saveDir, "GlobalSaveData.asd").isFile
             ) {
                 return ID_IXSEAL
+            }
+            if (saveDir.listFiles()?.any {
+                    if (!it.isFile) return@any false
+                    val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
+                    it.name.equals("システム共通データ.asd", ignoreCase = true) ||
+                        repaired.equals("システム共通データ.asd", ignoreCase = true)
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile &&
+                !File(saveDir, "CommonSystemData.sav").isFile &&
+                !File(saveDir, "AFInfo.asd").isFile &&
+                !File(saveDir, "AFConfig.asd").isFile &&
+                !File(saveDir, "AFCommon.asd").isFile &&
+                !File(saveDir, "3DSetting.asd").isFile &&
+                !File(saveDir, "音楽モード.asd").isFile &&
+                !File(saveDir, "壒妝儌乕僪.asd").isFile &&
+                !File(saveDir, "顔ＣＧ").isDirectory &&
+                !File(saveDir, "婄俠俧").isDirectory
+            ) {
+                return ID_HARUKA
             }
             val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
             val hasGlobalSave = saveFiles.any {
@@ -1023,6 +1142,9 @@ object GameCatalog {
         if (isIxsealAlias(lowerDir)) {
             return ID_IXSEAL
         }
+        if (isHarukaAlias(dirName)) {
+            return ID_HARUKA
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
@@ -1045,6 +1167,9 @@ object GameCatalog {
         }
         if (isIxsealAlias(lowerDisp)) {
             return ID_IXSEAL
+        }
+        if (!displayName.isNullOrBlank() && isHarukaAlias(displayName)) {
+            return ID_HARUKA
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -1366,6 +1491,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_HARUKA -> GameDescriptor(
+                id = ID_HARUKA,
+                title = stringResolver(R.string.game_haruka_title),
+                defaultDirName = "Haruka",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_haruka,
+                accentColor = 0xFFE08E00.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF211814.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.HARUKA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = stringResolver(R.string.game_kichikuou_title),
@@ -1439,7 +1579,8 @@ object GameCatalog {
         ID_ESCALAYER,
         ID_ESCALAYER_REBOOT,
         ID_GALZOO,
-        ID_IXSEAL
+        ID_IXSEAL,
+        ID_HARUKA
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

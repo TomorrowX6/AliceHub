@@ -125,7 +125,8 @@ private class SaveFileAdapter(
             "config.asd", "progress.asd", "joypad.asd",
             "keyfile.dat", "msgskipflag.sav",
             "已读文本跳过.asd", "既読スキップ.asd",
-            "共有.asd", "ｃｇモード.asd", "音楽モード.asd", "3dsetting.asd",
+            "共有.asd", "ｃｇモード.asd", "回想モード.asd", "音楽モード.asd", "3dsetting.asd",
+            "システム共通データ.asd",
             "gameenquete.asd", "commonsystemdata.sav", "volume.sav"
         )
     }
@@ -1233,9 +1234,9 @@ class SaveManagerActivity : ThemedActivity() {
                 lower.endsWith(".msgskip") ->
                 getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
-                lower == "ｃｇモード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
+                lower == "ｃｇモード.asd" || lower == "回想モード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
             lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
-            lower == "commonsystemdata.sav" || lower == "afconfig.asd" ||
+            lower == "commonsystemdata.sav" || lower == "システム共通データ.asd" || lower == "afconfig.asd" ||
                 lower == "config.asd" || lower == "joypad.asd" ||
                 lower == "keyfile.dat" ||
                 lower == "3dsetting.asd" || lower == "volume.sav" ->

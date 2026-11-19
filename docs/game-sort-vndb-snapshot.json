@@ -91,6 +91,11 @@
         "id",
         "=",
         "v21142"
+      ],
+      [
+        "id",
+        "=",
+        "v284"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -99,6 +104,15 @@
   "response": {
     "more": false,
     "results": [
+      {
+        "alttitle": "超昂閃忍ハルカ",
+        "average": 67.9,
+        "id": "v284",
+        "rating": 67.9,
+        "released": "2008-02-29",
+        "title": "Choukou Sennin Haruka",
+        "votecount": 763
+      },
       {
         "alttitle": "大悪司",
         "average": 77.2,

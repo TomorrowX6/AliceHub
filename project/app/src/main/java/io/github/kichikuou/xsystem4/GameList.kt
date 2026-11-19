@@ -664,7 +664,8 @@ class GameList(activity: Activity) {
                         classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
                         classifiedId == GameCatalog.ID_RANCE06 ||
                         classifiedId == GameCatalog.ID_GALZOO ||
-                        classifiedId == GameCatalog.ID_IXSEAL
+                        classifiedId == GameCatalog.ID_IXSEAL ||
+                        classifiedId == GameCatalog.ID_HARUKA
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -958,6 +959,7 @@ class GameList(activity: Activity) {
         val isEvenicle2Target = targetGameId == GameCatalog.ID_EVENICLE2
         val isEscalayerRebootTarget = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT
         val isIxsealTarget = targetGameId == GameCatalog.ID_IXSEAL
+        val isHarukaTarget = targetGameId == GameCatalog.ID_HARUKA
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -976,7 +978,8 @@ class GameList(activity: Activity) {
                         (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                         (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
                         (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
-                        (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
+                        (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
+                        (isHarukaTarget && isHarukaBloatRelPath(rel))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1026,7 +1029,8 @@ class GameList(activity: Activity) {
                                 (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                                 (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
                                 (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
-                                (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
+                                (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
+                                (isHarukaTarget && isHarukaBloatRelPath(rel))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1062,7 +1066,8 @@ class GameList(activity: Activity) {
                             (!isEscalayerRebootTarget || !isEscalayerRebootBloatRelPath(rel, skipArchives = false)) &&
                             (!isRance06Target || !isRance06BloatRelPath(rel, skipPatchSubdir = true)) &&
                             (!isGalzooTarget || !isGalzooBloatRelPath(rel)) &&
-                            (!isIxsealTarget || !isIxsealBloatRelPath(rel, skipPatchCnSubdir = true))
+                            (!isIxsealTarget || !isIxsealBloatRelPath(rel, skipPatchCnSubdir = true)) &&
+                            (!isHarukaTarget || !isHarukaBloatRelPath(rel))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -1080,7 +1085,8 @@ class GameList(activity: Activity) {
                             (isEscalayerRebootTarget && isEscalayerRebootBloatRelPath(rel, skipArchives = false)) ||
                             (isRance06Target && isRance06BloatRelPath(rel, skipPatchSubdir = false)) ||
                             (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
-                            (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false))
+                            (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
+                            (isHarukaTarget && isHarukaBloatRelPath(rel))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1143,7 +1149,8 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_ESCALAYER_REBOOT ||
                 classifiedId == GameCatalog.ID_RANCE06 ||
                 classifiedId == GameCatalog.ID_GALZOO ||
-                classifiedId == GameCatalog.ID_IXSEAL
+                classifiedId == GameCatalog.ID_IXSEAL ||
+                classifiedId == GameCatalog.ID_HARUKA
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
@@ -1158,6 +1165,7 @@ class GameList(activity: Activity) {
                         ainFile.name.equals("エスカレイヤーリブート.ain", ignoreCase = true)
                     ) -> "EscalayerReboot"
                 classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
+                classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
@@ -2240,6 +2248,8 @@ internal fun findGameRootDirInternal(
                 seg == "汉化补丁备份" ||
                 seg == "特典相关" ||
                 seg == "全CG存档" ||
+                seg == "広告" ||
+                seg == "广告" ||
                 seg.equals("patchCN", ignoreCase = true) ||
                 seg.equals("patchWM", ignoreCase = true)
         }
@@ -2465,6 +2475,48 @@ internal fun isIxsealBloatRelPath(relPath: String, skipPatchCnSubdir: Boolean = 
         dirMatch(fileNameLower)
 }
 
+internal fun isHarukaBloatRelPath(relPath: String): Boolean {
+    val norm = ArchiveExtractor.repairSjisAsGbkMojibake(relPath).replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val dirMatch: (String) -> Boolean = { seg ->
+        seg == "directx" ||
+            seg == "dll" ||
+            seg == "backdata" ||
+            seg == "savedata" ||
+            seg == "広告" ||
+            seg == "广告" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "特典相关" ||
+            seg == "全cg存档"
+    }
+    for (i in 0 until segments.size - 1) {
+        if (dirMatch(segments[i].lowercase())) {
+            return true
+        }
+    }
+    val fileNameLower = segments.last().lowercase()
+    if (fileNameLower.endsWith(".bak") && !fileNameLower.endsWith(".vanilla.bak")) {
+        return true
+    }
+    return fileNameLower.endsWith(".exe") ||
+        fileNameLower.endsWith(".dll") ||
+        fileNameLower.endsWith(".bat") ||
+        fileNameLower.endsWith(".cmd") ||
+        fileNameLower.endsWith(".lnk") ||
+        fileNameLower == "setup.bmp" ||
+        fileNameLower == "autorun.inf" ||
+        fileNameLower == "desktop.ini" ||
+        fileNameLower == "超昂閃忍ハルカ.ico" ||
+        fileNameLower == "超昂闪忍遥.ico" ||
+        fileNameLower == "haruka.ico" ||
+        fileNameLower == "超昂閃忍ハルカdm.dat" ||
+        fileNameLower == "超昂闪忍遥dm.dat" ||
+        fileNameLower == "harukadm.dat" ||
+        dirMatch(fileNameLower)
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
@@ -2474,7 +2526,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         gameId != GameCatalog.ID_ESCALAYER_REBOOT &&
         gameId != GameCatalog.ID_RANCE06 &&
         gameId != GameCatalog.ID_GALZOO &&
-        gameId != GameCatalog.ID_IXSEAL
+        gameId != GameCatalog.ID_IXSEAL &&
+        gameId != GameCatalog.ID_HARUKA
     ) {
         return
     }
@@ -2509,7 +2562,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                         f.name.equals("DirectX", ignoreCase = true) ||
                         f.name.equals("SaveData", ignoreCase = true)
                     )) ||
-                (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
+                (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel)) ||
+                (gameId == GameCatalog.ID_HARUKA && isHarukaBloatRelPath(rel))
             ) {
                 dirsToDelete.add(f)
             } else if ((gameId == GameCatalog.ID_RANCE06 || gameId == GameCatalog.ID_GALZOO) && (
@@ -2533,7 +2587,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     (gameId == GameCatalog.ID_ESCALAYER_REBOOT && isEscalayerRebootBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_RANCE06 && isRance06BloatRelPath(rel, skipPatchSubdir = true)) ||
                     (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel)) ||
-                    (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel))
+                    (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_HARUKA && isHarukaBloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)

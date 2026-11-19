@@ -237,18 +237,19 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val isEscalayerReboot = xsAct?.isEscalayerRebootGame() ?: false
         val isGalzoo = !isEscalayerReboot && (xsAct?.isGalzooGame() ?: false)
         val isIxseal = !isEscalayerReboot && !isGalzoo && (xsAct?.isIxsealGame() ?: false)
-        val isDohnaDohna = !isEscalayerReboot && !isGalzoo && !isIxseal && j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
-        val isEvenicle = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
-        val isSengokuRance = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
-        val isRance01 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance01", xsAct?.isRance01Game() ?: false)
-        val isRance02 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && j.optBoolean("isRance02", xsAct?.isRance02Game() ?: false)
-        val isRance03 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
-        val isRance08 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
-        val isRance09 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
-        val isEscalayer = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 &&
+        val isHaruka = !isEscalayerReboot && !isGalzoo && !isIxseal && (xsAct?.isHarukaGame() ?: false)
+        val isDohnaDohna = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
+        val isEvenicle = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
+        val isSengokuRance = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
+        val isRance01 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance01", xsAct?.isRance01Game() ?: false)
+        val isRance02 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && j.optBoolean("isRance02", xsAct?.isRance02Game() ?: false)
+        val isRance03 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
+        val isRance08 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
+        val isRance09 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
+        val isEscalayer = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 &&
             (j.optString("game") == "escalayer" || (xsAct?.isEscalayerGame() ?: false))
         val isSys3x = xsAct?.isSystem3xGame() ?: isEscalayer
-        val isRance10 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
+        val isRance10 = !isEscalayerReboot && !isGalzoo && !isIxseal && !isHaruka && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
             j.optBoolean("isRance10", xsAct?.isRance10Game() ?: false)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
