@@ -201,6 +201,27 @@ static bool crop_quad_transform(mat4 mw_transform, int tex_w, int tex_h, const R
 	return true;
 }
 
+static void apply_sprite_deform_uv(int sprite_deform, vec4 uv_rect)
+{
+	switch (sprite_deform) {
+	// Flip horizontally (mirrors the full texture, matching PartsEngine's CopyReverseLR semantics)
+	case 1:
+		uv_rect[0] = 1.0f - uv_rect[0];
+		uv_rect[2] = -uv_rect[2];
+		break;
+	// Flip vertically (mirrors the full texture, matching PartsEngine's CopyReverseUD semantics)
+	case 2:
+		uv_rect[1] = 1.0f - uv_rect[1];
+		uv_rect[3] = -uv_rect[3];
+		break;
+	case 0:
+		break;
+	default:
+		WARNING("Invalid sprite_deform: %d", sprite_deform);
+		break;
+	}
+}
+
 static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **inv_out,
 		float *min_x, float *max_x, float *min_y, float *max_y)
 {
@@ -245,7 +266,7 @@ static bool get_alpha_clipper_info(int alpha_clipper, GLuint *tex_out, vec4 **in
 	return true;
 }
 
-static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rectangle *rect, float blend_rate, vec3 add_color, vec3 multiply_color, int draw_filter, int alpha_clipper)
+static void parts_render_texture_deform(struct texture *texture, mat4 mw_transform, Rectangle *rect, int sprite_deform, float blend_rate, vec3 add_color, vec3 multiply_color, int draw_filter, int alpha_clipper)
 {
 	if (!texture || !gfx_remap_texture(texture) || !texture->handle || blend_rate <= 0.0f)
 		return;
@@ -254,6 +275,7 @@ static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rec
 	vec4 uv_rect;
 	if (!crop_quad_transform(mw_transform, texture->w, texture->h, rect, sub_mw, uv_rect))
 		return;
+	apply_sprite_deform_uv(sprite_deform, uv_rect);
 
 	float q_min_x, q_max_x, q_min_y, q_max_y;
 	quad_screen_aabb(sub_mw, &q_min_x, &q_max_x, &q_min_y, &q_max_y);
@@ -334,6 +356,11 @@ static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rec
 
 	if (auto_pass)
 		parts_render_pass_end();
+}
+
+static void parts_render_texture(struct texture *texture, mat4 mw_transform, Rectangle *rect, float blend_rate, vec3 add_color, vec3 multiply_color, int draw_filter, int alpha_clipper)
+{
+	parts_render_texture_deform(texture, mw_transform, rect, 0, blend_rate, add_color, multiply_color, draw_filter, alpha_clipper);
 }
 
 static void parts_get_effective_add_color(struct parts *parts, vec3 out)
@@ -444,25 +471,7 @@ static void parts_render_cg(struct parts *parts, struct parts_common *common)
 	mat4 mw_transform;
 	parts_world_matrix(parts, mw_transform);
 	glm_translate(mw_transform, (vec3){ common->origin_offset.x, common->origin_offset.y, 0 });
-
-	switch (parts->sprite_deform) {
-	// Flip horizontally
-	case 1:
-		glm_translate(mw_transform, (vec3){ common->w, 0.0f, 0.0f });
-		glm_scale(mw_transform, (vec3){ -common->w, common->h, 1.0f });
-		break;
-	// Flip vertically
-	case 2:
-		glm_translate(mw_transform, (vec3){ 0.0f, common->h, 0.0f });
-		glm_scale(mw_transform, (vec3){ common->w, -common->h, 1.0f });
-		break;
-	default:
-		WARNING("Invalid sprite_deform: %d", parts->sprite_deform);
-	// No deform
-	case 0:
-		glm_scale(mw_transform, (vec3){ common->w, common->h, 1.0 });
-		break;
-	}
+	glm_scale(mw_transform, (vec3){ common->w, common->h, 1.0f });
 
 	Rectangle r = common->surface_area;
 	if (!r.w && !r.h) {
@@ -476,7 +485,7 @@ static void parts_render_cg(struct parts *parts, struct parts_common *common)
 		parts->global.multiply_color.g / 255.0f,
 		parts->global.multiply_color.b / 255.0f,
 	};
-	parts_render_texture(&common->texture, mw_transform, &r, parts->global.alpha / 255.0, add_color, multiply_color, parts->draw_filter, parts_get_effective_alpha_clipper(parts));
+	parts_render_texture_deform(&common->texture, mw_transform, &r, parts->sprite_deform, parts->global.alpha / 255.0, add_color, multiply_color, parts->draw_filter, parts_get_effective_alpha_clipper(parts));
 }
 
 struct emitter_render_ud {
@@ -988,20 +997,7 @@ bool parts_cg_on_screen(struct parts *parts, struct parts_common *common)
 	mat4 mw_transform;
 	parts_world_matrix(parts, mw_transform);
 	glm_translate(mw_transform, (vec3){ common->origin_offset.x, common->origin_offset.y, 0 });
-	switch (parts->sprite_deform) {
-	case 1:
-		glm_translate(mw_transform, (vec3){ common->w, 0.0f, 0.0f });
-		glm_scale(mw_transform, (vec3){ -common->w, common->h, 1.0f });
-		break;
-	case 2:
-		glm_translate(mw_transform, (vec3){ 0.0f, common->h, 0.0f });
-		glm_scale(mw_transform, (vec3){ common->w, -common->h, 1.0f });
-		break;
-	default:
-	case 0:
-		glm_scale(mw_transform, (vec3){ common->w, common->h, 1.0f });
-		break;
-	}
+	glm_scale(mw_transform, (vec3){ common->w, common->h, 1.0f });
 
 	Rectangle r = common->surface_area;
 	if (!r.w && !r.h) {

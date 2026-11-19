@@ -16,6 +16,7 @@
 
 #include <stdatomic.h>
 #include <assert.h>
+#include <math.h>
 
 #include <sndfile.h>
 #include <SDL.h>
@@ -847,10 +848,16 @@ void mixer_init(void)
 	for (int i = 0; i < nr_mixers; i++) {
 		if (&mixers[i] == master)
 			continue;
-		mixers[i].parent = parent;
-		parent->children = xrealloc_array(parent->children, parent->nr_children, parent->nr_children+1, sizeof(struct mixer*));
-		parent->children[parent->nr_children++] = &mixers[i];
-		if (!game_rance10 && !game_evenicle2 && !game_ixseal && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
+		struct mixer *node_parent = parent;
+		if (game_rance03) {
+			// Rance 03 CGroupTree::GetParentGroup: groups 1..5 attach to Master (0),
+			// while VoiceMale (6) and VoiceFemale (7) attach to Voice (3).
+			node_parent = (i >= 6 && nr_mixers > 3) ? &mixers[3] : master;
+		}
+		mixers[i].parent = node_parent;
+		node_parent->children = xrealloc_array(node_parent->children, node_parent->nr_children, node_parent->nr_children+1, sizeof(struct mixer*));
+		node_parent->children[node_parent->nr_children++] = &mixers[i];
+		if (!game_rance10 && !game_evenicle2 && !game_ixseal && !game_rance03 && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
 			parent = &mixers[i];
 		}
 	}
@@ -914,7 +921,7 @@ int mixer_get_volume(int n, int *volume)
 		return 0;
 	}
 	audio_lock();
-	*volume = clamp(0, 100, (int)(mixers[n].mixer.gain * 100));
+	*volume = clamp(0, 100, (int)lroundf(mixers[n].mixer.gain * 100.0f));
 	audio_unlock();
 	return 1;
 }

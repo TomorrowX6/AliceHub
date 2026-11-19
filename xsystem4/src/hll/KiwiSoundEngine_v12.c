@@ -5,11 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
+#include "system4.h"
 #include "system4/ain.h"
 #include "system4/archive.h"
 #include "system4/ex.h"
 #include "system4/file.h"
+#include "system4/hashtable.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "asset_manager.h"
 #include "audio.h"
 #include "id_pool.h"
@@ -18,9 +21,22 @@
 #include "xsystem4.h"
 #include "hll.h"
 
+struct sound_meta {
+	struct ex *ex;
+	struct ex_table *info;
+};
+
+struct sound_row_entry {
+	struct ex_value *row;
+	unsigned nr_columns;
+};
+
 static struct id_pool sounds, sound_names, sound_file_names, effects;
-static struct ex *metadata;
-static struct ex_table *sound_info;
+static struct sound_meta *sound_metas;
+static size_t nr_sound_metas;
+static struct sound_row_entry *sound_row_entries;
+static size_t nr_sound_row_entries;
+static struct hash_table *sound_row_index;
 
 static int parse_sound_num_prefix(const char *name)
 {
@@ -100,21 +116,189 @@ static void kiwi_prelink(void)
 			80, 80, 80, 80, 80, 80
 		};
 		set_default_mixers(names, vols, 18);
+	} else if (game_rance03) {
+		static const char *const names[] = {
+			"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice",
+			"VoiceMale", "VoiceFemale"
+		};
+		static const int vols[] = { 80, 80, 80, 100, 80, 80, 80, 80 };
+		set_default_mixers(names, vols, 8);
 	}
 }
 
 static bool sound_file_names_loaded = false;
+
+static char *sound_key_normalize(const char *src)
+{
+	size_t len = strlen(src);
+	char *out = xmalloc(len + 1);
+	size_t i = 0;
+	while (src[i]) {
+		unsigned char c = (unsigned char)src[i];
+		if (SJIS_2BYTE(c) && src[i + 1]) {
+			out[i] = src[i];
+			out[i + 1] = src[i + 1];
+			i += 2;
+		} else {
+			if (c == '\\')
+				out[i] = '/';
+			else if (c >= 'A' && c <= 'Z')
+				out[i] = (char)(c - 'A' + 'a');
+			else
+				out[i] = (char)c;
+			i++;
+		}
+	}
+	out[i] = '\0';
+	return out;
+}
+
+static void kiwi_clear_timemaps(void)
+{
+	if (sound_row_index) {
+		ht_free(sound_row_index);
+		sound_row_index = NULL;
+	}
+	free(sound_row_entries);
+	sound_row_entries = NULL;
+	nr_sound_row_entries = 0;
+	for (size_t i = 0; i < nr_sound_metas; i++)
+		ex_free(sound_metas[i].ex);
+	free(sound_metas);
+	sound_metas = NULL;
+	nr_sound_metas = 0;
+}
+
+static void kiwi_add_timemap_data(struct archive_data *data)
+{
+	if (!data)
+		return;
+	if (!data->data || !data->size) {
+		archive_free_data(data);
+		return;
+	}
+	struct ex *ex = ex_read(data->data, data->size);
+	archive_free_data(data);
+	if (!ex)
+		return;
+	struct ex_table *info = ex_get_table(ex, "SoundInfo");
+	if (!info) {
+		ex_free(ex);
+		return;
+	}
+	sound_metas = xrealloc_array(sound_metas, nr_sound_metas, nr_sound_metas + 1, sizeof(*sound_metas));
+	sound_metas[nr_sound_metas].ex = ex;
+	sound_metas[nr_sound_metas].info = info;
+	nr_sound_metas++;
+}
+
+static bool ascii_starts_with_icase(const char *s, const char *prefix)
+{
+	while (*prefix) {
+		unsigned char a = (unsigned char)*s++;
+		unsigned char b = (unsigned char)*prefix++;
+		if (!a)
+			return false;
+		if (a >= 'A' && a <= 'Z') a = (unsigned char)(a - 'A' + 'a');
+		if (b >= 'A' && b <= 'Z') b = (unsigned char)(b - 'A' + 'a');
+		if (a != b)
+			return false;
+	}
+	return true;
+}
+
+static bool ascii_ends_with_icase(const char *s, const char *suffix)
+{
+	size_t slen = strlen(s);
+	size_t flen = strlen(suffix);
+	if (slen < flen)
+		return false;
+	return ascii_starts_with_icase(s + (slen - flen), suffix);
+}
+
+struct timemap_collect_ctx {
+	enum asset_type type;
+	struct hash_table *seen;
+};
+
+static void kiwi_collect_timemap_cb(struct archive_data *data, void *user)
+{
+	if (!data || !data->name)
+		return;
+	const char *base = data->name;
+	for (const char *p = data->name; *p;) {
+		if (SJIS_2BYTE((unsigned char)*p) && p[1]) {
+			p += 2;
+			continue;
+		}
+		if (*p == '/' || *p == '\\')
+			base = p + 1;
+		p++;
+	}
+	if (!ascii_starts_with_icase(base, "timemap_") || !ascii_ends_with_icase(base, ".ex"))
+		return;
+	struct timemap_collect_ctx *ctx = user;
+	char *norm = sound_key_normalize(data->name);
+	bool already_seen = ctx->seen && ht_get(ctx->seen, norm, NULL) != NULL;
+	if (!already_seen) {
+		if (ctx->seen)
+			ht_put(ctx->seen, norm, (void *)1);
+		kiwi_add_timemap_data(asset_get_by_name(ctx->type, data->name, NULL));
+	}
+	free(norm);
+}
+
+static void kiwi_build_sound_row_index(void)
+{
+	if (sound_row_index) {
+		ht_free(sound_row_index);
+		sound_row_index = NULL;
+	}
+	free(sound_row_entries);
+	sound_row_entries = NULL;
+	nr_sound_row_entries = 0;
+
+	size_t total_rows = 0;
+	for (size_t m = 0; m < nr_sound_metas; m++) {
+		struct ex_table *info = sound_metas[m].info;
+		if (info && info->nr_columns >= 1)
+			total_rows += info->nr_rows;
+	}
+	if (!total_rows)
+		return;
+
+	sound_row_entries = xcalloc(total_rows, sizeof(*sound_row_entries));
+	sound_row_index = ht_create(total_rows * 2);
+	for (size_t m = 0; m < nr_sound_metas; m++) {
+		struct ex_table *info = sound_metas[m].info;
+		if (!info || info->nr_columns < 1)
+			continue;
+		for (unsigned r = 0; r < info->nr_rows; r++) {
+			if (info->rows[r][0].type != EX_STRING || !info->rows[r][0].s)
+				continue;
+			struct sound_row_entry *entry = &sound_row_entries[nr_sound_row_entries++];
+			entry->row = info->rows[r];
+			entry->nr_columns = info->nr_columns;
+			char *key = sound_key_normalize(info->rows[r][0].s->text);
+			ht_put(sound_row_index, key, entry);
+			free(key);
+		}
+	}
+}
 
 static void ensure_sound_file_names(void)
 {
 	if (sound_file_names_loaded)
 		return;
 	sound_file_names_loaded = true;
-	if (sound_info && sound_info->nr_columns >= 1) {
-		for (unsigned r = 0; r < sound_info->nr_rows; r++) {
-			if (sound_info->rows[r][0].type != EX_STRING)
+	for (size_t m = 0; m < nr_sound_metas; m++) {
+		struct ex_table *info = sound_metas[m].info;
+		if (!info || info->nr_columns < 1)
+			continue;
+		for (unsigned r = 0; r < info->nr_rows; r++) {
+			if (info->rows[r][0].type != EX_STRING)
 				continue;
-			struct string *s = sound_info->rows[r][0].s;
+			struct string *s = info->rows[r][0].s;
 			int num = parse_sound_num_prefix(s->text);
 			if (num >= 0 && !id_pool_get(&sound_file_names, num))
 				id_pool_set(&sound_file_names, num, string_dup(s));
@@ -132,14 +316,23 @@ static void kiwi_init(void)
 	id_pool_init(&sound_file_names, 0);
 	id_pool_init(&effects, 0);
 	sound_file_names_loaded = false;
+	kiwi_clear_timemaps();
 	SDL_InitSubSystem(SDL_INIT_AUDIO);
 	audio_init();
-	struct archive_data *data = asset_get_by_name(ASSET_SOUND, "timemap_sound.ex", NULL);
-	if (data) {
-		metadata = ex_read(data->data, data->size);
-		archive_free_data(data);
-		if (metadata) sound_info = ex_get_table(metadata, "SoundInfo");
+
+	const enum asset_type types[] = { ASSET_SOUND, ASSET_BGM, ASSET_VOICE };
+	for (unsigned i = 0; i < sizeof(types) / sizeof(*types); i++) {
+		struct timemap_collect_ctx ctx = {
+			.type = types[i],
+			.seen = ht_create(16),
+		};
+		asset_foreach_file(types[i], kiwi_collect_timemap_cb, &ctx);
+		ht_free(ctx.seen);
 	}
+	if (!nr_sound_metas) {
+		kiwi_add_timemap_data(asset_get_by_name(ASSET_SOUND, "timemap_sound.ex", NULL));
+	}
+	kiwi_build_sound_row_index();
 }
 
 static void stop_effect(struct effect *effect)
@@ -171,25 +364,47 @@ static void kiwi_fini(void)
 	id_pool_delete(&sound_file_names);
 	id_pool_delete(&effects);
 	sound_file_names_loaded = false;
-	if (metadata) ex_free(metadata);
-	metadata = NULL;
-	sound_info = NULL;
+	kiwi_clear_timemaps();
 }
 
-static struct ex_value *sound_row(const char *name)
+static struct ex_value *sound_row(const char *name, unsigned *nr_columns_out)
 {
-	if (!sound_info) return NULL;
+	if (!name || !nr_sound_metas)
+		return NULL;
 	char *base = archive_basename(name);
-	int row = ex_row_at_string_key(sound_info, base);
+	if (sound_row_index) {
+		char *key = sound_key_normalize(base);
+		struct sound_row_entry *entry = ht_get(sound_row_index, key, NULL);
+		free(key);
+		if (entry) {
+			free(base);
+			if (nr_columns_out)
+				*nr_columns_out = entry->nr_columns;
+			return entry->row;
+		}
+	}
+	for (size_t m = 0; m < nr_sound_metas; m++) {
+		struct ex_table *info = sound_metas[m].info;
+		if (!info)
+			continue;
+		int row = ex_row_at_string_key(info, base);
+		if (row >= 0) {
+			free(base);
+			if (nr_columns_out)
+				*nr_columns_out = info->nr_columns;
+			return info->rows[row];
+		}
+	}
 	free(base);
-	return row >= 0 ? sound_info->rows[row] : NULL;
+	return NULL;
 }
 
 static int sound_group(struct string *name)
 {
 	if (!name) return 0;
-	struct ex_value *row = sound_row(name->text);
-	return row && sound_info->nr_columns >= 2 && row[1].type == EX_INT ? row[1].i : 0;
+	unsigned nr_columns = 0;
+	struct ex_value *row = sound_row(name->text, &nr_columns);
+	return row && nr_columns >= 2 && row[1].type == EX_INT ? row[1].i : 0;
 }
 
 static struct channel *open_sound(struct string *name)
@@ -209,11 +424,12 @@ static struct channel *open_sound(struct string *name)
 		free(path);
 	}
 	if (!channel) return NULL;
-	struct ex_value *row = sound_row(name->text);
-	if (row && sound_info->nr_columns >= 4) {
+	unsigned nr_columns = 0;
+	struct ex_value *row = sound_row(name->text, &nr_columns);
+	if (row && nr_columns >= 2) {
 		if (row[1].type == EX_INT)
 			channel_set_group(channel, row[1].i);
-		if (row[2].type == EX_INT && row[3].type == EX_INT &&
+		if (nr_columns >= 4 && row[2].type == EX_INT && row[3].type == EX_INT &&
 				row[2].i >= 0 && row[3].i > row[2].i &&
 				row[3].i <= channel_get_sample_length(channel)) {
 			channel_set_loop_start_pos(channel, row[2].i);
