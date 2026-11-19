@@ -119,6 +119,36 @@ public class SaveBackupRestoreTest {
         assertOriginal(live);
     }
 
+    @Test public void hiddenDirectoryCreationFailurePreservesOriginal() throws IOException {
+        File live = live();
+        File emptyHidden = new File(live, ".empty");
+        assertTrue(emptyHidden.mkdir());
+        File zip = archive("SaveData/new.asd");
+        int[] moves = {0};
+        int[] failedCreations = {0};
+        IOException error = assertThrows(IOException.class, () -> SaveBackupRestore.INSTANCE.restore(
+                zip, live, () -> Unit.INSTANCE, (from, to) -> {
+                    moves[0]++;
+                    return from.renameTo(to);
+                }, directory -> {
+                    if (directory.getName().equals(".empty")) {
+                        failedCreations[0]++;
+                        return false;
+                    }
+                    return directory.mkdir();
+                }));
+        assertTrue(error.getMessage().contains("Cannot create hidden save directory"));
+        assertEquals(1, failedCreations[0]);
+        assertEquals(0, moves[0]);
+        assertTrue(emptyHidden.isDirectory());
+        assertEquals(0, emptyHidden.list().length);
+        assertEquals("original", read(new File(live, "original.asd")));
+        assertEquals("hidden", read(new File(live, ".hidden")));
+        assertEquals("settings", read(new File(live, ".settings/config")));
+        assertEquals(4, live.listFiles().length);
+        assertNoTemporaryDirectories();
+    }
+
     @Test public void emptyArchivePreservesOnlyHiddenEntries() throws IOException {
         File live = live();
         assertEquals(0, restore(archive(), live));
