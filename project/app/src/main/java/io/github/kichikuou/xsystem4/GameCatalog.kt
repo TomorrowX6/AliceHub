@@ -1338,7 +1338,7 @@ object GameCatalog {
             )
             ID_GALZOO -> GameDescriptor(
                 id = ID_GALZOO,
-                title = context.getString(R.string.game_galzoo_title),
+                title = stringResolver(R.string.game_galzoo_title),
                 defaultDirName = "GALZOO",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_galzoo,
@@ -1353,7 +1353,7 @@ object GameCatalog {
             )
             ID_IXSEAL -> GameDescriptor(
                 id = ID_IXSEAL,
-                title = context.getString(R.string.game_ixseal_title),
+                title = stringResolver(R.string.game_ixseal_title),
                 defaultDirName = "Ixseal",
                 expectedAinName = "Ixseal.ain",
                 iconRes = R.drawable.ic_game_ixseal,
@@ -1383,7 +1383,7 @@ object GameCatalog {
             )
             ID_DAIAKUJI -> GameDescriptor(
                 id = ID_DAIAKUJI,
-                title = context.getString(R.string.game_daiakuji_title),
+                title = stringResolver(R.string.game_daiakuji_title),
                 defaultDirName = "Daiakuji",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_daiakuji,
