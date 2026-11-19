@@ -77,7 +77,7 @@ class TarHardlinksTest(unittest.TestCase):
     def extract(self, entries, root, source_root=None):
         archive = root / "fixture.tar"
         out = root / "out"
-        out.mkdir()
+        out.mkdir(exist_ok=True)
         with tarfile.open(archive, "w", format=tarfile.USTAR_FORMAT) as tar:
             for name, content, target in entries:
                 entry = tarfile.TarInfo(name)
@@ -103,13 +103,57 @@ class TarHardlinksTest(unittest.TestCase):
             if root.stat().st_dev == source_root.stat().st_dev:
                 self.skipTest("Temporary directories are on the same filesystem")
             content = b"cross-device payload\n" * 10000
-            result, out = self.extract([
-                ("original", content, None), ("linked", None, "original"),
-            ], root, source_root)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("EXTRACTED 2", result.stdout)
-            self.assertEqual((out / "linked").read_bytes(), content)
-            self.assertNotEqual((out / "linked").stat().st_dev, (source_root / "original").stat().st_dev)
+            out = root / "out"
+            out.mkdir()
+            (out / "linked").write_bytes(b"stale content")
+            for run in range(2):
+                with self.subTest(run=run):
+                    result, out = self.extract([
+                        ("original", content, None), ("linked", None, "original"),
+                    ], root, source_root)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("EXTRACTED 2", result.stdout)
+                    self.assertEqual((out / "linked").read_bytes(), content)
+                    self.assertNotEqual((out / "linked").stat().st_dev, (source_root / "original").stat().st_dev)
+                    self.assertEqual(sorted(p.name for p in out.iterdir()), ["linked"])
+
+    def test_repeated_extraction_overwrites_hard_link_destination(self):
+        for stale in (False, True):
+            with self.subTest(preexisting=stale), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                out = root / "out"
+                out.mkdir()
+                if stale:
+                    (out / "linked").write_bytes(b"different content")
+                content = b"target content\n"
+                for run in range(2):
+                    with self.subTest(run=run):
+                        result, out = self.extract([
+                            ("original", content, None), ("linked", None, "original"),
+                        ], root)
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertIn("EXTRACTED 2", result.stdout)
+                        self.assertEqual((out / "linked").read_bytes(), content)
+                        self.assertEqual((out / "original").read_bytes(), content)
+                        self.assertEqual(sorted(p.name for p in out.iterdir()), ["linked", "original"])
+
+    def test_directory_destination_is_not_replaced(self):
+        for nonempty in (False, True):
+            with self.subTest(nonempty=nonempty), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                destination = root / "out" / "linked"
+                destination.mkdir(parents=True)
+                if nonempty:
+                    (destination / "keep").write_bytes(b"keep content")
+                result, out = self.extract([
+                    ("original", b"target", None), ("linked", None, "original"),
+                ], root)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("Is a directory", result.stdout)
+                self.assertTrue(destination.is_dir())
+                if nonempty:
+                    self.assertEqual((destination / "keep").read_bytes(), b"keep content")
+                self.assertEqual(sorted(p.name for p in out.iterdir()), ["linked", "original"])
 
     def test_content_empty_and_chained_links(self):
         for content in (b"", b"hard link payload\n" * 100):

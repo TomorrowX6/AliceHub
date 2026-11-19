@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #ifdef __ANDROID__
@@ -349,6 +350,57 @@ static int copy_link_target(const char *source, const char *destination)
 	return 0;
 }
 
+static int replace_hard_link(const char *source, const char *destination)
+{
+	struct stat st;
+	if (lstat(destination, &st) == 0) {
+		if (S_ISDIR(st.st_mode)) {
+			errno = EISDIR;
+			return -1;
+		}
+	} else if (errno != ENOENT) {
+		return -1;
+	}
+
+	const char *slash = strrchr(destination, '/');
+	size_t parent_len = slash ? (size_t)(slash - destination + 1) : 0;
+	char *temp_dir = malloc(parent_len + sizeof(".archive_link_XXXXXX"));
+	if (!temp_dir) return -1;
+	memcpy(temp_dir, destination, parent_len);
+	strcpy(temp_dir + parent_len, ".archive_link_XXXXXX");
+	if (!mkdtemp(temp_dir)) {
+		int error = errno;
+		free(temp_dir);
+		errno = error;
+		return -1;
+	}
+	char *temp_path = malloc(strlen(temp_dir) + sizeof("/content"));
+	int error = 0;
+	if (!temp_path) {
+		error = ENOMEM;
+	} else {
+		sprintf(temp_path, "%s/content", temp_dir);
+		if (link(source, temp_path) != 0) {
+			int link_error = errno;
+			if ((link_error != EPERM && link_error != EXDEV && link_error != ENOTSUP &&
+				link_error != EOPNOTSUPP && link_error != EMLINK) ||
+				copy_link_target(source, temp_path) != 0) {
+				error = errno;
+			}
+		}
+		if (!error && rename(temp_path, destination) != 0) error = errno;
+		unlink(temp_path);
+		free(temp_path);
+	}
+	rmdir(temp_dir);
+	free(temp_dir);
+	if (error) {
+		errno = error;
+		return -1;
+	}
+	return 0;
+}
+
 static char *relative_link_name(const char *name)
 {
 	if (!name || !*name || *name == '/' || *name == '\\' || strchr(name, ':')) return NULL;
@@ -579,19 +631,14 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 				throw_io_exception(env, "Archive hard link target was not previously extracted");
 				goto cleanup;
 			}
-			if (link(source->path, pending_path) != 0) {
+			if (replace_hard_link(source->path, pending_path) != 0) {
 				int link_error = errno;
-				if ((link_error != EPERM && link_error != EXDEV && link_error != ENOTSUP &&
-					link_error != EOPNOTSUPP && link_error != EMLINK) ||
-					copy_link_target(source->path, pending_path) != 0) {
-					int copy_error = errno;
-					char msg[512];
-					snprintf(msg, sizeof(msg), "Cannot create archive hard link: %s%s",
-						(copy_error == ENOSPC || copy_error == EDQUOT) ? "ENOSPC: " : "",
-						strerror(copy_error));
-					throw_io_exception(env, msg);
-					goto cleanup;
-				}
+				char msg[512];
+				snprintf(msg, sizeof(msg), "Cannot create archive hard link: %s%s",
+					(link_error == ENOSPC || link_error == EDQUOT) ? "ENOSPC: " : "",
+					strerror(link_error));
+				throw_io_exception(env, msg);
+				goto cleanup;
 			}
 			archive_read_data_skip(a);
 			goto entry_complete;
