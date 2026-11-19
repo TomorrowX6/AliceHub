@@ -61,11 +61,13 @@ static bool update_cd_fade(uint32_t now) {
 
 	uint32_t elapsed = now - cd_fade.start_ms;
 	if (elapsed >= (uint32_t)cd_fade.duration_ms) {
+		bool should_stop = cd_fade.stop_on_end;
 		cd_fade.active = false;
+		cd_fade.stop_on_end = false;
 		cd_fade.current_vol = cd_fade.target_vol;
 		if (prv.cddev && prv.cddev->set_volume)
 			prv.cddev->set_volume(cd_fade.current_vol);
-		if (cd_fade.stop_on_end)
+		if (should_stop)
 			muscd_stop();
 		return false;
 	}
@@ -102,6 +104,9 @@ bool muscd_init(void) {
 		prv.cddev = NATIVE_CD_DEVICE;
 	}
 	prv.cd_current_track = 0;
+	cd_fade.active = false;
+	cd_fade.stop_on_end = false;
+	cd_fade.current_vol = 100;
 	return prv.cddev->init(playlist);
 }
 
@@ -116,6 +121,7 @@ void muscd_exit(void) {
 		prv.cddev->exit();
 		prv.cddev = NULL;
 	}
+	prv.cd_current_track = 0;
 	cd_fade.active = false;
 	cd_fade.stop_on_end = false;
 	cd_fade.current_vol = 100;
@@ -137,8 +143,12 @@ bool muscd_start(int trk, int loop) {
 	prv.cddev->stop();
 	reset_cd_fade();
 
+	if (!prv.cddev->start(trk, loop)) {
+		prv.cd_current_track = 0;
+		return false;
+	}
 	prv.cd_current_track = trk;
-	return prv.cddev->start(trk, loop);
+	return true;
 }
 
 void muscd_stop(void) {
@@ -199,6 +209,7 @@ bool muscd_fadestart(int time, int volume, int stop) {
 
 	if (time <= 0 || (volume == cd_fade.current_vol && !stop)) {
 		cd_fade.active = false;
+		cd_fade.stop_on_end = false;
 		cd_fade.current_vol = volume;
 		if (prv.cddev->set_volume)
 			prv.cddev->set_volume(volume);
@@ -223,4 +234,21 @@ bool muscd_fading(void) {
 void muscd_fadestop(void) {
 	cd_fade.active = false;
 	cd_fade.stop_on_end = false;
+}
+
+int muscd_get_volume(void) {
+	update_cd_fade(SDL_GetTicks());
+	return cd_fade.current_vol;
+}
+
+bool muscd_set_volume(int volume) {
+	if (!prv.cddev)
+		return false;
+	volume = clamp_vol(volume);
+	cd_fade.active = false;
+	cd_fade.stop_on_end = false;
+	cd_fade.current_vol = volume;
+	if (prv.cddev->set_volume)
+		prv.cddev->set_volume(volume);
+	return true;
 }
