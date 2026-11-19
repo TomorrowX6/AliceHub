@@ -1006,15 +1006,15 @@ class GameList(activity: Activity) {
                     .sortedByDescending { it.length() }
                     .toList()
                 val chosenDisc = discs.firstOrNull {
-                    Iso9660Extractor.containsGameRoot(it, expectedAinName, targetGameId)
+                    Iso9660Extractor.containsGameRoot(it, expectedAinName, targetGameId, checkCancelled)
                 } ?: if (expectedAinName.isNullOrBlank() &&
                     (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
                 ) {
-                    discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null, null) }
+                    discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null, null, checkCancelled) }
                 } else {
                     null
                 }
-                if (chosenDisc == null && discs.any { Iso9660Extractor.containsGameRoot(it, null, null) }) {
+                if (chosenDisc == null && discs.any { Iso9660Extractor.containsGameRoot(it, null, null, checkCancelled) }) {
                     throw InstallFailureException(R.string.import_wrong_game)
                 }
 
