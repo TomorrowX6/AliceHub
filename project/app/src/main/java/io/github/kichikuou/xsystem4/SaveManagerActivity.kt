@@ -286,11 +286,6 @@ class SaveManagerActivity : ThemedActivity() {
             return out
         }
 
-        /**
-         * Validates and extracts 100% of [backup] into a temporary staging directory FIRST,
-         * and ONLY deletes existing live save files and moves staged files into [saveDir]
-         * after extraction succeeds completely.
-         */
         private fun restoreSavesFromBackupSafely(
             appCtx: Context,
             backup: File,
@@ -298,68 +293,10 @@ class SaveManagerActivity : ThemedActivity() {
             dirName: String
         ): Int {
             ensureProcessStoppedOnIo(appCtx)
-            if (!backup.isFile || backup.length() <= 0L) {
-                throw IOException("Backup archive does not exist or is empty")
-            }
-            saveDir.mkdirs()
-            val stagingParent = saveDir.parentFile ?: appCtx.filesDir
-            val stagingDir = File(stagingParent, ".restore_staging_${System.nanoTime()}")
-            if (stagingDir.exists()) {
-                stagingDir.deleteRecursively()
-            }
-            stagingDir.mkdirs()
-            try {
-                val stagingRoot = stagingDir.canonicalFile
-                var count = 0
-                java.util.zip.ZipFile(backup).use { zipFile ->
-                    val entries = zipFile.entries()
-                    while (entries.hasMoreElements()) {
-                        val entry = entries.nextElement()
-                        if (entry.isDirectory) continue
-                        val rel = entry.name.replace('\\', '/').removePrefix("SaveData/").trimStart('/')
-                        if (rel.isEmpty() || rel.startsWith(".")) continue
-                        val dst = File(stagingRoot, rel).canonicalFile
-                        if (!dst.path.startsWith(stagingRoot.path + File.separator)) {
-                            throw IOException("Unsafe path in backup archive: ${entry.name}")
-                        }
-                        dst.parentFile?.mkdirs()
-                        var written: Long
-                        zipFile.getInputStream(entry).buffered().use { input ->
-                            dst.outputStream().buffered().use { output ->
-                                written = input.copyTo(output)
-                            }
-                        }
-                        if (entry.size >= 0L && written != entry.size) {
-                            throw IOException("Truncated entry in backup archive: ${entry.name}")
-                        }
-                        count++
-                    }
-                }
-
+            return SaveBackupRestore.restore(backup, saveDir, beforeSwap = {
                 ensureProcessStoppedOnIo(appCtx)
-                // Back up current live saves before swapping so the restore itself can be undone.
                 backupSavesInDir(appCtx.filesDir, saveDir, dirName)
-
-                saveDir.listFiles()?.filter { !it.name.startsWith(".") }?.forEach {
-                    it.deleteRecursively()
-                }
-                val stagedFiles = stagingDir.walkTopDown().filter { it.isFile }.toList()
-                for (staged in stagedFiles) {
-                    val rel = staged.relativeTo(stagingDir).path
-                    val finalDst = File(saveDir, rel)
-                    finalDst.parentFile?.mkdirs()
-                    if (!staged.renameTo(finalDst)) {
-                        staged.copyTo(finalDst, overwrite = true)
-                        staged.delete()
-                    }
-                }
-                return count
-            } finally {
-                try {
-                    stagingDir.deleteRecursively()
-                } catch (_: Throwable) {
-                }
-            }
+            })
         }
 
         private fun formatArchiveImportErrorForContext(context: Context, e: Throwable): String {
