@@ -195,7 +195,9 @@ object GameModifierBridge {
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance06GameDir(gameDir, dirNameFallback, saveDir) ||
             isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
-            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -229,7 +231,9 @@ object GameModifierBridge {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
-            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -260,7 +264,9 @@ object GameModifierBridge {
     fun isRance03GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
-            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -347,7 +353,10 @@ object GameModifierBridge {
         ) == GameCatalog.ID_GALZOO
 
     fun isSengokuRanceGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
-        if (isGalzooGameDir(gameDir, dirNameFallback, saveDir)) {
+        if (isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
+        ) {
             return false
         }
         if (gameDir != null && gameDir.isDirectory) {
@@ -386,7 +395,10 @@ object GameModifierBridge {
     }
 
     fun isRance08GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
-        if (isGalzooGameDir(gameDir, dirNameFallback, saveDir)) {
+        if (isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
+        ) {
             return false
         }
         if (gameDir != null && gameDir.isDirectory) {
@@ -437,7 +449,9 @@ object GameModifierBridge {
     fun isRance09GameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
-            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
         ) {
             return false
         }
@@ -492,6 +506,32 @@ object GameModifierBridge {
             displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
         ) == GameCatalog.ID_IXSEAL
 
+    @JvmOverloads
+    fun isHarukaGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_HARUKA
+
+    @JvmOverloads
+    fun isTsumashiboriGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_TSUMASHIBORI
+
     fun isEscalayerRebootGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -507,7 +547,9 @@ object GameModifierBridge {
     fun isEscalayerGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
         if (isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isGalzooGameDir(gameDir, dirNameFallback, saveDir) ||
-            isIxsealGameDir(gameDir, dirNameFallback, saveDir)
+            isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir)
         ) return false
         if (GameCatalog.isEscalayerGameDir(gameDir)) return true
         if (gameDir != null && gameDir.isDirectory) {
@@ -557,6 +599,8 @@ object GameModifierBridge {
             isEvenicle2GameDir(gameDir, dirNameFallback, saveDir) ||
             isEscalayerRebootGameDir(gameDir, dirNameFallback, saveDir) ||
             isIxsealGameDir(gameDir, dirNameFallback, saveDir) ||
+            isHarukaGameDir(gameDir, dirNameFallback, saveDir) ||
+            isTsumashiboriGameDir(gameDir, dirNameFallback, saveDir) ||
             isRance01GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance02GameDir(gameDir, dirNameFallback, saveDir) ||
             isRance03GameDir(gameDir, dirNameFallback, saveDir) ||

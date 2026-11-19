@@ -45,6 +45,8 @@ static dridata* dfile;
 static Uint32 start_time;
 
 static void apply_music_volume(int vol) {
+	if (vol < 0) vol = 0;
+	if (vol > 100) vol = 100;
 	current_vol = vol;
 	if (music)
 		mixer_music_set_gain(music, current_vol * prv.volval[BGM_VOLVAL_CH] / 10000.0f);
@@ -127,12 +129,12 @@ bool musbgm_play(int no, int time, int vol, int loop_count) {
 }
 
 void musbgm_stop(int no, int time) {
-	if (no == current_no)
+	if (no && no == current_no && music)
 		mixer_music_fade_out(music, time * 10);
 }
 
 void musbgm_fade(int no, int time, int vol) {
-	if (no != current_no)
+	if (!no || no != current_no)
 		return;
 
 	// SDL_mixer doesn't provide arbitrary fading, so just set the volume immediately.
@@ -156,7 +158,7 @@ int musbgm_getlen(int no) {
 }
 
 bool musbgm_isplaying(int no) {
-	return no == current_no && mixer_music_playing(music);
+	return no && no == current_no && music && mixer_music_playing(music);
 }
 
 void musbgm_stopall(int time) {

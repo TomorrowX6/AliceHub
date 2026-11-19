@@ -109,6 +109,7 @@ extern bool game_dungeons_and_dolls;
 extern bool game_escalayer_reboot;
 extern bool game_galzoo;
 extern bool game_ixseal;
+extern bool game_tsumashibori;
 
 bool sys_is_sdl_main_thread(void);
 

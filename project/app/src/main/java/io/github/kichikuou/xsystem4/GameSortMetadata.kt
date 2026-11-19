@@ -27,7 +27,9 @@ object GameSortMetadata {
         GameCatalog.ID_ESCALAYER to GameSortInfo("2002-08-02", 71.7, "https://vndb.org/v311", "https://www.alicesoft.com/information/2022/entry003043.html"),
         GameCatalog.ID_ESCALAYER_REBOOT to GameSortInfo("2014-07-25", 71.7, "https://vndb.org/v311", "https://www.alicesoft.com/escalayerreboot/"),
         GameCatalog.ID_GALZOO to GameSortInfo("2005-12-09", 76.8, "https://vndb.org/v334", "https://www.alicesoft.com/galzoo/"),
-        GameCatalog.ID_IXSEAL to GameSortInfo("2017-07-28", 72.0, "https://vndb.org/v21142", "https://www.alicesoft.com/ixseal/")
+        GameCatalog.ID_IXSEAL to GameSortInfo("2017-07-28", 72.0, "https://vndb.org/v21142", "https://www.alicesoft.com/ixseal/"),
+        GameCatalog.ID_HARUKA to GameSortInfo("2008-02-29", 67.9, "https://vndb.org/v284", "https://www.alicesoft.com/haruka/"),
+        GameCatalog.ID_TSUMASHIBORI to GameSortInfo("2006-08-04", 79.0, "https://vndb.org/v887", "https://www.alicesoft.com/tsumasibori/")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

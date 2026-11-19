@@ -220,6 +220,18 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isIxsealGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isHarukaGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isHarukaGameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun isTsumashiboriGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isTsumashiboriGameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isSystem3xGame(): Boolean {
         val root = effectiveGameRootFile()
         return GameCatalog.isSystem3xGameDir(root)

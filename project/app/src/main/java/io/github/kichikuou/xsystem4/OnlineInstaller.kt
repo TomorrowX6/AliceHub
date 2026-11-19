@@ -263,6 +263,8 @@ object OnlineInstaller {
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
     const val GALZOO_CDN_URL = "https://alicehub.000.moe/galzoo"
     const val IXSEAL_CDN_URL = "https://alicehub.000.moe/ixseal"
+    const val HARUKA_CDN_URL = "https://alicehub.000.moe/haruka"
+    const val TSUMASHIBORI_CDN_URL = "https://alicehub.000.moe/tsumashibori"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -935,28 +937,18 @@ object OnlineInstaller {
             (stagingDir.listFiles()?.any {
                 it.isFile && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
             } == true)
-        val sys4AinFile = stagingDir.listFiles()?.firstOrNull {
-            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
-        } ?: stagingDir.listFiles()?.firstOrNull {
-            it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
-        }
+        val sys4AinFile = findPrimarySys4AinFile(stagingDir)
         val isSys3x = GameCatalog.isSystem3xGameDir(stagingDir)
         if (!(hasSys4Ini && sys4AinFile != null) && !isSys3x) {
             throw GameList.InstallFailureException(R.string.directory_no_game)
         }
 
-        val rawAinBase = sys4AinFile?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it.nameWithoutExtension) }.orEmpty()
-        val sanitizedManifestBase = sanitizeInstallDirName(manifest.baseName, fallback = "")
-        val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
-        val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
-        val dirBaseName = when {
-            classifiedStagedId == GameCatalog.ID_RANCE06 -> sanitizedManifestBase.ifEmpty { "Rance06" }
-            classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
-            sanitizedManifestBase.isNotEmpty() &&
-                (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
-                sanitizedManifestBase
-            else -> sanitizedAinBase.ifEmpty { sanitizedManifestBase.ifEmpty { "Game" } }
-        }
+        val dirBaseName = resolveInstallDirBaseName(
+            stagingDir = stagingDir,
+            manifestBaseName = manifest.baseName,
+            sys4AinFile = sys4AinFile,
+            isSys3x = isSys3x
+        )
         var dstDir = File(storageCanonical, dirBaseName).canonicalFile
         var suffix = 1
         while (dstDir.exists()) {
@@ -969,6 +961,38 @@ object OnlineInstaller {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
         return dstDir
+    }
+
+    private fun findPrimarySys4AinFile(stagingDir: File): File? {
+        val files = stagingDir.listFiles() ?: return null
+        return files.firstOrNull {
+            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        } ?: files.firstOrNull {
+            it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+        }
+    }
+
+    @JvmOverloads
+    fun resolveInstallDirBaseName(
+        stagingDir: File,
+        manifestBaseName: String = "",
+        sys4AinFile: File? = findPrimarySys4AinFile(stagingDir),
+        isSys3x: Boolean = GameCatalog.isSystem3xGameDir(stagingDir)
+    ): String {
+        val rawAinBase = sys4AinFile?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it.nameWithoutExtension) }.orEmpty()
+        val sanitizedManifestBase = sanitizeInstallDirName(manifestBaseName, fallback = "")
+        val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
+        val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
+        return when {
+            classifiedStagedId == GameCatalog.ID_RANCE06 -> sanitizedManifestBase.ifEmpty { "Rance06" }
+            classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
+            classifiedStagedId == GameCatalog.ID_HARUKA -> sanitizedManifestBase.ifEmpty { "Haruka" }
+            classifiedStagedId == GameCatalog.ID_TSUMASHIBORI -> sanitizedManifestBase.ifEmpty { "Tsumashibori" }
+            sanitizedManifestBase.isNotEmpty() &&
+                (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
+                sanitizedManifestBase
+            else -> sanitizedAinBase.ifEmpty { sanitizedManifestBase.ifEmpty { "Game" } }
+        }
     }
 
     fun sanitizeInstallDirName(raw: String, fallback: String = "Game"): String {
@@ -1282,6 +1306,14 @@ object OnlineInstaller {
                         (lower.contains("escalayer") && lower.contains("reboot"))
                     GameCatalog.ID_GALZOO -> lower.contains("galzoo")
                     GameCatalog.ID_IXSEAL -> lower.contains("ixseal")
+                    GameCatalog.ID_HARUKA -> lower.contains("haruka") ||
+                        lower.contains("超昂閃忍") ||
+                        lower.contains("超昂闪忍") ||
+                        lower.contains("ハルカ")
+                    GameCatalog.ID_TSUMASHIBORI -> lower.contains("tsumashibori") ||
+                        lower.contains("tsumasibori") ||
+                        lower.contains("妻しぼり") ||
+                        lower.contains("嵢偟傏傝")
                     null, "" -> true
                     else -> false
                 }

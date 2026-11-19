@@ -107,9 +107,11 @@ private class SaveFileAdapter(
 
     /** Game-wide saves stand out from the per-slot ones; crash logs get a warning tint. */
     private fun tagTone(fileName: String): UiKit.Tone {
-        val lower = fileName.lowercase(Locale.ROOT)
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(fileName).lowercase(Locale.ROOT)
         return when {
-            lower in GLOBAL_SAVE_FILES || lower.endsWith(".msgskip") -> UiKit.Tone.PRIMARY
+            lower in GLOBAL_SAVE_FILES ||
+                GameCatalog.isHarukaSystemSaveFileName(fileName) ||
+                lower.endsWith(".msgskip") -> UiKit.Tone.PRIMARY
             lower.endsWith(".log") -> UiKit.Tone.WARNING
             else -> UiKit.Tone.NEUTRAL
         }
@@ -122,10 +124,15 @@ private class SaveFileAdapter(
             "ixseal_afcgmode.asd", "ixseal_afcommon.asd", "ixseal_afconfig.asd",
             "ixseal_afbgmmode.asd", "ixseal_afinfo.asd", "ixseal_afmemmode.asd",
             "ixseal_extra.sav",
+            "妻しぼりsys.asd", "嵢偟傏傝sys.asd", "tsumashiborisys.asd",
             "config.asd", "progress.asd", "joypad.asd",
             "keyfile.dat", "msgskipflag.sav",
             "已读文本跳过.asd", "既読スキップ.asd",
-            "共有.asd", "ｃｇモード.asd", "音楽モード.asd", "3dsetting.asd",
+            "共有.asd", "ｃｇモード.asd", "回想モード.asd", "音楽モード.asd", "3dsetting.asd",
+            "システム共通データ.asd",
+            "超昂閃忍ハルカsf.asd", "超昂閃忍ハルカsys.asd", "超昂閃忍ハルカfn.asd",
+            "超昂闪忍遥sf.asd", "超昂闪忍遥sys.asd", "超昂闪忍遥fn.asd",
+            "harukasf.asd", "harukasys.asd", "harukafn.asd",
             "gameenquete.asd", "commonsystemdata.sav", "volume.sav"
         )
     }
@@ -1226,6 +1233,7 @@ class SaveManagerActivity : ThemedActivity() {
         return when {
             lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
                 lower == "afcommon.asd" || lower == "progress.asd" ||
+                lower == "妻しぼりsys.asd" || lower == "tsumashiborisys.asd" ||
                 lower == "共有.asd" -> getString(R.string.save_tag_global)
             lower == "collection.asd" -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" || lower == "已读文本跳过.asd" ||
@@ -1233,9 +1241,9 @@ class SaveManagerActivity : ThemedActivity() {
                 lower.endsWith(".msgskip") ->
                 getString(R.string.save_tag_msgskip)
             lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
-                lower == "ｃｇモード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
+                lower == "ｃｇモード.asd" || lower == "回想モード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
             lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
-            lower == "commonsystemdata.sav" || lower == "afconfig.asd" ||
+            lower == "commonsystemdata.sav" || GameCatalog.isHarukaSystemSaveFileName(name) || lower == "afconfig.asd" ||
                 lower == "config.asd" || lower == "joypad.asd" ||
                 lower == "keyfile.dat" ||
                 lower == "3dsetting.asd" || lower == "volume.sav" ->

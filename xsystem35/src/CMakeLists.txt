@@ -225,5 +225,18 @@ else()  # non-emscripten, non-android
   target_compile_options(message_tests PRIVATE -Wno-pointer-sign -Wall)
   target_link_libraries(message_tests PRIVATE sdl)
   add_test(NAME message_tests COMMAND message_tests)
+
+  # Exercise BGM-backed CD fade/volume handling with deterministic ticks.
+  add_executable(music_cdrom_tests
+    music_cdrom_test.c
+    music.c
+    music_cdrom.c
+    cdrom.bgm.c
+    bgm.sdlmixer.c
+    )
+  target_compile_options(music_cdrom_tests PRIVATE -Wno-pointer-sign -Wall)
+  target_include_directories(music_cdrom_tests PRIVATE . ${SDL_INCLUDE_DIRS})
+  target_link_libraries(music_cdrom_tests PRIVATE m)
+  add_test(NAME music_cdrom_tests COMMAND music_cdrom_tests)
   file(COPY testdata DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif()
