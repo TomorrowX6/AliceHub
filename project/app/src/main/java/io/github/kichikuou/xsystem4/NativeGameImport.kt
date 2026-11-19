@@ -107,8 +107,11 @@ object NativeGameImport {
         val seenPatchIds = HashSet<T>()
 
         fun isBackupOrPatchContainer(name: String): Boolean =
-            name.equals("BackData", ignoreCase = true) ||
+            name.equals("backup", ignoreCase = true) ||
+                name.equals("BackData", ignoreCase = true) ||
                 name == "补丁" ||
+                name == "汉化补丁" ||
+                name == "解答集" ||
                 name == "备份" ||
                 name == "备份文件" ||
                 name == "原版有码备份" ||
@@ -246,6 +249,9 @@ object NativeGameImport {
         if (GameCatalog.isIxsealGameFiles(activeFiles)) {
             return "Ixseal"
         }
+        if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
+            return "Tsumashibori"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }
@@ -374,6 +380,8 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_GALZOO
         val isIxsealImport = targetGameId == GameCatalog.ID_IXSEAL ||
             detectedGameId == GameCatalog.ID_IXSEAL
+        val isTsumashiboriImport = targetGameId == GameCatalog.ID_TSUMASHIBORI ||
+            detectedGameId == GameCatalog.ID_TSUMASHIBORI
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
         val baseName = if (isDaiakujiImport) {
             "Daiakuji"
@@ -399,7 +407,8 @@ object NativeGameImport {
                         (isRance06Import && isRance06BloatRelPath(relPath, skipPatchSubdir = true)) ||
                         (isDaiakujiImport && isDaiakujiBloatRelPath(relPath, skipDDemo0Backup = hasPrimaryDDemo)) ||
                         (isGalzooImport && isGalzooBloatRelPath(relPath)) ||
-                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true))
+                        (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true)) ||
+                        (isTsumashiboriImport && isTsumashiboriBloatRelPath(relPath))
                     ) {
                         continue
                     }
