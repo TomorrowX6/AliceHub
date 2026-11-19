@@ -754,8 +754,9 @@ SDL_FPoint parts_local_position(struct parts *parts)
 static void parts_apply_local_matrix(struct parts *parts, mat4 out)
 {
 	float tx = 0.0f, ty = 0.0f;
-	if (parts->parent && parts->parent->states[0].type == PARTS_LAYOUT_BOX &&
-			parts->parent->states[0].layout_box.layout_type == PARTS_LAYOUT_FREE) {
+	if (parts->parent && (parts->parent->component_type == 15 ||
+			(parts->parent->states[0].type == PARTS_LAYOUT_BOX &&
+			parts->parent->states[0].layout_box.layout_type == PARTS_LAYOUT_FREE))) {
 		Point off = parts->parent->states[0].common.origin_offset;
 		tx += off.x;
 		ty += off.y;

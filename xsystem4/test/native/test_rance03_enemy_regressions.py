@@ -250,6 +250,7 @@ struct parts_scrollbar {
 
 struct parts {
     int no;
+    int component_type;
     struct { int z, z2; } sp;
     struct parts *parent;
     struct parts *first_child;
