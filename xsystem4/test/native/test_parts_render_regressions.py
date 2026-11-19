@@ -42,6 +42,7 @@ typedef struct { int x, y; } Point;
 #define PARTS_LAYOUT_FREE 2
 struct parts {
     struct parts *parent;
+    int component_type;
     struct { int type; struct { int layout_type; } layout_box;
              struct { Point origin_offset; } common; } states[1];
     struct { float x, y, z; } dummy;
@@ -145,6 +146,46 @@ static void close_matrix(mat4 a, mat4 b) {
     for (int c = 0; c < 4; c++) for (int r = 0; r < 4; r++)
         assert(fabsf(a[c][r] - b[c][r]) < 0.0001f);
 }
+static void test_container_origin(void) {
+    struct parts parent = {0};
+    component = (struct parts){0};
+    component.local.scale = (SDL_FPoint){1, 1};
+    mat4 actual, expected;
+    // An unattached component has no container origin.
+    identity(actual); identity(expected);
+    parts_apply_local_matrix(&component, actual);
+    close_matrix(actual, expected);
+    component.parent = &parent;
+    parent.component_type = 15;
+    parent.states[0].common.origin_offset = (Point){-192, -108};
+    identity(actual);
+    glm_translate(actual, (vec3){210, 135, 0});
+    parts_apply_local_matrix(&component, actual);
+    assert(actual[3][0] == 18 && actual[3][1] == 27);
+    for (int kind = 0; kind < 4; kind++) {
+        parent.component_type = kind == 0 ? 15 : 0;
+        parent.states[0].type = kind == 1 || kind == 2 ? PARTS_LAYOUT_BOX : 0;
+        parent.states[0].layout_box.layout_type = kind == 1 ? PARTS_LAYOUT_FREE : 0;
+        for (int empty = 0; empty < 2; empty++) {
+            parent.states[0].common.origin_offset = empty ? (Point){0, 0} : (Point){-192, -108};
+            for (int rotated = 0; rotated < 2; rotated++) {
+                component.local.pos = (SDL_FPoint){7, 9};
+                component.local.rotation.z = rotated ? 20 : 0;
+                identity(actual); identity(expected);
+                // Parent scale/rotation must transform the origin translation too.
+                glm_translate(actual, (vec3){210, 135, 0});
+                glm_rotate_z(actual, glm_rad(13), actual);
+                glm_scale(actual, (vec3){2, 3, 1});
+                memcpy(expected, actual, sizeof(mat4));
+                parts_apply_local_matrix(&component, actual);
+                bool offset = kind < 2 && !empty;
+                glm_translate(expected, (vec3){7 + (offset ? -192 : 0), 9 + (offset ? -108 : 0), 0});
+                if (rotated) glm_rotate_z(expected, glm_rad(20), expected);
+                close_matrix(actual, expected);
+            }
+        }
+    }
+}
 static void test_reversal(void) {
     // CG and FLAT both take this same local transform through parts_world_matrix.
     for (int rotation = 0; rotation < 2; rotation++) {
@@ -246,7 +287,7 @@ static void test_gray(void) {
     assert(!build_gray_filter(&missing, &op));
     assert(allocated == deleted);
 }
-int main(void) { test_reversal(); test_blur(); test_gray(); puts("parts render regression fixtures passed"); }
+int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gray(); puts("parts render regression fixtures passed"); }
 '''
 
 
