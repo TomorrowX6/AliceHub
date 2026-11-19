@@ -274,7 +274,7 @@ object OnlineInstaller {
     private const val READ_SLICE_TIMEOUT_MS = 3_000
     private const val TOTAL_READ_TIMEOUT_MS = 45_000L
 
-    private data class ManifestEntry(
+    data class ManifestEntry(
         val path: String,
         val key: String,
         val size: Long,
@@ -282,7 +282,7 @@ object OnlineInstaller {
         val extract: Boolean
     )
 
-    private data class OnlineManifest(
+    data class OnlineManifest(
         val gameName: String,
         val baseName: String,
         val totalBytes: Long,
@@ -293,6 +293,11 @@ object OnlineInstaller {
         val etag: String?,
         val totalBytes: Long
     )
+
+    class InvalidManifestException(message: String) : IOException(message)
+
+    const val BASE_STAGING_IDENTITY_FILE = ".online_base_staging_identity"
+    private val sha256HexRegex = Regex("^[0-9a-fA-F]{64}$")
 
     private val copySuffixRegex = Regex("""(?:\s*[\(（]\d+[\)）]|\s*[-_]?\s*副本)+$""")
 
@@ -820,7 +825,7 @@ object OnlineInstaller {
         }
         if (abortHandle?.isAborted == true) throw CancellationException()
         checkCancelled()
-        stagingDir.mkdirs()
+        prepareBaseStagingDir(stagingDir, computeBaseStagingIdentity(cleanBaseUrl, manifest))
         onStagingDirReady?.invoke(stagingDir)
         val stagingPrefix = stagingDir.path + File.separator
         val verifiedDoneEntries = HashSet<String>()
@@ -928,7 +933,13 @@ object OnlineInstaller {
 
         // Clean up internal marker/meta files before finalizing game directory
         stagingDir.walkTopDown()
-            .filter { it.isFile && (it.name.startsWith(".extracted_") || it.name.endsWith(".part.meta")) }
+            .filter {
+                it.isFile && (
+                    it.name.startsWith(".extracted_") ||
+                        it.name.endsWith(".part.meta") ||
+                        it.name == BASE_STAGING_IDENTITY_FILE
+                    )
+            }
             .toList()
             .forEach { it.delete() }
 
@@ -961,6 +972,49 @@ object OnlineInstaller {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
         return dstDir
+    }
+
+    fun computeBaseStagingIdentity(cleanBaseUrl: String, manifest: OnlineManifest): String {
+        val sb = StringBuilder("v1\n")
+        sb.append(cleanBaseUrl).append('\n')
+        sb.append(manifest.baseName).append('\n')
+        for (e in manifest.entries) {
+            sb.append(e.path).append('\t')
+                .append(e.key).append('\t')
+                .append(e.size).append('\t')
+                .append(e.sha256.lowercase(Locale.ROOT)).append('\t')
+                .append(e.extract).append('\n')
+        }
+        return sha256Hex(sb.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    /**
+     * Staging contents are only reused when they were produced for the exact same source and
+     * manifest; anything else (including legacy staging without an identity) is discarded, since
+     * files from an older manifest cannot be told apart from current ones after extraction.
+     */
+    fun prepareBaseStagingDir(stagingDir: File, identity: String) {
+        val identityFile = File(stagingDir, BASE_STAGING_IDENTITY_FILE)
+        if (stagingDir.exists()) {
+            val saved = try {
+                if (identityFile.isFile) identityFile.readText().trim() else null
+            } catch (_: Throwable) {
+                null
+            }
+            val hasContent = !stagingDir.isDirectory || stagingDir.listFiles()?.isNotEmpty() == true
+            if (saved != identity && hasContent) {
+                val trashed = evictFileToTrash(stagingDir)
+                trashed?.deleteRecursively()
+                if (stagingDir.exists()) {
+                    throw IOException("Cannot reset stale staging directory: $stagingDir")
+                }
+            }
+        }
+        stagingDir.mkdirs()
+        if (!stagingDir.isDirectory) {
+            throw IOException("Cannot create staging directory: $stagingDir")
+        }
+        identityFile.writeText(identity)
     }
 
     private fun findPrimarySys4AinFile(stagingDir: File): File? {
@@ -1187,7 +1241,7 @@ object OnlineInstaller {
             return false
         }
         if (entry.sha256.isBlank()) {
-            return true
+            return false
         }
         val cacheKey = "${file.path}:${file.length()}:${file.lastModified()}:${entry.sha256.lowercase(Locale.ROOT)}"
         if (cacheKey in verifiedCache) {
@@ -1416,31 +1470,12 @@ object OnlineInstaller {
                     throw IOException("Manifest HTTP $code")
                 }
                 val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val root = JSONObject(raw)
-                val gameName = root.optString("gameName", "兰斯10")
-                val baseName = root.optString("baseName", "Rance10")
-                val filesArr = root.getJSONArray("files")
-                val entries = ArrayList<ManifestEntry>(filesArr.length())
-                var sumBytes = 0L
-                for (i in 0 until filesArr.length()) {
-                    val item = filesArr.getJSONObject(i)
-                    val sz = item.getLong("size")
-                    sumBytes += sz
-                    entries.add(
-                        ManifestEntry(
-                            path = item.getString("path"),
-                            key = item.getString("key"),
-                            size = sz,
-                            sha256 = item.getString("sha256"),
-                            extract = item.optBoolean("extract", false)
-                        )
-                    )
-                }
-                val totalBytes = root.optLong("totalBytes", sumBytes).takeIf { it > 0L } ?: sumBytes
-                return OnlineManifest(gameName, baseName, totalBytes, entries)
+                return parseManifest(raw)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: GameList.InstallFailureException) {
+                throw e
+            } catch (e: InvalidManifestException) {
                 throw e
             } catch (e: Exception) {
                 if (abortHandle?.isAborted == true) throw CancellationException()
@@ -1463,7 +1498,40 @@ object OnlineInstaller {
         throw IOException("Failed to fetch online manifest", lastErr)
     }
 
-    private fun downloadFileWithResume(
+    fun parseManifest(raw: String): OnlineManifest {
+        val root = JSONObject(raw)
+        val gameName = root.optString("gameName", "兰斯10")
+        val baseName = root.optString("baseName", "Rance10")
+        val filesArr = root.getJSONArray("files")
+        val entries = ArrayList<ManifestEntry>(filesArr.length())
+        var sumBytes = 0L
+        for (i in 0 until filesArr.length()) {
+            val item = filesArr.getJSONObject(i)
+            val path = item.getString("path")
+            val sz = item.getLong("size")
+            val sha = item.getString("sha256").trim()
+            if (!sha256HexRegex.matches(sha)) {
+                throw InvalidManifestException("Manifest entry has invalid sha256: $path")
+            }
+            sumBytes += sz
+            entries.add(
+                ManifestEntry(
+                    path = path,
+                    key = item.getString("key"),
+                    size = sz,
+                    sha256 = sha.lowercase(Locale.ROOT),
+                    extract = item.optBoolean("extract", false)
+                )
+            )
+        }
+        val totalBytes = root.optLong("totalBytes", sumBytes).takeIf { it > 0L } ?: sumBytes
+        return OnlineManifest(gameName, baseName, totalBytes, entries)
+    }
+
+    fun isStrongEtag(etag: String?): Boolean =
+        !etag.isNullOrBlank() && !etag.trimStart().startsWith("W/", ignoreCase = true)
+
+    fun downloadFileWithResume(
         url: String,
         destPartFile: File,
         expectedSize: Long,
@@ -1477,10 +1545,16 @@ object OnlineInstaller {
         val metaFile = File("${destPartFile.path}.meta")
         var knownTotal = expectedSize
 
-        val savedMeta = readSavedMeta(metaFile, url, expectedSha256)
-        if (savedMeta == null && (metaFile.isFile || (expectedSha256.isNullOrBlank() && destPartFile.isFile))) {
+        // Without a content hash, a partial file may only be resumed under a strong validator,
+        // otherwise a changed remote file could be spliced onto the old prefix.
+        val hashless = expectedSha256.isNullOrBlank()
+        var savedMeta = readSavedMeta(metaFile, url, expectedSha256)
+        if ((savedMeta == null && (metaFile.isFile || (hashless && destPartFile.isFile))) ||
+            (hashless && destPartFile.isFile && !isStrongEtag(savedMeta?.etag))
+        ) {
             destPartFile.delete()
             metaFile.delete()
+            savedMeta = null
         }
         if (knownTotal <= 0L && savedMeta != null && savedMeta.totalBytes > 0L) {
             knownTotal = savedMeta.totalBytes
@@ -1519,6 +1593,13 @@ object OnlineInstaller {
                 ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, (knownTotal - curLen).coerceAtLeast(0L))
             }
 
+            val resumeEtag = if (curLen > 0L) readSavedMeta(metaFile, url, expectedSha256)?.etag else null
+            if (hashless && curLen > 0L && !isStrongEtag(resumeEtag)) {
+                destPartFile.delete()
+                metaFile.delete()
+                curLen = 0L
+            }
+
             val startedWithPartial = curLen > 0L
             var conn: HttpURLConnection? = null
             var completedNormally = false
@@ -1527,6 +1608,9 @@ object OnlineInstaller {
                 reqHeaders["Accept-Encoding"] = "identity"
                 if (curLen > 0L) {
                     reqHeaders["Range"] = "bytes=$curLen-"
+                    if (isStrongEtag(resumeEtag)) {
+                        reqHeaders["If-Range"] = resumeEtag!!
+                    }
                 }
 
                 conn = openFollowingRedirects(url, reqHeaders, abortHandle)
@@ -1537,12 +1621,14 @@ object OnlineInstaller {
                 }
 
                 val respEtag = conn.getHeaderField("ETag")?.trim()
-                val curSavedEtag = readSavedMeta(metaFile, url, expectedSha256)?.etag
                 val appendMode: Boolean
 
                 when (code) {
                     HttpURLConnection.HTTP_PARTIAL -> {
-                        if (expectedSha256.isNullOrBlank() && curSavedEtag != null && respEtag != null && curSavedEtag != respEtag) {
+                        val parsed = parseContentRange(conn.getHeaderField("Content-Range"))
+                        val sameRemoteFile = !hashless ||
+                            (curLen > 0L && isStrongEtag(respEtag) && respEtag == resumeEtag)
+                        if (parsed == null || parsed.first != curLen || !sameRemoteFile) {
                             abortHandle?.unregister(conn)
                             conn.disconnect()
                             conn = null
@@ -1551,21 +1637,8 @@ object OnlineInstaller {
                             attempt++
                             continue
                         }
-                        val cr = conn.getHeaderField("Content-Range")
-                        val parsed = parseContentRange(cr)
-                        if (parsed != null) {
-                            if (parsed.first != curLen) {
-                                abortHandle?.unregister(conn)
-                                conn.disconnect()
-                                conn = null
-                                destPartFile.delete()
-                                metaFile.delete()
-                                attempt++
-                                continue
-                            }
-                            if (parsed.second > 0L) {
-                                knownTotal = parsed.second
-                            }
+                        if (parsed.second > 0L) {
+                            knownTotal = parsed.second
                         } else {
                             val cl = conn.contentLengthLong
                             if (cl > 0L && knownTotal <= 0L) {
@@ -1620,9 +1693,8 @@ object OnlineInstaller {
                 if (knownTotal > 0L) {
                     ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, (knownTotal - curLen).coerceAtLeast(0L))
                 }
-                if (!respEtag.isNullOrEmpty() || knownTotal > 0L || !expectedSha256.isNullOrBlank()) {
-                    writeSavedMeta(metaFile, url, respEtag ?: curSavedEtag, knownTotal, expectedSha256)
-                }
+                val metaEtag = if (appendMode) respEtag ?: resumeEtag else respEtag
+                writeSavedMeta(metaFile, url, metaEtag, knownTotal, expectedSha256)
 
                 var speedWindowStartMs = SystemClock.elapsedRealtime()
                 var speedWindowBytes = 0L
