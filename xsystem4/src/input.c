@@ -540,11 +540,22 @@ static uint32_t last_keyevent_timestamp;
 static SDL_MouseButtonEvent deferred_synthetic_mouse_events[MAX_DEFERRED_SYNTHETIC_MOUSE_EVENTS];
 static int nr_deferred_synthetic_mouse_events = 0;
 static bool synthetic_mouse_hover_observed = false;
+static uint32_t synthetic_mouse_hover_tick = 0;
 static bool synthetic_mouse_down_observed = false;
+static uint32_t synthetic_mouse_down_observed_tick = 0;
 static bool synthetic_mouse_up_observed = true;
+static bool synthetic_mouse_release_pos_observed = false;
+static int synthetic_mouse_release_pos_obs_count = 0;
+static bool synthetic_mouse_release_queued_before_down_obs = false;
+static uint32_t synthetic_mouse_release_pos_tick = 0;
+static int synthetic_mouse_press_x = 0;
+static int synthetic_mouse_press_y = 0;
 static bool has_synthetic_mouse_pos = false;
 static int synthetic_mouse_x = 0;
 static int synthetic_mouse_y = 0;
+static bool synthetic_mouse_warped = false;
+static int synthetic_mouse_warp_raw_x = 0;
+static int synthetic_mouse_warp_raw_y = 0;
 static bool has_last_touch_down_pos = false;
 static SDL_Point last_touch_down_pos = {0, 0};
 static uint32_t last_parts_poll_timestamp = 0;
@@ -554,6 +565,10 @@ static uint32_t mouse_down_timestamp[VK_NR_KEYCODES];
 static bool deferred_mouse_release[VK_NR_KEYCODES];
 #define DEFERRED_MOUSE_RELEASE_MAX_DELAY 100
 #define SYNTHETIC_MOUSE_EVENT_DELAY 50
+#define SYNTHETIC_MOUSE_HOVER_MIN_DELAY 16
+#define SYNTHETIC_MOUSE_RELEASE_DROP_MIN_DELAY 16
+#define SYNTHETIC_MOUSE_RELEASE_DOWN_MIN_DELAY 50
+#define SYNTHETIC_MOUSE_RELEASE_OBSERVED_NO_POS_DELAY 80
 #define SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY 250
 
 static void fire_deferred_events(bool from_parts_poll, bool allow_press);
@@ -571,7 +586,10 @@ void input_notify_parts_poll(bool allow_press, bool clicking)
 {
 	in_parts_poll = false;
 	if (allow_press && clicking) {
-		synthetic_mouse_down_observed = true;
+		if (!synthetic_mouse_down_observed) {
+			synthetic_mouse_down_observed = true;
+			synthetic_mouse_down_observed_tick = SDL_GetTicks();
+		}
 		if (key_state[VK_LBUTTON])
 			mouse_down_unobserved[VK_LBUTTON] = false;
 		if (key_state[VK_RBUTTON])
@@ -585,6 +603,7 @@ void input_notify_parts_poll(bool allow_press, bool clicking)
 			synthetic_mouse_x = deferred_synthetic_mouse_events[0].x;
 			synthetic_mouse_y = deferred_synthetic_mouse_events[0].y;
 			has_synthetic_mouse_pos = true;
+			synthetic_mouse_warped = false;
 			synthetic_mouse_hover_observed = true;
 		}
 	}
@@ -594,11 +613,59 @@ void input_cancel_long_touch(void)
 {
 }
 
+#define MAX_ACTIVE_TOUCH_FINGERS 16
+struct active_touch_finger {
+	SDL_TouchID touch_id;
+	SDL_FingerID finger_id;
+};
+static struct active_touch_finger active_touch_fingers[MAX_ACTIVE_TOUCH_FINGERS];
+static int nr_active_touch_fingers = 0;
 static bool multi_touch_active = false;
 static bool two_finger_tap_candidate = false;
 static bool two_finger_scrolled = false;
 static uint32_t two_finger_tap_start_tick = 0;
 #define TWO_FINGER_TAP_MAX_MS 300
+
+static void clear_active_touch_fingers(void)
+{
+	nr_active_touch_fingers = 0;
+}
+
+static int track_touch_finger_down(SDL_TouchID touch_id, SDL_FingerID finger_id)
+{
+	for (int i = 0; i < nr_active_touch_fingers; i++) {
+		if (active_touch_fingers[i].touch_id == touch_id &&
+		    active_touch_fingers[i].finger_id == finger_id) {
+			return nr_active_touch_fingers;
+		}
+	}
+	if (nr_active_touch_fingers < MAX_ACTIVE_TOUCH_FINGERS) {
+		active_touch_fingers[nr_active_touch_fingers].touch_id = touch_id;
+		active_touch_fingers[nr_active_touch_fingers].finger_id = finger_id;
+		nr_active_touch_fingers++;
+	}
+	return nr_active_touch_fingers;
+}
+
+static int track_touch_finger_up(SDL_TouchID touch_id, SDL_FingerID finger_id)
+{
+	for (int i = 0; i < nr_active_touch_fingers; i++) {
+		if (active_touch_fingers[i].touch_id == touch_id &&
+		    active_touch_fingers[i].finger_id == finger_id) {
+			active_touch_fingers[i] = active_touch_fingers[--nr_active_touch_fingers];
+			break;
+		}
+	}
+	if (SDL_GetNumTouchFingers(touch_id) == 0) {
+		int dst = 0;
+		for (int i = 0; i < nr_active_touch_fingers; i++) {
+			if (active_touch_fingers[i].touch_id != touch_id)
+				active_touch_fingers[dst++] = active_touch_fingers[i];
+		}
+		nr_active_touch_fingers = dst;
+	}
+	return nr_active_touch_fingers;
+}
 
 static float scroll_gesture_y;
 #define SCROLL_GESTURE_SENSITIVITY 0.02f  // 2% of screen height
@@ -635,8 +702,10 @@ bool key_is_down(enum sact_keycode code)
 		mouse_down_unobserved[code] = false;
 		// Non-PartsEngine polling loops (e.g. IbisInputEngine/SACT2 Key_IsDown)
 		// must mark synthetic touch presses observed so mouse_get_pos() tracks drags.
-		if (code == VK_LBUTTON || code == VK_RBUTTON)
+		if ((code == VK_LBUTTON || code == VK_RBUTTON) && !synthetic_mouse_down_observed) {
 			synthetic_mouse_down_observed = true;
+			synthetic_mouse_down_observed_tick = SDL_GetTicks();
+		}
 	}
 	return key_state[code];
 }
@@ -670,11 +739,44 @@ void mouse_get_pos(int *x, int *y)
 		    nr_deferred_synthetic_mouse_events == 0 &&
 		    synthetic_mouse_down_observed &&
 		    (key_state[VK_LBUTTON] || key_state[VK_RBUTTON])) {
-			synthetic_mouse_x = wx;
-			synthetic_mouse_y = wy;
+			if (synthetic_mouse_warped &&
+			    (wx != synthetic_mouse_warp_raw_x || wy != synthetic_mouse_warp_raw_y)) {
+				synthetic_mouse_warped = false;
+			}
+			if (!synthetic_mouse_warped) {
+				synthetic_mouse_x = wx;
+				synthetic_mouse_y = wy;
+			}
 		}
 		wx = synthetic_mouse_x;
 		wy = synthetic_mouse_y;
+		if (!in_parts_poll && nr_deferred_synthetic_mouse_events > 0) {
+			uint32_t now = SDL_GetTicks();
+			bool parts_active = last_parts_poll_timestamp != 0 &&
+				(now - last_parts_poll_timestamp) < 500;
+			if (!parts_active) {
+				SDL_MouseButtonEvent *ev = &deferred_synthetic_mouse_events[0];
+				if (ev->state == SDL_PRESSED) {
+					if (!synthetic_mouse_hover_observed &&
+					    synthetic_mouse_x == ev->x && synthetic_mouse_y == ev->y) {
+						synthetic_mouse_hover_observed = true;
+						synthetic_mouse_hover_tick = now;
+					}
+				} else if (synthetic_mouse_down_observed &&
+				           !synthetic_mouse_release_pos_observed &&
+				           synthetic_mouse_x == ev->x && synthetic_mouse_y == ev->y) {
+					bool is_drag_release = ev->x != synthetic_mouse_press_x ||
+						ev->y != synthetic_mouse_press_y;
+					int min_obs = (synthetic_mouse_release_queued_before_down_obs &&
+						is_drag_release) ? 2 : 1;
+					synthetic_mouse_release_pos_obs_count++;
+					if (synthetic_mouse_release_pos_obs_count >= min_obs) {
+						synthetic_mouse_release_pos_observed = true;
+						synthetic_mouse_release_pos_tick = now;
+					}
+				}
+			}
+		}
 	}
 	*x = (wx - sdl.viewport.x) * sdl.w / sdl.viewport.w;
 	*y = (wy - sdl.viewport.y) * sdl.h / sdl.viewport.h;
@@ -684,7 +786,13 @@ void mouse_set_pos(int x, int y)
 {
 	int wx = x * sdl.viewport.w / sdl.w + sdl.viewport.x;
 	int wy = y * sdl.viewport.h / sdl.h + sdl.viewport.y;
-	has_synthetic_mouse_pos = false;
+	if (has_synthetic_mouse_pos) {
+		synthetic_mouse_x = wx;
+		synthetic_mouse_y = wy;
+		SDL_GetMouseState(&synthetic_mouse_warp_raw_x, &synthetic_mouse_warp_raw_y);
+		synthetic_mouse_warped = true;
+		return;
+	}
 	SDL_WarpMouseInWindow(sdl.window, wx, wy);
 }
 
@@ -2330,7 +2438,13 @@ static void pop_deferred_synthetic_mouse_event(uint32_t now)
 	synthetic_mouse_x = ev->x;
 	synthetic_mouse_y = ev->y;
 	has_synthetic_mouse_pos = true;
+	synthetic_mouse_warped = false;
+	synthetic_mouse_release_pos_observed = false;
+	synthetic_mouse_release_pos_obs_count = 0;
+	synthetic_mouse_release_queued_before_down_obs = false;
 	if (ev->state == SDL_PRESSED) {
+		synthetic_mouse_press_x = ev->x;
+		synthetic_mouse_press_y = ev->y;
 		synthetic_mouse_down_observed = false;
 	} else {
 		synthetic_mouse_up_observed = false;
@@ -2342,6 +2456,10 @@ static void pop_deferred_synthetic_mouse_event(uint32_t now)
 	}
 	if (nr_deferred_synthetic_mouse_events > 0) {
 		deferred_synthetic_mouse_events[0].timestamp = now;
+		if (deferred_synthetic_mouse_events[0].state == SDL_RELEASED &&
+		    !synthetic_mouse_down_observed) {
+			synthetic_mouse_release_queued_before_down_obs = true;
+		}
 	}
 }
 
@@ -2368,6 +2486,7 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 						synthetic_mouse_x = ev->x;
 						synthetic_mouse_y = ev->y;
 						has_synthetic_mouse_pos = true;
+						synthetic_mouse_warped = false;
 					} else {
 						pop_deferred_synthetic_mouse_event(now);
 					}
@@ -2380,6 +2499,7 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 					    (synthetic_mouse_x != ev->x || synthetic_mouse_y != ev->y)) {
 						synthetic_mouse_x = ev->x;
 						synthetic_mouse_y = ev->y;
+						synthetic_mouse_warped = false;
 					} else {
 						pop_deferred_synthetic_mouse_event(now);
 					}
@@ -2391,16 +2511,42 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 				synthetic_mouse_x = ev->x;
 				synthetic_mouse_y = ev->y;
 				has_synthetic_mouse_pos = true;
-				ready = now >= ev->timestamp + SYNTHETIC_MOUSE_EVENT_DELAY;
+				synthetic_mouse_warped = false;
+				ready = (now - ev->timestamp) >= SYNTHETIC_MOUSE_EVENT_DELAY ||
+					(synthetic_mouse_hover_observed &&
+					 (now - synthetic_mouse_hover_tick) >= SYNTHETIC_MOUSE_HOVER_MIN_DELAY);
 			} else {
 				// If the down state was already observed before lift, expose the
-				// final touch release position while the fallback hold keeps the button down.
-				if (synthetic_mouse_down_observed && has_synthetic_mouse_pos &&
-				    (synthetic_mouse_x != ev->x || synthetic_mouse_y != ev->y)) {
-					synthetic_mouse_x = ev->x;
-					synthetic_mouse_y = ev->y;
+				// final touch release position while keeping the button pressed
+				// long enough for the game's drag loop to read it, then release
+				// promptly instead of stalling for the full 250ms fallback window.
+				if (synthetic_mouse_down_observed) {
+					if (!synthetic_mouse_release_pos_observed) {
+						synthetic_mouse_x = ev->x;
+						synthetic_mouse_y = ev->y;
+						has_synthetic_mouse_pos = true;
+						synthetic_mouse_warped = false;
+					}
+					bool is_drag_release = ev->x != synthetic_mouse_press_x ||
+						ev->y != synthetic_mouse_press_y;
+					bool down_settled = (now - synthetic_mouse_down_observed_tick) >=
+						SYNTHETIC_MOUSE_RELEASE_DOWN_MIN_DELAY;
+					if (synthetic_mouse_release_pos_observed) {
+						ready = down_settled &&
+							(now - synthetic_mouse_release_pos_tick) >=
+							SYNTHETIC_MOUSE_RELEASE_DROP_MIN_DELAY;
+					} else if (synthetic_mouse_release_queued_before_down_obs &&
+					           is_drag_release) {
+						ready = (now - synthetic_mouse_down_observed_tick) >=
+							SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY;
+					} else {
+						ready = down_settled &&
+							(now - ev->timestamp) >=
+							SYNTHETIC_MOUSE_RELEASE_OBSERVED_NO_POS_DELAY;
+					}
+				} else {
+					ready = (now - ev->timestamp) >= SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY;
 				}
-				ready = now >= ev->timestamp + SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY;
 			}
 			if (ready) {
 				bool was_pressed = ev->state == SDL_PRESSED;
@@ -2447,6 +2593,10 @@ static void reset_inputs_on_movie_start(void)
 	synthetic_mouse_hover_observed = false;
 	synthetic_mouse_down_observed = false;
 	synthetic_mouse_up_observed = true;
+	synthetic_mouse_release_pos_observed = false;
+	synthetic_mouse_release_pos_obs_count = 0;
+	synthetic_mouse_release_queued_before_down_obs = false;
+	synthetic_mouse_warped = false;
 	has_last_touch_down_pos = false;
 	two_finger_tap_candidate = false;
 	two_finger_scrolled = false;
@@ -2608,6 +2758,11 @@ static void on_app_will_enter_background(bool *returned_foreground)
 	memset(kbd_key_state, 0, sizeof(kbd_key_state));
 	memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
 	key_state[VK_CONTROL] = false;
+	clear_active_touch_fingers();
+	multi_touch_active = false;
+	two_finger_tap_candidate = false;
+	two_finger_scrolled = false;
+	synthetic_mouse_warped = false;
 	reset_gamepad_transient_state();
 	reset_movie_hold_state();
 	mixer_set_app_backgrounded(true);
@@ -2682,6 +2837,11 @@ static void handle_window_event(SDL_Event *e, bool *did_swap, bool *returned_for
 		memset(kbd_key_state, 0, sizeof(kbd_key_state));
 		memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
 		key_state[VK_CONTROL] = false;
+		clear_active_touch_fingers();
+		multi_touch_active = false;
+		two_finger_tap_candidate = false;
+		two_finger_scrolled = false;
+		synthetic_mouse_warped = false;
 		reset_gamepad_transient_state();
 		reset_movie_hold_state();
 		mixer_set_window_focus(false);
@@ -2701,17 +2861,162 @@ static void enqueue_synthetic_mouse_button(const SDL_MouseButtonEvent *btn)
 	if (nr_deferred_synthetic_mouse_events == MAX_DEFERRED_SYNTHETIC_MOUSE_EVENTS) {
 		pop_deferred_synthetic_mouse_event(SDL_GetTicks());
 	}
-	if (nr_deferred_synthetic_mouse_events == 0 && btn->state == SDL_PRESSED) {
-		synthetic_mouse_hover_observed = false;
-		if (!key_state[VK_LBUTTON] && !key_state[VK_RBUTTON]) {
-			synthetic_mouse_x = btn->x;
-			synthetic_mouse_y = btn->y;
-			has_synthetic_mouse_pos = true;
+	if (nr_deferred_synthetic_mouse_events == 0) {
+		synthetic_mouse_warped = false;
+		if (btn->state == SDL_PRESSED) {
+			synthetic_mouse_hover_observed = false;
+			if (!key_state[VK_LBUTTON] && !key_state[VK_RBUTTON]) {
+				synthetic_mouse_x = btn->x;
+				synthetic_mouse_y = btn->y;
+				has_synthetic_mouse_pos = true;
+			}
+		} else {
+			synthetic_mouse_release_pos_observed = false;
+			synthetic_mouse_release_pos_obs_count = 0;
+			synthetic_mouse_release_queued_before_down_obs = !synthetic_mouse_down_observed;
 		}
 	}
 	deferred_synthetic_mouse_events[nr_deferred_synthetic_mouse_events] = *btn;
 	deferred_synthetic_mouse_events[nr_deferred_synthetic_mouse_events].timestamp = SDL_GetTicks();
 	nr_deferred_synthetic_mouse_events++;
+}
+
+static void handle_touch_mouse_button(SDL_MouseButtonEvent *btn)
+{
+	if (movie_has_active_playback() || suppress_touch_until_release) {
+		has_last_touch_down_pos = false;
+		return;
+	}
+	if (multi_touch_active) {
+		has_last_touch_down_pos = false;
+		return;
+	}
+	if (btn->state == SDL_PRESSED) {
+		last_touch_down_pos.x = btn->x;
+		last_touch_down_pos.y = btn->y;
+		has_last_touch_down_pos = true;
+		sync_gamepad_cursor_from_window(btn->x, btn->y);
+	} else {
+		if (has_last_touch_down_pos) {
+			int dx = abs(btn->x - last_touch_down_pos.x);
+			int dy = abs(btn->y - last_touch_down_pos.y);
+			int snap_dist = max(16, min(sdl.viewport.w, sdl.viewport.h) / 40);
+			if (dx <= snap_dist && dy <= snap_dist) {
+				btn->x = last_touch_down_pos.x;
+				btn->y = last_touch_down_pos.y;
+			}
+			has_last_touch_down_pos = false;
+		}
+		if (nr_deferred_synthetic_mouse_events == 0 &&
+		    !key_state[VK_LBUTTON] && !key_state[VK_RBUTTON]) {
+			return;
+		}
+	}
+	enqueue_synthetic_mouse_button(btn);
+}
+
+static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool down)
+{
+	if (down) {
+		int num_fingers = track_touch_finger_down(tfinger->touchId, tfinger->fingerId);
+		if (num_fingers >= 2) {
+			if (movie_touch_hold_eligible)
+				movie_early_release_hint = true;
+			single_touch_down = false;
+			movie_touch_hold_eligible = false;
+			if (movie_has_active_playback() || suppress_touch_until_release) {
+				suppress_touch_until_release = true;
+			}
+			// Multi-touch gesture: cancel single-finger mouse state and
+			// track 2-finger tap (right-click) vs 2-finger scroll.
+			multi_touch_active = true;
+			key_state[VK_LBUTTON] = false;
+			key_state[VK_RBUTTON] = false;
+			sdl_mouse_down[VK_LBUTTON] = false;
+			sdl_mouse_down[VK_RBUTTON] = false;
+			nr_deferred_synthetic_mouse_events = 0;
+			synthetic_mouse_hover_observed = false;
+			synthetic_mouse_down_observed = false;
+			synthetic_mouse_up_observed = true;
+			synthetic_mouse_release_pos_observed = false;
+			synthetic_mouse_release_pos_obs_count = 0;
+			synthetic_mouse_release_queued_before_down_obs = false;
+			synthetic_mouse_warped = false;
+			has_last_touch_down_pos = false;
+			scroll_gesture_y = -1.0f;
+			if (num_fingers == 2) {
+				two_finger_tap_candidate = true;
+				two_finger_scrolled = false;
+				two_finger_tap_start_tick = SDL_GetTicks();
+			} else {
+				two_finger_tap_candidate = false;
+			}
+		} else {
+			multi_touch_active = false;
+			two_finger_tap_candidate = false;
+			single_touch_down = true;
+			single_touch_finger_id = tfinger->fingerId;
+			single_touch_start_x = tfinger->x;
+			single_touch_start_y = tfinger->y;
+			single_touch_down_tick = SDL_GetTicks();
+			gamepad_cursor_active = false;
+			gamepad_cursor_visible = false;
+			if (movie_has_active_playback()) {
+				movie_touch_hold_eligible = true;
+				movie_hold_token++;
+				suppress_touch_until_release = true;
+			}
+		}
+		return;
+	}
+
+	if (single_touch_down && tfinger->fingerId == single_touch_finger_id) {
+		if (movie_touch_hold_eligible)
+			movie_early_release_hint = true;
+		single_touch_down = false;
+		movie_touch_hold_eligible = false;
+	}
+	int rem_fingers = track_touch_finger_up(tfinger->touchId, tfinger->fingerId);
+	if (rem_fingers == 0) {
+		single_touch_down = false;
+		movie_touch_hold_eligible = false;
+		multi_touch_active = false;
+		if (movie_has_active_playback() || suppress_touch_until_release) {
+			if (suppress_touch_until_release && movie_has_active_playback())
+				movie_early_release_hint = true;
+			suppress_touch_until_release = false;
+			two_finger_tap_candidate = false;
+			two_finger_scrolled = false;
+			return;
+		}
+		if (two_finger_tap_candidate && !two_finger_scrolled &&
+		    (SDL_GetTicks() - two_finger_tap_start_tick) <= TWO_FINGER_TAP_MAX_MS) {
+			int rx = has_synthetic_mouse_pos ? synthetic_mouse_x
+				: (sdl.viewport.x + sdl.viewport.w / 2);
+			int ry = has_synthetic_mouse_pos ? synthetic_mouse_y
+				: (sdl.viewport.y + sdl.viewport.h / 2);
+			if (sdl.viewport.w > 0 && sdl.viewport.h > 0) {
+				rx = max(sdl.viewport.x, min(sdl.viewport.x + sdl.viewport.w - 1, rx));
+				ry = max(sdl.viewport.y, min(sdl.viewport.y + sdl.viewport.h - 1, ry));
+			}
+			SDL_MouseButtonEvent rpress = {
+				.type = SDL_MOUSEBUTTONDOWN,
+				.which = SDL_TOUCH_MOUSEID,
+				.button = SDL_BUTTON_RIGHT,
+				.state = SDL_PRESSED,
+				.clicks = 1,
+				.x = rx,
+				.y = ry,
+			};
+			SDL_MouseButtonEvent rrelease = rpress;
+			rrelease.type = SDL_MOUSEBUTTONUP;
+			rrelease.state = SDL_RELEASED;
+			enqueue_synthetic_mouse_button(&rpress);
+			enqueue_synthetic_mouse_button(&rrelease);
+		}
+		two_finger_tap_candidate = false;
+		two_finger_scrolled = false;
+	}
 }
 
 void handle_window_events(void)
@@ -2832,44 +3137,21 @@ void handle_events(void)
 		case SDL_MOUSEMOTION:
 			if (e.motion.which != SDL_TOUCH_MOUSEID) {
 				has_synthetic_mouse_pos = false;
+				synthetic_mouse_warped = false;
 				sync_gamepad_cursor_from_window(e.motion.x, e.motion.y);
+			} else if (synthetic_mouse_warped &&
+			           (e.motion.x != synthetic_mouse_warp_raw_x ||
+			            e.motion.y != synthetic_mouse_warp_raw_y)) {
+				synthetic_mouse_warped = false;
 			}
 			break;
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEBUTTONDOWN:
 			if (e.button.which == SDL_TOUCH_MOUSEID) {
-				if (movie_has_active_playback() || suppress_touch_until_release) {
-					has_last_touch_down_pos = false;
-					break;
-				}
-				if (multi_touch_active) {
-					has_last_touch_down_pos = false;
-					break;
-				}
-				if (e.button.state == SDL_PRESSED) {
-					last_touch_down_pos.x = e.button.x;
-					last_touch_down_pos.y = e.button.y;
-					has_last_touch_down_pos = true;
-					sync_gamepad_cursor_from_window(e.button.x, e.button.y);
-				} else {
-					if (has_last_touch_down_pos) {
-						int dx = abs(e.button.x - last_touch_down_pos.x);
-						int dy = abs(e.button.y - last_touch_down_pos.y);
-						int snap_dist = max(16, min(sdl.viewport.w, sdl.viewport.h) / 40);
-						if (dx <= snap_dist && dy <= snap_dist) {
-							e.button.x = last_touch_down_pos.x;
-							e.button.y = last_touch_down_pos.y;
-						}
-						has_last_touch_down_pos = false;
-					}
-					if (nr_deferred_synthetic_mouse_events == 0 &&
-					    !key_state[VK_LBUTTON] && !key_state[VK_RBUTTON]) {
-						break;
-					}
-				}
-				enqueue_synthetic_mouse_button(&e.button);
+				handle_touch_mouse_button(&e.button);
 			} else {
 				has_synthetic_mouse_pos = false;
+				synthetic_mouse_warped = false;
 				sync_gamepad_cursor_from_window(e.button.x, e.button.y);
 				if (movie_has_active_playback() || suppress_mouse_until_release) {
 					if (e.button.state == SDL_PRESSED && movie_has_active_playback()) {
@@ -2898,52 +3180,9 @@ void handle_events(void)
 		case SDL_MOUSEWHEEL:
 			wheel_dir = e.wheel.y;
 			break;
-		case SDL_FINGERDOWN: {
-			int num_fingers = SDL_GetNumTouchFingers(e.tfinger.touchId);
-			if (num_fingers >= 2) {
-				if (movie_touch_hold_eligible)
-					movie_early_release_hint = true;
-				single_touch_down = false;
-				movie_touch_hold_eligible = false;
-				if (movie_has_active_playback() || suppress_touch_until_release) {
-					suppress_touch_until_release = true;
-				}
-				// Multi-touch gesture: cancel single-finger mouse state and
-				// track 2-finger tap (right-click) vs 2-finger scroll.
-				multi_touch_active = true;
-				key_state[VK_LBUTTON] = false;
-				key_state[VK_RBUTTON] = false;
-				nr_deferred_synthetic_mouse_events = 0;
-				synthetic_mouse_hover_observed = false;
-				synthetic_mouse_down_observed = false;
-				synthetic_mouse_up_observed = true;
-				has_last_touch_down_pos = false;
-				scroll_gesture_y = -1.0f;
-				if (num_fingers == 2) {
-					two_finger_tap_candidate = true;
-					two_finger_scrolled = false;
-					two_finger_tap_start_tick = SDL_GetTicks();
-				} else {
-					two_finger_tap_candidate = false;
-				}
-			} else {
-				multi_touch_active = false;
-				two_finger_tap_candidate = false;
-				single_touch_down = true;
-				single_touch_finger_id = e.tfinger.fingerId;
-				single_touch_start_x = e.tfinger.x;
-				single_touch_start_y = e.tfinger.y;
-				single_touch_down_tick = SDL_GetTicks();
-				gamepad_cursor_active = false;
-				gamepad_cursor_visible = false;
-				if (movie_has_active_playback()) {
-					movie_touch_hold_eligible = true;
-					movie_hold_token++;
-					suppress_touch_until_release = true;
-				}
-			}
+		case SDL_FINGERDOWN:
+			handle_touch_finger_event(&e.tfinger, true);
 			break;
-		}
 		case SDL_FINGERMOTION:
 			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id && movie_touch_hold_eligible) {
 				float dx = e.tfinger.x - single_touch_start_x;
@@ -2954,55 +3193,9 @@ void handle_events(void)
 				}
 			}
 			break;
-		case SDL_FINGERUP: {
-			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id) {
-				if (movie_touch_hold_eligible)
-					movie_early_release_hint = true;
-				single_touch_down = false;
-				movie_touch_hold_eligible = false;
-			}
-			int rem_fingers = SDL_GetNumTouchFingers(e.tfinger.touchId);
-			if (rem_fingers == 0) {
-				single_touch_down = false;
-				movie_touch_hold_eligible = false;
-				if (movie_has_active_playback() || suppress_touch_until_release) {
-					if (suppress_touch_until_release && movie_has_active_playback())
-						movie_early_release_hint = true;
-					suppress_touch_until_release = false;
-					two_finger_tap_candidate = false;
-					two_finger_scrolled = false;
-					break;
-				}
-				if (two_finger_tap_candidate && !two_finger_scrolled &&
-				    (SDL_GetTicks() - two_finger_tap_start_tick) <= TWO_FINGER_TAP_MAX_MS) {
-					int rx = has_synthetic_mouse_pos ? synthetic_mouse_x
-						: (sdl.viewport.x + sdl.viewport.w / 2);
-					int ry = has_synthetic_mouse_pos ? synthetic_mouse_y
-						: (sdl.viewport.y + sdl.viewport.h / 2);
-					if (sdl.viewport.w > 0 && sdl.viewport.h > 0) {
-						rx = max(sdl.viewport.x, min(sdl.viewport.x + sdl.viewport.w - 1, rx));
-						ry = max(sdl.viewport.y, min(sdl.viewport.y + sdl.viewport.h - 1, ry));
-					}
-					SDL_MouseButtonEvent rpress = {
-						.type = SDL_MOUSEBUTTONDOWN,
-						.which = SDL_TOUCH_MOUSEID,
-						.button = SDL_BUTTON_RIGHT,
-						.state = SDL_PRESSED,
-						.clicks = 1,
-						.x = rx,
-						.y = ry,
-					};
-					SDL_MouseButtonEvent rrelease = rpress;
-					rrelease.type = SDL_MOUSEBUTTONUP;
-					rrelease.state = SDL_RELEASED;
-					enqueue_synthetic_mouse_button(&rpress);
-					enqueue_synthetic_mouse_button(&rrelease);
-				}
-				two_finger_tap_candidate = false;
-				two_finger_scrolled = false;
-			}
+		case SDL_FINGERUP:
+			handle_touch_finger_event(&e.tfinger, false);
 			break;
-		}
 		case SDL_MULTIGESTURE:
 			if (e.mgesture.numFingers == 2) {
 				if (scroll_gesture_y < 0.0f)

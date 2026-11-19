@@ -322,6 +322,8 @@ typedef struct { struct { int event; } window; } SDL_Event;
 static bool mouse_focus, keyboard_focus, kbd_ctrl_down;
 static atomic_bool touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
+static bool multi_touch_active, two_finger_tap_candidate, two_finger_scrolled, synthetic_mouse_warped;
+static int cleared_touch_fingers = 0;
 static int restored, foreground, swaps, traces, recovered, backup_released;
 static bool next_recover_result = false;
 static bool mock_gl_ready = true;
@@ -340,6 +342,7 @@ static bool gfx_release_context_backup_if_ready(void) {
 }
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
 static void mixer_set_window_focus(bool v) { (void)v; }
+static void clear_active_touch_fingers(void) { cleared_touch_fingers++; }
 static void reset_gamepad_transient_state(void) {}
 static void reset_movie_hold_state(void) {}
 ''' + '\n'.join([
@@ -377,6 +380,16 @@ int main(void) {
     atomic_store(&android_redraw_requested, true);
     finish_event_drain(true, false);
     assert(restored == 3 && backup_released == 1);
+
+    // Focus loss clears active touch tracking and synthetic warp state.
+    multi_touch_active = true;
+    two_finger_tap_candidate = true;
+    two_finger_scrolled = true;
+    synthetic_mouse_warped = true;
+    event.window.event = SDL_WINDOWEVENT_FOCUS_LOST;
+    handle_window_event(&event, &did_swap, &returned_fg);
+    assert(cleared_touch_fingers == 1 && !multi_touch_active &&
+           !two_finger_tap_candidate && !two_finger_scrolled && !synthetic_mouse_warped);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
@@ -431,6 +444,8 @@ static int queue_len = 0;
 static Uint32 fake_ticks = 0;
 static int bg_calls = 0, fg_calls = 0, restore_calls = 0;
 static bool kbd_ctrl_down, kbd_key_state[256], sdl_mouse_down[8], key_state[256];
+static bool multi_touch_active, two_finger_tap_candidate, two_finger_scrolled, synthetic_mouse_warped;
+static int cleared_touch_fingers = 0;
 static atomic_bool touch_ctrl_skip = false;
 static bool s_android_in_background = false;
 static int s_delay_will_bg_handled = 0, s_delay_did_fg_handled = 0;
@@ -463,6 +478,7 @@ static void gfx_android_on_background(void) { s_android_in_background = true; bg
 static void gfx_android_on_foreground(void) { s_android_in_background = false; fg_calls++; }
 static void gfx_restore_window(void) { restore_calls++; }
 static void gfx_trace_resume(const char *p) { (void)p; }
+static void clear_active_touch_fingers(void) { cleared_touch_fingers++; }
 static void reset_gamepad_transient_state(void) {}
 static void reset_movie_hold_state(void) {}
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
@@ -486,8 +502,14 @@ int main(void) {
     // Draining queued WILL + DID in input.c consumes them without re-running backup readback.
     bool returned_fg = false;
     assert(queue_len == 2);
+    multi_touch_active = true;
+    two_finger_tap_candidate = true;
+    two_finger_scrolled = true;
+    synthetic_mouse_warped = true;
     on_app_will_enter_background(&returned_fg);
     assert(!returned_fg && bg_calls == 1);
+    assert(cleared_touch_fingers == 1 && !multi_touch_active &&
+           !two_finger_tap_candidate && !two_finger_scrolled && !synthetic_mouse_warped);
     on_app_did_enter_foreground(&returned_fg);
     assert(returned_fg && fg_calls == 1 && s_delay_will_bg_handled == 0 && s_delay_did_fg_handled == 0);
     queue_len = 0;
