@@ -192,15 +192,21 @@ struct string *string_copy(const struct string *s, int index, int len)
 {
 	if (index < 0)
 		index = 0;
-	if (len <= 0)
+	// System 4.x computes end = index + len and scans forward from char 0,
+	// copying through end-of-string when end is never reached (e.g. len < 0
+	// with index + len < 0, as in Evenicle's string splitter S_GETPART(s, 0, -1)).
+	if (len <= 0 && (int64_t)index + (int64_t)len >= 0)
 		return make_string("", 0);
-	if ((index = sjis_index(s->text, index)) < 0)
+	int start = sjis_index(s->text, index);
+	if (start < 0)
 		return make_string("", 0);
+	if (len < 0)
+		return make_string(s->text + start, s->size - start);
+	int copy_len = sjis_index(s->text + start, len);
+	if (copy_len < 0)
+		copy_len = s->size - start;
 
-	if ((len = sjis_index(s->text + index, len)) < 0)
-		len = s->size - index;
-
-	return make_string(s->text + index, len);
+	return make_string(s->text + start, copy_len);
 }
 
 void string_append_cstr(struct string **_a, const char *b, size_t b_size)
