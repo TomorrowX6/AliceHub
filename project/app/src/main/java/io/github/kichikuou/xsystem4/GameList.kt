@@ -1826,7 +1826,7 @@ internal fun restoreVanillaFromModDir(targetDir: File) {
             } catch (_: Throwable) {
                 false
             }
-            if (safeInside && f.exists() && f.isFile) {
+            if (safeInside && (!f.exists() || f.isFile)) {
                 val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
                 if (!hasBak) {
                     f.delete()
@@ -1898,6 +1898,17 @@ internal fun applyModStagingToGameDirInternal(
             .filter { it.isNotEmpty() && !it.contains("..") }
             .forEach { addedFiles.add(it) }
     }
+    fun persistAddedFiles() {
+        val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
+        manifestTmp.outputStream().use { out ->
+            out.write(addedFiles.joinToString("\n").toByteArray(Charsets.UTF_8))
+            out.flush()
+            out.fd.sync()
+        }
+        if (!manifestTmp.renameTo(manifestFile)) {
+            throw IOException("Failed to commit mod file journal: $manifestFile")
+        }
+    }
     try {
         for (srcFile in modFiles) {
             val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
@@ -1939,6 +1950,7 @@ internal fun applyModStagingToGameDirInternal(
                 }
             } else if (!wasAddedByMod) {
                 addedFiles.add(destRelPath)
+                persistAddedFiles()
             }
 
             val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
@@ -1967,13 +1979,7 @@ internal fun applyModStagingToGameDirInternal(
         }
     } finally {
         if (addedFiles.isNotEmpty() || manifestFile.exists()) {
-            val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
-            val content = addedFiles.joinToString("\n")
-            manifestTmp.writeText(content)
-            if (!manifestTmp.renameTo(manifestFile)) {
-                manifestFile.writeText(content)
-                manifestTmp.delete()
-            }
+            persistAddedFiles()
         }
     }
     return effectiveCleanReplace || isFullStandalone
