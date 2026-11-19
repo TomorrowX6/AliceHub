@@ -253,17 +253,26 @@ void mus_update(void) {
  *   return: ミキサーレベル(0 - 100) (ゲーム内で設定された値)
  */
 int mus_mixer_get_level(int device) {
-	WARNING("not implemented");
-	return 0;
+	switch (device) {
+	case MIX_CD:
+		return muscd_get_volume();
+	default:
+		WARNING("not implemented");
+		return 0;
+	}
 }
 
 bool mus_mixer_set_level(int device, int level) {
-	if (device == MIX_PCM) {
+	switch (device) {
+	case MIX_CD:
+		return muscd_set_volume(level);
+	case MIX_PCM:
 		muspcm_setvol(0, level);
 		return true;
+	default:
+		WARNING("not implemented");
+		return false;
 	}
-	WARNING("not implemented");
-	return false;
 }
 
 /*
