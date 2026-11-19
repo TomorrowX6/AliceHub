@@ -55,6 +55,27 @@ static bool FillAngle_FillAngleAMAP(int sprite, int center_x, int center_y, int 
 	if (!sp)
 		return false;
 	struct texture *dst = sprite_get_texture(sp);
+	if (!dst || dst->w <= 0 || dst->h <= 0)
+		return false;
+	if (angle == 0)
+		return true;
+	if (alpha < 0)
+		alpha = 0;
+	else if (alpha > 255)
+		alpha = 255;
+	if (angle <= -360 || angle >= 360) {
+		gfx_fill_amap(dst, 0, 0, dst->w, dst->h, alpha);
+		sprite_dirty(sp);
+		return true;
+	}
+	if (angle < 0) {
+		start_angle += angle;
+		angle = -angle;
+	}
+	start_angle %= 360;
+	if (start_angle < 0)
+		start_angle += 360;
+
 	float w = dst->w;
 	float h = dst->h;
 
@@ -88,6 +109,7 @@ static bool FillAngle_FillAngleAMAP(int sprite, int center_x, int center_y, int 
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
 
 	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	sprite_dirty(sp);
 	return true;
 }
 
