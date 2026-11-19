@@ -1429,8 +1429,13 @@ void parts_set_surface_area(struct parts *parts, struct parts_common *common, in
 {
 	if (x < 0 || y < 0)
 		return;
-	common->surface_area = (Rectangle) { x, y, w, h };
+	Rectangle area = { x, y, w, h };
+	bool changed = common->surface_area.x != area.x || common->surface_area.y != area.y ||
+		common->surface_area.w != area.w || common->surface_area.h != area.h;
+	common->surface_area = area;
 	parts_common_recalculate_hitbox(parts, common);
+	if (changed)
+		parts_dirty(parts);
 }
 
 static bool parts_animation_update(struct parts_animation *anim, int passed_time)

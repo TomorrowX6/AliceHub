@@ -164,6 +164,17 @@ static struct parts_state *parts_hittest_alpha_state(struct parts *parts, int st
 	return &parts->states[state];
 }
 
+static void parts_apply_sprite_deform_pixel(struct parts *parts,
+		struct parts_state *alpha_state, int *px, int *py)
+{
+	if (alpha_state->type != PARTS_CG)
+		return;
+	if (parts->sprite_deform == 1)
+		*px = alpha_state->common.w - 1 - *px;
+	else if (parts->sprite_deform == 2)
+		*py = alpha_state->common.h - 1 - *py;
+}
+
 static bool parts_hittest(struct parts *parts, int state, Point pos)
 {
 	if (parts->states[state].type == PARTS_LAYOUT_BOX || parts->component_type == 15)
@@ -242,6 +253,7 @@ static bool parts_hittest(struct parts *parts, int state, Point pos)
 				|| (parts->pixel_decide && !parts->scrollbar && !checkbox_with_label)) {
 			int px = (int)floorf(x - alpha_state->common.origin_offset.x);
 			int py = (int)floorf(y - alpha_state->common.origin_offset.y);
+			parts_apply_sprite_deform_pixel(parts, alpha_state, &px, &py);
 			return parts_common_check_alpha(alpha_state, px, py);
 		}
 		return true;
@@ -259,6 +271,7 @@ static bool parts_hittest(struct parts *parts, int state, Point pos)
 		float base_y = parts->local.pos.y + (parts->parent ? parts->parent->global.pos.y : 0.0f);
 		int px = (int)floorf(pos.x - base_x - alpha_state->common.origin_offset.x);
 		int py = (int)floorf(pos.y - base_y - alpha_state->common.origin_offset.y);
+		parts_apply_sprite_deform_pixel(parts, alpha_state, &px, &py);
 		return parts_common_check_alpha(alpha_state, px, py);
 	}
 	return true;
