@@ -766,4 +766,54 @@ public class HarukaCatalogTest {
         assertTrue(rebootStaging.exists());
         assertTrue(escStaging.exists());
     }
+
+    @Test
+    public void resolvesOnlineInstallDirBaseNameForHarukaCnAndJpLayouts() throws Exception {
+        File cnStaging = tmp.newFolder("online_haruka_cn_staging");
+        byte[] gbkIni = ("GameName = \"超昂闪忍遥\"\r\n"
+                + "CodeName = \"AliceCN.ain\"\r\n"
+                + "SaveFolder = \"SaveData\"\r\n").getBytes(GBK);
+        writeFile(new File(cnStaging, "System40.ini"), gbkIni);
+        writeFile(new File(cnStaging, "AliceCN.ain"), new byte[]{0});
+        writeFile(new File(cnStaging, "HarukaDll.inc"), new byte[]{0});
+
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(cnStaging, "Haruka")
+        );
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(cnStaging, "")
+        );
+
+        // Even with a minimal ASCII System40.ini (classification solely via AliceCN.ain + HarukaDll.inc),
+        // OnlineInstaller must preserve the manifest/default "Haruka" directory instead of deriving "AliceCN".
+        File cnMinimalIniStaging = tmp.newFolder("online_haruka_cn_minimal_staging");
+        writeFile(new File(cnMinimalIniStaging, "System40.ini"), "CodeName = \"AliceCN.ain\"\n".getBytes(StandardCharsets.UTF_8));
+        writeFile(new File(cnMinimalIniStaging, "AliceCN.ain"), new byte[]{0});
+        writeFile(new File(cnMinimalIniStaging, "HarukaDll.inc"), new byte[]{0});
+
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(cnMinimalIniStaging, "Haruka")
+        );
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(cnMinimalIniStaging, "")
+        );
+
+        File jpStaging = tmp.newFolder("online_haruka_jp_staging");
+        writeFile(new File(jpStaging, "System40.ini"), "GameName = \"超昂閃忍ハルカ\"\n".getBytes(SHIFT_JIS));
+        writeFile(new File(jpStaging, "超昂閃忍ハルカ.ain"), new byte[]{0});
+        writeFile(new File(jpStaging, "HarukaDll.inc"), new byte[]{0});
+
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(jpStaging, "Haruka")
+        );
+        assertEquals(
+                "Haruka",
+                OnlineInstaller.INSTANCE.resolveInstallDirBaseName(jpStaging, "")
+        );
+    }
 }
