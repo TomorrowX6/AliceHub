@@ -7,11 +7,13 @@ import java.util.zip.CRC32
 import java.util.zip.ZipFile
 
 internal object SaveBackupRestore {
+    @JvmOverloads
     fun restore(
         backup: File,
         saveDir: File,
         beforeSwap: () -> Unit = {},
-        rename: (File, File) -> Boolean = { from, to -> from.renameTo(to) }
+        rename: (File, File) -> Boolean = { from, to -> from.renameTo(to) },
+        createDirectory: (File) -> Boolean = { it.mkdir() }
     ): Int {
         if (!backup.isFile || backup.length() <= 0L) {
             throw IOException("Backup archive does not exist or is empty")
@@ -63,8 +65,22 @@ internal object SaveBackupRestore {
             if (saveDir.exists()) {
                 val liveEntries = saveDir.listFiles()
                     ?: throw IOException("Cannot list original saves")
+                fun copyStrictly(source: File, destination: File) {
+                    if (source.isDirectory) {
+                        if (!createDirectory(destination)) {
+                            throw IOException("Cannot create hidden save directory: $destination")
+                        }
+                        val children = source.listFiles()
+                            ?: throw IOException("Cannot list hidden save directory: $source")
+                        for (child in children) {
+                            copyStrictly(child, File(destination, child.name))
+                        }
+                    } else {
+                        source.copyTo(destination)
+                    }
+                }
                 for (entry in liveEntries.filter { it.name.startsWith(".") }) {
-                    entry.copyRecursively(File(staging, entry.name))
+                    copyStrictly(entry, File(staging, entry.name))
                 }
             }
             if (saveDir.exists()) {
