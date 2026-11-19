@@ -102,6 +102,25 @@ typedef struct {
 } vpad_slot_t;
 
 static pthread_mutex_t bridge_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t live_state_lock = PTHREAD_MUTEX_INITIALIZER;
+static char *live_state_json;
+
+static char *copy_live_state_json(void) {
+	pthread_mutex_lock(&live_state_lock);
+	char *out = strdup(live_state_json ? live_state_json : "{}");
+	pthread_mutex_unlock(&live_state_lock);
+	return out;
+}
+
+static void publish_live_state_json(char *out) {
+	pthread_mutex_lock(&live_state_lock);
+	char *old = live_state_json;
+	live_state_json = out;
+	pthread_mutex_unlock(&live_state_lock);
+	free(old);
+}
+
+static void update_live_state_sdl_thread(int locks);
 
 static struct {
 	bool initialized;
@@ -761,6 +780,7 @@ void alicehub_pump_events(void) {
 	for (int i = 0; i < n_actions; i++)
 		apply_single_action_sdl_thread(local_actions[i]);
 	apply_escalayer_locks_sdl_thread(locks_snapshot);
+	update_live_state_sdl_thread(locks_snapshot);
 
 	// Emit cursor motion before button events
 	if (moved_cursor && cursor_x >= 0.0f && cursor_y >= 0.0f) {
@@ -1077,13 +1097,18 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteGlobalSaveMod(
 	return JNI_FALSE;
 }
 
-JNIEXPORT jstring JNICALL
-Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
-	JNIEnv *env, jclass clazz) {
-	(void)clazz;
+static void update_live_state_sdl_thread(int locks) {
+	static bool initialized;
+	static uint32_t last_publish_tick;
+	uint32_t now = SDL_GetTicks();
+	if (initialized && (uint32_t)(now - last_publish_tick) < 250)
+		return;
+	initialized = true;
+	last_publish_tick = now;
 	refresh_escalayer_cache();
 	if (!esc_cache.is_escalayer) {
-		return (*env)->NewStringUTF(env, "{\"game\":\"system3\",\"ready\":true}");
+		publish_live_state_json(strdup("{\"game\":\"system3\",\"ready\":true}"));
+		return;
 	}
 
 	cJSON *root = cJSON_CreateObject();
@@ -1105,10 +1130,18 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
 	if (esc_valid_var(esc_cache.clear_count)) cJSON_AddNumberToObject(root, "clearCount", sysVar[esc_cache.clear_count]);
 	if (esc_valid_var(esc_cache.ed_flags)) cJSON_AddNumberToObject(root, "edFlags", esc_count_unlocked(esc_cache.ed_flags));
 	if (esc_valid_var(esc_cache.cg_seen)) cJSON_AddNumberToObject(root, "cgSeen", esc_count_unlocked(esc_cache.cg_seen));
-	cJSON_AddNumberToObject(root, "locks", esc_live_locks);
+	cJSON_AddNumberToObject(root, "locks", locks);
 
 	char *out = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
+	publish_live_state_json(out);
+}
+
+JNIEXPORT jstring JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
+	JNIEnv *env, jclass clazz) {
+	(void)clazz;
+	char *out = copy_live_state_json();
 	jstring ret = (*env)->NewStringUTF(env, out ? out : "{}");
 	free(out);
 	return ret;

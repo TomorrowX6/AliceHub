@@ -716,10 +716,11 @@ static int32_t gs_get_field_int(struct gsave *gs, int32_t rec_idx, const char *n
 	return kv ? kv->value : def_val;
 }
 
-static void gs_set_field_int(struct gsave *gs, int32_t rec_idx, const char *name1, const char *name2, int32_t val)
+static bool gs_set_field_int(struct gsave *gs, int32_t rec_idx, const char *name1, const char *name2, int32_t val)
 {
 	struct gsave_keyval *kv = gs_get_record_kv(gs, rec_idx, name1, name2);
 	if (kv) kv->value = val;
+	return kv != NULL;
 }
 
 static struct gsave_flat_array *gs_get_flat_array(struct gsave *gs, int32_t arr_idx)
@@ -845,12 +846,11 @@ static void json_read_common_status_gs(cJSON *root, struct gsave *gs, int32_t cs
 	cJSON_AddNumberToObject(root, "statusMaxPer", gs_get_field_int(gs, cs_rec, "StatusMaxPer", NULL, 0));
 }
 
-static void json_write_int_if_present(cJSON *root, const char *key, struct gsave *gs, int32_t rec_idx, const char *f1, const char *f2)
+static bool json_write_int_if_present(cJSON *root, const char *key, struct gsave *gs, int32_t rec_idx, const char *f1, const char *f2)
 {
 	cJSON *item = cJSON_GetObjectItem(root, key);
-	if (item && cJSON_IsNumber(item)) {
-		gs_set_field_int(gs, rec_idx, f1, f2, item->valueint);
-	}
+	if (!item) return true;
+	return cJSON_IsNumber(item) && gs_set_field_int(gs, rec_idx, f1, f2, item->valueint);
 }
 
 static char *read_local_save_summary_str(const char *path)
@@ -1723,97 +1723,122 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 	sys4_set_text_gbk(true);
 	cJSON *mod = cJSON_Parse(mod_json_str);
 	if (!mod) return false;
-	bool any_ok = false;
+	bool all_ok = true;
 	enum savefile_error serr;
+	cJSON *rank = cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank");
+	if (cJSON_IsNumber(rank) && rank->valueint < 0)
+		cJSON_DeleteItemFromObjectCaseSensitive(mod, "setAllCharRank");
+	cJSON *cards = cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");
+	if (cJSON_IsNumber(cards) && cards->valueint < 0)
+		cJSON_DeleteItemFromObjectCaseSensitive(mod, "setTakeOverCardCount");
 
 	int32_t total_clear_val = 0;
 	bool has_total_clear_mod = json_get_int_or_bool_item(mod, "TotalClearCount", &total_clear_val);
 	bool has_game_play_mod = cJSON_GetObjectItemCaseSensitive(mod, "gamePlayCount") != NULL;
+	bool want_global = has_game_play_mod || cJSON_GetObjectItemCaseSensitive(mod, "TotalClearCount") ||
+		cJSON_GetObjectItemCaseSensitive(mod, "itemStarRank") ||
+		cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank") ||
+		cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");
+	bool want_collection = cJSON_GetObjectItemCaseSensitive(mod, "leaderAtkRatio") ||
+		cJSON_GetObjectItemCaseSensitive(mod, "trophyExpBonus") ||
+		cJSON_GetObjectItemCaseSensitive(mod, "trophyStatusMaxPer");
+	bool want_csd_write = false;
+	for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
+		if (cJSON_GetObjectItemCaseSensitive(mod, s_csd_r10_keys[k].key)) {
+			want_csd_write = true;
+			break;
+		}
+	}
 
-	if (global_path && global_path[0] && file_exists(global_path)) {
-		struct gsave *gs_g = gsave_read(global_path, &serr);
+	if (want_global) {
+		bool file_ok = false;
+		struct gsave *gs_g = (global_path && global_path[0] && file_exists(global_path))
+			? gsave_read(global_path, &serr) : NULL;
 		if (gs_g) {
+			bool modified = true;
 			struct gsave_global *g_gc = gs_find_global(gs_g, "g_globalContext", NULL);
 			int32_t gc_rec = g_gc ? g_gc->value : -1;
 			if (has_game_play_mod) {
-				json_write_int_if_present(mod, "gamePlayCount", gs_g, gc_rec, "m_gamePlayCount", NULL);
+				modified &= json_write_int_if_present(mod, "gamePlayCount", gs_g, gc_rec, "m_gamePlayCount", NULL);
 			} else if (has_total_clear_mod) {
-				gs_set_field_int(gs_g, gc_rec, "m_gamePlayCount", NULL, total_clear_val);
+				modified &= gs_set_field_int(gs_g, gc_rec, "m_gamePlayCount", NULL, total_clear_val);
 			}
-			json_write_int_if_present(mod, "itemStarRank", gs_g, gc_rec, "m_itemStarRank", NULL);
+			modified &= json_write_int_if_present(mod, "itemStarRank", gs_g, gc_rec, "m_itemStarRank", NULL);
 
 			cJSON *j_rank = cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank");
-			if (j_rank && cJSON_IsNumber(j_rank) && j_rank->valueint >= 0) {
+			if (j_rank) {
 				struct gsave_flat_array *fa_ranks = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_characterRank", NULL, -1));
-				if (fa_ranks) {
+				if (cJSON_IsNumber(j_rank) && j_rank->valueint >= 0 && fa_ranks) {
 					for (int i = 0; i < fa_ranks->nr_values; i++) {
 						int32_t r_rec = fa_ranks->values[i].value;
-						gs_set_field_int(gs_g, r_rec, "rank", "Rank", j_rank->valueint);
-						gs_set_field_int(gs_g, r_rec, "eventStage", "EventStage", j_rank->valueint);
+						modified &= gs_set_field_int(gs_g, r_rec, "rank", "Rank", j_rank->valueint);
+						modified &= gs_set_field_int(gs_g, r_rec, "eventStage", "EventStage", j_rank->valueint);
 					}
+				} else {
+					modified = false;
 				}
 			}
 			cJSON *j_to = cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");
-			if (j_to && cJSON_IsNumber(j_to) && j_to->valueint >= 0) {
+			if (j_to) {
 				struct gsave_flat_array *fa_info = gs_get_flat_array(gs_g, gs_get_field_int(gs_g, gc_rec, "m_cardInfo", NULL, -1));
-				if (fa_info) {
+				if (cJSON_IsNumber(j_to) && j_to->valueint >= 0 && fa_info) {
 					for (int i = 0; i < fa_info->nr_values; i++) {
 						int32_t i_rec = fa_info->values[i].value;
-						gs_set_field_int(gs_g, i_rec, "m_count", NULL, j_to->valueint);
+						modified &= gs_set_field_int(gs_g, i_rec, "m_count", NULL, j_to->valueint);
 					}
+				} else {
+					modified = false;
 				}
 			}
 			char *tmp_path = NULL;
-			FILE *fp = atomic_save_open(global_path, "wb", &tmp_path);
+			FILE *fp = modified ? atomic_save_open(global_path, "wb", &tmp_path) : NULL;
 			if (fp) {
 				if (gsave_write(gs_g, fp, false, 1) == SAVEFILE_SUCCESS) {
-					if (atomic_save_commit(fp, global_path, tmp_path, true))
-						any_ok = true;
+					file_ok = atomic_save_commit(fp, global_path, tmp_path, true);
 				} else {
 					atomic_save_abort(fp, tmp_path);
 				}
 			}
 			gsave_free(gs_g);
 		}
+		all_ok &= file_ok;
 	}
 
-	if (collection_path && collection_path[0] && file_exists(collection_path)) {
-		struct gsave *gs_c = gsave_read(collection_path, &serr);
+	if (want_collection) {
+		bool file_ok = false;
+		struct gsave *gs_c = (collection_path && collection_path[0] && file_exists(collection_path))
+			? gsave_read(collection_path, &serr) : NULL;
 		if (gs_c) {
+			bool modified = true;
 			struct gsave_global *g_ct = gs_find_global(gs_c, "g_completedTrophy", NULL);
 			int32_t ct_rec = g_ct ? g_ct->value : -1;
 			cJSON *j_lar = cJSON_GetObjectItemCaseSensitive(mod, "leaderAtkRatio");
 			if (j_lar && cJSON_IsNumber(j_lar)) {
 				union { float f; int32_t i; } u;
 				u.f = (float)j_lar->valuedouble;
-				gs_set_field_int(gs_c, ct_rec, "<LeaderAtkRatio>", NULL, u.i);
+				modified &= gs_set_field_int(gs_c, ct_rec, "<LeaderAtkRatio>", NULL, u.i);
+			} else if (j_lar) {
+				modified = false;
 			}
 			int32_t cs_rec = gs_get_field_int(gs_c, ct_rec, "m_status", NULL, -1);
-			json_write_int_if_present(mod, "trophyExpBonus", gs_c, cs_rec, "m_PerExpUp", NULL);
-			json_write_int_if_present(mod, "trophyStatusMaxPer", gs_c, cs_rec, "StatusMaxPer", NULL);
+			modified &= json_write_int_if_present(mod, "trophyExpBonus", gs_c, cs_rec, "m_PerExpUp", NULL);
+			modified &= json_write_int_if_present(mod, "trophyStatusMaxPer", gs_c, cs_rec, "StatusMaxPer", NULL);
 			char *tmp_path = NULL;
-			FILE *fp = atomic_save_open(collection_path, "wb", &tmp_path);
+			FILE *fp = modified ? atomic_save_open(collection_path, "wb", &tmp_path) : NULL;
 			if (fp) {
 				if (gsave_write(gs_c, fp, false, 1) == SAVEFILE_SUCCESS) {
-					if (atomic_save_commit(fp, collection_path, tmp_path, true))
-						any_ok = true;
+					file_ok = atomic_save_commit(fp, collection_path, tmp_path, true);
 				} else {
 					atomic_save_abort(fp, tmp_path);
 				}
 			}
 			gsave_free(gs_c);
 		}
+		all_ok &= file_ok;
 	}
 
-	bool want_csd_write = false;
-	for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
-		int32_t dummy = 0;
-		if (json_get_int_or_bool_item(mod, s_csd_r10_keys[k].key, &dummy)) {
-			want_csd_write = true;
-			break;
-		}
-	}
 	if (want_csd_write) {
+		bool file_ok = false;
 		char *csd_path = csd_resolve_path(global_path, collection_path, true);
 		if (csd_path) {
 			struct csd_table tbl;
@@ -1823,23 +1848,25 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 				bool set_ok = true;
 				for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
 					int32_t val = 0;
-					if (json_get_int_or_bool_item(mod, s_csd_r10_keys[k].key, &val)) {
-						if (!csd_table_set_int_or_bool(&tbl, s_csd_r10_keys[k].key, val, s_csd_r10_keys[k].default_bool)) {
+					if (cJSON_GetObjectItemCaseSensitive(mod, s_csd_r10_keys[k].key)) {
+						if (!json_get_int_or_bool_item(mod, s_csd_r10_keys[k].key, &val) ||
+						    !csd_table_set_int_or_bool(&tbl, s_csd_r10_keys[k].key, val, s_csd_r10_keys[k].default_bool)) {
 							set_ok = false;
 							break;
 						}
 					}
 				}
-				if (set_ok && csd_table_save_file(csd_path, &tbl))
-					any_ok = true;
+				if (set_ok)
+					file_ok = csd_table_save_file(csd_path, &tbl);
 			}
 			csd_table_free(&tbl);
 			free(csd_path);
 		}
+		all_ok &= file_ok;
 	}
 
 	cJSON_Delete(mod);
-	return any_ok;
+	return (want_global || want_collection || want_csd_write) && all_ok;
 }
 
 static int read_game_config_streamer_mode(const char *config_path)
