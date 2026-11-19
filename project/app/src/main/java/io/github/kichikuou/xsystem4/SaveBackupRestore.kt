@@ -61,6 +61,13 @@ internal object SaveBackupRestore {
             }
             beforeSwap()
             if (saveDir.exists()) {
+                val liveEntries = saveDir.listFiles()
+                    ?: throw IOException("Cannot list original saves")
+                for (entry in liveEntries.filter { it.name.startsWith(".") }) {
+                    entry.copyRecursively(File(staging, entry.name))
+                }
+            }
+            if (saveDir.exists()) {
                 val oldDir = Files.createTempDirectory(parent.toPath(), ".restore_old_").toFile()
                 if (!oldDir.delete() || !rename(saveDir, oldDir)) {
                     throw IOException("Cannot move original saves aside")

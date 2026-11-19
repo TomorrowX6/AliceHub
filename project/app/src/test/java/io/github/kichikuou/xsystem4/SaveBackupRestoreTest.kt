@@ -16,6 +16,8 @@ class SaveBackupRestoreTest {
     private fun live(): File = temporary.newFolder("saves").apply {
         File(this, "original.asd").writeText("original")
         File(this, ".hidden").writeText("hidden")
+        File(this, ".settings").mkdir()
+        File(this, ".settings/config").writeText("settings")
     }
 
     private fun archive(vararg names: String): File = temporary.newFile("backup.zip").apply {
@@ -38,7 +40,8 @@ class SaveBackupRestoreTest {
     private fun assertOriginal(live: File) {
         assertEquals("original", File(live, "original.asd").readText())
         assertEquals("hidden", File(live, ".hidden").readText())
-        assertEquals(2, live.listFiles()!!.size)
+        assertEquals("settings", File(live, ".settings/config").readText())
+        assertEquals(3, live.listFiles()!!.size)
         assertFalse(temporary.root.listFiles()!!.any { it.name.startsWith(".restore_") })
     }
 
@@ -62,6 +65,8 @@ class SaveBackupRestoreTest {
         assertEquals(2, SaveBackupRestore.restore(archive("SaveData/new.asd", "SaveData/sub/slot.asd"), live))
         assertEquals("replacement", File(live, "new.asd").readText())
         assertEquals("replacement", File(live, "sub/slot.asd").readText())
+        assertEquals("hidden", File(live, ".hidden").readText())
+        assertEquals("settings", File(live, ".settings/config").readText())
         assertFalse(File(live, "original.asd").exists())
         assertFalse(temporary.root.listFiles()!!.any { it.name.startsWith(".restore_") })
     }
@@ -87,11 +92,13 @@ class SaveBackupRestoreTest {
         assertOriginal(live)
     }
 
-    @Test fun emptyArchiveRestoresEmptySaveSet() {
+    @Test fun emptyArchivePreservesOnlyHiddenEntries() {
         val live = live()
         assertEquals(0, SaveBackupRestore.restore(archive(), live))
         assertTrue(live.isDirectory)
-        assertTrue(live.listFiles()!!.isEmpty())
+        assertEquals(setOf(".hidden", ".settings"), live.listFiles()!!.map { it.name }.toSet())
+        assertEquals("hidden", File(live, ".hidden").readText())
+        assertEquals("settings", File(live, ".settings/config").readText())
     }
 
     @Test fun beforeSwapFailurePreservesOriginal() {
