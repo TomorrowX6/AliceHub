@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.StatFs
 import android.os.SystemClock
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
@@ -59,19 +60,24 @@ object Iso9660Extractor {
     fun containsGameRoot(
         file: File,
         expectedAinName: String? = null,
-        targetGameId: String? = null
+        targetGameId: String? = null,
+        checkCancelled: (() -> Unit)? = null
     ): Boolean {
         return try {
+            checkCancelled?.invoke()
             FileInputStream(file).use { fis ->
                 val ch = fis.channel
                 val desc = openRootDescriptor(ch) ?: return false
                 val queue = ArrayDeque<Pair<Long, Long>>()
+                val visited = HashSet<Long>()
                 queue.add(desc.rootLba to desc.rootSize)
                 var hasUnclassifiedSys3Root = false
                 var hasIsoKichikuMarker = false
                 var hasIsoDaiakujiMarker = false
                 while (queue.isNotEmpty()) {
+                    checkCancelled?.invoke()
                     val (dlba, dsize) = queue.removeFirst()
+                    if (!visited.add(dlba)) throw IOException("Cyclic or repeated ISO directory extent: $dlba")
                     val entries = parseDirectory(readExtentBytes(ch, desc.layout, dlba, dsize), desc.joliet)
                     var hasIni = false
                     var hasMatchingAin = false
@@ -80,6 +86,7 @@ object Iso9660Extractor {
                     val entryByLowerName = HashMap<String, DirEntry>()
                     var bgmDirEntry: DirEntry? = null
                     for (e in entries) {
+                        checkCancelled?.invoke()
                         if (e.isDir) {
                             if (e.extents.isNotEmpty()) {
                                 queue.add(e.extents[0])
@@ -189,6 +196,8 @@ object Iso9660Extractor {
                 }
                 false
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Throwable) {
             false
         }
@@ -396,15 +405,18 @@ object Iso9660Extractor {
 
         val tasks = mutableListOf<FileExtractTask>()
         val dirQueue = ArrayDeque<Triple<String, Long, Long>>()
+        val visited = HashSet<Long>()
         dirQueue.add(Triple("", desc.rootLba, desc.rootSize))
         var totalBytes = 0L
 
         while (dirQueue.isNotEmpty()) {
             checkCancelled?.invoke()
             val (prefix, dlba, dsize) = dirQueue.removeFirst()
+            if (!visited.add(dlba)) throw IOException("Cyclic or repeated ISO directory extent: $dlba")
             val rawDir = readExtentBytes(ch, desc.layout, dlba, dsize)
             val entries = parseDirectory(rawDir, desc.joliet)
             for (e in entries) {
+                checkCancelled?.invoke()
                 val rel = if (prefix.isEmpty()) e.name else "$prefix/${e.name}"
                 if (shouldSkip(rel)) continue
                 val dest = File(outCanonical, rel).canonicalFile

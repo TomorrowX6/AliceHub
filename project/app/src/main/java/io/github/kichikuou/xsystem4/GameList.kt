@@ -1006,15 +1006,15 @@ class GameList(activity: Activity) {
                     .sortedByDescending { it.length() }
                     .toList()
                 val chosenDisc = discs.firstOrNull {
-                    Iso9660Extractor.containsGameRoot(it, expectedAinName, targetGameId)
+                    Iso9660Extractor.containsGameRoot(it, expectedAinName, targetGameId, checkCancelled)
                 } ?: if (expectedAinName.isNullOrBlank() &&
                     (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
                 ) {
-                    discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null, null) }
+                    discs.firstOrNull { Iso9660Extractor.containsGameRoot(it, null, null, checkCancelled) }
                 } else {
                     null
                 }
-                if (chosenDisc == null && discs.any { Iso9660Extractor.containsGameRoot(it, null, null) }) {
+                if (chosenDisc == null && discs.any { Iso9660Extractor.containsGameRoot(it, null, null, checkCancelled) }) {
                     throw InstallFailureException(R.string.import_wrong_game)
                 }
 
@@ -1826,7 +1826,7 @@ internal fun restoreVanillaFromModDir(targetDir: File) {
             } catch (_: Throwable) {
                 false
             }
-            if (safeInside && f.exists() && f.isFile) {
+            if (safeInside && (!f.exists() || f.isFile)) {
                 val hasBak = File(f.parentFile, "${f.name}.vanilla.bak").isFile
                 if (!hasBak) {
                     f.delete()
@@ -1898,22 +1898,53 @@ internal fun applyModStagingToGameDirInternal(
             .filter { it.isNotEmpty() && !it.contains("..") }
             .forEach { addedFiles.add(it) }
     }
+    var persistedFiles: Set<String>? = null
+    fun persistAddedFiles() {
+        if (addedFiles == persistedFiles) return
+        val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
+        manifestTmp.outputStream().use { out ->
+            out.write(addedFiles.joinToString("\n").toByteArray(Charsets.UTF_8))
+            out.flush()
+            out.fd.sync()
+        }
+        if (!manifestTmp.renameTo(manifestFile)) {
+            throw IOException("Failed to commit mod file journal: $manifestFile")
+        }
+        persistedFiles = addedFiles.toSet()
+    }
+    val acceptedFiles = modFiles.mapNotNull { srcFile ->
+        val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
+        if (relPath.isEmpty() ||
+            relPath.startsWith(".") ||
+            relPath.contains("..") ||
+            relPath.endsWith(".vanilla.bak") ||
+            relPath.endsWith(".vanilla.bak.tmp") ||
+            NativeGameImport.skip(relPath) ||
+            (isEvenicle2Target && isEvenicle2CnPatchJunkRelPath(relPath))
+        ) {
+            null
+        } else {
+            srcFile to relPath
+        }
+    }
+    val addedFileNames = java.util.TreeSet(String.CASE_INSENSITIVE_ORDER).apply { addAll(addedFiles) }
+    var failure: Throwable? = null
     try {
-        for (srcFile in modFiles) {
-            val relPath = srcFile.relativeTo(modRoot).path.replace('\\', '/')
-            if (relPath.isEmpty() ||
-                relPath.startsWith(".") ||
-                relPath.contains("..") ||
-                relPath.endsWith(".vanilla.bak") ||
-                relPath.endsWith(".vanilla.bak.tmp") ||
-                NativeGameImport.skip(relPath) ||
-                (isEvenicle2Target && isEvenicle2CnPatchJunkRelPath(relPath))
-            ) {
-                continue
+        for ((_, relPath) in acceptedFiles) {
+            val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
+            destFile.parentFile?.mkdirs()
+            val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
+            if (!destFile.exists() && addedFileNames.add(destRelPath)) {
+                addedFiles.add(destRelPath)
             }
+        }
+        if (addedFiles.isNotEmpty() || manifestFile.exists()) {
+            persistAddedFiles()
+        }
+        for ((srcFile, relPath) in acceptedFiles) {
             val destFile = resolveCaseInsensitiveDest(targetDir, relPath)
             val destRelPath = destFile.relativeTo(targetDir).path.replace('\\', '/')
-            val wasAddedByMod = addedFiles.any { it.equals(destRelPath, ignoreCase = true) }
+            val wasAddedByMod = addedFileNames.contains(destRelPath)
             destFile.parentFile?.mkdirs()
             if (destFile.exists()) {
                 if (!wasAddedByMod) {
@@ -1937,8 +1968,6 @@ internal fun applyModStagingToGameDirInternal(
                         }
                     }
                 }
-            } else if (!wasAddedByMod) {
-                addedFiles.add(destRelPath)
             }
 
             val tmpDest = File(destFile.parentFile, ".mod_apply_${destFile.name}.tmp")
@@ -1965,14 +1994,19 @@ internal fun applyModStagingToGameDirInternal(
         ) {
             addedFiles.add("AsraTest.ini")
         }
+    } catch (t: Throwable) {
+        failure = t
+        throw t
     } finally {
         if (addedFiles.isNotEmpty() || manifestFile.exists()) {
-            val manifestTmp = File(targetDir, ".mod_installed_files.txt.tmp")
-            val content = addedFiles.joinToString("\n")
-            manifestTmp.writeText(content)
-            if (!manifestTmp.renameTo(manifestFile)) {
-                manifestFile.writeText(content)
-                manifestTmp.delete()
+            try {
+                persistAddedFiles()
+            } catch (t: Throwable) {
+                if (failure != null) {
+                    failure.addSuppressed(t)
+                } else {
+                    throw t
+                }
             }
         }
     }
