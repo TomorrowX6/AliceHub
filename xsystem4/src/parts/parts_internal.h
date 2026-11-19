@@ -30,6 +30,7 @@ struct string;
 struct hash_table;
 
 extern bool parts_v2;
+extern bool parts_hierarchical_matrix;
 
 // NOTE: actual value is +1
 enum parts_state_type {

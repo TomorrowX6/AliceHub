@@ -3922,6 +3922,8 @@ static void PartsEngine_PreLink(void)
 	parts_v2 = (ain->version >= 12
 		|| get_fun(libno, "GetControllerID") != NULL
 		|| get_fun(libno, "PartsFunc") != NULL);
+	parts_hierarchical_matrix = (ain->version >= 11
+		|| get_fun(libno, "UpdateMatrix") != NULL);
 
 	if (ain->version >= 11) {
 		static_library_replace(&lib_PartsEngine, "SetComponentType", PartsEngine_SetComponentType_v12);
