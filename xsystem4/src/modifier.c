@@ -1735,7 +1735,8 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 	int32_t total_clear_val = 0;
 	bool has_total_clear_mod = json_get_int_or_bool_item(mod, "TotalClearCount", &total_clear_val);
 	bool has_game_play_mod = cJSON_GetObjectItemCaseSensitive(mod, "gamePlayCount") != NULL;
-	bool want_global = has_game_play_mod || cJSON_GetObjectItemCaseSensitive(mod, "TotalClearCount") ||
+	bool want_global = has_game_play_mod ||
+		(has_total_clear_mod && global_path && global_path[0] && file_exists(global_path)) ||
 		cJSON_GetObjectItemCaseSensitive(mod, "itemStarRank") ||
 		cJSON_GetObjectItemCaseSensitive(mod, "setAllCharRank") ||
 		cJSON_GetObjectItemCaseSensitive(mod, "setTakeOverCardCount");

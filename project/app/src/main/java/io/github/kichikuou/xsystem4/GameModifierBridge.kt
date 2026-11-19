@@ -1528,6 +1528,15 @@ object GameModifierBridge {
             File(sub, "CommonSystemData.sav").isFile
     }
 
+    fun isGlobalSaveModFieldAvailable(saveDir: File, key: String): Boolean {
+        val name = when (key) {
+            "gamePlayCount", "itemStarRank", "setAllCharRank", "setTakeOverCardCount" -> "GlobalSave.asd"
+            "leaderAtkRatio", "trophyExpBonus", "trophyStatusMaxPer" -> "Collection.asd"
+            else -> return hasGlobalSaveFiles(saveDir)
+        }
+        return File(saveDir, name).isFile || File(File(saveDir, "SaveData"), name).isFile
+    }
+
     fun backupGlobalSaveFilesBeforeMod(saveDir: File) {
         val activeDir = resolveActiveGlobalSaveDir(saveDir)
         val sub = File(saveDir, "SaveData")
