@@ -545,4 +545,70 @@ public class IxsealCatalogTest {
         assertTrue(rebootStaging.exists());
         assertTrue(escStaging.exists());
     }
+
+    @Test
+    public void nativeGameImportDiscoversPatchCnInDirectAndContainerRoots() {
+        java.util.Map<String, List<NativeGameImport.TreeEntry<String, String>>> directTree = new java.util.HashMap<>();
+        directTree.put("root", Arrays.asList(
+                new NativeGameImport.TreeEntry<>("root/ini", "AliceStart.ini", false, "root/ini"),
+                new NativeGameImport.TreeEntry<>("root/ain", "Ixseal.ain", false, "root/ain"),
+                new NativeGameImport.TreeEntry<>("root/patchCN", "patchCN", true, "root/patchCN")
+        ));
+        directTree.put("root/patchCN", Arrays.asList(
+                new NativeGameImport.TreeEntry<>("root/patchCN/ain", "Ixseal.ain", false, "root/patchCN/ain"),
+                new NativeGameImport.TreeEntry<>("root/patchCN/cg", "IxsealCG.afa", false, "root/patchCN/cg")
+        ));
+        NativeGameImport.DiscoveredImportSources<String, String> direct = NativeGameImport.INSTANCE.discoverImportSources(
+                "root",
+                directTree.get("root"),
+                id -> directTree.getOrDefault(id, Collections.emptyList())
+        );
+        assertNotNull(direct.getPrimaryEntries());
+        assertEquals(1, direct.getSourceTrees().size());
+        assertEquals(1, direct.getIxsealPatchTrees().size());
+        assertEquals("root/patchCN/ain", direct.getIxsealPatchTrees().get(0).get(0).getPayload());
+
+        java.util.Map<String, List<NativeGameImport.TreeEntry<String, String>>> nestedPatchTree = new java.util.HashMap<>();
+        nestedPatchTree.put("root", Arrays.asList(
+                new NativeGameImport.TreeEntry<>("root/ini", "AliceStart.ini", false, "root/ini"),
+                new NativeGameImport.TreeEntry<>("root/ain", "Ixseal.ain", false, "root/ain"),
+                new NativeGameImport.TreeEntry<>("root/patchCN", "patchCN", true, "root/patchCN")
+        ));
+        nestedPatchTree.put("root/patchCN", Collections.singletonList(
+                new NativeGameImport.TreeEntry<>("root/patchCN/sub", "汉化补丁", true, "root/patchCN/sub")
+        ));
+        nestedPatchTree.put("root/patchCN/sub", Arrays.asList(
+                new NativeGameImport.TreeEntry<>("root/patchCN/sub/ini", "AliceStart.ini", false, "root/patchCN/sub/ini"),
+                new NativeGameImport.TreeEntry<>("root/patchCN/sub/ain", "Ixseal.ain", false, "root/patchCN/sub/ain")
+        ));
+        NativeGameImport.DiscoveredImportSources<String, String> nestedDirect = NativeGameImport.INSTANCE.discoverImportSources(
+                "root",
+                nestedPatchTree.get("root"),
+                id -> nestedPatchTree.getOrDefault(id, Collections.emptyList())
+        );
+        assertEquals(1, nestedDirect.getIxsealPatchTrees().size());
+        assertEquals("root/patchCN/sub/ini", nestedDirect.getIxsealPatchTrees().get(0).get(0).getPayload());
+
+        java.util.Map<String, List<NativeGameImport.TreeEntry<String, String>>> containerTree = new java.util.HashMap<>();
+        containerTree.put("container", Collections.singletonList(
+                new NativeGameImport.TreeEntry<>("container/Ixseal", "Ixseal", true, "container/Ixseal")
+        ));
+        containerTree.put("container/Ixseal", Arrays.asList(
+                new NativeGameImport.TreeEntry<>("container/Ixseal/ini", "AliceStart.ini", false, "container/Ixseal/ini"),
+                new NativeGameImport.TreeEntry<>("container/Ixseal/ain", "Ixseal.ain", false, "container/Ixseal/ain"),
+                new NativeGameImport.TreeEntry<>("container/Ixseal/patchCN", "patchCN", true, "container/Ixseal/patchCN")
+        ));
+        containerTree.put("container/Ixseal/patchCN", Collections.singletonList(
+                new NativeGameImport.TreeEntry<>("container/Ixseal/patchCN/ain", "Ixseal.ain", false, "container/Ixseal/patchCN/ain")
+        ));
+        NativeGameImport.DiscoveredImportSources<String, String> container = NativeGameImport.INSTANCE.discoverImportSources(
+                "container",
+                containerTree.get("container"),
+                id -> containerTree.getOrDefault(id, Collections.emptyList())
+        );
+        assertNotNull(container.getPrimaryEntries());
+        assertEquals(1, container.getSourceTrees().size());
+        assertEquals(1, container.getIxsealPatchTrees().size());
+        assertEquals("container/Ixseal/patchCN/ain", container.getIxsealPatchTrees().get(0).get(0).getPayload());
+    }
 }

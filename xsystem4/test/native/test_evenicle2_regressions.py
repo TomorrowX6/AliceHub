@@ -1418,9 +1418,29 @@ int main(int argc, char **argv)
     archive_free_data(d);
     archive_free(&afa->ar);
 
-    /* Reset restores CP932 behavior cleanly. */
+    /* Reset restores CP932/GBK behavior cleanly. */
     sys4_reset_mai_word_table();
     assert(!sys4_has_mai_word_table());
+
+    /* When no mai table is active and sys4_text_is_gbk is enabled, mai_* helpers must preserve GBK. */
+    sys4_set_text_gbk(true);
+    const char *gbk_sample = "请这里说对们";
+    char *gbk_expected = utf2sjis(gbk_sample, strlen(gbk_sample));
+    char *gbk_via_mai = mai_utf2sjis(gbk_sample, strlen(gbk_sample));
+    assert(gbk_expected && gbk_via_mai);
+    assert(strcmp(gbk_via_mai, gbk_expected) == 0);
+    assert(strchr(gbk_via_mai, '?') == NULL);
+    bool gbk_strict_ok = false;
+    char *gbk_strict_dec = mai_cjk2utf_strict(gbk_via_mai, &gbk_strict_ok);
+    assert(gbk_strict_ok && gbk_strict_dec && strcmp(gbk_strict_dec, gbk_sample) == 0);
+    char *gbk_dec = mai_sjis2utf(gbk_via_mai, strlen(gbk_via_mai));
+    assert(gbk_dec && strcmp(gbk_dec, gbk_sample) == 0);
+    free(gbk_expected);
+    free(gbk_via_mai);
+    free(gbk_strict_dec);
+    free(gbk_dec);
+    sys4_set_text_gbk(false);
+
     free(enc);
     free(strict_dec);
     free(dec);

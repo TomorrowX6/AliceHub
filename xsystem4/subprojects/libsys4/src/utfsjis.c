@@ -425,7 +425,9 @@ char *cjk2utf_strict(const char *_src, bool gbk, bool *valid_out)
 
 char *mai_cjk2utf_strict(const char *_src, bool *valid_out)
 {
-	return cjk2utf_strict_buf_impl(_src, _src ? strlen(_src) : 0, false, NULL, 0, valid_out, sys4_mai_active);
+	if (!sys4_mai_active)
+		return cjk2utf_strict(_src, sys4_text_is_gbk, valid_out);
+	return cjk2utf_strict_buf_impl(_src, _src ? strlen(_src) : 0, false, NULL, 0, valid_out, true);
 }
 
 static int cjk_encode_codepoint_impl(int u, bool gbk, bool use_mai)
@@ -519,7 +521,9 @@ char *utf2sjis(const char *_src, size_t len) {
 }
 
 char *mai_utf2sjis(const char *_src, size_t len) {
-	return utf2cjk_impl(_src, len, false, sys4_mai_active);
+	if (!sys4_mai_active)
+		return utf2sjis(_src, len);
+	return utf2cjk_impl(_src, len, false, true);
 }
 
 static bool seg_is_strict_sjis_non_gb2312(const uint8_t *src, size_t len)

@@ -14,6 +14,14 @@ import java.util.UUID
 object NativeGameImport {
     private data class Document(val uri: Uri, val name: String, val folder: Boolean, val size: Long)
 
+    data class TreeEntry<T, D>(val id: T, val name: String, val folder: Boolean, val payload: D)
+
+    data class DiscoveredImportSources<T, D>(
+        val primaryEntries: List<TreeEntry<T, D>>?,
+        val sourceTrees: List<Triple<T, List<TreeEntry<T, D>>, String>>,
+        val ixsealPatchTrees: List<List<TreeEntry<T, D>>>
+    )
+
     fun skip(path: String): Boolean {
         val parts = path.replace('\\', '/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return false
@@ -60,7 +68,7 @@ object NativeGameImport {
         return result
     }
 
-    private fun isSys4Root(docs: List<Document>): Boolean {
+    private fun <T, D> isSys4RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
         val hasIni = docs.any {
             !it.folder && !skip(it.name) &&
                 (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
@@ -72,12 +80,132 @@ object NativeGameImport {
         return hasIni && hasAin
     }
 
-    private fun isSys3Root(docs: List<Document>): Boolean {
-        if (isSys4Root(docs)) return false
+    private fun <T, D> isIxsealPatchRootEntries(docs: List<TreeEntry<T, D>>): Boolean {
+        if (isSys4RootEntries(docs)) return true
+        return docs.any {
+            !it.folder && !skip(it.name) &&
+                (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
+        }
+    }
+
+    private fun <T, D> isSys3RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
+        if (isSys4RootEntries(docs)) return false
         return docs.any {
             !it.folder && !skip(it.name) &&
                 (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
         }
+    }
+
+    fun <T, D> discoverImportSources(
+        rootId: T,
+        rootEntries: List<TreeEntry<T, D>>,
+        listChildren: (T) -> List<TreeEntry<T, D>>
+    ): DiscoveredImportSources<T, D> {
+        var sourceTrees: List<Triple<T, List<TreeEntry<T, D>>, String>> = emptyList()
+        var primaryEntries: List<TreeEntry<T, D>>? = null
+        val ixsealPatchTrees = mutableListOf<List<TreeEntry<T, D>>>()
+        val seenPatchIds = HashSet<T>()
+
+        fun isBackupOrPatchContainer(name: String): Boolean =
+            name.equals("BackData", ignoreCase = true) ||
+                name == "补丁" ||
+                name == "备份" ||
+                name == "备份文件" ||
+                name == "原版有码备份" ||
+                name == "无码补丁备份" ||
+                name == "汉化补丁备份" ||
+                name == "特典相关" ||
+                name == "全CG存档" ||
+                name.equals("patchWM", ignoreCase = true)
+
+        fun collectPatchCn(entries: List<TreeEntry<T, D>>) {
+            val patchQueue = ArrayDeque<Pair<T, Int>>()
+            entries.filter { it.folder && !skip(it.name) && it.name.equals("patchCN", ignoreCase = true) }
+                .sortedBy { it.name }
+                .forEach { patchQueue.add(it.id to 1) }
+            while (patchQueue.isNotEmpty()) {
+                val (dirId, depth) = patchQueue.removeFirst()
+                val docs = listChildren(dirId)
+                if (isIxsealPatchRootEntries(docs)) {
+                    if (seenPatchIds.add(dirId)) {
+                        ixsealPatchTrees.add(docs)
+                    }
+                } else if (depth < 3) {
+                    docs.filter { it.folder && !skip(it.name) }
+                        .sortedBy { it.name }
+                        .forEach { patchQueue.add(it.id to (depth + 1)) }
+                }
+            }
+        }
+
+        if (isSys4RootEntries(rootEntries) || isSys3RootEntries(rootEntries)) {
+            primaryEntries = rootEntries
+            sourceTrees = listOf(Triple(rootId, rootEntries, ""))
+            if (isSys4RootEntries(rootEntries)) {
+                collectPatchCn(rootEntries)
+            }
+        } else {
+            // Also support picking a container folder holding Disc1/GAMEDATA .. Disc3/GAMEDATA
+            // or sibling companion folders such as GALZOO/ + 三合一/Data/.
+            val discRoots = mutableListOf<Triple<T, List<TreeEntry<T, D>>, String>>()
+            val queue = ArrayDeque<Triple<T, String, Int>>()
+            collectPatchCn(rootEntries)
+            for (d in rootEntries) {
+                if (!d.folder || skip(d.name)) continue
+                if (
+                    !d.name.equals("patchCN", ignoreCase = true) &&
+                    !d.name.equals("DLL", ignoreCase = true) &&
+                    !d.name.equals("OLD", ignoreCase = true) &&
+                    !isBackupOrPatchContainer(d.name)
+                ) {
+                    queue.add(Triple(d.id, d.name, 1))
+                }
+            }
+            while (queue.isNotEmpty()) {
+                val (dirId, dirName, depth) = queue.removeFirst()
+                val docs = listChildren(dirId)
+                if (isSys4RootEntries(docs) || isSys3RootEntries(docs)) {
+                    if (primaryEntries == null) primaryEntries = docs
+                    discRoots.add(Triple(dirId, docs, ""))
+                    if (isSys4RootEntries(docs)) {
+                        collectPatchCn(docs)
+                    }
+                } else if (dirName.equals("Data", ignoreCase = true) &&
+                    docs.any {
+                        !it.folder && !skip(it.name) && (
+                            it.name.equals("PolyObj.lin", true) ||
+                                it.name.equals("Event.alk", true) ||
+                                it.name.endsWith(".dgn", true)
+                            )
+                    }
+                ) {
+                    discRoots.add(Triple(dirId, docs, "Data"))
+                } else if (docs.any {
+                        !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
+                            it.name.endsWith(".bgi", true) || it.name.endsWith(".alk", true))
+                    }
+                ) {
+                    discRoots.add(Triple(dirId, docs, ""))
+                } else if (depth < 3) {
+                    collectPatchCn(docs)
+                    for (sub in docs) {
+                        if (sub.folder && !skip(sub.name) &&
+                            !sub.name.equals("DLL", ignoreCase = true) &&
+                            !sub.name.equals("OLD", ignoreCase = true) &&
+                            !isBackupOrPatchContainer(sub.name) &&
+                            !sub.name.equals("patchCN", ignoreCase = true)
+                        ) {
+                            queue.add(Triple(sub.id, sub.name, depth + 1))
+                        }
+                    }
+                }
+            }
+            if (primaryEntries != null) {
+                sourceTrees = discRoots
+            }
+        }
+
+        return DiscoveredImportSources(primaryEntries, sourceTrees, ixsealPatchTrees)
     }
 
     @JvmOverloads
@@ -177,92 +305,17 @@ object NativeGameImport {
     ): File {
         val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val rootFiles = children(context, tree, root)
-        var sourceTrees: List<Triple<Uri, List<Document>, String>> = emptyList()
-        var primaryDocs: List<Document>? = null
-        val ixsealPatchTrees = mutableListOf<List<Document>>()
-
-        fun isBackupOrPatchContainer(name: String): Boolean =
-            name.equals("BackData", ignoreCase = true) ||
-                name == "补丁" ||
-                name == "备份" ||
-                name == "备份文件" ||
-                name == "原版有码备份" ||
-                name == "无码补丁备份" ||
-                name == "汉化补丁备份" ||
-                name == "特典相关" ||
-                name == "全CG存档" ||
-                name.equals("patchWM", ignoreCase = true)
-
-        if (isSys4Root(rootFiles) || isSys3Root(rootFiles)) {
-            primaryDocs = rootFiles
-            sourceTrees = listOf(Triple(root, rootFiles, ""))
-        } else {
-            // Also support picking a container folder holding Disc1/GAMEDATA .. Disc3/GAMEDATA
-            // or sibling companion folders such as GALZOO/ + 三合一/Data/.
-            val discRoots = mutableListOf<Triple<Uri, List<Document>, String>>()
-            val queue = ArrayDeque<Triple<Uri, String, Int>>()
-            val patchQueue = ArrayDeque<Pair<Uri, Int>>()
-            for (d in rootFiles) {
-                if (!d.folder || skip(d.name)) continue
-                if (d.name.equals("patchCN", ignoreCase = true)) {
-                    patchQueue.add(d.uri to 1)
-                } else if (
-                    !d.name.equals("DLL", ignoreCase = true) &&
-                    !d.name.equals("OLD", ignoreCase = true) &&
-                    !isBackupOrPatchContainer(d.name)
-                ) {
-                    queue.add(Triple(d.uri, d.name, 1))
-                }
-            }
-            while (patchQueue.isNotEmpty()) {
-                val (dirUri, depth) = patchQueue.removeFirst()
-                val docs = children(context, tree, dirUri)
-                if (isSys4Root(docs)) {
-                    ixsealPatchTrees.add(docs)
-                } else if (depth < 3) {
-                    for (sub in docs) {
-                        if (sub.folder && !skip(sub.name)) patchQueue.add(sub.uri to (depth + 1))
-                    }
-                }
-            }
-            while (queue.isNotEmpty()) {
-                val (dirUri, dirName, depth) = queue.removeFirst()
-                val docs = children(context, tree, dirUri)
-                if (isSys4Root(docs) || isSys3Root(docs)) {
-                    if (primaryDocs == null) primaryDocs = docs
-                    discRoots.add(Triple(dirUri, docs, ""))
-                } else if (dirName.equals("Data", ignoreCase = true) &&
-                    docs.any {
-                        !it.folder && !skip(it.name) && (
-                            it.name.equals("PolyObj.lin", true) ||
-                                it.name.equals("Event.alk", true) ||
-                                it.name.endsWith(".dgn", true)
-                            )
-                    }
-                ) {
-                    discRoots.add(Triple(dirUri, docs, "Data"))
-                } else if (docs.any {
-                        !it.folder && !skip(it.name) && (it.name.endsWith(".ald", true) ||
-                            it.name.endsWith(".bgi", true) || it.name.endsWith(".alk", true))
-                    }
-                ) {
-                    discRoots.add(Triple(dirUri, docs, ""))
-                } else if (depth < 3) {
-                    for (sub in docs) {
-                        if (sub.folder && !skip(sub.name) &&
-                            !sub.name.equals("DLL", ignoreCase = true) &&
-                            !sub.name.equals("OLD", ignoreCase = true) &&
-                            !isBackupOrPatchContainer(sub.name) &&
-                            !sub.name.equals("patchCN", ignoreCase = true)
-                        ) {
-                            queue.add(Triple(sub.uri, sub.name, depth + 1))
-                        }
-                    }
-                }
-            }
-            if (primaryDocs != null) {
-                sourceTrees = discRoots
-            }
+        val discovered = discoverImportSources(
+            rootId = root,
+            rootEntries = rootFiles.map { TreeEntry(it.uri, it.name, it.folder, it) },
+            listChildren = { uri -> children(context, tree, uri).map { TreeEntry(it.uri, it.name, it.folder, it) } }
+        )
+        val primaryDocs = discovered.primaryEntries?.map { it.payload }
+        val sourceTrees = discovered.sourceTrees.map { (uri, entries, sub) ->
+            Triple(uri, entries.map { it.payload }, sub)
+        }
+        val ixsealPatchTrees = discovered.ixsealPatchTrees.map { entries ->
+            entries.map { it.payload }
         }
 
         val resolvedPrimary = primaryDocs ?: throw GameList.InstallFailureException(R.string.directory_no_game)
