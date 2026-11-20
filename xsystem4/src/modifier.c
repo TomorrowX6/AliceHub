@@ -46,6 +46,7 @@ static bool s_pending_clear_card_cache = false;
 static bool s_pending_live_ui_refresh = false;
 static bool s_in_modifier_frame = false;
 static bool s_game_config_ready = false;
+static bool s_game_config_loaded = false;
 static int s_last_observed_summary_mode = -1;
 
 /* Lock bitmask flags (Rance 10) */
@@ -2363,6 +2364,7 @@ static void vm_inspect_mod_streamer_ain(void)
 
 	s_inspected_ain = ain;
 	s_game_config_ready = false;
+	s_game_config_loaded = false;
 	s_last_observed_summary_mode = -1;
 	s_card_org_mdata_slot = -1;
 	s_card_org_pair0_slot = -1;
@@ -2918,6 +2920,10 @@ static bool vm_persist_game_config_asd(void)
 	int cfg_idx = s_glob_game_config >= 0 ? s_glob_game_config : vm_find_global_idx("g_gameConfig", NULL);
 	if (cfg_idx < 0 || cfg_idx >= ain->nr_globals)
 		return false;
+	/* Before the game's own GroupLoad, g_gameConfig still holds defaults;
+	 * a GroupSave now would wipe the user's speed settings and unlock flags. */
+	if (!s_game_config_loaded)
+		return false;
 	int gidx = ain->globals[cfg_idx].group_index;
 	if (gidx >= 0 && gidx < ain->nr_global_groups &&
 	    ain->global_group_names && ain->global_group_names[gidx] && ain->global_group_names[gidx][0]) {
@@ -3251,7 +3257,7 @@ static void maybe_load_initial_modifier_config(void)
 	}
 }
 
-void modifier_on_config_loaded(void)
+static void modifier_mark_config_ready(void)
 {
 	if (!vm_globals_ready())
 		return;
@@ -3294,6 +3300,15 @@ void modifier_on_config_loaded(void)
 			persist_modifier_config_from_native(mask);
 		}
 	}
+}
+
+void modifier_on_config_loaded(void)
+{
+	if (!vm_globals_ready())
+		return;
+	vm_inspect_mod_streamer_ain();
+	s_game_config_loaded = true;
+	modifier_mark_config_ready();
 }
 
 void modifier_on_globals_loaded(void)
@@ -8468,7 +8483,7 @@ void modifier_on_frame(void)
 	vm_inspect_mod_streamer_ain();
 	if (!s_game_config_ready) {
 		if (vm_callstack_any_flag(FNO_FLAG_GAMEPLAY_SCENE) || s_frame_tick >= 60) {
-			modifier_on_config_loaded();
+			modifier_mark_config_ready();
 		}
 	}
 
