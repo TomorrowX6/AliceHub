@@ -959,7 +959,7 @@ static void error_handler(const char *msg)
 	vm_format_stack_trace(dialog_msg + off, sizeof(dialog_msg) - off, false);
 	const char *no_box = getenv("XSYSTEM4_NO_ERROR_BOX");
 	bool show_box = !no_box || !*no_box || !strcmp(no_box, "0");
-#if !defined(__ANDROID__) && !defined(_WIN32)
+#if !defined(__ANDROID__) && !defined(_WIN32) && !defined(ALICEHUB_IOS)
 	if (show_box) {
 		const char *disp = getenv("DISPLAY");
 		const char *wayland = getenv("WAYLAND_DISPLAY");

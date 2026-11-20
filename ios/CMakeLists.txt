@@ -66,6 +66,11 @@ dependency(libdeflate https://github.com/ebiggers/libdeflate/releases/download/v
   -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_GZIP_SUPPORT=OFF -DLIBDEFLATE_BUILD_GZIP=OFF)
 dependency(SDL2 https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz SHA1=9403df0573d47f62f2de074b582b87576bb4abbc
   -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_TESTS=OFF)
+ExternalProject_Add_Step(SDL2 alicehub_messagebox_patch
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+    -P ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-messagebox.cmake
+  DEPENDEES patch DEPENDERS configure
+  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-messagebox.cmake)
 ExternalProject_Add(freetype
   GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE
   CMAKE_ARGS ${common} -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
