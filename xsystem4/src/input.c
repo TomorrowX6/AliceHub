@@ -73,6 +73,8 @@ enum gamepad_ui_event_cmd {
 static bool kbd_key_state[VK_NR_KEYCODES];
 static bool vpad_vk_down[VK_NR_KEYCODES];
 static bool pad_vk_down[VK_NR_KEYCODES];
+// Keys held down by in-process features (e.g. the modifier's MOD cheat key).
+static bool injected_vk_down[VK_NR_KEYCODES];
 static bool sdl_mouse_down[VK_NR_KEYCODES];
 static bool prev_gamepad_mouse[VK_NR_KEYCODES];
 
@@ -713,6 +715,14 @@ bool key_is_down(enum sact_keycode code)
 		}
 	}
 	return key_state[code];
+}
+
+void key_set_injected(enum sact_keycode code, bool down)
+{
+	if (code <= 0 || code >= VK_NR_KEYCODES)
+		return;
+	injected_vk_down[code] = down;
+	key_state[code] = down || kbd_key_state[code] || vpad_vk_down[code] || pad_vk_down[code];
 }
 
 void key_clear_flag(bool no_ctrl)
@@ -1974,7 +1984,8 @@ static void rebuild_effective_keys(uint32_t now)
 			if (in_movie || suppressed_movie_keys[code])
 				key_state[code] = false;
 		} else {
-			bool down = kbd_key_state[code] || vpad_vk_down[code] || pad_vk_down[code];
+			bool down = kbd_key_state[code] || vpad_vk_down[code] || pad_vk_down[code]
+				|| injected_vk_down[code];
 			if (code == VK_CONTROL && ctrl_skip)
 				down = true;
 			if ((in_movie && is_movie_skip_suppressed_key(code)) || suppressed_movie_keys[code])

@@ -36,7 +36,6 @@
 #include "savedata.h"
 #include "xsystem4.h"
 
-extern bool key_state[VK_NR_KEYCODES];
 static int s_pulse_key0_frames = 0;
 static char *s_pending_cheat_gbk = NULL;
 static int s_cheat_wait_frames = 0;
@@ -3438,7 +3437,7 @@ static void vm_step_pending_cheat(void)
 			}
 		}
 		if (in_join && scs_ss) {
-			key_state[VK_0] = false;
+			key_set_injected(VK_0, false);
 			s_pulse_key0_frames = 0;
 			if (ain->globals) {
 				struct page *tt = s_glob_tt >= 0 ? vm_get_global_page_idx(s_glob_tt) : vm_get_global_page("tt", NULL);
@@ -3484,13 +3483,13 @@ static void vm_step_pending_cheat(void)
 	}
 
 	if (in_run_char_setting) {
-		key_state[VK_0] = false;
+		key_set_injected(VK_0, false);
 	} else {
-		key_state[VK_0] = true;
+		key_set_injected(VK_0, true);
 	}
 
 	if (--s_cheat_wait_frames <= 0) {
-		key_state[VK_0] = false;
+		key_set_injected(VK_0, false);
 		free(s_pending_cheat_gbk);
 		s_pending_cheat_gbk = NULL;
 		s_cheat_wait_frames = 0;
@@ -3846,7 +3845,7 @@ static void vm_execute_pending_action(const char *json_str)
 	    (cJSON_IsTrue(it) || (cJSON_IsNumber(it) && it->valueint != 0))) {
 		vm_unlock_mod_cheat_gate();
 		s_pulse_key0_frames = 8;
-		key_state[VK_0] = true;
+		key_set_injected(VK_0, true);
 	}
 	cJSON *tt_idx = cJSON_GetObjectItem(act, "ttFlagIdx");
 	cJSON *tt_val = cJSON_GetObjectItem(act, "ttFlagVal");
@@ -8544,9 +8543,9 @@ void modifier_on_frame(void)
 	if (s_pending_cheat_gbk) {
 		vm_step_pending_cheat();
 	} else if (s_pulse_key0_frames > 0) {
-		key_state[VK_0] = true;
+		key_set_injected(VK_0, true);
 		if (--s_pulse_key0_frames == 0)
-			key_state[VK_0] = false;
+			key_set_injected(VK_0, false);
 	}
 
 	/*
