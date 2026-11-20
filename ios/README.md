@@ -26,8 +26,8 @@ through libffi calls.
 simulator app in `ios/build/app-iphonesimulator/Build/Products/Debug-iphonesimulator/`.
 `ios/build-app.sh ipa` builds Release for devices without signing and packages
 `ios/build/AliceHub.ipa` for signing by a sideloading tool. The generated Xcode
-project is ignored; edit `project.yml` instead. Missing native staging triggers
-the corresponding native build automatically.
+project is ignored; edit `project.yml` instead. Each app build runs the incremental
+native build so edits to engine sources, headers and platform code are linked.
 
 The SwiftUI launcher discovers `Documents/Games`, imports security-scoped
 folders with coordinated reads, and confirms deletion without removing saves.
@@ -35,6 +35,8 @@ Import uses a hidden temporary directory and moves it into place after copying.
 Duplicate folder names are rejected rather than overwritten. Each launch writes
 `Documents/Logs/engine.log` (stdout/stderr) and `crash.log`; logs are replaced on
 the next launch. The app delegate forwards scene lifecycle notifications to SDL.
+Games with an INI launch by directory; AIN-only folders launch the first root AIN
+in filename order when multiple AINs exist.
 
 ## App launch contract
 
@@ -66,7 +68,7 @@ the next launch. The app delegate forwards scene lifecycle notifications to SDL.
 * The non-Android shutdown path still calls `sys_exit`/process exit; returning
   cleanly to the launcher and repeat sessions remain future work.
   iOS crash reports omit the Linux-only
-  register dump. Error dialogs currently follow the non-Android desktop gate.
+  register dump. Error dialogs use the scene-aware SDL UIKit alert window.
 
 ## Game runtime
 
@@ -76,6 +78,9 @@ framebuffer instead of framebuffer zero. The viewport remains in window points
 for mouse/touch mapping and is scaled to drawable pixels only for `glViewport`.
 SDL converts single-finger touches to mouse events. Android's window, GL and
 input paths are unchanged.
+Before a scene deactivates, the bridge finishes pending GPU work, pauses audio,
+and flushes tracked saves. SDL's event pump runs UIKit without returning to the
+engine while the app is inactive, resuming only once it becomes active again.
 
 Debug builds accept `-autolaunch <folder>` to launch a discovered game after the
 scene becomes active, for example:

@@ -7,9 +7,7 @@ case "$mode" in
   ipa) sdk=iphoneos; configuration=Release ;;
   *) echo "Usage: $0 [sim|ipa]" >&2; exit 2 ;;
 esac
-if [[ ! -f "$root/build/$sdk/stage/lib/libxsystem4.a" ]]; then
-  "$root/build-native.sh" "$sdk"
-fi
+"$root/build-native.sh" "$sdk"
 xcodegen generate --spec "$root/project.yml"
 xcodebuild -project "$root/AliceHub.xcodeproj" -scheme AliceHub \
   -configuration "$configuration" -sdk "$sdk" \

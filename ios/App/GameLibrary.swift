@@ -35,13 +35,21 @@ final class GameLibrary: ObservableObject {
     }
 
     static func isGame(_ url: URL) -> Bool {
+        (try? launchTarget(url)) != nil
+    }
+
+    static func launchTarget(_ url: URL) throws -> URL {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
-              let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { return false }
-        return contents.contains {
-            let name = $0.lastPathComponent.lowercased()
-            return (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true &&
-                (name == "alicestart.ini" || name == "system40.ini" || $0.pathExtension.lowercased() == "ain")
+              let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { throw LibraryError.notGame }
+        let regularFiles = contents.filter {
+            (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
+        if regularFiles.contains(where: { ["alicestart.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
+            return url
+        }
+        guard let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first else { throw LibraryError.notGame }
+        return ain
     }
 
     func refresh() {
@@ -93,6 +101,7 @@ final class GameLibrary: ObservableObject {
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
+            let target = try Self.launchTarget(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
             let saves = documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
@@ -110,7 +119,7 @@ final class GameLibrary: ObservableObject {
             guard chdir(resources.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
-            let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", game.url.path]
+            let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", target.path]
             launching = true
             DispatchQueue.main.async {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in

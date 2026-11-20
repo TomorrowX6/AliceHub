@@ -3,6 +3,9 @@
 #include <SDL_syswm.h>
 #include "EnginePlatform.h"
 #include "system4.h"
+#include "mixer.h"
+
+void savedata_flush_on_background(void);
 
 static SDL_SysWMinfo window_info(SDL_Window *window)
 {
@@ -25,6 +28,23 @@ void alicehub_ios_prepare_window(SDL_Window *window)
     }
     native.windowLevel = UIWindowLevelNormal + 1;
     [native makeKeyAndVisible];
+    static id inactiveObserver;
+    if (!inactiveObserver) {
+        inactiveObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneWillDeactivateNotification
+            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
+                if (SDL_GL_GetCurrentContext())
+                    glFinish();
+                mixer_set_app_backgrounded(true);
+                savedata_flush_on_background();
+            }];
+    }
+    static id activeObserver;
+    if (!activeObserver) {
+        activeObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidActivateNotification
+            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
+                mixer_set_app_backgrounded(false);
+            }];
+    }
     if (@available(iOS 16.0, *)) {
         [native.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
         UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc]

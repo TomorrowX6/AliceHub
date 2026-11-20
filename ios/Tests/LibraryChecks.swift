@@ -15,16 +15,41 @@ struct LibraryChecks {
         let source = root.appendingPathComponent("测试游戏")
         try files.createDirectory(at: source, withIntermediateDirectories: true)
         let library = GameLibrary(documents: documents)
+        func samePath(_ first: URL, _ second: URL) -> Bool {
+            first.resolvingSymlinksInPath().path == second.resolvingSymlinksInPath().path
+        }
         precondition(library.games.isEmpty && library.error == nil)
         precondition(!GameLibrary.isGame(source))
         for marker in ["AliceStart.ini", "System40.ini", "test.AIN"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
             precondition(GameLibrary.isGame(source))
+            let target = try GameLibrary.launchTarget(source)
+            precondition(samePath(target, marker == "test.AIN" ? file : source))
             try files.removeItem(at: file)
         }
         try files.createDirectory(at: source.appendingPathComponent("fake.ain"), withIntermediateDirectories: false)
         precondition(!GameLibrary.isGame(source))
+        do {
+            _ = try GameLibrary.launchTarget(source)
+            preconditionFailure("A marker directory must not be a launch target")
+        } catch LibraryError.notGame {}
+        do {
+            _ = try GameLibrary.launchTarget(root.appendingPathComponent("missing"))
+            preconditionFailure("A missing game must not be a launch target")
+        } catch LibraryError.notGame {}
+        let firstAIN = source.appendingPathComponent("a.ain")
+        let secondAIN = source.appendingPathComponent("z.ain")
+        try Data().write(to: secondAIN)
+        try Data().write(to: firstAIN)
+        let selectedAIN = try GameLibrary.launchTarget(source)
+        precondition(samePath(selectedAIN, firstAIN))
+        try Data().write(to: source.appendingPathComponent("sYsTeM40.InI"))
+        let selectedINI = try GameLibrary.launchTarget(source)
+        precondition(samePath(selectedINI, source))
+        try files.removeItem(at: source.appendingPathComponent("sYsTeM40.InI"))
+        try files.removeItem(at: firstAIN)
+        try files.removeItem(at: secondAIN)
         try Data().write(to: source.appendingPathComponent("System40.ini"))
         func awaitImport() {
             let deadline = Date().addingTimeInterval(10)
@@ -46,6 +71,6 @@ struct LibraryChecks {
         library.importFolder(source)
         awaitImport()
         precondition(library.games.isEmpty && library.error == LibraryError.notGame.localizedDescription)
-        print("PASS: empty library, root markers, directory rejection, import, duplicate rejection, deletion, invalid import")
+        print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
     }
 }

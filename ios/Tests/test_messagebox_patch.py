@@ -18,6 +18,9 @@ class MessageBoxPatchChecks(unittest.TestCase):
             raise unittest.SkipTest('Build iOS native dependencies to download SDL first')
         cls.original = sources[0].read_text()
         recipe = PATCH.read_text()
+        previous = re.search(r'set\(previous_inactive \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
+        current = re.search(r'set\(new_inactive \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
+        cls.original = cls.original.replace(previous, current)
         for name in ('wait', 'present'):
             old = re.search(r'set\(old_' + name + r' \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
             new = re.search(r'set\(new_' + name + r' \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
@@ -47,8 +50,20 @@ class MessageBoxPatchChecks(unittest.TestCase):
         self.assertIn('SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT', patched)
         self.assertIn('SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT', patched)
         self.assertIn('SDL_MESSAGEBOX_BUTTONS_RIGHT_TO_LEFT', patched)
+        self.assertIn('deadline = [NSDate timeIntervalSinceReferenceDate] + 5.0;\n                continue;', patched)
         self.assertEqual(self.patch().returncode, 0)
         self.assertEqual(self.source.read_text(), patched)
+
+    def test_upgrade_previous_patch(self):
+        self.source.write_text(self.original)
+        self.assertEqual(self.patch().returncode, 0)
+        current = self.source.read_text()
+        recipe = PATCH.read_text()
+        previous = re.search(r'set\(previous_inactive \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
+        updated = re.search(r'set\(new_inactive \[=\[(.*?)\]=\]\)', recipe, re.S)[1]
+        self.source.write_text(current.replace(updated, previous))
+        self.assertEqual(self.patch().returncode, 0)
+        self.assertEqual(self.source.read_text(), current)
 
     def test_empty_or_unknown_upstream_source_fails_without_writing(self):
         for contents in ('', 'unexpected SDL version'):

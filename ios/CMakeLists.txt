@@ -71,6 +71,11 @@ ExternalProject_Add_Step(SDL2 alicehub_messagebox_patch
     -P ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-messagebox.cmake
   DEPENDEES patch DEPENDERS configure
   DEPENDS ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-messagebox.cmake)
+ExternalProject_Add_Step(SDL2 alicehub_lifecycle_patch
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+    -P ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-lifecycle.cmake
+  DEPENDEES patch DEPENDERS configure
+  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-lifecycle.cmake)
 ExternalProject_Add(freetype
   GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE
   CMAKE_ARGS ${common} -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON

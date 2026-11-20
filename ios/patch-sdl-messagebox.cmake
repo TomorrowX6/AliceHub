@@ -14,6 +14,19 @@ function(replace_checked old new)
   endif()
 endfunction()
 
+set(previous_inactive [=[            if (window.hidden || window.windowScene.activationState != UISceneActivationStateForegroundActive) {
+                break;
+            }]=])
+set(new_inactive [=[            if (window.windowScene.activationState != UISceneActivationStateForegroundActive) {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+                deadline = [NSDate timeIntervalSinceReferenceDate] + 5.0;
+                continue;
+            }
+            if (window.hidden) {
+                break;
+            }]=])
+string(REPLACE "${previous_inactive}" "${new_inactive}" source "${source}")
+
 set(old_wait [=[static void UIKit_WaitUntilMessageBoxClosed(const SDL_MessageBoxData *messageboxdata, int *clickedindex)
 {
     *clickedindex = messageboxdata->numbuttons;
@@ -38,7 +51,12 @@ static void UIKit_WaitUntilMessageBoxClosed(const SDL_MessageBoxData *messagebox
         BOOL presented = NO;
         s_showingMessageBox = SDL_TRUE;
         while ((*clickedindex) == messageboxdata->numbuttons) {
-            if (window.hidden || window.windowScene.activationState != UISceneActivationStateForegroundActive) {
+            if (window.windowScene.activationState != UISceneActivationStateForegroundActive) {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+                deadline = [NSDate timeIntervalSinceReferenceDate] + 5.0;
+                continue;
+            }
+            if (window.hidden) {
                 break;
             }
             if (alert.presentingViewController && alert.view.window) {
