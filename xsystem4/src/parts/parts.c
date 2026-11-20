@@ -1379,6 +1379,8 @@ static bool parts_numeral_update(struct parts *parts, struct parts_numeral *num)
 {
 	if (!num->have_num || (num->show_type != 2 && num->font_no < 0))
 		return true;
+	if (num->show_type != 2 && num->font_no >= parts_nr_numeral_fonts)
+		return false;
 	// Length counts digits, excluding the sign and inserted grouping separators.
 	// Hidden padding still occupies the width of its zero glyph.
 	char digits[24];
@@ -1402,7 +1404,7 @@ static bool parts_numeral_update(struct parts *parts, struct parts_numeral *num)
 
 	float advances[192];
 	char glyphs[192][4];
-	struct parts_numeral_font *font = num->font_no >= 0
+	struct parts_numeral_font *font = num->show_type != 2
 		? &parts_numeral_fonts[num->font_no] : NULL;
 	struct text_style eff_ts = parts_get_effective_text_style(&num->ts);
 	int height = 0;

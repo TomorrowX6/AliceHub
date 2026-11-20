@@ -184,6 +184,8 @@ void PE_GetRectangleDetectionPoint(int no, int *x0, int *y0, int *x1, int *y1,
 		int *x2, int *y2, int *x3, int *y3, int state);
 bool PE_SetPartsCGDetectionSize(int parts_no, struct string *cg_name, int state);
 bool PE_Save(struct page **buffer);
+bool PE_SaveParts(int parts_no, struct page **buffer);
+bool PE_LoadParts(int parts_no, struct page **buffer);
 bool PE_SaveWithoutHideParts(struct page **buffer);
 bool PE_Load(struct page **buffer);
 bool PE_SaveBackScene(struct page **buffer);

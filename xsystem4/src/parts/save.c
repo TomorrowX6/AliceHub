@@ -35,6 +35,13 @@
 
 static struct parts_context *back_scene;
 
+#define PARTS_SAVED_FONTS (PARTS_NR_STATES + 1)
+
+struct numeral_font_map {
+	int source;
+	int target;
+};
+
 static void save_parts_params(struct iarray_writer *w, struct parts_params *params)
 {
 	iarray_write(w, params->z);
@@ -168,7 +175,7 @@ static void save_parts_numeral(struct iarray_writer *w, struct parts_numeral *nu
 }
 
 static void load_parts_numeral(struct iarray_reader *r, struct parts *parts,
-		struct parts_numeral *num, int version)
+		struct parts_numeral *num, int version, const struct numeral_font_map *fonts)
 {
 	num->have_num = iarray_read(r);
 	num->num = iarray_read(r);
@@ -187,7 +194,19 @@ static void load_parts_numeral(struct iarray_reader *r, struct parts *parts,
 		num->show_type = parts_numeral_fonts[num->font_no].type == PARTS_NUMERAL_FONT_COMBINED;
 	}
 
-	if (num->have_num)
+	if (fonts && num->show_type != 2 && num->font_no >= 0) {
+		int source = num->font_no;
+		num->font_no = -1;
+		for (int i = 0; i < PARTS_SAVED_FONTS; i++) {
+			if (fonts[i].source == source) {
+				num->font_no = fonts[i].target;
+				break;
+			}
+		}
+		if (num->font_no < 0)
+			r->error = 1;
+	}
+	if (num->have_num && !r->error)
 		parts_numeral_set_number(parts, num, num->num);
 }
 
@@ -1068,7 +1087,7 @@ static void save_parts_state(struct iarray_writer *w, struct parts *parts, struc
 }
 
 static void load_parts_state(struct iarray_reader *r, struct parts *parts,
-		struct parts_state *state, int version)
+		struct parts_state *state, int version, const struct numeral_font_map *fonts)
 {
 	parts_state_reset(state, iarray_read(r));
 	state->common.w = iarray_read(r);
@@ -1105,7 +1124,7 @@ static void load_parts_state(struct iarray_reader *r, struct parts *parts,
 		load_parts_animation(r, parts, &state->anim);
 		break;
 	case PARTS_NUMERAL:
-		load_parts_numeral(r, parts, &state->num, version);
+		load_parts_numeral(r, parts, &state->num, version, fonts);
 		break;
 	case PARTS_HGAUGE:
 		load_parts_gauge(r, parts, &state->gauge, false, version);
@@ -1256,7 +1275,8 @@ static void save_message_window(struct iarray_writer *w, struct parts *parts, st
 	save_parts_state(w, parts, &m->key_wait);
 }
 
-static void load_message_window(struct iarray_reader *r, struct parts *parts, int version)
+static void load_message_window(struct iarray_reader *r, struct parts *parts, int version,
+		const struct numeral_font_map *fonts)
 {
 	if (!iarray_read(r)) return;
 	// The background was loaded with the ordinary states; do not reset it.
@@ -1298,7 +1318,7 @@ static void load_message_window(struct iarray_reader *r, struct parts *parts, in
 		m->ruby_line_space = iarray_read(r);
 	}
 	parts_message_window_rebuild_text(parts);
-	load_parts_state(r, parts, &m->key_wait, version);
+	load_parts_state(r, parts, &m->key_wait, version, fonts);
 	// Sys43 resumes a loaded message fully visible, without its wait marker.
 	m->fixed = true;
 	m->key_show = false;
@@ -1421,9 +1441,12 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	iarray_write_at(w, motion_count_pos, motion_count);
 }
 
-static void load_parts(struct iarray_reader *r, int version)
+static void load_parts(struct iarray_reader *r, int version, int target_no,
+		const struct numeral_font_map *fonts)
 {
 	int no = iarray_read(r);
+	if (target_no >= 0)
+		no = target_no;
 	struct parts *parts = parts_get(no);
 	// Allocation normally attaches new components to the active controller.
 	// Saved components have their own parent IDs, including detached roots.
@@ -1434,7 +1457,7 @@ static void load_parts(struct iarray_reader *r, int version)
 	int state = iarray_read(r);
 	parts->state = parts_state_valid(state) ? state : PARTS_STATE_DEFAULT;
 	for (int i = 0; i < PARTS_NR_STATES; i++) {
-		load_parts_state(r, parts, &parts->states[i], version);
+		load_parts_state(r, parts, &parts->states[i], version, fonts);
 	}
 
 	load_parts_params(r, &parts->local, version);
@@ -1511,7 +1534,7 @@ static void load_parts(struct iarray_reader *r, int version)
 		parts_widget_rebuild(parts);
 	}
 	bool textures_suspended = version >= 17 ? iarray_read(r) : false;
-	if (version >= 18) load_message_window(r, parts, version);
+	if (version >= 18) load_message_window(r, parts, version, fonts);
 	if (version >= 21 && iarray_read(r)) {
 		struct parts_panel *p = parts->panel = xcalloc(1, sizeof(*p));
 		p->width = iarray_read(r);
@@ -1576,6 +1599,140 @@ static void load_parts(struct iarray_reader *r, int version)
 	// Panels are regenerated when loaded, including a save made while their
 	// previous texture was suspended (Sys43 behavior).
 	if (textures_suspended && !parts->panel) PE_SuspendTexture(no);
+}
+
+static bool save_part_fonts(struct iarray_writer *w, struct parts *parts)
+{
+	int indices[PARTS_SAVED_FONTS];
+	int count = 0;
+	for (int i = 0; i < PARTS_SAVED_FONTS; i++) {
+		struct parts_state *state = i < PARTS_NR_STATES ? &parts->states[i]
+			: parts->message_box ? &parts->message_box->key_wait : NULL;
+		if (!state || state->type != PARTS_NUMERAL || state->num.show_type == 2
+				|| state->num.font_no < 0)
+			continue;
+		int index = state->num.font_no;
+		if (index >= parts_nr_numeral_fonts)
+			return false;
+		bool found = false;
+		for (int j = 0; j < count; j++)
+			if (indices[j] == index) found = true;
+		if (!found) indices[count++] = index;
+	}
+	iarray_write(w, count);
+	for (int i = 0; i < count; i++) {
+		struct parts_numeral_font *font = &parts_numeral_fonts[indices[i]];
+		iarray_write(w, indices[i]);
+		iarray_write(w, font->type);
+		iarray_write(w, font->cg_no);
+		for (int j = 0; j < 12; j++) iarray_write(w, font->width[j]);
+	}
+	return true;
+}
+
+static bool load_part_fonts(struct iarray_reader *r, struct numeral_font_map *fonts)
+{
+	for (int i = 0; i < PARTS_SAVED_FONTS; i++)
+		fonts[i] = (struct numeral_font_map){-1, -1};
+	int count = iarray_read(r);
+	if (count < 0 || count > PARTS_SAVED_FONTS)
+		return false;
+	for (int i = 0; i < count; i++) {
+		fonts[i].source = iarray_read(r);
+		struct parts_numeral_font font = {0};
+		font.type = iarray_read(r);
+		font.cg_no = iarray_read(r);
+		for (int j = 0; j < 12; j++) font.width[j] = iarray_read(r);
+		if (r->error || fonts[i].source < 0 || font.type > PARTS_NUMERAL_FONT_SEPARATE2)
+			return false;
+		for (int j = 0; j < i; j++)
+			if (fonts[j].source == fonts[i].source) return false;
+		for (int j = 0; j < parts_nr_numeral_fonts; j++) {
+			struct parts_numeral_font *existing = &parts_numeral_fonts[j];
+			if (font.type == existing->type && font.cg_no == existing->cg_no
+					&& !memcmp(font.width, existing->width, sizeof(font.width))) {
+				fonts[i].target = j;
+				break;
+			}
+		}
+		if (fonts[i].target < 0) {
+			int n = parts_nr_numeral_fonts;
+			parts_numeral_fonts = xrealloc_array(parts_numeral_fonts, n, n + 1, sizeof(font));
+			parts_numeral_fonts[n] = font;
+			parts_numeral_font_init(&parts_numeral_fonts[n]);
+			parts_nr_numeral_fonts++;
+			fonts[i].target = n;
+		}
+	}
+	return !r->error;
+}
+
+bool PE_SaveParts(int parts_no, struct page **buffer)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || !buffer)
+		return false;
+	PE_UpdateComponent(0);
+	struct iarray_writer w;
+	iarray_init_writer(&w, "XPP2");
+	iarray_write(&w, CURRENT_SAVE_VERSION);
+	unsigned size_pos = iarray_writer_pos(&w);
+	iarray_write(&w, 0);
+	if (!save_part_fonts(&w, parts)) {
+		iarray_free_writer(&w);
+		return false;
+	}
+	save_parts(&w, parts);
+	iarray_write_string(&w, parts->comment);
+	iarray_write_at(&w, size_pos, iarray_writer_pos(&w));
+	struct page *saved = iarray_to_page(&w);
+	iarray_free_writer(&w);
+	if (*buffer) {
+		delete_page_vars(*buffer);
+		free_page(*buffer);
+	}
+	*buffer = saved;
+	return true;
+}
+
+bool PE_LoadParts(int parts_no, struct page **buffer)
+{
+	if (parts_no <= 0 || !buffer || !*buffer)
+		return false;
+	struct page *data = *buffer;
+	if (data->type != ARRAY_PAGE || data->array.rank != 1)
+		return false;
+	if (data->a_type != AIN_ARRAY_INT
+			&& (data->a_type != AIN_ARRAY || data->array.element_type.data != AIN_INT))
+		return false;
+	struct iarray_reader r;
+	if (!iarray_init_reader(&r, *buffer, "XPP2"))
+		return false;
+	int version = iarray_read(&r);
+	int size = iarray_read(&r);
+	if (r.error || version != CURRENT_SAVE_VERSION || size <= (int)r.pos
+			|| size != (*buffer)->nr_vars)
+		return false;
+	struct numeral_font_map fonts[PARTS_SAVED_FONTS];
+	if (!load_part_fonts(&r, fonts))
+		return false;
+	parts_release(parts_no);
+	load_parts(&r, version, parts_no, fonts);
+	struct parts *parts = parts_get(parts_no);
+	free_string(parts->comment);
+	parts->comment = iarray_read_string(&r);
+	if (r.error || !iarray_end(&r)) {
+		parts_release(parts_no);
+		return false;
+	}
+	// CopyParts detaches the source and its children before saving this record.
+	parts->pending_parent = -1;
+	parts->global = parts->local;
+	parts_set_posf(parts, parts->local.pos);
+	PE_UpdateComponent(0);
+	parts_list_resort(parts);
+	parts_recalculate_hitbox(parts);
+	return true;
 }
 
 static void save_numeral_fonts(struct iarray_writer *w)
@@ -1738,7 +1895,7 @@ bool PE_Load(struct page **buffer)
 	}
 
 	for (int i = 0; i < nr_parts; i++) {
-		load_parts(&r, version);
+		load_parts(&r, version, -1, NULL);
 	}
 	if (parts_v2) {
 		// Resolve the complete hierarchy before recursive updates can remove

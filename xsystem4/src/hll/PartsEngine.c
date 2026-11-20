@@ -1232,14 +1232,12 @@ static void PartsEngine_GetConstructionSurfaceArea(int parts_no,
 
 static bool PartsEngine_SaveParts(int parts_no, struct page **save_data_buffer)
 {
-	(void)parts_no; (void)save_data_buffer;
-	return false;
+	return PE_SaveParts(parts_no, save_data_buffer);
 }
 
 static bool PartsEngine_LoadParts(int parts_no, struct page **save_data_buffer)
 {
-	(void)parts_no; (void)save_data_buffer;
-	return false;
+	return PE_LoadParts(parts_no, save_data_buffer);
 }
 
 static void PartsEngine_Debug_GetSpriteRect(int parts_no,
