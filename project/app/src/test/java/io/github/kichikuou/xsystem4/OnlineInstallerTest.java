@@ -524,11 +524,12 @@ public class OnlineInstallerTest {
         for (String name : names) {
             assertFalse(name, name.startsWith(first.getName() + "-"));
             assertFalse(name, name.startsWith(".online_base_staging_"));
+            assertFalse(name, name.startsWith(".online_base_backup_"));
         }
     }
 
     @Test
-    public void installNextToUnrelatedDirWithSameNameUsesSuffix() throws Exception {
+    public void installNextToManuallyImportedCopyUsesSuffixAndLeavesItAlone() throws Exception {
         File storage = tmp.newFolder("storage").getCanonicalFile();
         byte[] ini = "[Game]\n".getBytes(StandardCharsets.UTF_8);
         byte[] ain = "ain".getBytes(StandardCharsets.UTF_8);
@@ -538,12 +539,35 @@ public class OnlineInstallerTest {
         serveCdn(manifestJson(fileEntry("System40.ini", ini), fileEntry("TestGame.ain", ain)), files);
         registerSpace(storage, new File(storage, ".online_base_staging_TestGame"));
 
-        File first = installFromCdn(storage);
-        registerSpace(storage, first, new File(storage, ".online_base_staging_TestGame"));
+        File manual = installFromCdn(storage);
+        // Same game files, but not tied to this online install (e.g. imported by hand).
+        assertTrue(new File(manual, OnlineInstaller.ONLINE_INSTALL_SOURCE_FILE).delete());
+        byte[] modified = "modified".getBytes(StandardCharsets.UTF_8);
+        write(new File(manual, "TestGame.ain"), modified);
+        registerSpace(storage, manual, new File(storage, ".online_base_staging_TestGame"));
+
         File second = installFromCdn(storage);
 
-        // Unrecognized games cannot be proven identical, so the existing dir is left alone.
-        assertNotEquals(first.getCanonicalFile(), second.getCanonicalFile());
-        assertTrue(new File(first, "TestGame.ain").isFile());
+        assertNotEquals(manual.getCanonicalFile(), second.getCanonicalFile());
+        assertArrayEquals(modified, Files.readAllBytes(new File(manual, "TestGame.ain").toPath()));
+        assertArrayEquals(ain, Files.readAllBytes(new File(second, "TestGame.ain").toPath()));
+    }
+
+    @Test
+    public void interruptedReinstallSwapIsRolledBack() throws Exception {
+        File storage = tmp.newFolder("storage").getCanonicalFile();
+        File backup = new File(storage, ".online_base_backup_Game");
+        write(new File(backup, "Game.ain"), "old".getBytes(StandardCharsets.UTF_8));
+        File doneBackup = new File(storage, ".online_base_backup_Done");
+        write(new File(doneBackup, "Done.ain"), "old".getBytes(StandardCharsets.UTF_8));
+        write(new File(storage, "Done/Done.ain"), "new".getBytes(StandardCharsets.UTF_8));
+
+        OnlineInstaller.INSTANCE.recoverInterruptedReinstalls(storage);
+
+        assertTrue(new File(storage, "Game/Game.ain").isFile());
+        assertFalse(backup.exists());
+        assertFalse(doneBackup.exists());
+        assertArrayEquals("new".getBytes(StandardCharsets.UTF_8),
+            Files.readAllBytes(new File(storage, "Done/Done.ain").toPath()));
     }
 }

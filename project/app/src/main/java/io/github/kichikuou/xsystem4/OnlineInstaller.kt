@@ -297,6 +297,9 @@ object OnlineInstaller {
     class InvalidManifestException(message: String) : IOException(message)
 
     const val BASE_STAGING_IDENTITY_FILE = ".online_base_staging_identity"
+    /** Written into a finished online install; holds the CDN base URL it was installed from. */
+    const val ONLINE_INSTALL_SOURCE_FILE = ".online_install_source"
+    private const val REINSTALL_BACKUP_PREFIX = ".online_base_backup_"
     private val sha256HexRegex = Regex("^[0-9a-fA-F]{64}$")
 
     private val copySuffixRegex = Regex("""(?:\s*[\(（]\d+[\)）]|\s*[-_]?\s*副本)+$""")
@@ -955,58 +958,111 @@ object OnlineInstaller {
             sys4AinFile = sys4AinFile,
             isSys3x = isSys3x
         )
-        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, stagingDir)
+        recoverInterruptedReinstalls(storageCanonical)
+        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, cleanBaseUrl)
         if (dstDir.parentFile != storageCanonical) {
             throw IOException("Destination directory escapes storage path: $dstDir")
         }
-        val finalized = if (dstDir.exists()) {
-            mergeDirInto(stagingDir, dstDir)
-        } else {
-            moveFileOrDir(stagingDir, dstDir)
-        }
-        if (!finalized) {
+        if (dstDir.exists()) {
+            replaceKeepingUserFiles(stagingDir, dstDir)
+        } else if (!moveFileOrDir(stagingDir, dstDir)) {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
         File(dstDir, BASE_STAGING_IDENTITY_FILE).delete()
+        try {
+            File(dstDir, ONLINE_INSTALL_SOURCE_FILE).writeText(cleanBaseUrl)
+        } catch (_: Throwable) {
+            // Only costs in-place refresh on the next re-trigger; the install itself is complete.
+        }
         return dstDir
     }
 
     /**
-     * Picks the directory a finished base-game staging dir is moved to. An existing directory
-     * holding the same game (e.g. an install re-triggered before the hub noticed the previous
-     * one finished) is reused so it gets refreshed in place instead of duplicated as
-     * "<Name>-N"; anything else gets the first free "<Name>-N" name.
+     * Picks the directory a finished base-game staging dir becomes. A directory previously
+     * online-installed from the same [sourceUrl] (re-triggered install) is reused so it is
+     * refreshed in place instead of duplicated as "<Name>-N"; manually imported or other
+     * copies are never touched and the first free "<Name>-N" name is used instead.
      */
-    internal fun resolveBaseInstallDestination(storageDir: File, dirBaseName: String, stagingDir: File): File {
-        val stagedGameId = GameCatalog.classifyGameRootDir(stagingDir)
+    internal fun resolveBaseInstallDestination(storageDir: File, dirBaseName: String, sourceUrl: String): File {
         var dstDir = File(storageDir, dirBaseName).canonicalFile
         var suffix = 1
         while (dstDir.exists()) {
-            if (stagedGameId != null && dstDir.isDirectory &&
-                GameCatalog.classifyGameRootDir(dstDir) == stagedGameId
-            ) {
-                return dstDir
-            }
+            if (dstDir.isDirectory && readOnlineInstallSource(dstDir) == sourceUrl) return dstDir
             dstDir = File(storageDir, "$dirBaseName-${suffix++}").canonicalFile
         }
         return dstDir
     }
 
-    /** Moves the contents of [src] into [dst], replacing same-named files and keeping the rest. */
-    internal fun mergeDirInto(src: File, dst: File): Boolean {
-        if (!src.isDirectory || !dst.isDirectory) return false
+    private fun readOnlineInstallSource(dir: File): String? = try {
+        File(dir, ONLINE_INSTALL_SOURCE_FILE).takeIf { it.isFile }?.readText()?.trim()
+    } catch (_: Throwable) {
+        null
+    }
+
+    /**
+     * Replaces [dst] with [staging], carrying over files only [dst] has (saves, settings).
+     * [dst] stays untouched until the complete new tree is ready, then the two are swapped by
+     * renames; a failure at any point leaves the previous installation playable.
+     */
+    internal fun replaceKeepingUserFiles(staging: File, dst: File) {
+        val copied = ArrayList<File>()
+        val backup = File(dst.parentFile, REINSTALL_BACKUP_PREFIX + dst.name)
+        try {
+            if (!copyMissingInto(dst, staging, copied)) {
+                throw IOException("Failed to carry existing files into $staging")
+            }
+            if (backup.exists() && !backup.deleteRecursively()) {
+                throw IOException("Cannot clear stale reinstall backup: $backup")
+            }
+            if (!dst.renameTo(backup)) {
+                throw IOException("Cannot move existing installation aside: $dst")
+            }
+        } catch (t: Throwable) {
+            for (f in copied.asReversed()) f.deleteRecursively()
+            throw t
+        }
+        if (!staging.renameTo(dst)) {
+            // If this restore fails too, recoverInterruptedReinstalls() retries it later.
+            backup.renameTo(dst)
+            for (f in copied.asReversed()) f.deleteRecursively()
+            throw IOException("Failed to finalize installed game directory: $staging -> $dst")
+        }
+        backup.deleteRecursively()
+    }
+
+    /** Copies entries of [src] that [dst] lacks into [dst], recording each created top entry. */
+    private fun copyMissingInto(src: File, dst: File, copied: MutableList<File>): Boolean {
         val children = src.listFiles() ?: return false
         for (child in children) {
+            if (child.name == ONLINE_INSTALL_SOURCE_FILE) continue
             val target = File(dst, child.name)
-            val ok = if (child.isDirectory && target.isDirectory) {
-                mergeDirInto(child, target)
-            } else {
-                if (target.exists() && !target.deleteRecursively()) return false
-                moveFileOrDir(child, target)
+            if (target.exists()) {
+                if (child.isDirectory && target.isDirectory && !copyMissingInto(child, target, copied)) {
+                    return false
+                }
+                continue
             }
-            if (!ok) return false
+            copied.add(target)
+            if (!copyRecursivelyVerified(child, target)) return false
         }
-        return src.delete() || !src.exists()
+        return true
+    }
+
+    /**
+     * Undoes a reinstall swap cut short between moving the old installation aside and moving
+     * the new one in, and drops backups whose swap completed.
+     */
+    fun recoverInterruptedReinstalls(storageDir: File) {
+        val children = storageDir.listFiles() ?: return
+        for (backup in children) {
+            if (!backup.isDirectory || !backup.name.startsWith(REINSTALL_BACKUP_PREFIX)) continue
+            val original = File(storageDir, backup.name.removePrefix(REINSTALL_BACKUP_PREFIX))
+            if (original.exists()) {
+                backup.deleteRecursively()
+            } else {
+                backup.renameTo(original)
+            }
+        }
     }
 
     fun computeBaseStagingIdentity(cleanBaseUrl: String, manifest: OnlineManifest): String {

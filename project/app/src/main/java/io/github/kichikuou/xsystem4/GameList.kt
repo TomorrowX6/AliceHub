@@ -361,6 +361,9 @@ class GameList(activity: Activity) {
             }
             storageDirs.add(storagePath)
             val homedir = File(storagePath, ".xsystem4")
+            if (state == Environment.MEDIA_MOUNTED) {
+                OnlineInstaller.recoverInterruptedReinstalls(storagePath)
+            }
             val files = storagePath.listFiles() ?: continue
             for (path in files) {
                 if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
