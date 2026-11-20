@@ -1608,8 +1608,11 @@ bool PE_LoadParts(int parts_no, struct page **buffer)
 {
 	if (parts_no <= 0 || !buffer || !*buffer)
 		return false;
-	if ((*buffer)->type != ARRAY_PAGE || (*buffer)->a_type != AIN_ARRAY_INT
-			|| (*buffer)->array.rank != 1)
+	struct page *data = *buffer;
+	if (data->type != ARRAY_PAGE || data->array.rank != 1)
+		return false;
+	if (data->a_type != AIN_ARRAY_INT
+			&& (data->a_type != AIN_ARRAY || data->array.element_type.data != AIN_INT))
 		return false;
 	struct iarray_reader r;
 	if (!iarray_init_reader(&r, *buffer, "XPP"))

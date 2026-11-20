@@ -16,11 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 FIXTURE = r'''
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include "system4.h"
 #include "system4/string.h"
 #include "vm/page.h"
+#include "vm/heap.h"
+#include "vm/v12.h"
 #include "parts.h"
 #include "parts/parts_internal.h"
 #include "hll/iarray.h"
@@ -50,12 +53,22 @@ void iarray_write(struct iarray_writer *w,int v) {
 }
 void iarray_write_at(struct iarray_writer *w,unsigned p,int v) { w->data[p]=v; }
 void iarray_free_writer(struct iarray_writer *w) { free(w->data); }
-struct page *iarray_to_page(struct iarray_writer *w) {
-    struct page *p=calloc(1,sizeof(*p)+w->size*sizeof(union vm_value));
-    p->type=ARRAY_PAGE; p->a_type=AIN_ARRAY_INT; p->array.rank=1;
-    p->nr_vars=w->size;
-    for(unsigned i=0;i<w->size;i++) p->values[i].i=w->data[i]; return p;
+struct page *alloc_page(enum page_type t,int index,int n) {
+    struct page *p=calloc(1,sizeof(*p)+n*sizeof(union vm_value));
+    p->type=t; p->index=index; p->nr_vars=n; return p;
 }
+_Noreturn void _vm_error(const char *fmt,...) { (void)fmt; abort(); }
+void sys_warning(const char *fmt,...) { (void)fmt; abort(); }
+int ain_type_slot_width(const struct ain_type *t) { assert(t->data==AIN_INT); return 1; }
+int variable_init_typed(union vm_value *v,const struct ain_type *t,bool a,bool b) {
+    (void)t; (void)a; (void)b; v->i=0; return 1;
+}
+union vm_value variable_initval(enum ain_data_type t) { (void)t; return (union vm_value){.i=0}; }
+int alloc_struct(int n) { (void)n; abort(); }
+void init_struct(int n,int slot) { (void)n; (void)slot; abort(); }
+void create_struct(int n,union vm_value *v) { (void)n; (void)v; abort(); }
+int32_t heap_alloc_slot(enum vm_pointer_type t) { (void)t; abort(); }
+void heap_set_page(int slot,struct page *p) { (void)slot; (void)p; abort(); }
 bool iarray_init_reader(struct iarray_reader *r,struct page *p,const char *s) {
     *r=(struct iarray_reader){.data=p->values,.size=p->nr_vars};
     do { if(iarray_read(r)!=*s) return false; } while(*s++); return !r->error;
@@ -134,7 +147,8 @@ static struct parts_motion *load_parts_motion(struct iarray_reader *r) { (void)r
 '''
 
 TEST = r'''
-int main(void) {
+static void roundtrip(int version) {
+    program.version=version; rebuilds=0;
     struct page *buf=NULL;
     assert(!PE_SaveParts(7,&buf)); assert(!buf);
     assert(!PE_LoadParts(2,&buf)); assert(!PE_LoadParts(2,NULL));
@@ -149,6 +163,7 @@ int main(void) {
     src->reverse_lr=true; src->state=2;
     for(int i=0;i<3;i++) { src->states[i].type=PARTS_CG; src->states[i].common.w=50+i; }
     assert(PE_SaveParts(1,&buf));
+    assert(buf->a_type==(version>=11 ? AIN_ARRAY : AIN_ARRAY_INT));
     int source_no=buf->values[6].i;
     assert(PE_LoadParts(2,&buf));
     struct parts *dst=parts_get(2);
@@ -166,15 +181,25 @@ int main(void) {
     for(int i=0;i<3;i++) assert(dst->states[i].common.w==50+i);
     assert(PE_LoadParts(2,&buf)); assert(rebuilds==2);
     assert(PE_SaveParts(1,&buf));
-    int version=buf->values[4].i; buf->values[4].i=version+1;
-    assert(!PE_LoadParts(2,&buf)); assert(parts_try_get(2)); buf->values[4].i=version;
+    int save_version=buf->values[4].i; buf->values[4].i=save_version+1;
+    assert(!PE_LoadParts(2,&buf)); assert(parts_try_get(2)); buf->values[4].i=save_version;
     buf->nr_vars--; assert(!PE_LoadParts(2,&buf)); buf->nr_vars++;
     buf->array.rank=2; assert(!PE_LoadParts(2,&buf)); buf->array.rank=1;
+    int atype=buf->a_type; buf->a_type=AIN_ARRAY_FLOAT;
+    assert(!PE_LoadParts(2,&buf)); buf->a_type=atype;
+    if(atype==AIN_ARRAY) {
+        buf->array.element_type.data=AIN_FLOAT; assert(!PE_LoadParts(2,&buf));
+        buf->array.element_type.data=AIN_INT;
+    }
     int count=buf->nr_vars; buf->nr_vars=0; assert(!PE_LoadParts(2,&buf)); buf->nr_vars=count;
     buf->values[0].i='!'; assert(!PE_LoadParts(2,&buf));
     assert(!PE_LoadParts(0,&buf));
     free_page(buf); for(int i=0;i<8;i++) parts_release(i);
-    assert(updates>=4); puts("single-part save/load roundtrip and invalid buffers: OK");
+    assert(updates>=4);
+}
+int main(void) {
+    roundtrip(10); roundtrip(12); roundtrip(14);
+    puts("single-part save/load: legacy, AIN v12 and v14 roundtrips and invalid buffers: OK");
 }
 '''
 
@@ -183,7 +208,14 @@ class PartsCloneTests(unittest.TestCase):
     def test_single_part_roundtrip(self):
         names = ["save_parts_params", "load_parts_params", "save_parts", "load_parts",
                  "PE_SaveParts", "PE_LoadParts"]
-        code = FIXTURE + "\n".join(function("src/parts/save.c", n) for n in names)
+        code = FIXTURE
+        for path, funcs in [
+            ("src/page.c", ["array_type", "unref_array_type", "alloc_array"]),
+            ("src/vm_v12.c", ["type_stride", "v12_array_new"]),
+            ("src/hll/iarray.c", ["iarray_to_page"]),
+        ]:
+            code += "\n".join(function(path, n) for n in funcs)
+        code += "\n".join(function("src/parts/save.c", n) for n in names)
         code += function("src/parts/activity.c", "PE_GetSpecialComponentType")
         code += function("src/hll/PartsEngine.c", "PartsEngine_GetComponentType_v12") + TEST
         flags = subprocess.check_output(["pkg-config", "--cflags", "sdl2"], text=True).split()
