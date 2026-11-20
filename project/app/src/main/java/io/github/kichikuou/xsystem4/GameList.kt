@@ -361,6 +361,9 @@ class GameList(activity: Activity) {
             }
             storageDirs.add(storagePath)
             val homedir = File(storagePath, ".xsystem4")
+            if (state == Environment.MEDIA_MOUNTED) {
+                OnlineInstaller.recoverInterruptedReinstalls(storagePath)
+            }
             val files = storagePath.listFiles() ?: continue
             for (path in files) {
                 if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
@@ -585,6 +588,8 @@ class GameList(activity: Activity) {
                 }
                 val homedir = File(storagePath, ".xsystem4")
                 val created = Item.fromDirectory(path, homedir, context)
+                // A re-install refreshes the existing directory in place; don't list it twice.
+                items.removeAll { it.path.canonicalFile == path.canonicalFile }
                 items.add(created)
                 lastInstalledItem = created
                 setInstallSucceeded(sessionGen)

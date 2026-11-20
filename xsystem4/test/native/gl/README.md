@@ -21,7 +21,8 @@ The harness checks production shader links and actual GPU readback against
 independently computed pixels:
 
 * Production 3D shader loader: Reign/Tapir/Seal × regular/shadow/outline
-  (9 pairs), including the full 308-bone, 14784-byte uniform block. This catches
+  (9 pairs), including the 308-bone RGBA32F bone texture (no uniform block, so it
+  links on drivers that count block members as vertex uniforms, e.g. SwiftShader). This catches
   capability/link failures that the 2D-only fixtures cannot detect. A successful
   host run is not proof that every emulator GPU backend accepts the shader.
 * FLAT particle position modes 0/1/2, direct and nested timelines, two

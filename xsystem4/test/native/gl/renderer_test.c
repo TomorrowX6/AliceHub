@@ -17,6 +17,8 @@ extern void test_render_flat(struct parts *, struct parts_flat *);
 extern void test_set_reverse(bool, bool);
 extern void test_activity_scale(struct parts *, bool, bool, float, float);
 extern GLuint test_load_3d_shader(const char *, const char *, int);
+int test_bone_texture_unit(void);
+GLuint test_create_bone_texture(void);
 extern void *test_re_renderer_create_with_billboard(int);
 extern GLuint test_re_renderer_get_billboard_tex(void *, int);
 extern void test_re_renderer_assert_valid(void *, int);
@@ -264,24 +266,32 @@ static void replacement_context_recovery_without_backup(void) {
 }
 static void shader3d_tests(void) {
     // Compile/link the production 3D shader pairs through the real loader.
-    // UBO storage is separate from default-block vertex uniform limits.
-    GLint max_block=0;
-    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE,&max_block);
-    assert(max_block >= 308*48);
+    // Bone matrices live in a texture (not a uniform block), so the programs
+    // also link on GLES drivers that count block members against
+    // GL_MAX_VERTEX_UNIFORM_VECTORS (e.g. SwiftShader: 256).
+    GLint max_tex=0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE,&max_tex);
+    assert(max_tex >= 308*3);
     const char *names[]={"reign","reign_shadow","reign_outline"};
     for (int engine=0;engine<3;engine++)for(int i=0;i<3;i++) {
         char vertex[128],fragment[128];
         snprintf(vertex,sizeof(vertex),"shaders/%s.v.glsl",names[i]);
         snprintf(fragment,sizeof(fragment),"shaders/%s.f.glsl",names[i]);
         GLuint program=test_load_3d_shader(vertex,fragment,engine);
-        GLuint block=glGetUniformBlockIndex(program,"BoneTransforms");
-        assert(block!=GL_INVALID_INDEX);
-        GLint bytes=0;
-        glGetActiveUniformBlockiv(program,block,GL_UNIFORM_BLOCK_DATA_SIZE,&bytes);
-        assert(bytes==308*48 && bytes<=max_block);
+        GLint blocks=-1;
+        glGetProgramiv(program,GL_ACTIVE_UNIFORM_BLOCKS,&blocks);
+        assert(blocks==0);
+        GLint loc=glGetUniformLocation(program,"bone_texture");
+        assert(loc>=0);
+        GLint unit=-1;
+        glGetUniformiv(program,loc,&unit);
+        assert(unit==test_bone_texture_unit());
         glDeleteProgram(program); no_error();
     }
-    puts("PASS: 9 production 3D shader pairs link; 308-bone UBO is 14784 bytes");
+    GLuint tex=test_create_bone_texture();
+    assert(tex && glIsTexture(tex));
+    glDeleteTextures(1,&tex); no_error();
+    puts("PASS: 9 production 3D shader pairs link; 308-bone RGBA32F bone texture is bound to its own unit");
 }
 static void blur_tests(void) {
     enum { W=15,H=11,N=W*H*4 };

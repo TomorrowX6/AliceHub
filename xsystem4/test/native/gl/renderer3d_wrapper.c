@@ -24,6 +24,24 @@ GLuint test_load_3d_shader(const char *vertex, const char *fragment, int engine)
     return load_shader(vertex, fragment, (enum RE_plugin_version)engine);
 }
 
+int test_bone_texture_unit(void)
+{
+    return BONE_TEXTURE_UNIT;
+}
+
+GLuint test_create_bone_texture(void)
+{
+    // Mirrors init_instance_bone_texture() in reign.c.
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, MAX_BONES * 3, 1, 0, GL_RGBA, GL_FLOAT, NULL);
+    float bone[12] = { 1, 0, 0, 0.5f,  0, 1, 0, 0,  0, 0, 1, 0 };
+    glTexSubImage2D(GL_TEXTURE_2D, 0, (MAX_BONES - 1) * 3, 0, 3, 1, GL_RGBA, GL_FLOAT, bone);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return glGetError() == GL_NO_ERROR ? tex : 0;
+}
+
 void *test_re_renderer_create_with_billboard(int cg_no)
 {
     struct RE_renderer *r = RE_renderer_new(RE_SEAL_PLUGIN);

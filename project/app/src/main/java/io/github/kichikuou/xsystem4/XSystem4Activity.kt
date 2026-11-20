@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
@@ -267,6 +268,12 @@ class XSystem4Activity : SDLActivity() {
         win.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         win.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
         mFullscreenModeActive = true
+    }
+
+    // SDL requests FULL_USER for a resizable window without an orientation hint, which lets a
+    // launch from a portrait-held device start in portrait. Every supported game is landscape.
+    override fun setOrientationBis(w: Int, h: Int, resizable: Boolean, hint: String?) {
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

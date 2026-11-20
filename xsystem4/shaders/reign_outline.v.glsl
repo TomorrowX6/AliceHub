@@ -19,12 +19,19 @@ uniform mat4 view_transform;
 uniform mat4 proj_transform;
 uniform mat3 normal_transform;
 
-const int MAX_BONES = 308;  // see 3d_internal.h
 const int NR_WEIGHTS = 4;
 uniform bool has_bones;
-layout(std140) uniform BoneTransforms {
-	mat3x4 bone_matrices[MAX_BONES];  // transposed
-};
+// Bone matrices are stored in a texture rather than a uniform block, because
+// some GLES implementations (e.g. SwiftShader) count uniform block members
+// against GL_MAX_VERTEX_UNIFORM_VECTORS.
+uniform sampler2D bone_texture;  // 3 texels (columns of a transposed mat3x4) per bone
+
+mat3x4 bone_matrix(int i) {
+	return mat3x4(
+		texelFetch(bone_texture, ivec2(i * 3, 0), 0),
+		texelFetch(bone_texture, ivec2(i * 3 + 1, 0), 0),
+		texelFetch(bone_texture, ivec2(i * 3 + 2, 0), 0));
+}
 uniform float outline_thickness;
 
 in vec3 vertex_pos;
@@ -39,7 +46,7 @@ void main() {
 		mat3x4 bone_transform = mat3x4(0.0);
 		for (int i = 0; i < NR_WEIGHTS; i++) {
 			if (vertex_bone_index[i] >= 0) {
-				bone_transform += bone_matrices[vertex_bone_index[i]] * vertex_bone_weight[i];
+				bone_transform += bone_matrix(vertex_bone_index[i]) * vertex_bone_weight[i];
 			}
 		}
 		local_bone_transform *= mat4(
