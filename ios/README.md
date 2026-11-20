@@ -64,8 +64,31 @@ the next launch. The app delegate forwards scene lifecycle notifications to SDL.
   SDL's required Apple frameworks; do not link SDL2main as an app entry point.
   Static compilation alone does not validate final app linking or lifecycle.
 * The non-Android shutdown path still calls `sys_exit`/process exit; returning
-  cleanly to the launcher, repeat sessions, touch controls and sandbox/runtime
-  behavior remain app-integration work. iOS crash reports omit the Linux-only
+  cleanly to the launcher and repeat sessions remain future work.
+  iOS crash reports omit the Linux-only
   register dump. Error dialogs currently follow the non-Android desktop gate.
 
-Actual game execution remains to be verified in the game-integration step.
+## Game runtime
+
+The iOS platform bridge attaches SDL's UIKit window to the active SwiftUI scene
+and requests landscape orientation. Rendering binds SDL's actual EAGL drawable
+framebuffer instead of framebuffer zero. The viewport remains in window points
+for mouse/touch mapping and is scaled to drawable pixels only for `glViewport`.
+SDL converts single-finger touches to mouse events. Android's window, GL and
+input paths are unchanged.
+
+Debug builds accept `-autolaunch <folder>` to launch a discovered game after the
+scene becomes active, for example:
+
+```
+xcrun simctl launch booted io.github.alicehub -autolaunch dohnadohna
+python3 ios/Tests/test_viewport.py
+```
+
+Dohna Dohna's title screen and first Chinese message have been exercised on the
+iPhone 17 simulator. Game files belong outside the repository, then under the
+app container's `Documents/Games/<folder>`; no game data is bundled. The test
+host has no audio output devices (`system_profiler SPAudioDataType` lists none),
+and SDL reports AudioQueue error -66680 (`kAudioQueueErr_InvalidDevice`). The
+engine continues silently; audible output still needs verification on a host
+with an audio device or a physical iPhone.

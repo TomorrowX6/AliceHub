@@ -60,7 +60,17 @@ struct LauncherView: View {
         .alert("操作失败", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
-        .onChange(of: scenePhase) { if $0 == .active { library.refresh() } }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            library.refresh()
+#if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
+               let game = library.games.first(where: { $0.name == arguments[index + 1] }) {
+                library.launch(game)
+            }
+#endif
+        }
     }
 }
 

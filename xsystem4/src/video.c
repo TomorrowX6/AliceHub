@@ -41,6 +41,9 @@
 #include "icon.h"
 #include "modifier.h"
 #include "xsystem4.h"
+#ifdef ALICEHUB_IOS
+#include "EnginePlatform.h"
+#endif
 
 struct sdl_private sdl;
 
@@ -848,6 +851,12 @@ int gfx_init(void)
 	if (gfx_initialized)
 		return true;
 
+#ifdef ALICEHUB_IOS
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+	SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
+	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+#endif
+
 	uint32_t flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO;
 	if (config.joypad)
 		flags |= SDL_INIT_GAMECONTROLLER;
@@ -865,12 +874,16 @@ int gfx_init(void)
 #endif
 
 	sdl.format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32);
+	uint32_t window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+#ifdef ALICEHUB_IOS
+	window_flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
 	sdl.window =  SDL_CreateWindow("XSystem4",
 				       SDL_WINDOWPOS_UNDEFINED,
 				       SDL_WINDOWPOS_UNDEFINED,
 				       config.view_width,
 				       config.view_height,
-				       SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+				       window_flags);
 	if (!sdl.window)
 		ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
 
@@ -879,6 +892,9 @@ int gfx_init(void)
 	sdl.gl.context = SDL_GL_CreateContext(sdl.window);
 	if (!sdl.gl.context)
 		ERROR("SDL_GL_CreateContext failed: %s", SDL_GetError());
+#ifdef ALICEHUB_IOS
+	alicehub_ios_prepare_window(sdl.window);
+#endif
 
 #ifndef USE_GLES
 	glewExperimental = GL_TRUE;
@@ -1013,7 +1029,11 @@ void gfx_toggle_fullscreen(void)
 void gfx_update_screen_scale(void)
 {
 	int display_w = 0, display_h = 0;
+#ifdef ALICEHUB_IOS
+	SDL_GetWindowSize(sdl.window, &display_w, &display_h);
+#else
 	SDL_GL_GetDrawableSize(sdl.window, &display_w, &display_h);
+#endif
 	if (display_w <= 0 || display_h <= 0 || sdl.w <= 0 || sdl.h <= 0)
 		return;
 
@@ -1240,8 +1260,12 @@ void gfx_swap(void)
 		return;
 	pinned_draw_tex = 0;
 	pinned_draw_bound = false;
+#ifdef ALICEHUB_IOS
+	alicehub_ios_bind_drawable(sdl.window, &sdl.viewport);
+#else
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(sdl.viewport.x, sdl.viewport.y, sdl.viewport.w, sdl.viewport.h);
+#endif
 	gfx_clear();
 
 	static mat4 wv_transform = MAT4(

@@ -113,14 +113,16 @@ final class GameLibrary: ObservableObject {
             let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", game.url.path]
             launching = true
             DispatchQueue.main.async {
-                SDL_SetMainReady()
-                var argv = arguments.map { strdup($0) }
-                argv.append(nil)
-                argv.withUnsafeMutableBufferPointer { buffer in
-                    _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
+                Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
+                    SDL_SetMainReady()
+                    var argv = arguments.map { strdup($0) }
+                    argv.append(nil)
+                    argv.withUnsafeMutableBufferPointer { buffer in
+                        _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
+                    }
+                    for argument in argv { free(argument) }
+                    exit(0)
                 }
-                for argument in argv { free(argument) }
-                exit(0)
             }
         } catch { self.error = error.localizedDescription }
     }

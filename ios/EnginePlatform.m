@@ -1,0 +1,53 @@
+#import <UIKit/UIKit.h>
+#import <OpenGLES/ES3/gl.h>
+#include <SDL_syswm.h>
+#include "EnginePlatform.h"
+#include "system4.h"
+
+static SDL_SysWMinfo window_info(SDL_Window *window)
+{
+    SDL_SysWMinfo info = {0};
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_UIKIT)
+        ERROR("Cannot access SDL UIKit window: %s", SDL_GetError());
+    return info;
+}
+
+void alicehub_ios_prepare_window(SDL_Window *window)
+{
+    SDL_SysWMinfo info = window_info(window);
+    UIWindow *native = info.info.uikit.window;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
+            native.windowScene = (UIWindowScene *)scene;
+            break;
+        }
+    }
+    native.windowLevel = UIWindowLevelNormal + 1;
+    [native makeKeyAndVisible];
+    if (@available(iOS 16.0, *)) {
+        [native.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+        UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc]
+            initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscape];
+        [native.windowScene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "Landscape request failed: %s", error.localizedDescription.UTF8String);
+        }];
+    } else {
+        [UIViewController attemptRotationToDeviceOrientation];
+    }
+    SDL_Log("iOS window attached: %s", native.windowScene ? "yes" : "no");
+}
+
+void alicehub_ios_bind_drawable(SDL_Window *window, const SDL_Rect *viewport)
+{
+    SDL_SysWMinfo info = window_info(window);
+    glBindFramebuffer(GL_FRAMEBUFFER, info.info.uikit.framebuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, info.info.uikit.colorbuffer);
+    int w, h, drawable_w, drawable_h;
+    SDL_GetWindowSize(window, &w, &h);
+    SDL_GL_GetDrawableSize(window, &drawable_w, &drawable_h);
+    if (w > 0 && h > 0) {
+        glViewport(viewport->x * drawable_w / w, viewport->y * drawable_h / h,
+                   viewport->w * drawable_w / w, viewport->h * drawable_h / h);
+    }
+}
