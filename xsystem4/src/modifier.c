@@ -6694,6 +6694,9 @@ void modifier_on_ain_init(void)
 	pthread_mutex_lock(&g_mod_mutex);
 	g_vm_ready_cached = false;
 	pthread_mutex_unlock(&g_mod_mutex);
+	/* Also runs after vm_reset() with the same ain: globals are defaults again. */
+	s_game_config_ready = false;
+	s_game_config_loaded = false;
 	s_r03_compatible = false;
 	s_r03_applying = false;
 	s_r03_inspected_ain = ain;

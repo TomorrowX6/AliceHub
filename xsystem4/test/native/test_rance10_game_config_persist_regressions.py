@@ -113,5 +113,11 @@ class Rance10GameConfigPersistTest(unittest.TestCase):
         self.assertEqual(src.count("s_game_config_loaded = true;"), 1)
 
 
+
+class VmResetTests(unittest.TestCase):
+    def test_ain_init_clears_loaded_flag(self):
+        body = extract_function("src/modifier.c", "modifier_on_ain_init")
+        self.assertIn("s_game_config_loaded = false;", body)
+
 if __name__ == "__main__":
     unittest.main()
