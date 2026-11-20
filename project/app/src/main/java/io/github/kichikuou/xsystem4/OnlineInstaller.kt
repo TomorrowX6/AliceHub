@@ -955,19 +955,58 @@ object OnlineInstaller {
             sys4AinFile = sys4AinFile,
             isSys3x = isSys3x
         )
-        var dstDir = File(storageCanonical, dirBaseName).canonicalFile
-        var suffix = 1
-        while (dstDir.exists()) {
-            dstDir = File(storageCanonical, "$dirBaseName-${suffix++}").canonicalFile
-        }
+        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, stagingDir)
         if (dstDir.parentFile != storageCanonical) {
             throw IOException("Destination directory escapes storage path: $dstDir")
         }
-        if (!moveFileOrDir(stagingDir, dstDir)) {
+        val finalized = if (dstDir.exists()) {
+            mergeDirInto(stagingDir, dstDir)
+        } else {
+            moveFileOrDir(stagingDir, dstDir)
+        }
+        if (!finalized) {
             throw IOException("Failed to finalize installed game directory: $stagingDir -> $dstDir")
         }
         File(dstDir, BASE_STAGING_IDENTITY_FILE).delete()
         return dstDir
+    }
+
+    /**
+     * Picks the directory a finished base-game staging dir is moved to. An existing directory
+     * holding the same game (e.g. an install re-triggered before the hub noticed the previous
+     * one finished) is reused so it gets refreshed in place instead of duplicated as
+     * "<Name>-N"; anything else gets the first free "<Name>-N" name.
+     */
+    internal fun resolveBaseInstallDestination(storageDir: File, dirBaseName: String, stagingDir: File): File {
+        val stagedGameId = GameCatalog.classifyGameRootDir(stagingDir)
+        var dstDir = File(storageDir, dirBaseName).canonicalFile
+        var suffix = 1
+        while (dstDir.exists()) {
+            if (stagedGameId != null && dstDir.isDirectory &&
+                GameCatalog.classifyGameRootDir(dstDir) == stagedGameId
+            ) {
+                return dstDir
+            }
+            dstDir = File(storageDir, "$dirBaseName-${suffix++}").canonicalFile
+        }
+        return dstDir
+    }
+
+    /** Moves the contents of [src] into [dst], replacing same-named files and keeping the rest. */
+    internal fun mergeDirInto(src: File, dst: File): Boolean {
+        if (!src.isDirectory || !dst.isDirectory) return false
+        val children = src.listFiles() ?: return false
+        for (child in children) {
+            val target = File(dst, child.name)
+            val ok = if (child.isDirectory && target.isDirectory) {
+                mergeDirInto(child, target)
+            } else {
+                if (target.exists() && !target.deleteRecursively()) return false
+                moveFileOrDir(child, target)
+            }
+            if (!ok) return false
+        }
+        return src.delete() || !src.exists()
     }
 
     fun computeBaseStagingIdentity(cleanBaseUrl: String, manifest: OnlineManifest): String {

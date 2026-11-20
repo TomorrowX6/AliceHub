@@ -493,4 +493,57 @@ public class OnlineInstallerTest {
             assertFalse(req.get("path").startsWith("/cdn/files/"));
         }
     }
+    @Test
+    public void reinstallOfSameGameRefreshesExistingDirInsteadOfDuplicating() throws Exception {
+        File storage = tmp.newFolder("storage").getCanonicalFile();
+        byte[] ini = "CodeName = \"Rance6.ain\"\n".getBytes(StandardCharsets.UTF_8);
+        byte[] ain = "ain".getBytes(StandardCharsets.UTF_8);
+        byte[] dll = "dll".getBytes(StandardCharsets.UTF_8);
+        Map<String, byte[]> files = new HashMap<>();
+        files.put("System40.ini", ini);
+        files.put("Rance6.ain", ain);
+        files.put("Rance6DLL.inc", dll);
+        JSONObject manifest = manifestJson(
+            fileEntry("System40.ini", ini), fileEntry("Rance6.ain", ain), fileEntry("Rance6DLL.inc", dll));
+        serveCdn(manifest, files);
+        registerSpace(storage, new File(storage, ".online_base_staging_TestGame"));
+
+        File first = installFromCdn(storage);
+        File save = new File(first, "SaveData/slot01.asd");
+        write(save, "save".getBytes(StandardCharsets.UTF_8));
+        write(new File(first, "Rance6.ain"), "stale".getBytes(StandardCharsets.UTF_8));
+        registerSpace(storage, first, new File(storage, ".online_base_staging_TestGame"));
+
+        File second = installFromCdn(storage);
+
+        assertEquals(first.getCanonicalFile(), second.getCanonicalFile());
+        assertArrayEquals(ain, Files.readAllBytes(new File(second, "Rance6.ain").toPath()));
+        assertTrue(save.isFile());
+        String[] names = storage.list();
+        Arrays.sort(names);
+        for (String name : names) {
+            assertFalse(name, name.startsWith(first.getName() + "-"));
+            assertFalse(name, name.startsWith(".online_base_staging_"));
+        }
+    }
+
+    @Test
+    public void installNextToUnrelatedDirWithSameNameUsesSuffix() throws Exception {
+        File storage = tmp.newFolder("storage").getCanonicalFile();
+        byte[] ini = "[Game]\n".getBytes(StandardCharsets.UTF_8);
+        byte[] ain = "ain".getBytes(StandardCharsets.UTF_8);
+        Map<String, byte[]> files = new HashMap<>();
+        files.put("System40.ini", ini);
+        files.put("TestGame.ain", ain);
+        serveCdn(manifestJson(fileEntry("System40.ini", ini), fileEntry("TestGame.ain", ain)), files);
+        registerSpace(storage, new File(storage, ".online_base_staging_TestGame"));
+
+        File first = installFromCdn(storage);
+        registerSpace(storage, first, new File(storage, ".online_base_staging_TestGame"));
+        File second = installFromCdn(storage);
+
+        // Unrecognized games cannot be proven identical, so the existing dir is left alone.
+        assertNotEquals(first.getCanonicalFile(), second.getCanonicalFile());
+        assertTrue(new File(first, "TestGame.ain").isFile());
+    }
 }

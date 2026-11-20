@@ -246,7 +246,7 @@ struct RE_instance {
 	mat4 local_transform;
 	mat3 normal_transform;
 	mat3x4 *bone_transforms;  // row-major, model->nr_bones elements
-	GLuint bone_transforms_ubo;
+	GLuint bone_transforms_texture;  // RGBA32F, 3 texels per bone
 	vec4 bounding_sphere;
 	struct RE_instance *shadow_volume_instance;
 	float z_from_camera;

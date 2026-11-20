@@ -585,6 +585,8 @@ class GameList(activity: Activity) {
                 }
                 val homedir = File(storagePath, ".xsystem4")
                 val created = Item.fromDirectory(path, homedir, context)
+                // A re-install refreshes the existing directory in place; don't list it twice.
+                items.removeAll { it.path.canonicalFile == path.canonicalFile }
                 items.add(created)
                 lastInstalledItem = created
                 setInstallSucceeded(sessionGen)

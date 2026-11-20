@@ -177,7 +177,7 @@ static void unload_instance(struct RE_instance *instance)
 		instance->s3de_effect = NULL;
 	}
 	if (instance->bone_transforms) {
-		glDeleteBuffers(1, &instance->bone_transforms_ubo);
+		glDeleteTextures(1, &instance->bone_transforms_texture);
 		free(instance->bone_transforms);
 		instance->bone_transforms = NULL;
 	}
@@ -311,9 +311,9 @@ static void update_bones(struct RE_instance *inst)
 		glm_mat4_transpose(bone_transform);  // column major -> row major
 		glm_mat3x4_copy(bone_transform, inst->bone_transforms[i]);
 	}
-	glBindBuffer(GL_UNIFORM_BUFFER, inst->bone_transforms_ubo);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, inst->model->nr_bones * sizeof(mat3x4), inst->bone_transforms);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	glBindTexture(GL_TEXTURE_2D, inst->bone_transforms_texture);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, inst->model->nr_bones * 3, 1, GL_RGBA, GL_FLOAT, inst->bone_transforms);
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Update inst->bounding_sphere.
 	vec3 center;
@@ -331,12 +331,16 @@ static void update_bones(struct RE_instance *inst)
 	}
 }
 
-static void init_instance_bone_ubo(struct RE_instance *instance)
+static void init_instance_bone_texture(struct RE_instance *instance)
 {
-	glGenBuffers(1, &instance->bone_transforms_ubo);
-	glBindBuffer(GL_UNIFORM_BUFFER, instance->bone_transforms_ubo);
-	glBufferData(GL_UNIFORM_BUFFER, MAX_BONES * sizeof(mat3x4), NULL, GL_DYNAMIC_DRAW);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	glGenTextures(1, &instance->bone_transforms_texture);
+	glBindTexture(GL_TEXTURE_2D, instance->bone_transforms_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, MAX_BONES * 3, 1, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 static void reset_cached_model_cb(struct ht_slot *slot, void *data)
@@ -361,8 +365,8 @@ static void reset_instance_gl(struct RE_instance *inst, struct archive *aar, enu
 	if (!inst)
 		return;
 	if (inst->bone_transforms) {
-		inst->bone_transforms_ubo = 0;
-		init_instance_bone_ubo(inst);
+		inst->bone_transforms_texture = 0;
+		init_instance_bone_texture(inst);
 	}
 	if (inst->shadow_volume_instance) {
 		reset_instance_gl(inst->shadow_volume_instance, aar, version);
@@ -1176,7 +1180,7 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 		}
 		if (instance->model && instance->model->nr_bones > 0) {
 			instance->bone_transforms = xcalloc(instance->model->nr_bones, sizeof(mat3x4));
-			init_instance_bone_ubo(instance);
+			init_instance_bone_texture(instance);
 		}
 		return !!instance->model;
 	case RE_ITYPE_PARTICLE_EFFECT:
