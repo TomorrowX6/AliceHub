@@ -1421,9 +1421,11 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	iarray_write_at(w, motion_count_pos, motion_count);
 }
 
-static void load_parts(struct iarray_reader *r, int version)
+static void load_parts(struct iarray_reader *r, int version, int target_no)
 {
 	int no = iarray_read(r);
+	if (target_no >= 0)
+		no = target_no;
 	struct parts *parts = parts_get(no);
 	// Allocation normally attaches new components to the active controller.
 	// Saved components have their own parent IDs, including detached roots.
@@ -1576,6 +1578,60 @@ static void load_parts(struct iarray_reader *r, int version)
 	// Panels are regenerated when loaded, including a save made while their
 	// previous texture was suspended (Sys43 behavior).
 	if (textures_suspended && !parts->panel) PE_SuspendTexture(no);
+}
+
+bool PE_SaveParts(int parts_no, struct page **buffer)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || !buffer)
+		return false;
+	PE_UpdateComponent(0);
+	struct iarray_writer w;
+	iarray_init_writer(&w, "XPP");
+	iarray_write(&w, CURRENT_SAVE_VERSION);
+	unsigned size_pos = iarray_writer_pos(&w);
+	iarray_write(&w, 0);
+	save_parts(&w, parts);
+	iarray_write_string(&w, parts->comment);
+	iarray_write_at(&w, size_pos, iarray_writer_pos(&w));
+	struct page *saved = iarray_to_page(&w);
+	iarray_free_writer(&w);
+	if (*buffer) {
+		delete_page_vars(*buffer);
+		free_page(*buffer);
+	}
+	*buffer = saved;
+	return true;
+}
+
+bool PE_LoadParts(int parts_no, struct page **buffer)
+{
+	if (parts_no <= 0 || !buffer || !*buffer)
+		return false;
+	if ((*buffer)->type != ARRAY_PAGE || (*buffer)->a_type != AIN_ARRAY_INT
+			|| (*buffer)->array.rank != 1)
+		return false;
+	struct iarray_reader r;
+	if (!iarray_init_reader(&r, *buffer, "XPP"))
+		return false;
+	int version = iarray_read(&r);
+	int size = iarray_read(&r);
+	if (r.error || version != CURRENT_SAVE_VERSION || size <= (int)r.pos
+			|| size != (*buffer)->nr_vars)
+		return false;
+	parts_release(parts_no);
+	load_parts(&r, version, parts_no);
+	struct parts *parts = parts_get(parts_no);
+	free_string(parts->comment);
+	parts->comment = iarray_read_string(&r);
+	if (r.error || !iarray_end(&r)) {
+		parts_release(parts_no);
+		return false;
+	}
+	// CopyParts detaches the source and its children before saving this record.
+	parts->pending_parent = -1;
+	PE_UpdateComponent(0);
+	return true;
 }
 
 static void save_numeral_fonts(struct iarray_writer *w)
@@ -1738,7 +1794,7 @@ bool PE_Load(struct page **buffer)
 	}
 
 	for (int i = 0; i < nr_parts; i++) {
-		load_parts(&r, version);
+		load_parts(&r, version, -1);
 	}
 	if (parts_v2) {
 		// Resolve the complete hierarchy before recursive updates can remove
