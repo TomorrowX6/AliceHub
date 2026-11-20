@@ -201,6 +201,8 @@ void handle_window_events(void);
 void handle_events(void);
 bool key_is_down(enum sact_keycode code);
 void key_clear_flag(bool no_ctrl);
+// Hold or release a key on behalf of the engine; survives the per-poll key rebuild.
+void key_set_injected(enum sact_keycode code, bool down);
 bool joy_key_is_down(uint8_t code);
 void joy_clear_flag(void);
 int joy_get_num_controllers(void);
