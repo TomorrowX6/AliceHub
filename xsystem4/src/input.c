@@ -312,7 +312,7 @@ static void handle_quit_event(void)
 static void sync_ctrl_key_state(void)
 {
 	kbd_key_state[VK_CONTROL] = kbd_ctrl_down;
-	key_state[VK_CONTROL] = kbd_ctrl_down || atomic_load(&touch_ctrl_skip)
+	key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
 		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
 }
 
@@ -699,7 +699,7 @@ bool key_is_down(enum sact_keycode code)
 		return false;
 	}
 	if (code == VK_CONTROL) {
-		key_state[VK_CONTROL] = kbd_ctrl_down || atomic_load(&touch_ctrl_skip)
+		key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
 			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
 	}
 	bool is_mouse_btn = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);

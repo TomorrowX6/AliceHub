@@ -92,6 +92,11 @@ class InjectedKeyTests(unittest.TestCase):
             out = subprocess.run([str(exe)], capture_output=True, text=True)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
 
+    def test_ctrl_recompositions_include_injected_hold(self):
+        for name in ("sync_ctrl_key_state", "key_is_down"):
+            body = extract_function("src/input.c", name)
+            self.assertIn("injected_vk_down[VK_CONTROL]", body, name)
+
     def test_modifier_does_not_write_key_state_directly(self):
         source = (ROOT / "src/modifier.c").read_text(encoding="utf-8")
         self.assertNotRegex(source, r"\bkey_state\s*\[")
