@@ -193,6 +193,7 @@ static bool key_state[VK_NR_KEYCODES];
 static bool kbd_key_state[VK_NR_KEYCODES];
 static bool vpad_vk_down[VK_NR_KEYCODES];
 static bool pad_vk_down[VK_NR_KEYCODES];
+static bool injected_vk_down[VK_NR_KEYCODES];
 static bool sdl_mouse_down[VK_NR_KEYCODES];
 static bool prev_gamepad_mouse[VK_NR_KEYCODES];
 static bool suppressed_movie_keys[VK_NR_KEYCODES];
