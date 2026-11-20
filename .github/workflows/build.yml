@@ -94,3 +94,52 @@ jobs:
           name: re-xsystem4-arm64-v8a
           path: re-xsystem4-arm64-v8a.apk
           if-no-files-found: error
+
+  ios:
+    name: Build unsigned iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      IOS_BUILD_NUMBER: ${{ github.run_number }}
+      IOS_MARKETING_VERSION: 0.1.${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode 16.4
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+
+      - name: Install build tools
+        run: brew install cmake ninja autoconf automake libtool bison flex pkgconf xcodegen
+
+      - name: Identify native toolchain
+        id: toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          ID=$({ xcodebuild -version; brew list --versions cmake ninja autoconf automake libtool bison flex pkgconf; } | shasum -a 256 | cut -d ' ' -f 1)
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Cache native libraries and downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios/build/iphoneos/stage
+            ios/build/iphoneos/*-prefix/src/*.tar.*
+          key: ios-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-${{ hashFiles('ios/CMakeLists.txt', 'ios/*.sh', 'ios/*.cmake', 'ios/EnginePlatform.*', 'cmake/**', 'xsystem4/**') }}
+
+      - name: Build unsigned IPA
+        run: |
+          ios/build-app.sh ipa
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          cp ios/build/AliceHub.ipa "ios/build/AliceHub-${SHORT_SHA}-ios-unsigned.ipa"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AliceHub-ios-unsigned
+          path: ios/build/AliceHub-*-ios-unsigned.ipa
+          if-no-files-found: error

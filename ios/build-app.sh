@@ -13,7 +13,9 @@ fi
 xcodegen generate --spec "$root/project.yml"
 xcodebuild -project "$root/AliceHub.xcodeproj" -scheme AliceHub \
   -configuration "$configuration" -sdk "$sdk" \
-  -derivedDataPath "$root/build/app-$sdk" CODE_SIGNING_ALLOWED=NO build
+  -derivedDataPath "$root/build/app-$sdk" CODE_SIGNING_ALLOWED=NO \
+  CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER:-1}" \
+  MARKETING_VERSION="${IOS_MARKETING_VERSION:-0.1.0}" build
 if [[ "$mode" == ipa ]]; then
   package="$root/build/package"
   mkdir -p "$package/Payload"
