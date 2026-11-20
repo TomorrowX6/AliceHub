@@ -2,6 +2,7 @@
 """Host C regression tests for Beat Blades Haruka (超昂閃忍ハルカ) compatibility in xsystem4."""
 
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -95,6 +96,95 @@ LIBSYS4_AIN = [
 
 
 class HarukaRegressionsTest(unittest.TestCase):
+    def test_translated_ain_finds_original_audio_archives_and_metadata(self):
+        harness = r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/archive.h"
+#include "system4/file.h"
+#include "system4/utfsjis.h"
+#include "asset_manager.h"
+#include "mixer.h"
+#include "xsystem4.h"
+
+struct config config;
+
+const char *display_utf0(const char *s) { return s; }
+char *gamedir_path(const char *s) { return path_join(config.game_dir, s); }
+char *gamedir_path_icase(const char *s) { return gamedir_path(s); }
+char *savedir_path(const char *s) { abort(); }
+
+static void check_asset(enum asset_type type, const char *name) {
+    struct archive_data *data = asset_get(type, 1);
+    assert(data && !strcmp(data->name, name));
+    archive_free_data(data);
+}
+
+int main(int argc, char **argv) {
+    assert(argc == 6);
+    config.game_dir = argv[1];
+    bool patched = !strcmp(argv[2], "AliceCN.ain");
+    sys4_set_text_gbk(patched);
+    config.ain_filename = utf2sjis(argv[2], strlen(argv[2]));
+    asset_manager_init();
+    check_asset(ASSET_CG, argv[3]);
+    check_asset(ASSET_SOUND, "voice.wav");
+    if (!strcmp(argv[4], "-")) {
+        assert(!asset_exists(ASSET_BGM, 1) && !config.bgi_path);
+    } else {
+        check_asset(ASSET_BGM, argv[4]);
+        assert(config.bgi_path);
+        bgi_read(config.bgi_path);
+        assert(bgi_get(1) && bgi_get(1)->loop_start == atoi(argv[5]));
+    }
+    assert(config.wai_path);
+    wai_load(config.wai_path);
+    assert(wai_get(1) && wai_get(1)->channel == 4);
+}
+"""
+        def write_ald(path, entry):
+            data = bytearray(3 * 256)
+            data[:9] = bytes((1, 0, 0, 2, 0, 0, 3, 0, 0))
+            data[256:259] = bytes((1, 1, 0))
+            struct.pack_into("<II", data, 512, 32, 1)
+            data[528:528 + len(entry)] = entry
+            path.write_bytes(data)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            prefix = "超昂閃忍ハルカ"
+            write_ald(tmp / f"{prefix}GA.ald", b"original.qnt")
+            write_ald(tmp / f"{prefix}BA.ald", b"music.wav")
+            write_ald(tmp / f"{prefix}WA.ald", b"voice.wav")
+            (tmp / f"{prefix}BA.BGI").write_bytes(encode_bgi("1, 0, 100, 1000, -1\n"))
+            wai = bytearray(48)
+            struct.pack_into("<4sIII", wai, 0, b"XI2\0", 1, 2, 3)
+            struct.pack_into("<III", wai, 36, 1, 0, 4)
+            (tmp / f"{prefix}.wai").write_bytes(wai)
+            libsys4 = ROOT / "subprojects/libsys4/src"
+            sources = [
+                *LIBSYS4_BGI_WAI, ROOT / "src/asset_manager.c", ROOT / "src/savedata.c",
+                *(libsys4 / f"{src}.c" for src in ("ald", "afa", "afa3", "archive", "buffer", "hashtable", "zlib")),
+            ]
+            flags = ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"]
+            compile_and_run(harness, sources, flags, [tmpdir, f"{prefix}.ain", "original.qnt", "music.wav", "100"])
+            with self.subTest(layout="renamed script"):
+                compile_and_run(harness, sources, flags, [tmpdir, "AliceCN.ain", "original.qnt", "music.wav", "100"])
+            patched = [tmpdir, "AliceCN.ain", "translated.qnt"]
+            with self.subTest(layout="renamed script and translated graphics"):
+                write_ald(tmp / "AliceCNGA.ald", b"translated.qnt")
+                compile_and_run(harness, sources, flags, [*patched, "music.wav", "100"])
+            with self.subTest(layout="patch also supplies BGM"):
+                write_ald(tmp / "AliceCNBA.ald", b"patch.wav")
+                (tmp / "AliceCN.bgi").write_bytes(encode_bgi("1, 0, 200, 1000, -1\n"))
+                compile_and_run(harness, sources, flags, [*patched, "patch.wav", "200"])
+            with self.subTest(layout="ambiguous fallback BGM"):
+                (tmp / "AliceCNBA.ald").unlink()
+                (tmp / "AliceCN.bgi").unlink()
+                write_ald(tmp / "UnrelatedBA.ald", b"unrelated.wav")
+                compile_and_run(harness, sources, flags, [*patched, "-", "0"])
+
     def test_playmovie_set_volume_and_lifecycle(self):
         # Directly compile src/hll/PlayMovie.c against a mocked movie backend and verify
         # Haruka's PlayMovie.SetVolume export, null-context behavior, volume propagation,
@@ -500,8 +590,6 @@ int main(void) {
         bgi_bytes = encode_bgi("".join(bgi_lines))
 
         # Build minimal XI2 v3 WAI (36-byte header + 12-byte records for 12 waves across channels 0..5).
-        import struct
-
         nr_waves = 12
         wai_buf = bytearray(36 + nr_waves * 12)
         wai_buf[0:4] = b"XI2\x00"

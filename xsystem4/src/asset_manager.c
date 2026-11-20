@@ -920,6 +920,69 @@ static bool register_ald_file(char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX],
 	}
 }
 
+static size_t fallback_ald_prefix_length(const char *name, const char *kinds)
+{
+	size_t len = strlen(name);
+	if (len <= 6)
+		return 0;
+	size_t plen = len - 6;
+	int disk = toupper((unsigned char)name[plen + 1]);
+	if (!strchr(kinds, toupper((unsigned char)name[plen])) || disk < 'A' || disk > 'Z')
+		return 0;
+	return plen;
+}
+
+static void register_fallback_alds(char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX],
+		int ald_count[ASSET_TYPE_MAX], char **names, size_t count, const char *kinds,
+		bool require_unique)
+{
+	const char *prefix = NULL;
+	size_t prefix_len = 0;
+	for (size_t i = 0; i < count; i++) {
+		size_t len = fallback_ald_prefix_length(names[i], kinds);
+		if (!len)
+			continue;
+		if (!prefix) {
+			prefix = names[i];
+			prefix_len = len;
+			if (!require_unique)
+				break;
+		} else if (len != prefix_len || strncasecmp(prefix, names[i], len)) {
+			return;
+		}
+	}
+	if (!prefix)
+		return;
+
+	for (size_t i = 0; i < count; i++) {
+		if (fallback_ald_prefix_length(names[i], kinds) == prefix_len
+				&& !strncasecmp(names[i], prefix, prefix_len))
+			register_ald_file(ald_filenames, ald_count, names[i], prefix_len);
+	}
+}
+
+static char *find_ald_audio_metadata(char **volumes, int count, const char *extension)
+{
+	for (int i = 0; i < count; i++) {
+		if (!volumes[i])
+			continue;
+		char *path = xstrdup(volumes[i]);
+		// Metadata is usually named after its volume (BA.bgi or WA.wai).
+		char *dot = strrchr(path, '.');
+		strcpy(dot + 1, extension);
+		char *found = path_get_icase(path);
+		if (!found) {
+			// Also accept metadata named after the archive family.
+			memmove(dot - 2, dot, strlen(dot) + 1);
+			found = path_get_icase(path);
+		}
+		free(path);
+		if (found)
+			return found;
+	}
+	return NULL;
+}
+
 void asset_manager_init(void)
 {
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
@@ -1015,33 +1078,23 @@ void asset_manager_init(void)
 	closedir_utf8(dir);
 	free(base);
 
-	if (!has_base_ald && nr_fallback_alds > 0) {
-		char *fallback_prefix = NULL;
-		size_t fallback_prefix_len = 0;
-		for (size_t i = 0; i < nr_fallback_alds; i++) {
-			const char *fn = fallback_alds[i];
-			size_t len = strlen(fn);
-			if (len <= 6 || strcasecmp(fn + len - 4, ".ald"))
-				continue;
-			size_t plen = len - 6;
-			char kind = (char)toupper((unsigned char)fn[plen]);
-			char disk = (char)toupper((unsigned char)fn[plen + 1]);
-			if ((kind != 'B' && kind != 'G' && kind != 'W' && kind != 'D') || disk < 'A' || disk > 'Z')
-				continue;
-			if (!fallback_prefix) {
-				fallback_prefix = xmalloc(plen + 1);
-				memcpy(fallback_prefix, fn, plen);
-				fallback_prefix[plen] = '\0';
-				fallback_prefix_len = plen;
-			}
-			if (plen == fallback_prefix_len && !strncasecmp(fn, fallback_prefix, fallback_prefix_len))
-				register_ald_file(ald_filenames, ald_count, fn, plen);
-		}
-		free(fallback_prefix);
+	if (!has_base_ald) {
+		register_fallback_alds(ald_filenames, ald_count, fallback_alds, nr_fallback_alds, "BGWD", false);
+	} else {
+		// A translated script can have matching graphics but keep the original audio.
+		if (!ald_count[ASSET_BGM] && !afa_filenames[ASSET_BGM])
+			register_fallback_alds(ald_filenames, ald_count, fallback_alds, nr_fallback_alds, "B", true);
+		if (!ald_count[ASSET_SOUND] && !afa_filenames[ASSET_SOUND])
+			register_fallback_alds(ald_filenames, ald_count, fallback_alds, nr_fallback_alds, "W", true);
 	}
 	for (size_t i = 0; i < nr_fallback_alds; i++)
 		free(fallback_alds[i]);
 	free(fallback_alds);
+
+	if (!config.bgi_path && !afa_filenames[ASSET_BGM])
+		config.bgi_path = find_ald_audio_metadata(ald_filenames[ASSET_BGM], ald_count[ASSET_BGM], "bgi");
+	if (!config.wai_path && !afa_filenames[ASSET_SOUND])
+		config.wai_path = find_ald_audio_metadata(ald_filenames[ASSET_SOUND], ald_count[ASSET_SOUND], "wai");
 
 	// open ALD archives
 	ald_init(ASSET_BGM, ald_filenames[ASSET_BGM], ald_count[ASSET_BGM]);
