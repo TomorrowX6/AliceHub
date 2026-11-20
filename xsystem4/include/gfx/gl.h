@@ -18,7 +18,11 @@
 #define SYSTEM4_GFX_GL_H
 
 #ifdef USE_GLES
+#ifdef ALICEHUB_IOS
+#include <OpenGLES/ES3/gl.h>
+#else
 #include <GLES3/gl3.h>
+#endif
 #else
 #include <GL/glew.h>
 #endif

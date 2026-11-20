@@ -11,6 +11,11 @@ if(ANDROID)
 endif()
 
 include(FetchContent)
+if(ALICEHUB_IOS)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(CGLM_SHARED OFF CACHE BOOL "" FORCE)
+  set(CGLM_STATIC ON CACHE BOOL "" FORCE)
+endif()
 
 FetchContent_Declare(
   cglm
@@ -31,7 +36,12 @@ find_package(ZLIB REQUIRED)
 
 add_subdirectory(subprojects/libsys4)
 
-add_library(xsystem4 SHARED)
+if(ALICEHUB_IOS)
+  add_library(xsystem4 STATIC)
+  target_compile_definitions(xsystem4 PRIVATE ALICEHUB_IOS SDL_MAIN_HANDLED)
+else()
+  add_library(xsystem4 SHARED)
+endif()
 
 target_compile_definitions(xsystem4 PRIVATE
   _DEFAULT_SOURCE
@@ -247,7 +257,14 @@ target_sources(xsystem4 PRIVATE
   )
 
 target_link_libraries(xsystem4 PRIVATE
-  m ZLIB::ZLIB SDL2::SDL2 Freetype::Freetype ffi GLESv3 cglm SndFile::sndfile sys4)
+  m ZLIB::ZLIB SDL2::SDL2 Freetype::Freetype ffi cglm SndFile::sndfile sys4)
+if(ALICEHUB_IOS)
+  target_link_libraries(xsystem4 PRIVATE "-framework OpenGLES")
+  install(TARGETS sys4 cglm)
+  install(FILES include/xsystem4_main.h DESTINATION include)
+else()
+  target_link_libraries(xsystem4 PRIVATE GLESv3)
+endif()
 
 target_compile_options(xsystem4 PRIVATE -Wno-unused-parameter)
 

@@ -31,7 +31,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#ifndef ALICEHUB_IOS
 #include <ucontext.h>
+#endif
 #include <dlfcn.h>
 #include <unwind.h>
 #endif
@@ -51,6 +53,9 @@
 #include "system4/utfsjis.h"
 
 #include "xsystem4.h"
+#ifdef ALICEHUB_IOS
+#include "xsystem4_main.h"
+#endif
 #include "asset_manager.h"
 #include "debugger.h"
 #include "gfx/gfx.h"
@@ -741,6 +746,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 		cbuf_put_hex(crash_report_buf, cap, &off, si ? (uint64_t)(uintptr_t)si->si_addr : 0, 16);
 		cbuf_puts(crash_report_buf, cap, &off, "\n");
 
+#ifndef ALICEHUB_IOS
 		ucontext_t *uc = (ucontext_t *)ucontext_ptr;
 		if (uc) {
 #if defined(__aarch64__)
@@ -763,6 +769,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 			cbuf_puts(crash_report_buf, cap, &off, "\n");
 #endif
 		}
+#endif
 	}
 #endif
 
@@ -1001,7 +1008,11 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
+#ifdef ALICEHUB_IOS
+int xsystem4_main(int argc, char *argv[])
+#else
 int main(int argc, char *argv[])
+#endif
 {
 #ifdef __ANDROID__
 	static bool sdl_main_entered = false;
