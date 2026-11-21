@@ -479,7 +479,12 @@ int channel_play(struct channel *ch)
 			ch->volume = ch->fade.end_volume * 100.0f;
 		}
 	}
+	bool playing = ch->voice >= 0;
 	audio_unlock();
+	if (!playing) {
+		WARNING("Failed to allocate audio stream in mixer %d", ch->mixer_no);
+		return 0;
+	}
 	return 1;
 }
 
@@ -653,7 +658,9 @@ int channel_get_group(struct channel *ch) { return ch->mixer_no; }
 
 bool channel_set_group(struct channel *ch, int group)
 {
-	if (group < 0 || group >= nr_mixers || ch->voice >= 0) return false;
+	if (group < 0 || group >= nr_mixers || ch->voice >= 0 ||
+			(config.mixer_nr_channels && (unsigned)group >= config.mixer_nr_channels))
+		return false;
 	ch->mixer_no = group;
 	return true;
 }
@@ -1073,6 +1080,9 @@ void mixer_init(void)
 		mixers[i].stream.sample.length = CHUNK_SIZE * 2;
 		mixers[i].stream.sample.data = mixers[i].data;
 		mixers[i].voice = sts_mixer_play_stream(&mixers[i].parent->mixer, &mixers[i].stream, 1.0f);
+		if (mixers[i].voice < 0)
+			ERROR("Failed to link audio mixer %d (%s) to parent %td (%s): stream capacity %d exhausted",
+				i, mixers[i].name, mixers[i].parent - mixers, mixers[i].parent->name, STS_MIXER_VOICES);
 	}
 
 	// read audio metadata
@@ -1099,6 +1109,11 @@ void mixer_init(void)
 #else
 	open_default_audio_device();
 #endif
+}
+
+int mixer_get_stream_capacity(void)
+{
+	return STS_MIXER_VOICES;
 }
 
 int mixer_get_numof(void)

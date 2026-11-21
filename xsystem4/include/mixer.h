@@ -42,6 +42,7 @@ void wai_load(const char *path);
 struct wai *wai_get(int no);
 
 void mixer_init(void);
+int mixer_get_stream_capacity(void);
 void mixer_set_global_focus(bool enabled);
 void mixer_set_window_focus(bool focused);
 void mixer_set_app_backgrounded(bool backgrounded);
