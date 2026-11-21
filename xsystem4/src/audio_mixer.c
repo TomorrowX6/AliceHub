@@ -375,7 +375,12 @@ int channel_play(struct channel *ch)
 			ch->volume = ch->fade.end_volume * 100.0f;
 		}
 	}
+	bool playing = ch->voice >= 0;
 	audio_unlock();
+	if (!playing) {
+		WARNING("Failed to allocate audio stream in mixer %d", ch->mixer_no);
+		return 0;
+	}
 	return 1;
 }
 
