@@ -27,8 +27,8 @@ The script compiles the C bridge and Swift sources with host `swiftc`, linking
 Homebrew libarchive rather than macOS's older system library. Fixtures are created
 at runtime and removed afterward: raw Shift-JIS ZIP, traversal ZIP, empty/corrupt
 archives, 7z/tar/tar.gz via Homebrew bsdtar, Joliet ISO via `hdiutil makehybrid`,
-and synthetic raw-sector MDF images. This tests extraction independently of the
-folder-only launcher; archive library/UI integration is a separate step.
+and synthetic raw-sector MDF images. End-to-end library checks cover archive-root,
+subfolder and nested-disc imports, duplicates, invalid games and temporary cleanup.
 libffi 3.4.6 has no configure switch to disable AArch64 closures, so the iOS-only
 patch disables them in its target header. Static executable trampolines are
 disabled in configure. CFI directives are disabled for that dependency because
@@ -45,9 +45,15 @@ project is ignored; edit `project.yml` instead. Each app build runs the incremen
 native build so edits to engine sources, headers and platform code are linked.
 
 The SwiftUI launcher discovers `Documents/Games`, imports security-scoped
-folders with coordinated reads, and confirms deletion without removing saves.
-Import uses a hidden temporary directory and moves it into place after copying.
-Duplicate folder names are rejected rather than overwritten. Each launch writes
+folders or archives/disc images with coordinated reads, and confirms deletion
+without removing saves. The archive picker opens files in place; extraction goes
+directly into hidden `Games/.import-<UUID>/stage0`, with up to three further stages
+for nested archives or game-containing ISO/MDF images. The shallowest game root
+wins (path-sorted ties). Its folder name is preserved, or the outer archive's
+basename is used for a stage-root game. Duplicate names are rejected, temporary
+stages are always cleaned, and the overlay shows extracted MB and the current
+entry. Supported archive documents opened from Files can also be imported.
+Each launch writes
 `Documents/Logs/engine.log` (stdout/stderr) and `crash.log`; logs are replaced on
 the next launch. The app delegate forwards scene lifecycle notifications to SDL.
 Games with an INI launch by directory; AIN-only folders launch the first root AIN

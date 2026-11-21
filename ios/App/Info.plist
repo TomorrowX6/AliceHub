@@ -12,6 +12,21 @@
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UIFileSharingEnabled</key><true/>
   <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>游戏压缩包或光盘镜像</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.archive</string>
+        <string>public.zip-archive</string>
+        <string>org.gnu.gnu-zip-archive</string>
+        <string>public.disk-image</string>
+      </array>
+    </dict>
+  </array>
   <key>UIRequiresFullScreen</key><true/>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UIStatusBarHidden</key><true/>

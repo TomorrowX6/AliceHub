@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @State private var pickerPresented = false
+    @State private var archivePickerPresented = false
     @State private var pendingDelete: Game?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -14,7 +15,7 @@ struct LauncherView: View {
                     Spacer()
                     Image(systemName: "gamecontroller").font(.system(size: 56)).foregroundColor(.accentColor)
                     Text("还没有游戏").font(.title2).bold().padding(.top)
-                    Text("导入 System 4 游戏文件夹即可开始。\n也可以通过“文件”App，将游戏文件夹复制到\n“我的 iPhone / AliceHub / Games”中。")
+                    Text("导入 System 4 游戏文件夹、压缩包或光盘镜像即可开始。\n也可以通过“文件”App，将游戏文件夹复制到\n“我的 iPhone / AliceHub / Games”中。")
                         .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center).padding()
                     Spacer()
                 } else {
@@ -30,9 +31,15 @@ struct LauncherView: View {
                     }
                     .listStyle(.insetGrouped)
                 }
-                Button { pickerPresented = true } label: {
-                    Label("导入游戏文件夹", systemImage: "folder.badge.plus")
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                VStack(spacing: 12) {
+                    Button { pickerPresented = true } label: {
+                        Label("导入游戏文件夹", systemImage: "folder.badge.plus")
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
+                    Button { archivePickerPresented = true } label: {
+                        Label("导入压缩包/光盘镜像", systemImage: "archivebox")
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }
                 }
                 .buttonStyle(.borderedProminent).padding()
             }
@@ -42,7 +49,8 @@ struct LauncherView: View {
                 if library.importing || library.launching {
                     ZStack {
                         Color.black.opacity(0.2).ignoresSafeArea()
-                        ProgressView(library.importing ? "正在导入，请稍候…" : "正在启动…")
+                        ProgressView(library.importing ? library.importProgress : "正在启动…")
+                            .lineLimit(4).multilineTextAlignment(.center)
                             .padding(28).background(.regularMaterial).cornerRadius(16)
                     }
                 }
@@ -50,6 +58,14 @@ struct LauncherView: View {
         }
         .navigationViewStyle(.stack)
         .sheet(isPresented: $pickerPresented) { FolderPicker { library.importFolder($0) } }
+        .sheet(isPresented: $archivePickerPresented) {
+            FolderPicker(contentTypes: ArchivePicker.contentTypes) { library.importArchive($0) }
+        }
+        .onOpenURL { url in
+            if url.isFileURL && ArchiveExtractor.isSupportedArchiveName(url.lastPathComponent) {
+                library.importArchive(url)
+            }
+        }
         .alert("删除游戏？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("取消", role: .cancel) { pendingDelete = nil }
             Button("删除", role: .destructive) {
@@ -75,10 +91,11 @@ struct LauncherView: View {
 }
 
 struct FolderPicker: UIViewControllerRepresentable {
+    var contentTypes: [UTType] = [.folder]
     let selected: (URL) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(selected: selected) }
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes, asCopy: false)
         picker.delegate = context.coordinator
         picker.allowsMultipleSelection = false
         return picker
@@ -91,4 +108,11 @@ struct FolderPicker: UIViewControllerRepresentable {
             if let url = urls.first { selected(url) }
         }
     }
+}
+
+private enum ArchivePicker {
+    static let contentTypes: [UTType] = [.zip, .archive, .gzip] +
+        ["7z", "rar", "tar", "tgz", "txz", "xz", "iso", "mdf"].map {
+            UTType(filenameExtension: $0) ?? .data
+        }
 }
