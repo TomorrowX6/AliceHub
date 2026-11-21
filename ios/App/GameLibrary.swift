@@ -9,10 +9,11 @@ struct Game: Identifiable {
 }
 
 enum LibraryError: LocalizedError {
-    case notGame, alreadyExists, resourcePath, logFile
+    case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
         case .notGame: return "所选文件夹不是 System 4 游戏。请确认根目录包含 AliceStart.ini、System40.ini 或 .ain 文件。"
+        case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 4 游戏。"
         case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
         case .resourcePath: return "无法找到游戏引擎资源。"
         case .logFile: return "无法创建运行日志。"
@@ -23,6 +24,7 @@ enum LibraryError: LocalizedError {
 final class GameLibrary: ObservableObject {
     @Published var games: [Game] = []
     @Published var importing = false
+    @Published var importProgress = ""
     @Published var launching = false
     @Published var error: String?
     private let files = FileManager.default
@@ -61,7 +63,10 @@ final class GameLibrary: ObservableObject {
     }
 
     func importFolder(_ source: URL) {
+        guard !importing && !launching else { return }
         importing = true
+        error = nil
+        importProgress = "正在复制游戏文件夹…"
         let destination = gamesDirectory.appendingPathComponent(source.lastPathComponent, isDirectory: true)
         DispatchQueue.global(qos: .userInitiated).async {
             let access = source.startAccessingSecurityScopedResource()
@@ -85,6 +90,123 @@ final class GameLibrary: ObservableObject {
             let message = result?.localizedDescription
             DispatchQueue.main.async {
                 self.importing = false
+                self.importProgress = ""
+                self.refresh()
+                self.error = message
+            }
+        }
+    }
+
+    private static func gameRoot(in stage: URL) throws -> URL? {
+        var level = [stage]
+        while !level.isEmpty {
+            for directory in level where isGame(directory) { return directory }
+            level = try level.flatMap { directory in
+                try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: .skipsHiddenFiles)
+                    .filter {
+                        let values = try $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                        return values.isDirectory == true && values.isSymbolicLink != true
+                    }
+            }.sorted { $0.path < $1.path }
+        }
+        return nil
+    }
+
+    private static func containedFiles(in stage: URL) throws -> [URL] {
+        var result = [URL]()
+        var failure: Error?
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        let enumerator = FileManager.default.enumerator(at: stage, includingPropertiesForKeys: keys,
+                                                        options: .skipsHiddenFiles) { _, error in
+            failure = error
+            return false
+        }
+        while let file = enumerator?.nextObject() as? URL {
+            let values = try file.resourceValues(forKeys: Set(keys))
+            if values.isRegularFile == true && values.isSymbolicLink != true { result.append(file) }
+        }
+        if let failure { throw failure }
+        let sized: [(url: URL, size: Int)] = try result.map { url in
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            return (url, size)
+        }
+        return sized.sorted {
+            $0.size == $1.size ? $0.url.path < $1.url.path : $0.size > $1.size
+        }.map { $0.url }
+    }
+
+    private static func archiveBaseName(_ source: URL) -> String {
+        let name = source.lastPathComponent
+        for suffix in [".tar.gz", ".tar.xz"] where name.lowercased().hasSuffix(suffix) {
+            return String(name.dropLast(suffix.count))
+        }
+        return source.deletingPathExtension().lastPathComponent
+    }
+
+    func importArchive(_ source: URL) {
+        guard !importing && !launching else { return }
+        importing = true
+        error = nil
+        importProgress = "正在解压：0 MB"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let access = source.startAccessingSecurityScopedResource()
+            defer { if access { source.stopAccessingSecurityScopedResource() } }
+            let temporary = self.gamesDirectory.appendingPathComponent(".import-\(UUID().uuidString)")
+            var result: Error?
+            do {
+                try self.files.createDirectory(at: temporary, withIntermediateDirectories: true)
+                let coordinator = NSFileCoordinator()
+                var coordinationError: NSError?
+                coordinator.coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { readable in
+                    do {
+                        var lastProgress = Date.distantPast
+                        var completedBytes: Int64 = 0
+                        func extract(_ archive: URL, to stage: URL) throws {
+                            var latestBytes: Int64 = 0
+                            try ArchiveExtractor.extract(archive, to: stage, onProgress: { bytes, entry in
+                                latestBytes = bytes
+                                let now = Date()
+                                guard now.timeIntervalSince(lastProgress) >= 0.15 else { return }
+                                lastProgress = now
+                                let text = "正在解压：\((completedBytes + bytes) / (1024 * 1024)) MB\n\(entry)"
+                                DispatchQueue.main.async { self.importProgress = text }
+                            })
+                            completedBytes += latestBytes
+                        }
+                        var stage = temporary.appendingPathComponent("stage0")
+                        try extract(readable, to: stage)
+                        var root = try Self.gameRoot(in: stage)
+                        for number in 1...3 where root == nil {
+                            let contained = try Self.containedFiles(in: stage)
+                            let discs = contained.filter { ["iso", "mdf"].contains($0.pathExtension.lowercased()) }
+                            let disc = discs.first { (try? Iso9660Extractor.containsGameRoot($0)) == true }
+                            guard let nested = disc ?? contained.first(where: { ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }) else { break }
+                            let next = temporary.appendingPathComponent("stage\(number)")
+                            try extract(nested, to: next)
+                            try self.files.removeItem(at: nested)
+                            if ["iso", "mdf"].contains(nested.pathExtension.lowercased()) {
+                                for sidecar in contained where sidecar.pathExtension.lowercased() == "mds" {
+                                    try self.files.removeItem(at: sidecar)
+                                }
+                            }
+                            stage = next
+                            root = try Self.gameRoot(in: stage)
+                        }
+                        guard let root else { throw LibraryError.archiveNotGame }
+                        let name = root == stage ? Self.archiveBaseName(source) : root.lastPathComponent
+                        guard !name.isEmpty && name != "." && name != ".." && !name.hasPrefix(".") else { throw LibraryError.archiveNotGame }
+                        let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
+                        guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
+                        try self.files.moveItem(at: root, to: destination)
+                    } catch { result = error }
+                }
+                if let coordinationError { throw coordinationError }
+            } catch { result = error }
+            try? self.files.removeItem(at: temporary)
+            let message = result?.localizedDescription
+            DispatchQueue.main.async {
+                self.importing = false
+                self.importProgress = ""
                 self.refresh()
                 self.error = message
             }
