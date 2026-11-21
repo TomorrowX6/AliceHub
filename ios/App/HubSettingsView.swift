@@ -40,6 +40,7 @@ struct HubSettingsView: View {
 struct ImportGameView: View {
     let folder: () -> Void
     let archive: () -> Void
+    let online: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -54,6 +55,10 @@ struct ImportGameView: View {
                             .font(.subheadline).foregroundColor(HubTheme.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).modifier(HubCard())
                     VStack(spacing: 0) {
+                        Button(action: online) {
+                            HubActionLabel(title: "在线下载游戏", subtitle: "浏览资源目录，下载后自动加入游戏库", symbol: "arrow.down.circle")
+                        }
+                        Divider()
                         Button(action: folder) {
                             HubActionLabel(title: "从文件夹导入", subtitle: "已解压的 System 3.x / System 4 游戏", symbol: "folder.badge.plus")
                         }

@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <iconv.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,8 @@ static int replace_hard_link(const char *source, const char *destination)
 int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
                        AHArchiveProgress progress, char *error, size_t error_size)
 {
+    locale_t utf8_locale = newlocale(LC_CTYPE_MASK, "en_US.UTF-8", NULL);
+    locale_t previous_locale = utf8_locale ? uselocale(utf8_locale) : (locale_t)0;
     struct archive *a = archive_read_new();
     char *path = NULL;
     int out = -1, count = -1, files = 0;
@@ -113,7 +116,7 @@ int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
         }
         /* Do not request libarchive's locale-dependent pathname conversion. */
         const char *raw = archive_entry_pathname(entry);
-        if (!raw || !*raw) { archive_read_data_skip(a); continue; }
+        if (!raw || !*raw) { failure = "无法解码压缩包文件名"; goto done; }
         int64_t size = archive_entry_size_is_set(entry) ? archive_entry_size(entry) : -1;
         size_t raw_length = strlen(raw);
         char *directory_path = NULL;
@@ -201,5 +204,6 @@ done:
         paths = next;
     }
     archive_read_free(a);
+    if (utf8_locale) { uselocale(previous_locale); freelocale(utf8_locale); }
     return count;
 }

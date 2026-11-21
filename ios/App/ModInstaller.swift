@@ -140,8 +140,14 @@ final class ModInstaller: ObservableObject {
         try ModArchiveExtractor.extract(file: archive, to: staging, progress: { bytes, path in self.report("已解压 \(bytes / 1048576) MB\n\(path)") }, isCancelled: { self.isCancelled() })
     }
 
-    private func download(_ release: ModReleaseEntry, games: URL, prefix: String) throws -> URL {
-        let cache = games.appendingPathComponent(".online_mod_cache")
+    func downloadVerifiedFile(_ release: ModReleaseEntry, cache: URL,
+                              progress: @escaping (Int64, Int64) -> Void) throws -> URL {
+        try download(release, games: cache, prefix: "", cacheDirectory: cache, progress: progress)
+    }
+
+    private func download(_ release: ModReleaseEntry, games: URL, prefix: String,
+                          cacheDirectory: URL? = nil, progress: ((Int64, Int64) -> Void)? = nil) throws -> URL {
+        let cache = cacheDirectory ?? games.appendingPathComponent(".online_mod_cache")
         try ModFiles.files.createDirectory(at: cache, withIntermediateDirectories: true)
         let hash = release.expectedSha256 ?? ""
         guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message("SHA-256 校验值无效") }
@@ -170,8 +176,11 @@ final class ModInstaller: ObservableObject {
             if expected > 0 && length >= expected { try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(meta) }
             do {
                 let transfer = ModDownloadTransfer(part: part, release: release, saved: metadata(), cancelled: { self.isCancelled() }, progress: { done, total in
-                    let fraction = total > 0 ? Double(done) / Double(total) : nil
-                    self.report(prefix + (fraction.map { "下载中 · \(Int($0 * 100))% · -- MB/s\n\(done / 1048576) / \(max(1, total / 1048576)) MB · \(release.version)" } ?? "下载中 · \(done / 1048576) MB · -- MB/s\n\(release.version)"), fraction)
+                    if let progress { progress(done, total) }
+                    else {
+                        let fraction = total > 0 ? Double(done) / Double(total) : nil
+                        self.report(prefix + (fraction.map { "下载中 · \(Int($0 * 100))% · -- MB/s\n\(done / 1048576) / \(max(1, total / 1048576)) MB · \(release.version)" } ?? "下载中 · \(done / 1048576) MB · -- MB/s\n\(release.version)"), fraction)
+                    }
                 })
                 try transfer.run { task in self.lock.lock(); self.networkTask = task; let cancel = self.cancelled; self.lock.unlock(); if cancel { task.cancel() } }
                 try checkCancelled()
@@ -252,6 +261,9 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
                 if response.statusCode == 416 { try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(part.appendingPathExtension("meta")) }
                 throw ModError.message("下载失败 HTTP \(response.statusCode)")
             }
+            if release.expectedSize >= 0 && total >= 0 && total != release.expectedSize {
+                throw ModError.message("下载文件大小不匹配")
+            }
             if total > received,
                let free = try ModFiles.files.attributesOfFileSystem(forPath: part.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber,
                total - received > free.int64Value - 64 * 1048576 { throw ModError.message("存储空间不足") }
@@ -269,6 +281,9 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         do {
             if cancelled() { throw CancellationError() }
+            if release.expectedSize >= 0 && Int64(data.count) > release.expectedSize - received {
+                throw ModError.message("下载文件大小不匹配")
+            }
             try handle?.write(contentsOf: data); received += Int64(data.count); progress(received, total)
         } catch { self.error = error; dataTask.cancel() }
     }

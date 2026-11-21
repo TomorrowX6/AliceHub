@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
+    @StateObject private var onlineDownload = OnlineGameDownloadModel()
+    @State private var onlinePresented = false
     @State private var importPresented = false
     @State private var folderPresented = false
     @State private var archivePresented = false
@@ -61,8 +63,9 @@ struct LauncherView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button { importPresented = true } label: {
-                    Label("导入游戏", systemImage: "plus")
+                HStack(spacing: 12) {
+                    Button { onlinePresented = true } label: { Label("在线下载", systemImage: "arrow.down.circle") }
+                    Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
                 }.buttonStyle(HubPrimaryButton())
                     .padding(.horizontal, 20).padding(.vertical, 12)
                     .frame(maxWidth: 620).frame(maxWidth: .infinity)
@@ -80,8 +83,12 @@ struct LauncherView: View {
             } archive: {
                 importPresented = false
                 DispatchQueue.main.async { archivePresented = true }
+            } online: {
+                importPresented = false
+                DispatchQueue.main.async { onlinePresented = true }
             }
         }
+        .sheet(isPresented: $onlinePresented) { OnlineGamesView(library: library, download: onlineDownload) }
         .sheet(isPresented: $settingsPresented) { HubSettingsView() }
         .sheet(isPresented: $folderPresented) { FolderPicker { library.importFolder($0) } }
         .sheet(isPresented: $archivePresented) {
@@ -94,6 +101,7 @@ struct LauncherView: View {
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
+            if phase == .background { onlineDownload.cancel() }
             guard phase == .active else { return }
             library.refresh()
 #if DEBUG

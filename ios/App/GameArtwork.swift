@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct GameArtwork: View {
-    let game: Game
+    var game: Game? = nil
+    var catalogID: String? = nil
     var size: CGFloat = 64
 
     private var artwork: UIImage? {
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: game.url.path)) ?? []) + [game.name]
+        let names = game.map { ((try? FileManager.default.contentsOfDirectory(atPath: $0.url.path)) ?? []) + [$0.name] } ?? []
         let normalized = names.joined(separator: " ").lowercased()
             .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
         let aliases: [(String, [String])] = [
@@ -27,7 +28,7 @@ struct GameArtwork: View {
             ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
             ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
         ]
-        guard let key = aliases.first(where: { $0.1.contains(where: normalized.contains) })?.0,
+        guard let key = catalogID ?? aliases.first(where: { $0.1.contains(where: normalized.contains) })?.0,
               let path = Bundle.main.path(forResource: "ic_game_" + key, ofType: "png", inDirectory: "drawable-nodpi") else { return nil }
         return UIImage(contentsOfFile: path)
     }

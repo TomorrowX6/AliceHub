@@ -83,6 +83,29 @@ the next launch. The app delegate forwards scene lifecycle notifications to SDL.
 Games with an INI launch by directory; AIN-only folders launch the first root AIN
 in filename order when multiple AINs exist.
 
+## Online game downloads
+
+The launcher's 在线下载 button (also in 导入游戏) lists the same 19 base-game
+sources as Android. A detail screen fetches the source's `manifest.json`, shows
+the download size/file count, and asks for confirmation before using data.
+Files are streamed to `Games/.online-game-<id>/cache` with HTTP Range continuation,
+size limits and SHA-256 verification. Manifest paths, duplicate/case-colliding
+names, prefix conflicts and integer overflow are rejected before installation.
+Archives marked `extract` use the existing safe archive extractor; hidden runtime
+configuration such as `.xsys35rc` is retained.
+
+Every attempt rebuilds a separate staging tree from verified cached downloads,
+then moves it into `Games/<baseName>` only after game detection succeeds. Existing
+game directories and saves are never replaced. Cancellation/failure keeps reusable
+downloads but removes incomplete staging. Success removes the download cache.
+Keep the app in the foreground: entering the background cancels the active transfer;
+use 继续下载 to resume after returning. This is not an iOS background-download service.
+
+`python3 ios/Tests/test_online_games.py` runs a local HTTP fixture covering catalog
+parity with Android, manifest validation, Range resume, cancellation/retry,
+checksummed archive extraction, UTF-8 filenames, hidden/empty files, symlink
+rejection and existing-install preservation. It requires Homebrew `libarchive`.
+
 ## App launch contract
 
 ### System 3.x

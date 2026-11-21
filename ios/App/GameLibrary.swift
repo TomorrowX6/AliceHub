@@ -35,7 +35,7 @@ final class GameLibrary: ObservableObject {
     @Published var error: String?
     private let files = FileManager.default
     private let documents: URL
-    private var gamesDirectory: URL { documents.appendingPathComponent("Games", isDirectory: true) }
+    var gamesDirectory: URL { documents.appendingPathComponent("Games", isDirectory: true) }
 
     init(documents: URL? = nil) {
         self.documents = documents ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
