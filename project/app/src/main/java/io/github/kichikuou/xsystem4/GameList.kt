@@ -2302,7 +2302,6 @@ internal fun findGameRootDirInternal(
                 seg == "备份" ||
                 seg == "备份文件" ||
                 seg == "原版有码备份" ||
-                seg.endsWith("汉化原版") ||
                 seg == "无码补丁备份" ||
                 seg == "汉化补丁备份" ||
                 seg == "特典相关" ||
@@ -2652,8 +2651,6 @@ internal fun isTsumamigui3BloatRelPath(relPath: String): Boolean {
         leafLower.endsWith(".bat") ||
         leafLower.endsWith(".cmd") ||
         leafLower.endsWith(".lnk") ||
-        leafLower.endsWith(".rar") ||
-        leafLower.endsWith(".zip") ||
         leafLower.endsWith(".rar去掉") ||
         (leafLower.startsWith("读我") && leafLower.endsWith(".txt")) ||
         leafLower == "tsumamigui3.ico" ||

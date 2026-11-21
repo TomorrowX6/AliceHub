@@ -654,6 +654,10 @@ void apply_game_specific_hacks(struct ain *ain)
 		game_rance9 = true;
 		apply_rance9_hacks(ain);
 	}
+	if (game_tsumamigui3 && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1024;
+		config.view_height = 768;
+	}
 	if (game_rance8 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1024;
 		config.view_height = 768;

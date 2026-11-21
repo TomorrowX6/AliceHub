@@ -116,7 +116,6 @@ object NativeGameImport {
                 name == "备份" ||
                 name == "备份文件" ||
                 name == "原版有码备份" ||
-                name.endsWith("汉化原版") ||
                 name == "无码补丁备份" ||
                 name == "汉化补丁备份" ||
                 name == "特典相关" ||

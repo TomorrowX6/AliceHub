@@ -30,7 +30,7 @@ public class Tsumamigui3CatalogTest {
             "Tsumamigui3.exe", "DecodeCG.dll", "OpenSaveFolder.exe", "ResetConfig.exe", "Uninstaller.exe",
             "InstallInfo/SaveFolderSetting.ini", "License/libogg/COPYING", "Manual/index.html",
             "v0.8汉化原版/AliceStart.ini", "v0.8汉化原版/Tsumamigui3.ain", "v0.8汉化原版/Tsumamigui3.ex",
-            "补丁/DLL.rar", "补丁/QZM3_v0.801校对测试版.zip", "攻略/QZM3_攻略图表（中文）.rar去掉",
+            "补丁/DLL.rar", "补丁/QZM3_v0.801校对测试版.zip", "Inner.zip.rar去掉", "攻略/QZM3_攻略图表（中文）.rar去掉",
             "全CG存档/汉化版全CG存档.rar去掉", "读我_v0.801汉化测试版.txt"
     };
 
@@ -135,6 +135,8 @@ public class Tsumamigui3CatalogTest {
         for (String rel : BLOAT_PATHS) {
             assertTrue(rel, GameListKt.isTsumamigui3BloatRelPath(rel));
         }
+        assertFalse(GameListKt.isTsumamigui3BloatRelPath("Tsumamigui3.zip"));
+        assertFalse(GameListKt.isTsumamigui3BloatRelPath("game/Tsumamigui3.rar"));
 
         File staging = tmp.newFolder("staging");
         File root = new File(staging, "[ALICESOFT] 妻みぐい3 汉化硬盘版 [汉化v0.801]");
