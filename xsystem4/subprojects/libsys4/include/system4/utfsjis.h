@@ -30,6 +30,12 @@
 
 extern bool sys4_text_is_gbk;
 void sys4_set_text_gbk(bool enabled);
+extern bool sys4_source_is_utf8;
+void sys4_set_source_utf8(bool enabled);
+bool sys4_bytes_look_utf8(const uint8_t *s, size_t len);
+char *sys4_source_strdup(const char *src);
+struct string;
+struct string *sys4_source_make_string(const char *src, size_t len);
 #define SJIS_2BYTE(b) (sys4_text_is_gbk ? ((uint8_t)(b) >= 0x81 && (uint8_t)(b) <= 0xfe) \
         : (((b) & 0xe0) == 0x80 || ((b) & 0xe0) == 0xe0))
 

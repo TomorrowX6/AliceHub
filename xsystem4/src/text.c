@@ -15,9 +15,11 @@
  */
 
 #include <math.h>
+#include <string.h>
 
 #include "system4.h"
 #include "system4/ain.h"
+#include "system4/file.h"
 #include "system4/fnl.h"
 #include "system4/hashtable.h"
 #include "system4/string.h"
@@ -111,11 +113,67 @@ static struct font *load_font(enum font_face type)
 
 static bool font_initialized = false;
 
+// UTF-8 releases lay text out for their .fnl font, whose glyphs fill only part of
+// the cell (Tsumamigui 3: 32px advance in a 48px cell). When a TTF stands in for
+// the .fnl, draw it at the same em so the layout matches the original.
+static float fnl_substitute_scale = 1.0f;
+
+static uint32_t read_le32(const uint8_t *p)
+{
+	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+// Reads only the metrics it needs, with bounds checks: fnl_open() exits on a
+// damaged index, and the .fnl is otherwise unused here.
+static void init_fnl_substitute_scale(void)
+{
+	if (!sys4_source_is_utf8 || !config.fnl_path)
+		return;
+	FILE *f = file_open_utf8(config.fnl_path, "rb");
+	if (!f)
+		return;
+	uint8_t header[16];
+	uint8_t *index = NULL;
+	if (fread(header, sizeof(header), 1, f) != 1 || memcmp(header, "FNA\0", 4))
+		goto out;
+	uint32_t index_size = read_le32(header + 12);
+	if (index_size < 8 || index_size > (64u << 20))
+		goto out;
+	index = xmalloc(index_size);
+	if (fread(index, index_size, 1, f) != 1)
+		goto out;
+	// nr_fonts, then font 0: nr_faces, then per face: height, uk, nr_glyphs, glyphs[10 bytes]
+	uint32_t nr_faces = read_le32(index + 4);
+	size_t pos = 8;
+	uint32_t height = 0, nr_glyphs = 0;
+	size_t glyphs = 0;
+	for (uint32_t i = 0; i < nr_faces; i++) {
+		if (index_size - pos < 12)
+			goto out;
+		height = read_le32(index + pos);
+		nr_glyphs = read_le32(index + pos + 8);
+		glyphs = pos + 12;
+		if (nr_glyphs > (index_size - glyphs) / 10)
+			goto out;
+		pos = glyphs + (size_t)nr_glyphs * 10;
+	}
+	unsigned g = fnl_char_to_index(0x8a6d); // 確 (full-width)
+	if (!nr_faces || !height || g >= nr_glyphs)
+		goto out;
+	unsigned width = index[glyphs + g * 10] | index[glyphs + g * 10 + 1] << 8;
+	if (width && width < height)
+		fnl_substitute_scale = (float)width / (float)height;
+out:
+	free(index);
+	fclose(f);
+}
+
 void gfx_font_init(void)
 {
 	if (font_initialized)
 		return;
 	ft_font_init();
+	init_fnl_substitute_scale();
 	font_ttf[FONT_GOTHIC] = load_font(FONT_GOTHIC);
 	font_ttf[FONT_MINCHO] = load_font(FONT_MINCHO);
 
@@ -154,6 +212,8 @@ static struct font *get_font(unsigned face)
 struct font_size *gfx_font_get_size(unsigned face, float size)
 {
 	struct font *font = get_font(face);
+	if (face > 255 && (sys4_text_is_gbk || sys4_has_mai_word_table()))
+		size *= fnl_substitute_scale;
 	return font->get_size(font, size);
 }
 
