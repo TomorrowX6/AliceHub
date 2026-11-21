@@ -295,6 +295,30 @@ static int complete_stream(sts_mixer_sample_t *sample, void *data) {
     return STS_STREAM_COMPLETE;
 }
 
+static void link_limit_test(const char *mode) {
+    assert(config.mixer_nr_channels == STS_MIXER_VOICES);
+    assert(nr_mixers == STS_MIXER_VOICES + !strcmp(mode, "limit-implicit"));
+    for (int i = 0; i < nr_mixers; i++) {
+        if (&mixers[i] == master) continue;
+        assert(mixers[i].voice >= 0);
+        sts_mixer_voice_t *voice = &mixers[i].parent->mixer.voices[mixers[i].voice];
+        assert(voice->state == STS_MIXER_VOICE_STREAMING);
+        assert(voice->stream == &mixers[i].stream);
+    }
+    if (!strcmp(mode, "limit-flat") || !strcmp(mode, "limit-implicit")) {
+        assert(sts_mixer_get_active_voices(&master->mixer) == nr_mixers - 1);
+    } else {
+        assert(sts_mixer_get_active_voices(&master->mixer) == 3);
+        assert(sts_mixer_get_active_voices(&mixers[3].mixer) == nr_mixers - 4);
+    }
+    start(12, "last", STS_MIXER_VOICES - 1, true);
+    assert(render(6) > 0.01f);
+    assert(kiwi_unprepare(12));
+    assert(slots() == nr_mixers - 1);
+    printf("%s: %d configured groups, all %d parent links active, last group renders audible PCM\n",
+        mode, STS_MIXER_VOICES, nr_mixers - 1);
+}
+
 static void bounds_test(void) {
     sts_mixer_t mixer;
     memset(&mixer, 0xff, sizeof(mixer));
@@ -340,11 +364,20 @@ int main(int argc, char **argv) {
     assert(argc == 5);
     wave_path = argv[3];
     config.default_volume = 80;
-    if (strcmp(argv[4], "empty")) {
+    if (!strcmp(argv[4], "linkfail")) {
+        const char *names[STS_MIXER_VOICES + 2];
+        names[0] = "Master";
+        for (unsigned i = 1; i < STS_MIXER_VOICES + 2; i++) names[i] = "Group";
+        set_default_mixers(names, NULL, STS_MIXER_VOICES + 2);
+    } else if (!strcmp(argv[4], "limit-implicit")) {
+        static const char *const names[] = {"Music", "Sound", "Effects", "Speech", "Ambient", "BackVoice"};
+        set_default_mixers(names, NULL, 6);
+    } else if (strcmp(argv[4], "empty") && strcmp(argv[4], "limit-empty")) {
         static const char *const names[] = {"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice"};
         static const int volumes[] = {50, 80, 80, 80, 80, 80};
         set_default_mixers(names, volumes, 6);
     }
+    game_evenicle2 = !strcmp(argv[4], "limit-flat");
     config.ex_path = argv[1];
     kiwi_prelink();
     kiwi_init();
@@ -358,6 +391,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[4], "full")) exhaustion_test();
     else if (!strcmp(argv[4], "pressure")) pressure_test();
     else if (!strcmp(argv[4], "bounds")) bounds_test();
+    else if (!strncmp(argv[4], "limit-", 6)) link_limit_test(argv[4]);
     else if (!strcmp(argv[4], "invalid") || !strcmp(argv[4], "absent")) {
         assert(config.mixer_nr_channels == 6);
         printf("absent/invalid EX groups leave configured mixers unchanged\n");
@@ -377,11 +411,13 @@ class EvenicleAudioTests(unittest.TestCase):
             metadata = directory / "timemap.ex"
             audio = directory / "audio.wav"
             volumes = [0.8, 0.8, 0.8, 1.0, 0.8, 0.8, 0.53, 0.59, -0.2, 1.5, 0.8, 0.8, 0.8, 0.8]
-            rows = [(-1, 0.8), (1024, 0.8)] if invalid else list(enumerate(volumes))
+            rows = [(-1, 0.8), (256, 0.8), (1023, 0.8), (1024, 0.8)] if invalid else list(enumerate(volumes))
+            if mode.startswith("limit-"):
+                rows = [(255, 0.8), (256, 0.8), (1023, 0.8)]
             groups.write_bytes(build_extf([] if mode == "absent" else [group_table(rows)]))
             metadata.write_bytes(build_extf([_ex_soundinfo_table(
                 [(b"10001", 11), (b"10101", 10), (b"bgm", 1),
-                 (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100)],
+                 (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100), (b"last", 255)],
                 [(b"Name", 3), (b"Group", 1)],
             )]))
             with wave.open(str(audio), "wb") as stream:
@@ -418,6 +454,23 @@ class EvenicleAudioTests(unittest.TestCase):
 
     def test_active_voice_scan_bounds(self):
         self.run_probe("bounds")
+
+    def test_ex_group_limit_nested(self):
+        self.run_probe("limit-nested")
+
+    def test_ex_group_limit_flat(self):
+        self.run_probe("limit-flat")
+
+    def test_ex_group_limit_implicit_master(self):
+        self.run_probe("limit-implicit")
+
+    def test_ex_group_limit_without_ini(self):
+        self.run_probe("limit-empty")
+
+    def test_parent_link_failure_is_fatal(self):
+        with self.assertRaisesRegex(AssertionError, "Failed to link audio mixer 257 .*stream capacity 256 exhausted"):
+            self.run_probe("linkfail")
+        print("oversized existing configuration: parent link failure is fatal, not silent", flush=True)
 
 
 if __name__ == "__main__":

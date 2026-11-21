@@ -885,6 +885,9 @@ void mixer_init(void)
 		mixers[i].stream.sample.length = CHUNK_SIZE * 2;
 		mixers[i].stream.sample.data = mixers[i].data;
 		mixers[i].voice = sts_mixer_play_stream(&mixers[i].parent->mixer, &mixers[i].stream, 1.0f);
+		if (mixers[i].voice < 0)
+			ERROR("Failed to link audio mixer %d (%s) to parent %td (%s): stream capacity %d exhausted",
+				i, mixers[i].name, mixers[i].parent - mixers, mixers[i].parent->name, STS_MIXER_VOICES);
 	}
 
 	// read audio metadata
@@ -895,6 +898,11 @@ void mixer_init(void)
 
 	// initialize SDL audio
 	open_default_audio_device();
+}
+
+int mixer_get_stream_capacity(void)
+{
+	return STS_MIXER_VOICES;
 }
 
 int mixer_get_numof(void)

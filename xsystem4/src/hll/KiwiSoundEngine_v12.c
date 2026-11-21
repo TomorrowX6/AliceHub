@@ -101,10 +101,15 @@ static void add_ex_mixers(void)
 	}
 	unsigned old_count = config.mixer_nr_channels;
 	unsigned count = old_count;
+	unsigned capacity = mixer_get_stream_capacity();
 	for (unsigned r = 0; r < table->nr_rows; r++) {
 		struct ex_value *row = table->rows[r];
-		if (row[0].type != EX_INT || row[0].i < 0 || row[0].i >= 1024) {
+		if (row[0].type != EX_INT || row[0].i < 0) {
 			WARNING("Invalid EX sound group at row %u", r);
+			continue;
+		}
+		if ((unsigned)row[0].i >= capacity) {
+			WARNING("EX sound group %d exceeds maximum %u; skipping", row[0].i, capacity - 1);
 			continue;
 		}
 		count = max(count, (unsigned)row[0].i + 1);
