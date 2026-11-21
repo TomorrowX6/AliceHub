@@ -177,7 +177,58 @@ static void read_mixer_channels(struct ini_entry *entry)
 	}
 }
 
+static bool file_text_is_utf8(const char *path)
+{
+	size_t len;
+	uint8_t *data = file_read(path, &len);
+	bool utf8 = data && sys4_bytes_look_utf8(data, len);
+	free(data);
+	return utf8;
+}
+
+// e.g. the BokiBoki release of Tsumamigui 3 (and its Simplified repack) stores all text as UTF-8.
+static bool ain_text_is_utf8(const char *path)
+{
+	int err;
+	bool prev = sys4_source_is_utf8;
+	sys4_set_source_utf8(false);
+	struct ain *raw = ain_open(path, &err);
+	sys4_set_source_utf8(prev);
+	if (!raw)
+		return false;
+	bool utf8 = false;
+	for (int i = 0; i < raw->nr_messages; i++) {
+		struct string *m = raw->messages[i];
+		bool ascii = true;
+		for (int j = 0; j < m->size && ascii; j++)
+			ascii = (uint8_t)m->text[j] < 0x80;
+		if (ascii)
+			continue;
+		if (!sys4_bytes_look_utf8((const uint8_t *)m->text, m->size)) {
+			utf8 = false;
+			break;
+		}
+		utf8 = true;
+	}
+	ain_free(raw);
+	return utf8;
+}
+
+static void set_utf8_release(bool enabled)
+{
+	sys4_set_source_utf8(enabled);
+	sys4_set_text_gbk(enabled);
+}
+
+static bool read_config_entries(const char *path);
+
 static bool read_config(const char *path)
+{
+	set_utf8_release(file_text_is_utf8(path));
+	return read_config_entries(path);
+}
+
+static bool read_config_entries(const char *path)
 {
 	int ini_size;
 	struct ini_entry *ini = ini_parse(path, &ini_size);
@@ -280,6 +331,8 @@ static void read_user_config_file(const char *path, const char *basedir)
 static void read_user_config(void)
 {
 	char *path;
+	bool source_utf8 = sys4_source_is_utf8;
+	sys4_set_source_utf8(false);
 
 	// global config
 	path = xmalloc(PATH_MAX);
@@ -291,6 +344,7 @@ static void read_user_config(void)
 	path = gamedir_path(".xsys4rc");
 	read_user_config_file(path, config.game_dir);
 	free(path);
+	sys4_set_source_utf8(source_utf8);
 }
 
 static char *get_xsystem4_home(void)
@@ -378,6 +432,18 @@ static bool config_init_with_ini(const char *ini_path)
 	char *tmp = xstrdup(ini_path);
 	config.game_dir = xstrdup(path_dirname(tmp));
 	free(tmp);
+	if (sys4_source_is_utf8) {
+		// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a
+		// Shift-JIS game. Its values are then re-read as UTF-8 converted to Shift-JIS.
+		char *ain_path = gamedir_path(config.ain_filename);
+		bool ain_utf8 = ain_text_is_utf8(ain_path);
+		free(ain_path);
+		if (!ain_utf8) {
+			sys4_set_text_gbk(false);
+			read_config_entries(ini_path);
+			sys4_set_source_utf8(false);
+		}
+	}
 	config_init();
 	return true;
 }
@@ -404,6 +470,7 @@ static bool config_init_with_dir(const char *dir)
 
 static void config_init_with_ain(const char *ain_path)
 {
+	set_utf8_release(ain_text_is_utf8(ain_path));
 	config.ain_filename = xstrdup(path_basename(ain_path));
 	config.game_dir = xstrdup(path_dirname(ain_path));
 	config_init();

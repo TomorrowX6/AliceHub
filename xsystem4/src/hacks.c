@@ -567,7 +567,9 @@ void apply_game_specific_hacks(struct ain *ain)
 	}
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
-	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
+	// UTF-8 releases are converted to GBK when loaded.
+	sys4_set_text_gbk(sys4_source_is_utf8
+		|| (config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
 			|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
 			|| strstr(config.game_name, "\xcf\xc4\xcd\xde")
 			|| strstr(config.game_name, "\xd6\xd0\xce\xc4")

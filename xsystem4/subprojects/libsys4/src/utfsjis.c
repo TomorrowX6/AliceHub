@@ -30,9 +30,32 @@
 #include "system4/file.h"
 #include "system4/utfsjis.h"
 #include "system4/s2utbl.h"
+#include "system4/string.h"
 #include "gbk_table.h"
 
 bool sys4_text_is_gbk = false;
+bool sys4_source_is_utf8 = false;
+
+/* Symbols used by UTF-8 releases that GBK lacks, parked in the GBK user-defined area. */
+static const struct { uint16_t gbk; uint16_t u; } gbk_extras[] = {
+	{ 0xaaa1, 0x266a }, // ♪
+	{ 0xaaa2, 0x30fb }, // ・
+	{ 0xaaa3, 0x2764 }, // ❤
+	{ 0xaaa4, 0x2665 }, // ♥
+};
+
+static int gbk_lookup(uint8_t lead, uint8_t trail)
+{
+	int u = gbk_to_unicode[lead - 0x81][trail - 0x40];
+	if (u)
+		return u;
+	uint16_t code = (uint16_t)((lead << 8) | trail);
+	for (size_t i = 0; i < sizeof(gbk_extras) / sizeof(gbk_extras[0]); i++) {
+		if (gbk_extras[i].gbk == code)
+			return gbk_extras[i].u;
+	}
+	return 0;
+}
 static uint16_t unicode_to_gbk[65536];
 static uint16_t unicode_to_sjis_tbl[65536];
 
@@ -46,6 +69,10 @@ static void ensure_unicode_to_gbk(void)
 			if (code && code < 65536)
 				unicode_to_gbk[code] = (uint16_t)((lead << 8) | trail);
 		}
+	}
+	for (size_t i = 0; i < sizeof(gbk_extras) / sizeof(gbk_extras[0]); i++) {
+		if (!unicode_to_gbk[gbk_extras[i].u])
+			unicode_to_gbk[gbk_extras[i].u] = gbk_extras[i].gbk;
 	}
 }
 
@@ -228,6 +255,32 @@ void sys4_set_text_gbk(bool enabled)
 		ensure_unicode_to_gbk();
 }
 
+void sys4_set_source_utf8(bool enabled)
+{
+	sys4_source_is_utf8 = enabled;
+}
+
+bool sys4_bytes_look_utf8(const uint8_t *s, size_t len)
+{
+	if (len >= 3 && s[0] == 0xef && s[1] == 0xbb && s[2] == 0xbf)
+		return true;
+	bool multibyte = false;
+	for (size_t i = 0; i < len;) {
+		uint8_t b = s[i];
+		size_t n = b < 0x80 ? 1 : (b & 0xe0) == 0xc0 ? 2 : (b & 0xf0) == 0xe0 ? 3 : (b & 0xf8) == 0xf0 ? 4 : 0;
+		if (!n || i + n > len)
+			return false;
+		for (size_t j = 1; j < n; j++) {
+			if ((s[i + j] & 0xc0) != 0x80)
+				return false;
+		}
+		if (n >= 3)
+			multibyte = true;
+		i += n;
+	}
+	return multibyte;
+}
+
 // Convert a character-index to a byte-index for a given SJIS string.
 int sjis_index(const char *_src, int index)
 {
@@ -254,7 +307,7 @@ static char *sjis_char2unicode_impl(const char *_src, int *dst, bool use_mai)
 	if (!use_mai && sys4_text_is_gbk) {
 		if (*src == 0x80) { *dst = 0x20ac; return (char*)src + 1; }
 		if (*src >= 0x81 && *src <= 0xfe && src[1] >= 0x40 && src[1] <= 0xfe) {
-			*dst = gbk_to_unicode[*src - 0x81][src[1] - 0x40];
+			*dst = gbk_lookup(src[0], src[1]);
 			if (!*dst) *dst = 0xfffd;
 			return (char*)src + 2;
 		}
@@ -394,7 +447,7 @@ static char *cjk2utf_strict_buf_impl(const char *_src, size_t len, bool gbk, cha
 				size_t c = (size_t)(b1 - 0x40);
 				if (b1 >= 0x40 && r < sizeof(gbk_to_unicode) / sizeof(gbk_to_unicode[0]) &&
 				    c < sizeof(gbk_to_unicode[0]) / sizeof(gbk_to_unicode[0][0]))
-					u = gbk_to_unicode[r][c];
+					u = gbk_lookup(b0, b1);
 				src += 2;
 			}
 		}
@@ -514,6 +567,24 @@ static char *utf2cjk_impl(const char *_src, size_t len, bool gbk, bool use_mai) 
 
 char *utf2cjk(const char *_src, size_t len, bool gbk) {
 	return utf2cjk_impl(_src, len, gbk, false);
+}
+
+/* Game data from UTF-8 releases is converted to GBK on load so it runs on the GBK text path. */
+char *sys4_source_strdup(const char *src)
+{
+	if (!sys4_source_is_utf8)
+		return strdup(src);
+	return utf2cjk_impl(src, strlen(src), sys4_text_is_gbk, false);
+}
+
+struct string *sys4_source_make_string(const char *src, size_t len)
+{
+	if (!sys4_source_is_utf8 || !len)
+		return make_string(src, len);
+	char *conv = utf2cjk_impl(src, len, sys4_text_is_gbk, false);
+	struct string *s = make_string(conv, strlen(conv));
+	free(conv);
+	return s;
 }
 
 char *utf2sjis(const char *_src, size_t len) {
