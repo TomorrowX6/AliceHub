@@ -15,7 +15,7 @@ func modifier_api_get_lock_mask(_ game: modifier_lock_game) -> Int32 { masks[gam
 func modifier_api_set_lock_mask(_ game: modifier_lock_game, _ mask: Int32) { masks[game.rawValue] = mask }
 func modifier_api_apply_live_action(_ json: UnsafePointer<CChar>!) { actions.append(String(cString: json)) }
 func modifier_api_read_local_save_summary(_ path: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CChar>! {
-    strdup("{\"valid\":true,\"ok\":true,\"turn\":3,\"foodTicket\":10,\"comment\":\"x\"}")
+    strdup("{\"valid\":true,\"ok\":true,\"turn\":3,\"foodTicket\":10,\"cardCount\":4,\"comment\":\"x\"}")
 }
 func modifier_api_write_local_save_mod(_ path: UnsafePointer<CChar>!, _ json: UnsafePointer<CChar>!) -> Bool {
     writes.append(String(cString: json)); return true

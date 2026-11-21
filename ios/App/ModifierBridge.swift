@@ -188,10 +188,26 @@ enum ModifierBridge {
         }
     }
 
+    /// Keys `write_local_save_mod_str` in modifier.c applies; other summary fields are read-only.
+    static let writableSaveKeys: Set<String> = [
+        "addCardCount", "addPerHit", "atkPerMag", "atkPerPhys", "battleCount", "cardAtkBonus", "cardHpBonus",
+        "chapter", "countryEnemyArmy", "countryPlayerArmy", "countryState", "curseTurn", "decBadCond",
+        "defPerMag", "defPerPhys", "difficulty", "foodTicket", "freeCitiesEArmy", "freeCitiesPArmy",
+        "freeCitiesState", "friendPoint", "hannyZippo", "helmanEArmy", "helmanPArmy", "helmanState", "honor",
+        "humanAlivePer", "humanCount", "humanDead", "humanDeadPer", "isUsedHannyZippo", "itemStar",
+        "leazasEArmy", "leazasPArmy", "leazasState", "partyAtk", "partyAvailCount", "partyBonusMaxPoint",
+        "partyHp", "partyIsFixStatus", "partyMaxHp", "partyRank", "perAutoAtk", "perAutoHeal", "perAvoid",
+        "perCrit", "perExpUp", "perFindTreasure", "perHpUp", "perInjection", "perMulti", "rareLuck",
+        "seaEnemyArmy", "seaPlayerArmy", "setCardCount", "setCharExp", "setCharStar", "statusMaxPer",
+        "subArmy", "subDwarf", "subGeneral", "subHanny", "subRemnant", "totalExp", "treasureNotGetCount",
+        "turn", "zethEArmy", "zethPArmy", "zethState",
+    ]
+
     /// Integer fields of a save summary that the native writer understands, in display order.
     static func editableFields(_ summary: [String: Any]) -> [(key: String, value: Int)] {
         summary.compactMap { key, value -> (String, Int)? in
-            guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            guard writableSaveKeys.contains(key), let number = value as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
             return (key, number.intValue)
         }
         .sorted { $0.0 < $1.0 }

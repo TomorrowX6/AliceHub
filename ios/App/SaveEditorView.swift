@@ -91,8 +91,11 @@ struct SaveFileEditor: View {
         guard !changes.isEmpty else { message = "没有修改"; return }
         do {
             try ModifierBridge.writeLocalSave(url, changes: changes)
-            message = "已保存 \(changes.count) 项"
             load()
+            let rejected = changes.filter { original[$0.key] != $0.value }.map(\.key).sorted()
+            message = rejected.isEmpty
+                ? "已保存 \(changes.count) 项"
+                : "以下字段未能写入：\(rejected.joined(separator: "、"))"
         } catch {
             message = "保存失败"
         }
