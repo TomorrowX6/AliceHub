@@ -127,7 +127,8 @@ bool PE_IsLayoutBoxReturnSizeForRate(int parts_no)
 
 static float layout_wrap_limit(struct parts_layout_box *lb, bool horizontal)
 {
-	if (!lb->wrap_size_is_rate)
+	// Older PACT data (e.g. Tsumamigui 3) sets the rate flag on pixel sizes such as 870.
+	if (!lb->wrap_size_is_rate || lb->wrap_size > 1.0f)
 		return lb->wrap_size;
 	int view = horizontal
 		? (config.view_width > 0 ? config.view_width : 1280)

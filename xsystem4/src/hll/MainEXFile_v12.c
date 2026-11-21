@@ -734,6 +734,117 @@ static bool mainex_format_names(struct string *name, struct page **out, int id)
 	return true;
 }
 
+/*
+ * Some name-based MainEXFile libraries with reader IDs (e.g. Tsumamigui 3)
+ * still return values through ref out-parameters, like the handle-based API.
+ */
+static struct ex_value *key_value(struct string *name, int row, struct string *field, int id)
+{
+	if (!field || row < 0)
+		return NULL;
+	struct ex_value *v = value(name, id);
+	if (!v || v->type != EX_TABLE)
+		return NULL;
+	int col = ex_col_from_name(v->t, field->text);
+	return col < 0 ? NULL : ex_table_get(v->t, row, col);
+}
+
+static struct ex_value *ia2value(struct string *name, int key, struct string *field, int id)
+{
+	return key_value(name, mainex_int_key(name, key, id), field, id);
+}
+
+static struct ex_value *sa2value(struct string *name, struct string *key, struct string *field, int id)
+{
+	return key_value(name, mainex_string_key(name, key, id), field, id);
+}
+
+static struct ex_value *ra2value(struct string *name, int row, struct string *field, int id)
+{
+	return key_value(name, row, field, id);
+}
+
+static bool out_int(struct ex_value *v, int *out)
+{
+	if (!out || !v || v->type != EX_INT)
+		return false;
+	*out = v->i;
+	return true;
+}
+
+static bool out_float(struct ex_value *v, float *out)
+{
+	if (!out || !v || v->type != EX_FLOAT)
+		return false;
+	*out = v->f;
+	return true;
+}
+
+static bool out_string(struct ex_value *v, struct string **out)
+{
+	if (!out || !v || v->type != EX_STRING || !v->s)
+		return false;
+	if (*out)
+		free_string(*out);
+	*out = string_ref(v->s);
+	return true;
+}
+
+static int value_type(struct ex_value *v) { return v ? v->type : 0; }
+
+static bool ref_int(struct string *n, int *d, int id) { return out_int(value(n, id), d); }
+static bool ref_float(struct string *n, float *d, int id) { return out_float(value(n, id), d); }
+static bool ref_string(struct string *n, struct string **d, int id) { return out_string(value(n, id), d); }
+static bool ref_aint(struct string *n, int i, int *d, int id) { return out_int(avalue(n, i, id), d); }
+static bool ref_afloat(struct string *n, int i, float *d, int id) { return out_float(avalue(n, i, id), d); }
+static bool ref_astring(struct string *n, int i, struct string **d, int id) { return out_string(avalue(n, i, id), d); }
+static bool ref_a2int(struct string *n, int r, int c, int *d, int id) { return out_int(a2value(n, r, c, id), d); }
+static bool ref_a2float(struct string *n, int r, int c, float *d, int id) { return out_float(a2value(n, r, c, id), d); }
+static bool ref_a2string(struct string *n, int r, int c, struct string **d, int id) { return out_string(a2value(n, r, c, id), d); }
+static int ia2_type(struct string *n, int k, struct string *f, int id) { return value_type(ia2value(n, k, f, id)); }
+static int sa2_type(struct string *n, struct string *k, struct string *f, int id) { return value_type(sa2value(n, k, f, id)); }
+static int ra2_type(struct string *n, int r, struct string *f, int id) { return value_type(ra2value(n, r, f, id)); }
+static bool ia2_exists(struct string *n, int k, struct string *f, int id) { return ia2value(n, k, f, id); }
+static bool sa2_exists(struct string *n, struct string *k, struct string *f, int id) { return sa2value(n, k, f, id); }
+static bool ra2_exists(struct string *n, int r, struct string *f, int id) { return ra2value(n, r, f, id); }
+static bool ref_ia2int(struct string *n, int k, struct string *f, int *d, int id) { return out_int(ia2value(n, k, f, id), d); }
+static bool ref_ia2float(struct string *n, int k, struct string *f, float *d, int id) { return out_float(ia2value(n, k, f, id), d); }
+static bool ref_ia2string(struct string *n, int k, struct string *f, struct string **d, int id) { return out_string(ia2value(n, k, f, id), d); }
+static bool ref_sa2int(struct string *n, struct string *k, struct string *f, int *d, int id) { return out_int(sa2value(n, k, f, id), d); }
+static bool ref_sa2float(struct string *n, struct string *k, struct string *f, float *d, int id) { return out_float(sa2value(n, k, f, id), d); }
+static bool ref_sa2string(struct string *n, struct string *k, struct string *f, struct string **d, int id) { return out_string(sa2value(n, k, f, id), d); }
+static bool ref_ra2int(struct string *n, int r, struct string *f, int *d, int id) { return out_int(ra2value(n, r, f, id), d); }
+static bool ref_ra2float(struct string *n, int r, struct string *f, float *d, int id) { return out_float(ra2value(n, r, f, id), d); }
+static bool ref_ra2string(struct string *n, int r, struct string *f, struct string **d, int id) { return out_string(ra2value(n, r, f, id), d); }
+
+static bool uses_ref_out_params(void)
+{
+	int libno = ain_get_library(ain, "MainEXFile");
+	if (libno < 0)
+		return false;
+	int fno = ain_get_library_function(ain, libno, "Int");
+	if (fno < 0)
+		return false;
+	struct ain_hll_function *f = &ain->libraries[libno].functions[fno];
+	return f->nr_arguments == 3 && f->arguments[1].type.data == AIN_REF_INT;
+}
+
+static void mainex_ref_prelink(struct static_library *library)
+{
+	const struct static_hll_function functions[] = {
+		HLL_EXPORT(Int, ref_int), HLL_EXPORT(Float, ref_float), HLL_EXPORT(String, ref_string),
+		HLL_EXPORT(AInt, ref_aint), HLL_EXPORT(AFloat, ref_afloat), HLL_EXPORT(AString, ref_astring),
+		HLL_EXPORT(A2Int, ref_a2int), HLL_EXPORT(A2Float, ref_a2float), HLL_EXPORT(A2String, ref_a2string),
+		HLL_EXPORT(IA2Type, ia2_type), HLL_EXPORT(SA2Type, sa2_type), HLL_EXPORT(RA2Type, ra2_type),
+		HLL_EXPORT(IA2Exists, ia2_exists), HLL_EXPORT(SA2Exists, sa2_exists), HLL_EXPORT(RA2Exists, ra2_exists),
+		HLL_EXPORT(IA2Int, ref_ia2int), HLL_EXPORT(IA2Float, ref_ia2float), HLL_EXPORT(IA2String, ref_ia2string),
+		HLL_EXPORT(SA2Int, ref_sa2int), HLL_EXPORT(SA2Float, ref_sa2float), HLL_EXPORT(SA2String, ref_sa2string),
+		HLL_EXPORT(RA2Int, ref_ra2int), HLL_EXPORT(RA2Float, ref_ra2float), HLL_EXPORT(RA2String, ref_ra2string),
+	};
+	for (unsigned i = 0; i < sizeof(functions) / sizeof(*functions); i++)
+		static_library_replace(library, functions[i].name, functions[i].fun);
+}
+
 void mainex_v12_prelink(struct static_library *library)
 {
 	const struct static_hll_function functions[] = {
@@ -756,4 +867,6 @@ void mainex_v12_prelink(struct static_library *library)
 	};
 	for (unsigned i = 0; i < sizeof(functions) / sizeof(*functions); i++)
 		static_library_replace(library, functions[i].name, functions[i].fun);
+	if (uses_ref_out_params())
+		mainex_ref_prelink(library);
 }
