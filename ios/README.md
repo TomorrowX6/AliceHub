@@ -70,6 +70,21 @@ in filename order when multiple AINs exist.
   iOS crash reports omit the Linux-only
   register dump. Error dialogs use the scene-aware SDL UIKit alert window.
 
+## Standalone checks
+
+`python3 ios/Tests/test_save_manager.py` compiles the Foundation-only save manager
+with `swiftc -import-objc-header ios/Tests/SaveChecks-Bridging-Header.h
+ios/App/SaveZip.swift ios/App/SaveManager.swift ios/Tests/SaveManagerChecks.swift
+-lz -o <checks>`, runs save-operation checks, and verifies ZIP interoperability
+with Python and `unzip`. The Python driver supplies the fixture directory argument
+to the executable. No simulator or game data is required.
+
+The launcher offers 存档管理 on each game's swipe actions. Saves remain under
+`Documents/Saves/<game>`; automatic backups retain five ZIPs under Application
+Support `save_backups/<game>`. Import merges files; restoring a backup replaces
+visible saves while retaining hidden settings. PC export uses the engine's native
+X4SS converter and does not modify the original saves.
+
 ## Game runtime
 
 The iOS platform bridge attaches SDL's UIKit window to the active SwiftUI scene

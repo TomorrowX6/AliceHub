@@ -5,6 +5,7 @@ struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @State private var pickerPresented = false
     @State private var pendingDelete: Game?
+    @State private var saveGame: Game?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -24,6 +25,7 @@ struct LauncherView: View {
                                 Label(game.name, systemImage: "gamecontroller.fill").padding(.vertical, 8)
                             }
                             .swipeActions {
+                                Button("存档管理") { saveGame = game }.tint(.blue)
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
                             }
                         }
@@ -50,6 +52,7 @@ struct LauncherView: View {
         }
         .navigationViewStyle(.stack)
         .sheet(isPresented: $pickerPresented) { FolderPicker { library.importFolder($0) } }
+        .sheet(item: $saveGame) { SaveManagerView(game: $0) }
         .alert("删除游戏？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("取消", role: .cancel) { pendingDelete = nil }
             Button("删除", role: .destructive) {
