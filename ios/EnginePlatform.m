@@ -7,6 +7,13 @@
 
 void savedata_flush_on_background(void);
 
+static void (*background_hook)(SDL_bool);
+
+void alicehub_ios_set_background_hook(void (*hook)(SDL_bool))
+{
+    background_hook = hook;
+}
+
 static SDL_SysWMinfo window_info(SDL_Window *window)
 {
     SDL_SysWMinfo info = {0};
@@ -34,15 +41,22 @@ void alicehub_ios_prepare_window(SDL_Window *window)
             object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
                 if (SDL_GL_GetCurrentContext())
                     glFinish();
-                mixer_set_app_backgrounded(true);
-                savedata_flush_on_background();
+                if (background_hook) {
+                    background_hook(SDL_TRUE);
+                } else {
+                    mixer_set_app_backgrounded(true);
+                    savedata_flush_on_background();
+                }
             }];
     }
     static id activeObserver;
     if (!activeObserver) {
         activeObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidActivateNotification
             object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
-                mixer_set_app_backgrounded(false);
+                if (background_hook)
+                    background_hook(SDL_FALSE);
+                else
+                    mixer_set_app_backgrounded(false);
             }];
     }
     if (@available(iOS 16.0, *)) {

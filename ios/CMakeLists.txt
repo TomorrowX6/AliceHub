@@ -115,7 +115,8 @@ function(isolate_engine name)
   set(exports -Wl,-exported_symbol,_${name}_main)
   if(name STREQUAL "xsystem4")
     list(APPEND exports -Wl,-exported_symbol,_alicehub_ios_prepare_window
-      -Wl,-exported_symbol,_alicehub_ios_bind_drawable)
+      -Wl,-exported_symbol,_alicehub_ios_bind_drawable
+      -Wl,-exported_symbol,_alicehub_ios_set_background_hook)
   endif()
   add_custom_target(${name}_engine ALL
     COMMAND ${CMAKE_C_COMPILER} -target ${ffi_target} -isysroot ${sdk_path}

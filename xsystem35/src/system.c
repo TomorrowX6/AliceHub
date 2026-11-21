@@ -20,6 +20,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef ALICEHUB_IOS
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #include "system.h"
 #include "sdl_compat.h"
 #include "debugger.h"
@@ -78,7 +82,16 @@ void sys_message(int lv, char *format, ...) {
 }
 
 void sys_write_crash_log(const char *reason) {
-#ifdef __ANDROID__
+#ifdef ALICEHUB_IOS
+	const char *path = getenv("XSYSTEM4_CRASH_LOG_PATH");
+	if (!path || !*path) return;
+	int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) return;
+	dprintf(fd, "=== XSystem35 Crash Report ===\nReason: %s\nPage: %d Address: 0x%x\n",
+		reason ? reason : "(unknown)", nact ? nact->current_page : -1,
+		nact ? nact->current_addr : 0);
+	close(fd);
+#elif defined(__ANDROID__)
 	char buf[1024];
 	int len = snprintf(buf, sizeof(buf),
 		"=== XSystem35 Crash Report ===\nReason: %s\nPage: %d Address: 0x%x\n",

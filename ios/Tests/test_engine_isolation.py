@@ -6,7 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = {
     'xsystem4': {'_xsystem4_main', '_alicehub_ios_prepare_window',
-                 '_alicehub_ios_bind_drawable'},
+                 '_alicehub_ios_bind_drawable', '_alicehub_ios_set_background_hook'},
     'xsystem35': {'_xsystem35_main'},
 }
 

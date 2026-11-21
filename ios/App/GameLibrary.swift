@@ -2,17 +2,23 @@ import Foundation
 import Combine
 import Darwin
 
+enum GameEngine: String {
+    case system3 = "System 3.x"
+    case system4 = "System 4"
+}
+
 struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
+    var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
 enum LibraryError: LocalizedError {
     case notGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 4 游戏。请确认根目录包含 AliceStart.ini、System40.ini 或 .ain 文件。"
+        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD 或 ADISK.ALD 文件。"
         case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
         case .resourcePath: return "无法找到游戏引擎资源。"
         case .logFile: return "无法创建运行日志。"
@@ -39,17 +45,34 @@ final class GameLibrary: ObservableObject {
     }
 
     static func launchTarget(_ url: URL) throws -> URL {
+        try launchInfo(url).target
+    }
+
+    static func launchInfo(_ url: URL) throws -> (engine: GameEngine, target: URL, system39: Bool) {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { throw LibraryError.notGame }
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
         if regularFiles.contains(where: { ["alicestart.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
-            return url
+            return (.system4, url, false)
         }
-        guard let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" })
-            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first else { throw LibraryError.notGame }
-        return ain
+        if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
+            return (.system4, ain, false)
+        }
+        let names = regularFiles.map { $0.lastPathComponent.lowercased() }
+        let system39 = names.contains("system39.ini") || names.contains("system39.ain")
+        guard system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) else { throw LibraryError.notGame }
+        return (.system3, url, system39)
+    }
+
+    static func launchArguments(_ url: URL, saves: URL) throws -> [String] {
+        let info = try launchInfo(url)
+        if info.engine == .system3 {
+            return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
+        }
+        return ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
     }
 
     func refresh() {
@@ -101,7 +124,7 @@ final class GameLibrary: ObservableObject {
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
-            let target = try Self.launchTarget(game.url)
+            let info = try Self.launchInfo(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
             let saves = documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
@@ -116,10 +139,12 @@ final class GameLibrary: ObservableObject {
             guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else { throw LibraryError.logFile }
             setbuf(stdout, nil)
             setbuf(stderr, nil)
-            guard chdir(resources.path) == 0 else { throw LibraryError.resourcePath }
+            guard chdir(info.engine == .system3 ? game.url.path : resources.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
-            let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", target.path]
+            setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
+            setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
+            let arguments = try Self.launchArguments(game.url, saves: saves)
             launching = true
             DispatchQueue.main.async {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
@@ -127,7 +152,11 @@ final class GameLibrary: ObservableObject {
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
                     argv.withUnsafeMutableBufferPointer { buffer in
-                        _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
+                        if info.engine == .system3 {
+                            _ = xsystem35_main(Int32(arguments.count), buffer.baseAddress)
+                        } else {
+                            _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
+                        }
                     }
                     for argument in argv { free(argument) }
                     exit(0)

@@ -19,6 +19,10 @@ targets:
       - path: ../xsystem4/fonts
         type: folder
         buildPhase: resources
+      - path: ../xsystem35/fonts/MTLc3m.ttf
+        buildPhase: resources
+      - path: ../xsystem35/fonts/mincho.ttf
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.alicehub

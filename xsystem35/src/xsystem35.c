@@ -526,6 +526,12 @@ int main(int argc, char **argv) {
 		}
 	}
 	
+#ifdef ALICEHUB_IOS
+	const char *gothic = getenv("XSYSTEM35_FONT_GOTHIC");
+	const char *mincho = getenv("XSYSTEM35_FONT_MINCHO");
+	if (gothic && *gothic) fontname_tt[FONT_GOTHIC] = gothic;
+	if (mincho && *mincho) fontname_tt[FONT_MINCHO] = mincho;
+#endif
 	load_profile();
 	check_profile();
 	sys35_ParseOption(&argc, argv);
