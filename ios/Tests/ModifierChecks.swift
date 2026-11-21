@@ -8,9 +8,12 @@ let MODIFIER_LOCK_EVENICLE = modifier_lock_game(rawValue: 2)
 var masks: [UInt32: Int32] = [:]
 var actions: [String] = []
 var writes: [String] = []
+var liveReplies = ["{\"inGame\":true,\"money\":5}"]
 func modifier_api_set_config_path(_ path: UnsafePointer<CChar>!) {}
 func modifier_api_current_game() -> UnsafePointer<CChar>! { ("dohnadohna" as NSString).utf8String }
-func modifier_api_get_live_state_json() -> UnsafeMutablePointer<CChar>! { strdup("{\"inGame\":true,\"money\":5}") }
+func modifier_api_get_live_state_json() -> UnsafeMutablePointer<CChar>! {
+    strdup(liveReplies.count > 1 ? liveReplies.removeFirst() : liveReplies[0])
+}
 func modifier_api_get_lock_mask(_ game: modifier_lock_game) -> Int32 { masks[game.rawValue] ?? 0 }
 func modifier_api_set_lock_mask(_ game: modifier_lock_game, _ mask: Int32) { masks[game.rawValue] = mask }
 func modifier_api_apply_live_action(_ json: UnsafePointer<CChar>!) { actions.append(String(cString: json)) }
@@ -23,7 +26,8 @@ func modifier_api_write_local_save_mod(_ path: UnsafePointer<CChar>!, _ json: Un
 
 @main
 struct ModifierChecks {
-    static func main() throws {
+    @MainActor
+    static func main() async throws {
         precondition(ModifierBridge.cheatAction(for: "  “whosyourdaddy” ")?["cheatCode"] as? String == "whosyourdaddy")
         precondition(ModifierBridge.cheatAction(for: "   ") == nil)
         precondition(ModifierBridge.applyCheatCode("灌注Eins陈谢谢喵"))
@@ -37,6 +41,25 @@ struct ModifierChecks {
         }
         precondition(ModifierBridge.currentGame()?.lockGame == MODIFIER_LOCK_DOHNADOHNA)
         precondition(ModifierBridge.liveState()["money"] as? Int == 5)
+
+        liveReplies = [4, 4, 14].map { "{\"inGame\":true,\"foodTicket\":\($0)}" }
+        var tickets: [Int] = []
+        var polling: Task<Void, Never>?
+        polling = Task {
+            await ModifierBridge.observeLiveState(every: 1_000_000) { state in
+                if let value = state["foodTicket"] as? Int {
+                    tickets.append(value)
+                    if value == 14 { polling?.cancel() }
+                }
+            }
+        }
+        let timeout = Task {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            polling?.cancel()
+        }
+        await polling?.value
+        timeout.cancel()
+        precondition(tickets == [4, 14])
 
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

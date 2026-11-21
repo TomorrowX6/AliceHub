@@ -7,6 +7,7 @@ struct ModifierView: View {
     @State private var code = ""
     @State private var status: String?
     @State private var live: [String: Any] = [:]
+    @State private var refreshID = 0
 
     var body: some View {
         NavigationView {
@@ -27,7 +28,10 @@ struct ModifierView: View {
             .navigationTitle(game?.name ?? "修改器")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: dismiss) } }
-            .onAppear(perform: reload)
+            .task(id: refreshID) {
+                if let lockGame = game?.lockGame { mask = ModifierBridge.lockMask(lockGame) }
+                await ModifierBridge.observeLiveState { live = $0 }
+            }
         }
         .navigationViewStyle(.stack)
         .modifier(HubAppearanceModifier())
@@ -85,15 +89,14 @@ struct ModifierView: View {
             ForEach(rows, id: \.0) { row in
                 HStack { Text(row.0); Spacer(); Text(row.1).foregroundColor(.secondary).monospacedDigit() }
             }
-            Button("刷新", action: reload)
+            Button("刷新") { refreshID += 1 }
         } header: { Text("实时数值") }
     }
 
     private func applyCode() {
         let trimmed = ModifierBridge.normalizeCheatCode(code)
         if ModifierBridge.applyCheatCode(trimmed) {
-            status = "已发送：\(trimmed)"
-            reload()
+            dismiss()
         } else {
             status = "请输入作弊码"
         }
@@ -102,14 +105,5 @@ struct ModifierView: View {
     private func setMask(_ lockGame: modifier_lock_game, _ value: Int32) {
         ModifierBridge.setLockMask(lockGame, value)
         mask = value
-    }
-
-    private func reload() {
-        if let lockGame = game?.lockGame { mask = ModifierBridge.lockMask(lockGame) }
-        // The snapshot is built by the engine on the main thread, so wait for it elsewhere.
-        DispatchQueue.global(qos: .userInitiated).async {
-            let state = ModifierBridge.liveState()
-            DispatchQueue.main.async { live = state }
-        }
     }
 }

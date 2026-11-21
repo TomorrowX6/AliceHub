@@ -122,9 +122,31 @@ enum ModifierBridge {
     }
 
     static func liveState() -> [String: Any] {
-        guard let raw = modifier_api_get_live_state_json() else { return [:] }
+        liveStateJSON().map(parse) ?? [:]
+    }
+
+    private static let liveStateQueue = DispatchQueue(label: "AliceHub.Modifier.LiveState", qos: .userInitiated)
+
+    private static func liveStateJSON() -> String? {
+        guard let raw = modifier_api_get_live_state_json() else { return nil }
         defer { free(raw) }
-        return parse(String(cString: raw))
+        return String(cString: raw)
+    }
+
+    @MainActor
+    static func observeLiveState(every interval: UInt64 = 500_000_000, onChange: ([String: Any]) -> Void) async {
+        var previous: String?
+        while !Task.isCancelled {
+            let json = await withCheckedContinuation { continuation in
+                liveStateQueue.async { continuation.resume(returning: liveStateJSON()) }
+            }
+            guard !Task.isCancelled else { return }
+            if let json, json != previous {
+                previous = json
+                onChange(parse(json))
+            }
+            try? await Task.sleep(nanoseconds: interval)
+        }
     }
 
     static func lockMask(_ game: modifier_lock_game) -> Int32 {
