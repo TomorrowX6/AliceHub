@@ -78,6 +78,14 @@ framebuffer instead of framebuffer zero. The viewport remains in window points
 for mouse/touch mapping and is scaled to drawable pixels only for `glViewport`.
 SDL converts single-finger touches to mouse events. Android's window, GL and
 input paths are unchanged.
+Tap the gamepad icon in the launcher to edit the global layout and controller
+settings. Swipe right on a game to configure an override for that game. The
+layout editor supports dragging, per-control size, opacity and visibility, and
+the Android Visual Novel, RPG and empty presets. In a game, the gamepad icon
+opens quick toggles; touches outside the controls still go to the game.
+Bluetooth and MFi controllers use SDL's GameController support and the same
+default mappings as Android. Enable physical controls in the gamepad settings;
+auto-hide is optional and only applies while a controller is connected.
 Before a scene deactivates, the bridge finishes pending GPU work, pauses audio,
 and flushes tracked saves. SDL's event pump runs UIKit without returning to the
 engine while the app is inactive, resuming only once it becomes active again.
@@ -88,6 +96,8 @@ scene becomes active, for example:
 ```
 xcrun simctl launch booted io.github.alicehub -autolaunch dohnadohna
 python3 ios/Tests/test_viewport.py
+xcrun swiftc ios/App/{GameLibrary,GamepadProfile}.swift ios/Tests/LibraryChecks.swift -o /tmp/alicehub-library-checks
+/tmp/alicehub-library-checks
 ```
 
 Dohna Dohna's title screen and first Chinese message have been exercised on the

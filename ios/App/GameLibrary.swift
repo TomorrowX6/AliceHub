@@ -119,11 +119,12 @@ final class GameLibrary: ObservableObject {
             guard chdir(resources.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
-            let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", target.path]
+            let arguments = ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", target.path]
             launching = true
             DispatchQueue.main.async {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     SDL_SetMainReady()
+                    RuntimeGamepad.prepare(for: game.id)
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
                     argv.withUnsafeMutableBufferPointer { buffer in

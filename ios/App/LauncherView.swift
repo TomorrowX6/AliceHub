@@ -1,10 +1,20 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum GamepadEditorTarget: Identifiable {
+    case global, game(String)
+    var id: String { gameID.map { "game:" + $0 } ?? "global" }
+    var gameID: String? {
+        if case let .game(id) = self { return id }
+        return nil
+    }
+}
+
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @State private var pickerPresented = false
     @State private var pendingDelete: Game?
+    @State private var gamepadEditor: GamepadEditorTarget?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -23,6 +33,11 @@ struct LauncherView: View {
                             Button { library.launch(game) } label: {
                                 Label(game.name, systemImage: "gamecontroller.fill").padding(.vertical, 8)
                             }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button { gamepadEditor = .game(game.id) } label: {
+                                    Label(padText("Gamepad"), systemImage: "gamecontroller")
+                                }
+                            }
                             .swipeActions {
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
                             }
@@ -37,6 +52,11 @@ struct LauncherView: View {
                 .buttonStyle(.borderedProminent).padding()
             }
             .navigationTitle("AliceHub")
+            .toolbar {
+                Button { gamepadEditor = .global } label: {
+                    Label(padText("Gamepad"), systemImage: "gamecontroller")
+                }
+            }
             .disabled(library.importing || library.launching)
             .overlay {
                 if library.importing || library.launching {
@@ -50,6 +70,7 @@ struct LauncherView: View {
         }
         .navigationViewStyle(.stack)
         .sheet(isPresented: $pickerPresented) { FolderPicker { library.importFolder($0) } }
+        .sheet(item: $gamepadEditor) { GamepadEditor(game: $0.gameID) }
         .alert("删除游戏？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("取消", role: .cancel) { pendingDelete = nil }
             Button("删除", role: .destructive) {
