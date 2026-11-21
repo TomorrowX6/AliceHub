@@ -21,7 +21,7 @@ struct OnlineGameChecks {
         let manifestData = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
         let manifest = try OnlineGameManifest.parse(manifestData)
         let fetched = try await OnlineGameManifest.fetch(from: base)
-        precondition(fetched.totalBytes == manifest.totalBytes && fetched.files.count == 5)
+        precondition(fetched.totalBytes == manifest.totalBytes && fetched.files.count == 6)
         let original = try JSONSerialization.jsonObject(with: manifestData) as! [String: Any]
         let entry = (original["files"] as! [[String: Any]])[0]
         func rejects(_ changed: [String: Any]) throws {
@@ -69,15 +69,15 @@ struct OnlineGameChecks {
         try Data("old manifest".utf8).write(to: stage.appendingPathComponent("stale.ain"))
         let installer = OnlineGameInstaller()
         var last: Int64 = 0
-        var sharedStorage = false, protectedCache = false
+        var independentStorage = false, protectedCache = false
         let destination = try installer.install(game, manifest: manifest, in: games, baseURL: base) { _, done, total in
             precondition(done >= last && done <= total); last = done
             let staged = stage.appendingPathComponent("game.ain")
             if files.fileExists(atPath: staged.path) {
                 let cachedAttributes = try! files.attributesOfItem(atPath: part.path)
                 let stagedAttributes = try! files.attributesOfItem(atPath: staged.path)
-                precondition((cachedAttributes[.systemFileNumber] as? NSNumber) == (stagedAttributes[.systemFileNumber] as? NSNumber))
-                sharedStorage = true
+                precondition((cachedAttributes[.systemFileNumber] as? NSNumber) != (stagedAttributes[.systemFileNumber] as? NSNumber))
+                independentStorage = true
             }
             let overlap = stage.appendingPathComponent("overlap.txt")
             if (try? String(contentsOf: overlap, encoding: .utf8)) == "overlaid" {
@@ -86,7 +86,7 @@ struct OnlineGameChecks {
                 protectedCache = true
             }
         }
-        precondition(last == manifest.totalBytes && sharedStorage && protectedCache)
+        precondition(last == manifest.totalBytes && independentStorage && protectedCache)
         try check(try Data(contentsOf: destination.appendingPathComponent("game.ain")) == payload)
         try check(try String(contentsOf: destination.appendingPathComponent(".xsys35rc"), encoding: .utf8) == "hidden config")
         let extracted = try files.subpathsOfDirectory(atPath: destination.path)
@@ -103,7 +103,13 @@ struct OnlineGameChecks {
         } catch LibraryError.alreadyExists {}
         try check(try String(contentsOf: destination.appendingPathComponent("save.rsm"), encoding: .utf8) == "save")
         print("PASS: Range resume, SHA-256/size checks, archive extraction, hidden and empty files, stale-stage cleanup and no-overwrite safety")
-        print("PASS: staging shares the verified cache inode without duplicate allocation; archive overlays preserve cached bytes")
+        let twin = destination.appendingPathComponent("twin.ain")
+        try check(try Data(contentsOf: twin) == payload)
+        let writer = try FileHandle(forWritingTo: destination.appendingPathComponent("game.ain"))
+        try writer.write(contentsOf: Data([0xFF]))
+        try writer.close()
+        try check(try Data(contentsOf: twin) == payload)
+        print("PASS: cloned staging has independent inodes; archive overlays preserve cache; identical-hash installed files have isolated writes")
 
         let cancelledGames = root.appendingPathComponent("cancelled")
         let stopping = OnlineGameInstaller()

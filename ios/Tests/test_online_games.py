@@ -19,6 +19,7 @@ with zipfile.ZipFile(buffer, "w") as archive:
     archive.writestr("Manual/说明.txt", "verified archive")
     archive.writestr("overlap.txt", "overlaid")
 PAYLOADS = {"game.ain": bytes(range(256)) * 4096, ".xsys35rc": b"hidden config", "overlap.txt": b"original", "manual.zip": buffer.getvalue(), "empty.txt": b""}
+PAYLOADS["twin.ain"] = PAYLOADS["game.ain"]
 MANIFEST = {
     "gameName": "测试游戏", "baseName": "FixtureGame",
     "files": [{"path": path, "key": "Fixture/" + path, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),

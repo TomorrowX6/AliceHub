@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Darwin
 
 final class OnlineGameInstaller {
     private let transfer = ModInstaller()
@@ -63,7 +64,10 @@ final class OnlineGameInstaller {
                     throw ArchiveError.invalidPath
                 }
                 if files.fileExists(atPath: output.path) { try files.removeItem(at: output) }
-                try files.linkItem(at: downloaded, to: output)
+                if clonefile(downloaded.path, output.path, 0) != 0 {
+                    try ArchiveExtractor.checkSpace(entry.size, at: staging)
+                    try files.copyItem(at: downloaded, to: output)
+                }
             }
             completed += entry.size
             progress("已校验 \(index + 1) / \(manifest.files.count)", completed, total)
