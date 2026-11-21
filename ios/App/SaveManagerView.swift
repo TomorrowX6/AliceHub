@@ -21,14 +21,14 @@ struct SaveManagerView: View {
         NavigationView {
             List {
                 Section {
-                    HubSectionHeader(title: game.name, subtitle: "存档独立保存，安心备份与迁移。", symbol: "externaldrive")
+                    HubSectionHeader(title: game.name, symbol: "externaldrive")
                 }.listRowBackground(HubTheme.surface)
-                Section(header: Text(game.name)) {
+                Section {
                     Button { confirmImport(folder: false) } label: {
-                        HubActionLabel(title: "从文件或压缩包导入", subtitle: "支持原始存档与 ZIP 备份", symbol: "square.and.arrow.down")
+                        HubActionLabel(title: "导入文件 / 压缩包", symbol: "square.and.arrow.down")
                     }.buttonStyle(.plain)
                     Button { confirmImport(folder: true) } label: {
-                        HubActionLabel(title: "从文件夹导入", subtitle: "导入前自动备份现有存档", symbol: "folder")
+                        HubActionLabel(title: "导入文件夹", symbol: "folder")
                     }.buttonStyle(.plain)
                     Menu {
                         Button("导出 PC 存档 · ZIP") { prepareExport(pc: true, zip: true) }
@@ -36,7 +36,7 @@ struct SaveManagerView: View {
                         Button("导出原始存档 · ZIP") { prepareExport(pc: false, zip: true) }
                         Button("导出原始存档到文件夹") { prepareExport(pc: false, zip: false) }
                     } label: {
-                        HubActionLabel(title: "导出存档", subtitle: "PC 兼容格式或原始文件", symbol: "square.and.arrow.up")
+                        HubActionLabel(title: "导出存档", symbol: "square.and.arrow.up")
                     }.disabled(entries.isEmpty)
                     Button("清空存档", role: .destructive) {
                         confirmation = SaveConfirmation(text: "确定清空全部 \(entries.count) 个存档文件吗？此操作不可恢复。") {
@@ -57,7 +57,7 @@ struct SaveManagerView: View {
                 }
                 Section(header: Text("\(entries.count) 个文件")) {
                     if entries.isEmpty {
-                        HubSectionHeader(title: "还没有存档", subtitle: "进入游戏保存一次，或导入已有存档。", symbol: "doc")
+                        HubSectionHeader(title: "暂无存档", symbol: "doc")
                     }
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 7) {

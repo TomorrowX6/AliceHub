@@ -17,11 +17,7 @@ struct OnlineGamesView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    HubSectionHeader(title: "下一段冒险，从这里开始", subtitle: "与 Android 版相同的游戏资源目录，下载后自动加入本机游戏库。", symbol: "arrow.down.circle")
-                        .modifier(HubCard())
-                    Text("请仅下载你合法拥有的游戏资源。建议使用 Wi-Fi，并保持 App 在前台。")
-                        .font(.footnote).foregroundColor(HubTheme.secondary)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 14)], spacing: 14) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 14)], spacing: 14) {
                         ForEach(games) { game in
                             NavigationLink {
                                 OnlineGameDetailView(game: game, library: library, download: download)
@@ -30,7 +26,10 @@ struct OnlineGamesView: View {
                                     GameArtwork(catalogID: game.artwork)
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(game.title).font(.headline).foregroundColor(HubTheme.text)
-                                        Text(status(game)).font(.caption).foregroundColor(HubTheme.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        if let status = status(game) {
+                                            Text(status).font(.caption).foregroundColor(HubTheme.secondary)
+                                        }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                     Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(HubTheme.secondary)
                                 }.modifier(HubCard())
@@ -50,9 +49,9 @@ struct OnlineGamesView: View {
             .interactiveDismissDisabled(download.running)
     }
 
-    private func status(_ game: OnlineGame) -> String {
-        if download.running && download.activeID == game.id { return "正在下载 · 点击查看进度" }
-        return library.games.contains { $0.name.caseInsensitiveCompare(game.directory) == .orderedSame } ? "已在游戏库" : "查看大小与下载详情"
+    private func status(_ game: OnlineGame) -> String? {
+        if download.running && download.activeID == game.id { return "下载中" }
+        return library.games.contains { $0.name.caseInsensitiveCompare(game.directory) == .orderedSame } ? "已安装" : nil
     }
 }
 
@@ -79,7 +78,8 @@ private struct OnlineGameDetailView: View {
                     GameArtwork(catalogID: game.artwork, size: 88)
                     VStack(alignment: .leading, spacing: 8) {
                         Text(game.title).font(.title2.bold()).foregroundColor(HubTheme.text)
-                        HubBadge(title: installed ? "已在游戏库" : "在线游戏", success: installed)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HubBadge(title: installed ? "已安装" : "在线游戏", success: installed)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.modifier(HubCard())
                 if loading {
@@ -89,16 +89,15 @@ private struct OnlineGameDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("无法获取游戏信息", systemImage: "wifi.exclamationmark").font(.headline)
                         Text(failure).font(.footnote).foregroundColor(HubTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                         Button("重试") { Task { await load() } }
                     }.modifier(HubCard())
                 }
                 if let manifest {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("下载信息", systemImage: "info.circle").font(.headline)
-                        LabeledContentRow(title: "下载大小", value: ModCatalog.formatSize(manifest.totalBytes))
-                        LabeledContentRow(title: "文件数量", value: "\(manifest.files.count)")
-                        Text("每个文件均验证大小与 SHA-256，全部完成后才会加入游戏库；不会覆盖已有游戏或存档。")
-                            .font(.footnote).foregroundColor(HubTheme.secondary)
+                        LabeledContentRow(title: "大小", value: ModCatalog.formatSize(manifest.totalBytes))
+                        LabeledContentRow(title: "文件", value: "\(manifest.files.count)")
                     }.modifier(HubCard())
                     if selected && download.running {
                         VStack(alignment: .leading, spacing: 12) {
@@ -107,23 +106,20 @@ private struct OnlineGameDetailView: View {
                             Text("\(ModCatalog.formatSize(download.completed)) / \(ModCatalog.formatSize(download.total))")
                                 .font(.subheadline.monospacedDigit())
                             Text(download.progressText).font(.footnote).foregroundColor(HubTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             Button("取消下载", role: .destructive) { confirmCancel = true }
                         }.modifier(HubCard())
-                    } else if installed {
-                        Label("已在游戏库，可以返回主页开始游戏", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline).foregroundColor(HubTheme.primary).modifier(HubCard())
-                    } else {
+                    } else if !installed {
                         if selected, let error = download.failure {
-                            Text(error).font(.footnote).foregroundColor(.orange).modifier(HubCard())
+                            Text(error).font(.footnote).foregroundColor(.orange)
+                                .fixedSize(horizontal: false, vertical: true).modifier(HubCard())
                         }
                         Button { confirmDownload = true } label: {
                             Label(selected && download.failure != nil ? "继续下载" : "下载游戏", systemImage: "arrow.down.circle")
                         }.buttonStyle(HubPrimaryButton()).disabled(download.running || library.importing || library.launching)
-                        if download.running { Text("请先完成或取消当前下载。 ").font(.footnote).foregroundColor(HubTheme.secondary) }
+                        if download.running { Text("另有下载进行中").font(.subheadline).foregroundColor(HubTheme.secondary) }
                     }
                 }
-                Text("取消或中断后可继续下载，已校验的内容会保留。下载时请保持 App 在前台；切到后台会自动暂停。")
-                    .font(.footnote).foregroundColor(HubTheme.secondary)
             }.padding(20).frame(maxWidth: 700).frame(maxWidth: .infinity)
         }.background(HubTheme.background.ignoresSafeArea())
             .navigationTitle("游戏详情").navigationBarTitleDisplayMode(.inline)
@@ -135,7 +131,7 @@ private struct OnlineGameDetailView: View {
                 Button("取消", role: .cancel) {}
                 Button("下载") { if let manifest { download.start(game, manifest: manifest, library: library) } }
             } message: {
-                Text("请确认你合法拥有此游戏。下载可能消耗较多流量，请预留足够空间并使用 Wi-Fi。")
+                Text("请确认合法拥有此游戏。下载消耗流量，请使用 Wi-Fi 并预留空间；后台会暂停。")
             }
             .alert("取消当前下载？", isPresented: $confirmCancel) {
                 Button("继续下载", role: .cancel) {}

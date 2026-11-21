@@ -23,7 +23,6 @@ struct LauncherView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    introduction
                     if !library.games.isEmpty { searchField }
                     HStack {
                         Text("我的游戏").font(.title3.bold())
@@ -47,9 +46,6 @@ struct LauncherView: View {
                             }
                         }
                     }
-                    Label("游戏保存在本机，随时继续你的冒险", systemImage: "internaldrive")
-                        .font(.caption).foregroundColor(HubTheme.secondary)
-                        .frame(maxWidth: .infinity).padding(.top, 4)
                 }
                 .padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
             }
@@ -112,15 +108,6 @@ struct LauncherView: View {
         }
     }
 
-    private var introduction: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("你的游戏，随时启程。").font(.system(.largeTitle, design: .rounded).bold())
-                .foregroundColor(HubTheme.text).fixedSize(horizontal: false, vertical: true)
-            Text("System 3.x / System 4 · 原生运行")
-                .font(.subheadline).foregroundColor(HubTheme.secondary)
-        }.padding(.top, 12)
-    }
-
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundColor(HubTheme.secondary)
@@ -159,14 +146,7 @@ struct LauncherView: View {
             Image(systemName: "gamecontroller").font(.system(size: 44, weight: .light))
                 .foregroundColor(HubTheme.primary).frame(width: 104, height: 104)
                 .background(HubTheme.variant).clipShape(RoundedRectangle(cornerRadius: 30))
-            Text("从第一款游戏开始").font(.title2.bold())
-            Text("导入你拥有的游戏文件，\n在 iPhone 和 iPad 上继续精彩。")
-                .font(.subheadline).foregroundColor(HubTheme.secondary).multilineTextAlignment(.center)
-            HStack(spacing: 8) {
-                HubBadge(title: "文件夹")
-                HubBadge(title: "压缩包")
-                HubBadge(title: "光盘镜像")
-            }
+            Text("还没有游戏").font(.title2.bold())
         }.frame(maxWidth: .infinity).padding(.vertical, 32).modifier(HubCard())
     }
 

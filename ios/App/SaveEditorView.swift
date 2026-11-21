@@ -30,11 +30,11 @@ struct SaveEditorView: View {
         NavigationView {
             List {
                 Section {
-                    HubSectionHeader(title: "修改存档", subtitle: game.name + " · 修改前自动备份", symbol: "slider.horizontal.3")
+                    HubSectionHeader(title: game.name, symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
                 let files = saves
                 if files.isEmpty {
-                    HubSectionHeader(title: "还没有可编辑的存档", subtitle: "先进入游戏存档一次，再回到这里。", symbol: "doc.text")
+                    HubSectionHeader(title: "暂无可编辑存档", symbol: "doc.text")
                 }
                 ForEach(files, id: \.self) { url in
                     NavigationLink(String(url.path.dropFirst(directory.path.count + 1))) {
@@ -74,7 +74,7 @@ struct SaveFileEditor: View {
                                 .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing).frame(maxWidth: 140)
                         }
                     }
-                } footer: { Text("保存前会在同目录生成 .mod.bak 备份。") }
+                }
                 if let message { Text(message).foregroundColor(.secondary) }
             }
         }

@@ -24,7 +24,7 @@ enum HubTheme {
 
 struct HubCard: ViewModifier {
     func body(content: Content) -> some View {
-        content.padding(20)
+        content.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             .background(HubTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
@@ -63,7 +63,7 @@ struct HubBadge: View {
 
 struct HubSectionHeader: View {
     let title: String
-    let subtitle: String
+    var subtitle: String? = nil
     let symbol: String
     var body: some View {
         HStack(spacing: 14) {
@@ -72,8 +72,10 @@ struct HubSectionHeader: View {
                 .background(HubTheme.variant).clipShape(RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.headline).foregroundColor(HubTheme.text)
-                Text(subtitle).font(.subheadline).foregroundColor(HubTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle).font(.subheadline).foregroundColor(HubTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
         }.padding(.vertical, 8).accessibilityElement(children: .combine)
@@ -82,7 +84,6 @@ struct HubSectionHeader: View {
 
 struct HubActionLabel: View {
     let title: String
-    let subtitle: String
     let symbol: String
     var destructive = false
     var navigates = true
@@ -92,10 +93,7 @@ struct HubActionLabel: View {
                 .foregroundColor(destructive ? .red : HubTheme.primary)
                 .frame(width: 42, height: 42).background(HubTheme.variant)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.body.weight(.semibold)).foregroundColor(destructive ? .red : HubTheme.text)
-                Text(subtitle).font(.caption).foregroundColor(HubTheme.secondary)
-            }
+            Text(title).font(.body.weight(.semibold)).foregroundColor(destructive ? .red : HubTheme.text)
             Spacer(minLength: 8)
             if navigates {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(HubTheme.secondary)

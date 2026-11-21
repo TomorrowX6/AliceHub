@@ -21,7 +21,7 @@ struct GamepadEditor: View {
         NavigationView {
             Form {
                 Section {
-                    HubSectionHeader(title: padText("Gamepad"), subtitle: game ?? padText("Virtual Gamepad"), symbol: "gamecontroller")
+                    HubSectionHeader(title: padText("Gamepad"), subtitle: game, symbol: "gamecontroller")
                 }.listRowBackground(HubTheme.surface)
                 if let game {
                     Section(header: Text(game)) {
@@ -127,10 +127,8 @@ struct GamepadEditor: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(LinearGradient(colors: [Color(red: 0.12, green: 0.15, blue: 0.25), Color(red: 0.06, green: 0.08, blue: 0.14)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                VStack(spacing: 6) {
-                    Image(systemName: "hand.draw").font(.title2)
-                    Text(padText("Drag controls to move them")).font(.caption2)
-                }.foregroundColor(.white.opacity(0.4)).allowsHitTesting(false)
+                Image(systemName: "hand.draw").font(.title2)
+                    .foregroundColor(.white.opacity(0.4)).allowsHitTesting(false)
                 if profile.virtual.snap {
                     Path { path in
                         for index in 1..<40 {

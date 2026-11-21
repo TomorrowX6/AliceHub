@@ -27,7 +27,7 @@ struct ModManagerView: View {
                 Section {
                     HubSectionHeader(title: model.directory.lastPathComponent, subtitle: model.status, symbol: "shippingbox")
                     Button { switching = true } label: {
-                        HubActionLabel(title: "切换目录", subtitle: "选择同一游戏的其他实例", symbol: "folder")
+                        HubActionLabel(title: "切换目录", symbol: "folder")
                     }.buttonStyle(.plain)
                     Button {
                         if let plan = model.plan { model.install(plan.steps) }
@@ -36,7 +36,7 @@ struct ModManagerView: View {
                         Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
                     }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
                     Button { localMode = true } label: {
-                        HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", subtitle: "从文件夹或压缩包选择", symbol: "archivebox")
+                        HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", symbol: "archivebox")
                     }.buttonStyle(.plain)
                     Button(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", role: .destructive) { confirmRestore = true }
                         .disabled(!model.canRestore)
