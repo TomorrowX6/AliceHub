@@ -169,6 +169,22 @@ struct ModChecks {
         } catch {}
         let conflictAfter = try snapshot(transition)
         precondition(conflictAfter == conflictBefore)
+        for (index, artifact) in ["Rance10.ain.vanilla.bak", "Rance10.ain.vanilla.bak.tmp", ".mod_apply_Rance10.ain.tmp", ModOverlay.journalName, ModOverlay.journalName + ".tmp", InstalledModInfo.metaFileName].enumerated() {
+            for clean in [false, true] {
+                let reservedGame = try directory("reserved-\(index)-\(clean)")
+                try write(reservedGame, "Rance10.ain", "original")
+                try write(reservedGame, artifact + "/keep.dat", "original directory contents")
+                let original = try snapshot(reservedGame)
+                let reservedMod = try directory("reserved-mod-\(index)-\(clean)")
+                try write(reservedMod, "Rance10.ain", "must not install")
+                do {
+                    try ModOverlay.applyModStaging(reservedMod, to: reservedGame, cleanReplace: clean)
+                    preconditionFailure("Accepted a directory at an installer-owned path")
+                } catch {}
+                let rejected = try snapshot(reservedGame)
+                precondition(rejected == original)
+            }
+        }
         let patch = try directory("patch")
         try write(patch, "Rance10.ain", "patched")
         try write(patch, "nested/new.afa", "updated added file")

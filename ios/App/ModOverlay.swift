@@ -176,6 +176,7 @@ enum ModOverlay {
         if isCnPatch && ModGameDescriptor.classifyDirectory(target)?.id == "evenicle2" { try normalizeEvenicle2CnPatchStaging(staging) }
         let root = try findModRootDir(staging, isCnPatch: isCnPatch)
         var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
+        var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
         let before = try ModFiles.walk(target)
         let directories = before.filter(ModFiles.isDirectory).map { $0.resolvingSymlinksInPath().standardizedFileURL }
         let directoryPaths = Set(directories.map(\.path))
@@ -184,7 +185,12 @@ enum ModOverlay {
             let relative = ModFiles.relative(file, to: root)
             if relative.hasPrefix(".") || NativeGameImport.skip(relative) { continue }
             let destination = try resolveCaseInsensitiveDest(target, relative)
-            affected.formUnion([destination, destination.appendingPathExtension("vanilla.bak"), destination.appendingPathExtension("vanilla.bak.tmp"), destination.deletingLastPathComponent().appendingPathComponent(".mod_apply_" + destination.lastPathComponent + ".tmp")])
+            let artifacts = [destination.appendingPathExtension("vanilla.bak"), destination.appendingPathExtension("vanilla.bak.tmp"), destination.deletingLastPathComponent().appendingPathComponent(".mod_apply_" + destination.lastPathComponent + ".tmp")]
+            affected.formUnion([destination] + artifacts)
+            reserved.formUnion(artifacts)
+        }
+        for file in reserved where ModFiles.exists(file) && !ModFiles.isFile(file) {
+            throw ModError.message("MOD 备份或临时路径不是文件：" + file.lastPathComponent)
         }
         if cleanReplace {
             for file in before where ModFiles.isFile(file) && (file.lastPathComponent.hasSuffix(".vanilla.bak.tmp") || (file.lastPathComponent.hasPrefix(".mod_apply_") && file.lastPathComponent.hasSuffix(".tmp"))) {
