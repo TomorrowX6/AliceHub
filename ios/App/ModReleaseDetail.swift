@@ -11,6 +11,9 @@ struct ModReleaseDetail: View {
                 let entry = model.releases[index]
                 List {
                     Section {
+                        HubSectionHeader(title: entry.version, subtitle: entry.isPatch ? "增量补丁" : "完整版本", symbol: "shippingbox")
+                    }.listRowBackground(HubTheme.surface)
+                    Section {
                         Text("文件：" + entry.fileName).textSelection(.enabled)
                         if entry.expectedSize > 0 { Text("大小：" + ModCatalog.formatSize(entry.expectedSize)) }
                         if !entry.formattedDate.isEmpty { Text("时间：" + entry.formattedDate) }
@@ -27,10 +30,11 @@ struct ModReleaseDetail: View {
                         }
                     }.disabled(model.busy)
                 }
+                .listStyle(.insetGrouped).modifier(HubListStyle())
                 .navigationTitle(entry.version).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             }
-        }.navigationViewStyle(.stack)
+        }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
     }
 }
 

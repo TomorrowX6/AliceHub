@@ -23,17 +23,22 @@ struct ModManagerView: View {
         NavigationView {
             List {
                 Section {
-                    Text("当前目录：" + model.directory.lastPathComponent).font(.headline)
-                    Text(model.status).font(.subheadline).foregroundColor(.secondary)
-                    Button("切换目录") { switching = true }
-                    Button(model.updateTitle) {
+                    HubSectionHeader(title: model.directory.lastPathComponent, subtitle: model.status, symbol: "shippingbox")
+                    Button { switching = true } label: {
+                        HubActionLabel(title: "切换目录", subtitle: "选择同一游戏的其他实例", symbol: "folder")
+                    }.buttonStyle(.plain)
+                    Button {
                         if let plan = model.plan { model.install(plan.steps) }
                         else { Task { await model.loadCatalog() } }
-                    }.disabled(model.updateDisabled)
-                    Button(model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD") { localOptions = true }
+                    } label: {
+                        Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
+                    }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
+                    Button { localOptions = true } label: {
+                        HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", subtitle: "从文件夹或压缩包选择", symbol: "archivebox")
+                    }.buttonStyle(.plain)
                     Button(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", role: .destructive) { confirmRestore = true }
                         .disabled(!model.canRestore)
-                }
+                }.listRowBackground(HubTheme.surface)
                 if let notice = model.notice {
                     Section { Label(notice, systemImage: "checkmark.circle").foregroundColor(.green) }
                 }
@@ -47,8 +52,9 @@ struct ModManagerView: View {
                             ModReleaseRow(entry: entry, latest: index == 0, installed: model.installedIndex == index, base: isBase(entry, index))
                         }.buttonStyle(.plain)
                     }
-                }
+                }.listRowBackground(HubTheme.surface)
             }
+            .listStyle(.insetGrouped).modifier(HubListStyle())
             .disabled(model.busy)
             .navigationTitle(model.descriptor.isCnPatch ? "安装汉化补丁" : "MOD 管理")
             .navigationBarTitleDisplayMode(.inline)
@@ -62,6 +68,7 @@ struct ModManagerView: View {
             .overlay { if model.busy { ModInstallProgress(installer: model.installer) } }
         }
         .navigationViewStyle(.stack)
+        .modifier(HubAppearanceModifier())
         .interactiveDismissDisabled(model.busy)
         .task { await model.loadCatalog(); library.refresh() }
         .onChange(of: model.busy) { busy in if !busy { library.refresh() } }

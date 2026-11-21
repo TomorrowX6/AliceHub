@@ -29,9 +29,12 @@ struct SaveEditorView: View {
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    HubSectionHeader(title: "修改存档", subtitle: game.name + " · 修改前自动备份", symbol: "slider.horizontal.3")
+                }.listRowBackground(HubTheme.surface)
                 let files = saves
                 if files.isEmpty {
-                    Text("还没有存档。先进入游戏存档一次。").foregroundColor(.secondary)
+                    HubSectionHeader(title: "还没有可编辑的存档", subtitle: "先进入游戏存档一次，再回到这里。", symbol: "doc.text")
                 }
                 ForEach(files, id: \.self) { url in
                     NavigationLink(String(url.path.dropFirst(directory.path.count + 1))) {
@@ -39,11 +42,13 @@ struct SaveEditorView: View {
                     }
                 }
             }
-            .navigationTitle("修改存档 · \(game.name)")
+            .listStyle(.insetGrouped).modifier(HubListStyle())
+            .navigationTitle("修改存档")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
         }
         .navigationViewStyle(.stack)
+        .modifier(HubAppearanceModifier())
     }
 }
 
@@ -73,6 +78,7 @@ struct SaveFileEditor: View {
                 if let message { Text(message).foregroundColor(.secondary) }
             }
         }
+        .modifier(HubListStyle())
         .navigationTitle(url.lastPathComponent)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("保存", action: save).disabled(error != nil) } }
         .onAppear(perform: load)

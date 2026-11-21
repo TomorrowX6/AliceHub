@@ -5,6 +5,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UITableView.appearance().backgroundColor = UIColor(HubTheme.background)
+        UITableViewCell.appearance().backgroundColor = UIColor(HubTheme.surface)
         let events: [(Notification.Name, () -> Void)] = [
             (UIScene.willDeactivateNotification, { SDL_OnApplicationWillResignActive() }),
             (UIScene.didEnterBackgroundNotification, { SDL_OnApplicationDidEnterBackground() }),
@@ -46,6 +48,6 @@ struct AliceHubApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
     var body: some Scene {
-        WindowGroup { LauncherView() }
+        WindowGroup { LauncherView().modifier(HubAppearanceModifier()) }
     }
 }

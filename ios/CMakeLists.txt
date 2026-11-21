@@ -26,19 +26,6 @@ function(dependency name url hash)
   ExternalProject_Add(${name} URL ${url} URL_HASH ${hash}
     CMAKE_ARGS ${common} ${ARGN})
 endfunction()
-dependency(xz https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.xz SHA256=4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b
-  -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-  -DXZ_TOOL_XZ=OFF -DXZ_TOOL_XZDEC=OFF -DXZ_TOOL_LZMADEC=OFF
-  -DXZ_TOOL_LZMAINFO=OFF -DXZ_TOOL_SCRIPTS=OFF -DXZ_DOC=OFF -DXZ_NLS=OFF)
-dependency(libarchive https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarchive-3.8.11.tar.xz SHA256=a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2
-  -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-  -DENABLE_TAR=OFF -DENABLE_CPIO=OFF -DENABLE_CAT=OFF -DENABLE_UNZIP=OFF
-  -DENABLE_TEST=OFF -DENABLE_OPENSSL=OFF -DENABLE_NETTLE=OFF -DENABLE_MBEDTLS=OFF
-  -DENABLE_LIBB2=OFF -DENABLE_LZ4=OFF -DENABLE_LZO=OFF -DENABLE_ZSTD=OFF
-  -DENABLE_BZip2=OFF -DENABLE_LIBXML2=OFF -DENABLE_EXPAT=OFF
-  -DENABLE_PCREPOSIX=OFF -DENABLE_PCRE2POSIX=OFF -DENABLE_ICONV=OFF
-  -DENABLE_ACL=OFF -DENABLE_XATTR=OFF -DENABLE_LZMA=ON -DENABLE_ZLIB=ON)
-ExternalProject_Add_StepDependencies(libarchive configure xz)
 dependency(libogg https://github.com/xiph/ogg/releases/download/v1.3.5/libogg-1.3.5.tar.xz SHA1=5a368421a636f7faa4c2f662857cb507dffd7c99)
 dependency(xz https://github.com/tukaani-project/xz/releases/download/v5.8.4/xz-5.8.4.tar.xz SHA256=4ce24038fd4221e0d13bc1a2de7a4db56e90b92b3bf75321f6c14be73f65de4b
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -142,7 +129,11 @@ function(isolate_engine name)
   if(name STREQUAL "xsystem4")
     list(APPEND exports -Wl,-exported_symbol,_alicehub_ios_prepare_window
       -Wl,-exported_symbol,_alicehub_ios_bind_drawable
-      -Wl,-exported_symbol,_alicehub_ios_set_background_hook)
+      -Wl,-exported_symbol,_alicehub_ios_set_background_hook
+      -Wl,-exported_symbol,_alicehub_ios_set_gamepad_callbacks
+      -Wl,-exported_symbol,_alicehub_ios_gamepad_command
+      -Wl,-exported_symbol,_alicehub_ios_gamepad_frame
+      -Wl,-exported_symbols_list,${CMAKE_CURRENT_LIST_DIR}/engine-exports.txt)
   endif()
   add_custom_target(${name}_engine ALL
     COMMAND ${CMAKE_C_COMPILER} -target ${ffi_target} -isysroot ${sdk_path}

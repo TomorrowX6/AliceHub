@@ -1,5 +1,6 @@
 """Audit staged Mach-O engines after building both iOS SDKs."""
 from pathlib import Path
+from fnmatch import fnmatchcase
 import subprocess
 import unittest
 
@@ -20,7 +21,15 @@ class EngineIsolationChecks(unittest.TestCase):
                     obj = lib / (engine + '_engine.o')
                     self.assertTrue(obj.is_file(), 'Build native libraries first')
                     output = subprocess.check_output(['nm', '-gU', str(obj)], text=True)
-                    self.assertEqual({line.split()[-1] for line in output.splitlines()}, expected)
+                    actual = {line.split()[-1] for line in output.splitlines()}
+                    allowed = expected.copy()
+                    if engine == 'xsystem4':
+                        allowed.update({'_alicehub_ios_set_gamepad_callbacks',
+                                        '_alicehub_ios_gamepad_command', '_alicehub_ios_gamepad_frame'})
+                        allowed.update((ROOT / 'ios/engine-exports.txt').read_text().splitlines())
+                    self.assertTrue(expected <= actual)
+                    self.assertTrue(all(any(fnmatchcase(symbol, pattern) for pattern in allowed)
+                                        for symbol in actual), actual - allowed)
                     undefined = subprocess.check_output(['nm', '-u', str(obj)], text=True)
                     self.assertIn('_SDL_Init', undefined)
                     self.assertIn('_FT_Init_FreeType', undefined)

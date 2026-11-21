@@ -1,0 +1,7 @@
+_modifier_api_*
+_input_set_gamepad_config_json
+_input_clear_virtual_inputs
+_input_set_virtual_button
+_input_set_virtual_dpad
+_input_set_virtual_stick
+_savedata_export_pc_file

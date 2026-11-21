@@ -20,21 +20,30 @@ struct SaveManagerView: View {
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    HubSectionHeader(title: game.name, subtitle: "存档独立保存，安心备份与迁移。", symbol: "externaldrive")
+                }.listRowBackground(HubTheme.surface)
                 Section(header: Text(game.name)) {
-                    Button("从文件或压缩包导入") { confirmImport(folder: false) }
-                    Button("从文件夹导入") { confirmImport(folder: true) }
-                    Menu("导出存档") {
+                    Button { confirmImport(folder: false) } label: {
+                        HubActionLabel(title: "从文件或压缩包导入", subtitle: "支持原始存档与 ZIP 备份", symbol: "square.and.arrow.down")
+                    }.buttonStyle(.plain)
+                    Button { confirmImport(folder: true) } label: {
+                        HubActionLabel(title: "从文件夹导入", subtitle: "导入前自动备份现有存档", symbol: "folder")
+                    }.buttonStyle(.plain)
+                    Menu {
                         Button("导出 PC 存档 · ZIP") { prepareExport(pc: true, zip: true) }
                         Button("导出 PC 存档到文件夹") { prepareExport(pc: true, zip: false) }
                         Button("导出原始存档 · ZIP") { prepareExport(pc: false, zip: true) }
                         Button("导出原始存档到文件夹") { prepareExport(pc: false, zip: false) }
+                    } label: {
+                        HubActionLabel(title: "导出存档", subtitle: "PC 兼容格式或原始文件", symbol: "square.and.arrow.up")
                     }.disabled(entries.isEmpty)
                     Button("清空存档", role: .destructive) {
                         confirmation = SaveConfirmation(text: "确定清空全部 \(entries.count) 个存档文件吗？此操作不可恢复。") {
                             operate { try manager.clear(); return "已清空存档" }
                         }
                     }.disabled(entries.isEmpty)
-                }
+                }.listRowBackground(HubTheme.surface)
                 if !backups.isEmpty {
                     Section(header: Text("恢复备份")) {
                         ForEach(backups, id: \.path) { backup in
@@ -47,13 +56,15 @@ struct SaveManagerView: View {
                     }
                 }
                 Section(header: Text("\(entries.count) 个文件")) {
-                    if entries.isEmpty { Text("存档目录为空").foregroundColor(.secondary) }
+                    if entries.isEmpty {
+                        HubSectionHeader(title: "还没有存档", subtitle: "进入游戏保存一次，或导入已有存档。", symbol: "doc")
+                    }
                     ForEach(entries) { entry in
-                        VStack(alignment: .leading) {
-                            Text(entry.path)
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label(entry.path, systemImage: "doc.text").font(.subheadline.weight(.medium))
                             Text("\(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file)) · \(entry.modified.formatted())")
                                 .font(.caption).foregroundColor(.secondary)
-                        }
+                        }.padding(.vertical, 6)
                         .contextMenu {
                             Button("导出原始存档") { prepareExport(pc: false, zip: false, single: entry) }
                             Button("导出 PC 存档") { prepareExport(pc: true, zip: false, single: entry) }
@@ -70,13 +81,16 @@ struct SaveManagerView: View {
                             }
                         }
                     }
-                }
+                }.listRowBackground(HubTheme.surface)
             }
+            .listStyle(.insetGrouped).modifier(HubListStyle())
             .navigationTitle("存档管理")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(busy) } }
             .disabled(busy)
             .overlay { if busy { ProgressView("正在处理，请稍候…").padding().background(.regularMaterial).cornerRadius(12) } }
         }
+        .navigationViewStyle(.stack).modifier(HubAppearanceModifier())
         .interactiveDismissDisabled(busy)
         .onAppear { refresh() }
         .sheet(item: $picker) { request in

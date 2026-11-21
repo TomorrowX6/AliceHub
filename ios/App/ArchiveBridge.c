@@ -45,7 +45,7 @@ char *ah_archive_decode(const uint8_t *bytes, size_t size, const char *encoding)
     return result;
 }
 
-int ah_archive_extract(const char *file, AHArchiveEntry accept, AHArchiveProgress progress,
+int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveProgress progress,
                        void *context, char *error, size_t error_size)
 {
     pthread_once(&locale_once, init_locale);

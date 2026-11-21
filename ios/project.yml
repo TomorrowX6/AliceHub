@@ -13,6 +13,9 @@ targets:
     platform: iOS
     sources:
       - path: App
+      - path: ../project/app/src/main/res/drawable-nodpi
+        type: folder
+        buildPhase: resources
       - path: ../xsystem4/shaders
         type: folder
         buildPhase: resources

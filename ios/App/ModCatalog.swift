@@ -281,7 +281,7 @@ enum ModCatalog {
             guard let row = row as? [String: Any] else { continue }
             let key = modString(row, "key"), file = modString(row, "fileName")
             let version = sanitizeParenFree(modString(row, "version"), multiline: false)
-            guard !key.isEmpty, !file.isEmpty, !version.isEmpty, ArchiveExtractor.isSupportedArchiveName(file) else { continue }
+            guard !key.isEmpty, !file.isEmpty, !version.isEmpty, ModArchiveExtractor.isSupportedArchiveName(file) else { continue }
             let summary = sanitizeParenFree(modString(row, "summary"), multiline: false)
             let changelog = sanitizeParenFree(modString(row, "changelog"), multiline: true)
             let encoded = key.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: allowed)! }.joined(separator: "/")

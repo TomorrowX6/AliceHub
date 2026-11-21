@@ -11,6 +11,9 @@ struct ModifierView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    HubSectionHeader(title: "局内修改器", subtitle: game?.name ?? "当前游戏", symbol: "slider.horizontal.3")
+                }.listRowBackground(HubTheme.surface)
                 if let game {
                     if game.supportsCheatCodes { cheatCodeSection }
                     if let lockGame = game.lockGame, !game.locks.isEmpty { lockSection(game, lockGame) }
@@ -20,12 +23,14 @@ struct ModifierView: View {
                 }
                 liveSection
             }
+            .modifier(HubListStyle())
             .navigationTitle(game?.name ?? "修改器")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: dismiss) } }
             .onAppear(perform: reload)
         }
         .navigationViewStyle(.stack)
+        .modifier(HubAppearanceModifier())
     }
 
     private var cheatCodeSection: some View {
