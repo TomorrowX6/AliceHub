@@ -196,6 +196,8 @@ SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex*)1; }
 int SDL_LockMutex(SDL_mutex *m) { return 0; }
 int SDL_UnlockMutex(SDL_mutex *m) { return 0; }
 SDL_Thread *SDL_CreateThread(SDL_ThreadFunction f, const char *n, void *d) { return (SDL_Thread*)1; }
+static int joined_threads;
+void SDL_WaitThread(SDL_Thread *t, int *status) { assert(t); joined_threads++; }
 void SDL_Delay(Uint32 ms) { test_ticks += ms; }
 #endif
 void SDL_LockAudioDevice(SDL_AudioDeviceID dev) {}
@@ -318,7 +320,7 @@ int main(void) {
     float pcm[CHUNK_SIZE * 2];
     audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
     advance_audio_clock(test_ticks = 1050);
-    assert(clock_tick == 1000);
+    assert(clock_tick == 1050);
     remaining_frames = 44100;
     channel_play(&sound);
     assert(channel_fade(&sound, 150, 23, false));
@@ -357,6 +359,41 @@ int main(void) {
     mixer_retry_audio_device(); assert(close_calls == 1);
     test_ticks = 3000;
     service_audio_device(); assert(close_calls == 2 && open_calls == 5);
+
+    // An older tick after foreground resume must not rewind or underflow.
+    atomic_store(&last_callback, 2500);
+    mixer_set_app_backgrounded(true);
+    test_ticks = 3101;
+    mixer_set_app_backgrounded(false);
+    remaining_frames = 44100;
+    channel_play(&sound);
+    frame = sound.frame;
+    advance_audio_clock(3100);
+    assert(clock_tick == 3101 && sound.frame == frame);
+
+    // Starting a fade near the end of the grace period must not backdate it.
+    test_ticks = 4000;
+    audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
+    advance_audio_clock(test_ticks = 4090);
+    channel_play(&sound);
+    test_ticks = 4095;
+    channel_fade(&sound, 80, 0, true);
+    advance_audio_clock(test_ticks = 4110);
+    assert(channel_is_playing(&sound) && channel_is_fading(&sound));
+    advance_audio_clock(test_ticks = 4200);
+    assert(!channel_is_playing(&sound));
+
+    int opens = open_calls, closes = close_calls;
+    assert(mixer_fini());
+    assert(joined_threads == 2 && audio_device == 0 && close_calls == closes + 1);
+    mixer_retry_audio_device();
+    assert(open_calls == opens && atomic_load(&audio_stopping));
+    assert(mixer_fini()); assert(joined_threads == 2 && close_calls == closes + 1);
+    audio_device_thread = (SDL_Thread*)1;
+    assert(!mixer_fini()); // SDL_Quit must be skipped while device work is in flight.
+    assert(close_calls == closes + 1);
+    atomic_flag_clear(&device_operation);
+    assert(mixer_fini() && joined_threads == 3);
     puts("Audio clock: failed open, empty/finite sound, stalled callback, fades, pause and recovery passed");
 #endif
 

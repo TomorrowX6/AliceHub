@@ -109,6 +109,9 @@ static int nr_mixers = 0;
 static _Atomic SDL_AudioDeviceID audio_device;
 static SDL_mutex *audio_mutex;
 static SDL_Thread *audio_clock_thread;
+static SDL_Thread *audio_device_thread;
+static atomic_bool audio_stopping;
+static atomic_flag device_operation = ATOMIC_FLAG_INIT;
 static atomic_bool retry_device, remove_device;
 static atomic_bool output_paused;
 static atomic_uint_least64_t last_callback;
@@ -225,13 +228,14 @@ static void audio_callback(possibly_unused void *data, Uint8 *stream, int len)
 }
 
 #ifdef ALICEHUB_IOS
-static void advance_audio_clock(Uint64 now)
+static void advance_audio_clock_locked(Uint64 now)
 {
-	audio_lock();
+	if (now < clock_tick)
+		return;
 	if (atomic_load(&output_paused)) {
 		clock_tick = now;
 		clock_fraction = 0;
-	} else if (now >= atomic_load(&last_callback) && now - atomic_load(&last_callback) > 100) {
+	} else if (!audio_device || (now >= atomic_load(&last_callback) && now - atomic_load(&last_callback) > 100)) {
 		Uint64 elapsed = min(now - clock_tick, 250);
 		unsigned frames = (elapsed * 44100 + clock_fraction) / 1000;
 		clock_fraction = (elapsed * 44100 + clock_fraction) % 1000;
@@ -242,13 +246,22 @@ static void advance_audio_clock(Uint64 now)
 			sts_mixer_mix_audio(&master->mixer, discard, count);
 			frames -= count;
 		}
+	} else {
+		clock_tick = now;
+		clock_fraction = 0;
 	}
+}
+
+static void advance_audio_clock(Uint64 now)
+{
+	audio_lock();
+	advance_audio_clock_locked(now);
 	audio_unlock();
 }
 
 static int audio_clock_main(void *unused)
 {
-	for (;;) {
+	while (!atomic_load(&audio_stopping)) {
 		advance_audio_clock(SDL_GetTicks64());
 		SDL_Delay(10);
 	}
@@ -441,6 +454,9 @@ int channel_play(struct channel *ch)
 	if (!ch || nr_mixers <= 0 || ch->mixer_no < 0 || ch->mixer_no >= nr_mixers)
 		return 0;
 	audio_lock();
+#ifdef ALICEHUB_IOS
+	advance_audio_clock_locked(SDL_GetTicks64());
+#endif
 	ch->paused = false;
 	if (ch->voice >= 0) {
 		if (ch->fade.pending && audio_clock_available()) {
@@ -529,6 +545,9 @@ int channel_fade_with_curve(struct channel *ch, int time, int volume, bool stop,
 		return channel_stop(ch);
 
 	audio_lock();
+#ifdef ALICEHUB_IOS
+	advance_audio_clock_locked(SDL_GetTicks64());
+#endif
 	if (time <= 0 || ch->info.samplerate <= 0) {
 		// XXX: Fade with time=0 is used to set volume. This needs to
 		//      take effect immediately, not via the audio callback
@@ -904,7 +923,7 @@ static void open_default_audio_device(void)
 }
 
 #ifdef ALICEHUB_IOS
-static void service_audio_device(void)
+static void update_audio_device(void)
 {
 	if (atomic_exchange(&remove_device, false) && audio_device) {
 		SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
@@ -921,9 +940,18 @@ static void service_audio_device(void)
 		open_default_audio_device();
 }
 
+static void service_audio_device(void)
+{
+	if (atomic_flag_test_and_set(&device_operation))
+		return;
+	if (!atomic_load(&audio_stopping))
+		update_audio_device();
+	atomic_flag_clear(&device_operation);
+}
+
 static int audio_device_main(void *unused)
 {
-	for (;;) {
+	while (!atomic_load(&audio_stopping)) {
 		service_audio_device();
 		SDL_Delay(20);
 	}
@@ -932,8 +960,28 @@ static int audio_device_main(void *unused)
 
 void mixer_retry_audio_device(void)
 {
-	if (audio_clock_thread)
+	if (audio_clock_thread && !atomic_load(&audio_stopping))
 		atomic_store(&retry_device, true);
+}
+
+bool mixer_fini(void)
+{
+	atomic_store(&audio_stopping, true);
+	if (audio_clock_thread) {
+		SDL_WaitThread(audio_clock_thread, NULL);
+		audio_clock_thread = NULL;
+	}
+	if (!audio_device_thread)
+		return true;
+	// A stuck CoreAudio call cannot be cancelled safely; leave SDL to process exit.
+	if (atomic_flag_test_and_set(&device_operation))
+		return false;
+	SDL_WaitThread(audio_device_thread, NULL);
+	audio_device_thread = NULL;
+	SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
+	if (dev)
+		SDL_CloseAudioDevice(dev);
+	return true;
 }
 #endif
 
@@ -1044,7 +1092,8 @@ void mixer_init(void)
 	if (!audio_clock_thread)
 		ERROR("SDL_CreateThread(mixer-clock): %s", SDL_GetError());
 	atomic_store(&retry_device, true);
-	if (!SDL_CreateThread(audio_device_main, "mixer-device", NULL))
+	audio_device_thread = SDL_CreateThread(audio_device_main, "mixer-device", NULL);
+	if (!audio_device_thread)
 		ERROR("SDL_CreateThread(mixer-device): %s", SDL_GetError());
 	NOTICE("Audio software clock ready (44100 Hz); opening output asynchronously");
 #else

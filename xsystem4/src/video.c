@@ -43,6 +43,7 @@
 #include "xsystem4.h"
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
+#include "mixer.h"
 #endif
 
 struct sdl_private sdl;
@@ -961,6 +962,10 @@ void gfx_fini(void)
 	nr_reset_callbacks = 0;
 	SDL_DestroyWindow(sdl.window);
 	SDL_FreeFormat(sdl.format);
+#ifdef ALICEHUB_IOS
+	if (!mixer_fini())
+		return;
+#endif
 	SDL_Quit();
 }
 

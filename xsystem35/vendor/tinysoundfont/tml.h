@@ -1,3 +1,4 @@
+/* AliceHub local patches: bounded track allocation and stable multi-track merge. */
 /* TinyMidiLoader - v0.7 - Minimalistic midi parsing library - https://github.com/schellingb/TinySoundFont
                                      no warranty implied; use at your own risk
    Do this:
@@ -305,6 +306,7 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 		if (!*f) { TML_ERROR("Out of memory"); return -1; }
 	}
 	evt = *f + p->message_count;
+	evt->next = TML_NULL;
 
 	//check what message we have
 	if ((status == TML_SYSEX) || (status == TML_EOX)) //sysex
@@ -396,10 +398,11 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	if (midi_header[12] & 0x80) { TML_ERROR("File uses unsupported SMPTE timing"); return messages; }
 	num_tracks = (int)(midi_header[10] << 8) | midi_header[11];
 	division = (int)(midi_header[12] << 8) | midi_header[13]; //division is ticks per beat (quarter-note)
-	if (num_tracks <= 0 && division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); return messages; }
+	if (num_tracks <= 0 || division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); return messages; }
 
 	// Allocate temporary tracks array for parsing
 	tracks = (struct tml_track*)TML_MALLOC(sizeof(struct tml_track) * num_tracks);
+	if (!tracks) return TML_NULL;
 	tracksEnd = &tracks[num_tracks];
 	for (t = tracks; t != tracksEnd; t++) t->Idx = t->End = t->Ticks = 0;
 
@@ -415,7 +418,9 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		// Get size of track data and read into buffer (allocate bigger buffer if needed)
 		track_length = track_header[7] | (track_header[6] << 8) | (track_header[5] << 16) | (track_header[4] << 24);
 		if (track_length < 0) { TML_WARN("Invalid MTrk header"); break; }
+		if (track_length > 16 * 1024 * 1024) { TML_WARN("MIDI track exceeds 16 MiB limit"); goto fail; }
 		if (trackbufsize < track_length) { TML_FREE(trackbuf); trackbuf = (unsigned char*)TML_MALLOC(trackbufsize = track_length); }
+		if (track_length && !trackbuf) goto fail;
 		if (stream->read(stream->data, trackbuf, track_length) != track_length) { TML_WARN("Unexpected end of file"); break; }
 
 		t->Idx = p.message_count;
@@ -432,7 +437,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	// Change message time signature from delta ticks to actual msec values and link messages ordered by time
 	if (p.message_count)
 	{
-		tml_message *PrevMessage = TML_NULL, *Msg, *MsgEnd, Swap;
+		tml_message *FirstMessage = TML_NULL, *PrevMessage = TML_NULL, *Msg, *MsgEnd, Swap;
 		unsigned int ticks = 0, tempo_ticks = 0; //tick counter and value at last tempo change
 		int step_smallest, msec, tempo_msec = 0; //msec value at last tempo change
 		double ticks2time = 500000 / (1000.0 * division); //milliseconds per tick
@@ -459,7 +464,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 					{
 						Msg->time = msec;
 						if (PrevMessage) { PrevMessage->next = Msg; PrevMessage = Msg; }
-						else { Swap = *Msg; *Msg = *messages; *messages = Swap; PrevMessage = messages; }
+						else FirstMessage = PrevMessage = Msg;
 					}
 				}
 				if (Msg != MsgEnd && t->Ticks + Msg->time > ticks)
@@ -471,6 +476,15 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		}
 		if (PrevMessage) PrevMessage->next = TML_NULL;
 		else p.message_count = 0;
+		if (FirstMessage && FirstMessage != messages)
+		{
+			Swap = *FirstMessage; *FirstMessage = *messages; *messages = Swap;
+			for (Msg = messages, MsgEnd = messages + p.message_count; Msg != MsgEnd; Msg++)
+			{
+				if (Msg->next == FirstMessage) Msg->next = messages;
+				else if (Msg->next == messages) Msg->next = FirstMessage;
+			}
+		}
 	}
 	TML_FREE(tracks);
 
@@ -481,6 +495,11 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	}
 
 	return messages;
+fail:
+	TML_FREE(trackbuf);
+	TML_FREE(tracks);
+	TML_FREE(messages);
+	return TML_NULL;
 }
 
 TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream)

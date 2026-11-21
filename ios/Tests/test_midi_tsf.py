@@ -55,6 +55,16 @@ static void Mix_SetPostMix(void (*callback)(void *, Uint8 *, int), void *unused)
 }
 '''
         harness += backend
+        def file_bytes(tracks):
+            return (b'MThd' + struct.pack('>IHHH', 6, len(tracks) > 1, len(tracks), 96)
+                    + b''.join(b'MTrk' + struct.pack('>I', len(t)) + t for t in tracks))
+
+        delayed = file_bytes([bytes([96, 0x90, 60, 100, 96, 0x80, 60, 0, 0, 255, 47, 0]),
+                              bytes([0, 0x91, 48, 100, 96, 0x81, 48, 0, 0, 255, 47, 0])])
+        tail = file_bytes([bytes([0, 0x90, 60, 100, 96, 0x80, 60, 0, 0, 255, 47, 0])])
+        oversized = midi[:14] + b'MTrk' + struct.pack('>I', 0x7fffffff)
+        for name, payload in [('delayed', delayed), ('tail', tail), ('oversized', oversized)]:
+            harness += '\nstatic const uint8_t ' + name + '[] = {' + ','.join(map(str, payload)) + '};\n'
         harness += r'''
 static void render_reference(float *out, int frames) {
     memset(out, 0, frames * 2 * sizeof(float));
@@ -84,8 +94,8 @@ static void render_reference(float *out, int frames) {
 static void compare_reference(const uint8_t *data, int size) {
     struct snapshot { uint64_t frame; int repeats; bool playing; float volume; } expected[400];
     for (int pass = 0; pass < 2; pass++) {
-        assert(midi_tsf.start(1, 2, data, size));
-        midi_tsf.fadestart(1700, 40, 0);
+        assert(midi_tsf.start(1, 0, data, size));
+        midi_tsf.fadestart(1700, 40, 1);
         double energy = 0;
         for (int block = 0; block < 400; block++) {
             float pcm[514];
@@ -124,6 +134,25 @@ int main(int argc, char **argv) {
     uint8_t data[256]; int size = fread(data, 1, sizeof(data), file); fclose(file);
     assert(!midi_tsf.start(1, 1, NULL, 0));
     assert(!midi_tsf.start(1, 1, (uint8_t *)"bad", 3));
+    assert(!tml_load_memory(oversized, sizeof(oversized)));
+    tml_message *merged = tml_load_memory(delayed, sizeof(delayed));
+    assert(merged);
+    unsigned last_time = 0;
+    int notes = 0, offs = 0;
+    for (tml_message *m = merged; m; m = m->next) {
+        assert(m->time >= last_time); last_time = m->time;
+        notes += m->type == TML_NOTE_ON;
+        offs += m->type == TML_NOTE_OFF;
+    }
+    assert(notes == 2 && offs == 2 && last_time == 1000);
+    tml_free(merged);
+    assert(midi_tsf.start(1, 1, tail, sizeof(tail)));
+    advance(duration);
+    float released[512]; render(released, 256);
+    double release_energy = 0;
+    for (int i = 0; i < 512; i++) release_energy += fabsf(released[i]);
+    assert(releasing && release_energy > .001);
+    advance(rate * 3); assert(!playing);
     assert(midi_tsf.start(7, 1, data, size));
     Sint16 pcm[4096] = {0}; hook(NULL, (Uint8 *)pcm, sizeof(pcm));
     int nonzero = 0;
@@ -141,7 +170,8 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < sizeof(pcm)/sizeof(*pcm); i++) assert(pcm[i] == 123);
     assert(midi_tsf.start(1, 2, data, size)); uint64_t length = duration;
     advance(length + 100); assert(playing && repeats == 1 && frame == 100);
-    advance(length); assert(!playing);
+    advance(length); assert(releasing || !playing);
+    advance(rate * 3); assert(!playing);
     assert(midi_tsf.start(1, 0, data, size)); advance(length * 3 + 100);
     assert(playing && frame == 100);
     midi_tsf.fadestart(100, 25, 0); assert(midi_tsf.fading());

@@ -48,6 +48,7 @@ void mixer_set_app_backgrounded(bool backgrounded);
 void mixer_handle_device_removed(uint32_t dev);
 #ifdef ALICEHUB_IOS
 void mixer_retry_audio_device(void);
+bool mixer_fini(void);
 #endif
 int mixer_get_numof(void);
 const char *mixer_get_name(int n);

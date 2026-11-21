@@ -20,6 +20,8 @@ static int rate, repeats, track;
 static uint64_t frame, duration, fade_left, fade_total;
 static float volume = 100, balance = 1, fade_from, fade_target;
 static bool playing, paused, backgrounded, fade_stop;
+static bool releasing;
+static uint64_t release_left;
 
 static float clamp_volume(int value) {
 	return value < 0 ? 0 : value > 100 ? 100 : value;
@@ -31,6 +33,7 @@ static void rewind_song(void) {
 		tsf_channel_set_presetnumber(synth, ch, 0, ch == 9);
 	next_event = song;
 	frame = 0;
+	releasing = false;
 }
 
 static void stop_locked(void) {
@@ -69,22 +72,32 @@ static void render(float *out, int frames) {
 	if (!playing || paused || backgrounded || !rate)
 		return;
 	for (int i = 0; i < frames && playing;) {
-		if (frame >= duration) {
-			if (repeats > 0 && --repeats == 0) {
-				playing = false;
-				fade_left = 0;
-				break;
-			}
-			rewind_song();
-		}
 		while (next_event && (uint64_t)next_event->time * rate <= frame * 1000) {
 			dispatch(next_event);
 			next_event = next_event->next;
 		}
+		if (!releasing && frame >= duration) {
+			if (repeats > 0 && --repeats == 0) {
+				releasing = true;
+				release_left = rate * 2;
+				tsf_note_off_all(synth);
+			} else {
+				rewind_song();
+				continue;
+			}
+		}
+		if (releasing && (!release_left || !tsf_active_voice_count(synth))) {
+			playing = false;
+			fade_left = 0;
+			tsf_reset(synth);
+			break;
+		}
 		uint64_t end = frame + frames - i;
-		if (end > duration)
+		if (releasing && end - frame > release_left)
+			end = frame + release_left;
+		if (!releasing && end > duration)
 			end = duration;
-		if (next_event) {
+		if (!releasing && next_event) {
 			uint64_t event_frame = ((uint64_t)next_event->time * rate + 999) / 1000;
 			if (end > event_frame)
 				end = event_frame;
@@ -92,6 +105,8 @@ static void render(float *out, int frames) {
 		if (fade_left && end - frame > fade_left)
 			end = frame + fade_left;
 		int count = end - frame;
+		if (releasing)
+			release_left -= count;
 		tsf_render_float(synth, out + i * 2, count, 0);
 		for (int j = 0; j < count; j++, i++) {
 			if (fade_left) {
