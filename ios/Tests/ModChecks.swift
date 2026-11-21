@@ -60,6 +60,11 @@ struct ModChecks {
         for invalid in [#"{}"#, #"{"releases":[]}"#, #"{"releases":[{"key":"a","fileName":"bad.exe","version":"v1"}]}"#] {
             do { _ = try ModCatalog.parseModCatalog(Data(invalid.utf8), cdnBaseURL: "https://example.test"); preconditionFailure("Accepted invalid catalog") } catch {}
         }
+        let privateRoot = try directory("private-path-game")
+        let viaPrivate = URL(fileURLWithPath: privateRoot.canonicalFileURL.path.hasPrefix("/var/") || privateRoot.canonicalFileURL.path.hasPrefix("/tmp/") ? "/private" + privateRoot.canonicalFileURL.path : privateRoot.path)
+        precondition(viaPrivate.appendingPathComponent("mai/sc/new.ain").canonicalFileURL.path == privateRoot.canonicalFileURL.path + "/mai/sc/new.ain")
+        precondition(try ModOverlay.resolveCaseInsensitiveDest(privateRoot, "mai/sc/new.ain").lastPathComponent == "new.ain")
+        precondition(ModFiles.relative(viaPrivate.appendingPathComponent("mai/new.ain"), to: privateRoot) == "mai/new.ain")
         print("PASS: catalog parsing, patch bases, URL encoding, update plans/selected steps, matching and version inference")
 
         func actions(_ index: Int, _ hasMod: Bool, _ info: InstalledModInfo?) -> [String] {
