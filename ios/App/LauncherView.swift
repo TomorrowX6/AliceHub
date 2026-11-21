@@ -1,12 +1,22 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum GamepadEditorTarget: Identifiable {
+    case global, game(String)
+    var id: String { gameID.map { "game:" + $0 } ?? "global" }
+    var gameID: String? {
+        if case let .game(id) = self { return id }
+        return nil
+    }
+}
+
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @State private var pickerPresented = false
     @State private var archivePickerPresented = false
     @State private var pendingDelete: Game?
     @State private var saveGame: Game?
+    @State private var gamepadEditor: GamepadEditorTarget?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -24,6 +34,11 @@ struct LauncherView: View {
                         ForEach(library.games) { game in
                             Button { library.launch(game) } label: {
                                 Label(game.name, systemImage: "gamecontroller.fill").padding(.vertical, 8)
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button { gamepadEditor = .game(game.id) } label: {
+                                    Label(padText("Gamepad"), systemImage: "gamecontroller")
+                                }
                             }
                             .swipeActions {
                                 Button("存档管理") { saveGame = game }.tint(.blue)
@@ -46,6 +61,11 @@ struct LauncherView: View {
                 .buttonStyle(.borderedProminent).padding()
             }
             .navigationTitle("AliceHub")
+            .toolbar {
+                Button { gamepadEditor = .global } label: {
+                    Label(padText("Gamepad"), systemImage: "gamecontroller")
+                }
+            }
             .disabled(library.importing || library.launching)
             .overlay {
                 if library.importing || library.launching {
@@ -69,6 +89,7 @@ struct LauncherView: View {
                 library.importArchive(url)
             }
         }
+        .sheet(item: $gamepadEditor) { GamepadEditor(game: $0.gameID) }
         .alert("删除游戏？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("取消", role: .cancel) { pendingDelete = nil }
             Button("删除", role: .destructive) {

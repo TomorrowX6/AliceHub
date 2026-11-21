@@ -7,6 +7,31 @@
 
 void savedata_flush_on_background(void);
 
+static void (*gamepad_attach)(UIWindow *);
+static void (*gamepad_command)(int);
+static void (*gamepad_frame)(float, float, bool, bool, bool, bool);
+
+void alicehub_ios_set_gamepad_callbacks(
+    void (*attach)(UIWindow *), void (*command)(int),
+    void (*frame)(float, float, bool, bool, bool, bool))
+{
+    gamepad_attach = attach;
+    gamepad_command = command;
+    gamepad_frame = frame;
+}
+
+void alicehub_ios_gamepad_command(int command)
+{
+    if (gamepad_command)
+        gamepad_command(command);
+}
+
+void alicehub_ios_gamepad_frame(float x, float y, bool cursor, bool movie, bool controller, bool ctrl)
+{
+    if (gamepad_frame)
+        gamepad_frame(x, y, cursor, movie, controller, ctrl);
+}
+
 static SDL_SysWMinfo window_info(SDL_Window *window)
 {
     SDL_SysWMinfo info = {0};
@@ -56,6 +81,8 @@ void alicehub_ios_prepare_window(SDL_Window *window)
         [UIViewController attemptRotationToDeviceOrientation];
     }
     SDL_Log("iOS window attached: %s", native.windowScene ? "yes" : "no");
+    if (gamepad_attach)
+        gamepad_attach(native);
 }
 
 void alicehub_ios_bind_drawable(SDL_Window *window, const SDL_Rect *viewport)
