@@ -177,7 +177,9 @@ enum ModOverlay {
         let root = try findModRootDir(staging, isCnPatch: isCnPatch)
         var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
         let before = try ModFiles.walk(target)
-        let directories = Set(before.filter(ModFiles.isDirectory).map(\.path))
+        let directories = before.filter(ModFiles.isDirectory).map { $0.resolvingSymlinksInPath().standardizedFileURL }
+        let directoryPaths = Set(directories.map(\.path))
+        let originalFiles = Set(before.filter(ModFiles.isFile).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
         for file in try ModFiles.walk(root) where ModFiles.isFile(file) {
             let relative = ModFiles.relative(file, to: root)
             if relative.hasPrefix(".") || NativeGameImport.skip(relative) { continue }
@@ -185,6 +187,9 @@ enum ModOverlay {
             affected.formUnion([destination, destination.appendingPathExtension("vanilla.bak"), destination.appendingPathExtension("vanilla.bak.tmp"), destination.deletingLastPathComponent().appendingPathComponent(".mod_apply_" + destination.lastPathComponent + ".tmp")])
         }
         if cleanReplace {
+            for file in before where ModFiles.isFile(file) && (file.lastPathComponent.hasSuffix(".vanilla.bak.tmp") || (file.lastPathComponent.hasPrefix(".mod_apply_") && file.lastPathComponent.hasSuffix(".tmp"))) {
+                affected.insert(file)
+            }
             for file in before where ModFiles.isFile(file) && file.lastPathComponent.hasSuffix(".vanilla.bak") {
                 affected.insert(file)
                 affected.insert(file.deletingLastPathComponent().appendingPathComponent(String(file.lastPathComponent.dropLast(".vanilla.bak".count))))
@@ -202,8 +207,7 @@ enum ModOverlay {
         var keepRollback = false
         defer { if !keepRollback { try? ModFiles.removeIfPresent(rollback) } }
         var saved: [URL: URL] = [:]
-        for file in affected.sorted(by: { $0.path < $1.path }) where ModFiles.exists(file) {
-            guard ModFiles.isFile(file) else { throw ModError.message("MOD 目标路径不是文件：" + file.lastPathComponent) }
+        for file in affected.sorted(by: { $0.path < $1.path }) where ModFiles.isFile(file) {
             let copy = rollback.appendingPathComponent(ModFiles.relative(file, to: target))
             try ModFiles.files.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
             try ModFiles.files.copyItem(at: file, to: copy)
@@ -216,15 +220,19 @@ enum ModOverlay {
         } catch {
             let failure = error
             do {
-                for file in affected {
-                    try ModFiles.removeIfPresent(file)
-                    if let copy = saved[file] {
-                        try ModFiles.files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                        try ModFiles.replace(copy, file)
-                    }
+                for file in try ModFiles.walk(target) where ModFiles.isFile(file) && !originalFiles.contains(file.resolvingSymlinksInPath().standardizedFileURL.path) {
+                    try ModFiles.files.removeItem(at: file)
                 }
-                for directory in try ModFiles.walk(target).reversed() where ModFiles.isDirectory(directory) && !directories.contains(directory.path) && ModFiles.children(directory).isEmpty {
+                for directory in try ModFiles.walk(target).reversed() where ModFiles.isDirectory(directory) && !directoryPaths.contains(directory.resolvingSymlinksInPath().standardizedFileURL.path) && ModFiles.children(directory).isEmpty {
                     try ModFiles.files.removeItem(at: directory)
+                }
+                for directory in directories where !ModFiles.exists(directory) {
+                    try ModFiles.files.createDirectory(at: directory, withIntermediateDirectories: true)
+                }
+                for (file, copy) in saved {
+                    try ModFiles.removeIfPresent(file)
+                    try ModFiles.files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try ModFiles.replace(copy, file)
                 }
             } catch {
                 keepRollback = true
@@ -257,6 +265,7 @@ enum ModOverlay {
         do {
             for (_, relative) in accepted {
                 let destination = try resolveCaseInsensitiveDest(target, relative)
+                guard !ModFiles.isDirectory(destination) else { throw ModError.message("MOD 目标路径不是文件：" + relative) }
                 try ModFiles.files.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 let resolved = ModFiles.relative(destination, to: target)
                 if !ModFiles.exists(destination) && addedNames.insert(resolved.lowercased()).inserted { added.append(resolved) }

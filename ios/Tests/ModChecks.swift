@@ -128,16 +128,47 @@ struct ModChecks {
             let rejected = try directory("rejected-\(clean)")
             try write(rejected, "Rance10.ain", "failed replacement")
             try write(rejected, "extra/new.afa", "must roll back")
+            try write(rejected, "Nested/replacement.afa", "must roll back after old folder is pruned")
             let previous = try snapshot(game)
+            var committed = false
             do {
                 try ModOverlay.applyModStaging(rejected, to: game, cleanReplace: clean) { _ in
+                    committed = true
                     throw ModError.message("metadata write failed")
                 }
                 preconditionFailure("Accepted failed commit")
             } catch {}
             let restored = try snapshot(game)
+            precondition(committed, "The failure must occur after the overlay was applied")
             precondition(restored == previous, "Rollback must preserve files, backups, journal and metadata")
         }
+        let transition = try directory("folder-to-file")
+        try write(transition, "Rance10.ain", "original")
+        let transitionBefore = try snapshot(transition)
+        let oldLayout = try directory("old-layout")
+        try write(oldLayout, "Rance10.ain", "old mod")
+        try write(oldLayout, "extras/old.afa", "obsolete")
+        try ModOverlay.applyModStaging(oldLayout, to: transition)
+        let newLayout = try directory("new-layout")
+        try write(newLayout, "Rance10.ain", "new mod")
+        try write(newLayout, "extras", "now a file")
+        try ModOverlay.applyModStaging(newLayout, to: transition)
+        let newLayoutFile = try read(transition, "extras")
+        precondition(newLayoutFile == "now a file")
+        try ModOverlay.restoreVanilla(transition)
+        let transitionAfter = try snapshot(transition)
+        precondition(transitionAfter == transitionBefore)
+        try write(transition, "extras/keep.afa", "unrelated original")
+        let conflictBefore = try snapshot(transition)
+        let conflict = try directory("conflicting-layout")
+        try write(conflict, "Rance10.ain", "rejected")
+        try write(conflict, "extras", "must not replace an original folder")
+        do {
+            try ModOverlay.applyModStaging(conflict, to: transition)
+            preconditionFailure("Accepted a file over an unrelated directory")
+        } catch {}
+        let conflictAfter = try snapshot(transition)
+        precondition(conflictAfter == conflictBefore)
         let patch = try directory("patch")
         try write(patch, "Rance10.ain", "patched")
         try write(patch, "nested/new.afa", "updated added file")
@@ -203,6 +234,16 @@ struct ModChecks {
             while installer.isRunning && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
             precondition(!installer.isRunning && installer.succeeded == success, installer.failure ?? "Job timeout: \(installer.progressText)")
         }
+        let explicitFull = try directory("e2-explicit-full")
+        try write(explicitFull, "Evenicle2.ain", "explicit full")
+        try write(e2, "obsolete.afa", "old patch")
+        try write(e2, ModOverlay.journalName, "obsolete.afa")
+        let e2Descriptor = ModGameDescriptor.supported.first { $0.id == "evenicle2" }!
+        precondition(installer.installLocalDirectory(explicitFull, to: e2, descriptor: e2Descriptor, cleanReplace: true))
+        awaitJob()
+        precondition(!ModFiles.exists(e2.appendingPathComponent("obsolete.afa")))
+        let explicitlyInstalled = try read(e2, "Evenicle2.ain")
+        precondition(explicitlyInstalled == "explicit full")
         let onlineGame = try directory("Games/online")
         try write(onlineGame, "Rance10.ain", "original")
         let data = try Data(contentsOf: root.appendingPathComponent("online.zip"))

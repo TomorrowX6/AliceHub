@@ -1176,8 +1176,9 @@ int main(int argc, char *argv[])
 			usage_error("Can't initialize game with argument '%s'", argv[0]);
 		}
 	}
-	ainfile = native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
-	if (!native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
+	bool use_native_ain_path = native_ain_path && file_exists(native_ain_path);
+	ainfile = use_native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
+	if (!use_native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
 		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
 		sys4_set_text_gbk(true);
 		char *gbk_ain = gamedir_path(config.ain_filename);

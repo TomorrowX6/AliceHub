@@ -39,7 +39,7 @@ struct GameDetailView: View {
                     if game.engine == .system4 {
                         action("虚拟手柄与外设", "独立布局、按键与控制器映射", "gamecontroller", .gamepad)
                     } else {
-                        HubActionLabel(title: "原生触控", subtitle: "System 3.x 暂不支持虚拟手柄", symbol: "hand.tap")
+                        HubActionLabel(title: "原生触控", subtitle: "System 3.x 暂不支持虚拟手柄", symbol: "hand.tap", navigates: false)
                     }
                     if SaveEditorView.supports(game.url) {
                         Divider()

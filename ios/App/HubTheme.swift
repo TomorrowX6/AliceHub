@@ -85,6 +85,7 @@ struct HubActionLabel: View {
     let subtitle: String
     let symbol: String
     var destructive = false
+    var navigates = true
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: symbol).font(.system(size: 18, weight: .medium))
@@ -96,7 +97,9 @@ struct HubActionLabel: View {
                 Text(subtitle).font(.caption).foregroundColor(HubTheme.secondary)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(HubTheme.secondary)
+            if navigates {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(HubTheme.secondary)
+            }
         }.padding(.vertical, 7).contentShape(Rectangle())
     }
 }

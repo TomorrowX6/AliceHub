@@ -200,15 +200,17 @@ final class GameLibrary: ObservableObject {
                             if let root = try Self.gameRoot(in: stage) { return (root, stage) }
                             guard depth < 3 else { return nil }
                             let contained = try Self.containedFiles(in: stage)
-                            let candidates = contained.filter { ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }
+                            let discs = contained.filter {
+                                ["iso", "mdf"].contains($0.pathExtension.lowercased()) && (try? Iso9660Extractor.containsGameRoot($0)) == true
+                            }
+                            let candidates = discs + contained.filter { !discs.contains($0) && ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }
                             for nested in candidates {
                                 let next = temporary.appendingPathComponent("stage-\(UUID().uuidString)")
                                 do {
                                     try extract(nested, to: next)
                                     if let found = try findGame(in: next, depth: depth + 1) { return found }
-                                } catch {
-                                    try? self.files.removeItem(at: next)
-                                }
+                                } catch {}
+                                if self.files.fileExists(atPath: next.path) { try self.files.removeItem(at: next) }
                             }
                             return nil
                         }

@@ -129,10 +129,10 @@ final class ModInstaller: ObservableObject {
     private func applyLocal(_ staging: URL, label: String, game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool) throws {
         try checkCancelled()
         let previous = InstalledModInfo.readOrInfer(game)
-        try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch, allowEvenicle2IncrementalDetect: true) { full in
+        try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch) { full in
             let version = ModCatalog.inferLocalOverlayVersion(label, isPatchHint: !full, fallbackIniDir: full || descriptor.isCnPatch ? game : nil, isCnPatch: descriptor.isCnPatch)
             try InstalledModInfo(version: version, baseVersion: full ? version : previous?.baseVersion,
-            baseFileId: full || descriptor.isCnPatch ? -1 : (previous?.baseFileId ?? -1), fileName: label, source: "local",
+            baseFileId: full ? -1 : (previous?.baseFileId ?? -1), fileName: label, source: "local",
                 installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
         }
     }
