@@ -216,10 +216,14 @@ xcrun swiftc ios/App/{GameLibrary,GamepadProfile}.swift ios/Tests/LibraryChecks.
 Dohna Dohna's title screen and first Chinese message have been exercised on the
 iPhone 17 simulator. Game files belong outside the repository, then under the
 app container's `Documents/Games/<folder>`; no game data is bundled. The test
-host has no audio output devices (`system_profiler SPAudioDataType` lists none),
-and SDL reports AudioQueue error -66680 (`kAudioQueueErr_InvalidDevice`). The
-engine continues silently; audible output still needs verification on a host
-with an audio device or a physical iPhone.
+host originally had no audio output devices, producing AudioQueue error -66680
+(`kAudioQueueErr_InvalidDevice`). System 4 opens/reopens output on a worker so
+CoreAudio cannot block the engine or foreground hook. A software mixer clock
+discards output when callbacks are unavailable, allowing sound completion and
+fades to progress even without a device. Both clocks respect scene/focus pause;
+device-added and foreground events request another asynchronous open attempt.
+System 4 output and System 3 MIDI have also been captured through BlackHole on
+the iPhone 17 simulator. Physical-device interruptions/routes remain unverified.
 
 ## In-game modifier
 

@@ -190,6 +190,13 @@ void SDL_PauseAudioDevice(SDL_AudioDeviceID dev, int pause_on) { pause_state = p
 void SDL_CloseAudioDevice(SDL_AudioDeviceID dev) { close_calls++; }
 #ifdef ALICEHUB_IOS
 const char *SDL_GetCurrentAudioDriver(void) { return "test-coreaudio"; }
+static Uint64 test_ticks;
+Uint64 SDL_GetTicks64(void) { return test_ticks; }
+SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex*)1; }
+int SDL_LockMutex(SDL_mutex *m) { return 0; }
+int SDL_UnlockMutex(SDL_mutex *m) { return 0; }
+SDL_Thread *SDL_CreateThread(SDL_ThreadFunction f, const char *n, void *d) { return (SDL_Thread*)1; }
+void SDL_Delay(Uint32 ms) { test_ticks += ms; }
 #endif
 void SDL_LockAudioDevice(SDL_AudioDeviceID dev) {}
 void SDL_UnlockAudioDevice(SDL_AudioDeviceID dev) {}
@@ -202,7 +209,13 @@ int sf_close(SNDFILE *s) { return 0; }
 int sf_error(SNDFILE *s) { return 0; }
 const char *sf_strerror(SNDFILE *s) { return ""; }
 sf_count_t sf_seek(SNDFILE *s, sf_count_t f, int w) { return 0; }
-sf_count_t sf_readf_float(SNDFILE *s, float *p, sf_count_t f) { return 0; }
+static sf_count_t remaining_frames;
+sf_count_t sf_readf_float(SNDFILE *s, float *p, sf_count_t f) {
+    sf_count_t n = remaining_frames < f ? remaining_frames : f;
+    memset(p, 0, n * 2 * sizeof(float));
+    remaining_frames -= n;
+    return n;
+}
 
 bool asset_exists_by_name(enum asset_type t, const char *n, int *id) { return false; }
 struct archive_data *asset_get(enum asset_type t, int no) { return NULL; }
@@ -230,27 +243,6 @@ void static_library_replace(struct static_library *l, const char *n, void *f) {}
 int main(void) {
 #ifdef ALICEHUB_IOS
     mixer_retry_audio_device(); assert(open_calls == 0);
-    fail_open = true;
-    mixer_init(); assert(audio_device == 0 && open_calls == 1);
-    mixer_retry_audio_device(); assert(audio_device == 0 && open_calls == 2);
-    fail_open = false;
-    mixer_set_app_backgrounded(true);
-    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 1 && open_calls == 3);
-    mixer_retry_audio_device(); assert(open_calls == 3);
-    mixer_set_app_backgrounded(false); assert(pause_state == 0);
-    mixer_handle_device_removed(99); assert(close_calls == 0 && open_calls == 3);
-    fail_open = true;
-    mixer_handle_device_removed(2); assert(close_calls == 1 && audio_device == 0);
-    mixer_set_global_focus(false); mixer_set_window_focus(false);
-    fail_open = false;
-    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 1);
-    mixer_set_window_focus(true); assert(pause_state == 0);
-    fail_open = true;
-    mixer_handle_device_removed(2); assert(audio_device == 0);
-    mixer_set_app_backgrounded(false);
-    fail_open = false;
-    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 0);
-    mixer_handle_device_removed(2); assert(audio_device == 2 && pause_state == 0);
 #endif
     static const char *const expected_names[8] = {
         "Master", "BGM", "SE", "Voice", "Ambient", "BackVoice", "VoiceMale", "VoiceFemale"
@@ -294,6 +286,79 @@ int main(void) {
     assert(mixers[5].nr_children == 0);
     assert(mixers[6].nr_children == 0);
     assert(mixers[7].nr_children == 0);
+
+#ifdef ALICEHUB_IOS
+    assert(open_calls == 0 && audio_device == 0);
+    fail_open = true;
+    service_audio_device(); assert(open_calls == 1 && audio_device == 0);
+    mixer_retry_audio_device(); assert(open_calls == 1);
+    service_audio_device(); assert(open_calls == 2 && audio_device == 0);
+
+    struct channel sound = { .file = (SNDFILE*)1,
+        .info = { .samplerate = 44100, .channels = 2, .frames = 4410 } };
+    assert(init_channel(&sound));
+    remaining_frames = 4410;
+    assert(channel_play(&sound) && channel_is_playing(&sound));
+    mixer_set_app_backgrounded(true);
+    advance_audio_clock(test_ticks = 500);
+    assert(sound.frame == 0 && channel_is_playing(&sound));
+    mixer_set_app_backgrounded(false);
+    advance_audio_clock(test_ticks = 750);
+    assert(sound.frame == 4410 && !channel_is_playing(&sound));
+
+    // Empty streams also finish without an audio device.
+    assert(channel_play(&sound));
+    advance_audio_clock(test_ticks = 1000);
+    assert(!channel_is_playing(&sound));
+
+    // A device that opens but stops calling back must not freeze fades or EOF.
+    fail_open = false;
+    mixer_retry_audio_device(); service_audio_device();
+    assert(audio_device == 2 && pause_state == 0);
+    float pcm[CHUNK_SIZE * 2];
+    audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
+    advance_audio_clock(test_ticks = 1050);
+    assert(clock_tick == 1000);
+    remaining_frames = 44100;
+    channel_play(&sound);
+    assert(channel_fade(&sound, 150, 23, false));
+    assert(channel_is_fading(&sound));
+    advance_audio_clock(test_ticks = 1250);
+    assert(!channel_is_fading(&sound) && sound.volume == 23);
+    channel_fade(&sound, 150, 0, true);
+    advance_audio_clock(test_ticks = 1500);
+    assert(!channel_is_playing(&sound) && !channel_is_fading(&sound));
+
+    mixer_set_global_focus(false); mixer_set_window_focus(false);
+    remaining_frames = 4410;
+    channel_play(&sound);
+    uint_least32_t frame = sound.frame;
+    advance_audio_clock(test_ticks = 1750);
+    assert(sound.frame == frame);
+    mixer_set_window_focus(true);
+    advance_audio_clock(test_ticks = 2000);
+    assert(!channel_is_playing(&sound));
+
+    // Late callbacks and a stale watchdog timestamp never double-advance.
+    audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
+    advance_audio_clock(1999);
+    assert(clock_tick == 2000);
+    mixer_retry_audio_device(); service_audio_device();
+    assert(open_calls == 3 && close_calls == 0);
+    mixer_handle_device_removed(99); service_audio_device();
+    assert(close_calls == 0);
+    mixer_set_app_backgrounded(true);
+    mixer_handle_device_removed(2); assert(close_calls == 0);
+    service_audio_device(); assert(close_calls == 1 && open_calls == 4);
+    assert(atomic_load(&output_paused));
+    audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
+    mixer_set_app_backgrounded(false);
+    advance_audio_clock(test_ticks = 2250);
+    mixer_retry_audio_device(); assert(close_calls == 1);
+    test_ticks = 3000;
+    service_audio_device(); assert(close_calls == 2 && open_calls == 5);
+    puts("Audio clock: failed open, empty/finite sound, stalled callback, fades, pause and recovery passed");
+#endif
 
     for (int i = 0; i < 8; i++) {
         assert(strcmp(mixer_get_name(i), expected_names[i]) == 0);
