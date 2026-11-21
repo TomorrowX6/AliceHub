@@ -257,6 +257,9 @@ object NativeGameImport {
         if (GameCatalog.isHarukaGameFiles(activeFiles)) {
             return "Haruka"
         }
+        if (GameCatalog.isTsumamigui3GameFiles(activeFiles)) {
+            return "Tsumamigui3"
+        }
         if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
             return "Tsumashibori"
         }
@@ -392,6 +395,8 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_HARUKA
         val isTsumashiboriImport = targetGameId == GameCatalog.ID_TSUMASHIBORI ||
             detectedGameId == GameCatalog.ID_TSUMASHIBORI
+        val isTsumamigui3Import = targetGameId == GameCatalog.ID_TSUMAMIGUI3 ||
+            detectedGameId == GameCatalog.ID_TSUMAMIGUI3
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
         val baseName = when {
             isDaiakujiImport -> "Daiakuji"
@@ -419,7 +424,8 @@ object NativeGameImport {
                         (isGalzooImport && isGalzooBloatRelPath(relPath)) ||
                         (isIxsealImport && isIxsealBloatRelPath(relPath, skipPatchCnSubdir = true)) ||
                         (isHarukaImport && isHarukaBloatRelPath(relPath)) ||
-                        (isTsumashiboriImport && isTsumashiboriBloatRelPath(relPath))
+                        (isTsumashiboriImport && isTsumashiboriBloatRelPath(relPath)) ||
+                        (isTsumamigui3Import && isTsumamigui3BloatRelPath(relPath))
                     ) {
                         continue
                     }

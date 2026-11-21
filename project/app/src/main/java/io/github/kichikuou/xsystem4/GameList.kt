@@ -671,7 +671,8 @@ class GameList(activity: Activity) {
                         classifiedId == GameCatalog.ID_GALZOO ||
                         classifiedId == GameCatalog.ID_IXSEAL ||
                         classifiedId == GameCatalog.ID_HARUKA ||
-                        classifiedId == GameCatalog.ID_TSUMASHIBORI
+                        classifiedId == GameCatalog.ID_TSUMASHIBORI ||
+                        classifiedId == GameCatalog.ID_TSUMAMIGUI3
                     ) {
                         pruneRedundantBaseBloat(imported)
                     }
@@ -967,6 +968,7 @@ class GameList(activity: Activity) {
         val isIxsealTarget = targetGameId == GameCatalog.ID_IXSEAL
         val isHarukaTarget = targetGameId == GameCatalog.ID_HARUKA
         val isTsumashiboriTarget = targetGameId == GameCatalog.ID_TSUMASHIBORI
+        val isTsumamigui3Target = targetGameId == GameCatalog.ID_TSUMAMIGUI3
         val tempDir = File(storagePath, ".install_temp_$sessionGen")
         tempDir.deleteRecursively()
         try {
@@ -987,7 +989,8 @@ class GameList(activity: Activity) {
                         (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
                         (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
                         (isHarukaTarget && isHarukaBloatRelPath(rel)) ||
-                        (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel))
+                        (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel)) ||
+                        (isTsumamigui3Target && isTsumamigui3BloatRelPath(rel))
                 },
                 throwInstallFailureOnNoSpace = true,
                 checkCancelled = checkCancelled,
@@ -1039,7 +1042,8 @@ class GameList(activity: Activity) {
                                 (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
                                 (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
                                 (isHarukaTarget && isHarukaBloatRelPath(rel)) ||
-                                (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel))
+                                (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel)) ||
+                        (isTsumamigui3Target && isTsumamigui3BloatRelPath(rel))
                         },
                         throwInstallFailureOnNoSpace = true,
                         checkCancelled = checkCancelled,
@@ -1077,7 +1081,8 @@ class GameList(activity: Activity) {
                             (!isGalzooTarget || !isGalzooBloatRelPath(rel)) &&
                             (!isIxsealTarget || !isIxsealBloatRelPath(rel, skipPatchCnSubdir = true)) &&
                             (!isHarukaTarget || !isHarukaBloatRelPath(rel)) &&
-                            (!isTsumashiboriTarget || !isTsumashiboriBloatRelPath(rel))
+                            (!isTsumashiboriTarget || !isTsumashiboriBloatRelPath(rel)) &&
+                            (!isTsumamigui3Target || !isTsumamigui3BloatRelPath(rel))
                     }
                     .sortedByDescending { it.length() }
                     .toList()
@@ -1097,7 +1102,8 @@ class GameList(activity: Activity) {
                             (isGalzooTarget && isGalzooBloatRelPath(rel)) ||
                             (isIxsealTarget && isIxsealBloatRelPath(rel, skipPatchCnSubdir = false)) ||
                             (isHarukaTarget && isHarukaBloatRelPath(rel)) ||
-                            (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel))
+                            (isTsumashiboriTarget && isTsumashiboriBloatRelPath(rel)) ||
+                        (isTsumamigui3Target && isTsumamigui3BloatRelPath(rel))
                     },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled,
@@ -1162,7 +1168,8 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_GALZOO ||
                 classifiedId == GameCatalog.ID_IXSEAL ||
                 classifiedId == GameCatalog.ID_HARUKA ||
-                classifiedId == GameCatalog.ID_TSUMASHIBORI
+                classifiedId == GameCatalog.ID_TSUMASHIBORI ||
+                classifiedId == GameCatalog.ID_TSUMAMIGUI3
             ) {
                 pruneRedundantBaseBloat(srcDir)
             }
@@ -1179,6 +1186,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
+                classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
@@ -2610,6 +2618,47 @@ internal fun isTsumashiboriBloatRelPath(relPath: String): Boolean {
         dirMatch(rawLeafLower)
 }
 
+internal fun isTsumamigui3BloatRelPath(relPath: String): Boolean {
+    val norm = relPath.replace('\\', '/').trim('/')
+    if (norm.isEmpty()) return false
+    val segments = norm.split('/').filter { it.isNotEmpty() }
+    val dirMatch: (String) -> Boolean = { seg ->
+        seg == "backup" ||
+            seg == "backdata" ||
+            seg == "dll" ||
+            seg == "directx" ||
+            seg == "savedata" ||
+            seg == "manual" ||
+            seg == "installinfo" ||
+            seg == "license" ||
+            seg == "补丁" ||
+            seg == "汉化补丁" ||
+            seg == "攻略" ||
+            seg == "备份" ||
+            seg == "备份文件" ||
+            seg == "全cg存档" ||
+            seg.endsWith("汉化原版")
+    }
+    for (i in 0 until segments.size - 1) {
+        if (dirMatch(segments[i].lowercase())) return true
+    }
+    val leafLower = segments.last().lowercase()
+    if (leafLower.endsWith(".bak") && !leafLower.endsWith(".vanilla.bak")) {
+        return true
+    }
+    return leafLower.endsWith(".exe") ||
+        leafLower.endsWith(".dll") ||
+        leafLower.endsWith(".bat") ||
+        leafLower.endsWith(".cmd") ||
+        leafLower.endsWith(".lnk") ||
+        leafLower.endsWith(".rar去掉") ||
+        (leafLower.startsWith("读我") && leafLower.endsWith(".txt")) ||
+        leafLower == "tsumamigui3.ico" ||
+        leafLower == "autorun.inf" ||
+        leafLower == "desktop.ini" ||
+        dirMatch(leafLower)
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
     if (gameId != GameCatalog.ID_RANCE02 &&
@@ -2621,7 +2670,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
         gameId != GameCatalog.ID_GALZOO &&
         gameId != GameCatalog.ID_IXSEAL &&
         gameId != GameCatalog.ID_HARUKA &&
-        gameId != GameCatalog.ID_TSUMASHIBORI
+        gameId != GameCatalog.ID_TSUMASHIBORI &&
+        gameId != GameCatalog.ID_TSUMAMIGUI3
     ) {
         return
     }
@@ -2658,7 +2708,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     )) ||
                 (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel)) ||
                 (gameId == GameCatalog.ID_HARUKA && isHarukaBloatRelPath(rel)) ||
-                (gameId == GameCatalog.ID_TSUMASHIBORI && isTsumashiboriBloatRelPath(rel))
+                (gameId == GameCatalog.ID_TSUMASHIBORI && isTsumashiboriBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_TSUMAMIGUI3 && isTsumamigui3BloatRelPath(rel))
             ) {
                 dirsToDelete.add(f)
             } else if ((gameId == GameCatalog.ID_RANCE06 || gameId == GameCatalog.ID_GALZOO) && (
@@ -2684,7 +2735,8 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
                     (gameId == GameCatalog.ID_GALZOO && isGalzooBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_IXSEAL && isIxsealBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_HARUKA && isHarukaBloatRelPath(rel)) ||
-                    (gameId == GameCatalog.ID_TSUMASHIBORI && isTsumashiboriBloatRelPath(rel))
+                    (gameId == GameCatalog.ID_TSUMASHIBORI && isTsumashiboriBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_TSUMAMIGUI3 && isTsumamigui3BloatRelPath(rel))
                 )
         ) {
             filesToDelete.add(f)

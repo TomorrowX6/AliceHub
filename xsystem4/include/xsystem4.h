@@ -110,6 +110,7 @@ extern bool game_escalayer_reboot;
 extern bool game_galzoo;
 extern bool game_ixseal;
 extern bool game_tsumashibori;
+extern bool game_tsumamigui3;
 
 bool sys_is_sdl_main_thread(void);
 

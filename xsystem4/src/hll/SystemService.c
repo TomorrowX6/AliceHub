@@ -71,23 +71,47 @@ static int SystemService_GetGameVersion(void)
 	return ain->game_version;
 }
 
-static struct string *SystemService_GetGameVersionByText(void)
+static const char *game_version_text(void)
 {
 	if (game_rance10) {
 		// This API returns a compatibility identifier, not a dotted version.
 		// Captured from the original Rance X v1.04 runtime.
-		return cstr_to_string("lasdf62uihf29fosif83oisdhf15j2l87asdf");
+		return "lasdf62uihf29fosif83oisdhf15j2l87asdf";
 	}
-	if (game_dohnadohna) {
-		return cstr_to_string("sd40006sd00000008f6300004");
-	}
-	if (game_evenicle2) {
-		return cstr_to_string("8938gohds983ogh1223fg086qirkcvn36");
-	}
-	if (game_ixseal) {
-		return cstr_to_string("a8k345es394fx4mg3q2p8ts68nk5zwr7");
+	if (game_dohnadohna)
+		return "sd40006sd00000008f6300004";
+	if (game_evenicle2)
+		return "8938gohds983ogh1223fg086qirkcvn36";
+	if (game_ixseal)
+		return "a8k345es394fx4mg3q2p8ts68nk5zwr7";
+	if (game_tsumamigui3) {
+		// Embedded in the original Tsumamigui3.exe; main() loops until it matches.
+		return "786u87]:78[]87d68sd86sadcfgsdfh87ni";
 	}
 	VM_ERROR("Unknown game version text for this title");
+}
+
+static struct string *SystemService_GetGameVersionByText(void)
+{
+	return cstr_to_string(game_version_text());
+}
+
+// Older AINs (e.g. v7) declare `bool GetGameVersionByText(ref string Version)`.
+static bool SystemService_GetGameVersionByText_ref(struct string **version)
+{
+	if (!version)
+		return false;
+	if (*version)
+		free_string(*version);
+	*version = cstr_to_string(game_version_text());
+	return true;
+}
+
+static void *SystemService_ResolveGameVersionByText(const struct ain_hll_function *function)
+{
+	if (function->nr_arguments == 1 && function->arguments[0].type.data == AIN_REF_STRING)
+		return SystemService_GetGameVersionByText_ref;
+	return SystemService_GetGameVersionByText;
 }
 
 static void SystemService_GetGameName(struct string **game_name)
@@ -1039,7 +1063,7 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(SetMixerVolume, mixer_set_volume),
 	    HLL_EXPORT(SetMixerMute, mixer_set_mute),
 	    HLL_EXPORT(GetGameVersion, SystemService_GetGameVersion),
-	    HLL_EXPORT(GetGameVersionByText, SystemService_GetGameVersionByText),
+	    HLL_OVERLOAD(GetGameVersionByText, SystemService_ResolveGameVersionByText),
 	    HLL_OVERLOAD(GetGameName, SystemService_ResolveGameName),
 	    HLL_EXPORT(GetGameTitle, SystemService_GetGameTitle),
 	    HLL_EXPORT(AddURLMenu, SystemService_AddURLMenu),

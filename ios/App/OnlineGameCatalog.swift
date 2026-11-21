@@ -25,6 +25,7 @@ struct OnlineGame: Identifiable {
         Self(id: "ixseal", title: "超昂神骑", directory: "Ixseal"),
         Self(id: "haruka", title: "超昂闪忍遥", directory: "Haruka"),
         Self(id: "tsumashibori", title: "妻管严", directory: "Tsumashibori"),
+        Self(id: "tsumamigui3", title: "妻中蜜３", directory: "Tsumamigui3"),
         Self(id: "kichikuou", title: "鬼畜王兰斯", directory: "KichikuRance"),
         Self(id: "daiakuji", title: "大恶司", directory: "Daiakuji")
     ]

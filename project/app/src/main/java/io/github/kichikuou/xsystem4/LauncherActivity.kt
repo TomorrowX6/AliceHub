@@ -76,7 +76,8 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_GALZOO && GameCatalog.isGalzooAlias(q)) ||
             (desc.id == GameCatalog.ID_IXSEAL && GameCatalog.isIxsealAlias(q)) ||
             (desc.id == GameCatalog.ID_HARUKA && GameCatalog.isHarukaAlias(q)) ||
-            (desc.id == GameCatalog.ID_TSUMASHIBORI && GameCatalog.isTsumashiboriAlias(q))
+            (desc.id == GameCatalog.ID_TSUMASHIBORI && GameCatalog.isTsumashiboriAlias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3 && GameCatalog.isTsumamigui3Alias(q))
         ) {
             return true
         }

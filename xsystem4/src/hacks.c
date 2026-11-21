@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <math.h>
 
 #include "system4.h"
@@ -56,6 +57,7 @@ bool game_escalayer_reboot = false;
 bool game_galzoo = false;
 bool game_ixseal = false;
 bool game_tsumashibori = false;
+bool game_tsumamigui3 = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -520,6 +522,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_galzoo = false;
 	game_ixseal = false;
 	game_tsumashibori = false;
+	game_tsumamigui3 = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -557,6 +560,11 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "PLAY_TABLE_SAKURA") >= 0
 		&& ain_get_struct(ain, "PLAY_TABLE_MADOKA") >= 0
 		&& ain_get_struct(ain, "SAKURA_SIDE_SPRITE") >= 0;
+	if (ain->version == 7 && config.ain_filename) {
+		const char *ain_base = strrchr(config.ain_filename, '/');
+		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
+		game_tsumamigui3 = !strcasecmp(ain_base, "Tsumamigui3.ain");
+	}
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	sys4_set_text_gbk((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
@@ -645,6 +653,10 @@ void apply_game_specific_hacks(struct ain *ain)
 			&& ain_get_struct(ain, "T_PartsNo") >= 0) {
 		game_rance9 = true;
 		apply_rance9_hacks(ain);
+	}
+	if (game_tsumamigui3 && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 1024;
+		config.view_height = 768;
 	}
 	if (game_rance8 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1024;
