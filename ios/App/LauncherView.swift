@@ -17,6 +17,7 @@ struct LauncherView: View {
     @State private var pendingDelete: Game?
     @State private var saveGame: Game?
     @State private var gamepadEditor: GamepadEditorTarget?
+    @State private var managedGame: Game?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -35,7 +36,7 @@ struct LauncherView: View {
                             Button { library.launch(game) } label: {
                                 Label {
                                     VStack(alignment: .leading) {
-                                        Text(game.name)
+                                        Text(ModOverlay.displayName(game.url, baseName: game.name))
                                         Text(game.engine.rawValue).font(.caption).foregroundColor(.secondary)
                                     }
                                 } icon: {
@@ -50,6 +51,18 @@ struct LauncherView: View {
                             .swipeActions {
                                 Button("存档管理") { saveGame = game }.tint(.blue)
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                if let descriptor = ModGameDescriptor.classifyDirectory(game.url) {
+                                    Button { managedGame = game } label: {
+                                        Label(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", systemImage: "shippingbox")
+                                    }.tint(.blue)
+                                }
+                            }
+                            .contextMenu {
+                                if let descriptor = ModGameDescriptor.classifyDirectory(game.url) {
+                                    Button(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理") { managedGame = game }
+                                }
                             }
                         }
                     }
@@ -97,6 +110,11 @@ struct LauncherView: View {
             }
         }
         .sheet(item: $gamepadEditor) { GamepadEditor(game: $0.gameID) }
+        .sheet(item: $managedGame) { game in
+            if let descriptor = ModGameDescriptor.classifyDirectory(game.url) {
+                ModManagerView(game: game, descriptor: descriptor, library: library)
+            }
+        }
         .alert("删除游戏？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("取消", role: .cancel) { pendingDelete = nil }
             Button("删除", role: .destructive) {
