@@ -36,16 +36,20 @@ static void add_modifier_button(UIViewController *root)
     [pan addTarget:button action:@selector(alicehub_dragModifierButton:)];
     [button addGestureRecognizer:pan];
     [view addSubview:button];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIEdgeInsets safe = view.safeAreaInsets;
+        button.frame = CGRectOffset(button.frame, safe.left, MAX(safe.top - 48, 0));
+    });
 }
 
 @implementation UIButton (AliceHubModifier)
 - (void)alicehub_dragModifierButton:(UIPanGestureRecognizer *)pan
 {
     CGPoint delta = [pan translationInView:self.superview];
-    CGRect bounds = self.superview.bounds;
+    CGRect bounds = UIEdgeInsetsInsetRect(self.superview.bounds, self.superview.safeAreaInsets);
     CGFloat half = self.bounds.size.width / 2;
-    self.center = CGPointMake(MIN(MAX(self.center.x + delta.x, half), bounds.size.width - half),
-                              MIN(MAX(self.center.y + delta.y, half), bounds.size.height - half));
+    self.center = CGPointMake(MIN(MAX(self.center.x + delta.x, CGRectGetMinX(bounds) + half), CGRectGetMaxX(bounds) - half),
+                              MIN(MAX(self.center.y + delta.y, CGRectGetMinY(bounds) + half), CGRectGetMaxY(bounds) - half));
     [pan setTranslation:CGPointZero inView:self.superview];
 }
 @end
