@@ -1,0 +1,134 @@
+import Foundation
+import Combine
+
+struct ModReleaseAction {
+    let title: String
+    let steps: [ModReleaseEntry]
+}
+
+enum ModManagerPolicy {
+    static func actions(_ releases: [ModReleaseEntry], index: Int, hasMod: Bool, installed: InstalledModInfo?) -> [ModReleaseAction] {
+        guard releases.indices.contains(index) else { return [] }
+        let entry = releases[index]
+        let current = hasMod && ModCatalog.matchInstalledIndex(releases, installed) == index
+        if !entry.isPatch {
+            return [ModReleaseAction(title: current ? "重新安装" : (hasMod ? "切换版本" : "安装"), steps: [entry])]
+        }
+        let combo = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: true)
+        let patch = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: false)
+        if ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: index, hasMod: hasMod, installed: installed) {
+            var actions = [ModReleaseAction(title: current ? "重装补丁" : "更新补丁", steps: patch)]
+            if combo.count > 1 { actions.append(ModReleaseAction(title: "完整重装", steps: combo)) }
+            return actions
+        }
+        if combo.count > 1 { return [ModReleaseAction(title: "组合安装", steps: combo), ModReleaseAction(title: "仅装补丁", steps: patch)] }
+        return [ModReleaseAction(title: "更新补丁", steps: patch)]
+    }
+
+    static func syncInstalledMeta(_ directory: URL, releases: [ModReleaseEntry], descriptor: ModGameDescriptor) throws {
+        guard ModOverlay.detectInstalledMod(directory), var info = InstalledModInfo.readOrInfer(directory) else { return }
+        let index = ModCatalog.matchInstalledIndex(releases, info)
+        guard releases.indices.contains(index) else { return }
+        let matched = releases[index]
+        guard info.version != matched.version || (info.fileId <= 0 && matched.fileId > 0) else { return }
+        info.version = matched.version
+        info.baseVersion = matched.isPatch ? (matched.baseVersion ?? info.baseVersion) : matched.version
+        if info.fileId <= 0 { info.fileId = matched.fileId }
+        if info.baseFileId <= 0 { info.baseFileId = matched.isPatch ? (matched.baseFileId ?? info.baseFileId) : matched.fileId }
+        info.kind = descriptor.overlayKind
+        try info.write(to: directory)
+    }
+
+    static func meta(_ entry: ModReleaseEntry) -> String {
+        [ModCatalog.formatSize(entry.expectedSize), entry.formattedDate,
+         entry.isPatch ? entry.baseVersion.map { "需 " + $0 } ?? "" : "", entry.fileName].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+final class ModManagerModel: ObservableObject {
+    let descriptor: ModGameDescriptor
+    let installer = ModInstaller()
+    @Published private(set) var directory: URL
+    @Published private(set) var releases: [ModReleaseEntry] = []
+    @Published private(set) var loading = false
+    @Published private(set) var loadFailed = false
+    @Published private(set) var installed: InstalledModInfo?
+    @Published private(set) var hasMod = false
+    @Published private(set) var canRestore = false
+    @Published private(set) var busy = false
+    @Published var error: String?
+    @Published var notice: String?
+    private var restoring = false
+    private var subscriptions = Set<AnyCancellable>()
+
+    init(directory: URL, descriptor: ModGameDescriptor) {
+        self.directory = directory
+        self.descriptor = descriptor
+        refreshInstalled()
+        installer.$isRunning.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] running in
+            guard let self else { return }
+            self.busy = running
+            if !running {
+                self.refreshInstalled()
+                self.error = self.installer.failure
+                if self.installer.succeeded {
+                    self.notice = self.restoring ? (descriptor.isCnPatch ? "已卸载汉化补丁" : "已卸载 MOD") : (descriptor.isCnPatch ? "汉化补丁安装成功" : "MOD 安装成功")
+                } else if self.installer.failure == nil { self.notice = "已取消" }
+            }
+        }.store(in: &subscriptions)
+    }
+
+    var installedIndex: Int { hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1 }
+    var plan: ModUpdatePlan? { ModCatalog.computeUpdatePlan(releases, hasMod: hasMod, installed: installed) }
+    var status: String {
+        let version = releases.indices.contains(installedIndex) ? releases[installedIndex].version : installed?.version
+        let current = !hasMod ? (descriptor.isCnPatch ? "未安装汉化补丁" : "未安装 MOD") : version.map { "已装 " + $0 } ?? (descriptor.isCnPatch ? "已安装汉化补丁" : "已装 MOD")
+        return current + (releases.first.map { " · 最新 " + $0.version } ?? "")
+    }
+    var updateTitle: String {
+        if busy { return "查看进度" }
+        if releases.isEmpty { return loading ? "检查中…" : (loadFailed ? "重新获取" : "安装最新") }
+        guard let plan else { return "已是最新" }
+        let size = ModCatalog.formatSize(plan.steps.reduce(Int64(0)) { $0 + max(0, $1.expectedSize) })
+        return (hasMod ? "立即更新" : "安装最新") + (size.isEmpty ? "" : " · " + size)
+    }
+    var updateDisabled: Bool { busy || (releases.isEmpty ? !loadFailed : plan == nil) }
+
+    func refreshInstalled() {
+        installed = InstalledModInfo.readOrInfer(directory)
+        hasMod = ModOverlay.detectInstalledMod(directory)
+        canRestore = ModOverlay.canRestoreVanilla(directory)
+    }
+    func select(_ directory: URL) {
+        guard !busy && !installer.isRunning else { return }
+        self.directory = directory
+        syncMetadata()
+    }
+    private func syncMetadata() {
+        do { try ModManagerPolicy.syncInstalledMeta(directory, releases: releases, descriptor: descriptor) }
+        catch { self.error = error.localizedDescription }
+        refreshInstalled()
+    }
+    @MainActor func loadCatalog() async {
+        guard !loading else { return }
+        loading = true; loadFailed = false
+        do {
+            releases = try await ModCatalog.fetchModCatalog(for: descriptor)
+            if !installer.isRunning { syncMetadata() }
+        } catch { loadFailed = true }
+        loading = false
+    }
+    func install(_ steps: [ModReleaseEntry]) {
+        restoring = false; notice = nil
+        installer.installOnlinePlan(steps, to: directory, descriptor: descriptor)
+    }
+    func installLocal(_ source: URL, folder: Bool) {
+        restoring = false; notice = nil
+        if folder { installer.installLocalDirectory(source, to: directory, descriptor: descriptor) }
+        else { installer.installLocalArchive(source, to: directory, descriptor: descriptor) }
+    }
+    func restore() {
+        restoring = true; notice = nil
+        installer.restoreVanilla(directory, descriptor: descriptor)
+    }
+}

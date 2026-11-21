@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory() as temporary:
     work = pathlib.Path(temporary)
     (work / "online.zip").write_bytes(DATA)
     subprocess.run(["xcrun", "clang", "-I" + str(ARCHIVE / "include"), "-c", str(ROOT / "ios/App/ArchiveBridge.c"), "-o", str(work / "bridge.o")], check=True)
-    sources = ["ios/App/ArchiveExtractor.swift", "ios/App/ModCatalog.swift", "ios/App/ModOverlay.swift", "ios/App/ModInstaller.swift", "ios/Tests/ModChecks.swift"]
+    sources = ["ios/App/ArchiveExtractor.swift", "ios/App/ModCatalog.swift", "ios/App/ModOverlay.swift", "ios/App/ModInstaller.swift", "ios/App/ModManagerModel.swift", "ios/Tests/ModChecks.swift"]
     subprocess.run(["xcrun", "swiftc", "-swift-version", "5", "-import-objc-header", str(ROOT / "ios/App/ArchiveBridge.h"),
                     *[str(ROOT / source) for source in sources], str(work / "bridge.o"), "-L" + str(ARCHIVE / "lib"), "-larchive", "-liconv", "-o", str(work / "checks")], check=True)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)

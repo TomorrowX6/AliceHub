@@ -62,6 +62,36 @@ struct ModChecks {
         }
         print("PASS: catalog parsing, patch bases, URL encoding, update plans/selected steps, matching and version inference")
 
+        func actions(_ index: Int, _ hasMod: Bool, _ info: InstalledModInfo?) -> [String] {
+            ModManagerPolicy.actions(releases, index: index, hasMod: hasMod, installed: info).map(\.title)
+        }
+        precondition(actions(2, false, nil) == ["安装"])
+        precondition(actions(2, true, installed(2)) == ["重新安装"])
+        precondition(actions(2, true, installed(3)) == ["切换版本"])
+        precondition(actions(0, true, installed(2)) == ["更新补丁", "完整重装"])
+        precondition(actions(0, true, installed(0)) == ["重装补丁", "完整重装"])
+        precondition(actions(0, false, nil) == ["组合安装", "仅装补丁"])
+        let comboAction = ModManagerPolicy.actions(releases, index: 0, hasMod: false, installed: nil)[0]
+        precondition(comboAction.steps.map(\.fileId) == [3, 4, 5])
+        precondition(ModManagerPolicy.actions(patches, index: 0, hasMod: false, installed: nil).map(\.title) == ["更新补丁"])
+        precondition(ModManagerPolicy.actions([], index: 0, hasMod: false, installed: nil).isEmpty)
+        precondition(ModManagerPolicy.actions(releases, index: -1, hasMod: false, installed: nil).isEmpty)
+        let stale = try directory("stale")
+        let staleInfo = InstalledModInfo(version: "v2.0完整版", fileName: "full.zip", source: "local", installedAtMs: 1234)
+        try staleInfo.write(to: stale)
+        try ModManagerPolicy.syncInstalledMeta(stale, releases: releases, descriptor: ModGameDescriptor.supported[0])
+        let synced = InstalledModInfo.read(stale)
+        precondition(synced?.version == releases[2].version && synced?.fileId == 3 && synced?.baseFileId == 3 && synced?.baseVersion == releases[2].version)
+        precondition(synced?.source == "local" && synced?.installedAtMs == 1234)
+        try ModManagerPolicy.syncInstalledMeta(stale, releases: [], descriptor: ModGameDescriptor.supported[0])
+        precondition(InstalledModInfo.read(stale) == synced)
+        let noMeta = try directory("noMeta")
+        try ModManagerPolicy.syncInstalledMeta(noMeta, releases: releases, descriptor: ModGameDescriptor.supported[0])
+        precondition(InstalledModInfo.read(noMeta) == nil)
+        let manager = ModManagerModel(directory: noMeta, descriptor: ModGameDescriptor.supported[0])
+        precondition(manager.status == "未安装 MOD" && manager.updateDisabled && !manager.canRestore)
+        print("PASS: manager install/switch/reinstall/patch/combo actions, empty/invalid selection, stale metadata sync and empty status")
+
         let game = try directory("game")
         try write(game, "Rance10.ain", "vanilla")
         try write(game, "AliceStart.ini", "GameName = \"兰斯10 决战\"\n")
