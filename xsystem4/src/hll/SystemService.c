@@ -87,6 +87,10 @@ static struct string *SystemService_GetGameVersionByText(void)
 	if (game_ixseal) {
 		return cstr_to_string("a8k345es394fx4mg3q2p8ts68nk5zwr7");
 	}
+	if (game_tsumamigui3) {
+		// Embedded in the original Tsumamigui3.exe.
+		return cstr_to_string("786u87]:78[]87d68sd86sadcfgsdfh87ni");
+	}
 	VM_ERROR("Unknown game version text for this title");
 }
 
