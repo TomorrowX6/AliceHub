@@ -94,7 +94,11 @@ names, prefix conflicts and integer overflow are rejected before installation.
 Archives marked `extract` use the existing safe archive extractor; hidden runtime
 configuration such as `.xsys35rc` is retained.
 
-Every attempt rebuilds a separate staging tree from verified cached downloads,
+Every attempt rebuilds a separate staging tree from verified cached downloads.
+Loose files are hard-linked on the same volume instead of copied, avoiding a
+second game's worth of storage or a redundant free-space check. Archive outputs
+unlink existing destinations before writing, so overlays cannot modify linked
+cache files. The installer
 then moves it into `Games/<baseName>` only after game detection succeeds. Existing
 game directories and saves are never replaced. Cancellation/failure keeps reusable
 downloads but removes incomplete staging. Success removes the download cache.

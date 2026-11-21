@@ -59,11 +59,11 @@ final class OnlineGameInstaller {
                 progress("正在解压并安装\n" + entry.path, completed, total)
                 _ = try ArchiveExtractor.extract(downloaded, to: staging, checkCancelled: self.checkCancelled)
             } else {
-                let output = staging.appendingPathComponent(entry.path)
-                _ = try ArchiveExtractor.outputPath(entry.path, size: entry.size, root: staging, shouldSkip: { _ in false })
-                try files.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+                guard let output = try ArchiveExtractor.outputPath(entry.path, size: 0, root: staging) else {
+                    throw ArchiveError.invalidPath
+                }
                 if files.fileExists(atPath: output.path) { try files.removeItem(at: output) }
-                try files.copyItem(at: downloaded, to: output)
+                try files.linkItem(at: downloaded, to: output)
             }
             completed += entry.size
             progress("已校验 \(index + 1) / \(manifest.files.count)", completed, total)

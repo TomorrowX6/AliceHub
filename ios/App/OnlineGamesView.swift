@@ -128,6 +128,9 @@ private struct OnlineGameDetailView: View {
         }.background(HubTheme.background.ignoresSafeArea())
             .navigationTitle("游戏详情").navigationBarTitleDisplayMode(.inline)
             .task { await load() }
+            .onChange(of: download.running) { running in
+                if !running { confirmCancel = false }
+            }
             .alert("开始下载游戏？", isPresented: $confirmDownload) {
                 Button("取消", role: .cancel) {}
                 Button("下载") { if let manifest { download.start(game, manifest: manifest, library: library) } }
