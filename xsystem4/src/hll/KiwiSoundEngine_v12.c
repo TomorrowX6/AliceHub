@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
@@ -84,7 +85,58 @@ static void set_default_mixers(const char *const *names, const int *volumes, uns
 	}
 }
 
-static void kiwi_prelink(void)
+static void add_ex_mixers(void)
+{
+	if (!config.ex_path)
+		return;
+	struct ex *ex = ex_read_file(config.ex_path);
+	if (!ex)
+		return;
+	// Ｅ＿サウンドグループ設定
+	struct ex_table *table = ex_get_table(ex,
+		"\x82\x64\x81\x51\x83\x54\x83\x45\x83\x93\x83\x68\x83\x4f\x83\x8b\x81\x5b\x83\x76\x90\xdd\x92\xe8");
+	if (!table || table->nr_columns < 3) {
+		ex_free(ex);
+		return;
+	}
+	unsigned old_count = config.mixer_nr_channels;
+	unsigned count = old_count;
+	unsigned capacity = mixer_get_stream_capacity();
+	for (unsigned r = 0; r < table->nr_rows; r++) {
+		struct ex_value *row = table->rows[r];
+		if (row[0].type != EX_INT || row[0].i < 0) {
+			WARNING("Invalid EX sound group at row %u", r);
+			continue;
+		}
+		if ((unsigned)row[0].i >= capacity) {
+			WARNING("EX sound group %d exceeds maximum %u; skipping", row[0].i, capacity - 1);
+			continue;
+		}
+		count = max(count, (unsigned)row[0].i + 1);
+	}
+	if (count > old_count) {
+		config.mixer_channels = xrealloc_array(config.mixer_channels, old_count, count, sizeof(char *));
+		config.mixer_volumes = xrealloc_array(config.mixer_volumes, old_count, count, sizeof(int));
+		for (unsigned i = old_count; i < count; i++) {
+			static const char *const names[] = { "Master", "BGM", "SE", "Voice", "Ambient", "BackVoice" };
+			char name[32];
+			snprintf(name, sizeof(name), "Group%u", i);
+			config.mixer_channels[i] = strdup(i < 6 ? names[i] : name);
+			config.mixer_volumes[i] = config.default_volume;
+		}
+		for (unsigned r = 0; r < table->nr_rows; r++) {
+			struct ex_value *row = table->rows[r];
+			if (row[0].type != EX_INT || row[0].i < (int)old_count || (unsigned)row[0].i >= count)
+				continue;
+			if (row[2].type == EX_FLOAT && isfinite(row[2].f))
+				config.mixer_volumes[row[0].i] = lroundf(fminf(1.0f, fmaxf(0.0f, row[2].f)) * 100);
+		}
+		config.mixer_nr_channels = count;
+	}
+	ex_free(ex);
+}
+
+static void set_game_default_mixers(void)
 {
 	if (config.mixer_nr_channels)
 		return;
@@ -124,6 +176,12 @@ static void kiwi_prelink(void)
 		static const int vols[] = { 80, 80, 80, 100, 80, 80, 80, 80 };
 		set_default_mixers(names, vols, 8);
 	}
+}
+
+static void kiwi_prelink(void)
+{
+	set_game_default_mixers();
+	add_ex_mixers();
 }
 
 static bool sound_file_names_loaded = false;
@@ -427,8 +485,11 @@ static struct channel *open_sound(struct string *name)
 	unsigned nr_columns = 0;
 	struct ex_value *row = sound_row(name->text, &nr_columns);
 	if (row && nr_columns >= 2) {
-		if (row[1].type == EX_INT)
-			channel_set_group(channel, row[1].i);
+		if (row[1].type == EX_INT && !channel_set_group(channel, row[1].i)) {
+			WARNING("Failed to assign sound '%s' to group %d", display_sjis0(name->text), row[1].i);
+			channel_close(channel);
+			return NULL;
+		}
 		if (nr_columns >= 4 && row[2].type == EX_INT && row[3].type == EX_INT &&
 				row[2].i >= 0 && row[3].i > row[2].i &&
 				row[3].i <= channel_get_sample_length(channel)) {
