@@ -1,0 +1,301 @@
+import Foundation
+import CryptoKit
+
+@main
+struct ModChecks {
+    static func main() throws {
+        setbuf(stdout, nil)
+        let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        let fm = FileManager.default
+        func directory(_ name: String) throws -> URL {
+            let url = root.appendingPathComponent(name)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true); return url
+        }
+        func write(_ root: URL, _ name: String, _ contents: String) throws {
+            let file = root.appendingPathComponent(name)
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(contents.utf8).write(to: file)
+        }
+        func read(_ root: URL, _ name: String) throws -> String { try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8) }
+        func snapshot(_ root: URL) throws -> [String: Data] {
+            var result: [String: Data] = [:]
+            for file in try ModFiles.walk(root).filter(ModFiles.isFile) { result[ModFiles.relative(file, to: root)] = try Data(contentsOf: file) }
+            return result
+        }
+        let json = #"{"releases":[{"fileId":5,"version":"v2.0 修复补丁2","fileName":"p2.zip","key":"mods/中文 #2.zip","isPatch":true},{"fileId":4,"version":"v2.0 修复补丁1","fileName":"p1.zip","key":"mods/p1.zip","isPatch":true},{"fileId":3,"version":"v2.0正式版","fileName":"full.zip","key":"mods/full.zip","isPatch":false},{"fileId":1,"version":"v1.0正式版","fileName":"old.zip","key":"mods/old.zip","isPatch":false}]}"#
+        let releases = try ModCatalog.parseModCatalog(Data(json.utf8), cdnBaseURL: "https://example.test/rance10")
+        precondition(releases[0].baseFileId == 3 && releases[1].baseVersion == "v2.0正式版")
+        precondition(releases[0].downloadUrl == "https://example.test/rance10/files/mods/%E4%B8%AD%E6%96%87%20%232.zip")
+        func installed(_ index: Int) -> InstalledModInfo {
+            InstalledModInfo(version: releases[index].version, baseVersion: releases[index].baseVersion ?? releases[index].version,
+                fileId: releases[index].fileId, baseFileId: releases[index].baseFileId ?? releases[index].fileId, fileName: releases[index].fileName)
+        }
+        func ids(_ plan: ModUpdatePlan?) -> [Int] { plan?.steps.map(\.fileId) ?? [] }
+        precondition(ids(ModCatalog.computeUpdatePlan(releases, hasMod: false, installed: nil)) == [3, 4, 5])
+        precondition(ModCatalog.computeUpdatePlan(releases, hasMod: true, installed: installed(0)) == nil)
+        let basePlan = ModCatalog.computeUpdatePlan(releases, hasMod: true, installed: installed(2))
+        precondition(ids(basePlan) == [4, 5] && basePlan!.isIncrementalOnly)
+        precondition(ids(ModCatalog.computeUpdatePlan(releases, hasMod: true, installed: installed(3))) == [3, 4, 5])
+        precondition(ids(ModCatalog.computeUpdatePlan(releases, hasMod: true, installed: installed(1))) == [5])
+        let patches = Array(releases.prefix(2))
+        precondition(ModCatalog.computeUpdatePlan(patches, hasMod: false, installed: nil) == nil)
+        precondition(ids(ModCatalog.computeUpdatePlan(patches, hasMod: true, installed: installed(2))) == [5])
+        precondition(ModCatalog.computeUpdatePlan([], hasMod: false, installed: nil) == nil)
+        precondition(ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: 0, hasMod: false, installed: nil, includeBaseForPatch: true).map(\.fileId) == [3, 4, 5])
+        precondition(ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: 0, hasMod: true, installed: installed(2), includeBaseForPatch: false).map(\.fileId) == [4, 5])
+        precondition(ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: 99, hasMod: false, installed: nil, includeBaseForPatch: true).isEmpty)
+        precondition(ModCatalog.matchInstalledIndex(releases, installed(0)) == 0)
+        precondition(ModCatalog.matchInstalledIndex(releases, InstalledModInfo(version: "unknown", fileName: "FULL.ZIP")) == 2)
+        precondition(ModCatalog.matchInstalledIndex(releases, InstalledModInfo(version: "兰斯10日不落MOD v2.0完整版.zip")) == 2)
+        let cnRelease = ModReleaseEntry(fileId: 1, version: "V1.02", fileName: "夏娃年代记2汉化补丁_V1.02.zip")
+        let cnLocal = InstalledModInfo(version: "V1.02", baseVersion: "V1.02", fileName: "【天之圣杯汉化组】夏娃年代记2V1.02.zip", source: "local", kind: "cn_patch")
+        precondition(ModCatalog.matchInstalledIndex([cnRelease], cnLocal) == 0)
+        precondition(ModCatalog.computeUpdatePlan([cnRelease], hasMod: true, installed: cnLocal) == nil)
+        precondition(ids(ModCatalog.computeUpdatePlan([cnRelease], hasMod: true, installed: InstalledModInfo(version: "V1.0", source: "local", kind: "cn_patch"))) == [1])
+        precondition(ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: 0, hasMod: true, installed: installed(2)))
+        precondition(!ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: 0, hasMod: false, installed: nil))
+        precondition(ModCatalog.extractCanonicalModVersion("兰斯10日不落MOD v3.1增量补丁2.zip") == "v3.1增量补丁2")
+        precondition(ModCatalog.sanitizeParenFree("a（b）\n c", multiline: true) == "a b\nc")
+        precondition(ModCatalog.formatSize(1048576) == "1.0 MB")
+        for invalid in [#"{}"#, #"{"releases":[]}"#, #"{"releases":[{"key":"a","fileName":"bad.exe","version":"v1"}]}"#] {
+            do { _ = try ModCatalog.parseModCatalog(Data(invalid.utf8), cdnBaseURL: "https://example.test"); preconditionFailure("Accepted invalid catalog") } catch {}
+        }
+        print("PASS: catalog parsing, patch bases, URL encoding, update plans/selected steps, matching and version inference")
+
+        func actions(_ index: Int, _ hasMod: Bool, _ info: InstalledModInfo?) -> [String] {
+            ModManagerPolicy.actions(releases, index: index, hasMod: hasMod, installed: info).map(\.title)
+        }
+        precondition(actions(2, false, nil) == ["安装"])
+        precondition(actions(2, true, installed(2)) == ["重新安装"])
+        precondition(actions(2, true, installed(3)) == ["切换版本"])
+        precondition(actions(0, true, installed(2)) == ["更新补丁", "完整重装"])
+        precondition(actions(0, true, installed(0)) == ["重装补丁", "完整重装"])
+        precondition(actions(1, true, installed(0)) == ["降级并完整重装"])
+        precondition(actions(0, false, nil) == ["组合安装", "仅装补丁"])
+        let comboAction = ModManagerPolicy.actions(releases, index: 0, hasMod: false, installed: nil)[0]
+        precondition(comboAction.steps.map(\.fileId) == [3, 4, 5])
+        precondition(ModManagerPolicy.actions(patches, index: 0, hasMod: false, installed: nil).map(\.title) == ["更新补丁"])
+        precondition(ModManagerPolicy.actions([], index: 0, hasMod: false, installed: nil).isEmpty)
+        precondition(ModManagerPolicy.actions(releases, index: -1, hasMod: false, installed: nil).isEmpty)
+        let stale = try directory("stale")
+        let staleInfo = InstalledModInfo(version: "v2.0完整版", fileName: "full.zip", source: "local", installedAtMs: 1234)
+        try staleInfo.write(to: stale)
+        try ModManagerPolicy.syncInstalledMeta(stale, releases: releases, descriptor: ModGameDescriptor.supported[0])
+        let synced = InstalledModInfo.read(stale)
+        precondition(synced?.version == releases[2].version && synced?.fileId == 3 && synced?.baseFileId == 3 && synced?.baseVersion == releases[2].version)
+        precondition(synced?.source == "local" && synced?.installedAtMs == 1234)
+        try ModManagerPolicy.syncInstalledMeta(stale, releases: [], descriptor: ModGameDescriptor.supported[0])
+        precondition(InstalledModInfo.read(stale) == synced)
+        let noMeta = try directory("noMeta")
+        try ModManagerPolicy.syncInstalledMeta(noMeta, releases: releases, descriptor: ModGameDescriptor.supported[0])
+        precondition(InstalledModInfo.read(noMeta) == nil)
+        let manager = ModManagerModel(directory: noMeta, descriptor: ModGameDescriptor.supported[0])
+        precondition(manager.status == "未安装 MOD" && manager.updateDisabled && !manager.canRestore)
+        print("PASS: manager install/switch/reinstall/patch/combo actions, empty/invalid selection, stale metadata sync and empty status")
+
+        let game = try directory("game")
+        try write(game, "Rance10.ain", "vanilla")
+        try write(game, "AliceStart.ini", "GameName = \"兰斯10 决战\"\n")
+        try write(game, "Data/Original.afa", "original")
+        try write(game, "SaveData/save.asd", "save")
+        let before = try snapshot(game)
+        let full = try directory("staging/wrapper/nested")
+        try write(full, "rance10.AIN", "full")
+        try write(full, "AliceStart.ini", "GameName = \"兰斯10日不落 v2.0\"\n")
+        try write(full, "Rance10MODCG.afa", "cg")
+        try write(full, "Rance10ModFlat.afa", "flat")
+        try write(full, "data/original.AFA", "replacement")
+        try write(full, "nested/new.afa", "added")
+        let found = try ModOverlay.findModRootDir(root.appendingPathComponent("staging"))
+        precondition(found.resolvingSymlinksInPath().path == full.resolvingSymlinksInPath().path, "\(found.path) != \(full.path)")
+        let wasFull = try ModOverlay.applyModStaging(root.appendingPathComponent("staging"), to: game)
+        precondition(wasFull && ModOverlay.canRestoreVanilla(game) && ModOverlay.detectInstalledMod(game))
+        let vanilla = try read(game, "Rance10.ain.vanilla.bak")
+        precondition(vanilla == "vanilla")
+        let replaced = try read(game, "Data/Original.afa")
+        precondition(replaced == "replacement")
+        let journal = try read(game, ModOverlay.journalName)
+        precondition(journal.contains("nested/new.afa") && journal.contains("AsraTest.ini") && !journal.contains("Original.afa"))
+        let info = InstalledModInfo(version: "v2.0正式版", baseVersion: "v2.0正式版", fileId: 3, baseFileId: 3, fileName: "full.zip", source: "online", installedAtMs: 1234)
+        try info.write(to: game)
+        precondition(InstalledModInfo.read(game) == info)
+        let localInfo = InstalledModInfo(version: "兰斯10日不落MOD v2.0完整版.zip", baseVersion: "v2.0完整版", source: "local")
+        try localInfo.write(to: game)
+        precondition(InstalledModInfo.read(game)?.version == "v2.0正式版")
+        try info.write(to: game)
+        precondition(ModOverlay.displayName(game) == "兰斯10 决战 [MOD · v2.0正式版]")
+        for clean in [false, true] {
+            let rejected = try directory("rejected-\(clean)")
+            try write(rejected, "Rance10.ain", "failed replacement")
+            try write(rejected, "extra/new.afa", "must roll back")
+            try write(rejected, "Nested/replacement.afa", "must roll back after old folder is pruned")
+            let previous = try snapshot(game)
+            var committed = false
+            do {
+                try ModOverlay.applyModStaging(rejected, to: game, cleanReplace: clean) { _ in
+                    committed = true
+                    throw ModError.message("metadata write failed")
+                }
+                preconditionFailure("Accepted failed commit")
+            } catch {}
+            let restored = try snapshot(game)
+            precondition(committed, "The failure must occur after the overlay was applied")
+            precondition(restored == previous, "Rollback must preserve files, backups, journal and metadata")
+        }
+        let transition = try directory("folder-to-file")
+        try write(transition, "Rance10.ain", "original")
+        let transitionBefore = try snapshot(transition)
+        let oldLayout = try directory("old-layout")
+        try write(oldLayout, "Rance10.ain", "old mod")
+        try write(oldLayout, "extras/old.afa", "obsolete")
+        try ModOverlay.applyModStaging(oldLayout, to: transition)
+        let newLayout = try directory("new-layout")
+        try write(newLayout, "Rance10.ain", "new mod")
+        try write(newLayout, "extras", "now a file")
+        try ModOverlay.applyModStaging(newLayout, to: transition)
+        let newLayoutFile = try read(transition, "extras")
+        precondition(newLayoutFile == "now a file")
+        try ModOverlay.restoreVanilla(transition)
+        let transitionAfter = try snapshot(transition)
+        precondition(transitionAfter == transitionBefore)
+        try write(transition, "extras/keep.afa", "unrelated original")
+        let conflictBefore = try snapshot(transition)
+        let conflict = try directory("conflicting-layout")
+        try write(conflict, "Rance10.ain", "rejected")
+        try write(conflict, "extras", "must not replace an original folder")
+        do {
+            try ModOverlay.applyModStaging(conflict, to: transition)
+            preconditionFailure("Accepted a file over an unrelated directory")
+        } catch {}
+        let conflictAfter = try snapshot(transition)
+        precondition(conflictAfter == conflictBefore)
+        for (index, artifact) in ["Rance10.ain.vanilla.bak", "Rance10.ain.vanilla.bak.tmp", ".mod_apply_Rance10.ain.tmp", ModOverlay.journalName, ModOverlay.journalName + ".tmp", InstalledModInfo.metaFileName].enumerated() {
+            for clean in [false, true] {
+                let reservedGame = try directory("reserved-\(index)-\(clean)")
+                try write(reservedGame, "Rance10.ain", "original")
+                try write(reservedGame, artifact + "/keep.dat", "original directory contents")
+                let original = try snapshot(reservedGame)
+                let reservedMod = try directory("reserved-mod-\(index)-\(clean)")
+                try write(reservedMod, "Rance10.ain", "must not install")
+                do {
+                    try ModOverlay.applyModStaging(reservedMod, to: reservedGame, cleanReplace: clean)
+                    preconditionFailure("Accepted a directory at an installer-owned path")
+                } catch {}
+                let rejected = try snapshot(reservedGame)
+                precondition(rejected == original)
+            }
+        }
+        let patch = try directory("patch")
+        try write(patch, "Rance10.ain", "patched")
+        try write(patch, "nested/new.afa", "updated added file")
+        try write(patch, "newdir/later.afa", "later")
+        _ = try ModOverlay.applyModStaging(patch, to: game, cleanReplace: false)
+        let preserved = try read(game, "Rance10.ain.vanilla.bak")
+        precondition(preserved == "vanilla")
+        try write(game, "AsraTest.ini", "runtime config")
+        try ModOverlay.restoreVanilla(game)
+        let after = try snapshot(game)
+        precondition(before == after, "Before \(before) after \(after)")
+        precondition(!ModFiles.exists(game.appendingPathComponent("nested")) && !ModFiles.exists(game.appendingPathComponent("newdir")))
+        let empty = try directory("invalid")
+        do { _ = try ModOverlay.applyModStaging(empty, to: game); preconditionFailure("Accepted empty mod") } catch {}
+        let failed = try directory("failed"), failedStaging = try directory("failedStaging")
+        try write(failedStaging, "new.afa", "new")
+        try fm.createDirectory(at: failed.appendingPathComponent(".mod_installed_files.txt.tmp"), withIntermediateDirectories: true)
+        do { _ = try ModOverlay.applyModStaging(failedStaging, to: failed, cleanReplace: false); preconditionFailure("Published without journal") } catch {}
+        precondition(!ModFiles.exists(failed.appendingPathComponent("new.afa")) && ModFiles.exists(failedStaging.appendingPathComponent("new.afa")))
+        let rollback = try directory("rollback/nested/child")
+        let rollbackRoot = root.appendingPathComponent("rollback")
+        try write(rollbackRoot, ModOverlay.journalName, "nested/child/never-created.afa")
+        _ = rollback
+        try ModOverlay.restoreVanilla(rollbackRoot)
+        precondition(ModFiles.children(rollbackRoot).isEmpty)
+        let inferred = try directory("preinstalled")
+        try write(inferred, "Rance10.ain", "mod")
+        try write(inferred, "System40.ini", "GameName = \"兰斯10日不落 v3.1\"\nSaveFolder = \"ModSaveData\"\n")
+        precondition(InstalledModInfo.readOrInfer(inferred)?.source == "preinstalled")
+        precondition(InstalledModInfo.readOrInfer(inferred)?.version == "v3.1正式版")
+        try write(inferred, InstalledModInfo.metaFileName, "not json")
+        precondition(InstalledModInfo.read(inferred) == nil && InstalledModInfo.readOrInfer(inferred)?.source == "preinstalled")
+        print("PASS: nested root, full/incremental overlay, case-insensitive replacement, backup/journal, metadata round-trip, byte-identical restore, failed journal and interrupted-write pruning")
+
+        let e2 = try directory("Evenicle2")
+        for file in ["Evenicle2.ain", "Evenicle2EX.ex", "Evenicle2CG.afa"] { try write(e2, file, "vanilla") }
+        let e2Before = try snapshot(e2)
+        let e2Full = try directory("e2full")
+        try write(e2Full, "Evenicle2CG.afa", "cg1")
+        for (file, value) in [("mai/sc/Evenicle2.ain", "ain1"), ("mai/sc/Evenicle2EX.ex", "ex1"), ("mai/word.mai", "word1"), ("Staff.png", "junk"), ("mai.dll", "junk"), ("Evenicle2_cn.exe", "junk")] { try write(e2Full, file, value) }
+        let e2WasFull = try ModOverlay.applyModStaging(e2Full, to: e2, isCnPatch: true, allowEvenicle2IncrementalDetect: true)
+        precondition(e2WasFull && !ModFiles.exists(e2.appendingPathComponent("Staff.png")) && !ModFiles.exists(e2.appendingPathComponent("mai/sc")))
+        let e2Patch = try directory("e2patch")
+        try write(e2Patch, "mai/sc/Evenicle2.ain", "ain2")
+        try write(e2Patch, "mai/word.mai", "word2")
+        let e2WasPatchFull = try ModOverlay.applyModStaging(e2Patch, to: e2, isCnPatch: true, allowEvenicle2IncrementalDetect: true)
+        let cg = try read(e2, "Evenicle2CG.afa")
+        precondition(!e2WasPatchFull && cg == "cg1")
+        try ModOverlay.restoreVanilla(e2)
+        let e2After = try snapshot(e2)
+        precondition(e2After == e2Before && !ModFiles.exists(e2.appendingPathComponent("mai")))
+        precondition(ModGameDescriptor.classifyDirectory(e2)?.id == "evenicle2")
+        precondition(ModCatalog.inferLocalOverlayVersion("【天之圣杯汉化组】夏娃年代记2V1.02.zip", isPatchHint: false, fallbackIniDir: nil, isCnPatch: true) == "V1.02")
+        let cn = InstalledModInfo(version: "V1.02", baseVersion: "V1.02", source: "local", kind: "cn_patch")
+        try cn.write(to: e2)
+        precondition(InstalledModInfo.read(e2) == cn && ModOverlay.displayName(e2).contains("[汉化 · V1.02]"))
+        print("PASS: Evenicle2 PC layout normalization/junk filtering, local incremental detection, CN metadata/display and restore")
+
+        let installer = ModInstaller()
+        func awaitJob(success: Bool = true) {
+            let deadline = Date().addingTimeInterval(20)
+            while !installer.isRunning && !installer.succeeded && installer.failure == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            while installer.isRunning && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            precondition(!installer.isRunning && installer.succeeded == success, installer.failure ?? "Job timeout: \(installer.progressText)")
+        }
+        let explicitFull = try directory("e2-explicit-full")
+        try write(explicitFull, "Evenicle2.ain", "explicit full")
+        try write(e2, "obsolete.afa", "old patch")
+        try write(e2, ModOverlay.journalName, "obsolete.afa")
+        let e2Descriptor = ModGameDescriptor.supported.first { $0.id == "evenicle2" }!
+        precondition(installer.installLocalDirectory(explicitFull, to: e2, descriptor: e2Descriptor, cleanReplace: true))
+        awaitJob()
+        precondition(!ModFiles.exists(e2.appendingPathComponent("obsolete.afa")))
+        let explicitlyInstalled = try read(e2, "Evenicle2.ain")
+        precondition(explicitlyInstalled == "explicit full")
+        let onlineGame = try directory("Games/online")
+        try write(onlineGame, "Rance10.ain", "original")
+        let data = try Data(contentsOf: root.appendingPathComponent("online.zip"))
+        let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let url = CommandLine.arguments[2]
+        let cache = try directory("Games/.online_mod_cache")
+        let part = cache.appendingPathComponent("mod_" + String(sha.prefix(16)) + ".zip.part")
+        try data.prefix(32).write(to: part)
+        try JSONSerialization.data(withJSONObject: ["url": url, "sha256": sha, "etag": "\"fixture\"", "totalBytes": data.count]).write(to: part.appendingPathExtension("meta"))
+        let release = ModReleaseEntry(fileId: 7, version: "v3.0正式版", fileName: "online.zip", downloadUrl: url, expectedSize: Int64(data.count), expectedSha256: sha)
+        precondition(installer.installOnlinePlan([release], to: onlineGame, descriptor: ModGameDescriptor.supported[0]))
+        precondition(!installer.installOnlinePlan([release], to: onlineGame, descriptor: ModGameDescriptor.supported[0]))
+        awaitJob()
+        precondition(InstalledModInfo.read(onlineGame)?.source == "online" && InstalledModInfo.read(onlineGame)?.baseFileId == 7 && !ModFiles.exists(part))
+        precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        let restoredOnline = try read(onlineGame, "Rance10.ain")
+        precondition(restoredOnline == "original")
+        print("PASS: online installer Range resume + SHA-256, metadata/cache cleanup, one-job guard and restore")
+        let retryRelease = ModReleaseEntry(fileId: 8, version: "v4.0正式版", fileName: "retry.zip", downloadUrl: url + "?retry", expectedSize: Int64(data.count), expectedSha256: sha)
+        precondition(installer.installOnlinePlan([retryRelease], to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        precondition(installer.installLocalArchive(root.appendingPathComponent("online.zip"), to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        precondition(InstalledModInfo.read(onlineGame)?.source == "local")
+        precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        let folder = try directory("localFolder")
+        try write(folder, "Rance10.ain", "folder mod")
+        precondition(installer.installLocalDirectory(folder, to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        let localContent = try read(onlineGame, "Rance10.ain")
+        precondition(localContent == "folder mod" && ModFiles.exists(folder.appendingPathComponent("Rance10.ain")))
+        precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        precondition(!installer.installOnlinePlan([], to: onlineGame, descriptor: ModGameDescriptor.supported[0]))
+        precondition(installer.installLocalArchive(root.appendingPathComponent("missing.zip"), to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob(success: false)
+        precondition(installer.failure != nil)
+        precondition(installer.installLocalDirectory(folder, to: onlineGame, descriptor: ModGameDescriptor.supported[0]))
+        installer.cancel(); awaitJob(success: false)
+        precondition(installer.failure == nil && installer.progressText == "已取消")
+        print("PASS: corrupt-download retry, security-scoped local archive, coordinated folder copy, empty-plan rejection, failure and cancellation")
+    }
+}

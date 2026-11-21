@@ -105,29 +105,74 @@ static struct mixer *master = NULL;
 static struct mixer *mixers = NULL;
 static int nr_mixers = 0;
 
+#ifdef ALICEHUB_IOS
+static _Atomic SDL_AudioDeviceID audio_device;
+static SDL_mutex *audio_mutex;
+static SDL_Thread *audio_clock_thread;
+static SDL_Thread *audio_device_thread;
+static atomic_bool audio_stopping;
+static atomic_flag device_operation = ATOMIC_FLAG_INIT;
+static atomic_bool retry_device, remove_device;
+static atomic_bool output_paused;
+static atomic_uint_least64_t last_callback;
+static Uint64 clock_tick;
+static unsigned clock_fraction;
+#else
 static SDL_AudioDeviceID audio_device = 0;
+#endif
 static bool global_focus = true;
 static bool window_focused = true;
 static bool app_backgrounded = false;
 
 static inline void mixer_sync_pause_state(void)
 {
+#ifdef ALICEHUB_IOS
+	if (audio_mutex)
+		SDL_LockMutex(audio_mutex);
+	bool paused = app_backgrounded || (!global_focus && !window_focused);
+	if (atomic_exchange(&output_paused, paused) != paused) {
+		clock_tick = SDL_GetTicks64();
+		clock_fraction = 0;
+	}
+	if (audio_mutex)
+		SDL_UnlockMutex(audio_mutex);
+#else
 	if (audio_device) {
 		bool should_pause = app_backgrounded || (!global_focus && !window_focused);
 		SDL_PauseAudioDevice(audio_device, should_pause ? 1 : 0);
 	}
+#endif
 }
 
 static inline void audio_lock(void)
 {
+#ifdef ALICEHUB_IOS
+	if (audio_mutex)
+		SDL_LockMutex(audio_mutex);
+#else
 	if (audio_device)
 		SDL_LockAudioDevice(audio_device);
+#endif
 }
 
 static inline void audio_unlock(void)
 {
+#ifdef ALICEHUB_IOS
+	if (audio_mutex)
+		SDL_UnlockMutex(audio_mutex);
+#else
 	if (audio_device)
 		SDL_UnlockAudioDevice(audio_device);
+#endif
+}
+
+static bool audio_clock_available(void)
+{
+#ifdef ALICEHUB_IOS
+	return audio_clock_thread != NULL;
+#else
+	return audio_device != 0;
+#endif
 }
 
 void mixer_set_global_focus(bool enabled)
@@ -153,6 +198,17 @@ void mixer_set_app_backgrounded(bool backgrounded)
  */
 static void audio_callback(possibly_unused void *data, Uint8 *stream, int len)
 {
+#ifdef ALICEHUB_IOS
+	audio_lock();
+	clock_tick = SDL_GetTicks64();
+	atomic_store(&last_callback, clock_tick);
+	clock_fraction = 0;
+	if (atomic_load(&output_paused)) {
+		memset(stream, 0, len);
+		audio_unlock();
+		return;
+	}
+#endif
 #ifdef __ANDROID__
 	static _Thread_local bool s_audio_prio_set = false;
 	if (!s_audio_prio_set) {
@@ -166,7 +222,52 @@ static void audio_callback(possibly_unused void *data, Uint8 *stream, int len)
 	if (master->muted) {
 		memset(stream, 0, len);
 	}
+#ifdef ALICEHUB_IOS
+	audio_unlock();
+#endif
 }
+
+#ifdef ALICEHUB_IOS
+static void advance_audio_clock_locked(Uint64 now)
+{
+	if (now < clock_tick)
+		return;
+	if (atomic_load(&output_paused)) {
+		clock_tick = now;
+		clock_fraction = 0;
+	} else if (!audio_device || (now >= atomic_load(&last_callback) && now - atomic_load(&last_callback) > 100)) {
+		Uint64 elapsed = min(now - clock_tick, 250);
+		unsigned frames = (elapsed * 44100 + clock_fraction) / 1000;
+		clock_fraction = (elapsed * 44100 + clock_fraction) % 1000;
+		clock_tick = now;
+		float discard[CHUNK_SIZE * 2];
+		while (frames) {
+			unsigned count = min(frames, CHUNK_SIZE);
+			sts_mixer_mix_audio(&master->mixer, discard, count);
+			frames -= count;
+		}
+	} else {
+		clock_tick = now;
+		clock_fraction = 0;
+	}
+}
+
+static void advance_audio_clock(Uint64 now)
+{
+	audio_lock();
+	advance_audio_clock_locked(now);
+	audio_unlock();
+}
+
+static int audio_clock_main(void *unused)
+{
+	while (!atomic_load(&audio_stopping)) {
+		advance_audio_clock(SDL_GetTicks64());
+		SDL_Delay(10);
+	}
+	return 0;
+}
+#endif
 
 /*
  * Seek to the specified position in the stream.
@@ -353,9 +454,12 @@ int channel_play(struct channel *ch)
 	if (!ch || nr_mixers <= 0 || ch->mixer_no < 0 || ch->mixer_no >= nr_mixers)
 		return 0;
 	audio_lock();
+#ifdef ALICEHUB_IOS
+	advance_audio_clock_locked(SDL_GetTicks64());
+#endif
 	ch->paused = false;
 	if (ch->voice >= 0) {
-		if (ch->fade.pending && audio_device != 0) {
+		if (ch->fade.pending && audio_clock_available()) {
 			ch->fade.fading = true;
 			ch->fade.pending = false;
 		}
@@ -367,7 +471,7 @@ int channel_play(struct channel *ch)
 	ch->voice = sts_mixer_play_stream(&mixers[ch->mixer_no].mixer, &ch->stream, (float)ch->volume / 100.0f);
 	if (ch->fade.pending) {
 		ch->fade.pending = false;
-		if (ch->voice >= 0 && audio_device != 0) {
+		if (ch->voice >= 0 && audio_clock_available()) {
 			ch->fade.start_pos = ch->frame;
 			ch->fade.fading = true;
 		} else {
@@ -446,6 +550,9 @@ int channel_fade_with_curve(struct channel *ch, int time, int volume, bool stop,
 		return channel_stop(ch);
 
 	audio_lock();
+#ifdef ALICEHUB_IOS
+	advance_audio_clock_locked(SDL_GetTicks64());
+#endif
 	if (time <= 0 || ch->info.samplerate <= 0) {
 		// XXX: Fade with time=0 is used to set volume. This needs to
 		//      take effect immediately, not via the audio callback
@@ -469,10 +576,10 @@ int channel_fade_with_curve(struct channel *ch, int time, int volume, bool stop,
 		ch->fade.elapsed = 0;
 		ch->fade.end_volume = clamp(0.0f, 1.0f, (float)volume / 100.0f);
 		ch->fade.curve = curve;
-		if (ch->voice >= 0 && !ch->paused && audio_device != 0 && ch->fade.frames > 0) {
+		if (ch->voice >= 0 && !ch->paused && audio_clock_available() && ch->fade.frames > 0) {
 			ch->fade.fading = true;
 			ch->fade.pending = false;
-		} else if (!stop && ch->voice < 0 && audio_device != 0 && ch->fade.frames > 0) {
+		} else if (!stop && ch->voice < 0 && audio_clock_available() && ch->fade.frames > 0) {
 			// Armed pre-play fade-in: starts when channel_play() is called,
 			// without reporting fading=true while idle.
 			ch->fade.fading = false;
@@ -800,21 +907,107 @@ static void open_default_audio_device(void)
 	};
 	audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 	if (audio_device == 0) {
+#ifdef ALICEHUB_IOS
+		const char *error = SDL_GetError();
+		const char *driver = SDL_GetCurrentAudioDriver();
+		WARNING("SDL_OpenAudioDevice failed (driver=%s, device=default): %s",
+			driver ? driver : "none", error);
+#else
 		WARNING("SDL_OpenAudioDevice failed: %s", SDL_GetError());
+#endif
 		return;
 	}
+#ifdef ALICEHUB_IOS
+	const char *driver = SDL_GetCurrentAudioDriver();
+	NOTICE("Audio opened (driver=%s, device=default, id=%u, %d Hz, format=0x%x, channels=%u)",
+		driver ? driver : "none", audio_device, have.freq, have.format, have.channels);
+#endif
+#ifdef ALICEHUB_IOS
+	SDL_PauseAudioDevice(audio_device, 0);
+#else
 	SDL_PauseAudioDevice(audio_device, (app_backgrounded || (!global_focus && !window_focused)) ? 1 : 0);
+#endif
 }
+
+#ifdef ALICEHUB_IOS
+static void update_audio_device(void)
+{
+	if (atomic_exchange(&remove_device, false) && audio_device) {
+		SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
+		SDL_CloseAudioDevice(dev);
+	}
+	if (!atomic_exchange(&retry_device, false))
+		return;
+	Uint64 callback_time = atomic_load(&last_callback);
+	if (audio_device && SDL_GetTicks64() - callback_time > 500) {
+		SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
+		SDL_CloseAudioDevice(dev);
+	}
+	if (!audio_device)
+		open_default_audio_device();
+}
+
+static void service_audio_device(void)
+{
+	if (atomic_flag_test_and_set(&device_operation))
+		return;
+	if (!atomic_load(&audio_stopping))
+		update_audio_device();
+	atomic_flag_clear(&device_operation);
+}
+
+static int audio_device_main(void *unused)
+{
+	while (!atomic_load(&audio_stopping)) {
+		service_audio_device();
+		SDL_Delay(20);
+	}
+	return 0;
+}
+
+void mixer_retry_audio_device(void)
+{
+	if (audio_clock_thread && !atomic_load(&audio_stopping))
+		atomic_store(&retry_device, true);
+}
+
+bool mixer_fini(void)
+{
+	atomic_store(&audio_stopping, true);
+	if (audio_clock_thread) {
+		SDL_WaitThread(audio_clock_thread, NULL);
+		audio_clock_thread = NULL;
+	}
+	if (!audio_device_thread)
+		return true;
+	// A stuck CoreAudio call cannot be cancelled safely; leave SDL to process exit.
+	if (atomic_flag_test_and_set(&device_operation))
+		return false;
+	SDL_WaitThread(audio_device_thread, NULL);
+	audio_device_thread = NULL;
+	SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
+	if (dev)
+		SDL_CloseAudioDevice(dev);
+	return true;
+}
+#endif
 
 void mixer_handle_device_removed(uint32_t dev)
 {
 	if (!master)
 		return;
+#ifdef ALICEHUB_IOS
+	if (audio_device && dev == audio_device) {
+		atomic_store(&remove_device, true);
+		atomic_store(&retry_device, true);
+	}
+#else
 	if (audio_device != 0 && dev == (uint32_t)audio_device) {
 		SDL_CloseAudioDevice(audio_device);
 		audio_device = 0;
 		open_default_audio_device();
 	}
+#endif
 }
 
 void mixer_init(void)
@@ -899,7 +1092,23 @@ void mixer_init(void)
 		wai_load(config.wai_path);
 
 	// initialize SDL audio
+#ifdef ALICEHUB_IOS
+	if (!(audio_mutex = SDL_CreateMutex()))
+		ERROR("SDL_CreateMutex: %s", SDL_GetError());
+	clock_tick = SDL_GetTicks64();
+	atomic_store(&last_callback, clock_tick);
+	mixer_sync_pause_state();
+	audio_clock_thread = SDL_CreateThread(audio_clock_main, "mixer-clock", NULL);
+	if (!audio_clock_thread)
+		ERROR("SDL_CreateThread(mixer-clock): %s", SDL_GetError());
+	atomic_store(&retry_device, true);
+	audio_device_thread = SDL_CreateThread(audio_device_main, "mixer-device", NULL);
+	if (!audio_device_thread)
+		ERROR("SDL_CreateThread(mixer-device): %s", SDL_GetError());
+	NOTICE("Audio software clock ready (44100 Hz); opening output asynchronously");
+#else
 	open_default_audio_device();
+#endif
 }
 
 int mixer_get_stream_capacity(void)

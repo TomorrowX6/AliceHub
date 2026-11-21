@@ -40,6 +40,9 @@
 #include "vm.h"
 #include "xsystem4.h"
 #include "debugger.h"
+#ifdef ALICEHUB_IOS
+#include "EnginePlatform.h"
+#endif
 
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
@@ -1811,6 +1814,8 @@ static void emit_emu_cmd_to_ui(int cmd)
 	}
 #ifdef __ANDROID__
 	SDL_AndroidSendMessage(COMMAND_GAMEPAD_UI_EVENT, GAMEPAD_UI_EMU_CMD | (cmd << 8));
+#elif defined(ALICEHUB_IOS)
+	alicehub_ios_gamepad_command(cmd);
 #endif
 }
 
@@ -2417,6 +2422,15 @@ static void process_gamepad_frame(void)
 	}
 	send_cursor_ui_state(do_cursor_reset);
 	rebuild_effective_keys(now);
+#ifdef ALICEHUB_IOS
+	if (sdl.window) {
+		int width = 0, height = 0;
+		SDL_GetWindowSize(sdl.window, &width, &height);
+		alicehub_ios_gamepad_frame((float)synthetic_mouse_x / max(1, width),
+			(float)synthetic_mouse_y / max(1, height), gamepad_cursor_visible && !in_movie,
+			in_movie, has_sdl_pad, key_state[VK_CONTROL]);
+	}
+#endif
 }
 
 void register_input_handler(void(*handler)(const char*))
@@ -3116,6 +3130,12 @@ void handle_events(void)
 			gfx_restore_window();
 			did_swap = true;
 			break;
+#ifdef ALICEHUB_IOS
+		case SDL_AUDIODEVICEADDED:
+			if (!e.adevice.iscapture)
+				mixer_retry_audio_device();
+			break;
+#endif
 		case SDL_AUDIODEVICEREMOVED:
 			if (!e.adevice.iscapture)
 				mixer_handle_device_removed(e.adevice.which);

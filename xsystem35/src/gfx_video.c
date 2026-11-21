@@ -44,6 +44,11 @@
 #include "gfx_private.h"
 #include "xsystem35.h"
 #include "image.h"
+#ifdef ALICEHUB_IOS
+#include "EnginePlatform.h"
+#include "mixer.h"
+#include "msgskip.h"
+#endif
 
 static SDL_Window *gfx_window;
 SDL_Renderer *gfx_renderer;
@@ -359,6 +364,16 @@ void gfx_setWindowTitle(char *name) {
 }
 #endif
 
+#ifdef ALICEHUB_IOS
+static void ios_background_changed(SDL_bool backgrounded) {
+	if (backgrounded) {
+		SDL_RenderFlush(gfx_renderer);
+		msgskip_syncFile();
+	}
+	mixer_pause_all(backgrounded);
+}
+#endif
+
 static void window_init(const char *render_driver) {
 	if (render_driver)
 		SDL_SetHint(SDL_HINT_RENDER_DRIVER, render_driver);
@@ -381,6 +396,11 @@ static void window_init(const char *render_driver) {
 #endif
 
 	Uint32 flags = SDL_WINDOW_RESIZABLE;
+#ifdef ALICEHUB_IOS
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
+	flags |= SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
 #ifdef __ANDROID__
 	SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
 	SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "1");
@@ -392,6 +412,10 @@ static void window_init(const char *render_driver) {
 
 	gfx_window = sdl_CreateWindow(
 		title, SYS35_DEFAULT_WIDTH, SYS35_DEFAULT_HEIGHT, flags);
+#ifdef ALICEHUB_IOS
+	alicehub_ios_set_background_hook(ios_background_changed);
+	alicehub_ios_prepare_window(gfx_window);
+#endif
 #if XSYSTEM35_SDL_VERSION == 2
 #ifdef __ANDROID__
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");

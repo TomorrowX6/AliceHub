@@ -31,7 +31,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#ifndef ALICEHUB_IOS
 #include <ucontext.h>
+#endif
 #include <dlfcn.h>
 #include <unwind.h>
 #endif
@@ -51,6 +53,9 @@
 #include "system4/utfsjis.h"
 
 #include "xsystem4.h"
+#ifdef ALICEHUB_IOS
+#include "xsystem4_main.h"
+#endif
 #include "asset_manager.h"
 #include "debugger.h"
 #include "gfx/gfx.h"
@@ -741,6 +746,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 		cbuf_put_hex(crash_report_buf, cap, &off, si ? (uint64_t)(uintptr_t)si->si_addr : 0, 16);
 		cbuf_puts(crash_report_buf, cap, &off, "\n");
 
+#ifndef ALICEHUB_IOS
 		ucontext_t *uc = (ucontext_t *)ucontext_ptr;
 		if (uc) {
 #if defined(__aarch64__)
@@ -763,6 +769,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 			cbuf_puts(crash_report_buf, cap, &off, "\n");
 #endif
 		}
+#endif
 	}
 #endif
 
@@ -952,7 +959,7 @@ static void error_handler(const char *msg)
 	vm_format_stack_trace(dialog_msg + off, sizeof(dialog_msg) - off, false);
 	const char *no_box = getenv("XSYSTEM4_NO_ERROR_BOX");
 	bool show_box = !no_box || !*no_box || !strcmp(no_box, "0");
-#if !defined(__ANDROID__) && !defined(_WIN32)
+#if !defined(__ANDROID__) && !defined(_WIN32) && !defined(ALICEHUB_IOS)
 	if (show_box) {
 		const char *disp = getenv("DISPLAY");
 		const char *wayland = getenv("WAYLAND_DISPLAY");
@@ -1001,7 +1008,11 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
+#ifdef ALICEHUB_IOS
+int xsystem4_main(int argc, char *argv[])
+#else
 int main(int argc, char *argv[])
+#endif
 {
 #ifdef __ANDROID__
 	static bool sdl_main_entered = false;
@@ -1026,6 +1037,7 @@ int main(int argc, char *argv[])
 #endif
 
 	char *ainfile;
+	const char *native_ain_path = NULL;
 	int err = AIN_SUCCESS;
 	bool audit = false;
 
@@ -1159,12 +1171,14 @@ int main(int argc, char *argv[])
 				usage_error("Failed to read .ini file '%s'", argv[0]);
 		} else if (arg_ext && !strcasecmp(arg_ext, "ain")) {
 			config_init_with_ain(argv[0]);
+			native_ain_path = argv[0];
 		} else {
 			usage_error("Can't initialize game with argument '%s'", argv[0]);
 		}
 	}
-	ainfile = gamedir_path(config.ain_filename);
-	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+	bool use_native_ain_path = native_ain_path && file_exists(native_ain_path);
+	ainfile = use_native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
+	if (!use_native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
 		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
 		sys4_set_text_gbk(true);
 		char *gbk_ain = gamedir_path(config.ain_filename);
