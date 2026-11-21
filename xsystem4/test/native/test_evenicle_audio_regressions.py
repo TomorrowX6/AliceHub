@@ -253,6 +253,89 @@ static void exhaustion_test(void) {
     printf("capacity=%d: overflow returns false; paused close, EOF, fade-stop and replacement release slots\n", STS_MIXER_VOICES);
 }
 
+static void pressure_test(void) {
+    int baseline = slots();
+    struct string *name = cstr_to_string("10001");
+    for (int cycle = 0; cycle < 3; cycle++) {
+        for (int i = 0; i < 40; i++) {
+            start(100 + i, "master", 0, true);
+            start(140 + i, "se", 2, true);
+            start(180 + i, "ambient", 12, true);
+            start(220 + i, "10001", 11, true);
+        }
+        for (int id = 100; id < 260; id++)
+            assert(kiwi_fade(id, 0, 0, false, 0));
+        assert(sts_mixer_get_active_voices(&master->mixer) == 43);
+        assert(sts_mixer_get_active_voices(&mixers[3].mixer) == 10);
+        assert(sts_mixer_get_active_voices(&mixers[11].mixer) == 40);
+        assert(slots() == baseline + 160);
+        assert(kiwi_prepare_3(12, name, false));
+        assert(kiwi_loop(12, 0));
+        assert(kiwi_play(12));
+        assert(sts_mixer_get_active_voices(&mixers[11].mixer) == 41);
+        assert(render(6) > 0.01f);
+        assert(mixer_set_mute(11, 1));
+        render(4);
+        assert(render(4) == 0);
+        assert(mixer_set_mute(11, 0));
+        assert(render(4) > 0.01f);
+        assert(kiwi_unprepare(12));
+        for (int id = 100; id < 260; id++) assert(kiwi_unprepare(id));
+        render(4);
+        assert(render(4) == 0);
+        assert(slots() == baseline);
+        assert(sts_mixer_get_active_voices(&master->mixer) == 3);
+        assert(sts_mixer_get_active_voices(&mixers[3].mixer) == 10);
+    }
+    free_string(name);
+    printf("160 concurrent streams across 4 groups + voice 11 audible; master=43, voice11=41; 3 cycles, parent slots unchanged\n");
+}
+
+static int complete_stream(sts_mixer_sample_t *sample, void *data) {
+    return STS_STREAM_COMPLETE;
+}
+
+static void bounds_test(void) {
+    sts_mixer_t mixer;
+    memset(&mixer, 0xff, sizeof(mixer));
+    sts_mixer_init(&mixer, 44100, STS_MIXER_SAMPLE_FORMAT_FLOAT);
+    float value = 0.1f, output[4];
+    sts_mixer_sample_t sample = {.length = 1, .frequency = 44100,
+        .audio_format = STS_MIXER_SAMPLE_FORMAT_FLOAT, .data = &value};
+    assert(!mixer.voice_count);
+    sts_mixer_mix_audio(&mixer, output, 2);
+    for (int i = 0; i < 4; i++) assert(output[i] == 0);
+    for (int i = 0; i < 40; i++)
+        assert(sts_mixer_play_sample(&mixer, &sample, 1, 1, 0) == i);
+    assert(mixer.voice_count == 40);
+    sts_mixer_stop_voice(&mixer, 39);
+    assert(mixer.voice_count == 39);
+    sts_mixer_stop_voice(&mixer, 3);
+    assert(mixer.voice_count == 39);
+    assert(sts_mixer_play_sample(&mixer, &sample, 1, 1, 0) == 3);
+    sts_mixer_stop_sample(&mixer, &sample);
+    assert(!mixer.voice_count);
+    for (int i = 0; i < 40; i++) sts_mixer_play_sample(&mixer, &sample, 1, 1, 0);
+    sts_mixer_mix_audio(&mixer, output, 2);
+    assert(output[0] > 0);
+    assert(!mixer.voice_count);
+    sts_mixer_stream_t stream = {.callback = complete_stream};
+    for (int i = 0; i < 40; i++)
+        assert(sts_mixer_play_stream(&mixer, &stream, 1) == i);
+    sts_mixer_stop_stream(&mixer, &stream);
+    assert(!mixer.voice_count);
+    for (int i = 0; i < 40; i++) sts_mixer_play_stream(&mixer, &stream, 1);
+    sts_mixer_mix_audio(&mixer, output, 2);
+    assert(!mixer.voice_count);
+    assert(sts_mixer_play_sample(&mixer, &sample, 1, 1, 0) == 0);
+    sts_mixer_shutdown(&mixer);
+    assert(!mixer.voice_count && !sts_mixer_get_active_voices(&mixer));
+    printf("active scan bound: empty, holes, reuse, sample/stream EOF, bulk stop and shutdown OK\n");
+    printf("capacity=%d voice_bytes=%zu mixer_bytes=%zu extra_slot_bytes_for_14_mixers=%zu\n",
+        STS_MIXER_VOICES, sizeof(sts_mixer_voice_t), sizeof(sts_mixer_t),
+        (STS_MIXER_VOICES - 32) * sizeof(sts_mixer_voice_t) * 14);
+}
+
 int main(int argc, char **argv) {
     assert(argc == 5);
     wave_path = argv[3];
@@ -273,6 +356,8 @@ int main(int argc, char **argv) {
     kiwi_build_sound_row_index();
     if (!strcmp(argv[4], "life")) lifecycle_test();
     else if (!strcmp(argv[4], "full")) exhaustion_test();
+    else if (!strcmp(argv[4], "pressure")) pressure_test();
+    else if (!strcmp(argv[4], "bounds")) bounds_test();
     else if (!strcmp(argv[4], "invalid") || !strcmp(argv[4], "absent")) {
         assert(config.mixer_nr_channels == 6);
         printf("absent/invalid EX groups leave configured mixers unchanged\n");
@@ -296,7 +381,7 @@ class EvenicleAudioTests(unittest.TestCase):
             groups.write_bytes(build_extf([] if mode == "absent" else [group_table(rows)]))
             metadata.write_bytes(build_extf([_ex_soundinfo_table(
                 [(b"10001", 11), (b"10101", 10), (b"bgm", 1),
-                 (b"se", 2), (b"ambient", 12), (b"badgroup", 100)],
+                 (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100)],
                 [(b"Name", 3), (b"Group", 1)],
             )]))
             with wave.open(str(audio), "wb") as stream:
@@ -327,6 +412,12 @@ class EvenicleAudioTests(unittest.TestCase):
 
     def test_capacity_and_replaced_fades(self):
         self.run_probe("full")
+
+    def test_high_concurrency_voice_and_parent_slots(self):
+        self.run_probe("pressure")
+
+    def test_active_voice_scan_bounds(self):
+        self.run_probe("bounds")
 
 
 if __name__ == "__main__":
