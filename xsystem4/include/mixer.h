@@ -46,6 +46,9 @@ void mixer_set_global_focus(bool enabled);
 void mixer_set_window_focus(bool focused);
 void mixer_set_app_backgrounded(bool backgrounded);
 void mixer_handle_device_removed(uint32_t dev);
+#ifdef ALICEHUB_IOS
+void mixer_retry_audio_device(void);
+#endif
 int mixer_get_numof(void);
 const char *mixer_get_name(int n);
 int mixer_set_name(int n, const char *name);

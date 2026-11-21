@@ -119,8 +119,10 @@ void alicehub_ios_prepare_window(SDL_Window *window)
             object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
                 if (background_hook)
                     background_hook(SDL_FALSE);
-                else
+                else {
                     mixer_set_app_backgrounded(false);
+                    mixer_retry_audio_device();
+                }
             }];
     }
     if (@available(iOS 16.0, *)) {

@@ -793,11 +793,31 @@ static void open_default_audio_device(void)
 	};
 	audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 	if (audio_device == 0) {
+#ifdef ALICEHUB_IOS
+		const char *error = SDL_GetError();
+		const char *driver = SDL_GetCurrentAudioDriver();
+		WARNING("SDL_OpenAudioDevice failed (driver=%s, device=default): %s",
+			driver ? driver : "none", error);
+#else
 		WARNING("SDL_OpenAudioDevice failed: %s", SDL_GetError());
+#endif
 		return;
 	}
+#ifdef ALICEHUB_IOS
+	const char *driver = SDL_GetCurrentAudioDriver();
+	NOTICE("Audio opened (driver=%s, device=default, id=%u, %d Hz, format=0x%x, channels=%u)",
+		driver ? driver : "none", audio_device, have.freq, have.format, have.channels);
+#endif
 	SDL_PauseAudioDevice(audio_device, (app_backgrounded || (!global_focus && !window_focused)) ? 1 : 0);
 }
+
+#ifdef ALICEHUB_IOS
+void mixer_retry_audio_device(void)
+{
+	if (master && audio_device == 0)
+		open_default_audio_device();
+}
+#endif
 
 void mixer_handle_device_removed(uint32_t dev)
 {

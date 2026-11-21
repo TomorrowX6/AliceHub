@@ -3130,6 +3130,12 @@ void handle_events(void)
 			gfx_restore_window();
 			did_swap = true;
 			break;
+#ifdef ALICEHUB_IOS
+		case SDL_AUDIODEVICEADDED:
+			if (!e.adevice.iscapture)
+				mixer_retry_audio_device();
+			break;
+#endif
 		case SDL_AUDIODEVICEREMOVED:
 			if (!e.adevice.iscapture)
 				mixer_handle_device_removed(e.adevice.which);

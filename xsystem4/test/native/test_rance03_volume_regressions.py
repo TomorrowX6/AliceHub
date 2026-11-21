@@ -4,6 +4,7 @@
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -73,7 +74,7 @@ def build_extf(blocks: list[bytes]) -> bytes:
 
 
 def sdl_cflags() -> list[str]:
-    return subprocess.check_output(["pkg-config", "--cflags", "sdl2"], text=True).split()
+    return subprocess.check_output(["pkg-config", "--cflags", "sdl2", "sndfile"], text=True).split()
 
 
 def compile_and_run(
@@ -110,6 +111,7 @@ def compile_and_run(
             str(src_path),
             *[str(p) for p in extra_sources],
             *(extra_flags or []),
+            *(["-framework", "CoreFoundation"] if sys.platform == "darwin" else []),
             "-o",
             str(bin_path),
         ]
@@ -177,12 +179,18 @@ bool game_rance03 = true;
 bool game_ixseal = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
+static int open_calls, close_calls, pause_state = -1;
+static bool fail_open;
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {
+    open_calls++;
     if (obtained) *obtained = *desired;
-    return 2;
+    return fail_open ? 0 : 2;
 }
-void SDL_PauseAudioDevice(SDL_AudioDeviceID dev, int pause_on) {}
-void SDL_CloseAudioDevice(SDL_AudioDeviceID dev) {}
+void SDL_PauseAudioDevice(SDL_AudioDeviceID dev, int pause_on) { pause_state = pause_on; }
+void SDL_CloseAudioDevice(SDL_AudioDeviceID dev) { close_calls++; }
+#ifdef ALICEHUB_IOS
+const char *SDL_GetCurrentAudioDriver(void) { return "test-coreaudio"; }
+#endif
 void SDL_LockAudioDevice(SDL_AudioDeviceID dev) {}
 void SDL_UnlockAudioDevice(SDL_AudioDeviceID dev) {}
 const char *SDL_GetError(void) { return ""; }
@@ -220,6 +228,30 @@ void static_library_replace(struct static_library *l, const char *n, void *f) {}
 #include "hll/KiwiSoundEngine_v12.c"
 
 int main(void) {
+#ifdef ALICEHUB_IOS
+    mixer_retry_audio_device(); assert(open_calls == 0);
+    fail_open = true;
+    mixer_init(); assert(audio_device == 0 && open_calls == 1);
+    mixer_retry_audio_device(); assert(audio_device == 0 && open_calls == 2);
+    fail_open = false;
+    mixer_set_app_backgrounded(true);
+    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 1 && open_calls == 3);
+    mixer_retry_audio_device(); assert(open_calls == 3);
+    mixer_set_app_backgrounded(false); assert(pause_state == 0);
+    mixer_handle_device_removed(99); assert(close_calls == 0 && open_calls == 3);
+    fail_open = true;
+    mixer_handle_device_removed(2); assert(close_calls == 1 && audio_device == 0);
+    mixer_set_global_focus(false); mixer_set_window_focus(false);
+    fail_open = false;
+    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 1);
+    mixer_set_window_focus(true); assert(pause_state == 0);
+    fail_open = true;
+    mixer_handle_device_removed(2); assert(audio_device == 0);
+    mixer_set_app_backgrounded(false);
+    fail_open = false;
+    mixer_retry_audio_device(); assert(audio_device == 2 && pause_state == 0);
+    mixer_handle_device_removed(2); assert(audio_device == 2 && pause_state == 0);
+#endif
     static const char *const expected_names[8] = {
         "Master", "BGM", "SE", "Voice", "Ambient", "BackVoice", "VoiceMale", "VoiceFemale"
     };
@@ -325,6 +357,8 @@ int main(void) {
 """
         out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-DALICEHUB_IOS", "-lz", "-lm"])
+        self.assertTrue(out.strip().endswith("OK"))
 
     def test_kiwi_multi_timemap_lookup_case_insensitive_cjk_fallback_and_fini(self):
         cols_6 = [
