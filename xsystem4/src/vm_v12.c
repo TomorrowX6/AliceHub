@@ -470,7 +470,7 @@ static int array_hll_param_width(int parameter)
 		int lo = parameter & 0xffff;
 		if (hi >= 2)
 			return lo == 3 ? 3 : 2;
-		return lo == 3 ? 2 : 1;
+		return lo == 3 || (hi == 1 && lo == 1) ? 2 : 1;
 	}
 	return parameter == AIN_IFACE ? 2 : 1;
 }
