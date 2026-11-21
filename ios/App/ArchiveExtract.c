@@ -143,7 +143,8 @@ int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
             archive_read_data_skip(a);
             goto entry_complete;
         }
-        out = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0644);
+        if (unlink(path) < 0 && errno != ENOENT) goto system_error;
+        out = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
         if (out < 0) goto system_error;
         for (;;) {
             const void *block;

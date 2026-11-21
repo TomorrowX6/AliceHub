@@ -112,6 +112,24 @@ enum ArchiveChecks {
             try run("/opt/homebrew/opt/libarchive/bin/bsdtar", args)
             try extract(url, format)
         }
+        for replacement in ["original.dat", "copy.dat"] {
+            let input = root.appendingPathComponent("replace-" + replacement)
+            try files.createDirectory(at: input, withIntermediateDirectories: true)
+            try Data("old".utf8).write(to: input.appendingPathComponent("original.dat"))
+            try files.linkItem(at: input.appendingPathComponent("original.dat"), to: input.appendingPathComponent("copy.dat"))
+            let tar = root.appendingPathComponent(replacement + ".tar")
+            try run("/opt/homebrew/opt/libarchive/bin/bsdtar", ["--format", "ustar", "-cf", tar.path, "-C", input.path, "original.dat", "copy.dat"])
+            try Data("new".utf8).write(to: input.appendingPathComponent(replacement))
+            try run("/opt/homebrew/opt/libarchive/bin/bsdtar", ["-rf", tar.path, "-C", input.path, replacement])
+            let output = root.appendingPathComponent("replaced-" + replacement)
+            let count = try ArchiveExtractor.extract(tar, to: output)
+            precondition(count == 3)
+            for name in ["original.dat", "copy.dat"] {
+                let body = try Data(contentsOf: output.appendingPathComponent(name))
+                precondition(body == Data((name == replacement ? "new" : "old").utf8))
+            }
+        }
+        print("PASS: later TAR entries replace either hard-link name without changing its aliases")
         let iso = root.appendingPathComponent("disc.bin")
         try run("/usr/bin/hdiutil", ["makehybrid", "-iso", "-joliet", "-o", iso.path, source.path])
         let actualISO = files.fileExists(atPath: iso.path) ? iso : URL(fileURLWithPath: iso.path + ".iso")
