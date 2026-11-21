@@ -107,7 +107,7 @@ The shared native modifier (`xsystem4/src/modifier.c`) is reached from Swift thr
   entry with the Android presets (Rance X), live locks (Rance X, Dohna Dohna, Evenicle), one-tap common
   cheats (Dohna Dohna, Evenicle) and the live value readout. Locks persist in
   `Application Support/modifier_config.json`.
-- **Launcher:** swipe a game and choose “修改存档” to edit integer fields of its local save files.
+- **Launcher:** swipe a Rance X game (folder with `Rance10.ain`) and choose “修改存档” to edit the writable fields of its `LocalSaveN.asd` files.
   Each write first copies the file to `<save>.mod.bak`.
 
 Checks: `swiftc -parse-as-library ios/App/ModifierBridge.swift ios/Tests/ModifierChecks.swift -o /tmp/modchecks && /tmp/modchecks`.

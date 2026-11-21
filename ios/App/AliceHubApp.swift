@@ -17,10 +17,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("AliceHubOpenModifier"), object: nil, queue: .main) { note in
             guard var host = note.object as? UIViewController else { return }
             while let presented = host.presentedViewController { host = presented }
-            var panel: UIViewController?
-            panel = UIHostingController(rootView: ModifierView { panel?.dismiss(animated: true) })
-            panel?.modalPresentationStyle = .formSheet
-            host.present(panel!, animated: true)
+            weak var weakPanel: UIViewController?
+            let panel = UIHostingController(rootView: ModifierView { weakPanel?.dismiss(animated: true) })
+            weakPanel = panel
+            panel.modalPresentationStyle = .formSheet
+            host.present(panel, animated: true)
         })
         return true
     }

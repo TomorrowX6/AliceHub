@@ -101,6 +101,10 @@ struct ModifierView: View {
 
     private func reload() {
         if let lockGame = game?.lockGame { mask = ModifierBridge.lockMask(lockGame) }
-        live = ModifierBridge.liveState()
+        // The snapshot is built by the engine on the main thread, so wait for it elsewhere.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let state = ModifierBridge.liveState()
+            DispatchQueue.main.async { live = state }
+        }
     }
 }

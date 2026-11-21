@@ -8724,7 +8724,8 @@ const char *modifier_api_current_game(void)
 {
 	if (game_rance10) return "rance10";
 	if (game_dohnadohna) return "dohnadohna";
-	if (game_evenicle || game_evenicle2) return "evenicle";
+	if (game_evenicle) return "evenicle";
+	if (game_evenicle2) return "evenicle2";
 	if (game_sengokurance) return "sengokurance";
 	if (game_rance01) return "rance01";
 	if (game_rance02) return "rance02";

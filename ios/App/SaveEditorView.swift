@@ -5,12 +5,24 @@ struct SaveEditorView: View {
     let directory: URL
     @Environment(\.dismiss) private var dismiss
 
+    /// The native save summary/writer only understand Rance X progress saves (`LocalSaveN.asd`).
+    static func isProgressSave(_ url: URL) -> Bool {
+        url.lastPathComponent.range(of: #"^LocalSave\d+\.asd$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    static func supports(_ gameDirectory: URL) -> Bool {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: gameDirectory.path)) ?? []
+        return names.contains { name in
+            name.caseInsensitiveCompare("Rance10.ain") == .orderedSame || name.contains("ランス10") || name.contains("兰斯10")
+        }
+    }
+
     private var saves: [URL] {
         let keys: [URLResourceKey] = [.isRegularFileKey]
         guard let walker = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else { return [] }
         return walker.compactMap { $0 as? URL }
             .filter { (try? $0.resourceValues(forKeys: Set(keys)).isRegularFile) == true }
-            .filter { !$0.lastPathComponent.hasSuffix(".bak") && !$0.lastPathComponent.hasPrefix(".") }
+            .filter { Self.isProgressSave($0) }
             .sorted { $0.path < $1.path }
     }
 

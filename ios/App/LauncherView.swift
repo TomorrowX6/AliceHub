@@ -26,7 +26,9 @@ struct LauncherView: View {
                             }
                             .swipeActions {
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
-                                Button { editingSaves = game } label: { Label("修改存档", systemImage: "slider.horizontal.3") }.tint(.orange)
+                                if SaveEditorView.supports(game.url) {
+                                    Button { editingSaves = game } label: { Label("修改存档", systemImage: "slider.horizontal.3") }.tint(.orange)
+                                }
                             }
                         }
                     }
