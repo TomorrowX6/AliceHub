@@ -8,6 +8,7 @@ func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoin
 @main
 struct LibraryChecks {
     static func main() throws {
+        try ArchiveChecks.run()
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
