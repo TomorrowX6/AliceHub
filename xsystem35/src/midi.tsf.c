@@ -68,7 +68,7 @@ static void render(float *out, int frames) {
 	memset(out, 0, frames * 2 * sizeof(float));
 	if (!playing || paused || backgrounded || !rate)
 		return;
-	for (int i = 0; i < frames && playing; i++) {
+	for (int i = 0; i < frames && playing;) {
 		if (frame >= duration) {
 			if (repeats > 0 && --repeats == 0) {
 				playing = false;
@@ -81,15 +81,28 @@ static void render(float *out, int frames) {
 			dispatch(next_event);
 			next_event = next_event->next;
 		}
-		tsf_render_float(synth, out + i * 2, 1, 0);
-		if (fade_left) {
-			fade_left--;
-			volume = fade_target + (fade_from - fade_target) * ((double)fade_left / fade_total);
+		uint64_t end = frame + frames - i;
+		if (end > duration)
+			end = duration;
+		if (next_event) {
+			uint64_t event_frame = ((uint64_t)next_event->time * rate + 999) / 1000;
+			if (end > event_frame)
+				end = event_frame;
 		}
-		float gain = volume * balance / 100.0f;
-		out[i * 2] *= gain;
-		out[i * 2 + 1] *= gain;
-		frame++;
+		if (fade_left && end - frame > fade_left)
+			end = frame + fade_left;
+		int count = end - frame;
+		tsf_render_float(synth, out + i * 2, count, 0);
+		for (int j = 0; j < count; j++, i++) {
+			if (fade_left) {
+				fade_left--;
+				volume = fade_target + (fade_from - fade_target) * ((double)fade_left / fade_total);
+			}
+			float gain = volume * balance / 100.0f;
+			out[i * 2] *= gain;
+			out[i * 2 + 1] *= gain;
+		}
+		frame = end;
 		if (!fade_left && fade_stop) {
 			playing = false;
 			fade_stop = false;

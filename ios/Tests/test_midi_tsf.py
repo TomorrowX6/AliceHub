@@ -25,6 +25,7 @@ class MidiTsfChecks(unittest.TestCase):
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "midi.h"
 typedef uint8_t Uint8;
 typedef uint16_t Uint16;
@@ -55,6 +56,55 @@ static void Mix_SetPostMix(void (*callback)(void *, Uint8 *, int), void *unused)
 '''
         harness += backend
         harness += r'''
+static void render_reference(float *out, int frames) {
+    memset(out, 0, frames * 2 * sizeof(float));
+    if (!playing || paused || backgrounded || !rate) return;
+    for (int i = 0; i < frames && playing; i++) {
+        if (frame >= duration) {
+            if (repeats > 0 && --repeats == 0) {
+                playing = false; fade_left = 0; break;
+            }
+            rewind_song();
+        }
+        while (next_event && (uint64_t)next_event->time * rate <= frame * 1000) {
+            dispatch(next_event); next_event = next_event->next;
+        }
+        tsf_render_float(synth, out + i * 2, 1, 0);
+        if (fade_left) {
+            fade_left--;
+            volume = fade_target + (fade_from - fade_target) * ((double)fade_left / fade_total);
+        }
+        float gain = volume * balance / 100.0f;
+        out[i * 2] *= gain; out[i * 2 + 1] *= gain;
+        frame++;
+        if (!fade_left && fade_stop) { playing = false; fade_stop = false; }
+    }
+}
+
+static void compare_reference(const uint8_t *data, int size) {
+    struct snapshot { uint64_t frame; int repeats; bool playing; float volume; } expected[400];
+    for (int pass = 0; pass < 2; pass++) {
+        assert(midi_tsf.start(1, 2, data, size));
+        midi_tsf.fadestart(1700, 40, 0);
+        double energy = 0;
+        for (int block = 0; block < 400; block++) {
+            float pcm[514];
+            if (block == 17) midi_tsf.pause();
+            if (block == 23) midi_tsf.unpause();
+            if (!pass) render_reference(pcm, 257); else render(pcm, 257);
+            for (int j = 0; j < 514; j++) energy += fabsf(pcm[j]);
+            if (!pass) expected[block] = (struct snapshot){frame, repeats, playing, volume};
+            else {
+                assert(frame == expected[block].frame && repeats == expected[block].repeats);
+                assert(playing == expected[block].playing);
+                assert(fabsf(volume - expected[block].volume) < .001f);
+            }
+        }
+        assert(energy > 1 && !playing);
+        midi_tsf.fadestart(0, 100, 0);
+    }
+}
+
 static void advance(int frames) {
     float buffer[256 * 2];
     while (frames) {
@@ -105,6 +155,13 @@ int main(int argc, char **argv) {
     midi_tsf.fadestart(0, 50, 0); assert(volume == 50);
     prv.volval[0] = 20; midi_tsf.reapply_volume(); assert(fabsf(balance - .2f) < .001f);
     midi_tsf.fadestart(0, 0, 1); assert(!playing);
+    prv.volval[0] = 100; midi_tsf.reapply_volume();
+    midi_tsf.fadestart(0, 100, 0);
+    compare_reference(data, size);
+    assert(midi_tsf.start(1, 0, data, size));
+    clock_t begin = clock(); advance(rate * 60);
+    double seconds = (double)(clock() - begin) / CLOCKS_PER_SEC;
+    printf("MIDI timing: 60s rendered in %.3fs CPU (%.1fx realtime)\n", seconds, 60 / seconds);
     midi_tsf.reset(); midi_tsf.exit(); assert(!hook && !synth && !mutex);
     puts("TinySoundFont MIDI: nonzero PCM, negotiated rate, loops, pause, fades, mixing and errors passed");
 }
