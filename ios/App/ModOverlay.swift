@@ -24,7 +24,7 @@ enum ModFiles {
         return result
     }
     static func relative(_ url: URL, to root: URL) -> String {
-        String(url.resolvingSymlinksInPath().standardizedFileURL.path.dropFirst(root.resolvingSymlinksInPath().standardizedFileURL.path.count + 1))
+        String(url.canonicalFileURL.path.dropFirst(root.canonicalFileURL.path.count + 1))
     }
     static func ini(_ directory: URL) -> [String: String] {
         let children = children(directory)
@@ -50,8 +50,8 @@ enum ModFiles {
             current.appendPathComponent(String(part))
             if (try? files.destinationOfSymbolicLink(atPath: current.path)) != nil { throw ModError.message("不支持符号链接：" + relative) }
         }
-        let canonical = current.resolvingSymlinksInPath().standardizedFileURL
-        guard canonical.path.hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path + "/") else { throw ModError.message("无效文件路径：" + relative) }
+        let canonical = current.canonicalFileURL
+        guard canonical.path.hasPrefix(root.canonicalFileURL.path + "/") else { throw ModError.message("无效文件路径：" + relative) }
         return current
     }
     static func replace(_ source: URL, _ destination: URL) throws {
@@ -142,8 +142,8 @@ enum ModOverlay {
         return current
     }
     private static func pruneEmptyParentDirs(_ start: URL, stop: URL) throws {
-        var current = start.resolvingSymlinksInPath().standardizedFileURL
-        let stop = stop.resolvingSymlinksInPath().standardizedFileURL
+        var current = start.canonicalFileURL
+        let stop = stop.canonicalFileURL
         while current.path != stop.path && current.path.hasPrefix(stop.path + "/") && ModFiles.children(current).isEmpty {
             if !ModFiles.exists(current) { current.deleteLastPathComponent(); continue }
             try ModFiles.files.removeItem(at: current); current.deleteLastPathComponent()
@@ -178,9 +178,9 @@ enum ModOverlay {
         var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
         var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
         let before = try ModFiles.walk(target)
-        let directories = before.filter(ModFiles.isDirectory).map { $0.resolvingSymlinksInPath().standardizedFileURL }
+        let directories = before.filter(ModFiles.isDirectory).map { $0.canonicalFileURL }
         let directoryPaths = Set(directories.map(\.path))
-        let originalFiles = Set(before.filter(ModFiles.isFile).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+        let originalFiles = Set(before.filter(ModFiles.isFile).map { $0.canonicalFileURL.path })
         for file in try ModFiles.walk(root) where ModFiles.isFile(file) {
             let relative = ModFiles.relative(file, to: root)
             if relative.hasPrefix(".") || NativeGameImport.skip(relative) { continue }
@@ -207,7 +207,7 @@ enum ModOverlay {
                 }
             }
         }
-        affected = Set(affected.map { $0.resolvingSymlinksInPath().standardizedFileURL })
+        affected = Set(affected.map { $0.canonicalFileURL })
         let rollback = target.deletingLastPathComponent().appendingPathComponent(".mod_rollback_" + UUID().uuidString)
         try ModFiles.files.createDirectory(at: rollback, withIntermediateDirectories: true)
         var keepRollback = false
@@ -226,10 +226,10 @@ enum ModOverlay {
         } catch {
             let failure = error
             do {
-                for file in try ModFiles.walk(target) where ModFiles.isFile(file) && !originalFiles.contains(file.resolvingSymlinksInPath().standardizedFileURL.path) {
+                for file in try ModFiles.walk(target) where ModFiles.isFile(file) && !originalFiles.contains(file.canonicalFileURL.path) {
                     try ModFiles.files.removeItem(at: file)
                 }
-                for directory in try ModFiles.walk(target).reversed() where ModFiles.isDirectory(directory) && !directoryPaths.contains(directory.resolvingSymlinksInPath().standardizedFileURL.path) && ModFiles.children(directory).isEmpty {
+                for directory in try ModFiles.walk(target).reversed() where ModFiles.isDirectory(directory) && !directoryPaths.contains(directory.canonicalFileURL.path) && ModFiles.children(directory).isEmpty {
                     try ModFiles.files.removeItem(at: directory)
                 }
                 for directory in directories where !ModFiles.exists(directory) {

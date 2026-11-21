@@ -108,7 +108,7 @@ enum ModArchiveExtractor {
                         shouldSkip: @escaping (String) -> Bool = { _ in false },
                         progress: @escaping (Int64, String) -> Void = { _, _ in },
                         isCancelled: @escaping () -> Bool = { false }) throws -> Int {
-        let state = ExtractionState(destination: destination.resolvingSymlinksInPath().standardizedFileURL,
+        let state = ExtractionState(destination: destination.canonicalFileURL,
                                     shouldSkip: shouldSkip, progress: progress, isCancelled: isCancelled)
         try FileManager.default.createDirectory(at: state.root, withIntermediateDirectories: true)
         var message = [CChar](repeating: 0, count: 1024)
@@ -161,7 +161,7 @@ private final class ExtractionState {
                 throw ArchiveExtractionError.unsafePath(decoded)
             }
         }
-        let output = root.appendingPathComponent(relative).resolvingSymlinksInPath().standardizedFileURL
+        let output = root.appendingPathComponent(relative).canonicalFileURL
         guard output.path.hasPrefix(root.path + "/") else { throw ArchiveExtractionError.unsafePath(decoded) }
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         if size > 0,
@@ -169,5 +169,15 @@ private final class ExtractionState {
            size > free.int64Value - 32 * 1024 * 1024 { throw ArchiveExtractionError.native("ENOSPC: Insufficient storage space") }
         currentPath = relative
         return strdup(output.path)
+    }
+}
+
+extension URL {
+    /// Resolves symlinks, folding `/private/var` and `/private/tmp` back to `/var` and `/tmp` so existing
+    /// and not-yet-created paths canonicalize the same way (Foundation only strips `/private` for existing files).
+    var canonicalFileURL: URL {
+        let path = resolvingSymlinksInPath().standardizedFileURL.path
+        for prefix in ["/private/var/", "/private/tmp/"] where path.hasPrefix(prefix) { return URL(fileURLWithPath: String(path.dropFirst(8))) }
+        return URL(fileURLWithPath: path)
     }
 }
