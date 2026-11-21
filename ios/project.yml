@@ -31,7 +31,7 @@ targets:
         LIBRARY_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/build/$(PLATFORM_NAME)/stage/lib
-        OTHER_LDFLAGS: $(inherited) -lxsystem4 -lsys4 -lcglm -lSDL2 -lfreetype -lffi -lsndfile -lvorbisfile -lvorbisenc -lvorbis -logg -lturbojpeg -lwebp -lsharpyuv -lpng16 -ldeflate -lz -liconv -framework UIKit -framework OpenGLES -framework QuartzCore -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreMotion -framework CoreHaptics -framework GameController -framework Metal -framework CoreBluetooth -framework CoreGraphics -framework CoreVideo -framework CoreFoundation -framework Foundation
+        OTHER_LDFLAGS: $(inherited) -lxsystem4 -lsys4 -lcglm -lSDL2 -lfreetype -lffi -lsndfile -lvorbisfile -lvorbisenc -lvorbis -logg -lturbojpeg -lwebp -lsharpyuv -lpng16 -ldeflate -larchive -llzma -lz -liconv -framework UIKit -framework OpenGLES -framework QuartzCore -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework CoreMotion -framework CoreHaptics -framework GameController -framework Metal -framework CoreBluetooth -framework CoreGraphics -framework CoreVideo -framework CoreFoundation -framework Foundation
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: '1,2'
         SUPPORTS_MACCATALYST: NO

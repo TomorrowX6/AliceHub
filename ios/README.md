@@ -14,6 +14,23 @@ simulator archives into one fat archive: both use arm64 but different platforms.
 Zlib is taken from the selected SDK. FreeType 2.13.3 matches the Android fallback
 in `cmake/FindFreetype.cmake`; cglm 0.9.2 is fetched by the engine's CMake project.
 Other dependency versions and hashes match the root Android superbuild.
+libarchive 3.8.11 and xz 5.8.4 are staged statically with the root build's feature
+options. Archive extraction supports ZIP, RAR4/5, 7z, tar (gzip/xz), and ISO9660.
+Raw MDF disc images are not supported. Entry paths are decoded in Swift using
+UTF-8 or the Android CJK heuristic; unsafe paths and symbolic links are rejected
+or skipped. Hard links to previously extracted files are materialized as copies.
+
+The standalone archive regression check runs on the macOS host:
+
+```
+brew install libarchive
+python3 ios/Tests/test_archives.py
+```
+
+It compiles the same C bridge and Swift extractor against host libarchive and
+checks GBK/Shift-JIS ZIP names, filtering, cancellation, unsafe paths and TAR
+hard links. It does not launch the app or exercise a document provider.
+
 libffi 3.4.6 has no configure switch to disable AArch64 closures, so the iOS-only
 patch disables them in its target header. Static executable trampolines are
 disabled in configure. CFI directives are disabled for that dependency because
