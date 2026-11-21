@@ -265,7 +265,7 @@ target_link_libraries(xsystem4 PRIVATE
 if(ALICEHUB_IOS)
   target_link_libraries(xsystem4 PRIVATE "-framework OpenGLES")
   install(TARGETS sys4 cglm)
-  install(FILES include/xsystem4_main.h DESTINATION include)
+  install(FILES include/xsystem4_main.h include/modifier_api.h DESTINATION include)
 else()
   target_link_libraries(xsystem4 PRIVATE GLESv3)
 endif()

@@ -32,6 +32,7 @@
 #include "vm/page.h"
 #include "input.h"
 #include "modifier.h"
+#include "modifier_api.h"
 #include "parts.h"
 #include "savedata.h"
 #include "xsystem4.h"
@@ -708,7 +709,7 @@ static void persist_modifier_config_from_native(int lock_mask)
 	free(cfg_path);
 }
 
-#if defined(__ANDROID__) || defined(MODIFIER_STANDALONE_TEST)
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_STANDALONE_TEST)
 
 static int32_t gs_get_field_int(struct gsave *gs, int32_t rec_idx, const char *name1, const char *name2, int32_t def_val)
 {
@@ -1890,7 +1891,7 @@ static int read_game_config_streamer_mode(const char *config_path)
 	return val != 0 ? 1 : 0;
 }
 
-#endif /* __ANDROID__ || MODIFIER_STANDALONE_TEST */
+#endif /* __ANDROID__ || ALICEHUB_IOS || MODIFIER_STANDALONE_TEST */
 
 /* =========================================================================
  * Live In-Game VM Memory Helpers (Executed on VM Thread in modifier_on_frame)
@@ -8676,6 +8677,215 @@ void modifier_on_frame(void)
 /* =========================================================================
  * JNI Exports for Android UI (GameModifierBridge)
  * ========================================================================= */
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
+
+static void set_game_lock_mask(bool *init_flag, int *target, int mask)
+{
+	int save_r10_mask;
+	pthread_mutex_lock(&g_mod_mutex);
+	*init_flag = true;
+	*target = mask;
+	save_r10_mask = g_live_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	persist_modifier_config_from_native(save_r10_mask);
+}
+
+static int get_game_lock_mask(const int *target)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int mask = *target;
+	pthread_mutex_unlock(&g_mod_mutex);
+	return mask;
+}
+
+char *modifier_api_read_local_save_summary(const char *path)
+{
+	return path ? read_local_save_summary_str(path) : NULL;
+}
+
+bool modifier_api_write_local_save_mod(const char *path, const char *mod_json)
+{
+	return (path && mod_json) ? write_local_save_mod_str(path, mod_json) : false;
+}
+
+char *modifier_api_read_global_save_summary(const char *global_path, const char *collection_path)
+{
+	return read_global_save_summary_str(global_path ? global_path : "", collection_path ? collection_path : "");
+}
+
+bool modifier_api_write_global_save_mod(const char *global_path, const char *collection_path, const char *mod_json)
+{
+	if (!mod_json)
+		return false;
+	return write_global_save_mod_str(global_path ? global_path : "", collection_path ? collection_path : "", mod_json);
+}
+
+const char *modifier_api_current_game(void)
+{
+	if (game_rance10) return "rance10";
+	if (game_dohnadohna) return "dohnadohna";
+	if (game_evenicle) return "evenicle";
+	if (game_evenicle2) return "evenicle2";
+	if (game_sengokurance) return "sengokurance";
+	if (game_rance01) return "rance01";
+	if (game_rance02) return "rance02";
+	if (game_rance03) return "rance03";
+	if (game_rance8) return "rance08";
+	if (game_rance9) return "rance09";
+	if (game_escalayer_reboot) return "escalayer";
+	return "";
+}
+
+char *modifier_api_get_live_state_json(void)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	if (g_vm_ready_cached) {
+		uint32_t target_seq = ++g_live_state_req_seq;
+		struct timespec ts;
+		if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+			ts.tv_nsec += 25000000L; /* 25ms max wait (~1.5 frames at 60fps) */
+			if (ts.tv_nsec >= 1000000000L) {
+				ts.tv_sec += 1;
+				ts.tv_nsec -= 1000000000L;
+			}
+			while (g_live_state_built_seq != target_seq) {
+				if (pthread_cond_timedwait(&g_mod_cond, &g_mod_mutex, &ts) == ETIMEDOUT)
+					break;
+			}
+		}
+	}
+	char *ret = strdup(g_cached_live_state_json ? g_cached_live_state_json : "{\"inGame\":false}");
+	pthread_mutex_unlock(&g_mod_mutex);
+	return ret;
+}
+
+void modifier_api_set_config_path(const char *path)
+{
+	if (!path || !path[0])
+		return;
+	pthread_mutex_lock(&g_mod_mutex);
+	free(g_modifier_config_path);
+	g_modifier_config_path = strdup(path);
+	pthread_mutex_unlock(&g_mod_mutex);
+}
+
+void modifier_api_apply_live_action(const char *action_json)
+{
+	if (!action_json)
+		return;
+	pthread_mutex_lock(&g_mod_mutex);
+	free(g_pending_action_json);
+	g_pending_action_json = strdup(action_json);
+	pthread_mutex_unlock(&g_mod_mutex);
+}
+
+static void set_rance10_lock_mask(int mask)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int prev = g_live_lock_mask;
+	bool first_init = !g_has_lock_mask_init;
+	g_has_lock_mask_init = true;
+	g_live_lock_mask = mask;
+	bool prev_dis = (prev & LOCK_DISABLE_STREAMER_MODE) != 0;
+	bool next_dis = (mask & LOCK_DISABLE_STREAMER_MODE) != 0;
+	if (first_init) {
+		if (next_dis)
+			g_pending_lock_streamer_mode = 0;
+	} else if (prev_dis != next_dis) {
+		g_pending_lock_streamer_mode = next_dis ? 0 : 1;
+	}
+	pthread_mutex_unlock(&g_mod_mutex);
+}
+
+void modifier_api_set_lock_mask(enum modifier_lock_game game, int mask)
+{
+	switch (game) {
+	case MODIFIER_LOCK_RANCE10:
+		set_rance10_lock_mask(mask);
+		persist_modifier_config_from_native(mask);
+		break;
+	case MODIFIER_LOCK_DOHNADOHNA: set_game_lock_mask(&g_has_dohna_lock_mask_init, &g_dohna_lock_mask, mask); break;
+	case MODIFIER_LOCK_EVENICLE: set_game_lock_mask(&g_has_evenicle_lock_mask_init, &g_evenicle_lock_mask, mask); break;
+	case MODIFIER_LOCK_SENGOKURANCE: set_game_lock_mask(&g_has_sr_lock_mask_init, &g_sr_lock_mask, mask); break;
+	case MODIFIER_LOCK_RANCE01: set_game_lock_mask(&g_has_r01_lock_mask_init, &g_r01_lock_mask, mask); break;
+	case MODIFIER_LOCK_RANCE02: set_game_lock_mask(&g_has_r02_lock_mask_init, &g_r02_lock_mask, mask); break;
+	case MODIFIER_LOCK_RANCE03: set_game_lock_mask(&g_has_r03_lock_mask_init, &g_r03_lock_mask, mask); break;
+	case MODIFIER_LOCK_RANCE08: set_game_lock_mask(&g_has_r08_lock_mask_init, &g_r08_lock_mask, mask); break;
+	case MODIFIER_LOCK_RANCE09: set_game_lock_mask(&g_has_r09_lock_mask_init, &g_r09_lock_mask, mask); break;
+	}
+}
+
+int modifier_api_get_lock_mask(enum modifier_lock_game game)
+{
+	switch (game) {
+	case MODIFIER_LOCK_RANCE10: return get_game_lock_mask(&g_live_lock_mask);
+	case MODIFIER_LOCK_DOHNADOHNA: return get_game_lock_mask(&g_dohna_lock_mask);
+	case MODIFIER_LOCK_EVENICLE: return get_game_lock_mask(&g_evenicle_lock_mask);
+	case MODIFIER_LOCK_SENGOKURANCE: return get_game_lock_mask(&g_sr_lock_mask);
+	case MODIFIER_LOCK_RANCE01: return get_game_lock_mask(&g_r01_lock_mask);
+	case MODIFIER_LOCK_RANCE02: return get_game_lock_mask(&g_r02_lock_mask);
+	case MODIFIER_LOCK_RANCE03: return get_game_lock_mask(&g_r03_lock_mask);
+	case MODIFIER_LOCK_RANCE08: return get_game_lock_mask(&g_r08_lock_mask);
+	case MODIFIER_LOCK_RANCE09: return get_game_lock_mask(&g_r09_lock_mask);
+	}
+	return 0;
+}
+
+int modifier_api_read_streamer_mode(const char *config_path)
+{
+	return config_path ? read_game_config_streamer_mode(config_path) : -1;
+}
+
+bool modifier_api_write_streamer_mode(const char *config_path, bool enabled)
+{
+	return config_path ? write_game_config_streamer_mode(config_path, enabled) : false;
+}
+
+void modifier_api_set_ctrl_skip(bool enabled)
+{
+	input_set_touch_ctrl_skip(enabled);
+}
+
+bool modifier_api_get_ctrl_skip(void)
+{
+	return input_get_touch_ctrl_skip();
+}
+
+void modifier_api_set_ui_scale(int font_pct, int scrollbar_pct)
+{
+	int fp = clamp_font_scale_pct(font_pct);
+	int sp = clamp_scrollbar_scale_pct(scrollbar_pct);
+	pthread_mutex_lock(&g_mod_mutex);
+	g_has_ui_scale_init = true;
+	g_font_scale_pct = fp;
+	g_scrollbar_scale_pct = sp;
+	pthread_mutex_unlock(&g_mod_mutex);
+	/* Actual parts_set_modifier_* + live refresh run on SDLThread in modifier_on_frame. */
+}
+
+int modifier_api_get_font_scale(void)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int fp = g_font_scale_pct;
+	pthread_mutex_unlock(&g_mod_mutex);
+	return fp;
+}
+
+int modifier_api_get_scrollbar_scale(void)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	int sp = g_scrollbar_scale_pct;
+	pthread_mutex_unlock(&g_mod_mutex);
+	return sp;
+}
+
+bool modifier_api_export_pc_save_file(const char *src_path, const char *dst_path)
+{
+	return (src_path && dst_path) ? savedata_export_pc_file(src_path, dst_path) : false;
+}
+
+#endif /* __ANDROID__ || ALICEHUB_IOS */
+
 #ifdef __ANDROID__
 
 static jstring jni_new_string_utf8_safe(JNIEnv *env, const char *utf8)
@@ -8823,25 +9033,9 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveStateJson(
 	JNIEnv *env, jclass clazz)
 {
 	(void)clazz;
-	pthread_mutex_lock(&g_mod_mutex);
-	if (g_vm_ready_cached) {
-		uint32_t target_seq = ++g_live_state_req_seq;
-		struct timespec ts;
-		if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-			ts.tv_nsec += 25000000L; /* 25ms max wait (~1.5 frames at 60fps) */
-			if (ts.tv_nsec >= 1000000000L) {
-				ts.tv_sec += 1;
-				ts.tv_nsec -= 1000000000L;
-			}
-			while (g_live_state_built_seq != target_seq) {
-				if (pthread_cond_timedwait(&g_mod_cond, &g_mod_mutex, &ts) == ETIMEDOUT)
-					break;
-			}
-		}
-	}
-	const char *snap = g_cached_live_state_json ? g_cached_live_state_json : "{\"inGame\":false}";
-	jstring ret = jni_new_string_utf8_safe(env, snap);
-	pthread_mutex_unlock(&g_mod_mutex);
+	char *json = modifier_api_get_live_state_json();
+	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{\"inGame\":false}");
+	free(json);
 	return ret;
 }
 
@@ -8853,12 +9047,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetConfigPath(
 	if (!jpath)
 		return;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	if (path && path[0]) {
-		pthread_mutex_lock(&g_mod_mutex);
-		free(g_modifier_config_path);
-		g_modifier_config_path = strdup(path);
-		pthread_mutex_unlock(&g_mod_mutex);
-	}
+	modifier_api_set_config_path(path);
 	if (path)
 		(*env)->ReleaseStringUTFChars(env, jpath, path);
 }
@@ -8869,20 +9058,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetLiveLocks(
 {
 	(void)env;
 	(void)clazz;
-	pthread_mutex_lock(&g_mod_mutex);
-	int prev = g_live_lock_mask;
-	bool first_init = !g_has_lock_mask_init;
-	g_has_lock_mask_init = true;
-	g_live_lock_mask = (int)mask;
-	bool prev_dis = (prev & LOCK_DISABLE_STREAMER_MODE) != 0;
-	bool next_dis = ((int)mask & LOCK_DISABLE_STREAMER_MODE) != 0;
-	if (first_init) {
-		if (next_dis)
-			g_pending_lock_streamer_mode = 0;
-	} else if (prev_dis != next_dis) {
-		g_pending_lock_streamer_mode = next_dis ? 0 : 1;
-	}
-	pthread_mutex_unlock(&g_mod_mutex);
+	set_rance10_lock_mask((int)mask);
 }
 
 JNIEXPORT jint JNICALL
@@ -8895,25 +9071,6 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetLiveLocks(
 	int mask = g_live_lock_mask;
 	pthread_mutex_unlock(&g_mod_mutex);
 	return (jint)mask;
-}
-
-static void set_game_lock_mask(bool *init_flag, int *target, int mask)
-{
-	int save_r10_mask;
-	pthread_mutex_lock(&g_mod_mutex);
-	*init_flag = true;
-	*target = mask;
-	save_r10_mask = g_live_lock_mask;
-	pthread_mutex_unlock(&g_mod_mutex);
-	persist_modifier_config_from_native(save_r10_mask);
-}
-
-static int get_game_lock_mask(const int *target)
-{
-	pthread_mutex_lock(&g_mod_mutex);
-	int mask = *target;
-	pthread_mutex_unlock(&g_mod_mutex);
-	return mask;
 }
 
 JNIEXPORT void JNICALL
@@ -9069,10 +9226,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeApplyLiveAction(
 		return;
 	const char *act = (*env)->GetStringUTFChars(env, jaction, NULL);
 	if (act) {
-		pthread_mutex_lock(&g_mod_mutex);
-		free(g_pending_action_json);
-		g_pending_action_json = strdup(act);
-		pthread_mutex_unlock(&g_mod_mutex);
+		modifier_api_apply_live_action(act);
 		(*env)->ReleaseStringUTFChars(env, jaction, act);
 	}
 }
@@ -9125,14 +9279,7 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetUiScale(
 {
 	(void)env;
 	(void)clazz;
-	int fp = clamp_font_scale_pct((int)font_pct);
-	int sp = clamp_scrollbar_scale_pct((int)scrollbar_pct);
-	pthread_mutex_lock(&g_mod_mutex);
-	g_has_ui_scale_init = true;
-	g_font_scale_pct = fp;
-	g_scrollbar_scale_pct = sp;
-	pthread_mutex_unlock(&g_mod_mutex);
-	/* Actual parts_set_modifier_* + live refresh run on SDLThread in modifier_on_frame. */
+	modifier_api_set_ui_scale((int)font_pct, (int)scrollbar_pct);
 }
 
 JNIEXPORT jint JNICALL

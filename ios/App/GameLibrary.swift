@@ -243,13 +243,17 @@ final class GameLibrary: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
+    func savesDirectory(for game: Game) -> URL {
+        documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
+    }
+
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
             let info = try Self.launchInfo(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
-            let saves = documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
+            let saves = savesDirectory(for: game)
             let logs = documents.appendingPathComponent("Logs")
             for directory in [home, saves, logs] {
                 try files.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -267,6 +271,7 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
             setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
             let arguments = try Self.launchArguments(game.url, saves: saves)
+            ModifierBridge.prepareForLaunch()
             launching = true
             DispatchQueue.main.async {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in

@@ -188,3 +188,17 @@ host has no audio output devices (`system_profiler SPAudioDataType` lists none),
 and SDL reports AudioQueue error -66680 (`kAudioQueueErr_InvalidDevice`). The
 engine continues silently; audible output still needs verification on a host
 with an audio device or a physical iPhone.
+
+## In-game modifier
+
+The shared native modifier (`xsystem4/src/modifier.c`) is reached from Swift through
+`xsystem4/include/modifier_api.h`; Android's JNI exports call the same functions.
+
+- **In game:** a draggable wand button on the engine window opens the modifier panel: MOD cheat-code
+  entry with the Android presets (Rance X), live locks (Rance X, Dohna Dohna, Evenicle), one-tap common
+  cheats (Dohna Dohna, Evenicle) and the live value readout. Locks persist in
+  `Application Support/modifier_config.json`.
+- **Launcher:** swipe a Rance X game (folder with `Rance10.ain`) and choose “修改存档” to edit the writable fields of its `LocalSaveN.asd` files.
+  Each write first copies the file to `<save>.mod.bak`.
+
+Checks: `swiftc -parse-as-library ios/App/ModifierBridge.swift ios/Tests/ModifierChecks.swift -o /tmp/modchecks && /tmp/modchecks`.

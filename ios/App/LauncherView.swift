@@ -18,6 +18,7 @@ struct LauncherView: View {
     @State private var saveGame: Game?
     @State private var gamepadEditor: GamepadEditorTarget?
     @State private var managedGame: Game?
+    @State private var editingSaves: Game?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -51,6 +52,9 @@ struct LauncherView: View {
                             .swipeActions {
                                 Button("存档管理") { saveGame = game }.tint(.blue)
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
+                                if SaveEditorView.supports(game.url) {
+                                    Button { editingSaves = game } label: { Label("修改存档", systemImage: "slider.horizontal.3") }.tint(.orange)
+                                }
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 if let descriptor = ModGameDescriptor.classifyDirectory(game.url) {
@@ -85,6 +89,9 @@ struct LauncherView: View {
                 Button { gamepadEditor = .global } label: {
                     Label(padText("Gamepad"), systemImage: "gamecontroller")
                 }
+            }
+            .sheet(item: $editingSaves) { game in
+                SaveEditorView(game: game, directory: library.savesDirectory(for: game))
             }
             .disabled(library.importing || library.launching)
             .overlay {
