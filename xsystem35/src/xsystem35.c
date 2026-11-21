@@ -22,6 +22,9 @@
 /* $Id: xsystem35.c,v 1.77 2003/11/16 15:29:52 chikama Exp $ */
 
 #include "config.h"
+#ifdef ALICEHUB_IOS
+#include "xsystem35_main.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -497,7 +500,11 @@ static void registerGameFiles(void) {
 		fc_init(nact->files.save_path);
 }
 
+#ifdef ALICEHUB_IOS
+int xsystem35_main(int argc, char **argv) {
+#else
 int main(int argc, char **argv) {
+#endif
 #ifdef __ANDROID__
 	static bool sdl_main_entered = false;
 	if (sdl_main_entered) {

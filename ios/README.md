@@ -20,6 +20,26 @@ disabled in configure. CFI directives are disabled for that dependency because
 Xcode's assembler rejects its AArch64 CFI expressions. Exceptions must not unwind
 through libffi calls.
 
+## Isolated engines
+
+The native build also stages SDL2_mixer 2.8.1 (minimp3 and Vorbisfile, no MIDI)
+and the SDL2 xsystem35 static engine with the debugger disabled. The launcher
+still only starts System 4 games.
+
+`libxsystem4_engine.a` contains one prelinked object combining xsystem4, sys4
+and cglm; `libxsystem35_engine.a` similarly combines xsystem35, src_lib and
+modules. The iOS linker localizes everything except each engine's entry point
+and the two System 4 `alicehub_ios_*` platform functions. Engines and their
+private libraries use `-fno-common` so tentative globals are isolated too. Shared
+dependencies remain undefined until the app link. Do not link the raw engine
+archives alongside these isolated archives.
+
+`EnginePlatform.m` stays inside the System 4 object so its audio/save lifecycle
+hooks resolve to the isolated System 4 implementations. The app force-loads
+both isolated archives to exercise their combined link even before System 3
+launch support is wired up. After building both SDKs, validate the staged
+exports with `python3 ios/Tests/test_engine_isolation.py`.
+
 ## App shell
 
 `ios/build-app.sh sim` generates the Xcode project and builds an unsigned
@@ -62,7 +82,7 @@ in filename order when multiple AINs exist.
   environment variables or JNI modifier/gamepad initialization apply on iOS.
 * Integrate SDL's UIKit lifecycle and call `SDL_SetMainReady()` before entering
   the engine; the engine uses `SDL_MAIN_HANDLED` and exports no main/SDL_main.
-  Link the staged dependencies (including sys4 and cglm), SDK zlib/iconv and
+  Link the isolated engine archives and shared dependencies, SDK zlib/iconv and
   SDL's required Apple frameworks; do not link SDL2main as an app entry point.
   Static compilation alone does not validate final app linking or lifecycle.
 * The non-Android shutdown path still calls `sys_exit`/process exit; returning
