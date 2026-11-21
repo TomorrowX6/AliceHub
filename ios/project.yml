@@ -1,5 +1,6 @@
 name: AliceHub
 options:
+  developmentLanguage: zh-Hans
   deploymentTarget:
     iOS: '15.0'
 settings:

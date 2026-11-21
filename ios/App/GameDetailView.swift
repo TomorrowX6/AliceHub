@@ -36,7 +36,11 @@ struct GameDetailView: View {
                         action(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", "本地安装、在线版本与原版还原", "shippingbox", .mods)
                         Divider()
                     }
-                    action("虚拟手柄与外设", "独立布局、按键与控制器映射", "gamecontroller", .gamepad)
+                    if game.engine == .system4 {
+                        action("虚拟手柄与外设", "独立布局、按键与控制器映射", "gamecontroller", .gamepad)
+                    } else {
+                        HubActionLabel(title: "原生触控", subtitle: "System 3.x 暂不支持虚拟手柄", symbol: "hand.tap")
+                    }
                     if SaveEditorView.supports(game.url) {
                         Divider()
                         action("修改存档", "编辑数值，修改前自动备份", "slider.horizontal.3", .editor)
@@ -46,7 +50,7 @@ struct GameDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("本机游戏目录", systemImage: "folder").font(.subheadline.bold())
                     Text(game.name).font(.footnote).foregroundColor(HubTheme.secondary).textSelection(.enabled)
-                    Text("局内修改器可通过游戏画面中的悬浮按钮打开。")
+                    Text(game.engine == .system4 ? "局内修改器可通过游戏画面中的悬浮按钮打开。" : "System 3.x 使用原生触控操作。")
                         .font(.caption).foregroundColor(HubTheme.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).modifier(HubCard())
 

@@ -61,6 +61,7 @@ struct SaveManagerChecks {
         check(try read("slot.asd") == "old")
         check(!files.fileExists(atPath: manager.directory.appendingPathComponent("extra.asd").path))
         check(try read(".secret") == "secret" && read(".settings/config") == "settings")
+        check(try read("nested/.hidden/data") == "hidden")
         let attack = root.appendingPathComponent("attack.zip")
         try SaveZip.write([.init(name: "SaveData/../escape", data: Data())], to: attack)
         rejects { try manager.restore(attack) }

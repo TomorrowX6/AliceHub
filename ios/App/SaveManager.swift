@@ -123,9 +123,20 @@ final class SaveManager {
         try backup()
         let existed = files.fileExists(atPath: directory.path)
         if existed {
-            for hidden in try children(directory) where hidden.lastPathComponent.hasPrefix(".") {
-                try files.copyItem(at: hidden, to: staging.appendingPathComponent(hidden.lastPathComponent))
+            func preserveHidden(_ source: URL, _ destination: URL) throws {
+                for child in try children(source) {
+                    let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    guard values.isSymbolicLink != true else { throw Failure.unsafePath }
+                    let target = destination.appendingPathComponent(child.lastPathComponent)
+                    if child.lastPathComponent.hasPrefix(".") {
+                        try files.createDirectory(at: destination, withIntermediateDirectories: true)
+                        try files.copyItem(at: child, to: target)
+                    } else if values.isDirectory == true {
+                        try preserveHidden(child, target)
+                    }
+                }
             }
+            try preserveHidden(directory, staging)
             try move(directory, old)
         }
         do { try move(staging, directory) }

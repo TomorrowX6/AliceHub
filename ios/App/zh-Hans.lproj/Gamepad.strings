@@ -61,3 +61,10 @@
 "Start" = "开始";
 "Page Up" = "上一页";
 "Page Down" = "下一页";
+"Enter" = "回车";
+"Esc" = "退出";
+"Space" = "空格";
+"Tab" = "制表键";
+"Shift" = "Shift 键";
+"Ctrl" = "Ctrl 键";
+"Drag controls to move them" = "拖动控件调整位置";

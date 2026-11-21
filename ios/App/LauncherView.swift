@@ -116,7 +116,10 @@ struct LauncherView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundColor(HubTheme.secondary)
-            TextField("搜索游戏", text: $query).submitLabel(.search)
+            TextField("搜索游戏", text: $query)
+                .submitLabel(.search)
+                .disableAutocorrection(true)
+                .textInputAutocapitalization(.never)
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(HubTheme.secondary) }
                     .accessibilityLabel("清除搜索").frame(minWidth: 32, minHeight: 32)

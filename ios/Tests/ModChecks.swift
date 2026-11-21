@@ -70,6 +70,7 @@ struct ModChecks {
         precondition(actions(2, true, installed(3)) == ["切换版本"])
         precondition(actions(0, true, installed(2)) == ["更新补丁", "完整重装"])
         precondition(actions(0, true, installed(0)) == ["重装补丁", "完整重装"])
+        precondition(actions(1, true, installed(0)) == ["降级并完整重装"])
         precondition(actions(0, false, nil) == ["组合安装", "仅装补丁"])
         let comboAction = ModManagerPolicy.actions(releases, index: 0, hasMod: false, installed: nil)[0]
         precondition(comboAction.steps.map(\.fileId) == [3, 4, 5])
@@ -123,6 +124,20 @@ struct ModChecks {
         precondition(InstalledModInfo.read(game)?.version == "v2.0正式版")
         try info.write(to: game)
         precondition(ModOverlay.displayName(game) == "兰斯10 决战 [MOD · v2.0正式版]")
+        for clean in [false, true] {
+            let rejected = try directory("rejected-\(clean)")
+            try write(rejected, "Rance10.ain", "failed replacement")
+            try write(rejected, "extra/new.afa", "must roll back")
+            let previous = try snapshot(game)
+            do {
+                try ModOverlay.applyModStaging(rejected, to: game, cleanReplace: clean) { _ in
+                    throw ModError.message("metadata write failed")
+                }
+                preconditionFailure("Accepted failed commit")
+            } catch {}
+            let restored = try snapshot(game)
+            precondition(restored == previous, "Rollback must preserve files, backups, journal and metadata")
+        }
         let patch = try directory("patch")
         try write(patch, "Rance10.ain", "patched")
         try write(patch, "nested/new.afa", "updated added file")

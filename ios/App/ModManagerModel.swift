@@ -16,6 +16,10 @@ enum ModManagerPolicy {
         }
         let combo = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: true)
         let patch = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: false)
+        let installedIndex = hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1
+        if installedIndex >= 0 && installedIndex < index {
+            return combo.count > 1 ? [ModReleaseAction(title: "降级并完整重装", steps: combo)] : []
+        }
         if ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: index, hasMod: hasMod, installed: installed) {
             var actions = [ModReleaseAction(title: current ? "重装补丁" : "更新补丁", steps: patch)]
             if combo.count > 1 { actions.append(ModReleaseAction(title: "完整重装", steps: combo)) }
@@ -122,10 +126,10 @@ final class ModManagerModel: ObservableObject {
         restoring = false; notice = nil
         installer.installOnlinePlan(steps, to: directory, descriptor: descriptor)
     }
-    func installLocal(_ source: URL, folder: Bool) {
+    func installLocal(_ source: URL, folder: Bool, cleanReplace: Bool) {
         restoring = false; notice = nil
-        if folder { installer.installLocalDirectory(source, to: directory, descriptor: descriptor) }
-        else { installer.installLocalArchive(source, to: directory, descriptor: descriptor) }
+        if folder { installer.installLocalDirectory(source, to: directory, descriptor: descriptor, cleanReplace: cleanReplace) }
+        else { installer.installLocalArchive(source, to: directory, descriptor: descriptor, cleanReplace: cleanReplace) }
     }
     func restore() {
         restoring = true; notice = nil

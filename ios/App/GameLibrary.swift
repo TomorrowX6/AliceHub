@@ -74,7 +74,7 @@ final class GameLibrary: ObservableObject {
         if info.engine == .system3 {
             return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
         }
-        return ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
+        return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
     }
 
     func refresh() {
@@ -196,26 +196,25 @@ final class GameLibrary: ObservableObject {
                             })
                             completedBytes += latestBytes
                         }
-                        var stage = temporary.appendingPathComponent("stage0")
-                        try extract(readable, to: stage)
-                        var root = try Self.gameRoot(in: stage)
-                        for number in 1...3 where root == nil {
+                        func findGame(in stage: URL, depth: Int) throws -> (root: URL, stage: URL)? {
+                            if let root = try Self.gameRoot(in: stage) { return (root, stage) }
+                            guard depth < 3 else { return nil }
                             let contained = try Self.containedFiles(in: stage)
-                            let discs = contained.filter { ["iso", "mdf"].contains($0.pathExtension.lowercased()) }
-                            let disc = discs.first { (try? Iso9660Extractor.containsGameRoot($0)) == true }
-                            guard let nested = disc ?? contained.first(where: { ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }) else { break }
-                            let next = temporary.appendingPathComponent("stage\(number)")
-                            try extract(nested, to: next)
-                            try self.files.removeItem(at: nested)
-                            if ["iso", "mdf"].contains(nested.pathExtension.lowercased()) {
-                                for sidecar in contained where sidecar.pathExtension.lowercased() == "mds" {
-                                    try self.files.removeItem(at: sidecar)
+                            let candidates = contained.filter { ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }
+                            for nested in candidates {
+                                let next = temporary.appendingPathComponent("stage-\(UUID().uuidString)")
+                                do {
+                                    try extract(nested, to: next)
+                                    if let found = try findGame(in: next, depth: depth + 1) { return found }
+                                } catch {
+                                    try? self.files.removeItem(at: next)
                                 }
                             }
-                            stage = next
-                            root = try Self.gameRoot(in: stage)
+                            return nil
                         }
-                        guard let root else { throw LibraryError.archiveNotGame }
+                        let initial = temporary.appendingPathComponent("stage0")
+                        try extract(readable, to: initial)
+                        guard let (root, stage) = try findGame(in: initial, depth: 0) else { throw LibraryError.archiveNotGame }
                         let name = root == stage ? Self.archiveBaseName(source) : root.lastPathComponent
                         guard !name.isEmpty && name != "." && name != ".." && !name.hasPrefix(".") else { throw LibraryError.archiveNotGame }
                         let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
@@ -276,7 +275,7 @@ final class GameLibrary: ObservableObject {
             DispatchQueue.main.async {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     SDL_SetMainReady()
-                    RuntimeGamepad.prepare(for: game.id)
+                    if info.engine == .system4 { RuntimeGamepad.prepare(for: game.id) }
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
                     argv.withUnsafeMutableBufferPointer { buffer in

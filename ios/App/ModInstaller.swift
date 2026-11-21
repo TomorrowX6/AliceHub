@@ -59,12 +59,13 @@ final class ModInstaller: ObservableObject {
                 try self.extract(archive, to: staging)
                 try self.checkCancelled()
                 let previous = InstalledModInfo.read(game)
-                let full = try ModOverlay.applyModStaging(staging, to: game, cleanReplace: !release.isPatch, isCnPatch: descriptor.isCnPatch)
-                try InstalledModInfo(version: release.version,
+                try ModOverlay.applyModStaging(staging, to: game, cleanReplace: !release.isPatch, isCnPatch: descriptor.isCnPatch) { full in
+                    try InstalledModInfo(version: release.version,
                     baseVersion: !release.isPatch || full ? release.version : (release.baseVersion ?? previous?.baseVersion),
                     fileId: release.fileId, baseFileId: !release.isPatch || full ? release.fileId : (release.baseFileId ?? previous?.baseFileId ?? -1),
                     fileName: release.fileName, uploadedAt: release.uploadedAt, source: "online",
-                    installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+                        installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+                }
                 try ModFiles.removeIfPresent(archive)
                 try ModFiles.removeIfPresent(archive.appendingPathExtension("meta"))
             }
@@ -72,19 +73,19 @@ final class ModInstaller: ObservableObject {
     }
 
     @discardableResult
-    func installLocalArchive(_ source: URL, to game: URL, descriptor: ModGameDescriptor) -> Bool {
+    func installLocalArchive(_ source: URL, to game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool = false) -> Bool {
         start {
             let access = source.startAccessingSecurityScopedResource()
             defer { if access { source.stopAccessingSecurityScopedResource() } }
             let staging = game.deletingLastPathComponent().appendingPathComponent(".mod_extract_temp_" + UUID().uuidString)
             defer { try? ModFiles.removeIfPresent(staging) }
             try self.extract(source, to: staging)
-            try self.applyLocal(staging, label: source.lastPathComponent, game: game, descriptor: descriptor)
+            try self.applyLocal(staging, label: source.lastPathComponent, game: game, descriptor: descriptor, cleanReplace: cleanReplace)
         }
     }
 
     @discardableResult
-    func installLocalDirectory(_ source: URL, to game: URL, descriptor: ModGameDescriptor) -> Bool {
+    func installLocalDirectory(_ source: URL, to game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool = false) -> Bool {
         start {
             let access = source.startAccessingSecurityScopedResource()
             defer { if access { source.stopAccessingSecurityScopedResource() } }
@@ -111,7 +112,7 @@ final class ModInstaller: ObservableObject {
                 } catch { copyError = error }
             }
             if let error = coordinationError ?? copyError { throw error }
-            try self.applyLocal(staging, label: source.lastPathComponent, game: game, descriptor: descriptor)
+            try self.applyLocal(staging, label: source.lastPathComponent, game: game, descriptor: descriptor, cleanReplace: cleanReplace)
         }
     }
 
@@ -125,14 +126,15 @@ final class ModInstaller: ObservableObject {
         }
     }
 
-    private func applyLocal(_ staging: URL, label: String, game: URL, descriptor: ModGameDescriptor) throws {
+    private func applyLocal(_ staging: URL, label: String, game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool) throws {
         try checkCancelled()
         let previous = InstalledModInfo.readOrInfer(game)
-        let full = try ModOverlay.applyModStaging(staging, to: game, isCnPatch: descriptor.isCnPatch, allowEvenicle2IncrementalDetect: true)
-        let version = ModCatalog.inferLocalOverlayVersion(label, isPatchHint: !full, fallbackIniDir: full || descriptor.isCnPatch ? game : nil, isCnPatch: descriptor.isCnPatch)
-        try InstalledModInfo(version: version, baseVersion: full || descriptor.isCnPatch ? version : previous?.baseVersion,
+        try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch, allowEvenicle2IncrementalDetect: true) { full in
+            let version = ModCatalog.inferLocalOverlayVersion(label, isPatchHint: !full, fallbackIniDir: full || descriptor.isCnPatch ? game : nil, isCnPatch: descriptor.isCnPatch)
+            try InstalledModInfo(version: version, baseVersion: full ? version : previous?.baseVersion,
             baseFileId: full || descriptor.isCnPatch ? -1 : (previous?.baseFileId ?? -1), fileName: label, source: "local",
-            installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+                installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+        }
     }
     private func extract(_ archive: URL, to staging: URL) throws {
         try ModArchiveExtractor.extract(file: archive, to: staging, progress: { bytes, path in self.report("已解压 \(bytes / 1048576) MB\n\(path)") }, isCancelled: { self.isCancelled() })

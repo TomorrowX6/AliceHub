@@ -172,7 +172,69 @@ enum ModOverlay {
         }
     }
     @discardableResult
-    static func applyModStaging(_ staging: URL, to target: URL, cleanReplace: Bool = true, isCnPatch: Bool = false, allowEvenicle2IncrementalDetect: Bool = false) throws -> Bool {
+    static func applyModStaging(_ staging: URL, to target: URL, cleanReplace: Bool = true, isCnPatch: Bool = false, allowEvenicle2IncrementalDetect: Bool = false, commit: (Bool) throws -> Void = { _ in }) throws -> Bool {
+        if isCnPatch && ModGameDescriptor.classifyDirectory(target)?.id == "evenicle2" { try normalizeEvenicle2CnPatchStaging(staging) }
+        let root = try findModRootDir(staging, isCnPatch: isCnPatch)
+        var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
+        let before = try ModFiles.walk(target)
+        let directories = Set(before.filter(ModFiles.isDirectory).map(\.path))
+        for file in try ModFiles.walk(root) where ModFiles.isFile(file) {
+            let relative = ModFiles.relative(file, to: root)
+            if relative.hasPrefix(".") || NativeGameImport.skip(relative) { continue }
+            let destination = try resolveCaseInsensitiveDest(target, relative)
+            affected.formUnion([destination, destination.appendingPathExtension("vanilla.bak"), destination.appendingPathExtension("vanilla.bak.tmp"), destination.deletingLastPathComponent().appendingPathComponent(".mod_apply_" + destination.lastPathComponent + ".tmp")])
+        }
+        if cleanReplace {
+            for file in before where ModFiles.isFile(file) && file.lastPathComponent.hasSuffix(".vanilla.bak") {
+                affected.insert(file)
+                affected.insert(file.deletingLastPathComponent().appendingPathComponent(String(file.lastPathComponent.dropLast(".vanilla.bak".count))))
+            }
+            let journal = target.appendingPathComponent(journalName)
+            if ModFiles.isFile(journal) {
+                for line in try String(contentsOf: journal, encoding: .utf8).components(separatedBy: .newlines) where !line.isEmpty {
+                    affected.insert(try ModFiles.checked(target, line))
+                }
+            }
+        }
+        affected = Set(affected.map { $0.resolvingSymlinksInPath().standardizedFileURL })
+        let rollback = target.deletingLastPathComponent().appendingPathComponent(".mod_rollback_" + UUID().uuidString)
+        try ModFiles.files.createDirectory(at: rollback, withIntermediateDirectories: true)
+        var keepRollback = false
+        defer { if !keepRollback { try? ModFiles.removeIfPresent(rollback) } }
+        var saved: [URL: URL] = [:]
+        for file in affected.sorted(by: { $0.path < $1.path }) where ModFiles.exists(file) {
+            guard ModFiles.isFile(file) else { throw ModError.message("MOD 目标路径不是文件：" + file.lastPathComponent) }
+            let copy = rollback.appendingPathComponent(ModFiles.relative(file, to: target))
+            try ModFiles.files.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try ModFiles.files.copyItem(at: file, to: copy)
+            saved[file] = copy
+        }
+        do {
+            let full = try applyStaging(staging, to: target, cleanReplace: cleanReplace, isCnPatch: isCnPatch, allowEvenicle2IncrementalDetect: allowEvenicle2IncrementalDetect)
+            try commit(full)
+            return full
+        } catch {
+            let failure = error
+            do {
+                for file in affected {
+                    try ModFiles.removeIfPresent(file)
+                    if let copy = saved[file] {
+                        try ModFiles.files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try ModFiles.replace(copy, file)
+                    }
+                }
+                for directory in try ModFiles.walk(target).reversed() where ModFiles.isDirectory(directory) && !directories.contains(directory.path) && ModFiles.children(directory).isEmpty {
+                    try ModFiles.files.removeItem(at: directory)
+                }
+            } catch {
+                keepRollback = true
+                throw ModError.message("安装失败，恢复文件保留在：" + rollback.path)
+            }
+            throw failure
+        }
+    }
+
+    private static func applyStaging(_ staging: URL, to target: URL, cleanReplace: Bool, isCnPatch: Bool, allowEvenicle2IncrementalDetect: Bool) throws -> Bool {
         let evenicle2 = isCnPatch && ModGameDescriptor.classifyDirectory(target)?.id == "evenicle2"
         if evenicle2 { try normalizeEvenicle2CnPatchStaging(staging) }
         let root = try findModRootDir(staging, isCnPatch: isCnPatch)

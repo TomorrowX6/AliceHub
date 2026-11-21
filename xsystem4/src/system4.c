@@ -1037,6 +1037,7 @@ int main(int argc, char *argv[])
 #endif
 
 	char *ainfile;
+	const char *native_ain_path = NULL;
 	int err = AIN_SUCCESS;
 	bool audit = false;
 
@@ -1170,12 +1171,13 @@ int main(int argc, char *argv[])
 				usage_error("Failed to read .ini file '%s'", argv[0]);
 		} else if (arg_ext && !strcasecmp(arg_ext, "ain")) {
 			config_init_with_ain(argv[0]);
+			native_ain_path = argv[0];
 		} else {
 			usage_error("Can't initialize game with argument '%s'", argv[0]);
 		}
 	}
-	ainfile = gamedir_path(config.ain_filename);
-	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+	ainfile = native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
+	if (!native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
 		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
 		sys4_set_text_gbk(true);
 		char *gbk_ain = gamedir_path(config.ain_filename);

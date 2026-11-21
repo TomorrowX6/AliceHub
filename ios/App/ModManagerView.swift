@@ -12,6 +12,8 @@ struct ModManagerView: View {
     @State private var confirmRestore = false
     @State private var selected: ModSelection?
     @State private var importing: ModImport?
+    @State private var cleanLocal = false
+    @State private var localMode = false
     @Environment(\.dismiss) private var dismiss
 
     init(game: Game, descriptor: ModGameDescriptor, library: GameLibrary) {
@@ -33,7 +35,7 @@ struct ModManagerView: View {
                     } label: {
                         Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
                     }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
-                    Button { localOptions = true } label: {
+                    Button { localMode = true } label: {
                         HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", subtitle: "从文件夹或压缩包选择", symbol: "archivebox")
                     }.buttonStyle(.plain)
                     Button(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", role: .destructive) { confirmRestore = true }
@@ -77,6 +79,13 @@ struct ModManagerView: View {
             Button("从压缩包安装") { importing = ModImport(folder: false) }
             Button("从文件夹安装") { importing = ModImport(folder: true) }
             Button("取消", role: .cancel) {}
+        } message: {
+            Text(cleanLocal ? "完整安装将先还原原版，再安装所选文件。" : "增量安装保留现有 MOD 文件，请先安装对应基础版本。")
+        }
+        .confirmationDialog("选择本地安装方式", isPresented: $localMode, titleVisibility: .visible) {
+            Button("完整安装（替换现有 MOD）") { cleanLocal = true; localOptions = true }
+            Button("增量补丁（保留基础版本）") { cleanLocal = false; localOptions = true }
+            Button("取消", role: .cancel) {}
         }
         .confirmationDialog("切换目录", isPresented: $switching, titleVisibility: .visible) {
             ForEach(library.games.filter { ModGameDescriptor.classifyDirectory($0.url) == model.descriptor }) { game in
@@ -95,7 +104,7 @@ struct ModManagerView: View {
         .sheet(item: $importing) { selection in
             ModDocumentPicker(folder: selection.folder) { source in
                 importing = nil
-                if let source { model.installLocal(source, folder: selection.folder) }
+                if let source { model.installLocal(source, folder: selection.folder, cleanReplace: cleanLocal) }
             }
         }
     }

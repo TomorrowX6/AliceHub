@@ -71,7 +71,7 @@ struct GamepadEditor: View {
                         Toggle(padText("Swap A/B and X/Y"), isOn: $profile.physical.swapAbXy)
                         modePicker("Left stick", mode: $profile.physical.leftStickMode)
                         modePicker("Right stick", mode: $profile.physical.rightStickMode)
-                        modePicker("D-Pad", mode: $profile.physical.dpadMode)
+                        modePicker("D-Pad", mode: $profile.physical.dpadMode, modes: PadMode.allCases.filter { $0 != .wheel })
                         slider("Dead zone", value: $profile.physical.deadzonePct, range: 5...45, fraction: false)
                         slider("Cursor speed", value: $profile.physical.cursorSpeedPct, range: 30...250, fraction: false)
                         NavigationLink(padText("Button Mapping")) {
@@ -86,7 +86,7 @@ struct GamepadEditor: View {
                                 Button(padText("Reset Button Mapping"), role: .destructive) {
                                     profile.physical.bindings = PhysicalPad.defaults
                                 }
-                            }.navigationTitle(padText("Button Mapping"))
+                            }.modifier(HubListStyle()).navigationTitle(padText("Button Mapping"))
                         }
                     }
                     Section {
@@ -212,9 +212,9 @@ struct GamepadEditor: View {
             (kind != .button && profile.virtual.controls.contains { $0.kind == kind }))
     }
 
-    private func modePicker(_ title: String, mode: Binding<PadMode>) -> some View {
+    private func modePicker(_ title: String, mode: Binding<PadMode>, modes: [PadMode] = PadMode.allCases) -> some View {
         Picker(padText(title), selection: mode) {
-            ForEach(PadMode.allCases) { mode in Text(mode.title).tag(mode) }
+            ForEach(modes) { mode in Text(mode.title).tag(mode) }
         }
     }
 
