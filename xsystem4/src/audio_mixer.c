@@ -551,7 +551,9 @@ int channel_get_group(struct channel *ch) { return ch->mixer_no; }
 
 bool channel_set_group(struct channel *ch, int group)
 {
-	if (group < 0 || group >= nr_mixers || ch->voice >= 0) return false;
+	if (group < 0 || group >= nr_mixers || ch->voice >= 0 ||
+			(config.mixer_nr_channels && (unsigned)group >= config.mixer_nr_channels))
+		return false;
 	ch->mixer_no = group;
 	return true;
 }

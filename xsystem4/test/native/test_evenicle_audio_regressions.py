@@ -360,6 +360,42 @@ static void bounds_test(void) {
         (STS_MIXER_VOICES - 32) * sizeof(sts_mixer_voice_t) * 14);
 }
 
+static void authored_groups_test(void) {
+    int baseline = slots();
+    assert(config.mixer_nr_channels == STS_MIXER_VOICES);
+    assert(nr_mixers == STS_MIXER_VOICES + 1);
+    assert(master == &mixers[config.mixer_nr_channels]);
+    assert(mixers[255].parent == &mixers[3]);
+    prepare(12, "last", 255);
+    struct channel *ch = id_pool_get(&sounds, 12);
+    assert(!channel_set_group(ch, -1));
+    assert(!channel_set_group(ch, 256));
+    assert(!channel_set_group(ch, 257));
+    assert(!channel_set_group(ch, 1023));
+    assert(channel_get_group(ch) == 255);
+    assert(kiwi_loop(12, 0));
+    assert(kiwi_play(12));
+    assert(render(6) > 0.01f);
+    assert(mixer_set_mute(3, 1));
+    render(4);
+    assert(render(4) == 0);
+    assert(mixer_set_mute(3, 0));
+    assert(render(4) > 0.01f);
+    assert(kiwi_unprepare(12));
+    render(4);
+    static const char *const invalid[] = {"skipped", "past-skipped", "after-master", "negative"};
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(*invalid); i++) {
+        struct string *name = cstr_to_string(invalid[i]);
+        assert(!kiwi_prepare_3(12, name, false));
+        assert(!kiwi_exists(12));
+        assert(!kiwi_play(12));
+        assert(slots() == baseline);
+        assert(render(4) == 0);
+        free_string(name);
+    }
+    printf("implicit master=256: authored group 255 renders and obeys Voice mute; groups -1/256/257/1023 fail Prepare without audio or slot leaks\n");
+}
+
 int main(int argc, char **argv) {
     assert(argc == 5);
     wave_path = argv[3];
@@ -372,7 +408,10 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[4], "limit-implicit")) {
         static const char *const names[] = {"Music", "Sound", "Effects", "Speech", "Ambient", "BackVoice"};
         set_default_mixers(names, NULL, 6);
-    } else if (strcmp(argv[4], "empty") && strcmp(argv[4], "limit-empty")) {
+    } else if (!strcmp(argv[4], "authored-implicit")) {
+        static const char *const names[] = {"Music", "Sound", "SE", "Voice", "Ambient", "BackVoice"};
+        set_default_mixers(names, NULL, 6);
+    } else if (strcmp(argv[4], "empty") && strcmp(argv[4], "limit-empty") && strcmp(argv[4], "legacy")) {
         static const char *const names[] = {"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice"};
         static const int volumes[] = {50, 80, 80, 80, 80, 80};
         set_default_mixers(names, volumes, 6);
@@ -391,6 +430,14 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[4], "full")) exhaustion_test();
     else if (!strcmp(argv[4], "pressure")) pressure_test();
     else if (!strcmp(argv[4], "bounds")) bounds_test();
+    else if (!strcmp(argv[4], "authored-implicit")) authored_groups_test();
+    else if (!strcmp(argv[4], "legacy")) {
+        assert(config.mixer_nr_channels == 0 && nr_mixers == 3);
+        prepare(12, "master", 0);
+        assert(channel_set_group(id_pool_get(&sounds, 12), 2));
+        assert(kiwi_unprepare(12));
+        printf("legacy defaults: unconfigured Music/Sound/Master groups remain assignable\n");
+    }
     else if (!strncmp(argv[4], "limit-", 6)) link_limit_test(argv[4]);
     else if (!strcmp(argv[4], "invalid") || !strcmp(argv[4], "absent")) {
         assert(config.mixer_nr_channels == 6);
@@ -412,12 +459,13 @@ class EvenicleAudioTests(unittest.TestCase):
             audio = directory / "audio.wav"
             volumes = [0.8, 0.8, 0.8, 1.0, 0.8, 0.8, 0.53, 0.59, -0.2, 1.5, 0.8, 0.8, 0.8, 0.8]
             rows = [(-1, 0.8), (256, 0.8), (1023, 0.8), (1024, 0.8)] if invalid else list(enumerate(volumes))
-            if mode.startswith("limit-"):
+            if mode.startswith("limit-") or mode == "authored-implicit":
                 rows = [(255, 0.8), (256, 0.8), (1023, 0.8)]
-            groups.write_bytes(build_extf([] if mode == "absent" else [group_table(rows)]))
+            groups.write_bytes(build_extf([] if mode in ("absent", "legacy") else [group_table(rows)]))
             metadata.write_bytes(build_extf([_ex_soundinfo_table(
                 [(b"10001", 11), (b"10101", 10), (b"bgm", 1),
-                 (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100), (b"last", 255)],
+                 (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100), (b"last", 255),
+                 (b"skipped", 256), (b"past-skipped", 1023), (b"after-master", 257), (b"negative", -1)],
                 [(b"Name", 3), (b"Group", 1)],
             )]))
             with wave.open(str(audio), "wb") as stream:
@@ -471,6 +519,12 @@ class EvenicleAudioTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "Failed to link audio mixer 257 .*stream capacity 256 exhausted"):
             self.run_probe("linkfail")
         print("oversized existing configuration: parent link failure is fatal, not silent", flush=True)
+
+    def test_implicit_master_is_not_an_authored_group(self):
+        self.run_probe("authored-implicit")
+
+    def test_legacy_default_groups(self):
+        self.run_probe("legacy")
 
 
 if __name__ == "__main__":
