@@ -15,9 +15,11 @@
  */
 
 #include <math.h>
+#include <string.h>
 
 #include "system4.h"
 #include "system4/ain.h"
+#include "system4/file.h"
 #include "system4/fnl.h"
 #include "system4/hashtable.h"
 #include "system4/string.h"
@@ -116,21 +118,54 @@ static bool font_initialized = false;
 // the .fnl, draw it at the same em so the layout matches the original.
 static float fnl_substitute_scale = 1.0f;
 
+static uint32_t read_le32(const uint8_t *p)
+{
+	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+// Reads only the metrics it needs, with bounds checks: fnl_open() exits on a
+// damaged index, and the .fnl is otherwise unused here.
 static void init_fnl_substitute_scale(void)
 {
 	if (!sys4_source_is_utf8 || !config.fnl_path)
 		return;
-	struct fnl *fnl = fnl_open(config.fnl_path);
-	if (!fnl)
+	FILE *f = file_open_utf8(config.fnl_path, "rb");
+	if (!f)
 		return;
-	if (fnl->nr_fonts && fnl->fonts[0].nr_faces) {
-		struct fnl_font *font = &fnl->fonts[0];
-		struct fnl_font_face *face = &font->faces[font->nr_faces - 1];
-		struct fnl_glyph *g = fnl_get_glyph(face, 0x8a6d); // 確 (full-width)
-		if (g && g->data_pos && face->height && g->width < face->height)
-			fnl_substitute_scale = (float)g->width / (float)face->height;
+	uint8_t header[16];
+	uint8_t *index = NULL;
+	if (fread(header, sizeof(header), 1, f) != 1 || memcmp(header, "FNA\0", 4))
+		goto out;
+	uint32_t index_size = read_le32(header + 12);
+	if (index_size < 8 || index_size > (64u << 20))
+		goto out;
+	index = xmalloc(index_size);
+	if (fread(index, index_size, 1, f) != 1)
+		goto out;
+	// nr_fonts, then font 0: nr_faces, then per face: height, uk, nr_glyphs, glyphs[10 bytes]
+	uint32_t nr_faces = read_le32(index + 4);
+	size_t pos = 8;
+	uint32_t height = 0, nr_glyphs = 0;
+	size_t glyphs = 0;
+	for (uint32_t i = 0; i < nr_faces; i++) {
+		if (index_size - pos < 12)
+			goto out;
+		height = read_le32(index + pos);
+		nr_glyphs = read_le32(index + pos + 8);
+		glyphs = pos + 12;
+		if (nr_glyphs > (index_size - glyphs) / 10)
+			goto out;
+		pos = glyphs + (size_t)nr_glyphs * 10;
 	}
-	fnl_free(fnl);
+	unsigned g = fnl_char_to_index(0x8a6d); // 確 (full-width)
+	if (!nr_faces || !height || g >= nr_glyphs)
+		goto out;
+	unsigned width = index[glyphs + g * 10] | index[glyphs + g * 10 + 1] << 8;
+	if (width && width < height)
+		fnl_substitute_scale = (float)width / (float)height;
+out:
+	free(index);
+	fclose(f);
 }
 
 void gfx_font_init(void)

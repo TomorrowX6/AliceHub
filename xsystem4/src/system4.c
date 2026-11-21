@@ -224,22 +224,7 @@ static bool read_config_entries(const char *path);
 
 static bool read_config(const char *path)
 {
-	bool utf8 = file_text_is_utf8(path);
-	set_utf8_release(utf8);
-	if (!read_config_entries(path))
-		return false;
-	if (!utf8 || !config.ain_filename)
-		return true;
-	// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a Shift-JIS/GBK game.
-	char *dir = xstrdup(path);
-	char *ain_path = xmalloc(PATH_MAX);
-	snprintf(ain_path, PATH_MAX, "%s/%s", path_dirname(dir), config.ain_filename);
-	bool ain_utf8 = ain_text_is_utf8(ain_path);
-	free(ain_path);
-	free(dir);
-	if (ain_utf8)
-		return true;
-	set_utf8_release(false);
+	set_utf8_release(file_text_is_utf8(path));
 	return read_config_entries(path);
 }
 
@@ -447,6 +432,18 @@ static bool config_init_with_ini(const char *ini_path)
 	char *tmp = xstrdup(ini_path);
 	config.game_dir = xstrdup(path_dirname(tmp));
 	free(tmp);
+	if (sys4_source_is_utf8) {
+		// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a
+		// Shift-JIS game. Its values are then re-read as UTF-8 converted to Shift-JIS.
+		char *ain_path = gamedir_path(config.ain_filename);
+		bool ain_utf8 = ain_text_is_utf8(ain_path);
+		free(ain_path);
+		if (!ain_utf8) {
+			sys4_set_text_gbk(false);
+			read_config_entries(ini_path);
+			sys4_set_source_utf8(false);
+		}
+	}
 	config_init();
 	return true;
 }

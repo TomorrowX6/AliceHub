@@ -574,14 +574,14 @@ char *sys4_source_strdup(const char *src)
 {
 	if (!sys4_source_is_utf8)
 		return strdup(src);
-	return utf2cjk_impl(src, strlen(src), true, false);
+	return utf2cjk_impl(src, strlen(src), sys4_text_is_gbk, false);
 }
 
 struct string *sys4_source_make_string(const char *src, size_t len)
 {
 	if (!sys4_source_is_utf8 || !len)
 		return make_string(src, len);
-	char *conv = utf2cjk_impl(src, len, true, false);
+	char *conv = utf2cjk_impl(src, len, sys4_text_is_gbk, false);
 	struct string *s = make_string(conv, strlen(conv));
 	free(conv);
 	return s;
