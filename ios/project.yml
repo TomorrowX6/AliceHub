@@ -27,6 +27,9 @@ targets:
         buildPhase: resources
       - path: ../xsystem35/fonts/mincho.ttf
         buildPhase: resources
+      - path: ../xsystem35/soundfonts
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.alicehub

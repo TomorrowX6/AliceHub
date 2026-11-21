@@ -128,8 +128,12 @@ The native System 3 touch handler is retained: one finger is left-click,
 two fingers or a tap in the black border is right-click, three fingers opens
 the engine menu. There is no additional Android launcher gesture overlay.
 
-**MIDI synthesis is unavailable on iOS.** MIDI-only music stays silent without
-an initialization error. Recorded MP3/OGG/WAV BGM and PCM remain supported;
+MIDI BGM uses TinySoundFont with the bundled GPLv2 TimGM6mb GM soundfont.
+The launcher supplies its path through `XSYSTEM35_SOUNDFONT`; a missing or invalid
+soundfont logs a warning and disables MIDI without disabling recorded audio.
+MIDI is mixed alongside recorded music and PCM, supports finite/infinite loops,
+volume and fades, and pauses with the scene without advancing its position.
+Recorded MP3/OGG/WAV BGM and PCM remain supported;
 CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
 
 ### System 4
