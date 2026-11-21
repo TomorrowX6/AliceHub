@@ -26,14 +26,21 @@ struct LauncherView: View {
                     Spacer()
                     Image(systemName: "gamecontroller").font(.system(size: 56)).foregroundColor(.accentColor)
                     Text("还没有游戏").font(.title2).bold().padding(.top)
-                    Text("导入 System 4 游戏文件夹、压缩包或光盘镜像即可开始。\n也可以通过“文件”App，将游戏文件夹复制到\n“我的 iPhone / AliceHub / Games”中。")
+                    Text("导入 System 3.x / System 4 游戏文件夹、压缩包或光盘镜像即可开始。\n也可以通过“文件”App，将游戏文件夹复制到\n“我的 iPhone / AliceHub / Games”中。")
                         .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center).padding()
                     Spacer()
                 } else {
                     List {
                         ForEach(library.games) { game in
                             Button { library.launch(game) } label: {
-                                Label(game.name, systemImage: "gamecontroller.fill").padding(.vertical, 8)
+                                Label {
+                                    VStack(alignment: .leading) {
+                                        Text(game.name)
+                                        Text(game.engine.rawValue).font(.caption).foregroundColor(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "gamecontroller.fill")
+                                }.padding(.vertical, 8)
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button { gamepadEditor = .game(game.id) } label: {

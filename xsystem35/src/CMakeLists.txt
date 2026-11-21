@@ -27,7 +27,9 @@ add_library(src_lib STATIC
 target_compile_options(src_lib PRIVATE -Wno-pointer-sign -Wall)
 target_include_directories(src_lib PRIVATE .)
 
-if (ANDROID)
+if (ALICEHUB_IOS)
+  add_library(xsystem35 STATIC)
+elseif (ANDROID)
   add_library(xsystem35 SHARED)
 else()
   add_executable(xsystem35)
@@ -194,6 +196,10 @@ elseif (ANDROID)
   target_link_libraries(xsystem35 PRIVATE ${ndk_log})
   target_link_options(xsystem35 PRIVATE "LINKER:-z,max-page-size=16384")
   install(TARGETS xsystem35 LIBRARY DESTINATION lib)
+
+elseif (ALICEHUB_IOS)
+  install(TARGETS xsystem35 src_lib ARCHIVE DESTINATION lib)
+  install(FILES xsystem35_main.h DESTINATION include)
 
 else()  # non-emscripten, non-android
   if (TARGET cJSON)

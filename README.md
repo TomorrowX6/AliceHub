@@ -96,8 +96,8 @@
 
 - **获取 IPA**：在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 中打开一次成功的构建，在 **Artifacts** 下载 `AliceHub-ios-unsigned`（下载需登录 GitHub）。解压后得到 `AliceHub-<shortsha>-ios-unsigned.ipa`；这是**未签名**的安装包，不包含游戏资源。
 - **侧载安装**：可使用 AltStore / SideStore / Sideloadly 签名安装；免费 Apple ID 的签名通常 **7 天后过期**，需定期续签。TrollStore 仅适用于其支持的设备与系统版本，不适用于所有 iOS 版本。本应用目标为 iOS 15.0+、arm64。
-- **导入游戏**：自行准备合法的 **System 4** 完整游戏文件夹，复制到“文件”→“我的 iPhone”→“AliceHub”→“Games”，或在应用中点击 **导入游戏文件夹**。游戏文件夹根目录须包含 `AliceStart.ini`、`System40.ini` 或 `*.ain`，点击列表中的文件夹名启动。
-- **当前限制**：仅支持 System 4；尚无虚拟手柄、MOD 管理、modifier（修改器）或在线安装。退出游戏会关闭整个应用。已在模拟器验证，**真机尚未测试**；音频仍需在具备音频设备的环境验证。
+- **导入游戏**：自行准备合法的 **System 3.x / System 4** 完整游戏文件夹，复制到“文件”→“我的 iPhone”→“AliceHub”→“Games”，或在应用中点击 **导入游戏文件夹**。System 4 根目录须包含 `AliceStart.ini`、`System40.ini` 或非 `System39.ain` 的 `*.ain`；System 3.x 须包含 `*SA.ALD`、`ADISK.ALD`、`System39.ini` 或 `System39.ain`。列表显示所用引擎；混合标记时 System 4 优先。
+- **当前限制**：System 3.x 暂无 MIDI 合成，MIDI 音乐静音（录制的 BGM/PCM 仍受支持）。尚无虚拟手柄、MOD 管理、modifier（修改器）或在线安装。退出游戏会关闭整个应用。已在模拟器验证，**真机尚未测试**；音频仍需在具备音频设备的环境验证。
 - **本地构建**：需要 macOS、Xcode 与 Homebrew，先执行 `brew install cmake ninja autoconf automake libtool bison flex pkgconf xcodegen`，再运行 `ios/build-app.sh ipa` 生成 `ios/build/AliceHub.ipa`，或运行 `ios/build-app.sh sim` 构建模拟器版本。详见 [iOS 构建说明](ios/README.md)。
 
 ---

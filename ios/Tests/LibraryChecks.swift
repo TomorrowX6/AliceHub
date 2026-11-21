@@ -5,6 +5,9 @@ enum RuntimeGamepad { static func prepare(for game: String) {} }
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }
+func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
+    fatalError("Library checks must not launch the engine")
+}
 
 @main
 struct LibraryChecks {
@@ -53,6 +56,32 @@ struct LibraryChecks {
         try files.removeItem(at: source.appendingPathComponent("sYsTeM40.InI"))
         try files.removeItem(at: firstAIN)
         try files.removeItem(at: secondAIN)
+        let saves = documents.appendingPathComponent("Saves/test")
+        for marker in ["testSA.ALD", "aDiSk.AlD", "sYsTeM39.iNi", "System39.ain"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            precondition(GameLibrary.isGame(source))
+            precondition(Game(url: source).engine == .system3)
+            let info = try GameLibrary.launchInfo(source)
+            precondition(info.engine == .system3 && samePath(info.target, source))
+            let sys39 = marker.lowercased().hasPrefix("system39")
+            let arguments = try GameLibrary.launchArguments(source, saves: saves)
+            precondition(arguments == ["xsystem35", "-gamedir", source.path, "-savedir", saves.path] + (sys39 ? ["-saveformat", "system39"] : []))
+            try Data().write(to: firstAIN)
+            let mixed = try GameLibrary.launchInfo(source)
+            precondition(mixed.engine == .system4 && samePath(mixed.target, firstAIN))
+            try files.removeItem(at: firstAIN)
+            try Data().write(to: source.appendingPathComponent("AliceStart.ini"))
+            precondition(Game(url: source).engine == .system4)
+            try files.removeItem(at: source.appendingPathComponent("AliceStart.ini"))
+            try files.removeItem(at: file)
+        }
+        for marker in ["random.ald", "ADISK", "something.ini"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            precondition(!GameLibrary.isGame(source))
+            try files.removeItem(at: file)
+        }
         try Data().write(to: source.appendingPathComponent("System40.ini"))
         func awaitImport() {
             let deadline = Date().addingTimeInterval(10)
@@ -71,6 +100,12 @@ struct LibraryChecks {
         library.delete(library.games[0])
         precondition(library.games.isEmpty)
         try files.removeItem(at: source.appendingPathComponent("System40.ini"))
+        try Data().write(to: source.appendingPathComponent("TESTsa.ald"))
+        library.importFolder(source)
+        awaitImport()
+        precondition(library.games.count == 1 && library.games[0].engine == .system3 && library.error == nil)
+        library.delete(library.games[0])
+        try files.removeItem(at: source.appendingPathComponent("TESTsa.ald"))
         library.importFolder(source)
         awaitImport()
         precondition(library.games.isEmpty && library.error == LibraryError.notGame.localizedDescription)

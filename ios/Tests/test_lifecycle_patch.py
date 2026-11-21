@@ -81,6 +81,11 @@ int main(void) {
 #include <assert.h>
 #include <stdbool.h>
 static int context, step;
+typedef int SDL_bool;
+#define SDL_TRUE 1
+static void (*background_hook)(SDL_bool);
+static int hook_calls;
+static void hook(SDL_bool paused) { assert(paused); hook_calls++; }
 static int SDL_GL_GetCurrentContext(void) { return context; }
 static void glFinish(void) { assert(step++ == 0); }
 static void mixer_set_app_backgrounded(bool paused) { assert(paused); assert(step++ == context); }
@@ -91,6 +96,8 @@ static void resign(void) {
 int main(void) {
     resign(); assert(step == 2);
     context = 1; step = 0; resign(); assert(step == 3);
+    background_hook = hook; context = 0; step = 0; resign();
+    assert(step == 0 && hook_calls == 1);
 }
 '''
         with tempfile.TemporaryDirectory() as temporary:

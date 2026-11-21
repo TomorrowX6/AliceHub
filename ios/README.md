@@ -35,6 +35,30 @@ disabled in configure. CFI directives are disabled for that dependency because
 Xcode's assembler rejects its AArch64 CFI expressions. Exceptions must not unwind
 through libffi calls.
 
+## Isolated engines
+
+The native build also stages SDL2_mixer 2.8.1 (minimp3 and Vorbisfile, no MIDI)
+and the SDL2 xsystem35 static engine with the debugger disabled. The launcher
+supports System 3.x and System 4 and labels each game's engine. System 4 INIs
+and non-System39 AINs take precedence over System 3 markers (`*SA.ALD`,
+`ADISK.ALD`, `System39.ini`, `System39.ain`). Only regular root files count.
+
+`libxsystem4_engine.a` contains one prelinked object combining xsystem4, sys4
+and cglm; `libxsystem35_engine.a` similarly combines xsystem35, src_lib and
+modules. The iOS linker localizes everything except each engine's entry point
+and the shared `alicehub_ios_*` platform functions. Engines and their
+private libraries use `-fno-common` so tentative globals are isolated too. Shared
+dependencies remain undefined until the app link. Do not link the raw engine
+archives alongside these isolated archives.
+
+`EnginePlatform.m` stays inside the System 4 object so its audio/save lifecycle
+hooks resolve to the isolated System 4 implementations by default. System 3
+registers its own audio/render-flush/message-skip hook before attaching its
+window; the SDL UIKit event pump suspends either engine while inactive.
+The app force-loads both isolated archives to exercise their combined link.
+After building both SDKs, validate the staged
+exports with `python3 ios/Tests/test_engine_isolation.py`.
+
 ## App shell
 
 `ios/build-app.sh sim` generates the Xcode project and builds an unsigned
@@ -61,6 +85,27 @@ in filename order when multiple AINs exist.
 
 ## App launch contract
 
+### System 3.x
+
+The launcher calls `xsystem35_main` with `-gamedir <root> -savedir <saveDir>`
+and adds `-saveformat system39` for System39 INI/AIN markers. The game directory
+is the working directory. Engine output and crash reports use `Documents/Logs`.
+Bundled `MTLc3m.ttf`/`mincho.ttf` paths are supplied via
+`XSYSTEM35_FONT_GOTHIC`/`XSYSTEM35_FONT_MINCHO` as defaults before loading
+`.xsys35rc`; profile and CLI font overrides take precedence. Relative profile
+font paths resolve against the game directory.
+
+SDL's renderer handles Retina scaling and aspect-preserving letterboxing.
+The native System 3 touch handler is retained: one finger is left-click,
+two fingers or a tap in the black border is right-click, three fingers opens
+the engine menu. There is no additional Android launcher gesture overlay.
+
+**MIDI synthesis is unavailable on iOS.** MIDI-only music stays silent without
+an initialization error. Recorded MP3/OGG/WAV BGM and PCM remain supported;
+CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
+
+### System 4
+
 * Include `xsystem4_main.h` and call `xsystem4_main(argc, argv)` with an argv[0]
   such as `xsystem4`, followed by `--save-folder`, an absolute writable sandbox
   directory, `--save-format=rsm`, and the absolute game directory (or INI/AIN).
@@ -83,7 +128,7 @@ in filename order when multiple AINs exist.
   environment variables or JNI modifier/gamepad initialization apply on iOS.
 * Integrate SDL's UIKit lifecycle and call `SDL_SetMainReady()` before entering
   the engine; the engine uses `SDL_MAIN_HANDLED` and exports no main/SDL_main.
-  Link the staged dependencies (including sys4 and cglm), SDK zlib/iconv and
+  Link the isolated engine archives and shared dependencies, SDK zlib/iconv and
   SDL's required Apple frameworks; do not link SDL2main as an app entry point.
   Static compilation alone does not validate final app linking or lifecycle.
 * The non-Android shutdown path still calls `sys_exit`/process exit; returning

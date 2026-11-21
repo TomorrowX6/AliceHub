@@ -89,14 +89,57 @@ ExternalProject_Add_Step(SDL2 alicehub_lifecycle_patch
     -P ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-lifecycle.cmake
   DEPENDEES patch DEPENDERS configure
   DEPENDS ${CMAKE_CURRENT_LIST_DIR}/patch-sdl-lifecycle.cmake)
+dependency(SDL2_mixer https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1.tar.gz SHA1=b38a337de10b04c51053ca0d17b57c31f5dcdd96
+  -DSDL2MIXER_VENDORED=OFF -DSDL2MIXER_DEPS_SHARED=OFF
+  -DSDL2MIXER_INSTALL=ON -DSDL2MIXER_SAMPLES=OFF
+  -DSDL2MIXER_FLAC=OFF -DSDL2MIXER_GME=OFF -DSDL2MIXER_MOD=OFF
+  -DSDL2MIXER_MIDI=OFF -DSDL2MIXER_OPUS=OFF -DSDL2MIXER_WAVPACK=OFF
+  -DSDL2MIXER_MP3=ON -DSDL2MIXER_MP3_MINIMP3=ON
+  -DSDL2MIXER_VORBIS=VORBISFILE -DSDL2MIXER_VORBIS_VORBISFILE_SHARED=OFF)
+ExternalProject_Add_StepDependencies(SDL2_mixer configure SDL2 libogg libvorbis)
 ExternalProject_Add(freetype
   GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE
   CMAKE_ARGS ${common} -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
     -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON)
 ExternalProject_Add(xsystem4
   SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../xsystem4
-  CMAKE_ARGS ${common} -DALICEHUB_IOS=ON
+  CMAKE_ARGS ${common} -DALICEHUB_IOS=ON -DCMAKE_C_FLAGS=-fno-common
     -DCMAKE_MODULE_PATH=${CMAKE_CURRENT_LIST_DIR}/../cmake
   BUILD_ALWAYS YES)
 ExternalProject_Add_StepDependencies(xsystem4 configure
   SDL2 freetype libjpeg-turbo libwebp libpng libffi libsndfile libdeflate)
+ExternalProject_Add(xsystem35
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../xsystem35
+  CMAKE_ARGS ${common} -DALICEHUB_IOS=ON -DCMAKE_C_FLAGS=-fno-common
+    -DXSYSTEM35_SDL_VERSION=2
+    -DENABLE_DEBUGGER=OFF
+    -DCMAKE_MODULE_PATH=${CMAKE_CURRENT_LIST_DIR}/../cmake
+  BUILD_ALWAYS YES)
+ExternalProject_Add_StepDependencies(xsystem35 configure
+  SDL2 SDL2_mixer freetype libwebp)
+
+function(isolate_engine name)
+  set(object "${stage}/lib/${name}_engine.o")
+  set(archive "${stage}/lib/lib${name}_engine.a")
+  set(inputs "")
+  foreach(library IN LISTS ARGN)
+    list(APPEND inputs "${stage}/lib/lib${library}.a")
+  endforeach()
+  set(exports -Wl,-exported_symbol,_${name}_main)
+  if(name STREQUAL "xsystem4")
+    list(APPEND exports -Wl,-exported_symbol,_alicehub_ios_prepare_window
+      -Wl,-exported_symbol,_alicehub_ios_bind_drawable
+      -Wl,-exported_symbol,_alicehub_ios_set_background_hook)
+  endif()
+  add_custom_target(${name}_engine ALL
+    COMMAND ${CMAKE_C_COMPILER} -target ${ffi_target} -isysroot ${sdk_path}
+      -nostdlib -Wl,-r -Wl,-all_load ${inputs} ${exports} -o ${object}
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${archive}
+    COMMAND ${CMAKE_AR} qc ${archive} ${object}
+    COMMAND ${CMAKE_RANLIB} ${archive}
+    BYPRODUCTS ${object} ${archive}
+    DEPENDS ${name}
+    VERBATIM)
+endfunction()
+isolate_engine(xsystem4 xsystem4 sys4 cglm)
+isolate_engine(xsystem35 xsystem35 src_lib modules)
