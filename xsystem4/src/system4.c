@@ -177,9 +177,49 @@ static void read_mixer_channels(struct ini_entry *entry)
 	}
 }
 
+static void detect_utf8_release(const char *ini_path)
+{
+	size_t len;
+	uint8_t *data = file_read(ini_path, &len);
+	if (data && sys4_bytes_look_utf8(data, len)) {
+		// e.g. the BokiBoki Traditional Chinese release of Tsumamigui 3 stores all text as UTF-8.
+		sys4_set_source_utf8(true);
+		sys4_set_text_gbk(true);
+	}
+	free(data);
+}
+
+// Guards against a UTF-8 AliceStart.ini edited by hand for a Shift-JIS/GBK game.
+static bool ain_text_is_utf8(const char *path)
+{
+	int err;
+	sys4_set_source_utf8(false);
+	struct ain *raw = ain_open(path, &err);
+	sys4_set_source_utf8(true);
+	if (!raw)
+		return true;
+	bool utf8 = false;
+	for (int i = 0; i < raw->nr_messages; i++) {
+		struct string *m = raw->messages[i];
+		bool ascii = true;
+		for (int j = 0; j < m->size && ascii; j++)
+			ascii = (uint8_t)m->text[j] < 0x80;
+		if (ascii)
+			continue;
+		if (!sys4_bytes_look_utf8((const uint8_t *)m->text, m->size)) {
+			utf8 = false;
+			break;
+		}
+		utf8 = true;
+	}
+	ain_free(raw);
+	return utf8;
+}
+
 static bool read_config(const char *path)
 {
 	int ini_size;
+	detect_utf8_release(path);
 	struct ini_entry *ini = ini_parse(path, &ini_size);
 	if (!ini)
 		return false;
@@ -1214,6 +1254,10 @@ int main(int argc, char *argv[])
 		config.save_dir = xstrdup(savedir);
 	}
 
+	if (sys4_source_is_utf8 && !ain_text_is_utf8(ainfile)) {
+		sys4_set_source_utf8(false);
+		sys4_set_text_gbk(false);
+	}
 	if (!(ain = ain_open(ainfile, &err))) {
 		free(ainfile);
 		ERROR("%s", ain_strerror(err));

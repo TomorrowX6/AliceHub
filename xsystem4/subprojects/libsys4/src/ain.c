@@ -29,6 +29,7 @@
 #include "little_endian.h"
 #include "system4.h"
 #include "system4/ain.h"
+#include "system4/utfsjis.h"
 #include "system4/file.h"
 #include "system4/hashtable.h"
 #include "system4/instructions.h"
@@ -1503,7 +1504,7 @@ err:
 
 struct ain *ain_open(const char *path, int *error)
 {
-	return ain_open_conv(path, strdup, error);
+	return ain_open_conv(path, sys4_source_strdup, error);
 }
 
 struct ain *ain_new(int major_version, int minor_version)

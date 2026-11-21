@@ -481,7 +481,7 @@ struct ex *ex_read_conv(const uint8_t *data, size_t size, struct string*(*conv)(
 
 struct ex *ex_read(const uint8_t *data, size_t size)
 {
-	return ex_read_conv(data, size, make_string);
+	return ex_read_conv(data, size, sys4_source_make_string);
 }
 
 struct ex *ex_read_file_conv(const char *path, struct string*(*conv)(const char*,size_t))
@@ -497,7 +497,7 @@ struct ex *ex_read_file_conv(const char *path, struct string*(*conv)(const char*
 
 struct ex *ex_read_file(const char *path)
 {
-	return ex_read_file_conv(path, make_string);
+	return ex_read_file_conv(path, sys4_source_make_string);
 }
 
 static void ex_copy_value(struct ex_value *out, struct ex_value *in);
