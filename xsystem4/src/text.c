@@ -111,11 +111,34 @@ static struct font *load_font(enum font_face type)
 
 static bool font_initialized = false;
 
+// UTF-8 releases lay text out for their .fnl font, whose glyphs fill only part of
+// the cell (Tsumamigui 3: 32px advance in a 48px cell). When a TTF stands in for
+// the .fnl, draw it at the same em so the layout matches the original.
+static float fnl_substitute_scale = 1.0f;
+
+static void init_fnl_substitute_scale(void)
+{
+	if (!sys4_source_is_utf8 || !config.fnl_path)
+		return;
+	struct fnl *fnl = fnl_open(config.fnl_path);
+	if (!fnl)
+		return;
+	if (fnl->nr_fonts && fnl->fonts[0].nr_faces) {
+		struct fnl_font *font = &fnl->fonts[0];
+		struct fnl_font_face *face = &font->faces[font->nr_faces - 1];
+		struct fnl_glyph *g = fnl_get_glyph(face, 0x8a6d); // 確 (full-width)
+		if (g && g->data_pos && face->height && g->width < face->height)
+			fnl_substitute_scale = (float)g->width / (float)face->height;
+	}
+	fnl_free(fnl);
+}
+
 void gfx_font_init(void)
 {
 	if (font_initialized)
 		return;
 	ft_font_init();
+	init_fnl_substitute_scale();
 	font_ttf[FONT_GOTHIC] = load_font(FONT_GOTHIC);
 	font_ttf[FONT_MINCHO] = load_font(FONT_MINCHO);
 
@@ -154,6 +177,8 @@ static struct font *get_font(unsigned face)
 struct font_size *gfx_font_get_size(unsigned face, float size)
 {
 	struct font *font = get_font(face);
+	if (face > 255 && (sys4_text_is_gbk || sys4_has_mai_word_table()))
+		size *= fnl_substitute_scale;
 	return font->get_size(font, size);
 }
 
