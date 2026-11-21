@@ -265,6 +265,7 @@ object OnlineInstaller {
     const val IXSEAL_CDN_URL = "https://alicehub.000.moe/ixseal"
     const val HARUKA_CDN_URL = "https://alicehub.000.moe/haruka"
     const val TSUMASHIBORI_CDN_URL = "https://alicehub.000.moe/tsumashibori"
+    const val TSUMAMIGUI3_CDN_URL = "https://alicehub.000.moe/tsumamigui3"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1133,6 +1134,7 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
             classifiedStagedId == GameCatalog.ID_HARUKA -> sanitizedManifestBase.ifEmpty { "Haruka" }
             classifiedStagedId == GameCatalog.ID_TSUMASHIBORI -> sanitizedManifestBase.ifEmpty { "Tsumashibori" }
+            classifiedStagedId == GameCatalog.ID_TSUMAMIGUI3 -> sanitizedManifestBase.ifEmpty { "Tsumamigui3" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1459,6 +1461,9 @@ object OnlineInstaller {
                         lower.contains("tsumasibori") ||
                         lower.contains("妻しぼり") ||
                         lower.contains("嵢偟傏傝")
+                    GameCatalog.ID_TSUMAMIGUI3 -> lower.contains("tsumamigui3") ||
+                        lower.contains("妻みぐい３") ||
+                        lower.contains("妻みぐい3")
                     null, "" -> true
                     else -> false
                 }

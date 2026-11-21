@@ -49,6 +49,7 @@ object AppSettings {
     internal const val DEFAULT_IXSEAL_BYTES = 4729863037L
     internal const val DEFAULT_HARUKA_BYTES = 3797821541L
     internal const val DEFAULT_TSUMASHIBORI_BYTES = 2850964030L
+    internal const val DEFAULT_TSUMAMIGUI3_BYTES = 2403975825L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -186,6 +187,7 @@ object AppSettings {
             OnlineInstaller.IXSEAL_CDN_URL -> DEFAULT_IXSEAL_BYTES
             OnlineInstaller.HARUKA_CDN_URL -> DEFAULT_HARUKA_BYTES
             OnlineInstaller.TSUMASHIBORI_CDN_URL -> DEFAULT_TSUMASHIBORI_BYTES
+            OnlineInstaller.TSUMAMIGUI3_CDN_URL -> DEFAULT_TSUMAMIGUI3_BYTES
             else -> -1L
         }
     }

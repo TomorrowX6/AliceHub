@@ -319,7 +319,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_GALZOO ||
                 descriptor.id == GameCatalog.ID_IXSEAL ||
                 descriptor.id == GameCatalog.ID_HARUKA ||
-                descriptor.id == GameCatalog.ID_TSUMASHIBORI
+                descriptor.id == GameCatalog.ID_TSUMASHIBORI ||
+                descriptor.id == GameCatalog.ID_TSUMAMIGUI3
             ) {
                 descriptor.title
             } else {

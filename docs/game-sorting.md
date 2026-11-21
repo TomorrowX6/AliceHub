@@ -43,6 +43,7 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `ixseal` | Beat Valkyrie Ixseal | 2017-07-28 | 72 | 7.20 | [v21142](https://vndb.org/v21142) | [source](https://www.alicesoft.com/ixseal/) |
 | `haruka` | Beat Blades Haruka | 2008-02-29 | 67.9 | 6.79 | [v284](https://vndb.org/v284) | [source](https://www.alicesoft.com/haruka/) |
 | `tsumashibori` | Tsumashibori | 2006-08-04 | 79 | 7.90 | [v887](https://vndb.org/v887) | [source](https://www.alicesoft.com/tsumasibori/) |
+| `tsumamigui3` | Tsumamigui 3 | 2016-01-29 | 79.5 | 7.95 | [v18486](https://vndb.org/v18486) | [source](https://www.alicesoft.com/tsumamigui3/) |
 
 ## Edition mapping / missing-score decisions
 

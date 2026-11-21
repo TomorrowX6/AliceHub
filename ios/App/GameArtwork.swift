@@ -25,6 +25,7 @@ struct GameArtwork: View {
             ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
             ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
             ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
+            ("tsumamigui3", ["tsumamigui3", "妻みぐい3", "妻みぐい３", "妻中蜜3", "妻中蜜３"]),
             ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
             ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
         ]

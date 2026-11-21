@@ -101,6 +101,11 @@
         "id",
         "=",
         "v887"
+      ],
+      [
+        "id",
+        "=",
+        "v18486"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -162,6 +167,15 @@
         "released": "2006-08-04",
         "title": "Tsuma Shibori",
         "votecount": 237
+      },
+      {
+        "alttitle": "妻みぐい3",
+        "average": 79.5,
+        "id": "v18486",
+        "rating": 79.5,
+        "released": "2016-01-29",
+        "title": "Tsumamigui 3",
+        "votecount": 632
       },
       {
         "alttitle": "ランスII　－反逆の少女たち－",

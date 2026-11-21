@@ -251,6 +251,7 @@
     <string name="game_ixseal_title">超昂神骑</string>
     <string name="game_haruka_title">超昂闪忍遥</string>
     <string name="game_tsumashibori_title">妻管严</string>
+    <string name="game_tsumamigui3_title">妻中蜜３</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

@@ -62,6 +62,7 @@ object GameCatalog {
     const val ID_IXSEAL = "ixseal"
     const val ID_HARUKA = "haruka"
     const val ID_TSUMASHIBORI = "tsumashibori"
+    const val ID_TSUMAMIGUI3 = "tsumamigui3"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -396,6 +397,9 @@ object GameCatalog {
         if (isIxsealGameFiles(fileNames, readSmallFile)) {
             return ID_IXSEAL
         }
+        if (isTsumamigui3GameFiles(fileNames, readSmallFile)) {
+            return ID_TSUMAMIGUI3
+        }
         if (isTsumashiboriGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMASHIBORI
         }
@@ -515,6 +519,12 @@ object GameCatalog {
         Regex("(?<![a-z0-9])ts?uma[\\s._-]*sh?ibori(?![a-z0-9])", RegexOption.IGNORE_CASE)
     private val TSUMASHIBORI_ALD_REGEX =
         Regex("^(?:妻しぼり|嵢偟傏傝|ts?umash?ibori)[a-z0-9_]*\\.ald$", RegexOption.IGNORE_CASE)
+    private val TSUMAMIGUI3_EN_ALIAS_REGEX =
+        Regex("(?<![a-z0-9])ts?uma[\\s._-]*migui[\\s._-]*(?:3|iii)(?![a-z0-9])", RegexOption.IGNORE_CASE)
+    private val TSUMAMIGUI3_CJK_ALIAS_REGEX =
+        Regex("(?:妻みぐい|ツマミグイ|つまみぐい|嵢傒偖偄|妻中蜜)[\\s_-]*[3３Ⅲ]")
+    private val TSUMAMIGUI3_ASSET_REGEX =
+        Regex("^ts?umamigui3(?:cg|flat|pact|sound|voice)\\.afa$", RegexOption.IGNORE_CASE)
     private val TSUMASHIBORI_SAVE_SLOT_REGEX =
         Regex("^(?:妻しぼり|嵢偟傏傝|ts?umash?ibori)(?:sys|\\d+)\\.asd$", RegexOption.IGNORE_CASE)
 
@@ -920,6 +930,61 @@ object GameCatalog {
         }
     }
 
+    fun isTsumamigui3Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val rawLower = raw.lowercase()
+        val repairedLower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val check: (String) -> Boolean = { s ->
+            TSUMAMIGUI3_EN_ALIAS_REGEX.containsMatchIn(s) || TSUMAMIGUI3_CJK_ALIAS_REGEX.containsMatchIn(s)
+        }
+        return check(repairedLower) || check(rawLower)
+    }
+
+    @JvmOverloads
+    fun isTsumamigui3GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
+        if (ainNames.any { it.equals("Tsumamigui3.ain", ignoreCase = true) || it.equals("Tumamigui3.ain", ignoreCase = true) }) {
+            return true
+        }
+        if (fileNames.any { TSUMAMIGUI3_ASSET_REGEX.matches(it) }) {
+            val otherAins = ainNames.filter { !it.equals("System39.ain", ignoreCase = true) }
+            if (otherAins.isEmpty()) return true
+        }
+        val iniName = fileNames.firstOrNull {
+            it.equals("System40.ini", ignoreCase = true) || it.equals("AliceStart.ini", ignoreCase = true)
+        }
+        if (ainNames.isNotEmpty() && iniName != null && readSmallFile != null) {
+            try {
+                val raw = readSmallFile(iniName)
+                if (raw != null) {
+                    val title = System40Ini.parse(raw).gameName?.trim().orEmpty()
+                    if (title.isNotEmpty() && isTsumamigui3Alias(title)) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        return false
+    }
+
+    fun isTsumamigui3GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isTsumamigui3GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) {
+                try { f.readBytes() } catch (_: Throwable) { null }
+            } else {
+                null
+            }
+        }
+    }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -1272,6 +1337,9 @@ object GameCatalog {
         if (isHarukaAlias(dirName)) {
             return ID_HARUKA
         }
+        if (isTsumamigui3Alias(dirName)) {
+            return ID_TSUMAMIGUI3
+        }
         if (isTsumashiboriAlias(dirName)) {
             return ID_TSUMASHIBORI
         }
@@ -1300,6 +1368,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isHarukaAlias(displayName)) {
             return ID_HARUKA
+        }
+        if (!displayName.isNullOrBlank() && isTsumamigui3Alias(displayName)) {
+            return ID_TSUMAMIGUI3
         }
         if (!displayName.isNullOrBlank() && isTsumashiboriAlias(displayName)) {
             return ID_TSUMASHIBORI
@@ -1654,6 +1725,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_TSUMAMIGUI3 -> GameDescriptor(
+                id = ID_TSUMAMIGUI3,
+                title = stringResolver(R.string.game_tsumamigui3_title),
+                defaultDirName = "Tsumamigui3",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tsumamigui3,
+                accentColor = 0xFFE65100.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF2A1A10.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
                 title = stringResolver(R.string.game_kichikuou_title),
@@ -1729,7 +1815,8 @@ object GameCatalog {
         ID_GALZOO,
         ID_IXSEAL,
         ID_HARUKA,
-        ID_TSUMASHIBORI
+        ID_TSUMASHIBORI,
+        ID_TSUMAMIGUI3
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {
