@@ -18,9 +18,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             guard var host = note.object as? UIViewController else { return }
             while let presented = host.presentedViewController { host = presented }
             weak var weakPanel: UIViewController?
-            let panel = UIHostingController(rootView: ModifierView { weakPanel?.dismiss(animated: true) })
+            weak var engineWindow = (note.object as? UIViewController)?.view.window
+            let panel = UIHostingController(rootView: ModifierView {
+                weakPanel?.dismiss(animated: true) {
+                    // Dismissal can hand key/front status back to the launcher window, hiding the engine and wand.
+                    guard let window = engineWindow else { return }
+                    window.makeKeyAndVisible()
+                    if let wand = window.rootViewController?.view.viewWithTag(0x4D4F44) {
+                        wand.superview?.bringSubviewToFront(wand)
+                    }
+                }
+            })
             weakPanel = panel
             panel.modalPresentationStyle = .formSheet
+            panel.isModalInPresentation = true
             host.present(panel, animated: true)
         })
         return true
