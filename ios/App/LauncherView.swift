@@ -5,6 +5,7 @@ struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @State private var pickerPresented = false
     @State private var pendingDelete: Game?
+    @State private var editingSaves: Game?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -25,6 +26,7 @@ struct LauncherView: View {
                             }
                             .swipeActions {
                                 Button(role: .destructive) { pendingDelete = game } label: { Label("删除", systemImage: "trash") }
+                                Button { editingSaves = game } label: { Label("修改存档", systemImage: "slider.horizontal.3") }.tint(.orange)
                             }
                         }
                     }
@@ -37,6 +39,9 @@ struct LauncherView: View {
                 .buttonStyle(.borderedProminent).padding()
             }
             .navigationTitle("AliceHub")
+            .sheet(item: $editingSaves) { game in
+                SaveEditorView(game: game, directory: library.savesDirectory(for: game))
+            }
             .disabled(library.importing || library.launching)
             .overlay {
                 if library.importing || library.launching {

@@ -16,6 +16,40 @@ static SDL_SysWMinfo window_info(SDL_Window *window)
     return info;
 }
 
+static void add_modifier_button(UIViewController *root)
+{
+    UIView *view = root.view;
+    if (!view || [view viewWithTag:0x4D4F44])
+        return;
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.tag = 0x4D4F44;
+    button.frame = CGRectMake(12, 60, 44, 44);
+    button.layer.cornerRadius = 22;
+    button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
+    button.tintColor = UIColor.whiteColor;
+    button.accessibilityLabel = @"修改器";
+    [button setImage:[UIImage systemImageNamed:@"wand.and.stars"] forState:UIControlStateNormal];
+    [button addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        [NSNotificationCenter.defaultCenter postNotificationName:@"AliceHubOpenModifier" object:root];
+    }] forControlEvents:UIControlEventTouchUpInside];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] init];
+    [pan addTarget:button action:@selector(alicehub_dragModifierButton:)];
+    [button addGestureRecognizer:pan];
+    [view addSubview:button];
+}
+
+@implementation UIButton (AliceHubModifier)
+- (void)alicehub_dragModifierButton:(UIPanGestureRecognizer *)pan
+{
+    CGPoint delta = [pan translationInView:self.superview];
+    CGRect bounds = self.superview.bounds;
+    CGFloat half = self.bounds.size.width / 2;
+    self.center = CGPointMake(MIN(MAX(self.center.x + delta.x, half), bounds.size.width - half),
+                              MIN(MAX(self.center.y + delta.y, half), bounds.size.height - half));
+    [pan setTranslation:CGPointZero inView:self.superview];
+}
+@end
+
 void alicehub_ios_prepare_window(SDL_Window *window)
 {
     SDL_SysWMinfo info = window_info(window);
@@ -28,6 +62,7 @@ void alicehub_ios_prepare_window(SDL_Window *window)
     }
     native.windowLevel = UIWindowLevelNormal + 1;
     [native makeKeyAndVisible];
+    add_modifier_button(native.rootViewController);
     static id inactiveObserver;
     if (!inactiveObserver) {
         inactiveObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneWillDeactivateNotification

@@ -98,13 +98,17 @@ final class GameLibrary: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
+    func savesDirectory(for game: Game) -> URL {
+        documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
+    }
+
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
             let target = try Self.launchTarget(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
-            let saves = documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
+            let saves = savesDirectory(for: game)
             let logs = documents.appendingPathComponent("Logs")
             for directory in [home, saves, logs] {
                 try files.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -119,6 +123,7 @@ final class GameLibrary: ObservableObject {
             guard chdir(resources.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
+            ModifierBridge.prepareForLaunch()
             let arguments = ["xsystem4", "--save-folder", saves.path, "--save-format=rsm", target.path]
             launching = true
             DispatchQueue.main.async {

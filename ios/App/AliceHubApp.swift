@@ -14,6 +14,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         observers = events.map { name, callback in
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in callback() }
         }
+        observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("AliceHubOpenModifier"), object: nil, queue: .main) { note in
+            guard var host = note.object as? UIViewController else { return }
+            while let presented = host.presentedViewController { host = presented }
+            var panel: UIViewController?
+            panel = UIHostingController(rootView: ModifierView { panel?.dismiss(animated: true) })
+            panel?.modalPresentationStyle = .formSheet
+            host.present(panel!, animated: true)
+        })
         return true
     }
 
