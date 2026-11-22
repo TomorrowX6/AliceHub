@@ -1133,6 +1133,8 @@ class GameList(activity: Activity) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
+                classifiedId == GameCatalog.ID_YAKATA2 -> "Yakata2"
+                classifiedId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
                 legacySystem3 -> sanitizeDerivedGameDirName(
                     (GameCatalog.legacySystem3Title(srcDir) ?: srcDir.name).take(64),
                     fallback = "System3"
@@ -1157,6 +1159,12 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_ATLACHNACHA -> "AtlachNacha"
                 classifiedId == GameCatalog.ID_REISHIKI -> "Reishiki"
                 classifiedId == GameCatalog.ID_HARUURARE -> "Haruurare"
+                classifiedId == GameCatalog.ID_OKUSAMAJUN -> "OkusamaJun"
+                classifiedId == GameCatalog.ID_OKUSAMANTR -> "OkusamaNtr"
+                classifiedId == GameCatalog.ID_EVENICLE2RANCE -> "Evenicle2Rance"
+                classifiedId == GameCatalog.ID_EVENICLEGAIDEN -> "EvenicleGaiden"
+                classifiedId == GameCatalog.ID_WAIDONYO -> "Waidonyo"
+                classifiedId == GameCatalog.ID_RANCE6AFTER -> "Rance6After"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"

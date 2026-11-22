@@ -17,6 +17,8 @@ struct Game: Identifiable {
         if GameLibrary.isRance41(url) { return "兰斯4.1 拯救制药厂！" }
         if GameLibrary.isRance42(url) { return "兰斯4.2 天使组" }
         if GameLibrary.isRance5d(url) { return "兰斯5D" }
+        if GameLibrary.isYakata2(url) { return "爱丽丝之馆2" }
+        if GameLibrary.isSdpsMaria(url) { return "Super D.P.S 玛利亚和坎潘" }
         return url.lastPathComponent
     }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
@@ -106,6 +108,16 @@ final class GameLibrary: ObservableObject {
         }
         guard let game = legacySystem3GameId(url) else { return false }
         return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
+    }
+
+    static func isYakata2(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "yakata2" || game == "yakata2_eng"
+    }
+
+    static func isSdpsMaria(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps"
     }
 
     static func isRance5d(_ url: URL) -> Bool {

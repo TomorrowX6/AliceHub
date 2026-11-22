@@ -75,10 +75,9 @@ const char *parts_utf8_to_cjk_literal(const char *literal)
 	return "";
 }
 
-static bool load_skin(struct parts *parts, struct parts_state *state,
-		struct string *base, bool flat, const char *suffix)
+static bool load_skin_with_encoded_suffix(struct parts *parts, struct parts_state *state,
+		struct string *base, bool flat, const char *encoded)
 {
-	const char *encoded = parts_utf8_to_cjk_literal(suffix);
 	struct string *name = string_dup(base);
 	string_append_cstr(&name, encoded, strlen(encoded));
 	parts_state_reset(state, flat ? PARTS_FLAT : PARTS_CG);
@@ -87,6 +86,23 @@ static bool load_skin(struct parts *parts, struct parts_state *state,
 	free_string(name);
 	if (!ok) parts_state_reset(state, PARTS_UNINITIALIZED);
 	return ok;
+}
+
+static bool load_skin(struct parts *parts, struct parts_state *state,
+		struct string *base, bool flat, const char *suffix)
+{
+	if (load_skin_with_encoded_suffix(parts, state, base, flat,
+			parts_utf8_to_cjk_literal(suffix)))
+		return true;
+	if (sys4_text_is_gbk && suffix && suffix[0]) {
+		// Hybrid GBK-AIN / Shift-JIS-PACT titles (e.g. Evenicle 2 Rance CN)
+		// store Shift-JIS base asset names in PACT and Shift-JIS skins in AFA.
+		sys4_set_text_gbk(false);
+		const char *sjis_suffix = parts_utf8_to_cjk_literal(suffix);
+		sys4_set_text_gbk(true);
+		return load_skin_with_encoded_suffix(parts, state, base, flat, sjis_suffix);
+	}
+	return false;
 }
 
 static void fill_rgba_rect(uint8_t *pixels, int tex_w, int x0, int y0, int rw, int rh,
@@ -176,18 +192,31 @@ static void rebuild_background(struct parts *parts)
 	struct string *checked_base = string_dup(base);
 	if (checked && !override->size && base->size) {
 		for (int cs = 0; cs < 3; cs++) {
-			struct string *cand = string_dup(base);
-			const char *suffix = parts_utf8_to_cjk_literal(checked_suffixes[cs]);
-			string_append_cstr(&cand, suffix, strlen(suffix));
-			struct parts_state probe = {0};
-			if (load_skin_any(parts, &probe, cand, flat, suffixes[0], 3)
-					|| load_skin(parts, &probe, cand, flat, "")) {
-				parts_state_reset(&probe, PARTS_UNINITIALIZED);
-				free_string(checked_base);
-				checked_base = cand;
-				break;
+			bool matched_checked = false;
+			for (int enc_try = 0; enc_try < (sys4_text_is_gbk ? 2 : 1); enc_try++) {
+				const char *suffix;
+				if (enc_try == 0) {
+					suffix = parts_utf8_to_cjk_literal(checked_suffixes[cs]);
+				} else {
+					sys4_set_text_gbk(false);
+					suffix = parts_utf8_to_cjk_literal(checked_suffixes[cs]);
+					sys4_set_text_gbk(true);
+				}
+				struct string *cand = string_dup(base);
+				string_append_cstr(&cand, suffix, strlen(suffix));
+				struct parts_state probe = {0};
+				if (load_skin_any(parts, &probe, cand, flat, suffixes[0], 3)
+						|| load_skin(parts, &probe, cand, flat, "")) {
+					parts_state_reset(&probe, PARTS_UNINITIALIZED);
+					free_string(checked_base);
+					checked_base = cand;
+					matched_checked = true;
+					break;
+				}
+				free_string(cand);
 			}
-			free_string(cand);
+			if (matched_checked)
+				break;
 		}
 	}
 	for (int i = 0; i < 4; i++) {

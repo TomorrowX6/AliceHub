@@ -39,7 +39,7 @@ issues, please let me know or open a pull request to update this table.
 | オニむス                                                | Supported   | From ALICEの館7 |
 | 透色                                                    | Supported   | From ALICEの館7 |
 | DEBUT                                                   | Supported   | From ALICEの館7 |
-| ランス6その後                                           | Supported   | From ALICEの館7 |
+| ランス6その後                                           | Supported   | From ALICEの館7; JP and CN (GBK) supported |
 | ほいっぷハニー                                          | Supported   | From ALICEの館7 |
 | Text Jam Session                                        | Supported   | From ALICEの館7 |
 | 没ロゴの哀しみ                                          | Supported   | From ALICEの館7 |
@@ -71,7 +71,7 @@ issues, please let me know or open a pull request to update this table.
 | 砂漠のニッカ                                            | Unknown     | From Alice 2010 |
 | ばにしゅ！～この手のひらにおっぱいを～                  | Unknown     | From Alice 2010 |
 | はるうられ -校内赤線区域-                               | Supported   | From Alice 2010; CN GBK (`AliceStart2.ini` / `haru_c.ain`) supported |
-| わいどにょ                                              | Supported   | From Alice 2010 |
+| わいどにょ                                              | Supported   | From Alice 2010; JP and CN (GBK) supported |
 | ランス02 -反逆の少女たち-                               | Supported   | From Alice 2010 |
 | Rance 02 -The Rebellious Maidens- (Fan TL)              | Supported   |       |
 | Rance 02 -The Rebellious Maidens- (MangaGamer)          | Supported   |       |
@@ -87,4 +87,9 @@ issues, please let me know or open a pull request to update this table.
 | Rance 01 - Quest for Hikari (EN)                        | Supported   |       |
 | ランスIX－ヘルマン革命－                                | Supported   |       |
 | Rance IX - The Helmanian Revolution (EN)                | Unknown     |       |
+| イブニクル外典                                          | Supported   | JP and CN (GBK) supported |
+| イブニクル・ランス版                                    | Supported   | Engine support (`GetSystemName` check) |
+| イブニクル２ランス版                                    | Supported   | JP and CN (GBK + companion `*CHS.afa`/`*CHS2.afa` auto-mount) supported |
+| 母爛漫                                                  | Supported   | Engine support (`SystemService.GetVersion` + 8ch mixer) |
+| 奥さまの回復術 純愛編 / 奪愛編                          | Supported   | Official CN GBK (translated PACT keys + 8ch mixer) supported |
 | All games released after Rance IX                       | Unsupported |       |

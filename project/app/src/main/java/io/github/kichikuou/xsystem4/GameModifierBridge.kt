@@ -619,6 +619,110 @@ object GameModifierBridge {
         ) == GameCatalog.ID_HARUURARE
 
     @JvmOverloads
+    fun isOkusamaJunGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_OKUSAMAJUN
+
+    @JvmOverloads
+    fun isOkusamaNtrGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_OKUSAMANTR
+
+    @JvmOverloads
+    fun isEvenicle2RanceGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_EVENICLE2RANCE
+
+    @JvmOverloads
+    fun isEvenicleGaidenGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_EVENICLEGAIDEN
+
+    @JvmOverloads
+    fun isWaidonyoGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_WAIDONYO
+
+    @JvmOverloads
+    fun isRance6AfterGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_RANCE6AFTER
+
+    @JvmOverloads
+    fun isYakata2GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_YAKATA2
+
+    @JvmOverloads
+    fun isSdpsMariaGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_SDPSMARIA
+
+    @JvmOverloads
     fun isNonModifierBuiltInGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -642,7 +746,15 @@ object GameModifierBridge {
         GameCatalog.ID_KAERUNYO,
         GameCatalog.ID_ATLACHNACHA,
         GameCatalog.ID_REISHIKI,
-        GameCatalog.ID_HARUURARE -> true
+        GameCatalog.ID_HARUURARE,
+        GameCatalog.ID_OKUSAMAJUN,
+        GameCatalog.ID_OKUSAMANTR,
+        GameCatalog.ID_EVENICLE2RANCE,
+        GameCatalog.ID_EVENICLEGAIDEN,
+        GameCatalog.ID_WAIDONYO,
+        GameCatalog.ID_RANCE6AFTER,
+        GameCatalog.ID_YAKATA2,
+        GameCatalog.ID_SDPSMARIA -> true
         else -> false
     }
 

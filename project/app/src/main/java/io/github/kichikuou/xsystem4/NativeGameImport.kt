@@ -238,6 +238,12 @@ object NativeGameImport {
         if (GameCatalog.isDaiakujiGameFiles(activeFiles)) {
             return "Daiakuji"
         }
+        if (GameCatalog.isEvenicle2RanceGameFiles(activeFiles)) {
+            return "Evenicle2Rance"
+        }
+        if (GameCatalog.isEvenicleGaidenGameFiles(activeFiles)) {
+            return "EvenicleGaiden"
+        }
         if (activeFiles.any { it.equals("Evenicle2.ain", true) }) {
             return "Evenicle2"
         }
@@ -271,6 +277,18 @@ object NativeGameImport {
         }
         if (GameCatalog.isHaruurareGameFiles(activeFiles)) {
             return "Haruurare"
+        }
+        if (GameCatalog.isOkusamaJunGameFiles(activeFiles)) {
+            return "OkusamaJun"
+        }
+        if (GameCatalog.isOkusamaNtrGameFiles(activeFiles)) {
+            return "OkusamaNtr"
+        }
+        if (GameCatalog.isWaidonyoGameFiles(activeFiles)) {
+            return "Waidonyo"
+        }
+        if (GameCatalog.isRance6AfterGameFiles(activeFiles)) {
+            return "Rance6After"
         }
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"
@@ -426,6 +444,8 @@ object NativeGameImport {
         val baseName = when {
             isDaiakujiImport -> "Daiakuji"
             isHarukaImport -> "Haruka"
+            detectedGameId == GameCatalog.ID_YAKATA2 -> "Yakata2"
+            detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
                 OnlineInstaller.sanitizeInstallDirName(

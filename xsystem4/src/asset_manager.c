@@ -71,14 +71,23 @@ struct asset_manager_ald {
 	struct archive *archive;
 };
 
+enum afa_archive_priority {
+	AFA_PRIO_BACKUP = 0,
+	AFA_PRIO_BASE   = 1,
+	AFA_PRIO_PATCH  = 2,
+	AFA_PRIO_MOD    = 3,
+};
+
 struct afa_canon_entry {
 	struct afa_archive *ar;
 	struct afa_entry *entry;
+	int prio;
 };
 
 struct asset_manager_afa {
 	struct asset_manager manager;
 	struct afa_archive **archives;
+	uint8_t *archive_priorities;
 	size_t nr_archives;
 	struct afa_archive **id_archives;
 	size_t nr_id_archives;
@@ -361,12 +370,25 @@ static bool afa_is_mod_archive(const char *filepath)
 	return false;
 }
 
-static size_t afa_find_insert_pos(struct asset_manager_afa *manager, const char *filepath)
+static bool afa_is_backup_archive(const char *filepath)
+{
+	size_t len = strlen(filepath);
+	return len >= 12 && !strcasecmp(filepath + len - 12, ".vanilla.bak");
+}
+
+static int afa_default_priority(const char *filepath)
 {
 	if (afa_is_mod_archive(filepath))
-		return 0;
+		return AFA_PRIO_MOD;
+	if (afa_is_backup_archive(filepath))
+		return AFA_PRIO_BACKUP;
+	return AFA_PRIO_BASE;
+}
+
+static size_t afa_find_insert_pos(struct asset_manager_afa *manager, int prio)
+{
 	size_t pos = 0;
-	while (pos < manager->nr_archives && afa_is_mod_archive(manager->archives[pos]->filename))
+	while (pos < manager->nr_archives && manager->archive_priorities[pos] > prio)
 		pos++;
 	return pos;
 }
@@ -401,9 +423,8 @@ static size_t afa_register_id_archive(struct asset_manager_afa *manager, struct 
 	return manager->nr_id_archives++;
 }
 
-static bool afa_load_archive(struct asset_manager *_manager, const char *name)
+static bool afa_load_archive_prio(struct asset_manager_afa *manager, const char *name, int prio)
 {
-	struct asset_manager_afa *manager = (struct asset_manager_afa*)_manager;
 	char path[PATH_MAX];
 	size_t name_len = strlen(name);
 	if (name_len >= 4 && !strcasecmp(name + name_len - 4, ".afa"))
@@ -426,16 +447,28 @@ static bool afa_load_archive(struct asset_manager *_manager, const char *name)
 		}
 	}
 
-	size_t pos = afa_find_insert_pos(manager, path);
+	if (prio < 0)
+		prio = afa_default_priority(path);
+	size_t pos = afa_find_insert_pos(manager, prio);
 	manager->archives = xrealloc(manager->archives,
 		(manager->nr_archives + 1) * sizeof(*manager->archives));
+	manager->archive_priorities = xrealloc(manager->archive_priorities,
+		(manager->nr_archives + 1) * sizeof(*manager->archive_priorities));
 	memmove(manager->archives + pos + 1, manager->archives + pos,
 		(manager->nr_archives - pos) * sizeof(*manager->archives));
+	memmove(manager->archive_priorities + pos + 1, manager->archive_priorities + pos,
+		(manager->nr_archives - pos) * sizeof(*manager->archive_priorities));
 	manager->archives[pos] = ar;
+	manager->archive_priorities[pos] = (uint8_t)prio;
 	manager->nr_archives++;
 	afa_register_id_archive(manager, ar);
 	afa_invalidate_canon_index(manager);
 	return true;
+}
+
+static bool afa_load_archive(struct asset_manager *_manager, const char *name)
+{
+	return afa_load_archive_prio((struct asset_manager_afa*)_manager, name, -1);
 }
 
 static int afa_encode_id(struct asset_manager_afa *manager, struct afa_archive *ar, int local_no)
@@ -495,12 +528,6 @@ static struct archive_data *afa_get_by_id(struct asset_manager *_manager, int id
 	return archive_get(&manager->id_archives[idx]->ar, local_id - 1);
 }
 
-static bool afa_is_backup_archive(const char *filepath)
-{
-	size_t len = strlen(filepath);
-	return len >= 12 && !strcasecmp(filepath + len - 12, ".vanilla.bak");
-}
-
 static uint64_t afa_entry_timestamp(const struct afa_entry *e)
 {
 	if (!e->unknown0 && !e->unknown1)
@@ -522,32 +549,40 @@ static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
 {
 	struct afa_archive *best_ar = NULL;
 	struct afa_entry *best_entry = NULL;
+	int best_prio = -1;
 	uint64_t best_ts = 0;
 
 	for (size_t i = 0; i < manager->nr_archives; i++) {
 		struct afa_archive *ar = manager->archives[i];
-		if (afa_is_backup_archive(ar->filename) && best_entry)
+		int prio = manager->archive_priorities[i];
+		if (best_entry && prio < best_prio)
 			break;
 
 		struct afa_entry *e = afa_lookup_by_basename(ar, name);
 		if (!e)
 			continue;
 
-		if (afa_is_mod_archive(ar->filename)) {
+		if (prio >= AFA_PRIO_MOD) {
 			*ar_out = ar;
 			return e;
 		}
 
 		uint64_t ts = afa_entry_timestamp(e);
-		if (ts == 0) {
-			if (!best_entry) {
+		if (!best_entry || prio > best_prio) {
+			best_ar = ar;
+			best_entry = e;
+			best_prio = prio;
+			best_ts = ts;
+			if (ts == 0) {
 				*ar_out = ar;
 				return e;
 			}
 			continue;
 		}
 
-		if (!best_entry || ts > best_ts) {
+		if (ts == 0)
+			continue;
+		if (ts > best_ts) {
 			best_ar = ar;
 			best_entry = e;
 			best_ts = ts;
@@ -559,22 +594,15 @@ static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
 	return best_entry;
 }
 
-static bool afa_candidate_beats(struct afa_archive *cur_ar, struct afa_entry *cur_e,
-		struct afa_archive *cand_ar, struct afa_entry *cand_e)
+static bool afa_candidate_beats(int cur_prio, struct afa_entry *cur_e,
+		int cand_prio, struct afa_entry *cand_e)
 {
 	if (!cur_e)
 		return true;
-	bool cur_mod = afa_is_mod_archive(cur_ar->filename);
-	bool cand_mod = afa_is_mod_archive(cand_ar->filename);
-	if (cur_mod != cand_mod)
-		return cand_mod;
-	if (cur_mod)
+	if (cur_prio != cand_prio)
+		return cand_prio > cur_prio;
+	if (cur_prio >= AFA_PRIO_MOD)
 		return false;
-
-	bool cur_bak = afa_is_backup_archive(cur_ar->filename);
-	bool cand_bak = afa_is_backup_archive(cand_ar->filename);
-	if (cur_bak != cand_bak)
-		return cur_bak;
 
 	uint64_t cur_ts = afa_entry_timestamp(cur_e);
 	uint64_t cand_ts = afa_entry_timestamp(cand_e);
@@ -586,7 +614,7 @@ static bool afa_candidate_beats(struct afa_archive *cur_ar, struct afa_entry *cu
 }
 
 static void afa_canon_index_insert(struct asset_manager_afa *manager, const char *key,
-		struct afa_archive *ar, struct afa_entry *entry)
+		struct afa_archive *ar, struct afa_entry *entry, int prio)
 {
 	struct ht_slot *slot = ht_put(manager->canon_basename_table, key, NULL);
 	if (!slot->value) {
@@ -599,13 +627,15 @@ static void afa_canon_index_insert(struct asset_manager_afa *manager, const char
 		size_t idx = manager->nr_canon_entries++;
 		manager->canon_entries[idx].ar = ar;
 		manager->canon_entries[idx].entry = entry;
+		manager->canon_entries[idx].prio = prio;
 		slot->value = (void *)(uintptr_t)(idx + 1);
 		return;
 	}
 	size_t idx = (size_t)(uintptr_t)slot->value - 1;
-	if (afa_candidate_beats(manager->canon_entries[idx].ar, manager->canon_entries[idx].entry, ar, entry)) {
+	if (afa_candidate_beats(manager->canon_entries[idx].prio, manager->canon_entries[idx].entry, prio, entry)) {
 		manager->canon_entries[idx].ar = ar;
 		manager->canon_entries[idx].entry = entry;
+		manager->canon_entries[idx].prio = prio;
 	}
 }
 
@@ -622,6 +652,7 @@ static void afa_ensure_canon_index(struct asset_manager_afa *manager)
 
 	for (size_t i = 0; i < manager->nr_archives; i++) {
 		struct afa_archive *ar = manager->archives[i];
+		int prio = manager->archive_priorities[i];
 		for (uint32_t j = 0; j < ar->nr_files; j++) {
 			const char *ename = ar->files[j].name->text;
 			if (!name_has_non_ascii(ename))
@@ -637,9 +668,9 @@ static void afa_ensure_canon_index(struct asset_manager_afa *manager)
 			if (ebase != base_buf)
 				free(ebase);
 			if (sjis_form)
-				afa_canon_index_insert(manager, sjis_form, ar, &ar->files[j]);
+				afa_canon_index_insert(manager, sjis_form, ar, &ar->files[j], prio);
 			if (gbk_form && (!sjis_form || strcmp(sjis_form, gbk_form) != 0))
-				afa_canon_index_insert(manager, gbk_form, ar, &ar->files[j]);
+				afa_canon_index_insert(manager, gbk_form, ar, &ar->files[j], prio);
 			if (sjis_form != sjis_buf)
 				free(sjis_form);
 			if (gbk_form != gbk_buf)
@@ -697,6 +728,7 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 		free(target_base);
 
 	struct afa_archive *best_ar = NULL;
+	int best_prio = -1;
 	best_entry = NULL;
 	if (manager->nr_canon_entries > 0) {
 		const char *queries[2] = { q_sjis, q_gbk };
@@ -710,9 +742,10 @@ static struct afa_entry *afa_find_best_by_basename(struct asset_manager_afa *man
 				continue;
 			size_t idx = (size_t)(uintptr_t)val - 1;
 			struct afa_canon_entry *ce = &manager->canon_entries[idx];
-			if (afa_candidate_beats(best_ar, best_entry, ce->ar, ce->entry)) {
+			if (afa_candidate_beats(best_prio, best_entry, ce->prio, ce->entry)) {
 				best_ar = ce->ar;
 				best_entry = ce->entry;
+				best_prio = ce->prio;
 			}
 		}
 	}
@@ -855,7 +888,9 @@ static void afa_init(enum asset_type type, char *file)
 
 	struct asset_manager_afa *manager = afa_create_manager();
 	manager->archives = xmalloc(sizeof(*manager->archives));
+	manager->archive_priorities = xmalloc(sizeof(*manager->archive_priorities));
 	manager->archives[0] = ar;
+	manager->archive_priorities[0] = AFA_PRIO_BASE;
 	manager->nr_archives = 1;
 	afa_register_id_archive(manager, ar);
 	assets[type] = &manager->manager;
@@ -866,7 +901,9 @@ static void afa_init(enum asset_type type, char *file)
 		struct afa_archive *bak_ar = afa_open(bak_path, MMAP_IF_64BIT, &error);
 		if (bak_ar) {
 			manager->archives = xrealloc(manager->archives, 2 * sizeof(*manager->archives));
+			manager->archive_priorities = xrealloc(manager->archive_priorities, 2 * sizeof(*manager->archive_priorities));
 			manager->archives[1] = bak_ar;
+			manager->archive_priorities[1] = AFA_PRIO_BACKUP;
 			manager->nr_archives = 2;
 			afa_register_id_archive(manager, bak_ar);
 		}
@@ -988,6 +1025,8 @@ void asset_manager_init(void)
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
 	int ald_count[ASSET_TYPE_MAX] = {0};
 	char *afa_filenames[ASSET_TYPE_MAX] = {0};
+	char *afa_chs_cg = NULL;
+	char *afa_chs_flat = NULL;
 
 	UDIR *dir;
 	char *d_name;
@@ -1066,6 +1105,12 @@ void asset_manager_init(void)
 				afa_filenames[ASSET_PACT] = path_join(config.game_dir, d_name);
 			} else if (!strcasecmp(type, "AFF.afa")) {
 				afa_filenames[ASSET_FLASH] = path_join(config.game_dir, d_name);
+			} else if (!strcasecmp(type, "CHS.afa")) {
+				free(afa_chs_cg);
+				afa_chs_cg = path_join(config.game_dir, d_name);
+			} else if (!strcasecmp(type, "CHS2.afa")) {
+				free(afa_chs_flat);
+				afa_chs_flat = path_join(config.game_dir, d_name);
 			}
 		} else if (!strcasecmp(ext, "fnl")) {
 			if (!config.fnl_path)
@@ -1115,4 +1160,22 @@ void asset_manager_init(void)
 	afa_init(ASSET_PACT, afa_filenames[ASSET_PACT]);
 	afa_init(ASSET_DATA, afa_filenames[ASSET_DATA]);
 	afa_init(ASSET_FLASH, afa_filenames[ASSET_FLASH]);
+
+	// Mount companion CN CG/Flat patch archives (e.g. Evenicle2RanceCHS.afa / CHS2.afa)
+	// with patch overlay priority (above base archives, below user mods) so translated
+	// UI skins and flats take precedence even when base entries have newer timestamps.
+	if (afa_chs_cg) {
+		if (!assets[ASSET_CG])
+			assets[ASSET_CG] = &afa_create_manager()->manager;
+		if (assets[ASSET_CG]->load_archive == afa_load_archive)
+			afa_load_archive_prio((struct asset_manager_afa *)assets[ASSET_CG], afa_chs_cg, AFA_PRIO_PATCH);
+		free(afa_chs_cg);
+	}
+	if (afa_chs_flat) {
+		if (!assets[ASSET_FLAT])
+			assets[ASSET_FLAT] = &afa_create_manager()->manager;
+		if (assets[ASSET_FLAT]->load_archive == afa_load_archive)
+			afa_load_archive_prio((struct asset_manager_afa *)assets[ASSET_FLAT], afa_chs_flat, AFA_PRIO_PATCH);
+		free(afa_chs_flat);
+	}
 }

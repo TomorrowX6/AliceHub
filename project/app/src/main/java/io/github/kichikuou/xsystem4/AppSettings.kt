@@ -61,6 +61,14 @@ object AppSettings {
     internal const val DEFAULT_ATLACHNACHA_BYTES = 148510731L
     internal const val DEFAULT_REISHIKI_BYTES = 88875020L
     internal const val DEFAULT_HARUURARE_BYTES = 264968018L
+    internal const val DEFAULT_OKUSAMAJUN_BYTES = 433754405L
+    internal const val DEFAULT_OKUSAMANTR_BYTES = 407324160L
+    internal const val DEFAULT_EVENICLE2RANCE_BYTES = 675181447L
+    internal const val DEFAULT_EVENICLEGAIDEN_BYTES = 344150541L
+    internal const val DEFAULT_WAIDONYO_BYTES = 554965092L
+    internal const val DEFAULT_RANCE6AFTER_BYTES = 38024313L
+    internal const val DEFAULT_YAKATA2_BYTES = 14072286L
+    internal const val DEFAULT_SDPSMARIA_BYTES = 11185724L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -210,6 +218,14 @@ object AppSettings {
             OnlineInstaller.ATLACHNACHA_CDN_URL -> DEFAULT_ATLACHNACHA_BYTES
             OnlineInstaller.REISHIKI_CDN_URL -> DEFAULT_REISHIKI_BYTES
             OnlineInstaller.HARUURARE_CDN_URL -> DEFAULT_HARUURARE_BYTES
+            OnlineInstaller.OKUSAMAJUN_CDN_URL -> DEFAULT_OKUSAMAJUN_BYTES
+            OnlineInstaller.OKUSAMANTR_CDN_URL -> DEFAULT_OKUSAMANTR_BYTES
+            OnlineInstaller.EVENICLE2RANCE_CDN_URL -> DEFAULT_EVENICLE2RANCE_BYTES
+            OnlineInstaller.EVENICLEGAIDEN_CDN_URL -> DEFAULT_EVENICLEGAIDEN_BYTES
+            OnlineInstaller.WAIDONYO_CDN_URL -> DEFAULT_WAIDONYO_BYTES
+            OnlineInstaller.RANCE6AFTER_CDN_URL -> DEFAULT_RANCE6AFTER_BYTES
+            OnlineInstaller.YAKATA2_CDN_URL -> DEFAULT_YAKATA2_BYTES
+            OnlineInstaller.SDPSMARIA_CDN_URL -> DEFAULT_SDPSMARIA_BYTES
             else -> -1L
         }
     }

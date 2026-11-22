@@ -263,6 +263,14 @@
     <string name="game_atlachnacha_title">アトラク＝ナクア</string>
     <string name="game_reishiki_title">零式</string>
     <string name="game_haruurare_title">はるうられ -校内赤線区域-</string>
+    <string name="game_okusamajun_title">奥さまの回復術 純愛編</string>
+    <string name="game_okusamantr_title">奥さまの回復術 奪愛編</string>
+    <string name="game_evenicle2rance_title">イブニクル２ランス版</string>
+    <string name="game_eveniclegaiden_title">イブニクル外典</string>
+    <string name="game_waidonyo_title">わいどにょ</string>
+    <string name="game_rance6after_title">ランス６その後</string>
+    <string name="game_yakata2_title">ALICEの館II</string>
+    <string name="game_sdpsmaria_title">Super D.P.S マリアとカンパン</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>

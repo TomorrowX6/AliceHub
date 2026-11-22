@@ -74,6 +74,14 @@ object GameCatalog {
     const val ID_ATLACHNACHA = "atlachnacha"
     const val ID_REISHIKI = "reishiki"
     const val ID_HARUURARE = "haruurare"
+    const val ID_OKUSAMAJUN = "okusamajun"
+    const val ID_OKUSAMANTR = "okusamantr"
+    const val ID_EVENICLE2RANCE = "evenicle2rance"
+    const val ID_EVENICLEGAIDEN = "eveniclegaiden"
+    const val ID_WAIDONYO = "waidonyo"
+    const val ID_RANCE6AFTER = "rance6after"
+    const val ID_YAKATA2 = "yakata2"
+    const val ID_SDPSMARIA = "sdpsmaria"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -353,6 +361,12 @@ object GameCatalog {
         if (ainNames.any { it.equals("dohnadohna.ain", ignoreCase = true) }) {
             return ID_DOHNA_DOHNA
         }
+        if (isEvenicle2RanceGameFiles(fileNames, readSmallFile)) {
+            return ID_EVENICLE2RANCE
+        }
+        if (isEvenicleGaidenGameFiles(fileNames, readSmallFile)) {
+            return ID_EVENICLEGAIDEN
+        }
         if (ainNames.any { it.equals("Evenicle2.ain", ignoreCase = true) }) {
             return ID_EVENICLE2
         }
@@ -406,6 +420,9 @@ object GameCatalog {
         }
         if (isRance5dGameFiles(fileNames)) {
             return ID_RANCE5D
+        }
+        if (isRance6AfterGameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE6AFTER
         }
         if (isRance06GameFiles(fileNames)) {
             return ID_RANCE06
@@ -469,6 +486,21 @@ object GameCatalog {
         }
         if (isHaruurareGameFiles(fileNames, readSmallFile)) {
             return ID_HARUURARE
+        }
+        if (isOkusamaJunGameFiles(fileNames, readSmallFile)) {
+            return ID_OKUSAMAJUN
+        }
+        if (isOkusamaNtrGameFiles(fileNames, readSmallFile)) {
+            return ID_OKUSAMANTR
+        }
+        if (isWaidonyoGameFiles(fileNames, readSmallFile)) {
+            return ID_WAIDONYO
+        }
+        if (isYakata2GameFiles(fileNames, readSmallFile)) {
+            return ID_YAKATA2
+        }
+        if (isSdpsMariaGameFiles(fileNames, readSmallFile)) {
+            return ID_SDPSMARIA
         }
         if (isTsumamiguiGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI
@@ -798,6 +830,7 @@ object GameCatalog {
     }
 
     fun isEvenicle2Alias(lowerText: String): Boolean {
+        if (isEvenicle2RanceAlias(lowerText)) return false
         return lowerText.contains("evenicle2") ||
             lowerText.contains("evenicle 2") ||
             lowerText.contains("evenicle_2") ||
@@ -969,6 +1002,7 @@ object GameCatalog {
 
     fun isRance06GameFiles(fileNames: Collection<String>): Boolean {
         if (isSystem3xGameFiles(fileNames)) return false
+        if (isRance6AfterGameFiles(fileNames)) return false
         val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
@@ -995,6 +1029,11 @@ object GameCatalog {
         }
         return fileNames.any {
             val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+            if (it.contains("after", true) || it.contains("sonogo", true) ||
+                it.contains("その後") || repaired.contains("その後")
+            ) {
+                return@any false
+            }
             it.equals("Rance6DLL.inc", ignoreCase = true) ||
                 RANCE06_ALD_REGEX.matches(it) ||
                 RANCE06_ALD_REGEX.matches(repaired)
@@ -1002,7 +1041,7 @@ object GameCatalog {
     }
 
     fun isRance06Alias(raw: String): Boolean {
-        if (raw.isBlank()) return false
+        if (raw.isBlank() || isRance6AfterAlias(raw)) return false
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
         return RANCE06_EN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_CN_ALIAS_REGEX.containsMatchIn(lower) ||
@@ -1497,6 +1536,426 @@ object GameCatalog {
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         ) { readSmallRootFile(dir, it) }
 
+    fun isOkusamaJunAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        if (lower.contains("ntr") || lower.contains("夺爱") || lower.contains("奪愛")) return false
+        return lower.contains("okusamajun") ||
+            lower.contains("okusama_jun") ||
+            lower.contains("okusama jun") ||
+            lower.contains("okusama-jun") ||
+            ((lower.contains("okusama") || lower.contains("太太的恢复术") ||
+                lower.contains("太太的恢復術") || lower.contains("奥さまの回復術") || lower.contains("奥さま")) &&
+                (lower.contains("jun") || lower.contains("纯爱") || lower.contains("純愛") ||
+                    lower.contains("pure love") || lower.contains("purelove")))
+    }
+
+    @JvmOverloads
+    fun isOkusamaJunGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                it.equals("okusama_jun_cn.ain", true) ||
+                    it.equals("okusama_jun.ain", true) ||
+                    it.equals("okusamajun.ain", true)
+            } || fileNames.any {
+                it.equals("okusama_jun_cnCG.afa", true) ||
+                    it.equals("okusama_junCG.afa", true) ||
+                    it.equals("okusama_jun_cnPact.afa", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isOkusamaJunAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isOkusamaJunGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isOkusamaJunGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isOkusamaNtrAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        if (lower.contains("okusamajun") || lower.contains("okusama_jun") ||
+            lower.contains("纯爱") || lower.contains("純愛") || lower.contains("pure love")
+        ) return false
+        return lower.contains("okusamantr") ||
+            lower.contains("okusama_ntr") ||
+            lower.contains("okusama ntr") ||
+            lower.contains("okusama-ntr") ||
+            ((lower.contains("okusama") || lower.contains("太太的恢复术") ||
+                lower.contains("太太的恢復術") || lower.contains("奥さまの回復術") || lower.contains("奥さま")) &&
+                (lower.contains("ntr") || lower.contains("夺爱") || lower.contains("奪愛")))
+    }
+
+    @JvmOverloads
+    fun isOkusamaNtrGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                it.equals("okusama_ntr_cn.ain", true) ||
+                    it.equals("okusama_ntr.ain", true) ||
+                    it.equals("okusamantr.ain", true)
+            } || fileNames.any {
+                it.equals("okusama_ntr_cnCG.afa", true) ||
+                    it.equals("okusama_ntrCG.afa", true) ||
+                    it.equals("okusama_ntr_cnPact.afa", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isOkusamaNtrAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isOkusamaNtrGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isOkusamaNtrGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isEvenicle2RanceAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        val check: (String) -> Boolean = { s ->
+            s.contains("evenicle2rance") ||
+                s.contains("evenicle2_rance") ||
+                s.contains("evenicle2-rance") ||
+                s.contains("evenicle2 rance") ||
+                s.contains("evenicle 2 rance") ||
+                s.contains("イブニクル2ランス") ||
+                s.contains("イブニクル２ランス") ||
+                s.contains("イブニクル2 ランス") ||
+                s.contains("イブニクル２ ランス") ||
+                s.contains("夏娃年代记2 兰斯") ||
+                s.contains("夏娃年代记2兰斯") ||
+                s.contains("夏娃年代記2蘭斯") ||
+                s.contains("夏娃年代記2 蘭斯") ||
+                s.contains("夏娃2兰斯") ||
+                s.contains("夏娃2 兰斯") ||
+                ((s.contains("夏娃年代记2") || s.contains("夏娃年代記2") || s.contains("夏娃2")) &&
+                    (s.contains("兰斯") || s.contains("蘭斯") || s.contains("rance"))) ||
+                (s.contains("イブニクル") && (s.contains("2") || s.contains("２")) && s.contains("ランス"))
+        }
+        return check(lower) || check(rawLower) || rawLower.contains("僀僽僯僋儖俀儔儞僗")
+    }
+
+    @JvmOverloads
+    fun isEvenicle2RanceGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Evenicle2Rance.ain", true) } ||
+            fileNames.any {
+                it.equals("Evenicle2RanceCG.afa", true) ||
+                    it.equals("Evenicle2RanceCHS.afa", true) ||
+                    it.equals("Evenicle2RanceCHS2.afa", true) ||
+                    it.equals("Evenicle2RancePact.afa", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isEvenicle2RanceAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isEvenicle2RanceGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isEvenicle2RanceGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isEvenicleGaidenAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        return lower.contains("eveniclegaiden") ||
+            lower.contains("evenicle_gaiden") ||
+            lower.contains("evenicle gaiden") ||
+            lower.contains("eveniclegaiten") ||
+            lower.contains("evenicle gaiten") ||
+            lower.contains("evenicleapc") ||
+            lower.contains("evenicle_apc") ||
+            lower.contains("イブニクル外典") ||
+            lower.contains("夏娃年代记外典") ||
+            lower.contains("夏娃年代記外典") ||
+            lower.contains("夏娃外典") ||
+            rawLower.contains("僀僽僯僋儖奜揟")
+    }
+
+    @JvmOverloads
+    fun isEvenicleGaidenGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                it.equals("EvenicleApc.ain", true) ||
+                    it.equals("EvenicleGaiden.ain", true) ||
+                    it.equals("EvenicleGaiten.ain", true)
+            } || fileNames.any {
+                it.equals("EvenicleApcCG.afa", true) ||
+                    it.equals("EvenicleApcPact.afa", true) ||
+                    it.equals("EvenicleApcFlat.afa", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isEvenicleGaidenAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isEvenicleGaidenGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isEvenicleGaidenGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isWaidonyoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        return lower.contains("waidonyo") ||
+            lower.contains("わいどにょ") ||
+            lower.contains("异空窟") ||
+            lower.contains("異空窟") ||
+            rawLower.contains("傢偄偳偵傚")
+    }
+
+    @JvmOverloads
+    fun isWaidonyoGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("waidonyo.ain", true) ||
+                    it.equals("わいどにょ.ain", true) || r.equals("わいどにょ.ain", true) ||
+                    it.equals("傢偄偳偵傚.ain", true)
+            } || fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("waidonyoDLL.inc", true) ||
+                    it.equals("waidonyoGA.ald", true) ||
+                    it.equals("waidonyoGZ.ald", true) ||
+                    it.equals("わいどにょGA.ald", true) || r.equals("わいどにょGA.ald", true) ||
+                    it.equals("わいどにょGZ.ald", true) || r.equals("わいどにょGZ.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isWaidonyoAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isWaidonyoGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isWaidonyoGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isRance6AfterAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        val normalized = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFKC)
+        return normalized.contains("rance6after") ||
+            normalized.contains("rance6_after") ||
+            normalized.contains("rance6 after") ||
+            normalized.contains("rance06after") ||
+            normalized.contains("rance06 after") ||
+            normalized.contains("rance vi aftermath") ||
+            normalized.contains("rance vi: aftermath") ||
+            normalized.contains("rance vi sonogo") ||
+            normalized.contains("rance 6 aftermath") ||
+            normalized.contains("rance 6 sonogo") ||
+            normalized.contains("rance6sonogo") ||
+            normalized.contains("ランス6その後") ||
+            normalized.contains("ランス06その後") ||
+            normalized.contains("ランス6 その後") ||
+            normalized.contains("兰斯06 后日谈") ||
+            normalized.contains("兰斯06后日谈") ||
+            normalized.contains("兰斯6 后日谈") ||
+            normalized.contains("兰斯6后日谈") ||
+            normalized.contains("兰斯vi后日谈") ||
+            normalized.contains("蘭斯06後日談") ||
+            normalized.contains("蘭斯6後日談") ||
+            rawLower.contains("儔儞僗俇偦偺屻") ||
+            rawLower.contains("儔儞僗6偦偺屻")
+    }
+
+    @JvmOverloads
+    fun isRance6AfterGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("rance6after.ain", true) ||
+                    it.equals("ランス６その後.ain", true) || r.equals("ランス６その後.ain", true) ||
+                    it.equals("ランス6その後.ain", true) || r.equals("ランス6その後.ain", true) ||
+                    it.equals("儔儞僗俇偦偺屻.ain", true)
+            } || fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("rance6afterDLL.inc", true) ||
+                    it.equals("rance6afterGA.ald", true) ||
+                    it.equals("ランス６その後GA.ald", true) || r.equals("ランス６その後GA.ald", true) ||
+                    it.equals("ランス6その後GA.ald", true) || r.equals("ランス6その後GA.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System40.ini", true) || it.equals("AliceStart.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isRance6AfterAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isRance6AfterGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isRance6AfterGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    private val YAKATA2_ADISK_CRC32S = setOf(0x45951cabL)
+    private val SDPSMARIA_ADISK_CRC32S = setOf(0x9418eef5L)
+
+    fun isYakata2Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("yakata2") ||
+            normalized.contains("yakata 2") ||
+            normalized.contains("yakata_2") ||
+            normalized.contains("alice no yakata ii") ||
+            normalized.contains("alice no yakata 2") ||
+            normalized.contains("aliceの館ii") ||
+            normalized.contains("aliceの館2") ||
+            normalized.contains("爱丽丝之馆2") ||
+            normalized.contains("爱丽丝之馆ii") ||
+            normalized.contains("愛麗絲之館2") ||
+            normalized.contains("愛麗絲之館ii") ||
+            normalized.contains("揍揍卷卷塔") ||
+            normalized.contains("ぽんぽんぺんぺん")
+    }
+
+    @JvmOverloads
+    fun isYakata2GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "yakata2" || game == "yakata2_eng") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isYakata2Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in YAKATA2_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isYakata2GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isYakata2GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
+    fun isSdpsMariaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("sdpsmaria") ||
+            normalized.contains("sdps_maria") ||
+            normalized.contains("sdps maria") ||
+            normalized.contains("superdpsmaria") ||
+            normalized.contains("super dps") ||
+            normalized.contains("superdps") ||
+            normalized.contains("super d.p.s") ||
+            normalized.contains("玛利亚和坎潘") ||
+            normalized.contains("瑪利亞和坎潘") ||
+            normalized.contains("玛丽亚和坎潘") ||
+            normalized.contains("マリアとカンパン") ||
+            normalized.contains("maria & kanpan") ||
+            normalized.contains("maria and kanpan")
+    }
+
+    @JvmOverloads
+    fun isSdpsMariaGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isSdpsMariaAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in SDPSMARIA_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isSdpsMariaGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isSdpsMariaGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -1827,6 +2286,9 @@ object GameCatalog {
         if (isRance5dAlias(lowerDir)) {
             return ID_RANCE5D
         }
+        if (isRance6AfterAlias(dirName)) {
+            return ID_RANCE6AFTER
+        }
         if (isRance06Alias(lowerDir)) {
             return ID_RANCE06
         }
@@ -1838,8 +2300,14 @@ object GameCatalog {
         ) {
             return ID_SENGOKU_RANCE
         }
+        if (isEvenicle2RanceAlias(dirName)) {
+            return ID_EVENICLE2RANCE
+        }
         if (isEvenicle2Alias(lowerDir)) {
             return ID_EVENICLE2
+        }
+        if (isEvenicleGaidenAlias(dirName)) {
+            return ID_EVENICLEGAIDEN
         }
         if (lowerDir == "evenicle" || lowerDir.startsWith("evenicle-") || lowerDir.contains("イブニクル") || lowerDir.contains("夏娃")) {
             return ID_EVENICLE
@@ -1887,6 +2355,21 @@ object GameCatalog {
         }
         if (isHaruurareAlias(dirName)) {
             return ID_HARUURARE
+        }
+        if (isOkusamaJunAlias(dirName)) {
+            return ID_OKUSAMAJUN
+        }
+        if (isOkusamaNtrAlias(dirName)) {
+            return ID_OKUSAMANTR
+        }
+        if (isWaidonyoAlias(dirName)) {
+            return ID_WAIDONYO
+        }
+        if (isYakata2Alias(dirName)) {
+            return ID_YAKATA2
+        }
+        if (isSdpsMariaAlias(dirName)) {
+            return ID_SDPSMARIA
         }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
@@ -1940,6 +2423,21 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isHaruurareAlias(displayName)) {
             return ID_HARUURARE
+        }
+        if (!displayName.isNullOrBlank() && isOkusamaJunAlias(displayName)) {
+            return ID_OKUSAMAJUN
+        }
+        if (!displayName.isNullOrBlank() && isOkusamaNtrAlias(displayName)) {
+            return ID_OKUSAMANTR
+        }
+        if (!displayName.isNullOrBlank() && isWaidonyoAlias(displayName)) {
+            return ID_WAIDONYO
+        }
+        if (!displayName.isNullOrBlank() && isYakata2Alias(displayName)) {
+            return ID_YAKATA2
+        }
+        if (!displayName.isNullOrBlank() && isSdpsMariaAlias(displayName)) {
+            return ID_SDPSMARIA
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -1996,6 +2494,9 @@ object GameCatalog {
         if (isRance5dAlias(lowerDisp)) {
             return ID_RANCE5D
         }
+        if (!displayName.isNullOrBlank() && isRance6AfterAlias(displayName)) {
+            return ID_RANCE6AFTER
+        }
         if (isRance06Alias(lowerDisp)) {
             return ID_RANCE06
         }
@@ -2007,8 +2508,14 @@ object GameCatalog {
         ) {
             return ID_SENGOKU_RANCE
         }
+        if (!displayName.isNullOrBlank() && isEvenicle2RanceAlias(displayName)) {
+            return ID_EVENICLE2RANCE
+        }
         if (isEvenicle2Alias(lowerDisp)) {
             return ID_EVENICLE2
+        }
+        if (!displayName.isNullOrBlank() && isEvenicleGaidenAlias(displayName)) {
+            return ID_EVENICLEGAIDEN
         }
         if (lowerDisp.contains("イブニクル") || lowerDisp.contains("evenicle") || lowerDisp.contains("夏娃")) {
             return ID_EVENICLE
@@ -2513,6 +3020,126 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_OKUSAMAJUN -> GameDescriptor(
+                id = ID_OKUSAMAJUN,
+                title = stringResolver(R.string.game_okusamajun_title),
+                defaultDirName = "OkusamaJun",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_okusamajun,
+                accentColor = 0xFFE91E63.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2B141D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.OKUSAMAJUN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_OKUSAMANTR -> GameDescriptor(
+                id = ID_OKUSAMANTR,
+                title = stringResolver(R.string.game_okusamantr_title),
+                defaultDirName = "OkusamaNtr",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_okusamantr,
+                accentColor = 0xFF3949AB.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF14182B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.OKUSAMANTR_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_EVENICLE2RANCE -> GameDescriptor(
+                id = ID_EVENICLE2RANCE,
+                title = stringResolver(R.string.game_evenicle2rance_title),
+                defaultDirName = "Evenicle2Rance",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_evenicle2rance,
+                accentColor = 0xFF2E7D32.toInt(),
+                accentBorderColor = 0x6681C784,
+                iconFrameColor = 0xFF112316.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLE2RANCE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_EVENICLEGAIDEN -> GameDescriptor(
+                id = ID_EVENICLEGAIDEN,
+                title = stringResolver(R.string.game_eveniclegaiden_title),
+                defaultDirName = "EvenicleGaiden",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_eveniclegaiden,
+                accentColor = 0xFF00897B.toInt(),
+                accentBorderColor = 0x664DB6AC,
+                iconFrameColor = 0xFF0E2220.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLEGAIDEN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_WAIDONYO -> GameDescriptor(
+                id = ID_WAIDONYO,
+                title = stringResolver(R.string.game_waidonyo_title),
+                defaultDirName = "Waidonyo",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_waidonyo,
+                accentColor = 0xFF5E35B1.toInt(),
+                accentBorderColor = 0x669575CD,
+                iconFrameColor = 0xFF1A122B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.WAIDONYO_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE6AFTER -> GameDescriptor(
+                id = ID_RANCE6AFTER,
+                title = stringResolver(R.string.game_rance6after_title),
+                defaultDirName = "Rance6After",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance6after,
+                accentColor = 0xFF00796B.toInt(),
+                accentBorderColor = 0x664DB6AC,
+                iconFrameColor = 0xFF0E1F1D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE6AFTER_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_YAKATA2 -> GameDescriptor(
+                id = ID_YAKATA2,
+                title = stringResolver(R.string.game_yakata2_title),
+                defaultDirName = "Yakata2",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_yakata2,
+                accentColor = 0xFFF57C00.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF281A0E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.YAKATA2_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SDPSMARIA -> GameDescriptor(
+                id = ID_SDPSMARIA,
+                title = stringResolver(R.string.game_sdpsmaria_title),
+                defaultDirName = "SuperDpsMaria",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_sdpsmaria,
+                accentColor = 0xFFAD1457.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF28121B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SDPSMARIA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -2570,7 +3197,15 @@ object GameCatalog {
         ID_KAERUNYO,
         ID_ATLACHNACHA,
         ID_REISHIKI,
-        ID_HARUURARE
+        ID_HARUURARE,
+        ID_OKUSAMAJUN,
+        ID_OKUSAMANTR,
+        ID_EVENICLE2RANCE,
+        ID_EVENICLEGAIDEN,
+        ID_WAIDONYO,
+        ID_RANCE6AFTER,
+        ID_YAKATA2,
+        ID_SDPSMARIA
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

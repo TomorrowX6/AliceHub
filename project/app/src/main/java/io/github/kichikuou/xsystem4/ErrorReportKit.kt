@@ -1307,14 +1307,20 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_rance04_title)
             GameCatalog.isRance5dAlias(lower) ->
                 context.getString(R.string.game_rance5d_title)
+            GameCatalog.isRance6AfterAlias(lower) ->
+                context.getString(R.string.game_rance6after_title)
             GameCatalog.isRance06Alias(lower) ->
                 context.getString(R.string.game_rance06_title)
             GameCatalog.isGalzooAlias(lower) ->
                 context.getString(R.string.game_galzoo_title)
             lower.contains("dohnadohna") || lower.contains("多娜多娜") ->
                 context.getString(R.string.game_dohnadohna_title)
+            GameCatalog.isEvenicle2RanceAlias(lower) ->
+                context.getString(R.string.game_evenicle2rance_title)
             GameCatalog.isEvenicle2Alias(lower) ->
                 context.getString(R.string.game_evenicle2_title)
+            GameCatalog.isEvenicleGaidenAlias(lower) ->
+                context.getString(R.string.game_eveniclegaiden_title)
             GameCatalog.isEscalayerRebootAlias(lower) ->
                 context.getString(R.string.game_escalayer_reboot_title)
             GameCatalog.isIxsealAlias(lower) ->
@@ -1339,6 +1345,16 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_reishiki_title)
             GameCatalog.isHaruurareAlias(lower) ->
                 context.getString(R.string.game_haruurare_title)
+            GameCatalog.isOkusamaJunAlias(lower) ->
+                context.getString(R.string.game_okusamajun_title)
+            GameCatalog.isOkusamaNtrAlias(lower) ->
+                context.getString(R.string.game_okusamantr_title)
+            GameCatalog.isWaidonyoAlias(lower) ->
+                context.getString(R.string.game_waidonyo_title)
+            GameCatalog.isYakata2Alias(lower) ->
+                context.getString(R.string.game_yakata2_title)
+            GameCatalog.isSdpsMariaAlias(lower) ->
+                context.getString(R.string.game_sdpsmaria_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

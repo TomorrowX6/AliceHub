@@ -41,7 +41,15 @@ object GameSortMetadata {
         GameCatalog.ID_KAERUNYO to GameSortInfo("1997-08-29", 56.4, "https://vndb.org/v1841", "https://vndb.org/v1841"),
         GameCatalog.ID_ATLACHNACHA to GameSortInfo("1997-12-18", 76.5, "https://vndb.org/v163", "https://vndb.org/v163"),
         GameCatalog.ID_REISHIKI to GameSortInfo("1997-12-18", 65.6, "https://vndb.org/v1826", "https://vndb.org/v1826"),
-        GameCatalog.ID_HARUURARE to GameSortInfo("2009-12-18", 65.3, "https://vndb.org/v3096", "https://vndb.org/v3096")
+        GameCatalog.ID_HARUURARE to GameSortInfo("2009-12-18", 65.3, "https://vndb.org/v3096", "https://vndb.org/v3096"),
+        GameCatalog.ID_OKUSAMAJUN to GameSortInfo("2022-05-27", 67.3, "https://vndb.org/v35407", "https://vndb.org/v35407"),
+        GameCatalog.ID_OKUSAMANTR to GameSortInfo("2022-05-27", 67.3, "https://vndb.org/v35407", "https://vndb.org/v35407"),
+        GameCatalog.ID_EVENICLE2RANCE to GameSortInfo("2019-02-22", 71.1, "https://vndb.org/v25513", "https://vndb.org/v25513"),
+        GameCatalog.ID_EVENICLEGAIDEN to GameSortInfo("2015-06-11", 65.3, "https://vndb.org/v20540", "https://vndb.org/v20540"),
+        GameCatalog.ID_WAIDONYO to GameSortInfo("2009-12-18", null, null, "https://www.alicesoft.com/alice2010/"),
+        GameCatalog.ID_RANCE6AFTER to GameSortInfo("2004-12-17", 63.0, "https://vndb.org/v29842", "https://vndb.org/v29842"),
+        GameCatalog.ID_YAKATA2 to GameSortInfo("1992-07-15", 58.2, "https://vndb.org/v9609", "https://vndb.org/v9609"),
+        GameCatalog.ID_SDPSMARIA to GameSortInfo("1992-09-01", 61.2, "https://vndb.org/v8670", "https://vndb.org/v8670")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

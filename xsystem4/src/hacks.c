@@ -53,7 +53,12 @@ bool game_rance9 = false;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
+bool game_evenicle_rance = false;
+bool game_evenicle_gaiden = false;
 bool game_evenicle2 = false;
+bool game_evenicle2_rance = false;
+bool game_haharanman = false;
+bool game_okusama = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
@@ -552,7 +557,12 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_rance10 = false;
 	game_dohnadohna = false;
 	game_evenicle = false;
+	game_evenicle_rance = false;
+	game_evenicle_gaiden = false;
 	game_evenicle2 = false;
+	game_evenicle2_rance = false;
+	game_haharanman = false;
+	game_okusama = false;
 	game_rance03 = false;
 	game_dungeons_and_dolls = false;
 	game_escalayer_reboot = false;
@@ -565,11 +575,26 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
 	game_dohnadohna = ain->version == 14
 		&& ain_get_function(ain, "DohnaDohna@CreateResources") >= 0;
+	game_evenicle_rance = ain->version == 6
+		&& ain_get_struct(ain, "CBigMap") >= 0
+		&& ain_has_gbk_string(ain, "56s5d4");
+	game_evenicle_gaiden = ain->version == 6
+		&& ain_get_struct(ain, "CBigMap") >= 0
+		&& ain_has_gbk_string(ain, "aa6sdd5432");
 	game_evenicle = ain->version == 6
+		&& !game_evenicle_rance
+		&& !game_evenicle_gaiden
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_get_function(ain, "CMapPlayer@RunPathFindMove") >= 0;
 	game_evenicle2 = ain->version == 14
 		&& ain_get_function(ain, "C_MedicaMenu@0") >= 0;
+	game_evenicle2_rance = game_evenicle2
+		&& ain_has_gbk_string(ain, "th74s65a");
+	game_haharanman = ain->version == 14
+		&& ain_has_gbk_string(ain, "83h2mjr");
+	game_okusama = ain->version == 14
+		&& ain_get_function(ain, "AdvGauge@UpdatePregnancy") >= 0
+		&& ain_has_gbk_string(ain, "4fnd6e97tn9");
 	game_rance01 = ain->version == 6
 		&& ain_get_struct(ain, "Player") >= 0
 		&& ain_get_struct(ain, "DungeonLine") >= 0
@@ -626,7 +651,9 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xe9L")
 			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xb3\xa4")
 			|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
-			|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")))
+			|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
+			|| strstr(config.game_name, "\xcc\xab\xcc\xab")
+			|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -663,7 +690,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1920;
 		config.view_height = 1080;
 	}
-	if ((game_dohnadohna || game_evenicle2 || game_ixseal)
+	if ((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman || game_okusama)
 			&& config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;

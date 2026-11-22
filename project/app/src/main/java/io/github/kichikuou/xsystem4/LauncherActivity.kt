@@ -88,7 +88,15 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_KAERUNYO && GameCatalog.isKaerunyoAlias(q)) ||
             (desc.id == GameCatalog.ID_ATLACHNACHA && GameCatalog.isAtlachnachaAlias(q)) ||
             (desc.id == GameCatalog.ID_REISHIKI && GameCatalog.isReishikiAlias(q)) ||
-            (desc.id == GameCatalog.ID_HARUURARE && GameCatalog.isHaruurareAlias(q))
+            (desc.id == GameCatalog.ID_HARUURARE && GameCatalog.isHaruurareAlias(q)) ||
+            (desc.id == GameCatalog.ID_OKUSAMAJUN && GameCatalog.isOkusamaJunAlias(q)) ||
+            (desc.id == GameCatalog.ID_OKUSAMANTR && GameCatalog.isOkusamaNtrAlias(q)) ||
+            (desc.id == GameCatalog.ID_EVENICLE2RANCE && GameCatalog.isEvenicle2RanceAlias(q)) ||
+            (desc.id == GameCatalog.ID_EVENICLEGAIDEN && GameCatalog.isEvenicleGaidenAlias(q)) ||
+            (desc.id == GameCatalog.ID_WAIDONYO && GameCatalog.isWaidonyoAlias(q)) ||
+            (desc.id == GameCatalog.ID_RANCE6AFTER && GameCatalog.isRance6AfterAlias(q)) ||
+            (desc.id == GameCatalog.ID_YAKATA2 && GameCatalog.isYakata2Alias(q)) ||
+            (desc.id == GameCatalog.ID_SDPSMARIA && GameCatalog.isSdpsMariaAlias(q))
         ) {
             return true
         }

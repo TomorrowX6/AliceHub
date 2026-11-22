@@ -264,6 +264,14 @@
     <string name="game_atlachnacha_title">ATLACH=NACHA</string>
     <string name="game_reishiki_title">Zero Shiki</string>
     <string name="game_haruurare_title">Haru Urare</string>
+    <string name="game_okusamajun_title">Okusama no Kaifuku Jutsu: Pure Love</string>
+    <string name="game_okusamantr_title">Okusama no Kaifuku Jutsu: NTR</string>
+    <string name="game_evenicle2rance_title">Evenicle 2 Rance</string>
+    <string name="game_eveniclegaiden_title">Evenicle Gaiten</string>
+    <string name="game_waidonyo_title">Waidonyo</string>
+    <string name="game_rance6after_title">Rance VI: Aftermath</string>
+    <string name="game_yakata2_title">ALICE no Yakata II</string>
+    <string name="game_sdpsmaria_title">Super D.P.S.: Maria &amp; Kanpan</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

@@ -247,7 +247,7 @@ public class GameSortingTest {
             list = new GameList(activity);
             List<GameSelectEntry> after = GameCatalog.INSTANCE.buildSelectEntries(activity, list);
             assertNull(after.stream().filter(e -> e.getDescriptor().getId().equals(GameCatalog.ID_RANCE10)).findFirst().get().getPrimaryItem());
-            assertEquals(GameCatalog.ID_DOHNA_DOHNA, after.get(0).getDescriptor().getId());
+            assertEquals(GameCatalog.ID_OKUSAMAJUN, after.get(0).getDescriptor().getId());
         } finally {
             list.close(); new File(dir, "AliceStart.ini").delete(); new File(dir, "Rance10.ain").delete(); dir.delete();
         }
