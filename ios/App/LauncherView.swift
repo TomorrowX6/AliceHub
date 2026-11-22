@@ -15,7 +15,8 @@ struct LauncherView: View {
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            ModOverlay.displayName($0.url, baseName: $0.displayName).localizedCaseInsensitiveContains(search)
+            ModOverlay.displayName($0.url, baseName: $0.displayName).localizedCaseInsensitiveContains(search) ||
+                $0.name.localizedCaseInsensitiveContains(search)
         }
     }
 

@@ -1182,8 +1182,6 @@ class GameList(activity: Activity) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
-                classifiedId == GameCatalog.ID_RANCE41 -> "Rance41"
-                classifiedId == GameCatalog.ID_RANCE42 -> "Rance42"
                 legacySystem3 -> sanitizeDerivedGameDirName(
                     (GameCatalog.legacySystem3Title(srcDir) ?: srcDir.name).take(64),
                     fallback = "System3"

@@ -180,7 +180,7 @@ public class Rance41And42CatalogTest {
         assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE41));
         assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE42));
         assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE04));
-        assertEquals("Rance41", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("RAN41_SA.ald", "RAN41_GA.ald"), false));
+        assertEquals("RAN41_SA", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("RAN41_SA.ald", "RAN41_GA.ald"), false));
 
         assertTrue(GameCatalog.INSTANCE.isSystem3xGameDir(r42Ald));
         assertFalse(GameCatalog.INSTANCE.isLegacySystem3GameDir(r42Ald));
@@ -190,7 +190,7 @@ public class Rance41And42CatalogTest {
         assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE42));
         assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE41));
         assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE04));
-        assertEquals("Rance42", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("ran42_sa.ald", "ran42_ga.ald"), false));
+        assertEquals("ran42_sa", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("ran42_sa.ald", "ran42_ga.ald"), false));
     }
 
     @Test
