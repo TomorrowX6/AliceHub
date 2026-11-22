@@ -63,7 +63,8 @@ struct LibraryChecks {
             try Data().write(to: file)
             let isRance5d = marker.lowercased() == "r5d_sa.ald"
             precondition(GameLibrary.isRance5d(source) == isRance5d)
-            precondition(Game(url: source).name == (isRance5d ? "兰斯5D" : source.lastPathComponent))
+            precondition(Game(url: source).name == source.lastPathComponent)
+            precondition(Game(url: source).displayName == (isRance5d ? "兰斯5D" : source.lastPathComponent))
             if isRance5d {
                 try Data().write(to: firstAIN)
                 precondition(!GameLibrary.isRance5d(source))

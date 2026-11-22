@@ -10,7 +10,8 @@ enum GameEngine: String {
 struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
-    var name: String { GameLibrary.isRance5d(url) ? "兰斯5D" : url.lastPathComponent }
+    var name: String { url.lastPathComponent }
+    var displayName: String { GameLibrary.isRance5d(url) ? "兰斯5D" : name }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
@@ -90,7 +91,7 @@ final class GameLibrary: ObservableObject {
         do {
             try files.createDirectory(at: gamesDirectory, withIntermediateDirectories: true)
             games = try files.contentsOfDirectory(at: gamesDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         } catch { self.error = error.localizedDescription }
     }
 
