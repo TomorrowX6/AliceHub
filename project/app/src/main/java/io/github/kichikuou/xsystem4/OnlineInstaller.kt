@@ -953,11 +953,9 @@ object OnlineInstaller {
             .toList()
             .forEach { it.delete() }
 
-        val hasSys4Ini = File(stagingDir, "AliceStart.ini").isFile ||
-            File(stagingDir, "System40.ini").isFile ||
-            (stagingDir.listFiles()?.any {
-                it.isFile && (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
-            } == true)
+        val hasSys4Ini = stagingDir.listFiles()?.any {
+            it.isFile && GameCatalog.isSystem4LaunchIni(it.name)
+        } == true
         val sys4AinFile = findPrimarySys4AinFile(stagingDir)
         val isSys3x = GameCatalog.isSystem3xGameDir(stagingDir)
         if (!(hasSys4Ini && sys4AinFile != null) && !isSys3x) {

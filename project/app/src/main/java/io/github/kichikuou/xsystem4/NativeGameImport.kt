@@ -70,10 +70,7 @@ object NativeGameImport {
 
     private fun <T, D> isSys4RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
         val hasIni = docs.any {
-            !it.folder && !skip(it.name) &&
-                (it.name.equals("AliceStart.ini", true) ||
-                    it.name.equals("AliceStart2.ini", true) ||
-                    it.name.equals("System40.ini", true))
+            !it.folder && !skip(it.name) && GameCatalog.isSystem4LaunchIni(it.name)
         }
         val hasAin = docs.any {
             !it.folder && !skip(it.name) &&

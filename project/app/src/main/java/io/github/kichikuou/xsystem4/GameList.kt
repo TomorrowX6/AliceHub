@@ -896,7 +896,7 @@ class GameList(activity: Activity) {
         if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
         val primaryCanonical = primaryDir.canonicalPath
         val primaryScenario = primaryDir.listFiles()?.firstOrNull {
-            it.isFile && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
+            it.isFile && GameCatalog.isSystem35Scenario(it.name)
         }?.name
         val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr")
         searchRoot.walkTopDown()
@@ -911,7 +911,7 @@ class GameList(activity: Activity) {
                 checkCancelled()
                 val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
                 val otherScenario = files.firstOrNull {
-                    it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
+                    GameCatalog.isSystem35Scenario(it.name)
                 }?.name
                 if (primaryScenario != null && otherScenario != null &&
                     !otherScenario.equals(primaryScenario, ignoreCase = true)
@@ -1144,8 +1144,7 @@ class GameList(activity: Activity) {
 
             if (srcDir == null) {
                 val hasIni = tempDir.walkTopDown().any {
-                    it.isFile && (it.name.equals("System40.ini", true) ||
-                        it.name.equals("AliceStart.ini", true) ||
+                    it.isFile && (GameCatalog.isSystem4LaunchIni(it.name) ||
                         it.name.equals("System39.ini", true))
                 }
                 throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
@@ -2110,8 +2109,7 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
         if (outerCnRoot != null && outerCnRoot.isDirectory &&
             outerCnRoot.listFiles()?.any {
                 it.isFile && (it.name.endsWith(".ain", ignoreCase = true) ||
-                    it.name.equals("AliceStart.ini", ignoreCase = true) ||
-                    it.name.equals("System40.ini", ignoreCase = true))
+                    GameCatalog.isSystem4LaunchIni(it.name))
             } == true
         ) {
             return outerCnRoot
@@ -2307,7 +2305,7 @@ internal fun mergeGalzooCompanionData(
 
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+    val hasIni = files.any { GameCatalog.isSystem4LaunchIni(it.name) }
     val hasAin = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
     return hasIni && hasAin
 }

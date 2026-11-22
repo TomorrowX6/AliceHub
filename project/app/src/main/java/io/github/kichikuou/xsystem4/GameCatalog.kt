@@ -77,9 +77,13 @@ object GameCatalog {
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
+    internal fun isSystem4LaunchIni(name: String): Boolean =
+        name.equals("System40.ini", true) ||
+            name.equals("AliceStart.ini", true) ||
+            name.equals("AliceStart2.ini", true)
+
     private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
-        (it.endsWith(".ain", true) && !it.equals("System39.ain", true)) ||
-            it.equals("System40.ini", true) || it.equals("AliceStart.ini", true)
+        (it.endsWith(".ain", true) && !it.equals("System39.ain", true)) || isSystem4LaunchIni(it)
     }
 
     internal fun isSystem35Scenario(name: String): Boolean =

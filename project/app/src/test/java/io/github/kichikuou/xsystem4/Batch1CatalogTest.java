@@ -116,11 +116,23 @@ public class Batch1CatalogTest {
 
     @Test
     public void handlesIniFallbacksMojibakeAndDisambiguation() throws Exception {
-        // Haruurare with AliceStart2.ini + generic ain
-        File haruIni2 = tmp.newFolder("HaruIni2");
-        writeFile(new File(haruIni2, "AliceStart2.ini"), "GameName = \"校内赤线区\"\nCodeName = \"custom.ain\"\n".getBytes(GBK));
-        writeFile(new File(haruIni2, "custom.ain"), new byte[]{1});
+        // Haruurare with AliceStart2.ini-only layout (no AliceStart.ini / System40.ini) must pass
+        // folder classification, extracted archive root detection, and folder discovery equally.
+        File haruArchiveStaging = tmp.newFolder("HaruArchiveStaging");
+        File haruIni2 = new File(haruArchiveStaging, "HaruurareCN");
+        writeFile(new File(haruIni2, "AliceStart2.ini"), "GameName = \"校内赤线区\"\nCodeName = \"haru_c.ain\"\n".getBytes(GBK));
+        writeFile(new File(haruIni2, "haru_c.ain"), new byte[]{1});
         assertEquals(GameCatalog.ID_HARUURARE, GameCatalog.INSTANCE.classifyGameRootDir(haruIni2));
+        assertTrue(GameListKt.isSystem4GameRoot(haruIni2));
+        assertEquals(haruIni2, GameListKt.findGameRootDirInternal(haruArchiveStaging, null, GameCatalog.ID_HARUURARE));
+
+        // Atlach=Nacha archive with only *_CHS.ALD scenario must also pass archive root detection.
+        File atlArchiveStaging = tmp.newFolder("AtlArchiveStaging");
+        File atlRoot = new File(atlArchiveStaging, "AtlachCN");
+        writeFile(new File(atlRoot, "蜘蛛SA_CHS.ALD"), new byte[]{1});
+        writeFile(new File(atlRoot, "CHS.TBL"), new byte[]{1});
+        assertTrue(GameListKt.isSystem3GameRoot(atlRoot));
+        assertEquals(atlRoot, GameListKt.findGameRootDirInternal(atlArchiveStaging, null, GameCatalog.ID_ATLACHNACHA));
 
         // NativeGameImport canonical base names including *_CHS.ALD
         assertEquals("Daibanchou", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(

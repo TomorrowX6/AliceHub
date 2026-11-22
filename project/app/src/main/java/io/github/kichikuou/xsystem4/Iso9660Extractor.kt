@@ -104,9 +104,7 @@ object Iso9660Extractor {
                             if (lowerName.startsWith("daiakuji_") || lowerName.startsWith("daiakuzi_")) {
                                 hasIsoDaiakujiMarker = true
                             }
-                            if (e.name.equals("AliceStart.ini", ignoreCase = true) ||
-                                e.name.equals("System40.ini", ignoreCase = true)
-                            ) {
+                            if (GameCatalog.isSystem4LaunchIni(e.name)) {
                                 hasIni = true
                             }
                             if (e.name.endsWith(".ain", ignoreCase = true) &&
@@ -119,9 +117,7 @@ object Iso9660Extractor {
                                     hasMatchingAin = true
                                 }
                             }
-                            if (e.name.endsWith("sa.ald", ignoreCase = true) ||
-                                e.name.equals("adisk.ald", ignoreCase = true)
-                            ) {
+                            if (GameCatalog.isSystem35Scenario(e.name)) {
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true)
                                 ) {
