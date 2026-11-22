@@ -28,6 +28,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <dirent.h>
 
 #include "portab.h"
 #include "utfsjis.h"
@@ -35,6 +37,81 @@
 #include "gbk_table.h"
 
 static uint16_t unicode_to_gbk_tbl[65536];
+static uint16_t chs_remap_tbl[65536];
+static bool chs_remap_loaded = false;
+
+void chs_tbl_reset(void) {
+	memset(chs_remap_tbl, 0, sizeof(chs_remap_tbl));
+	chs_remap_loaded = false;
+}
+
+bool chs_tbl_is_loaded(void) {
+	return chs_remap_loaded;
+}
+
+bool chs_tbl_load(const char *path) {
+	if (!path || !*path)
+		return false;
+	FILE *fp = fopen(path, "rb");
+	if (!fp)
+		return false;
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return false;
+	}
+	long size = ftell(fp);
+	if (size <= 0 || size > (long)(65536 * 2) || (size & 1) != 0) {
+		fclose(fp);
+		return false;
+	}
+	rewind(fp);
+	uint8_t *raw = malloc((size_t)size);
+	if (!raw) {
+		fclose(fp);
+		return false;
+	}
+	size_t nread = fread(raw, 1, (size_t)size, fp);
+	fclose(fp);
+	if (nread != (size_t)size) {
+		free(raw);
+		return false;
+	}
+	chs_tbl_reset();
+	size_t count = nread / 2;
+	for (size_t i = 0; i < count; i++) {
+		chs_remap_tbl[i] = (uint16_t)(raw[i * 2] | ((uint16_t)raw[i * 2 + 1] << 8));
+	}
+	free(raw);
+	chs_remap_loaded = true;
+	return true;
+}
+
+bool chs_tbl_load_from_dir(const char *dir_path) {
+	chs_tbl_reset();
+	DIR *dir = opendir(dir_path ? dir_path : ".");
+	if (!dir)
+		return false;
+	struct dirent *d;
+	bool loaded = false;
+	while ((d = readdir(dir))) {
+		if (strcasecmp(d->d_name, "CHS.TBL") == 0) {
+			if (dir_path && strcmp(dir_path, ".") != 0) {
+				size_t len = strlen(dir_path) + 1 + strlen(d->d_name) + 1;
+				char *full = malloc(len);
+				if (full) {
+					snprintf(full, len, "%s/%s", dir_path, d->d_name);
+					loaded = chs_tbl_load(full);
+					free(full);
+				}
+			} else {
+				loaded = chs_tbl_load(d->d_name);
+			}
+			break;
+		}
+	}
+	closedir(dir);
+	return loaded;
+}
 
 static uint8_t *append_utf8(uint8_t *dstp, int c) {
 	if (c <= 0x7f) {
@@ -95,12 +172,28 @@ uint8_t *sjis2utf(const uint8_t *src) {
 			continue;
 		}
 
-		int c;
+		int c = 0;
 		if (*src >= 0xa0 && *src <= 0xdf) {
 			c = 0xff60 + *src - 0xa0;
 			src++;
 		} else {
-			c = s2u[*src - 0x80][*(src+1) - 0x40];
+			if (!src[1])
+				break;
+			if (chs_remap_loaded) {
+				uint16_t mapped = chs_remap_tbl[((unsigned)src[0] << 8) | src[1]];
+				if (mapped) {
+					if (mapped <= 0x7f) {
+						c = mapped;
+					} else {
+						uint8_t hi = (uint8_t)(mapped >> 8);
+						uint8_t lo = (uint8_t)(mapped & 0xff);
+						if (hi >= 0x81 && hi <= 0xfe && lo >= 0x40 && lo <= 0xfe)
+							c = gbk_to_unicode[hi - 0x81][lo - 0x40];
+					}
+				}
+			}
+			if (!c)
+				c = s2u[*src - 0x80][*(src+1) - 0x40];
 			src += 2;
 		}
 

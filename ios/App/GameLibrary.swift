@@ -127,7 +127,7 @@ final class GameLibrary: ObservableObject {
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        if regularFiles.contains(where: { ["alicestart.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
+        if regularFiles.contains(where: { ["alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
             return (.system4, url, false)
         }
         if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
@@ -136,7 +136,7 @@ final class GameLibrary: ObservableObject {
         }
         let names = regularFiles.map { $0.lastPathComponent.lowercased() }
         let system39 = names.contains("system39.ini") || names.contains("system39.ain")
-        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) {
+        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0.hasSuffix("sa_chs.ald") || $0 == "adisk.ald" }) {
             return (.system3, url, system39)
         }
         if names.contains("adisk.dat") && names.contains("acg.dat") {

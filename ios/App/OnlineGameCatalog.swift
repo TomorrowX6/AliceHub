@@ -29,9 +29,16 @@ struct OnlineGame: Identifiable {
         Self(id: "ixseal", title: "超昂神骑", directory: "Ixseal"),
         Self(id: "haruka", title: "超昂闪忍遥", directory: "Haruka"),
         Self(id: "tsumashibori", title: "妻管严", directory: "Tsumashibori"),
+        Self(id: "tsumamigui", title: "妻中蜜", directory: "Tsumamigui"),
         Self(id: "tsumamigui3", title: "妻中蜜３", directory: "Tsumamigui3"),
         Self(id: "kichikuou", title: "鬼畜王兰斯", directory: "KichikuRance"),
-        Self(id: "daiakuji", title: "大恶司", directory: "Daiakuji")
+        Self(id: "daiakuji", title: "大恶司", directory: "Daiakuji"),
+        Self(id: "daibanchou", title: "大番长 -Big Bang Age-", directory: "Daibanchou"),
+        Self(id: "daiteikoku", title: "大帝国", directory: "Daiteikoku"),
+        Self(id: "kaerunyo", title: "回家扭·帕扭", directory: "Kaerunyo"),
+        Self(id: "atlachnacha", title: "阿特拉克=纳克亚", directory: "AtlachNacha"),
+        Self(id: "reishiki", title: "零式", directory: "Reishiki"),
+        Self(id: "haruurare", title: "校内赤线区", directory: "Haruurare")
     ]
 }
 

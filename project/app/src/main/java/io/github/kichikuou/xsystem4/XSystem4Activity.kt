@@ -233,6 +233,12 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isTsumashiboriGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isNonModifierBuiltInGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isNonModifierBuiltInGameDir(root, saveDir?.name, saveDir)
+    }
+
     fun isSystem3xGame(): Boolean {
         val root = effectiveGameRootFile()
         return GameCatalog.isSystem3xGameDir(root)

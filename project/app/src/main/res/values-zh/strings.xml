@@ -249,13 +249,20 @@
     <string name="game_rance09_title">兰斯09 赫尔曼革命</string>
     <string name="game_kichikuou_title">鬼畜王兰斯</string>
     <string name="game_daiakuji_title">大恶司</string>
+    <string name="game_daibanchou_title">大番长 -Big Bang Age-</string>
+    <string name="game_daiteikoku_title">大帝国</string>
     <string name="game_escalayer_title">超昂天使 艾斯卡蕾雅</string>
     <string name="game_escalayer_reboot_title">超昂天使 艾斯卡蕾雅 Reboot</string>
     <string name="game_galzoo_title">GALZOO艾兰德</string>
     <string name="game_ixseal_title">超昂神骑</string>
     <string name="game_haruka_title">超昂闪忍遥</string>
     <string name="game_tsumashibori_title">妻管严</string>
+    <string name="game_tsumamigui_title">妻中蜜</string>
     <string name="game_tsumamigui3_title">妻中蜜３</string>
+    <string name="game_kaerunyo_title">回家扭·帕扭</string>
+    <string name="game_atlachnacha_title">阿特拉克=纳克亚</string>
+    <string name="game_reishiki_title">零式</string>
+    <string name="game_haruurare_title">校内赤线区</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

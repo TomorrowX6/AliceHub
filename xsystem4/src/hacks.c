@@ -36,7 +36,10 @@
 
 #include "hll/hll.h"
 
+bool game_daibanchou = false;
 bool game_daibanchou_en = false;
+bool game_daiteikoku = false;
+bool game_haruurare = false;
 bool game_rance01 = false;
 bool game_rance02 = false;
 bool game_rance02_mg = false;
@@ -345,6 +348,37 @@ static bool ain_has_gbk_r03_strings(struct ain *ain)
 	return false;
 }
 
+static bool ain_messages_look_gbk(struct ain *ain)
+{
+	unsigned long gbk_pairs = 0;
+	unsigned long sjis_kana_pairs = 0;
+	int limit = ain->nr_messages < 8192 ? ain->nr_messages : 8192;
+	for (int i = 0; i < limit; i++) {
+		if (!ain->messages[i])
+			continue;
+		const unsigned char *s = (const unsigned char *)ain->messages[i]->text;
+		if (!s)
+			continue;
+		for (size_t j = 0; s[j] && s[j + 1]; j++) {
+			unsigned char b0 = s[j];
+			unsigned char b1 = s[j + 1];
+			if (b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe) {
+				gbk_pairs++;
+				j++;
+			} else if ((b0 == 0x82 && b1 >= 0x9f && b1 <= 0xf1)
+					|| (b0 == 0x83 && b1 >= 0x40 && b1 <= 0x96)) {
+				sjis_kana_pairs++;
+				j++;
+			} else if ((((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xfe))
+						&& b1 >= 0x40 && b1 <= 0xfe)
+					|| (b0 >= 0xa1 && b0 <= 0xaf && b1 >= 0xa1 && b1 <= 0xfe)) {
+				j++;
+			}
+		}
+	}
+	return gbk_pairs >= 64 && gbk_pairs > sjis_kana_pairs * 2;
+}
+
 static void apply_rance03_message_layout(struct ain *ain)
 {
 	// Reflow raw glyph positions before the script applies centre/right alignment.
@@ -503,7 +537,10 @@ static void apply_rance03_skill_cooldown_layout(struct ain *ain)
 
 void apply_game_specific_hacks(struct ain *ain)
 {
+	game_daibanchou = false;
 	game_daibanchou_en = false;
+	game_daiteikoku = false;
+	game_haruurare = false;
 	game_rance02_mg = false;
 	game_rance6 = false;
 	game_rance6_mg = false;
@@ -560,6 +597,15 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "PLAY_TABLE_SAKURA") >= 0
 		&& ain_get_struct(ain, "PLAY_TABLE_MADOKA") >= 0
 		&& ain_get_struct(ain, "SAKURA_SIDE_SPRITE") >= 0;
+	game_daibanchou = ain->version == 4
+		&& ain_get_library(ain, "BanMisc") >= 0
+		&& ain_get_struct(ain, "StructPowerUpPhase") >= 0;
+	game_daiteikoku = ain->version == 6
+		&& ain_get_struct(ain, "StarBattleArea") >= 0
+		&& ain_get_struct(ain, "AdmiralSkillInfoConstant") >= 0;
+	game_haruurare = ain->version == 6
+		&& ain_get_struct(ain, "HaruApp") >= 0
+		&& ain_get_struct(ain, "CustomerRequirement") >= 0;
 	if (ain->version == 7 && config.ain_filename) {
 		const char *ain_base = strrchr(config.ain_filename, '/');
 		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
@@ -576,7 +622,11 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| strstr(config.game_name, "\xba\xba\xbb\xaf")
 			|| strstr(config.game_name, "\x9e\x61\xbb\xaf")
 			|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")
-			|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")))
+			|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
+			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xe9L")
+			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xb3\xa4")
+			|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
+			|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -596,7 +646,8 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_has_gbk_string(ain, "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd")))
 		|| (game_tsumashibori && (ain_has_gbk_string(ain, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
 			|| ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")))
-		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0));
+		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
+		|| ain_messages_look_gbk(ain));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);
@@ -618,7 +669,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_height = 720;
 	}
 	char *game_name = config.game_name ? sjis2utf(config.game_name, 0) : xstrdup("");
-	if (!strcmp(game_name, "大番長")) {
+	if (game_daibanchou || !strcmp(game_name, "大番長")) {
+		game_daibanchou = true;
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {
 		apply_rance02_hacks(ain);

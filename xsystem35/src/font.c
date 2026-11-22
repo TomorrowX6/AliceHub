@@ -157,7 +157,7 @@ static bool is_sc_face_name(const char *family) {
 
 static void select_sc_ttc_face(const char *path, FT_Face *face_io) {
 	FT_Face cur = *face_io;
-	if ((this.encoding != GBK && this.encoding != UTF8) || !cur || cur->num_faces <= 1)
+	if ((this.encoding != GBK && this.encoding != UTF8 && !chs_tbl_is_loaded()) || !cur || cur->num_faces <= 1)
 		return;
 	if (is_sc_face_name(cur->family_name) && strstr(cur->family_name, "Mono") != NULL)
 		return;
@@ -192,7 +192,7 @@ static void select_sc_ttc_face(const char *path, FT_Face *face_io) {
 static FT_Face get_fallback_face(FontType type) {
 	if (type >= FONTTYPEMAX)
 		return NULL;
-	int slot = (this.encoding == GBK || this.encoding == UTF8) ? 1 : 0;
+	int slot = (this.encoding == GBK || this.encoding == UTF8 || chs_tbl_is_loaded()) ? 1 : 0;
 	if (this.fallback_checked[type][slot])
 		return this.fallback_face[type][slot];
 	this.fallback_checked[type][slot] = true;
@@ -291,7 +291,7 @@ static bool font_select(FontSpec spec, Font *font) {
 	// face with the SC fallback font. UTF-8 is encoding-only (used by Japanese,
 	// Latin, and Chinese games alike), so preserve the configured primary face
 	// here and fall back per-glyph in get_glyph().
-	if (this.encoding == GBK && FT_Get_Char_Index(face, 0x8fd9) == 0) {
+	if ((this.encoding == GBK || chs_tbl_is_loaded()) && FT_Get_Char_Index(face, 0x8fd9) == 0) {
 		FT_Face cjk = get_fallback_face(spec.type);
 		if (cjk)
 			face = cjk;

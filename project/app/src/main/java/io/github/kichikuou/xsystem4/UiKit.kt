@@ -308,10 +308,13 @@ internal object UiKit {
             GameCatalog.ID_RANCE5D, GameCatalog.ID_RANCE06,
             GameCatalog.ID_RANCE08, GameCatalog.ID_RANCE09,
             GameCatalog.ID_KICHIKUOU, GameCatalog.ID_DAIAKUJI,
+            GameCatalog.ID_DAIBANCHOU, GameCatalog.ID_DAITEIKOKU,
             GameCatalog.ID_ESCALAYER, GameCatalog.ID_ESCALAYER_REBOOT,
             GameCatalog.ID_GALZOO, GameCatalog.ID_IXSEAL,
             GameCatalog.ID_HARUKA, GameCatalog.ID_TSUMASHIBORI,
-            GameCatalog.ID_TSUMAMIGUI3 -> 0
+            GameCatalog.ID_TSUMAMIGUI, GameCatalog.ID_TSUMAMIGUI3,
+            GameCatalog.ID_KAERUNYO, GameCatalog.ID_ATLACHNACHA,
+            GameCatalog.ID_REISHIKI, GameCatalog.ID_HARUURARE -> 0
             GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
             else -> frame.layoutParams.width / 10
         }
@@ -334,13 +337,20 @@ internal object UiKit {
             desc.id == GameCatalog.ID_RANCE09 ||
             desc.id == GameCatalog.ID_KICHIKUOU ||
             desc.id == GameCatalog.ID_DAIAKUJI ||
+            desc.id == GameCatalog.ID_DAIBANCHOU ||
+            desc.id == GameCatalog.ID_DAITEIKOKU ||
             desc.id == GameCatalog.ID_ESCALAYER ||
             desc.id == GameCatalog.ID_ESCALAYER_REBOOT ||
             desc.id == GameCatalog.ID_GALZOO ||
             desc.id == GameCatalog.ID_IXSEAL ||
             desc.id == GameCatalog.ID_HARUKA ||
             desc.id == GameCatalog.ID_TSUMASHIBORI ||
-            desc.id == GameCatalog.ID_TSUMAMIGUI3
+            desc.id == GameCatalog.ID_TSUMAMIGUI ||
+            desc.id == GameCatalog.ID_TSUMAMIGUI3 ||
+            desc.id == GameCatalog.ID_KAERUNYO ||
+            desc.id == GameCatalog.ID_ATLACHNACHA ||
+            desc.id == GameCatalog.ID_REISHIKI ||
+            desc.id == GameCatalog.ID_HARUURARE
         val bitmap = if (builtIn) null else item?.getIconBitmap(frame.layoutParams.width - pad * 2)
         if (bitmap != null) {
             iconView.setImageBitmap(bitmap)

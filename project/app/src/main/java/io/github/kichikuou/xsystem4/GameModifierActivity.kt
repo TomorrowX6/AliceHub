@@ -346,13 +346,20 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RANCE09 ||
                 id == GameCatalog.ID_KICHIKUOU ||
                 id == GameCatalog.ID_DAIAKUJI ||
+                id == GameCatalog.ID_DAIBANCHOU ||
+                id == GameCatalog.ID_DAITEIKOKU ||
                 id == GameCatalog.ID_ESCALAYER ||
                 id == GameCatalog.ID_ESCALAYER_REBOOT ||
                 id == GameCatalog.ID_GALZOO ||
                 id == GameCatalog.ID_IXSEAL ||
                 id == GameCatalog.ID_HARUKA ||
                 id == GameCatalog.ID_TSUMASHIBORI ||
+                id == GameCatalog.ID_TSUMAMIGUI ||
                 id == GameCatalog.ID_TSUMAMIGUI3 ||
+                id == GameCatalog.ID_KAERUNYO ||
+                id == GameCatalog.ID_ATLACHNACHA ||
+                id == GameCatalog.ID_REISHIKI ||
+                id == GameCatalog.ID_HARUURARE ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

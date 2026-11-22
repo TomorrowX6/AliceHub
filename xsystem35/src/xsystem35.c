@@ -70,6 +70,7 @@
 #include "volume.h"
 #include "msgskip.h"
 #include "texthook.h"
+#include "utfsjis.h"
 
 static char *gameResourceFile = "xsystem35.gr";
 static void    sys35_usage(bool verbose);
@@ -526,6 +527,11 @@ int main(int argc, char **argv) {
 		}
 	}
 	
+	// Load optional Longinus CHS.TBL character remap table before profile/options.
+	if (chs_tbl_load_from_dir(".")) {
+		sys_setDefaultCharacterEncoding(SHIFT_JIS, true);
+	}
+
 #ifdef ALICEHUB_IOS
 	const char *gothic = getenv("XSYSTEM35_FONT_GOTHIC");
 	const char *mincho = getenv("XSYSTEM35_FONT_MINCHO");

@@ -57,15 +57,24 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
             val isSys3x = GameCatalog.isSystem3xGameDir(dir)
-            var iniFile = File(dir, "System40.ini")
+            val hasHaruCnAin = File(dir, "haru_c.ain").isFile ||
+                dir.listFiles()?.any { it.isFile && it.name.equals("haru_c.ain", ignoreCase = true) } == true
+            var iniFile = if (hasHaruCnAin && File(dir, "AliceStart2.ini").exists()) {
+                File(dir, "AliceStart2.ini")
+            } else {
+                File(dir, "System40.ini")
+            }
             if (!iniFile.exists())
                 iniFile = File(dir, "AliceStart.ini")
+            if (!iniFile.exists())
+                iniFile = File(dir, "AliceStart2.ini")
             if (!iniFile.exists())
                 iniFile = File(dir, "System39.ini")
             if (!iniFile.exists()) {
                 val ignoreCaseIni = dir.listFiles()?.firstOrNull {
                     it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
                         it.name.equals("AliceStart.ini", ignoreCase = true) ||
+                        it.name.equals("AliceStart2.ini", ignoreCase = true) ||
                         it.name.equals("System39.ini", ignoreCase = true))
                 }
                 if (ignoreCaseIni != null) {
@@ -89,6 +98,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
                     GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
+                    GameCatalog.isTsumamiguiGameDir(dir) -> context.getString(R.string.game_tsumamigui_title)
+                    GameCatalog.isKaerunyoGameDir(dir) -> context.getString(R.string.game_kaerunyo_title)
+                    GameCatalog.isAtlachnachaGameDir(dir) -> context.getString(R.string.game_atlachnacha_title)
+                    GameCatalog.isReishikiGameDir(dir) -> context.getString(R.string.game_reishiki_title)
                     else -> dir.name
                 }
             } else {
@@ -1198,7 +1211,14 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
+                classifiedId == GameCatalog.ID_TSUMAMIGUI -> "Tsumamigui"
                 classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
+                classifiedId == GameCatalog.ID_DAIBANCHOU -> "Daibanchou"
+                classifiedId == GameCatalog.ID_DAITEIKOKU -> "Daiteikoku"
+                classifiedId == GameCatalog.ID_KAERUNYO -> "Kaerunyo"
+                classifiedId == GameCatalog.ID_ATLACHNACHA -> "AtlachNacha"
+                classifiedId == GameCatalog.ID_REISHIKI -> "Reishiki"
+                classifiedId == GameCatalog.ID_HARUURARE -> "Haruurare"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"

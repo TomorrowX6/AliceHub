@@ -12,10 +12,10 @@ Game Compatibility
 | ランス4.2                                   | Supported   | [Ver1.05](https://hannylaboratory.blogspot.com/2023/02/blog-post_9.html). Use system3-sdl2 for older versions |
 | いけないかつみ先生                          | Supported   | Emojis are not supported |
 | 闘神都市II                                  | Supported   | Win95 edition |
-| かえるにょ・ぱにょ～ん                      | Supported   | Normal / Low-priced edition |
+| かえるにょ・ぱにょ～ん                      | Supported   | Normal / Low-priced edition; CN GBK fan translation supported |
 | 戦巫女                                      | Supported   | Normal / Low-priced edition |
-| 零式                                        | Supported   | From ALICEの館４・５・６ / Low-priced edition |
-| アトラク＝ナクア                            | Supported   | From ALICEの館４・５・６ / Low-priced edition |
+| 零式                                        | Supported   | From ALICEの館４・５・６ / Low-priced edition; CN GBK fan translation supported |
+| アトラク＝ナクア                            | Supported   | From ALICEの館４・５・６ / Low-priced edition; CN Longinus `CHS.TBL` + `*_CHS.ALD` supported |
 | Rance －光を求めて－                        | Supported   | From ALICEの館４・５・６ |
 | Rance II －反逆の少女達－                   | Supported   | From ALICEの館４・５・６ |
 | Rance III －リーザス陥落－                  | Supported   | From ALICEの館４・５・６ |
@@ -49,7 +49,7 @@ Game Compatibility
 | チェシャのお部屋1.5                         | Supported   | From 王子さまLV1.5 |
 | 王子さま１／１６                            | Supported   | From 王子さまLV1.5 |
 | スパイ伊藤の「クイズ！俺にさぼらせろ」      | Supported   | From 王子さまLV1.5 |
-| 妻みぐい                                    | Supported   | Opening demo is not supported |
+| 妻みぐい                                    | Supported   | Opening demo is not supported; CN GBK fan translation supported |
 | 超昂天使エスカレイヤー                      | Supported   | Opening demo is not supported |
 | ランス５Ｄ                                  | Supported   |       |
 | Rance 5D - The Lonely Girl (EN)             | Supported   | MangaGamer version |

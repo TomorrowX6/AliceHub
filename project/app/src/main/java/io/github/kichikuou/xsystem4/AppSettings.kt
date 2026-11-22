@@ -47,13 +47,20 @@ object AppSettings {
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
     private const val DEFAULT_KICHIKUOU_BYTES = 198596468L
     private const val DEFAULT_DAIAKUJI_BYTES = 923623502L
+    internal const val DEFAULT_DAIBANCHOU_BYTES = 1895126876L
+    internal const val DEFAULT_DAITEIKOKU_BYTES = 2416202457L
     private const val DEFAULT_ESCALAYER_BYTES = 1563994084L
     private const val DEFAULT_ESCALAYER_REBOOT_BYTES = 2470174002L
     internal const val DEFAULT_GALZOO_BYTES = 4027583522L
     internal const val DEFAULT_IXSEAL_BYTES = 4729863037L
     internal const val DEFAULT_HARUKA_BYTES = 3797821541L
     internal const val DEFAULT_TSUMASHIBORI_BYTES = 2850964030L
+    internal const val DEFAULT_TSUMAMIGUI_BYTES = 1400592703L
     internal const val DEFAULT_TSUMAMIGUI3_BYTES = 2403975825L
+    internal const val DEFAULT_KAERUNYO_BYTES = 105838567L
+    internal const val DEFAULT_ATLACHNACHA_BYTES = 148510731L
+    internal const val DEFAULT_REISHIKI_BYTES = 88875020L
+    internal const val DEFAULT_HARUURARE_BYTES = 264968018L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -189,13 +196,20 @@ object AppSettings {
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES
             OnlineInstaller.KICHIKUOU_CDN_URL -> DEFAULT_KICHIKUOU_BYTES
             OnlineInstaller.DAIAKUJI_CDN_URL -> DEFAULT_DAIAKUJI_BYTES
+            OnlineInstaller.DAIBANCHOU_CDN_URL -> DEFAULT_DAIBANCHOU_BYTES
+            OnlineInstaller.DAITEIKOKU_CDN_URL -> DEFAULT_DAITEIKOKU_BYTES
             OnlineInstaller.ESCALAYER_CDN_URL -> DEFAULT_ESCALAYER_BYTES
             OnlineInstaller.ESCALAYER_REBOOT_CDN_URL -> DEFAULT_ESCALAYER_REBOOT_BYTES
             OnlineInstaller.GALZOO_CDN_URL -> DEFAULT_GALZOO_BYTES
             OnlineInstaller.IXSEAL_CDN_URL -> DEFAULT_IXSEAL_BYTES
             OnlineInstaller.HARUKA_CDN_URL -> DEFAULT_HARUKA_BYTES
             OnlineInstaller.TSUMASHIBORI_CDN_URL -> DEFAULT_TSUMASHIBORI_BYTES
+            OnlineInstaller.TSUMAMIGUI_CDN_URL -> DEFAULT_TSUMAMIGUI_BYTES
             OnlineInstaller.TSUMAMIGUI3_CDN_URL -> DEFAULT_TSUMAMIGUI3_BYTES
+            OnlineInstaller.KAERUNYO_CDN_URL -> DEFAULT_KAERUNYO_BYTES
+            OnlineInstaller.ATLACHNACHA_CDN_URL -> DEFAULT_ATLACHNACHA_BYTES
+            OnlineInstaller.REISHIKI_CDN_URL -> DEFAULT_REISHIKI_BYTES
+            OnlineInstaller.HARUURARE_CDN_URL -> DEFAULT_HARUURARE_BYTES
             else -> -1L
         }
     }

@@ -263,13 +263,20 @@ object OnlineInstaller {
     const val RANCE09_CDN_URL = "https://alicehub.000.moe/rance09"
     const val KICHIKUOU_CDN_URL = "https://alicehub.000.moe/kichikuou"
     const val DAIAKUJI_CDN_URL = "https://alicehub.000.moe/daiakuji"
+    const val DAIBANCHOU_CDN_URL = "https://alicehub.000.moe/daibanchou"
+    const val DAITEIKOKU_CDN_URL = "https://alicehub.000.moe/daiteikoku"
     const val ESCALAYER_CDN_URL = "https://alicehub.000.moe/escalayer"
     const val ESCALAYER_REBOOT_CDN_URL = "https://alicehub.000.moe/escalayerreboot"
     const val GALZOO_CDN_URL = "https://alicehub.000.moe/galzoo"
     const val IXSEAL_CDN_URL = "https://alicehub.000.moe/ixseal"
     const val HARUKA_CDN_URL = "https://alicehub.000.moe/haruka"
     const val TSUMASHIBORI_CDN_URL = "https://alicehub.000.moe/tsumashibori"
+    const val TSUMAMIGUI_CDN_URL = "https://alicehub.000.moe/tsumamigui"
     const val TSUMAMIGUI3_CDN_URL = "https://alicehub.000.moe/tsumamigui3"
+    const val KAERUNYO_CDN_URL = "https://alicehub.000.moe/kaerunyo"
+    const val ATLACHNACHA_CDN_URL = "https://alicehub.000.moe/atlachnacha"
+    const val REISHIKI_CDN_URL = "https://alicehub.000.moe/reishiki"
+    const val HARUURARE_CDN_URL = "https://alicehub.000.moe/haruurare"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1142,7 +1149,14 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_GALZOO -> sanitizedManifestBase.ifEmpty { "GALZOO" }
             classifiedStagedId == GameCatalog.ID_HARUKA -> sanitizedManifestBase.ifEmpty { "Haruka" }
             classifiedStagedId == GameCatalog.ID_TSUMASHIBORI -> sanitizedManifestBase.ifEmpty { "Tsumashibori" }
+            classifiedStagedId == GameCatalog.ID_TSUMAMIGUI -> sanitizedManifestBase.ifEmpty { "Tsumamigui" }
             classifiedStagedId == GameCatalog.ID_TSUMAMIGUI3 -> sanitizedManifestBase.ifEmpty { "Tsumamigui3" }
+            classifiedStagedId == GameCatalog.ID_DAIBANCHOU -> sanitizedManifestBase.ifEmpty { "Daibanchou" }
+            classifiedStagedId == GameCatalog.ID_DAITEIKOKU -> sanitizedManifestBase.ifEmpty { "Daiteikoku" }
+            classifiedStagedId == GameCatalog.ID_KAERUNYO -> sanitizedManifestBase.ifEmpty { "Kaerunyo" }
+            classifiedStagedId == GameCatalog.ID_ATLACHNACHA -> sanitizedManifestBase.ifEmpty { "AtlachNacha" }
+            classifiedStagedId == GameCatalog.ID_REISHIKI -> sanitizedManifestBase.ifEmpty { "Reishiki" }
+            classifiedStagedId == GameCatalog.ID_HARUURARE -> sanitizedManifestBase.ifEmpty { "Haruurare" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1459,6 +1473,30 @@ object OnlineInstaller {
                     GameCatalog.ID_DAIAKUJI -> lower.contains("daiakuji") ||
                         lower.contains("大悪司") ||
                         lower.contains("大恶司")
+                    GameCatalog.ID_DAIBANCHOU -> lower.contains("daibanchou") ||
+                        lower.contains("大番長") ||
+                        lower.contains("大番长")
+                    GameCatalog.ID_DAITEIKOKU -> lower.contains("daiteikoku") ||
+                        lower.contains("大帝国") ||
+                        lower.contains("大帝國")
+                    GameCatalog.ID_KAERUNYO -> lower.contains("kaerunyo") ||
+                        lower.contains("かえるにょ") ||
+                        lower.contains("ぱにょ")
+                    GameCatalog.ID_ATLACHNACHA -> lower.contains("atlach") ||
+                        lower.contains("アトラク")
+                    GameCatalog.ID_REISHIKI -> lower.contains("reishiki") ||
+                        lower.contains("零式")
+                    GameCatalog.ID_HARUURARE -> lower.contains("haruurare") ||
+                        lower.contains("はるうられ") ||
+                        lower.contains("校内赤线")
+                    GameCatalog.ID_TSUMAMIGUI -> (lower.contains("tsumamigui") ||
+                        lower.contains("妻みぐい") ||
+                        lower.contains("妻中蜜")) &&
+                        !lower.contains("tsumamigui3") &&
+                        !lower.contains("妻みぐい3") &&
+                        !lower.contains("妻みぐい３") &&
+                        !lower.contains("妻中蜜3") &&
+                        !lower.contains("妻中蜜３")
                     GameCatalog.ID_ESCALAYER -> lower.contains("escalayer") &&
                         !lower.contains("escalayerreboot") &&
                         !lower.contains("escalayer_reboot") &&

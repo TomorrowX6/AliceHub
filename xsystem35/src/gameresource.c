@@ -68,6 +68,7 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 
 	char *basename = NULL;
 	bool found_xsleep = false;
+	bool chs_slot[DRIFILETYPEMAX][DRIFILEMAX] = {{false}};
 	struct dirent* d;
 	while ((d = p_readdir(dir))) {
 		char *filename = d->d_name;
@@ -93,34 +94,31 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 				gr->alk[idx] = strdup(filename);
 			}
 		} else if (len >= 6 && strcasecmp(filename + len - 4, ".ald") == 0) {
-			int dno = toupper(filename[len - 5]) - 'A';
+			bool is_chs = len >= 10 && strcasecmp(filename + len - 8, "_chs.ald") == 0;
+			int suffix_len = is_chs ? 8 : 4;
+			int dno = toupper((unsigned char)filename[len - suffix_len - 1]) - 'A';
 			if (dno < 0 || dno >= DRIFILEMAX) continue;
-			switch (toupper(filename[len - 6])) {
-			case 'S':
-				storeDataName(gr, DRIFILE_SCO, dno, filename);
-				if (!basename) {
-					basename = strdup(filename);
-					basename[len - 5] = '\0';
-				}
-				break;
-			case 'G':
-				storeDataName(gr, DRIFILE_CG, dno, filename);
-				break;
-			case 'W':
-				storeDataName(gr, DRIFILE_WAVE, dno, filename);
-				break;
-			case 'M':
-				storeDataName(gr, DRIFILE_MIDI, dno, filename);
-				break;
-			case 'D':
-				storeDataName(gr, DRIFILE_DATA, dno, filename);
-				break;
-			case 'R':
-				storeDataName(gr, DRIFILE_RSC, dno, filename);
-				break;
-			case 'B':
-				storeDataName(gr, DRIFILE_BGM, dno, filename);
-				break;
+			int type = -1;
+			switch (toupper((unsigned char)filename[len - suffix_len - 2])) {
+			case 'S': type = DRIFILE_SCO; break;
+			case 'G': type = DRIFILE_CG; break;
+			case 'W': type = DRIFILE_WAVE; break;
+			case 'M': type = DRIFILE_MIDI; break;
+			case 'D': type = DRIFILE_DATA; break;
+			case 'R': type = DRIFILE_RSC; break;
+			case 'B': type = DRIFILE_BGM; break;
+			}
+			if (type < 0) continue;
+			if (!is_chs && chs_slot[type][dno]) continue;
+			if (is_chs) chs_slot[type][dno] = true;
+			free(gr->game_fname[type][dno]);
+			storeDataName(gr, type, dno, filename);
+			if (type == DRIFILE_SCO && (!basename || is_chs)) {
+				free(basename);
+				int base_len = len - suffix_len - 1;
+				basename = malloc((size_t)base_len + 1);
+				memcpy(basename, filename, (size_t)base_len);
+				basename[base_len] = '\0';
 			}
 		} else if (strcasecmp(filename + 1, "sleep.asd") == 0) {
 			found_xsleep = true;

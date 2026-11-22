@@ -318,13 +318,20 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_RANCE09 ||
                 descriptor.id == GameCatalog.ID_KICHIKUOU ||
                 descriptor.id == GameCatalog.ID_DAIAKUJI ||
+                descriptor.id == GameCatalog.ID_DAIBANCHOU ||
+                descriptor.id == GameCatalog.ID_DAITEIKOKU ||
                 descriptor.id == GameCatalog.ID_ESCALAYER ||
                 descriptor.id == GameCatalog.ID_ESCALAYER_REBOOT ||
                 descriptor.id == GameCatalog.ID_GALZOO ||
                 descriptor.id == GameCatalog.ID_IXSEAL ||
                 descriptor.id == GameCatalog.ID_HARUKA ||
                 descriptor.id == GameCatalog.ID_TSUMASHIBORI ||
-                descriptor.id == GameCatalog.ID_TSUMAMIGUI3
+                descriptor.id == GameCatalog.ID_TSUMAMIGUI ||
+                descriptor.id == GameCatalog.ID_TSUMAMIGUI3 ||
+                descriptor.id == GameCatalog.ID_KAERUNYO ||
+                descriptor.id == GameCatalog.ID_ATLACHNACHA ||
+                descriptor.id == GameCatalog.ID_REISHIKI ||
+                descriptor.id == GameCatalog.ID_HARUURARE
             ) {
                 descriptor.title
             } else {
