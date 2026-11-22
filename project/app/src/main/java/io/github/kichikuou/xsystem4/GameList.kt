@@ -2665,8 +2665,20 @@ internal fun isTsumamigui3BloatRelPath(relPath: String): Boolean {
         dirMatch(leafLower)
 }
 
+internal fun normalizeRance06DungeonData(gameDir: File) {
+    val data = gameDir.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("Data", ignoreCase = true) } ?: return
+    val entries = data.listFiles().orEmpty()
+    if (entries.any { it.name.equals("DungeonData.dlf", ignoreCase = true) }) return
+    val copyName = Regex("DungeonData\\([0-9]+\\)\\.dlf", RegexOption.IGNORE_CASE)
+    val source = entries.filter { it.isFile && copyName.matches(it.name) }.minByOrNull { it.name } ?: return
+    if (!source.renameTo(File(data, "DungeonData.dlf"))) {
+        throw IOException("Cannot normalize dungeon data: ${source.name}")
+    }
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
+    if (gameId == GameCatalog.ID_RANCE06) normalizeRance06DungeonData(destGameDir)
     if (gameId != GameCatalog.ID_RANCE02 &&
         gameId != GameCatalog.ID_RANCE04 &&
         gameId != GameCatalog.ID_KICHIKUOU &&
