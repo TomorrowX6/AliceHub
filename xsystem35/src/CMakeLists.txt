@@ -234,6 +234,14 @@ else()  # non-emscripten, non-android
   target_link_libraries(message_tests PRIVATE sdl)
   add_test(NAME message_tests COMMAND message_tests)
 
+  add_executable(effect_tests effect_test.c effect.c)
+  target_compile_options(effect_tests PRIVATE -Wno-pointer-sign -Wall)
+  target_link_libraries(effect_tests PRIVATE src_lib sdl m)
+  add_test(NAME effect_tests COMMAND effect_tests)
+  set_tests_properties(effect_tests PROPERTIES
+    ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
+    TIMEOUT 10)
+
   # Exercise BGM-backed CD fade/volume handling with deterministic ticks.
   add_executable(music_cdrom_tests
     music_cdrom_test.c
