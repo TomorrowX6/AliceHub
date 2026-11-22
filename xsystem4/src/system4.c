@@ -378,13 +378,17 @@ static char *get_xsystem4_home(void)
 	return realpath_utf8(".");
 }
 
-static char *get_save_path(const char *dir_name)
+static char *get_save_path(const char *dir_name, const char *utf8_game_name_override, const char *utf8_dir_name_override)
 {
 	if (!dir_name)
 		dir_name = "SaveData";
 
-	char *utf8_game_name = sjis2utf(config.game_name, strlen(config.game_name));
-	char *utf8_dir_name = sjis2utf(dir_name, strlen(dir_name));
+	char *utf8_game_name = (utf8_game_name_override && *utf8_game_name_override)
+		? xstrdup(utf8_game_name_override)
+		: sjis2utf(config.game_name, strlen(config.game_name));
+	char *utf8_dir_name = (utf8_dir_name_override && *utf8_dir_name_override)
+		? xstrdup(utf8_dir_name_override)
+		: sjis2utf(dir_name, strlen(dir_name));
 	char *save_dir = xmalloc(strlen(config.home_dir) + 1 + strlen(utf8_game_name) + 1 + strlen(utf8_dir_name) + 1);
 	strcpy(save_dir, config.home_dir);
 	strcat(save_dir, "/");
@@ -396,10 +400,11 @@ static char *get_save_path(const char *dir_name)
 	return save_dir;
 }
 
-static void config_init(void)
+static void config_init_with_utf8_save_overrides(const char *utf8_game_name, const char *utf8_save_dir)
 {
+	bool omitted_game_name = !config.game_name;
 	config.home_dir = get_xsystem4_home();
-	if (!config.game_name)
+	if (omitted_game_name)
 		config.game_name = xstrdup(config.ain_filename);
 	if ((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
 				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
@@ -427,9 +432,19 @@ static void config_init(void)
 		sys4_set_text_gbk(true);
 	}
 
-	char *new_save_dir = get_save_path(config.save_dir);
+	const char *save_game_name = (utf8_game_name && *utf8_game_name)
+		? utf8_game_name
+		: ((omitted_game_name && config.ain_basename_utf8 && *config.ain_basename_utf8)
+			? config.ain_basename_utf8
+			: NULL);
+	char *new_save_dir = get_save_path(config.save_dir, save_game_name, utf8_save_dir);
 	free(config.save_dir);
 	config.save_dir = new_save_dir;
+}
+
+static void config_init(void)
+{
+	config_init_with_utf8_save_overrides(NULL, NULL);
 }
 
 static char *resolved_ain_path = NULL;
@@ -460,6 +475,8 @@ static bool config_init_with_ini(const char *ini_path)
 {
 	free(resolved_ain_path);
 	resolved_ain_path = NULL;
+	free(config.ain_basename_utf8);
+	config.ain_basename_utf8 = NULL;
 	if (!read_config(ini_path))
 		return false;
 	if (!config.ain_filename)
@@ -467,11 +484,18 @@ static bool config_init_with_ini(const char *ini_path)
 	char *tmp = xstrdup(ini_path);
 	config.game_dir = xstrdup(path_dirname(tmp));
 	free(tmp);
+	char *utf8_game_name = NULL;
+	char *utf8_save_dir = NULL;
 	if (sys4_source_is_utf8) {
 		// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a
-		// Shift-JIS or GBK game. Preserve the resolved on-disk script path before re-reading
-		// the INI in legacy mode so non-Shift-JIS UTF-8 filenames (e.g. GBK-only chars) are
-		// not mangled into '?' when opening the script or resolving sidecar assets.
+		// Shift-JIS or GBK game. Preserve the resolved on-disk script path and lossless
+		// UTF-8 save-directory keys before re-reading the INI in legacy mode so non-Shift-JIS
+		// UTF-8 characters (e.g. GBK-only chars) are not mangled into '?' when opening the
+		// script, resolving sidecar assets, or creating default save folders.
+		if (config.game_name)
+			utf8_game_name = sjis2utf(config.game_name, strlen(config.game_name));
+		if (config.save_dir)
+			utf8_save_dir = sjis2utf(config.save_dir, strlen(config.save_dir));
 		char *ain_path = gamedir_path_icase(config.ain_filename);
 		if (!ain_path)
 			ain_path = gamedir_path(config.ain_filename);
@@ -488,7 +512,9 @@ static bool config_init_with_ini(const char *ini_path)
 			sys4_set_source_utf8(false);
 		}
 	}
-	config_init();
+	config_init_with_utf8_save_overrides(utf8_game_name, utf8_save_dir);
+	free(utf8_game_name);
+	free(utf8_save_dir);
 	return true;
 }
 
@@ -565,6 +591,8 @@ static void config_init_with_ain(const char *ain_path)
 	resolved_ain_path = NULL;
 	set_utf8_release(ain_text_is_utf8(ain_path));
 	config.ain_filename = xstrdup(path_basename(ain_path));
+	free(config.ain_basename_utf8);
+	config.ain_basename_utf8 = xstrdup(path_basename(ain_path));
 	config.game_dir = xstrdup(path_dirname(ain_path));
 	config_init();
 }

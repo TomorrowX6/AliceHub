@@ -655,6 +655,9 @@ int main(int argc, char **argv) {{
         fn_set_utf8 = extract_def("src/system4.c", "set_utf8_release")
         fn_read_cfg = extract_def("src/system4.c", "read_config")
         fn_read_entries = extract_def("src/system4.c", "read_config_entries")
+        fn_save_path = extract_def("src/system4.c", "get_save_path")
+        fn_cfg_init_ovr = extract_def("src/system4.c", "config_init_with_utf8_save_overrides")
+        fn_cfg_init = extract_def("src/system4.c", "config_init")
         fn_resolve = extract_def("src/system4.c", "resolve_configured_ain_path")
         fn_init_ini = extract_def("src/system4.c", "config_init_with_ini")
         fn_init_dir = extract_def("src/system4.c", "config_init_with_dir")
@@ -677,12 +680,22 @@ int main(int argc, char **argv) {{
 
         with tempfile.TemporaryDirectory() as tmpdir:
             td = Path(tmpdir)
+            home_dir = td / "home"
+            home_dir.mkdir()
+
             game_dir = td / "utf8_gbk_chs"
             game_dir.mkdir()
             # UTF-8 INI with untitled CodeName containing GBK-only char '戏' (not in Shift-JIS).
             (game_dir / "System40.ini").write_bytes('CodeName = "游戏.CHS"\n'.encode("utf-8"))
-            script_path = game_dir / "游戏.CHS"
-            script_path.write_bytes(ai2_bytes)
+            (game_dir / "游戏.CHS").write_bytes(ai2_bytes)
+
+            titled_dir = td / "utf8_titled_chs"
+            titled_dir.mkdir()
+            # UTF-8 INI with GBK-only GameName & CodeName for a legacy script.
+            (titled_dir / "System40.ini").write_bytes(
+                'GameName = "测试游戏"\nCodeName = "游戏.CHS"\n'.encode("utf-8")
+            )
+            (titled_dir / "游戏.CHS").write_bytes(ai2_bytes)
 
             harness = f"""
 #include <assert.h>
@@ -702,15 +715,13 @@ int main(int argc, char **argv) {{
 
 struct config config;
 static char *resolved_ain_path = NULL;
+static const char *test_home_dir = NULL;
 
 static struct string *ini_string(struct ini_entry *e) {{ return e->value.s; }}
 static int ini_integer(struct ini_entry *e) {{ return e->value.i; }}
 static bool ini_boolean(struct ini_entry *e) {{ return e->value.i != 0; }}
 static void read_mixer_channels(struct ini_entry *e) {{ (void)e; }}
-static void config_init(void) {{
-    if (!config.game_name && config.ain_filename)
-        config.game_name = xstrdup(config.ain_filename);
-}}
+static char *get_xsystem4_home(void) {{ return xstrdup(test_home_dir); }}
 
 char *gamedir_path(const char *path) {{
     char *utf = sjis2utf(path, strlen(path));
@@ -736,22 +747,31 @@ static bool read_config_entries(const char *path);
 {fn_set_utf8}
 {fn_read_cfg}
 {fn_read_entries}
+{fn_save_path}
+{fn_cfg_init_ovr}
+{fn_cfg_init}
 {fn_resolve}
 {fn_init_ini}
 {fn_init_dir}
 
 int main(int argc, char **argv) {{
-    assert(argc == 2);
+    assert(argc == 4);
+    test_home_dir = argv[3];
 
-    // 1. Launch via directory with UTF-8 System40.ini pointing to legacy "游戏.CHS".
+    // 1. Untitled UTF-8 System40.ini pointing to legacy "游戏.CHS".
     memset(&config, 0, sizeof(config));
     assert(config_init_with_dir(argv[1]) == true);
 
-    // 2. Legacy script text encoding is preserved (not stuck in UTF-8 mode).
+    // Legacy script text encoding is preserved (not stuck in UTF-8 mode).
     assert(sys4_source_is_utf8 == false);
     assert(sys4_text_is_gbk == false);
 
-    // 3. Resolved on-disk script path and UTF-8 basename survive the legacy INI reread intact.
+    // Default save directory uses the lossless UTF-8 basename without '?' replacement.
+    assert(config.save_dir != NULL);
+    assert(strchr(config.save_dir, '?') == NULL);
+    assert(strstr(config.save_dir, "/\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS/SaveData") != NULL);
+
+    // Resolved on-disk script path and UTF-8 basename survive the legacy INI reread intact.
     char *ainfile = resolve_configured_ain_path(NULL);
     assert(ainfile != NULL);
     assert(file_exists(ainfile));
@@ -759,13 +779,25 @@ int main(int argc, char **argv) {{
     assert(config.ain_basename_utf8 != NULL);
     assert(strcmp(config.ain_basename_utf8, "\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS") == 0);
 
-    // 4. Opening the resolved script succeeds and reads back the legacy Shift-JIS message.
+    // Opening the resolved script succeeds and reads back the legacy Shift-JIS message.
     int err = AIN_SUCCESS;
     struct ain *opened = ain_open(ainfile, &err);
     assert(opened != NULL && err == AIN_SUCCESS);
     assert(opened->nr_messages == 2);
     assert(strcmp(opened->messages[1]->text, "\\x83\\x65\\x83\\x58\\x83\\x67") == 0);
     ain_free(opened);
+    free(ainfile);
+
+    // 2. Titled UTF-8 System40.ini with GBK-only GameName ("测试游戏") + legacy "游戏.CHS".
+    memset(&config, 0, sizeof(config));
+    assert(config_init_with_dir(argv[2]) == true);
+    assert(sys4_source_is_utf8 == false);
+    assert(sys4_text_is_gbk == false);
+    assert(config.save_dir != NULL);
+    assert(strchr(config.save_dir, '?') == NULL);
+    assert(strstr(config.save_dir, "/\\xe6\\xb5\\x8b\\xe8\\xaf\\x95\\xe6\\xb8\\xb8\\xe6\\x88\\x8f/SaveData") != NULL);
+    ainfile = resolve_configured_ain_path(NULL);
+    assert(ainfile != NULL && file_exists(ainfile));
     free(ainfile);
 
     puts("OK");
@@ -799,7 +831,7 @@ int main(int argc, char **argv) {{
                     "-I" + str(td),
                     "-I" + str(libsys4_src),
                 ],
-                [str(game_dir)],
+                [str(game_dir), str(titled_dir), str(home_dir)],
             )
             self.assertEqual(out.strip(), "OK")
 
