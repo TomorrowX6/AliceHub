@@ -58,6 +58,24 @@ struct LibraryChecks {
         try files.removeItem(at: firstAIN)
         try files.removeItem(at: secondAIN)
         let saves = documents.appendingPathComponent("Saves/test")
+        for marker in ["R5D_SA.ALD", "r5d_sa.ald", "R5D_GA.ALD", "RANCE4SA.ALD"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            let isRance5d = marker.lowercased() == "r5d_sa.ald"
+            precondition(GameLibrary.isRance5d(source) == isRance5d)
+            precondition(Game(url: source).name == (isRance5d ? "兰斯5D" : source.lastPathComponent))
+            if isRance5d {
+                try Data().write(to: firstAIN)
+                precondition(!GameLibrary.isRance5d(source))
+                try files.removeItem(at: firstAIN)
+            }
+            try files.removeItem(at: file)
+        }
+        let fakeRance = source.appendingPathComponent("R5D_SA.ALD")
+        try files.createDirectory(at: fakeRance, withIntermediateDirectories: false)
+        precondition(!GameLibrary.isRance5d(source))
+        try files.removeItem(at: fakeRance)
+        precondition(!GameLibrary.isRance5d(root.appendingPathComponent("missing")))
         for marker in ["testSA.ALD", "aDiSk.AlD", "sYsTeM39.iNi", "System39.ain"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)

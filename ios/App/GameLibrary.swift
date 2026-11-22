@@ -10,7 +10,7 @@ enum GameEngine: String {
 struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
-    var name: String { url.lastPathComponent }
+    var name: String { GameLibrary.isRance5d(url) ? "兰斯5D" : url.lastPathComponent }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
@@ -44,6 +44,15 @@ final class GameLibrary: ObservableObject {
 
     static func isGame(_ url: URL) -> Bool {
         (try? launchTarget(url)) != nil
+    }
+
+    static func isRance5d(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "r5d_sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
     }
 
     static func launchTarget(_ url: URL) throws -> URL {

@@ -81,6 +81,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
             val fallbackSys3Name = if (isSys3x) {
                 when {
+                    GameCatalog.isRance5dGameDir(dir) -> context.getString(R.string.game_rance5d_title)
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
                     GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
@@ -1187,6 +1188,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
                 classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
+                classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(

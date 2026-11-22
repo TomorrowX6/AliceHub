@@ -53,6 +53,7 @@ Game Compatibility
 | 超昂天使エスカレイヤー                      | Supported   | Opening demo is not supported |
 | ランス５Ｄ                                  | Supported   |       |
 | Rance 5D - The Lonely Girl (EN)             | Supported   | MangaGamer version |
+| 兰斯5D (ZH)                                | Supported   | GBK fan translation |
 | 俺の下であがけ                              | Supported   |       |
 | 楽園行                                      | Supported   |       |
 | 妻みぐい２                                  | Supported   |       |

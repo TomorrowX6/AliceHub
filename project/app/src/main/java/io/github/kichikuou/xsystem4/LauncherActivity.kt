@@ -71,6 +71,7 @@ private class GameSelectAdapter(
             desc.defaultDirName.contains(q, ignoreCase = true) ||
             desc.id.removePrefix(GameCatalog.PREFIX_CUSTOM).contains(q, ignoreCase = true) ||
             (desc.expectedAinName?.contains(q, ignoreCase = true) == true) ||
+            (desc.id == GameCatalog.ID_RANCE5D && GameCatalog.isRance5dAlias(q)) ||
             (desc.id == GameCatalog.ID_RANCE06 && GameCatalog.isRance06Alias(q)) ||
             (desc.id == GameCatalog.ID_DAIAKUJI && GameCatalog.isDaiakujiAlias(q)) ||
             (desc.id == GameCatalog.ID_GALZOO && GameCatalog.isGalzooAlias(q)) ||
