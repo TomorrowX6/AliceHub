@@ -42,6 +42,9 @@ struct GameArtwork: View {
             } else if let game, GameLibrary.isRance04(game.url) {
                 Text("IV").font(.system(size: size * 0.5, weight: .bold, design: .serif))
                     .foregroundColor(HubTheme.primary)
+            } else if let game, GameLibrary.isRance5d(game.url) {
+                Text("5D").font(.system(size: size * 0.5, weight: .bold, design: .serif))
+                    .foregroundColor(HubTheme.primary)
             } else {
                 Image(systemName: "gamecontroller.fill").font(.system(size: size * 0.4))
                     .foregroundColor(HubTheme.primary)

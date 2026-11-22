@@ -89,7 +89,7 @@ struct ModManagerView: View {
         }
         .confirmationDialog("切换目录", isPresented: $switching, titleVisibility: .visible) {
             ForEach(library.games.filter { ModGameDescriptor.classifyDirectory($0.url) == model.descriptor }) { game in
-                Button(game.name + " · " + (InstalledModInfo.readOrInfer(game.url)?.version ?? "原版")) { model.select(game.url); library.refresh() }
+                Button(game.displayName + " · " + (InstalledModInfo.readOrInfer(game.url)?.version ?? "原版")) { model.select(game.url); library.refresh() }
             }
             Button("取消", role: .cancel) {}
         }

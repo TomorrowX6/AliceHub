@@ -20,6 +20,7 @@ object GameSortMetadata {
         GameCatalog.ID_RANCE02 to GameSortInfo("2009-12-18", null, null, "https://www.alicesoft.com/rance35th/"),
         GameCatalog.ID_RANCE03 to GameSortInfo("2015-08-28", 85.4, "https://vndb.org/v17642", "https://www.alicesoft.com/rance35th/"),
         GameCatalog.ID_RANCE04 to GameSortInfo("1993-12-11", null, null, "https://www.alicesoft.com/rance35th/"),
+        GameCatalog.ID_RANCE5D to GameSortInfo("2002-10-25", null, null, "https://www.alicesoft.com/rance35th/"),
         GameCatalog.ID_RANCE06 to GameSortInfo("2004-08-27", 79.3, "https://vndb.org/v2047", "https://www.alicesoft.com/rance35th/"),
         GameCatalog.ID_RANCE08 to GameSortInfo("2012-02-24", 80.0, "https://vndb.org/v6985", "https://www.alicesoft.com/rance8/magnum.html"),
         GameCatalog.ID_RANCE09 to GameSortInfo("2014-04-25", 83.5, "https://vndb.org/v13802", "https://www.alicesoft.com/rance35th/"),

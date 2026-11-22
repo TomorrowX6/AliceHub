@@ -13,7 +13,9 @@ struct Game: Identifiable {
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
     var displayName: String {
-        GameLibrary.isRance04(url) ? "兰斯IV 教团的遗产" : url.lastPathComponent
+        if GameLibrary.isRance04(url) { return "兰斯IV 教团的遗产" }
+        if GameLibrary.isRance5d(url) { return "兰斯5D" }
+        return url.lastPathComponent
     }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
@@ -55,6 +57,15 @@ final class GameLibrary: ObservableObject {
               let info = try? launchInfo(url), info.engine == .system3 else { return false }
         return contents.contains {
             $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+    }
+
+    static func isRance5d(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "r5d_sa.ald" &&
                 (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
     }

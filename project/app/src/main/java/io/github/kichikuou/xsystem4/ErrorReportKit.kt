@@ -1299,6 +1299,8 @@ internal object ErrorReportKit {
         return when {
             lower.contains("rance10") || lower.contains("兰斯10") ->
                 context.getString(R.string.game_rance10_title)
+            GameCatalog.isRance5dAlias(lower) ->
+                context.getString(R.string.game_rance5d_title)
             GameCatalog.isRance06Alias(lower) ->
                 context.getString(R.string.game_rance06_title)
             GameCatalog.isGalzooAlias(lower) ->
