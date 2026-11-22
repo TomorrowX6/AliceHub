@@ -656,7 +656,7 @@ int main(int argc, char **argv) {{
         fn_read_cfg = extract_def("src/system4.c", "read_config")
         fn_read_entries = extract_def("src/system4.c", "read_config_entries")
         fn_save_path = extract_def("src/system4.c", "get_save_path")
-        fn_cfg_init_ovr = extract_def("src/system4.c", "config_init_with_utf8_save_overrides")
+        fn_cfg_init_code = extract_def("src/system4.c", "config_init_with_utf8_codename")
         fn_cfg_init = extract_def("src/system4.c", "config_init")
         fn_resolve = extract_def("src/system4.c", "resolve_configured_ain_path")
         fn_init_ini = extract_def("src/system4.c", "config_init_with_ini")
@@ -682,20 +682,28 @@ int main(int argc, char **argv) {{
             td = Path(tmpdir)
             home_dir = td / "home"
             home_dir.mkdir()
+            legacy_home = td / "legacy_home"
+            (legacy_home / "游?.CHS" / "SaveData").mkdir(parents=True)
 
             game_dir = td / "utf8_gbk_chs"
             game_dir.mkdir()
-            # UTF-8 INI with untitled CodeName containing GBK-only char '戏' (not in Shift-JIS).
+            # 1. Untitled UTF-8 INI with GBK-only char '戏' (not in Shift-JIS).
             (game_dir / "System40.ini").write_bytes('CodeName = "游戏.CHS"\n'.encode("utf-8"))
             (game_dir / "游戏.CHS").write_bytes(ai2_bytes)
 
-            titled_dir = td / "utf8_titled_chs"
-            titled_dir.mkdir()
-            # UTF-8 INI with GBK-only GameName & CodeName for a legacy script.
-            (titled_dir / "System40.ini").write_bytes(
-                'GameName = "测试游戏"\nCodeName = "游戏.CHS"\n'.encode("utf-8")
+            ep1_dir = td / "ep1"
+            (ep1_dir / "episode1").mkdir(parents=True)
+            # 2. Untitled UTF-8 INI with subdirectory in CodeName (distinct save path vs episode2).
+            (ep1_dir / "System40.ini").write_bytes('CodeName = "episode1/游戏.CHS"\n'.encode("utf-8"))
+            (ep1_dir / "episode1" / "游戏.CHS").write_bytes(ai2_bytes)
+
+            kana_dir = td / "utf8_halfwidth_kana"
+            kana_dir.mkdir()
+            # 3. Titled UTF-8 INI with half-width katakana GameName ("ﾗﾝｽ") + legacy script.
+            (kana_dir / "System40.ini").write_bytes(
+                'GameName = "ﾗﾝｽ"\nCodeName = "game.ain"\n'.encode("utf-8")
             )
-            (titled_dir / "游戏.CHS").write_bytes(ai2_bytes)
+            (kana_dir / "game.ain").write_bytes(ai2_bytes)
 
             harness = f"""
 #include <assert.h>
@@ -748,15 +756,15 @@ static bool read_config_entries(const char *path);
 {fn_read_cfg}
 {fn_read_entries}
 {fn_save_path}
-{fn_cfg_init_ovr}
+{fn_cfg_init_code}
 {fn_cfg_init}
 {fn_resolve}
 {fn_init_ini}
 {fn_init_dir}
 
 int main(int argc, char **argv) {{
-    assert(argc == 4);
-    test_home_dir = argv[3];
+    assert(argc == 6);
+    test_home_dir = argv[4];
 
     // 1. Untitled UTF-8 System40.ini pointing to legacy "游戏.CHS".
     memset(&config, 0, sizeof(config));
@@ -766,7 +774,7 @@ int main(int argc, char **argv) {{
     assert(sys4_source_is_utf8 == false);
     assert(sys4_text_is_gbk == false);
 
-    // Default save directory uses the lossless UTF-8 basename without '?' replacement.
+    // Default save directory uses the lossless UTF-8 CodeName without '?' replacement.
     assert(config.save_dir != NULL);
     assert(strchr(config.save_dir, '?') == NULL);
     assert(strstr(config.save_dir, "/\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS/SaveData") != NULL);
@@ -788,17 +796,31 @@ int main(int argc, char **argv) {{
     ain_free(opened);
     free(ainfile);
 
-    // 2. Titled UTF-8 System40.ini with GBK-only GameName ("测试游戏") + legacy "游戏.CHS".
+    // 2. Untitled UTF-8 INI with subdirectory preserves full CodeName path in save_dir
+    //    while keeping only the basename for ain_basename_utf8 asset lookup.
     memset(&config, 0, sizeof(config));
     assert(config_init_with_dir(argv[2]) == true);
-    assert(sys4_source_is_utf8 == false);
-    assert(sys4_text_is_gbk == false);
-    assert(config.save_dir != NULL);
-    assert(strchr(config.save_dir, '?') == NULL);
-    assert(strstr(config.save_dir, "/\\xe6\\xb5\\x8b\\xe8\\xaf\\x95\\xe6\\xb8\\xb8\\xe6\\x88\\x8f/SaveData") != NULL);
+    assert(config.save_dir != NULL && strchr(config.save_dir, '?') == NULL);
+    assert(strstr(config.save_dir, "/episode1/\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS/SaveData") != NULL);
+    assert(config.ain_basename_utf8 != NULL);
+    assert(strcmp(config.ain_basename_utf8, "\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS") == 0);
     ainfile = resolve_configured_ain_path(NULL);
     assert(ainfile != NULL && file_exists(ainfile));
     free(ainfile);
+
+    // 3. Titled UTF-8 INI with half-width katakana GameName ("ﾗﾝｽ") preserves CP932 save path
+    //    without GBK '?' corruption.
+    memset(&config, 0, sizeof(config));
+    assert(config_init_with_dir(argv[3]) == true);
+    assert(config.save_dir != NULL && strchr(config.save_dir, '?') == NULL);
+    assert(strstr(config.save_dir, "/\\xef\\xbe\\x97\\xef\\xbe\\x9d\\xef\\xbd\\xbd/SaveData") != NULL);
+
+    // 4. Pre-existing legacy save dir ("游?.CHS/SaveData") is preserved instead of stranding saves.
+    test_home_dir = argv[5];
+    memset(&config, 0, sizeof(config));
+    assert(config_init_with_dir(argv[1]) == true);
+    assert(config.save_dir != NULL);
+    assert(strstr(config.save_dir, "/\\xe6\\xb8\\xb8?.CHS/SaveData") != NULL);
 
     puts("OK");
     return 0;
@@ -831,7 +853,7 @@ int main(int argc, char **argv) {{
                     "-I" + str(td),
                     "-I" + str(libsys4_src),
                 ],
-                [str(game_dir), str(titled_dir), str(home_dir)],
+                [str(game_dir), str(ep1_dir), str(kana_dir), str(home_dir), str(legacy_home)],
             )
             self.assertEqual(out.strip(), "OK")
 
