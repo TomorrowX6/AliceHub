@@ -57,13 +57,20 @@ void parts_scrollbar_free(struct parts *parts)
 	parts->scrollbar = NULL;
 }
 
-static bool load_skin(struct parts *parts, struct parts_state *state, struct string *base,
-		bool flat, const char *piece, const char *suffix)
+static bool load_skin_enc(struct parts *parts, struct parts_state *state, struct string *base,
+		bool flat, const char *piece, const char *suffix, bool force_sjis)
 {
 	struct string *name = string_dup(base);
 	const char *names[] = {piece, suffix};
 	for (int i = 0; i < 2; i++) {
-		const char *encoded = parts_utf8_to_cjk_literal(names[i]);
+		const char *encoded;
+		if (force_sjis && sys4_text_is_gbk) {
+			sys4_set_text_gbk(false);
+			encoded = parts_utf8_to_cjk_literal(names[i]);
+			sys4_set_text_gbk(true);
+		} else {
+			encoded = parts_utf8_to_cjk_literal(names[i]);
+		}
 		string_append_cstr(&name, encoded, strlen(encoded));
 	}
 	parts_state_reset(state, flat ? PARTS_FLAT : PARTS_CG);
@@ -72,6 +79,16 @@ static bool load_skin(struct parts *parts, struct parts_state *state, struct str
 	free_string(name);
 	if (!ok) parts_state_reset(state, PARTS_UNINITIALIZED);
 	return ok;
+}
+
+static bool load_skin(struct parts *parts, struct parts_state *state, struct string *base,
+		bool flat, const char *piece, const char *suffix)
+{
+	if (load_skin_enc(parts, state, base, flat, piece, suffix, false))
+		return true;
+	if (sys4_text_is_gbk && ((piece && piece[0]) || (suffix && suffix[0])))
+		return load_skin_enc(parts, state, base, flat, piece, suffix, true);
+	return false;
 }
 
 static bool load_skin_variants(struct parts *parts, struct parts_state *state, struct string *base,

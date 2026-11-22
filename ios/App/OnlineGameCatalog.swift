@@ -38,7 +38,15 @@ struct OnlineGame: Identifiable {
         Self(id: "kaerunyo", title: "回家扭·帕扭", directory: "Kaerunyo"),
         Self(id: "atlachnacha", title: "阿特拉克=纳克亚", directory: "AtlachNacha"),
         Self(id: "reishiki", title: "零式", directory: "Reishiki"),
-        Self(id: "haruurare", title: "校内赤线区", directory: "Haruurare")
+        Self(id: "haruurare", title: "校内赤线区", directory: "Haruurare"),
+        Self(id: "okusamajun", title: "太太的恢复术 纯爱篇", directory: "OkusamaJun"),
+        Self(id: "okusamantr", title: "太太的恢复术 夺爱篇", directory: "OkusamaNtr"),
+        Self(id: "evenicle2rance", title: "夏娃年代记2 兰斯版", directory: "Evenicle2Rance"),
+        Self(id: "eveniclegaiden", title: "夏娃年代记外典", directory: "EvenicleGaiden"),
+        Self(id: "waidonyo", title: "异空窟探险", directory: "Waidonyo"),
+        Self(id: "rance6after", title: "兰斯06 后日谈", directory: "Rance6After"),
+        Self(id: "yakata2", title: "爱丽丝之馆2", directory: "Yakata2"),
+        Self(id: "sdpsmaria", title: "Super D.P.S 玛利亚和坎潘", directory: "SuperDpsMaria")
     ]
 }
 

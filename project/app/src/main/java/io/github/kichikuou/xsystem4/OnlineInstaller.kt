@@ -277,6 +277,14 @@ object OnlineInstaller {
     const val ATLACHNACHA_CDN_URL = "https://alicehub.000.moe/atlachnacha"
     const val REISHIKI_CDN_URL = "https://alicehub.000.moe/reishiki"
     const val HARUURARE_CDN_URL = "https://alicehub.000.moe/haruurare"
+    const val OKUSAMAJUN_CDN_URL = "https://alicehub.000.moe/okusamajun"
+    const val OKUSAMANTR_CDN_URL = "https://alicehub.000.moe/okusamantr"
+    const val EVENICLE2RANCE_CDN_URL = "https://alicehub.000.moe/evenicle2rance"
+    const val EVENICLEGAIDEN_CDN_URL = "https://alicehub.000.moe/eveniclegaiden"
+    const val WAIDONYO_CDN_URL = "https://alicehub.000.moe/waidonyo"
+    const val RANCE6AFTER_CDN_URL = "https://alicehub.000.moe/rance6after"
+    const val YAKATA2_CDN_URL = "https://alicehub.000.moe/yakata2"
+    const val SDPSMARIA_CDN_URL = "https://alicehub.000.moe/sdpsmaria"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1155,6 +1163,14 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_ATLACHNACHA -> sanitizedManifestBase.ifEmpty { "AtlachNacha" }
             classifiedStagedId == GameCatalog.ID_REISHIKI -> sanitizedManifestBase.ifEmpty { "Reishiki" }
             classifiedStagedId == GameCatalog.ID_HARUURARE -> sanitizedManifestBase.ifEmpty { "Haruurare" }
+            classifiedStagedId == GameCatalog.ID_OKUSAMAJUN -> sanitizedManifestBase.ifEmpty { "OkusamaJun" }
+            classifiedStagedId == GameCatalog.ID_OKUSAMANTR -> sanitizedManifestBase.ifEmpty { "OkusamaNtr" }
+            classifiedStagedId == GameCatalog.ID_EVENICLE2RANCE -> sanitizedManifestBase.ifEmpty { "Evenicle2Rance" }
+            classifiedStagedId == GameCatalog.ID_EVENICLEGAIDEN -> sanitizedManifestBase.ifEmpty { "EvenicleGaiden" }
+            classifiedStagedId == GameCatalog.ID_WAIDONYO -> sanitizedManifestBase.ifEmpty { "Waidonyo" }
+            classifiedStagedId == GameCatalog.ID_RANCE6AFTER -> sanitizedManifestBase.ifEmpty { "Rance6After" }
+            classifiedStagedId == GameCatalog.ID_YAKATA2 -> sanitizedManifestBase.ifEmpty { "Yakata2" }
+            classifiedStagedId == GameCatalog.ID_SDPSMARIA -> sanitizedManifestBase.ifEmpty { "SuperDpsMaria" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1450,8 +1466,23 @@ object OnlineInstaller {
                 val matches = when (targetGameId) {
                     GameCatalog.ID_RANCE10 -> lower.contains("rance10") || lower.contains("rance_10")
                     GameCatalog.ID_DOHNA_DOHNA -> lower.contains("dohna")
-                    GameCatalog.ID_EVENICLE -> lower.contains("evenicle") && !lower.contains("evenicle2") && !lower.contains("evenicle_2")
-                    GameCatalog.ID_EVENICLE2 -> lower.contains("evenicle2") || lower.contains("evenicle_2")
+                    GameCatalog.ID_EVENICLE -> lower.contains("evenicle") &&
+                        !lower.contains("evenicle2") &&
+                        !lower.contains("evenicle_2") &&
+                        !lower.contains("gaiden") &&
+                        !lower.contains("gaiten") &&
+                        !lower.contains("evenicleapc")
+                    GameCatalog.ID_EVENICLE2 -> (lower.contains("evenicle2") || lower.contains("evenicle_2")) &&
+                        !lower.contains("rance")
+                    GameCatalog.ID_EVENICLE2RANCE -> lower.contains("evenicle2rance") ||
+                        lower.contains("evenicle2_rance") ||
+                        (lower.contains("evenicle2") && lower.contains("rance"))
+                    GameCatalog.ID_EVENICLEGAIDEN -> lower.contains("eveniclegaiden") ||
+                        lower.contains("evenicle_gaiden") ||
+                        lower.contains("eveniclegaiten") ||
+                        lower.contains("evenicleapc") ||
+                        lower.contains("夏娃年代记外典") ||
+                        lower.contains("イブニクル外典")
                     GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
                     GameCatalog.ID_RANCE01 -> lower.contains("rance01") || lower.contains("rance_01")
                     GameCatalog.ID_RANCE02 -> lower.contains("rance02") || lower.contains("rance_02")
@@ -1463,8 +1494,20 @@ object OnlineInstaller {
                     GameCatalog.ID_RANCE42 -> lower.contains("rance42") || lower.contains("rance_42") ||
                         lower.contains("rance4.2") || lower.contains("rance_4_2")
                     GameCatalog.ID_RANCE5D -> lower.contains("rance5d") || lower.contains("rance_5d")
-                    GameCatalog.ID_RANCE06 -> lower.contains("rance06") || lower.contains("rance_06") ||
-                        Regex("(?<![a-z0-9])rance_?6(?![0-9])").containsMatchIn(lower)
+                    GameCatalog.ID_RANCE06 -> (lower.contains("rance06") || lower.contains("rance_06") ||
+                        Regex("(?<![a-z0-9])rance_?6(?![0-9])").containsMatchIn(lower)) &&
+                        !lower.contains("after") &&
+                        !lower.contains("sonogo") &&
+                        !lower.contains("その後") &&
+                        !lower.contains("后日")
+                    GameCatalog.ID_RANCE6AFTER -> lower.contains("rance6after") ||
+                        lower.contains("rance6_after") ||
+                        lower.contains("rance06after") ||
+                        lower.contains("rancevisonogo") ||
+                        lower.contains("ランス６その後") ||
+                        lower.contains("ランス6その後") ||
+                        lower.contains("兰斯06后日谈") ||
+                        lower.contains("兰斯6后日谈")
                     GameCatalog.ID_RANCE08 -> lower.contains("rance08") || lower.contains("rance_08")
                     GameCatalog.ID_RANCE09 -> lower.contains("rance09") || lower.contains("rance_09")
                     GameCatalog.ID_KICHIKUOU -> lower.contains("kichiku")
@@ -1487,6 +1530,25 @@ object OnlineInstaller {
                     GameCatalog.ID_HARUURARE -> lower.contains("haruurare") ||
                         lower.contains("はるうられ") ||
                         lower.contains("校内赤线")
+                    GameCatalog.ID_OKUSAMAJUN -> lower.contains("okusamajun") ||
+                        lower.contains("okusama_jun") ||
+                        ((lower.contains("okusama") || lower.contains("太太的恢复术") || lower.contains("奥さま")) &&
+                            (lower.contains("jun") || lower.contains("纯爱") || lower.contains("純愛")))
+                    GameCatalog.ID_OKUSAMANTR -> lower.contains("okusamantr") ||
+                        lower.contains("okusama_ntr") ||
+                        ((lower.contains("okusama") || lower.contains("太太的恢复术") || lower.contains("奥さま")) &&
+                            (lower.contains("ntr") || lower.contains("夺爱") || lower.contains("奪愛")))
+                    GameCatalog.ID_WAIDONYO -> lower.contains("waidonyo") ||
+                        lower.contains("わいどにょ") ||
+                        lower.contains("异空窟")
+                    GameCatalog.ID_YAKATA2 -> lower.contains("yakata2") ||
+                        lower.contains("aliceの館ii") ||
+                        lower.contains("aliceの館2") ||
+                        lower.contains("爱丽丝之馆2")
+                    GameCatalog.ID_SDPSMARIA -> lower.contains("sdpsmaria") ||
+                        lower.contains("sdps_maria") ||
+                        lower.contains("superdpsmaria") ||
+                        lower.contains("玛利亚和坎潘")
                     GameCatalog.ID_TSUMAMIGUI -> (lower.contains("tsumamigui") ||
                         lower.contains("妻みぐい") ||
                         lower.contains("妻中蜜")) &&

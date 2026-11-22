@@ -175,6 +175,13 @@ static void set_game_default_mixers(void)
 		};
 		static const int vols[] = { 80, 80, 80, 100, 80, 80, 80, 80 };
 		set_default_mixers(names, vols, 8);
+	} else if (game_okusama || game_haharanman) {
+		static const char *const names[] = {
+			"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice",
+			"SystemVoice", "Extra"
+		};
+		static const int vols[] = { 80, 80, 80, 100, 80, 80, 100, 80 };
+		set_default_mixers(names, vols, 8);
 	}
 }
 

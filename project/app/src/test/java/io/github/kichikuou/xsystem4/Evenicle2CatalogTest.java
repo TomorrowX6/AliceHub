@@ -57,6 +57,10 @@ public class Evenicle2CatalogTest {
         writeFile(new File(bonusDir, "AliceStart.ini"), "GameName = \"Evenicle2Rance\"\n".getBytes(StandardCharsets.UTF_8));
         writeFile(new File(bonusDir, "Evenicle2Rance.ain"), new byte[]{0});
 
+        File customBonusDir = tmp.newFolder("Evenicle2Bonus");
+        writeFile(new File(customBonusDir, "AliceStart.ini"), "GameName = \"Evenicle2Bonus\"\n".getBytes(StandardCharsets.UTF_8));
+        writeFile(new File(customBonusDir, "Evenicle2Bonus.ain"), new byte[]{0});
+
         assertEquals(
                 GameCatalog.ID_EVENICLE2,
                 GameCatalog.INSTANCE.classifyDirectory(e2Dir, e2Dir.getName(), null, null)
@@ -70,8 +74,12 @@ public class Evenicle2CatalogTest {
                 GameCatalog.INSTANCE.classifyDirectory(e1Dir, e1Dir.getName(), null, null)
         );
         assertEquals(
-                GameCatalog.PREFIX_CUSTOM + "Evenicle2Rance",
+                GameCatalog.ID_EVENICLE2RANCE,
                 GameCatalog.INSTANCE.classifyDirectory(bonusDir, bonusDir.getName(), null, null)
+        );
+        assertEquals(
+                GameCatalog.PREFIX_CUSTOM + "Evenicle2Bonus",
+                GameCatalog.INSTANCE.classifyDirectory(customBonusDir, customBonusDir.getName(), null, null)
         );
 
         assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(e2Dir, "Evenicle2.ain", GameCatalog.ID_EVENICLE2));

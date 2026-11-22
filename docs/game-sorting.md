@@ -55,6 +55,14 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `atlachnacha` | ATLACH=NACHA | 1997-12-18 | 76.5 | 7.65 | [v163](https://vndb.org/v163) | [source](https://vndb.org/v163) |
 | `reishiki` | Zero Shiki | 1997-12-18 | 65.6 | 6.56 | [v1826](https://vndb.org/v1826) | [source](https://vndb.org/v1826) |
 | `haruurare` | Haru Urare | 2009-12-18 | 65.3 | 6.53 | [v3096](https://vndb.org/v3096) | [source](https://vndb.org/v3096) |
+| `okusamajun` | Okusama no Kaifuku Jutsu: Pure Love | 2022-05-27 | 67.3 | 6.73 | [v35407](https://vndb.org/v35407) | [source](https://vndb.org/v35407) |
+| `okusamantr` | Okusama no Kaifuku Jutsu: NTR | 2022-05-27 | 67.3 | 6.73 | [v35407](https://vndb.org/v35407) | [source](https://vndb.org/v35407) |
+| `evenicle2rance` | Evenicle 2 Rance | 2019-02-22 | 71.1 | 7.11 | [v25513](https://vndb.org/v25513) | [source](https://vndb.org/v25513) |
+| `eveniclegaiden` | Evenicle Gaiten | 2015-06-11 | 65.3 | 6.53 | [v20540](https://vndb.org/v20540) | [source](https://vndb.org/v20540) |
+| `waidonyo` | Waidonyo | 2009-12-18 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/alice2010/) |
+| `rance6after` | Rance VI: Aftermath | 2004-12-17 | 63 | 6.30 | [v29842](https://vndb.org/v29842) | [source](https://vndb.org/v29842) |
+| `yakata2` | ALICE no Yakata II | 1992-07-15 | 58.2 | 5.82 | [v9609](https://vndb.org/v9609) | [source](https://vndb.org/v9609) |
+| `sdpsmaria` | Super D.P.S.: Maria & Kanpan | 1992-09-01 | 61.2 | 6.12 | [v8670](https://vndb.org/v8670) | [source](https://vndb.org/v8670) |
 
 ## Edition mapping / missing-score decisions
 
@@ -62,6 +70,9 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 - `rance02` groups variants under one card. VNDB splits original II / standard 02 under [v1427](https://vndb.org/v1427) and revised 02 Kai under [v18970](https://vndb.org/v18970). The preserved release evidence maps r85823 to standard 02, r130324 to revised 02, and bundle r64811 to both. The fetched ratings are 61.9 and 60.3 respectively; neither unambiguously describes the whole card. Keep rating/source null, rather than choose one, average them, or substitute the older original. Official remake release date remains 2009-12-18.
 - `rance08` is titled Quest Magnum in the app. Date **2012-02-24** is the first Magnum expansion release, not Quest base (2011) or integrated reissue (2018). Official [Magnum page](https://www.alicesoft.com/rance8/magnum.html) confirms it; VNDB release r18068 maps Magnum to work [v6985](https://vndb.org/v6985). Its **rating is work-wide including base Quest**, not an invented separate Magnum rating.
 - Escalayer and Reboot share work **v311**, with Reboot release r35452 explicitly mapping there. Both cards therefore use the same real work rating 71.7, not separate edition-only ratings. Their dates remain 2002-08-02 vs 2014-07-25 (not the 2016 Android port). They retain source order on rating ties.
+- `okusamajun` and `okusamantr` share VNDB work **v35407** (simultaneous Pure Love / NTR editions released 2022-05-27), so both use rating 67.3 and retain source order on ties.
+- `waidonyo` (bundled in Alice 2010, released 2009-12-18) has no standalone VNDB work entry, so its rating/source remain null.
+- `sdpsmaria` maps to VNDB **v8670** (`Super D.P.S.`, released `1992-09`); day-of-month is normalized to `1992-09-01` for full ISO-date parsing.
 - No ErogameScape score or search-cache value is integrated. That source was superseded by the user and research stopped. No popularity count is reused as a rating.
 
 ## Validation scope

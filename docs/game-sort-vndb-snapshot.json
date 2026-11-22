@@ -161,6 +161,36 @@
         "id",
         "=",
         "v3096"
+      ],
+      [
+        "id",
+        "=",
+        "v8670"
+      ],
+      [
+        "id",
+        "=",
+        "v9609"
+      ],
+      [
+        "id",
+        "=",
+        "v20540"
+      ],
+      [
+        "id",
+        "=",
+        "v25513"
+      ],
+      [
+        "id",
+        "=",
+        "v29842"
+      ],
+      [
+        "id",
+        "=",
+        "v35407"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -447,6 +477,60 @@
         "released": "2020-11-27",
         "title": "doHna:doHna -Issho ni Warui Koto o Shiyou-",
         "votecount": 2768
+      },
+      {
+        "alttitle": null,
+        "average": 61.5,
+        "id": "v8670",
+        "rating": 61.2,
+        "released": "1992-09",
+        "title": "Super D.P.S.",
+        "votecount": 6
+      },
+      {
+        "alttitle": "ALICEの館II",
+        "average": 57.5,
+        "id": "v9609",
+        "rating": 58.2,
+        "released": "1992-07-15",
+        "title": "ALICE no Yakata II",
+        "votecount": 22
+      },
+      {
+        "alttitle": "イブニクル外典",
+        "average": 65.5,
+        "id": "v20540",
+        "rating": 65.3,
+        "released": "2015-06-11",
+        "title": "Evenicle Gaiten",
+        "votecount": 59
+      },
+      {
+        "alttitle": "イブニクル２ランス版",
+        "average": 71.1,
+        "id": "v25513",
+        "rating": 71.1,
+        "released": "2019-02-22",
+        "title": "Evenicle 2 Rance",
+        "votecount": 121
+      },
+      {
+        "alttitle": "ランス６その後",
+        "average": 63,
+        "id": "v29842",
+        "rating": 63,
+        "released": "2004-12-17",
+        "title": "Rance VI Sonogo",
+        "votecount": 220
+      },
+      {
+        "alttitle": "奥さまの回復術",
+        "average": 67.3,
+        "id": "v35407",
+        "rating": 67.3,
+        "released": "2022-05-27",
+        "title": "Oku-sama no Kaifuku Jutsu",
+        "votecount": 391
       }
     ]
   },

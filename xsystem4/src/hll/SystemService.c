@@ -80,8 +80,14 @@ static const char *game_version_text(void)
 	}
 	if (game_dohnadohna)
 		return "sd40006sd00000008f6300004";
+	if (game_evenicle2_rance)
+		return "7f4ssdth7855sbk65asde4fdsrfg4rvn4aq";
 	if (game_evenicle2)
 		return "8938gohds983ogh1223fg086qirkcvn36";
+	if (game_haharanman)
+		return "bmjr78365hd5ghd2337fh2jf";
+	if (game_okusama)
+		return "0000004fn0000d6e000097tn9000";
 	if (game_ixseal)
 		return "a8k345es394fx4mg3q2p8ts68nk5zwr7";
 	if (game_tsumamigui3) {
@@ -934,7 +940,15 @@ static void SystemService_GetSystemName(struct string **out)
 		return;
 	if (*out)
 		free_string(*out);
-	*out = cstr_to_string(game_evenicle ? "828pg55b349" : "System4.0");
+	if (game_evenicle_rance)
+		*out = cstr_to_string("s065605d4");
+	else
+		*out = cstr_to_string(game_evenicle ? "828pg55b349" : "System4.0");
+}
+
+static void SystemService_GetSceneNameList(struct string **out)
+{
+	set_out_cstr(out, game_evenicle_gaiden ? "000aa6sd000000320000000d54" : "");
 }
 
 static char **backup_save_files = NULL;
@@ -1090,6 +1104,7 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(GetCountryNo, SystemService_GetCountryNo),
 	    HLL_EXPORT(ScanFloat, SystemService_ScanFloat),
 	    HLL_EXPORT(GetSystemName, SystemService_GetSystemName),
+	    HLL_EXPORT(GetSceneNameList, SystemService_GetSceneNameList),
 	    HLL_EXPORT(AddBackupSaveFileName, SystemService_AddBackupSaveFileName),
 	    HLL_EXPORT(BackupSaveFile, SystemService_BackupSaveFile),
 	    HLL_EXPORT(Save, SystemService_Save),

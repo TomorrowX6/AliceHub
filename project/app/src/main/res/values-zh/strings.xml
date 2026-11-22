@@ -263,6 +263,14 @@
     <string name="game_atlachnacha_title">阿特拉克=纳克亚</string>
     <string name="game_reishiki_title">零式</string>
     <string name="game_haruurare_title">校内赤线区</string>
+    <string name="game_okusamajun_title">太太的恢复术 纯爱篇</string>
+    <string name="game_okusamantr_title">太太的恢复术 夺爱篇</string>
+    <string name="game_evenicle2rance_title">夏娃年代记2 兰斯版</string>
+    <string name="game_eveniclegaiden_title">夏娃年代记外典</string>
+    <string name="game_waidonyo_title">异空窟探险</string>
+    <string name="game_rance6after_title">兰斯06 后日谈</string>
+    <string name="game_yakata2_title">爱丽丝之馆2</string>
+    <string name="game_sdpsmaria_title">Super D.P.S 玛利亚和坎潘</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

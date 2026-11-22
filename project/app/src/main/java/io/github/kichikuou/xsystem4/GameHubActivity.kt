@@ -331,7 +331,15 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_KAERUNYO ||
                 descriptor.id == GameCatalog.ID_ATLACHNACHA ||
                 descriptor.id == GameCatalog.ID_REISHIKI ||
-                descriptor.id == GameCatalog.ID_HARUURARE
+                descriptor.id == GameCatalog.ID_HARUURARE ||
+                descriptor.id == GameCatalog.ID_OKUSAMAJUN ||
+                descriptor.id == GameCatalog.ID_OKUSAMANTR ||
+                descriptor.id == GameCatalog.ID_EVENICLE2RANCE ||
+                descriptor.id == GameCatalog.ID_EVENICLEGAIDEN ||
+                descriptor.id == GameCatalog.ID_WAIDONYO ||
+                descriptor.id == GameCatalog.ID_RANCE6AFTER ||
+                descriptor.id == GameCatalog.ID_YAKATA2 ||
+                descriptor.id == GameCatalog.ID_SDPSMARIA
             ) {
                 descriptor.title
             } else {

@@ -554,118 +554,136 @@ struct string *PE_GetUserComponentData(int no, struct string *key)
 }
 
 // Layout keys in the Chinese edition are GBK, including the Japanese field names.
-static const char *const pact_key_aliases[][4] = {
-	{ "种类別情报", "種類別情報", "种类別情報", "种类别情报" },
-	{ "パーツ类型", "パーツタイプ", NULL, NULL },
-	{ "レイアウト类型", "レイアウトタイプ", NULL, NULL },
-	{ "翻折許可", "折り返し許可", "折り返し许可", NULL },
-	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ", NULL },
-	{ "翻折尺寸を率として認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", NULL },
-	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", "折り返しサイズをレートとして认识する" },
-	{ "原点座標模式", "原点座標モード", "原点座标模式", NULL },
-	{ "ミップ地图", "ミップマップ", NULL, NULL },
-	{ "減算色模式", "減算色モード", NULL, NULL },
-	{ "左右反转", "左右反転", NULL, NULL },
-	{ "上下反转", "上下反転", NULL, NULL },
-	{ "文本エリア", "テキストエリア", "テキスト区域", NULL },
-	{ "开始時シーク量", "開始時シーク量", NULL, NULL },
-	{ "线の幅", "線の幅", NULL, NULL },
-	{ "旋转角度", "回転角度", NULL, NULL },
-	{ "座標总览", "座標一覧", NULL, NULL },
-	{ "一般状态", "通常状態", "通常状态", NULL },
-	{ "光标选中状态", "オンカーソル状態", "オンカーソル状态", NULL },
-	{ "键DOWN状态", "キーダウン状態", "キーダウン状态", NULL },
-	{ "光标选中透過", "オンカーソル透過", "オンカーソル透过", NULL },
-	{ "光标选中表示連動", "オンカーソル表示連動", "オンカーソル表示连动", NULL },
-	{ "复选框表示連動", "チェックボックス表示連動", "チェックボックス表示连动", NULL },
-	{ "α剪切器ー", "アルファクリッパー", NULL, NULL },
-	{ "点击許可", "クリック許可", "クリック许可", NULL },
-	{ "光标选中效果音", "オンカーソル効果音", "オンカーソル音效", NULL },
-	{ "点击效果音", "クリック効果音", "クリック音效", NULL },
-	{ "消息窗口表示連動", "メッセージウィンドウ表示連動", "文本窗口表示连动", NULL },
-	{ "信息窗口視覚效果連動", "メッセージウィンドウ視覚効果連動", "文本窗口视觉效果连动", NULL },
-	{ "按钮の色", "ボタンの色", NULL, NULL },
-	{ "字体类型", "フォントタイプ", NULL, NULL },
-	{ "字体尺寸", "フォント尺寸", "フォントサイズ", NULL },
-	{ "字体色", "フォント色", NULL, NULL },
-	{ "字体粗度", "フォント太さ", NULL, NULL },
-	{ "字体镶边", "フォント縁取り", "フォント缘取り", NULL },
-	{ "字体镶边色", "フォント縁取り色", "フォント缘取り色", NULL },
-	{ "文本位置", "テキスト位置", NULL, NULL },
-	{ "文本装飾", "テキスト装飾", "テキスト装饰", NULL },
-	{ "文本", "テキスト", NULL, NULL },
-	{ "文字间距", "文字間隔", "文字间隔", NULL },
-	{ "行间距", "行間隔", "行间隔", NULL },
-	{ "字间距", "字間隔", "字间隔", NULL },
-	{ "有效", "有効", NULL, NULL },
-	{ "有效状态", "有効状態", "有効", NULL },
-	{ "选择状态", "チェック状態", "チェック状态", NULL },
-	{ "按钮模式", "ボタンモード", "ボタン模式", NULL },
-	{ "复选框リスト", "チェックボックスリスト", NULL, NULL },
-	{ "旋转", "回転", "回转", NULL },
-	{ "反转", "反転", NULL, NULL },
-	{ "数值", "数値", NULL, NULL },
-	{ "尺寸", "サイズ", NULL, NULL },
-	{ "前尺寸", "前サイズ", NULL, NULL },
-	{ "次尺寸", "次サイズ", NULL, NULL },
-	{ "全体滚动条量", "全体スクロール量", NULL, NULL },
-	{ "滚动条位置", "スクロール位置", NULL, NULL },
-	{ "滚动率", "スクロールレート", NULL, NULL },
-	{ "按钮点击移动量", "ボタンクリック移動量", "ボタンクリック移动量", NULL },
-	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", "全体スクロール量サイズ连动", NULL },
-	{ "表示量尺寸連動", "表示量サイズ連動", "表示量サイズ连动", NULL },
-	{ "表示类型", "表示タイプ", NULL, NULL },
-	{ "补间类型", "補間タイプ", "辅间タイプ", NULL },
-	{ "原矩形", "元矩形", NULL, NULL },
-	{ "用户组件名", "ユーザコンポーネント名", NULL, NULL },
-	{ "数据", "データ", NULL, NULL },
-	{ "结束キー", "終了キー", "终了キー", NULL },
-	{ "扩大", "拡張", "扩张", NULL },
-	{ "背景图片", "背景画像", NULL, NULL },
-	{ "边距", "マージン", NULL, NULL },
-	{ "上書き检查ＣＧ名", "上書きチェックＣＧ名", NULL, NULL },
-	{ "上書き检查フラット名", "上書きチェックフラット名", NULL, NULL },
-	{ "消息编号", "メッセージ番号", "文本番号", NULL },
-	{ "循环ＣＧ开始编号", "ループＣＧ開始番号", "ループＣＧ开始番号", NULL },
-	{ "循环ＣＧ张数", "ループＣＧ枚数", NULL, NULL },
-	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", "ループＣＧ切り替え时间", NULL },
-	{ "子パーツ列表", "子パーツ", "子部件", "子パーツリスト" },
-	{ "サーフェイスエリア", "サーフェイス区域", NULL, NULL },
-	{ "スクロールＸ座標連動", "スクロールＸ座标连动", NULL, NULL },
-	{ "スクロールＹ座標連動", "スクロールＹ座标连动", NULL, NULL },
-	{ "スクロールアルファ連動", "スクロールアルファ连动", NULL, NULL },
-	{ "タグ処理有効", "タグ处理有效", NULL, NULL },
-	{ "ホイール有効", "ホイール有效", NULL, NULL },
-	{ "マウスカーソルピクセル判定", "鼠标光标ピクセル判定", NULL, NULL },
-	{ "ルビ装飾", "ルビ装饰", NULL, NULL },
-	{ "一文字辺りの表示時間", "一文字边りの表示时间", NULL, NULL },
-	{ "乗算色", "乘算色", NULL, NULL },
-	{ "座標", "座标", NULL, NULL },
-	{ "座標をレートとして認識する", "座标をレートとして认识する", NULL, NULL },
-	{ "手順リスト", "手顺リスト", NULL, NULL },
-	{ "拡大縮小", "扩大缩小", NULL, NULL },
-	{ "注視点更新", "注视点更新", NULL, NULL },
-	{ "遷移先", "迁移先", NULL, NULL },
-	{ "遷移方法", "迁移方法", NULL, NULL },
-	{ "長さ", "长さ", NULL, NULL },
-	{ "閉じている", "闭じている", NULL, NULL },
-	{ "非アクティブ時の乗算カラー", "非アクティブ时の乘算カラー", NULL, NULL },
-	{ "コメント", "评论", NULL, NULL },
-	{ "クリップ許可", "クリップ许可", NULL, NULL },
-	{ "クリップ領域", "クリップ领域", NULL, NULL },
-	{ "原点座標", "原点座标", NULL, NULL },
+static const char *const pact_key_aliases[][6] = {
+	{ "种类別情报", "種類別情報", "种类別情報", "种类别情报", "种类別信息", NULL },
+	{ "パーツ类型", "パーツタイプ", "组件类型", "部件タイプ", NULL, NULL },
+	{ "レイアウト类型", "レイアウトタイプ", NULL, NULL, NULL, NULL },
+	{ "配置", "部署", NULL, NULL, NULL, NULL },
+	{ "翻折許可", "折り返し許可", "折り返し许可", NULL, NULL, NULL },
+	{ "翻折尺寸", "折り返し尺寸", "折り返しサイズ", NULL, NULL, NULL },
+	{ "翻折尺寸を率として認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", NULL, NULL, NULL },
+	{ "翻折尺寸をレートとして認識する", "折り返し尺寸をレートとして認識する", "折り返しサイズをレートとして認識する", "折り返しサイズをレートとして认识する", NULL, NULL },
+	{ "原点座標模式", "原点座標モード", "原点座标模式", "原点坐标模式", NULL, NULL },
+	{ "ミップ地图", "ミップマップ", NULL, NULL, NULL, NULL },
+	{ "減算色模式", "減算色モード", NULL, NULL, NULL, NULL },
+	{ "左右反转", "左右反転", NULL, NULL, NULL, NULL },
+	{ "上下反转", "上下反転", NULL, NULL, NULL, NULL },
+	{ "文本エリア", "テキストエリア", "テキスト区域", "文本区域", NULL, NULL },
+	{ "开始時シーク量", "開始時シーク量", NULL, NULL, NULL, NULL },
+	{ "线の幅", "線の幅", NULL, NULL, NULL, NULL },
+	{ "旋转角度", "回転角度", NULL, NULL, NULL, NULL },
+	{ "座標总览", "座標一覧", NULL, NULL, NULL, NULL },
+	{ "一般状态", "通常状態", "通常状态", NULL, NULL, NULL },
+	{ "光标选中状态", "オンカーソル状態", "オンカーソル状态", "オン光标状态", NULL, NULL },
+	{ "键DOWN状态", "キーダウン状態", "キーダウン状态", "キー下降状态", NULL, NULL },
+	{ "光标选中透過", "オンカーソル透過", "オンカーソル透过", "オン光标透過", NULL, NULL },
+	{ "光标选中表示連動", "オンカーソル表示連動", "オンカーソル表示连动", "オン光标显示連動", NULL, NULL },
+	{ "复选框表示連動", "チェックボックス表示連動", "チェックボックス表示连动", "检查ボックス显示連動", NULL, NULL },
+	{ "α剪切器ー", "アルファクリッパー", NULL, NULL, NULL, NULL },
+	{ "点击許可", "クリック許可", "クリック许可", "点击许可", NULL, NULL },
+	{ "光标选中效果音", "オンカーソル効果音", "オンカーソル音效", "オン光标效果音", NULL, NULL },
+	{ "点击效果音", "クリック効果音", "クリック音效", NULL, NULL, NULL },
+	{ "消息窗口表示連動", "メッセージウィンドウ表示連動", "文本窗口表示连动", "文本内容窗口显示連動", NULL, NULL },
+	{ "信息窗口視覚效果連動", "メッセージウィンドウ視覚効果連動", "文本窗口视觉效果连动", "文本内容窗口視覚效果連動", NULL, NULL },
+	{ "按钮の色", "ボタンの色", NULL, NULL, NULL, NULL },
+	{ "字体类型", "フォントタイプ", NULL, NULL, NULL, NULL },
+	{ "字体尺寸", "フォント尺寸", "フォントサイズ", NULL, NULL, NULL },
+	{ "字体色", "フォント色", NULL, NULL, NULL, NULL },
+	{ "字体粗度", "フォント太さ", "字体粗细", NULL, NULL, NULL },
+	{ "字体镶边", "フォント縁取り", "フォント缘取り", "字体描边", NULL, NULL },
+	{ "字体镶边色", "フォント縁取り色", "フォント缘取り色", "字体描边颜色", NULL, NULL },
+	{ "文本位置", "テキスト位置", NULL, NULL, NULL, NULL },
+	{ "文本装飾", "テキスト装飾", "テキスト装饰", NULL, NULL, NULL },
+	{ "文本", "テキスト", NULL, NULL, NULL, NULL },
+	{ "文字间距", "文字間隔", "文字间隔", NULL, NULL, NULL },
+	{ "行间距", "行間隔", "行间隔", NULL, NULL, NULL },
+	{ "字间距", "字間隔", "字间隔", NULL, NULL, NULL },
+	{ "有效", "有効", "生效", NULL, NULL, NULL },
+	{ "有效状态", "有効状態", "有効", "生效状态", NULL, NULL },
+	{ "选择状态", "チェック状態", "チェック状态", "检查状态", NULL, NULL },
+	{ "按钮模式", "ボタンモード", "ボタン模式", NULL, NULL, NULL },
+	{ "复选框リスト", "チェックボックスリスト", "检查ボックス列表", NULL, NULL, NULL },
+	{ "旋转", "回転", "回转", NULL, NULL, NULL },
+	{ "反转", "反転", NULL, NULL, NULL, NULL },
+	{ "数值", "数値", NULL, NULL, NULL, NULL },
+	{ "尺寸", "サイズ", NULL, NULL, NULL, NULL },
+	{ "前尺寸", "前サイズ", NULL, NULL, NULL, NULL },
+	{ "次尺寸", "次サイズ", NULL, NULL, NULL, NULL },
+	{ "全体滚动条量", "全体スクロール量", "全局滚动量", "全局スライダー量", NULL, NULL },
+	{ "滚动条位置", "スクロール位置", "滚动位置", NULL, NULL, NULL },
+	{ "滚动率", "スクロールレート", "滚动レート", "スライダーレート", NULL, NULL },
+	{ "按钮点击移动量", "ボタンクリック移動量", "ボタンクリック移动量", NULL, NULL, NULL },
+	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", "全体スクロール量サイズ连动", "全局滚动量尺寸連動", "全局スライダー量尺寸連動", NULL },
+	{ "表示量尺寸連動", "表示量サイズ連動", "表示量サイズ连动", "显示量尺寸連動", NULL, NULL },
+	{ "表示", "显示", NULL, NULL, NULL, NULL },
+	{ "エディタ上表示", "编辑上表示", "エディタ上显示", NULL, NULL, NULL },
+	{ "表示量", "显示量", NULL, NULL, NULL, NULL },
+	{ "表示类型", "表示タイプ", "显示类型", NULL, NULL, NULL },
+	{ "コンマ表示", "コンマ显示", NULL, NULL, NULL, NULL },
+	{ "改行を表示する", "改行を显示する", NULL, NULL, NULL, NULL },
+	{ "补间类型", "補間タイプ", "辅间タイプ", "補間类型", NULL, NULL },
+	{ "原矩形", "元矩形", NULL, NULL, NULL, NULL },
+	{ "全体", "全局", NULL, NULL, NULL, NULL },
+	{ "用户组件名", "ユーザコンポーネント名", NULL, NULL, NULL, NULL },
+	{ "数据", "データ", NULL, NULL, NULL, NULL },
+	{ "结束キー", "終了キー", "终了キー", NULL, NULL, NULL },
+	{ "扩大", "拡張", "扩张", NULL, NULL, NULL },
+	{ "背景图片", "背景画像", "背景图像", NULL, NULL, NULL },
+	{ "边距", "マージン", NULL, NULL, NULL, NULL },
+	{ "フラット名", "缺省名", NULL, NULL, NULL, NULL },
+	{ "上書きフラット名", "覆盖フラット名", "覆盖缺省名", NULL, NULL, NULL },
+	{ "上書き检查ＣＧ名", "上書きチェックＣＧ名", "覆盖检查ＣＧ名", NULL, NULL, NULL },
+	{ "上書き检查フラット名", "上書きチェックフラット名", "覆盖检查フラット名", "覆盖チェック缺省名", NULL, NULL },
+	{ "上書き前フラット名", "覆盖前フラット名", "覆盖前缺省名", NULL, NULL, NULL },
+	{ "上書き次フラット名", "覆盖次フラット名", "覆盖次缺省名", NULL, NULL, NULL },
+	{ "上書きバーフラット名", "覆盖バーフラット名", "覆盖条缺省名", NULL, NULL, NULL },
+	{ "上書き背景フラット名", "覆盖背景フラット名", "覆盖背景缺省名", NULL, NULL, NULL },
+	{ "上書きバーＣＧ名", "覆盖バーＣＧ名", "覆盖条ＣＧ名", NULL, NULL, NULL },
+	{ "消息编号", "メッセージ番号", "文本番号", "文本内容编号", NULL, NULL },
+	{ "循环ＣＧ开始编号", "ループＣＧ開始番号", "ループＣＧ开始番号", NULL, NULL, NULL },
+	{ "循环ＣＧ张数", "ループＣＧ枚数", NULL, NULL, NULL, NULL },
+	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", "ループＣＧ切り替え时间", NULL, NULL, NULL },
+	{ "子パーツ", "子部件", "子组件", "子パーツ列表", "子パーツリスト", "子组件列表" },
+	{ "サーフェイスエリア", "サーフェイス区域", NULL, NULL, NULL, NULL },
+	{ "スクロールＸ座標連動", "スクロールＸ座标连动", "滚动Ｘ坐标連動", NULL, NULL, NULL },
+	{ "スクロールＹ座標連動", "スクロールＹ座标连动", "滚动Ｙ坐标連動", NULL, NULL, NULL },
+	{ "スクロールアルファ連動", "スクロールアルファ连动", "滚动アルファ連動", NULL, NULL, NULL },
+	{ "タグ処理有効", "タグ处理有效", "タグ処理生效", NULL, NULL, NULL },
+	{ "ホイール有効", "ホイール有效", "ホイール生效", NULL, NULL, NULL },
+	{ "スピードアップ有効", "スピードアップ有效", "スピードアップ生效", NULL, NULL, NULL },
+	{ "マウスカーソルピクセル判定", "鼠标光标ピクセル判定", NULL, NULL, NULL, NULL },
+	{ "ルビ装飾", "ルビ装饰", NULL, NULL, NULL, NULL },
+	{ "一文字辺りの表示時間", "一文字边りの表示时间", "一文字辺りの显示时间", NULL, NULL, NULL },
+	{ "乗算色", "乘算色", NULL, NULL, NULL, NULL },
+	{ "座標", "座标", "坐标", NULL, NULL, NULL },
+	{ "座標をレートとして認識する", "座标をレートとして认识する", "坐标をレートとして認識する", NULL, NULL, NULL },
+	{ "手順リスト", "手顺リスト", "手順列表", NULL, NULL, NULL },
+	{ "幅リスト", "幅列表", NULL, NULL, NULL, NULL },
+	{ "拡大縮小", "扩大缩小", "放大縮小", NULL, NULL, NULL },
+	{ "注視点更新", "注视点更新", NULL, NULL, NULL, NULL },
+	{ "遷移先", "迁移先", NULL, NULL, NULL, NULL },
+	{ "遷移方法", "迁移方法", NULL, NULL, NULL, NULL },
+	{ "長さ", "长さ", NULL, NULL, NULL, NULL },
+	{ "閉じている", "闭じている", NULL, NULL, NULL, NULL },
+	{ "アクティブ", "激活", NULL, NULL, NULL, NULL },
+	{ "キー待ちマーク", "キー等待マーク", NULL, NULL, NULL, NULL },
+	{ "非アクティブ時の乗算カラー", "非アクティブ时の乘算カラー", NULL, NULL, NULL, NULL },
+	{ "コメント", "评论", "备注", NULL, NULL, NULL },
+	{ "クリップ許可", "クリップ许可", NULL, NULL, NULL, NULL },
+	{ "クリップ領域", "クリップ领域", NULL, NULL, NULL, NULL },
+	{ "原点座標", "原点座标", "原点坐标", NULL, NULL, NULL },
 };
 
 typedef void *(*pact_lookup_fn)(void *ctx, const char *key);
 
-static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key)
+static void *pact_lookup_alias_once(void *ctx, pact_lookup_fn lookup, const char *key)
 {
 	void *res = lookup(ctx, parts_utf8_to_cjk_literal(key));
 	if (res)
 		return res;
 	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
 		bool matched = false;
-		for (size_t k = 0; k < 4 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < 6 && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key)) {
 				matched = true;
 				break;
@@ -673,7 +691,7 @@ static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key
 		}
 		if (!matched)
 			continue;
-		for (size_t k = 0; k < 4 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < 6 && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key))
 				continue;
 			res = lookup(ctx, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
@@ -684,9 +702,33 @@ static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key
 	return NULL;
 }
 
+static void *pact_lookup_alias(void *ctx, pact_lookup_fn lookup, const char *key)
+{
+	void *res = pact_lookup_alias_once(ctx, lookup, key);
+	if (!res && sys4_text_is_gbk) {
+		// Some GBK-translated titles keep parts of their PACT trees in Shift-JIS.
+		sys4_set_text_gbk(false);
+		res = pact_lookup_alias_once(ctx, lookup, key);
+		sys4_set_text_gbk(true);
+	}
+	return res;
+}
+
 static void *node_lookup_cb(void *ctx, const char *key)
 {
 	return ex_tree_get_child((struct ex_tree *)ctx, key);
+}
+
+static void *tree_node_lookup_cb(void *ctx, const char *key)
+{
+	struct ex_tree *n = ex_tree_get_child((struct ex_tree *)ctx, key);
+	return (n && !n->is_leaf) ? n : NULL;
+}
+
+static struct ex_tree *child_parts_tree(struct ex_tree *tree)
+{
+	if (!tree || tree->is_leaf) return NULL;
+	return pact_lookup_alias(tree, tree_node_lookup_cb, "子パーツ");
 }
 
 static struct ex_tree *node(struct ex_tree *tree, const char *key)
@@ -725,6 +767,32 @@ static struct string *str2(struct ex_tree *tree, const char *k1, const char *k2)
 	return v && v->type == EX_STRING ? v->s : &EMPTY_STRING;
 }
 
+static bool current_pact_sjis_under_gbk = false;
+
+static struct string *pact_ui_text(struct ex_tree *tree, const char *key)
+{
+	struct string *s = str(tree, key);
+	if (!current_pact_sjis_under_gbk || !s || !s->size)
+		return string_ref(s ? s : &EMPTY_STRING);
+	bool has_non_ascii = false;
+	for (int i = 0; i < s->size; i++) {
+		if ((unsigned char)s->text[i] >= 0x80) {
+			has_non_ascii = true;
+			break;
+		}
+	}
+	if (!has_non_ascii)
+		return string_ref(s);
+	sys4_set_text_gbk(false);
+	char *utf = sjis2utf(s->text, s->size);
+	sys4_set_text_gbk(true);
+	char *gbk = utf2sjis(utf, strlen(utf));
+	free(utf);
+	struct string *out = make_string(gbk, strlen(gbk));
+	free(gbk);
+	return out;
+}
+
 static float number(struct ex_tree *tree, const char *key, float fallback)
 {
 	struct ex_value *v = field(tree, key);
@@ -749,6 +817,36 @@ static float item2(struct ex_tree *tree, const char *k1, const char *k2, int ind
 	struct ex_value *v = field2(tree, k1, k2);
 	v = v && v->type == EX_LIST ? ex_list_get(v->list, index) : NULL;
 	return !v ? fallback : v->type == EX_INT ? v->i : v->type == EX_FLOAT ? v->f : fallback;
+}
+
+static bool is_known_pact_kind_utf8(const char *kind)
+{
+	static const char *const known[] = {
+		"レイアウトボックス", "低レベルパーツ", "低等级部件", "低等级组件",
+		"按钮", "ボタン", "复选框", "检查ボックス", "チェックボックス",
+		"纵向滚动条栏", "横向滚动条栏", "竖滚动条", "横滚动条", "縦滚动条",
+		"縦スクロールバー", "纵スクロールバー", "横スクロールバー",
+		"竖スライダー", "横スライダー", "縦スライダー", "纵向滑动条", "横向滑动条",
+		"横スライダー条", "縦スライダー条", "纵スライダー条",
+		"面板", "パネル", "消息窗口", "文本窗口", "信息窗口", "文本内容窗口", "メッセージウィンドウ",
+		"ラジオ按钮ボックス", "单选按钮框", "ラジオボタンボックス",
+		"文本框", "文本ボックス", "テキストボックス", "リストボックス", "列表ボックス", "コンボボックス",
+		"多行文本框", "マルチライン文本ボックス", "マルチラインテキストボックス", "スピンボックス",
+		"フォーム", "フォームグループ", "用户组件", "ユーザコンポーネント",
+		"ＣＧパーツ", "ＣＧ部件", "ＣＧ组件", "フラットパーツ", "フラット部件", "缺省组件",
+		"矩形パーツ", "矩形部件", "矩形组件", "ＣＧ判定パーツ", "ＣＧ判定部件", "ＣＧ判定组件",
+		"横向计量パーツ", "横ゲージ部件", "横ゲージパーツ", "横进度槽组件",
+		"纵向计量パーツ", "縦ゲージ部件", "竖ゲージ部件", "縦ゲージパーツ", "縦进度槽组件", "纵进度槽组件",
+		"ループＣＧパーツ", "循环ＣＧパーツ", "ループＣＧ组件", "循环ＣＧ组件",
+		"数字パーツ", "数字部件", "数字组件",
+		"文本パーツ", "テキストパーツ", "文本部件", "文本组件",
+		"構築パーツ", "构筑パーツ", "構築部件", "构筑部件", "構築组件", "构筑组件",
+	};
+	for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+		if (!strcmp(kind, known[i]))
+			return true;
+	}
+	return false;
 }
 
 static char *read_pact_kind(struct ex_tree *tree)
@@ -779,8 +877,20 @@ static char *read_pact_kind(struct ex_tree *tree)
 	struct ex_value *v = field2(tree, "パーツ类型", "部件タイプ");
 	if (!v)
 		return xstrdup("");
-	if (v->type == EX_STRING)
-		return sjis2utf(v->s->text, v->s->size);
+	if (v->type == EX_STRING) {
+		char *u = sjis2utf(v->s->text, v->s->size);
+		if (sys4_text_is_gbk && !is_known_pact_kind_utf8(u)) {
+			sys4_set_text_gbk(false);
+			char *alt = sjis2utf(v->s->text, v->s->size);
+			sys4_set_text_gbk(true);
+			if (is_known_pact_kind_utf8(alt)) {
+				free(u);
+				return alt;
+			}
+			free(alt);
+		}
+		return u;
+	}
 	if (v->type == EX_INT) {
 		for (size_t i = 0; i < sizeof(kind_by_id) / sizeof(kind_by_id[0]); i++) {
 			if (kind_by_id[i].type == v->i)
@@ -795,11 +905,11 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 	if (!tree) return;
 	char *kind = read_pact_kind(tree);
 	int no = p->no;
-	if (!strcmp(kind, "ＣＧパーツ") || !strcmp(kind, "ＣＧ部件")) {
+	if (!strcmp(kind, "ＣＧパーツ") || !strcmp(kind, "ＣＧ部件") || !strcmp(kind, "ＣＧ组件")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		parts_get_cg(p, state - 1);
 		if (cg->size) PE_SetPartsCG(no, cg, number2(tree, "变形", "変形", 0), state);
-	} else if (!strcmp(kind, "フラットパーツ") || !strcmp(kind, "フラット部件")) {
+	} else if (!strcmp(kind, "フラットパーツ") || !strcmp(kind, "フラット部件") || !strcmp(kind, "缺省组件")) {
 		struct string *flat = str(tree, "フラット名");
 		if (flat->size) {
 			PE_SetPartsFlat(no, flat, state);
@@ -807,24 +917,24 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 			p->states[state - 1].flat.begin_seek_frame = frame;
 			if (frame) PE_GoFramePartsFlat(no, frame, state);
 		}
-	} else if (!strcmp(kind, "矩形パーツ") || !strcmp(kind, "矩形部件")) {
+	} else if (!strcmp(kind, "矩形パーツ") || !strcmp(kind, "矩形部件") || !strcmp(kind, "矩形组件")) {
 		PE_SetRectangleDetectionPoint(no, item(tree, "左上", 0, 0), item(tree, "左上", 1, 0),
 				item(tree, "右上", 0, 0), item(tree, "右上", 1, 0),
 				item(tree, "左下", 0, 0), item(tree, "左下", 1, 0),
 				item(tree, "右下", 0, 0), item(tree, "右下", 1, 0), state);
-	} else if (!strcmp(kind, "ＣＧ判定パーツ") || !strcmp(kind, "ＣＧ判定部件")) {
+	} else if (!strcmp(kind, "ＣＧ判定パーツ") || !strcmp(kind, "ＣＧ判定部件") || !strcmp(kind, "ＣＧ判定组件")) {
 		PE_SetPartsCGDetectionSize(no, str(tree, "ＣＧ名"), state);
-	} else if (!strcmp(kind, "横向计量パーツ") || !strcmp(kind, "横ゲージ部件") || !strcmp(kind, "横ゲージパーツ")) {
+	} else if (!strcmp(kind, "横向计量パーツ") || !strcmp(kind, "横ゲージ部件") || !strcmp(kind, "横ゲージパーツ") || !strcmp(kind, "横进度槽组件")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		if (cg->size) PE_SetHGaugeCG(no, cg, state);
 		PE_SetHGaugeReverse(no, !!number(tree, "反转", 0), state);
 		PE_SetHGaugeRate(no, number(tree, "分子", 0), number(tree, "分母", 100), state);
-	} else if (!strcmp(kind, "纵向计量パーツ") || !strcmp(kind, "縦ゲージ部件") || !strcmp(kind, "竖ゲージ部件") || !strcmp(kind, "縦ゲージパーツ")) {
+	} else if (!strcmp(kind, "纵向计量パーツ") || !strcmp(kind, "縦ゲージ部件") || !strcmp(kind, "竖ゲージ部件") || !strcmp(kind, "縦ゲージパーツ") || !strcmp(kind, "縦进度槽组件") || !strcmp(kind, "纵进度槽组件")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		if (cg->size) PE_SetVGaugeCG(no, cg, state);
 		PE_SetVGaugeReverse(no, !!number(tree, "反转", 0), state);
 		PE_SetVGaugeRate(no, number(tree, "分子", 0), number(tree, "分母", 100), state);
-	} else if (!strcmp(kind, "ループＣＧパーツ") || !strcmp(kind, "循环ＣＧパーツ")) {
+	} else if (!strcmp(kind, "ループＣＧパーツ") || !strcmp(kind, "循环ＣＧパーツ") || !strcmp(kind, "ループＣＧ组件") || !strcmp(kind, "循环ＣＧ组件")) {
 		struct string *cg = str(tree, "ＣＧ名");
 		if (cg->size) {
 			PE_SetLoopCG(no, cg,
@@ -833,7 +943,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 					number2(tree, "循环ＣＧ切り替え时间", "循环ＣＧ切换時間", 0),
 					state);
 		}
-	} else if (!strcmp(kind, "数字パーツ") || !strcmp(kind, "数字部件")) {
+	} else if (!strcmp(kind, "数字パーツ") || !strcmp(kind, "数字部件") || !strcmp(kind, "数字组件")) {
 		PE_SetNumeralFont(no,
 				number2(tree, "字体类型", "フォントタイプ", 0),
 				number2(tree, "字体尺寸", "フォントサイズ", 16),
@@ -861,7 +971,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 		PE_SetNumeralShowPadding(no, number(tree, "ゼロパディング", 1), state);
 		PE_SetNumeralLength(no, number(tree, "桁数", 0), state);
 		PE_SetNumeralNumber(no, number(tree, "数值", 0), state);
-	} else if (!strcmp(kind, "文本パーツ") || !strcmp(kind, "文本部件") || !strcmp(kind, "テキストパーツ")) {
+	} else if (!strcmp(kind, "文本パーツ") || !strcmp(kind, "文本部件") || !strcmp(kind, "テキストパーツ") || !strcmp(kind, "文本组件")) {
 		struct ex_tree *style = node(tree, "文本装飾");
 		PE_SetPartsFontType(no, number2(style, "字体类型", "フォントタイプ", 0), state);
 		PE_SetPartsFontSize(no, number2(style, "字体尺寸", "フォントサイズ", 16), state);
@@ -900,8 +1010,10 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 			text_style_set_edge_width(&pt->ruby_ts, number2(rstyle, "字体镶边", "フォント縁取り", 0));
 			pt->ruby_char_space = number2(rstyle, "字间距", "字間隔", 0);
 		}
-		PE_SetText(no, str(tree, "文本"), state);
-	} else if (!strcmp(kind, "構築パーツ") || !strcmp(kind, "构筑パーツ") || !strcmp(kind, "構築部件")) {
+		struct string *text = pact_ui_text(tree, "文本");
+		PE_SetText(no, text, state);
+		free_string(text);
+	} else if (!strcmp(kind, "構築パーツ") || !strcmp(kind, "构筑パーツ") || !strcmp(kind, "構築部件") || !strcmp(kind, "构筑部件") || !strcmp(kind, "構築组件") || !strcmp(kind, "构筑组件")) {
 		parts_get_construction_process(p, state - 1);
 		struct ex_tree *steps = node(tree, "手順リスト");
 		if (steps && !steps->is_leaf) {
@@ -932,7 +1044,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 				int blur = number2(step, "ぼかし長さ", "ブラー", 0);
 				float bold = number2(step, "字体粗度", "フォント太さ", 0);
 				float edge = number2(step, "字体镶边", "フォント縁取り", 0);
-				struct string *txt = str(step, "文本"), *cg = str(step, "ＣＧ名");
+				struct string *txt = pact_ui_text(step, "文本"), *cg = str(step, "ＣＧ名");
 				switch (cmd) {
 				case 0: PE_AddCreateToPartsConstructionProcess(no, dw, dh, state); break;
 				case 1: PE_AddCreatePixelOnlyToPartsConstructionProcess(no, dw, dh, state); break;
@@ -1023,6 +1135,7 @@ static void load_state(struct parts *p, struct ex_tree *tree, int state)
 				}
 				default: WARNING("Unsupported PACT construction step command: %d", cmd); break;
 				}
+				free_string(txt);
 			}
 			PE_BuildPartsConstructionProcess(no, state);
 		}
@@ -1130,7 +1243,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 				number2(info, "翻折尺寸", "折り返しサイズ", 200));
 		PE_SetLayoutBoxReturnSizeForRate(no, number2(info, "翻折尺寸を率として認識する", "折り返しサイズをレートとして認識する", 0));
 		PE_set_layoutbox_padding(no, item(info, "パディング", 0, 0), item(info, "パディング", 1, 0), item(info, "パディング", 2, 0), item(info, "パディング", 3, 0));
-	} else if (!strcmp(kind, "低レベルパーツ") || !strcmp(kind, "低等级部件")) {
+	} else if (!strcmp(kind, "低レベルパーツ") || !strcmp(kind, "低等级部件") || !strcmp(kind, "低等级组件")) {
 		load_state(p, node2(info, "一般状态", "普通状態"), 1);
 		load_state(p, node2(info, "光标选中状态", "オン指针状態"), 2);
 		load_state(p, node2(info, "键DOWN状态", "キーダウン状態"), 3);
@@ -1153,7 +1266,9 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		PE_SetButtonTextOriginPosMode(no, number(info, "文本位置", 5));
 		PE_SetButtonCharSpace(no, number2(info, "文字间距", "文字間隔", 0));
 		PE_SetButtonLineSpace(no, number2(info, "行间距", "行間隔", 0));
-		PE_SetButtonText(no, str(info, "文本"));
+		struct string *btn_text = pact_ui_text(info, "文本");
+		PE_SetButtonText(no, btn_text);
+		free_string(btn_text);
 		struct string *flat = str(info, "フラット名"), *cg = str(info, "ＣＧ名");
 		if (cg->size) PE_SetButtonCGName(no, cg);
 		if (flat->size) PE_SetButtonFlatName(no, flat);
@@ -1180,7 +1295,9 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		PE_SetCheckBoxCharSpace(no, number2(info, "文字间距", "文字間隔", 0));
 		PE_SetCheckBoxLineSpace(no, number2(info, "行间距", "行間隔", 0));
 		PE_SetCheckBoxButtonMode(no, number(info, "按钮模式", 0));
-		PE_SetCheckBoxText(no, str(info, "文本"));
+		struct string *cb_text = pact_ui_text(info, "文本");
+		PE_SetCheckBoxText(no, cb_text);
+		free_string(cb_text);
 		struct string *cg = str(info, "ＣＧ名"), *flat = str(info, "フラット名");
 		if (cg->size) PE_SetCheckBoxCGName(no, cg);
 		if (flat->size) PE_SetCheckBoxFlatName(no, flat);
@@ -1194,17 +1311,20 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		if (flat->size) PE_SetCheckBoxOverrideCheckedFlatName(no, flat);
 		parts_widget_end_batch(p);
 	} else if (!strcmp(kind, "纵向滚动条栏") || !strcmp(kind, "横向滚动条栏") ||
-	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") ||
+	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") || !strcmp(kind, "縦滚动条") ||
 	           !strcmp(kind, "縦スクロールバー") || !strcmp(kind, "纵スクロールバー") || !strcmp(kind, "横スクロールバー") ||
 	           !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
-	           !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー") ||
+	           !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー条") ||
+	           !strcmp(kind, "縦スライダー条") || !strcmp(kind, "纵スライダー条") ||
 	           !strcmp(kind, "纵向滑动条") || !strcmp(kind, "横向滑动条")) {
 		bool horizontal = !strcmp(kind, "横向滚动条栏") || !strcmp(kind, "横滚动条") ||
 		                  !strcmp(kind, "横スクロールバー") ||
-		                  !strcmp(kind, "横スライダー") || !strcmp(kind, "横向滑动条");
+		                  !strcmp(kind, "横スライダー") || !strcmp(kind, "横スライダー条") ||
+		                  !strcmp(kind, "横向滑动条");
 		bool is_slider = !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
-		                 !strcmp(kind, "縦スライダー") || !strcmp(kind, "横向滑动条") ||
-		                 !strcmp(kind, "纵向滑动条");
+		                 !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー条") ||
+		                 !strcmp(kind, "縦スライダー条") || !strcmp(kind, "纵スライダー条") ||
+		                 !strcmp(kind, "横向滑动条") || !strcmp(kind, "纵向滑动条");
 		if (is_slider)
 			parts_sliderbar_create(p, horizontal);
 		else
@@ -1243,7 +1363,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		PE_SetPanelAlphaGradationBottom(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 1, 0));
 		PE_SetPanelAlphaGradationLeft(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 2, 0));
 		PE_SetPanelAlphaGradationRight(no, item2(info, "アルファ色彩渐变", "アルファグラデーション", 3, 0));
-	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "文本窗口") || !strcmp(kind, "信息窗口") || !strcmp(kind, "メッセージウィンドウ")) {
+	} else if (!strcmp(kind, "消息窗口") || !strcmp(kind, "文本窗口") || !strcmp(kind, "信息窗口") || !strcmp(kind, "文本内容窗口") || !strcmp(kind, "メッセージウィンドウ")) {
 		PE_SetSpecialComponentType(no, 10);
 		PE_SetMessageWindowActive(no, number(info, "アクティブ", 0));
 		PE_SetMessageWindowInactiveMultipleColor(no,
@@ -1286,7 +1406,9 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		struct string *flat = str(info, "フラット名"), *cg = str(info, "ＣＧ名");
 		if (cg->size) PE_SetMessageWindowCGName(no, cg);
 		if (flat->size) PE_SetMessageWindowFlatName(no, flat);
-		PE_SetMessageWindowText(no, str(info, "文本"), number2(info, "消息编号", "信息番号", -1), &EMPTY_STRING, 0, 0);
+		struct string *mw_text = pact_ui_text(info, "文本");
+		PE_SetMessageWindowText(no, mw_text, number2(info, "消息编号", "信息番号", -1), &EMPTY_STRING, 0, 0);
+		free_string(mw_text);
 		struct ex_tree *key = node(info, "キー待ちマーク");
 		if (key) {
 			PE_SetKeyWaitPos(no, item(key, "座標", 0, 0), item(key, "座標", 1, 0), item(key, "座標", 2, 0));
@@ -1299,20 +1421,24 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		}
 	} else if (!strcmp(kind, "ラジオ按钮ボックス") || !strcmp(kind, "单选按钮框") || !strcmp(kind, "ラジオボタンボックス")) {
 		PE_SetSpecialComponentType(no, 9);
-	} else if (!strcmp(kind, "文本框") || !strcmp(kind, "テキストボックス")) {
+	} else if (!strcmp(kind, "文本框") || !strcmp(kind, "文本ボックス") || !strcmp(kind, "テキストボックス")) {
 		PE_SetSpecialComponentType(no, 4);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 30));
-		PE_SetTextBoxText(no, str(info, "文本"));
-	} else if (!strcmp(kind, "リストボックス")) {
+		struct string *tb_text = pact_ui_text(info, "文本");
+		PE_SetTextBoxText(no, tb_text);
+		free_string(tb_text);
+	} else if (!strcmp(kind, "リストボックス") || !strcmp(kind, "列表ボックス")) {
 		PE_SetSpecialComponentType(no, 5);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 200));
 	} else if (!strcmp(kind, "コンボボックス")) {
 		PE_SetSpecialComponentType(no, 6);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 30));
-	} else if (!strcmp(kind, "多行文本框") || !strcmp(kind, "マルチラインテキストボックス")) {
+	} else if (!strcmp(kind, "多行文本框") || !strcmp(kind, "マルチライン文本ボックス") || !strcmp(kind, "マルチラインテキストボックス")) {
 		PE_SetSpecialComponentType(no, 7);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 200));
-		PE_SetTextBoxText(no, str(info, "文本"));
+		struct string *tb_text = pact_ui_text(info, "文本");
+		PE_SetTextBoxText(no, tb_text);
+		free_string(tb_text);
 	} else if (!strcmp(kind, "スピンボックス")) {
 		PE_SetSpecialComponentType(no, 11);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 100), item2(info, "尺寸", "サイズ", 1, 24));
@@ -1348,7 +1474,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		VM_ERROR("Unsupported PACT component: %s", kind);
 	}
 	free(kind);
-	struct ex_tree *children = node2(tree, "子パーツ", "子部件");
+	struct ex_tree *children = child_parts_tree(tree);
 	if (children) for (unsigned i = 0; i < children->nr_children; i++)
 		load_part(a, &children->children[i], no, edit);
 }
@@ -1390,7 +1516,7 @@ static void load_part_links(struct activity *a, struct ex_tree *tree)
 		p->scrollbar->total_link = total ? total->no : 0;
 		p->scrollbar->view_link = view ? view->no : 0;
 	}
-	struct ex_tree *children = node2(tree, "子パーツ", "子部件");
+	struct ex_tree *children = child_parts_tree(tree);
 	if (children) for (unsigned i = 0; i < children->nr_children; i++) load_part_links(a, &children->children[i]);
 }
 
@@ -2605,8 +2731,25 @@ bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit)
 		free(raw);
 	}
 	if (!ex) return false;
+	bool prev_sjis_under_gbk = current_pact_sjis_under_gbk;
+	current_pact_sjis_under_gbk = false;
+	if (sys4_text_is_gbk) {
+		const char *gbk_act = parts_utf8_to_cjk_literal("アクティビティ");
+		sys4_set_text_gbk(false);
+		const char *sjis_act = parts_utf8_to_cjk_literal("アクティビティ");
+		sys4_set_text_gbk(true);
+		bool has_gbk_act = false, has_sjis_act = false;
+		for (unsigned i = 0; i < ex->nr_blocks; i++) {
+			if (!strcmp(ex->blocks[i].name->text, gbk_act))
+				has_gbk_act = true;
+			else if (!strcmp(ex->blocks[i].name->text, sjis_act))
+				has_sjis_act = true;
+		}
+		current_pact_sjis_under_gbk = !has_gbk_act && has_sjis_act;
+	}
 	struct ex_value *layout = block(ex, "アクティビティ");
 	if (!layout || layout->type != EX_TREE || layout->tree->is_leaf || !PE_CreateActivity(name)) {
+		current_pact_sjis_under_gbk = prev_sjis_under_gbk;
 		ex_free(ex);
 		return false;
 	}
@@ -2625,6 +2768,7 @@ bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit)
 	}
 	for (unsigned i = 0; i < layout->tree->nr_children; i++) load_part(a, &layout->tree->children[i], 0, edit);
 	for (unsigned i = 0; i < layout->tree->nr_children; i++) load_part_links(a, &layout->tree->children[i]);
+	current_pact_sjis_under_gbk = prev_sjis_under_gbk;
 	PE_UpdateComponent(0);
 	ex_free(ex);
 	return true;
@@ -2747,7 +2891,7 @@ static void bind_legacy_tree(struct activity *a, struct ex_tree *tree, struct pa
 		bp->next = *at;
 		*at = bp;
 	}
-	struct ex_tree *children = node(tree, "子パーツ列表");
+	struct ex_tree *children = child_parts_tree(tree);
 	if (!children)
 		return;
 	struct parts *child_part = TAILQ_FIRST(&part->children);

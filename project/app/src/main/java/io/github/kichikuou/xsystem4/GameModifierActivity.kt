@@ -360,6 +360,14 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_ATLACHNACHA ||
                 id == GameCatalog.ID_REISHIKI ||
                 id == GameCatalog.ID_HARUURARE ||
+                id == GameCatalog.ID_OKUSAMAJUN ||
+                id == GameCatalog.ID_OKUSAMANTR ||
+                id == GameCatalog.ID_EVENICLE2RANCE ||
+                id == GameCatalog.ID_EVENICLEGAIDEN ||
+                id == GameCatalog.ID_WAIDONYO ||
+                id == GameCatalog.ID_RANCE6AFTER ||
+                id == GameCatalog.ID_YAKATA2 ||
+                id == GameCatalog.ID_SDPSMARIA ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

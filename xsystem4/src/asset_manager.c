@@ -988,6 +988,8 @@ void asset_manager_init(void)
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
 	int ald_count[ASSET_TYPE_MAX] = {0};
 	char *afa_filenames[ASSET_TYPE_MAX] = {0};
+	char *afa_chs_cg = NULL;
+	char *afa_chs_flat = NULL;
 
 	UDIR *dir;
 	char *d_name;
@@ -1066,6 +1068,12 @@ void asset_manager_init(void)
 				afa_filenames[ASSET_PACT] = path_join(config.game_dir, d_name);
 			} else if (!strcasecmp(type, "AFF.afa")) {
 				afa_filenames[ASSET_FLASH] = path_join(config.game_dir, d_name);
+			} else if (!strcasecmp(type, "CHS.afa")) {
+				free(afa_chs_cg);
+				afa_chs_cg = path_join(config.game_dir, d_name);
+			} else if (!strcasecmp(type, "CHS2.afa")) {
+				free(afa_chs_flat);
+				afa_chs_flat = path_join(config.game_dir, d_name);
 			}
 		} else if (!strcasecmp(ext, "fnl")) {
 			if (!config.fnl_path)
@@ -1115,4 +1123,22 @@ void asset_manager_init(void)
 	afa_init(ASSET_PACT, afa_filenames[ASSET_PACT]);
 	afa_init(ASSET_DATA, afa_filenames[ASSET_DATA]);
 	afa_init(ASSET_FLASH, afa_filenames[ASSET_FLASH]);
+
+	// Mount companion CN CG/Flat patch archives (e.g. Evenicle2RanceCHS.afa / CHS2.afa)
+	// ahead of the base archives so translated UI skins and flats take precedence without
+	// requiring Windows DLL hooks.
+	if (afa_chs_cg) {
+		if (!assets[ASSET_CG])
+			assets[ASSET_CG] = &afa_create_manager()->manager;
+		if (assets[ASSET_CG]->load_archive)
+			assets[ASSET_CG]->load_archive(assets[ASSET_CG], afa_chs_cg);
+		free(afa_chs_cg);
+	}
+	if (afa_chs_flat) {
+		if (!assets[ASSET_FLAT])
+			assets[ASSET_FLAT] = &afa_create_manager()->manager;
+		if (assets[ASSET_FLAT]->load_archive)
+			assets[ASSET_FLAT]->load_archive(assets[ASSET_FLAT], afa_chs_flat);
+		free(afa_chs_flat);
+	}
 }
