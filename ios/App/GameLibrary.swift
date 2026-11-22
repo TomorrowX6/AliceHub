@@ -14,6 +14,8 @@ struct Game: Identifiable {
     var name: String { url.lastPathComponent }
     var displayName: String {
         if GameLibrary.isRance04(url) { return "兰斯IV 教团的遗产" }
+        if GameLibrary.isRance41(url) { return "兰斯4.1 拯救制药厂！" }
+        if GameLibrary.isRance42(url) { return "兰斯4.2 天使组" }
         if GameLibrary.isRance5d(url) { return "兰斯5D" }
         return url.lastPathComponent
     }
@@ -59,6 +61,35 @@ final class GameLibrary: ObservableObject {
             $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
                 (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
+    }
+
+    private static func legacySystem3GameId(_ url: URL) -> String? {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3,
+              let ini = contents.first(where: {
+                  $0.lastPathComponent.lowercased() == "system3.ini" &&
+                      (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+              }),
+              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "game" {
+                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
+
+    static func isRance41(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "rance41" || game == "rance4.1"
+    }
+
+    static func isRance42(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "rance42" || game == "rance4.2"
     }
 
     static func isRance5d(_ url: URL) -> Bool {

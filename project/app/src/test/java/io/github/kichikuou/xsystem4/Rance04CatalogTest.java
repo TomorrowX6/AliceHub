@@ -68,19 +68,21 @@ public class Rance04CatalogTest {
         assertFalse(GameCatalog.INSTANCE.isRance04GameDir(root));
     }
 
-    @Test public void registersLocalOnlyDescriptorAndSeriesOrder() {
+    @Test public void registersOnlineDescriptorAndSeriesOrder() {
         GameDescriptor descriptor = GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_RANCE04, null, id -> "title");
         assertEquals("rance04", descriptor.getId());
         assertEquals("Rance04", descriptor.getDefaultDirName());
         assertNull(descriptor.getExpectedAinName());
-        assertFalse(descriptor.getSupportsOnlineBaseInstall());
-        assertNull(descriptor.getOnlineBaseCdnUrl());
+        assertTrue(descriptor.getSupportsOnlineBaseInstall());
+        assertEquals(OnlineInstaller.RANCE04_CDN_URL, descriptor.getOnlineBaseCdnUrl());
+        assertEquals(AppSettings.DEFAULT_RANCE04_BYTES, AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.RANCE04_CDN_URL));
         assertFalse(descriptor.getSupportsOnlineMod());
         assertFalse(descriptor.getSupportsLocalMod());
         List<String> order = GameCatalog.builtInSelectOrder();
         assertTrue(order.indexOf(GameCatalog.ID_RANCE04) > order.indexOf(GameCatalog.ID_RANCE03));
         assertTrue(order.indexOf(GameCatalog.ID_RANCE04) < order.indexOf(GameCatalog.ID_RANCE06));
         assertEquals("1993-12-11", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE04).getReleaseDate());
+        assertEquals(Double.valueOf(62.0), GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE04).getRating());
     }
 
     @Test public void prunesOnlyWindowsExecutableAndKeepsRuntimePayload() throws Exception {

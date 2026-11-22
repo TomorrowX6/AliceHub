@@ -106,6 +106,26 @@
         "id",
         "=",
         "v18486"
+      ],
+      [
+        "id",
+        "=",
+        "v2040"
+      ],
+      [
+        "id",
+        "=",
+        "v2043"
+      ],
+      [
+        "id",
+        "=",
+        "v2044"
+      ],
+      [
+        "id",
+        "=",
+        "v2046"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -187,6 +207,33 @@
         "votecount": 1028
       },
       {
+        "alttitle": "ランス IV　－教団の遺産－",
+        "average": 62,
+        "id": "v2040",
+        "rating": 62,
+        "released": "1993-12-11",
+        "title": "Rance IV - Kyoudan no Isan -",
+        "votecount": 1436
+      },
+      {
+        "alttitle": "ランス４．１　～お薬工場を救え！～",
+        "average": 53.3,
+        "id": "v2043",
+        "rating": 53.3,
+        "released": "1995-12-01",
+        "title": "Rance 4.1 ~Okusuri Koujou o Sukue!~",
+        "votecount": 917
+      },
+      {
+        "alttitle": "ランス４．２　～エンジェル組～",
+        "average": 53.7,
+        "id": "v2044",
+        "rating": 53.7,
+        "released": "1995-12-08",
+        "title": "Rance 4.2 ~Angelgumi~",
+        "votecount": 884
+      },
+      {
         "alttitle": "鬼畜王ランス",
         "average": 84,
         "id": "v2045",
@@ -194,6 +241,15 @@
         "released": "1996-12-19",
         "title": "Kichikuou Rance",
         "votecount": 1134
+      },
+      {
+        "alttitle": "ランス５Ｄ －ひとりぼっちの女の子－",
+        "average": 57.5,
+        "id": "v2046",
+        "rating": 57.5,
+        "released": "2002-10-25",
+        "title": "Rance 5D - Hitoribocchi no Onna no Ko -",
+        "votecount": 1635
       },
       {
         "alttitle": "RanceVI -ゼス崩壊-",

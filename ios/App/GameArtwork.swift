@@ -18,6 +18,10 @@ struct GameArtwork: View {
             ("rance01", ["rance01", "兰斯01", "ランス01"]),
             ("rance02", ["rance02", "兰斯02", "ランス02"]),
             ("rance03", ["rance03", "兰斯03", "ランス03"]),
+            ("rance41", ["rance41", "rance4.1", "兰斯4.1", "兰斯41", "ランス4.1", "拯救制药厂", "お薬工場"]),
+            ("rance42", ["rance42", "rance4.2", "兰斯4.2", "兰斯42", "ランス4.2", "天使组", "天使組", "エンジェル組"]),
+            ("rance04", ["rance04", "rance4sa", "ranceiv", "兰斯iv", "兰斯4", "ランスiv", "ランス4", "教团的遗产", "教団の遺産"]),
+            ("rance5d", ["rance5d", "r5dsa", "兰斯5d", "ランス5d", "ランス５ｄ"]),
             ("rance06", ["rance06", "兰斯6", "ランス6"]),
             ("rance08", ["rance08", "rance8", "兰斯8", "ランスクエスト"]),
             ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
@@ -29,7 +33,14 @@ struct GameArtwork: View {
             ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
             ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
         ]
-        guard let key = catalogID ?? aliases.first(where: { $0.1.contains(where: normalized.contains) })?.0,
+        let detectedID: String? = game.flatMap { g in
+            if GameLibrary.isRance41(g.url) { return "rance41" }
+            if GameLibrary.isRance42(g.url) { return "rance42" }
+            if GameLibrary.isRance04(g.url) { return "rance04" }
+            if GameLibrary.isRance5d(g.url) { return "rance5d" }
+            return nil
+        }
+        guard let key = catalogID ?? detectedID ?? aliases.first(where: { $0.1.contains(where: normalized.contains) })?.0,
               let path = Bundle.main.path(forResource: "ic_game_" + key, ofType: "png", inDirectory: "drawable-nodpi") else { return nil }
         return UIImage(contentsOfFile: path)
     }

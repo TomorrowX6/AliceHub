@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#include <SDL.h>
 #include <SDL_syswm.h>
 
 SDL_Window *alicehub_system3_create_window(const char *title, int x, int y, int w, int h, Uint32 flags)

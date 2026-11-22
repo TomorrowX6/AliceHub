@@ -82,20 +82,22 @@ public class Rance5dCatalogTest {
         assertFalse(GameCatalog.INSTANCE.isRance5dGameDir(root));
     }
 
-    @Test public void registersLocalOnlyDescriptorAndSeriesOrder() {
+    @Test public void registersOnlineDescriptorAndSeriesOrder() {
         GameDescriptor descriptor = GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_RANCE5D, null, id -> "title");
         assertEquals("rance5d", descriptor.getId());
         assertEquals("Rance5D", descriptor.getDefaultDirName());
         assertNull(descriptor.getExpectedAinName());
-        assertFalse(descriptor.getSupportsOnlineBaseInstall());
-        assertNull(descriptor.getOnlineBaseCdnUrl());
+        assertTrue(descriptor.getSupportsOnlineBaseInstall());
+        assertEquals(OnlineInstaller.RANCE5D_CDN_URL, descriptor.getOnlineBaseCdnUrl());
+        assertEquals(AppSettings.DEFAULT_RANCE5D_BYTES, AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.RANCE5D_CDN_URL));
         assertFalse(descriptor.getSupportsOnlineMod());
         assertFalse(descriptor.getSupportsLocalMod());
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(order.indexOf(GameCatalog.ID_RANCE04) + 1, order.indexOf(GameCatalog.ID_RANCE5D));
+        assertEquals(order.indexOf(GameCatalog.ID_RANCE42) + 1, order.indexOf(GameCatalog.ID_RANCE5D));
         assertEquals(order.indexOf(GameCatalog.ID_RANCE5D) + 1, order.indexOf(GameCatalog.ID_RANCE06));
         assertTrue(order.indexOf(GameCatalog.ID_RANCE5D) < order.indexOf(GameCatalog.ID_RANCE06));
         assertEquals("2002-10-25", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE5D).getReleaseDate());
+        assertEquals(Double.valueOf(57.5), GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE5D).getRating());
     }
 
 }

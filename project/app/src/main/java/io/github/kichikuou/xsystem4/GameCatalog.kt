@@ -52,6 +52,8 @@ object GameCatalog {
     const val ID_RANCE02 = "rance02"
     const val ID_RANCE03 = "rance03"
     const val ID_RANCE04 = "rance04"
+    const val ID_RANCE41 = "rance41"
+    const val ID_RANCE42 = "rance42"
     const val ID_RANCE5D = "rance5d"
     const val ID_RANCE06 = "rance06"
     const val ID_RANCE08 = "rance08"
@@ -96,6 +98,12 @@ object GameCatalog {
         ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
             val key = line.substringBefore('=').trim()
             if (key.equals("title", true)) line.substringAfter('=', "").trim().ifEmpty { null } else null
+        }
+
+    internal fun legacySystem3GameId(ini: ByteArray?): String? =
+        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+            val key = line.substringBefore('=').trim()
+            if (key.equals("game", true)) line.substringAfter('=', "").trim().lowercase().ifEmpty { null } else null
         }
 
     internal fun legacySystem3Title(dir: File): String? {
@@ -378,6 +386,12 @@ object GameCatalog {
         }
         if (isRance04GameFiles(fileNames)) {
             return ID_RANCE04
+        }
+        if (isRance41GameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE41
+        }
+        if (isRance42GameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE42
         }
         if (isRance5dGameFiles(fileNames)) {
             return ID_RANCE5D
@@ -782,6 +796,79 @@ object GameCatalog {
         if (Regex("(?:rance|兰斯|ランス)\\s*0?(?:4|iv)\\s*[.・]\\s*[12]", RegexOption.IGNORE_CASE).containsMatchIn(normalized)) return false
         return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4(?![0-9.]|\\s*[.・]\\s*[0-9])|iv(?![a-z0-9.]|\\s*[.・]\\s*[0-9]))", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
             normalized.contains("教团的遗产") || normalized.contains("教団の遺産")
+    }
+
+    @JvmOverloads
+    fun isRance41GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "rance41" || game == "rance4.1") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isRance41Alias(title)) return true
+        }
+        return fileNames.any { it.equals("RANCE41.ICO", true) }
+    }
+
+    fun isRance41GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isRance41GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) runCatching { f.readBytes() }.getOrNull() else null
+        }
+    }
+
+    fun isRance41Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4|iv)\\s*[.・]?\\s*1(?![0-9])", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("拯救制药厂") ||
+            normalized.contains("お薬工場")
+    }
+
+    @JvmOverloads
+    fun isRance42GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "rance42" || game == "rance4.2") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isRance42Alias(title)) return true
+        }
+        return false
+    }
+
+    fun isRance42GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isRance42GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            if (f != null && f.length() <= 256L * 1024L) runCatching { f.readBytes() }.getOrNull() else null
+        }
+    }
+
+    fun isRance42Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4|iv)\\s*[.・]?\\s*2(?![0-9])", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("天使组") ||
+            normalized.contains("天使組") ||
+            normalized.contains("エンジェル組") ||
+            normalized.contains("angelgumi") ||
+            normalized.contains("angel army")
     }
 
     fun isRance5dGameFiles(fileNames: Collection<String>): Boolean =
@@ -1361,6 +1448,12 @@ object GameCatalog {
         ) {
             return ID_RANCE03
         }
+        if (isRance41Alias(lowerDir)) {
+            return ID_RANCE41
+        }
+        if (isRance42Alias(lowerDir)) {
+            return ID_RANCE42
+        }
         if (isRance04Alias(lowerDir)) {
             return ID_RANCE04
         }
@@ -1481,6 +1574,12 @@ object GameCatalog {
             lowerDisp.contains("リーザス") || lowerDisp.contains("利萨斯")
         ) {
             return ID_RANCE03
+        }
+        if (isRance41Alias(lowerDisp)) {
+            return ID_RANCE41
+        }
+        if (isRance42Alias(lowerDisp)) {
+            return ID_RANCE42
         }
         if (isRance04Alias(lowerDisp)) {
             return ID_RANCE04
@@ -1669,8 +1768,38 @@ object GameCatalog {
                 accentColor = 0xFF3949AB.toInt(),
                 accentBorderColor = 0x667986CB,
                 iconFrameColor = 0xFF14182C.toInt(),
-                supportsOnlineBaseInstall = false,
-                onlineBaseCdnUrl = null,
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE04_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE41 -> GameDescriptor(
+                id = ID_RANCE41,
+                title = stringResolver(R.string.game_rance41_title),
+                defaultDirName = "Rance41",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance41,
+                accentColor = 0xFFD84315.toInt(),
+                accentBorderColor = 0x66FF8A65,
+                iconFrameColor = 0xFF281612.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE41_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE42 -> GameDescriptor(
+                id = ID_RANCE42,
+                title = stringResolver(R.string.game_rance42_title),
+                defaultDirName = "Rance42",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance42,
+                accentColor = 0xFF1E88E5.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF121D2B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE42_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -1681,11 +1810,11 @@ object GameCatalog {
                 defaultDirName = "Rance5D",
                 expectedAinName = null,
                 iconRes = R.drawable.ic_game_rance5d,
-                accentColor = 0xFF3949AB.toInt(),
-                accentBorderColor = 0x667986CB,
-                iconFrameColor = 0xFF14182C.toInt(),
-                supportsOnlineBaseInstall = false,
-                onlineBaseCdnUrl = null,
+                accentColor = 0xFFAD1457.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF28121B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE5D_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -1905,6 +2034,8 @@ object GameCatalog {
         ID_RANCE02,
         ID_RANCE03,
         ID_RANCE04,
+        ID_RANCE41,
+        ID_RANCE42,
         ID_RANCE5D,
         ID_RANCE06,
         ID_SENGOKU_RANCE,

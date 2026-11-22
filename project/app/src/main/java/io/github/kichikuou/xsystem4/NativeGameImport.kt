@@ -407,10 +407,15 @@ object NativeGameImport {
             isHarukaImport -> "Haruka"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
-                OnlineInstaller.sanitizeInstallDirName(
-                    GameCatalog.legacySystem3Title(ini?.let(readPrimarySmallFile)).orEmpty().take(64),
-                    fallback = "System3"
-                )
+                val iniBytes = ini?.let(readPrimarySmallFile)
+                when {
+                    GameCatalog.isRance41GameFiles(primaryFileNames) { if (it.equals("system3.ini", true)) iniBytes else null } -> "Rance41"
+                    GameCatalog.isRance42GameFiles(primaryFileNames) { if (it.equals("system3.ini", true)) iniBytes else null } -> "Rance42"
+                    else -> OnlineInstaller.sanitizeInstallDirName(
+                        GameCatalog.legacySystem3Title(iniBytes).orEmpty().take(64),
+                        fallback = "System3"
+                    )
+                }
             }
             else -> resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         }

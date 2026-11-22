@@ -49,7 +49,7 @@ struct OnlineGameChecks {
         var overflow = original, huge = entry
         huge["size"] = Int64.max; overflow["files"] = [huge, entry]; try rejects(overflow)
         var empty = original; empty["files"] = []; try rejects(empty)
-        precondition(OnlineGame.all.count == 20 && Set(OnlineGame.all.map(\.id)).count == 20)
+        precondition(OnlineGame.all.count == 24 && Set(OnlineGame.all.map(\.id)).count == 24)
         print("PASS: catalog, HTTP manifest, invalid paths/keys/hashes/sizes, Unicode/case duplicates, prefix collisions and overflow")
 
         let game = OnlineGame(id: "fixture", title: "测试游戏", directory: manifest.baseName)
