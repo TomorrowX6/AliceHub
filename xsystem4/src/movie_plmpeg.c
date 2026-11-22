@@ -92,6 +92,7 @@ struct movie_context {
 
 	bool plm_playing;
 	bool skipped;
+	bool unsupported;
 
 	// Time keeping data. Written by audio handler and referenced by video
 	// handler (i.e. we sync the video to the audio).
@@ -132,7 +133,7 @@ static void unregister_movie(struct movie_context *mc)
 
 static bool movie_context_is_playing(struct movie_context *mc)
 {
-	if (!mc || mc->skipped)
+	if (!mc || mc->unsupported || mc->skipped)
 		return false;
 	if (mc->apeg)
 		return mc->apeg->playing && !movie_is_end(mc);
@@ -679,27 +680,41 @@ static void update_texture(GLuint unit, GLuint texture, plm_plane_t *plane)
 
 struct movie_context *movie_load(const char *filename)
 {
-	struct movie_context *mc = xcalloc(1, sizeof(struct movie_context));
-	mc->voice = -1;
+	if (!filename || !*filename)
+		return NULL;
 	char *path = gamedir_path_icase(filename);
 	if (!path) {
 		WARNING("%s: file does not exist", filename);
-		movie_free(mc);
+		return NULL;
+	}
+	if (is_directory(path)) {
+		WARNING("%s: path is a directory", path);
+		free(path);
 		return NULL;
 	}
 	FILE *fp = file_open_utf8(path, "rb");
 	if (!fp) {
 		WARNING("%s: %s", path, strerror(errno));
 		free(path);
-		movie_free(mc);
 		return NULL;
 	}
+	struct movie_context *mc = xcalloc(1, sizeof(struct movie_context));
+	mc->voice = -1;
+	mc->volume = 100;
 	mc->plm = plm_create_with_file(fp, TRUE);
-	if (!plm_has_headers(mc->plm)) {
-		WARNING("%s: not a MPEG-PS file", path);
+	if (!mc->plm || !plm_has_headers(mc->plm) ||
+			plm_get_num_video_streams(mc->plm) <= 0) {
+		WARNING("%s: unsupported movie format (not MPEG-1 PS); skipping playback", path);
+		if (mc->plm) {
+			plm_destroy(mc->plm);
+			mc->plm = NULL;
+		} else {
+			fclose(fp);
+		}
 		free(path);
-		movie_free(mc);
-		return NULL;
+		mc->unsupported = true;
+		mc->skipped = true;
+		return mc;
 	}
 	free(path);
 
@@ -707,7 +722,6 @@ struct movie_context *movie_load(const char *filename)
 
 	mc->decoder_mutex = SDL_CreateMutex();
 	mc->timer_mutex = SDL_CreateMutex();
-	mc->volume = 100;
 	register_movie(mc);
 	return mc;
 }
@@ -898,6 +912,8 @@ bool movie_play(struct movie_context *mc)
 {
 	if (!mc)
 		return false;
+	if (mc->unsupported)
+		return true;
 	if (mc->apeg)
 		return movie_play_at(mc, 0);
 
@@ -993,7 +1009,7 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 {
 	if (!mc)
 		return false;
-	if (mc->skipped)
+	if (mc->unsupported || mc->skipped)
 		return sprite != NULL;
 
 	plm_frame_t *frame = NULL;
@@ -1106,7 +1122,7 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 
 bool movie_is_end(struct movie_context *mc)
 {
-	if (!mc || mc->skipped)
+	if (!mc || mc->unsupported || mc->skipped)
 		return true;
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
@@ -1127,7 +1143,7 @@ bool movie_is_end(struct movie_context *mc)
 
 int movie_get_position(struct movie_context *mc)
 {
-	if (!mc)
+	if (!mc || mc->unsupported)
 		return 0;
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
