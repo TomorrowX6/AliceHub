@@ -432,8 +432,34 @@ static void config_init(void)
 	config.save_dir = new_save_dir;
 }
 
+static char *resolved_ain_path = NULL;
+
+static char *resolve_configured_ain_path(const char *native_ain_path)
+{
+	if (native_ain_path && file_exists(native_ain_path))
+		return xstrdup(native_ain_path);
+	if (resolved_ain_path && file_exists(resolved_ain_path))
+		return xstrdup(resolved_ain_path);
+	char *ainfile = gamedir_path(config.ain_filename);
+	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
+		sys4_set_text_gbk(true);
+		char *gbk_ain = gamedir_path(config.ain_filename);
+		sys4_set_text_gbk(false);
+		if (file_exists(gbk_ain)) {
+			free(ainfile);
+			ainfile = gbk_ain;
+		} else {
+			free(gbk_ain);
+		}
+	}
+	return ainfile;
+}
+
 static bool config_init_with_ini(const char *ini_path)
 {
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
 	if (!read_config(ini_path))
 		return false;
 	if (!config.ain_filename)
@@ -443,9 +469,18 @@ static bool config_init_with_ini(const char *ini_path)
 	free(tmp);
 	if (sys4_source_is_utf8) {
 		// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a
-		// Shift-JIS game. Its values are then re-read as UTF-8 converted to Shift-JIS.
-		char *ain_path = gamedir_path(config.ain_filename);
-		bool ain_utf8 = ain_text_is_utf8(ain_path);
+		// Shift-JIS or GBK game. Preserve the resolved on-disk script path before re-reading
+		// the INI in legacy mode so non-Shift-JIS UTF-8 filenames (e.g. GBK-only chars) are
+		// not mangled into '?' when opening the script or resolving sidecar assets.
+		char *ain_path = gamedir_path_icase(config.ain_filename);
+		if (!ain_path)
+			ain_path = gamedir_path(config.ain_filename);
+		if (ain_path && file_exists(ain_path)) {
+			resolved_ain_path = xstrdup(ain_path);
+			free(config.ain_basename_utf8);
+			config.ain_basename_utf8 = xstrdup(path_basename(ain_path));
+		}
+		bool ain_utf8 = ain_path ? ain_text_is_utf8(ain_path) : false;
 		free(ain_path);
 		if (!ain_utf8) {
 			sys4_set_text_gbk(false);
@@ -526,6 +561,8 @@ static bool config_init_with_dir(const char *dir)
 
 static void config_init_with_ain(const char *ain_path)
 {
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
 	set_utf8_release(ain_text_is_utf8(ain_path));
 	config.ain_filename = xstrdup(path_basename(ain_path));
 	config.game_dir = xstrdup(path_dirname(ain_path));
@@ -1345,20 +1382,7 @@ int main(int argc, char *argv[])
 			usage_error("Can't initialize game with argument '%s'", argv[0]);
 		}
 	}
-	bool use_native_ain_path = native_ain_path && file_exists(native_ain_path);
-	ainfile = use_native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
-	if (!use_native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
-		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
-		sys4_set_text_gbk(true);
-		char *gbk_ain = gamedir_path(config.ain_filename);
-		sys4_set_text_gbk(false);
-		if (file_exists(gbk_ain)) {
-			free(ainfile);
-			ainfile = gbk_ain;
-		} else {
-			free(gbk_ain);
-		}
-	}
+	ainfile = resolve_configured_ain_path(native_ain_path);
 	if (ainfile && file_exists(ainfile)) {
 		free(config.ain_basename_utf8);
 		config.ain_basename_utf8 = xstrdup(path_basename(ainfile));

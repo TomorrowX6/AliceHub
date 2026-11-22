@@ -2,8 +2,10 @@
 """Native C regression tests for Batch 3 CN System 4.x adaptations."""
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
+import zlib
 
 from test_evenicle2_regressions import (
     LIBSYS4_CORE,
@@ -626,6 +628,178 @@ int main(int argc, char **argv) {{
                 LIBSYS4_CORE,
                 ["-lz", "-lm"],
                 [str(chs_only), str(dual_no_tbl), str(dual_with_tbl)],
+            )
+            self.assertEqual(out.strip(), "OK")
+
+    def test_utf8_ini_preserves_gbk_only_script_filename_for_legacy_script(self):
+        def extract_def(rel_path: str, name: str) -> str:
+            source = (ROOT / rel_path).read_text(encoding="utf-8")
+            pos = 0
+            while True:
+                idx = source.index(name + "(", pos)
+                start = source.rfind("\n", 0, idx) + 1
+                semi = source.find(";", idx)
+                brace = source.find("{", idx)
+                if brace != -1 and (semi == -1 or brace < semi):
+                    break
+                pos = idx + len(name)
+            depth = 1
+            end = brace + 1
+            while depth:
+                depth += (source[end] == "{") - (source[end] == "}")
+                end += 1
+            return source[start:end]
+
+        fn_file_utf8 = extract_def("src/system4.c", "file_text_is_utf8")
+        fn_ain_utf8 = extract_def("src/system4.c", "ain_text_is_utf8")
+        fn_set_utf8 = extract_def("src/system4.c", "set_utf8_release")
+        fn_read_cfg = extract_def("src/system4.c", "read_config")
+        fn_read_entries = extract_def("src/system4.c", "read_config_entries")
+        fn_resolve = extract_def("src/system4.c", "resolve_configured_ain_path")
+        fn_init_ini = extract_def("src/system4.c", "config_init_with_ini")
+        fn_init_dir = extract_def("src/system4.c", "config_init_with_dir")
+
+        # Build a minimal valid AI2 v4 script with a legacy Shift-JIS message (non-UTF-8).
+        msgs = [b"", _sjis("テスト")]
+        raw_ain = (
+            b"VERS"
+            + struct.pack("<I", 4)
+            + b"FUNC"
+            + struct.pack("<I", 0)
+            + b"STRT"
+            + struct.pack("<I", 0)
+            + b"MSG0"
+            + struct.pack("<I", len(msgs))
+            + b"".join(m + b"\x00" for m in msgs)
+        )
+        comp_ain = zlib.compress(raw_ain)
+        ai2_bytes = b"AI2\x00\x00\x00\x00\x00" + struct.pack("<II", len(raw_ain), len(comp_ain)) + comp_ain
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            td = Path(tmpdir)
+            game_dir = td / "utf8_gbk_chs"
+            game_dir.mkdir()
+            # UTF-8 INI with untitled CodeName containing GBK-only char '戏' (not in Shift-JIS).
+            (game_dir / "System40.ini").write_bytes('CodeName = "游戏.CHS"\n'.encode("utf-8"))
+            script_path = game_dir / "游戏.CHS"
+            script_path.write_bytes(ai2_bytes)
+
+            harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "xsystem4.h"
+#include "system4.h"
+#include "system4/ain.h"
+#include "system4/file.h"
+#include "system4/ini.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+
+struct config config;
+static char *resolved_ain_path = NULL;
+
+static struct string *ini_string(struct ini_entry *e) {{ return e->value.s; }}
+static int ini_integer(struct ini_entry *e) {{ return e->value.i; }}
+static bool ini_boolean(struct ini_entry *e) {{ return e->value.i != 0; }}
+static void read_mixer_channels(struct ini_entry *e) {{ (void)e; }}
+static void config_init(void) {{
+    if (!config.game_name && config.ain_filename)
+        config.game_name = xstrdup(config.ain_filename);
+}}
+
+char *gamedir_path(const char *path) {{
+    char *utf = sjis2utf(path, strlen(path));
+    char *res = path_join(config.game_dir, utf);
+    free(utf);
+    return res;
+}}
+
+char *gamedir_path_icase(const char *path) {{
+    char *res = gamedir_path(path);
+    if (!file_exists(res)) {{
+        char *tmp = path_get_icase(res);
+        free(res);
+        res = tmp;
+    }}
+    return res;
+}}
+
+static bool read_config_entries(const char *path);
+
+{fn_file_utf8}
+{fn_ain_utf8}
+{fn_set_utf8}
+{fn_read_cfg}
+{fn_read_entries}
+{fn_resolve}
+{fn_init_ini}
+{fn_init_dir}
+
+int main(int argc, char **argv) {{
+    assert(argc == 2);
+
+    // 1. Launch via directory with UTF-8 System40.ini pointing to legacy "游戏.CHS".
+    memset(&config, 0, sizeof(config));
+    assert(config_init_with_dir(argv[1]) == true);
+
+    // 2. Legacy script text encoding is preserved (not stuck in UTF-8 mode).
+    assert(sys4_source_is_utf8 == false);
+    assert(sys4_text_is_gbk == false);
+
+    // 3. Resolved on-disk script path and UTF-8 basename survive the legacy INI reread intact.
+    char *ainfile = resolve_configured_ain_path(NULL);
+    assert(ainfile != NULL);
+    assert(file_exists(ainfile));
+    assert(strcmp(path_basename(ainfile), "\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS") == 0);
+    assert(config.ain_basename_utf8 != NULL);
+    assert(strcmp(config.ain_basename_utf8, "\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS") == 0);
+
+    // 4. Opening the resolved script succeeds and reads back the legacy Shift-JIS message.
+    int err = AIN_SUCCESS;
+    struct ain *opened = ain_open(ainfile, &err);
+    assert(opened != NULL && err == AIN_SUCCESS);
+    assert(opened->nr_messages == 2);
+    assert(strcmp(opened->messages[1]->text, "\\x83\\x65\\x83\\x58\\x83\\x67") == 0);
+    ain_free(opened);
+    free(ainfile);
+
+    puts("OK");
+    return 0;
+}}
+"""
+            ini_tab_c = td / "ini_parser.tab.c"
+            ini_tab_h = td / "ini_parser.tab.h"
+            ini_lex_c = td / "ini_lexer.yy.c"
+            libsys4_src = ROOT / "subprojects/libsys4/src"
+            subprocess.run(
+                [
+                    "bison",
+                    str(libsys4_src / "ini_parser.y"),
+                    f"--defines={ini_tab_h}",
+                    f"--output={ini_tab_c}",
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["flex", "-o", str(ini_lex_c), str(libsys4_src / "ini_lexer.l")],
+                check=True,
+            )
+            ini_sources = [libsys4_src / "ini.c", ini_tab_c, ini_lex_c]
+            out = compile_and_run(
+                harness,
+                [*LIBSYS4_CORE, *ini_sources],
+                [
+                    "-lz",
+                    "-lm",
+                    "-I" + str(td),
+                    "-I" + str(libsys4_src),
+                ],
+                [str(game_dir)],
             )
             self.assertEqual(out.strip(), "OK")
 
