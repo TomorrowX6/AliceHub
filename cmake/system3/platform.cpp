@@ -7,7 +7,7 @@
 #ifdef ALICEHUB_IOS
 int system3_entry(int argc, char **argv);
 
-extern "C" int system3_main(int argc, char **argv)
+extern "C" __attribute__((visibility("default"))) int system3_main(int argc, char **argv)
 {
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     return system3_entry(argc, argv);

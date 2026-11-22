@@ -83,6 +83,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 when {
                     GameCatalog.isLegacySystem3GameDir(dir) -> GameCatalog.legacySystem3Title(dir) ?: dir.name
                     GameCatalog.isRance04GameDir(dir) -> context.getString(R.string.game_rance04_title)
+                    GameCatalog.isRance41GameDir(dir) -> context.getString(R.string.game_rance41_title)
+                    GameCatalog.isRance42GameDir(dir) -> context.getString(R.string.game_rance42_title)
                     GameCatalog.isRance5dGameDir(dir) -> context.getString(R.string.game_rance5d_title)
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)

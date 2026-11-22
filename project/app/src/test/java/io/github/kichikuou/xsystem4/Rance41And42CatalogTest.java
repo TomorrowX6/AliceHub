@@ -121,4 +121,118 @@ public class Rance41And42CatalogTest {
         assertEquals(Double.valueOf(53.7), info42.getRating());
         assertEquals("https://vndb.org/v2044", info42.getScoreSourceUrl());
     }
+
+    private static byte[] buildAdiskWithCrc32(long targetCrc, int totalSize) {
+        byte[] data = new byte[Math.max(totalSize, 256)];
+        for (int i = 0; i < 252; i++) {
+            data[i] = (byte) (i & 0xFF);
+        }
+        // Compute IEEE CRC32 of the first 252 bytes, then solve the final 4 bytes so CRC32(data[0..255]) == targetCrc.
+        int[] table = new int[256];
+        for (int i = 0; i < 256; i++) {
+            int c = i;
+            for (int k = 0; k < 8; k++) {
+                c = ((c & 1) != 0) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            }
+            table[i] = c;
+        }
+        int crc = ~0;
+        for (int i = 0; i < 252; i++) {
+            crc = table[(crc ^ (data[i] & 0xFF)) & 0xFF] ^ (crc >>> 8);
+        }
+        int desired = ~(int) targetCrc;
+        int[] patch = new int[4];
+        for (int i = 3; i >= 0; i--) {
+            int topByte = (desired >>> 24) & 0xFF;
+            int idx = -1;
+            for (int j = 0; j < 256; j++) {
+                if (((table[j] >>> 24) & 0xFF) == topByte) {
+                    idx = j;
+                    break;
+                }
+            }
+            assertTrue("CRC32 inverse lookup must succeed", idx >= 0);
+            patch[i] = idx;
+            desired = (desired ^ table[idx]) << 8;
+        }
+        for (int i = 0; i < 4; i++) {
+            data[252 + i] = (byte) ((crc ^ patch[i]) & 0xFF);
+            crc = table[(crc ^ (data[252 + i] & 0xFF)) & 0xFF] ^ (crc >>> 8);
+        }
+        return data;
+    }
+
+    @Test
+    public void recognizesV105AldReleasesAndCrossRejects() throws Exception {
+        File r41Ald = tmp.newFolder("rance41_v105");
+        write(r41Ald, "RAN41_SA.ald", "sa");
+        write(r41Ald, "RAN41_GA.ald", "ga");
+
+        File r42Ald = tmp.newFolder("rance42_v105");
+        write(r42Ald, "ran42_sa.ald", "sa");
+        write(r42Ald, "ran42_ga.ald", "ga");
+
+        assertTrue(GameCatalog.INSTANCE.isSystem3xGameDir(r41Ald));
+        assertFalse(GameCatalog.INSTANCE.isLegacySystem3GameDir(r41Ald));
+        assertTrue(GameCatalog.INSTANCE.isRance41GameDir(r41Ald));
+        assertFalse(GameCatalog.INSTANCE.isRance42GameDir(r41Ald));
+        assertEquals(GameCatalog.ID_RANCE41, GameCatalog.INSTANCE.classifyGameRootDir(r41Ald));
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE41));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE42));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r41Ald, null, GameCatalog.ID_RANCE04));
+        assertEquals("Rance41", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("RAN41_SA.ald", "RAN41_GA.ald"), false));
+
+        assertTrue(GameCatalog.INSTANCE.isSystem3xGameDir(r42Ald));
+        assertFalse(GameCatalog.INSTANCE.isLegacySystem3GameDir(r42Ald));
+        assertTrue(GameCatalog.INSTANCE.isRance42GameDir(r42Ald));
+        assertFalse(GameCatalog.INSTANCE.isRance41GameDir(r42Ald));
+        assertEquals(GameCatalog.ID_RANCE42, GameCatalog.INSTANCE.classifyGameRootDir(r42Ald));
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE42));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE41));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(r42Ald, null, GameCatalog.ID_RANCE04));
+        assertEquals("Rance42", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList("ran42_sa.ald", "ran42_ga.ald"), false));
+    }
+
+    @Test
+    public void recognizesOriginalLegacyDatByAdiskCrc32EvenAbove256Kb() throws Exception {
+        // Larger than 256 KiB to verify bounded 256-byte prefix reading works on real-sized ADISK.DAT files.
+        int realisticSize = 300 * 1024;
+        long[] r41Crcs = {0xa43fb4b6L, 0xc39ca9e6L};
+        long[] r42Crcs = {0x04d24d1eL, 0x07e46c85L};
+
+        for (long crc : r41Crcs) {
+            File dir = tmp.newFolder("orig_r41_" + Long.toHexString(crc));
+            Files.write(new File(dir, "ADISK.DAT").toPath(), buildAdiskWithCrc32(crc, realisticSize));
+            write(dir, "ACG.DAT", "cg");
+            assertEquals(Long.valueOf(crc), GameCatalog.INSTANCE.legacyAdiskCrc32(Files.readAllBytes(new File(dir, "ADISK.DAT").toPath())));
+            assertTrue(GameCatalog.INSTANCE.isRance41GameDir(dir));
+            assertFalse(GameCatalog.INSTANCE.isRance42GameDir(dir));
+            assertEquals(GameCatalog.ID_RANCE41, GameCatalog.INSTANCE.classifyGameRootDir(dir));
+            assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(dir, null, GameCatalog.ID_RANCE41));
+            assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(dir, null, GameCatalog.ID_RANCE42));
+        }
+
+        for (long crc : r42Crcs) {
+            File dir = tmp.newFolder("orig_r42_" + Long.toHexString(crc));
+            Files.write(new File(dir, "ADISK.DAT").toPath(), buildAdiskWithCrc32(crc, realisticSize));
+            write(dir, "ACG.DAT", "cg");
+            assertEquals(Long.valueOf(crc), GameCatalog.INSTANCE.legacyAdiskCrc32(Files.readAllBytes(new File(dir, "ADISK.DAT").toPath())));
+            assertTrue(GameCatalog.INSTANCE.isRance42GameDir(dir));
+            assertFalse(GameCatalog.INSTANCE.isRance41GameDir(dir));
+            assertEquals(GameCatalog.ID_RANCE42, GameCatalog.INSTANCE.classifyGameRootDir(dir));
+            assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(dir, null, GameCatalog.ID_RANCE42));
+            assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(dir, null, GameCatalog.ID_RANCE41));
+        }
+
+        // Another legacy System 3 game (e.g., Toushin Toshi II, 0xe27dd441) must not classify as Rance 4.1 or 4.2.
+        File otherLegacy = tmp.newFolder("orig_toushin2");
+        Files.write(new File(otherLegacy, "ADISK.DAT").toPath(), buildAdiskWithCrc32(0xe27dd441L, realisticSize));
+        write(otherLegacy, "ACG.DAT", "cg");
+        assertTrue(GameCatalog.INSTANCE.isLegacySystem3GameDir(otherLegacy));
+        assertFalse(GameCatalog.INSTANCE.isRance41GameDir(otherLegacy));
+        assertFalse(GameCatalog.INSTANCE.isRance42GameDir(otherLegacy));
+        assertNull(GameCatalog.INSTANCE.classifyGameRootDir(otherLegacy));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(otherLegacy, null, GameCatalog.ID_RANCE41));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(otherLegacy, null, GameCatalog.ID_RANCE42));
+    }
 }

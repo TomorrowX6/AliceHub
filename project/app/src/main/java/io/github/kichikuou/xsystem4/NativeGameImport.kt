@@ -264,6 +264,12 @@ object NativeGameImport {
         if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
             return "Tsumashibori"
         }
+        if (GameCatalog.isRance41GameFiles(activeFiles)) {
+            return "Rance41"
+        }
+        if (GameCatalog.isRance42GameFiles(activeFiles)) {
+            return "Rance42"
+        }
         if (GameCatalog.isRance5dGameFiles(activeFiles)) {
             return "Rance5D"
         }
@@ -366,10 +372,11 @@ object NativeGameImport {
                 !it.folder && !skip(it.name) &&
                     ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
             }
-            if (doc != null && (doc.size < 0 || doc.size <= 256L * 1024L)) {
-                readBoundedDocumentBytes(context, doc.uri)
-            } else {
-                null
+            when {
+                doc == null -> null
+                fileName.equals("ADISK.DAT", ignoreCase = true) -> readBoundedDocumentBytes(context, doc.uri, 256)
+                doc.size < 0 || doc.size <= 256L * 1024L -> readBoundedDocumentBytes(context, doc.uri)
+                else -> null
             }
         }
         val detectedGameId = GameCatalog.classifyGameRootFiles(
@@ -407,12 +414,11 @@ object NativeGameImport {
             isHarukaImport -> "Haruka"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
-                val iniBytes = ini?.let(readPrimarySmallFile)
                 when {
-                    GameCatalog.isRance41GameFiles(primaryFileNames) { if (it.equals("system3.ini", true)) iniBytes else null } -> "Rance41"
-                    GameCatalog.isRance42GameFiles(primaryFileNames) { if (it.equals("system3.ini", true)) iniBytes else null } -> "Rance42"
+                    GameCatalog.isRance41GameFiles(primaryFileNames, readPrimarySmallFile) -> "Rance41"
+                    GameCatalog.isRance42GameFiles(primaryFileNames, readPrimarySmallFile) -> "Rance42"
                     else -> OnlineInstaller.sanitizeInstallDirName(
-                        GameCatalog.legacySystem3Title(iniBytes).orEmpty().take(64),
+                        GameCatalog.legacySystem3Title(ini?.let(readPrimarySmallFile)).orEmpty().take(64),
                         fallback = "System3"
                     )
                 }

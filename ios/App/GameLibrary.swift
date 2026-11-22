@@ -83,13 +83,29 @@ final class GameLibrary: ObservableObject {
     }
 
     static func isRance41(_ url: URL) -> Bool {
+        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+           let info = try? launchInfo(url), info.engine == .system3,
+           contents.contains(where: {
+               $0.lastPathComponent.lowercased() == "ran41_sa.ald" &&
+                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+           }) {
+            return true
+        }
         guard let game = legacySystem3GameId(url) else { return false }
-        return game == "rance41" || game == "rance4.1"
+        return game == "rance41" || game == "rance41_eng" || game == "rance4.1"
     }
 
     static func isRance42(_ url: URL) -> Bool {
+        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+           let info = try? launchInfo(url), info.engine == .system3,
+           contents.contains(where: {
+               $0.lastPathComponent.lowercased() == "ran42_sa.ald" &&
+                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+           }) {
+            return true
+        }
         guard let game = legacySystem3GameId(url) else { return false }
-        return game == "rance42" || game == "rance4.2"
+        return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
     }
 
     static func isRance5d(_ url: URL) -> Bool {

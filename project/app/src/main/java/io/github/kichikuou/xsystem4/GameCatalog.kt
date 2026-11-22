@@ -478,10 +478,11 @@ object GameCatalog {
         }
         return classifyGameRootFiles(fileNames, bgmFileNames) { name ->
             val f = files.firstOrNull { it.name.equals(name, true) }
-            if (f != null && f.length() <= 256L * 1024L) {
-                try { f.readBytes() } catch (_: Throwable) { null }
-            } else {
-                null
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
             }
         }
     }
@@ -798,20 +799,53 @@ object GameCatalog {
             normalized.contains("教团的遗产") || normalized.contains("教団の遺産")
     }
 
+    private val RANCE41_ADISK_CRC32S = setOf(0xa43fb4b6L, 0xc39ca9e6L)
+    private val RANCE42_ADISK_CRC32S = setOf(0x04d24d1eL, 0x07e46c85L)
+
+    private fun readFilePrefix(file: File, maxBytes: Int): ByteArray? = runCatching {
+        file.inputStream().use { input ->
+            val buf = ByteArray(maxBytes)
+            var off = 0
+            while (off < maxBytes) {
+                val n = input.read(buf, off, maxBytes - off)
+                if (n < 0) break
+                off += n
+            }
+            if (off == maxBytes) buf else buf.copyOf(off)
+        }
+    }.getOrNull()
+
+    fun legacyAdiskCrc32(raw: ByteArray?): Long? {
+        if (raw == null || raw.size < 256) return null
+        val crc = java.util.zip.CRC32()
+        crc.update(raw, 0, 256)
+        return crc.value
+    }
+
     @JvmOverloads
     fun isRance41GameFiles(
         fileNames: Collection<String>,
         readSmallFile: ((String) -> ByteArray?)? = null
     ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any { it.equals("RAN41_SA.ALD", true) || it.equals("RANCE41SA.ALD", true) }) {
+            return true
+        }
         if (!isLegacySystem3GameFiles(fileNames)) return false
         val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
         if (iniName != null && readSmallFile != null) {
             val raw = runCatching { readSmallFile(iniName) }.getOrNull()
             val game = legacySystem3GameId(raw)
-            if (game == "rance41" || game == "rance4.1") return true
+            if (game == "rance41" || game == "rance41_eng" || game == "rance4.1") return true
             if (game != null) return false
             val title = legacySystem3Title(raw)
             if (!title.isNullOrBlank() && isRance41Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in RANCE41_ADISK_CRC32S) return true
+            if (crc != null && crc in RANCE42_ADISK_CRC32S) return false
         }
         return fileNames.any { it.equals("RANCE41.ICO", true) }
     }
@@ -821,7 +855,12 @@ object GameCatalog {
         val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
         return isRance41GameFiles(files.map { it.name }) { name ->
             val f = files.firstOrNull { it.name.equals(name, true) }
-            if (f != null && f.length() <= 256L * 1024L) runCatching { f.readBytes() }.getOrNull() else null
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
         }
     }
 
@@ -838,15 +877,24 @@ object GameCatalog {
         fileNames: Collection<String>,
         readSmallFile: ((String) -> ByteArray?)? = null
     ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any { it.equals("RAN42_SA.ALD", true) || it.equals("RANCE42SA.ALD", true) }) {
+            return true
+        }
         if (!isLegacySystem3GameFiles(fileNames)) return false
         val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
         if (iniName != null && readSmallFile != null) {
             val raw = runCatching { readSmallFile(iniName) }.getOrNull()
             val game = legacySystem3GameId(raw)
-            if (game == "rance42" || game == "rance4.2") return true
+            if (game == "rance42" || game == "rance42_eng" || game == "rance4.2") return true
             if (game != null) return false
             val title = legacySystem3Title(raw)
             if (!title.isNullOrBlank() && isRance42Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in RANCE42_ADISK_CRC32S) return true
         }
         return false
     }
@@ -856,7 +904,12 @@ object GameCatalog {
         val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
         return isRance42GameFiles(files.map { it.name }) { name ->
             val f = files.firstOrNull { it.name.equals(name, true) }
-            if (f != null && f.length() <= 256L * 1024L) runCatching { f.readBytes() }.getOrNull() else null
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
         }
     }
 
