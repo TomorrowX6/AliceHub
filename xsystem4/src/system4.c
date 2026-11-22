@@ -506,7 +506,7 @@ static bool config_init_with_dir(const char *dir)
 	}
 	free(alt_ini);
 
-	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini", "AliceStart2.ini" };
+	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini", "AliceStart2.ini", "AliceStart.CHS" };
 	for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); i++) {
 		char *path = path_join(dir, ini_names[i]);
 		if (!file_exists(path)) {

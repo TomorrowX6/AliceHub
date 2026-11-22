@@ -107,7 +107,12 @@ object Iso9660Extractor {
                             if (GameCatalog.isSystem4LaunchIni(e.name)) {
                                 hasIni = true
                             }
-                            if (GameCatalog.isSystem4CodeFile(e.name)) {
+                            val isLonginusChsCode = e.name.endsWith(".chs", ignoreCase = true) &&
+                                !e.name.equals("AliceStart.CHS", ignoreCase = true) &&
+                                (entryByLowerName.containsKey("alicestart.chs") ||
+                                    entryByLowerName.containsKey("chs.tbl") ||
+                                    entries.any { !it.isDir && (it.name.equals("AliceStart.CHS", true) || it.name.equals("CHS.TBL", true)) })
+                            if (GameCatalog.isSystem4AinFile(e.name) || isLonginusChsCode) {
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true) ||
                                     ArchiveExtractor.repairSjisAsGbkMojibake(e.name).equals(expectedAinName, ignoreCase = true)

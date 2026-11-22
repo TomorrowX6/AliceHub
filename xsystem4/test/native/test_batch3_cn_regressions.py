@@ -210,6 +210,7 @@ void static_library_replace(struct static_library *l, const char *n, void *f) {}
 #include "hll/KiwiSoundEngine_v12.c"
 
 int main(void) {
+    // 1. Empty config fallback populates 6 default channels with Master at 0.
     memset(&config, 0, sizeof(config));
     config.default_volume = 80;
     kiwi_prelink();
@@ -221,9 +222,43 @@ int main(void) {
 
     mixer_init();
     assert(nr_mixers == 6);
+    assert(master == &mixers[0]);
+    for (int i = 1; i < nr_mixers; i++) {
+        assert(mixers[i].parent == master);
+    }
+
+    // 2. Shipped NightRemasterCHSR18 AliceStart.ini config: channel 0 is GBK "主音量"
+    //    and must be recognized as master directly (no extra 7th mixer), preserving all
+    //    6 configured names and volumes while keeping all children attached to master.
+    memset(&config, 0, sizeof(config));
+    static char *shipped_names[] = {
+        "\xd6\xf7\xd2\xf4\xc1\xbf",     // GBK "主音量"
+        "\xa3\xc2\xa3\xc7\xa3\xcd",     // GBK "ＢＧＭ"
+        "\xd2\xf4\xd0\xa7",             // GBK "音效"
+        "\x89\xb9\x90\xba",             // SJIS "音声"
+        "\x8a\xc2\x89\xb9",             // SJIS "環音"
+        "\x94\x77\x8c\x69\x89\xb9\x90\xba" // SJIS "背景音声"
+    };
+    static int shipped_vols[] = { 80, 75, 70, 90, 65, 85 };
+    config.mixer_nr_channels = 6;
+    config.mixer_channels = shipped_names;
+    config.mixer_volumes = shipped_vols;
+    config.default_volume = 80;
+    kiwi_prelink();
+    assert(config.mixer_nr_channels == 6);
+    assert(strcmp(config.mixer_channels[0], "\xd6\xf7\xd2\xf4\xc1\xbf") == 0);
+    assert(config.mixer_volumes[1] == 75 && config.mixer_volumes[5] == 85);
+
+    mixer_init();
+    assert(nr_mixers == 6);
+    assert(master == &mixers[0]);
+    assert(strcmp(mixers[0].name, "\xd6\xf7\xd2\xf4\xc1\xbf") == 0);
+    assert(strcmp(mixers[3].name, "\x89\xb9\x90\xba") == 0);
     for (int i = 1; i < nr_mixers; i++) {
         assert(mixers[i].parent == &mixers[0]);
     }
+    assert(mixer_set_volume(0, 0) == true);
+    assert(master->mixer.gain == 0.0f);
 
     puts("OK");
     return 0;
@@ -526,6 +561,73 @@ int main(void) {{
 """
         out = compile_and_run(harness, [], ["-I" + str(ROOT / "src/parts")])
         self.assertEqual(out.strip(), "OK")
+
+    def test_config_init_with_dir_chs_and_ini_precedence(self):
+        fn_dir = extract_function("src/system4.c", "config_init_with_dir")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            td = Path(tmpdir)
+            chs_only = td / "chs_only"
+            chs_only.mkdir()
+            (chs_only / "AliceStart.CHS").write_bytes(b"CodeName = \"Oya.CHS\"\n")
+
+            dual_no_tbl = td / "dual_no_tbl"
+            dual_no_tbl.mkdir()
+            (dual_no_tbl / "AliceStart.ini").write_bytes(b"CodeName = \"Oya.ain\"\n")
+            (dual_no_tbl / "AliceStart.CHS").write_bytes(b"CodeName = \"Oya.CHS\"\n")
+
+            dual_with_tbl = td / "dual_with_tbl"
+            dual_with_tbl.mkdir()
+            (dual_with_tbl / "AliceStart.ini").write_bytes(b"CodeName = \"Oya.ain\"\n")
+            (dual_with_tbl / "AliceStart.CHS").write_bytes(b"CodeName = \"Oya.CHS\"\n")
+            (dual_with_tbl / "CHS.TBL").write_bytes(b"\x00\x00")
+
+            harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4/file.h"
+
+static char last_selected[1024];
+static bool config_init_with_ini(const char *path) {{
+    strncpy(last_selected, path, sizeof(last_selected) - 1);
+    last_selected[sizeof(last_selected) - 1] = '\\0';
+    return true;
+}}
+
+{fn_dir}
+
+int main(int argc, char **argv) {{
+    assert(argc == 4);
+
+    // 1. CHS-only directory without CHS.TBL still launches via AliceStart.CHS fallback.
+    last_selected[0] = '\\0';
+    assert(config_init_with_dir(argv[1]) == true);
+    assert(strstr(last_selected, "AliceStart.CHS") != NULL);
+
+    // 2. Dual-config directory without CHS.TBL preserves standard AliceStart.ini precedence.
+    last_selected[0] = '\\0';
+    assert(config_init_with_dir(argv[2]) == true);
+    assert(strstr(last_selected, "AliceStart.ini") != NULL);
+
+    // 3. Dual-config directory WITH CHS.TBL prefers AliceStart.CHS.
+    last_selected[0] = '\\0';
+    assert(config_init_with_dir(argv[3]) == true);
+    assert(strstr(last_selected, "AliceStart.CHS") != NULL);
+
+    puts("OK");
+    return 0;
+}}
+"""
+            out = compile_and_run(
+                harness,
+                LIBSYS4_CORE,
+                ["-lz", "-lm"],
+                [str(chs_only), str(dual_no_tbl), str(dual_with_tbl)],
+            )
+            self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":

@@ -107,6 +107,12 @@ public class Batch3CatalogTest {
         File noTbl = makeDir("NoTbl", "AliceStart.ini", "AliceStart.CHS", "game.ain");
         assertEquals("AliceStart.ini", GameListKt.resolveLaunchIniFile(noTbl).getName());
 
+        // Auxiliary .chs files without AliceStart.CHS/CHS.TBL must not shadow .ain or be treated as code.
+        File auxChsOnly = makeDir("AuxChsOnly", "System40.ini", "00_aux.chs");
+        assertFalse(GameListKt.isSystem4GameRoot(auxChsOnly));
+        assertEquals("Game", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
+                Arrays.asList("00_aux.chs", "Game.ain"), false));
+
         // Rance 1 Digest vs Rance 01 disambiguation
         assertTrue(GameCatalog.INSTANCE.isRance1DigestAlias("兰斯1 摘要版"));
         assertTrue(GameCatalog.INSTANCE.isRance1DigestAlias("兰斯１摘要版"));

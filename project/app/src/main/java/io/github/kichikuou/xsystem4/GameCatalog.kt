@@ -95,12 +95,18 @@ object GameCatalog {
             name.equals("AliceStart2.ini", true) ||
             name.equals("AliceStart.CHS", true)
 
-    internal fun isSystem4CodeFile(name: String): Boolean =
-        (name.endsWith(".ain", true) && !name.equals("System39.ain", true)) ||
-            (name.endsWith(".chs", true) && !name.equals("AliceStart.CHS", true))
+    internal fun isSystem4AinFile(name: String): Boolean =
+        name.endsWith(".ain", true) && !name.equals("System39.ain", true)
+
+    internal fun hasLonginusChsConfig(fileNames: Collection<String>): Boolean =
+        fileNames.any { it.equals("AliceStart.CHS", true) || it.equals("CHS.TBL", true) }
+
+    internal fun isSystem4CodeFile(name: String, siblingFileNames: Collection<String>): Boolean =
+        isSystem4AinFile(name) ||
+            (name.endsWith(".chs", true) && !name.equals("AliceStart.CHS", true) && hasLonginusChsConfig(siblingFileNames))
 
     private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
-        isSystem4CodeFile(it) || isSystem4LaunchIni(it)
+        isSystem4CodeFile(it, fileNames) || isSystem4LaunchIni(it)
     }
 
     internal fun isSystem35Scenario(name: String): Boolean =
@@ -2053,7 +2059,7 @@ object GameCatalog {
         readSmallFile: ((String) -> ByteArray?)? = null
     ): Boolean {
         if (isSystem3xGameFiles(fileNames)) return false
-        val codeNames = fileNames.filter { isSystem4CodeFile(it) }
+        val codeNames = fileNames.filter { isSystem4CodeFile(it, fileNames) }
         if (codeNames.isEmpty()) return false
         if (codeNames.any {
                 val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
@@ -2208,7 +2214,8 @@ object GameCatalog {
             val files = gameDir.listFiles()
             if (files != null) {
                 classifyGameRootDir(gameDir)?.let { return it }
-                if (files.any { it.isFile && isSystem4CodeFile(it.name) }) {
+                val fileNames = files.filter { it.isFile }.map { it.name }
+                if (fileNames.any { isSystem4CodeFile(it, fileNames) }) {
                     return "$PREFIX_CUSTOM$dirName"
                 }
                 if (isSystem3xGameDir(gameDir)) {

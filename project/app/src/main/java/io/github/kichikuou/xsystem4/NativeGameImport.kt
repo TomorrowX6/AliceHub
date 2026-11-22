@@ -69,12 +69,9 @@ object NativeGameImport {
     }
 
     private fun <T, D> isSys4RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
-        val hasIni = docs.any {
-            !it.folder && !skip(it.name) && GameCatalog.isSystem4LaunchIni(it.name)
-        }
-        val hasAin = docs.any {
-            !it.folder && !skip(it.name) && GameCatalog.isSystem4CodeFile(it.name)
-        }
+        val activeNames = docs.filter { !it.folder && !skip(it.name) }.map { it.name }
+        val hasIni = activeNames.any { GameCatalog.isSystem4LaunchIni(it) }
+        val hasAin = activeNames.any { GameCatalog.isSystem4CodeFile(it, activeNames) }
         return hasIni && hasAin
     }
 
@@ -322,7 +319,8 @@ object NativeGameImport {
         if (GameCatalog.isGalzooGameFiles(activeFiles)) {
             return "GALZOO"
         }
-        val sys4Ain = activeFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it) }
+        val sys4Ain = activeFiles.firstOrNull { GameCatalog.isSystem4AinFile(it) }
+            ?: activeFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it, activeFiles) }
         if (sys4Ain != null) {
             val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.substringBeforeLast('.'))
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")

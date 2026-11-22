@@ -1024,7 +1024,11 @@ void mixer_init(void)
 		// NOTE: Older games don't have an explicit master channel.
 		//       We add an extra mixer in this case for consistency.
 		int need_master = 1;
-		if (!strcmp(config.mixer_channels[0], "Master") || !strcmp(config.mixer_channels[0], SJIS_MASTER)) {
+		static const char gbk_master[] = "\xd6\xf7\xd2\xf4\xc1\xbf"; /* 主音量 */
+		if (game_night_remaster
+				|| !strcmp(config.mixer_channels[0], "Master")
+				|| !strcmp(config.mixer_channels[0], SJIS_MASTER)
+				|| !strcmp(config.mixer_channels[0], gbk_master)) {
 			need_master = 0;
 		}
 		nr_mixers = config.mixer_nr_channels + need_master;

@@ -1090,7 +1090,9 @@ class GameList(activity: Activity) {
             }
             mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
-            val ainFile = srcFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it.name) }
+            val srcFileNames = srcFiles.map { it.name }
+            val ainFile = srcFiles.firstOrNull { GameCatalog.isSystem4AinFile(it.name) }
+                ?: srcFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it.name, srcFileNames) }
             val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
             val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
             if (ainFile == null && sys3Scenario == null && !legacySystem3) {
@@ -2331,8 +2333,9 @@ internal fun mergeGalzooCompanionData(
 
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-    val hasIni = files.any { GameCatalog.isSystem4LaunchIni(it.name) }
-    val hasAin = files.any { GameCatalog.isSystem4CodeFile(it.name) }
+    val fileNames = files.map { it.name }
+    val hasIni = fileNames.any { GameCatalog.isSystem4LaunchIni(it) }
+    val hasAin = fileNames.any { GameCatalog.isSystem4CodeFile(it, fileNames) }
     return hasIni && hasAin
 }
 
