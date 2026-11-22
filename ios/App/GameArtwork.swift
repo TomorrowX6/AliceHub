@@ -17,6 +17,7 @@ struct GameArtwork: View {
             ("rance10", ["rance10", "rancex", "兰斯10", "ランス10"]),
             ("dohnadohna", ["dohnadohna", "多娜多娜", "ドーナドーナ"]),
             ("sengokurance", ["sengoku", "戦国", "战国"]),
+            ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
             ("rance01", ["rance01", "兰斯01", "ランス01"]),
             ("rance02", ["rance02", "兰斯02", "ランス02"]),
             ("rance03", ["rance03", "兰斯03", "ランス03"]),
@@ -45,6 +46,9 @@ struct GameArtwork: View {
             ("waidonyo", ["waidonyo", "わいどにょ", "异空窟探险", "異空窟探險"]),
             ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
             ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
+            ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
+            ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
+            ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
             ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
             ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
         ]

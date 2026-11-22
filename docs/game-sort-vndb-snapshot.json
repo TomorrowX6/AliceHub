@@ -191,6 +191,26 @@
         "id",
         "=",
         "v35407"
+      ],
+      [
+        "id",
+        "=",
+        "v499"
+      ],
+      [
+        "id",
+        "=",
+        "v849"
+      ],
+      [
+        "id",
+        "=",
+        "v1414"
+      ],
+      [
+        "id",
+        "=",
+        "v10732"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -531,6 +551,42 @@
         "released": "2022-05-27",
         "title": "Oku-sama no Kaifuku Jutsu",
         "votecount": 391
+      },
+      {
+        "alttitle": "夜が来る！-Square of the MOON-",
+        "average": 66.9,
+        "id": "v499",
+        "rating": 66.9,
+        "released": "2001-04-19",
+        "title": "Yoru ga Kuru! -Square of the Moon-",
+        "votecount": 81
+      },
+      {
+        "alttitle": "闘神都市III",
+        "average": 74.4,
+        "id": "v849",
+        "rating": 74.4,
+        "released": "2008-11-28",
+        "title": "Toushin Toshi III",
+        "votecount": 125
+      },
+      {
+        "alttitle": "Rance -光をもとめて-",
+        "average": 54.4,
+        "id": "v1414",
+        "rating": 54.4,
+        "released": "1989-07-15",
+        "title": "Rance -Hikari o Motomete-",
+        "votecount": 1189
+      },
+      {
+        "alttitle": "母娘乱館",
+        "average": 78.1,
+        "id": "v10732",
+        "rating": 78.1,
+        "released": "2012-09-14",
+        "title": "Oyako Rankan",
+        "votecount": 462
       }
     ]
   },
@@ -607,6 +663,32 @@
           "id": "v18970",
           "rtype": "complete",
           "title": "Rance 02 Kai - Hangyaku no Shoujo-tachi -"
+        }
+      ]
+    },
+    {
+      "id": "r28251",
+      "official": true,
+      "released": "2004-08-27",
+      "title": "Rance 1 - Digest Edition",
+      "vns": [
+        {
+          "id": "v1414",
+          "rtype": "complete",
+          "title": "Rance -Hikari o Motomete-"
+        }
+      ]
+    },
+    {
+      "id": "r119676",
+      "official": true,
+      "released": "2024-04-19",
+      "title": "Yoru ga Kuru! -Square of the Moon- Remastered - Download Edition",
+      "vns": [
+        {
+          "id": "v499",
+          "rtype": "complete",
+          "title": "Yoru ga Kuru! -Square of the Moon-"
         }
       ]
     }

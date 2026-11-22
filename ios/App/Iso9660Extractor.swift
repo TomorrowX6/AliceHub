@@ -107,7 +107,7 @@ enum Iso9660Extractor {
                 if entry.directory { queue.append(entry.extents[0]) }
                 else {
                     let name = entry.name.lowercased()
-                    if name == "alicestart.ini" || name == "alicestart2.ini" || name == "system40.ini" ||
+                    if name == "alicestart.chs" || name == "alicestart.ini" || name == "alicestart2.ini" || name == "system40.ini" ||
                         (!name.hasPrefix(".") && name != "system39.ain" && name.hasSuffix(".ain")) { return true }
                 }
             }

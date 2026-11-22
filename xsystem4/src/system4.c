@@ -99,6 +99,7 @@ struct config config = {
 	.game_name = NULL,
 	.boot_name = NULL,
 	.ain_filename = NULL,
+	.ain_basename_utf8 = NULL,
 	.vm_name = NULL,
 	.game_dir = NULL,
 	.save_dir = NULL,
@@ -377,12 +378,14 @@ static char *get_xsystem4_home(void)
 	return realpath_utf8(".");
 }
 
-static char *get_save_path(const char *dir_name)
+static char *get_save_path(const char *dir_name, const char *utf8_game_name_override)
 {
 	if (!dir_name)
 		dir_name = "SaveData";
 
-	char *utf8_game_name = sjis2utf(config.game_name, strlen(config.game_name));
+	char *utf8_game_name = (utf8_game_name_override && *utf8_game_name_override)
+		? xstrdup(utf8_game_name_override)
+		: sjis2utf(config.game_name, strlen(config.game_name));
 	char *utf8_dir_name = sjis2utf(dir_name, strlen(dir_name));
 	char *save_dir = xmalloc(strlen(config.home_dir) + 1 + strlen(utf8_game_name) + 1 + strlen(utf8_dir_name) + 1);
 	strcpy(save_dir, config.home_dir);
@@ -395,10 +398,11 @@ static char *get_save_path(const char *dir_name)
 	return save_dir;
 }
 
-static void config_init(void)
+static void config_init_with_utf8_codename(const char *utf8_code_name)
 {
+	bool omitted_game_name = !config.game_name;
 	config.home_dir = get_xsystem4_home();
-	if (!config.game_name)
+	if (omitted_game_name)
 		config.game_name = xstrdup(config.ain_filename);
 	if ((config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
 				|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
@@ -413,7 +417,9 @@ static void config_init(void)
 				|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
 				|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
 				|| strstr(config.game_name, "\xcc\xab\xcc\xab")
-				|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")))
+				|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")
+				|| strstr(config.game_name, "\xd0\xb0\xd2\xb9")
+				|| strstr(config.game_name, "\xb6\xb7\xc9\xf1")))
 			|| (config.ain_filename && strstr(config.ain_filename, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
@@ -424,13 +430,72 @@ static void config_init(void)
 		sys4_set_text_gbk(true);
 	}
 
-	char *new_save_dir = get_save_path(config.save_dir);
+	char *legacy_save_dir = get_save_path(config.save_dir, NULL);
+	char *new_save_dir = legacy_save_dir;
+	if (omitted_game_name && utf8_code_name && *utf8_code_name &&
+	    !strchr(utf8_code_name, '?') && config.ain_filename &&
+	    strchr(config.ain_filename, '?') && !is_directory(legacy_save_dir)) {
+		char *candidate = NULL;
+#ifndef _WIN32
+		if (strchr(utf8_code_name, '\\')) {
+			char *raw_utf8_save_dir = get_save_path(config.save_dir, utf8_code_name);
+			if (is_directory(raw_utf8_save_dir))
+				candidate = raw_utf8_save_dir;
+			else
+				free(raw_utf8_save_dir);
+		}
+#endif
+		if (!candidate) {
+			char *normalized = xstrdup(utf8_code_name);
+			for (char *p = normalized; *p; p++) {
+				if (*p == '\\')
+					*p = '/';
+			}
+			candidate = get_save_path(config.save_dir, normalized);
+			free(normalized);
+		}
+		new_save_dir = candidate;
+		free(legacy_save_dir);
+	}
 	free(config.save_dir);
 	config.save_dir = new_save_dir;
 }
 
+static void config_init(void)
+{
+	config_init_with_utf8_codename(NULL);
+}
+
+static char *resolved_ain_path = NULL;
+
+static char *resolve_configured_ain_path(const char *native_ain_path)
+{
+	if (native_ain_path && file_exists(native_ain_path))
+		return xstrdup(native_ain_path);
+	if (resolved_ain_path && file_exists(resolved_ain_path))
+		return xstrdup(resolved_ain_path);
+	char *ainfile = gamedir_path(config.ain_filename);
+	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
+		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
+		sys4_set_text_gbk(true);
+		char *gbk_ain = gamedir_path(config.ain_filename);
+		sys4_set_text_gbk(false);
+		if (file_exists(gbk_ain)) {
+			free(ainfile);
+			ainfile = gbk_ain;
+		} else {
+			free(gbk_ain);
+		}
+	}
+	return ainfile;
+}
+
 static bool config_init_with_ini(const char *ini_path)
 {
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
+	free(config.ain_basename_utf8);
+	config.ain_basename_utf8 = NULL;
 	if (!read_config(ini_path))
 		return false;
 	if (!config.ain_filename)
@@ -438,11 +503,23 @@ static bool config_init_with_ini(const char *ini_path)
 	char *tmp = xstrdup(ini_path);
 	config.game_dir = xstrdup(path_dirname(tmp));
 	free(tmp);
+	char *utf8_code_name = NULL;
 	if (sys4_source_is_utf8) {
 		// The script decides; a UTF-8 AliceStart.ini may have been edited by hand for a
-		// Shift-JIS game. Its values are then re-read as UTF-8 converted to Shift-JIS.
-		char *ain_path = gamedir_path(config.ain_filename);
-		bool ain_utf8 = ain_text_is_utf8(ain_path);
+		// Shift-JIS or GBK game. Preserve the resolved on-disk script path and configured
+		// UTF-8 CodeName before re-reading the INI in legacy mode so non-Shift-JIS UTF-8
+		// filenames (e.g. GBK-only chars) are not mangled into '?' when opening the script,
+		// resolving sidecar assets, or creating default save folders for untitled INIs.
+		utf8_code_name = sjis2utf(config.ain_filename, strlen(config.ain_filename));
+		char *ain_path = gamedir_path_icase(config.ain_filename);
+		if (!ain_path)
+			ain_path = gamedir_path(config.ain_filename);
+		if (ain_path && file_exists(ain_path)) {
+			resolved_ain_path = xstrdup(ain_path);
+			free(config.ain_basename_utf8);
+			config.ain_basename_utf8 = xstrdup(path_basename(ain_path));
+		}
+		bool ain_utf8 = ain_path ? ain_text_is_utf8(ain_path) : false;
 		free(ain_path);
 		if (!ain_utf8) {
 			sys4_set_text_gbk(false);
@@ -450,12 +527,37 @@ static bool config_init_with_ini(const char *ini_path)
 			sys4_set_source_utf8(false);
 		}
 	}
-	config_init();
+	config_init_with_utf8_codename(utf8_code_name);
+	free(utf8_code_name);
 	return true;
 }
 
 static bool config_init_with_dir(const char *dir)
 {
+	// Prefer Longinus CN launcher config (AliceStart.CHS + CHS.TBL, e.g. Oyakorankan).
+	char *chs_ini = path_join(dir, "AliceStart.CHS");
+	if (!file_exists(chs_ini)) {
+		char *icase = path_get_icase(chs_ini);
+		free(chs_ini);
+		chs_ini = icase;
+	}
+	if (chs_ini && file_exists(chs_ini)) {
+		char *chs_tbl = path_join(dir, "CHS.TBL");
+		if (!file_exists(chs_tbl)) {
+			char *icase = path_get_icase(chs_tbl);
+			free(chs_tbl);
+			chs_tbl = icase;
+		}
+		bool has_chs_tbl = chs_tbl && file_exists(chs_tbl);
+		free(chs_tbl);
+		if (has_chs_tbl) {
+			bool ok = config_init_with_ini(chs_ini);
+			free(chs_ini);
+			return ok;
+		}
+	}
+	free(chs_ini);
+
 	char *alt_ini = path_join(dir, "AliceStart2.ini");
 	if (!file_exists(alt_ini)) {
 		char *icase = path_get_icase(alt_ini);
@@ -479,7 +581,7 @@ static bool config_init_with_dir(const char *dir)
 	}
 	free(alt_ini);
 
-	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini", "AliceStart2.ini" };
+	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini", "AliceStart2.ini", "AliceStart.CHS" };
 	for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); i++) {
 		char *path = path_join(dir, ini_names[i]);
 		if (!file_exists(path)) {
@@ -499,8 +601,12 @@ static bool config_init_with_dir(const char *dir)
 
 static void config_init_with_ain(const char *ain_path)
 {
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
 	set_utf8_release(ain_text_is_utf8(ain_path));
 	config.ain_filename = xstrdup(path_basename(ain_path));
+	free(config.ain_basename_utf8);
+	config.ain_basename_utf8 = xstrdup(path_basename(ain_path));
 	config.game_dir = xstrdup(path_dirname(ain_path));
 	config_init();
 }
@@ -1091,10 +1197,55 @@ bool sys_is_sdl_main_thread(void)
 }
 #endif
 
+static void init_text_dict(void)
+{
+	sys4_reset_text_dict();
+	if (!config.game_dir)
+		return;
+	const char *base_src = (config.ain_basename_utf8 && *config.ain_basename_utf8)
+		? config.ain_basename_utf8
+		: config.ain_filename;
+	if (!base_src || !*base_src)
+		return;
+	const char *slash = strrchr(base_src, '/');
+	const char *bslash = strrchr(base_src, '\\');
+	const char *name = slash > bslash ? slash + 1 : (bslash ? bslash + 1 : base_src);
+	const char *dot = strrchr(name, '.');
+	size_t stem_len = dot ? (size_t)(dot - name) : strlen(name);
+	if (!stem_len)
+		return;
+	char *dict_name = xmalloc(stem_len + sizeof("Dict.dat"));
+	memcpy(dict_name, name, stem_len);
+	memcpy(dict_name + stem_len, "Dict.dat", sizeof("Dict.dat"));
+	char *path = gamedir_path_icase(dict_name);
+	free(dict_name);
+	if (path && file_exists(path)) {
+		if (!sys4_load_text_dict(path))
+			WARNING("Failed to load text dictionary: %s", path);
+	}
+	free(path);
+}
+
 static void init_mai_word_table(void)
 {
 	sys4_reset_mai_word_table();
-	if (sys4_text_is_gbk || !config.game_dir)
+	if (!config.game_dir)
+		return;
+	if (!sys4_source_is_utf8) {
+		char *chs_path = gamedir_path_icase("CHS.TBL");
+		if (chs_path && file_exists(chs_path)) {
+			if (sys4_load_chs_tbl(chs_path)) {
+				// Longinus CHS.TBL remaps Shift-JIS byte pairs to GBK glyphs at render time;
+				// keep VM/archive string encoding in Shift-JIS mode so EX/AFA lookups stay intact.
+				sys4_set_text_gbk(false);
+				free(chs_path);
+				return;
+			}
+			WARNING("Failed to load Longinus CHS.TBL: %s", chs_path);
+		}
+		free(chs_path);
+	}
+	if (sys4_text_is_gbk)
 		return;
 	char *path = gamedir_path_icase("mai/word.mai");
 	if (path && file_exists(path)) {
@@ -1262,29 +1413,21 @@ int main(int argc, char *argv[])
 		if (is_directory(argv[0])) {
 			if (!config_init_with_dir(argv[0]))
 				usage_error("Failed to find game in '%s'", argv[0]);
-		} else if (arg_ext && !strcasecmp(arg_ext, "ini")) {
+		} else if (arg_ext && (!strcasecmp(arg_ext, "ini")
+				|| (!strcasecmp(arg_ext, "chs") && !strcasecmp(path_basename(argv[0]), "AliceStart.CHS")))) {
 			if (!config_init_with_ini(argv[0]))
 				usage_error("Failed to read .ini file '%s'", argv[0]);
-		} else if (arg_ext && !strcasecmp(arg_ext, "ain")) {
+		} else if (arg_ext && (!strcasecmp(arg_ext, "ain") || !strcasecmp(arg_ext, "chs"))) {
 			config_init_with_ain(argv[0]);
 			native_ain_path = argv[0];
 		} else {
 			usage_error("Can't initialize game with argument '%s'", argv[0]);
 		}
 	}
-	bool use_native_ain_path = native_ain_path && file_exists(native_ain_path);
-	ainfile = use_native_ain_path ? xstrdup(native_ain_path) : gamedir_path(config.ain_filename);
-	if (!use_native_ain_path && !file_exists(ainfile) && !sys4_text_is_gbk) {
-		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
-		sys4_set_text_gbk(true);
-		char *gbk_ain = gamedir_path(config.ain_filename);
-		sys4_set_text_gbk(false);
-		if (file_exists(gbk_ain)) {
-			free(ainfile);
-			ainfile = gbk_ain;
-		} else {
-			free(gbk_ain);
-		}
+	ainfile = resolve_configured_ain_path(native_ain_path);
+	if (ainfile && file_exists(ainfile)) {
+		free(config.ain_basename_utf8);
+		config.ain_basename_utf8 = xstrdup(path_basename(ainfile));
 	}
 
 	read_user_config();
@@ -1325,6 +1468,7 @@ int main(int argc, char *argv[])
 	mkdir_p(config.save_dir);
 	apply_game_specific_hacks(ain);
 	init_mai_word_table();
+	init_text_dict();
 	if (config.msgskip_delay)
 		set_msgskip_delay(ain, config.msgskip_delay);
 	asset_manager_init();

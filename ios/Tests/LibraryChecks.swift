@@ -58,7 +58,7 @@ struct LibraryChecks {
         }
         precondition(library.games.isEmpty && library.error == nil)
         precondition(!GameLibrary.isGame(source))
-        for marker in ["AliceStart.ini", "System40.ini", "test.AIN"] {
+        for marker in ["AliceStart.CHS", "AliceStart.ini", "System40.ini", "test.AIN"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
             precondition(GameLibrary.isGame(source))
@@ -78,10 +78,14 @@ struct LibraryChecks {
         } catch LibraryError.notGame {}
         let firstAIN = source.appendingPathComponent("a.ain")
         let secondAIN = source.appendingPathComponent("z.ain")
+        let auxChs = source.appendingPathComponent("00_aux.chs")
+        try Data().write(to: auxChs)
+        precondition(!GameLibrary.isGame(source))
         try Data().write(to: secondAIN)
         try Data().write(to: firstAIN)
         let selectedAIN = try GameLibrary.launchTarget(source)
         precondition(samePath(selectedAIN, firstAIN))
+        try files.removeItem(at: auxChs)
         try Data().write(to: source.appendingPathComponent("sYsTeM40.InI"))
         let selectedINI = try GameLibrary.launchTarget(source)
         precondition(samePath(selectedINI, source))

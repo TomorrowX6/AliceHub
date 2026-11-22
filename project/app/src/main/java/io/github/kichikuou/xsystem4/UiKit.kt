@@ -318,7 +318,9 @@ internal object UiKit {
             GameCatalog.ID_OKUSAMAJUN, GameCatalog.ID_OKUSAMANTR,
             GameCatalog.ID_EVENICLE2RANCE, GameCatalog.ID_EVENICLEGAIDEN,
             GameCatalog.ID_WAIDONYO, GameCatalog.ID_RANCE6AFTER,
-            GameCatalog.ID_YAKATA2, GameCatalog.ID_SDPSMARIA -> 0
+            GameCatalog.ID_YAKATA2, GameCatalog.ID_SDPSMARIA,
+            GameCatalog.ID_TOUSHIN3, GameCatalog.ID_OYAKORANKAN,
+            GameCatalog.ID_YORUGAKURU, GameCatalog.ID_RANCE1DIGEST -> 0
             GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
             else -> frame.layoutParams.width / 10
         }
@@ -362,7 +364,11 @@ internal object UiKit {
             desc.id == GameCatalog.ID_WAIDONYO ||
             desc.id == GameCatalog.ID_RANCE6AFTER ||
             desc.id == GameCatalog.ID_YAKATA2 ||
-            desc.id == GameCatalog.ID_SDPSMARIA
+            desc.id == GameCatalog.ID_SDPSMARIA ||
+            desc.id == GameCatalog.ID_TOUSHIN3 ||
+            desc.id == GameCatalog.ID_OYAKORANKAN ||
+            desc.id == GameCatalog.ID_YORUGAKURU ||
+            desc.id == GameCatalog.ID_RANCE1DIGEST
         val bitmap = if (builtIn) null else item?.getIconBitmap(frame.layoutParams.width - pad * 2)
         if (bitmap != null) {
             iconView.setImageBitmap(bitmap)

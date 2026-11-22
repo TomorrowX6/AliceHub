@@ -285,6 +285,10 @@ object OnlineInstaller {
     const val RANCE6AFTER_CDN_URL = "https://alicehub.000.moe/rance6after"
     const val YAKATA2_CDN_URL = "https://alicehub.000.moe/yakata2"
     const val SDPSMARIA_CDN_URL = "https://alicehub.000.moe/sdpsmaria"
+    const val TOUSHIN3_CDN_URL = "https://alicehub.000.moe/toushin3"
+    const val OYAKORANKAN_CDN_URL = "https://alicehub.000.moe/oyakorankan"
+    const val YORUGAKURU_CDN_URL = "https://alicehub.000.moe/yorugakuru"
+    const val RANCE1DIGEST_CDN_URL = "https://alicehub.000.moe/rance1digest"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1127,11 +1131,17 @@ object OnlineInstaller {
     }
 
     private fun findPrimarySys4AinFile(stagingDir: File): File? {
-        val files = stagingDir.listFiles() ?: return null
+        val files = stagingDir.listFiles()?.filter { it.isFile }.orEmpty()
+        val names = files.map { it.name }
+        val readSmall: (String) -> ByteArray? = { GameCatalog.readSmallRootFile(stagingDir, it) }
         return files.firstOrNull {
-            it.isFile && !it.name.startsWith('.') && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+            !it.name.startsWith('.') && GameCatalog.isSystem4AinFile(it.name)
         } ?: files.firstOrNull {
-            it.isFile && it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+            GameCatalog.isSystem4AinFile(it.name)
+        } ?: files.firstOrNull {
+            !it.name.startsWith('.') && GameCatalog.isSystem4CodeFile(it.name, names, readSmall)
+        } ?: files.firstOrNull {
+            GameCatalog.isSystem4CodeFile(it.name, names, readSmall)
         }
     }
 
@@ -1171,6 +1181,10 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_RANCE6AFTER -> sanitizedManifestBase.ifEmpty { "Rance6After" }
             classifiedStagedId == GameCatalog.ID_YAKATA2 -> sanitizedManifestBase.ifEmpty { "Yakata2" }
             classifiedStagedId == GameCatalog.ID_SDPSMARIA -> sanitizedManifestBase.ifEmpty { "SuperDpsMaria" }
+            classifiedStagedId == GameCatalog.ID_TOUSHIN3 -> sanitizedManifestBase.ifEmpty { "Toushin3" }
+            classifiedStagedId == GameCatalog.ID_OYAKORANKAN -> sanitizedManifestBase.ifEmpty { "Oyakorankan" }
+            classifiedStagedId == GameCatalog.ID_YORUGAKURU -> sanitizedManifestBase.ifEmpty { "Yorugakuru" }
+            classifiedStagedId == GameCatalog.ID_RANCE1DIGEST -> sanitizedManifestBase.ifEmpty { "Rance1Digest" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1484,7 +1498,16 @@ object OnlineInstaller {
                         lower.contains("夏娃年代记外典") ||
                         lower.contains("イブニクル外典")
                     GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
-                    GameCatalog.ID_RANCE01 -> lower.contains("rance01") || lower.contains("rance_01")
+                    GameCatalog.ID_RANCE01 -> (lower.contains("rance01") || lower.contains("rance_01")) &&
+                        !lower.contains("digest") &&
+                        !lower.contains("摘要")
+                    GameCatalog.ID_RANCE1DIGEST -> lower.contains("rance1digest") ||
+                        lower.contains("rance1_digest") ||
+                        lower.contains("rance01digest") ||
+                        lower.contains("兰斯1摘要") ||
+                        lower.contains("兰斯１摘要") ||
+                        lower.contains("ランス1ダイジェスト") ||
+                        lower.contains("ランス１ダイジェスト")
                     GameCatalog.ID_RANCE02 -> lower.contains("rance02") || lower.contains("rance_02")
                     GameCatalog.ID_RANCE03 -> lower.contains("rance03") || lower.contains("rance_03")
                     GameCatalog.ID_RANCE04 -> lower.contains("rance04") || lower.contains("rance_04") ||
@@ -1549,6 +1572,21 @@ object OnlineInstaller {
                         lower.contains("sdps_maria") ||
                         lower.contains("superdpsmaria") ||
                         lower.contains("玛利亚和坎潘")
+                    GameCatalog.ID_TOUSHIN3 -> lower.contains("toushin3") ||
+                        lower.contains("toushin_3") ||
+                        lower.contains("toushintoshi3") ||
+                        lower.contains("闘神都市") ||
+                        lower.contains("斗神都市3") ||
+                        lower.contains("斗神都市３")
+                    GameCatalog.ID_OYAKORANKAN -> lower.contains("oyakorankan") ||
+                        lower.contains("oyako_rankan") ||
+                        lower.contains("母娘乱館") ||
+                        lower.contains("母娘乱馆")
+                    GameCatalog.ID_YORUGAKURU -> lower.contains("yorugakuru") ||
+                        lower.contains("yoru_ga_kuru") ||
+                        lower.contains("nightremaster") ||
+                        lower.contains("夜が来る") ||
+                        lower.contains("邪夜将至")
                     GameCatalog.ID_TSUMAMIGUI -> (lower.contains("tsumamigui") ||
                         lower.contains("妻みぐい") ||
                         lower.contains("妻中蜜")) &&

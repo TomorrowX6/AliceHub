@@ -29,6 +29,7 @@ struct config {
 	char *game_name;
 	char *boot_name;
 	char *ain_filename;
+	char *ain_basename_utf8;
 	char *vm_name;
 	char *game_dir;
 	char *save_dir;
@@ -112,6 +113,9 @@ extern bool game_evenicle2;
 extern bool game_evenicle2_rance;
 extern bool game_haharanman;
 extern bool game_okusama;
+extern bool game_night_remaster;
+extern bool game_oyakorankan;
+extern bool game_toushin3;
 extern bool game_rance03;
 extern bool game_dungeons_and_dolls;
 extern bool game_escalayer_reboot;

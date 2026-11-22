@@ -182,6 +182,12 @@ static void set_game_default_mixers(void)
 		};
 		static const int vols[] = { 80, 80, 80, 100, 80, 80, 100, 80 };
 		set_default_mixers(names, vols, 8);
+	} else if (game_night_remaster) {
+		static const char *const names[] = {
+			"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice"
+		};
+		static const int vols[] = { 80, 80, 80, 80, 80, 80 };
+		set_default_mixers(names, vols, 6);
 	}
 }
 

@@ -63,6 +63,10 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `rance6after` | Rance VI: Aftermath | 2004-12-17 | 63 | 6.30 | [v29842](https://vndb.org/v29842) | [source](https://vndb.org/v29842) |
 | `yakata2` | ALICE no Yakata II | 1992-07-15 | 58.2 | 5.82 | [v9609](https://vndb.org/v9609) | [source](https://vndb.org/v9609) |
 | `sdpsmaria` | Super D.P.S.: Maria & Kanpan | 1992-09-01 | 61.2 | 6.12 | [v8670](https://vndb.org/v8670) | [source](https://vndb.org/v8670) |
+| `toushin3` | Toushin Toshi III | 2008-11-28 | 74.4 | 7.44 | [v849](https://vndb.org/v849) | [source](https://vndb.org/v849) |
+| `oyakorankan` | Oyako Rankan | 2012-09-14 | 78.1 | 7.81 | [v10732](https://vndb.org/v10732) | [source](https://vndb.org/v10732) |
+| `yorugakuru` | Yoru ga Kuru! -Square of the MOON- Remastered | 2024-04-19 | 66.9 | 6.69 | [v499](https://vndb.org/v499) | [source](https://vndb.org/r119676) |
+| `rance1digest` | Rance 1 Digest Edition | 2004-08-27 | 54.4 | 5.44 | [v1414](https://vndb.org/v1414) | [source](https://vndb.org/r28251) |
 
 ## Edition mapping / missing-score decisions
 
@@ -73,6 +77,8 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 - `okusamajun` and `okusamantr` share VNDB work **v35407** (simultaneous Pure Love / NTR editions released 2022-05-27), so both use rating 67.3 and retain source order on ties.
 - `waidonyo` (bundled in Alice 2010, released 2009-12-18) has no standalone VNDB work entry, so its rating/source remain null.
 - `sdpsmaria` maps to VNDB **v8670** (`Super D.P.S.`, released `1992-09`); day-of-month is normalized to `1992-09-01` for full ISO-date parsing.
+- `yorugakuru` lists the 2024 Remastered edition (first Japanese release `r119676` on `2024-04-19`), sharing work-wide rating 66.9 under VNDB **v499** (`Yoru ga Kuru! -Square of the Moon-`), matching the same work-rating rule as `escalayer_reboot`.
+- `rance1digest` lists the System 4 Digest Edition (first Japanese release `r28251` on `2004-08-27`), sharing work-wide rating 54.4 under VNDB **v1414** (`Rance -Hikari o Motomete-`).
 - No ErogameScape score or search-cache value is integrated. That source was superseded by the user and research stopped. No popularity count is reused as a rating.
 
 ## Validation scope

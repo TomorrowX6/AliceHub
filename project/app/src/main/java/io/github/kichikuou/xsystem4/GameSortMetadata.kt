@@ -49,7 +49,11 @@ object GameSortMetadata {
         GameCatalog.ID_WAIDONYO to GameSortInfo("2009-12-18", null, null, "https://www.alicesoft.com/alice2010/"),
         GameCatalog.ID_RANCE6AFTER to GameSortInfo("2004-12-17", 63.0, "https://vndb.org/v29842", "https://vndb.org/v29842"),
         GameCatalog.ID_YAKATA2 to GameSortInfo("1992-07-15", 58.2, "https://vndb.org/v9609", "https://vndb.org/v9609"),
-        GameCatalog.ID_SDPSMARIA to GameSortInfo("1992-09-01", 61.2, "https://vndb.org/v8670", "https://vndb.org/v8670")
+        GameCatalog.ID_SDPSMARIA to GameSortInfo("1992-09-01", 61.2, "https://vndb.org/v8670", "https://vndb.org/v8670"),
+        GameCatalog.ID_TOUSHIN3 to GameSortInfo("2008-11-28", 74.4, "https://vndb.org/v849", "https://vndb.org/v849"),
+        GameCatalog.ID_OYAKORANKAN to GameSortInfo("2012-09-14", 78.1, "https://vndb.org/v10732", "https://vndb.org/v10732"),
+        GameCatalog.ID_YORUGAKURU to GameSortInfo("2024-04-19", 66.9, "https://vndb.org/v499", "https://vndb.org/r119676"),
+        GameCatalog.ID_RANCE1DIGEST to GameSortInfo("2004-08-27", 54.4, "https://vndb.org/v1414", "https://vndb.org/r28251")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

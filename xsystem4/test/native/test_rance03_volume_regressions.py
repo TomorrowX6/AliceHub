@@ -179,6 +179,7 @@ bool game_rance03 = true;
 bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
+bool game_night_remaster = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 static int open_calls, close_calls, pause_state = -1;
@@ -528,6 +529,7 @@ bool game_rance03 = true;
 bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
+bool game_night_remaster = false;
 
 static uint8_t *g_sound2_buf = NULL;
 static size_t g_sound2_size = 0;

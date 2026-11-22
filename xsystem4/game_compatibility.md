@@ -60,7 +60,7 @@ issues, please let me know or open a pull request to update this table.
 | Sengoku Rance -Three for the Slash! Thrust! Burn!- (EN) | Supported   |       |
 | AliveZ                                                  | Unknown     |       |
 | エドランゼ ～Come on!水戸姫様～                         | Supported   |       |
-| 闘神都市III                                             | Supported   |       |
+| 闘神都市III                                             | Supported   | JP and CN (GBK fan translation) supported |
 | ばにしゅ！～おっぱいの消えた王国～                      | Unknown     |       |
 | 僕だけの保健室                                          | Supported   |       |
 | ももいろガーディアン                                    | Unknown     |       |
@@ -79,7 +79,7 @@ issues, please let me know or open a pull request to update this table.
 | 大帝国                                                  | Supported   | JP and CN (GBK fan translation) |
 | ランス・クエスト                                        | Supported   |       |
 | ランス・クエスト マグナム                               | Supported   |       |
-| 母娘乱館                                                | Unknown     |       |
+| 母娘乱館                                                | Supported   | JP and CN Longinus (`AliceStart.CHS` / `CHS.TBL` / `CHS.afa`, 1024×768 viewport fix) supported |
 | パステルチャイム3 バインドシーカー                      | Supported   |       |
 | パスチャ3 プラスコンテンツ                              | Supported   |       |
 | どらぺこ！ ～おねだりドラゴンとおっぱい勇者～           | Unsupported |       |
@@ -92,4 +92,6 @@ issues, please let me know or open a pull request to update this table.
 | イブニクル２ランス版                                    | Supported   | JP and CN (GBK + companion `*CHS.afa`/`*CHS2.afa` auto-mount) supported |
 | 母爛漫                                                  | Supported   | Engine support (`SystemService.GetVersion` + 8ch mixer) |
 | 奥さまの回復術 純愛編 / 奪愛編                          | Supported   | Official CN GBK (translated PACT keys + 8ch mixer) supported |
+| 夜が来る！-Square of the MOON- Remastered               | Supported   | Official CN GBK (`GetGameVersionByText`, 6ch mixer, XOR-0x49 `*Dict.dat`, widget click fix) supported |
+| Rance -光をもとめて- ダイジェスト版                      | Supported   | JP and CN (GBK fan translation) supported |
 | All games released after Rance IX                       | Unsupported |       |

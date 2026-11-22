@@ -220,7 +220,7 @@ public class Batch2CatalogTest {
 
     @Test
     public void exposesDescriptorsCdnUrlsDefaultSizesAndVndbSnapshotParity() throws Exception {
-        assertEquals(39, GameCatalog.builtInSelectOrder().size());
+        assertEquals(43, GameCatalog.builtInSelectOrder().size());
 
         Object[][] spec = {
                 {GameCatalog.ID_OKUSAMAJUN, R.string.game_okusamajun_title, "OkusamaJun", R.drawable.ic_game_okusamajun,

@@ -69,6 +69,10 @@ object AppSettings {
     internal const val DEFAULT_RANCE6AFTER_BYTES = 38024313L
     internal const val DEFAULT_YAKATA2_BYTES = 14072286L
     internal const val DEFAULT_SDPSMARIA_BYTES = 11185724L
+    internal const val DEFAULT_TOUSHIN3_BYTES = 3406621760L
+    internal const val DEFAULT_OYAKORANKAN_BYTES = 2961641642L
+    internal const val DEFAULT_YORUGAKURU_BYTES = 1565514386L
+    internal const val DEFAULT_RANCE1DIGEST_BYTES = 11945316L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -226,6 +230,10 @@ object AppSettings {
             OnlineInstaller.RANCE6AFTER_CDN_URL -> DEFAULT_RANCE6AFTER_BYTES
             OnlineInstaller.YAKATA2_CDN_URL -> DEFAULT_YAKATA2_BYTES
             OnlineInstaller.SDPSMARIA_CDN_URL -> DEFAULT_SDPSMARIA_BYTES
+            OnlineInstaller.TOUSHIN3_CDN_URL -> DEFAULT_TOUSHIN3_BYTES
+            OnlineInstaller.OYAKORANKAN_CDN_URL -> DEFAULT_OYAKORANKAN_BYTES
+            OnlineInstaller.YORUGAKURU_CDN_URL -> DEFAULT_YORUGAKURU_BYTES
+            OnlineInstaller.RANCE1DIGEST_CDN_URL -> DEFAULT_RANCE1DIGEST_BYTES
             else -> -1L
         }
     }
