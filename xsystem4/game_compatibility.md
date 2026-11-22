@@ -21,6 +21,7 @@ issues, please let me know or open a pull request to update this table.
 | 魔女の贖罪                                              | Unknown     |       |
 | Rance VI -ゼス崩壊-                                     | Supported   |       |
 | Rance VI -Collapse of Zeth- (EN)                        | Supported   |       |
+| Rance VI / 兰斯06 (CN)                                  | Supported   | GBK; 哈尼喵×爱丽丝汉化组 v1.10. Copy-suffixed DungeonData(N).dlf is accepted when DungeonData.dlf is absent. |
 | ウルトラ魔法少女まなな Vol.1～Vol.5                     | Supported   |       |
 | 鈴宮刑務娼館                                            | Supported   | From ALICEの館7 |
 | しまいま                                                | Supported   | From ALICEの館7 |

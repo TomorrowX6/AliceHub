@@ -778,6 +778,7 @@ object GameCatalog {
         return RANCE06_EN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_CN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_JP_ALIAS_REGEX.containsMatchIn(lower) ||
+            Regex("(?:^|[^a-z0-9])r6汉硬(?:[0-9.]|$)").containsMatchIn(lower) ||
             lower.contains("ゼス崩壊") ||
             lower.contains("赛斯崩坏") ||
             lower.contains("賽斯崩壞") ||

@@ -33,6 +33,39 @@ public class Rance06CatalogTest {
         }
     }
 
+    @Test
+    public void normalizeDungeonCopyNames() throws Exception {
+        File game = tmp.newFolder("R6汉硬1.10");
+        GameListKt.normalizeRance06DungeonData(game);
+        File data = new File(game, "dAtA");
+        assertTrue(data.mkdir());
+        File invalid = new File(data, "DungeonData(x).dlf");
+        writeFile(invalid, new byte[]{9});
+        assertTrue(new File(data, "DungeonData(0).dlf").mkdir());
+        GameListKt.normalizeRance06DungeonData(game);
+        assertFalse(new File(data, "DungeonData.dlf").exists());
+        File copy = new File(data, "dUnGeOnDaTa(7).DlF");
+        writeFile(copy, new byte[]{7});
+        GameListKt.normalizeRance06DungeonData(game);
+        File canonical = new File(data, "DungeonData.dlf");
+        assertTrue(canonical.isFile());
+        assertFalse(copy.exists());
+        assertTrue(invalid.exists());
+        assertTrue(canonical.delete());
+        writeFile(copy, new byte[]{7});
+        File earlier = new File(data, "DungeonData(2).dlf");
+        writeFile(earlier, new byte[]{2});
+        GameListKt.normalizeRance06DungeonData(game);
+        assertFalse(earlier.exists());
+        assertEquals(2, java.nio.file.Files.readAllBytes(canonical.toPath())[0]);
+        writeFile(copy, new byte[]{8});
+        File mixedCanonical = new File(data, "DUNGEONDATA.DLF");
+        assertTrue(canonical.renameTo(mixedCanonical));
+        GameListKt.normalizeRance06DungeonData(game);
+        assertTrue(copy.exists());
+        assertEquals(2, java.nio.file.Files.readAllBytes(mixedCanonical.toPath())[0]);
+    }
+
     private static void putLe32(byte[] buf, int off, int val) {
         buf[off] = (byte) (val & 0xFF);
         buf[off + 1] = (byte) ((val >>> 8) & 0xFF);
@@ -247,6 +280,8 @@ public class Rance06CatalogTest {
                 "ランス６",
                 "ランス06 ゼス崩壊",
                 "兰斯6",
+                "R6汉硬1.10",
+                "[040827][ALICESOFT] 兰斯06 V1.10.rar",
                 "兰斯06 赛斯崩坏",
                 "Rance6中文版 v1.10（哈尼喵汉化组×爱丽丝汉化组 制作）"
         };
