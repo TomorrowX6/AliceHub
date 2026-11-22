@@ -29,7 +29,30 @@ list(REMOVE_ITEM vm_sources "${src}/sys/mako_midi.cpp")
 if(ANDROID)
   add_library(system3 SHARED)
   target_link_options(system3 PRIVATE "LINKER:-z,max-page-size=16384" "LINKER:--exclude-libs,ALL")
-  target_sources(system3 PRIVATE "${src}/android/nact_android.cpp")
+  set(android_nact "${src}/android/nact_android.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${android_nact}")
+  file(READ "${android_nact}" android_nact_source)
+  set(original [=[bool NACT::handle_platform_event(const SDL_Event& e)
+{
+	return false;
+}]=])
+  set(replacement [=[#include "ags.h"
+
+bool NACT::handle_platform_event(const SDL_Event& e)
+{
+	if (e.type == SDL_APP_DIDENTERFOREGROUND || e.type == SDL_RENDER_DEVICE_RESET) {
+		ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);
+		return true;
+	}
+	return false;
+}]=])
+  string(REPLACE "${original}" "${replacement}" patched_android_nact "${android_nact_source}")
+  if(patched_android_nact STREQUAL android_nact_source)
+    message(FATAL_ERROR "Could not apply System 3 Android redraw patch")
+  endif()
+  file(CONFIGURE OUTPUT nact_android.cpp CONTENT "${patched_android_nact}" @ONLY)
+  target_include_directories(system3 PRIVATE "${src}/android")
+  target_sources(system3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nact_android.cpp")
   target_link_libraries(system3 PRIVATE log)
 elseif(ALICEHUB_IOS)
   enable_language(OBJC OBJCXX)
