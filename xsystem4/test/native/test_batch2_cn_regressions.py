@@ -730,25 +730,68 @@ int main(void) {{
         self.assertEqual(out.strip(), "OK")
 
     def test_asset_manager_mounts_chs_and_chs2_ahead_of_base(self):
+        import zlib
+
+        def build_afa_v2_ts(entries: list[tuple[bytes, bytes, int]]) -> bytes:
+            info_raw = bytearray()
+            data_buf = bytearray()
+            data_off_rel = 8
+            for idx, (name, payload, ts) in enumerate(entries):
+                padded = len(name)
+                info_raw.extend(struct.pack("<ii", len(name), padded))
+                info_raw.extend(name)
+                info_raw.extend(struct.pack("<iIIii", idx + 1, ts, 0, data_off_rel + len(data_buf), len(payload)))
+                data_buf.extend(payload)
+            info_comp = zlib.compress(bytes(info_raw))
+            data_start = 44 + len(info_comp)
+            header = (
+                b"AFAH"
+                + struct.pack("<I", 0x1C)
+                + b"AlicArch"
+                + struct.pack("<III", 2, 0, data_start)
+                + b"INFO"
+                + struct.pack("<III", len(info_comp) + 16, len(info_raw), len(entries))
+            )
+            data_hdr = b"DATA" + struct.pack("<I", 8 + len(data_buf))
+            return header + info_comp + data_hdr + bytes(data_buf)
+
+        sjis_menu = _sjis("メニュー")
+        gbk_menu = _gbk("菜单")
+        query_menu = _sjis("タイトル")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             gdir = Path(tmpdir)
             (gdir / "Evenicle2Rance.ain").write_bytes(b"AIN")
-            (gdir / "Evenicle2RanceCG.afa").write_bytes(build_afa_v2([
-                (b"title_btn", b"JP_CG"),
-                (b"base_only", b"BASE_CG"),
+            # Base archives have NEWER nonzero timestamps (200 / 400) than CHS/CHS2 (100 / 300).
+            (gdir / "Evenicle2RanceCG.afa").write_bytes(build_afa_v2_ts([
+                (b"title_btn", b"JP_CG_NEWER", 200),
+                (b"mod_btn", b"JP_MOD_BTN", 400),
+                (b"base_only", b"BASE_CG", 200),
+                (sjis_menu, b"JP_CANON_NEWER", 200),
             ]))
-            (gdir / "Evenicle2RanceCHS.afa").write_bytes(build_afa_v2([
-                (b"title_btn", b"CN_CG"),
+            (gdir / "Evenicle2RanceCHS.afa").write_bytes(build_afa_v2_ts([
+                (b"title_btn", b"CN_CG_OLDER", 100),
+                (b"mod_btn", b"CN_MOD_BTN", 300),
+                (gbk_menu, b"CN_CANON_OLDER", 100),
             ]))
-            (gdir / "Evenicle2RanceFlat.afa").write_bytes(build_afa_v2([
-                (b"title_banner", b"JP_FLAT"),
-                (b"base_flat", b"BASE_FLAT"),
+            (gdir / "Evenicle2RanceFlat.afa").write_bytes(build_afa_v2_ts([
+                (b"title_banner", b"JP_FLAT_NEWER", 200),
+                (b"base_flat", b"BASE_FLAT", 200),
             ]))
-            (gdir / "Evenicle2RanceCHS2.afa").write_bytes(build_afa_v2([
-                (b"title_banner", b"CN_FLAT"),
+            (gdir / "Evenicle2RanceCHS2.afa").write_bytes(build_afa_v2_ts([
+                (b"title_banner", b"CN_FLAT_OLDER", 100),
+            ]))
+            # User mod archive with oldest timestamp (50) must still beat both CHS and Base.
+            mod_afa = gdir / "UserMod.afa"
+            mod_afa.write_bytes(build_afa_v2_ts([
+                (b"mod_btn", b"MOD_CG_OLDEST", 50),
             ]))
 
-            harness = r"""
+            sjis_menu_c = "".join(f"\\x{b:02x}" for b in sjis_menu)
+            gbk_menu_c = "".join(f"\\x{b:02x}" for b in gbk_menu)
+            query_menu_c = "".join(f"\\x{b:02x}" for b in query_menu)
+
+            harness = f"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -782,51 +825,73 @@ bool game_daibanchou_en = false;
 bool game_daiteikoku = false;
 bool game_haruurare = false;
 
-char *gamedir_path(const char *p) { return strdup(p); }
-char *gamedir_path_icase(const char *p) { return strdup(p); }
-char *savedir_path(const char *p) { return strdup(p); }
-const char *display_sjis0(const char *s) { return s ? s : ""; }
-const char *display_utf0(const char *s) { return s ? s : ""; }
-struct cg *cg_load_data(struct archive_data *dfile) { (void)dfile; return NULL; }
-struct cg *cg_load_file(const char *filename) { (void)filename; return NULL; }
-bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst) { (void)dfile; (void)dst; return false; }
-bool cg_get_metrics_file(const char *filename, struct cg_metrics *dst) { (void)filename; (void)dst; return false; }
+char *gamedir_path(const char *p) {{ return strdup(p); }}
+char *gamedir_path_icase(const char *p) {{ return strdup(p); }}
+char *savedir_path(const char *p) {{ return strdup(p); }}
+const char *display_sjis0(const char *s) {{ return s ? s : ""; }}
+const char *display_utf0(const char *s) {{ return s ? s : ""; }}
+struct cg *cg_load_data(struct archive_data *dfile) {{ (void)dfile; return NULL; }}
+struct cg *cg_load_file(const char *filename) {{ (void)filename; return NULL; }}
+bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst) {{ (void)dfile; (void)dst; return false; }}
+bool cg_get_metrics_file(const char *filename, struct cg_metrics *dst) {{ (void)filename; (void)dst; return false; }}
 void save_cjk_canon_forms_buf(const char *s, char *sjis_buf, size_t sjis_cap, char **sjis_out,
-        char *gbk_buf, size_t gbk_cap, char **gbk_out) {
-    (void)s; (void)sjis_buf; (void)sjis_cap; (void)gbk_buf; (void)gbk_cap;
+        char *gbk_buf, size_t gbk_cap, char **gbk_out) {{
+    (void)sjis_cap; (void)gbk_cap;
     if (sjis_out) *sjis_out = NULL;
     if (gbk_out) *gbk_out = NULL;
-}
-char *save_transcode_cstr_strict(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len) {
+    if (!strcmp(s, "{sjis_menu_c}") || !strcmp(s, "{gbk_menu_c}") || !strcmp(s, "{query_menu_c}")) {{
+        strcpy(sjis_buf, "CANON_MENU");
+        if (sjis_out) *sjis_out = sjis_buf;
+        if (gbk_out) {{
+            strcpy(gbk_buf, "CANON_MENU");
+            *gbk_out = gbk_buf;
+        }}
+    }}
+}}
+char *save_transcode_cstr_strict(const char *s, size_t len, bool src_is_gbk, bool dst_is_gbk, size_t *out_len) {{
     (void)s; (void)len; (void)src_is_gbk; (void)dst_is_gbk; (void)out_len;
     return NULL;
-}
+}}
 
 #include "asset_manager.c"
 
-static void check_entry(enum asset_type type, const char *name, const char *expected) {
+static void check_entry(enum asset_type type, const char *name, const char *expected) {{
     struct archive_data *d = asset_get_by_name(type, name, NULL);
     assert(d != NULL);
     assert(d->size == strlen(expected));
     assert(memcmp(d->data, expected, d->size) == 0);
     archive_free_data(d);
-}
+}}
 
-int main(int argc, char **argv) {
-    assert(argc == 2);
+int main(int argc, char **argv) {{
+    assert(argc == 3);
     memset(&config, 0, sizeof(config));
     config.game_dir = argv[1];
     config.ain_filename = "Evenicle2Rance.ain";
     asset_manager_init();
 
-    check_entry(ASSET_CG, "title_btn", "CN_CG");
+    // 1. CHS / CHS2 beat base archives in raw lookup even when base timestamps are newer (200 > 100).
+    check_entry(ASSET_CG, "title_btn", "CN_CG_OLDER");
     check_entry(ASSET_CG, "base_only", "BASE_CG");
-    check_entry(ASSET_FLAT, "title_banner", "CN_FLAT");
+    check_entry(ASSET_FLAT, "title_banner", "CN_FLAT_OLDER");
     check_entry(ASSET_FLAT, "base_flat", "BASE_FLAT");
+
+    // 2. CHS beats base archive in canonical non-ASCII lookup even when base timestamp is newer (200 > 100).
+    check_entry(ASSET_CG, "{query_menu_c}", "CN_CANON_OLDER");
+
+    // 3. Before mounting mod, CHS (ts=300) beats base (ts=400).
+    check_entry(ASSET_CG, "mod_btn", "CN_MOD_BTN");
+
+    // 4. After mounting user mod (ts=50), mod priority still beats both CHS (300) and Base (400),
+    //    while non-mod entries still resolve to CHS and Base fallback.
+    assert(asset_manager_load_archive(ASSET_CG, argv[2]) == true);
+    check_entry(ASSET_CG, "mod_btn", "MOD_CG_OLDEST");
+    check_entry(ASSET_CG, "title_btn", "CN_CG_OLDER");
+    check_entry(ASSET_CG, "base_only", "BASE_CG");
 
     puts("OK");
     return 0;
-}
+}}
 """
             out = compile_and_run(
                 harness,
@@ -837,7 +902,7 @@ int main(int argc, char **argv) {
                     *LIBSYS4_CORE,
                 ],
                 ["-lz", "-lm"],
-                [str(gdir)],
+                [str(gdir), str(mod_afa)],
             )
             self.assertEqual(out.strip(), "OK")
 
