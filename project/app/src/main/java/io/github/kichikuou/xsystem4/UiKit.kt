@@ -3,6 +3,8 @@ package io.github.kichikuou.xsystem4
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -13,6 +15,7 @@ import android.graphics.drawable.RippleDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ReplacementSpan
+import android.util.LruCache
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -278,6 +281,43 @@ internal object UiKit {
         )
     }
 
+    private val builtInIconCache = object : LruCache<String, Bitmap>(6 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int =
+            (value.allocationByteCount / 1024).coerceAtLeast(1)
+    }
+
+    private fun decodeCachedBuiltInIcon(context: Context, resId: Int, targetPx: Int): Bitmap? {
+        val clampedPx = targetPx.coerceIn(64, 512)
+        val cacheKey = "$resId:$clampedPx"
+        synchronized(builtInIconCache) {
+            builtInIconCache.get(cacheKey)?.takeIf { !it.isRecycled }
+        }?.let { return it }
+
+        return try {
+            val res = context.resources
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeResource(res, resId, bounds)
+            val srcW = bounds.outWidth
+            val srcH = bounds.outHeight
+            if (srcW <= 0 || srcH <= 0) return null
+            var sampleSize = 1
+            while ((srcW / (sampleSize * 2)) >= clampedPx && (srcH / (sampleSize * 2)) >= clampedPx) {
+                sampleSize *= 2
+            }
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = BitmapFactory.decodeResource(res, resId, opts) ?: return null
+            synchronized(builtInIconCache) {
+                builtInIconCache.put(cacheKey, decoded)
+            }
+            decoded
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     /**
      * Shows a game's icon inside its rounded frame (game list and game hub).
      *
@@ -293,83 +333,35 @@ internal object UiKit {
         radiusDp: Float
     ) {
         val ctx = frame.context
-        frame.background = GradientDrawable().apply {
-            cornerRadius = dp(ctx, radiusDp)
-            setColor(desc.iconFrameColor)
+        val frameTag = "${desc.iconFrameColor}:$radiusDp"
+        if (frame.tag != frameTag) {
+            frame.background = GradientDrawable().apply {
+                cornerRadius = dp(ctx, radiusDp)
+                setColor(desc.iconFrameColor)
+            }
+            frame.clipToOutline = true
+            frame.tag = frameTag
         }
-        frame.clipToOutline = true
 
-        val pad = when (desc.id) {
-            GameCatalog.ID_RANCE10, GameCatalog.ID_EVENICLE,
-            GameCatalog.ID_EVENICLE2, GameCatalog.ID_SENGOKU_RANCE,
-            GameCatalog.ID_RANCE01, GameCatalog.ID_RANCE02,
-            GameCatalog.ID_RANCE03, GameCatalog.ID_RANCE04,
-            GameCatalog.ID_RANCE41, GameCatalog.ID_RANCE42,
-            GameCatalog.ID_RANCE5D, GameCatalog.ID_RANCE06,
-            GameCatalog.ID_RANCE08, GameCatalog.ID_RANCE09,
-            GameCatalog.ID_KICHIKUOU, GameCatalog.ID_DAIAKUJI,
-            GameCatalog.ID_DAIBANCHOU, GameCatalog.ID_DAITEIKOKU,
-            GameCatalog.ID_ESCALAYER, GameCatalog.ID_ESCALAYER_REBOOT,
-            GameCatalog.ID_GALZOO, GameCatalog.ID_IXSEAL,
-            GameCatalog.ID_HARUKA, GameCatalog.ID_TSUMASHIBORI,
-            GameCatalog.ID_TSUMAMIGUI, GameCatalog.ID_TSUMAMIGUI3,
-            GameCatalog.ID_KAERUNYO, GameCatalog.ID_ATLACHNACHA,
-            GameCatalog.ID_REISHIKI, GameCatalog.ID_HARUURARE,
-            GameCatalog.ID_OKUSAMAJUN, GameCatalog.ID_OKUSAMANTR,
-            GameCatalog.ID_EVENICLE2RANCE, GameCatalog.ID_EVENICLEGAIDEN,
-            GameCatalog.ID_WAIDONYO, GameCatalog.ID_RANCE6AFTER,
-            GameCatalog.ID_YAKATA2, GameCatalog.ID_SDPSMARIA,
-            GameCatalog.ID_TOUSHIN3, GameCatalog.ID_OYAKORANKAN,
-            GameCatalog.ID_YORUGAKURU, GameCatalog.ID_RANCE1DIGEST -> 0
-            GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
-            else -> frame.layoutParams.width / 10
+        val builtIn = GameCatalog.isBuiltInGameId(desc.id)
+        val frameWidth = frame.layoutParams?.width?.takeIf { it > 0 } ?: dpInt(ctx, 56)
+        val pad = when {
+            desc.id == GameCatalog.ID_DOHNA_DOHNA -> dpInt(ctx, 2)
+            builtIn -> 0
+            else -> frameWidth / 10
         }
-        frame.setPadding(pad, pad, pad, pad)
+        if (frame.paddingLeft != pad || frame.paddingTop != pad ||
+            frame.paddingRight != pad || frame.paddingBottom != pad
+        ) {
+            frame.setPadding(pad, pad, pad, pad)
+        }
 
-        val builtIn = desc.id == GameCatalog.ID_RANCE10 ||
-            desc.id == GameCatalog.ID_DOHNA_DOHNA ||
-            desc.id == GameCatalog.ID_EVENICLE ||
-            desc.id == GameCatalog.ID_EVENICLE2 ||
-            desc.id == GameCatalog.ID_SENGOKU_RANCE ||
-            desc.id == GameCatalog.ID_RANCE01 ||
-            desc.id == GameCatalog.ID_RANCE02 ||
-            desc.id == GameCatalog.ID_RANCE03 ||
-            desc.id == GameCatalog.ID_RANCE04 ||
-            desc.id == GameCatalog.ID_RANCE41 ||
-            desc.id == GameCatalog.ID_RANCE42 ||
-            desc.id == GameCatalog.ID_RANCE5D ||
-            desc.id == GameCatalog.ID_RANCE06 ||
-            desc.id == GameCatalog.ID_RANCE08 ||
-            desc.id == GameCatalog.ID_RANCE09 ||
-            desc.id == GameCatalog.ID_KICHIKUOU ||
-            desc.id == GameCatalog.ID_DAIAKUJI ||
-            desc.id == GameCatalog.ID_DAIBANCHOU ||
-            desc.id == GameCatalog.ID_DAITEIKOKU ||
-            desc.id == GameCatalog.ID_ESCALAYER ||
-            desc.id == GameCatalog.ID_ESCALAYER_REBOOT ||
-            desc.id == GameCatalog.ID_GALZOO ||
-            desc.id == GameCatalog.ID_IXSEAL ||
-            desc.id == GameCatalog.ID_HARUKA ||
-            desc.id == GameCatalog.ID_TSUMASHIBORI ||
-            desc.id == GameCatalog.ID_TSUMAMIGUI ||
-            desc.id == GameCatalog.ID_TSUMAMIGUI3 ||
-            desc.id == GameCatalog.ID_KAERUNYO ||
-            desc.id == GameCatalog.ID_ATLACHNACHA ||
-            desc.id == GameCatalog.ID_REISHIKI ||
-            desc.id == GameCatalog.ID_HARUURARE ||
-            desc.id == GameCatalog.ID_OKUSAMAJUN ||
-            desc.id == GameCatalog.ID_OKUSAMANTR ||
-            desc.id == GameCatalog.ID_EVENICLE2RANCE ||
-            desc.id == GameCatalog.ID_EVENICLEGAIDEN ||
-            desc.id == GameCatalog.ID_WAIDONYO ||
-            desc.id == GameCatalog.ID_RANCE6AFTER ||
-            desc.id == GameCatalog.ID_YAKATA2 ||
-            desc.id == GameCatalog.ID_SDPSMARIA ||
-            desc.id == GameCatalog.ID_TOUSHIN3 ||
-            desc.id == GameCatalog.ID_OYAKORANKAN ||
-            desc.id == GameCatalog.ID_YORUGAKURU ||
-            desc.id == GameCatalog.ID_RANCE1DIGEST
-        val bitmap = if (builtIn) null else item?.getIconBitmap(frame.layoutParams.width - pad * 2)
+        val targetPx = (frameWidth - pad * 2).coerceAtLeast(dpInt(ctx, 48))
+        val bitmap = if (builtIn) {
+            decodeCachedBuiltInIcon(ctx, desc.iconRes, targetPx)
+        } else {
+            item?.getIconBitmap(targetPx)
+        }
         if (bitmap != null) {
             iconView.setImageBitmap(bitmap)
         } else {

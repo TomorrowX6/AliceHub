@@ -14,6 +14,7 @@ struct OnlineGamesView: View {
     }
 
     var body: some View {
+        let installedNames = Set(library.games.map { $0.name.lowercased() })
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -27,7 +28,7 @@ struct OnlineGamesView: View {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(game.title).font(.headline).foregroundColor(HubTheme.text)
                                             .fixedSize(horizontal: false, vertical: true)
-                                        if let status = status(game) {
+                                        if let status = status(game, installedNames: installedNames) {
                                             Text(status).font(.caption).foregroundColor(HubTheme.secondary)
                                         }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -49,9 +50,9 @@ struct OnlineGamesView: View {
             .interactiveDismissDisabled(download.running)
     }
 
-    private func status(_ game: OnlineGame) -> String? {
+    private func status(_ game: OnlineGame, installedNames: Set<String>) -> String? {
         if download.running && download.activeID == game.id { return "下载中" }
-        return library.games.contains { $0.name.caseInsensitiveCompare(game.directory) == .orderedSame } ? "已安装" : nil
+        return installedNames.contains(game.directory.lowercased()) ? "已安装" : nil
     }
 }
 

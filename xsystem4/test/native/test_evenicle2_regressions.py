@@ -1504,6 +1504,7 @@ static int nonzero_glyph_pixels = 0;
 
 struct fnl *fnl_open(const char *path) {{ (void)path; fnl_open_calls++; return NULL; }}
 struct font *fnl_font_load(struct fnl *lib, unsigned index) {{ (void)lib; (void)index; return NULL; }}
+unsigned fnl_char_to_index(uint16_t code) {{ (void)code; return 0; }}
 
 const char *display_sjis0(const char *sjis) {{ return sjis ? sjis : ""; }}
 

@@ -48,6 +48,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private val trackedDialogs = mutableListOf<Dialog>()
     private var lastProgressRenderMs: Long = 0L
     private var pendingPostResumeAction: (() -> Unit)? = null
+    private var skipInitialResumeRefresh: Boolean = false
 
     private fun <T : Dialog> trackDialog(dlg: T): T {
         trackedDialogs.removeAll { !it.isShowing }
@@ -102,6 +103,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
         handleRestoreDialogIntent(intent)
         refreshUi()
+        skipInitialResumeRefresh = true
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -158,16 +160,24 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     override fun onResume() {
         super.onResume()
-        gameList = LauncherActivity.obtainGameList(this, refresh = false)
+        val latestList = LauncherActivity.obtainGameList(this, refresh = false)
+        val listChanged = latestList !== gameList
+        gameList = latestList
         gameList.observer = this
-        rebindGameState()
+        val skipRefresh = skipInitialResumeRefresh && !listChanged
+        skipInitialResumeRefresh = false
+        if (!skipRefresh) {
+            rebindGameState()
+        }
         refreshOnlineSizeIfNeeded()
         if (gameList.isRestoringMod) {
             showRestoreModProgress()
         } else {
             dismissRestoreModProgress()
         }
-        refreshUi()
+        if (!skipRefresh) {
+            refreshUi()
+        }
         renderInstallState(gameList.installState)
         matchingItems.firstOrNull { gameList.isUninstalling(it) }?.let { watchUninstall(it) }
 
@@ -301,50 +311,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         )
 
         findViewById<TextView>(R.id.hub_title).text =
-            if (descriptor.id == GameCatalog.ID_RANCE10 ||
-                descriptor.id == GameCatalog.ID_DOHNA_DOHNA ||
-                descriptor.id == GameCatalog.ID_EVENICLE ||
-                descriptor.id == GameCatalog.ID_EVENICLE2 ||
-                descriptor.id == GameCatalog.ID_SENGOKU_RANCE ||
-                descriptor.id == GameCatalog.ID_RANCE01 ||
-                descriptor.id == GameCatalog.ID_RANCE02 ||
-                descriptor.id == GameCatalog.ID_RANCE03 ||
-                descriptor.id == GameCatalog.ID_RANCE04 ||
-                descriptor.id == GameCatalog.ID_RANCE41 ||
-                descriptor.id == GameCatalog.ID_RANCE42 ||
-                descriptor.id == GameCatalog.ID_RANCE5D ||
-                descriptor.id == GameCatalog.ID_RANCE06 ||
-                descriptor.id == GameCatalog.ID_RANCE08 ||
-                descriptor.id == GameCatalog.ID_RANCE09 ||
-                descriptor.id == GameCatalog.ID_KICHIKUOU ||
-                descriptor.id == GameCatalog.ID_DAIAKUJI ||
-                descriptor.id == GameCatalog.ID_DAIBANCHOU ||
-                descriptor.id == GameCatalog.ID_DAITEIKOKU ||
-                descriptor.id == GameCatalog.ID_ESCALAYER ||
-                descriptor.id == GameCatalog.ID_ESCALAYER_REBOOT ||
-                descriptor.id == GameCatalog.ID_GALZOO ||
-                descriptor.id == GameCatalog.ID_IXSEAL ||
-                descriptor.id == GameCatalog.ID_HARUKA ||
-                descriptor.id == GameCatalog.ID_TSUMASHIBORI ||
-                descriptor.id == GameCatalog.ID_TSUMAMIGUI ||
-                descriptor.id == GameCatalog.ID_TSUMAMIGUI3 ||
-                descriptor.id == GameCatalog.ID_KAERUNYO ||
-                descriptor.id == GameCatalog.ID_ATLACHNACHA ||
-                descriptor.id == GameCatalog.ID_REISHIKI ||
-                descriptor.id == GameCatalog.ID_HARUURARE ||
-                descriptor.id == GameCatalog.ID_OKUSAMAJUN ||
-                descriptor.id == GameCatalog.ID_OKUSAMANTR ||
-                descriptor.id == GameCatalog.ID_EVENICLE2RANCE ||
-                descriptor.id == GameCatalog.ID_EVENICLEGAIDEN ||
-                descriptor.id == GameCatalog.ID_WAIDONYO ||
-                descriptor.id == GameCatalog.ID_RANCE6AFTER ||
-                descriptor.id == GameCatalog.ID_YAKATA2 ||
-                descriptor.id == GameCatalog.ID_SDPSMARIA ||
-                descriptor.id == GameCatalog.ID_TOUSHIN3 ||
-                descriptor.id == GameCatalog.ID_OYAKORANKAN ||
-                descriptor.id == GameCatalog.ID_YORUGAKURU ||
-                descriptor.id == GameCatalog.ID_RANCE1DIGEST
-            ) {
+            if (GameCatalog.isBuiltInGameId(descriptor.id)) {
                 descriptor.title
             } else {
                 curItem?.let { GameCatalog.cleanItemTitle(it.name) } ?: descriptor.title

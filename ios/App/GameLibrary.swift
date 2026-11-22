@@ -8,20 +8,37 @@ enum GameEngine: String {
     case system4 = "System 4"
 }
 
-struct Game: Identifiable {
+struct Game: Identifiable, Equatable {
     let url: URL
+    let displayName: String
+    let resolvedDisplayName: String
+    let engine: GameEngine
+    let artworkKey: String?
+    let isRance04: Bool
+    let isRance5d: Bool
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
-    var displayName: String {
-        if GameLibrary.isRance04(url) { return "兰斯IV 教团的遗产" }
-        if GameLibrary.isRance41(url) { return "兰斯4.1 拯救制药厂！" }
-        if GameLibrary.isRance42(url) { return "兰斯4.2 天使组" }
-        if GameLibrary.isRance5d(url) { return "兰斯5D" }
-        if GameLibrary.isYakata2(url) { return "爱丽丝之馆2" }
-        if GameLibrary.isSdpsMaria(url) { return "Super D.P.S 玛利亚和坎潘" }
-        return url.lastPathComponent
+
+    init(url: URL) {
+        let meta = GameLibrary.inspect(url)
+        self.url = url
+        self.displayName = meta.displayName
+        self.resolvedDisplayName = GameLibrary.titleResolver?(url, meta.displayName) ?? meta.displayName
+        self.engine = meta.engine
+        self.artworkKey = meta.artworkKey
+        self.isRance04 = meta.isRance04
+        self.isRance5d = meta.isRance5d
     }
-    var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
+
+    fileprivate init(url: URL, meta: GameLibrary.InspectedGame) {
+        self.url = url
+        self.displayName = meta.displayName
+        self.resolvedDisplayName = GameLibrary.titleResolver?(url, meta.displayName) ?? meta.displayName
+        self.engine = meta.engine
+        self.artworkKey = meta.artworkKey
+        self.isRance04 = meta.isRance04
+        self.isRance5d = meta.isRance5d
+    }
 }
 
 enum LibraryError: LocalizedError {
@@ -38,6 +55,162 @@ enum LibraryError: LocalizedError {
 }
 
 final class GameLibrary: ObservableObject {
+    // Registered by the app entrypoint to apply ModOverlay display names without coupling
+    // GameLibrary to ModOverlay in standalone library checks.
+    static var titleResolver: ((URL, String) -> String)? = nil
+
+    fileprivate struct InspectedGame {
+        let isValidGame: Bool
+        let displayName: String
+        let engine: GameEngine
+        let artworkKey: String?
+        let isRance04: Bool
+        let isRance5d: Bool
+    }
+
+    private static let artworkAliases: [(String, [String])] = [
+        ("escalayer_reboot", ["escalayerreboot", "reboot"]),
+        ("evenicle2rance", ["evenicle2rance", "イブニクル2ランス", "イブニクル２ランス", "夏娃年代记2兰斯", "夏娃年代記2蘭斯", "evenicle2兰斯"]),
+        ("evenicle2", ["evenicle2", "イブニクル2", "夏娃年代记2"]),
+        ("eveniclegaiden", ["eveniclegaiden", "eveniclegaiten", "evenicleapc", "イブニクル外典", "夏娃年代记外典", "夏娃年代記外典"]),
+        ("rance10", ["rance10", "rancex", "兰斯10", "ランス10"]),
+        ("dohnadohna", ["dohnadohna", "多娜多娜", "ドーナドーナ"]),
+        ("sengokurance", ["sengoku", "戦国", "战国"]),
+        ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
+        ("rance01", ["rance01", "兰斯01", "ランス01"]),
+        ("rance02", ["rance02", "兰斯02", "ランス02"]),
+        ("rance03", ["rance03", "兰斯03", "ランス03"]),
+        ("rance41", ["rance41", "rance4.1", "ran41sa", "兰斯4.1", "兰斯41", "ランス4.1", "拯救制药厂", "お薬工場"]),
+        ("rance42", ["rance42", "rance4.2", "ran42sa", "兰斯4.2", "兰斯42", "ランス4.2", "天使组", "天使組", "エンジェル組"]),
+        ("rance04", ["rance04", "rance4sa", "ranceiv", "兰斯iv", "兰斯4", "ランスiv", "ランス4", "教团的遗产", "教団の遺産"]),
+        ("rance5d", ["rance5d", "r5dsa", "兰斯5d", "ランス5d", "ランス５ｄ"]),
+        ("rance6after", ["rance6after", "ranceviaftermath", "rancevisonogo", "ランス6その後", "ランス６その後", "兰斯06后日谈", "兰斯6后日谈", "兰斯vi后日谈", "儔儞僗俇偦偺屻"]),
+        ("rance06", ["rance06", "兰斯6", "ランス6"]),
+        ("rance08", ["rance08", "rance8", "兰斯8", "ランスクエスト"]),
+        ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
+        ("kichikuou", ["kichiku", "鬼畜王"]),
+        ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
+        ("daibanchou", ["daibanchou", "大番長", "大番长", "bigbangage"]),
+        ("daiteikoku", ["daiteikoku", "大帝国", "大帝國"]),
+        ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
+        ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
+        ("tsumamigui3", ["tsumamigui3", "妻みぐい3", "妻みぐい３", "妻中蜜3", "妻中蜜３"]),
+        ("tsumamigui", ["tsumamigui", "妻みぐい", "妻中蜜", "嵢傒偖偄"]),
+        ("kaerunyo", ["kaerunyo", "かえるにょ", "ぱにょ", "回家扭"]),
+        ("atlachnacha", ["atlachnacha", "atlach", "アトラク", "阿特拉克", "蜘蛛sa"]),
+        ("reishiki", ["reishiki", "零式", "zeroshiki", "楇幃"]),
+        ("haruurare", ["haruurare", "はるうられ", "haru_c", "校内赤线", "校内赤線"]),
+        ("okusamajun", ["okusamajun", "太太的恢复术纯爱", "奥さまの回復術純愛", "纯爱篇", "純愛編"]),
+        ("okusamantr", ["okusamantr", "太太的恢复术夺爱", "奥さまの回復術奪愛", "夺爱篇", "奪愛編"]),
+        ("waidonyo", ["waidonyo", "わいどにょ", "异空窟探险", "異空窟探險"]),
+        ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
+        ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
+        ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
+        ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
+        ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
+        ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
+        ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
+    ]
+
+    private static func launchInfoFromRegularFiles(_ url: URL, regularFiles: [URL]) throws -> (engine: GameEngine, target: URL, system39: Bool) {
+        if regularFiles.contains(where: { ["alicestart.chs", "alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
+            return (.system4, url, false)
+        }
+        if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
+            return (.system4, ain, false)
+        }
+        if regularFiles.contains(where: { $0.lastPathComponent.lowercased() == "chs.tbl" }),
+           let chsAin = regularFiles.filter({
+               $0.pathExtension.lowercased() == "chs" && $0.lastPathComponent.lowercased() != "alicestart.chs"
+           }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
+            return (.system4, chsAin, false)
+        }
+        let names = regularFiles.map { $0.lastPathComponent.lowercased() }
+        let system39 = names.contains("system39.ini") || names.contains("system39.ain")
+        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0.hasSuffix("sa_chs.ald") || $0 == "adisk.ald" }) {
+            return (.system3, url, system39)
+        }
+        if names.contains("adisk.dat") && names.contains("acg.dat") {
+            return (.legacySystem3, url, false)
+        }
+        throw LibraryError.notGame
+    }
+
+    private static func legacySystem3GameIdFromRegularFiles(_ regularFiles: [URL]) -> String? {
+        guard let ini = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "system3.ini" }),
+              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "game" {
+                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
+
+    fileprivate static func inspect(_ url: URL) -> InspectedGame {
+        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+              let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false)
+        }
+        let regularFiles = contents.filter {
+            (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        let info = try? launchInfoFromRegularFiles(url, regularFiles: regularFiles)
+        let engine = info?.engine ?? .system4
+        let regularNamesLower = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
+        let legacyId = engine == .legacySystem3 ? legacySystem3GameIdFromRegularFiles(regularFiles) : nil
+
+        let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
+        let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
+            (legacyId.map { $0 == "rance41" || $0 == "rance41_eng" || $0 == "rance4.1" } ?? false)
+        let rance42 = (engine == .system3 && regularNamesLower.contains("ran42_sa.ald")) ||
+            (legacyId.map { $0 == "rance42" || $0 == "rance42_eng" || $0 == "rance4.2" } ?? false)
+        let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
+        let yakata2 = legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false
+        let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
+
+        let displayName: String
+        if rance04 { displayName = "兰斯IV 教团的遗产" }
+        else if rance41 { displayName = "兰斯4.1 拯救制药厂！" }
+        else if rance42 { displayName = "兰斯4.2 天使组" }
+        else if rance5d { displayName = "兰斯5D" }
+        else if yakata2 { displayName = "爱丽丝之馆2" }
+        else if sdpsMaria { displayName = "Super D.P.S 玛利亚和坎潘" }
+        else { displayName = url.lastPathComponent }
+
+        let detectedArtworkID: String?
+        if rance41 { detectedArtworkID = "rance41" }
+        else if rance42 { detectedArtworkID = "rance42" }
+        else if rance04 { detectedArtworkID = "rance04" }
+        else if rance5d { detectedArtworkID = "rance5d" }
+        else if yakata2 { detectedArtworkID = "yakata2" }
+        else if sdpsMaria { detectedArtworkID = "sdpsmaria" }
+        else { detectedArtworkID = nil }
+
+        let artworkKey: String?
+        if let detectedArtworkID {
+            artworkKey = detectedArtworkID
+        } else {
+            let names = contents.map { $0.lastPathComponent } + [url.lastPathComponent]
+            let normalized = names.joined(separator: " ").lowercased()
+                .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
+            artworkKey = artworkAliases.first(where: { $0.1.contains(where: normalized.contains) })?.0
+        }
+
+        return InspectedGame(
+            isValidGame: info != nil,
+            displayName: displayName,
+            engine: engine,
+            artworkKey: artworkKey,
+            isRance04: rance04,
+            isRance5d: rance5d
+        )
+    }
+
     @Published var games: [Game] = []
     @Published var importing = false
     @Published var importProgress = ""
@@ -45,6 +218,7 @@ final class GameLibrary: ObservableObject {
     @Published var error: String?
     private let files = FileManager.default
     private let documents: URL
+    private var refreshGeneration: Int = 0
     var gamesDirectory: URL { documents.appendingPathComponent("Games", isDirectory: true) }
 
     init(documents: URL? = nil) {
@@ -139,28 +313,7 @@ final class GameLibrary: ObservableObject {
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        if regularFiles.contains(where: { ["alicestart.chs", "alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
-            return (.system4, url, false)
-        }
-        if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
-            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
-            return (.system4, ain, false)
-        }
-        if regularFiles.contains(where: { $0.lastPathComponent.lowercased() == "chs.tbl" }),
-           let chsAin = regularFiles.filter({
-               $0.pathExtension.lowercased() == "chs" && $0.lastPathComponent.lowercased() != "alicestart.chs"
-           }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
-            return (.system4, chsAin, false)
-        }
-        let names = regularFiles.map { $0.lastPathComponent.lowercased() }
-        let system39 = names.contains("system39.ini") || names.contains("system39.ain")
-        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0.hasSuffix("sa_chs.ald") || $0 == "adisk.ald" }) {
-            return (.system3, url, system39)
-        }
-        if names.contains("adisk.dat") && names.contains("acg.dat") {
-            return (.legacySystem3, url, false)
-        }
-        throw LibraryError.notGame
+        return try launchInfoFromRegularFiles(url, regularFiles: regularFiles)
     }
 
     static func launchArguments(_ url: URL, saves: URL) throws -> [String] {
@@ -175,12 +328,47 @@ final class GameLibrary: ObservableObject {
         }
     }
 
+    private static func scanGames(in directory: URL) throws -> [Game] {
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        return try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
+            .compactMap { url -> Game? in
+                let meta = inspect(url)
+                return meta.isValidGame ? Game(url: url, meta: meta) : nil
+            }
+            .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
     func refresh() {
+        refreshGeneration += 1
         do {
-            try files.createDirectory(at: gamesDirectory, withIntermediateDirectories: true)
-            games = try files.contentsOfDirectory(at: gamesDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+            let scanned = try Self.scanGames(in: gamesDirectory)
+            if scanned != games { games = scanned }
         } catch { self.error = error.localizedDescription }
+    }
+
+    func refreshAsync(completion: (() -> Void)? = nil) {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let directory = gamesDirectory
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let scanned = try Self.scanGames(in: directory)
+                DispatchQueue.main.async {
+                    if generation == self.refreshGeneration && scanned != self.games {
+                        self.games = scanned
+                    }
+                    completion?()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    if generation == self.refreshGeneration {
+                        self.error = error.localizedDescription
+                    }
+                    completion?()
+                }
+            }
+        }
     }
 
     static func normalizeRance06DungeonData(_ root: URL) throws {

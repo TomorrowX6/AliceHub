@@ -15,7 +15,7 @@ struct LauncherView: View {
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            ModOverlay.displayName($0.url, baseName: $0.displayName).localizedCaseInsensitiveContains(search) ||
+            $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                 $0.name.localizedCaseInsensitiveContains(search)
         }
     }
@@ -100,12 +100,13 @@ struct LauncherView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .background { onlineDownload.cancel() }
             guard phase == .active else { return }
-            library.refresh()
+            library.refreshAsync {
 #if DEBUG
-            let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
-               let game = library.games.first(where: { $0.name == arguments[index + 1] }) { library.launch(game) }
+                let arguments = ProcessInfo.processInfo.arguments
+                if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
+                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) { library.launch(game) }
 #endif
+            }
         }
     }
 
@@ -128,7 +129,7 @@ struct LauncherView: View {
         HStack(spacing: 16) {
             GameArtwork(game: game)
             VStack(alignment: .leading, spacing: 10) {
-                Text(ModOverlay.displayName(game.url, baseName: game.displayName))
+                Text(game.resolvedDisplayName)
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
                     HubBadge(title: "已安装", success: true)

@@ -23,6 +23,7 @@ import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -35,16 +36,103 @@ private const val STATE_SEARCH_QUERY = "STATE_SEARCH_QUERY"
 
 private class GameSelectAdapter(
     private val activity: Activity,
-    private val gameList: GameList
+    private var gameList: GameList,
+    initialRunningRoot: String? = GameCatalog.getRunningGameRoot(activity)
 ) : BaseAdapter() {
+    private data class BoundRow(
+        val entry: GameSelectEntry,
+        val badgeLabel: String,
+        val badgeTone: UiKit.Tone,
+        val iconKey: String
+    )
+
+    private class RowViewHolder(
+        val card: View,
+        val iconFrame: View,
+        val icon: ImageView,
+        val title: TextView,
+        val badge: TextView
+    ) {
+        var boundAccent: Int = 0
+        var boundNight: Boolean? = null
+        var boundIconKey: String? = null
+        var boundChipTone: UiKit.Tone? = null
+    }
+
     private val context: Context = activity
-    private var allEntries: List<GameSelectEntry> = GameCatalog.buildSelectEntries(activity, gameList)
-    private var entries: List<GameSelectEntry> = allEntries
+    private val inflater: LayoutInflater = LayoutInflater.from(context)
+    private var runningRoot: String? = initialRunningRoot
+    private var allRows: List<BoundRow> = buildRows(GameCatalog.buildSelectEntries(activity, gameList))
+    private var rows: List<BoundRow> = allRows
     private var filterQuery: String = ""
 
-    fun reload() {
-        allEntries = GameCatalog.buildSelectEntries(context, gameList)
+    fun updateGameList(newGameList: GameList, runningGameRoot: String? = GameCatalog.getRunningGameRoot(context)) {
+        gameList = newGameList
+        reload(runningGameRoot)
+    }
+
+    fun reload(runningGameRoot: String? = GameCatalog.getRunningGameRoot(context)) {
+        runningRoot = runningGameRoot
+        allRows = buildRows(GameCatalog.buildSelectEntries(context, gameList))
         applyFilter()
+    }
+
+    fun refreshTransientStates(runningGameRoot: String? = GameCatalog.getRunningGameRoot(context)) {
+        runningRoot = runningGameRoot
+        allRows = buildRows(allRows.map { it.entry })
+        applyFilter()
+    }
+
+    private fun buildRows(entries: List<GameSelectEntry>): List<BoundRow> {
+        val runRoot = runningRoot
+        return entries.map { entry ->
+            val desc = entry.descriptor
+            val primary = entry.primaryItem
+            val isRunning = runRoot != null && entry.items.any { it.path.path == runRoot }
+            val isInstalling = gameList.isInstallingForGame(desc.id)
+            val badgeTone: UiKit.Tone
+            val badgeLabel: String
+            when {
+                isInstalling -> {
+                    badgeLabel = context.getString(R.string.game_status_installing)
+                    badgeTone = UiKit.Tone.INFO
+                }
+                isRunning -> {
+                    badgeLabel = context.getString(R.string.game_status_running)
+                    badgeTone = UiKit.Tone.SUCCESS
+                }
+                primary != null && primary.error != null -> {
+                    badgeLabel = context.getString(R.string.game_status_error)
+                    badgeTone = UiKit.Tone.DANGER
+                }
+                primary != null && gameList.hasInstalledMod(primary) -> {
+                    val modInfo = gameList.getInstalledModInfo(primary)
+                    val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
+                    val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
+                    val statusRes = if (isCnPatch) {
+                        R.string.game_status_installed_cn_patch
+                    } else {
+                        R.string.game_status_installed_mod
+                    }
+                    badgeLabel = context.getString(statusRes, ver)
+                    badgeTone = UiKit.Tone.SUCCESS
+                }
+                primary != null -> {
+                    badgeLabel = context.getString(R.string.game_status_installed)
+                    badgeTone = UiKit.Tone.SUCCESS
+                }
+                else -> {
+                    badgeLabel = context.getString(R.string.game_status_not_installed)
+                    badgeTone = UiKit.Tone.NEUTRAL
+                }
+            }
+            val iconKey = if (GameCatalog.isBuiltInGameId(desc.id)) {
+                "res:${desc.id}:${desc.iconRes}:${desc.iconFrameColor}"
+            } else {
+                "file:${desc.id}:${desc.iconFrameColor}:${primary?.icon?.absolutePath.orEmpty()}"
+            }
+            BoundRow(entry, badgeLabel, badgeTone, iconKey)
+        }
     }
 
     fun setFilter(query: String) {
@@ -57,10 +145,10 @@ private class GameSelectAdapter(
     fun hasQuery(): Boolean = filterQuery.isNotEmpty()
 
     private fun applyFilter() {
-        entries = if (filterQuery.isEmpty()) {
-            allEntries
+        rows = if (filterQuery.isEmpty()) {
+            allRows
         } else {
-            allEntries.filter { matchesQuery(it, filterQuery) }
+            allRows.filter { matchesQuery(it.entry, filterQuery) }
         }
         notifyDataSetChanged()
     }
@@ -109,77 +197,62 @@ private class GameSelectAdapter(
         }
     }
 
-    override fun getCount(): Int = entries.size
-    override fun getItem(position: Int): GameSelectEntry = entries[position]
+    override fun getCount(): Int = rows.size
+    override fun getItem(position: Int): GameSelectEntry = rows[position].entry
     override fun getItemId(position: Int): Long = position.toLong()
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-        val entry = entries[position]
+        val row = rows[position]
+        val entry = row.entry
         val desc = entry.descriptor
         val primary = entry.primaryItem
-        val view = convertView
-            ?: LayoutInflater.from(context).inflate(R.layout.launcher_item, parent, false)
-
-        val card = view.findViewById<View>(R.id.card_container)
-        card.background = UiKit.accentCard(
-            context, desc.accentColor, R.dimen.ui_radius_card, clickable = true
-        )
-
-        UiKit.bindGameIcon(
-            frame = view.findViewById(R.id.icon_frame),
-            iconView = view.findViewById(R.id.icon),
-            desc = desc,
-            item = primary,
-            radiusDp = 16f
-        )
-
-        view.findViewById<TextView>(R.id.title).text = desc.title
-
-        val runningRoot = GameCatalog.getRunningGameRoot(context)
-        val isRunning = runningRoot != null && entry.items.any { it.path.path == runningRoot }
-        val isInstalling = gameList.isInstallingForGame(desc.id)
-
-        val badge = view.findViewById<TextView>(R.id.status_badge)
-        val badgeTone: UiKit.Tone
-        val badgeLabel: String
-
-        when {
-            isInstalling -> {
-                badgeLabel = context.getString(R.string.game_status_installing)
-                badgeTone = UiKit.Tone.INFO
-            }
-            isRunning -> {
-                badgeLabel = context.getString(R.string.game_status_running)
-                badgeTone = UiKit.Tone.SUCCESS
-            }
-            primary != null && primary.error != null -> {
-                badgeLabel = context.getString(R.string.game_status_error)
-                badgeTone = UiKit.Tone.DANGER
-            }
-            primary != null && gameList.hasInstalledMod(primary) -> {
-                val modInfo = gameList.getInstalledModInfo(primary)
-                val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
-                val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
-                val statusRes = if (isCnPatch) {
-                    R.string.game_status_installed_cn_patch
-                } else {
-                    R.string.game_status_installed_mod
-                }
-                badgeLabel = context.getString(statusRes, ver)
-                badgeTone = UiKit.Tone.SUCCESS
-            }
-            primary != null -> {
-                badgeLabel = context.getString(R.string.game_status_installed)
-                badgeTone = UiKit.Tone.SUCCESS
-            }
-            else -> {
-                badgeLabel = context.getString(R.string.game_status_not_installed)
-                badgeTone = UiKit.Tone.NEUTRAL
-            }
+        val view: View
+        val holder: RowViewHolder
+        if (convertView == null) {
+            view = inflater.inflate(R.layout.launcher_item, parent, false)
+            holder = RowViewHolder(
+                card = view.findViewById(R.id.card_container),
+                iconFrame = view.findViewById(R.id.icon_frame),
+                icon = view.findViewById(R.id.icon),
+                title = view.findViewById(R.id.title),
+                badge = view.findViewById(R.id.status_badge)
+            )
+            view.tag = holder
+        } else {
+            view = convertView
+            holder = view.tag as RowViewHolder
         }
 
-        badge.text = badgeLabel
-        UiKit.styleChip(badge, badgeTone, dot = true)
+        val night = UiKit.isNight(context)
+        if (holder.boundAccent != desc.accentColor || holder.boundNight != night) {
+            holder.card.background = UiKit.accentCard(
+                context, desc.accentColor, R.dimen.ui_radius_card, clickable = true
+            )
+            holder.boundAccent = desc.accentColor
+        }
+
+        if (holder.boundIconKey != row.iconKey) {
+            UiKit.bindGameIcon(
+                frame = holder.iconFrame,
+                iconView = holder.icon,
+                desc = desc,
+                item = primary,
+                radiusDp = 16f
+            )
+            holder.boundIconKey = row.iconKey
+        }
+
+        if (holder.title.text != desc.title) {
+            holder.title.text = desc.title
+        }
+        if (holder.badge.text != row.badgeLabel) {
+            holder.badge.text = row.badgeLabel
+        }
+        if (holder.boundChipTone != row.badgeTone || holder.boundNight != night) {
+            UiKit.styleChip(holder.badge, row.badgeTone, dot = true)
+            holder.boundChipTone = row.badgeTone
+        }
+        holder.boundNight = night
 
         return view
     }
@@ -212,6 +285,10 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     private var searchBackCallback: Any? = null
     private var lastProgressRenderMs: Long = 0L
     private var lastRenderedInstallingGameId: String? = null
+    private var lastRenderedDataVersion: Long = -1L
+    private var lastRenderedSortMode: GameSortMode? = null
+    private var lastRenderedLocaleTag: String? = null
+    private var lastRenderedRunningRoot: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -220,7 +297,9 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         title = getString(R.string.select_game_title)
 
         gameList = obtainGameList(this, refresh = false)
-        adapter = GameSelectAdapter(this, gameList)
+        val initialRunningRoot = GameCatalog.getRunningGameRoot(this)
+        adapter = GameSelectAdapter(this, gameList, initialRunningRoot)
+        recordRenderedSnapshot(initialRunningRoot)
 
         val banner = findViewById<TextView>(R.id.active_install_banner)
         banner.setOnClickListener { onActiveInstallBannerClick() }
@@ -324,8 +403,17 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         }
     }
 
-    private fun reloadEntries() {
-        adapter.reload()
+    private fun recordRenderedSnapshot(runningRoot: String?) {
+        lastRenderedDataVersion = gameList.dataVersion
+        lastRenderedSortMode = AppSettings.getGameSortMode(this)
+        lastRenderedLocaleTag = AppSettings.resolveLocale(this).toLanguageTag()
+        lastRenderedRunningRoot = runningRoot
+        lastRenderedInstallingGameId = gameList.activeTargetGameId
+    }
+
+    private fun reloadEntries(runningRoot: String? = GameCatalog.getRunningGameRoot(this)) {
+        adapter.reload(runningRoot)
+        recordRenderedSnapshot(runningRoot)
         updateSearchEmptyState()
     }
 
@@ -436,13 +524,34 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onResume() {
         super.onResume()
-        val latestList = obtainGameList(this, refresh = true)
+        val latestList = obtainGameList(this, refresh = false)
+        val runningRoot = GameCatalog.getRunningGameRoot(this)
         if (latestList !== gameList) {
-            setGameList(latestList)
+            setGameList(latestList, runningRoot)
         } else {
             gameList.observer = this
-            reloadEntries()
+            val curVersion = gameList.dataVersion
+            val curSort = AppSettings.getGameSortMode(this)
+            val curLocale = AppSettings.resolveLocale(this).toLanguageTag()
+            val curInstalling = gameList.activeTargetGameId
+            when {
+                curVersion != lastRenderedDataVersion ||
+                    curSort != lastRenderedSortMode ||
+                    curLocale != lastRenderedLocaleTag -> {
+                    reloadEntries(runningRoot)
+                }
+                runningRoot != lastRenderedRunningRoot ||
+                    curInstalling != lastRenderedInstallingGameId -> {
+                    adapter.refreshTransientStates(runningRoot)
+                    recordRenderedSnapshot(runningRoot)
+                }
+            }
             renderInstallState(gameList.installState)
+        }
+        gameList.syncFromDiskAsync {
+            if (!isFinishing && !isDestroyed) {
+                reloadEntries()
+            }
         }
         val postAction = pendingPostResumeAction
         pendingPostResumeAction = null
@@ -510,7 +619,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         val curTargetId = gameList.activeTargetGameId
         if (curTargetId != lastRenderedInstallingGameId) {
             lastRenderedInstallingGameId = curTargetId
-            adapter.notifyDataSetChanged()
+            adapter.refreshTransientStates(lastRenderedRunningRoot)
         }
         if (now - lastProgressRenderMs < 80L) return
         lastProgressRenderMs = now
@@ -538,15 +647,18 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         renderInstallState(gameList.installState)
     }
 
-    private fun setGameList(newGameList: GameList) {
+    private fun setGameList(
+        newGameList: GameList,
+        runningRoot: String? = GameCatalog.getRunningGameRoot(this)
+    ) {
         if (gameList.observer === this) {
             gameList.observer = null
         }
         gameList = newGameList
         gameList.observer = this
-        adapter = GameSelectAdapter(this, gameList)
+        adapter.updateGameList(gameList, runningRoot)
         adapter.setFilter(searchInput.text?.toString().orEmpty())
-        listView.adapter = adapter
+        recordRenderedSnapshot(runningRoot)
         updateSearchEmptyState()
         renderInstallState(gameList.installState)
     }

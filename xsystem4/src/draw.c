@@ -178,9 +178,25 @@ static void run_draw_shader(Shader *s, Texture *dst, Texture *src, mat4 mw_trans
 		return;
 	if (src && !gfx_remap_texture(src) && !src->handle)
 		return;
+	if (data->vpw <= 0 || data->vph <= 0)
+		return;
+	int64_t sc_x0 = data->vpx;
+	int64_t sc_y0 = data->vpy;
+	int64_t sc_x1 = sc_x0 + data->vpw;
+	int64_t sc_y1 = sc_y0 + data->vph;
+	if (dst) {
+		if (sc_x0 < 0) sc_x0 = 0;
+		if (sc_y0 < 0) sc_y0 = 0;
+		if (sc_x1 > dst->w) sc_x1 = dst->w;
+		if (sc_y1 > dst->h) sc_y1 = dst->h;
+	}
+	if (sc_x1 <= sc_x0 || sc_y1 <= sc_y0)
+		return;
 	if (src && dst && src->handle && src->handle == dst->handle)
 		gfx_flush_draw_target(dst);
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, data->vpx, data->vpy, data->vpw, data->vph);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor((GLint)sc_x0, (GLint)sc_y0, (GLsizei)(sc_x1 - sc_x0), (GLsizei)(sc_y1 - sc_y0));
 
 	struct gfx_render_job job = {
 		.shader = s,
@@ -192,11 +208,14 @@ static void run_draw_shader(Shader *s, Texture *dst, Texture *src, mat4 mw_trans
 	};
 	gfx_render(&job);
 
+	glDisable(GL_SCISSOR_TEST);
 	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 }
 
 static void _run_copy_shader(Shader *s, Texture *dst, Texture *src, GLfloat src_w, GLfloat src_h, struct copy_data *data)
 {
+	if (data->w <= 0 || data->h <= 0 || data->sw <= 0 || data->sh <= 0)
+		return;
 	GLfloat scale_x = (GLfloat)data->w / data->sw;
 	GLfloat scale_y = (GLfloat)data->h / data->sh;
 
