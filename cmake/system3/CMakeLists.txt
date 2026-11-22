@@ -36,7 +36,7 @@ elseif(ALICEHUB_IOS)
   add_library(system3 STATIC)
   target_compile_definitions(system3 PRIVATE SDL_MAIN_HANDLED ALICEHUB_IOS)
   set_source_files_properties("${src}/sdlmain.cpp" PROPERTIES
-    COMPILE_DEFINITIONS "main=system3_entry;SDL_CreateWindow=alicehub_system3_create_window")
+    COMPILE_DEFINITIONS "main=system3_entry;SDL_CreateWindow=alicehub_system3_create_window;SDL_CreateRenderer=alicehub_system3_create_renderer")
   target_sources(system3 PRIVATE "${src}/generic/nact_generic.cpp" window.ios.m)
   set_source_files_properties(window.ios.m PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 else()

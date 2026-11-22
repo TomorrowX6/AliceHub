@@ -3,12 +3,17 @@
 
 SDL_Window *alicehub_system3_create_window(const char *title, int x, int y, int w, int h, Uint32 flags)
 {
-    SDL_Window *window = SDL_CreateWindow(title, x, y, w, h,
+    return SDL_CreateWindow(title, x, y, w, h,
         flags | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI);
+}
+
+SDL_Renderer *alicehub_system3_create_renderer(SDL_Window *window, int index, Uint32 flags)
+{
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, index, flags);
     SDL_SysWMinfo info = {0};
     SDL_VERSION(&info.version);
-    if (!window || !SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_UIKIT)
-        return window;
+    if (!renderer || !SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_UIKIT)
+        return renderer;
 
     UIWindow *native = info.info.uikit.window;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -48,5 +53,5 @@ SDL_Window *alicehub_system3_create_window(const char *title, int x, int y, int 
         [quit.widthAnchor constraintEqualToConstant:40],
         [quit.heightAnchor constraintEqualToConstant:40],
     ]];
-    return window;
+    return renderer;
 }
