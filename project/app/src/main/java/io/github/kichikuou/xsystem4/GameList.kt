@@ -1190,7 +1190,6 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
                 classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
-                classifiedId == GameCatalog.ID_RANCE04 -> "Rance04"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(

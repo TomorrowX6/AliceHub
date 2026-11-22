@@ -3,6 +3,10 @@ package io.github.kichikuou.xsystem4;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -13,6 +17,8 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 34)
 public class Rance04CatalogTest {
     @Rule public final TemporaryFolder tmp = new TemporaryFolder();
 
@@ -22,7 +28,7 @@ public class Rance04CatalogTest {
         Files.write(file.toPath(), "test".getBytes(StandardCharsets.UTF_8));
     }
 
-    @Test public void recognizesPackageAndCanonicalImportName() throws Exception {
+    @Test public void recognizesPackageAndLegacyImportName() throws Exception {
         File root = tmp.newFolder("【卡拉保护协会】兰斯ＩＶ　－教团的遗产－");
         for (String name : Arrays.asList("RANCE4SA.ALD", "RANCE4GA.ALD", "System39.ain", ".xsys35rc")) write(root, name);
         assertTrue(GameCatalog.INSTANCE.isSystem3xGameDir(root));
@@ -30,7 +36,7 @@ public class Rance04CatalogTest {
         assertEquals(GameCatalog.ID_RANCE04, GameCatalog.INSTANCE.classifyGameRootDir(root));
         assertEquals(GameCatalog.ID_RANCE04, GameCatalog.INSTANCE.classifyDirectory(root, root.getName(), null, null));
         assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(root, null, GameCatalog.ID_RANCE04));
-        assertEquals("Rance04", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList(root.list()), false));
+        assertEquals("RANCE4SA", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(Arrays.asList(root.list()), false));
         assertTrue(GameCatalog.INSTANCE.isRance04GameFiles(Collections.singletonList("rance4sa.ald")));
     }
 
@@ -96,5 +102,29 @@ public class Rance04CatalogTest {
         write(other, "RANCE4CN.EXE");
         GameListKt.pruneRedundantBaseBloat(other);
         assertTrue(new File(other, "RANCE4CN.EXE").isFile());
+    }
+
+    @Test public void reinstallUsesRetainedLegacySavesAndKeepsCopiesSeparate() throws Exception {
+        android.content.Context context = RuntimeEnvironment.getApplication();
+        File home = tmp.newFolder("home");
+        for (String scenario : Arrays.asList("RANCE4SA.ALD", "rance4sa.ald")) {
+            String legacyName = scenario.substring(0, scenario.lastIndexOf('.'));
+            File retained = new File(context.getFilesDir(), "saves/" + legacyName);
+            write(retained, "asleep.asd");
+            String importedName = NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
+                    Arrays.asList(scenario, "System39.ain"), false);
+            File reinstalled = new File(home, importedName);
+            assertTrue(reinstalled.mkdir());
+            write(reinstalled, scenario);
+            Item item = Item.Companion.fromDirectory(reinstalled, home, context);
+            assertNull(item.getError());
+            assertEquals(retained, item.getSavedir());
+            assertEquals("test", new String(Files.readAllBytes(new File(item.getSavedir(), "asleep.asd").toPath()), StandardCharsets.UTF_8));
+            File copy = new File(home, importedName + "-1");
+            assertTrue(copy.mkdir());
+            write(copy, scenario);
+            Item copiedItem = Item.Companion.fromDirectory(copy, home, context);
+            assertNotEquals(item.getSavedir(), copiedItem.getSavedir());
+        }
     }
 }
