@@ -11,6 +11,9 @@ struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
+    var displayName: String {
+        GameLibrary.isRance04(url) ? "兰斯IV 教团的遗产" : url.lastPathComponent
+    }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
@@ -44,6 +47,15 @@ final class GameLibrary: ObservableObject {
 
     static func isGame(_ url: URL) -> Bool {
         (try? launchTarget(url)) != nil
+    }
+
+    static func isRance04(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
     }
 
     static func launchTarget(_ url: URL) throws -> URL {
@@ -81,7 +93,7 @@ final class GameLibrary: ObservableObject {
         do {
             try files.createDirectory(at: gamesDirectory, withIntermediateDirectories: true)
             games = try files.contentsOfDirectory(at: gamesDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         } catch { self.error = error.localizedDescription }
     }
 

@@ -17,7 +17,7 @@ struct GameDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
                     GameArtwork(game: game, size: 100)
-                    Text(ModOverlay.displayName(game.url, baseName: game.name))
+                    Text(ModOverlay.displayName(game.url, baseName: game.displayName))
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
