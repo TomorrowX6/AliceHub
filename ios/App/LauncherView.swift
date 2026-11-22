@@ -15,7 +15,8 @@ struct LauncherView: View {
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            ModOverlay.displayName($0.url, baseName: $0.name).localizedCaseInsensitiveContains(search)
+            ModOverlay.displayName($0.url, baseName: $0.displayName).localizedCaseInsensitiveContains(search) ||
+                $0.name.localizedCaseInsensitiveContains(search)
         }
     }
 
@@ -127,7 +128,7 @@ struct LauncherView: View {
         HStack(spacing: 16) {
             GameArtwork(game: game)
             VStack(alignment: .leading, spacing: 10) {
-                Text(ModOverlay.displayName(game.url, baseName: game.name))
+                Text(ModOverlay.displayName(game.url, baseName: game.displayName))
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
                     HubBadge(title: "已安装", success: true)

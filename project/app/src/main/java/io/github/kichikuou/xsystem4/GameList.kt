@@ -81,6 +81,11 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
             val fallbackSys3Name = if (isSys3x) {
                 when {
+                    GameCatalog.isLegacySystem3GameDir(dir) -> GameCatalog.legacySystem3Title(dir) ?: dir.name
+                    GameCatalog.isRance04GameDir(dir) -> context.getString(R.string.game_rance04_title)
+                    GameCatalog.isRance41GameDir(dir) -> context.getString(R.string.game_rance41_title)
+                    GameCatalog.isRance42GameDir(dir) -> context.getString(R.string.game_rance42_title)
+                    GameCatalog.isRance5dGameDir(dir) -> context.getString(R.string.game_rance5d_title)
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
                     GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
@@ -663,6 +668,7 @@ class GameList(activity: Activity) {
                         }
                     }
                     if (isRance02 ||
+                        classifiedId == GameCatalog.ID_RANCE04 ||
                         classifiedId == GameCatalog.ID_KICHIKUOU ||
                         classifiedId == GameCatalog.ID_DAIAKUJI ||
                         classifiedId == GameCatalog.ID_EVENICLE2 ||
@@ -1134,10 +1140,9 @@ class GameList(activity: Activity) {
             mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
             val ainFile = srcFiles.firstOrNull { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
-            val sys3Scenario = srcFiles.firstOrNull {
-                it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
-            }
-            if (ainFile == null && sys3Scenario == null) {
+            val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
+            val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
+            if (ainFile == null && sys3Scenario == null && !legacySystem3) {
                 throw InstallFailureException(R.string.directory_no_game)
             }
             if (!expectedAinName.isNullOrBlank() &&
@@ -1148,7 +1153,9 @@ class GameList(activity: Activity) {
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
             val isRance02 = isRance02Target ||
                 GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
-            mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (!legacySystem3) {
+                mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            }
             if (isGalzooTarget || GameCatalog.classifyGameRootDir(srcDir) == GameCatalog.ID_GALZOO) {
                 mergeGalzooCompanionData(listOf(tempDir, srcDir), srcDir, checkCancelled = checkCancelled)
             }
@@ -1160,6 +1167,7 @@ class GameList(activity: Activity) {
             }
             val classifiedId = GameCatalog.classifyDirectory(srcDir, srcDir.name)
             if (classifiedId == GameCatalog.ID_RANCE02 ||
+                classifiedId == GameCatalog.ID_RANCE04 ||
                 classifiedId == GameCatalog.ID_KICHIKUOU ||
                 classifiedId == GameCatalog.ID_DAIAKUJI ||
                 classifiedId == GameCatalog.ID_EVENICLE2 ||
@@ -1174,6 +1182,10 @@ class GameList(activity: Activity) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
+                legacySystem3 -> sanitizeDerivedGameDirName(
+                    (GameCatalog.legacySystem3Title(srcDir) ?: srcDir.name).take(64),
+                    fallback = "System3"
+                )
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
                 GameCatalog.isKichikuouGameDir(srcDir) -> "KichikuRance"
                 GameCatalog.isDaiakujiGameDir(srcDir) -> "Daiakuji"
@@ -1187,6 +1199,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
                 classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
+                classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
                 ainFile != null -> sanitizeDerivedGameDirName(
@@ -2282,7 +2295,8 @@ internal fun isSystem4GameRoot(dir: File): Boolean {
 internal fun isSystem3GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     if (isSystem4GameRoot(dir)) return false
-    return files.any { it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true) }
+    return files.any { GameCatalog.isSystem35Scenario(it.name) } ||
+        GameCatalog.isLegacySystem3GameFiles(files.map { it.name })
 }
 
 internal fun findGameRootDirInternal(
@@ -2418,6 +2432,9 @@ internal fun isEscalayerRebootBloatRelPath(relPath: String, skipArchives: Boolea
     }
     return false
 }
+
+internal fun isRance04BloatRelPath(relPath: String): Boolean =
+    relPath.replace('\\', '/').substringAfterLast('/').equals("RANCE4CN.EXE", true)
 
 @JvmOverloads
 internal fun isRance06BloatRelPath(relPath: String, skipPatchSubdir: Boolean = true): Boolean {
@@ -2659,9 +2676,22 @@ internal fun isTsumamigui3BloatRelPath(relPath: String): Boolean {
         dirMatch(leafLower)
 }
 
+internal fun normalizeRance06DungeonData(gameDir: File) {
+    val data = gameDir.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("Data", ignoreCase = true) } ?: return
+    val entries = data.listFiles().orEmpty()
+    if (entries.any { it.name.equals("DungeonData.dlf", ignoreCase = true) }) return
+    val copyName = Regex("DungeonData\\([0-9]+\\)\\.dlf", RegexOption.IGNORE_CASE)
+    val source = entries.filter { it.isFile && copyName.matches(it.name) }.minByOrNull { it.name } ?: return
+    if (!source.renameTo(File(data, "DungeonData.dlf"))) {
+        throw IOException("Cannot normalize dungeon data: ${source.name}")
+    }
+}
+
 internal fun pruneRedundantBaseBloat(destGameDir: File) {
     val gameId = GameCatalog.classifyDirectory(destGameDir, destGameDir.name)
+    if (gameId == GameCatalog.ID_RANCE06) normalizeRance06DungeonData(destGameDir)
     if (gameId != GameCatalog.ID_RANCE02 &&
+        gameId != GameCatalog.ID_RANCE04 &&
         gameId != GameCatalog.ID_KICHIKUOU &&
         gameId != GameCatalog.ID_DAIAKUJI &&
         gameId != GameCatalog.ID_EVENICLE2 &&
@@ -2727,6 +2757,7 @@ internal fun pruneRedundantBaseBloat(destGameDir: File) {
             }
         } else if (f.isFile && (
                 (gameId == GameCatalog.ID_RANCE02 && isBaseInstallBloatRelPath(rel)) ||
+                    (gameId == GameCatalog.ID_RANCE04 && isRance04BloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_KICHIKUOU && isKichikuouBloatRelPath(rel)) ||
                     (gameId == GameCatalog.ID_DAIAKUJI && isDaiakujiBloatRelPath(rel, skipDDemo0Backup = hasDDemoAlk)) ||
                     (gameId == GameCatalog.ID_EVENICLE2 && isEvenicle2BloatRelPath(rel)) ||

@@ -18,6 +18,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <cglm/cglm.h>
 #include "gfx/gl.h"
 #include "system4.h"
@@ -186,6 +188,49 @@ static GLuint *load_event_textures(int *nr_textures_out)
 	return textures;
 }
 
+static char *dungeon_data_path(void)
+{
+	char *dir_path = gamedir_path_icase("Data");
+	if (!dir_path)
+		return gamedir_path("Data/DungeonData.dlf");
+	char *path = path_join(dir_path, "DungeonData.dlf");
+	char *canonical = path_get_icase(path);
+	if (canonical) {
+		free(path);
+		free(dir_path);
+		return canonical;
+	}
+	UDIR *dir = opendir_utf8(dir_path);
+	char *best = NULL;
+	char *name;
+	while (dir && (name = readdir_utf8(dir))) {
+		const char *suffix = name;
+		if (!strncasecmp(name, "DungeonData(", 12)) {
+			suffix = name + 12;
+			while (*suffix >= '0' && *suffix <= '9')
+				suffix++;
+			if (suffix > name + 12 && !strcasecmp(suffix, ").dlf")) {
+				char *candidate = path_join(dir_path, name);
+				if (file_exists(candidate) && !is_directory(candidate)
+						&& (!best || strcmp(candidate, best) < 0)) {
+					free(best);
+					best = candidate;
+				} else {
+					free(candidate);
+				}
+			}
+		}
+		free(name);
+	}
+	if (dir)
+		closedir_utf8(dir);
+	free(dir_path);
+	if (!best)
+		return path;
+	free(path);
+	return best;
+}
+
 bool dungeon_load(struct dungeon_context *ctx, int num)
 {
 	struct polyobj *polyobj = NULL;
@@ -197,7 +242,7 @@ bool dungeon_load(struct dungeon_context *ctx, int num)
 		VM_ERROR("Dungeon is already loaded");
 
 	if (ctx->version == DRAW_DUNGEON_1) {
-		char *path = gamedir_path("Data/DungeonData.dlf");
+		char *path = dungeon_data_path();
 		int error = ARCHIVE_SUCCESS;
 		struct archive *dlf = (struct archive *)dlf_open(path, MMAP_IF_64BIT, &error);
 		if (error == ARCHIVE_FILE_ERROR) {

@@ -32,6 +32,10 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `rance01` | Rance 01 (remake) | 2013-09-27 | 70.9 | 7.09 | [v14022](https://vndb.org/v14022) | [source](https://www.alicesoft.com/rance35th/) |
 | `rance02` | Rance 02 (remake) | 2009-12-18 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/rance35th/) |
 | `rance03` | Rance 03 (remake) | 2015-08-28 | 85.4 | 8.54 | [v17642](https://vndb.org/v17642) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance04` | Rance IV | 1993-12-11 | 62 | 6.20 | [v2040](https://vndb.org/v2040) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance41` | Rance 4.1 | 1995-12-01 | 53.3 | 5.33 | [v2043](https://vndb.org/v2043) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance42` | Rance 4.2 | 1995-12-08 | 53.7 | 5.37 | [v2044](https://vndb.org/v2044) | [source](https://www.alicesoft.com/rance35th/) |
+| `rance5d` | Rance 5D | 2002-10-25 | 57.5 | 5.75 | [v2046](https://vndb.org/v2046) | [source](https://www.alicesoft.com/rance35th/) |
 | `rance06` | Rance VI | 2004-08-27 | 79.3 | 7.93 | [v2047](https://vndb.org/v2047) | [source](https://www.alicesoft.com/rance35th/) |
 | `rance08` | Rance Quest Magnum | 2012-02-24 | 80 | 8.00 | [v6985](https://vndb.org/v6985) | [source](https://www.alicesoft.com/rance8/magnum.html) |
 | `rance09` | Rance IX | 2014-04-25 | 83.5 | 8.35 | [v13802](https://vndb.org/v13802) | [source](https://www.alicesoft.com/rance35th/) |

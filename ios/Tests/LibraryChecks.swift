@@ -9,6 +9,9 @@ func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoin
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }
+func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
+    fatalError("Library checks must not launch the engine")
+}
 
 @main
 struct LibraryChecks {
@@ -18,6 +21,34 @@ struct LibraryChecks {
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
+        let rance = root.appendingPathComponent("R6汉硬1.10")
+        let data = rance.appendingPathComponent("dAtA")
+        try files.createDirectory(at: data, withIntermediateDirectories: true)
+        let copy = data.appendingPathComponent("dUnGeOnDaTa(7).DlF")
+        try Data([7]).write(to: copy)
+        try GameLibrary.normalizeRance06DungeonData(rance)
+        precondition(files.fileExists(atPath: copy.path), "Do not normalize unrelated games")
+        try Data().write(to: rance.appendingPathComponent("Rance6.ain"))
+        try files.removeItem(at: copy)
+        try Data().write(to: data.appendingPathComponent("DungeonData(x).dlf"))
+        try files.createDirectory(at: data.appendingPathComponent("DungeonData(0).dlf"), withIntermediateDirectories: false)
+        try GameLibrary.normalizeRance06DungeonData(rance)
+        let canonical = data.appendingPathComponent("DungeonData.dlf")
+        precondition(!files.fileExists(atPath: canonical.path))
+        try Data([7]).write(to: copy)
+        try GameLibrary.normalizeRance06DungeonData(rance)
+        precondition(!files.fileExists(atPath: copy.path))
+        let normalizedData = try Data(contentsOf: canonical)
+        precondition(normalizedData == Data([7]))
+        try Data([8]).write(to: copy)
+        try GameLibrary.normalizeRance06DungeonData(rance)
+        precondition(files.fileExists(atPath: copy.path))
+        let preservedData = try Data(contentsOf: canonical)
+        precondition(preservedData == Data([7]))
+        do {
+            try GameLibrary.normalizeRance06DungeonData(root.appendingPathComponent("missing"))
+            preconditionFailure("Missing import root must report an error")
+        } catch is CocoaError {}
         let documents = root.appendingPathComponent("Documents")
         let source = root.appendingPathComponent("测试游戏")
         try files.createDirectory(at: source, withIntermediateDirectories: true)
@@ -58,6 +89,49 @@ struct LibraryChecks {
         try files.removeItem(at: firstAIN)
         try files.removeItem(at: secondAIN)
         let saves = documents.appendingPathComponent("Saves/test")
+        for marker in ["RANCE4SA.ALD", "rance4sa.ald", "RANCE41SA.ALD", "RANCE42SA.ALD"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            let isRance04 = marker.lowercased() == "rance4sa.ald"
+            precondition(GameLibrary.isRance04(source) == isRance04)
+            precondition(Game(url: source).name == source.lastPathComponent)
+            precondition(Game(url: source).displayName == (isRance04 ? "兰斯IV 教团的遗产" : source.lastPathComponent))
+            try files.removeItem(at: file)
+        }
+        let ranceCopy = root.appendingPathComponent("Rance IV copy")
+        try files.createDirectory(at: ranceCopy, withIntermediateDirectories: true)
+        try Data().write(to: ranceCopy.appendingPathComponent("RANCE4SA.ALD"))
+        try Data().write(to: source.appendingPathComponent("RANCE4SA.ALD"))
+        let firstCopy = Game(url: source), secondCopy = Game(url: ranceCopy)
+        precondition(firstCopy.displayName == secondCopy.displayName)
+        precondition(firstCopy.name != secondCopy.name)
+        precondition(library.savesDirectory(for: firstCopy).lastPathComponent == source.lastPathComponent)
+        precondition(library.savesDirectory(for: firstCopy) != library.savesDirectory(for: secondCopy))
+        let retainedSave = library.savesDirectory(for: firstCopy).appendingPathComponent("asleep.asd")
+        try files.createDirectory(at: retainedSave.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: retainedSave)
+        let retainedData = try Data(contentsOf: library.savesDirectory(for: firstCopy).appendingPathComponent("asleep.asd"))
+        precondition(retainedData == Data([1, 2, 3]))
+        try files.removeItem(at: source.appendingPathComponent("RANCE4SA.ALD"))
+        for marker in ["R5D_SA.ALD", "r5d_sa.ald", "R5D_GA.ALD", "RANCE42SA.ALD"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            let isRance5d = marker.lowercased() == "r5d_sa.ald"
+            precondition(GameLibrary.isRance5d(source) == isRance5d)
+            precondition(Game(url: source).name == source.lastPathComponent)
+            precondition(Game(url: source).displayName == (isRance5d ? "兰斯5D" : source.lastPathComponent))
+            if isRance5d {
+                try Data().write(to: firstAIN)
+                precondition(!GameLibrary.isRance5d(source))
+                try files.removeItem(at: firstAIN)
+            }
+            try files.removeItem(at: file)
+        }
+        let fakeRance = source.appendingPathComponent("R5D_SA.ALD")
+        try files.createDirectory(at: fakeRance, withIntermediateDirectories: false)
+        precondition(!GameLibrary.isRance5d(source))
+        try files.removeItem(at: fakeRance)
+        precondition(!GameLibrary.isRance5d(root.appendingPathComponent("missing")))
         for marker in ["testSA.ALD", "aDiSk.AlD", "sYsTeM39.iNi", "System39.ain"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
@@ -77,6 +151,23 @@ struct LibraryChecks {
             try files.removeItem(at: source.appendingPathComponent("AliceStart.ini"))
             try files.removeItem(at: file)
         }
+        let legacyDisk = source.appendingPathComponent("ADISK.dat")
+        let legacyCg = source.appendingPathComponent("aCg.DaT")
+        try Data().write(to: legacyDisk)
+        precondition(!GameLibrary.isGame(source))
+        try Data().write(to: legacyCg)
+        precondition(Game(url: source).engine == .legacySystem3)
+        let legacyArguments = try GameLibrary.launchArguments(source, saves: saves)
+        precondition(legacyArguments == ["system3", "-gamedir", source.path, "-savedir", saves.path])
+        let newerDisk = source.appendingPathComponent("testSA.ALD")
+        try Data().write(to: newerDisk)
+        precondition(Game(url: source).engine == .system3)
+        try files.removeItem(at: newerDisk)
+        try Data().write(to: firstAIN)
+        precondition(Game(url: source).engine == .system4)
+        try files.removeItem(at: firstAIN)
+        try files.removeItem(at: legacyDisk)
+        try files.removeItem(at: legacyCg)
         for marker in ["random.ald", "ADISK", "something.ini"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)

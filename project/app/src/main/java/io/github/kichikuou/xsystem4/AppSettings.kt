@@ -38,6 +38,10 @@ object AppSettings {
     private const val DEFAULT_RANCE01_BYTES = 611603977L
     private const val DEFAULT_RANCE02_BYTES = 273186363L
     private const val DEFAULT_RANCE03_BYTES = 2223244774L
+    internal const val DEFAULT_RANCE04_BYTES = 113194039L
+    internal const val DEFAULT_RANCE41_BYTES = 76386618L
+    internal const val DEFAULT_RANCE42_BYTES = 179080854L
+    internal const val DEFAULT_RANCE5D_BYTES = 403478563L
     internal const val DEFAULT_RANCE06_BYTES = 2260544882L
     private const val DEFAULT_RANCE08_BYTES = 1964252126L
     private const val DEFAULT_RANCE09_BYTES = 2738534355L
@@ -176,6 +180,10 @@ object AppSettings {
             OnlineInstaller.RANCE01_CDN_URL -> DEFAULT_RANCE01_BYTES
             OnlineInstaller.RANCE02_CDN_URL -> DEFAULT_RANCE02_BYTES
             OnlineInstaller.RANCE03_CDN_URL -> DEFAULT_RANCE03_BYTES
+            OnlineInstaller.RANCE04_CDN_URL -> DEFAULT_RANCE04_BYTES
+            OnlineInstaller.RANCE41_CDN_URL -> DEFAULT_RANCE41_BYTES
+            OnlineInstaller.RANCE42_CDN_URL -> DEFAULT_RANCE42_BYTES
+            OnlineInstaller.RANCE5D_CDN_URL -> DEFAULT_RANCE5D_BYTES
             OnlineInstaller.RANCE06_CDN_URL -> DEFAULT_RANCE06_BYTES
             OnlineInstaller.RANCE08_CDN_URL -> DEFAULT_RANCE08_BYTES
             OnlineInstaller.RANCE09_CDN_URL -> DEFAULT_RANCE09_BYTES

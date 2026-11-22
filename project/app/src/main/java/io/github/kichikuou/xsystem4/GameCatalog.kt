@@ -51,6 +51,10 @@ object GameCatalog {
     const val ID_RANCE01 = "rance01"
     const val ID_RANCE02 = "rance02"
     const val ID_RANCE03 = "rance03"
+    const val ID_RANCE04 = "rance04"
+    const val ID_RANCE41 = "rance41"
+    const val ID_RANCE42 = "rance42"
+    const val ID_RANCE5D = "rance5d"
     const val ID_RANCE06 = "rance06"
     const val ID_RANCE08 = "rance08"
     const val ID_RANCE09 = "rance09"
@@ -66,16 +70,47 @@ object GameCatalog {
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
-    fun isSystem3xGameFiles(fileNames: Collection<String>): Boolean {
-        val hasSys4Ain = fileNames.any { it.endsWith(".ain", true) && !it.equals("System39.ain", true) }
-        val hasSys4Ini = fileNames.any { it.equals("System40.ini", true) || it.equals("AliceStart.ini", true) }
-        if (hasSys4Ain || hasSys4Ini) return false
-        return fileNames.any {
-            it.endsWith("sa.ald", true) ||
-                it.equals("adisk.ald", true) ||
-                it.equals("System39.ini", true) ||
-                it.equals("System39.ain", true)
+    private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
+        (it.endsWith(".ain", true) && !it.equals("System39.ain", true)) ||
+            it.equals("System40.ini", true) || it.equals("AliceStart.ini", true)
+    }
+
+    internal fun isSystem35Scenario(name: String): Boolean =
+        name.endsWith("sa.ald", true) || name.equals("adisk.ald", true)
+
+    private fun hasSystem35Markers(fileNames: Collection<String>): Boolean = fileNames.any {
+        isSystem35Scenario(it) || it.equals("System39.ini", true) || it.equals("System39.ain", true)
+    }
+
+    private fun hasLegacySystem3Data(fileNames: Collection<String>): Boolean =
+        fileNames.any { it.equals("ADISK.DAT", true) } && fileNames.any { it.equals("ACG.DAT", true) }
+
+    fun isLegacySystem3GameFiles(fileNames: Collection<String>): Boolean =
+        hasLegacySystem3Data(fileNames) && !hasSystem4Markers(fileNames) && !hasSystem35Markers(fileNames)
+
+    fun isLegacySystem3GameDir(dir: File?): Boolean =
+        isLegacySystem3GameFiles(dir?.listFiles().orEmpty().filter { it.isFile }.map { it.name })
+
+    fun isSystem3xGameFiles(fileNames: Collection<String>): Boolean =
+        !hasSystem4Markers(fileNames) && (hasSystem35Markers(fileNames) || hasLegacySystem3Data(fileNames))
+
+    internal fun legacySystem3Title(ini: ByteArray?): String? =
+        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+            val key = line.substringBefore('=').trim()
+            if (key.equals("title", true)) line.substringAfter('=', "").trim().ifEmpty { null } else null
         }
+
+    internal fun legacySystem3GameId(ini: ByteArray?): String? =
+        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+            val key = line.substringBefore('=').trim()
+            if (key.equals("game", true)) line.substringAfter('=', "").trim().lowercase().ifEmpty { null } else null
+        }
+
+    internal fun legacySystem3Title(dir: File): String? {
+        val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
+        return if (ini != null && ini.length() <= 256 * 1024) {
+            runCatching { legacySystem3Title(ini.readBytes()) }.getOrNull()
+        } else null
     }
 
     fun isSystem3xGameDir(dir: File?): Boolean {
@@ -349,6 +384,18 @@ object GameCatalog {
         if (ainNames.any { it.equals("Rance03.ain", ignoreCase = true) }) {
             return ID_RANCE03
         }
+        if (isRance04GameFiles(fileNames)) {
+            return ID_RANCE04
+        }
+        if (isRance41GameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE41
+        }
+        if (isRance42GameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE42
+        }
+        if (isRance5dGameFiles(fileNames)) {
+            return ID_RANCE5D
+        }
         if (isRance06GameFiles(fileNames)) {
             return ID_RANCE06
         }
@@ -431,10 +478,11 @@ object GameCatalog {
         }
         return classifyGameRootFiles(fileNames, bgmFileNames) { name ->
             val f = files.firstOrNull { it.name.equals(name, true) }
-            if (f != null && f.length() <= 256L * 1024L) {
-                try { f.readBytes() } catch (_: Throwable) { null }
-            } else {
-                null
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
             }
         }
     }
@@ -738,6 +786,155 @@ object GameCatalog {
             lowerText.contains("夏娃2")
     }
 
+    fun isRance04GameFiles(fileNames: Collection<String>): Boolean =
+        isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCE4SA.ALD", true) }
+
+    fun isRance04GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isRance04GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty())
+
+    fun isRance04Alias(raw: String): Boolean {
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        if (Regex("(?:rance|兰斯|ランス)\\s*0?(?:4|iv)\\s*[.・]\\s*[12]", RegexOption.IGNORE_CASE).containsMatchIn(normalized)) return false
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4(?![0-9.]|\\s*[.・]\\s*[0-9])|iv(?![a-z0-9.]|\\s*[.・]\\s*[0-9]))", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("教团的遗产") || normalized.contains("教団の遺産")
+    }
+
+    private val RANCE41_ADISK_CRC32S = setOf(0xa43fb4b6L, 0xc39ca9e6L)
+    private val RANCE42_ADISK_CRC32S = setOf(0x04d24d1eL, 0x07e46c85L)
+
+    private fun readFilePrefix(file: File, maxBytes: Int): ByteArray? = runCatching {
+        file.inputStream().use { input ->
+            val buf = ByteArray(maxBytes)
+            var off = 0
+            while (off < maxBytes) {
+                val n = input.read(buf, off, maxBytes - off)
+                if (n < 0) break
+                off += n
+            }
+            if (off == maxBytes) buf else buf.copyOf(off)
+        }
+    }.getOrNull()
+
+    fun legacyAdiskCrc32(raw: ByteArray?): Long? {
+        if (raw == null || raw.size < 256) return null
+        val crc = java.util.zip.CRC32()
+        crc.update(raw, 0, 256)
+        return crc.value
+    }
+
+    @JvmOverloads
+    fun isRance41GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any { it.equals("RAN41_SA.ALD", true) || it.equals("RANCE41SA.ALD", true) }) {
+            return true
+        }
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "rance41" || game == "rance41_eng" || game == "rance4.1") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isRance41Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in RANCE41_ADISK_CRC32S) return true
+            if (crc != null && crc in RANCE42_ADISK_CRC32S) return false
+        }
+        return fileNames.any { it.equals("RANCE41.ICO", true) }
+    }
+
+    fun isRance41GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isRance41GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
+    fun isRance41Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4|iv)\\s*[.・]?\\s*1(?![0-9])", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("拯救制药厂") ||
+            normalized.contains("お薬工場")
+    }
+
+    @JvmOverloads
+    fun isRance42GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any { it.equals("RAN42_SA.ALD", true) || it.equals("RANCE42SA.ALD", true) }) {
+            return true
+        }
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "rance42" || game == "rance42_eng" || game == "rance4.2") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isRance42Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in RANCE42_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isRance42GameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isRance42GameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
+    fun isRance42Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4|iv)\\s*[.・]?\\s*2(?![0-9])", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("天使组") ||
+            normalized.contains("天使組") ||
+            normalized.contains("エンジェル組") ||
+            normalized.contains("angelgumi") ||
+            normalized.contains("angel army")
+    }
+
+    fun isRance5dGameFiles(fileNames: Collection<String>): Boolean =
+        isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("R5D_SA.ALD", true) }
+
+    fun isRance5dGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isRance5dGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty())
+
+    fun isRance5dAlias(raw: String): Boolean {
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*5d(?![a-z0-9])").containsMatchIn(normalized)
+    }
+
     fun isRance06GameFiles(fileNames: Collection<String>): Boolean {
         if (isSystem3xGameFiles(fileNames)) return false
         val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
@@ -778,6 +975,7 @@ object GameCatalog {
         return RANCE06_EN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_CN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_JP_ALIAS_REGEX.containsMatchIn(lower) ||
+            Regex("(?:^|[^a-z0-9])r6汉硬(?:[0-9.]|$)").containsMatchIn(lower) ||
             lower.contains("ゼス崩壊") ||
             lower.contains("赛斯崩坏") ||
             lower.contains("賽斯崩壞") ||
@@ -1303,6 +1501,18 @@ object GameCatalog {
         ) {
             return ID_RANCE03
         }
+        if (isRance41Alias(lowerDir)) {
+            return ID_RANCE41
+        }
+        if (isRance42Alias(lowerDir)) {
+            return ID_RANCE42
+        }
+        if (isRance04Alias(lowerDir)) {
+            return ID_RANCE04
+        }
+        if (isRance5dAlias(lowerDir)) {
+            return ID_RANCE5D
+        }
         if (isRance06Alias(lowerDir)) {
             return ID_RANCE06
         }
@@ -1417,6 +1627,18 @@ object GameCatalog {
             lowerDisp.contains("リーザス") || lowerDisp.contains("利萨斯")
         ) {
             return ID_RANCE03
+        }
+        if (isRance41Alias(lowerDisp)) {
+            return ID_RANCE41
+        }
+        if (isRance42Alias(lowerDisp)) {
+            return ID_RANCE42
+        }
+        if (isRance04Alias(lowerDisp)) {
+            return ID_RANCE04
+        }
+        if (isRance5dAlias(lowerDisp)) {
+            return ID_RANCE5D
         }
         if (isRance06Alias(lowerDisp)) {
             return ID_RANCE06
@@ -1586,6 +1808,66 @@ object GameCatalog {
                 iconFrameColor = 0xFF1D1012.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.RANCE03_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE04 -> GameDescriptor(
+                id = ID_RANCE04,
+                title = stringResolver(R.string.game_rance04_title),
+                defaultDirName = "Rance04",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance04,
+                accentColor = 0xFF3949AB.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF14182C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE04_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE41 -> GameDescriptor(
+                id = ID_RANCE41,
+                title = stringResolver(R.string.game_rance41_title),
+                defaultDirName = "Rance41",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance41,
+                accentColor = 0xFFD84315.toInt(),
+                accentBorderColor = 0x66FF8A65,
+                iconFrameColor = 0xFF281612.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE41_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE42 -> GameDescriptor(
+                id = ID_RANCE42,
+                title = stringResolver(R.string.game_rance42_title),
+                defaultDirName = "Rance42",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance42,
+                accentColor = 0xFF1E88E5.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF121D2B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE42_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE5D -> GameDescriptor(
+                id = ID_RANCE5D,
+                title = stringResolver(R.string.game_rance5d_title),
+                defaultDirName = "Rance5D",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance5d,
+                accentColor = 0xFFAD1457.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF28121B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE5D_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -1804,6 +2086,10 @@ object GameCatalog {
         ID_RANCE01,
         ID_RANCE02,
         ID_RANCE03,
+        ID_RANCE04,
+        ID_RANCE41,
+        ID_RANCE42,
+        ID_RANCE5D,
         ID_RANCE06,
         ID_SENGOKU_RANCE,
         ID_RANCE08,

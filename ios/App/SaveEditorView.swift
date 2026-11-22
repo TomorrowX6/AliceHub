@@ -30,7 +30,7 @@ struct SaveEditorView: View {
         NavigationView {
             List {
                 Section {
-                    HubSectionHeader(title: game.name, symbol: "slider.horizontal.3")
+                    HubSectionHeader(title: game.displayName, symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
                 let files = saves
                 if files.isEmpty {

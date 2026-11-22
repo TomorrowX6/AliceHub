@@ -3,6 +3,7 @@ import Combine
 import Darwin
 
 enum GameEngine: String {
+    case legacySystem3 = "System 3"
     case system3 = "System 3.x"
     case system4 = "System 4"
 }
@@ -11,6 +12,13 @@ struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
+    var displayName: String {
+        if GameLibrary.isRance04(url) { return "兰斯IV 教团的遗产" }
+        if GameLibrary.isRance41(url) { return "兰斯4.1 拯救制药厂！" }
+        if GameLibrary.isRance42(url) { return "兰斯4.2 天使组" }
+        if GameLibrary.isRance5d(url) { return "兰斯5D" }
+        return url.lastPathComponent
+    }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
@@ -18,7 +26,7 @@ enum LibraryError: LocalizedError {
     case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD 或 ADISK.ALD 文件。"
+        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
         case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。"
         case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
         case .resourcePath: return "无法找到游戏引擎资源。"
@@ -46,6 +54,69 @@ final class GameLibrary: ObservableObject {
         (try? launchTarget(url)) != nil
     }
 
+    static func isRance04(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+    }
+
+    private static func legacySystem3GameId(_ url: URL) -> String? {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3,
+              let ini = contents.first(where: {
+                  $0.lastPathComponent.lowercased() == "system3.ini" &&
+                      (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+              }),
+              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "game" {
+                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
+
+    static func isRance41(_ url: URL) -> Bool {
+        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+           let info = try? launchInfo(url), info.engine == .system3,
+           contents.contains(where: {
+               $0.lastPathComponent.lowercased() == "ran41_sa.ald" &&
+                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+           }) {
+            return true
+        }
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "rance41" || game == "rance41_eng" || game == "rance4.1"
+    }
+
+    static func isRance42(_ url: URL) -> Bool {
+        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+           let info = try? launchInfo(url), info.engine == .system3,
+           contents.contains(where: {
+               $0.lastPathComponent.lowercased() == "ran42_sa.ald" &&
+                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+           }) {
+            return true
+        }
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
+    }
+
+    static func isRance5d(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "r5d_sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+    }
+
     static func launchTarget(_ url: URL) throws -> URL {
         try launchInfo(url).target
     }
@@ -65,24 +136,50 @@ final class GameLibrary: ObservableObject {
         }
         let names = regularFiles.map { $0.lastPathComponent.lowercased() }
         let system39 = names.contains("system39.ini") || names.contains("system39.ain")
-        guard system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) else { throw LibraryError.notGame }
-        return (.system3, url, system39)
+        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) {
+            return (.system3, url, system39)
+        }
+        if names.contains("adisk.dat") && names.contains("acg.dat") {
+            return (.legacySystem3, url, false)
+        }
+        throw LibraryError.notGame
     }
 
     static func launchArguments(_ url: URL, saves: URL) throws -> [String] {
         let info = try launchInfo(url)
-        if info.engine == .system3 {
+        switch info.engine {
+        case .legacySystem3:
+            return ["system3", "-gamedir", url.path, "-savedir", saves.path]
+        case .system3:
             return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
+        case .system4:
+            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
         }
-        return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
     }
 
     func refresh() {
         do {
             try files.createDirectory(at: gamesDirectory, withIntermediateDirectories: true)
             games = try files.contentsOfDirectory(at: gamesDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         } catch { self.error = error.localizedDescription }
+    }
+
+    static func normalizeRance06DungeonData(_ root: URL) throws {
+        let files = FileManager.default
+        let children = try files.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey])
+        let ainNames = ["rance6.ain", "rance06.ain", "rancevi.ain", "ランス6.ain", "ランス６.ain", "ランス06.ain", "ランス０６.ain"]
+        guard children.contains(where: { ainNames.contains($0.lastPathComponent.lowercased()) && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }),
+              let data = children.first(where: { $0.lastPathComponent.lowercased() == "data" && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) else { return }
+        let entries = try files.contentsOfDirectory(at: data, includingPropertiesForKeys: [.isRegularFileKey])
+        guard !entries.contains(where: { $0.lastPathComponent.lowercased() == "dungeondata.dlf" }) else { return }
+        let candidates = entries.filter {
+            $0.lastPathComponent.range(of: #"^DungeonData\([0-9]+\)\.dlf$"#, options: [.regularExpression, .caseInsensitive]) != nil &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        if let source = candidates.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
+            try files.moveItem(at: source, to: data.appendingPathComponent("DungeonData.dlf"))
+        }
     }
 
     func importFolder(_ source: URL) {
@@ -104,6 +201,7 @@ final class GameLibrary: ObservableObject {
                         guard Self.isGame(readable) else { throw LibraryError.notGame }
                         guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
                         try self.files.copyItem(at: readable, to: temporary)
+                        try Self.normalizeRance06DungeonData(temporary)
                         try self.files.moveItem(at: temporary, to: destination)
                     } catch { result = error }
                 }
@@ -221,6 +319,7 @@ final class GameLibrary: ObservableObject {
                         guard !name.isEmpty && name != "." && name != ".." && !name.hasPrefix(".") else { throw LibraryError.archiveNotGame }
                         let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
                         guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
+                        try Self.normalizeRance06DungeonData(root)
                         try self.files.moveItem(at: root, to: destination)
                     } catch { result = error }
                 }
@@ -266,7 +365,7 @@ final class GameLibrary: ObservableObject {
             guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else { throw LibraryError.logFile }
             setbuf(stdout, nil)
             setbuf(stderr, nil)
-            guard chdir(info.engine == .system3 ? game.url.path : resources.path) == 0 else { throw LibraryError.resourcePath }
+            guard chdir(info.engine == .system4 ? resources.path : game.url.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
@@ -282,9 +381,12 @@ final class GameLibrary: ObservableObject {
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
                     argv.withUnsafeMutableBufferPointer { buffer in
-                        if info.engine == .system3 {
+                        switch info.engine {
+                        case .legacySystem3:
+                            _ = system3_main(Int32(arguments.count), buffer.baseAddress)
+                        case .system3:
                             _ = xsystem35_main(Int32(arguments.count), buffer.baseAddress)
-                        } else {
+                        case .system4:
                             _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
                         }
                     }
