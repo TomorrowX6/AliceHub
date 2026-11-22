@@ -567,7 +567,8 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 	if (clickable && prev_clicking && !cur_clicking
 			&& click_down_parts == parts->no) {
 		parts_play_sound(parts, PARTS_STATE_CLICKED);
-		clicked_parts = parts->no;
+		if (parts->clickable)
+			clicked_parts = parts->no;
 		click_fired_this_frame = true;
 		if (parts->component_type == 1 && parts->widget)
 			parts_widget_check(parts, !parts->widget->checked);

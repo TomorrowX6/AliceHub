@@ -58,7 +58,7 @@ struct LibraryChecks {
         }
         precondition(library.games.isEmpty && library.error == nil)
         precondition(!GameLibrary.isGame(source))
-        for marker in ["AliceStart.ini", "System40.ini", "test.AIN"] {
+        for marker in ["AliceStart.CHS", "AliceStart.ini", "System40.ini", "test.AIN"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
             precondition(GameLibrary.isGame(source))

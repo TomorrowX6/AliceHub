@@ -546,6 +546,7 @@ bool game_rance03 = false;
 bool game_ixseal = true;
 bool game_okusama = false;
 bool game_haharanman = false;
+bool game_night_remaster = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {

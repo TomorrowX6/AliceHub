@@ -96,7 +96,11 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_WAIDONYO && GameCatalog.isWaidonyoAlias(q)) ||
             (desc.id == GameCatalog.ID_RANCE6AFTER && GameCatalog.isRance6AfterAlias(q)) ||
             (desc.id == GameCatalog.ID_YAKATA2 && GameCatalog.isYakata2Alias(q)) ||
-            (desc.id == GameCatalog.ID_SDPSMARIA && GameCatalog.isSdpsMariaAlias(q))
+            (desc.id == GameCatalog.ID_SDPSMARIA && GameCatalog.isSdpsMariaAlias(q)) ||
+            (desc.id == GameCatalog.ID_TOUSHIN3 && GameCatalog.isToushin3Alias(q)) ||
+            (desc.id == GameCatalog.ID_OYAKORANKAN && GameCatalog.isOyakorankanAlias(q)) ||
+            (desc.id == GameCatalog.ID_YORUGAKURU && GameCatalog.isYorugakuruAlias(q)) ||
+            (desc.id == GameCatalog.ID_RANCE1DIGEST && GameCatalog.isRance1DigestAlias(q))
         ) {
             return true
         }

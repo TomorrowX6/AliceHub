@@ -1090,7 +1090,7 @@ class GameList(activity: Activity) {
             }
             mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
-            val ainFile = srcFiles.firstOrNull { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+            val ainFile = srcFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it.name) }
             val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
             val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
             if (ainFile == null && sys3Scenario == null && !legacySystem3) {
@@ -1165,6 +1165,10 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_EVENICLEGAIDEN -> "EvenicleGaiden"
                 classifiedId == GameCatalog.ID_WAIDONYO -> "Waidonyo"
                 classifiedId == GameCatalog.ID_RANCE6AFTER -> "Rance6After"
+                classifiedId == GameCatalog.ID_TOUSHIN3 -> "Toushin3"
+                classifiedId == GameCatalog.ID_OYAKORANKAN -> "Oyakorankan"
+                classifiedId == GameCatalog.ID_YORUGAKURU -> "Yorugakuru"
+                classifiedId == GameCatalog.ID_RANCE1DIGEST -> "Rance1Digest"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
@@ -2050,14 +2054,19 @@ internal fun isBaseInstallBloatRelPath(relPath: String, skipPatchSubdir: Boolean
 internal fun resolveLaunchIniFile(dir: File): File {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasHaruCnAin = files.any { it.name.equals("haru_c.ain", ignoreCase = true) }
+    val hasChsTbl = files.any { it.name.equals("CHS.TBL", ignoreCase = true) }
     fun findIni(name: String): File? = files.firstOrNull { it.name == name }
         ?: files.firstOrNull { it.name.equals(name, ignoreCase = true) }
     if (hasHaruCnAin) {
         findIni("AliceStart2.ini")?.let { return it }
     }
+    if (hasChsTbl) {
+        findIni("AliceStart.CHS")?.let { return it }
+    }
     return findIni("System40.ini")
         ?: findIni("AliceStart.ini")
         ?: findIni("AliceStart2.ini")
+        ?: findIni("AliceStart.CHS")
         ?: findIni("System39.ini")
         ?: File(dir, "System40.ini")
 }
@@ -2323,7 +2332,7 @@ internal fun mergeGalzooCompanionData(
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasIni = files.any { GameCatalog.isSystem4LaunchIni(it.name) }
-    val hasAin = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
+    val hasAin = files.any { GameCatalog.isSystem4CodeFile(it.name) }
     return hasIni && hasAin
 }
 

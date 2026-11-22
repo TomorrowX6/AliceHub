@@ -248,6 +248,289 @@ bool sys4_load_mai_word_table(const char *path)
 	return ok;
 }
 
+/* Load a Longinus CHS.TBL remap table (up to 65536 little-endian uint16 entries
+ * mapping 2-byte Shift-JIS codepoints -> GBK byte pairs) into the custom Shift-JIS
+ * render table without mutating base CP932 archive/path conversions. */
+bool sys4_load_chs_tbl_mem(const void *data, size_t size)
+{
+	if (!data || size < 2 || (size % 2) != 0 || size > 131072)
+		return false;
+
+	const uint8_t *raw = (const uint8_t *)data;
+	size_t count = size / 2;
+
+	sys4_reset_mai_word_table();
+
+	// Seed with base CP932 table so unmapped punctuation/kana remain intact.
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t u = (uint16_t)s2u[b1 - 0x80][b2 - 0x40];
+			uint16_t sjis = (uint16_t)((b1 << 8) | b2);
+			if (u == 0x30fb && sjis != 0x8145)
+				continue;
+			mai_s2u[b1 - 0x80][b2 - 0x40] = u;
+		}
+	}
+
+	size_t mapped_count = 0;
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			size_t code = ((size_t)b1 << 8) | (size_t)b2;
+			if (code >= count)
+				continue;
+			uint16_t mapped = (uint16_t)(raw[code * 2] | ((uint16_t)raw[code * 2 + 1] << 8));
+			// Skip empty slots and '?' (0x003f) fallback placeholders so CP932 symbols
+			// absent from GBK (e.g. ・ 0x8145, ♪ 0x81f4) remain legible.
+			if (!mapped || mapped == 0x003f)
+				continue;
+			int u = 0;
+			if (mapped <= 0x7f) {
+				u = mapped;
+			} else {
+				uint8_t hi = (uint8_t)(mapped >> 8);
+				uint8_t lo = (uint8_t)(mapped & 0xff);
+				if (hi >= 0x81 && hi <= 0xfe && lo >= 0x40 && lo <= 0xfe)
+					u = gbk_lookup(hi, lo);
+			}
+			if (u > 0 && u < 65536) {
+				mai_s2u[b1 - 0x80][b2 - 0x40] = (uint16_t)u;
+				if (!mai_u2s[u])
+					mai_u2s[u] = (uint16_t)code;
+				mapped_count++;
+			}
+		}
+	}
+
+	if (!mapped_count) {
+		sys4_reset_mai_word_table();
+		return false;
+	}
+
+	for (int c = 0xa1; c <= 0xdf; c++) {
+		uint16_t u = (uint16_t)(0xff60 + (c - 0xa0));
+		if (!mai_u2s[u])
+			mai_u2s[u] = (uint16_t)c;
+	}
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t u = mai_s2u[b1 - 0x80][b2 - 0x40];
+			if (u >= 0x80 && !mai_u2s[u])
+				mai_u2s[u] = (uint16_t)((b1 << 8) | b2);
+		}
+	}
+
+	sys4_mai_active = true;
+	return true;
+}
+
+bool sys4_load_chs_tbl(const char *path)
+{
+	if (!path || !*path)
+		return false;
+	size_t size = 0;
+	void *buf = file_read(path, &size);
+	if (!buf)
+		return false;
+	bool ok = sys4_load_chs_tbl_mem(buf, size);
+	free(buf);
+	return ok;
+}
+
+struct text_dict_entry {
+	char *src;
+	char *dst;
+};
+
+static struct text_dict_entry *text_dict_entries = NULL;
+static size_t text_dict_count = 0;
+
+static int text_dict_cmp(const void *a, const void *b)
+{
+	const struct text_dict_entry *ea = (const struct text_dict_entry *)a;
+	const struct text_dict_entry *eb = (const struct text_dict_entry *)b;
+	return strcmp(ea->src, eb->src);
+}
+
+void sys4_reset_text_dict(void)
+{
+	for (size_t i = 0; i < text_dict_count; i++) {
+		free(text_dict_entries[i].src);
+		free(text_dict_entries[i].dst);
+	}
+	free(text_dict_entries);
+	text_dict_entries = NULL;
+	text_dict_count = 0;
+}
+
+/* Load an XOR-0x49 UI/EX text dictionary (e.g. NightRemasterDict.dat), stored
+ * as 3-line records: Shift-JIS source line, GBK target line, separator line. */
+bool sys4_load_text_dict_mem(const void *data, size_t size)
+{
+	sys4_reset_text_dict();
+	if (!data || size < 4 || size > 4 * 1024 * 1024)
+		return false;
+
+	const uint8_t *raw = (const uint8_t *)data;
+	char *dec = xmalloc(size + 1);
+	size_t nl_count = 0;
+	for (size_t i = 0; i < size; i++) {
+		char c = (char)(raw[i] ^ 0x49);
+		dec[i] = c;
+		if (c == '\n')
+			nl_count++;
+	}
+	dec[size] = '\0';
+	if (nl_count < 1) {
+		free(dec);
+		return false;
+	}
+
+	char **lines = xmalloc((nl_count + 1) * sizeof(*lines));
+	size_t nr_lines = 0;
+	char *p = dec;
+	while (true) {
+		char *nl = strchr(p, '\n');
+		if (nl)
+			*nl = '\0';
+		size_t len = strlen(p);
+		if (len > 0 && p[len - 1] == '\r')
+			p[len - 1] = '\0';
+		lines[nr_lines++] = p;
+		if (!nl)
+			break;
+		p = nl + 1;
+	}
+
+	size_t cap = (nr_lines / 3) + 1;
+	struct text_dict_entry *entries = xmalloc(cap * sizeof(*entries));
+	size_t count = 0;
+	for (size_t i = 0; i + 1 < nr_lines; i += 3) {
+		const char *src = lines[i];
+		const char *dst = lines[i + 1];
+		if (!src[0] || !dst[0] || !strcmp(src, dst))
+			continue;
+		entries[count].src = xstrdup(src);
+		entries[count].dst = xstrdup(dst);
+		count++;
+	}
+	free(lines);
+	free(dec);
+
+	if (!count) {
+		free(entries);
+		return false;
+	}
+
+	qsort(entries, count, sizeof(*entries), text_dict_cmp);
+	size_t unique = 0;
+	for (size_t i = 0; i < count; i++) {
+		if (unique > 0 && !strcmp(entries[unique - 1].src, entries[i].src)) {
+			free(entries[i].src);
+			free(entries[i].dst);
+			continue;
+		}
+		if (unique != i)
+			entries[unique] = entries[i];
+		unique++;
+	}
+
+	text_dict_entries = entries;
+	text_dict_count = unique;
+	return true;
+}
+
+bool sys4_load_text_dict(const char *path)
+{
+	if (!path || !*path)
+		return false;
+	size_t size = 0;
+	void *buf = file_read(path, &size);
+	if (!buf)
+		return false;
+	bool ok = sys4_load_text_dict_mem(buf, size);
+	free(buf);
+	return ok;
+}
+
+const char *sys4_text_dict_lookup(const char *src)
+{
+	if (!text_dict_count || !src || !*src)
+		return NULL;
+	size_t lo = 0, hi = text_dict_count;
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		int cmp = strcmp(text_dict_entries[mid].src, src);
+		if (cmp == 0)
+			return text_dict_entries[mid].dst;
+		if (cmp < 0)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	return NULL;
+}
+
+char *sys4_text_dict_translate_lines(const char *src)
+{
+	if (!text_dict_count || !src || !*src)
+		return NULL;
+	const char *whole = sys4_text_dict_lookup(src);
+	if (whole)
+		return xstrdup(whole);
+	if (!strchr(src, '\n'))
+		return NULL;
+
+	// Translate multi-line strings line-by-line only if at least one line matches.
+	char *copy = xstrdup(src);
+	bool any = false;
+	size_t total = 0;
+	size_t nlines = 0;
+	for (char *ln = copy; ln;) {
+		char *nxt = strchr(ln, '\n');
+		if (nxt)
+			*nxt = '\0';
+		const char *rep = sys4_text_dict_lookup(ln);
+		if (rep)
+			any = true;
+		total += strlen(rep ? rep : ln) + (nxt ? 1 : 0);
+		nlines++;
+		ln = nxt ? nxt + 1 : NULL;
+	}
+	if (!any) {
+		free(copy);
+		return NULL;
+	}
+
+	char *out = xmalloc(total + 1);
+	char *dst = out;
+	char *ln = copy;
+	for (size_t i = 0; i < nlines; i++) {
+		const char *rep = sys4_text_dict_lookup(ln);
+		const char *piece = rep ? rep : ln;
+		size_t len = strlen(piece);
+		memcpy(dst, piece, len);
+		dst += len;
+		if (i + 1 < nlines)
+			*dst++ = '\n';
+		ln += strlen(ln) + 1;
+	}
+	*dst = '\0';
+	free(copy);
+	return out;
+}
+
 void sys4_set_text_gbk(bool enabled)
 {
 	sys4_text_is_gbk = enabled;

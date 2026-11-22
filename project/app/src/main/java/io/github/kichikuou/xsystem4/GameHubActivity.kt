@@ -339,7 +339,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_WAIDONYO ||
                 descriptor.id == GameCatalog.ID_RANCE6AFTER ||
                 descriptor.id == GameCatalog.ID_YAKATA2 ||
-                descriptor.id == GameCatalog.ID_SDPSMARIA
+                descriptor.id == GameCatalog.ID_SDPSMARIA ||
+                descriptor.id == GameCatalog.ID_TOUSHIN3 ||
+                descriptor.id == GameCatalog.ID_OYAKORANKAN ||
+                descriptor.id == GameCatalog.ID_YORUGAKURU ||
+                descriptor.id == GameCatalog.ID_RANCE1DIGEST
             ) {
                 descriptor.title
             } else {

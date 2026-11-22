@@ -46,7 +46,11 @@ struct OnlineGame: Identifiable {
         Self(id: "waidonyo", title: "异空窟探险", directory: "Waidonyo"),
         Self(id: "rance6after", title: "兰斯06 后日谈", directory: "Rance6After"),
         Self(id: "yakata2", title: "爱丽丝之馆2", directory: "Yakata2"),
-        Self(id: "sdpsmaria", title: "Super D.P.S 玛利亚和坎潘", directory: "SuperDpsMaria")
+        Self(id: "sdpsmaria", title: "Super D.P.S 玛利亚和坎潘", directory: "SuperDpsMaria"),
+        Self(id: "toushin3", title: "斗神都市3", directory: "Toushin3"),
+        Self(id: "oyakorankan", title: "母娘乱馆", directory: "Oyakorankan"),
+        Self(id: "yorugakuru", title: "邪夜将至 Remastered", directory: "Yorugakuru"),
+        Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest")
     ]
 }
 

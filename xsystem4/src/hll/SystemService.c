@@ -88,6 +88,8 @@ static const char *game_version_text(void)
 		return "bmjr78365hd5ghd2337fh2jf";
 	if (game_okusama)
 		return "0000004fn0000d6e000097tn9000";
+	if (game_night_remaster)
+		return "00000045q0000sdb0500dsfq5";
 	if (game_ixseal)
 		return "a8k345es394fx4mg3q2p8ts68nk5zwr7";
 	if (game_tsumamigui3) {

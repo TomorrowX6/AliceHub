@@ -271,6 +271,10 @@
     <string name="game_rance6after_title">ランス６その後</string>
     <string name="game_yakata2_title">ALICEの館II</string>
     <string name="game_sdpsmaria_title">Super D.P.S マリアとカンパン</string>
+    <string name="game_toushin3_title">闘神都市III</string>
+    <string name="game_oyakorankan_title">母娘乱館</string>
+    <string name="game_yorugakuru_title">夜が来る！ Remastered</string>
+    <string name="game_rance1digest_title">ランス1 ダイジェスト版</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>

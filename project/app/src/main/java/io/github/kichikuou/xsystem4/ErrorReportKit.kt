@@ -1355,6 +1355,14 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_yakata2_title)
             GameCatalog.isSdpsMariaAlias(lower) ->
                 context.getString(R.string.game_sdpsmaria_title)
+            GameCatalog.isToushin3Alias(lower) ->
+                context.getString(R.string.game_toushin3_title)
+            GameCatalog.isOyakorankanAlias(lower) ->
+                context.getString(R.string.game_oyakorankan_title)
+            GameCatalog.isYorugakuruAlias(lower) ->
+                context.getString(R.string.game_yorugakuru_title)
+            GameCatalog.isRance1DigestAlias(lower) ->
+                context.getString(R.string.game_rance1digest_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

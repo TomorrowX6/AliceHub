@@ -537,8 +537,11 @@ static bool add_text_to_cproc(int parts_no, int x, int y, struct string *text,
 
 	struct parts_cp_op *op = xcalloc(1, sizeof(struct parts_cp_op));
 	op->type = op_type;
+	char *dict_mapped = text ? sys4_text_dict_translate_lines(text->text) : NULL;
+	struct string *op_text = dict_mapped ? make_string(dict_mapped, strlen(dict_mapped)) : string_dup(text);
+	free(dict_mapped);
 	op->text = (struct parts_cp_text) {
-		.text = string_dup(text),
+		.text = op_text,
 		.x = x,
 		.y = y,
 		.line_space = line_space,

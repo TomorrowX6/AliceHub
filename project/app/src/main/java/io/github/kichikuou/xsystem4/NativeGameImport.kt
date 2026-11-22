@@ -73,8 +73,7 @@ object NativeGameImport {
             !it.folder && !skip(it.name) && GameCatalog.isSystem4LaunchIni(it.name)
         }
         val hasAin = docs.any {
-            !it.folder && !skip(it.name) &&
-                it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true)
+            !it.folder && !skip(it.name) && GameCatalog.isSystem4CodeFile(it.name)
         }
         return hasIni && hasAin
     }
@@ -290,6 +289,18 @@ object NativeGameImport {
         if (GameCatalog.isRance6AfterGameFiles(activeFiles)) {
             return "Rance6After"
         }
+        if (GameCatalog.isToushin3GameFiles(activeFiles)) {
+            return "Toushin3"
+        }
+        if (GameCatalog.isOyakorankanGameFiles(activeFiles)) {
+            return "Oyakorankan"
+        }
+        if (GameCatalog.isYorugakuruGameFiles(activeFiles)) {
+            return "Yorugakuru"
+        }
+        if (GameCatalog.isRance1DigestGameFiles(activeFiles)) {
+            return "Rance1Digest"
+        }
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"
         }
@@ -311,9 +322,7 @@ object NativeGameImport {
         if (GameCatalog.isGalzooGameFiles(activeFiles)) {
             return "GALZOO"
         }
-        val sys4Ain = activeFiles.firstOrNull {
-            it.endsWith(".ain", true) && !it.equals("System39.ain", true)
-        }
+        val sys4Ain = activeFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it) }
         if (sys4Ain != null) {
             val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sys4Ain.substringBeforeLast('.'))
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")

@@ -368,6 +368,10 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RANCE6AFTER ||
                 id == GameCatalog.ID_YAKATA2 ||
                 id == GameCatalog.ID_SDPSMARIA ||
+                id == GameCatalog.ID_TOUSHIN3 ||
+                id == GameCatalog.ID_OYAKORANKAN ||
+                id == GameCatalog.ID_YORUGAKURU ||
+                id == GameCatalog.ID_RANCE1DIGEST ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

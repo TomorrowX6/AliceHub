@@ -82,16 +82,25 @@ object GameCatalog {
     const val ID_RANCE6AFTER = "rance6after"
     const val ID_YAKATA2 = "yakata2"
     const val ID_SDPSMARIA = "sdpsmaria"
+    const val ID_TOUSHIN3 = "toushin3"
+    const val ID_OYAKORANKAN = "oyakorankan"
+    const val ID_YORUGAKURU = "yorugakuru"
+    const val ID_RANCE1DIGEST = "rance1digest"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
     internal fun isSystem4LaunchIni(name: String): Boolean =
         name.equals("System40.ini", true) ||
             name.equals("AliceStart.ini", true) ||
-            name.equals("AliceStart2.ini", true)
+            name.equals("AliceStart2.ini", true) ||
+            name.equals("AliceStart.CHS", true)
+
+    internal fun isSystem4CodeFile(name: String): Boolean =
+        (name.endsWith(".ain", true) && !name.equals("System39.ain", true)) ||
+            (name.endsWith(".chs", true) && !name.equals("AliceStart.CHS", true))
 
     private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
-        (it.endsWith(".ain", true) && !it.equals("System39.ain", true)) || isSystem4LaunchIni(it)
+        isSystem4CodeFile(it) || isSystem4LaunchIni(it)
     }
 
     internal fun isSystem35Scenario(name: String): Boolean =
@@ -385,6 +394,9 @@ object GameCatalog {
         ) {
             return ID_ESCALAYER_REBOOT
         }
+        if (isRance1DigestGameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE1DIGEST
+        }
         if (ainNames.any { it.equals("Rance01.ain", ignoreCase = true) } ||
             fileNames.any { it.startsWith("Rance01", ignoreCase = true) && it.endsWith(".ald", ignoreCase = true) }
         ) {
@@ -501,6 +513,15 @@ object GameCatalog {
         }
         if (isSdpsMariaGameFiles(fileNames, readSmallFile)) {
             return ID_SDPSMARIA
+        }
+        if (isToushin3GameFiles(fileNames, readSmallFile)) {
+            return ID_TOUSHIN3
+        }
+        if (isOyakorankanGameFiles(fileNames, readSmallFile)) {
+            return ID_OYAKORANKAN
+        }
+        if (isYorugakuruGameFiles(fileNames, readSmallFile)) {
+            return ID_YORUGAKURU
         }
         if (isTsumamiguiGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI
@@ -1956,6 +1977,209 @@ object GameCatalog {
         }
     }
 
+    fun isToushin3Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return normalized.contains("toushin3") ||
+            normalized.contains("toushin 3") ||
+            normalized.contains("toushin_3") ||
+            normalized.contains("toushin toshi iii") ||
+            normalized.contains("toushin toshi 3") ||
+            normalized.contains("toushintoshi3") ||
+            normalized.contains("toushintoshiiii") ||
+            normalized.contains("闘神都市3") ||
+            normalized.contains("闘神都市iii") ||
+            normalized.contains("斗神都市3") ||
+            normalized.contains("斗神都市iii") ||
+            normalized.contains("鬥神都市3") ||
+            normalized.contains("鬥神都市iii") ||
+            rawLower.contains("摤恄搒巗")
+    }
+
+    @JvmOverloads
+    fun isToushin3GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("toushin3.ain", true) ||
+                    it.equals("斗神都市3.ain", true) ||
+                    it.equals("闘神都市３.ain", true) || r.equals("闘神都市３.ain", true) ||
+                    it.equals("闘神都市3.ain", true) || r.equals("闘神都市3.ain", true)
+            } || fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("闘神都市３DLL.inc", true) || r.equals("闘神都市３DLL.inc", true) ||
+                    it.equals("闘神都市３GM.ald", true) || r.equals("闘神都市３GM.ald", true) ||
+                    it.equals("闘神都市３GA.ald", true) || r.equals("闘神都市３GA.ald", true) ||
+                    it.equals("Toushin3Map.dat", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System40.ini", true) || it.equals("AliceStart.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isToushin3Alias(title)) return true
+        }
+        return false
+    }
+
+    fun isToushin3GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isToushin3GameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isOyakorankanAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return normalized.contains("oyakorankan") ||
+            normalized.contains("oyako rankan") ||
+            normalized.contains("oyako_rankan") ||
+            normalized.contains("母娘乱館") ||
+            normalized.contains("母娘乱馆") ||
+            normalized.contains("母娘亂館") ||
+            rawLower.contains("曣枅棆娰")
+    }
+
+    @JvmOverloads
+    fun isOyakorankanGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val codeNames = fileNames.filter { isSystem4CodeFile(it) }
+        if (codeNames.isEmpty()) return false
+        if (codeNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("oyakorankan.ain", true) ||
+                    it.equals("母娘乱館.CHS", true) || r.equals("母娘乱館.CHS", true) ||
+                    it.equals("母娘乱館.ain", true) || r.equals("母娘乱館.ain", true) ||
+                    it.equals("母娘乱馆.CHS", true) || it.equals("母娘乱馆.ain", true)
+            } || fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("母娘乱館CG.afa", true) || r.equals("母娘乱館CG.afa", true) ||
+                    it.equals("母娘乱館BA.ald", true) || r.equals("母娘乱館BA.ald", true) ||
+                    it.equals("母娘乱館WA.ald", true) || r.equals("母娘乱館WA.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull {
+            it.equals("AliceStart.CHS", true) || it.equals("AliceStart.ini", true) || it.equals("System40.ini", true)
+        }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isOyakorankanAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isOyakorankanGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isOyakorankanGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isYorugakuruAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return normalized.contains("yorugakuru") ||
+            normalized.contains("yoru ga kuru") ||
+            normalized.contains("yoru_ga_kuru") ||
+            normalized.contains("nightremaster") ||
+            normalized.contains("night remaster") ||
+            normalized.contains("square of the moon") ||
+            normalized.contains("夜が来る") ||
+            normalized.contains("邪夜将至") ||
+            normalized.contains("邪夜將至") ||
+            rawLower.contains("枌偑棃傞")
+    }
+
+    @JvmOverloads
+    fun isYorugakuruGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any {
+                it.equals("nightRemaster.ain", true) ||
+                    it.equals("yorugakuru.ain", true)
+            } || fileNames.any {
+                it.equals("NightRemasterCG.afa", true) ||
+                    it.equals("NightRemasterPact.afa", true) ||
+                    it.equals("NightRemasterDict.dat", true) ||
+                    it.equals("NightRemasterEX.ex", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isYorugakuruAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isYorugakuruGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isYorugakuruGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isRance1DigestAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("rance1digest") ||
+            normalized.contains("rance1_digest") ||
+            normalized.contains("rance 1 digest") ||
+            normalized.contains("rance1 digest") ||
+            normalized.contains("rance01digest") ||
+            normalized.contains("rance -光をもとめて- digest") ||
+            normalized.contains("rance -hikari o motomete- digest") ||
+            normalized.contains("兰斯1摘要") ||
+            normalized.contains("兰斯1 摘要") ||
+            normalized.contains("兰斯01摘要") ||
+            normalized.contains("蘭斯1摘要") ||
+            normalized.contains("ランス1ダイジェスト") ||
+            normalized.contains("ランス1 ダイジェスト") ||
+            normalized.contains("光をもとめて- digest") ||
+            (normalized.contains("光をもとめて") && (normalized.contains("digest") || normalized.contains("ダイジェスト") || normalized.contains("摘要")))
+    }
+
+    @JvmOverloads
+    fun isRance1DigestGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Rance1.ain", true) } ||
+            fileNames.any {
+                it.equals("Rance1_DLL.inc", true) ||
+                    it.equals("Rance1GA.ald", true) ||
+                    it.equals("RANCE1BA.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System40.ini", true) || it.equals("AliceStart.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isRance1DigestAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isRance1DigestGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isRance1DigestGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -1984,8 +2208,7 @@ object GameCatalog {
             val files = gameDir.listFiles()
             if (files != null) {
                 classifyGameRootDir(gameDir)?.let { return it }
-                val ainFiles = files.filter { it.isFile && it.name.endsWith(".ain", ignoreCase = true) }
-                if (ainFiles.any { !it.name.equals("System39.ain", ignoreCase = true) }) {
+                if (files.any { it.isFile && isSystem4CodeFile(it.name) }) {
                     return "$PREFIX_CUSTOM$dirName"
                 }
                 if (isSystem3xGameDir(gameDir)) {
@@ -2259,6 +2482,9 @@ object GameCatalog {
         ) {
             return ID_RANCE08
         }
+        if (isRance1DigestAlias(dirName)) {
+            return ID_RANCE1DIGEST
+        }
         if (lowerDir == "rance01" || lowerDir.startsWith("rance01-") || lowerDir.contains("rance 01") ||
             RANCE01_CN_ALIAS_REGEX.containsMatchIn(lowerDir) || lowerDir.contains("ランス01") ||
             lowerDir.contains("ランス０１")) {
@@ -2371,6 +2597,15 @@ object GameCatalog {
         if (isSdpsMariaAlias(dirName)) {
             return ID_SDPSMARIA
         }
+        if (isToushin3Alias(dirName)) {
+            return ID_TOUSHIN3
+        }
+        if (isOyakorankanAlias(dirName)) {
+            return ID_OYAKORANKAN
+        }
+        if (isYorugakuruAlias(dirName)) {
+            return ID_YORUGAKURU
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
@@ -2438,6 +2673,18 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isSdpsMariaAlias(displayName)) {
             return ID_SDPSMARIA
+        }
+        if (!displayName.isNullOrBlank() && isToushin3Alias(displayName)) {
+            return ID_TOUSHIN3
+        }
+        if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
+            return ID_OYAKORANKAN
+        }
+        if (!displayName.isNullOrBlank() && isYorugakuruAlias(displayName)) {
+            return ID_YORUGAKURU
+        }
+        if (!displayName.isNullOrBlank() && isRance1DigestAlias(displayName)) {
+            return ID_RANCE1DIGEST
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -3140,6 +3387,66 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_TOUSHIN3 -> GameDescriptor(
+                id = ID_TOUSHIN3,
+                title = stringResolver(R.string.game_toushin3_title),
+                defaultDirName = "Toushin3",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_toushin3,
+                accentColor = 0xFF1565C0.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF0E1D2F.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TOUSHIN3_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_OYAKORANKAN -> GameDescriptor(
+                id = ID_OYAKORANKAN,
+                title = stringResolver(R.string.game_oyakorankan_title),
+                defaultDirName = "Oyakorankan",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_oyakorankan,
+                accentColor = 0xFFC2185B.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF2B121C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.OYAKORANKAN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_YORUGAKURU -> GameDescriptor(
+                id = ID_YORUGAKURU,
+                title = stringResolver(R.string.game_yorugakuru_title),
+                defaultDirName = "Yorugakuru",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_yorugakuru,
+                accentColor = 0xFF283593.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF11152A.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.YORUGAKURU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE1DIGEST -> GameDescriptor(
+                id = ID_RANCE1DIGEST,
+                title = stringResolver(R.string.game_rance1digest_title),
+                defaultDirName = "Rance1Digest",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance1digest,
+                accentColor = 0xFF2E7D32.toInt(),
+                accentBorderColor = 0x6681C784,
+                iconFrameColor = 0xFF112315.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE1DIGEST_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -3205,7 +3512,11 @@ object GameCatalog {
         ID_WAIDONYO,
         ID_RANCE6AFTER,
         ID_YAKATA2,
-        ID_SDPSMARIA
+        ID_SDPSMARIA,
+        ID_TOUSHIN3,
+        ID_OYAKORANKAN,
+        ID_YORUGAKURU,
+        ID_RANCE1DIGEST
     )
 
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {

@@ -59,6 +59,9 @@ bool game_evenicle2 = false;
 bool game_evenicle2_rance = false;
 bool game_haharanman = false;
 bool game_okusama = false;
+bool game_night_remaster = false;
+bool game_oyakorankan = false;
+bool game_toushin3 = false;
 bool game_rance03 = false;
 bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
@@ -563,6 +566,9 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle2_rance = false;
 	game_haharanman = false;
 	game_okusama = false;
+	game_night_remaster = false;
+	game_oyakorankan = false;
+	game_toushin3 = false;
 	game_rance03 = false;
 	game_dungeons_and_dolls = false;
 	game_escalayer_reboot = false;
@@ -595,6 +601,14 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_okusama = ain->version == 14
 		&& ain_get_function(ain, "AdvGauge@UpdatePregnancy") >= 0
 		&& ain_has_gbk_string(ain, "4fnd6e97tn9");
+	game_night_remaster = ain->version == 14
+		&& ain_get_function(ain, "C_Monster@nMoonPiece::get") >= 0
+		&& ain_has_gbk_string(ain, "45qsdbdsfq5");
+	game_oyakorankan = ain->version == 6
+		&& ain_get_struct(ain, "StatusHeroineInfomation") >= 0
+		&& ain_get_struct(ain, "HeroineMapIcon") >= 0;
+	game_toushin3 = ain->version == 5
+		&& ain_get_library(ain, "Toushin3Loader") >= 0;
 	game_rance01 = ain->version == 6
 		&& ain_get_struct(ain, "Player") >= 0
 		&& ain_get_struct(ain, "DungeonLine") >= 0
@@ -653,7 +667,9 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
 			|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
 			|| strstr(config.game_name, "\xcc\xab\xcc\xab")
-			|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")))
+			|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")
+			|| strstr(config.game_name, "\xd0\xb0\xd2\xb9")
+			|| strstr(config.game_name, "\xb6\xb7\xc9\xf1")))
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -690,10 +706,15 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1920;
 		config.view_height = 1080;
 	}
-	if ((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman || game_okusama)
+	if ((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman || game_okusama || game_night_remaster)
 			&& config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;
+	}
+	if (game_oyakorankan && config.view_width == 1280 && config.view_height == 720) {
+		// The Longinus AliceStart.CHS patch mistakenly sets 1280x720; the game assets are 1024x768.
+		config.view_width = 1024;
+		config.view_height = 768;
 	}
 	char *game_name = config.game_name ? sjis2utf(config.game_name, 0) : xstrdup("");
 	if (game_daibanchou || !strcmp(game_name, "大番長")) {

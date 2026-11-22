@@ -772,8 +772,16 @@ static bool current_pact_sjis_under_gbk = false;
 static struct string *pact_ui_text(struct ex_tree *tree, const char *key)
 {
 	struct string *s = str(tree, key);
-	if (!current_pact_sjis_under_gbk || !s || !s->size)
+	if (!s || !s->size)
 		return string_ref(s ? s : &EMPTY_STRING);
+	char *dict_mapped = sys4_text_dict_translate_lines(s->text);
+	if (dict_mapped) {
+		struct string *out = make_string(dict_mapped, strlen(dict_mapped));
+		free(dict_mapped);
+		return out;
+	}
+	if (!current_pact_sjis_under_gbk)
+		return string_ref(s);
 	bool has_non_ascii = false;
 	for (int i = 0; i < s->size; i++) {
 		if ((unsigned char)s->text[i] >= 0x80) {

@@ -99,6 +99,7 @@ struct config config = {
 	.game_name = NULL,
 	.boot_name = NULL,
 	.ain_filename = NULL,
+	.ain_basename_utf8 = NULL,
 	.vm_name = NULL,
 	.game_dir = NULL,
 	.save_dir = NULL,
@@ -413,7 +414,9 @@ static void config_init(void)
 				|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
 				|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
 				|| strstr(config.game_name, "\xcc\xab\xcc\xab")
-				|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")))
+				|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")
+				|| strstr(config.game_name, "\xd0\xb0\xd2\xb9")
+				|| strstr(config.game_name, "\xb6\xb7\xc9\xf1")))
 			|| (config.ain_filename && strstr(config.ain_filename, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
@@ -456,6 +459,30 @@ static bool config_init_with_ini(const char *ini_path)
 
 static bool config_init_with_dir(const char *dir)
 {
+	// Prefer Longinus CN launcher config (AliceStart.CHS + CHS.TBL, e.g. Oyakorankan).
+	char *chs_ini = path_join(dir, "AliceStart.CHS");
+	if (!file_exists(chs_ini)) {
+		char *icase = path_get_icase(chs_ini);
+		free(chs_ini);
+		chs_ini = icase;
+	}
+	if (chs_ini && file_exists(chs_ini)) {
+		char *chs_tbl = path_join(dir, "CHS.TBL");
+		if (!file_exists(chs_tbl)) {
+			char *icase = path_get_icase(chs_tbl);
+			free(chs_tbl);
+			chs_tbl = icase;
+		}
+		bool has_chs_tbl = chs_tbl && file_exists(chs_tbl);
+		free(chs_tbl);
+		if (has_chs_tbl) {
+			bool ok = config_init_with_ini(chs_ini);
+			free(chs_ini);
+			return ok;
+		}
+	}
+	free(chs_ini);
+
 	char *alt_ini = path_join(dir, "AliceStart2.ini");
 	if (!file_exists(alt_ini)) {
 		char *icase = path_get_icase(alt_ini);
@@ -1091,10 +1118,55 @@ bool sys_is_sdl_main_thread(void)
 }
 #endif
 
+static void init_text_dict(void)
+{
+	sys4_reset_text_dict();
+	if (!config.game_dir)
+		return;
+	const char *base_src = (config.ain_basename_utf8 && *config.ain_basename_utf8)
+		? config.ain_basename_utf8
+		: config.ain_filename;
+	if (!base_src || !*base_src)
+		return;
+	const char *slash = strrchr(base_src, '/');
+	const char *bslash = strrchr(base_src, '\\');
+	const char *name = slash > bslash ? slash + 1 : (bslash ? bslash + 1 : base_src);
+	const char *dot = strrchr(name, '.');
+	size_t stem_len = dot ? (size_t)(dot - name) : strlen(name);
+	if (!stem_len)
+		return;
+	char *dict_name = xmalloc(stem_len + sizeof("Dict.dat"));
+	memcpy(dict_name, name, stem_len);
+	memcpy(dict_name + stem_len, "Dict.dat", sizeof("Dict.dat"));
+	char *path = gamedir_path_icase(dict_name);
+	free(dict_name);
+	if (path && file_exists(path)) {
+		if (!sys4_load_text_dict(path))
+			WARNING("Failed to load text dictionary: %s", path);
+	}
+	free(path);
+}
+
 static void init_mai_word_table(void)
 {
 	sys4_reset_mai_word_table();
-	if (sys4_text_is_gbk || !config.game_dir)
+	if (!config.game_dir)
+		return;
+	if (!sys4_source_is_utf8) {
+		char *chs_path = gamedir_path_icase("CHS.TBL");
+		if (chs_path && file_exists(chs_path)) {
+			if (sys4_load_chs_tbl(chs_path)) {
+				// Longinus CHS.TBL remaps Shift-JIS byte pairs to GBK glyphs at render time;
+				// keep VM/archive string encoding in Shift-JIS mode so EX/AFA lookups stay intact.
+				sys4_set_text_gbk(false);
+				free(chs_path);
+				return;
+			}
+			WARNING("Failed to load Longinus CHS.TBL: %s", chs_path);
+		}
+		free(chs_path);
+	}
+	if (sys4_text_is_gbk)
 		return;
 	char *path = gamedir_path_icase("mai/word.mai");
 	if (path && file_exists(path)) {
@@ -1262,10 +1334,11 @@ int main(int argc, char *argv[])
 		if (is_directory(argv[0])) {
 			if (!config_init_with_dir(argv[0]))
 				usage_error("Failed to find game in '%s'", argv[0]);
-		} else if (arg_ext && !strcasecmp(arg_ext, "ini")) {
+		} else if (arg_ext && (!strcasecmp(arg_ext, "ini")
+				|| (!strcasecmp(arg_ext, "chs") && !strcasecmp(path_basename(argv[0]), "AliceStart.CHS")))) {
 			if (!config_init_with_ini(argv[0]))
 				usage_error("Failed to read .ini file '%s'", argv[0]);
-		} else if (arg_ext && !strcasecmp(arg_ext, "ain")) {
+		} else if (arg_ext && (!strcasecmp(arg_ext, "ain") || !strcasecmp(arg_ext, "chs"))) {
 			config_init_with_ain(argv[0]);
 			native_ain_path = argv[0];
 		} else {
@@ -1285,6 +1358,10 @@ int main(int argc, char *argv[])
 		} else {
 			free(gbk_ain);
 		}
+	}
+	if (ainfile && file_exists(ainfile)) {
+		free(config.ain_basename_utf8);
+		config.ain_basename_utf8 = xstrdup(path_basename(ainfile));
 	}
 
 	read_user_config();
@@ -1325,6 +1402,7 @@ int main(int argc, char *argv[])
 	mkdir_p(config.save_dir);
 	apply_game_specific_hacks(ain);
 	init_mai_word_table();
+	init_text_dict();
 	if (config.msgskip_delay)
 		set_msgskip_delay(ain, config.msgskip_delay);
 	asset_manager_init();

@@ -139,10 +139,14 @@ final class GameLibrary: ObservableObject {
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        if regularFiles.contains(where: { ["alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
+        if regularFiles.contains(where: { ["alicestart.chs", "alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
             return (.system4, url, false)
         }
-        if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
+        if let ain = regularFiles.filter({
+            let lower = $0.lastPathComponent.lowercased()
+            let ext = $0.pathExtension.lowercased()
+            return (ext == "ain" && lower != "system39.ain") || (ext == "chs" && lower != "alicestart.chs")
+        })
             .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
             return (.system4, ain, false)
         }

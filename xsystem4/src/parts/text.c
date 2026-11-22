@@ -373,10 +373,12 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 
 void parts_text_append(struct parts *parts, struct parts_text *t, struct string *text)
 {
-	const char *msgp = text->text;
+	char *dict_mapped = text ? sys4_text_dict_translate_lines(text->text) : NULL;
+	const char *msgp = dict_mapped ? dict_mapped : (text ? text->text : "");
 	while (*msgp) {
 		msgp = parts_text_append_char(t, msgp);
 	}
+	free(dict_mapped);
 	parts_text_update_dims(parts, t);
 }
 
@@ -462,17 +464,26 @@ bool PE_SetText(int parts_no, struct string *text, int state)
 	if (!parts_state_valid(--state))
 		return false;
 
+	char *dict_mapped = text ? sys4_text_dict_translate_lines(text->text) : NULL;
+	struct string *effective = dict_mapped ? make_string(dict_mapped, strlen(dict_mapped)) : text;
+	free(dict_mapped);
+
 	struct parts *parts = parts_get(parts_no);
 	if (parts->states[state].type == PARTS_TEXT) {
 		struct parts_text *t = &parts->states[state].text;
 		struct string *cur = parts_text_get(t);
-		bool same = !strcmp(cur->text, text->text) && (t->nr_lines > 0 || !text->size);
+		bool same = !strcmp(cur->text, effective->text) && (t->nr_lines > 0 || !effective->size);
 		free_string(cur);
-		if (same)
+		if (same) {
+			if (effective != text)
+				free_string(effective);
 			return true;
+		}
 	}
 	parts_text_clear(parts, state);
-	parts_text_append(parts, parts_get_text(parts, state), text);
+	parts_text_append(parts, parts_get_text(parts, state), effective);
+	if (effective != text)
+		free_string(effective);
 	parts_dirty(parts);
 	return true;
 }

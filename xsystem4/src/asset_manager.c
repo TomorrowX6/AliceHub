@@ -914,7 +914,9 @@ static void afa_init(enum asset_type type, char *file)
 
 static char *get_base_name(const char *ain_filename)
 {
-	char *path = sjis_filename2utf(ain_filename, 0);
+	char *path = (config.ain_basename_utf8 && *config.ain_basename_utf8)
+		? xstrdup(config.ain_basename_utf8)
+		: sjis_filename2utf(ain_filename, 0);
 	char *dot = strrchr(path, '.');
 	if (dot)
 		*dot = '\0';
@@ -1051,10 +1053,13 @@ void asset_manager_init(void)
 		if (!ext)
 			goto loop_next;
 		// archive filename must normally begin with ain filename; retain *.ald candidates for renamed CN AINs
+		// and standalone CHS.afa overlays used by Longinus CN translations (e.g. Oyakorankan).
 		if (strncasecmp(base, match_name, base_len)) {
 			if (!strcasecmp(ext, "ald")) {
 				fallback_alds = xrealloc(fallback_alds, (nr_fallback_alds + 1) * sizeof(*fallback_alds));
 				fallback_alds[nr_fallback_alds++] = xstrdup(d_name);
+			} else if (!strcasecmp(match_name, "CHS.afa") && !afa_chs_cg) {
+				afa_chs_cg = path_join(config.game_dir, d_name);
 			}
 			goto loop_next;
 		}

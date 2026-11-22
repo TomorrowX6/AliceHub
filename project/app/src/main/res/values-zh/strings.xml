@@ -271,6 +271,10 @@
     <string name="game_rance6after_title">兰斯06 后日谈</string>
     <string name="game_yakata2_title">爱丽丝之馆2</string>
     <string name="game_sdpsmaria_title">Super D.P.S 玛利亚和坎潘</string>
+    <string name="game_toushin3_title">斗神都市3</string>
+    <string name="game_oyakorankan_title">母娘乱馆</string>
+    <string name="game_yorugakuru_title">邪夜将至 Remastered</string>
+    <string name="game_rance1digest_title">兰斯1 摘要版</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

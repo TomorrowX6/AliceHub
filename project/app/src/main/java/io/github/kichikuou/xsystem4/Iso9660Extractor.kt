@@ -107,9 +107,7 @@ object Iso9660Extractor {
                             if (GameCatalog.isSystem4LaunchIni(e.name)) {
                                 hasIni = true
                             }
-                            if (e.name.endsWith(".ain", ignoreCase = true) &&
-                                !e.name.equals("System39.ain", ignoreCase = true)
-                            ) {
+                            if (GameCatalog.isSystem4CodeFile(e.name)) {
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true) ||
                                     ArchiveExtractor.repairSjisAsGbkMojibake(e.name).equals(expectedAinName, ignoreCase = true)
