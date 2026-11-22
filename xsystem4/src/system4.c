@@ -435,7 +435,26 @@ static void config_init_with_utf8_codename(const char *utf8_code_name)
 	if (omitted_game_name && utf8_code_name && *utf8_code_name &&
 	    !strchr(utf8_code_name, '?') && config.ain_filename &&
 	    strchr(config.ain_filename, '?') && !is_directory(legacy_save_dir)) {
-		new_save_dir = get_save_path(config.save_dir, utf8_code_name);
+		char *candidate = NULL;
+#ifndef _WIN32
+		if (strchr(utf8_code_name, '\\')) {
+			char *raw_utf8_save_dir = get_save_path(config.save_dir, utf8_code_name);
+			if (is_directory(raw_utf8_save_dir))
+				candidate = raw_utf8_save_dir;
+			else
+				free(raw_utf8_save_dir);
+		}
+#endif
+		if (!candidate) {
+			char *normalized = xstrdup(utf8_code_name);
+			for (char *p = normalized; *p; p++) {
+				if (*p == '\\')
+					*p = '/';
+			}
+			candidate = get_save_path(config.save_dir, normalized);
+			free(normalized);
+		}
+		new_save_dir = candidate;
 		free(legacy_save_dir);
 	}
 	free(config.save_dir);
@@ -492,10 +511,6 @@ static bool config_init_with_ini(const char *ini_path)
 		// filenames (e.g. GBK-only chars) are not mangled into '?' when opening the script,
 		// resolving sidecar assets, or creating default save folders for untitled INIs.
 		utf8_code_name = sjis2utf(config.ain_filename, strlen(config.ain_filename));
-		for (char *p = utf8_code_name; *p; p++) {
-			if (*p == '\\')
-				*p = '/';
-		}
 		char *ain_path = gamedir_path_icase(config.ain_filename);
 		if (!ain_path)
 			ain_path = gamedir_path(config.ain_filename);

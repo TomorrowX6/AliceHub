@@ -684,6 +684,8 @@ int main(int argc, char **argv) {{
             home_dir.mkdir()
             legacy_home = td / "legacy_home"
             (legacy_home / "游?.CHS" / "SaveData").mkdir(parents=True)
+            bslash_home = td / "bslash_home"
+            (bslash_home / "episode1\\游戏.CHS" / "SaveData").mkdir(parents=True)
 
             game_dir = td / "utf8_gbk_chs"
             game_dir.mkdir()
@@ -767,7 +769,7 @@ static bool read_config_entries(const char *path);
 {fn_init_dir}
 
 int main(int argc, char **argv) {{
-    assert(argc == 6);
+    assert(argc == 7);
     test_home_dir = argv[4];
 
     // 1. Untitled UTF-8 System40.ini pointing to legacy "游戏.CHS".
@@ -829,6 +831,13 @@ int main(int argc, char **argv) {{
     assert(config.save_dir != NULL);
     assert(strstr(config.save_dir, "/\\xe6\\xb8\\xb8?.CHS/SaveData") != NULL);
 
+    // 5. Pre-existing POSIX literal-backslash save dir ("episode1\\游戏.CHS/SaveData") is preserved.
+    test_home_dir = argv[6];
+    memset(&config, 0, sizeof(config));
+    assert(config_init_with_dir(argv[2]) == true);
+    assert(config.save_dir != NULL);
+    assert(strstr(config.save_dir, "/episode1\\\\\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS/SaveData") != NULL);
+
     puts("OK");
     return 0;
 }}
@@ -860,7 +869,7 @@ int main(int argc, char **argv) {{
                     "-I" + str(td),
                     "-I" + str(libsys4_src),
                 ],
-                [str(game_dir), str(ep1_dir), str(kana_dir), str(home_dir), str(legacy_home)],
+                [str(game_dir), str(ep1_dir), str(kana_dir), str(home_dir), str(legacy_home), str(bslash_home)],
             )
             self.assertEqual(out.strip(), "OK")
 
