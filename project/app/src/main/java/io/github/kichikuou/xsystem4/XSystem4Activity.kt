@@ -266,6 +266,13 @@ class XSystem4Activity : SDLActivity() {
 
     private fun applyImmersiveFullscreen() {
         val win = window ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = win.attributes
+            if (lp.layoutInDisplayCutoutMode != WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                win.attributes = lp
+            }
+        }
         @Suppress("DEPRECATION")
         val flags = View.SYSTEM_UI_FLAG_FULLSCREEN or
             View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or

@@ -540,7 +540,7 @@ SDL_Surface *gfx_createSurfaceView(SDL_Surface *sf, int x, int y, int w, int h) 
 }
 
 void gfx_setFullscreen(bool on) {
-#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	if (on == gfx_fullscreen)
 		return;
 	sdl_SetWindowFullscreen(gfx_window, on);
@@ -562,7 +562,7 @@ void gfx_setViewSize(int w, int h) {
 	view_w = w;
 	view_h = h;
 
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	sdl_SetWindowContentSize(gfx_window, w, h);
 #endif
 	sdl_SetRenderLogicalPresentation(gfx_renderer, w, h, gfx_integer_scaling);

@@ -820,7 +820,7 @@ void gfx_trace_resume(const char *phase)
  */
 static void init_window_size(void)
 {
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	int display_id = SDL_GetWindowDisplayIndex(sdl.window);
 	if (display_id < 0)
 		return;
@@ -1238,6 +1238,33 @@ static bool is_app_in_background(void)
 #endif
 }
 
+static void gfx_refresh_viewport_if_needed(void)
+{
+	static int last_display_w = 0, last_display_h = 0;
+	static int last_logical_w = 0, last_logical_h = 0;
+	if (!sdl.window)
+		return;
+	int display_w = 0, display_h = 0;
+#ifdef ALICEHUB_IOS
+	SDL_GetWindowSize(sdl.window, &display_w, &display_h);
+#else
+	SDL_GL_GetDrawableSize(sdl.window, &display_w, &display_h);
+#endif
+	if (display_w <= 0 || display_h <= 0 || sdl.w <= 0 || sdl.h <= 0)
+		return;
+	if (sdl.viewport.w <= 0 || sdl.viewport.h <= 0 ||
+			display_w != last_display_w || display_h != last_display_h ||
+			sdl.w != last_logical_w || sdl.h != last_logical_h) {
+		gfx_update_screen_scale();
+		if (sdl.viewport.w > 0 && sdl.viewport.h > 0) {
+			last_display_w = display_w;
+			last_display_h = display_h;
+			last_logical_w = sdl.w;
+			last_logical_h = sdl.h;
+		}
+	}
+}
+
 void gfx_swap(void)
 {
 #ifdef __ANDROID__
@@ -1259,8 +1286,7 @@ void gfx_swap(void)
 		view = &main_surface;
 	else if (view != &main_surface && !gfx_remap_texture(view))
 		view = &main_surface;
-	if (sdl.viewport.w <= 0 || sdl.viewport.h <= 0)
-		gfx_update_screen_scale();
+	gfx_refresh_viewport_if_needed();
 	if (sdl.viewport.w <= 0 || sdl.viewport.h <= 0)
 		return;
 	pinned_draw_tex = 0;

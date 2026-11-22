@@ -60,9 +60,14 @@ def _build_fnl(fonts: list[list[tuple[int, dict[int, int]]]]) -> bytes:
 class FontAndDrawScissorTests(unittest.TestCase):
     def test_fnl_substitute_scale_per_font_and_gbk_modes(self):
         fn_read_le32 = extract_function("src/text.c", "read_le32")
+        fn_uses_sub = extract_function("src/text.c", "fnl_uses_ttf_substitute")
+        fn_set_scales = extract_function("src/text.c", "set_fnl_substitute_scales")
+        fn_apply_fallback = extract_function("src/text.c", "apply_fallback_fnl_substitute_scale")
         fn_get_scale = extract_function("src/text.c", "get_fnl_substitute_scale")
-        fn_get_ypad = extract_function("src/text.c", "get_fnl_substitute_y_pad")
+        fn_get_ypad = extract_function("src/text.c", "gfx_get_fnl_substitute_y_pad")
         fn_init_scale = extract_function("src/text.c", "init_fnl_substitute_scale")
+        fn_actual_size = extract_function("src/text.c", "gfx_get_actual_font_size")
+        fn_actual_size_rd = extract_function("src/text.c", "gfx_get_actual_font_size_round_down")
 
         # Multi-font .fnl matching real games (e.g. Rance09 / Rance08 / Evenicle):
         # font 0: h=384, 確 w=268 (0.6979)
@@ -97,27 +102,66 @@ class FontAndDrawScissorTests(unittest.TestCase):
 
 #define MAX_FNL_FONTS 32
 struct config config;
+bool game_night_remaster = false;
+bool game_evenicle2 = false;
+bool game_evenicle2_rance = false;
+bool game_evenicle = false;
+bool game_evenicle_rance = false;
+bool game_evenicle_gaiden = false;
+bool game_ixseal = false;
+bool game_oyakorankan = false;
+bool game_tsumamigui3 = false;
+bool game_rance01 = false;
+bool game_rance03 = false;
+bool game_rance8 = false;
+bool game_rance9 = false;
+bool game_rance10 = false;
+bool game_okusama = false;
+bool game_dohnadohna = false;
+
 static float fnl_substitute_scales[MAX_FNL_FONTS];
 static unsigned fnl_substitute_count = 0;
 
+struct font {{
+    float (*get_actual_size)(struct font *font, float size);
+    float (*get_actual_size_round_down)(struct font *font, float size);
+}};
+static float stub_actual(struct font *f, float s) {{ (void)f; return roundf(s); }}
+static float stub_actual_rd(struct font *f, float s) {{ (void)f; return floorf(s); }}
+static struct font stub_font = {{ .get_actual_size = stub_actual, .get_actual_size_round_down = stub_actual_rd }};
+static struct font *get_font(unsigned face) {{ (void)face; return &stub_font; }}
+
+static void reset_games(void) {{
+    game_night_remaster = game_evenicle2 = game_evenicle2_rance = false;
+    game_evenicle = game_evenicle_rance = game_evenicle_gaiden = false;
+    game_ixseal = game_oyakorankan = game_tsumamigui3 = false;
+    game_rance01 = game_rance03 = game_rance8 = game_rance9 = false;
+    game_rance10 = game_okusama = game_dohnadohna = false;
+}}
+
 {fn_read_le32}
+{fn_uses_sub}
+{fn_set_scales}
+{fn_apply_fallback}
 {fn_get_scale}
 {fn_get_ypad}
 {fn_init_scale}
+{fn_actual_size}
+{fn_actual_size_rd}
 
 int main(int argc, char **argv) {{
     assert(argc == 4);
     memset(&config, 0, sizeof(config));
     config.fnl_path = argv[1];
 
-    // 1. Native JP mode (!gbk && !mai) does NOT substitute or scale.
+    // 1. Native JP mode with .fnl present (!gbk && !mai) does NOT substitute or scale.
     sys4_set_text_gbk(false);
     sys4_set_source_utf8(false);
     sys4_reset_mai_word_table();
     init_fnl_substitute_scale();
     assert(fnl_substitute_count == 0);
     assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
-    assert(get_fnl_substitute_y_pad(256, 30.0f) == 0);
+    assert(gfx_get_fnl_substitute_y_pad(256, 30.0f) == 0);
 
     // 2. GBK mode (non-UTF8, e.g. Rance01/03/08/09/Evenicle/Ixseal/Oyakorankan) parses ALL fonts.
     sys4_set_text_gbk(true);
@@ -132,10 +176,22 @@ int main(int argc, char **argv) {{
     // Out-of-range FNL face falls back to font 0.
     assert(fabsf(get_fnl_substitute_scale(270) - (268.0f / 384.0f)) < 1e-3f);
     // Vertical centering pad: size=30, scaled=round(30*0.6979)=21 -> (30-21)/2 = 4.5 -> 5.
-    assert(get_fnl_substitute_y_pad(256, 30.0f) == 5);
-    assert(get_fnl_substitute_y_pad(0, 30.0f) == 0);
+    assert(gfx_get_fnl_substitute_y_pad(256, 30.0f) == 5);
+    assert(gfx_get_fnl_substitute_y_pad(0, 30.0f) == 0);
+    // Actual font size queries also apply the substitute scale for face >= 256.
+    assert(fabsf(gfx_get_actual_font_size(256, 30.0f) - 21.0f) < 1e-3f);
+    assert(fabsf(gfx_get_actual_font_size_round_down(256, 30.0f) - 20.0f) < 1e-3f);
+    assert(fabsf(gfx_get_actual_font_size(0, 30.0f) - 30.0f) < 1e-3f);
 
-    // 3. CHS.TBL / mai word table mode also scales even if sys4_text_is_gbk is false.
+    // 3. On-disk .fnl takes precedence over built-in game fallback table.
+    reset_games();
+    game_night_remaster = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 3);
+    assert(fabsf(get_fnl_substitute_scale(256) - (268.0f / 384.0f)) < 1e-3f);
+    reset_games();
+
+    // 4. CHS.TBL / mai word table mode also scales even if sys4_text_is_gbk is false.
     sys4_set_text_gbk(false);
     uint8_t word[65536] = {{0}};
     word[0x8bf7] = 1;
@@ -145,19 +201,73 @@ int main(int argc, char **argv) {{
     assert(fabsf(get_fnl_substitute_scale(256) - (268.0f / 384.0f)) < 1e-3f);
     sys4_reset_mai_word_table();
 
-    // 4. File shorter than index_size stops safely with count == 0 and scale 1.0.
+    // 5. File shorter than index_size stops safely with count == 0 and scale 1.0 (unknown game).
     sys4_set_text_gbk(true);
     config.fnl_path = argv[2];
     init_fnl_substitute_scale();
     assert(fnl_substitute_count == 0);
     assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
 
-    // 5. Index truncated mid-font 1 keeps font 0 cleanly without crashing.
+    // 6. Index truncated mid-font 1 keeps font 0 cleanly without crashing.
     config.fnl_path = argv[3];
     init_fnl_substitute_scale();
     assert(fnl_substitute_count == 1);
     assert(fabsf(get_fnl_substitute_scale(256) - (268.0f / 384.0f)) < 1e-3f);
     assert(fabsf(get_fnl_substitute_scale(257) - (268.0f / 384.0f)) < 1e-3f);
+
+    // 7. Missing .fnl (CDN packages without .fnl or stripped repacks) uses measured per-game fallback.
+    config.fnl_path = NULL;
+    reset_games();
+    game_evenicle2_rance = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 2);
+    assert(fabsf(get_fnl_substitute_scale(256) - (159.0f / 200.0f)) < 1e-3f);
+    assert(fabsf(get_fnl_substitute_scale(257) - (118.0f / 176.0f)) < 1e-3f);
+    assert(gfx_get_fnl_substitute_y_pad(257, 42.0f) == 7);
+
+    reset_games();
+    game_evenicle_gaiden = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 3);
+    assert(fabsf(get_fnl_substitute_scale(256) - (190.0f / 272.0f)) < 1e-3f);
+    assert(fabsf(get_fnl_substitute_scale(257) - (87.0f / 112.0f)) < 1e-3f);
+    assert(fabsf(get_fnl_substitute_scale(258) - (77.0f / 96.0f)) < 1e-3f);
+
+    // NightRemaster stripped-FNL works in BOTH GBK and JP (non-GBK) mode since get_font() uses TTF.
+    reset_games();
+    game_night_remaster = true;
+    sys4_set_text_gbk(false);
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 5);
+    assert(fabsf(get_fnl_substitute_scale(256) - (163.0f / 288.0f)) < 1e-3f);
+    assert(fabsf(get_fnl_substitute_scale(260) - (156.0f / 192.0f)) < 1e-3f);
+    assert(gfx_get_fnl_substitute_y_pad(256, 60.0f) == 13);
+
+    reset_games();
+    game_rance9 = true;
+    sys4_set_text_gbk(true);
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 6);
+    assert(fabsf(get_fnl_substitute_scale(261) - (109.0f / 200.0f)) < 1e-3f);
+
+    // 8. Native-TTF games (Rance 10, Okusama, Dohna Dohna) must remain unscaled (1.0).
+    reset_games();
+    game_rance10 = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+    assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
+
+    reset_games();
+    game_okusama = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+    assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
+
+    reset_games();
+    game_dohnadohna = true;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+    assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
 
     puts("OK");
     return 0;
@@ -381,9 +491,272 @@ int main(int argc, char **argv) {{
         self.assertIn("is_valid_fnl_file(cand_path)", src)
         self.assertIn("if (!config.fnl_path && fallback_fnl_name)", src)
 
-        # Verify text.c enables gfx_text_advance_edges whenever config.fnl_path is present.
+        # Verify text.c enables gfx_text_advance_edges for both on-disk and fallback FNL scales.
         text_src = (ROOT / "src/text.c").read_text(encoding="utf-8")
-        self.assertIn("(config.fnl_path || (ain && ain->version >= 12)) && !game_rance7_mg", text_src)
+        self.assertIn("(config.fnl_path || fnl_substitute_count || (ain && ain->version >= 12)) && !game_rance7_mg", text_src)
+
+        # Verify NewFont applies the FNL substitute vertical pad.
+        newfont_src = (ROOT / "src/hll/NewFont.c").read_text(encoding="utf-8")
+        self.assertIn("gfx_get_fnl_substitute_y_pad(", newfont_src)
+
+    def test_hacks_resolution_and_structural_detection(self):
+        fn_apply = extract_function("src/hacks.c", "apply_game_specific_hacks")
+        fn_has_gbk = extract_function("src/hacks.c", "ain_has_gbk_string")
+        fn_has_r03 = extract_function("src/hacks.c", "ain_has_gbk_r03_strings")
+        fn_msg_gbk = extract_function("src/hacks.c", "ain_messages_look_gbk")
+
+        harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+#include "system4.h"
+#include "system4/ain.h"
+#include "system4/hashtable.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "xsystem4.h"
+
+struct config config;
+bool game_daibanchou = false, game_daibanchou_en = false, game_daiteikoku = false;
+bool game_haruurare = false, game_rance01 = false, game_rance02 = false;
+bool game_rance02_mg = false, game_rance6 = false, game_rance6_mg = false;
+bool game_rance7_mg = false, game_sengokurance = false, game_rance8 = false;
+bool game_rance8_mg = false, game_rance9 = false, game_rance10 = false;
+bool game_dohnadohna = false, game_evenicle = false, game_evenicle_rance = false;
+bool game_evenicle_gaiden = false, game_evenicle2 = false, game_evenicle2_rance = false;
+bool game_haharanman = false, game_okusama = false, game_night_remaster = false;
+bool game_oyakorankan = false, game_toushin3 = false, game_rance03 = false;
+bool game_dungeons_and_dolls = false, game_escalayer_reboot = false;
+bool game_galzoo = false, game_ixseal = false, game_tsumashibori = false;
+bool game_tsumamigui3 = false, game_waidonyo = false;
+
+static void apply_daibanchou_hacks(struct ain *a) {{ (void)a; }}
+static void apply_rance02_hacks(struct ain *a) {{ (void)a; }}
+static void apply_rance6_hacks(struct ain *a) {{ (void)a; }}
+static void apply_rance9_hacks(struct ain *a) {{ (void)a; }}
+static void apply_rance03_message_layout(struct ain *a) {{ (void)a; }}
+static void apply_rance03_card_caption_layout(struct ain *a) {{ (void)a; }}
+static void apply_rance03_effect_sound_paths(struct ain *a) {{ (void)a; }}
+static void apply_rance03_skill_cooldown_layout(struct ain *a) {{ (void)a; }}
+static void escalayer_reboot_replace_cn_ui_text(struct string **s, int n) {{ (void)s; (void)n; }}
+
+{fn_has_gbk}
+{fn_has_r03}
+{fn_msg_gbk}
+{fn_apply}
+
+static void add_struct(struct ain *a, const char *name) {{
+    a->structures = xrealloc(a->structures, (a->nr_structures + 1) * sizeof(*a->structures));
+    memset(&a->structures[a->nr_structures], 0, sizeof(*a->structures));
+    a->structures[a->nr_structures++].name = xstrdup(name);
+}}
+static void add_lib(struct ain *a, const char *name) {{
+    a->libraries = xrealloc(a->libraries, (a->nr_libraries + 1) * sizeof(*a->libraries));
+    memset(&a->libraries[a->nr_libraries], 0, sizeof(*a->libraries));
+    a->libraries[a->nr_libraries++].name = xstrdup(name);
+}}
+static void add_func(struct ain *a, const char *name) {{
+    a->functions = xrealloc(a->functions, (a->nr_functions + 1) * sizeof(*a->functions));
+    memset(&a->functions[a->nr_functions], 0, sizeof(*a->functions));
+    a->functions[a->nr_functions++].name = xstrdup(name);
+}}
+static void add_global(struct ain *a, const char *name) {{
+    a->globals = xrealloc(a->globals, (a->nr_globals + 1) * sizeof(*a->globals));
+    memset(&a->globals[a->nr_globals], 0, sizeof(*a->globals));
+    a->globals[a->nr_globals++].name = xstrdup(name);
+}}
+static void add_string(struct ain *a, const char *s) {{
+    a->strings = xrealloc(a->strings, (a->nr_strings + 1) * sizeof(*a->strings));
+    a->strings[a->nr_strings++] = make_string(s, strlen(s));
+}}
+static void index_and_apply(struct ain *a) {{
+    if (a->_func_ht) {{ ht_free(a->_func_ht); a->_func_ht = NULL; }}
+    if (a->_struct_ht) {{ ht_free(a->_struct_ht); a->_struct_ht = NULL; }}
+    ain_index_functions(a);
+    ain_index_structures(a);
+    apply_game_specific_hacks(a);
+}}
+static void free_mock_ain(struct ain *a) {{
+    if (a->_func_ht) ht_free(a->_func_ht);
+    if (a->_struct_ht) ht_free(a->_struct_ht);
+    for (int i = 0; i < a->nr_structures; i++) free(a->structures[i].name);
+    for (int i = 0; i < a->nr_libraries; i++) free(a->libraries[i].name);
+    for (int i = 0; i < a->nr_functions; i++) free(a->functions[i].name);
+    for (int i = 0; i < a->nr_globals; i++) free(a->globals[i].name);
+    for (int i = 0; i < a->nr_strings; i++) free_string(a->strings[i]);
+    free(a->structures); free(a->libraries); free(a->functions); free(a->globals); free(a->strings);
+    memset(a, 0, sizeof(*a));
+}}
+
+int main(void) {{
+    struct ain a = {{0}};
+
+    // 1. Tsumamigui 3 with renamed AIN detects structurally and sets 1024x768.
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    config.ain_filename = "renamed_cn.ain";
+    a.version = 7;
+    add_struct(&a, "C_LOVE_SHIELD");
+    add_struct(&a, "C_LOVE_SHIELD_GAUGE");
+    index_and_apply(&a);
+    assert(game_tsumamigui3 && config.view_width == 1024 && config.view_height == 768);
+    free_mock_ain(&a);
+
+    // 2. Waidonyo detects structurally and sets 1280x720.
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    a.version = 6;
+    add_lib(&a, "ChrLoader"); add_lib(&a, "MapLoader"); add_struct(&a, "T_MamatotoDamage");
+    index_and_apply(&a);
+    assert(game_waidonyo && config.view_width == 1280 && config.view_height == 720);
+    free_mock_ain(&a);
+
+    // 3. Oyakorankan overrides BOTH 1280x720 (broken AliceStart.CHS) and 800x600 (direct .CHS launch) to 1024x768.
+    a.version = 6;
+    add_struct(&a, "StatusHeroineInfomation"); add_struct(&a, "HeroineMapIcon");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 1280; config.view_height = 720;
+    index_and_apply(&a);
+    assert(game_oyakorankan && config.view_width == 1024 && config.view_height == 768);
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_oyakorankan && config.view_width == 1024 && config.view_height == 768);
+    free_mock_ain(&a);
+
+    // 4. Evenicle / Evenicle Gaiden / Rance01 / Rance03 / Haru Urare / Daibanchou / Daiteikoku.
+    a.version = 6;
+    add_struct(&a, "CBigMap"); add_func(&a, "CMapPlayer@RunPathFindMove");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_evenicle && config.view_width == 1280 && config.view_height == 720);
+    add_string(&a, "aa6sdd5432");
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_evenicle_gaiden && config.view_width == 1280 && config.view_height == 720);
+    free_mock_ain(&a);
+
+    a.version = 6;
+    add_struct(&a, "Player"); add_struct(&a, "DungeonLine"); add_global(&a, "g_chipDepository");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_rance01 && config.view_width == 1024 && config.view_height == 768);
+    free_mock_ain(&a);
+
+    a.version = 6;
+    add_struct(&a, "HaruApp"); add_struct(&a, "CustomerRequirement");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_haruurare && config.view_width == 1024 && config.view_height == 768);
+    free_mock_ain(&a);
+
+    a.version = 4;
+    add_lib(&a, "BanMisc"); add_struct(&a, "StructPowerUpPhase");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_daibanchou && config.view_width == 640 && config.view_height == 480);
+    free_mock_ain(&a);
+
+    a.version = 6;
+    add_struct(&a, "StarBattleArea"); add_struct(&a, "AdmiralSkillInfoConstant");
+    memset(&config, 0, sizeof(config));
+    config.view_width = 800; config.view_height = 600;
+    index_and_apply(&a);
+    assert(game_daiteikoku && config.view_width == 800 && config.view_height == 600);
+    free_mock_ain(&a);
+
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(
+            harness,
+            LIBSYS4_CORE,
+            ["-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_video_viewport_auto_refresh_and_mobile_guards(self):
+        fn_update = extract_function("src/video.c", "void gfx_update_screen_scale")
+        fn_refresh = extract_function("src/video.c", "static void gfx_refresh_viewport_if_needed")
+
+        for define_ios in (False, True):
+            macro = "#define ALICEHUB_IOS" if define_ios else ""
+            harness = f"""
+#include <assert.h>
+#include <stdio.h>
+{macro}
+typedef void SDL_Window;
+typedef struct {{ int x, y, w, h; }} SDL_Rect;
+static int dummy_win = 1;
+static struct {{ SDL_Window *window; int w, h; SDL_Rect viewport; }} sdl = {{
+    .window = &dummy_win, .w = 800, .h = 600, .viewport = {{0, 0, 0, 0}}
+}};
+static int cur_w = 1080, cur_h = 2340;
+static void SDL_GetWindowSize(SDL_Window *w, int *ow, int *oh) {{ (void)w; *ow = cur_w; *oh = cur_h; }}
+static void SDL_GL_GetDrawableSize(SDL_Window *w, int *ow, int *oh) {{ (void)w; *ow = cur_w; *oh = cur_h; }}
+
+{fn_update}
+{fn_refresh}
+
+int main(void) {{
+    // 1. Initial portrait launch -> letterboxed 800x600 inside 1080x2340.
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.x == 0 && sdl.viewport.w == 1080 && sdl.viewport.h == 810);
+
+    // 2. Async rotation to landscape 2340x1080 (without SDL_WINDOWEVENT_SIZE_CHANGED) -> pillarboxed 4:3.
+    cur_w = 2340; cur_h = 1080;
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.y == 0 && sdl.viewport.h == 1080 && sdl.viewport.w == 1440 && sdl.viewport.x == 450);
+
+    // 3. Immersive bar / cutout expand 2260x1080 -> 2340x1080 updates viewport x immediately.
+    cur_w = 2260; cur_h = 1080;
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.w == 1440 && sdl.viewport.x == 410);
+
+    // 4. Logical resolution change (1280x720) updates viewport aspect ratio.
+    sdl.w = 1280; sdl.h = 720;
+    cur_w = 2340; cur_h = 1080;
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.w == 1920 && sdl.viewport.h == 1080 && sdl.viewport.x == 210);
+
+    // 5. Transient 0x0 size preserves existing valid viewport and recovers on next valid frame.
+    cur_w = 0; cur_h = 0;
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.w == 1920 && sdl.viewport.h == 1080);
+    cur_w = 1920; cur_h = 1080;
+    gfx_refresh_viewport_if_needed();
+    assert(sdl.viewport.x == 0 && sdl.viewport.w == 1920 && sdl.viewport.h == 1080);
+
+    puts("OK");
+    return 0;
+}}
+"""
+            out = compile_and_run(harness, [], [])
+            self.assertEqual(out.strip(), "OK")
+
+        # Verify mobile fullscreen guards in xsystem4, xsystem35, and Android cutout config.
+        video_src = (ROOT / "src/video.c").read_text(encoding="utf-8")
+        self.assertIn("#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)", video_src)
+        self.assertIn("gfx_refresh_viewport_if_needed();", video_src)
+
+        repo_root = ROOT.parent
+        x35_video_src = (repo_root / "xsystem35/src/gfx_video.c").read_text(encoding="utf-8")
+        self.assertIn("#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && !defined(ALICEHUB_IOS)", x35_video_src)
+        self.assertIn("#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)", x35_video_src)
+
+        cutout_style = (repo_root / "project/app/src/main/res/values-v28/styles.xml").read_text(encoding="utf-8")
+        self.assertIn("shortEdges", cutout_style)
+        activity_src = (repo_root / "project/app/src/main/java/io/github/kichikuou/xsystem4/XSystem4Activity.kt").read_text(encoding="utf-8")
+        self.assertIn("LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES", activity_src)
 
 
 if __name__ == "__main__":

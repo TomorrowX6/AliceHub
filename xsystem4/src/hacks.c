@@ -69,6 +69,7 @@ bool game_galzoo = false;
 bool game_ixseal = false;
 bool game_tsumashibori = false;
 bool game_tsumamigui3 = false;
+bool game_waidonyo = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -576,6 +577,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_ixseal = false;
 	game_tsumashibori = false;
 	game_tsumamigui3 = false;
+	game_waidonyo = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -645,11 +647,18 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_haruurare = ain->version == 6
 		&& ain_get_struct(ain, "HaruApp") >= 0
 		&& ain_get_struct(ain, "CustomerRequirement") >= 0;
-	if (ain->version == 7 && config.ain_filename) {
+	game_tsumamigui3 = ain->version == 7
+		&& ain_get_struct(ain, "C_LOVE_SHIELD") >= 0
+		&& ain_get_struct(ain, "C_LOVE_SHIELD_GAUGE") >= 0;
+	if (!game_tsumamigui3 && ain->version == 7 && config.ain_filename) {
 		const char *ain_base = strrchr(config.ain_filename, '/');
 		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
 		game_tsumamigui3 = !strcasecmp(ain_base, "Tsumamigui3.ain");
 	}
+	game_waidonyo = ain->version == 6
+		&& ain_get_library(ain, "ChrLoader") >= 0
+		&& ain_get_library(ain, "MapLoader") >= 0
+		&& ain_get_struct(ain, "T_MamatotoDamage") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
 	// UTF-8 releases are converted to GBK when loaded.
@@ -706,12 +715,15 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1920;
 		config.view_height = 1080;
 	}
-	if ((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman || game_okusama || game_night_remaster)
+	if ((game_dohnadohna || game_evenicle || game_evenicle_rance || game_evenicle_gaiden
+				|| game_evenicle2 || game_ixseal || game_haharanman || game_okusama
+				|| game_night_remaster || game_waidonyo)
 			&& config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;
 	}
-	if (game_oyakorankan && config.view_width == 1280 && config.view_height == 720) {
+	if (game_oyakorankan && ((config.view_width == 1280 && config.view_height == 720)
+			|| (config.view_width == 800 && config.view_height == 600))) {
 		// The Longinus AliceStart.CHS patch mistakenly sets 1280x720; the game assets are 1024x768.
 		config.view_width = 1024;
 		config.view_height = 768;
@@ -756,21 +768,19 @@ void apply_game_specific_hacks(struct ain *ain)
 		game_rance9 = true;
 		apply_rance9_hacks(ain);
 	}
-	if (game_tsumamigui3 && config.view_width == 800 && config.view_height == 600) {
-		config.view_width = 1024;
-		config.view_height = 768;
+	if ((game_rance6 || game_daibanchou) && config.view_width == 800 && config.view_height == 600) {
+		config.view_width = 640;
+		config.view_height = 480;
 	}
-	if (game_rance8 && config.view_width == 800 && config.view_height == 600) {
+	if ((game_tsumamigui3 || game_rance01 || game_rance03 || game_rance8
+				|| game_escalayer_reboot || game_haruurare)
+			&& config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1024;
 		config.view_height = 768;
 	}
 	if (game_rance9 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 1280;
 		config.view_height = 720;
-	}
-	if (game_escalayer_reboot && config.view_width == 800 && config.view_height == 600) {
-		config.view_width = 1024;
-		config.view_height = 768;
 	}
 	/* Leftover SJIS *display* strings in the CN edition. Exact matches only. */
 	if (game_escalayer_reboot && sys4_text_is_gbk)
