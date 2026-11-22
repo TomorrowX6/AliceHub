@@ -693,8 +693,8 @@ int main(int argc, char **argv) {{
 
             ep1_dir = td / "ep1"
             (ep1_dir / "episode1").mkdir(parents=True)
-            # 2. Untitled UTF-8 INI with subdirectory in CodeName (distinct save path vs episode2).
-            (ep1_dir / "System40.ini").write_bytes('CodeName = "episode1/游戏.CHS"\n'.encode("utf-8"))
+            # 2. Untitled UTF-8 INI with backslash subdirectory in CodeName (distinct save path + mkdir_p).
+            (ep1_dir / "System40.ini").write_bytes('CodeName = "episode1\\游戏.CHS"\n'.encode("utf-8"))
             (ep1_dir / "episode1" / "游戏.CHS").write_bytes(ai2_bytes)
 
             kana_dir = td / "utf8_halfwidth_kana"
@@ -733,6 +733,10 @@ static char *get_xsystem4_home(void) {{ return xstrdup(test_home_dir); }}
 
 char *gamedir_path(const char *path) {{
     char *utf = sjis2utf(path, strlen(path));
+    for (char *p = utf; *p; p++) {{
+        if (*p == '\\\\')
+            *p = '/';
+    }}
     char *res = path_join(config.game_dir, utf);
     free(utf);
     return res;
@@ -796,12 +800,15 @@ int main(int argc, char **argv) {{
     ain_free(opened);
     free(ainfile);
 
-    // 2. Untitled UTF-8 INI with subdirectory preserves full CodeName path in save_dir
-    //    while keeping only the basename for ain_basename_utf8 asset lookup.
+    // 2. Untitled UTF-8 INI with backslash subdirectory normalizes separators in save_dir so
+    //    mkdir_p creates nested parents on a fresh save root while preserving distinct paths.
     memset(&config, 0, sizeof(config));
     assert(config_init_with_dir(argv[2]) == true);
     assert(config.save_dir != NULL && strchr(config.save_dir, '?') == NULL);
+    assert(strchr(config.save_dir, '\\\\') == NULL);
     assert(strstr(config.save_dir, "/episode1/\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS/SaveData") != NULL);
+    assert(mkdir_p(config.save_dir) == 0);
+    assert(is_directory(config.save_dir));
     assert(config.ain_basename_utf8 != NULL);
     assert(strcmp(config.ain_basename_utf8, "\\xe6\\xb8\\xb8\\xe6\\x88\\x8f.CHS") == 0);
     ainfile = resolve_configured_ain_path(NULL);

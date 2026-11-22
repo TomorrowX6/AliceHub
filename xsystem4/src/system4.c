@@ -492,6 +492,10 @@ static bool config_init_with_ini(const char *ini_path)
 		// filenames (e.g. GBK-only chars) are not mangled into '?' when opening the script,
 		// resolving sidecar assets, or creating default save folders for untitled INIs.
 		utf8_code_name = sjis2utf(config.ain_filename, strlen(config.ain_filename));
+		for (char *p = utf8_code_name; *p; p++) {
+			if (*p == '\\')
+				*p = '/';
+		}
 		char *ain_path = gamedir_path_icase(config.ain_filename);
 		if (!ain_path)
 			ain_path = gamedir_path(config.ain_filename);
