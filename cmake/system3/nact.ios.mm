@@ -32,9 +32,10 @@ void NACT::text_dialog()
             style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { done = YES; }]];
         const NSUInteger maxLength = std::max(0, tvar_maxlen);
         __block NSString *result = nil;
+        __weak UIAlertController *weakDialog = dialog;
         [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil)
             style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                NSString *input = dialog.textFields.firstObject.text ?: @"";
+                NSString *input = weakDialog.textFields.firstObject.text ?: @"";
                 NSUInteger end = input.length;
                 if (end > maxLength)
                     end = [input rangeOfComposedCharacterSequenceAtIndex:maxLength].location;
