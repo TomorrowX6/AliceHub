@@ -89,7 +89,10 @@ void screenshot_save(void);
 
 #define MMAP_IF_64BIT (sizeof(void*) >= 8 ? ARCHIVE_MMAP : 0)
 
+extern bool game_daibanchou;
 extern bool game_daibanchou_en;
+extern bool game_daiteikoku;
+extern bool game_haruurare;
 extern bool game_rance01;
 extern bool game_rance02;
 extern bool game_rance02_mg;

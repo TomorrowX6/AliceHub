@@ -57,21 +57,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
             val isSys3x = GameCatalog.isSystem3xGameDir(dir)
-            var iniFile = File(dir, "System40.ini")
-            if (!iniFile.exists())
-                iniFile = File(dir, "AliceStart.ini")
-            if (!iniFile.exists())
-                iniFile = File(dir, "System39.ini")
-            if (!iniFile.exists()) {
-                val ignoreCaseIni = dir.listFiles()?.firstOrNull {
-                    it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
-                        it.name.equals("AliceStart.ini", ignoreCase = true) ||
-                        it.name.equals("System39.ini", ignoreCase = true))
-                }
-                if (ignoreCaseIni != null) {
-                    iniFile = ignoreCaseIni
-                }
-            }
+            val iniFile = resolveLaunchIniFile(dir)
             if (!iniFile.exists() && !isSys3x) {
                 val err = context.getString(R.string.toast_no_ini, dir.path)
                 Log.w("GameList", err)
@@ -89,6 +75,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
                     GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
+                    GameCatalog.isTsumamiguiGameDir(dir) -> context.getString(R.string.game_tsumamigui_title)
+                    GameCatalog.isKaerunyoGameDir(dir) -> context.getString(R.string.game_kaerunyo_title)
+                    GameCatalog.isAtlachnachaGameDir(dir) -> context.getString(R.string.game_atlachnacha_title)
+                    GameCatalog.isReishikiGameDir(dir) -> context.getString(R.string.game_reishiki_title)
                     else -> dir.name
                 }
             } else {
@@ -880,45 +870,7 @@ class GameList(activity: Activity) {
         primaryDir: File,
         checkCancelled: () -> Unit
     ) {
-        if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
-        val primaryCanonical = primaryDir.canonicalPath
-        val primaryScenario = primaryDir.listFiles()?.firstOrNull {
-            it.isFile && (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
-        }?.name
-        val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr")
-        searchRoot.walkTopDown()
-            .filter { d ->
-                d.isDirectory && d.canonicalPath != primaryCanonical && run {
-                    val lower = d.path.replace('\\', '/').lowercase()
-                    lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
-                }
-            }
-            .toList()
-            .forEach { sibling ->
-                checkCancelled()
-                val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
-                val otherScenario = files.firstOrNull {
-                    it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
-                }?.name
-                if (primaryScenario != null && otherScenario != null &&
-                    !otherScenario.equals(primaryScenario, ignoreCase = true)
-                ) {
-                    return@forEach
-                }
-                for (f in files) {
-                    checkCancelled()
-                    if (NativeGameImport.skip(f.name)) continue
-                    val ext = f.extension.lowercase()
-                    if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
-                    val target = File(primaryDir, f.name)
-                    if (!target.exists()) {
-                        if (!f.renameTo(target)) {
-                            f.copyTo(target, overwrite = false)
-                            f.delete()
-                        }
-                    }
-                }
-            }
+        mergeSiblingMultiDiscDirsInternal(searchRoot, primaryDir, checkCancelled)
     }
 
     private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
@@ -1131,8 +1083,7 @@ class GameList(activity: Activity) {
 
             if (srcDir == null) {
                 val hasIni = tempDir.walkTopDown().any {
-                    it.isFile && (it.name.equals("System40.ini", true) ||
-                        it.name.equals("AliceStart.ini", true) ||
+                    it.isFile && (GameCatalog.isSystem4LaunchIni(it.name) ||
                         it.name.equals("System39.ini", true))
                 }
                 throw InstallFailureException(if (hasIni) R.string.directory_no_game else R.string.zip_no_ini)
@@ -1198,7 +1149,14 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_IXSEAL -> "Ixseal"
                 classifiedId == GameCatalog.ID_HARUKA -> "Haruka"
                 classifiedId == GameCatalog.ID_TSUMASHIBORI -> "Tsumashibori"
+                classifiedId == GameCatalog.ID_TSUMAMIGUI -> "Tsumamigui"
                 classifiedId == GameCatalog.ID_TSUMAMIGUI3 -> "Tsumamigui3"
+                classifiedId == GameCatalog.ID_DAIBANCHOU -> "Daibanchou"
+                classifiedId == GameCatalog.ID_DAITEIKOKU -> "Daiteikoku"
+                classifiedId == GameCatalog.ID_KAERUNYO -> "Kaerunyo"
+                classifiedId == GameCatalog.ID_ATLACHNACHA -> "AtlachNacha"
+                classifiedId == GameCatalog.ID_REISHIKI -> "Reishiki"
+                classifiedId == GameCatalog.ID_HARUURARE -> "Haruurare"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
@@ -2081,6 +2039,76 @@ internal fun isBaseInstallBloatRelPath(relPath: String, skipPatchSubdir: Boolean
     return matchSeg(segments.last().lowercase())
 }
 
+internal fun resolveLaunchIniFile(dir: File): File {
+    val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+    val hasHaruCnAin = files.any { it.name.equals("haru_c.ain", ignoreCase = true) }
+    fun findIni(name: String): File? = files.firstOrNull { it.name == name }
+        ?: files.firstOrNull { it.name.equals(name, ignoreCase = true) }
+    if (hasHaruCnAin) {
+        findIni("AliceStart2.ini")?.let { return it }
+    }
+    return findIni("System40.ini")
+        ?: findIni("AliceStart.ini")
+        ?: findIni("AliceStart2.ini")
+        ?: findIni("System39.ini")
+        ?: File(dir, "System40.ini")
+}
+
+internal fun normalizeSystem35ScenarioIdentity(name: String): String {
+    val lower = name.lowercase()
+    return if (lower.endsWith("_chs.ald")) {
+        lower.removeSuffix("_chs.ald") + ".ald"
+    } else {
+        lower
+    }
+}
+
+internal fun mergeSiblingMultiDiscDirsInternal(
+    searchRoot: File,
+    primaryDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
+    val primaryCanonical = primaryDir.canonicalPath
+    val primaryScenario = primaryDir.listFiles()?.firstOrNull {
+        it.isFile && GameCatalog.isSystem35Scenario(it.name)
+    }?.name?.let(::normalizeSystem35ScenarioIdentity)
+    val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr", "tbl")
+    searchRoot.walkTopDown()
+        .filter { d ->
+            d.isDirectory && d.canonicalPath != primaryCanonical && run {
+                val lower = d.path.replace('\\', '/').lowercase()
+                lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
+            }
+        }
+        .toList()
+        .forEach { sibling ->
+            checkCancelled()
+            val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
+            val otherScenario = files.firstOrNull {
+                GameCatalog.isSystem35Scenario(it.name)
+            }?.name?.let(::normalizeSystem35ScenarioIdentity)
+            if (primaryScenario != null && otherScenario != null &&
+                otherScenario != primaryScenario
+            ) {
+                return@forEach
+            }
+            for (f in files) {
+                checkCancelled()
+                if (NativeGameImport.skip(f.name)) continue
+                val ext = f.extension.lowercase()
+                if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
+                val target = File(primaryDir, f.name)
+                if (!target.exists()) {
+                    if (!f.renameTo(target)) {
+                        f.copyTo(target, overwrite = false)
+                        f.delete()
+                    }
+                }
+            }
+        }
+}
+
 internal fun preferCnRootOverInstallData(candidate: File?): File? {
     if (candidate != null &&
         candidate.name.equals("InstallData", ignoreCase = true) &&
@@ -2089,9 +2117,8 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
         val outerCnRoot = candidate.parentFile?.parentFile
         if (outerCnRoot != null && outerCnRoot.isDirectory &&
             outerCnRoot.listFiles()?.any {
-                it.isFile && (it.name.endsWith(".ain", ignoreCase = true) ||
-                    it.name.equals("AliceStart.ini", ignoreCase = true) ||
-                    it.name.equals("System40.ini", ignoreCase = true))
+                it.isFile && it.name.endsWith(".ain", ignoreCase = true) &&
+                    !it.name.equals("System39.ain", ignoreCase = true)
             } == true
         ) {
             return outerCnRoot
@@ -2287,7 +2314,7 @@ internal fun mergeGalzooCompanionData(
 
 internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-    val hasIni = files.any { it.name.equals("System40.ini", true) || it.name.equals("AliceStart.ini", true) }
+    val hasIni = files.any { GameCatalog.isSystem4LaunchIni(it.name) }
     val hasAin = files.any { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
     return hasIni && hasAin
 }

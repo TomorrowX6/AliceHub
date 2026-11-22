@@ -18,6 +18,7 @@ issues, please let me know or open a pull request to update this table.
 | ままにょにょ                                            | Supported   |       |
 | 大番長 -Big Bang Age-                                   | Supported   |       |
 | Daibanchou -Big Bang Age- (EN)                          | Supported   |       |
+| 大番长 -Big Bang Age- (CN)                              | Supported   | GBK fan translation |
 | 魔女の贖罪                                              | Unknown     |       |
 | Rance VI -ゼス崩壊-                                     | Supported   |       |
 | Rance VI -Collapse of Zeth- (EN)                        | Supported   |       |
@@ -69,13 +70,13 @@ issues, please let me know or open a pull request to update this table.
 | レイチェルの桜貝                                        | Unknown     | From Alice 2010 |
 | 砂漠のニッカ                                            | Unknown     | From Alice 2010 |
 | ばにしゅ！～この手のひらにおっぱいを～                  | Unknown     | From Alice 2010 |
-| はるうられ -校内赤線区域-                               | Supported   | From Alice 2010 |
+| はるうられ -校内赤線区域-                               | Supported   | From Alice 2010; CN GBK (`AliceStart2.ini` / `haru_c.ain`) supported |
 | わいどにょ                                              | Supported   | From Alice 2010 |
 | ランス02 -反逆の少女たち-                               | Supported   | From Alice 2010 |
 | Rance 02 -The Rebellious Maidens- (Fan TL)              | Supported   |       |
 | Rance 02 -The Rebellious Maidens- (MangaGamer)          | Supported   |       |
 | しゃーまんず・さんくちゅあり－巫女の聖域－              | Unknown     |       |
-| 大帝国                                                  | Supported   |       |
+| 大帝国                                                  | Supported   | JP and CN (GBK fan translation) |
 | ランス・クエスト                                        | Supported   |       |
 | ランス・クエスト マグナム                               | Supported   |       |
 | 母娘乱館                                                | Unknown     |       |

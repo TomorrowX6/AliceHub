@@ -47,7 +47,14 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `ixseal` | Beat Valkyrie Ixseal | 2017-07-28 | 72 | 7.20 | [v21142](https://vndb.org/v21142) | [source](https://www.alicesoft.com/ixseal/) |
 | `haruka` | Beat Blades Haruka | 2008-02-29 | 67.9 | 6.79 | [v284](https://vndb.org/v284) | [source](https://www.alicesoft.com/haruka/) |
 | `tsumashibori` | Tsumashibori | 2006-08-04 | 79 | 7.90 | [v887](https://vndb.org/v887) | [source](https://www.alicesoft.com/tsumasibori/) |
+| `tsumamigui` | Tsumamigui | 2002-03-15 | 66.4 | 6.64 | [v1125](https://vndb.org/v1125) | [source](https://vndb.org/v1125) |
 | `tsumamigui3` | Tsumamigui 3 | 2016-01-29 | 79.5 | 7.95 | [v18486](https://vndb.org/v18486) | [source](https://www.alicesoft.com/tsumamigui3/) |
+| `daibanchou` | Daibanchou -Big Bang Age- | 2003-12-19 | 75 | 7.50 | [v299](https://vndb.org/v299) | [source](https://vndb.org/v299) |
+| `daiteikoku` | Daiteikoku | 2011-04-28 | 77 | 7.70 | [v3066](https://vndb.org/v3066) | [source](https://www.alicesoft.com/daiteikoku/) |
+| `kaerunyo` | Kaeru nyo Panyon | 1997-08-29 | 56.4 | 5.64 | [v1841](https://vndb.org/v1841) | [source](https://vndb.org/v1841) |
+| `atlachnacha` | ATLACH=NACHA | 1997-12-18 | 76.5 | 7.65 | [v163](https://vndb.org/v163) | [source](https://vndb.org/v163) |
+| `reishiki` | Zero Shiki | 1997-12-18 | 65.6 | 6.56 | [v1826](https://vndb.org/v1826) | [source](https://vndb.org/v1826) |
+| `haruurare` | Haru Urare | 2009-12-18 | 65.3 | 6.53 | [v3096](https://vndb.org/v3096) | [source](https://vndb.org/v3096) |
 
 ## Edition mapping / missing-score decisions
 

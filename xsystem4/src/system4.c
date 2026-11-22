@@ -407,7 +407,11 @@ static void config_init(void)
 				|| strstr(config.game_name, "\xba\xba\xbb\xaf")
 				|| strstr(config.game_name, "\x9e\x61\xbb\xaf")
 				|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")
-				|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")))
+				|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
+				|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xe9L")
+				|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xb3\xa4")
+				|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
+				|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")))
 			|| (config.ain_filename && strstr(config.ain_filename, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
@@ -450,7 +454,30 @@ static bool config_init_with_ini(const char *ini_path)
 
 static bool config_init_with_dir(const char *dir)
 {
-	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini" };
+	char *alt_ini = path_join(dir, "AliceStart2.ini");
+	if (!file_exists(alt_ini)) {
+		char *icase = path_get_icase(alt_ini);
+		free(alt_ini);
+		alt_ini = icase;
+	}
+	if (alt_ini && file_exists(alt_ini)) {
+		char *haru_ain = path_join(dir, "haru_c.ain");
+		if (!file_exists(haru_ain)) {
+			char *icase = path_get_icase(haru_ain);
+			free(haru_ain);
+			haru_ain = icase;
+		}
+		bool has_haru_cn = haru_ain && file_exists(haru_ain);
+		free(haru_ain);
+		if (has_haru_cn) {
+			bool ok = config_init_with_ini(alt_ini);
+			free(alt_ini);
+			return ok;
+		}
+	}
+	free(alt_ini);
+
+	static const char *const ini_names[] = { "System40.ini", "AliceStart.ini", "AliceStart2.ini" };
 	for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); i++) {
 		char *path = path_join(dir, ini_names[i]);
 		if (!file_exists(path)) {

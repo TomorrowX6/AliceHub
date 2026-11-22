@@ -1323,8 +1323,22 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_haruka_title)
             GameCatalog.isTsumamigui3Alias(lower) ->
                 context.getString(R.string.game_tsumamigui3_title)
+            GameCatalog.isTsumamiguiAlias(lower) ->
+                context.getString(R.string.game_tsumamigui_title)
             GameCatalog.isTsumashiboriAlias(lower) ->
                 context.getString(R.string.game_tsumashibori_title)
+            GameCatalog.isDaibanchouAlias(lower) ->
+                context.getString(R.string.game_daibanchou_title)
+            GameCatalog.isDaiteikokuAlias(lower) ->
+                context.getString(R.string.game_daiteikoku_title)
+            GameCatalog.isKaerunyoAlias(lower) ->
+                context.getString(R.string.game_kaerunyo_title)
+            GameCatalog.isAtlachnachaAlias(lower) ->
+                context.getString(R.string.game_atlachnacha_title)
+            GameCatalog.isReishikiAlias(lower) ->
+                context.getString(R.string.game_reishiki_title)
+            GameCatalog.isHaruurareAlias(lower) ->
+                context.getString(R.string.game_haruurare_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

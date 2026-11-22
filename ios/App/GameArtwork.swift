@@ -27,9 +27,16 @@ struct GameArtwork: View {
             ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
             ("kichikuou", ["kichiku", "鬼畜王"]),
             ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
+            ("daibanchou", ["daibanchou", "大番長", "大番长", "bigbangage"]),
+            ("daiteikoku", ["daiteikoku", "大帝国", "大帝國"]),
             ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
             ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
             ("tsumamigui3", ["tsumamigui3", "妻みぐい3", "妻みぐい３", "妻中蜜3", "妻中蜜３"]),
+            ("tsumamigui", ["tsumamigui", "妻みぐい", "妻中蜜", "嵢傒偖偄"]),
+            ("kaerunyo", ["kaerunyo", "かえるにょ", "ぱにょ", "回家扭"]),
+            ("atlachnacha", ["atlachnacha", "atlach", "アトラク", "阿特拉克", "蜘蛛sa"]),
+            ("reishiki", ["reishiki", "零式", "zeroshiki", "楇幃"]),
+            ("haruurare", ["haruurare", "はるうられ", "haru_c", "校内赤线", "校内赤線"]),
             ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
             ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
         ]

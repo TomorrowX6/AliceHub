@@ -77,11 +77,18 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_RANCE5D && GameCatalog.isRance5dAlias(q)) ||
             (desc.id == GameCatalog.ID_RANCE06 && GameCatalog.isRance06Alias(q)) ||
             (desc.id == GameCatalog.ID_DAIAKUJI && GameCatalog.isDaiakujiAlias(q)) ||
+            (desc.id == GameCatalog.ID_DAIBANCHOU && GameCatalog.isDaibanchouAlias(q)) ||
+            (desc.id == GameCatalog.ID_DAITEIKOKU && GameCatalog.isDaiteikokuAlias(q)) ||
             (desc.id == GameCatalog.ID_GALZOO && GameCatalog.isGalzooAlias(q)) ||
             (desc.id == GameCatalog.ID_IXSEAL && GameCatalog.isIxsealAlias(q)) ||
             (desc.id == GameCatalog.ID_HARUKA && GameCatalog.isHarukaAlias(q)) ||
             (desc.id == GameCatalog.ID_TSUMASHIBORI && GameCatalog.isTsumashiboriAlias(q)) ||
-            (desc.id == GameCatalog.ID_TSUMAMIGUI3 && GameCatalog.isTsumamigui3Alias(q))
+            (desc.id == GameCatalog.ID_TSUMAMIGUI && GameCatalog.isTsumamiguiAlias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3 && GameCatalog.isTsumamigui3Alias(q)) ||
+            (desc.id == GameCatalog.ID_KAERUNYO && GameCatalog.isKaerunyoAlias(q)) ||
+            (desc.id == GameCatalog.ID_ATLACHNACHA && GameCatalog.isAtlachnachaAlias(q)) ||
+            (desc.id == GameCatalog.ID_REISHIKI && GameCatalog.isReishikiAlias(q)) ||
+            (desc.id == GameCatalog.ID_HARUURARE && GameCatalog.isHaruurareAlias(q))
         ) {
             return true
         }

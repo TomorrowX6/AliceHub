@@ -70,8 +70,7 @@ object NativeGameImport {
 
     private fun <T, D> isSys4RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
         val hasIni = docs.any {
-            !it.folder && !skip(it.name) &&
-                (it.name.equals("AliceStart.ini", true) || it.name.equals("System40.ini", true))
+            !it.folder && !skip(it.name) && GameCatalog.isSystem4LaunchIni(it.name)
         }
         val hasAin = docs.any {
             !it.folder && !skip(it.name) &&
@@ -264,6 +263,27 @@ object NativeGameImport {
         if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
             return "Tsumashibori"
         }
+        if (GameCatalog.isDaibanchouGameFiles(activeFiles)) {
+            return "Daibanchou"
+        }
+        if (GameCatalog.isDaiteikokuGameFiles(activeFiles)) {
+            return "Daiteikoku"
+        }
+        if (GameCatalog.isHaruurareGameFiles(activeFiles)) {
+            return "Haruurare"
+        }
+        if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
+            return "Tsumamigui"
+        }
+        if (GameCatalog.isKaerunyoGameFiles(activeFiles)) {
+            return "Kaerunyo"
+        }
+        if (GameCatalog.isAtlachnachaGameFiles(activeFiles)) {
+            return "AtlachNacha"
+        }
+        if (GameCatalog.isReishikiGameFiles(activeFiles)) {
+            return "Reishiki"
+        }
         if (GameCatalog.isRance5dGameFiles(activeFiles)) {
             return "Rance5D"
         }
@@ -281,7 +301,7 @@ object NativeGameImport {
             return OnlineInstaller.sanitizeInstallDirName(raw, fallback = "Game")
         }
         val sa = activeFiles.firstOrNull {
-            it.endsWith("sa.ald", true) || it.equals("adisk.ald", true)
+            it.endsWith("sa.ald", true) || it.endsWith("sa_chs.ald", true) || it.equals("adisk.ald", true)
         }
         if (sa != null) {
             val raw = ArchiveExtractor.repairSjisAsGbkMojibake(sa.substringBeforeLast('.'))

@@ -19,6 +19,10 @@
 #include "hankaku.h"
 #include "utfsjis.h"
 #include "unittest.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 typedef struct {
 	const char *zen;
@@ -97,9 +101,50 @@ static void format_number_zenkaku_test(void) {
 	ASSERT_STRCMP(sjis2utf(format_number_zenkaku(65535, 3, buf)), "５３５");
 }
 
+static void chs_tbl_test(void) {
+	char dir_tmpl[] = "/tmp/xsys35_chs_tbl_XXXXXX";
+	char *dir = mkdtemp(dir_tmpl);
+	ASSERT_TRUE(dir != NULL);
+
+	char tbl_path[256];
+	snprintf(tbl_path, sizeof(tbl_path), "%s/chs.tbl", dir);
+	uint8_t *buf = calloc(61440, 2);
+	ASSERT_TRUE(buf != NULL);
+	// Map SJIS 0x8141 -> GBK 0xD6D0 (U+4E2D "中"), SJIS 0x8142 -> ASCII '!'
+	buf[0x8141 * 2] = 0xD0;
+	buf[0x8141 * 2 + 1] = 0xD6;
+	buf[0x8142 * 2] = '!';
+	buf[0x8142 * 2 + 1] = 0x00;
+
+	FILE *fp = fopen(tbl_path, "wb");
+	ASSERT_TRUE(fp != NULL);
+	ASSERT_EQUAL(fwrite(buf, 2, 61440, fp), 61440);
+	fclose(fp);
+	free(buf);
+
+	ASSERT_TRUE(chs_tbl_load_from_dir(dir));
+	ASSERT_TRUE(chs_tbl_is_loaded());
+
+	// 0x8141 -> "中", 0x8142 -> "!", unmapped 0x82A0 -> SJIS "あ"
+	const uint8_t sample[] = { 0x81, 0x41, 0x81, 0x42, 0x82, 0xA0, 0x00 };
+	uint8_t *utf = sjis2utf(sample);
+	ASSERT_STRCMP((const char *)utf, "中!あ");
+	free(utf);
+
+	chs_tbl_reset();
+	ASSERT_TRUE(!chs_tbl_is_loaded());
+	uint8_t *orig = sjis2utf(sample);
+	ASSERT_STRCMP((const char *)orig, "、。あ");
+	free(orig);
+
+	unlink(tbl_path);
+	rmdir(dir);
+}
+
 void hankaku_test(void) {
 	zen2han_test();
 	han2zen_test();
 	format_number_test();
 	format_number_zenkaku_test();
+	chs_tbl_test();
 }
