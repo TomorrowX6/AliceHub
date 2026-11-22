@@ -150,7 +150,7 @@ public class Rance06CatalogTest {
         int idx09 = order.indexOf(GameCatalog.ID_RANCE09);
 
         assertTrue(idx01 >= 0 && idx02 > idx01 && idx03 > idx02);
-        assertEquals(idx03 + 1, idx06);
+        assertTrue(idx06 > idx03);
         assertEquals(idx06 + 1, idxSr);
         assertTrue(idx08 > idxSr && idx09 > idx08);
     }

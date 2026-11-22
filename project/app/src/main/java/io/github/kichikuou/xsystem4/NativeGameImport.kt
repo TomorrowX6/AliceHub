@@ -263,6 +263,9 @@ object NativeGameImport {
         if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
             return "Tsumashibori"
         }
+        if (GameCatalog.isRance04GameFiles(activeFiles)) {
+            return "Rance04"
+        }
         if (GameCatalog.isRance06GameFiles(activeFiles)) {
             return "Rance06"
         }

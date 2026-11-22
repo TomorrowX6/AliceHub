@@ -58,6 +58,14 @@ struct LibraryChecks {
         try files.removeItem(at: firstAIN)
         try files.removeItem(at: secondAIN)
         let saves = documents.appendingPathComponent("Saves/test")
+        for marker in ["RANCE4SA.ALD", "rance4sa.ald", "RANCE41SA.ALD", "RANCE42SA.ALD"] {
+            let file = source.appendingPathComponent(marker)
+            try Data().write(to: file)
+            let isRance04 = marker.lowercased() == "rance4sa.ald"
+            precondition(GameLibrary.isRance04(source) == isRance04)
+            precondition(Game(url: source).name == (isRance04 ? "兰斯IV 教团的遗产" : source.lastPathComponent))
+            try files.removeItem(at: file)
+        }
         for marker in ["testSA.ALD", "aDiSk.AlD", "sYsTeM39.iNi", "System39.ain"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
