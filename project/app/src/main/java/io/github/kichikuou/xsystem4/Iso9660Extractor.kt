@@ -107,12 +107,7 @@ object Iso9660Extractor {
                             if (GameCatalog.isSystem4LaunchIni(e.name)) {
                                 hasIni = true
                             }
-                            val isLonginusChsCode = e.name.endsWith(".chs", ignoreCase = true) &&
-                                !e.name.equals("AliceStart.CHS", ignoreCase = true) &&
-                                (entryByLowerName.containsKey("alicestart.chs") ||
-                                    entryByLowerName.containsKey("chs.tbl") ||
-                                    entries.any { !it.isDir && (it.name.equals("AliceStart.CHS", true) || it.name.equals("CHS.TBL", true)) })
-                            if (GameCatalog.isSystem4AinFile(e.name) || isLonginusChsCode) {
+                            if (GameCatalog.isSystem4AinFile(e.name)) {
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true) ||
                                     ArchiveExtractor.repairSjisAsGbkMojibake(e.name).equals(expectedAinName, ignoreCase = true)
@@ -127,6 +122,23 @@ object Iso9660Extractor {
                                     hasSys3Scenario = true
                                 }
                             }
+                        }
+                    }
+                    if (hasIni && !hasMatchingAin) {
+                        val readSmallIsoFile: (String) -> ByteArray? = { name ->
+                            entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
+                                readEntrySmallBytes(ch, desc.layout, it)
+                            }
+                        }
+                        if (dirFileNames.any { name ->
+                                GameCatalog.isSystem4CodeFile(name, dirFileNames, readSmallIsoFile) && (
+                                    expectedAinName.isNullOrBlank() ||
+                                        name.equals(expectedAinName, ignoreCase = true) ||
+                                        ArchiveExtractor.repairSjisAsGbkMojibake(name).equals(expectedAinName, ignoreCase = true)
+                                    )
+                            }
+                        ) {
+                            hasMatchingAin = true
                         }
                     }
                     if (targetGameId == GameCatalog.ID_KICHIKUOU) {

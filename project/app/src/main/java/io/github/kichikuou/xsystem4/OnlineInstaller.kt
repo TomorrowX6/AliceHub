@@ -1133,14 +1133,15 @@ object OnlineInstaller {
     private fun findPrimarySys4AinFile(stagingDir: File): File? {
         val files = stagingDir.listFiles()?.filter { it.isFile }.orEmpty()
         val names = files.map { it.name }
+        val readSmall: (String) -> ByteArray? = { GameCatalog.readSmallRootFile(stagingDir, it) }
         return files.firstOrNull {
             !it.name.startsWith('.') && GameCatalog.isSystem4AinFile(it.name)
         } ?: files.firstOrNull {
             GameCatalog.isSystem4AinFile(it.name)
         } ?: files.firstOrNull {
-            !it.name.startsWith('.') && GameCatalog.isSystem4CodeFile(it.name, names)
+            !it.name.startsWith('.') && GameCatalog.isSystem4CodeFile(it.name, names, readSmall)
         } ?: files.firstOrNull {
-            GameCatalog.isSystem4CodeFile(it.name, names)
+            GameCatalog.isSystem4CodeFile(it.name, names, readSmall)
         }
     }
 

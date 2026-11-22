@@ -270,7 +270,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     }
 }
 
-data class System40Ini(val gameName: String?, val SaveFolder: String?) {
+data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeName: String? = null) {
     companion object {
         fun parse(file: File): System40Ini = parse(file.readBytes())
 
@@ -295,16 +295,18 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?) {
             var gameName: String? = null
             var registName: String? = null
             var SaveFolder: String? = null
+            var codeName: String? = null
             for (line in String(raw, chosenCharset).lines()) {
                 regex.matchEntire(line.trim())?.let {
                     when (it.groupValues[1]) {
                         "GameName" -> gameName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                         "Regist" -> registName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
                         "SaveFolder" -> SaveFolder = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
+                        "CodeName" -> codeName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2]).trim()
                     }
                 }
             }
-            return System40Ini(gameName ?: registName, SaveFolder)
+            return System40Ini(gameName ?: registName, SaveFolder, codeName)
         }
     }
 }
@@ -1092,7 +1094,11 @@ class GameList(activity: Activity) {
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
             val srcFileNames = srcFiles.map { it.name }
             val ainFile = srcFiles.firstOrNull { GameCatalog.isSystem4AinFile(it.name) }
-                ?: srcFiles.firstOrNull { GameCatalog.isSystem4CodeFile(it.name, srcFileNames) }
+                ?: srcFiles.firstOrNull {
+                    GameCatalog.isSystem4CodeFile(it.name, srcFileNames) { name ->
+                        GameCatalog.readSmallRootFile(srcDir, name)
+                    }
+                }
             val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
             val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
             if (ainFile == null && sys3Scenario == null && !legacySystem3) {
@@ -2335,7 +2341,11 @@ internal fun isSystem4GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val fileNames = files.map { it.name }
     val hasIni = fileNames.any { GameCatalog.isSystem4LaunchIni(it) }
-    val hasAin = fileNames.any { GameCatalog.isSystem4CodeFile(it, fileNames) }
+    val hasAin = fileNames.any {
+        GameCatalog.isSystem4CodeFile(it, fileNames) { name ->
+            GameCatalog.readSmallRootFile(dir, name)
+        }
+    }
     return hasIni && hasAin
 }
 

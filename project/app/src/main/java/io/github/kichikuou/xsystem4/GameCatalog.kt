@@ -101,9 +101,46 @@ object GameCatalog {
     internal fun hasLonginusChsConfig(fileNames: Collection<String>): Boolean =
         fileNames.any { it.equals("AliceStart.CHS", true) || it.equals("CHS.TBL", true) }
 
-    internal fun isSystem4CodeFile(name: String, siblingFileNames: Collection<String>): Boolean =
-        isSystem4AinFile(name) ||
-            (name.endsWith(".chs", true) && !name.equals("AliceStart.CHS", true) && hasLonginusChsConfig(siblingFileNames))
+    internal fun configuredChsCodeFileName(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): String? {
+        if (readSmallFile == null) return null
+        val hasChsTbl = fileNames.any { it.equals("CHS.TBL", true) }
+        val hasHaruCn = fileNames.any { it.equals("haru_c.ain", true) }
+        fun findFile(target: String) = fileNames.firstOrNull { it == target }
+            ?: fileNames.firstOrNull { it.equals(target, true) }
+        val iniName = (if (hasHaruCn) findFile("AliceStart2.ini") else null)
+            ?: (if (hasChsTbl) findFile("AliceStart.CHS") else null)
+            ?: findFile("System40.ini")
+            ?: findFile("AliceStart.ini")
+            ?: findFile("AliceStart2.ini")
+            ?: findFile("AliceStart.CHS")
+            ?: return null
+        val raw = runCatching { readSmallFile(iniName) }.getOrNull() ?: return null
+        val codeName = runCatching { System40Ini.parse(raw).codeName }.getOrNull()
+            ?.replace('\\', '/')?.substringAfterLast('/')?.trim()
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        if (!codeName.endsWith(".chs", true) || codeName.equals("AliceStart.CHS", true)) return null
+        return fileNames.firstOrNull {
+            it.equals(codeName, true) || ArchiveExtractor.repairSjisAsGbkMojibake(it).equals(codeName, true)
+        }
+    }
+
+    internal fun isSystem4CodeFile(
+        name: String,
+        siblingFileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem4AinFile(name)) return true
+        if (!name.endsWith(".chs", true) || name.equals("AliceStart.CHS", true)) return false
+        if (hasLonginusChsConfig(siblingFileNames)) return true
+        val configured = configuredChsCodeFileName(siblingFileNames, readSmallFile)
+        return configured != null && (
+            name.equals(configured, true) ||
+                ArchiveExtractor.repairSjisAsGbkMojibake(name).equals(configured, true)
+            )
+    }
 
     private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
         isSystem4CodeFile(it, fileNames) || isSystem4LaunchIni(it)
@@ -1281,7 +1318,7 @@ object GameCatalog {
         }
     }
 
-    private fun readSmallRootFile(dir: File, name: String): ByteArray? {
+    internal fun readSmallRootFile(dir: File, name: String): ByteArray? {
         val f = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals(name, true) } ?: return null
         return if (f.length() <= 256L * 1024L) runCatching { f.readBytes() }.getOrNull() else null
     }
@@ -2059,7 +2096,7 @@ object GameCatalog {
         readSmallFile: ((String) -> ByteArray?)? = null
     ): Boolean {
         if (isSystem3xGameFiles(fileNames)) return false
-        val codeNames = fileNames.filter { isSystem4CodeFile(it, fileNames) }
+        val codeNames = fileNames.filter { isSystem4CodeFile(it, fileNames, readSmallFile) }
         if (codeNames.isEmpty()) return false
         if (codeNames.any {
                 val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
@@ -2215,7 +2252,7 @@ object GameCatalog {
             if (files != null) {
                 classifyGameRootDir(gameDir)?.let { return it }
                 val fileNames = files.filter { it.isFile }.map { it.name }
-                if (fileNames.any { isSystem4CodeFile(it, fileNames) }) {
+                if (fileNames.any { isSystem4CodeFile(it, fileNames) { n -> readSmallRootFile(gameDir, n) } }) {
                     return "$PREFIX_CUSTOM$dirName"
                 }
                 if (isSystem3xGameDir(gameDir)) {

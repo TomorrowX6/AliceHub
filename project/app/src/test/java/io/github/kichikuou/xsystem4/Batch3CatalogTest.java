@@ -107,11 +107,33 @@ public class Batch3CatalogTest {
         File noTbl = makeDir("NoTbl", "AliceStart.ini", "AliceStart.CHS", "game.ain");
         assertEquals("AliceStart.ini", GameListKt.resolveLaunchIniFile(noTbl).getName());
 
-        // Auxiliary .chs files without AliceStart.CHS/CHS.TBL must not shadow .ain or be treated as code.
+        // Auxiliary .chs files without AliceStart.CHS/CHS.TBL or INI CodeName must not shadow .ain or be treated as code.
         File auxChsOnly = makeDir("AuxChsOnly", "System40.ini", "00_aux.chs");
+        writeFile(new File(auxChsOnly, "System40.ini"), "CodeName = \"Other.ain\"\n".getBytes(StandardCharsets.UTF_8));
         assertFalse(GameListKt.isSystem4GameRoot(auxChsOnly));
         assertEquals("Game", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
                 Arrays.asList("00_aux.chs", "Game.ain"), false));
+
+        // Standard INI explicitly configuring CodeName = "CustomGame.CHS" must be accepted by dir, staging, and SAF discovery.
+        File configuredChs = makeDir("ConfiguredChs", "System40.ini", "CustomGame.CHS");
+        byte[] configuredIniBytes = "CodeName = \"CustomGame.CHS\"\nGameName = \"CustomGame\"\n".getBytes(StandardCharsets.UTF_8);
+        writeFile(new File(configuredChs, "System40.ini"), configuredIniBytes);
+        assertTrue(GameListKt.isSystem4GameRoot(configuredChs));
+        assertEquals("CustomGame", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(configuredChs, ""));
+        List<NativeGameImport.TreeEntry<String, byte[]>> safEntries = Arrays.asList(
+                new NativeGameImport.TreeEntry<>("ini", "System40.ini", false, configuredIniBytes),
+                new NativeGameImport.TreeEntry<>("chs", "CustomGame.CHS", false, new byte[]{1})
+        );
+        NativeGameImport.DiscoveredImportSources<String, byte[]> discoveredChs =
+                NativeGameImport.INSTANCE.discoverImportSources("root", safEntries, id -> Arrays.asList(), e -> e.getPayload());
+        assertNotNull(discoveredChs.getPrimaryEntries());
+        List<NativeGameImport.TreeEntry<String, byte[]>> auxSafEntries = Arrays.asList(
+                new NativeGameImport.TreeEntry<>("ini", "System40.ini", false, "CodeName = \"Other.ain\"\n".getBytes(StandardCharsets.UTF_8)),
+                new NativeGameImport.TreeEntry<>("chs", "00_aux.chs", false, new byte[]{1})
+        );
+        NativeGameImport.DiscoveredImportSources<String, byte[]> rejectedAux =
+                NativeGameImport.INSTANCE.discoverImportSources("root", auxSafEntries, id -> Arrays.asList(), e -> e.getPayload());
+        assertEquals(null, rejectedAux.getPrimaryEntries());
 
         // Rance 1 Digest vs Rance 01 disambiguation
         assertTrue(GameCatalog.INSTANCE.isRance1DigestAlias("兰斯1 摘要版"));
