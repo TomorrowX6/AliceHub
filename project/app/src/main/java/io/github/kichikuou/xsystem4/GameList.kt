@@ -88,7 +88,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val err = context.getString(R.string.toast_no_ini, dir.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, null, err).apply {
-                    cachedClassifiedId = GameCatalog.classifyDirectory(dir, dir.name, null, dir.name)
+                    GameCatalog.classifyItem(this)
                     cachedHasMod = false
                     cachedModInfo = null
                     cachedModInfoResolved = true
@@ -127,7 +127,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val err = context.getString(R.string.toast_no_GameName, iniFile.path)
                 Log.w("GameList", err)
                 return Item(dir.name, dir, homedir, null, icon, err).apply {
-                    cachedClassifiedId = GameCatalog.classifyDirectory(dir, dir.name, null, dir.name)
+                    GameCatalog.classifyItem(this)
                     cachedHasMod = false
                     cachedModInfo = null
                     cachedModInfoResolved = true
@@ -158,7 +158,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 rawName
             }
             return Item(displayName, dir, homedir, savedir, icon, null).apply {
-                cachedClassifiedId = GameCatalog.classifyDirectory(dir, dir.name, savedir, displayName)
+                GameCatalog.classifyItem(this)
                 cachedHasMod = hasModMarker
                 cachedModInfo = modMeta
                 cachedModInfoResolved = true
@@ -473,42 +473,75 @@ class GameList(activity: Activity) {
         val launchIniName: String,
         val launchIniModified: Long,
         val launchIniLength: Long,
+        val modVersionIniName: String,
+        val modVersionIniModified: Long,
+        val modVersionIniLength: Long,
         val system3IniName: String,
         val system3IniModified: Long,
         val system3IniLength: Long,
+        val extraMetadataFingerprints: List<String>,
         val iconName: String,
         val iconModified: Long,
         val iconLength: Long,
         val modMetaModified: Long,
         val modMetaLength: Long,
         val journalModified: Long,
-        val journalLength: Long
+        val journalLength: Long,
+        val saveDirModified: Long,
+        val saveDirEntries: List<String>
     )
 
     companion object {
-        internal fun computeDirSignature(dir: File): DirSignature {
+        internal fun computeDirSignature(dir: File, saveDir: File? = null): DirSignature {
             val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
             val launchIni = resolveLaunchIniFile(dir).takeIf { it.isFile }
+            val modVersionIni = OnlineInstaller.resolveModVersionIniFile(dir)
             val sys3Ini = files.firstOrNull { it.name == "System3.ini" }
                 ?: files.firstOrNull { it.name.equals("system3.ini", ignoreCase = true) }
+            val extraMeta = files.mapNotNull { f ->
+                val lower = f.name.lowercase()
+                if (lower.endsWith(".ini") ||
+                    lower.endsWith(".chs") ||
+                    lower.endsWith(".vanilla.bak") ||
+                    lower == "rance10.ain"
+                ) {
+                    "${f.name}:${f.lastModified()}:${f.length()}"
+                } else {
+                    null
+                }
+            }.sorted()
             val iconFile = files.firstOrNull { it.extension.equals("ico", ignoreCase = true) }
             val modMeta = File(dir, InstalledModInfo.META_FILE_NAME).takeIf { it.isFile }
             val journal = File(dir, ".mod_installed_files.txt").takeIf { it.isFile }
+            val saveDirExists = saveDir != null && saveDir.isDirectory
+            val saveEntries = if (saveDirExists) {
+                saveDir!!.listFiles()?.map { entry ->
+                    if (entry.isDirectory) "D:${entry.name}" else "F:${entry.name}"
+                }?.sorted().orEmpty()
+            } else {
+                emptyList()
+            }
             return DirSignature(
                 dirModified = dir.lastModified(),
                 launchIniName = launchIni?.name.orEmpty(),
                 launchIniModified = launchIni?.lastModified() ?: 0L,
                 launchIniLength = launchIni?.length() ?: 0L,
+                modVersionIniName = modVersionIni?.name.orEmpty(),
+                modVersionIniModified = modVersionIni?.lastModified() ?: 0L,
+                modVersionIniLength = modVersionIni?.length() ?: 0L,
                 system3IniName = sys3Ini?.name.orEmpty(),
                 system3IniModified = sys3Ini?.lastModified() ?: 0L,
                 system3IniLength = sys3Ini?.length() ?: 0L,
+                extraMetadataFingerprints = extraMeta,
                 iconName = iconFile?.name.orEmpty(),
                 iconModified = iconFile?.lastModified() ?: 0L,
                 iconLength = iconFile?.length() ?: 0L,
                 modMetaModified = modMeta?.lastModified() ?: 0L,
                 modMetaLength = modMeta?.length() ?: 0L,
                 journalModified = journal?.lastModified() ?: 0L,
-                journalLength = journal?.length() ?: 0L
+                journalLength = journal?.length() ?: 0L,
+                saveDirModified = if (saveDirExists) saveDir!!.lastModified() else 0L,
+                saveDirEntries = saveEntries
             )
         }
     }
@@ -554,9 +587,11 @@ class GameList(activity: Activity) {
         dataVersion++
     }
 
+    private fun resolveSaveDirFor(dir: File): File = File(appContext.filesDir, "saves/${dir.name}")
+
     private fun recordItemSignature(item: Item) {
         val next = HashMap(diskSnapshot)
-        next[item.path.absolutePath] = computeDirSignature(item.path)
+        next[item.path.absolutePath] = computeDirSignature(item.path, item.savedir ?: resolveSaveDirFor(item.path))
         diskSnapshot = next
     }
 
@@ -600,7 +635,7 @@ class GameList(activity: Activity) {
         }
         val initialSnap = HashMap<String, DirSignature>(items.size)
         for (item in items) {
-            initialSnap[item.path.absolutePath] = computeDirSignature(item.path)
+            initialSnap[item.path.absolutePath] = computeDirSignature(item.path, item.savedir ?: resolveSaveDirFor(item.path))
         }
         diskSnapshot = initialSnap
     }
@@ -629,7 +664,8 @@ class GameList(activity: Activity) {
                     for (path in files) {
                         if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
                             scannedEntries.add(path to homedir)
-                            newSnap[path.absolutePath] = computeDirSignature(path)
+                            val saveDir = existingByPath[path.absolutePath]?.savedir ?: resolveSaveDirFor(path)
+                            newSnap[path.absolutePath] = computeDirSignature(path, saveDir)
                         }
                     }
                 }
@@ -644,9 +680,10 @@ class GameList(activity: Activity) {
                     if (prevItem != null && prevSnap[key] == newSnap[key]) {
                         rebuilt.add(prevItem)
                     } else {
-                        rebuilt.add(Item.fromDirectory(dir, homedir, ctx))
-                        // Refresh signature in case Item.fromDirectory extracted .xsystem4.ico into dir.
-                        newSnap[key] = computeDirSignature(dir)
+                        val rebuiltItem = Item.fromDirectory(dir, homedir, ctx)
+                        rebuilt.add(rebuiltItem)
+                        // Refresh signature in case Item.fromDirectory extracted .xsystem4.ico or created savedir.
+                        newSnap[key] = computeDirSignature(dir, rebuiltItem.savedir ?: resolveSaveDirFor(dir))
                     }
                 }
                 Triple(newStorageDirs, rebuilt, newSnap)

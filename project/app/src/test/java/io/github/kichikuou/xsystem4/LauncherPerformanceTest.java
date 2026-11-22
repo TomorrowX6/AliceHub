@@ -66,7 +66,7 @@ public class LauncherPerformanceTest {
             Files.write(ini2.toPath(), "".getBytes());
             long origDirMtime = haruDir.lastModified();
 
-            GameList.DirSignature before = GameList.Companion.computeDirSignature$app_debug(haruDir);
+            GameList.DirSignature before = GameList.Companion.computeDirSignature$app_debug(haruDir, null);
             assertEquals("AliceStart2.ini", before.getLaunchIniName());
 
             // In-place edit to AliceStart2.ini without changing parent dir mtime.
@@ -74,7 +74,7 @@ public class LauncherPerformanceTest {
             ini2.setLastModified(before.getLaunchIniModified() + 2000L);
             haruDir.setLastModified(origDirMtime);
 
-            GameList.DirSignature after = GameList.Companion.computeDirSignature$app_debug(haruDir);
+            GameList.DirSignature after = GameList.Companion.computeDirSignature$app_debug(haruDir, null);
             assertFalse("In-place AliceStart2.ini edit must invalidate signature", before.equals(after));
 
             // 2. Case-variant System3.ini in-place edit.
@@ -83,12 +83,12 @@ public class LauncherPerformanceTest {
             File sys3Ini = new File(sys3Dir, "sYsTeM3.InI");
             Files.write(sys3Ini.toPath(), "game=yakata2\n".getBytes());
             long sys3Mtime = sys3Dir.lastModified();
-            GameList.DirSignature sys3Before = GameList.Companion.computeDirSignature$app_debug(sys3Dir);
+            GameList.DirSignature sys3Before = GameList.Companion.computeDirSignature$app_debug(sys3Dir, null);
             assertEquals("sYsTeM3.InI", sys3Before.getSystem3IniName());
             Files.write(sys3Ini.toPath(), "game=sdps_maria\n".getBytes());
             sys3Ini.setLastModified(sys3Before.getSystem3IniModified() + 2000L);
             sys3Dir.setLastModified(sys3Mtime);
-            GameList.DirSignature sys3After = GameList.Companion.computeDirSignature$app_debug(sys3Dir);
+            GameList.DirSignature sys3After = GameList.Companion.computeDirSignature$app_debug(sys3Dir, null);
             assertFalse("In-place System3.ini edit must invalidate signature", sys3Before.equals(sys3After));
 
             // 3. Custom .ico overwrite at same path updates both DirSignature and Item.iconFingerprint
@@ -96,16 +96,53 @@ public class LauncherPerformanceTest {
             File icoFile = new File(haruDir, "custom.ico");
             Files.write(icoFile.toPath(), new byte[]{0, 0, 1, 0, 1, 0});
             icoFile.setLastModified(1_000_000L);
-            GameList.DirSignature icoBefore = GameList.Companion.computeDirSignature$app_debug(haruDir);
+            GameList.DirSignature icoBefore = GameList.Companion.computeDirSignature$app_debug(haruDir, null);
             Item itemBefore = new Item("Haru", haruDir, root, null, icoFile, null);
             String fpBefore = itemBefore.iconFingerprint$app_debug();
 
             Files.write(icoFile.toPath(), new byte[]{0, 0, 1, 0, 1, 0, 9, 9});
             icoFile.setLastModified(1_000_000L);
-            GameList.DirSignature icoAfter = GameList.Companion.computeDirSignature$app_debug(haruDir);
+            GameList.DirSignature icoAfter = GameList.Companion.computeDirSignature$app_debug(haruDir, null);
             assertFalse("Overwriting custom .ico must invalidate signature", icoBefore.equals(icoAfter));
             itemBefore.invalidateMetadataCache$app_debug();
             assertFalse("Overwriting custom .ico must change iconFingerprint", fpBefore.equals(itemBefore.iconFingerprint$app_debug()));
+
+            // 4. Dual System40.ini + AliceStart.ini mod layout: System40.ini is selected for launch,
+            //    while AliceStart.ini is read first by extractCanonicalModVersionFromDir.
+            //    In-place edit to AliceStart.ini must still invalidate DirSignature.
+            File modDir = new File(root, "Rance10Mod");
+            assertTrue(modDir.mkdirs());
+            File sys40 = new File(modDir, "System40.ini");
+            File aliceStart = new File(modDir, "AliceStart.ini");
+            Files.write(sys40.toPath(), "GameName = \"Rance10\"\n".getBytes());
+            Files.write(aliceStart.toPath(), "GameName = \"兰斯10 日不落 v1.0\"\n".getBytes());
+            long modDirMtime = modDir.lastModified();
+
+            GameList.DirSignature modBefore = GameList.Companion.computeDirSignature$app_debug(modDir, null);
+            assertEquals("System40.ini", modBefore.getLaunchIniName());
+            assertEquals("AliceStart.ini", modBefore.getModVersionIniName());
+
+            Files.write(aliceStart.toPath(), "GameName = \"兰斯10 日不落 v1.1\"\n".getBytes());
+            aliceStart.setLastModified(modBefore.getModVersionIniModified() + 2000L);
+            modDir.setLastModified(modDirMtime);
+
+            GameList.DirSignature modAfter = GameList.Companion.computeDirSignature$app_debug(modDir, null);
+            assertFalse("In-place AliceStart.ini edit alongside System40.ini must invalidate signature", modBefore.equals(modAfter));
+
+            // 5. Save-marker creation in saveDir must invalidate DirSignature AND reclassify ambiguous items.
+            File ambigDir = new File(root, "AmbiguousGame");
+            File saveDir = new File(root, "saves/AmbiguousGame");
+            assertTrue(ambigDir.mkdirs());
+            assertTrue(saveDir.mkdirs());
+            GameList.DirSignature saveBefore = GameList.Companion.computeDirSignature$app_debug(ambigDir, saveDir);
+            Item ambigItem = new Item("AmbiguousGame", ambigDir, root, saveDir, null, null);
+            assertEquals("custom:AmbiguousGame", GameCatalog.INSTANCE.classifyItem(ambigItem));
+
+            File escaSave = new File(saveDir, "Esca.sav");
+            assertTrue(escaSave.createNewFile());
+            GameList.DirSignature saveAfter = GameList.Companion.computeDirSignature$app_debug(ambigDir, saveDir);
+            assertFalse("Creating save marker in saveDir must invalidate DirSignature", saveBefore.equals(saveAfter));
+            assertEquals(GameCatalog.ID_ESCALAYER_REBOOT, GameCatalog.INSTANCE.classifyItem(ambigItem));
         } finally {
             deleteRecursively(root);
         }

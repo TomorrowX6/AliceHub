@@ -2254,24 +2254,7 @@ object GameCatalog {
         return if (cut != null) rawName.substring(0, cut) else rawName
     }
 
-    fun classifyItem(item: Item): String {
-        item.cachedClassifiedId?.let { return it }
-        val resolved = classifyDirectory(
-            gameDir = item.path,
-            dirName = item.path.name,
-            saveDir = item.savedir,
-            displayName = item.name
-        )
-        item.cachedClassifiedId = resolved
-        return resolved
-    }
-
-    fun classifyDirectory(
-        gameDir: File?,
-        dirName: String,
-        saveDir: File? = null,
-        displayName: String? = null
-    ): String {
+    private fun classifyByGameDirOnly(gameDir: File?, dirName: String): String? {
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null) {
@@ -2285,6 +2268,37 @@ object GameCatalog {
                 }
             }
         }
+        return null
+    }
+
+    fun classifyItem(item: Item): String {
+        item.cachedClassifiedId?.let { return it }
+        val gameDirResult = classifyByGameDirOnly(item.path, item.path.name)
+        if (gameDirResult != null) {
+            item.cachedClassifiedId = gameDirResult
+            return gameDirResult
+        }
+        val resolved = classifyDirectory(
+            gameDir = item.path,
+            dirName = item.path.name,
+            saveDir = item.savedir,
+            displayName = item.name
+        )
+        // Only cache classifications that do not depend on saveDir markers, since
+        // first-launch saves in item.savedir can refine ambiguous installations.
+        if (item.savedir == null) {
+            item.cachedClassifiedId = resolved
+        }
+        return resolved
+    }
+
+    fun classifyDirectory(
+        gameDir: File?,
+        dirName: String,
+        saveDir: File? = null,
+        displayName: String? = null
+    ): String {
+        classifyByGameDirOnly(gameDir, dirName)?.let { return it }
 
         if (saveDir != null && saveDir.isDirectory) {
             if (saveDir.listFiles()?.any {

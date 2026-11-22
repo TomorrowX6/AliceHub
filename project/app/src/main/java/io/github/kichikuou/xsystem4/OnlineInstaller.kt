@@ -394,14 +394,19 @@ object OnlineInstaller {
     private val modVersionNumberRegex = Regex("""v?(\d+\.\d+(?:\.\d+)?[a-zA-Z]?)""", RegexOption.IGNORE_CASE)
     private val patchSeqRegex = Regex("""(?:补丁|patch|hotfix)\s*(\d+)""", RegexOption.IGNORE_CASE)
 
-    fun extractCanonicalModVersionFromDir(gameDir: File): String? {
+    internal fun resolveModVersionIniFile(gameDir: File): File? {
         if (!gameDir.isDirectory) return null
-        val iniFile = File(gameDir, "AliceStart.ini").takeIf { it.isFile }
+        return File(gameDir, "AliceStart.ini").takeIf { it.isFile }
             ?: File(gameDir, "System40.ini").takeIf { it.isFile }
             ?: gameDir.listFiles()?.firstOrNull {
                 it.isFile && (it.name.equals("AliceStart.ini", ignoreCase = true) ||
                     it.name.equals("System40.ini", ignoreCase = true))
             }
+    }
+
+    fun extractCanonicalModVersionFromDir(gameDir: File): String? {
+        if (!gameDir.isDirectory) return null
+        val iniFile = resolveModVersionIniFile(gameDir)
         val gn = iniFile?.let {
             try {
                 System40Ini.parse(it).gameName
