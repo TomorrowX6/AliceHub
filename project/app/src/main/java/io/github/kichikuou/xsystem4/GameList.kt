@@ -57,30 +57,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
         fun fromDirectory(dir: File, homedir: File, context: Context): Item {
             val isSys3x = GameCatalog.isSystem3xGameDir(dir)
-            val hasHaruCnAin = File(dir, "haru_c.ain").isFile ||
-                dir.listFiles()?.any { it.isFile && it.name.equals("haru_c.ain", ignoreCase = true) } == true
-            var iniFile = if (hasHaruCnAin && File(dir, "AliceStart2.ini").exists()) {
-                File(dir, "AliceStart2.ini")
-            } else {
-                File(dir, "System40.ini")
-            }
-            if (!iniFile.exists())
-                iniFile = File(dir, "AliceStart.ini")
-            if (!iniFile.exists())
-                iniFile = File(dir, "AliceStart2.ini")
-            if (!iniFile.exists())
-                iniFile = File(dir, "System39.ini")
-            if (!iniFile.exists()) {
-                val ignoreCaseIni = dir.listFiles()?.firstOrNull {
-                    it.isFile && (it.name.equals("System40.ini", ignoreCase = true) ||
-                        it.name.equals("AliceStart.ini", ignoreCase = true) ||
-                        it.name.equals("AliceStart2.ini", ignoreCase = true) ||
-                        it.name.equals("System39.ini", ignoreCase = true))
-                }
-                if (ignoreCaseIni != null) {
-                    iniFile = ignoreCaseIni
-                }
-            }
+            val iniFile = resolveLaunchIniFile(dir)
             if (!iniFile.exists() && !isSys3x) {
                 val err = context.getString(R.string.toast_no_ini, dir.path)
                 Log.w("GameList", err)
@@ -893,45 +870,7 @@ class GameList(activity: Activity) {
         primaryDir: File,
         checkCancelled: () -> Unit
     ) {
-        if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
-        val primaryCanonical = primaryDir.canonicalPath
-        val primaryScenario = primaryDir.listFiles()?.firstOrNull {
-            it.isFile && GameCatalog.isSystem35Scenario(it.name)
-        }?.name
-        val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr")
-        searchRoot.walkTopDown()
-            .filter { d ->
-                d.isDirectory && d.canonicalPath != primaryCanonical && run {
-                    val lower = d.path.replace('\\', '/').lowercase()
-                    lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
-                }
-            }
-            .toList()
-            .forEach { sibling ->
-                checkCancelled()
-                val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
-                val otherScenario = files.firstOrNull {
-                    GameCatalog.isSystem35Scenario(it.name)
-                }?.name
-                if (primaryScenario != null && otherScenario != null &&
-                    !otherScenario.equals(primaryScenario, ignoreCase = true)
-                ) {
-                    return@forEach
-                }
-                for (f in files) {
-                    checkCancelled()
-                    if (NativeGameImport.skip(f.name)) continue
-                    val ext = f.extension.lowercase()
-                    if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
-                    val target = File(primaryDir, f.name)
-                    if (!target.exists()) {
-                        if (!f.renameTo(target)) {
-                            f.copyTo(target, overwrite = false)
-                            f.delete()
-                        }
-                    }
-                }
-            }
+        mergeSiblingMultiDiscDirsInternal(searchRoot, primaryDir, checkCancelled)
     }
 
     private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
@@ -2100,6 +2039,74 @@ internal fun isBaseInstallBloatRelPath(relPath: String, skipPatchSubdir: Boolean
     return matchSeg(segments.last().lowercase())
 }
 
+internal fun resolveLaunchIniFile(dir: File): File {
+    val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+    val hasHaruCnAin = files.any { it.name.equals("haru_c.ain", ignoreCase = true) }
+    if (hasHaruCnAin) {
+        files.firstOrNull { it.name.equals("AliceStart2.ini", ignoreCase = true) }?.let { return it }
+    }
+    return files.firstOrNull { it.name.equals("System40.ini", ignoreCase = true) }
+        ?: files.firstOrNull { it.name.equals("AliceStart.ini", ignoreCase = true) }
+        ?: files.firstOrNull { it.name.equals("AliceStart2.ini", ignoreCase = true) }
+        ?: files.firstOrNull { it.name.equals("System39.ini", ignoreCase = true) }
+        ?: File(dir, "System40.ini")
+}
+
+internal fun normalizeSystem35ScenarioIdentity(name: String): String {
+    val lower = name.lowercase()
+    return if (lower.endsWith("_chs.ald")) {
+        lower.removeSuffix("_chs.ald") + ".ald"
+    } else {
+        lower
+    }
+}
+
+internal fun mergeSiblingMultiDiscDirsInternal(
+    searchRoot: File,
+    primaryDir: File,
+    checkCancelled: () -> Unit = {}
+) {
+    if (!GameCatalog.isSystem3xGameDir(primaryDir)) return
+    val primaryCanonical = primaryDir.canonicalPath
+    val primaryScenario = primaryDir.listFiles()?.firstOrNull {
+        it.isFile && GameCatalog.isSystem35Scenario(it.name)
+    }?.name?.let(::normalizeSystem35ScenarioIdentity)
+    val dataExts = setOf("ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr", "tbl")
+    searchRoot.walkTopDown()
+        .filter { d ->
+            d.isDirectory && d.canonicalPath != primaryCanonical && run {
+                val lower = d.path.replace('\\', '/').lowercase()
+                lower.contains("disc") || lower.contains("disk") || lower.endsWith("/gamedata")
+            }
+        }
+        .toList()
+        .forEach { sibling ->
+            checkCancelled()
+            val files = sibling.listFiles()?.filter { it.isFile }.orEmpty()
+            val otherScenario = files.firstOrNull {
+                GameCatalog.isSystem35Scenario(it.name)
+            }?.name?.let(::normalizeSystem35ScenarioIdentity)
+            if (primaryScenario != null && otherScenario != null &&
+                otherScenario != primaryScenario
+            ) {
+                return@forEach
+            }
+            for (f in files) {
+                checkCancelled()
+                if (NativeGameImport.skip(f.name)) continue
+                val ext = f.extension.lowercase()
+                if (ext !in dataExts && !f.name.equals("Alice.exe", true)) continue
+                val target = File(primaryDir, f.name)
+                if (!target.exists()) {
+                    if (!f.renameTo(target)) {
+                        f.copyTo(target, overwrite = false)
+                        f.delete()
+                    }
+                }
+            }
+        }
+}
+
 internal fun preferCnRootOverInstallData(candidate: File?): File? {
     if (candidate != null &&
         candidate.name.equals("InstallData", ignoreCase = true) &&
@@ -2108,8 +2115,8 @@ internal fun preferCnRootOverInstallData(candidate: File?): File? {
         val outerCnRoot = candidate.parentFile?.parentFile
         if (outerCnRoot != null && outerCnRoot.isDirectory &&
             outerCnRoot.listFiles()?.any {
-                it.isFile && (it.name.endsWith(".ain", ignoreCase = true) ||
-                    GameCatalog.isSystem4LaunchIni(it.name))
+                it.isFile && it.name.endsWith(".ain", ignoreCase = true) &&
+                    !it.name.equals("System39.ain", ignoreCase = true)
             } == true
         ) {
             return outerCnRoot

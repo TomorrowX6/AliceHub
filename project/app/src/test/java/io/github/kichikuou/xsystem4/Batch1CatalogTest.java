@@ -134,6 +134,42 @@ public class Batch1CatalogTest {
         assertTrue(GameListKt.isSystem3GameRoot(atlRoot));
         assertEquals(atlRoot, GameListKt.findGameRootDirInternal(atlArchiveStaging, null, GameCatalog.ID_ATLACHNACHA));
 
+        // Case-insensitive alicestart2.ini must win over AliceStart.ini when haru_c.ain is present.
+        File haruDualLower = tmp.newFolder("HaruDualLower");
+        writeFile(new File(haruDualLower, "AliceStart.ini"), "GameName = \"はるうられ\"\n".getBytes(GBK));
+        writeFile(new File(haruDualLower, "alicestart2.ini"), "GameName = \"校内赤线区\"\n".getBytes(GBK));
+        writeFile(new File(haruDualLower, "haru_c.ain"), new byte[]{1});
+        assertEquals("alicestart2.ini", GameListKt.resolveLaunchIniFile(haruDualLower).getName());
+
+        // Outer AliceStart2.ini without an .ain must NOT override a complete InstallSet/InstallData root.
+        File outerOnlyIni = tmp.newFolder("OuterOnlyIni");
+        writeFile(new File(outerOnlyIni, "AliceStart2.ini"), "GameName = \"校内赤线区\"\n".getBytes(GBK));
+        File innerInstallData = new File(outerOnlyIni, "InstallSet/InstallData");
+        writeFile(new File(innerInstallData, "AliceStart.ini"), "GameName = \"はるうられ\"\n".getBytes(GBK));
+        writeFile(new File(innerInstallData, "haru_c.ain"), new byte[]{1});
+        assertEquals(innerInstallData, GameListKt.preferCnRootOverInstallData(innerInstallData));
+        // Once outer root has an actual launchable .ain, preferCnRootOverInstallData switches to outer root.
+        writeFile(new File(outerOnlyIni, "haru_c.ain"), new byte[]{1});
+        assertEquals(outerOnlyIni, GameListKt.preferCnRootOverInstallData(innerInstallData));
+
+        // Companion disc merge: SA_CHS.ALD + base SA.ALD share scenario identity and merge assets,
+        // while a genuinely different game's scenario disc is still skipped.
+        File multiDiscRoot = tmp.newFolder("MultiDiscChs");
+        File disc1 = new File(multiDiscRoot, "Disc1/GAMEDATA");
+        File disc2 = new File(multiDiscRoot, "Disc2/GAMEDATA");
+        File discOther = new File(multiDiscRoot, "Disc3/GAMEDATA");
+        writeFile(new File(disc1, "蜘蛛SA_CHS.ALD"), new byte[]{1});
+        writeFile(new File(disc1, "CHS.TBL"), new byte[]{1});
+        writeFile(new File(disc2, "蜘蛛SA.ALD"), new byte[]{2});
+        writeFile(new File(disc2, "蜘蛛GA.ALD"), new byte[]{3});
+        writeFile(new File(discOther, "otherSA.ALD"), new byte[]{4});
+        writeFile(new File(discOther, "otherGA.ALD"), new byte[]{5});
+        GameListKt.mergeSiblingMultiDiscDirsInternal(multiDiscRoot, disc1, () -> kotlin.Unit.INSTANCE);
+        assertTrue(new File(disc1, "蜘蛛SA_CHS.ALD").isFile());
+        assertTrue(new File(disc1, "蜘蛛SA.ALD").isFile());
+        assertTrue(new File(disc1, "蜘蛛GA.ALD").isFile());
+        assertFalse(new File(disc1, "otherGA.ALD").exists());
+
         // NativeGameImport canonical base names including *_CHS.ALD
         assertEquals("Daibanchou", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
                 Arrays.asList("System40.ini", "大番長.ain"), false));
