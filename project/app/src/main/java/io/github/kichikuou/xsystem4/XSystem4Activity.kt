@@ -1345,6 +1345,13 @@ class XSystem4Activity : SDLActivity() {
         return arrayOf("--save-folder", saveFolder, "--save-format=rsm", gameRoot)
     }
 
+    override fun finish() {
+        if (launchedGameRoot != null && isLegacySystem3Game) {
+            GameCatalog.clearRunningGameRoot(this)
+        }
+        super.finish()
+    }
+
     override fun onDestroy() {
         unregisterModernBackCallback()
         unregisterControllerListener()
