@@ -5,6 +5,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -37,11 +38,11 @@ public class LegacySystem3ImportTest {
 
     @Test
     public void picksOnlyTheLegacyGameTreeWhenImportingAFolder() {
-        var main = List.of(entry("ADISK.dat", false), entry("ACG.dat", false),
+        List<NativeGameImport.TreeEntry<String, String>> main = Arrays.asList(entry("ADISK.dat", false), entry("ACG.dat", false),
                 entry("system3.ini", false), entry("bgm", true));
-        var hint = List.of(entry("ADISK.dat", false), entry("system3.ini", false));
-        var result = NativeGameImport.INSTANCE.discoverImportSources(
-                "root", List.of(entry("提示盘", true), entry("game", true)),
+        List<NativeGameImport.TreeEntry<String, String>> hint = Arrays.asList(entry("ADISK.dat", false), entry("system3.ini", false));
+        NativeGameImport.DiscoveredImportSources<String, String> result = NativeGameImport.INSTANCE.discoverImportSources(
+                "root", Arrays.asList(entry("提示盘", true), entry("game", true)),
                 id -> id.equals("game") ? main : hint);
 
         assertEquals(main, result.getPrimaryEntries());
@@ -51,13 +52,13 @@ public class LegacySystem3ImportTest {
 
     @Test
     public void doesNotOverrideNewerEngineMarkers() {
-        for (String marker : List.of("Rance41SA.ALD", "ADISK.ALD", "System39.ini", "System39.ain")) {
-            var files = List.of("ADISK.DAT", "ACG.DAT", "system3.ini", marker);
+        for (String marker : Arrays.asList("Rance41SA.ALD", "ADISK.ALD", "System39.ini", "System39.ain")) {
+            List<String> files = Arrays.asList("ADISK.DAT", "ACG.DAT", "system3.ini", marker);
             assertFalse(GameCatalog.INSTANCE.isLegacySystem3GameFiles(files));
             assertTrue(GameCatalog.INSTANCE.isSystem3xGameFiles(files));
         }
-        for (String marker : List.of("System40.ini", "AliceStart.ini", "Game.AIN")) {
-            var files = List.of("ADISK.DAT", "ACG.DAT", "system3.ini", marker);
+        for (String marker : Arrays.asList("System40.ini", "AliceStart.ini", "Game.AIN")) {
+            List<String> files = Arrays.asList("ADISK.DAT", "ACG.DAT", "system3.ini", marker);
             assertFalse(GameCatalog.INSTANCE.isLegacySystem3GameFiles(files));
             assertFalse(GameCatalog.INSTANCE.isSystem3xGameFiles(files));
         }
