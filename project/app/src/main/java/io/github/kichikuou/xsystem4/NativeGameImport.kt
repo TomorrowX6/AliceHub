@@ -486,6 +486,7 @@ object NativeGameImport {
                 }
             }
             currentCoroutineContext().ensureActive()
+            if (isRance06Import) normalizeRance06DungeonData(staging)
             if (!GameCatalog.validateImportedGameDir(staging, expectedAinName, targetGameId)) {
                 throw GameList.InstallFailureException(R.string.import_wrong_game)
             }

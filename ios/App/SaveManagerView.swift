@@ -21,7 +21,7 @@ struct SaveManagerView: View {
         NavigationView {
             List {
                 Section {
-                    HubSectionHeader(title: game.name, symbol: "externaldrive")
+                    HubSectionHeader(title: game.displayName, symbol: "externaldrive")
                 }.listRowBackground(HubTheme.surface)
                 Section {
                     Button { confirmImport(folder: false) } label: {

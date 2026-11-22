@@ -12,6 +12,9 @@ struct Game: Identifiable {
     let url: URL
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
+    var displayName: String {
+        GameLibrary.isRance04(url) ? "兰斯IV 教团的遗产" : url.lastPathComponent
+    }
     var engine: GameEngine { (try? GameLibrary.launchInfo(url).engine) ?? .system4 }
 }
 
@@ -45,6 +48,15 @@ final class GameLibrary: ObservableObject {
 
     static func isGame(_ url: URL) -> Bool {
         (try? launchTarget(url)) != nil
+    }
+
+    static func isRance04(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .system3 else { return false }
+        return contents.contains {
+            $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
     }
 
     static func launchTarget(_ url: URL) throws -> URL {
@@ -91,8 +103,25 @@ final class GameLibrary: ObservableObject {
         do {
             try files.createDirectory(at: gamesDirectory, withIntermediateDirectories: true)
             games = try files.contentsOfDirectory(at: gamesDirectory, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .filter(Self.isGame).map { Game(url: $0) }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         } catch { self.error = error.localizedDescription }
+    }
+
+    static func normalizeRance06DungeonData(_ root: URL) throws {
+        let files = FileManager.default
+        let children = try files.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey])
+        let ainNames = ["rance6.ain", "rance06.ain", "rancevi.ain", "ランス6.ain", "ランス６.ain", "ランス06.ain", "ランス０６.ain"]
+        guard children.contains(where: { ainNames.contains($0.lastPathComponent.lowercased()) && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }),
+              let data = children.first(where: { $0.lastPathComponent.lowercased() == "data" && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) else { return }
+        let entries = try files.contentsOfDirectory(at: data, includingPropertiesForKeys: [.isRegularFileKey])
+        guard !entries.contains(where: { $0.lastPathComponent.lowercased() == "dungeondata.dlf" }) else { return }
+        let candidates = entries.filter {
+            $0.lastPathComponent.range(of: #"^DungeonData\([0-9]+\)\.dlf$"#, options: [.regularExpression, .caseInsensitive]) != nil &&
+                (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        if let source = candidates.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
+            try files.moveItem(at: source, to: data.appendingPathComponent("DungeonData.dlf"))
+        }
     }
 
     func importFolder(_ source: URL) {
@@ -114,6 +143,7 @@ final class GameLibrary: ObservableObject {
                         guard Self.isGame(readable) else { throw LibraryError.notGame }
                         guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
                         try self.files.copyItem(at: readable, to: temporary)
+                        try Self.normalizeRance06DungeonData(temporary)
                         try self.files.moveItem(at: temporary, to: destination)
                     } catch { result = error }
                 }
@@ -231,6 +261,7 @@ final class GameLibrary: ObservableObject {
                         guard !name.isEmpty && name != "." && name != ".." && !name.hasPrefix(".") else { throw LibraryError.archiveNotGame }
                         let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
                         guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
+                        try Self.normalizeRance06DungeonData(root)
                         try self.files.moveItem(at: root, to: destination)
                     } catch { result = error }
                 }
