@@ -18,7 +18,9 @@ class BuildAppChecks(unittest.TestCase):
             native = root / 'build-native.sh'
             native.write_text('#!/bin/bash\nset -eu\necho "native:$1" >> "$CALLS"\n'
                               'mkdir -p "$(dirname "$0")/build/$1/stage/lib"\n'
-                              'touch "$(dirname "$0")/build/$1/stage/lib/libxsystem4.a"\n')
+                              'touch "$(dirname "$0")/build/$1/stage/lib/libxsystem4.a"\n'
+                              'mkdir -p "$(dirname "$0")/build/$1/stage/share/system3/mda"\n'
+                              'touch "$(dirname "$0")/build/$1/stage/share/system3/mda/AMUS.DAT"\n')
             native.chmod(0o755)
             for name in ('xcodegen', 'xcodebuild'):
                 tool = root / name
@@ -29,6 +31,7 @@ class BuildAppChecks(unittest.TestCase):
                 subprocess.run(['bash', str(root / 'build-app.sh'), 'sim'], env=env, check=True)
             self.assertEqual(calls.read_text().splitlines(),
                              ['native:iphonesimulator', 'xcodegen', 'xcodebuild'] * 2)
+            self.assertTrue((root / 'build/system3/mda/AMUS.DAT').is_file())
             product = root / 'build/app-iphoneos/Build/Products/Release-iphoneos/AliceHub.app'
             product.mkdir(parents=True)
             (product / 'fixture').write_text('app')

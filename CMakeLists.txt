@@ -252,9 +252,18 @@ ExternalProject_Add(
 ExternalProject_Add_StepDependencies(xsystem35 configure
   SDL2 SDL2_mixer libwebp libogg libvorbis xsystem4)
 
+ExternalProject_Add(system3
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/cmake/system3
+  CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+    -DANDROID_STL=c++_static
+    -DCMAKE_MODULE_PATH=${CMAKE_CURRENT_LIST_DIR}/cmake
+  BUILD_ALWAYS YES)
+ExternalProject_Add_StepDependencies(system3 configure SDL2 xsystem4)
+
 install(
   FILES ${stagingDir}/lib/libxsystem4.so
         ${stagingDir}/lib/libxsystem35.so
+        ${stagingDir}/lib/libsystem3.so
         ${stagingDir}/lib/libSDL2.so
         ${stagingDir}/lib/libcglm.so
         ${stagingDir}/lib/libarchive_jni.so
@@ -267,3 +276,6 @@ install(
 install(
   FILES xsystem35/fonts/MTLc3m.ttf xsystem35/fonts/mincho.ttf
   DESTINATION ${androidProjectDir}/app/src/main/assets/fonts)
+
+install(DIRECTORY ${stagingDir}/share/system3/mda
+  DESTINATION ${androidProjectDir}/app/src/main/assets)

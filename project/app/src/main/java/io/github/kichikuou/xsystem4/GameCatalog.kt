@@ -67,16 +67,41 @@ object GameCatalog {
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
-    fun isSystem3xGameFiles(fileNames: Collection<String>): Boolean {
-        val hasSys4Ain = fileNames.any { it.endsWith(".ain", true) && !it.equals("System39.ain", true) }
-        val hasSys4Ini = fileNames.any { it.equals("System40.ini", true) || it.equals("AliceStart.ini", true) }
-        if (hasSys4Ain || hasSys4Ini) return false
-        return fileNames.any {
-            it.endsWith("sa.ald", true) ||
-                it.equals("adisk.ald", true) ||
-                it.equals("System39.ini", true) ||
-                it.equals("System39.ain", true)
+    private fun hasSystem4Markers(fileNames: Collection<String>): Boolean = fileNames.any {
+        (it.endsWith(".ain", true) && !it.equals("System39.ain", true)) ||
+            it.equals("System40.ini", true) || it.equals("AliceStart.ini", true)
+    }
+
+    internal fun isSystem35Scenario(name: String): Boolean =
+        name.endsWith("sa.ald", true) || name.equals("adisk.ald", true)
+
+    private fun hasSystem35Markers(fileNames: Collection<String>): Boolean = fileNames.any {
+        isSystem35Scenario(it) || it.equals("System39.ini", true) || it.equals("System39.ain", true)
+    }
+
+    private fun hasLegacySystem3Data(fileNames: Collection<String>): Boolean =
+        fileNames.any { it.equals("ADISK.DAT", true) } && fileNames.any { it.equals("ACG.DAT", true) }
+
+    fun isLegacySystem3GameFiles(fileNames: Collection<String>): Boolean =
+        hasLegacySystem3Data(fileNames) && !hasSystem4Markers(fileNames) && !hasSystem35Markers(fileNames)
+
+    fun isLegacySystem3GameDir(dir: File?): Boolean =
+        isLegacySystem3GameFiles(dir?.listFiles().orEmpty().filter { it.isFile }.map { it.name })
+
+    fun isSystem3xGameFiles(fileNames: Collection<String>): Boolean =
+        !hasSystem4Markers(fileNames) && (hasSystem35Markers(fileNames) || hasLegacySystem3Data(fileNames))
+
+    internal fun legacySystem3Title(ini: ByteArray?): String? =
+        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+            val key = line.substringBefore('=').trim()
+            if (key.equals("title", true)) line.substringAfter('=', "").trim().ifEmpty { null } else null
         }
+
+    internal fun legacySystem3Title(dir: File): String? {
+        val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
+        return if (ini != null && ini.length() <= 256 * 1024) {
+            runCatching { legacySystem3Title(ini.readBytes()) }.getOrNull()
+        } else null
     }
 
     fun isSystem3xGameDir(dir: File?): Boolean {

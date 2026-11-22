@@ -90,10 +90,8 @@ object NativeGameImport {
 
     private fun <T, D> isSys3RootEntries(docs: List<TreeEntry<T, D>>): Boolean {
         if (isSys4RootEntries(docs)) return false
-        return docs.any {
-            !it.folder && !skip(it.name) &&
-                (it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true))
-        }
+        val names = docs.filter { !it.folder && !skip(it.name) }.map { it.name }
+        return names.any(GameCatalog::isSystem35Scenario) || GameCatalog.isLegacySystem3GameFiles(names)
     }
 
     fun <T, D> discoverImportSources(
@@ -173,6 +171,9 @@ object NativeGameImport {
                 val (dirId, dirName, depth) = queue.removeFirst()
                 val docs = listChildren(dirId)
                 if (isSys4RootEntries(docs) || isSys3RootEntries(docs)) {
+                    if (primaryEntries == null && GameCatalog.isLegacySystem3GameFiles(docs.filter { !it.folder }.map { it.name })) {
+                        return DiscoveredImportSources(docs, listOf(Triple(dirId, docs, "")), emptyList())
+                    }
                     if (primaryEntries == null) primaryEntries = docs
                     discRoots.add(Triple(dirId, docs, ""))
                     if (isSys4RootEntries(docs)) {
@@ -401,6 +402,13 @@ object NativeGameImport {
         val baseName = when {
             isDaiakujiImport -> "Daiakuji"
             isHarukaImport -> "Haruka"
+            GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
+                val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
+                OnlineInstaller.sanitizeInstallDirName(
+                    GameCatalog.legacySystem3Title(ini?.let(readPrimarySmallFile)).orEmpty().take(64),
+                    fallback = "System3"
+                )
+            }
             else -> resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1)
         }
         val storageCanonical = storage.canonicalFile
