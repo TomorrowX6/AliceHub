@@ -92,7 +92,8 @@ public class Rance5dCatalogTest {
         assertFalse(descriptor.getSupportsOnlineMod());
         assertFalse(descriptor.getSupportsLocalMod());
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertTrue(order.indexOf(GameCatalog.ID_RANCE5D) > order.indexOf(GameCatalog.ID_RANCE03));
+        assertEquals(order.indexOf(GameCatalog.ID_RANCE04) + 1, order.indexOf(GameCatalog.ID_RANCE5D));
+        assertEquals(order.indexOf(GameCatalog.ID_RANCE5D) + 1, order.indexOf(GameCatalog.ID_RANCE06));
         assertTrue(order.indexOf(GameCatalog.ID_RANCE5D) < order.indexOf(GameCatalog.ID_RANCE06));
         assertEquals("2002-10-25", GameSortMetadata.INSTANCE.forGame(GameCatalog.ID_RANCE5D).getReleaseDate());
     }

@@ -309,6 +309,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 descriptor.id == GameCatalog.ID_RANCE01 ||
                 descriptor.id == GameCatalog.ID_RANCE02 ||
                 descriptor.id == GameCatalog.ID_RANCE03 ||
+                descriptor.id == GameCatalog.ID_RANCE04 ||
                 descriptor.id == GameCatalog.ID_RANCE5D ||
                 descriptor.id == GameCatalog.ID_RANCE06 ||
                 descriptor.id == GameCatalog.ID_RANCE08 ||

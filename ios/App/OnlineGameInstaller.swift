@@ -74,6 +74,7 @@ final class OnlineGameInstaller {
         }
         try checkCancelled()
         guard GameLibrary.isGame(staging) else { throw LibraryError.notGame }
+        try GameLibrary.normalizeRance06DungeonData(staging)
         guard !files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
         try files.moveItem(at: staging, to: destination)
         try? files.removeItem(at: work)

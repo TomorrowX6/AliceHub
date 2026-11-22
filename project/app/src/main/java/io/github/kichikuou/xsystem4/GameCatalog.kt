@@ -51,6 +51,7 @@ object GameCatalog {
     const val ID_RANCE01 = "rance01"
     const val ID_RANCE02 = "rance02"
     const val ID_RANCE03 = "rance03"
+    const val ID_RANCE04 = "rance04"
     const val ID_RANCE5D = "rance5d"
     const val ID_RANCE06 = "rance06"
     const val ID_RANCE08 = "rance08"
@@ -349,6 +350,9 @@ object GameCatalog {
         }
         if (ainNames.any { it.equals("Rance03.ain", ignoreCase = true) }) {
             return ID_RANCE03
+        }
+        if (isRance04GameFiles(fileNames)) {
+            return ID_RANCE04
         }
         if (isRance5dGameFiles(fileNames)) {
             return ID_RANCE5D
@@ -742,6 +746,19 @@ object GameCatalog {
             lowerText.contains("夏娃2")
     }
 
+    fun isRance04GameFiles(fileNames: Collection<String>): Boolean =
+        isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCE4SA.ALD", true) }
+
+    fun isRance04GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isRance04GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty())
+
+    fun isRance04Alias(raw: String): Boolean {
+        val normalized = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFKC).lowercase()
+        if (Regex("(?:rance|兰斯|ランス)\\s*0?(?:4|iv)\\s*[.・]\\s*[12]", RegexOption.IGNORE_CASE).containsMatchIn(normalized)) return false
+        return Regex("(?<![a-z0-9])(?:rance|兰斯|ランス)\\s*(?:0?4(?![0-9.]|\\s*[.・]\\s*[0-9])|iv(?![a-z0-9.]|\\s*[.・]\\s*[0-9]))", RegexOption.IGNORE_CASE).containsMatchIn(normalized) ||
+            normalized.contains("教团的遗产") || normalized.contains("教団の遺産")
+    }
+
     fun isRance5dGameFiles(fileNames: Collection<String>): Boolean =
         isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("R5D_SA.ALD", true) }
 
@@ -793,6 +810,7 @@ object GameCatalog {
         return RANCE06_EN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_CN_ALIAS_REGEX.containsMatchIn(lower) ||
             RANCE06_JP_ALIAS_REGEX.containsMatchIn(lower) ||
+            Regex("(?:^|[^a-z0-9])r6汉硬(?:[0-9.]|$)").containsMatchIn(lower) ||
             lower.contains("ゼス崩壊") ||
             lower.contains("赛斯崩坏") ||
             lower.contains("賽斯崩壞") ||
@@ -1318,6 +1336,9 @@ object GameCatalog {
         ) {
             return ID_RANCE03
         }
+        if (isRance04Alias(lowerDir)) {
+            return ID_RANCE04
+        }
         if (isRance5dAlias(lowerDir)) {
             return ID_RANCE5D
         }
@@ -1435,6 +1456,9 @@ object GameCatalog {
             lowerDisp.contains("リーザス") || lowerDisp.contains("利萨斯")
         ) {
             return ID_RANCE03
+        }
+        if (isRance04Alias(lowerDisp)) {
+            return ID_RANCE04
         }
         if (isRance5dAlias(lowerDisp)) {
             return ID_RANCE5D
@@ -1607,6 +1631,21 @@ object GameCatalog {
                 iconFrameColor = 0xFF1D1012.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.RANCE03_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE04 -> GameDescriptor(
+                id = ID_RANCE04,
+                title = stringResolver(R.string.game_rance04_title),
+                defaultDirName = "Rance04",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance04,
+                accentColor = 0xFF3949AB.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF14182C.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false
@@ -1840,6 +1879,7 @@ object GameCatalog {
         ID_RANCE01,
         ID_RANCE02,
         ID_RANCE03,
+        ID_RANCE04,
         ID_RANCE5D,
         ID_RANCE06,
         ID_SENGOKU_RANCE,
