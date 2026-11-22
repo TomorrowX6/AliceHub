@@ -134,12 +134,15 @@ public class Batch1CatalogTest {
         assertTrue(GameListKt.isSystem3GameRoot(atlRoot));
         assertEquals(atlRoot, GameListKt.findGameRootDirInternal(atlArchiveStaging, null, GameCatalog.ID_ATLACHNACHA));
 
-        // Case-insensitive alicestart2.ini must win over AliceStart.ini when haru_c.ain is present.
+        // Case-insensitive alicestart2.ini must win over AliceStart.ini when haru_c.ain is present,
+        // and exact-case AliceStart2.ini must win when both case variants coexist.
         File haruDualLower = tmp.newFolder("HaruDualLower");
         writeFile(new File(haruDualLower, "AliceStart.ini"), "GameName = \"はるうられ\"\n".getBytes(GBK));
         writeFile(new File(haruDualLower, "alicestart2.ini"), "GameName = \"校内赤线区\"\n".getBytes(GBK));
         writeFile(new File(haruDualLower, "haru_c.ain"), new byte[]{1});
         assertEquals("alicestart2.ini", GameListKt.resolveLaunchIniFile(haruDualLower).getName());
+        writeFile(new File(haruDualLower, "AliceStart2.ini"), "GameName = \"校内赤线区\"\n".getBytes(GBK));
+        assertEquals("AliceStart2.ini", GameListKt.resolveLaunchIniFile(haruDualLower).getName());
 
         // Outer AliceStart2.ini without an .ain must NOT override a complete InstallSet/InstallData root.
         File outerOnlyIni = tmp.newFolder("OuterOnlyIni");

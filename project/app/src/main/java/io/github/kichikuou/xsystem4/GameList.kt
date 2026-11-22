@@ -2042,13 +2042,15 @@ internal fun isBaseInstallBloatRelPath(relPath: String, skipPatchSubdir: Boolean
 internal fun resolveLaunchIniFile(dir: File): File {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     val hasHaruCnAin = files.any { it.name.equals("haru_c.ain", ignoreCase = true) }
+    fun findIni(name: String): File? = files.firstOrNull { it.name == name }
+        ?: files.firstOrNull { it.name.equals(name, ignoreCase = true) }
     if (hasHaruCnAin) {
-        files.firstOrNull { it.name.equals("AliceStart2.ini", ignoreCase = true) }?.let { return it }
+        findIni("AliceStart2.ini")?.let { return it }
     }
-    return files.firstOrNull { it.name.equals("System40.ini", ignoreCase = true) }
-        ?: files.firstOrNull { it.name.equals("AliceStart.ini", ignoreCase = true) }
-        ?: files.firstOrNull { it.name.equals("AliceStart2.ini", ignoreCase = true) }
-        ?: files.firstOrNull { it.name.equals("System39.ini", ignoreCase = true) }
+    return findIni("System40.ini")
+        ?: findIni("AliceStart.ini")
+        ?: findIni("AliceStart2.ini")
+        ?: findIni("System39.ini")
         ?: File(dir, "System40.ini")
 }
 
