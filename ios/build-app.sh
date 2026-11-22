@@ -8,6 +8,7 @@ case "$mode" in
   *) echo "Usage: $0 [sim|ipa]" >&2; exit 2 ;;
 esac
 "$root/build-native.sh" "$sdk"
+cmake -E copy_directory "$root/build/$sdk/stage/share/system3" "$root/build/system3"
 xcodegen generate --spec "$root/project.yml"
 xcodebuild -project "$root/AliceHub.xcodeproj" -scheme AliceHub \
   -configuration "$configuration" -sdk "$sdk" \

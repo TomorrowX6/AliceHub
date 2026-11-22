@@ -3,6 +3,7 @@ import Combine
 import Darwin
 
 enum GameEngine: String {
+    case legacySystem3 = "System 3"
     case system3 = "System 3.x"
     case system4 = "System 4"
 }
@@ -18,7 +19,7 @@ enum LibraryError: LocalizedError {
     case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD 或 ADISK.ALD 文件。"
+        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
         case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。"
         case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
         case .resourcePath: return "无法找到游戏引擎资源。"
@@ -65,16 +66,25 @@ final class GameLibrary: ObservableObject {
         }
         let names = regularFiles.map { $0.lastPathComponent.lowercased() }
         let system39 = names.contains("system39.ini") || names.contains("system39.ain")
-        guard system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) else { throw LibraryError.notGame }
-        return (.system3, url, system39)
+        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0 == "adisk.ald" }) {
+            return (.system3, url, system39)
+        }
+        if names.contains("adisk.dat") && names.contains("acg.dat") {
+            return (.legacySystem3, url, false)
+        }
+        throw LibraryError.notGame
     }
 
     static func launchArguments(_ url: URL, saves: URL) throws -> [String] {
         let info = try launchInfo(url)
-        if info.engine == .system3 {
+        switch info.engine {
+        case .legacySystem3:
+            return ["system3", "-gamedir", url.path, "-savedir", saves.path]
+        case .system3:
             return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
+        case .system4:
+            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
         }
-        return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
     }
 
     func refresh() {
@@ -266,7 +276,7 @@ final class GameLibrary: ObservableObject {
             guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else { throw LibraryError.logFile }
             setbuf(stdout, nil)
             setbuf(stderr, nil)
-            guard chdir(info.engine == .system3 ? game.url.path : resources.path) == 0 else { throw LibraryError.resourcePath }
+            guard chdir(info.engine == .system4 ? resources.path : game.url.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
@@ -282,9 +292,12 @@ final class GameLibrary: ObservableObject {
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
                     argv.withUnsafeMutableBufferPointer { buffer in
-                        if info.engine == .system3 {
+                        switch info.engine {
+                        case .legacySystem3:
+                            _ = system3_main(Int32(arguments.count), buffer.baseAddress)
+                        case .system3:
                             _ = xsystem35_main(Int32(arguments.count), buffer.baseAddress)
-                        } else {
+                        case .system4:
                             _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)
                         }
                     }

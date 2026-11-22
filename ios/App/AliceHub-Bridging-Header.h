@@ -10,4 +10,5 @@ bool savedata_export_pc_file(const char *src, const char *dst);
 #include "../EnginePlatform.h"
 #include "../../xsystem4/include/input.h"
 #include "xsystem35_main.h"
+int system3_main(int argc, char **argv);
 #include "modifier_api.h"

@@ -117,6 +117,11 @@ ExternalProject_Add(xsystem35
   BUILD_ALWAYS YES)
 ExternalProject_Add_StepDependencies(xsystem35 configure
   SDL2 SDL2_mixer freetype libwebp)
+ExternalProject_Add(system3
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../cmake/system3
+  CMAKE_ARGS ${common} -DALICEHUB_IOS=ON
+  BUILD_ALWAYS YES)
+ExternalProject_Add_StepDependencies(system3 configure SDL2 freetype)
 
 function(isolate_engine name)
   set(object "${stage}/lib/${name}_engine.o")
@@ -147,3 +152,4 @@ function(isolate_engine name)
 endfunction()
 isolate_engine(xsystem4 xsystem4 sys4 cglm)
 isolate_engine(xsystem35 xsystem35 src_lib modules)
+isolate_engine(system3 system3)

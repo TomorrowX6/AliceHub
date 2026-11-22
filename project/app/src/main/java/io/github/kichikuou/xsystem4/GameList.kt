@@ -81,6 +81,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
             val fallbackSys3Name = if (isSys3x) {
                 when {
+                    GameCatalog.isLegacySystem3GameDir(dir) -> GameCatalog.legacySystem3Title(dir) ?: dir.name
                     GameCatalog.isEscalayerGameDir(dir) -> context.getString(R.string.game_escalayer_title)
                     GameCatalog.isKichikuouGameDir(dir) -> context.getString(R.string.game_kichikuou_title)
                     GameCatalog.isDaiakujiGameDir(dir) -> context.getString(R.string.game_daiakuji_title)
@@ -1134,10 +1135,9 @@ class GameList(activity: Activity) {
             mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
             val ainFile = srcFiles.firstOrNull { it.name.endsWith(".ain", true) && !it.name.equals("System39.ain", true) }
-            val sys3Scenario = srcFiles.firstOrNull {
-                it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true)
-            }
-            if (ainFile == null && sys3Scenario == null) {
+            val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
+            val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
+            if (ainFile == null && sys3Scenario == null && !legacySystem3) {
                 throw InstallFailureException(R.string.directory_no_game)
             }
             if (!expectedAinName.isNullOrBlank() &&
@@ -1148,7 +1148,9 @@ class GameList(activity: Activity) {
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
             val isRance02 = isRance02Target ||
                 GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
-            mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            if (!legacySystem3) {
+                mergeInstallSetData(listOf(tempDir, srcDir), srcDir, skipRance02Bloat = isRance02, checkCancelled = checkCancelled)
+            }
             if (isGalzooTarget || GameCatalog.classifyGameRootDir(srcDir) == GameCatalog.ID_GALZOO) {
                 mergeGalzooCompanionData(listOf(tempDir, srcDir), srcDir, checkCancelled = checkCancelled)
             }
@@ -1174,6 +1176,10 @@ class GameList(activity: Activity) {
                 pruneRedundantBaseBloat(srcDir)
             }
             val baseName = when {
+                legacySystem3 -> sanitizeDerivedGameDirName(
+                    (GameCatalog.legacySystem3Title(srcDir) ?: srcDir.name).take(64),
+                    fallback = "System3"
+                )
                 GameCatalog.isEscalayerGameDir(srcDir) -> "Escalayer"
                 GameCatalog.isKichikuouGameDir(srcDir) -> "KichikuRance"
                 GameCatalog.isDaiakujiGameDir(srcDir) -> "Daiakuji"
@@ -2282,7 +2288,8 @@ internal fun isSystem4GameRoot(dir: File): Boolean {
 internal fun isSystem3GameRoot(dir: File): Boolean {
     val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
     if (isSystem4GameRoot(dir)) return false
-    return files.any { it.name.endsWith("sa.ald", true) || it.name.equals("adisk.ald", true) }
+    return files.any { GameCatalog.isSystem35Scenario(it.name) } ||
+        GameCatalog.isLegacySystem3GameFiles(files.map { it.name })
 }
 
 internal fun findGameRootDirInternal(

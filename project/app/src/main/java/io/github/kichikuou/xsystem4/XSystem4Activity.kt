@@ -238,6 +238,10 @@ class XSystem4Activity : SDLActivity() {
         return GameCatalog.isSystem3xGameDir(root)
     }
 
+    private val isLegacySystem3Game by lazy {
+        GameCatalog.isLegacySystem3GameDir(effectiveGameRootFile())
+    }
+
     private fun syncAllLocksToNative() {
         if (isSystem3xGame()) {
             GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedEscLockMask(this))
@@ -298,6 +302,10 @@ class XSystem4Activity : SDLActivity() {
         // Apply immersive fullscreen directly without blocking UI thread on SDL wait(500)
         applyImmersiveFullscreen()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (isLegacySystem3Game) {
+            registerModernBackCallback()
+            return
+        }
         val label = TextView(this).apply {
             text = getString(R.string.loading_game)
             setTextColor(Color.WHITE)
@@ -783,10 +791,10 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         resetMovieSkipOverlay()
-        if (isSystem3xGame()) {
+        if (!isLegacySystem3Game && isSystem3xGame()) {
             xsystem35Midi.onActivityPause()
         }
-        if (launchedGameRoot != null) {
+        if (launchedGameRoot != null && !isLegacySystem3Game) {
             lastSyncedConfigSeq = if (isSystem3xGame()) {
                 GameModifierBridge.syncEscLockMaskFromNative(this)
             } else {
@@ -800,6 +808,7 @@ class XSystem4Activity : SDLActivity() {
     override fun onResume() {
         traceEditorReturn("onResume.begin")
         super.onResume()
+        if (isLegacySystem3Game) return
         if (isSystem3xGame()) {
             xsystem35Midi.onActivityResume()
         }
@@ -1283,7 +1292,11 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun getLibraries(): Array<String> {
-        return if (isSystem3xGame()) arrayOf("SDL2", "xsystem35") else arrayOf("SDL2", "xsystem4")
+        return arrayOf("SDL2", when {
+            isLegacySystem3Game -> "system3"
+            isSystem3xGame() -> "xsystem35"
+            else -> "xsystem4"
+        })
     }
 
     override fun getArguments(): Array<String> {
@@ -1302,6 +1315,9 @@ class XSystem4Activity : SDLActivity() {
             // x86/x86_64 Android emulators can hang in AAudio STARTING on first write;
             // fall back to SDL's Java AudioTrack backend on x86 hosts.
             SDLActivity.nativeSetenv("SDL_AUDIODRIVER", "android")
+        }
+        if (isLegacySystem3Game) {
+            return arrayOf("-gamedir", gameRoot, "-savedir", saveFolder)
         }
         GameModifierBridge.markAlreadyLoaded()
         try {
@@ -1351,10 +1367,10 @@ class XSystem4Activity : SDLActivity() {
         if (launchedGameRoot != null) {
             GameCatalog.clearRunningGameRoot(this)
             try {
-                if (isSystem3xGame()) {
-                    GameModifierBridge.syncEscLockMaskFromNative(this)
-                } else {
-                    GameModifierBridge.syncLockMaskFromNative(this)
+                when {
+                    isLegacySystem3Game -> Unit
+                    isSystem3xGame() -> GameModifierBridge.syncEscLockMaskFromNative(this)
+                    else -> GameModifierBridge.syncLockMaskFromNative(this)
                 }
             } catch (_: Throwable) {
             }
@@ -1369,7 +1385,7 @@ class XSystem4Activity : SDLActivity() {
             super.onDestroy()
         } finally {
             try {
-                if (isSystem3xGame()) {
+                if (!isLegacySystem3Game && isSystem3xGame()) {
                     xsystem35Midi.release()
                 }
             } finally {
@@ -1451,7 +1467,10 @@ class XSystem4Activity : SDLActivity() {
         return super.onUnhandledMessage(command, param)
     }
 
-    // Native JNI helpers invoked from xsystem35's SDL thread (midi.android.c / input_modal.c)
+    @Suppress("unused")
+    fun inputString(oldVal: String, maxLen: Int): String? = inputString("", oldVal, maxLen)
+
+    // Native JNI helpers invoked by the SDL engines.
     @Suppress("unused")
     fun inputString(msg: String, oldVal: String, maxLen: Int): String? {
         val result = arrayOfNulls<String?>(1)

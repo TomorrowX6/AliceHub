@@ -9,6 +9,9 @@ func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoin
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }
+func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
+    fatalError("Library checks must not launch the engine")
+}
 
 @main
 struct LibraryChecks {
@@ -77,6 +80,23 @@ struct LibraryChecks {
             try files.removeItem(at: source.appendingPathComponent("AliceStart.ini"))
             try files.removeItem(at: file)
         }
+        let legacyDisk = source.appendingPathComponent("ADISK.dat")
+        let legacyCg = source.appendingPathComponent("aCg.DaT")
+        try Data().write(to: legacyDisk)
+        precondition(!GameLibrary.isGame(source))
+        try Data().write(to: legacyCg)
+        precondition(Game(url: source).engine == .legacySystem3)
+        let legacyArguments = try GameLibrary.launchArguments(source, saves: saves)
+        precondition(legacyArguments == ["system3", "-gamedir", source.path, "-savedir", saves.path])
+        let newerDisk = source.appendingPathComponent("testSA.ALD")
+        try Data().write(to: newerDisk)
+        precondition(Game(url: source).engine == .system3)
+        try files.removeItem(at: newerDisk)
+        try Data().write(to: firstAIN)
+        precondition(Game(url: source).engine == .system4)
+        try files.removeItem(at: firstAIN)
+        try files.removeItem(at: legacyDisk)
+        try files.removeItem(at: legacyCg)
         for marker in ["random.ald", "ADISK", "something.ini"] {
             let file = source.appendingPathComponent(marker)
             try Data().write(to: file)
