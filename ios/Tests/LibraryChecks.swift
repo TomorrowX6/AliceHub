@@ -108,6 +108,11 @@ struct LibraryChecks {
         try Data().write(to: source.appendingPathComponent("RANCE4SA.ALD"))
         let firstCopy = Game(url: source), secondCopy = Game(url: ranceCopy)
         precondition(firstCopy.displayName == secondCopy.displayName)
+        precondition(firstCopy.artworkKey == "rance04" && firstCopy.isRance04 && !firstCopy.isRance5d)
+        GameLibrary.titleResolver = { _, base in base + " [MOD]" }
+        let resolvedCopy = Game(url: source)
+        GameLibrary.titleResolver = nil
+        precondition(resolvedCopy.resolvedDisplayName == firstCopy.displayName + " [MOD]")
         precondition(firstCopy.name != secondCopy.name)
         precondition(library.savesDirectory(for: firstCopy).lastPathComponent == source.lastPathComponent)
         precondition(library.savesDirectory(for: firstCopy) != library.savesDirectory(for: secondCopy))

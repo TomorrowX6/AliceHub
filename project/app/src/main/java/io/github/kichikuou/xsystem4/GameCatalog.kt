@@ -2254,21 +2254,7 @@ object GameCatalog {
         return if (cut != null) rawName.substring(0, cut) else rawName
     }
 
-    fun classifyItem(item: Item): String {
-        return classifyDirectory(
-            gameDir = item.path,
-            dirName = item.path.name,
-            saveDir = item.savedir,
-            displayName = item.name
-        )
-    }
-
-    fun classifyDirectory(
-        gameDir: File?,
-        dirName: String,
-        saveDir: File? = null,
-        displayName: String? = null
-    ): String {
+    private fun classifyByGameDirOnly(gameDir: File?, dirName: String): String? {
         if (gameDir != null && gameDir.isDirectory) {
             val files = gameDir.listFiles()
             if (files != null) {
@@ -2282,6 +2268,37 @@ object GameCatalog {
                 }
             }
         }
+        return null
+    }
+
+    fun classifyItem(item: Item): String {
+        item.cachedClassifiedId?.let { return it }
+        val gameDirResult = classifyByGameDirOnly(item.path, item.path.name)
+        if (gameDirResult != null) {
+            item.cachedClassifiedId = gameDirResult
+            return gameDirResult
+        }
+        val resolved = classifyDirectory(
+            gameDir = item.path,
+            dirName = item.path.name,
+            saveDir = item.savedir,
+            displayName = item.name
+        )
+        // Only cache classifications that do not depend on saveDir markers, since
+        // first-launch saves in item.savedir can refine ambiguous installations.
+        if (item.savedir == null) {
+            item.cachedClassifiedId = resolved
+        }
+        return resolved
+    }
+
+    fun classifyDirectory(
+        gameDir: File?,
+        dirName: String,
+        saveDir: File? = null,
+        displayName: String? = null
+    ): String {
+        classifyByGameDirOnly(gameDir, dirName)?.let { return it }
 
         if (saveDir != null && saveDir.isDirectory) {
             if (saveDir.listFiles()?.any {
@@ -3538,8 +3555,7 @@ object GameCatalog {
         }
     }
 
-    @JvmStatic
-    fun builtInSelectOrder(): List<String> = listOf(
+    private val BUILT_IN_SELECT_ORDER: List<String> = listOf(
         ID_RANCE10,
         ID_DOHNA_DOHNA,
         ID_EVENICLE,
@@ -3585,24 +3601,41 @@ object GameCatalog {
         ID_RANCE1DIGEST
     )
 
+    private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()
+
+    @JvmStatic
+    fun builtInSelectOrder(): List<String> = BUILT_IN_SELECT_ORDER
+
+    @JvmStatic
+    fun isBuiltInGameId(gameId: String): Boolean = gameId in BUILT_IN_SELECT_ORDER_SET
+
     fun buildSelectEntries(context: Context, gameList: GameList): List<GameSelectEntry> {
-        val entries = ArrayList<GameSelectEntry>()
-        val builtInIds = builtInSelectOrder()
-        val builtInSet = builtInIds.toHashSet()
-
-        for (gid in builtInIds) {
-            val desc = descriptorFor(context, gid, gameList)
-            val matched = matchingItems(gameList, gid)
-            entries.add(GameSelectEntry(desc, matched, matched.firstOrNull()))
-        }
-
+        val grouped = HashMap<String, MutableList<Item>>()
+        val customOrder = ArrayList<Pair<String, Item>>()
         for (i in 0 until gameList.size) {
             val item = gameList[i]
             val cid = classifyItem(item)
-            if (cid !in builtInSet) {
-                val desc = descriptorFor(context, cid, gameList)
-                entries.add(GameSelectEntry(desc, listOf(item), item))
+            if (cid in BUILT_IN_SELECT_ORDER_SET) {
+                grouped.getOrPut(cid) { ArrayList() }.add(item)
+            } else {
+                customOrder.add(cid to item)
             }
+        }
+        for (bucket in grouped.values) {
+            if (bucket.size > 1) {
+                bucket.sortBy { it.path.name }
+            }
+        }
+
+        val entries = ArrayList<GameSelectEntry>(BUILT_IN_SELECT_ORDER.size + customOrder.size)
+        for (gid in BUILT_IN_SELECT_ORDER) {
+            val desc = descriptorFor(context, gid, gameList)
+            val matched = grouped[gid] ?: emptyList()
+            entries.add(GameSelectEntry(desc, matched, matched.firstOrNull()))
+        }
+        for ((cid, item) in customOrder) {
+            val desc = descriptorFor(context, cid, gameList)
+            entries.add(GameSelectEntry(desc, listOf(item), item))
         }
         return GameSorting.sorted(entries, AppSettings.getGameSortMode(context), AppSettings.resolveLocale(context))
     }

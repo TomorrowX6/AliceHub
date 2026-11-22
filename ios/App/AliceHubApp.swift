@@ -47,6 +47,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct AliceHubApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
+    init() {
+        GameLibrary.titleResolver = { url, base in
+            ModOverlay.displayName(url, baseName: base)
+        }
+    }
+
     var body: some Scene {
         WindowGroup { LauncherView().modifier(HubAppearanceModifier()) }
     }

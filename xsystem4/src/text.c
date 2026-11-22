@@ -113,21 +113,44 @@ static struct font *load_font(enum font_face type)
 
 static bool font_initialized = false;
 
-// UTF-8 releases lay text out for their .fnl font, whose glyphs fill only part of
-// the cell (Tsumamigui 3: 32px advance in a 48px cell). When a TTF stands in for
-// the .fnl, draw it at the same em so the layout matches the original.
-static float fnl_substitute_scale = 1.0f;
+// Chinese releases (UTF-8, GBK, or CHS.TBL) substitute a TTF for .fnl bitmap
+// fonts, whose glyphs fill only part of the cell (e.g. 0.56–0.81 of cell height).
+// Scale each .fnl face index to match its original glyph width/height ratio and
+// vertically center it within the cell so text matches the original layout.
+static float fnl_substitute_scales[MAX_FNL_FONTS];
+static unsigned fnl_substitute_count = 0;
 
 static uint32_t read_le32(const uint8_t *p)
 {
 	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
+static float get_fnl_substitute_scale(unsigned face)
+{
+	if (face <= 255 || !(sys4_text_is_gbk || sys4_has_mai_word_table()) || !fnl_substitute_count)
+		return 1.0f;
+	unsigned idx = face - 256;
+	return idx < fnl_substitute_count ? fnl_substitute_scales[idx] : fnl_substitute_scales[0];
+}
+
+static int get_fnl_substitute_y_pad(unsigned face, float size)
+{
+	float scale = get_fnl_substitute_scale(face);
+	if (scale >= 0.999f || size <= 0.0f)
+		return 0;
+	float scaled = roundf(max(1.0f, size * scale));
+	int pad = (int)lroundf((size - scaled) * 0.5f);
+	return pad > 0 ? pad : 0;
+}
+
 // Reads only the metrics it needs, with bounds checks: fnl_open() exits on a
-// damaged index, and the .fnl is otherwise unused here.
+// damaged index, and the .fnl is otherwise unused when TTF stands in for it.
 static void init_fnl_substitute_scale(void)
 {
-	if (!sys4_source_is_utf8 || !config.fnl_path)
+	fnl_substitute_count = 0;
+	for (unsigned i = 0; i < MAX_FNL_FONTS; i++)
+		fnl_substitute_scales[i] = 1.0f;
+	if ((!sys4_text_is_gbk && !sys4_has_mai_word_table()) || !config.fnl_path)
 		return;
 	FILE *f = file_open_utf8(config.fnl_path, "rb");
 	if (!f)
@@ -137,32 +160,61 @@ static void init_fnl_substitute_scale(void)
 	if (fread(header, sizeof(header), 1, f) != 1 || memcmp(header, "FNA\0", 4))
 		goto out;
 	uint32_t index_size = read_le32(header + 12);
-	if (index_size < 8 || index_size > (64u << 20))
+	if (index_size < 4 || index_size > (64u << 20))
 		goto out;
 	index = xmalloc(index_size);
 	if (fread(index, index_size, 1, f) != 1)
 		goto out;
-	// nr_fonts, then font 0: nr_faces, then per face: height, uk, nr_glyphs, glyphs[10 bytes]
-	uint32_t nr_faces = read_le32(index + 4);
-	size_t pos = 8;
-	uint32_t height = 0, nr_glyphs = 0;
-	size_t glyphs = 0;
-	for (uint32_t i = 0; i < nr_faces; i++) {
-		if (index_size - pos < 12)
-			goto out;
-		height = read_le32(index + pos);
-		nr_glyphs = read_le32(index + pos + 8);
-		glyphs = pos + 12;
-		if (nr_glyphs > (index_size - glyphs) / 10)
-			goto out;
-		pos = glyphs + (size_t)nr_glyphs * 10;
+	// nr_fonts, then per font: nr_faces, then per face: height, uk, nr_glyphs, glyphs[10 bytes]
+	uint32_t nr_fonts = read_le32(index);
+	size_t pos = 4;
+	unsigned g_primary = fnl_char_to_index(0x8a6d); // 確 (full-width)
+	unsigned g_fallback = fnl_char_to_index(0x889f); // 亜 (full-width)
+	for (uint32_t fi = 0; fi < nr_fonts && fi < MAX_FNL_FONTS; fi++) {
+		if (index_size - pos < 4)
+			break;
+		uint32_t nr_faces = read_le32(index + pos);
+		pos += 4;
+		uint32_t best_height = 0;
+		unsigned best_width = 0;
+		bool ok = true;
+		for (uint32_t i = 0; i < nr_faces; i++) {
+			if (index_size - pos < 12) {
+				ok = false;
+				break;
+			}
+			uint32_t height = read_le32(index + pos);
+			uint32_t nr_glyphs = read_le32(index + pos + 8);
+			size_t glyphs = pos + 12;
+			if (nr_glyphs > (index_size - glyphs) / 10) {
+				ok = false;
+				break;
+			}
+			pos = glyphs + (size_t)nr_glyphs * 10;
+			if (height > best_height) {
+				unsigned width = 0;
+				if (g_primary < nr_glyphs) {
+					size_t off = glyphs + (size_t)g_primary * 10;
+					if (read_le32(index + off + 2))
+						width = index[off] | ((unsigned)index[off + 1] << 8);
+				}
+				if (!width && g_fallback < nr_glyphs) {
+					size_t off = glyphs + (size_t)g_fallback * 10;
+					if (read_le32(index + off + 2))
+						width = index[off] | ((unsigned)index[off + 1] << 8);
+				}
+				if (width) {
+					best_height = height;
+					best_width = width;
+				}
+			}
+		}
+		if (!ok)
+			break;
+		if (best_height && best_width && best_width < best_height)
+			fnl_substitute_scales[fi] = (float)best_width / (float)best_height;
+		fnl_substitute_count = fi + 1;
 	}
-	unsigned g = fnl_char_to_index(0x8a6d); // 確 (full-width)
-	if (!nr_faces || !height || g >= nr_glyphs)
-		goto out;
-	unsigned width = index[glyphs + g * 10] | index[glyphs + g * 10 + 1] << 8;
-	if (width && width < height)
-		fnl_substitute_scale = (float)width / (float)height;
 out:
 	free(index);
 	fclose(f);
@@ -187,7 +239,7 @@ void gfx_font_init(void)
 			font_fnl[i] = fnl_font_load(fnl, i);
 		}
 	}
-	if (ain && ain->version >= 12 && !game_rance7_mg)
+	if ((config.fnl_path || (ain && ain->version >= 12)) && !game_rance7_mg)
 		gfx_text_advance_edges = true;
 	font_initialized = true;
 }
@@ -212,8 +264,9 @@ static struct font *get_font(unsigned face)
 struct font_size *gfx_font_get_size(unsigned face, float size)
 {
 	struct font *font = get_font(face);
-	if (face > 255 && (sys4_text_is_gbk || sys4_has_mai_word_table()))
-		size *= fnl_substitute_scale;
+	float scale = get_fnl_substitute_scale(face);
+	if (scale < 0.999f && size > 0.0f)
+		size = max(1.0f, size * scale);
 	return font->get_size(font, size);
 }
 
@@ -426,13 +479,14 @@ float gfx_render_text_mode(Texture *dst, float x, int y, char *msg, struct text_
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
 	float edge_width = text_style_edge_width(ts);
+	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
 
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
 		: 0.f;
-	int edge_y = gfx_text_advance_edges
+	int edge_y = (gfx_text_advance_edges
 		? lroundf(ts->edge_up + ceilf(ts->bold_width))
-		: 0;
+		: 0) + fnl_y_pad;
 
 	if (edge_width > 0.01f) {
 		struct text_render_metrics metrics = {
@@ -475,12 +529,13 @@ float gfx_render_text_edge_only(Texture *dst, float x, int y, char *msg, struct 
 		return 0.0f;
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
+	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
 		: 0.f;
-	int edge_y = gfx_text_advance_edges
+	int edge_y = (gfx_text_advance_edges
 		? lroundf(ts->edge_up + ceilf(ts->bold_width))
-		: 0;
+		: 0) + fnl_y_pad;
 	struct text_render_metrics metrics = {
 		.x = x,
 		.y = y + edge_y,
@@ -502,12 +557,13 @@ float gfx_render_text_core_only(Texture *dst, float x, int y, char *msg, struct 
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
 	float edge_width = text_style_edge_width(ts);
+	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
 		: 0.f;
-	int edge_y = gfx_text_advance_edges
+	int edge_y = (gfx_text_advance_edges
 		? lroundf(ts->edge_up + ceilf(ts->bold_width))
-		: 0;
+		: 0) + fnl_y_pad;
 	struct text_render_metrics metrics = {
 		.x = x,
 		.y = y + edge_y,
@@ -586,7 +642,7 @@ static void gfx_draw_text(Texture *dst, int x, int y, char *text, enum text_rend
 	struct font_size *font_size = gfx_font_get_size(font_metrics.face, font_metrics.size);
 	struct text_render_metrics metrics = {
 		.x = x,
-		.y = y,
+		.y = y + get_fnl_substitute_y_pad(font_metrics.face, font_metrics.size),
 		.color = font_metrics.color,
 		.weight = gfx_int_to_font_weight(font_metrics.weight),
 		.edge_width = 0.0f,

@@ -1022,6 +1022,19 @@ static char *find_ald_audio_metadata(char **volumes, int count, const char *exte
 	return NULL;
 }
 
+static bool is_valid_fnl_file(const char *path)
+{
+	if (!path || is_directory(path))
+		return false;
+	FILE *f = file_open_utf8(path, "rb");
+	if (!f)
+		return false;
+	uint8_t magic[4];
+	bool ok = fread(magic, sizeof(magic), 1, f) == 1 && !memcmp(magic, "FNA\0", 4);
+	fclose(f);
+	return ok;
+}
+
 void asset_manager_init(void)
 {
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
@@ -1044,6 +1057,7 @@ void asset_manager_init(void)
 	bool has_base_ald = false;
 	char **fallback_alds = NULL;
 	size_t nr_fallback_alds = 0;
+	char *fallback_fnl_name = NULL;
 
 	// get ALD filenames
 	while ((d_name = readdir_utf8(dir))) {
@@ -1060,6 +1074,15 @@ void asset_manager_init(void)
 				fallback_alds[nr_fallback_alds++] = xstrdup(d_name);
 			} else if (!strcasecmp(match_name, "CHS.afa") && !afa_chs_cg) {
 				afa_chs_cg = path_join(config.game_dir, d_name);
+			} else if (!strcasecmp(ext, "fnl") && d_name[0] != '.') {
+				if (!fallback_fnl_name || strcmp(d_name, fallback_fnl_name) < 0) {
+					char *cand_path = path_join(config.game_dir, d_name);
+					if (is_valid_fnl_file(cand_path)) {
+						free(fallback_fnl_name);
+						fallback_fnl_name = xstrdup(d_name);
+					}
+					free(cand_path);
+				}
 			}
 			goto loop_next;
 		}
@@ -1127,6 +1150,11 @@ void asset_manager_init(void)
 	}
 	closedir_utf8(dir);
 	free(base);
+
+	if (!config.fnl_path && fallback_fnl_name) {
+		config.fnl_path = path_join(config.game_dir, fallback_fnl_name);
+	}
+	free(fallback_fnl_name);
 
 	if (!has_base_ald) {
 		register_fallback_alds(ald_filenames, ald_count, fallback_alds, nr_fallback_alds, "BGWD", false);
