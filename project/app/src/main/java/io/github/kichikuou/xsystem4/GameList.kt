@@ -57,12 +57,22 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     internal var cachedModInfoResolved: Boolean = false
     @Volatile
     internal var cachedModInfo: InstalledModInfo? = null
+    @Volatile
+    internal var cachedIconFingerprint: String? = null
+
+    internal fun iconFingerprint(): String {
+        cachedIconFingerprint?.let { return it }
+        val computed = icon?.takeIf { it.isFile }?.let { "${it.lastModified()}:${it.length()}" }.orEmpty()
+        cachedIconFingerprint = computed
+        return computed
+    }
 
     internal fun invalidateMetadataCache() {
         cachedClassifiedId = null
         cachedHasMod = null
         cachedModInfoResolved = false
         cachedModInfo = null
+        cachedIconFingerprint = null
     }
 
     companion object {
@@ -82,9 +92,11 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedHasMod = false
                     cachedModInfo = null
                     cachedModInfoResolved = true
+                    cachedIconFingerprint = ""
                 }
             }
             val icon = findIcon(dir)
+            val iconFp = icon?.takeIf { it.isFile }?.let { "${it.lastModified()}:${it.length()}" }.orEmpty()
             val ini = if (iniFile.exists()) System40Ini.parse(iniFile) else System40Ini(null, null)
             val fallbackSys3Name = if (isSys3x) {
                 when {
@@ -119,6 +131,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedHasMod = false
                     cachedModInfo = null
                     cachedModInfoResolved = true
+                    cachedIconFingerprint = iconFp
                 }
             }
             val savedir = File(context.filesDir, "saves/${dir.name}")
@@ -149,6 +162,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 cachedHasMod = hasModMarker
                 cachedModInfo = modMeta
                 cachedModInfoResolved = true
+                cachedIconFingerprint = iconFp
             }
         }
 
@@ -245,7 +259,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         return try {
             val iconFile = icon ?: return null
             if (!iconFile.isFile) return null
-            val cacheKey = "${iconFile.absolutePath}:${iconFile.lastModified()}:$reqSize"
+            val cacheKey = "${iconFile.absolutePath}:${iconFile.lastModified()}:${iconFile.length()}:$reqSize"
             synchronized(iconBitmapCache) {
                 iconBitmapCache.get(cacheKey)?.takeIf { !it.isRecycled }
             }?.let { return it }
@@ -454,26 +468,86 @@ class GameList(activity: Activity) {
     operator fun get(index: Int): Item = items[index]
     val size: Int get() = items.size
 
-    private data class DirSignature(
+    internal data class DirSignature(
         val dirModified: Long,
-        val iniModified: Long,
+        val launchIniName: String,
+        val launchIniModified: Long,
+        val launchIniLength: Long,
+        val system3IniName: String,
+        val system3IniModified: Long,
+        val system3IniLength: Long,
+        val iconName: String,
+        val iconModified: Long,
+        val iconLength: Long,
         val modMetaModified: Long,
-        val journalModified: Long
+        val modMetaLength: Long,
+        val journalModified: Long,
+        val journalLength: Long
     )
 
-    private fun computeDirSignature(dir: File): DirSignature {
-        val iniFile = File(dir, "AliceStart.ini").takeIf { it.isFile }
-            ?: File(dir, "System40.ini").takeIf { it.isFile }
-            ?: File(dir, "AliceStart.CHS").takeIf { it.isFile }
-            ?: File(dir, "AliceStart2.ini").takeIf { it.isFile }
-        val modMeta = File(dir, InstalledModInfo.META_FILE_NAME).takeIf { it.isFile }
-        val journal = File(dir, ".mod_installed_files.txt").takeIf { it.isFile }
-        return DirSignature(
-            dirModified = dir.lastModified(),
-            iniModified = iniFile?.lastModified() ?: 0L,
-            modMetaModified = modMeta?.lastModified() ?: 0L,
-            journalModified = journal?.lastModified() ?: 0L
-        )
+    companion object {
+        internal fun computeDirSignature(dir: File): DirSignature {
+            val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+            val launchIni = resolveLaunchIniFile(dir).takeIf { it.isFile }
+            val sys3Ini = files.firstOrNull { it.name == "System3.ini" }
+                ?: files.firstOrNull { it.name.equals("system3.ini", ignoreCase = true) }
+            val iconFile = files.firstOrNull { it.extension.equals("ico", ignoreCase = true) }
+            val modMeta = File(dir, InstalledModInfo.META_FILE_NAME).takeIf { it.isFile }
+            val journal = File(dir, ".mod_installed_files.txt").takeIf { it.isFile }
+            return DirSignature(
+                dirModified = dir.lastModified(),
+                launchIniName = launchIni?.name.orEmpty(),
+                launchIniModified = launchIni?.lastModified() ?: 0L,
+                launchIniLength = launchIni?.length() ?: 0L,
+                system3IniName = sys3Ini?.name.orEmpty(),
+                system3IniModified = sys3Ini?.lastModified() ?: 0L,
+                system3IniLength = sys3Ini?.length() ?: 0L,
+                iconName = iconFile?.name.orEmpty(),
+                iconModified = iconFile?.lastModified() ?: 0L,
+                iconLength = iconFile?.length() ?: 0L,
+                modMetaModified = modMeta?.lastModified() ?: 0L,
+                modMetaLength = modMeta?.length() ?: 0L,
+                journalModified = journal?.lastModified() ?: 0L,
+                journalLength = journal?.length() ?: 0L
+            )
+        }
+    }
+
+    private fun discoverMountedStorageDirs(
+        knownRoots: Set<String> = emptySet(),
+        createDummyIfEmpty: Boolean = false
+    ): List<Pair<File, Boolean>> {
+        val result = ArrayList<Pair<File, Boolean>>()
+        for (storagePath in appContext.getExternalFilesDirs(null).filterNotNull()) {
+            val state = Environment.getExternalStorageState(storagePath)
+            if (state != Environment.MEDIA_MOUNTED && state != Environment.MEDIA_MOUNTED_READ_ONLY) {
+                continue
+            }
+            val writable = state == Environment.MEDIA_MOUNTED
+            result.add(storagePath to writable)
+            if (writable && storagePath.absolutePath !in knownRoots) {
+                OnlineInstaller.recoverInterruptedReinstalls(storagePath)
+            }
+            if (createDummyIfEmpty && writable) {
+                val files = storagePath.listFiles()
+                if (files != null && files.isEmpty()) {
+                    val dummyFile = File(storagePath, "dummy.txt")
+                    dummyFile.writeText("Create a subfolder here that stores game files.")
+                    MediaScannerConnection.scanFile(
+                        appContext,
+                        arrayOf(dummyFile.absolutePath),
+                        null,
+                        null
+                    )
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            val storage = File(appContext.filesDir, "games")
+            storage.mkdirs()
+            result.add(storage to true)
+        }
+        return result
     }
 
     private fun bumpDataVersion() {
@@ -513,43 +587,16 @@ class GameList(activity: Activity) {
     class InstallFailureException(val msgId: Int) : Exception()
 
     init {
-        for (storagePath in activity.getExternalFilesDirs(null).filterNotNull()) {
-            val state = Environment.getExternalStorageState(storagePath)
-            Log.i("GameList", "${storagePath}: $state")
-            if (state != Environment.MEDIA_MOUNTED && state != Environment.MEDIA_MOUNTED_READ_ONLY) {
-                continue
-            }
+        val discovered = discoverMountedStorageDirs(knownRoots = emptySet(), createDummyIfEmpty = true)
+        for ((storagePath, _) in discovered) {
             storageDirs.add(storagePath)
             val homedir = File(storagePath, ".xsystem4")
-            if (state == Environment.MEDIA_MOUNTED) {
-                OnlineInstaller.recoverInterruptedReinstalls(storagePath)
-            }
             val files = storagePath.listFiles() ?: continue
             for (path in files) {
                 if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
                     items.add(Item.fromDirectory(path, homedir, context))
                 }
             }
-            if (state == Environment.MEDIA_MOUNTED && files.isEmpty()) {
-                val dummyFile = File(storagePath, "dummy.txt")
-                dummyFile.writeText("Create a subfolder here that stores game files.")
-                MediaScannerConnection.scanFile(
-                    activity,
-                    arrayOf(dummyFile.absolutePath),
-                    null,
-                    null
-                )
-            }
-        }
-        if (storageDirs.isEmpty()) {
-            val storage = File(context.filesDir, "games")
-            storage.mkdirs()
-            storageDirs.add(storage)
-            storage.listFiles()
-                ?.filter { it.isDirectory && !it.name.startsWith('.') && !uninstallingPaths.contains(it.absolutePath) }
-                ?.forEach {
-                    items.add(Item.fromDirectory(it, File(storage, ".xsystem4"), context))
-                }
         }
         val initialSnap = HashMap<String, DirSignature>(items.size)
         for (item in items) {
@@ -561,7 +608,9 @@ class GameList(activity: Activity) {
     fun syncFromDiskAsync(onChanged: () -> Unit) {
         if (installState !is InstallState.Idle || installJob?.isActive == true || isRestoringMod) return
         if (syncJob?.isActive == true) return
-        val dirsCopy = ArrayList(storageDirs)
+        val startVersion = dataVersion
+        val prevRoots = storageDirs.map { it.absolutePath }
+        val prevRootSet = prevRoots.toHashSet()
         val existingByPath = HashMap<String, Item>(items.size)
         for (item in items) {
             existingByPath[item.path.absolutePath] = item
@@ -569,9 +618,12 @@ class GameList(activity: Activity) {
         val prevSnap = diskSnapshot
         syncJob = scope.launch {
             val result = withContext(Dispatchers.IO) {
+                val discovered = discoverMountedStorageDirs(knownRoots = prevRootSet, createDummyIfEmpty = false)
+                val newStorageDirs = discovered.map { it.first }
+                val newRootPaths = newStorageDirs.map { it.absolutePath }
                 val scannedEntries = ArrayList<Pair<File, File>>() // (gameDir, homedir)
                 val newSnap = HashMap<String, DirSignature>()
-                for (storagePath in dirsCopy) {
+                for (storagePath in newStorageDirs) {
                     val homedir = File(storagePath, ".xsystem4")
                     val files = storagePath.listFiles() ?: continue
                     for (path in files) {
@@ -581,7 +633,7 @@ class GameList(activity: Activity) {
                         }
                     }
                 }
-                if (newSnap == prevSnap && newSnap.size == existingByPath.size) {
+                if (newRootPaths == prevRoots && newSnap == prevSnap && newSnap.size == existingByPath.size) {
                     return@withContext null
                 }
                 val rebuilt = ArrayList<Item>(scannedEntries.size)
@@ -593,14 +645,23 @@ class GameList(activity: Activity) {
                         rebuilt.add(prevItem)
                     } else {
                         rebuilt.add(Item.fromDirectory(dir, homedir, ctx))
+                        // Refresh signature in case Item.fromDirectory extracted .xsystem4.ico into dir.
+                        newSnap[key] = computeDirSignature(dir)
                     }
                 }
-                rebuilt to newSnap
+                Triple(newStorageDirs, rebuilt, newSnap)
             }
-            if (result != null && installState is InstallState.Idle && installJob?.isActive != true && !isRestoringMod) {
+            if (result != null &&
+                dataVersion == startVersion &&
+                installState is InstallState.Idle &&
+                installJob?.isActive != true &&
+                !isRestoringMod
+            ) {
+                storageDirs.clear()
+                storageDirs.addAll(result.first)
                 items.clear()
-                items.addAll(result.first)
-                diskSnapshot = result.second
+                items.addAll(result.second)
+                diskSnapshot = result.third
                 bumpDataVersion()
                 onChanged()
             }

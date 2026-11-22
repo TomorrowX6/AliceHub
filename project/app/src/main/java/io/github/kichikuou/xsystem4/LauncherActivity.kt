@@ -129,7 +129,7 @@ private class GameSelectAdapter(
             val iconKey = if (GameCatalog.isBuiltInGameId(desc.id)) {
                 "res:${desc.id}:${desc.iconRes}:${desc.iconFrameColor}"
             } else {
-                "file:${desc.id}:${desc.iconFrameColor}:${primary?.icon?.absolutePath.orEmpty()}"
+                "file:${desc.id}:${desc.iconFrameColor}:${primary?.icon?.absolutePath.orEmpty()}:${primary?.iconFingerprint().orEmpty()}"
             }
             BoundRow(entry, badgeLabel, badgeTone, iconKey)
         }

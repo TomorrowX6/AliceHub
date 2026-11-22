@@ -304,10 +304,81 @@ int main(void) {{
         self.assertEqual(out.strip(), "OK")
 
     def test_asset_manager_fallback_fnl_discovery(self):
-        # Verify asset_manager.c retains a deterministic fallback *.fnl when ain basename differs.
+        fn_valid_fnl = extract_function("src/asset_manager.c", "is_valid_fnl_file")
+        harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+
+#include "system4.h"
+#include "system4/file.h"
+#include "system4/string.h"
+
+{fn_valid_fnl}
+
+static char *pick_fallback_fnl(const char *dir_path) {{
+    UDIR *dir = opendir_utf8(dir_path);
+    assert(dir != NULL);
+    char *best = NULL;
+    char *d_name;
+    while ((d_name = readdir_utf8(dir))) {{
+        const char *ext = file_extension(d_name);
+        if (ext && !strcasecmp(ext, "fnl") && d_name[0] != '.') {{
+            if (!best || strcmp(d_name, best) < 0) {{
+                char *cand = path_join(dir_path, d_name);
+                if (is_valid_fnl_file(cand)) {{
+                    free(best);
+                    best = xstrdup(d_name);
+                }}
+                free(cand);
+            }}
+        }}
+        free(d_name);
+    }}
+    closedir_utf8(dir);
+    return best;
+}}
+
+int main(int argc, char **argv) {{
+    assert(argc == 3);
+    // Dir 1: AppleDouble ._GameFont.fnl, non-FNA A_corrupt.fnl, directory B_dir.fnl, valid Z_real.fnl.
+    char *chosen = pick_fallback_fnl(argv[1]);
+    assert(chosen != NULL && strcmp(chosen, "Z_real.fnl") == 0);
+    free(chosen);
+
+    // Dir 2: only AppleDouble sidecar and corrupt file -> must return NULL.
+    char *none = pick_fallback_fnl(argv[2]);
+    assert(none == NULL);
+
+    puts("OK");
+    return 0;
+}}
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            td = Path(tmpdir)
+            d1 = td / "with_real"
+            d1.mkdir()
+            (d1 / "._GameFont.fnl").write_bytes(b"\x00\x05\x16\x07AppleDouble")
+            (d1 / "A_corrupt.fnl").write_bytes(b"NOT_FNA_HEADER")
+            (d1 / "B_dir.fnl").mkdir()
+            (d1 / "Z_real.fnl").write_bytes(_build_fnl([[(384, {0x8A6D: 268})]]))
+
+            d2 = td / "sidecar_only"
+            d2.mkdir()
+            (d2 / "._GameFont.fnl").write_bytes(b"\x00\x05\x16\x07AppleDouble")
+            (d2 / "broken.fnl").write_bytes(b"BAD!")
+
+            out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"], [str(d1), str(d2)])
+            self.assertEqual(out.strip(), "OK")
+
+        # Verify asset_manager.c validates fallback *.fnl candidates and ignores dotfiles.
         src = (ROOT / "src/asset_manager.c").read_text(encoding="utf-8")
-        self.assertIn('!strcasecmp(ext, "fnl")', src)
-        self.assertIn("fallback_fnl_name", src)
+        self.assertIn('!strcasecmp(ext, "fnl") && d_name[0] != \'.\'', src)
+        self.assertIn("is_valid_fnl_file(cand_path)", src)
         self.assertIn("if (!config.fnl_path && fallback_fnl_name)", src)
 
         # Verify text.c enables gfx_text_advance_edges whenever config.fnl_path is present.
