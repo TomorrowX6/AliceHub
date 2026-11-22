@@ -135,6 +135,67 @@ public class Batch3CatalogTest {
                 NativeGameImport.INSTANCE.discoverImportSources("root", auxSafEntries, id -> Arrays.asList(), e -> e.getPayload());
         assertEquals(null, rejectedAux.getPrimaryEntries());
 
+        // UTF-8 CodeName with ASCII GameName (both with and without BOM), plus legacy GBK & Shift_JIS retention.
+        File utf8Chs = makeDir("Utf8Chs", "System40.ini", "游戏.CHS");
+        byte[] utf8IniBytes = "GameName = \"Game\"\nCodeName = \"游戏.CHS\"\n".getBytes(StandardCharsets.UTF_8);
+        writeFile(new File(utf8Chs, "System40.ini"), utf8IniBytes);
+        System40Ini parsedUtf8 = System40Ini.Companion.parse(utf8IniBytes);
+        assertEquals("Game", parsedUtf8.getGameName());
+        assertEquals("游戏.CHS", parsedUtf8.getCodeName());
+        assertTrue(GameListKt.isSystem4GameRoot(utf8Chs));
+        List<NativeGameImport.TreeEntry<String, byte[]>> utf8SafEntries = Arrays.asList(
+                new NativeGameImport.TreeEntry<>("ini", "System40.ini", false, utf8IniBytes),
+                new NativeGameImport.TreeEntry<>("chs", "游戏.CHS", false, new byte[]{1})
+        );
+        assertNotNull(NativeGameImport.INSTANCE.discoverImportSources(
+                "root", utf8SafEntries, id -> Arrays.asList(), e -> e.getPayload()).getPrimaryEntries());
+
+        byte[] bomPrefix = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
+        byte[] bomIniBytes = new byte[bomPrefix.length + utf8IniBytes.length];
+        System.arraycopy(bomPrefix, 0, bomIniBytes, 0, bomPrefix.length);
+        System.arraycopy(utf8IniBytes, 0, bomIniBytes, bomPrefix.length, utf8IniBytes.length);
+        assertEquals("游戏.CHS", System40Ini.Companion.parse(bomIniBytes).getCodeName());
+
+        byte[] gbkIniBytes = "GameName = \"魔\"\nCodeName = \"游戏.CHS\"\n".getBytes(GBK);
+        System40Ini parsedGbk = System40Ini.Companion.parse(gbkIniBytes);
+        assertEquals("魔", parsedGbk.getGameName());
+        assertEquals("游戏.CHS", parsedGbk.getCodeName());
+
+        Charset sjis = Charset.forName("Shift_JIS");
+        byte[] sjisIniBytes = "GameName = \"Game\"\nCodeName = \"ランス.CHS\"\n".getBytes(sjis);
+        System40Ini parsedSjis = System40Ini.Companion.parse(sjisIniBytes);
+        assertEquals("Game", parsedSjis.getGameName());
+        assertEquals("ランス.CHS", parsedSjis.getCodeName());
+
+        // Inline ';' and '//' trailing comments (and comment markers inside quotes) must match native ini_lexer.l.
+        byte[] semiCommentIni = (
+                "; CodeName = \"Ignored.CHS\"\n" +
+                "// CodeName = \"AlsoIgnored.CHS\"\n" +
+                "CodeName = \"CustomGame.CHS\" ; Chinese \"build\"\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        assertEquals("CustomGame.CHS", System40Ini.Companion.parse(semiCommentIni).getCodeName());
+        byte[] slashCommentIni = "CodeName = \"a;b//c.CHS\" // Chinese build\n".getBytes(StandardCharsets.UTF_8);
+        assertEquals("a;b//c.CHS", System40Ini.Companion.parse(slashCommentIni).getCodeName());
+
+        File commentedChs = makeDir("CommentedChs", "System40.ini", "CustomGame.CHS");
+        writeFile(new File(commentedChs, "System40.ini"), semiCommentIni);
+        assertTrue(GameListKt.isSystem4GameRoot(commentedChs));
+        List<NativeGameImport.TreeEntry<String, byte[]>> semiSafEntries = Arrays.asList(
+                new NativeGameImport.TreeEntry<>("ini", "System40.ini", false, semiCommentIni),
+                new NativeGameImport.TreeEntry<>("chs", "CustomGame.CHS", false, new byte[]{1})
+        );
+        assertNotNull(NativeGameImport.INSTANCE.discoverImportSources(
+                "root", semiSafEntries, id -> Arrays.asList(), e -> e.getPayload()).getPrimaryEntries());
+
+        // Untitled configured .CHS game falls back to the resolved code filename instead of failing library validation.
+        assertEquals("CustomGame", Item.Companion.resolveFallbackSystem4Name(
+                commentedChs, System40Ini.Companion.parse(semiCommentIni)));
+        File untitledMissingCode = makeDir("UntitledMissingCode", "System40.ini", "00_aux.chs");
+        byte[] missingCodeIni = "CodeName = \"Other.CHS\"\n".getBytes(StandardCharsets.UTF_8);
+        writeFile(new File(untitledMissingCode, "System40.ini"), missingCodeIni);
+        assertEquals(null, Item.Companion.resolveFallbackSystem4Name(
+                untitledMissingCode, System40Ini.Companion.parse(missingCodeIni)));
+
         // Rance 1 Digest vs Rance 01 disambiguation
         assertTrue(GameCatalog.INSTANCE.isRance1DigestAlias("兰斯1 摘要版"));
         assertTrue(GameCatalog.INSTANCE.isRance1DigestAlias("兰斯１摘要版"));

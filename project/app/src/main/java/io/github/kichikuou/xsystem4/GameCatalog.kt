@@ -101,6 +101,33 @@ object GameCatalog {
     internal fun hasLonginusChsConfig(fileNames: Collection<String>): Boolean =
         fileNames.any { it.equals("AliceStart.CHS", true) || it.equals("CHS.TBL", true) }
 
+    internal fun matchConfiguredChsCodeFileName(
+        codeName: String?,
+        fileNames: Collection<String>
+    ): String? {
+        val normalized = codeName
+            ?.replace('\\', '/')?.substringAfterLast('/')?.trim()
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        if (!normalized.endsWith(".chs", true) || normalized.equals("AliceStart.CHS", true)) return null
+        return fileNames.firstOrNull {
+            it.equals(normalized, true) || ArchiveExtractor.repairSjisAsGbkMojibake(it).equals(normalized, true)
+        }
+    }
+
+    internal fun matchConfiguredSystem4CodeFileName(
+        codeName: String?,
+        fileNames: Collection<String>
+    ): String? {
+        matchConfiguredChsCodeFileName(codeName, fileNames)?.let { return it }
+        val normalized = codeName
+            ?.replace('\\', '/')?.substringAfterLast('/')?.trim()
+            ?.takeIf { it.isNotEmpty() } ?: return null
+        if (!isSystem4AinFile(normalized)) return null
+        return fileNames.firstOrNull {
+            it.equals(normalized, true) || ArchiveExtractor.repairSjisAsGbkMojibake(it).equals(normalized, true)
+        }
+    }
+
     internal fun configuredChsCodeFileName(
         fileNames: Collection<String>,
         readSmallFile: ((String) -> ByteArray?)? = null
@@ -119,12 +146,7 @@ object GameCatalog {
             ?: return null
         val raw = runCatching { readSmallFile(iniName) }.getOrNull() ?: return null
         val codeName = runCatching { System40Ini.parse(raw).codeName }.getOrNull()
-            ?.replace('\\', '/')?.substringAfterLast('/')?.trim()
-            ?.takeIf { it.isNotEmpty() } ?: return null
-        if (!codeName.endsWith(".chs", true) || codeName.equals("AliceStart.CHS", true)) return null
-        return fileNames.firstOrNull {
-            it.equals(codeName, true) || ArchiveExtractor.repairSjisAsGbkMojibake(it).equals(codeName, true)
-        }
+        return matchConfiguredChsCodeFileName(codeName, fileNames)
     }
 
     internal fun isSystem4CodeFile(

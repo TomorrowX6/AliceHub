@@ -84,7 +84,12 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             } else {
                 null
             }
-            val effectiveGameName = ini.gameName?.takeIf { it.isNotBlank() } ?: fallbackSys3Name
+            val fallbackSys4Name = if (!isSys3x && iniFile.exists()) {
+                resolveFallbackSystem4Name(dir, ini)
+            } else {
+                null
+            }
+            val effectiveGameName = ini.gameName?.takeIf { it.isNotBlank() } ?: fallbackSys3Name ?: fallbackSys4Name
             if (effectiveGameName == null) {
                 val err = context.getString(R.string.toast_no_GameName, iniFile.path)
                 Log.w("GameList", err)
@@ -114,6 +119,16 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 rawName
             }
             return Item(displayName, dir, homedir, savedir, icon, null)
+        }
+
+        fun resolveFallbackSystem4Name(dir: File, ini: System40Ini): String? {
+            val fileNames = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+            val matchedCodeFile = GameCatalog.matchConfiguredSystem4CodeFileName(ini.codeName, fileNames)
+                ?: return null
+            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(matchedCodeFile)
+            return repaired.substringBeforeLast('.').takeIf { it.isNotBlank() }
+                ?: repaired.takeIf { it.isNotBlank() }
+                ?: dir.name.takeIf { it.isNotBlank() }
         }
 
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
@@ -272,37 +287,109 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 
 data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeName: String? = null) {
     companion object {
+        private val ASSIGNMENT_REGEX =
+            Regex("""^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*"([^"\r\n]*)"\s*(?:(?:;|//).*)?$""")
+
+        private fun hasUtf8Bom(raw: ByteArray): Boolean =
+            raw.size >= 3 &&
+                raw[0] == 0xEF.toByte() &&
+                raw[1] == 0xBB.toByte() &&
+                raw[2] == 0xBF.toByte()
+
+        // Matches native xsystem4 sys4_bytes_look_utf8: strict UTF-8 across the whole file,
+        // with either a UTF-8 BOM or at least one 3- or 4-byte UTF-8 sequence (preventing
+        // 2-byte GBK characters from being misidentified as 2-byte Latin UTF-8).
+        private fun bytesLookUtf8(raw: ByteArray): Boolean {
+            if (hasUtf8Bom(raw)) return true
+            var hasThreeOrFourByte = false
+            var i = 0
+            while (i < raw.size) {
+                val b0 = raw[i].toInt() and 0xFF
+                when {
+                    b0 < 0x80 -> i++
+                    b0 in 0xC2..0xDF -> {
+                        if (i + 1 >= raw.size) return false
+                        val b1 = raw[i + 1].toInt() and 0xFF
+                        if ((b1 and 0xC0) != 0x80) return false
+                        i += 2
+                    }
+                    b0 in 0xE0..0xEF -> {
+                        if (i + 2 >= raw.size) return false
+                        val b1 = raw[i + 1].toInt() and 0xFF
+                        val b2 = raw[i + 2].toInt() and 0xFF
+                        if ((b1 and 0xC0) != 0x80 || (b2 and 0xC0) != 0x80) return false
+                        if (b0 == 0xE0 && b1 < 0xA0) return false
+                        if (b0 == 0xED && b1 >= 0xA0) return false
+                        hasThreeOrFourByte = true
+                        i += 3
+                    }
+                    b0 in 0xF0..0xF4 -> {
+                        if (i + 3 >= raw.size) return false
+                        val b1 = raw[i + 1].toInt() and 0xFF
+                        val b2 = raw[i + 2].toInt() and 0xFF
+                        val b3 = raw[i + 3].toInt() and 0xFF
+                        if ((b1 and 0xC0) != 0x80 || (b2 and 0xC0) != 0x80 || (b3 and 0xC0) != 0x80) return false
+                        if (b0 == 0xF0 && b1 < 0x90) return false
+                        if (b0 == 0xF4 && b1 > 0x8F) return false
+                        hasThreeOrFourByte = true
+                        i += 4
+                    }
+                    else -> return false
+                }
+            }
+            return hasThreeOrFourByte
+        }
+
+        private fun detectLegacyCharset(sampleRaw: ByteArray): Charset {
+            val decoded = ArchiveExtractor.decodeBestCjkText(sampleRaw, preferGbkOnTie = true)
+            val sjis = Charset.forName("Shift_JIS")
+            val gbk = Charset.forName("GBK")
+            return if (decoded == String(sampleRaw, sjis) && decoded != String(sampleRaw, gbk)) {
+                sjis
+            } else {
+                gbk
+            }
+        }
+
         fun parse(file: File): System40Ini = parse(file.readBytes())
 
         fun parse(raw: ByteArray): System40Ini {
-            val regex = Regex("""(\w+)\s*=\s*"(.*)"""")
-            val latin = String(raw, Charsets.ISO_8859_1)
-            val gnMatch = Regex("""(?:^|\r?\n)\s*(?:GameName|Regist)\s*=\s*"([^\r\n"]*)"""").find(latin)
-            val chosenCharset = if (gnMatch != null) {
-                val gnRaw = gnMatch.groupValues[1].toByteArray(Charsets.ISO_8859_1)
-                val decoded = ArchiveExtractor.decodeBestCjkText(gnRaw, preferGbkOnTie = true)
-                when {
-                    decoded == String(gnRaw, Charsets.UTF_8) && gnRaw.any { (it.toInt() and 0x80) != 0 } ->
-                        Charsets.UTF_8
-                    decoded == String(gnRaw, Charset.forName("Shift_JIS")) &&
-                        decoded != String(gnRaw, Charset.forName("GBK")) ->
-                        Charset.forName("Shift_JIS")
-                    else -> Charset.forName("GBK")
-                }
+            val body = if (hasUtf8Bom(raw)) raw.copyOfRange(3, raw.size) else raw
+            val chosenCharset = if (bytesLookUtf8(raw)) {
+                Charsets.UTF_8
             } else {
-                Charset.forName("GBK")
+                val latin = String(body, Charsets.ISO_8859_1)
+                var titleSample: ByteArray? = null
+                var otherSample: ByteArray? = null
+                for (line in latin.lines()) {
+                    val m = ASSIGNMENT_REGEX.matchEntire(line.trim()) ?: continue
+                    val rawVal = m.groupValues[2].toByteArray(Charsets.ISO_8859_1)
+                    if (rawVal.none { (it.toInt() and 0x80) != 0 }) continue
+                    when (m.groupValues[1]) {
+                        "GameName", "Regist" -> if (titleSample == null) titleSample = rawVal
+                        "CodeName", "SaveFolder" -> if (otherSample == null) otherSample = rawVal
+                    }
+                }
+                val sample = titleSample ?: otherSample
+                if (sample != null) detectLegacyCharset(sample) else Charset.forName("GBK")
             }
             var gameName: String? = null
             var registName: String? = null
             var SaveFolder: String? = null
             var codeName: String? = null
-            for (line in String(raw, chosenCharset).lines()) {
-                regex.matchEntire(line.trim())?.let {
+            for (line in String(body, chosenCharset).lines()) {
+                ASSIGNMENT_REGEX.matchEntire(line.trim())?.let {
+                    val rawValue = it.groupValues[2]
+                    val value = if (chosenCharset == Charsets.UTF_8) {
+                        rawValue
+                    } else {
+                        ArchiveExtractor.repairSjisAsGbkMojibake(rawValue)
+                    }
                     when (it.groupValues[1]) {
-                        "GameName" -> gameName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
-                        "Regist" -> registName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
-                        "SaveFolder" -> SaveFolder = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2])
-                        "CodeName" -> codeName = ArchiveExtractor.repairSjisAsGbkMojibake(it.groupValues[2]).trim()
+                        "GameName" -> gameName = value
+                        "Regist" -> registName = value
+                        "SaveFolder" -> SaveFolder = value
+                        "CodeName" -> codeName = value.trim()
                     }
                 }
             }
