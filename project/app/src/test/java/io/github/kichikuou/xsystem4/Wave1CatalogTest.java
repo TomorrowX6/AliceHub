@@ -29,7 +29,7 @@ public class Wave1CatalogTest {
     @Test
     public void wave1CatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(49, order.size());
+        assertEquals(58, order.size());
         assertTrue(order.contains(GameCatalog.ID_EVENICLERANCE));
         assertTrue(order.contains(GameCatalog.ID_HAHARANMAN));
         assertTrue(order.contains(GameCatalog.ID_TSUMAMIGUI2));

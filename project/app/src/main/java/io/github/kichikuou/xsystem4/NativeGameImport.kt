@@ -231,6 +231,36 @@ object NativeGameImport {
     }
 
     @JvmOverloads
+    fun resolveCopyTreeBaseName(
+        primaryFileNames: Collection<String>,
+        detectedGameId: String?,
+        targetGameId: String? = null,
+        isMultiDiscSys3: Boolean = false,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): String {
+        val isDaiakujiImport = targetGameId == GameCatalog.ID_DAIAKUJI ||
+            detectedGameId == GameCatalog.ID_DAIAKUJI
+        val isHarukaImport = targetGameId == GameCatalog.ID_HARUKA ||
+            detectedGameId == GameCatalog.ID_HARUKA
+        return when {
+            isDaiakujiImport -> "Daiakuji"
+            isHarukaImport -> "Haruka"
+            detectedGameId == GameCatalog.ID_YAKATA2 -> "Yakata2"
+            detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
+            detectedGameId == GameCatalog.ID_GAKUENKING -> "GakuenKING"
+            detectedGameId == GameCatalog.ID_ONLYYOU -> "OnlyYou"
+            GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
+                val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
+                OnlineInstaller.sanitizeInstallDirName(
+                    GameCatalog.legacySystem3Title(ini?.let { readSmallFile?.invoke(it) }).orEmpty().take(64),
+                    fallback = "System3"
+                )
+            }
+            else -> resolveImportBaseNameFromFileNames(primaryFileNames, isMultiDiscSys3, readSmallFile)
+        }
+    }
+
+    @JvmOverloads
     fun resolveImportBaseNameFromFileNames(
         fileNames: Collection<String>,
         isMultiDiscSys3: Boolean = false,
@@ -338,6 +368,33 @@ object NativeGameImport {
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"
         }
+        if (GameCatalog.isDiaboliqueGameFiles(activeFiles, readSmallFile)) {
+            return "DiaboLiQuE"
+        }
+        if (GameCatalog.isGakuenKingExGameFiles(activeFiles, readSmallFile)) {
+            return "GakuenKINGEx"
+        }
+        if (GameCatalog.isGakuenKingGameFiles(activeFiles, readSmallFile)) {
+            return "GakuenKING"
+        }
+        if (GameCatalog.isOudouYuushaGameFiles(activeFiles, readSmallFile)) {
+            return "OudouYuusha"
+        }
+        if (GameCatalog.isToushin2GameFiles(activeFiles, readSmallFile)) {
+            return "Toushin2"
+        }
+        if (GameCatalog.isToushin1GameFiles(activeFiles, readSmallFile)) {
+            return "Toushin1"
+        }
+        if (GameCatalog.isDarcrowsGameFiles(activeFiles, readSmallFile)) {
+            return "DARCROWS"
+        }
+        if (GameCatalog.isIkusaMikoGameFiles(activeFiles, readSmallFile)) {
+            return "IkusaMiko"
+        }
+        if (GameCatalog.isOnlyYouGameFiles(activeFiles, readSmallFile)) {
+            return "OnlyYou"
+        }
         if (GameCatalog.isKaerunyoGameFiles(activeFiles)) {
             return "Kaerunyo"
         }
@@ -371,17 +428,6 @@ object NativeGameImport {
         }
         return if (isMultiDiscSys3) "System3" else "Game"
     }
-
-    private fun resolveImportBaseName(
-        docs: List<Document>,
-        isMultiDiscSys3: Boolean,
-        readSmallFile: ((String) -> ByteArray?)? = null
-    ): String =
-        resolveImportBaseNameFromFileNames(
-            docs.filter { !it.folder }.map { it.name },
-            isMultiDiscSys3,
-            readSmallFile
-        )
 
     private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
         return try {
@@ -498,20 +544,13 @@ object NativeGameImport {
         val isTsumamigui3Import = targetGameId == GameCatalog.ID_TSUMAMIGUI3 ||
             detectedGameId == GameCatalog.ID_TSUMAMIGUI3
         val hasPrimaryDDemo = primaryFileNames.any { it.equals("dDemo.alk", ignoreCase = true) }
-        val baseName = when {
-            isDaiakujiImport -> "Daiakuji"
-            isHarukaImport -> "Haruka"
-            detectedGameId == GameCatalog.ID_YAKATA2 -> "Yakata2"
-            detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
-            GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
-                val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
-                OnlineInstaller.sanitizeInstallDirName(
-                    GameCatalog.legacySystem3Title(ini?.let(readPrimarySmallFile)).orEmpty().take(64),
-                    fallback = "System3"
-                )
-            }
-            else -> resolveImportBaseName(resolvedPrimary, sourceTrees.size > 1, readPrimarySmallFile)
-        }
+        val baseName = resolveCopyTreeBaseName(
+            primaryFileNames = primaryFileNames,
+            detectedGameId = detectedGameId,
+            targetGameId = targetGameId,
+            isMultiDiscSys3 = sourceTrees.size > 1,
+            readSmallFile = readPrimarySmallFile
+        )
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile
         if (staging.parentFile != storageCanonical || !staging.mkdir())

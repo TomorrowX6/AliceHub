@@ -73,6 +73,15 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `tsumamigui2` | Tsumamigui 2 | 2003-03-28 | 67.5 | 6.75 | [v1110](https://vndb.org/v1110) | [source](https://vndb.org/v1110) |
 | `tsumamigui3jun` | Tsumamigui 3 Spin-off: Pure Love | 2016-06-24 | 69.9 | 6.99 | [v19661](https://vndb.org/v19661) | [source](https://vndb.org/r46986) |
 | `tsumamigui3ntr` | Tsumamigui 3 Spin-off: NTR | 2016-06-24 | 69.9 | 6.99 | [v19661](https://vndb.org/v19661) | [source](https://vndb.org/r46987) |
+| `diabolique` | DiaboLiQuE | 1998-05-28 | 76.4 | 7.64 | [v2261](https://vndb.org/v2261) | [source](https://vndb.org/v2261) |
+| `gakuenking` | Gakuen King -Hidehiko Gakkou o Tsukuru- | 1996-06-07 | 65.1 | 6.51 | [v2461](https://vndb.org/v2461) | [source](https://vndb.org/v2461) |
+| `gakuenkingex` | Gakuen King Bangai Hen -Hidehiko Curry o Tsukuru- | 1998-11-26 | unknown | unknown | not assigned | [source](https://vndb.org/v20390) |
+| `oudouyuusha` | Oudou Yuusha | 1998-04-02 | 65.3 | 6.53 | [v4476](https://vndb.org/v4476) | [source](https://vndb.org/v4476) |
+| `toushin1` | Toushin Toshi | 1990-12-15 | 59.9 | 5.99 | [v888](https://vndb.org/v888) | [source](https://vndb.org/v888) |
+| `toushin2` | Toushin Toshi II | 1994-12-10 | 76.4 | 7.64 | [v889](https://vndb.org/v889) | [source](https://vndb.org/v889) |
+| `darcrows` | DARCROWS | 1999-11-18 | 70.5 | 7.05 | [v1095](https://vndb.org/v1095) | [source](https://vndb.org/v1095) |
+| `ikusamiko` | Ikusa Miko -Vestal Virgin- | 1997-10-30 | 54.8 | 5.48 | [v3083](https://vndb.org/v3083) | [source](https://vndb.org/v3083) |
+| `onlyyou` | Only You -Seikimatsu no Juliette-tachi- | 1996-01-01 | 71.2 | 7.12 | [v2003](https://vndb.org/v2003) | [source](https://vndb.org/v2003) |
 
 ## Edition mapping / missing-score decisions
 
@@ -85,6 +94,7 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 - `sdpsmaria` maps to VNDB **v8670** (`Super D.P.S.`, released `1992-09`); day-of-month is normalized to `1992-09-01` for full ISO-date parsing.
 - `yorugakuru` lists the 2024 Remastered edition (first Japanese release `r119676` on `2024-04-19`), sharing work-wide rating 66.9 under VNDB **v499** (`Yoru ga Kuru! -Square of the Moon-`), matching the same work-rating rule as `escalayer_reboot`.
 - `rance1digest` lists the System 4 Digest Edition (first Japanese release `r28251` on `2004-08-27`), sharing work-wide rating 54.4 under VNDB **v1414** (`Rance -Hikari o Motomete-`).
+- `gakuenkingex` maps to VNDB **v20390** (`Gakuen King Bangai Hen -Hidehiko Curry o Tsukuru-`, released `1998-11-26`); VNDB currently returns `rating: null` (too few votes for a Bayesian rating), so its rating and score source stay null rather than substituting raw `average`.
 - No ErogameScape score or search-cache value is integrated. That source was superseded by the user and research stopped. No popularity count is reused as a rating.
 
 ## Validation scope

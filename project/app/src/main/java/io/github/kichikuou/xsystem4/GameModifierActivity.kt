@@ -378,6 +378,15 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_TSUMAMIGUI2 ||
                 id == GameCatalog.ID_TSUMAMIGUI3JUN ||
                 id == GameCatalog.ID_TSUMAMIGUI3NTR ||
+                id == GameCatalog.ID_DIABOLIQUE ||
+                id == GameCatalog.ID_GAKUENKING ||
+                id == GameCatalog.ID_GAKUENKINGEX ||
+                id == GameCatalog.ID_OUDOUYUUSHA ||
+                id == GameCatalog.ID_TOUSHIN1 ||
+                id == GameCatalog.ID_TOUSHIN2 ||
+                id == GameCatalog.ID_DARCROWS ||
+                id == GameCatalog.ID_IKUSAMIKO ||
+                id == GameCatalog.ID_ONLYYOU ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

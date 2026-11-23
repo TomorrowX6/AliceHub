@@ -25,6 +25,7 @@
 
 // Game titles.
 #define GT_TOSHIN2 "闘神都市Ⅱ　ｆｏｒ　Ｗｉｎ９５　"
+#define GT_TOSHIN2_ENG "Toushin Toshi II for Win95　"
 #define GT_RANCE4 "Ｒａｎｃｅ４　－教団の遺産－　Ｆｏｒ　Ｗｉｎ９５　"
 #define GT_RANCE4_V2 "RanceⅣ　－教団の遺産－　for Windows　"
 #define GT_RANCE2 "ＲＡＮＣＥ２"
@@ -68,7 +69,7 @@ void enable_hack_by_title(const char *title_utf8) {
 	if (game_id != GAME_UNKNOWN)
 		return;
 
-	if (!strcmp(title_utf8, GT_TOSHIN2))
+	if (!strcmp(title_utf8, GT_TOSHIN2) || !strcmp(title_utf8, GT_TOSHIN2_ENG))
 		game_id = GAME_TT2;
 	else if (!strcmp(title_utf8, GT_RANCE4_V2))
 		game_id = GAME_RANCE4_V2;

@@ -236,6 +236,51 @@
         "id",
         "=",
         "v19661"
+      ],
+      [
+        "id",
+        "=",
+        "v888"
+      ],
+      [
+        "id",
+        "=",
+        "v889"
+      ],
+      [
+        "id",
+        "=",
+        "v1095"
+      ],
+      [
+        "id",
+        "=",
+        "v2003"
+      ],
+      [
+        "id",
+        "=",
+        "v2261"
+      ],
+      [
+        "id",
+        "=",
+        "v2461"
+      ],
+      [
+        "id",
+        "=",
+        "v3083"
+      ],
+      [
+        "id",
+        "=",
+        "v4476"
+      ],
+      [
+        "id",
+        "=",
+        "v20390"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -657,6 +702,87 @@
         "released": "2016-06-24",
         "title": "Tsumamigui 3 Spin-off",
         "votecount": 168
+      },
+      {
+        "alttitle": "闘神都市",
+        "average": 59.9,
+        "id": "v888",
+        "rating": 59.9,
+        "released": "1990-12-15",
+        "title": "Toushin Toshi",
+        "votecount": 353
+      },
+      {
+        "alttitle": "闘神都市II",
+        "average": 76.4,
+        "id": "v889",
+        "rating": 76.4,
+        "released": "1994-12-10",
+        "title": "Toushin Toshi II",
+        "votecount": 309
+      },
+      {
+        "alttitle": "DARCROWS -ダークロウズ-",
+        "average": 71.6,
+        "id": "v1095",
+        "rating": 70.5,
+        "released": "1999-11-18",
+        "title": "DARCROWS",
+        "votecount": 37
+      },
+      {
+        "alttitle": "Ｏｎｌｙ Ｙｏｕ　－世紀末のジュリエット達－",
+        "average": 74.5,
+        "id": "v2003",
+        "rating": 71.2,
+        "released": "1996-01-01",
+        "title": "Only You -Seikimatsu no Juliette-tachi-",
+        "votecount": 18
+      },
+      {
+        "alttitle": "DiaboLiQuE－デアボリカ－",
+        "average": 78.5,
+        "id": "v2261",
+        "rating": 76.4,
+        "released": "1998-05-28",
+        "title": "Diabolique",
+        "votecount": 34
+      },
+      {
+        "alttitle": "学園KING －日出彦 学校をつくる－",
+        "average": 68.1,
+        "id": "v2461",
+        "rating": 65.1,
+        "released": "1996-06-07",
+        "title": "Gakuen King -Hidehiko Gakkou o Tsukuru-",
+        "votecount": 9
+      },
+      {
+        "alttitle": "戦巫女 －Vestal virgin－",
+        "average": 48.2,
+        "id": "v3083",
+        "rating": 54.8,
+        "released": "1997-10-30",
+        "title": "Ikusa Miko -Vestal Virgin-",
+        "votecount": 6
+      },
+      {
+        "alttitle": "王道勇者",
+        "average": 67.5,
+        "id": "v4476",
+        "rating": 65.3,
+        "released": "1998-04-02",
+        "title": "Oudou Yuusha",
+        "votecount": 12
+      },
+      {
+        "alttitle": "学園KING番外編 -日出彦 カレーをつくる-",
+        "average": 55,
+        "id": "v20390",
+        "rating": null,
+        "released": "1998-11-26",
+        "title": "Gakuen King Bangai Hen -Hidehiko Curry o Tsukuru-",
+        "votecount": 2
       }
     ]
   },

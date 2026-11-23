@@ -59,7 +59,16 @@ object GameSortMetadata {
         GameCatalog.ID_HAHARANMAN to GameSortInfo("2019-04-26", 76.7, "https://vndb.org/v25144", "https://vndb.org/v25144"),
         GameCatalog.ID_TSUMAMIGUI2 to GameSortInfo("2003-03-28", 67.5, "https://vndb.org/v1110", "https://vndb.org/v1110"),
         GameCatalog.ID_TSUMAMIGUI3JUN to GameSortInfo("2016-06-24", 69.9, "https://vndb.org/v19661", "https://vndb.org/r46986"),
-        GameCatalog.ID_TSUMAMIGUI3NTR to GameSortInfo("2016-06-24", 69.9, "https://vndb.org/v19661", "https://vndb.org/r46987")
+        GameCatalog.ID_TSUMAMIGUI3NTR to GameSortInfo("2016-06-24", 69.9, "https://vndb.org/v19661", "https://vndb.org/r46987"),
+        GameCatalog.ID_DIABOLIQUE to GameSortInfo("1998-05-28", 76.4, "https://vndb.org/v2261", "https://vndb.org/v2261"),
+        GameCatalog.ID_GAKUENKING to GameSortInfo("1996-06-07", 65.1, "https://vndb.org/v2461", "https://vndb.org/v2461"),
+        GameCatalog.ID_GAKUENKINGEX to GameSortInfo("1998-11-26", null, null, "https://vndb.org/v20390"),
+        GameCatalog.ID_OUDOUYUUSHA to GameSortInfo("1998-04-02", 65.3, "https://vndb.org/v4476", "https://vndb.org/v4476"),
+        GameCatalog.ID_TOUSHIN1 to GameSortInfo("1990-12-15", 59.9, "https://vndb.org/v888", "https://vndb.org/v888"),
+        GameCatalog.ID_TOUSHIN2 to GameSortInfo("1994-12-10", 76.4, "https://vndb.org/v889", "https://vndb.org/v889"),
+        GameCatalog.ID_DARCROWS to GameSortInfo("1999-11-18", 70.5, "https://vndb.org/v1095", "https://vndb.org/v1095"),
+        GameCatalog.ID_IKUSAMIKO to GameSortInfo("1997-10-30", 54.8, "https://vndb.org/v3083", "https://vndb.org/v3083"),
+        GameCatalog.ID_ONLYYOU to GameSortInfo("1996-01-01", 71.2, "https://vndb.org/v2003", "https://vndb.org/v2003")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

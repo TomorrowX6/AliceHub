@@ -56,7 +56,16 @@ struct OnlineGame: Identifiable {
         Self(id: "haharanman", title: "母烂漫", directory: "Haharanman"),
         Self(id: "tsumamigui2", title: "妻中蜜2", directory: "Tsumamigui2"),
         Self(id: "tsumamigui3jun", title: "妻中蜜3 番外 纯爱篇", directory: "Tsumamigui3Jun"),
-        Self(id: "tsumamigui3ntr", title: "妻中蜜3 番外 寝取篇", directory: "Tsumamigui3Ntr")
+        Self(id: "tsumamigui3ntr", title: "妻中蜜3 番外 寝取篇", directory: "Tsumamigui3Ntr"),
+        Self(id: "diabolique", title: "魔鬼恋曲 DiaboLiQuE", directory: "DiaboLiQuE"),
+        Self(id: "gakuenking", title: "学园KING", directory: "GakuenKING"),
+        Self(id: "gakuenkingex", title: "学园KING 番外篇", directory: "GakuenKINGEx"),
+        Self(id: "oudouyuusha", title: "王道勇者", directory: "OudouYuusha"),
+        Self(id: "toushin1", title: "斗神都市", directory: "Toushin1"),
+        Self(id: "toushin2", title: "斗神都市II", directory: "Toushin2"),
+        Self(id: "darcrows", title: "暗鸦 DARCROWS", directory: "DARCROWS"),
+        Self(id: "ikusamiko", title: "战巫女", directory: "IkusaMiko"),
+        Self(id: "onlyyou", title: "Only You 世纪末的朱丽叶们", directory: "OnlyYou")
     ]
 }
 

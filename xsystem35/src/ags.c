@@ -209,6 +209,13 @@ void ags_getDisplayInfo(enum ags_display display, int *width, int *height, int *
 		*width = dm.w;
 		*height = dm.h;
 		*depth = SDL_BITSPERPIXEL(dm.format);
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
+		// Mobile UIKit/Android logical display modes can report heights < 600 (e.g. iPhone landscape),
+		// causing titles like Oudou Yuusha to emit a spurious 800x600 desktop requirement dialog.
+		if (*width < 800) *width = 800;
+		if (*height < 600) *height = 600;
+		if (*depth < 16) *depth = 32;
+#endif
 		break;
 	case AGS_DISPLAY_DIB:
 		*width = nact->ags.world_width;
@@ -226,6 +233,11 @@ void ags_getDisplayInfo(enum ags_display display, int *width, int *height, int *
 		*width = dm.w;
 		*height = dm.h;
 		*depth = SDL_BITSPERPIXEL(dm.format);
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
+		if (*width < 800) *width = 800;
+		if (*height < 600) *height = 600;
+		if (*depth < 16) *depth = 32;
+#endif
 		break;
 	}
 }
