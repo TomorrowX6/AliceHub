@@ -554,7 +554,8 @@ struct string *PE_GetUserComponentData(int no, struct string *key)
 }
 
 // Layout keys in the Chinese edition are GBK, including the Japanese field names.
-static const char *const pact_key_aliases[][6] = {
+#define PACT_KEY_ALIAS_COLS 8
+static const char *const pact_key_aliases[][PACT_KEY_ALIAS_COLS] = {
 	{ "种类別情报", "種類別情報", "种类別情報", "种类别情报", "种类別信息", NULL },
 	{ "パーツ类型", "パーツタイプ", "组件类型", "部件タイプ", NULL, NULL },
 	{ "レイアウト类型", "レイアウトタイプ", NULL, NULL, NULL, NULL },
@@ -609,11 +610,11 @@ static const char *const pact_key_aliases[][6] = {
 	{ "尺寸", "サイズ", NULL, NULL, NULL, NULL },
 	{ "前尺寸", "前サイズ", NULL, NULL, NULL, NULL },
 	{ "次尺寸", "次サイズ", NULL, NULL, NULL, NULL },
-	{ "全体滚动条量", "全体スクロール量", "全局滚动量", "全局スライダー量", NULL, NULL },
-	{ "滚动条位置", "スクロール位置", "滚动位置", NULL, NULL, NULL },
-	{ "滚动率", "スクロールレート", "滚动レート", "スライダーレート", NULL, NULL },
-	{ "按钮点击移动量", "ボタンクリック移動量", "ボタンクリック移动量", NULL, NULL, NULL },
-	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", "全体スクロール量サイズ连动", "全局滚动量尺寸連動", "全局スライダー量尺寸連動", NULL },
+	{ "全体滚动条量", "全体スクロール量", "全体スライダー量", "全局滚动量", "全局スライダー量", "全体滑动量" },
+	{ "滚动条位置", "スクロール位置", "スライダー位置", "滚动位置", "滑动位置", "滑动条位置" },
+	{ "滚动率", "スクロールレート", "滚动レート", "スライダーレート", "滑动率", "滑动条率" },
+	{ "按钮点击移动量", "ボタンクリック移動量", "ボタンクリック移动量" },
+	{ "全体滚动条量尺寸連動", "全体スクロール量サイズ連動", "全体スクロール量サイズ连动", "全体スライダー量サイズ連動", "全局滚动量尺寸連動", "全局スライダー量尺寸連動" },
 	{ "表示量尺寸連動", "表示量サイズ連動", "表示量サイズ连动", "显示量尺寸連動", NULL, NULL },
 	{ "表示", "显示", NULL, NULL, NULL, NULL },
 	{ "エディタ上表示", "编辑上表示", "エディタ上显示", NULL, NULL, NULL },
@@ -624,7 +625,7 @@ static const char *const pact_key_aliases[][6] = {
 	{ "补间类型", "補間タイプ", "辅间タイプ", "補間类型", NULL, NULL },
 	{ "原矩形", "元矩形", NULL, NULL, NULL, NULL },
 	{ "全体", "全局", NULL, NULL, NULL, NULL },
-	{ "用户组件名", "ユーザコンポーネント名", NULL, NULL, NULL, NULL },
+	{ "用户组件名", "ユーザコンポーネント名", "ユーザーコンポーネント名" },
 	{ "数据", "データ", NULL, NULL, NULL, NULL },
 	{ "结束キー", "終了キー", "终了キー", NULL, NULL, NULL },
 	{ "扩大", "拡張", "扩张", NULL, NULL, NULL },
@@ -645,9 +646,9 @@ static const char *const pact_key_aliases[][6] = {
 	{ "循环ＣＧ切り替え时间", "ループＣＧ切り替え時間", "ループＣＧ切り替え时间", NULL, NULL, NULL },
 	{ "子パーツ", "子部件", "子组件", "子パーツ列表", "子パーツリスト", "子组件列表" },
 	{ "サーフェイスエリア", "サーフェイス区域", NULL, NULL, NULL, NULL },
-	{ "スクロールＸ座標連動", "スクロールＸ座标连动", "滚动Ｘ坐标連動", NULL, NULL, NULL },
-	{ "スクロールＹ座標連動", "スクロールＹ座标连动", "滚动Ｙ坐标連動", NULL, NULL, NULL },
-	{ "スクロールアルファ連動", "スクロールアルファ连动", "滚动アルファ連動", NULL, NULL, NULL },
+	{ "スクロールＸ座標連動", "スクロールＸ座标连动", "滚动Ｘ坐标連動", "スライダーＸ座標連動" },
+	{ "スクロールＹ座標連動", "スクロールＹ座标连动", "滚动Ｙ坐标連動", "スライダーＹ座標連動" },
+	{ "スクロールアルファ連動", "スクロールアルファ连动", "滚动アルファ連動", "スライダーアルファ連動" },
 	{ "タグ処理有効", "タグ处理有效", "タグ処理生效", NULL, NULL, NULL },
 	{ "ホイール有効", "ホイール有效", "ホイール生效", NULL, NULL, NULL },
 	{ "スピードアップ有効", "スピードアップ有效", "スピードアップ生效", NULL, NULL, NULL },
@@ -683,7 +684,7 @@ static void *pact_lookup_alias_once(void *ctx, pact_lookup_fn lookup, const char
 		return res;
 	for (size_t i = 0; i < sizeof(pact_key_aliases) / sizeof(pact_key_aliases[0]); i++) {
 		bool matched = false;
-		for (size_t k = 0; k < 6 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < PACT_KEY_ALIAS_COLS && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key)) {
 				matched = true;
 				break;
@@ -691,7 +692,7 @@ static void *pact_lookup_alias_once(void *ctx, pact_lookup_fn lookup, const char
 		}
 		if (!matched)
 			continue;
-		for (size_t k = 0; k < 6 && pact_key_aliases[i][k]; k++) {
+		for (size_t k = 0; k < PACT_KEY_ALIAS_COLS && pact_key_aliases[i][k]; k++) {
 			if (!strcmp(pact_key_aliases[i][k], key))
 				continue;
 			res = lookup(ctx, parts_utf8_to_cjk_literal(pact_key_aliases[i][k]));
@@ -827,20 +828,77 @@ static float item2(struct ex_tree *tree, const char *k1, const char *k2, int ind
 	return !v ? fallback : v->type == EX_INT ? v->i : v->type == EX_FLOAT ? v->f : fallback;
 }
 
+static bool classify_pact_scroll_or_slider_kind(const char *kind, bool *horizontal, bool *is_slider)
+{
+	static const struct {
+		const char *name;
+		bool horizontal;
+		bool is_slider;
+	} table[] = {
+		{ "纵向滚动条栏", false, false },
+		{ "纵向滚动条",   false, false },
+		{ "竖滚动条",     false, false },
+		{ "竖滚动条栏",   false, false },
+		{ "縦滚动条",     false, false },
+		{ "纵滚动条",     false, false },
+		{ "縦スクロールバー", false, false },
+		{ "纵スクロールバー", false, false },
+		{ "竖スクロールバー", false, false },
+		{ "横向滚动条栏", true,  false },
+		{ "横向滚动条",   true,  false },
+		{ "横滚动条",     true,  false },
+		{ "横滚动条栏",   true,  false },
+		{ "横スクロールバー", true,  false },
+		{ "縦スライダーバー", false, true },
+		{ "纵スライダーバー", false, true },
+		{ "竖スライダーバー", false, true },
+		{ "縦スライダー",     false, true },
+		{ "纵スライダー",     false, true },
+		{ "竖スライダー",     false, true },
+		{ "縦スライダー条",   false, true },
+		{ "纵スライダー条",   false, true },
+		{ "竖スライダー条",   false, true },
+		{ "縦スライダー栏",   false, true },
+		{ "纵スライダー栏",   false, true },
+		{ "竖スライダー栏",   false, true },
+		{ "纵向滑动条",       false, true },
+		{ "纵向滑动条栏",     false, true },
+		{ "纵滑动条",         false, true },
+		{ "竖滑动条",         false, true },
+		{ "纵向滑块",         false, true },
+		{ "竖滑块",           false, true },
+		{ "横スライダーバー", true,  true },
+		{ "横スライダー",     true,  true },
+		{ "横スライダー条",   true,  true },
+		{ "横スライダー栏",   true,  true },
+		{ "横向滑动条",       true,  true },
+		{ "横向滑动条栏",     true,  true },
+		{ "横滑动条",         true,  true },
+		{ "横向滑块",         true,  true },
+		{ "横滑块",           true,  true },
+	};
+	for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+		if (!strcmp(kind, table[i].name)) {
+			if (horizontal) *horizontal = table[i].horizontal;
+			if (is_slider) *is_slider = table[i].is_slider;
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool is_known_pact_kind_utf8(const char *kind)
 {
+	if (classify_pact_scroll_or_slider_kind(kind, NULL, NULL))
+		return true;
 	static const char *const known[] = {
 		"レイアウトボックス", "低レベルパーツ", "低等级部件", "低等级组件",
 		"按钮", "ボタン", "复选框", "检查ボックス", "チェックボックス",
-		"纵向滚动条栏", "横向滚动条栏", "竖滚动条", "横滚动条", "縦滚动条",
-		"縦スクロールバー", "纵スクロールバー", "横スクロールバー",
-		"竖スライダー", "横スライダー", "縦スライダー", "纵向滑动条", "横向滑动条",
-		"横スライダー条", "縦スライダー条", "纵スライダー条",
 		"面板", "パネル", "消息窗口", "文本窗口", "信息窗口", "文本内容窗口", "メッセージウィンドウ",
 		"ラジオ按钮ボックス", "单选按钮框", "ラジオボタンボックス",
 		"文本框", "文本ボックス", "テキストボックス", "リストボックス", "列表ボックス", "コンボボックス",
 		"多行文本框", "マルチライン文本ボックス", "マルチラインテキストボックス", "スピンボックス",
-		"フォーム", "フォームグループ", "用户组件", "ユーザコンポーネント",
+		"フォーム", "フォームグループ", "用户组件", "ユーザコンポーネント", "ユーザーコンポーネント",
 		"ＣＧパーツ", "ＣＧ部件", "ＣＧ组件", "フラットパーツ", "フラット部件", "缺省组件",
 		"矩形パーツ", "矩形部件", "矩形组件", "ＣＧ判定パーツ", "ＣＧ判定部件", "ＣＧ判定组件",
 		"横向计量パーツ", "横ゲージ部件", "横ゲージパーツ", "横进度槽组件",
@@ -1318,29 +1376,22 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		flat = str2(info, "上書き检查フラット名", "覆盖检查フラット名");
 		if (flat->size) PE_SetCheckBoxOverrideCheckedFlatName(no, flat);
 		parts_widget_end_batch(p);
-	} else if (!strcmp(kind, "纵向滚动条栏") || !strcmp(kind, "横向滚动条栏") ||
-	           !strcmp(kind, "竖滚动条") || !strcmp(kind, "横滚动条") || !strcmp(kind, "縦滚动条") ||
-	           !strcmp(kind, "縦スクロールバー") || !strcmp(kind, "纵スクロールバー") || !strcmp(kind, "横スクロールバー") ||
-	           !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
-	           !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー条") ||
-	           !strcmp(kind, "縦スライダー条") || !strcmp(kind, "纵スライダー条") ||
-	           !strcmp(kind, "纵向滑动条") || !strcmp(kind, "横向滑动条")) {
-		bool horizontal = !strcmp(kind, "横向滚动条栏") || !strcmp(kind, "横滚动条") ||
-		                  !strcmp(kind, "横スクロールバー") ||
-		                  !strcmp(kind, "横スライダー") || !strcmp(kind, "横スライダー条") ||
-		                  !strcmp(kind, "横向滑动条");
-		bool is_slider = !strcmp(kind, "竖スライダー") || !strcmp(kind, "横スライダー") ||
-		                 !strcmp(kind, "縦スライダー") || !strcmp(kind, "横スライダー条") ||
-		                 !strcmp(kind, "縦スライダー条") || !strcmp(kind, "纵スライダー条") ||
-		                 !strcmp(kind, "横向滑动条") || !strcmp(kind, "纵向滑动条");
+	} else if (classify_pact_scroll_or_slider_kind(kind, NULL, NULL)) {
+		bool horizontal = false, is_slider = false;
+		classify_pact_scroll_or_slider_kind(kind, &horizontal, &is_slider);
 		if (is_slider)
 			parts_sliderbar_create(p, horizontal);
 		else
 			parts_scrollbar_create(p, horizontal);
 		struct parts_scrollbar *s = p->scrollbar;
 		int length = number(info, "長さ", 256), width = number(info, "幅", 24);
-		s->width = horizontal ? length : width;
-		s->height = horizontal ? width : length;
+		if (!field(info, "長さ") && !field(info, "幅") && field2(info, "尺寸", "サイズ")) {
+			s->width = item2(info, "尺寸", "サイズ", 0, horizontal ? 256 : 24);
+			s->height = item2(info, "尺寸", "サイズ", 1, horizontal ? 24 : 256);
+		} else {
+			s->width = horizontal ? length : width;
+			s->height = horizontal ? width : length;
+		}
 		s->before = is_slider ? 0 : number2(info, "前尺寸", "前サイズ", 24);
 		s->after = is_slider ? 0 : number2(info, "次尺寸", "次サイズ", 24);
 		s->total = number2(info, "全体滚动条量", "全体スクロール量", 100);
@@ -1455,7 +1506,7 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 200));
 	} else if (!strcmp(kind, "フォームグループ")) {
 		PE_SetSpecialComponentType(no, 14);
-	} else if (!strcmp(kind, "用户组件") || !strcmp(kind, "ユーザコンポーネント")) {
+	} else if (!strcmp(kind, "用户组件") || !strcmp(kind, "ユーザコンポーネント") || !strcmp(kind, "ユーザーコンポーネント")) {
 		PE_SetSpecialComponentType(no, 15);
 		PE_SetUserComponentName(no, str2(info, "用户组件名", "ユーザコンポーネント名"));
 		struct ex_value *data = field(info, "数据");

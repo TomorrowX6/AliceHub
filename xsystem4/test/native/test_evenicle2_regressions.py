@@ -975,6 +975,17 @@ int main(void) {
             ]),
             part_node("vsb", "縦スクロールバー", []),
             part_node("vsld", "縦スライダー", []),
+            part_node("hsldbar", "横スライダーバー", [
+                _ex_leaf(_sjis("長さ"), 1, struct.pack("<i", 320)),
+                _ex_leaf(_sjis("幅"), 1, struct.pack("<i", 20)),
+                _ex_leaf(_sjis("全体スライダー量"), 1, struct.pack("<i", 200)),
+                _ex_leaf(_sjis("スライダー位置"), 1, struct.pack("<i", 50)),
+                _ex_leaf(_sjis("スライダーレート"), 2, struct.pack("<f", 0.25)),
+            ]),
+            part_node("vsldbar", "縦スライダーバー", [
+                _ex_leaf(_sjis("長さ"), 1, struct.pack("<i", 180)),
+                _ex_leaf(_sjis("幅"), 1, struct.pack("<i", 16)),
+            ]),
             part_node("rb", "ラジオボタンボックス", []),
             part_node("mw", "メッセージウィンドウ", [], children_list=[
                 part_node("mw_child_btn", "ボタン", []),
@@ -1033,6 +1044,7 @@ const char *parts_utf8_to_cjk_literal(const char *literal) {
 
 static int got_special_10 = 0, got_text = 0;
 static int got_button = 0, got_checkbox = 0, got_scrollbar = 0, got_slider = 0;
+static int got_h_slider = 0, got_v_slider = 0;
 static int got_h_gauge = 0, got_v_gauge = 0, got_loop_cg = 0;
 static int got_override_cg = 0, got_child_parent = 0;
 
@@ -1082,9 +1094,15 @@ static struct parts_scrollbar *make_dummy_scrollbar(void) {
 }
 void parts_scrollbar_create(struct parts *p, bool h) { p->scrollbar = make_dummy_scrollbar(); got_scrollbar++; }
 void parts_scrollbar_free(struct parts *p) {}
-int parts_scrollbar_range(struct parts_scrollbar *s) { return 0; }
+int parts_scrollbar_range(struct parts_scrollbar *s) { return s->total > s->view ? s->total - s->view : 0; }
 void parts_scrollbar_rebuild(struct parts *p) {}
-void parts_sliderbar_create(struct parts *p, bool h) { p->scrollbar = make_dummy_scrollbar(); got_slider++; }
+void parts_sliderbar_create(struct parts *p, bool h) {
+    p->scrollbar = make_dummy_scrollbar();
+    p->scrollbar->horizontal = h;
+    p->scrollbar->is_slider = true;
+    got_slider++;
+    if (h) got_h_slider++; else got_v_slider++;
+}
 void parts_widget_create_deferred(struct parts *p, int t) {
     p->widget = &dummy_widgets[p->no];
     if (t == 0) got_button++;
@@ -1293,10 +1311,24 @@ int main(int argc, char **argv) {
     assert(got_h_gauge == 1);
     assert(got_v_gauge == 1);
     assert(got_scrollbar == 1);
-    assert(got_slider == 1);
+    assert(got_slider == 3);
+    assert(got_h_slider == 1);
+    assert(got_v_slider == 2);
+    struct activity_part *hsld = find_part(a, cstr_to_string("hsldbar"));
+    assert(hsld);
+    struct parts *hp = parts_try_get(hsld->no);
+    assert(hp && hp->scrollbar && hp->scrollbar->is_slider && hp->scrollbar->horizontal);
+    assert(hp->scrollbar->width == 320 && hp->scrollbar->height == 20);
+    assert(hp->scrollbar->total == 200 && hp->scrollbar->pos == 50);
+    assert(hp->scrollbar->rate > 0.24f && hp->scrollbar->rate < 0.26f);
+    struct activity_part *vsld = find_part(a, cstr_to_string("vsldbar"));
+    assert(vsld);
+    struct parts *vp = parts_try_get(vsld->no);
+    assert(vp && vp->scrollbar && vp->scrollbar->is_slider && !vp->scrollbar->horizontal);
+    assert(vp->scrollbar->width == 16 && vp->scrollbar->height == 180);
     assert(special_9 == 1);
     assert(got_special_10 == 1);
-    assert(got_child_parent == 11);
+    assert(got_child_parent == 13);
 
     ex_free(ex);
     free_string(act_name);
