@@ -76,7 +76,6 @@ class VirtualGamepadView(context: Context) : View(context) {
     private var editMode: Boolean = false
     private var selectedControlId: String? = null
     private var ctrlToggleLatched: Boolean = false
-    private var autoHiddenByPhysicalPad: Boolean = false
     private var hiddenByMovie: Boolean = false
     private var editorAccentColor: Int = 0xFFA9B6FF.toInt()
 
@@ -158,16 +157,6 @@ class VirtualGamepadView(context: Context) : View(context) {
         }
     }
 
-    fun setAutoHiddenByPhysicalPad(hidden: Boolean) {
-        if (autoHiddenByPhysicalPad != hidden) {
-            autoHiddenByPhysicalPad = hidden
-            if (hidden && !editMode) {
-                releaseAllInputs()
-            }
-            updateVisibilityState()
-        }
-    }
-
     fun setHiddenByMovie(hidden: Boolean) {
         if (hiddenByMovie != hidden) {
             hiddenByMovie = hidden
@@ -180,12 +169,12 @@ class VirtualGamepadView(context: Context) : View(context) {
 
     internal fun resumeVisibilityState(): String =
         "visible=$visibility enabled=${profile.virtual.enabled} " +
-            "movie=$hiddenByMovie physical=$autoHiddenByPhysicalPad edit=$editMode " +
+            "movie=$hiddenByMovie edit=$editMode " +
             "controls=${profile.virtual.controls.size}"
 
     private fun updateVisibilityState() {
         val shouldShow = editMode ||
-            (profile.virtual.enabled && !autoHiddenByPhysicalPad && !hiddenByMovie)
+            (profile.virtual.enabled && !hiddenByMovie)
         visibility = if (shouldShow) VISIBLE else GONE
     }
 

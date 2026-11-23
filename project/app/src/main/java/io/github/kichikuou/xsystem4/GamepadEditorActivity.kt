@@ -123,7 +123,6 @@ class GamepadEditorActivity : Activity() {
 
     private lateinit var physEnabledSwitch: Switch
     private lateinit var physSwapSwitch: Switch
-    private lateinit var physAutoHideSwitch: Switch
     private lateinit var deadzoneValTv: TextView
     private lateinit var deadzoneSeek: SeekBar
     private lateinit var speedValTv: TextView
@@ -596,12 +595,6 @@ class GamepadEditorActivity : Activity() {
             })
             addView(makeHorizDivider())
 
-            physAutoHideSwitch = Switch(this@GamepadEditorActivity).also { tintSwitch(it) }
-            addView(makeSwitchRow(tr("接入隐藏虚拟键", "接続時仮想非表示", "Auto-hide Virtual"), physAutoHideSwitch) { checked ->
-                profile = profile.copy(physical = profile.physical.copy(autoHideVirtualPad = checked))
-            })
-            addView(makeHorizDivider())
-
             // Rumble toggle hidden: rumbleEnabled is stored but not implemented natively yet.
 
             val dzPair = makeCompactSliderRow(
@@ -908,7 +901,6 @@ class GamepadEditorActivity : Activity() {
         syncingUi = true
         physEnabledSwitch.isChecked = profile.physical.enabled
         physSwapSwitch.isChecked = profile.physical.swapAbXy
-        physAutoHideSwitch.isChecked = profile.physical.autoHideVirtualPad
         deadzoneSeek.progress = (profile.physical.deadzonePct - GamepadBridge.DEADZONE_PCT_MIN)
             .coerceIn(0, GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN)
         deadzoneValTv.text = "${profile.physical.deadzonePct}%"

@@ -471,8 +471,6 @@ class XSystem4Activity : SDLActivity() {
         val phys = activeGamepadProfile.physical
         val connected = GamepadBridge.queryConnectedControllers(this)
         val effectiveCount = maxOf(connected.size, nativePadCount)
-        val hideVpad = phys.enabled && phys.autoHideVirtualPad && effectiveCount > 0
-        virtualGamepadView?.setAutoHiddenByPhysicalPad(hideVpad)
         if (phys.enabled && showToast && effectiveCount > lastReportedConnectedPads && connected.isNotEmpty()) {
             val name = connected.last().name
             val msg = GamepadBridge.tr(
