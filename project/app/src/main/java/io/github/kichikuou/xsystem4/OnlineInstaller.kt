@@ -314,6 +314,7 @@ object OnlineInstaller {
     )
 
     private data class SavedMeta(
+        val url: String?,
         val etag: String?,
         val totalBytes: Long
     )
@@ -837,14 +838,15 @@ object OnlineInstaller {
         onProgress: (OnlineProgressUpdate) -> Unit
     ): File {
         onProgress(OnlineProgressUpdate(context.getString(R.string.online_fetching_manifest), null))
-        val cleanBaseUrl = cdnBaseUrl.trimEnd('/')
-        val manifest = fetchManifest(cleanBaseUrl, abortHandle, checkCancelled)
+        val canonicalBaseUrl = AppSettings.canonicalCdnUrl(cdnBaseUrl)
+        val fetchBaseUrl = AppSettings.resolveCdnUrl(context, canonicalBaseUrl).trimEnd('/')
+        val manifest = fetchManifest(fetchBaseUrl, abortHandle, checkCancelled)
         if (manifest.entries.isEmpty()) {
             throw GameList.InstallFailureException(R.string.online_download_error)
         }
         if (abortHandle?.isAborted == true) throw CancellationException()
         checkCancelled()
-        AppSettings.setCachedBaseGameSize(context, cleanBaseUrl, manifest.totalBytes)
+        AppSettings.setCachedBaseGameSize(context, canonicalBaseUrl, manifest.totalBytes)
 
         val safeBase = sanitizeInstallDirName(manifest.baseName, fallback = "Game")
             .replace(Regex("[^A-Za-z0-9_\\-]"), "_")
@@ -857,7 +859,7 @@ object OnlineInstaller {
         }
         if (abortHandle?.isAborted == true) throw CancellationException()
         checkCancelled()
-        prepareBaseStagingDir(stagingDir, computeBaseStagingIdentity(cleanBaseUrl, manifest))
+        prepareBaseStagingDir(stagingDir, computeBaseStagingIdentity(canonicalBaseUrl, manifest))
         onStagingDirReady?.invoke(stagingDir)
         val stagingPrefix = stagingDir.path + File.separator
         val verifiedDoneEntries = HashSet<String>()
@@ -897,7 +899,7 @@ object OnlineInstaller {
             val partFile = File(finalFile.parentFile, "${finalFile.name}.part")
             val partMetaFile = File("${partFile.path}.meta")
             val encodedKey = entry.key.split('/').joinToString("/") { Uri.encode(it) }
-            val fileUrl = "$cleanBaseUrl/files/$encodedKey"
+            val fileUrl = "$fetchBaseUrl/files/$encodedKey"
 
             downloadFileWithResume(
                 url = fileUrl,
@@ -986,7 +988,7 @@ object OnlineInstaller {
             isSys3x = isSys3x
         )
         recoverInterruptedReinstalls(storageCanonical)
-        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, cleanBaseUrl)
+        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, canonicalBaseUrl)
         if (dstDir.parentFile != storageCanonical) {
             throw IOException("Destination directory escapes storage path: $dstDir")
         }
@@ -997,7 +999,7 @@ object OnlineInstaller {
         }
         File(dstDir, BASE_STAGING_IDENTITY_FILE).delete()
         try {
-            File(dstDir, ONLINE_INSTALL_SOURCE_FILE).writeText(cleanBaseUrl)
+            File(dstDir, ONLINE_INSTALL_SOURCE_FILE).writeText(canonicalBaseUrl)
         } catch (_: Throwable) {
             // Only costs in-place refresh on the next re-trigger; the install itself is complete.
         }
@@ -1021,7 +1023,9 @@ object OnlineInstaller {
     }
 
     private fun readOnlineInstallSource(dir: File): String? = try {
-        File(dir, ONLINE_INSTALL_SOURCE_FILE).takeIf { it.isFile }?.readText()?.trim()
+        File(dir, ONLINE_INSTALL_SOURCE_FILE).takeIf { it.isFile }?.readText()?.trim()?.let {
+            AppSettings.canonicalCdnUrl(it)
+        }
     } catch (_: Throwable) {
         null
     }
@@ -1282,8 +1286,9 @@ object OnlineInstaller {
     ) {
         val cacheDir = File(storagePath, ".online_mod_cache")
         cacheDir.mkdirs()
+        val effectiveUrl = AppSettings.resolveCdnUrl(context, req.url)
         val cacheId = req.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
-            ?: sha256Hex(req.url.toByteArray(Charsets.UTF_8)).take(16)
+            ?: sha256Hex(AppSettings.canonicalCdnUrl(req.url).toByteArray(Charsets.UTF_8)).take(16)
         val ext = extractArchiveExtension(req.fileName)
         val partFile = File(cacheDir, "mod_${cacheId}${ext}.part")
         val metaFile = File("${partFile.path}.meta")
@@ -1325,7 +1330,7 @@ object OnlineInstaller {
         }
 
         downloadFileWithResume(
-            url = req.url,
+            url = effectiveUrl,
             destPartFile = partFile,
             expectedSize = req.contentLength.takeIf { it > 0L } ?: -1L,
             expectedSha256 = req.expectedSha256,
@@ -1639,7 +1644,7 @@ object OnlineInstaller {
             if (!cacheDir.isDirectory) return out
             for (step in steps) {
                 val cacheId = step.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
-                    ?: sha256Hex(step.downloadUrl.toByteArray(Charsets.UTF_8)).take(16)
+                    ?: sha256Hex(AppSettings.canonicalCdnUrl(step.downloadUrl).toByteArray(Charsets.UTF_8)).take(16)
                 val ext = extractArchiveExtension(step.fileName)
                 evictFileToTrash(File(cacheDir, "mod_${cacheId}${ext}.part"))?.let { out.add(it) }
                 evictFileToTrash(File(cacheDir, "mod_${cacheId}${ext}.part.meta"))?.let { out.add(it) }
@@ -1845,7 +1850,9 @@ object OnlineInstaller {
                 ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, (knownTotal - curLen).coerceAtLeast(0L))
             }
 
-            val resumeEtag = if (curLen > 0L) readSavedMeta(metaFile, url, expectedSha256)?.etag else null
+            val resumeMeta = if (curLen > 0L) readSavedMeta(metaFile, url, expectedSha256) else null
+            val resumeEtag = resumeMeta?.etag
+            val sameResumeUrl = resumeMeta?.url == url
             if (hashless && curLen > 0L && !isStrongEtag(resumeEtag)) {
                 destPartFile.delete()
                 metaFile.delete()
@@ -1860,7 +1867,7 @@ object OnlineInstaller {
                 reqHeaders["Accept-Encoding"] = "identity"
                 if (curLen > 0L) {
                     reqHeaders["Range"] = "bytes=$curLen-"
-                    if (isStrongEtag(resumeEtag)) {
+                    if (sameResumeUrl && isStrongEtag(resumeEtag)) {
                         reqHeaders["If-Range"] = resumeEtag!!
                     }
                 }
@@ -2146,6 +2153,7 @@ object OnlineInstaller {
                 savedSha.equals(expectedSha256, ignoreCase = true)
             if (!shaMatched && j.optString("url") != expectedUrl) return null
             SavedMeta(
+                url = j.optString("url").takeIf { it.isNotEmpty() },
                 etag = j.optString("etag").takeIf { it.isNotEmpty() },
                 totalBytes = j.optLong("totalBytes", -1L)
             )

@@ -1,5 +1,38 @@
 import Foundation
 
+enum DownloadRoute: String, CaseIterable, Identifiable {
+    static let storageKey = "hub.downloadRoute"
+    static let cdnOrigin = "https://alicehub.000.moe"
+
+    case global
+    case cn
+
+    var id: String { rawValue }
+    var title: String { self == .global ? "国际线路" : "国内线路" }
+
+    static var current: Self {
+        Self(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .global
+    }
+
+    func gameBaseURLString(for id: String) -> String {
+        switch self {
+        case .global: return Self.cdnOrigin + "/" + id
+        case .cn: return Self.cdnOrigin + "/cn/" + id
+        }
+    }
+
+    func resolveURL(_ raw: String) -> String {
+        let prefix = Self.cdnOrigin + "/"
+        guard raw.hasPrefix(prefix) else { return raw }
+        let rest = String(raw.dropFirst(prefix.count))
+        let canonicalRest = rest.hasPrefix("cn/") ? String(rest.dropFirst(3)) : rest
+        switch self {
+        case .global: return prefix + canonicalRest
+        case .cn: return prefix + "cn/" + canonicalRest
+        }
+    }
+}
+
 struct ModReleaseEntry: Equatable {
     var fileId: Int
     var version: String
@@ -77,7 +110,7 @@ struct ModGameDescriptor: Equatable {
     let title: String
     var isCnPatch: Bool { id != "rance10" }
     var overlayKind: String { isCnPatch ? "cn_patch" : "mod" }
-    var overlayURL: String { "https://alicehub.000.moe/" + id }
+    var overlayURL: String { DownloadRoute.current.gameBaseURLString(for: id) }
     var catalogPath: String { isCnPatch ? "files/cn-patch/index.json" : "files/mods/index.json" }
 
     static let supported = [Self(id: "rance10", title: "兰斯10 决战"), Self(id: "evenicle", title: "夏娃年代记"), Self(id: "evenicle2", title: "夏娃年代记2")]

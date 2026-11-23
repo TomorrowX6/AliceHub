@@ -96,6 +96,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_sort, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
+        findViewById<ImageView>(R.id.icon_settings_download_route)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_route, accent))
         findViewById<ImageView>(R.id.icon_settings_gamepad)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_gamepad, accent))
         findViewById<ImageView>(R.id.icon_settings_clear_cache)
@@ -119,6 +121,9 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
+        }
+        findViewById<View>(R.id.row_settings_download_route).setOnClickListener {
+            showDownloadRouteDialog()
         }
         findViewById<View>(R.id.row_settings_gamepad).setOnClickListener {
             startActivity(Intent(this, GamepadSettingsActivity::class.java))
@@ -178,6 +183,10 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+        val routeLabel = downloadRouteLabel(AppSettings.getDownloadRoute(this))
+        findViewById<TextView>(R.id.value_settings_download_route).text = routeLabel
+        findViewById<View>(R.id.row_settings_download_route).contentDescription =
+            getString(R.string.settings_download_route) + ", " + routeLabel
         val gp = GamepadBridge.loadProfile(this, null)
         val connectedPads = GamepadBridge.queryConnectedControllers(this).size
         findViewById<TextView>(R.id.value_settings_gamepad)?.text = when {
@@ -751,6 +760,37 @@ class SettingsActivity : ThemedActivity() {
                         AppSettings.setLanguageMode(this, nextLang)
                         recreate()
                     }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun downloadRouteLabel(route: String): String = getString(
+        if (route == AppSettings.ROUTE_CN) R.string.download_route_cn
+        else R.string.download_route_global
+    )
+
+    private fun showDownloadRouteDialog() {
+        val routes = arrayOf(
+            AppSettings.ROUTE_GLOBAL,
+            AppSettings.ROUTE_CN
+        )
+        val labels = arrayOf(
+            getString(R.string.download_route_global),
+            getString(R.string.download_route_cn)
+        )
+        val currentRoute = AppSettings.getDownloadRoute(this)
+        val checkedIdx = routes.indexOf(currentRoute).coerceAtLeast(0)
+
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_download_route)
+                .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
+                    val nextRoute = routes.getOrElse(which) { AppSettings.ROUTE_GLOBAL }
+                    dlg.dismiss()
+                    AppSettings.setDownloadRoute(this, nextRoute)
+                    refreshSettingsUi()
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()

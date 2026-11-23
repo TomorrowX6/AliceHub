@@ -3,11 +3,17 @@ import SwiftUI
 struct HubSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
+    @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @State private var gamepad = false
 
     var body: some View {
         NavigationView {
             List {
+                Section("下载线路") {
+                    Picker("下载线路", selection: $downloadRoute) {
+                        ForEach(DownloadRoute.allCases) { Text($0.title).tag($0.rawValue) }
+                    }.pickerStyle(.segmented).padding(.vertical, 8)
+                }.listRowBackground(HubTheme.surface)
                 Section("外观") {
                     Picker("主题模式", selection: $appearance) {
                         ForEach(HubAppearance.allCases) { Text($0.title).tag($0.rawValue) }

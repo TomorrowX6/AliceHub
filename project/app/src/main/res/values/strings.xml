@@ -134,6 +134,9 @@
     <string name="save_cleared_toast">Saves cleared</string>
 
     <string name="settings_online_install">Online Install (Chinese)</string>
+    <string name="settings_download_route">Download Route</string>
+    <string name="download_route_global">International</string>
+    <string name="download_route_cn">China Domestic</string>
     <string name="action_online_install">Online Install</string>
     <string name="action_online_install_with_size">Online Install · %1$s</string>
     <string name="action_local_install">Local Install</string>

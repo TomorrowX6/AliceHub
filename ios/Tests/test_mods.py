@@ -20,7 +20,15 @@ RETRY = []
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/redirect"):
+            self.send_response(302)
+            self.send_header("Location", "/online.zip")
+            self.end_headers()
+            return
         start = int(self.headers.get("Range", "bytes=0-")[6:-1])
+        if_range = self.headers.get("If-Range")
+        if if_range and if_range != '"fixture"':
+            start = 0
         RANGES.append(start)
         payload = DATA
         if "?retry" in self.path:
@@ -51,8 +59,8 @@ with tempfile.TemporaryDirectory() as temporary:
     thread.start()
     try:
         subprocess.run([str(work / "checks"), str(work), f"http://127.0.0.1:{server.server_port}/online.zip"], check=True)
-        assert RANGES == [32, 0, 0], RANGES
+        assert RANGES == [32, 16, 0, 0], RANGES
         assert RETRY == [0, 0], RETRY
-        print("PASS: HTTP fixture received Range bytes=32-; corrupt response retried cleanly")
+        print("PASS: HTTP fixture received Range bytes=32-, 302 redirect preserved Range bytes=16-; corrupt response retried cleanly")
     finally:
         server.shutdown()

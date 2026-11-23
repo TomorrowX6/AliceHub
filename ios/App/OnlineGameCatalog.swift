@@ -5,7 +5,7 @@ struct OnlineGame: Identifiable {
     let title: String
     let directory: String
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
-    var baseURL: URL { URL(string: "https://alicehub.000.moe/" + id + "/")! }
+    var baseURL: URL { URL(string: DownloadRoute.current.gameBaseURLString(for: id) + "/")! }
 
     static let all: [Self] = [
         Self(id: "rance10", title: "兰斯10 决战", directory: "Rance10"),

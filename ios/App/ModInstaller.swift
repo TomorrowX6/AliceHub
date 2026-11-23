@@ -153,14 +153,20 @@ final class ModInstaller: ObservableObject {
         try ModFiles.files.createDirectory(at: cache, withIntermediateDirectories: true)
         let hash = release.expectedSha256 ?? ""
         guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message("SHA-256 校验值无效") }
-        let identity = hash.count >= 16 ? String(hash.prefix(16)) : String(SHA256.hash(data: Data(release.downloadUrl.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
+        let effectiveUrl = DownloadRoute.current.resolveURL(release.downloadUrl)
+        let resolvedRelease: ModReleaseEntry = {
+            var copy = release
+            copy.downloadUrl = effectiveUrl
+            return copy
+        }()
+        let identity = hash.count >= 16 ? String(hash.prefix(16)) : String(SHA256.hash(data: Data(DownloadRoute.global.resolveURL(effectiveUrl).utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
         let ext = [".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz", ".afa", ".ald"].first { release.fileName.lowercased().hasSuffix($0) } ?? ".rar"
         let part = cache.appendingPathComponent("mod_" + identity + ext + ".part")
         let meta = part.appendingPathExtension("meta")
         func metadata() -> [String: Any]? {
             guard let data = try? Data(contentsOf: meta), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             if !hash.isEmpty && (json["sha256"] as? String)?.lowercased() == hash.lowercased() { return json }
-            return json["url"] as? String == release.downloadUrl ? json : nil
+            return json["url"] as? String == effectiveUrl ? json : nil
         }
         var lastError: Error = ModError.message("下载失败，请检查网络与可用空间")
         for attempt in 0..<8 {
@@ -177,7 +183,7 @@ final class ModInstaller: ObservableObject {
             }
             if expected > 0 && length >= expected { try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(meta) }
             do {
-                let transfer = ModDownloadTransfer(part: part, release: release, saved: metadata(), cancelled: { self.isCancelled() }, progress: { done, total in
+                let transfer = ModDownloadTransfer(part: part, release: resolvedRelease, saved: metadata(), cancelled: { self.isCancelled() }, progress: { done, total in
                     if let progress { progress(done, total) }
                     else {
                         let fraction = total > 0 ? Double(done) / Double(total) : nil
@@ -225,6 +231,8 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
     var error: Error?
     var received: Int64 = 0
     var total: Int64 = -1
+    var rangeHeader: String?
+    var ifRangeHeader: String?
     init(part: URL, release: ModReleaseEntry, saved: [String: Any]?, cancelled: @escaping () -> Bool, progress: @escaping (Int64, Int64) -> Void) {
         self.part = part; self.release = release; self.saved = saved; self.cancelled = cancelled; self.progress = progress
     }
@@ -236,8 +244,14 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         received = ModFiles.fileSize(part)
         if received > 0 {
-            request.setValue("bytes=\(received)-", forHTTPHeaderField: "Range")
-            if let etag = saved?["etag"] as? String, Self.strong(etag) { request.setValue(etag, forHTTPHeaderField: "If-Range") }
+            let range = "bytes=\(received)-"
+            rangeHeader = range
+            request.setValue(range, forHTTPHeaderField: "Range")
+            let sameUrl = (saved?["url"] as? String) == release.downloadUrl
+            if sameUrl, let etag = saved?["etag"] as? String, Self.strong(etag) {
+                ifRangeHeader = etag
+                request.setValue(etag, forHTTPHeaderField: "If-Range")
+            }
         }
         let session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
@@ -245,6 +259,19 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
         register(task); task.resume(); done.wait()
         if let error { throw error }
         if total > 0 && received != total { throw ModError.message("下载文件大小不匹配") }
+    }
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard !cancelled(), let scheme = request.url?.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+            completionHandler(nil)
+            return
+        }
+        var redirected = request
+        redirected.cachePolicy = .reloadIgnoringLocalCacheData
+        redirected.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
+        redirected.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        if let rangeHeader { redirected.setValue(rangeHeader, forHTTPHeaderField: "Range") }
+        if let ifRangeHeader { redirected.setValue(ifRangeHeader, forHTTPHeaderField: "If-Range") }
+        completionHandler(redirected)
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         do {
