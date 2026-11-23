@@ -476,7 +476,9 @@ int main(int argc, char **argv) {{
             self.assertEqual(out.strip(), "OK")
 
     def test_gamepad_sensitivity_clamping_range(self):
-        # Verify input.c clamps cursorSpeedPct to 20..300% (144..2160 px/s) and deadzonePct to 5..45%.
+        # Verify both xsystem4/src/input.c and xsystem35/src/alicehub_bridge.c clamp
+        # cursorSpeedPct to 20..300% and deadzonePct to 5..45%, and preserve toggle latches
+        # when only sensitivity/deadzone changes.
         src = (ROOT / "src/input.c").read_text(encoding="utf-8", errors="ignore")
         fn = _extract_def("src/input.c", "input_set_gamepad_config_json")
         self.assertIn("if (p < 20) p = 20;", fn)
@@ -484,7 +486,13 @@ int main(int argc, char **argv) {{
         self.assertIn("gp_cfg.cursor_speed = 720.0f * ((float)p / 100.0f);", fn)
         self.assertIn("if (p < 5) p = 5;", fn)
         self.assertIn("if (p > 45) p = 45;", fn)
+        self.assertIn("if (phys_mapping_changed)", fn)
         self.assertIn("cfg.cursor_speed", src)
+
+        s35 = (ROOT.parent / "xsystem35/src/alicehub_bridge.c").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("if (p < 20) p = 20;", s35)
+        self.assertIn("if (p > 300) p = 300;", s35)
+        self.assertIn("if (phys_mapping_changed)", s35)
 
 
 if __name__ == "__main__":

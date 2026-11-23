@@ -87,6 +87,9 @@ final class RuntimeGamepad: UIView {
             self.profile.physical.cursorSpeedPct = pct
             self.sensitivityLabel.text = "\(padText("Sensitivity")): \(Int(pct))%"
             self.profile.engineJSON().withCString { input_set_gamepad_config_json($0) }
+            if !self.sensitivitySlider.isTracking {
+                self.store.save(self.profile, for: self.store.saved(self.game) == nil ? nil : self.game)
+            }
         }, for: .valueChanged)
         sensitivitySlider.addAction(UIAction { [weak self] _ in
             guard let self else { return }
