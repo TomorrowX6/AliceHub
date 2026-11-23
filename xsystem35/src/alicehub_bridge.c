@@ -122,7 +122,7 @@ static void publish_live_state_json(char *out) {
 
 static void update_live_state_sdl_thread(int locks);
 
-static struct {
+static struct gamepad_config {
 	bool initialized;
 	bool phys_enabled;
 	bool swap_ab_xy;
