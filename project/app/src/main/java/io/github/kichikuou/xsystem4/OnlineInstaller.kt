@@ -2950,7 +2950,16 @@ object OnlineInstaller {
             if (code == HttpURLConnection.HTTP_OK) {
                 // Server doesn't support Range or If-Range invalidated -> stream full 200 OK sequentially!
                 val cl = probeConn.contentLengthLong
-                val finalTotal = if (cl > 0L) cl else totalBytes
+                val enforcedExpected = if (expectedSize > 0L) expectedSize else totalBytes
+                if (enforcedExpected > 0L && cl > 0L && cl != enforcedExpected) {
+                    destPartFile.delete()
+                    metaFile.delete()
+                    throw IOException("Downloaded size mismatch: expected $enforcedExpected, got $cl")
+                }
+                val finalTotal = if (enforcedExpected > 0L) enforcedExpected else cl
+                if (finalTotal > 0L) {
+                    ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, finalTotal)
+                }
                 writeSavedMeta(metaFile, url, respEtag, finalTotal, expectedSha256, segmented = false)
                 val input = probeConn.inputStream
                 var written = 0L
@@ -2972,6 +2981,9 @@ object OnlineInstaller {
                             segCheckCancelled()
                             if (n < 0) break
                             if (n == 0) continue
+                            if (enforcedExpected > 0L && written + n.toLong() > enforcedExpected) {
+                                throw IOException("Downloaded size mismatch: expected $enforcedExpected, got >$enforcedExpected")
+                            }
                             output.write(buf, 0, n)
                             written += n.toLong()
                             onProgressDelta(written, n.toLong(), finalTotal)
@@ -2991,6 +3003,15 @@ object OnlineInstaller {
                 probeConn.disconnect()
                 probeConn = null
                 batchAbort.removeChild(fileAbort)
+                if (enforcedExpected > 0L && written != enforcedExpected) {
+                    if (written < enforcedExpected && (cl <= 0L || cl == enforcedExpected)) {
+                        runSingleStreamAndFinish()
+                        return
+                    }
+                    destPartFile.delete()
+                    metaFile.delete()
+                    throw IOException("Downloaded size mismatch: expected $enforcedExpected, got $written")
+                }
                 if (finalTotal > 0L && written < finalTotal) {
                     runSingleStreamAndFinish()
                     return
@@ -3071,9 +3092,19 @@ object OnlineInstaller {
                 }
             }
             batchAbort.removeChild(fileAbort)
+            val isTerminalProbeIo = t is IOException && (
+                t.message == "HTTP 401" ||
+                    t.message == "HTTP 403" ||
+                    t.message?.startsWith("Downloaded size mismatch:") == true ||
+                    t.message?.startsWith("SHA-256 verification failed") == true
+                )
             if (t is CancellationException || t is GameList.InstallFailureException ||
-                batchAbort.isAborted || (t is IOException && (t.message == "HTTP 401" || t.message == "HTTP 403"))
+                batchAbort.isAborted || isTerminalProbeIo
             ) {
+                if (isTerminalProbeIo && t.message?.startsWith("Downloaded size mismatch:") == true) {
+                    destPartFile.delete()
+                    metaFile.delete()
+                }
                 onFileFinished(t)
             } else {
                 // Transient probe network error: fall back to single-stream with full retry loop
@@ -3208,7 +3239,12 @@ object OnlineInstaller {
                         curLen = 0L
                         appendMode = false
                         val cl = conn.contentLengthLong
-                        if (cl > 0L) {
+                        if (expectedSize > 0L && cl > 0L && cl != expectedSize) {
+                            destPartFile.delete()
+                            metaFile.delete()
+                            throw IOException("Downloaded size mismatch: expected $expectedSize, got $cl")
+                        }
+                        if (expectedSize <= 0L && cl > 0L) {
                             knownTotal = cl
                         }
                     }

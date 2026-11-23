@@ -439,7 +439,7 @@ final class ModInstaller: ObservableObject {
             segments = existingSegments
             startedWithPartial = true
             if segments.allSatisfy(\.isComplete) && ModFiles.fileSize(part) == knownTotal {
-                if hashless || (try fileHash(part) == hash.lowercased()) {
+                if try hashless || fileHash(part) == hash.lowercased() {
                     try writeSegmentMeta(meta: meta, url: release.downloadUrl, etag: saved?["etag"] as? String, total: knownTotal, sha256: hash, segmented: false, segments: [])
                     progress(knownTotal, knownTotal)
                     return part
@@ -454,7 +454,7 @@ final class ModInstaller: ObservableObject {
                 curLen = 0; saved = nil
             }
             if knownTotal > 0 && curLen == knownTotal {
-                if hashless || (try fileHash(part) == hash.lowercased()) {
+                if try hashless || fileHash(part) == hash.lowercased() {
                     progress(curLen, knownTotal)
                     return part
                 }
@@ -808,7 +808,7 @@ final class ModInstaller: ObservableObject {
                 if expected > 0 && written != expected {
                     return try downloadSingleStream(release: release, part: part, meta: meta, progress: progress)
                 }
-                if !hashless && (try fileHash(part) != hash.lowercased()) {
+                if try !hashless && fileHash(part) != hash.lowercased() {
                     try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(meta)
                     throw ModError.message("SHA-256 校验失败")
                 }
@@ -1038,7 +1038,7 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
     var writePos: Int64
     var remaining: Int64
     var respEtag: String?
-    var outcome: Outcome = .restartFull
+    var outcome: Outcome? = nil
     var error: Error?
     var rangeHeader: String
 
@@ -1074,8 +1074,10 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
         register(task); task.resume(); done.wait()
         if let error { throw error }
         if case .restartFull = outcome { return .restartFull }
-        guard remaining == 0 else { throw ModError.message("下载分片提前结束") }
-        return .partialComplete(etag: respEtag)
+        guard case .partialComplete(let etag) = outcome, remaining == 0 else {
+            throw ModError.message("下载分片提前结束")
+        }
+        return .partialComplete(etag: etag)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,

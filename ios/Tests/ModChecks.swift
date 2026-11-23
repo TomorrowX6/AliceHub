@@ -477,6 +477,20 @@ struct ModChecks {
         let fallbackFile = try installer.downloadVerifiedFile(fallbackRelease, cache: fallbackCache, maxConnections: 8, minSegmentedBytes: 32 * 1024) { _, _ in }
         let fallbackGot = try Data(contentsOf: fallbackFile)
         precondition(fallbackGot == segExpected)
-        print("PASS: segmented Range download (8x), segmented resume at concurrency=1, and 200 OK fallback")
+        // Pre-header disconnect on a resumed range must retry that range instead of discarding saved progress
+        let dropCache = try directory("seg-drop-cache")
+        let dropURL = url.replacingOccurrences(of: "/online.zip", with: "/segmented-drop.bin")
+        let dropRelease = ModReleaseEntry(fileId: 101, version: "v1", fileName: "segmented.bin", downloadUrl: dropURL, expectedSize: Int64(segExpected.count), expectedSha256: segSha)
+        let dropPart = ModInstaller.cacheFileURL(for: dropRelease, in: dropCache)
+        try Data(segExpected.prefix(half) + Data(repeating: 0, count: segExpected.count - half)).write(to: dropPart)
+        let dropMeta: [String: Any] = [
+            "url": dropURL, "etag": "\"seg-fixture\"", "totalBytes": segExpected.count, "sha256": segSha,
+            "segmented": true, "segments": [[0, half - 1, half], [half, segExpected.count - 1, 0]]
+        ]
+        try JSONSerialization.data(withJSONObject: dropMeta).write(to: dropPart.appendingPathExtension("meta"))
+        let droppedResumed = try installer.downloadVerifiedFile(dropRelease, cache: dropCache, maxConnections: 8, minSegmentedBytes: 32 * 1024) { _, _ in }
+        let droppedGot = try Data(contentsOf: droppedResumed)
+        precondition(droppedGot == segExpected)
+        print("PASS: segmented Range download (8x), segmented resume at concurrency=1, 200 OK fallback, and pre-header disconnect retry")
     }
 }

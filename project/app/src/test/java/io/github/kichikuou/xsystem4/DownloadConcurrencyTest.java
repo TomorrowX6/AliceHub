@@ -481,5 +481,33 @@ public class DownloadConcurrencyTest {
         );
         assertArrayEquals(payload, Files.readAllBytes(fallbackPart.toPath()));
         assertEquals("200 OK fallback must stream directly in 1 request", 1, recordedRequests.size());
+
+        // Hashless 200 OK fallback with mismatched Content-Length / oversized body must be rejected
+        byte[] wrongPayload = pattern(payload.length + 1024, 77);
+        Resource wrongSizeNoRange = new Resource(wrongPayload, "\"wrong-size\"");
+        wrongSizeNoRange.supportRange = false;
+        routes.put("/wrong-size-no-range.zip", wrongSizeNoRange);
+        File wrongDir = tmp.newFolder("seg-wrong-size").getCanonicalFile();
+        ShadowStatFs.registerStats(wrongDir.getPath(), 1_000_000, 1_000_000, 1_000_000);
+        File wrongPart = new File(wrongDir, "wrong.zip.part");
+        boolean rejectedWrongSize = false;
+        try {
+            OnlineInstaller.INSTANCE.downloadFileWithResume(
+                    localUrl("/wrong-size-no-range.zip"),
+                    wrongPart,
+                    payload.length,
+                    null,
+                    Collections.emptyMap(),
+                    null,
+                    () -> Unit.INSTANCE,
+                    (done, total, speed) -> Unit.INSTANCE,
+                    8,
+                    32 * 1024L
+            );
+        } catch (Exception e) {
+            rejectedWrongSize = e.getMessage() != null && e.getMessage().contains("size mismatch");
+        }
+        assertTrue("Hashless 200 OK fallback with wrong size must fail", rejectedWrongSize);
+        assertFalse(wrongPart.exists());
     }
 }

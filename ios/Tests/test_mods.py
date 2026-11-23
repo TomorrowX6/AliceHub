@@ -20,16 +20,40 @@ RETRY = []
 SEG_INFLIGHT = 0
 SEG_PEAK = 0
 SEG_RANGES = []
+SEG_DROP_SEEN = 0
+SEG_DROP_RANGES = []
 SEG_LOCK = threading.Lock()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        global SEG_INFLIGHT, SEG_PEAK
+        global SEG_INFLIGHT, SEG_PEAK, SEG_DROP_SEEN
         if self.path.startswith("/redirect"):
             self.send_response(302)
             self.send_header("Location", "/online.zip")
             self.end_headers()
+            return
+        if self.path.startswith("/segmented-drop.bin"):
+            range_hdr = self.headers.get("Range", "")
+            with SEG_LOCK:
+                SEG_DROP_SEEN += 1
+                attempt = SEG_DROP_SEEN
+                SEG_DROP_RANGES.append(range_hdr)
+            if attempt == 1:
+                # Simulate pre-header TCP disconnect: close socket without writing headers!
+                self.close_connection = True
+                return
+            s_str, e_str = range_hdr[6:].split("-", 1)
+            start = int(s_str)
+            end = int(e_str) if e_str else len(SEG_DATA) - 1
+            chunk = SEG_DATA[start:end + 1]
+            self.send_response(206)
+            self.send_header("ETag", '"seg-fixture"')
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(SEG_DATA)}")
+            self.send_header("Content-Length", str(len(chunk)))
+            self.end_headers()
+            self.wfile.write(chunk)
             return
         if self.path.startswith("/segmented.bin") or self.path.startswith("/segmented-200.bin"):
             is_no_range = self.path.startswith("/segmented-200.bin")
@@ -105,6 +129,9 @@ with tempfile.TemporaryDirectory() as temporary:
         assert RETRY == [0, 0], RETRY
         assert SEG_PEAK >= 4, f"Expected >=4 concurrent segments, got peak={SEG_PEAK}"
         assert len(SEG_RANGES) >= 8, f"Expected >=8 range segments, got {len(SEG_RANGES)}"
-        print(f"PASS: HTTP fixture received Range bytes=32-, 302 redirect preserved Range bytes=16-; segmented download peak={SEG_PEAK} ranges={len(SEG_RANGES)}")
+        half = len(SEG_DATA) // 2
+        expected_drop_range = f"bytes={half}-{len(SEG_DATA) - 1}"
+        assert SEG_DROP_RANGES == [expected_drop_range, expected_drop_range], f"Pre-header disconnect should retry range without restarting from 0: {SEG_DROP_RANGES}"
+        print(f"PASS: HTTP fixture received Range bytes=32-, 302 redirect preserved Range bytes=16-; segmented download peak={SEG_PEAK} ranges={len(SEG_RANGES)} drop_retries={SEG_DROP_RANGES}")
     finally:
         server.shutdown()
