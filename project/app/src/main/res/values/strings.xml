@@ -285,14 +285,14 @@
     <string name="uncensored_patch_row_installed">Uncensored Patch · Installed</string>
     <string name="uncensored_patch_fetching">Checking uncensored patch info…</string>
     <string name="uncensored_patch_fetch_failed">Failed to fetch uncensored patch info. Check network.</string>
-    <string name="uncensored_patch_install_btn">Download &amp; Install (%1$s)</string>
-    <string name="uncensored_patch_reinstall_btn">Reinstall (%1$s)</string>
+    <string name="uncensored_patch_install_btn">Download &amp; Install</string>
+    <string name="uncensored_patch_reinstall_btn">Reinstall</string>
     <string name="uncensored_patch_uninstall_btn">Uninstall Patch</string>
     <string name="uncensored_patch_uninstall_confirm">Uninstall the uncensored patch? Only the standalone overlay file will be removed; base game, MODs, and saves are untouched.</string>
     <string name="uncensored_patch_installed_toast">Uncensored patch installed</string>
     <string name="uncensored_patch_uninstalled_toast">Uncensored patch uninstalled</string>
     <string name="uncensored_patch_downloading">Downloading uncensored patch · %1$d%% · %2$s\n%3$d / %4$d MB · %5$s</string>
-    <string name="uncensored_patch_info_installed">Status: Installed (%1$s)\nStandalone overlay; does not modify base game, MODs, or saves.</string>
+    <string name="uncensored_patch_info_installed">Status: Installed · %1$s\nStandalone overlay; does not modify base game, MODs, or saves.</string>
     <string name="uncensored_patch_info_not_installed">Status: Not Installed\n%1$s\nSize: %2$s · %3$d CGs</string>
     <string name="game_status_installing">Installing…</string>
     <string name="game_status_running">Running</string>

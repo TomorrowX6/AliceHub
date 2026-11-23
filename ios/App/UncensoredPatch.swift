@@ -340,7 +340,7 @@ final class UncensoredPatchInstaller: ObservableObject {
                 if finalError is CancellationError {
                     self.succeeded = false
                     self.failure = nil
-                    self.progressText = "已取消（下次安装可断点续传）"
+                    self.progressText = "已取消"
                 } else if let finalError {
                     self.succeeded = false
                     self.failure = finalError.localizedDescription
