@@ -58,7 +58,14 @@ final class ModInstaller: ObservableObject {
                 defer { try? ModFiles.removeIfPresent(staging) }
                 try self.extract(archive, to: staging)
                 try self.checkCancelled()
-                let previous = InstalledModInfo.read(game)
+                let previous = InstalledModInfo.readOrInfer(game)
+                if !descriptor.isCnPatch && ModOverlay.detectInstalledMod(game) && !ModOverlay.canRestoreVanilla(game) {
+                    let storedGroup = previous?.group ?? ""
+                    let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
+                    if ModCatalog.groupsConflict(release.group, existingGroup) {
+                        throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                    }
+                }
                 try ModOverlay.applyModStaging(staging, to: game, cleanReplace: !release.isPatch, isCnPatch: descriptor.isCnPatch) { full in
                     let resolvedGroup = release.group.isEmpty ? ((!release.isPatch || full) ? "" : (previous?.group ?? "")) : release.group
                     try InstalledModInfo(version: release.version,
@@ -130,6 +137,14 @@ final class ModInstaller: ObservableObject {
     private func applyLocal(_ staging: URL, label: String, game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool) throws {
         try checkCancelled()
         let previous = InstalledModInfo.readOrInfer(game)
+        if !descriptor.isCnPatch && ModOverlay.detectInstalledMod(game) && !ModOverlay.canRestoreVanilla(game) {
+            let storedGroup = previous?.group ?? ""
+            let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
+            let incomingGroup = ModCatalog.inferModGroup(fileName: label, directory: staging)
+            if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
+                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+            }
+        }
         try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch) { full in
             let version = ModCatalog.inferLocalOverlayVersion(label, isPatchHint: !full, fallbackIniDir: full || descriptor.isCnPatch ? game : nil, isCnPatch: descriptor.isCnPatch)
             let inferredGroup: String

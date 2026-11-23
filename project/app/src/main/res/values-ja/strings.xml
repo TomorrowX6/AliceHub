@@ -190,6 +190,8 @@
     <string name="mod_mgr_btn_install_latest">最新を導入</string>
     <string name="mod_mgr_btn_update_latest">今すぐ更新</string>
     <string name="mod_mgr_btn_switch_series">MOD切替</string>
+    <string name="mod_mgr_btn_switch_needs_vanilla">バニラ本体が必要</string>
+    <string name="mod_mgr_switch_requires_vanilla">このディレクトリはバニラバックアップのない導入済みMOD版のため、別シリーズへ直接切替できません。別のバニラ本体を導入してからご利用ください。</string>
     <string name="mod_mgr_detail_group">シリーズ：%1$s</string>
     <string name="mod_mgr_restore_confirm">MODを解除してバニラに戻しますか？セーブは保持されます。</string>
     <string name="mod_mgr_tag_latest">最新</string>

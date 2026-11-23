@@ -10,6 +10,9 @@ struct ModReleaseDetail: View {
             let releases = model.visibleReleases
             if releases.indices.contains(index) {
                 let entry = releases[index]
+                let switchingGroup = model.hasMod && ModCatalog.groupsConflict(entry.group, model.installed?.group)
+                let switchBlocked = switchingGroup && !model.canRestore
+                let detailActions = ModManagerPolicy.actions(releases, index: index, hasMod: model.hasMod, installed: model.installed, canRestore: model.canRestore)
                 List {
                     Section {
                         HubSectionHeader(title: entry.version, subtitle: entry.isPatch ? "增量补丁" : "完整版本", symbol: "shippingbox")
@@ -21,16 +24,23 @@ struct ModReleaseDetail: View {
                         if !entry.formattedDate.isEmpty { Text("时间：" + entry.formattedDate) }
                         Text(entry.isPatch ? "增量补丁 · 需 " + (entry.baseVersion ?? "-") : (model.descriptor.isCnPatch ? "完整汉化补丁" : "完整版本"))
                     }
-                    if entry.isPatch, let base = entry.baseVersion,
+                    if switchBlocked {
+                        Section {
+                            Text("当前整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                                .foregroundColor(.orange)
+                        }
+                    } else if entry.isPatch, let base = entry.baseVersion,
                        !ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: index, hasMod: model.hasMod, installed: model.installed) {
                         Section { Text("未安装 \(base)，建议组合安装").foregroundColor(.orange) }
                     }
                     if !entry.changelog.isEmpty { Section("更新说明") { Text(entry.changelog).textSelection(.enabled) } }
-                    Section {
-                        ForEach(Array(ModManagerPolicy.actions(releases, index: index, hasMod: model.hasMod, installed: model.installed).enumerated()), id: \.offset) { _, action in
-                            Button(action.title) { dismiss(); model.install(action.steps) }
-                        }
-                    }.disabled(model.busy)
+                    if !detailActions.isEmpty {
+                        Section {
+                            ForEach(Array(detailActions.enumerated()), id: \.offset) { _, action in
+                                Button(action.title) { dismiss(); model.install(action.steps) }
+                            }
+                        }.disabled(model.busy)
+                    }
                 }
                 .listStyle(.insetGrouped).modifier(HubListStyle())
                 .navigationTitle(entry.version).navigationBarTitleDisplayMode(.inline)

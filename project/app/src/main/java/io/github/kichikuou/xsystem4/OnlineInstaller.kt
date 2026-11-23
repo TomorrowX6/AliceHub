@@ -725,13 +725,18 @@ object OnlineInstaller {
         return isInstalledMatchingBaseRelease(baseRelease, installed)
     }
 
+    @JvmOverloads
     fun computeUpdatePlan(
         releases: List<ModReleaseEntry>,
         hasMod: Boolean,
-        installed: InstalledModInfo?
+        installed: InstalledModInfo?,
+        canRestore: Boolean = true
     ): ModUpdatePlan? {
         val latest = releases.firstOrNull() ?: return null
         val switchingGroup = hasMod && groupsConflict(latest.group, installed?.group)
+        if (switchingGroup && !canRestore) {
+            return null
+        }
         val installedIdx = if (hasMod && !switchingGroup) matchInstalledIndex(releases, installed) else -1
         if (hasMod && !switchingGroup && installedIdx == 0) {
             return null
@@ -800,23 +805,34 @@ object OnlineInstaller {
         )
     }
 
+    @JvmOverloads
     fun computeStepsForSelectedRelease(
         releases: List<ModReleaseEntry>,
         targetIdx: Int,
         hasMod: Boolean,
         installed: InstalledModInfo?,
-        includeBaseForPatch: Boolean
+        includeBaseForPatch: Boolean,
+        canRestore: Boolean = true
     ): List<ModReleaseEntry> {
         if (targetIdx !in releases.indices) return emptyList()
         val target = releases[targetIdx]
+        val switchingGroup = hasMod && groupsConflict(target.group, installed?.group)
+        if (switchingGroup && !canRestore) {
+            return emptyList()
+        }
         if (!target.isPatch) {
             return listOf(target)
         }
         val baseIdx = (targetIdx + 1 until releases.size).firstOrNull {
             !releases[it].isPatch && sameReleaseGroup(target, releases[it])
         } ?: -1
+        if (switchingGroup) {
+            if (!includeBaseForPatch || baseIdx < 0) {
+                return emptyList()
+            }
+        }
         if (!includeBaseForPatch || baseIdx < 0) {
-            if (hasMod && baseIdx >= 0 && !groupsConflict(target.group, installed?.group)) {
+            if (hasMod && baseIdx >= 0 && !switchingGroup) {
                 val installedIdx = matchInstalledIndex(releases, installed)
                 if (installedIdx in (targetIdx + 1)..baseIdx && sameReleaseGroup(target, releases[installedIdx])) {
                     val incremental = (installedIdx - 1 downTo targetIdx)

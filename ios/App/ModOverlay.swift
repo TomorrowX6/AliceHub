@@ -268,6 +268,14 @@ enum ModOverlay {
         let full = isStandaloneFullModDir(root)
         let files = try ModFiles.walk(root).filter(ModFiles.isFile)
         let clean = evenicle2 && cleanReplace && allowEvenicle2IncrementalDetect ? files.contains(where: { $0.lastPathComponent.lowercased() == "evenicle2cg.afa" }) : cleanReplace
+        if !isCnPatch && detectInstalledMod(target) && !canRestoreVanilla(target) {
+            let storedGroup = InstalledModInfo.readOrInfer(target)?.group ?? ""
+            let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: target) : storedGroup
+            let incomingGroup = ModCatalog.inferModGroup(directory: root)
+            if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
+                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+            }
+        }
         if clean && (detectInstalledMod(target) || canRestoreVanilla(target)) { try restoreVanilla(target) }
         let journal = target.appendingPathComponent(journalName)
         var added = ((try? String(contentsOf: journal, encoding: .utf8)) ?? "").components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !$0.contains("..") }

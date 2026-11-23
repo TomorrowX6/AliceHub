@@ -40,6 +40,11 @@ struct ModManagerView: View {
                     }.buttonStyle(.plain)
                     Button(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", role: .destructive) { confirmRestore = true }
                         .disabled(!model.canRestore)
+                    if model.switchBlockedByNoBackup {
+                        Text("当前整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                            .font(.footnote)
+                            .foregroundColor(.orange)
+                    }
                 }.listRowBackground(HubTheme.surface)
                 if let notice = model.notice {
                     Section { Label(notice, systemImage: "checkmark.circle").foregroundColor(.green) }

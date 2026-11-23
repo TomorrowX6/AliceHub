@@ -1707,6 +1707,16 @@ class GameList(activity: Activity) {
                     }
                     val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
+                    if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                        !Item.canRestoreVanillaDir(targetItem.path)
+                    ) {
+                        val existingGroup = prevInfo?.group.orEmpty()
+                            .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                        val incomingGroup = OnlineInstaller.inferModGroup(srcLabel, null)
+                        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+                            throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                        }
+                    }
                     staging = NativeGameImport.copyModTree(context, uri, storage) { progress ->
                         if (abortHandle.isAborted) throw CancellationException()
                         withContext(Dispatchers.Main) {
@@ -1790,6 +1800,16 @@ class GameList(activity: Activity) {
                     val myJob = kotlin.coroutines.coroutineContext[Job]
                     val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
+                    if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                        !Item.canRestoreVanillaDir(targetItem.path)
+                    ) {
+                        val existingGroup = prevInfo?.group.orEmpty()
+                            .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                        val incomingGroup = OnlineInstaller.inferModGroup(srcLabel, null)
+                        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+                            throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                        }
+                    }
                     tempDir.deleteRecursively()
                     ArchiveExtractor.extractUriToDirectory(
                         context = context,
@@ -1951,7 +1971,16 @@ class GameList(activity: Activity) {
                                 }
                             },
                             applyStaging = { staging ->
-                                val prevInfo = InstalledModInfo.read(targetItem.path)
+                                val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
+                                if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                                    !Item.canRestoreVanillaDir(targetItem.path)
+                                ) {
+                                    val existingGroup = prevInfo?.group.orEmpty()
+                                        .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                                    if (OnlineInstaller.groupsConflict(release.group, existingGroup)) {
+                                        throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                                    }
+                                }
                                 val wasFull = applyModStagingToGameDir(
                                     stagingDir = staging,
                                     targetDir = targetItem.path,
@@ -2273,6 +2302,14 @@ internal fun applyModStagingToGameDirInternal(
         modFiles.any { it.name.equals("Evenicle2CG.afa", ignoreCase = true) }
     } else {
         cleanReplaceIfStandalone
+    }
+    if (!isCnPatch && Item.detectInstalledMod(targetDir) && !Item.canRestoreVanillaDir(targetDir)) {
+        val existingGroup = InstalledModInfo.readOrInfer(targetDir)?.group.orEmpty()
+            .ifBlank { OnlineInstaller.inferModGroup("", targetDir) }
+        val incomingGroup = OnlineInstaller.inferModGroup("", modRoot)
+        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+            throw GameList.InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+        }
     }
     if (effectiveCleanReplace && (Item.detectInstalledMod(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
         restoreVanillaFromModDir(targetDir)

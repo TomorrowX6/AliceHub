@@ -7,16 +7,20 @@ struct ModReleaseAction {
 }
 
 enum ModManagerPolicy {
-    static func actions(_ releases: [ModReleaseEntry], index: Int, hasMod: Bool, installed: InstalledModInfo?) -> [ModReleaseAction] {
+    static func actions(_ releases: [ModReleaseEntry], index: Int, hasMod: Bool, installed: InstalledModInfo?, canRestore: Bool = true) -> [ModReleaseAction] {
         guard releases.indices.contains(index) else { return [] }
         let entry = releases[index]
+        let switchingGroup = hasMod && ModCatalog.groupsConflict(entry.group, installed?.group)
+        if switchingGroup && !canRestore { return [] }
         let current = hasMod && ModCatalog.matchInstalledIndex(releases, installed) == index
         if !entry.isPatch {
-            let switchingGroup = hasMod && ModCatalog.groupsConflict(entry.group, installed?.group)
             return [ModReleaseAction(title: current ? "重新安装" : (switchingGroup ? "切换安装" : (hasMod ? "切换版本" : "安装")), steps: [entry])]
         }
-        let combo = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: true)
-        let patch = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: false)
+        let combo = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: true, canRestore: canRestore)
+        if switchingGroup {
+            return combo.count > 1 ? [ModReleaseAction(title: "组合安装", steps: combo)] : []
+        }
+        let patch = ModCatalog.computeStepsForSelectedRelease(releases, targetIdx: index, hasMod: hasMod, installed: installed, includeBaseForPatch: false, canRestore: canRestore)
         let installedIndex = hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1
         if installedIndex >= 0 && installedIndex < index {
             return combo.count > 1 ? [ModReleaseAction(title: "降级并完整重装", steps: combo)] : []
@@ -89,8 +93,11 @@ final class ModManagerModel: ObservableObject {
 
     var availableGroups: [String] { ModCatalog.distinctModGroups(releases) }
     var visibleReleases: [ModReleaseEntry] { ModCatalog.releasesForGroup(releases, group: selectedGroup) }
+    var switchBlockedByNoBackup: Bool {
+        hasMod && !canRestore && ModCatalog.groupsConflict(visibleReleases.first?.group, installed?.group)
+    }
     var installedIndex: Int { hasMod ? ModCatalog.matchInstalledIndex(visibleReleases, installed) : -1 }
-    var plan: ModUpdatePlan? { ModCatalog.computeUpdatePlan(visibleReleases, hasMod: hasMod, installed: installed) }
+    var plan: ModUpdatePlan? { ModCatalog.computeUpdatePlan(visibleReleases, hasMod: hasMod, installed: installed, canRestore: canRestore) }
     var status: String {
         let allIdx = hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1
         let version = releases.indices.contains(allIdx) ? releases[allIdx].version : installed?.version
@@ -115,13 +122,14 @@ final class ModManagerModel: ObservableObject {
     var updateTitle: String {
         if busy { return "查看进度" }
         if visibleReleases.isEmpty { return loading ? "检查中…" : (loadFailed ? "重新获取" : "安装最新") }
+        if switchBlockedByNoBackup { return "需原版切换" }
         guard let plan else { return "已是最新" }
         let switchingGroup = hasMod && ModCatalog.groupsConflict(visibleReleases.first?.group, installed?.group)
         let size = ModCatalog.formatSize(plan.steps.reduce(Int64(0)) { $0 + max(0, $1.expectedSize) })
         let baseLabel = !hasMod ? "安装最新" : (switchingGroup ? "切换安装" : "立即更新")
         return baseLabel + (size.isEmpty ? "" : " · " + size)
     }
-    var updateDisabled: Bool { busy || (visibleReleases.isEmpty ? !loadFailed : plan == nil) }
+    var updateDisabled: Bool { busy || switchBlockedByNoBackup || (visibleReleases.isEmpty ? !loadFailed : plan == nil) }
 
     func selectGroup(_ group: String) {
         selectedGroup = group

@@ -375,6 +375,19 @@ struct ModChecks {
         precondition(ids(ModCatalog.computeUpdatePlan(ribuluoList, hasMod: true, installed: installedBfyy)) == [19, 20])
         precondition(ids(ModCatalog.computeUpdatePlan(bfyyList, hasMod: true, installed: installedRibuluo)) == [21])
         precondition(ModManagerPolicy.actions(bfyyList, index: 0, hasMod: true, installed: installedRibuluo).map(\.title) == ["切换安装"])
+        // Cross-series patch detail must NEVER offer patch-only; only combo when base exists, empty when no base
+        precondition(ModCatalog.computeStepsForSelectedRelease(ribuluoList, targetIdx: 0, hasMod: true, installed: installedBfyy, includeBaseForPatch: false).isEmpty)
+        precondition(ModCatalog.computeStepsForSelectedRelease(ribuluoList, targetIdx: 0, hasMod: true, installed: installedBfyy, includeBaseForPatch: true).map(\.fileId) == [19, 20])
+        precondition(ModManagerPolicy.actions(ribuluoList, index: 0, hasMod: true, installed: installedBfyy).map(\.title) == ["组合安装"])
+        precondition(ModManagerPolicy.actions([ribuluoList[0]], index: 0, hasMod: true, installed: installedBfyy).isEmpty)
+        // Without recoverable vanilla baseline (canRestore == false), cross-series switch is blocked everywhere
+        precondition(ModCatalog.computeUpdatePlan(bfyyList, hasMod: true, installed: installedRibuluo, canRestore: false) == nil)
+        precondition(ModCatalog.computeUpdatePlan(ribuluoList, hasMod: true, installed: installedBfyy, canRestore: false) == nil)
+        precondition(ModManagerPolicy.actions(bfyyList, index: 0, hasMod: true, installed: installedRibuluo, canRestore: false).isEmpty)
+        precondition(ModManagerPolicy.actions(ribuluoList, index: 0, hasMod: true, installed: installedBfyy, canRestore: false).isEmpty)
+        // Same-series update remains allowed even when canRestore == false
+        let preinstalledRibuluoBase = InstalledModInfo(version: "v3.1正式版", baseVersion: "v3.1正式版", fileId: 19, baseFileId: 19, fileName: "R10_Ribuluo_full.zip", source: "preinstalled", group: "日不落MOD")
+        precondition(ids(ModCatalog.computeUpdatePlan(ribuluoList, hasMod: true, installed: preinstalledRibuluoBase, canRestore: false)) == [20])
         precondition(ModCatalog.normalizeModVersionKey("R10全系列MOD-V0.62.zip") == "0.62")
         precondition(ModCatalog.inferModGroup(fileName: "R10全系列MOD-V0.62.zip") == ModCatalog.modGroupBfyy)
         let bfyyGame = try directory("bfyyGame")
@@ -395,6 +408,22 @@ struct ModChecks {
         precondition(InstalledModInfo.read(bfyyGame)?.group == ModCatalog.modGroupBfyy)
         try ModOverlay.restoreVanilla(bfyyGame)
         precondition(!ModOverlay.detectInstalledMod(bfyyGame))
+        // Preinstalled Ribuluo directory without journal/backups must reject cross-series BFYY overlay
+        let preinstalledRibuluo = try directory("preinstalledRibuluo")
+        try write(preinstalledRibuluo, "Rance10.ain", "ribuluo-ain")
+        try write(preinstalledRibuluo, "Rance10MODCG.afa", "ribuluo-cg")
+        try write(preinstalledRibuluo, "Rance10ModFlat.afa", "ribuluo-flat")
+        try write(preinstalledRibuluo, "AliceStart.ini", "GameName = \"兰斯10日不落\"\nSaveFolder = \"ModSaveData\"\n")
+        precondition(ModOverlay.detectInstalledMod(preinstalledRibuluo) && !ModOverlay.canRestoreVanilla(preinstalledRibuluo))
+        let bfyyBlockedStage = try directory("bfyyBlockedStage")
+        try write(bfyyBlockedStage, "Rance10.ain", "bfyy-ain")
+        try write(bfyyBlockedStage, "Rance10CGBFYY.afa", "bfyy-cg")
+        try write(bfyyBlockedStage, "Rance10FlatBFYY.afa", "bfyy-flat")
+        do {
+            _ = try ModOverlay.applyModStaging(bfyyBlockedStage, to: preinstalledRibuluo)
+            preconditionFailure("Accepted cross-series switch onto un-restorable preinstalled MOD")
+        } catch {}
+        precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent("Rance10MODCG.afa")) && !ModFiles.exists(preinstalledRibuluo.appendingPathComponent("Rance10CGBFYY.afa")))
         print("PASS: multi-MOD group isolation, cross-group switching, BFYY detection, displayName and legacy metadata inference")
     }
 }

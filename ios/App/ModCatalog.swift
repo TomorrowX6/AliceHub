@@ -340,9 +340,10 @@ enum ModCatalog {
         return ((patchIdx...base).contains(idx) && sameReleaseGroup(releases[patchIdx], releases[idx])) || matchesBase(releases[base], installed)
     }
 
-    static func computeUpdatePlan(_ releases: [ModReleaseEntry], hasMod: Bool, installed: InstalledModInfo?) -> ModUpdatePlan? {
+    static func computeUpdatePlan(_ releases: [ModReleaseEntry], hasMod: Bool, installed: InstalledModInfo?, canRestore: Bool = true) -> ModUpdatePlan? {
         guard let latest = releases.first else { return nil }
         let switchingGroup = hasMod && groupsConflict(latest.group, installed?.group)
+        if switchingGroup && !canRestore { return nil }
         let index = (hasMod && !switchingGroup) ? matchInstalledIndex(releases, installed) : -1
         if hasMod && !switchingGroup && index == 0 { return nil }
         if hasMod && !switchingGroup, let installed, installed.fileId > 0, latest.fileId > 0, index < 0, installed.fileId >= latest.fileId { return nil }
@@ -359,13 +360,16 @@ enum ModCatalog {
         return ModUpdatePlan(targetRelease: latest, steps: [releases[base]] + releases[..<base].reversed().filter { $0.isPatch && sameReleaseGroup(latest, $0) }, isIncrementalOnly: false)
     }
 
-    static func computeStepsForSelectedRelease(_ releases: [ModReleaseEntry], targetIdx: Int, hasMod: Bool, installed: InstalledModInfo?, includeBaseForPatch: Bool) -> [ModReleaseEntry] {
+    static func computeStepsForSelectedRelease(_ releases: [ModReleaseEntry], targetIdx: Int, hasMod: Bool, installed: InstalledModInfo?, includeBaseForPatch: Bool, canRestore: Bool = true) -> [ModReleaseEntry] {
         guard releases.indices.contains(targetIdx) else { return [] }
         let target = releases[targetIdx]
+        let switchingGroup = hasMod && groupsConflict(target.group, installed?.group)
+        if switchingGroup && !canRestore { return [] }
         if !target.isPatch { return [target] }
         let base = releases.indices.first { $0 > targetIdx && !releases[$0].isPatch && sameReleaseGroup(target, releases[$0]) }
+        if switchingGroup && (!includeBaseForPatch || base == nil) { return [] }
         if !includeBaseForPatch || base == nil {
-            if hasMod, let base, !groupsConflict(target.group, installed?.group) {
+            if hasMod, let base, !switchingGroup {
                 let index = matchInstalledIndex(releases, installed)
                 if index > targetIdx && index <= base && sameReleaseGroup(target, releases[index]) {
                     let patches = releases[targetIdx..<index].reversed().filter { $0.isPatch && sameReleaseGroup(target, $0) }

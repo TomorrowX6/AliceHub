@@ -524,13 +524,18 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         findViewById<TextView>(R.id.mod_mgr_title).text =
             getString(R.string.save_manager_current_dir, currentTarget.path.name)
 
+        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val switchingSeries = hasMod && visible.isNotEmpty() &&
+            OnlineInstaller.groupsConflict(visible[0].group, installed?.group)
+        val switchBlockedByNoBackup = switchingSeries && !canRestore
+
         val statusPart = when {
             !hasMod -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_none else R.string.mod_mgr_status_none)
             installedDisplayLabel.isNotBlank() -> getString(R.string.mod_mgr_status_ver, installedDisplayLabel)
             else -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_installed else R.string.mod_mgr_status_installed)
         }
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
-        summaryView.text = if (onlineEnabled && visible.isNotEmpty()) {
+        val baseSummary = if (onlineEnabled && visible.isNotEmpty()) {
             val latestPart = getString(R.string.mod_mgr_summary_format, visible[0].version)
             if (groups.size > 1 && visible[0].group.isNotBlank()) {
                 "$statusPart · ${visible[0].group} $latestPart"
@@ -539,6 +544,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
         } else {
             statusPart
+        }
+        summaryView.text = if (onlineEnabled && switchBlockedByNoBackup) {
+            "$baseSummary\n${getString(R.string.mod_mgr_switch_requires_vanilla)}"
+        } else {
+            baseSummary
         }
         summaryView.visibility = View.VISIBLE
 
@@ -551,7 +561,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         btnLocal.isEnabled = !isBusy
         val btnRestore = findViewById<Button>(R.id.btn_mod_mgr_restore)
         btnRestore.setText(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
-        btnRestore.isEnabled = gameList.canRestoreVanilla(currentTarget) && !isBusy
+        btnRestore.isEnabled = canRestore && !isBusy
 
         renderGroupTabs(groups, visible = onlineEnabled && groups.size > 1, enabled = !isBusy)
 
@@ -566,9 +576,6 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
         }
 
-        val switchingSeries = hasMod && visible.isNotEmpty() &&
-            OnlineInstaller.groupsConflict(visible[0].group, installed?.group)
-
         when {
             isInstallingThis -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_downloading)
@@ -578,6 +585,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 btnUpdate.text = getString(
                     when {
                         !hasMod -> R.string.mod_mgr_btn_install_latest
+                        switchBlockedByNoBackup -> R.string.mod_mgr_btn_switch_needs_vanilla
                         switchingSeries -> R.string.mod_mgr_btn_switch_series
                         else -> R.string.mod_mgr_btn_update_latest
                     }
@@ -595,8 +603,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_retry)
                 btnUpdate.isEnabled = true
             }
+            switchBlockedByNoBackup -> {
+                btnUpdate.text = getString(R.string.mod_mgr_btn_switch_needs_vanilla)
+                btnUpdate.isEnabled = false
+            }
             visible.isNotEmpty() -> {
-                val plan = OnlineInstaller.computeUpdatePlan(visible, hasMod, installed)
+                val plan = OnlineInstaller.computeUpdatePlan(visible, hasMod, installed, canRestore = canRestore)
                 if (plan == null) {
                     btnUpdate.text = getString(R.string.mod_mgr_btn_up_to_date)
                     btnUpdate.isEnabled = false
@@ -752,7 +764,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
-        val plan = OnlineInstaller.computeUpdatePlan(visibleReleases(), hasMod, installed) ?: return
+        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val plan = OnlineInstaller.computeUpdatePlan(visibleReleases(), hasMod, installed, canRestore = canRestore)
+            ?: return
         executeSteps(plan.steps)
     }
 
@@ -849,6 +863,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val entry = visible[index]
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
+        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val switchingGroup = hasMod && OnlineInstaller.groupsConflict(entry.group, installed?.group)
+        val switchBlockedByNoBackup = switchingGroup && !canRestore
         val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(visible, installed) else -1
         val hasMatchingBase = OnlineInstaller.hasMatchingBaseForPatch(visible, index, hasMod, installed)
         val comboSteps = if (entry.isPatch) {
@@ -857,7 +874,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 targetIdx = index,
                 hasMod = hasMod,
                 installed = installed,
-                includeBaseForPatch = true
+                includeBaseForPatch = true,
+                canRestore = canRestore
             )
         } else {
             emptyList()
@@ -868,7 +886,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 targetIdx = index,
                 hasMod = hasMod,
                 installed = installed,
-                includeBaseForPatch = false
+                includeBaseForPatch = false,
+                canRestore = canRestore
             )
         } else {
             emptyList()
@@ -897,7 +916,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     )
                 )
             }
-            if (entry.isPatch && !hasMatchingBase && !entry.baseVersion.isNullOrBlank()) {
+            if (switchBlockedByNoBackup) {
+                append("\n\n")
+                append(getString(R.string.mod_mgr_switch_requires_vanilla))
+            } else if (entry.isPatch && !hasMatchingBase && !entry.baseVersion.isNullOrBlank()) {
                 append("\n\n")
                 append(getString(R.string.mod_mgr_patch_combo_hint, entry.baseVersion))
             }
@@ -912,8 +934,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             .setMessage(msg)
             .setNegativeButton(R.string.cancel, null)
 
-        if (!entry.isPatch) {
-            val switchingGroup = hasMod && OnlineInstaller.groupsConflict(entry.group, installed?.group)
+        if (switchBlockedByNoBackup) {
+            // Cannot safely switch MOD series in place without a recoverable vanilla baseline.
+        } else if (!entry.isPatch) {
             val posLabel = when {
                 hasMod && installedIdx == index -> getString(R.string.mod_mgr_action_reinstall)
                 switchingGroup -> getString(R.string.mod_mgr_btn_switch_series)
@@ -922,6 +945,13 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
             builder.setPositiveButton(posLabel) { _, _ ->
                 executeSteps(listOf(entry))
+            }
+        } else if (switchingGroup) {
+            // Across conflicting MOD series, only allow full base+patch switch; never patch-only.
+            if (comboSteps.size > 1) {
+                builder.setPositiveButton(R.string.mod_mgr_action_combo_install) { _, _ ->
+                    executeSteps(comboSteps)
+                }
             }
         } else {
             val patchSteps = patchOnlySteps.ifEmpty { listOf(entry) }

@@ -190,6 +190,8 @@
     <string name="mod_mgr_btn_install_latest">安装最新</string>
     <string name="mod_mgr_btn_update_latest">立即更新</string>
     <string name="mod_mgr_btn_switch_series">切换安装</string>
+    <string name="mod_mgr_btn_switch_needs_vanilla">需原版切换</string>
+    <string name="mod_mgr_switch_requires_vanilla">当前目录为整合包，缺少原版备份，无法原地切换其他 MOD 系列。请先安装一份原版游戏本体后再安装该系列 MOD。</string>
     <string name="mod_mgr_detail_group">系列：%1$s</string>
     <string name="mod_mgr_restore_confirm">确定卸载 MOD 并还原原版吗？存档会保留。</string>
     <string name="mod_mgr_tag_latest">最新</string>

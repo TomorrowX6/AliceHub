@@ -181,6 +181,37 @@ public class MamanAndMultiModTest {
         assertFalse(switchToBfyy.isIncrementalOnly());
         assertEquals(Collections.singletonList(bfyyFull), switchToBfyy.getSteps());
 
+        // Cross-series patch-only selection must be rejected; only full base+patch is allowed, and empty if no base
+        assertTrue(OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                ribuluoOnly, 0, true, installedBfyy, false, true).isEmpty());
+        assertEquals(
+                Arrays.asList(ribuluoBase, ribuluoPatch),
+                OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                        ribuluoOnly, 0, true, installedBfyy, true, true)
+        );
+        List<ModReleaseEntry> ribuluoPatchOnlyCatalog = Collections.singletonList(ribuluoPatch);
+        assertTrue(OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                ribuluoPatchOnlyCatalog, 0, true, installedBfyy, true, true).isEmpty());
+        assertTrue(OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                ribuluoPatchOnlyCatalog, 0, true, installedBfyy, false, true).isEmpty());
+
+        // Without recoverable vanilla backups (canRestore = false), in-place series switching must be blocked
+        assertNull(OnlineInstaller.INSTANCE.computeUpdatePlan(ribuluoOnly, true, installedBfyy, false));
+        assertNull(OnlineInstaller.INSTANCE.computeUpdatePlan(bfyyOnly, true, installedRibuluo, false));
+        assertTrue(OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                bfyyOnly, 0, true, installedRibuluo, false, false).isEmpty());
+        assertTrue(OnlineInstaller.INSTANCE.computeStepsForSelectedRelease(
+                ribuluoOnly, 0, true, installedBfyy, true, false).isEmpty());
+        // Same-series updates remain allowed even when canRestore = false (e.g. preinstalled Ribuluo repack)
+        InstalledModInfo installedRibuluoBase = new InstalledModInfo(
+                "v3.1正式版", "v3.1正式版", 19, 19, "R10_Ribuluo_full.zip", "", "preinstalled", 100L,
+                InstalledModInfo.KIND_MOD, OnlineInstaller.MOD_GROUP_RIBULUO
+        );
+        ModUpdatePlan sameSeriesUpdate = OnlineInstaller.INSTANCE.computeUpdatePlan(
+                ribuluoOnly, true, installedRibuluoBase, false);
+        assertNotNull(sameSeriesUpdate);
+        assertEquals(Collections.singletonList(ribuluoPatch), sameSeriesUpdate.getSteps());
+
         // Version key normalization & group inference for BFYY
         assertEquals("0.62", OnlineInstaller.INSTANCE.normalizeModVersionKey("R10全系列MOD-V0.62.zip"));
         assertEquals("0.62", OnlineInstaller.INSTANCE.normalizeModVersionKey("v0.62正式版"));
@@ -210,5 +241,28 @@ public class MamanAndMultiModTest {
         GameListKt.restoreVanillaFromModDir(r10);
         assertFalse(new File(r10, "Rance10CGBFYY.afa").exists());
         assertFalse(Item.Companion.detectInstalledMod(r10, null));
+
+        // Preinstalled Ribuluo repack without journal or .vanilla.bak must reject cross-series BFYY overlay
+        File preinstalledRibuluo = makeDir(
+                "PreinstalledRibuluo",
+                "Rance10.ain",
+                "Rance10MODCG.afa",
+                "Rance10ModFlat.afa",
+                "AliceStart.ini"
+        );
+        writeText(new File(preinstalledRibuluo, "AliceStart.ini"), "GameName = \"兰斯10日不落\"\nSaveFolder = \"ModSaveData\"\n");
+        assertTrue(Item.Companion.detectInstalledMod(preinstalledRibuluo, null));
+        assertFalse(Item.Companion.canRestoreVanillaDir(preinstalledRibuluo));
+        File bfyyStage2 = makeDir("BfyyStage2", "Rance10.ain", "Rance10CGBFYY.afa", "Rance10FlatBFYY.afa");
+        boolean rejected = false;
+        try {
+            GameListKt.applyModStagingToGameDirInternal(bfyyStage2, preinstalledRibuluo, true, false, false);
+        } catch (Throwable t) {
+            rejected = t instanceof GameList.InstallFailureException &&
+                    ((GameList.InstallFailureException) t).getMsgId() == R.string.uninstall_mod_no_backup_msg;
+        }
+        assertTrue("Cross-series switch onto un-restorable preinstalled MOD must fail", rejected);
+        assertTrue(new File(preinstalledRibuluo, "Rance10MODCG.afa").isFile());
+        assertFalse(new File(preinstalledRibuluo, "Rance10CGBFYY.afa").exists());
     }
 }
