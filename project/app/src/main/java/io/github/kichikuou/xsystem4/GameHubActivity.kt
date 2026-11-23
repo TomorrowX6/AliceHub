@@ -352,9 +352,15 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 val modInfo = gameList.getInstalledModInfo(curItem)
                 val isCnPatch = descriptor.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
                 val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
+                val modGroup = modInfo?.group?.takeIf { it.isNotBlank() }
+                val modLabel = if (!isCnPatch && modGroup != null && !modGroup.equals(ver, ignoreCase = true)) {
+                    "$modGroup · $ver"
+                } else {
+                    ver
+                }
                 statusText = getString(
                     if (isCnPatch) R.string.game_status_installed_cn_patch else R.string.game_status_installed_mod,
-                    ver
+                    modLabel
                 )
                 statusTone = UiKit.Tone.SUCCESS
             }
@@ -488,7 +494,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val labels = Array(matchingItems.size) { idx ->
             val it = matchingItems[idx]
             val ver = if (gameList.hasInstalledMod(it)) {
-                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: fallbackTag
+                val info = gameList.getInstalledModInfo(it)
+                val v = info?.version?.takeIf { s -> s.isNotBlank() } ?: fallbackTag
+                val g = info?.group?.takeIf { s -> s.isNotBlank() }
+                if (!descriptor.isCnPatch && g != null && !g.equals(v, ignoreCase = true)) "$g · $v" else v
             } else {
                 null
             }

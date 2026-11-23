@@ -188,7 +188,8 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_TOUSHIN3 && GameCatalog.isToushin3Alias(q)) ||
             (desc.id == GameCatalog.ID_OYAKORANKAN && GameCatalog.isOyakorankanAlias(q)) ||
             (desc.id == GameCatalog.ID_YORUGAKURU && GameCatalog.isYorugakuruAlias(q)) ||
-            (desc.id == GameCatalog.ID_RANCE1DIGEST && GameCatalog.isRance1DigestAlias(q))
+            (desc.id == GameCatalog.ID_RANCE1DIGEST && GameCatalog.isRance1DigestAlias(q)) ||
+            (desc.id == GameCatalog.ID_MAMAN && GameCatalog.isMamanAlias(q))
         ) {
             return true
         }

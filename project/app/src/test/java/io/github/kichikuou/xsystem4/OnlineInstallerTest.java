@@ -570,4 +570,40 @@ public class OnlineInstallerTest {
         assertArrayEquals("new".getBytes(StandardCharsets.UTF_8),
             Files.readAllBytes(new File(storage, "Done/Done.ain").toPath()));
     }
+
+    @Test
+    public void installedModInfoGroupRoundTripsAndInfersLegacyJson() throws Exception {
+        File r10 = tmp.newFolder("Rance10MetaGroup");
+        write(new File(r10, "Rance10.ain"), "mod".getBytes(StandardCharsets.UTF_8));
+        write(new File(r10, "Rance10MODCG.afa"), "cg".getBytes(StandardCharsets.UTF_8));
+
+        // Legacy .mod_version.json lacking "group" infers group from dir/fileName
+        write(
+            new File(r10, InstalledModInfo.META_FILE_NAME),
+            "{\"version\":\"v0.49正式版\",\"fileName\":\"日不落MOD0.49完整版.rar\",\"source\":\"online\",\"kind\":\"mod\"}"
+                .getBytes(StandardCharsets.UTF_8)
+        );
+        InstalledModInfo legacy = InstalledModInfo.Companion.read(r10);
+        assertTrue(legacy != null);
+        assertEquals(OnlineInstaller.MOD_GROUP_RIBULUO, legacy.getGroup());
+
+        // Explicit empty group preserves "" without forced overwrite
+        InstalledModInfo explicitEmpty = new InstalledModInfo(
+            "v2.0正式版", "v2.0正式版", 3, 3, "full.zip", "", "online", 123L, InstalledModInfo.KIND_MOD, ""
+        );
+        InstalledModInfo.Companion.write(r10, explicitEmpty);
+        InstalledModInfo readEmpty = InstalledModInfo.Companion.read(r10);
+        assertTrue(readEmpty != null);
+        assertEquals("", readEmpty.getGroup());
+
+        // Explicit BFYY group persists across write/read
+        InstalledModInfo bfyy = new InstalledModInfo(
+            "v0.62正式版", "v0.62正式版", 21, 21, "R10全系列MOD-V0.62.zip", "2025-09-14 01:39",
+            "online", 456L, InstalledModInfo.KIND_MOD, OnlineInstaller.MOD_GROUP_BFYY
+        );
+        InstalledModInfo.Companion.write(r10, bfyy);
+        InstalledModInfo readBfyy = InstalledModInfo.Companion.read(r10);
+        assertTrue(readBfyy != null);
+        assertEquals(OnlineInstaller.MOD_GROUP_BFYY, readBfyy.getGroup());
+    }
 }

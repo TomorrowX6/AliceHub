@@ -45,11 +45,22 @@ struct ModManagerView: View {
                     Section { Label(notice, systemImage: "checkmark.circle").foregroundColor(.green) }
                 }
                 Section("在线版本") {
-                    if model.releases.isEmpty {
+                    if model.availableGroups.count > 1 {
+                        Picker("MOD 系列", selection: Binding(
+                            get: { model.selectedGroup },
+                            set: { model.selectGroup($0) }
+                        )) {
+                            ForEach(model.availableGroups, id: \.self) { group in
+                                Text(group).tag(group)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    if model.visibleReleases.isEmpty {
                         if model.loading { ProgressView("正在加载…") }
                         else { Text(model.loadFailed ? "获取失败，请检查网络" : (model.descriptor.isCnPatch ? "暂无可用汉化补丁" : "暂无可用版本")).foregroundColor(.secondary) }
                     }
-                    ForEach(Array(model.releases.enumerated()), id: \.offset) { index, entry in
+                    ForEach(Array(model.visibleReleases.enumerated()), id: \.offset) { index, entry in
                         Button { selected = ModSelection(id: index) } label: {
                             ModReleaseRow(entry: entry, latest: index == 0, installed: model.installedIndex == index, base: isBase(entry, index))
                         }.buttonStyle(.plain)
@@ -89,7 +100,7 @@ struct ModManagerView: View {
         }
         .confirmationDialog("切换目录", isPresented: $switching, titleVisibility: .visible) {
             ForEach(library.games.filter { ModGameDescriptor.classifyDirectory($0.url) == model.descriptor }) { game in
-                Button(game.displayName + " · " + (InstalledModInfo.readOrInfer(game.url)?.version ?? "原版")) { model.select(game.url); library.refresh() }
+                Button(directorySwitchLabel(for: game)) { model.select(game.url); library.refresh() }
             }
             Button("取消", role: .cancel) {}
         }
@@ -109,8 +120,19 @@ struct ModManagerView: View {
         }
     }
 
+    private func directorySwitchLabel(for game: Game) -> String {
+        guard let info = InstalledModInfo.readOrInfer(game.url) else {
+            return game.displayName + " · 原版"
+        }
+        if !model.descriptor.isCnPatch, !info.group.isEmpty, info.group.caseInsensitiveCompare(info.version) != .orderedSame {
+            return game.displayName + " · " + info.group + " · " + info.version
+        }
+        return game.displayName + " · " + info.version
+    }
+
     private func isBase(_ entry: ModReleaseEntry, _ index: Int) -> Bool {
-        guard model.hasMod, model.installedIndex != index, !entry.isPatch, let info = model.installed else { return false }
+        guard model.hasMod, model.installedIndex != index, !entry.isPatch, let info = model.installed,
+              !ModCatalog.groupsConflict(entry.group, info.group) else { return false }
         return (info.baseFileId > 0 && info.baseFileId == entry.fileId) || info.baseVersion.map { !$0.isEmpty && ModCatalog.normalizeModVersionKey($0) == ModCatalog.normalizeModVersionKey(entry.version) } == true
     }
 }

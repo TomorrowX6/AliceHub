@@ -189,6 +189,8 @@
     <string name="mod_mgr_btn_up_to_date">最新です</string>
     <string name="mod_mgr_btn_install_latest">最新を導入</string>
     <string name="mod_mgr_btn_update_latest">今すぐ更新</string>
+    <string name="mod_mgr_btn_switch_series">MOD切替</string>
+    <string name="mod_mgr_detail_group">シリーズ：%1$s</string>
     <string name="mod_mgr_restore_confirm">MODを解除してバニラに戻しますか？セーブは保持されます。</string>
     <string name="mod_mgr_tag_latest">最新</string>
     <string name="mod_mgr_tag_installed">導入済</string>
@@ -278,6 +280,7 @@
     <string name="game_oyakorankan_title">母娘乱館</string>
     <string name="game_yorugakuru_title">夜が来る！ Remastered</string>
     <string name="game_rance1digest_title">ランス1 ダイジェスト版</string>
+    <string name="game_maman_title">は～とふるママン</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>

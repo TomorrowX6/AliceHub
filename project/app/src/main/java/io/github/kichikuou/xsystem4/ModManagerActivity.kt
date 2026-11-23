@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.BaseAdapter
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -37,6 +38,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
         private const val STATE_TARGET_PATH = "STATE_MOD_MGR_TARGET_PATH"
         private const val STATE_TARGET_GAME_ID = "STATE_MOD_MGR_TARGET_GAME_ID"
+        private const val STATE_SELECTED_GROUP = "STATE_MOD_MGR_SELECTED_GROUP"
+        private const val STATE_USER_PICKED_GROUP = "STATE_MOD_MGR_USER_PICKED_GROUP"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -56,6 +59,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private lateinit var adapter: ModReleaseAdapter
 
     private var releases: List<ModReleaseEntry> = emptyList()
+    private var selectedGroup: String = ""
+    private var userPickedGroup: Boolean = false
+    private var renderedGroupKey: String? = null
     private var isLoadingCatalog: Boolean = false
     private var catalogLoadError: Boolean = false
     private var loadedDownloadRoute: String? = null
@@ -118,6 +124,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
         gameList = LauncherActivity.obtainGameList(this)
         resolveGameContext(intent, savedInstanceState)
+        selectedGroup = savedInstanceState?.getString(STATE_SELECTED_GROUP).orEmpty()
+        userPickedGroup = savedInstanceState?.getBoolean(STATE_USER_PICKED_GROUP, false) ?: false
         val candidates = overlayGameItems()
         if (candidates.isEmpty()) {
             Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
@@ -148,7 +156,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
         listView.setOnItemClickListener { _, _, pos, _ ->
             val index = pos - listView.headerViewsCount
-            if (index in releases.indices) {
+            if (index in visibleReleases().indices) {
                 showReleaseDetailDialog(index)
             }
         }
@@ -169,6 +177,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         if (targetGameId.isNotBlank()) {
             outState.putString(STATE_TARGET_GAME_ID, targetGameId)
         }
+        if (selectedGroup.isNotBlank()) {
+            outState.putString(STATE_SELECTED_GROUP, selectedGroup)
+        }
+        outState.putBoolean(STATE_USER_PICKED_GROUP, userPickedGroup)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -180,6 +192,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         resolveGameContext(intent)
         if (targetGameId != prevGameId) {
             releases = emptyList()
+            selectedGroup = ""
+            userPickedGroup = false
+            renderedGroupKey = null
             catalogLoadError = false
             if (AppSettings.isOnlineInstallEnabled(this)) {
                 loadCatalog()
@@ -231,6 +246,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             catalogLoadError = false
             loadedDownloadRoute = null
             releases = emptyList()
+            selectedGroup = ""
+            userPickedGroup = false
+            renderedGroupKey = null
         } else if ((loadedDownloadRoute != null && loadedDownloadRoute != currentRoute) ||
             (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError)
         ) {
@@ -318,6 +336,39 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         currentTargetPath = currentTarget.path.path
     }
 
+    private fun availableGroups(): List<String> =
+        OnlineInstaller.distinctModGroups(releases)
+
+    private fun visibleReleases(): List<ModReleaseEntry> =
+        OnlineInstaller.releasesForGroup(releases, selectedGroup)
+
+    private fun syncSelectedGroupWithInstalled(forceAuto: Boolean = false) {
+        val groups = availableGroups()
+        if (groups.size <= 1) {
+            selectedGroup = groups.firstOrNull().orEmpty()
+            return
+        }
+        val currentStillValid = selectedGroup.isNotBlank() &&
+            groups.any { it.equals(selectedGroup, ignoreCase = true) }
+        if (!forceAuto && userPickedGroup && currentStillValid) {
+            return
+        }
+        val installedGroup = if (::currentTarget.isInitialized && gameList.hasInstalledMod(currentTarget)) {
+            val info = gameList.getInstalledModInfo(currentTarget)
+            val idx = OnlineInstaller.matchInstalledIndex(releases, info)
+            val fromCatalog = if (idx in releases.indices) releases[idx].group else ""
+            fromCatalog.ifBlank { info?.group.orEmpty() }
+        } else {
+            ""
+        }
+        val matchedGroup = groups.firstOrNull { it.equals(installedGroup, ignoreCase = true) }
+        selectedGroup = matchedGroup ?: if (currentStillValid) {
+            groups.first { it.equals(selectedGroup, ignoreCase = true) }
+        } else {
+            groups[0]
+        }
+    }
+
     private fun loadCatalog() {
         if (!AppSettings.isOnlineInstallEnabled(this)) {
             catalogJob?.cancel()
@@ -325,6 +376,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             isLoadingCatalog = false
             catalogLoadError = false
             releases = emptyList()
+            selectedGroup = ""
+            userPickedGroup = false
+            renderedGroupKey = null
             updateUi()
             return
         }
@@ -347,6 +401,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 }
                 releases = loaded
                 syncLocalModVersionWithCatalog(loaded)
+                syncSelectedGroupWithInstalled()
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
@@ -366,7 +421,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val idx = OnlineInstaller.matchInstalledIndex(catalog, installed)
         if (idx !in catalog.indices) return
         val matched = catalog[idx]
-        if (installed.version != matched.version || (installed.fileId <= 0 && matched.fileId > 0)) {
+        val needsGroupSync = matched.group.isNotBlank() && installed.group != matched.group
+        if (installed.version != matched.version || (installed.fileId <= 0 && matched.fileId > 0) || needsGroupSync) {
             val resolvedBaseVer = if (!matched.isPatch) {
                 matched.version
             } else {
@@ -384,7 +440,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     baseVersion = resolvedBaseVer,
                     fileId = if (installed.fileId > 0) installed.fileId else matched.fileId,
                     baseFileId = if (installed.baseFileId > 0) installed.baseFileId else resolvedBaseFid,
-                    kind = descriptor.overlayKind
+                    kind = descriptor.overlayKind,
+                    group = matched.group.ifBlank { installed.group }
                 )
             )
             gameList.refreshItemMetadata(currentTarget)
@@ -392,14 +449,75 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
     }
 
+    private fun renderGroupTabs(groups: List<String>, visible: Boolean, enabled: Boolean) {
+        val container = findViewById<LinearLayout>(R.id.mod_mgr_group_tabs) ?: return
+        if (!visible || groups.size <= 1) {
+            container.visibility = View.GONE
+            if (renderedGroupKey != null) {
+                container.removeAllViews()
+                renderedGroupKey = null
+            }
+            return
+        }
+        container.visibility = View.VISIBLE
+        val renderKey = "${groups.joinToString("\u0001")}|$selectedGroup|$enabled"
+        if (renderedGroupKey == renderKey && container.childCount == groups.size) {
+            return
+        }
+        renderedGroupKey = renderKey
+        container.removeAllViews()
+        val gap = UiKit.dpInt(this, 8)
+        for ((i, group) in groups.withIndex()) {
+            val isSelected = group.equals(selectedGroup, ignoreCase = true)
+            val styleRes = if (isSelected) {
+                R.style.Widget_Launcher_Button_Filled
+            } else {
+                R.style.Widget_Launcher_Button
+            }
+            val btn = Button(this, null, 0, styleRes).apply {
+                text = group
+                isEnabled = enabled
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                    if (i > 0) marginStart = gap
+                }
+                setOnClickListener {
+                    if (!selectedGroup.equals(group, ignoreCase = true)) {
+                        selectedGroup = group
+                        userPickedGroup = true
+                        updateUi()
+                    }
+                }
+            }
+            container.addView(btn)
+        }
+    }
+
     private fun updateUi() {
         val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
-        val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
+        val groups = availableGroups()
+        if (groups.size > 1 && (selectedGroup.isBlank() || groups.none { it.equals(selectedGroup, ignoreCase = true) })) {
+            syncSelectedGroupWithInstalled()
+        }
+        val visible = visibleReleases()
+        val installedAllIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
         val displayVer = when {
-            installedIdx in releases.indices -> releases[installedIdx].version
+            installedAllIdx in releases.indices -> releases[installedAllIdx].version
             installed != null && installed.version.isNotBlank() -> installed.version
+            else -> ""
+        }
+        val installedGroup = when {
+            installedAllIdx in releases.indices && releases[installedAllIdx].group.isNotBlank() ->
+                releases[installedAllIdx].group
+            !installed?.group.isNullOrBlank() -> installed!!.group
+            else -> ""
+        }
+        val installedDisplayLabel = when {
+            !isCnPatch && installedGroup.isNotBlank() && displayVer.isNotBlank() &&
+                !installedGroup.equals(displayVer, ignoreCase = true) ->
+                "$installedGroup · $displayVer"
+            displayVer.isNotBlank() -> displayVer
             else -> ""
         }
 
@@ -408,12 +526,17 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
         val statusPart = when {
             !hasMod -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_none else R.string.mod_mgr_status_none)
-            displayVer.isNotBlank() -> getString(R.string.mod_mgr_status_ver, displayVer)
+            installedDisplayLabel.isNotBlank() -> getString(R.string.mod_mgr_status_ver, installedDisplayLabel)
             else -> getString(if (isCnPatch) R.string.cn_patch_mgr_status_installed else R.string.mod_mgr_status_installed)
         }
         val summaryView = findViewById<TextView>(R.id.mod_mgr_summary)
-        summaryView.text = if (onlineEnabled && releases.isNotEmpty()) {
-            "$statusPart · ${getString(R.string.mod_mgr_summary_format, releases[0].version)}"
+        summaryView.text = if (onlineEnabled && visible.isNotEmpty()) {
+            val latestPart = getString(R.string.mod_mgr_summary_format, visible[0].version)
+            if (groups.size > 1 && visible[0].group.isNotBlank()) {
+                "$statusPart · ${visible[0].group} $latestPart"
+            } else {
+                "$statusPart · $latestPart"
+            }
         } else {
             statusPart
         }
@@ -430,6 +553,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         btnRestore.setText(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
         btnRestore.isEnabled = gameList.canRestoreVanilla(currentTarget) && !isBusy
 
+        renderGroupTabs(groups, visible = onlineEnabled && groups.size > 1, enabled = !isBusy)
+
         val btnUpdate = findViewById<Button>(R.id.btn_mod_mgr_update)
         val showUpdateBtn = onlineEnabled || isInstallingThis
         btnUpdate.visibility = if (showUpdateBtn) View.VISIBLE else View.GONE
@@ -441,6 +566,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
         }
 
+        val switchingSeries = hasMod && visible.isNotEmpty() &&
+            OnlineInstaller.groupsConflict(visible[0].group, installed?.group)
+
         when {
             isInstallingThis -> {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_downloading)
@@ -448,7 +576,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
             isBusy -> {
                 btnUpdate.text = getString(
-                    if (!hasMod) R.string.mod_mgr_btn_install_latest else R.string.mod_mgr_btn_update_latest
+                    when {
+                        !hasMod -> R.string.mod_mgr_btn_install_latest
+                        switchingSeries -> R.string.mod_mgr_btn_switch_series
+                        else -> R.string.mod_mgr_btn_update_latest
+                    }
                 )
                 btnUpdate.isEnabled = false
             }
@@ -463,14 +595,18 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 btnUpdate.text = getString(R.string.mod_mgr_btn_retry)
                 btnUpdate.isEnabled = true
             }
-            releases.isNotEmpty() -> {
-                val plan = OnlineInstaller.computeUpdatePlan(releases, hasMod, installed)
+            visible.isNotEmpty() -> {
+                val plan = OnlineInstaller.computeUpdatePlan(visible, hasMod, installed)
                 if (plan == null) {
                     btnUpdate.text = getString(R.string.mod_mgr_btn_up_to_date)
                     btnUpdate.isEnabled = false
                 } else {
                     val baseLabel = getString(
-                        if (!hasMod) R.string.mod_mgr_btn_install_latest else R.string.mod_mgr_btn_update_latest
+                        when {
+                            !hasMod -> R.string.mod_mgr_btn_install_latest
+                            switchingSeries -> R.string.mod_mgr_btn_switch_series
+                            else -> R.string.mod_mgr_btn_update_latest
+                        }
                     )
                     val planBytes = plan.steps.sumOf { it.expectedSize.coerceAtLeast(0L) }
                     val sizeStr = OnlineInstaller.formatSize(planBytes)
@@ -485,7 +621,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         val emptyView = findViewById<TextView>(R.id.mod_mgr_empty_view)
-        if (releases.isEmpty()) {
+        if (visible.isEmpty()) {
             emptyView.visibility = View.VISIBLE
             val label = when {
                 !onlineEnabled -> getString(R.string.mod_mgr_online_disabled)
@@ -525,7 +661,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val names = Array(candidates.size) { idx ->
             val it = candidates[idx]
             val ver = if (gameList.hasInstalledMod(it)) {
-                gameList.getInstalledModInfo(it)?.version?.takeIf { v -> v.isNotBlank() } ?: fallbackTag
+                val info = gameList.getInstalledModInfo(it)
+                val v = info?.version?.takeIf { s -> s.isNotBlank() } ?: fallbackTag
+                val g = info?.group?.takeIf { s -> s.isNotBlank() }
+                if (!isCnPatch && g != null && !g.equals(v, ignoreCase = true)) "$g · $v" else v
             } else {
                 null
             }
@@ -539,6 +678,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     if (which in candidates.indices) {
                         currentTarget = candidates[which]
                         currentTargetPath = currentTarget.path.path
+                        userPickedGroup = false
+                        syncSelectedGroupWithInstalled(forceAuto = true)
                         updateUi()
                     }
                     dlg.dismiss()
@@ -611,7 +752,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
-        val plan = OnlineInstaller.computeUpdatePlan(releases, hasMod, installed) ?: return
+        val plan = OnlineInstaller.computeUpdatePlan(visibleReleases(), hasMod, installed) ?: return
         executeSteps(plan.steps)
     }
 
@@ -703,15 +844,16 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
             return
         }
-        if (index !in releases.indices) return
-        val entry = releases[index]
+        val visible = visibleReleases()
+        if (index !in visible.indices) return
+        val entry = visible[index]
         val hasMod = gameList.hasInstalledMod(currentTarget)
         val installed = gameList.getInstalledModInfo(currentTarget)
-        val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
-        val hasMatchingBase = OnlineInstaller.hasMatchingBaseForPatch(releases, index, hasMod, installed)
+        val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(visible, installed) else -1
+        val hasMatchingBase = OnlineInstaller.hasMatchingBaseForPatch(visible, index, hasMod, installed)
         val comboSteps = if (entry.isPatch) {
             OnlineInstaller.computeStepsForSelectedRelease(
-                releases = releases,
+                releases = visible,
                 targetIdx = index,
                 hasMod = hasMod,
                 installed = installed,
@@ -722,7 +864,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
         val patchOnlySteps = if (entry.isPatch) {
             OnlineInstaller.computeStepsForSelectedRelease(
-                releases = releases,
+                releases = visible,
                 targetIdx = index,
                 hasMod = hasMod,
                 installed = installed,
@@ -733,6 +875,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         val msg = buildString {
+            if (entry.group.isNotBlank()) {
+                append(getString(R.string.mod_mgr_detail_group, entry.group)).append("\n")
+            }
             append(getString(R.string.mod_mgr_detail_file, entry.fileName))
             val sizeStr = OnlineInstaller.formatSize(entry.expectedSize)
             if (sizeStr.isNotEmpty()) {
@@ -768,8 +913,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             .setNegativeButton(R.string.cancel, null)
 
         if (!entry.isPatch) {
+            val switchingGroup = hasMod && OnlineInstaller.groupsConflict(entry.group, installed?.group)
             val posLabel = when {
                 hasMod && installedIdx == index -> getString(R.string.mod_mgr_action_reinstall)
+                switchingGroup -> getString(R.string.mod_mgr_btn_switch_series)
                 hasMod -> getString(R.string.mod_mgr_action_switch)
                 else -> getString(R.string.mod_mgr_action_install)
             }
@@ -974,19 +1121,21 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private inner class ModReleaseAdapter : BaseAdapter() {
-        override fun getCount(): Int = releases.size
-        override fun getItem(position: Int): ModReleaseEntry = releases[position]
-        override fun getItemId(position: Int): Long = releases[position].fileId.toLong()
+        override fun getCount(): Int = visibleReleases().size
+        override fun getItem(position: Int): ModReleaseEntry = visibleReleases()[position]
+        override fun getItemId(position: Int): Long = visibleReleases()[position].fileId.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val view = convertView ?: LayoutInflater.from(this@ModManagerActivity)
                 .inflate(R.layout.list_item_entry, parent, false)
-            val entry = releases[position]
+            val visible = visibleReleases()
+            val entry = visible[position]
             val hasMod = gameList.hasInstalledMod(currentTarget)
             val installed = gameList.getInstalledModInfo(currentTarget)
-            val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(releases, installed) else -1
+            val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(visible, installed) else -1
             val isCurrent = hasMod && installedIdx == position
-            val isCurrentBase = hasMod && !isCurrent && !entry.isPatch && installed != null && (
+            val isCurrentBase = hasMod && !isCurrent && !entry.isPatch && installed != null &&
+                !OnlineInstaller.groupsConflict(entry.group, installed.group) && (
                 (installed.baseFileId > 0 && installed.baseFileId == entry.fileId) ||
                     (!installed.baseVersion.isNullOrBlank() &&
                         OnlineInstaller.normalizeModVersionKey(installed.baseVersion) ==

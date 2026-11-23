@@ -852,6 +852,7 @@ struct sortable {
 };
 
 static int current_sort_function;
+static int current_sort_object = -1;
 static enum ain_data_type current_sort_elem_type;
 
 static enum ain_data_type page_array_elem_type(const struct page *page)
@@ -883,14 +884,26 @@ static int array_compare_custom(const void *_a, const void *_b)
 {
 	const struct sortable *a = _a;
 	const struct sortable *b = _b;
+	bool is_bool_pred = ain && current_sort_function >= 0 && current_sort_function < ain->nr_functions
+		&& ain->functions[current_sort_function].return_type.data == AIN_BOOL;
 	stack_push(prepare_compare_arg(current_sort_function, 0, a->v, current_sort_elem_type));
 	stack_push(prepare_compare_arg(current_sort_function, 1, b->v, current_sort_elem_type));
-	vm_call(current_sort_function, -1);
+	vm_call(current_sort_function, current_sort_object);
 	int d = stack_pop().i;
+	if (is_bool_pred) {
+		if (d)
+			return -1;
+		stack_push(prepare_compare_arg(current_sort_function, 0, b->v, current_sort_elem_type));
+		stack_push(prepare_compare_arg(current_sort_function, 1, a->v, current_sort_elem_type));
+		vm_call(current_sort_function, current_sort_object);
+		if (stack_pop().i)
+			return 1;
+		return a->index - b->index;
+	}
 	return d ? d : a->index - b->index;
 }
 
-void array_sort(struct page *page, int compare_fno)
+void array_sort(struct page *page, int compare_fno, int compare_obj)
 {
 	if (!page)
 		return;
@@ -903,11 +916,14 @@ void array_sort(struct page *page, int compare_fno)
 			values[i].index = i;
 		}
 		int prev_fn = current_sort_function;
+		int prev_obj = current_sort_object;
 		enum ain_data_type prev_elem = current_sort_elem_type;
 		current_sort_function = compare_fno;
+		current_sort_object = compare_obj;
 		current_sort_elem_type = elem_type;
 		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_custom);
 		current_sort_function = prev_fn;
+		current_sort_object = prev_obj;
 		current_sort_elem_type = prev_elem;
 		for (int i = 0; i < page->nr_vars; i++) {
 			page->values[i] = values[i].v;
@@ -987,7 +1003,7 @@ void array_sort_mem(struct page *page, int member_no)
 	free(values);
 }
 
-int array_find(struct page *page, int start, int end, union vm_value v, int compare_fno)
+int array_find(struct page *page, int start, int end, union vm_value v, int compare_fno, int compare_obj)
 {
 	if (!page)
 		return -1;
@@ -1016,7 +1032,7 @@ int array_find(struct page *page, int start, int end, union vm_value v, int comp
 	for (int i = start; i < end; i++) {
 		stack_push(prepare_compare_arg(compare_fno, 0, v, elem_type));
 		stack_push(prepare_compare_arg(compare_fno, 1, page->values[i], elem_type));
-		vm_call(compare_fno, -1);
+		vm_call(compare_fno, compare_obj);
 		if (stack_pop().i)
 			return i;
 	}

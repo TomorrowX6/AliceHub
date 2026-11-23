@@ -79,11 +79,11 @@ enum ModOverlay {
         if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) { return true }
         for file in ModFiles.children(directory).filter(ModFiles.isFile) {
             let name = file.lastPathComponent.lowercased()
-            if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
+            if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10cgbfyy") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10flatbfyy") && name.hasSuffix(".afa")) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
             if name == "rance10.ain", let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 8_000_000 { return true }
         }
-        let ini = ModFiles.ini(directory), name = ini["gamename"] ?? ""
-        return ini["savefolder"]?.lowercased() == "modsavedata" || name.contains("收费必是倒卖") || name.contains("日不落") || name.contains("[MOD")
+        let ini = ModFiles.ini(directory), name = ini["gamename"] ?? "", saveFolder = ini["savefolder"]?.lowercased() ?? ""
+        return saveFolder == "modsavedata" || saveFolder == "savedatabfyy" || name.contains("收费必是倒卖") || name.contains("日不落") || name.contains("全系列") || name.lowercased().contains("bfyy") || name.contains("[MOD")
     }
     static func canRestoreVanilla(_ directory: URL) -> Bool {
         ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
@@ -93,15 +93,28 @@ enum ModOverlay {
         let raw = (baseName ?? ModFiles.ini(directory)["gamename"] ?? directory.lastPathComponent).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
         guard info != nil || detectInstalledMod(directory) else { return raw }
         let backup = ["AliceStart.ini.vanilla.bak", "System40.ini.vanilla.bak"].map { directory.appendingPathComponent($0) }.first(where: ModFiles.exists)
-        var base = (backup.flatMap { ModFiles.iniFile($0)["gamename"] } ?? ((raw.contains("收费必是倒卖") || raw.contains("日不落")) ? "兰斯10 决战" : raw)).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
+        var base = (backup.flatMap { ModFiles.iniFile($0)["gamename"] } ?? ((raw.contains("收费必是倒卖") || raw.contains("日不落") || raw.contains("全系列") || raw.lowercased().contains("bfyy")) ? "兰斯10 决战" : raw)).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
         if base.hasSuffix("[MOD]") { base = String(base.dropLast(5)) }
         let tag = info?.kind == "cn_patch" ? "汉化" : "MOD"
-        return base.trimmingCharacters(in: .whitespacesAndNewlines) + " [" + tag + (info.map { " · " + $0.version } ?? "") + "]"
+        let detail: String
+        if let info {
+            if info.kind != "cn_patch", !info.group.isEmpty, info.group.caseInsensitiveCompare(info.version) != .orderedSame {
+                detail = " · " + info.group + " · " + info.version
+            } else {
+                detail = " · " + info.version
+            }
+        } else {
+            detail = ""
+        }
+        return base.trimmingCharacters(in: .whitespacesAndNewlines) + " [" + tag + detail + "]"
     }
     private static func isAsset(_ file: URL) -> Bool { ModFiles.isFile(file) && ["ain", "afa", "ex", "ald", "bgi", "wai", "fnl"].contains(file.pathExtension.lowercased()) }
     static func isStandaloneFullModDir(_ root: URL) -> Bool {
         let names = ModFiles.children(root).filter(ModFiles.isFile).map { $0.lastPathComponent.lowercased() }
-        return names.contains(where: { $0.hasSuffix(".ain") }) && names.contains("rance10modcg.afa") && names.contains("rance10modflat.afa")
+        let hasAin = names.contains(where: { $0.hasSuffix(".ain") })
+        let hasRibuluo = names.contains("rance10modcg.afa") && names.contains("rance10modflat.afa")
+        let hasBfyy = names.contains(where: { $0.hasPrefix("rance10cgbfyy") && $0.hasSuffix(".afa") }) && names.contains("rance10flatbfyy.afa")
+        return hasAin && (hasRibuluo || hasBfyy)
     }
     static func findModRootDir(_ staging: URL, isCnPatch: Bool = false) throws -> URL {
         var current = staging

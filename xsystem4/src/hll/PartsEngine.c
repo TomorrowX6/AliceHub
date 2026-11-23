@@ -70,6 +70,13 @@ static void PartsEngine_Update(int passed_time, bool is_skip, bool message_windo
 	PE_Update(passed_time, message_window_show);
 }
 
+static void PartsEngine_Update_v8(int passed_time, possibly_unused bool is_skip,
+		bool message_window_show, possibly_unused float multiply_rate,
+		possibly_unused float alpha_rate)
+{
+	PE_Update(passed_time, message_window_show);
+}
+
 static void PartsEngine_Update_v12(int passed_time, int scaled_time, bool message_window_show,
 		float multiply_rate, float alpha_rate)
 {
@@ -3929,7 +3936,11 @@ static void PartsEngine_PreLink(void)
 	}
 	fun = get_fun(libno, "UpdateComponent");
 	if (fun && fun->nr_arguments == 5) {
-		static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
+		if (fun->arguments[1].type.data == AIN_BOOL) {
+			static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v8);
+		} else {
+			static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
+		}
 	}
 	fun = get_fun(libno, "Parts_GetPartsCGName");
 	if (fun && fun->return_type.data == AIN_STRING) {

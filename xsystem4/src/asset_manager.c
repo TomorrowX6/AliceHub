@@ -430,6 +430,12 @@ static bool afa_is_mod_archive(const char *filepath)
 		    tolower((unsigned char)p[1]) == 'o' &&
 		    tolower((unsigned char)p[2]) == 'd')
 			return true;
+		if (p[3] &&
+		    tolower((unsigned char)p[0]) == 'b' &&
+		    tolower((unsigned char)p[1]) == 'f' &&
+		    tolower((unsigned char)p[2]) == 'y' &&
+		    tolower((unsigned char)p[3]) == 'y')
+			return true;
 	}
 	return false;
 }

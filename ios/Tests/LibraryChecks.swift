@@ -210,6 +210,13 @@ struct LibraryChecks {
         library.importFolder(source)
         awaitImport()
         precondition(library.games.isEmpty && library.error == LibraryError.notGame.localizedDescription)
+        let mamanDir = root.appendingPathComponent("Maman")
+        try files.createDirectory(at: mamanDir, withIntermediateDirectories: true)
+        try Data().write(to: mamanDir.appendingPathComponent("AliceStart.ini"))
+        try Data().write(to: mamanDir.appendingPathComponent("Maman.ain"))
+        precondition(GameLibrary.isGame(mamanDir))
+        let mamanGame = Game(url: mamanDir)
+        precondition(mamanGame.engine == .system4 && mamanGame.artworkKey == "maman")
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

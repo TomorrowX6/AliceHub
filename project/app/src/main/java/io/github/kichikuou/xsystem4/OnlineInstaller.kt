@@ -44,7 +44,7 @@ data class ModReleaseEntry(
         get() = version.contains("完整") || fileName.contains("完整") || version.contains("正式版")
 }
 
-data class InstalledModInfo(
+data class InstalledModInfo @JvmOverloads constructor(
     val version: String,
     val baseVersion: String?,
     val fileId: Int,
@@ -53,7 +53,8 @@ data class InstalledModInfo(
     val uploadedAt: String,
     val source: String,
     val installedAtMs: Long,
-    val kind: String = KIND_MOD
+    val kind: String = KIND_MOD,
+    val group: String = ""
 ) {
     val formattedDate: String
         get() = uploadedAt.replace('T', ' ').take(16)
@@ -98,6 +99,13 @@ data class InstalledModInfo(
                         fallbackIniDir = gameDir
                     )
                 }
+                val group = if (j.has("group")) {
+                    j.optString("group", "").trim()
+                } else if (kind == KIND_MOD) {
+                    OnlineInstaller.inferModGroup(fileName, gameDir)
+                } else {
+                    ""
+                }
                 InstalledModInfo(
                     version = ver,
                     baseVersion = baseVer,
@@ -107,7 +115,8 @@ data class InstalledModInfo(
                     uploadedAt = j.optString("uploadedAt", "").trim(),
                     source = source,
                     installedAtMs = j.optLong("installedAtMs", 0L),
-                    kind = kind
+                    kind = kind,
+                    group = group
                 )
             } catch (_: Throwable) {
                 null
@@ -117,7 +126,10 @@ data class InstalledModInfo(
         fun readOrInfer(gameDir: File): InstalledModInfo? {
             read(gameDir)?.let { return it }
             if (!Item.detectInstalledMod(gameDir)) return null
-            val inferred = OnlineInstaller.extractCanonicalModVersionFromDir(gameDir) ?: return null
+            val inferred = OnlineInstaller.extractCanonicalModVersionFromDir(gameDir)
+                ?: OnlineInstaller.inferModGroup("", gameDir).takeIf { it.isNotEmpty() }
+                ?: return null
+            val inferredGroup = OnlineInstaller.inferModGroup("", gameDir)
             return InstalledModInfo(
                 version = inferred,
                 baseVersion = inferred,
@@ -126,7 +138,8 @@ data class InstalledModInfo(
                 fileName = "",
                 uploadedAt = "",
                 source = "preinstalled",
-                installedAtMs = 0L
+                installedAtMs = 0L,
+                group = inferredGroup
             )
         }
 
@@ -142,6 +155,7 @@ data class InstalledModInfo(
                     .put("source", info.source)
                     .put("installedAtMs", info.installedAtMs)
                     .put("kind", info.kind)
+                    .put("group", info.group)
                 File(gameDir, META_FILE_NAME).writeText(j.toString(), Charsets.UTF_8)
             } catch (_: Throwable) {
             }
@@ -289,6 +303,7 @@ object OnlineInstaller {
     const val OYAKORANKAN_CDN_URL = "https://alicehub.000.moe/oyakorankan"
     const val YORUGAKURU_CDN_URL = "https://alicehub.000.moe/yorugakuru"
     const val RANCE1DIGEST_CDN_URL = "https://alicehub.000.moe/rance1digest"
+    const val MAMAN_CDN_URL = "https://alicehub.000.moe/maman"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -359,10 +374,18 @@ object OnlineInstaller {
                 "rance10日不落mod",
                 "日不落mod",
                 "日不落",
+                "兰斯10全系列mod",
+                "rance10全系列mod",
+                "r10全系列mod",
+                "全系列mod",
+                "全系列",
+                "bfyy",
                 "兰斯10mod",
                 "rance10mod",
+                "r10mod",
                 "兰斯10",
-                "rance10"
+                "rance10",
+                "r10"
             )) {
                 if (s.startsWith(prefix)) {
                     s = s.removePrefix(prefix).trimStart('-', '.')
@@ -452,8 +475,12 @@ object OnlineInstaller {
                 "决战",
                 "rance10",
                 "rance 10",
+                "r10",
                 "日不落mod",
                 "日不落",
+                "全系列mod",
+                "全系列",
+                "bfyy",
                 "mod"
             )) {
                 if (cleaned.startsWith(prefix, ignoreCase = true)) {
@@ -556,20 +583,94 @@ object OnlineInstaller {
         return if (verMatch != null) "V${verMatch.groupValues[1]}" else "V1.00"
     }
 
+    const val MOD_GROUP_RIBULUO = "日不落MOD"
+    const val MOD_GROUP_BFYY = "全系列MOD"
+
+    fun inferModGroup(fileName: String = "", gameDir: File? = null): String {
+        val lowerName = fileName.lowercase(Locale.ROOT)
+        if (lowerName.contains("全系列") || lowerName.contains("bfyy") || lowerName.contains("波风幽影")) {
+            return MOD_GROUP_BFYY
+        }
+        if (lowerName.contains("日不落")) {
+            return MOD_GROUP_RIBULUO
+        }
+        if (gameDir != null && gameDir.isDirectory) {
+            val children = gameDir.listFiles()
+            if (children != null) {
+                for (f in children) {
+                    if (!f.isFile) continue
+                    val n = f.name.lowercase(Locale.ROOT)
+                    if ((n.startsWith("rance10cgbfyy") || n.startsWith("rance10flatbfyy")) && n.endsWith(".afa")) {
+                        return MOD_GROUP_BFYY
+                    }
+                    if ((n.startsWith("rance10modcg") || n.startsWith("rance10modflat")) && n.endsWith(".afa")) {
+                        return MOD_GROUP_RIBULUO
+                    }
+                }
+            }
+            val iniFile = resolveModVersionIniFile(gameDir)
+            if (iniFile != null) {
+                val ini = runCatching { System40Ini.parse(iniFile) }.getOrNull()
+                if (ini?.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true) {
+                    return MOD_GROUP_BFYY
+                }
+                val gn = ini?.gameName.orEmpty()
+                if (gn.contains("全系列") || gn.contains("bfyy", ignoreCase = true)) {
+                    return MOD_GROUP_BFYY
+                }
+                if (gn.contains("日不落") || ini?.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true) {
+                    return MOD_GROUP_RIBULUO
+                }
+            }
+        }
+        return ""
+    }
+
+    fun distinctModGroups(releases: List<ModReleaseEntry>): List<String> {
+        val seen = LinkedHashSet<String>()
+        for (r in releases) {
+            val g = r.group.trim()
+            if (g.isNotEmpty()) seen.add(g)
+        }
+        return seen.toList()
+    }
+
+    fun releasesForGroup(releases: List<ModReleaseEntry>, group: String?): List<ModReleaseEntry> {
+        val groups = distinctModGroups(releases)
+        if (groups.size <= 1 || group.isNullOrBlank()) return releases
+        val filtered = releases.filter { it.group.equals(group, ignoreCase = true) }
+        return if (filtered.isNotEmpty()) filtered else releases
+    }
+
+    fun groupsConflict(a: String?, b: String?): Boolean {
+        val ga = a?.trim().orEmpty()
+        val gb = b?.trim().orEmpty()
+        return ga.isNotEmpty() && gb.isNotEmpty() && !ga.equals(gb, ignoreCase = true)
+    }
+
+    private fun sameReleaseGroup(a: ModReleaseEntry, b: ModReleaseEntry): Boolean =
+        !groupsConflict(a.group, b.group)
+
     fun matchInstalledIndex(releases: List<ModReleaseEntry>, installed: InstalledModInfo?): Int {
         if (installed == null || releases.isEmpty()) return -1
         if (installed.fileId > 0) {
-            val byId = releases.indexOfFirst { it.fileId == installed.fileId }
+            val byId = releases.indexOfFirst {
+                it.fileId == installed.fileId && !groupsConflict(it.group, installed.group)
+            }
             if (byId >= 0) return byId
         }
         if (installed.fileName.isNotBlank()) {
-            val byFile = releases.indexOfFirst { it.fileName.equals(installed.fileName, ignoreCase = true) }
+            val byFile = releases.indexOfFirst {
+                it.fileName.equals(installed.fileName, ignoreCase = true) && !groupsConflict(it.group, installed.group)
+            }
             if (byFile >= 0) return byFile
             val normFile = normalizeModVersionKey(installed.fileName)
             if (normFile.isNotEmpty()) {
                 val byNormFile = releases.indexOfFirst {
-                    normalizeModVersionKey(it.fileName) == normFile ||
-                        normalizeModVersionKey(it.version) == normFile
+                    !groupsConflict(it.group, installed.group) && (
+                        normalizeModVersionKey(it.fileName) == normFile ||
+                            normalizeModVersionKey(it.version) == normFile
+                        )
                 }
                 if (byNormFile >= 0) return byNormFile
             }
@@ -577,8 +678,10 @@ object OnlineInstaller {
         val normInstalled = normalizeModVersionKey(installed.version)
         if (normInstalled.isNotEmpty()) {
             val byVer = releases.indexOfFirst {
-                normalizeModVersionKey(it.version) == normInstalled ||
-                    normalizeModVersionKey(it.fileName) == normInstalled
+                !groupsConflict(it.group, installed.group) && (
+                    normalizeModVersionKey(it.version) == normInstalled ||
+                        normalizeModVersionKey(it.fileName) == normInstalled
+                    )
             }
             if (byVer >= 0) return byVer
         }
@@ -590,6 +693,7 @@ object OnlineInstaller {
         installed: InstalledModInfo?
     ): Boolean {
         if (installed == null) return false
+        if (groupsConflict(baseRelease.group, installed.group)) return false
         if (installed.baseFileId > 0 && installed.baseFileId == baseRelease.fileId) {
             return true
         }
@@ -611,10 +715,13 @@ object OnlineInstaller {
         if (!hasMod || patchIdx !in releases.indices) return false
         val patch = releases[patchIdx]
         if (!patch.isPatch) return false
-        val baseIdx = (patchIdx + 1 until releases.size).firstOrNull { !releases[it].isPatch } ?: return false
+        if (groupsConflict(patch.group, installed?.group)) return false
+        val baseIdx = (patchIdx + 1 until releases.size).firstOrNull {
+            !releases[it].isPatch && sameReleaseGroup(patch, releases[it])
+        } ?: return false
         val baseRelease = releases[baseIdx]
         val installedIdx = matchInstalledIndex(releases, installed)
-        if (installedIdx in patchIdx..baseIdx) return true
+        if (installedIdx in patchIdx..baseIdx && sameReleaseGroup(patch, releases[installedIdx])) return true
         return isInstalledMatchingBaseRelease(baseRelease, installed)
     }
 
@@ -624,11 +731,12 @@ object OnlineInstaller {
         installed: InstalledModInfo?
     ): ModUpdatePlan? {
         val latest = releases.firstOrNull() ?: return null
-        val installedIdx = if (hasMod) matchInstalledIndex(releases, installed) else -1
-        if (hasMod && installedIdx == 0) {
+        val switchingGroup = hasMod && groupsConflict(latest.group, installed?.group)
+        val installedIdx = if (hasMod && !switchingGroup) matchInstalledIndex(releases, installed) else -1
+        if (hasMod && !switchingGroup && installedIdx == 0) {
             return null
         }
-        if (hasMod && installed != null && installed.fileId > 0 && latest.fileId > 0 &&
+        if (hasMod && !switchingGroup && installed != null && installed.fileId > 0 && latest.fileId > 0 &&
             installedIdx < 0 && installed.fileId >= latest.fileId
         ) {
             return null
@@ -640,9 +748,11 @@ object OnlineInstaller {
                 isIncrementalOnly = false
             )
         }
-        val baseIdx = (1 until releases.size).firstOrNull { !releases[it].isPatch } ?: -1
+        val baseIdx = (1 until releases.size).firstOrNull {
+            !releases[it].isPatch && sameReleaseGroup(latest, releases[it])
+        } ?: -1
         if (baseIdx < 0) {
-            return if (hasMod) {
+            return if (hasMod && !switchingGroup) {
                 ModUpdatePlan(
                     targetRelease = latest,
                     steps = listOf(latest),
@@ -653,17 +763,19 @@ object OnlineInstaller {
             }
         }
         val baseRelease = releases[baseIdx]
-        val matchingBase = hasMod && (
-            installedIdx in 1..baseIdx ||
+        val matchingBase = hasMod && !switchingGroup && (
+            (installedIdx in 1..baseIdx && sameReleaseGroup(latest, releases[installedIdx])) ||
                 isInstalledMatchingBaseRelease(baseRelease, installed)
             )
         if (matchingBase) {
             val patches = if (installedIdx in 1..baseIdx) {
-                (installedIdx - 1 downTo 0).map { releases[it] }.filter { it.isPatch }
+                (installedIdx - 1 downTo 0).map { releases[it] }
+                    .filter { it.isPatch && sameReleaseGroup(latest, it) }
             } else {
                 val minFid = installed?.fileId ?: -1
                 (baseIdx - 1 downTo 0).map { releases[it] }.filter {
-                    it.isPatch && (minFid <= 0 || it.fileId <= 0 || it.fileId > minFid)
+                    it.isPatch && sameReleaseGroup(latest, it) &&
+                        (minFid <= 0 || it.fileId <= 0 || it.fileId > minFid)
                 }
             }
             if (patches.isNotEmpty()) {
@@ -677,7 +789,7 @@ object OnlineInstaller {
         val fullSteps = ArrayList<ModReleaseEntry>()
         fullSteps.add(baseRelease)
         for (i in baseIdx - 1 downTo 0) {
-            if (releases[i].isPatch) {
+            if (releases[i].isPatch && sameReleaseGroup(latest, releases[i])) {
                 fullSteps.add(releases[i])
             }
         }
@@ -700,14 +812,16 @@ object OnlineInstaller {
         if (!target.isPatch) {
             return listOf(target)
         }
-        val baseIdx = (targetIdx + 1 until releases.size).firstOrNull { !releases[it].isPatch } ?: -1
+        val baseIdx = (targetIdx + 1 until releases.size).firstOrNull {
+            !releases[it].isPatch && sameReleaseGroup(target, releases[it])
+        } ?: -1
         if (!includeBaseForPatch || baseIdx < 0) {
-            if (hasMod && baseIdx >= 0) {
+            if (hasMod && baseIdx >= 0 && !groupsConflict(target.group, installed?.group)) {
                 val installedIdx = matchInstalledIndex(releases, installed)
-                if (installedIdx in (targetIdx + 1)..baseIdx) {
+                if (installedIdx in (targetIdx + 1)..baseIdx && sameReleaseGroup(target, releases[installedIdx])) {
                     val incremental = (installedIdx - 1 downTo targetIdx)
                         .map { releases[it] }
-                        .filter { it.isPatch }
+                        .filter { it.isPatch && sameReleaseGroup(target, it) }
                     if (incremental.isNotEmpty()) return incremental
                 }
             }
@@ -716,7 +830,7 @@ object OnlineInstaller {
         val steps = ArrayList<ModReleaseEntry>()
         steps.add(releases[baseIdx])
         for (i in baseIdx - 1 downTo targetIdx) {
-            if (releases[i].isPatch) {
+            if (releases[i].isPatch && sameReleaseGroup(target, releases[i])) {
                 steps.add(releases[i])
             }
         }
@@ -811,7 +925,8 @@ object OnlineInstaller {
                 if (!item.isPatch) {
                     resolved.add(item)
                 } else {
-                    val baseEntry = (i + 1 until rawRows.size).map { rawRows[it] }.firstOrNull { !it.isPatch }
+                    val baseEntry = (i + 1 until rawRows.size).map { rawRows[it] }
+                        .firstOrNull { !it.isPatch && sameReleaseGroup(item, it) }
                     resolved.add(
                         item.copy(
                             baseFileId = baseEntry?.fileId,
@@ -1194,6 +1309,7 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_OYAKORANKAN -> sanitizedManifestBase.ifEmpty { "Oyakorankan" }
             classifiedStagedId == GameCatalog.ID_YORUGAKURU -> sanitizedManifestBase.ifEmpty { "Yorugakuru" }
             classifiedStagedId == GameCatalog.ID_RANCE1DIGEST -> sanitizedManifestBase.ifEmpty { "Rance1Digest" }
+            classifiedStagedId == GameCatalog.ID_MAMAN -> sanitizedManifestBase.ifEmpty { "Maman" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -1597,6 +1713,13 @@ object OnlineInstaller {
                         lower.contains("nightremaster") ||
                         lower.contains("夜が来る") ||
                         lower.contains("邪夜将至")
+                    GameCatalog.ID_MAMAN -> lower == "maman" ||
+                        lower.startsWith("maman-") ||
+                        lower.startsWith("maman_") ||
+                        lower.contains("heartfulmaman") ||
+                        lower.contains("heartful maman") ||
+                        lower.contains("は～とふるママン") ||
+                        lower.contains("再婚妈妈")
                     GameCatalog.ID_TSUMAMIGUI -> (lower.contains("tsumamigui") ||
                         lower.contains("妻みぐい") ||
                         lower.contains("妻中蜜")) &&

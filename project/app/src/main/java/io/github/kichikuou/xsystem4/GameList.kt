@@ -143,16 +143,29 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
                 val baseName = (bakIni?.let { System40Ini.parse(it).gameName }
-                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落")) "兰斯10 决战" else rawName)
+                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落") ||
+                        rawName.contains("全系列") || rawName.contains("bfyy", ignoreCase = true)
+                    ) {
+                        "兰斯10 决战"
+                    } else {
+                        rawName
+                    })
                     .replace("兰斯１０", "兰斯10")
                     .removeSuffix("[MOD]")
                     .trim()
                 val verLabel = modMeta?.version?.takeIf { it.isNotBlank() }
+                val groupLabel = modMeta?.group?.takeIf { it.isNotBlank() }
                 val tag = if (modMeta?.kind == InstalledModInfo.KIND_CN_PATCH) "汉化" else "MOD"
-                if (verLabel != null) {
-                    "$baseName [$tag · $verLabel]"
-                } else {
-                    "$baseName [$tag]"
+                when {
+                    modMeta?.kind != InstalledModInfo.KIND_CN_PATCH &&
+                        groupLabel != null &&
+                        verLabel != null &&
+                        !groupLabel.equals(verLabel, ignoreCase = true) ->
+                        "$baseName [$tag · $groupLabel · $verLabel]"
+                    verLabel != null ->
+                        "$baseName [$tag · $verLabel]"
+                    else ->
+                        "$baseName [$tag]"
                 }
             } else {
                 rawName
@@ -190,6 +203,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     if (lower.endsWith(".vanilla.bak") ||
                         (lower.startsWith("rance10modcg") && lower.endsWith(".afa")) ||
                         (lower.startsWith("rance10modflat") && lower.endsWith(".afa")) ||
+                        (lower.startsWith("rance10cgbfyy") && lower.endsWith(".afa")) ||
+                        (lower.startsWith("rance10flatbfyy") && lower.endsWith(".afa")) ||
                         lower == "asratest.ini" ||
                         lower == "作弊码.txt" ||
                         (lower == "rance10.ain" && f.length() > 8_000_000L)
@@ -208,11 +223,16 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 iniFile?.let { System40Ini.parse(it) }
             }
             if (ini != null) {
-                if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true) {
+                if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true ||
+                    ini.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true
+                ) {
                     return true
                 }
                 val gn = ini.gameName ?: ""
-                if (gn.contains("收费必是倒卖") || gn.contains("日不落") || gn.contains("[MOD")) {
+                if (gn.contains("收费必是倒卖") || gn.contains("日不落") ||
+                    gn.contains("全系列") || gn.contains("bfyy", ignoreCase = true) ||
+                    gn.contains("[MOD")
+                ) {
                     return true
                 }
             }
@@ -1498,6 +1518,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_OYAKORANKAN -> "Oyakorankan"
                 classifiedId == GameCatalog.ID_YORUGAKURU -> "Yorugakuru"
                 classifiedId == GameCatalog.ID_RANCE1DIGEST -> "Rance1Digest"
+                classifiedId == GameCatalog.ID_MAMAN -> "Maman"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
@@ -1604,7 +1625,8 @@ class GameList(activity: Activity) {
                     fileName = srcLabel,
                     uploadedAt = "",
                     source = "preinstalled",
-                    installedAtMs = System.currentTimeMillis()
+                    installedAtMs = System.currentTimeMillis(),
+                    group = OnlineInstaller.inferModGroup(srcLabel, gameDir)
                 )
             )
         }
@@ -1704,6 +1726,12 @@ class GameList(activity: Activity) {
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
                         isCnPatch = isCnPatch
                     )
+                    val inferredGroup = if (isCnPatch) {
+                        ""
+                    } else {
+                        OnlineInstaller.inferModGroup(srcLabel, targetItem.path)
+                            .ifEmpty { if (wasFull) "" else prevInfo?.group.orEmpty() }
+                    }
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -1715,7 +1743,8 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            kind = overlayKind
+                            kind = overlayKind,
+                            group = inferredGroup
                         )
                     )
                 }
@@ -1800,6 +1829,12 @@ class GameList(activity: Activity) {
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
                         isCnPatch = isCnPatch
                     )
+                    val inferredGroup = if (isCnPatch) {
+                        ""
+                    } else {
+                        OnlineInstaller.inferModGroup(srcLabel, targetItem.path)
+                            .ifEmpty { if (wasFull) "" else prevInfo?.group.orEmpty() }
+                    }
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -1811,7 +1846,8 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            kind = overlayKind
+                            kind = overlayKind,
+                            group = inferredGroup
                         )
                     )
                 }
@@ -1846,7 +1882,7 @@ class GameList(activity: Activity) {
         }
         val targetVer = steps.last().version
         val targetGroup = steps.last().group
-        val notifLabel = if (isCnPatch && targetGroup.isNotBlank()) {
+        val notifLabel = if (targetGroup.isNotBlank()) {
             "$targetGroup · $targetVer"
         } else {
             targetVer
@@ -1932,6 +1968,9 @@ class GameList(activity: Activity) {
                                 } else {
                                     release.baseFileId ?: prevInfo?.baseFileId ?: -1
                                 }
+                                val resolvedGroup = release.group.ifBlank {
+                                    if (!release.isPatch || wasFull) "" else prevInfo?.group.orEmpty()
+                                }
                                 InstalledModInfo.write(
                                     targetItem.path,
                                     InstalledModInfo(
@@ -1943,7 +1982,8 @@ class GameList(activity: Activity) {
                                         uploadedAt = release.uploadedAt,
                                         source = "online",
                                         installedAtMs = System.currentTimeMillis(),
-                                        kind = overlayKind
+                                        kind = overlayKind,
+                                        group = resolvedGroup
                                     )
                                 )
                             }
@@ -2042,9 +2082,14 @@ private fun isModAssetFile(file: File): Boolean {
 private fun isStandaloneFullModDir(modRoot: File): Boolean {
     val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
     val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
-    val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
-    val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
-    return hasAin && hasModCg && hasModFlat
+    val hasRibuluo = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) } &&
+        topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
+    val hasBfyy = topFiles.any {
+        it.name.startsWith("Rance10CGBFYY", ignoreCase = true) && it.name.endsWith(".afa", ignoreCase = true)
+    } && topFiles.any {
+        it.name.equals("Rance10FlatBFYY.afa", ignoreCase = true)
+    }
+    return hasAin && (hasRibuluo || hasBfyy)
 }
 
 private fun findModRootDir(stagingDir: File, isCnPatch: Boolean = false): File {

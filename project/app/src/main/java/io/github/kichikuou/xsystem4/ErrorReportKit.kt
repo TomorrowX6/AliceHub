@@ -1363,6 +1363,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_yorugakuru_title)
             GameCatalog.isRance1DigestAlias(lower) ->
                 context.getString(R.string.game_rance1digest_title)
+            GameCatalog.isMamanAlias(lower) ->
+                context.getString(R.string.game_maman_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

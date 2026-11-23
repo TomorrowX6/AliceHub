@@ -94,4 +94,5 @@ issues, please let me know or open a pull request to update this table.
 | 奥さまの回復術 純愛編 / 奪愛編                          | Supported   | Official CN GBK (translated PACT keys + 8ch mixer) supported |
 | 夜が来る！-Square of the MOON- Remastered               | Supported   | Official CN GBK (`GetGameVersionByText`, 6ch mixer, XOR-0x49 `*Dict.dat`, widget click fix) supported |
 | Rance -光をもとめて- ダイジェスト版                      | Supported   | JP and CN (GBK fan translation) supported |
+| は～とふるママン                                        | Supported   | JP and CN (GBK; AIN v8 String/Int/Float + A_FIND/A_SORT + PartsEngine v8 + scrollbar fix) supported |
 | All games released after Rance IX                       | Unsupported |       |

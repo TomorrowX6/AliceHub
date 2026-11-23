@@ -7,25 +7,27 @@ struct ModReleaseDetail: View {
 
     var body: some View {
         NavigationView {
-            if model.releases.indices.contains(index) {
-                let entry = model.releases[index]
+            let releases = model.visibleReleases
+            if releases.indices.contains(index) {
+                let entry = releases[index]
                 List {
                     Section {
                         HubSectionHeader(title: entry.version, subtitle: entry.isPatch ? "增量补丁" : "完整版本", symbol: "shippingbox")
                     }.listRowBackground(HubTheme.surface)
                     Section {
+                        if !entry.group.isEmpty { Text("系列：" + entry.group) }
                         Text("文件：" + entry.fileName).textSelection(.enabled)
                         if entry.expectedSize > 0 { Text("大小：" + ModCatalog.formatSize(entry.expectedSize)) }
                         if !entry.formattedDate.isEmpty { Text("时间：" + entry.formattedDate) }
                         Text(entry.isPatch ? "增量补丁 · 需 " + (entry.baseVersion ?? "-") : (model.descriptor.isCnPatch ? "完整汉化补丁" : "完整版本"))
                     }
                     if entry.isPatch, let base = entry.baseVersion,
-                       !ModCatalog.hasMatchingBaseForPatch(model.releases, patchIdx: index, hasMod: model.hasMod, installed: model.installed) {
+                       !ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: index, hasMod: model.hasMod, installed: model.installed) {
                         Section { Text("未安装 \(base)，建议组合安装").foregroundColor(.orange) }
                     }
                     if !entry.changelog.isEmpty { Section("更新说明") { Text(entry.changelog).textSelection(.enabled) } }
                     Section {
-                        ForEach(Array(ModManagerPolicy.actions(model.releases, index: index, hasMod: model.hasMod, installed: model.installed).enumerated()), id: \.offset) { _, action in
+                        ForEach(Array(ModManagerPolicy.actions(releases, index: index, hasMod: model.hasMod, installed: model.installed).enumerated()), id: \.offset) { _, action in
                             Button(action.title) { dismiss(); model.install(action.steps) }
                         }
                     }.disabled(model.busy)

@@ -775,6 +775,19 @@ object GameModifierBridge {
         ) == GameCatalog.ID_RANCE1DIGEST
 
     @JvmOverloads
+    fun isMamanGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_MAMAN
+
+    @JvmOverloads
     fun isNonModifierBuiltInGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -810,7 +823,8 @@ object GameModifierBridge {
         GameCatalog.ID_TOUSHIN3,
         GameCatalog.ID_OYAKORANKAN,
         GameCatalog.ID_YORUGAKURU,
-        GameCatalog.ID_RANCE1DIGEST -> true
+        GameCatalog.ID_RANCE1DIGEST,
+        GameCatalog.ID_MAMAN -> true
         else -> false
     }
 

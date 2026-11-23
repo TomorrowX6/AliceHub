@@ -317,6 +317,9 @@ object NativeGameImport {
         if (GameCatalog.isRance1DigestGameFiles(activeFiles)) {
             return "Rance1Digest"
         }
+        if (GameCatalog.isMamanGameFiles(activeFiles)) {
+            return "Maman"
+        }
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"
         }
