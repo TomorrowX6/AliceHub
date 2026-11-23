@@ -288,6 +288,11 @@
     <string name="game_yorugakuru_title">Yoru ga Kuru! Remastered</string>
     <string name="game_rance1digest_title">Rance 1 Digest</string>
     <string name="game_maman_title">Heartful Maman</string>
+    <string name="game_eveniclerance_title">Evenicle Rance</string>
+    <string name="game_haharanman_title">Haha Ranman</string>
+    <string name="game_tsumamigui2_title">Tsumamigui 2</string>
+    <string name="game_tsumamigui3jun_title">Tsumamigui 3 Spin-off: Pure Love</string>
+    <string name="game_tsumamigui3ntr_title">Tsumamigui 3 Spin-off: NTR</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

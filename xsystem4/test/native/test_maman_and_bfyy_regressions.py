@@ -139,6 +139,8 @@ int main(void) {{
 struct ain *ain = NULL;
 bool parts_v2 = true;
 bool parts_multi_controller = true;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 _Noreturn void _vm_error(const char *fmt, ...) {{ abort(); }}
 
 {v12_builtin_fn}

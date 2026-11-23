@@ -256,6 +256,9 @@ object NativeGameImport {
         if (GameCatalog.isEvenicle2RanceGameFiles(activeFiles)) {
             return "Evenicle2Rance"
         }
+        if (GameCatalog.isEvenicleRanceGameFiles(activeFiles)) {
+            return "EvenicleRance"
+        }
         if (GameCatalog.isEvenicleGaidenGameFiles(activeFiles)) {
             return "EvenicleGaiden"
         }
@@ -277,6 +280,12 @@ object NativeGameImport {
         }
         if (GameCatalog.isHarukaGameFiles(activeFiles)) {
             return "Haruka"
+        }
+        if (GameCatalog.isTsumamigui3JunGameFiles(activeFiles)) {
+            return "Tsumamigui3Jun"
+        }
+        if (GameCatalog.isTsumamigui3NtrGameFiles(activeFiles)) {
+            return "Tsumamigui3Ntr"
         }
         if (GameCatalog.isTsumamigui3GameFiles(activeFiles)) {
             return "Tsumamigui3"
@@ -319,6 +328,12 @@ object NativeGameImport {
         }
         if (GameCatalog.isMamanGameFiles(activeFiles)) {
             return "Maman"
+        }
+        if (GameCatalog.isHaharanmanGameFiles(activeFiles)) {
+            return "Haharanman"
+        }
+        if (GameCatalog.isTsumamigui2GameFiles(activeFiles)) {
+            return "Tsumamigui2"
         }
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"

@@ -69,6 +69,8 @@ bool game_galzoo = false;
 bool game_ixseal = false;
 bool game_tsumashibori = false;
 bool game_tsumamigui3 = false;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 bool game_maman = false;
 bool game_waidonyo = false;
 
@@ -708,6 +710,8 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_ixseal = false;
 	game_tsumashibori = false;
 	game_tsumamigui3 = false;
+	game_tsumamigui3_jun = false;
+	game_tsumamigui3_ntr = false;
 	game_maman = false;
 	game_waidonyo = false;
 
@@ -787,6 +791,22 @@ void apply_game_specific_hacks(struct ain *ain)
 		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
 		game_tsumamigui3 = !strcasecmp(ain_base, "Tsumamigui3.ain");
 	}
+	game_tsumamigui3_jun = ain->version == 8
+		&& ain_get_struct(ain, "C_BOOT_WARNING") >= 0
+		&& ain_has_gbk_string(ain, "-asat;df,zx");
+	if (!game_tsumamigui3_jun && ain->version == 8 && config.ain_filename) {
+		const char *ain_base = strrchr(config.ain_filename, '/');
+		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
+		game_tsumamigui3_jun = !strcasecmp(ain_base, "Tsuma3SO_Junai.ain");
+	}
+	game_tsumamigui3_ntr = ain->version == 8
+		&& ain_get_struct(ain, "C_BOOT_WARNING") >= 0
+		&& ain_has_gbk_string(ain, "asd34k8jklh");
+	if (!game_tsumamigui3_ntr && ain->version == 8 && config.ain_filename) {
+		const char *ain_base = strrchr(config.ain_filename, '/');
+		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
+		game_tsumamigui3_ntr = !strcasecmp(ain_base, "Tsuma3SO_Netorare.ain");
+	}
 	game_maman = ain->version == 8
 		&& ain_get_struct(ain, "C_BOOT_WARNING") >= 0
 		&& ain_get_struct(ain, "SaveData::C_PARAMETER") >= 0;
@@ -816,6 +836,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
+		|| (game_evenicle_rance && (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
+			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9")))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
 		|| (game_rance03 && ain_has_gbk_r03_strings(ain))
@@ -910,7 +932,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 640;
 		config.view_height = 480;
 	}
-	if (((game_tsumamigui3 || game_rance8 || game_escalayer_reboot)
+	if (((game_tsumamigui3 || game_tsumamigui3_jun || game_tsumamigui3_ntr || game_rance8 || game_escalayer_reboot)
 				&& config.view_width == 800 && config.view_height == 600)
 			|| ((game_rance01 || game_rance03 || game_haruurare) && default_view_size)) {
 		config.view_width = 1024;

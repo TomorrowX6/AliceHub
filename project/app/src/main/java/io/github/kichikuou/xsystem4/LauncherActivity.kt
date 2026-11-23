@@ -189,7 +189,12 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_OYAKORANKAN && GameCatalog.isOyakorankanAlias(q)) ||
             (desc.id == GameCatalog.ID_YORUGAKURU && GameCatalog.isYorugakuruAlias(q)) ||
             (desc.id == GameCatalog.ID_RANCE1DIGEST && GameCatalog.isRance1DigestAlias(q)) ||
-            (desc.id == GameCatalog.ID_MAMAN && GameCatalog.isMamanAlias(q))
+            (desc.id == GameCatalog.ID_MAMAN && GameCatalog.isMamanAlias(q)) ||
+            (desc.id == GameCatalog.ID_EVENICLERANCE && GameCatalog.isEvenicleRanceAlias(q)) ||
+            (desc.id == GameCatalog.ID_HAHARANMAN && GameCatalog.isHaharanmanAlias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI2 && GameCatalog.isTsumamigui2Alias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3JUN && GameCatalog.isTsumamigui3JunAlias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3NTR && GameCatalog.isTsumamigui3NtrAlias(q))
         ) {
             return true
         }

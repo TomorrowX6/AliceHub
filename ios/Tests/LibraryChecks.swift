@@ -217,6 +217,20 @@ struct LibraryChecks {
         precondition(GameLibrary.isGame(mamanDir))
         let mamanGame = Game(url: mamanDir)
         precondition(mamanGame.engine == .system4 && mamanGame.artworkKey == "maman")
+        for (dirName, marker, expectedEngine, expectedKey) in [
+            ("EvenicleRance", "EvenicleRance.ain", GameEngine.system4, "eveniclerance"),
+            ("Haharanman", "Haharanman.ain", GameEngine.system4, "haharanman"),
+            ("Tsumamigui2", "System39.ain", GameEngine.system3, "tsumamigui2"),
+            ("Tsumamigui3Jun", "Tsuma3SO_Junai.ain", GameEngine.system4, "tsumamigui3jun"),
+            ("Tsumamigui3Ntr", "Tsuma3SO_Netorare.ain", GameEngine.system4, "tsumamigui3ntr")
+        ] {
+            let gDir = root.appendingPathComponent(dirName)
+            try files.createDirectory(at: gDir, withIntermediateDirectories: true)
+            try Data().write(to: gDir.appendingPathComponent(marker))
+            precondition(GameLibrary.isGame(gDir))
+            let g = Game(url: gDir)
+            precondition(g.engine == expectedEngine && g.artworkKey == expectedKey)
+        }
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

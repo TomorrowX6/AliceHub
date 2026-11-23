@@ -56,7 +56,7 @@ Game Compatibility
 | 兰斯5D (ZH)                                | Supported   | GBK fan translation |
 | 俺の下であがけ                              | Supported   |       |
 | 楽園行                                      | Supported   |       |
-| 妻みぐい２                                  | Supported   |       |
+| 妻みぐい２                                  | Supported   | JP and CN (UTF-8 `System39.ain` + `AlphaMap.alk` skip + CJK fallback font) supported |
 | シェル・クレイル                            | Supported   |       |
 | ナイトデーモン                              | Supported   |       |
 | Nor                                         | Unsupported |       |

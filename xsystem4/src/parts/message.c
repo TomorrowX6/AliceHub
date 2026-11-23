@@ -23,6 +23,7 @@
 #include "system4/string.h"
 
 #include "vm.h"
+#include "xsystem4.h"
 #include "parts.h"
 #include "parts_internal.h"
 
@@ -46,6 +47,19 @@ static STAILQ_HEAD(, parts_message) msg_queue =
 
 static int message_type_v8(int type)
 {
+	// Early AIN v8 (Tsumamigui 3 Spin-offs, Jun 2016) has no DoubleClick slot at 5:
+	// MouseEnter..MouseClick are 0..4, MouseOnCursor..Fixed are 5..24, SwipeBegin..End are 25..27.
+	if ((game_tsumamigui3_jun || game_tsumamigui3_ntr)
+			&& (!ain || !ain->_func_ht
+				|| (ain_get_function(ain, "parts::detail::CPartsMessageManager@CallDelegateMouseDoubleClick") < 0
+					&& ain_get_function(ain, "parts::detail::CPartsMessageManager@CallDelegateDoubleClick") < 0))) {
+		switch (type) {
+		case PARTS_MSG_SWIPE_BEGIN: return 25;
+		case PARTS_MSG_SWIPING: return 26;
+		case PARTS_MSG_SWIPE_END: return 27;
+		default: return type > 0 ? type - 1 : type;
+		}
+	}
 	// CPartsMessageManager.CallDelegate in AIN v8 (Heartful Maman):
 	// MouseEnter..MouseClick are shifted to 0..4 (leaving 5 for DoubleClick),
 	// 6..25 match internal IDs, and SwipeBegin..SwipeEnd are 26..28.

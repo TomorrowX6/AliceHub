@@ -100,6 +100,8 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 		} else if (len >= 4 && strcasecmp(filename + len - 4, ".bgi") == 0) {
 			gr->bgi = strdup(filename);
 		} else if (len >= 5 && strcasecmp(filename + len - 4, ".alk") == 0) {
+			// AlphaMap.alk is an unused helper archive that collides with demo *.alk on gr->alk[0].
+			if (strcasecmp(filename, "AlphaMap.alk") == 0) continue;
 			bool numbered = isdigit((unsigned char)filename[len - 5]);
 			int idx = numbered ? filename[len - 5] - '0' : 0;
 			// Prefer unnumbered <name>.alk (e.g. dDemo.alk) over <name>0.alk backups (e.g. dDemo0.alk).

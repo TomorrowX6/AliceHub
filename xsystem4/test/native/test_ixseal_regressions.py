@@ -173,6 +173,7 @@ LIBSYS4_CORE = [
 
 class TestIxsealRegressions(unittest.TestCase):
     def test_hacks_gbk_detection_resolution_and_version_text(self):
+        fn_gvt = extract_function("src/hll/SystemService.c", "game_version_text")
         fn_gvbt = extract_function("src/hll/SystemService.c", "SystemService_GetGameVersionByText")
         harness = f"""
 #include <assert.h>
@@ -190,6 +191,7 @@ struct config config;
 void message_layout_init_rance03(void) {{}}
 _Noreturn void _vm_error(const char *fmt, ...) {{ abort(); }}
 
+{fn_gvt}
 {fn_gvbt}
 
 static int part_int(const char *s, int start, int len) {{
@@ -547,6 +549,8 @@ bool game_ixseal = true;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = false;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {

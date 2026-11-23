@@ -216,6 +216,26 @@
         "id",
         "=",
         "v20161"
+      ],
+      [
+        "id",
+        "=",
+        "v24002"
+      ],
+      [
+        "id",
+        "=",
+        "v25144"
+      ],
+      [
+        "id",
+        "=",
+        "v1110"
+      ],
+      [
+        "id",
+        "=",
+        "v19661"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -601,6 +621,42 @@
         "released": "2017-01-27",
         "title": "Heartful Maman",
         "votecount": 437
+      },
+      {
+        "alttitle": "イブニクル・ランス版",
+        "average": 67.4,
+        "id": "v24002",
+        "rating": 67.4,
+        "released": "2015-04-24",
+        "title": "Evenicle Rance",
+        "votecount": 229
+      },
+      {
+        "alttitle": "母爛漫",
+        "average": 76.7,
+        "id": "v25144",
+        "rating": 76.7,
+        "released": "2019-04-26",
+        "title": "Haha Ranman",
+        "votecount": 220
+      },
+      {
+        "alttitle": "妻みぐい2",
+        "average": 67.6,
+        "id": "v1110",
+        "rating": 67.5,
+        "released": "2003-03-28",
+        "title": "Tsumamigui 2",
+        "votecount": 82
+      },
+      {
+        "alttitle": "妻みぐい3 スピンオフ",
+        "average": 69.9,
+        "id": "v19661",
+        "rating": 69.9,
+        "released": "2016-06-24",
+        "title": "Tsumamigui 3 Spin-off",
+        "votecount": 168
       }
     ]
   },

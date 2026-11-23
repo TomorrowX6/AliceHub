@@ -373,6 +373,11 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_YORUGAKURU ||
                 id == GameCatalog.ID_RANCE1DIGEST ||
                 id == GameCatalog.ID_MAMAN ||
+                id == GameCatalog.ID_EVENICLERANCE ||
+                id == GameCatalog.ID_HAHARANMAN ||
+                id == GameCatalog.ID_TSUMAMIGUI2 ||
+                id == GameCatalog.ID_TSUMAMIGUI3JUN ||
+                id == GameCatalog.ID_TSUMAMIGUI3NTR ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

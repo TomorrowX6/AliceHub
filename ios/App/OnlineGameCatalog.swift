@@ -51,7 +51,12 @@ struct OnlineGame: Identifiable {
         Self(id: "oyakorankan", title: "母娘乱馆", directory: "Oyakorankan"),
         Self(id: "yorugakuru", title: "邪夜将至 Remastered", directory: "Yorugakuru"),
         Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest"),
-        Self(id: "maman", title: "再婚妈妈", directory: "Maman")
+        Self(id: "maman", title: "再婚妈妈", directory: "Maman"),
+        Self(id: "eveniclerance", title: "夏娃年代记 兰斯版", directory: "EvenicleRance"),
+        Self(id: "haharanman", title: "母烂漫", directory: "Haharanman"),
+        Self(id: "tsumamigui2", title: "妻中蜜2", directory: "Tsumamigui2"),
+        Self(id: "tsumamigui3jun", title: "妻中蜜3 番外 纯爱篇", directory: "Tsumamigui3Jun"),
+        Self(id: "tsumamigui3ntr", title: "妻中蜜3 番外 寝取篇", directory: "Tsumamigui3Ntr")
     ]
 }
 

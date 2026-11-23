@@ -108,8 +108,12 @@ int main(void) {{
     // Custom non-1280x720 viewports stay untouched.
     config.view_width = 800;
     config.view_height = 600;
+    config.view_width_set = true;
+    config.view_height_set = true;
     apply_game_specific_hacks(oya);
     assert(config.view_width == 800 && config.view_height == 600);
+    config.view_width_set = false;
+    config.view_height_set = false;
     ain_free(oya);
     free(config.game_name);
 
@@ -167,6 +171,8 @@ bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = true;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 SDL_AudioDeviceID SDL_OpenAudioDevice(const char *dev, int iscap, const SDL_AudioSpec *desired, SDL_AudioSpec *obtained, int allowed) {
