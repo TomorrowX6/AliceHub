@@ -136,6 +136,10 @@
     <string name="settings_download_route">下载线路</string>
     <string name="download_route_global">国际线路</string>
     <string name="download_route_cn">国内线路</string>
+    <string name="settings_download_concurrency">下载并发数</string>
+    <string name="download_concurrency_value">%1$d 并发</string>
+    <string name="download_concurrency_summary">同时下载的文件或分片连接数（默认 8），网络不稳定时可适当调低。</string>
+    <string name="download_concurrency_reset">恢复默认 (8)</string>
     <string name="action_online_install">在线安装</string>
     <string name="action_online_install_with_size">在线安装 · %1$s</string>
     <string name="action_local_install">本地安装</string>

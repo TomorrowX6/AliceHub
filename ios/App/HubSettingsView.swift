@@ -4,15 +4,31 @@ struct HubSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
     @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
+    @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @State private var gamepad = false
+
+    private var clampedConcurrency: Binding<Int> {
+        Binding(
+            get: { DownloadConcurrency.clamped(downloadConcurrency) },
+            set: { downloadConcurrency = DownloadConcurrency.clamped($0) }
+        )
+    }
 
     var body: some View {
         NavigationView {
             List {
-                Section("下载线路") {
+                Section("下载") {
                     Picker("下载线路", selection: $downloadRoute) {
                         ForEach(DownloadRoute.allCases) { Text($0.title).tag($0.rawValue) }
                     }.pickerStyle(.segmented).padding(.vertical, 8)
+                    Stepper(value: clampedConcurrency, in: DownloadConcurrency.range) {
+                        HStack {
+                            Text("并发下载数")
+                            Spacer()
+                            Text("\(DownloadConcurrency.clamped(downloadConcurrency))")
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }.listRowBackground(HubTheme.surface)
                 Section("外观") {
                     Picker("主题模式", selection: $appearance) {

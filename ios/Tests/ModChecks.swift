@@ -443,5 +443,40 @@ struct ModChecks {
         } catch {}
         precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent("Rance10MODCG.afa")) && !ModFiles.exists(preinstalledRibuluo.appendingPathComponent("Rance10CGBFYY.afa")))
         print("PASS: multi-MOD group isolation, cross-group switching, BFYY detection, displayName and legacy metadata inference")
+
+        // Concurrent segmented Range download + resume with changed concurrency + 200 OK fallback
+        UserDefaults.standard.removeObject(forKey: DownloadConcurrency.storageKey)
+        precondition(DownloadConcurrency.current == 8)
+        precondition(ModInstaller.computeSegmentCount(remainingBytes: 256 * 1024, maxConnections: 8, minSegmentedBytes: 32 * 1024) == 8)
+        precondition(ModInstaller.computeSegmentCount(remainingBytes: 256 * 1024, maxConnections: 1, minSegmentedBytes: 32 * 1024) == 1)
+        let segExpected = try Data(contentsOf: root.appendingPathComponent("segmented.bin"))
+        let segSha = SHA256.hash(data: segExpected).map { String(format: "%02x", $0) }.joined()
+        let segURL = url.replacingOccurrences(of: "/online.zip", with: "/segmented.bin")
+        let segCache = try directory("seg-cache")
+        let segRelease = ModReleaseEntry(fileId: 99, version: "v1", fileName: "segmented.bin", downloadUrl: segURL, expectedSize: Int64(segExpected.count), expectedSha256: segSha)
+        let segFile = try installer.downloadVerifiedFile(segRelease, cache: segCache, maxConnections: 8, minSegmentedBytes: 32 * 1024) { _, _ in }
+        let segGot = try Data(contentsOf: segFile)
+        precondition(segGot == segExpected)
+        // Resume a partially-completed segmented file after lowering concurrency to 1
+        let resumeCache = try directory("seg-resume-cache")
+        let resumePart = ModInstaller.cacheFileURL(for: segRelease, in: resumeCache)
+        let half = segExpected.count / 2
+        try Data(segExpected.prefix(half) + Data(repeating: 0, count: segExpected.count - half)).write(to: resumePart)
+        let segMeta: [String: Any] = [
+            "url": segURL, "etag": "\"seg-fixture\"", "totalBytes": segExpected.count, "sha256": segSha,
+            "segmented": true, "segments": [[0, half - 1, half], [half, segExpected.count - 1, 0]]
+        ]
+        try JSONSerialization.data(withJSONObject: segMeta).write(to: resumePart.appendingPathExtension("meta"))
+        let resumedFile = try installer.downloadVerifiedFile(segRelease, cache: resumeCache, maxConnections: 1, minSegmentedBytes: 32 * 1024) { _, _ in }
+        let resumedGot = try Data(contentsOf: resumedFile)
+        precondition(resumedGot == segExpected)
+        // 200 OK fallback when server ignores Range
+        let fallbackCache = try directory("seg-200-cache")
+        let fallbackURL = url.replacingOccurrences(of: "/online.zip", with: "/segmented-200.bin")
+        let fallbackRelease = ModReleaseEntry(fileId: 100, version: "v1", fileName: "segmented.bin", downloadUrl: fallbackURL, expectedSize: Int64(segExpected.count), expectedSha256: segSha)
+        let fallbackFile = try installer.downloadVerifiedFile(fallbackRelease, cache: fallbackCache, maxConnections: 8, minSegmentedBytes: 32 * 1024) { _, _ in }
+        let fallbackGot = try Data(contentsOf: fallbackFile)
+        precondition(fallbackGot == segExpected)
+        print("PASS: segmented Range download (8x), segmented resume at concurrency=1, and 200 OK fallback")
     }
 }

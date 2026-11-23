@@ -283,7 +283,13 @@ object UncensoredPatchManager {
         }
     }
 
-    fun startInstall(gameDir: File, gameId: String, manifest: UncensoredPatchManifest): Boolean {
+    @JvmOverloads
+    fun startInstall(
+        gameDir: File,
+        gameId: String,
+        manifest: UncensoredPatchManifest,
+        maxConcurrency: Int = AppSettings.DEFAULT_DOWNLOAD_CONCURRENCY
+    ): Boolean {
         synchronized(lock) {
             if (activeJob?.isActive == true) return false
             val abort = InstallAbortHandle()
@@ -334,19 +340,21 @@ object UncensoredPatchManager {
                         expectedSha256 = manifest.sha256,
                         headers = mapOf("User-Agent" to OnlineInstaller.DEFAULT_USER_AGENT),
                         abortHandle = abort,
-                        checkCancelled = checkCancelled
-                    ) { done, total, speed ->
-                        publishState(
-                            UncensoredInstallState.Downloading(
-                                gameDirPath = dirPath,
-                                gameId = gameId,
-                                fileName = manifest.fileName,
-                                doneBytes = done,
-                                totalBytes = if (total > 0L) total else manifest.size,
-                                speedBps = speed
+                        checkCancelled = checkCancelled,
+                        onProgress = { done, total, speed ->
+                            publishState(
+                                UncensoredInstallState.Downloading(
+                                    gameDirPath = dirPath,
+                                    gameId = gameId,
+                                    fileName = manifest.fileName,
+                                    doneBytes = done,
+                                    totalBytes = if (total > 0L) total else manifest.size,
+                                    speedBps = speed
+                                )
                             )
-                        )
-                    }
+                        },
+                        maxConnections = AppSettings.normalizeDownloadConcurrency(maxConcurrency)
+                    )
 
                     checkCancelled()
                     if (prevInfo != null && isSafeOverlayFileName(prevInfo.fileName) &&

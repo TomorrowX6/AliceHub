@@ -33,6 +33,24 @@ enum DownloadRoute: String, CaseIterable, Identifiable {
     }
 }
 
+enum DownloadConcurrency {
+    static let storageKey = "hub.downloadConcurrency"
+    static let minValue = 1
+    static let maxValue = 16
+    static let defaultValue = 8
+    static let range = minValue...maxValue
+
+    static func clamped(_ value: Int) -> Int {
+        min(maxValue, max(minValue, value))
+    }
+
+    static var current: Int {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: storageKey) != nil else { return defaultValue }
+        return clamped(defaults.integer(forKey: storageKey))
+    }
+}
+
 struct ModReleaseEntry: Equatable {
     var fileId: Int
     var version: String

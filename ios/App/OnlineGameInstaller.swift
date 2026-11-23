@@ -13,13 +13,20 @@ final class OnlineGameInstaller {
         transfer.cancel()
     }
 
+    private func isCancelled() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
     private func checkCancelled() throws {
-        lock.lock(); let stopped = cancelled; lock.unlock()
-        if stopped { throw CancellationError() }
+        if isCancelled() { throw CancellationError() }
     }
 
     func install(_ game: OnlineGame, manifest: OnlineGameManifest, in games: URL,
-                 baseURL: URL? = nil, progress: @escaping (String, Int64, Int64) -> Void) throws -> URL {
+                 baseURL: URL? = nil,
+                 concurrency: Int = DownloadConcurrency.current,
+                 minSegmentedBytes: Int64 = ModInstaller.defaultMinSegmentedBytes,
+                 progress: @escaping (String, Int64, Int64) -> Void) throws -> URL {
         try checkCancelled()
         let destination = games.appendingPathComponent(manifest.baseName, isDirectory: true)
         guard !files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
@@ -37,27 +44,182 @@ final class OnlineGameInstaller {
         if files.fileExists(atPath: staging.path) { try files.removeItem(at: staging) }
         try files.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? files.removeItem(at: staging) }
-        var completed: Int64 = 0
-        var lastProgress = Date.distantPast
+
         let total = manifest.totalBytes
+        let totalFiles = manifest.files.count
+        let effectiveConcurrency = DownloadConcurrency.clamped(concurrency)
+
+        struct DownloadGroup {
+            let release: ModReleaseEntry
+            let cachePath: String
+            let entryIndices: [Int]
+            let entrySize: Int64
+            let displayPath: String
+        }
+
+        // Deduplicate entries sharing identical cache files (e.g. identical SHA-256)
+        // so concurrent workers never race on the same .part file or issue duplicate HTTP requests.
+        var groupIndexByCachePath: [String: Int] = [:]
+        var groups: [DownloadGroup] = []
         for (index, entry) in manifest.files.enumerated() {
-            try checkCancelled()
-            progress("正在校验 / 下载 \(index + 1) / \(manifest.files.count)\n" + entry.path, completed, total)
             var url = (baseURL ?? game.baseURL).appendingPathComponent("files")
             for component in entry.key.split(separator: "/") { url.appendPathComponent(String(component)) }
             let release = ModReleaseEntry(fileId: index, version: entry.path, fileName: entry.path,
                                           downloadUrl: url.absoluteString, expectedSize: entry.size,
                                           expectedSha256: entry.sha256.lowercased())
-            let before = completed
-            let downloaded = try transfer.downloadVerifiedFile(release, cache: cache) { done, _ in
-                guard Date().timeIntervalSince(lastProgress) >= 0.15 else { return }
-                lastProgress = Date()
-                progress("正在下载 \(index + 1) / \(manifest.files.count)\n" + entry.path,
-                         before + min(done, entry.size), total)
+            let cachePath = ModInstaller.cacheFileURL(for: release, in: cache).path
+            if let existingIdx = groupIndexByCachePath[cachePath] {
+                let prev = groups[existingIdx]
+                groups[existingIdx] = DownloadGroup(
+                    release: prev.release,
+                    cachePath: prev.cachePath,
+                    entryIndices: prev.entryIndices + [index],
+                    entrySize: prev.entrySize,
+                    displayPath: prev.displayPath
+                )
+            } else {
+                groupIndexByCachePath[cachePath] = groups.count
+                groups.append(DownloadGroup(
+                    release: release,
+                    cachePath: cachePath,
+                    entryIndices: [index],
+                    entrySize: entry.size,
+                    displayPath: entry.path
+                ))
+            }
+        }
+
+        var downloadedByEntry = Array<URL?>(repeating: nil, count: totalFiles)
+
+        if effectiveConcurrency <= 1 || groups.count <= 1 {
+            var completed: Int64 = 0
+            var lastProgress = Date.distantPast
+            let perFileConns = groups.count == 1 ? effectiveConcurrency : 1
+            for group in groups {
+                try checkCancelled()
+                let firstIndex = group.entryIndices[0]
+                progress("正在校验 / 下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, completed, total)
+                let before = completed
+                let multiplier = Int64(group.entryIndices.count)
+                let downloaded = try transfer.downloadVerifiedFile(
+                    group.release,
+                    cache: cache,
+                    maxConnections: perFileConns,
+                    minSegmentedBytes: minSegmentedBytes
+                ) { done, _ in
+                    guard Date().timeIntervalSince(lastProgress) >= 0.08 else { return }
+                    lastProgress = Date()
+                    let credited = min(before + min(done, group.entrySize) * multiplier, total)
+                    progress("正在下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, credited, total)
+                }
+                for idx in group.entryIndices {
+                    downloadedByEntry[idx] = downloaded
+                }
+                completed = min(completed + group.entrySize * multiplier, total)
+            }
+        } else {
+            let stateLock = NSLock()
+            let progressEmitLock = NSLock()
+            var entryDone = Array<Int64>(repeating: 0, count: totalFiles)
+            var maxReported: Int64 = 0
+            var finishedFiles = 0
+            var activePaths: [String] = []
+            var lastProgress = Date.distantPast
+            var firstError: Error?
+
+            func emitDownloadProgress(force: Bool = false) {
+                progressEmitLock.lock()
+                defer { progressEmitLock.unlock() }
+                var payload: (String, Int64)?
+                stateLock.lock()
+                let now = Date()
+                if force || now.timeIntervalSince(lastProgress) >= 0.08 {
+                    lastProgress = now
+                    let sum = min(entryDone.reduce(0, +), total)
+                    if sum > maxReported { maxReported = sum }
+                    let displayIdx = min(finishedFiles + 1, totalFiles)
+                    let activeCount = min(activePaths.count, effectiveConcurrency)
+                    let activeName = activePaths.first ?? groups[0].displayPath
+                    let title = activeCount > 1
+                        ? "正在下载 \(displayIdx) / \(totalFiles) · \(activeCount) 并发\n" + activeName
+                        : "正在下载 \(displayIdx) / \(totalFiles)\n" + activeName
+                    payload = (title, maxReported)
+                }
+                stateLock.unlock()
+                if let payload {
+                    progress(payload.0, payload.1, total)
+                }
+            }
+
+            let opQueue = OperationQueue()
+            opQueue.maxConcurrentOperationCount = effectiveConcurrency
+            let dispatchGroup = DispatchGroup()
+
+            // Schedule largest unique files first while preserving manifest-order staging below
+            let scheduledGroups = groups.sorted { $0.entrySize > $1.entrySize }
+            for group in scheduledGroups {
+                stateLock.lock()
+                activePaths.append(group.displayPath)
+                stateLock.unlock()
+                transfer.downloadVerifiedFileOnQueue(
+                    group.release,
+                    cache: cache,
+                    operationQueue: opQueue,
+                    group: dispatchGroup,
+                    maxConnections: effectiveConcurrency,
+                    minSegmentedBytes: minSegmentedBytes,
+                    progress: { done, _ in
+                        let clamped = min(done, group.entrySize)
+                        stateLock.lock()
+                        for idx in group.entryIndices {
+                            if clamped > entryDone[idx] { entryDone[idx] = clamped }
+                        }
+                        stateLock.unlock()
+                        emitDownloadProgress(force: false)
+                    },
+                    completion: { result in
+                        stateLock.lock()
+                        if let pos = activePaths.firstIndex(of: group.displayPath) {
+                            activePaths.remove(at: pos)
+                        }
+                        switch result {
+                        case .success(let fileURL):
+                            for idx in group.entryIndices {
+                                downloadedByEntry[idx] = fileURL
+                                entryDone[idx] = group.entrySize
+                            }
+                            finishedFiles += group.entryIndices.count
+                            stateLock.unlock()
+                            emitDownloadProgress(force: true)
+                        case .failure(let error):
+                            let isFirst = firstError == nil
+                            if isFirst { firstError = error }
+                            stateLock.unlock()
+                            if isFirst { self.transfer.cancel() }
+                        }
+                    }
+                )
+            }
+
+            dispatchGroup.wait()
+            stateLock.lock()
+            let batchError = firstError
+            stateLock.unlock()
+            if let batchError {
+                if self.isCancelled() { throw CancellationError() }
+                throw batchError
             }
             try checkCancelled()
+        }
+
+        // Phase 2: Stage and extract strictly in manifest order so overlays are deterministic
+        for (index, entry) in manifest.files.enumerated() {
+            try checkCancelled()
+            guard let downloaded = downloadedByEntry[index] else {
+                throw ModError.message("下载文件缺失：" + entry.path)
+            }
             if entry.extract == true {
-                progress("正在解压并安装\n" + entry.path, completed, total)
+                progress("正在解压并安装\n" + entry.path, total, total)
                 _ = try ArchiveExtractor.extract(downloaded, to: staging, checkCancelled: self.checkCancelled)
             } else {
                 guard let output = try ArchiveExtractor.outputPath(entry.path, size: 0, root: staging) else {
@@ -69,8 +231,7 @@ final class OnlineGameInstaller {
                     try files.copyItem(at: downloaded, to: output)
                 }
             }
-            completed += entry.size
-            progress("已校验 \(index + 1) / \(manifest.files.count)", completed, total)
+            progress("已校验 \(index + 1) / \(totalFiles)", total, total)
         }
         try checkCancelled()
         guard GameLibrary.isGame(staging) else { throw LibraryError.notGame }

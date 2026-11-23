@@ -31,6 +31,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -98,6 +99,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
         findViewById<ImageView>(R.id.icon_settings_download_route)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_route, accent))
+        findViewById<ImageView>(R.id.icon_settings_download_concurrency)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_download_concurrency, accent))
         findViewById<ImageView>(R.id.icon_settings_gamepad)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_gamepad, accent))
         findViewById<ImageView>(R.id.icon_settings_clear_cache)
@@ -124,6 +127,9 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_download_route).setOnClickListener {
             showDownloadRouteDialog()
+        }
+        findViewById<View>(R.id.row_settings_download_concurrency).setOnClickListener {
+            showDownloadConcurrencyDialog()
         }
         findViewById<View>(R.id.row_settings_gamepad).setOnClickListener {
             startActivity(Intent(this, GamepadSettingsActivity::class.java))
@@ -187,6 +193,10 @@ class SettingsActivity : ThemedActivity() {
         findViewById<TextView>(R.id.value_settings_download_route).text = routeLabel
         findViewById<View>(R.id.row_settings_download_route).contentDescription =
             getString(R.string.settings_download_route) + ", " + routeLabel
+        val concurrencyLabel = downloadConcurrencyLabel(AppSettings.getDownloadConcurrency(this))
+        findViewById<TextView>(R.id.value_settings_download_concurrency).text = concurrencyLabel
+        findViewById<View>(R.id.row_settings_download_concurrency).contentDescription =
+            getString(R.string.settings_download_concurrency) + ", " + concurrencyLabel
         val gp = GamepadBridge.loadProfile(this, null)
         val connectedPads = GamepadBridge.queryConnectedControllers(this).size
         findViewById<TextView>(R.id.value_settings_gamepad)?.text = when {
@@ -790,6 +800,101 @@ class SettingsActivity : ThemedActivity() {
                     val nextRoute = routes.getOrElse(which) { AppSettings.ROUTE_GLOBAL }
                     dlg.dismiss()
                     AppSettings.setDownloadRoute(this, nextRoute)
+                    refreshSettingsUi()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun downloadConcurrencyLabel(count: Int): String =
+        getString(R.string.download_concurrency_value, AppSettings.normalizeDownloadConcurrency(count))
+
+    private fun showDownloadConcurrencyDialog() {
+        val minVal = AppSettings.MIN_DOWNLOAD_CONCURRENCY
+        val maxVal = AppSettings.MAX_DOWNLOAD_CONCURRENCY
+        var selected = AppSettings.getDownloadConcurrency(this)
+        val density = resources.displayMetrics.density
+        val padH = (24 * density).toInt()
+        val padV = (14 * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padH, padV, padH, padV / 2)
+        }
+        val valueView = TextView(this).apply {
+            text = downloadConcurrencyLabel(selected)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTextColor(getColor(R.color.ui_text_primary))
+        }
+        val seekBar = SeekBar(this).apply {
+            max = maxVal - minVal
+            progress = selected - minVal
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                    selected = AppSettings.normalizeDownloadConcurrency(minVal + progress)
+                    valueView.text = downloadConcurrencyLabel(selected)
+                }
+
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        }
+        val ticksRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, (2 * density).toInt(), 0, (10 * density).toInt())
+        }
+        val tickColor = getColor(R.color.ui_text_tertiary)
+        ticksRow.addView(TextView(this).apply {
+            text = minVal.toString()
+            textSize = 12f
+            setTextColor(tickColor)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        ticksRow.addView(TextView(this).apply {
+            text = AppSettings.DEFAULT_DOWNLOAD_CONCURRENCY.toString()
+            textSize = 12f
+            gravity = Gravity.CENTER_HORIZONTAL
+            setTextColor(tickColor)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        ticksRow.addView(TextView(this).apply {
+            text = maxVal.toString()
+            textSize = 12f
+            gravity = Gravity.END
+            setTextColor(tickColor)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        val summaryView = TextView(this).apply {
+            text = getString(R.string.download_concurrency_summary)
+            textSize = 13f
+            setTextColor(getColor(R.color.ui_text_secondary))
+        }
+        container.addView(valueView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = (10 * density).toInt() })
+        container.addView(seekBar, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        container.addView(ticksRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        container.addView(summaryView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_download_concurrency)
+                .setView(container)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    AppSettings.setDownloadConcurrency(this, selected)
+                    refreshSettingsUi()
+                }
+                .setNeutralButton(R.string.download_concurrency_reset) { _, _ ->
+                    AppSettings.setDownloadConcurrency(this, AppSettings.DEFAULT_DOWNLOAD_CONCURRENCY)
                     refreshSettingsUi()
                 }
                 .setNegativeButton(R.string.cancel, null)

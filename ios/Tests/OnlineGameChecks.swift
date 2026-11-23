@@ -121,7 +121,7 @@ struct OnlineGameChecks {
         let stopping = OnlineGameInstaller()
         do {
             _ = try stopping.install(game, manifest: manifest, in: cancelledGames, baseURL: base) { text, done, _ in
-                if text.hasPrefix("正在下载") && done > 0 { stopping.cancel() }
+                if text.hasPrefix("正在下载") && done >= 4096 { stopping.cancel() }
             }
             preconditionFailure("Cancellation was ignored")
         } catch is CancellationError {}
@@ -129,6 +129,23 @@ struct OnlineGameChecks {
         let resumed = try OnlineGameInstaller().install(game, manifest: manifest, in: cancelledGames, baseURL: base) { _, _, _ in }
         try check(try Data(contentsOf: resumed.appendingPathComponent("game.ain")) == payload)
         print("PASS: cancellation keeps partial downloads hidden; retry resumes and commits atomically")
+
+        // Verify DownloadConcurrency setting defaults to 8, clamps 1...16, and works with concurrency=1 and concurrency=8
+        UserDefaults.standard.removeObject(forKey: DownloadConcurrency.storageKey)
+        precondition(DownloadConcurrency.current == 8)
+        UserDefaults.standard.set(0, forKey: DownloadConcurrency.storageKey)
+        precondition(DownloadConcurrency.current == 1)
+        UserDefaults.standard.set(99, forKey: DownloadConcurrency.storageKey)
+        precondition(DownloadConcurrency.current == 16)
+        UserDefaults.standard.set(4, forKey: DownloadConcurrency.storageKey)
+        precondition(DownloadConcurrency.current == 4)
+        UserDefaults.standard.removeObject(forKey: DownloadConcurrency.storageKey)
+
+        let serialGames = root.appendingPathComponent("serial-mode")
+        let serialDest = try OnlineGameInstaller().install(game, manifest: manifest, in: serialGames, baseURL: base, concurrency: 1) { _, _, _ in }
+        try check(try Data(contentsOf: serialDest.appendingPathComponent("game.ain")) == payload)
+        try check(try String(contentsOf: serialDest.appendingPathComponent("overlap.txt"), encoding: .utf8) == "overlaid")
+        print("PASS: DownloadConcurrency defaults/clamping and serial vs concurrent multi-file install parity")
 
         var noGameJSON = original
         noGameJSON["baseName"] = "NotAGame"
