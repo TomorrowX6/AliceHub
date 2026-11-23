@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreText
 import Darwin
 
 enum GameEngine: String {
@@ -877,6 +878,28 @@ final class GameLibrary: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
+    /// Returns "<file>#<PostScript name>" for an installed system font, or nil when
+    /// CoreText would substitute a different font.
+    static func systemFontSpec(_ postScriptName: String) -> String? {
+        let font = CTFontCreateWithName(postScriptName as CFString, 12, nil)
+        guard CTFontCopyPostScriptName(font) as String == postScriptName,
+              let url = CTFontCopyAttribute(font, kCTFontURLAttribute) as? URL,
+              FileManager.default.isReadableFile(atPath: url.path) else { return nil }
+        return url.path + "#" + postScriptName
+    }
+
+    private static func setSystemSansFontDefaults() {
+        let japanese = systemFontSpec("HiraginoSans-W3")
+        let chinese = systemFontSpec("PingFangSC-Medium") ?? japanese
+        let defaults = [
+            "XSYSTEM4_FONT_GOTHIC": japanese, "XSYSTEM4_FONT_MINCHO": japanese,
+            "XSYSTEM4_FONT_GOTHIC_SC": chinese, "XSYSTEM4_FONT_MINCHO_SC": chinese,
+        ]
+        for (name, value) in defaults {
+            if let value { setenv(name, value, 1) } else { unsetenv(name) }
+        }
+    }
+
     func savesDirectory(for game: Game) -> URL {
         documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
     }
@@ -902,6 +925,7 @@ final class GameLibrary: ObservableObject {
             guard chdir(info.engine == .system4 ? resources.path : game.url.path) == 0 else { throw LibraryError.resourcePath }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
+            Self.setSystemSansFontDefaults()
             setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
             setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)

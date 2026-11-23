@@ -340,10 +340,39 @@ static void select_gbk_ttc_face(const char *path, const FT_Byte *mem, FT_Long me
 	}
 }
 
-struct font *ft_font_load(const char *path)
+// Replaces *face_io with the face in a font collection whose PostScript name
+// is ps_name. Returns false if the collection has no such face.
+static bool select_named_ttc_face(const char *path, const char *ps_name, FT_Face *face_io)
 {
-	if (!path || !path[0])
-		return NULL;
+	const char *cur_name = FT_Get_Postscript_Name(*face_io);
+	if (cur_name && !strcmp(cur_name, ps_name))
+		return true;
+	FT_Long num_faces = (*face_io)->num_faces;
+	for (FT_Long i = 1; i < num_faces; i++) {
+		FT_Face cand = NULL;
+		if (FT_New_Face(ft_lib, path, i, &cand) || !cand)
+			continue;
+		const char *name = FT_Get_Postscript_Name(cand);
+		if (name && !strcmp(name, ps_name)) {
+			FT_Done_Face(*face_io);
+			*face_io = cand;
+			return true;
+		}
+		FT_Done_Face(cand);
+	}
+	return false;
+}
+
+static bool select_face(const char *path, const char *ps_name, FT_Face *face_io)
+{
+	if (ps_name)
+		return select_named_ttc_face(path, ps_name, face_io);
+	select_gbk_ttc_face(path, NULL, 0, face_io);
+	return true;
+}
+
+static struct font *load_font_file(const char *path, const char *ps_name)
+{
 	if (path[0] == '/' && !file_exists(path))
 		return NULL;
 #ifdef __ANDROID__
@@ -353,8 +382,7 @@ struct font *ft_font_load(const char *path)
 			free(font);
 			return NULL;
 		}
-		select_gbk_ttc_face(path, NULL, 0, &font->font);
-		if (!font->font->charmap) {
+		if (!select_face(path, ps_name, &font->font) || !font->font->charmap) {
 			FT_Done_Face(font->font);
 			free(font);
 			return NULL;
@@ -395,7 +423,11 @@ struct font *ft_font_load(const char *path)
 		free(font);
 		return NULL;
 	}
-	select_gbk_ttc_face(path, NULL, 0, &font->font);
+	if (!select_face(path, ps_name, &font->font)) {
+		FT_Done_Face(font->font);
+		free(font);
+		return NULL;
+	}
 #endif
 
 	if (!font->font->charmap) {
@@ -414,4 +446,19 @@ struct font *ft_font_load(const char *path)
 	font->super.size_char = ft_font_size_char;
 	font->super.size_char_kerning = ft_font_size_char_kerning;
 	return &font->super;
+}
+
+// path may end in "#<PostScript name>" to pick one face out of a .ttc collection.
+struct font *ft_font_load(const char *path)
+{
+	if (!path || !path[0])
+		return NULL;
+	const char *sep = strrchr(path, '#');
+	if (!sep || sep == path || !sep[1] || file_exists(path))
+		return load_font_file(path, NULL);
+	char *file = xstrdup(path);
+	file[sep - path] = '\0';
+	struct font *font = load_font_file(file, sep + 1);
+	free(file);
+	return font;
 }
