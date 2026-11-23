@@ -54,6 +54,12 @@ static unsigned pending_close_requests = 0;
 static uint32_t first_unpopped_close_tick = 0;
 static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
+static atomic_bool long_press_ctrl_enabled = false;
+static uint32_t long_touch_start_tick = 0;
+static SDL_FingerID long_touch_finger_id = 0;
+static SDL_FRect long_touch_finger_rect;
+static bool long_touch_ctrl_down = false;
+#define LONG_TOUCH_DURATION 1000
 
 #define MOVIE_HOLD_SKIP_MS 800
 #define MOVIE_TOUCH_SLOP_SQ (0.05f * 0.05f)
@@ -316,7 +322,7 @@ static void sync_ctrl_key_state(void)
 {
 	kbd_key_state[VK_CONTROL] = kbd_ctrl_down;
 	key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
-		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
+		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL] || long_touch_ctrl_down;
 }
 
 void input_set_touch_ctrl_skip(bool enabled)
@@ -328,6 +334,11 @@ void input_set_touch_ctrl_skip(bool enabled)
 bool input_get_touch_ctrl_skip(void)
 {
 	return atomic_load(&touch_ctrl_skip);
+}
+
+void input_set_long_press_ctrl(bool enabled)
+{
+	atomic_store(&long_press_ctrl_enabled, enabled);
 }
 static enum sact_keycode sdl_keytable[] = {
 	[SDL_SCANCODE_0] = VK_0,
@@ -621,6 +632,16 @@ void input_notify_parts_poll(bool allow_press, bool clicking)
 
 void input_cancel_long_touch(void)
 {
+	long_touch_start_tick = 0;
+}
+
+static void release_long_touch_ctrl(void)
+{
+	long_touch_start_tick = 0;
+	if (long_touch_ctrl_down) {
+		long_touch_ctrl_down = false;
+		sync_ctrl_key_state();
+	}
 }
 
 #define MAX_ACTIVE_TOUCH_FINGERS 16
@@ -703,7 +724,7 @@ bool key_is_down(enum sact_keycode code)
 	}
 	if (code == VK_CONTROL) {
 		key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
-			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
+			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL] || long_touch_ctrl_down;
 	}
 	bool is_mouse_btn = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 	bool parts_polling = last_parts_poll_timestamp != 0 &&
@@ -742,7 +763,7 @@ void key_clear_flag(bool no_ctrl)
 		mouse_down_unobserved[i] = false;
 		deferred_mouse_release[i] = false;
 	}
-	if (atomic_load(&touch_ctrl_skip))
+	if (atomic_load(&touch_ctrl_skip) || long_touch_ctrl_down)
 		key_state[VK_CONTROL] = true;
 }
 
@@ -1967,7 +1988,7 @@ static void send_cursor_ui_state(bool force)
 static void rebuild_effective_keys(uint32_t now)
 {
 	bool in_movie = movie_has_active_playback();
-	bool ctrl_skip = atomic_load(&touch_ctrl_skip);
+	bool ctrl_skip = atomic_load(&touch_ctrl_skip) || long_touch_ctrl_down;
 	for (int code = 1; code < VK_NR_KEYCODES; code++) {
 		bool is_mouse = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 		bool pad_mouse = is_mouse && (vpad_vk_down[code] || pad_vk_down[code]);
@@ -2589,6 +2610,22 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 		}
 	}
 
+	if (long_touch_start_tick && sdl_mouse_down[VK_RBUTTON])
+		long_touch_start_tick = 0;
+	if (long_touch_start_tick && nr_deferred_synthetic_mouse_events == 0 &&
+	    now - long_touch_start_tick >= LONG_TOUCH_DURATION) {
+		long_touch_start_tick = 0;
+		long_touch_ctrl_down = true;
+		sdl_mouse_down[VK_LBUTTON] = false;
+		if (!vpad_vk_down[VK_LBUTTON] && !pad_vk_down[VK_LBUTTON])
+			key_state[VK_LBUTTON] = false;
+		mouse_down_unobserved[VK_LBUTTON] = false;
+		deferred_mouse_release[VK_LBUTTON] = false;
+		synthetic_mouse_hover_observed = false;
+		synthetic_mouse_up_observed = true;
+		sync_ctrl_key_state();
+	}
+
 #ifdef __ANDROID__
 	// Fire the deferred keyboard and text input events.
 	while (!STAILQ_EMPTY(&deferred_keyevent_queue) && now >= last_keyevent_timestamp + DEFERRED_KEY_DELAY) {
@@ -2632,6 +2669,7 @@ static void reset_inputs_on_movie_start(void)
 	has_last_touch_down_pos = false;
 	two_finger_tap_candidate = false;
 	two_finger_scrolled = false;
+	release_long_touch_ctrl();
 	movie_pad_holding = false;
 	for (int s = 0; s < NR_PAD_SLOTS; s++) {
 		if (phys_slot_prev_raw[s])
@@ -2795,6 +2833,7 @@ static void on_app_will_enter_background(bool *returned_foreground)
 	two_finger_tap_candidate = false;
 	two_finger_scrolled = false;
 	synthetic_mouse_warped = false;
+	release_long_touch_ctrl();
 	reset_gamepad_transient_state();
 	reset_movie_hold_state();
 	mixer_set_app_backgrounded(true);
@@ -2874,6 +2913,7 @@ static void handle_window_event(SDL_Event *e, bool *did_swap, bool *returned_for
 		two_finger_tap_candidate = false;
 		two_finger_scrolled = false;
 		synthetic_mouse_warped = false;
+		release_long_touch_ctrl();
 		reset_gamepad_transient_state();
 		reset_movie_hold_state();
 		mixer_set_window_focus(false);
@@ -2959,6 +2999,7 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 			if (movie_has_active_playback() || suppress_touch_until_release) {
 				suppress_touch_until_release = true;
 			}
+			release_long_touch_ctrl();
 			// Multi-touch gesture: cancel single-finger mouse state and
 			// track 2-finger tap (right-click) vs 2-finger scroll.
 			multi_touch_active = true;
@@ -2998,9 +3039,22 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 				movie_hold_token++;
 				suppress_touch_until_release = true;
 			}
+			release_long_touch_ctrl();
+			if (atomic_load(&long_press_ctrl_enabled) && !suppress_touch_until_release) {
+				long_touch_start_tick = max(1u, SDL_GetTicks());
+				long_touch_finger_id = tfinger->fingerId;
+				long_touch_finger_rect = (SDL_FRect) {
+					.x = tfinger->x - 0.01f,
+					.y = tfinger->y - 0.01f,
+					.w = 0.02f,
+					.h = 0.02f
+				};
+			}
 		}
 		return;
 	}
+
+	release_long_touch_ctrl();
 
 	if (single_touch_down && tfinger->fingerId == single_touch_finger_id) {
 		if (movie_touch_hold_eligible)
@@ -3222,6 +3276,10 @@ void handle_events(void)
 			handle_touch_finger_event(&e.tfinger, true);
 			break;
 		case SDL_FINGERMOTION:
+			if (long_touch_start_tick && e.tfinger.fingerId == long_touch_finger_id &&
+			    !SDL_PointInFRect(&(SDL_FPoint){ e.tfinger.x, e.tfinger.y }, &long_touch_finger_rect)) {
+				long_touch_start_tick = 0;
+			}
 			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id && movie_touch_hold_eligible) {
 				float dx = e.tfinger.x - single_touch_start_x;
 				float dy = e.tfinger.y - single_touch_start_y;

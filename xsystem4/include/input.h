@@ -196,6 +196,7 @@ bool input_has_system_message(void);
 bool input_pop_system_message(int *message);
 void input_set_touch_ctrl_skip(bool enabled);
 bool input_get_touch_ctrl_skip(void);
+void input_set_long_press_ctrl(bool enabled);
 
 void handle_window_events(void);
 void handle_events(void);
