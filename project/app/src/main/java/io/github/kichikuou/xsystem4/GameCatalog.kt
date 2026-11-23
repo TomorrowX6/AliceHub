@@ -11,7 +11,7 @@ import android.os.Process
 import android.widget.Toast
 import java.io.File
 
-data class GameDescriptor(
+data class GameDescriptor @JvmOverloads constructor(
     val id: String,
     val title: String,
     val defaultDirName: String,
@@ -27,7 +27,8 @@ data class GameDescriptor(
     val isRance10: Boolean,
     val isCnPatch: Boolean = false,
     val overlayCdnBaseUrl: String? = null,
-    val overlayCatalogRelPath: String = "files/mods/index.json"
+    val overlayCatalogRelPath: String = "files/mods/index.json",
+    val supportsUncensoredPatch: Boolean = false
 ) {
     val effectiveOverlayCdnUrl: String?
         get() = overlayCdnBaseUrl ?: onlineBaseCdnUrl
@@ -2892,7 +2893,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE10_CDN_URL,
                 supportsOnlineMod = true,
                 supportsLocalMod = true,
-                isRance10 = true
+                isRance10 = true,
+                supportsUncensoredPatch = true
             )
             ID_DOHNA_DOHNA -> GameDescriptor(
                 id = ID_DOHNA_DOHNA,
@@ -2958,7 +2960,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.SENGOKU_RANCE_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE01 -> GameDescriptor(
                 id = ID_RANCE01,
@@ -2973,7 +2976,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE01_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE02 -> GameDescriptor(
                 id = ID_RANCE02,
@@ -2988,7 +2992,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE02_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE03 -> GameDescriptor(
                 id = ID_RANCE03,
@@ -3003,7 +3008,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE03_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE04 -> GameDescriptor(
                 id = ID_RANCE04,
@@ -3063,7 +3069,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE5D_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE06 -> GameDescriptor(
                 id = ID_RANCE06,
@@ -3078,7 +3085,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE06_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE08 -> GameDescriptor(
                 id = ID_RANCE08,
@@ -3093,7 +3101,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE08_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_RANCE09 -> GameDescriptor(
                 id = ID_RANCE09,
@@ -3108,7 +3117,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE09_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_ESCALAYER -> GameDescriptor(
                 id = ID_ESCALAYER,

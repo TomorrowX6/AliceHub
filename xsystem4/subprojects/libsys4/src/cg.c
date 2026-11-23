@@ -33,6 +33,29 @@
 #include "system4/tga.h"
 #include "system4/webp.h"
 
+static cg_base_loader_by_name_fn cg_base_loader_by_name = NULL;
+static cg_base_loader_by_id_fn cg_base_loader_by_id = NULL;
+
+void cg_set_base_loader_by_name(cg_base_loader_by_name_fn fn)
+{
+	cg_base_loader_by_name = fn;
+}
+
+void cg_set_base_loader_by_id(cg_base_loader_by_id_fn fn)
+{
+	cg_base_loader_by_id = fn;
+}
+
+struct cg *cg_load_base_by_name(const char *name)
+{
+	return (cg_base_loader_by_name && name) ? cg_base_loader_by_name(name) : NULL;
+}
+
+struct cg *cg_load_base_by_id(struct archive *src_ar, int id)
+{
+	return (cg_base_loader_by_id && src_ar && id > 0) ? cg_base_loader_by_id(src_ar, id) : NULL;
+}
+
 const char *cg_file_extensions[_ALCG_NR_FORMATS] = {
 	[ALCG_UNKNOWN] = "",
 	[ALCG_QNT]     = "qnt",

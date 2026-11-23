@@ -63,6 +63,20 @@ static void storeSaveName(GameResource *gr, int no, char *src) {
 	if (path) free(path);
 }
 
+static bool is_uncensored_overlay_ald(const char *filename) {
+	if (!filename || !filename[0] || filename[0] == '.')
+		return false;
+	static const char needle[] = "uncensored";
+	for (const char *p = filename; *p; p++) {
+		size_t k = 0;
+		while (needle[k] && p[k] && tolower((unsigned char)p[k]) == needle[k])
+			k++;
+		if (needle[k] == '\0')
+			return true;
+	}
+	return false;
+}
+
 bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, struct dirent *(*p_readdir)(DIR *)) {
 	memset(gr, 0, sizeof(GameResource));
 
@@ -94,6 +108,7 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 				gr->alk[idx] = strdup(filename);
 			}
 		} else if (len >= 6 && strcasecmp(filename + len - 4, ".ald") == 0) {
+			if (is_uncensored_overlay_ald(filename)) continue;
 			bool is_chs = len >= 10 && strcasecmp(filename + len - 8, "_chs.ald") == 0;
 			int suffix_len = is_chs ? 8 : 4;
 			int dno = toupper((unsigned char)filename[len - suffix_len - 1]) - 'A';

@@ -43,12 +43,17 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private var selectedItem: Item? = null
 
     private var progressDialog: Dialog? = null
+    private var uncensoredProgressDialog: Dialog? = null
     private var restoreModDialog: Dialog? = null
     private var uninstallDialog: AlertDialog? = null
     private val trackedDialogs = mutableListOf<Dialog>()
     private var lastProgressRenderMs: Long = 0L
+    private var lastUncensoredRenderMs: Long = 0L
     private var pendingPostResumeAction: (() -> Unit)? = null
     private var skipInitialResumeRefresh: Boolean = false
+    private val uncensoredListener: (UncensoredInstallState) -> Unit = { st ->
+        renderUncensoredInstallState(st)
+    }
 
     private fun <T : Dialog> trackDialog(dlg: T): T {
         trackedDialogs.removeAll { !it.isShowing }
@@ -97,6 +102,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         findViewById<View>(R.id.btn_hub_online_install).setOnClickListener { openOnlineInstall() }
         findViewById<View>(R.id.btn_hub_local_install).setOnClickListener { openLocalInstall() }
         findViewById<View>(R.id.btn_hub_mod_manager).setOnClickListener { openModManager() }
+        findViewById<View>(R.id.btn_hub_uncensored_patch).setOnClickListener { openUncensoredPatchDialog() }
         findViewById<View>(R.id.btn_hub_save_manager).setOnClickListener { openSaveManager() }
         findViewById<View>(R.id.btn_hub_game_modifier).setOnClickListener { openGameModifier() }
         findViewById<View>(R.id.btn_hub_gamepad_settings).setOnClickListener { openGamepadSettings() }
@@ -179,6 +185,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             refreshUi()
         }
         renderInstallState(gameList.installState)
+        UncensoredPatchManager.addListener(uncensoredListener)
         matchingItems.firstOrNull { gameList.isUninstalling(it) }?.let { watchUninstall(it) }
 
         val postAction = pendingPostResumeAction
@@ -188,19 +195,23 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onPause() {
+        UncensoredPatchManager.removeListener(uncensoredListener)
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissUncensoredProgressDialog()
         dismissRestoreModProgress()
         super.onPause()
     }
 
     override fun onDestroy() {
+        UncensoredPatchManager.removeListener(uncensoredListener)
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null
         }
         dismissProgressDialog()
+        dismissUncensoredProgressDialog()
         dismissRestoreModProgress()
         dismissUninstallDialog()
         dismissTrackedDialogs()
@@ -356,7 +367,12 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 statusTone = UiKit.Tone.NEUTRAL
             }
         }
-        statusView.text = statusText
+        val uncensoredInstalled = curItem != null && UncensoredPatchManager.detectInstalled(curItem.path)
+        statusView.text = if (uncensoredInstalled && !isInstallingHere && curItem?.error == null) {
+            "$statusText · ${getString(R.string.game_status_uncensored_suffix)}"
+        } else {
+            statusText
+        }
         UiKit.styleChip(statusView, statusTone, dot = true)
 
         // With several copies of the game installed, the directory in use gets its own row
@@ -388,6 +404,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val onlineBtn = findViewById<Button>(R.id.btn_hub_online_install)
         val localBtn = findViewById<Button>(R.id.btn_hub_local_install)
         val modMgrBtn = findViewById<Button>(R.id.btn_hub_mod_manager)
+        val uncBtn = findViewById<Button>(R.id.btn_hub_uncensored_patch)
 
         val onlineEnabled = descriptor.supportsOnlineBaseInstall && AppSettings.isOnlineInstallEnabled(this)
         onlineBtn.visibility = if (onlineEnabled) View.VISIBLE else View.GONE
@@ -395,6 +412,9 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val hasOverlaySupport = descriptor.supportsOnlineMod || descriptor.supportsLocalMod
         modMgrBtn.visibility = if (hasOverlaySupport) View.VISIBLE else View.GONE
         modMgrBtn.setText(if (descriptor.isCnPatch) R.string.action_install_cn_patch else R.string.mod_mgr_activity_title)
+        val showUncensored = descriptor.supportsUncensoredPatch && (uncensoredInstalled || onlineEnabled)
+        uncBtn.visibility = if (showUncensored) View.VISIBLE else View.GONE
+        uncBtn.setText(if (uncensoredInstalled) R.string.uncensored_patch_row_installed else R.string.uncensored_patch_title)
 
         val rowAccent = UiKit.accentOnSurface(this, descriptor.accentColor)
         UiKit.styleActionRow(onlineBtn, R.drawable.ic_cloud_download, rowAccent)
@@ -404,6 +424,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             if (descriptor.isCnPatch) R.drawable.ic_language else R.drawable.ic_extension,
             rowAccent
         )
+        UiKit.styleActionRow(uncBtn, R.drawable.ic_extension, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_save_manager), R.drawable.ic_save, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_game_modifier), R.drawable.ic_tune, rowAccent)
         UiKit.styleActionRow(findViewById(R.id.btn_hub_gamepad_settings), R.drawable.ic_gamepad, rowAccent)
@@ -491,6 +512,14 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun onPrimaryPlayClicked() {
         if (gameList.isRestoringMod) return
+        if (UncensoredPatchManager.isAnyDownloading()) {
+            if (selectedItem?.path?.path?.let { UncensoredPatchManager.isDownloadingFor(it) } == true) {
+                renderUncensoredInstallState(UncensoredPatchManager.state)
+            } else {
+                showOtherInstallBusyToast()
+            }
+            return
+        }
         if (isInstallingCurrentHubGame()) {
             gameList.restoreInstallProgress()
             renderInstallState(gameList.installState)
@@ -529,6 +558,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun openOnlineInstall() {
         if (gameList.isRestoringMod) return
+        if (UncensoredPatchManager.isAnyDownloading()) {
+            showOtherInstallBusyToast()
+            return
+        }
         if (gameList.installState is InstallState.Installing) {
             if (isInstallingCurrentHubGame()) {
                 gameList.restoreInstallProgress()
@@ -577,6 +610,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private fun openLocalInstall() {
         if (gameList.isRestoringMod) return
+        if (UncensoredPatchManager.isAnyDownloading()) {
+            showOtherInstallBusyToast()
+            return
+        }
         if (gameList.installState is InstallState.Installing) {
             if (isInstallingCurrentHubGame()) {
                 gameList.restoreInstallProgress()
@@ -615,6 +652,247 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             .putExtra(ModManagerActivity.EXTRA_GAME_PATH, target.path.path)
             .putExtra(ModManagerActivity.EXTRA_GAME_ID, descriptor.id)
         startActivity(intent)
+    }
+
+    private fun openUncensoredPatchDialog() {
+        val target = selectedItem
+        if (target == null) {
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.uncensored_patch_title)
+                    .setMessage(R.string.mod_no_game_installed)
+                    .setPositiveButton(R.string.ok, null)
+                    .show()
+            )
+            return
+        }
+        if (UncensoredPatchManager.isDownloadingFor(target.path.path)) {
+            renderUncensoredInstallState(UncensoredPatchManager.state)
+            return
+        }
+        if (UncensoredPatchManager.isAnyDownloading() || gameList.installState is InstallState.Installing || gameList.isRestoringMod) {
+            showOtherInstallBusyToast()
+            return
+        }
+        val isInstalled = UncensoredPatchManager.detectInstalled(target.path)
+        val installedInfo = InstalledUncensoredInfo.read(target.path)
+        val cdnUrl = descriptor.onlineBaseCdnUrl
+        val onlineEnabled = cdnUrl != null && AppSettings.isOnlineInstallEnabled(this)
+
+        if (!onlineEnabled || cdnUrl == null) {
+            if (!isInstalled) return
+            val detail = installedInfo?.let {
+                val sz = OnlineInstaller.formatSize(it.size)
+                if (it.cgCount > 0 && sz.isNotEmpty()) "${it.cgCount} CG · $sz" else it.fileName
+            } ?: target.path.name
+            trackDialog(
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.uncensored_patch_title)
+                    .setMessage(getString(R.string.uncensored_patch_info_installed, detail))
+                    .setPositiveButton(R.string.uncensored_patch_uninstall_btn) { _, _ ->
+                        confirmUninstallUncensoredPatch(target)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            )
+            return
+        }
+
+        val loadingDlg = trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.uncensored_patch_title)
+                .setMessage(R.string.uncensored_patch_fetching)
+                .setCancelable(true)
+                .show()
+        )
+        scope.launch {
+            val manifest = try {
+                withContext(Dispatchers.IO) {
+                    UncensoredPatchManager.fetchManifest(cdnUrl)
+                }
+            } catch (_: Throwable) {
+                null
+            }
+            if (isFinishing || isDestroyed) return@launch
+            if (loadingDlg.isShowing) loadingDlg.dismiss()
+
+            if (manifest == null) {
+                val builder = AlertDialog.Builder(this@GameHubActivity)
+                    .setTitle(R.string.uncensored_patch_title)
+                    .setMessage(R.string.uncensored_patch_fetch_failed)
+                    .setNegativeButton(R.string.cancel, null)
+                if (isInstalled) {
+                    builder.setPositiveButton(R.string.uncensored_patch_uninstall_btn) { _, _ ->
+                        confirmUninstallUncensoredPatch(target)
+                    }
+                }
+                trackDialog(builder.show())
+                return@launch
+            }
+
+            val sizeText = OnlineInstaller.formatSize(manifest.size)
+            val msg = if (isInstalled) {
+                val detail = installedInfo?.let {
+                    val sz = OnlineInstaller.formatSize(it.size)
+                    if (it.cgCount > 0 && sz.isNotEmpty()) "${it.cgCount} CG · $sz" else it.fileName
+                } ?: sizeText
+                getString(R.string.uncensored_patch_info_installed, detail)
+            } else {
+                getString(
+                    R.string.uncensored_patch_info_not_installed,
+                    manifest.summary,
+                    sizeText,
+                    manifest.cgCount
+                )
+            }
+            val builder = AlertDialog.Builder(this@GameHubActivity)
+                .setTitle(manifest.title.ifEmpty { getString(R.string.uncensored_patch_title) })
+                .setMessage(msg)
+                .setPositiveButton(
+                    getString(
+                        if (isInstalled) R.string.uncensored_patch_reinstall_btn
+                        else R.string.uncensored_patch_install_btn,
+                        sizeText
+                    )
+                ) { _, _ ->
+                    ensureGameNotRunning(this@GameHubActivity) {
+                        if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, manifest)) {
+                            showOtherInstallBusyToast()
+                        }
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+            if (isInstalled) {
+                builder.setNeutralButton(R.string.uncensored_patch_uninstall_btn) { _, _ ->
+                    confirmUninstallUncensoredPatch(target)
+                }
+            }
+            trackDialog(builder.show())
+        }
+    }
+
+    private fun confirmUninstallUncensoredPatch(target: Item) {
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.uncensored_patch_uninstall_btn)
+                .setMessage(R.string.uncensored_patch_uninstall_confirm)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    ensureGameNotRunning(this) {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                UncensoredPatchManager.uninstall(target.path)
+                            }
+                            if (!isFinishing && !isDestroyed) {
+                                refreshUi()
+                                Toast.makeText(
+                                    this@GameHubActivity,
+                                    if (ok) R.string.uncensored_patch_uninstalled_toast else R.string.error,
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    private fun renderUncensoredInstallState(st: UncensoredInstallState) {
+        if (isFinishing || isDestroyed) return
+        val curPath = selectedItem?.path?.path
+        when (st) {
+            UncensoredInstallState.Idle -> dismissUncensoredProgressDialog()
+            is UncensoredInstallState.Downloading -> {
+                if (curPath != null && st.gameDirPath != curPath) {
+                    dismissUncensoredProgressDialog()
+                    return
+                }
+                val now = android.os.SystemClock.uptimeMillis()
+                if (uncensoredProgressDialog != null && now - lastUncensoredRenderMs < 100L && st.doneBytes < st.totalBytes) {
+                    return
+                }
+                lastUncensoredRenderMs = now
+                showUncensoredProgressDialog(st)
+            }
+            is UncensoredInstallState.Succeeded -> {
+                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                dismissUncensoredProgressDialog()
+                UncensoredPatchManager.consumeTerminalState()
+                refreshUi()
+                Toast.makeText(this, R.string.uncensored_patch_installed_toast, Toast.LENGTH_SHORT).show()
+            }
+            is UncensoredInstallState.Cancelled -> {
+                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                dismissUncensoredProgressDialog()
+                UncensoredPatchManager.consumeTerminalState()
+                refreshUi()
+                Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_SHORT).show()
+            }
+            is UncensoredInstallState.Failed -> {
+                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                dismissUncensoredProgressDialog()
+                UncensoredPatchManager.consumeTerminalState()
+                refreshUi()
+                trackDialog(
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.error)
+                        .setMessage(st.message.ifBlank { getString(R.string.online_mod_download_error) })
+                        .setPositiveButton(R.string.ok, null)
+                        .show()
+                )
+            }
+        }
+    }
+
+    private fun showUncensoredProgressDialog(st: UncensoredInstallState.Downloading) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (uncensoredProgressDialog == null) {
+            uncensoredProgressDialog = Dialog(this).apply {
+                setTitle(R.string.uncensored_patch_title)
+                setCancelable(false)
+                setContentView(R.layout.progress_dialog)
+                findViewById<View>(R.id.btn_bg_install)?.visibility = View.GONE
+                findViewById<View>(R.id.btn_pause_install)?.visibility = View.GONE
+                findViewById<Button>(R.id.btn_cancel_install)?.apply {
+                    visibility = View.VISIBLE
+                    setText(R.string.cancel)
+                    setOnClickListener { UncensoredPatchManager.cancelActiveInstall() }
+                }
+                show()
+            }
+        }
+        val dlg = uncensoredProgressDialog ?: return
+        val pct = if (st.totalBytes > 0L) ((st.doneBytes * 100L) / st.totalBytes).toInt().coerceIn(0, 100) else 0
+        val doneMb = st.doneBytes / (1024L * 1024L)
+        val totalMb = (st.totalBytes / (1024L * 1024L)).coerceAtLeast(1L)
+        val speed = OnlineInstaller.formatSpeed(st.speedBps)
+        dlg.findViewById<TextView>(R.id.text)?.text = getString(
+            R.string.uncensored_patch_downloading,
+            pct,
+            speed,
+            doneMb,
+            totalMb,
+            st.fileName
+        )
+        val bar = dlg.findViewById<ProgressBar>(R.id.progress_bar)
+        if (bar != null) {
+            val pm = st.permille
+            if (pm != null) {
+                bar.visibility = View.VISIBLE
+                bar.progress = pm
+            } else {
+                bar.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun dismissUncensoredProgressDialog() {
+        uncensoredProgressDialog?.dismiss()
+        uncensoredProgressDialog = null
+        if (progressDialog == null && uninstallDialog == null && restoreModDialog == null) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun openSaveManager() {
@@ -770,7 +1048,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun dismissRestoreModProgress() {
         restoreModDialog?.dismiss()
         restoreModDialog = null
-        if (progressDialog == null && uninstallDialog == null) {
+        if (progressDialog == null && uninstallDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
@@ -955,7 +1233,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun dismissUninstallDialog() {
         uninstallDialog?.dismiss()
         uninstallDialog = null
-        if (progressDialog == null && restoreModDialog == null) {
+        if (progressDialog == null && restoreModDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
@@ -963,7 +1241,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun dismissProgressDialog() {
         progressDialog?.dismiss()
         progressDialog = null
-        if (uninstallDialog == null && restoreModDialog == null) {
+        if (uninstallDialog == null && restoreModDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }

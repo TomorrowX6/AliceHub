@@ -77,6 +77,14 @@ static inline const char *cg_file_extension(enum cg_type t)
 
 struct archive_data;
 
+typedef struct cg *(*cg_base_loader_by_name_fn)(const char *name);
+typedef struct cg *(*cg_base_loader_by_id_fn)(struct archive *src_ar, int id);
+
+void cg_set_base_loader_by_name(cg_base_loader_by_name_fn fn);
+void cg_set_base_loader_by_id(cg_base_loader_by_id_fn fn);
+struct cg *cg_load_base_by_name(const char *name);
+struct cg *cg_load_base_by_id(struct archive *src_ar, int id);
+
 enum cg_type cg_check_format(uint8_t *data);
 bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst);
 bool cg_get_metrics(struct archive *ar, int no, struct cg_metrics *dst);

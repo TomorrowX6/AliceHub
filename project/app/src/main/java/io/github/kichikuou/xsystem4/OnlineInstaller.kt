@@ -2073,7 +2073,7 @@ object OnlineInstaller {
         }
     }
 
-    private fun openFollowingRedirects(
+    internal fun openFollowingRedirects(
         initialUrl: String,
         headers: Map<String, String>,
         abortHandle: InstallAbortHandle? = null,
@@ -2198,7 +2198,7 @@ object OnlineInstaller {
         }
     }
 
-    private fun formatSpeed(bps: Long): String {
+    internal fun formatSpeed(bps: Long): String {
         if (bps <= 0L) return "-- MB/s"
         val mbps = bps.toDouble() / (1024.0 * 1024.0)
         return if (mbps >= 1.0) {

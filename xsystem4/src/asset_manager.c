@@ -69,13 +69,16 @@ struct asset_manager {
 struct asset_manager_ald {
 	struct asset_manager manager;
 	struct archive *archive;
+	struct afa_archive **cg_overlays;
+	size_t nr_cg_overlays;
 };
 
 enum afa_archive_priority {
-	AFA_PRIO_BACKUP = 0,
-	AFA_PRIO_BASE   = 1,
-	AFA_PRIO_PATCH  = 2,
-	AFA_PRIO_MOD    = 3,
+	AFA_PRIO_BACKUP     = 0,
+	AFA_PRIO_BASE       = 1,
+	AFA_PRIO_PATCH      = 2,
+	AFA_PRIO_MOD        = 3,
+	AFA_PRIO_UNCENSORED = 4,
 };
 
 struct afa_canon_entry {
@@ -348,13 +351,74 @@ bool asset_cg_get_metrics_by_name(const char *name, struct cg_metrics *metrics)
 static bool ald_exists_by_id(struct asset_manager *_manager, int id)
 {
 	struct asset_manager_ald *manager = (struct asset_manager_ald*)_manager;
+	if (id > 0) {
+		for (size_t i = 0; i < manager->nr_cg_overlays; i++) {
+			if (!manager->cg_overlays[i]->has_number)
+				continue;
+			if (archive_exists(&manager->cg_overlays[i]->ar, id - 1))
+				return true;
+		}
+	}
 	return archive_exists(manager->archive, id - 1);
 }
 
 static struct archive_data *ald_get_by_id(struct asset_manager *_manager, int id)
 {
 	struct asset_manager_ald *manager = (struct asset_manager_ald*)_manager;
+	if (id > 0) {
+		for (size_t i = 0; i < manager->nr_cg_overlays; i++) {
+			if (!manager->cg_overlays[i]->has_number)
+				continue;
+			struct archive_data *data = archive_get(&manager->cg_overlays[i]->ar, id - 1);
+			if (data)
+				return data;
+		}
+	}
 	return archive_get(manager->archive, id - 1);
+}
+
+static bool ald_attach_cg_overlay(struct asset_manager_ald *manager, const char *path)
+{
+	for (size_t i = 0; i < manager->nr_cg_overlays; i++) {
+		if (!strcasecmp(manager->cg_overlays[i]->filename, path))
+			return true;
+	}
+	int error;
+	struct afa_archive *ar = afa_open(path, MMAP_IF_64BIT, &error);
+	if (!ar) {
+		WARNING("Failed to open CG overlay archive: %s", display_utf0(path));
+		return false;
+	}
+	manager->cg_overlays = xrealloc(manager->cg_overlays,
+		(manager->nr_cg_overlays + 1) * sizeof(*manager->cg_overlays));
+	manager->cg_overlays[manager->nr_cg_overlays++] = ar;
+	return true;
+}
+
+static bool afa_is_backup_archive(const char *filepath)
+{
+	size_t len = strlen(filepath);
+	return len >= 12 && !strcasecmp(filepath + len - 12, ".vanilla.bak");
+}
+
+static bool afa_is_uncensored_archive(const char *filepath)
+{
+	const char *base = strrchr(filepath, '/');
+	base = base ? base + 1 : filepath;
+	if (!base[0] || base[0] == '.' || afa_is_backup_archive(base))
+		return false;
+	size_t len = strlen(base);
+	if (len < 14 || strcasecmp(base + len - 4, ".afa") != 0)
+		return false;
+	static const char needle[] = "uncensored";
+	for (const char *p = base; *p; p++) {
+		size_t k = 0;
+		while (needle[k] && p[k] && tolower((unsigned char)p[k]) == needle[k])
+			k++;
+		if (needle[k] == '\0')
+			return true;
+	}
+	return false;
 }
 
 static bool afa_is_mod_archive(const char *filepath)
@@ -370,18 +434,14 @@ static bool afa_is_mod_archive(const char *filepath)
 	return false;
 }
 
-static bool afa_is_backup_archive(const char *filepath)
-{
-	size_t len = strlen(filepath);
-	return len >= 12 && !strcasecmp(filepath + len - 12, ".vanilla.bak");
-}
-
 static int afa_default_priority(const char *filepath)
 {
-	if (afa_is_mod_archive(filepath))
-		return AFA_PRIO_MOD;
 	if (afa_is_backup_archive(filepath))
 		return AFA_PRIO_BACKUP;
+	if (afa_is_uncensored_archive(filepath))
+		return AFA_PRIO_UNCENSORED;
+	if (afa_is_mod_archive(filepath))
+		return AFA_PRIO_MOD;
 	return AFA_PRIO_BASE;
 }
 
@@ -1035,6 +1095,77 @@ static bool is_valid_fnl_file(const char *path)
 	return ok;
 }
 
+static struct cg *asset_cg_load_base_by_name(const char *name)
+{
+	if (!assets[ASSET_CG] || !assets[ASSET_CG]->get_by_name)
+		return NULL;
+	return asset_cg_load_by_name(name, NULL);
+}
+
+static struct cg *asset_cg_load_base_by_id(struct archive *src_ar, int id)
+{
+	if (!assets[ASSET_CG] || !src_ar || id <= 0)
+		return NULL;
+	if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+		struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
+		for (size_t i = 0; i < manager->nr_cg_overlays; i++) {
+			if (!manager->cg_overlays[i]->has_number)
+				continue;
+			struct archive_data *data = archive_get(&manager->cg_overlays[i]->ar, id - 1);
+			if (data) {
+				struct cg *cg = cg_load_data(data);
+				archive_free_data(data);
+				return cg;
+			}
+		}
+		return NULL;
+	}
+	if (assets[ASSET_CG]->get_by_id == afa_get_by_id) {
+		struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
+		struct afa_archive *src_afa = NULL;
+		for (size_t i = 0; i < manager->nr_archives; i++) {
+			if (&manager->archives[i]->ar == src_ar) {
+				src_afa = manager->archives[i];
+				break;
+			}
+		}
+		if (!src_afa)
+			return NULL;
+		if (!src_afa->has_number) {
+			uint32_t idx = (uint32_t)(id - 1);
+			if (idx >= src_afa->nr_files || !src_afa->files[idx].name)
+				return NULL;
+			return asset_cg_load_base_by_name(src_afa->files[idx].name->text);
+		}
+		for (size_t i = 0; i < manager->nr_archives; i++) {
+			if (!manager->archives[i]->has_number)
+				continue;
+			struct archive_data *data = archive_get(&manager->archives[i]->ar, id - 1);
+			if (data) {
+				struct cg *cg = cg_load_data(data);
+				archive_free_data(data);
+				return cg;
+			}
+		}
+	}
+	return NULL;
+}
+
+static int compare_uncensored_paths(const void *a, const void *b)
+{
+	const char *pa = *(const char * const *)a;
+	const char *pb = *(const char * const *)b;
+	const char *ba = strrchr(pa, '/');
+	const char *bb = strrchr(pb, '/');
+	ba = ba ? ba + 1 : pa;
+	bb = bb ? bb + 1 : pb;
+	bool ca = !strcasecmp(ba, "AliceHubUncensoredCG.afa");
+	bool cb = !strcasecmp(bb, "AliceHubUncensoredCG.afa");
+	if (ca != cb)
+		return ca ? -1 : 1;
+	return strcasecmp(ba, bb);
+}
+
 void asset_manager_init(void)
 {
 	char *ald_filenames[ASSET_TYPE_MAX][ALD_FILEMAX] = {0};
@@ -1042,6 +1173,8 @@ void asset_manager_init(void)
 	char *afa_filenames[ASSET_TYPE_MAX] = {0};
 	char *afa_chs_cg = NULL;
 	char *afa_chs_flat = NULL;
+	char **afa_uncensored_cgs = NULL;
+	size_t nr_afa_uncensored_cgs = 0;
 
 	UDIR *dir;
 	char *d_name;
@@ -1066,6 +1199,12 @@ void asset_manager_init(void)
 		const char *ext = file_extension(match_name);
 		if (!ext)
 			goto loop_next;
+		if (afa_is_uncensored_archive(d_name)) {
+			afa_uncensored_cgs = xrealloc(afa_uncensored_cgs,
+				(nr_afa_uncensored_cgs + 1) * sizeof(*afa_uncensored_cgs));
+			afa_uncensored_cgs[nr_afa_uncensored_cgs++] = path_join(config.game_dir, d_name);
+			goto loop_next;
+		}
 		// archive filename must normally begin with ain filename; retain *.ald candidates for renamed CN AINs
 		// and standalone CHS.afa overlays used by Longinus CN translations (e.g. Oyakorankan).
 		if (strncasecmp(base, match_name, base_len)) {
@@ -1211,4 +1350,33 @@ void asset_manager_init(void)
 			afa_load_archive_prio((struct asset_manager_afa *)assets[ASSET_FLAT], afa_chs_flat, AFA_PRIO_PATCH);
 		free(afa_chs_flat);
 	}
+
+	// Mount standalone uncensored CG overlay archives (e.g. AliceHubUncensoredCG.afa,
+	// Aiuncensored.afa) above base/patch/mod archives so uncensored H-CGs work across
+	// both AFA and ALD games without touching game scripts or conflicting with MODs.
+	if (nr_afa_uncensored_cgs > 0) {
+		qsort(afa_uncensored_cgs, nr_afa_uncensored_cgs, sizeof(*afa_uncensored_cgs),
+			compare_uncensored_paths);
+		if (!assets[ASSET_CG])
+			assets[ASSET_CG] = &afa_create_manager()->manager;
+		if (assets[ASSET_CG]->load_archive == afa_load_archive) {
+			// afa_load_archive_prio prepends equal-priority archives, so load in reverse
+			// to keep index 0 (AliceHubUncensoredCG.afa) at highest precedence.
+			for (size_t i = nr_afa_uncensored_cgs; i-- > 0; ) {
+				afa_load_archive_prio((struct asset_manager_afa *)assets[ASSET_CG],
+					afa_uncensored_cgs[i], AFA_PRIO_UNCENSORED);
+			}
+		} else if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			for (size_t i = 0; i < nr_afa_uncensored_cgs; i++) {
+				ald_attach_cg_overlay((struct asset_manager_ald *)assets[ASSET_CG],
+					afa_uncensored_cgs[i]);
+			}
+		}
+		for (size_t i = 0; i < nr_afa_uncensored_cgs; i++)
+			free(afa_uncensored_cgs[i]);
+		free(afa_uncensored_cgs);
+	}
+
+	cg_set_base_loader_by_name(asset_cg_load_base_by_name);
+	cg_set_base_loader_by_id(asset_cg_load_base_by_id);
 }
