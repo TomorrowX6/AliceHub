@@ -229,7 +229,24 @@ struct LibraryChecks {
             ("Toushin1", "TOUSHINSA.ALD", GameEngine.system3, "toushin1"),
             ("Toushin2", "tt2SA.ALD", GameEngine.system3, "toushin2"),
             ("DARCROWS", "HIME_SA.ALD", GameEngine.system3, "darcrows"),
-            ("IkusaMiko", "戦巫女SA.ALD", GameEngine.system3, "ikusamiko")
+            ("IkusaMiko", "戦巫女SA.ALD", GameEngine.system3, "ikusamiko"),
+            ("Sanbiki", "GBK.ain", GameEngine.system4, "sanbiki"),
+            ("PERSIOM", "PERSIOM_SA.ALD", GameEngine.system3, "persiom"),
+            ("SeeInAO", "イルカSA.ald", GameEngine.system3, "seeinao"),
+            ("HushabyBaby", "幽霊SA.ALD", GameEngine.system3, "hushaby"),
+            ("CielClaire", "逃避行SA.ALD", GameEngine.system3, "cielclaire"),
+            ("NightDemon", "夢鬼SA.ald", GameEngine.system3, "nightdemon"),
+            ("Katsumi", "かつみSA.ALD", GameEngine.system3, "katsumi"),
+            ("DrStop", "DS_SA.ALD", GameEngine.system3, "drstop"),
+            ("KoreDps", "これＤＰＳ？SA.ALD", GameEngine.system3, "koredps"),
+            ("KaeruAlice", "かえるにょ国にょアリスSA.ALD", GameEngine.system3, "kaerualice"),
+            ("ProstudentGood", "ＳＲ猿SA.ALD", GameEngine.system3, "prostudentgood"),
+            ("PastelChime", "ぱすてるSA.ALD", GameEngine.system3, "pastelchime"),
+            ("PastelChime2", "ぱすてる２.ain", GameEngine.system4, "pastelchime2"),
+            ("DALK", "DALK_SA.ALD", GameEngine.system3, "dalk"),
+            ("NingenGari", "人間狩りSA.ALD", GameEngine.system3, "ningengari"),
+            ("PaschaCpp", "ぱすてる＋.ain", GameEngine.system4, "paschacpp"),
+            ("Pascha3", "パステルチャイム３.ain", GameEngine.system4, "pascha3")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -238,14 +255,18 @@ struct LibraryChecks {
             let g = Game(url: gDir)
             precondition(g.engine == expectedEngine && g.artworkKey == expectedKey)
         }
-        for (dirName, legacyId, expectedName, expectedKey, checkFn) in [
-            ("GakuenKING", "gakuen_king", "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
-            ("OnlyYou", "onlyyou", "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool)
+        for (dirName, legacyId, cgFile, expectedName, expectedKey, checkFn) in [
+            ("GakuenKING", "gakuen_king", "ACG.DAT", "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
+            ("OnlyYou", "onlyyou", "ACG.DAT", "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool),
+            ("AyumiChan", "ayumi_cd", "ACG0.DAT", "步美物语", "ayumi", GameLibrary.isAyumi as (URL) -> Bool),
+            ("DpsAll", "dps_all", "ACG.DAT", "D.P.S. 全部", "dpsall", GameLibrary.isDpsAll as (URL) -> Bool),
+            ("ProstudentG", "prog_cd", "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
+            ("Yakata3", "yakata3_cd", "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
             try Data().write(to: gDir.appendingPathComponent("ADISK.DAT"))
-            try Data().write(to: gDir.appendingPathComponent("ACG.DAT"))
+            try Data().write(to: gDir.appendingPathComponent(cgFile))
             try Data("game = \(legacyId)\n".utf8).write(to: gDir.appendingPathComponent("system3.ini"))
             precondition(GameLibrary.isGame(gDir) && checkFn(gDir))
             let g = Game(url: gDir)
@@ -280,18 +301,31 @@ struct LibraryChecks {
             }
             return Data(buf)
         }
-        for (dirName, crc, expectedName, expectedKey, checkFn) in [
-            ("UnknownFolder1", UInt32(0xd1bf243b), "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
-            ("UnknownFolder2", UInt32(0x832aeb97), "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool)
+        for (dirName, crc, cgFile, expectedName, expectedKey, checkFn) in [
+            ("UnknownFolder1", UInt32(0xd1bf243b), "ACG.DAT", "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
+            ("UnknownFolder2", UInt32(0x832aeb97), "ACG.DAT", "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool),
+            ("UnknownFolder3", UInt32(0xd2bed9ee), "ACG0.DAT", "步美物语", "ayumi", GameLibrary.isAyumi as (URL) -> Bool),
+            ("UnknownFolder4", UInt32(0xd48b4ec6), "ACG.DAT", "D.P.S. 全部", "dpsall", GameLibrary.isDpsAll as (URL) -> Bool),
+            ("UnknownFolder5", UInt32(0xfb0e4a63), "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
+            ("UnknownFolder6", UInt32(0x7f8f5e2a), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
         ] {
             let cDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: cDir, withIntermediateDirectories: true)
             try make256Bytes(crc32: crc).write(to: cDir.appendingPathComponent("ADISK.DAT"))
-            try Data().write(to: cDir.appendingPathComponent("ACG.DAT"))
+            try Data().write(to: cDir.appendingPathComponent(cgFile))
             precondition(GameLibrary.isGame(cDir) && checkFn(cDir))
             let g = Game(url: cDir)
             precondition(g.engine == .legacySystem3 && g.displayName == expectedName && g.artworkKey == expectedKey)
         }
+        // Collision guards: Sengoku Rance Sanbiki vs Sengoku Rance; KaeruAlice vs Kaerunyo
+        let sanbikiTitleDir = root.appendingPathComponent("戦国ランス～三匹が斬ったり突いたり燃やしたり～")
+        try files.createDirectory(at: sanbikiTitleDir, withIntermediateDirectories: true)
+        try Data().write(to: sanbikiTitleDir.appendingPathComponent("GBK.ain"))
+        precondition(Game(url: sanbikiTitleDir).artworkKey == "sanbiki")
+        let kaeruAliceDir = root.appendingPathComponent("かえるにょ国にょアリス")
+        try files.createDirectory(at: kaeruAliceDir, withIntermediateDirectories: true)
+        try Data().write(to: kaeruAliceDir.appendingPathComponent("System39.ain"))
+        precondition(Game(url: kaeruAliceDir).artworkKey == "kaerualice")
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

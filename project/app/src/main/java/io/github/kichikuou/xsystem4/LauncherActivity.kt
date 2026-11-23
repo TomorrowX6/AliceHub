@@ -203,7 +203,28 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_TOUSHIN2 && GameCatalog.isToushin2Alias(q)) ||
             (desc.id == GameCatalog.ID_DARCROWS && GameCatalog.isDarcrowsAlias(q)) ||
             (desc.id == GameCatalog.ID_IKUSAMIKO && GameCatalog.isIkusaMikoAlias(q)) ||
-            (desc.id == GameCatalog.ID_ONLYYOU && GameCatalog.isOnlyYouAlias(q))
+            (desc.id == GameCatalog.ID_ONLYYOU && GameCatalog.isOnlyYouAlias(q)) ||
+            (desc.id == GameCatalog.ID_SANBIKI && GameCatalog.isSanbikiAlias(q)) ||
+            (desc.id == GameCatalog.ID_PERSIOM && GameCatalog.isPersiomAlias(q)) ||
+            (desc.id == GameCatalog.ID_SEEINAO && GameCatalog.isSeeInAoAlias(q)) ||
+            (desc.id == GameCatalog.ID_HUSHABY && GameCatalog.isHushabyAlias(q)) ||
+            (desc.id == GameCatalog.ID_AYUMI && GameCatalog.isAyumiAlias(q)) ||
+            (desc.id == GameCatalog.ID_CIELCLAIRE && GameCatalog.isCielClaireAlias(q)) ||
+            (desc.id == GameCatalog.ID_NIGHTDEMON && GameCatalog.isNightDemonAlias(q)) ||
+            (desc.id == GameCatalog.ID_KATSUMI && GameCatalog.isKatsumiAlias(q)) ||
+            (desc.id == GameCatalog.ID_DRSTOP && GameCatalog.isDrStopAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSALL && GameCatalog.isDpsAllAlias(q)) ||
+            (desc.id == GameCatalog.ID_KOREDPS && GameCatalog.isKoreDpsAlias(q)) ||
+            (desc.id == GameCatalog.ID_KAERUALICE && GameCatalog.isKaeruAliceAlias(q)) ||
+            (desc.id == GameCatalog.ID_PROSTUDENTG && GameCatalog.isProstudentGAlias(q)) ||
+            (desc.id == GameCatalog.ID_PROSTUDENTGOOD && GameCatalog.isProstudentGoodAlias(q)) ||
+            (desc.id == GameCatalog.ID_PASTELCHIME && GameCatalog.isPastelChimeAlias(q)) ||
+            (desc.id == GameCatalog.ID_PASTELCHIME2 && GameCatalog.isPastelChime2Alias(q)) ||
+            (desc.id == GameCatalog.ID_YAKATA3 && GameCatalog.isYakata3Alias(q)) ||
+            (desc.id == GameCatalog.ID_DALK && GameCatalog.isDalkAlias(q)) ||
+            (desc.id == GameCatalog.ID_NINGENGARI && GameCatalog.isNingenGariAlias(q)) ||
+            (desc.id == GameCatalog.ID_PASCHACPP && GameCatalog.isPaschaCppAlias(q)) ||
+            (desc.id == GameCatalog.ID_PASCHA3 && GameCatalog.isPascha3Alias(q))
         ) {
             return true
         }

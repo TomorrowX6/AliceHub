@@ -25,7 +25,46 @@ find_package(Freetype REQUIRED)
 
 set(src "${system3_source_SOURCE_DIR}/src")
 file(GLOB vm_sources "${src}/sys/*.cpp")
-list(REMOVE_ITEM vm_sources "${src}/sys/mako_midi.cpp")
+list(REMOVE_ITEM vm_sources "${src}/sys/mako_midi.cpp" "${src}/sys/nact_sys3.cpp")
+
+set(orig_nact_sys3 "${src}/sys/nact_sys3.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_sys3}")
+file(READ "${orig_nact_sys3}" nact_sys3_source)
+set(sys3_cmd_m_orig [=[	} else if(tvar_index == 31) {
+		sco.open(string);
+	} else if(tvar_index == 32) {
+		ags->set_cg_file(string);
+	} else if(tvar_index == 33) {
+		mako->amus.open(string);
+		strcpy(string + strlen(string) - 3, "MDA");
+		mako->mda.open(string);]=])
+set(sys3_cmd_m_repl [=[	} else if(tvar_index == 31) {
+		sco.open(encoding->toUtf8(string).c_str());
+	} else if(tvar_index == 32) {
+		ags->set_cg_file(encoding->toUtf8(string).c_str());
+	} else if(tvar_index == 33) {
+		std::string utf8_name = encoding->toUtf8(string);
+		mako->amus.open(utf8_name.c_str());
+		if (utf8_name.size() >= 3) {
+			utf8_name.replace(utf8_name.size() - 3, 3, "MDA");
+		}
+		mako->mda.open(utf8_name.c_str());]=])
+string(REPLACE "${sys3_cmd_m_orig}" "${sys3_cmd_m_repl}" patched_nact_sys3 "${nact_sys3_source}")
+if(patched_nact_sys3 STREQUAL nact_sys3_source)
+  message(FATAL_ERROR "Could not apply System 3 UTF-8 cmd_m filename patch")
+endif()
+set(sys3_y254_orig [=[		case 254:
+			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO)) ? 1 : 0;
+			break;]=])
+set(sys3_y254_repl [=[		case 254:
+			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO) || (game_id.is(GameId::PROG_CD) && mako->is_cd_available())) ? 1 : 0;
+			break;]=])
+string(REPLACE "${sys3_y254_orig}" "${sys3_y254_repl}" patched_nact_sys3_2 "${patched_nact_sys3}")
+if(patched_nact_sys3_2 STREQUAL patched_nact_sys3)
+  message(FATAL_ERROR "Could not apply System 3 Prostudent G CD-DA Y254 patch")
+endif()
+file(CONFIGURE OUTPUT nact_sys3.cpp CONTENT "${patched_nact_sys3_2}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_sys3.cpp")
 if(ANDROID)
   add_library(system3 SHARED)
   target_link_options(system3 PRIVATE "LINKER:-z,max-page-size=16384" "LINKER:--exclude-libs,ALL")

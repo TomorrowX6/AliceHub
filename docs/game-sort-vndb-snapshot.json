@@ -281,6 +281,106 @@
         "id",
         "=",
         "v20390"
+      ],
+      [
+        "id",
+        "=",
+        "v31408"
+      ],
+      [
+        "id",
+        "=",
+        "v4477"
+      ],
+      [
+        "id",
+        "=",
+        "v4771"
+      ],
+      [
+        "id",
+        "=",
+        "v3049"
+      ],
+      [
+        "id",
+        "=",
+        "v1929"
+      ],
+      [
+        "id",
+        "=",
+        "v493"
+      ],
+      [
+        "id",
+        "=",
+        "v5896"
+      ],
+      [
+        "id",
+        "=",
+        "v4515"
+      ],
+      [
+        "id",
+        "=",
+        "v1828"
+      ],
+      [
+        "id",
+        "=",
+        "v2234"
+      ],
+      [
+        "id",
+        "=",
+        "v1825"
+      ],
+      [
+        "id",
+        "=",
+        "v4701"
+      ],
+      [
+        "id",
+        "=",
+        "v4702"
+      ],
+      [
+        "id",
+        "=",
+        "v4693"
+      ],
+      [
+        "id",
+        "=",
+        "v1080"
+      ],
+      [
+        "id",
+        "=",
+        "v9426"
+      ],
+      [
+        "id",
+        "=",
+        "v1798"
+      ],
+      [
+        "id",
+        "=",
+        "v1827"
+      ],
+      [
+        "id",
+        "=",
+        "v4758"
+      ],
+      [
+        "id",
+        "=",
+        "v11292"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -783,6 +883,186 @@
         "released": "1998-11-26",
         "title": "Gakuen King Bangai Hen -Hidehiko Curry o Tsukuru-",
         "votecount": 2
+      },
+      {
+        "alttitle": "戦国ランス～三匹が斬ったり突いたり燃やしたり -slash!thrust!burn!-",
+        "average": 58.1,
+        "id": "v31408",
+        "rating": 58.1,
+        "released": "2008-04-11",
+        "title": "Sengoku Rance ~Sanbiki ga Kittari Tsuitari Moyashitari -Slash! Thrust! Burn!-",
+        "votecount": 102
+      },
+      {
+        "alttitle": "PERSIOM‐約束の集う場所‐",
+        "average": 67.9,
+        "id": "v4477",
+        "rating": 65.8,
+        "released": "2000-04-13",
+        "title": "Persiom -Yakusoku no Tsudou Basho-",
+        "votecount": 14
+      },
+      {
+        "alttitle": "See In 青 －シーンAO－",
+        "average": 67,
+        "id": "v4771",
+        "rating": 64.6,
+        "released": "2000-07-06",
+        "title": "See in Ao",
+        "votecount": 10
+      },
+      {
+        "alttitle": null,
+        "average": 45.6,
+        "id": "v3049",
+        "rating": 51.9,
+        "released": "1999-09-30",
+        "title": "HUSHABY BABY",
+        "votecount": 9
+      },
+      {
+        "alttitle": "あゆみちゃん物語",
+        "average": 58.1,
+        "id": "v1929",
+        "rating": 58.9,
+        "released": "1992-12-15",
+        "title": "Ayumi-chan Monogatari",
+        "votecount": 15
+      },
+      {
+        "alttitle": "シェル・クレイル～愛しあう逃避の中で～",
+        "average": 70.9,
+        "id": "v493",
+        "rating": 68.5,
+        "released": "2003-06-27",
+        "title": "Les Chairs Cruelles ~Aishiau Touhi no Naka de~",
+        "votecount": 18
+      },
+      {
+        "alttitle": "ナイトデーモン－夢鬼－",
+        "average": 64,
+        "id": "v5896",
+        "rating": 62.4,
+        "released": "2003-08-29",
+        "title": "Night Demon -Yume Oni-",
+        "votecount": 6
+      },
+      {
+        "alttitle": "いけないかつみ先生 ～患者さんおいたはだめよん～",
+        "average": 63.3,
+        "id": "v4515",
+        "rating": null,
+        "released": "1997-04-25",
+        "title": "Ikenai Katsumi Sensei ~Kanja-san Oita wa Dame Yon~",
+        "votecount": 3
+      },
+      {
+        "alttitle": null,
+        "average": 59.5,
+        "id": "v1828",
+        "rating": 60,
+        "released": "1992-04-15",
+        "title": "Dr.STOP!",
+        "votecount": 11
+      },
+      {
+        "alttitle": "D.P.S.全部",
+        "average": 57.1,
+        "id": "v2234",
+        "rating": 58.7,
+        "released": "1995-11-10",
+        "title": "D.P.S. Zenbu",
+        "votecount": 9
+      },
+      {
+        "alttitle": "これD.P.S.？",
+        "average": 45,
+        "id": "v1825",
+        "rating": null,
+        "released": "2000-12-07",
+        "title": "Kore D.P.S.?",
+        "votecount": 3
+      },
+      {
+        "alttitle": "ぷろすちゅーでんとG",
+        "average": 73.2,
+        "id": "v4701",
+        "rating": 69.7,
+        "released": "1993-05-15",
+        "title": "Prostudent G",
+        "votecount": 15
+      },
+      {
+        "alttitle": "ぷろすちゅ★でんとGood",
+        "average": 72.8,
+        "id": "v4702",
+        "rating": 68.7,
+        "released": "1999-01-14",
+        "title": "Prostu★dent Good",
+        "votecount": 12
+      },
+      {
+        "alttitle": "ぱすてるチャイム－恋のスキルアップ－",
+        "average": 62.7,
+        "id": "v4693",
+        "rating": 62.4,
+        "released": "1998-11-26",
+        "title": "Pastel Chime -Koi no Skill Up-",
+        "votecount": 24
+      },
+      {
+        "alttitle": "ぱすてるチャイムContinue",
+        "average": 73.5,
+        "id": "v1080",
+        "rating": 72.6,
+        "released": "2005-06-17",
+        "title": "Pastel Chime Continue",
+        "votecount": 50
+      },
+      {
+        "alttitle": "ALICEの館3",
+        "average": 52.8,
+        "id": "v9426",
+        "rating": 57,
+        "released": "1995-04-01",
+        "title": "Alice no Yakata 3",
+        "votecount": 6
+      },
+      {
+        "alttitle": null,
+        "average": 58.5,
+        "id": "v1798",
+        "rating": 59,
+        "released": "1992-12-15",
+        "title": "DALK",
+        "votecount": 20
+      },
+      {
+        "alttitle": "人間狩り",
+        "average": 55.5,
+        "id": "v1827",
+        "rating": 57.4,
+        "released": "1997-12-18",
+        "title": "Ningen Gari",
+        "votecount": 11
+      },
+      {
+        "alttitle": "ぱすちゃC＋＋",
+        "average": 79.3,
+        "id": "v4758",
+        "rating": 71.7,
+        "released": "2005-12-09",
+        "title": "Pascha C++",
+        "votecount": 9
+      },
+      {
+        "alttitle": "パステルチャイム3 バインドシーカー",
+        "average": 74.8,
+        "id": "v11292",
+        "rating": 74.8,
+        "released": "2013-02-15",
+        "title": "Pastel Chime 3 Bind Seeker",
+        "votecount": 123
       }
     ]
   },

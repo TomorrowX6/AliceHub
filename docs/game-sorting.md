@@ -82,6 +82,27 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `darcrows` | DARCROWS | 1999-11-18 | 70.5 | 7.05 | [v1095](https://vndb.org/v1095) | [source](https://vndb.org/v1095) |
 | `ikusamiko` | Ikusa Miko -Vestal Virgin- | 1997-10-30 | 54.8 | 5.48 | [v3083](https://vndb.org/v3083) | [source](https://vndb.org/v3083) |
 | `onlyyou` | Only You -Seikimatsu no Juliette-tachi- | 1996-01-01 | 71.2 | 7.12 | [v2003](https://vndb.org/v2003) | [source](https://vndb.org/v2003) |
+| `sanbiki` | Sengoku Rance ~Sanbiki ga Kittari Tsuitari Moyashitari~ | 2008-04-11 | 58.1 | 5.81 | [v31408](https://vndb.org/v31408) | [source](https://vndb.org/v31408) |
+| `persiom` | Persiom -Yakusoku no Tsudou Basho- | 2000-04-13 | 65.8 | 6.58 | [v4477](https://vndb.org/v4477) | [source](https://vndb.org/v4477) |
+| `seeinao` | See in Ao | 2000-07-06 | 64.6 | 6.46 | [v4771](https://vndb.org/v4771) | [source](https://vndb.org/v4771) |
+| `hushaby` | HUSHABY BABY | 1999-09-30 | 51.9 | 5.19 | [v3049](https://vndb.org/v3049) | [source](https://vndb.org/v3049) |
+| `ayumi` | Ayumi-chan Monogatari | 1992-12-15 | 58.9 | 5.89 | [v1929](https://vndb.org/v1929) | [source](https://vndb.org/v1929) |
+| `cielclaire` | Les Chairs Cruelles ~Aishiau Touhi no Naka de~ | 2003-06-27 | 68.5 | 6.85 | [v493](https://vndb.org/v493) | [source](https://vndb.org/v493) |
+| `nightdemon` | Night Demon -Yume Oni- | 2003-08-29 | 62.4 | 6.24 | [v5896](https://vndb.org/v5896) | [source](https://vndb.org/v5896) |
+| `katsumi` | Ikenai Katsumi Sensei | 1997-04-25 | unknown | unknown | not assigned | [source](https://vndb.org/v4515) |
+| `drstop` | Dr.STOP! | 1992-04-15 | 60 | 6.00 | [v1828](https://vndb.org/v1828) | [source](https://vndb.org/v1828) |
+| `dpsall` | D.P.S. Zenbu | 1995-11-10 | 58.7 | 5.87 | [v2234](https://vndb.org/v2234) | [source](https://vndb.org/v2234) |
+| `koredps` | Kore D.P.S.? | 2000-12-07 | unknown | unknown | not assigned | [source](https://vndb.org/v1825) |
+| `kaerualice` | Kaeru nyo Kuni nyo Alice | 2000-12-07 | unknown | unknown | not assigned | [source](https://vndb.org/r3541) |
+| `prostudentg` | Prostudent G | 1993-05-15 | 69.7 | 6.97 | [v4701](https://vndb.org/v4701) | [source](https://vndb.org/v4701) |
+| `prostudentgood` | Prostu★dent Good | 1999-01-14 | 68.7 | 6.87 | [v4702](https://vndb.org/v4702) | [source](https://vndb.org/v4702) |
+| `pastelchime` | Pastel Chime -Koi no Skill Up- | 1998-11-26 | 62.4 | 6.24 | [v4693](https://vndb.org/v4693) | [source](https://vndb.org/v4693) |
+| `pastelchime2` | Pastel Chime Continue | 2005-06-17 | 72.6 | 7.26 | [v1080](https://vndb.org/v1080) | [source](https://vndb.org/v1080) |
+| `yakata3` | Alice no Yakata 3 | 1995-04-01 | 57 | 5.70 | [v9426](https://vndb.org/v9426) | [source](https://vndb.org/v9426) |
+| `dalk` | DALK | 1992-12-15 | 59 | 5.90 | [v1798](https://vndb.org/v1798) | [source](https://vndb.org/v1798) |
+| `ningengari` | Ningen Gari | 1997-12-18 | 57.4 | 5.74 | [v1827](https://vndb.org/v1827) | [source](https://vndb.org/v1827) |
+| `paschacpp` | Pascha C++ | 2005-12-09 | 71.7 | 7.17 | [v4758](https://vndb.org/v4758) | [source](https://vndb.org/v4758) |
+| `pascha3` | Pastel Chime 3 Bind Seeker | 2013-02-15 | 74.8 | 7.48 | [v11292](https://vndb.org/v11292) | [source](https://vndb.org/v11292) |
 
 ## Edition mapping / missing-score decisions
 
@@ -95,6 +116,8 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 - `yorugakuru` lists the 2024 Remastered edition (first Japanese release `r119676` on `2024-04-19`), sharing work-wide rating 66.9 under VNDB **v499** (`Yoru ga Kuru! -Square of the Moon-`), matching the same work-rating rule as `escalayer_reboot`.
 - `rance1digest` lists the System 4 Digest Edition (first Japanese release `r28251` on `2004-08-27`), sharing work-wide rating 54.4 under VNDB **v1414** (`Rance -Hikari o Motomete-`).
 - `gakuenkingex` maps to VNDB **v20390** (`Gakuen King Bangai Hen -Hidehiko Curry o Tsukuru-`, released `1998-11-26`); VNDB currently returns `rating: null` (too few votes for a Bayesian rating), so its rating and score source stay null rather than substituting raw `average`.
+- `katsumi` ([v4515](https://vndb.org/v4515), released `1997-04-25`) and `koredps` ([v1825](https://vndb.org/v1825), released `2000-12-07`) similarly return `rating: null` on VNDB (3 votes each), so their rating and score source stay null rather than substituting raw `average`.
+- `kaerualice` (`かえるにょ国にょアリス`, bundled on *20th Century Alice* / [r3541](https://vndb.org/r3541), released `2000-12-07`) has no standalone VNDB work entry, so its rating and score source stay null.
 - No ErogameScape score or search-cache value is integrated. That source was superseded by the user and research stopped. No popularity count is reused as a rating.
 
 ## Validation scope

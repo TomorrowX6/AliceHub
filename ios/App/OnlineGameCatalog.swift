@@ -65,7 +65,28 @@ struct OnlineGame: Identifiable {
         Self(id: "toushin2", title: "斗神都市II", directory: "Toushin2"),
         Self(id: "darcrows", title: "暗鸦 DARCROWS", directory: "DARCROWS"),
         Self(id: "ikusamiko", title: "战巫女", directory: "IkusaMiko"),
-        Self(id: "onlyyou", title: "Only You 世纪末的朱丽叶们", directory: "OnlyYou")
+        Self(id: "onlyyou", title: "Only You 世纪末的朱丽叶们", directory: "OnlyYou"),
+        Self(id: "sanbiki", title: "战国兰斯 三匹が斬ったり突いたり燃やしたり", directory: "Sanbiki"),
+        Self(id: "persiom", title: "PERSIOM 约定汇聚之所", directory: "PERSIOM"),
+        Self(id: "seeinao", title: "SeeIn青 ～Scene AO～", directory: "SeeInAO"),
+        Self(id: "hushaby", title: "HUSHABY BABY", directory: "HushabyBaby"),
+        Self(id: "ayumi", title: "步美物语", directory: "AyumiChan"),
+        Self(id: "cielclaire", title: "残酷的爱恋", directory: "CielClaire"),
+        Self(id: "nightdemon", title: "梦鬼 Night Demon", directory: "NightDemon"),
+        Self(id: "katsumi", title: "不靠谱的胜美大夫", directory: "Katsumi"),
+        Self(id: "drstop", title: "Dr.STOP!", directory: "DrStop"),
+        Self(id: "dpsall", title: "D.P.S. 全部", directory: "DpsAll"),
+        Self(id: "koredps", title: "这是D.P.S.？", directory: "KoreDps"),
+        Self(id: "kaerualice", title: "蛙国爱丽丝", directory: "KaeruAlice"),
+        Self(id: "prostudentg", title: "职业学生G", directory: "ProstudentG"),
+        Self(id: "prostudentgood", title: "职业学生Good", directory: "ProstudentGood"),
+        Self(id: "pastelchime", title: "粉彩铃音", directory: "PastelChime"),
+        Self(id: "pastelchime2", title: "粉彩铃音 Continue", directory: "PastelChime2"),
+        Self(id: "yakata3", title: "爱丽丝之馆3", directory: "Yakata3"),
+        Self(id: "dalk", title: "DALK", directory: "DALK"),
+        Self(id: "ningengari", title: "人间狩猎", directory: "NingenGari"),
+        Self(id: "paschacpp", title: "粉彩铃音 C++", directory: "PaschaCpp"),
+        Self(id: "pascha3", title: "粉彩铃音3 封神追寻者", directory: "Pascha3")
     ]
 }
 

@@ -359,6 +359,27 @@ object OnlineInstaller {
     const val DARCROWS_CDN_URL = "https://alicehub.000.moe/darcrows"
     const val IKUSAMIKO_CDN_URL = "https://alicehub.000.moe/ikusamiko"
     const val ONLYYOU_CDN_URL = "https://alicehub.000.moe/onlyyou"
+    const val SANBIKI_CDN_URL = "https://alicehub.000.moe/sanbiki"
+    const val PERSIOM_CDN_URL = "https://alicehub.000.moe/persiom"
+    const val SEEINAO_CDN_URL = "https://alicehub.000.moe/seeinao"
+    const val HUSHABY_CDN_URL = "https://alicehub.000.moe/hushaby"
+    const val AYUMI_CDN_URL = "https://alicehub.000.moe/ayumi"
+    const val CIELCLAIRE_CDN_URL = "https://alicehub.000.moe/cielclaire"
+    const val NIGHTDEMON_CDN_URL = "https://alicehub.000.moe/nightdemon"
+    const val KATSUMI_CDN_URL = "https://alicehub.000.moe/katsumi"
+    const val DRSTOP_CDN_URL = "https://alicehub.000.moe/drstop"
+    const val DPSALL_CDN_URL = "https://alicehub.000.moe/dpsall"
+    const val KOREDPS_CDN_URL = "https://alicehub.000.moe/koredps"
+    const val KAERUALICE_CDN_URL = "https://alicehub.000.moe/kaerualice"
+    const val PROSTUDENTG_CDN_URL = "https://alicehub.000.moe/prostudentg"
+    const val PROSTUDENTGOOD_CDN_URL = "https://alicehub.000.moe/prostudentgood"
+    const val PASTELCHIME_CDN_URL = "https://alicehub.000.moe/pastelchime"
+    const val PASTELCHIME2_CDN_URL = "https://alicehub.000.moe/pastelchime2"
+    const val YAKATA3_CDN_URL = "https://alicehub.000.moe/yakata3"
+    const val DALK_CDN_URL = "https://alicehub.000.moe/dalk"
+    const val NINGENGARI_CDN_URL = "https://alicehub.000.moe/ningengari"
+    const val PASCHACPP_CDN_URL = "https://alicehub.000.moe/paschacpp"
+    const val PASCHA3_CDN_URL = "https://alicehub.000.moe/pascha3"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1740,6 +1761,27 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_DARCROWS -> sanitizedManifestBase.ifEmpty { "DARCROWS" }
             classifiedStagedId == GameCatalog.ID_IKUSAMIKO -> sanitizedManifestBase.ifEmpty { "IkusaMiko" }
             classifiedStagedId == GameCatalog.ID_ONLYYOU -> sanitizedManifestBase.ifEmpty { "OnlyYou" }
+            classifiedStagedId == GameCatalog.ID_SANBIKI -> sanitizedManifestBase.ifEmpty { "Sanbiki" }
+            classifiedStagedId == GameCatalog.ID_PERSIOM -> sanitizedManifestBase.ifEmpty { "PERSIOM" }
+            classifiedStagedId == GameCatalog.ID_SEEINAO -> sanitizedManifestBase.ifEmpty { "SeeInAO" }
+            classifiedStagedId == GameCatalog.ID_HUSHABY -> sanitizedManifestBase.ifEmpty { "HushabyBaby" }
+            classifiedStagedId == GameCatalog.ID_AYUMI -> sanitizedManifestBase.ifEmpty { "AyumiChan" }
+            classifiedStagedId == GameCatalog.ID_CIELCLAIRE -> sanitizedManifestBase.ifEmpty { "CielClaire" }
+            classifiedStagedId == GameCatalog.ID_NIGHTDEMON -> sanitizedManifestBase.ifEmpty { "NightDemon" }
+            classifiedStagedId == GameCatalog.ID_KATSUMI -> sanitizedManifestBase.ifEmpty { "Katsumi" }
+            classifiedStagedId == GameCatalog.ID_DRSTOP -> sanitizedManifestBase.ifEmpty { "DrStop" }
+            classifiedStagedId == GameCatalog.ID_DPSALL -> sanitizedManifestBase.ifEmpty { "DpsAll" }
+            classifiedStagedId == GameCatalog.ID_KOREDPS -> sanitizedManifestBase.ifEmpty { "KoreDps" }
+            classifiedStagedId == GameCatalog.ID_KAERUALICE -> sanitizedManifestBase.ifEmpty { "KaeruAlice" }
+            classifiedStagedId == GameCatalog.ID_PROSTUDENTG -> sanitizedManifestBase.ifEmpty { "ProstudentG" }
+            classifiedStagedId == GameCatalog.ID_PROSTUDENTGOOD -> sanitizedManifestBase.ifEmpty { "ProstudentGood" }
+            classifiedStagedId == GameCatalog.ID_PASTELCHIME -> sanitizedManifestBase.ifEmpty { "PastelChime" }
+            classifiedStagedId == GameCatalog.ID_PASTELCHIME2 -> sanitizedManifestBase.ifEmpty { "PastelChime2" }
+            classifiedStagedId == GameCatalog.ID_YAKATA3 -> sanitizedManifestBase.ifEmpty { "Yakata3" }
+            classifiedStagedId == GameCatalog.ID_DALK -> sanitizedManifestBase.ifEmpty { "DALK" }
+            classifiedStagedId == GameCatalog.ID_NINGENGARI -> sanitizedManifestBase.ifEmpty { "NingenGari" }
+            classifiedStagedId == GameCatalog.ID_PASCHACPP -> sanitizedManifestBase.ifEmpty { "PaschaCpp" }
+            classifiedStagedId == GameCatalog.ID_PASCHA3 -> sanitizedManifestBase.ifEmpty { "Pascha3" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2058,7 +2100,11 @@ object OnlineInstaller {
                         lower.contains("evenicleapc") ||
                         lower.contains("夏娃年代记外典") ||
                         lower.contains("イブニクル外典")
-                    GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance")
+                    GameCatalog.ID_SENGOKU_RANCE -> lower.contains("sengokurance") &&
+                        !lower.contains("sanbiki") &&
+                        !lower.contains("三匹")
+                    GameCatalog.ID_SANBIKI -> lower.contains("sanbiki") ||
+                        lower.contains("三匹")
                     GameCatalog.ID_RANCE01 -> (lower.contains("rance01") || lower.contains("rance_01")) &&
                         !lower.contains("digest") &&
                         !lower.contains("摘要")
@@ -2104,9 +2150,17 @@ object OnlineInstaller {
                     GameCatalog.ID_DAITEIKOKU -> lower.contains("daiteikoku") ||
                         lower.contains("大帝国") ||
                         lower.contains("大帝國")
-                    GameCatalog.ID_KAERUNYO -> lower.contains("kaerunyo") ||
+                    GameCatalog.ID_KAERUNYO -> (lower.contains("kaerunyo") ||
                         lower.contains("かえるにょ") ||
-                        lower.contains("ぱにょ")
+                        lower.contains("ぱにょ")) &&
+                        !lower.contains("kaerualice") &&
+                        !lower.contains("国にょ") &&
+                        !lower.contains("アリス") &&
+                        !lower.contains("蛙国")
+                    GameCatalog.ID_KAERUALICE -> lower.contains("kaerualice") ||
+                        lower.contains("kaeru_alice") ||
+                        lower.contains("国にょアリス") ||
+                        lower.contains("蛙国爱丽丝")
                     GameCatalog.ID_ATLACHNACHA -> lower.contains("atlach") ||
                         lower.contains("アトラク")
                     GameCatalog.ID_REISHIKI -> lower.contains("reishiki") ||
@@ -2196,6 +2250,96 @@ object OnlineInstaller {
                         lower.contains("世紀末のジュリエット")) &&
                         !lower.contains("recross") &&
                         !lower.contains("リクルス")
+                    GameCatalog.ID_PERSIOM -> lower.contains("persiom")
+                    GameCatalog.ID_SEEINAO -> lower.contains("seeinao") ||
+                        lower.contains("seein_ao") ||
+                        lower.contains("seein青")
+                    GameCatalog.ID_HUSHABY -> lower.contains("hushaby")
+                    GameCatalog.ID_AYUMI -> lower.contains("ayumichan") ||
+                        lower.contains("ayumi_chan") ||
+                        lower.contains("ayumi") ||
+                        lower.contains("あゆみちゃん") ||
+                        lower.contains("步美物语")
+                    GameCatalog.ID_CIELCLAIRE -> lower.contains("cielclaire") ||
+                        lower.contains("ciel_claire") ||
+                        lower.contains("シェル・クレイル") ||
+                        lower.contains("残酷的爱恋")
+                    GameCatalog.ID_NIGHTDEMON -> lower.contains("nightdemon") ||
+                        lower.contains("night_demon") ||
+                        lower.contains("ナイトデーモン") ||
+                        lower.contains("夢鬼") ||
+                        lower.contains("梦鬼")
+                    GameCatalog.ID_KATSUMI -> lower.contains("katsumi") ||
+                        lower.contains("かつみ") ||
+                        lower.contains("胜美大夫")
+                    GameCatalog.ID_DRSTOP -> lower.contains("drstop") ||
+                        lower.contains("dr_stop") ||
+                        lower.contains("dr.stop")
+                    GameCatalog.ID_DPSALL -> lower.contains("dpsall") ||
+                        lower.contains("dps_all") ||
+                        lower.contains("d.p.s.全部") ||
+                        lower.contains("dps全部")
+                    GameCatalog.ID_KOREDPS -> lower.contains("koredps") ||
+                        lower.contains("kore_dps") ||
+                        lower.contains("これd.p.s") ||
+                        lower.contains("これdps") ||
+                        lower.contains("这是d.p.s")
+                    GameCatalog.ID_PROSTUDENTGOOD -> lower.contains("prostudentgood") ||
+                        lower.contains("prostudent_good") ||
+                        lower.contains("ぷろすちゅ★でんと") ||
+                        lower.contains("职业学生good")
+                    GameCatalog.ID_PROSTUDENTG -> (lower.contains("prostudentg") ||
+                        lower.contains("prostudent_g") ||
+                        lower.contains("prog_cd") ||
+                        lower.contains("ぷろすちゅーでんとg") ||
+                        lower.contains("职业学生g")) &&
+                        !lower.contains("good")
+                    GameCatalog.ID_PASCHA3 -> lower.contains("pascha3") ||
+                        lower.contains("pascha_3") ||
+                        lower.contains("pastelchime3") ||
+                        lower.contains("パステルチャイム3") ||
+                        lower.contains("パステルチャイム３") ||
+                        lower.contains("粉彩铃音3") ||
+                        lower.contains("粉彩铃音３")
+                    GameCatalog.ID_PASCHACPP -> lower.contains("paschacpp") ||
+                        lower.contains("pascha_cpp") ||
+                        lower.contains("paschac++") ||
+                        lower.contains("ぱすちゃc") ||
+                        lower.contains("粉彩铃音c++") ||
+                        lower.contains("粉彩铃音 c++")
+                    GameCatalog.ID_PASTELCHIME2 -> lower.contains("pastelchime2") ||
+                        lower.contains("pastelchime_2") ||
+                        lower.contains("pastelchimecontinue") ||
+                        lower.contains("ぱすてるチャイムcontinue") ||
+                        lower.contains("粉彩铃音continue") ||
+                        lower.contains("粉彩铃音 continue")
+                    GameCatalog.ID_PASTELCHIME -> (lower.contains("pastelchime") ||
+                        lower.contains("pastel_chime") ||
+                        lower.contains("ぱすてるチャイム") ||
+                        lower.contains("粉彩铃音")) &&
+                        !lower.contains("2") &&
+                        !lower.contains("２") &&
+                        !lower.contains("3") &&
+                        !lower.contains("３") &&
+                        !lower.contains("continue") &&
+                        !lower.contains("cpp") &&
+                        !lower.contains("c++") &&
+                        !lower.contains("++") &&
+                        !lower.contains("bind")
+                    GameCatalog.ID_YAKATA3 -> lower.contains("yakata3") ||
+                        lower.contains("yakata_3") ||
+                        lower.contains("aliceの館3") ||
+                        lower.contains("aliceの館iii") ||
+                        lower.contains("爱丽丝之馆3")
+                    GameCatalog.ID_DALK -> (Regex("(?<![a-z0-9])dalk(?![a-z0-9])").containsMatchIn(lower) ||
+                        lower.contains("dalk_sa") || lower.contains("dalk_base")) &&
+                        !lower.contains("gaiden") &&
+                        !lower.contains("外伝") &&
+                        !lower.contains("外传")
+                    GameCatalog.ID_NINGENGARI -> lower.contains("ningengari") ||
+                        lower.contains("ningen_gari") ||
+                        lower.contains("人間狩り") ||
+                        lower.contains("人间狩猎")
                     GameCatalog.ID_OYAKORANKAN -> lower.contains("oyakorankan") ||
                         lower.contains("oyako_rankan") ||
                         lower.contains("母娘乱館") ||
