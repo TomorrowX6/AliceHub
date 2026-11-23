@@ -102,6 +102,7 @@ class HarukaRegressionsTest(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 #include "system4/archive.h"
+#include "system4/cg.h"
 #include "system4/file.h"
 #include "system4/utfsjis.h"
 #include "asset_manager.h"
@@ -114,6 +115,10 @@ const char *display_utf0(const char *s) { return s; }
 char *gamedir_path(const char *s) { return path_join(config.game_dir, s); }
 char *gamedir_path_icase(const char *s) { return gamedir_path(s); }
 char *savedir_path(const char *s) { abort(); }
+struct cg *cg_load_data(struct archive_data *d) { (void)d; return NULL; }
+struct cg *cg_load_file(const char *f) { (void)f; return NULL; }
+void cg_set_base_loader_by_name(cg_base_loader_by_name_fn fn) { (void)fn; }
+void cg_set_base_loader_by_id(cg_base_loader_by_id_fn fn) { (void)fn; }
 
 static void check_asset(enum asset_type type, const char *name) {
     struct archive_data *data = asset_get(type, 1);
