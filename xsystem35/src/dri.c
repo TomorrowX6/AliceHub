@@ -49,47 +49,105 @@ static bool read_index(int volume, drifiles *d, FILE *fp) {
 		return false;
 	uint32_t linksize = linkend - ofssize;
 
-	// Read the link table. In System 3.9, only the first volume's link table is
-	// valid. It's different in System 3.8 and earlier, and games that depend
-	// on the old behavior (e.g. Child Assassin in Alice CD 2.50) won't work.
-	if (!d->link) {
-		d->nr_files = (int)(linksize / 3);
-		if (d->nr_files <= 0)
+	// Read the link table into a local buffer first so a failed read leaves `d` untouched.
+	uint8_t *new_link = NULL;
+	uint32_t *new_offset = NULL;
+	int nr_files = d->nr_files;
+	const uint8_t *link = d->link;
+	if (!link) {
+		nr_files = (int)(linksize / 3);
+		if (nr_files <= 0)
 			return false;
-		d->link = calloc(1, linksize);
-		d->offset = calloc(sizeof(uint32_t), d->nr_files);
-		if (!d->link || !d->offset)
+		new_link = calloc(1, linksize);
+		new_offset = calloc(sizeof(uint32_t), nr_files);
+		if (!new_link || !new_offset) {
+			free(new_link);
+			free(new_offset);
 			return false;
-		if (fseek(fp, (long)ofssize, SEEK_SET) != 0 || fread(d->link, linksize, 1, fp) != 1)
+		}
+		if (fseek(fp, (long)ofssize, SEEK_SET) != 0 || fread(new_link, linksize, 1, fp) != 1) {
+			free(new_link);
+			free(new_offset);
 			return false;
+		}
+		link = new_link;
 	}
 
 	// Read the offsets table.
 	uint8_t *otbl = malloc(ofssize);
-	if (!otbl)
-		return false;
-	if (fseek(fp, 0L, SEEK_SET) != 0 || fread(otbl, ofssize, 1, fp) != 1) {
+	uint32_t *vol_offsets = calloc(sizeof(uint32_t), nr_files);
+	if (!otbl || !vol_offsets) {
 		free(otbl);
+		free(vol_offsets);
+		free(new_link);
+		free(new_offset);
 		return false;
 	}
-	for (int i = 0; i < d->nr_files; i++) {
-		if (d->link[i * 3] != volume)
+	if (fseek(fp, 0L, SEEK_SET) != 0 || fread(otbl, ofssize, 1, fp) != 1) {
+		free(otbl);
+		free(vol_offsets);
+		free(new_link);
+		free(new_offset);
+		return false;
+	}
+
+	int new_maxno = d->maxno;
+	for (int i = 0; i < nr_files; i++) {
+		if (link[i * 3] != volume)
 			continue;
-		if (d->maxno < i)
-			d->maxno = i;
-		uint32_t offset_index = (uint32_t)LittleEndian_getW(d->link, i * 3 + 1);
+		if (new_maxno < i)
+			new_maxno = i;
+		uint32_t offset_index = (uint32_t)LittleEndian_getW(link, i * 3 + 1);
 		if (offset_index >= ofssize / 3) {
 			free(otbl);
+			free(vol_offsets);
+			free(new_link);
+			free(new_offset);
 			return false;
 		}
 		uint32_t off = (uint32_t)LittleEndian_get3B(otbl, (int)(offset_index * 3)) << 8;
-		if (off > filesize) {
-			free(otbl);
-			return false;
+		if (off != 0) {
+			if (off > filesize || filesize - off < 8) {
+				free(otbl);
+				free(vol_offsets);
+				free(new_link);
+				free(new_offset);
+				return false;
+			}
+			uint8_t eh[8];
+			if (fseek(fp, (long)off, SEEK_SET) != 0 || fread(eh, sizeof(eh), 1, fp) != 1) {
+				free(otbl);
+				free(vol_offsets);
+				free(new_link);
+				free(new_offset);
+				return false;
+			}
+			uint32_t ptr = LittleEndian_getDW(eh, 0);
+			uint32_t size = LittleEndian_getDW(eh, 4);
+			if (ptr < 8 || (uint64_t)ptr + (uint64_t)size > (uint64_t)(filesize - off)) {
+				free(otbl);
+				free(vol_offsets);
+				free(new_link);
+				free(new_offset);
+				return false;
+			}
 		}
-		d->offset[i] = off;
+		vol_offsets[i] = off;
 	}
+
+	// Commit validated volume index atomically.
+	if (new_link) {
+		d->nr_files = nr_files;
+		d->link = new_link;
+		d->offset = new_offset;
+	}
+	for (int i = 0; i < d->nr_files; i++) {
+		if (d->link[i * 3] == volume)
+			d->offset[i] = vol_offsets[i];
+	}
+	d->maxno = new_maxno;
 	free(otbl);
+	free(vol_offsets);
 	return true;
 }
 
@@ -207,10 +265,14 @@ dridata *dri_getdata(drifiles *d, int no) {
 	uint8_t *data;
 	int ptr, size;
 	if (d->mmapped) {
+		if (!d->mmap[volume - 1])
+			return NULL;
 		data = d->mmap[volume - 1]->addr + d->offset[no];
 		ptr  = LittleEndian_getDW(data, 0);
 		size = LittleEndian_getDW(data, 4);
 	} else {
+		if (!d->fnames[volume - 1])
+			return NULL;
 		FILE *fp = fopen(d->fnames[volume - 1], "rb");
 		if (!fp)
 			return NULL;

@@ -272,6 +272,9 @@ int main(void) {{
             base_ald = td / "R5D_GA.ALD"
             ov_ald = td / "AliceHubUncensoredCG.ald"
             bad_ald = td / "MalformedUncensoredCG.ald"
+            trunc_ald = td / "TruncatedUncensoredCG.ald"
+            mv_vol1 = td / "MV_GA.ALD"
+            mv_vol2 = td / "MV_GB.ALD"
             base_ald.write_bytes(make_ald([(50, "CG0051.QNT", b"BASE_51"), (51, "CG0052.QNT", b"BASE_52")]))
             ov_ald.write_bytes(make_ald([(50, "CG0051.QNT", b"UNC_51_LONG")]))
             # Construct malformed ALD whose link table has an out-of-bounds offset_index (0xFFFF)
@@ -280,6 +283,30 @@ int main(void) {{
             bad_bytes[ofssize_bad + 50 * 3 + 1] = 0xFF
             bad_bytes[ofssize_bad + 50 * 3 + 2] = 0xFF
             bad_ald.write_bytes(bytes(bad_bytes))
+            # Construct ALD whose entry header declares payload size exceeding file size
+            trunc_bytes = bytearray(make_ald([(50, "CG0051.QNT", b"SHORT")]))
+            entry_off = (trunc_bytes[3] | (trunc_bytes[4] << 8) | (trunc_bytes[5] << 16)) << 8
+            struct.pack_into("<I", trunc_bytes, entry_off + 4, 0x100000)
+            trunc_ald.write_bytes(bytes(trunc_bytes))
+            # Multi-volume ALD: vol 1 has valid slot 10; link table points slot 11 & 12 to vol 2,
+            # where slot 11 is valid in vol 2 and slot 12 is truncated -> vol 2 rejected atomically!
+            mv1 = bytearray(make_ald([(10, "CG0011.QNT", b"VOL1_OK")]))
+            # Expand link table in mv1 to include slots 11 (vol 2, idx 1) and 12 (vol 2, idx 2)
+            # Easier: build 3-entry vol1 and rewrite link table entries 11 & 12 to volume 2
+            mv1 = bytearray(make_ald([(10, "CG0011.QNT", b"VOL1_OK"), (11, "DUMMY1", b"X"), (12, "DUMMY2", b"Y")]))
+            mv1_ofs = (mv1[0] | (mv1[1] << 8) | (mv1[2] << 16)) << 8
+            mv1[mv1_ofs + 11 * 3] = 2
+            mv1[mv1_ofs + 11 * 3 + 1] = 1
+            mv1[mv1_ofs + 11 * 3 + 2] = 0
+            mv1[mv1_ofs + 12 * 3] = 2
+            mv1[mv1_ofs + 12 * 3 + 1] = 2
+            mv1[mv1_ofs + 12 * 3 + 2] = 0
+            mv_vol1.write_bytes(bytes(mv1))
+            mv2 = bytearray(make_ald([(11, "CG0012.QNT", b"VOL2_FIRST"), (12, "CG0013.QNT", b"VOL2_BAD")]))
+            # Corrupt entry 2's size in mv2 so slot 11 is valid but slot 12 fails validation
+            mv2_ent2_off = (mv2[6] | (mv2[7] << 8) | (mv2[8] << 16)) << 8
+            struct.pack_into("<I", mv2, mv2_ent2_off + 4, 0x200000)
+            mv_vol2.write_bytes(bytes(mv2))
 
             src_c = td / "test_x35.c"
             exe = td / "test_x35"
@@ -320,10 +347,24 @@ int main(void) {{
 
     const char *base_files[1] = {{ "{base_ald}" }};
     ald_init(DRIFILE_CG, base_files, 1, false);
-    // Malformed overlay with OOB offset_index must be safely rejected without crashing
+    // Malformed / truncated overlays must be safely rejected without crashing
     assert(dri_init_optional("{bad_ald}", false) == NULL);
+    assert(dri_init_optional("{trunc_ald}", false) == NULL);
     ald_init_overlay(DRIFILE_CG, "{bad_ald}", false);
+    ald_init_overlay(DRIFILE_CG, "{trunc_ald}", false);
     ald_init_overlay(DRIFILE_CG, "{ov_ald}", false);
+
+    // Multi-volume ALD: rejected secondary volume must not expose partial offsets
+    const char *mv_files[2] = {{ "{mv_vol1}", "{mv_vol2}" }};
+    drifiles *mv = dri_init(mv_files, 2, false);
+    assert(mv != NULL);
+    assert(dri_exists(mv, 10));
+    assert(!dri_exists(mv, 11));
+    assert(!dri_exists(mv, 12));
+    dridata *mv10 = dri_getdata(mv, 10);
+    assert(mv10 && mv10->size == 7 && memcmp(mv10->data, "VOL1_OK", 7) == 0);
+    free(mv10->data_raw);
+    free(mv10);
 
     assert(ald_exists(DRIFILE_CG, 50));
     assert(ald_exists(DRIFILE_CG, 51));

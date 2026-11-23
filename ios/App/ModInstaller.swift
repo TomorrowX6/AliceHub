@@ -142,7 +142,7 @@ final class ModInstaller: ObservableObject {
 
     func downloadVerifiedFile(_ release: ModReleaseEntry, cache: URL,
                               progress: @escaping (Int64, Int64) -> Void) throws -> URL {
-        lock.lock(); cancelled = false; networkTask = nil; lock.unlock()
+        try checkCancelled()
         defer { lock.lock(); networkTask = nil; lock.unlock() }
         return try download(release, games: cache, prefix: "", cacheDirectory: cache, progress: progress)
     }
