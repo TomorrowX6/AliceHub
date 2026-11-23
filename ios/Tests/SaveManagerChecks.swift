@@ -108,6 +108,12 @@ struct SaveManagerChecks {
         let rawFolder = root.appendingPathComponent("RawExport")
         _ = try manager.export(to: rawFolder, pc: false, zip: false)
         check(try Data(contentsOf: rawFolder.appendingPathComponent("SaveData/struct.asd")).prefix(8) == SaveManager.magic)
+        if root.path.hasPrefix("/var/") {
+            let picked = URL(fileURLWithPath: "/private" + root.path).appendingPathComponent("PickedFolder")
+            try files.createDirectory(at: picked, withIntermediateDirectories: true)
+            check(try manager.export(to: picked, pc: false, zip: false) == (manager.list().count, 0))
+            check(try Data(contentsOf: picked.appendingPathComponent("SaveData/android.asd")) == Data("android".utf8))
+        }
         let entry = try manager.list().first { $0.path == "android.asd" }!
         let single = root.appendingPathComponent("single.asd")
         check(try manager.export(to: single, pc: false, zip: false, single: entry) == (1, 0))

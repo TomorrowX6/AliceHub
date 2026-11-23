@@ -99,8 +99,13 @@ final class SaveManager {
 
     private func install(_ entry: SaveZip.Entry, path: String, root: URL) throws {
         let target = root.appendingPathComponent(path)
-        let resolved = target.resolvingSymlinksInPath().standardizedFileURL.path
-        guard resolved.hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path + "/") else { throw Failure.unsafePath }
+        // resolvingSymlinksInPath only strips "/private" from paths that exist, so
+        // compare the nearest existing ancestor rather than the file to be written.
+        var existing = target.deletingLastPathComponent()
+        while !files.fileExists(atPath: existing.path) { existing.deleteLastPathComponent() }
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = existing.resolvingSymlinksInPath().standardizedFileURL.path
+        guard resolved == base || resolved.hasPrefix(base + "/") else { throw Failure.unsafePath }
         try files.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         try entry.data.write(to: target, options: .atomic)
         try files.setAttributes([.modificationDate: entry.modified], ofItemAtPath: target.path)
