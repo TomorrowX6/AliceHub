@@ -3359,8 +3359,8 @@ void input_set_gamepad_config_json(const char *json)
 		cJSON *sp = cJSON_GetObjectItemCaseSensitive(phys, "cursorSpeedPct");
 		if (cJSON_IsNumber(sp)) {
 			int p = sp->valueint;
-			if (p < 30) p = 30;
-			if (p > 250) p = 250;
+			if (p < 20) p = 20;
+			if (p > 300) p = 300;
 			gp_cfg.cursor_speed = 720.0f * ((float)p / 100.0f);
 		}
 		cJSON *rm = cJSON_GetObjectItemCaseSensitive(phys, "rumbleEnabled");

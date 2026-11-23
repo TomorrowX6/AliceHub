@@ -199,22 +199,87 @@ static bool ain_text_is_utf8(const char *path)
 	sys4_set_source_utf8(prev);
 	if (!raw)
 		return false;
-	bool utf8 = false;
-	for (int i = 0; i < raw->nr_messages; i++) {
-		struct string *m = raw->messages[i];
-		bool ascii = true;
-		for (int j = 0; j < m->size && ascii; j++)
-			ascii = (uint8_t)m->text[j] < 0x80;
-		if (ascii)
-			continue;
-		if (!sys4_bytes_look_utf8((const uint8_t *)m->text, m->size)) {
-			utf8 = false;
-			break;
+	unsigned long valid = 0;
+	unsigned long invalid = 0;
+	if (raw->nr_messages > 0 && raw->messages) {
+		int step = raw->nr_messages > 8192 ? raw->nr_messages / 8192 : 1;
+		for (int i = 0; i < raw->nr_messages; i += step) {
+			struct string *m = raw->messages[i];
+			if (!m || !m->size)
+				continue;
+			bool ascii = true;
+			for (int j = 0; j < m->size && ascii; j++)
+				ascii = (uint8_t)m->text[j] < 0x80;
+			if (ascii)
+				continue;
+			if (sys4_bytes_look_utf8((const uint8_t *)m->text, m->size))
+				valid++;
+			else
+				invalid++;
 		}
-		utf8 = true;
+	}
+	if (!valid && !invalid && raw->nr_strings > 0 && raw->strings) {
+		int step = raw->nr_strings > 8192 ? raw->nr_strings / 8192 : 1;
+		for (int i = 0; i < raw->nr_strings; i += step) {
+			struct string *s = raw->strings[i];
+			if (!s || !s->size)
+				continue;
+			bool ascii = true;
+			for (int j = 0; j < s->size && ascii; j++)
+				ascii = (uint8_t)s->text[j] < 0x80;
+			if (ascii)
+				continue;
+			if (sys4_bytes_look_utf8((const uint8_t *)s->text, s->size))
+				valid++;
+			else
+				invalid++;
+		}
 	}
 	ain_free(raw);
-	return utf8;
+	return valid > 0 && valid >= invalid * 9;
+}
+
+static bool ain_content_is_utf8(const struct ain *raw)
+{
+	if (!raw)
+		return false;
+	unsigned long valid = 0;
+	unsigned long invalid = 0;
+	if (raw->nr_messages > 0 && raw->messages) {
+		int step = raw->nr_messages > 8192 ? raw->nr_messages / 8192 : 1;
+		for (int i = 0; i < raw->nr_messages; i += step) {
+			struct string *m = raw->messages[i];
+			if (!m || !m->size)
+				continue;
+			bool ascii = true;
+			for (int j = 0; j < m->size && ascii; j++)
+				ascii = (uint8_t)m->text[j] < 0x80;
+			if (ascii)
+				continue;
+			if (sys4_bytes_look_utf8((const uint8_t *)m->text, m->size))
+				valid++;
+			else
+				invalid++;
+		}
+	}
+	if (!valid && !invalid && raw->nr_strings > 0 && raw->strings) {
+		int step = raw->nr_strings > 8192 ? raw->nr_strings / 8192 : 1;
+		for (int i = 0; i < raw->nr_strings; i += step) {
+			struct string *s = raw->strings[i];
+			if (!s || !s->size)
+				continue;
+			bool ascii = true;
+			for (int j = 0; j < s->size && ascii; j++)
+				ascii = (uint8_t)s->text[j] < 0x80;
+			if (ascii)
+				continue;
+			if (sys4_bytes_look_utf8((const uint8_t *)s->text, s->size))
+				valid++;
+			else
+				invalid++;
+		}
+	}
+	return valid > 0 && valid >= invalid * 9;
 }
 
 static void set_utf8_release(bool enabled)
@@ -479,16 +544,17 @@ static char *resolve_configured_ain_path(const char *native_ain_path)
 	if (resolved_ain_path && file_exists(resolved_ain_path))
 		return xstrdup(resolved_ain_path);
 	char *ainfile = gamedir_path(config.ain_filename);
-	if (!file_exists(ainfile) && !sys4_text_is_gbk) {
-		// Handle GBK-encoded CodeName when GameName in INI was customized and lacks GBK markers.
-		sys4_set_text_gbk(true);
-		char *gbk_ain = gamedir_path(config.ain_filename);
-		sys4_set_text_gbk(false);
-		if (file_exists(gbk_ain)) {
+	if (!file_exists(ainfile)) {
+		// Handle GBK or Shift-JIS CodeName when GameName in INI uses the opposite encoding.
+		bool prev = sys4_text_is_gbk;
+		sys4_set_text_gbk(!prev);
+		char *alt_ain = gamedir_path(config.ain_filename);
+		sys4_set_text_gbk(prev);
+		if (file_exists(alt_ain)) {
 			free(ainfile);
-			ainfile = gbk_ain;
+			ainfile = alt_ain;
 		} else {
-			free(gbk_ain);
+			free(alt_ain);
 		}
 	}
 	return ainfile;
@@ -1460,6 +1526,14 @@ int main(int argc, char *argv[])
 	if (!(ain = ain_open(ainfile, &err))) {
 		free(ainfile);
 		ERROR("%s", ain_strerror(err));
+	}
+	if (!sys4_source_is_utf8 && ain_content_is_utf8(ain)) {
+		ain_free(ain);
+		set_utf8_release(true);
+		if (!(ain = ain_open(ainfile, &err))) {
+			free(ainfile);
+			ERROR("%s", ain_strerror(err));
+		}
 	}
 	free(ainfile);
 

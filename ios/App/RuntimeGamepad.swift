@@ -31,6 +31,8 @@ final class RuntimeGamepad: UIView {
     private let menuPanel = UIStackView()
     private let virtualToggle = UIButton(type: .system)
     private let physicalToggle = UIButton(type: .system)
+    private let sensitivityLabel = UILabel()
+    private let sensitivitySlider = UISlider()
     private let cursorView = UIImageView(image: UIImage(systemName: "cursorarrow.rays"))
     private var cursorPosition = CGPoint(x: 0.5, y: 0.5)
 
@@ -73,6 +75,25 @@ final class RuntimeGamepad: UIView {
             self.profile.physical.enabled.toggle()
             self.saveProfile()
         }, for: .touchUpInside)
+        sensitivityLabel.textColor = .white
+        sensitivityLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        sensitivityLabel.textAlignment = .center
+        sensitivitySlider.minimumValue = 20
+        sensitivitySlider.maximumValue = 300
+        sensitivitySlider.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        sensitivitySlider.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            let pct = Double(Int(self.sensitivitySlider.value.rounded()))
+            self.profile.physical.cursorSpeedPct = pct
+            self.sensitivityLabel.text = "\(padText("Sensitivity")): \(Int(pct))%"
+            self.profile.engineJSON().withCString { input_set_gamepad_config_json($0) }
+        }, for: .valueChanged)
+        sensitivitySlider.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.store.save(self.profile, for: self.store.saved(self.game) == nil ? nil : self.game)
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        menuPanel.addArrangedSubview(sensitivityLabel)
+        menuPanel.addArrangedSubview(sensitivitySlider)
         let close = UIButton(type: .system)
         close.setTitle(padText("Close"), for: .normal)
         close.tintColor = .white
@@ -118,6 +139,9 @@ final class RuntimeGamepad: UIView {
         refreshVisibility()
         virtualToggle.setTitle(padText(profile.virtual.enabled ? "Hide Virtual Gamepad" : "Show Virtual Gamepad"), for: .normal)
         physicalToggle.setTitle(padText(profile.physical.enabled ? "Disable Controller" : "Enable Controller"), for: .normal)
+        let speedPct = min(300, max(20, Int(profile.physical.cursorSpeedPct.rounded())))
+        sensitivitySlider.value = Float(speedPct)
+        sensitivityLabel.text = "\(padText("Sensitivity")): \(speedPct)%"
         setNeedsLayout()
     }
 

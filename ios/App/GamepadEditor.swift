@@ -63,6 +63,8 @@ struct GamepadEditor: View {
                         }
                         slider("Global scale", value: $profile.virtual.scale, range: 0.6...1.5)
                         slider("Global opacity", value: $profile.virtual.opacity, range: 0.2...1)
+                        slider("Sensitivity", value: $profile.physical.cursorSpeedPct, range: 20...300, fraction: false)
+                        slider("Dead zone", value: $profile.physical.deadzonePct, range: 5...45, fraction: false)
                         Toggle(padText("Snap to grid"), isOn: $profile.virtual.snap)
                     }
                     Section(header: Text(padText("Physical Controller"))) {
@@ -73,7 +75,7 @@ struct GamepadEditor: View {
                         modePicker("Right stick", mode: $profile.physical.rightStickMode)
                         modePicker("D-Pad", mode: $profile.physical.dpadMode, modes: PadMode.allCases.filter { $0 != .wheel })
                         slider("Dead zone", value: $profile.physical.deadzonePct, range: 5...45, fraction: false)
-                        slider("Cursor speed", value: $profile.physical.cursorSpeedPct, range: 30...250, fraction: false)
+                        slider("Sensitivity", value: $profile.physical.cursorSpeedPct, range: 20...300, fraction: false)
                         NavigationLink(padText("Button Mapping")) {
                             Form {
                                 Menu(padText("Layout Preset")) {

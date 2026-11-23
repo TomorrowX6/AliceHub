@@ -137,7 +137,7 @@ static enum s3de_interp_type parse_interp_type(const char *s)
 #define KEYWORD " %255[^, \t\r\n}]"
 #define QUOTED_STRING "\"%255[^\"]\""
 
-static char *parse_quoted_string(char **ptext)
+static char *parse_quoted_string(char **ptext, bool gbk)
 {
 	char *text = *ptext;
 
@@ -153,7 +153,7 @@ static char *parse_quoted_string(char **ptext)
 	}
 	*p = '\0';
 	*ptext = p + 1;
-	return utf2sjis(text, 0);
+	return utf2cjk(text, 0, gbk);
 }
 
 // range := float [',' float]
@@ -235,13 +235,13 @@ static int *parse_int_list(char **ptext, int *nr)
 
 // Parses a comma-separated list of quoted strings, storing the first non-empty
 // one in *out and skipping the rest. Rance 9 only uses the first name.
-static bool parse_texture_name(char **ptext, char **out)
+static bool parse_texture_name(char **ptext, char **out, bool gbk)
 {
 	char *text = *ptext;
 	int len;
 	char *result = NULL;
 	do {
-		char *s = parse_quoted_string(&text);
+		char *s = parse_quoted_string(&text, gbk);
 		if (!s) {
 			free(result);
 			return false;
@@ -362,7 +362,7 @@ err:
 	return false;
 }
 
-static struct s3de *parse_3de(char *text)
+static struct s3de *parse_3de(char *text, bool gbk)
 {
 	struct s3de *s = xcalloc(1, sizeof(struct s3de));
 	s->loop_start_frame = -1;
@@ -398,7 +398,7 @@ static struct s3de *parse_3de(char *text)
 				s->objects = xrealloc_array(s->objects, s->nr_objects,
 					s->nr_objects + 1, sizeof(struct s3de_object));
 				current = &s->objects[s->nr_objects++];
-				current->name = utf2sjis(buf, 0);
+				current->name = utf2cjk(buf, 0, gbk);
 				current->texture_anime_frame = 1.0f;
 			} else {
 				parse_error("unknown toplevel token.", text);
@@ -431,7 +431,7 @@ static struct s3de *parse_3de(char *text)
 		} else if (MATCH("個数 = %d", &n)) {
 			current->particle_count = n;
 		} else if (MATCH("テクスチャ = ")) {
-			if (!parse_texture_name(&text, &current->texture)) goto err;
+			if (!parse_texture_name(&text, &current->texture, gbk)) goto err;
 		} else if (MATCH("ブレンドタイプ = " KEYWORD, buf)) {
 			int v = parse_blend_type(buf);
 			if (v < 0) goto err;
@@ -439,7 +439,7 @@ static struct s3de *parse_3de(char *text)
 		} else if (MATCH("テクスチャアニメフレーム = %f", &f)) {
 			current->texture_anime_frame = f;
 		} else if (MATCH("ポリゴン = ")) {
-			current->polygon_name = parse_quoted_string(&text);
+			current->polygon_name = parse_quoted_string(&text, gbk);
 			if (!current->polygon_name) goto err;
 		} else if (MATCH("フレーム参照 = " KEYWORD, buf)) {
 			// Every emitter in Rance 9 uses "エフェクト".
@@ -459,7 +459,7 @@ static struct s3de *parse_3de(char *text)
 			current->posture_type = v;
 		} else if (MATCH("ターゲット名 = ")) {
 			// Unused.
-			char *s = parse_quoted_string(&text);
+			char *s = parse_quoted_string(&text, gbk);
 			if (!s) goto err;
 			free(s);
 		} else if (MATCH("方向タイプ = " KEYWORD, buf)) {
@@ -878,10 +878,15 @@ struct s3de *s3de_load(struct archive *aar, const char *path)
 		memcpy(sjis_text, dfile->data, dfile->size);
 		sjis_text[dfile->size] = '\0';
 
-		char *text = sjis2utf(sjis_text, dfile->size);
-		free(sjis_text);
-		s = parse_3de(text);
+		char *text = cjk2utf(sjis_text, dfile->size, false);
+		s = parse_3de(text, false);
 		free(text);
+		if (!s && sys4_text_is_gbk) {
+			text = cjk2utf(sjis_text, dfile->size, true);
+			s = parse_3de(text, true);
+			free(text);
+		}
+		free(sjis_text);
 	}
 	if (!s) {
 		WARNING("could not parse %s", dfile->name);

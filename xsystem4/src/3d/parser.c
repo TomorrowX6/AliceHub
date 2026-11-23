@@ -690,9 +690,14 @@ struct ex_value *RE_ex_block(struct ex *ex, const char *utf8_key)
 {
 	if (!ex || !utf8_key)
 		return NULL;
-	char *sjis = utf2sjis(utf8_key, 0);
+	char *sjis = utf2cjk(utf8_key, 0, false);
 	struct ex_value *v = ex_get(ex, sjis);
 	free(sjis);
+	if (!v && sys4_text_is_gbk) {
+		char *gbk = utf2cjk(utf8_key, 0, true);
+		v = ex_get(ex, gbk);
+		free(gbk);
+	}
 	return v;
 }
 
@@ -700,7 +705,7 @@ struct ex_tree *RE_ex_child(const struct ex_tree *tree, const char *utf8_key)
 {
 	if (!tree || tree->is_leaf || !utf8_key)
 		return NULL;
-	char *sjis = utf2sjis(utf8_key, 0);
+	char *sjis = utf2cjk(utf8_key, 0, false);
 	for (unsigned i = 0; i < tree->nr_children; i++) {
 		if (tree->children[i].name && !strcmp(tree->children[i].name->text, sjis)) {
 			free(sjis);
@@ -708,6 +713,16 @@ struct ex_tree *RE_ex_child(const struct ex_tree *tree, const char *utf8_key)
 		}
 	}
 	free(sjis);
+	if (sys4_text_is_gbk) {
+		char *gbk = utf2cjk(utf8_key, 0, true);
+		for (unsigned i = 0; i < tree->nr_children; i++) {
+			if (tree->children[i].name && !strcmp(tree->children[i].name->text, gbk)) {
+				free(gbk);
+				return &tree->children[i];
+			}
+		}
+		free(gbk);
+	}
 	return NULL;
 }
 
@@ -812,8 +827,10 @@ void txtex_opr_load(uint8_t *data, size_t size, struct pol *pol)
 		ex_free(ex);
 		return;
 	}
-	char *add_sjis = utf2sjis("加算合成", 0);
-	char *add2_sjis = utf2sjis("加算", 0);
+	char *add_sjis = utf2cjk("加算合成", 0, false);
+	char *add2_sjis = utf2cjk("加算", 0, false);
+	char *add_gbk = sys4_text_is_gbk ? utf2cjk("加算合成", 0, true) : NULL;
+	char *add2_gbk = sys4_text_is_gbk ? utf2cjk("加算", 0, true) : NULL;
 	for (unsigned c = 0; c < meshes_v->tree->nr_children; c++) {
 		struct ex_tree *mn = &meshes_v->tree->children[c];
 		if (!mn->name || mn->is_leaf)
@@ -846,7 +863,9 @@ void txtex_opr_load(uint8_t *data, size_t size, struct pol *pol)
 				pm->flags |= MESH_BLEND_ADDITIVE;
 			const char *bm_s = RE_ex_sjis_str(mn, "ブレンドモード");
 			int bm_i = 0;
-			if ((bm_s && (!strcmp(bm_s, add_sjis) || !strcmp(bm_s, add2_sjis) || !strcasecmp(bm_s, "Add"))) ||
+			if ((bm_s && (!strcmp(bm_s, add_sjis) || !strcmp(bm_s, add2_sjis) ||
+			              (add_gbk && !strcmp(bm_s, add_gbk)) || (add2_gbk && !strcmp(bm_s, add2_gbk)) ||
+			              !strcasecmp(bm_s, "Add"))) ||
 			    (RE_ex_int(mn, "ブレンドモード", &bm_i) && bm_i == 1))
 				pm->flags |= MESH_BLEND_ADDITIVE;
 			RE_ex_vec2(mn, "ＵＶ座標スクロール", pm->uv_scroll);
@@ -860,6 +879,8 @@ void txtex_opr_load(uint8_t *data, size_t size, struct pol *pol)
 	}
 	free(add_sjis);
 	free(add2_sjis);
+	free(add_gbk);
+	free(add2_gbk);
 	ex_free(ex);
 }
 

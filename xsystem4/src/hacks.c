@@ -359,33 +359,163 @@ static bool ain_has_gbk_r03_strings(struct ain *ain)
 
 static bool ain_messages_look_gbk(struct ain *ain)
 {
-	unsigned long gbk_pairs = 0;
-	unsigned long sjis_kana_pairs = 0;
-	int limit = ain->nr_messages < 8192 ? ain->nr_messages : 8192;
-	for (int i = 0; i < limit; i++) {
+	unsigned long gbk_score = 0;
+	unsigned long sjis_score = 0;
+	if (!ain || ain->nr_messages <= 0 || !ain->messages)
+		return false;
+	int step = ain->nr_messages > 8192 ? ain->nr_messages / 8192 : 1;
+	for (int i = 0; i < ain->nr_messages; i += step) {
 		if (!ain->messages[i])
 			continue;
 		const unsigned char *s = (const unsigned char *)ain->messages[i]->text;
 		if (!s)
 			continue;
-		for (size_t j = 0; s[j] && s[j + 1]; j++) {
+		for (size_t j = 0; s[j]; ) {
 			unsigned char b0 = s[j];
-			unsigned char b1 = s[j + 1];
-			if (b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe) {
-				gbk_pairs++;
+			if (b0 < 0x80) {
 				j++;
-			} else if ((b0 == 0x82 && b1 >= 0x9f && b1 <= 0xf1)
-					|| (b0 == 0x83 && b1 >= 0x40 && b1 <= 0x96)) {
-				sjis_kana_pairs++;
-				j++;
-			} else if ((((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xfe))
-						&& b1 >= 0x40 && b1 <= 0xfe)
-					|| (b0 >= 0xa1 && b0 <= 0xaf && b1 >= 0xa1 && b1 <= 0xfe)) {
-				j++;
+				continue;
 			}
+			if (b0 >= 0x81 && b0 <= 0xfe && s[j + 1] >= 0x40 && s[j + 1] <= 0xfe && s[j + 1] != 0x7f) {
+				unsigned char b1 = s[j + 1];
+				if ((b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe)
+						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)
+						|| (b0 >= 0xaa && b0 <= 0xdf && b1 >= 0x40 && b1 <= 0xa0)) {
+					gbk_score++;
+				}
+				j += 2;
+				continue;
+			}
+			j++;
+		}
+		for (size_t j = 0; s[j]; ) {
+			unsigned char b0 = s[j];
+			if (b0 < 0x80 || (b0 >= 0xa1 && b0 <= 0xdf)) {
+				j++;
+				continue;
+			}
+			if (((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xfc))
+					&& ((s[j + 1] >= 0x40 && s[j + 1] <= 0x7e) || (s[j + 1] >= 0x80 && s[j + 1] <= 0xfc))) {
+				unsigned char b1 = s[j + 1];
+				if ((b0 == 0x82 && b1 >= 0x9f && b1 <= 0xf1)
+						|| (b0 == 0x83 && b1 >= 0x40 && b1 <= 0x96)
+						|| (b0 == 0x81 && b1 >= 0x40 && b1 <= 0xac)
+						|| (b0 >= 0x88 && b0 <= 0x9f && b1 >= 0x40 && b1 <= 0x7e)) {
+					sjis_score++;
+				}
+				j += 2;
+				continue;
+			}
+			j++;
 		}
 	}
-	return gbk_pairs >= 64 && gbk_pairs > sjis_kana_pairs * 2;
+	return gbk_score >= 64 && gbk_score > sjis_score * 2;
+}
+
+enum ain_text_encoding {
+	AIN_ENC_UNKNOWN = 0,
+	AIN_ENC_GBK,
+	AIN_ENC_SJIS,
+};
+
+static void scan_string_array_encoding(struct string **arr, int count,
+		unsigned long *gbk_score_out, unsigned long *sjis_score_out)
+{
+	unsigned long gbk_score = 0;
+	unsigned long sjis_score = 0;
+	if (!arr || count <= 0) {
+		*gbk_score_out = 0;
+		*sjis_score_out = 0;
+		return;
+	}
+	int step = count > 8192 ? count / 8192 : 1;
+	for (int i = 0; i < count; i += step) {
+		if (!arr[i])
+			continue;
+		const unsigned char *s = (const unsigned char *)arr[i]->text;
+		for (size_t j = 0; s[j]; ) {
+			unsigned char b0 = s[j];
+			if (b0 < 0x80) {
+				j++;
+				continue;
+			}
+			if (b0 >= 0x81 && b0 <= 0xfe && s[j + 1] >= 0x40 && s[j + 1] <= 0xfe && s[j + 1] != 0x7f) {
+				unsigned char b1 = s[j + 1];
+				if ((b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe)
+						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)
+						|| (b0 >= 0xaa && b0 <= 0xdf && b1 >= 0x40 && b1 <= 0xa0)) {
+					gbk_score++;
+				}
+				j += 2;
+				continue;
+			}
+			j++;
+		}
+		for (size_t j = 0; s[j]; ) {
+			unsigned char b0 = s[j];
+			if (b0 < 0x80 || (b0 >= 0xa1 && b0 <= 0xdf)) {
+				j++;
+				continue;
+			}
+			if (((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xfc))
+					&& ((s[j + 1] >= 0x40 && s[j + 1] <= 0x7e) || (s[j + 1] >= 0x80 && s[j + 1] <= 0xfc))) {
+				unsigned char b1 = s[j + 1];
+				if ((b0 == 0x82 && b1 >= 0x9f && b1 <= 0xf1)
+						|| (b0 == 0x83 && b1 >= 0x40 && b1 <= 0x96)
+						|| (b0 == 0x81 && b1 >= 0x40 && b1 <= 0xac)
+						|| (b0 >= 0x88 && b0 <= 0x9f && b1 >= 0x40 && b1 <= 0x7e)) {
+					sjis_score++;
+				}
+				j += 2;
+				continue;
+			}
+			j++;
+		}
+	}
+	*gbk_score_out = gbk_score;
+	*sjis_score_out = sjis_score;
+}
+
+static enum ain_text_encoding ain_detect_text_encoding(struct ain *ain)
+{
+	if (!ain)
+		return AIN_ENC_UNKNOWN;
+	unsigned long gbk_score = 0, sjis_score = 0;
+	scan_string_array_encoding(ain->messages, ain->nr_messages, &gbk_score, &sjis_score);
+	if (gbk_score >= 64 && gbk_score > sjis_score * 2)
+		return AIN_ENC_GBK;
+	if (sjis_score >= 64 && sjis_score > gbk_score * 16)
+		return AIN_ENC_SJIS;
+	if (gbk_score + sjis_score < 32) {
+		scan_string_array_encoding(ain->strings, ain->nr_strings, &gbk_score, &sjis_score);
+		if (gbk_score >= 64 && gbk_score > sjis_score * 2)
+			return AIN_ENC_GBK;
+		if (sjis_score >= 64 && sjis_score > gbk_score * 16)
+			return AIN_ENC_SJIS;
+	}
+	return AIN_ENC_UNKNOWN;
+}
+
+static bool config_game_name_has_gbk_marker(const char *name)
+{
+	if (!name)
+		return false;
+	return strstr(name, "\xc0\xbc\xcb\xb9")
+		|| strstr(name, "\xb6\xe0\xc4\xc8")
+		|| strstr(name, "\xcf\xc4\xcd\xde")
+		|| strstr(name, "\xd6\xd0\xce\xc4")
+		|| strstr(name, "\xba\xba\xbb\xaf")
+		|| strstr(name, "\x9e\x61\xbb\xaf")
+		|| strstr(name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")
+		|| strstr(name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
+		|| strstr(name, "\xb4\xf3\xb7\xac\xe9L")
+		|| strstr(name, "\xb4\xf3\xb7\xac\xb3\xa4")
+		|| strstr(name, "\xb4\xf3\xb5\xdb\xb9\xfa")
+		|| strstr(name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
+		|| strstr(name, "\xcc\xab\xcc\xab")
+		|| strstr(name, "\xd2\xec\xbf\xd5\xbf\xdf")
+		|| strstr(name, "\xd0\xb0\xd2\xb9")
+		|| strstr(name, "\xb6\xb7\xc9\xf1");
 }
 
 static void apply_rance03_message_layout(struct ain *ain)
@@ -660,25 +790,16 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_library(ain, "MapLoader") >= 0
 		&& ain_get_struct(ain, "T_MamatotoDamage") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
-	// Also detect via GBK symbols in AIN so mods that change GameName in AliceStart.ini still enable GBK.
+	// Detect actual AIN text encoding first so Shift-JIS releases/repacks with a Chinese
+	// GameName in AliceStart.ini (e.g. Shift-JIS Rance IX with GameName="兰斯9") are not
+	// forced into GBK mode, while GBK releases with an unmodified JP/EN GameName still
+	// enable GBK. Fall back to GameName/symbol heuristics only when AIN text is inconclusive.
 	// UTF-8 releases are converted to GBK when loaded.
-	sys4_set_text_gbk(sys4_source_is_utf8
-		|| (config.game_name && (strstr(config.game_name, "\xc0\xbc\xcb\xb9")
-			|| strstr(config.game_name, "\xb6\xe0\xc4\xc8")
-			|| strstr(config.game_name, "\xcf\xc4\xcd\xde")
-			|| strstr(config.game_name, "\xd6\xd0\xce\xc4")
-			|| strstr(config.game_name, "\xba\xba\xbb\xaf")
-			|| strstr(config.game_name, "\x9e\x61\xbb\xaf")
-			|| strstr(config.game_name, "\xb3\xac\xb0\xba\xc9\xf1\xc6\xef")
-			|| strstr(config.game_name, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
-			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xe9L")
-			|| strstr(config.game_name, "\xb4\xf3\xb7\xac\xb3\xa4")
-			|| strstr(config.game_name, "\xb4\xf3\xb5\xdb\xb9\xfa")
-			|| strstr(config.game_name, "\xd0\xa3\xc4\xda\xb3\xe0\xcf\xdf")
-			|| strstr(config.game_name, "\xcc\xab\xcc\xab")
-			|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")
-			|| strstr(config.game_name, "\xd0\xb0\xd2\xb9")
-			|| strstr(config.game_name, "\xb6\xb7\xc9\xf1")))
+	enum ain_text_encoding text_enc = sys4_source_is_utf8
+		? AIN_ENC_GBK
+		: ain_detect_text_encoding(ain);
+	bool gbk_game_name = config_game_name_has_gbk_marker(config.game_name);
+	bool gbk_heuristics = gbk_game_name
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
 		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
@@ -699,7 +820,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_tsumashibori && (ain_has_gbk_string(ain, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
 			|| ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")))
 		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
-		|| ain_messages_look_gbk(ain));
+		|| ain_messages_look_gbk(ain);
+	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);
@@ -731,7 +853,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1024;
 		config.view_height = 768;
 	}
-	char *game_name = config.game_name ? sjis2utf(config.game_name, 0) : xstrdup("");
+	char *game_name = config.game_name
+		? cjk2utf(config.game_name, 0, sys4_text_is_gbk || gbk_game_name)
+		: xstrdup("");
 	if (game_daibanchou || !strcmp(game_name, "大番長")) {
 		game_daibanchou = true;
 		apply_daibanchou_hacks(ain);

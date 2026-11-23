@@ -580,14 +580,14 @@ int sjis_index(const char *_src, int index)
 	return src[i] ? i : -1;
 }
 
-static char *sjis_char2unicode_impl(const char *_src, int *dst, bool use_mai)
+static char *cjk_char2unicode_impl(const char *_src, int *dst, bool gbk, bool use_mai)
 {
 	const uint8_t *src = (const uint8_t*)_src;
 	if (*src <= 0x7f) {
 		*dst = *src;
 		return (char*)src + 1;
 	}
-	if (!use_mai && sys4_text_is_gbk) {
+	if (!use_mai && gbk) {
 		if (*src == 0x80) { *dst = 0x20ac; return (char*)src + 1; }
 		if (*src >= 0x81 && *src <= 0xfe && src[1] >= 0x40 && src[1] <= 0xfe) {
 			*dst = gbk_lookup(src[0], src[1]);
@@ -621,15 +621,15 @@ static char *sjis_char2unicode_impl(const char *_src, int *dst, bool use_mai)
 
 char *sjis_char2unicode(const char *_src, int *dst)
 {
-	return sjis_char2unicode_impl(_src, dst, false);
+	return cjk_char2unicode_impl(_src, dst, sys4_text_is_gbk, false);
 }
 
 char *mai_sjis_char2unicode(const char *_src, int *dst)
 {
-	return sjis_char2unicode_impl(_src, dst, sys4_mai_active);
+	return cjk_char2unicode_impl(_src, dst, sys4_text_is_gbk, sys4_mai_active);
 }
 
-static char *sjis2utf_impl(const char *_src, size_t len, bool use_mai) {
+static char *cjk2utf_impl(const char *_src, size_t len, bool gbk, bool use_mai) {
 	if (!_src)
 		return NULL;
 	const uint8_t *src = (const uint8_t*)_src;
@@ -641,12 +641,14 @@ static char *sjis2utf_impl(const char *_src, size_t len, bool use_mai) {
 
 	while (src < end && *src) {
 		int c;
-		bool is_2b = use_mai ? (((*src) & 0xe0) == 0x80 || ((*src) & 0xe0) == 0xe0) : SJIS_2BYTE(*src);
+		bool is_2b = (!use_mai && gbk)
+			? (*src >= 0x81 && *src <= 0xfe)
+			: (((*src) & 0xe0) == 0x80 || ((*src) & 0xe0) == 0xe0);
 		if (is_2b && !(src + 1 < end && src[1] != '\0')) {
-			c = (!use_mai && sys4_text_is_gbk) ? 0xfffd : '?';
+			c = (!use_mai && gbk) ? 0xfffd : '?';
 			src++;
 		} else {
-			src = (const uint8_t*)sjis_char2unicode_impl((const char*)src, &c, use_mai);
+			src = (const uint8_t*)cjk_char2unicode_impl((const char*)src, &c, gbk, use_mai);
 		}
 
 		if (c <= 0x7f) {
@@ -664,12 +666,16 @@ static char *sjis2utf_impl(const char *_src, size_t len, bool use_mai) {
 	return (char*)dst;
 }
 
+char *cjk2utf(const char *_src, size_t len, bool gbk) {
+	return cjk2utf_impl(_src, len, gbk, false);
+}
+
 char *sjis2utf(const char *_src, size_t len) {
-	return sjis2utf_impl(_src, len, false);
+	return cjk2utf_impl(_src, len, sys4_text_is_gbk, false);
 }
 
 char *mai_sjis2utf(const char *_src, size_t len) {
-	return sjis2utf_impl(_src, len, sys4_mai_active);
+	return cjk2utf_impl(_src, len, sys4_text_is_gbk, sys4_mai_active);
 }
 
 static void encode_utf8_bmp(int u, uint8_t **dstp)
@@ -852,17 +858,40 @@ char *utf2cjk(const char *_src, size_t len, bool gbk) {
 	return utf2cjk_impl(_src, len, gbk, false);
 }
 
-/* Game data from UTF-8 releases is converted to GBK on load so it runs on the GBK text path. */
+static bool bytes_are_valid_utf8_non_ascii(const uint8_t *s, size_t len)
+{
+	bool has_non_ascii = false;
+	for (size_t i = 0; i < len; ) {
+		uint8_t b = s[i];
+		if (b < 0x80) {
+			i++;
+			continue;
+		}
+		size_t n = (b >= 0xc2 && b <= 0xdf) ? 2 : (b & 0xf0) == 0xe0 ? 3 : (b & 0xf8) == 0xf0 ? 4 : 0;
+		if (!n || i + n > len)
+			return false;
+		for (size_t j = 1; j < n; j++) {
+			if ((s[i + j] & 0xc0) != 0x80)
+				return false;
+		}
+		has_non_ascii = true;
+		i += n;
+	}
+	return has_non_ascii;
+}
+
+/* Game data from UTF-8 releases is converted to GBK on load so it runs on the GBK text path.
+ * Leave non-UTF-8 legacy strings untouched so mixed repacks (e.g. UTF-8 AIN + SJIS EX/AFA) do not turn into '?'. */
 char *sys4_source_strdup(const char *src)
 {
-	if (!sys4_source_is_utf8)
+	if (!sys4_source_is_utf8 || !src || !bytes_are_valid_utf8_non_ascii((const uint8_t *)src, strlen(src)))
 		return strdup(src);
 	return utf2cjk_impl(src, strlen(src), sys4_text_is_gbk, false);
 }
 
 struct string *sys4_source_make_string(const char *src, size_t len)
 {
-	if (!sys4_source_is_utf8 || !len)
+	if (!sys4_source_is_utf8 || !len || !bytes_are_valid_utf8_non_ascii((const uint8_t *)src, len))
 		return make_string(src, len);
 	char *conv = utf2cjk_impl(src, len, sys4_text_is_gbk, false);
 	struct string *s = make_string(conv, strlen(conv));

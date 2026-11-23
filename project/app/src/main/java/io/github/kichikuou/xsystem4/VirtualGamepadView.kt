@@ -780,12 +780,13 @@ class VirtualGamepadView(context: Context) : View(context) {
         canvas.drawCircle(cx, cy, r, strokePaint)
 
         // Subtle inner deadzone ring
+        val travel = r * 0.68f
+        val dzFrac = (profile.physical.deadzonePct / 100f).coerceIn(0.05f, 0.45f)
         strokePaint.color = Color.argb((alphaInt * 0.30f).toInt(), 255, 255, 255)
         strokePaint.strokeWidth = dp(1f)
-        canvas.drawCircle(cx, cy, r * 0.30f, strokePaint)
+        canvas.drawCircle(cx, cy, travel * dzFrac, strokePaint)
 
         // Thumb cap
-        val travel = r * 0.68f
         val kx = cx + nx * travel
         val ky = cy + ny * travel
         val knobR = r * 0.44f

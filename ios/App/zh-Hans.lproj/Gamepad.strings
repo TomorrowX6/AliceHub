@@ -28,6 +28,7 @@
 "D-Pad" = "方向键";
 "Dead zone" = "死区";
 "Cursor speed" = "光标速度";
+"Sensitivity" = "灵敏度";
 "Reset to Default" = "恢复默认";
 "Save" = "保存";
 "Cancel" = "取消";
