@@ -95,4 +95,7 @@ issues, please let me know or open a pull request to update this table.
 | 夜が来る！-Square of the MOON- Remastered               | Supported   | Official CN GBK (`GetGameVersionByText`, 6ch mixer, XOR-0x49 `*Dict.dat`, widget click fix) supported |
 | Rance -光をもとめて- ダイジェスト版                      | Supported   | JP and CN (GBK fan translation) supported |
 | は～とふるママン                                        | Supported   | JP and CN (GBK; AIN v8 String/Int/Float + A_FIND/A_SORT + PartsEngine v8 + scrollbar fix) supported |
+| イブニクル ランス版                                     | Supported   | JP and CN (GBK) supported |
+| 母爛漫                                                  | Supported   | JP and CN (GBK; PACT activity GBK full-width digit folding + 8ch mixer + FNL substitute scale) supported |
+| 妻みぐい３ スピンオフ 純愛編 / 寝取られ編               | Supported   | JP and CN (SJIS+custom FNL; early AIN v8 A_SORT/A_FIND + Parts message mapping + GetGameVersionByText) supported |
 | All games released after Rance IX                       | Unsupported |       |

@@ -111,6 +111,9 @@ bool game_evenicle_gaiden = false;
 bool game_ixseal = false;
 bool game_oyakorankan = false;
 bool game_tsumamigui3 = false;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
+bool game_haharanman = false;
 bool game_rance01 = false;
 bool game_rance03 = false;
 bool game_rance8 = false;
@@ -135,6 +138,7 @@ static void reset_games(void) {{
     game_night_remaster = game_evenicle2 = game_evenicle2_rance = false;
     game_evenicle = game_evenicle_rance = game_evenicle_gaiden = false;
     game_ixseal = game_oyakorankan = game_tsumamigui3 = false;
+    game_tsumamigui3_jun = game_tsumamigui3_ntr = game_haharanman = false;
     game_rance01 = game_rance03 = game_rance8 = game_rance9 = false;
     game_rance10 = game_okusama = game_dohnadohna = false;
 }}
@@ -504,6 +508,9 @@ int main(int argc, char **argv) {{
         fn_has_gbk = extract_function("src/hacks.c", "ain_has_gbk_string")
         fn_has_r03 = extract_function("src/hacks.c", "ain_has_gbk_r03_strings")
         fn_msg_gbk = extract_function("src/hacks.c", "ain_messages_look_gbk")
+        fn_scan_enc = extract_function("src/hacks.c", "scan_string_array_encoding")
+        fn_detect_enc = extract_function("src/hacks.c", "ain_detect_text_encoding")
+        fn_gbk_name = extract_function("src/hacks.c", "config_game_name_has_gbk_marker")
 
         harness = f"""
 #include <assert.h>
@@ -533,7 +540,14 @@ bool game_haharanman = false, game_okusama = false, game_night_remaster = false;
 bool game_oyakorankan = false, game_toushin3 = false, game_rance03 = false;
 bool game_dungeons_and_dolls = false, game_escalayer_reboot = false;
 bool game_galzoo = false, game_ixseal = false, game_tsumashibori = false;
-bool game_tsumamigui3 = false, game_waidonyo = false;
+bool game_tsumamigui3 = false, game_tsumamigui3_jun = false, game_tsumamigui3_ntr = false;
+bool game_maman = false, game_waidonyo = false;
+
+enum ain_text_encoding {{
+    AIN_ENC_UNKNOWN = 0,
+    AIN_ENC_GBK,
+    AIN_ENC_SJIS,
+}};
 
 static void apply_daibanchou_hacks(struct ain *a) {{ (void)a; }}
 static void apply_rance02_hacks(struct ain *a) {{ (void)a; }}
@@ -548,6 +562,9 @@ static void escalayer_reboot_replace_cn_ui_text(struct string **s, int n) {{ (vo
 {fn_has_gbk}
 {fn_has_r03}
 {fn_msg_gbk}
+{fn_scan_enc}
+{fn_detect_enc}
+{fn_gbk_name}
 {fn_apply}
 
 static void add_struct(struct ain *a, const char *name) {{

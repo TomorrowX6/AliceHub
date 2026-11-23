@@ -788,6 +788,71 @@ object GameModifierBridge {
         ) == GameCatalog.ID_MAMAN
 
     @JvmOverloads
+    fun isEvenicleRanceGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_EVENICLERANCE
+
+    @JvmOverloads
+    fun isHaharanmanGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_HAHARANMAN
+
+    @JvmOverloads
+    fun isTsumamigui2GameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_TSUMAMIGUI2
+
+    @JvmOverloads
+    fun isTsumamigui3JunGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_TSUMAMIGUI3JUN
+
+    @JvmOverloads
+    fun isTsumamigui3NtrGameDir(
+        gameDir: File?,
+        dirNameFallback: String? = null,
+        saveDir: File? = null
+    ): Boolean =
+        GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        ) == GameCatalog.ID_TSUMAMIGUI3NTR
+
+    @JvmOverloads
     fun isNonModifierBuiltInGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -824,7 +889,12 @@ object GameModifierBridge {
         GameCatalog.ID_OYAKORANKAN,
         GameCatalog.ID_YORUGAKURU,
         GameCatalog.ID_RANCE1DIGEST,
-        GameCatalog.ID_MAMAN -> true
+        GameCatalog.ID_MAMAN,
+        GameCatalog.ID_EVENICLERANCE,
+        GameCatalog.ID_HAHARANMAN,
+        GameCatalog.ID_TSUMAMIGUI2,
+        GameCatalog.ID_TSUMAMIGUI3JUN,
+        GameCatalog.ID_TSUMAMIGUI3NTR -> true
         else -> false
     }
 

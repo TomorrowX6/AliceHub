@@ -49,7 +49,7 @@ HARNESS = r'''
 #include "hll/hll.h"
 
 struct config config;
-bool game_rance10, game_dohnadohna, game_evenicle2, game_rance03, game_ixseal, game_okusama, game_haharanman, game_night_remaster;
+bool game_rance10, game_dohnadohna, game_evenicle2, game_rance03, game_ixseal, game_okusama, game_haharanman, game_night_remaster, game_tsumamigui3_jun, game_tsumamigui3_ntr;
 static const char *wave_path;
 static Uint32 ticks;
 int SDL_InitSubSystem(Uint32 flags) { return 0; }

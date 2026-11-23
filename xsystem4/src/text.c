@@ -160,8 +160,11 @@ static void apply_fallback_fnl_substitute_scale(void)
 	} else if (game_oyakorankan) {
 		static const float s[] = { 43.f / 56.f, 84.f / 120.f, 61.f / 80.f, 107.f / 160.f, 89.f / 136.f };
 		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
-	} else if (game_tsumamigui3) {
+	} else if (game_tsumamigui3 || game_tsumamigui3_jun || game_tsumamigui3_ntr) {
 		static const float s[] = { 129.f / 192.f, 112.f / 160.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_haharanman) {
+		static const float s[] = { 123.f / 160.f, 152.f / 200.f, 131.f / 160.f, 104.f / 160.f };
 		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
 	} else if (game_rance01) {
 		static const float s[] = { 309.f / 384.f };

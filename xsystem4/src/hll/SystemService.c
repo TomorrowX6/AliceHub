@@ -96,6 +96,10 @@ static const char *game_version_text(void)
 		// Embedded in the original Tsumamigui3.exe; main() loops until it matches.
 		return "786u87]:78[]87d68sd86sadcfgsdfh87ni";
 	}
+	if (game_tsumamigui3_jun)
+		return "2[0-as:;lclat;o34;asdf,zxcv@-123";
+	if (game_tsumamigui3_ntr)
+		return "kljasd890f734kjhasd98jklhasd86f";
 	VM_ERROR("Unknown game version text for this title");
 }
 

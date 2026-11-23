@@ -287,6 +287,11 @@
     <string name="game_yorugakuru_title">邪夜将至 Remastered</string>
     <string name="game_rance1digest_title">兰斯1 摘要版</string>
     <string name="game_maman_title">再婚妈妈</string>
+    <string name="game_eveniclerance_title">夏娃年代记 兰斯版</string>
+    <string name="game_haharanman_title">母烂漫</string>
+    <string name="game_tsumamigui2_title">妻中蜜2</string>
+    <string name="game_tsumamigui3jun_title">妻中蜜3 番外 纯爱篇</string>
+    <string name="game_tsumamigui3ntr_title">妻中蜜3 番外 寝取篇</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

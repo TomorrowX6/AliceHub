@@ -168,7 +168,7 @@ public class IxsealCatalogTest {
         );
 
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(44, order.size());
+        assertEquals(49, order.size());
         int erIdx = order.indexOf(GameCatalog.ID_ESCALAYER_REBOOT);
         int galIdx = order.indexOf(GameCatalog.ID_GALZOO);
         int ixIdx = order.indexOf(GameCatalog.ID_IXSEAL);

@@ -68,6 +68,11 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `yorugakuru` | Yoru ga Kuru! -Square of the MOON- Remastered | 2024-04-19 | 66.9 | 6.69 | [v499](https://vndb.org/v499) | [source](https://vndb.org/r119676) |
 | `rance1digest` | Rance 1 Digest Edition | 2004-08-27 | 54.4 | 5.44 | [v1414](https://vndb.org/v1414) | [source](https://vndb.org/r28251) |
 | `maman` | Heartful Maman | 2017-01-27 | 78.1 | 7.81 | [v20161](https://vndb.org/v20161) | [source](https://vndb.org/v20161) |
+| `eveniclerance` | Evenicle Rance | 2015-04-24 | 67.4 | 6.74 | [v24002](https://vndb.org/v24002) | [source](https://vndb.org/v24002) |
+| `haharanman` | Haha Ranman | 2019-04-26 | 76.7 | 7.67 | [v25144](https://vndb.org/v25144) | [source](https://vndb.org/v25144) |
+| `tsumamigui2` | Tsumamigui 2 | 2003-03-28 | 67.5 | 6.75 | [v1110](https://vndb.org/v1110) | [source](https://vndb.org/v1110) |
+| `tsumamigui3jun` | Tsumamigui 3 Spin-off: Pure Love | 2016-06-24 | 69.9 | 6.99 | [v19661](https://vndb.org/v19661) | [source](https://vndb.org/r46986) |
+| `tsumamigui3ntr` | Tsumamigui 3 Spin-off: NTR | 2016-06-24 | 69.9 | 6.99 | [v19661](https://vndb.org/v19661) | [source](https://vndb.org/r46987) |
 
 ## Edition mapping / missing-score decisions
 

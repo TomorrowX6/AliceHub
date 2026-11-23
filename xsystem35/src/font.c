@@ -197,6 +197,20 @@ static FT_Face get_fallback_face(FontType type) {
 		return this.fallback_face[type][slot];
 	this.fallback_checked[type][slot] = true;
 
+	const char *env_fallback = getenv("XSYSTEM35_FONT_FALLBACK");
+	if (env_fallback && env_fallback[0]) {
+		FT_Face face = open_face(env_fallback, 0);
+		if (face) {
+			if (env_fallback[0] == '/')
+				select_sc_ttc_face(env_fallback, &face);
+			if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
+				this.fallback_face[type][slot] = face;
+				return face;
+			}
+			FT_Done_Face(face);
+		}
+	}
+
 	static const char *const gothic_candidates[] = {
 #ifdef __ANDROID__
 		"/system/fonts/NotoSansCJK-Regular.ttc",

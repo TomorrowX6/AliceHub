@@ -80,17 +80,37 @@ static void free_activity_intents_and_funcs(struct activity *a)
 
 static struct activity *activities;
 
+static bool activity_name_eq(const char *a, const char *b)
+{
+	if (!a || !b)
+		return a == b;
+	if (!strcmp(a, b))
+		return true;
+	if (!sys4_text_is_gbk)
+		return false;
+	char a_buf[256], b_buf[256];
+	bool a_changed = false, b_changed = false;
+	char *a_norm = cjk_gbk_zenkaku_to_sjis_buf(a, strlen(a), a_buf, sizeof(a_buf), &a_changed);
+	char *b_norm = cjk_gbk_zenkaku_to_sjis_buf(b, strlen(b), b_buf, sizeof(b_buf), &b_changed);
+	bool eq = (a_changed || b_changed) && !strcmp(a_norm, b_norm);
+	if (a_norm != a_buf)
+		free(a_norm);
+	if (b_norm != b_buf)
+		free(b_norm);
+	return eq;
+}
+
 static struct activity *find_activity(struct string *name)
 {
 	for (struct activity *a = activities; a; a = a->next)
-		if (!strcmp(a->name->text, name->text)) return a;
+		if (activity_name_eq(a->name->text, name->text)) return a;
 	return NULL;
 }
 
 static struct activity_part *find_part(struct activity *a, struct string *name)
 {
 	if (a) for (struct activity_part *p = a->parts; p; p = p->next)
-		if (!strcmp(p->name->text, name->text)) return p;
+		if (activity_name_eq(p->name->text, name->text)) return p;
 	return NULL;
 }
 
@@ -130,7 +150,7 @@ bool PE_RemoveActivityParts(struct string *name, struct string *part_name)
 	if (!a) return false;
 	for (struct activity_part **at = &a->parts; *at; at = &(*at)->next) {
 		struct activity_part *p = *at;
-		if (strcmp(p->name->text, part_name->text)) continue;
+		if (!activity_name_eq(p->name->text, part_name->text)) continue;
 		*at = p->next;
 		free_string(p->name);
 		free(p);
@@ -151,7 +171,7 @@ bool PE_ReleaseActivity(struct string *name, struct page **erased)
 {
 	for (struct activity **at = &activities; *at; at = &(*at)->next) {
 		struct activity *a = *at;
-		if (strcmp(a->name->text, name->text)) continue;
+		if (!activity_name_eq(a->name->text, name->text)) continue;
 		*at = a->next;
 		while (a->parts) {
 			struct activity_part *p = a->parts;
@@ -292,7 +312,7 @@ void PE_RemoveAllActivityCloseParts(struct string *name)
 static struct activity_intent *find_intent(struct activity *a, struct string *part_name)
 {
 	if (a) for (struct activity_intent *it = a->intents; it; it = it->next)
-		if (!strcmp(it->src->text, part_name->text)) return it;
+		if (activity_name_eq(it->src->text, part_name->text)) return it;
 	return NULL;
 }
 
@@ -379,8 +399,8 @@ void PE_SetActivityFunc(struct string *name, struct string *part_name, int state
 	struct activity *a = find_activity(name);
 	if (!a) return;
 	for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
-		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text) &&
-		    !strcmp(fn->id->text, fmap_id->text)) {
+		if (fn->state == state && activity_name_eq(fn->part_name->text, part_name->text) &&
+		    activity_name_eq(fn->id->text, fmap_id->text)) {
 			free_string(fn->func);
 			fn->func = string_dup(func_name);
 			return;
@@ -400,8 +420,8 @@ struct string *PE_GetActivityFunc(struct string *name, struct string *part_name,
 {
 	struct activity *a = find_activity(name);
 	if (a) for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
-		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text) &&
-		    !strcmp(fn->id->text, fmap_id->text))
+		if (fn->state == state && activity_name_eq(fn->part_name->text, part_name->text) &&
+		    activity_name_eq(fn->id->text, fmap_id->text))
 			return string_dup(fn->func);
 	}
 	return string_ref(&EMPTY_STRING);
@@ -412,7 +432,7 @@ int PE_NumofActivityFunc(struct string *name, struct string *part_name, int stat
 	struct activity *a = find_activity(name);
 	int count = 0;
 	if (a) for (struct activity_func *fn = a->funcs; fn; fn = fn->next)
-		if (fn->state == state && !strcmp(fn->part_name->text, part_name->text))
+		if (fn->state == state && activity_name_eq(fn->part_name->text, part_name->text))
 			count++;
 	return count;
 }
@@ -422,7 +442,7 @@ void PE_GetActivityFuncPair(int index, struct string *name, struct string *part_
 {
 	struct activity *a = find_activity(name);
 	if (a && index >= 0) for (struct activity_func *fn = a->funcs; fn; fn = fn->next) {
-		if (fn->state != state || strcmp(fn->part_name->text, part_name->text))
+		if (fn->state != state || !activity_name_eq(fn->part_name->text, part_name->text))
 			continue;
 		if (index--)
 			continue;
@@ -534,7 +554,7 @@ void PE_SetUserComponentData(int no, struct string *key, struct string *value)
 {
 	struct parts *p = parts_get(no);
 	for (struct parts_user_value *v = p->user_values; v; v = v->next) {
-		if (strcmp(v->key->text, key->text)) continue;
+		if (!activity_name_eq(v->key->text, key->text)) continue;
 		free_string(v->value);
 		v->value = string_dup(value);
 		return;
@@ -549,7 +569,7 @@ void PE_SetUserComponentData(int no, struct string *key, struct string *value)
 struct string *PE_GetUserComponentData(int no, struct string *key)
 {
 	for (struct parts_user_value *v = parts_get(no)->user_values; v; v = v->next)
-		if (!strcmp(v->key->text, key->text)) return string_ref(v->value);
+		if (activity_name_eq(v->key->text, key->text)) return string_ref(v->value);
 	return string_ref(&EMPTY_STRING);
 }
 
@@ -1928,7 +1948,7 @@ static struct activity_part *find_part_cstr(struct activity *a, const char *cstr
 {
 	if (!a || !cstr || !cstr[0]) return NULL;
 	for (struct activity_part *p = a->parts; p; p = p->next)
-		if (!strcmp(p->name->text, cstr)) return p;
+		if (activity_name_eq(p->name->text, cstr)) return p;
 	return NULL;
 }
 

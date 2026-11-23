@@ -88,6 +88,11 @@ object GameCatalog {
     const val ID_YORUGAKURU = "yorugakuru"
     const val ID_RANCE1DIGEST = "rance1digest"
     const val ID_MAMAN = "maman"
+    const val ID_EVENICLERANCE = "eveniclerance"
+    const val ID_HAHARANMAN = "haharanman"
+    const val ID_TSUMAMIGUI2 = "tsumamigui2"
+    const val ID_TSUMAMIGUI3JUN = "tsumamigui3jun"
+    const val ID_TSUMAMIGUI3NTR = "tsumamigui3ntr"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -440,6 +445,9 @@ object GameCatalog {
         if (isEvenicle2RanceGameFiles(fileNames, readSmallFile)) {
             return ID_EVENICLE2RANCE
         }
+        if (isEvenicleRanceGameFiles(fileNames, readSmallFile)) {
+            return ID_EVENICLERANCE
+        }
         if (isEvenicleGaidenGameFiles(fileNames, readSmallFile)) {
             return ID_EVENICLEGAIDEN
         }
@@ -551,6 +559,12 @@ object GameCatalog {
         if (isIxsealGameFiles(fileNames, readSmallFile)) {
             return ID_IXSEAL
         }
+        if (isTsumamigui3JunGameFiles(fileNames, readSmallFile)) {
+            return ID_TSUMAMIGUI3JUN
+        }
+        if (isTsumamigui3NtrGameFiles(fileNames, readSmallFile)) {
+            return ID_TSUMAMIGUI3NTR
+        }
         if (isTsumamigui3GameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI3
         }
@@ -592,6 +606,12 @@ object GameCatalog {
         }
         if (isMamanGameFiles(fileNames, readSmallFile)) {
             return ID_MAMAN
+        }
+        if (isHaharanmanGameFiles(fileNames, readSmallFile)) {
+            return ID_HAHARANMAN
+        }
+        if (isTsumamigui2GameFiles(fileNames, readSmallFile)) {
+            return ID_TSUMAMIGUI2
         }
         if (isTsumamiguiGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI
@@ -1291,7 +1311,7 @@ object GameCatalog {
     }
 
     fun isTsumamigui3Alias(raw: String): Boolean {
-        if (raw.isBlank()) return false
+        if (raw.isBlank() || isTsumamigui3JunAlias(raw) || isTsumamigui3NtrAlias(raw)) return false
         val rawLower = raw.lowercase()
         val repairedLower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
         val check: (String) -> Boolean = { s ->
@@ -1435,7 +1455,9 @@ object GameCatalog {
         ) { readSmallRootFile(dir, it) }
 
     fun isTsumamiguiAlias(raw: String): Boolean {
-        if (raw.isBlank() || isTsumamigui3Alias(raw)) return false
+        if (raw.isBlank() || isTsumamigui3JunAlias(raw) || isTsumamigui3NtrAlias(raw) ||
+            isTsumamigui3Alias(raw) || isTsumamigui2Alias(raw)
+        ) return false
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
         val rawLower = raw.lowercase()
         if (Regex("(?:ts?umamigui|妻みぐい|妻中蜜)[\\s._-]*(?:[23２３]|ii|iii)", RegexOption.IGNORE_CASE).containsMatchIn(lower)) {
@@ -2298,6 +2320,240 @@ object GameCatalog {
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         ) { readSmallRootFile(dir, it) }
 
+    fun isEvenicleRanceAlias(raw: String): Boolean {
+        if (raw.isBlank() || isEvenicle2RanceAlias(raw)) return false
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val rawLower = raw.lowercase()
+        val check: (String) -> Boolean = { s ->
+            s.contains("eveniclerance") ||
+                s.contains("evenicle_rance") ||
+                s.contains("evenicle-rance") ||
+                s.contains("evenicle rance") ||
+                s.contains("イブニクルランス") ||
+                s.contains("イブニクル・ランス") ||
+                s.contains("イブニクル ランス") ||
+                s.contains("夏娃年代记兰斯") ||
+                s.contains("夏娃年代记 兰斯") ||
+                s.contains("夏娃年代記蘭斯") ||
+                s.contains("夏娃年代記 蘭斯") ||
+                s.contains("夏娃兰斯") ||
+                ((s.contains("夏娃年代记") || s.contains("夏娃年代記") || s.contains("イブニクル")) &&
+                    !s.contains("2") && !s.contains("２") &&
+                    (s.contains("兰斯") || s.contains("蘭斯") || s.contains("ランス") || s.contains("rance")))
+        }
+        return check(lower) || check(rawLower) || rawLower.contains("僀僽僯僋儖儔儞僗")
+    }
+
+    @JvmOverloads
+    fun isEvenicleRanceGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("EvenicleRance.ain", true) } ||
+            fileNames.any {
+                it.equals("EvenicleRanceCG.afa", true) ||
+                    it.equals("EvenicleRanceFlat.afa", true) ||
+                    it.equals("EvenicleRancePact.afa", true) ||
+                    it.equals("EvenicleRance.ex", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isEvenicleRanceAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isEvenicleRanceGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isEvenicleRanceGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isHaharanmanAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return normalized == "haharanman" ||
+            normalized.startsWith("haharanman-") ||
+            normalized.startsWith("haharanman_") ||
+            normalized.contains("haharanman") ||
+            normalized.contains("haha ranman") ||
+            normalized.contains("母爛漫") ||
+            normalized.contains("母烂漫") ||
+            rawLower.contains("曣椆枤")
+    }
+
+    @JvmOverloads
+    fun isHaharanmanGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Haharanman.ain", true) } ||
+            fileNames.any {
+                it.equals("HaharanmanCG.afa", true) ||
+                    it.equals("HaharanmanFlat.afa", true) ||
+                    it.equals("HaharanmanPact.afa", true) ||
+                    it.equals("HaharanmanFont.fnl", true) ||
+                    it.equals("HaharanmanEX.ex", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isHaharanmanAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isHaharanmanGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isHaharanmanGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isTsumamigui2Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return Regex("(?:ts?uma[\\s._-]*migui|妻みぐい|妻中蜜)[\\s._-]*(?:2|ii)(?![0-9a-z])", RegexOption.IGNORE_CASE)
+            .containsMatchIn(normalized) ||
+            rawLower.contains("嵢傒偖偄俀") ||
+            rawLower.contains("嵢傒偖偄2")
+    }
+
+    @JvmOverloads
+    fun isTsumamigui2GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                val n = java.text.Normalizer.normalize(r, java.text.Normalizer.Form.NFKC)
+                n.equals("妻みぐい2SA.ald", true) || n.equals("妻みぐい2GA.ald", true) ||
+                    it.equals("妻みぐい２SA.ald", true) || it.equals("妻みぐい２GA.ald", true) ||
+                    it.equals("嵢傒偖偄俀SA.ald", true) || it.equals("嵢傒偖偄俀GA.ald", true) ||
+                    it.equals("Tsumamigui2SA.ald", true) || it.equals("Tsumamigui2GA.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isTsumamigui2Alias(title)) return true
+        }
+        return false
+    }
+
+    fun isTsumamigui2GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isTsumamigui2GameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isTsumamigui3JunAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        if (normalized.contains("ntr") || normalized.contains("netorare") ||
+            normalized.contains("寝取") || normalized.contains("寢取")
+        ) return false
+        val hasT3 = normalized.contains("tsuma3so") ||
+            normalized.contains("tsumamigui3") ||
+            normalized.contains("tumamigui3") ||
+            normalized.contains("妻みぐい3") ||
+            normalized.contains("妻中蜜3")
+        return normalized.contains("tsumamigui3jun") ||
+            normalized.contains("tsumamigui3_jun") ||
+            normalized.contains("tsuma3so_junai") ||
+            normalized.contains("tsuma3sojunai") ||
+            (hasT3 && (normalized.contains("junai") || normalized.contains("jun") ||
+                normalized.contains("纯爱") || normalized.contains("純愛") ||
+                normalized.contains("pure love") || normalized.contains("purelove")))
+    }
+
+    @JvmOverloads
+    fun isTsumamigui3JunGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Tsuma3SO_Junai.ain", true) || it.equals("Tsumamigui3Jun.ain", true) } ||
+            fileNames.any {
+                it.equals("Tsuma3SO_JunaiCG.afa", true) ||
+                    it.equals("Tsuma3SO_JunaiFlat.afa", true) ||
+                    it.equals("Tsuma3SO_JunaiPact.afa", true) ||
+                    it.equals("Tsuma3SO_JunaiFont.fnl", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isTsumamigui3JunAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isTsumamigui3JunGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isTsumamigui3JunGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isTsumamigui3NtrAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        if (normalized.contains("junai") || normalized.contains("纯爱") || normalized.contains("純愛")) return false
+        val hasT3 = normalized.contains("tsuma3so") ||
+            normalized.contains("tsumamigui3") ||
+            normalized.contains("tumamigui3") ||
+            normalized.contains("妻みぐい3") ||
+            normalized.contains("妻中蜜3")
+        return normalized.contains("tsumamigui3ntr") ||
+            normalized.contains("tsumamigui3_ntr") ||
+            normalized.contains("tsuma3so_netorare") ||
+            normalized.contains("tsuma3sonetorare") ||
+            (hasT3 && (normalized.contains("netorare") || normalized.contains("ntr") ||
+                normalized.contains("寝取") || normalized.contains("寢取")))
+    }
+
+    @JvmOverloads
+    fun isTsumamigui3NtrGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Tsuma3SO_Netorare.ain", true) || it.equals("Tsumamigui3Ntr.ain", true) } ||
+            fileNames.any {
+                it.equals("Tsuma3SO_NetorareCG.afa", true) ||
+                    it.equals("Tsuma3SO_NetorareFlat.afa", true) ||
+                    it.equals("Tsuma3SO_NetorarePact.afa", true) ||
+                    it.equals("Tsuma3SO_NetorareFont.fnl", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isTsumamigui3NtrAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isTsumamigui3NtrGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isTsumamigui3NtrGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -2668,6 +2924,9 @@ object GameCatalog {
         if (isEvenicle2Alias(lowerDir)) {
             return ID_EVENICLE2
         }
+        if (isEvenicleRanceAlias(dirName)) {
+            return ID_EVENICLERANCE
+        }
         if (isEvenicleGaidenAlias(dirName)) {
             return ID_EVENICLEGAIDEN
         }
@@ -2691,8 +2950,17 @@ object GameCatalog {
         if (isHarukaAlias(dirName)) {
             return ID_HARUKA
         }
+        if (isTsumamigui3JunAlias(dirName)) {
+            return ID_TSUMAMIGUI3JUN
+        }
+        if (isTsumamigui3NtrAlias(dirName)) {
+            return ID_TSUMAMIGUI3NTR
+        }
         if (isTsumamigui3Alias(dirName)) {
             return ID_TSUMAMIGUI3
+        }
+        if (isTsumamigui2Alias(dirName)) {
+            return ID_TSUMAMIGUI2
         }
         if (isTsumamiguiAlias(dirName)) {
             return ID_TSUMAMIGUI
@@ -2745,6 +3013,9 @@ object GameCatalog {
         if (isMamanAlias(dirName)) {
             return ID_MAMAN
         }
+        if (isHaharanmanAlias(dirName)) {
+            return ID_HAHARANMAN
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
@@ -2771,8 +3042,17 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isHarukaAlias(displayName)) {
             return ID_HARUKA
         }
+        if (!displayName.isNullOrBlank() && isTsumamigui3JunAlias(displayName)) {
+            return ID_TSUMAMIGUI3JUN
+        }
+        if (!displayName.isNullOrBlank() && isTsumamigui3NtrAlias(displayName)) {
+            return ID_TSUMAMIGUI3NTR
+        }
         if (!displayName.isNullOrBlank() && isTsumamigui3Alias(displayName)) {
             return ID_TSUMAMIGUI3
+        }
+        if (!displayName.isNullOrBlank() && isTsumamigui2Alias(displayName)) {
+            return ID_TSUMAMIGUI2
         }
         if (!displayName.isNullOrBlank() && isTsumamiguiAlias(displayName)) {
             return ID_TSUMAMIGUI
@@ -2827,6 +3107,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isMamanAlias(displayName)) {
             return ID_MAMAN
+        }
+        if (!displayName.isNullOrBlank() && isHaharanmanAlias(displayName)) {
+            return ID_HAHARANMAN
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -2902,6 +3185,9 @@ object GameCatalog {
         }
         if (isEvenicle2Alias(lowerDisp)) {
             return ID_EVENICLE2
+        }
+        if (!displayName.isNullOrBlank() && isEvenicleRanceAlias(displayName)) {
+            return ID_EVENICLERANCE
         }
         if (!displayName.isNullOrBlank() && isEvenicleGaidenAlias(displayName)) {
             return ID_EVENICLEGAIDEN
@@ -3613,6 +3899,81 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_EVENICLERANCE -> GameDescriptor(
+                id = ID_EVENICLERANCE,
+                title = stringResolver(R.string.game_eveniclerance_title),
+                defaultDirName = "EvenicleRance",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_eveniclerance,
+                accentColor = 0xFF2E7D32.toInt(),
+                accentBorderColor = 0x6681C784,
+                iconFrameColor = 0xFF132617.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.EVENICLERANCE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_HAHARANMAN -> GameDescriptor(
+                id = ID_HAHARANMAN,
+                title = stringResolver(R.string.game_haharanman_title),
+                defaultDirName = "Haharanman",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_haharanman,
+                accentColor = 0xFFC2185B.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF29131C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.HAHARANMAN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TSUMAMIGUI2 -> GameDescriptor(
+                id = ID_TSUMAMIGUI2,
+                title = stringResolver(R.string.game_tsumamigui2_title),
+                defaultDirName = "Tsumamigui2",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tsumamigui2,
+                accentColor = 0xFFEC407A.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF29131C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI2_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TSUMAMIGUI3JUN -> GameDescriptor(
+                id = ID_TSUMAMIGUI3JUN,
+                title = stringResolver(R.string.game_tsumamigui3jun_title),
+                defaultDirName = "Tsumamigui3Jun",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tsumamigui3jun,
+                accentColor = 0xFFAD1457.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF28121B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3JUN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TSUMAMIGUI3NTR -> GameDescriptor(
+                id = ID_TSUMAMIGUI3NTR,
+                title = stringResolver(R.string.game_tsumamigui3ntr_title),
+                defaultDirName = "Tsumamigui3Ntr",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tsumamigui3ntr,
+                accentColor = 0xFF6A1B9A.toInt(),
+                accentBorderColor = 0x66BA68C8,
+                iconFrameColor = 0xFF201329.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3NTR_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -3682,7 +4043,12 @@ object GameCatalog {
         ID_OYAKORANKAN,
         ID_YORUGAKURU,
         ID_RANCE1DIGEST,
-        ID_MAMAN
+        ID_MAMAN,
+        ID_EVENICLERANCE,
+        ID_HAHARANMAN,
+        ID_TSUMAMIGUI2,
+        ID_TSUMAMIGUI3JUN,
+        ID_TSUMAMIGUI3NTR
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

@@ -84,6 +84,11 @@ object AppSettings {
     internal const val DEFAULT_YORUGAKURU_BYTES = 1565514386L
     internal const val DEFAULT_RANCE1DIGEST_BYTES = 11945316L
     internal const val DEFAULT_MAMAN_BYTES = 1562216703L
+    internal const val DEFAULT_EVENICLERANCE_BYTES = 397398161L
+    internal const val DEFAULT_HAHARANMAN_BYTES = 1231870701L
+    internal const val DEFAULT_TSUMAMIGUI2_BYTES = 760017305L
+    internal const val DEFAULT_TSUMAMIGUI3JUN_BYTES = 215949267L
+    internal const val DEFAULT_TSUMAMIGUI3NTR_BYTES = 244591288L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -301,6 +306,11 @@ object AppSettings {
             OnlineInstaller.YORUGAKURU_CDN_URL -> DEFAULT_YORUGAKURU_BYTES
             OnlineInstaller.RANCE1DIGEST_CDN_URL -> DEFAULT_RANCE1DIGEST_BYTES
             OnlineInstaller.MAMAN_CDN_URL -> DEFAULT_MAMAN_BYTES
+            OnlineInstaller.EVENICLERANCE_CDN_URL -> DEFAULT_EVENICLERANCE_BYTES
+            OnlineInstaller.HAHARANMAN_CDN_URL -> DEFAULT_HAHARANMAN_BYTES
+            OnlineInstaller.TSUMAMIGUI2_CDN_URL -> DEFAULT_TSUMAMIGUI2_BYTES
+            OnlineInstaller.TSUMAMIGUI3JUN_CDN_URL -> DEFAULT_TSUMAMIGUI3JUN_BYTES
+            OnlineInstaller.TSUMAMIGUI3NTR_CDN_URL -> DEFAULT_TSUMAMIGUI3NTR_BYTES
             else -> -1L
         }
     }

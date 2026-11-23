@@ -72,6 +72,7 @@ final class GameLibrary: ObservableObject {
         ("escalayer_reboot", ["escalayerreboot", "reboot"]),
         ("evenicle2rance", ["evenicle2rance", "イブニクル2ランス", "イブニクル２ランス", "夏娃年代记2兰斯", "夏娃年代記2蘭斯", "evenicle2兰斯"]),
         ("evenicle2", ["evenicle2", "イブニクル2", "夏娃年代记2"]),
+        ("eveniclerance", ["eveniclerance", "イブニクルランス", "夏娃年代记兰斯", "夏娃年代記蘭斯", "夏娃兰斯"]),
         ("eveniclegaiden", ["eveniclegaiden", "eveniclegaiten", "evenicleapc", "イブニクル外典", "夏娃年代记外典", "夏娃年代記外典"]),
         ("rance10", ["rance10", "rancex", "兰斯10", "ランス10"]),
         ("dohnadohna", ["dohnadohna", "多娜多娜", "ドーナドーナ"]),
@@ -94,7 +95,10 @@ final class GameLibrary: ObservableObject {
         ("daiteikoku", ["daiteikoku", "大帝国", "大帝國"]),
         ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
         ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
+        ("tsumamigui3jun", ["tsumamigui3jun", "tsuma3sojunai", "妻みぐい3スピンオフ純愛", "妻みぐい３スピンオフ純愛", "妻みぐい3純愛", "妻中蜜3番外纯爱", "妻中蜜3纯爱"]),
+        ("tsumamigui3ntr", ["tsumamigui3ntr", "tsuma3sonetorare", "妻みぐい3スピンオフ寝取", "妻みぐい３スピンオフ寝取", "妻みぐい3寝取", "妻中蜜3番外寝取", "妻中蜜3寝取"]),
         ("tsumamigui3", ["tsumamigui3", "妻みぐい3", "妻みぐい３", "妻中蜜3", "妻中蜜３"]),
+        ("tsumamigui2", ["tsumamigui2", "妻みぐい2", "妻みぐい２", "妻中蜜2", "妻中蜜２", "嵢傒偖偄俀"]),
         ("tsumamigui", ["tsumamigui", "妻みぐい", "妻中蜜", "嵢傒偖偄"]),
         ("kaerunyo", ["kaerunyo", "かえるにょ", "ぱにょ", "回家扭"]),
         ("atlachnacha", ["atlachnacha", "atlach", "アトラク", "阿特拉克", "蜘蛛sa"]),
@@ -109,6 +113,7 @@ final class GameLibrary: ObservableObject {
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
+        ("haharanman", ["haharanman", "母爛漫", "母烂漫", "曣椆枤"]),
         ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
         ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
     ]
@@ -577,6 +582,7 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             setenv("XSYSTEM35_FONT_GOTHIC", resources.appendingPathComponent("MTLc3m.ttf").path, 1)
             setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
+            setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
             let arguments = try Self.launchArguments(game.url, saves: saves)
             ModifierBridge.prepareForLaunch()

@@ -180,6 +180,8 @@ bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = false;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
 static int open_calls, close_calls, pause_state = -1;
@@ -530,6 +532,8 @@ bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = false;
+bool game_tsumamigui3_jun = false;
+bool game_tsumamigui3_ntr = false;
 
 static uint8_t *g_sound2_buf = NULL;
 static size_t g_sound2_size = 0;

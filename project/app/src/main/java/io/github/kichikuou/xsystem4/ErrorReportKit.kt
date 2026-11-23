@@ -1319,6 +1319,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_evenicle2rance_title)
             GameCatalog.isEvenicle2Alias(lower) ->
                 context.getString(R.string.game_evenicle2_title)
+            GameCatalog.isEvenicleRanceAlias(lower) ->
+                context.getString(R.string.game_eveniclerance_title)
             GameCatalog.isEvenicleGaidenAlias(lower) ->
                 context.getString(R.string.game_eveniclegaiden_title)
             GameCatalog.isEscalayerRebootAlias(lower) ->
@@ -1327,8 +1329,14 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_ixseal_title)
             GameCatalog.isHarukaAlias(lower) ->
                 context.getString(R.string.game_haruka_title)
+            GameCatalog.isTsumamigui3JunAlias(lower) ->
+                context.getString(R.string.game_tsumamigui3jun_title)
+            GameCatalog.isTsumamigui3NtrAlias(lower) ->
+                context.getString(R.string.game_tsumamigui3ntr_title)
             GameCatalog.isTsumamigui3Alias(lower) ->
                 context.getString(R.string.game_tsumamigui3_title)
+            GameCatalog.isTsumamigui2Alias(lower) ->
+                context.getString(R.string.game_tsumamigui2_title)
             GameCatalog.isTsumamiguiAlias(lower) ->
                 context.getString(R.string.game_tsumamigui_title)
             GameCatalog.isTsumashiboriAlias(lower) ->
@@ -1365,6 +1373,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_rance1digest_title)
             GameCatalog.isMamanAlias(lower) ->
                 context.getString(R.string.game_maman_title)
+            GameCatalog.isHaharanmanAlias(lower) ->
+                context.getString(R.string.game_haharanman_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)
