@@ -193,8 +193,17 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_EVENICLERANCE && GameCatalog.isEvenicleRanceAlias(q)) ||
             (desc.id == GameCatalog.ID_HAHARANMAN && GameCatalog.isHaharanmanAlias(q)) ||
             (desc.id == GameCatalog.ID_TSUMAMIGUI2 && GameCatalog.isTsumamigui2Alias(q)) ||
-            (desc.id == GameCatalog.ID_TSUMAMIGUI3JUN && GameCatalog.isTsumamigui3JunAlias(q)) ||
-            (desc.id == GameCatalog.ID_TSUMAMIGUI3NTR && GameCatalog.isTsumamigui3NtrAlias(q))
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3JUN && ("tsuma3so_junai".contains(q, ignoreCase = true) || GameCatalog.isTsumamigui3JunAlias(q))) ||
+            (desc.id == GameCatalog.ID_TSUMAMIGUI3NTR && ("tsuma3so_netorare".contains(q, ignoreCase = true) || GameCatalog.isTsumamigui3NtrAlias(q))) ||
+            (desc.id == GameCatalog.ID_DIABOLIQUE && GameCatalog.isDiaboliqueAlias(q)) ||
+            (desc.id == GameCatalog.ID_GAKUENKING && GameCatalog.isGakuenKingAlias(q)) ||
+            (desc.id == GameCatalog.ID_GAKUENKINGEX && GameCatalog.isGakuenKingExAlias(q)) ||
+            (desc.id == GameCatalog.ID_OUDOUYUUSHA && GameCatalog.isOudouYuushaAlias(q)) ||
+            (desc.id == GameCatalog.ID_TOUSHIN1 && GameCatalog.isToushin1Alias(q)) ||
+            (desc.id == GameCatalog.ID_TOUSHIN2 && GameCatalog.isToushin2Alias(q)) ||
+            (desc.id == GameCatalog.ID_DARCROWS && GameCatalog.isDarcrowsAlias(q)) ||
+            (desc.id == GameCatalog.ID_IKUSAMIKO && GameCatalog.isIkusaMikoAlias(q)) ||
+            (desc.id == GameCatalog.ID_ONLYYOU && GameCatalog.isOnlyYouAlias(q))
         ) {
             return true
         }

@@ -293,6 +293,15 @@
     <string name="game_tsumamigui2_title">Tsumamigui 2</string>
     <string name="game_tsumamigui3jun_title">Tsumamigui 3 Spin-off: Pure Love</string>
     <string name="game_tsumamigui3ntr_title">Tsumamigui 3 Spin-off: NTR</string>
+    <string name="game_diabolique_title">DiaboLiQuE</string>
+    <string name="game_gakuenking_title">Gakuen King</string>
+    <string name="game_gakuenkingex_title">Gakuen King Bangai Hen</string>
+    <string name="game_oudouyuusha_title">Oudou Yuusha</string>
+    <string name="game_toushin1_title">Toushin Toshi</string>
+    <string name="game_toushin2_title">Toushin Toshi II</string>
+    <string name="game_darcrows_title">DARCROWS</string>
+    <string name="game_ikusamiko_title">Ikusa Miko -Vestal Virgin-</string>
+    <string name="game_onlyyou_title">Only You</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

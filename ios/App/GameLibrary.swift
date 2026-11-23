@@ -110,6 +110,15 @@ final class GameLibrary: ObservableObject {
         ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
         ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
         ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
+        ("toushin2", ["toushin2", "toushintoshi2", "toushintoshiii", "tt2sa", "闘神都市2", "闘神都市２", "闘神都市ii", "斗神都市2", "斗神都市２", "斗神都市ii", "鬥神都市2"]),
+        ("toushin1", ["toushin1", "toushinsa", "toushintoshi", "闘神都市", "斗神都市", "鬥神都市"]),
+        ("diabolique", ["diabolique", "diabosa", "デアボリカ", "魔鬼恋曲"]),
+        ("gakuenkingex", ["gakuenkingex", "gakuenkingbangai", "学園番外編", "学園king番外", "学园king番外"]),
+        ("gakuenking", ["gakuenking", "学園king", "学园king", "gakuen.com"]),
+        ("oudouyuusha", ["oudouyuusha", "王道勇者", "王道sa"]),
+        ("darcrows", ["darcrows", "himesa", "ダークロウズ", "暗鸦"]),
+        ("ikusamiko", ["ikusamiko", "戦巫女", "战巫女", "vestalvirgin"]),
+        ("onlyyou", ["onlyyou", "世紀末のジュリエット", "世纪末的朱丽叶"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
@@ -178,6 +187,8 @@ final class GameLibrary: ObservableObject {
         let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
         let yakata2 = legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false
         let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
+        let gakuenKing = legacyId.map { $0 == "gakuen_king" || $0 == "gakuenking" } ?? false
+        let onlyYou = legacyId.map { $0 == "onlyyou" || $0 == "only_you" } ?? false
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
@@ -186,6 +197,8 @@ final class GameLibrary: ObservableObject {
         else if rance5d { displayName = "兰斯5D" }
         else if yakata2 { displayName = "爱丽丝之馆2" }
         else if sdpsMaria { displayName = "Super D.P.S 玛利亚和坎潘" }
+        else if gakuenKing { displayName = "学园KING" }
+        else if onlyYou { displayName = "Only You 世纪末的朱丽叶们" }
         else { displayName = url.lastPathComponent }
 
         let detectedArtworkID: String?
@@ -195,6 +208,8 @@ final class GameLibrary: ObservableObject {
         else if rance5d { detectedArtworkID = "rance5d" }
         else if yakata2 { detectedArtworkID = "yakata2" }
         else if sdpsMaria { detectedArtworkID = "sdpsmaria" }
+        else if gakuenKing { detectedArtworkID = "gakuenking" }
+        else if onlyYou { detectedArtworkID = "onlyyou" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?
@@ -298,6 +313,16 @@ final class GameLibrary: ObservableObject {
     static func isSdpsMaria(_ url: URL) -> Bool {
         guard let game = legacySystem3GameId(url) else { return false }
         return game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps"
+    }
+
+    static func isGakuenKing(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "gakuen_king" || game == "gakuenking"
+    }
+
+    static func isOnlyYou(_ url: URL) -> Bool {
+        guard let game = legacySystem3GameId(url) else { return false }
+        return game == "onlyyou" || game == "only_you"
     }
 
     static func isRance5d(_ url: URL) -> Bool {

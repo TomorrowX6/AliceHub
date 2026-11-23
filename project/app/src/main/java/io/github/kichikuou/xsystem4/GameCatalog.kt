@@ -93,6 +93,15 @@ object GameCatalog {
     const val ID_TSUMAMIGUI2 = "tsumamigui2"
     const val ID_TSUMAMIGUI3JUN = "tsumamigui3jun"
     const val ID_TSUMAMIGUI3NTR = "tsumamigui3ntr"
+    const val ID_DIABOLIQUE = "diabolique"
+    const val ID_GAKUENKING = "gakuenking"
+    const val ID_GAKUENKINGEX = "gakuenkingex"
+    const val ID_OUDOUYUUSHA = "oudouyuusha"
+    const val ID_TOUSHIN1 = "toushin1"
+    const val ID_TOUSHIN2 = "toushin2"
+    const val ID_DARCROWS = "darcrows"
+    const val ID_IKUSAMIKO = "ikusamiko"
+    const val ID_ONLYYOU = "onlyyou"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -595,8 +604,20 @@ object GameCatalog {
         if (isSdpsMariaGameFiles(fileNames, readSmallFile)) {
             return ID_SDPSMARIA
         }
+        if (isGakuenKingGameFiles(fileNames, readSmallFile)) {
+            return ID_GAKUENKING
+        }
+        if (isOnlyYouGameFiles(fileNames, readSmallFile)) {
+            return ID_ONLYYOU
+        }
         if (isToushin3GameFiles(fileNames, readSmallFile)) {
             return ID_TOUSHIN3
+        }
+        if (isToushin2GameFiles(fileNames, readSmallFile)) {
+            return ID_TOUSHIN2
+        }
+        if (isToushin1GameFiles(fileNames, readSmallFile)) {
+            return ID_TOUSHIN1
         }
         if (isOyakorankanGameFiles(fileNames, readSmallFile)) {
             return ID_OYAKORANKAN
@@ -615,6 +636,21 @@ object GameCatalog {
         }
         if (isTsumamiguiGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI
+        }
+        if (isDiaboliqueGameFiles(fileNames, readSmallFile)) {
+            return ID_DIABOLIQUE
+        }
+        if (isGakuenKingExGameFiles(fileNames, readSmallFile)) {
+            return ID_GAKUENKINGEX
+        }
+        if (isOudouYuushaGameFiles(fileNames, readSmallFile)) {
+            return ID_OUDOUYUUSHA
+        }
+        if (isDarcrowsGameFiles(fileNames, readSmallFile)) {
+            return ID_DARCROWS
+        }
+        if (isIkusaMikoGameFiles(fileNames, readSmallFile)) {
+            return ID_IKUSAMIKO
         }
         if (isKaerunyoGameFiles(fileNames, readSmallFile)) {
             return ID_KAERUNYO
@@ -2087,7 +2123,9 @@ object GameCatalog {
             normalized.contains("斗神都市iii") ||
             normalized.contains("鬥神都市3") ||
             normalized.contains("鬥神都市iii") ||
-            rawLower.contains("摤恄搒巗")
+            rawLower.contains("摤恄搒巗3") ||
+            rawLower.contains("摤恄搒巗iii") ||
+            rawLower.contains("摤恄搒巗俁")
     }
 
     @JvmOverloads
@@ -2554,6 +2592,417 @@ object GameCatalog {
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         ) { readSmallRootFile(dir, it) }
 
+    private val GAKUENKING_ADISK_CRC32S = setOf(0xd1bf243bL)
+    private val ONLYYOU_ADISK_CRC32S = setOf(0x832aeb97L)
+
+    fun isDiaboliqueAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("diabolique") ||
+            normalized.contains("diabo_sa") ||
+            normalized.contains("デアボリカ") ||
+            normalized.contains("魔鬼恋曲") ||
+            normalized.contains("魔鬼戀曲")
+    }
+
+    @JvmOverloads
+    fun isDiaboliqueGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                it.equals("DIABO_SA.ALD", true) ||
+                    it.equals("DIABO_GA.ALD", true) ||
+                    it.equals("DIABO_GB.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDiaboliqueAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDiaboliqueGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isDiaboliqueGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isGakuenKingExAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val hasGakuenKing = normalized.contains("gakuenking") ||
+            normalized.contains("gakuen_king") ||
+            normalized.contains("gakuen king") ||
+            normalized.contains("学園king") ||
+            normalized.contains("学园king") ||
+            normalized.contains("學園king")
+        return normalized.contains("gakuenkingex") ||
+            normalized.contains("gakuenking_ex") ||
+            normalized.contains("gakuenking-ex") ||
+            normalized.contains("gakuenkingbangai") ||
+            normalized.contains("学園番外編") ||
+            normalized.contains("日出彦 カレーをつくる") ||
+            normalized.contains("日出彦カレーをつくる") ||
+            normalized.contains("hidehiko curry") ||
+            (hasGakuenKing && (normalized.contains("bangai") ||
+                normalized.contains("番外") ||
+                normalized.contains("curry") ||
+                normalized.contains("カレー") ||
+                Regex("(?<![a-z0-9])ex(?![a-z0-9])").containsMatchIn(normalized)))
+    }
+
+    @JvmOverloads
+    fun isGakuenKingExGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("学園番外編SA.ald", true) || r.equals("学園番外編SA.ald", true) ||
+                    it.equals("学園番外編GA.ald", true) || r.equals("学園番外編GA.ald", true) ||
+                    it.equals("学園番外編MA.ald", true) || r.equals("学園番外編MA.ald", true) ||
+                    it.equals("学園番外編WA.ald", true) || r.equals("学園番外編WA.ald", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isGakuenKingExAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isGakuenKingExGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isGakuenKingExGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isGakuenKingAlias(raw: String): Boolean {
+        if (raw.isBlank() || isGakuenKingExAlias(raw)) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("gakuenking") ||
+            normalized.contains("gakuen_king") ||
+            normalized.contains("gakuen-king") ||
+            normalized.contains("gakuen king") ||
+            normalized.contains("学園king") ||
+            normalized.contains("学园king") ||
+            normalized.contains("學園king") ||
+            normalized.contains("日出彦 学校をつくる") ||
+            normalized.contains("日出彦学校をつくる") ||
+            normalized.contains("hidehiko gakkou")
+    }
+
+    @JvmOverloads
+    fun isGakuenKingGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "gakuen_king" || game == "gakuenking") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isGakuenKingAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in GAKUENKING_ADISK_CRC32S) return true
+        }
+        return fileNames.any { it.equals("GAKUEN.COM", true) }
+    }
+
+    fun isGakuenKingGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isGakuenKingGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
+    fun isOudouYuushaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("oudouyuusha") ||
+            normalized.contains("oudou_yuusha") ||
+            normalized.contains("oudou-yuusha") ||
+            normalized.contains("oudou yuusha") ||
+            normalized.contains("odo yuusha") ||
+            normalized.contains("王道勇者") ||
+            normalized.contains("王道sa")
+    }
+
+    @JvmOverloads
+    fun isOudouYuushaGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("王道SA.ALD", true) || r.equals("王道SA.ALD", true) ||
+                    it.equals("王道GA.ALD", true) || r.equals("王道GA.ALD", true) ||
+                    it.equals("王道GB.ALD", true) || r.equals("王道GB.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isOudouYuushaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isOudouYuushaGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isOudouYuushaGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isToushin2Alias(raw: String): Boolean {
+        if (raw.isBlank() || isToushin3Alias(raw)) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return Regex("(?<![a-z0-9])(?:toushin|toshin)[\\s._-]*(?:toshi[\\s._-]*)?(?:2|ii)(?![0-9a-z])", RegexOption.IGNORE_CASE)
+            .containsMatchIn(normalized) ||
+            Regex("(?:闘神都市|斗神都市|鬥神都市)[\\s._-]*(?:2|ii)(?![0-9a-z])", RegexOption.IGNORE_CASE)
+                .containsMatchIn(normalized) ||
+            normalized == "tt2" ||
+            normalized.contains("tt2sa") ||
+            rawLower.contains("摤恄搒巗2") ||
+            rawLower.contains("摤恄搒巗ii") ||
+            rawLower.contains("摤恄搒巗俀")
+    }
+
+    @JvmOverloads
+    fun isToushin2GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                val n = java.text.Normalizer.normalize(r, java.text.Normalizer.Form.NFKC)
+                it.equals("tt2SA.ALD", true) ||
+                    it.equals("tt2GA.ald", true) ||
+                    it.equals("tt2DA.ALD", true) ||
+                    it.equals("tt2WA.ALD", true) ||
+                    n.equals("闘神都市2SA.ALD", true) ||
+                    n.equals("闘神都市IISA.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isToushin2Alias(title)) return true
+        }
+        return false
+    }
+
+    fun isToushin2GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isToushin2GameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isToushin1Alias(raw: String): Boolean {
+        if (raw.isBlank() || isToushin3Alias(raw) || isToushin2Alias(raw)) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        if (Regex("(?:toushin|toshin|闘神都市|斗神都市|鬥神都市)[\\s._-]*(?:[23]|ii|iii)", RegexOption.IGNORE_CASE)
+                .containsMatchIn(normalized)
+        ) {
+            return false
+        }
+        return normalized.contains("toushin1") ||
+            normalized.contains("toushin 1") ||
+            normalized.contains("toushin_1") ||
+            normalized.contains("toushin-1") ||
+            normalized.contains("toshin1") ||
+            normalized.contains("toushin toshi") ||
+            normalized.contains("toushintoshi") ||
+            normalized.contains("toshin toshi") ||
+            normalized.contains("闘神都市") ||
+            normalized.contains("斗神都市") ||
+            normalized.contains("鬥神都市") ||
+            rawLower.contains("摤恄搒巗")
+    }
+
+    @JvmOverloads
+    fun isToushin1GameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames) || isToushin2GameFiles(fileNames, readSmallFile)) return false
+        if (fileNames.any {
+                it.equals("TOUSHINSA.ALD", true) ||
+                    it.equals("TOUSHINGA.ALD", true) ||
+                    it.equals("TOUSHINDA.ALD", true) ||
+                    it.equals("TOUSHINMA.ALD", true) ||
+                    it.equals("TOUSHINWA.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isToushin1Alias(title)) return true
+        }
+        return false
+    }
+
+    fun isToushin1GameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isToushin1GameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isDarcrowsAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("darcrows") ||
+            normalized.contains("ダークロウズ") ||
+            normalized.contains("暗鸦") ||
+            normalized.contains("暗鴉") ||
+            normalized.contains("hime_sa")
+    }
+
+    @JvmOverloads
+    fun isDarcrowsGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                it.equals("HIME_SA.ALD", true) ||
+                    it.equals("HIME_GA.ALD", true) ||
+                    it.equals("HIME_GB.ALD", true) ||
+                    it.equals("HIME_RA.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDarcrowsAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDarcrowsGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isDarcrowsGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isIkusaMikoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        return normalized.contains("ikusamiko") ||
+            normalized.contains("ikusa_miko") ||
+            normalized.contains("ikusa-miko") ||
+            normalized.contains("ikusa miko") ||
+            normalized.contains("vestal virgin") ||
+            normalized.contains("戦巫女") ||
+            normalized.contains("战巫女") ||
+            normalized.contains("戰巫女")
+    }
+
+    @JvmOverloads
+    fun isIkusaMikoGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        if (fileNames.any {
+                val r = ArchiveExtractor.repairSjisAsGbkMojibake(it)
+                it.equals("戦巫女SA.ALD", true) || r.equals("戦巫女SA.ALD", true) ||
+                    it.equals("戦巫女GA.ALD", true) || r.equals("戦巫女GA.ALD", true) ||
+                    it.equals("戦巫女WA.ALD", true) || r.equals("戦巫女WA.ALD", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isIkusaMikoAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isIkusaMikoGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isIkusaMikoGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
+    fun isOnlyYouAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        if (normalized.contains("recross") || normalized.contains("re cross") ||
+            normalized.contains("re・cross") || normalized.contains("リクルス") || normalized.contains("リ・クルス")
+        ) return false
+        return normalized.contains("onlyyou") ||
+            normalized.contains("only_you") ||
+            normalized.contains("only-you") ||
+            normalized.contains("only you") ||
+            normalized.contains("世紀末のジュリエット") ||
+            normalized.contains("世纪末的朱丽叶") ||
+            normalized.contains("世紀末的朱麗葉") ||
+            normalized.contains("seikimatsu no juliette")
+    }
+
+    @JvmOverloads
+    fun isOnlyYouGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "onlyyou" || game == "only_you") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isOnlyYouAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in ONLYYOU_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isOnlyYouGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isOnlyYouGameFiles(files.map { it.name }) { name ->
+            val f = files.firstOrNull { it.name.equals(name, true) }
+            when {
+                f == null -> null
+                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                else -> null
+            }
+        }
+    }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -3004,6 +3453,33 @@ object GameCatalog {
         if (isToushin3Alias(dirName)) {
             return ID_TOUSHIN3
         }
+        if (isToushin2Alias(dirName)) {
+            return ID_TOUSHIN2
+        }
+        if (isToushin1Alias(dirName)) {
+            return ID_TOUSHIN1
+        }
+        if (isDiaboliqueAlias(dirName)) {
+            return ID_DIABOLIQUE
+        }
+        if (isGakuenKingExAlias(dirName)) {
+            return ID_GAKUENKINGEX
+        }
+        if (isGakuenKingAlias(dirName)) {
+            return ID_GAKUENKING
+        }
+        if (isOudouYuushaAlias(dirName)) {
+            return ID_OUDOUYUUSHA
+        }
+        if (isDarcrowsAlias(dirName)) {
+            return ID_DARCROWS
+        }
+        if (isIkusaMikoAlias(dirName)) {
+            return ID_IKUSAMIKO
+        }
+        if (isOnlyYouAlias(dirName)) {
+            return ID_ONLYYOU
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -3095,6 +3571,33 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isToushin3Alias(displayName)) {
             return ID_TOUSHIN3
+        }
+        if (!displayName.isNullOrBlank() && isToushin2Alias(displayName)) {
+            return ID_TOUSHIN2
+        }
+        if (!displayName.isNullOrBlank() && isToushin1Alias(displayName)) {
+            return ID_TOUSHIN1
+        }
+        if (!displayName.isNullOrBlank() && isDiaboliqueAlias(displayName)) {
+            return ID_DIABOLIQUE
+        }
+        if (!displayName.isNullOrBlank() && isGakuenKingExAlias(displayName)) {
+            return ID_GAKUENKINGEX
+        }
+        if (!displayName.isNullOrBlank() && isGakuenKingAlias(displayName)) {
+            return ID_GAKUENKING
+        }
+        if (!displayName.isNullOrBlank() && isOudouYuushaAlias(displayName)) {
+            return ID_OUDOUYUUSHA
+        }
+        if (!displayName.isNullOrBlank() && isDarcrowsAlias(displayName)) {
+            return ID_DARCROWS
+        }
+        if (!displayName.isNullOrBlank() && isIkusaMikoAlias(displayName)) {
+            return ID_IKUSAMIKO
+        }
+        if (!displayName.isNullOrBlank() && isOnlyYouAlias(displayName)) {
+            return ID_ONLYYOU
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -3974,6 +4477,141 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_DIABOLIQUE -> GameDescriptor(
+                id = ID_DIABOLIQUE,
+                title = stringResolver(R.string.game_diabolique_title),
+                defaultDirName = "DiaboLiQuE",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_diabolique,
+                accentColor = 0xFFB71C1C.toInt(),
+                accentBorderColor = 0x66EF5350,
+                iconFrameColor = 0xFF231015.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DIABOLIQUE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_GAKUENKING -> GameDescriptor(
+                id = ID_GAKUENKING,
+                title = stringResolver(R.string.game_gakuenking_title),
+                defaultDirName = "GakuenKING",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_gakuenking,
+                accentColor = 0xFFEF6C00.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF261A0D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.GAKUENKING_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_GAKUENKINGEX -> GameDescriptor(
+                id = ID_GAKUENKINGEX,
+                title = stringResolver(R.string.game_gakuenkingex_title),
+                defaultDirName = "GakuenKINGEx",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_gakuenkingex,
+                accentColor = 0xFFF57F17.toInt(),
+                accentBorderColor = 0x66FFD54F,
+                iconFrameColor = 0xFF261E0D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.GAKUENKINGEX_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_OUDOUYUUSHA -> GameDescriptor(
+                id = ID_OUDOUYUUSHA,
+                title = stringResolver(R.string.game_oudouyuusha_title),
+                defaultDirName = "OudouYuusha",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_oudouyuusha,
+                accentColor = 0xFF1976D2.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF0E1B2B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.OUDOUYUUSHA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TOUSHIN1 -> GameDescriptor(
+                id = ID_TOUSHIN1,
+                title = stringResolver(R.string.game_toushin1_title),
+                defaultDirName = "Toushin1",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_toushin1,
+                accentColor = 0xFF283593.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF11152A.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TOUSHIN1_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TOUSHIN2 -> GameDescriptor(
+                id = ID_TOUSHIN2,
+                title = stringResolver(R.string.game_toushin2_title),
+                defaultDirName = "Toushin2",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_toushin2,
+                accentColor = 0xFF0277BD.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0D1D2B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TOUSHIN2_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DARCROWS -> GameDescriptor(
+                id = ID_DARCROWS,
+                title = stringResolver(R.string.game_darcrows_title),
+                defaultDirName = "DARCROWS",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_darcrows,
+                accentColor = 0xFF4A148C.toInt(),
+                accentBorderColor = 0x66BA68C8,
+                iconFrameColor = 0xFF1A1026.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DARCROWS_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_IKUSAMIKO -> GameDescriptor(
+                id = ID_IKUSAMIKO,
+                title = stringResolver(R.string.game_ikusamiko_title),
+                defaultDirName = "IkusaMiko",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_ikusamiko,
+                accentColor = 0xFFC62828.toInt(),
+                accentBorderColor = 0x66EF5350,
+                iconFrameColor = 0xFF261113.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.IKUSAMIKO_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_ONLYYOU -> GameDescriptor(
+                id = ID_ONLYYOU,
+                title = stringResolver(R.string.game_onlyyou_title),
+                defaultDirName = "OnlyYou",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_onlyyou,
+                accentColor = 0xFFAD1457.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF28121D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ONLYYOU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -4048,7 +4686,16 @@ object GameCatalog {
         ID_HAHARANMAN,
         ID_TSUMAMIGUI2,
         ID_TSUMAMIGUI3JUN,
-        ID_TSUMAMIGUI3NTR
+        ID_TSUMAMIGUI3NTR,
+        ID_DIABOLIQUE,
+        ID_GAKUENKING,
+        ID_GAKUENKINGEX,
+        ID_OUDOUYUUSHA,
+        ID_TOUSHIN1,
+        ID_TOUSHIN2,
+        ID_DARCROWS,
+        ID_IKUSAMIKO,
+        ID_ONLYYOU
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

@@ -292,6 +292,15 @@
     <string name="game_tsumamigui2_title">妻中蜜2</string>
     <string name="game_tsumamigui3jun_title">妻中蜜3 番外 纯爱篇</string>
     <string name="game_tsumamigui3ntr_title">妻中蜜3 番外 寝取篇</string>
+    <string name="game_diabolique_title">魔鬼恋曲 DiaboLiQuE</string>
+    <string name="game_gakuenking_title">学园KING</string>
+    <string name="game_gakuenkingex_title">学园KING 番外篇</string>
+    <string name="game_oudouyuusha_title">王道勇者</string>
+    <string name="game_toushin1_title">斗神都市</string>
+    <string name="game_toushin2_title">斗神都市II</string>
+    <string name="game_darcrows_title">暗鸦 DARCROWS</string>
+    <string name="game_ikusamiko_title">战巫女</string>
+    <string name="game_onlyyou_title">Only You 世纪末的朱丽叶们</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

@@ -89,6 +89,15 @@ object AppSettings {
     internal const val DEFAULT_TSUMAMIGUI2_BYTES = 760017305L
     internal const val DEFAULT_TSUMAMIGUI3JUN_BYTES = 215949267L
     internal const val DEFAULT_TSUMAMIGUI3NTR_BYTES = 244591288L
+    internal const val DEFAULT_DIABOLIQUE_BYTES = 212543299L
+    internal const val DEFAULT_GAKUENKING_BYTES = 83874519L
+    internal const val DEFAULT_GAKUENKINGEX_BYTES = 6975808L
+    internal const val DEFAULT_OUDOUYUUSHA_BYTES = 162434751L
+    internal const val DEFAULT_TOUSHIN1_BYTES = 6276307L
+    internal const val DEFAULT_TOUSHIN2_BYTES = 168804761L
+    internal const val DEFAULT_DARCROWS_BYTES = 558857840L
+    internal const val DEFAULT_IKUSAMIKO_BYTES = 381340553L
+    internal const val DEFAULT_ONLYYOU_BYTES = 77592471L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -311,6 +320,15 @@ object AppSettings {
             OnlineInstaller.TSUMAMIGUI2_CDN_URL -> DEFAULT_TSUMAMIGUI2_BYTES
             OnlineInstaller.TSUMAMIGUI3JUN_CDN_URL -> DEFAULT_TSUMAMIGUI3JUN_BYTES
             OnlineInstaller.TSUMAMIGUI3NTR_CDN_URL -> DEFAULT_TSUMAMIGUI3NTR_BYTES
+            OnlineInstaller.DIABOLIQUE_CDN_URL -> DEFAULT_DIABOLIQUE_BYTES
+            OnlineInstaller.GAKUENKING_CDN_URL -> DEFAULT_GAKUENKING_BYTES
+            OnlineInstaller.GAKUENKINGEX_CDN_URL -> DEFAULT_GAKUENKINGEX_BYTES
+            OnlineInstaller.OUDOUYUUSHA_CDN_URL -> DEFAULT_OUDOUYUUSHA_BYTES
+            OnlineInstaller.TOUSHIN1_CDN_URL -> DEFAULT_TOUSHIN1_BYTES
+            OnlineInstaller.TOUSHIN2_CDN_URL -> DEFAULT_TOUSHIN2_BYTES
+            OnlineInstaller.DARCROWS_CDN_URL -> DEFAULT_DARCROWS_BYTES
+            OnlineInstaller.IKUSAMIKO_CDN_URL -> DEFAULT_IKUSAMIKO_BYTES
+            OnlineInstaller.ONLYYOU_CDN_URL -> DEFAULT_ONLYYOU_BYTES
             else -> -1L
         }
     }

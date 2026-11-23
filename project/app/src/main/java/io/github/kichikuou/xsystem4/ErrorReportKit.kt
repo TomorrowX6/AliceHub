@@ -1365,6 +1365,10 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_sdpsmaria_title)
             GameCatalog.isToushin3Alias(lower) ->
                 context.getString(R.string.game_toushin3_title)
+            GameCatalog.isToushin2Alias(lower) ->
+                context.getString(R.string.game_toushin2_title)
+            GameCatalog.isToushin1Alias(lower) ->
+                context.getString(R.string.game_toushin1_title)
             GameCatalog.isOyakorankanAlias(lower) ->
                 context.getString(R.string.game_oyakorankan_title)
             GameCatalog.isYorugakuruAlias(lower) ->
@@ -1375,6 +1379,20 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_maman_title)
             GameCatalog.isHaharanmanAlias(lower) ->
                 context.getString(R.string.game_haharanman_title)
+            GameCatalog.isDiaboliqueAlias(lower) ->
+                context.getString(R.string.game_diabolique_title)
+            GameCatalog.isGakuenKingExAlias(lower) ->
+                context.getString(R.string.game_gakuenkingex_title)
+            GameCatalog.isGakuenKingAlias(lower) ->
+                context.getString(R.string.game_gakuenking_title)
+            GameCatalog.isOudouYuushaAlias(lower) ->
+                context.getString(R.string.game_oudouyuusha_title)
+            GameCatalog.isDarcrowsAlias(lower) ->
+                context.getString(R.string.game_darcrows_title)
+            GameCatalog.isIkusaMikoAlias(lower) ->
+                context.getString(R.string.game_ikusamiko_title)
+            GameCatalog.isOnlyYouAlias(lower) ->
+                context.getString(R.string.game_onlyyou_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)
