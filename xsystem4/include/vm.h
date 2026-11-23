@@ -55,6 +55,7 @@ extern struct ain *ain;
 
 extern union vm_value *stack;
 extern int32_t stack_ptr;
+void vm_stack_ensure(size_t needed);
 
 static inline union vm_value _vm_id(union vm_value v)
 {

@@ -1882,13 +1882,19 @@ static void load_rsave_call_stack(struct rsave *save)
 	instr_ptr = (size_t)(return_address - ip_inc);
 }
 
+#define MAX_RESUME_VM_STACK_SIZE (1024 * 1024)
+
 static void load_json_stack(cJSON *json)
 {
 	stack_ptr = 0;
+	int count = cJSON_GetArraySize(json);
+	if (count < 0 || count > MAX_RESUME_VM_STACK_SIZE)
+		invalid_save_data("Invalid VM stack size %d", count);
+	vm_stack_ensure((size_t)count);
 
 	cJSON *item;
 	cJSON_ArrayForEach(item, json) {
-		if (stack_ptr >= 4096)
+		if (stack_ptr >= count)
 			invalid_save_data("VM stack overflow");
 		type_check(cJSON_Number, item);
 		stack_push_value(vm_int(item->valueint));
@@ -1898,8 +1904,11 @@ static void load_json_stack(cJSON *json)
 static void load_rsave_stack(struct rsave *save)
 {
 	stack_ptr = 0;
-	if (save->stack_size < 0 || save->stack_size > 4096)
+	if (save->stack_size < 0 || save->stack_size > MAX_RESUME_VM_STACK_SIZE)
 		invalid_save_data("Invalid VM stack size %d", save->stack_size);
+	if (save->stack_size > 0 && !save->stack)
+		invalid_save_data("Missing VM stack data");
+	vm_stack_ensure((size_t)save->stack_size);
 
 	for (int i = 0; i < save->stack_size; i++) {
 		stack_push_value(vm_int(save->stack[i]));
