@@ -599,6 +599,15 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 ).show()
             }
         )
+        menuEntries.add(
+            tr(
+                "手柄灵敏度 · ${curPadProfile.physical.cursorSpeedPct}%",
+                "パッド感度 · ${curPadProfile.physical.cursorSpeedPct}%",
+                "Gamepad Sensitivity · ${curPadProfile.physical.cursorSpeedPct}%"
+            ) to {
+                showGamepadSensitivityDialog(curPadProfile, xsAct)
+            }
+        )
         // Keep the menu entry so players can learn where to edit, but both
         // branches refuse in-session button/layout changes (settings/hub only).
         menuEntries.add(
@@ -640,6 +649,117 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 menuEntries.getOrNull(which)?.second?.invoke()
             }
             .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showGamepadSensitivityDialog(initialProfile: GamepadProfile, xsAct: XSystem4Activity?) {
+        val ctx = AppSettings.wrapThemeContext(activity)
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        var speedPct = initialProfile.physical.cursorSpeedPct.coerceIn(
+            GamepadBridge.CURSOR_SPEED_PCT_MIN,
+            GamepadBridge.CURSOR_SPEED_PCT_MAX
+        )
+        var deadzonePct = initialProfile.physical.deadzonePct.coerceIn(
+            GamepadBridge.DEADZONE_PCT_MIN,
+            GamepadBridge.DEADZONE_PCT_MAX
+        )
+
+        fun syncNativeOnly() {
+            val base = xsAct?.getActiveGamepadProfile() ?: initialProfile
+            val preview = base.copy(
+                physical = base.physical.copy(
+                    cursorSpeedPct = speedPct,
+                    deadzonePct = deadzonePct
+                )
+            )
+            GamepadBridge.syncProfileToNative(preview)
+        }
+
+        fun persistAndApply() {
+            if (xsAct != null) {
+                xsAct.updateGamepadSensitivity(speedPct, deadzonePct)
+            } else {
+                val next = initialProfile.copy(
+                    physical = initialProfile.physical.copy(
+                        cursorSpeedPct = speedPct,
+                        deadzonePct = deadzonePct
+                    )
+                )
+                GamepadBridge.saveProfile(activity, next, null, false)
+                GamepadBridge.syncProfileToNative(next)
+            }
+        }
+
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(8))
+        }
+
+        val speedHeader = android.widget.TextView(ctx).apply {
+            textSize = 14f
+            text = "${tr("手柄灵敏度", "パッド感度", "Sensitivity")}: ${speedPct}%"
+        }
+        val speedSeek = android.widget.SeekBar(ctx).apply {
+            max = GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN
+            progress = speedPct - GamepadBridge.CURSOR_SPEED_PCT_MIN
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                    speedPct = (p + GamepadBridge.CURSOR_SPEED_PCT_MIN).coerceIn(
+                        GamepadBridge.CURSOR_SPEED_PCT_MIN,
+                        GamepadBridge.CURSOR_SPEED_PCT_MAX
+                    )
+                    speedHeader.text = "${tr("手柄灵敏度", "パッド感度", "Sensitivity")}: ${speedPct}%"
+                    if (fromUser) syncNativeOnly()
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
+                    persistAndApply()
+                }
+            })
+        }
+
+        val dzHeader = android.widget.TextView(ctx).apply {
+            textSize = 14f
+            setPadding(0, dp(12), 0, 0)
+            text = "${tr("摇杆死区", "デッドゾーン", "Deadzone")}: ${deadzonePct}%"
+        }
+        val dzSeek = android.widget.SeekBar(ctx).apply {
+            max = GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN
+            progress = deadzonePct - GamepadBridge.DEADZONE_PCT_MIN
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                    deadzonePct = (p + GamepadBridge.DEADZONE_PCT_MIN).coerceIn(
+                        GamepadBridge.DEADZONE_PCT_MIN,
+                        GamepadBridge.DEADZONE_PCT_MAX
+                    )
+                    dzHeader.text = "${tr("摇杆死区", "デッドゾーン", "Deadzone")}: ${deadzonePct}%"
+                    if (fromUser) syncNativeOnly()
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
+                    persistAndApply()
+                }
+            })
+        }
+
+        container.addView(speedHeader)
+        container.addView(speedSeek)
+        container.addView(dzHeader)
+        container.addView(dzSeek)
+
+        dialogBuilder()
+            .setTitle(tr("手柄灵敏度", "パッド感度", "Gamepad Sensitivity"))
+            .setView(container)
+            .setNeutralButton(tr("默认 (100%)", "初期値 (100%)", "Default (100%)")) { _, _ ->
+                speedPct = 100
+                deadzonePct = 18
+                persistAndApply()
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                persistAndApply()
+            }
             .show()
     }
 

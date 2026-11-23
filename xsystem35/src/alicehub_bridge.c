@@ -122,7 +122,7 @@ static void publish_live_state_json(char *out) {
 
 static void update_live_state_sdl_thread(int locks);
 
-static struct {
+static struct gamepad_config {
 	bool initialized;
 	bool phys_enabled;
 	bool swap_ab_xy;
@@ -856,6 +856,7 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 
 	pthread_mutex_lock(&bridge_lock);
 	init_cfg_defaults_locked();
+	struct gamepad_config prev_cfg = gp_cfg;
 
 	cJSON *phys = cJSON_GetObjectItemCaseSensitive(root, "physical");
 	if (cJSON_IsObject(phys)) {
@@ -879,8 +880,8 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 		cJSON *sp = cJSON_GetObjectItemCaseSensitive(phys, "cursorSpeedPct");
 		if (cJSON_IsNumber(sp)) {
 			int p = sp->valueint;
-			if (p < 30) p = 30;
-			if (p > 250) p = 250;
+			if (p < 20) p = 20;
+			if (p > 300) p = 300;
 			gp_cfg.cursor_speed_px = 520.0f * ((float)p / 100.0f);
 		}
 		cJSON *bindings = cJSON_GetObjectItemCaseSensitive(phys, "bindings");
@@ -903,9 +904,19 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 		if (cJSON_IsNumber(vrs)) gp_cfg.vpad_right_stick_mode = vrs->valueint;
 	}
 
-	memset(android_pad.latched, 0, sizeof(android_pad.latched));
-	for (int i = 0; i < MAX_VPAD_SLOTS; i++)
-		vpad_slots[i].latched = false;
+	bool phys_mapping_changed = prev_cfg.phys_enabled != gp_cfg.phys_enabled
+		|| prev_cfg.swap_ab_xy != gp_cfg.swap_ab_xy
+		|| prev_cfg.phys_dpad_mode != gp_cfg.phys_dpad_mode
+		|| memcmp(prev_cfg.phys_bindings, gp_cfg.phys_bindings, sizeof(gp_cfg.phys_bindings)) != 0;
+	bool vpad_mapping_changed = prev_cfg.vpad_left_stick_mode != gp_cfg.vpad_left_stick_mode
+		|| prev_cfg.vpad_right_stick_mode != gp_cfg.vpad_right_stick_mode;
+
+	if (phys_mapping_changed)
+		memset(android_pad.latched, 0, sizeof(android_pad.latched));
+	if (vpad_mapping_changed) {
+		for (int i = 0; i < MAX_VPAD_SLOTS; i++)
+			vpad_slots[i].latched = false;
+	}
 
 	pthread_mutex_unlock(&bridge_lock);
 	cJSON_Delete(root);

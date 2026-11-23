@@ -72,6 +72,10 @@ class GamepadConfigController(
     private var scaleSeek: SeekBar? = null
     private var opacityValTv: TextView? = null
     private var opacitySeek: SeekBar? = null
+    private var sensitivityValTv: TextView? = null
+    private var sensitivitySeek: SeekBar? = null
+    private var deadzoneValTv: TextView? = null
+    private var deadzoneSeek: SeekBar? = null
 
     fun isDirty(): Boolean = dirty
 
@@ -289,6 +293,24 @@ class GamepadConfigController(
             }
             opacitySeek = opPair.first
             opacityValTv = opPair.second
+
+            val sensPair = addInlineSliderRow(this, tr("手柄灵敏度", "感度", "Sensitivity"), GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.CURSOR_SPEED_PCT_MIN).coerceIn(GamepadBridge.CURSOR_SPEED_PCT_MIN, GamepadBridge.CURSOR_SPEED_PCT_MAX)
+                draft = draft.copy(physical = draft.physical.copy(cursorSpeedPct = pct))
+                sensitivityValTv?.text = "${pct}%"
+                markDirty(true)
+            }
+            sensitivitySeek = sensPair.first
+            sensitivityValTv = sensPair.second
+
+            val dzPair = addInlineSliderRow(this, tr("摇杆死区", "デッドゾーン", "Deadzone"), GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN) { p ->
+                val pct = (p + GamepadBridge.DEADZONE_PCT_MIN).coerceIn(GamepadBridge.DEADZONE_PCT_MIN, GamepadBridge.DEADZONE_PCT_MAX)
+                draft = draft.copy(physical = draft.physical.copy(deadzonePct = pct))
+                deadzoneValTv?.text = "${pct}%"
+                markDirty(true)
+            }
+            deadzoneSeek = dzPair.first
+            deadzoneValTv = dzPair.second
         }
         body.addView(optCard, cardMarginParams())
 
@@ -484,6 +506,12 @@ class GamepadConfigController(
         opacitySeek?.progress = (draft.virtual.globalOpacityPct - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
             .coerceIn(0, GamepadBridge.GLOBAL_OPACITY_PCT_MAX - GamepadBridge.GLOBAL_OPACITY_PCT_MIN)
         opacityValTv?.text = "${draft.virtual.globalOpacityPct}%"
+        sensitivitySeek?.progress = (draft.physical.cursorSpeedPct - GamepadBridge.CURSOR_SPEED_PCT_MIN)
+            .coerceIn(0, GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN)
+        sensitivityValTv?.text = "${draft.physical.cursorSpeedPct}%"
+        deadzoneSeek?.progress = (draft.physical.deadzonePct - GamepadBridge.DEADZONE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN)
+        deadzoneValTv?.text = "${draft.physical.deadzonePct}%"
 
         updatePresetChip(presetBtnVn, draft.virtual.presetId == GamepadBridge.PRESET_VN_MOUSE)
         updatePresetChip(presetBtnRpg, draft.virtual.presetId == GamepadBridge.PRESET_RPG_DUNGEON)
@@ -630,7 +658,7 @@ class GamepadConfigController(
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             setTextColor(uiCtx.getColor(R.color.ui_text_primary))
-            layoutParams = LinearLayout.LayoutParams(dp(76), ViewGroup.LayoutParams.WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         val seek = SeekBar(uiCtx).apply {
             if (accentColor != null) UiKit.tintSeekBar(this, rawAccent())

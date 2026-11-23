@@ -34,7 +34,8 @@ static inline float randf(void)
 static void parse_error(const char *msg, char *input)
 {
 	char *eol = strchr(input, '\n');
-	*eol = '\0';
+	if (eol)
+		*eol = '\0';
 	WARNING("Parse error: %s Near: \"%s\"", msg, input);
 }
 
@@ -99,7 +100,7 @@ static char *parse_quoted_string(char **ptext)
 	}
 	*p = '\0';
 	*ptext = p + 1;
-	return utf2sjis(text, 0);
+	return utf2cjk(text, 0, false);
 }
 
 #define MATCH(fmt, ...) (len = 0, sscanf(text, fmt " %n", ##__VA_ARGS__, &len), text += len, len)
@@ -211,7 +212,7 @@ static struct particle_position *parse_position(char **ptext)
 				   MATCH("ボーン[ %d , \"\" , %f , %f , %f ]", &n, &x, &y, &z)) {
 			unit->type = PARTICLE_POS_UNIT_BONE;
 			unit->bone.target_index = n;
-			unit->bone.name = utf2sjis(string_buf, 0);
+			unit->bone.name = utf2cjk(string_buf, 0, false);
 			unit->bone.offset[0] = x;
 			unit->bone.offset[1] = y;
 			unit->bone.offset[2] = -z;
@@ -272,7 +273,7 @@ static struct pae *parse_pae(char *text)
 			} else if (MATCH("オブジェクト " QUOTED_STRING " = {", string_buf)) {
 				pae->objects = xrealloc_array(pae->objects, pae->nr_objects, pae->nr_objects + 1, sizeof(struct pae_object));
 				current_object = &pae->objects[pae->nr_objects++];
-				current_object->name = utf2sjis(string_buf, 0);
+				current_object->name = utf2cjk(string_buf, 0, false);
 				// Default values.
 				current_object->move_type = PARTICLE_MOVE_LINEAR;
 				current_object->texture_anime_frame = 1.0;
@@ -513,6 +514,8 @@ void pae_reset_gl(struct pae *pae, struct archive *aar, enum RE_plugin_version v
 
 static struct RE_instance *get_target(struct RE_instance *inst, int index)
 {
+	if (!inst || !inst->plugin || index < 0 || index >= RE_NR_INSTANCE_TARGETS)
+		return NULL;
 	int target_id = inst->target[index];
 	if (target_id < 0 || target_id >= inst->plugin->nr_instances)
 		return NULL;
@@ -645,8 +648,7 @@ static void init_particle_instances(struct particle_object *po)
 
 struct pae *pae_load(struct archive *aar, const char *path, enum RE_plugin_version version)
 {
-	const char *basename = strrchr(path, '\\');
-	basename = basename ? basename + 1 : path;
+	const char *basename = RE_path_basename(path);
 
 	struct archive_data *dfile = RE_get_aar_entry(aar, path, basename, ".pae");
 	if (!dfile) {
@@ -663,9 +665,9 @@ struct pae *pae_load(struct archive *aar, const char *path, enum RE_plugin_versi
 	}
 	sjis_text[dfile->size] = '\0';
 
-	// We could parse the SJIS text directly, but convert it to UTF-8 for code
-	// clarity.
-	char *text = sjis2utf(sjis_text, dfile->size);
+	// .pae files in 3D archives are Shift-JIS even in GBK-patched releases;
+	// decode explicitly as Shift-JIS rather than using the game text charset.
+	char *text = cjk2utf(sjis_text, dfile->size, false);
 	free(sjis_text);
 	struct pae *pae = parse_pae(text);
 	free(text);
@@ -726,6 +728,8 @@ static void particle_position_free(struct particle_position *pos)
 
 void pae_free(struct pae *pae)
 {
+	if (!pae)
+		return;
 	for (int i = 0; i < pae->nr_objects; i++) {
 		struct pae_object *po = &pae->objects[i];
 		free(po->name);
@@ -745,8 +749,10 @@ void pae_free(struct pae *pae)
 		if (po->model)
 			model_free(po->model);
 	}
-	ht_foreach_value(pae->textures, free_billboard_texture);
-	ht_free(pae->textures);
+	if (pae->textures) {
+		ht_foreach_value(pae->textures, free_billboard_texture);
+		ht_free(pae->textures);
+	}
 	free(pae->objects);
 	free(pae->path);
 	free(pae);
@@ -764,6 +770,11 @@ void particle_effect_free(struct particle_effect *effect)
 
 void pae_calc_frame_range(struct pae *pae, struct motion *motion)
 {
+	if (!pae || pae->nr_objects <= 0) {
+		motion->frame_begin = motion->loop_frame_begin = 0;
+		motion->frame_end = motion->loop_frame_end = 0;
+		return;
+	}
 	int begin_frame = INT_MAX;
 	int end_frame = INT_MIN;
 	for (int i = 0; i < pae->nr_objects; i++) {

@@ -604,19 +604,26 @@ class GamepadEditorActivity : Activity() {
 
             // Rumble toggle hidden: rumbleEnabled is stored but not implemented natively yet.
 
-            val dzPair = makeCompactSliderRow(tr("死区", "デッドゾーン", "Deadzone"), 40) { p ->
-                val v = (p + 5).coerceIn(5, 45)
+            val dzPair = makeCompactSliderRow(
+                tr("死区", "デッドゾーン", "Deadzone"),
+                GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN
+            ) { p ->
+                val v = (p + GamepadBridge.DEADZONE_PCT_MIN).coerceIn(GamepadBridge.DEADZONE_PCT_MIN, GamepadBridge.DEADZONE_PCT_MAX)
                 profile = profile.copy(physical = profile.physical.copy(deadzonePct = v))
                 deadzoneValTv.text = "${v}%"
                 stickScopeView.deadzone = v / 100f
                 stickScopeView.invalidate()
+                virtualLayer.setProfile(profile)
             }
             deadzoneSeek = dzPair.first
             deadzoneValTv = dzPair.second
             addView(dzPair.third)
 
-            val spPair = makeCompactSliderRow(tr("指针", "ポインタ", "Pointer"), 220) { p ->
-                val v = (p + 30).coerceIn(30, 250)
+            val spPair = makeCompactSliderRow(
+                tr("灵敏度", "感度", "Sensitivity"),
+                GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN
+            ) { p ->
+                val v = (p + GamepadBridge.CURSOR_SPEED_PCT_MIN).coerceIn(GamepadBridge.CURSOR_SPEED_PCT_MIN, GamepadBridge.CURSOR_SPEED_PCT_MAX)
                 profile = profile.copy(physical = profile.physical.copy(cursorSpeedPct = v))
                 speedValTv.text = "${v}%"
             }
@@ -902,9 +909,11 @@ class GamepadEditorActivity : Activity() {
         physEnabledSwitch.isChecked = profile.physical.enabled
         physSwapSwitch.isChecked = profile.physical.swapAbXy
         physAutoHideSwitch.isChecked = profile.physical.autoHideVirtualPad
-        deadzoneSeek.progress = (profile.physical.deadzonePct - 5).coerceIn(0, 40)
+        deadzoneSeek.progress = (profile.physical.deadzonePct - GamepadBridge.DEADZONE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN)
         deadzoneValTv.text = "${profile.physical.deadzonePct}%"
-        speedSeek.progress = (profile.physical.cursorSpeedPct - 30).coerceIn(0, 220)
+        speedSeek.progress = (profile.physical.cursorSpeedPct - GamepadBridge.CURSOR_SPEED_PCT_MIN)
+            .coerceIn(0, GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN)
         speedValTv.text = "${profile.physical.cursorSpeedPct}%"
         syncingUi = false
 
@@ -1021,6 +1030,41 @@ class GamepadEditorActivity : Activity() {
         opVal = opRow.second
         opVal.text = "${profile.virtual.globalOpacityPct}%"
         globalPopoverCard.addView(opRow.third)
+
+        lateinit var sensVal: TextView
+        val sensRow = makeCompactSliderRow(
+            tr("手柄灵敏度", "感度", "Sensitivity"),
+            GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN
+        ) { p ->
+            val v = (p + GamepadBridge.CURSOR_SPEED_PCT_MIN)
+                .coerceIn(GamepadBridge.CURSOR_SPEED_PCT_MIN, GamepadBridge.CURSOR_SPEED_PCT_MAX)
+            profile = profile.copy(physical = profile.physical.copy(cursorSpeedPct = v))
+            sensVal.text = "${v}%"
+            refreshPhysicalUi()
+        }
+        sensRow.first.progress = (profile.physical.cursorSpeedPct - GamepadBridge.CURSOR_SPEED_PCT_MIN)
+            .coerceIn(0, GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN)
+        sensVal = sensRow.second
+        sensVal.text = "${profile.physical.cursorSpeedPct}%"
+        globalPopoverCard.addView(sensRow.third)
+
+        lateinit var dzVal: TextView
+        val dzRow = makeCompactSliderRow(
+            tr("摇杆死区", "デッドゾーン", "Deadzone"),
+            GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN
+        ) { p ->
+            val v = (p + GamepadBridge.DEADZONE_PCT_MIN)
+                .coerceIn(GamepadBridge.DEADZONE_PCT_MIN, GamepadBridge.DEADZONE_PCT_MAX)
+            profile = profile.copy(physical = profile.physical.copy(deadzonePct = v))
+            dzVal.text = "${v}%"
+            virtualLayer.setProfile(profile)
+            refreshPhysicalUi()
+        }
+        dzRow.first.progress = (profile.physical.deadzonePct - GamepadBridge.DEADZONE_PCT_MIN)
+            .coerceIn(0, GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN)
+        dzVal = dzRow.second
+        dzVal.text = "${profile.physical.deadzonePct}%"
+        globalPopoverCard.addView(dzRow.third)
     }
 
     private fun positionElementInspector(sel: VirtualControlSpec) {

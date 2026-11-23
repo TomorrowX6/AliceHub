@@ -378,6 +378,31 @@ class XSystem4Activity : SDLActivity() {
         return saved.virtual.enabled
     }
 
+    fun updateGamepadSensitivity(cursorSpeedPct: Int, deadzonePct: Int): GamepadProfile {
+        val clampedSpeed = cursorSpeedPct.coerceIn(
+            GamepadBridge.CURSOR_SPEED_PCT_MIN,
+            GamepadBridge.CURSOR_SPEED_PCT_MAX
+        )
+        val clampedDeadzone = deadzonePct.coerceIn(
+            GamepadBridge.DEADZONE_PCT_MIN,
+            GamepadBridge.DEADZONE_PCT_MAX
+        )
+        val updated = activeGamepadProfile.copy(
+            physical = activeGamepadProfile.physical.copy(
+                cursorSpeedPct = clampedSpeed,
+                deadzonePct = clampedDeadzone
+            )
+        )
+        val saved = GamepadBridge.saveProfile(
+            this,
+            updated,
+            currentGamepadProfileKey(),
+            activeGamepadProfile.perGameOverride
+        )
+        applyGamepadProfile(saved)
+        return saved
+    }
+
     fun currentGamepadGameId(): String? {
         val rootFile = currentGameRoot()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
         val saveFile = currentSaveDir()?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }

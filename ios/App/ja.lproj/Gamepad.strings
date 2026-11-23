@@ -28,6 +28,7 @@
 "D-Pad" = "方向キー";
 "Dead zone" = "デッドゾーン";
 "Cursor speed" = "カーソル速度";
+"Sensitivity" = "感度";
 "Reset to Default" = "初期設定に戻す";
 "Save" = "保存";
 "Cancel" = "キャンセル";

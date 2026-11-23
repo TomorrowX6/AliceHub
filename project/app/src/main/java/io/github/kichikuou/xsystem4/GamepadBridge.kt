@@ -136,8 +136,8 @@ data class PhysicalPadConfig(
             .put("leftStickMode", leftStickMode)
             .put("rightStickMode", rightStickMode)
             .put("dpadMode", dpadMode)
-            .put("deadzonePct", deadzonePct.coerceIn(5, 45))
-            .put("cursorSpeedPct", cursorSpeedPct.coerceIn(30, 250))
+            .put("deadzonePct", deadzonePct.coerceIn(GamepadBridge.DEADZONE_PCT_MIN, GamepadBridge.DEADZONE_PCT_MAX))
+            .put("cursorSpeedPct", cursorSpeedPct.coerceIn(GamepadBridge.CURSOR_SPEED_PCT_MIN, GamepadBridge.CURSOR_SPEED_PCT_MAX))
             .put("rumbleEnabled", rumbleEnabled)
             .put("bindings", bindObj)
     }
@@ -162,8 +162,8 @@ data class PhysicalPadConfig(
                 leftStickMode = obj.optInt("leftStickMode", GamepadBridge.STICK_MOUSE),
                 rightStickMode = obj.optInt("rightStickMode", GamepadBridge.STICK_WHEEL),
                 dpadMode = obj.optInt("dpadMode", GamepadBridge.STICK_ARROWS),
-                deadzonePct = obj.optInt("deadzonePct", 18).coerceIn(5, 45),
-                cursorSpeedPct = obj.optInt("cursorSpeedPct", 100).coerceIn(30, 250),
+                deadzonePct = obj.optInt("deadzonePct", 18).coerceIn(GamepadBridge.DEADZONE_PCT_MIN, GamepadBridge.DEADZONE_PCT_MAX),
+                cursorSpeedPct = obj.optInt("cursorSpeedPct", 100).coerceIn(GamepadBridge.CURSOR_SPEED_PCT_MIN, GamepadBridge.CURSOR_SPEED_PCT_MAX),
                 rumbleEnabled = obj.optBoolean("rumbleEnabled", false),
                 bindings = defaults
             )
@@ -375,6 +375,10 @@ object GamepadBridge {
     const val GLOBAL_SCALE_PCT_MAX = 150
     const val GLOBAL_OPACITY_PCT_MIN = 20
     const val GLOBAL_OPACITY_PCT_MAX = 100
+    const val DEADZONE_PCT_MIN = 5
+    const val DEADZONE_PCT_MAX = 45
+    const val CURSOR_SPEED_PCT_MIN = 20
+    const val CURSOR_SPEED_PCT_MAX = 300
     /** Editor snap step (normalized); the editor grid is drawn on the same step. */
     const val GRID_STEP = 0.025f
 

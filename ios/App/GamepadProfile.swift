@@ -215,8 +215,8 @@ struct GamepadProfile: Codable, Equatable {
             virtual: VirtualConfig(leftStickMode: virtual.mode(for: .leftStick), rightStickMode: virtual.mode(for: .rightStick)),
             physical: PhysicalConfig(enabled: physical.enabled, swapAbXy: physical.swapAbXy,
                 leftStickMode: physical.leftStickMode, rightStickMode: physical.rightStickMode,
-                dpadMode: physical.dpadMode, deadzonePct: Int(physical.deadzonePct),
-                cursorSpeedPct: Int(physical.cursorSpeedPct),
+                dpadMode: physical.dpadMode, deadzonePct: min(45, max(5, Int(physical.deadzonePct.rounded()))),
+                cursorSpeedPct: min(300, max(20, Int(physical.cursorSpeedPct.rounded()))),
                 bindings: Dictionary(uniqueKeysWithValues: physical.bindings.enumerated().map { (String($0.offset), $0.element) })))
         guard let data = try? JSONEncoder().encode(config) else { return "" }
         return String(decoding: data, as: UTF8.self)

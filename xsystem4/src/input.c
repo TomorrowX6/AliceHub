@@ -3336,6 +3336,7 @@ void input_set_gamepad_config_json(const char *json)
 	}
 	pthread_mutex_lock(&gp_mutex);
 	ensure_gamepad_config_defaults_locked();
+	struct gamepad_config prev_cfg = gp_cfg;
 
 	cJSON *phys = cJSON_GetObjectItemCaseSensitive(root, "physical");
 	if (cJSON_IsObject(phys)) {
@@ -3359,8 +3360,8 @@ void input_set_gamepad_config_json(const char *json)
 		cJSON *sp = cJSON_GetObjectItemCaseSensitive(phys, "cursorSpeedPct");
 		if (cJSON_IsNumber(sp)) {
 			int p = sp->valueint;
-			if (p < 30) p = 30;
-			if (p > 250) p = 250;
+			if (p < 20) p = 20;
+			if (p > 300) p = 300;
 			gp_cfg.cursor_speed = 720.0f * ((float)p / 100.0f);
 		}
 		cJSON *rm = cJSON_GetObjectItemCaseSensitive(phys, "rumbleEnabled");
@@ -3386,8 +3387,17 @@ void input_set_gamepad_config_json(const char *json)
 		if (cJSON_IsNumber(vrs)) gp_cfg.vpad_right_stick_mode = vrs->valueint;
 	}
 
-	phys_latch_reset_gen++;
-	vpad_latch_reset_gen++;
+	bool phys_mapping_changed = prev_cfg.phys_enabled != gp_cfg.phys_enabled
+		|| prev_cfg.swap_ab_xy != gp_cfg.swap_ab_xy
+		|| prev_cfg.phys_dpad_mode != gp_cfg.phys_dpad_mode
+		|| memcmp(prev_cfg.phys_bindings, gp_cfg.phys_bindings, sizeof(gp_cfg.phys_bindings)) != 0;
+	bool vpad_mapping_changed = prev_cfg.vpad_left_stick_mode != gp_cfg.vpad_left_stick_mode
+		|| prev_cfg.vpad_right_stick_mode != gp_cfg.vpad_right_stick_mode;
+
+	if (phys_mapping_changed)
+		phys_latch_reset_gen++;
+	if (vpad_mapping_changed)
+		vpad_latch_reset_gen++;
 
 	pthread_mutex_unlock(&gp_mutex);
 	cJSON_Delete(root);
