@@ -1359,16 +1359,21 @@ void asset_manager_init(void)
 			compare_uncensored_paths);
 		if (!assets[ASSET_CG])
 			assets[ASSET_CG] = &afa_create_manager()->manager;
-		for (size_t i = 0; i < nr_afa_uncensored_cgs; i++) {
-			if (assets[ASSET_CG]->load_archive == afa_load_archive) {
+		if (assets[ASSET_CG]->load_archive == afa_load_archive) {
+			// afa_load_archive_prio prepends equal-priority archives, so load in reverse
+			// to keep index 0 (AliceHubUncensoredCG.afa) at highest precedence.
+			for (size_t i = nr_afa_uncensored_cgs; i-- > 0; ) {
 				afa_load_archive_prio((struct asset_manager_afa *)assets[ASSET_CG],
 					afa_uncensored_cgs[i], AFA_PRIO_UNCENSORED);
-			} else if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			}
+		} else if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			for (size_t i = 0; i < nr_afa_uncensored_cgs; i++) {
 				ald_attach_cg_overlay((struct asset_manager_ald *)assets[ASSET_CG],
 					afa_uncensored_cgs[i]);
 			}
-			free(afa_uncensored_cgs[i]);
 		}
+		for (size_t i = 0; i < nr_afa_uncensored_cgs; i++)
+			free(afa_uncensored_cgs[i]);
 		free(afa_uncensored_cgs);
 	}
 

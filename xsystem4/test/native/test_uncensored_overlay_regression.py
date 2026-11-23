@@ -143,8 +143,12 @@ class UncensoredOverlayRegressionTest(unittest.TestCase):
                     version=2,
                 )
             )
+            other_unc_png = make_qnt_solid(16, 16, 77, 88, 99)
             (afa_dir / "AliceHubUncensoredCG.afa").write_bytes(
                 make_afa([(b"hcg_01.png", 0, 0, 0, unc_png)], version=2)
+            )
+            (afa_dir / "ZzzOtherUncensored.afa").write_bytes(
+                make_afa([(b"hcg_01.png", 0, 0, 0, other_unc_png)], version=2)
             )
 
             # 2. ALD directory: base GA.ald (id 10 & id 11) + AliceHubUncensoredCG.afa (AFAv1 id 10)
