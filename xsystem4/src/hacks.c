@@ -706,6 +706,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_rance03_effect_sound_paths(ain);
 		apply_rance03_skill_cooldown_layout(ain);
 	}
+	bool default_view_size = !config.view_width_set && !config.view_height_set
+		&& config.view_width == 800 && config.view_height == 600;
 	if (game_rance6 && config.view_width == 800 && config.view_height == 600) {
 		config.view_width = 640;
 		config.view_height = 480;
@@ -715,15 +717,16 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_width = 1920;
 		config.view_height = 1080;
 	}
-	if ((game_dohnadohna || game_evenicle || game_evenicle_rance || game_evenicle_gaiden
-				|| game_evenicle2 || game_ixseal || game_haharanman || game_okusama
-				|| game_night_remaster || game_waidonyo)
-			&& config.view_width == 800 && config.view_height == 600) {
+	if (((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman
+				|| game_okusama || game_night_remaster)
+				&& config.view_width == 800 && config.view_height == 600)
+			|| ((game_evenicle || game_evenicle_rance || game_evenicle_gaiden || game_waidonyo)
+				&& default_view_size)) {
 		config.view_width = 1280;
 		config.view_height = 720;
 	}
 	if (game_oyakorankan && ((config.view_width == 1280 && config.view_height == 720)
-			|| (config.view_width == 800 && config.view_height == 600))) {
+			|| default_view_size)) {
 		// The Longinus AliceStart.CHS patch mistakenly sets 1280x720; the game assets are 1024x768.
 		config.view_width = 1024;
 		config.view_height = 768;
@@ -768,13 +771,14 @@ void apply_game_specific_hacks(struct ain *ain)
 		game_rance9 = true;
 		apply_rance9_hacks(ain);
 	}
-	if ((game_rance6 || game_daibanchou) && config.view_width == 800 && config.view_height == 600) {
+	if ((game_rance6 && config.view_width == 800 && config.view_height == 600)
+			|| (game_daibanchou && default_view_size)) {
 		config.view_width = 640;
 		config.view_height = 480;
 	}
-	if ((game_tsumamigui3 || game_rance01 || game_rance03 || game_rance8
-				|| game_escalayer_reboot || game_haruurare)
-			&& config.view_width == 800 && config.view_height == 600) {
+	if (((game_tsumamigui3 || game_rance8 || game_escalayer_reboot)
+				&& config.view_width == 800 && config.view_height == 600)
+			|| ((game_rance01 || game_rance03 || game_haruurare) && default_view_size)) {
 		config.view_width = 1024;
 		config.view_height = 768;
 	}

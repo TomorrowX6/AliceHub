@@ -36,6 +36,8 @@ struct config {
 	char *home_dir;
 	int view_width;
 	int view_height;
+	bool view_width_set;
+	bool view_height_set;
 	size_t mixer_nr_channels;
 	char **mixer_channels;
 	int *mixer_volumes;

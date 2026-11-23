@@ -616,26 +616,39 @@ int main(void) {{
     assert(game_waidonyo && config.view_width == 1280 && config.view_height == 720);
     free_mock_ain(&a);
 
-    // 3. Oyakorankan overrides BOTH 1280x720 (broken AliceStart.CHS) and 800x600 (direct .CHS launch) to 1024x768.
+    // 3. Oyakorankan overrides BOTH explicit 1280x720 (broken AliceStart.CHS) and omitted default 800x600 to 1024x768,
+    //    while honoring an explicit 800x600 INI override.
     a.version = 6;
     add_struct(&a, "StatusHeroineInfomation"); add_struct(&a, "HeroineMapIcon");
     memset(&config, 0, sizeof(config));
     config.view_width = 1280; config.view_height = 720;
+    config.view_width_set = true; config.view_height_set = true;
     index_and_apply(&a);
     assert(game_oyakorankan && config.view_width == 1024 && config.view_height == 768);
+    memset(&config, 0, sizeof(config));
     config.view_width = 800; config.view_height = 600;
     index_and_apply(&a);
     assert(game_oyakorankan && config.view_width == 1024 && config.view_height == 768);
+    config.view_width = 800; config.view_height = 600;
+    config.view_width_set = true; config.view_height_set = true;
+    index_and_apply(&a);
+    assert(game_oyakorankan && config.view_width == 800 && config.view_height == 600);
     free_mock_ain(&a);
 
     // 4. Evenicle / Evenicle Gaiden / Rance01 / Rance03 / Haru Urare / Daibanchou / Daiteikoku.
+    //    Explicit 800x600 INI dimensions must be respected; omitted dimensions get native defaults.
     a.version = 6;
     add_struct(&a, "CBigMap"); add_func(&a, "CMapPlayer@RunPathFindMove");
     memset(&config, 0, sizeof(config));
     config.view_width = 800; config.view_height = 600;
     index_and_apply(&a);
     assert(game_evenicle && config.view_width == 1280 && config.view_height == 720);
+    config.view_width = 800; config.view_height = 600;
+    config.view_width_set = true; config.view_height_set = true;
+    index_and_apply(&a);
+    assert(game_evenicle && config.view_width == 800 && config.view_height == 600);
     add_string(&a, "aa6sdd5432");
+    memset(&config, 0, sizeof(config));
     config.view_width = 800; config.view_height = 600;
     index_and_apply(&a);
     assert(game_evenicle_gaiden && config.view_width == 1280 && config.view_height == 720);
