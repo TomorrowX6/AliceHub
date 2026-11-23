@@ -302,5 +302,41 @@ public class Wave1BCatalogTest {
                 Arrays.asList("HIME_SA.ALD", "HIME_GA.ALD")));
         assertEquals("IkusaMiko", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
                 Arrays.asList("戦巫女SA.ALD", "戦巫女GA.ALD")));
+
+        // Verify copyTree destination naming uses canonical names for legacy GakuenKING / OnlyYou
+        // even when system3.ini has no title or is absent (ADISK.DAT CRC32-only).
+        List<String> legacyWithIni = Arrays.asList("ADISK.DAT", "ACG.DAT", "system3.ini");
+        assertEquals("GakuenKING", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                legacyWithIni,
+                GameCatalog.INSTANCE.classifyGameRootFiles(legacyWithIni, Arrays.asList(), name ->
+                        name.equalsIgnoreCase("system3.ini") ? "game = gakuen_king\n".getBytes(StandardCharsets.UTF_8) : null),
+                null,
+                false,
+                name -> name.equalsIgnoreCase("system3.ini") ? "game = gakuen_king\n".getBytes(StandardCharsets.UTF_8) : null));
+        assertEquals("OnlyYou", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                legacyWithIni,
+                GameCatalog.INSTANCE.classifyGameRootFiles(legacyWithIni, Arrays.asList(), name ->
+                        name.equalsIgnoreCase("system3.ini") ? "game = onlyyou\n".getBytes(StandardCharsets.UTF_8) : null),
+                null,
+                false,
+                name -> name.equalsIgnoreCase("system3.ini") ? "game = onlyyou\n".getBytes(StandardCharsets.UTF_8) : null));
+
+        List<String> legacyCrcOnly = Arrays.asList("ADISK.DAT", "ACG.DAT");
+        byte[] gkHeader = make256BytesWithCrc32(0xd1bf243bL);
+        byte[] oyHeader = make256BytesWithCrc32(0x832aeb97L);
+        assertEquals("GakuenKING", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                legacyCrcOnly,
+                GameCatalog.INSTANCE.classifyGameRootFiles(legacyCrcOnly, Arrays.asList(), name ->
+                        name.equalsIgnoreCase("ADISK.DAT") ? gkHeader : null),
+                null,
+                false,
+                name -> name.equalsIgnoreCase("ADISK.DAT") ? gkHeader : null));
+        assertEquals("OnlyYou", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                legacyCrcOnly,
+                GameCatalog.INSTANCE.classifyGameRootFiles(legacyCrcOnly, Arrays.asList(), name ->
+                        name.equalsIgnoreCase("ADISK.DAT") ? oyHeader : null),
+                null,
+                false,
+                name -> name.equalsIgnoreCase("ADISK.DAT") ? oyHeader : null));
     }
 }
