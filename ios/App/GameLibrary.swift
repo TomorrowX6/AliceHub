@@ -166,6 +166,36 @@ final class GameLibrary: ObservableObject {
         return nil
     }
 
+    private static func legacyAdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
+        guard let adisk = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "adisk.dat" }),
+              let handle = try? FileHandle(forReadingFrom: adisk) else { return nil }
+        defer { handle.closeFile() }
+        let data = handle.readData(ofLength: 256)
+        guard data.count == 256 else { return nil }
+        var crc: UInt32 = 0xffffffff
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xedb88320 : (crc >> 1)
+            }
+        }
+        return crc ^ 0xffffffff
+    }
+
+    private static func isGakuenKingFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "gakuen_king" || legacyId == "gakuenking"
+        }
+        return adiskCrc == 0xd1bf243b || regularNamesLower.contains("gakuen.com")
+    }
+
+    private static func isOnlyYouFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "onlyyou" || legacyId == "only_you"
+        }
+        return adiskCrc == 0x832aeb97
+    }
+
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
@@ -178,6 +208,7 @@ final class GameLibrary: ObservableObject {
         let engine = info?.engine ?? .system4
         let regularNamesLower = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
         let legacyId = engine == .legacySystem3 ? legacySystem3GameIdFromRegularFiles(regularFiles) : nil
+        let adiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
 
         let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
         let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
@@ -187,8 +218,8 @@ final class GameLibrary: ObservableObject {
         let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
         let yakata2 = legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false
         let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
-        let gakuenKing = legacyId.map { $0 == "gakuen_king" || $0 == "gakuenking" } ?? false
-        let onlyYou = legacyId.map { $0 == "onlyyou" || $0 == "only_you" } ?? false
+        let gakuenKing = engine == .legacySystem3 && isGakuenKingFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
+        let onlyYou = engine == .legacySystem3 && isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
@@ -321,13 +352,22 @@ final class GameLibrary: ObservableObject {
     }
 
     static func isGakuenKing(_ url: URL) -> Bool {
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "gakuen_king" || game == "gakuenking"
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let names = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isGakuenKingFromRegularFiles(names, legacyId: legacyId, adiskCrc: crc)
     }
 
     static func isOnlyYou(_ url: URL) -> Bool {
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "onlyyou" || game == "only_you"
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
     }
 
     static func isRance5d(_ url: URL) -> Bool {

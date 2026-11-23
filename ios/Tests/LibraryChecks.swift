@@ -255,6 +255,43 @@ struct LibraryChecks {
         try files.createDirectory(at: reCrossDir, withIntermediateDirectories: true)
         try Data().write(to: reCrossDir.appendingPathComponent("OY_SA.ALD"))
         precondition(GameLibrary.isGame(reCrossDir) && Game(url: reCrossDir).artworkKey == nil)
+        func make256Bytes(crc32 target: UInt32) -> Data {
+            var buf = [UInt8](repeating: 0, count: 256)
+            var table = [UInt32](repeating: 0, count: 256)
+            var rev = [Int](repeating: 0, count: 256)
+            for i in 0..<256 {
+                var v = UInt32(i)
+                for _ in 0..<8 { v = (v & 1) != 0 ? (v >> 1) ^ 0xedb88320 : (v >> 1) }
+                table[i] = v
+                rev[Int(v >> 24)] = i
+            }
+            var forward: UInt32 = 0xffffffff
+            for i in 0..<252 { forward = (forward >> 8) ^ table[Int((forward ^ UInt32(buf[i])) & 0xff)] }
+            var r = target ^ 0xffffffff
+            var idx = [Int](repeating: 0, count: 4)
+            for i in stride(from: 3, through: 0, by: -1) {
+                idx[i] = rev[Int(r >> 24)]
+                r = (r ^ table[idx[i]]) << 8
+            }
+            for i in 0..<4 {
+                let b = UInt8((forward ^ UInt32(idx[i])) & 0xff)
+                buf[252 + i] = b
+                forward = (forward >> 8) ^ table[Int((forward ^ UInt32(b)) & 0xff)]
+            }
+            return Data(buf)
+        }
+        for (dirName, crc, expectedName, expectedKey, checkFn) in [
+            ("UnknownFolder1", UInt32(0xd1bf243b), "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
+            ("UnknownFolder2", UInt32(0x832aeb97), "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool)
+        ] {
+            let cDir = root.appendingPathComponent(dirName)
+            try files.createDirectory(at: cDir, withIntermediateDirectories: true)
+            try make256Bytes(crc32: crc).write(to: cDir.appendingPathComponent("ADISK.DAT"))
+            try Data().write(to: cDir.appendingPathComponent("ACG.DAT"))
+            precondition(GameLibrary.isGame(cDir) && checkFn(cDir))
+            let g = Game(url: cDir)
+            precondition(g.engine == .legacySystem3 && g.displayName == expectedName && g.artworkKey == expectedKey)
+        }
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()
