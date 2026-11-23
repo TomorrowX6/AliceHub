@@ -368,28 +368,28 @@ object NativeGameImport {
         if (GameCatalog.isTsumamiguiGameFiles(activeFiles)) {
             return "Tsumamigui"
         }
-        if (GameCatalog.isDiaboliqueGameFiles(activeFiles)) {
+        if (GameCatalog.isDiaboliqueGameFiles(activeFiles, readSmallFile)) {
             return "DiaboLiQuE"
         }
-        if (GameCatalog.isGakuenKingExGameFiles(activeFiles)) {
+        if (GameCatalog.isGakuenKingExGameFiles(activeFiles, readSmallFile)) {
             return "GakuenKINGEx"
         }
         if (GameCatalog.isGakuenKingGameFiles(activeFiles, readSmallFile)) {
             return "GakuenKING"
         }
-        if (GameCatalog.isOudouYuushaGameFiles(activeFiles)) {
+        if (GameCatalog.isOudouYuushaGameFiles(activeFiles, readSmallFile)) {
             return "OudouYuusha"
         }
-        if (GameCatalog.isToushin2GameFiles(activeFiles)) {
+        if (GameCatalog.isToushin2GameFiles(activeFiles, readSmallFile)) {
             return "Toushin2"
         }
-        if (GameCatalog.isToushin1GameFiles(activeFiles)) {
+        if (GameCatalog.isToushin1GameFiles(activeFiles, readSmallFile)) {
             return "Toushin1"
         }
-        if (GameCatalog.isDarcrowsGameFiles(activeFiles)) {
+        if (GameCatalog.isDarcrowsGameFiles(activeFiles, readSmallFile)) {
             return "DARCROWS"
         }
-        if (GameCatalog.isIkusaMikoGameFiles(activeFiles)) {
+        if (GameCatalog.isIkusaMikoGameFiles(activeFiles, readSmallFile)) {
             return "IkusaMiko"
         }
         if (GameCatalog.isOnlyYouGameFiles(activeFiles, readSmallFile)) {
