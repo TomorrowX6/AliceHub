@@ -767,7 +767,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                         val resolvedManifest = manifest.copy(
                             downloadUrl = AppSettings.resolveCdnUrl(this@GameHubActivity, manifest.downloadUrl)
                         )
-                        if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, resolvedManifest)) {
+                        val maxConcurrency = AppSettings.getDownloadConcurrency(this@GameHubActivity)
+                        if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, resolvedManifest, maxConcurrency)) {
                             showOtherInstallBusyToast()
                         }
                     }

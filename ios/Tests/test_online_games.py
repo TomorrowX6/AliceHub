@@ -38,18 +38,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             data = PAYLOADS[name]
-        start = int(self.headers.get("Range", "bytes=0-")[6:-1])
+        range_hdr = self.headers.get("Range", "")
+        if range_hdr.startswith("bytes="):
+            spec = range_hdr[6:]
+            start_s, end_s = spec.split("-", 1)
+            start = int(start_s)
+            end = int(end_s) if end_s else len(data) - 1
+            partial = True
+        else:
+            start = 0
+            end = len(data) - 1
+            partial = False
         if self.path.endswith("game.ain"):
             RANGES.append(start)
-        self.send_response(206 if start else 200)
+        slice_data = data[start:end + 1] if len(data) > 0 else b""
+        self.send_response(206 if partial else 200)
         self.send_header("ETag", '"fixture"')
-        self.send_header("Content-Length", str(len(data) - start))
-        if start:
-            self.send_header("Content-Range", f"bytes {start}-{len(data)-1}/{len(data)}")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(slice_data)))
+        if partial and len(data) > 0:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
         self.end_headers()
         try:
-            for offset in range(start, len(data), 4096):
-                self.wfile.write(data[offset:offset + 4096])
+            for offset in range(0, len(slice_data), 4096):
+                self.wfile.write(slice_data[offset:offset + 4096])
                 self.wfile.flush()
                 time.sleep(0.001)
         except (BrokenPipeError, ConnectionResetError):
@@ -82,7 +94,7 @@ with tempfile.TemporaryDirectory() as directory:
     thread.start()
     try:
         subprocess.run([str(work / "checks"), str(work), f"http://127.0.0.1:{server.server_port}/"], check=True)
-        assert RANGES[0] == 64 and len(RANGES) == 3 and RANGES[-1] > 0, RANGES
+        assert RANGES[0] == 64 and len(RANGES) == 4 and RANGES[1] == 0 and RANGES[2] > 0 and RANGES[3] == 0, RANGES
         print("PASS: Android catalog parity and HTTP Range continuation after cancellation")
     finally:
         server.shutdown()

@@ -137,6 +137,10 @@
     <string name="settings_download_route">Download Route</string>
     <string name="download_route_global">International</string>
     <string name="download_route_cn">China Domestic</string>
+    <string name="settings_download_concurrency">Download Concurrency</string>
+    <string name="download_concurrency_value">%1$d</string>
+    <string name="download_concurrency_summary">Concurrent file and segment download connections (default 8). Lower this if your network is unstable.</string>
+    <string name="download_concurrency_reset">Default (8)</string>
     <string name="action_online_install">Online Install</string>
     <string name="action_online_install_with_size">Online Install · %1$s</string>
     <string name="action_local_install">Local Install</string>

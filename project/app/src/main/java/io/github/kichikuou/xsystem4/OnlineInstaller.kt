@@ -5,15 +5,27 @@ import android.net.Uri
 import android.os.StatFs
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicLongArray
+import java.util.concurrent.atomic.AtomicReference
 
 data class ModDownloadRequest(
     val url: String,
@@ -186,9 +198,30 @@ class InstallAbortHandle {
     private var aborted = false
     private val connections = HashSet<HttpURLConnection>()
     private val workerThreads = HashSet<Thread>()
+    private val children = HashSet<InstallAbortHandle>()
 
     val isAborted: Boolean
         get() = synchronized(lock) { aborted }
+
+    fun addChild(child: InstallAbortHandle) {
+        val abortNow = synchronized(lock) {
+            if (aborted) {
+                true
+            } else {
+                children.add(child)
+                false
+            }
+        }
+        if (abortNow) {
+            child.abort()
+        }
+    }
+
+    fun removeChild(child: InstallAbortHandle) {
+        synchronized(lock) {
+            children.remove(child)
+        }
+    }
 
     fun register(conn: HttpURLConnection) {
         val curThread = Thread.currentThread()
@@ -223,13 +256,21 @@ class InstallAbortHandle {
     }
 
     fun abort() {
-        val (threads, toClose) = synchronized(lock) {
+        val (threads, toClose, childCopy) = synchronized(lock) {
             aborted = true
             val tCopy = workerThreads.toList()
             val cCopy = connections.toList()
+            val chCopy = children.toList()
             workerThreads.clear()
             connections.clear()
-            tCopy to cCopy
+            children.clear()
+            Triple(tCopy, cCopy, chCopy)
+        }
+        for (ch in childCopy) {
+            try {
+                ch.abort()
+            } catch (_: Throwable) {
+            }
         }
         for (t in threads) {
             try {
@@ -312,6 +353,9 @@ object OnlineInstaller {
     private const val MAX_REDIRECTS = 6
     private const val READ_SLICE_TIMEOUT_MS = 3_000
     private const val TOTAL_READ_TIMEOUT_MS = 45_000L
+    const val DEFAULT_MIN_SEGMENTED_BYTES = 8L * 1024L * 1024L
+    private const val MIN_SEGMENT_SIZE_BYTES = 4L * 1024L * 1024L
+    private const val SEGMENT_META_PERSIST_BYTES = 2L * 1024L * 1024L
 
     data class ManifestEntry(
         val path: String,
@@ -328,11 +372,57 @@ object OnlineInstaller {
         val entries: List<ManifestEntry>
     )
 
+    internal data class SegmentProgress(
+        val start: Long,
+        val end: Long,
+        @Volatile var done: Long
+    ) {
+        val length: Long get() = end - start + 1L
+        val isComplete: Boolean get() = done >= length
+    }
+
     private data class SavedMeta(
         val url: String?,
         val etag: String?,
-        val totalBytes: Long
+        val totalBytes: Long,
+        val segmented: Boolean = false,
+        val segments: List<SegmentProgress> = emptyList()
     )
+
+    internal fun computeSegmentCount(
+        remainingBytes: Long,
+        maxConnections: Int,
+        minSegmentedBytes: Long = DEFAULT_MIN_SEGMENTED_BYTES
+    ): Int {
+        val capped = AppSettings.normalizeDownloadConcurrency(maxConnections)
+        if (capped <= 1 || remainingBytes < minSegmentedBytes || minSegmentedBytes <= 0L) return 1
+        val minChunk = (minSegmentedBytes / 2L).coerceAtLeast(1L).coerceAtMost(MIN_SEGMENT_SIZE_BYTES)
+        val bySize = (remainingBytes / minChunk).coerceAtMost(capped.toLong()).toInt().coerceAtLeast(1)
+        return bySize.coerceIn(1, capped)
+    }
+
+    internal fun buildInitialSegments(
+        alreadyDonePrefix: Long,
+        totalBytes: Long,
+        segmentCount: Int
+    ): List<SegmentProgress> {
+        val out = ArrayList<SegmentProgress>(segmentCount + 1)
+        if (alreadyDonePrefix > 0L) {
+            out.add(SegmentProgress(0L, alreadyDonePrefix - 1L, alreadyDonePrefix))
+        }
+        val remaining = totalBytes - alreadyDonePrefix
+        val count = segmentCount.coerceAtLeast(1)
+        val base = remaining / count
+        val rem = remaining % count
+        var cursor = alreadyDonePrefix
+        for (i in 0 until count) {
+            val len = base + if (i < rem) 1L else 0L
+            if (len <= 0L) continue
+            out.add(SegmentProgress(cursor, cursor + len - 1L, 0L))
+            cursor += len
+        }
+        return out
+    }
 
     class InvalidManifestException(message: String) : IOException(message)
 
@@ -959,6 +1049,7 @@ object OnlineInstaller {
         }
     }
 
+    @JvmOverloads
     fun installBaseGameFromCloud(
         context: Context,
         storagePath: File,
@@ -966,7 +1057,9 @@ object OnlineInstaller {
         abortHandle: InstallAbortHandle? = null,
         onStagingDirReady: ((File) -> Unit)? = null,
         checkCancelled: () -> Unit,
-        onProgress: (OnlineProgressUpdate) -> Unit
+        onProgress: (OnlineProgressUpdate) -> Unit,
+        concurrency: Int = AppSettings.getDownloadConcurrency(context),
+        minSegmentedBytes: Long = DEFAULT_MIN_SEGMENTED_BYTES
     ): File {
         onProgress(OnlineProgressUpdate(context.getString(R.string.online_fetching_manifest), null))
         val canonicalBaseUrl = AppSettings.canonicalCdnUrl(cdnBaseUrl)
@@ -995,27 +1088,25 @@ object OnlineInstaller {
         val stagingPrefix = stagingDir.path + File.separator
         val verifiedDoneEntries = HashSet<String>()
 
+        data class PreparedEntry(
+            val index: Int,
+            val entry: ManifestEntry,
+            val cleanPath: String,
+            val finalFile: File,
+            val partFile: File,
+            val partMetaFile: File,
+            val fileUrl: String,
+            val alreadyDone: Boolean,
+            val initialPartBytes: Long
+        )
+
+        val prepared = ArrayList<PreparedEntry>(manifest.entries.size)
         var alreadyCompletedBytes = 0L
-        for (entry in manifest.entries) {
-            checkCancelled()
-            if (isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)) {
-                alreadyCompletedBytes += entry.size
-            }
-        }
-
-        val remainingTotal = (manifest.totalBytes - alreadyCompletedBytes).coerceAtLeast(0L)
-        ensureAvailableSpace(storageCanonical, remainingTotal)
-
-        var completedBeforeCurrent = alreadyCompletedBytes
-        val totalFiles = manifest.entries.size
-        val totalGameMb = (manifest.totalBytes / (1024L * 1024L)).coerceAtLeast(1L)
+        var partialBytesOnDisk = 0L
+        var alreadyDoneFiles = 0
 
         for ((index, entry) in manifest.entries.withIndex()) {
             checkCancelled()
-            if (isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)) {
-                continue
-            }
-
             val cleanPath = ArchiveExtractor.repairSjisAsGbkMojibake(entry.path)
             val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
             if (relParts.isEmpty() || relParts.any { it == ".." }) {
@@ -1025,81 +1116,376 @@ object OnlineInstaller {
             if (!finalFile.path.startsWith(stagingPrefix)) {
                 throw IOException("Manifest path escapes staging directory: ${entry.path}")
             }
-            finalFile.parentFile?.mkdirs()
-
             val partFile = File(finalFile.parentFile, "${finalFile.name}.part")
             val partMetaFile = File("${partFile.path}.meta")
             val encodedKey = entry.key.split('/').joinToString("/") { Uri.encode(it) }
             val fileUrl = "$fetchBaseUrl/files/$encodedKey"
 
-            downloadFileWithResume(
-                url = fileUrl,
-                destPartFile = partFile,
-                expectedSize = entry.size,
-                expectedSha256 = entry.sha256,
-                headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
-                abortHandle = abortHandle,
-                checkCancelled = checkCancelled,
-                onProgress = { fileDoneBytes, _, speedBps ->
-                    val globalDone = (completedBeforeCurrent + fileDoneBytes).coerceAtMost(manifest.totalBytes)
-                    val permille = if (manifest.totalBytes > 0L) {
-                        ((globalDone * 1000L) / manifest.totalBytes).toInt().coerceIn(0, 1000)
-                    } else {
-                        0
-                    }
-                    val pct = permille / 10
-                    val doneMb = globalDone / (1024L * 1024L)
-                    val speedStr = formatSpeed(speedBps)
-                    val msg = context.getString(
-                        R.string.online_base_download_progress,
-                        index + 1,
-                        totalFiles,
-                        pct,
-                        speedStr,
-                        doneMb,
-                        totalGameMb,
-                        cleanPath
-                    )
-                    onProgress(OnlineProgressUpdate(msg, permille))
-                }
+            val done = isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)
+            val initPart = if (done) {
+                alreadyCompletedBytes += entry.size
+                alreadyDoneFiles++
+                entry.size
+            } else {
+                val pBytes = estimatePartialBytesOnDisk(partFile, partMetaFile, fileUrl, entry.size, entry.sha256)
+                partialBytesOnDisk += pBytes
+                pBytes
+            }
+            prepared.add(
+                PreparedEntry(
+                    index = index,
+                    entry = entry,
+                    cleanPath = cleanPath,
+                    finalFile = finalFile,
+                    partFile = partFile,
+                    partMetaFile = partMetaFile,
+                    fileUrl = fileUrl,
+                    alreadyDone = done,
+                    initialPartBytes = initPart
+                )
             )
+        }
 
-            if (entry.extract) {
+        val remainingTotal = (manifest.totalBytes - alreadyCompletedBytes - partialBytesOnDisk).coerceAtLeast(0L)
+        ensureAvailableSpace(storageCanonical, remainingTotal)
+
+        val totalFiles = manifest.entries.size
+        val totalGameMb = (manifest.totalBytes / (1024L * 1024L)).coerceAtLeast(1L)
+        val pending = prepared.filter { !it.alreadyDone }
+        val effectiveConcurrency = AppSettings.normalizeDownloadConcurrency(concurrency)
+
+        fun commitEntry(item: PreparedEntry, committedBytesBefore: Long) {
+            checkCancelled()
+            if (item.entry.extract) {
                 onProgress(
                     OnlineProgressUpdate(
-                        context.getString(R.string.online_verifying_extracting, cleanPath),
+                        context.getString(R.string.online_verifying_extracting, item.cleanPath),
                         if (manifest.totalBytes > 0L) {
-                            (((completedBeforeCurrent + entry.size) * 1000L) / manifest.totalBytes).toInt().coerceIn(0, 1000)
+                            (((committedBytesBefore + item.entry.size) * 1000L) / manifest.totalBytes)
+                                .toInt().coerceIn(0, 1000)
                         } else null
                     )
                 )
                 ArchiveExtractor.extractFileToDirectory(
-                    archiveFile = partFile,
+                    archiveFile = item.partFile,
                     destDir = stagingDir,
                     shouldSkip = { rel -> NativeGameImport.skip(rel) },
                     throwInstallFailureOnNoSpace = true,
                     checkCancelled = checkCancelled
                 )
-                markerFileForExtractEntry(stagingDir, entry).writeText(entry.sha256)
-                partFile.delete()
-                partMetaFile.delete()
+                markerFileForExtractEntry(stagingDir, item.entry).writeText(item.entry.sha256)
+                item.partFile.delete()
+                item.partMetaFile.delete()
             } else {
-                if (finalFile.exists() && !finalFile.delete()) {
-                    throw IOException("Cannot overwrite target file: $finalFile")
+                item.finalFile.parentFile?.mkdirs()
+                if (item.finalFile.exists() && !item.finalFile.delete()) {
+                    throw IOException("Cannot overwrite target file: ${item.finalFile}")
                 }
-                if (!moveFileOrDir(partFile, finalFile)) {
-                    throw IOException("Failed to finalize downloaded file: $partFile -> $finalFile")
+                if (!moveFileOrDir(item.partFile, item.finalFile)) {
+                    throw IOException("Failed to finalize downloaded file: ${item.partFile} -> ${item.finalFile}")
                 }
-                partMetaFile.delete()
+                item.partMetaFile.delete()
             }
+        }
 
-            completedBeforeCurrent += entry.size
+        if (pending.isNotEmpty()) {
+            if (effectiveConcurrency <= 1 || pending.size == 1) {
+                var completedBeforeCurrent = alreadyCompletedBytes
+                val perFileConns = if (pending.size == 1) effectiveConcurrency else 1
+                for (item in pending) {
+                    checkCancelled()
+                    item.finalFile.parentFile?.mkdirs()
+                    downloadFileWithResume(
+                        url = item.fileUrl,
+                        destPartFile = item.partFile,
+                        expectedSize = item.entry.size,
+                        expectedSha256 = item.entry.sha256,
+                        headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
+                        abortHandle = abortHandle,
+                        checkCancelled = checkCancelled,
+                        onProgress = { fileDoneBytes, _, speedBps ->
+                            val globalDone = (completedBeforeCurrent + fileDoneBytes).coerceAtMost(manifest.totalBytes)
+                            val permille = if (manifest.totalBytes > 0L) {
+                                ((globalDone * 1000L) / manifest.totalBytes).toInt().coerceIn(0, 1000)
+                            } else {
+                                0
+                            }
+                            val pct = permille / 10
+                            val doneMb = globalDone / (1024L * 1024L)
+                            val speedStr = formatSpeed(speedBps)
+                            val msg = context.getString(
+                                R.string.online_base_download_progress,
+                                item.index + 1,
+                                totalFiles,
+                                pct,
+                                speedStr,
+                                doneMb,
+                                totalGameMb,
+                                item.cleanPath
+                            )
+                            onProgress(OnlineProgressUpdate(msg, permille))
+                        },
+                        maxConnections = perFileConns,
+                        minSegmentedBytes = minSegmentedBytes
+                    )
+                    commitEntry(item, completedBeforeCurrent)
+                    completedBeforeCurrent += item.entry.size
+                }
+            } else {
+                val batchAbort = InstallAbortHandle()
+                abortHandle?.addChild(batchAbort)
+                val workerCount = effectiveConcurrency
+                val pool = Executors.newFixedThreadPool(workerCount) { r ->
+                    Thread(r, "AliceHubDL").apply { isDaemon = true }
+                }
+                val entryDone = AtomicLongArray(totalFiles)
+                for (item in prepared) {
+                    entryDone.set(item.index, item.initialPartBytes)
+                }
+                val completedFilesCount = AtomicInteger(alreadyDoneFiles)
+                val maxReportedDone = AtomicLong(alreadyCompletedBytes + partialBytesOnDisk)
+                val progressLock = Any()
+                val progressEmitLock = Any()
+                val activeNames = LinkedHashSet<String>()
+                var lastCompletedName = pending.first().cleanPath
+                var speedWindowStartMs = SystemClock.elapsedRealtime()
+                var speedWindowBytes = 0L
+                var currentSpeedBps = 0L
+                var lastUiReportMs = 0L
+
+                fun reportAggregateProgress(deltaBytes: Long, force: Boolean = false) {
+                    synchronized(progressEmitLock) {
+                        var update: OnlineProgressUpdate? = null
+                        synchronized(progressLock) {
+                            if (deltaBytes > 0L) {
+                                speedWindowBytes += deltaBytes
+                            }
+                            val now = SystemClock.elapsedRealtime()
+                            val elapsed = now - speedWindowStartMs
+                            if (elapsed >= 600L) {
+                                currentSpeedBps = (speedWindowBytes * 1000L) / elapsed
+                                speedWindowStartMs = now
+                                speedWindowBytes = 0L
+                            }
+                            if (!force && now - lastUiReportMs < 150L) return
+                            lastUiReportMs = now
+                            var sum = 0L
+                            for (i in 0 until totalFiles) {
+                                sum += entryDone.get(i)
+                            }
+                            val clamped = sum.coerceAtMost(manifest.totalBytes)
+                            val globalDone = maxReportedDone.updateAndGet { prev -> maxOf(prev, clamped) }
+                            val permille = if (manifest.totalBytes > 0L) {
+                                ((globalDone * 1000L) / manifest.totalBytes).toInt().coerceIn(0, 1000)
+                            } else {
+                                0
+                            }
+                            val pct = permille / 10
+                            val doneMb = globalDone / (1024L * 1024L)
+                            val speedStr = formatSpeed(currentSpeedBps)
+                            val displayIdx = (completedFilesCount.get() + 1).coerceAtMost(totalFiles)
+                            val activeCount = activeNames.size.coerceAtMost(effectiveConcurrency)
+                            val primaryName = activeNames.firstOrNull() ?: lastCompletedName
+                            val displayLabel = if (activeCount > 1) {
+                                "$primaryName (+${activeCount - 1})"
+                            } else {
+                                primaryName
+                            }
+                            val msg = context.getString(
+                                R.string.online_base_download_progress,
+                                displayIdx,
+                                totalFiles,
+                                pct,
+                                speedStr,
+                                doneMb,
+                                totalGameMb,
+                                displayLabel
+                            )
+                            update = OnlineProgressUpdate(msg, permille)
+                        }
+                        update?.let(onProgress)
+                    }
+                }
+
+                // Group pending entries sharing the exact same partFile (defensive deduplication)
+                val groupedByPart = LinkedHashMap<String, MutableList<PreparedEntry>>()
+                for (item in pending) {
+                    groupedByPart.getOrPut(item.partFile.canonicalPath) { ArrayList() }.add(item)
+                }
+                // Schedule largest files first so huge archives start immediately alongside smaller files
+                val orderedGroups = groupedByPart.values.sortedByDescending { grp -> grp.maxOf { it.entry.size } }
+
+                val remainingTasks = AtomicInteger(orderedGroups.size)
+                val allDoneLatch = CountDownLatch(1)
+                val firstError = AtomicReference<Throwable?>(null)
+
+                fun failBatch(t: Throwable) {
+                    if (firstError.compareAndSet(null, t)) {
+                        batchAbort.abort()
+                    }
+                }
+
+                fun submitDynamicTask(task: () -> Unit): Boolean {
+                    if (batchAbort.isAborted || firstError.get() != null) return false
+                    remainingTasks.incrementAndGet()
+                    return try {
+                        pool.execute {
+                            try {
+                                task()
+                            } catch (t: Throwable) {
+                                failBatch(t)
+                            } finally {
+                                if (remainingTasks.decrementAndGet() == 0) {
+                                    allDoneLatch.countDown()
+                                }
+                            }
+                        }
+                        true
+                    } catch (_: RejectedExecutionException) {
+                        if (remainingTasks.decrementAndGet() == 0) {
+                            allDoneLatch.countDown()
+                        }
+                        false
+                    }
+                }
+
+                val workerCheckCancelled = {
+                    if (batchAbort.isAborted || abortHandle?.isAborted == true) {
+                        throw CancellationException()
+                    }
+                    checkCancelled()
+                }
+
+                try {
+                    for (group in orderedGroups) {
+                        pool.execute {
+                            try {
+                                for (item in group) {
+                                    workerCheckCancelled()
+                                    item.finalFile.parentFile?.mkdirs()
+                                    synchronized(progressLock) { activeNames.add(item.cleanPath) }
+                                    reportAggregateProgress(0L, force = true)
+                                    val prevFileDone = AtomicLong(entryDone.get(item.index))
+                                    val onItemDone: (Throwable?) -> Unit = { err ->
+                                        synchronized(progressLock) {
+                                            activeNames.remove(item.cleanPath)
+                                            lastCompletedName = item.cleanPath
+                                        }
+                                        if (err != null) {
+                                            failBatch(err)
+                                        } else {
+                                            val prev = prevFileDone.getAndSet(item.entry.size)
+                                            val delta = (item.entry.size - prev).coerceAtLeast(0L)
+                                            entryDone.set(item.index, item.entry.size)
+                                            completedFilesCount.incrementAndGet()
+                                            reportAggregateProgress(delta, force = true)
+                                        }
+                                    }
+                                    if (group.size > 1) {
+                                        // Serialized within identical-partFile group
+                                        downloadFileWithResume(
+                                            url = item.fileUrl,
+                                            destPartFile = item.partFile,
+                                            expectedSize = item.entry.size,
+                                            expectedSha256 = item.entry.sha256,
+                                            headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
+                                            abortHandle = batchAbort,
+                                            checkCancelled = workerCheckCancelled,
+                                            onProgress = { fileDoneBytes, _, _ ->
+                                                val clampedFile = fileDoneBytes.coerceAtMost(item.entry.size)
+                                                val prev = prevFileDone.getAndSet(clampedFile)
+                                                entryDone.set(item.index, clampedFile)
+                                                reportAggregateProgress((clampedFile - prev).coerceAtLeast(0L))
+                                            },
+                                            maxConnections = 1,
+                                            minSegmentedBytes = minSegmentedBytes
+                                        )
+                                        onItemDone(null)
+                                    } else {
+                                        startFileDownloadOnPool(
+                                            url = item.fileUrl,
+                                            destPartFile = item.partFile,
+                                            expectedSize = item.entry.size,
+                                            expectedSha256 = item.entry.sha256,
+                                            headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
+                                            maxConnections = effectiveConcurrency,
+                                            minSegmentedBytes = minSegmentedBytes,
+                                            batchAbort = batchAbort,
+                                            checkCancelled = workerCheckCancelled,
+                                            onProgressDelta = { fileDoneBytes, delta, _ ->
+                                                val clampedFile = fileDoneBytes.coerceAtMost(item.entry.size)
+                                                prevFileDone.set(clampedFile)
+                                                entryDone.set(item.index, clampedFile)
+                                                reportAggregateProgress(delta)
+                                            },
+                                            submitSubTask = ::submitDynamicTask,
+                                            onFileFinished = onItemDone
+                                        )
+                                    }
+                                }
+                            } catch (t: Throwable) {
+                                failBatch(t)
+                            } finally {
+                                if (remainingTasks.decrementAndGet() == 0) {
+                                    allDoneLatch.countDown()
+                                }
+                            }
+                        }
+                    }
+
+                    while (!allDoneLatch.await(150L, TimeUnit.MILLISECONDS)) {
+                        if (abortHandle?.isAborted == true) {
+                            batchAbort.abort()
+                            throw CancellationException()
+                        }
+                        try {
+                            checkCancelled()
+                        } catch (t: Throwable) {
+                            batchAbort.abort()
+                            throw t
+                        }
+                    }
+                } finally {
+                    pool.shutdown()
+                    if (!pool.awaitTermination(5L, TimeUnit.SECONDS)) {
+                        batchAbort.abort()
+                        pool.shutdownNow()
+                        pool.awaitTermination(3L, TimeUnit.SECONDS)
+                    }
+                    abortHandle?.removeChild(batchAbort)
+                }
+
+                if (abortHandle?.isAborted == true) throw CancellationException()
+                checkCancelled()
+                firstError.get()?.let { err ->
+                    when (err) {
+                        is CancellationException -> throw err
+                        is GameList.InstallFailureException -> throw err
+                        is IOException -> throw err
+                        is RuntimeException -> throw err
+                        is Error -> throw err
+                        else -> throw IOException("Concurrent download failed", err)
+                    }
+                }
+
+                // Phase 2: Commit downloaded files & extract archives strictly in manifest order
+                var committedBytes = alreadyCompletedBytes
+                for (item in prepared) {
+                    if (item.alreadyDone) continue
+                    commitEntry(item, committedBytes)
+                    committedBytes += item.entry.size
+                }
+            }
         }
 
         // Clean up internal marker/meta files before finalizing game directory. The staging
         // identity stays until the move succeeds so a failed move keeps verified downloads reusable.
         stagingDir.walkTopDown()
-            .filter { it.isFile && (it.name.startsWith(".extracted_") || it.name.endsWith(".part.meta")) }
+            .filter {
+                it.isFile && (it.name.startsWith(".extracted_") ||
+                    it.name.endsWith(".part.meta") ||
+                    it.name.endsWith(".part.meta.tmp"))
+            }
             .toList()
             .forEach { it.delete() }
 
@@ -1469,7 +1855,8 @@ object OnlineInstaller {
             headers = headers,
             abortHandle = abortHandle,
             checkCancelled = checkCancelled,
-            onProgress = reportProgress
+            onProgress = reportProgress,
+            maxConnections = AppSettings.getDownloadConcurrency(context)
         )
 
         var extractedOk = false
@@ -1927,7 +2314,812 @@ object OnlineInstaller {
     fun isStrongEtag(etag: String?): Boolean =
         !etag.isNullOrBlank() && !etag.trimStart().startsWith("W/", ignoreCase = true)
 
+    private fun estimatePartialBytesOnDisk(
+        partFile: File,
+        metaFile: File,
+        url: String,
+        expectedSize: Long,
+        expectedSha256: String?
+    ): Long {
+        if (!partFile.isFile) return 0L
+        val saved = readSavedMeta(metaFile, url, expectedSha256)
+        if (saved != null && saved.segmented) {
+            if (expectedSize > 0L && saved.totalBytes != expectedSize) return 0L
+            return saved.segments.sumOf { it.done }.coerceIn(0L, expectedSize.coerceAtLeast(0L))
+        }
+        val len = partFile.length()
+        return if (expectedSize > 0L && len in 1L..expectedSize) len else 0L
+    }
+
+    @JvmOverloads
     fun downloadFileWithResume(
+        url: String,
+        destPartFile: File,
+        expectedSize: Long,
+        expectedSha256: String?,
+        headers: Map<String, String>,
+        abortHandle: InstallAbortHandle?,
+        checkCancelled: () -> Unit,
+        onProgress: (doneBytes: Long, totalBytes: Long, speedBps: Long) -> Unit,
+        maxConnections: Int = 1,
+        minSegmentedBytes: Long = DEFAULT_MIN_SEGMENTED_BYTES
+    ) {
+        destPartFile.parentFile?.mkdirs()
+        val metaFile = File("${destPartFile.path}.meta")
+        val normalizedConns = AppSettings.normalizeDownloadConcurrency(maxConnections)
+        val saved = readSavedMeta(metaFile, url, expectedSha256)
+        val knownTotal = when {
+            expectedSize > 0L -> expectedSize
+            saved != null && saved.totalBytes > 0L -> saved.totalBytes
+            else -> -1L
+        }
+        val alreadySegmented = saved?.segmented == true &&
+            destPartFile.isFile &&
+            (expectedSize <= 0L || saved.totalBytes == expectedSize)
+        val curLen = if (!alreadySegmented && destPartFile.isFile) destPartFile.length() else 0L
+        val remaining = if (alreadySegmented) {
+            saved!!.segments.sumOf { it.length - it.done }
+        } else if (knownTotal > 0L) {
+            (knownTotal - curLen).coerceAtLeast(0L)
+        } else {
+            -1L
+        }
+        val wantSegmented = alreadySegmented ||
+            (normalizedConns > 1 && knownTotal > 0L && computeSegmentCount(remaining, normalizedConns, minSegmentedBytes) >= 2)
+
+        if (!wantSegmented) {
+            downloadFileSingleStream(
+                url = url,
+                destPartFile = destPartFile,
+                expectedSize = expectedSize,
+                expectedSha256 = expectedSha256,
+                headers = headers,
+                abortHandle = abortHandle,
+                checkCancelled = checkCancelled,
+                onProgress = onProgress
+            )
+            return
+        }
+
+        val batchAbort = InstallAbortHandle()
+        abortHandle?.addChild(batchAbort)
+        val pool = if (normalizedConns > 1) {
+            Executors.newFixedThreadPool(normalizedConns) { r ->
+                Thread(r, "AliceHubSeg").apply { isDaemon = true }
+            }
+        } else {
+            null
+        }
+        val remainingTasks = AtomicInteger(1)
+        val allDoneLatch = CountDownLatch(1)
+        val firstError = AtomicReference<Throwable?>(null)
+        val progressLock = Any()
+        val progressEmitLock = Any()
+        var speedWindowStartMs = SystemClock.elapsedRealtime()
+        var speedWindowBytes = 0L
+        var currentSpeedBps = 0L
+        var lastUiReportMs = 0L
+        val maxReported = AtomicLong(0L)
+
+        fun reportCombined(fileDoneBytes: Long, deltaBytes: Long, totalBytes: Long, force: Boolean = false) {
+            synchronized(progressEmitLock) {
+                var reportDone = 0L
+                var reportSpeed = 0L
+                var shouldEmit = false
+                synchronized(progressLock) {
+                    if (deltaBytes > 0L) speedWindowBytes += deltaBytes
+                    val now = SystemClock.elapsedRealtime()
+                    val elapsed = now - speedWindowStartMs
+                    if (elapsed >= 600L) {
+                        currentSpeedBps = (speedWindowBytes * 1000L) / elapsed
+                        speedWindowStartMs = now
+                        speedWindowBytes = 0L
+                    }
+                    if (force || now - lastUiReportMs >= 150L) {
+                        lastUiReportMs = now
+                        val clamped = if (totalBytes > 0L) fileDoneBytes.coerceAtMost(totalBytes) else fileDoneBytes
+                        reportDone = maxReported.updateAndGet { prev -> maxOf(prev, clamped) }
+                        reportSpeed = currentSpeedBps
+                        shouldEmit = true
+                    }
+                }
+                if (shouldEmit) {
+                    onProgress(reportDone, totalBytes, reportSpeed)
+                }
+            }
+        }
+
+        val workerCheckCancelled = {
+            if (batchAbort.isAborted || abortHandle?.isAborted == true) {
+                throw CancellationException()
+            }
+            checkCancelled()
+        }
+
+        fun submitSubTask(task: () -> Unit): Boolean {
+            if (batchAbort.isAborted || firstError.get() != null) return false
+            if (pool == null) {
+                // Single-worker resume of a previously segmented file: run inline
+                task()
+                return true
+            }
+            remainingTasks.incrementAndGet()
+            return try {
+                pool.execute {
+                    try {
+                        task()
+                    } catch (t: Throwable) {
+                        if (firstError.compareAndSet(null, t)) {
+                            batchAbort.abort()
+                        }
+                    } finally {
+                        if (remainingTasks.decrementAndGet() == 0) {
+                            allDoneLatch.countDown()
+                        }
+                    }
+                }
+                true
+            } catch (_: RejectedExecutionException) {
+                if (remainingTasks.decrementAndGet() == 0) {
+                    allDoneLatch.countDown()
+                }
+                false
+            }
+        }
+
+        try {
+            val kickoff = {
+                try {
+                    startFileDownloadOnPool(
+                        url = url,
+                        destPartFile = destPartFile,
+                        expectedSize = expectedSize,
+                        expectedSha256 = expectedSha256,
+                        headers = headers,
+                        maxConnections = normalizedConns,
+                        minSegmentedBytes = minSegmentedBytes,
+                        batchAbort = batchAbort,
+                        checkCancelled = workerCheckCancelled,
+                        onProgressDelta = { done, delta, total ->
+                            reportCombined(done, delta, total, force = (total > 0L && done >= total))
+                        },
+                        submitSubTask = ::submitSubTask,
+                        onFileFinished = { err ->
+                            if (err != null && firstError.compareAndSet(null, err)) {
+                                batchAbort.abort()
+                            }
+                        }
+                    )
+                } catch (t: Throwable) {
+                    if (firstError.compareAndSet(null, t)) {
+                        batchAbort.abort()
+                    }
+                } finally {
+                    if (remainingTasks.decrementAndGet() == 0) {
+                        allDoneLatch.countDown()
+                    }
+                }
+            }
+            if (pool != null) {
+                pool.execute(kickoff)
+                while (!allDoneLatch.await(150L, TimeUnit.MILLISECONDS)) {
+                    if (abortHandle?.isAborted == true) {
+                        batchAbort.abort()
+                        throw CancellationException()
+                    }
+                    try {
+                        checkCancelled()
+                    } catch (t: Throwable) {
+                        batchAbort.abort()
+                        throw t
+                    }
+                }
+            } else {
+                kickoff()
+            }
+        } finally {
+            if (pool != null) {
+                pool.shutdown()
+                if (!pool.awaitTermination(5L, TimeUnit.SECONDS)) {
+                    batchAbort.abort()
+                    pool.shutdownNow()
+                    pool.awaitTermination(3L, TimeUnit.SECONDS)
+                }
+            }
+            abortHandle?.removeChild(batchAbort)
+        }
+
+        if (abortHandle?.isAborted == true) throw CancellationException()
+        checkCancelled()
+        firstError.get()?.let { err ->
+            when (err) {
+                is CancellationException -> throw err
+                is GameList.InstallFailureException -> throw err
+                is IOException -> throw err
+                is RuntimeException -> throw err
+                is Error -> throw err
+                else -> throw IOException("Segmented download failed", err)
+            }
+        }
+    }
+
+    private fun startFileDownloadOnPool(
+        url: String,
+        destPartFile: File,
+        expectedSize: Long,
+        expectedSha256: String?,
+        headers: Map<String, String>,
+        maxConnections: Int,
+        minSegmentedBytes: Long,
+        batchAbort: InstallAbortHandle,
+        checkCancelled: () -> Unit,
+        onProgressDelta: (fileDoneBytes: Long, deltaBytes: Long, totalBytes: Long) -> Unit,
+        submitSubTask: (() -> Unit) -> Boolean,
+        onFileFinished: (Throwable?) -> Unit
+    ) {
+        destPartFile.parentFile?.mkdirs()
+        val metaFile = File("${destPartFile.path}.meta")
+        val hashless = expectedSha256.isNullOrBlank()
+        var savedMeta = readSavedMeta(metaFile, url, expectedSha256)
+        if (savedMeta?.segmented == true &&
+            (!destPartFile.isFile || (expectedSize > 0L && savedMeta.totalBytes != expectedSize))
+        ) {
+            destPartFile.delete()
+            metaFile.delete()
+            savedMeta = null
+        }
+        if ((savedMeta == null && (metaFile.isFile || (hashless && destPartFile.isFile))) ||
+            (hashless && destPartFile.isFile && !isStrongEtag(savedMeta?.etag))
+        ) {
+            destPartFile.delete()
+            metaFile.delete()
+            savedMeta = null
+        }
+
+        val knownTotal = when {
+            expectedSize > 0L -> expectedSize
+            savedMeta != null && savedMeta.totalBytes > 0L -> savedMeta.totalBytes
+            else -> -1L
+        }
+
+        fun runSingleStreamAndFinish() {
+            var lastDone = 0L
+            downloadFileSingleStream(
+                url = url,
+                destPartFile = destPartFile,
+                expectedSize = expectedSize,
+                expectedSha256 = expectedSha256,
+                headers = headers,
+                abortHandle = batchAbort,
+                checkCancelled = checkCancelled,
+                onProgress = { done, total, _ ->
+                    val delta = (done - lastDone).coerceAtLeast(0L)
+                    lastDone = done
+                    onProgressDelta(done, delta, total)
+                }
+            )
+            onFileFinished(null)
+        }
+
+        val alreadySegmented = savedMeta?.segmented == true
+        val segments: List<SegmentProgress>
+        val startedWithPartial: Boolean
+        if (alreadySegmented) {
+            segments = savedMeta!!.segments
+            startedWithPartial = true
+            if (segments.all { it.isComplete } && destPartFile.isFile && destPartFile.length() == savedMeta.totalBytes) {
+                if (!hashless) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        writeSavedMeta(metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256, segmented = false)
+                        onProgressDelta(savedMeta.totalBytes, 0L, savedMeta.totalBytes)
+                        onFileFinished(null)
+                        return
+                    }
+                    destPartFile.delete()
+                    metaFile.delete()
+                    runSingleStreamAndFinish()
+                    return
+                } else {
+                    writeSavedMeta(metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256, segmented = false)
+                    onProgressDelta(savedMeta.totalBytes, 0L, savedMeta.totalBytes)
+                    onFileFinished(null)
+                    return
+                }
+            }
+        } else {
+            var curLen = if (destPartFile.isFile) destPartFile.length() else 0L
+            if (knownTotal > 0L && curLen > knownTotal) {
+                destPartFile.delete()
+                metaFile.delete()
+                curLen = 0L
+                savedMeta = null
+            }
+            if (knownTotal > 0L && curLen == knownTotal) {
+                if (!hashless) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        onProgressDelta(curLen, 0L, knownTotal)
+                        onFileFinished(null)
+                        return
+                    }
+                    destPartFile.delete()
+                    metaFile.delete()
+                    curLen = 0L
+                    savedMeta = null
+                } else {
+                    onProgressDelta(curLen, 0L, knownTotal)
+                    onFileFinished(null)
+                    return
+                }
+            }
+            val remaining = if (knownTotal > 0L) knownTotal - curLen else -1L
+            val segCount = computeSegmentCount(remaining, maxConnections, minSegmentedBytes)
+            if (segCount < 2 || knownTotal <= 0L) {
+                runSingleStreamAndFinish()
+                return
+            }
+            segments = buildInitialSegments(curLen, knownTotal, segCount)
+            startedWithPartial = curLen > 0L
+        }
+
+        val unfinished = segments.filter { !it.isComplete }
+        if (unfinished.isEmpty()) {
+            runSingleStreamAndFinish()
+            return
+        }
+
+        val totalBytes = if (alreadySegmented) savedMeta!!.totalBytes else knownTotal
+        ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, unfinished.sumOf { it.length - it.done })
+
+        val fileAbort = InstallAbortHandle()
+        batchAbort.addChild(fileAbort)
+        val fileDoneBytes = AtomicLong(segments.sumOf { it.done })
+        val metaLock = Any()
+        val bytesSinceMetaSave = AtomicLong(0L)
+        val activeEtag = AtomicReference<String?>(savedMeta?.etag)
+        val hasCurrentUrlEtag = AtomicBoolean(savedMeta != null && savedMeta.url == url && isStrongEtag(savedMeta.etag))
+        val fileError = AtomicReference<Throwable?>(null)
+        val needsCleanRestart = AtomicBoolean(false)
+        val activeSegTasks = AtomicInteger(1)
+
+        fun persistMeta(segmented: Boolean) {
+            synchronized(metaLock) {
+                writeSavedMeta(
+                    metaFile = metaFile,
+                    url = url,
+                    etag = activeEtag.get(),
+                    totalBytes = totalBytes,
+                    sha256 = expectedSha256,
+                    segmented = segmented,
+                    segments = if (segmented) segments else emptyList()
+                )
+            }
+        }
+
+        fun segCheckCancelled() {
+            if (fileAbort.isAborted || batchAbort.isAborted) throw CancellationException()
+            checkCancelled()
+        }
+
+        fun streamIntoSegment(conn: HttpURLConnection, seg: SegmentProgress) {
+            val reqStart = seg.start + seg.done
+            var segRemaining = seg.length - seg.done
+            var completedNormally = false
+            val input = conn.inputStream
+            try {
+                RandomAccessFile(destPartFile, "rw").use { raf ->
+                    raf.seek(reqStart)
+                    val buf = ByteArray(256 * 1024)
+                    var idleReadMs = 0L
+                    while (segRemaining > 0L) {
+                        segCheckCancelled()
+                        val n = try {
+                            input.read(buf)
+                        } catch (ste: java.net.SocketTimeoutException) {
+                            segCheckCancelled()
+                            idleReadMs += READ_SLICE_TIMEOUT_MS
+                            if (idleReadMs >= TOTAL_READ_TIMEOUT_MS) throw ste
+                            continue
+                        }
+                        idleReadMs = 0L
+                        segCheckCancelled()
+                        if (n < 0) break
+                        if (n == 0) continue
+                        if (n.toLong() > segRemaining) {
+                            throw IOException("Segment overflow: got $n > remaining $segRemaining")
+                        }
+                        raf.write(buf, 0, n)
+                        seg.done += n.toLong()
+                        segRemaining -= n.toLong()
+                        val totalDone = fileDoneBytes.addAndGet(n.toLong())
+                        onProgressDelta(totalDone, n.toLong(), totalBytes)
+                        if (bytesSinceMetaSave.addAndGet(n.toLong()) >= SEGMENT_META_PERSIST_BYTES) {
+                            bytesSinceMetaSave.set(0L)
+                            persistMeta(true)
+                        }
+                    }
+                    raf.fd.sync()
+                }
+                completedNormally = true
+            } finally {
+                if (completedNormally) {
+                    try {
+                        input.close()
+                    } catch (_: Throwable) {
+                    }
+                }
+                persistMeta(true)
+            }
+        }
+
+        fun runSegmentLoop(seg: SegmentProgress) {
+            var lastErr: Exception? = null
+            var attempt = 0
+            while (attempt < MAX_HTTP_RETRIES && !seg.isComplete) {
+                segCheckCancelled()
+                val reqStart = seg.start + seg.done
+                val reqEnd = seg.end
+                var conn: HttpURLConnection? = null
+                var completedConn = false
+                try {
+                    val reqHeaders = LinkedHashMap<String, String>(headers)
+                    reqHeaders["Accept-Encoding"] = "identity"
+                    reqHeaders["Range"] = "bytes=$reqStart-$reqEnd"
+                    val etag = activeEtag.get()
+                    if (hasCurrentUrlEtag.get() && isStrongEtag(etag)) {
+                        reqHeaders["If-Range"] = etag!!
+                    }
+                    conn = openFollowingRedirects(url, reqHeaders, fileAbort)
+                    val code = conn.responseCode
+                    conn.readTimeout = READ_SLICE_TIMEOUT_MS
+                    if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                        throw IOException("HTTP $code")
+                    }
+                    val respEtag = conn.getHeaderField("ETag")?.trim()
+                    when (code) {
+                        HttpURLConnection.HTTP_PARTIAL -> {
+                            val parsed = parseContentRangeFull(conn.getHeaderField("Content-Range"))
+                            val validRange = parsed != null &&
+                                parsed.first == reqStart &&
+                                parsed.second == reqEnd &&
+                                (parsed.third <= 0L || parsed.third == totalBytes)
+                            val sameRemote = !hashless ||
+                                (isStrongEtag(respEtag) && respEtag == activeEtag.get())
+                            if (!validRange || !sameRemote) {
+                                needsCleanRestart.set(true)
+                                fileAbort.abort()
+                                return
+                            }
+                            if (!respEtag.isNullOrEmpty() && !hasCurrentUrlEtag.get()) {
+                                activeEtag.set(respEtag)
+                                if (isStrongEtag(respEtag)) hasCurrentUrlEtag.set(true)
+                            }
+                            streamIntoSegment(conn, seg)
+                            completedConn = true
+                            if (!seg.isComplete) {
+                                throw IOException("Premature EOF in segment ${seg.start}-${seg.end} at ${seg.done}/${seg.length}")
+                            }
+                            return
+                        }
+                        HttpURLConnection.HTTP_OK, 416 -> {
+                            needsCleanRestart.set(true)
+                            fileAbort.abort()
+                            return
+                        }
+                        else -> throw IOException("Unexpected HTTP status $code")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: GameList.InstallFailureException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (fileAbort.isAborted || batchAbort.isAborted) throw CancellationException()
+                    checkCancelled()
+                    lastErr = e
+                    if (attempt + 1 < MAX_HTTP_RETRIES) {
+                        sleepCancellable(1000L * (attempt + 1).coerceAtMost(5), ::segCheckCancelled)
+                    }
+                    attempt++
+                } finally {
+                    fileAbort.unregister(conn)
+                    if (conn != null) {
+                        if (!completedConn && (fileAbort.isAborted || batchAbort.isAborted)) {
+                            InstallAbortHandle.disconnectAsync(listOf(conn))
+                        } else {
+                            conn.disconnect()
+                        }
+                    }
+                }
+            }
+            if (!seg.isComplete) {
+                throw lastErr ?: IOException("Segment ${seg.start}-${seg.end} incomplete")
+            }
+        }
+
+        fun onSegmentTaskExited(err: Throwable?) {
+            if (err != null && !needsCleanRestart.get()) {
+                if (fileError.compareAndSet(null, err)) {
+                    fileAbort.abort()
+                }
+            }
+            if (activeSegTasks.decrementAndGet() != 0) return
+
+            batchAbort.removeChild(fileAbort)
+            if (batchAbort.isAborted) {
+                persistMeta(true)
+                onFileFinished(CancellationException())
+                return
+            }
+            if (needsCleanRestart.get()) {
+                destPartFile.delete()
+                metaFile.delete()
+                try {
+                    runSingleStreamAndFinish()
+                } catch (t: Throwable) {
+                    onFileFinished(t)
+                }
+                return
+            }
+            val recordedErr = fileError.get()
+            if (recordedErr != null) {
+                persistMeta(true)
+                onFileFinished(recordedErr)
+                return
+            }
+            try {
+                if (!segments.all { it.isComplete } || !destPartFile.isFile || destPartFile.length() != totalBytes) {
+                    throw IOException("Downloaded size mismatch: expected $totalBytes, got ${destPartFile.length()}")
+                }
+                if (!hashless) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        destPartFile.delete()
+                        metaFile.delete()
+                        if (startedWithPartial) {
+                            runSingleStreamAndFinish()
+                            return
+                        }
+                        throw IOException("SHA-256 verification failed for ${destPartFile.name}")
+                    }
+                }
+                persistMeta(false)
+                onProgressDelta(totalBytes, 0L, totalBytes)
+                onFileFinished(null)
+            } catch (t: Throwable) {
+                onFileFinished(t)
+            }
+        }
+
+        fun spawnRemainingSegments(rest: List<SegmentProgress>) {
+            for (seg in rest) {
+                activeSegTasks.incrementAndGet()
+                val submitted = submitSubTask {
+                    var err: Throwable? = null
+                    try {
+                        runSegmentLoop(seg)
+                    } catch (t: Throwable) {
+                        err = t
+                    } finally {
+                        onSegmentTaskExited(err)
+                    }
+                }
+                if (!submitted) {
+                    onSegmentTaskExited(CancellationException())
+                }
+            }
+        }
+
+        val probeSeg = unfinished.first()
+        val restSegs = unfinished.drop(1)
+
+        if (alreadySegmented) {
+            spawnRemainingSegments(restSegs)
+            var err: Throwable? = null
+            try {
+                runSegmentLoop(probeSeg)
+            } catch (t: Throwable) {
+                err = t
+            } finally {
+                onSegmentTaskExited(err)
+            }
+            return
+        }
+
+        // Probe on the first unfinished segment before committing segmented mode
+        var probeConn: HttpURLConnection? = null
+        var probeCompleted = false
+        try {
+            segCheckCancelled()
+            val reqStart = probeSeg.start + probeSeg.done
+            val reqEnd = probeSeg.end
+            val reqHeaders = LinkedHashMap<String, String>(headers)
+            reqHeaders["Accept-Encoding"] = "identity"
+            reqHeaders["Range"] = "bytes=$reqStart-$reqEnd"
+            val resumeEtag = savedMeta?.etag
+            if (startedWithPartial && hasCurrentUrlEtag.get() && isStrongEtag(resumeEtag)) {
+                reqHeaders["If-Range"] = resumeEtag!!
+            }
+            probeConn = openFollowingRedirects(url, reqHeaders, fileAbort)
+            val code = probeConn.responseCode
+            probeConn.readTimeout = READ_SLICE_TIMEOUT_MS
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED || code == HttpURLConnection.HTTP_FORBIDDEN) {
+                throw IOException("HTTP $code")
+            }
+            val respEtag = probeConn.getHeaderField("ETag")?.trim()
+            if (code == HttpURLConnection.HTTP_OK) {
+                // Server doesn't support Range or If-Range invalidated -> stream full 200 OK sequentially!
+                val cl = probeConn.contentLengthLong
+                val enforcedExpected = if (expectedSize > 0L) expectedSize else totalBytes
+                if (enforcedExpected > 0L && cl > 0L && cl != enforcedExpected) {
+                    destPartFile.delete()
+                    metaFile.delete()
+                    throw IOException("Downloaded size mismatch: expected $enforcedExpected, got $cl")
+                }
+                val finalTotal = if (enforcedExpected > 0L) enforcedExpected else cl
+                val existingPartBytes = if (destPartFile.isFile) destPartFile.length() else 0L
+                val additionalNeeded = (finalTotal - existingPartBytes).coerceAtLeast(0L)
+                if (additionalNeeded > 0L) {
+                    ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, additionalNeeded)
+                }
+                writeSavedMeta(metaFile, url, respEtag, finalTotal, expectedSha256, segmented = false)
+                val input = probeConn.inputStream
+                var written = 0L
+                try {
+                    FileOutputStream(destPartFile, false).use { output ->
+                        val buf = ByteArray(256 * 1024)
+                        var idleReadMs = 0L
+                        while (true) {
+                            segCheckCancelled()
+                            val n = try {
+                                input.read(buf)
+                            } catch (ste: java.net.SocketTimeoutException) {
+                                segCheckCancelled()
+                                idleReadMs += READ_SLICE_TIMEOUT_MS
+                                if (idleReadMs >= TOTAL_READ_TIMEOUT_MS) throw ste
+                                continue
+                            }
+                            idleReadMs = 0L
+                            segCheckCancelled()
+                            if (n < 0) break
+                            if (n == 0) continue
+                            if (enforcedExpected > 0L && written + n.toLong() > enforcedExpected) {
+                                throw IOException("Downloaded size mismatch: expected $enforcedExpected, got >$enforcedExpected")
+                            }
+                            output.write(buf, 0, n)
+                            written += n.toLong()
+                            onProgressDelta(written, n.toLong(), finalTotal)
+                        }
+                        output.fd.sync()
+                    }
+                    probeCompleted = true
+                } finally {
+                    if (probeCompleted) {
+                        try {
+                            input.close()
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+                fileAbort.unregister(probeConn)
+                probeConn.disconnect()
+                probeConn = null
+                batchAbort.removeChild(fileAbort)
+                if (enforcedExpected > 0L && written != enforcedExpected) {
+                    if (written < enforcedExpected && (cl <= 0L || cl == enforcedExpected)) {
+                        runSingleStreamAndFinish()
+                        return
+                    }
+                    destPartFile.delete()
+                    metaFile.delete()
+                    throw IOException("Downloaded size mismatch: expected $enforcedExpected, got $written")
+                }
+                if (finalTotal > 0L && written < finalTotal) {
+                    runSingleStreamAndFinish()
+                    return
+                }
+                if (!hashless) {
+                    val actualSha = computeFileSha256(destPartFile, checkCancelled)
+                    if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
+                        destPartFile.delete()
+                        metaFile.delete()
+                        throw IOException("SHA-256 verification failed for ${destPartFile.name}")
+                    }
+                }
+                onProgressDelta(written, 0L, finalTotal)
+                onFileFinished(null)
+                return
+            }
+
+            if (code == HttpURLConnection.HTTP_PARTIAL) {
+                val parsed = parseContentRangeFull(probeConn.getHeaderField("Content-Range"))
+                val validRange = parsed != null &&
+                    parsed.first == reqStart &&
+                    parsed.second == reqEnd &&
+                    (parsed.third <= 0L || parsed.third == totalBytes)
+                val hashlessSafe = !hashless ||
+                    (isStrongEtag(respEtag) && (!startedWithPartial || respEtag == resumeEtag))
+                if (validRange && hashlessSafe) {
+                    activeEtag.set(respEtag ?: activeEtag.get())
+                    if (isStrongEtag(respEtag)) hasCurrentUrlEtag.set(true)
+                    // Commit segmented meta BEFORE touching destPartFile so crash/cancel can never misread sparse file!
+                    persistMeta(true)
+                    if (!destPartFile.exists()) {
+                        destPartFile.createNewFile()
+                    }
+                    spawnRemainingSegments(restSegs)
+                    var segErr: Throwable? = null
+                    try {
+                        try {
+                            streamIntoSegment(probeConn, probeSeg)
+                            probeCompleted = true
+                        } finally {
+                            fileAbort.unregister(probeConn)
+                            if (!probeCompleted && (fileAbort.isAborted || batchAbort.isAborted)) {
+                                InstallAbortHandle.disconnectAsync(listOf(probeConn))
+                            } else {
+                                probeConn.disconnect()
+                            }
+                            probeConn = null
+                        }
+                        if (!probeSeg.isComplete) {
+                            runSegmentLoop(probeSeg)
+                        }
+                    } catch (t: Throwable) {
+                        segErr = t
+                    } finally {
+                        onSegmentTaskExited(segErr)
+                    }
+                    return
+                }
+            }
+
+            // Fallback to single-stream for 416 / non-matching range / hashless without strong ETag
+            fileAbort.unregister(probeConn)
+            probeConn.disconnect()
+            probeConn = null
+            batchAbort.removeChild(fileAbort)
+            if (code == 416) {
+                destPartFile.delete()
+                metaFile.delete()
+            }
+            runSingleStreamAndFinish()
+        } catch (t: Throwable) {
+            if (probeConn != null) {
+                fileAbort.unregister(probeConn)
+                if (!probeCompleted && (fileAbort.isAborted || batchAbort.isAborted)) {
+                    InstallAbortHandle.disconnectAsync(listOf(probeConn))
+                } else {
+                    probeConn.disconnect()
+                }
+            }
+            batchAbort.removeChild(fileAbort)
+            val isTerminalProbeIo = t is IOException && (
+                t.message == "HTTP 401" ||
+                    t.message == "HTTP 403" ||
+                    t.message?.startsWith("Downloaded size mismatch:") == true ||
+                    t.message?.startsWith("SHA-256 verification failed") == true
+                )
+            if (t is CancellationException || t is GameList.InstallFailureException ||
+                batchAbort.isAborted || isTerminalProbeIo
+            ) {
+                if (isTerminalProbeIo && t.message?.startsWith("Downloaded size mismatch:") == true) {
+                    destPartFile.delete()
+                    metaFile.delete()
+                }
+                onFileFinished(t)
+            } else {
+                // Transient probe network error: fall back to single-stream with full retry loop
+                try {
+                    runSingleStreamAndFinish()
+                } catch (fallbackErr: Throwable) {
+                    onFileFinished(fallbackErr)
+                }
+            }
+        }
+    }
+
+    private fun downloadFileSingleStream(
         url: String,
         destPartFile: File,
         expectedSize: Long,
@@ -2049,7 +3241,12 @@ object OnlineInstaller {
                         curLen = 0L
                         appendMode = false
                         val cl = conn.contentLengthLong
-                        if (cl > 0L) {
+                        if (expectedSize > 0L && cl > 0L && cl != expectedSize) {
+                            destPartFile.delete()
+                            metaFile.delete()
+                            throw IOException("Downloaded size mismatch: expected $expectedSize, got $cl")
+                        }
+                        if (expectedSize <= 0L && cl > 0L) {
                             knownTotal = cl
                         }
                     }
@@ -2261,13 +3458,19 @@ object OnlineInstaller {
         throw IOException("Too many HTTP redirects")
     }
 
-    private fun parseContentRange(header: String?): Pair<Long, Long>? {
+    private fun parseContentRangeFull(header: String?): Triple<Long, Long, Long>? {
         if (header.isNullOrBlank()) return null
         val m = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
             .find(header.trim()) ?: return null
         val start = m.groupValues[1].toLongOrNull() ?: return null
+        val end = m.groupValues[2].toLongOrNull() ?: return null
         val total = m.groupValues[3].toLongOrNull() ?: -1L
-        return start to total
+        return Triple(start, end, total)
+    }
+
+    private fun parseContentRange(header: String?): Pair<Long, Long>? {
+        val full = parseContentRangeFull(header) ?: return null
+        return full.first to full.third
     }
 
     private fun ensureAvailableSpace(dir: File, neededBytes: Long) {
@@ -2291,23 +3494,75 @@ object OnlineInstaller {
                 savedSha.isNotEmpty() &&
                 savedSha.equals(expectedSha256, ignoreCase = true)
             if (!shaMatched && j.optString("url") != expectedUrl) return null
+            val totalBytes = j.optLong("totalBytes", -1L)
+            val segmented = j.optBoolean("segmented", false)
+            val segments = if (segmented) {
+                if (totalBytes <= 0L) return null
+                val arr = j.optJSONArray("segments") ?: return null
+                if (arr.length() == 0) return null
+                val list = ArrayList<SegmentProgress>(arr.length())
+                var expectedStart = 0L
+                for (i in 0 until arr.length()) {
+                    val segArr = arr.optJSONArray(i) ?: return null
+                    if (segArr.length() < 3) return null
+                    val s = segArr.optLong(0, -1L)
+                    val e = segArr.optLong(1, -1L)
+                    val d = segArr.optLong(2, -1L)
+                    if (s != expectedStart || e < s) return null
+                    val len = e - s + 1L
+                    if (d < 0L || d > len) return null
+                    list.add(SegmentProgress(s, e, d))
+                    expectedStart = e + 1L
+                }
+                if (expectedStart != totalBytes) return null
+                list
+            } else {
+                emptyList()
+            }
             SavedMeta(
                 url = j.optString("url").takeIf { it.isNotEmpty() },
                 etag = j.optString("etag").takeIf { it.isNotEmpty() },
-                totalBytes = j.optLong("totalBytes", -1L)
+                totalBytes = totalBytes,
+                segmented = segmented,
+                segments = segments
             )
         } catch (_: Throwable) {
             null
         }
     }
 
-    private fun writeSavedMeta(metaFile: File, url: String, etag: String?, totalBytes: Long, sha256: String?) {
+    private fun writeSavedMeta(
+        metaFile: File,
+        url: String,
+        etag: String?,
+        totalBytes: Long,
+        sha256: String?,
+        segmented: Boolean = false,
+        segments: List<SegmentProgress> = emptyList()
+    ) {
         try {
             val j = JSONObject().put("url", url)
             if (!etag.isNullOrEmpty()) j.put("etag", etag)
             if (totalBytes > 0L) j.put("totalBytes", totalBytes)
             if (!sha256.isNullOrBlank()) j.put("sha256", sha256)
-            metaFile.writeText(j.toString())
+            if (segmented && segments.isNotEmpty()) {
+                j.put("segmented", true)
+                val arr = JSONArray()
+                for (seg in segments) {
+                    arr.put(JSONArray().put(seg.start).put(seg.end).put(seg.done))
+                }
+                j.put("segments", arr)
+            }
+            val tmp = File("${metaFile.path}.tmp")
+            FileOutputStream(tmp, false).use { out ->
+                out.write(j.toString().toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
+            if (!tmp.renameTo(metaFile)) {
+                tmp.copyTo(metaFile, overwrite = true)
+                tmp.delete()
+            }
         } catch (_: Throwable) {
         }
     }

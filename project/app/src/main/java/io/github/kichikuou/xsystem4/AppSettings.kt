@@ -18,6 +18,7 @@ object AppSettings {
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
     private const val KEY_DOWNLOAD_ROUTE = "download_route"
+    private const val KEY_DOWNLOAD_CONCURRENCY = "download_concurrency"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
     private const val THEME_FILE_NAME = ".app_theme"
@@ -33,6 +34,9 @@ object AppSettings {
 
     const val ROUTE_GLOBAL = "global"
     const val ROUTE_CN = "cn"
+    const val MIN_DOWNLOAD_CONCURRENCY = 1
+    const val MAX_DOWNLOAD_CONCURRENCY = 16
+    const val DEFAULT_DOWNLOAD_CONCURRENCY = 8
     private const val CDN_ORIGIN_PREFIX = "https://alicehub.000.moe/"
     private const val CDN_CN_PREFIX = "https://alicehub.000.moe/cn/"
 
@@ -207,6 +211,19 @@ object AppSettings {
     @JvmStatic
     fun setDownloadRoute(context: Context, route: String) {
         prefs(context).edit().putString(KEY_DOWNLOAD_ROUTE, normalizeDownloadRoute(route)).apply()
+    }
+
+    @JvmStatic
+    fun normalizeDownloadConcurrency(raw: Int): Int =
+        raw.coerceIn(MIN_DOWNLOAD_CONCURRENCY, MAX_DOWNLOAD_CONCURRENCY)
+
+    @JvmStatic
+    fun getDownloadConcurrency(context: Context): Int =
+        normalizeDownloadConcurrency(prefs(context).getInt(KEY_DOWNLOAD_CONCURRENCY, DEFAULT_DOWNLOAD_CONCURRENCY))
+
+    @JvmStatic
+    fun setDownloadConcurrency(context: Context, concurrency: Int) {
+        prefs(context).edit().putInt(KEY_DOWNLOAD_CONCURRENCY, normalizeDownloadConcurrency(concurrency)).apply()
     }
 
     /** Strips any route prefix (/cn/) to recover the canonical game CDN URL for cache keys and install identity. */
