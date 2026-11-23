@@ -133,6 +133,9 @@
     <string name="save_cleared_toast">已清空存档</string>
 
     <string name="settings_online_install">在线安装(中文)</string>
+    <string name="settings_download_route">下载线路</string>
+    <string name="download_route_global">国际线路</string>
+    <string name="download_route_cn">国内线路</string>
     <string name="action_online_install">在线安装</string>
     <string name="action_online_install_with_size">在线安装 · %1$s</string>
     <string name="action_local_install">本地安装</string>

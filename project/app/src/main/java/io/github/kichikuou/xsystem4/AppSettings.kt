@@ -17,6 +17,7 @@ object AppSettings {
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
+    private const val KEY_DOWNLOAD_ROUTE = "download_route"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
     private const val THEME_FILE_NAME = ".app_theme"
@@ -29,6 +30,11 @@ object AppSettings {
     const val LANG_ZH = "zh"
     const val LANG_JA = "ja"
     const val LANG_EN = "en"
+
+    const val ROUTE_GLOBAL = "global"
+    const val ROUTE_CN = "cn"
+    private const val CDN_ORIGIN_PREFIX = "https://alicehub.000.moe/"
+    private const val CDN_CN_PREFIX = "https://alicehub.000.moe/cn/"
 
     private const val DEFAULT_RANCE10_BYTES = 4028714690L
     private const val DEFAULT_DOHNA_BYTES = 3310231215L
@@ -188,9 +194,51 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_ONLINE_INSTALL, enabled).apply()
     }
 
+    private fun normalizeDownloadRoute(raw: String?): String = when (raw?.trim()?.lowercase(Locale.ROOT)) {
+        ROUTE_CN -> ROUTE_CN
+        else -> ROUTE_GLOBAL
+    }
+
+    @JvmStatic
+    fun getDownloadRoute(context: Context): String =
+        normalizeDownloadRoute(prefs(context).getString(KEY_DOWNLOAD_ROUTE, ROUTE_GLOBAL))
+
+    @JvmStatic
+    fun setDownloadRoute(context: Context, route: String) {
+        prefs(context).edit().putString(KEY_DOWNLOAD_ROUTE, normalizeDownloadRoute(route)).apply()
+    }
+
+    /** Strips any route prefix (/cn/) to recover the canonical game CDN URL for cache keys and install identity. */
+    @JvmStatic
+    fun canonicalCdnUrl(url: String): String {
+        val trimmed = url.trimEnd('/')
+        return if (trimmed.startsWith(CDN_CN_PREFIX)) {
+            CDN_ORIGIN_PREFIX + trimmed.removePrefix(CDN_CN_PREFIX)
+        } else {
+            trimmed
+        }
+    }
+
+    /** Applies [route] to any AliceHub CDN URL (idempotent); non-AliceHub URLs pass through unchanged. */
+    @JvmStatic
+    fun applyDownloadRoute(url: String, route: String): String {
+        if (!url.startsWith(CDN_ORIGIN_PREFIX)) return url
+        val rest = url.removePrefix(CDN_ORIGIN_PREFIX)
+        val canonicalRest = if (rest.startsWith("cn/")) rest.removePrefix("cn/") else rest
+        return if (normalizeDownloadRoute(route) == ROUTE_CN) {
+            CDN_CN_PREFIX + canonicalRest
+        } else {
+            CDN_ORIGIN_PREFIX + canonicalRest
+        }
+    }
+
+    @JvmStatic
+    fun resolveCdnUrl(context: Context, url: String): String =
+        applyDownloadRoute(url, getDownloadRoute(context))
+
     @JvmStatic
     fun defaultBaseGameSizeForUrl(cdnBaseUrl: String): Long {
-        return when (cdnBaseUrl.trimEnd('/')) {
+        return when (canonicalCdnUrl(cdnBaseUrl)) {
             OnlineInstaller.RANCE10_CDN_URL -> DEFAULT_RANCE10_BYTES
             OnlineInstaller.DOHNA_DOHNA_CDN_URL -> DEFAULT_DOHNA_BYTES
             OnlineInstaller.EVENICLE_CDN_URL -> DEFAULT_EVENICLE_BYTES
@@ -239,7 +287,7 @@ object AppSettings {
     }
 
     fun getCachedBaseGameSize(context: Context, cdnBaseUrl: String): Long {
-        val clean = cdnBaseUrl.trimEnd('/')
+        val clean = canonicalCdnUrl(cdnBaseUrl)
         val saved = prefs(context).getLong(KEY_BASE_SIZE_PREFIX + clean, -1L)
         if (saved > 0L) return saved
         return defaultBaseGameSizeForUrl(clean)
@@ -247,7 +295,7 @@ object AppSettings {
 
     fun setCachedBaseGameSize(context: Context, cdnBaseUrl: String, totalBytes: Long) {
         if (totalBytes <= 0L) return
-        val clean = cdnBaseUrl.trimEnd('/')
+        val clean = canonicalCdnUrl(cdnBaseUrl)
         prefs(context).edit().putLong(KEY_BASE_SIZE_PREFIX + clean, totalBytes).apply()
     }
 

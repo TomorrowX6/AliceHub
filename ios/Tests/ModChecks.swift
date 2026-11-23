@@ -57,6 +57,18 @@ struct ModChecks {
         precondition(ModCatalog.extractCanonicalModVersion("兰斯10日不落MOD v3.1增量补丁2.zip") == "v3.1增量补丁2")
         precondition(ModCatalog.sanitizeParenFree("a（b）\n c", multiline: true) == "a b\nc")
         precondition(ModCatalog.formatSize(1048576) == "1.0 MB")
+        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
+        precondition(DownloadRoute.current == .global)
+        precondition(DownloadRoute.global.gameBaseURLString(for: "rance10") == "https://alicehub.000.moe/rance10")
+        precondition(DownloadRoute.cn.gameBaseURLString(for: "rance10") == "https://alicehub.000.moe/cn/rance10")
+        precondition(DownloadRoute.cn.resolveURL("https://alicehub.000.moe/rance10/files/a.bin") == "https://alicehub.000.moe/cn/rance10/files/a.bin")
+        precondition(DownloadRoute.cn.resolveURL("https://alicehub.000.moe/cn/rance10/files/a.bin") == "https://alicehub.000.moe/cn/rance10/files/a.bin")
+        precondition(DownloadRoute.global.resolveURL("https://alicehub.000.moe/cn/rance10/files/a.bin") == "https://alicehub.000.moe/rance10/files/a.bin")
+        precondition(DownloadRoute.cn.resolveURL("http://127.0.0.1:8080/rance10") == "http://127.0.0.1:8080/rance10")
+        UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)
+        precondition(ModGameDescriptor.supported[0].overlayURL == "https://alicehub.000.moe/cn/rance10")
+        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
+        precondition(ModGameDescriptor.supported[0].overlayURL == "https://alicehub.000.moe/rance10")
         for invalid in [#"{}"#, #"{"releases":[]}"#, #"{"releases":[{"key":"a","fileName":"bad.exe","version":"v1"}]}"#] {
             do { _ = try ModCatalog.parseModCatalog(Data(invalid.utf8), cdnBaseURL: "https://example.test"); preconditionFailure("Accepted invalid catalog") } catch {}
         }
@@ -320,6 +332,13 @@ struct ModChecks {
         let restoredOnline = try read(onlineGame, "Rance10.ain")
         precondition(restoredOnline == "original")
         print("PASS: online installer Range resume + SHA-256, metadata/cache cleanup, one-job guard and restore")
+        // Verify 302 redirect preserves Range across hops and skips stale ETag on route switch
+        let redirectURL = url.replacingOccurrences(of: "/online.zip", with: "/redirect")
+        try data.prefix(16).write(to: part)
+        try JSONSerialization.data(withJSONObject: ["url": url, "sha256": sha, "etag": "\"stale-r2-etag\"", "totalBytes": data.count]).write(to: part.appendingPathExtension("meta"))
+        let redirectRelease = ModReleaseEntry(fileId: 9, version: "v3.5正式版", fileName: "online.zip", downloadUrl: redirectURL, expectedSize: Int64(data.count), expectedSha256: sha)
+        precondition(installer.installOnlinePlan([redirectRelease], to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
+        precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
         let retryRelease = ModReleaseEntry(fileId: 8, version: "v4.0正式版", fileName: "retry.zip", downloadUrl: url + "?retry", expectedSize: Int64(data.count), expectedSha256: sha)
         precondition(installer.installOnlinePlan([retryRelease], to: onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()
         precondition(installer.restoreVanilla(onlineGame, descriptor: ModGameDescriptor.supported[0])); awaitJob()

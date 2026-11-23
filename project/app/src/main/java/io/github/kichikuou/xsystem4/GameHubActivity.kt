@@ -461,12 +461,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun refreshOnlineSizeIfNeeded() {
         if (!descriptor.supportsOnlineBaseInstall || !AppSettings.isOnlineInstallEnabled(this)) return
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
-        if (refreshedSizeCdnUrl == cdnUrl) return
-        refreshedSizeCdnUrl = cdnUrl
+        val fetchUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
+        if (refreshedSizeCdnUrl == fetchUrl) return
+        refreshedSizeCdnUrl = fetchUrl
         scope.launch {
             val fetched = try {
                 withContext(Dispatchers.IO) {
-                    OnlineInstaller.fetchManifestTotalBytes(cdnUrl)
+                    OnlineInstaller.fetchManifestTotalBytes(fetchUrl)
                 }
             } catch (_: Throwable) {
                 -1L
@@ -705,10 +706,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 .setCancelable(true)
                 .show()
         )
+        val fetchCdnUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
         scope.launch {
             val manifest = try {
                 withContext(Dispatchers.IO) {
-                    UncensoredPatchManager.fetchManifest(cdnUrl)
+                    UncensoredPatchManager.fetchManifest(fetchCdnUrl)
                 }
             } catch (_: Throwable) {
                 null
@@ -753,7 +755,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                     else R.string.uncensored_patch_install_btn
                 ) { _, _ ->
                     ensureGameNotRunning(this@GameHubActivity) {
-                        if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, manifest)) {
+                        val resolvedManifest = manifest.copy(
+                            downloadUrl = AppSettings.resolveCdnUrl(this@GameHubActivity, manifest.downloadUrl)
+                        )
+                        if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, resolvedManifest)) {
                             showOtherInstallBusyToast()
                         }
                     }

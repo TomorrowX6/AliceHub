@@ -58,6 +58,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private var releases: List<ModReleaseEntry> = emptyList()
     private var isLoadingCatalog: Boolean = false
     private var catalogLoadError: Boolean = false
+    private var loadedDownloadRoute: String? = null
 
     private var pendingPostResumeAction: (() -> Unit)? = null
 
@@ -222,13 +223,17 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         rebindCurrentTarget()
         gameList.observer = this
         val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
+        val currentRoute = AppSettings.getDownloadRoute(this)
         if (!onlineEnabled) {
             catalogJob?.cancel()
             catalogJob = null
             isLoadingCatalog = false
             catalogLoadError = false
+            loadedDownloadRoute = null
             releases = emptyList()
-        } else if (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError) {
+        } else if ((loadedDownloadRoute != null && loadedDownloadRoute != currentRoute) ||
+            (releases.isEmpty() && !isLoadingCatalog && !catalogLoadError)
+        ) {
             loadCatalog()
         }
         if (gameList.isRestoringMod) {
@@ -328,7 +333,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         catalogLoadError = false
         updateUi()
 
-        val cdnBaseUrl = descriptor.effectiveOverlayCdnUrl ?: OnlineInstaller.RANCE10_CDN_URL
+        val route = AppSettings.getDownloadRoute(this)
+        loadedDownloadRoute = route
+        val cdnBaseUrl = AppSettings.applyDownloadRoute(
+            descriptor.effectiveOverlayCdnUrl ?: OnlineInstaller.RANCE10_CDN_URL,
+            route
+        )
         val catalogRelPath = descriptor.overlayCatalogRelPath
         catalogJob = scope.launch {
             try {
