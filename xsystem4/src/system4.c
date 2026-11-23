@@ -106,6 +106,8 @@ struct config config = {
 	.home_dir = NULL,
 	.view_width = 800,
 	.view_height = 600,
+	.view_width_set = false,
+	.view_height_set = false,
 	.mixer_nr_channels = 0,
 	.mixer_channels = NULL,
 	.default_volume = 100,
@@ -254,8 +256,10 @@ static bool read_config_entries(const char *path)
 			config.save_dir = xstrdup(ini_string(&ini[i])->text);
 		} else if (!strcmp(ini[i].name->text, "ViewWidth")) {
 			config.view_width = ini_integer(&ini[i]);
+			config.view_width_set = true;
 		} else if (!strcmp(ini[i].name->text, "ViewHeight")) {
 			config.view_height = ini_integer(&ini[i]);
+			config.view_height_set = true;
 		} else if (!strcmp(ini[i].name->text, "VolumeValancer")) {
 			read_mixer_channels(&ini[i]);
 		} else if (!strcmp(ini[i].name->text, "DefaultVolumeRate")) {

@@ -36,6 +36,8 @@ struct config {
 	char *home_dir;
 	int view_width;
 	int view_height;
+	bool view_width_set;
+	bool view_height_set;
 	size_t mixer_nr_channels;
 	char **mixer_channels;
 	int *mixer_volumes;
@@ -123,6 +125,7 @@ extern bool game_galzoo;
 extern bool game_ixseal;
 extern bool game_tsumashibori;
 extern bool game_tsumamigui3;
+extern bool game_waidonyo;
 
 bool sys_is_sdl_main_thread(void);
 

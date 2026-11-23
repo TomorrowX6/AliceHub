@@ -125,15 +125,68 @@ static uint32_t read_le32(const uint8_t *p)
 	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
+static bool fnl_uses_ttf_substitute(void)
+{
+	return sys4_text_is_gbk || sys4_has_mai_word_table() || !config.fnl_path;
+}
+
+static void set_fnl_substitute_scales(const float *scales, unsigned count)
+{
+	if (count > MAX_FNL_FONTS)
+		count = MAX_FNL_FONTS;
+	for (unsigned i = 0; i < count; i++)
+		fnl_substitute_scales[i] = scales[i];
+	fnl_substitute_count = count;
+}
+
+static void apply_fallback_fnl_substitute_scale(void)
+{
+	// Fallback ratios measured from each title's original *Font.fnl (full-width glyph
+	// width / cell height) for packages that omit the .fnl (Evenicle 2 Rance, Evenicle
+	// Gaiden) or repacks with stripped *Font.fnl files. Games whose face >= 256 uses
+	// native 1.0x TTF sizing (Rance 10, Okusama, Dohna Dohna) stay unscaled.
+	if (game_night_remaster) {
+		static const float s[] = { 163.f / 288.f, 149.f / 192.f, 154.f / 192.f, 159.f / 192.f, 156.f / 192.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_evenicle2 || game_evenicle2_rance) {
+		static const float s[] = { 159.f / 200.f, 118.f / 176.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_evenicle || game_evenicle_rance || game_evenicle_gaiden) {
+		static const float s[] = { 190.f / 272.f, 87.f / 112.f, 77.f / 96.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_ixseal) {
+		static const float s[] = { 293.f / 440.f, 154.f / 240.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_oyakorankan) {
+		static const float s[] = { 43.f / 56.f, 84.f / 120.f, 61.f / 80.f, 107.f / 160.f, 89.f / 136.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_tsumamigui3) {
+		static const float s[] = { 129.f / 192.f, 112.f / 160.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_rance01) {
+		static const float s[] = { 309.f / 384.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_rance03) {
+		static const float s[] = { 268.f / 384.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_rance8) {
+		static const float s[] = { 134.f / 192.f, 149.f / 192.f, 90.f / 128.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_rance9) {
+		static const float s[] = { 120.f / 160.f, 101.f / 144.f, 128.f / 168.f, 148.f / 224.f, 145.f / 224.f, 109.f / 200.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	}
+}
+
 static float get_fnl_substitute_scale(unsigned face)
 {
-	if (face <= 255 || !(sys4_text_is_gbk || sys4_has_mai_word_table()) || !fnl_substitute_count)
+	if (face <= 255 || !fnl_uses_ttf_substitute() || !fnl_substitute_count)
 		return 1.0f;
 	unsigned idx = face - 256;
 	return idx < fnl_substitute_count ? fnl_substitute_scales[idx] : fnl_substitute_scales[0];
 }
 
-static int get_fnl_substitute_y_pad(unsigned face, float size)
+int gfx_get_fnl_substitute_y_pad(unsigned face, float size)
 {
 	float scale = get_fnl_substitute_scale(face);
 	if (scale >= 0.999f || size <= 0.0f)
@@ -150,11 +203,17 @@ static void init_fnl_substitute_scale(void)
 	fnl_substitute_count = 0;
 	for (unsigned i = 0; i < MAX_FNL_FONTS; i++)
 		fnl_substitute_scales[i] = 1.0f;
-	if ((!sys4_text_is_gbk && !sys4_has_mai_word_table()) || !config.fnl_path)
+	if (!fnl_uses_ttf_substitute())
 		return;
+	if (!config.fnl_path) {
+		apply_fallback_fnl_substitute_scale();
+		return;
+	}
 	FILE *f = file_open_utf8(config.fnl_path, "rb");
-	if (!f)
+	if (!f) {
+		apply_fallback_fnl_substitute_scale();
 		return;
+	}
 	uint8_t header[16];
 	uint8_t *index = NULL;
 	if (fread(header, sizeof(header), 1, f) != 1 || memcmp(header, "FNA\0", 4))
@@ -218,6 +277,8 @@ static void init_fnl_substitute_scale(void)
 out:
 	free(index);
 	fclose(f);
+	if (!fnl_substitute_count)
+		apply_fallback_fnl_substitute_scale();
 }
 
 void gfx_font_init(void)
@@ -229,7 +290,7 @@ void gfx_font_init(void)
 	font_ttf[FONT_GOTHIC] = load_font(FONT_GOTHIC);
 	font_ttf[FONT_MINCHO] = load_font(FONT_MINCHO);
 
-	if (config.fnl_path && !sys4_text_is_gbk && !sys4_has_mai_word_table()) {
+	if (config.fnl_path && !fnl_uses_ttf_substitute()) {
 		struct fnl *fnl = fnl_open(config.fnl_path);
 		if (!fnl)
 			ERROR("Failed to load .fnl font library '%s'", config.fnl_path);
@@ -239,7 +300,7 @@ void gfx_font_init(void)
 			font_fnl[i] = fnl_font_load(fnl, i);
 		}
 	}
-	if ((config.fnl_path || (ain && ain->version >= 12)) && !game_rance7_mg)
+	if ((config.fnl_path || fnl_substitute_count || (ain && ain->version >= 12)) && !game_rance7_mg)
 		gfx_text_advance_edges = true;
 	font_initialized = true;
 }
@@ -247,7 +308,7 @@ void gfx_font_init(void)
 static struct font *get_font(unsigned face)
 {
 	if (face > 255) {
-		if (sys4_text_is_gbk || sys4_has_mai_word_table() || !config.fnl_path)
+		if (fnl_uses_ttf_substitute())
 			return font_ttf[0];
 		face -= 256;
 		if (face >= MAX_FNL_FONTS || !font_fnl[face]) {
@@ -403,12 +464,18 @@ float gfx_size_text(struct text_style *ts, const char *text)
 float gfx_get_actual_font_size(unsigned face, float size)
 {
 	struct font *font = get_font(face);
+	float scale = get_fnl_substitute_scale(face);
+	if (scale < 0.999f && size > 0.0f)
+		size = max(1.0f, size * scale);
 	return font->get_actual_size(font, size);
 }
 
 float gfx_get_actual_font_size_round_down(unsigned face, float size)
 {
 	struct font *font = get_font(face);
+	float scale = get_fnl_substitute_scale(face);
+	if (scale < 0.999f && size > 0.0f)
+		size = max(1.0f, size * scale);
 	return font->get_actual_size_round_down(font, size);
 }
 
@@ -479,7 +546,7 @@ float gfx_render_text_mode(Texture *dst, float x, int y, char *msg, struct text_
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
 	float edge_width = text_style_edge_width(ts);
-	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
+	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
@@ -529,7 +596,7 @@ float gfx_render_text_edge_only(Texture *dst, float x, int y, char *msg, struct 
 		return 0.0f;
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
-	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
+	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
 		: 0.f;
@@ -557,7 +624,7 @@ float gfx_render_text_core_only(Texture *dst, float x, int y, char *msg, struct 
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
 	float edge_width = text_style_edge_width(ts);
-	int fnl_y_pad = get_fnl_substitute_y_pad(ts->face, ts->size);
+	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
 		? edge_width + ceilf(ts->bold_width)
 		: 0.f;
@@ -642,7 +709,7 @@ static void gfx_draw_text(Texture *dst, int x, int y, char *text, enum text_rend
 	struct font_size *font_size = gfx_font_get_size(font_metrics.face, font_metrics.size);
 	struct text_render_metrics metrics = {
 		.x = x,
-		.y = y + get_fnl_substitute_y_pad(font_metrics.face, font_metrics.size),
+		.y = y + gfx_get_fnl_substitute_y_pad(font_metrics.face, font_metrics.size),
 		.color = font_metrics.color,
 		.weight = gfx_int_to_font_weight(font_metrics.weight),
 		.edge_width = 0.0f,

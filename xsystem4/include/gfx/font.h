@@ -157,6 +157,7 @@ SDL_Color gfx_get_font_color(void);
 void gfx_set_font_name(const char *name);
 
 struct font_size *gfx_font_get_size(unsigned face, float size);
+int gfx_get_fnl_substitute_y_pad(unsigned face, float size);
 enum font_weight gfx_int_to_font_weight(int weight);
 float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm);
 
