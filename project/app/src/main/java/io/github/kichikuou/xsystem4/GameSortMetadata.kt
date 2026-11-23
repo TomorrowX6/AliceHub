@@ -68,7 +68,28 @@ object GameSortMetadata {
         GameCatalog.ID_TOUSHIN2 to GameSortInfo("1994-12-10", 76.4, "https://vndb.org/v889", "https://vndb.org/v889"),
         GameCatalog.ID_DARCROWS to GameSortInfo("1999-11-18", 70.5, "https://vndb.org/v1095", "https://vndb.org/v1095"),
         GameCatalog.ID_IKUSAMIKO to GameSortInfo("1997-10-30", 54.8, "https://vndb.org/v3083", "https://vndb.org/v3083"),
-        GameCatalog.ID_ONLYYOU to GameSortInfo("1996-01-01", 71.2, "https://vndb.org/v2003", "https://vndb.org/v2003")
+        GameCatalog.ID_ONLYYOU to GameSortInfo("1996-01-01", 71.2, "https://vndb.org/v2003", "https://vndb.org/v2003"),
+        GameCatalog.ID_SANBIKI to GameSortInfo("2008-04-11", 58.1, "https://vndb.org/v31408", "https://vndb.org/v31408"),
+        GameCatalog.ID_PERSIOM to GameSortInfo("2000-04-13", 65.8, "https://vndb.org/v4477", "https://vndb.org/v4477"),
+        GameCatalog.ID_SEEINAO to GameSortInfo("2000-07-06", 64.6, "https://vndb.org/v4771", "https://vndb.org/v4771"),
+        GameCatalog.ID_HUSHABY to GameSortInfo("1999-09-30", 51.9, "https://vndb.org/v3049", "https://vndb.org/v3049"),
+        GameCatalog.ID_AYUMI to GameSortInfo("1992-12-15", 58.9, "https://vndb.org/v1929", "https://vndb.org/v1929"),
+        GameCatalog.ID_CIELCLAIRE to GameSortInfo("2003-06-27", 68.5, "https://vndb.org/v493", "https://vndb.org/v493"),
+        GameCatalog.ID_NIGHTDEMON to GameSortInfo("2003-08-29", 62.4, "https://vndb.org/v5896", "https://vndb.org/v5896"),
+        GameCatalog.ID_KATSUMI to GameSortInfo("1997-04-25", null, null, "https://vndb.org/v4515"),
+        GameCatalog.ID_DRSTOP to GameSortInfo("1992-04-15", 60.0, "https://vndb.org/v1828", "https://vndb.org/v1828"),
+        GameCatalog.ID_DPSALL to GameSortInfo("1995-11-10", 58.7, "https://vndb.org/v2234", "https://vndb.org/v2234"),
+        GameCatalog.ID_KOREDPS to GameSortInfo("2000-12-07", null, null, "https://vndb.org/v1825"),
+        GameCatalog.ID_KAERUALICE to GameSortInfo("2000-12-07", null, null, "https://vndb.org/r3541"),
+        GameCatalog.ID_PROSTUDENTG to GameSortInfo("1993-05-15", 69.7, "https://vndb.org/v4701", "https://vndb.org/v4701"),
+        GameCatalog.ID_PROSTUDENTGOOD to GameSortInfo("1999-01-14", 68.7, "https://vndb.org/v4702", "https://vndb.org/v4702"),
+        GameCatalog.ID_PASTELCHIME to GameSortInfo("1998-11-26", 62.4, "https://vndb.org/v4693", "https://vndb.org/v4693"),
+        GameCatalog.ID_PASTELCHIME2 to GameSortInfo("2005-06-17", 72.6, "https://vndb.org/v1080", "https://vndb.org/v1080"),
+        GameCatalog.ID_YAKATA3 to GameSortInfo("1995-04-01", 57.0, "https://vndb.org/v9426", "https://vndb.org/v9426"),
+        GameCatalog.ID_DALK to GameSortInfo("1992-12-15", 59.0, "https://vndb.org/v1798", "https://vndb.org/v1798"),
+        GameCatalog.ID_NINGENGARI to GameSortInfo("1997-12-18", 57.4, "https://vndb.org/v1827", "https://vndb.org/v1827"),
+        GameCatalog.ID_PASCHACPP to GameSortInfo("2005-12-09", 71.7, "https://vndb.org/v4758", "https://vndb.org/v4758"),
+        GameCatalog.ID_PASCHA3 to GameSortInfo("2013-02-15", 74.8, "https://vndb.org/v11292", "https://vndb.org/v11292")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

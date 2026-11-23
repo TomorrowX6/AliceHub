@@ -249,6 +249,10 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
             detectedGameId == GameCatalog.ID_GAKUENKING -> "GakuenKING"
             detectedGameId == GameCatalog.ID_ONLYYOU -> "OnlyYou"
+            detectedGameId == GameCatalog.ID_AYUMI -> "AyumiChan"
+            detectedGameId == GameCatalog.ID_DPSALL -> "DpsAll"
+            detectedGameId == GameCatalog.ID_PROSTUDENTG -> "ProstudentG"
+            detectedGameId == GameCatalog.ID_YAKATA3 -> "Yakata3"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
                 OnlineInstaller.sanitizeInstallDirName(
@@ -395,7 +399,70 @@ object NativeGameImport {
         if (GameCatalog.isOnlyYouGameFiles(activeFiles, readSmallFile)) {
             return "OnlyYou"
         }
-        if (GameCatalog.isKaerunyoGameFiles(activeFiles)) {
+        if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
+            return "Sanbiki"
+        }
+        if (GameCatalog.isPersiomGameFiles(activeFiles, readSmallFile)) {
+            return "PERSIOM"
+        }
+        if (GameCatalog.isSeeInAoGameFiles(activeFiles, readSmallFile)) {
+            return "SeeInAO"
+        }
+        if (GameCatalog.isHushabyGameFiles(activeFiles, readSmallFile)) {
+            return "HushabyBaby"
+        }
+        if (GameCatalog.isAyumiGameFiles(activeFiles, readSmallFile)) {
+            return "AyumiChan"
+        }
+        if (GameCatalog.isCielClaireGameFiles(activeFiles, readSmallFile)) {
+            return "CielClaire"
+        }
+        if (GameCatalog.isNightDemonGameFiles(activeFiles, readSmallFile)) {
+            return "NightDemon"
+        }
+        if (GameCatalog.isKatsumiGameFiles(activeFiles, readSmallFile)) {
+            return "Katsumi"
+        }
+        if (GameCatalog.isDrStopGameFiles(activeFiles, readSmallFile)) {
+            return "DrStop"
+        }
+        if (GameCatalog.isKoreDpsGameFiles(activeFiles, readSmallFile)) {
+            return "KoreDps"
+        }
+        if (GameCatalog.isDpsAllGameFiles(activeFiles, readSmallFile)) {
+            return "DpsAll"
+        }
+        if (GameCatalog.isKaeruAliceGameFiles(activeFiles, readSmallFile)) {
+            return "KaeruAlice"
+        }
+        if (GameCatalog.isProstudentGoodGameFiles(activeFiles, readSmallFile)) {
+            return "ProstudentGood"
+        }
+        if (GameCatalog.isProstudentGGameFiles(activeFiles, readSmallFile)) {
+            return "ProstudentG"
+        }
+        if (GameCatalog.isPascha3GameFiles(activeFiles, readSmallFile)) {
+            return "Pascha3"
+        }
+        if (GameCatalog.isPaschaCppGameFiles(activeFiles, readSmallFile)) {
+            return "PaschaCpp"
+        }
+        if (GameCatalog.isPastelChime2GameFiles(activeFiles, readSmallFile)) {
+            return "PastelChime2"
+        }
+        if (GameCatalog.isPastelChimeGameFiles(activeFiles, readSmallFile)) {
+            return "PastelChime"
+        }
+        if (GameCatalog.isYakata3GameFiles(activeFiles, readSmallFile)) {
+            return "Yakata3"
+        }
+        if (GameCatalog.isDalkGameFiles(activeFiles, readSmallFile)) {
+            return "DALK"
+        }
+        if (GameCatalog.isNingenGariGameFiles(activeFiles, readSmallFile)) {
+            return "NingenGari"
+        }
+        if (GameCatalog.isKaerunyoGameFiles(activeFiles, readSmallFile)) {
             return "Kaerunyo"
         }
         if (GameCatalog.isAtlachnachaGameFiles(activeFiles)) {

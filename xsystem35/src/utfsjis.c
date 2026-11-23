@@ -324,7 +324,8 @@ void cjk_score_sample(const uint8_t *src, int *sjis_err, int *gbk_err, int *gbk_
 				(*sjis_err)++;
 			} else {
 				uint16_t u = s2u[*p - 0x80][b2 - 0x40];
-				if (u == 0x30fb && !(*p == 0x81 && b2 == 0x45))
+				bool is_sjis_gaiji = (*p >= 0xeb && *p <= 0xfc) && (b2 <= 0xa0);
+				if (u == 0x30fb && !(*p == 0x81 && b2 == 0x45) && !is_sjis_gaiji)
 					(*sjis_err)++;
 			}
 			p += b2 ? 2 : 1;
@@ -357,9 +358,47 @@ void cjk_score_sample(const uint8_t *src, int *sjis_err, int *gbk_err, int *gbk_
 }
 
 bool cjk_looks_like_gbk(const uint8_t *src) {
+	if (!src)
+		return false;
 	int sjis_err = 0, gbk_err = 0, gbk_valid = 0;
 	cjk_score_sample(src, &sjis_err, &gbk_err, &gbk_valid);
-	return gbk_valid > 0 && sjis_err > gbk_err;
+	if (gbk_valid <= 0 || sjis_err <= gbk_err)
+		return false;
+
+	int sjis_kana = 0, gb2312_valid = 0;
+	const uint8_t *p = src;
+	while (*p) {
+		if (*p < 0x80) {
+			p++;
+		} else if ((*p >= 0x81 && *p <= 0x9f) || (*p >= 0xe0 && *p <= 0xfc)) {
+			uint8_t b2 = p[1];
+			if ((p[0] == 0x82 && b2 >= 0x9f && b2 <= 0xf1) ||
+				(p[0] == 0x83 && b2 >= 0x40 && b2 <= 0x96)) {
+				sjis_kana++;
+			}
+			p += b2 ? 2 : 1;
+		} else {
+			p++;
+		}
+	}
+	p = src;
+	while (*p) {
+		if (*p < 0x80) {
+			p++;
+		} else if (*p >= 0x81 && *p <= 0xfe) {
+			uint8_t b2 = p[1];
+			if (b2 < 0x40 || b2 > 0xfe || b2 == 0x7f || gbk_to_unicode[*p - 0x81][b2 - 0x40] == 0) {
+				p++;
+			} else {
+				if (*p >= 0xa1 && *p <= 0xf7 && b2 >= 0xa1 && b2 <= 0xfe)
+					gb2312_valid++;
+				p += 2;
+			}
+		} else {
+			p++;
+		}
+	}
+	return gb2312_valid > 0 && gb2312_valid > sjis_kana;
 }
 
 /* src 内に半角カナもしくはASCII文字があるかどうか */

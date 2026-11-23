@@ -10,7 +10,7 @@ Game Compatibility
 | 兰斯IV －教团的遗产－ (CN)                  | Supported   | Fan translation |
 | ランス4.1                                   | Supported   | [Ver1.05](https://hannylaboratory.blogspot.com/2023/02/blog-post_9.html). Use system3-sdl2 for older versions |
 | ランス4.2                                   | Supported   | [Ver1.05](https://hannylaboratory.blogspot.com/2023/02/blog-post_9.html). Use system3-sdl2 for older versions |
-| いけないかつみ先生                          | Supported   | Emojis are not supported |
+| いけないかつみ先生                          | Supported   | Emojis are not supported (Shift-JIS Gaiji guarded against false GBK auto-switch) |
 | 闘神都市II                                  | Supported   | Win95 edition (JP and EN fan translation supported) |
 | かえるにょ・ぱにょ～ん                      | Supported   | Normal / Low-priced edition; CN GBK fan translation supported |
 | 戦巫女                                      | Supported   | Normal / Low-priced edition |

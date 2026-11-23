@@ -76,6 +76,7 @@ final class GameLibrary: ObservableObject {
         ("eveniclegaiden", ["eveniclegaiden", "eveniclegaiten", "evenicleapc", "イブニクル外典", "夏娃年代记外典", "夏娃年代記外典"]),
         ("rance10", ["rance10", "rancex", "兰斯10", "ランス10"]),
         ("dohnadohna", ["dohnadohna", "多娜多娜", "ドーナドーナ"]),
+        ("sanbiki", ["sanbiki", "三匹が", "三匹", "slash!thrust!burn!"]),
         ("sengokurance", ["sengoku", "戦国", "战国"]),
         ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
         ("rance01", ["rance01", "兰斯01", "ランス01"]),
@@ -100,6 +101,7 @@ final class GameLibrary: ObservableObject {
         ("tsumamigui3", ["tsumamigui3", "妻みぐい3", "妻みぐい３", "妻中蜜3", "妻中蜜３"]),
         ("tsumamigui2", ["tsumamigui2", "妻みぐい2", "妻みぐい２", "妻中蜜2", "妻中蜜２", "嵢傒偖偄俀"]),
         ("tsumamigui", ["tsumamigui", "妻みぐい", "妻中蜜", "嵢傒偖偄"]),
+        ("kaerualice", ["kaerualice", "かえるにょ国にょアリス", "国にょアリス", "蛙国爱丽丝", "蛙國愛麗絲"]),
         ("kaerunyo", ["kaerunyo", "かえるにょ", "ぱにょ", "回家扭"]),
         ("atlachnacha", ["atlachnacha", "atlach", "アトラク", "阿特拉克", "蜘蛛sa"]),
         ("reishiki", ["reishiki", "零式", "zeroshiki", "楇幃"]),
@@ -107,7 +109,10 @@ final class GameLibrary: ObservableObject {
         ("okusamajun", ["okusamajun", "太太的恢复术纯爱", "奥さまの回復術純愛", "纯爱篇", "純愛編"]),
         ("okusamantr", ["okusamantr", "太太的恢复术夺爱", "奥さまの回復術奪愛", "夺爱篇", "奪愛編"]),
         ("waidonyo", ["waidonyo", "わいどにょ", "异空窟探险", "異空窟探險"]),
+        ("yakata3", ["yakata3", "aliceの館3", "aliceの館３", "aliceの館iii", "alicenoyakata3", "alicenoyakataiii", "爱丽丝之馆3", "爱丽丝之馆３", "愛麗絲之館3", "愛麗絲之館３"]),
         ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
+        ("koredps", ["koredps", "これdps", "これｄｐｓ", "これd.p.s", "这是dps", "這是dps", "这是d.p.s", "這是d.p.s"]),
+        ("dpsall", ["dpsall", "d.p.s.全部", "dps全部", "d.p.s.zenbu", "dpszenbu"]),
         ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
         ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
         ("toushin2", ["toushin2", "toushintoshi2", "toushintoshiii", "tt2sa", "闘神都市2", "闘神都市２", "闘神都市ii", "斗神都市2", "斗神都市２", "斗神都市ii", "鬥神都市2"]),
@@ -119,6 +124,22 @@ final class GameLibrary: ObservableObject {
         ("darcrows", ["darcrows", "himesa", "ダークロウズ", "暗鸦"]),
         ("ikusamiko", ["ikusamiko", "戦巫女", "战巫女", "vestalvirgin"]),
         ("onlyyou", ["onlyyou", "世紀末のジュリエット", "世纪末的朱丽叶"]),
+        ("persiom", ["persiom", "約束の集う場所", "约定汇聚之所"]),
+        ("seeinao", ["seeinao", "seein青", "イルカsa", "シーンao"]),
+        ("hushaby", ["hushaby", "幽霊sa"]),
+        ("ayumi", ["ayumichan", "ayumi", "あゆみちゃん", "步美物语", "步美物語"]),
+        ("cielclaire", ["cielclaire", "chairscruelles", "シェルクレイル", "逃避行sa", "残酷的爱恋", "殘酷的愛戀"]),
+        ("nightdemon", ["nightdemon", "ナイトデーモン", "夢鬼", "梦鬼"]),
+        ("katsumi", ["katsumi", "いけないかつみ", "かつみsa", "胜美大夫", "勝美大夫"]),
+        ("drstop", ["drstop", "dr.stop", "dssa.ald"]),
+        ("prostudentgood", ["prostudentgood", "prostu★dent", "sr猿", "ｓｒ猿", "ぷろすちゅ★でんと", "职业学生good", "職業學生good"]),
+        ("prostudentg", ["prostudentg", "progcd", "ぷろすちゅーでんとg", "职业学生g", "職業學生g"]),
+        ("pascha3", ["pascha3", "pastelchime3", "bindseeker", "パステルチャイム3", "パステルチャイム３", "バインドシーカー", "粉彩铃音3", "粉彩铃音３", "粉彩鈴音3", "封神追寻者", "pc3特典"]),
+        ("paschacpp", ["paschacpp", "paschac++", "ぱすちゃc++", "ぱすちゃc＋＋", "ぱすてる+", "ぱすてる＋", "粉彩铃音c++", "粉彩鈴音c++"]),
+        ("pastelchime2", ["pastelchime2", "pastelchimecontinue", "pastelcc", "ぱすてるチャイムcontinue", "ぱすてる2", "ぱすてる２", "粉彩铃音continue", "粉彩铃音2", "粉彩鈴音2"]),
+        ("pastelchime", ["pastelchime", "ぱすてるチャイム", "ぱすてるsa", "粉彩铃音", "粉彩鈴音"]),
+        ("dalk", ["dalksa", "dalkga", "dalk"]),
+        ("ningengari", ["ningengari", "人間狩り", "人间狩猎", "人間狩獵"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
@@ -146,7 +167,7 @@ final class GameLibrary: ObservableObject {
         if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0.hasSuffix("sa_chs.ald") || $0 == "adisk.ald" }) {
             return (.system3, url, system39)
         }
-        if names.contains("adisk.dat") && names.contains("acg.dat") {
+        if names.contains("adisk.dat") && (names.contains("acg.dat") || names.contains("acg0.dat")) {
             return (.legacySystem3, url, false)
         }
         throw LibraryError.notGame
@@ -196,6 +217,37 @@ final class GameLibrary: ObservableObject {
         return adiskCrc == 0x832aeb97
     }
 
+    private static func isAyumiFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "ayumi_cd" || legacyId == "ayumi" || legacyId == "ayumi_fd" ||
+                legacyId == "ayumi_proto" || legacyId == "ayumi_live_256" || legacyId == "ayumi_live_full"
+        }
+        let ayumiCrcs: Set<UInt32> = [0xd2bed9ee, 0x4e2fed2a, 0x4e2f5678, 0x00d15a2b, 0x5f66ff1d]
+        return (adiskCrc.map { ayumiCrcs.contains($0) } ?? false) ||
+            (regularNamesLower.contains("acg0.dat") && regularNamesLower.contains("adisk.dat"))
+    }
+
+    private static func isDpsAllFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "dps_all" || legacyId == "dpsall"
+        }
+        return adiskCrc == 0xd48b4ec6 || (regularNamesLower.contains("acg1_1.dat") && regularNamesLower.contains("acgs1_16.dat"))
+    }
+
+    private static func isProstudentGFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "prog_cd" || legacyId == "prog_fd" || legacyId == "prog" || legacyId == "prostudentg" || legacyId == "prostudent_g"
+        }
+        return adiskCrc == 0xfb0e4a63 || adiskCrc == 0x5ffbfee7
+    }
+
+    private static func isYakata3FromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "yakata3_cd" || legacyId == "yakata3" || legacyId == "yakata3_fd"
+        }
+        return adiskCrc == 0x7f8f5e2a || adiskCrc == 0x58ebcc99
+    }
+
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
@@ -220,6 +272,10 @@ final class GameLibrary: ObservableObject {
         let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
         let gakuenKing = engine == .legacySystem3 && isGakuenKingFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let onlyYou = engine == .legacySystem3 && isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let ayumi = engine == .legacySystem3 && isAyumiFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
+        let dpsAll = engine == .legacySystem3 && isDpsAllFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
+        let prostudentG = engine == .legacySystem3 && isProstudentGFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let yakata3 = engine == .legacySystem3 && isYakata3FromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
@@ -230,6 +286,10 @@ final class GameLibrary: ObservableObject {
         else if sdpsMaria { displayName = "Super D.P.S 玛利亚和坎潘" }
         else if gakuenKing { displayName = "学园KING" }
         else if onlyYou { displayName = "Only You 世纪末的朱丽叶们" }
+        else if ayumi { displayName = "步美物语" }
+        else if dpsAll { displayName = "D.P.S. 全部" }
+        else if prostudentG { displayName = "职业学生G" }
+        else if yakata3 { displayName = "爱丽丝之馆3" }
         else { displayName = url.lastPathComponent }
 
         let detectedArtworkID: String?
@@ -241,6 +301,10 @@ final class GameLibrary: ObservableObject {
         else if sdpsMaria { detectedArtworkID = "sdpsmaria" }
         else if gakuenKing { detectedArtworkID = "gakuenking" }
         else if onlyYou { detectedArtworkID = "onlyyou" }
+        else if ayumi { detectedArtworkID = "ayumi" }
+        else if dpsAll { detectedArtworkID = "dpsall" }
+        else if prostudentG { detectedArtworkID = "prostudentg" }
+        else if yakata3 { detectedArtworkID = "yakata3" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?
@@ -252,8 +316,10 @@ final class GameLibrary: ObservableObject {
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
             let isOnlyYouReCross = normalized.contains("recross") || normalized.contains("リクルス")
+            let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("dalkdemo")
             artworkKey = artworkAliases.first(where: { key, tokens in
                 if key == "onlyyou" && isOnlyYouReCross { return false }
+                if key == "dalk" && isDalkGaiden { return false }
                 return tokens.contains(where: normalized.contains)
             })?.0
         }
@@ -368,6 +434,44 @@ final class GameLibrary: ObservableObject {
         let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
         let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
         return isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isAyumi(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let names = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isAyumiFromRegularFiles(names, legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isDpsAll(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let names = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isDpsAllFromRegularFiles(names, legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isProstudentG(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isProstudentGFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isYakata3(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isYakata3FromRegularFiles(legacyId: legacyId, adiskCrc: crc)
     }
 
     static func isRance5d(_ url: URL) -> Bool {

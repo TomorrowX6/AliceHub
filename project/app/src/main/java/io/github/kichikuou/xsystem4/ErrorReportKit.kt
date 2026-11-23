@@ -1345,6 +1345,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_daibanchou_title)
             GameCatalog.isDaiteikokuAlias(lower) ->
                 context.getString(R.string.game_daiteikoku_title)
+            GameCatalog.isKaeruAliceAlias(lower) ->
+                context.getString(R.string.game_kaerualice_title)
             GameCatalog.isKaerunyoAlias(lower) ->
                 context.getString(R.string.game_kaerunyo_title)
             GameCatalog.isAtlachnachaAlias(lower) ->
@@ -1359,8 +1361,14 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_okusamantr_title)
             GameCatalog.isWaidonyoAlias(lower) ->
                 context.getString(R.string.game_waidonyo_title)
+            GameCatalog.isYakata3Alias(lower) ->
+                context.getString(R.string.game_yakata3_title)
             GameCatalog.isYakata2Alias(lower) ->
                 context.getString(R.string.game_yakata2_title)
+            GameCatalog.isKoreDpsAlias(lower) ->
+                context.getString(R.string.game_koredps_title)
+            GameCatalog.isDpsAllAlias(lower) ->
+                context.getString(R.string.game_dpsall_title)
             GameCatalog.isSdpsMariaAlias(lower) ->
                 context.getString(R.string.game_sdpsmaria_title)
             GameCatalog.isToushin3Alias(lower) ->
@@ -1393,6 +1401,40 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_ikusamiko_title)
             GameCatalog.isOnlyYouAlias(lower) ->
                 context.getString(R.string.game_onlyyou_title)
+            GameCatalog.isSanbikiAlias(lower) ->
+                context.getString(R.string.game_sanbiki_title)
+            GameCatalog.isPersiomAlias(lower) ->
+                context.getString(R.string.game_persiom_title)
+            GameCatalog.isSeeInAoAlias(lower) ->
+                context.getString(R.string.game_seeinao_title)
+            GameCatalog.isHushabyAlias(lower) ->
+                context.getString(R.string.game_hushaby_title)
+            GameCatalog.isAyumiAlias(lower) ->
+                context.getString(R.string.game_ayumi_title)
+            GameCatalog.isCielClaireAlias(lower) ->
+                context.getString(R.string.game_cielclaire_title)
+            GameCatalog.isNightDemonAlias(lower) ->
+                context.getString(R.string.game_nightdemon_title)
+            GameCatalog.isKatsumiAlias(lower) ->
+                context.getString(R.string.game_katsumi_title)
+            GameCatalog.isDrStopAlias(lower) ->
+                context.getString(R.string.game_drstop_title)
+            GameCatalog.isProstudentGoodAlias(lower) ->
+                context.getString(R.string.game_prostudentgood_title)
+            GameCatalog.isProstudentGAlias(lower) ->
+                context.getString(R.string.game_prostudentg_title)
+            GameCatalog.isPascha3Alias(lower) ->
+                context.getString(R.string.game_pascha3_title)
+            GameCatalog.isPaschaCppAlias(lower) ->
+                context.getString(R.string.game_paschacpp_title)
+            GameCatalog.isPastelChime2Alias(lower) ->
+                context.getString(R.string.game_pastelchime2_title)
+            GameCatalog.isPastelChimeAlias(lower) ->
+                context.getString(R.string.game_pastelchime_title)
+            GameCatalog.isDalkAlias(lower) ->
+                context.getString(R.string.game_dalk_title)
+            GameCatalog.isNingenGariAlias(lower) ->
+                context.getString(R.string.game_ningengari_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

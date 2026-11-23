@@ -29,6 +29,7 @@
 #include "xsystem4.h"
 
 static bool vs_read = false;
+static bool vs_from_gamedir = false;
 static FILE *vs_file = NULL;
 
 enum vsf_valuetype {
@@ -94,6 +95,7 @@ static bool vsfile_open(struct string *filename, bool read)
 		vs_file = NULL;
 	}
 	vs_read = read;
+	vs_from_gamedir = false;
 	if (!read) {
 		char *dir = path_dirname(u);
 		if (dir && *dir)
@@ -104,6 +106,8 @@ static bool vsfile_open(struct string *filename, bool read)
 		char *gu = gamedir_path_icase(filename->text);
 		if (gu) {
 			vs_file = file_open_utf8(gu, "rb");
+			if (vs_file)
+				vs_from_gamedir = true;
 			free(gu);
 		}
 	}
@@ -120,6 +124,7 @@ static void VSFile_ModuleFini(void)
 		fclose(vs_file);
 		vs_file = NULL;
 	}
+	vs_from_gamedir = false;
 }
 
 static bool VSFile_OpenForWrite(struct string *filename)
@@ -129,6 +134,7 @@ static bool VSFile_OpenForWrite(struct string *filename)
 	if (!vsf_write("VSF\0\0\0\0", 8)) {
 		fclose(vs_file);
 		vs_file = NULL;
+		vs_from_gamedir = false;
 		return false;
 	}
 	return true;
@@ -142,6 +148,7 @@ static bool VSFile_OpenForRead(struct string *filename)
 	if (!vsf_read(hdr, 8) || memcmp(hdr, "VSF\0\0\0\0", 8)) {
 		fclose(vs_file);
 		vs_file = NULL;
+		vs_from_gamedir = false;
 		return false;
 	}
 	return true;
@@ -155,6 +162,7 @@ static bool VSFile_Close(void)
 	} else {
 		WARNING("VSFILE is already closed");
 	}
+	vs_from_gamedir = false;
 	return true;
 }
 
@@ -260,7 +268,10 @@ static bool VSFile_ReadString(struct string **str)
 		string_append_cstr(&s, &b, 1);
 	}
 
-	if (s->size > 0) {
+	// Only cross-encoding-convert strings read from SaveData (e.g. JP save imported into CN build).
+	// Read-only game data files opened from game_dir (e.g. Data/Parameter/*.dat) store raw engine lookup keys
+	// that must match VM strings verbatim without heuristic SJIS<->GBK rewriting.
+	if (!vs_from_gamedir && s->size > 0) {
 		int bias = save_text_gbk_bias(s->text);
 		if ((sys4_text_is_gbk && bias <= -12) || (!sys4_text_is_gbk && bias >= 12)) {
 			struct string *conv = save_decode_vm_string(s->text, s->size, !sys4_text_is_gbk);

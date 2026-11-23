@@ -98,6 +98,27 @@ object AppSettings {
     internal const val DEFAULT_DARCROWS_BYTES = 558857840L
     internal const val DEFAULT_IKUSAMIKO_BYTES = 381340553L
     internal const val DEFAULT_ONLYYOU_BYTES = 77592471L
+    internal const val DEFAULT_SANBIKI_BYTES = 160062187L
+    internal const val DEFAULT_PERSIOM_BYTES = 287307616L
+    internal const val DEFAULT_SEEINAO_BYTES = 197954141L
+    internal const val DEFAULT_HUSHABY_BYTES = 32337216L
+    internal const val DEFAULT_AYUMI_BYTES = 89331318L
+    internal const val DEFAULT_CIELCLAIRE_BYTES = 772056801L
+    internal const val DEFAULT_NIGHTDEMON_BYTES = 761609079L
+    internal const val DEFAULT_KATSUMI_BYTES = 127134186L
+    internal const val DEFAULT_DRSTOP_BYTES = 2372912L
+    internal const val DEFAULT_DPSALL_BYTES = 48806657L
+    internal const val DEFAULT_KOREDPS_BYTES = 34941173L
+    internal const val DEFAULT_KAERUALICE_BYTES = 114809179L
+    internal const val DEFAULT_PROSTUDENTG_BYTES = 74947167L
+    internal const val DEFAULT_PROSTUDENTGOOD_BYTES = 144813947L
+    internal const val DEFAULT_PASTELCHIME_BYTES = 128679015L
+    internal const val DEFAULT_PASTELCHIME2_BYTES = 2725818511L
+    internal const val DEFAULT_YAKATA3_BYTES = 14582865L
+    internal const val DEFAULT_DALK_BYTES = 13360976L
+    internal const val DEFAULT_NINGENGARI_BYTES = 17006400L
+    internal const val DEFAULT_PASCHACPP_BYTES = 1391660611L
+    internal const val DEFAULT_PASCHA3_BYTES = 3638072646L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -329,6 +350,27 @@ object AppSettings {
             OnlineInstaller.DARCROWS_CDN_URL -> DEFAULT_DARCROWS_BYTES
             OnlineInstaller.IKUSAMIKO_CDN_URL -> DEFAULT_IKUSAMIKO_BYTES
             OnlineInstaller.ONLYYOU_CDN_URL -> DEFAULT_ONLYYOU_BYTES
+            OnlineInstaller.SANBIKI_CDN_URL -> DEFAULT_SANBIKI_BYTES
+            OnlineInstaller.PERSIOM_CDN_URL -> DEFAULT_PERSIOM_BYTES
+            OnlineInstaller.SEEINAO_CDN_URL -> DEFAULT_SEEINAO_BYTES
+            OnlineInstaller.HUSHABY_CDN_URL -> DEFAULT_HUSHABY_BYTES
+            OnlineInstaller.AYUMI_CDN_URL -> DEFAULT_AYUMI_BYTES
+            OnlineInstaller.CIELCLAIRE_CDN_URL -> DEFAULT_CIELCLAIRE_BYTES
+            OnlineInstaller.NIGHTDEMON_CDN_URL -> DEFAULT_NIGHTDEMON_BYTES
+            OnlineInstaller.KATSUMI_CDN_URL -> DEFAULT_KATSUMI_BYTES
+            OnlineInstaller.DRSTOP_CDN_URL -> DEFAULT_DRSTOP_BYTES
+            OnlineInstaller.DPSALL_CDN_URL -> DEFAULT_DPSALL_BYTES
+            OnlineInstaller.KOREDPS_CDN_URL -> DEFAULT_KOREDPS_BYTES
+            OnlineInstaller.KAERUALICE_CDN_URL -> DEFAULT_KAERUALICE_BYTES
+            OnlineInstaller.PROSTUDENTG_CDN_URL -> DEFAULT_PROSTUDENTG_BYTES
+            OnlineInstaller.PROSTUDENTGOOD_CDN_URL -> DEFAULT_PROSTUDENTGOOD_BYTES
+            OnlineInstaller.PASTELCHIME_CDN_URL -> DEFAULT_PASTELCHIME_BYTES
+            OnlineInstaller.PASTELCHIME2_CDN_URL -> DEFAULT_PASTELCHIME2_BYTES
+            OnlineInstaller.YAKATA3_CDN_URL -> DEFAULT_YAKATA3_BYTES
+            OnlineInstaller.DALK_CDN_URL -> DEFAULT_DALK_BYTES
+            OnlineInstaller.NINGENGARI_CDN_URL -> DEFAULT_NINGENGARI_BYTES
+            OnlineInstaller.PASCHACPP_CDN_URL -> DEFAULT_PASCHACPP_BYTES
+            OnlineInstaller.PASCHA3_CDN_URL -> DEFAULT_PASCHA3_BYTES
             else -> -1L
         }
     }

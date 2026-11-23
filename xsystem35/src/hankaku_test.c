@@ -141,10 +141,30 @@ static void chs_tbl_test(void) {
 	rmdir(dir);
 }
 
+static void cjk_looks_like_gbk_test(void) {
+	// Shift-JIS Gaiji/emoji (0xEB9F, used by Ikenai Katsumi Sensei) must NOT trigger GBK switch
+	const uint8_t katsumi_emoji[] = { 0xeb, 0x9f, 0x00 };
+	ASSERT_TRUE(!cjk_looks_like_gbk(katsumi_emoji));
+
+	// Shift-JIS kana + Gaiji (even with trail byte >= 0xA1) must stay Shift-JIS
+	const uint8_t jp_with_gaiji[] = { 0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd, 0xeb, 0xa5, 0x00 };
+	ASSERT_TRUE(!cjk_looks_like_gbk(jp_with_gaiji));
+
+	// Shift-JIS halfwidth kana sequence must stay Shift-JIS
+	const uint8_t sjis_han[] = { 0x20, 0xb1, 0xc0, 0xbc, 0xaf, 0xc0, 0xd7, 0xa4, 0x00 };
+	ASSERT_TRUE(!cjk_looks_like_gbk(sjis_han));
+
+	// Genuine GBK Chinese strings (with GB2312 bytes invalid in Shift-JIS) must still detect GBK
+	// "魅魔" in GBK: F7 C8 C4 A7
+	const uint8_t gbk_cn[] = { 0xf7, 0xc8, 0xc4, 0xa7, 0x00 };
+	ASSERT_TRUE(cjk_looks_like_gbk(gbk_cn));
+}
+
 void hankaku_test(void) {
 	zen2han_test();
 	han2zen_test();
 	format_number_test();
 	format_number_zenkaku_test();
 	chs_tbl_test();
+	cjk_looks_like_gbk_test();
 }

@@ -387,6 +387,27 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_DARCROWS ||
                 id == GameCatalog.ID_IKUSAMIKO ||
                 id == GameCatalog.ID_ONLYYOU ||
+                id == GameCatalog.ID_SANBIKI ||
+                id == GameCatalog.ID_PERSIOM ||
+                id == GameCatalog.ID_SEEINAO ||
+                id == GameCatalog.ID_HUSHABY ||
+                id == GameCatalog.ID_AYUMI ||
+                id == GameCatalog.ID_CIELCLAIRE ||
+                id == GameCatalog.ID_NIGHTDEMON ||
+                id == GameCatalog.ID_KATSUMI ||
+                id == GameCatalog.ID_DRSTOP ||
+                id == GameCatalog.ID_DPSALL ||
+                id == GameCatalog.ID_KOREDPS ||
+                id == GameCatalog.ID_KAERUALICE ||
+                id == GameCatalog.ID_PROSTUDENTG ||
+                id == GameCatalog.ID_PROSTUDENTGOOD ||
+                id == GameCatalog.ID_PASTELCHIME ||
+                id == GameCatalog.ID_PASTELCHIME2 ||
+                id == GameCatalog.ID_YAKATA3 ||
+                id == GameCatalog.ID_DALK ||
+                id == GameCatalog.ID_NINGENGARI ||
+                id == GameCatalog.ID_PASCHACPP ||
+                id == GameCatalog.ID_PASCHA3 ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }
