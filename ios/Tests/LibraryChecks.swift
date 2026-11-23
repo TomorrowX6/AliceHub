@@ -3,6 +3,10 @@ import Foundation
 func SDL_SetMainReady() {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
 enum ModifierBridge { static func prepareForLaunch() {} }
+enum SaveSyncSession {
+    static func begin(game: String) {}
+    static func end(game: String) {}
+}
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }

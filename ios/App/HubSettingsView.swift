@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct HubSettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -6,6 +7,10 @@ struct HubSettingsView: View {
     @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @State private var gamepad = false
+    @State private var choosingSyncFolder = false
+    @State private var syncFolder = SaveSyncFolder.displayName
+    @State private var syncing = false
+    @State private var syncMessage: String?
 
     private var clampedConcurrency: Binding<Int> {
         Binding(
@@ -40,6 +45,31 @@ struct HubSettingsView: View {
                         HubActionLabel(title: "手柄设置", symbol: "gamecontroller")
                     }.buttonStyle(.plain)
                 }.listRowBackground(HubTheme.surface)
+                Section {
+                    if let syncFolder {
+                        HubActionLabel(title: "同步文件夹：\(syncFolder)", symbol: "icloud", navigates: false)
+                        Button { syncNow() } label: {
+                            HubActionLabel(title: syncing ? "正在同步…" : "立即同步全部存档", symbol: "arrow.triangle.2.circlepath", navigates: false)
+                        }.buttonStyle(.plain).disabled(syncing)
+                        Button { choosingSyncFolder = true } label: {
+                            HubActionLabel(title: "更换同步文件夹", symbol: "folder")
+                        }.buttonStyle(.plain)
+                        Button {
+                            SaveSyncFolder.clear()
+                            self.syncFolder = nil
+                        } label: {
+                            HubActionLabel(title: "停用存档同步", symbol: "icloud.slash", destructive: true, navigates: false)
+                        }.buttonStyle(.plain)
+                    } else {
+                        Button { choosingSyncFolder = true } label: {
+                            HubActionLabel(title: "选择同步文件夹", symbol: "icloud")
+                        }.buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("存档同步")
+                } footer: {
+                    Text("在“文件”中选择一个文件夹（例如 iCloud 云盘）。启动游戏前、切到后台时和退出游戏后，各游戏的存档会与该文件夹双向同步，以较新的文件为准；覆盖本机存档前会自动备份。删除操作不会同步。")
+                }.listRowBackground(HubTheme.surface)
                 Section("关于") {
                     Link(destination: URL(string: "https://github.com/TomorrowX6/AliceHub")!) {
                         HubActionLabel(title: "AliceHub", symbol: "curlybraces")
@@ -51,6 +81,49 @@ struct HubSettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
             .sheet(isPresented: $gamepad) { GamepadEditor(game: nil).modifier(HubAppearanceModifier()) }
+            .sheet(isPresented: $choosingSyncFolder) {
+                SyncFolderPicker { url in
+                    choosingSyncFolder = false
+                    guard let url else { return }
+                    do {
+                        try SaveSyncFolder.set(url)
+                        syncFolder = SaveSyncFolder.displayName
+                        syncNow()
+                    } catch { syncMessage = error.localizedDescription }
+                }
+            }
+            .alert("存档同步", isPresented: Binding(get: { syncMessage != nil }, set: { if !$0 { syncMessage = nil } })) {
+                Button("好", role: .cancel) { syncMessage = nil }
+            } message: { Text(syncMessage ?? "") }
+    }
+
+    private func syncNow() {
+        syncing = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let message: String
+            do {
+                let summary = try SaveSyncFolder.syncAll()
+                message = summary.map { "同步完成：下载 \($0.pulled) 个文件，上传 \($0.pushed) 个文件。" } ?? "尚未选择同步文件夹。"
+            } catch { message = error.localizedDescription }
+            DispatchQueue.main.async { syncing = false; syncMessage = message }
+        }
+    }
+}
+
+private struct SyncFolderPicker: UIViewControllerRepresentable {
+    let picked: (URL?) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(picked: picked) }
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let picked: (URL?) -> Void
+        init(picked: @escaping (URL?) -> Void) { self.picked = picked }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { picked(urls.first) }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { picked(nil) }
     }
 }
 
