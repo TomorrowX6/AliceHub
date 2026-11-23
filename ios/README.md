@@ -198,7 +198,7 @@ the Android Visual Novel, RPG and empty presets. In a game, the gamepad icon
 opens quick toggles; touches outside the controls still go to the game.
 Bluetooth and MFi controllers use SDL's GameController support and the same
 default mappings as Android. Enable physical controls in the gamepad settings;
-auto-hide is optional and only applies while a controller is connected.
+virtual controls can be toggled manually from the in-game menu or a mapped button.
 Before a scene deactivates, the bridge finishes pending GPU work, pauses audio,
 and flushes tracked saves. SDL's event pump runs UIKit without returning to the
 engine while the app is inactive, resuming only once it becomes active again.

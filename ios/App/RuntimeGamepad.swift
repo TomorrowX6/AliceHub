@@ -16,8 +16,8 @@ final class RuntimeGamepad: UIView {
             RuntimeGamepad.overlay = overlay
         }, { command in
             RuntimeGamepad.overlay?.run(command: command)
-        }, { x, y, cursor, movie, controller, ctrl in
-            RuntimeGamepad.overlay?.update(x: x, y: y, cursor: cursor, movie: movie, controller: controller, ctrl: ctrl)
+        }, { x, y, cursor, movie, _, ctrl in
+            RuntimeGamepad.overlay?.update(x: x, y: y, cursor: cursor, movie: movie, ctrl: ctrl)
         })
     }
 
@@ -26,7 +26,6 @@ final class RuntimeGamepad: UIView {
     private var profile: GamepadProfile
     private var controls: [TouchPadControl] = []
     private var inMovie = false
-    private var controllerConnected = false
     private let menuButton = UIButton(type: .system)
     private let menuPanel = UIStackView()
     private let virtualToggle = UIButton(type: .system)
@@ -173,8 +172,7 @@ final class RuntimeGamepad: UIView {
     }
 
     private func refreshVisibility() {
-        let hideControls = !profile.virtual.enabled || inMovie || !menuPanel.isHidden ||
-            (controllerConnected && profile.physical.enabled && profile.physical.autoHide)
+        let hideControls = !profile.virtual.enabled || inMovie || !menuPanel.isHidden
         if hideControls && controls.contains(where: { !$0.isHidden }) { releaseInputs() }
         controls.forEach { $0.isHidden = hideControls }
         menuButton.isHidden = inMovie
@@ -185,7 +183,7 @@ final class RuntimeGamepad: UIView {
         input_clear_virtual_inputs()
     }
 
-    private func update(x: Float, y: Float, cursor: Bool, movie: Bool, controller: Bool, ctrl: Bool) {
+    private func update(x: Float, y: Float, cursor: Bool, movie: Bool, ctrl: Bool) {
         let showCursor = cursor && menuPanel.isHidden
         if cursorView.isHidden == showCursor { cursorView.isHidden = !showCursor }
         if showCursor {
@@ -195,9 +193,8 @@ final class RuntimeGamepad: UIView {
                 layoutCursor()
             }
         }
-        if movie != inMovie || controller != controllerConnected {
+        if movie != inMovie {
             inMovie = movie
-            controllerConnected = controller
             if movie { menuPanel.isHidden = true }
             refreshVisibility()
         }

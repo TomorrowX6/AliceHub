@@ -347,6 +347,18 @@ struct LibraryChecks {
         profiles.removeOverride(for: "ゲーム/一")
         precondition(profiles.active("ゲーム/一") == global)
 
+        // Legacy saved profiles containing the removed physical.autoHide key must still decode cleanly.
+        var legacyDict = try! JSONSerialization.jsonObject(with: try! JSONEncoder().encode(local)) as! [String: Any]
+        var legacyPhysical = legacyDict["physical"] as! [String: Any]
+        legacyPhysical["autoHide"] = true
+        legacyDict["physical"] = legacyPhysical
+        let legacyData = try! JSONSerialization.data(withJSONObject: legacyDict)
+        let decodedLegacy = try! JSONDecoder().decode(GamepadProfile.self, from: legacyData)
+        precondition(decodedLegacy.physical == local.physical && decodedLegacy.virtual.enabled == local.virtual.enabled)
+        let reencoded = try! JSONSerialization.jsonObject(with: try! JSONEncoder().encode(decodedLegacy)) as! [String: Any]
+        let reencodedPhysical = reencoded["physical"] as! [String: Any]
+        precondition(reencodedPhysical["autoHide"] == nil)
+
         let json = try! JSONSerialization.jsonObject(with: Data(local.engineJSON().utf8)) as! [String: Any]
         let physical = json["physical"] as! [String: Any]
         let bindings = physical["bindings"] as! [String: [String: Any]]

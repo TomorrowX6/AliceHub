@@ -40,12 +40,25 @@ public class GamepadSensitivityTest {
         assertEquals(GamepadBridge.DEADZONE_PCT_MAX, high.getDeadzonePct());
 
         PhysicalPadConfig mid = new PhysicalPadConfig(
-                false, false, false,
+                false, false,
                 GamepadBridge.STICK_MOUSE, GamepadBridge.STICK_WHEEL, GamepadBridge.STICK_ARROWS,
                 24, 280, false, GamepadBridge.INSTANCE.defaultPhysicalBindings());
         PhysicalPadConfig parsed = PhysicalPadConfig.Companion.fromJson(mid.toJson());
         assertEquals(280, parsed.getCursorSpeedPct());
         assertEquals(24, parsed.getDeadzonePct());
+
+        // Legacy profiles containing the removed autoHideVirtualPad flag must still deserialize
+        // cleanly and omit the removed field when re-serialized.
+        PhysicalPadConfig legacy = PhysicalPadConfig.Companion.fromJson(
+                new JSONObject()
+                        .put("enabled", true)
+                        .put("autoHideVirtualPad", true)
+                        .put("swapAbXy", true)
+                        .put("cursorSpeedPct", 160));
+        assertTrue(legacy.getEnabled());
+        assertTrue(legacy.getSwapAbXy());
+        assertEquals(160, legacy.getCursorSpeedPct());
+        assertFalse(legacy.toJson().has("autoHideVirtualPad"));
     }
 
     @Test
@@ -58,12 +71,27 @@ public class GamepadSensitivityTest {
                     null, dirty -> Unit.INSTANCE, saved -> Unit.INSTANCE);
             View root = controller.buildRootView();
 
+            assertNull("Removed auto-hide switch must not appear in overview",
+                    findText(root, "接入隐藏虚拟键", "接続時仮想非表示", "Auto-hide Virtual"));
+
             SeekBar sensSeek = findSliderByLabel(root, "手柄灵敏度");
             SeekBar dzSeek = findSliderByLabel(root, "摇杆死区");
             assertNotNull("GamepadSettings must expose 手柄灵敏度 slider", sensSeek);
             assertNotNull("GamepadSettings must expose 摇杆死区 slider", dzSeek);
             assertEquals(GamepadBridge.CURSOR_SPEED_PCT_MAX - GamepadBridge.CURSOR_SPEED_PCT_MIN, sensSeek.getMax());
             assertEquals(GamepadBridge.DEADZONE_PCT_MAX - GamepadBridge.DEADZONE_PCT_MIN, dzSeek.getMax());
+
+            // Verify balanced row heights between switch rows above and slider rows below.
+            int dp44 = UiKit.INSTANCE.dpInt(controller.getUiCtx(), 44);
+            int dp48 = UiKit.INSTANCE.dpInt(controller.getUiCtx(), 48);
+            View sensRow = (View) sensSeek.getParent();
+            View dzRow = (View) dzSeek.getParent();
+            assertTrue("Slider row must have comfortable minimum height", sensRow.getMinimumHeight() >= dp44);
+            assertTrue("Slider row must have comfortable minimum height", dzRow.getMinimumHeight() >= dp44);
+            TextView hapticLabel = findText(root, "按键触感");
+            assertNotNull(hapticLabel);
+            View hapticRow = (View) hapticLabel.getParent().getParent();
+            assertEquals("Switch row must stay compact at 48dp minHeight", dp48, hapticRow.getMinimumHeight());
 
             // Simulate user dragging sensitivity to 260% and deadzone to 30%.
             setSeekFromUser(sensSeek, 260 - GamepadBridge.CURSOR_SPEED_PCT_MIN);
@@ -97,6 +125,8 @@ public class GamepadSensitivityTest {
         GamepadEditorActivity editor = Robolectric.buildActivity(GamepadEditorActivity.class, intent).setup().get();
         try {
             View decor = editor.getWindow().getDecorView();
+            assertNull("Removed auto-hide switch must not appear in editor",
+                    findText(decor, "接入隐藏虚拟键", "接続時仮想非表示", "Auto-hide Virtual"));
             // Physical tab slider has widened 20..300 range.
             SeekBar physSens = findSliderByLabel(decor, "灵敏度", "感度", "Sensitivity");
             assertNotNull("Physical tab must expose Sensitivity slider", physSens);

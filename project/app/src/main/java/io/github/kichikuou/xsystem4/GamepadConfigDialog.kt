@@ -61,7 +61,6 @@ class GamepadConfigController(
     private var vpadEnabledSwitch: Switch? = null
     private var physEnabledSwitch: Switch? = null
     private var swapAbXySwitch: Switch? = null
-    private var autoHideSwitch: Switch? = null
     private var hapticSwitch: Switch? = null
 
     private var presetBtnVn: TextView? = null
@@ -235,7 +234,7 @@ class GamepadConfigController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(12)
+                topMargin = dp(10)
             })
         }
         body.addView(masterCard, cardMarginParams())
@@ -245,7 +244,7 @@ class GamepadConfigController(
             addView(sectionHeader(tr("布局预设", "プリセット", "Preset")))
             val presetRow = LinearLayout(uiCtx).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 0, 0, dp(4))
+                setPadding(0, 0, 0, dp(6))
             }
             val btnVn = makePresetChip("ADV") { confirmApplyPreset(GamepadBridge.PRESET_VN_MOUSE) }
             val btnRpg = makePresetChip("RPG") { confirmApplyPreset(GamepadBridge.PRESET_RPG_DUNGEON) }
@@ -261,11 +260,6 @@ class GamepadConfigController(
             addDivider(this)
             swapAbXySwitch = addSwitchRow(this, "A↔B  X↔Y", tr("Switch 布局互换", "Switch配列", "Switch layout")) { checked ->
                 draft = draft.copy(physical = draft.physical.copy(swapAbXy = checked))
-                markDirty(true)
-            }
-            addDivider(this)
-            autoHideSwitch = addSwitchRow(this, tr("接入隐藏虚拟键", "接続時仮想非表示", "Auto-hide Virtual"), null) { checked ->
-                draft = draft.copy(physical = draft.physical.copy(autoHideVirtualPad = checked))
                 markDirty(true)
             }
             addDivider(this)
@@ -497,7 +491,6 @@ class GamepadConfigController(
         vpadEnabledSwitch?.isChecked = draft.virtual.enabled
         physEnabledSwitch?.isChecked = draft.physical.enabled
         swapAbXySwitch?.isChecked = draft.physical.swapAbXy
-        autoHideSwitch?.isChecked = draft.physical.autoHideVirtualPad
         hapticSwitch?.isChecked = draft.virtual.hapticFeedback
 
         scaleSeek?.progress = (draft.virtual.globalScalePct - GamepadBridge.GLOBAL_SCALE_PCT_MIN)
@@ -565,8 +558,8 @@ class GamepadConfigController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(1).coerceAtLeast(1)
             ).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(6)
+                topMargin = dp(3)
+                bottomMargin = dp(3)
             }
         })
     }
@@ -589,8 +582,8 @@ class GamepadConfigController(
         val row = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(60)
-            setPadding(0, dp(8), 0, dp(8))
+            minimumHeight = dp(48)
+            setPadding(0, 0, 0, 0)
             setBackgroundResource(R.drawable.bg_row_action)
             isFocusable = true
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -599,6 +592,7 @@ class GamepadConfigController(
         }
         val textCol = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = dp(12)
             }
@@ -651,7 +645,8 @@ class GamepadConfigController(
         val row = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
+            minimumHeight = dp(46)
+            setPadding(0, dp(6), 0, dp(6))
         }
         val lbl = TextView(uiCtx).apply {
             text = label

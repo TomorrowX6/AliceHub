@@ -178,7 +178,6 @@ struct PhysicalPad: Codable, Equatable {
     ]
 
     var enabled = false
-    var autoHide = false
     var swapAbXy = false
     var leftStickMode: PadMode = .mouse
     var rightStickMode: PadMode = .wheel

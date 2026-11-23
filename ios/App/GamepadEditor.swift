@@ -69,7 +69,6 @@ struct GamepadEditor: View {
                     }
                     Section(header: Text(padText("Physical Controller"))) {
                         Toggle(padText("Enable Controller"), isOn: $profile.physical.enabled)
-                        Toggle(padText("Auto-hide Virtual Gamepad"), isOn: $profile.physical.autoHide)
                         Toggle(padText("Swap A/B and X/Y"), isOn: $profile.physical.swapAbXy)
                         modePicker("Left stick", mode: $profile.physical.leftStickMode)
                         modePicker("Right stick", mode: $profile.physical.rightStickMode)

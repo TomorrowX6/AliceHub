@@ -113,7 +113,6 @@ data class VirtualControlSpec(
 
 data class PhysicalPadConfig(
     val enabled: Boolean = false,
-    val autoHideVirtualPad: Boolean = false,
     val swapAbXy: Boolean = false,
     val leftStickMode: Int = GamepadBridge.STICK_MOUSE,
     val rightStickMode: Int = GamepadBridge.STICK_WHEEL,
@@ -131,7 +130,6 @@ data class PhysicalPadConfig(
         }
         return JSONObject()
             .put("enabled", enabled)
-            .put("autoHideVirtualPad", autoHideVirtualPad)
             .put("swapAbXy", swapAbXy)
             .put("leftStickMode", leftStickMode)
             .put("rightStickMode", rightStickMode)
@@ -157,7 +155,6 @@ data class PhysicalPadConfig(
             }
             return PhysicalPadConfig(
                 enabled = obj.optBoolean("enabled", false),
-                autoHideVirtualPad = obj.optBoolean("autoHideVirtualPad", false),
                 swapAbXy = obj.optBoolean("swapAbXy", false),
                 leftStickMode = obj.optInt("leftStickMode", GamepadBridge.STICK_MOUSE),
                 rightStickMode = obj.optInt("rightStickMode", GamepadBridge.STICK_WHEEL),
