@@ -251,6 +251,10 @@ struct LibraryChecks {
             let g = Game(url: gDir)
             precondition(g.engine == .legacySystem3 && g.displayName == expectedName && g.artworkKey == expectedKey)
         }
+        let reCrossDir = root.appendingPathComponent("OnlyYou Re-Cross")
+        try files.createDirectory(at: reCrossDir, withIntermediateDirectories: true)
+        try Data().write(to: reCrossDir.appendingPathComponent("OY_SA.ALD"))
+        precondition(GameLibrary.isGame(reCrossDir) && Game(url: reCrossDir).artworkKey == nil)
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

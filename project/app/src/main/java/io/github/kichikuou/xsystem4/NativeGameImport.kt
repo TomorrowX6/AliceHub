@@ -245,8 +245,6 @@ object NativeGameImport {
         return when {
             isDaiakujiImport -> "Daiakuji"
             isHarukaImport -> "Haruka"
-            detectedGameId == GameCatalog.ID_RANCE41 -> "Rance41"
-            detectedGameId == GameCatalog.ID_RANCE42 -> "Rance42"
             detectedGameId == GameCatalog.ID_YAKATA2 -> "Yakata2"
             detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
             detectedGameId == GameCatalog.ID_GAKUENKING -> "GakuenKING"

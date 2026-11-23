@@ -219,7 +219,12 @@ final class GameLibrary: ObservableObject {
             let names = contents.map { $0.lastPathComponent } + [url.lastPathComponent]
             let normalized = names.joined(separator: " ").lowercased()
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
-            artworkKey = artworkAliases.first(where: { $0.1.contains(where: normalized.contains) })?.0
+                .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
+            let isOnlyYouReCross = normalized.contains("recross") || normalized.contains("リクルス")
+            artworkKey = artworkAliases.first(where: { key, tokens in
+                if key == "onlyyou" && isOnlyYouReCross { return false }
+                return tokens.contains(where: normalized.contains)
+            })?.0
         }
 
         return InspectedGame(
