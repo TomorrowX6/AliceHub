@@ -264,5 +264,27 @@ public class MamanAndMultiModTest {
         assertTrue("Cross-series switch onto un-restorable preinstalled MOD must fail", rejected);
         assertTrue(new File(preinstalledRibuluo, "Rance10MODCG.afa").isFile());
         assertFalse(new File(preinstalledRibuluo, "Rance10CGBFYY.afa").exists());
+
+        // Same-series fix patch on a preinstalled Ribuluo repack creates .vanilla.bak + journal,
+        // but must persist .mod_non_vanilla_baseline so canRestoreVanillaDir stays false and
+        // a later BFYY cross-series switch remains blocked!
+        File ribuluoFixPatch = makeDir("RibuluoFixPatch", "Rance10.ain", "extra_fix.txt");
+        GameListKt.applyModStagingToGameDirInternal(ribuluoFixPatch, preinstalledRibuluo, false, false, false);
+        assertTrue(new File(preinstalledRibuluo, "Rance10.ain.vanilla.bak").isFile());
+        assertTrue(new File(preinstalledRibuluo, ".mod_installed_files.txt").isFile());
+        assertTrue(new File(preinstalledRibuluo, Item.NON_VANILLA_BASELINE_MARKER).isFile());
+        assertFalse(Item.Companion.canRestoreVanillaDir(preinstalledRibuluo));
+        assertNull(OnlineInstaller.INSTANCE.computeUpdatePlan(
+                bfyyOnly, true, installedRibuluo, Item.Companion.canRestoreVanillaDir(preinstalledRibuluo)));
+        boolean rejectedAfterPatch = false;
+        try {
+            GameListKt.applyModStagingToGameDirInternal(bfyyStage2, preinstalledRibuluo, true, false, false);
+        } catch (Throwable t) {
+            rejectedAfterPatch = t instanceof GameList.InstallFailureException &&
+                    ((GameList.InstallFailureException) t).getMsgId() == R.string.uninstall_mod_no_backup_msg;
+        }
+        assertTrue("Cross-series switch after same-series patch on repack must still fail", rejectedAfterPatch);
+        assertTrue(new File(preinstalledRibuluo, "Rance10MODCG.afa").isFile());
+        assertFalse(new File(preinstalledRibuluo, "Rance10CGBFYY.afa").exists());
     }
 }

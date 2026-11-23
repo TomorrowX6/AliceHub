@@ -75,8 +75,9 @@ enum ModFiles {
 
 enum ModOverlay {
     static let journalName = ".mod_installed_files.txt"
+    static let nonVanillaBaselineName = ".mod_non_vanilla_baseline"
     static func detectInstalledMod(_ directory: URL) -> Bool {
-        if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) { return true }
+        if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return true }
         for file in ModFiles.children(directory).filter(ModFiles.isFile) {
             let name = file.lastPathComponent.lowercased()
             if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10cgbfyy") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10flatbfyy") && name.hasSuffix(".afa")) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
@@ -86,7 +87,8 @@ enum ModOverlay {
         return saveFolder == "modsavedata" || saveFolder == "savedatabfyy" || name.contains("收费必是倒卖") || name.contains("日不落") || name.contains("全系列") || name.lowercased().contains("bfyy") || name.contains("[MOD")
     }
     static func canRestoreVanilla(_ directory: URL) -> Bool {
-        ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
+        if ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return false }
+        return ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
     }
     static func displayName(_ directory: URL, baseName: String? = nil) -> String {
         let info = InstalledModInfo.readOrInfer(directory)
@@ -188,8 +190,8 @@ enum ModOverlay {
     static func applyModStaging(_ staging: URL, to target: URL, cleanReplace: Bool = true, isCnPatch: Bool = false, allowEvenicle2IncrementalDetect: Bool = false, commit: (Bool) throws -> Void = { _ in }) throws -> Bool {
         if isCnPatch && ModGameDescriptor.classifyDirectory(target)?.id == "evenicle2" { try normalizeEvenicle2CnPatchStaging(staging) }
         let root = try findModRootDir(staging, isCnPatch: isCnPatch)
-        var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
-        var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
+        var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(nonVanillaBaselineName), target.appendingPathComponent(nonVanillaBaselineName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
+        var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(nonVanillaBaselineName), target.appendingPathComponent(nonVanillaBaselineName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
         let before = try ModFiles.walk(target)
         let directories = before.filter(ModFiles.isDirectory).map { $0.canonicalFileURL }
         let directoryPaths = Set(directories.map(\.path))
@@ -268,12 +270,17 @@ enum ModOverlay {
         let full = isStandaloneFullModDir(root)
         let files = try ModFiles.walk(root).filter(ModFiles.isFile)
         let clean = evenicle2 && cleanReplace && allowEvenicle2IncrementalDetect ? files.contains(where: { $0.lastPathComponent.lowercased() == "evenicle2cg.afa" }) : cleanReplace
-        if !isCnPatch && detectInstalledMod(target) && !canRestoreVanilla(target) {
+        let nonVanillaBaseline = !isCnPatch && detectInstalledMod(target) && !canRestoreVanilla(target)
+        if nonVanillaBaseline {
             let storedGroup = InstalledModInfo.readOrInfer(target)?.group ?? ""
             let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: target) : storedGroup
             let incomingGroup = ModCatalog.inferModGroup(directory: root)
             if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
                 throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+            }
+            let baselineMarker = target.appendingPathComponent(nonVanillaBaselineName)
+            if !ModFiles.isFile(baselineMarker) {
+                try ModFiles.journal(["preinstalled-mod"], to: baselineMarker)
             }
         }
         if clean && (detectInstalledMod(target) || canRestoreVanilla(target)) { try restoreVanilla(target) }

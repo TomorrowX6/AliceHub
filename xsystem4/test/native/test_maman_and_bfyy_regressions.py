@@ -313,7 +313,27 @@ int main(void) {
     assert(g_exists[5] && g_parts[5].scrollbar != NULL);
     assert(PE_GetHScrollbarTotalSize(5) == 200);
     assert(PE_GetHScrollbarScrollPos(5) == 50);
+    // Mismatched orientation or scrollbar/sliderbar kind must return 0 without reading/clobbering part 5.
+    assert(PE_GetVScrollbarTotalSize(5) == 0);
+    assert(PE_GetVScrollbarScrollPos(5) == 0);
+    assert(PE_GetHSliderBarTotalSize(5) == 0);
+    assert(PE_GetHSliderBarScrollPos(5) == 0);
+    assert(PE_GetVSliderBarTotalSize(5) == 0);
+    assert(PE_GetHScrollbarTotalSize(5) == 200);
+    assert(PE_GetHScrollbarScrollPos(5) == 50);
     parts_scrollbar_free(&g_parts[5]);
+
+    // Sliderbar getters match their own kind/orientation and reject mismatched kinds/orientations.
+    PE_SetVSliderBarTotalSize(6, 300);
+    PE_SetVSliderBarViewSize(6, 100);
+    PE_SetVSliderBarScrollPos(6, 80);
+    assert(PE_GetVSliderBarTotalSize(6) == 300);
+    assert(PE_GetVSliderBarScrollPos(6) == 80);
+    assert(PE_GetHSliderBarTotalSize(6) == 0);
+    assert(PE_GetVScrollbarTotalSize(6) == 0);
+    assert(PE_GetHScrollbarTotalSize(6) == 0);
+    assert(PE_GetVSliderBarTotalSize(6) == 300);
+    parts_scrollbar_free(&g_parts[6]);
 
     // Legacy parts_v2 == false keeps 0-based part IDs working.
     parts_v2 = false;

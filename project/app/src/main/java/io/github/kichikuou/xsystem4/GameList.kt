@@ -189,9 +189,12 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 ?: dir.name.takeIf { it.isNotBlank() }
         }
 
+        const val NON_VANILLA_BASELINE_MARKER = ".mod_non_vanilla_baseline"
+
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
             if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
-                File(dir, ".mod_installed_files.txt").isFile
+                File(dir, ".mod_installed_files.txt").isFile ||
+                File(dir, NON_VANILLA_BASELINE_MARKER).isFile
             ) {
                 return true
             }
@@ -240,6 +243,9 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         }
 
         fun canRestoreVanillaDir(dir: File): Boolean {
+            if (File(dir, NON_VANILLA_BASELINE_MARKER).isFile) {
+                return false
+            }
             return File(dir, ".mod_installed_files.txt").isFile ||
                 (dir.listFiles()?.any { it.name.endsWith(".vanilla.bak") } == true)
         }
@@ -1605,7 +1611,28 @@ class GameList(activity: Activity) {
     fun canRestoreVanilla(item: Item): Boolean = Item.canRestoreVanillaDir(item.path)
 
     private fun maybeRecordPreinstalledModMeta(gameDir: File, srcUri: Uri) {
-        if (!hasInstalledModDir(gameDir) || File(gameDir, InstalledModInfo.META_FILE_NAME).isFile) {
+        if (!hasInstalledModDir(gameDir)) {
+            return
+        }
+        if (!Item.canRestoreVanillaDir(gameDir)) {
+            val marker = File(gameDir, Item.NON_VANILLA_BASELINE_MARKER)
+            if (!marker.isFile) {
+                try {
+                    val tmp = File(gameDir, "${Item.NON_VANILLA_BASELINE_MARKER}.tmp")
+                    tmp.outputStream().use { out ->
+                        out.write("preinstalled-mod\n".toByteArray(Charsets.UTF_8))
+                        out.flush()
+                        out.fd.sync()
+                    }
+                    if (!tmp.renameTo(marker)) {
+                        tmp.delete()
+                    }
+                } catch (t: Throwable) {
+                    Log.w("GameList", "Failed to write non-vanilla baseline marker", t)
+                }
+            }
+        }
+        if (File(gameDir, InstalledModInfo.META_FILE_NAME).isFile) {
             return
         }
         val srcLabel = resolveUriDisplayName(srcUri)
@@ -1646,6 +1673,7 @@ class GameList(activity: Activity) {
 
     fun restoreMod(item: Item): Boolean {
         if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) return false
+        if (!canRestoreVanilla(item)) return false
         isRestoringMod = true
         return try {
             restoreVanillaFromMod(item.path)
@@ -1661,6 +1689,9 @@ class GameList(activity: Activity) {
 
     fun launchRestoreMod(item: Item, onDone: (Boolean) -> Unit): Boolean {
         if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) {
+            return false
+        }
+        if (!canRestoreVanilla(item)) {
             return false
         }
         isRestoringMod = true
@@ -2303,12 +2334,28 @@ internal fun applyModStagingToGameDirInternal(
     } else {
         cleanReplaceIfStandalone
     }
-    if (!isCnPatch && Item.detectInstalledMod(targetDir) && !Item.canRestoreVanillaDir(targetDir)) {
+    val nonVanillaBaseline = !isCnPatch &&
+        Item.detectInstalledMod(targetDir) &&
+        !Item.canRestoreVanillaDir(targetDir)
+    if (nonVanillaBaseline) {
         val existingGroup = InstalledModInfo.readOrInfer(targetDir)?.group.orEmpty()
             .ifBlank { OnlineInstaller.inferModGroup("", targetDir) }
         val incomingGroup = OnlineInstaller.inferModGroup("", modRoot)
         if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
             throw GameList.InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+        }
+        val marker = File(targetDir, Item.NON_VANILLA_BASELINE_MARKER)
+        if (!marker.isFile) {
+            val markerTmp = File(targetDir, "${Item.NON_VANILLA_BASELINE_MARKER}.tmp")
+            markerTmp.outputStream().use { out ->
+                out.write("preinstalled-mod\n".toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
+            if (!markerTmp.renameTo(marker)) {
+                markerTmp.delete()
+                throw IOException("Failed to commit non-vanilla baseline marker: $marker")
+            }
         }
     }
     if (effectiveCleanReplace && (Item.detectInstalledMod(targetDir) || Item.canRestoreVanillaDir(targetDir))) {

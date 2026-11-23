@@ -424,6 +424,24 @@ struct ModChecks {
             preconditionFailure("Accepted cross-series switch onto un-restorable preinstalled MOD")
         } catch {}
         precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent("Rance10MODCG.afa")) && !ModFiles.exists(preinstalledRibuluo.appendingPathComponent("Rance10CGBFYY.afa")))
+        // Same-series fix patch on preinstalled Ribuluo repack creates .vanilla.bak + journal,
+        // but must persist .mod_non_vanilla_baseline so canRestoreVanilla stays false and
+        // a later BFYY cross-series switch remains blocked!
+        let ribuluoPatchStage = try directory("ribuluoPatchStage")
+        try write(ribuluoPatchStage, "Rance10.ain", "ribuluo-patched")
+        try write(ribuluoPatchStage, "extra_fix.txt", "fix")
+        _ = try ModOverlay.applyModStaging(ribuluoPatchStage, to: preinstalledRibuluo, cleanReplace: false)
+        precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent("Rance10.ain.vanilla.bak")))
+        precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent(ModOverlay.journalName)))
+        precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent(ModOverlay.nonVanillaBaselineName)))
+        precondition(!ModOverlay.canRestoreVanilla(preinstalledRibuluo))
+        precondition(ModCatalog.computeUpdatePlan(bfyyList, hasMod: true, installed: installedRibuluo, canRestore: ModOverlay.canRestoreVanilla(preinstalledRibuluo)) == nil)
+        precondition(ModManagerPolicy.actions(bfyyList, index: 0, hasMod: true, installed: installedRibuluo, canRestore: ModOverlay.canRestoreVanilla(preinstalledRibuluo)).isEmpty)
+        do {
+            _ = try ModOverlay.applyModStaging(bfyyBlockedStage, to: preinstalledRibuluo)
+            preconditionFailure("Accepted cross-series switch after same-series patch on preinstalled MOD")
+        } catch {}
+        precondition(ModFiles.isFile(preinstalledRibuluo.appendingPathComponent("Rance10MODCG.afa")) && !ModFiles.exists(preinstalledRibuluo.appendingPathComponent("Rance10CGBFYY.afa")))
         print("PASS: multi-MOD group isolation, cross-group switching, BFYY detection, displayName and legacy metadata inference")
     }
 }

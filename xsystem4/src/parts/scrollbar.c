@@ -215,14 +215,15 @@ static struct parts *scrollbar(int no, bool horizontal)
 	return parts;
 }
 
-static struct parts *scrollbar_get_existing(int no, bool horizontal)
+static struct parts *scrollbar_get_existing(int no, bool horizontal, bool is_slider)
 {
 	if (parts_v2 && no <= 0)
 		return NULL;
 	struct parts *parts = parts_try_get(no);
 	if (!parts || !parts->scrollbar)
 		return NULL;
-	(void)horizontal;
+	if (parts->scrollbar->horizontal != horizontal || parts->scrollbar->is_slider != is_slider)
+		return NULL;
 	return parts;
 }
 
@@ -486,30 +487,30 @@ void PE_Set##axis##ScrollbarScrollRate(int no, float rate) { \
 void PE_Set##axis##ScrollbarMoveSizeByButton(int no, int size) { \
 	struct parts *p = scrollbar(no, horizontal); if (p) p->scrollbar->step = size; } \
 int PE_Get##axis##ScrollbarTotalSize(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->total : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->total : 0; } \
 int PE_Get##axis##ScrollbarViewSize(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->view : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->view : 0; } \
 int PE_Get##axis##ScrollbarScrollPos(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->pos : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->pos : 0; } \
 float PE_Get##axis##ScrollbarScrollRate(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->rate : 0.f; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->rate : 0.f; } \
 int PE_Get##axis##ScrollbarMoveSizeByButton(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->step : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->step : 0; } \
 void PE_Set##axis##ScrollTotalSizeLinkNumber(int no, int target) { \
 	struct parts *p = scrollbar(no, horizontal); if (p) p->scrollbar->total_link = target; } \
 void PE_Set##axis##ScrollViewSizeLinkNumber(int no, int target) { \
 	struct parts *p = scrollbar(no, horizontal); if (p) p->scrollbar->view_link = target; } \
 int PE_Get##axis##ScrollTotalSizeLinkNumber(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->total_link : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->total_link : 0; } \
 int PE_Get##axis##ScrollViewSizeLinkNumber(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->view_link : 0; }
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->view_link : 0; }
 SCROLLBAR_API(V, false)
 SCROLLBAR_API(H, true)
 #undef SCROLLBAR_API
 
 #define END_API(axis, horizontal, end, field) \
 void PE_Set##axis##Scrollbar##end(int no, int size) { struct parts *p = scrollbar(no, horizontal); if (!p || p->scrollbar->field == size) return; p->scrollbar->field = size; parts_dirty(p); } \
-int PE_Get##axis##Scrollbar##end(int no) { struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->field : 0; }
+int PE_Get##axis##Scrollbar##end(int no) { struct parts *p = scrollbar_get_existing(no, horizontal, false); return p ? p->scrollbar->field : 0; }
 END_API(V, false, UpHeight, before)
 END_API(V, false, DownHeight, after)
 END_API(H, true, LeftWidth, before)
@@ -523,7 +524,7 @@ void PE_Set##axis##Scrollbar##part##kind##Name(int no, struct string *name) { \
 	if (!strcmp((*target)->text, name->text)) return; \
 	struct string *copy = string_dup(name); free_string(*target); *target = copy; parts_scrollbar_rebuild(p); } \
 struct string *PE_Get##axis##Scrollbar##part##kind##Name(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); \
+	struct parts *p = scrollbar_get_existing(no, horizontal, false); \
 	return p ? string_dup(p->scrollbar->names[flat][index]) : string_ref(&EMPTY_STRING); }
 #define NAMES(axis, horizontal, first, last, kind, flat) \
 NAME_API(axis, horizontal, , 0, kind, flat) \
@@ -572,21 +573,21 @@ void PE_Set##axis##SliderBarScrollRate(int no, float rate) { \
 	if (s->rate == clamped && s->pos == new_pos) return; \
 	s->rate = clamped; s->pos = new_pos; parts_dirty(p); } \
 int PE_Get##axis##SliderBarTotalSize(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->total : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->total : 0; } \
 int PE_Get##axis##SliderBarViewSize(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->view : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->view : 0; } \
 int PE_Get##axis##SliderBarScrollPos(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->pos : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->pos : 0; } \
 float PE_Get##axis##SliderBarScrollRate(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->rate : 0.f; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->rate : 0.f; } \
 void PE_Set##axis##SliderTotalSizeLinkNumber(int no, int target) { \
 	struct parts *p = sliderbar(no, horizontal); if (p) p->scrollbar->total_link = target; } \
 void PE_Set##axis##SliderViewSizeLinkNumber(int no, int target) { \
 	struct parts *p = sliderbar(no, horizontal); if (p) p->scrollbar->view_link = target; } \
 int PE_Get##axis##SliderTotalSizeLinkNumber(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->total_link : 0; } \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->total_link : 0; } \
 int PE_Get##axis##SliderViewSizeLinkNumber(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); return p ? p->scrollbar->view_link : 0; }
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); return p ? p->scrollbar->view_link : 0; }
 SLIDERBAR_API(V, false)
 SLIDERBAR_API(H, true)
 #undef SLIDERBAR_API
@@ -598,7 +599,7 @@ void PE_Set##axis##SliderBar##part##kind##Name(int no, struct string *name) { \
 	if (!strcmp((*target)->text, name->text)) return; \
 	struct string *copy = string_dup(name); free_string(*target); *target = copy; parts_scrollbar_rebuild(p); } \
 struct string *PE_Get##axis##SliderBar##part##kind##Name(int no) { \
-	struct parts *p = scrollbar_get_existing(no, horizontal); \
+	struct parts *p = scrollbar_get_existing(no, horizontal, true); \
 	return p ? string_dup(p->scrollbar->names[flat][index]) : string_ref(&EMPTY_STRING); }
 #define SLIDER_NAMES(axis, horizontal, kind, flat) \
 SLIDER_NAME_API(axis, horizontal, , 0, kind, flat) \
