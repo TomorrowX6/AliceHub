@@ -482,6 +482,30 @@ public class DownloadConcurrencyTest {
         assertArrayEquals(payload, Files.readAllBytes(fallbackPart.toPath()));
         assertEquals("200 OK fallback must stream directly in 1 request", 1, recordedRequests.size());
 
+        // Resumed download receiving HTTP 200 truncates the existing .part file, so space check
+        // must credit existingPartBytes instead of falsely failing with import_no_space.
+        File tightDir = tmp.newFolder("seg-tight-200").getCanonicalFile();
+        File tightPart = new File(tightDir, "no-range.zip.part");
+        byte[] existingPrefix = new byte[payload.length / 2];
+        System.arraycopy(payload, 0, existingPrefix, 0, existingPrefix.length);
+        Files.write(tightPart.toPath(), existingPrefix);
+        // Available bytes = 64 MB headroom + (payload.length / 2) + 8 KB: enough for remaining half, < full payload!
+        long tightAvailBytes = 64L * 1024L * 1024L + (payload.length / 2L) + 8192L;
+        ShadowStatFs.registerStats(tightDir.getPath(), (int) (tightAvailBytes / 4096L) + 100, (int) (tightAvailBytes / 4096L), (int) (tightAvailBytes / 4096L));
+        OnlineInstaller.INSTANCE.downloadFileWithResume(
+                localUrl("/no-range.zip"),
+                tightPart,
+                payload.length,
+                hash,
+                Collections.emptyMap(),
+                null,
+                () -> Unit.INSTANCE,
+                (done, total, speed) -> Unit.INSTANCE,
+                8,
+                32 * 1024L
+        );
+        assertArrayEquals(payload, Files.readAllBytes(tightPart.toPath()));
+
         // Hashless 200 OK fallback with mismatched Content-Length / oversized body must be rejected
         byte[] wrongPayload = pattern(payload.length + 1024, 77);
         Resource wrongSizeNoRange = new Resource(wrongPayload, "\"wrong-size\"");

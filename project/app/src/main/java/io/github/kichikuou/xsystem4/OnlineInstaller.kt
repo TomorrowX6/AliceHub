@@ -2957,8 +2957,10 @@ object OnlineInstaller {
                     throw IOException("Downloaded size mismatch: expected $enforcedExpected, got $cl")
                 }
                 val finalTotal = if (enforcedExpected > 0L) enforcedExpected else cl
-                if (finalTotal > 0L) {
-                    ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, finalTotal)
+                val existingPartBytes = if (destPartFile.isFile) destPartFile.length() else 0L
+                val additionalNeeded = (finalTotal - existingPartBytes).coerceAtLeast(0L)
+                if (additionalNeeded > 0L) {
+                    ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, additionalNeeded)
                 }
                 writeSavedMeta(metaFile, url, respEtag, finalTotal, expectedSha256, segmented = false)
                 val input = probeConn.inputStream
