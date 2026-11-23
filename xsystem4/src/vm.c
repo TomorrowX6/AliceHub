@@ -77,6 +77,20 @@ static inline void stack_ensure(int extra)
 	}
 }
 
+void vm_stack_ensure(size_t needed)
+{
+	if (stack && needed < stack_size)
+		return;
+	size_t new_size = stack_size ? stack_size : INITIAL_STACK_SIZE;
+	while (new_size <= needed) {
+		if (new_size > SIZE_MAX / 2 / sizeof(union vm_value))
+			VM_ERROR("VM stack size overflow");
+		new_size *= 2;
+	}
+	stack = xrealloc(stack, new_size * sizeof(union vm_value));
+	stack_size = new_size;
+}
+
 // Stack of function call frames
 struct function_call call_stack[4096];
 int32_t call_stack_ptr = 0;
