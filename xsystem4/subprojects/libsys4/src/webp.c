@@ -113,7 +113,9 @@ void webp_extract(uint8_t *data, size_t size, struct cg *cg, struct archive *ar)
 		return;
 	}
 	over_depth++;
-	struct cg *base_cg = cg_load(ar, base-1);
+	struct cg *base_cg = cg_load_base_by_id(base);
+	if (!base_cg)
+		base_cg = cg_load(ar, base-1);
 	over_depth--;
 	if (!base_cg) {
 		WARNING("failed to load webp base CG");

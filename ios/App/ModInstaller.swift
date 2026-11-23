@@ -142,7 +142,9 @@ final class ModInstaller: ObservableObject {
 
     func downloadVerifiedFile(_ release: ModReleaseEntry, cache: URL,
                               progress: @escaping (Int64, Int64) -> Void) throws -> URL {
-        try download(release, games: cache, prefix: "", cacheDirectory: cache, progress: progress)
+        lock.lock(); cancelled = false; networkTask = nil; lock.unlock()
+        defer { lock.lock(); networkTask = nil; lock.unlock() }
+        return try download(release, games: cache, prefix: "", cacheDirectory: cache, progress: progress)
     }
 
     private func download(_ release: ModReleaseEntry, games: URL, prefix: String,
@@ -152,7 +154,7 @@ final class ModInstaller: ObservableObject {
         let hash = release.expectedSha256 ?? ""
         guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message("SHA-256 校验值无效") }
         let identity = hash.count >= 16 ? String(hash.prefix(16)) : String(SHA256.hash(data: Data(release.downloadUrl.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
-        let ext = [".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz"].first { release.fileName.lowercased().hasSuffix($0) } ?? ".rar"
+        let ext = [".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz", ".afa", ".ald"].first { release.fileName.lowercased().hasSuffix($0) } ?? ".rar"
         let part = cache.appendingPathComponent("mod_" + identity + ext + ".part")
         let meta = part.appendingPathExtension("meta")
         func metadata() -> [String: Any]? {

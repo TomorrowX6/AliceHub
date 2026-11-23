@@ -29,6 +29,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <ctype.h>
+#include <dirent.h>
 #include <stdarg.h>
 #include <locale.h>
 #include <unistd.h>
@@ -486,6 +489,47 @@ static void init_signalhandler() {
 }
 #endif
 
+static bool is_uncensored_cg_ald_name(const char *name) {
+	if (!name || !name[0] || name[0] == '.')
+		return false;
+	size_t len = strlen(name);
+	if (len < 14 || strcasecmp(name + len - 4, ".ald") != 0)
+		return false;
+	static const char needle[] = "uncensored";
+	for (const char *p = name; *p; p++) {
+		size_t k = 0;
+		while (needle[k] && p[k] && tolower((unsigned char)p[k]) == needle[k])
+			k++;
+		if (needle[k] == '\0')
+			return true;
+	}
+	return false;
+}
+
+static void register_uncensored_cg_overlay(bool use_mmap) {
+	DIR *dir = opendir(".");
+	if (!dir)
+		return;
+	char *chosen = NULL;
+	struct dirent *ent;
+	while ((ent = readdir(dir)) != NULL) {
+		if (!is_uncensored_cg_ald_name(ent->d_name))
+			continue;
+		if (!chosen ||
+		    !strcasecmp(ent->d_name, "AliceHubUncensoredCG.ald") ||
+		    (strcasecmp(chosen, "AliceHubUncensoredCG.ald") != 0 &&
+		     strcasecmp(ent->d_name, chosen) < 0)) {
+			free(chosen);
+			chosen = strdup(ent->d_name);
+		}
+	}
+	closedir(dir);
+	if (chosen) {
+		ald_init_overlay(DRIFILE_CG, chosen, use_mmap);
+		free(chosen);
+	}
+}
+
 static void registerGameFiles(void) {
 	if (nact->files.cnt[DRIFILE_SCO] == 0)
 		SYSERROR("No Scenario data available");
@@ -497,6 +541,7 @@ static void registerGameFiles(void) {
 		}
 		ald_init(type, nact->files.game_fname[type], nact->files.cnt[type], use_mmap);
 	}
+	register_uncensored_cg_overlay(true);
 	if (nact->files.save_path)
 		fc_init(nact->files.save_path);
 }

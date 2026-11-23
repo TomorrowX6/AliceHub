@@ -7,6 +7,8 @@ struct GameDetailView: View {
     @State private var destination: Destination?
     @State private var deleting = false
     @State private var modDescriptor: ModGameDescriptor?
+    @State private var uncensoredDescriptor: UncensoredGameDescriptor?
+    @State private var uncensoredInstalled = false
     @State private var supportsSaveEditor = false
     @State private var loadedCapabilities = false
 
@@ -15,7 +17,7 @@ struct GameDetailView: View {
     }
 
     private enum Destination: String, Identifiable {
-        case saves, gamepad, mods, editor
+        case saves, gamepad, mods, uncensored, editor
         var id: String { rawValue }
     }
 
@@ -30,6 +32,9 @@ struct GameDetailView: View {
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
                         HubBadge(title: active.engine.rawValue)
+                        if uncensoredInstalled {
+                            HubBadge(title: "无码", success: true)
+                        }
                     }
                     Button { library.launch(active) } label: {
                         Label("开始游戏", systemImage: "play.fill")
@@ -42,6 +47,10 @@ struct GameDetailView: View {
                     Divider()
                     if let descriptor = modDescriptor {
                         action(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", "shippingbox", .mods)
+                        Divider()
+                    }
+                    if uncensoredDescriptor != nil {
+                        action(uncensoredInstalled ? "无码补丁 · 已安装" : "无码补丁", "sparkles", .uncensored)
                         Divider()
                     }
                     if active.engine == .system4 {
@@ -72,10 +81,14 @@ struct GameDetailView: View {
             if !loadedCapabilities {
                 loadedCapabilities = true
                 modDescriptor = ModGameDescriptor.classifyDirectory(active.url)
+                uncensoredDescriptor = UncensoredGameDescriptor.classifyDirectory(active.url)
                 supportsSaveEditor = SaveEditorView.supports(active.url)
             }
+            uncensoredInstalled = UncensoredPatchStore.isInstalled(active.url)
         }
-        .sheet(item: $destination) { target in
+        .sheet(item: $destination, onDismiss: {
+            uncensoredInstalled = UncensoredPatchStore.isInstalled(currentGame.url)
+        }) { target in
             Group {
                 switch target {
                 case .saves: SaveManagerView(game: active)
@@ -84,6 +97,10 @@ struct GameDetailView: View {
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
                         ModManagerView(game: active, descriptor: descriptor, library: library)
+                    }
+                case .uncensored:
+                    if let unc = uncensoredDescriptor ?? UncensoredGameDescriptor.classifyDirectory(active.url) {
+                        UncensoredPatchView(game: active, descriptor: unc, library: library)
                     }
                 }
             }.modifier(HubAppearanceModifier())

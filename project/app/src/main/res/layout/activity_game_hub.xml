@@ -154,6 +154,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/mod_mgr_activity_title" />
+
+            <Button
+                android:id="@+id/btn_hub_uncensored_patch"
+                style="@style/Widget.Launcher.ActionRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/uncensored_patch_title"
+                android:visibility="gone" />
         </LinearLayout>
 
         <LinearLayout

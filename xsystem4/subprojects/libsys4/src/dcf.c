@@ -195,16 +195,25 @@ void dcf_apply_diff(struct cg *base, struct cg *diff, const uint8_t *chunk_map, 
 
 static struct cg *dcf_get_base_cg(const char *name, struct archive *ar)
 {
-	struct string *tmp = (ar->conv ? ar->conv : make_string)(name, strlen(name));
-	char *basename = archive_basename(tmp->text);
-	free_string(tmp);
-
-	struct archive_data *data = archive_get_by_basename(ar, basename);
-	free(basename);
-	if (!data)
+	static _Thread_local int dcf_depth = 0;
+	if (dcf_depth >= 8) {
+		WARNING("DCF base CG recursion depth exceeded (%d)", dcf_depth);
 		return NULL;
-	struct cg *cg = cg_load_data(data);
-	archive_free_data(data);
+	}
+	struct string *tmp = (ar && ar->conv ? ar->conv : make_string)(name, strlen(name));
+	dcf_depth++;
+	struct cg *cg = cg_load_base_by_name(tmp->text);
+	if (!cg && ar) {
+		char *basename = archive_basename(tmp->text);
+		struct archive_data *data = archive_get_by_basename(ar, basename);
+		free(basename);
+		if (data) {
+			cg = cg_load_data(data);
+			archive_free_data(data);
+		}
+	}
+	dcf_depth--;
+	free_string(tmp);
 	return cg;
 }
 

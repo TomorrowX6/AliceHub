@@ -114,6 +114,40 @@ drifiles *dri_init(const char **file, int cnt, bool use_mmap) {
 	return d;
 }
 
+drifiles *dri_init_optional(const char *file, bool use_mmap) {
+	if (!file || !file[0])
+		return NULL;
+	FILE *fp = fopen(file, "rb");
+	if (!fp)
+		return NULL;
+	drifiles *d = calloc(1, sizeof(drifiles));
+	if (!d) {
+		fclose(fp);
+		return NULL;
+	}
+#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__)
+	use_mmap = false;
+#endif
+	if (!read_index(1, d, fp)) {
+		WARNING("%s: ignoring invalid overlay ALD file", file);
+		fclose(fp);
+		free(d->link);
+		free(d->offset);
+		free(d);
+		return NULL;
+	}
+	d->fnames[0] = strdup(file);
+	fclose(fp);
+	if (use_mmap) {
+		mmap_t *m = map_file(file);
+		if (m) {
+			d->mmap[0] = m;
+			d->mmapped = true;
+		}
+	}
+	return d;
+}
+
 bool dri_is_linked(drifiles *d, int no) {
 	return no >= 0 && no < d->nr_files && d->link[no * 3];
 }
