@@ -39,7 +39,7 @@ public class Wave1CatalogTest {
         GameDescriptor er = GameCatalog.INSTANCE.descriptorForWithResolver(
                 GameCatalog.ID_EVENICLERANCE, null, id -> "Evenicle Rance");
         assertEquals("EvenicleRance", er.getDefaultDirName());
-        assertEquals("EvenicleRance.ain", er.getExpectedAinName());
+        assertNull(er.getExpectedAinName());
         assertEquals(OnlineInstaller.EVENICLERANCE_CDN_URL, er.getOnlineBaseCdnUrl());
         assertTrue(er.getSupportsOnlineBaseInstall());
         assertFalse(er.getSupportsOnlineMod());
@@ -47,7 +47,7 @@ public class Wave1CatalogTest {
         GameDescriptor hh = GameCatalog.INSTANCE.descriptorForWithResolver(
                 GameCatalog.ID_HAHARANMAN, null, id -> "Haha Ranman");
         assertEquals("Haharanman", hh.getDefaultDirName());
-        assertEquals("Haharanman.ain", hh.getExpectedAinName());
+        assertNull(hh.getExpectedAinName());
         assertEquals(OnlineInstaller.HAHARANMAN_CDN_URL, hh.getOnlineBaseCdnUrl());
 
         GameDescriptor t2 = GameCatalog.INSTANCE.descriptorForWithResolver(
@@ -59,13 +59,13 @@ public class Wave1CatalogTest {
         GameDescriptor t3j = GameCatalog.INSTANCE.descriptorForWithResolver(
                 GameCatalog.ID_TSUMAMIGUI3JUN, null, id -> "Tsumamigui 3 Spin-off: Pure Love");
         assertEquals("Tsumamigui3Jun", t3j.getDefaultDirName());
-        assertEquals("Tsuma3SO_Junai.ain", t3j.getExpectedAinName());
+        assertNull(t3j.getExpectedAinName());
         assertEquals(OnlineInstaller.TSUMAMIGUI3JUN_CDN_URL, t3j.getOnlineBaseCdnUrl());
 
         GameDescriptor t3n = GameCatalog.INSTANCE.descriptorForWithResolver(
                 GameCatalog.ID_TSUMAMIGUI3NTR, null, id -> "Tsumamigui 3 Spin-off: NTR");
         assertEquals("Tsumamigui3Ntr", t3n.getDefaultDirName());
-        assertEquals("Tsuma3SO_Netorare.ain", t3n.getExpectedAinName());
+        assertNull(t3n.getExpectedAinName());
         assertEquals(OnlineInstaller.TSUMAMIGUI3NTR_CDN_URL, t3n.getOnlineBaseCdnUrl());
 
         assertEquals(397398161L, AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.EVENICLERANCE_CDN_URL));
@@ -218,5 +218,30 @@ public class Wave1CatalogTest {
                 Arrays.asList("AliceStart.ini", "EvenicleRance.ain")));
         assertEquals("Haharanman", NativeGameImport.INSTANCE.resolveImportBaseNameFromFileNames(
                 Arrays.asList("AliceStart.ini", "Haharanman.ain")));
+
+        // Alternate recognized AIN filenames and companion assets must pass validateImportedGameDir
+        // while opposite spin-off editions are still rejected.
+        File altJun = tmp.newFolder("alt_jun");
+        assertTrue(new File(altJun, "Tsumamigui3Jun.ain").createNewFile());
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(altJun, null, GameCatalog.ID_TSUMAMIGUI3JUN));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(altJun, null, GameCatalog.ID_TSUMAMIGUI3NTR));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(altJun, null, GameCatalog.ID_TSUMAMIGUI3));
+
+        File altNtr = tmp.newFolder("alt_ntr");
+        assertTrue(new File(altNtr, "Tsumamigui3Ntr.ain").createNewFile());
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(altNtr, null, GameCatalog.ID_TSUMAMIGUI3NTR));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(altNtr, null, GameCatalog.ID_TSUMAMIGUI3JUN));
+
+        File altEr = tmp.newFolder("alt_er");
+        assertTrue(new File(altEr, "GameCN.ain").createNewFile());
+        assertTrue(new File(altEr, "EvenicleRanceCG.afa").createNewFile());
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(altEr, null, GameCatalog.ID_EVENICLERANCE));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(altEr, null, GameCatalog.ID_EVENICLE));
+
+        File altHh = tmp.newFolder("alt_hh");
+        assertTrue(new File(altHh, "GameCN.ain").createNewFile());
+        assertTrue(new File(altHh, "HaharanmanFont.fnl").createNewFile());
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(altHh, null, GameCatalog.ID_HAHARANMAN));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(altHh, null, GameCatalog.ID_MAMAN));
     }
 }

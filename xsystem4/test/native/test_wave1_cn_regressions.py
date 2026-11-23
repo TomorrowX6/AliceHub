@@ -201,9 +201,11 @@ int main(void) {{
 
     def test_tsumamigui3_spinoff_early_v8_message_mapping_and_vm_guard(self):
         vm_src = (ROOT / "src/vm.c").read_text(encoding="utf-8", errors="ignore")
-        self.assertIn(
-            'ain->version > 8 || (ain->version == 8 && (game_maman || ain_get_library(ain, "String") >= 0))',
-            vm_src,
+        self.assertEqual(
+            vm_src.count(
+                "ain->version > 8 || (ain->version == 8 && !game_tsumamigui3_jun && !game_tsumamigui3_ntr)"
+            ),
+            2,
         )
 
         harness = r"""

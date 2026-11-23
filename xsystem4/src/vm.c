@@ -2426,7 +2426,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case A_SORT: {
 		int fno = stack_pop().i;
-		int obj = (ain->version > 8 || (ain->version == 8 && (game_maman || ain_get_library(ain, "String") >= 0)))
+		int obj = (ain->version > 8 || (ain->version == 8 && !game_tsumamigui3_jun && !game_tsumamigui3_ntr))
 			? stack_pop().i : -1;
 		int array = stack_pop_var()->i;
 		array_sort(heap[array].page, fno, obj);
@@ -2434,7 +2434,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case A_FIND: {
 		int fno = stack_pop().i;
-		int obj = (ain->version > 8 || (ain->version == 8 && (game_maman || ain_get_library(ain, "String") >= 0)))
+		int obj = (ain->version > 8 || (ain->version == 8 && !game_tsumamigui3_jun && !game_tsumamigui3_ntr))
 			? stack_pop().i : -1;
 		union vm_value v = stack_pop();
 		int end = stack_pop().i;
