@@ -1443,8 +1443,11 @@ static enum opcode execute_instruction(enum opcode opcode)
 		break;
 	}
 	case CALLHLL: {
-		if (ain->version < 11 || !v12_hll_call(get_argument(0), get_argument(1), get_argument(2)))
-			hll_call(get_argument(0), get_argument(1));
+		int lib = get_argument(0);
+		int fn = get_argument(1);
+		int type_param = ain->version >= 11 ? get_argument(2) : 0;
+		if (!v12_hll_call(lib, fn, type_param))
+			hll_call(lib, fn);
 		break;
 	}
 	case RETURN: {
@@ -2423,12 +2426,14 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case A_SORT: {
 		int fno = stack_pop().i;
+		int obj = ain->version >= 8 ? stack_pop().i : -1;
 		int array = stack_pop_var()->i;
-		array_sort(heap[array].page, fno);
+		array_sort(heap[array].page, fno, obj);
 		break;
 	}
 	case A_FIND: {
 		int fno = stack_pop().i;
+		int obj = ain->version >= 8 ? stack_pop().i : -1;
 		union vm_value v = stack_pop();
 		int end = stack_pop().i;
 		int start = stack_pop().i;
@@ -2457,7 +2462,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 				is_str_array = true;
 			}
 		}
-		stack_push(array_find(array, start, end, v, fno));
+		stack_push(array_find(array, start, end, v, fno, obj));
 		if (is_str_array) {
 			heap_unref(v.i);
 		}
@@ -2695,7 +2700,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int end = stack_pop().i;
 		int start = stack_pop().i;
 		int array = stack_pop_var()->i;
-		stack_push(array_find(heap_get_page(array), start, end, *v, 0));
+		stack_push(array_find(heap_get_page(array), start, end, *v, 0, -1));
 		break;
 	}
 	case SH_SREF_EMPTY: {

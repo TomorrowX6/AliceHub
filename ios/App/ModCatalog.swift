@@ -62,6 +62,7 @@ struct InstalledModInfo: Equatable {
     var source = "online"
     var installedAtMs: Int64 = 0
     var kind = "mod"
+    var group = ""
     var formattedDate: String { String(uploadedAt.replacingOccurrences(of: "T", with: " ").prefix(16)) }
 
     static func read(_ directory: URL) -> Self? {
@@ -70,27 +71,39 @@ struct InstalledModInfo: Equatable {
         let raw = modString(json, "version")
         guard !raw.isEmpty else { return nil }
         let base = modString(json, "baseVersion")
+        let fileName = modString(json, "fileName")
         let source = modString(json, "source", fallback: "online").nonempty ?? "online"
         let kind = modString(json, "kind", fallback: "mod").nonempty ?? "mod"
         let local = source != "online" && kind != "cn_patch"
         let patch = !base.isEmpty && base != raw
+        let group: String
+        if json["group"] != nil {
+            group = modString(json, "group")
+        } else if kind == "mod" {
+            group = ModCatalog.inferModGroup(fileName: fileName, directory: directory)
+        } else {
+            group = ""
+        }
         return Self(version: local ? ModCatalog.inferVersionFromFileName(raw, isPatchHint: base.isEmpty ? nil : patch, fallbackIniDir: patch ? nil : directory) : raw,
                     baseVersion: base.isEmpty ? nil : (local ? ModCatalog.inferVersionFromFileName(base, isPatchHint: false, fallbackIniDir: directory) : base),
                     fileId: modInt(json, "fileId", fallback: -1), baseFileId: modInt(json, "baseFileId", fallback: -1),
-                    fileName: modString(json, "fileName"), uploadedAt: modString(json, "uploadedAt"), source: source,
-                    installedAtMs: (json["installedAtMs"] as? NSNumber)?.int64Value ?? 0, kind: kind)
+                    fileName: fileName, uploadedAt: modString(json, "uploadedAt"), source: source,
+                    installedAtMs: (json["installedAtMs"] as? NSNumber)?.int64Value ?? 0, kind: kind, group: group)
     }
 
     static func readOrInfer(_ directory: URL) -> Self? {
         if let info = read(directory) { return info }
-        guard ModOverlay.detectInstalledMod(directory), let version = ModCatalog.extractCanonicalModVersionFromDir(directory) else { return nil }
-        return Self(version: version, baseVersion: version, source: "preinstalled")
+        guard ModOverlay.detectInstalledMod(directory) else { return nil }
+        let inferredGroup = ModCatalog.inferModGroup(fileName: "", directory: directory)
+        let version = ModCatalog.extractCanonicalModVersionFromDir(directory) ?? (inferredGroup.isEmpty ? nil : inferredGroup)
+        guard let version else { return nil }
+        return Self(version: version, baseVersion: version, source: "preinstalled", group: inferredGroup)
     }
 
     func write(to directory: URL) throws {
         let json: [String: Any] = ["version": version, "baseVersion": baseVersion ?? "", "fileId": fileId,
             "baseFileId": baseFileId, "fileName": fileName, "uploadedAt": uploadedAt, "source": source,
-            "installedAtMs": installedAtMs, "kind": kind]
+            "installedAtMs": installedAtMs, "kind": kind, "group": group]
         try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]).write(to: directory.appendingPathComponent(Self.metaFileName), options: .atomic)
     }
 
@@ -170,7 +183,7 @@ enum ModCatalog {
         var previous = ""
         while previous != text {
             previous = text
-            for prefix in ["兰斯10日不落mod", "rance10日不落mod", "日不落mod", "日不落", "兰斯10mod", "rance10mod", "兰斯10", "rance10"] where text.hasPrefix(prefix) {
+            for prefix in ["兰斯10日不落mod", "rance10日不落mod", "日不落mod", "日不落", "兰斯10全系列mod", "rance10全系列mod", "r10全系列mod", "全系列mod", "全系列", "bfyy", "兰斯10mod", "rance10mod", "r10mod", "兰斯10", "rance10", "r10"] where text.hasPrefix(prefix) {
                 text = String(text.dropFirst(prefix.count)).modReplacing(#"^[-.]+"#, "")
             }
         }
@@ -196,7 +209,7 @@ enum ModCatalog {
         while previous != text {
             previous = text
             text = text.modReplacing(#"^[ \-_·:：]+"#, "")
-            for prefix in ["兰斯10", "兰斯１０", "决战", "rance10", "rance 10", "日不落mod", "日不落", "mod"] where text.lowercased().hasPrefix(prefix) {
+            for prefix in ["兰斯10", "兰斯１０", "决战", "rance10", "rance 10", "r10", "日不落mod", "日不落", "全系列mod", "全系列", "bfyy", "mod"] where text.lowercased().hasPrefix(prefix) {
                 text = String(text.dropFirst(prefix.count)).modReplacing(#"^[ \-_·:：]+"#, "")
             }
         }
@@ -235,61 +248,137 @@ enum ModCatalog {
         return (fileName.modMatch(number) ?? ini.modMatch(number)).map { "V" + $0 } ?? "V1.00"
     }
 
+    static let modGroupRibuluo = "日不落MOD"
+    static let modGroupBfyy = "全系列MOD"
+
+    static func inferModGroup(fileName: String = "", directory: URL? = nil) -> String {
+        let lowerName = fileName.lowercased()
+        if lowerName.contains("全系列") || lowerName.contains("bfyy") || lowerName.contains("波风幽影") {
+            return modGroupBfyy
+        }
+        if lowerName.contains("日不落") {
+            return modGroupRibuluo
+        }
+        if let directory, ModFiles.isDirectory(directory) {
+            for file in ModFiles.children(directory).filter(ModFiles.isFile) {
+                let n = file.lastPathComponent.lowercased()
+                if (n.hasPrefix("rance10cgbfyy") || n.hasPrefix("rance10flatbfyy")) && n.hasSuffix(".afa") {
+                    return modGroupBfyy
+                }
+                if (n.hasPrefix("rance10modcg") || n.hasPrefix("rance10modflat")) && n.hasSuffix(".afa") {
+                    return modGroupRibuluo
+                }
+            }
+            let ini = ModFiles.ini(directory)
+            if ini["savefolder"]?.lowercased() == "savedatabfyy" {
+                return modGroupBfyy
+            }
+            let gn = ini["gamename"] ?? ""
+            if gn.contains("全系列") || gn.lowercased().contains("bfyy") {
+                return modGroupBfyy
+            }
+            if gn.contains("日不落") || ini["savefolder"]?.lowercased() == "modsavedata" {
+                return modGroupRibuluo
+            }
+        }
+        return ""
+    }
+
+    static func distinctModGroups(_ releases: [ModReleaseEntry]) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for release in releases {
+            let group = release.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !group.isEmpty && seen.insert(group).inserted {
+                result.append(group)
+            }
+        }
+        return result
+    }
+
+    static func releasesForGroup(_ releases: [ModReleaseEntry], group: String?) -> [ModReleaseEntry] {
+        let groups = distinctModGroups(releases)
+        guard groups.count > 1, let group, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return releases
+        }
+        let filtered = releases.filter { $0.group.caseInsensitiveCompare(group) == .orderedSame }
+        return filtered.isEmpty ? releases : filtered
+    }
+
+    static func groupsConflict(_ a: String?, _ b: String?) -> Bool {
+        let ga = (a ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let gb = (b ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return !ga.isEmpty && !gb.isEmpty && ga.caseInsensitiveCompare(gb) != .orderedSame
+    }
+
+    private static func sameReleaseGroup(_ a: ModReleaseEntry, _ b: ModReleaseEntry) -> Bool {
+        !groupsConflict(a.group, b.group)
+    }
+
     static func matchInstalledIndex(_ releases: [ModReleaseEntry], _ installed: InstalledModInfo?) -> Int {
         guard let installed else { return -1 }
-        if installed.fileId > 0, let index = releases.firstIndex(where: { $0.fileId == installed.fileId }) { return index }
+        if installed.fileId > 0, let index = releases.firstIndex(where: { $0.fileId == installed.fileId && !groupsConflict($0.group, installed.group) }) { return index }
         if !installed.fileName.isEmpty {
-            if let index = releases.firstIndex(where: { $0.fileName.lowercased() == installed.fileName.lowercased() }) { return index }
+            if let index = releases.firstIndex(where: { $0.fileName.lowercased() == installed.fileName.lowercased() && !groupsConflict($0.group, installed.group) }) { return index }
             let key = normalizeModVersionKey(installed.fileName)
-            if !key.isEmpty, let index = releases.firstIndex(where: { normalizeModVersionKey($0.fileName) == key || normalizeModVersionKey($0.version) == key }) { return index }
+            if !key.isEmpty, let index = releases.firstIndex(where: { !groupsConflict($0.group, installed.group) && (normalizeModVersionKey($0.fileName) == key || normalizeModVersionKey($0.version) == key) }) { return index }
         }
         let key = normalizeModVersionKey(installed.version)
-        return key.isEmpty ? -1 : (releases.firstIndex { normalizeModVersionKey($0.version) == key || normalizeModVersionKey($0.fileName) == key } ?? -1)
+        return key.isEmpty ? -1 : (releases.firstIndex { !groupsConflict($0.group, installed.group) && (normalizeModVersionKey($0.version) == key || normalizeModVersionKey($0.fileName) == key) } ?? -1)
     }
 
     private static func matchesBase(_ base: ModReleaseEntry, _ installed: InstalledModInfo?) -> Bool {
-        guard let installed else { return false }
+        guard let installed, !groupsConflict(base.group, installed.group) else { return false }
         return (installed.baseFileId > 0 && installed.baseFileId == base.fileId) || (!normalizeModVersionKey(base.version).isEmpty && installed.baseVersion.map { normalizeModVersionKey($0) == normalizeModVersionKey(base.version) } == true)
     }
 
     static func hasMatchingBaseForPatch(_ releases: [ModReleaseEntry], patchIdx: Int, hasMod: Bool, installed: InstalledModInfo?) -> Bool {
         guard hasMod, releases.indices.contains(patchIdx), releases[patchIdx].isPatch,
-              let base = releases.indices.first(where: { $0 > patchIdx && !releases[$0].isPatch }) else { return false }
-        return (patchIdx...base).contains(matchInstalledIndex(releases, installed)) || matchesBase(releases[base], installed)
+              !groupsConflict(releases[patchIdx].group, installed?.group),
+              let base = releases.indices.first(where: { $0 > patchIdx && !releases[$0].isPatch && sameReleaseGroup(releases[patchIdx], releases[$0]) }) else { return false }
+        let idx = matchInstalledIndex(releases, installed)
+        return ((patchIdx...base).contains(idx) && sameReleaseGroup(releases[patchIdx], releases[idx])) || matchesBase(releases[base], installed)
     }
 
-    static func computeUpdatePlan(_ releases: [ModReleaseEntry], hasMod: Bool, installed: InstalledModInfo?) -> ModUpdatePlan? {
+    static func computeUpdatePlan(_ releases: [ModReleaseEntry], hasMod: Bool, installed: InstalledModInfo?, canRestore: Bool = true) -> ModUpdatePlan? {
         guard let latest = releases.first else { return nil }
-        let index = hasMod ? matchInstalledIndex(releases, installed) : -1
-        if hasMod && index == 0 { return nil }
-        if hasMod, let installed, installed.fileId > 0, latest.fileId > 0, index < 0, installed.fileId >= latest.fileId { return nil }
+        let switchingGroup = hasMod && groupsConflict(latest.group, installed?.group)
+        if switchingGroup && !canRestore { return nil }
+        let index = (hasMod && !switchingGroup) ? matchInstalledIndex(releases, installed) : -1
+        if hasMod && !switchingGroup && index == 0 { return nil }
+        if hasMod && !switchingGroup, let installed, installed.fileId > 0, latest.fileId > 0, index < 0, installed.fileId >= latest.fileId { return nil }
         if !latest.isPatch { return ModUpdatePlan(targetRelease: latest, steps: [latest], isIncrementalOnly: false) }
-        guard let base = releases.indices.first(where: { $0 > 0 && !releases[$0].isPatch }) else {
-            return hasMod ? ModUpdatePlan(targetRelease: latest, steps: [latest], isIncrementalOnly: true) : nil
+        guard let base = releases.indices.first(where: { $0 > 0 && !releases[$0].isPatch && sameReleaseGroup(latest, releases[$0]) }) else {
+            return (hasMod && !switchingGroup) ? ModUpdatePlan(targetRelease: latest, steps: [latest], isIncrementalOnly: true) : nil
         }
-        if hasMod && ((1...base).contains(index) || matchesBase(releases[base], installed)) {
+        if hasMod && !switchingGroup && (((1...base).contains(index) && sameReleaseGroup(latest, releases[index])) || matchesBase(releases[base], installed)) {
             let patches: [ModReleaseEntry]
-            if (1...base).contains(index) { patches = releases[..<index].reversed().filter(\.isPatch) }
-            else { patches = releases[..<base].reversed().filter { $0.isPatch && ((installed?.fileId ?? -1) <= 0 || $0.fileId <= 0 || $0.fileId > installed!.fileId) } }
+            if (1...base).contains(index) { patches = releases[..<index].reversed().filter { $0.isPatch && sameReleaseGroup(latest, $0) } }
+            else { patches = releases[..<base].reversed().filter { $0.isPatch && sameReleaseGroup(latest, $0) && ((installed?.fileId ?? -1) <= 0 || $0.fileId <= 0 || $0.fileId > installed!.fileId) } }
             if !patches.isEmpty { return ModUpdatePlan(targetRelease: latest, steps: patches, isIncrementalOnly: true) }
         }
-        return ModUpdatePlan(targetRelease: latest, steps: [releases[base]] + releases[..<base].reversed().filter(\.isPatch), isIncrementalOnly: false)
+        return ModUpdatePlan(targetRelease: latest, steps: [releases[base]] + releases[..<base].reversed().filter { $0.isPatch && sameReleaseGroup(latest, $0) }, isIncrementalOnly: false)
     }
 
-    static func computeStepsForSelectedRelease(_ releases: [ModReleaseEntry], targetIdx: Int, hasMod: Bool, installed: InstalledModInfo?, includeBaseForPatch: Bool) -> [ModReleaseEntry] {
+    static func computeStepsForSelectedRelease(_ releases: [ModReleaseEntry], targetIdx: Int, hasMod: Bool, installed: InstalledModInfo?, includeBaseForPatch: Bool, canRestore: Bool = true) -> [ModReleaseEntry] {
         guard releases.indices.contains(targetIdx) else { return [] }
         let target = releases[targetIdx]
+        let switchingGroup = hasMod && groupsConflict(target.group, installed?.group)
+        if switchingGroup && !canRestore { return [] }
         if !target.isPatch { return [target] }
-        let base = releases.indices.first { $0 > targetIdx && !releases[$0].isPatch }
+        let base = releases.indices.first { $0 > targetIdx && !releases[$0].isPatch && sameReleaseGroup(target, releases[$0]) }
+        if switchingGroup && (!includeBaseForPatch || base == nil) { return [] }
         if !includeBaseForPatch || base == nil {
-            let index = matchInstalledIndex(releases, installed)
-            if hasMod, let base, index > targetIdx, index <= base {
-                let patches = releases[targetIdx..<index].reversed().filter(\.isPatch)
-                if !patches.isEmpty { return patches }
+            if hasMod, let base, !switchingGroup {
+                let index = matchInstalledIndex(releases, installed)
+                if index > targetIdx && index <= base && sameReleaseGroup(target, releases[index]) {
+                    let patches = releases[targetIdx..<index].reversed().filter { $0.isPatch && sameReleaseGroup(target, $0) }
+                    if !patches.isEmpty { return patches }
+                }
             }
             return [target]
         }
-        return [releases[base!]] + releases[targetIdx..<base!].reversed().filter(\.isPatch)
+        return [releases[base!]] + releases[targetIdx..<base!].reversed().filter { $0.isPatch && sameReleaseGroup(target, $0) }
     }
 
     static func sanitizeParenFree(_ raw: String, multiline: Bool) -> String {
@@ -327,7 +416,7 @@ enum ModCatalog {
         }
         guard !releases.isEmpty else { throw ModError.message("暂无可用版本") }
         for index in releases.indices where releases[index].isPatch {
-            if let base = releases.indices.first(where: { $0 > index && !releases[$0].isPatch }) {
+            if let base = releases.indices.first(where: { $0 > index && !releases[$0].isPatch && sameReleaseGroup(releases[index], releases[$0]) }) {
                 releases[index].baseFileId = releases[base].fileId; releases[index].baseVersion = releases[base].version
             }
         }

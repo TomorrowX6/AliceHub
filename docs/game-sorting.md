@@ -67,6 +67,7 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `oyakorankan` | Oyako Rankan | 2012-09-14 | 78.1 | 7.81 | [v10732](https://vndb.org/v10732) | [source](https://vndb.org/v10732) |
 | `yorugakuru` | Yoru ga Kuru! -Square of the MOON- Remastered | 2024-04-19 | 66.9 | 6.69 | [v499](https://vndb.org/v499) | [source](https://vndb.org/r119676) |
 | `rance1digest` | Rance 1 Digest Edition | 2004-08-27 | 54.4 | 5.44 | [v1414](https://vndb.org/v1414) | [source](https://vndb.org/r28251) |
+| `maman` | Heartful Maman | 2017-01-27 | 78.1 | 7.81 | [v20161](https://vndb.org/v20161) | [source](https://vndb.org/v20161) |
 
 ## Edition mapping / missing-score decisions
 

@@ -53,7 +53,8 @@ object GameSortMetadata {
         GameCatalog.ID_TOUSHIN3 to GameSortInfo("2008-11-28", 74.4, "https://vndb.org/v849", "https://vndb.org/v849"),
         GameCatalog.ID_OYAKORANKAN to GameSortInfo("2012-09-14", 78.1, "https://vndb.org/v10732", "https://vndb.org/v10732"),
         GameCatalog.ID_YORUGAKURU to GameSortInfo("2024-04-19", 66.9, "https://vndb.org/v499", "https://vndb.org/r119676"),
-        GameCatalog.ID_RANCE1DIGEST to GameSortInfo("2004-08-27", 54.4, "https://vndb.org/v1414", "https://vndb.org/r28251")
+        GameCatalog.ID_RANCE1DIGEST to GameSortInfo("2004-08-27", 54.4, "https://vndb.org/v1414", "https://vndb.org/r28251"),
+        GameCatalog.ID_MAMAN to GameSortInfo("2017-01-27", 78.1, "https://vndb.org/v20161", "https://vndb.org/v20161")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

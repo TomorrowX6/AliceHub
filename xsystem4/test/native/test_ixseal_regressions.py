@@ -711,7 +711,7 @@ int main(void) {{
         input_src = (ROOT / "src/parts/input.c").read_text(encoding="utf-8")
         self.assertIn('parts_msg_push(drag_parts, PARTS_MSG_DRAG_END, "i", VK_LBUTTON);', input_src)
         msg_src = (ROOT / "src/parts/message.c").read_text(encoding="utf-8")
-        self.assertIn("return msg ? msg->type : (ain->version >= 11 ? -1 : 0);", msg_src)
+        self.assertIn("return msg ? msg->type : (ain->version >= 8 ? -1 : 0);", msg_src)
 
         def cn_state_node(kind: str, extra: list[bytes] | None = None) -> bytes:
             kids = [_ex_leaf(_gbk("パーツタイプ"), 3, _ex_pstr(_gbk(kind)))]

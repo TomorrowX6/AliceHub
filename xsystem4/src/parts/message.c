@@ -44,6 +44,24 @@ struct parts_message {
 static STAILQ_HEAD(, parts_message) msg_queue =
 		STAILQ_HEAD_INITIALIZER(msg_queue);
 
+static int message_type_v8(int type)
+{
+	// CPartsMessageManager.CallDelegate in AIN v8 (Heartful Maman):
+	// MouseEnter..MouseClick are shifted to 0..4 (leaving 5 for DoubleClick),
+	// 6..25 match internal IDs, and SwipeBegin..SwipeEnd are 26..28.
+	switch (type) {
+	case PARTS_MSG_MOUSE_ENTER: return 0;
+	case PARTS_MSG_MOUSE_MOVE: return 1;
+	case PARTS_MSG_MOUSE_LEAVE: return 2;
+	case PARTS_MSG_MOUSE_WHEEL: return 3;
+	case PARTS_MSG_MOUSE_CLICK: return 4;
+	case PARTS_MSG_SWIPE_BEGIN: return 26;
+	case PARTS_MSG_SWIPING: return 27;
+	case PARTS_MSG_SWIPE_END: return 28;
+	default: return type;
+	}
+}
+
 static int message_type_v12(int type)
 {
 	// CPartsMessageManager.CallDelegate in the v12 scripts. MouseEnter is 0;
@@ -89,7 +107,8 @@ void parts_msg_push(struct parts* parts, int type, const char *fmt, ...)
 	msg->parts_no = parts ? parts->no : 0;
 	msg->delegate_index = parts ? parts->delegate_index : -1;
 	msg->unique_id = parts ? parts->event_unique_id : -1;
-	msg->type = ain->version >= 11 ? message_type_v12(type) : type;
+	msg->type = ain->version >= 11 ? message_type_v12(type)
+		: (ain->version >= 8 ? message_type_v8(type) : type);
 	msg->nr_variables = 0;
 
 	va_list ap;
@@ -176,8 +195,8 @@ int PE_GetMessageUniqueID(void)
 int PE_GetMessageType(void)
 {
 	struct parts_message *msg = STAILQ_FIRST(&msg_queue);
-	// v12 scripts drain the queue until -1. Zero is a valid message type.
-	return msg ? msg->type : (ain->version >= 11 ? -1 : 0);
+	// v8+ scripts drain the queue until -1. Zero is a valid message type (MouseEnter).
+	return msg ? msg->type : (ain->version >= 8 ? -1 : 0);
 }
 
 int PE_GetMessagePartsNumber(void)

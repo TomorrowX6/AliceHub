@@ -66,7 +66,7 @@ bool library_exists(int libno)
 {
 	if (!ain || libno < 0 || libno >= ain->nr_libraries)
 		return false;
-	if (ain->version >= 11 && v12_builtin_library(ain->libraries[libno].name))
+	if (v12_builtin_library(ain->libraries[libno].name))
 		return true;
 	return libraries && libraries[libno];
 }
@@ -76,7 +76,7 @@ bool library_function_exists(int libno, int fno)
 	if (!ain || libno < 0 || libno >= ain->nr_libraries ||
 	    fno < 0 || fno >= ain->libraries[libno].nr_functions)
 		return false;
-	if (ain->version >= 11 && v12_builtin_library(ain->libraries[libno].name))
+	if (v12_builtin_library(ain->libraries[libno].name))
 		return true;
 	return libraries && libraries[libno] && libraries[libno][fno].fun;
 }
@@ -1012,8 +1012,8 @@ static void library_run_all(const char *name)
 {
 	for (int i = 0; i < ain->nr_libraries; i++) {
 		// These signatures contain generic and callback types handled directly
-		// by the v12 VM, not by the C FFI.
-		if (ain->version >= 11 && v12_builtin_library(ain->libraries[i].name))
+		// by the VM, not by the C FFI.
+		if (v12_builtin_library(ain->libraries[i].name))
 			continue;
 		struct static_library *library = find_static_library(ain->libraries[i].name);
 		if (library) library_run(library, name);
@@ -1028,7 +1028,7 @@ static void link_libraries(void)
 	libraries = xcalloc(ain->nr_libraries, sizeof(struct hll_function*));
 
 	for (int i = 0; i < ain->nr_libraries; i++) {
-		if (ain->version >= 11 && v12_builtin_library(ain->libraries[i].name))
+		if (v12_builtin_library(ain->libraries[i].name))
 			continue;
 		struct static_library *library = find_static_library(ain->libraries[i].name);
 		if (library) libraries[i] = link_static_library(&ain->libraries[i], library);

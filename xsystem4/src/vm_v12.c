@@ -2418,21 +2418,33 @@ static bool system_call_hll(struct ain_hll_function *f)
 
 bool v12_builtin_library(const char *name)
 {
-	return !strcmp(name, "system") || !strcmp(name, "Array") || !strcmp(name, "String")
-		|| !strcmp(name, "Delegate") || !strcmp(name, "Int") || !strcmp(name, "Float");
+	if (!ain || !name)
+		return false;
+	if (ain->version >= 11) {
+		return !strcmp(name, "system") || !strcmp(name, "Array") || !strcmp(name, "String")
+			|| !strcmp(name, "Delegate") || !strcmp(name, "Int") || !strcmp(name, "Float");
+	}
+	if (ain->version >= 8) {
+		return !strcmp(name, "String") || !strcmp(name, "Int") || !strcmp(name, "Float");
+	}
+	return false;
 }
 
 bool v12_hll_call(int library, int function, int type_parameter)
 {
+	if (!ain || ain->version < 8)
+		return false;
 	if (library < 0 || library >= ain->nr_libraries || function < 0
 			|| function >= ain->libraries[library].nr_functions)
 		VM_ERROR("Invalid AIN v12 HLL call: %d.%d", library, function);
 	struct ain_library *lib = &ain->libraries[library];
 	struct ain_hll_function *f = &lib->functions[function];
-	if (!strcmp(lib->name, "system")) return system_call_hll(f);
-	if (!strcmp(lib->name, "Array")) return array_call(f, type_parameter);
+	if (ain->version >= 11) {
+		if (!strcmp(lib->name, "system")) return system_call_hll(f);
+		if (!strcmp(lib->name, "Array")) return array_call(f, type_parameter);
+		if (!strcmp(lib->name, "Delegate")) return delegate_call_hll(f);
+	}
 	if (!strcmp(lib->name, "String")) return string_call(f);
-	if (!strcmp(lib->name, "Delegate")) return delegate_call_hll(f);
 	if (!strcmp(lib->name, "Int")) return int_call_hll(f);
 	if (!strcmp(lib->name, "Float")) return float_call_hll(f);
 	return false;

@@ -79,6 +79,7 @@ object AppSettings {
     internal const val DEFAULT_OYAKORANKAN_BYTES = 2961641642L
     internal const val DEFAULT_YORUGAKURU_BYTES = 1565514386L
     internal const val DEFAULT_RANCE1DIGEST_BYTES = 11945316L
+    internal const val DEFAULT_MAMAN_BYTES = 1562216703L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -282,6 +283,7 @@ object AppSettings {
             OnlineInstaller.OYAKORANKAN_CDN_URL -> DEFAULT_OYAKORANKAN_BYTES
             OnlineInstaller.YORUGAKURU_CDN_URL -> DEFAULT_YORUGAKURU_BYTES
             OnlineInstaller.RANCE1DIGEST_CDN_URL -> DEFAULT_RANCE1DIGEST_BYTES
+            OnlineInstaller.MAMAN_CDN_URL -> DEFAULT_MAMAN_BYTES
             else -> -1L
         }
     }

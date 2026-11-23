@@ -87,6 +87,7 @@ object GameCatalog {
     const val ID_OYAKORANKAN = "oyakorankan"
     const val ID_YORUGAKURU = "yorugakuru"
     const val ID_RANCE1DIGEST = "rance1digest"
+    const val ID_MAMAN = "maman"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -588,6 +589,9 @@ object GameCatalog {
         }
         if (isYorugakuruGameFiles(fileNames, readSmallFile)) {
             return ID_YORUGAKURU
+        }
+        if (isMamanGameFiles(fileNames, readSmallFile)) {
+            return ID_MAMAN
         }
         if (isTsumamiguiGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMAMIGUI
@@ -2246,6 +2250,54 @@ object GameCatalog {
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         ) { readSmallRootFile(dir, it) }
 
+    fun isMamanAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
+        val normalized = java.text.Normalizer.normalize(repaired, java.text.Normalizer.Form.NFKC).lowercase()
+        val rawLower = raw.lowercase()
+        return normalized == "maman" ||
+            normalized.startsWith("maman-") ||
+            normalized.startsWith("maman_") ||
+            normalized.contains("heartful maman") ||
+            normalized.contains("heartfulmaman") ||
+            normalized.contains("は～とふるママン") ||
+            normalized.contains("は〜とふるママン") ||
+            normalized.contains("はーとふるママン") ||
+            normalized.contains("は~とふるママン") ||
+            normalized.contains("再婚妈妈") ||
+            normalized.contains("再婚媽媽") ||
+            rawLower.contains("偼乣偲傇傞儅儅儞")
+    }
+
+    @JvmOverloads
+    fun isMamanGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)? = null
+    ): Boolean {
+        if (isSystem3xGameFiles(fileNames)) return false
+        val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true) }
+        if (ainNames.isEmpty()) return false
+        if (ainNames.any { it.equals("Maman.ain", true) } ||
+            fileNames.any {
+                it.equals("MamanCG.afa", true) ||
+                    it.equals("MamanFlat.afa", true) ||
+                    it.equals("MamanPact.afa", true) ||
+                    it.equals("MamanFont.fnl", true)
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { it.equals("AliceStart.ini", true) || it.equals("System40.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isMamanAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isMamanGameDir(dir: File?): Boolean =
+        dir?.isDirectory == true && isMamanGameFiles(
+            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        ) { readSmallRootFile(dir, it) }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -2690,6 +2742,9 @@ object GameCatalog {
         if (isYorugakuruAlias(dirName)) {
             return ID_YORUGAKURU
         }
+        if (isMamanAlias(dirName)) {
+            return ID_MAMAN
+        }
         if (lowerDir == "kichikurance" || lowerDir.startsWith("kichikurance-") ||
             lowerDir == "kichikuou" || lowerDir.startsWith("kichikuou-") ||
             lowerDir.contains("kichikuou") || lowerDir.contains("kichiku") ||
@@ -2769,6 +2824,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isRance1DigestAlias(displayName)) {
             return ID_RANCE1DIGEST
+        }
+        if (!displayName.isNullOrBlank() && isMamanAlias(displayName)) {
+            return ID_MAMAN
         }
         if (lowerDisp.contains("kichikuou") || lowerDisp.contains("kichikurance") || lowerDisp.contains("鬼畜王")) {
             return ID_KICHIKUOU
@@ -3540,6 +3598,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_MAMAN -> GameDescriptor(
+                id = ID_MAMAN,
+                title = stringResolver(R.string.game_maman_title),
+                defaultDirName = "Maman",
+                expectedAinName = "Maman.ain",
+                iconRes = R.drawable.ic_game_maman,
+                accentColor = 0xFFD81B60.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2B131E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.MAMAN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -3608,7 +3681,8 @@ object GameCatalog {
         ID_TOUSHIN3,
         ID_OYAKORANKAN,
         ID_YORUGAKURU,
-        ID_RANCE1DIGEST
+        ID_RANCE1DIGEST,
+        ID_MAMAN
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

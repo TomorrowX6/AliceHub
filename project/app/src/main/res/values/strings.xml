@@ -190,6 +190,10 @@
     <string name="mod_mgr_btn_up_to_date">Up to Date</string>
     <string name="mod_mgr_btn_install_latest">Install Latest</string>
     <string name="mod_mgr_btn_update_latest">Update Now</string>
+    <string name="mod_mgr_btn_switch_series">Switch MOD</string>
+    <string name="mod_mgr_btn_switch_needs_vanilla">Needs Vanilla</string>
+    <string name="mod_mgr_switch_requires_vanilla">This preinstalled MOD directory has no vanilla backup and cannot be switched to another MOD series in place. Install a vanilla copy of the game first to use this MOD series.</string>
+    <string name="mod_mgr_detail_group">Series: %1$s</string>
     <string name="mod_mgr_restore_confirm">Uninstall MOD and restore vanilla? Saves will be kept.</string>
     <string name="mod_mgr_tag_latest">LATEST</string>
     <string name="mod_mgr_tag_installed">INSTALLED</string>
@@ -279,6 +283,7 @@
     <string name="game_oyakorankan_title">Oyako Rankan</string>
     <string name="game_yorugakuru_title">Yoru ga Kuru! Remastered</string>
     <string name="game_rance1digest_title">Rance 1 Digest</string>
+    <string name="game_maman_title">Heartful Maman</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

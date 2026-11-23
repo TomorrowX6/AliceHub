@@ -75,6 +75,7 @@ enum ain_data_type {
     AIN_FLOAT = 11,
     AIN_STRING = 12,
     AIN_REF_STRING = 20,
+    AIN_BOOL = 50,
 };
 
 struct ain_type { enum ain_data_type data; };

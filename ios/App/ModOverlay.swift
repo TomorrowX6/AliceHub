@@ -75,33 +75,48 @@ enum ModFiles {
 
 enum ModOverlay {
     static let journalName = ".mod_installed_files.txt"
+    static let nonVanillaBaselineName = ".mod_non_vanilla_baseline"
     static func detectInstalledMod(_ directory: URL) -> Bool {
-        if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) { return true }
+        if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return true }
         for file in ModFiles.children(directory).filter(ModFiles.isFile) {
             let name = file.lastPathComponent.lowercased()
-            if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
+            if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10cgbfyy") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10flatbfyy") && name.hasSuffix(".afa")) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
             if name == "rance10.ain", let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 8_000_000 { return true }
         }
-        let ini = ModFiles.ini(directory), name = ini["gamename"] ?? ""
-        return ini["savefolder"]?.lowercased() == "modsavedata" || name.contains("收费必是倒卖") || name.contains("日不落") || name.contains("[MOD")
+        let ini = ModFiles.ini(directory), name = ini["gamename"] ?? "", saveFolder = ini["savefolder"]?.lowercased() ?? ""
+        return saveFolder == "modsavedata" || saveFolder == "savedatabfyy" || name.contains("收费必是倒卖") || name.contains("日不落") || name.contains("全系列") || name.lowercased().contains("bfyy") || name.contains("[MOD")
     }
     static func canRestoreVanilla(_ directory: URL) -> Bool {
-        ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
+        if ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return false }
+        return ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
     }
     static func displayName(_ directory: URL, baseName: String? = nil) -> String {
         let info = InstalledModInfo.readOrInfer(directory)
         let raw = (baseName ?? ModFiles.ini(directory)["gamename"] ?? directory.lastPathComponent).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
         guard info != nil || detectInstalledMod(directory) else { return raw }
         let backup = ["AliceStart.ini.vanilla.bak", "System40.ini.vanilla.bak"].map { directory.appendingPathComponent($0) }.first(where: ModFiles.exists)
-        var base = (backup.flatMap { ModFiles.iniFile($0)["gamename"] } ?? ((raw.contains("收费必是倒卖") || raw.contains("日不落")) ? "兰斯10 决战" : raw)).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
+        var base = (backup.flatMap { ModFiles.iniFile($0)["gamename"] } ?? ((raw.contains("收费必是倒卖") || raw.contains("日不落") || raw.contains("全系列") || raw.lowercased().contains("bfyy")) ? "兰斯10 决战" : raw)).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
         if base.hasSuffix("[MOD]") { base = String(base.dropLast(5)) }
         let tag = info?.kind == "cn_patch" ? "汉化" : "MOD"
-        return base.trimmingCharacters(in: .whitespacesAndNewlines) + " [" + tag + (info.map { " · " + $0.version } ?? "") + "]"
+        let detail: String
+        if let info {
+            if info.kind != "cn_patch", !info.group.isEmpty, info.group.caseInsensitiveCompare(info.version) != .orderedSame {
+                detail = " · " + info.group + " · " + info.version
+            } else {
+                detail = " · " + info.version
+            }
+        } else {
+            detail = ""
+        }
+        return base.trimmingCharacters(in: .whitespacesAndNewlines) + " [" + tag + detail + "]"
     }
     private static func isAsset(_ file: URL) -> Bool { ModFiles.isFile(file) && ["ain", "afa", "ex", "ald", "bgi", "wai", "fnl"].contains(file.pathExtension.lowercased()) }
     static func isStandaloneFullModDir(_ root: URL) -> Bool {
         let names = ModFiles.children(root).filter(ModFiles.isFile).map { $0.lastPathComponent.lowercased() }
-        return names.contains(where: { $0.hasSuffix(".ain") }) && names.contains("rance10modcg.afa") && names.contains("rance10modflat.afa")
+        let hasAin = names.contains(where: { $0.hasSuffix(".ain") })
+        let hasRibuluo = names.contains("rance10modcg.afa") && names.contains("rance10modflat.afa")
+        let hasBfyy = names.contains(where: { $0.hasPrefix("rance10cgbfyy") && $0.hasSuffix(".afa") }) && names.contains("rance10flatbfyy.afa")
+        return hasAin && (hasRibuluo || hasBfyy)
     }
     static func findModRootDir(_ staging: URL, isCnPatch: Bool = false) throws -> URL {
         var current = staging
@@ -175,8 +190,8 @@ enum ModOverlay {
     static func applyModStaging(_ staging: URL, to target: URL, cleanReplace: Bool = true, isCnPatch: Bool = false, allowEvenicle2IncrementalDetect: Bool = false, commit: (Bool) throws -> Void = { _ in }) throws -> Bool {
         if isCnPatch && ModGameDescriptor.classifyDirectory(target)?.id == "evenicle2" { try normalizeEvenicle2CnPatchStaging(staging) }
         let root = try findModRootDir(staging, isCnPatch: isCnPatch)
-        var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
-        var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
+        var affected: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(nonVanillaBaselineName), target.appendingPathComponent(nonVanillaBaselineName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName), target.appendingPathComponent("AsraTest.ini")]
+        var reserved: Set<URL> = [target.appendingPathComponent(journalName), target.appendingPathComponent(journalName + ".tmp"), target.appendingPathComponent(nonVanillaBaselineName), target.appendingPathComponent(nonVanillaBaselineName + ".tmp"), target.appendingPathComponent(InstalledModInfo.metaFileName)]
         let before = try ModFiles.walk(target)
         let directories = before.filter(ModFiles.isDirectory).map { $0.canonicalFileURL }
         let directoryPaths = Set(directories.map(\.path))
@@ -255,6 +270,19 @@ enum ModOverlay {
         let full = isStandaloneFullModDir(root)
         let files = try ModFiles.walk(root).filter(ModFiles.isFile)
         let clean = evenicle2 && cleanReplace && allowEvenicle2IncrementalDetect ? files.contains(where: { $0.lastPathComponent.lowercased() == "evenicle2cg.afa" }) : cleanReplace
+        let nonVanillaBaseline = !isCnPatch && detectInstalledMod(target) && !canRestoreVanilla(target)
+        if nonVanillaBaseline {
+            let storedGroup = InstalledModInfo.readOrInfer(target)?.group ?? ""
+            let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: target) : storedGroup
+            let incomingGroup = ModCatalog.inferModGroup(directory: root)
+            if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
+                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+            }
+            let baselineMarker = target.appendingPathComponent(nonVanillaBaselineName)
+            if !ModFiles.isFile(baselineMarker) {
+                try ModFiles.journal(["preinstalled-mod"], to: baselineMarker)
+            }
+        }
         if clean && (detectInstalledMod(target) || canRestoreVanilla(target)) { try restoreVanilla(target) }
         let journal = target.appendingPathComponent(journalName)
         var added = ((try? String(contentsOf: journal, encoding: .utf8)) ?? "").components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !$0.contains("..") }

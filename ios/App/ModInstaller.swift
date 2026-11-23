@@ -58,13 +58,21 @@ final class ModInstaller: ObservableObject {
                 defer { try? ModFiles.removeIfPresent(staging) }
                 try self.extract(archive, to: staging)
                 try self.checkCancelled()
-                let previous = InstalledModInfo.read(game)
+                let previous = InstalledModInfo.readOrInfer(game)
+                if !descriptor.isCnPatch && ModOverlay.detectInstalledMod(game) && !ModOverlay.canRestoreVanilla(game) {
+                    let storedGroup = previous?.group ?? ""
+                    let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
+                    if ModCatalog.groupsConflict(release.group, existingGroup) {
+                        throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                    }
+                }
                 try ModOverlay.applyModStaging(staging, to: game, cleanReplace: !release.isPatch, isCnPatch: descriptor.isCnPatch) { full in
+                    let resolvedGroup = release.group.isEmpty ? ((!release.isPatch || full) ? "" : (previous?.group ?? "")) : release.group
                     try InstalledModInfo(version: release.version,
                     baseVersion: !release.isPatch || full ? release.version : (release.baseVersion ?? previous?.baseVersion),
                     fileId: release.fileId, baseFileId: !release.isPatch || full ? release.fileId : (release.baseFileId ?? previous?.baseFileId ?? -1),
                     fileName: release.fileName, uploadedAt: release.uploadedAt, source: "online",
-                        installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+                        installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind, group: resolvedGroup).write(to: game)
                 }
                 try ModFiles.removeIfPresent(archive)
                 try ModFiles.removeIfPresent(archive.appendingPathExtension("meta"))
@@ -129,11 +137,26 @@ final class ModInstaller: ObservableObject {
     private func applyLocal(_ staging: URL, label: String, game: URL, descriptor: ModGameDescriptor, cleanReplace: Bool) throws {
         try checkCancelled()
         let previous = InstalledModInfo.readOrInfer(game)
+        if !descriptor.isCnPatch && ModOverlay.detectInstalledMod(game) && !ModOverlay.canRestoreVanilla(game) {
+            let storedGroup = previous?.group ?? ""
+            let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
+            let incomingGroup = ModCatalog.inferModGroup(fileName: label, directory: staging)
+            if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
+                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+            }
+        }
         try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch) { full in
             let version = ModCatalog.inferLocalOverlayVersion(label, isPatchHint: !full, fallbackIniDir: full || descriptor.isCnPatch ? game : nil, isCnPatch: descriptor.isCnPatch)
+            let inferredGroup: String
+            if descriptor.isCnPatch {
+                inferredGroup = ""
+            } else {
+                let detected = ModCatalog.inferModGroup(fileName: label, directory: game)
+                inferredGroup = detected.isEmpty ? (full ? "" : (previous?.group ?? "")) : detected
+            }
             try InstalledModInfo(version: version, baseVersion: full ? version : previous?.baseVersion,
             baseFileId: full ? -1 : (previous?.baseFileId ?? -1), fileName: label, source: "local",
-                installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind).write(to: game)
+                installedAtMs: Int64(Date().timeIntervalSince1970 * 1000), kind: descriptor.overlayKind, group: inferredGroup).write(to: game)
         }
     }
     private func extract(_ archive: URL, to staging: URL) throws {

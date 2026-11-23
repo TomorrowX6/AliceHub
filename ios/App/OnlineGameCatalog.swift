@@ -50,7 +50,8 @@ struct OnlineGame: Identifiable {
         Self(id: "toushin3", title: "斗神都市3", directory: "Toushin3"),
         Self(id: "oyakorankan", title: "母娘乱馆", directory: "Oyakorankan"),
         Self(id: "yorugakuru", title: "邪夜将至 Remastered", directory: "Yorugakuru"),
-        Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest")
+        Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest"),
+        Self(id: "maman", title: "再婚妈妈", directory: "Maman")
     ]
 }
 

@@ -69,6 +69,7 @@ bool game_galzoo = false;
 bool game_ixseal = false;
 bool game_tsumashibori = false;
 bool game_tsumamigui3 = false;
+bool game_maman = false;
 bool game_waidonyo = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
@@ -707,6 +708,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_ixseal = false;
 	game_tsumashibori = false;
 	game_tsumamigui3 = false;
+	game_maman = false;
 	game_waidonyo = false;
 
 	game_rance10 = ain->version == 12
@@ -785,6 +787,14 @@ void apply_game_specific_hacks(struct ain *ain)
 		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
 		game_tsumamigui3 = !strcasecmp(ain_base, "Tsumamigui3.ain");
 	}
+	game_maman = ain->version == 8
+		&& ain_get_struct(ain, "C_BOOT_WARNING") >= 0
+		&& ain_get_struct(ain, "SaveData::C_PARAMETER") >= 0;
+	if (!game_maman && ain->version == 8 && config.ain_filename) {
+		const char *ain_base = strrchr(config.ain_filename, '/');
+		ain_base = ain_base ? ain_base + 1 : config.ain_filename;
+		game_maman = !strcasecmp(ain_base, "Maman.ain");
+	}
 	game_waidonyo = ain->version == 6
 		&& ain_get_library(ain, "ChrLoader") >= 0
 		&& ain_get_library(ain, "MapLoader") >= 0
@@ -840,7 +850,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		config.view_height = 1080;
 	}
 	if (((game_dohnadohna || game_evenicle2 || game_ixseal || game_haharanman
-				|| game_okusama || game_night_remaster)
+				|| game_okusama || game_night_remaster || game_maman)
 				&& config.view_width == 800 && config.view_height == 600)
 			|| ((game_evenicle || game_evenicle_rance || game_evenicle_gaiden || game_waidonyo)
 				&& default_view_size)) {

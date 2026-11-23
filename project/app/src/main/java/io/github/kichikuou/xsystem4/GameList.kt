@@ -143,16 +143,29 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
                 val baseName = (bakIni?.let { System40Ini.parse(it).gameName }
-                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落")) "兰斯10 决战" else rawName)
+                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落") ||
+                        rawName.contains("全系列") || rawName.contains("bfyy", ignoreCase = true)
+                    ) {
+                        "兰斯10 决战"
+                    } else {
+                        rawName
+                    })
                     .replace("兰斯１０", "兰斯10")
                     .removeSuffix("[MOD]")
                     .trim()
                 val verLabel = modMeta?.version?.takeIf { it.isNotBlank() }
+                val groupLabel = modMeta?.group?.takeIf { it.isNotBlank() }
                 val tag = if (modMeta?.kind == InstalledModInfo.KIND_CN_PATCH) "汉化" else "MOD"
-                if (verLabel != null) {
-                    "$baseName [$tag · $verLabel]"
-                } else {
-                    "$baseName [$tag]"
+                when {
+                    modMeta?.kind != InstalledModInfo.KIND_CN_PATCH &&
+                        groupLabel != null &&
+                        verLabel != null &&
+                        !groupLabel.equals(verLabel, ignoreCase = true) ->
+                        "$baseName [$tag · $groupLabel · $verLabel]"
+                    verLabel != null ->
+                        "$baseName [$tag · $verLabel]"
+                    else ->
+                        "$baseName [$tag]"
                 }
             } else {
                 rawName
@@ -176,9 +189,12 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 ?: dir.name.takeIf { it.isNotBlank() }
         }
 
+        const val NON_VANILLA_BASELINE_MARKER = ".mod_non_vanilla_baseline"
+
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
             if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
-                File(dir, ".mod_installed_files.txt").isFile
+                File(dir, ".mod_installed_files.txt").isFile ||
+                File(dir, NON_VANILLA_BASELINE_MARKER).isFile
             ) {
                 return true
             }
@@ -190,6 +206,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     if (lower.endsWith(".vanilla.bak") ||
                         (lower.startsWith("rance10modcg") && lower.endsWith(".afa")) ||
                         (lower.startsWith("rance10modflat") && lower.endsWith(".afa")) ||
+                        (lower.startsWith("rance10cgbfyy") && lower.endsWith(".afa")) ||
+                        (lower.startsWith("rance10flatbfyy") && lower.endsWith(".afa")) ||
                         lower == "asratest.ini" ||
                         lower == "作弊码.txt" ||
                         (lower == "rance10.ain" && f.length() > 8_000_000L)
@@ -208,11 +226,16 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 iniFile?.let { System40Ini.parse(it) }
             }
             if (ini != null) {
-                if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true) {
+                if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true ||
+                    ini.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true
+                ) {
                     return true
                 }
                 val gn = ini.gameName ?: ""
-                if (gn.contains("收费必是倒卖") || gn.contains("日不落") || gn.contains("[MOD")) {
+                if (gn.contains("收费必是倒卖") || gn.contains("日不落") ||
+                    gn.contains("全系列") || gn.contains("bfyy", ignoreCase = true) ||
+                    gn.contains("[MOD")
+                ) {
                     return true
                 }
             }
@@ -220,6 +243,9 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         }
 
         fun canRestoreVanillaDir(dir: File): Boolean {
+            if (File(dir, NON_VANILLA_BASELINE_MARKER).isFile) {
+                return false
+            }
             return File(dir, ".mod_installed_files.txt").isFile ||
                 (dir.listFiles()?.any { it.name.endsWith(".vanilla.bak") } == true)
         }
@@ -1498,6 +1524,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_OYAKORANKAN -> "Oyakorankan"
                 classifiedId == GameCatalog.ID_YORUGAKURU -> "Yorugakuru"
                 classifiedId == GameCatalog.ID_RANCE1DIGEST -> "Rance1Digest"
+                classifiedId == GameCatalog.ID_MAMAN -> "Maman"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
@@ -1584,7 +1611,28 @@ class GameList(activity: Activity) {
     fun canRestoreVanilla(item: Item): Boolean = Item.canRestoreVanillaDir(item.path)
 
     private fun maybeRecordPreinstalledModMeta(gameDir: File, srcUri: Uri) {
-        if (!hasInstalledModDir(gameDir) || File(gameDir, InstalledModInfo.META_FILE_NAME).isFile) {
+        if (!hasInstalledModDir(gameDir)) {
+            return
+        }
+        if (!Item.canRestoreVanillaDir(gameDir)) {
+            val marker = File(gameDir, Item.NON_VANILLA_BASELINE_MARKER)
+            if (!marker.isFile) {
+                try {
+                    val tmp = File(gameDir, "${Item.NON_VANILLA_BASELINE_MARKER}.tmp")
+                    tmp.outputStream().use { out ->
+                        out.write("preinstalled-mod\n".toByteArray(Charsets.UTF_8))
+                        out.flush()
+                        out.fd.sync()
+                    }
+                    if (!tmp.renameTo(marker)) {
+                        tmp.delete()
+                    }
+                } catch (t: Throwable) {
+                    Log.w("GameList", "Failed to write non-vanilla baseline marker", t)
+                }
+            }
+        }
+        if (File(gameDir, InstalledModInfo.META_FILE_NAME).isFile) {
             return
         }
         val srcLabel = resolveUriDisplayName(srcUri)
@@ -1604,7 +1652,8 @@ class GameList(activity: Activity) {
                     fileName = srcLabel,
                     uploadedAt = "",
                     source = "preinstalled",
-                    installedAtMs = System.currentTimeMillis()
+                    installedAtMs = System.currentTimeMillis(),
+                    group = OnlineInstaller.inferModGroup(srcLabel, gameDir)
                 )
             )
         }
@@ -1624,6 +1673,7 @@ class GameList(activity: Activity) {
 
     fun restoreMod(item: Item): Boolean {
         if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) return false
+        if (!canRestoreVanilla(item)) return false
         isRestoringMod = true
         return try {
             restoreVanillaFromMod(item.path)
@@ -1639,6 +1689,9 @@ class GameList(activity: Activity) {
 
     fun launchRestoreMod(item: Item, onDone: (Boolean) -> Unit): Boolean {
         if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) {
+            return false
+        }
+        if (!canRestoreVanilla(item)) {
             return false
         }
         isRestoringMod = true
@@ -1685,6 +1738,16 @@ class GameList(activity: Activity) {
                     }
                     val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
+                    if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                        !Item.canRestoreVanillaDir(targetItem.path)
+                    ) {
+                        val existingGroup = prevInfo?.group.orEmpty()
+                            .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                        val incomingGroup = OnlineInstaller.inferModGroup(srcLabel, null)
+                        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+                            throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                        }
+                    }
                     staging = NativeGameImport.copyModTree(context, uri, storage) { progress ->
                         if (abortHandle.isAborted) throw CancellationException()
                         withContext(Dispatchers.Main) {
@@ -1704,6 +1767,12 @@ class GameList(activity: Activity) {
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
                         isCnPatch = isCnPatch
                     )
+                    val inferredGroup = if (isCnPatch) {
+                        ""
+                    } else {
+                        OnlineInstaller.inferModGroup(srcLabel, targetItem.path)
+                            .ifEmpty { if (wasFull) "" else prevInfo?.group.orEmpty() }
+                    }
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -1715,7 +1784,8 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            kind = overlayKind
+                            kind = overlayKind,
+                            group = inferredGroup
                         )
                     )
                 }
@@ -1761,6 +1831,16 @@ class GameList(activity: Activity) {
                     val myJob = kotlin.coroutines.coroutineContext[Job]
                     val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
                     val srcLabel = resolveUriDisplayName(uri)
+                    if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                        !Item.canRestoreVanillaDir(targetItem.path)
+                    ) {
+                        val existingGroup = prevInfo?.group.orEmpty()
+                            .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                        val incomingGroup = OnlineInstaller.inferModGroup(srcLabel, null)
+                        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+                            throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                        }
+                    }
                     tempDir.deleteRecursively()
                     ArchiveExtractor.extractUriToDirectory(
                         context = context,
@@ -1800,6 +1880,12 @@ class GameList(activity: Activity) {
                         fallbackIniDir = if (wasFull || isCnPatch) targetItem.path else null,
                         isCnPatch = isCnPatch
                     )
+                    val inferredGroup = if (isCnPatch) {
+                        ""
+                    } else {
+                        OnlineInstaller.inferModGroup(srcLabel, targetItem.path)
+                            .ifEmpty { if (wasFull) "" else prevInfo?.group.orEmpty() }
+                    }
                     InstalledModInfo.write(
                         targetItem.path,
                         InstalledModInfo(
@@ -1811,7 +1897,8 @@ class GameList(activity: Activity) {
                             uploadedAt = "",
                             source = "local",
                             installedAtMs = System.currentTimeMillis(),
-                            kind = overlayKind
+                            kind = overlayKind,
+                            group = inferredGroup
                         )
                     )
                 }
@@ -1846,7 +1933,7 @@ class GameList(activity: Activity) {
         }
         val targetVer = steps.last().version
         val targetGroup = steps.last().group
-        val notifLabel = if (isCnPatch && targetGroup.isNotBlank()) {
+        val notifLabel = if (targetGroup.isNotBlank()) {
             "$targetGroup · $targetVer"
         } else {
             targetVer
@@ -1915,7 +2002,16 @@ class GameList(activity: Activity) {
                                 }
                             },
                             applyStaging = { staging ->
-                                val prevInfo = InstalledModInfo.read(targetItem.path)
+                                val prevInfo = InstalledModInfo.readOrInfer(targetItem.path)
+                                if (!isCnPatch && Item.detectInstalledMod(targetItem.path) &&
+                                    !Item.canRestoreVanillaDir(targetItem.path)
+                                ) {
+                                    val existingGroup = prevInfo?.group.orEmpty()
+                                        .ifBlank { OnlineInstaller.inferModGroup("", targetItem.path) }
+                                    if (OnlineInstaller.groupsConflict(release.group, existingGroup)) {
+                                        throw InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+                                    }
+                                }
                                 val wasFull = applyModStagingToGameDir(
                                     stagingDir = staging,
                                     targetDir = targetItem.path,
@@ -1932,6 +2028,9 @@ class GameList(activity: Activity) {
                                 } else {
                                     release.baseFileId ?: prevInfo?.baseFileId ?: -1
                                 }
+                                val resolvedGroup = release.group.ifBlank {
+                                    if (!release.isPatch || wasFull) "" else prevInfo?.group.orEmpty()
+                                }
                                 InstalledModInfo.write(
                                     targetItem.path,
                                     InstalledModInfo(
@@ -1943,7 +2042,8 @@ class GameList(activity: Activity) {
                                         uploadedAt = release.uploadedAt,
                                         source = "online",
                                         installedAtMs = System.currentTimeMillis(),
-                                        kind = overlayKind
+                                        kind = overlayKind,
+                                        group = resolvedGroup
                                     )
                                 )
                             }
@@ -2042,9 +2142,14 @@ private fun isModAssetFile(file: File): Boolean {
 private fun isStandaloneFullModDir(modRoot: File): Boolean {
     val topFiles = modRoot.listFiles()?.filter { it.isFile } ?: return false
     val hasAin = topFiles.any { it.name.endsWith(".ain", ignoreCase = true) }
-    val hasModCg = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) }
-    val hasModFlat = topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
-    return hasAin && hasModCg && hasModFlat
+    val hasRibuluo = topFiles.any { it.name.equals("Rance10MODCG.afa", ignoreCase = true) } &&
+        topFiles.any { it.name.equals("Rance10ModFlat.afa", ignoreCase = true) }
+    val hasBfyy = topFiles.any {
+        it.name.startsWith("Rance10CGBFYY", ignoreCase = true) && it.name.endsWith(".afa", ignoreCase = true)
+    } && topFiles.any {
+        it.name.equals("Rance10FlatBFYY.afa", ignoreCase = true)
+    }
+    return hasAin && (hasRibuluo || hasBfyy)
 }
 
 private fun findModRootDir(stagingDir: File, isCnPatch: Boolean = false): File {
@@ -2228,6 +2333,30 @@ internal fun applyModStagingToGameDirInternal(
         modFiles.any { it.name.equals("Evenicle2CG.afa", ignoreCase = true) }
     } else {
         cleanReplaceIfStandalone
+    }
+    val nonVanillaBaseline = !isCnPatch &&
+        Item.detectInstalledMod(targetDir) &&
+        !Item.canRestoreVanillaDir(targetDir)
+    if (nonVanillaBaseline) {
+        val existingGroup = InstalledModInfo.readOrInfer(targetDir)?.group.orEmpty()
+            .ifBlank { OnlineInstaller.inferModGroup("", targetDir) }
+        val incomingGroup = OnlineInstaller.inferModGroup("", modRoot)
+        if (OnlineInstaller.groupsConflict(incomingGroup, existingGroup)) {
+            throw GameList.InstallFailureException(R.string.uninstall_mod_no_backup_msg)
+        }
+        val marker = File(targetDir, Item.NON_VANILLA_BASELINE_MARKER)
+        if (!marker.isFile) {
+            val markerTmp = File(targetDir, "${Item.NON_VANILLA_BASELINE_MARKER}.tmp")
+            markerTmp.outputStream().use { out ->
+                out.write("preinstalled-mod\n".toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
+            if (!markerTmp.renameTo(marker)) {
+                markerTmp.delete()
+                throw IOException("Failed to commit non-vanilla baseline marker: $marker")
+            }
+        }
     }
     if (effectiveCleanReplace && (Item.detectInstalledMod(targetDir) || Item.canRestoreVanillaDir(targetDir))) {
         restoreVanillaFromModDir(targetDir)

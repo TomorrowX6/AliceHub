@@ -125,6 +125,7 @@ extern bool game_galzoo;
 extern bool game_ixseal;
 extern bool game_tsumashibori;
 extern bool game_tsumamigui3;
+extern bool game_maman;
 extern bool game_waidonyo;
 
 bool sys_is_sdl_main_thread(void);

@@ -49,7 +49,8 @@ struct OnlineGameChecks {
         var overflow = original, huge = entry
         huge["size"] = Int64.max; overflow["files"] = [huge, entry]; try rejects(overflow)
         var empty = original; empty["files"] = []; try rejects(empty)
-        precondition(OnlineGame.all.count == 43 && Set(OnlineGame.all.map(\.id)).count == 43)
+        precondition(OnlineGame.all.count == 44 && Set(OnlineGame.all.map(\.id)).count == 44)
+        precondition(OnlineGame.all.contains { $0.id == "maman" && $0.directory == "Maman" })
         UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/rance10/")
         UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)
