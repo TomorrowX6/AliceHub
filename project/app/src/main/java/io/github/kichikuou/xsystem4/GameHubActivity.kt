@@ -749,11 +749,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 .setTitle(manifest.title.ifEmpty { getString(R.string.uncensored_patch_title) })
                 .setMessage(msg)
                 .setPositiveButton(
-                    getString(
-                        if (isInstalled) R.string.uncensored_patch_reinstall_btn
-                        else R.string.uncensored_patch_install_btn,
-                        sizeText
-                    )
+                    if (isInstalled) R.string.uncensored_patch_reinstall_btn
+                    else R.string.uncensored_patch_install_btn
                 ) { _, _ ->
                     ensureGameNotRunning(this@GameHubActivity) {
                         if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, manifest)) {
