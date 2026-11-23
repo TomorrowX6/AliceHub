@@ -2679,10 +2679,10 @@ object GameCatalog {
 
     private val GAKUENKING_ADISK_CRC32S = setOf(0xd1bf243bL)
     private val ONLYYOU_ADISK_CRC32S = setOf(0x832aeb97L)
-    private val AYUMI_ADISK_CRC32S = setOf(0xd2bed9eeL)
+    private val AYUMI_ADISK_CRC32S = setOf(0xd2bed9eeL, 0x4e2fed2aL, 0x4e2f5678L, 0x00d15a2bL, 0x5f66ff1dL)
     private val DPSALL_ADISK_CRC32S = setOf(0xd48b4ec6L)
-    private val PROSTUDENTG_ADISK_CRC32S = setOf(0xfb0e4a63L)
-    private val YAKATA3_ADISK_CRC32S = setOf(0x7f8f5e2aL)
+    private val PROSTUDENTG_ADISK_CRC32S = setOf(0xfb0e4a63L, 0x5ffbfee7L)
+    private val YAKATA3_ADISK_CRC32S = setOf(0x7f8f5e2aL, 0x58ebcc99L)
 
     fun isDiaboliqueAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
@@ -3244,7 +3244,9 @@ object GameCatalog {
         if (iniName != null && readSmallFile != null) {
             val raw = runCatching { readSmallFile(iniName) }.getOrNull()
             val game = legacySystem3GameId(raw)
-            if (game == "ayumi_cd" || game == "ayumi" || game == "ayumi_fd") return true
+            if (game == "ayumi_cd" || game == "ayumi" || game == "ayumi_fd" ||
+                game == "ayumi_proto" || game == "ayumi_live_256" || game == "ayumi_live_full"
+            ) return true
             if (game != null) return false
             val title = legacySystem3Title(raw)
             if (!title.isNullOrBlank() && isAyumiAlias(title)) return true
@@ -3560,7 +3562,7 @@ object GameCatalog {
         if (iniName != null && readSmallFile != null) {
             val raw = runCatching { readSmallFile(iniName) }.getOrNull()
             val game = legacySystem3GameId(raw)
-            if (game == "prog_cd" || game == "prog" || game == "prostudentg" || game == "prostudent_g") return true
+            if (game == "prog_cd" || game == "prog_fd" || game == "prog" || game == "prostudentg" || game == "prostudent_g") return true
             if (game != null) return false
             val title = legacySystem3Title(raw)
             if (!title.isNullOrBlank() && isProstudentGAlias(title)) return true

@@ -219,9 +219,12 @@ final class GameLibrary: ObservableObject {
 
     private static func isAyumiFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
         if let legacyId {
-            return legacyId == "ayumi_cd" || legacyId == "ayumi" || legacyId == "ayumi_fd"
+            return legacyId == "ayumi_cd" || legacyId == "ayumi" || legacyId == "ayumi_fd" ||
+                legacyId == "ayumi_proto" || legacyId == "ayumi_live_256" || legacyId == "ayumi_live_full"
         }
-        return adiskCrc == 0xd2bed9ee || (regularNamesLower.contains("acg0.dat") && regularNamesLower.contains("adisk.dat"))
+        let ayumiCrcs: Set<UInt32> = [0xd2bed9ee, 0x4e2fed2a, 0x4e2f5678, 0x00d15a2b, 0x5f66ff1d]
+        return (adiskCrc.map { ayumiCrcs.contains($0) } ?? false) ||
+            (regularNamesLower.contains("acg0.dat") && regularNamesLower.contains("adisk.dat"))
     }
 
     private static func isDpsAllFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
@@ -233,16 +236,16 @@ final class GameLibrary: ObservableObject {
 
     private static func isProstudentGFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
         if let legacyId {
-            return legacyId == "prog_cd" || legacyId == "prog" || legacyId == "prostudentg" || legacyId == "prostudent_g"
+            return legacyId == "prog_cd" || legacyId == "prog_fd" || legacyId == "prog" || legacyId == "prostudentg" || legacyId == "prostudent_g"
         }
-        return adiskCrc == 0xfb0e4a63
+        return adiskCrc == 0xfb0e4a63 || adiskCrc == 0x5ffbfee7
     }
 
     private static func isYakata3FromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
         if let legacyId {
             return legacyId == "yakata3_cd" || legacyId == "yakata3" || legacyId == "yakata3_fd"
         }
-        return adiskCrc == 0x7f8f5e2a
+        return adiskCrc == 0x7f8f5e2a || adiskCrc == 0x58ebcc99
     }
 
     fileprivate static func inspect(_ url: URL) -> InspectedGame {

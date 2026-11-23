@@ -162,9 +162,12 @@ public class Wave2CatalogTest {
         // Legacy System 3 classification via system3.ini AND ADISK.DAT CRC32 (including ACG0.DAT for ayumi)
         Object[][] legacyCases = new Object[][]{
             {GameCatalog.ID_AYUMI, "ayumi_cd", "ACG0.DAT", 0xd2bed9eeL, "AyumiChan"},
+            {GameCatalog.ID_AYUMI, "ayumi_fd", "ACG.DAT", 0x4e2fed2aL, "AyumiChan"},
             {GameCatalog.ID_DPSALL, "dps_all", "ACG.DAT", 0xd48b4ec6L, "DpsAll"},
             {GameCatalog.ID_PROSTUDENTG, "prog_cd", "ACG.DAT", 0xfb0e4a63L, "ProstudentG"},
-            {GameCatalog.ID_YAKATA3, "yakata3_cd", "ACG.DAT", 0x7f8f5e2aL, "Yakata3"}
+            {GameCatalog.ID_PROSTUDENTG, "prog_fd", "ACG.DAT", 0x5ffbfee7L, "ProstudentG"},
+            {GameCatalog.ID_YAKATA3, "yakata3_cd", "ACG.DAT", 0x7f8f5e2aL, "Yakata3"},
+            {GameCatalog.ID_YAKATA3, "yakata3_fd", "ACG.DAT", 0x58ebcc99L, "Yakata3"}
         };
         for (Object[] c : legacyCases) {
             String expectedId = (String) c[0];
@@ -173,7 +176,7 @@ public class Wave2CatalogTest {
             long crc = (Long) c[3];
             String expectedBase = (String) c[4];
 
-            File iniDir = tmp.newFolder("legacy_ini_" + expectedId);
+            File iniDir = tmp.newFolder("legacy_ini_" + gameIniVal);
             assertTrue(new File(iniDir, "ADISK.DAT").createNewFile());
             assertTrue(new File(iniDir, cgFile).createNewFile());
             try (FileOutputStream out = new FileOutputStream(new File(iniDir, "system3.ini"))) {
@@ -182,7 +185,7 @@ public class Wave2CatalogTest {
             assertEquals(expectedId, GameCatalog.INSTANCE.classifyGameRootDir(iniDir));
             assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(iniDir, null, expectedId));
 
-            File crcDir = tmp.newFolder("legacy_crc_" + expectedId);
+            File crcDir = tmp.newFolder("legacy_crc_" + gameIniVal);
             assertTrue(new File(crcDir, cgFile).createNewFile());
             byte[] header = make256BytesWithCrc32(crc);
             assertEquals(Long.valueOf(crc), GameCatalog.INSTANCE.legacyAdiskCrc32(header));

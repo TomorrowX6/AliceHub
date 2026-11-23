@@ -305,9 +305,12 @@ struct LibraryChecks {
             ("UnknownFolder1", UInt32(0xd1bf243b), "ACG.DAT", "学园KING", "gakuenking", GameLibrary.isGakuenKing as (URL) -> Bool),
             ("UnknownFolder2", UInt32(0x832aeb97), "ACG.DAT", "Only You 世纪末的朱丽叶们", "onlyyou", GameLibrary.isOnlyYou as (URL) -> Bool),
             ("UnknownFolder3", UInt32(0xd2bed9ee), "ACG0.DAT", "步美物语", "ayumi", GameLibrary.isAyumi as (URL) -> Bool),
+            ("UnknownFolder3FD", UInt32(0x4e2fed2a), "ACG.DAT", "步美物语", "ayumi", GameLibrary.isAyumi as (URL) -> Bool),
             ("UnknownFolder4", UInt32(0xd48b4ec6), "ACG.DAT", "D.P.S. 全部", "dpsall", GameLibrary.isDpsAll as (URL) -> Bool),
             ("UnknownFolder5", UInt32(0xfb0e4a63), "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
-            ("UnknownFolder6", UInt32(0x7f8f5e2a), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
+            ("UnknownFolder5FD", UInt32(0x5ffbfee7), "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
+            ("UnknownFolder6", UInt32(0x7f8f5e2a), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool),
+            ("UnknownFolder6FD", UInt32(0x58ebcc99), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
         ] {
             let cDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: cDir, withIntermediateDirectories: true)
