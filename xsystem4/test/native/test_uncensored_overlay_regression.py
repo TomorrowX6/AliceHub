@@ -164,6 +164,7 @@ class UncensoredOverlayRegressionTest(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 #include "system4.h"
+#include "system4/archive.h"
 #include "system4/cg.h"
 #include "system4/dcf.h"
 #include "system4/file.h"
@@ -212,6 +213,18 @@ int main(void) {{
     assert_rgb(dcf_base, 200, 100, 50);
     cg_free(dcf_base);
 
+    // Verify WebP base-ID lookup from unnumbered AFAv2 base does NOT collide positionally
+    // with sparse AFAv2 overlay: entry 1 in base is ui_01 (11,22,33), NOT overlay entry 0 (hcg_01)!
+    struct archive_data *ui_raw = asset_get_by_name(ASSET_CG, "ui_01", NULL);
+    assert(ui_raw && ui_raw->archive);
+    struct cg *webp_ui = cg_load_base_by_id(ui_raw->archive, 2); // 1-based index 2 -> base files[1] == ui_01
+    assert_rgb(webp_ui, 11, 22, 33);
+    cg_free(webp_ui);
+    struct cg *webp_hcg = cg_load_base_by_id(ui_raw->archive, 1); // 1-based index 1 -> base files[0] == hcg_01 -> overridden by uncensored!
+    assert_rgb(webp_hcg, 200, 100, 50);
+    cg_free(webp_hcg);
+    archive_free_data(ui_raw);
+
     // Phase 2: ALD game + AFAv1 AliceHubUncensoredCG.afa
     config.game_dir = "{ald_dir}";
     config.ain_filename = "AldGame.ain";
@@ -258,8 +271,15 @@ int main(void) {{
             td = Path(tmp)
             base_ald = td / "R5D_GA.ALD"
             ov_ald = td / "AliceHubUncensoredCG.ald"
+            bad_ald = td / "MalformedUncensoredCG.ald"
             base_ald.write_bytes(make_ald([(50, "CG0051.QNT", b"BASE_51"), (51, "CG0052.QNT", b"BASE_52")]))
             ov_ald.write_bytes(make_ald([(50, "CG0051.QNT", b"UNC_51_LONG")]))
+            # Construct malformed ALD whose link table has an out-of-bounds offset_index (0xFFFF)
+            bad_bytes = bytearray(make_ald([(50, "CG0051.QNT", b"BAD")]))
+            ofssize_bad = (bad_bytes[0] | (bad_bytes[1] << 8) | (bad_bytes[2] << 16)) << 8
+            bad_bytes[ofssize_bad + 50 * 3 + 1] = 0xFF
+            bad_bytes[ofssize_bad + 50 * 3 + 2] = 0xFF
+            bad_ald.write_bytes(bytes(bad_bytes))
 
             src_c = td / "test_x35.c"
             exe = td / "test_x35"
@@ -300,6 +320,9 @@ int main(void) {{
 
     const char *base_files[1] = {{ "{base_ald}" }};
     ald_init(DRIFILE_CG, base_files, 1, false);
+    // Malformed overlay with OOB offset_index must be safely rejected without crashing
+    assert(dri_init_optional("{bad_ald}", false) == NULL);
+    ald_init_overlay(DRIFILE_CG, "{bad_ald}", false);
     ald_init_overlay(DRIFILE_CG, "{ov_ald}", false);
 
     assert(ald_exists(DRIFILE_CG, 50));

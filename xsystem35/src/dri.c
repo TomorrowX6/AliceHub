@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <errno.h>
 #include "portab.h"
 #include "system.h"
@@ -31,35 +32,43 @@
 #include "dri.h"
 
 static bool read_index(int volume, drifiles *d, FILE *fp) {
-	fseek(fp, 0L, SEEK_END);
-	int filesize = ftell(fp);
+	if (fseek(fp, 0L, SEEK_END) != 0)
+		return false;
+	long fsize = ftell(fp);
+	if (fsize < 6 || fsize > INT_MAX)
+		return false;
+	uint32_t filesize = (uint32_t)fsize;
 
 	// Get the size of offsets table and link table.
 	uint8_t hdr[6];
-	fseek(fp, 0L, SEEK_SET);
-	if (fread(hdr, 6, 1, fp) != 1)
+	if (fseek(fp, 0L, SEEK_SET) != 0 || fread(hdr, 6, 1, fp) != 1)
 		return false;
-	int ofssize = LittleEndian_get3B(hdr, 0) << 8;
-	int linksize = (LittleEndian_get3B(hdr, 3) << 8) - ofssize;
-	if (ofssize <= 0 || linksize <= 0 || ofssize + linksize > filesize)
+	uint32_t ofssize = (uint32_t)LittleEndian_get3B(hdr, 0) << 8;
+	uint32_t linkend = (uint32_t)LittleEndian_get3B(hdr, 3) << 8;
+	if (ofssize < 6 || linkend <= ofssize || linkend > filesize)
 		return false;
+	uint32_t linksize = linkend - ofssize;
 
 	// Read the link table. In System 3.9, only the first volume's link table is
 	// valid. It's different in System 3.8 and earlier, and games that depend
 	// on the old behavior (e.g. Child Assassin in Alice CD 2.50) won't work.
 	if (!d->link) {
-		d->nr_files = linksize / 3;
+		d->nr_files = (int)(linksize / 3);
+		if (d->nr_files <= 0)
+			return false;
 		d->link = calloc(1, linksize);
 		d->offset = calloc(sizeof(uint32_t), d->nr_files);
-		fseek(fp, ofssize, SEEK_SET);
-		if (fread(d->link, linksize, 1, fp) != 1)
+		if (!d->link || !d->offset)
+			return false;
+		if (fseek(fp, (long)ofssize, SEEK_SET) != 0 || fread(d->link, linksize, 1, fp) != 1)
 			return false;
 	}
 
 	// Read the offsets table.
 	uint8_t *otbl = malloc(ofssize);
-	fseek(fp, 0L, SEEK_SET);
-	if (fread(otbl, ofssize, 1, fp) != 1) {
+	if (!otbl)
+		return false;
+	if (fseek(fp, 0L, SEEK_SET) != 0 || fread(otbl, ofssize, 1, fp) != 1) {
 		free(otbl);
 		return false;
 	}
@@ -68,8 +77,17 @@ static bool read_index(int volume, drifiles *d, FILE *fp) {
 			continue;
 		if (d->maxno < i)
 			d->maxno = i;
-		int offset_index = LittleEndian_getW(d->link, i * 3 + 1);
-		d->offset[i] = LittleEndian_get3B(otbl, offset_index * 3) << 8;
+		uint32_t offset_index = (uint32_t)LittleEndian_getW(d->link, i * 3 + 1);
+		if (offset_index >= ofssize / 3) {
+			free(otbl);
+			return false;
+		}
+		uint32_t off = (uint32_t)LittleEndian_get3B(otbl, (int)(offset_index * 3)) << 8;
+		if (off > filesize) {
+			free(otbl);
+			return false;
+		}
+		d->offset[i] = off;
 	}
 	free(otbl);
 	return true;

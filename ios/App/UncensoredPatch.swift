@@ -26,22 +26,24 @@ struct UncensoredGameDescriptor: Equatable {
 
     static func classifyDirectory(_ directory: URL) -> Self? {
         let names = Set(ModFiles.children(directory).filter(ModFiles.isFile).map { $0.lastPathComponent.lowercased() })
+        if names.contains("rance6after.ain") || names.contains("rance1.ain") { return nil }
         if names.contains("rance10.ain") { return descriptor(for: "rance10") }
         if names.contains("rance9.ain") || names.contains("rance09.ain") { return descriptor(for: "rance09") }
         if names.contains("rance03.ain") { return descriptor(for: "rance03") }
         if names.contains("rance01.ain") { return descriptor(for: "rance01") }
-        if names.contains("rance6.ain") || names.contains("rance06.ain") || names.contains("rance6.chs") {
+        if names.contains("rance6.ain") || names.contains("rance06.ain") || names.contains("rance6.chs") ||
+            names.contains("rance6cg.afa") || names.contains("rance6ga.ald") || names.contains("rance6dll.inc") {
             return descriptor(for: "rance06")
         }
         if names.contains("r5d_sa.ald") { return descriptor(for: "rance5d") }
-        if names.contains("rance6after.ain") || names.contains("rance1.ain") { return nil }
         if names.contains("rance02.ain") || names.contains("ランス０２.ain") || names.contains("ランス０２ga.ald") ||
             names.contains("儔儞僗俷俲.ain") || names.contains("儔儞僗俷俲ga.ald") {
             return descriptor(for: "rance02")
         }
-        if names.contains("alicecn.ain") || names.contains("rance7.ain") || names.contains("sengokurance.ain") ||
+        if names.contains("rance7.ain") || names.contains("sengokurance.ain") ||
             names.contains("愴崙儔儞僗.ain") || names.contains("愴崙儔儞僗ga.ald") ||
-            names.contains("戦国ランス.ain") || names.contains("戦国ランスga.ald") {
+            names.contains("戦国ランス.ain") || names.contains("戦国ランスga.ald") ||
+            names.contains("战国兰斯.ain") || names.contains("战国兰斯ga.ald") {
             return descriptor(for: "sengokurance")
         }
         if names.contains("rance08.ain") || names.contains("rance8.ain") || names.contains("rancequest.ain") ||
@@ -70,6 +72,16 @@ struct UncensoredPatchManifest: Equatable {
     let cgCount: Int
     let updatedAt: String
     let downloadUrl: String
+
+    static let maxManifestBytes = 1024 * 1024
+    static let managedOverlayNames: Set<String> = [
+        "alicehubuncensoredcg.afa",
+        "alicehubuncensoredcg.ald"
+    ]
+
+    static func isManagedOverlayFileName(_ name: String) -> Bool {
+        managedOverlayNames.contains(name.lowercased())
+    }
 
     static func isSafeOverlayFileName(_ name: String) -> Bool {
         guard !name.isEmpty, !name.hasPrefix("."),
@@ -139,9 +151,22 @@ struct UncensoredPatchManifest: Equatable {
     static func fetch(for descriptor: UncensoredGameDescriptor) async throws -> Self {
         var request = URLRequest(url: descriptor.manifestURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw ModError.message("无法获取无码补丁信息，请检查网络")
+        }
+        if http.expectedContentLength > Int64(maxManifestBytes) {
+            throw ModError.message("无码补丁清单过大")
+        }
+        var data = Data()
+        if http.expectedContentLength > 0 {
+            data.reserveCapacity(Int(http.expectedContentLength))
+        }
+        for try await byte in bytes {
+            if data.count >= maxManifestBytes {
+                throw ModError.message("无码补丁清单过大")
+            }
+            data.append(byte)
         }
         return try parse(data, cdnBaseURL: descriptor.cdnBaseURL)
     }
@@ -201,7 +226,7 @@ enum UncensoredPatchStore {
     static func isInstalled(_ directory: URL) -> Bool {
         if InstalledUncensoredInfo.read(directory) != nil { return true }
         return ModFiles.children(directory).contains {
-            ModFiles.isFile($0) && UncensoredPatchManifest.isSafeOverlayFileName($0.lastPathComponent)
+            ModFiles.isFile($0) && UncensoredPatchManifest.isManagedOverlayFileName($0.lastPathComponent)
         }
     }
 
@@ -211,7 +236,7 @@ enum UncensoredPatchStore {
             try ModFiles.removeIfPresent(directory.appendingPathComponent(info.fileName))
         }
         for child in ModFiles.children(directory) where ModFiles.isFile(child) {
-            if UncensoredPatchManifest.isSafeOverlayFileName(child.lastPathComponent) {
+            if UncensoredPatchManifest.isManagedOverlayFileName(child.lastPathComponent) {
                 try ModFiles.removeIfPresent(child)
             }
         }
@@ -278,10 +303,18 @@ final class UncensoredPatchInstaller: ObservableObject {
                 }
                 if self.isCancelled() { throw CancellationError() }
                 let dest = try ModFiles.checked(directory, manifest.fileName)
-                for child in ModFiles.children(directory) where ModFiles.isFile(child) {
-                    let name = child.lastPathComponent
-                    if UncensoredPatchManifest.isSafeOverlayFileName(name) && name.lowercased() != manifest.fileName.lowercased() {
-                        try ModFiles.removeIfPresent(child)
+                let prev = InstalledUncensoredInfo.read(directory)
+                let destOwned = !ModFiles.exists(dest) ||
+                    UncensoredPatchManifest.isManagedOverlayFileName(manifest.fileName) ||
+                    prev?.fileName.lowercased() == manifest.fileName.lowercased()
+                guard destOwned else {
+                    throw ModError.message("目标文件已存在且不属于 AliceHub 无码补丁，已取消覆盖")
+                }
+                if let prev, UncensoredPatchManifest.isSafeOverlayFileName(prev.fileName),
+                   prev.fileName.lowercased() != manifest.fileName.lowercased() {
+                    let prevURL = try ModFiles.checked(directory, prev.fileName)
+                    if ModFiles.isFile(prevURL) {
+                        try ModFiles.removeIfPresent(prevURL)
                     }
                 }
                 try ModFiles.replace(downloaded, dest)

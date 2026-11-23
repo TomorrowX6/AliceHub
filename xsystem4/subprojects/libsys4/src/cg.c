@@ -51,9 +51,9 @@ struct cg *cg_load_base_by_name(const char *name)
 	return (cg_base_loader_by_name && name) ? cg_base_loader_by_name(name) : NULL;
 }
 
-struct cg *cg_load_base_by_id(int id)
+struct cg *cg_load_base_by_id(struct archive *src_ar, int id)
 {
-	return (cg_base_loader_by_id && id > 0) ? cg_base_loader_by_id(id) : NULL;
+	return (cg_base_loader_by_id && src_ar && id > 0) ? cg_base_loader_by_id(src_ar, id) : NULL;
 }
 
 const char *cg_file_extensions[_ALCG_NR_FORMATS] = {

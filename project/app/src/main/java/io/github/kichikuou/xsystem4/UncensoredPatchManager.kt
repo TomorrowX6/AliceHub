@@ -112,7 +112,12 @@ sealed class UncensoredInstallState {
 
 object UncensoredPatchManager {
     const val MANIFEST_REL_PATH = "files/uncensored/manifest.json"
+    const val CACHE_DIR_NAME = ".uncensored_cache"
     private val SHA256_REGEX = Regex("^[0-9a-fA-F]{64}$")
+    private val MANAGED_OVERLAY_NAMES = setOf(
+        "alicehubuncensoredcg.afa",
+        "alicehubuncensoredcg.ald"
+    )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val lock = Any()
@@ -186,11 +191,15 @@ object UncensoredPatchManager {
         return parts.all { it.isNotEmpty() && it != "." && it != ".." }
     }
 
+    fun isManagedOverlayFileName(name: String): Boolean {
+        return name.lowercase(Locale.ROOT) in MANAGED_OVERLAY_NAMES
+    }
+
     fun detectInstalled(gameDir: File): Boolean {
         if (!gameDir.isDirectory) return false
         if (InstalledUncensoredInfo.read(gameDir) != null) return true
         val files = gameDir.listFiles() ?: return false
-        return files.any { it.isFile && isSafeOverlayFileName(it.name) }
+        return files.any { it.isFile && isManagedOverlayFileName(it.name) }
     }
 
     @Throws(IOException::class)
@@ -297,13 +306,25 @@ object UncensoredPatchManager {
                             throw CancellationException()
                         }
                     }
+                    checkCancelled()
                     val idPrefix = manifest.sha256.take(16)
-                    val partFile = File(gameDir, ".uncensored_${idPrefix}.part")
+                    val cacheDir = File(gameDir.parentFile ?: gameDir, CACHE_DIR_NAME)
+                    if (!cacheDir.isDirectory && !cacheDir.mkdirs()) {
+                        throw IOException("Failed to create uncensored cache directory")
+                    }
+                    val partFile = File(cacheDir, "uncensored_${idPrefix}.part")
                     val metaFile = File("${partFile.path}.meta")
                     val destFile = File(gameDir, manifest.fileName)
                     val destCanonical = destFile.canonicalFile
                     if (destCanonical.parentFile != gameDir.canonicalFile) {
                         throw IOException("Invalid destination path")
+                    }
+                    val prevInfo = InstalledUncensoredInfo.read(gameDir)
+                    val destOwned = !destFile.exists() ||
+                        isManagedOverlayFileName(destFile.name) ||
+                        (prevInfo != null && prevInfo.fileName.equals(destFile.name, ignoreCase = true))
+                    if (!destOwned) {
+                        throw IOException("Refusing to overwrite unowned file: ${destFile.name}")
                     }
 
                     OnlineInstaller.downloadFileWithResume(
@@ -328,13 +349,11 @@ object UncensoredPatchManager {
                     }
 
                     checkCancelled()
-                    // Remove any differently-named legacy uncensored overlay file before atomic replace
-                    gameDir.listFiles()?.forEach { f ->
-                        if (f.isFile && isSafeOverlayFileName(f.name) &&
-                            !f.name.equals(manifest.fileName, ignoreCase = true)
-                        ) {
-                            f.delete()
-                        }
+                    if (prevInfo != null && isSafeOverlayFileName(prevInfo.fileName) &&
+                        !prevInfo.fileName.equals(manifest.fileName, ignoreCase = true)
+                    ) {
+                        val prevFile = File(gameDir, prevInfo.fileName)
+                        if (prevFile.isFile) prevFile.delete()
                     }
                     if (!partFile.renameTo(destFile)) {
                         if (destFile.exists()) {
@@ -346,7 +365,7 @@ object UncensoredPatchManager {
                         }
                     }
                     metaFile.delete()
-                    cleanupStalePartFiles(gameDir)
+                    cleanupLegacyGameDirPartFiles(gameDir)
                     InstalledUncensoredInfo.write(
                         gameDir,
                         InstalledUncensoredInfo(
@@ -387,14 +406,8 @@ object UncensoredPatchManager {
     }
 
     fun cancelActiveInstall() {
-        val abort: InstallAbortHandle?
-        val job: Job?
-        synchronized(lock) {
-            abort = activeAbortHandle
-            job = activeJob
-        }
+        val abort = synchronized(lock) { activeAbortHandle }
         abort?.abort()
-        job?.cancel()
     }
 
     fun uninstall(gameDir: File): Boolean {
@@ -406,16 +419,16 @@ object UncensoredPatchManager {
             if (f.isFile && !f.delete()) ok = false
         }
         gameDir.listFiles()?.forEach { f ->
-            if (f.isFile && isSafeOverlayFileName(f.name)) {
+            if (f.isFile && isManagedOverlayFileName(f.name)) {
                 if (!f.delete()) ok = false
             }
         }
-        cleanupStalePartFiles(gameDir)
+        cleanupLegacyGameDirPartFiles(gameDir)
         InstalledUncensoredInfo.delete(gameDir)
         return ok
     }
 
-    private fun cleanupStalePartFiles(gameDir: File) {
+    private fun cleanupLegacyGameDirPartFiles(gameDir: File) {
         gameDir.listFiles()?.forEach { f ->
             if (f.isFile && f.name.startsWith(".uncensored_") &&
                 (f.name.endsWith(".part") || f.name.endsWith(".part.meta"))

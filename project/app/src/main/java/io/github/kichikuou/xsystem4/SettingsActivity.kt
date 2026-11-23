@@ -203,7 +203,7 @@ class SettingsActivity : ThemedActivity() {
     private fun onClearCacheClicked() {
         if (clearingCache) return
         val gameList = LauncherActivity.obtainGameList(this, refresh = false)
-        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod || UncensoredPatchManager.isAnyDownloading()) {
             Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
             return
         }
@@ -306,7 +306,7 @@ class SettingsActivity : ThemedActivity() {
     ) {
         if (clearingCache) return
         val gameList = LauncherActivity.obtainGameList(this, refresh = false)
-        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) {
+        if (gameList.installState is InstallState.Installing || gameList.isRestoringMod || UncensoredPatchManager.isAnyDownloading()) {
             Toast.makeText(this, R.string.settings_clear_cache_busy_toast, Toast.LENGTH_SHORT).show()
             return
         }
@@ -388,7 +388,9 @@ class SettingsActivity : ThemedActivity() {
             val children = root.listFiles() ?: continue
             for (f in children) {
                 val n = f.name
-                val isResumableDir = n.startsWith(".online_base_staging_") || n == ".online_mod_cache"
+                val isResumableDir = n.startsWith(".online_base_staging_") ||
+                    n == ".online_mod_cache" ||
+                    n == UncensoredPatchManager.CACHE_DIR_NAME
                 if (isResumableDir) {
                     if (computeFileTreeBytes(f) > 0L) {
                         resumable.add(f)

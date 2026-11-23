@@ -37,6 +37,9 @@ public class UncensoredPatchManagerTest {
         assertTrue(UncensoredPatchManager.INSTANCE.isSafeOverlayFileName("AliceHubUncensoredCG.afa"));
         assertTrue(UncensoredPatchManager.INSTANCE.isSafeOverlayFileName("AliceHubUncensoredCG.ald"));
         assertTrue(UncensoredPatchManager.INSTANCE.isSafeOverlayFileName("Aiuncensored.afa"));
+        assertTrue(UncensoredPatchManager.INSTANCE.isManagedOverlayFileName("AliceHubUncensoredCG.afa"));
+        assertTrue(UncensoredPatchManager.INSTANCE.isManagedOverlayFileName("AliceHubUncensoredCG.ald"));
+        assertFalse(UncensoredPatchManager.INSTANCE.isManagedOverlayFileName("MyUncensoredMod.afa"));
 
         assertFalse(UncensoredPatchManager.INSTANCE.isSafeOverlayFileName("Rance10CG.afa"));
         assertFalse(UncensoredPatchManager.INSTANCE.isSafeOverlayFileName(".AliceHubUncensoredCG.afa"));
@@ -96,6 +99,11 @@ public class UncensoredPatchManagerTest {
         assertFalse(UncensoredPatchManager.INSTANCE.detectInstalled(gameDir));
         assertFalse(Item.Companion.detectInstalledMod(gameDir, null));
 
+        // Unrelated user MOD file containing "uncensored" must NOT be misclassified or deleted
+        File userModUnc = new File(gameDir, "MyUncensoredMod.afa");
+        Files.write(userModUnc.toPath(), "USER_MOD".getBytes(StandardCharsets.UTF_8));
+        assertFalse(UncensoredPatchManager.INSTANCE.detectInstalled(gameDir));
+
         // Installing uncensored overlay must NOT trigger MOD detection
         Files.write(uncFile.toPath(), "AFA".getBytes(StandardCharsets.UTF_8));
         InstalledUncensoredInfo.Companion.write(
@@ -109,7 +117,8 @@ public class UncensoredPatchManagerTest {
         assertNotNull(InstalledUncensoredInfo.Companion.read(gameDir));
         assertFalse(Item.Companion.detectInstalledMod(gameDir, null));
 
-        // Coexisting with a MOD marker: uninstalling uncensored patch must leave base & MOD intact
+        // Coexisting with a MOD marker + user-supplied MyUncensoredMod.afa:
+        // uninstalling uncensored patch must leave base, MOD marker, AND MyUncensoredMod.afa intact
         Files.write(modMarker.toPath(), "{\"version\":\"v0.49\"}".getBytes(StandardCharsets.UTF_8));
         assertTrue(UncensoredPatchManager.INSTANCE.uninstall(gameDir));
         assertFalse(UncensoredPatchManager.INSTANCE.detectInstalled(gameDir));
@@ -117,6 +126,7 @@ public class UncensoredPatchManagerTest {
         assertFalse(uncFile.exists());
         assertTrue(baseAin.exists());
         assertTrue(modMarker.exists());
+        assertTrue(userModUnc.exists());
     }
 
     @Test
