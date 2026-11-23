@@ -1490,6 +1490,8 @@ class GameList(activity: Activity) {
             val baseName = when {
                 classifiedId == GameCatalog.ID_YAKATA2 -> "Yakata2"
                 classifiedId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
+                classifiedId == GameCatalog.ID_GAKUENKING -> "GakuenKING"
+                classifiedId == GameCatalog.ID_ONLYYOU -> "OnlyYou"
                 legacySystem3 -> sanitizeDerivedGameDirName(
                     (GameCatalog.legacySystem3Title(srcDir) ?: srcDir.name).take(64),
                     fallback = "System3"
@@ -1525,6 +1527,13 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_YORUGAKURU -> "Yorugakuru"
                 classifiedId == GameCatalog.ID_RANCE1DIGEST -> "Rance1Digest"
                 classifiedId == GameCatalog.ID_MAMAN -> "Maman"
+                classifiedId == GameCatalog.ID_DIABOLIQUE -> "DiaboLiQuE"
+                classifiedId == GameCatalog.ID_GAKUENKINGEX -> "GakuenKINGEx"
+                classifiedId == GameCatalog.ID_OUDOUYUUSHA -> "OudouYuusha"
+                classifiedId == GameCatalog.ID_TOUSHIN1 -> "Toushin1"
+                classifiedId == GameCatalog.ID_TOUSHIN2 -> "Toushin2"
+                classifiedId == GameCatalog.ID_DARCROWS -> "DARCROWS"
+                classifiedId == GameCatalog.ID_IKUSAMIKO -> "IkusaMiko"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"
