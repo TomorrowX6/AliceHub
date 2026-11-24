@@ -98,7 +98,7 @@ final class OnlineGameInstaller {
             for group in groups {
                 try checkCancelled()
                 let firstIndex = group.entryIndices[0]
-                progress("正在校验 / 下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, completed, total)
+                progress(hubText("正在校验 / 下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), completed, total)
                 let before = completed
                 let multiplier = Int64(group.entryIndices.count)
                 let downloaded = try transfer.downloadVerifiedFile(
@@ -110,7 +110,7 @@ final class OnlineGameInstaller {
                     guard Date().timeIntervalSince(lastProgress) >= 0.08 else { return }
                     lastProgress = Date()
                     let credited = min(before + min(done, group.entrySize) * multiplier, total)
-                    progress("正在下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, credited, total)
+                    progress(hubText("正在下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), credited, total)
                 }
                 for idx in group.entryIndices {
                     downloadedByEntry[idx] = downloaded
@@ -141,8 +141,8 @@ final class OnlineGameInstaller {
                     let activeCount = min(activePaths.count, effectiveConcurrency)
                     let activeName = activePaths.first ?? groups[0].displayPath
                     let title = activeCount > 1
-                        ? "正在下载 \(displayIdx) / \(totalFiles) · \(activeCount) 并发\n" + activeName
-                        : "正在下载 \(displayIdx) / \(totalFiles)\n" + activeName
+                        ? hubText("正在下载 %lld / %lld · %lld 并发\n%@", displayIdx, totalFiles, activeCount, activeName)
+                        : hubText("正在下载 %lld / %lld\n%@", displayIdx, totalFiles, activeName)
                     payload = (title, maxReported)
                 }
                 stateLock.unlock()
@@ -216,10 +216,10 @@ final class OnlineGameInstaller {
         for (index, entry) in manifest.files.enumerated() {
             try checkCancelled()
             guard let downloaded = downloadedByEntry[index] else {
-                throw ModError.message("下载文件缺失：" + entry.path)
+                throw ModError.message(hubText("下载文件缺失：%@", entry.path))
             }
             if entry.extract == true {
-                progress("正在解压并安装\n" + entry.path, total, total)
+                progress(hubText("正在解压并安装\n%@", entry.path), total, total)
                 _ = try ArchiveExtractor.extract(downloaded, to: staging, checkCancelled: self.checkCancelled)
             } else {
                 guard let output = try ArchiveExtractor.outputPath(entry.path, size: 0, root: staging) else {
@@ -231,7 +231,7 @@ final class OnlineGameInstaller {
                     try files.copyItem(at: downloaded, to: output)
                 }
             }
-            progress("已校验 \(index + 1) / \(totalFiles)", total, total)
+            progress(hubText("已校验 %lld / %lld", index + 1, totalFiles), total, total)
         }
         try checkCancelled()
         guard GameLibrary.isGame(staging) else { throw LibraryError.notGame }
@@ -260,7 +260,7 @@ final class OnlineGameDownloadModel: ObservableObject {
         let installer = OnlineGameInstaller()
         self.installer = installer
         activeID = game.id; running = true; succeeded = false; failure = nil
-        completed = 0; total = manifest.totalBytes; progressText = "正在准备下载…"
+        completed = 0; total = manifest.totalBytes; progressText = hubText("正在准备下载…")
         let games = library.gamesDirectory
         DispatchQueue.global(qos: .userInitiated).async {
             var result: Error?
@@ -271,7 +271,7 @@ final class OnlineGameDownloadModel: ObservableObject {
                     }
                 }
             } catch { result = error }
-            let message = result.map { $0 is CancellationError ? "已取消下载；重试时会复用已下载的文件。" : $0.localizedDescription }
+            let message = result.map { $0 is CancellationError ? hubText("已取消下载；重试时会复用已下载的文件。") : $0.localizedDescription }
             DispatchQueue.main.async {
                 self.running = false; self.installer = nil; self.failure = message; self.succeeded = message == nil
                 library.refresh()

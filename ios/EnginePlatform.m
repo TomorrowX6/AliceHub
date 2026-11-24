@@ -6,6 +6,7 @@
 #include "mixer.h"
 
 void savedata_flush_on_background(void);
+void alicehub_ios_localize_modifier_button(void *button);
 
 static void (*gamepad_attach)(UIWindow *);
 static void (*gamepad_command)(int);
@@ -69,7 +70,7 @@ static void add_modifier_button(UIViewController *root)
     button.layer.cornerRadius = 22;
     button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
     button.tintColor = UIColor.whiteColor;
-    button.accessibilityLabel = @"修改器";
+    alicehub_ios_localize_modifier_button((__bridge void *)button);
     [button setImage:[UIImage systemImageNamed:@"wand.and.stars"] forState:UIControlStateNormal];
     [button addAction:[UIAction actionWithHandler:^(UIAction *action) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"AliceHubOpenModifier" object:root];

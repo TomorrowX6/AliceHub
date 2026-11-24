@@ -16,7 +16,7 @@
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
-      <key>CFBundleTypeName</key><string>游戏压缩包或光盘镜像</string>
+      <key>CFBundleTypeName</key><string>Game Archive or Disk Image</string>
       <key>CFBundleTypeRole</key><string>Viewer</string>
       <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>

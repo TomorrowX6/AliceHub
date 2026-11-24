@@ -18,11 +18,11 @@ struct ModReleaseDetail: View {
                         HubSectionHeader(title: entry.version, subtitle: entry.isPatch ? "增量补丁" : "完整版本", symbol: "shippingbox")
                     }.listRowBackground(HubTheme.surface)
                     Section {
-                        if !entry.group.isEmpty { Text("系列：" + entry.group) }
-                        Text("文件：" + entry.fileName).textSelection(.enabled)
-                        if entry.expectedSize > 0 { Text("大小：" + ModCatalog.formatSize(entry.expectedSize)) }
-                        if !entry.formattedDate.isEmpty { Text("时间：" + entry.formattedDate) }
-                        Text(entry.isPatch ? "增量补丁 · 需 " + (entry.baseVersion ?? "-") : (model.descriptor.isCnPatch ? "完整汉化补丁" : "完整版本"))
+                        if !entry.group.isEmpty { Text(hubText("系列：%@", entry.group)) }
+                        Text(hubText("文件：%@", entry.fileName)).textSelection(.enabled)
+                        if entry.expectedSize > 0 { Text(hubText("大小：%@", ModCatalog.formatSize(entry.expectedSize))) }
+                        if !entry.formattedDate.isEmpty { Text(hubText("时间：%@", entry.formattedDate)) }
+                        Text(entry.isPatch ? hubText("增量补丁 · 需 %@", entry.baseVersion ?? "-") : hubText(model.descriptor.isCnPatch ? "完整汉化补丁" : "完整版本"))
                     }
                     if switchBlocked {
                         Section {
@@ -31,13 +31,13 @@ struct ModReleaseDetail: View {
                         }
                     } else if entry.isPatch, let base = entry.baseVersion,
                        !ModCatalog.hasMatchingBaseForPatch(releases, patchIdx: index, hasMod: model.hasMod, installed: model.installed) {
-                        Section { Text("未安装 \(base)，建议组合安装").foregroundColor(.orange) }
+                        Section { Text(hubText("未安装 %@，建议组合安装", base)).foregroundColor(.orange) }
                     }
                     if !entry.changelog.isEmpty { Section("更新说明") { Text(entry.changelog).textSelection(.enabled) } }
                     if !detailActions.isEmpty {
                         Section {
                             ForEach(Array(detailActions.enumerated()), id: \.offset) { _, action in
-                                Button(action.title) { dismiss(); model.install(action.steps) }
+                                Button(hubText(action.title)) { dismiss(); model.install(action.steps) }
                             }
                         }.disabled(model.busy)
                     }
@@ -60,10 +60,10 @@ struct ModReleaseRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(entry.version).font(.headline).foregroundColor(.primary)
             HStack {
-                if latest { chip("最新", .blue) }
-                if installed { chip("已装", .green) }
-                else if base { chip("基础", .green) }
-                if entry.isPatch { chip("补丁", .secondary) }
+                if latest { chip(hubText("最新"), .blue) }
+                if installed { chip(hubText("已装"), .green) }
+                else if base { chip(hubText("基础"), .green) }
+                if entry.isPatch { chip(hubText("补丁"), .secondary) }
             }
             Text(ModManagerPolicy.meta(entry)).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(.vertical, 5)

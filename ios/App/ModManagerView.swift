@@ -91,7 +91,7 @@ struct ModManagerView: View {
         .task { await model.loadCatalog(); library.refresh() }
         .onChange(of: model.busy) { busy in if !busy { library.refresh() } }
         .onDisappear { library.refresh() }
-        .confirmationDialog(model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", isPresented: $localOptions, titleVisibility: .visible) {
+        .confirmationDialog(hubText(model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD"), isPresented: $localOptions, titleVisibility: .visible) {
             Button("从压缩包安装") { importing = ModImport(folder: false) }
             Button("从文件夹安装") { importing = ModImport(folder: true) }
             Button("取消", role: .cancel) {}
@@ -127,7 +127,7 @@ struct ModManagerView: View {
 
     private func directorySwitchLabel(for game: Game) -> String {
         guard let info = InstalledModInfo.readOrInfer(game.url) else {
-            return game.displayName + " · 原版"
+            return game.displayName + " · " + hubText("原版")
         }
         if !model.descriptor.isCnPatch, !info.group.isEmpty, info.group.caseInsensitiveCompare(info.version) != .orderedSame {
             return game.displayName + " · " + info.group + " · " + info.version

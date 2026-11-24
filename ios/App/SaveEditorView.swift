@@ -87,7 +87,7 @@ struct SaveFileEditor: View {
     private func load() {
         let summary = ModifierBridge.readLocalSave(url)
         guard summary["valid"] as? Bool == true else {
-            error = "无法读取存档：\(summary["error"] as? String ?? "未知错误")"
+            error = hubText("无法读取存档：%@", summary["error"] as? String ?? hubText("未知错误"))
             return
         }
         let fields = ModifierBridge.editableFields(summary)
@@ -101,21 +101,21 @@ struct SaveFileEditor: View {
         var changes: [String: Int] = [:]
         for key in keys {
             guard let text = values[key], let value = Int(text.trimmingCharacters(in: .whitespaces)) else {
-                message = "\(key) 不是有效整数"
+                message = hubText("%@ 不是有效整数", key)
                 return
             }
             if value != original[key] { changes[key] = value }
         }
-        guard !changes.isEmpty else { message = "没有修改"; return }
+        guard !changes.isEmpty else { message = hubText("没有修改"); return }
         do {
             try ModifierBridge.writeLocalSave(url, changes: changes)
             load()
             let rejected = changes.filter { original[$0.key] != $0.value }.map(\.key).sorted()
             message = rejected.isEmpty
-                ? "已保存 \(changes.count) 项"
-                : "以下字段未能写入：\(rejected.joined(separator: "、"))"
+                ? hubText("已保存 %lld 项", changes.count)
+                : hubText("以下字段未能写入：%@", rejected.joined(separator: ", "))
         } catch {
-            message = "保存失败"
+            message = hubText("保存失败")
         }
     }
 }

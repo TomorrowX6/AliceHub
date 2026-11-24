@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+@_cdecl("alicehub_ios_localize_modifier_button")
+@MainActor
+func alicehub_ios_localize_modifier_button(_ opaqueButton: UnsafeMutableRawPointer) {
+    Unmanaged<UIButton>.fromOpaque(opaqueButton).takeUnretainedValue().accessibilityLabel = hubText("修改器")
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 

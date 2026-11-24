@@ -811,7 +811,7 @@ final class GameLibrary: ObservableObject {
         guard !importing && !launching else { return }
         importing = true
         error = nil
-        importProgress = "正在复制游戏文件夹…"
+        importProgress = hubText("正在复制游戏文件夹…")
         let destination = gamesDirectory.appendingPathComponent(source.lastPathComponent, isDirectory: true)
         DispatchQueue.global(qos: .userInitiated).async {
             let access = source.startAccessingSecurityScopedResource()
@@ -893,7 +893,7 @@ final class GameLibrary: ObservableObject {
         guard !importing && !launching else { return }
         importing = true
         error = nil
-        importProgress = "正在解压：0 MB"
+        importProgress = hubText("正在解压：%lld MB", 0)
         DispatchQueue.global(qos: .userInitiated).async {
             let access = source.startAccessingSecurityScopedResource()
             defer { if access { source.stopAccessingSecurityScopedResource() } }
@@ -914,7 +914,7 @@ final class GameLibrary: ObservableObject {
                                 let now = Date()
                                 guard now.timeIntervalSince(lastProgress) >= 0.15 else { return }
                                 lastProgress = now
-                                let text = "正在解压：\((completedBytes + bytes) / (1024 * 1024)) MB\n\(entry)"
+                                let text = hubText("正在解压：%lld MB\n%@", (completedBytes + bytes) / (1024 * 1024), entry)
                                 DispatchQueue.main.async { self.importProgress = text }
                             })
                             completedBytes += latestBytes

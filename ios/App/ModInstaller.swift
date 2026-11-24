@@ -49,7 +49,7 @@ final class ModInstaller: ObservableObject {
         lock.lock()
         guard !running else { lock.unlock(); return false }
         running = true; cancelled = false; lock.unlock()
-        let publishStart = { self.isRunning = true; self.succeeded = false; self.failure = nil; self.progressText = "正在加载…"; self.fraction = nil }
+        let publishStart = { self.isRunning = true; self.succeeded = false; self.failure = nil; self.progressText = hubText("正在加载…"); self.fraction = nil }
         if Thread.isMainThread { publishStart() } else { DispatchQueue.main.async(execute: publishStart) }
         queue.async {
             var failure: Error?
@@ -58,7 +58,7 @@ final class ModInstaller: ObservableObject {
             DispatchQueue.main.async {
                 self.isRunning = false; self.succeeded = result == nil
                 self.failure = result is CancellationError ? nil : result?.localizedDescription
-                if result is CancellationError { self.progressText = "已取消" }
+                if result is CancellationError { self.progressText = hubText("已取消") }
                 else if result == nil { self.fraction = 1 }
                 self.lock.lock(); self.running = false; self.activeTasks.removeAll(); self.lock.unlock()
             }
@@ -73,7 +73,7 @@ final class ModInstaller: ObservableObject {
             for (index, release) in steps.enumerated() {
                 try self.checkCancelled()
                 let prefix = steps.count > 1 ? "[\(index + 1)/\(steps.count)] " : ""
-                self.report(prefix + "准备下载 \(release.version)…", 0)
+                self.report(prefix + hubText("准备下载 %@…", release.version), 0)
                 let archive = try self.download(release, games: game.deletingLastPathComponent(), prefix: prefix)
                 let staging = game.deletingLastPathComponent().appendingPathComponent(".mod_online_extract_temp_" + UUID().uuidString)
                 defer { try? ModFiles.removeIfPresent(staging) }
@@ -84,7 +84,7 @@ final class ModInstaller: ObservableObject {
                     let storedGroup = previous?.group ?? ""
                     let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
                     if ModCatalog.groupsConflict(release.group, existingGroup) {
-                        throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                        throw ModError.message(hubText("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。"))
                     }
                 }
                 try ModOverlay.applyModStaging(staging, to: game, cleanReplace: !release.isPatch, isCnPatch: descriptor.isCnPatch) { full in
@@ -135,7 +135,7 @@ final class ModInstaller: ObservableObject {
                             try ModFiles.files.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                             try ModFiles.files.copyItem(at: file, to: destination)
                             total += Int64((try file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-                            self.report("已复制 \(total / 1048576) MB\n\(relative)")
+                            self.report(hubText("已复制 %lld MB\n%@", total / 1048576, relative))
                         }
                     }
                 } catch { copyError = error }
@@ -148,10 +148,10 @@ final class ModInstaller: ObservableObject {
     @discardableResult
     func restoreVanilla(_ game: URL, descriptor: ModGameDescriptor) -> Bool {
         start {
-            guard ModOverlay.canRestoreVanilla(game) else { throw ModError.message(descriptor.isCnPatch ? "当前无原版备份，请删除游戏本体后重装原版。" : "整合包无原版备份，请删除游戏本体后重装原版。") }
+            guard ModOverlay.canRestoreVanilla(game) else { throw ModError.message(descriptor.isCnPatch ? hubText("当前无原版备份，请删除游戏本体后重装原版。") : hubText("整合包无原版备份，请删除游戏本体后重装原版。")) }
             try self.checkCancelled()
             try ModOverlay.restoreVanilla(game)
-            self.report(descriptor.isCnPatch ? "已卸载汉化补丁" : "已卸载 MOD", 1)
+            self.report(descriptor.isCnPatch ? hubText("已卸载汉化补丁") : hubText("已卸载 MOD"), 1)
         }
     }
 
@@ -163,7 +163,7 @@ final class ModInstaller: ObservableObject {
             let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: game) : storedGroup
             let incomingGroup = ModCatalog.inferModGroup(fileName: label, directory: staging)
             if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
-                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                throw ModError.message(hubText("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。"))
             }
         }
         try ModOverlay.applyModStaging(staging, to: game, cleanReplace: cleanReplace, isCnPatch: descriptor.isCnPatch) { full in
@@ -181,7 +181,7 @@ final class ModInstaller: ObservableObject {
         }
     }
     private func extract(_ archive: URL, to staging: URL) throws {
-        try ModArchiveExtractor.extract(file: archive, to: staging, progress: { bytes, path in self.report("已解压 \(bytes / 1048576) MB\n\(path)") }, isCancelled: { self.isCancelled() })
+        try ModArchiveExtractor.extract(file: archive, to: staging, progress: { bytes, path in self.report(hubText("已解压 %lld MB\n%@", bytes / 1048576, path)) }, isCancelled: { self.isCancelled() })
     }
 
     static func computeSegmentCount(remainingBytes: Int64, maxConnections: Int,
@@ -261,7 +261,7 @@ final class ModInstaller: ObservableObject {
             progress: progress,
             asyncCompletion: nil
         ) else {
-            throw ModError.message("下载失败，请检查网络与可用空间")
+            throw ModError.message(hubText("下载失败，请检查网络与可用空间"))
         }
         return url
     }
@@ -277,7 +277,7 @@ final class ModInstaller: ObservableObject {
         let cache = cacheDirectory ?? games.appendingPathComponent(".online_mod_cache")
         try ModFiles.files.createDirectory(at: cache, withIntermediateDirectories: true)
         let hash = release.expectedSha256 ?? ""
-        guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message("SHA-256 校验值无效") }
+        guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message(hubText("SHA-256 校验值无效")) }
         let effectiveUrl = DownloadRoute.current.resolveURL(release.downloadUrl)
         let resolvedRelease: ModReleaseEntry = {
             var copy = release
@@ -318,7 +318,7 @@ final class ModInstaller: ObservableObject {
             if let progress { progress(done, total) }
             else {
                 let fraction = total > 0 ? Double(done) / Double(total) : nil
-                self.report(prefix + (fraction.map { "下载中 · \(Int($0 * 100))% · -- MB/s\n\(done / 1048576) / \(max(1, total / 1048576)) MB · \(release.version)" } ?? "下载中 · \(done / 1048576) MB · -- MB/s\n\(release.version)"), fraction)
+                self.report(prefix + (fraction.map { hubText("下载中 · %lld%% · -- MB/s\n%lld / %lld MB · %@", Int($0 * 100), done / 1048576, max(1, total / 1048576), release.version) } ?? hubText("下载中 · %lld MB · -- MB/s\n%@", done / 1048576, release.version)), fraction)
             }
         }
 
@@ -372,7 +372,7 @@ final class ModInstaller: ObservableObject {
             if !hash.isEmpty && (json["sha256"] as? String)?.lowercased() == hash.lowercased() { return json }
             return json["url"] as? String == effectiveUrl ? json : nil
         }
-        var lastError: Error = ModError.message("下载失败，请检查网络与可用空间")
+        var lastError: Error = ModError.message(hubText("下载失败，请检查网络与可用空间"))
         for attempt in 0..<8 {
             try checkCancelled()
             let saved = metadata(), etag = saved?["etag"] as? String
@@ -396,11 +396,11 @@ final class ModInstaller: ObservableObject {
                 try transfer.run { task in activeTask = task; self.registerTask(task) }
                 try checkCancelled()
                 let downloaded = ModFiles.fileSize(part)
-                if resolvedRelease.expectedSize > 0 && downloaded != resolvedRelease.expectedSize { throw ModError.message("下载文件大小不匹配") }
+                if resolvedRelease.expectedSize > 0 && downloaded != resolvedRelease.expectedSize { throw ModError.message(hubText("下载文件大小不匹配")) }
                 let hashMatches = hash.isEmpty ? true : try fileHash(part) == hash.lowercased()
                 if !hashMatches {
                     try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(meta)
-                    throw ModError.message("SHA-256 校验失败")
+                    throw ModError.message(hubText("SHA-256 校验失败"))
                 }
                 return part
             } catch {
@@ -489,7 +489,7 @@ final class ModInstaller: ObservableObject {
         if needBytes > 0,
            let free = try ModFiles.files.attributesOfFileSystem(forPath: part.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber,
            needBytes > free.int64Value - 64 * 1048576 {
-            throw ModError.message("存储空间不足")
+            throw ModError.message(hubText("存储空间不足"))
         }
 
         let stateLock = NSLock()
@@ -598,7 +598,7 @@ final class ModInstaller: ObservableObject {
         }
 
         func runSegmentWithRetries(_ seg: DownloadSegment) throws {
-            var lastErr: Error = ModError.message("下载失败，请检查网络与可用空间")
+            var lastErr: Error = ModError.message(hubText("下载失败，请检查网络与可用空间"))
             for attempt in 0..<8 {
                 if isFileStopped() { throw CancellationError() }
                 if seg.isComplete { return }
@@ -698,7 +698,7 @@ final class ModInstaller: ObservableObject {
             }
             do {
                 guard segments.allSatisfy(\.isComplete), ModFiles.fileSize(part) == knownTotal else {
-                    throw ModError.message("下载文件大小不匹配")
+                    throw ModError.message(hubText("下载文件大小不匹配"))
                 }
                 if !hashless {
                     let actual = try self.fileHash(part)
@@ -709,7 +709,7 @@ final class ModInstaller: ObservableObject {
                             finishFile(.success(url))
                             return
                         }
-                        throw ModError.message("SHA-256 校验失败")
+                        throw ModError.message(hubText("SHA-256 校验失败"))
                     }
                 }
                 snapshotMeta(segmented: false)
@@ -756,7 +756,7 @@ final class ModInstaller: ObservableObject {
             switch syncResult {
             case .success(let url): return url
             case .failure(let error): throw error
-            case nil: throw ModError.message("下载失败，请检查网络与可用空间")
+            case nil: throw ModError.message(hubText("下载失败，请检查网络与可用空间"))
             }
         }
 
@@ -810,7 +810,7 @@ final class ModInstaller: ObservableObject {
                 }
                 if try !hashless && fileHash(part) != hash.lowercased() {
                     try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(meta)
-                    throw ModError.message("SHA-256 校验失败")
+                    throw ModError.message(hubText("SHA-256 校验失败"))
                 }
                 progress(written, expected > 0 ? expected : written)
                 return part
@@ -844,7 +844,7 @@ final class ModInstaller: ObservableObject {
         switch syncResult {
         case .success(let url): return url
         case .failure(let error): throw error
-        case nil: throw ModError.message("下载失败，请检查网络与可用空间")
+        case nil: throw ModError.message(hubText("下载失败，请检查网络与可用空间"))
         }
     }
 
@@ -890,7 +890,7 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
     }
     static func strong(_ etag: String?) -> Bool { etag.map { !$0.isEmpty && !$0.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("w/") } ?? false }
     func run(register: (URLSessionTask) -> Void) throws {
-        guard let url = URL(string: release.downloadUrl), ["http", "https"].contains(url.scheme) else { throw ModError.message("无效下载地址") }
+        guard let url = URL(string: release.downloadUrl), ["http", "https"].contains(url.scheme) else { throw ModError.message(hubText("无效下载地址")) }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
@@ -910,7 +910,7 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
         let task = session.dataTask(with: request)
         register(task); task.resume(); done.wait()
         if let error { throw error }
-        if total > 0 && received != total { throw ModError.message("下载文件大小不匹配") }
+        if total > 0 && received != total { throw ModError.message(hubText("下载文件大小不匹配")) }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         guard !cancelled(), let scheme = request.url?.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
@@ -933,22 +933,22 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
                 let range = response.value(forHTTPHeaderField: "Content-Range") ?? ""
                 guard let start = range.modMatch(#"^bytes (\d+)-\d+/\d+$"#), Int64(start) == received,
                       !(release.expectedSha256 ?? "").isEmpty || (received > 0 && Self.strong(etag) && etag == saved?["etag"] as? String) else {
-                    try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(part.appendingPathExtension("meta")); throw ModError.message("下载续传校验失败")
+                    try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(part.appendingPathExtension("meta")); throw ModError.message(hubText("下载续传校验失败"))
                 }
                 total = Int64(range.components(separatedBy: "/").last ?? "") ?? -1
             } else if response.statusCode == 200 {
                 received = 0; total = response.expectedContentLength
             } else {
                 if response.statusCode == 416 { try ModFiles.removeIfPresent(part); try ModFiles.removeIfPresent(part.appendingPathExtension("meta")) }
-                throw ModError.message("下载失败 HTTP \(response.statusCode)")
+                throw ModError.message(hubText("下载失败 HTTP %lld", response.statusCode))
             }
             if release.expectedSize >= 0 && total >= 0 && total != release.expectedSize {
-                throw ModError.message("下载文件大小不匹配")
+                throw ModError.message(hubText("下载文件大小不匹配"))
             }
             if total > received,
                let free = try ModFiles.files.attributesOfFileSystem(forPath: part.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber,
-               total - received > free.int64Value - 64 * 1048576 { throw ModError.message("存储空间不足") }
-            if !ModFiles.exists(part) { guard ModFiles.files.createFile(atPath: part.path, contents: nil) else { throw ModError.message("下载失败，请检查网络与可用空间") } }
+               total - received > free.int64Value - 64 * 1048576 { throw ModError.message(hubText("存储空间不足")) }
+            if !ModFiles.exists(part) { guard ModFiles.files.createFile(atPath: part.path, contents: nil) else { throw ModError.message(hubText("下载失败，请检查网络与可用空间")) } }
             handle = try FileHandle(forWritingTo: part)
             if received == 0 { try handle!.truncate(atOffset: 0) }
             try handle!.seekToEnd()
@@ -963,7 +963,7 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
         do {
             if cancelled() { throw CancellationError() }
             if release.expectedSize >= 0 && Int64(data.count) > release.expectedSize - received {
-                throw ModError.message("下载文件大小不匹配")
+                throw ModError.message(hubText("下载文件大小不匹配"))
             }
             try handle?.write(contentsOf: data); received += Int64(data.count); progress(received, total)
         } catch { self.error = error; dataTask.cancel() }
@@ -1012,7 +1012,7 @@ private func pwriteAll(fd: Int32, data: Data, offset: Int64) throws {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
             }
             if n == 0 {
-                throw ModError.message("写入文件失败")
+                throw ModError.message(hubText("写入文件失败"))
             }
             written += n
         }
@@ -1061,7 +1061,7 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
 
     func run(register: (URLSessionTask) -> Void) throws -> Outcome {
         guard let url = URL(string: urlString), ["http", "https"].contains(url.scheme) else {
-            throw ModError.message("无效下载地址")
+            throw ModError.message(hubText("无效下载地址"))
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
@@ -1075,7 +1075,7 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
         if let error { throw error }
         if case .restartFull = outcome { return .restartFull }
         guard case .partialComplete(let etag) = outcome, remaining == 0 else {
-            throw ModError.message("下载分片提前结束")
+            throw ModError.message(hubText("下载分片提前结束"))
         }
         return .partialComplete(etag: etag)
     }
@@ -1116,7 +1116,7 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
             self.outcome = .restartFull
             completionHandler(.cancel)
         } else {
-            self.error = ModError.message("下载失败 HTTP \(http.statusCode)")
+            self.error = ModError.message(hubText("下载失败 HTTP %lld", http.statusCode))
             completionHandler(.cancel)
         }
     }
@@ -1125,7 +1125,7 @@ private final class ModSegmentTransfer: NSObject, URLSessionDataDelegate {
         do {
             if cancelled() { throw CancellationError() }
             let count = Int64(data.count)
-            guard count <= remaining else { throw ModError.message("下载分片大小不匹配") }
+            guard count <= remaining else { throw ModError.message(hubText("下载分片大小不匹配")) }
             try pwriteAll(fd: fd, data: data, offset: writePos)
             writePos += count
             remaining -= count
@@ -1203,7 +1203,7 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
 
     func run(register: (URLSessionTask) -> Void) throws -> Outcome {
         guard let url = URL(string: urlString), ["http", "https"].contains(url.scheme) else {
-            throw ModError.message("无效下载地址")
+            throw ModError.message(hubText("无效下载地址"))
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
@@ -1217,7 +1217,7 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
         if mode == 3 { return .fallbackSingleStream }
         if let error { throw error }
         if mode == 2 { return .full200Complete(written: fullWritten, total: fullTotal) }
-        guard mode == 1, remaining == 0 else { throw ModError.message("下载分片提前结束") }
+        guard mode == 1, remaining == 0 else { throw ModError.message(hubText("下载分片提前结束")) }
         return .partialComplete
     }
 
@@ -1256,11 +1256,11 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
             } else if http.statusCode == 200 {
                 fullTotal = http.expectedContentLength > 0 ? http.expectedContentLength : expectedTotal
                 if expectedTotal > 0 && http.expectedContentLength > 0 && http.expectedContentLength != expectedTotal {
-                    throw ModError.message("下载文件大小不匹配")
+                    throw ModError.message(hubText("下载文件大小不匹配"))
                 }
                 if !ModFiles.exists(part) {
                     guard ModFiles.files.createFile(atPath: part.path, contents: nil) else {
-                        throw ModError.message("下载失败，请检查网络与可用空间")
+                        throw ModError.message(hubText("下载失败，请检查网络与可用空间"))
                     }
                 }
                 fullHandle = try FileHandle(forWritingTo: part)
@@ -1274,7 +1274,7 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
                 mode = 3
                 completionHandler(.cancel)
             } else {
-                throw ModError.message("下载失败 HTTP \(http.statusCode)")
+                throw ModError.message(hubText("下载失败 HTTP %lld", http.statusCode))
             }
         } catch {
             self.error = error
@@ -1287,14 +1287,14 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
             if cancelled() { throw CancellationError() }
             if mode == 1 {
                 let count = Int64(data.count)
-                guard count <= remaining else { throw ModError.message("下载分片大小不匹配") }
+                guard count <= remaining else { throw ModError.message(hubText("下载分片大小不匹配")) }
                 try pwriteAll(fd: fd, data: data, offset: writePos)
                 writePos += count
                 remaining -= count
                 onPartialBytes(count)
             } else if mode == 2 {
                 if expectedTotal > 0 && Int64(data.count) > expectedTotal - fullWritten {
-                    throw ModError.message("下载文件大小不匹配")
+                    throw ModError.message(hubText("下载文件大小不匹配"))
                 }
                 try fullHandle?.write(contentsOf: data)
                 fullWritten += Int64(data.count)

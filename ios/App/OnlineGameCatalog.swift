@@ -193,11 +193,11 @@ struct OnlineGameManifest: Decodable {
     }
 
     static func parse(_ data: Data) throws -> Self {
-        guard data.count <= 4 * 1048576 else { throw ModError.message("下载清单过大") }
+        guard data.count <= 4 * 1048576 else { throw ModError.message(hubText("下载清单过大")) }
         let manifest = try JSONDecoder().decode(Self.self, from: data)
         guard safePath(manifest.baseName), !manifest.baseName.contains("/"), !manifest.baseName.hasPrefix("."),
               !manifest.files.isEmpty, manifest.files.count <= 10000 else {
-            throw ModError.message("游戏清单无效")
+            throw ModError.message(hubText("游戏清单无效"))
         }
         var paths = Set<String>(), total: Int64 = 0
         for entry in manifest.files {
@@ -205,17 +205,17 @@ struct OnlineGameManifest: Decodable {
             let sum = total.addingReportingOverflow(entry.size)
             guard safePath(entry.path), safePath(entry.key), entry.size >= 0, !sum.overflow,
                   entry.sha256.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil,
-                  paths.insert(path).inserted else { throw ModError.message("游戏清单包含不安全或重复的文件") }
+                  paths.insert(path).inserted else { throw ModError.message(hubText("游戏清单包含不安全或重复的文件")) }
             total = sum.partialValue
         }
         for path in paths {
             var parts = path.split(separator: "/"); parts.removeLast()
             while !parts.isEmpty {
-                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message("游戏清单文件路径冲突") }
+                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message(hubText("游戏清单文件路径冲突")) }
                 parts.removeLast()
             }
         }
-        guard total > 0 else { throw ModError.message("游戏清单为空") }
+        guard total > 0 else { throw ModError.message(hubText("游戏清单为空")) }
         return manifest
     }
 
@@ -225,7 +225,7 @@ struct OnlineGameManifest: Decodable {
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw ModError.message("无法获取游戏清单，请检查网络后重试")
+            throw ModError.message(hubText("无法获取游戏清单，请检查网络后重试"))
         }
         return try parse(data)
     }

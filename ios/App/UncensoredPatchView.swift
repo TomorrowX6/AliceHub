@@ -19,15 +19,15 @@ struct UncensoredPatchView: View {
         if installed {
             if let info = installedInfo {
                 let parts = [
-                    "已安装",
-                    info.cgCount > 0 ? "\(info.cgCount) 张 CG" : "",
+                    hubText("已安装"),
+                    info.cgCount > 0 ? hubText("%lld 张 CG", info.cgCount) : "",
                     info.size > 0 ? ModCatalog.formatSize(info.size) : ""
                 ].filter { !$0.isEmpty }
                 return parts.joined(separator: " · ")
             }
-            return "已安装"
+            return hubText("已安装")
         }
-        return "未安装"
+        return hubText("未安装")
     }
 
     var body: some View {
@@ -41,7 +41,7 @@ struct UncensoredPatchView: View {
                                 .font(.footnote)
                                 .foregroundColor(HubTheme.secondary)
                             Text([ModCatalog.formatSize(manifest.size),
-                                  manifest.cgCount > 0 ? "\(manifest.cgCount) 张 CG" : "",
+                                  manifest.cgCount > 0 ? hubText("%lld 张 CG", manifest.cgCount) : "",
                                   manifest.updatedAt].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundColor(HubTheme.secondary)
@@ -53,7 +53,7 @@ struct UncensoredPatchView: View {
                             installer.install(manifest, to: game.url)
                         } label: {
                             Label(
-                                installed ? "重新安装 · \(ModCatalog.formatSize(manifest.size))" : "下载并安装 · \(ModCatalog.formatSize(manifest.size))",
+                                installed ? hubText("重新安装 · %@", ModCatalog.formatSize(manifest.size)) : hubText("下载并安装 · %@", ModCatalog.formatSize(manifest.size)),
                                 systemImage: "arrow.down.circle"
                             ).frame(maxWidth: .infinity)
                         }
@@ -133,7 +133,7 @@ struct UncensoredPatchView: View {
                 refreshState()
                 library.refresh()
                 if installer.succeeded {
-                    notice = "无码补丁安装成功"
+                    notice = hubText("无码补丁安装成功")
                 } else if let err = installer.failure {
                     alertError = err
                 }
@@ -146,7 +146,7 @@ struct UncensoredPatchView: View {
                     try UncensoredPatchStore.uninstall(from: game.url)
                     refreshState()
                     library.refresh()
-                    notice = "已卸载无码补丁"
+                    notice = hubText("已卸载无码补丁")
                 } catch {
                     alertError = error.localizedDescription
                 }
