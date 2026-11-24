@@ -643,6 +643,12 @@ void PE_UpdateInputState(int passed_time)
 	}
 	bool cur_clicking = key_is_down(VK_LBUTTON);
 	if (input_take_long_touch_click_cancel() && !cur_clicking) {
+		// Long press turned the held touch into Ctrl: release without a click.
+		struct parts *down = prev_clicking && click_down_parts ? parts_try_get(click_down_parts) : NULL;
+		if (down)
+			parts_msg_push(down, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
+		if (parts_v2 && parts_began_click && prev_clicking && whole_lclick_down)
+			parts_msg_push(NULL, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
 		prev_clicking = false;
 		whole_lclick_down = false;
 		click_down_parts = 0;
