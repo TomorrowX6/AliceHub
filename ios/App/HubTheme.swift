@@ -11,6 +11,10 @@ enum HubTheme {
     static let secondary = adaptive(0x5B6170, 0xA4AAB8)
     static let success = adaptive(0x1F7A3D, 0x7FD79A)
     static let successBackground = adaptive(0xE0F4E6, 0x12301D)
+    static let primaryChip = adaptive(0x2F3FA6, 0xC3CCFF)
+    static let primaryChipBackground = adaptive(0xE4E7F8, 0x2B3568)
+    static let warning = adaptive(0x9A5B00, 0xFFCB6B)
+    static let warningBackground = adaptive(0xFFF0D1, 0x3A2A0A)
 
     private static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
         Color(UIColor { traits in
@@ -50,13 +54,46 @@ struct HubPrimaryButton: ButtonStyle {
 }
 
 struct HubBadge: View {
+    enum Tone {
+        case neutral, success, primary, warning
+    }
+
     let title: String
-    var success = false
+    let tone: Tone
+
+    init(title: String, tone: Tone) {
+        self.title = title
+        self.tone = tone
+    }
+
+    init(title: String, success: Bool = false) {
+        self.title = title
+        self.tone = success ? .success : .neutral
+    }
+
+    private var foreground: Color {
+        switch tone {
+        case .neutral: return HubTheme.secondary
+        case .success: return HubTheme.success
+        case .primary: return HubTheme.primaryChip
+        case .warning: return HubTheme.warning
+        }
+    }
+
+    private var background: Color {
+        switch tone {
+        case .neutral: return HubTheme.variant
+        case .success: return HubTheme.successBackground
+        case .primary: return HubTheme.primaryChipBackground
+        case .warning: return HubTheme.warningBackground
+        }
+    }
+
     var body: some View {
         Text(title).font(.caption.weight(.medium))
             .padding(.horizontal, 9).padding(.vertical, 5)
-            .foregroundColor(success ? HubTheme.success : HubTheme.secondary)
-            .background(success ? HubTheme.successBackground : HubTheme.variant)
+            .foregroundColor(foreground)
+            .background(background)
             .clipShape(Capsule())
     }
 }

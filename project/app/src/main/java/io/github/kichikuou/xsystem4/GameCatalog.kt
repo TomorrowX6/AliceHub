@@ -28,7 +28,8 @@ data class GameDescriptor @JvmOverloads constructor(
     val isCnPatch: Boolean = false,
     val overlayCdnBaseUrl: String? = null,
     val overlayCatalogRelPath: String = "files/mods/index.json",
-    val supportsUncensoredPatch: Boolean = false
+    val supportsUncensoredPatch: Boolean = false,
+    val hasChinese: Boolean = false
 ) {
     val effectiveOverlayCdnUrl: String?
         get() = overlayCdnBaseUrl ?: onlineBaseCdnUrl
@@ -185,6 +186,82 @@ object GameCatalog {
 
     internal fun hasLonginusChsConfig(fileNames: Collection<String>): Boolean =
         fileNames.any { it.equals("AliceStart.CHS", true) || it.equals("CHS.TBL", true) }
+
+    private val CHINESE_MARKER_ASSET_EXTENSIONS = setOf(
+        "ain", "afa", "ald", "chs", "ex", "fnl", "ini", "dat", "ttf", "otf"
+    )
+
+    /**
+     * Detects explicit local Chinese-translation asset markers in a game directory's top-level
+     * filenames (ignoring documentation files such as readme/manual `.txt` or `.md`).
+     */
+    @JvmStatic
+    fun hasLocalChineseMarkers(fileNames: Collection<String>): Boolean {
+        if (fileNames.isEmpty()) return false
+        if (hasLonginusChsConfig(fileNames)) return true
+        return fileNames.any { name ->
+            val lower = name.lowercase()
+            if (lower == "alicecn.ain" ||
+                lower == "haru_c.ain" ||
+                lower == "gbk.ain" ||
+                lower == "simhei.ttf" ||
+                lower.endsWith("_chs.ald") ||
+                lower.endsWith("chs.afa") ||
+                lower.endsWith("chs2.afa") ||
+                lower.endsWith("_cn.afa") ||
+                lower.endsWith("_cn.ain") ||
+                lower.endsWith("_cn.ald")
+            ) {
+                return@any true
+            }
+            val ext = lower.substringAfterLast('.', "")
+            if (ext !in CHINESE_MARKER_ASSET_EXTENSIONS) {
+                return@any false
+            }
+            lower.startsWith("sourcehansanscn") ||
+                lower.contains("_cn_") ||
+                lower.contains("汉化") ||
+                lower.contains("中文")
+        }
+    }
+
+    @JvmStatic
+    fun hasLocalChineseMarkers(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val names = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+        return hasLocalChineseMarkers(names)
+    }
+
+    @JvmStatic
+    fun hasExplicitNonChineseEdition(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
+            ?: return false
+        if (ini.length() > 256L * 1024L) return false
+        val legacyId = runCatching { legacySystem3GameId(ini.readBytes()) }.getOrNull() ?: return false
+        return legacyId.endsWith("_eng")
+    }
+
+    @JvmStatic
+    @JvmOverloads
+    fun hasChineseTranslation(
+        descriptor: GameDescriptor,
+        item: Item? = null,
+        modInfo: InstalledModInfo? = null
+    ): Boolean {
+        if (modInfo?.kind == InstalledModInfo.KIND_CN_PATCH) return true
+        if (item != null) {
+            val localCn = item.cachedHasLocalCnMarkers ?: hasLocalChineseMarkers(item.path).also {
+                item.cachedHasLocalCnMarkers = it
+            }
+            if (localCn) return true
+            val explicitNonCn = item.cachedHasExplicitNonCnEdition ?: hasExplicitNonChineseEdition(item.path).also {
+                item.cachedHasExplicitNonCnEdition = it
+            }
+            if (explicitNonCn) return false
+        }
+        return descriptor.hasChinese || descriptor.isCnPatch
+    }
 
     internal fun matchConfiguredChsCodeFileName(
         codeName: String?,
@@ -6603,7 +6680,8 @@ object GameCatalog {
                 supportsOnlineMod = true,
                 supportsLocalMod = true,
                 isRance10 = true,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_DOHNA_DOHNA -> GameDescriptor(
                 id = ID_DOHNA_DOHNA,
@@ -6618,7 +6696,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.DOHNA_DOHNA_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_EVENICLE -> GameDescriptor(
                 id = ID_EVENICLE,
@@ -6636,7 +6715,8 @@ object GameCatalog {
                 isRance10 = false,
                 isCnPatch = true,
                 overlayCdnBaseUrl = OnlineInstaller.EVENICLE_CDN_URL,
-                overlayCatalogRelPath = "files/cn-patch/index.json"
+                overlayCatalogRelPath = "files/cn-patch/index.json",
+                hasChinese = true
             )
             ID_EVENICLE2 -> GameDescriptor(
                 id = ID_EVENICLE2,
@@ -6654,7 +6734,8 @@ object GameCatalog {
                 isRance10 = false,
                 isCnPatch = true,
                 overlayCdnBaseUrl = OnlineInstaller.EVENICLE2_CDN_URL,
-                overlayCatalogRelPath = "files/cn-patch/index.json"
+                overlayCatalogRelPath = "files/cn-patch/index.json",
+                hasChinese = true
             )
             ID_SENGOKU_RANCE -> GameDescriptor(
                 id = ID_SENGOKU_RANCE,
@@ -6670,7 +6751,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE01 -> GameDescriptor(
                 id = ID_RANCE01,
@@ -6686,7 +6768,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE02 -> GameDescriptor(
                 id = ID_RANCE02,
@@ -6702,7 +6785,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE03 -> GameDescriptor(
                 id = ID_RANCE03,
@@ -6718,7 +6802,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE04 -> GameDescriptor(
                 id = ID_RANCE04,
@@ -6733,7 +6818,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE04_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_RANCE41 -> GameDescriptor(
                 id = ID_RANCE41,
@@ -6748,7 +6834,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE41_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_RANCE42 -> GameDescriptor(
                 id = ID_RANCE42,
@@ -6763,7 +6850,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE42_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_RANCE5D -> GameDescriptor(
                 id = ID_RANCE5D,
@@ -6779,7 +6867,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE06 -> GameDescriptor(
                 id = ID_RANCE06,
@@ -6795,7 +6884,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE08 -> GameDescriptor(
                 id = ID_RANCE08,
@@ -6811,7 +6901,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_RANCE09 -> GameDescriptor(
                 id = ID_RANCE09,
@@ -6827,7 +6918,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_ESCALAYER -> GameDescriptor(
                 id = ID_ESCALAYER,
@@ -6857,7 +6949,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.ESCALAYER_REBOOT_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_GALZOO -> GameDescriptor(
                 id = ID_GALZOO,
@@ -6872,7 +6965,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.GALZOO_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_IXSEAL -> GameDescriptor(
                 id = ID_IXSEAL,
@@ -6887,7 +6981,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.IXSEAL_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_HARUKA -> GameDescriptor(
                 id = ID_HARUKA,
@@ -6917,7 +7012,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMASHIBORI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TSUMAMIGUI3 -> GameDescriptor(
                 id = ID_TSUMAMIGUI3,
@@ -6932,7 +7028,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_KICHIKUOU -> GameDescriptor(
                 id = ID_KICHIKUOU,
@@ -6947,7 +7044,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.KICHIKUOU_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_DAIAKUJI -> GameDescriptor(
                 id = ID_DAIAKUJI,
@@ -6962,7 +7060,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.DAIAKUJI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_DAIBANCHOU -> GameDescriptor(
                 id = ID_DAIBANCHOU,
@@ -6977,7 +7076,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.DAIBANCHOU_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_DAITEIKOKU -> GameDescriptor(
                 id = ID_DAITEIKOKU,
@@ -6992,7 +7092,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.DAITEIKOKU_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TSUMAMIGUI -> GameDescriptor(
                 id = ID_TSUMAMIGUI,
@@ -7007,7 +7108,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_KAERUNYO -> GameDescriptor(
                 id = ID_KAERUNYO,
@@ -7022,7 +7124,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.KAERUNYO_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_ATLACHNACHA -> GameDescriptor(
                 id = ID_ATLACHNACHA,
@@ -7037,7 +7140,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.ATLACHNACHA_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_REISHIKI -> GameDescriptor(
                 id = ID_REISHIKI,
@@ -7052,7 +7156,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.REISHIKI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_HARUURARE -> GameDescriptor(
                 id = ID_HARUURARE,
@@ -7067,7 +7172,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.HARUURARE_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_OKUSAMAJUN -> GameDescriptor(
                 id = ID_OKUSAMAJUN,
@@ -7082,7 +7188,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.OKUSAMAJUN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_OKUSAMANTR -> GameDescriptor(
                 id = ID_OKUSAMANTR,
@@ -7097,7 +7204,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.OKUSAMANTR_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_EVENICLE2RANCE -> GameDescriptor(
                 id = ID_EVENICLE2RANCE,
@@ -7112,7 +7220,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLE2RANCE_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_EVENICLEGAIDEN -> GameDescriptor(
                 id = ID_EVENICLEGAIDEN,
@@ -7127,7 +7236,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLEGAIDEN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_WAIDONYO -> GameDescriptor(
                 id = ID_WAIDONYO,
@@ -7142,7 +7252,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.WAIDONYO_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_RANCE6AFTER -> GameDescriptor(
                 id = ID_RANCE6AFTER,
@@ -7157,7 +7268,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE6AFTER_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_YAKATA2 -> GameDescriptor(
                 id = ID_YAKATA2,
@@ -7172,7 +7284,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.YAKATA2_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_SDPSMARIA -> GameDescriptor(
                 id = ID_SDPSMARIA,
@@ -7187,7 +7300,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.SDPSMARIA_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TOUSHIN3 -> GameDescriptor(
                 id = ID_TOUSHIN3,
@@ -7202,7 +7316,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TOUSHIN3_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_OYAKORANKAN -> GameDescriptor(
                 id = ID_OYAKORANKAN,
@@ -7217,7 +7332,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.OYAKORANKAN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_YORUGAKURU -> GameDescriptor(
                 id = ID_YORUGAKURU,
@@ -7232,7 +7348,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.YORUGAKURU_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_RANCE1DIGEST -> GameDescriptor(
                 id = ID_RANCE1DIGEST,
@@ -7247,7 +7364,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.RANCE1DIGEST_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_MAMAN -> GameDescriptor(
                 id = ID_MAMAN,
@@ -7262,7 +7380,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.MAMAN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_EVENICLERANCE -> GameDescriptor(
                 id = ID_EVENICLERANCE,
@@ -7277,7 +7396,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.EVENICLERANCE_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_HAHARANMAN -> GameDescriptor(
                 id = ID_HAHARANMAN,
@@ -7292,7 +7412,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.HAHARANMAN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TSUMAMIGUI2 -> GameDescriptor(
                 id = ID_TSUMAMIGUI2,
@@ -7307,7 +7428,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI2_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TSUMAMIGUI3JUN -> GameDescriptor(
                 id = ID_TSUMAMIGUI3JUN,
@@ -7322,7 +7444,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3JUN_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_TSUMAMIGUI3NTR -> GameDescriptor(
                 id = ID_TSUMAMIGUI3NTR,
@@ -7337,7 +7460,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.TSUMAMIGUI3NTR_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_DIABOLIQUE -> GameDescriptor(
                 id = ID_DIABOLIQUE,
@@ -7442,7 +7566,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.DARCROWS_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_IKUSAMIKO -> GameDescriptor(
                 id = ID_IKUSAMIKO,
@@ -7487,7 +7612,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.SANBIKI_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_PERSIOM -> GameDescriptor(
                 id = ID_PERSIOM,
@@ -7787,7 +7913,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.PASCHA3_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                hasChinese = true
             )
             ID_MAMATOTO -> GameDescriptor(
                 id = ID_MAMATOTO,

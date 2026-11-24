@@ -23,6 +23,7 @@ struct GameDetailView: View {
 
     var body: some View {
         let active = currentGame
+        let hasChinese = OnlineGame.hasChinese(for: active)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
@@ -31,10 +32,8 @@ struct GameDetailView: View {
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
+                        HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
                         HubBadge(title: active.engine.rawValue)
-                        if uncensoredInstalled {
-                            HubBadge(title: "无码", success: true)
-                        }
                     }
                     Button { library.launch(active) } label: {
                         Label("开始游戏", systemImage: "play.fill")

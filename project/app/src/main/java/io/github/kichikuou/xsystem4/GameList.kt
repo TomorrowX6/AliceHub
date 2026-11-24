@@ -59,6 +59,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     internal var cachedModInfo: InstalledModInfo? = null
     @Volatile
     internal var cachedIconFingerprint: String? = null
+    @Volatile
+    internal var cachedHasLocalCnMarkers: Boolean? = null
+    @Volatile
+    internal var cachedHasExplicitNonCnEdition: Boolean? = null
 
     internal fun iconFingerprint(): String {
         cachedIconFingerprint?.let { return it }
@@ -73,6 +77,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         cachedModInfoResolved = false
         cachedModInfo = null
         cachedIconFingerprint = null
+        cachedHasLocalCnMarkers = null
+        cachedHasExplicitNonCnEdition = null
     }
 
     companion object {
@@ -93,6 +99,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedModInfo = null
                     cachedModInfoResolved = true
                     cachedIconFingerprint = ""
+                    cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                    cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
             val icon = findIcon(dir)
@@ -132,6 +140,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedModInfo = null
                     cachedModInfoResolved = true
                     cachedIconFingerprint = iconFp
+                    cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                    cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
             val savedir = File(context.filesDir, "saves/${dir.name}")
@@ -176,6 +186,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 cachedModInfo = modMeta
                 cachedModInfoResolved = true
                 cachedIconFingerprint = iconFp
+                cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
             }
         }
 

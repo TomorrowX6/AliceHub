@@ -373,9 +373,8 @@
     <string name="game_vanishpalm_title">Vanish! ~Kono Te no Hira ni Oppai o~</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
-    <string name="game_status_installed_mod">Installed · %1$s</string>
-    <string name="game_status_installed_cn_patch">Installed · CN %1$s</string>
-    <string name="game_status_uncensored_suffix">Uncensored</string>
+    <string name="game_translation_cn">Chinese</string>
+    <string name="game_translation_raw">Raw</string>
     <string name="uncensored_patch_title">Uncensored Patch</string>
     <string name="uncensored_patch_row_installed">Uncensored Patch · Installed</string>
     <string name="uncensored_patch_fetching">Checking uncensored patch info…</string>

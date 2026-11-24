@@ -372,9 +372,8 @@
     <string name="game_vanishpalm_title">ばにしゅ！～この手のひらにおっぱいを～</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
-    <string name="game_status_installed_mod">導入済 · %1$s</string>
-    <string name="game_status_installed_cn_patch">導入済 · 中国語化 %1$s</string>
-    <string name="game_status_uncensored_suffix">無修正</string>
+    <string name="game_translation_cn">中国語あり</string>
+    <string name="game_translation_raw">中国語なし</string>
     <string name="uncensored_patch_title">無修正パッチ</string>
     <string name="uncensored_patch_row_installed">無修正パッチ · 導入済</string>
     <string name="uncensored_patch_fetching">無修正パッチ情報を取得中…</string>
