@@ -18,6 +18,9 @@ var liveReplies = ["{\"inGame\":true,\"money\":5}"]
 var system35Reply: String?
 func xsystem35_modifier_live_state() -> UnsafeMutablePointer<CChar>? { system35Reply.flatMap { strdup($0) } }
 func modifier_api_set_config_path(_ path: UnsafePointer<CChar>!) {}
+func modifier_api_set_ui_scale(_ font: Int32, _ scrollbar: Int32) {}
+func modifier_api_read_global_save_summary(_ global: UnsafePointer<CChar>!, _ collection: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CChar>? { nil }
+func modifier_api_write_global_save_mod(_ global: UnsafePointer<CChar>!, _ collection: UnsafePointer<CChar>!, _ json: UnsafePointer<CChar>!) -> Bool { false }
 func modifier_api_current_game() -> UnsafePointer<CChar>! { ("dohnadohna" as NSString).utf8String }
 func modifier_api_get_live_state_json() -> UnsafeMutablePointer<CChar>! {
     strdup(liveReplies.count > 1 ? liveReplies.removeFirst() : liveReplies[0])
@@ -95,7 +98,7 @@ struct ModifierChecks {
 
         for game in ModifierBridge.games {
             precondition(Set(game.locks.map(\.bit)).count == game.locks.count, game.id)
-            precondition(Set(game.cheats.map(\.title)).count == game.cheats.count, game.id)
+            precondition(Set(game.cheats.map(\.id)).count == game.cheats.count, game.id)
         }
         precondition(ModifierBridge.currentGame()?.lockGame == MODIFIER_LOCK_DOHNADOHNA)
         precondition(ModifierBridge.liveState()["money"] as? Int == 5)

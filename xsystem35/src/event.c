@@ -44,9 +44,6 @@
 #include "volume.h"
 #include "mixer.h"
 #include "alicehub_bridge.h"
-#ifdef ALICEHUB_IOS
-#include "escalayer_modifier.h"
-#endif
 
 static void get_event(void);
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed);

@@ -40,8 +40,8 @@ struct OnlineGameChecks {
         precondition(ambivalenz.displayTitle(in: .japanese, bundle: bundle) == "AmbivalenZ -二律背反-")
         let installedDirectory = root.appendingPathComponent(ambivalenz.directory)
         try files.createDirectory(at: installedDirectory, withIntermediateDirectories: true)
-        let installed = Game(url: installedDirectory)
-        precondition(OnlineGame.displayTitle(for: installed, in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
+        let installedAmbivalenz = Game(url: installedDirectory)
+        precondition(OnlineGame.displayTitle(for: installedAmbivalenz, in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
         let customDirectory = root.appendingPathComponent("My AmbivalenZ Folder")
         try files.createDirectory(at: customDirectory, withIntermediateDirectories: true)
         let custom = Game(url: customDirectory)
@@ -132,6 +132,9 @@ struct OnlineGameChecks {
         let uninstalledRance10 = entries[2]
         precondition(uninstalledRance10.primary == nil && uninstalledRance10.matches("熟肉") &&
                      !uninstalledRance10.matches("生肉"))
+        precondition(uninstalledRance10.displayTitle(in: .english, bundle: bundle) == "Rance 10: Showdown")
+        precondition(uninstalledRance10.matches("Showdown", language: .english, bundle: bundle))
+        precondition(rance41.matches("No Chinese", language: .english, bundle: bundle))
         precondition(LibraryEntry.installation(in: rance41.installations, selectedID: engRance41.id) == engRance41)
         precondition(LibraryEntry.installation(in: rance41.matchingInstallations(in: [cnRance41]), selectedID: engRance41.id) == cnRance41)
         precondition(rance41.matchingInstallations(in: []).isEmpty)

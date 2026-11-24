@@ -7,6 +7,7 @@ struct GameDetailView: View {
     let catalog: OnlineGame?
     let installations: [Game]
     @Binding var selectedID: String?
+    @Environment(\.dismiss) private var dismiss
     @HubLocalizedText private var localized
     @State private var destination: Destination?
     @State private var deleting = false
