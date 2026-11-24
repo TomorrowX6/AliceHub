@@ -106,6 +106,32 @@ enum LocalGameImport {
         return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
     }
 
+    private static func discContainer(_ url: URL) -> URL? {
+        var parent = url
+        while parent.path != "/" {
+            if leaf(parent).range(of: #"^(disc|disk|cd)[ _-]*[0-9]+$"#, options: .regularExpression) != nil {
+                return parent
+            }
+            parent.deleteLastPathComponent()
+        }
+        return nil
+    }
+
+    private static func mergeSystem4DiscAssets(from source: URL, names: Set<String>, primary: URL,
+                                               primaryNames: Set<String>, into output: URL,
+                                               exclude: (String, Bool) -> Bool) throws {
+        guard let mainDisc = discContainer(primary), let otherDisc = discContainer(source),
+              mainDisc.path != otherDisc.path,
+              mainDisc.deletingLastPathComponent().path == otherDisc.deletingLastPathComponent().path,
+              !hasSystem4Root(names), system4Code(names).isEmpty else { return }
+        let stems = system4Code(primaryNames).map { ($0 as NSString).deletingPathExtension }
+        let assets = names.filter { name in name.hasSuffix(".afa") && stems.contains(where: name.hasPrefix) }
+        guard !assets.isEmpty else { return }
+        try merge(source, into: output, exclude: { path, isDirectory in
+            isDirectory || !assets.contains(path.lowercased()) || exclude(path, isDirectory)
+        })
+    }
+
     private static func merge(_ source: URL, into destination: URL, overwrite: Bool = false, move: Bool = false,
                               prefix: String = "", exclude: (String, Bool) -> Bool = { _, _ in false }) throws {
         try files.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -203,6 +229,15 @@ enum LocalGameImport {
             }
         }
         try merge(primary.url, into: output, exclude: rules.skip)
+        if primary.engine == .system4, let disc = discContainer(primary.url), contains(disc, in: source) {
+            for sibling in try gameDirectories(entries(disc.deletingLastPathComponent())) where sibling.path != disc.path {
+                for payload in try directories(sibling, forGameDiscovery: true)
+                    where discContainer(payload)?.path == sibling.path {
+                    try mergeSystem4DiscAssets(from: payload, names: names(payload), primary: primary.url,
+                                               primaryNames: primary.names, into: output, exclude: rules.skip)
+                }
+            }
+        }
         for (root, data, engine, local) in sources where primary.engine != .legacySystem3 {
             if let engine, !matchesDisc(engine: engine, names: local, primaryEngine: primary.engine, primaryNames: primary.names) {
                 continue
@@ -296,7 +331,13 @@ enum LocalGameImport {
 
     private static func finishArchive(_ root: URL, work: URL) throws {
         let all = try directories(work)
-        if let engine = try? GameLibrary.launchInfo(root).engine, engine != .system4 {
+        if (try? GameLibrary.launchInfo(root).engine) == .system4 {
+            let primary = try names(root)
+            for sibling in try directories(work, forGameDiscovery: true) {
+                try mergeSystem4DiscAssets(from: sibling, names: names(sibling), primary: root,
+                                           primaryNames: primary, into: root, exclude: { _, _ in false })
+            }
+        } else if let engine = try? GameLibrary.launchInfo(root).engine {
             let allowed: Set<String> = ["ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr", "tbl"]
             let primary = try names(root)
             for sibling in all where sibling.path != root.path {
