@@ -431,7 +431,7 @@ struct archive *ald_open_conv(char **files, int count, int flags, int *error, ch
 	struct ald_archive *ar = calloc(1, sizeof(struct ald_archive));
 	ar->conv = conv;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
 	flags &= ~ARCHIVE_MMAP;
 #endif
 

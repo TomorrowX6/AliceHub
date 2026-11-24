@@ -584,6 +584,8 @@ static void registerGameFiles(void) {
 
 #ifdef ALICEHUB_IOS
 static int run_xsystem35(int argc, char **argv) {
+#elif defined(__SWITCH__)
+int alicehub_switch_engine_main(int argc, char **argv) {
 #else
 int main(int argc, char **argv) {
 #endif

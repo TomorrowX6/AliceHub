@@ -32,7 +32,7 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <direct.h>
-#else
+#elif !defined(__SWITCH__)
 #include <libgen.h>
 #endif
 
@@ -259,9 +259,36 @@ FILE *file_open_utf8(const char *path, const char *mode)
 	return fopen(path, mode);
 }
 
+#ifdef __SWITCH__
+static char *switch_path_component(const char *path, char *buf)
+{
+	if (!path || !*path)
+		path = ".";
+	snprintf(buf, PATH_MAX, "%s", path);
+	char *start = buf;
+	char *mount = strchr(buf, ':');
+	if (mount && mount[1] == '/' && strcspn(buf, "/") == (size_t)(mount + 1 - buf))
+		start = mount + 1;
+	size_t len = strlen(start);
+	while (len > 1 && start[len - 1] == '/')
+		start[--len] = '\0';
+	return start;
+}
+#endif
+
 char *path_dirname(const char *path)
 {
 	static char buf[PATH_MAX];
+#ifdef __SWITCH__
+	char *start = switch_path_component(path, buf);
+	char *slash = strrchr(start, '/');
+	if (!slash)
+		return ".";
+	while (slash > start && slash[-1] == '/')
+		slash--;
+	*(slash == start ? slash + 1 : slash) = '\0';
+	return buf;
+#else
 	if (!path)
 		return ".";
 	size_t n = strlen(path);
@@ -270,11 +297,17 @@ char *path_dirname(const char *path)
 	memmove(buf, path, n);
 	buf[n] = '\0';
 	return dirname(buf);
+#endif
 }
 
 char *path_basename(const char *path)
 {
 	static char buf[PATH_MAX];
+#ifdef __SWITCH__
+	char *start = switch_path_component(path, buf);
+	char *slash = strrchr(start, '/');
+	return slash && slash[1] ? slash + 1 : start;
+#else
 	if (!path)
 		return ".";
 	size_t n = strlen(path);
@@ -283,6 +316,7 @@ char *path_basename(const char *path)
 	memmove(buf, path, n);
 	buf[n] = '\0';
 	return basename(buf);
+#endif
 }
 #endif
 
@@ -476,8 +510,13 @@ int mkdir_p(const char *path)
 	int mode = S_IRWXU;
 #endif
 
-	// Iterate the string
-	for (p = _path + 1; *p; p++) {
+	p = _path + 1;
+#ifdef __SWITCH__
+	char *slash = strchr(_path, '/');
+	if (slash && slash > _path && slash[-1] == ':')
+		p = slash + 1;
+#endif
+	for (; *p; p++) {
 		if (*p == '/') {
 			// Temporarily truncate
 			*p = '\0';

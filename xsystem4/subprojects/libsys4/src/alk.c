@@ -185,7 +185,7 @@ static bool alk_read_header(FILE *f, struct alk_archive *ar, int *error)
 
 struct alk_archive *alk_open(const char *file, int flags, int *error)
 {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
 	flags &= ~ARCHIVE_MMAP;
 #endif
 	FILE *fp;

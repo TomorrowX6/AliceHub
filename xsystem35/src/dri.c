@@ -153,7 +153,7 @@ static bool read_index(int volume, drifiles *d, FILE *fp) {
 
 drifiles *dri_init(const char **file, int cnt, bool use_mmap) {
 	drifiles *d = calloc(1, sizeof(drifiles));
-#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__)
+#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__) || defined(__SWITCH__)
 	use_mmap = false;
 #endif
 
@@ -201,7 +201,7 @@ drifiles *dri_init_optional(const char *file, bool use_mmap) {
 		fclose(fp);
 		return NULL;
 	}
-#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__)
+#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__) || defined(__SWITCH__)
 	use_mmap = false;
 #endif
 	if (!read_index(1, d, fp)) {

@@ -183,7 +183,7 @@ static bool dlf_read_header(FILE *f, struct dlf_archive *ar, int *error)
 
 struct dlf_archive *dlf_open(const char *file, int flags, int *error)
 {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
 	flags &= ~ARCHIVE_MMAP;
 #endif
 	FILE *fp;

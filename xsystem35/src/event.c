@@ -533,6 +533,11 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 		break;
 
 	case SDL_EVENT_JOYSTICK_AXIS_MOTION:
+#ifdef __SWITCH__
+		if (e->jaxis.axis > 1)
+			break;
+		joyinfo &= e->jaxis.axis == 0 ? ~0xc : ~3;
+#endif
 		if (abs(e->jaxis.value) < 0x4000) {
 			joyinfo &= e->jaxis.axis == 0 ? ~0xc : ~3;
 		} else {
@@ -567,7 +572,12 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 			case 0: case 1: case 2: case 3:
 				mask = 1 << (e->jbutton.button + 4);
 				break;
-#ifdef __EMSCRIPTEN__
+#if defined(__SWITCH__)
+			case 12: mask = SYS35KEY_LEFT;  break;
+			case 13: mask = SYS35KEY_UP;    break;
+			case 14: mask = SYS35KEY_RIGHT; break;
+			case 15: mask = SYS35KEY_DOWN;  break;
+#elif defined(__EMSCRIPTEN__)
 			// Gamepads known to browsers get a "standard" mapping where D-pad
 			// keys are mapped to buttons 12-15.
 			case 12: mask = SYS35KEY_UP;    break;

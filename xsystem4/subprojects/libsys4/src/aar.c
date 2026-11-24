@@ -316,7 +316,7 @@ static bool aar_read_index(FILE *f, struct aar_archive *ar, int *error)
 
 struct aar_archive *aar_open(const char *file, int flags, int *error)
 {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
 	flags &= ~ARCHIVE_MMAP;
 #endif
 	FILE *fp;

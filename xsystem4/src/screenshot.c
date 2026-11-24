@@ -98,7 +98,7 @@ void screenshot_save(void)
 }
 
 #else
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__SWITCH__)
 
 void screenshot_save(void)
 {
@@ -224,5 +224,5 @@ void screenshot_save(void)
 	free(name);
 }
 
-#endif // __ANDROID__
+#endif // __ANDROID__ || __SWITCH__
 #endif // _WIN32

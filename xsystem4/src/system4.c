@@ -31,11 +31,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#if !defined(__SWITCH__)
+#define HAVE_POSIX_CRASH_HANDLER
 #ifndef ALICEHUB_IOS
 #include <ucontext.h>
 #endif
 #include <dlfcn.h>
 #include <unwind.h>
+#endif
 #endif
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -854,7 +857,7 @@ static void warning_handler(const char *msg)
 		recent_warning_count++;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 struct backtrace_state {
 	char *buf;
 	size_t size;
@@ -898,7 +901,9 @@ static size_t format_native_backtrace(char *buf, size_t size)
 	_Unwind_Backtrace(unwind_backtrace_cb, &st);
 	return st.off;
 }
+#endif
 
+#ifndef _WIN32
 static bool write_file_raw(const char *path, const char *data, size_t len, bool append)
 {
 	if (!path || !*path)
@@ -918,7 +923,9 @@ static bool write_file_raw(const char *path, const char *data, size_t len, bool 
 	close(fd);
 	return written > 0;
 }
+#endif
 
+#ifdef HAVE_POSIX_CRASH_HANDLER
 static const char *signal_name_str(int sig)
 {
 	switch (sig) {
@@ -1057,7 +1064,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	cbuf_puts(crash_report_buf, cap, &off, kind ? kind : "UNKNOWN");
 	cbuf_puts(crash_report_buf, cap, &off, "\n");
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	if (sig != 0) {
 		siginfo_t *si = (siginfo_t *)siginfo_ptr;
 		cbuf_puts(crash_report_buf, cap, &off, "Signal      : ");
@@ -1121,7 +1128,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	if (off >= cap)
 		off = cap - 1;
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	if (!safe_signal && off + 1 < cap) {
 		cbuf_puts(crash_report_buf, cap, &off, "\n[Native C Backtrace]\n");
 		if (off + 1 < cap)
@@ -1205,7 +1212,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	in_crash_handler = 0;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 static uint8_t crash_alt_stack_mem[65536];
 static const int crash_signals[] = { SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL };
 #define NR_CRASH_SIGNALS (sizeof(crash_signals) / sizeof(crash_signals[0]))
@@ -1392,6 +1399,8 @@ static void init_mai_word_table(void)
 
 #ifdef ALICEHUB_IOS
 static int run_xsystem4(int argc, char *argv[])
+#elif defined(__SWITCH__)
+int alicehub_switch_engine_main(int argc, char *argv[])
 #else
 int main(int argc, char *argv[])
 #endif
@@ -1406,7 +1415,7 @@ int main(int argc, char *argv[])
 #endif
 	sys_error_handler = error_handler;
 	sys_warning_handler = warning_handler;
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	install_crash_signal_handlers();
 #endif
 #ifdef __ANDROID__
