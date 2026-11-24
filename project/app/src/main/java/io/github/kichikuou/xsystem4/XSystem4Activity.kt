@@ -333,7 +333,9 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.markAlreadyLoaded()
         try {
             GameModifierBridge.syncNativeConfigPath(this)
-            GameModifierBridge.syncUiScaleToNative(this)
+            if (!isSystem3xGame()) {
+                GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+            }
             syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
@@ -352,6 +354,11 @@ class XSystem4Activity : SDLActivity() {
 
     fun currentGamepadProfileKey(): String? =
         GamepadBridge.normalizeGameProfileKey(currentGameRoot())
+
+    fun currentUiScaleGameKey(): String? =
+        GameModifierBridge.normalizeUiScaleGameKey(
+            effectiveGameRootFile()?.name ?: effectiveSaveDirFile()?.name
+        )
 
     fun getActiveGamepadProfile(): GamepadProfile = activeGamepadProfile
 
@@ -807,7 +814,9 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
-                GameModifierBridge.syncUiScaleToNative(this)
+                if (!isSystem3xGame()) {
+                    GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                }
                 syncAllLocksToNative()
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
@@ -852,7 +861,9 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
-                GameModifierBridge.syncUiScaleToNative(this)
+                if (!isSystem3xGame()) {
+                    GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                }
                 syncAllLocksToNative()
                 syncOverlayPreferences()
                 lastSyncedConfigSeq = curSeq
@@ -1358,7 +1369,9 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.markAlreadyLoaded()
         try {
             GameModifierBridge.syncNativeConfigPath(this)
-            GameModifierBridge.syncUiScaleToNative(this)
+            if (!isSystem3xGame()) {
+                GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+            }
             syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
@@ -1409,6 +1422,7 @@ class XSystem4Activity : SDLActivity() {
         resetMovieSkipOverlay()
         if (launchedGameRoot != null) {
             GameCatalog.clearRunningGameRoot(this)
+            GameModifierBridge.clearActiveUiScaleGameKey()
             try {
                 when {
                     isLegacySystem3Game -> Unit

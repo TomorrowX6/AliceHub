@@ -34,6 +34,8 @@ object GameModifierBridge {
     private const val KEY_ESC_LOCK_MASK = "escalayer_lock_mask"
     private const val KEY_FONT_SCALE_PCT = "font_scale_pct"
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
+    private const val KEY_GAME_FONT_SCALE_PCT = "game_font_scale_pct"
+    private const val KEY_GAME_SCROLLBAR_SCALE_PCT = "game_scrollbar_scale_pct"
     private const val KEY_CONFIG_SEQ = "config_seq"
     private const val UNLOCK_BAK_SUFFIX = ".unlock.bak"
     private const val MOD_BAK_SUFFIX = ".mod.bak"
@@ -125,6 +127,9 @@ object GameModifierBridge {
 
     @Volatile
     private var loaded = false
+
+    @Volatile
+    private var activeUiScaleGameKey: String? = null
 
     fun markAlreadyLoaded() {
         loaded = true
@@ -1278,11 +1283,22 @@ object GameModifierBridge {
                     json.put(KEY_R08_LOCK_MASK, r08Mask)
                     json.put(KEY_R09_LOCK_MASK, r09Mask)
                     json.put(KEY_ESC_LOCK_MASK, escMask)
-                    val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-                    val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
-                    json.put(KEY_FONT_SCALE_PCT, fontPct)
-                    json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
-                    var needsSave = false
+                    val hasLegacyUiScale = json.has(KEY_FONT_SCALE_PCT) || json.has(KEY_SCROLLBAR_SCALE_PCT)
+                    val fontScaleMap = sanitizeScaleMap(
+                        json.optJSONObject(KEY_GAME_FONT_SCALE_PCT),
+                        DEFAULT_FONT_SCALE_PCT,
+                        ::clampFontScale
+                    )
+                    val sbScaleMap = sanitizeScaleMap(
+                        json.optJSONObject(KEY_GAME_SCROLLBAR_SCALE_PCT),
+                        DEFAULT_SCROLLBAR_SCALE_PCT,
+                        ::clampScrollbarScale
+                    )
+                    json.remove(KEY_FONT_SCALE_PCT)
+                    json.remove(KEY_SCROLLBAR_SCALE_PCT)
+                    json.put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
+                    json.put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
+                    var needsSave = hasLegacyUiScale
                     if (!migratedV1) {
                         json.put(KEY_FLOATING_ENABLED, true)
                         json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
@@ -1337,8 +1353,16 @@ object GameModifierBridge {
             val r08Mask = prefs.getInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
             val r09Mask = prefs.getInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
             val escMask = prefs.getInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-            val fontPct = clampFontScale(prefs.getInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-            val sbPct = clampScrollbarScale(prefs.getInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            val fontScaleMap = parseScaleMapFromPrefs(
+                prefs.getString(KEY_GAME_FONT_SCALE_PCT, null),
+                DEFAULT_FONT_SCALE_PCT,
+                ::clampFontScale
+            )
+            val sbScaleMap = parseScaleMapFromPrefs(
+                prefs.getString(KEY_GAME_SCROLLBAR_SCALE_PCT, null),
+                DEFAULT_SCROLLBAR_SCALE_PCT,
+                ::clampScrollbarScale
+            )
             val json = JSONObject().apply {
                 put(KEY_FLOATING_ENABLED, floatingEnabled)
                 put(KEY_FLOATING_DEFAULT_ON_V1, true)
@@ -1357,11 +1381,13 @@ object GameModifierBridge {
                 put(KEY_R08_LOCK_MASK, r08Mask)
                 put(KEY_R09_LOCK_MASK, r09Mask)
                 put(KEY_ESC_LOCK_MASK, escMask)
-                put(KEY_FONT_SCALE_PCT, fontPct)
-                put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+                put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
+                put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
                 put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
             }
-            if (!migratedV1 || !ctrlDefaultOffV2) {
+            if (!migratedV1 || !ctrlDefaultOffV2 ||
+                prefs.contains(KEY_FONT_SCALE_PCT) || prefs.contains(KEY_SCROLLBAR_SCALE_PCT)
+            ) {
                 writeConfigJson(context, json)
             }
             return json
@@ -1393,8 +1419,16 @@ object GameModifierBridge {
             val r08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
             val r09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
             val escMask = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
-            val fontPct = clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
-            val sbPct = clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+            val fontScaleMap = sanitizeScaleMap(
+                json.optJSONObject(KEY_GAME_FONT_SCALE_PCT),
+                DEFAULT_FONT_SCALE_PCT,
+                ::clampFontScale
+            )
+            val sbScaleMap = sanitizeScaleMap(
+                json.optJSONObject(KEY_GAME_SCROLLBAR_SCALE_PCT),
+                DEFAULT_SCROLLBAR_SCALE_PCT,
+                ::clampScrollbarScale
+            )
             val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
             json.put(KEY_FLOATING_ENABLED, floatingEnabled)
             json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
@@ -1413,8 +1447,10 @@ object GameModifierBridge {
             json.put(KEY_R08_LOCK_MASK, r08Mask)
             json.put(KEY_R09_LOCK_MASK, r09Mask)
             json.put(KEY_ESC_LOCK_MASK, escMask)
-            json.put(KEY_FONT_SCALE_PCT, fontPct)
-            json.put(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+            json.remove(KEY_FONT_SCALE_PCT)
+            json.remove(KEY_SCROLLBAR_SCALE_PCT)
+            json.put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
+            json.put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
             json.put(KEY_CONFIG_SEQ, nextSeq)
             val pid = Process.myPid()
             val tid = Thread.currentThread().id
@@ -1453,10 +1489,55 @@ object GameModifierBridge {
                 .putInt(KEY_R08_LOCK_MASK, r08Mask)
                 .putInt(KEY_R09_LOCK_MASK, r09Mask)
                 .putInt(KEY_ESC_LOCK_MASK, escMask)
-                .putInt(KEY_FONT_SCALE_PCT, fontPct)
-                .putInt(KEY_SCROLLBAR_SCALE_PCT, sbPct)
+                .remove(KEY_FONT_SCALE_PCT)
+                .remove(KEY_SCROLLBAR_SCALE_PCT)
+                .putString(KEY_GAME_FONT_SCALE_PCT, fontScaleMap.toString())
+                .putString(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap.toString())
                 .putInt(KEY_CONFIG_SEQ, nextSeq)
                 .commit()
+        }
+    }
+
+    fun normalizeUiScaleGameKey(rawKey: String?): String? {
+        if (rawKey.isNullOrBlank()) return null
+        val trimmed = rawKey.trim().trimEnd('/', '\\')
+        if (trimmed.isEmpty()) return null
+        val sep = maxOf(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+        val base = (if (sep >= 0) trimmed.substring(sep + 1) else trimmed).trim()
+        if (base.isEmpty() || base == "." || base == "..") return null
+        return base
+    }
+
+    private fun sanitizeScaleMap(
+        raw: JSONObject?,
+        defaultPct: Int,
+        clamp: (Int) -> Int
+    ): JSONObject {
+        val out = JSONObject()
+        if (raw == null) return out
+        val keys = raw.keys()
+        while (keys.hasNext()) {
+            val rawKey = keys.next()
+            val normKey = normalizeUiScaleGameKey(rawKey) ?: continue
+            val value = raw.opt(rawKey) as? Number ?: continue
+            val clamped = clamp(value.toInt())
+            if (clamped != defaultPct) {
+                out.put(normKey, clamped)
+            }
+        }
+        return out
+    }
+
+    private fun parseScaleMapFromPrefs(
+        rawStr: String?,
+        defaultPct: Int,
+        clamp: (Int) -> Int
+    ): JSONObject {
+        if (rawStr.isNullOrBlank()) return JSONObject()
+        return try {
+            sanitizeScaleMap(JSONObject(rawStr), defaultPct, clamp)
+        } catch (_: Throwable) {
+            JSONObject()
         }
     }
 
@@ -1464,43 +1545,82 @@ object GameModifierBridge {
 
     fun clampScrollbarScale(pct: Int): Int = pct.coerceIn(MIN_SCROLLBAR_SCALE_PCT, MAX_SCROLLBAR_SCALE_PCT)
 
-    fun getFontScalePercent(context: Context): Int {
-        return clampFontScale(readConfigJson(context).optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT))
+    fun clearActiveUiScaleGameKey() {
+        activeUiScaleGameKey = null
     }
 
-    fun setFontScalePercent(context: Context, pct: Int) {
+    fun getFontScalePercent(context: Context, gameKey: String?): Int {
+        val key = normalizeUiScaleGameKey(gameKey) ?: return DEFAULT_FONT_SCALE_PCT
+        val map = readConfigJson(context).optJSONObject(KEY_GAME_FONT_SCALE_PCT) ?: return DEFAULT_FONT_SCALE_PCT
+        val value = map.opt(key) as? Number ?: return DEFAULT_FONT_SCALE_PCT
+        return clampFontScale(value.toInt())
+    }
+
+    fun setFontScalePercent(context: Context, gameKey: String?, pct: Int) {
+        val key = normalizeUiScaleGameKey(gameKey) ?: return
         val clamped = clampFontScale(pct)
         synchronized(configLock) {
             val json = readConfigJson(context)
-            json.put(KEY_FONT_SCALE_PCT, clamped)
+            val map = json.optJSONObject(KEY_GAME_FONT_SCALE_PCT) ?: JSONObject()
+            if (clamped == DEFAULT_FONT_SCALE_PCT) {
+                map.remove(key)
+            } else {
+                map.put(key, clamped)
+            }
+            json.put(KEY_GAME_FONT_SCALE_PCT, map)
             writeConfigJson(context, json)
         }
-        syncUiScaleToNative(context)
+        syncUiScaleToNativeIfActive(context, key)
     }
 
-    fun getScrollbarScalePercent(context: Context): Int {
-        return clampScrollbarScale(readConfigJson(context).optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+    fun getScrollbarScalePercent(context: Context, gameKey: String?): Int {
+        val key = normalizeUiScaleGameKey(gameKey) ?: return DEFAULT_SCROLLBAR_SCALE_PCT
+        val map = readConfigJson(context).optJSONObject(KEY_GAME_SCROLLBAR_SCALE_PCT) ?: return DEFAULT_SCROLLBAR_SCALE_PCT
+        val value = map.opt(key) as? Number ?: return DEFAULT_SCROLLBAR_SCALE_PCT
+        return clampScrollbarScale(value.toInt())
     }
 
-    fun setScrollbarScalePercent(context: Context, pct: Int) {
+    fun setScrollbarScalePercent(context: Context, gameKey: String?, pct: Int) {
+        val key = normalizeUiScaleGameKey(gameKey) ?: return
         val clamped = clampScrollbarScale(pct)
         synchronized(configLock) {
             val json = readConfigJson(context)
-            json.put(KEY_SCROLLBAR_SCALE_PCT, clamped)
+            val map = json.optJSONObject(KEY_GAME_SCROLLBAR_SCALE_PCT) ?: JSONObject()
+            if (clamped == DEFAULT_SCROLLBAR_SCALE_PCT) {
+                map.remove(key)
+            } else {
+                map.put(key, clamped)
+            }
+            json.put(KEY_GAME_SCROLLBAR_SCALE_PCT, map)
             writeConfigJson(context, json)
         }
-        syncUiScaleToNative(context)
+        syncUiScaleToNativeIfActive(context, key)
     }
 
-    fun syncUiScaleToNative(context: Context) {
+    private fun syncUiScaleToNativeIfActive(context: Context, key: String) {
+        if (!loaded || activeUiScaleGameKey != key) return
+        syncUiScaleToNative(context, key)
+    }
+
+    fun syncUiScaleToNative(context: Context, gameKey: String?) {
+        val key = normalizeUiScaleGameKey(gameKey)
+        activeUiScaleGameKey = key
         if (!loaded) return
         try {
             val (fontPct, sbPct) = synchronized(configLock) {
-                val json = readConfigJson(context)
-                clampFontScale(json.optInt(KEY_FONT_SCALE_PCT, DEFAULT_FONT_SCALE_PCT)) to
-                    clampScrollbarScale(json.optInt(KEY_SCROLLBAR_SCALE_PCT, DEFAULT_SCROLLBAR_SCALE_PCT))
+                if (key == null) {
+                    DEFAULT_FONT_SCALE_PCT to DEFAULT_SCROLLBAR_SCALE_PCT
+                } else {
+                    val json = readConfigJson(context)
+                    val fMap = json.optJSONObject(KEY_GAME_FONT_SCALE_PCT)
+                    val sMap = json.optJSONObject(KEY_GAME_SCROLLBAR_SCALE_PCT)
+                    val f = (fMap?.opt(key) as? Number)?.toInt()?.let(::clampFontScale) ?: DEFAULT_FONT_SCALE_PCT
+                    val s = (sMap?.opt(key) as? Number)?.toInt()?.let(::clampScrollbarScale) ?: DEFAULT_SCROLLBAR_SCALE_PCT
+                    f to s
+                }
             }
             nativeSetConfigPath(getConfigFilePath(context))
+            nativeSetUiScaleGameKey(key)
             nativeSetUiScale(fontPct, sbPct)
         } catch (_: Throwable) {
         }
@@ -2292,6 +2412,9 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetCtrlSkip(): Boolean
+
+    @JvmStatic
+    external fun nativeSetUiScaleGameKey(gameKey: String?)
 
     @JvmStatic
     external fun nativeSetUiScale(fontPct: Int, scrollbarPct: Int)

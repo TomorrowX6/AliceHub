@@ -76,6 +76,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
             }
         }
 
+    private fun currentUiScaleGameKey(): String? =
+        (activity as? XSystem4Activity)?.currentUiScaleGameKey()
+
     fun attach() {
         if (!GameModifierBridge.isFloatingEnabled(activity)) {
             return
@@ -450,8 +453,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
             tr("Ctrl 快进键 · 已隐藏", "Ctrl早送り · 非表示", "Ctrl Skip · Hidden")
         }
 
-        val fontPct = GameModifierBridge.getFontScalePercent(activity)
-        val sbPct = GameModifierBridge.getScrollbarScalePercent(activity)
+        val uiScaleGameKey = currentUiScaleGameKey()
+        val fontPct = GameModifierBridge.getFontScalePercent(activity, uiScaleGameKey)
+        val sbPct = GameModifierBridge.getScrollbarScalePercent(activity, uiScaleGameKey)
 
         val menuEntries = mutableListOf<Pair<String, () -> Unit>>()
         if (isRance10) {
@@ -2906,20 +2910,21 @@ class FloatingModifierOverlay(private val activity: Activity) {
     }
 
     private fun showFontScaleDialog() {
+        val gameKey = currentUiScaleGameKey() ?: return
         showScaleSliderDialog(
             title = tr("字体大小", "文字サイズ", "Font Size"),
             description = tr(
-                "范围 75%~160%，默认 100%",
-                "範囲 75%~160% · 標準 100%",
-                "Range 75%~160% · Default 100%"
+                "仅对当前游戏生效 · 范围 75%~160%，默认 100%",
+                "このゲームのみ適用 · 範囲 75%~160% · 標準 100%",
+                "Current game only · Range 75%~160% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,
             defaultPct = GameModifierBridge.DEFAULT_FONT_SCALE_PCT,
             stepPct = 5,
-            currentPct = GameModifierBridge.getFontScalePercent(activity),
+            currentPct = GameModifierBridge.getFontScalePercent(activity, gameKey),
             presets = listOf(80, 90, 100, 115, 130, 150),
-            applyPct = { pct -> GameModifierBridge.setFontScalePercent(activity, pct) },
+            applyPct = { pct -> GameModifierBridge.setFontScalePercent(activity, gameKey, pct) },
             onConfirmedToast = { pct, isReset ->
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
@@ -2932,20 +2937,21 @@ class FloatingModifierOverlay(private val activity: Activity) {
     }
 
     private fun showScrollbarScaleDialog() {
+        val gameKey = currentUiScaleGameKey() ?: return
         showScaleSliderDialog(
             title = tr("滚动条", "スクロールバー", "Scrollbar"),
             description = tr(
-                "范围 100%~300%，默认 100%",
-                "範囲 100%~300% · 標準 100%",
-                "Range 100%~300% · Default 100%"
+                "仅对当前游戏生效 · 范围 100%~300%，默认 100%",
+                "このゲームのみ適用 · 範囲 100%~300% · 標準 100%",
+                "Current game only · Range 100%~300% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_SCROLLBAR_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_SCROLLBAR_SCALE_PCT,
             defaultPct = GameModifierBridge.DEFAULT_SCROLLBAR_SCALE_PCT,
             stepPct = 10,
-            currentPct = GameModifierBridge.getScrollbarScalePercent(activity),
+            currentPct = GameModifierBridge.getScrollbarScalePercent(activity, gameKey),
             presets = listOf(100, 130, 160, 200, 250, 300),
-            applyPct = { pct -> GameModifierBridge.setScrollbarScalePercent(activity, pct) },
+            applyPct = { pct -> GameModifierBridge.setScrollbarScalePercent(activity, gameKey, pct) },
             onConfirmedToast = { pct, isReset ->
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")

@@ -39,6 +39,7 @@ int modifier_api_read_streamer_mode(const char *config_path);
 bool modifier_api_write_streamer_mode(const char *config_path, bool enabled);
 void modifier_api_set_ctrl_skip(bool enabled);
 bool modifier_api_get_ctrl_skip(void);
+void modifier_api_set_ui_scale_game_key(const char *game_key);
 void modifier_api_set_ui_scale(int font_pct, int scrollbar_pct);
 int modifier_api_get_font_scale(void);
 int modifier_api_get_scrollbar_scale(void);

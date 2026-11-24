@@ -216,6 +216,7 @@ static bool g_has_r02_lock_mask_init = false;
 static int g_font_scale_pct = 100;
 static int g_scrollbar_scale_pct = 100;
 static bool g_has_ui_scale_init = false;
+static char *g_ui_scale_game_key = NULL;
 static int s_applied_font_scale_pct = 100;
 static int s_applied_scrollbar_scale_pct = 100;
 static int g_pending_lock_streamer_mode = -1;
@@ -232,6 +233,43 @@ static inline int clamp_scrollbar_scale_pct(int pct)
 	if (pct < 75) return 75;
 	if (pct > 300) return 300;
 	return pct;
+}
+
+static int cjson_get_per_game_scale(cJSON *root, const char *map_key, const char *game_key,
+                                    int default_pct, int (*clamp_fn)(int))
+{
+	if (!root || !map_key || !game_key || !game_key[0])
+		return default_pct;
+	cJSON *map = cJSON_GetObjectItemCaseSensitive(root, map_key);
+	if (!map || !cJSON_IsObject(map))
+		return default_pct;
+	cJSON *entry = cJSON_GetObjectItemCaseSensitive(map, game_key);
+	if (!entry || !cJSON_IsNumber(entry))
+		return default_pct;
+	return clamp_fn ? clamp_fn(entry->valueint) : entry->valueint;
+}
+
+static void cjson_set_per_game_scale(cJSON *root, const char *map_key, const char *game_key,
+                                     int pct, int default_pct)
+{
+	if (!root || !map_key || !game_key || !game_key[0])
+		return;
+	cJSON *map = cJSON_GetObjectItemCaseSensitive(root, map_key);
+	if (map && !cJSON_IsObject(map)) {
+		cJSON_DeleteItemFromObjectCaseSensitive(root, map_key);
+		map = NULL;
+	}
+	if (!map) {
+		if (pct == default_pct)
+			return;
+		map = cJSON_CreateObject();
+		if (!map)
+			return;
+		cJSON_AddItemToObject(root, map_key, map);
+	}
+	cJSON_DeleteItemFromObjectCaseSensitive(map, game_key);
+	if (pct != default_pct)
+		cJSON_AddNumberToObject(map, game_key, pct);
 }
 static char *g_pending_action_json = NULL;
 static char *g_cached_live_state_json = NULL;
@@ -522,8 +560,10 @@ static bool write_config_atomic_unique(const char *cfg_path, const char *data, s
 static void persist_modifier_config_from_native(int lock_mask)
 {
 	char *cfg_path = NULL;
+	char *ui_game_key = NULL;
 	int cur_font_pct = 100;
 	int cur_sb_pct = 100;
+	bool has_ui_init = false;
 	int cur_dd_mask = 0;
 	int cur_ev_mask = 0;
 	int cur_sr_mask = 0;
@@ -544,6 +584,9 @@ static void persist_modifier_config_from_native(int lock_mask)
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_modifier_config_path && g_modifier_config_path[0])
 		cfg_path = strdup(g_modifier_config_path);
+	if (g_ui_scale_game_key && g_ui_scale_game_key[0])
+		ui_game_key = strdup(g_ui_scale_game_key);
+	has_ui_init = g_has_ui_scale_init;
 	cur_font_pct = g_font_scale_pct;
 	cur_sb_pct = g_scrollbar_scale_pct;
 	cur_dd_mask = g_dohna_lock_mask;
@@ -570,9 +613,16 @@ static void persist_modifier_config_from_native(int lock_mask)
 		if (env_cfg && env_cfg[0])
 			cfg_path = strdup(env_cfg);
 	}
+	if (!ui_game_key) {
+		const char *env_key = getenv("XSYS4_MOD_GAME_KEY");
+		if (env_key && env_key[0])
+			ui_game_key = strdup(env_key);
+	}
 #endif
-	if (!cfg_path)
+	if (!cfg_path) {
+		free(ui_game_key);
 		return;
+	}
 
 	pthread_mutex_lock(&g_cfg_io_mutex);
 	uint32_t tmp_seq = ++g_cfg_tmp_seq;
@@ -595,8 +645,6 @@ static void persist_modifier_config_from_native(int lock_mask)
 		cJSON_AddBoolToObject(root, "ctrl_default_on_v1", true);
 		cJSON_AddBoolToObject(root, "ctrl_default_off_v2", true);
 		cJSON_AddBoolToObject(root, "ctrl_overlay_visible", false);
-		cJSON_AddNumberToObject(root, "font_scale_pct", cur_font_pct);
-		cJSON_AddNumberToObject(root, "scrollbar_scale_pct", cur_sb_pct);
 	}
 
 	bool want_dis = (lock_mask & LOCK_DISABLE_STREAMER_MODE) != 0;
@@ -610,8 +658,6 @@ static void persist_modifier_config_from_native(int lock_mask)
 	cJSON *j_r09_mask = cJSON_GetObjectItem(root, "rance09_lock_mask");
 	cJSON *j_r01_mask = cJSON_GetObjectItem(root, "rance01_lock_mask");
 	cJSON *j_r02_mask = cJSON_GetObjectItem(root, "rance02_lock_mask");
-	cJSON *j_font = cJSON_GetObjectItem(root, "font_scale_pct");
-	cJSON *j_sb = cJSON_GetObjectItem(root, "scrollbar_scale_pct");
 	bool cur_dis = j_dis ? cJSON_IsTrue(j_dis) : false;
 	int cur_mask = (j_mask && cJSON_IsNumber(j_mask)) ? j_mask->valueint : -1;
 	int disk_dd_mask = (j_dd_mask && cJSON_IsNumber(j_dd_mask)) ? j_dd_mask->valueint : 0;
@@ -622,8 +668,13 @@ static void persist_modifier_config_from_native(int lock_mask)
 	int disk_r09_mask = (j_r09_mask && cJSON_IsNumber(j_r09_mask)) ? j_r09_mask->valueint : 0;
 	int disk_r01_mask = (j_r01_mask && cJSON_IsNumber(j_r01_mask)) ? j_r01_mask->valueint : 0;
 	int disk_r02_mask = (j_r02_mask && cJSON_IsNumber(j_r02_mask)) ? j_r02_mask->valueint : 0;
-	int disk_font = (j_font && cJSON_IsNumber(j_font)) ? j_font->valueint : -1;
-	int disk_sb = (j_sb && cJSON_IsNumber(j_sb)) ? j_sb->valueint : -1;
+	bool persist_per_game_ui = has_ui_init && ui_game_key && ui_game_key[0];
+	int disk_font = persist_per_game_ui
+		? cjson_get_per_game_scale(root, "game_font_scale_pct", ui_game_key, 100, clamp_font_scale_pct)
+		: cur_font_pct;
+	int disk_sb = persist_per_game_ui
+		? cjson_get_per_game_scale(root, "game_scrollbar_scale_pct", ui_game_key, 100, clamp_scrollbar_scale_pct)
+		: cur_sb_pct;
 	if (j_dis && j_mask && cur_dis == want_dis && cur_mask == lock_mask &&
 	    (!has_dd_init || (j_dd_mask && disk_dd_mask == cur_dd_mask)) &&
 	    (!has_ev_init || (j_ev_mask && disk_ev_mask == cur_ev_mask)) &&
@@ -633,10 +684,11 @@ static void persist_modifier_config_from_native(int lock_mask)
 	    (!has_r09_init || (j_r09_mask && disk_r09_mask == cur_r09_mask)) &&
 	    (!has_r01_init || (j_r01_mask && disk_r01_mask == cur_r01_mask)) &&
 	    (!has_r02_init || (j_r02_mask && disk_r02_mask == cur_r02_mask)) &&
-	    disk_font == cur_font_pct && disk_sb == cur_sb_pct) {
+	    (!persist_per_game_ui || (disk_font == cur_font_pct && disk_sb == cur_sb_pct))) {
 		cJSON_Delete(root);
 		pthread_mutex_unlock(&g_cfg_io_mutex);
 		free(cfg_path);
+		free(ui_game_key);
 		return;
 	}
 
@@ -680,9 +732,11 @@ static void persist_modifier_config_from_native(int lock_mask)
 		cJSON_AddNumberToObject(root, "rance02_lock_mask", has_r02_init ? cur_r02_mask : disk_r02_mask);
 	}
 	cJSON_DeleteItemFromObject(root, "font_scale_pct");
-	cJSON_AddNumberToObject(root, "font_scale_pct", cur_font_pct);
 	cJSON_DeleteItemFromObject(root, "scrollbar_scale_pct");
-	cJSON_AddNumberToObject(root, "scrollbar_scale_pct", cur_sb_pct);
+	if (persist_per_game_ui) {
+		cjson_set_per_game_scale(root, "game_font_scale_pct", ui_game_key, cur_font_pct, 100);
+		cjson_set_per_game_scale(root, "game_scrollbar_scale_pct", ui_game_key, cur_sb_pct, 100);
+	}
 	cJSON_DeleteItemFromObject(root, "config_seq");
 	cJSON_AddNumberToObject(root, "config_seq", next_seq);
 	if (!cJSON_GetObjectItem(root, "floating_default_on_v1"))
@@ -707,6 +761,7 @@ static void persist_modifier_config_from_native(int lock_mask)
 	}
 	pthread_mutex_unlock(&g_cfg_io_mutex);
 	free(cfg_path);
+	free(ui_game_key);
 }
 
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_STANDALONE_TEST)
@@ -3139,6 +3194,7 @@ static void vm_ensure_card_org_fallback_proc(void)
 static void maybe_load_initial_modifier_config(void)
 {
 	char *cfg_path = NULL;
+	char *ui_game_key = NULL;
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init &&
 	    g_has_sr_lock_mask_init && g_has_r01_lock_mask_init && g_has_r02_lock_mask_init &&
@@ -3149,6 +3205,8 @@ static void maybe_load_initial_modifier_config(void)
 	}
 	if (g_modifier_config_path && g_modifier_config_path[0])
 		cfg_path = strdup(g_modifier_config_path);
+	if (g_ui_scale_game_key && g_ui_scale_game_key[0])
+		ui_game_key = strdup(g_ui_scale_game_key);
 	pthread_mutex_unlock(&g_mod_mutex);
 
 #ifndef __ANDROID__
@@ -3157,22 +3215,33 @@ static void maybe_load_initial_modifier_config(void)
 		if (env_cfg && env_cfg[0])
 			cfg_path = strdup(env_cfg);
 	}
+	if (!ui_game_key) {
+		const char *env_key = getenv("XSYS4_MOD_GAME_KEY");
+		if (env_key && env_key[0])
+			ui_game_key = strdup(env_key);
+	}
 #endif
-	if (!cfg_path)
+	if (!cfg_path) {
+		free(ui_game_key);
 		return;
+	}
 	if (!file_exists(cfg_path)) {
 		free(cfg_path);
+		free(ui_game_key);
 		return;
 	}
 	size_t sz = 0;
 	char *raw = file_read(cfg_path, &sz);
 	free(cfg_path);
-	if (!raw)
+	if (!raw) {
+		free(ui_game_key);
 		return;
+	}
 	cJSON *root = cJSON_Parse(raw);
 	free(raw);
 	if (!root || !cJSON_IsObject(root)) {
 		cJSON_Delete(root);
+		free(ui_game_key);
 		return;
 	}
 	cJSON *j_mask = cJSON_GetObjectItem(root, "lock_mask");
@@ -3185,8 +3254,6 @@ static void maybe_load_initial_modifier_config(void)
 	cJSON *j_r01  = cJSON_GetObjectItem(root, "rance01_lock_mask");
 	cJSON *j_r02  = cJSON_GetObjectItem(root, "rance02_lock_mask");
 	cJSON *j_dis  = cJSON_GetObjectItem(root, "disable_streamer_mode");
-	cJSON *j_font = cJSON_GetObjectItem(root, "font_scale_pct");
-	cJSON *j_sb   = cJSON_GetObjectItem(root, "scrollbar_scale_pct");
 	int mask = (j_mask && cJSON_IsNumber(j_mask)) ? j_mask->valueint : 0;
 	int dd_mask = (j_dd && cJSON_IsNumber(j_dd)) ? j_dd->valueint : 0;
 	int ev_mask = (j_ev && cJSON_IsNumber(j_ev)) ? j_ev->valueint : 0;
@@ -3198,9 +3265,10 @@ static void maybe_load_initial_modifier_config(void)
 	int r02_mask = (j_r02 && cJSON_IsNumber(j_r02)) ? j_r02->valueint : 0;
 	if (j_dis && cJSON_IsTrue(j_dis))
 		mask |= LOCK_DISABLE_STREAMER_MODE;
-	int font_pct = (j_font && cJSON_IsNumber(j_font)) ? clamp_font_scale_pct(j_font->valueint) : 100;
-	int sb_pct   = (j_sb && cJSON_IsNumber(j_sb)) ? clamp_scrollbar_scale_pct(j_sb->valueint) : 100;
+	int font_pct = cjson_get_per_game_scale(root, "game_font_scale_pct", ui_game_key, 100, clamp_font_scale_pct);
+	int sb_pct   = cjson_get_per_game_scale(root, "game_scrollbar_scale_pct", ui_game_key, 100, clamp_scrollbar_scale_pct);
 	cJSON_Delete(root);
+	free(ui_game_key);
 
 	bool apply_initial_scale = false;
 	pthread_mutex_lock(&g_mod_mutex);
@@ -8851,6 +8919,14 @@ bool modifier_api_get_ctrl_skip(void)
 	return input_get_touch_ctrl_skip();
 }
 
+void modifier_api_set_ui_scale_game_key(const char *game_key)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	free(g_ui_scale_game_key);
+	g_ui_scale_game_key = (game_key && game_key[0]) ? strdup(game_key) : NULL;
+	pthread_mutex_unlock(&g_mod_mutex);
+}
+
 void modifier_api_set_ui_scale(int font_pct, int scrollbar_pct)
 {
 	int fp = clamp_font_scale_pct(font_pct);
@@ -9271,6 +9347,21 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCtrlSkip(
 	(void)env;
 	(void)clazz;
 	return input_get_touch_ctrl_skip() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetUiScaleGameKey(
+	JNIEnv *env, jclass clazz, jstring jgameKey)
+{
+	(void)clazz;
+	if (!jgameKey) {
+		modifier_api_set_ui_scale_game_key(NULL);
+		return;
+	}
+	const char *key = (*env)->GetStringUTFChars(env, jgameKey, NULL);
+	modifier_api_set_ui_scale_game_key(key);
+	if (key)
+		(*env)->ReleaseStringUTFChars(env, jgameKey, key);
 }
 
 JNIEXPORT void JNICALL
