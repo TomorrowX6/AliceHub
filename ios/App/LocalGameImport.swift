@@ -312,17 +312,14 @@ enum LocalGameImport {
             }
         }
         let ain = try names(root).sorted().first { $0.hasSuffix(".ain") }
+        let gameDepth = root.resolvingSymlinksInPath().pathComponents.count
         for patch in all where leaf(patch) == "commonfiles" {
-            let parent = patch.deletingLastPathComponent()
-            let updateFiles = parent.deletingLastPathComponent()
             let inGame = contains(patch, in: root)
-            if inGame && (leaf(parent) != "files" || leaf(updateFiles) != "updatefiles" || !contains(updateFiles, in: root)) {
-                continue
-            }
+            let patchPath = patch.resolvingSymlinksInPath().pathComponents
+                .dropFirst(gameDepth).map { $0.lowercased() }
+            if inGame && patchPath != ["updatefiles", "files", "commonfiles"] { continue }
             let local = try names(patch)
             if let ain, local.contains(where: { $0.hasSuffix(".ain") }), !local.contains(ain) { continue }
-            let patchPath = patch.resolvingSymlinksInPath().pathComponents
-                .dropFirst(root.resolvingSymlinksInPath().pathComponents.count).map { $0.lowercased() }
             try merge(patch, into: root, overwrite: true, exclude: { relative, _ in
                 inGame && patchPath.starts(with: relative.lowercased().split(separator: "/").map(String.init))
             })
