@@ -1503,6 +1503,8 @@ static void load_part(struct activity *a, struct ex_tree *tree, int parent, bool
 	} else if (!strcmp(kind, "文本框") || !strcmp(kind, "文本ボックス") || !strcmp(kind, "テキストボックス")) {
 		PE_SetSpecialComponentType(no, 4);
 		parts_set_dims(p, &p->states[0].common, item2(info, "尺寸", "サイズ", 0, 200), item2(info, "尺寸", "サイズ", 1, 30));
+		PE_SetTextBoxReadOnly(no, number2(info, "读取专用", "読み取り専用", 0) != 0);
+		PE_SetTextBoxMaxTextLength(no, number(info, "最大文字数", 0));
 		struct string *tb_text = pact_ui_text(info, "文本");
 		PE_SetTextBoxText(no, tb_text);
 		free_string(tb_text);

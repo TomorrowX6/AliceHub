@@ -617,6 +617,9 @@ struct parts {
 	int *radio_children;
 	int nr_radio_children;
 	struct string *text_box_text;
+	struct parts_state *text_box_label;
+	int text_box_max_length;
+	bool text_box_read_only;
 	bool is_hovered;
 	bool focused;
 	int active_part; // cached focused descendant, used on controller roots
@@ -828,6 +831,7 @@ void parts_add_motion(struct parts *parts, struct parts_motion *motion);
 extern bool parts_began_click;
 extern bool parts_frame_did_heavy_load;
 bool parts_input_is_busy(void);
+void parts_text_box_set_display(struct parts *parts, const char *composition);
 void parts_input_reset_part(struct parts *parts);
 void parts_input_reset(void);
 struct iarray_writer;

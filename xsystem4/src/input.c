@@ -871,9 +871,23 @@ bool mouse_show_cursor(bool show)
 	return SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE) >= 0;
 }
 
-static void(*input_handler)(const char*);
-static void(*editing_handler)(const char*, int, int);
-static void(*key_handler)(int);
+static const struct input_text_handlers *legacy_text_handlers;
+static const struct input_text_handlers *parts_text_handlers;
+static const struct input_text_handlers *text_handlers;
+
+static void update_text_handlers(void)
+{
+	const struct input_text_handlers *next = legacy_text_handlers ? legacy_text_handlers : parts_text_handlers;
+	if (text_handlers == next)
+		return;
+	if (text_handlers && text_handlers->edit)
+		text_handlers->edit("", 0, 0);
+	if (text_handlers)
+		SDL_StopTextInput();
+	text_handlers = next;
+	if (text_handlers)
+		SDL_StartTextInput();
+}
 
 static void key_event(SDL_KeyboardEvent *e, bool pressed)
 {
@@ -918,8 +932,8 @@ static void key_event(SDL_KeyboardEvent *e, bool pressed)
 			kbd_key_state[code] = pressed;
 			key_state[code] = pressed || vpad_vk_down[code] || pad_vk_down[code];
 		}
-		if (pressed && key_handler)
-			key_handler(code);
+		if (pressed && text_handlers && text_handlers->key)
+			text_handlers->key(code);
 	}
 }
 
@@ -2478,34 +2492,16 @@ static void process_gamepad_frame(void)
 #endif
 }
 
-void register_input_handler(void(*handler)(const char*))
+void input_set_legacy_text_handlers(const struct input_text_handlers *handlers)
 {
-	input_handler = handler;
+	legacy_text_handlers = handlers;
+	update_text_handlers();
 }
 
-void clear_input_handler(void)
+void input_set_parts_text_handlers(const struct input_text_handlers *handlers)
 {
-	input_handler = NULL;
-}
-
-void register_editing_handler(void(*handler)(const char*, int, int))
-{
-	editing_handler = handler;
-}
-
-void clear_editing_handler(void)
-{
-	editing_handler = NULL;
-}
-
-void register_key_handler(void(*handler)(int))
-{
-	key_handler = handler;
-}
-
-void clear_key_handler(void)
-{
-	key_handler = NULL;
+	parts_text_handlers = handlers;
+	update_text_handlers();
 }
 
 static void pop_deferred_synthetic_mouse_event(uint32_t now)
@@ -2640,8 +2636,8 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 		struct deferred_keyevent *ev = STAILQ_FIRST(&deferred_keyevent_queue);
 		switch (ev->e.type) {
 		case SDL_TEXTINPUT:
-			if (input_handler)
-				input_handler(ev->e.text.text);
+			if (text_handlers && text_handlers->commit)
+				text_handlers->commit(ev->e.text.text);
 			break;
 		case SDL_KEYDOWN:
 		case SDL_KEYUP:
@@ -3273,7 +3269,7 @@ void handle_events(void)
 			// fallthrough
 		case SDL_KEYUP:
 #ifdef __ANDROID__
-			if (input_handler && e.key.timestamp < last_keyevent_timestamp + DEFERRED_KEY_DELAY) {
+			if (text_handlers && e.key.timestamp < last_keyevent_timestamp + DEFERRED_KEY_DELAY) {
 				// Input from virtual keyboard is sent as consecutive
 				// SDL_KEYDOWN and SDL_KEYUP events. To give the game a chance
 				// to see the previous key event, delay the event.
@@ -3398,7 +3394,7 @@ void handle_events(void)
 			generic_joy_button_event(&e.jbutton);
 			break;
 		case SDL_TEXTINPUT:
-			if (!input_handler) {
+			if (!text_handlers || !text_handlers->commit) {
 				break;
 #ifdef __ANDROID__
 			} else if (!STAILQ_EMPTY(&deferred_keyevent_queue)) {
@@ -3408,12 +3404,12 @@ void handle_events(void)
 				STAILQ_INSERT_TAIL(&deferred_keyevent_queue, ev, entry);
 #endif
 			} else {
-				input_handler(e.text.text);
+				text_handlers->commit(e.text.text);
 			}
 			break;
 		case SDL_TEXTEDITING:
-			if (editing_handler)
-				editing_handler(e.edit.text, e.edit.start, e.edit.length);
+			if (text_handlers && text_handlers->edit)
+				text_handlers->edit(e.edit.text, e.edit.start, e.edit.length);
 			break;
 		default:
 			break;
