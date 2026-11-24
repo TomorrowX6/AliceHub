@@ -558,9 +558,15 @@ class GameModifierActivity : ThemedActivity() {
         )
     }
 
+    private fun currentUiScaleGameKey(): String? =
+        GameModifierBridge.normalizeUiScaleGameKey(
+            if (::currentTarget.isInitialized) currentTarget.dirName else intent.getStringExtra(EXTRA_DIR_NAME)
+        )
+
     private fun refreshUiScaleButtons() {
-        val fontPct = GameModifierBridge.getFontScalePercent(this)
-        val sbPct = GameModifierBridge.getScrollbarScalePercent(this)
+        val gameKey = currentUiScaleGameKey()
+        val fontPct = GameModifierBridge.getFontScalePercent(this, gameKey)
+        val sbPct = GameModifierBridge.getScrollbarScalePercent(this, gameKey)
         findViewById<Button>(R.id.btn_mod_font_size)?.text = tr(
             "字体大小 · $fontPct%",
             "文字サイズ · $fontPct%",
@@ -1606,21 +1612,22 @@ class GameModifierActivity : ThemedActivity() {
     // 5. Font Size & Scrollbar Scale Dialogs
     // =========================================================================
     private fun showFontScaleDialog() {
+        val gameKey = currentUiScaleGameKey() ?: return
         showScaleSliderDialog(
             title = tr("字体大小", "文字サイズ", "Font Size"),
             description = tr(
-                "范围 75%~160%，默认 100%",
-                "範囲 75%~160% · 標準 100%",
-                "Range 75%~160% · Default 100%"
+                "仅对当前游戏生效 · 范围 75%~160%，默认 100%",
+                "このゲームのみ適用 · 範囲 75%~160% · 標準 100%",
+                "Current game only · Range 75%~160% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_FONT_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_FONT_SCALE_PCT,
             defaultPct = GameModifierBridge.DEFAULT_FONT_SCALE_PCT,
             stepPct = 5,
-            currentPct = GameModifierBridge.getFontScalePercent(this),
+            currentPct = GameModifierBridge.getFontScalePercent(this, gameKey),
             presets = listOf(80, 90, 100, 115, 130, 150),
             onApply = { pct, isReset ->
-                GameModifierBridge.setFontScalePercent(this, pct)
+                GameModifierBridge.setFontScalePercent(this, gameKey, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
@@ -1633,21 +1640,22 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun showScrollbarScaleDialog() {
+        val gameKey = currentUiScaleGameKey() ?: return
         showScaleSliderDialog(
             title = tr("滚动条", "スクロールバー", "Scrollbar"),
             description = tr(
-                "范围 100%~300%，默认 100%",
-                "範囲 100%~300% · 標準 100%",
-                "Range 100%~300% · Default 100%"
+                "仅对当前游戏生效 · 范围 100%~300%，默认 100%",
+                "このゲームのみ適用 · 範囲 100%~300% · 標準 100%",
+                "Current game only · Range 100%~300% · Default 100%"
             ),
             minPct = GameModifierBridge.MIN_SCROLLBAR_SCALE_PCT,
             maxPct = GameModifierBridge.MAX_SCROLLBAR_SCALE_PCT,
             defaultPct = GameModifierBridge.DEFAULT_SCROLLBAR_SCALE_PCT,
             stepPct = 10,
-            currentPct = GameModifierBridge.getScrollbarScalePercent(this),
+            currentPct = GameModifierBridge.getScrollbarScalePercent(this, gameKey),
             presets = listOf(100, 130, 160, 200, 250, 300),
             onApply = { pct, isReset ->
-                GameModifierBridge.setScrollbarScalePercent(this, pct)
+                GameModifierBridge.setScrollbarScalePercent(this, gameKey, pct)
                 refreshSummaryText()
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
