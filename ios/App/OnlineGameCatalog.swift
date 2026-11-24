@@ -73,6 +73,18 @@ struct OnlineGame: Identifiable {
         return false
     }
 
+    static func defaultSorted(_ list: [OnlineGame]) -> [OnlineGame] {
+        let cn = list.filter(\.hasChinese)
+        let raw = list.filter { !$0.hasChinese }
+        return cn + raw
+    }
+
+    static func defaultSortedInstalled(_ list: [Game]) -> [Game] {
+        let cn = list.filter { hasChinese(for: $0) }
+        let raw = list.filter { !hasChinese(for: $0) }
+        return cn + raw
+    }
+
     static let all: [Self] = [
         Self(id: "rance10", title: "兰斯10 决战", directory: "Rance10", hasChinese: true),
         Self(id: "dohnadohna", title: "多娜多娜 一起来干坏事吧", directory: "dohnadohna", hasChinese: true),

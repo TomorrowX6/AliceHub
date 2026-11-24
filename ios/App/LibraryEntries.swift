@@ -94,7 +94,8 @@ struct LibraryEntry: Identifiable {
             let rightMetadata = right.catalog.flatMap { metadata[$0.artwork] }
             let order: ComparisonResult
             switch sort {
-            case .catalog: order = .orderedSame
+            case .catalog:
+                order = left.hasChinese == right.hasChinese ? .orderedSame : (left.hasChinese ? .orderedAscending : .orderedDescending)
             case .name:
                 order = left.displayTitle(in: language).compare(right.displayTitle(in: language),
                                                                options: .caseInsensitive, locale: locale)

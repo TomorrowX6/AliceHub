@@ -89,6 +89,12 @@ struct OnlineGameChecks {
         for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm"] {
             precondition(!chineseIds.contains(rawId), "Expected raw: \(rawId)")
         }
+        let defaultOrdered = OnlineGame.defaultSorted(OnlineGame.all)
+        precondition(defaultOrdered.count == OnlineGame.all.count)
+        precondition(defaultOrdered.prefix(chineseIds.count).allSatisfy(\.hasChinese))
+        precondition(defaultOrdered.dropFirst(chineseIds.count).allSatisfy { !$0.hasChinese })
+        precondition(defaultOrdered.prefix(chineseIds.count).map(\.id) == OnlineGame.all.filter(\.hasChinese).map(\.id))
+        precondition(defaultOrdered.dropFirst(chineseIds.count).map(\.id) == OnlineGame.all.filter { !$0.hasChinese }.map(\.id))
         let cnMarkerDir = root.appendingPathComponent("custom-cn-markers")
         try files.createDirectory(at: cnMarkerDir, withIntermediateDirectories: true)
         precondition(!OnlineGame.hasLocalChineseMarkers(in: cnMarkerDir))
@@ -129,6 +135,13 @@ struct OnlineGameChecks {
         precondition(LibraryEntry.build(games: [], sort: .catalog, includeOnline: false).isEmpty)
         precondition(entries.count == OnlineGame.all.count + 1)
         precondition(entries.prefix(3).map(\.id) == ["catalog:rance41", "local:custom-raw-game", "catalog:rance10"])
+        let uninstalledEntries = Array(entries.dropFirst(2))
+        let uninstalledCnCount = uninstalledEntries.filter(\.hasChinese).count
+        precondition(uninstalledEntries.prefix(uninstalledCnCount).allSatisfy(\.hasChinese))
+        precondition(uninstalledEntries.dropFirst(uninstalledCnCount).allSatisfy { !$0.hasChinese })
+        let customInstalledEntries = LibraryEntry.build(games: [Game(url: rawCustomDir), Game(url: cnMarkerDir)],
+                                                        sort: .catalog, includeOnline: false)
+        precondition(customInstalledEntries.map(\.id) == ["local:\(cnMarkerDir.lastPathComponent)", "local:\(rawCustomDir.lastPathComponent)"])
         let rance41 = entries[0]
         precondition(rance41.installations.map(\.id) == [cnRance41.id, engRance41.id])
         precondition(rance41.matches(engRance41.name) && rance41.matches(rance41.title))
@@ -179,6 +192,13 @@ struct OnlineGameChecks {
         let patchedCustom = Game(url: patchedCustomDir)
         precondition(patchedCustom.hasInstalledCnPatch && !patchedCustom.hasLocalChineseMarkers)
         precondition(OnlineGame.hasChinese(for: patchedCustom))
+        let sortedInstalled = OnlineGame.defaultSortedInstalled([
+            Game(url: rawCustomDir),
+            Game(url: cnMarkerDir),
+            engRance41,
+            patchedCustom
+        ])
+        precondition(sortedInstalled.map(\.name) == [cnMarkerDir.lastPathComponent, patchedCustomDir.lastPathComponent, rawCustomDir.lastPathComponent, engRance41Dir.lastPathComponent])
         let invalidPatchDir = root.appendingPathComponent("custom-cn-patch-empty-ver")
         try files.createDirectory(at: invalidPatchDir, withIntermediateDirectories: true)
         try Data().write(to: invalidPatchDir.appendingPathComponent("System40.ini"))
