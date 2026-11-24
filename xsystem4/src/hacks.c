@@ -55,6 +55,7 @@ bool game_dohnadohna = false;
 bool game_evenicle = false;
 bool game_evenicle_rance = false;
 bool game_evenicle_gaiden = false;
+bool game_bladebriders = false;
 bool game_evenicle2 = false;
 bool game_evenicle2_rance = false;
 bool game_haharanman = false;
@@ -707,6 +708,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle = false;
 	game_evenicle_rance = false;
 	game_evenicle_gaiden = false;
+	game_bladebriders = false;
 	game_evenicle2 = false;
 	game_evenicle2_rance = false;
 	game_haharanman = false;
@@ -736,6 +738,8 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle_gaiden = ain->version == 6
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_has_gbk_string(ain, "aa6sdd5432");
+	game_bladebriders = ain->version == 6
+		&& ain_has_gbk_string(ain, "wf:-3");
 	game_evenicle = ain->version == 6
 		&& !game_evenicle_rance
 		&& !game_evenicle_gaiden

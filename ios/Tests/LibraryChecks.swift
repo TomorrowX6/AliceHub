@@ -319,7 +319,24 @@ struct LibraryChecks {
             ("Megane", "眼鏡のメイと夏休み.ain", GameEngine.system4, "megane"),
             ("RachelSakura", "レイチェルの桜貝.ain", GameEngine.system4, "rachelsakura"),
             ("SabakuNika", "砂漠のニッカ.ain", GameEngine.system4, "sabakunika"),
-            ("VanishPalm", "ばにしゅ！番外.ain", GameEngine.system4, "vanishpalm")
+            ("VanishPalm", "ばにしゅ！番外.ain", GameEngine.system4, "vanishpalm"),
+            ("BladeBriders", "burebura.ain", GameEngine.system4, "bladebriders"),
+            ("Dorapeko", "どらぺこ！.ain", GameEngine.system4, "dorapeko"),
+            ("HaniwaPetit", "ハニワ闇開発室ぷち.ain", GameEngine.system4, "haniwapetit"),
+            ("UnknownYakata456", "４５６_SA.ALD", GameEngine.system3, "yakata456"),
+            ("UnknownUmi", "蒼海SA.ald", GameEngine.system3, "uminiochite"),
+            ("UnknownGakuen2", "戦記２SA.ALD", GameEngine.system3, "gakuenhyouryuu2"),
+            ("UnknownYousei", "妖精SA.ald", GameEngine.system3, "yousei"),
+            ("UnknownTobira", "［扉］SA.ALD", GameEngine.system3, "tobira"),
+            ("UnknownBuroburo", "壁SA.ALD", GameEngine.system3, "buroburo"),
+            ("UnknownKudakero", "当砕SA.ALD", GameEngine.system3, "kudakero"),
+            ("UnknownCarol", "キャロルsa.ald", GameEngine.system3, "carol"),
+            ("UnknownOthellot", "おせろっとSA.ALD", GameEngine.system3, "othellot"),
+            ("UnknownMasquerade", "MQN_sa.ald", GameEngine.system3, "masquerade"),
+            ("UnknownDekirukana", "できSA.ALD", GameEngine.system3, "dekirukana"),
+            ("UnknownTatakikoroshi", "叩き殺しSA.ALD", GameEngine.system3, "tatakikoroshi"),
+            ("UnknownBalloonPop", "風船_SA.ALD", GameEngine.system3, "balloonpop"),
+            ("UnknownSelfGame", "SelfSA.ald", GameEngine.system3, "selfgame")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -448,6 +465,39 @@ struct LibraryChecks {
         try files.createDirectory(at: kamunagara2Dir, withIntermediateDirectories: true)
         try Data().write(to: kamunagara2Dir.appendingPathComponent("System40.ini"))
         precondition(Game(url: kamunagara2Dir).artworkKey == nil)
+        let hiyoko2Dir = root.appendingPathComponent("UnknownHiyoko2")
+        try files.createDirectory(at: hiyoko2Dir, withIntermediateDirectories: true)
+        try Data().write(to: hiyoko2Dir.appendingPathComponent("sa.ald"))
+        try Data().write(to: hiyoko2Dir.appendingPathComponent("piyod.dat"))
+        precondition(Game(url: hiyoko2Dir).engine == .system3 && Game(url: hiyoko2Dir).artworkKey == "hiyoko2")
+        let progOmakeDir = root.appendingPathComponent("UnknownProgOmake")
+        try files.createDirectory(at: progOmakeDir, withIntermediateDirectories: true)
+        try make256Bytes(crc32: 0xfb0e4a63).write(to: progOmakeDir.appendingPathComponent("ADISK.DAT"))
+        try Data().write(to: progOmakeDir.appendingPathComponent("ACG.DAT"))
+        try Data("[config]\ngame = prog_omake\n".utf8).write(to: progOmakeDir.appendingPathComponent("system3.ini"))
+        precondition(Game(url: progOmakeDir).engine == .legacySystem3 && Game(url: progOmakeDir).artworkKey == "progomake")
+        let sdpsTonoDir = root.appendingPathComponent("UnknownSdpsTono")
+        try files.createDirectory(at: sdpsTonoDir, withIntermediateDirectories: true)
+        try make256Bytes(crc32: 0xc7a20cdf).write(to: sdpsTonoDir.appendingPathComponent("ADISK.DAT"))
+        try make256Bytes(crc32: 0xbb1edff1).write(to: sdpsTonoDir.appendingPathComponent("BDISK.DAT"))
+        try Data().write(to: sdpsTonoDir.appendingPathComponent("ACG.DAT"))
+        precondition(Game(url: sdpsTonoDir).engine == .legacySystem3 && Game(url: sdpsTonoDir).artworkKey == "sdpstono")
+        let sdpsKaizokuDir = root.appendingPathComponent("UnknownSdpsKaizoku")
+        try files.createDirectory(at: sdpsKaizokuDir, withIntermediateDirectories: true)
+        try make256Bytes(crc32: 0xc7a20cdf).write(to: sdpsKaizokuDir.appendingPathComponent("ADISK.DAT"))
+        try make256Bytes(crc32: 0xf81829e3).write(to: sdpsKaizokuDir.appendingPathComponent("BDISK.DAT"))
+        try Data().write(to: sdpsKaizokuDir.appendingPathComponent("ACG.DAT"))
+        precondition(Game(url: sdpsKaizokuDir).engine == .legacySystem3 && Game(url: sdpsKaizokuDir).artworkKey == "sdpskaizoku")
+        let ayumiLiveCrcDir = root.appendingPathComponent("UnknownAyumiLive")
+        try files.createDirectory(at: ayumiLiveCrcDir, withIntermediateDirectories: true)
+        try make256Bytes(crc32: 0x00d15a2b).write(to: ayumiLiveCrcDir.appendingPathComponent("ADISK.DAT"))
+        try Data().write(to: ayumiLiveCrcDir.appendingPathComponent("ACG3.DAT"))
+        precondition(Game(url: ayumiLiveCrcDir).engine == .legacySystem3 && Game(url: ayumiLiveCrcDir).artworkKey == "ayumilive")
+        let yakata3KanaDir = root.appendingPathComponent("アリスの館3")
+        try files.createDirectory(at: yakata3KanaDir, withIntermediateDirectories: true)
+        try Data().write(to: yakata3KanaDir.appendingPathComponent("ADISK.DAT"))
+        try Data().write(to: yakata3KanaDir.appendingPathComponent("ACG.DAT"))
+        precondition(Game(url: yakata3KanaDir).artworkKey == "yakata3")
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

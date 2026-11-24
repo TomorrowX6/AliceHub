@@ -75,14 +75,17 @@ public class TranslationBadgeTest {
             GameCatalog.ID_TSUMAMIGUI3NTR,
             GameCatalog.ID_DARCROWS,
             GameCatalog.ID_SANBIKI,
-            GameCatalog.ID_PASCHA3
+            GameCatalog.ID_PASCHA3,
+            GameCatalog.ID_BLADEBRIDERS,
+            GameCatalog.ID_DORAPEKO,
+            GameCatalog.ID_HANIWAPETIT
     ));
 
     @Test
     public void builtInCatalogMatchesVerifiedChineseAndRawClassification() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(127, order.size());
-        assertEquals(50, EXPECTED_CHINESE_IDS.size());
+        assertEquals(157, order.size());
+        assertEquals(53, EXPECTED_CHINESE_IDS.size());
 
         int cnCount = 0;
         int rawCount = 0;
@@ -97,8 +100,8 @@ public class TranslationBadgeTest {
                 rawCount++;
             }
         }
-        assertEquals(50, cnCount);
-        assertEquals(77, rawCount);
+        assertEquals(53, cnCount);
+        assertEquals(104, rawCount);
 
         // Spot-check titles whose raw vs CN status is non-obvious
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_ESCALAYER, null, r -> "escalayer").getHasChinese());
@@ -120,6 +123,7 @@ public class TranslationBadgeTest {
         // Chinese documentation/readme files must NOT flip an untranslated game to Chinese
         assertFalse(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "超昂閃忍ハルカ.ain", "中文说明.txt", "汉化指南.md", "SourceHanSansCN_README.txt")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.CHS", "CHS.TBL")));
+        assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "burebura.ain", "uif_config.json")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("System40.ini", "AliceCN.ain")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "haru_c.ain")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "GBK.ain")));

@@ -94,6 +94,7 @@ final class GameLibrary: ObservableObject {
             let lower = rawName.lowercased()
             if lower == "alicestart.chs" || lower == "chs.tbl" || lower == "alicecn.ain" ||
                 lower == "haru_c.ain" || lower == "gbk.ain" || lower == "simhei.ttf" ||
+                lower == "uif_config.json" ||
                 lower.hasSuffix("_chs.ald") || lower.hasSuffix("chs.afa") ||
                 lower.hasSuffix("chs2.afa") || lower.hasSuffix("_cn.afa") ||
                 lower.hasSuffix("_cn.ain") || lower.hasSuffix("_cn.ald") {
@@ -166,16 +167,22 @@ final class GameLibrary: ObservableObject {
         ("okusamajun", ["okusamajun", "太太的恢复术纯爱", "奥さまの回復術純愛", "纯爱篇", "純愛編"]),
         ("okusamantr", ["okusamantr", "太太的恢复术夺爱", "奥さまの回復術奪愛", "夺爱篇", "奪愛編"]),
         ("waidonyo", ["waidonyo", "わいどにょ", "异空窟探险", "異空窟探險"]),
-        ("yakata3", ["yakata3", "aliceの館3", "aliceの館３", "aliceの館iii", "alicenoyakata3", "alicenoyakataiii", "爱丽丝之馆3", "爱丽丝之馆３", "愛麗絲之館3", "愛麗絲之館３"]),
-        ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
+        ("yakata456", ["yakata456", "456sa.ald", "４５６sa.ald", "456ga.ald", "４５６ga.ald", "アリスの館4", "アリスの館４", "aliceの館4", "aliceの館４", "爱丽丝之馆4", "愛麗絲之館4"]),
+        ("yakata3", ["yakata3", "aliceの館3", "aliceの館３", "aliceの館iii", "アリスの館3", "アリスの館３", "アリスの館iii", "alicenoyakata3", "alicenoyakataiii", "爱丽丝之馆3", "爱丽丝之馆３", "愛麗絲之館3", "愛麗絲之館３"]),
+        ("yakata2", ["yakata2", "aliceの館ii", "aliceの館2", "アリスの館2", "アリスの館２", "アリスの館ii", "alicenoyakata2", "alicenoyakataii", "爱丽丝之馆2", "爱丽丝之馆２", "愛麗絲之館2", "愛麗絲之館２"]),
+        ("yakata1", ["yakata1", "aliceの館", "アリスの館", "alicenoyakata", "爱丽丝之馆", "愛麗絲之館"]),
         ("koredps", ["koredps", "これdps", "これｄｐｓ", "これd.p.s", "这是dps", "這是dps", "这是d.p.s", "這是d.p.s"]),
         ("dpsall", ["dpsall", "d.p.s.全部", "dps全部", "d.p.s.zenbu", "dpszenbu"]),
+        ("sdpstono", ["sdpstono", "superdpstono", "遠野の森", "远野之森", "遠野之森", "tononomori"]),
+        ("sdpskaizoku", ["sdpskaizoku", "superdpskaizoku", "海賊稼業", "海盗生涯", "海盜生涯", "kaizokukagyou"]),
         ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
+        ("dps", ["dreamprogramsystem", "梦幻程序系统", "夢幻程序系統"]),
         ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
         ("toushin2sp", ["toushin2sp", "soshitesorekara", "そしてそれから", "然后从那以后", "然後從那以後"]),
         ("toushin2", ["toushin2", "toushintoshi2", "toushintoshiii", "tt2sa", "闘神都市2", "闘神都市２", "闘神都市ii", "斗神都市2", "斗神都市２", "斗神都市ii", "鬥神都市2"]),
         ("toushin1", ["toushin1", "toushinsa", "toushintoshi", "闘神都市", "斗神都市", "鬥神都市"]),
         ("diabolique", ["diabolique", "diabosa", "デアボリカ", "魔鬼恋曲"]),
+        ("gakuenhyouryuu2", ["gakuenhyouryuu2", "学園漂流戦記第2", "学園漂流戦記2", "学园漂流战记第2", "学园漂流战记2", "戦記2sa.ald", "戦記２sa.ald"]),
         ("gakuenhyouryuu", ["gakuenhyouryuu", "学園漂流", "学园漂流", "學園漂流"]),
         ("gakuenkingex", ["gakuenkingex", "gakuenkingbangai", "学園番外編", "学園king番外", "学园king番外"]),
         ("gakuenking", ["gakuenking", "学園king", "学园king", "gakuen.com"]),
@@ -194,12 +201,15 @@ final class GameLibrary: ObservableObject {
         ("persiom", ["persiom", "約束の集う場所", "约定汇聚之所"]),
         ("seeinao", ["seeinao", "seein青", "イルカsa", "シーンao"]),
         ("hushaby", ["hushaby", "幽霊sa"]),
+        ("ayumilive", ["ayumilive", "実写版", "jisshaban", "liveaction", "步美物语真人", "步美物語真人"]),
+        ("ayumihint", ["ayumihint", "ヒントディスク", "步美物语提示", "步美物語提示"]),
         ("ayumi", ["ayumichan", "ayumi", "あゆみちゃん", "步美物语", "步美物語"]),
         ("cielclaire", ["cielclaire", "chairscruelles", "シェルクレイル", "逃避行sa", "残酷的爱恋", "殘酷的愛戀"]),
         ("nightdemon", ["nightdemon", "ナイトデーモン", "夢鬼", "梦鬼"]),
         ("katsumi", ["katsumi", "いけないかつみ", "かつみsa", "胜美大夫", "勝美大夫"]),
         ("drstop", ["drstop", "dr.stop", "dssa.ald"]),
         ("prostudentgood", ["prostudentgood", "prostu★dent", "sr猿", "ｓｒ猿", "ぷろすちゅ★でんと", "职业学生good", "職業學生good"]),
+        ("progomake", ["progomake", "prostudentgomake", "ぷろすちゅーでんとgおまけ", "职业学生g附赠", "職業學生g附贈"]),
         ("prostudentg", ["prostudentg", "progcd", "ぷろすちゅーでんとg", "职业学生g", "職業學生g"]),
         ("pascha3", ["pascha3", "pastelchime3", "bindseeker", "パステルチャイム3", "パステルチャイム３", "バインドシーカー", "粉彩铃音3", "粉彩铃音３", "粉彩鈴音3", "封神追寻者", "pc3特典"]),
         ("paschacpp", ["paschacpp", "paschac++", "ぱすちゃc++", "ぱすちゃc＋＋", "ぱすてる+", "ぱすてる＋", "粉彩铃音c++", "粉彩鈴音c++"]),
@@ -242,6 +252,27 @@ final class GameLibrary: ObservableObject {
         ("megane", ["megane", "眼鏡のメイ", "眼镜梅与暑假", "眼鏡梅與暑假"]),
         ("rachelsakura", ["rachelsakura", "rachellnosakuragai", "レイチェルの桜貝", "蕾切尔的樱贝", "蕾切爾的櫻貝"]),
         ("sabakunika", ["sabakunika", "sabakunonikka", "砂漠のニッカ", "沙漠的妮卡"]),
+        ("bladebriders", ["bladebriders", "blade☆briders", "burebura", "ぶれいど", "ブライダーズ", "武想少女隊", "武想少女队"]),
+        ("dorapeko", ["dorapeko", "drapeko", "どらぺこ", "おねだりドラゴン", "饥饿龙娘", "飢餓龍娘"]),
+        ("haniwapetit", ["haniwapetit", "ハニワ闇開発室", "闇開発室ぷち", "哈尼瓦暗黑开发室", "哈尼瓦闇開發室"]),
+        ("uminiochite", ["uminiochite", "蒼海に堕ちて", "蒼海sa.ald", "坠入苍海", "墜入蒼海"]),
+        ("yousei", ["yousei", "妖精sa.ald", "妖精ga.ald"]),
+        ("tobira", ["tobira", "[扉]", "［扉］", "[扉]sa.ald", "［扉］sa.ald", "[扉]ga.ald", "［扉］ga.ald"]),
+        ("buroburo", ["buroburo", "ぶろぶろ", "壁sa.ald", "噗咯噗咯"]),
+        ("kudakero", ["kudakero", "当たって!!kudakero", "当砕sa.ald", "撞碎吧"]),
+        ("littlevampire", ["littlevampire", "リトルヴァンパイア", "小吸血鬼"]),
+        ("intruder", ["intruder", "桜屋敷の探索", "樱屋敷的探索", "櫻屋敷的探索"]),
+        ("crescent", ["crescentmoongirl", "crescentmoon", "クレセントムーン", "新月少女"]),
+        ("tengu", ["abunaitengu", "あぶないてんぐ", "あぶない天狗", "危险的天狗", "危險的天狗"]),
+        ("nisenaguri", ["nisenaguri", "にせなぐり", "偽殴打", "伪殴打"]),
+        ("carol", ["キャロル", "聖なる鐘が響く夜", "卡萝尔", "圣钟鸣响之夜"]),
+        ("othellot", ["othellot", "おせろっと", "黑白棋娘"]),
+        ("masquerade", ["masquerade", "マスカレイド", "mqnsa.ald", "假面舞会", "假面舞會"]),
+        ("dekirukana", ["dekirukana", "できるかな", "できsa.ald", "能做到吗", "能做到嗎"]),
+        ("tatakikoroshi", ["tatakikoroshi", "たたき殺し", "叩き殺し", "敲杀太郎", "敲殺太郎"]),
+        ("balloonpop", ["balloonpop", "ばるーんぽっぷ", "風船sa.ald", "气球爆破", "氣球爆破"]),
+        ("hiyoko2", ["hiyoko2", "kousokuhiyoko", "高速ひよこ", "高速小鸡", "高速小雞"]),
+        ("selfgame", ["selfgame", "selfsa.ald", "selfga.ald"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
@@ -269,7 +300,7 @@ final class GameLibrary: ObservableObject {
         if system39 || names.contains(where: isSystem35Scenario) {
             return (.system3, url, system39)
         }
-        if names.contains("adisk.dat") && (names.contains("acg.dat") || names.contains("acg0.dat")) {
+        if names.contains("adisk.dat") && (names.contains("acg.dat") || names.contains("acg0.dat") || names.contains("acg3.dat")) {
             return (.legacySystem3, url, false)
         }
         throw LibraryError.notGame
@@ -294,9 +325,9 @@ final class GameLibrary: ObservableObject {
         return nil
     }
 
-    private static func legacyAdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
-        guard let adisk = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "adisk.dat" }),
-              let handle = try? FileHandle(forReadingFrom: adisk) else { return nil }
+    private static func legacyDiskPrefixCrc32FromRegularFiles(_ regularFiles: [URL], fileNameLower: String) -> UInt32? {
+        guard let disk = regularFiles.first(where: { $0.lastPathComponent.lowercased() == fileNameLower }),
+              let handle = try? FileHandle(forReadingFrom: disk) else { return nil }
         defer { handle.closeFile() }
         let data = handle.readData(ofLength: 256)
         guard data.count == 256 else { return nil }
@@ -308,6 +339,14 @@ final class GameLibrary: ObservableObject {
             }
         }
         return crc ^ 0xffffffff
+    }
+
+    private static func legacyAdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
+        legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "adisk.dat")
+    }
+
+    private static func legacyBdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
+        legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "bdisk.dat")
     }
 
     private static func isGakuenKingFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
@@ -324,12 +363,26 @@ final class GameLibrary: ObservableObject {
         return adiskCrc == 0x832aeb97
     }
 
+    private static func isAyumiLiveFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "ayumi_live_256" || legacyId == "ayumi_live_full" || legacyId == "ayumi_live" || legacyId == "ayumilive"
+        }
+        return adiskCrc == 0x00d15a2b || adiskCrc == 0x5f66ff1d ||
+            (regularNamesLower.contains("acg3.dat") && regularNamesLower.contains("adisk.dat"))
+    }
+
+    private static func isAyumiHintFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "ayumi_hint" || legacyId == "ayumihint"
+        }
+        return adiskCrc == 0xf6bd963a
+    }
+
     private static func isAyumiFromRegularFiles(_ regularNamesLower: Set<String>, legacyId: String?, adiskCrc: UInt32?) -> Bool {
         if let legacyId {
-            return legacyId == "ayumi_cd" || legacyId == "ayumi" || legacyId == "ayumi_fd" ||
-                legacyId == "ayumi_proto" || legacyId == "ayumi_live_256" || legacyId == "ayumi_live_full"
+            return legacyId == "ayumi_cd" || legacyId == "ayumi" || legacyId == "ayumi_fd" || legacyId == "ayumi_proto"
         }
-        let ayumiCrcs: Set<UInt32> = [0xd2bed9ee, 0x4e2fed2a, 0x4e2f5678, 0x00d15a2b, 0x5f66ff1d]
+        let ayumiCrcs: Set<UInt32> = [0xd2bed9ee, 0x4e2fed2a, 0x4e2f5678]
         return (adiskCrc.map { ayumiCrcs.contains($0) } ?? false) ||
             (regularNamesLower.contains("acg0.dat") && regularNamesLower.contains("adisk.dat"))
     }
@@ -403,6 +456,7 @@ final class GameLibrary: ObservableObject {
         let regularNamesLower = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
         let legacyId = engine == .legacySystem3 ? legacySystem3GameIdFromRegularFiles(regularFiles) : nil
         let adiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        let bdiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyBdiskCrc32FromRegularFiles(regularFiles) : nil
 
         let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
         let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
@@ -411,18 +465,31 @@ final class GameLibrary: ObservableObject {
             (legacyId.map { $0 == "rance42" || $0 == "rance42_eng" || $0 == "rance4.2" } ?? false)
         let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
         let yakata2 = legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false
+        let yakata1 = engine == .legacySystem3 && ((legacyId == "yakata" || legacyId == "yakata1") || (legacyId == nil && (adiskCrc == 0x8cef6fa6 || adiskCrc == 0xd8f84e34)))
+        let littleVampire = engine == .legacySystem3 && ((legacyId == "vampire" || legacyId == "little_vampire" || legacyId == "littlevampire") || (legacyId == nil && adiskCrc == 0x957bcfbf))
+        let intruder = engine == .legacySystem3 && (legacyId == "intruder" || (legacyId == nil && adiskCrc == 0xa7520fb2))
+        let crescent = engine == .legacySystem3 && (legacyId == "crescent" || (legacyId == nil && adiskCrc == 0x42351f2c))
+        let tengu = engine == .legacySystem3 && ((legacyId == "tengu" || legacyId == "abunai_tengu") || (legacyId == nil && adiskCrc == 0xc942ff58))
+        let dps = engine == .legacySystem3 && (legacyId == "dps" || (legacyId == nil && adiskCrc == 0x69ea4865))
+        let sdpsTono = engine == .legacySystem3 && ((legacyId == "sdps_tono" || legacyId == "sdpstono") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xbb1edff1))
+        let sdpsKaizoku = engine == .legacySystem3 && ((legacyId == "sdps_kaizoku" || legacyId == "sdpskaizoku") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xf81829e3))
         let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
         let gakuenKing = engine == .legacySystem3 && isGakuenKingFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let onlyYou = engine == .legacySystem3 && isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
-        let ayumi = engine == .legacySystem3 && isAyumiFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
+        let ayumiLive = engine == .legacySystem3 && isAyumiLiveFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
+        let ayumiHint = engine == .legacySystem3 && isAyumiHintFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let ayumi = engine == .legacySystem3 && !ayumiLive && !ayumiHint && isAyumiFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let dpsAll = engine == .legacySystem3 && isDpsAllFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
-        let prostudentG = engine == .legacySystem3 && isProstudentGFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let progOmake = engine == .legacySystem3 && (legacyId == "prog_omake" || legacyId == "progomake")
+        let prostudentG = engine == .legacySystem3 && !progOmake && isProstudentGFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let niseNaguri = engine == .legacySystem3 && ((legacyId == "nise_naguri" || legacyId == "nisenaguri") || (legacyId == nil && adiskCrc == 0xfabe6302))
         let yakata3 = engine == .legacySystem3 && isYakata3FromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let ambivalenz = engine == .legacySystem3 && isAmbivalenzFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let funnyBee = engine == .legacySystem3 && isFunnyBeeFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let toushin2Sp = engine == .legacySystem3 && isToushin2SpFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let mugenHouyou = engine == .legacySystem3 && isMugenHouyouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let otomeSenki = engine == .legacySystem3 && isOtomeSenkiFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let hiyoko2 = engine == .system3 && regularNamesLower.contains("piyod.dat") && (regularNamesLower.contains("sa.ald") || regularNamesLower.contains("ga.ald"))
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
@@ -430,18 +497,31 @@ final class GameLibrary: ObservableObject {
         else if rance42 { displayName = "兰斯4.2 天使组" }
         else if rance5d { displayName = "兰斯5D" }
         else if yakata2 { displayName = "爱丽丝之馆2" }
+        else if yakata1 { displayName = "爱丽丝之馆" }
+        else if littleVampire { displayName = "小吸血鬼 Little Vampire" }
+        else if intruder { displayName = "侵入者 -樱屋敷的探索-" }
+        else if crescent { displayName = "新月少女" }
+        else if tengu { displayName = "危险的天狗传说" }
+        else if dps { displayName = "D.P.S. 梦幻程序系统" }
+        else if sdpsTono { displayName = "Super D.P.S 远野之森" }
+        else if sdpsKaizoku { displayName = "Super D.P.S 欢乐海盗生涯" }
         else if sdpsMaria { displayName = "Super D.P.S 玛利亚和坎潘" }
         else if gakuenKing { displayName = "学园KING" }
         else if onlyYou { displayName = "Only You 世纪末的朱丽叶们" }
+        else if ayumiLive { displayName = "步美物语 真人版" }
+        else if ayumiHint { displayName = "步美物语 提示盘" }
         else if ayumi { displayName = "步美物语" }
         else if dpsAll { displayName = "D.P.S. 全部" }
+        else if progOmake { displayName = "职业学生G 附赠盘" }
         else if prostudentG { displayName = "职业学生G" }
+        else if niseNaguri { displayName = "伪殴打狂魔塔" }
         else if yakata3 { displayName = "爱丽丝之馆3" }
         else if ambivalenz { displayName = "AmbivalenZ -二律背反-" }
         else if funnyBee { displayName = "宇宙快盗Funny Bee" }
         else if toushin2Sp { displayName = "斗神都市II 然后，从那以后…" }
         else if mugenHouyou { displayName = "梦幻泡影" }
         else if otomeSenki { displayName = "乙女战记" }
+        else if hiyoko2 { displayName = "高速小鸡2" }
         else { displayName = url.lastPathComponent }
 
         let erumeiWakare: Bool
@@ -470,6 +550,9 @@ final class GameLibrary: ObservableObject {
         let isRance10 = engine == .system4 && regularNamesLower.contains("rance10.ain")
         let isGirls = engine == .system4 && (regularNamesLower.contains("ｇｉｒｌｓ.ain") || regularNamesLower.contains("girls.ain") || dirLower == "girls")
         let isDebut = engine == .system4 && (regularNamesLower.contains("ｄｅｂｕｔ.ain") || regularNamesLower.contains("debut.ain") || dirLower == "debut")
+        let isCarol = engine == .system3 && (regularNamesLower.contains("キャロルsa.ald") || dirLower == "carol")
+        let isDpsDir = engine == .legacySystem3 && dirLower == "dps"
+        let isTenguDir = engine == .legacySystem3 && dirLower == "tengu"
 
         let detectedArtworkID: String?
         if isRance10 { detectedArtworkID = "rance10" }
@@ -478,22 +561,38 @@ final class GameLibrary: ObservableObject {
         else if rance04 { detectedArtworkID = "rance04" }
         else if rance5d { detectedArtworkID = "rance5d" }
         else if yakata2 { detectedArtworkID = "yakata2" }
+        else if yakata1 { detectedArtworkID = "yakata1" }
+        else if littleVampire { detectedArtworkID = "littlevampire" }
+        else if intruder { detectedArtworkID = "intruder" }
+        else if crescent { detectedArtworkID = "crescent" }
+        else if tengu { detectedArtworkID = "tengu" }
+        else if dps { detectedArtworkID = "dps" }
+        else if sdpsTono { detectedArtworkID = "sdpstono" }
+        else if sdpsKaizoku { detectedArtworkID = "sdpskaizoku" }
         else if sdpsMaria { detectedArtworkID = "sdpsmaria" }
         else if gakuenKing { detectedArtworkID = "gakuenking" }
         else if onlyYou { detectedArtworkID = "onlyyou" }
+        else if ayumiLive { detectedArtworkID = "ayumilive" }
+        else if ayumiHint { detectedArtworkID = "ayumihint" }
         else if ayumi { detectedArtworkID = "ayumi" }
         else if dpsAll { detectedArtworkID = "dpsall" }
+        else if progOmake { detectedArtworkID = "progomake" }
         else if prostudentG { detectedArtworkID = "prostudentg" }
+        else if niseNaguri { detectedArtworkID = "nisenaguri" }
         else if yakata3 { detectedArtworkID = "yakata3" }
         else if ambivalenz { detectedArtworkID = "ambivalenz" }
         else if funnyBee { detectedArtworkID = "funnybee" }
         else if toushin2Sp { detectedArtworkID = "toushin2sp" }
         else if mugenHouyou { detectedArtworkID = "mugenhouyou" }
         else if otomeSenki { detectedArtworkID = "otomesenki" }
+        else if hiyoko2 { detectedArtworkID = "hiyoko2" }
         else if erumeiWakare { detectedArtworkID = "erumeiwakare" }
         else if erumeiFlower { detectedArtworkID = "erumeiflower" }
         else if isGirls { detectedArtworkID = "girls" }
         else if isDebut { detectedArtworkID = "debut" }
+        else if isCarol { detectedArtworkID = "carol" }
+        else if isDpsDir { detectedArtworkID = "dps" }
+        else if isTenguDir { detectedArtworkID = "tengu" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?

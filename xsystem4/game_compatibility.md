@@ -82,8 +82,10 @@ issues, please let me know or open a pull request to update this table.
 | ランス・クエスト マグナム                               | Supported   |       |
 | 母娘乱館                                                | Supported   | JP and CN Longinus (`AliceStart.CHS` / `CHS.TBL` / `CHS.afa`, 1024×768 viewport fix) supported |
 | パステルチャイム3 バインドシーカー                      | Supported   |       |
+| ハニワ闇開発室ぷち                                      | Supported   | From Pascha3 bonus; JP and CN (GBK) supported (`MainEXFile` empty `.ex` fallback + `PartsEngine.UpdateGUIController`) |
 | パスチャ3 プラスコンテンツ                              | Supported   |       |
-| どらぺこ！ ～おねだりドラゴンとおっぱい勇者～           | Unsupported |       |
+| どらぺこ！ ～おねだりドラゴンとおっぱい勇者～           | Supported   | JP and CN (`uif_config.json` character_substitution) supported; E2E verified (boot, world map, ADV, audio, save/load) |
+| 武想少女隊ぶれいど☆ブライダーズ                         | Supported   | JP and CN (`uif_config.json` character_substitution + `SystemService.GetSystemBufferName`) supported; E2E verified (boot, ADV, 3D Stage 1 battle, audio, save) |
 | ランス01 光をもとめて                                   | Supported   |       |
 | Rance 01 - Quest for Hikari (EN)                        | Supported   |       |
 | ランスIX－ヘルマン革命－                                | Supported   |       |

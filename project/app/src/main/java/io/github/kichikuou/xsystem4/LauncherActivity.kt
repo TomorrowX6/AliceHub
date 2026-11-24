@@ -273,7 +273,37 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_MEGANE && GameCatalog.isMeganeAlias(q)) ||
             (desc.id == GameCatalog.ID_RACHELSAKURA && GameCatalog.isRachelSakuraAlias(q)) ||
             (desc.id == GameCatalog.ID_SABAKUNIKA && GameCatalog.isSabakuNikaAlias(q)) ||
-            (desc.id == GameCatalog.ID_VANISHPALM && GameCatalog.isVanishPalmAlias(q))
+            (desc.id == GameCatalog.ID_VANISHPALM && GameCatalog.isVanishPalmAlias(q)) ||
+            (desc.id == GameCatalog.ID_BLADEBRIDERS && GameCatalog.isBladeBridersAlias(q)) ||
+            (desc.id == GameCatalog.ID_DORAPEKO && GameCatalog.isDorapekoAlias(q)) ||
+            (desc.id == GameCatalog.ID_HANIWAPETIT && GameCatalog.isHaniwaPetitAlias(q)) ||
+            (desc.id == GameCatalog.ID_YAKATA456 && GameCatalog.isYakata456Alias(q)) ||
+            (desc.id == GameCatalog.ID_UMINIOCHITE && GameCatalog.isUmiNiOchiteAlias(q)) ||
+            (desc.id == GameCatalog.ID_GAKUENHYOURYUU2 && GameCatalog.isGakuenHyouryuu2Alias(q)) ||
+            (desc.id == GameCatalog.ID_YOUSEI && GameCatalog.isYouseiAlias(q)) ||
+            (desc.id == GameCatalog.ID_TOBIRA && GameCatalog.isTobiraAlias(q)) ||
+            (desc.id == GameCatalog.ID_BUROBURO && GameCatalog.isBuroburoAlias(q)) ||
+            (desc.id == GameCatalog.ID_KUDAKERO && GameCatalog.isKudakeroAlias(q)) ||
+            (desc.id == GameCatalog.ID_LITTLEVAMPIRE && GameCatalog.isLittleVampireAlias(q)) ||
+            (desc.id == GameCatalog.ID_INTRUDER && GameCatalog.isIntruderAlias(q)) ||
+            (desc.id == GameCatalog.ID_CRESCENT && GameCatalog.isCrescentAlias(q)) ||
+            (desc.id == GameCatalog.ID_TENGU && GameCatalog.isTenguAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPS && GameCatalog.isDpsAlias(q)) ||
+            (desc.id == GameCatalog.ID_YAKATA1 && GameCatalog.isYakata1Alias(q)) ||
+            (desc.id == GameCatalog.ID_SDPSTONO && GameCatalog.isSdpsTonoAlias(q)) ||
+            (desc.id == GameCatalog.ID_SDPSKAIZOKU && GameCatalog.isSdpsKaizokuAlias(q)) ||
+            (desc.id == GameCatalog.ID_PROGOMAKE && GameCatalog.isProgOmakeAlias(q)) ||
+            (desc.id == GameCatalog.ID_AYUMIHINT && GameCatalog.isAyumiHintAlias(q)) ||
+            (desc.id == GameCatalog.ID_AYUMILIVE && GameCatalog.isAyumiLiveAlias(q)) ||
+            (desc.id == GameCatalog.ID_NISENAGURI && GameCatalog.isNiseNaguriAlias(q)) ||
+            (desc.id == GameCatalog.ID_CAROL && GameCatalog.isCarolAlias(q)) ||
+            (desc.id == GameCatalog.ID_OTHELLOT && GameCatalog.isOthellotAlias(q)) ||
+            (desc.id == GameCatalog.ID_MASQUERADE && GameCatalog.isMasqueradeAlias(q)) ||
+            (desc.id == GameCatalog.ID_DEKIRUKANA && GameCatalog.isDekirukanaAlias(q)) ||
+            (desc.id == GameCatalog.ID_TATAKIKOROSHI && GameCatalog.isTatakikoroshiAlias(q)) ||
+            (desc.id == GameCatalog.ID_BALLOONPOP && GameCatalog.isBalloonPopAlias(q)) ||
+            (desc.id == GameCatalog.ID_HIYOKO2 && GameCatalog.isHiyoko2Alias(q)) ||
+            (desc.id == GameCatalog.ID_SELFGAME && GameCatalog.isSelfGameAlias(q))
         ) {
             return true
         }

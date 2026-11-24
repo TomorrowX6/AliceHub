@@ -1366,6 +1366,19 @@ static void init_mai_word_table(void)
 			WARNING("Failed to load Longinus CHS.TBL: %s", chs_path);
 		}
 		free(chs_path);
+
+		char *uif_path = gamedir_path_icase("uif_config.json");
+		if (uif_path && file_exists(uif_path)) {
+			if (sys4_load_uif_config(uif_path)) {
+				// UIF character_substitution remaps Shift-JIS codepoints to Chinese glyphs at
+				// render time; keep VM/archive strings in Shift-JIS mode so EX/AFA lookups stay intact.
+				sys4_set_text_gbk(false);
+				free(uif_path);
+				return;
+			}
+			WARNING("Failed to load UIF character_substitution config: %s", uif_path);
+		}
+		free(uif_path);
 	}
 	if (sys4_text_is_gbk)
 		return;

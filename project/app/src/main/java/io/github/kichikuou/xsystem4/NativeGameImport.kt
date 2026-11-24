@@ -247,12 +247,24 @@ object NativeGameImport {
             isDaiakujiImport -> "Daiakuji"
             isHarukaImport -> "Haruka"
             detectedGameId == GameCatalog.ID_YAKATA2 -> "Yakata2"
+            detectedGameId == GameCatalog.ID_YAKATA1 -> "Yakata1"
+            detectedGameId == GameCatalog.ID_LITTLEVAMPIRE -> "LittleVampire"
+            detectedGameId == GameCatalog.ID_INTRUDER -> "Intruder"
+            detectedGameId == GameCatalog.ID_CRESCENT -> "CrescentMoonGirl"
+            detectedGameId == GameCatalog.ID_TENGU -> "AbunaiTengu"
+            detectedGameId == GameCatalog.ID_DPS -> "DPS"
+            detectedGameId == GameCatalog.ID_SDPSTONO -> "SuperDpsTono"
+            detectedGameId == GameCatalog.ID_SDPSKAIZOKU -> "SuperDpsKaizoku"
             detectedGameId == GameCatalog.ID_SDPSMARIA -> "SuperDpsMaria"
             detectedGameId == GameCatalog.ID_GAKUENKING -> "GakuenKING"
             detectedGameId == GameCatalog.ID_ONLYYOU -> "OnlyYou"
+            detectedGameId == GameCatalog.ID_AYUMILIVE -> "AyumiLive"
+            detectedGameId == GameCatalog.ID_AYUMIHINT -> "AyumiHint"
             detectedGameId == GameCatalog.ID_AYUMI -> "AyumiChan"
             detectedGameId == GameCatalog.ID_DPSALL -> "DpsAll"
+            detectedGameId == GameCatalog.ID_PROGOMAKE -> "ProstudentGOmake"
             detectedGameId == GameCatalog.ID_PROSTUDENTG -> "ProstudentG"
+            detectedGameId == GameCatalog.ID_NISENAGURI -> "NiseNaguri"
             detectedGameId == GameCatalog.ID_YAKATA3 -> "Yakata3"
             detectedGameId == GameCatalog.ID_AMBIVALENZ -> "AmbivalenZ"
             detectedGameId == GameCatalog.ID_FUNNYBEE -> "FunnyBee"
@@ -441,6 +453,9 @@ object NativeGameImport {
         if (GameCatalog.isOtomeSenkiGameFiles(activeFiles, readSmallFile)) {
             return "OtomeSenki"
         }
+        if (GameCatalog.isGakuenHyouryuu2GameFiles(activeFiles, readSmallFile)) {
+            return "GakuenHyouryuu2"
+        }
         if (GameCatalog.isGakuenHyouryuuGameFiles(activeFiles, readSmallFile)) {
             return "GakuenHyouryuu"
         }
@@ -552,6 +567,57 @@ object NativeGameImport {
         if (GameCatalog.isSabakuNikaGameFiles(activeFiles, readSmallFile)) {
             return "SabakuNika"
         }
+        if (GameCatalog.isBladeBridersGameFiles(activeFiles, readSmallFile)) {
+            return "BladeBriders"
+        }
+        if (GameCatalog.isDorapekoGameFiles(activeFiles, readSmallFile)) {
+            return "Dorapeko"
+        }
+        if (GameCatalog.isHaniwaPetitGameFiles(activeFiles, readSmallFile)) {
+            return "HaniwaPetit"
+        }
+        if (GameCatalog.isYakata456GameFiles(activeFiles, readSmallFile)) {
+            return "Yakata456"
+        }
+        if (GameCatalog.isUmiNiOchiteGameFiles(activeFiles, readSmallFile)) {
+            return "UmiNiOchite"
+        }
+        if (GameCatalog.isYouseiGameFiles(activeFiles, readSmallFile)) {
+            return "Yousei"
+        }
+        if (GameCatalog.isTobiraGameFiles(activeFiles, readSmallFile)) {
+            return "Tobira"
+        }
+        if (GameCatalog.isBuroburoGameFiles(activeFiles, readSmallFile)) {
+            return "Buroburo"
+        }
+        if (GameCatalog.isKudakeroGameFiles(activeFiles, readSmallFile)) {
+            return "Kudakero"
+        }
+        if (GameCatalog.isCarolGameFiles(activeFiles, readSmallFile)) {
+            return "Carol"
+        }
+        if (GameCatalog.isOthellotGameFiles(activeFiles, readSmallFile)) {
+            return "Othellot"
+        }
+        if (GameCatalog.isMasqueradeGameFiles(activeFiles, readSmallFile)) {
+            return "Masquerade"
+        }
+        if (GameCatalog.isDekirukanaGameFiles(activeFiles, readSmallFile)) {
+            return "Dekirukana"
+        }
+        if (GameCatalog.isTatakikoroshiGameFiles(activeFiles, readSmallFile)) {
+            return "Tatakikoroshi"
+        }
+        if (GameCatalog.isBalloonPopGameFiles(activeFiles, readSmallFile)) {
+            return "BalloonPop"
+        }
+        if (GameCatalog.isHiyoko2GameFiles(activeFiles, readSmallFile)) {
+            return "Hiyoko2"
+        }
+        if (GameCatalog.isSelfGameFiles(activeFiles, readSmallFile)) {
+            return "SelfGame"
+        }
         if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
             return "Sanbiki"
         }
@@ -649,6 +715,15 @@ object NativeGameImport {
         return if (isMultiDiscSys3) "System3" else "Game"
     }
 
+    fun boundedPrimaryReadLimitBytes(fileName: String, docSize: Long): Int? {
+        return when {
+            fileName.equals("ADISK.DAT", ignoreCase = true) ||
+                fileName.equals("BDISK.DAT", ignoreCase = true) -> 256
+            docSize < 0L || docSize <= 256L * 1024L -> 256 * 1024
+            else -> null
+        }
+    }
+
     private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -685,10 +760,14 @@ object NativeGameImport {
             listChildren = { uri -> children(context, tree, uri).map { TreeEntry(it.uri, it.name, it.folder, it) } },
             readSmallEntry = { entry ->
                 val doc = entry.payload
-                if (!doc.folder && (doc.size < 0 || doc.size <= 256L * 1024L)) {
-                    readBoundedDocumentBytes(context, doc.uri)
-                } else {
+                if (doc.folder) {
                     null
+                } else {
+                    val limit = boundedPrimaryReadLimitBytes(
+                        ArchiveExtractor.repairSjisAsGbkMojibake(doc.name),
+                        doc.size
+                    )
+                    if (limit != null) readBoundedDocumentBytes(context, doc.uri, limit) else null
                 }
             }
         )
@@ -727,12 +806,8 @@ object NativeGameImport {
                 !it.folder && !skip(it.name) &&
                     ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
             }
-            when {
-                doc == null -> null
-                fileName.equals("ADISK.DAT", ignoreCase = true) -> readBoundedDocumentBytes(context, doc.uri, 256)
-                doc.size < 0 || doc.size <= 256L * 1024L -> readBoundedDocumentBytes(context, doc.uri)
-                else -> null
-            }
+            val limit = if (doc != null) boundedPrimaryReadLimitBytes(fileName, doc.size) else null
+            if (doc != null && limit != null) readBoundedDocumentBytes(context, doc.uri, limit) else null
         }
         val primaryFileSize: (String) -> Long? = { fileName ->
             resolvedPrimary.firstOrNull {

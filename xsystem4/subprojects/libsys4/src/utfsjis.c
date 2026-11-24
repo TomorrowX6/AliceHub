@@ -348,6 +348,481 @@ bool sys4_load_chs_tbl(const char *path)
 	return ok;
 }
 
+static void uif_skip_ws(const uint8_t **p, const uint8_t *end)
+{
+	while (*p < end) {
+		uint8_t c = **p;
+		if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+			(*p)++;
+		else
+			break;
+	}
+}
+
+static int uif_hex_val(uint8_t c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static bool uif_parse_hex4(const uint8_t **p, const uint8_t *end, uint16_t *out)
+{
+	if (end - *p < 4)
+		return false;
+	uint16_t v = 0;
+	for (int i = 0; i < 4; i++) {
+		int h = uif_hex_val((*p)[i]);
+		if (h < 0)
+			return false;
+		v = (uint16_t)((v << 4) | h);
+	}
+	*p += 4;
+	*out = v;
+	return true;
+}
+
+static void uif_append_utf8(uint8_t **buf, size_t *len, size_t *cap, uint32_t cp)
+{
+	if (*len + 5 > *cap) {
+		*cap = (*cap < 64) ? 64 : (*cap * 2);
+		*buf = xrealloc(*buf, *cap);
+	}
+	if (cp <= 0x7f) {
+		(*buf)[(*len)++] = (uint8_t)cp;
+	} else if (cp <= 0x7ff) {
+		(*buf)[(*len)++] = (uint8_t)(0xc0 | (cp >> 6));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | (cp & 0x3f));
+	} else if (cp <= 0xffff) {
+		(*buf)[(*len)++] = (uint8_t)(0xe0 | (cp >> 12));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | ((cp >> 6) & 0x3f));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | (cp & 0x3f));
+	} else if (cp <= 0x10ffff) {
+		(*buf)[(*len)++] = (uint8_t)(0xf0 | (cp >> 18));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | ((cp >> 12) & 0x3f));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | ((cp >> 6) & 0x3f));
+		(*buf)[(*len)++] = (uint8_t)(0x80 | (cp & 0x3f));
+	}
+}
+
+static bool uif_parse_json_string(const uint8_t **p, const uint8_t *end, char **out_str, size_t *out_len)
+{
+	uif_skip_ws(p, end);
+	if (*p >= end || **p != '"')
+		return false;
+	(*p)++;
+
+	size_t cap = 64, len = 0;
+	uint8_t *buf = xmalloc(cap);
+
+	while (*p < end) {
+		uint8_t c = *(*p)++;
+		if (c == '"') {
+			buf[len] = '\0';
+			if (out_str) {
+				*out_str = (char *)buf;
+				if (out_len) *out_len = len;
+			} else {
+				free(buf);
+			}
+			return true;
+		}
+		if (c == '\\') {
+			if (*p >= end) {
+				free(buf);
+				return false;
+			}
+			uint8_t esc = *(*p)++;
+			switch (esc) {
+			case '"':  case '\\': case '/': uif_append_utf8(&buf, &len, &cap, esc); break;
+			case 'b':  uif_append_utf8(&buf, &len, &cap, '\b'); break;
+			case 'f':  uif_append_utf8(&buf, &len, &cap, '\f'); break;
+			case 'n':  uif_append_utf8(&buf, &len, &cap, '\n'); break;
+			case 'r':  uif_append_utf8(&buf, &len, &cap, '\r'); break;
+			case 't':  uif_append_utf8(&buf, &len, &cap, '\t'); break;
+			case 'u': {
+				uint16_t hi = 0;
+				if (!uif_parse_hex4(p, end, &hi)) {
+					free(buf);
+					return false;
+				}
+				uint32_t cp = hi;
+				if (hi >= 0xd800 && hi <= 0xdbff && end - *p >= 6 && (*p)[0] == '\\' && (*p)[1] == 'u') {
+					const uint8_t *save = *p;
+					*p += 2;
+					uint16_t lo = 0;
+					if (uif_parse_hex4(p, end, &lo) && lo >= 0xdc00 && lo <= 0xdfff)
+						cp = 0x10000 + (((uint32_t)(hi - 0xd800) << 10) | (uint32_t)(lo - 0xdc00));
+					else
+						*p = save;
+				}
+				uif_append_utf8(&buf, &len, &cap, cp);
+				break;
+			}
+			default:
+				free(buf);
+				return false;
+			}
+		} else {
+			if (len + 2 > cap) {
+				cap *= 2;
+				buf = xrealloc(buf, cap);
+			}
+			buf[len++] = c;
+		}
+	}
+	free(buf);
+	return false;
+}
+
+static bool uif_skip_json_value(const uint8_t **p, const uint8_t *end, int depth)
+{
+	if (depth > 32)
+		return false;
+	uif_skip_ws(p, end);
+	if (*p >= end)
+		return false;
+	uint8_t c = **p;
+	if (c == '"') {
+		return uif_parse_json_string(p, end, NULL, NULL);
+	} else if (c == '{') {
+		(*p)++;
+		uif_skip_ws(p, end);
+		if (*p < end && **p == '}') {
+			(*p)++;
+			return true;
+		}
+		while (*p < end) {
+			if (!uif_parse_json_string(p, end, NULL, NULL))
+				return false;
+			uif_skip_ws(p, end);
+			if (*p >= end || **p != ':')
+				return false;
+			(*p)++;
+			if (!uif_skip_json_value(p, end, depth + 1))
+				return false;
+			uif_skip_ws(p, end);
+			if (*p >= end)
+				return false;
+			if (**p == ',') {
+				(*p)++;
+				continue;
+			}
+			if (**p == '}') {
+				(*p)++;
+				return true;
+			}
+			return false;
+		}
+		return false;
+	} else if (c == '[') {
+		(*p)++;
+		uif_skip_ws(p, end);
+		if (*p < end && **p == ']') {
+			(*p)++;
+			return true;
+		}
+		while (*p < end) {
+			if (!uif_skip_json_value(p, end, depth + 1))
+				return false;
+			uif_skip_ws(p, end);
+			if (*p >= end)
+				return false;
+			if (**p == ',') {
+				(*p)++;
+				continue;
+			}
+			if (**p == ']') {
+				(*p)++;
+				return true;
+			}
+			return false;
+		}
+		return false;
+	} else if (end - *p >= 4 && !memcmp(*p, "true", 4)) {
+		*p += 4;
+		return true;
+	} else if (end - *p >= 5 && !memcmp(*p, "false", 5)) {
+		*p += 5;
+		return true;
+	} else if (end - *p >= 4 && !memcmp(*p, "null", 4)) {
+		*p += 4;
+		return true;
+	} else if (c == '-' || (c >= '0' && c <= '9')) {
+		if (c == '-') (*p)++;
+		if (*p >= end || **p < '0' || **p > '9')
+			return false;
+		while (*p < end && (**p >= '0' && **p <= '9')) (*p)++;
+		if (*p < end && **p == '.') {
+			(*p)++;
+			while (*p < end && (**p >= '0' && **p <= '9')) (*p)++;
+		}
+		if (*p < end && (**p == 'e' || **p == 'E')) {
+			(*p)++;
+			if (*p < end && (**p == '+' || **p == '-')) (*p)++;
+			while (*p < end && (**p >= '0' && **p <= '9')) (*p)++;
+		}
+		return true;
+	}
+	return false;
+}
+
+static bool uif_next_utf8(const uint8_t **p, const uint8_t *end, uint32_t *cp_out)
+{
+	if (*p >= end)
+		return false;
+	uint8_t c0 = **p;
+	if (c0 < 0x80) {
+		*cp_out = c0;
+		(*p)++;
+		return true;
+	}
+	if ((c0 & 0xe0) == 0xc0 && end - *p >= 2 && (((*p)[1] & 0xc0) == 0x80)) {
+		*cp_out = ((uint32_t)(c0 & 0x1f) << 6) | (uint32_t)((*p)[1] & 0x3f);
+		*p += 2;
+		return true;
+	}
+	if ((c0 & 0xf0) == 0xe0 && end - *p >= 3
+			&& (((*p)[1] & 0xc0) == 0x80) && (((*p)[2] & 0xc0) == 0x80)) {
+		*cp_out = ((uint32_t)(c0 & 0x0f) << 12)
+				| ((uint32_t)((*p)[1] & 0x3f) << 6)
+				| (uint32_t)((*p)[2] & 0x3f);
+		*p += 3;
+		return true;
+	}
+	if ((c0 & 0xf8) == 0xf0 && end - *p >= 4
+			&& (((*p)[1] & 0xc0) == 0x80) && (((*p)[2] & 0xc0) == 0x80)
+			&& (((*p)[3] & 0xc0) == 0x80)) {
+		*cp_out = ((uint32_t)(c0 & 0x07) << 18)
+				| ((uint32_t)((*p)[1] & 0x3f) << 12)
+				| ((uint32_t)((*p)[2] & 0x3f) << 6)
+				| (uint32_t)((*p)[3] & 0x3f);
+		*p += 4;
+		return true;
+	}
+	return false;
+}
+
+/* Load a UIF (Universal Injection Framework) uif_config.json character_substitution
+ * mapping into the custom Shift-JIS render table without mutating base CP932
+ * archive/path conversions. */
+bool sys4_load_uif_config_mem(const void *data, size_t size)
+{
+	if (!data || size < 2)
+		return false;
+
+	const uint8_t *p = (const uint8_t *)data;
+	const uint8_t *end = p + size;
+	if (size >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf)
+		p += 3;
+
+	uif_skip_ws(&p, end);
+	if (p >= end || *p != '{')
+		return false;
+	p++;
+
+	bool found_section = false;
+	bool enabled = false;
+	char *src_chars = NULL;
+	char *dst_chars = NULL;
+	size_t src_len = 0, dst_len = 0;
+
+	uif_skip_ws(&p, end);
+	if (p < end && *p != '}') {
+		while (p < end) {
+			char *key = NULL;
+			if (!uif_parse_json_string(&p, end, &key, NULL))
+				goto fail;
+			uif_skip_ws(&p, end);
+			if (p >= end || *p != ':') {
+				free(key);
+				goto fail;
+			}
+			p++;
+			if (!strcmp(key, "character_substitution")) {
+				free(key);
+				uif_skip_ws(&p, end);
+				if (p >= end || *p != '{')
+					goto fail;
+				p++;
+				found_section = true;
+				uif_skip_ws(&p, end);
+				if (p < end && *p != '}') {
+					while (p < end) {
+						char *subkey = NULL;
+						if (!uif_parse_json_string(&p, end, &subkey, NULL))
+							goto fail;
+						uif_skip_ws(&p, end);
+						if (p >= end || *p != ':') {
+							free(subkey);
+							goto fail;
+						}
+						p++;
+						uif_skip_ws(&p, end);
+						if (!strcmp(subkey, "enable")) {
+							free(subkey);
+							if (end - p >= 4 && !memcmp(p, "true", 4)) {
+								enabled = true;
+								p += 4;
+							} else if (end - p >= 5 && !memcmp(p, "false", 5)) {
+								enabled = false;
+								p += 5;
+							} else {
+								goto fail;
+							}
+						} else if (!strcmp(subkey, "source_characters")) {
+							free(subkey);
+							free(src_chars);
+							src_chars = NULL;
+							if (!uif_parse_json_string(&p, end, &src_chars, &src_len))
+								goto fail;
+						} else if (!strcmp(subkey, "target_characters")) {
+							free(subkey);
+							free(dst_chars);
+							dst_chars = NULL;
+							if (!uif_parse_json_string(&p, end, &dst_chars, &dst_len))
+								goto fail;
+						} else {
+							free(subkey);
+							if (!uif_skip_json_value(&p, end, 0))
+								goto fail;
+						}
+						uif_skip_ws(&p, end);
+						if (p >= end)
+							goto fail;
+						if (*p == ',') {
+							p++;
+							continue;
+						}
+						if (*p == '}') {
+							p++;
+							break;
+						}
+						goto fail;
+					}
+				} else if (p < end && *p == '}') {
+					p++;
+				}
+			} else {
+				free(key);
+				if (!uif_skip_json_value(&p, end, 0))
+					goto fail;
+			}
+			uif_skip_ws(&p, end);
+			if (p >= end)
+				goto fail;
+			if (*p == ',') {
+				p++;
+				continue;
+			}
+			if (*p == '}') {
+				p++;
+				break;
+			}
+			goto fail;
+		}
+	}
+
+	if (!found_section || !enabled || !src_chars || !dst_chars || !src_len || !dst_len)
+		goto fail;
+
+	uint16_t *subst = xcalloc(MAI_WORD_TABLE_SIZE, sizeof(uint16_t));
+	const uint8_t *sp = (const uint8_t *)src_chars;
+	const uint8_t *send = sp + src_len;
+	const uint8_t *dp = (const uint8_t *)dst_chars;
+	const uint8_t *dend = dp + dst_len;
+	size_t pair_count = 0;
+
+	while (sp < send && dp < dend) {
+		uint32_t su = 0, du = 0;
+		if (!uif_next_utf8(&sp, send, &su) || !uif_next_utf8(&dp, dend, &du)) {
+			free(subst);
+			goto fail;
+		}
+		if (su >= 0x80 && su < MAI_WORD_TABLE_SIZE && du > 0 && du < MAI_WORD_TABLE_SIZE) {
+			subst[su] = (uint16_t)du;
+			pair_count++;
+		}
+	}
+	if (sp != send || dp != dend || !pair_count) {
+		free(subst);
+		goto fail;
+	}
+
+	sys4_reset_mai_word_table();
+
+	size_t mapped_count = 0;
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t base_u = (uint16_t)s2u[b1 - 0x80][b2 - 0x40];
+			uint16_t sjis = (uint16_t)((b1 << 8) | b2);
+			if (base_u == 0x30fb && sjis != 0x8145)
+				continue;
+			if (subst[base_u]) {
+				uint16_t dst_u = subst[base_u];
+				mai_s2u[b1 - 0x80][b2 - 0x40] = dst_u;
+				if (!mai_u2s[dst_u])
+					mai_u2s[dst_u] = sjis;
+				mapped_count++;
+			} else {
+				mai_s2u[b1 - 0x80][b2 - 0x40] = base_u;
+			}
+		}
+	}
+
+	free(subst);
+	free(src_chars);
+	free(dst_chars);
+
+	if (!mapped_count) {
+		sys4_reset_mai_word_table();
+		return false;
+	}
+
+	for (int c = 0xa1; c <= 0xdf; c++) {
+		uint16_t u = (uint16_t)(0xff60 + (c - 0xa0));
+		if (!mai_u2s[u])
+			mai_u2s[u] = (uint16_t)c;
+	}
+	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
+		if (b1 >= 0xa0 && b1 <= 0xdf)
+			continue;
+		for (int b2 = 0x40; b2 <= 0xfc; b2++) {
+			if (b2 == 0x7f)
+				continue;
+			uint16_t u = mai_s2u[b1 - 0x80][b2 - 0x40];
+			if (u >= 0x80 && !mai_u2s[u])
+				mai_u2s[u] = (uint16_t)((b1 << 8) | b2);
+		}
+	}
+
+	sys4_mai_active = true;
+	return true;
+
+fail:
+	free(src_chars);
+	free(dst_chars);
+	return false;
+}
+
+bool sys4_load_uif_config(const char *path)
+{
+	if (!path || !*path)
+		return false;
+	size_t size = 0;
+	void *buf = file_read(path, &size);
+	if (!buf)
+		return false;
+	bool ok = sys4_load_uif_config_mem(buf, size);
+	free(buf);
+	return ok;
+}
+
 struct text_dict_entry {
 	char *src;
 	char *dst;
