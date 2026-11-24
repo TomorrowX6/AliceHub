@@ -467,11 +467,13 @@ final class GameLibrary: ObservableObject {
         let erumeiFlower = engine == .system4 && regularNamesLower.contains("エルメイフラワー.ain") && !erumeiWakare
 
         let dirLower = url.lastPathComponent.lowercased()
+        let isRance10 = engine == .system4 && regularNamesLower.contains("rance10.ain")
         let isGirls = engine == .system4 && (regularNamesLower.contains("ｇｉｒｌｓ.ain") || regularNamesLower.contains("girls.ain") || dirLower == "girls")
         let isDebut = engine == .system4 && (regularNamesLower.contains("ｄｅｂｕｔ.ain") || regularNamesLower.contains("debut.ain") || dirLower == "debut")
 
         let detectedArtworkID: String?
-        if rance41 { detectedArtworkID = "rance41" }
+        if isRance10 { detectedArtworkID = "rance10" }
+        else if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
         else if rance04 { detectedArtworkID = "rance04" }
         else if rance5d { detectedArtworkID = "rance5d" }
@@ -863,6 +865,114 @@ final class GameLibrary: ObservableObject {
                 self.importProgress = ""
                 self.refresh()
                 self.error = message
+            }
+        }
+    }
+
+    enum DirectoryNameValidation: Equatable {
+        case valid(String)
+        case invalid(String)
+    }
+
+    func suggestNextDirectoryName(basePrefix: String = "Rance10") -> String {
+        let existing = Set(((try? files.contentsOfDirectory(atPath: gamesDirectory.path)) ?? []).map { $0.lowercased() })
+        for index in 1...999 {
+            let candidate = "\(basePrefix)-\(index)"
+            if !existing.contains(candidate.lowercased()) {
+                return candidate
+            }
+        }
+        return "\(basePrefix)-\(Int(Date().timeIntervalSince1970))"
+    }
+
+    func validateNewDirectoryName(_ raw: String) -> DirectoryNameValidation {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .invalid(hubText("请输入目录名称")) }
+        guard trimmed.count <= 80 else { return .invalid(hubText("目录名称过长（最多 80 个字符）")) }
+        guard trimmed != "." && trimmed != ".." && !trimmed.hasPrefix(".") else {
+            return .invalid(hubText("目录名称不能包含非法字符或以点号开头"))
+        }
+        let forbidden = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.controlCharacters)
+        if trimmed.rangeOfCharacter(from: forbidden) != nil {
+            return .invalid(hubText("目录名称不能包含非法字符或以点号开头"))
+        }
+        let existing = (try? files.contentsOfDirectory(atPath: gamesDirectory.path)) ?? []
+        let lower = trimmed.lowercased()
+        if existing.contains(where: { $0.lowercased() == lower }) {
+            return .invalid(hubText("已存在同名目录，请换一个名称"))
+        }
+        return .valid(trimmed)
+    }
+
+    func cloneDirectory(
+        from source: Game,
+        named targetName: String,
+        transformStage: ((URL) throws -> Void)? = nil,
+        completion: ((Game?) -> Void)? = nil
+    ) {
+        guard !importing && !launching else {
+            completion?(nil)
+            return
+        }
+        let sanitized: String
+        switch validateNewDirectoryName(targetName) {
+        case .valid(let name):
+            sanitized = name
+        case .invalid(let reason):
+            error = reason
+            completion?(nil)
+            return
+        }
+        importing = true
+        error = nil
+        importProgress = hubText("正在创建目录：%@", sanitized)
+        let sourceURL = source.url
+        let gamesDir = gamesDirectory
+        DispatchQueue.global(qos: .userInitiated).async {
+            let temporary = gamesDir.appendingPathComponent(".import-\(UUID().uuidString)", isDirectory: true)
+            let destination = gamesDir.appendingPathComponent(sanitized, isDirectory: true)
+            var result: Error?
+            do {
+                try self.files.createDirectory(at: gamesDir, withIntermediateDirectories: true)
+                let existing = (try? self.files.contentsOfDirectory(atPath: gamesDir.path)) ?? []
+                if existing.contains(where: { $0.lowercased() == sanitized.lowercased() }) || self.files.fileExists(atPath: destination.path) {
+                    throw LibraryError.alreadyExists
+                }
+                guard Self.isGame(sourceURL) else { throw LibraryError.notGame }
+                try self.files.copyItem(at: sourceURL, to: temporary)
+                let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+                if let enumerator = self.files.enumerator(at: temporary, includingPropertiesForKeys: keys) {
+                    var tempFiles: [URL] = []
+                    while let item = enumerator.nextObject() as? URL {
+                        let values = try? item.resourceValues(forKeys: Set(keys))
+                        if values?.isRegularFile == true && values?.isSymbolicLink != true &&
+                            item.lastPathComponent.lowercased().hasSuffix(".tmp") {
+                            tempFiles.append(item)
+                        }
+                    }
+                    for tmpFile in tempFiles {
+                        try? self.files.removeItem(at: tmpFile)
+                    }
+                }
+                if let transformStage {
+                    try transformStage(temporary)
+                }
+                guard Self.isGame(temporary) else { throw LibraryError.notGame }
+                try self.files.moveItem(at: temporary, to: destination)
+            } catch {
+                result = error
+            }
+            if self.files.fileExists(atPath: temporary.path) {
+                try? self.files.removeItem(at: temporary)
+            }
+            let message = result?.localizedDescription
+            DispatchQueue.main.async {
+                self.importing = false
+                self.importProgress = ""
+                self.refresh()
+                self.error = message
+                let created = result == nil ? self.games.first(where: { $0.name == sanitized }) : nil
+                completion?(created)
             }
         }
     }

@@ -148,6 +148,46 @@ public class GamepadSensitivityTest {
         }
     }
 
+    @Test
+    public void clearingLocalizedOverrideDoesNotReloadLegacyProfileAndPreservesOtherCopies() throws Exception {
+        android.content.Context ctx = RuntimeEnvironment.getApplication();
+        java.io.File profileDir = new java.io.File(ctx.getFilesDir(), "gamepad_profiles");
+        profileDir.mkdirs();
+        // Seed a legacy localized override file ("Rance10-__") with custom cursorSpeedPct = 240.
+        org.json.JSONObject legacyJson = new GamepadProfile().toJson();
+        legacyJson.put("perGameOverride", true);
+        legacyJson.getJSONObject("physical").put("cursorSpeedPct", 240);
+        java.io.File legacyFile = new java.io.File(profileDir, "game_Rance10-__.json");
+        java.nio.file.Files.write(legacyFile.toPath(),
+                legacyJson.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            // Before clearing, both localized keys fall back to the legacy override.
+            assertTrue(GamepadBridge.INSTANCE.hasPerGameOverride(ctx, "Rance10-原版"));
+            assertEquals(240, GamepadBridge.INSTANCE.loadProfile(ctx, "Rance10-原版").getPhysical().getCursorSpeedPct());
+            assertEquals(240, GamepadBridge.INSTANCE.loadProfile(ctx, "Rance10-日版").getPhysical().getCursorSpeedPct());
+
+            // Clear override for Rance10-原版 -> must switch to global without deleting legacy file for Rance10-日版.
+            GamepadBridge.INSTANCE.clearPerGameOverride(ctx, "Rance10-原版");
+            assertFalse(GamepadBridge.INSTANCE.hasPerGameOverride(ctx, "Rance10-原版"));
+            assertEquals(100, GamepadBridge.INSTANCE.loadProfile(ctx, "Rance10-原版").getPhysical().getCursorSpeedPct());
+            assertTrue("Legacy file must stay intact for other copies", legacyFile.isFile());
+            assertTrue(GamepadBridge.INSTANCE.hasPerGameOverride(ctx, "Rance10-日版"));
+            assertEquals(240, GamepadBridge.INSTANCE.loadProfile(ctx, "Rance10-日版").getPhysical().getCursorSpeedPct());
+
+            // Save global profile (saveAsPerGame=false) from Rance10-日版 -> must also disable its legacy override.
+            GamepadProfile global = GamepadBridge.INSTANCE.loadGlobalProfile(ctx);
+            GamepadBridge.INSTANCE.saveProfile(ctx, global, "Rance10-日版", false);
+            assertFalse(GamepadBridge.INSTANCE.hasPerGameOverride(ctx, "Rance10-日版"));
+            assertEquals(100, GamepadBridge.INSTANCE.loadProfile(ctx, "Rance10-日版").getPhysical().getCursorSpeedPct());
+        } finally {
+            legacyFile.delete();
+            String k1 = GamepadBridge.INSTANCE.normalizeGameProfileKey("Rance10-原版");
+            String k2 = GamepadBridge.INSTANCE.normalizeGameProfileKey("Rance10-日版");
+            if (k1 != null) new java.io.File(profileDir, "game_" + k1 + ".json").delete();
+            if (k2 != null) new java.io.File(profileDir, "game_" + k2 + ".json").delete();
+        }
+    }
+
     private static void setSeekFromUser(SeekBar seek, int progress) {
         try {
             java.lang.reflect.Method m = android.widget.AbsSeekBar.class.getSuperclass()
