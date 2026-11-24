@@ -1,3 +1,4 @@
+"Quit Game" = "ゲーム終了";
 "Gamepad" = "パッド設定";
 "Virtual Gamepad" = "仮想パッド";
 "Physical Controller" = "物理コントローラー";
@@ -11,6 +12,14 @@
 "Selected control" = "選択したコントロール";
 "Add control" = "コントロールを追加";
 "Remove Control" = "コントロールを削除";
+"Control deleted" = "コントロールを削除しました";
+"Undo" = "元に戻す";
+"Edit Layout" = "レイアウト編集";
+"Custom Combo" = "カスタム同時押し";
+"First Key" = "キー1";
+"Second Key" = "キー2";
+"Lock Combo" = "固定";
+"Apply Combo" = "適用";
 "Button" = "ボタン";
 "Button Mapping" = "ボタン割り当て";
 "Reset Button Mapping" = "ボタン割り当てをリセット";

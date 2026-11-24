@@ -3368,6 +3368,24 @@ static void vm_free(void)
 
 static jmp_buf reset_buf;
 
+#ifdef ALICEHUB_IOS
+static bool session_active;
+void unlink_libraries(void);
+
+void vm_end_session(void)
+{
+	if (session_active) {
+		session_active = false;
+		savedata_flush_on_background();
+		vm_free();
+	}
+	unlink_libraries();
+	ain = NULL;
+	call_stack_ptr = 0;
+	vm_reset_once = false;
+}
+#endif
+
 _Noreturn void vm_reset(void)
 {
 	vm_free();
@@ -3394,6 +3412,9 @@ int vm_execute_ain(struct ain *program)
 
 	heap_init();
 	init_libraries();
+#ifdef ALICEHUB_IOS
+	session_active = true;
+#endif
 
 	// Initialize globals
 	heap[0].ref = 1;
@@ -3666,6 +3687,9 @@ _Noreturn void vm_exit(int code)
 	if (code == 0)
 		savedata_flush_on_background();
 	vm_free();
+#ifdef ALICEHUB_IOS
+	session_active = false;
+#endif
 #ifdef DEBUG_HEAP
 	for (size_t i = 0; i < heap_size; i++) {
 		if (heap[i].ref > 0)

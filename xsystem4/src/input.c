@@ -3634,6 +3634,9 @@ void input_set_virtual_button(int slot_id, int action_type, int code, int code2,
 void input_clear_virtual_inputs(void)
 {
 	pthread_mutex_lock(&gp_mutex);
+#ifdef ALICEHUB_IOS
+	atomic_store(&touch_ctrl_skip, false);
+#endif
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
 		vpad_ui_slots[i].phys_down = false;
 		vpad_ui_slots[i].pending_press_edge = false;

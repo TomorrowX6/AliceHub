@@ -180,6 +180,27 @@ void sact_ModuleFini(void)
 	audio_reset();
 }
 
+#ifdef ALICEHUB_IOS
+void sact_end_session(void)
+{
+	if (sprites) {
+		sact_SP_DeleteAll();
+		if (sprites[-1]) {
+			// The main surface owns its texture.
+			sprites[-1]->texture = (Texture){0};
+			sprite_free(sprites[-1]);
+			free(sprites[-1]);
+		}
+		free(sprites - 1);
+	}
+	sprites = NULL;
+	nr_sprites = 0;
+	engine_type = UNINITIALIZED_SPRITE_ENGINE;
+	view_mode = 0;
+	use_power2_texture = false;
+}
+#endif
+
 //int SACT2_Error(struct string *err);
 HLL_WARN_UNIMPLEMENTED(0, int, SACT2, WP_GetSP, int sp);
 

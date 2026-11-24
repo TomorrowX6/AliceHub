@@ -111,7 +111,7 @@ struct UncensoredPatchManifest: Equatable {
     static func parse(_ data: Data, cdnBaseURL: String) throws -> Self {
         guard data.count <= 1024 * 1024,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ModError.message("无码补丁清单无效")
+            throw ModError.message(hubText("无码补丁清单无效"))
         }
         let version = (json["version"] as? String ?? "1.0").trimmingCharacters(in: .whitespacesAndNewlines)
         let gameId = (json["gameId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -126,7 +126,7 @@ struct UncensoredPatchManifest: Equatable {
 
         guard isSafeOverlayFileName(fileName), isSafeKey(key), size > 0,
               sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
-            throw ModError.message("无码补丁清单字段不安全或无效")
+            throw ModError.message(hubText("无码补丁清单字段不安全或无效"))
         }
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-!.~'()*")
         let encoded = key.split(separator: "/").map {
@@ -153,10 +153,10 @@ struct UncensoredPatchManifest: Equatable {
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw ModError.message("无法获取无码补丁信息，请检查网络")
+            throw ModError.message(hubText("无法获取无码补丁信息，请检查网络"))
         }
         if http.expectedContentLength > Int64(maxManifestBytes) {
-            throw ModError.message("无码补丁清单过大")
+            throw ModError.message(hubText("无码补丁清单过大"))
         }
         var data = Data()
         if http.expectedContentLength > 0 {
@@ -164,7 +164,7 @@ struct UncensoredPatchManifest: Equatable {
         }
         for try await byte in bytes {
             if data.count >= maxManifestBytes {
-                throw ModError.message("无码补丁清单过大")
+                throw ModError.message(hubText("无码补丁清单过大"))
             }
             data.append(byte)
         }
@@ -276,9 +276,10 @@ final class UncensoredPatchInstaller: ObservableObject {
         activeTransfer = transfer
         lock.unlock()
         isRunning = true; succeeded = false; failure = nil
-        progressText = "准备下载无码补丁…"; fraction = 0
+        progressText = hubText("准备下载无码补丁…"); fraction = 0
 
         let cache = directory.deletingLastPathComponent().appendingPathComponent(".uncensored_cache", isDirectory: true)
+        let activity = BackgroundActivity(title: hubText("无码补丁")) { [weak self] in self?.cancel() }
         queue.async {
             var error: Error?
             do {
@@ -296,8 +297,9 @@ final class UncensoredPatchInstaller: ObservableObject {
                     let doneMB = done / 1048576
                     let totalMB = max(1, effTotal / 1048576)
                     let pct = frac.map { Int($0 * 100) } ?? 0
+                    activity.update(fraction: frac, detail: "\(doneMB) / \(totalMB) MB")
                     DispatchQueue.main.async {
-                        self.progressText = "下载中 · \(pct)%\n\(doneMB) / \(totalMB) MB · \(manifest.fileName)"
+                        self.progressText = hubText("下载中 · %lld%%\n%lld / %lld MB · %@", pct, doneMB, totalMB, manifest.fileName)
                         self.fraction = frac
                     }
                 }
@@ -308,7 +310,7 @@ final class UncensoredPatchInstaller: ObservableObject {
                     UncensoredPatchManifest.isManagedOverlayFileName(manifest.fileName) ||
                     prev?.fileName.lowercased() == manifest.fileName.lowercased()
                 guard destOwned else {
-                    throw ModError.message("目标文件已存在且不属于 AliceHub 无码补丁，已取消覆盖")
+                    throw ModError.message(hubText("目标文件已存在且不属于 AliceHub 无码补丁，已取消覆盖"))
                 }
                 if let prev, UncensoredPatchManifest.isSafeOverlayFileName(prev.fileName),
                    prev.fileName.lowercased() != manifest.fileName.lowercased() {
@@ -336,11 +338,17 @@ final class UncensoredPatchInstaller: ObservableObject {
             self.activeTransfer = nil
             self.lock.unlock()
             let finalError = error
+            let wasPaused = finalError is CancellationError && activity.expired
+            activity.end(wasPaused ? .paused : finalError is CancellationError ? .failed("已取消")
+                         : finalError.map { .failed($0.localizedDescription) } ?? .succeeded)
             DispatchQueue.main.async {
-                if finalError is CancellationError {
+                if wasPaused {
+                    self.succeeded = false
+                    self.failure = hubText("下载已暂停，重新安装会继续下载。")
+                } else if finalError is CancellationError {
                     self.succeeded = false
                     self.failure = nil
-                    self.progressText = "已取消"
+                    self.progressText = hubText("已取消")
                 } else if let finalError {
                     self.succeeded = false
                     self.failure = finalError.localizedDescription

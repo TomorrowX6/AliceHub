@@ -98,7 +98,7 @@ final class OnlineGameInstaller {
             for group in groups {
                 try checkCancelled()
                 let firstIndex = group.entryIndices[0]
-                progress("正在校验 / 下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, completed, total)
+                progress(hubText("正在校验 / 下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), completed, total)
                 let before = completed
                 let multiplier = Int64(group.entryIndices.count)
                 let downloaded = try transfer.downloadVerifiedFile(
@@ -110,7 +110,7 @@ final class OnlineGameInstaller {
                     guard Date().timeIntervalSince(lastProgress) >= 0.08 else { return }
                     lastProgress = Date()
                     let credited = min(before + min(done, group.entrySize) * multiplier, total)
-                    progress("正在下载 \(firstIndex + 1) / \(totalFiles)\n" + group.displayPath, credited, total)
+                    progress(hubText("正在下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), credited, total)
                 }
                 for idx in group.entryIndices {
                     downloadedByEntry[idx] = downloaded
@@ -141,8 +141,8 @@ final class OnlineGameInstaller {
                     let activeCount = min(activePaths.count, effectiveConcurrency)
                     let activeName = activePaths.first ?? groups[0].displayPath
                     let title = activeCount > 1
-                        ? "正在下载 \(displayIdx) / \(totalFiles) · \(activeCount) 并发\n" + activeName
-                        : "正在下载 \(displayIdx) / \(totalFiles)\n" + activeName
+                        ? hubText("正在下载 %lld / %lld · %lld 并发\n%@", displayIdx, totalFiles, activeCount, activeName)
+                        : hubText("正在下载 %lld / %lld\n%@", displayIdx, totalFiles, activeName)
                     payload = (title, maxReported)
                 }
                 stateLock.unlock()
@@ -216,10 +216,10 @@ final class OnlineGameInstaller {
         for (index, entry) in manifest.files.enumerated() {
             try checkCancelled()
             guard let downloaded = downloadedByEntry[index] else {
-                throw ModError.message("下载文件缺失：" + entry.path)
+                throw ModError.message(hubText("下载文件缺失：%@", entry.path))
             }
             if entry.extract == true {
-                progress("正在解压并安装\n" + entry.path, total, total)
+                progress(hubText("正在解压并安装\n%@", entry.path), total, total)
                 _ = try ArchiveExtractor.extract(downloaded, to: staging, checkCancelled: self.checkCancelled)
             } else {
                 guard let output = try ArchiveExtractor.outputPath(entry.path, size: 0, root: staging) else {
@@ -231,7 +231,7 @@ final class OnlineGameInstaller {
                     try files.copyItem(at: downloaded, to: output)
                 }
             }
-            progress("已校验 \(index + 1) / \(totalFiles)", total, total)
+            progress(hubText("已校验 %lld / %lld", index + 1, totalFiles), total, total)
         }
         try checkCancelled()
         guard GameLibrary.isGame(staging) else { throw LibraryError.notGame }
@@ -252,29 +252,50 @@ final class OnlineGameDownloadModel: ObservableObject {
     @Published private(set) var succeeded = false
     @Published private(set) var failure: String?
     private var installer: OnlineGameInstaller?
+    private var paused: (game: OnlineGame, manifest: OnlineGameManifest)?
 
-    func cancel() { installer?.cancel() }
+    func cancel() { paused = nil; installer?.cancel() }
+
+    /// Continues a download the system paused while the app was in the background.
+    func resumePaused(library: GameLibrary) {
+        guard let paused, !running else { return }
+        start(paused.game, manifest: paused.manifest, library: library)
+    }
 
     func start(_ game: OnlineGame, manifest: OnlineGameManifest, library: GameLibrary) {
         guard !running && !library.importing && !library.launching else { return }
         let installer = OnlineGameInstaller()
         self.installer = installer
+        paused = nil
         activeID = game.id; running = true; succeeded = false; failure = nil
-        completed = 0; total = manifest.totalBytes; progressText = "正在准备下载…"
+        completed = 0; total = manifest.totalBytes; progressText = hubText("正在准备下载…")
         let games = library.gamesDirectory
+        let activity = BackgroundActivity(title: game.displayTitle(in: .current)) { installer.cancel() }
         DispatchQueue.global(qos: .userInitiated).async {
             var result: Error?
             do {
                 _ = try installer.install(game, manifest: manifest, in: games) { message, completed, total in
+                    activity.update(fraction: total > 0 ? Double(completed) / Double(total) : nil, detail: message)
                     DispatchQueue.main.async {
                         self.progressText = message; self.completed = completed; self.total = total
                     }
                 }
             } catch { result = error }
-            let message = result.map { $0 is CancellationError ? "已取消下载；重试时会复用已下载的文件。" : $0.localizedDescription }
+            let wasPaused = result is CancellationError && activity.expired
+            let autoResume = wasPaused && activity.autoResumes
+            let message = result.map {
+                autoResume ? hubText("下载已暂停，回到前台会继续。")
+                    : wasPaused ? hubText("下载已暂停；重试时会复用已下载的文件。")
+                    : $0 is CancellationError ? hubText("已取消下载；重试时会复用已下载的文件。") : $0.localizedDescription
+            }
+            activity.end(wasPaused ? .paused : message.map { .failed($0) } ?? .succeeded)
             DispatchQueue.main.async {
                 self.running = false; self.installer = nil; self.failure = message; self.succeeded = message == nil
                 library.refresh()
+                if autoResume {
+                    self.paused = (game, manifest)
+                    if BackgroundActivity.appActive && OnlineInstall.enabled { self.resumePaused(library: library) }
+                }
             }
         }
     }

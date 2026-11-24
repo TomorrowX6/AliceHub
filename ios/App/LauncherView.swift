@@ -4,36 +4,40 @@ import UniformTypeIdentifiers
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @StateObject private var onlineDownload = OnlineGameDownloadModel()
-    @State private var onlinePresented = false
     @State private var importPresented = false
     @State private var folderPresented = false
     @State private var archivePresented = false
     @State private var settingsPresented = false
+    @State private var reportPresented = false
+    @State private var reportMessage: String?
     @State private var query = ""
+    @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
+#if DEBUG
+    @State private var didAutoLaunch = false
+#endif
     @Environment(\.scenePhase) private var scenePhase
+    @HubLocalizedText private var localized
 
-    private var filteredGames: [Game] {
+    private var filteredGames: [LibraryEntry] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return search.isEmpty ? library.games : library.games.filter {
-            let translationTag = OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉"
-            return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
-                $0.name.localizedCaseInsensitiveContains(search) ||
-                translationTag.localizedCaseInsensitiveContains(search)
-        }
+        let language = localized.language
+        return LibraryEntry.build(games: library.games, sort: sortMode, includeOnline: onlineInstall,
+                                  locale: language.locale, language: language)
+            .filter { $0.matches(search, language: language) }
     }
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if !library.games.isEmpty { searchField }
+                    searchField
                     HStack {
-                        Text("我的游戏").font(.title3.bold())
+                        Text("游戏库").font(.title3.bold())
                         Spacer()
-                        Text("\(library.games.count) 款游戏").font(.subheadline).foregroundColor(HubTheme.secondary)
+                        sortMenu
                     }
-                    if library.games.isEmpty { emptyLibrary }
-                    else if filteredGames.isEmpty {
+                    if filteredGames.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "magnifyingglass").font(.largeTitle).foregroundColor(HubTheme.secondary)
                             Text("没有找到相关游戏").font(.headline)
@@ -41,10 +45,10 @@ struct LauncherView: View {
                         }.frame(maxWidth: .infinity).padding(32).modifier(HubCard())
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
-                            ForEach(filteredGames) { game in
+                            ForEach(filteredGames) { entry in
                                 NavigationLink {
-                                    GameDetailView(game: game, library: library)
-                                } label: { gameCard(game) }
+                                    LibraryGameDestination(entry: entry, library: library, download: onlineDownload)
+                                } label: { gameCard(entry) }
                                 .buttonStyle(.plain)
                             }
                         }
@@ -62,10 +66,8 @@ struct LauncherView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button { onlinePresented = true } label: { Label("在线下载", systemImage: "arrow.down.circle") }
-                    Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
-                }.buttonStyle(HubPrimaryButton())
+                Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
+                    .buttonStyle(HubPrimaryButton()).disabled(onlineDownload.running)
                     .padding(.horizontal, 20).padding(.vertical, 12)
                     .frame(maxWidth: 620).frame(maxWidth: .infinity)
                     .background(HubTheme.background.opacity(0.96))
@@ -82,13 +84,15 @@ struct LauncherView: View {
             } archive: {
                 importPresented = false
                 DispatchQueue.main.async { archivePresented = true }
-            } online: {
-                importPresented = false
-                DispatchQueue.main.async { onlinePresented = true }
             }
         }
-        .sheet(isPresented: $onlinePresented) { OnlineGamesView(library: library, download: onlineDownload) }
-        .sheet(isPresented: $settingsPresented) { HubSettingsView() }
+        .sheet(isPresented: $settingsPresented) { HubSettingsView(games: library.gamesDirectory) }
+        .sheet(isPresented: $reportPresented, onDismiss: { reportMessage = nil }) {
+            NavigationView {
+                HubErrorReportView(message: reportMessage)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { reportPresented = false } } }
+            }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
+        }
         .sheet(isPresented: $folderPresented) { FolderPicker { library.importFolder($0) } }
         .sheet(isPresented: $archivePresented) {
             FolderPicker(contentTypes: ArchivePicker.contentTypes) { library.importArchive($0) }
@@ -97,16 +101,25 @@ struct LauncherView: View {
             if url.isFileURL && ArchiveExtractor.isSupportedArchiveName(url.lastPathComponent) { library.importArchive(url) }
         }
         .alert("操作失败", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
+            Button("错误报告") {
+                reportMessage = library.error
+                library.error = nil
+                reportPresented = true
+            }
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { onlineDownload.cancel() }
             guard phase == .active else { return }
+            if OnlineInstall.enabled { onlineDownload.resumePaused(library: library) }
             library.refreshAsync {
 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
-                if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
-                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) { library.launch(game) }
+                if !didAutoLaunch,
+                   let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
+                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) {
+                    didAutoLaunch = true
+                    library.launch(game)
+                }
 #endif
             }
         }
@@ -127,17 +140,37 @@ struct LauncherView: View {
             .background(HubTheme.surface).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func gameCard(_ game: Game) -> some View {
-        let hasChinese = OnlineGame.hasChinese(for: game)
+    private var sortMenu: some View {
+        Menu {
+            Picker("排序", selection: $sortMode) {
+                ForEach(LibrarySortMode.allCases, id: \.self) { mode in
+                    Text(localized(mode.title)).tag(mode)
+                }
+            }
+        } label: {
+            Label(localized(sortMode.shortTitle), systemImage: "arrow.up.arrow.down")
+                .font(.subheadline.bold()).foregroundColor(HubTheme.primary)
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background(HubTheme.surface).clipShape(Capsule())
+        }
+        .accessibilityLabel("排序")
+        .accessibilityValue(localized(sortMode.shortTitle))
+    }
+
+    private func gameCard(_ entry: LibraryEntry) -> some View {
+        let installing = onlineDownload.running && onlineDownload.activeID == entry.catalog?.id
+        let hasChinese = entry.hasChinese
         return HStack(spacing: 16) {
-            GameArtwork(game: game)
+            GameArtwork(game: entry.primary, catalogID: entry.catalog?.artwork)
             VStack(alignment: .leading, spacing: 10) {
-                Text(game.resolvedDisplayName)
+                Text(entry.displayTitle(in: localized.language))
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
-                    HubBadge(title: "已安装", success: true)
-                    HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
-                    HubBadge(title: game.engine.rawValue)
+                    HubBadge(
+                        title: installing ? "下载中" : (entry.primary == nil ? "未安装" : "已安装"),
+                        success: !installing && entry.primary != nil
+                    )
+                    HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                 }
             }
             Spacer(minLength: 0)
@@ -147,21 +180,12 @@ struct LauncherView: View {
             .accessibilityElement(children: .combine)
     }
 
-    private var emptyLibrary: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "gamecontroller").font(.system(size: 44, weight: .light))
-                .foregroundColor(HubTheme.primary).frame(width: 104, height: 104)
-                .background(HubTheme.variant).clipShape(RoundedRectangle(cornerRadius: 30))
-            Text("还没有游戏").font(.title2.bold())
-        }.frame(maxWidth: .infinity).padding(.vertical, 32).modifier(HubCard())
-    }
-
     private var progressOverlay: some View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 20) {
                 ProgressView().scaleEffect(1.2)
-                Text(library.importing ? "正在导入游戏" : "正在启动游戏").font(.headline)
+                Text(localized(library.importing ? "正在导入游戏" : "正在启动游戏")).font(.headline)
                 if library.importing {
                     Text(library.importProgress).font(.caption).foregroundColor(HubTheme.secondary)
                         .multilineTextAlignment(.center).lineLimit(4)
@@ -169,6 +193,27 @@ struct LauncherView: View {
             }.padding(28).frame(maxWidth: 320).background(HubTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 24)).padding()
         }.accessibilityAddTraits(.isModal)
+    }
+}
+
+private struct LibraryGameDestination: View {
+    let entry: LibraryEntry
+    @ObservedObject var library: GameLibrary
+    @ObservedObject var download: OnlineGameDownloadModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedID: String?
+
+    var body: some View {
+        let installations = entry.matchingInstallations(in: library.games)
+        if let active = LibraryEntry.installation(in: installations, selectedID: selectedID) {
+            GameDetailView(game: active, library: library, download: download, catalog: entry.catalog,
+                           installations: installations, selectedID: $selectedID)
+                .id(active.id)
+        } else if let catalog = entry.catalog {
+            OnlineGameDetailView(game: catalog, library: library, download: download)
+        } else {
+            Color.clear.onAppear { dismiss() }
+        }
     }
 }
 

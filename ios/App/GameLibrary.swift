@@ -52,14 +52,15 @@ struct Game: Identifiable, Equatable {
 }
 
 enum LibraryError: LocalizedError {
-    case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
+    case notGame, archiveNotGame, alreadyExists, resourcePath, logFile, audioStopping
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
-        case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。"
-        case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
-        case .resourcePath: return "无法找到游戏引擎资源。"
-        case .logFile: return "无法创建运行日志。"
+        case .notGame: return hubText("所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。")
+        case .archiveNotGame: return hubText("压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。")
+        case .alreadyExists: return hubText("已存在同名游戏文件夹，请先删除或重命名后再导入。")
+        case .resourcePath: return hubText("无法找到游戏引擎资源。")
+        case .logFile: return hubText("无法创建运行日志。")
+        case .audioStopping: return hubText("音频仍在关闭，请稍后重试。")
         }
     }
 }
@@ -265,13 +266,18 @@ final class GameLibrary: ObservableObject {
         }
         let names = regularFiles.map { $0.lastPathComponent.lowercased() }
         let system39 = names.contains("system39.ini") || names.contains("system39.ain")
-        if system39 || names.contains(where: { $0.hasSuffix("sa.ald") || $0.hasSuffix("sa_chs.ald") || $0 == "adisk.ald" }) {
+        if system39 || names.contains(where: isSystem35Scenario) {
             return (.system3, url, system39)
         }
         if names.contains("adisk.dat") && (names.contains("acg.dat") || names.contains("acg0.dat")) {
             return (.legacySystem3, url, false)
         }
         throw LibraryError.notGame
+    }
+
+    static func isSystem35Scenario(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.hasSuffix("sa.ald") || lower.hasSuffix("sa_chs.ald") || lower == "adisk.ald"
     }
 
     private static func legacySystem3GameIdFromRegularFiles(_ regularFiles: [URL]) -> String? {
@@ -808,150 +814,50 @@ final class GameLibrary: ObservableObject {
     }
 
     func importFolder(_ source: URL) {
-        guard !importing && !launching else { return }
-        importing = true
-        error = nil
-        importProgress = "正在复制游戏文件夹…"
-        let destination = gamesDirectory.appendingPathComponent(source.lastPathComponent, isDirectory: true)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let access = source.startAccessingSecurityScopedResource()
-            defer { if access { source.stopAccessingSecurityScopedResource() } }
-            var result: Error?
-            let temporary = self.gamesDirectory.appendingPathComponent(".import-\(UUID().uuidString)")
-            do {
-                let coordinator = NSFileCoordinator()
-                var coordinationError: NSError?
-                coordinator.coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { readable in
-                    do {
-                        guard Self.isGame(readable) else { throw LibraryError.notGame }
-                        guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
-                        try self.files.copyItem(at: readable, to: temporary)
-                        try Self.normalizeRance06DungeonData(temporary)
-                        try self.files.moveItem(at: temporary, to: destination)
-                    } catch { result = error }
-                }
-                if let coordinationError { throw coordinationError }
-            } catch { result = error }
-            try? self.files.removeItem(at: temporary)
-            let message = result?.localizedDescription
-            DispatchQueue.main.async {
-                self.importing = false
-                self.importProgress = ""
-                self.refresh()
-                self.error = message
+        importLocal(source, progress: hubText("正在复制游戏文件夹…")) { readable, work in
+            let staged = work.appendingPathComponent("folder", isDirectory: true)
+            try LocalGameImport.stageFolder(readable, to: staged)
+            return (staged, source.lastPathComponent)
+        }
+    }
+
+    func importArchive(_ source: URL) {
+        importLocal(source, progress: hubText("正在解压：%lld MB", 0)) { readable, work in
+            var lastProgress = Date.distantPast
+            return try LocalGameImport.stageArchive(readable, in: work) { bytes, entry in
+                let now = Date()
+                guard now.timeIntervalSince(lastProgress) >= 0.15 else { return }
+                lastProgress = now
+                let text = hubText("正在解压：%lld MB\n%@", bytes / (1024 * 1024), entry)
+                DispatchQueue.main.async { self.importProgress = text }
             }
         }
     }
 
-    private static func gameRoot(in stage: URL) throws -> URL? {
-        var level = [stage]
-        while !level.isEmpty {
-            for directory in level where isGame(directory) { return directory }
-            level = try level.flatMap { directory in
-                try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: .skipsHiddenFiles)
-                    .filter {
-                        let values = try $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                        return values.isDirectory == true && values.isSymbolicLink != true
-                    }
-            }.sorted { $0.path < $1.path }
-        }
-        return nil
-    }
-
-    private static func containedFiles(in stage: URL) throws -> [URL] {
-        var result = [URL]()
-        var failure: Error?
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
-        let enumerator = FileManager.default.enumerator(at: stage, includingPropertiesForKeys: keys,
-                                                        options: .skipsHiddenFiles) { _, error in
-            failure = error
-            return false
-        }
-        while let file = enumerator?.nextObject() as? URL {
-            let values = try file.resourceValues(forKeys: Set(keys))
-            if values.isRegularFile == true && values.isSymbolicLink != true { result.append(file) }
-        }
-        if let failure { throw failure }
-        let sized: [(url: URL, size: Int)] = try result.map { url in
-            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            return (url, size)
-        }
-        return sized.sorted {
-            $0.size == $1.size ? $0.url.path < $1.url.path : $0.size > $1.size
-        }.map { $0.url }
-    }
-
-    private static func archiveBaseName(_ source: URL) -> String {
-        let name = source.lastPathComponent
-        for suffix in [".tar.gz", ".tar.xz"] where name.lowercased().hasSuffix(suffix) {
-            return String(name.dropLast(suffix.count))
-        }
-        return source.deletingPathExtension().lastPathComponent
-    }
-
-    func importArchive(_ source: URL) {
+    private func importLocal(_ source: URL, progress: String,
+                             stage: @escaping (URL, URL) throws -> (root: URL, name: String)) {
         guard !importing && !launching else { return }
         importing = true
         error = nil
-        importProgress = "正在解压：0 MB"
+        importProgress = progress
         DispatchQueue.global(qos: .userInitiated).async {
             let access = source.startAccessingSecurityScopedResource()
             defer { if access { source.stopAccessingSecurityScopedResource() } }
-            let temporary = self.gamesDirectory.appendingPathComponent(".import-\(UUID().uuidString)")
+            let work = self.gamesDirectory.appendingPathComponent(".import-\(UUID().uuidString)")
             var result: Error?
-            do {
-                try self.files.createDirectory(at: temporary, withIntermediateDirectories: true)
-                let coordinator = NSFileCoordinator()
-                var coordinationError: NSError?
-                coordinator.coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { readable in
-                    do {
-                        var lastProgress = Date.distantPast
-                        var completedBytes: Int64 = 0
-                        func extract(_ archive: URL, to stage: URL) throws {
-                            var latestBytes: Int64 = 0
-                            try ArchiveExtractor.extract(archive, to: stage, onProgress: { bytes, entry in
-                                latestBytes = bytes
-                                let now = Date()
-                                guard now.timeIntervalSince(lastProgress) >= 0.15 else { return }
-                                lastProgress = now
-                                let text = "正在解压：\((completedBytes + bytes) / (1024 * 1024)) MB\n\(entry)"
-                                DispatchQueue.main.async { self.importProgress = text }
-                            })
-                            completedBytes += latestBytes
-                        }
-                        func findGame(in stage: URL, depth: Int) throws -> (root: URL, stage: URL)? {
-                            if let root = try Self.gameRoot(in: stage) { return (root, stage) }
-                            guard depth < 3 else { return nil }
-                            let contained = try Self.containedFiles(in: stage)
-                            let discs = contained.filter {
-                                ["iso", "mdf"].contains($0.pathExtension.lowercased()) && (try? Iso9660Extractor.containsGameRoot($0)) == true
-                            }
-                            let candidates = discs + contained.filter { !discs.contains($0) && ArchiveExtractor.isSupportedArchiveName($0.lastPathComponent) }
-                            for nested in candidates {
-                                let next = temporary.appendingPathComponent("stage-\(UUID().uuidString)")
-                                do {
-                                    try extract(nested, to: next)
-                                    if let found = try findGame(in: next, depth: depth + 1) { return found }
-                                } catch {}
-                                if self.files.fileExists(atPath: next.path) { try self.files.removeItem(at: next) }
-                            }
-                            return nil
-                        }
-                        let initial = temporary.appendingPathComponent("stage0")
-                        try extract(readable, to: initial)
-                        guard let (root, stage) = try findGame(in: initial, depth: 0) else { throw LibraryError.archiveNotGame }
-                        let name = root == stage ? Self.archiveBaseName(source) : root.lastPathComponent
-                        guard !name.isEmpty && name != "." && name != ".." && !name.hasPrefix(".") else { throw LibraryError.archiveNotGame }
-                        let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
-                        guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
-                        try Self.normalizeRance06DungeonData(root)
-                        try self.files.moveItem(at: root, to: destination)
-                    } catch { result = error }
-                }
-                if let coordinationError { throw coordinationError }
-            } catch { result = error }
-            try? self.files.removeItem(at: temporary)
-            let message = result?.localizedDescription
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            coordinator.coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { readable in
+                do {
+                    let (root, name) = try stage(readable, work)
+                    guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/") else { throw LibraryError.notGame }
+                    let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
+                    guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
+                    try self.files.moveItem(at: root, to: destination)
+                } catch { result = error }
+            }
+            try? self.files.removeItem(at: work)
+            let message = (result ?? coordinationError)?.localizedDescription
             DispatchQueue.main.async {
                 self.importing = false
                 self.importProgress = ""
@@ -997,6 +903,7 @@ final class GameLibrary: ObservableObject {
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
+            guard alicehub_ios_finish_audio_shutdown() else { throw LibraryError.audioStopping }
             let info = try Self.launchInfo(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
@@ -1008,11 +915,14 @@ final class GameLibrary: ObservableObject {
             let log = logs.appendingPathComponent("engine.log")
             let descriptor = open(log.path, O_WRONLY | O_CREAT | O_TRUNC, mode_t(0o644))
             guard descriptor >= 0 else { throw LibraryError.logFile }
-            defer { close(descriptor) }
-            guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else { throw LibraryError.logFile }
-            setbuf(stdout, nil)
-            setbuf(stderr, nil)
-            guard chdir(info.engine == .system4 ? resources.path : game.url.path) == 0 else { throw LibraryError.resourcePath }
+            let workingDirectory = info.engine == .system4 ? resources.path : game.url.path
+            let arguments: [String]
+            do {
+                arguments = try Self.launchArguments(game.url, saves: saves)
+            } catch {
+                close(descriptor)
+                throw error
+            }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             Self.setSystemSansFontDefaults()
@@ -1020,14 +930,39 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
-            let arguments = try Self.launchArguments(game.url, saves: saves)
             launching = true
             SaveSyncSession.begin(game: game.name) {
-                ModifierBridge.prepareForLaunch()
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
+                    let previousDirectory = open(".", O_RDONLY)
+                    let previousStdout = dup(STDOUT_FILENO)
+                    let previousStderr = dup(STDERR_FILENO)
+                    defer {
+                        if previousDirectory >= 0 { fchdir(previousDirectory); close(previousDirectory) }
+                        fflush(stdout)
+                        fflush(stderr)
+                        if previousStdout >= 0 { dup2(previousStdout, STDOUT_FILENO); close(previousStdout) }
+                        if previousStderr >= 0 { dup2(previousStderr, STDERR_FILENO); close(previousStderr) }
+                        close(descriptor)
+                        SaveSyncSession.end()
+                        self.launching = false
+                    }
+                    guard previousDirectory >= 0, chdir(workingDirectory) == 0 else {
+                        self.error = LibraryError.resourcePath.localizedDescription
+                        return
+                    }
+                    guard previousStdout >= 0, previousStderr >= 0,
+                          dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else {
+                        self.error = LibraryError.logFile.localizedDescription
+                        return
+                    }
                     SDL_SetMainReady()
+                    alicehub_ios_begin_game()
+                    defer { alicehub_ios_end_game() }
+                    if info.engine != .legacySystem3 {
+                        RuntimeGamepad.prepare(for: game.id, engine: info.engine)
+                    }
                     if info.engine == .system4 {
-                        RuntimeGamepad.prepare(for: game.id)
+                        ModifierBridge.prepareForLaunch(gameID: game.id)
                         input_set_long_press_ctrl(UserDefaults.standard.bool(forKey: "hub.longPressCtrl"))
                     }
                     var argv = arguments.map { strdup($0) }
@@ -1043,7 +978,6 @@ final class GameLibrary: ObservableObject {
                         }
                     }
                     for argument in argv { free(argument) }
-                    exit(0)
                 }
             }
         } catch { self.error = error.localizedDescription }

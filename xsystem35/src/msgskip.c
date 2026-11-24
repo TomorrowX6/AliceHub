@@ -112,6 +112,17 @@ bool msgskip_isSkipping(void) {
 	return msgskip.enabled & msgskip.activated;
 }
 
+#ifdef ALICEHUB_IOS
+void msgskip_fini(void) {
+	msgskip_syncFile();
+	if (msgskip.map)
+		unmap_file(msgskip.map);
+	memset(&msgskip, 0, sizeof(msgskip));
+	msgskip.flags = MSGSKIP_STOP_ON_UNSEEN | MSGSKIP_STOP_ON_MENU | MSGSKIP_STOP_ON_CLICK;
+	msgskip.enabled = true;
+}
+#endif
+
 bool msgskip_isActivated(void) {
 	return msgskip.activated;
 }

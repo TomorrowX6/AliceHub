@@ -1391,6 +1391,7 @@ static void parts_render_on_gl_reset(possibly_unused void *user)
 
 void parts_render_init(void)
 {
-	parts_render_load_shader();
+	parts_pass_active = false;
+	parts_render_on_gl_reset(NULL);
 	gfx_register_reset_callback(parts_render_on_gl_reset, NULL);
 }
