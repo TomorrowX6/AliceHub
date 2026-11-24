@@ -18,6 +18,78 @@ class System35Checks(unittest.TestCase):
                             str(source), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], cwd=temporary, check=True)
 
+    def test_virtual_stick_uses_configured_deadzone(self):
+        bridge = 'xsystem35/src/alicehub_bridge.c'
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <math.h>
+static struct { float deadzone; } gp_cfg;
+''' + function(bridge, 'static float apply_deadzone(')
+    + function(bridge, 'static void apply_virtual_stick_deadzone(') + r'''
+int main(void) {
+    float x = 0.2f, y = -0.2f;
+    gp_cfg.deadzone = 0.45f;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x == 0 && y == 0);
+
+    x = 0.2f;
+    y = -0.2f;
+    gp_cfg.deadzone = 0.05f;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x > 0 && x < 0.2f && y == -x);
+
+    x = 1;
+    y = -1;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x == 1 && y == -1);
+}
+''')
+
+    def test_restart_reallocates_scenario_stack_once(self):
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+static char stack[1024], *stack_buf, *stack_top;
+static const char *sl_sco;
+static bool sl_is_s380, allocated;
+static size_t stack_size = sizeof(stack);
+static void sl_jmpFar(int page) { assert(page == 0); sl_sco = "S380"; }
+static void *alloc_stack(size_t size) { assert(!allocated && size == sizeof(stack)); allocated = true; return stack; }
+static void free_stack(void *ptr) { assert(allocated && ptr == stack); allocated = false; }
+#define malloc alloc_stack
+#define free free_stack
+#define NOMEMERR() abort()
+''' + function('xsystem35/src/scenario.c', 'bool sl_init(') +
+             function('xsystem35/src/scenario.c', 'bool sl_reinit(') + r'''
+int main(void) {
+    assert(sl_init() && allocated);
+    assert(sl_reinit() && allocated && stack_top == stack && sl_is_s380);
+}
+''')
+
+    def test_encoding_lock_clears_between_sessions(self):
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <stdbool.h>
+typedef enum { SHIFT_JIS, UTF8, GBK } CharacterEncoding;
+static CharacterEncoding default_encoding, current_encoding;
+static bool encoding_locked;
+static void sys_setCharacterEncoding(CharacterEncoding encoding) { current_encoding = encoding; }
+''' + function('xsystem35/src/nact.c', 'void sys_setDefaultCharacterEncoding(') +
+             function('xsystem35/src/nact.c', 'bool sys_isCharacterEncodingLocked(') +
+             function('xsystem35/src/nact.c', 'void sys_resetCharacterEncoding(') + r'''
+int main(void) {
+    sys_setDefaultCharacterEncoding(GBK, true);
+    sys_setDefaultCharacterEncoding(UTF8, false);
+    assert(sys_isCharacterEncodingLocked());
+    sys_resetCharacterEncoding();
+    assert(!sys_isCharacterEncodingLocked());
+    assert(default_encoding == SHIFT_JIS && current_encoding == SHIFT_JIS);
+}
+''')
+
     def test_background_audio_and_render_flush(self):
         self.compile_and_run(r'''
 #include <assert.h>

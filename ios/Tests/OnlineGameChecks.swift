@@ -2,8 +2,17 @@ import Foundation
 import CryptoKit
 
 func SDL_SetMainReady() {}
-enum RuntimeGamepad { static func prepare(for game: String) {} }
-enum ModifierBridge { static func prepareForLaunch() {} }
+func alicehub_ios_begin_game() {}
+func alicehub_ios_finish_audio_shutdown() -> Bool { true }
+func alicehub_ios_end_game() {}
+func input_set_long_press_ctrl(_ enabled: Bool) {}
+enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
+enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
+enum SaveSyncSession {
+    static func begin(game: String, ready: @escaping () -> Void) {}
+    static func end() {}
+}
+func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 
@@ -17,6 +26,28 @@ struct OnlineGameChecks {
     static func main() async throws {
         let files = FileManager.default
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        precondition(OnlineGame.matchesChineseBadge("chinese", hasChinese: true, in: .english, bundle: bundle))
+        precondition(!OnlineGame.matchesChineseBadge("Chinese", hasChinese: false, in: .english, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("No Chinese", hasChinese: false, in: .english, bundle: bundle))
+        precondition(!OnlineGame.matchesChineseBadge("No Chinese", hasChinese: true, in: .english, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("中国語なし", hasChinese: false, in: .japanese, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("熟肉", hasChinese: true, in: .english, bundle: bundle))
+        let ambivalenz = OnlineGame.all.first { $0.id == "ambivalenz" }!
+        precondition(ambivalenz.displayTitle(in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
+        precondition(ambivalenz.displayTitle(in: .japanese, bundle: bundle) == "AmbivalenZ -二律背反-")
+        let installedDirectory = root.appendingPathComponent(ambivalenz.directory)
+        try files.createDirectory(at: installedDirectory, withIntermediateDirectories: true)
+        let installedAmbivalenz = Game(url: installedDirectory)
+        precondition(OnlineGame.displayTitle(for: installedAmbivalenz, in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
+        let customDirectory = root.appendingPathComponent("My AmbivalenZ Folder")
+        try files.createDirectory(at: customDirectory, withIntermediateDirectories: true)
+        let custom = Game(url: customDirectory)
+        precondition(custom.artworkKey == "ambivalenz")
+        precondition(OnlineGame.displayTitle(for: custom, in: .english, bundle: bundle) == custom.resolvedDisplayName)
+        print("Localized catalog titles, custom names, and exact language-badge searches passed")
         let base = URL(string: CommandLine.arguments[2])!
         let manifestData = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
         let manifest = try OnlineGameManifest.parse(manifestData)
@@ -58,6 +89,12 @@ struct OnlineGameChecks {
         for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm", "yakata456", "ayumilive", "carol", "selfgame", "momoiroguardian"] {
             precondition(!chineseIds.contains(rawId), "Expected raw: \(rawId)")
         }
+        let defaultOrdered = OnlineGame.defaultSorted(OnlineGame.all)
+        precondition(defaultOrdered.count == OnlineGame.all.count)
+        precondition(defaultOrdered.prefix(chineseIds.count).allSatisfy(\.hasChinese))
+        precondition(defaultOrdered.dropFirst(chineseIds.count).allSatisfy { !$0.hasChinese })
+        precondition(defaultOrdered.prefix(chineseIds.count).map(\.id) == OnlineGame.all.filter(\.hasChinese).map(\.id))
+        precondition(defaultOrdered.dropFirst(chineseIds.count).map(\.id) == OnlineGame.all.filter { !$0.hasChinese }.map(\.id))
         let cnMarkerDir = root.appendingPathComponent("custom-cn-markers")
         try files.createDirectory(at: cnMarkerDir, withIntermediateDirectories: true)
         precondition(!OnlineGame.hasLocalChineseMarkers(in: cnMarkerDir))
@@ -111,6 +148,62 @@ struct OnlineGameChecks {
         let cnRance41 = Game(url: cnRance41Dir)
         precondition(cnRance41.artworkKey == "rance41" && !cnRance41.hasExplicitNonChineseEdition)
         precondition(OnlineGame.hasChinese(for: cnRance41))
+        let installed = [engRance41, cnRance41, Game(url: rawCustomDir)]
+        let entries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: true)
+        let localEntries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: false)
+        precondition(localEntries.map(\.id) == ["catalog:rance41", "local:custom-raw-game"])
+        precondition(localEntries.first?.installations == [cnRance41, engRance41])
+        precondition(LibraryEntry.build(games: [], sort: .catalog, includeOnline: false).isEmpty)
+        precondition(entries.count == OnlineGame.all.count + 1)
+        precondition(entries.prefix(3).map(\.id) == ["catalog:rance41", "local:custom-raw-game", "catalog:rance10"])
+        let uninstalledEntries = Array(entries.dropFirst(2))
+        let uninstalledCnCount = uninstalledEntries.filter(\.hasChinese).count
+        precondition(uninstalledEntries.prefix(uninstalledCnCount).allSatisfy(\.hasChinese))
+        precondition(uninstalledEntries.dropFirst(uninstalledCnCount).allSatisfy { !$0.hasChinese })
+        let customInstalledEntries = LibraryEntry.build(games: [Game(url: rawCustomDir), Game(url: cnMarkerDir)],
+                                                        sort: .catalog, includeOnline: false)
+        precondition(customInstalledEntries.map(\.id) == ["local:\(cnMarkerDir.lastPathComponent)", "local:\(rawCustomDir.lastPathComponent)"])
+        let rance41 = entries[0]
+        precondition(rance41.installations.map(\.id) == [cnRance41.id, engRance41.id])
+        precondition(rance41.matches(engRance41.name) && rance41.matches(rance41.title))
+        precondition(rance41.matches("熟肉") && rance41.matches("生肉"))
+        let uninstalledRance10 = entries[2]
+        precondition(uninstalledRance10.primary == nil && uninstalledRance10.matches("熟肉") &&
+                     !uninstalledRance10.matches("生肉"))
+        precondition(uninstalledRance10.displayTitle(in: .english, bundle: bundle) == "Rance 10: Showdown")
+        precondition(uninstalledRance10.matches("Showdown", language: .english, bundle: bundle))
+        precondition(rance41.matches("No Chinese", language: .english, bundle: bundle))
+        precondition(LibraryEntry.installation(in: rance41.installations, selectedID: engRance41.id) == engRance41)
+        precondition(LibraryEntry.installation(in: rance41.matchingInstallations(in: [cnRance41]), selectedID: engRance41.id) == cnRance41)
+        precondition(rance41.matchingInstallations(in: []).isEmpty)
+        let rating = LibraryEntry.build(games: installed, sort: .rating, includeOnline: true)
+        precondition(rating.prefix(3).map(\.id) == entries.prefix(3).map(\.id))
+        precondition(rating.last(where: { $0.catalog?.id == "rance03" }).map { $0.primary == nil } == true)
+        precondition(rating.firstIndex { $0.catalog?.id == "rance03" }! < rating.firstIndex { $0.catalog?.id == "rance02" }!)
+        let release = LibraryEntry.build(games: installed, sort: .releaseDate, includeOnline: true)
+        precondition(release.prefix(2).map(\.id) == entries.prefix(2).map(\.id))
+        precondition(release.firstIndex { $0.catalog?.id == "dohnadohna" }! < release.firstIndex { $0.catalog?.id == "rance10" }!)
+        let names = LibraryEntry.build(games: installed, sort: .name, includeOnline: true, locale: Locale(identifier: "en"))
+        precondition(zip(names.dropFirst(2), names.dropFirst(3)).allSatisfy {
+            $0.title.compare($1.title, options: .caseInsensitive, locale: Locale(identifier: "en")) != .orderedDescending
+        })
+
+        let icon32 = root.appendingPathComponent("icon32.exe")
+        let icon64 = root.appendingPathComponent("icon64.exe")
+        let ico = GameExecutableIcon.extract(from: icon32)
+        precondition(ico?.prefix(6) == Data([0, 0, 1, 0, 1, 0]))
+        precondition(GameExecutableIcon.extract(from: icon64) == ico)
+        let helper = rawCustomDir.appendingPathComponent("OpenSaveFolder.exe")
+        try files.copyItem(at: icon32, to: helper)
+        precondition(GameExecutableIcon.image(in: rawCustomDir) == nil)
+        let exe = rawCustomDir.appendingPathComponent("Game.exe")
+        try files.copyItem(at: icon64, to: exe)
+        precondition(GameExecutableIcon.image(in: rawCustomDir)?.width == 32)
+        try Data((try Data(contentsOf: icon64)).prefix(512)).write(to: exe)
+        precondition(GameExecutableIcon.extract(from: exe) == nil)
+        try ico?.write(to: rawCustomDir.appendingPathComponent("game.ICO"))
+        precondition(GameExecutableIcon.image(in: rawCustomDir)?.height == 32)
+
         precondition(InstalledModInfo.metaFileName == ".mod_version.json")
         let patchedCustomDir = root.appendingPathComponent("custom-cn-patch-meta")
         try files.createDirectory(at: patchedCustomDir, withIntermediateDirectories: true)
@@ -120,6 +213,13 @@ struct OnlineGameChecks {
         let patchedCustom = Game(url: patchedCustomDir)
         precondition(patchedCustom.hasInstalledCnPatch && !patchedCustom.hasLocalChineseMarkers)
         precondition(OnlineGame.hasChinese(for: patchedCustom))
+        let sortedInstalled = OnlineGame.defaultSortedInstalled([
+            Game(url: rawCustomDir),
+            Game(url: cnMarkerDir),
+            engRance41,
+            patchedCustom
+        ])
+        precondition(sortedInstalled.map(\.name) == [cnMarkerDir.lastPathComponent, patchedCustomDir.lastPathComponent, rawCustomDir.lastPathComponent, engRance41Dir.lastPathComponent])
         let invalidPatchDir = root.appendingPathComponent("custom-cn-patch-empty-ver")
         try files.createDirectory(at: invalidPatchDir, withIntermediateDirectories: true)
         try Data().write(to: invalidPatchDir.appendingPathComponent("System40.ini"))
@@ -247,11 +347,7 @@ struct OnlineGameChecks {
             precondition(momoiro.matchesSearch(q), "Expected Momoiro Guardian to match search query: \(q)")
         }
         precondition(!momoiro.matchesSearch("熟肉"))
-        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/rance10/")
-        UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)
-        precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/cn/rance10/")
-        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         print("PASS: catalog, HTTP manifest, invalid paths/keys/hashes/sizes, Unicode/case duplicates, prefix collisions and overflow")
 
         let game = OnlineGame(id: "fixture", title: "测试游戏", directory: manifest.baseName)

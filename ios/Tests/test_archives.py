@@ -49,6 +49,6 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run(["xcrun", "clang", "-I" + str(ARCHIVE / "include"), "-c", str(ROOT / "ios/App/ArchiveBridge.c"),
                     "-o", str(work / "bridge.o")], check=True)
     subprocess.run(["xcrun", "swiftc", "-import-objc-header", str(ROOT / "ios/App/ArchiveBridge.h"),
-                    str(ROOT / "ios/App/ModArchiveExtractor.swift"), str(ROOT / "ios/Tests/ModArchiveChecks.swift"),
+                    str(ROOT / "ios/App/HubLanguage.swift"), str(ROOT / "ios/App/ModArchiveExtractor.swift"), str(ROOT / "ios/Tests/ModArchiveChecks.swift"),
                     str(work / "bridge.o"), "-L" + str(ARCHIVE / "lib"), "-larchive", "-liconv", "-o", str(work / "checks")], check=True)
     subprocess.run([str(work / "checks"), str(work)], check=True)

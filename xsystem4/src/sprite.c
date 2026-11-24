@@ -165,6 +165,15 @@ static void sprite_on_gl_reset(possibly_unused void *user)
 		sprite_load_chipmunk_shader();
 }
 
+#ifdef ALICEHUB_IOS
+void sprite_end_session(void)
+{
+	sprite_shader = (struct sprite_shader){0};
+	sprite_shader_mode = SPRITE_SHADER_NONE;
+	sact_dirty = true;
+}
+#endif
+
 void sprite_init_sact(void)
 {
 	if (sprite_shader.s.prepare) {

@@ -98,7 +98,7 @@ dependency(SDL2_mixer https://github.com/libsdl-org/SDL_mixer/releases/download/
   -DSDL2MIXER_VORBIS=VORBISFILE -DSDL2MIXER_VORBIS_VORBISFILE_SHARED=OFF)
 ExternalProject_Add_StepDependencies(SDL2_mixer configure SDL2 libogg libvorbis)
 ExternalProject_Add(freetype
-  GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE
+  GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-15-0 GIT_SHALLOW TRUE
   CMAKE_ARGS ${common} -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
     -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON)
 ExternalProject_Add(xsystem4
@@ -139,6 +139,15 @@ function(isolate_engine name)
       -Wl,-exported_symbol,_alicehub_ios_gamepad_command
       -Wl,-exported_symbol,_alicehub_ios_gamepad_frame
       -Wl,-exported_symbols_list,${CMAKE_CURRENT_LIST_DIR}/engine-exports.txt)
+  elseif(name STREQUAL "xsystem35")
+    list(APPEND exports -Wl,-exported_symbol,_xsystem35_modifier_live_state
+      -Wl,-exported_symbol,_xsystem35_modifier_get_locks
+      -Wl,-exported_symbol,_xsystem35_modifier_set_locks
+      -Wl,-exported_symbol,_xsystem35_modifier_apply_action)
+    foreach(symbol set_gamepad_config_json set_virtual_stick set_virtual_dpad
+        set_virtual_button clear_virtual_inputs save_screenshot)
+      list(APPEND exports -Wl,-exported_symbol,_xsystem35_${symbol})
+    endforeach()
   endif()
   add_custom_target(${name}_engine ALL
     COMMAND ${CMAKE_C_COMPILER} -target ${ffi_target} -isysroot ${sdk_path}

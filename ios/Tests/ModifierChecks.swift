@@ -4,12 +4,23 @@ struct modifier_lock_game: Equatable { var rawValue: UInt32 }
 let MODIFIER_LOCK_RANCE10 = modifier_lock_game(rawValue: 0)
 let MODIFIER_LOCK_DOHNADOHNA = modifier_lock_game(rawValue: 1)
 let MODIFIER_LOCK_EVENICLE = modifier_lock_game(rawValue: 2)
+let MODIFIER_LOCK_SENGOKURANCE = modifier_lock_game(rawValue: 3)
+let MODIFIER_LOCK_RANCE01 = modifier_lock_game(rawValue: 4)
+let MODIFIER_LOCK_RANCE02 = modifier_lock_game(rawValue: 5)
+let MODIFIER_LOCK_RANCE03 = modifier_lock_game(rawValue: 6)
+let MODIFIER_LOCK_RANCE08 = modifier_lock_game(rawValue: 7)
+let MODIFIER_LOCK_RANCE09 = modifier_lock_game(rawValue: 8)
 
 var masks: [UInt32: Int32] = [:]
 var actions: [String] = []
 var writes: [String] = []
 var liveReplies = ["{\"inGame\":true,\"money\":5}"]
+var system35Reply: String?
+func xsystem35_modifier_live_state() -> UnsafeMutablePointer<CChar>? { system35Reply.flatMap { strdup($0) } }
 func modifier_api_set_config_path(_ path: UnsafePointer<CChar>!) {}
+func modifier_api_set_ui_scale(_ font: Int32, _ scrollbar: Int32) {}
+func modifier_api_read_global_save_summary(_ global: UnsafePointer<CChar>!, _ collection: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CChar>? { nil }
+func modifier_api_write_global_save_mod(_ global: UnsafePointer<CChar>!, _ collection: UnsafePointer<CChar>!, _ json: UnsafePointer<CChar>!) -> Bool { false }
 func modifier_api_current_game() -> UnsafePointer<CChar>! { ("dohnadohna" as NSString).utf8String }
 func modifier_api_get_live_state_json() -> UnsafeMutablePointer<CChar>! {
     strdup(liveReplies.count > 1 ? liveReplies.removeFirst() : liveReplies[0])
@@ -34,10 +45,60 @@ struct ModifierChecks {
         precondition(masks[0] == ModifierBridge.rance10StreamerModeBit && actions.last!.contains("\"streamerMode\":0"))
         precondition(ModifierBridge.applyCheatCode("开启主播模式"))
         precondition(masks[0] == 0 && actions.last!.contains("\"streamerMode\":1"))
+        masks[0] = ModifierBridge.rance10TreasureBit
+        ModifierBridge.setStreamerMode(false)
+        precondition(masks[0] == ModifierBridge.rance10TreasureBit | ModifierBridge.rance10StreamerModeBit)
+        precondition(!ModifierBridge.streamerMode(in: [:], mask: masks[0]!))
+        precondition(ModifierBridge.streamerMode(in: ["streamerMode": 1], mask: masks[0]!))
+        precondition(!ModifierBridge.streamerMode(in: ["streamerMode": 0], mask: 0))
+        let unsupported = ModifierBridge.parse(#"{"inGame":false,"streamerModeSupported":false,"streamerMode":0}"#)
+        precondition(ModifierBridge.streamerToggleState(in: unsupported, mask: 0) == nil)
+        precondition(ModifierBridge.streamerToggleState(in: [:], mask: 0) == nil)
+        let supported = ModifierBridge.parse(#"{"inGame":false,"streamerModeSupported":true}"#)
+        precondition(ModifierBridge.streamerToggleState(in: supported, mask: 0) == true)
+        precondition(ModifierBridge.streamerToggleState(in: supported, mask: masks[0]!) == false)
+        let supportedLive = ModifierBridge.parse(#"{"inGame":false,"streamerModeSupported":true,"streamerMode":1}"#)
+        precondition(ModifierBridge.streamerToggleState(in: supportedLive, mask: masks[0]!) == true)
+        ModifierBridge.setStreamerMode(true)
+        precondition(masks[0] == ModifierBridge.rance10TreasureBit)
+
+        precondition(ModifierGamePanel.all.map(\.game.id) == ["sengokurance", "rance01", "rance02", "rance03", "rance08", "rance09"])
+        let sr = ModifierGamePanel.all[0]
+        precondition(sr.resources.first?.initialValue(in: ["gold": 123]) == "123")
+        precondition(sr.resources.first?.initialValue(in: ["gold": true]) == "")
+        precondition(ModifierField.changes(from: ["srGold": "123", "srAp": " -5 ", "srApMax": "", "overflow": "2147483648"],
+                                           excluding: ["srGold": "123"]) == ["srAp": -5])
+        let srCharacters = sr.characters!
+        precondition(srCharacters.rows(in: [:]).isEmpty)
+        let generals = srCharacters.rows(in: ["srCharacters": [
+            ["charIdx": 9, "factionIdx": 2, "name": "兰斯", "troops": 400],
+            ["factionIdx": 2, "name": "Invalid"],
+        ]])
+        precondition(generals.count == 2)
+        precondition(generals[0].target == ["charIdx": -1, "factionIdx": 2])
+        precondition(generals[1].name == "兰斯")
+        precondition(srCharacters.action(for: generals[1], values: ["troops": 600])["srCharEdit"] as? [String: Int]
+                     == ["charIdx": 9, "factionIdx": 2, "troops": 600])
+        for (input, expected) in [("1", "true"), ("0", "false")] {
+            let changes = ModifierField.changes(from: ["resetAction": input], excluding: [:])
+            ModifierBridge.send(srCharacters.action(for: generals[1], values: changes))
+            precondition(actions.last!.contains("\"resetAction\":\(expected)"))
+        }
+        ModifierBridge.send(srCharacters.action(for: generals[1], values: srCharacters.boost))
+        precondition(actions.last!.contains("\"resetAction\":true"))
+        for panel in ModifierGamePanel.all.dropFirst().compactMap(\.characters) {
+            let rows = panel.rows(in: ["\(panel.prefix)Characters": [["index": 4, "hp": 20]]])
+            precondition(rows.map(\.target) == [["target": -1], ["target": 4]])
+            precondition(panel.action(for: rows[0], values: ["hp": 50])["\(panel.prefix)CharEdit"] as? [String: Int]
+                         == ["target": -1, "hp": 50])
+        }
+        precondition(ModifierBridge.system35LiveState() == nil)
+        system35Reply = "{\"game\":\"escalayer\",\"hp\":25}"
+        precondition(ModifierBridge.system35LiveState().map(ModifierBridge.parse)?["hp"] as? Int == 25)
 
         for game in ModifierBridge.games {
             precondition(Set(game.locks.map(\.bit)).count == game.locks.count, game.id)
-            precondition(Set(game.cheats.map(\.title)).count == game.cheats.count, game.id)
+            precondition(Set(game.cheats.map(\.id)).count == game.cheats.count, game.id)
         }
         precondition(ModifierBridge.currentGame()?.lockGame == MODIFIER_LOCK_DOHNADOHNA)
         precondition(ModifierBridge.liveState()["money"] as? Int == 5)

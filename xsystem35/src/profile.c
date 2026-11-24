@@ -44,6 +44,18 @@ struct profile_kv {
 static struct profile_kv *profile = NULL;
 static int profile_values = 0;
 
+#ifdef ALICEHUB_IOS
+void profile_fini(void) {
+	for (int i = 0; i < profile_values; i++) {
+		free(profile[i].name);
+		free(profile[i].value);
+	}
+	free(profile);
+	profile = NULL;
+	profile_values = 0;
+}
+#endif
+
 static struct profile_kv *check_profile(const char *name)
 {
 	for (int i = 0; i < profile_values; i++) {

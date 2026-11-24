@@ -9,8 +9,14 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +36,23 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
         private const val STATE_HUB_GAME_ID = "STATE_HUB_GAME_ID"
         private const val STATE_HUB_SELECTED_PATH = "STATE_HUB_SELECTED_PATH"
+        private const val PREFS_NAME = "alicehub_settings"
+        private const val KEY_SELECTED_INSTANCE_PREFIX = "hub_selected_instance_path_"
+
+        fun shouldShowInstanceRow(descriptor: GameDescriptor, matchingCount: Int): Boolean {
+            return matchingCount > 1 || (descriptor.isRance10 && matchingCount >= 1)
+        }
+
+        fun persistSelectedInstancePath(context: android.content.Context, targetGameId: String, path: String?) {
+            val editor = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            val key = KEY_SELECTED_INSTANCE_PREFIX + targetGameId
+            if (path.isNullOrBlank()) {
+                editor.remove(key)
+            } else {
+                editor.putString(key, path)
+            }
+            editor.apply()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -51,6 +74,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private var lastUncensoredRenderMs: Long = 0L
     private var pendingPostResumeAction: (() -> Unit)? = null
     private var skipInitialResumeRefresh: Boolean = false
+    private var pendingCreatedInstanceName: String? = null
     private val uncensoredListener: (UncensoredInstallState) -> Unit = { st ->
         renderUncensoredInstallState(st)
     }
@@ -296,10 +320,22 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         finish()
     }
 
+    private fun loadPersistedInstancePath(targetGameId: String): String? {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_SELECTED_INSTANCE_PREFIX + targetGameId, null)
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun persistSelectedInstancePath(targetGameId: String, path: String?) {
+        Companion.persistSelectedInstancePath(this, targetGameId, path)
+    }
+
     private fun rebindGameState() {
         descriptor = GameCatalog.descriptorFor(this, gameId, gameList)
         matchingItems = GameCatalog.matchingItems(gameList, descriptor.id)
-        val matchedByPath = selectedPath?.let { p -> matchingItems.firstOrNull { it.path.path == p } }
+        val effectivePath = selectedPath?.takeIf { it.isNotBlank() }
+            ?: loadPersistedInstancePath(descriptor.id)
+        val matchedByPath = effectivePath?.let { p -> matchingItems.firstOrNull { it.path.path == p } }
         selectedItem = matchedByPath ?: matchingItems.firstOrNull()
         selectedPath = selectedItem?.path?.path
     }
@@ -373,13 +409,14 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             dot = false
         )
 
-        // With several copies of the game installed, the directory in use gets its own row
-        // (next to the button that switches it) instead of being squeezed into the status chip.
-        val hasInstanceChoice = matchingItems.size > 1
+        // Show the directory switch row when multiple copies exist, and keep it permanently
+        // visible for installed Rance 10 copies so players can switch or create directories
+        // for vanilla and multi-version MOD setups.
+        val showInstanceRow = shouldShowInstanceRow(descriptor, matchingItems.size)
         findViewById<View>(R.id.hub_instance_row).visibility =
-            if (hasInstanceChoice) View.VISIBLE else View.GONE
+            if (showInstanceRow) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.hub_instance_dir).text =
-            if (hasInstanceChoice) curItem?.path?.name.orEmpty() else ""
+            if (showInstanceRow) curItem?.path?.name.orEmpty() else ""
 
         val playBtn = findViewById<Button>(R.id.btn_hub_play)
         playBtn.setTextColor(Color.WHITE)
@@ -459,7 +496,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun refreshOnlineSizeIfNeeded() {
         if (!descriptor.supportsOnlineBaseInstall || !AppSettings.isOnlineInstallEnabled(this)) return
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
-        val fetchUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
+        val fetchUrl = AppSettings.canonicalCdnUrl(cdnUrl)
         if (refreshedSizeCdnUrl == fetchUrl) return
         refreshedSizeCdnUrl = fetchUrl
         scope.launch {
@@ -480,36 +517,213 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         }
     }
 
-    private fun showSwitchInstanceDialog() {
-        if (matchingItems.size <= 1) return
+    private fun formatInstanceLabel(it: Item): String {
         val fallbackTag = if (descriptor.isCnPatch) "CN" else "MOD"
-        val labels = Array(matchingItems.size) { idx ->
-            val it = matchingItems[idx]
-            val ver = if (gameList.hasInstalledMod(it)) {
-                val info = gameList.getInstalledModInfo(it)
-                val v = info?.version?.takeIf { s -> s.isNotBlank() } ?: fallbackTag
-                val g = info?.group?.takeIf { s -> s.isNotBlank() }
-                if (!descriptor.isCnPatch && g != null && !g.equals(v, ignoreCase = true)) "$g · $v" else v
-            } else {
-                null
-            }
-            if (ver != null) "${it.path.name} · $ver" else it.path.name
+        val ver = if (gameList.hasInstalledMod(it)) {
+            val info = gameList.getInstalledModInfo(it)
+            val v = info?.version?.takeIf { s -> s.isNotBlank() } ?: fallbackTag
+            val g = info?.group?.takeIf { s -> s.isNotBlank() }
+            if (!descriptor.isCnPatch && g != null && !g.equals(v, ignoreCase = true)) "$g · $v" else v
+        } else if (descriptor.isRance10) {
+            getString(R.string.hub_instance_vanilla_tag)
+        } else {
+            null
         }
+        return if (ver != null) "${it.path.name} · $ver" else it.path.name
+    }
+
+    private fun showSwitchInstanceDialog() {
+        if (matchingItems.isEmpty() || (!descriptor.isRance10 && matchingItems.size <= 1)) return
+        val labels = Array(matchingItems.size) { idx -> formatInstanceLabel(matchingItems[idx]) }
         val curIdx = matchingItems.indexOfFirst { it.path.path == selectedItem?.path?.path }.coerceAtLeast(0)
-        trackDialog(
-            AlertDialog.Builder(this)
-                .setTitle(R.string.hub_select_instance_title)
-                .setSingleChoiceItems(labels, curIdx) { dlg, which ->
-                    if (which in matchingItems.indices) {
-                        selectedItem = matchingItems[which]
-                        selectedPath = selectedItem?.path?.path
-                        refreshUi()
-                    }
-                    dlg.dismiss()
+        val builder = AlertDialog.Builder(this)
+            .setTitle(R.string.hub_select_instance_title)
+            .setSingleChoiceItems(labels, curIdx) { dlg, which ->
+                if (which in matchingItems.indices) {
+                    selectedItem = matchingItems[which]
+                    selectedPath = selectedItem?.path?.path
+                    persistSelectedInstancePath(descriptor.id, selectedPath)
+                    refreshUi()
                 }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        )
+                dlg.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+        if (descriptor.isRance10) {
+            builder.setPositiveButton(R.string.hub_create_instance) { _, _ ->
+                showCreateRance10InstanceDialog()
+            }
+        }
+        trackDialog(builder.show())
+    }
+
+    private fun showCreateRance10InstanceDialog() {
+        if (!descriptor.isRance10 || matchingItems.isEmpty()) return
+        if (gameList.isRestoringMod || UncensoredPatchManager.isAnyDownloading()) {
+            showOtherInstallBusyToast()
+            return
+        }
+        if (gameList.installState is InstallState.Installing) {
+            if (isInstallingCurrentHubGame()) {
+                gameList.restoreInstallProgress()
+                renderInstallState(gameList.installState)
+            } else {
+                showOtherInstallBusyToast()
+            }
+            return
+        }
+
+        val candidates = matchingItems
+        val defaultSourceIdx = candidates.indexOfFirst { !gameList.hasInstalledMod(it) }
+            .takeIf { it >= 0 }
+            ?: candidates.indexOfFirst { it.path.path == selectedItem?.path?.path }.coerceAtLeast(0)
+        var chosenSource = candidates[defaultSourceIdx]
+        val parentDir = chosenSource.path.parentFile ?: chosenSource.path
+        val usedNames = gameList.allExistingDirectoryNames()
+        val suggestedName = Rance10InstanceManager.suggestNextDirName(parentDir, descriptor.defaultDirName, usedNames)
+
+        val padH = UiKit.dpInt(this, 20)
+        val padTop = UiKit.dpInt(this, 12)
+        val gap = UiKit.dpInt(this, 10)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padH, padTop, padH, UiKit.dpInt(this@GameHubActivity, 6))
+        }
+
+        val nameLabel = TextView(this).apply {
+            setText(R.string.hub_create_instance_name_label)
+            setTextColor(getColor(R.color.ui_text_secondary))
+            textSize = 13f
+        }
+        val nameInput = EditText(this).apply {
+            setText(suggestedName)
+            setHint(R.string.hub_create_instance_name_hint)
+            isSingleLine = true
+            setSelection(text.length)
+        }
+        val errorView = TextView(this).apply {
+            setTextColor(getColor(R.color.tone_danger_fg))
+            textSize = 12f
+            visibility = View.GONE
+        }
+        container.addView(nameLabel)
+        container.addView(nameInput)
+        container.addView(errorView)
+
+        val cleanVanillaCheck = CheckBox(this).apply {
+            setText(R.string.hub_create_instance_clean_vanilla)
+            setTextColor(getColor(R.color.ui_text_primary))
+            textSize = 14f
+            isChecked = true
+            setPadding(0, gap, 0, 0)
+        }
+        val descView = TextView(this).apply {
+            setTextColor(getColor(R.color.ui_text_secondary))
+            textSize = 13f
+            setPadding(0, gap, 0, 0)
+        }
+
+        var sizeJob: kotlinx.coroutines.Job? = null
+        fun updateSourcePreview() {
+            val src = chosenSource
+            val hasMod = gameList.hasInstalledMod(src)
+            val canRestore = hasMod && Item.canRestoreVanillaDir(src.path)
+            cleanVanillaCheck.visibility = if (canRestore) View.VISIBLE else View.GONE
+            val clean = canRestore && cleanVanillaCheck.isChecked
+            sizeJob?.cancel()
+            sizeJob = scope.launch {
+                val planBytes = withContext(Dispatchers.IO) {
+                    Rance10InstanceManager.planCopy(src.path, clean).totalBytes
+                }
+                if (isFinishing || isDestroyed) return@launch
+                val sizeStr = OnlineInstaller.formatSize(planBytes).ifEmpty { "0 B" }
+                descView.text = when {
+                    !hasMod || clean -> getString(R.string.hub_create_instance_desc_vanilla, src.path.name, sizeStr)
+                    !canRestore -> getString(R.string.hub_create_instance_desc_repack, sizeStr)
+                    else -> getString(R.string.hub_create_instance_desc_copy, src.path.name, sizeStr)
+                }
+            }
+        }
+
+        if (candidates.size > 1) {
+            val srcLabel = TextView(this).apply {
+                setText(R.string.hub_create_instance_source_label)
+                setTextColor(getColor(R.color.ui_text_secondary))
+                textSize = 13f
+                setPadding(0, gap, 0, 0)
+            }
+            val srcSpinner = Spinner(this).apply {
+                adapter = ArrayAdapter(
+                    this@GameHubActivity,
+                    android.R.layout.simple_spinner_dropdown_item,
+                    candidates.map { formatInstanceLabel(it) }
+                )
+                setSelection(defaultSourceIdx)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                        if (pos in candidates.indices) {
+                            chosenSource = candidates[pos]
+                            cleanVanillaCheck.isChecked = true
+                            updateSourcePreview()
+                        }
+                    }
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+            }
+            container.addView(srcLabel)
+            container.addView(srcSpinner)
+        }
+
+        cleanVanillaCheck.setOnCheckedChangeListener { _, _ -> updateSourcePreview() }
+        container.addView(cleanVanillaCheck)
+        container.addView(descView)
+        updateSourcePreview()
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.hub_create_instance_title)
+            .setView(container)
+            .setPositiveButton(R.string.ok, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setOnDismissListener { sizeJob?.cancel() }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                val src = chosenSource
+                val targetParent = src.path.parentFile ?: src.path
+                val result = Rance10InstanceManager.validateDirName(
+                    targetParent,
+                    nameInput.text?.toString().orEmpty(),
+                    gameList.allExistingDirectoryNames()
+                )
+                if (!result.isValid) {
+                    val errRes = when (result.error) {
+                        Rance10InstanceManager.NameValidationError.EMPTY -> R.string.hub_create_instance_err_empty
+                        Rance10InstanceManager.NameValidationError.INVALID_CHARS -> R.string.hub_create_instance_err_invalid
+                        Rance10InstanceManager.NameValidationError.TOO_LONG -> R.string.hub_create_instance_err_too_long
+                        Rance10InstanceManager.NameValidationError.ALREADY_EXISTS -> R.string.hub_create_instance_err_exists
+                        null -> R.string.hub_create_instance_err_invalid
+                    }
+                    errorView.setText(errRes)
+                    errorView.visibility = View.VISIBLE
+                    return@setOnClickListener
+                }
+                val clean = cleanVanillaCheck.visibility == View.VISIBLE && cleanVanillaCheck.isChecked
+                dialog.dismiss()
+                ensureGameNotRunning(this) {
+                    InstallForegroundService.requestNotificationPermissionIfNeeded(this)
+                    pendingCreatedInstanceName = result.sanitizedName
+                    val started = gameList.cloneRance10Directory(src, result.sanitizedName, cleanVanilla = clean)
+                    if (!started) {
+                        pendingCreatedInstanceName = null
+                        showOtherInstallBusyToast()
+                    } else {
+                        refreshUi()
+                        renderInstallState(gameList.installState)
+                    }
+                }
+            }
+        }
+        trackDialog(dialog)
+        dialog.show()
     }
 
     private fun onPrimaryPlayClicked() {
@@ -707,7 +921,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 .setCancelable(true)
                 .show()
         )
-        val fetchCdnUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
+        val fetchCdnUrl = AppSettings.canonicalCdnUrl(cdnUrl)
         scope.launch {
             val manifest = try {
                 withContext(Dispatchers.IO) {
@@ -757,7 +971,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 ) { _, _ ->
                     ensureGameNotRunning(this@GameHubActivity) {
                         val resolvedManifest = manifest.copy(
-                            downloadUrl = AppSettings.resolveCdnUrl(this@GameHubActivity, manifest.downloadUrl)
+                            downloadUrl = AppSettings.canonicalCdnUrl(manifest.downloadUrl)
                         )
                         val maxConcurrency = AppSettings.getDownloadConcurrency(this@GameHubActivity)
                         if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, resolvedManifest, maxConcurrency)) {
@@ -1099,13 +1313,29 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             }
             InstallState.Succeeded -> {
                 dismissProgressDialog()
+                val createdName = pendingCreatedInstanceName
+                pendingCreatedInstanceName = null
+                val installed = gameList.lastInstalledItem
+                if (installed != null && GameCatalog.classifyItem(installed) == descriptor.id) {
+                    selectedPath = installed.path.path
+                    persistSelectedInstancePath(descriptor.id, selectedPath)
+                }
                 rebindGameState()
                 refreshUi()
-                Toast.makeText(this, R.string.install_done_toast, Toast.LENGTH_SHORT).show()
+                if (!createdName.isNullOrBlank()) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.hub_create_instance_done_toast, installed?.path?.name ?: createdName),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(this, R.string.install_done_toast, Toast.LENGTH_SHORT).show()
+                }
                 gameList.consumeInstallResult()
             }
             is InstallState.Cancelled -> {
                 dismissProgressDialog()
+                pendingCreatedInstanceName = null
                 rebindGameState()
                 refreshUi()
                 if (state.paused) {
@@ -1117,6 +1347,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             }
             is InstallState.Failed -> {
                 dismissProgressDialog()
+                pendingCreatedInstanceName = null
                 rebindGameState()
                 refreshUi()
                 gameList.consumeInstallResult()

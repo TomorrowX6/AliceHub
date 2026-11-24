@@ -10,8 +10,8 @@ enum SaveZip {
         case invalidArchive, unsupportedArchive
         var errorDescription: String? {
             switch self {
-            case .invalidArchive: return "ZIP 压缩包损坏或校验失败。"
-            case .unsupportedArchive: return "不支持此 ZIP 格式（仅支持未加密的普通 ZIP）。"
+            case .invalidArchive: return hubText("ZIP 压缩包损坏或校验失败。")
+            case .unsupportedArchive: return hubText("不支持此 ZIP 格式（仅支持未加密的普通 ZIP）。")
             }
         }
     }
