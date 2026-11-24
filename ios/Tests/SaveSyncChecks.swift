@@ -180,8 +180,50 @@ struct SaveSyncChecks {
         check(get(documents, "Saves/race/slot.sav") == "just written")
         check(get(cloud, "race/slot.sav") == "cloud edit")
 
+        let uploading = SaveSync(game: "upload-race", documents: documents, folder: cloud,
+                                 state: support.appendingPathComponent("upload-race.json"))
+        let uploadingLocal = documents.appendingPathComponent("Saves/upload-race")
+        let uploadingRemote = cloud.appendingPathComponent("upload-race")
+        try put(uploadingLocal, "a.sav", "base", 30)
+        try put(uploadingRemote, "a.sav", "base", 30)
+        check(try uploading.sync() == SaveSync.Summary())
+        try put(uploadingLocal, "a.sav", "first", 20)
+        try put(uploadingLocal, "b.sav", "another save", 20)
+        let changing = uploadingLocal.appendingPathComponent("a.sav")
+        let originalStamp = try files.attributesOfItem(atPath: changing.path)[.modificationDate] as! Date
+        var checks = 0
+        check(try uploading.sync(mode: .uploadOnly) {
+            checks += 1
+            if checks == 3 {
+                // The first write accessor sees different bytes at the same size and mtime.
+                try! Data("later".utf8).write(to: changing)
+                try! files.setAttributes([.modificationDate: originalStamp], ofItemAtPath: changing.path)
+            }
+            return false
+        } == SaveSync.Summary(pushed: 1, skipped: 1))
+        check(get(uploadingRemote, "a.sav") == "base" && get(uploadingRemote, "b.sav") == "another save")
+        check(try uploading.sync(mode: .uploadOnly) == SaveSync.Summary(pushed: 1))
+        check(get(uploadingRemote, "a.sav") == "later")
+
+        let cancelling = SaveSync(game: "cancel-upload", documents: documents, folder: cloud)
+        let cancellingLocal = documents.appendingPathComponent("Saves/cancel-upload")
+        let cancellingRemote = cloud.appendingPathComponent("cancel-upload")
+        try put(cancellingLocal, "a.sav", "first", 20)
+        try put(cancellingLocal, "b.sav", "second", 20)
+        check(try cancelling.sync(mode: .uploadOnly, isCancelled: { true }) == SaveSync.Summary())
+        checks = 0
+        check(try cancelling.sync(mode: .uploadOnly) {
+            checks += 1
+            return checks == 4
+        } == SaveSync.Summary())
+        check(get(cancellingRemote, "a.sav") == nil && get(cancellingRemote, "b.sav") == nil)
+        check(try cancelling.sync(mode: .uploadOnly) {
+            get(cancellingRemote, "a.sav") != nil
+        } == SaveSync.Summary(pushed: 1))
+        check(get(cancellingRemote, "a.sav") == "first" && get(cancellingRemote, "b.sav") == nil)
+
         SaveSyncFolder.clear()
         check(!SaveSyncFolder.isConfigured)
-        print("PASS: pull/push, upload only, unchanged rewrite, restores, conflicts, hidden skip, backups, idempotence, placeholder safety, sync-all, symlink roots, /private paths, target recheck")
+        print("PASS: pull/push, upload only, unchanged rewrite, restores, conflicts, hidden skip, backups, idempotence, placeholder safety, sync-all, symlink roots, /private paths, target/source rechecks, upload cancellation")
     }
 }

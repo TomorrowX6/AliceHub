@@ -11,6 +11,7 @@ final class SaveSync {
         var pulled = 0
         var pushed = 0
         var conflicts = 0
+        var skipped = 0
     }
     enum Failure: LocalizedError {
         case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged
@@ -52,6 +53,13 @@ final class SaveSync {
         let data: Data
         let modified: Date
     }
+
+    private struct FileStamp: Equatable {
+        let size: Int
+        let modified: Date
+    }
+
+    private enum WriteResult: Equatable { case written, sourceChanged, cancelled }
 
     private struct Record: Codable {
         var hash: String
@@ -132,6 +140,19 @@ final class SaveSync {
         return Snapshot(data: data, modified: modified)
     }
 
+    private func stamp(_ url: URL) -> FileStamp? {
+        guard let attributes = try? files.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        return FileStamp(size: size.intValue, modified: modified)
+    }
+
+    private func stableLocalSnapshot(_ url: URL) -> Snapshot? {
+        guard let before = stamp(url), let data = try? Data(contentsOf: url),
+              data.count == before.size, stamp(url) == before else { return nil }
+        return Snapshot(data: data, modified: before.modified)
+    }
+
     private func coordinatedRead(path: [String], under root: URL) throws -> Snapshot {
         let url = try checkedURL(path, under: root)
         var error: NSError?
@@ -156,39 +177,56 @@ final class SaveSync {
         }
     }
 
-    private func coordinatedWrite(_ snapshot: Snapshot, path: [String], under root: URL, expected: Data?) throws {
+    private func coordinatedWrite(_ snapshot: Snapshot, path: [String], under root: URL, expected: Data?,
+                                  isCancelled: () -> Bool, sourceStillMatches: () -> Bool = { true }) throws -> WriteResult {
         let url = try checkedURL(path, under: root)
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         var error: NSError?
-        var result: Result<Void, Error> = .failure(Failure.folderUnavailable)
+        var result: Result<WriteResult, Error> = .failure(Failure.folderUnavailable)
         coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { coordinatedURL in
             result = Result {
+                guard !isCancelled() else { return .cancelled }
                 let target = try checkedURL(path, under: root)
                 guard canonical(coordinatedURL).pathComponents == canonical(target).pathComponents else { throw Failure.unsafePath }
                 guard try existingBytes(at: coordinatedURL) == expected else { throw Failure.targetChanged }
+                guard sourceStillMatches() else { return .sourceChanged }
+                guard !isCancelled() else { return .cancelled }
                 try snapshot.data.write(to: coordinatedURL, options: .atomic)
                 try files.setAttributes([.modificationDate: snapshot.modified], ofItemAtPath: coordinatedURL.path)
+                return .written
             }
         }
         if let error { throw error }
-        try result.get()
+        return try result.get()
     }
 
-    @discardableResult func sync(mode: Mode = .twoWay) throws -> Summary {
+    @discardableResult func sync(mode: Mode = .twoWay, isCancelled: () -> Bool = { false }) throws -> Summary {
+        var summary = Summary()
+        guard !isCancelled() else { return summary }
         _ = try checkedURL(["Saves", game], under: documents)
         _ = try checkedURL([game], under: folder)
         let mine = try scan(local)
         let theirs = try scan(remote)
         var records = loadRecords()
         defer { try? saveRecords(records) }
-        var summary = Summary()
         var backedUp = false
-        for path in mine.union(theirs).sorted() {
+        paths: for path in mine.union(theirs).sorted() {
+            guard !isCancelled() else { break }
             if mode == .uploadOnly && !mine.contains(path) { continue }
             let parts = path.split(separator: "/").map(String.init)
             let localPath = ["Saves", game] + parts
             let remotePath = [game] + parts
-            let a = mine.contains(path) ? try snapshot(checkedURL(localPath, under: documents)) : nil
+            let a: Snapshot?
+            if mine.contains(path) {
+                let source = try checkedURL(localPath, under: documents)
+                guard let snapshot = stableLocalSnapshot(source) else {
+                    summary.skipped += 1
+                    continue
+                }
+                a = snapshot
+            } else {
+                a = nil
+            }
             let b = theirs.contains(path) ? try coordinatedRead(path: remotePath, under: folder) : nil
             let base = records[path]
             let pull: Bool
@@ -216,13 +254,28 @@ final class SaveSync {
                     try beforeLocalChange()
                     backedUp = true
                 }
-                try coordinatedWrite(b, path: localPath, under: documents, expected: a?.data)
+                guard try coordinatedWrite(b, path: localPath, under: documents, expected: a?.data,
+                                           isCancelled: isCancelled) == .written else { break }
                 records[path] = Record(hash: Self.digest(b.data))
                 summary.pulled += 1
             } else if let a {
-                try coordinatedWrite(a, path: remotePath, under: folder, expected: b?.data)
-                records[path] = Record(hash: Self.digest(a.data))
-                summary.pushed += 1
+                let hash = Self.digest(a.data)
+                let result = try coordinatedWrite(a, path: remotePath, under: folder, expected: b?.data,
+                                                  isCancelled: isCancelled) {
+                    guard let source = try? checkedURL(localPath, under: documents),
+                          let current = stableLocalSnapshot(source) else { return false }
+                    return current.data.count == a.data.count && current.modified == a.modified
+                        && Self.digest(current.data) == hash
+                }
+                switch result {
+                case .written:
+                    records[path] = Record(hash: hash)
+                    summary.pushed += 1
+                case .sourceChanged:
+                    summary.skipped += 1
+                case .cancelled:
+                    break paths
+                }
             }
         }
         return summary
@@ -293,8 +346,12 @@ enum SaveSyncFolder {
     /// Syncs one game's saves. Local files are backed up through SaveManager before
     /// the first one is overwritten.
     @discardableResult static func sync(game: String, mode: SaveSync.Mode = .twoWay,
-                                       documents: URL? = nil, support: URL? = nil) throws -> SaveSync.Summary? {
-        try withFolder { folder in try make(game: game, folder: folder, documents: documents, support: support).sync(mode: mode) }
+                                       documents: URL? = nil, support: URL? = nil,
+                                       isCancelled: () -> Bool = { false }) throws -> SaveSync.Summary? {
+        guard !isCancelled() else { return nil }
+        return try withFolder { folder in
+            try make(game: game, folder: folder, documents: documents, support: support).sync(mode: mode, isCancelled: isCancelled)
+        }
     }
 
     /// Uploads every game that has local saves.
@@ -312,6 +369,7 @@ enum SaveSyncFolder {
                 let result = try make(game: game, folder: folder, documents: documents, support: support).sync(mode: .uploadOnly)
                 total.pushed += result.pushed
                 total.conflicts += result.conflicts
+                total.skipped += result.skipped
             }
             return total
         }

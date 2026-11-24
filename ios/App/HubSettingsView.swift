@@ -109,6 +109,7 @@ struct HubSettingsView: View {
                 message = summary.map {
                     "同步完成：上传 \($0.pushed) 个文件。"
                         + ($0.conflicts > 0 ? "\($0.conflicts) 个文件两边都有不同修改，已保持不变。" : "")
+                        + ($0.skipped > 0 ? "\($0.skipped) 个文件正在修改，已跳过，下次同步时重试。" : "")
                 } ?? "尚未选择同步文件夹。"
             } catch { message = error.localizedDescription }
             let name = SaveSyncFolder.displayName
