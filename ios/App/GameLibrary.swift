@@ -416,9 +416,13 @@ final class GameLibrary: ObservableObject {
             let normalized = names.joined(separator: " ").lowercased()
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
-            let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("dalkdemo")
+            let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("外傳") || normalized.contains("dalkdemo")
+            let isVanishTeNoHira = normalized.contains("この手のひら") || normalized.contains("konotenohira")
+            let isKamunagara2 = normalized.contains("神武2") || normalized.contains("神武２") || normalized.contains("第弐話") || normalized.contains("第2話")
             artworkKey = artworkAliases.first(where: { key, tokens in
                 if key == "dalk" && isDalkGaiden { return false }
+                if key == "vanish" && isVanishTeNoHira { return false }
+                if key == "kamunagara" && isKamunagara2 { return false }
                 return tokens.contains(where: normalized.contains)
             })?.0
         }

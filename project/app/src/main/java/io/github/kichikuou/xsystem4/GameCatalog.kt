@@ -491,7 +491,8 @@ object GameCatalog {
     fun classifyGameRootFiles(
         fileNames: Collection<String>,
         bgmFileNames: Collection<String> = emptyList(),
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): String? {
         val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
         if (ainNames.any { it.equals("Rance10.ain", ignoreCase = true) }) {
@@ -734,10 +735,10 @@ object GameCatalog {
         if (isKamunagaraGameFiles(fileNames, readSmallFile)) {
             return ID_KAMUNAGARA
         }
-        if (isErumeiWakareGameFiles(fileNames, readSmallFile)) {
+        if (isErumeiWakareGameFiles(fileNames, readSmallFile, getFileSize)) {
             return ID_ERUMEIWAKARE
         }
-        if (isErumeiFlowerGameFiles(fileNames, readSmallFile)) {
+        if (isErumeiFlowerGameFiles(fileNames, readSmallFile, getFileSize)) {
             return ID_ERUMEIFLOWER
         }
         if (isManana1GameFiles(fileNames, readSmallFile)) {
@@ -880,15 +881,22 @@ object GameCatalog {
         } else {
             emptyList()
         }
-        return classifyGameRootFiles(fileNames, bgmFileNames) { name ->
-            val f = files.firstOrNull { it.name.equals(name, true) }
-            when {
-                f == null -> null
-                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
-                f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
-                else -> null
+        return classifyGameRootFiles(
+            fileNames = fileNames,
+            bgmFileNames = bgmFileNames,
+            readSmallFile = { name ->
+                val f = files.firstOrNull { it.name.equals(name, true) }
+                when {
+                    f == null -> null
+                    name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                    f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+                    else -> null
+                }
+            },
+            getFileSize = { name ->
+                files.firstOrNull { it.name.equals(name, true) }?.length()
             }
-        }
+        )
     }
 
     @JvmOverloads
@@ -896,12 +904,13 @@ object GameCatalog {
         targetGameId: String?,
         fileNames: Collection<String>,
         bgmFileNames: Collection<String> = emptyList(),
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): Boolean {
         if (targetGameId.isNullOrBlank() || targetGameId.startsWith(PREFIX_CUSTOM)) {
             return true
         }
-        return classifyGameRootFiles(fileNames, bgmFileNames, readSmallFile) == targetGameId
+        return classifyGameRootFiles(fileNames, bgmFileNames, readSmallFile, getFileSize) == targetGameId
     }
 
     fun matchesTargetGame(targetGameId: String?, gameDir: File?): Boolean {
@@ -4675,7 +4684,8 @@ object GameCatalog {
     @JvmOverloads
     fun isErumeiWakareGameFiles(
         fileNames: Collection<String>,
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): Boolean {
         if (!hasSystem4Markers(fileNames)) return false
         val hasErumeiFiles = fileNames.any {
@@ -4684,17 +4694,26 @@ object GameCatalog {
                 n == "エルメイフラワーba.ald" || n == "エルメイフラワーwa.ald"
         }
         if (!hasErumeiFiles) return false
-        if (readSmallFile != null) {
-            val waiName = fileNames.firstOrNull { nfkcLower(it) == "エルメイフラワーwa.wai" }
-            val waiBytes = waiName?.let { runCatching { readSmallFile(it) }.getOrNull() }
-            if (waiBytes != null && waiBytes.isNotEmpty()) {
-                return waiBytes.size <= 256
-            }
-            val bgiName = fileNames.firstOrNull { nfkcLower(it) == "エルメイフラワーba.bgi" }
-            val bgiBytes = bgiName?.let { runCatching { readSmallFile(it) }.getOrNull() }
-            if (bgiBytes != null && bgiBytes.isNotEmpty()) {
-                return bgiBytes.size <= 600
-            }
+        val waiName = fileNames.firstOrNull { nfkcLower(it) == "エルメイフラワーwa.wai" }
+        val waiSize = waiName?.let { name ->
+            getFileSize?.invoke(name)?.takeIf { it > 0L }
+                ?: readSmallFile?.let { runCatching { it(name) }.getOrNull()?.size?.toLong()?.takeIf { s -> s > 0L } }
+        }
+        if (waiSize != null) {
+            return waiSize <= 256L
+        }
+        val bgiName = fileNames.firstOrNull { nfkcLower(it) == "エルメイフラワーba.bgi" }
+        val bgiSize = bgiName?.let { name ->
+            getFileSize?.invoke(name)?.takeIf { it > 0L }
+                ?: readSmallFile?.let { runCatching { it(name) }.getOrNull()?.size?.toLong()?.takeIf { s -> s > 0L } }
+        }
+        if (bgiSize != null) {
+            return bgiSize <= 600L
+        }
+        val ainName = fileNames.firstOrNull { nfkcLower(it) == "エルメイフラワー.ain" }
+        val ainSize = ainName?.let { name -> getFileSize?.invoke(name)?.takeIf { it > 0L } }
+        if (ainSize != null) {
+            return ainSize <= 500_000L
         }
         return false
     }
@@ -4703,9 +4722,11 @@ object GameCatalog {
         if (dir == null || !dir.isDirectory) return false
         val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
         val names = files.map { it.name }
-        if (isErumeiWakareGameFiles(names) { readSmallRootFile(dir, it) }) return true
-        val ain = files.firstOrNull { nfkcLower(it.name) == "エルメイフラワー.ain" }
-        return ain != null && ain.length() in 1L..500_000L
+        return isErumeiWakareGameFiles(
+            fileNames = names,
+            readSmallFile = { readSmallRootFile(dir, it) },
+            getFileSize = { name -> files.firstOrNull { it.name.equals(name, true) }?.length() }
+        )
     }
 
     fun isErumeiFlowerAlias(raw: String): Boolean {
@@ -4719,9 +4740,10 @@ object GameCatalog {
     @JvmOverloads
     fun isErumeiFlowerGameFiles(
         fileNames: Collection<String>,
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): Boolean {
-        if (!hasSystem4Markers(fileNames) || isErumeiWakareGameFiles(fileNames, readSmallFile)) return false
+        if (!hasSystem4Markers(fileNames) || isErumeiWakareGameFiles(fileNames, readSmallFile, getFileSize)) return false
         if (fileNames.any {
                 val n = nfkcLower(it)
                 n == "エルメイフラワー.ain" || n == "エルメイフラワーga.ald" ||
@@ -4736,10 +4758,15 @@ object GameCatalog {
         return false
     }
 
-    fun isErumeiFlowerGameDir(dir: File?): Boolean =
-        dir?.isDirectory == true && !isErumeiWakareGameDir(dir) && isErumeiFlowerGameFiles(
-            dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
-        ) { readSmallRootFile(dir, it) }
+    fun isErumeiFlowerGameDir(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return isErumeiFlowerGameFiles(
+            fileNames = files.map { it.name },
+            readSmallFile = { readSmallRootFile(dir, it) },
+            getFileSize = { name -> files.firstOrNull { it.name.equals(name, true) }?.length() }
+        )
+    }
 
     private fun isMananaVolAlias(raw: String, vol: Int): Boolean {
         if (raw.isBlank()) return false

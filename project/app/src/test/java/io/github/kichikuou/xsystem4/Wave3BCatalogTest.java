@@ -133,6 +133,33 @@ public class Wave3BCatalogTest {
         assertTrue(GameCatalog.INSTANCE.isErumeiWakareGameDir(ewDir));
         assertFalse(GameCatalog.INSTANCE.isErumeiFlowerGameDir(ewDir));
 
+        // Disambiguation fallback via .ain size alone (no WA.wai / BA.bgi present)
+        File ewAinOnly = tmp.newFolder("ef_wakare_ain_only");
+        assertTrue(new File(ewAinOnly, "System40.ini").createNewFile());
+        try (FileOutputStream out = new FileOutputStream(new File(ewAinOnly, "エルメイフラワー.ain"))) {
+            out.write(new byte[372424]);
+        }
+        assertEquals(GameCatalog.ID_ERUMEIWAKARE, GameCatalog.INSTANCE.classifyGameRootDir(ewAinOnly));
+        assertTrue(GameCatalog.INSTANCE.isErumeiWakareGameDir(ewAinOnly));
+        assertFalse(GameCatalog.INSTANCE.isErumeiFlowerGameDir(ewAinOnly));
+
+        File efAinOnly = tmp.newFolder("ef_main_ain_only");
+        assertTrue(new File(efAinOnly, "System40.ini").createNewFile());
+        try (FileOutputStream out = new FileOutputStream(new File(efAinOnly, "エルメイフラワー.ain"))) {
+            out.write(new byte[600000]);
+        }
+        assertEquals(GameCatalog.ID_ERUMEIFLOWER, GameCatalog.INSTANCE.classifyGameRootDir(efAinOnly));
+        assertTrue(GameCatalog.INSTANCE.isErumeiFlowerGameDir(efAinOnly));
+        assertFalse(GameCatalog.INSTANCE.isErumeiWakareGameDir(efAinOnly));
+
+        List<String> erumeiFilesOnly = Arrays.asList("System40.ini", "エルメイフラワー.ain");
+        assertEquals(GameCatalog.ID_ERUMEIWAKARE, GameCatalog.INSTANCE.classifyGameRootFiles(
+                erumeiFilesOnly, java.util.Collections.emptyList(), null,
+                name -> name.equals("エルメイフラワー.ain") ? 372424L : 732L));
+        assertEquals(GameCatalog.ID_ERUMEIFLOWER, GameCatalog.INSTANCE.classifyGameRootFiles(
+                erumeiFilesOnly, java.util.Collections.emptyList(), null,
+                name -> name.equals("エルメイフラワー.ain") ? 1072674L : 732L));
+
         // Sibling collision guards
         assertEquals(GameCatalog.ID_DALKGAIDEN, GameCatalog.INSTANCE.classifyDirectory(null, "UnknownDir", null, "DALK外伝"));
         assertEquals(GameCatalog.ID_DALKGAIDEN, GameCatalog.INSTANCE.classifyDirectory(null, "DalkGaiden", null, "DALK外传"));
