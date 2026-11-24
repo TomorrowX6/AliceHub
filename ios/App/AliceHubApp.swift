@@ -17,26 +17,54 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in callback() }
         }
         observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("AliceHubOpenModifier"), object: nil, queue: .main) { note in
-            guard var host = note.object as? UIViewController else { return }
+            guard let engine = note.object as? UIViewController else { return }
+            var host = engine
             while let presented = host.presentedViewController { host = presented }
             weak var weakPanel: UIViewController?
-            weak var engineWindow = (note.object as? UIViewController)?.view.window
-            let panel = UIHostingController(rootView: ModifierView {
-                weakPanel?.dismiss(animated: true) {
-                    // Dismissal can hand key/front status back to the launcher window, hiding the engine and wand.
-                    guard let window = engineWindow else { return }
-                    window.makeKeyAndVisible()
-                    if let wand = window.rootViewController?.view.viewWithTag(0x4D4F44) {
-                        wand.superview?.bringSubviewToFront(wand)
-                    }
+            weak var engineWindow = engine.view.window
+            let restoreEngine = {
+                // Dismissal can hand key/front status back to the launcher window, hiding the engine and wand.
+                guard let window = engineWindow else { return }
+                window.makeKeyAndVisible()
+                if let wand = window.rootViewController?.view.viewWithTag(0x4D4F44) {
+                    wand.superview?.bringSubviewToFront(wand)
                 }
-            })
+            }
+            let panel = UIHostingController(rootView: ModifierView(dismiss: {
+                weakPanel?.dismiss(animated: true, completion: restoreEngine)
+            }, editScale: { [weak engine] gameID, scale in
+                weakPanel?.dismiss(animated: false) {
+                    restoreEngine()
+                    guard let engine else { return }
+                    Self.presentScalePreview(on: engine, gameID: gameID, scale: scale, restoreEngine: restoreEngine)
+                }
+            }))
             weakPanel = panel
             panel.modalPresentationStyle = .formSheet
             panel.isModalInPresentation = true
             host.present(panel, animated: true)
         })
         return true
+    }
+
+    private static func presentScalePreview(on engine: UIViewController, gameID: String, scale: GameDisplayScale,
+                                            restoreEngine: @escaping () -> Void) {
+        weak var weakOverlay: UIViewController?
+        let overlay = UIHostingController(rootView: GameDisplayScaleEditor(
+            scale: scale, initialPercent: scale.percent(for: gameID), live: true, preview: { value in
+                ModifierBridge.applyDisplayScale(for: gameID, preview: (scale, value))
+            }, finish: { value in
+                if let value { scale.save(value, for: gameID) }
+                ModifierBridge.applyDisplayScale(for: gameID)
+                weakOverlay?.dismiss(animated: false, completion: restoreEngine)
+            }
+        ).modifier(HubAppearanceModifier()))
+        weakOverlay = overlay
+        overlay.view.backgroundColor = .clear
+        overlay.view.accessibilityViewIsModal = true
+        overlay.modalPresentationStyle = .overFullScreen
+        overlay.isModalInPresentation = true
+        engine.present(overlay, animated: false)
     }
 
     func applicationWillTerminate(_ application: UIApplication) { SDL_OnApplicationWillTerminate() }

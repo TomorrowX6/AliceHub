@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ModifierView: View {
     let dismiss: () -> Void
+    let editScale: (String, GameDisplayScale) -> Void
     private let game = ModifierBridge.currentGame()
     @State private var mask: Int32 = 0
     @State private var code = ""
@@ -17,7 +18,7 @@ struct ModifierView: View {
                 }.listRowBackground(HubTheme.surface)
                 if let gameID = ModifierBridge.displayScaleGame {
                     Section {
-                        GameDisplayScaleRows(gameID: gameID, live: true)
+                        GameDisplayScaleRows(gameID: gameID) { scale in editScale(gameID, scale) }
                     } header: { Text("显示") }
                 }
                 if let game {
