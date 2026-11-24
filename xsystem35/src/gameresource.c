@@ -200,7 +200,23 @@ static void trimRight(char *str) {
 		*p = '\0';
 }
 
-static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_fname) {
+static char *descriptor_save_path(const char *dir, const char *path) {
+	const char *name = path + strcspn(path, ":");
+	name = *name ? name + 1 : path;
+	for (const char *p = name; *p; p++) {
+		if (*p == '/' || *p == '\\')
+			name = p + 1;
+	}
+	if (!*name || !strcmp(name, ".") || !strcmp(name, ".."))
+		return NULL;
+	char *result = malloc(strlen(dir) + strlen(name) + 2);
+	if (!result)
+		NOMEMERR();
+	sprintf(result, "%s/%s", dir, name);
+	return result;
+}
+
+static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_fname, const char *savedir) {
 	int linecnt = 0, dno;
 	char line[256];
 	char key[256], path[256];
@@ -244,7 +260,14 @@ static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_
 			storeDataName(gr, DRIFILE_BGM, dno, path);
 		} else if (0 == strncmp(key, "Save", 4)) {
 			dno = key[4] - 'A';
-			if (dno < 0 || dno >= DRIFILEMAX) goto errexit;
+			if (dno < 0 || dno >= SAVE_MAXNUMBER) goto errexit;
+			if (savedir) {
+				char *save = descriptor_save_path(savedir, path);
+				if (!save) goto errexit;
+				storeSaveName(gr, dno, save);
+				free(save);
+				continue;
+			}
 			storeSaveName(gr, dno, path);
 		} else if (0 == strncmp(key, "Ain", 3)) {
 			gr->ain = strdup(path);
@@ -261,11 +284,18 @@ static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_
 			if (dno < 0 || dno >= 10) goto errexit;
 			gr->alk[dno] = strdup(path);
 		} else if (0 == strncmp(key, "MsgSkip", 7)) {
+			if (savedir) {
+				gr->msgskip = descriptor_save_path(savedir, path);
+				if (!gr->msgskip) goto errexit;
+				continue;
+			}
 			gr->msgskip = strdup(path);
 		} else {
 			goto errexit;
 		}
 	}
+	if (savedir && !gr->save_path)
+		gr->save_path = strdup(savedir);
 	gr->gr_fname = strdup(gr_fname);
 	return true;
 
@@ -277,7 +307,11 @@ static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_
 bool initGameResource(GameResource *gr, const char *gr_fname, const char *savedir) {
 	FILE *fp = fopen(gr_fname, "r");
 	if (fp) {
-		bool result = initGameResourceFromFile(gr, fp, gr_fname);
+#ifdef __SWITCH__
+		bool result = initGameResourceFromFile(gr, fp, gr_fname, savedir);
+#else
+		bool result = initGameResourceFromFile(gr, fp, gr_fname, NULL);
+#endif
 		fclose(fp);
 		return result;
 	}

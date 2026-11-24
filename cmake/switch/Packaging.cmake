@@ -1,5 +1,6 @@
 function(alicehub_switch_package target romfs)
   target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/launcher.c")
+  target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
   target_compile_definitions(${target} PRIVATE ALICEHUB_ENGINE="${target}")
   nx_generate_nacp(${target}.nacp NAME "AliceHub - ${target}" AUTHOR "AliceHub" VERSION "1.0.0")
   nx_create_nro(${target} NACP ${target}.nacp ROMFS "${romfs}")

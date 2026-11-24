@@ -40,6 +40,9 @@
 #include "vm.h"
 #include "xsystem4.h"
 #include "debugger.h"
+#ifdef __SWITCH__
+#include "controller.h"
+#endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
 #endif
@@ -494,6 +497,9 @@ struct pad_device_slot {
 	uint16_t vendor_id;
 	uint16_t product_id;
 	bool btn_down[NR_PAD_SLOTS];
+#ifdef __SWITCH__
+	bool face_swapped_at_press[2];
+#endif
 	bool hat_dir[4]; // U, D, L, R
 	float axes[6];   // LX, LY, RX, RY, LT, RT
 	bool trigger_latched[2];
@@ -1729,11 +1735,20 @@ static void controller_button_event(SDL_ControllerButtonEvent *e)
 	// Only SDL_CONTROLLER_BUTTON_A (0) .. SDL_CONTROLLER_BUTTON_DPAD_RIGHT (14)
 	// correspond to PAD_SLOT_A .. PAD_SLOT_DPAD_RIGHT; 15/16 are MISC1/PADDLE1, not LT/RT.
 	if (e->button < 15) {
-		joybutton_state[e->button] = pressed;
+		int button = e->button;
 		pthread_mutex_lock(&gp_mutex);
 		struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+#ifdef __SWITCH__
+		if (s && (button == SDL_CONTROLLER_BUTTON_A || button == SDL_CONTROLLER_BUTTON_B)) {
+			if (pressed)
+				s->face_swapped_at_press[button] = alicehub_switch_face_button(e->which, button) != button;
+			if (s->face_swapped_at_press[button])
+				button = button == SDL_CONTROLLER_BUTTON_A ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
+		}
+#endif
+		joybutton_state[button] = pressed;
 		if (s)
-			s->btn_down[e->button] = pressed;
+			s->btn_down[button] = pressed;
 		pthread_mutex_unlock(&gp_mutex);
 	}
 }

@@ -363,6 +363,12 @@ static void rance4v2_hack(void) {
 }
 
 static void handle_render_event(SDL_Event *e, bool virtual_input) {
+#ifdef __SWITCH__
+	if (e->type == SDL_EVENT_QUIT) {
+		nact_quit(false);
+		return;
+	}
+#endif
 	if (modal_handle_event(e))
 		return;
 
