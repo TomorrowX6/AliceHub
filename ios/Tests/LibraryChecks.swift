@@ -521,6 +521,85 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+
+        func fixture(_ base: URL, _ path: String, _ contents: String = "") throws {
+            let file = base.appendingPathComponent(path)
+            try files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(contents.utf8).write(to: file)
+        }
+        func installed(_ path: String) -> Bool { files.fileExists(atPath: games.appendingPathComponent(path).path) }
+        func checkContents(_ path: String, _ expected: String) throws {
+            let data = try Data(contentsOf: games.appendingPathComponent(path))
+            precondition(String(decoding: data, as: UTF8.self) == expected, path)
+        }
+
+        let multi = root.appendingPathComponent("Multi Disc Folder")
+        try fixture(multi, "Disc1/GAMEDATA/KichikuRanceSA.ald")
+        try fixture(multi, "Disc1/GAMEDATA/dummy.dat", "payload")
+        try fixture(multi, "Disc1/GAMEDATA/shared.ald", "first")
+        try fixture(multi, "Disc1/GAMEDATA/.xsys35rc")
+        try fixture(multi, "Disc1/GAMEDATA/System35.exe")
+        try fixture(multi, "Disc2/GAMEDATA/Shared.ALD", "second")
+        try fixture(multi, "Disc2/GAMEDATA/KichikuRanceGA.ald")
+        try fixture(multi, "Disc2/GAMEDATA/DirectX/setup.exe")
+        library.importFolder(multi)
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Multi Disc Folder/shared.ald", "first")
+        precondition(installed("Multi Disc Folder/KichikuRanceGA.ald") && installed("Multi Disc Folder/.xsys35rc"))
+        precondition(!installed("Multi Disc Folder/System35.exe") && !installed("Multi Disc Folder/DirectX"))
+        precondition(files.fileExists(atPath: multi.appendingPathComponent("Disc1/GAMEDATA/System35.exe").path))
+
+        try fixture(multi, "Disc3/GAMEDATA/OtherSA.ald")
+        try fixture(multi, "Disc3/GAMEDATA/OtherGA.ald")
+        try importArchive(makeArchive(multi, name: "multi-disc.zip"), expected: "GAMEDATA")
+        try checkContents("GAMEDATA/shared.ald", "first")
+        precondition(installed("GAMEDATA/KichikuRanceGA.ald") && !installed("GAMEDATA/OtherGA.ald"))
+
+        let ixseal = root.appendingPathComponent("Bundled Ixseal")
+        try fixture(ixseal, "Game/System40.ini")
+        try fixture(ixseal, "Game/Ixseal.ain", "base")
+        try fixture(ixseal, "Game/dummy.dat", "payload")
+        try fixture(ixseal, "Game/patchCN/Nested/IXSEAL.AIN", "cn patch")
+        try fixture(ixseal, "Game/patchCN/Nested/IxsealCG.afa", "patch data")
+        try fixture(ixseal, "Game/patchCN/Nested/setup.exe")
+        try fixture(ixseal, "Game/SaveData/slot.dat")
+        try fixture(ixseal, "UpdateFiles/Files/CommonFiles/Ixseal.ain", "official update")
+        try fixture(ixseal, "UpdateFiles/Files/CommonFiles/update.dat", "official data")
+        try fixture(ixseal, "Unrelated/CommonFiles/Unrelated.ain")
+        try fixture(ixseal, "Unrelated/CommonFiles/must-not-import.dat")
+
+        library.importFolder(ixseal)
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Bundled Ixseal/IXSEAL.AIN", "cn patch")
+        precondition(!installed("Bundled Ixseal/patchCN") && !installed("Bundled Ixseal/setup.exe"))
+
+        try importArchive(makeArchive(ixseal, name: "bundled-patch.zip"), expected: "Game")
+        try checkContents("Game/Ixseal.ain", "cn patch")
+        try checkContents("Game/update.dat", "official data")
+        precondition(installed("Game/IxsealCG.afa") && !installed("Game/patchCN") && !installed("Game/SaveData"))
+        precondition(!installed("Game/must-not-import.dat"))
+
+        let rance02 = root.appendingPathComponent("Bundled Rance02")
+        try fixture(rance02, "Rance02.ain")
+        try fixture(rance02, "InstallSet/InstallData/extra.ald")
+        try fixture(rance02, "junk.bak")
+        try fixture(rance02, "saved.vanilla.bak")
+        library.importFolder(rance02)
+        awaitImport()
+        precondition(library.error == nil && installed("Bundled Rance02/extra.ald"))
+        precondition(!installed("Bundled Rance02/InstallSet") && !installed("Bundled Rance02/junk.bak"))
+        precondition(installed("Bundled Rance02/saved.vanilla.bak"))
+
+        let unknown = root.appendingPathComponent("Unknown Installer Scope")
+        try fixture(unknown, "MyGame.ain")
+        try fixture(unknown, "install.exe")
+        try fixture(unknown, "backup.bak")
+        library.importFolder(unknown)
+        awaitImport()
+        precondition(library.error == nil && installed("Unknown Installer Scope/install.exe") && installed("Unknown Installer Scope/backup.bak"))
+        print("PASS: multi-disc folder and archive assembly, patch priority and AIN guard, installer cleanup, companion data, source preservation")
     }
 
     static func checkGamepadProfiles() {

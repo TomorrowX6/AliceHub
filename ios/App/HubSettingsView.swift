@@ -157,7 +157,7 @@ struct ImportGameView: View {
                         }
                         Divider()
                         Button(action: folder) {
-                            HubActionLabel(title: "文件夹", symbol: "folder.badge.plus")
+                            HubActionLabel(title: "文件夹 / 多碟", symbol: "folder.badge.plus")
                         }
                         Divider()
                         Button(action: archive) {
