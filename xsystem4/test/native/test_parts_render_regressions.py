@@ -41,6 +41,7 @@ class FontSessionTests(unittest.TestCase):
 #define FW_BOLD 1
 #define ERROR(...) abort()
 struct font { int id; };
+static struct { int face, size; struct font *font_size; } text_sprite_ts = {0, 16, NULL};
 struct fnl { unsigned nr_fonts; };
 struct font_metrics { int size, face, weight; unsigned char color[4]; };
 static struct font_metrics font_metrics;
@@ -88,6 +89,7 @@ int main(void) {
     gfx_font_init();
     gfx_font_init();
     assert(loaded == 2 && font_ttf[0]->id == 10 && !font_fnl[0]);
+    text_sprite_ts.font_size = font_ttf[text_sprite_ts.face];
     assert(gfx_text_advance_edges && fnl_substitute_count == 1);
     glyph_cache_trackers = malloc(16);
     nr_glyph_cache_trackers = cap_glyph_cache_trackers = 1;
@@ -95,10 +97,13 @@ int main(void) {
     gfx_font_fini();
     assert(released == 2 && !glyph_cache_trackers && !nr_glyph_cache_trackers);
     assert(!font_ttf[0] && !gfx_text_advance_edges && font_metrics.size == 16);
+    assert(!text_sprite_ts.font_size && text_sprite_ts.face == 0 && text_sprite_ts.size == 16);
     game = 2;
     config.fnl_path = "second.fnl";
     gfx_font_init();
     assert(loaded == 5 && font_ttf[0]->id == 20 && font_fnl[0]->id == 22);
+    text_sprite_ts.font_size = font_ttf[text_sprite_ts.face];
+    assert(text_sprite_ts.font_size->id == 20);
     gfx_font_fini();
     assert(released == 5 && !ft_sessions && !session_fnl);
 }

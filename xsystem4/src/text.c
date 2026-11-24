@@ -28,6 +28,9 @@
 
 #include "gfx/gfx.h"
 #include "gfx/font.h"
+#ifdef ALICEHUB_IOS
+#include "sact.h"
+#endif
 #include "vm.h"
 #include "xsystem4.h"
 
@@ -743,6 +746,7 @@ void gfx_font_size_fini(struct font_size *size)
 
 void gfx_font_fini(void)
 {
+	text_sprite_ts.font_size = NULL;
 	for (unsigned i = 0; i < MAX_FNL_FONTS; i++) {
 		fnl_font_free(font_fnl[i]);
 		font_fnl[i] = NULL;
