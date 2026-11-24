@@ -186,9 +186,10 @@ X4SS converter and does not modify the original saves.
 Settings → 存档同步 keeps saves in a folder the user picks in Files, typically
 in iCloud Drive, so no iCloud entitlement or paid signing is needed. The folder
 is stored as a security-scoped bookmark and mirrors `Documents/Saves` as
-`<folder>/<game>/...`. `SaveSync` merges both sides per file, newest wins with a
-2 s tolerance, before launch, on entering the background and after the game
-exits; local files are backed up first and deletions are not propagated.
+`<folder>/<game>/...`. Before launch it syncs in both directions; manual sync,
+backgrounding and exit only upload. If both copies changed, neither is
+overwritten. To resolve a conflict, keep the desired version on both sides.
+Local files are backed up before replacement and deletions are not propagated.
 `python3 ios/Tests/test_save_sync.py` runs its Foundation-only checks.
 
 ## Game runtime

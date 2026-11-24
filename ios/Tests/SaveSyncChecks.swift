@@ -5,10 +5,12 @@ struct SaveSyncChecks {
     static func check(_ value: Bool, _ line: UInt = #line) { precondition(value, "line \(line)") }
     static func main() throws {
         let files = FileManager.default
-        let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        let path = CommandLine.arguments[1]
+        let root = URL(fileURLWithPath: path.hasPrefix("/private/var/") ? String(path.dropFirst("/private".count)) : path)
         let documents = root.appendingPathComponent("Documents")
         let support = root.appendingPathComponent("Support")
-        let cloud = URL(fileURLWithPath: "/private" + root.path).appendingPathComponent("iCloud Drive/AliceHub")
+        let cloudRoot = root.path.hasPrefix("/var/") ? URL(fileURLWithPath: "/private" + root.path) : root
+        let cloud = cloudRoot.appendingPathComponent("iCloud Drive/AliceHub")
         try files.createDirectory(at: cloud, withIntermediateDirectories: true)
         func put(_ base: URL, _ path: String, _ value: String, _ age: TimeInterval) throws {
             let url = base.appendingPathComponent(path)
@@ -28,11 +30,14 @@ struct SaveSyncChecks {
         try SaveSyncFolder.set(cloud)
         check(SaveSyncFolder.isConfigured && SaveSyncFolder.displayName == "AliceHub")
 
-        try put(local, "LocalSave1.asd", "local-new", 10)
+        try put(local, "LocalSave1.asd", "remote-old", 3600)
         try put(remote, "LocalSave1.asd", "remote-old", 3600)
+        try put(local, "LocalSave2.asd", "local-old", 3600)
+        try put(remote, "LocalSave2.asd", "local-old", 3600)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
+        try put(local, "LocalSave1.asd", "local-new", 10)
         try put(local, "sub/only-local.sav", "only-local", 50)
         try put(remote, "LocalSave2.asd", "remote-new", 10)
-        try put(local, "LocalSave2.asd", "local-old", 3600)
         try put(remote, "only-remote.rsm", "only-remote", 50)
         try put(local, "same.asd", "same", 100)
         try put(remote, "same.asd", "same", 300)
@@ -57,7 +62,12 @@ struct SaveSyncChecks {
         // A background flush rewrites unchanged data with a fresh timestamp; newer remote progress still wins.
         try put(remote, "LocalSave1.asd", "other-device", 60)
         try put(local, "LocalSave1.asd", "local-new", 0)
-        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 1, pushed: 0))
+        try put(remote, "incoming.asd", "cloud-only", 50)
+        try put(local, "outgoing.asd", "local-only", 50)
+        check(try SaveSyncFolder.sync(game: game, mode: .uploadOnly, documents: documents, support: support)! == SaveSync.Summary(pushed: 1))
+        check(get(local, "LocalSave1.asd") == "local-new" && get(remote, "LocalSave1.asd") == "other-device")
+        check(get(local, "incoming.asd") == nil && get(remote, "outgoing.asd") == "local-only")
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 2, pushed: 0))
         check(get(local, "LocalSave1.asd") == "other-device")
 
         // Restoring an old save keeps its old timestamp but is still the newest local change.
@@ -65,11 +75,13 @@ struct SaveSyncChecks {
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
         check(get(remote, "LocalSave2.asd") == "restored-old")
 
-        // When both sides changed, the newer one wins.
+        // When both sides changed, retain both even when timestamps differ.
         try put(local, "same.asd", "local-edit", 30)
         try put(remote, "same.asd", "remote-edit", 20)
-        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 1, pushed: 0))
-        check(get(local, "same.asd") == "remote-edit")
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(conflicts: 1))
+        check(get(local, "same.asd") == "local-edit" && get(remote, "same.asd") == "remote-edit")
+        try put(local, "same.asd", "remote-edit", 20)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
 
         // An edit that keeps the previous timestamp (e.g. a ZIP import) is still a change.
         let stamp = try files.attributesOfItem(atPath: local.appendingPathComponent("same.asd").path)[.modificationDate] as! Date
@@ -84,13 +96,15 @@ struct SaveSyncChecks {
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
         check(get(local, "tie.asd") == "tie-local" && get(remote, "tie.asd") == "tie-remote")
 
-        // The conflict stays until a side's content changes, even if a timestamp-only rewrite moves it.
+        // A timestamp-only rewrite or another one-sided edit doesn't resolve the conflict.
         try put(local, "tie.asd", "tie-local", 0)
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
         check(get(remote, "tie.asd") == "tie-remote")
         try put(local, "tie.asd", "tie-local-edit", 0)
-        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
-        check(get(remote, "tie.asd") == "tie-local-edit")
+        check(try SaveSyncFolder.sync(game: game, mode: .uploadOnly, documents: documents, support: support)! == SaveSync.Summary(conflicts: 1))
+        check(get(local, "tie.asd") == "tie-local-edit" && get(remote, "tie.asd") == "tie-remote")
+        try put(remote, "tie.asd", "tie-local-edit", 0)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
 
         // Three versions with the same timestamp: last synced, cloud, and a local import.
         let tieStamp = Date(timeIntervalSinceNow: -500)
@@ -110,28 +124,64 @@ struct SaveSyncChecks {
             try files.removeItem(at: base.appendingPathComponent("three.asd"))
         }
 
-        // An unchanged local file next to a not-yet-downloaded cloud file transfers nothing
-        // without reading it; a local edit must read the cloud copy before replacing it.
+        // Neither launch nor upload may treat an unreadable placeholder as a known version.
         let placeholder = remote.appendingPathComponent(".only-remote.rsm.icloud")
         try files.moveItem(at: remote.appendingPathComponent("only-remote.rsm"), to: placeholder)
-        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
+        do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("ignored an unread placeholder") } catch {}
         try put(local, "only-remote.rsm", "edited-locally", 0)
-        do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("pushed over an unread placeholder") } catch {}
+        do { try SaveSyncFolder.sync(game: game, mode: .uploadOnly, documents: documents, support: support); preconditionFailure("pushed over an unread placeholder") } catch {}
         try files.moveItem(at: placeholder, to: remote.appendingPathComponent("only-remote.rsm"))
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
 
         try put(cloud, "其他游戏/LocalSave1.asd", "other", 5)
         try put(documents.appendingPathComponent("Saves"), "第三个/x.sav", "third", 5)
         let all = try SaveSyncFolder.syncAll(documents: documents, support: support)!
-        check(all == SaveSync.Summary(pulled: 1, pushed: 1))
+        check(all == SaveSync.Summary(pushed: 1))
+        check(get(documents, "Saves/其他游戏/LocalSave1.asd") == nil)
+        check(try SaveSyncFolder.sync(game: "其他游戏", documents: documents, support: support)! == SaveSync.Summary(pulled: 1))
         check(get(documents, "Saves/其他游戏/LocalSave1.asd") == "other")
         check(get(cloud, "第三个/x.sav") == "third")
 
         try files.createSymbolicLink(at: remote.appendingPathComponent("escape"), withDestinationURL: root)
         do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("symlink accepted") } catch {}
 
+        let escaped = root.appendingPathComponent("outside")
+        try put(escaped, "slot.sav", "outside", 5)
+        try files.createSymbolicLink(at: cloud.appendingPathComponent("remote-link"), withDestinationURL: escaped)
+        try put(documents, "Saves/remote-link/slot.sav", "inside", 5)
+        do {
+            try SaveSyncFolder.sync(game: "remote-link", mode: .uploadOnly, documents: documents, support: support)
+            preconditionFailure("remote game directory symlink accepted")
+        } catch SaveSync.Failure.unsafePath {}
+        try files.createSymbolicLink(at: documents.appendingPathComponent("Saves/local-link"), withDestinationURL: escaped)
+        try put(cloud, "local-link/slot.sav", "cloud", 5)
+        do {
+            try SaveSyncFolder.sync(game: "local-link", documents: documents, support: support)
+            preconditionFailure("local game directory symlink accepted")
+        } catch SaveSync.Failure.unsafePath {}
+        check(get(escaped, "slot.sav") == "outside")
+
+        let alias = root.appendingPathComponent("Documents alias")
+        try files.createSymbolicLink(at: alias, withDestinationURL: documents)
+        try put(cloud, "new-game/sub/slot.sav", "new", 5)
+        check(try SaveSyncFolder.sync(game: "new-game", documents: alias, support: support)! == SaveSync.Summary(pulled: 1))
+        check(get(documents, "Saves/new-game/sub/slot.sav") == "new")
+
+        let racing = SaveSync(game: "race", documents: documents, folder: cloud,
+                              state: support.appendingPathComponent("race.json")) {
+            try put(documents, "Saves/race/slot.sav", "just written", 0)
+        }
+        try put(documents, "Saves/race/slot.sav", "base", 20)
+        try put(cloud, "race/slot.sav", "base", 20)
+        check(try racing.sync() == SaveSync.Summary())
+        try put(cloud, "race/slot.sav", "cloud edit", 10)
+        do { try racing.sync(); preconditionFailure("target changed after scan was overwritten") }
+        catch SaveSync.Failure.targetChanged {}
+        check(get(documents, "Saves/race/slot.sav") == "just written")
+        check(get(cloud, "race/slot.sav") == "cloud edit")
+
         SaveSyncFolder.clear()
         check(!SaveSyncFolder.isConfigured)
-        print("PASS: pull/push, unchanged rewrite, restore and same-timestamp edits, conflicts, ties and persisted conflicts, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
+        print("PASS: pull/push, upload only, unchanged rewrite, restores, conflicts, hidden skip, backups, idempotence, placeholder safety, sync-all, symlink roots, /private paths, target recheck")
     }
 }

@@ -4,6 +4,10 @@ import CryptoKit
 func SDL_SetMainReady() {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
 enum ModifierBridge { static func prepareForLaunch() {} }
+enum SaveSyncSession {
+    static func begin(game: String, ready: @escaping () -> Void) {}
+}
+func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 

@@ -4,8 +4,8 @@ import Foundation
 /// Two-way mirror between Documents/Saves/<game> and
 /// <sync folder>/<game>, where the sync folder is any folder the user picked in
 /// Files (typically iCloud Drive). A file counts as changed only when its content
-/// differs from the last synced version; when both sides changed, the clearly newer
-/// one wins and near-ties are left alone. Deletions are not propagated.
+/// differs from the last synced version. Conflicting copies are left in place.
+/// Deletions are not propagated.
 final class SaveSync {
     struct Summary: Equatable {
         var pulled = 0
@@ -13,44 +13,48 @@ final class SaveSync {
         var conflicts = 0
     }
     enum Failure: LocalizedError {
-        case folderUnavailable, unsafePath
+        case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged
         var errorDescription: String? {
             switch self {
             case .folderUnavailable: return "无法访问同步文件夹，请在设置中重新选择。"
             case .unsafePath: return "同步文件夹中的存档路径不安全。"
+            case .unreadableCloudFile: return "云端存档暂不可读，请在“文件”中下载后重试。"
+            case .targetChanged: return "同步时存档已被修改，未覆盖该文件。请重试。"
             }
         }
     }
 
     static let bookmarkKey = "hub.saveSync.bookmark"
-    /// Files written within this many seconds of each other count as the same version,
-    /// which absorbs timestamp rounding on file provider volumes.
-    static let tolerance: TimeInterval = 2
+    enum Mode: Equatable { case twoWay, uploadOnly }
 
     private let files = FileManager.default
     private let coordinator = NSFileCoordinator()
     let local: URL
     let remote: URL
     let state: URL?
+    private let documents: URL
+    private let folder: URL
+    private let game: String
     private let beforeLocalChange: () throws -> Void
 
-    init(local: URL, remote: URL, state: URL? = nil, beforeLocalChange: @escaping () throws -> Void = {}) {
-        self.local = local
-        self.remote = remote
+    init(game: String, documents: URL, folder: URL,
+         state: URL? = nil, beforeLocalChange: @escaping () throws -> Void = {}) {
+        self.game = game
+        self.documents = documents
+        self.folder = folder
+        local = documents.appendingPathComponent("Saves").appendingPathComponent(game)
+        remote = folder.appendingPathComponent(game)
         self.state = state
         self.beforeLocalChange = beforeLocalChange
     }
 
-    private struct Item {
-        let url: URL
+    private struct Snapshot {
+        let data: Data
         let modified: Date
-        let downloaded: Bool
     }
 
     private struct Record: Codable {
         var hash: String
-        var remote: Date
-        /// Local and remote hashes of an unresolved near-tie, kept until either side changes.
         var conflict: [String]?
     }
 
@@ -69,7 +73,6 @@ final class SaveSync {
         try JSONEncoder().encode(records).write(to: state, options: .atomic)
     }
 
-
     /// iCloud Drive lists files that are not downloaded yet as ".<name>.icloud".
     private static func logicalName(_ name: String) -> String? {
         if name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > 8 {
@@ -78,22 +81,44 @@ final class SaveSync {
         return name.hasPrefix(".") ? nil : name
     }
 
-    private func scan(_ root: URL) throws -> [String: Item] {
-        guard files.fileExists(atPath: root.path) else { return [:] }
-        var result: [String: Item] = [:]
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey]
+    private func canonical(_ url: URL) -> URL {
+        var ancestor = url
+        var suffix: [String] = []
+        while !files.fileExists(atPath: ancestor.path), ancestor.path != "/" {
+            suffix.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        return suffix.reversed().reduce(ancestor.resolvingSymlinksInPath().standardizedFileURL) {
+            $0.appendingPathComponent($1)
+        }
+    }
+
+    private func checkedURL(_ parts: [String], under root: URL) throws -> URL {
+        var url = root
+        for part in parts {
+            guard !part.isEmpty, part != ".", part != "..", !part.contains("/") else { throw Failure.unsafePath }
+            url.appendPathComponent(part)
+            guard (try? files.destinationOfSymbolicLink(atPath: url.path)) == nil else { throw Failure.unsafePath }
+        }
+        let parent = canonical(root).pathComponents
+        guard canonical(url).pathComponents.starts(with: parent) else { throw Failure.unsafePath }
+        return url
+    }
+
+    private func scan(_ root: URL) throws -> Set<String> {
+        guard files.fileExists(atPath: root.path) else { return [] }
+        var result: Set<String> = []
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
         func visit(_ folder: URL, _ prefix: String) throws {
             for child in try files.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys) {
                 guard let name = Self.logicalName(child.lastPathComponent) else { continue }
-                let url = folder.appendingPathComponent(name)
+                let url = try checkedURL([name], under: folder)
                 let values = try child.resourceValues(forKeys: Set(keys))
                 guard values.isSymbolicLink != true else { throw Failure.unsafePath }
-                if values.isDirectory == true {
+                if values.isDirectory == true && name == child.lastPathComponent {
                     try visit(url, prefix + name + "/")
                 } else {
-                    let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-                        ?? values.contentModificationDate ?? .distantPast
-                    result[prefix + name] = Item(url: url, modified: modified, downloaded: name == child.lastPathComponent)
+                    result.insert(prefix + name)
                 }
             }
         }
@@ -101,101 +126,102 @@ final class SaveSync {
         return result
     }
 
-    private func coordinatedRead(_ url: URL) throws -> Data {
+    private func snapshot(_ url: URL) throws -> Snapshot {
+        let data = try Data(contentsOf: url)
+        let modified = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .distantPast
+        return Snapshot(data: data, modified: modified)
+    }
+
+    private func coordinatedRead(path: [String], under root: URL) throws -> Snapshot {
+        let url = try checkedURL(path, under: root)
         var error: NSError?
-        var result: Result<Data, Error> = .failure(Failure.folderUnavailable)
-        coordinator.coordinate(readingItemAt: url, options: [], error: &error) { url in
-            result = Result { try Data(contentsOf: url) }
+        var result: Result<Snapshot, Error> = .failure(Failure.folderUnavailable)
+        coordinator.coordinate(readingItemAt: url, options: [], error: &error) { coordinatedURL in
+            result = Result {
+                let target = try checkedURL(path, under: root)
+                guard canonical(coordinatedURL).pathComponents == canonical(target).pathComponents else { throw Failure.unsafePath }
+                return try snapshot(coordinatedURL)
+            }
         }
         if let error { throw error }
         return try result.get()
     }
 
-    private func coordinatedWrite(_ data: Data, to url: URL, modified: Date) throws {
+    private func existingBytes(at url: URL) throws -> Data? {
+        do { return try Data(contentsOf: url) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            let siblings = try files.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+            guard !siblings.contains(".\(url.lastPathComponent).icloud") else { throw Failure.unreadableCloudFile }
+            return nil
+        }
+    }
+
+    private func coordinatedWrite(_ snapshot: Snapshot, path: [String], under root: URL, expected: Data?) throws {
+        let url = try checkedURL(path, under: root)
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         var error: NSError?
-        var result: Result<Void, Error> = .success(())
-        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { url in
+        var result: Result<Void, Error> = .failure(Failure.folderUnavailable)
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { coordinatedURL in
             result = Result {
-                try data.write(to: url, options: .atomic)
-                try files.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
+                let target = try checkedURL(path, under: root)
+                guard canonical(coordinatedURL).pathComponents == canonical(target).pathComponents else { throw Failure.unsafePath }
+                guard try existingBytes(at: coordinatedURL) == expected else { throw Failure.targetChanged }
+                try snapshot.data.write(to: coordinatedURL, options: .atomic)
+                try files.setAttributes([.modificationDate: snapshot.modified], ofItemAtPath: coordinatedURL.path)
             }
         }
         if let error { throw error }
         try result.get()
     }
 
-    @discardableResult func sync() throws -> Summary {
+    @discardableResult func sync(mode: Mode = .twoWay) throws -> Summary {
+        _ = try checkedURL(["Saves", game], under: documents)
+        _ = try checkedURL([game], under: folder)
         let mine = try scan(local)
         let theirs = try scan(remote)
         var records = loadRecords()
         defer { try? saveRecords(records) }
         var summary = Summary()
         var backedUp = false
-        for path in Set(mine.keys).union(theirs.keys).sorted() {
-            let parts = path.split(separator: "/")
-            guard !parts.contains(".."), !parts.contains(".") else { throw Failure.unsafePath }
-            let a = mine[path], b = theirs[path], base = records[path]
-            var localData: Data?, remoteData: Data?
-            func localBytes() throws -> Data {
-                if localData == nil { localData = try Data(contentsOf: a!.url) }
-                return localData!
-            }
-            func remoteBytes() throws -> Data {
-                if remoteData == nil { remoteData = try coordinatedRead(b!.url) }
-                return remoteData!
-            }
+        for path in mine.union(theirs).sorted() {
+            if mode == .uploadOnly && !mine.contains(path) { continue }
+            let parts = path.split(separator: "/").map(String.init)
+            let localPath = ["Saves", game] + parts
+            let remotePath = [game] + parts
+            let a = mine.contains(path) ? try snapshot(checkedURL(localPath, under: documents)) : nil
+            let b = theirs.contains(path) ? try coordinatedRead(path: remotePath, under: folder) : nil
+            let base = records[path]
             let pull: Bool
             if let a, let b {
-                let localHash = Self.digest(try localBytes())
-                let knownLocal = base?.conflict?.first ?? base?.hash
-                let knownRemote = base?.conflict?.last ?? base?.hash
-                // An unchanged local file next to a cloud file that is not downloaded yet and
-                // still matches the last sync needs no transfer, so skip downloading it.
-                let remoteHash: String
-                if localHash == knownLocal, !b.downloaded, let base, let knownRemote,
-                   abs(b.modified.timeIntervalSince(base.remote)) <= Self.tolerance {
-                    remoteHash = knownRemote
-                } else {
-                    remoteHash = Self.digest(try remoteBytes())
-                }
+                let localHash = Self.digest(a.data)
+                let remoteHash = Self.digest(b.data)
                 if localHash == remoteHash {
-                    records[path] = Record(hash: localHash, remote: b.modified)
+                    records[path] = Record(hash: localHash)
                     continue
                 }
-                let localChanged = localHash != knownLocal
-                let remoteChanged = remoteHash != knownRemote
-                if !localChanged && !remoteChanged {
-                    records[path]?.remote = b.modified
+                let localChanged = localHash != base?.hash
+                let remoteChanged = remoteHash != base?.hash
+                if base?.conflict != nil || (localChanged && remoteChanged) {
+                    records[path] = Record(hash: base?.hash ?? "", conflict: [localHash, remoteHash])
                     summary.conflicts += 1
                     continue
                 }
-                if localChanged && remoteChanged {
-                    if abs(b.modified.timeIntervalSince(a.modified)) <= Self.tolerance {
-                        records[path] = Record(hash: base?.hash ?? "", remote: b.modified, conflict: [localHash, remoteHash])
-                        summary.conflicts += 1
-                        continue
-                    }
-                    pull = b.modified > a.modified
-                } else {
-                    pull = remoteChanged
-                }
+                pull = remoteChanged
             } else {
                 pull = a == nil
             }
             if pull, let b {
+                guard mode == .twoWay else { continue }
                 if a != nil && !backedUp {
                     try beforeLocalChange()
                     backedUp = true
                 }
-                let data = try remoteBytes()
-                try coordinatedWrite(data, to: local.appendingPathComponent(path), modified: b.modified)
-                records[path] = Record(hash: Self.digest(data), remote: b.modified)
+                try coordinatedWrite(b, path: localPath, under: documents, expected: a?.data)
+                records[path] = Record(hash: Self.digest(b.data))
                 summary.pulled += 1
             } else if let a {
-                let data = try localBytes()
-                try coordinatedWrite(data, to: remote.appendingPathComponent(path), modified: a.modified)
-                records[path] = Record(hash: Self.digest(data), remote: a.modified)
+                try coordinatedWrite(a, path: remotePath, under: folder, expected: b?.data)
+                records[path] = Record(hash: Self.digest(a.data))
                 summary.pushed += 1
             }
         }
@@ -205,6 +231,18 @@ final class SaveSync {
 
 /// The user's chosen sync folder, kept as a security-scoped bookmark.
 enum SaveSyncFolder {
+    private static let queue = DispatchQueue(label: "io.github.alicehub.saveSync", qos: .userInitiated)
+
+    static func enqueue(_ work: @escaping () -> Void) {
+        queue.async { work() }
+    }
+
+    static func finish(_ work: @escaping () -> Void) {
+        let done = DispatchSemaphore(value: 0)
+        enqueue { work(); done.signal() }
+        done.wait()
+    }
+
     static var isConfigured: Bool { UserDefaults.standard.data(forKey: SaveSync.bookmarkKey) != nil }
 
     private static let folderIDKey = "hub.saveSync.folderID"
@@ -229,9 +267,9 @@ enum SaveSyncFolder {
     }
 
     private static func make(game: String, folder: URL, documents: URL?, support: URL?) -> SaveSync {
-        let manager = SaveManager(game: game, documents: documents, support: support) { _, _ in }
-        return SaveSync(local: manager.directory, remote: folder.appendingPathComponent(game),
-                        state: state(game: game, support: support)) { try manager.backup() }
+        let root = documents ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let manager = SaveManager(game: game, documents: root, support: support) { _, _ in }
+        return SaveSync(game: game, documents: root, folder: folder, state: state(game: game, support: support)) { try manager.backup() }
     }
 
     static var displayName: String? {
@@ -254,11 +292,12 @@ enum SaveSyncFolder {
 
     /// Syncs one game's saves. Local files are backed up through SaveManager before
     /// the first one is overwritten.
-    @discardableResult static func sync(game: String, documents: URL? = nil, support: URL? = nil) throws -> SaveSync.Summary? {
-        try withFolder { folder in try make(game: game, folder: folder, documents: documents, support: support).sync() }
+    @discardableResult static func sync(game: String, mode: SaveSync.Mode = .twoWay,
+                                       documents: URL? = nil, support: URL? = nil) throws -> SaveSync.Summary? {
+        try withFolder { folder in try make(game: game, folder: folder, documents: documents, support: support).sync(mode: mode) }
     }
 
-    /// Syncs every game that has saves on either side.
+    /// Uploads every game that has local saves.
     static func syncAll(documents: URL? = nil, support: URL? = nil) throws -> SaveSync.Summary? {
         let files = FileManager.default
         let saves = (documents ?? files.urls(for: .documentDirectory, in: .userDomainMask)[0]).appendingPathComponent("Saves")
@@ -269,9 +308,8 @@ enum SaveSyncFolder {
                     .map(\.lastPathComponent)
             }
             var total = SaveSync.Summary()
-            for game in Set(names(saves)).union(names(folder)).sorted() {
-                let result = try make(game: game, folder: folder, documents: documents, support: support).sync()
-                total.pulled += result.pulled
+            for game in names(saves).sorted() {
+                let result = try make(game: game, folder: folder, documents: documents, support: support).sync(mode: .uploadOnly)
                 total.pushed += result.pushed
                 total.conflicts += result.conflicts
             }

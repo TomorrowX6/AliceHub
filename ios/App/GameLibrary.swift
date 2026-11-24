@@ -907,10 +907,9 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
             let arguments = try Self.launchArguments(game.url, saves: saves)
-            SaveSyncSession.begin(game: game.name)
-            ModifierBridge.prepareForLaunch()
             launching = true
-            DispatchQueue.main.async {
+            SaveSyncSession.begin(game: game.name) {
+                ModifierBridge.prepareForLaunch()
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     SDL_SetMainReady()
                     if info.engine == .system4 { RuntimeGamepad.prepare(for: game.id) }
@@ -927,7 +926,6 @@ final class GameLibrary: ObservableObject {
                         }
                     }
                     for argument in argv { free(argument) }
-                    SaveSyncSession.end()
                     exit(0)
                 }
             }

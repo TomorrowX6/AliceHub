@@ -53,22 +53,28 @@ struct HubSettingsView: View {
                         }.buttonStyle(.plain).disabled(syncing)
                         Button { choosingSyncFolder = true } label: {
                             HubActionLabel(title: "更换同步文件夹", symbol: "folder")
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).disabled(syncing)
                         Button {
-                            SaveSyncFolder.clear()
-                            self.syncFolder = nil
+                            syncing = true
+                            SaveSyncFolder.enqueue {
+                                SaveSyncFolder.clear()
+                                DispatchQueue.main.async {
+                                    syncFolder = nil
+                                    syncing = false
+                                }
+                            }
                         } label: {
                             HubActionLabel(title: "停用存档同步", symbol: "icloud.slash", destructive: true, navigates: false)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).disabled(syncing)
                     } else {
                         Button { choosingSyncFolder = true } label: {
                             HubActionLabel(title: "选择同步文件夹", symbol: "icloud")
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).disabled(syncing)
                     }
                 } header: {
                     Text("存档同步")
                 } footer: {
-                    Text("在“文件”中选择一个文件夹（例如 iCloud 云盘）。启动游戏前、切到后台时和退出游戏后，各游戏的存档会与该文件夹双向同步，以较新的文件为准；覆盖本机存档前会自动备份。删除操作不会同步。")
+                    Text("在“文件”中选择一个文件夹（例如 iCloud 云盘）。启动游戏前双向同步；手动同步、切到后台和退出游戏时只上传。两边都有不同修改时保留两份，覆盖本机存档前会自动备份。删除操作不会同步。")
                 }.listRowBackground(HubTheme.surface)
                 Section("关于") {
                     Link(destination: URL(string: "https://github.com/TomorrowX6/AliceHub")!) {
@@ -85,11 +91,7 @@ struct HubSettingsView: View {
                 SyncFolderPicker { url in
                     choosingSyncFolder = false
                     guard let url else { return }
-                    do {
-                        try SaveSyncFolder.set(url)
-                        syncFolder = SaveSyncFolder.displayName
-                        syncNow()
-                    } catch { syncMessage = error.localizedDescription }
+                    syncNow(picking: url)
                 }
             }
             .alert("存档同步", isPresented: Binding(get: { syncMessage != nil }, set: { if !$0 { syncMessage = nil } })) {
@@ -97,18 +99,24 @@ struct HubSettingsView: View {
             } message: { Text(syncMessage ?? "") }
     }
 
-    private func syncNow() {
+    private func syncNow(picking folder: URL? = nil) {
         syncing = true
-        DispatchQueue.global(qos: .userInitiated).async {
+        SaveSyncFolder.enqueue {
             let message: String
             do {
+                if let folder { try SaveSyncFolder.set(folder) }
                 let summary = try SaveSyncFolder.syncAll()
                 message = summary.map {
-                    "同步完成：下载 \($0.pulled) 个文件，上传 \($0.pushed) 个文件。"
-                        + ($0.conflicts > 0 ? "\($0.conflicts) 个文件两边都有不同修改且时间相同，已保持不变。" : "")
+                    "同步完成：上传 \($0.pushed) 个文件。"
+                        + ($0.conflicts > 0 ? "\($0.conflicts) 个文件两边都有不同修改，已保持不变。" : "")
                 } ?? "尚未选择同步文件夹。"
             } catch { message = error.localizedDescription }
-            DispatchQueue.main.async { syncing = false; syncMessage = message }
+            let name = SaveSyncFolder.displayName
+            DispatchQueue.main.async {
+                syncFolder = name
+                syncing = false
+                syncMessage = message
+            }
         }
     }
 }
