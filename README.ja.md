@@ -1,38 +1,73 @@
 <div align="center">
   <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
   <h1>AliceHub</h1>
-  <p><strong>System 3.x / System 4.x アーキテクチャ向けデュアルカーネル・ネイティブ Android ランタイム＆統合管理ハブ</strong></p>
+  <p><strong>Android・iOS 向けのアリスソフト作品ランチャー</strong></p>
   <p>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build APK" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
-    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Platform" /></a>
-    <img src="https://img.shields.io/badge/Engine-System%203.x%20%26%204.x-FF7043.svg" alt="Engine: System 3.x & 4.x" />
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
   </p>
   <p><a href="README.md"><strong>简体中文</strong></a> | <a href="README.en.md"><strong>English</strong></a> | <strong>日本語</strong></p>
 </div>
 
 ---
 
-**AliceHub**（`io.github.alicehub`）は、[xsystem4](https://github.com/nunuhara/xsystem4)、[xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2)、および [xsystem4-android](https://github.com/kichikuou/xsystem4-android) をベースに独自拡張・最適化された **System 3.x & System 4.x** 向けデュアルカーネル・ネイティブ Android ランタイムエンジン＆ローカル資産管理ハブです。
+**AliceHub**（`io.github.alicehub`）は、アリスソフト作品を **Android と iOS** でネイティブ実行・管理するオープンソースのランチャーです。SDL2 とネイティブエンジンを使うため、Wine、Winlator、x86/x64 命令変換は不要です。ゲームデータは同梱されません。利用権のあるゲームファイルをご用意ください。
 
-純粋な C/C++、SDL2、OpenGL ES 3.0 で実装されており、Wine や Winlator などの x86/x64 エミュレーション層を介さずに `arm64-v8a` Android デバイス上で原本シナリオバイトコードの直接実行とハードウェアアクセラレーション描画を行います。ディレクトリ構成から **System 3.x**（`System39.ini`、`*SA.ALD`、`ADISK.ALD`）と **System 4.x**（`AliceStart.ini`、`System40.ini`、`*.ain`）を自動判別して対応するネイティブエンジン（`libxsystem35.so` / `libxsystem4.so`）を起動し、クラシックな **System 3.5〜3.9**、初期 **System 4.0** から **AIN v12〜v14.1**、**PartsEngine**、**FLAT v15**、**SealEngine / ReignEngine 3D** を採用する後期大規模タイトルおよび拡張パッチまで幅広く対応します。
+## ダウンロードとクイックスタート
 
----
+[**最新リリース**](https://github.com/TomorrowX6/AliceHub/releases/latest) から端末に合ったパッケージをダウンロードしてください。
 
-## 主な機能
+| プラットフォーム | 動作環境 | パッケージ |
+| :--- | :--- | :--- |
+| **Android** | Android 8.0（API 26）以降、`arm64-v8a`、OpenGL ES 3.0 | `AliceHub-<バージョン>-arm64-v8a.apk`（そのままインストール可能） |
+| **iOS / iPadOS** | 15.0 以降、arm64 | `AliceHub-<バージョン>-ios-unsigned.ipa`（**未署名**、署名してサイドロード） |
 
-### 1. System 3.x + System 4.x デュアルネイティブエンジン＆モバイル最適化
+[GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `re-xsystem4-arm64-v8a` または `AliceHub-ios-unsigned` をダウンロードし、展開して APK / IPA を取得することもできます。成果物のダウンロードには GitHub へのログインが必要です。
+
+### Android
+
+APK をインストールして **AliceHub** を開き、ゲームを選択するか、右上のメニューから **他のゲームを導入** を選びます。ゲームファイル一式を含むフォルダ、`.zip` / `.rar` / `.7z` アーカイブ、`.iso` / `.mdf` ディスクイメージを読み込めます。導入後は **ゲーム開始** をタップします。
+
+### iOS / iPadOS
+
+1. AltStore、SideStore、Sideloadly などで IPA に署名し、サイドロードします。無料の Apple Account で署名した場合は通常 7 日ごとに更新が必要です。TrollStore は対応する端末と OS バージョンでのみ利用できます。
+2. **AliceHub → ゲームをインポート** から **フォルダ / 複数ディスク** または **アーカイブ / ディスクイメージ** を選びます。「ファイル」アプリで端末内の **AliceHub → Games** にゲームフォルダ一式をコピーすることもできます。
+3. ライブラリで取り込んだゲームを開き、**プレイ** をタップします。ゲームを通常終了するとライブラリに戻ります。
+
+**オンラインインストール**は両プラットフォームとも初期状態では無効です。設定で規約に同意して有効にすると、ゲームの項目から利用可能なファイルをダウンロードできます。ゲームファイルとインストール時の一時データに必要な空き容量を確保してください。
+
+## 対応ゲームと機能
+
+ゲームのルートフォルダにあるファイルから、使用するエンジンを自動で選択します。以下は主な判定用ファイルであり、ゲームに必要なすべてのファイルではありません。
+
+| ゲームの種類 | ネイティブエンジン | 主な判定用ファイル |
+| :--- | :--- | :--- |
+| **初期の System 1–3** | `system3-sdl2` | `ADISK.DAT`、`ACG.DAT` など |
+| **System 3.5–3.9** | `xsystem35` | `System39.ini`、`System39.ain`、`*SA.ALD`、`ADISK.ALD` |
+| **System 4.x** | `xsystem4` | `AliceStart.ini`、`System40.ini`、`*.ain`（`System39.ain` を除く） |
+
+- **ライブラリと取り込み**：検索、並び替え、中国語翻訳版と原語版の表示に対応。カタログ外の作品、複数ディスク、同梱パッチも取り込めます。対応作品では MOD を管理できます。ランス10ではフォルダの新規作成・切り替えができ、セーブと MOD はフォルダごとに管理されます。
+- **セーブと補助機能**：セーブをインポート・エクスポート・バックアップできます。対応作品ではセーブ編集、ゲーム内の改造ツール、配信者モード、表示サイズ調整を利用できます。iOS では「ファイル」で選んだフォルダ（iCloud Drive など）とセーブを同期できます。
+- **操作と音声**：System 3.5–3.9 と System 4.x は編集可能な仮想パッドと物理コントローラーの割り当てに対応し、初期の DAT 形式の作品はネイティブのタッチ操作を使います。`xsystem35` の MIDI 音楽は両プラットフォームで再生できます。
+- **バックグラウンドインストール**：Android はフォアグラウンドサービスを使用します。iOS 26 以降はシステムタスクで継続できます。それ以前の iOS はバックグラウンド実行時間に制限があり、上限に達すると一時停止します。アプリに戻ると再開できます。
+
+## Android の機能詳細
+
+### 1. ネイティブエンジンとモバイル最適化
 - **System 3.x ネイティブカーネル（`xsystem35`）**：
-  - System 3.5〜3.9 のシナリオバイトコードおよび拡張モジュール（`ShGraph`、`ShSound`、`ShString`、`SACT`、`eDemo` 等）、`ALD` / `ALK` / `DRI` アーカイブ、`PMS` / `QNT` / `VSP` / `JPEG` / `WebP` 画像描画、`System 3.9`（`System39.ain`）セーブ形式を完全サポート。
+  - System 3.5〜3.9 のシナリオバイトコードおよび拡張モジュール（`ShGraph`、`ShSound`、`ShString`、`SACT`、`eDemo` 等）、`ALD` / `ALK` / `DRI` アーカイブ、`PMS` / `QNT` / `VSP` / `JPEG` / `WebP` 画像描画、`System 3.9`（`System39.ain`）セーブ形式に対応。
   - **Shift-JIS / GBK / Unicode** マルチエンコーディング描画、`SDL2_mixer` 仮想 CD オーディオ再生（`playlist.txt` による MP3 / Ogg トラック指定）、Android ネイティブ MIDI シンセサイザーを内蔵し、フローティングオーバーレイ・仮想パッド／物理コントローラー・リアルタイム補助機能と完全連携。
-- **全世代対応 System 4.x カーネル（`xsystem4`）**：
-  - 初期 System 4.0（`AIN v0〜v11`、`SACT2`、`StoatSpriteEngine`、`DrawDungeon` / `ReignEngine` 3D ダンジョン＆スキニング描画、`ALD` アーカイブ）から後期大規模タイトル（`AIN v12〜v14.1` 全命令セット、`PartsEngine` 全 804 関数、`SealEngine` 3D UBO ボーン変換、`ELNA` / `FLAT v15` スケルタル＆パーティクルアニメーション、`APEG` / `PMPEG` 動画再生、`SaveData v26/v27`、複数 `.afa` / `.ex` 優先度解決）まで網羅。
+- **System 4.x ネイティブエンジン（`xsystem4`）**：
+  - 初期 System 4.0（`AIN v0〜v11`、`SACT2`、`StoatSpriteEngine`、`DrawDungeon` / `ReignEngine` 3D ダンジョン＆スキニング描画、`ALD` アーカイブ）から後期大規模タイトル（`AIN v12〜v14.1` 全命令セット、`PartsEngine`、`SealEngine` 3D UBO ボーン変換、`ELNA` / `FLAT v15` スケルタル＆パーティクルアニメーション、`APEG` / `PMPEG` 動画再生、`SaveData v26/v27`、複数 `.afa` / `.ex` 優先度解決）まで網羅。
 - **グラフィックス復旧・高リフレッシュレート制御・省電力設計**：
   - バックグラウンド移行時の `EGLContext` 消失後にテクスチャ・オフスクリーン FBO・フィルタ・3D ダンジョンリソースを自動再構築し、ウィンドウ復帰時に即座に再描画。
   - 描画（`-8`）およびオーディオ（`-16`）高優先度スレッド制御、Android 12+ **ADPF（`APerformanceHintManager`）** 動的クロック制御、60fps VSync ペーシング、Android 15+ 向け `16 KB` ページアライメント（`max-page-size=16384`）、バックグラウンド時の音声／MIDI 自動一時停止に対応。
 
 ### 2. 統合ホーム・専用管理ハブ・グローバル設定
-- **統合ホーム＆汎用インポート**：プリセットタイトルに加え、**他のゲームを導入** から任意の System 3.x / System 4.x 作品を自由に追加可能。PE 実行ファイルから高解像度アイコンを自動抽出し、リアルタイム状態バッジ（`未導入`、`導入済`、`導入済 · MOD`、`導入中…`、`実行中`）を表示。
+- **ライブラリとインポート**：カタログ内の作品と取り込んだ作品を表示します。PE 実行ファイルからアイコンを抽出し、インストール状態も表示します。
 - **エントリ別管理ハブ**：本体導入、複数ディレクトリ切替、非破壊 MOD・パッチ管理、個別セーブ管理、専用補助ツール、バックグラウンド非同期アンインストールを作品特性に応じて自動構成。
 - **設定画面**（ホーム右上の歯車アイコン）：
   - **テーマ**：`自動`・`ライト`・`ダーク` のリアルタイム切替。
@@ -47,7 +82,7 @@
   - 複数ディスクフォルダ（`Disk1` / `Disk2` 等）や分割インストールデータの自動統合、同梱アップデートパッチの自動適用、不要ファイルの整理、および UTF-8 / UTF-16LE / GBK / Shift-JIS ファイル名の自動判別と文字化け修復に対応。
 - **ストリーミング導入＆フォアグラウンドサービス**：
   - オンライン導入（設定で有効化時）では容量事前表示・HTTP `Range` レジューム・ファイル単位の SHA-256 検証に対応し、2倍の一時領域を必要とせず直接展開。
-  - フォアグラウンドサービスと WakeLock により画面オフやバックグラウンド移行時もフルスピードで継続し、進捗・通信速度表示および **一時停止**・**キャンセル** 操作を提供。
+  - フォアグラウンドサービスで、画面オフやバックグラウンド移行後もダウンロードと展開を継続できます。進捗や通信速度の表示、一時停止、キャンセルにも対応します。
 - **非破壊 MOD・パッチ管理**：
   - 更新履歴・容量付きのオンラインカタログ更新、差分パッチ適用、バージョン自動認識付きのローカル導入に対応し、上書き前の自動アトミックバックアップによりワンタップで初期状態へ復元可能。
 
@@ -66,31 +101,9 @@
 
 ---
 
-## 動作環境
+## タッチとコントローラー操作
 
-| 項目 | 最小要件 | 推奨環境 |
-| :--- | :--- | :--- |
-| **CPU アーキテクチャ** | `arm64-v8a`（64ビット ARM） | Snapdragon 8 シリーズ / Dimensity 8000+ 同等以上 |
-| **OS バージョン** | Android 8.0（API 26）以上 | Android 12.0（API 31）以上（ADPF・シームレスフレーム制御対応） |
-| **グラフィックス** | OpenGL ES 3.0 | OpenGL ES 3.2 |
-| **メモリ** | 4 GB RAM | 6 GB RAM 以上 |
-| **ストレージ空き容量** | 5 GB 以上の空き容量を推奨 | UFS 3.0 以上のフラッシュストレージ |
-
----
-
-## クイックスタート
-
-1. [**Releases**](https://github.com/TomorrowX6/AliceHub/releases) または [**GitHub Actions**](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) から最新の署名済み APK を取得してインストールします。
-2. **AliceHub** を起動し、対象エントリの管理ハブを開くか、右上メニューの **他のゲームを導入** を選択します：
-   - **ローカル導入**：`.zip` / `.rar` / `.7z` アーカイブ、`.iso` / `.mdf` ディスクイメージ、またはフォルダから PC 版ファイル一式を導入します：
-     - **System 3.x 資産**：`*SA.ALD` / `ADISK.ALD`、`*.ALD`、`System39.ini` / `System39.ain` 等（CD-DA 音源を再生する場合はゲームルートに MP3 / Ogg を指定した `playlist.txt` を配置）。
-     - **System 4.x 資産**：`AliceStart.ini` / `System40.ini`、`*.ain`、`*.afa` / `*.ald` 等。
-   - **オンライン導入**：利用する場合はホーム右上の **設定** から利用規約に同意して有効化します。
-3. **ゲーム開始** をタップして起動します（構成に応じて `xsystem35` または `xsystem4` が自動選択されます）。実行中は画面左上のフローティングアイコンから早送り・仮想パッド・スクリーンショット・文字サイズ・各種補助機能をいつでも調整できます。
-
----
-
-## タッチ＆コントローラー操作一覧
+以下は Android の System 3.5–3.9 と System 4.x 向けです。iOS では **設定 → ゲームパッド設定** から操作を変更できます。System 4 では **長押しでスキップ（Ctrl 長押し）** も有効にできます。
 
 | 操作内容 | タッチジェスチャー | 物理コントローラー初期割り当て（変更可） |
 | :--- | :--- | :--- |
@@ -106,6 +119,10 @@
 
 ## ソースからのビルド
 
+### Android APK
+
+JDK 17、Android SDK（プラットフォーム API 34）、Android NDK、CMake 3.22 以降、Ninja を用意してください。以下は Ubuntu の例です。`YOUR_NDK_VERSION` はインストール済みの NDK バージョンに置き換えてください。
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y ninja-build bison flex autoconf automake libtool pkg-config cmake git python3 openjdk-17-jdk
@@ -114,22 +131,31 @@ git clone https://github.com/TomorrowX6/AliceHub.git
 cd AliceHub
 
 export ANDROID_SDK_ROOT=/path/to/android-sdk
-export ANDROID_NDK_HOME=/path/to/android-sdk/ndk/26.1.10909125
-
-# 1. arm64-v8a ネイティブ共有ライブラリ一式をクロスビルド（libxsystem4.so / libxsystem35.so / libSDL2.so / libarchive_jni.so 等）
+export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/YOUR_NDK_VERSION"
 ./build-shared-libs.sh
-
-# 2. 署名済み Release APK をビルド
-cd project && ./gradlew assembleRelease
+(cd project && ./gradlew assembleRelease)
 ```
 
-生成された APK は `project/app/build/outputs/apk/release/app-release.apk` に出力されます。
+出力先：`project/app/build/outputs/apk/release/app-release.apk`。リリース用の署名を設定していない場合はデバッグ鍵が使われるため、署名の異なるインストール済み APK を上書きできません。
+
+### iOS IPA またはシミュレータ用アプリ
+
+macOS に Xcode と iOS SDK をインストールします（CI は Xcode 26 を使用）。シミュレータ用アプリを使う場合は iOS Simulator ランタイムも必要です。リポジトリのルートで実行します。
+
+```bash
+brew install cmake ninja autoconf automake libtool bison flex pkgconf xcodegen
+ios/build-app.sh ipa  # ios/build/AliceHub.ipa（未署名）
+ios/build-app.sh sim  # arm64 シミュレータ用アプリ
+```
+
+ビルドと開発時の確認方法は [iOS 開発者向けドキュメント](ios/README.md) を参照してください。
 
 ---
 
 ## 謝辞とライセンス
 
 - [nunuhara/xsystem4](https://github.com/nunuhara/xsystem4) & [nunuhara/libsys4](https://github.com/nunuhara/libsys4) — クロスプラットフォーム System 4.x コアエンジンおよびフォーマットパーサー。
+- [kichikuou/system3-sdl2](https://github.com/kichikuou/system3-sdl2) — 初期の System 1–3 作品向けランタイム。
 - [kichikuou/xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) — クロスプラットフォーム System 3.x（`xsystem35`）コアエンジンおよびモジュール実装。
 - [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — Android 移植基盤フレームワーク。
 

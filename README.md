@@ -3,10 +3,11 @@
   <h1>AliceHub</h1>
   <p><strong>面向 System 3.x / System 4.x 架构的 Android 双内核原生运行引擎与聚合管理中心</strong></p>
   <p>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build APK" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
-    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Platform" /></a>
-    <img src="https://img.shields.io/badge/Engine-System%203.x%20%26%204.x-FF7043.svg" alt="Engine: System 3.x & 4.x" />
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
     <img src="https://img.shields.io/badge/QQ%20%E4%BA%A4%E6%B5%81%E7%BE%A4-383917628-12B7F5.svg" alt="QQ 交流群: 383917628" />
   </p>
   <p><strong>简体中文</strong> | <a href="README.en.md"><strong>English</strong></a> | <a href="README.ja.md"><strong>日本語</strong></a></p>
@@ -14,26 +15,60 @@
 
 ---
 
-**AliceHub**（`io.github.alicehub`）是基于 [xsystem4](https://github.com/nunuhara/xsystem4)、[xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) 与 [xsystem4-android](https://github.com/kichikuou/xsystem4-android) 深度定制与扩展的 **System 3.x & System 4.x** Android 双内核原生运行引擎与本地资源聚合管理中心。
+**AliceHub**（`io.github.alicehub`）是在 **Android 和 iOS** 上原生运行 AliceSoft 游戏的开源启动器与管理工具。它使用 SDL2 和原生引擎运行游戏文件，无需 Wine、Winlator 或 x86/x64 指令转译。安装包不包含游戏，请自行准备有权使用的游戏资源。
 
-项目采用纯 C/C++、SDL2 与 OpenGL ES 3.0 编写，在 `arm64-v8a` Android 设备上直接解释执行原版脚本字节码并硬件加速渲染封包资源，无需借助 Wine、Winlator 或任何 x86/x64 指令转译层。启动器可根据资源目录自动识别 **System 3.x**（`System39.ini`、`*SA.ALD`、`ADISK.ALD`）与 **System 4.x**（`AliceStart.ini`、`System40.ini`、`*.ain`）架构并透明调度对应原生内核（`libxsystem35.so` / `libxsystem4.so`），完整覆盖从经典 **System 3.5 ~ 3.9**、早期 **System 4.0** 到采用 **AIN v12 ~ v14.1**、**PartsEngine**、**FLAT v15**、**SealEngine / ReignEngine 3D** 的历代作品及社区汉化与扩展补丁。
+## 下载与快速上手
 
----
+从 [**最新 Release**](https://github.com/TomorrowX6/AliceHub/releases/latest) 下载设备对应的安装包：
 
-## 核心特性
+| 平台 | 系统要求 | 安装包 |
+| :--- | :--- | :--- |
+| **Android** | Android 8.0（API 26）及以上、`arm64-v8a`、OpenGL ES 3.0 | `AliceHub-<版本>-arm64-v8a.apk`，下载后直接安装 |
+| **iOS / iPadOS** | 15.0 及以上、arm64 | `AliceHub-<版本>-ios-unsigned.ipa`，**未签名**，需自行签名并侧载 |
 
-### 1. System 3.x + System 4.x 双原生内核与移动端深度调优
+也可在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载 `re-xsystem4-arm64-v8a` 或 `AliceHub-ios-unsigned`，解压后获取 APK 或 IPA（下载构建产物需登录 GitHub）。
+
+### Android
+
+安装 APK，打开 **AliceHub**，选择游戏条目，或从右上角菜单选择 **导入其他游戏**。可以导入包含完整游戏资源的文件夹、`.zip` / `.rar` / `.7z` 压缩包或 `.iso` / `.mdf` 光盘镜像。导入后点击 **开始游戏**。
+
+### iOS / iPadOS
+
+1. 使用 AltStore、SideStore 或 Sideloadly 签名并侧载 IPA。使用免费 Apple 账户签名通常需每 7 天续签一次；TrollStore 仅适用于它支持的设备与系统版本。
+2. 打开 **AliceHub → 导入游戏**，选择 **文件夹 / 多碟** 或 **压缩包 / 光盘**；也可用「文件」App 将完整游戏文件夹复制到本机 **AliceHub → Games**。
+3. 在游戏库打开已导入的条目并点击 **开始游戏**。正常退出游戏会返回游戏库。
+
+**在线安装**默认关闭。两端均可在设置中阅读并同意使用条款后开启，再从游戏条目下载可用的资源。准备足够空间存放游戏文件及安装时的临时数据。
+
+## 支持的游戏和功能
+
+启动器会根据游戏根目录中的文件自动选择引擎。下表列出常见的识别标记，不代表完整游戏只需这些文件。
+
+| 游戏类型 | 原生引擎 | 常见识别标记 |
+| :--- | :--- | :--- |
+| **早期 System 1–3** | `system3-sdl2` | `ADISK.DAT`、`ACG.DAT` 等 |
+| **System 3.5–3.9** | `xsystem35` | `System39.ini`、`System39.ain`、`*SA.ALD`、`ADISK.ALD` |
+| **System 4.x** | `xsystem4` | `AliceStart.ini`、`System40.ini`、`*.ain`（不含 `System39.ain`） |
+
+- **游戏库与导入**：内置目录支持搜索、排序及「熟肉 / 生肉」标识，并可导入目录外的作品。支持多碟导入、随附补丁及兼容作品的 MOD 管理。兰斯 10 可切换或新建目录，分别保留各版本的存档与 MOD。
+- **存档与工具**：支持存档导入、导出与备份；部分游戏支持存档编辑、局内修改器、主播模式或显示缩放。iOS 可选用「文件」中的文件夹（例如 iCloud 云盘）同步存档。
+- **操控与音频**：System 3.5–3.9 和 System 4.x 支持可编辑虚拟手柄与物理手柄映射；早期 DAT 版作品使用原生触控。两端均支持 `xsystem35` 的 MIDI 音乐。
+- **后台安装**：Android 使用前台服务；iOS 26 及以上可通过系统任务继续后台处理。旧版 iOS 的后台时间有限，超时后会暂停，可回到应用继续。
+
+## Android 功能详解
+
+### 1. 原生引擎与移动端优化
 - **System 3.x 原生内核（`xsystem35`）**：
-  - 完整支持 System 3.5 ~ 3.9 场景字节码与扩展模块（`ShGraph`、`ShSound`、`ShString`、`SACT`、`eDemo` 等）、`ALD` / `ALK` / `DRI` 资源包、`PMS` / `QNT` / `VSP` / `JPEG` / `WebP` 图像渲染，以及 `System 3.9`（`System39.ain`）存档格式。
+  - 支持 System 3.5 ~ 3.9 场景字节码与扩展模块（`ShGraph`、`ShSound`、`ShString`、`SACT`、`eDemo` 等）、`ALD` / `ALK` / `DRI` 资源包、`PMS` / `QNT` / `VSP` / `JPEG` / `WebP` 图像渲染，以及 `System 3.9`（`System39.ain`）存档格式。
   - 原生兼容 **Shift-JIS / GBK / Unicode** 多编码文本排版，内置 `SDL2_mixer` 虚拟 CD 音轨播放（支持 `playlist.txt` 挂载 MP3 / Ogg 音轨）与 Android 原生 MIDI 合成器，完整接入局内悬浮窗、虚拟手柄/外设映射与实时状态修改。
-- **System 4.x 全代际内核（`xsystem4`）**：
-  - 向上与向下兼容早期 System 4.0（`AIN v0 ~ v11`、`SACT2`、`StoatSpriteEngine`、`DrawDungeon` / `ReignEngine` 3D 迷宫与蒙皮渲染、`ALD` 资源包）至后期大型项目（`AIN v12 ~ v14.1` 完整指令集、`PartsEngine` 全 804 个接口、`SealEngine` 3D UBO 骨骼变换、`ELNA` / `FLAT v15` 骨骼与粒子动画、`APEG` / `PMPEG` 视频流、`SaveData v26/v27` 及多 `.afa` / `.ex` 优先级覆盖）。
-- **图形弹性恢复与高刷低功耗调度**：
+- **System 4.x 原生内核（`xsystem4`）**：
+  - 覆盖早期 System 4.0（`AIN v0 ~ v11`、`SACT2`、`StoatSpriteEngine`、`DrawDungeon` / `ReignEngine` 3D 迷宫与蒙皮渲染、`ALD` 资源包）至后期大型项目（`AIN v12 ~ v14.1`、`PartsEngine`、`SealEngine` 3D UBO 骨骼变换、`ELNA` / `FLAT v15` 骨骼与粒子动画、`APEG` / `PMPEG` 视频流、`SaveData v26/v27` 及多 `.afa` / `.ex` 优先级覆盖）。
+- **图形恢复与帧率调度**：
   - 支持后台 `EGLContext` 丢失后的纹理、离屏 FBO、图像滤镜与 3D 迷宫资源自动重建，窗口恢复即时重绘。
   - 渲染（`-8`）与混音（`-16`）高优先级线程调度，接入 Android 12+ **ADPF（`APerformanceHintManager`）** 动态提频与 60fps VSync 对齐，全面适配 Android 15+ `16 KB` 页面对齐（`max-page-size=16384`），切入后台自动挂起音频混音与 MIDI 输出。
 
 ### 2. 聚合启动主页、独立项目管理与全局设置
-- **聚合主页与通用导入**：卡片式展示多款深度适配预设条目，并支持通过 **导入其他游戏** 添加任意 System 3.x / System 4.x 外部项目；自动从 PE 可执行文件提取高清图标，实时展示状态角标（`未安装`、`已安装`、`已安装 · MOD`、`已安装 · 汉化`、`安装中…`、`运行中`）。
+- **聚合主页与通用导入**：展示内置与导入的游戏条目，自动从 PE 可执行文件提取图标，并显示安装状态。
 - **独立项目中心**：每个条目拥有专属管理页，按引擎与项目特性自动适配本体安装、多实例目录切换、无损 MOD / 汉化补丁管理、隔离存档目录管理、专属修改器及后台异步卸载清理。
 - **全局设置页**（主页右上角齿轮图标）：
   - **主题模式**：支持 `自动`、`亮色`、`深色` 三档实时切换。
@@ -48,7 +83,7 @@
   - 支持多盘目录（`Disk1` / `Disk2` 等）与分盘安装集自动合并、随附更新补丁自动覆盖、冗余安装文件清理，以及 UTF-8 / UTF-16LE / GBK / Shift-JIS 文件名编码识别与乱码自动修复。
 - **流式在线安装与前台保活**：
   - 在线安装（于设置中开启后可用）支持流式下载、包体体积预展示、HTTP `Range` 断点续传与逐文件 SHA-256 完整性校验，无需双倍解压暂存空间。
-  - 依托前台服务与唤醒锁在切回桌面或息屏状态下持续满速传输与解压，并在进度弹窗与系统通知栏同步提供实时进度、网速、**暂停**与**取消**控制。
+  - 前台服务可在切回桌面或息屏时继续下载与解压，并在进度弹窗与系统通知栏显示进度、网速及暂停和取消操作。
 - **无损 MOD 与汉化补丁管理**：
   - 支持在线查看版本列表、包体体积与更新日志，执行一键增量更新、基础包 + 补丁自动组合安装及历史版本切换；本地导入时自动识别并规范化标准版本号。
   - 覆盖前自动原子备份原版文件，随时支持一键 **卸载还原**。
@@ -68,41 +103,9 @@
 
 ---
 
-## 系统与硬件要求
+## 触控与手柄操作
 
-| 项目 | 最低要求 | 推荐配置 |
-| :--- | :--- | :--- |
-| **处理器架构** | `arm64-v8a`（64 位 ARM） | 骁龙 8 系列 / 天玑 8000+ 或同级芯片 |
-| **操作系统** | Android 8.0（API 26）及以上 | Android 12.0（API 31）及以上（支持 ADPF 与无缝帧率） |
-| **图形接口** | OpenGL ES 3.0 | OpenGL ES 3.2 |
-| **运行内存** | 4 GB RAM | 6 GB RAM 及以上 |
-| **存储空间** | 建议预留 5 GB 以上可用空间 | UFS 3.0+ 闪存 |
-
----
-
-## 快速上手
-
-1. 前往 [**Releases**](https://github.com/TomorrowX6/AliceHub/releases) 下载最新签名安装包，或在 [**GitHub Actions**](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 获取最新自动构建产物。
-2. 安装并打开 **AliceHub**，选择预设条目进入管理页，或点击主页右上角菜单中的 **导入其他游戏**：
-   - **本地安装**：从本地 `.zip` / `.rar` / `.7z` 压缩包、`.iso` / `.mdf` 光盘镜像或文件夹导入完整运行资源：
-     - **System 3.x 资源**：包含 `*SA.ALD` / `ADISK.ALD`、`*.ALD`、`System39.ini` / `System39.ain` 等（如需挂载 CD 音轨，可在游戏根目录放置 `playlist.txt` 指向 MP3 / Ogg 曲目）。
-     - **System 4.x 资源**：包含 `AliceStart.ini` / `System40.ini`、`*.ain`、`*.afa` / `*.ald` 等。
-   - **在线安装**：可在主页右上角 **设置** 中阅读并同意《免责声明与使用条款》后开启 **在线安装**。
-3. 点击 **开始游戏** 启动运行（应用将自动识别架构并调用 `xsystem35` 或 `xsystem4` 内核）；运行中可随时点击左上角悬浮图标调节快进、虚拟手柄、截图、字号缩放及辅助功能。
-
----
-
-## iOS（实验性）
-
-- **获取 IPA**：在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 中打开一次成功的构建，在 **Artifacts** 下载 `AliceHub-ios-unsigned`（下载需登录 GitHub）。解压后得到 `AliceHub-<shortsha>-ios-unsigned.ipa`；这是**未签名**的安装包，不包含游戏资源。
-- **侧载安装**：可使用 AltStore / SideStore / Sideloadly 签名安装；免费 Apple ID 的签名通常 **7 天后过期**，需定期续签。TrollStore 仅适用于其支持的设备与系统版本，不适用于所有 iOS 版本。本应用目标为 iOS 15.0+、arm64。
-- **导入游戏**：自行准备合法的 **System 3.x / System 4** 完整游戏文件夹，复制到“文件”→“我的 iPhone”→“AliceHub”→“Games”，或在应用中点击 **导入游戏文件夹**。System 4 根目录须包含 `AliceStart.ini`、`System40.ini` 或非 `System39.ain` 的 `*.ain`；System 3.x 须包含 `*SA.ALD`、`ADISK.ALD`、`System39.ini` 或 `System39.ain`。列表显示所用引擎；混合标记时 System 4 优先。
-- **当前限制**：System 3.x 暂无 MIDI 合成，MIDI 音乐静音（录制的 BGM/PCM 仍受支持）。尚无虚拟手柄、MOD 管理、modifier（修改器）或在线安装。退出游戏会关闭整个应用。已在模拟器验证，**真机尚未测试**；音频仍需在具备音频设备的环境验证。
-- **本地构建**：需要 macOS、Xcode 与 Homebrew，先执行 `brew install cmake ninja autoconf automake libtool bison flex pkgconf xcodegen`，再运行 `ios/build-app.sh ipa` 生成 `ios/build/AliceHub.ipa`，或运行 `ios/build-app.sh sim` 构建模拟器版本。详见 [iOS 构建说明](ios/README.md)。
-
----
-
-## 触控与手柄操作说明
+下表适用于 Android 的 System 3.5–3.9 和 System 4.x。iOS 请在 **设置 → 手柄设置** 中配置手柄；在 System 4 游戏中，可另行开启 **长按快进（按住 Ctrl）**。
 
 | 运行时操作 | 触控手势 | 物理手柄默认映射（可自定义） |
 | :--- | :--- | :--- |
@@ -118,38 +121,43 @@
 
 ## 从源码构建
 
-### 1. 环境准备
-推荐使用 Linux（Ubuntu 22.04 / 24.04）或 macOS，安装 **JDK 17**、**Android SDK（API 34+）**、**Android NDK（r26d–r29）**、**CMake 3.22+** 与 **Ninja**：
+### Android APK
+
+安装 JDK 17、Android SDK（平台 API 34）、Android NDK、CMake 3.22+ 和 Ninja。以下以 Ubuntu 为例，将 `YOUR_NDK_VERSION` 替换为已安装的 NDK 版本：
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y ninja-build bison flex autoconf automake libtool pkg-config cmake git python3 openjdk-17-jdk
-```
 
-### 2. 编译与打包
-
-```bash
 git clone https://github.com/TomorrowX6/AliceHub.git
 cd AliceHub
 
 export ANDROID_SDK_ROOT=/path/to/android-sdk
-export ANDROID_NDK_HOME=/path/to/android-sdk/ndk/26.1.10909125
-
-# 1. 交叉编译全部 arm64-v8a 原生动态库（libxsystem4.so / libxsystem35.so / libSDL2.so / libarchive_jni.so 等）
+export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/YOUR_NDK_VERSION"
 ./build-shared-libs.sh
-
-# 2. 构建签名 Release APK
-cd project
-./gradlew assembleRelease
+(cd project && ./gradlew assembleRelease)
 ```
 
-构建完成后，安装包输出路径为 `project/app/build/outputs/apk/release/app-release.apk`。
+输出：`project/app/build/outputs/apk/release/app-release.apk`。没有配置 Release 密钥时，本地构建默认使用调试密钥，不能直接覆盖签名不同的已安装版本。
+
+### iOS IPA 或模拟器应用
+
+在 macOS 上安装 Xcode 和 iOS SDK（CI 使用 Xcode 26）；构建模拟器应用时还需安装模拟器运行时。以下命令从仓库根目录运行：
+
+```bash
+brew install cmake ninja autoconf automake libtool bison flex pkgconf xcodegen
+ios/build-app.sh ipa  # ios/build/AliceHub.ipa（未签名）
+ios/build-app.sh sim  # 构建 arm64 模拟器应用
+```
+
+构建细节与开发检查见 [iOS 开发文档](ios/README.md)。
 
 ---
 
 ## 致谢与开源许可
 
 - [nunuhara/xsystem4](https://github.com/nunuhara/xsystem4) & [nunuhara/libsys4](https://github.com/nunuhara/libsys4) — 跨平台 System 4.x 核心引擎与格式解析库。
+- [kichikuou/system3-sdl2](https://github.com/kichikuou/system3-sdl2) — 早期 System 1–3 游戏的运行引擎。
 - [kichikuou/xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) — 跨平台 System 3.x（xsystem35）核心引擎与模块实现。
 - [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — Android 移植基础框架。
 

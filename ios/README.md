@@ -1,7 +1,13 @@
-# iOS native libraries
+# AliceHub iOS development
 
-Prerequisites: Xcode with iOS SDKs, and Homebrew `cmake ninja autoconf automake
-libtool bison flex` (`xcodegen` will be used by the app project later).
+For the release IPA, sideloading, and game import, see the [quick start](../README.en.md#download-and-quick-start).
+
+## Native libraries
+
+Prerequisites: macOS, Xcode with iOS SDKs, and Homebrew `cmake ninja autoconf
+automake libtool bison flex pkgconf`. The app build also needs `xcodegen`.
+CI uses Xcode 26, which is needed to compile support for continued background
+processing on iOS 26. Run the commands below from the repository root.
 
 ```
 ios/build-native.sh iphonesimulator
@@ -39,25 +45,26 @@ through libffi calls.
 
 ## Isolated engines
 
-The native build also stages SDL2_mixer 2.8.1 (minimp3 and Vorbisfile, no MIDI)
-and the SDL2 xsystem35 static engine with the debugger disabled. The launcher
-supports System 3.x and System 4 and labels each game's engine. System 4 INIs
-and non-System39 AINs take precedence over System 3 markers (`*SA.ALD`,
-`ADISK.ALD`, `System39.ini`, `System39.ain`). Only regular root files count.
+The native build stages SDL2_mixer 2.8.1 (minimp3 and Vorbisfile; xsystem35
+handles MIDI separately via TinySoundFont). The launcher labels each game's
+engine. System 4 markers take precedence over System 3.5–3.9 markers
+(`*SA.ALD`, `ADISK.ALD`, `System39.ini`, `System39.ain`). If neither matches,
+the legacy System 1–3 engine is selected for `ADISK.DAT` with a recognized
+graphics archive such as `ACG.DAT`. Only regular root files count.
 
 `libxsystem4_engine.a` contains one prelinked object combining xsystem4, sys4
 and cglm; `libxsystem35_engine.a` similarly combines xsystem35, src_lib and
-modules. The iOS linker localizes everything except each engine's entry point
-and the shared `alicehub_ios_*` platform functions. Engines and their
-private libraries use `-fno-common` so tentative globals are isolated too. Shared
-dependencies remain undefined until the app link. Do not link the raw engine
-archives alongside these isolated archives.
+modules. `libsystem3_engine.a` contains the legacy system3-sdl2 runtime. The
+iOS linker localizes private symbols, keeping entry points and the required
+platform and app bridge functions public. Shared dependencies remain undefined
+until the app link. Do not link the raw engine archives alongside the isolated
+archives.
 
 `EnginePlatform.m` stays inside the System 4 object so its audio/save lifecycle
 hooks resolve to the isolated System 4 implementations by default. System 3
 registers its own audio/render-flush/message-skip hook before attaching its
 window; the SDL UIKit event pump suspends either engine while inactive.
-The app force-loads both isolated archives to exercise their combined link.
+The app force-loads all three isolated archives.
 After building both SDKs, validate the staged
 exports with `python3 ios/Tests/test_engine_isolation.py`.
 
@@ -71,10 +78,10 @@ project is ignored; edit `project.yml` instead. Each app build runs the incremen
 native build so edits to engine sources, headers and platform code are linked.
 
 The SwiftUI launcher discovers `Documents/Games`, imports security-scoped
-folders or archives/disc images with coordinated reads, and confirms deletion
-without removing saves. The archive picker opens files in place; extraction goes
-directly into hidden `Games/.import-<UUID>/stage0`, with up to three further stages
-for nested archives or game-containing ISO/MDF images. The shallowest game root
+folders, multi-disc sets and archives/disc images with coordinated reads, and
+confirms deletion without removing saves. The archive picker opens files in place;
+extraction goes directly into hidden `Games/.import-<UUID>/stage0`, with up to three
+further stages for nested archives or game-containing ISO/MDF images. The shallowest game root
 wins (path-sorted ties). Its folder name is preserved, or the outer archive's
 basename is used for a stage-root game. Duplicate names are rejected, temporary
 stages are always cleaned, and the overlay shows extracted MB and the current
@@ -87,9 +94,10 @@ in filename order when multiple AINs exist.
 
 ## Online game downloads
 
-The launcher's 在线下载 button (also in 导入游戏) lists the same 19 base-game
-sources as Android. A detail screen fetches the source's `manifest.json`, shows
-the download size/file count, and asks for confirmation before using data.
+Enable **Online Installation** in Settings and accept the terms to show
+downloadable entries in the game library. A game's download screen fetches the
+source's `manifest.json`, shows the download size and file count, and asks for
+confirmation before starting.
 Files are streamed to `Games/.online-game-<id>/cache` with HTTP Range continuation,
 size limits and SHA-256 verification. Manifest paths, duplicate/case-colliding
 names, prefix conflicts and integer overflow are rejected before installation.
@@ -105,8 +113,10 @@ originals. The installer
 then moves it into `Games/<baseName>` only after game detection succeeds. Existing
 game directories and saves are never replaced. Cancellation/failure keeps reusable
 downloads but removes incomplete staging. Success removes the download cache.
-Keep the app in the foreground: entering the background cancels the active transfer;
-use 继续下载 to resume after returning. This is not an iOS background-download service.
+On iOS 26 and later the installer can use a continued processing task with
+system progress UI. Execution time is still controlled by iOS. On older iOS
+versions the installer uses the short background grace period and pauses if it
+runs out, resuming when the app returns to the foreground.
 
 `python3 ios/Tests/test_online_games.py` runs a local HTTP fixture covering catalog
 parity with Android, manifest validation, Range resume, cancellation/retry,
@@ -115,7 +125,10 @@ rejection and existing-install preservation. It requires Homebrew `libarchive`.
 
 ## App launch contract
 
-### System 3.x
+### System 1–3 and System 3.5–3.9
+
+Legacy DAT games run via `system3_main` and use the engine's native touch
+controls rather than the virtual gamepad.
 
 The launcher calls `xsystem35_main` with `-gamedir <root> -savedir <saveDir>`
 and adds `-saveformat system39` for System39 INI/AIN markers. The game directory
@@ -126,9 +139,9 @@ Bundled `MTLc3m.ttf`/`mincho.ttf` paths are supplied via
 font paths resolve against the game directory.
 
 SDL's renderer handles Retina scaling and aspect-preserving letterboxing.
-The native System 3 touch handler is retained: one finger is left-click,
-two fingers or a tap in the black border is right-click, three fingers opens
-the engine menu. There is no additional Android launcher gesture overlay.
+The native System 3.5–3.9 touch handler supports one-finger left click,
+two-finger or black-border right click, and a three-finger engine menu.
+The app also provides an optional virtual gamepad.
 
 MIDI BGM uses TinySoundFont with the bundled GPLv2 TimGM6mb GM soundfont.
 The launcher supplies its path through `XSYSTEM35_SOUNDFONT`; a missing or invalid
@@ -175,10 +188,9 @@ CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
   Link the isolated engine archives and shared dependencies, SDK zlib/iconv and
   SDL's required Apple frameworks; do not link SDL2main as an app entry point.
   Static compilation alone does not validate final app linking or lifecycle.
-* The non-Android shutdown path still calls `sys_exit`/process exit; returning
-  cleanly to the launcher and repeat sessions remain future work.
-  iOS crash reports omit the Linux-only
-  register dump. Error dialogs use the scene-aware SDL UIKit alert window.
+* A normal iOS session exit returns to the launcher. iOS crash reports omit
+  the Linux-only register dump. Error dialogs use the scene-aware SDL UIKit
+  alert window.
 
 ## Standalone checks
 
@@ -189,7 +201,7 @@ ios/App/SaveZip.swift ios/App/SaveManager.swift ios/Tests/SaveManagerChecks.swif
 with Python and `unzip`. The Python driver supplies the fixture directory argument
 to the executable. No simulator or game data is required.
 
-The launcher offers 存档管理 on each game's swipe actions. Saves remain under
+The game detail screen offers save management. Saves remain under
 `Documents/Saves/<game>`; automatic backups retain five ZIPs under Application
 Support `save_backups/<game>`. Import merges files; restoring a backup replaces
 visible saves while retaining hidden settings. PC export uses the engine's native
@@ -217,11 +229,12 @@ makes a one-finger press held still for one second act as a held Ctrl key for
 message skip until the finger lifts. Moving the finger, a second finger, a
 PartsEngine drag or movie playback cancels it, and the left click of that
 press is dropped once Ctrl engages.
-Tap the gamepad icon in the launcher to edit the global layout and controller
-settings. Swipe right on a game to configure an override for that game. The
-layout editor supports dragging, per-control size, opacity and visibility, and
-the Android Visual Novel, RPG and empty presets. In a game, the gamepad icon
-opens quick toggles; touches outside the controls still go to the game.
+Use **Settings → Gamepad Settings** to edit the global layout and controller
+mappings, or use a supported game's detail screen to configure an override.
+The layout editor supports dragging, per-control size, opacity and visibility,
+key combinations, and Visual Novel, RPG and empty presets. In System 3.5–3.9
+and System 4 games, the gamepad menu also offers quick toggles and in-game
+layout editing. Touches outside the controls still go to the game.
 Bluetooth and MFi controllers use SDL's GameController support and the same
 default mappings as Android. Enable physical controls in the gamepad settings;
 virtual controls can be toggled manually from the in-game menu or a mapped button.
@@ -235,8 +248,7 @@ scene becomes active, for example:
 ```
 xcrun simctl launch booted io.github.alicehub -autolaunch dohnadohna
 python3 ios/Tests/test_viewport.py
-xcrun swiftc ios/App/{GameLibrary,GamepadProfile}.swift ios/Tests/LibraryChecks.swift -o /tmp/alicehub-library-checks
-/tmp/alicehub-library-checks
+bash ios/Tests/run-library-checks.sh
 ```
 
 Dohna Dohna's title screen and first Chinese message have been exercised on the
@@ -260,7 +272,7 @@ The shared native modifier (`xsystem4/src/modifier.c`) is reached from Swift thr
   entry with the Android presets (Rance X), live locks (Rance X, Dohna Dohna, Evenicle), one-tap common
   cheats (Dohna Dohna, Evenicle) and the live value readout. Locks persist in
   `Application Support/modifier_config.json`.
-- **Launcher:** swipe a Rance X game (folder with `Rance10.ain`) and choose “修改存档” to edit the writable fields of its `LocalSaveN.asd` files.
+- **Launcher:** open a Rance X game's detail screen and choose the save editor to edit the writable fields of its `LocalSaveN.asd` files.
   Each write first copies the file to `<save>.mod.bak`.
 
 Checks: `swiftc -parse-as-library ios/App/ModifierBridge.swift ios/App/ModifierGamePanels.swift ios/Tests/ModifierChecks.swift -o /tmp/modchecks && /tmp/modchecks`.
