@@ -11,8 +11,10 @@ ios/build-native.sh iphoneos
 Both builds target arm64, iOS 15.0+, and install separate static archives and
 headers in `ios/build/<sdk>/stage/{lib,include}`. Do not combine device and
 simulator archives into one fat archive: both use arm64 but different platforms.
-Zlib is taken from the selected SDK. FreeType 2.13.3 matches the Android fallback
-in `cmake/FindFreetype.cmake`; cglm 0.9.2 is fetched by the engine's CMake project.
+Zlib is taken from the selected SDK. FreeType is 2.15.0, newer than the Android
+fallback in `cmake/FindFreetype.cmake`, because iOS 26 and later ship PingFang in
+Apple's HVF outline format. FreeType enables HVF when the SDK has `libhvf`, and
+`build-app.sh` then weak-links it so the app still launches on older iOS; cglm 0.9.2 is fetched by the engine's CMake project.
 Other dependency versions and hashes match the root Android superbuild.
 Archive imports use static libarchive 3.8.11 and xz 5.8.4 with SDK zlib.
 
@@ -150,6 +152,16 @@ CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
   relative `fonts/...`; explicit absolute `--font-mincho` and `--font-gothic`
   paths are also supported. Unlike Android's SDL asset reader, FreeType on iOS
   reads actual filesystem paths. The engine does not change cwd itself.
+* The launcher sets `XSYSTEM4_FONT_GOTHIC`/`XSYSTEM4_FONT_MINCHO` to the system
+  Hiragino Sans W3 and `XSYSTEM4_FONT_GOTHIC_SC`/`XSYSTEM4_FONT_MINCHO_SC` (used
+  for Chinese releases) to PingFang SC Medium, resolved through CoreText as
+  `<file>#<PostScript name>` so the right face is picked from the `.ttc`. These
+  rank below `.xsys4rc` and CLI fonts and above the bundled fonts, which remain
+  the fallback when a system font is missing or unreadable. Individual glyphs
+  missing from a system font (such as kana in PingFang SC) fall back to the
+  bundled HanaMinA. PingFang SC Medium is used because iOS ships Regular only
+  as a variable-font instance with a private name that FreeType cannot select
+  by PostScript name.
 * Supply an absolute game path so the resource cwd and game directory remain
   independent. Import/extract game files into an accessible sandbox directory
   before launch; document-provider access is the app's responsibility.

@@ -15,6 +15,7 @@
  */
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "system4.h"
@@ -85,11 +86,29 @@ static struct font *load_font(enum font_face type)
 #endif
 	};
 
+#ifdef ALICEHUB_IOS
+	static const char *const default_font_env[2][2] = {
+		{ [FONT_GOTHIC] = "XSYSTEM4_FONT_GOTHIC", [FONT_MINCHO] = "XSYSTEM4_FONT_MINCHO" },
+		{ [FONT_GOTHIC] = "XSYSTEM4_FONT_GOTHIC_SC", [FONT_MINCHO] = "XSYSTEM4_FONT_MINCHO_SC" },
+	};
+#endif
+
 	struct font *font;
 	bool use_sc_fonts = sys4_text_is_gbk || sys4_has_mai_word_table();
 	// user specified font
 	if (config.font_paths[type] && (font = ft_font_load(config.font_paths[type])))
 		return font;
+#ifdef ALICEHUB_IOS
+	// platform default set by the launcher
+	const char *env_font = getenv(default_font_env[use_sc_fonts][type]);
+	if (env_font && *env_font && (font = ft_font_load(env_font))) {
+		struct font *fallback = ft_font_load(default_font_paths[FONT_MINCHO]);
+		if (!fallback)
+			fallback = ft_font_load(local_font_paths[FONT_MINCHO]);
+		ft_font_set_fallback(font, fallback);
+		return font;
+	}
+#endif
 	if (use_sc_fonts) {
 		const char *const *paths = type == FONT_GOTHIC ? gbk_gothic_paths : gbk_mincho_paths;
 		size_t nr_paths = type == FONT_GOTHIC

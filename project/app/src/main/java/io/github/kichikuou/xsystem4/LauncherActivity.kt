@@ -43,6 +43,8 @@ private class GameSelectAdapter(
         val entry: GameSelectEntry,
         val badgeLabel: String,
         val badgeTone: UiKit.Tone,
+        val translationLabel: String,
+        val translationTone: UiKit.Tone,
         val iconKey: String
     )
 
@@ -51,12 +53,14 @@ private class GameSelectAdapter(
         val iconFrame: View,
         val icon: ImageView,
         val title: TextView,
-        val badge: TextView
+        val badge: TextView,
+        val translationBadge: TextView
     ) {
         var boundAccent: Int = 0
         var boundNight: Boolean? = null
         var boundIconKey: String? = null
         var boundChipTone: UiKit.Tone? = null
+        var boundTranslationTone: UiKit.Tone? = null
     }
 
     private val context: Context = activity
@@ -105,18 +109,6 @@ private class GameSelectAdapter(
                     badgeLabel = context.getString(R.string.game_status_error)
                     badgeTone = UiKit.Tone.DANGER
                 }
-                primary != null && gameList.hasInstalledMod(primary) -> {
-                    val modInfo = gameList.getInstalledModInfo(primary)
-                    val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
-                    val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
-                    val statusRes = if (isCnPatch) {
-                        R.string.game_status_installed_cn_patch
-                    } else {
-                        R.string.game_status_installed_mod
-                    }
-                    badgeLabel = context.getString(statusRes, ver)
-                    badgeTone = UiKit.Tone.SUCCESS
-                }
                 primary != null -> {
                     badgeLabel = context.getString(R.string.game_status_installed)
                     badgeTone = UiKit.Tone.SUCCESS
@@ -126,12 +118,18 @@ private class GameSelectAdapter(
                     badgeTone = UiKit.Tone.NEUTRAL
                 }
             }
+            val modInfo = if (primary != null) gameList.getInstalledModInfo(primary) else null
+            val hasChinese = GameCatalog.hasChineseTranslation(desc, primary, modInfo)
+            val translationLabel = context.getString(
+                if (hasChinese) R.string.game_translation_cn else R.string.game_translation_raw
+            )
+            val translationTone = if (hasChinese) UiKit.Tone.PRIMARY else UiKit.Tone.WARNING
             val iconKey = if (GameCatalog.isBuiltInGameId(desc.id)) {
                 "res:${desc.id}:${desc.iconRes}:${desc.iconFrameColor}"
             } else {
                 "file:${desc.id}:${desc.iconFrameColor}:${primary?.icon?.absolutePath.orEmpty()}:${primary?.iconFingerprint().orEmpty()}"
             }
-            BoundRow(entry, badgeLabel, badgeTone, iconKey)
+            BoundRow(entry, badgeLabel, badgeTone, translationLabel, translationTone, iconKey)
         }
     }
 
@@ -148,7 +146,10 @@ private class GameSelectAdapter(
         rows = if (filterQuery.isEmpty()) {
             allRows
         } else {
-            allRows.filter { matchesQuery(it.entry, filterQuery) }
+            allRows.filter {
+                it.translationLabel.contains(filterQuery, ignoreCase = true) ||
+                    matchesQuery(it.entry, filterQuery)
+            }
         }
         notifyDataSetChanged()
     }
@@ -251,7 +252,28 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_MANANA2 && GameCatalog.isManana2Alias(q)) ||
             (desc.id == GameCatalog.ID_MANANA3 && GameCatalog.isManana3Alias(q)) ||
             (desc.id == GameCatalog.ID_MANANA4 && GameCatalog.isManana4Alias(q)) ||
-            (desc.id == GameCatalog.ID_MANANA5 && GameCatalog.isManana5Alias(q))
+            (desc.id == GameCatalog.ID_MANANA5 && GameCatalog.isManana5Alias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMASAKURA && GameCatalog.isTsumaSakuraAlias(q)) ||
+            (desc.id == GameCatalog.ID_SHAMANSSANCTUARY && GameCatalog.isShamansSanctuaryAlias(q)) ||
+            (desc.id == GameCatalog.ID_ALIVEZ && GameCatalog.isAliveZAlias(q)) ||
+            (desc.id == GameCatalog.ID_DUNGEONSDOLLS && GameCatalog.isDungeonsDollsAlias(q)) ||
+            (desc.id == GameCatalog.ID_SUZUMIYA && GameCatalog.isSuzumiyaAlias(q)) ||
+            (desc.id == GameCatalog.ID_SHIMAIMA && GameCatalog.isShimaimaAlias(q)) ||
+            (desc.id == GameCatalog.ID_DAIBANCHOUGAIDEN && GameCatalog.isDaibanchouGaidenAlias(q)) ||
+            (desc.id == GameCatalog.ID_COSPLAYLEMON && GameCatalog.isCosplayLemonAlias(q)) ||
+            (desc.id == GameCatalog.ID_WHIPHONEY && GameCatalog.isWhipHoneyAlias(q)) ||
+            (desc.id == GameCatalog.ID_ONIMUSU && GameCatalog.isOnimusuAlias(q)) ||
+            (desc.id == GameCatalog.ID_PROGRX && GameCatalog.isProGrxAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSVERN && GameCatalog.isDpsVerNAlias(q)) ||
+            (desc.id == GameCatalog.ID_SUKIIRONO && GameCatalog.isSukiironoAlias(q)) ||
+            (desc.id == GameCatalog.ID_GIRLS && GameCatalog.isGirlsAlias(q)) ||
+            (desc.id == GameCatalog.ID_DEBUT && GameCatalog.isDebutAlias(q)) ||
+            (desc.id == GameCatalog.ID_HARUKAVSESCA && GameCatalog.isHarukaVsEscaAlias(q)) ||
+            (desc.id == GameCatalog.ID_HARUKANINJA && GameCatalog.isHarukaNinjaAlias(q)) ||
+            (desc.id == GameCatalog.ID_MEGANE && GameCatalog.isMeganeAlias(q)) ||
+            (desc.id == GameCatalog.ID_RACHELSAKURA && GameCatalog.isRachelSakuraAlias(q)) ||
+            (desc.id == GameCatalog.ID_SABAKUNIKA && GameCatalog.isSabakuNikaAlias(q)) ||
+            (desc.id == GameCatalog.ID_VANISHPALM && GameCatalog.isVanishPalmAlias(q))
         ) {
             return true
         }
@@ -278,7 +300,8 @@ private class GameSelectAdapter(
                 iconFrame = view.findViewById(R.id.icon_frame),
                 icon = view.findViewById(R.id.icon),
                 title = view.findViewById(R.id.title),
-                badge = view.findViewById(R.id.status_badge)
+                badge = view.findViewById(R.id.status_badge),
+                translationBadge = view.findViewById(R.id.translation_badge)
             )
             view.tag = holder
         } else {
@@ -314,6 +337,13 @@ private class GameSelectAdapter(
         if (holder.boundChipTone != row.badgeTone || holder.boundNight != night) {
             UiKit.styleChip(holder.badge, row.badgeTone, dot = true)
             holder.boundChipTone = row.badgeTone
+        }
+        if (holder.translationBadge.text != row.translationLabel) {
+            holder.translationBadge.text = row.translationLabel
+        }
+        if (holder.boundTranslationTone != row.translationTone || holder.boundNight != night) {
+            UiKit.styleChip(holder.translationBadge, row.translationTone, dot = false)
+            holder.boundTranslationTone = row.translationTone
         }
         holder.boundNight = night
 

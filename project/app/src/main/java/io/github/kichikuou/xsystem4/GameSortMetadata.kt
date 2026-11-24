@@ -116,7 +116,28 @@ object GameSortMetadata {
         GameCatalog.ID_MANANA2 to GameSortInfo("2004-10-11", 59.5, "https://vndb.org/v2037", "https://vndb.org/v2037"),
         GameCatalog.ID_MANANA3 to GameSortInfo("2004-12-17", 59.6, "https://vndb.org/v2038", "https://vndb.org/v2038"),
         GameCatalog.ID_MANANA4 to GameSortInfo("2005-05-04", 59.1, "https://vndb.org/v2039", "https://vndb.org/v2039"),
-        GameCatalog.ID_MANANA5 to GameSortInfo("2005-06-17", 61.8, "https://vndb.org/v2041", "https://vndb.org/v2041")
+        GameCatalog.ID_MANANA5 to GameSortInfo("2005-06-17", 61.8, "https://vndb.org/v2041", "https://vndb.org/v2041"),
+        GameCatalog.ID_TSUMASAKURA to GameSortInfo("2010-07-14", 57.9, "https://vndb.org/v3974", "https://vndb.org/r7680"),
+        GameCatalog.ID_SHAMANSSANCTUARY to GameSortInfo("2010-11-26", 65.5, "https://vndb.org/v5121", "https://vndb.org/v5121"),
+        GameCatalog.ID_ALIVEZ to GameSortInfo("2008-09-26", 57.8, "https://vndb.org/v958", "https://vndb.org/v958"),
+        GameCatalog.ID_DUNGEONSDOLLS to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_SUZUMIYA to GameSortInfo("2004-12-17", 65.9, "https://vndb.org/v2033", "https://vndb.org/v2033"),
+        GameCatalog.ID_SHIMAIMA to GameSortInfo("2004-12-17", 61.0, "https://vndb.org/v2034", "https://vndb.org/v2034"),
+        GameCatalog.ID_DAIBANCHOUGAIDEN to GameSortInfo("2004-12-17", null, null, "https://vndb.org/v30469"),
+        GameCatalog.ID_COSPLAYLEMON to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_WHIPHONEY to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_ONIMUSU to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_PROGRX to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_DPSVERN to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_SUKIIRONO to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_GIRLS to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_DEBUT to GameSortInfo("2004-12-17", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_HARUKAVSESCA to GameSortInfo("2009-12-18", 64.0, "https://vndb.org/v3100", "https://vndb.org/v3100"),
+        GameCatalog.ID_HARUKANINJA to GameSortInfo("2009-12-18", 60.3, "https://vndb.org/v3105", "https://vndb.org/v3105"),
+        GameCatalog.ID_MEGANE to GameSortInfo("2009-12-18", 51.8, "https://vndb.org/v3101", "https://vndb.org/v3101"),
+        GameCatalog.ID_RACHELSAKURA to GameSortInfo("2009-12-18", 54.5, "https://vndb.org/v3102", "https://vndb.org/v3102"),
+        GameCatalog.ID_SABAKUNIKA to GameSortInfo("2009-12-18", 58.5, "https://vndb.org/v3103", "https://vndb.org/v3103"),
+        GameCatalog.ID_VANISHPALM to GameSortInfo("2009-12-18", 60.9, "https://vndb.org/v3099", "https://vndb.org/v3099")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]
