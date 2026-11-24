@@ -264,6 +264,11 @@ int main(void) {
     ain_add_string(ain, "th74s65a");
 
     const char *sjis = "\x82\xb1\x82\xea\x82\xcd\x83\x65\x83\x58\x83\x67\x82\xc5\x82\xb7\x81\x42";
+    ain_add_message(ain, sjis);
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle2_rance);
+    assert(!sys4_text_is_gbk && "marker-free inconclusive AIN must stay Shift-JIS");
+
     for (int i = 0; i < 12; i++)
         ain_add_message(ain, sjis);
 
