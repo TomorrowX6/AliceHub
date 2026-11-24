@@ -113,8 +113,28 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `otomesenki` | Otome Senki | 1997-01-01 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
 | `gakuenhyouryuu` | Gakuen Hyouryuu Senki | 1999-07-01 | 65.6 | 6.56 | [v20393](https://vndb.org/v20393) | [source](https://vndb.org/v20393) |
 | `maidnosusume` | Maid no Susume | 1999-07-01 | unknown | unknown | not assigned | [source](https://vndb.org/v20392) |
+| `dalkgaiden` | Dalk Gaiden | 2002-09-27 | 58.7 | 5.87 | [v1807](https://vndb.org/v1807) | [source](https://vndb.org/v1807) |
+| `mamanyonyo` | Mamanyonyo | 2003-02-07 | 66.1 | 6.61 | [v1111](https://vndb.org/v1111) | [source](https://vndb.org/v1111) |
+| `majonoshokuzai` | Majo no Shokuzai | 2004-04-16 | 71.2 | 7.12 | [v4823](https://vndb.org/v4823) | [source](https://vndb.org/v4823) |
+| `saboten` | Yokubari Saboten | 2006-04-21 | 65.6 | 6.56 | [v502](https://vndb.org/v502) | [source](https://vndb.org/v502) |
+| `doublesensei` | Double Sensei Life | 2007-06-29 | 68.7 | 6.87 | [v303](https://vndb.org/v303) | [source](https://vndb.org/v303) |
+| `ojousama` | Ojou-sama o Iinari ni Suru Game | 2007-10-05 | 56.8 | 5.68 | [v411](https://vndb.org/v411) | [source](https://vndb.org/v411) |
+| `edoranze` | Edo Ranze ~Come on! Mito Hime-sama~ | 2008-10-12 | 58.9 | 5.89 | [v2289](https://vndb.org/v2289) | [source](https://vndb.org/v2289) |
+| `vanish` | Vanish! ~Oppai no Kieta Oukoku~ | 2009-02-27 | 64.1 | 6.41 | [v1364](https://vndb.org/v1364) | [source](https://vndb.org/v1364) |
+| `hokenshitsu` | Boku Dake no Hokenshitsu | 2009-07-24 | 72.1 | 7.21 | [v2029](https://vndb.org/v2029) | [source](https://vndb.org/v2029) |
+| `kamunagara` | Jinmu - Kamunagara - Ichi Ni San | 2005-09-30 | 57.7 | 5.77 | [v3104](https://vndb.org/v3104) | [source](https://vndb.org/v3104) |
+| `erumeiflower` | El Mayflower | 2004-12-17 | unknown | unknown | not assigned | [source](https://vndb.org/v21749) |
+| `erumeiwakare` | El Mayflower ~Wakare no Yoru~ | 2006-06-02 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `manana1` | Ultra Mahou Shoujo Manana vol.1 | 2004-08-27 | 61.1 | 6.11 | [v2036](https://vndb.org/v2036) | [source](https://vndb.org/v2036) |
+| `manana2` | Ultra Mahou Shoujo Manana vol.2 | 2004-10-11 | 59.5 | 5.95 | [v2037](https://vndb.org/v2037) | [source](https://vndb.org/v2037) |
+| `manana3` | Ultra Mahou Shoujo Manana vol.3 | 2004-12-17 | 59.6 | 5.96 | [v2038](https://vndb.org/v2038) | [source](https://vndb.org/v2038) |
+| `manana4` | Ultra Mahou Shoujo Manana vol.4 | 2005-05-04 | 59.1 | 5.91 | [v2039](https://vndb.org/v2039) | [source](https://vndb.org/v2039) |
+| `manana5` | Ultra Mahou Shoujo Manana vol.5 | 2005-06-17 | 61.8 | 6.18 | [v2041](https://vndb.org/v2041) | [source](https://vndb.org/v2041) |
 
 ## Edition mapping / missing-score decisions
+
+- `erumeiflower` ([v21749](https://vndb.org/v21749), released `2004-12-17`) currently returns `rating: null` on VNDB (0 votes), so its rating and score source remain null.
+- `erumeiwakare` (`エルメイフラワー ～別れの夜～`, released `2006-06-02` as a standalone epilogue to El Mayflower) has no separate VNDB entry, so its rating and score source remain null.
 
 - `otomesenki` (`乙女戦記`, 1997 AliceSoft free download title) has no standalone VNDB work entry, so its rating and score source remain null.
 - `maidnosusume` ([v20392](https://vndb.org/v20392), released `1999-07-01`) currently returns `rating: null` on VNDB (0 votes), so its rating and score source remain null.

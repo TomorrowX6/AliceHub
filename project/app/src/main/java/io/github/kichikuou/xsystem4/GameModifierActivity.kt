@@ -418,6 +418,23 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_OTOMESENKI ||
                 id == GameCatalog.ID_GAKUENHYOURYUU ||
                 id == GameCatalog.ID_MAIDNOSUSUME ||
+                id == GameCatalog.ID_DALKGAIDEN ||
+                id == GameCatalog.ID_MAMANYONYO ||
+                id == GameCatalog.ID_MAJONOSHOKUZAI ||
+                id == GameCatalog.ID_SABOTEN ||
+                id == GameCatalog.ID_DOUBLESENSEI ||
+                id == GameCatalog.ID_OJOUSAMA ||
+                id == GameCatalog.ID_EDORANZE ||
+                id == GameCatalog.ID_VANISH ||
+                id == GameCatalog.ID_HOKENSHITSU ||
+                id == GameCatalog.ID_KAMUNAGARA ||
+                id == GameCatalog.ID_ERUMEIFLOWER ||
+                id == GameCatalog.ID_ERUMEIWAKARE ||
+                id == GameCatalog.ID_MANANA1 ||
+                id == GameCatalog.ID_MANANA2 ||
+                id == GameCatalog.ID_MANANA3 ||
+                id == GameCatalog.ID_MANANA4 ||
+                id == GameCatalog.ID_MANANA5 ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

@@ -148,8 +148,25 @@ final class GameLibrary: ObservableObject {
         ("paschacpp", ["paschacpp", "paschac++", "ぱすちゃc++", "ぱすちゃc＋＋", "ぱすてる+", "ぱすてる＋", "粉彩铃音c++", "粉彩鈴音c++"]),
         ("pastelchime2", ["pastelchime2", "pastelchimecontinue", "pastelcc", "ぱすてるチャイムcontinue", "ぱすてる2", "ぱすてる２", "粉彩铃音continue", "粉彩铃音2", "粉彩鈴音2"]),
         ("pastelchime", ["pastelchime", "ぱすてるチャイム", "ぱすてるsa", "粉彩铃音", "粉彩鈴音"]),
+        ("dalkgaiden", ["dalkgaiden", "dalk外伝", "ｄａｌｋ外伝", "dalk外传", "dalk外傳"]),
         ("dalk", ["dalksa", "dalkga", "dalk"]),
         ("ningengari", ["ningengari", "人間狩り", "人间狩猎", "人間狩獵"]),
+        ("mamanyonyo", ["mamanyonyo", "ままにょにょ", "妈妈软软", "媽媽軟軟", "mamanyodemo"]),
+        ("majonoshokuzai", ["majonoshokuzai", "魔女の贖罪", "魔女的赎罪", "魔女的贖罪"]),
+        ("saboten", ["saboten", "よくばりサボテン", "贪心仙人掌", "貪心仙人掌"]),
+        ("doublesensei", ["doublesensei", "だぶる先生らいふ", "双倍教师生活", "雙倍教師生活"]),
+        ("ojousama", ["ojousama", "お嬢様をいいなり", "お嬢様.ain", "お嬢様ga.ald", "让大小姐言听计从", "讓大小姐言聽計從"]),
+        ("edoranze", ["edoranze", "エドランゼ", "水戸姫様", "江户乱世", "江戶亂世", "水户姬大人"]),
+        ("vanish", ["vanish", "ばにしゅ", "おっぱいの消えた王国", "消失的王国", "消失的王國"]),
+        ("hokenshitsu", ["hokenshitsu", "僕だけの保健室", "只属于我的保健室", "只屬於我的保健室", "hoken.alm"]),
+        ("kamunagara", ["kamunagara", "カムナガラ", "神武.ain", "神武ga.ald", "神武ba.ald", "神武wa.ald", "神武"]),
+        ("erumeiwakare", ["erumeiwakare", "wakarenoyoru", "別れの夜", "别离之夜", "別離之夜"]),
+        ("erumeiflower", ["erumeiflower", "elmayflower", "エルメイフラワー", "艾尔梅花", "艾爾梅花"]),
+        ("manana1", ["manana1", "mananavol1", "mananavol.1", "まななvol1", "まななｖｏｌ１", "まななvol.1", "まなな1", "玛娜娜vol.1", "玛娜娜vol1", "玛娜娜1"]),
+        ("manana2", ["manana2", "mananavol2", "mananavol.2", "まななvol2", "まななｖｏｌ２", "まななvol.2", "まなな2", "玛娜娜vol.2", "玛娜娜vol2", "玛娜娜2"]),
+        ("manana3", ["manana3", "mananavol3", "mananavol.3", "まななvol3", "まななｖｏｌ３", "まななvol.3", "まなな3", "玛娜娜vol.3", "玛娜娜vol3", "玛娜娜3"]),
+        ("manana4", ["manana4", "mananavol4", "mananavol.4", "まななvol4", "まななｖｏｌ４", "まななvol.4", "まなな4", "玛娜娜vol.4", "玛娜娜vol4", "玛娜娜4"]),
+        ("manana5", ["manana5", "mananavol5", "mananavol.5", "まななvol5", "まななｖｏｌ５", "まななvol.5", "まなな5", "玛娜娜vol.5", "玛娜娜vol5", "玛娜娜5"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
@@ -347,6 +364,28 @@ final class GameLibrary: ObservableObject {
         else if otomeSenki { displayName = "乙女战记" }
         else { displayName = url.lastPathComponent }
 
+        let erumeiWakare: Bool
+        if engine == .system4 && regularNamesLower.contains("エルメイフラワー.ain") {
+            let waiSize = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "エルメイフラワーwa.wai" })
+                .flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
+            let bgiSize = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "エルメイフラワーba.bgi" })
+                .flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
+            let ainSize = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "エルメイフラワー.ain" })
+                .flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
+            if let waiSize, waiSize > 0 {
+                erumeiWakare = waiSize <= 256
+            } else if let bgiSize, bgiSize > 0 {
+                erumeiWakare = bgiSize <= 600
+            } else if let ainSize, ainSize > 0 {
+                erumeiWakare = ainSize <= 500_000
+            } else {
+                erumeiWakare = false
+            }
+        } else {
+            erumeiWakare = false
+        }
+        let erumeiFlower = engine == .system4 && regularNamesLower.contains("エルメイフラワー.ain") && !erumeiWakare
+
         let detectedArtworkID: String?
         if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
@@ -365,6 +404,8 @@ final class GameLibrary: ObservableObject {
         else if toushin2Sp { detectedArtworkID = "toushin2sp" }
         else if mugenHouyou { detectedArtworkID = "mugenhouyou" }
         else if otomeSenki { detectedArtworkID = "otomesenki" }
+        else if erumeiWakare { detectedArtworkID = "erumeiwakare" }
+        else if erumeiFlower { detectedArtworkID = "erumeiflower" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?
@@ -375,9 +416,13 @@ final class GameLibrary: ObservableObject {
             let normalized = names.joined(separator: " ").lowercased()
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
-            let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("dalkdemo")
+            let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("外傳") || normalized.contains("dalkdemo")
+            let isVanishTeNoHira = normalized.contains("この手のひら") || normalized.contains("konotenohira")
+            let isKamunagara2 = normalized.contains("神武2") || normalized.contains("神武２") || normalized.contains("第弐話") || normalized.contains("第2話")
             artworkKey = artworkAliases.first(where: { key, tokens in
                 if key == "dalk" && isDalkGaiden { return false }
+                if key == "vanish" && isVanishTeNoHira { return false }
+                if key == "kamunagara" && isKamunagara2 { return false }
                 return tokens.contains(where: normalized.contains)
             })?.0
         }

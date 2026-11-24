@@ -236,7 +236,8 @@ object NativeGameImport {
         detectedGameId: String?,
         targetGameId: String? = null,
         isMultiDiscSys3: Boolean = false,
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): String {
         val isDaiakujiImport = targetGameId == GameCatalog.ID_DAIAKUJI ||
             detectedGameId == GameCatalog.ID_DAIAKUJI
@@ -258,6 +259,8 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_TOUSHIN2SP -> "Toushin2Sp"
             detectedGameId == GameCatalog.ID_MUGENHOUYOU -> "MugenHouyou"
             detectedGameId == GameCatalog.ID_OTOMESENKI -> "OtomeSenki"
+            detectedGameId == GameCatalog.ID_ERUMEIWAKARE -> "ErumeiWakare"
+            detectedGameId == GameCatalog.ID_ERUMEIFLOWER -> "ErumeiFlower"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
                 OnlineInstaller.sanitizeInstallDirName(
@@ -265,7 +268,7 @@ object NativeGameImport {
                     fallback = "System3"
                 )
             }
-            else -> resolveImportBaseNameFromFileNames(primaryFileNames, isMultiDiscSys3, readSmallFile)
+            else -> resolveImportBaseNameFromFileNames(primaryFileNames, isMultiDiscSys3, readSmallFile, getFileSize)
         }
     }
 
@@ -273,7 +276,8 @@ object NativeGameImport {
     fun resolveImportBaseNameFromFileNames(
         fileNames: Collection<String>,
         isMultiDiscSys3: Boolean = false,
-        readSmallFile: ((String) -> ByteArray?)? = null
+        readSmallFile: ((String) -> ByteArray?)? = null,
+        getFileSize: ((String) -> Long?)? = null
     ): String {
         val activeFiles = fileNames.filter { !skip(it) }
         if (activeFiles.any { it.equals("DOKI_SA.ALD", true) }) {
@@ -433,6 +437,57 @@ object NativeGameImport {
         }
         if (GameCatalog.isMaidNoSusumeGameFiles(activeFiles, readSmallFile)) {
             return "MaidNoSusume"
+        }
+        if (GameCatalog.isDalkGaidenGameFiles(activeFiles, readSmallFile)) {
+            return "DalkGaiden"
+        }
+        if (GameCatalog.isMamanyonyoGameFiles(activeFiles, readSmallFile)) {
+            return "Mamanyonyo"
+        }
+        if (GameCatalog.isMajoNoShokuzaiGameFiles(activeFiles, readSmallFile)) {
+            return "MajoNoShokuzai"
+        }
+        if (GameCatalog.isSabotenGameFiles(activeFiles, readSmallFile)) {
+            return "Saboten"
+        }
+        if (GameCatalog.isDoubleSenseiGameFiles(activeFiles, readSmallFile)) {
+            return "DoubleSensei"
+        }
+        if (GameCatalog.isOjousamaGameFiles(activeFiles, readSmallFile)) {
+            return "Ojousama"
+        }
+        if (GameCatalog.isEdoranzeGameFiles(activeFiles, readSmallFile)) {
+            return "Edoranze"
+        }
+        if (GameCatalog.isVanishGameFiles(activeFiles, readSmallFile)) {
+            return "Vanish"
+        }
+        if (GameCatalog.isHokenshitsuGameFiles(activeFiles, readSmallFile)) {
+            return "Hokenshitsu"
+        }
+        if (GameCatalog.isKamunagaraGameFiles(activeFiles, readSmallFile)) {
+            return "Kamunagara"
+        }
+        if (GameCatalog.isErumeiWakareGameFiles(activeFiles, readSmallFile, getFileSize)) {
+            return "ErumeiWakare"
+        }
+        if (GameCatalog.isErumeiFlowerGameFiles(activeFiles, readSmallFile, getFileSize)) {
+            return "ErumeiFlower"
+        }
+        if (GameCatalog.isManana1GameFiles(activeFiles, readSmallFile)) {
+            return "Manana1"
+        }
+        if (GameCatalog.isManana2GameFiles(activeFiles, readSmallFile)) {
+            return "Manana2"
+        }
+        if (GameCatalog.isManana3GameFiles(activeFiles, readSmallFile)) {
+            return "Manana3"
+        }
+        if (GameCatalog.isManana4GameFiles(activeFiles, readSmallFile)) {
+            return "Manana4"
+        }
+        if (GameCatalog.isManana5GameFiles(activeFiles, readSmallFile)) {
+            return "Manana5"
         }
         if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
             return "Sanbiki"
@@ -616,10 +671,17 @@ object NativeGameImport {
                 else -> null
             }
         }
+        val primaryFileSize: (String) -> Long? = { fileName ->
+            resolvedPrimary.firstOrNull {
+                !it.folder && !skip(it.name) &&
+                    ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
+            }?.size?.takeIf { it > 0L }
+        }
         val detectedGameId = GameCatalog.classifyGameRootFiles(
             fileNames = primaryFileNames,
             bgmFileNames = bgmFileNames,
-            readSmallFile = readPrimarySmallFile
+            readSmallFile = readPrimarySmallFile,
+            getFileSize = primaryFileSize
         )
         val matchesTarget = if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
             true
@@ -651,7 +713,8 @@ object NativeGameImport {
             detectedGameId = detectedGameId,
             targetGameId = targetGameId,
             isMultiDiscSys3 = sourceTrees.size > 1,
-            readSmallFile = readPrimarySmallFile
+            readSmallFile = readPrimarySmallFile,
+            getFileSize = primaryFileSize
         )
         val storageCanonical = storage.canonicalFile
         val staging = File(storageCanonical, ".import-${UUID.randomUUID()}").canonicalFile

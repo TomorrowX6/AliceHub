@@ -251,7 +251,22 @@ struct LibraryChecks {
             ("OnlyYouReCross", "オンリーSA.ALD", GameEngine.system3, "onlyyourecross"),
             ("Mamorigami", "守神SA.ALD", GameEngine.system3, "mamorigami"),
             ("GakuenHyouryuu", "学園漂流SA.ALD", GameEngine.system3, "gakuenhyouryuu"),
-            ("MaidNoSusume", "メイドSA.ALD", GameEngine.system3, "maidnosusume")
+            ("MaidNoSusume", "メイドSA.ALD", GameEngine.system3, "maidnosusume"),
+            ("DalkGaiden", "ＤＡＬＫ外伝.ain", GameEngine.system4, "dalkgaiden"),
+            ("Mamanyonyo", "ままにょにょ.ain", GameEngine.system4, "mamanyonyo"),
+            ("MajoNoShokuzai", "魔女の贖罪.ain", GameEngine.system4, "majonoshokuzai"),
+            ("Saboten", "よくばりサボテン.ain", GameEngine.system4, "saboten"),
+            ("DoubleSensei", "だぶる先生らいふ.ain", GameEngine.system4, "doublesensei"),
+            ("Ojousama", "お嬢様.ain", GameEngine.system4, "ojousama"),
+            ("Edoranze", "エドランゼ.ain", GameEngine.system4, "edoranze"),
+            ("Vanish", "ばにしゅ！.ain", GameEngine.system4, "vanish"),
+            ("Hokenshitsu", "僕だけの保健室.ain", GameEngine.system4, "hokenshitsu"),
+            ("Kamunagara", "神武.ain", GameEngine.system4, "kamunagara"),
+            ("Manana1", "まななＶＯＬ１.ain", GameEngine.system4, "manana1"),
+            ("Manana2", "まななＶＯＬ２.ain", GameEngine.system4, "manana2"),
+            ("Manana3", "まななＶＯＬ３.ain", GameEngine.system4, "manana3"),
+            ("Manana4", "まななＶＯＬ４.ain", GameEngine.system4, "manana4"),
+            ("Manana5", "まななＶＯＬ５.ain", GameEngine.system4, "manana5")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -346,6 +361,24 @@ struct LibraryChecks {
         try files.createDirectory(at: kaeruAliceDir, withIntermediateDirectories: true)
         try Data().write(to: kaeruAliceDir.appendingPathComponent("System39.ain"))
         precondition(Game(url: kaeruAliceDir).artworkKey == "kaerualice")
+        let erumeiMainDir = root.appendingPathComponent("UnknownErumei1")
+        try files.createDirectory(at: erumeiMainDir, withIntermediateDirectories: true)
+        try Data().write(to: erumeiMainDir.appendingPathComponent("エルメイフラワー.ain"))
+        try Data(repeating: 1, count: 1803).write(to: erumeiMainDir.appendingPathComponent("エルメイフラワーWA.wai"))
+        precondition(Game(url: erumeiMainDir).artworkKey == "erumeiflower")
+        let erumeiWakareDir = root.appendingPathComponent("UnknownErumei2")
+        try files.createDirectory(at: erumeiWakareDir, withIntermediateDirectories: true)
+        try Data().write(to: erumeiWakareDir.appendingPathComponent("エルメイフラワー.ain"))
+        try Data(repeating: 1, count: 99).write(to: erumeiWakareDir.appendingPathComponent("エルメイフラワーWA.wai"))
+        precondition(Game(url: erumeiWakareDir).artworkKey == "erumeiwakare")
+        let vanish2010Dir = root.appendingPathComponent("ばにしゅ！～この手のひらにおっぱいを～")
+        try files.createDirectory(at: vanish2010Dir, withIntermediateDirectories: true)
+        try Data().write(to: vanish2010Dir.appendingPathComponent("System40.ini"))
+        precondition(Game(url: vanish2010Dir).artworkKey == nil)
+        let kamunagara2Dir = root.appendingPathComponent("神武 第弐話")
+        try files.createDirectory(at: kamunagara2Dir, withIntermediateDirectories: true)
+        try Data().write(to: kamunagara2Dir.appendingPathComponent("System40.ini"))
+        precondition(Game(url: kamunagara2Dir).artworkKey == nil)
         print("PASS: empty library, INI/AIN launch targets, deterministic multiple AINs, missing/invalid targets, import, duplicate rejection, deletion, invalid import")
         func run(_ executable: String, _ arguments: [String]) throws {
             let process = Process()

@@ -96,7 +96,24 @@ struct OnlineGame: Identifiable {
         Self(id: "mugenhouyou", title: "梦幻泡影", directory: "MugenHouyou"),
         Self(id: "otomesenki", title: "乙女战记", directory: "OtomeSenki"),
         Self(id: "gakuenhyouryuu", title: "学园漂流战记", directory: "GakuenHyouryuu"),
-        Self(id: "maidnosusume", title: "女仆的推荐", directory: "MaidNoSusume")
+        Self(id: "maidnosusume", title: "女仆的推荐", directory: "MaidNoSusume"),
+        Self(id: "dalkgaiden", title: "DALK外传", directory: "DalkGaiden"),
+        Self(id: "mamanyonyo", title: "妈妈软软", directory: "Mamanyonyo"),
+        Self(id: "majonoshokuzai", title: "魔女的赎罪", directory: "MajoNoShokuzai"),
+        Self(id: "saboten", title: "贪心仙人掌", directory: "Saboten"),
+        Self(id: "doublesensei", title: "双倍教师生活", directory: "DoubleSensei"),
+        Self(id: "ojousama", title: "让大小姐言听计从的游戏", directory: "Ojousama"),
+        Self(id: "edoranze", title: "江户乱世 ～Come on!水户姬大人～", directory: "Edoranze"),
+        Self(id: "vanish", title: "Vanish! 消失的王国", directory: "Vanish"),
+        Self(id: "hokenshitsu", title: "只属于我的保健室", directory: "Hokenshitsu"),
+        Self(id: "kamunagara", title: "神武 -卡姆纳加拉-", directory: "Kamunagara"),
+        Self(id: "erumeiflower", title: "艾尔梅花", directory: "ErumeiFlower"),
+        Self(id: "erumeiwakare", title: "艾尔梅花 ～别离之夜～", directory: "ErumeiWakare"),
+        Self(id: "manana1", title: "超级魔法少女玛娜娜 Vol.1", directory: "Manana1"),
+        Self(id: "manana2", title: "超级魔法少女玛娜娜 Vol.2", directory: "Manana2"),
+        Self(id: "manana3", title: "超级魔法少女玛娜娜 Vol.3", directory: "Manana3"),
+        Self(id: "manana4", title: "超级魔法少女玛娜娜 Vol.4", directory: "Manana4"),
+        Self(id: "manana5", title: "超级魔法少女玛娜娜 Vol.5", directory: "Manana5")
     ]
 }
 

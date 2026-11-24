@@ -129,6 +129,23 @@ object AppSettings {
     internal const val DEFAULT_OTOMESENKI_BYTES = 2849367L
     internal const val DEFAULT_GAKUENHYOURYUU_BYTES = 3931456L
     internal const val DEFAULT_MAIDNOSUSUME_BYTES = 21891136L
+    internal const val DEFAULT_DALKGAIDEN_BYTES = 460876218L
+    internal const val DEFAULT_MAMANYONYO_BYTES = 335070846L
+    internal const val DEFAULT_MAJONOSHOKUZAI_BYTES = 974991851L
+    internal const val DEFAULT_SABOTEN_BYTES = 1157904094L
+    internal const val DEFAULT_DOUBLESENSEI_BYTES = 1403588942L
+    internal const val DEFAULT_OJOUSAMA_BYTES = 553143699L
+    internal const val DEFAULT_EDORANZE_BYTES = 327142146L
+    internal const val DEFAULT_VANISH_BYTES = 936198458L
+    internal const val DEFAULT_HOKENSHITSU_BYTES = 1125275837L
+    internal const val DEFAULT_KAMUNAGARA_BYTES = 68102129L
+    internal const val DEFAULT_ERUMEIFLOWER_BYTES = 149238805L
+    internal const val DEFAULT_ERUMEIWAKARE_BYTES = 36214242L
+    internal const val DEFAULT_MANANA1_BYTES = 322325810L
+    internal const val DEFAULT_MANANA2_BYTES = 346673076L
+    internal const val DEFAULT_MANANA3_BYTES = 360676229L
+    internal const val DEFAULT_MANANA4_BYTES = 284601476L
+    internal const val DEFAULT_MANANA5_BYTES = 319631754L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -391,6 +408,23 @@ object AppSettings {
             OnlineInstaller.OTOMESENKI_CDN_URL -> DEFAULT_OTOMESENKI_BYTES
             OnlineInstaller.GAKUENHYOURYUU_CDN_URL -> DEFAULT_GAKUENHYOURYUU_BYTES
             OnlineInstaller.MAIDNOSUSUME_CDN_URL -> DEFAULT_MAIDNOSUSUME_BYTES
+            OnlineInstaller.DALKGAIDEN_CDN_URL -> DEFAULT_DALKGAIDEN_BYTES
+            OnlineInstaller.MAMANYONYO_CDN_URL -> DEFAULT_MAMANYONYO_BYTES
+            OnlineInstaller.MAJONOSHOKUZAI_CDN_URL -> DEFAULT_MAJONOSHOKUZAI_BYTES
+            OnlineInstaller.SABOTEN_CDN_URL -> DEFAULT_SABOTEN_BYTES
+            OnlineInstaller.DOUBLESENSEI_CDN_URL -> DEFAULT_DOUBLESENSEI_BYTES
+            OnlineInstaller.OJOUSAMA_CDN_URL -> DEFAULT_OJOUSAMA_BYTES
+            OnlineInstaller.EDORANZE_CDN_URL -> DEFAULT_EDORANZE_BYTES
+            OnlineInstaller.VANISH_CDN_URL -> DEFAULT_VANISH_BYTES
+            OnlineInstaller.HOKENSHITSU_CDN_URL -> DEFAULT_HOKENSHITSU_BYTES
+            OnlineInstaller.KAMUNAGARA_CDN_URL -> DEFAULT_KAMUNAGARA_BYTES
+            OnlineInstaller.ERUMEIFLOWER_CDN_URL -> DEFAULT_ERUMEIFLOWER_BYTES
+            OnlineInstaller.ERUMEIWAKARE_CDN_URL -> DEFAULT_ERUMEIWAKARE_BYTES
+            OnlineInstaller.MANANA1_CDN_URL -> DEFAULT_MANANA1_BYTES
+            OnlineInstaller.MANANA2_CDN_URL -> DEFAULT_MANANA2_BYTES
+            OnlineInstaller.MANANA3_CDN_URL -> DEFAULT_MANANA3_BYTES
+            OnlineInstaller.MANANA4_CDN_URL -> DEFAULT_MANANA4_BYTES
+            OnlineInstaller.MANANA5_CDN_URL -> DEFAULT_MANANA5_BYTES
             else -> -1L
         }
     }

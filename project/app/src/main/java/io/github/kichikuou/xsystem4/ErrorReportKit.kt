@@ -1435,6 +1435,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_pastelchime2_title)
             GameCatalog.isPastelChimeAlias(lower) ->
                 context.getString(R.string.game_pastelchime_title)
+            GameCatalog.isDalkGaidenAlias(lower) ->
+                context.getString(R.string.game_dalkgaiden_title)
             GameCatalog.isDalkAlias(lower) ->
                 context.getString(R.string.game_dalk_title)
             GameCatalog.isNingenGariAlias(lower) ->
@@ -1455,6 +1457,38 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_gakuenhyouryuu_title)
             GameCatalog.isMaidNoSusumeAlias(lower) ->
                 context.getString(R.string.game_maidnosusume_title)
+            GameCatalog.isMamanyonyoAlias(lower) ->
+                context.getString(R.string.game_mamanyonyo_title)
+            GameCatalog.isMajoNoShokuzaiAlias(lower) ->
+                context.getString(R.string.game_majonoshokuzai_title)
+            GameCatalog.isSabotenAlias(lower) ->
+                context.getString(R.string.game_saboten_title)
+            GameCatalog.isDoubleSenseiAlias(lower) ->
+                context.getString(R.string.game_doublesensei_title)
+            GameCatalog.isOjousamaAlias(lower) ->
+                context.getString(R.string.game_ojousama_title)
+            GameCatalog.isEdoranzeAlias(lower) ->
+                context.getString(R.string.game_edoranze_title)
+            GameCatalog.isVanishAlias(lower) ->
+                context.getString(R.string.game_vanish_title)
+            GameCatalog.isHokenshitsuAlias(lower) ->
+                context.getString(R.string.game_hokenshitsu_title)
+            GameCatalog.isKamunagaraAlias(lower) ->
+                context.getString(R.string.game_kamunagara_title)
+            GameCatalog.isErumeiWakareAlias(lower) ->
+                context.getString(R.string.game_erumeiwakare_title)
+            GameCatalog.isErumeiFlowerAlias(lower) ->
+                context.getString(R.string.game_erumeiflower_title)
+            GameCatalog.isManana1Alias(lower) ->
+                context.getString(R.string.game_manana1_title)
+            GameCatalog.isManana2Alias(lower) ->
+                context.getString(R.string.game_manana2_title)
+            GameCatalog.isManana3Alias(lower) ->
+                context.getString(R.string.game_manana3_title)
+            GameCatalog.isManana4Alias(lower) ->
+                context.getString(R.string.game_manana4_title)
+            GameCatalog.isManana5Alias(lower) ->
+                context.getString(R.string.game_manana5_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)
