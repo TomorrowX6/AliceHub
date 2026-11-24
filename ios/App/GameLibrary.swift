@@ -927,7 +927,7 @@ final class GameLibrary: ObservableObject {
                         }
                     }
                     for argument in argv { free(argument) }
-                    SaveSyncSession.end(game: game.name)
+                    SaveSyncSession.end()
                     exit(0)
                 }
             }

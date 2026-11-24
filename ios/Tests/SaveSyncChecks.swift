@@ -23,6 +23,7 @@ struct SaveSyncChecks {
         let local = documents.appendingPathComponent("Saves/\(game)")
         let remote = cloud.appendingPathComponent(game)
 
+        SaveSyncFolder.clear()
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support) == nil)
         try SaveSyncFolder.set(cloud)
         check(SaveSyncFolder.isConfigured && SaveSyncFolder.displayName == "AliceHub")
@@ -33,8 +34,8 @@ struct SaveSyncChecks {
         try put(remote, "LocalSave2.asd", "remote-new", 10)
         try put(local, "LocalSave2.asd", "local-old", 3600)
         try put(remote, "only-remote.rsm", "only-remote", 50)
-        try put(local, "same.asd", "same-local", 100)
-        try put(remote, "same.asd", "same-remote", 101)
+        try put(local, "same.asd", "same", 100)
+        try put(remote, "same.asd", "same", 300)
         try put(local, ".hidden", "hidden", 10)
 
         let first = try SaveSyncFolder.sync(game: game, documents: documents, support: support)!
@@ -43,7 +44,7 @@ struct SaveSyncChecks {
         check(get(remote, "sub/only-local.sav") == "only-local")
         check(get(local, "LocalSave2.asd") == "remote-new")
         check(get(local, "only-remote.rsm") == "only-remote")
-        check(get(local, "same.asd") == "same-local" && get(remote, "same.asd") == "same-remote")
+        check(get(local, "same.asd") == "same" && get(remote, "same.asd") == "same")
         check(get(remote, ".hidden") == nil)
         let backups = try files.contentsOfDirectory(atPath: support.appendingPathComponent("save_backups/\(game)").path)
         check(backups.count == 1)
@@ -52,6 +53,23 @@ struct SaveSyncChecks {
 
         let second = try SaveSyncFolder.sync(game: game, documents: documents, support: support)!
         check(second == SaveSync.Summary())
+
+        // A background flush rewrites unchanged data with a fresh timestamp; newer remote progress still wins.
+        try put(remote, "LocalSave1.asd", "other-device", 60)
+        try put(local, "LocalSave1.asd", "local-new", 0)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 1, pushed: 0))
+        check(get(local, "LocalSave1.asd") == "other-device")
+
+        // Restoring an old save keeps its old timestamp but is still the newest local change.
+        try put(local, "LocalSave2.asd", "restored-old", 7200)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
+        check(get(remote, "LocalSave2.asd") == "restored-old")
+
+        // When both sides changed, the newer one wins.
+        try put(local, "same.asd", "local-edit", 30)
+        try put(remote, "same.asd", "remote-edit", 20)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 1, pushed: 0))
+        check(get(local, "same.asd") == "remote-edit")
 
         try files.moveItem(at: remote.appendingPathComponent("only-remote.rsm"), to: remote.appendingPathComponent(".only-remote.rsm.icloud"))
         try put(local, "only-remote.rsm", "edited-locally", 0)
@@ -69,6 +87,6 @@ struct SaveSyncChecks {
 
         SaveSyncFolder.clear()
         check(!SaveSyncFolder.isConfigured)
-        print("PASS: newest-wins pull/push, tolerance, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
+        print("PASS: pull/push, unchanged rewrite and restore handling, conflicts, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
     }
 }

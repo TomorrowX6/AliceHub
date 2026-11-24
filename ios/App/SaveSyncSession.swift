@@ -2,13 +2,22 @@ import UIKit
 
 /// Syncs the running game's saves with the sync folder at launch, when the app
 /// moves to the background (after the engine flushed its saves on deactivate), and
-/// when the game exits. Failures are logged and never block play.
+/// when the process exits. Both engines quit through exit(), so the exit sync is an
+/// atexit handler registered before the engine adds its own save-on-exit handlers.
+/// Failures are logged and never block play.
 enum SaveSyncSession {
+    private static var game: String?
     private static var observer: NSObjectProtocol?
+    private static var registered = false
 
     static func begin(game: String) {
         guard SaveSyncFolder.isConfigured else { return }
         run(game, "launch")
+        Self.game = game
+        if !registered {
+            registered = true
+            atexit { SaveSyncSession.end() }
+        }
         observer = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             var task = UIBackgroundTaskIdentifier.invalid
             task = UIApplication.shared.beginBackgroundTask {
@@ -20,10 +29,11 @@ enum SaveSyncSession {
         }
     }
 
-    static func end(game: String) {
+    static func end() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
-        guard SaveSyncFolder.isConfigured else { return }
+        guard let game else { return }
+        Self.game = nil
         run(game, "exit")
     }
 
