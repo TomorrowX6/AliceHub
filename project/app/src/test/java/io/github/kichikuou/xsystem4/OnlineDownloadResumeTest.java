@@ -1,6 +1,7 @@
 package io.github.kichikuou.xsystem4;
 
 import android.content.Context;
+import android.content.res.Configuration;
 
 import org.json.JSONObject;
 import org.junit.After;
@@ -39,6 +40,7 @@ import kotlin.Unit;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 
 @RunWith(RobolectricTestRunner.class)
@@ -179,6 +181,17 @@ public class OnlineDownloadResumeTest {
         try {
             SettingsActivity settings = controller.get();
             assertEquals(0, settings.getResources().getIdentifier("row_settings_download_route", "id", settings.getPackageName()));
+            for (String lang : new String[] { "en", "zh", "ja" }) {
+                Configuration cfg = new Configuration(settings.getResources().getConfiguration());
+                cfg.setLocale(Locale.forLanguageTag(lang));
+                Context localized = settings.createConfigurationContext(cfg);
+                String label = localized.getString(R.string.settings_online_install);
+                String disclaimer = localized.getString(R.string.online_disclaimer_msg);
+                assertFalse("Unexpected language suffix in " + label,
+                        label.contains("Chinese") || label.contains("中文") || label.contains("中国語"));
+                assertFalse("Article 7 should be removed in " + lang,
+                        disclaimer.contains("Article 7") || disclaimer.contains("第七条") || disclaimer.contains("第7条"));
+            }
         } finally {
             controller.pause().stop().destroy();
         }
