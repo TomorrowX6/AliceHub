@@ -23,6 +23,7 @@
 
 #include "config.h"
 #ifdef ALICEHUB_IOS
+#include "escalayer_modifier.h"
 #include "xsystem35_main.h"
 #endif
 
@@ -548,6 +549,7 @@ static void registerGameFiles(void) {
 
 #ifdef ALICEHUB_IOS
 int xsystem35_main(int argc, char **argv) {
+	escalayer_modifier_reset(true);
 #else
 int main(int argc, char **argv) {
 #endif
@@ -641,6 +643,9 @@ int main(int argc, char **argv) {
 	}
 
 	sys35_remove();
+#ifdef ALICEHUB_IOS
+	escalayer_modifier_reset(false);
+#endif
 	
 	return 0;
 }

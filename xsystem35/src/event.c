@@ -44,6 +44,9 @@
 #include "volume.h"
 #include "mixer.h"
 #include "alicehub_bridge.h"
+#ifdef ALICEHUB_IOS
+#include "escalayer_modifier.h"
+#endif
 
 static void get_event(void);
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed);
@@ -610,6 +613,9 @@ static void get_event(void) {
 
 	fire_deferred_touch_event();
 	alicehub_pump_events();
+#ifdef ALICEHUB_IOS
+	escalayer_modifier_tick();
+#endif
 
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {

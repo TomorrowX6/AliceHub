@@ -22,8 +22,34 @@ struct ModifierGame {
     let supportsCheatCodes: Bool
 }
 
+struct ModifierField: Identifiable {
+    let id: String
+    let title: String
+    let stateKey: String
+
+    init(_ id: String, _ title: String, stateKey: String? = nil) {
+        self.id = id
+        self.title = title
+        self.stateKey = stateKey ?? id
+    }
+
+    func initialValue(in state: [String: Any]) -> String {
+        ModifierBridge.integer(state[stateKey]).map(String.init) ?? ""
+    }
+
+    static func changes(from input: [String: String], excluding initial: [String: String]) -> [String: Int32] {
+        input.reduce(into: [:]) { changes, entry in
+            guard entry.value != initial[entry.key],
+                  let number = Int32(entry.value.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+            changes[entry.key] = number
+        }
+    }
+}
+
 enum ModifierBridge {
     static let rance10StreamerModeBit: Int32 = 1 << 11
+    static let rance10TreasureBit: Int32 = 1 << 10
+    static let rance10TreasureAction = ["perFindTreasure": 999, "treasureNotGetCount": 99, "rareLuck": 999]
     static let disableStreamerCodes: Set<String> = ["关闭主播模式", "灌注Eins陈谢谢喵", "关注Eins陈谢谢喵"]
     static let enableStreamerCode = "开启主播模式"
 
@@ -105,7 +131,7 @@ enum ModifierBridge {
             ModifierCheat(title: "立即触发下次移动遇敌", action: ["evCheatTriggerEncounter": true], done: "下次大地图移动将立即遇敌"),
             ModifierCheat(title: "清空当前遇敌危险度至安全状态", action: ["evCheatClearEncounter": true], done: "遇敌危险度已重置为安全状态"),
         ], supportsCheatCodes: false),
-    ]
+    ] + ModifierGamePanel.all.map(\.game)
 
     static var configURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -134,6 +160,12 @@ enum ModifierBridge {
         return games.first { $0.id == id }
     }
 
+    static func system35LiveState() -> String? {
+        guard let raw = xsystem35_modifier_live_state() else { return nil }
+        defer { free(raw) }
+        return String(cString: raw)
+    }
+
     static func liveState() -> [String: Any] {
         liveStateJSON().map(parse) ?? [:]
     }
@@ -147,11 +179,12 @@ enum ModifierBridge {
     }
 
     @MainActor
-    static func observeLiveState(every interval: UInt64 = 500_000_000, onChange: ([String: Any]) -> Void) async {
+    static func observeLiveState(every interval: UInt64 = 500_000_000, system35: Bool = false,
+                                 onChange: ([String: Any]) -> Void) async {
         var previous: String?
         while !Task.isCancelled {
             let json = await withCheckedContinuation { continuation in
-                liveStateQueue.async { continuation.resume(returning: liveStateJSON()) }
+                liveStateQueue.async { continuation.resume(returning: system35 ? system35LiveState() : liveStateJSON()) }
             }
             guard !Task.isCancelled else { return }
             if let json, json != previous {
@@ -194,14 +227,35 @@ enum ModifierBridge {
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"“”"))
     }
 
+    static func integer(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return number as? Int
+    }
+
+    static func streamerMode(in state: [String: Any], mask: Int32) -> Bool {
+        if let mode = integer(state["streamerMode"]) { return mode != 0 }
+        return mask & rance10StreamerModeBit == 0
+    }
+
+    static func streamerToggleState(in state: [String: Any], mask: Int32) -> Bool? {
+        guard let supported = state["streamerModeSupported"] as? NSNumber,
+              CFGetTypeID(supported) == CFBooleanGetTypeID(), supported.boolValue else { return nil }
+        return streamerMode(in: state, mask: mask)
+    }
+
+    static func setStreamerMode(_ enabled: Bool) {
+        let mask = lockMask(MODIFIER_LOCK_RANCE10)
+        setLockMask(MODIFIER_LOCK_RANCE10, enabled ? mask & ~rance10StreamerModeBit : mask | rance10StreamerModeBit)
+        send(enabled ? ["streamerMode": 1] : ["streamerMode": 0, "streamerPopup": true])
+    }
+
     static func applyCheatCode(_ rawCode: String) -> Bool {
         guard let action = cheatAction(for: rawCode) else { return false }
         if let mode = action["streamerMode"] as? Int {
-            let mask = lockMask(MODIFIER_LOCK_RANCE10)
-            let disabled = mode == 0
-            setLockMask(MODIFIER_LOCK_RANCE10, disabled ? mask | rance10StreamerModeBit : mask & ~rance10StreamerModeBit)
+            setStreamerMode(mode != 0)
+        } else {
+            send(action)
         }
-        send(action)
         return true
     }
 
