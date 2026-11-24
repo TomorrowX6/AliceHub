@@ -327,15 +327,21 @@ static bool font_select(FontSpec spec, Font *font) {
 // the ideographic em box. CJK fonts such as Noto Sans/Serif CJK add line
 // spacing to usWinAscent (1.16em) and keep the em box in the typo metrics
 // (0.88em / -0.12em); use the em box for them, or text sits ~0.28em too low.
+// Latin fonts (e.g. DejaVu) keep usWinAscent, as GDI does.
+static bool has_cjk_em_box(const TT_OS2 *os2, int upem) {
+	enum { CJK_CODE_PAGES = 0x1f << 17 };  // JIS, GBK, Wansung, Big5, Johab
+	return os2->version >= 1 && (os2->ulCodePageRange1 & CJK_CODE_PAGES) &&
+		os2->sTypoLineGap == 0 && os2->sTypoAscender > 0 &&
+		os2->sTypoAscender < os2->usWinAscent &&
+		os2->sTypoAscender - os2->sTypoDescender == upem;
+}
+
 static int cell_ascent(const Font *font) {
 	TT_OS2 *os2 = FT_Get_Sfnt_Table(font->face, FT_SFNT_OS2);
 	if (!os2 || os2->version == 0xffff || !os2->usWinAscent)
 		return font->ascent;
 	int upem = font->face->units_per_EM;
-	int ascent = os2->usWinAscent;
-	if (os2->sTypoAscender > 0 && os2->sTypoAscender < ascent &&
-	    os2->sTypoAscender - os2->sTypoDescender == upem)
-		ascent = os2->sTypoAscender;
+	int ascent = has_cjk_em_box(os2, upem) ? os2->sTypoAscender : os2->usWinAscent;
 	return (ascent * font->face->size->metrics.y_ppem + upem / 2) / upem;
 }
 
