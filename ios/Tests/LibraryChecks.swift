@@ -615,6 +615,11 @@ struct LibraryChecks {
             precondition(!installed("\(game)/SplitGameBG.afa"))
             precondition(!installed("\(game)/SplitGameBGM.afa"))
         }
+        library.importFolder(system4Discs.appendingPathComponent("Disc 1"))
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Disc 1/SplitGameCG.afa", "primary")
+        precondition(!installed("Disc 1/SplitGameWA.AFA"))
 
         let ixseal = root.appendingPathComponent("Bundled Ixseal")
         try fixture(ixseal, "Game/System40.ini")

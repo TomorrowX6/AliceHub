@@ -229,7 +229,8 @@ enum LocalGameImport {
             }
         }
         try merge(primary.url, into: output, exclude: rules.skip)
-        if primary.engine == .system4, let disc = discContainer(primary.url), contains(disc, in: source) {
+        if primary.engine == .system4, let disc = discContainer(primary.url),
+           contains(disc.deletingLastPathComponent(), in: source) {
             for sibling in try gameDirectories(entries(disc.deletingLastPathComponent())) where sibling.path != disc.path {
                 for payload in try directories(sibling, forGameDiscovery: true)
                     where discContainer(payload)?.path == sibling.path {
