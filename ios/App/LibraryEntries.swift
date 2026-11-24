@@ -69,7 +69,8 @@ struct LibraryEntry: Identifiable {
         games.sorted { $0.name < $1.name }
     }
 
-    static func build(games: [Game], sort: LibrarySortMode, locale: Locale = .current, language: HubLanguage = .chinese) -> [Self] {
+    static func build(games: [Game], sort: LibrarySortMode, includeOnline: Bool, locale: Locale = .current,
+                      language: HubLanguage = .chinese) -> [Self] {
         var grouped: [String: [Game]] = [:]
         var custom: [Self] = []
         for game in games {
@@ -80,8 +81,10 @@ struct LibraryEntry: Identifiable {
             }
         }
 
-        let entries = catalogOrder.map { catalog in
-            Self(catalog: catalog, installations: directoryOrder(grouped[catalog.id] ?? []))
+        let entries = catalogOrder.compactMap { catalog -> Self? in
+            let installations = grouped[catalog.id] ?? []
+            guard includeOnline || !installations.isEmpty else { return nil }
+            return Self(catalog: catalog, installations: directoryOrder(installations))
         } + custom
         return entries.enumerated().sorted { a, b in
             let left = a.element, right = b.element

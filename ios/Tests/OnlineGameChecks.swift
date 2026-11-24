@@ -122,7 +122,11 @@ struct OnlineGameChecks {
         precondition(cnRance41.artworkKey == "rance41" && !cnRance41.hasExplicitNonChineseEdition)
         precondition(OnlineGame.hasChinese(for: cnRance41))
         let installed = [engRance41, cnRance41, Game(url: rawCustomDir)]
-        let entries = LibraryEntry.build(games: installed, sort: .catalog)
+        let entries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: true)
+        let localEntries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: false)
+        precondition(localEntries.map(\.id) == ["catalog:rance41", "local:custom-raw-game"])
+        precondition(localEntries.first?.installations == [cnRance41, engRance41])
+        precondition(LibraryEntry.build(games: [], sort: .catalog, includeOnline: false).isEmpty)
         precondition(entries.count == OnlineGame.all.count + 1)
         precondition(entries.prefix(3).map(\.id) == ["catalog:rance41", "local:custom-raw-game", "catalog:rance10"])
         let rance41 = entries[0]
@@ -138,14 +142,14 @@ struct OnlineGameChecks {
         precondition(LibraryEntry.installation(in: rance41.installations, selectedID: engRance41.id) == engRance41)
         precondition(LibraryEntry.installation(in: rance41.matchingInstallations(in: [cnRance41]), selectedID: engRance41.id) == cnRance41)
         precondition(rance41.matchingInstallations(in: []).isEmpty)
-        let rating = LibraryEntry.build(games: installed, sort: .rating)
+        let rating = LibraryEntry.build(games: installed, sort: .rating, includeOnline: true)
         precondition(rating.prefix(3).map(\.id) == entries.prefix(3).map(\.id))
         precondition(rating.last(where: { $0.catalog?.id == "rance03" }).map { $0.primary == nil } == true)
         precondition(rating.firstIndex { $0.catalog?.id == "rance03" }! < rating.firstIndex { $0.catalog?.id == "rance02" }!)
-        let release = LibraryEntry.build(games: installed, sort: .releaseDate)
+        let release = LibraryEntry.build(games: installed, sort: .releaseDate, includeOnline: true)
         precondition(release.prefix(2).map(\.id) == entries.prefix(2).map(\.id))
         precondition(release.firstIndex { $0.catalog?.id == "dohnadohna" }! < release.firstIndex { $0.catalog?.id == "rance10" }!)
-        let names = LibraryEntry.build(games: installed, sort: .name, locale: Locale(identifier: "en"))
+        let names = LibraryEntry.build(games: installed, sort: .name, includeOnline: true, locale: Locale(identifier: "en"))
         precondition(zip(names.dropFirst(2), names.dropFirst(3)).allSatisfy {
             $0.title.compare($1.title, options: .caseInsensitive, locale: Locale(identifier: "en")) != .orderedDescending
         })

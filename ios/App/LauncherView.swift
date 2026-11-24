@@ -12,6 +12,7 @@ struct LauncherView: View {
     @State private var reportMessage: String?
     @State private var query = ""
     @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
 #if DEBUG
     @State private var didAutoLaunch = false
 #endif
@@ -21,7 +22,8 @@ struct LauncherView: View {
     private var filteredGames: [LibraryEntry] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let language = localized.language
-        return LibraryEntry.build(games: library.games, sort: sortMode, locale: language.locale, language: language)
+        return LibraryEntry.build(games: library.games, sort: sortMode, includeOnline: onlineInstall,
+                                  locale: language.locale, language: language)
             .filter { $0.matches(search, language: language) }
     }
 
