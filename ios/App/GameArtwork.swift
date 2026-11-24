@@ -4,6 +4,7 @@ struct GameArtwork: View {
     var game: Game? = nil
     var catalogID: String? = nil
     var size: CGFloat = 64
+    @State private var localArtwork: UIImage?
 
     private static let imageCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
@@ -22,6 +23,8 @@ struct GameArtwork: View {
         return image
     }
 
+    static func clearCache() { imageCache.removeAllObjects() }
+
     private var artwork: UIImage? {
         guard let key = catalogID ?? game?.artworkKey else { return nil }
         return Self.cachedImage(forKey: key)
@@ -30,7 +33,7 @@ struct GameArtwork: View {
     var body: some View {
         ZStack {
             HubTheme.variant
-            if let artwork {
+            if let artwork = artwork ?? localArtwork {
                 Image(uiImage: artwork).resizable().scaledToFit().padding(3)
             } else if let game, game.isRance04 {
                 Text("IV").font(.system(size: size * 0.5, weight: .bold, design: .serif))
@@ -45,5 +48,11 @@ struct GameArtwork: View {
         }.frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
             .accessibilityHidden(true)
+            .task(id: game?.url) {
+                localArtwork = nil
+                guard artwork == nil, let url = game?.url else { return }
+                let image = await Task.detached(priority: .utility) { GameExecutableIcon.image(in: url) }.value
+                if !Task.isCancelled { localArtwork = image.map { UIImage(cgImage: $0) } }
+            }
     }
 }

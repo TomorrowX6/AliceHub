@@ -1,10 +1,35 @@
 import Foundation
+import SwiftUI
+import WebKit
 
 func SDL_SetMainReady() {}
-enum RuntimeGamepad { static func prepare(for game: String) {} }
-enum ModifierBridge { static func prepareForLaunch() {} }
+func alicehub_ios_begin_game() {}
+private var audioShutdownFinished = true
+func alicehub_ios_finish_audio_shutdown() -> Bool { audioShutdownFinished }
+func alicehub_ios_end_game() {}
+func input_set_long_press_ctrl(_ enabled: Bool) {}
+enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
+enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
+enum SaveSyncSession {
+    static func begin(game: String, ready: @escaping () -> Void) { ready() }
+    static func end() {}
+}
+
+private struct HubLocaleProbe: View {
+    let capture: (HubLanguage) -> Void
+    @HubLocalizedText private var localized
+
+    var body: some View {
+        capture(localized.language)
+        return Color.clear.frame(width: 1, height: 1)
+    }
+}
+
+private var engineLaunches = [String]()
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
-    fatalError("Library checks must not launch the engine")
+    precondition(argc > 1)
+    engineLaunches.append(String(cString: argv![Int(argc) - 1]!))
+    return 0
 }
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
@@ -15,12 +40,19 @@ func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoint
 
 @main
 struct LibraryChecks {
+    @MainActor
     static func main() throws {
         try ArchiveChecks.run()
         checkGamepadProfiles()
+        checkDisplayScales()
+        try checkHubTools()
+        try checkManualResourceRules()
+        checkHubPlurals()
+        if #available(macOS 13.0, *) { checkLiveHubPlurals() }
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
+        try checkRelaunch(root.appendingPathComponent("Relaunch"))
         let rance = root.appendingPathComponent("R6汉硬1.10")
         let data = rance.appendingPathComponent("dAtA")
         try files.createDirectory(at: data, withIntermediateDirectories: true)
@@ -517,6 +549,340 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+
+        func fixture(_ base: URL, _ path: String, _ contents: String = "") throws {
+            let file = base.appendingPathComponent(path)
+            try files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(contents.utf8).write(to: file)
+        }
+        func installed(_ path: String) -> Bool { files.fileExists(atPath: games.appendingPathComponent(path).path) }
+        func checkContents(_ path: String, _ expected: String) throws {
+            let data = try Data(contentsOf: games.appendingPathComponent(path))
+            precondition(String(decoding: data, as: UTF8.self) == expected, path)
+        }
+
+        let multi = root.appendingPathComponent("Multi Disc Folder")
+        try fixture(multi, "Disc1/GAMEDATA/KichikuRanceSA.ald")
+        try fixture(multi, "Disc1/GAMEDATA/dummy.dat", "payload")
+        try fixture(multi, "Disc1/GAMEDATA/shared.ald", "first")
+        try fixture(multi, "Disc1/GAMEDATA/.xsys35rc")
+        try fixture(multi, "Disc1/GAMEDATA/System35.exe")
+        try fixture(multi, "Disc2/Shared.ALD", "second")
+        try fixture(multi, "Disc2/KichikuRanceGA.ald")
+        try fixture(multi, "Disc2/DirectX/setup.exe")
+        try fixture(multi, "Disc3/GAMEDATA/OtherSA.ald")
+        try fixture(multi, "Disc3/GAMEDATA/OtherGA.ald")
+        try fixture(multi, "Disc4/GAMEDATA/Other.ain")
+        try fixture(multi, "Disc4/GAMEDATA/System40.ini")
+        try fixture(multi, "Disc5/GAMEDATA/KichikuRanceSA_CHS.ald")
+        try fixture(multi, "Disc5/GAMEDATA/KichikuRanceWA.ald")
+        library.importFolder(multi)
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Multi Disc Folder/shared.ald", "first")
+        precondition(installed("Multi Disc Folder/KichikuRanceGA.ald") && installed("Multi Disc Folder/.xsys35rc"))
+        precondition(installed("Multi Disc Folder/KichikuRanceWA.ald"))
+        precondition(!installed("Multi Disc Folder/OtherGA.ald") && !installed("Multi Disc Folder/Other.ain"))
+        precondition(library.games.first { $0.name == "Multi Disc Folder" }?.engine == .system3)
+        precondition(!installed("Multi Disc Folder/System35.exe") && !installed("Multi Disc Folder/DirectX"))
+        precondition(files.fileExists(atPath: multi.appendingPathComponent("Disc1/GAMEDATA/System35.exe").path))
+
+        try importArchive(makeArchive(multi, name: "multi-disc.zip"), expected: "GAMEDATA")
+        try checkContents("GAMEDATA/shared.ald", "first")
+        precondition(installed("GAMEDATA/KichikuRanceGA.ald") && !installed("GAMEDATA/OtherGA.ald"))
+        precondition(installed("GAMEDATA/KichikuRanceWA.ald") && !installed("GAMEDATA/Other.ain"))
+
+        let system4Discs = root.appendingPathComponent("System 4 Discs")
+        try fixture(system4Discs, "Disc 1/Install/System40.ini")
+        try fixture(system4Discs, "Disc 1/Install/SplitGame.ain")
+        try fixture(system4Discs, "Disc 1/Install/dummy.dat", "payload")
+        try fixture(system4Discs, "Disc 1/Install/SplitGameCG.afa", "primary")
+        try fixture(system4Discs, "Disc 2/GameData/SplitGameCG.afa", "secondary")
+        try fixture(system4Discs, "Disc 2/GameData/SplitGameWA.AFA", "audio")
+        try fixture(system4Discs, "Disc 2/GameData/OtherGameCG.afa")
+        try fixture(system4Discs, "Disc 3/Other/System40.ini")
+        try fixture(system4Discs, "Disc 3/Other/Other.ain")
+        try fixture(system4Discs, "Disc 3/Other/SplitGameBG.afa")
+        try fixture(system4Discs, "Extras/Disc 4/SplitGameBGM.afa")
+        library.importFolder(system4Discs)
+        awaitImport()
+        precondition(library.error == nil)
+        try importArchive(makeArchive(system4Discs, name: "system4-discs.zip"), expected: "Install")
+        for game in ["System 4 Discs", "Install"] {
+            try checkContents("\(game)/SplitGameCG.afa", "primary")
+            try checkContents("\(game)/SplitGameWA.AFA", "audio")
+            precondition(!installed("\(game)/OtherGameCG.afa"))
+            precondition(!installed("\(game)/SplitGameBG.afa"))
+            precondition(!installed("\(game)/SplitGameBGM.afa"))
+        }
+        library.importFolder(system4Discs.appendingPathComponent("Disc 1"))
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Disc 1/SplitGameCG.afa", "primary")
+        precondition(!installed("Disc 1/SplitGameWA.AFA"))
+
+        let ixseal = root.appendingPathComponent("Bundled Ixseal")
+        try fixture(ixseal, "Game/System40.ini")
+        try fixture(ixseal, "Game/Ixseal.ain", "base")
+        try fixture(ixseal, "Game/dummy.dat", "payload")
+        try fixture(ixseal, "Game/patchCN/Nested/IXSEAL.AIN", "cn patch")
+        try fixture(ixseal, "Game/patchCN/Nested/IxsealCG.afa", "patch data")
+        try fixture(ixseal, "Game/patchCN/Nested/setup.exe")
+        try fixture(ixseal, "Game/SaveData/slot.dat")
+        try fixture(ixseal, "UpdateFiles/Files/CommonFiles/Ixseal.ain", "official update")
+        try fixture(ixseal, "UpdateFiles/Files/CommonFiles/update.dat", "official data")
+        try fixture(ixseal, "Unrelated/CommonFiles/Unrelated.ain")
+        try fixture(ixseal, "Unrelated/CommonFiles/must-not-import.dat")
+
+        library.importFolder(ixseal)
+        awaitImport()
+        precondition(library.error == nil)
+        try checkContents("Bundled Ixseal/IXSEAL.AIN", "cn patch")
+        precondition(!installed("Bundled Ixseal/patchCN") && !installed("Bundled Ixseal/setup.exe"))
+
+        try importArchive(makeArchive(ixseal, name: "bundled-patch.zip"), expected: "Game")
+        try checkContents("Game/Ixseal.ain", "cn patch")
+        try checkContents("Game/update.dat", "official data")
+        precondition(installed("Game/IxsealCG.afa") && !installed("Game/patchCN") && !installed("Game/SaveData"))
+        precondition(!installed("Game/must-not-import.dat"))
+
+        let innerUpdate = root.appendingPathComponent("in-root-update")
+        try fixture(innerUpdate, "System40.ini")
+        try fixture(innerUpdate, "Ixseal.ain", "base")
+        try fixture(innerUpdate, "dummy.dat", "payload")
+        try fixture(innerUpdate, "UpdateFiles/Files/CommonFiles/IXSEAL.AIN", "in-root update")
+        try fixture(innerUpdate, "UpdateFiles/Files/CommonFiles/update.dat", "official data")
+        try fixture(innerUpdate, "Other/UpdateFiles/Files/CommonFiles/Unrelated.ain")
+        try fixture(innerUpdate, "Other/UpdateFiles/Files/CommonFiles/must-not-import.dat")
+        try fixture(innerUpdate, "Backup/UpdateFiles/Files/CommonFiles/Ixseal.ain", "old backup")
+        try fixture(innerUpdate, "Backup/UpdateFiles/Files/CommonFiles/backup-only.dat")
+        try fixture(innerUpdate, "Resources/CommonFiles/not-an-update.dat")
+        try importArchive(makeArchive(innerUpdate, name: "In-root Update.zip"), expected: "In-root Update")
+        try checkContents("In-root Update/Ixseal.ain", "in-root update")
+        try checkContents("In-root Update/update.dat", "official data")
+        precondition(!installed("In-root Update/must-not-import.dat") && !installed("In-root Update/not-an-update.dat"))
+        precondition(!installed("In-root Update/backup-only.dat"))
+
+        let ostCollection = root.appendingPathComponent("ost-token")
+        try fixture(ostCollection, "placeholder.txt")
+        try files.copyItem(at: makeArchive(top, name: "ProStudentG.zip"), to: ostCollection.appendingPathComponent("ProStudentG.zip"))
+        try files.copyItem(at: makeArchive(top, name: "Game - OST.zip"), to: ostCollection.appendingPathComponent("Game - OST.zip"))
+        try importArchive(makeArchive(ostCollection, name: "Game with Soundtrack.zip"), expected: "Game with Soundtrack")
+        try files.removeItem(at: ostCollection.appendingPathComponent("ProStudentG.zip"))
+        try importArchive(makeArchive(ostCollection, name: "Only Soundtrack.zip"), expected: nil, error: LibraryError.archiveNotGame.localizedDescription)
+
+        let rance02 = root.appendingPathComponent("Bundled Rance02")
+        try fixture(rance02, "Rance02.ain")
+        try fixture(rance02, "InstallSet/InstallData/extra.ald")
+        try fixture(rance02, "junk.bak")
+        try fixture(rance02, "saved.vanilla.bak")
+        library.importFolder(rance02)
+        awaitImport()
+        precondition(library.error == nil && installed("Bundled Rance02/extra.ald"))
+        precondition(!installed("Bundled Rance02/InstallSet") && !installed("Bundled Rance02/junk.bak"))
+        precondition(installed("Bundled Rance02/saved.vanilla.bak"))
+
+        let unknown = root.appendingPathComponent("Unknown Installer Scope")
+        try fixture(unknown, "MyGame.ain")
+        try fixture(unknown, "install.exe")
+        try fixture(unknown, "backup.bak")
+        library.importFolder(unknown)
+        awaitImport()
+        precondition(library.error == nil && installed("Unknown Installer Scope/install.exe") && installed("Unknown Installer Scope/backup.bak"))
+        print("PASS: multi-disc folder and archive assembly, patch priority and AIN guard, installer cleanup, companion data, source preservation")
+    }
+
+    static func checkDisplayScales() {
+        let suite = "AliceHub.DisplayScaleChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let font = GameDisplayScale.font
+        let scrollbar = GameDisplayScale.scrollbar
+        precondition(font.percent(for: "第一款", defaults: defaults) == 100)
+        precondition(scrollbar.percent(for: "第一款", defaults: defaults) == 100)
+        font.save(180, for: "第一款", defaults: defaults)
+        scrollbar.save(325, for: "第一款", defaults: defaults)
+        font.save(50, for: "第二款", defaults: defaults)
+        let reopened = UserDefaults(suiteName: suite)!
+        precondition(font.percent(for: "第一款", defaults: reopened) == 160)
+        precondition(scrollbar.percent(for: "第一款", defaults: reopened) == 300)
+        precondition(font.percent(for: "第二款", defaults: reopened) == 75)
+        precondition(scrollbar.percent(for: "第二款", defaults: reopened) == 100)
+        scrollbar.save(90, for: "第一款", defaults: reopened)
+        font.save(100, for: "第一款", defaults: reopened)
+        precondition(font.percent(for: "第一款", defaults: reopened) == 100)
+        precondition(scrollbar.percent(for: "第一款", defaults: reopened) == 100)
+        precondition(font.percent(for: "第二款", defaults: reopened) == 75)
+        precondition(font.step == 5 && scrollbar.step == 10)
+        print("PASS: per-game font and scrollbar scales, persistence, bounds, defaults and reset")
+    }
+
+    static func checkHubTools() throws {
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["fr-FR", "ja-JP"]) == .japanese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["zh-Hant-TW"]) == .chinese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["de-DE"]) == .english)
+        precondition(HubLanguage.english.resolved(preferredLanguages: ["ja"]) == .english)
+
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? files.removeItem(at: root) }
+        let caches = root.appendingPathComponent("Caches")
+        let games = root.appendingPathComponent("Games")
+        let game = games.appendingPathComponent("Installed")
+        let manual = game.appendingPathComponent("Manual")
+        let saves = root.appendingPathComponent("Saves")
+        for directory in [caches, manual, saves] {
+            try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let cached = caches.appendingPathComponent("cache")
+        let resume = games.appendingPathComponent(".online_mod_cache")
+        let scratch = games.appendingPathComponent(".import-remaining")
+        let fresh = games.appendingPathComponent(".import-active")
+        let index = manual.appendingPathComponent("index.html")
+        let save = saves.appendingPathComponent("save.dat")
+        for file in [cached, resume, scratch, fresh, index, save] {
+            try Data("test data".utf8).write(to: file)
+        }
+        try files.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -1200)], ofItemAtPath: scratch.path)
+        let cleanup = HubCacheFiles(caches: caches, games: games)
+        precondition(cleanup.size(of: cleanup.targets(includeDownloads: false)) == 18)
+        try cleanup.clear(includeDownloads: false)
+        precondition(files.fileExists(atPath: resume.path))
+        try cleanup.clear(includeDownloads: true)
+        precondition(!files.fileExists(atPath: resume.path))
+        precondition(!files.fileExists(atPath: cached.path) && !files.fileExists(atPath: scratch.path))
+        precondition(files.fileExists(atPath: fresh.path) && files.fileExists(atPath: save.path))
+        let viewer = HubToolFiles.manual(in: game)
+        precondition(viewer?.index.path == index.path)
+        precondition(!HubToolFiles.contains(save, in: manual))
+        let reference = game.appendingPathComponent("quick-reference.html")
+        try Data("Quick reference".utf8).write(to: reference)
+        let linkedDocuments = root.appendingPathComponent("LinkedDocuments")
+        try files.createSymbolicLink(at: linkedDocuments, withDestinationURL: games)
+        let linkedGame = linkedDocuments.appendingPathComponent(game.lastPathComponent)
+        let linkedViewer = HubToolFiles.manual(in: linkedGame)
+        precondition(linkedViewer?.root == viewer?.root)
+        let relativeReference = URL(string: "../quick-reference.html", relativeTo: index)!.absoluteURL
+        precondition(linkedViewer?.canNavigate(to: relativeReference) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("missing/page.html")) == true)
+        let privateGamePath: String
+        if game.path.hasPrefix("/var/") {
+            privateGamePath = "/private" + game.path
+        } else if game.path.hasPrefix("/private/var/") {
+            privateGamePath = String(game.path.dropFirst("/private".count))
+        } else {
+            privateGamePath = linkedGame.path
+        }
+        let alternateGame = URL(fileURLWithPath: privateGamePath, isDirectory: true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("missing/page.html")) == true)
+        let insideLink = manual.appendingPathComponent("inside.html")
+        try files.createSymbolicLink(at: insideLink, withDestinationURL: reference)
+        precondition(linkedViewer?.canNavigate(to: insideLink) == true)
+        let outsideLink = manual.appendingPathComponent("outside.html")
+        try files.createSymbolicLink(at: outsideLink, withDestinationURL: save)
+        precondition(linkedViewer?.canNavigate(to: outsideLink) == false)
+        precondition(linkedViewer?.canNavigate(to: games.appendingPathComponent("Installed copy/page.html")) == false)
+        try files.removeItem(at: index)
+        try files.createSymbolicLink(at: index, withDestinationURL: save)
+        precondition(HubToolFiles.manual(in: game) == nil)
+        precondition(HubToolFiles.logTail(save, limit: 4) == "data")
+        print("Language, cache cleanup, local manual, and error report file checks passed")
+    }
+
+    @MainActor
+    static func checkManualResourceRules() throws {
+        var compilation: Result<WKContentRuleList?, Error>?
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "AliceHubOfflineManualChecks",
+            encodedContentRuleList: HubToolFiles.Manual.resourceRules
+        ) { rules, error in
+            compilation = error.map { .failure($0) } ?? .success(rules)
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while compilation == nil && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let rules = try compilation?.get()
+        precondition(rules != nil, "Offline manual content rules did not compile")
+        print("Offline manual content rules compiled")
+    }
+
+    static func checkHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        func text(_ key: String, _ count: Int, language: HubLanguage = .english) -> String {
+            language.text(key, arguments: [count], bundle: bundle)
+        }
+        precondition(text("%lld 款游戏", 0) == "0 games")
+        precondition(text("%lld 款游戏", 1) == "1 game")
+        precondition(text("%lld 款游戏", 2) == "2 games")
+        precondition(text("%lld 个文件", 0) == "0 files")
+        precondition(text("%lld 个文件", 1) == "1 file")
+        precondition(text("%lld 个文件", 2) == "2 files")
+        let confirmation = "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"
+        precondition(text(confirmation, 1) == "Delete 1 save file? This can’t be undone.")
+        precondition(text(confirmation, 2) == "Delete all 2 save files? This can’t be undone.")
+        for count in 0...2 {
+            precondition(text("%lld 款游戏", count, language: .japanese) == "ゲーム \(count) 本")
+            precondition(text("%lld 个文件", count, language: .japanese) == "\(count) 件のファイル")
+            precondition(text(confirmation, count, language: .japanese) == "セーブファイル \(count) 件をすべて削除しますか？この操作は取り消せません。")
+            precondition(text("%lld 款游戏", count, language: .chinese) == "\(count) 款游戏")
+            precondition(text("%lld 个文件", count, language: .chinese) == "\(count) 个文件")
+            precondition(text(confirmation, count, language: .chinese) == "确定清空全部 \(count) 个存档文件吗？此操作不可恢复。")
+        }
+        print("Game count, file count, and clear-save plural checks passed for en, ja, and zh-Hans")
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    static func checkLiveHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        var rendered: [String] = []
+        let probe = HubLocaleProbe { language in
+            rendered = ["%lld 款游戏", "%lld 个文件", "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"].map {
+                language.text($0, arguments: [1], bundle: bundle)
+            }
+        }
+        let renderer = ImageRenderer(content: probe.environment(\.locale, HubLanguage.english.locale))
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["1 game", "1 file", "Delete 1 save file? This can’t be undone."])
+        renderer.content = probe.environment(\.locale, HubLanguage.japanese.locale)
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["ゲーム 1 本", "1 件のファイル", "セーブファイル 1 件をすべて削除しますか？この操作は取り消せません。"])
+        print("SwiftUI plural checks passed after changing the live locale from en to ja")
+    }
+
+    static func checkRelaunch(_ documents: URL) throws {
+        let library = GameLibrary(documents: documents)
+        let originalDirectory = FileManager.default.currentDirectoryPath
+        for name in ["First", "Second"] {
+            let folder = library.gamesDirectory.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let target = folder.appendingPathComponent("\(name).ain")
+            try Data().write(to: target)
+            library.launch(Game(url: folder))
+            precondition(library.launching)
+            let deadline = Date().addingTimeInterval(2)
+            while library.launching && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(!library.launching && library.error == nil)
+            let launchedTarget = engineLaunches.last.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+            precondition(launchedTarget == target.resolvingSymlinksInPath().path)
+            precondition(FileManager.default.currentDirectoryPath == originalDirectory)
+        }
+        precondition(engineLaunches.count == 2)
+        audioShutdownFinished = false
+        library.launch(Game(url: library.gamesDirectory.appendingPathComponent("First")))
+        precondition(!library.launching && library.error == LibraryError.audioStopping.localizedDescription)
+        precondition(engineLaunches.count == 2)
+        audioShutdownFinished = true
+        print("Library relaunch checks passed")
     }
 
     static func checkGamepadProfiles() {
@@ -572,5 +938,31 @@ struct LibraryChecks {
         precondition(defaultBindings["0"]?["type"] as? Int == 2 && defaultBindings["0"]?["code"] as? Int == 1)
         precondition(defaultBindings["10"]?["code"] as? Int == -1)
         print("Gamepad profile checks passed")
+
+        var custom = GamepadProfile()
+        let combo = PadAction.combo(17, 83, toggle: true)
+        precondition(combo.comboTitle == "Ctrl+S")
+        custom.virtual.controls[2].action = combo
+        custom.physical.bindings[0] = combo
+        profiles.save(custom, for: "combo")
+        precondition(profiles.active("combo") == custom)
+        let customJSON = try! JSONSerialization.jsonObject(with: Data(custom.engineJSON().utf8)) as! [String: Any]
+        let customPhysical = customJSON["physical"] as! [String: Any]
+        let customBindings = customPhysical["bindings"] as! [String: [String: Any]]
+        precondition(customBindings["0"]?["type"] as? Int == 6)
+        precondition(customBindings["0"]?["code"] as? Int == 83 && customBindings["0"]?["code2"] as? Int == 17)
+        precondition(customBindings["0"]?["toggle"] as? Bool == true)
+
+        let original = custom.virtual.controls[2]
+        let deletion = custom.virtual.deleteControl(at: 2)
+        precondition(!custom.virtual.controls.contains(original))
+        precondition(custom.virtual.addControl(.button, reserving: deletion) != nil)
+        precondition(custom.virtual.controls.last?.slot != original.slot)
+        precondition(custom.virtual.restore(deletion) == original.id)
+        precondition(custom.virtual.controls[2] == original && custom.virtual.restore(deletion) == nil)
+        let deletedDPad = custom.virtual.deleteControl(at: 0)
+        precondition(!custom.virtual.canAddControl(.dpad, reserving: deletedDPad))
+        precondition(custom.virtual.restore(deletedDPad) == deletedDPad.control.id)
+        print("Gamepad combo and delete undo checks passed")
     }
 }

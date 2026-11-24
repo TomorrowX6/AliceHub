@@ -50,9 +50,9 @@ enum ModManagerPolicy {
         try info.write(to: directory)
     }
 
-    static func meta(_ entry: ModReleaseEntry) -> String {
+    static func meta(_ entry: ModReleaseEntry, language: HubLanguage) -> String {
         [ModCatalog.formatSize(entry.expectedSize), entry.formattedDate,
-         entry.isPatch ? entry.baseVersion.map { "需 " + $0 } ?? "" : "", entry.fileName].filter { !$0.isEmpty }.joined(separator: " · ")
+         entry.isPatch ? entry.baseVersion.map { language.text("需 %@", arguments: [$0]) } ?? "" : "", entry.fileName].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
@@ -85,8 +85,8 @@ final class ModManagerModel: ObservableObject {
                 self.refreshInstalled()
                 self.error = self.installer.failure
                 if self.installer.succeeded {
-                    self.notice = self.restoring ? (descriptor.isCnPatch ? "已卸载汉化补丁" : "已卸载 MOD") : (descriptor.isCnPatch ? "汉化补丁安装成功" : "MOD 安装成功")
-                } else if self.installer.failure == nil { self.notice = "已取消" }
+                    self.notice = self.restoring ? (descriptor.isCnPatch ? hubText("已卸载汉化补丁") : hubText("已卸载 MOD")) : (descriptor.isCnPatch ? hubText("汉化补丁安装成功") : hubText("MOD 安装成功"))
+                } else if self.installer.failure == nil { self.notice = hubText("已取消") }
             }
         }.store(in: &subscriptions)
     }
@@ -98,7 +98,7 @@ final class ModManagerModel: ObservableObject {
     }
     var installedIndex: Int { hasMod ? ModCatalog.matchInstalledIndex(visibleReleases, installed) : -1 }
     var plan: ModUpdatePlan? { ModCatalog.computeUpdatePlan(visibleReleases, hasMod: hasMod, installed: installed, canRestore: canRestore) }
-    var status: String {
+    func status(in language: HubLanguage) -> String {
         let allIdx = hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1
         let version = releases.indices.contains(allIdx) ? releases[allIdx].version : installed?.version
         let installedGroup = (releases.indices.contains(allIdx) && !releases[allIdx].group.isEmpty) ? releases[allIdx].group : (installed?.group ?? "")
@@ -112,21 +112,24 @@ final class ModManagerModel: ObservableObject {
         } else {
             installedLabel = nil
         }
-        let current = !hasMod ? (descriptor.isCnPatch ? "未安装汉化补丁" : "未安装 MOD") : installedLabel.map { "已装 " + $0 } ?? (descriptor.isCnPatch ? "已安装汉化补丁" : "已装 MOD")
+        let current = !hasMod ? language.text(descriptor.isCnPatch ? "未安装汉化补丁" : "未安装 MOD")
+            : installedLabel.map { language.text("已装 %@", arguments: [$0]) } ?? language.text(descriptor.isCnPatch ? "已安装汉化补丁" : "已装 MOD")
         if let latest = visibleReleases.first {
-            let latestPart = (availableGroups.count > 1 && !latest.group.isEmpty) ? (" · " + latest.group + " 最新 " + latest.version) : (" · 最新 " + latest.version)
-            return current + latestPart
+            let latestPart = (availableGroups.count > 1 && !latest.group.isEmpty)
+                ? language.text("%@ 最新 %@", arguments: [latest.group, latest.version])
+                : language.text("最新 %@", arguments: [latest.version])
+            return current + " · " + latestPart
         }
         return current
     }
-    var updateTitle: String {
-        if busy { return "查看进度" }
-        if visibleReleases.isEmpty { return loading ? "检查中…" : (loadFailed ? "重新获取" : "安装最新") }
-        if switchBlockedByNoBackup { return "需原版切换" }
-        guard let plan else { return "已是最新" }
+    func updateTitle(in language: HubLanguage) -> String {
+        if busy { return language.text("查看进度") }
+        if visibleReleases.isEmpty { return language.text(loading ? "检查中…" : (loadFailed ? "重新获取" : "安装最新")) }
+        if switchBlockedByNoBackup { return language.text("需原版切换") }
+        guard let plan else { return language.text("已是最新") }
         let switchingGroup = hasMod && ModCatalog.groupsConflict(visibleReleases.first?.group, installed?.group)
         let size = ModCatalog.formatSize(plan.steps.reduce(Int64(0)) { $0 + max(0, $1.expectedSize) })
-        let baseLabel = !hasMod ? "安装最新" : (switchingGroup ? "切换安装" : "立即更新")
+        let baseLabel = language.text(!hasMod ? "安装最新" : (switchingGroup ? "切换安装" : "立即更新"))
         return baseLabel + (size.isEmpty ? "" : " · " + size)
     }
     var updateDisabled: Bool { busy || switchBlockedByNoBackup || (visibleReleases.isEmpty ? !loadFailed : plan == nil) }

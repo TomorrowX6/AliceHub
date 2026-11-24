@@ -243,6 +243,54 @@ int main(void) {
         out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
 
+    def test_rance_gbk_prologue_with_mixed_message_table(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/utfsjis.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+
+struct config config;
+void message_layout_init_rance03(void) {}
+
+int main(void) {
+    struct ain *ain = ain_new(14, 0);
+    ain_add_function(ain, "C_MedicaMenu@0");
+    ain_add_string(ain, "th74s65a");
+
+    const char *sjis = "\x82\xb1\x82\xea\x82\xcd\x83\x65\x83\x58\x83\x67\x82\xc5\x82\xb7\x81\x42";
+    ain_add_message(ain, sjis);
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle2_rance);
+    assert(!sys4_text_is_gbk && "marker-free inconclusive AIN must stay Shift-JIS");
+
+    for (int i = 0; i < 12; i++)
+        ain_add_message(ain, sjis);
+
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle2_rance);
+    assert(!sys4_text_is_gbk);
+
+    const char *gbk = "\xd5\xe2\xca\xc7\xcb\xc0\xcd\xf6\xb3\xa3\xb0\xe9\xc9\xed\xb1\xdf\xb5\xc4\xca\xc0\xbd\xe7\xa1\xa3";
+    ain_add_message(ain, gbk);
+    apply_game_specific_hacks(ain);
+    assert(sys4_text_is_gbk);
+    char *text = sjis2utf(gbk, 0);
+    assert(strcmp(text, "这是死亡常伴身边的世界。") == 0);
+    free(text);
+    ain_free(ain);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):
         harness = r"""
 #include <assert.h>
@@ -1531,6 +1579,10 @@ struct config config;
 bool game_rance02_mg = false;
 bool game_rance6_mg = false;
 bool game_rance7_mg = false;
+bool game_night_remaster, game_evenicle2, game_evenicle2_rance;
+bool game_evenicle, game_evenicle_rance, game_evenicle_gaiden;
+bool game_ixseal, game_oyakorankan, game_tsumamigui3, game_tsumamigui3_jun, game_tsumamigui3_ntr;
+bool game_haharanman, game_rance01, game_rance03, game_rance8, game_rance9;
 
 static int fnl_open_calls = 0;
 static int rendered_glyph_count = 0;
@@ -1569,6 +1621,9 @@ static bool cjk_is_ascii_only(const char *s) {{
 
 {save_bias_fn}
 
+#ifdef TEST_IOS_FONT_DEFAULTS
+#define ALICEHUB_IOS
+#endif
 #include "font_freetype.c"
 #include "text.c"
 
@@ -1620,18 +1675,57 @@ int main(void)
     /* save_text_gbk_bias must treat valid mai CN save strings/comments as non-GBK. */
     assert(save_text_gbk_bias(mai_cn) < 0);
 
+    const char *spec = XSYS4_DATA_DIR "/fonts/VL-Gothic-Regular.ttf#VL-Gothic-Regular";
+#ifdef ALICEHUB_IOS
+    assert(setenv("XSYSTEM4_FONT_GOTHIC_SC", spec, 1) == 0);
+    config.font_paths[FONT_GOTHIC] = XSYS4_DATA_DIR "/fonts/HanaMinA.ttf";
+    struct font_ft *custom = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(custom && !custom->fallback);
+    assert(strcmp(FT_Get_Postscript_Name(custom->font), "HanaMinA") == 0);
+    config.font_paths[FONT_GOTHIC] = NULL;
+
+    struct font_ft *system = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(system && system->fallback);
+    assert(strcmp(FT_Get_Postscript_Name(system->font), "VL-Gothic-Regular") == 0);
+    assert(strcmp(FT_Get_Postscript_Name(system->fallback->font), "HanaMinA") == 0);
+    /* Use the Roman charmap to simulate a system face with no kana. */
+    assert(FT_Select_Charmap(system->font, FT_ENCODING_APPLE_ROMAN) == 0);
+    assert(FT_Get_Char_Index(system->font, 'A') != 0);
+    assert(FT_Get_Char_Index(system->font, 0x3042) == 0);
+    assert(FT_Get_Char_Index(system->fallback->font, 0x3042) != 0);
+    assert(ft_font_for_char(system, 'A') == system);
+    assert(ft_font_for_char(system, 0x3042) == system->fallback);
+
+    struct font_size *size = system->super.get_size(&system->super, 24);
+    int before = nonzero_glyph_pixels;
+    assert(font_get_glyph(size, 0x3042, FONT_WEIGHT_NORMAL));
+    assert(nonzero_glyph_pixels > before);
+    struct font_size *fallback_size = system->fallback->super.get_size(&system->fallback->super, 24);
+    assert(size->font->size_char_kerning(size, 0x3042, 'A') ==
+           fallback_size->font->size_char_kerning(fallback_size, 0x3042, 0));
+#else
+    assert(!ft_font_load(spec));
+    struct font_ft *before = (struct font_ft *)font_ttf[FONT_GOTHIC];
+    assert(setenv("XSYSTEM4_FONT_GOTHIC_SC", XSYS4_DATA_DIR "/fonts/VL-Gothic-Regular.ttf", 1) == 0);
+    struct font_ft *after = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(after && strcmp(FT_Get_Postscript_Name(before->font), FT_Get_Postscript_Name(after->font)) == 0);
+#endif
+
     free(mai_cn);
     sys4_reset_mai_word_table();
     puts("OK");
     return 0;
 }}
 """
-        out = compile_and_run(
-            harness,
-            LIBSYS4_CORE,
-            [*ft_cflags, f'-DXSYS4_DATA_DIR="{ROOT}"', *ft_libs, "-lz", "-lm"],
-        )
-        self.assertEqual(out.strip(), "OK")
+        for ios in (False, True):
+            with self.subTest(ios=ios):
+                out = compile_and_run(
+                    harness,
+                    LIBSYS4_CORE,
+                    [*ft_cflags, f'-DXSYS4_DATA_DIR="{ROOT}"',
+                     *(["-DTEST_IOS_FONT_DEFAULTS"] if ios else []), *ft_libs, "-lz", "-lm"],
+                )
+                self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":

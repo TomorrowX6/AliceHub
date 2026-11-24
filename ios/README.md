@@ -11,8 +11,10 @@ ios/build-native.sh iphoneos
 Both builds target arm64, iOS 15.0+, and install separate static archives and
 headers in `ios/build/<sdk>/stage/{lib,include}`. Do not combine device and
 simulator archives into one fat archive: both use arm64 but different platforms.
-Zlib is taken from the selected SDK. FreeType 2.13.3 matches the Android fallback
-in `cmake/FindFreetype.cmake`; cglm 0.9.2 is fetched by the engine's CMake project.
+Zlib is taken from the selected SDK. FreeType is 2.15.0, newer than the Android
+fallback in `cmake/FindFreetype.cmake`, because iOS 26 and later ship PingFang in
+Apple's HVF outline format. FreeType enables HVF when the SDK has `libhvf`, and
+`build-app.sh` then weak-links it so the app still launches on older iOS; cglm 0.9.2 is fetched by the engine's CMake project.
 Other dependency versions and hashes match the root Android superbuild.
 Archive imports use static libarchive 3.8.11 and xz 5.8.4 with SDK zlib.
 
@@ -150,6 +152,16 @@ CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
   relative `fonts/...`; explicit absolute `--font-mincho` and `--font-gothic`
   paths are also supported. Unlike Android's SDL asset reader, FreeType on iOS
   reads actual filesystem paths. The engine does not change cwd itself.
+* The launcher sets `XSYSTEM4_FONT_GOTHIC`/`XSYSTEM4_FONT_MINCHO` to the system
+  Hiragino Sans W3 and `XSYSTEM4_FONT_GOTHIC_SC`/`XSYSTEM4_FONT_MINCHO_SC` (used
+  for Chinese releases) to PingFang SC Medium, resolved through CoreText as
+  `<file>#<PostScript name>` so the right face is picked from the `.ttc`. These
+  rank below `.xsys4rc` and CLI fonts and above the bundled fonts, which remain
+  the fallback when a system font is missing or unreadable. Individual glyphs
+  missing from a system font (such as kana in PingFang SC) fall back to the
+  bundled HanaMinA. PingFang SC Medium is used because iOS ships Regular only
+  as a variable-font instance with a private name that FreeType cannot select
+  by PostScript name.
 * Supply an absolute game path so the resource cwd and game directory remain
   independent. Import/extract game files into an accessible sandbox directory
   before launch; document-provider access is the app's responsibility.
@@ -183,6 +195,15 @@ Support `save_backups/<game>`. Import merges files; restoring a backup replaces
 visible saves while retaining hidden settings. PC export uses the engine's native
 X4SS converter and does not modify the original saves.
 
+Settings → 存档同步 keeps saves in a folder the user picks in Files, typically
+in iCloud Drive, so no iCloud entitlement or paid signing is needed. The folder
+is stored as a security-scoped bookmark and mirrors `Documents/Saves` as
+`<folder>/<game>/...`. Before launch it syncs in both directions; manual sync,
+backgrounding and exit only upload. If both copies changed, neither is
+overwritten. To resolve a conflict, keep the desired version on both sides.
+Local files are backed up before replacement and deletions are not propagated.
+`python3 ios/Tests/test_save_sync.py` runs its Foundation-only checks.
+
 ## Game runtime
 
 The iOS platform bridge attaches SDL's UIKit window to the active SwiftUI scene
@@ -191,6 +212,11 @@ framebuffer instead of framebuffer zero. The viewport remains in window points
 for mouse/touch mapping and is scaled to drawable pixels only for `glViewport`.
 SDL converts single-finger touches to mouse events. Android's window, GL and
 input paths are unchanged.
+For System 4 games, the opt-in "长按快进（按住 Ctrl）" setting (off by default)
+makes a one-finger press held still for one second act as a held Ctrl key for
+message skip until the finger lifts. Moving the finger, a second finger, a
+PartsEngine drag or movie playback cancels it, and the left click of that
+press is dropped once Ctrl engages.
 Tap the gamepad icon in the launcher to edit the global layout and controller
 settings. Swipe right on a game to configure an override for that game. The
 layout editor supports dragging, per-control size, opacity and visibility, and
@@ -237,4 +263,4 @@ The shared native modifier (`xsystem4/src/modifier.c`) is reached from Swift thr
 - **Launcher:** swipe a Rance X game (folder with `Rance10.ain`) and choose “修改存档” to edit the writable fields of its `LocalSaveN.asd` files.
   Each write first copies the file to `<save>.mod.bak`.
 
-Checks: `swiftc -parse-as-library ios/App/ModifierBridge.swift ios/Tests/ModifierChecks.swift -o /tmp/modchecks && /tmp/modchecks`.
+Checks: `swiftc -parse-as-library ios/App/ModifierBridge.swift ios/App/ModifierGamePanels.swift ios/Tests/ModifierChecks.swift -o /tmp/modchecks && /tmp/modchecks`.

@@ -6,11 +6,11 @@ enum ArchiveError: LocalizedError {
     case extraction(String)
     var errorDescription: String? {
         switch self {
-        case .invalidPath: return "压缩包包含不安全的文件路径。"
-        case .noSpace: return "存储空间不足，请清理空间后重试。"
-        case .cancelled: return "已取消导入。"
-        case .invalidImage: return "光盘镜像损坏或格式不受支持。"
-        case .extraction(let message): return "解压失败：\(message)"
+        case .invalidPath: return hubText("压缩包包含不安全的文件路径。")
+        case .noSpace: return hubText("存储空间不足，请清理空间后重试。")
+        case .cancelled: return hubText("已取消导入。")
+        case .invalidImage: return hubText("光盘镜像损坏或格式不受支持。")
+        case .extraction(let message): return hubText("解压失败：%@", hubText(message))
         }
     }
 }

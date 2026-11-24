@@ -571,6 +571,18 @@ static void clear_primary_face(FontType type) {
 	this.face_is_fallback[type] = false;
 }
 
+#ifdef ALICEHUB_IOS
+void font_fini(void) {
+	cache_destroy(glyph_cache);
+	glyph_cache = NULL;
+	if (ft_library)
+		FT_Done_FreeType(ft_library);
+	ft_library = NULL;
+	memset(&this, 0, sizeof(this));
+	this.encoding = SHIFT_JIS;
+}
+#endif
+
 void font_set_encoding(CharacterEncoding encoding) {
 	if (this.encoding != encoding) {
 		this.encoding = encoding;

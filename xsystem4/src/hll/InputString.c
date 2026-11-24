@@ -14,7 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
-#include <SDL.h>
+#include <string.h>
 
 #include "system4.h"
 #include "system4/ain.h"
@@ -26,6 +26,7 @@
 #include "gfx/gfx.h"
 #include "hll.h"
 #include "input.h"
+#include "parts_widgets.h"
 
 static int font_size;
 static int font_weight;
@@ -104,33 +105,28 @@ static void handle_key(int code)
 
 static void InputString_OpenIME(void)
 {
-	register_input_handler(handle_input);
-	register_editing_handler(handle_editing);
-	register_key_handler(handle_key);
+	static const struct input_text_handlers handlers = { handle_input, handle_editing, handle_key };
 	has_editing_text = false;
 	ime_open = true;
-	SDL_StartTextInput();
+	input_set_legacy_text_handlers(&handlers);
 }
 
 static void InputString_CloseIME(void)
 {
 	ime_open = false;
-	SDL_StopTextInput();
 	has_editing_text = false;
-	clear_input_handler();
-	clear_editing_handler();
-	clear_key_handler();
+	input_set_legacy_text_handlers(NULL);
 }
 
 static bool InputString_IsOpenIME(void) { return ime_open; }
 static bool InputString_Inputs(void)
 {
-	return has_editing_text;
+	return ime_open ? has_editing_text : PE_IsTextBoxComposing();
 }
 
 static bool InputString_Converts(void)
 {
-	return has_editing_text;
+	return InputString_Inputs();
 }
 
 static void InputString_PreLink(void)

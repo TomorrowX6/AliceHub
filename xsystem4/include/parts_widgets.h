@@ -85,4 +85,9 @@ void PE_RemoveRadioButtonBoxChild(int no, int child_no);
 void PE_ClearRadioButtonBoxChild(int no);
 void PE_SetTextBoxText(int no, struct string *text);
 struct string *PE_GetTextBoxText(int no);
+void PE_SetTextBoxReadOnly(int no, bool read_only);
+bool PE_IsTextBoxReadOnly(int no);
+void PE_SetTextBoxMaxTextLength(int no, int length);
+int PE_GetTextBoxMaxTextLength(int no);
+bool PE_IsTextBoxComposing(void);
 #endif

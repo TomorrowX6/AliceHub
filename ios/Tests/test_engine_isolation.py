@@ -8,7 +8,14 @@ ROOT = Path(__file__).resolve().parents[2]
 EXPORTS = {
     'xsystem4': {'_xsystem4_main', '_alicehub_ios_prepare_window',
                  '_alicehub_ios_bind_drawable', '_alicehub_ios_set_background_hook'},
-    'xsystem35': {'_xsystem35_main'},
+    'xsystem35': {'_xsystem35_main', '_xsystem35_modifier_live_state',
+                  '_xsystem35_modifier_get_locks', '_xsystem35_modifier_set_locks',
+                  '_xsystem35_modifier_apply_action',
+                  '_xsystem35_set_gamepad_config_json',
+                  '_xsystem35_clear_virtual_inputs', '_xsystem35_set_virtual_button',
+                  '_xsystem35_set_virtual_dpad', '_xsystem35_set_virtual_stick',
+                  '_xsystem35_save_screenshot'},
+
     'system3': {'_system3_main'},
 }
 
