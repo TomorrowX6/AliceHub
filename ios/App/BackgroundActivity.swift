@@ -76,10 +76,13 @@ final class BackgroundActivity {
             if self.continuedTask == nil { self.expire() }
             self.endLegacyTask()
         }
+#if compiler(>=6.2)
         if #available(iOS 26.0, *) { submitContinuedTask() }
+#endif
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+#if compiler(>=6.2)
     @available(iOS 26.0, *)
     private func submitContinuedTask() {
         let identifier = Self.taskPrefix + UUID().uuidString
@@ -110,8 +113,10 @@ final class BackgroundActivity {
         continuedTask = task
         pushProgress()
     }
+#endif
 
     private func pushProgress() {
+#if compiler(>=6.2)
         guard #available(iOS 26.0, *) else { return }
         let apply = {
             guard let task = self.continuedTask as? BGContinuedProcessingTask else { return }
@@ -122,15 +127,18 @@ final class BackgroundActivity {
             task.updateTitle(self.title, subtitle: detail)
         }
         if Thread.isMainThread { apply() } else { DispatchQueue.main.async(execute: apply) }
+#endif
     }
 
     private func finish(_ outcome: Outcome) {
+#if compiler(>=6.2)
         if #available(iOS 26.0, *), let task = continuedTask as? BGContinuedProcessingTask {
             if case .succeeded = outcome { task.progress.completedUnitCount = task.progress.totalUnitCount }
             var success = false
             if case .succeeded = outcome { success = true }
             task.setTaskCompleted(success: success)
         }
+#endif
         continuedTask = nil
         if UIApplication.shared.applicationState != .active { notify(outcome) }
         endLegacyTask()
