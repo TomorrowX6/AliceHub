@@ -17,6 +17,8 @@ targets:
       - path: ../project/app/src/main/res/drawable-nodpi
         type: folder
         buildPhase: resources
+      - path: ../project/app/src/main/res/raw/full_unlock_saves.zip
+        buildPhase: resources
       - path: ../xsystem4/shaders
         type: folder
         buildPhase: resources

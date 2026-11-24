@@ -28,9 +28,11 @@ class SaveManagerChecks(unittest.TestCase):
             subprocess.run([
                 'swiftc', '-import-objc-header', str(ROOT / 'ios/Tests/SaveChecks-Bridging-Header.h'),
                 str(ROOT / 'ios/App/SaveZip.swift'), str(ROOT / 'ios/App/SaveManager.swift'),
+                str(ROOT / 'ios/App/GlobalSaveEditor.swift'),
                 str(ROOT / 'ios/Tests/SaveManagerChecks.swift'), '-lz', '-o', str(binary),
             ], check=True)
-            subprocess.run([str(binary), str(root)], check=True)
+            template = ROOT / 'project/app/src/main/res/raw/full_unlock_saves.zip'
+            subprocess.run([str(binary), str(root), str(template)], check=True)
             subprocess.run(['unzip', '-t', str(root / 'interop.zip')], check=True)
             with zipfile.ZipFile(root / 'interop.zip') as archive:
                 self.assertIsNone(archive.testzip())
