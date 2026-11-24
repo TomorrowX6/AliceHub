@@ -1593,6 +1593,30 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_selfgame_title)
             GameCatalog.isMomoiroGuardianAlias(lower) ->
                 context.getString(R.string.game_momoiroguardian_title)
+            GameCatalog.isRance1ClassicAlias(lower) ->
+                context.getString(R.string.game_rance1classic_title)
+            GameCatalog.isRance2ClassicAlias(lower) ->
+                context.getString(R.string.game_rance2classic_title)
+            GameCatalog.isRance3ClassicAlias(lower) ->
+                context.getString(R.string.game_rance3classic_title)
+            GameCatalog.isDpsSgFahrenAlias(lower) ->
+                context.getString(R.string.game_dpssgfahren_title)
+            GameCatalog.isDpsSgKateiAlias(lower) ->
+                context.getString(R.string.game_dpssgkatei_title)
+            GameCatalog.isDpsSgNobunagaAlias(lower) ->
+                context.getString(R.string.game_dpssgnobunaga_title)
+            GameCatalog.isDpsSg2AntiqueAlias(lower) ->
+                context.getString(R.string.game_dpssg2antique_title)
+            GameCatalog.isDpsSg2IkenaiAlias(lower) ->
+                context.getString(R.string.game_dpssg2ikenai_title)
+            GameCatalog.isDpsSg2AkaiAlias(lower) ->
+                context.getString(R.string.game_dpssg2akai_title)
+            GameCatalog.isDpsSg3RabbitAlias(lower) ->
+                context.getString(R.string.game_dpssg3rabbit_title)
+            GameCatalog.isDpsSg3ShinkonAlias(lower) ->
+                context.getString(R.string.game_dpssg3shinkon_title)
+            GameCatalog.isDpsSg3SotsugyouAlias(lower) ->
+                context.getString(R.string.game_dpssg3sotsugyou_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

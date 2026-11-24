@@ -218,6 +218,78 @@ struct OnlineGame: Identifiable {
             title: "桃色守护者",
             directory: "MomoiroGuardian",
             aliases: ["Momoiro Guardian", "ももいろガーディアン", "桃色守護者", "ももんが", "Momonga"]
+        ),
+        Self(
+            id: "rance1classic",
+            title: "兰斯I 寻找小光（原版）",
+            directory: "Rance1Classic",
+            aliases: ["Rance -Hikari o Motomete- (Classic)", "Rance －光を求めて－（原版）", "Rance I", "兰斯1原版", "ランスI"]
+        ),
+        Self(
+            id: "rance2classic",
+            title: "兰斯II 反叛的少女们（原版）",
+            directory: "Rance2Classic",
+            aliases: ["Rance II -Hangyaku no Shoujo-tachi- (Classic)", "ランスII －反逆の少女たち－（原版）", "Rance II", "兰斯2原版", "ランスII"]
+        ),
+        Self(
+            id: "rance3classic",
+            title: "兰斯III 利萨斯陷落（原版）",
+            directory: "Rance3Classic",
+            aliases: ["Rance III -Leazas Kanraku- (Classic)", "ランスIII －リーザス陥落－（原版）", "Rance III", "兰斯3原版", "ランスIII"]
+        ),
+        Self(
+            id: "dpssgfahren",
+            title: "D.P.S. SG 飞翔的梦",
+            directory: "DpsSgFahren",
+            aliases: ["D.P.S. SG - Fahren Fliegen", "D.P.S. SG －Fahren Fliegen－", "Fahren Fliegen", "飛翔的夢"]
+        ),
+        Self(
+            id: "dpssgkatei",
+            title: "D.P.S. SG 家庭教师是美妙的工作",
+            directory: "DpsSgKatei",
+            aliases: ["D.P.S. SG - Kateikyoushi wa Suteki na Oshigoto", "D.P.S. SG －家庭教師はステキなお仕事－", "家庭教師はステキなお仕事", "Kateikyoushi"]
+        ),
+        Self(
+            id: "dpssgnobunaga",
+            title: "D.P.S. SG 信长的淫谋",
+            directory: "DpsSgNobunaga",
+            aliases: ["D.P.S. SG - Nobunaga no Inbou", "D.P.S. SG －信長の淫謀－", "信長の淫謀", "Nobunaga no Inbou"]
+        ),
+        Self(
+            id: "dpssg2antique",
+            title: "D.P.S. SG set2 古董屋",
+            directory: "DpsSg2Antique",
+            aliases: ["D.P.S. SG set2 - ANTIQUE HOUSE", "D.P.S. SG set2 －ANTIQUE HOUSE－", "ANTIQUE HOUSE"]
+        ),
+        Self(
+            id: "dpssg2ikenai",
+            title: "D.P.S. SG set2 不妙的内科体检再临",
+            directory: "DpsSg2Ikenai",
+            aliases: ["D.P.S. SG set2 - Ikenai Naika Kenshin Futatabi", "D.P.S. SG set2 －いけない内科検診再び－", "いけない内科検診再び"]
+        ),
+        Self(
+            id: "dpssg2akai",
+            title: "D.P.S. SG set2 朱红之夜",
+            directory: "DpsSg2Akai",
+            aliases: ["D.P.S. SG set2 - Akai Yoru", "D.P.S. SG set2 －朱い夜－", "朱い夜", "Akai Yoru"]
+        ),
+        Self(
+            id: "dpssg3rabbit",
+            title: "D.P.S. SG set3 Rabbit P4P",
+            directory: "DpsSg3Rabbit",
+            aliases: ["D.P.S. SG set3 - Rabbit P4P", "D.P.S. SG set3 －Rabbit P4P－", "Rabbit P4P"]
+        ),
+        Self(
+            id: "dpssg3shinkon",
+            title: "D.P.S. SG set3 新婚物语",
+            directory: "DpsSg3Shinkon",
+            aliases: ["D.P.S. SG set3 - Shinkon-san Monogatari", "D.P.S. SG set3 －しんこんさんものがたり－", "しんこんさんものがたり", "新婚物語"]
+        ),
+        Self(
+            id: "dpssg3sotsugyou",
+            title: "D.P.S. SG set3 毕业",
+            directory: "DpsSg3Sotsugyou",
+            aliases: ["D.P.S. SG set3 - Sotsugyou", "D.P.S. SG set3 －卒業－", "卒業", "Sotsugyou"]
         )
     ]
 }

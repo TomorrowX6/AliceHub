@@ -381,6 +381,26 @@
         "id",
         "=",
         "v11292"
+      ],
+      [
+        "id",
+        "=",
+        "v1829"
+      ],
+      [
+        "id",
+        "=",
+        "v8667"
+      ],
+      [
+        "id",
+        "=",
+        "v8668"
+      ],
+      [
+        "id",
+        "=",
+        "v8669"
       ]
     ],
     "fields": "title,alttitle,released,rating,average,votecount",
@@ -1516,6 +1536,42 @@
         "released": "2009-09-18",
         "title": "Momoiro Guardian",
         "votecount": 40
+      },
+      {
+        "alttitle": "ランス III　－リーザス陥落－",
+        "average": 65.5,
+        "id": "v1829",
+        "rating": 65.5,
+        "released": "1991-10-15",
+        "title": "Rance III - Leazas Kanraku -",
+        "votecount": 878
+      },
+      {
+        "alttitle": null,
+        "average": 56.3,
+        "id": "v8667",
+        "rating": 58.2,
+        "released": "1990-08-15",
+        "title": "D.P.S. SG",
+        "votecount": 9
+      },
+      {
+        "alttitle": null,
+        "average": 56.1,
+        "id": "v8668",
+        "rating": 58.1,
+        "released": "1991-04-15",
+        "title": "D.P.S. SG set2",
+        "votecount": 9
+      },
+      {
+        "alttitle": null,
+        "average": 58.7,
+        "id": "v8669",
+        "rating": 59.4,
+        "released": "1991-12-15",
+        "title": "D.P.S. SG set3",
+        "votecount": 12
       }
     ]
   },

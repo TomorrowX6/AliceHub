@@ -305,7 +305,10 @@ struct LibraryChecks {
             ("UnknownTatakikoroshi", "叩き殺しSA.ALD", GameEngine.system3, "tatakikoroshi"),
             ("UnknownBalloonPop", "風船_SA.ALD", GameEngine.system3, "balloonpop"),
             ("UnknownSelfGame", "SelfSA.ald", GameEngine.system3, "selfgame"),
-            ("MomoiroGuardian", "ももんが.ain", GameEngine.system4, "momoiroguardian")
+            ("MomoiroGuardian", "ももんが.ain", GameEngine.system4, "momoiroguardian"),
+            ("Rance1Classic", "RANCESA.ALD", GameEngine.system3, "rance1classic"),
+            ("Rance2Classic", "RANCE2SA.ALD", GameEngine.system3, "rance2classic"),
+            ("Rance3Classic", "RANCE3SA.ALD", GameEngine.system3, "rance3classic")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -391,6 +394,36 @@ struct LibraryChecks {
             let g = Game(url: cDir)
             precondition(g.engine == .legacySystem3 && g.displayName == expectedName && g.artworkKey == expectedKey)
         }
+        // Wave 7 D.P.S. SG set 1/2/3 ADISK+BDISK CRC32 detection (even under opaque folder names)
+        for (dirName, acrc, bcrc, expectedName, expectedKey) in [
+            ("OpaqueSg1A", UInt32(0xab4cda48), UInt32(0xe405d57c), "D.P.S. SG 飞翔的梦", "dpssgfahren"),
+            ("OpaqueSg1B", UInt32(0xab4cda48), UInt32(0x23e67d18), "D.P.S. SG 家庭教师是美妙的工作", "dpssgkatei"),
+            ("OpaqueSg1C", UInt32(0xab4cda48), UInt32(0x2ec116f2), "D.P.S. SG 信长的淫谋", "dpssgnobunaga"),
+            ("OpaqueSg2A", UInt32(0xab4cda48), UInt32(0x41fe8b3d), "D.P.S. SG set2 古董屋", "dpssg2antique"),
+            ("OpaqueSg2B", UInt32(0xab4cda48), UInt32(0x6b562c09), "D.P.S. SG set2 不妙的内科体检再临", "dpssg2ikenai"),
+            ("OpaqueSg2C", UInt32(0xab4cda48), UInt32(0x1098e78c), "D.P.S. SG set2 朱红之夜", "dpssg2akai"),
+            ("OpaqueSg3A", UInt32(0xb77ae133), UInt32(0xa3228b6c), "D.P.S. SG set3 Rabbit P4P", "dpssg3rabbit"),
+            ("OpaqueSg3B", UInt32(0xb77ae133), UInt32(0x09b4448a), "D.P.S. SG set3 新婚物语", "dpssg3shinkon"),
+            ("OpaqueSg3C", UInt32(0xb77ae133), UInt32(0xbc4525d8), "D.P.S. SG set3 毕业", "dpssg3sotsugyou")
+        ] {
+            let sgDir = root.appendingPathComponent(dirName)
+            try files.createDirectory(at: sgDir, withIntermediateDirectories: true)
+            try make256Bytes(crc32: acrc).write(to: sgDir.appendingPathComponent("ADISK.DAT"))
+            try make256Bytes(crc32: bcrc).write(to: sgDir.appendingPathComponent("BDISK.DAT"))
+            try Data().write(to: sgDir.appendingPathComponent("ACG.DAT"))
+            precondition(GameLibrary.isGame(sgDir))
+            let g = Game(url: sgDir)
+            precondition(g.engine == .legacySystem3 && g.displayName == expectedName && g.artworkKey == expectedKey)
+        }
+        // Collision guard: Classic Rance 1/2/3 System 3.x must never collide with System 4 remakes or Rance 1 Digest
+        let classicR1Opaque = root.appendingPathComponent("OpaqueR1")
+        try files.createDirectory(at: classicR1Opaque, withIntermediateDirectories: true)
+        try Data().write(to: classicR1Opaque.appendingPathComponent("RANCESA.ALD"))
+        precondition(Game(url: classicR1Opaque).artworkKey == "rance1classic")
+        let remakeR1 = root.appendingPathComponent("Rance01RemakeCheck")
+        try files.createDirectory(at: remakeR1, withIntermediateDirectories: true)
+        try Data().write(to: remakeR1.appendingPathComponent("Rance01.ain"))
+        precondition(Game(url: remakeR1).artworkKey == "rance01")
         // Collision guards: Sengoku Rance Sanbiki vs Sengoku Rance; KaeruAlice vs Kaerunyo
         let sanbikiTitleDir = root.appendingPathComponent("戦国ランス～三匹が斬ったり突いたり燃やしたり～")
         try files.createDirectory(at: sanbikiTitleDir, withIntermediateDirectories: true)

@@ -1375,6 +1375,18 @@ object GameModifierBridge {
         GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_MOMOIROGUARDIAN
 
     @JvmOverloads
+    fun isRance1ClassicGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean =
+        GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_RANCE1CLASSIC
+
+    @JvmOverloads
+    fun isRance2ClassicGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean =
+        GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_RANCE2CLASSIC
+
+    @JvmOverloads
+    fun isRance3ClassicGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean =
+        GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_RANCE3CLASSIC
+
+    @JvmOverloads
     fun isNonModifierBuiltInGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -1525,7 +1537,19 @@ object GameModifierBridge {
         GameCatalog.ID_BALLOONPOP,
         GameCatalog.ID_HIYOKO2,
         GameCatalog.ID_SELFGAME,
-        GameCatalog.ID_MOMOIROGUARDIAN -> true
+        GameCatalog.ID_MOMOIROGUARDIAN,
+        GameCatalog.ID_RANCE1CLASSIC,
+        GameCatalog.ID_RANCE2CLASSIC,
+        GameCatalog.ID_RANCE3CLASSIC,
+        GameCatalog.ID_DPSSGFAHREN,
+        GameCatalog.ID_DPSSGKATEI,
+        GameCatalog.ID_DPSSGNOBUNAGA,
+        GameCatalog.ID_DPSSG2ANTIQUE,
+        GameCatalog.ID_DPSSG2IKENAI,
+        GameCatalog.ID_DPSSG2AKAI,
+        GameCatalog.ID_DPSSG3RABBIT,
+        GameCatalog.ID_DPSSG3SHINKON,
+        GameCatalog.ID_DPSSG3SOTSUGYOU -> true
         else -> false
     }
 

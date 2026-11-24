@@ -459,6 +459,18 @@ object OnlineInstaller {
     const val HIYOKO2_CDN_URL = "https://alicehub.000.moe/hiyoko2"
     const val SELFGAME_CDN_URL = "https://alicehub.000.moe/selfgame"
     const val MOMOIROGUARDIAN_CDN_URL = "https://alicehub.000.moe/momoiroguardian"
+    const val RANCE1CLASSIC_CDN_URL = "https://alicehub.000.moe/rance1classic"
+    const val RANCE2CLASSIC_CDN_URL = "https://alicehub.000.moe/rance2classic"
+    const val RANCE3CLASSIC_CDN_URL = "https://alicehub.000.moe/rance3classic"
+    const val DPSSGFAHREN_CDN_URL = "https://alicehub.000.moe/dpssgfahren"
+    const val DPSSGKATEI_CDN_URL = "https://alicehub.000.moe/dpssgkatei"
+    const val DPSSGNOBUNAGA_CDN_URL = "https://alicehub.000.moe/dpssgnobunaga"
+    const val DPSSG2ANTIQUE_CDN_URL = "https://alicehub.000.moe/dpssg2antique"
+    const val DPSSG2IKENAI_CDN_URL = "https://alicehub.000.moe/dpssg2ikenai"
+    const val DPSSG2AKAI_CDN_URL = "https://alicehub.000.moe/dpssg2akai"
+    const val DPSSG3RABBIT_CDN_URL = "https://alicehub.000.moe/dpssg3rabbit"
+    const val DPSSG3SHINKON_CDN_URL = "https://alicehub.000.moe/dpssg3shinkon"
+    const val DPSSG3SOTSUGYOU_CDN_URL = "https://alicehub.000.moe/dpssg3sotsugyou"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1940,6 +1952,18 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_HIYOKO2 -> sanitizedManifestBase.ifEmpty { "Hiyoko2" }
             classifiedStagedId == GameCatalog.ID_SELFGAME -> sanitizedManifestBase.ifEmpty { "SelfGame" }
             classifiedStagedId == GameCatalog.ID_MOMOIROGUARDIAN -> sanitizedManifestBase.ifEmpty { "MomoiroGuardian" }
+            classifiedStagedId == GameCatalog.ID_RANCE1CLASSIC -> sanitizedManifestBase.ifEmpty { "Rance1Classic" }
+            classifiedStagedId == GameCatalog.ID_RANCE2CLASSIC -> sanitizedManifestBase.ifEmpty { "Rance2Classic" }
+            classifiedStagedId == GameCatalog.ID_RANCE3CLASSIC -> sanitizedManifestBase.ifEmpty { "Rance3Classic" }
+            classifiedStagedId == GameCatalog.ID_DPSSGFAHREN -> sanitizedManifestBase.ifEmpty { "DpsSgFahren" }
+            classifiedStagedId == GameCatalog.ID_DPSSGKATEI -> sanitizedManifestBase.ifEmpty { "DpsSgKatei" }
+            classifiedStagedId == GameCatalog.ID_DPSSGNOBUNAGA -> sanitizedManifestBase.ifEmpty { "DpsSgNobunaga" }
+            classifiedStagedId == GameCatalog.ID_DPSSG2ANTIQUE -> sanitizedManifestBase.ifEmpty { "DpsSg2Antique" }
+            classifiedStagedId == GameCatalog.ID_DPSSG2IKENAI -> sanitizedManifestBase.ifEmpty { "DpsSg2Ikenai" }
+            classifiedStagedId == GameCatalog.ID_DPSSG2AKAI -> sanitizedManifestBase.ifEmpty { "DpsSg2Akai" }
+            classifiedStagedId == GameCatalog.ID_DPSSG3RABBIT -> sanitizedManifestBase.ifEmpty { "DpsSg3Rabbit" }
+            classifiedStagedId == GameCatalog.ID_DPSSG3SHINKON -> sanitizedManifestBase.ifEmpty { "DpsSg3Shinkon" }
+            classifiedStagedId == GameCatalog.ID_DPSSG3SOTSUGYOU -> sanitizedManifestBase.ifEmpty { "DpsSg3Sotsugyou" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2841,6 +2865,10 @@ object OnlineInstaller {
                         lower.contains("梦幻程序系统")) &&
                         !lower.contains("dpsall") &&
                         !lower.contains("koredps") &&
+                        !lower.contains("dpssg") &&
+                        !lower.contains("dps_sg") &&
+                        !lower.contains("dps sg") &&
+                        !lower.contains("d.p.s. sg") &&
                         !lower.contains("super") &&
                         !lower.contains("sdps") &&
                         !lower.contains("ver_n") &&
@@ -2903,6 +2931,61 @@ object OnlineInstaller {
                         lower.contains("ももいろガーディアン") ||
                         lower.contains("ももんが") ||
                         lower.contains("桃色守护者")
+                    GameCatalog.ID_RANCE1CLASSIC -> lower.contains("rance1classic") ||
+                        lower.contains("rance1_classic") ||
+                        lower.contains("rancesa.ald") ||
+                        lower.contains("兰斯1原版") ||
+                        Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*i(?![a-z0-9])").containsMatchIn(lower) ||
+                        (lower.contains("光を求めて") && (lower.contains("原版") || lower.contains("classic")))
+                    GameCatalog.ID_RANCE2CLASSIC -> lower.contains("rance2classic") ||
+                        lower.contains("rance2_classic") ||
+                        lower.contains("rance2sa.ald") ||
+                        lower.contains("兰斯2原版") ||
+                        Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*ii(?![a-z0-9])").containsMatchIn(lower) ||
+                        (lower.contains("反逆の少女") && (lower.contains("原版") || lower.contains("classic")))
+                    GameCatalog.ID_RANCE3CLASSIC -> lower.contains("rance3classic") ||
+                        lower.contains("rance3_classic") ||
+                        lower.contains("rance3sa.ald") ||
+                        lower.contains("兰斯3原版") ||
+                        Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*iii(?![a-z0-9])").containsMatchIn(lower) ||
+                        (lower.contains("リーザス") && (lower.contains("原版") || lower.contains("classic")))
+                    GameCatalog.ID_DPSSGFAHREN -> lower.contains("dpssgfahren") ||
+                        lower.contains("dps_sg_fahren") ||
+                        lower.contains("fahren fliegen") ||
+                        lower.contains("飞翔的梦")
+                    GameCatalog.ID_DPSSGKATEI -> lower.contains("dpssgkatei") ||
+                        lower.contains("dps_sg_katei") ||
+                        lower.contains("家庭教師はステキなお仕事") ||
+                        lower.contains("家庭教师是美妙的工作")
+                    GameCatalog.ID_DPSSGNOBUNAGA -> lower.contains("dpssgnobunaga") ||
+                        lower.contains("dps_sg_nobunaga") ||
+                        lower.contains("信長の淫謀") ||
+                        lower.contains("信长的淫谋")
+                    GameCatalog.ID_DPSSG2ANTIQUE -> lower.contains("dpssg2antique") ||
+                        lower.contains("dps_sg2_antique") ||
+                        lower.contains("antique house") ||
+                        lower.contains("古董屋")
+                    GameCatalog.ID_DPSSG2IKENAI -> lower.contains("dpssg2ikenai") ||
+                        lower.contains("dps_sg2_ikenai") ||
+                        lower.contains("いけない内科検診") ||
+                        lower.contains("不妙的内科体检")
+                    GameCatalog.ID_DPSSG2AKAI -> lower.contains("dpssg2akai") ||
+                        lower.contains("dps_sg2_akai") ||
+                        lower.contains("朱い夜") ||
+                        lower.contains("朱红之夜")
+                    GameCatalog.ID_DPSSG3RABBIT -> lower.contains("dpssg3rabbit") ||
+                        lower.contains("dps_sg3_rabbit") ||
+                        lower.contains("rabbit p4p") ||
+                        lower.contains("rabbitp4p")
+                    GameCatalog.ID_DPSSG3SHINKON -> lower.contains("dpssg3shinkon") ||
+                        lower.contains("dps_sg3_shinkon") ||
+                        lower.contains("しんこんさんものがたり") ||
+                        lower.contains("新婚物语")
+                    GameCatalog.ID_DPSSG3SOTSUGYOU -> lower.contains("dpssg3sotsugyou") ||
+                        lower.contains("dps_sg3_sotsugyou") ||
+                        lower.contains("sotsugyou") ||
+                        lower.contains("卒業") ||
+                        lower.contains("毕业")
                     GameCatalog.ID_TSUMASHIBORI -> lower.contains("tsumashibori") ||
                         lower.contains("tsumasibori") ||
                         lower.contains("妻しぼり") ||

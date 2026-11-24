@@ -132,6 +132,9 @@ final class GameLibrary: ObservableObject {
         ("sanbiki", ["sanbiki", "三匹が", "三匹", "slash!thrust!burn!"]),
         ("sengokurance", ["sengoku", "戦国", "战国"]),
         ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
+        ("rance1classic", ["rance1classic", "rancesa.ald", "rancega.ald", "兰斯1原版", "兰斯1（原版）", "兰斯i寻找小光"]),
+        ("rance2classic", ["rance2classic", "rance2sa.ald", "rance2ga.ald", "兰斯2原版", "兰斯2（原版）", "兰斯ii反叛的少女"]),
+        ("rance3classic", ["rance3classic", "rance3sa.ald", "rance3ga.ald", "兰斯3原版", "兰斯3（原版）", "兰斯iii利萨斯陥落", "兰斯iii利萨斯陷落"]),
         ("rance01", ["rance01", "兰斯01", "ランス01"]),
         ("rance02", ["rance02", "兰斯02", "ランス02"]),
         ("rance03", ["rance03", "兰斯03", "ランス03"]),
@@ -174,6 +177,15 @@ final class GameLibrary: ObservableObject {
         ("sdpstono", ["sdpstono", "superdpstono", "遠野の森", "远野之森", "遠野之森", "tononomori"]),
         ("sdpskaizoku", ["sdpskaizoku", "superdpskaizoku", "海賊稼業", "海盗生涯", "海盜生涯", "kaizokukagyou"]),
         ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
+        ("dpssgfahren", ["dpssgfahren", "fahrenfliegen", "fahnenfliegen", "飞翔的梦", "飛翔的夢"]),
+        ("dpssgkatei", ["dpssgkatei", "家庭教師はステキなお仕事", "家庭教师是美妙的工作", "家庭教師是美妙的工作", "kateikyoushi"]),
+        ("dpssgnobunaga", ["dpssgnobunaga", "信長の淫謀", "信长的淫谋", "信長的淫謀", "nobunaganoinbou"]),
+        ("dpssg2antique", ["dpssg2antique", "antiquehouse", "古董屋"]),
+        ("dpssg2ikenai", ["dpssg2ikenai", "いけない内科検診", "不妙的内科体检", "不妙的內科體檢", "naikakenshin"]),
+        ("dpssg2akai", ["dpssg2akai", "朱い夜", "朱红之夜", "朱紅之夜", "akaiyoru"]),
+        ("dpssg3rabbit", ["dpssg3rabbit", "rabbitp4p"]),
+        ("dpssg3shinkon", ["dpssg3shinkon", "しんこんさんものがたり", "新婚物语", "新婚物語", "shinkonsan"]),
+        ("dpssg3sotsugyou", ["dpssg3sotsugyou", "d.p.s.sgset3sotsugyou", "d.p.s.sgset3毕业", "d.p.s.sgset3畢業", "d.p.s.sgset3－卒業－"]),
         ("dps", ["dreamprogramsystem", "梦幻程序系统", "夢幻程序系統"]),
         ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
         ("toushin2sp", ["toushin2sp", "soshitesorekara", "そしてそれから", "然后从那以后", "然後從那以後"]),
@@ -453,6 +465,21 @@ final class GameLibrary: ObservableObject {
         let bdiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyBdiskCrc32FromRegularFiles(regularFiles) : nil
 
         let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
+        let rance1Classic = (engine == .system3 && regularNamesLower.contains("rancesa.ald")) ||
+            (engine == .legacySystem3 && (legacyId == "rance" || (legacyId == nil && adiskCrc == 0x2fffbd60)))
+        let rance2Classic = (engine == .system3 && regularNamesLower.contains("rance2sa.ald")) ||
+            (engine == .legacySystem3 && (legacyId == "rance2" || (legacyId == nil && adiskCrc == 0x28f8298f)))
+        let rance3Classic = (engine == .system3 && regularNamesLower.contains("rance3sa.ald")) ||
+            (engine == .legacySystem3 && (legacyId == "rance3" || (legacyId == nil && adiskCrc == 0x47a399a1)))
+        let dpsSgFahren = engine == .legacySystem3 && ((legacyId == "dps_sg_fahren" || legacyId == "dpssgfahren") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0xe405d57c))
+        let dpsSgKatei = engine == .legacySystem3 && ((legacyId == "dps_sg_katei" || legacyId == "dpssgkatei") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0x23e67d18))
+        let dpsSgNobunaga = engine == .legacySystem3 && ((legacyId == "dps_sg_nobunaga" || legacyId == "dpssgnobunaga") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0x2ec116f2))
+        let dpsSg2Antique = engine == .legacySystem3 && ((legacyId == "dps_sg2_antique" || legacyId == "dpssg2antique") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0x41fe8b3d))
+        let dpsSg2Ikenai = engine == .legacySystem3 && ((legacyId == "dps_sg2_ikenai" || legacyId == "dpssg2ikenai") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0x6b562c09))
+        let dpsSg2Akai = engine == .legacySystem3 && ((legacyId == "dps_sg2_akai" || legacyId == "dpssg2akai") || (legacyId == nil && adiskCrc == 0xab4cda48 && bdiskCrc == 0x1098e78c))
+        let dpsSg3Rabbit = engine == .legacySystem3 && ((legacyId == "dps_sg3_rabbit" || legacyId == "dpssg3rabbit") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0xa3228b6c))
+        let dpsSg3Shinkon = engine == .legacySystem3 && ((legacyId == "dps_sg3_shinkon" || legacyId == "dpssg3shinkon") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0x09b4448a))
+        let dpsSg3Sotsugyou = engine == .legacySystem3 && ((legacyId == "dps_sg3_sotsugyou" || legacyId == "dpssg3sotsugyou") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0xbc4525d8))
         let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
             (legacyId.map { $0 == "rance41" || $0 == "rance41_eng" || $0 == "rance4.1" } ?? false)
         let rance42 = (engine == .system3 && regularNamesLower.contains("ran42_sa.ald")) ||
@@ -487,6 +514,18 @@ final class GameLibrary: ObservableObject {
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
+        else if rance1Classic { displayName = "兰斯I 寻找小光（原版）" }
+        else if rance2Classic { displayName = "兰斯II 反叛的少女们（原版）" }
+        else if rance3Classic { displayName = "兰斯III 利萨斯陷落（原版）" }
+        else if dpsSgFahren { displayName = "D.P.S. SG 飞翔的梦" }
+        else if dpsSgKatei { displayName = "D.P.S. SG 家庭教师是美妙的工作" }
+        else if dpsSgNobunaga { displayName = "D.P.S. SG 信长的淫谋" }
+        else if dpsSg2Antique { displayName = "D.P.S. SG set2 古董屋" }
+        else if dpsSg2Ikenai { displayName = "D.P.S. SG set2 不妙的内科体检再临" }
+        else if dpsSg2Akai { displayName = "D.P.S. SG set2 朱红之夜" }
+        else if dpsSg3Rabbit { displayName = "D.P.S. SG set3 Rabbit P4P" }
+        else if dpsSg3Shinkon { displayName = "D.P.S. SG set3 新婚物语" }
+        else if dpsSg3Sotsugyou { displayName = "D.P.S. SG set3 毕业" }
         else if rance41 { displayName = "兰斯4.1 拯救制药厂！" }
         else if rance42 { displayName = "兰斯4.2 天使组" }
         else if rance5d { displayName = "兰斯5D" }
@@ -551,6 +590,18 @@ final class GameLibrary: ObservableObject {
         if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
         else if rance04 { detectedArtworkID = "rance04" }
+        else if rance1Classic { detectedArtworkID = "rance1classic" }
+        else if rance2Classic { detectedArtworkID = "rance2classic" }
+        else if rance3Classic { detectedArtworkID = "rance3classic" }
+        else if dpsSgFahren { detectedArtworkID = "dpssgfahren" }
+        else if dpsSgKatei { detectedArtworkID = "dpssgkatei" }
+        else if dpsSgNobunaga { detectedArtworkID = "dpssgnobunaga" }
+        else if dpsSg2Antique { detectedArtworkID = "dpssg2antique" }
+        else if dpsSg2Ikenai { detectedArtworkID = "dpssg2ikenai" }
+        else if dpsSg2Akai { detectedArtworkID = "dpssg2akai" }
+        else if dpsSg3Rabbit { detectedArtworkID = "dpssg3rabbit" }
+        else if dpsSg3Shinkon { detectedArtworkID = "dpssg3shinkon" }
+        else if dpsSg3Sotsugyou { detectedArtworkID = "dpssg3sotsugyou" }
         else if rance5d { detectedArtworkID = "rance5d" }
         else if yakata2 { detectedArtworkID = "yakata2" }
         else if yakata1 { detectedArtworkID = "yakata1" }
