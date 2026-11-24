@@ -113,7 +113,28 @@ struct OnlineGame: Identifiable {
         Self(id: "manana2", title: "超级魔法少女玛娜娜 Vol.2", directory: "Manana2"),
         Self(id: "manana3", title: "超级魔法少女玛娜娜 Vol.3", directory: "Manana3"),
         Self(id: "manana4", title: "超级魔法少女玛娜娜 Vol.4", directory: "Manana4"),
-        Self(id: "manana5", title: "超级魔法少女玛娜娜 Vol.5", directory: "Manana5")
+        Self(id: "manana5", title: "超级魔法少女玛娜娜 Vol.5", directory: "Manana5"),
+        Self(id: "tsumasakura", title: "妻们的樱贝", directory: "TsumaSakura"),
+        Self(id: "shamanssanctuary", title: "巫女的圣域", directory: "ShamansSanctuary"),
+        Self(id: "alivez", title: "AliveZ", directory: "AliveZ"),
+        Self(id: "dungeonsdolls", title: "DUNGEONS & DOLLS", directory: "DungeonsDolls"),
+        Self(id: "suzumiya", title: "铃宫刑务娼馆", directory: "Suzumiya"),
+        Self(id: "shimaima", title: "姐妹。", directory: "Shimaima"),
+        Self(id: "daibanchougaiden", title: "大番长外传", directory: "DaibanchouGaiden"),
+        Self(id: "cosplaylemon", title: "Cosplay柠檬", directory: "CosplayLemon"),
+        Self(id: "whiphoney", title: "奶油哈尼", directory: "WhipHoney"),
+        Self(id: "onimusu", title: "鬼女", directory: "Onimusu"),
+        Self(id: "progrx", title: "职业GRX", directory: "ProGrx"),
+        Self(id: "dpsvern", title: "D.P.S. Ver_N", directory: "DpsVerN"),
+        Self(id: "sukiirono", title: "透色", directory: "Sukiirono"),
+        Self(id: "girls", title: "Girls", directory: "Girls"),
+        Self(id: "debut", title: "DEBUT", directory: "Debut"),
+        Self(id: "harukavsesca", title: "超昂闪忍遥 遥VS艾斯卡蕾雅", directory: "HarukaVsEsca"),
+        Self(id: "harukaninja", title: "超昂闪忍遥 疾风！？忍者大作战", directory: "HarukaNinja"),
+        Self(id: "megane", title: "眼镜梅与暑假", directory: "Megane"),
+        Self(id: "rachelsakura", title: "蕾切尔的樱贝", directory: "RachelSakura"),
+        Self(id: "sabakunika", title: "沙漠的妮卡", directory: "SabakuNika"),
+        Self(id: "vanishpalm", title: "Vanish! 掌中奇缘", directory: "VanishPalm")
     ]
 }
 

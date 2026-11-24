@@ -58,24 +58,25 @@ issues, please let me know or open a pull request to update this table.
 | 超昂閃忍ハルカ                                          | Unknown     |       |
 | 戦国ランス～三匹が斬ったり突いたり燃やしたり            | Supported   |       |
 | Sengoku Rance -Three for the Slash! Thrust! Burn!- (EN) | Supported   |       |
-| AliveZ                                                  | Unknown     |       |
+| AliveZ                                                  | Supported   | E2E verified (0 unimplemented HLLs, boot, gameplay, audio, save/load) |
 | エドランゼ ～Come on!水戸姫様～                         | Supported   |       |
 | 闘神都市III                                             | Supported   | JP and CN (GBK fan translation) supported |
 | ばにしゅ！～おっぱいの消えた王国～                      | Supported   | E2E verified (0 unimplemented HLLs, prologue, audio, save/load) |
 | 僕だけの保健室                                          | Supported   |       |
 | ももいろガーディアン                                    | Unknown     |       |
-| 超昂閃忍ハルカ ハルカVSエスカレイヤー                   | Unknown     | From Alice 2010 |
-| 超昂閃忍ハルカ ―疾風！？忍者大作戦―                     | Unknown     | From Alice 2010 |
-| 眼鏡のメイと夏休み                                      | Unknown     | From Alice 2010 |
-| レイチェルの桜貝                                        | Unknown     | From Alice 2010 |
-| 砂漠のニッカ                                            | Unknown     | From Alice 2010 |
-| ばにしゅ！～この手のひらにおっぱいを～                  | Unknown     | From Alice 2010 |
+| 超昂閃忍ハルカ ハルカVSエスカレイヤー                   | Supported   | From Alice 2010; E2E verified (boot, prologue, audio, quick save/load) |
+| 超昂閃忍ハルカ ―疾風！？忍者大作戦―                     | Supported   | From Alice 2010; E2E verified (boot, ADV, Stage 00 battle, audio, save/load) |
+| 眼鏡のメイと夏休み                                      | Supported   | From Alice 2010; E2E verified (boot, ADV, audio, save/load) |
+| レイチェルの桜貝                                        | Supported   | From Alice 2010; E2E verified (boot, prologue, Ep.1 ADV, audio, quick save/load) |
+| 砂漠のニッカ                                            | Supported   | From Alice 2010; E2E verified (boot, ADV, audio, save/load) |
+| ばにしゅ！～この手のひらにおっぱいを～                  | Supported   | From Alice 2010; E2E verified (boot, ADV, audio, quick save/load) |
 | はるうられ -校内赤線区域-                               | Supported   | From Alice 2010; CN GBK (`AliceStart2.ini` / `haru_c.ain`) supported |
 | わいどにょ                                              | Supported   | From Alice 2010; JP and CN (GBK) supported |
 | ランス02 -反逆の少女たち-                               | Supported   | From Alice 2010 |
 | Rance 02 -The Rebellious Maidens- (Fan TL)              | Supported   |       |
 | Rance 02 -The Rebellious Maidens- (MangaGamer)          | Supported   |       |
-| しゃーまんず・さんくちゅあり－巫女の聖域－              | Unknown     |       |
+| 妻たちの桜貝                                            | Supported   | E2E verified (boot, ADV, audio, save/load) |
+| しゃーまんず・さんくちゅあり－巫女の聖域－              | Supported   | E2E verified (Confirm3 DVD check bypass in `hacks.c`, boot, ADV, audio, save/load) |
 | 大帝国                                                  | Supported   | JP and CN (GBK fan translation) |
 | ランス・クエスト                                        | Supported   |       |
 | ランス・クエスト マグナム                               | Supported   |       |

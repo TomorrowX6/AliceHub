@@ -69,7 +69,7 @@ public class Wave1BCatalogTest {
     @Test
     public void wave1BCatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(106, order.size());
+        assertEquals(127, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_DIABOLIQUE, "DiaboLiQuE", OnlineInstaller.DIABOLIQUE_CDN_URL, 212543299L, "1998-05-28", 76.4, "https://vndb.org/v2261"},

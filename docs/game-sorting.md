@@ -130,9 +130,33 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `manana3` | Ultra Mahou Shoujo Manana vol.3 | 2004-12-17 | 59.6 | 5.96 | [v2038](https://vndb.org/v2038) | [source](https://vndb.org/v2038) |
 | `manana4` | Ultra Mahou Shoujo Manana vol.4 | 2005-05-04 | 59.1 | 5.91 | [v2039](https://vndb.org/v2039) | [source](https://vndb.org/v2039) |
 | `manana5` | Ultra Mahou Shoujo Manana vol.5 | 2005-06-17 | 61.8 | 6.18 | [v2041](https://vndb.org/v2041) | [source](https://vndb.org/v2041) |
+| `tsumasakura` | Tsuma-tachi no Sakuragai | 2010-07-14 | 57.9 | 5.79 | [v3974](https://vndb.org/v3974) | [source](https://vndb.org/r7680) |
+| `shamanssanctuary` | Shaman's Sanctuary -Miko no Seiiki- | 2010-11-26 | 65.5 | 6.55 | [v5121](https://vndb.org/v5121) | [source](https://vndb.org/v5121) |
+| `alivez` | AliveZ | 2008-09-26 | 57.8 | 5.78 | [v958](https://vndb.org/v958) | [source](https://vndb.org/v958) |
+| `dungeonsdolls` | DUNGEONS & DOLLS | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `suzumiya` | Suzumiya Keimu Shoukan | 2004-12-17 | 65.9 | 6.59 | [v2033](https://vndb.org/v2033) | [source](https://vndb.org/v2033) |
+| `shimaima` | Shimaima. | 2004-12-17 | 61.0 | 6.10 | [v2034](https://vndb.org/v2034) | [source](https://vndb.org/v2034) |
+| `daibanchougaiden` | Daibanchou Gaiden | 2004-12-17 | unknown | unknown | not assigned | [source](https://vndb.org/v30469) |
+| `cosplaylemon` | Cosplay Lemon | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `whiphoney` | Whip Honey | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `onimusu` | Onimusu | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `progrx` | Pro GRX | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `dpsvern` | D.P.S. Ver_N | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `sukiirono` | Sukiiro | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `girls` | Girls | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `debut` | DEBUT | 2004-12-17 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `harukavsesca` | Choukou Sennin Haruka: Haruka VS Escalayer | 2009-12-18 | 64.0 | 6.40 | [v3100](https://vndb.org/v3100) | [source](https://vndb.org/v3100) |
+| `harukaninja` | Choukou Sennin Haruka -Shippuu!? Ninja Dai Sakusen- | 2009-12-18 | 60.3 | 6.03 | [v3105](https://vndb.org/v3105) | [source](https://vndb.org/v3105) |
+| `megane` | Megane no Mei to Natsuyasumi | 2009-12-18 | 51.8 | 5.18 | [v3101](https://vndb.org/v3101) | [source](https://vndb.org/v3101) |
+| `rachelsakura` | Rachell no Sakuragai | 2009-12-18 | 54.5 | 5.45 | [v3102](https://vndb.org/v3102) | [source](https://vndb.org/v3102) |
+| `sabakunika` | Sabaku no Nikka | 2009-12-18 | 58.5 | 5.85 | [v3103](https://vndb.org/v3103) | [source](https://vndb.org/v3103) |
+| `vanishpalm` | Vanish! ~Kono Te no Hira ni Oppai o~ | 2009-12-18 | 60.9 | 6.09 | [v3099](https://vndb.org/v3099) | [source](https://vndb.org/v3099) |
 
 ## Edition mapping / missing-score decisions
 
+- `tsumasakura` ([v3974](https://vndb.org/v3974)) has `released: null` on the VN work entry because only the free trial release ([r7680](https://vndb.org/r7680), `2010-07-14`) was published; its release date and release source point to `r7680` while using VNDB Bayesian rating 57.9 from `v3974`.
+- `daibanchougaiden` ([v30469](https://vndb.org/v30469), bundled on *ALICEの館7*, `2004-12-17`) currently returns `rating: null` on VNDB (3 votes), so its rating and score source remain null rather than substituting raw `average`.
+- `dungeonsdolls`, `cosplaylemon`, `whiphoney`, `onimusu`, `progrx`, `dpsvern`, `sukiirono`, `girls`, and `debut` (all bundled on *ALICEの館7*, `2004-12-17`) have no standalone VNDB work entries, so their ratings and score sources remain null.
 - `erumeiflower` ([v21749](https://vndb.org/v21749), released `2004-12-17`) currently returns `rating: null` on VNDB (0 votes), so its rating and score source remain null.
 - `erumeiwakare` (`エルメイフラワー ～別れの夜～`, released `2006-06-02` as a standalone epilogue to El Mayflower) has no separate VNDB entry, so its rating and score source remain null.
 
