@@ -1777,6 +1777,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_BALLOONPOP -> "BalloonPop"
                 classifiedId == GameCatalog.ID_HIYOKO2 -> "Hiyoko2"
                 classifiedId == GameCatalog.ID_SELFGAME -> "SelfGame"
+                classifiedId == GameCatalog.ID_MOMOIROGUARDIAN -> "MomoiroGuardian"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"

@@ -1591,6 +1591,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_hiyoko2_title)
             GameCatalog.isSelfGameAlias(lower) ->
                 context.getString(R.string.game_selfgame_title)
+            GameCatalog.isMomoiroGuardianAlias(lower) ->
+                context.getString(R.string.game_momoiroguardian_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

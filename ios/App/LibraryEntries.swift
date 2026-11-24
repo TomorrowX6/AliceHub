@@ -38,7 +38,7 @@ struct LibraryEntry: Identifiable {
 
     func matches(_ search: String, language: HubLanguage = .chinese, bundle: Bundle = .main) -> Bool {
         if search.isEmpty { return true }
-        let labels = [displayTitle(in: language, bundle: bundle), title, catalog?.directory, catalog?.id].compactMap { $0 }
+        let labels = [displayTitle(in: language, bundle: bundle), title, catalog?.directory, catalog?.id].compactMap { $0 } + (catalog?.aliases ?? [])
         func matchesLanguage(_ chinese: Bool) -> Bool {
             OnlineGame.matchesChineseBadge(search, hasChinese: chinese, in: language, bundle: bundle) ||
                 OnlineGame.chineseBadgeKey(hasChinese: chinese).localizedCaseInsensitiveContains(search)

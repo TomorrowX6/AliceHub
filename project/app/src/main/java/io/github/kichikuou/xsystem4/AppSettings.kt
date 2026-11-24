@@ -194,6 +194,7 @@ object AppSettings {
     internal const val DEFAULT_BALLOONPOP_BYTES = 35380L
     internal const val DEFAULT_HIYOKO2_BYTES = 102330L
     internal const val DEFAULT_SELFGAME_BYTES = 3694656L
+    internal const val DEFAULT_MOMOIROGUARDIAN_BYTES = 904356575L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -493,6 +494,7 @@ object AppSettings {
             OnlineInstaller.BALLOONPOP_CDN_URL -> DEFAULT_BALLOONPOP_BYTES
             OnlineInstaller.HIYOKO2_CDN_URL -> DEFAULT_HIYOKO2_BYTES
             OnlineInstaller.SELFGAME_CDN_URL -> DEFAULT_SELFGAME_BYTES
+            OnlineInstaller.MOMOIROGUARDIAN_CDN_URL -> DEFAULT_MOMOIROGUARDIAN_BYTES
             else -> -1L
         }
     }

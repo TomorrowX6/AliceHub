@@ -5,14 +5,29 @@ struct OnlineGame: Identifiable {
     let title: String
     let directory: String
     let hasChinese: Bool
+    let aliases: [String]
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
     var baseURL: URL { URL(string: AliceHubCDN.gameBaseURLString(for: id) + "/")! }
 
-    init(id: String, title: String, directory: String, hasChinese: Bool = false) {
+    init(id: String, title: String, directory: String, hasChinese: Bool = false, aliases: [String] = []) {
         self.id = id
         self.title = title
         self.directory = directory
         self.hasChinese = hasChinese
+        self.aliases = aliases
+    }
+
+    func matchesSearch(_ query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        let translationTag = hasChinese ? "熟肉" : "生肉"
+        if title.localizedCaseInsensitiveContains(trimmed) ||
+            id.localizedCaseInsensitiveContains(trimmed) ||
+            directory.localizedCaseInsensitiveContains(trimmed) ||
+            translationTag.localizedCaseInsensitiveContains(trimmed) {
+            return true
+        }
+        return aliases.contains { $0.localizedCaseInsensitiveContains(trimmed) }
     }
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
@@ -242,7 +257,8 @@ struct OnlineGame: Identifiable {
         Self(id: "tatakikoroshi", title: "敲杀太郎", directory: "Tatakikoroshi"),
         Self(id: "balloonpop", title: "气球爆破", directory: "BalloonPop"),
         Self(id: "hiyoko2", title: "高速小鸡2", directory: "Hiyoko2"),
-        Self(id: "selfgame", title: "self", directory: "SelfGame")
+        Self(id: "selfgame", title: "self", directory: "SelfGame"),
+        Self(id: "momoiroguardian", title: "桃色守护者", directory: "MomoiroGuardian", aliases: ["Momoiro Guardian", "ももいろガーディアン", "桃色守護者", "ももんが", "Momonga"])
     ]
 }
 

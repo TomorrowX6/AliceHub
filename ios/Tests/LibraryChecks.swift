@@ -336,7 +336,8 @@ struct LibraryChecks {
             ("UnknownDekirukana", "できSA.ALD", GameEngine.system3, "dekirukana"),
             ("UnknownTatakikoroshi", "叩き殺しSA.ALD", GameEngine.system3, "tatakikoroshi"),
             ("UnknownBalloonPop", "風船_SA.ALD", GameEngine.system3, "balloonpop"),
-            ("UnknownSelfGame", "SelfSA.ald", GameEngine.system3, "selfgame")
+            ("UnknownSelfGame", "SelfSA.ald", GameEngine.system3, "selfgame"),
+            ("MomoiroGuardian", "ももんが.ain", GameEngine.system4, "momoiroguardian")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)

@@ -458,6 +458,7 @@ object OnlineInstaller {
     const val BALLOONPOP_CDN_URL = "https://alicehub.000.moe/balloonpop"
     const val HIYOKO2_CDN_URL = "https://alicehub.000.moe/hiyoko2"
     const val SELFGAME_CDN_URL = "https://alicehub.000.moe/selfgame"
+    const val MOMOIROGUARDIAN_CDN_URL = "https://alicehub.000.moe/momoiroguardian"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1938,6 +1939,7 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_BALLOONPOP -> sanitizedManifestBase.ifEmpty { "BalloonPop" }
             classifiedStagedId == GameCatalog.ID_HIYOKO2 -> sanitizedManifestBase.ifEmpty { "Hiyoko2" }
             classifiedStagedId == GameCatalog.ID_SELFGAME -> sanitizedManifestBase.ifEmpty { "SelfGame" }
+            classifiedStagedId == GameCatalog.ID_MOMOIROGUARDIAN -> sanitizedManifestBase.ifEmpty { "MomoiroGuardian" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2895,6 +2897,12 @@ object OnlineInstaller {
                     GameCatalog.ID_SELFGAME -> lower.contains("selfgame") ||
                         lower.contains("self_game") ||
                         lower.contains("selfsa.ald")
+                    GameCatalog.ID_MOMOIROGUARDIAN -> lower.contains("momoiroguardian") ||
+                        lower.contains("momoiro_guardian") ||
+                        lower.contains("momonga") ||
+                        lower.contains("ももいろガーディアン") ||
+                        lower.contains("ももんが") ||
+                        lower.contains("桃色守护者")
                     GameCatalog.ID_TSUMASHIBORI -> lower.contains("tsumashibori") ||
                         lower.contains("tsumasibori") ||
                         lower.contains("妻しぼり") ||

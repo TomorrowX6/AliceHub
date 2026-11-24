@@ -273,6 +273,7 @@ final class GameLibrary: ObservableObject {
         ("balloonpop", ["balloonpop", "ばるーんぽっぷ", "風船sa.ald", "气球爆破", "氣球爆破"]),
         ("hiyoko2", ["hiyoko2", "kousokuhiyoko", "高速ひよこ", "高速小鸡", "高速小雞"]),
         ("selfgame", ["selfgame", "selfsa.ald", "selfga.ald"]),
+        ("momoiroguardian", ["momoiroguardian", "momoiro_guardian", "ももいろガーディアン", "桃色守护者", "桃色守護者", "ももんが", "momonga"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),

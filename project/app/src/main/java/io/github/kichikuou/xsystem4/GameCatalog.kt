@@ -202,6 +202,7 @@ object GameCatalog {
     const val ID_BALLOONPOP = "balloonpop"
     const val ID_HIYOKO2 = "hiyoko2"
     const val ID_SELFGAME = "selfgame"
+    const val ID_MOMOIROGUARDIAN = "momoiroguardian"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -1037,6 +1038,9 @@ object GameCatalog {
         }
         if (isSelfGameFiles(fileNames, readSmallFile)) {
             return ID_SELFGAME
+        }
+        if (isMomoiroGuardianGameFiles(fileNames, readSmallFile)) {
+            return ID_MOMOIROGUARDIAN
         }
         if (isPascha3GameFiles(fileNames, readSmallFile)) {
             return ID_PASCHA3
@@ -5743,6 +5747,33 @@ object GameCatalog {
 
     fun isHaniwaPetitGameDir(dir: File?): Boolean = dir?.isDirectory == true && isHaniwaPetitGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
 
+    fun isMomoiroGuardianAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("momoiroguardian") || n.contains("momoiro_guardian") || n.contains("momoiro guardian") ||
+            n.contains("ももいろガーディアン") || n.contains("桃色守护者") || n.contains("桃色守護者") ||
+            n.contains("ももんが") || n.contains("momonga")
+    }
+
+    @JvmOverloads
+    fun isMomoiroGuardianGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ももんが.ain" || n == "ももんがga.ald" || n == "ももんがwa.ald" ||
+                    n == "ももんがba.ald" || n == "momonga.inc" || n == "momonga.ain"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isMomoiroGuardianAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isMomoiroGuardianGameDir(dir: File?): Boolean = dir?.isDirectory == true && isMomoiroGuardianGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
     fun isYakata456Alias(raw: String): Boolean {
         if (raw.isBlank()) return false
         val n = nfkcLower(raw)
@@ -7176,6 +7207,9 @@ object GameCatalog {
         if (isSelfGameAlias(dirName)) {
             return ID_SELFGAME
         }
+        if (isMomoiroGuardianAlias(dirName)) {
+            return ID_MOMOIROGUARDIAN
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -7588,6 +7622,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isSelfGameAlias(displayName)) {
             return ID_SELFGAME
+        }
+        if (!displayName.isNullOrBlank() && isMomoiroGuardianAlias(displayName)) {
+            return ID_MOMOIROGUARDIAN
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -10143,6 +10180,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_MOMOIROGUARDIAN -> GameDescriptor(
+                id = ID_MOMOIROGUARDIAN,
+                title = stringResolver(R.string.game_momoiroguardian_title),
+                defaultDirName = "MomoiroGuardian",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_momoiroguardian,
+                accentColor = 0xFFEC407A.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2D141F.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.MOMOIROGUARDIAN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -10325,7 +10377,8 @@ object GameCatalog {
         ID_TATAKIKOROSHI,
         ID_BALLOONPOP,
         ID_HIYOKO2,
-        ID_SELFGAME
+        ID_SELFGAME,
+        ID_MOMOIROGUARDIAN
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()
