@@ -50,6 +50,8 @@ final class SaveSync {
     private struct Record: Codable {
         var hash: String
         var remote: Date
+        /// Local and remote hashes of an unresolved near-tie, kept until either side changes.
+        var conflict: [String]?
     }
 
     private static func digest(_ data: Data) -> String {
@@ -145,23 +147,32 @@ final class SaveSync {
             }
             let pull: Bool
             if let a, let b {
-                // A cloud file that is not downloaded yet and still matches the last sync is
-                // treated as unchanged, so a sync does not download every save.
-                let remoteHash: String?
-                if !b.downloaded, let base, abs(b.modified.timeIntervalSince(base.remote)) <= Self.tolerance {
-                    remoteHash = base.hash
+                let localHash = Self.digest(try localBytes())
+                let knownLocal = base?.conflict?.first ?? base?.hash
+                let knownRemote = base?.conflict?.last ?? base?.hash
+                // An unchanged local file next to a cloud file that is not downloaded yet and
+                // still matches the last sync needs no transfer, so skip downloading it.
+                let remoteHash: String
+                if localHash == knownLocal, !b.downloaded, let base, let knownRemote,
+                   abs(b.modified.timeIntervalSince(base.remote)) <= Self.tolerance {
+                    remoteHash = knownRemote
                 } else {
                     remoteHash = Self.digest(try remoteBytes())
                 }
-                let localHash = Self.digest(try localBytes())
                 if localHash == remoteHash {
                     records[path] = Record(hash: localHash, remote: b.modified)
                     continue
                 }
-                let localChanged = localHash != base?.hash
-                let remoteChanged = remoteHash != base?.hash
+                let localChanged = localHash != knownLocal
+                let remoteChanged = remoteHash != knownRemote
+                if !localChanged && !remoteChanged {
+                    records[path]?.remote = b.modified
+                    summary.conflicts += 1
+                    continue
+                }
                 if localChanged && remoteChanged {
                     if abs(b.modified.timeIntervalSince(a.modified)) <= Self.tolerance {
+                        records[path] = Record(hash: base?.hash ?? "", remote: b.modified, conflict: [localHash, remoteHash])
                         summary.conflicts += 1
                         continue
                     }

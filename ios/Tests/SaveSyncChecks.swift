@@ -83,11 +83,41 @@ struct SaveSyncChecks {
         try put(remote, "tie.asd", "tie-remote", 40)
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
         check(get(local, "tie.asd") == "tie-local" && get(remote, "tie.asd") == "tie-remote")
-        try files.removeItem(at: local.appendingPathComponent("tie.asd"))
-        try files.removeItem(at: remote.appendingPathComponent("tie.asd"))
 
-        try files.moveItem(at: remote.appendingPathComponent("only-remote.rsm"), to: remote.appendingPathComponent(".only-remote.rsm.icloud"))
+        // The conflict stays until a side's content changes, even if a timestamp-only rewrite moves it.
+        try put(local, "tie.asd", "tie-local", 0)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
+        check(get(remote, "tie.asd") == "tie-remote")
+        try put(local, "tie.asd", "tie-local-edit", 0)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
+        check(get(remote, "tie.asd") == "tie-local-edit")
+
+        // Three versions with the same timestamp: last synced, cloud, and a local import.
+        let tieStamp = Date(timeIntervalSinceNow: -500)
+        func stamped(_ base: URL, _ value: String) throws {
+            try Data(value.utf8).write(to: base.appendingPathComponent("three.asd"))
+            try files.setAttributes([.modificationDate: tieStamp], ofItemAtPath: base.appendingPathComponent("three.asd").path)
+        }
+        try stamped(local, "A")
+        try stamped(remote, "A")
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
+        try stamped(remote, "B")
+        try stamped(local, "C")
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
+        check(get(local, "three.asd") == "C" && get(remote, "three.asd") == "B")
+        for base in [local, remote] {
+            try files.removeItem(at: base.appendingPathComponent("tie.asd"))
+            try files.removeItem(at: base.appendingPathComponent("three.asd"))
+        }
+
+        // An unchanged local file next to a not-yet-downloaded cloud file transfers nothing
+        // without reading it; a local edit must read the cloud copy before replacing it.
+        let placeholder = remote.appendingPathComponent(".only-remote.rsm.icloud")
+        try files.moveItem(at: remote.appendingPathComponent("only-remote.rsm"), to: placeholder)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary())
         try put(local, "only-remote.rsm", "edited-locally", 0)
+        do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("pushed over an unread placeholder") } catch {}
+        try files.moveItem(at: placeholder, to: remote.appendingPathComponent("only-remote.rsm"))
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
 
         try put(cloud, "其他游戏/LocalSave1.asd", "other", 5)
@@ -102,6 +132,6 @@ struct SaveSyncChecks {
 
         SaveSyncFolder.clear()
         check(!SaveSyncFolder.isConfigured)
-        print("PASS: pull/push, unchanged rewrite, restore and same-timestamp edits, conflicts and ties, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
+        print("PASS: pull/push, unchanged rewrite, restore and same-timestamp edits, conflicts, ties and persisted conflicts, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
     }
 }
