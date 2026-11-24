@@ -15,6 +15,11 @@ struct ModifierView: View {
                 Section {
                     HubSectionHeader(title: "局内修改器", subtitle: game?.name ?? "当前游戏", symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
+                if let gameID = ModifierBridge.displayScaleGame {
+                    Section {
+                        GameDisplayScaleRows(gameID: gameID, live: true)
+                    } header: { Text("显示") }
+                }
                 if let game {
                     if game.supportsCheatCodes { cheatCodeSection }
                     if let lockGame = game.lockGame, !game.locks.isEmpty { lockSection(game, lockGame) }

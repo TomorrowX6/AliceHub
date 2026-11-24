@@ -63,6 +63,15 @@ struct GameDetailView: View {
                     }
                 }.modifier(HubCard())
 
+                if active.engine == .system4 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("显示").font(.title3.bold())
+                        VStack(spacing: 0) {
+                            GameDisplayScaleRows(gameID: active.id)
+                        }.modifier(HubCard())
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 12) {
                     Label("本机游戏目录", systemImage: "folder").font(.subheadline.bold())
                     Text(active.name).font(.footnote).foregroundColor(HubTheme.secondary).textSelection(.enabled)

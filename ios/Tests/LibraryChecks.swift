@@ -3,7 +3,7 @@ import Foundation
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
-enum ModifierBridge { static func prepareForLaunch() {} }
+enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
 }
@@ -22,6 +22,7 @@ struct LibraryChecks {
     static func main() throws {
         try ArchiveChecks.run()
         checkGamepadProfiles()
+        checkDisplayScales()
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
@@ -521,6 +522,31 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+    }
+
+    static func checkDisplayScales() {
+        let suite = "AliceHub.DisplayScaleChecks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let font = GameDisplayScale.font
+        let scrollbar = GameDisplayScale.scrollbar
+        precondition(font.percent(for: "第一款", defaults: defaults) == 100)
+        precondition(scrollbar.percent(for: "第一款", defaults: defaults) == 100)
+        font.save(180, for: "第一款", defaults: defaults)
+        scrollbar.save(325, for: "第一款", defaults: defaults)
+        font.save(50, for: "第二款", defaults: defaults)
+        let reopened = UserDefaults(suiteName: suite)!
+        precondition(font.percent(for: "第一款", defaults: reopened) == 160)
+        precondition(scrollbar.percent(for: "第一款", defaults: reopened) == 300)
+        precondition(font.percent(for: "第二款", defaults: reopened) == 75)
+        precondition(scrollbar.percent(for: "第二款", defaults: reopened) == 100)
+        scrollbar.save(90, for: "第一款", defaults: reopened)
+        font.save(100, for: "第一款", defaults: reopened)
+        precondition(font.percent(for: "第一款", defaults: reopened) == 100)
+        precondition(scrollbar.percent(for: "第一款", defaults: reopened) == 100)
+        precondition(font.percent(for: "第二款", defaults: reopened) == 75)
+        precondition(font.step == 5 && scrollbar.step == 10)
+        print("PASS: per-game font and scrollbar scales, persistence, bounds, defaults and reset")
     }
 
     static func checkGamepadProfiles() {

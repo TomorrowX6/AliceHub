@@ -112,8 +112,21 @@ enum ModifierBridge {
             .appendingPathComponent("modifier_config.json")
     }
 
-    static func prepareForLaunch() {
+    private(set) static var displayScaleGame: String?
+
+    static func prepareForLaunch(gameID: String) {
         modifier_api_set_config_path(configURL.path)
+        displayScaleGame = gameID
+        applyDisplayScale(for: gameID)
+    }
+
+    static func applyDisplayScale(for gameID: String, preview: (GameDisplayScale, Int)? = nil) {
+        guard displayScaleGame == gameID else { return }
+        func percent(_ scale: GameDisplayScale) -> Int32 {
+            if let (kind, value) = preview, kind == scale { return Int32(scale.clamped(value)) }
+            return Int32(scale.percent(for: gameID))
+        }
+        modifier_api_set_ui_scale(percent(.font), percent(.scrollbar))
     }
 
     static func currentGame() -> ModifierGame? {
