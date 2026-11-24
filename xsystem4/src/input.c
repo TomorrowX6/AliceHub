@@ -56,6 +56,7 @@ static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
 static atomic_bool long_press_ctrl_enabled = false;
 static bool long_touch_armed = false;
+static uint32_t long_touch_start_tick;
 static SDL_FRect long_touch_finger_rect;
 static bool long_touch_ctrl_down = false;
 static uint64_t next_touch_press_id;
@@ -2654,20 +2655,13 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 #endif
 }
 
-static void update_long_touch_ctrl(void)
+static bool long_touch_right_button_down(void)
 {
-	if (!long_touch_armed && !long_touch_ctrl_down)
-		return;
-	if (sdl_mouse_down[VK_RBUTTON] || vpad_vk_down[VK_RBUTTON] || pad_vk_down[VK_RBUTTON]) {
-		release_long_touch_ctrl();
-		return;
-	}
-	if (!long_touch_armed || !touch_press_id || nr_deferred_synthetic_mouse_events ||
-	    SDL_GetTicks() - single_touch_down_tick < LONG_TOUCH_DURATION)
-		return;
+	return sdl_mouse_down[VK_RBUTTON] || vpad_vk_down[VK_RBUTTON] || pad_vk_down[VK_RBUTTON];
+}
 
-	long_touch_armed = false;
-	long_touch_ctrl_down = true;
+static void cancel_long_touch_click(void)
+{
 	// Parts can only have captured one press since its last poll.
 	if (!long_touch_click_cancel)
 		long_touch_click_cancel = touch_press_id;
@@ -2680,6 +2674,23 @@ static void update_long_touch_ctrl(void)
 	}
 	synthetic_mouse_hover_observed = false;
 	synthetic_mouse_up_observed = true;
+}
+
+static void update_long_touch_ctrl(void)
+{
+	if (!long_touch_armed && !long_touch_ctrl_down)
+		return;
+	if (long_touch_right_button_down()) {
+		release_long_touch_ctrl();
+		return;
+	}
+	if (!long_touch_armed || !touch_press_id || nr_deferred_synthetic_mouse_events ||
+	    SDL_GetTicks() - long_touch_start_tick < LONG_TOUCH_DURATION)
+		return;
+
+	long_touch_armed = false;
+	long_touch_ctrl_down = true;
+	cancel_long_touch_click();
 	sync_ctrl_key_state();
 }
 
@@ -3082,6 +3093,7 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 			release_long_touch_ctrl();
 			if (atomic_load(&long_press_ctrl_enabled) && !suppress_touch_until_release) {
 				long_touch_armed = true;
+				long_touch_start_tick = tfinger->timestamp;
 				long_touch_finger_rect = (SDL_FRect) {
 					.x = tfinger->x - 0.01f,
 					.y = tfinger->y - 0.01f,
@@ -3093,6 +3105,17 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 		return;
 	}
 
+	// SDL can queue the matching synthetic mouse release before FINGERUP.
+	bool only_touch_release_pending = nr_deferred_synthetic_mouse_events == 1 &&
+		deferred_synthetic_mouse_events[0].button == SDL_BUTTON_LEFT &&
+		deferred_synthetic_mouse_events[0].state == SDL_RELEASED;
+	if (long_touch_armed && touch_press_id && !long_touch_right_button_down() &&
+	    nr_active_touch_fingers == 1 && active_touch_fingers[0].touch_id == tfinger->touchId &&
+	    active_touch_fingers[0].finger_id == tfinger->fingerId &&
+	    tfinger->timestamp - long_touch_start_tick >= LONG_TOUCH_DURATION &&
+	    (nr_deferred_synthetic_mouse_events == 0 || only_touch_release_pending)) {
+		cancel_long_touch_click();
+	}
 	release_long_touch_ctrl();
 
 	if (single_touch_down && tfinger->fingerId == single_touch_finger_id) {

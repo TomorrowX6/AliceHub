@@ -283,6 +283,16 @@ int main(void)
 	pump(600);
 	update_touch_click_capture(false);
 	assert(prev_clicking && part_releases == 2 && !key_is_down(VK_LBUTTON));
+	prev_clicking = whole_lclick_down = false;
+
+	// The finger lifted after the deadline, but there was no poll while Ctrl could be held.
+	press();
+	capture_current_press();
+	SDL_Delay(850);
+	lift(false);
+	input_parts_poll_begin(true);
+	assert(!key_is_down(VK_CONTROL) && !key_is_down(VK_LBUTTON));
+	release_capture_without_click(false, 3);
 	return 0;
 }
 '''

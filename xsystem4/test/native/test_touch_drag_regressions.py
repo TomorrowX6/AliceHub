@@ -88,6 +88,8 @@ def build_input_harness(body: str) -> str:
         extract_function("src/input.c", "synthetic_mouse_event"),
         extract_function("src/input.c", "pop_deferred_synthetic_mouse_event"),
         extract_function("src/input.c", "fire_deferred_events"),
+        extract_function("src/input.c", "long_touch_right_button_down"),
+        extract_function("src/input.c", "cancel_long_touch_click"),
         extract_function("src/input.c", "update_long_touch_ctrl"),
         extract_function("src/input.c", "enqueue_synthetic_mouse_button"),
         extract_function("src/input.c", "handle_touch_mouse_button"),
@@ -206,6 +208,7 @@ static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
 static atomic_bool long_press_ctrl_enabled = false;
 static bool long_touch_armed;
+static uint32_t long_touch_start_tick;
 static SDL_FRect long_touch_finger_rect;
 static bool long_touch_ctrl_down;
 static uint64_t next_touch_press_id;
