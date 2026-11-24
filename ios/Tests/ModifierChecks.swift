@@ -76,6 +76,13 @@ struct ModifierChecks {
         precondition(generals[1].name == "兰斯")
         precondition(srCharacters.action(for: generals[1], values: ["troops": 600])["srCharEdit"] as? [String: Int]
                      == ["charIdx": 9, "factionIdx": 2, "troops": 600])
+        for (input, expected) in [("1", "true"), ("0", "false")] {
+            let changes = ModifierField.changes(from: ["resetAction": input], excluding: [:])
+            ModifierBridge.send(srCharacters.action(for: generals[1], values: changes))
+            precondition(actions.last!.contains("\"resetAction\":\(expected)"))
+        }
+        ModifierBridge.send(srCharacters.action(for: generals[1], values: srCharacters.boost))
+        precondition(actions.last!.contains("\"resetAction\":true"))
         for panel in ModifierGamePanel.all.dropFirst().compactMap(\.characters) {
             let rows = panel.rows(in: ["\(panel.prefix)Characters": [["index": 4, "hp": 20]]])
             precondition(rows.map(\.target) == [["target": -1], ["target": 4]])

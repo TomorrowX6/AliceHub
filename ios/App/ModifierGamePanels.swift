@@ -34,6 +34,9 @@ struct ModifierCharacters {
 
     func action(for character: ModifierCharacter, values: [String: Any]) -> [String: Any] {
         var payload = values
+        if prefix == "sr", let resetAction = ModifierBridge.integer(payload["resetAction"]) {
+            payload["resetAction"] = resetAction != 0
+        }
         for (key, value) in character.target { payload[key] = value }
         return ["\(prefix)CharEdit": payload]
     }
