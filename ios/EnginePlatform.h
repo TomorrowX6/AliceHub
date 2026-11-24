@@ -15,6 +15,7 @@ void alicehub_ios_set_gamepad_callbacks(
     void (*frame)(float x, float y, bool cursor, bool movie, bool controller, bool ctrl));
 #endif
 void alicehub_ios_begin_game(void);
+bool alicehub_ios_finish_audio_shutdown(void);
 void alicehub_ios_end_game(void);
 void alicehub_ios_request_quit(void);
 void alicehub_ios_set_background_hook(void (*hook)(SDL_bool backgrounded));

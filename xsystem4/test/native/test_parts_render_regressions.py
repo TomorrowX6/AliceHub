@@ -964,10 +964,13 @@ static bool gfx_remap_texture(Texture *t) {
 static void gfx_delete_texture(Texture *t) { t->handle = 0; }
 static void gfx_copy_main_surface(Texture *dst) { static GLuint h = 10; dst->handle = ++h; dst->w = 64; dst->h = 64; }
 static void gfx_set_view(Texture *t) { (void)t; }
+static void gfx_reset_view(void) {}
 ''' + '\n'.join([
             function('src/effect.c', 'static void effect_on_gl_reset'),
             function('src/effect.c', 'static void ensure_effect_reset_registered'),
             function('src/effect.c', 'int effect_init'),
+            function('src/effect.c', 'int effect_fini'),
+            function('src/effect.c', 'void effect_end_session'),
         ]) + r'''
 int main(void) {
     assert(effect_init(EFFECT_CROSSFADE) == 1);
@@ -984,6 +987,12 @@ int main(void) {
     // Next effect_init lazily reloads the shader program cleanly and does not duplicate registration.
     assert(effect_init(EFFECT_CROSSFADE) == 1);
     assert(register_calls == 1 && shader_loads == 2 && crossfade_shader.s.program == 502);
+
+    effect_end_session();
+    assert(!effect.on && !effect.old.handle && !effect.view.handle);
+    assert(!effect_reset_registered && crossfade_shader.s.program == 0);
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(register_calls == 2 && shader_loads == 3 && crossfade_shader.s.program == 503);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:

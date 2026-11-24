@@ -52,7 +52,7 @@ struct Game: Identifiable, Equatable {
 }
 
 enum LibraryError: LocalizedError {
-    case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
+    case notGame, archiveNotGame, alreadyExists, resourcePath, logFile, audioStopping
     var errorDescription: String? {
         switch self {
         case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
@@ -60,6 +60,7 @@ enum LibraryError: LocalizedError {
         case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
         case .resourcePath: return "无法找到游戏引擎资源。"
         case .logFile: return "无法创建运行日志。"
+        case .audioStopping: return "音频仍在关闭，请稍后重试。"
         }
     }
 }
@@ -997,6 +998,7 @@ final class GameLibrary: ObservableObject {
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
+            guard alicehub_ios_finish_audio_shutdown() else { throw LibraryError.audioStopping }
             let info = try Self.launchInfo(game.url)
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")

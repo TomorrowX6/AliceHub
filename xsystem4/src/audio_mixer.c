@@ -111,7 +111,7 @@ static SDL_mutex *audio_mutex;
 static SDL_Thread *audio_clock_thread;
 static SDL_Thread *audio_device_thread;
 static atomic_bool audio_stopping;
-static atomic_flag device_operation = ATOMIC_FLAG_INIT;
+static atomic_bool audio_device_stopped;
 static atomic_bool retry_device, remove_device;
 static atomic_bool output_paused;
 static atomic_uint_least64_t last_callback;
@@ -200,6 +200,11 @@ static void audio_callback(possibly_unused void *data, Uint8 *stream, int len)
 {
 #ifdef ALICEHUB_IOS
 	audio_lock();
+	if (atomic_load(&audio_stopping)) {
+		memset(stream, 0, len);
+		audio_unlock();
+		return;
+	}
 	clock_tick = SDL_GetTicks64();
 	atomic_store(&last_callback, clock_tick);
 	clock_fraction = 0;
@@ -949,11 +954,8 @@ static void update_audio_device(void)
 
 static void service_audio_device(void)
 {
-	if (atomic_flag_test_and_set(&device_operation))
-		return;
 	if (!atomic_load(&audio_stopping))
 		update_audio_device();
-	atomic_flag_clear(&device_operation);
 }
 
 static int audio_device_main(void *unused)
@@ -962,6 +964,10 @@ static int audio_device_main(void *unused)
 		service_audio_device();
 		SDL_Delay(20);
 	}
+	SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
+	if (dev)
+		SDL_CloseAudioDevice(dev);
+	atomic_store(&audio_device_stopped, true);
 	return 0;
 }
 
@@ -973,27 +979,16 @@ void mixer_retry_audio_device(void)
 
 void audio_metadata_reset(void);
 
-void mixer_fini(void)
+bool mixer_fini(void)
 {
 	atomic_store(&audio_stopping, true);
 	if (audio_clock_thread) {
 		SDL_WaitThread(audio_clock_thread, NULL);
 		audio_clock_thread = NULL;
 	}
-	if (audio_device_thread) {
-		while (atomic_flag_test_and_set(&device_operation)) {
-			SDL_PumpEvents();
-			SDL_Delay(1);
-		}
-		SDL_WaitThread(audio_device_thread, NULL);
-		audio_device_thread = NULL;
-		atomic_flag_clear(&device_operation);
-	}
-	SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
-	if (dev)
-		SDL_CloseAudioDevice(dev);
-	SDL_DestroyMutex(audio_mutex);
-	audio_mutex = NULL;
+	// Drain a callback that entered before audio_stopping was set.
+	audio_lock();
+	audio_unlock();
 	for (int i = 0; i < nr_mixers; i++) {
 		free(mixers[i].name);
 		free(mixers[i].children);
@@ -1004,6 +999,25 @@ void mixer_fini(void)
 	atomic_store(&retry_device, false);
 	atomic_store(&remove_device, false);
 	audio_metadata_reset();
+	if (!audio_device_thread) {
+		SDL_DestroyMutex(audio_mutex);
+		audio_mutex = NULL;
+	}
+	return audio_device_thread == NULL;
+}
+
+bool alicehub_ios_finish_audio_shutdown(void)
+{
+	if (!audio_device_thread)
+		return true;
+	if (!atomic_load(&audio_device_stopped))
+		return false;
+	SDL_WaitThread(audio_device_thread, NULL);
+	audio_device_thread = NULL;
+	SDL_DestroyMutex(audio_mutex);
+	audio_mutex = NULL;
+	SDL_Quit();
+	return true;
 }
 #endif
 
@@ -1126,6 +1140,7 @@ void mixer_init(void)
 	if (!audio_clock_thread)
 		ERROR("SDL_CreateThread(mixer-clock): %s", SDL_GetError());
 	atomic_store(&retry_device, true);
+	atomic_store(&audio_device_stopped, false);
 	audio_device_thread = SDL_CreateThread(audio_device_main, "mixer-device", NULL);
 	if (!audio_device_thread)
 		ERROR("SDL_CreateThread(mixer-device): %s", SDL_GetError());

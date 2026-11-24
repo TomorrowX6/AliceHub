@@ -88,6 +88,13 @@ bool sys_isCharacterEncodingLocked(void) {
 	return encoding_locked;
 }
 
+#ifdef ALICEHUB_IOS
+void sys_resetCharacterEncoding(void) {
+	encoding_locked = false;
+	sys_setDefaultCharacterEncoding(SHIFT_JIS, false);
+}
+#endif
+
 /* 選択肢・通常メッセージ振り分け */
 void sys_addMsg(const char *str) {
 	const char *msg = NULL;

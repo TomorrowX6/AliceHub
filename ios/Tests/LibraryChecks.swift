@@ -2,6 +2,8 @@ import Foundation
 
 func SDL_SetMainReady() {}
 func alicehub_ios_begin_game() {}
+private var audioShutdownFinished = true
+func alicehub_ios_finish_audio_shutdown() -> Bool { audioShutdownFinished }
 func alicehub_ios_end_game() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
@@ -550,6 +552,11 @@ struct LibraryChecks {
             precondition(FileManager.default.currentDirectoryPath == originalDirectory)
         }
         precondition(engineLaunches.count == 2)
+        audioShutdownFinished = false
+        library.launch(Game(url: library.gamesDirectory.appendingPathComponent("First")))
+        precondition(!library.launching && library.error == LibraryError.audioStopping.localizedDescription)
+        precondition(engineLaunches.count == 2)
+        audioShutdownFinished = true
         print("Library relaunch checks passed")
     }
 

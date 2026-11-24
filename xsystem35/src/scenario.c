@@ -110,9 +110,6 @@ void sl_fini(void) {
 #endif
 
 bool sl_init(void) {
-#ifdef ALICEHUB_IOS
-	free(stack_buf);
-#endif
 	stack_buf = malloc(stack_size);
 	if (stack_buf == NULL)
 		NOMEMERR();

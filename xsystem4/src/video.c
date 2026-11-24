@@ -932,14 +932,18 @@ void gfx_android_fini(void)
 void sact_end_session(void);
 void sprite_end_session(void);
 void scene_end_session(void);
+void parts_end_session(void);
+void effect_end_session(void);
 #endif
 
 void gfx_fini(void)
 {
 #ifdef ALICEHUB_IOS
-	mixer_fini();
+	bool quit_sdl = mixer_fini();
 	if (!sdl.gl.context)
 		goto close_sdl;
+	effect_end_session();
+	parts_end_session();
 	sact_end_session();
 	scene_end_session();
 	sprite_end_session();
@@ -988,6 +992,8 @@ close_sdl:
 	gfx_initialized = false;
 	gfx_ctx_gen++;
 	wait_vsync = true;
+	if (!quit_sdl)
+		return;
 #endif
 	SDL_Quit();
 }

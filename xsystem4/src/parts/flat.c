@@ -196,11 +196,7 @@ static void parts_flat_on_gl_reset(void *user)
 
 static void flat_asset_push_front(struct parts_flat_asset *a)
 {
-	static bool flat_reset_registered = false;
-	if (!flat_reset_registered) {
-		gfx_register_reset_callback(parts_flat_on_gl_reset, NULL);
-		flat_reset_registered = true;
-	}
+	gfx_register_reset_callback(parts_flat_on_gl_reset, NULL);
 	a->prev = NULL;
 	a->next = flat_asset_head;
 	if (flat_asset_head)

@@ -723,7 +723,7 @@ int xsystem35_main(int argc, char **argv) {
 	memset(fontface, 0, sizeof(fontface));
 	fontname_tt[FONT_GOTHIC] = DEFAULT_GOTHIC_TTF;
 	fontname_tt[FONT_MINCHO] = DEFAULT_MINCHO_TTF;
-	sys_setDefaultCharacterEncoding(SHIFT_JIS, false);
+	sys_resetCharacterEncoding();
 	return exit_code;
 }
 #endif

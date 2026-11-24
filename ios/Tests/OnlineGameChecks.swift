@@ -3,6 +3,7 @@ import CryptoKit
 
 func SDL_SetMainReady() {}
 func alicehub_ios_begin_game() {}
+func alicehub_ios_finish_audio_shutdown() -> Bool { true }
 func alicehub_ios_end_game() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
