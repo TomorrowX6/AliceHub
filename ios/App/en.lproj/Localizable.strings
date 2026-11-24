@@ -1,6 +1,5 @@
 "%lld 个文件两边都有不同修改，已保持不变。" = "%lld conflicting files kept unchanged.";
 "%lld 个文件正在修改，已跳过。" = "Skipped %lld files in use.";
-"%lld 款游戏" = "%lld games";
 "AmbivalenZ -二律背反-" = "AmbivalenZ -Niritsu Haihan-";
 "Cosplay柠檬" = "Cosplay Lemon";
 "D.P.S. 全部" = "D.P.S. Zenbu";
@@ -302,7 +301,6 @@
 "设置" = "Settings";
 "国内线路" = "Mainland China";
 "国际线路" = "Global";
-"%lld 个文件" = "%lld files";
 "恢复备份（%@）" = "Restore Backup (%@)";
 "语言" = "Language";
 "请确认合法拥有此游戏。下载消耗流量，请使用 Wi-Fi 并预留空间；后台会暂停。" = "Make sure you own this game. Use Wi-Fi and leave enough storage. Downloads pause in the background.";

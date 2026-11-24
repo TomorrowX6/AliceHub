@@ -32,7 +32,7 @@ struct LauncherView: View {
                     HStack {
                         Text("我的游戏").font(.title3.bold())
                         Spacer()
-                        Text("\(library.games.count) 款游戏").font(.subheadline).foregroundColor(HubTheme.secondary)
+                        Text(hubText("%lld 款游戏", library.games.count)).font(.subheadline).foregroundColor(HubTheme.secondary)
                     }
                     if library.games.isEmpty { emptyLibrary }
                     else if filteredGames.isEmpty {

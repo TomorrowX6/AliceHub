@@ -91,6 +91,7 @@ struct HubBadge: View {
 
     var body: some View {
         Text(LocalizedStringKey(title)).font(.caption.weight(.medium))
+            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 9).padding(.vertical, 5)
             .foregroundColor(foreground)
             .background(background)

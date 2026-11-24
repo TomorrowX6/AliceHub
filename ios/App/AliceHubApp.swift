@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                   let path = note.userInfo?["path"] as? String else { return }
             let game = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
             guard let manual = HubToolFiles.manual(in: game) else { return }
-            let panel = UIHostingController(rootView: HubManualView(index: manual).environment(\.locale, HubLanguage.current.locale))
+            let panel = UIHostingController(rootView: HubManualView(manual: manual).environment(\.locale, HubLanguage.current.locale))
             panel.modalPresentationStyle = .formSheet
             host.present(panel, animated: true)
         })

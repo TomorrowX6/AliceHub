@@ -39,8 +39,8 @@ struct SaveManagerView: View {
                         HubActionLabel(title: "导出存档", symbol: "square.and.arrow.up")
                     }.disabled(entries.isEmpty)
                     Button("清空存档", role: .destructive) {
-                        confirmation = SaveConfirmation(text: "确定清空全部 \(entries.count) 个存档文件吗？此操作不可恢复。") {
-                            operate { try manager.clear(); return "已清空存档" }
+                        confirmation = SaveConfirmation(text: hubText("确定清空全部 %lld 个存档文件吗？此操作不可恢复。", entries.count)) {
+                            operate { try manager.clear(); return hubText("已清空存档") }
                         }
                     }.disabled(entries.isEmpty)
                 }.listRowBackground(HubTheme.surface)
@@ -55,7 +55,7 @@ struct SaveManagerView: View {
                         }
                     }
                 }
-                Section(header: Text("\(entries.count) 个文件")) {
+                Section(header: Text(hubText("%lld 个文件", entries.count))) {
                     if entries.isEmpty {
                         HubSectionHeader(title: "暂无存档", symbol: "doc")
                     }

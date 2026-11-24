@@ -23,6 +23,7 @@ struct LibraryChecks {
         try ArchiveChecks.run()
         checkGamepadProfiles()
         try checkHubTools()
+        checkHubPlurals()
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
@@ -559,13 +560,63 @@ struct LibraryChecks {
         precondition(!files.fileExists(atPath: resume.path))
         precondition(!files.fileExists(atPath: cached.path) && !files.fileExists(atPath: scratch.path))
         precondition(files.fileExists(atPath: fresh.path) && files.fileExists(atPath: save.path))
-        precondition(HubToolFiles.manual(in: game)?.path == index.path)
+        let viewer = HubToolFiles.manual(in: game)
+        precondition(viewer?.index.path == index.path)
         precondition(!HubToolFiles.contains(save, in: manual))
+        let reference = game.appendingPathComponent("quick-reference.html")
+        try Data("Quick reference".utf8).write(to: reference)
+        let linkedDocuments = root.appendingPathComponent("LinkedDocuments")
+        try files.createSymbolicLink(at: linkedDocuments, withDestinationURL: games)
+        let linkedGame = linkedDocuments.appendingPathComponent(game.lastPathComponent)
+        let linkedViewer = HubToolFiles.manual(in: linkedGame)
+        precondition(linkedViewer?.root == viewer?.root)
+        let relativeReference = URL(string: "../quick-reference.html", relativeTo: index)!.absoluteURL
+        precondition(linkedViewer?.canNavigate(to: relativeReference) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("missing/page.html")) == true)
+        let privateGamePath: String
+        if game.path.hasPrefix("/var/") {
+            privateGamePath = "/private" + game.path
+        } else if game.path.hasPrefix("/private/var/") {
+            privateGamePath = String(game.path.dropFirst("/private".count))
+        } else {
+            privateGamePath = linkedGame.path
+        }
+        let alternateGame = URL(fileURLWithPath: privateGamePath, isDirectory: true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("missing/page.html")) == true)
+        let insideLink = manual.appendingPathComponent("inside.html")
+        try files.createSymbolicLink(at: insideLink, withDestinationURL: reference)
+        precondition(linkedViewer?.canNavigate(to: insideLink) == true)
+        let outsideLink = manual.appendingPathComponent("outside.html")
+        try files.createSymbolicLink(at: outsideLink, withDestinationURL: save)
+        precondition(linkedViewer?.canNavigate(to: outsideLink) == false)
+        precondition(linkedViewer?.canNavigate(to: games.appendingPathComponent("Installed copy/page.html")) == false)
         try files.removeItem(at: index)
         try files.createSymbolicLink(at: index, withDestinationURL: save)
         precondition(HubToolFiles.manual(in: game) == nil)
         precondition(HubToolFiles.logTail(save, limit: 4) == "data")
         print("Language, cache cleanup, local manual, and error report file checks passed")
+    }
+
+    static func checkHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let english = Bundle(url: resources.appendingPathComponent("en.lproj", isDirectory: true))!
+        func text(_ key: String, _ count: Int) -> String {
+            let format = english.localizedString(forKey: key, value: key, table: nil)
+            return String(format: format, locale: Locale(identifier: "en"), count)
+        }
+        precondition(text("%lld 款游戏", 0) == "0 games")
+        precondition(text("%lld 款游戏", 1) == "1 game")
+        precondition(text("%lld 款游戏", 2) == "2 games")
+        precondition(text("%lld 个文件", 0) == "0 files")
+        precondition(text("%lld 个文件", 1) == "1 file")
+        precondition(text("%lld 个文件", 2) == "2 files")
+        let confirmation = "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"
+        precondition(text(confirmation, 1) == "Delete 1 save file? This can’t be undone.")
+        precondition(text(confirmation, 2) == "Delete all 2 save files? This can’t be undone.")
+        print("English game and save-file plural checks passed")
     }
 
     static func checkGamepadProfiles() {

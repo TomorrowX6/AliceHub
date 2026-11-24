@@ -99,7 +99,7 @@ struct GameDetailView: View {
                 case .gamepad: GamepadEditor(game: active.id)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
                 case .manual:
-                    if let manual { HubManualView(index: manual) }
+                    if let manual { HubManualView(manual: manual) }
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
                         ModManagerView(game: active, descriptor: descriptor, library: library)

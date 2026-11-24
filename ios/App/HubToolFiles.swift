@@ -46,20 +46,42 @@ struct HubCacheFiles {
 }
 
 enum HubToolFiles {
-    static func manual(in game: URL) -> URL? {
-        let root = game.resolvingSymlinksInPath().standardizedFileURL
-        let manual = root.appendingPathComponent("Manual", isDirectory: true)
-        let index = manual.appendingPathComponent("index.html")
-        guard contains(index, in: manual), contains(manual, in: root),
-              (try? index.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
-        return index
+    struct Manual {
+        let root: URL
+        let index: URL
+
+        func canNavigate(to url: URL) -> Bool {
+            HubToolFiles.contains(url, in: root)
+        }
+    }
+
+    static func manual(in game: URL) -> Manual? {
+        guard game.isFileURL else { return nil }
+        let root = canonical(game)
+        let index = root.appendingPathComponent("Manual/index.html")
+        let manual = Manual(root: root, index: index)
+        guard manual.canNavigate(to: index),
+              (try? canonical(index).resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
+        return manual
     }
 
     static func contains(_ url: URL, in directory: URL) -> Bool {
         guard url.isFileURL else { return false }
-        let root = directory.resolvingSymlinksInPath().standardizedFileURL.pathComponents
-        let path = url.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let root = canonical(directory).pathComponents
+        let path = canonical(url).pathComponents
         return path.count > root.count && path.starts(with: root)
+    }
+
+    private static func canonical(_ url: URL) -> URL {
+        var ancestor = url.standardizedFileURL
+        var missing: [String] = []
+        while ancestor.path != "/" && !FileManager.default.fileExists(atPath: ancestor.path) {
+            missing.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        return missing.reversed().reduce(ancestor.resolvingSymlinksInPath().standardizedFileURL) {
+            $0.appendingPathComponent($1)
+        }
     }
 
     static func logTail(_ url: URL, limit: UInt64 = 256 * 1024) -> String? {

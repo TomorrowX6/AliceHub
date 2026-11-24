@@ -206,16 +206,16 @@ private struct ReportShareSheet: UIViewControllerRepresentable {
 }
 
 struct HubManualView: View {
-    let index: URL
+    let manual: HubToolFiles.Manual
     @Environment(\.dismiss) private var dismiss
     @State private var failed = false
 
     var body: some View {
         NavigationView {
-            ManualWebView(index: index) { failed = true }
+            ManualWebView(manual: manual) { failed = $0 }
                 .overlay {
                     if failed {
-                        Text("无法打开游戏说明书").padding(20).modifier(HubCard())
+                        Text("无法打开游戏说明书").padding(20).modifier(HubCard()).allowsHitTesting(false)
                     }
                 }
                 .navigationTitle("游戏说明书").navigationBarTitleDisplayMode(.inline)
@@ -225,11 +225,11 @@ struct HubManualView: View {
 }
 
 private struct ManualWebView: UIViewRepresentable {
-    let index: URL
-    let failed: () -> Void
+    let manual: HubToolFiles.Manual
+    let setFailed: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(directory: index.deletingLastPathComponent(), failed: failed)
+        Coordinator(manual: manual, setFailed: setFailed)
     }
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -237,22 +237,22 @@ private struct ManualWebView: UIViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.loadFileURL(index, allowingReadAccessTo: context.coordinator.directory)
+        webView.loadFileURL(manual.index, allowingReadAccessTo: manual.root)
         return webView
     }
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let directory: URL
-        let failed: () -> Void
+        let manual: HubToolFiles.Manual
+        let setFailed: (Bool) -> Void
 
-        init(directory: URL, failed: @escaping () -> Void) {
-            self.directory = directory
-            self.failed = failed
+        init(manual: HubToolFiles.Manual, setFailed: @escaping (Bool) -> Void) {
+            self.manual = manual
+            self.setFailed = setFailed
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard action.targetFrame != nil, let url = action.request.url, HubToolFiles.contains(url, in: directory) else {
+            guard action.targetFrame != nil, let url = action.request.url, manual.canNavigate(to: url) else {
                 decisionHandler(.cancel)
                 return
             }
@@ -260,7 +260,11 @@ private struct ManualWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled { failed() }
+            if (error as NSError).code != NSURLErrorCancelled { setFailed(true) }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            setFailed(false)
         }
     }
 }
