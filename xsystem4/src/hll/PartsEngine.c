@@ -2372,11 +2372,11 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		return 1;
 	case 82:  // void SetTextBoxReadOnly(int no, bool ro)
 		REQUIRE_INTS(2);
-		PartsEngine_WidgetStub_b(ints[0].i, !!ints[1].i);
+		PE_SetTextBoxReadOnly(ints[0].i, !!ints[1].i);
 		return 1;
 	case 83:  // bool IsTextBoxReadOnly(int no)
 		REQUIRE_INTS(2);
-		ints[1].i = PartsEngine_WidgetGetFalse(ints[0].i);
+		ints[1].i = PE_IsTextBoxReadOnly(ints[0].i);
 		return 1;
 	case 94:  // void SetLayoutBoxPadding(int parts_no, int top, int bottom, int left, int right)
 		REQUIRE_INTS(5);
@@ -3490,8 +3490,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetTextBoxSize, PartsEngine_WidgetSetSize),
 	    HLL_EXPORT(SetTextBoxFontProperty, PartsEngine_WidgetSetFontProperty),
 	    HLL_EXPORT(GetTextBoxFontProperty, PartsEngine_WidgetGetFontProperty),
-	    HLL_EXPORT(SetTextBoxReadOnly, PartsEngine_WidgetStub_b),
-	    HLL_EXPORT(IsTextBoxReadOnly, PartsEngine_WidgetGetFalse),
+	    HLL_EXPORT(SetTextBoxReadOnly, PE_SetTextBoxReadOnly),
+	    HLL_EXPORT(IsTextBoxReadOnly, PE_IsTextBoxReadOnly),
 	    HLL_EXPORT(SetTextBoxText, PE_SetTextBoxText),
 	    HLL_EXPORT(GetTextBoxText, PartsEngine_GetTextBoxText_v12),
 	    HLL_EXPORT(SelectTextBoxAll, PartsEngine_SelectTextBoxAll),
@@ -3499,8 +3499,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetSpinBoxValue, PartsEngine_GetSpinBoxValue),
 	    HLL_EXPORT(SelectSpinBoxAll, PartsEngine_SelectSpinBoxAll),
 	    HLL_EXPORT(CancelFormClose, PartsEngine_CancelFormClose),
-	    HLL_EXPORT(SetTextBoxMaxTextLength, PartsEngine_WidgetStub_i),
-	    HLL_EXPORT(GetTextBoxMaxTextLength, PartsEngine_WidgetGetZero),
+	    HLL_EXPORT(SetTextBoxMaxTextLength, PE_SetTextBoxMaxTextLength),
+	    HLL_EXPORT(GetTextBoxMaxTextLength, PE_GetTextBoxMaxTextLength),
 	    HLL_EXPORT(SetTextBoxBGColor, PartsEngine_WidgetStub_iii),
 	    HLL_EXPORT(GetTextBoxBGR, PartsEngine_WidgetGetZero),
 	    HLL_EXPORT(GetTextBoxBGG, PartsEngine_WidgetGetZero),

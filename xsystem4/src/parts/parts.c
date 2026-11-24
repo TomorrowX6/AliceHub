@@ -1593,6 +1593,10 @@ void parts_release(int parts_no)
 	while (root->parent) root = root->parent;
 	if (root->active_part == parts_no) root->active_part = 0;
 	parts_input_reset_part(parts);
+	if (parts->text_box_label) {
+		parts_state_reset(parts->text_box_label, PARTS_UNINITIALIZED);
+		free(parts->text_box_label);
+	}
 	parts_widget_free(parts);
 	parts_panel_free(parts);
 	parts_scrollbar_free(parts);

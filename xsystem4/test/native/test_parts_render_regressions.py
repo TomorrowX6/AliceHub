@@ -1150,7 +1150,7 @@ int main(void) {
 
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
-        self.assertIn('#define CURRENT_SAVE_VERSION 32', save)
+        self.assertIn('#define CURRENT_SAVE_VERSION 33', save)
         for axis in ('lr', 'tb'):
             self.assertIn(f'iarray_write(w, parts->reverse_{axis});', save)
             self.assertIn(f'parts->reverse_{axis} = version >= 32 ? !!iarray_read(r) : false;', save)

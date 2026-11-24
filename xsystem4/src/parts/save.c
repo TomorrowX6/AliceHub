@@ -31,7 +31,8 @@
 #include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 32
+#define CURRENT_SAVE_VERSION 33
+#define MIN_SINGLE_PART_SAVE_VERSION 32
 
 static struct parts_context *back_scene;
 
@@ -1428,6 +1429,8 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	// v32: retain component reversal across Save/Load and BackScene.
 	iarray_write(w, parts->reverse_lr);
 	iarray_write(w, parts->reverse_tb);
+	iarray_write(w, parts->text_box_read_only);
+	iarray_write(w, parts->text_box_max_length);
 	motion_count_pos = iarray_writer_pos(w);
 	iarray_write(w, 0); // size of motion list
 
@@ -1587,6 +1590,8 @@ static void load_parts(struct iarray_reader *r, int version, int target_no,
 	// the flags. Leave those scales intact and default the flags to false.
 	parts->reverse_lr = version >= 32 ? !!iarray_read(r) : false;
 	parts->reverse_tb = version >= 32 ? !!iarray_read(r) : false;
+	parts->text_box_read_only = version >= 33 ? !!iarray_read(r) : false;
+	parts->text_box_max_length = version >= 33 ? iarray_read(r) : 0;
 	int motion_count = iarray_read(r);
 	for (int i = 0; i < motion_count; i++) {
 		struct parts_motion *motion = load_parts_motion(r);
@@ -1710,7 +1715,8 @@ bool PE_LoadParts(int parts_no, struct page **buffer)
 		return false;
 	int version = iarray_read(&r);
 	int size = iarray_read(&r);
-	if (r.error || version != CURRENT_SAVE_VERSION || size <= (int)r.pos
+	if (r.error || version < MIN_SINGLE_PART_SAVE_VERSION || version > CURRENT_SAVE_VERSION
+			|| size <= (int)r.pos
 			|| size != (*buffer)->nr_vars)
 		return false;
 	struct numeral_font_map fonts[PARTS_SAVED_FONTS];
