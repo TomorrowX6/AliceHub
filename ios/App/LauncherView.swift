@@ -13,11 +13,12 @@ struct LauncherView: View {
     @State private var reportMessage: String?
     @State private var query = ""
     @Environment(\.scenePhase) private var scenePhase
+    @HubLocalizedText private var localized
 
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            let translationTag = hubText(OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉")
+            let translationTag = localized(OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉")
             return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                 $0.name.localizedCaseInsensitiveContains(search) ||
                 translationTag.localizedCaseInsensitiveContains(search)
@@ -32,7 +33,7 @@ struct LauncherView: View {
                     HStack {
                         Text("我的游戏").font(.title3.bold())
                         Spacer()
-                        Text(hubText("%lld 款游戏", library.games.count)).font(.subheadline).foregroundColor(HubTheme.secondary)
+                        Text(localized("%lld 款游戏", library.games.count)).font(.subheadline).foregroundColor(HubTheme.secondary)
                     }
                     if library.games.isEmpty { emptyLibrary }
                     else if filteredGames.isEmpty {
@@ -174,7 +175,7 @@ struct LauncherView: View {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 20) {
                 ProgressView().scaleEffect(1.2)
-                Text(hubText(library.importing ? "正在导入游戏" : "正在启动游戏")).font(.headline)
+                Text(localized(library.importing ? "正在导入游戏" : "正在启动游戏")).font(.headline)
                 if library.importing {
                     Text(library.importProgress).font(.caption).foregroundColor(HubTheme.secondary)
                         .multilineTextAlignment(.center).lineLimit(4)

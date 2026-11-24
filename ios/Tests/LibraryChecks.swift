@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
@@ -7,6 +8,17 @@ enum ModifierBridge { static func prepareForLaunch() {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
 }
+
+private struct HubLocaleProbe: View {
+    let capture: (HubLanguage) -> Void
+    @HubLocalizedText private var localized
+
+    var body: some View {
+        capture(localized.language)
+        return Color.clear.frame(width: 1, height: 1)
+    }
+}
+
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }
@@ -19,11 +31,13 @@ func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoint
 
 @main
 struct LibraryChecks {
+    @MainActor
     static func main() throws {
         try ArchiveChecks.run()
         checkGamepadProfiles()
         try checkHubTools()
         checkHubPlurals()
+        if #available(macOS 13.0, *) { checkLiveHubPlurals() }
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
@@ -624,6 +638,27 @@ struct LibraryChecks {
             precondition(text(confirmation, count, language: .chinese) == "确定清空全部 \(count) 个存档文件吗？此操作不可恢复。")
         }
         print("Game count, file count, and clear-save plural checks passed for en, ja, and zh-Hans")
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    static func checkLiveHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        var rendered: [String] = []
+        let probe = HubLocaleProbe { language in
+            rendered = ["%lld 款游戏", "%lld 个文件", "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"].map {
+                language.text($0, arguments: [1], bundle: bundle)
+            }
+        }
+        let renderer = ImageRenderer(content: probe.environment(\.locale, HubLanguage.english.locale))
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["1 game", "1 file", "Delete 1 save file? This can’t be undone."])
+        renderer.content = probe.environment(\.locale, HubLanguage.japanese.locale)
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["ゲーム 1 本", "1 件のファイル", "セーブファイル 1 件をすべて削除しますか？この操作は取り消せません。"])
+        print("SwiftUI plural checks passed after changing the live locale from en to ja")
     }
 
     static func checkGamepadProfiles() {

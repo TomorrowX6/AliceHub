@@ -50,9 +50,9 @@ enum ModManagerPolicy {
         try info.write(to: directory)
     }
 
-    static func meta(_ entry: ModReleaseEntry) -> String {
+    static func meta(_ entry: ModReleaseEntry, language: HubLanguage) -> String {
         [ModCatalog.formatSize(entry.expectedSize), entry.formattedDate,
-         entry.isPatch ? entry.baseVersion.map { hubText("需 %@", $0) } ?? "" : "", entry.fileName].filter { !$0.isEmpty }.joined(separator: " · ")
+         entry.isPatch ? entry.baseVersion.map { language.text("需 %@", arguments: [$0]) } ?? "" : "", entry.fileName].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
@@ -98,7 +98,7 @@ final class ModManagerModel: ObservableObject {
     }
     var installedIndex: Int { hasMod ? ModCatalog.matchInstalledIndex(visibleReleases, installed) : -1 }
     var plan: ModUpdatePlan? { ModCatalog.computeUpdatePlan(visibleReleases, hasMod: hasMod, installed: installed, canRestore: canRestore) }
-    var status: String {
+    func status(in language: HubLanguage) -> String {
         let allIdx = hasMod ? ModCatalog.matchInstalledIndex(releases, installed) : -1
         let version = releases.indices.contains(allIdx) ? releases[allIdx].version : installed?.version
         let installedGroup = (releases.indices.contains(allIdx) && !releases[allIdx].group.isEmpty) ? releases[allIdx].group : (installed?.group ?? "")
@@ -112,21 +112,24 @@ final class ModManagerModel: ObservableObject {
         } else {
             installedLabel = nil
         }
-        let current = !hasMod ? (descriptor.isCnPatch ? hubText("未安装汉化补丁") : hubText("未安装 MOD")) : installedLabel.map { hubText("已装 %@", $0) } ?? (descriptor.isCnPatch ? hubText("已安装汉化补丁") : hubText("已装 MOD"))
+        let current = !hasMod ? language.text(descriptor.isCnPatch ? "未安装汉化补丁" : "未安装 MOD")
+            : installedLabel.map { language.text("已装 %@", arguments: [$0]) } ?? language.text(descriptor.isCnPatch ? "已安装汉化补丁" : "已装 MOD")
         if let latest = visibleReleases.first {
-            let latestPart = (availableGroups.count > 1 && !latest.group.isEmpty) ? (" · " + hubText("%@ 最新 %@", latest.group, latest.version)) : (" · " + hubText("最新 %@", latest.version))
-            return current + latestPart
+            let latestPart = (availableGroups.count > 1 && !latest.group.isEmpty)
+                ? language.text("%@ 最新 %@", arguments: [latest.group, latest.version])
+                : language.text("最新 %@", arguments: [latest.version])
+            return current + " · " + latestPart
         }
         return current
     }
-    var updateTitle: String {
-        if busy { return hubText("查看进度") }
-        if visibleReleases.isEmpty { return loading ? hubText("检查中…") : (loadFailed ? hubText("重新获取") : hubText("安装最新")) }
-        if switchBlockedByNoBackup { return hubText("需原版切换") }
-        guard let plan else { return hubText("已是最新") }
+    func updateTitle(in language: HubLanguage) -> String {
+        if busy { return language.text("查看进度") }
+        if visibleReleases.isEmpty { return language.text(loading ? "检查中…" : (loadFailed ? "重新获取" : "安装最新")) }
+        if switchBlockedByNoBackup { return language.text("需原版切换") }
+        guard let plan else { return language.text("已是最新") }
         let switchingGroup = hasMod && ModCatalog.groupsConflict(visibleReleases.first?.group, installed?.group)
         let size = ModCatalog.formatSize(plan.steps.reduce(Int64(0)) { $0 + max(0, $1.expectedSize) })
-        let baseLabel = hubText(!hasMod ? "安装最新" : (switchingGroup ? "切换安装" : "立即更新"))
+        let baseLabel = language.text(!hasMod ? "安装最新" : (switchingGroup ? "切换安装" : "立即更新"))
         return baseLabel + (size.isEmpty ? "" : " · " + size)
     }
     var updateDisabled: Bool { busy || switchBlockedByNoBackup || (visibleReleases.isEmpty ? !loadFailed : plan == nil) }

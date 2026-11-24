@@ -5,6 +5,10 @@ enum HubLanguage: String, CaseIterable, Identifiable {
 
     case system, chinese = "zh-Hans", japanese = "ja", english = "en"
 
+    init(locale: Locale) {
+        self = Self.system.resolved(preferredLanguages: [locale.identifier])
+    }
+
     var id: String { rawValue }
 
     var title: String {

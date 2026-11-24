@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct HubSettingsView: View {
     let games: URL
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
     @AppStorage(HubLanguage.storageKey) private var language = HubLanguage.system.rawValue
     @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
@@ -57,7 +58,7 @@ struct HubSettingsView: View {
                 }.listRowBackground(HubTheme.surface)
                 Section {
                     if let syncFolder {
-                        HubActionLabel(title: hubText("同步文件夹：%@", syncFolder), symbol: "icloud", navigates: false)
+                        HubActionLabel(title: localized("同步文件夹：%@", syncFolder), symbol: "icloud", navigates: false)
                         Button { syncNow() } label: {
                             HubActionLabel(title: syncing ? "正在同步…" : "立即同步全部存档", symbol: "arrow.triangle.2.circlepath", navigates: false)
                         }.buttonStyle(.plain).disabled(syncing)
@@ -104,7 +105,7 @@ struct HubSettingsView: View {
                 }.listRowBackground(HubTheme.surface)
             }
             .listStyle(.insetGrouped).modifier(HubListStyle())
-            .navigationTitle(hubText("设置")).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(localized("设置")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(clearingCache) } }
         }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
             .interactiveDismissDisabled(clearingCache)

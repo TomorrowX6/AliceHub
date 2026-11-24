@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SaveManagerView: View {
     let game: Game
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @State private var entries: [SaveManager.FileEntry] = []
     @State private var backups: [URL] = []
     @State private var picker: SavePickerRequest?
@@ -39,7 +40,7 @@ struct SaveManagerView: View {
                         HubActionLabel(title: "导出存档", symbol: "square.and.arrow.up")
                     }.disabled(entries.isEmpty)
                     Button("清空存档", role: .destructive) {
-                        confirmation = SaveConfirmation(text: hubText("确定清空全部 %lld 个存档文件吗？此操作不可恢复。", entries.count)) {
+                        confirmation = SaveConfirmation("确定清空全部 %lld 个存档文件吗？此操作不可恢复。", entries.count) {
                             operate { try manager.clear(); return hubText("已清空存档") }
                         }
                     }.disabled(entries.isEmpty)
@@ -47,15 +48,15 @@ struct SaveManagerView: View {
                 if !backups.isEmpty {
                     Section(header: Text("恢复备份")) {
                         ForEach(backups, id: \.path) { backup in
-                            Button(hubText("恢复备份（%@）", backupTime(backup))) {
-                                confirmation = SaveConfirmation(text: hubText("用 %@ 的备份替换当前存档吗？当前存档会先自动备份。", backupTime(backup))) {
+                            Button(localized("恢复备份（%@）", backupTime(backup))) {
+                                confirmation = SaveConfirmation("用 %@ 的备份替换当前存档吗？当前存档会先自动备份。", backupTime(backup)) {
                                     operate { try manager.restore(backup); return hubText("已恢复备份") }
                                 }
                             }
                         }
                     }
                 }
-                Section(header: Text(hubText("%lld 个文件", entries.count))) {
+                Section(header: Text(localized("%lld 个文件", entries.count))) {
                     if entries.isEmpty {
                         HubSectionHeader(title: "暂无存档", symbol: "doc")
                     }
@@ -71,11 +72,11 @@ struct SaveManagerView: View {
                             Button("备份存档") {
                                 let action = { operate { try manager.duplicate(entry); return hubText("已备份为 %@.bak", entry.url.lastPathComponent) } }
                                 if FileManager.default.fileExists(atPath: entry.url.appendingPathExtension("bak").path) {
-                                    confirmation = SaveConfirmation(text: hubText("文件“%@.bak”已存在，是否覆盖？", entry.url.lastPathComponent), action: action)
+                                    confirmation = SaveConfirmation("文件“%@.bak”已存在，是否覆盖？", entry.url.lastPathComponent, action: action)
                                 } else { action() }
                             }
                             Button("删除存档", role: .destructive) {
-                                confirmation = SaveConfirmation(text: hubText("确定删除 %@？", entry.path)) {
+                                confirmation = SaveConfirmation("确定删除 %@？", entry.path) {
                                     operate { try manager.delete(entry); return hubText("已删除 %@", entry.path) }
                                 }
                             }
@@ -117,7 +118,7 @@ struct SaveManagerView: View {
             Button("好", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
         .alert(item: $confirmation) { item in
-            Alert(title: Text("存档管理"), message: Text(item.text), primaryButton: .default(Text("确定"), action: item.action), secondaryButton: .cancel(Text("取消")))
+            Alert(title: Text("存档管理"), message: Text(item.text(in: localized.language)), primaryButton: .default(Text("确定"), action: item.action), secondaryButton: .cancel(Text("取消")))
         }
     }
 
@@ -145,7 +146,7 @@ struct SaveManagerView: View {
         let action = { picker = SavePickerRequest(kind: folder ? .importFolder : .importFiles) }
         if entries.isEmpty { action() }
         else {
-            confirmation = SaveConfirmation(text: hubText("同名存档会被覆盖。导入前会先自动备份当前存档，可在“导入存档”里选择“恢复备份”撤销。"), action: action)
+            confirmation = SaveConfirmation("同名存档会被覆盖。导入前会先自动备份当前存档，可在“导入存档”里选择“恢复备份”撤销。", action: action)
         }
     }
 
@@ -176,8 +177,19 @@ struct SaveManagerView: View {
 
 private struct SaveConfirmation: Identifiable {
     let id = UUID()
-    let text: String
+    private let key: String
+    private let arguments: [CVarArg]
     let action: () -> Void
+
+    init(_ key: String, _ arguments: CVarArg..., action: @escaping () -> Void) {
+        self.key = key
+        self.arguments = arguments
+        self.action = action
+    }
+
+    func text(in language: HubLanguage) -> String {
+        language.text(key, arguments: arguments)
+    }
 }
 
 private struct SavePickerRequest: Identifiable {
