@@ -362,11 +362,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         UiKit.styleChip(statusView, statusTone, dot = true)
 
         val translationView = findViewById<TextView>(R.id.hub_translation_badge)
-        val modInfo = if (curItem != null && !descriptor.hasChinese && !descriptor.isCnPatch) {
-            gameList.getInstalledModInfo(curItem)
-        } else {
-            null
-        }
+        val modInfo = if (curItem != null) gameList.getInstalledModInfo(curItem) else null
         val hasChinese = GameCatalog.hasChineseTranslation(descriptor, curItem, modInfo)
         translationView.text = getString(
             if (hasChinese) R.string.game_translation_cn else R.string.game_translation_raw

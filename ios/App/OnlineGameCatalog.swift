@@ -21,29 +21,23 @@ struct OnlineGame: Identifiable {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.isRegularFileKey]
         ) else { return false }
-        for item in contents where (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
-            let lower = item.lastPathComponent.lowercased()
-            if lower == "alicestart.chs" || lower == "chs.tbl" || lower == "alicecn.ain" ||
-                lower == "haru_c.ain" || lower == "gbk.ain" || lower == "simhei.ttf" ||
-                lower.hasPrefix("sourcehansanscn") || lower.hasSuffix("_chs.ald") ||
-                lower.hasSuffix("chs.afa") || lower.hasSuffix("chs2.afa") ||
-                lower.hasSuffix("_cn.afa") || lower.hasSuffix("_cn.ain") ||
-                lower.hasSuffix("_cn.ald") || lower.contains("_cn_") ||
-                lower.contains("汉化") || lower.contains("中文") {
-                return true
-            }
+        let fileNames = contents.compactMap { item -> String? in
+            (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true ? item.lastPathComponent : nil
         }
-        return false
+        return GameLibrary.hasLocalChineseMarkers(fileNames: fileNames)
     }
 
     static func hasChinese(for game: Game) -> Bool {
-        if let key = game.artworkKey, let entry = byArtworkKey[key], entry.hasChinese {
+        if game.hasInstalledCnPatch || game.hasLocalChineseMarkers {
             return true
         }
-        if InstalledModInfo.read(game.url)?.kind == "cn_patch" {
-            return true
+        if game.hasExplicitNonChineseEdition {
+            return false
         }
-        return hasLocalChineseMarkers(in: game.url)
+        if let key = game.artworkKey, let entry = byArtworkKey[key] {
+            return entry.hasChinese
+        }
+        return false
     }
 
     static let all: [Self] = [

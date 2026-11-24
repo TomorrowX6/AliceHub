@@ -16,6 +16,9 @@ struct Game: Identifiable, Equatable {
     let artworkKey: String?
     let isRance04: Bool
     let isRance5d: Bool
+    let hasLocalChineseMarkers: Bool
+    let hasExplicitNonChineseEdition: Bool
+    let hasInstalledCnPatch: Bool
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
 
@@ -28,6 +31,9 @@ struct Game: Identifiable, Equatable {
         self.artworkKey = meta.artworkKey
         self.isRance04 = meta.isRance04
         self.isRance5d = meta.isRance5d
+        self.hasLocalChineseMarkers = meta.hasLocalChineseMarkers
+        self.hasExplicitNonChineseEdition = meta.hasExplicitNonChineseEdition
+        self.hasInstalledCnPatch = meta.hasInstalledCnPatch
     }
 
     fileprivate init(url: URL, meta: GameLibrary.InspectedGame) {
@@ -38,6 +44,9 @@ struct Game: Identifiable, Equatable {
         self.artworkKey = meta.artworkKey
         self.isRance04 = meta.isRance04
         self.isRance5d = meta.isRance5d
+        self.hasLocalChineseMarkers = meta.hasLocalChineseMarkers
+        self.hasExplicitNonChineseEdition = meta.hasExplicitNonChineseEdition
+        self.hasInstalledCnPatch = meta.hasInstalledCnPatch
     }
 }
 
@@ -66,6 +75,41 @@ final class GameLibrary: ObservableObject {
         let artworkKey: String?
         let isRance04: Bool
         let isRance5d: Bool
+        let hasLocalChineseMarkers: Bool
+        let hasExplicitNonChineseEdition: Bool
+        let hasInstalledCnPatch: Bool
+    }
+
+    private static let chineseMarkerAssetExtensions: Set<String> = [
+        "ain", "afa", "ald", "chs", "ex", "fnl", "ini", "dat", "ttf", "otf"
+    ]
+
+    static func hasLocalChineseMarkers<S: Sequence>(fileNames: S) -> Bool where S.Element == String {
+        for rawName in fileNames {
+            let lower = rawName.lowercased()
+            if lower == "alicestart.chs" || lower == "chs.tbl" || lower == "alicecn.ain" ||
+                lower == "haru_c.ain" || lower == "gbk.ain" || lower == "simhei.ttf" ||
+                lower.hasSuffix("_chs.ald") || lower.hasSuffix("chs.afa") ||
+                lower.hasSuffix("chs2.afa") || lower.hasSuffix("_cn.afa") ||
+                lower.hasSuffix("_cn.ain") || lower.hasSuffix("_cn.ald") {
+                return true
+            }
+            let ext = (lower as NSString).pathExtension
+            guard chineseMarkerAssetExtensions.contains(ext) else { continue }
+            if lower.hasPrefix("sourcehansanscn") || lower.contains("_cn_") ||
+                lower.contains("汉化") || lower.contains("中文") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func hasInstalledCnPatchFromRegularFiles(_ regularFiles: [URL]) -> Bool {
+        guard let meta = regularFiles.first(where: { $0.lastPathComponent == ".alicehub_mod_meta.json" }),
+              let data = try? Data(contentsOf: meta), data.count <= 256 * 1024,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let kind = json["kind"] as? String else { return false }
+        return kind.trimmingCharacters(in: .whitespacesAndNewlines) == "cn_patch"
     }
 
     private static let artworkAliases: [(String, [String])] = [
@@ -334,7 +378,7 @@ final class GameLibrary: ObservableObject {
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
-            return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false)
+            return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false, hasLocalChineseMarkers: false, hasExplicitNonChineseEdition: false, hasInstalledCnPatch: false)
         }
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
@@ -458,13 +502,20 @@ final class GameLibrary: ObservableObject {
             })?.0
         }
 
+        let hasLocalChinese = hasLocalChineseMarkers(fileNames: regularNamesLower)
+        let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
+        let hasCnPatch = hasInstalledCnPatchFromRegularFiles(regularFiles)
+
         return InspectedGame(
             isValidGame: info != nil,
             displayName: displayName,
             engine: engine,
             artworkKey: artworkKey,
             isRance04: rance04,
-            isRance5d: rance5d
+            isRance5d: rance5d,
+            hasLocalChineseMarkers: hasLocalChinese,
+            hasExplicitNonChineseEdition: hasExplicitNonChinese,
+            hasInstalledCnPatch: hasCnPatch
         )
     }
 

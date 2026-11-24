@@ -187,9 +187,13 @@ object GameCatalog {
     internal fun hasLonginusChsConfig(fileNames: Collection<String>): Boolean =
         fileNames.any { it.equals("AliceStart.CHS", true) || it.equals("CHS.TBL", true) }
 
+    private val CHINESE_MARKER_ASSET_EXTENSIONS = setOf(
+        "ain", "afa", "ald", "chs", "ex", "fnl", "ini", "dat", "ttf", "otf"
+    )
+
     /**
-     * Detects explicit local Chinese-translation markers in a game directory's top-level filenames
-     * (used for custom-imported titles or locally patched titles whose online base is raw JP/EN).
+     * Detects explicit local Chinese-translation asset markers in a game directory's top-level
+     * filenames (ignoring documentation files such as readme/manual `.txt` or `.md`).
      */
     @JvmStatic
     fun hasLocalChineseMarkers(fileNames: Collection<String>): Boolean {
@@ -197,17 +201,24 @@ object GameCatalog {
         if (hasLonginusChsConfig(fileNames)) return true
         return fileNames.any { name ->
             val lower = name.lowercase()
-            lower == "alicecn.ain" ||
+            if (lower == "alicecn.ain" ||
                 lower == "haru_c.ain" ||
                 lower == "gbk.ain" ||
                 lower == "simhei.ttf" ||
-                lower.startsWith("sourcehansanscn") ||
                 lower.endsWith("_chs.ald") ||
                 lower.endsWith("chs.afa") ||
                 lower.endsWith("chs2.afa") ||
                 lower.endsWith("_cn.afa") ||
                 lower.endsWith("_cn.ain") ||
-                lower.endsWith("_cn.ald") ||
+                lower.endsWith("_cn.ald")
+            ) {
+                return@any true
+            }
+            val ext = lower.substringAfterLast('.', "")
+            if (ext !in CHINESE_MARKER_ASSET_EXTENSIONS) {
+                return@any false
+            }
+            lower.startsWith("sourcehansanscn") ||
                 lower.contains("_cn_") ||
                 lower.contains("汉化") ||
                 lower.contains("中文")
@@ -222,21 +233,34 @@ object GameCatalog {
     }
 
     @JvmStatic
+    fun hasExplicitNonChineseEdition(dir: File?): Boolean {
+        if (dir == null || !dir.isDirectory) return false
+        val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
+            ?: return false
+        if (ini.length() > 256L * 1024L) return false
+        val legacyId = runCatching { legacySystem3GameId(ini.readBytes()) }.getOrNull() ?: return false
+        return legacyId.endsWith("_eng")
+    }
+
+    @JvmStatic
     @JvmOverloads
     fun hasChineseTranslation(
         descriptor: GameDescriptor,
         item: Item? = null,
         modInfo: InstalledModInfo? = null
     ): Boolean {
-        if (descriptor.hasChinese || descriptor.isCnPatch) return true
         if (modInfo?.kind == InstalledModInfo.KIND_CN_PATCH) return true
         if (item != null) {
-            item.cachedHasLocalCnMarkers?.let { return it }
-            val detected = hasLocalChineseMarkers(item.path)
-            item.cachedHasLocalCnMarkers = detected
-            return detected
+            val localCn = item.cachedHasLocalCnMarkers ?: hasLocalChineseMarkers(item.path).also {
+                item.cachedHasLocalCnMarkers = it
+            }
+            if (localCn) return true
+            val explicitNonCn = item.cachedHasExplicitNonCnEdition ?: hasExplicitNonChineseEdition(item.path).also {
+                item.cachedHasExplicitNonCnEdition = it
+            }
+            if (explicitNonCn) return false
         }
-        return false
+        return descriptor.hasChinese || descriptor.isCnPatch
     }
 
     internal fun matchConfiguredChsCodeFileName(

@@ -9,6 +9,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -115,6 +117,8 @@ public class TranslationBadgeTest {
     public void localChineseMarkersAndCnPatchOverrideRawClassification() throws Exception {
         assertFalse(GameCatalog.hasLocalChineseMarkers(Collections.emptyList()));
         assertFalse(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "超昂閃忍ハルカ.ain", "超昂閃忍ハルカGA.ald")));
+        // Chinese documentation/readme files must NOT flip an untranslated game to Chinese
+        assertFalse(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "超昂閃忍ハルカ.ain", "中文说明.txt", "汉化指南.md", "SourceHanSansCN_README.txt")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.CHS", "CHS.TBL")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("System40.ini", "AliceCN.ain")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "haru_c.ain")));
@@ -122,6 +126,7 @@ public class TranslationBadgeTest {
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("System39.ini", "蜘蛛SA_CHS.ALD")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "Game_cn.afa")));
         assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("system3.ini", "simhei.ttf")));
+        assertTrue(GameCatalog.hasLocalChineseMarkers(Arrays.asList("AliceStart.ini", "某游戏汉化版.ain")));
 
         GameDescriptor customDesc = GameCatalog.INSTANCE.descriptorForWithResolver("custom:MyGame", null, r -> "MyGame");
         assertFalse(customDesc.getHasChinese());
@@ -129,6 +134,7 @@ public class TranslationBadgeTest {
         File rawDir = tmp.newFolder("custom_raw");
         assertTrue(new File(rawDir, "System40.ini").createNewFile());
         assertTrue(new File(rawDir, "Game.ain").createNewFile());
+        assertTrue(new File(rawDir, "中文说明.txt").createNewFile());
         Item rawItem = new Item("MyGame", rawDir, rawDir, null, null, null);
         assertFalse(GameCatalog.hasChineseTranslation(customDesc, rawItem, null));
 
@@ -138,7 +144,7 @@ public class TranslationBadgeTest {
         );
         assertTrue(GameCatalog.hasChineseTranslation(customDesc, rawItem, cnPatchInfo));
 
-        // Explicit local Chinese file in a custom game directory flips raw -> Chinese
+        // Explicit local Chinese asset in a custom game directory flips raw -> Chinese
         File cnDir = tmp.newFolder("custom_cn");
         assertTrue(new File(cnDir, "AliceStart.ini").createNewFile());
         assertTrue(new File(cnDir, "Game_cn.afa").createNewFile());
@@ -149,5 +155,27 @@ public class TranslationBadgeTest {
         assertTrue(new File(rawDir, "CHS.TBL").createNewFile());
         Item updatedRawItem = new Item("MyGame", rawDir, rawDir, null, null, null);
         assertTrue(GameCatalog.hasChineseTranslation(customDesc, updatedRawItem, null));
+
+        // Explicit English Legacy System 3 import (e.g., rance41_eng) overrides online CN default
+        GameDescriptor rance41Desc = GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_RANCE41, null, r -> "rance41");
+        assertTrue(GameCatalog.hasChineseTranslation(rance41Desc, null, null));
+
+        File engRance41Dir = tmp.newFolder("rance41_eng");
+        assertTrue(new File(engRance41Dir, "ADISK.DAT").createNewFile());
+        assertTrue(new File(engRance41Dir, "ACG.DAT").createNewFile());
+        Files.write(new File(engRance41Dir, "system3.ini").toPath(), "[config]\ngame = rance41_eng\n".getBytes(StandardCharsets.UTF_8));
+        Item engRance41Item = new Item("Rance 4.1", engRance41Dir, engRance41Dir, null, null, null);
+        assertTrue(GameCatalog.hasExplicitNonChineseEdition(engRance41Dir));
+        assertFalse(GameCatalog.hasChineseTranslation(rance41Desc, engRance41Item, null));
+
+        // Chinese Rance 4.1 download stays Chinese
+        File cnRance41Dir = tmp.newFolder("rance41_cn");
+        assertTrue(new File(cnRance41Dir, "ADISK.DAT").createNewFile());
+        assertTrue(new File(cnRance41Dir, "ACG.DAT").createNewFile());
+        assertTrue(new File(cnRance41Dir, "simhei.ttf").createNewFile());
+        Files.write(new File(cnRance41Dir, "system3.ini").toPath(), "[config]\ngame = rance41\nfontfile = simhei.ttf\n".getBytes(StandardCharsets.UTF_8));
+        Item cnRance41Item = new Item("兰斯4.1", cnRance41Dir, cnRance41Dir, null, null, null);
+        assertFalse(GameCatalog.hasExplicitNonChineseEdition(cnRance41Dir));
+        assertTrue(GameCatalog.hasChineseTranslation(rance41Desc, cnRance41Item, null));
     }
 }

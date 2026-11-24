@@ -118,11 +118,7 @@ private class GameSelectAdapter(
                     badgeTone = UiKit.Tone.NEUTRAL
                 }
             }
-            val modInfo = if (primary != null && !desc.hasChinese && !desc.isCnPatch) {
-                gameList.getInstalledModInfo(primary)
-            } else {
-                null
-            }
+            val modInfo = if (primary != null) gameList.getInstalledModInfo(primary) else null
             val hasChinese = GameCatalog.hasChineseTranslation(desc, primary, modInfo)
             val translationLabel = context.getString(
                 if (hasChinese) R.string.game_translation_cn else R.string.game_translation_raw
