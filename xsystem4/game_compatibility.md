@@ -19,7 +19,7 @@ issues, please let me know or open a pull request to update this table.
 | 大番長 -Big Bang Age-                                   | Supported   |       |
 | Daibanchou -Big Bang Age- (EN)                          | Supported   |       |
 | 大番长 -Big Bang Age- (CN)                              | Supported   | GBK fan translation |
-| 魔女の贖罪                                              | Unknown     |       |
+| 魔女の贖罪                                              | Supported   | E2E verified (boot, prologue, Ch.1 strategy hub, WAV/OGG audio, quick save/load) |
 | Rance VI -ゼス崩壊-                                     | Supported   |       |
 | Rance VI -Collapse of Zeth- (EN)                        | Supported   |       |
 | Rance VI / 兰斯06 (CN)                                  | Supported   | GBK; 哈尼喵×爱丽丝汉化组 v1.10. Copy-suffixed DungeonData(N).dlf is accepted when DungeonData.dlf is absent. |
@@ -53,7 +53,7 @@ issues, please let me know or open a pull request to update this table.
 | 戦国ランス                                              | Supported   |       |
 | Sengoku Rance (EN FanTL)                                | Supported   |       |
 | Sengoku Rance (MangaGamer)                              | Supported   |       |
-| だぶる先生らいふっ                                      | Unknown     |       |
+| だぶる先生らいふっ                                      | Supported   | E2E verified (0 unimplemented HLLs, voiced ADV, quick save/load) |
 | お嬢様をいいなりにするゲーム                            | Supported   |       |
 | 超昂閃忍ハルカ                                          | Unknown     |       |
 | 戦国ランス～三匹が斬ったり突いたり燃やしたり            | Supported   |       |
@@ -61,7 +61,7 @@ issues, please let me know or open a pull request to update this table.
 | AliveZ                                                  | Unknown     |       |
 | エドランゼ ～Come on!水戸姫様～                         | Supported   |       |
 | 闘神都市III                                             | Supported   | JP and CN (GBK fan translation) supported |
-| ばにしゅ！～おっぱいの消えた王国～                      | Unknown     |       |
+| ばにしゅ！～おっぱいの消えた王国～                      | Supported   | E2E verified (0 unimplemented HLLs, prologue, audio, save/load) |
 | 僕だけの保健室                                          | Supported   |       |
 | ももいろガーディアン                                    | Unknown     |       |
 | 超昂閃忍ハルカ ハルカVSエスカレイヤー                   | Unknown     | From Alice 2010 |

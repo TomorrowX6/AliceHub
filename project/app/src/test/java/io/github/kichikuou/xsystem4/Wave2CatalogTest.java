@@ -63,7 +63,7 @@ public class Wave2CatalogTest {
     @Test
     public void wave2CatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(89, order.size());
+        assertEquals(106, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_SANBIKI, "Sanbiki", OnlineInstaller.SANBIKI_CDN_URL, 160062187L, "2008-04-11", 58.1, "https://vndb.org/v31408", "https://vndb.org/v31408"},

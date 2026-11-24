@@ -390,6 +390,23 @@ object OnlineInstaller {
     const val OTOMESENKI_CDN_URL = "https://alicehub.000.moe/otomesenki"
     const val GAKUENHYOURYUU_CDN_URL = "https://alicehub.000.moe/gakuenhyouryuu"
     const val MAIDNOSUSUME_CDN_URL = "https://alicehub.000.moe/maidnosusume"
+    const val DALKGAIDEN_CDN_URL = "https://alicehub.000.moe/dalkgaiden"
+    const val MAMANYONYO_CDN_URL = "https://alicehub.000.moe/mamanyonyo"
+    const val MAJONOSHOKUZAI_CDN_URL = "https://alicehub.000.moe/majonoshokuzai"
+    const val SABOTEN_CDN_URL = "https://alicehub.000.moe/saboten"
+    const val DOUBLESENSEI_CDN_URL = "https://alicehub.000.moe/doublesensei"
+    const val OJOUSAMA_CDN_URL = "https://alicehub.000.moe/ojousama"
+    const val EDORANZE_CDN_URL = "https://alicehub.000.moe/edoranze"
+    const val VANISH_CDN_URL = "https://alicehub.000.moe/vanish"
+    const val HOKENSHITSU_CDN_URL = "https://alicehub.000.moe/hokenshitsu"
+    const val KAMUNAGARA_CDN_URL = "https://alicehub.000.moe/kamunagara"
+    const val ERUMEIFLOWER_CDN_URL = "https://alicehub.000.moe/erumeiflower"
+    const val ERUMEIWAKARE_CDN_URL = "https://alicehub.000.moe/erumeiwakare"
+    const val MANANA1_CDN_URL = "https://alicehub.000.moe/manana1"
+    const val MANANA2_CDN_URL = "https://alicehub.000.moe/manana2"
+    const val MANANA3_CDN_URL = "https://alicehub.000.moe/manana3"
+    const val MANANA4_CDN_URL = "https://alicehub.000.moe/manana4"
+    const val MANANA5_CDN_URL = "https://alicehub.000.moe/manana5"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1802,6 +1819,23 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_OTOMESENKI -> sanitizedManifestBase.ifEmpty { "OtomeSenki" }
             classifiedStagedId == GameCatalog.ID_GAKUENHYOURYUU -> sanitizedManifestBase.ifEmpty { "GakuenHyouryuu" }
             classifiedStagedId == GameCatalog.ID_MAIDNOSUSUME -> sanitizedManifestBase.ifEmpty { "MaidNoSusume" }
+            classifiedStagedId == GameCatalog.ID_DALKGAIDEN -> sanitizedManifestBase.ifEmpty { "DalkGaiden" }
+            classifiedStagedId == GameCatalog.ID_MAMANYONYO -> sanitizedManifestBase.ifEmpty { "Mamanyonyo" }
+            classifiedStagedId == GameCatalog.ID_MAJONOSHOKUZAI -> sanitizedManifestBase.ifEmpty { "MajoNoShokuzai" }
+            classifiedStagedId == GameCatalog.ID_SABOTEN -> sanitizedManifestBase.ifEmpty { "Saboten" }
+            classifiedStagedId == GameCatalog.ID_DOUBLESENSEI -> sanitizedManifestBase.ifEmpty { "DoubleSensei" }
+            classifiedStagedId == GameCatalog.ID_OJOUSAMA -> sanitizedManifestBase.ifEmpty { "Ojousama" }
+            classifiedStagedId == GameCatalog.ID_EDORANZE -> sanitizedManifestBase.ifEmpty { "Edoranze" }
+            classifiedStagedId == GameCatalog.ID_VANISH -> sanitizedManifestBase.ifEmpty { "Vanish" }
+            classifiedStagedId == GameCatalog.ID_HOKENSHITSU -> sanitizedManifestBase.ifEmpty { "Hokenshitsu" }
+            classifiedStagedId == GameCatalog.ID_KAMUNAGARA -> sanitizedManifestBase.ifEmpty { "Kamunagara" }
+            classifiedStagedId == GameCatalog.ID_ERUMEIFLOWER -> sanitizedManifestBase.ifEmpty { "ErumeiFlower" }
+            classifiedStagedId == GameCatalog.ID_ERUMEIWAKARE -> sanitizedManifestBase.ifEmpty { "ErumeiWakare" }
+            classifiedStagedId == GameCatalog.ID_MANANA1 -> sanitizedManifestBase.ifEmpty { "Manana1" }
+            classifiedStagedId == GameCatalog.ID_MANANA2 -> sanitizedManifestBase.ifEmpty { "Manana2" }
+            classifiedStagedId == GameCatalog.ID_MANANA3 -> sanitizedManifestBase.ifEmpty { "Manana3" }
+            classifiedStagedId == GameCatalog.ID_MANANA4 -> sanitizedManifestBase.ifEmpty { "Manana4" }
+            classifiedStagedId == GameCatalog.ID_MANANA5 -> sanitizedManifestBase.ifEmpty { "Manana5" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2397,11 +2431,61 @@ object OnlineInstaller {
                         lower.contains("aliceの館3") ||
                         lower.contains("aliceの館iii") ||
                         lower.contains("爱丽丝之馆3")
+                    GameCatalog.ID_DALKGAIDEN -> lower.contains("dalkgaiden") ||
+                        lower.contains("dalk_gaiden") ||
+                        lower.contains("dalk外伝") ||
+                        lower.contains("dalk外传") ||
+                        lower.contains("dalk外傳")
                     GameCatalog.ID_DALK -> (Regex("(?<![a-z0-9])dalk(?![a-z0-9])").containsMatchIn(lower) ||
                         lower.contains("dalk_sa") || lower.contains("dalk_base")) &&
                         !lower.contains("gaiden") &&
                         !lower.contains("外伝") &&
-                        !lower.contains("外传")
+                        !lower.contains("外传") &&
+                        !lower.contains("外傳")
+                    GameCatalog.ID_MAMANYONYO -> lower.contains("mamanyonyo") ||
+                        lower.contains("ままにょにょ") ||
+                        lower.contains("妈妈软软")
+                    GameCatalog.ID_MAJONOSHOKUZAI -> lower.contains("majonoshokuzai") ||
+                        lower.contains("majo_no_shokuzai") ||
+                        lower.contains("魔女の贖罪") ||
+                        lower.contains("魔女的赎罪")
+                    GameCatalog.ID_SABOTEN -> lower.contains("saboten") ||
+                        lower.contains("よくばりサボテン") ||
+                        lower.contains("贪心仙人掌")
+                    GameCatalog.ID_DOUBLESENSEI -> lower.contains("doublesensei") ||
+                        lower.contains("double_sensei") ||
+                        lower.contains("だぶる先生") ||
+                        lower.contains("双倍教师生活")
+                    GameCatalog.ID_OJOUSAMA -> lower.contains("ojousama") ||
+                        lower.contains("お嬢様をいいなり") ||
+                        lower.contains("让大小姐言听计从")
+                    GameCatalog.ID_EDORANZE -> lower.contains("edoranze") ||
+                        lower.contains("エドランゼ") ||
+                        lower.contains("江户乱世")
+                    GameCatalog.ID_VANISH -> lower.contains("vanish") ||
+                        lower.contains("ばにしゅ")
+                    GameCatalog.ID_HOKENSHITSU -> lower.contains("hokenshitsu") ||
+                        lower.contains("僕だけの保健室") ||
+                        lower.contains("只属于我的保健室")
+                    GameCatalog.ID_KAMUNAGARA -> lower.contains("kamunagara") ||
+                        lower.contains("カムナガラ") ||
+                        lower.contains("神武")
+                    GameCatalog.ID_ERUMEIWAKARE -> lower.contains("erumeiwakare") ||
+                        lower.contains("erumei_wakare") ||
+                        lower.contains("別れの夜") ||
+                        lower.contains("别离之夜")
+                    GameCatalog.ID_ERUMEIFLOWER -> (lower.contains("erumeiflower") ||
+                        lower.contains("erumei_flower") ||
+                        lower.contains("エルメイフラワー") ||
+                        lower.contains("艾尔梅花")) &&
+                        !lower.contains("wakare") &&
+                        !lower.contains("別れ") &&
+                        !lower.contains("别离")
+                    GameCatalog.ID_MANANA1 -> lower.contains("manana1") || lower.contains("manana_1") || lower.contains("まななvol1")
+                    GameCatalog.ID_MANANA2 -> lower.contains("manana2") || lower.contains("manana_2") || lower.contains("まななvol2")
+                    GameCatalog.ID_MANANA3 -> lower.contains("manana3") || lower.contains("manana_3") || lower.contains("まななvol3")
+                    GameCatalog.ID_MANANA4 -> lower.contains("manana4") || lower.contains("manana_4") || lower.contains("まななvol4")
+                    GameCatalog.ID_MANANA5 -> lower.contains("manana5") || lower.contains("manana_5") || lower.contains("まななvol5")
                     GameCatalog.ID_NINGENGARI -> lower.contains("ningengari") ||
                         lower.contains("ningen_gari") ||
                         lower.contains("人間狩り") ||
@@ -2415,13 +2499,12 @@ object OnlineInstaller {
                         lower.contains("nightremaster") ||
                         lower.contains("夜が来る") ||
                         lower.contains("邪夜将至")
-                    GameCatalog.ID_MAMAN -> lower == "maman" ||
-                        lower.startsWith("maman-") ||
-                        lower.startsWith("maman_") ||
+                    GameCatalog.ID_MAMAN -> (Regex("(?<![a-z0-9])maman(?![a-z0-9])").containsMatchIn(lower) ||
                         lower.contains("heartfulmaman") ||
                         lower.contains("heartful maman") ||
                         lower.contains("は～とふるママン") ||
-                        lower.contains("再婚妈妈")
+                        lower.contains("再婚妈妈")) &&
+                        !lower.contains("mamanyonyo")
                     GameCatalog.ID_HAHARANMAN -> lower.contains("haharanman") ||
                         lower.contains("haha_ranman") ||
                         lower.contains("母爛漫") ||

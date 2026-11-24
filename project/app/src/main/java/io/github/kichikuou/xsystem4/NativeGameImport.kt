@@ -434,6 +434,57 @@ object NativeGameImport {
         if (GameCatalog.isMaidNoSusumeGameFiles(activeFiles, readSmallFile)) {
             return "MaidNoSusume"
         }
+        if (GameCatalog.isDalkGaidenGameFiles(activeFiles, readSmallFile)) {
+            return "DalkGaiden"
+        }
+        if (GameCatalog.isMamanyonyoGameFiles(activeFiles, readSmallFile)) {
+            return "Mamanyonyo"
+        }
+        if (GameCatalog.isMajoNoShokuzaiGameFiles(activeFiles, readSmallFile)) {
+            return "MajoNoShokuzai"
+        }
+        if (GameCatalog.isSabotenGameFiles(activeFiles, readSmallFile)) {
+            return "Saboten"
+        }
+        if (GameCatalog.isDoubleSenseiGameFiles(activeFiles, readSmallFile)) {
+            return "DoubleSensei"
+        }
+        if (GameCatalog.isOjousamaGameFiles(activeFiles, readSmallFile)) {
+            return "Ojousama"
+        }
+        if (GameCatalog.isEdoranzeGameFiles(activeFiles, readSmallFile)) {
+            return "Edoranze"
+        }
+        if (GameCatalog.isVanishGameFiles(activeFiles, readSmallFile)) {
+            return "Vanish"
+        }
+        if (GameCatalog.isHokenshitsuGameFiles(activeFiles, readSmallFile)) {
+            return "Hokenshitsu"
+        }
+        if (GameCatalog.isKamunagaraGameFiles(activeFiles, readSmallFile)) {
+            return "Kamunagara"
+        }
+        if (GameCatalog.isErumeiWakareGameFiles(activeFiles, readSmallFile)) {
+            return "ErumeiWakare"
+        }
+        if (GameCatalog.isErumeiFlowerGameFiles(activeFiles, readSmallFile)) {
+            return "ErumeiFlower"
+        }
+        if (GameCatalog.isManana1GameFiles(activeFiles, readSmallFile)) {
+            return "Manana1"
+        }
+        if (GameCatalog.isManana2GameFiles(activeFiles, readSmallFile)) {
+            return "Manana2"
+        }
+        if (GameCatalog.isManana3GameFiles(activeFiles, readSmallFile)) {
+            return "Manana3"
+        }
+        if (GameCatalog.isManana4GameFiles(activeFiles, readSmallFile)) {
+            return "Manana4"
+        }
+        if (GameCatalog.isManana5GameFiles(activeFiles, readSmallFile)) {
+            return "Manana5"
+        }
         if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
             return "Sanbiki"
         }

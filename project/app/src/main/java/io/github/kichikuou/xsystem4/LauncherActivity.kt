@@ -234,7 +234,24 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_MUGENHOUYOU && GameCatalog.isMugenHouyouAlias(q)) ||
             (desc.id == GameCatalog.ID_OTOMESENKI && GameCatalog.isOtomeSenkiAlias(q)) ||
             (desc.id == GameCatalog.ID_GAKUENHYOURYUU && GameCatalog.isGakuenHyouryuuAlias(q)) ||
-            (desc.id == GameCatalog.ID_MAIDNOSUSUME && GameCatalog.isMaidNoSusumeAlias(q))
+            (desc.id == GameCatalog.ID_MAIDNOSUSUME && GameCatalog.isMaidNoSusumeAlias(q)) ||
+            (desc.id == GameCatalog.ID_DALKGAIDEN && GameCatalog.isDalkGaidenAlias(q)) ||
+            (desc.id == GameCatalog.ID_MAMANYONYO && GameCatalog.isMamanyonyoAlias(q)) ||
+            (desc.id == GameCatalog.ID_MAJONOSHOKUZAI && GameCatalog.isMajoNoShokuzaiAlias(q)) ||
+            (desc.id == GameCatalog.ID_SABOTEN && GameCatalog.isSabotenAlias(q)) ||
+            (desc.id == GameCatalog.ID_DOUBLESENSEI && GameCatalog.isDoubleSenseiAlias(q)) ||
+            (desc.id == GameCatalog.ID_OJOUSAMA && GameCatalog.isOjousamaAlias(q)) ||
+            (desc.id == GameCatalog.ID_EDORANZE && GameCatalog.isEdoranzeAlias(q)) ||
+            (desc.id == GameCatalog.ID_VANISH && GameCatalog.isVanishAlias(q)) ||
+            (desc.id == GameCatalog.ID_HOKENSHITSU && GameCatalog.isHokenshitsuAlias(q)) ||
+            (desc.id == GameCatalog.ID_KAMUNAGARA && GameCatalog.isKamunagaraAlias(q)) ||
+            (desc.id == GameCatalog.ID_ERUMEIFLOWER && GameCatalog.isErumeiFlowerAlias(q)) ||
+            (desc.id == GameCatalog.ID_ERUMEIWAKARE && GameCatalog.isErumeiWakareAlias(q)) ||
+            (desc.id == GameCatalog.ID_MANANA1 && GameCatalog.isManana1Alias(q)) ||
+            (desc.id == GameCatalog.ID_MANANA2 && GameCatalog.isManana2Alias(q)) ||
+            (desc.id == GameCatalog.ID_MANANA3 && GameCatalog.isManana3Alias(q)) ||
+            (desc.id == GameCatalog.ID_MANANA4 && GameCatalog.isManana4Alias(q)) ||
+            (desc.id == GameCatalog.ID_MANANA5 && GameCatalog.isManana5Alias(q))
         ) {
             return true
         }
