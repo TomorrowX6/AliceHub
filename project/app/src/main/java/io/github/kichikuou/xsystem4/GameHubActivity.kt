@@ -459,7 +459,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     private fun refreshOnlineSizeIfNeeded() {
         if (!descriptor.supportsOnlineBaseInstall || !AppSettings.isOnlineInstallEnabled(this)) return
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
-        val fetchUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
+        val fetchUrl = AppSettings.canonicalCdnUrl(cdnUrl)
         if (refreshedSizeCdnUrl == fetchUrl) return
         refreshedSizeCdnUrl = fetchUrl
         scope.launch {
@@ -707,7 +707,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 .setCancelable(true)
                 .show()
         )
-        val fetchCdnUrl = AppSettings.resolveCdnUrl(this, cdnUrl)
+        val fetchCdnUrl = AppSettings.canonicalCdnUrl(cdnUrl)
         scope.launch {
             val manifest = try {
                 withContext(Dispatchers.IO) {
@@ -757,7 +757,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 ) { _, _ ->
                     ensureGameNotRunning(this@GameHubActivity) {
                         val resolvedManifest = manifest.copy(
-                            downloadUrl = AppSettings.resolveCdnUrl(this@GameHubActivity, manifest.downloadUrl)
+                            downloadUrl = AppSettings.canonicalCdnUrl(manifest.downloadUrl)
                         )
                         val maxConcurrency = AppSettings.getDownloadConcurrency(this@GameHubActivity)
                         if (!UncensoredPatchManager.startInstall(target.path, descriptor.id, resolvedManifest, maxConcurrency)) {

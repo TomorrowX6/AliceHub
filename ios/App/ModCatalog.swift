@@ -1,42 +1,25 @@
 import Foundation
 
-enum DownloadRoute: String, CaseIterable, Identifiable {
-    static let storageKey = "hub.downloadRoute"
-    static let cdnOrigin = "https://alicehub.000.moe"
+enum AliceHubCDN {
+    static let origin = "https://alicehub.000.moe"
 
-    case global
-    case cn
-
-    var id: String { rawValue }
-    var title: String { self == .global ? "国际线路" : "国内线路" }
-
-    static var current: Self {
-        Self(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .global
+    static func gameBaseURLString(for id: String) -> String {
+        origin + "/" + id
     }
 
-    func gameBaseURLString(for id: String) -> String {
-        switch self {
-        case .global: return Self.cdnOrigin + "/" + id
-        case .cn: return Self.cdnOrigin + "/cn/" + id
-        }
-    }
-
-    func resolveURL(_ raw: String) -> String {
-        let prefix = Self.cdnOrigin + "/"
+    static func canonicalURL(_ raw: String) -> String {
+        let prefix = origin + "/"
         guard raw.hasPrefix(prefix) else { return raw }
         let rest = String(raw.dropFirst(prefix.count))
         let canonicalRest = rest.hasPrefix("cn/") ? String(rest.dropFirst(3)) : rest
-        switch self {
-        case .global: return prefix + canonicalRest
-        case .cn: return prefix + "cn/" + canonicalRest
-        }
+        return prefix + canonicalRest
     }
 }
 
 enum OnlineInstall {
     static let storageKey = "hub.onlineInstall"
     static var enabled: Bool { UserDefaults.standard.bool(forKey: storageKey) }
-    static let disclaimer = "开启并使用在线安装功能前，请仔细阅读并确认以下全部条款：\n\n第一条 · 应用性质与定位\nAliceHub 为开源跨平台运行环境与本地资源管理工具，旨在进行客户端兼容性研究与技术学习测试。本应用本身不包含、不内置任何商业游戏程序、美术、音频或文本资产。\n\n第二条 · 资源来源与知识产权\n在线通道所索引及传输之数据包、补丁与扩展内容均整理自互联网公开渠道。相关作品之著作权、商标权及其他知识产权均归原权利人及制作团队所有，AliceHub 及其开发者不享有任何权利，亦与原权利人无任何隶属、授权或合作关系。\n\n第三条 · 使用范围与正版要求\n1. 通过本功能获取之内容仅限用户个人在具备合法正版授权前提下，用于技术交流、本地运行验证及备份恢复测试；\n2. 严禁将本应用或相关资源用于任何商业经营、有偿代装、倒卖牟利、公开传播、二次分发或非法录播展示；\n3. 若您尚未取得对应作品之合法授权，请支持正版，并于下载测试后 24 小时内彻底删除全部相关文件。\n\n第四条 · 年龄与地区合规\n部分作品可能包含面向特定年龄群体之内容。用户确认自身已达到所在国家或司法辖区法律法规规定之法定成年年龄，并承诺遵守当地关于数字内容访问、下载与持有之全部适用法律。\n\n第五条 · 风险承担与责任免除\n在线传输服务按现状提供，不对网络连通性、资源完整性、安全性或持续可用性作任何明示或暗示担保。因使用本功能产生之数据丢失、设备异常、流量消耗或违反法律法规及本条款所引发之一切纠纷与法律责任，均由用户本人独立承担，与本应用开发者无关。\n\n第六条 · 条款生效与撤回\n点击「已阅读并同意」即表示您已充分理解并无条件接受上述全部条款；如不同意其中任何内容，请点击「取消」保持关闭状态。您亦可随时在设置中关闭在线安装功能。\n\n第七条 · 资源语种说明\n在线安装通道主要提供中文版本游戏本体与相关扩展资源，部分作品按游戏页标注提供日文原版；如需运行其他语种版本，请通过本地安装功能自行导入对应文件。"
+    static let disclaimer = "开启并使用在线安装功能前，请仔细阅读并确认以下全部条款：\n\n第一条 · 应用性质与定位\nAliceHub 为开源跨平台运行环境与本地资源管理工具，旨在进行客户端兼容性研究与技术学习测试。本应用本身不包含、不内置任何商业游戏程序、美术、音频或文本资产。\n\n第二条 · 资源来源与知识产权\n在线通道所索引及传输之数据包、补丁与扩展内容均整理自互联网公开渠道。相关作品之著作权、商标权及其他知识产权均归原权利人及制作团队所有，AliceHub 及其开发者不享有任何权利，亦与原权利人无任何隶属、授权或合作关系。\n\n第三条 · 使用范围与正版要求\n1. 通过本功能获取之内容仅限用户个人在具备合法正版授权前提下，用于技术交流、本地运行验证及备份恢复测试；\n2. 严禁将本应用或相关资源用于任何商业经营、有偿代装、倒卖牟利、公开传播、二次分发或非法录播展示；\n3. 若您尚未取得对应作品之合法授权，请支持正版，并于下载测试后 24 小时内彻底删除全部相关文件。\n\n第四条 · 年龄与地区合规\n部分作品可能包含面向特定年龄群体之内容。用户确认自身已达到所在国家或司法辖区法律法规规定之法定成年年龄，并承诺遵守当地关于数字内容访问、下载与持有之全部适用法律。\n\n第五条 · 风险承担与责任免除\n在线传输服务按现状提供，不对网络连通性、资源完整性、安全性或持续可用性作任何明示或暗示担保。因使用本功能产生之数据丢失、设备异常、流量消耗或违反法律法规及本条款所引发之一切纠纷与法律责任，均由用户本人独立承担，与本应用开发者无关。\n\n第六条 · 条款生效与撤回\n点击「已阅读并同意」即表示您已充分理解并无条件接受上述全部条款；如不同意其中任何内容，请点击「取消」保持关闭状态。您亦可随时在设置中关闭在线安装功能。"
 }
 
 enum DownloadConcurrency {
@@ -147,7 +130,7 @@ struct ModGameDescriptor: Equatable {
     let title: String
     var isCnPatch: Bool { id != "rance10" }
     var overlayKind: String { isCnPatch ? "cn_patch" : "mod" }
-    var overlayURL: String { DownloadRoute.current.gameBaseURLString(for: id) }
+    var overlayURL: String { AliceHubCDN.gameBaseURLString(for: id) }
     var catalogPath: String { isCnPatch ? "files/cn-patch/index.json" : "files/mods/index.json" }
 
     static let supported = [Self(id: "rance10", title: "兰斯10 决战"), Self(id: "evenicle", title: "夏娃年代记"), Self(id: "evenicle2", title: "夏娃年代记2")]

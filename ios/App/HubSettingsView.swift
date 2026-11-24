@@ -7,7 +7,6 @@ struct HubSettingsView: View {
     @HubLocalizedText private var localized
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
     @AppStorage(HubLanguage.storageKey) private var language = HubLanguage.system.rawValue
-    @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @AppStorage("hub.longPressCtrl") private var longPressCtrl = false
     @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
@@ -35,13 +34,10 @@ struct HubSettingsView: View {
                     }
                 }.listRowBackground(HubTheme.surface)
                 Section("下载") {
-                    Toggle("在线安装(中文)", isOn: Binding(
+                    Toggle("在线安装", isOn: Binding(
                         get: { onlineInstall },
                         set: { enabled in if enabled { onlineDisclaimer = true } else { onlineInstall = false } }
                     ))
-                    Picker("下载线路", selection: $downloadRoute) {
-                        ForEach(DownloadRoute.allCases) { Text(LocalizedStringKey($0.title)).tag($0.rawValue) }
-                    }.pickerStyle(.segmented).padding(.vertical, 8)
                     Stepper(value: clampedConcurrency, in: DownloadConcurrency.range) {
                         HStack {
                             Text("并发下载数")

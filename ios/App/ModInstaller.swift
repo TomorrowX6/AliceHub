@@ -204,8 +204,8 @@ final class ModInstaller: ObservableObject {
 
     static func cacheFileURL(for release: ModReleaseEntry, in cache: URL) -> URL {
         let hash = release.expectedSha256 ?? ""
-        let effectiveUrl = DownloadRoute.current.resolveURL(release.downloadUrl)
-        let identity = hash.count >= 16 ? String(hash.prefix(16)) : String(SHA256.hash(data: Data(DownloadRoute.global.resolveURL(effectiveUrl).utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
+        let effectiveUrl = AliceHubCDN.canonicalURL(release.downloadUrl)
+        let identity = hash.count >= 16 ? String(hash.prefix(16)) : String(SHA256.hash(data: Data(effectiveUrl.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
         let ext = [".tar.gz", ".tar.xz", ".rar", ".7z", ".zip", ".tgz", ".txz", ".afa", ".ald"].first { release.fileName.lowercased().hasSuffix($0) } ?? ".rar"
         return cache.appendingPathComponent("mod_" + identity + ext + ".part")
     }
@@ -287,7 +287,7 @@ final class ModInstaller: ObservableObject {
         try ModFiles.files.createDirectory(at: cache, withIntermediateDirectories: true)
         let hash = release.expectedSha256 ?? ""
         guard hash.isEmpty || hash.modMatch(#"^([0-9a-f]{64})$"#) != nil else { throw ModError.message(hubText("SHA-256 校验值无效")) }
-        let effectiveUrl = DownloadRoute.current.resolveURL(release.downloadUrl)
+        let effectiveUrl = AliceHubCDN.canonicalURL(release.downloadUrl)
         let resolvedRelease: ModReleaseEntry = {
             var copy = release
             copy.downloadUrl = effectiveUrl
