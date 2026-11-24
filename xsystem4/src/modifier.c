@@ -8254,7 +8254,9 @@ static char *vm_build_live_state_json(int lock_mask)
 	struct page *bc    = s_glob_battle_ctx >= 0 ? vm_get_global_page_idx(s_glob_battle_ctx) : vm_get_global_page("g_battleContext", NULL);
 	struct page *enemy = s_glob_enemy >= 0 ? vm_get_global_page_idx(s_glob_enemy) : vm_get_global_page("g_enemy", NULL);
 
-	if (vm_has_mod_streamer_mode()) {
+	bool streamer_mode_supported = vm_has_mod_streamer_mode();
+	cJSON_AddBoolToObject(root, "streamerModeSupported", streamer_mode_supported);
+	if (streamer_mode_supported) {
 		int sm = vm_get_live_streamer_mode(!vm_is_in_card_ui_callstack());
 		if (sm >= 0)
 			cJSON_AddNumberToObject(root, "streamerMode", sm);

@@ -61,13 +61,16 @@ struct ModifierView: View {
     }
 
     private var streamerSection: some View {
-        let enabled = ModifierBridge.streamerMode(in: live, mask: mask)
-        return Section {
-            Button(enabled ? "主播模式 · 已开启" : "主播模式 · 已关闭") {
-                ModifierBridge.setStreamerMode(!enabled)
-                mask = ModifierBridge.lockMask(MODIFIER_LOCK_RANCE10)
-                live.removeValue(forKey: "streamerMode")
-                refreshID += 1
+        Section {
+            if let enabled = ModifierBridge.streamerToggleState(in: live, mask: mask) {
+                Button(enabled ? "主播模式 · 已开启" : "主播模式 · 已关闭") {
+                    ModifierBridge.setStreamerMode(!enabled)
+                    mask = ModifierBridge.lockMask(MODIFIER_LOCK_RANCE10)
+                    live.removeValue(forKey: "streamerMode")
+                    refreshID += 1
+                }
+            } else {
+                Text("不支持主播模式").foregroundColor(.secondary)
             }
         }
     }

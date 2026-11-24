@@ -224,6 +224,12 @@ enum ModifierBridge {
         return mask & rance10StreamerModeBit == 0
     }
 
+    static func streamerToggleState(in state: [String: Any], mask: Int32) -> Bool? {
+        guard let supported = state["streamerModeSupported"] as? NSNumber,
+              CFGetTypeID(supported) == CFBooleanGetTypeID(), supported.boolValue else { return nil }
+        return streamerMode(in: state, mask: mask)
+    }
+
     static func setStreamerMode(_ enabled: Bool) {
         let mask = lockMask(MODIFIER_LOCK_RANCE10)
         setLockMask(MODIFIER_LOCK_RANCE10, enabled ? mask & ~rance10StreamerModeBit : mask | rance10StreamerModeBit)
