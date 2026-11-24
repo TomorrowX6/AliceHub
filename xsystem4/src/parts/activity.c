@@ -2174,15 +2174,17 @@ static bool parse_binary_pact_stream(struct string *act_name, const uint8_t *buf
 		case 4: { // TextBox
 			int32_t tw = pbr_i32(r), th = pbr_i32(r);
 			(void)pbr_font40(r);
-			pbr_bool(r);
+			bool read_only = pbr_bool(r);
 			const char *ttxt = pbr_cstr(r);
-			pbr_i32(r);
+			int32_t max_length = pbr_i32(r);
 			for (int i = 0; i < 13; i++) pbr_i32(r);
 			pbr_cstr(r);
 			pbr_i32(r);
 			if (version >= 5) pbr_bool(r);
 			PE_SetSpecialComponentType(no, 4);
 			parts_set_dims(p, &p->states[0].common, tw, th);
+			PE_SetTextBoxReadOnly(no, read_only);
+			PE_SetTextBoxMaxTextLength(no, max_length);
 			struct string *ts = make_string(ttxt, (unsigned)strlen(ttxt));
 			PE_SetTextBoxText(no, ts);
 			free_string(ts);

@@ -10,6 +10,7 @@ from test_parts_render_regressions import ROOT, function
 
 FIXTURE = r'''
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,10 +50,23 @@ static void parts_msg_push(struct parts *p, int type, const char *fmt, ...) {
     fixed += type == PARTS_MSG_TEXT_FIXED;
 }
 static const struct input_text_handlers *legacy_text_handlers, *parts_text_handlers, *text_handlers;
+typedef struct { int code; void *data1; } SDL_UserEvent;
+static atomic_uint android_parts_text_session;
+struct android_parts_text { bool composing; int backspaces; char text[]; };
 '''
 
 SCENARIO = r'''
 static void legacy_commit(const char *text) { assert(!strcmp(text, "legacy")); }
+
+static void android_text(int session, const char *text, bool composing, int backspaces)
+{
+    struct android_parts_text *input = malloc(sizeof(*input) + strlen(text) + 1);
+    input->composing = composing;
+    input->backspaces = backspaces;
+    strcpy(input->text, text);
+    SDL_UserEvent event = { .code = session, .data1 = input };
+    dispatch_android_parts_text(&event);
+}
 
 int main(void)
 {
@@ -82,6 +96,18 @@ int main(void)
     text_handlers->key(VK_RETURN);
     assert(fixed == 1);
 
+    atomic_store(&android_parts_text_session, 2);
+    android_text(2, "A", false, 0);
+    android_text(2, "kana", true, 0);
+    assert(!strcmp(fields[0].text_box_text->text, "A") && changed == 5 && preview);
+    android_text(1, "B", false, 0);
+    android_text(2, "\xe4\xbb\xae\xe5\x90\x8d", false, 0);
+    assert(!strcmp(fields[0].text_box_text->text, "A\x81\xa2") && changed == 6 && !preview);
+    android_text(2, "", false, 1);
+    assert(!strcmp(fields[0].text_box_text->text, "A") && changed == 7);
+    android_text(2, "", false, 1);
+    assert(fields[0].text_box_text->size == 0 && changed == 8);
+
     input_set_legacy_text_handlers(&legacy);
     assert(text_handlers == &legacy);
     text_handlers->commit("legacy");
@@ -107,7 +133,8 @@ int main(void)
 class PartsTextBoxTests(unittest.TestCase):
     def test_focused_text_box_uses_sdl_and_keeps_legacy_input_separate(self):
         functions = {
-            'src/input.c': ['update_text_handlers', 'input_set_legacy_text_handlers', 'input_set_parts_text_handlers'],
+            'src/input.c': ['dispatch_android_parts_text', 'update_text_handlers',
+                            'input_set_legacy_text_handlers', 'input_set_parts_text_handlers'],
             'src/parts/widgets.c': ['PE_SetTextBoxText', 'PE_GetTextBoxText'],
             'src/parts/input.c': [
                 'text_box_can_edit', 'text_box_commit', 'text_box_edit', 'text_box_key',

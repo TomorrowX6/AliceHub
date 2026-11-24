@@ -875,6 +875,36 @@ static const struct input_text_handlers *legacy_text_handlers;
 static const struct input_text_handlers *parts_text_handlers;
 static const struct input_text_handlers *text_handlers;
 
+#ifdef __ANDROID__
+static uint32_t android_parts_text_event;
+static unsigned android_parts_text_generation;
+static atomic_uint android_parts_text_session;
+
+struct android_parts_text {
+	bool composing;
+	int backspaces;
+	char text[];
+};
+
+static void dispatch_android_parts_text(const SDL_UserEvent *event)
+{
+	struct android_parts_text *input = event->data1;
+	if ((unsigned)event->code == atomic_load(&android_parts_text_session)) {
+		if (input->composing) {
+			text_handlers->edit(input->text, 0, 0);
+		} else if (input->backspaces) {
+			for (int i = 0; i < input->backspaces; i++)
+				text_handlers->key(VK_BACK);
+		} else {
+			text_handlers->commit(input->text);
+			if (strpbrk(input->text, "\r\n"))
+				text_handlers->key(VK_RETURN);
+		}
+	}
+	free(input);
+}
+#endif
+
 static void update_text_handlers(void)
 {
 	const struct input_text_handlers *next = legacy_text_handlers ? legacy_text_handlers : parts_text_handlers;
@@ -885,6 +915,19 @@ static void update_text_handlers(void)
 	if (text_handlers)
 		SDL_StopTextInput();
 	text_handlers = next;
+#ifdef __ANDROID__
+	unsigned session = 0;
+	if (next && next == parts_text_handlers) {
+		if (!android_parts_text_event)
+			android_parts_text_event = SDL_RegisterEvents(1);
+		if (android_parts_text_event != (uint32_t)-1) {
+			if (++android_parts_text_generation == 0)
+				++android_parts_text_generation;
+			session = android_parts_text_generation;
+		}
+	}
+	atomic_store(&android_parts_text_session, session);
+#endif
 	if (text_handlers)
 		SDL_StartTextInput();
 }
@@ -2644,6 +2687,10 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 			last_keyevent_timestamp = now;
 			key_event(&ev->e.key, ev->e.type == SDL_KEYDOWN);
 			break;
+		default:
+			if (ev->e.type == android_parts_text_event)
+				dispatch_android_parts_text(&ev->e.user);
+			break;
 		}
 		STAILQ_REMOVE_HEAD(&deferred_keyevent_queue, entry);
 		free(ev);
@@ -3192,6 +3239,12 @@ void handle_window_events(void)
 				did_swap = true;
 			}
 			break;
+		default:
+#ifdef __ANDROID__
+			if (android_parts_text_event && e.type == android_parts_text_event)
+				free(e.user.data1);
+#endif
+			break;
 		}
 	}
 	finish_event_drain(did_swap, returned_foreground);
@@ -3412,6 +3465,17 @@ void handle_events(void)
 				text_handlers->edit(e.edit.text, e.edit.start, e.edit.length);
 			break;
 		default:
+#ifdef __ANDROID__
+			if (android_parts_text_event && e.type == android_parts_text_event) {
+				if (STAILQ_EMPTY(&deferred_keyevent_queue)) {
+					dispatch_android_parts_text(&e.user);
+				} else {
+					struct deferred_keyevent *ev = xmalloc(sizeof(*ev));
+					ev->e = e;
+					STAILQ_INSERT_TAIL(&deferred_keyevent_queue, ev, entry);
+				}
+			}
+#endif
 			break;
 		}
 	}
@@ -3837,6 +3901,34 @@ static jstring jni_new_string_utf8_safe(JNIEnv *env, const char *utf8)
 	if (u16 != stack_buf)
 		free(u16);
 	return ret;
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_XSystem4Activity_nativePartsTextInputSession(
+	JNIEnv *env, jobject activity)
+{
+	(void)env;
+	(void)activity;
+	return (jint)atomic_load(&android_parts_text_session);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_XSystem4Activity_sendPartsTextInput(
+	JNIEnv *env, jobject activity, jint session, jbyteArray text, jboolean composing, jint backspaces)
+{
+	(void)activity;
+	if (!session || (unsigned)session != atomic_load(&android_parts_text_session))
+		return;
+	jsize size = text ? (*env)->GetArrayLength(env, text) : 0;
+	struct android_parts_text *input = xmalloc(sizeof(*input) + (size_t)size + 1);
+	input->composing = composing;
+	input->backspaces = backspaces;
+	if (size)
+		(*env)->GetByteArrayRegion(env, text, 0, size, (jbyte *)input->text);
+	input->text[size] = '\0';
+	SDL_Event event = { .user = { .type = android_parts_text_event, .code = session, .data1 = input } };
+	if (SDL_PushEvent(&event) <= 0)
+		free(input);
 }
 
 JNIEXPORT void JNICALL

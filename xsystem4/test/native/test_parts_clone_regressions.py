@@ -41,7 +41,8 @@ FIXTURE = r'''
 #include "parts.h"
 #include "parts/parts_internal.h"
 #include "hll/iarray.h"
-#define CURRENT_SAVE_VERSION 32
+#define CURRENT_SAVE_VERSION 33
+#define MIN_SINGLE_PART_SAVE_VERSION 32
 #define PARTS_SAVED_FONTS (PARTS_NR_STATES + 1)
 struct numeral_font_map { int source, target; };
 bool parts_v2 = true, parts_multi_controller = false;
@@ -274,6 +275,33 @@ static void roundtrip(int version) {
     free_page(buf); for(int i=0;i<8;i++) parts_release(i);
     assert(updates>=4);
 }
+static void text_box_roundtrip(void) {
+    struct parts *src=parts_get(1);
+    src->component_type=4;
+    src->text_box_text=make_string("value",5);
+    src->text_box_read_only=true;
+    src->text_box_max_length=20;
+    struct page *buf=NULL;
+    assert(PE_SaveParts(1,&buf));
+    assert(PE_LoadParts(2,&buf));
+    struct parts *dst=parts_get(2);
+    assert(dst->component_type==4 && dst->text_box_read_only && dst->text_box_max_length==20);
+    assert(!strcmp(dst->text_box_text->text,"value"));
+
+    // Downgrade this record by removing the two v33 values before the empty
+    // motion list and empty comment.
+    assert(buf->values[buf->nr_vars-4].i==1 && buf->values[buf->nr_vars-3].i==20);
+    memmove(buf->values+buf->nr_vars-4,buf->values+buf->nr_vars-2,2*sizeof(*buf->values));
+    buf->nr_vars-=2;
+    buf->values[5].i=32;
+    buf->values[6].i=buf->nr_vars;
+    assert(PE_LoadParts(2,&buf));
+    dst=parts_get(2);
+    assert(!dst->text_box_read_only && dst->text_box_max_length==0);
+    assert(!strcmp(dst->text_box_text->text,"value"));
+    free_page(buf);
+    parts_release(1); parts_release(2);
+}
 static void numeral_roundtrip(void) {
     program.version=14;
     parts_nr_numeral_fonts=2;
@@ -323,6 +351,7 @@ static void numeral_roundtrip(void) {
 }
 int main(void) {
     roundtrip(10); roundtrip(12); roundtrip(14);
+    text_box_roundtrip();
     numeral_roundtrip();
     puts("detached visibility, alpha, Z, root position, sort and hitbox refresh: OK");
     puts("single-part save/load: legacy, AIN v12 and v14 roundtrips and invalid buffers: OK");
