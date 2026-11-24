@@ -150,6 +150,27 @@ object GameCatalog {
     const val ID_MANANA3 = "manana3"
     const val ID_MANANA4 = "manana4"
     const val ID_MANANA5 = "manana5"
+    const val ID_TSUMASAKURA = "tsumasakura"
+    const val ID_SHAMANSSANCTUARY = "shamanssanctuary"
+    const val ID_ALIVEZ = "alivez"
+    const val ID_DUNGEONSDOLLS = "dungeonsdolls"
+    const val ID_SUZUMIYA = "suzumiya"
+    const val ID_SHIMAIMA = "shimaima"
+    const val ID_DAIBANCHOUGAIDEN = "daibanchougaiden"
+    const val ID_COSPLAYLEMON = "cosplaylemon"
+    const val ID_WHIPHONEY = "whiphoney"
+    const val ID_ONIMUSU = "onimusu"
+    const val ID_PROGRX = "progrx"
+    const val ID_DPSVERN = "dpsvern"
+    const val ID_SUKIIRONO = "sukiirono"
+    const val ID_GIRLS = "girls"
+    const val ID_DEBUT = "debut"
+    const val ID_HARUKAVSESCA = "harukavsesca"
+    const val ID_HARUKANINJA = "harukaninja"
+    const val ID_MEGANE = "megane"
+    const val ID_RACHELSAKURA = "rachelsakura"
+    const val ID_SABAKUNIKA = "sabakunika"
+    const val ID_VANISHPALM = "vanishpalm"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -576,6 +597,12 @@ object GameCatalog {
         if (isGalzooGameFiles(fileNames)) {
             return ID_GALZOO
         }
+        if (isHarukaVsEscaGameFiles(fileNames, readSmallFile)) {
+            return ID_HARUKAVSESCA
+        }
+        if (isHarukaNinjaGameFiles(fileNames, readSmallFile)) {
+            return ID_HARUKANINJA
+        }
         if (isHarukaGameFiles(fileNames, readSmallFile)) {
             return ID_HARUKA
         }
@@ -632,6 +659,9 @@ object GameCatalog {
         }
         if (isTsumashiboriGameFiles(fileNames, readSmallFile)) {
             return ID_TSUMASHIBORI
+        }
+        if (isDaibanchouGaidenGameFiles(fileNames, readSmallFile)) {
+            return ID_DAIBANCHOUGAIDEN
         }
         if (isDaibanchouGameFiles(fileNames, readSmallFile)) {
             return ID_DAIBANCHOU
@@ -726,6 +756,9 @@ object GameCatalog {
         if (isEdoranzeGameFiles(fileNames, readSmallFile)) {
             return ID_EDORANZE
         }
+        if (isVanishPalmGameFiles(fileNames, readSmallFile)) {
+            return ID_VANISHPALM
+        }
         if (isVanishGameFiles(fileNames, readSmallFile)) {
             return ID_VANISH
         }
@@ -755,6 +788,57 @@ object GameCatalog {
         }
         if (isManana5GameFiles(fileNames, readSmallFile)) {
             return ID_MANANA5
+        }
+        if (isTsumaSakuraGameFiles(fileNames, readSmallFile)) {
+            return ID_TSUMASAKURA
+        }
+        if (isShamansSanctuaryGameFiles(fileNames, readSmallFile)) {
+            return ID_SHAMANSSANCTUARY
+        }
+        if (isAliveZGameFiles(fileNames, readSmallFile)) {
+            return ID_ALIVEZ
+        }
+        if (isDungeonsDollsGameFiles(fileNames, readSmallFile)) {
+            return ID_DUNGEONSDOLLS
+        }
+        if (isSuzumiyaGameFiles(fileNames, readSmallFile)) {
+            return ID_SUZUMIYA
+        }
+        if (isShimaimaGameFiles(fileNames, readSmallFile)) {
+            return ID_SHIMAIMA
+        }
+        if (isCosplayLemonGameFiles(fileNames, readSmallFile)) {
+            return ID_COSPLAYLEMON
+        }
+        if (isWhipHoneyGameFiles(fileNames, readSmallFile)) {
+            return ID_WHIPHONEY
+        }
+        if (isOnimusuGameFiles(fileNames, readSmallFile)) {
+            return ID_ONIMUSU
+        }
+        if (isProGrxGameFiles(fileNames, readSmallFile)) {
+            return ID_PROGRX
+        }
+        if (isDpsVerNGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSVERN
+        }
+        if (isSukiironoGameFiles(fileNames, readSmallFile)) {
+            return ID_SUKIIRONO
+        }
+        if (isGirlsGameFiles(fileNames, readSmallFile)) {
+            return ID_GIRLS
+        }
+        if (isDebutGameFiles(fileNames, readSmallFile)) {
+            return ID_DEBUT
+        }
+        if (isMeganeGameFiles(fileNames, readSmallFile)) {
+            return ID_MEGANE
+        }
+        if (isRachelSakuraGameFiles(fileNames, readSmallFile)) {
+            return ID_RACHELSAKURA
+        }
+        if (isSabakuNikaGameFiles(fileNames, readSmallFile)) {
+            return ID_SABAKUNIKA
         }
         if (isPascha3GameFiles(fileNames, readSmallFile)) {
             return ID_PASCHA3
@@ -1090,10 +1174,14 @@ object GameCatalog {
     fun isHarukaAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
+        val norm = nfkcLower(raw)
         val rawLower = raw.lowercase()
-        if (lower.contains("escalayer") || lower.contains("超昂天使") || lower.contains("エスカレイヤー") ||
-            lower.contains("ixseal") || lower.contains("超昂神騎") || lower.contains("超昂神骑") ||
-            lower.contains("エクシール") || lower.contains("beat angel") || lower.contains("beat valkyrie")
+        if (norm.contains("escalayer") || norm.contains("超昂天使") || norm.contains("エスカレイヤー") ||
+            norm.contains("ixseal") || norm.contains("超昂神騎") || norm.contains("超昂神骑") ||
+            norm.contains("エクシール") || norm.contains("beat angel") || norm.contains("beat valkyrie") ||
+            norm.contains("harukavsesca") || norm.contains("haruka vs") || norm.contains("ハルカvs") || norm.contains("遥vs") ||
+            norm.contains("harukaninja") || norm.contains("shippuu") || norm.contains("疾風") || norm.contains("疾风") ||
+            norm.contains("忍者大作戦") || norm.contains("忍者大作战") || norm.contains("忍者大作戰")
         ) {
             return false
         }
@@ -1115,6 +1203,7 @@ object GameCatalog {
         readSmallFile: ((String) -> ByteArray?)? = null
     ): Boolean {
         if (isSystem3xGameFiles(fileNames)) return false
+        if (isHarukaVsEscaGameFiles(fileNames, readSmallFile) || isHarukaNinjaGameFiles(fileNames, readSmallFile)) return false
         val sys4AinNames = fileNames.filter {
             it.endsWith(".ain", ignoreCase = true) && !it.equals("System39.ain", ignoreCase = true)
         }
@@ -1610,6 +1699,10 @@ object GameCatalog {
 
     fun isDaibanchouAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
+        val norm = nfkcLower(raw)
+        if (norm.contains("gaiden") || norm.contains("外伝") || norm.contains("外传") || norm.contains("外傳")) {
+            return false
+        }
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(raw).lowercase()
         val rawLower = raw.lowercase()
         return lower.contains("daibanchou") || lower.contains("daibancho") ||
@@ -4578,7 +4671,10 @@ object GameCatalog {
     fun isVanishAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
         val n = nfkcLower(raw)
-        if (n.contains("この手のひら") || n.contains("kono te no hira")) return false
+        if (n.contains("この手のひら") || n.contains("kono te no hira") ||
+            n.contains("vanishpalm") || n.contains("vanish_palm") ||
+            n.contains("ばにしゅ!番外") || n.contains("掌中奇缘") || n.contains("掌中奇緣")
+        ) return false
         return n.contains("vanish") || n.contains("ばにしゅ") ||
             n.contains("おっぱいの消えた王国") || n.contains("消失的王国") || n.contains("消失的王國")
     }
@@ -4817,6 +4913,543 @@ object GameCatalog {
     fun isManana5Alias(raw: String): Boolean = isMananaVolAlias(raw, 5)
     @JvmOverloads fun isManana5GameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean = isMananaVolGameFiles(5, fileNames, readSmallFile)
     fun isManana5GameDir(dir: File?): Boolean = dir?.isDirectory == true && isManana5GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isTsumaSakuraAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("tsumasakura") || n.contains("tsuma_sakura") || n.contains("tsuma-tachi no sakuragai") ||
+            n.contains("tsumatachi no sakuragai") || n.contains("妻たちの桜貝") || n.contains("妻们的樱贝") || n.contains("妻們的櫻貝")
+    }
+
+    @JvmOverloads
+    fun isTsumaSakuraGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "妻たちの桜貝.ain" || n == "妻たちの桜貝ga.ald" || n == "妻たちの桜貝ba.ald" || n == "妻たちの桜貝wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isTsumaSakuraAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isTsumaSakuraGameDir(dir: File?): Boolean = dir?.isDirectory == true && isTsumaSakuraGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isShamansSanctuaryAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("shamanssanctuary") || n.contains("shamans_sanctuary") || n.contains("shaman's sanctuary") ||
+            n.contains("miko no seiiki") || n.contains("しゃーまんず") || n.contains("さんくちゅあり") ||
+            n.contains("まんくちゅ") || n.contains("巫女の聖域") || n.contains("巫女的圣域") || n.contains("巫女的聖域")
+    }
+
+    @JvmOverloads
+    fun isShamansSanctuaryGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "まんくちゅ.ain" || n == "まんくちゅga.ald" || n == "まんくちゅba.ald" || n == "まんくちゅwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isShamansSanctuaryAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isShamansSanctuaryGameDir(dir: File?): Boolean = dir?.isDirectory == true && isShamansSanctuaryGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isAliveZAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("alivez") || n.contains("alive_z") || n.contains("alive-z")
+    }
+
+    @JvmOverloads
+    fun isAliveZGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "alivez.ain" || n == "alivezga.ald" || n == "alivezba.ald" || n == "alivezwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isAliveZAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isAliveZGameDir(dir: File?): Boolean = dir?.isDirectory == true && isAliveZGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDungeonsDollsAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dungeonsdolls") || n.contains("dungeons_dolls") || n.contains("dungeons & dolls") ||
+            n.contains("dungeons&dolls") || n.contains("dungeons and dolls") || n.contains("ドールズ")
+    }
+
+    @JvmOverloads
+    fun isDungeonsDollsGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ドールズ.ain" || n == "ドールズga.ald" || n == "ドールズba.ald" || n == "ドールズwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDungeonsDollsAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDungeonsDollsGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDungeonsDollsGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isSuzumiyaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("suzumiya") || n.contains("keimu shoukan") ||
+            n.contains("鈴宮刑務娼館") || n.contains("铃宫刑务娼馆") || n.contains("鈴宮刑務娼館")
+    }
+
+    @JvmOverloads
+    fun isSuzumiyaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "鈴宮刑務娼館.ain" || n == "鈴宮刑務娼館ga.ald" || n == "鈴宮刑務娼館ba.ald" || n == "鈴宮刑務娼館wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isSuzumiyaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isSuzumiyaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSuzumiyaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isShimaimaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("shimaima") || n.contains("しまいま") || n == "姐妹。" || n == "姐妹"
+    }
+
+    @JvmOverloads
+    fun isShimaimaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "しまいま.ain" || n == "しまいまga.ald" || n == "しまいまba.ald" || n == "しまいまwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isShimaimaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isShimaimaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isShimaimaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDaibanchouGaidenAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("daibanchougaiden") || n.contains("daibanchou_gaiden") ||
+            n.contains("daibanchou gaiden") || n.contains("daibanchou-gaiden") ||
+            n.contains("大番長外伝") || n.contains("大番长外传") || n.contains("大番長外傳")
+    }
+
+    @JvmOverloads
+    fun isDaibanchouGaidenGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "大番長外伝.ain" || n == "大番長外伝ga.ald" || n == "大番長外伝ba.ald" || n == "大番長外伝wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDaibanchouGaidenAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDaibanchouGaidenGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDaibanchouGaidenGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isCosplayLemonAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("cosplaylemon") || n.contains("cosplay_lemon") || n.contains("cosplay lemon") ||
+            n.contains("こすぷれれもん") || n.contains("コスプレれもん") || n.contains("cosplay柠檬") || n.contains("cosplay檸檬")
+    }
+
+    @JvmOverloads
+    fun isCosplayLemonGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "こすぷれれもん.ain" || n == "こすぷれれもんga.ald" || n == "こすぷれれもんba.ald" || n == "こすぷれれもんwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isCosplayLemonAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isCosplayLemonGameDir(dir: File?): Boolean = dir?.isDirectory == true && isCosplayLemonGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isWhipHoneyAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("whiphoney") || n.contains("whip_honey") || n.contains("whip honey") ||
+            n.contains("ほいっぷハニー") || n.contains("ホイップハニー") || n.contains("奶油哈尼")
+    }
+
+    @JvmOverloads
+    fun isWhipHoneyGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ほいっぷハニー.ain" || n == "ほいっぷハニーga.ald" || n == "ほいっぷハニーba.ald" || n == "ほいっぷハニーwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isWhipHoneyAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isWhipHoneyGameDir(dir: File?): Boolean = dir?.isDirectory == true && isWhipHoneyGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isOnimusuAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("onimusu") || n.contains("オニむス") || n == "鬼女"
+    }
+
+    @JvmOverloads
+    fun isOnimusuGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "オニむス.ain" || n == "オニむスga.ald" || n == "オニむスba.ald" || n == "オニむスwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isOnimusuAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isOnimusuGameDir(dir: File?): Boolean = dir?.isDirectory == true && isOnimusuGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isProGrxAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("progrx") || n.contains("pro_grx") || n.contains("pro grx") ||
+            n.contains("ぷろgrx") || n.contains("职业grx") || n.contains("職業grx")
+    }
+
+    @JvmOverloads
+    fun isProGrxGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ぷろgrx.ain" || n == "ぷろgrxga.ald" || n == "ぷろgrxba.ald" || n == "ぷろgrxwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isProGrxAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isProGrxGameDir(dir: File?): Boolean = dir?.isDirectory == true && isProGrxGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDpsVerNAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpsvern") || n.contains("dps_ver_n") || n.contains("dps ver_n") ||
+            n.contains("d.p.s. ver_n") || n.contains("d.p.s.ver_n") || n.contains("でーぴーえす")
+    }
+
+    @JvmOverloads
+    fun isDpsVerNGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "でーぴーえすver_n.ain" || n == "でーぴーえすver_nga.ald" || n == "でーぴーえすver_nba.ald" || n == "でーぴーえすver_nwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDpsVerNAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDpsVerNGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDpsVerNGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isSukiironoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("sukiirono") || n.contains("sukiiro") || n.contains("透色")
+    }
+
+    @JvmOverloads
+    fun isSukiironoGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "透色.ain" || n == "透色ga.ald" || n == "透色ba.ald" || n == "透色wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isSukiironoAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isSukiironoGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSukiironoGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isGirlsAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw).trim()
+        return Regex("(?<![a-z0-9])girls(?![a-z0-9])").containsMatchIn(n) ||
+            n.contains("girls.ain") || n.contains("girlsga.ald")
+    }
+
+    @JvmOverloads
+    fun isGirlsGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "girls.ain" || n == "girlsga.ald" || n == "girlsba.ald" || n == "girlswa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isGirlsAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isGirlsGameDir(dir: File?): Boolean = dir?.isDirectory == true && isGirlsGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDebutAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw).trim()
+        return Regex("(?<![a-z0-9])debut(?![a-z0-9])").containsMatchIn(n) ||
+            n.contains("debut.ain") || n.contains("debutga.ald")
+    }
+
+    @JvmOverloads
+    fun isDebutGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "debut.ain" || n == "debutga.ald" || n == "debutba.ald" || n == "debutwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDebutAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDebutGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDebutGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isHarukaVsEscaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("harukavsesca") || n.contains("haruka_vs_esca") ||
+            n.contains("haruka vs escalayer") || n.contains("haruka vs esca") ||
+            n.contains("ハルカvs") || n.contains("ハルカ vs") ||
+            n.contains("遥vs艾斯卡") || n.contains("遙vs艾斯卡") ||
+            ((n.contains("ハルカ") || n.contains("haruka") || n.contains("闪忍遥") || n.contains("閃忍遙")) &&
+                (n.contains("エスカレイヤー") || n.contains("escalayer") || n.contains("艾斯卡")))
+    }
+
+    @JvmOverloads
+    fun isHarukaVsEscaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ハルカvs.ain" || n == "ハルカvsga.ald" || n == "ハルカvsgb.ald" || n == "ハルカvsba.ald" || n == "ハルカvswa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isHarukaVsEscaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isHarukaVsEscaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isHarukaVsEscaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isHarukaNinjaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("harukaninja") || n.contains("haruka_ninja") ||
+            n.contains("shippuu!? ninja") || n.contains("ninja dai sakusen") ||
+            n.contains("疾風!?忍者大作戦") || n.contains("疾风!?忍者大作战") ||
+            n.contains("疾風!?忍者大作戰") || n.contains("忍者大作戦") || n.contains("忍者大作战")
+    }
+
+    @JvmOverloads
+    fun isHarukaNinjaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "疾風!?忍者大作戦.ain" || n == "疾風!?忍者大作戦ga.ald" ||
+                    n == "疾風!?忍者大作戦gb.ald" || n == "疾風!?忍者大作戦ba.ald" || n == "疾風!?忍者大作戦wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isHarukaNinjaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isHarukaNinjaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isHarukaNinjaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isMeganeAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("megane no mei") || Regex("(?<![a-z0-9])megane(?![a-z0-9])").containsMatchIn(n) ||
+            n.contains("眼鏡のメイ") || n.contains("眼镜梅与暑假") || n.contains("眼鏡梅與暑假")
+    }
+
+    @JvmOverloads
+    fun isMeganeGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "眼鏡のメイと夏休み.ain" || n == "眼鏡のメイと夏休みga.ald" ||
+                    n == "眼鏡のメイと夏休みba.ald" || n == "眼鏡のメイと夏休みwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isMeganeAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isMeganeGameDir(dir: File?): Boolean = dir?.isDirectory == true && isMeganeGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isRachelSakuraAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("rachelsakura") || n.contains("rachel_sakura") ||
+            n.contains("rachell no sakuragai") || n.contains("rachel no sakuragai") ||
+            n.contains("レイチェルの桜貝") || n.contains("蕾切尔的樱贝") || n.contains("蕾切爾的櫻貝")
+    }
+
+    @JvmOverloads
+    fun isRachelSakuraGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "レイチェルの桜貝.ain" || n == "レイチェルの桜貝ga.ald" ||
+                    n == "レイチェルの桜貝ba.ald" || n == "レイチェルの桜貝wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isRachelSakuraAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isRachelSakuraGameDir(dir: File?): Boolean = dir?.isDirectory == true && isRachelSakuraGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isSabakuNikaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("sabakunika") || n.contains("sabaku_nika") || n.contains("sabaku no nikka") ||
+            n.contains("砂漠のニッカ") || n.contains("沙漠的妮卡")
+    }
+
+    @JvmOverloads
+    fun isSabakuNikaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "砂漠のニッカ.ain" || n == "砂漠のニッカga.ald" ||
+                    n == "砂漠のニッカba.ald" || n == "砂漠のニッカwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isSabakuNikaAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isSabakuNikaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSabakuNikaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isVanishPalmAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("vanishpalm") || n.contains("vanish_palm") ||
+            n.contains("この手のひらにおっぱい") || n.contains("この手のひら") ||
+            n.contains("kono te no hira") || n.contains("ばにしゅ!番外") ||
+            n.contains("掌中奇缘") || n.contains("掌中奇緣")
+    }
+
+    @JvmOverloads
+    fun isVanishPalmGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ばにしゅ!番外.ain" || n == "ばにしゅ!番外ga.ald" ||
+                    n == "ばにしゅ!番外ba.ald" || n == "ばにしゅ!番外wa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isVanishPalmAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isVanishPalmGameDir(dir: File?): Boolean = dir?.isDirectory == true && isVanishPalmGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
 
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
@@ -5206,6 +5839,12 @@ object GameCatalog {
         if (isEscalayerRebootAlias(lowerDir)) {
             return ID_ESCALAYER_REBOOT
         }
+        if (isHarukaVsEscaAlias(dirName)) {
+            return ID_HARUKAVSESCA
+        }
+        if (isHarukaNinjaAlias(dirName)) {
+            return ID_HARUKANINJA
+        }
         if (lowerDir == "escalayer" || lowerDir.startsWith("escalayer-") || lowerDir.contains("escalayer") ||
             lowerDir.contains("超昂天使") || lowerDir.contains("エスカレイヤー")
         ) {
@@ -5234,6 +5873,9 @@ object GameCatalog {
         }
         if (isTsumashiboriAlias(dirName)) {
             return ID_TSUMASHIBORI
+        }
+        if (isDaibanchouGaidenAlias(dirName)) {
+            return ID_DAIBANCHOUGAIDEN
         }
         if (isDaibanchouAlias(dirName)) {
             return ID_DAIBANCHOU
@@ -5409,6 +6051,9 @@ object GameCatalog {
         if (isEdoranzeAlias(dirName)) {
             return ID_EDORANZE
         }
+        if (isVanishPalmAlias(dirName)) {
+            return ID_VANISHPALM
+        }
         if (isVanishAlias(dirName)) {
             return ID_VANISH
         }
@@ -5439,6 +6084,57 @@ object GameCatalog {
         if (isManana5Alias(dirName)) {
             return ID_MANANA5
         }
+        if (isTsumaSakuraAlias(dirName)) {
+            return ID_TSUMASAKURA
+        }
+        if (isShamansSanctuaryAlias(dirName)) {
+            return ID_SHAMANSSANCTUARY
+        }
+        if (isAliveZAlias(dirName)) {
+            return ID_ALIVEZ
+        }
+        if (isDungeonsDollsAlias(dirName)) {
+            return ID_DUNGEONSDOLLS
+        }
+        if (isSuzumiyaAlias(dirName)) {
+            return ID_SUZUMIYA
+        }
+        if (isShimaimaAlias(dirName)) {
+            return ID_SHIMAIMA
+        }
+        if (isCosplayLemonAlias(dirName)) {
+            return ID_COSPLAYLEMON
+        }
+        if (isWhipHoneyAlias(dirName)) {
+            return ID_WHIPHONEY
+        }
+        if (isOnimusuAlias(dirName)) {
+            return ID_ONIMUSU
+        }
+        if (isProGrxAlias(dirName)) {
+            return ID_PROGRX
+        }
+        if (isDpsVerNAlias(dirName)) {
+            return ID_DPSVERN
+        }
+        if (isSukiironoAlias(dirName)) {
+            return ID_SUKIIRONO
+        }
+        if (isGirlsAlias(dirName)) {
+            return ID_GIRLS
+        }
+        if (isDebutAlias(dirName)) {
+            return ID_DEBUT
+        }
+        if (isMeganeAlias(dirName)) {
+            return ID_MEGANE
+        }
+        if (isRachelSakuraAlias(dirName)) {
+            return ID_RACHELSAKURA
+        }
+        if (isSabakuNikaAlias(dirName)) {
+            return ID_SABAKUNIKA
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -5465,6 +6161,12 @@ object GameCatalog {
         val lowerDisp = displayName?.let { ArchiveExtractor.repairSjisAsGbkMojibake(it) }?.lowercase() ?: ""
         if (isEscalayerRebootAlias(lowerDisp)) {
             return ID_ESCALAYER_REBOOT
+        }
+        if (!displayName.isNullOrBlank() && isHarukaVsEscaAlias(displayName)) {
+            return ID_HARUKAVSESCA
+        }
+        if (!displayName.isNullOrBlank() && isHarukaNinjaAlias(displayName)) {
+            return ID_HARUKANINJA
         }
         if (lowerDisp.contains("escalayer") || lowerDisp.contains("超昂天使") ||
             lowerDisp.contains("エスカレイヤー") || lowerDisp.contains("艾斯卡蕾雅")
@@ -5494,6 +6196,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isTsumashiboriAlias(displayName)) {
             return ID_TSUMASHIBORI
+        }
+        if (!displayName.isNullOrBlank() && isDaibanchouGaidenAlias(displayName)) {
+            return ID_DAIBANCHOUGAIDEN
         }
         if (!displayName.isNullOrBlank() && isDaibanchouAlias(displayName)) {
             return ID_DAIBANCHOU
@@ -5669,6 +6374,9 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isEdoranzeAlias(displayName)) {
             return ID_EDORANZE
         }
+        if (!displayName.isNullOrBlank() && isVanishPalmAlias(displayName)) {
+            return ID_VANISHPALM
+        }
         if (!displayName.isNullOrBlank() && isVanishAlias(displayName)) {
             return ID_VANISH
         }
@@ -5698,6 +6406,57 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isManana5Alias(displayName)) {
             return ID_MANANA5
+        }
+        if (!displayName.isNullOrBlank() && isTsumaSakuraAlias(displayName)) {
+            return ID_TSUMASAKURA
+        }
+        if (!displayName.isNullOrBlank() && isShamansSanctuaryAlias(displayName)) {
+            return ID_SHAMANSSANCTUARY
+        }
+        if (!displayName.isNullOrBlank() && isAliveZAlias(displayName)) {
+            return ID_ALIVEZ
+        }
+        if (!displayName.isNullOrBlank() && isDungeonsDollsAlias(displayName)) {
+            return ID_DUNGEONSDOLLS
+        }
+        if (!displayName.isNullOrBlank() && isSuzumiyaAlias(displayName)) {
+            return ID_SUZUMIYA
+        }
+        if (!displayName.isNullOrBlank() && isShimaimaAlias(displayName)) {
+            return ID_SHIMAIMA
+        }
+        if (!displayName.isNullOrBlank() && isCosplayLemonAlias(displayName)) {
+            return ID_COSPLAYLEMON
+        }
+        if (!displayName.isNullOrBlank() && isWhipHoneyAlias(displayName)) {
+            return ID_WHIPHONEY
+        }
+        if (!displayName.isNullOrBlank() && isOnimusuAlias(displayName)) {
+            return ID_ONIMUSU
+        }
+        if (!displayName.isNullOrBlank() && isProGrxAlias(displayName)) {
+            return ID_PROGRX
+        }
+        if (!displayName.isNullOrBlank() && isDpsVerNAlias(displayName)) {
+            return ID_DPSVERN
+        }
+        if (!displayName.isNullOrBlank() && isSukiironoAlias(displayName)) {
+            return ID_SUKIIRONO
+        }
+        if (!displayName.isNullOrBlank() && isGirlsAlias(displayName)) {
+            return ID_GIRLS
+        }
+        if (!displayName.isNullOrBlank() && isDebutAlias(displayName)) {
+            return ID_DEBUT
+        }
+        if (!displayName.isNullOrBlank() && isMeganeAlias(displayName)) {
+            return ID_MEGANE
+        }
+        if (!displayName.isNullOrBlank() && isRachelSakuraAlias(displayName)) {
+            return ID_RACHELSAKURA
+        }
+        if (!displayName.isNullOrBlank() && isSabakuNikaAlias(displayName)) {
+            return ID_SABAKUNIKA
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -7435,6 +8194,321 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_TSUMASAKURA -> GameDescriptor(
+                id = ID_TSUMASAKURA,
+                title = stringResolver(R.string.game_tsumasakura_title),
+                defaultDirName = "TsumaSakura",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tsumasakura,
+                accentColor = 0xFFF48FB1.toInt(),
+                accentBorderColor = 0x66F8BBD0,
+                iconFrameColor = 0xFF2E1622.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.TSUMASAKURA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SHAMANSSANCTUARY -> GameDescriptor(
+                id = ID_SHAMANSSANCTUARY,
+                title = stringResolver(R.string.game_shamanssanctuary_title),
+                defaultDirName = "ShamansSanctuary",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_shamanssanctuary,
+                accentColor = 0xFFE53935.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2E1114.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SHAMANSSANCTUARY_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_ALIVEZ -> GameDescriptor(
+                id = ID_ALIVEZ,
+                title = stringResolver(R.string.game_alivez_title),
+                defaultDirName = "AliveZ",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_alivez,
+                accentColor = 0xFF26C6DA.toInt(),
+                accentBorderColor = 0x6680DEEA,
+                iconFrameColor = 0xFF0E252B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ALIVEZ_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DUNGEONSDOLLS -> GameDescriptor(
+                id = ID_DUNGEONSDOLLS,
+                title = stringResolver(R.string.game_dungeonsdolls_title),
+                defaultDirName = "DungeonsDolls",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dungeonsdolls,
+                accentColor = 0xFF7E57C2.toInt(),
+                accentBorderColor = 0x66B39DDB,
+                iconFrameColor = 0xFF1E1630.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DUNGEONSDOLLS_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SUZUMIYA -> GameDescriptor(
+                id = ID_SUZUMIYA,
+                title = stringResolver(R.string.game_suzumiya_title),
+                defaultDirName = "Suzumiya",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_suzumiya,
+                accentColor = 0xFF8D6E63.toInt(),
+                accentBorderColor = 0x66BCAAA4,
+                iconFrameColor = 0xFF241B18.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SUZUMIYA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SHIMAIMA -> GameDescriptor(
+                id = ID_SHIMAIMA,
+                title = stringResolver(R.string.game_shimaima_title),
+                defaultDirName = "Shimaima",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_shimaima,
+                accentColor = 0xFFEC407A.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2D1220.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SHIMAIMA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DAIBANCHOUGAIDEN -> GameDescriptor(
+                id = ID_DAIBANCHOUGAIDEN,
+                title = stringResolver(R.string.game_daibanchougaiden_title),
+                defaultDirName = "DaibanchouGaiden",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_daibanchougaiden,
+                accentColor = 0xFFFF7043.toInt(),
+                accentBorderColor = 0x66FFAB91,
+                iconFrameColor = 0xFF2E1710.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DAIBANCHOUGAIDEN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_COSPLAYLEMON -> GameDescriptor(
+                id = ID_COSPLAYLEMON,
+                title = stringResolver(R.string.game_cosplaylemon_title),
+                defaultDirName = "CosplayLemon",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_cosplaylemon,
+                accentColor = 0xFFFDD835.toInt(),
+                accentBorderColor = 0x66FFF59D,
+                iconFrameColor = 0xFF2E280D.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.COSPLAYLEMON_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_WHIPHONEY -> GameDescriptor(
+                id = ID_WHIPHONEY,
+                title = stringResolver(R.string.game_whiphoney_title),
+                defaultDirName = "WhipHoney",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_whiphoney,
+                accentColor = 0xFFFFB74D.toInt(),
+                accentBorderColor = 0x66FFE0B2,
+                iconFrameColor = 0xFF2E2110.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.WHIPHONEY_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_ONIMUSU -> GameDescriptor(
+                id = ID_ONIMUSU,
+                title = stringResolver(R.string.game_onimusu_title),
+                defaultDirName = "Onimusu",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_onimusu,
+                accentColor = 0xFFD84315.toInt(),
+                accentBorderColor = 0x66FF8A65,
+                iconFrameColor = 0xFF2E150E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.ONIMUSU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_PROGRX -> GameDescriptor(
+                id = ID_PROGRX,
+                title = stringResolver(R.string.game_progrx_title),
+                defaultDirName = "ProGrx",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_progrx,
+                accentColor = 0xFF42A5F5.toInt(),
+                accentBorderColor = 0x6690CAF9,
+                iconFrameColor = 0xFF112233.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.PROGRX_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSVERN -> GameDescriptor(
+                id = ID_DPSVERN,
+                title = stringResolver(R.string.game_dpsvern_title),
+                defaultDirName = "DpsVerN",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpsvern,
+                accentColor = 0xFF26A69A.toInt(),
+                accentBorderColor = 0x6680CBC4,
+                iconFrameColor = 0xFF0E2926.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSVERN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SUKIIRONO -> GameDescriptor(
+                id = ID_SUKIIRONO,
+                title = stringResolver(R.string.game_sukiirono_title),
+                defaultDirName = "Sukiirono",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_sukiirono,
+                accentColor = 0xFF29B6F6.toInt(),
+                accentBorderColor = 0x6681D4FA,
+                iconFrameColor = 0xFF102430.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SUKIIRONO_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_GIRLS -> GameDescriptor(
+                id = ID_GIRLS,
+                title = stringResolver(R.string.game_girls_title),
+                defaultDirName = "Girls",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_girls,
+                accentColor = 0xFFF06292.toInt(),
+                accentBorderColor = 0x66F8BBD0,
+                iconFrameColor = 0xFF2E1420.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.GIRLS_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DEBUT -> GameDescriptor(
+                id = ID_DEBUT,
+                title = stringResolver(R.string.game_debut_title),
+                defaultDirName = "Debut",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_debut,
+                accentColor = 0xFF66BB6A.toInt(),
+                accentBorderColor = 0x66A5D6A7,
+                iconFrameColor = 0xFF142917.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DEBUT_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_HARUKAVSESCA -> GameDescriptor(
+                id = ID_HARUKAVSESCA,
+                title = stringResolver(R.string.game_harukavsesca_title),
+                defaultDirName = "HarukaVsEsca",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_harukavsesca,
+                accentColor = 0xFFAB47BC.toInt(),
+                accentBorderColor = 0x66CE93D8,
+                iconFrameColor = 0xFF26122B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.HARUKAVSESCA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_HARUKANINJA -> GameDescriptor(
+                id = ID_HARUKANINJA,
+                title = stringResolver(R.string.game_harukaninja_title),
+                defaultDirName = "HarukaNinja",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_harukaninja,
+                accentColor = 0xFFFFA726.toInt(),
+                accentBorderColor = 0x66FFCC80,
+                iconFrameColor = 0xFF2E1F0E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.HARUKANINJA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_MEGANE -> GameDescriptor(
+                id = ID_MEGANE,
+                title = stringResolver(R.string.game_megane_title),
+                defaultDirName = "Megane",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_megane,
+                accentColor = 0xFFE57373.toInt(),
+                accentBorderColor = 0x66FFCDD2,
+                iconFrameColor = 0xFF2D1616.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.MEGANE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RACHELSAKURA -> GameDescriptor(
+                id = ID_RACHELSAKURA,
+                title = stringResolver(R.string.game_rachelsakura_title),
+                defaultDirName = "RachelSakura",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rachelsakura,
+                accentColor = 0xFF26A69A.toInt(),
+                accentBorderColor = 0x6680CBC4,
+                iconFrameColor = 0xFF0E2926.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RACHELSAKURA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SABAKUNIKA -> GameDescriptor(
+                id = ID_SABAKUNIKA,
+                title = stringResolver(R.string.game_sabakunika_title),
+                defaultDirName = "SabakuNika",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_sabakunika,
+                accentColor = 0xFF3F51B5.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF141930.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.SABAKUNIKA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_VANISHPALM -> GameDescriptor(
+                id = ID_VANISHPALM,
+                title = stringResolver(R.string.game_vanishpalm_title),
+                defaultDirName = "VanishPalm",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_vanishpalm,
+                accentColor = 0xFFEF5350.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2E1414.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.VANISHPALM_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -7566,7 +8640,28 @@ object GameCatalog {
         ID_MANANA2,
         ID_MANANA3,
         ID_MANANA4,
-        ID_MANANA5
+        ID_MANANA5,
+        ID_TSUMASAKURA,
+        ID_SHAMANSSANCTUARY,
+        ID_ALIVEZ,
+        ID_DUNGEONSDOLLS,
+        ID_SUZUMIYA,
+        ID_SHIMAIMA,
+        ID_DAIBANCHOUGAIDEN,
+        ID_COSPLAYLEMON,
+        ID_WHIPHONEY,
+        ID_ONIMUSU,
+        ID_PROGRX,
+        ID_DPSVERN,
+        ID_SUKIIRONO,
+        ID_GIRLS,
+        ID_DEBUT,
+        ID_HARUKAVSESCA,
+        ID_HARUKANINJA,
+        ID_MEGANE,
+        ID_RACHELSAKURA,
+        ID_SABAKUNIKA,
+        ID_VANISHPALM
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

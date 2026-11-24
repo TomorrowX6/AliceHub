@@ -407,6 +407,27 @@ object OnlineInstaller {
     const val MANANA3_CDN_URL = "https://alicehub.000.moe/manana3"
     const val MANANA4_CDN_URL = "https://alicehub.000.moe/manana4"
     const val MANANA5_CDN_URL = "https://alicehub.000.moe/manana5"
+    const val TSUMASAKURA_CDN_URL = "https://alicehub.000.moe/tsumasakura"
+    const val SHAMANSSANCTUARY_CDN_URL = "https://alicehub.000.moe/shamanssanctuary"
+    const val ALIVEZ_CDN_URL = "https://alicehub.000.moe/alivez"
+    const val DUNGEONSDOLLS_CDN_URL = "https://alicehub.000.moe/dungeonsdolls"
+    const val SUZUMIYA_CDN_URL = "https://alicehub.000.moe/suzumiya"
+    const val SHIMAIMA_CDN_URL = "https://alicehub.000.moe/shimaima"
+    const val DAIBANCHOUGAIDEN_CDN_URL = "https://alicehub.000.moe/daibanchougaiden"
+    const val COSPLAYLEMON_CDN_URL = "https://alicehub.000.moe/cosplaylemon"
+    const val WHIPHONEY_CDN_URL = "https://alicehub.000.moe/whiphoney"
+    const val ONIMUSU_CDN_URL = "https://alicehub.000.moe/onimusu"
+    const val PROGRX_CDN_URL = "https://alicehub.000.moe/progrx"
+    const val DPSVERN_CDN_URL = "https://alicehub.000.moe/dpsvern"
+    const val SUKIIRONO_CDN_URL = "https://alicehub.000.moe/sukiirono"
+    const val GIRLS_CDN_URL = "https://alicehub.000.moe/girls"
+    const val DEBUT_CDN_URL = "https://alicehub.000.moe/debut"
+    const val HARUKAVSESCA_CDN_URL = "https://alicehub.000.moe/harukavsesca"
+    const val HARUKANINJA_CDN_URL = "https://alicehub.000.moe/harukaninja"
+    const val MEGANE_CDN_URL = "https://alicehub.000.moe/megane"
+    const val RACHELSAKURA_CDN_URL = "https://alicehub.000.moe/rachelsakura"
+    const val SABAKUNIKA_CDN_URL = "https://alicehub.000.moe/sabakunika"
+    const val VANISHPALM_CDN_URL = "https://alicehub.000.moe/vanishpalm"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1836,6 +1857,27 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_MANANA3 -> sanitizedManifestBase.ifEmpty { "Manana3" }
             classifiedStagedId == GameCatalog.ID_MANANA4 -> sanitizedManifestBase.ifEmpty { "Manana4" }
             classifiedStagedId == GameCatalog.ID_MANANA5 -> sanitizedManifestBase.ifEmpty { "Manana5" }
+            classifiedStagedId == GameCatalog.ID_TSUMASAKURA -> sanitizedManifestBase.ifEmpty { "TsumaSakura" }
+            classifiedStagedId == GameCatalog.ID_SHAMANSSANCTUARY -> sanitizedManifestBase.ifEmpty { "ShamansSanctuary" }
+            classifiedStagedId == GameCatalog.ID_ALIVEZ -> sanitizedManifestBase.ifEmpty { "AliveZ" }
+            classifiedStagedId == GameCatalog.ID_DUNGEONSDOLLS -> sanitizedManifestBase.ifEmpty { "DungeonsDolls" }
+            classifiedStagedId == GameCatalog.ID_SUZUMIYA -> sanitizedManifestBase.ifEmpty { "Suzumiya" }
+            classifiedStagedId == GameCatalog.ID_SHIMAIMA -> sanitizedManifestBase.ifEmpty { "Shimaima" }
+            classifiedStagedId == GameCatalog.ID_DAIBANCHOUGAIDEN -> sanitizedManifestBase.ifEmpty { "DaibanchouGaiden" }
+            classifiedStagedId == GameCatalog.ID_COSPLAYLEMON -> sanitizedManifestBase.ifEmpty { "CosplayLemon" }
+            classifiedStagedId == GameCatalog.ID_WHIPHONEY -> sanitizedManifestBase.ifEmpty { "WhipHoney" }
+            classifiedStagedId == GameCatalog.ID_ONIMUSU -> sanitizedManifestBase.ifEmpty { "Onimusu" }
+            classifiedStagedId == GameCatalog.ID_PROGRX -> sanitizedManifestBase.ifEmpty { "ProGrx" }
+            classifiedStagedId == GameCatalog.ID_DPSVERN -> sanitizedManifestBase.ifEmpty { "DpsVerN" }
+            classifiedStagedId == GameCatalog.ID_SUKIIRONO -> sanitizedManifestBase.ifEmpty { "Sukiirono" }
+            classifiedStagedId == GameCatalog.ID_GIRLS -> sanitizedManifestBase.ifEmpty { "Girls" }
+            classifiedStagedId == GameCatalog.ID_DEBUT -> sanitizedManifestBase.ifEmpty { "Debut" }
+            classifiedStagedId == GameCatalog.ID_HARUKAVSESCA -> sanitizedManifestBase.ifEmpty { "HarukaVsEsca" }
+            classifiedStagedId == GameCatalog.ID_HARUKANINJA -> sanitizedManifestBase.ifEmpty { "HarukaNinja" }
+            classifiedStagedId == GameCatalog.ID_MEGANE -> sanitizedManifestBase.ifEmpty { "Megane" }
+            classifiedStagedId == GameCatalog.ID_RACHELSAKURA -> sanitizedManifestBase.ifEmpty { "RachelSakura" }
+            classifiedStagedId == GameCatalog.ID_SABAKUNIKA -> sanitizedManifestBase.ifEmpty { "SabakuNika" }
+            classifiedStagedId == GameCatalog.ID_VANISHPALM -> sanitizedManifestBase.ifEmpty { "VanishPalm" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2198,9 +2240,18 @@ object OnlineInstaller {
                     GameCatalog.ID_DAIAKUJI -> lower.contains("daiakuji") ||
                         lower.contains("大悪司") ||
                         lower.contains("大恶司")
-                    GameCatalog.ID_DAIBANCHOU -> lower.contains("daibanchou") ||
+                    GameCatalog.ID_DAIBANCHOUGAIDEN -> lower.contains("daibanchougaiden") ||
+                        lower.contains("daibanchou_gaiden") ||
+                        lower.contains("大番長外伝") ||
+                        lower.contains("大番长外传") ||
+                        lower.contains("大番長外傳")
+                    GameCatalog.ID_DAIBANCHOU -> (lower.contains("daibanchou") ||
                         lower.contains("大番長") ||
-                        lower.contains("大番长")
+                        lower.contains("大番长")) &&
+                        !lower.contains("gaiden") &&
+                        !lower.contains("外伝") &&
+                        !lower.contains("外传") &&
+                        !lower.contains("外傳")
                     GameCatalog.ID_DAITEIKOKU -> lower.contains("daiteikoku") ||
                         lower.contains("大帝国") ||
                         lower.contains("大帝國")
@@ -2462,8 +2513,19 @@ object OnlineInstaller {
                     GameCatalog.ID_EDORANZE -> lower.contains("edoranze") ||
                         lower.contains("エドランゼ") ||
                         lower.contains("江户乱世")
-                    GameCatalog.ID_VANISH -> lower.contains("vanish") ||
-                        lower.contains("ばにしゅ")
+                    GameCatalog.ID_VANISHPALM -> lower.contains("vanishpalm") ||
+                        lower.contains("vanish_palm") ||
+                        lower.contains("この手のひら") ||
+                        lower.contains("ばにしゅ！番外") ||
+                        lower.contains("ばにしゅ!番外") ||
+                        lower.contains("掌中奇缘")
+                    GameCatalog.ID_VANISH -> (lower.contains("vanish") ||
+                        lower.contains("ばにしゅ")) &&
+                        !lower.contains("vanishpalm") &&
+                        !lower.contains("vanish_palm") &&
+                        !lower.contains("この手のひら") &&
+                        !lower.contains("番外") &&
+                        !lower.contains("掌中")
                     GameCatalog.ID_HOKENSHITSU -> lower.contains("hokenshitsu") ||
                         lower.contains("僕だけの保健室") ||
                         lower.contains("只属于我的保健室")
@@ -2541,16 +2603,98 @@ object OnlineInstaller {
                     GameCatalog.ID_ESCALAYER -> lower.contains("escalayer") &&
                         !lower.contains("escalayerreboot") &&
                         !lower.contains("escalayer_reboot") &&
-                        !lower.contains("reboot")
+                        !lower.contains("reboot") &&
+                        !lower.contains("haruka") &&
+                        !lower.contains("ハルカ")
                     GameCatalog.ID_ESCALAYER_REBOOT -> lower.contains("escalayerreboot") ||
                         lower.contains("escalayer_reboot") ||
                         (lower.contains("escalayer") && lower.contains("reboot"))
                     GameCatalog.ID_GALZOO -> lower.contains("galzoo")
                     GameCatalog.ID_IXSEAL -> lower.contains("ixseal")
-                    GameCatalog.ID_HARUKA -> lower.contains("haruka") ||
+                    GameCatalog.ID_HARUKAVSESCA -> lower.contains("harukavsesca") ||
+                        lower.contains("haruka_vs_esca") ||
+                        lower.contains("ハルカvs") ||
+                        lower.contains("遥vs")
+                    GameCatalog.ID_HARUKANINJA -> lower.contains("harukaninja") ||
+                        lower.contains("haruka_ninja") ||
+                        lower.contains("疾風") ||
+                        lower.contains("疾风") ||
+                        lower.contains("忍者大作戦") ||
+                        lower.contains("忍者大作战")
+                    GameCatalog.ID_HARUKA -> (lower.contains("haruka") ||
                         lower.contains("超昂閃忍") ||
                         lower.contains("超昂闪忍") ||
-                        lower.contains("ハルカ")
+                        lower.contains("ハルカ")) &&
+                        !lower.contains("harukavsesca") &&
+                        !lower.contains("haruka_vs") &&
+                        !lower.contains("harukaninja") &&
+                        !lower.contains("haruka_ninja") &&
+                        !lower.contains("escalayer") &&
+                        !lower.contains("エスカレイヤー") &&
+                        !lower.contains("ハルカvs") &&
+                        !lower.contains("遥vs") &&
+                        !lower.contains("疾風") &&
+                        !lower.contains("疾风") &&
+                        !lower.contains("忍者大作戦") &&
+                        !lower.contains("忍者大作战")
+                    GameCatalog.ID_TSUMASAKURA -> lower.contains("tsumasakura") ||
+                        lower.contains("tsuma_sakura") ||
+                        lower.contains("妻たちの桜貝") ||
+                        lower.contains("妻们的樱贝")
+                    GameCatalog.ID_SHAMANSSANCTUARY -> lower.contains("shamanssanctuary") ||
+                        lower.contains("shamans_sanctuary") ||
+                        lower.contains("しゃーまんず") ||
+                        lower.contains("まんくちゅ") ||
+                        lower.contains("巫女の聖域") ||
+                        lower.contains("巫女的圣域")
+                    GameCatalog.ID_ALIVEZ -> lower.contains("alivez") ||
+                        lower.contains("alive_z") ||
+                        lower.contains("ａｌｉｖｅｚ")
+                    GameCatalog.ID_DUNGEONSDOLLS -> lower.contains("dungeonsdolls") ||
+                        lower.contains("dungeons_dolls") ||
+                        lower.contains("dungeons & dolls") ||
+                        lower.contains("ドールズ")
+                    GameCatalog.ID_SUZUMIYA -> lower.contains("suzumiya") ||
+                        lower.contains("鈴宮刑務娼館") ||
+                        lower.contains("铃宫刑务娼馆")
+                    GameCatalog.ID_SHIMAIMA -> lower.contains("shimaima") ||
+                        lower.contains("しまいま")
+                    GameCatalog.ID_COSPLAYLEMON -> lower.contains("cosplaylemon") ||
+                        lower.contains("cosplay_lemon") ||
+                        lower.contains("こすぷれれもん") ||
+                        lower.contains("cosplay柠檬")
+                    GameCatalog.ID_WHIPHONEY -> lower.contains("whiphoney") ||
+                        lower.contains("whip_honey") ||
+                        lower.contains("ほいっぷハニー") ||
+                        lower.contains("奶油哈尼")
+                    GameCatalog.ID_ONIMUSU -> lower.contains("onimusu") ||
+                        lower.contains("オニむス")
+                    GameCatalog.ID_PROGRX -> lower.contains("progrx") ||
+                        lower.contains("pro_grx") ||
+                        lower.contains("ぷろgrx") ||
+                        lower.contains("ぷろｇｒｘ") ||
+                        lower.contains("职业grx")
+                    GameCatalog.ID_DPSVERN -> lower.contains("dpsvern") ||
+                        lower.contains("dps_ver_n") ||
+                        lower.contains("でーぴーえす")
+                    GameCatalog.ID_SUKIIRONO -> lower.contains("sukiirono") ||
+                        lower.contains("sukiiro") ||
+                        lower.contains("透色")
+                    GameCatalog.ID_GIRLS -> Regex("(?<![a-z0-9])girls(?![a-z0-9])").containsMatchIn(lower) ||
+                        lower.contains("ｇｉｒｌｓ")
+                    GameCatalog.ID_DEBUT -> Regex("(?<![a-z0-9])debut(?![a-z0-9])").containsMatchIn(lower) ||
+                        lower.contains("ｄｅｂｕｔ")
+                    GameCatalog.ID_MEGANE -> lower.contains("megane") ||
+                        lower.contains("眼鏡のメイ") ||
+                        lower.contains("眼镜梅")
+                    GameCatalog.ID_RACHELSAKURA -> lower.contains("rachelsakura") ||
+                        lower.contains("rachel_sakura") ||
+                        lower.contains("レイチェルの桜貝") ||
+                        lower.contains("蕾切尔的樱贝")
+                    GameCatalog.ID_SABAKUNIKA -> lower.contains("sabakunika") ||
+                        lower.contains("sabaku_nika") ||
+                        lower.contains("砂漠のニッカ") ||
+                        lower.contains("沙漠的妮卡")
                     GameCatalog.ID_TSUMASHIBORI -> lower.contains("tsumashibori") ||
                         lower.contains("tsumasibori") ||
                         lower.contains("妻しぼり") ||

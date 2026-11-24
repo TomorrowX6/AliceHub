@@ -435,6 +435,27 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_MANANA3 ||
                 id == GameCatalog.ID_MANANA4 ||
                 id == GameCatalog.ID_MANANA5 ||
+                id == GameCatalog.ID_TSUMASAKURA ||
+                id == GameCatalog.ID_SHAMANSSANCTUARY ||
+                id == GameCatalog.ID_ALIVEZ ||
+                id == GameCatalog.ID_DUNGEONSDOLLS ||
+                id == GameCatalog.ID_SUZUMIYA ||
+                id == GameCatalog.ID_SHIMAIMA ||
+                id == GameCatalog.ID_DAIBANCHOUGAIDEN ||
+                id == GameCatalog.ID_COSPLAYLEMON ||
+                id == GameCatalog.ID_WHIPHONEY ||
+                id == GameCatalog.ID_ONIMUSU ||
+                id == GameCatalog.ID_PROGRX ||
+                id == GameCatalog.ID_DPSVERN ||
+                id == GameCatalog.ID_SUKIIRONO ||
+                id == GameCatalog.ID_GIRLS ||
+                id == GameCatalog.ID_DEBUT ||
+                id == GameCatalog.ID_HARUKAVSESCA ||
+                id == GameCatalog.ID_HARUKANINJA ||
+                id == GameCatalog.ID_MEGANE ||
+                id == GameCatalog.ID_RACHELSAKURA ||
+                id == GameCatalog.ID_SABAKUNIKA ||
+                id == GameCatalog.ID_VANISHPALM ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

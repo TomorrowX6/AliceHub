@@ -251,7 +251,28 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_MANANA2 && GameCatalog.isManana2Alias(q)) ||
             (desc.id == GameCatalog.ID_MANANA3 && GameCatalog.isManana3Alias(q)) ||
             (desc.id == GameCatalog.ID_MANANA4 && GameCatalog.isManana4Alias(q)) ||
-            (desc.id == GameCatalog.ID_MANANA5 && GameCatalog.isManana5Alias(q))
+            (desc.id == GameCatalog.ID_MANANA5 && GameCatalog.isManana5Alias(q)) ||
+            (desc.id == GameCatalog.ID_TSUMASAKURA && GameCatalog.isTsumaSakuraAlias(q)) ||
+            (desc.id == GameCatalog.ID_SHAMANSSANCTUARY && GameCatalog.isShamansSanctuaryAlias(q)) ||
+            (desc.id == GameCatalog.ID_ALIVEZ && GameCatalog.isAliveZAlias(q)) ||
+            (desc.id == GameCatalog.ID_DUNGEONSDOLLS && GameCatalog.isDungeonsDollsAlias(q)) ||
+            (desc.id == GameCatalog.ID_SUZUMIYA && GameCatalog.isSuzumiyaAlias(q)) ||
+            (desc.id == GameCatalog.ID_SHIMAIMA && GameCatalog.isShimaimaAlias(q)) ||
+            (desc.id == GameCatalog.ID_DAIBANCHOUGAIDEN && GameCatalog.isDaibanchouGaidenAlias(q)) ||
+            (desc.id == GameCatalog.ID_COSPLAYLEMON && GameCatalog.isCosplayLemonAlias(q)) ||
+            (desc.id == GameCatalog.ID_WHIPHONEY && GameCatalog.isWhipHoneyAlias(q)) ||
+            (desc.id == GameCatalog.ID_ONIMUSU && GameCatalog.isOnimusuAlias(q)) ||
+            (desc.id == GameCatalog.ID_PROGRX && GameCatalog.isProGrxAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSVERN && GameCatalog.isDpsVerNAlias(q)) ||
+            (desc.id == GameCatalog.ID_SUKIIRONO && GameCatalog.isSukiironoAlias(q)) ||
+            (desc.id == GameCatalog.ID_GIRLS && GameCatalog.isGirlsAlias(q)) ||
+            (desc.id == GameCatalog.ID_DEBUT && GameCatalog.isDebutAlias(q)) ||
+            (desc.id == GameCatalog.ID_HARUKAVSESCA && GameCatalog.isHarukaVsEscaAlias(q)) ||
+            (desc.id == GameCatalog.ID_HARUKANINJA && GameCatalog.isHarukaNinjaAlias(q)) ||
+            (desc.id == GameCatalog.ID_MEGANE && GameCatalog.isMeganeAlias(q)) ||
+            (desc.id == GameCatalog.ID_RACHELSAKURA && GameCatalog.isRachelSakuraAlias(q)) ||
+            (desc.id == GameCatalog.ID_SABAKUNIKA && GameCatalog.isSabakuNikaAlias(q)) ||
+            (desc.id == GameCatalog.ID_VANISHPALM && GameCatalog.isVanishPalmAlias(q))
         ) {
             return true
         }

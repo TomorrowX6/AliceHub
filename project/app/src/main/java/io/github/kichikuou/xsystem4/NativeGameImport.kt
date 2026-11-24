@@ -321,6 +321,12 @@ object NativeGameImport {
         if (GameCatalog.isIxsealGameFiles(activeFiles)) {
             return "Ixseal"
         }
+        if (GameCatalog.isHarukaVsEscaGameFiles(activeFiles, readSmallFile)) {
+            return "HarukaVsEsca"
+        }
+        if (GameCatalog.isHarukaNinjaGameFiles(activeFiles, readSmallFile)) {
+            return "HarukaNinja"
+        }
         if (GameCatalog.isHarukaGameFiles(activeFiles)) {
             return "Haruka"
         }
@@ -335,6 +341,9 @@ object NativeGameImport {
         }
         if (GameCatalog.isTsumashiboriGameFiles(activeFiles)) {
             return "Tsumashibori"
+        }
+        if (GameCatalog.isDaibanchouGaidenGameFiles(activeFiles, readSmallFile)) {
+            return "DaibanchouGaiden"
         }
         if (GameCatalog.isDaibanchouGameFiles(activeFiles)) {
             return "Daibanchou"
@@ -459,6 +468,9 @@ object NativeGameImport {
         if (GameCatalog.isEdoranzeGameFiles(activeFiles, readSmallFile)) {
             return "Edoranze"
         }
+        if (GameCatalog.isVanishPalmGameFiles(activeFiles, readSmallFile)) {
+            return "VanishPalm"
+        }
         if (GameCatalog.isVanishGameFiles(activeFiles, readSmallFile)) {
             return "Vanish"
         }
@@ -488,6 +500,57 @@ object NativeGameImport {
         }
         if (GameCatalog.isManana5GameFiles(activeFiles, readSmallFile)) {
             return "Manana5"
+        }
+        if (GameCatalog.isTsumaSakuraGameFiles(activeFiles, readSmallFile)) {
+            return "TsumaSakura"
+        }
+        if (GameCatalog.isShamansSanctuaryGameFiles(activeFiles, readSmallFile)) {
+            return "ShamansSanctuary"
+        }
+        if (GameCatalog.isAliveZGameFiles(activeFiles, readSmallFile)) {
+            return "AliveZ"
+        }
+        if (GameCatalog.isDungeonsDollsGameFiles(activeFiles, readSmallFile)) {
+            return "DungeonsDolls"
+        }
+        if (GameCatalog.isSuzumiyaGameFiles(activeFiles, readSmallFile)) {
+            return "Suzumiya"
+        }
+        if (GameCatalog.isShimaimaGameFiles(activeFiles, readSmallFile)) {
+            return "Shimaima"
+        }
+        if (GameCatalog.isCosplayLemonGameFiles(activeFiles, readSmallFile)) {
+            return "CosplayLemon"
+        }
+        if (GameCatalog.isWhipHoneyGameFiles(activeFiles, readSmallFile)) {
+            return "WhipHoney"
+        }
+        if (GameCatalog.isOnimusuGameFiles(activeFiles, readSmallFile)) {
+            return "Onimusu"
+        }
+        if (GameCatalog.isProGrxGameFiles(activeFiles, readSmallFile)) {
+            return "ProGrx"
+        }
+        if (GameCatalog.isDpsVerNGameFiles(activeFiles, readSmallFile)) {
+            return "DpsVerN"
+        }
+        if (GameCatalog.isSukiironoGameFiles(activeFiles, readSmallFile)) {
+            return "Sukiirono"
+        }
+        if (GameCatalog.isGirlsGameFiles(activeFiles, readSmallFile)) {
+            return "Girls"
+        }
+        if (GameCatalog.isDebutGameFiles(activeFiles, readSmallFile)) {
+            return "Debut"
+        }
+        if (GameCatalog.isMeganeGameFiles(activeFiles, readSmallFile)) {
+            return "Megane"
+        }
+        if (GameCatalog.isRachelSakuraGameFiles(activeFiles, readSmallFile)) {
+            return "RachelSakura"
+        }
+        if (GameCatalog.isSabakuNikaGameFiles(activeFiles, readSmallFile)) {
+            return "SabakuNika"
         }
         if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
             return "Sanbiki"

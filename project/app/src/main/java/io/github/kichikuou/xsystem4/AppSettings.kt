@@ -146,6 +146,27 @@ object AppSettings {
     internal const val DEFAULT_MANANA3_BYTES = 360676229L
     internal const val DEFAULT_MANANA4_BYTES = 284601476L
     internal const val DEFAULT_MANANA5_BYTES = 319631754L
+    internal const val DEFAULT_TSUMASAKURA_BYTES = 33875467L
+    internal const val DEFAULT_SHAMANSSANCTUARY_BYTES = 1464069450L
+    internal const val DEFAULT_ALIVEZ_BYTES = 3724684828L
+    internal const val DEFAULT_DUNGEONSDOLLS_BYTES = 790324801L
+    internal const val DEFAULT_SUZUMIYA_BYTES = 694041858L
+    internal const val DEFAULT_SHIMAIMA_BYTES = 959573915L
+    internal const val DEFAULT_DAIBANCHOUGAIDEN_BYTES = 179008967L
+    internal const val DEFAULT_COSPLAYLEMON_BYTES = 59713023L
+    internal const val DEFAULT_WHIPHONEY_BYTES = 10895556L
+    internal const val DEFAULT_ONIMUSU_BYTES = 45327000L
+    internal const val DEFAULT_PROGRX_BYTES = 25585442L
+    internal const val DEFAULT_DPSVERN_BYTES = 95418388L
+    internal const val DEFAULT_SUKIIRONO_BYTES = 113630600L
+    internal const val DEFAULT_GIRLS_BYTES = 135973798L
+    internal const val DEFAULT_DEBUT_BYTES = 27789639L
+    internal const val DEFAULT_HARUKAVSESCA_BYTES = 667745059L
+    internal const val DEFAULT_HARUKANINJA_BYTES = 213542665L
+    internal const val DEFAULT_MEGANE_BYTES = 44386500L
+    internal const val DEFAULT_RACHELSAKURA_BYTES = 192743017L
+    internal const val DEFAULT_SABAKUNIKA_BYTES = 253327874L
+    internal const val DEFAULT_VANISHPALM_BYTES = 336117791L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -425,6 +446,27 @@ object AppSettings {
             OnlineInstaller.MANANA3_CDN_URL -> DEFAULT_MANANA3_BYTES
             OnlineInstaller.MANANA4_CDN_URL -> DEFAULT_MANANA4_BYTES
             OnlineInstaller.MANANA5_CDN_URL -> DEFAULT_MANANA5_BYTES
+            OnlineInstaller.TSUMASAKURA_CDN_URL -> DEFAULT_TSUMASAKURA_BYTES
+            OnlineInstaller.SHAMANSSANCTUARY_CDN_URL -> DEFAULT_SHAMANSSANCTUARY_BYTES
+            OnlineInstaller.ALIVEZ_CDN_URL -> DEFAULT_ALIVEZ_BYTES
+            OnlineInstaller.DUNGEONSDOLLS_CDN_URL -> DEFAULT_DUNGEONSDOLLS_BYTES
+            OnlineInstaller.SUZUMIYA_CDN_URL -> DEFAULT_SUZUMIYA_BYTES
+            OnlineInstaller.SHIMAIMA_CDN_URL -> DEFAULT_SHIMAIMA_BYTES
+            OnlineInstaller.DAIBANCHOUGAIDEN_CDN_URL -> DEFAULT_DAIBANCHOUGAIDEN_BYTES
+            OnlineInstaller.COSPLAYLEMON_CDN_URL -> DEFAULT_COSPLAYLEMON_BYTES
+            OnlineInstaller.WHIPHONEY_CDN_URL -> DEFAULT_WHIPHONEY_BYTES
+            OnlineInstaller.ONIMUSU_CDN_URL -> DEFAULT_ONIMUSU_BYTES
+            OnlineInstaller.PROGRX_CDN_URL -> DEFAULT_PROGRX_BYTES
+            OnlineInstaller.DPSVERN_CDN_URL -> DEFAULT_DPSVERN_BYTES
+            OnlineInstaller.SUKIIRONO_CDN_URL -> DEFAULT_SUKIIRONO_BYTES
+            OnlineInstaller.GIRLS_CDN_URL -> DEFAULT_GIRLS_BYTES
+            OnlineInstaller.DEBUT_CDN_URL -> DEFAULT_DEBUT_BYTES
+            OnlineInstaller.HARUKAVSESCA_CDN_URL -> DEFAULT_HARUKAVSESCA_BYTES
+            OnlineInstaller.HARUKANINJA_CDN_URL -> DEFAULT_HARUKANINJA_BYTES
+            OnlineInstaller.MEGANE_CDN_URL -> DEFAULT_MEGANE_BYTES
+            OnlineInstaller.RACHELSAKURA_CDN_URL -> DEFAULT_RACHELSAKURA_BYTES
+            OnlineInstaller.SABAKUNIKA_CDN_URL -> DEFAULT_SABAKUNIKA_BYTES
+            OnlineInstaller.VANISHPALM_CDN_URL -> DEFAULT_VANISHPALM_BYTES
             else -> -1L
         }
     }

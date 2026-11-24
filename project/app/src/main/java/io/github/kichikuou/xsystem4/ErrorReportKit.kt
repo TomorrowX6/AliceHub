@@ -1327,6 +1327,10 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_escalayer_reboot_title)
             GameCatalog.isIxsealAlias(lower) ->
                 context.getString(R.string.game_ixseal_title)
+            GameCatalog.isHarukaVsEscaAlias(lower) ->
+                context.getString(R.string.game_harukavsesca_title)
+            GameCatalog.isHarukaNinjaAlias(lower) ->
+                context.getString(R.string.game_harukaninja_title)
             GameCatalog.isHarukaAlias(lower) ->
                 context.getString(R.string.game_haruka_title)
             GameCatalog.isTsumamigui3JunAlias(lower) ->
@@ -1341,6 +1345,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_tsumamigui_title)
             GameCatalog.isTsumashiboriAlias(lower) ->
                 context.getString(R.string.game_tsumashibori_title)
+            GameCatalog.isDaibanchouGaidenAlias(lower) ->
+                context.getString(R.string.game_daibanchougaiden_title)
             GameCatalog.isDaibanchouAlias(lower) ->
                 context.getString(R.string.game_daibanchou_title)
             GameCatalog.isDaiteikokuAlias(lower) ->
@@ -1469,6 +1475,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_ojousama_title)
             GameCatalog.isEdoranzeAlias(lower) ->
                 context.getString(R.string.game_edoranze_title)
+            GameCatalog.isVanishPalmAlias(lower) ->
+                context.getString(R.string.game_vanishpalm_title)
             GameCatalog.isVanishAlias(lower) ->
                 context.getString(R.string.game_vanish_title)
             GameCatalog.isHokenshitsuAlias(lower) ->
@@ -1489,6 +1497,40 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_manana4_title)
             GameCatalog.isManana5Alias(lower) ->
                 context.getString(R.string.game_manana5_title)
+            GameCatalog.isTsumaSakuraAlias(lower) ->
+                context.getString(R.string.game_tsumasakura_title)
+            GameCatalog.isShamansSanctuaryAlias(lower) ->
+                context.getString(R.string.game_shamanssanctuary_title)
+            GameCatalog.isAliveZAlias(lower) ->
+                context.getString(R.string.game_alivez_title)
+            GameCatalog.isDungeonsDollsAlias(lower) ->
+                context.getString(R.string.game_dungeonsdolls_title)
+            GameCatalog.isSuzumiyaAlias(lower) ->
+                context.getString(R.string.game_suzumiya_title)
+            GameCatalog.isShimaimaAlias(lower) ->
+                context.getString(R.string.game_shimaima_title)
+            GameCatalog.isCosplayLemonAlias(lower) ->
+                context.getString(R.string.game_cosplaylemon_title)
+            GameCatalog.isWhipHoneyAlias(lower) ->
+                context.getString(R.string.game_whiphoney_title)
+            GameCatalog.isOnimusuAlias(lower) ->
+                context.getString(R.string.game_onimusu_title)
+            GameCatalog.isProGrxAlias(lower) ->
+                context.getString(R.string.game_progrx_title)
+            GameCatalog.isDpsVerNAlias(lower) ->
+                context.getString(R.string.game_dpsvern_title)
+            GameCatalog.isSukiironoAlias(lower) ->
+                context.getString(R.string.game_sukiirono_title)
+            GameCatalog.isGirlsAlias(lower) ->
+                context.getString(R.string.game_girls_title)
+            GameCatalog.isDebutAlias(lower) ->
+                context.getString(R.string.game_debut_title)
+            GameCatalog.isMeganeAlias(lower) ->
+                context.getString(R.string.game_megane_title)
+            GameCatalog.isRachelSakuraAlias(lower) ->
+                context.getString(R.string.game_rachelsakura_title)
+            GameCatalog.isSabakuNikaAlias(lower) ->
+                context.getString(R.string.game_sabakunika_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

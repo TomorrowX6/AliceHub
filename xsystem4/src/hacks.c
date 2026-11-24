@@ -955,4 +955,27 @@ void apply_game_specific_hacks(struct ain *ain)
 		ain_get_global(ain, "g_sBattle") >= 0 &&
 		ain_get_global(ain, "\x81\x9f\x8b\xe0") >= 0
 	);
+
+	// Confirm3 DVD authentication in Shaman's Sanctuary computes expected protect-file
+	// bytes using real Math.SetSeed/Math.Rand rather than stubbed Confirm3.GetRandom,
+	// so Confirm3.File_ReadByte returning 0 always fails. Short-circuit the void
+	// "ゲームディスク認証" check when both Confirm3 and CheckDVD_CheckProtectFile exist.
+	if (ain_get_library(ain, "Confirm3") >= 0
+			&& ain_get_function(ain, "CheckDVD_CheckProtectFile") > 0) {
+		int auth_fno = ain_get_function(ain, "\x83\x51\x81\x5b\x83\x80\x83\x66\x83\x42\x83\x58\x83\x4e\x94\x46\x8f\xd8");
+		if (auth_fno > 0) {
+			struct ain_function *f = &ain->functions[auth_fno];
+			if (f->return_type.data == AIN_VOID && f->address >= 0) {
+				uint32_t base = (uint32_t)f->address;
+				uint32_t end = find_func_end_addr(ain, auth_fno);
+				if (end >= base && end - base >= 2 && (size_t)base + 2 <= ain->code_size) {
+					struct buffer out;
+					buffer_init(&out, NULL, 0);
+					write_instruction0(&out, RETURN);
+					memcpy(ain->code + base, out.buf, out.index);
+					free(out.buf);
+				}
+			}
+		}
+	}
 }
