@@ -123,6 +123,61 @@ int main(void)
 }
 """)
 
+    def test_descriptor_slots_with_the_same_basename_remain_separate(self):
+        parser = "\n".join(
+            extract_function("../xsystem35/src/gameresource.c", name)
+            for name in ("storeDataName", "storeSaveName", "trimRight", "descriptor_save_path",
+                         "descriptor_save_path_used", "disambiguate_descriptor_saves",
+                         "initGameResourceFromFile")
+        )
+        self.run_c(r"""
+#include <assert.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#define NOMEMERR abort
+#define SYSERROR(...) fprintf(stderr, __VA_ARGS__)
+#define max(a, b) ((a) > (b) ? (a) : (b))
+enum { DRIFILE_SCO, DRIFILE_CG, DRIFILE_WAVE, DRIFILE_MIDI, DRIFILE_DATA, DRIFILE_RSC, DRIFILE_BGM };
+enum { DRIFILEMAX = 255, SAVE_MAXNUMBER = 26 };
+typedef struct {
+    const char *game_fname[7][DRIFILEMAX], *save_fname[SAVE_MAXNUMBER];
+    int cnt[7];
+    const char *ain, *wai, *bgi, *sact01, *init, *alk[10], *msgskip, *save_path, *gr_fname;
+} GameResource;
+""" + parser + r"""
+int main(void)
+{
+    assert(mkdir("saves", 0700) == 0);
+    FILE *descriptor = tmpfile();
+    assert(descriptor);
+    fputs("SaveB second/SLOT.ASD\nSaveA first/slot.asd\nSaveC save-B-1.asd\n"
+          "SaveD old/unique.asd\nMsgSkip old/skip.dat\n", descriptor);
+    rewind(descriptor);
+    GameResource gr;
+    assert(initGameResourceFromFile(&gr, descriptor, "xsystem35.gr", "saves"));
+    assert(!strcmp(gr.save_fname[0], "saves/slot.asd"));
+    assert(!strcmp(gr.save_fname[1], "saves/save-B-2.asd"));
+    assert(!strcmp(gr.save_fname[2], "saves/save-B-1.asd"));
+    assert(!strcmp(gr.save_fname[3], "saves/unique.asd"));
+    assert(!strcmp(gr.msgskip, "saves/skip.dat"));
+    assert(!strcmp(gr.save_path, "saves"));
+    for (int i = 0; i < 2; i++) {
+        FILE *slot = fopen(gr.save_fname[i], "wb");
+        assert(slot && fputc('A' + i, slot) == 'A' + i && fclose(slot) == 0);
+    }
+    for (int i = 0; i < 2; i++) {
+        FILE *slot = fopen(gr.save_fname[i], "rb");
+        assert(slot && fgetc(slot) == 'A' + i && fclose(slot) == 0);
+    }
+    fclose(descriptor);
+}
+""")
+
 
 if __name__ == "__main__":
     unittest.main()

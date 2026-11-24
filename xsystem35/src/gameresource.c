@@ -216,6 +216,36 @@ static char *descriptor_save_path(const char *dir, const char *path) {
 	return result;
 }
 
+static bool descriptor_save_path_used(const GameResource *gr, const char *path, int slots) {
+	if (gr->msgskip && !strcasecmp(gr->msgskip, path))
+		return true;
+	for (int i = 0; i < slots; i++) {
+		if (gr->save_fname[i] && !strcasecmp(gr->save_fname[i], path))
+			return true;
+	}
+	return false;
+}
+
+static void disambiguate_descriptor_saves(GameResource *gr, const char *savedir) {
+	for (int i = 0; i < SAVE_MAXNUMBER; i++) {
+		const char *path = gr->save_fname[i];
+		if (!path || !descriptor_save_path_used(gr, path, i))
+			continue;
+		unsigned attempt = 0;
+		char *replacement;
+		for (;;) {
+			char name[32];
+			snprintf(name, sizeof(name), "save-%c-%u.asd", 'A' + i, ++attempt);
+			replacement = descriptor_save_path(savedir, name);
+			if (!descriptor_save_path_used(gr, replacement, SAVE_MAXNUMBER))
+				break;
+			free(replacement);
+		}
+		free((void *)path);
+		gr->save_fname[i] = replacement;
+	}
+}
+
 static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_fname, const char *savedir) {
 	int linecnt = 0, dno;
 	char line[256];
@@ -294,8 +324,11 @@ static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_
 			goto errexit;
 		}
 	}
-	if (savedir && !gr->save_path)
-		gr->save_path = strdup(savedir);
+	if (savedir) {
+		disambiguate_descriptor_saves(gr, savedir);
+		if (!gr->save_path)
+			gr->save_path = strdup(savedir);
+	}
 	gr->gr_fname = strdup(gr_fname);
 	return true;
 
