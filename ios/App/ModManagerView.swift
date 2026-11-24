@@ -30,12 +30,14 @@ struct ModManagerView: View {
                     Button { switching = true } label: {
                         HubActionLabel(title: "切换目录", symbol: "folder")
                     }.buttonStyle(.plain)
-                    Button {
-                        if let plan = model.plan { model.install(plan.steps) }
-                        else { Task { await model.loadCatalog() } }
-                    } label: {
-                        Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
-                    }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
+                    if onlineInstall {
+                        Button {
+                            if let plan = model.plan { model.install(plan.steps) }
+                            else { Task { await model.loadCatalog() } }
+                        } label: {
+                            Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
+                        }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
+                    }
                     Button { localMode = true } label: {
                         HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", symbol: "archivebox")
                     }.buttonStyle(.plain)
@@ -82,8 +84,10 @@ struct ModManagerView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.disabled(model.busy) }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { Task { await model.loadCatalog() } } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("重新获取").disabled(model.busy || model.loading)
+                    if onlineInstall {
+                        Button { Task { await model.loadCatalog() } } label: { Image(systemName: "arrow.clockwise") }
+                            .accessibilityLabel("重新获取").disabled(model.busy || model.loading)
+                    }
                 }
             }
             .overlay { if model.busy { ModInstallProgress(installer: model.installer) } }
@@ -91,7 +95,7 @@ struct ModManagerView: View {
         .navigationViewStyle(.stack)
         .modifier(HubAppearanceModifier())
         .interactiveDismissDisabled(model.busy)
-        .task { await model.loadCatalog(); library.refresh() }
+        .task { if onlineInstall { await model.loadCatalog() }; library.refresh() }
         .onChange(of: model.busy) { busy in if !busy { library.refresh() } }
         .onDisappear { library.refresh() }
         .confirmationDialog(model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", isPresented: $localOptions, titleVisibility: .visible) {
