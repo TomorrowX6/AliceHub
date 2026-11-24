@@ -101,7 +101,7 @@ with tempfile.TemporaryDirectory() as directory:
         subprocess.run(["xcrun", "clang", "-I" + str(ARCHIVE / "include"), "-c", str(ROOT / f"ios/App/{source}.c"), "-o", str(work / f"{source}.o")], check=True)
     header = work / "Bridging.h"
     header.write_text('#include "' + str(ROOT / "ios/App/ArchiveBridge.h") + '"\n#include "' + str(ROOT / "ios/App/ArchiveExtract.h") + '"\n')
-    sources = ["GameLibrary", "LocalGameImport", "LocalImportCleanup", "GamepadProfile", "ArchiveExtractor", "Iso9660Extractor", "ModArchiveExtractor", "ModCatalog", "ModOverlay", "ModInstaller", "ModManagerModel", "OnlineGameCatalog", "OnlineGameInstaller", "LibraryEntries", "GameExecutableIcon", "BackgroundActivity"]
+    sources = ["GameLibrary", "LocalGameImport", "LocalImportCleanup", "GamepadProfile", "GameDisplayScale", "HubLanguage", "ArchiveExtractor", "Iso9660Extractor", "ModArchiveExtractor", "ModCatalog", "ModOverlay", "ModInstaller", "ModManagerModel", "OnlineGameCatalog", "OnlineGameInstaller", "LibraryEntries", "GameExecutableIcon", "BackgroundActivity"]
     subprocess.run(["xcrun", "swiftc", "-swift-version", "5", "-import-objc-header", str(header),
                     *[str(ROOT / f"ios/App/{source}.swift") for source in sources], str(ROOT / "ios/Tests/OnlineGameChecks.swift"),
                     str(work / "ArchiveBridge.o"), str(work / "ArchiveExtract.o"), "-L" + str(ARCHIVE / "lib"), "-larchive", "-liconv", "-o", str(work / "checks")], check=True)

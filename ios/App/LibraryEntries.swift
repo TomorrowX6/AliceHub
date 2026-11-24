@@ -32,16 +32,22 @@ struct LibraryEntry: Identifiable {
     var title: String { catalog?.title ?? installations[0].resolvedDisplayName }
     var hasChinese: Bool { primary.map(OnlineGame.hasChinese(for:)) ?? catalog?.hasChinese ?? false }
 
-    func matches(_ search: String) -> Bool {
+    func displayTitle(in language: HubLanguage, bundle: Bundle = .main) -> String {
+        catalog?.displayTitle(in: language, bundle: bundle) ?? title
+    }
+
+    func matches(_ search: String, language: HubLanguage = .chinese, bundle: Bundle = .main) -> Bool {
         if search.isEmpty { return true }
-        let labels = [title, catalog?.directory, catalog?.id].compactMap { $0 }
+        let labels = [displayTitle(in: language, bundle: bundle), title, catalog?.directory, catalog?.id].compactMap { $0 }
         func matchesLanguage(_ chinese: Bool) -> Bool {
-            (chinese ? "熟肉" : "生肉").localizedCaseInsensitiveContains(search)
+            OnlineGame.matchesChineseBadge(search, hasChinese: chinese, in: language, bundle: bundle) ||
+                OnlineGame.chineseBadgeKey(hasChinese: chinese).localizedCaseInsensitiveContains(search)
         }
         return labels.contains { $0.localizedCaseInsensitiveContains(search) } ||
             (installations.isEmpty && matchesLanguage(hasChinese)) ||
             installations.contains {
-                $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
+                OnlineGame.displayTitle(for: $0, in: language, bundle: bundle).localizedCaseInsensitiveContains(search) ||
+                    $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                     $0.name.localizedCaseInsensitiveContains(search) ||
                     matchesLanguage(OnlineGame.hasChinese(for: $0))
             }
@@ -63,7 +69,7 @@ struct LibraryEntry: Identifiable {
         games.sorted { $0.name < $1.name }
     }
 
-    static func build(games: [Game], sort: LibrarySortMode, locale: Locale = .current) -> [Self] {
+    static func build(games: [Game], sort: LibrarySortMode, locale: Locale = .current, language: HubLanguage = .chinese) -> [Self] {
         var grouped: [String: [Game]] = [:]
         var custom: [Self] = []
         for game in games {
@@ -86,7 +92,9 @@ struct LibraryEntry: Identifiable {
             let order: ComparisonResult
             switch sort {
             case .catalog: order = .orderedSame
-            case .name: order = left.title.compare(right.title, options: .caseInsensitive, locale: locale)
+            case .name:
+                order = left.displayTitle(in: language).compare(right.displayTitle(in: language),
+                                                               options: .caseInsensitive, locale: locale)
             case .rating: order = descending(leftMetadata?.rating, rightMetadata?.rating)
             case .releaseDate: order = descending(leftMetadata?.date, rightMetadata?.date)
             }

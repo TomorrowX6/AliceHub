@@ -17,14 +17,14 @@ enum ModFiles {
     static func walk(_ url: URL) throws -> [URL] {
         var result: [URL] = []
         for child in try files.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
-            if try child.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { throw ModError.message("不支持符号链接：" + child.path) }
+            if try child.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { throw ModError.message(hubText("不支持符号链接：%@", child.path)) }
             result.append(child)
             if isDirectory(child) { result += try walk(child) }
         }
         return result
     }
     static func relative(_ url: URL, to root: URL) throws -> String {
-        guard let relative = url.relativeFilePath(to: root) else { throw ModError.message("无效文件路径：" + url.path) }
+        guard let relative = url.relativeFilePath(to: root) else { throw ModError.message(hubText("无效文件路径：%@", url.path)) }
         return relative
     }
     static func ini(_ directory: URL) -> [String: String] {
@@ -45,13 +45,13 @@ enum ModFiles {
     }
     static func checked(_ root: URL, _ relative: String) throws -> URL {
         let parts = relative.replacingOccurrences(of: "\\", with: "/").split(separator: "/")
-        guard !relative.hasPrefix("/"), !relative.hasPrefix("\\"), !parts.contains(".."), !relative.contains("\0"), parts.first?.contains(":") != true else { throw ModError.message("无效文件路径：" + relative) }
+        guard !relative.hasPrefix("/"), !relative.hasPrefix("\\"), !parts.contains(".."), !relative.contains("\0"), parts.first?.contains(":") != true else { throw ModError.message(hubText("无效文件路径：%@", relative)) }
         var current = root
         for part in parts {
             current.appendPathComponent(String(part))
-            if (try? files.destinationOfSymbolicLink(atPath: current.path)) != nil { throw ModError.message("不支持符号链接：" + relative) }
+            if (try? files.destinationOfSymbolicLink(atPath: current.path)) != nil { throw ModError.message(hubText("不支持符号链接：%@", relative)) }
         }
-        guard current.relativeFilePath(to: root) != nil else { throw ModError.message("无效文件路径：" + relative) }
+        guard current.relativeFilePath(to: root) != nil else { throw ModError.message(hubText("无效文件路径：%@", relative)) }
         return current
     }
     static func replace(_ source: URL, _ destination: URL) throws {
@@ -63,7 +63,7 @@ enum ModFiles {
     static func journal(_ lines: [String], to file: URL) throws {
         let temporary = file.appendingPathExtension("tmp")
         let data = Data(lines.joined(separator: "\n").utf8)
-        if !exists(temporary) { guard files.createFile(atPath: temporary.path, contents: nil) else { throw ModError.message("无法写入 MOD 文件记录") } }
+        if !exists(temporary) { guard files.createFile(atPath: temporary.path, contents: nil) else { throw ModError.message(hubText("无法写入 MOD 文件记录")) } }
         let handle = try FileHandle(forWritingTo: temporary)
         defer { try? handle.close() }
         try handle.truncate(atOffset: 0)
@@ -97,7 +97,7 @@ enum ModOverlay {
         let backup = ["AliceStart.ini.vanilla.bak", "System40.ini.vanilla.bak"].map { directory.appendingPathComponent($0) }.first(where: ModFiles.exists)
         var base = (backup.flatMap { ModFiles.iniFile($0)["gamename"] } ?? ((raw.contains("收费必是倒卖") || raw.contains("日不落") || raw.contains("全系列") || raw.lowercased().contains("bfyy")) ? "兰斯10 决战" : raw)).replacingOccurrences(of: "兰斯１０", with: "兰斯10")
         if base.hasSuffix("[MOD]") { base = String(base.dropLast(5)) }
-        let tag = info?.kind == "cn_patch" ? "汉化" : "MOD"
+        let tag = info?.kind == "cn_patch" ? hubText("汉化") : "MOD"
         let detail: String
         if let info {
             if info.kind != "cn_patch", !info.group.isEmpty, info.group.caseInsensitiveCompare(info.version) != .orderedSame {
@@ -126,7 +126,7 @@ enum ModOverlay {
             let directories = children.filter { ModFiles.isDirectory($0) && !$0.lastPathComponent.hasPrefix(".") }
             if directories.count == 1 { current = directories[0] }
             else if let found = try directories.first(where: { try ModFiles.walk($0).contains(where: isAsset) }) { current = found }
-            else { throw ModError.message(isCnPatch ? "未找到有效的汉化补丁文件" : "未找到有效的 MOD 文件") }
+            else { throw ModError.message(isCnPatch ? hubText("未找到有效的汉化补丁文件") : hubText("未找到有效的 MOD 文件")) }
         }
     }
     static func isEvenicle2CnPatchJunkRelPath(_ relative: String) -> Bool {
@@ -205,7 +205,7 @@ enum ModOverlay {
             reserved.formUnion(artifacts)
         }
         for file in reserved where ModFiles.exists(file) && !ModFiles.isFile(file) {
-            throw ModError.message("MOD 备份或临时路径不是文件：" + file.lastPathComponent)
+            throw ModError.message(hubText("MOD 备份或临时路径不是文件：%@", file.lastPathComponent))
         }
         if cleanReplace {
             for file in before where ModFiles.isFile(file) && (file.lastPathComponent.hasSuffix(".vanilla.bak.tmp") || (file.lastPathComponent.hasPrefix(".mod_apply_") && file.lastPathComponent.hasSuffix(".tmp"))) {
@@ -257,7 +257,7 @@ enum ModOverlay {
                 }
             } catch {
                 keepRollback = true
-                throw ModError.message("安装失败，恢复文件保留在：" + rollback.path)
+                throw ModError.message(hubText("安装失败，恢复文件保留在：%@", rollback.path))
             }
             throw failure
         }
@@ -276,7 +276,7 @@ enum ModOverlay {
             let existingGroup = storedGroup.isEmpty ? ModCatalog.inferModGroup(directory: target) : storedGroup
             let incomingGroup = ModCatalog.inferModGroup(directory: root)
             if ModCatalog.groupsConflict(incomingGroup, existingGroup) {
-                throw ModError.message("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
+                throw ModError.message(hubText("整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。"))
             }
             let baselineMarker = target.appendingPathComponent(nonVanillaBaselineName)
             if !ModFiles.isFile(baselineMarker) {
@@ -299,7 +299,7 @@ enum ModOverlay {
         do {
             for (_, relative) in accepted {
                 let destination = try resolveCaseInsensitiveDest(target, relative)
-                guard !ModFiles.isDirectory(destination) else { throw ModError.message("MOD 目标路径不是文件：" + relative) }
+                guard !ModFiles.isDirectory(destination) else { throw ModError.message(hubText("MOD 目标路径不是文件：%@", relative)) }
                 try ModFiles.files.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 let resolved = try ModFiles.relative(destination, to: target)
                 if !ModFiles.exists(destination) && addedNames.insert(resolved.lowercased()).inserted { added.append(resolved) }

@@ -55,11 +55,11 @@ enum LibraryError: LocalizedError {
     case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
-        case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。"
-        case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
-        case .resourcePath: return "无法找到游戏引擎资源。"
-        case .logFile: return "无法创建运行日志。"
+        case .notGame: return hubText("所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。")
+        case .archiveNotGame: return hubText("压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。")
+        case .alreadyExists: return hubText("已存在同名游戏文件夹，请先删除或重命名后再导入。")
+        case .resourcePath: return hubText("无法找到游戏引擎资源。")
+        case .logFile: return hubText("无法创建运行日志。")
         }
     }
 }
@@ -813,7 +813,7 @@ final class GameLibrary: ObservableObject {
     }
 
     func importFolder(_ source: URL) {
-        importLocal(source, progress: "正在复制游戏文件夹…") { readable, work in
+        importLocal(source, progress: hubText("正在复制游戏文件夹…")) { readable, work in
             let staged = work.appendingPathComponent("folder", isDirectory: true)
             try LocalGameImport.stageFolder(readable, to: staged)
             return (staged, source.lastPathComponent)
@@ -821,13 +821,13 @@ final class GameLibrary: ObservableObject {
     }
 
     func importArchive(_ source: URL) {
-        importLocal(source, progress: "正在解压：0 MB") { readable, work in
+        importLocal(source, progress: hubText("正在解压：%lld MB", 0)) { readable, work in
             var lastProgress = Date.distantPast
             return try LocalGameImport.stageArchive(readable, in: work) { bytes, entry in
                 let now = Date()
                 guard now.timeIntervalSince(lastProgress) >= 0.15 else { return }
                 lastProgress = now
-                let text = "正在解压：\(bytes / (1024 * 1024)) MB\n\(entry)"
+                let text = hubText("正在解压：%lld MB\n%@", bytes / (1024 * 1024), entry)
                 DispatchQueue.main.async { self.importProgress = text }
             }
         }

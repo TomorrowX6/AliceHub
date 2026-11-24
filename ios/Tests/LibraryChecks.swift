@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import WebKit
 
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
@@ -7,6 +9,17 @@ enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
 }
+
+private struct HubLocaleProbe: View {
+    let capture: (HubLanguage) -> Void
+    @HubLocalizedText private var localized
+
+    var body: some View {
+        capture(localized.language)
+        return Color.clear.frame(width: 1, height: 1)
+    }
+}
+
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
 }
@@ -19,10 +32,15 @@ func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoint
 
 @main
 struct LibraryChecks {
+    @MainActor
     static func main() throws {
         try ArchiveChecks.run()
         checkGamepadProfiles()
         checkDisplayScales()
+        try checkHubTools()
+        try checkManualResourceRules()
+        checkHubPlurals()
+        if #available(macOS 13.0, *) { checkLiveHubPlurals() }
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
@@ -659,6 +677,146 @@ struct LibraryChecks {
         precondition(font.percent(for: "第二款", defaults: reopened) == 75)
         precondition(font.step == 5 && scrollbar.step == 10)
         print("PASS: per-game font and scrollbar scales, persistence, bounds, defaults and reset")
+    }
+
+    static func checkHubTools() throws {
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["fr-FR", "ja-JP"]) == .japanese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["zh-Hant-TW"]) == .chinese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["de-DE"]) == .english)
+        precondition(HubLanguage.english.resolved(preferredLanguages: ["ja"]) == .english)
+
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? files.removeItem(at: root) }
+        let caches = root.appendingPathComponent("Caches")
+        let games = root.appendingPathComponent("Games")
+        let game = games.appendingPathComponent("Installed")
+        let manual = game.appendingPathComponent("Manual")
+        let saves = root.appendingPathComponent("Saves")
+        for directory in [caches, manual, saves] {
+            try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let cached = caches.appendingPathComponent("cache")
+        let resume = games.appendingPathComponent(".online_mod_cache")
+        let scratch = games.appendingPathComponent(".import-remaining")
+        let fresh = games.appendingPathComponent(".import-active")
+        let index = manual.appendingPathComponent("index.html")
+        let save = saves.appendingPathComponent("save.dat")
+        for file in [cached, resume, scratch, fresh, index, save] {
+            try Data("test data".utf8).write(to: file)
+        }
+        try files.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -1200)], ofItemAtPath: scratch.path)
+        let cleanup = HubCacheFiles(caches: caches, games: games)
+        precondition(cleanup.size(of: cleanup.targets(includeDownloads: false)) == 18)
+        try cleanup.clear(includeDownloads: false)
+        precondition(files.fileExists(atPath: resume.path))
+        try cleanup.clear(includeDownloads: true)
+        precondition(!files.fileExists(atPath: resume.path))
+        precondition(!files.fileExists(atPath: cached.path) && !files.fileExists(atPath: scratch.path))
+        precondition(files.fileExists(atPath: fresh.path) && files.fileExists(atPath: save.path))
+        let viewer = HubToolFiles.manual(in: game)
+        precondition(viewer?.index.path == index.path)
+        precondition(!HubToolFiles.contains(save, in: manual))
+        let reference = game.appendingPathComponent("quick-reference.html")
+        try Data("Quick reference".utf8).write(to: reference)
+        let linkedDocuments = root.appendingPathComponent("LinkedDocuments")
+        try files.createSymbolicLink(at: linkedDocuments, withDestinationURL: games)
+        let linkedGame = linkedDocuments.appendingPathComponent(game.lastPathComponent)
+        let linkedViewer = HubToolFiles.manual(in: linkedGame)
+        precondition(linkedViewer?.root == viewer?.root)
+        let relativeReference = URL(string: "../quick-reference.html", relativeTo: index)!.absoluteURL
+        precondition(linkedViewer?.canNavigate(to: relativeReference) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: linkedGame.appendingPathComponent("missing/page.html")) == true)
+        let privateGamePath: String
+        if game.path.hasPrefix("/var/") {
+            privateGamePath = "/private" + game.path
+        } else if game.path.hasPrefix("/private/var/") {
+            privateGamePath = String(game.path.dropFirst("/private".count))
+        } else {
+            privateGamePath = linkedGame.path
+        }
+        let alternateGame = URL(fileURLWithPath: privateGamePath, isDirectory: true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("quick-reference.html")) == true)
+        precondition(linkedViewer?.canNavigate(to: alternateGame.appendingPathComponent("missing/page.html")) == true)
+        let insideLink = manual.appendingPathComponent("inside.html")
+        try files.createSymbolicLink(at: insideLink, withDestinationURL: reference)
+        precondition(linkedViewer?.canNavigate(to: insideLink) == true)
+        let outsideLink = manual.appendingPathComponent("outside.html")
+        try files.createSymbolicLink(at: outsideLink, withDestinationURL: save)
+        precondition(linkedViewer?.canNavigate(to: outsideLink) == false)
+        precondition(linkedViewer?.canNavigate(to: games.appendingPathComponent("Installed copy/page.html")) == false)
+        try files.removeItem(at: index)
+        try files.createSymbolicLink(at: index, withDestinationURL: save)
+        precondition(HubToolFiles.manual(in: game) == nil)
+        precondition(HubToolFiles.logTail(save, limit: 4) == "data")
+        print("Language, cache cleanup, local manual, and error report file checks passed")
+    }
+
+    @MainActor
+    static func checkManualResourceRules() throws {
+        var compilation: Result<WKContentRuleList?, Error>?
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "AliceHubOfflineManualChecks",
+            encodedContentRuleList: HubToolFiles.Manual.resourceRules
+        ) { rules, error in
+            compilation = error.map { .failure($0) } ?? .success(rules)
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while compilation == nil && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let rules = try compilation?.get()
+        precondition(rules != nil, "Offline manual content rules did not compile")
+        print("Offline manual content rules compiled")
+    }
+
+    static func checkHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        func text(_ key: String, _ count: Int, language: HubLanguage = .english) -> String {
+            language.text(key, arguments: [count], bundle: bundle)
+        }
+        precondition(text("%lld 款游戏", 0) == "0 games")
+        precondition(text("%lld 款游戏", 1) == "1 game")
+        precondition(text("%lld 款游戏", 2) == "2 games")
+        precondition(text("%lld 个文件", 0) == "0 files")
+        precondition(text("%lld 个文件", 1) == "1 file")
+        precondition(text("%lld 个文件", 2) == "2 files")
+        let confirmation = "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"
+        precondition(text(confirmation, 1) == "Delete 1 save file? This can’t be undone.")
+        precondition(text(confirmation, 2) == "Delete all 2 save files? This can’t be undone.")
+        for count in 0...2 {
+            precondition(text("%lld 款游戏", count, language: .japanese) == "ゲーム \(count) 本")
+            precondition(text("%lld 个文件", count, language: .japanese) == "\(count) 件のファイル")
+            precondition(text(confirmation, count, language: .japanese) == "セーブファイル \(count) 件をすべて削除しますか？この操作は取り消せません。")
+            precondition(text("%lld 款游戏", count, language: .chinese) == "\(count) 款游戏")
+            precondition(text("%lld 个文件", count, language: .chinese) == "\(count) 个文件")
+            precondition(text(confirmation, count, language: .chinese) == "确定清空全部 \(count) 个存档文件吗？此操作不可恢复。")
+        }
+        print("Game count, file count, and clear-save plural checks passed for en, ja, and zh-Hans")
+    }
+
+    @available(macOS 13.0, *)
+    @MainActor
+    static func checkLiveHubPlurals() {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        var rendered: [String] = []
+        let probe = HubLocaleProbe { language in
+            rendered = ["%lld 款游戏", "%lld 个文件", "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"].map {
+                language.text($0, arguments: [1], bundle: bundle)
+            }
+        }
+        let renderer = ImageRenderer(content: probe.environment(\.locale, HubLanguage.english.locale))
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["1 game", "1 file", "Delete 1 save file? This can’t be undone."])
+        renderer.content = probe.environment(\.locale, HubLanguage.japanese.locale)
+        precondition(renderer.cgImage != nil)
+        precondition(rendered == ["ゲーム 1 本", "1 件のファイル", "セーブファイル 1 件をすべて削除しますか？この操作は取り消せません。"])
+        print("SwiftUI plural checks passed after changing the live locale from en to ja")
     }
 
     static func checkGamepadProfiles() {

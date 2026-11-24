@@ -35,6 +35,9 @@ targets:
       - path: build/system3
         type: folder
         buildPhase: resources
+      - path: build/licenses
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.alicehub

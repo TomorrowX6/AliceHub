@@ -422,7 +422,7 @@ enum ModCatalog {
     }
 
     static func parseModCatalog(_ data: Data, cdnBaseURL: String) throws -> [ModReleaseEntry] {
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = json["releases"] as? [Any] else { throw ModError.message("获取失败，请检查网络") }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = json["releases"] as? [Any] else { throw ModError.message(hubText("获取失败，请检查网络")) }
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-!.~'()*")
         var releases: [ModReleaseEntry] = []
         for (index, row) in rows.enumerated() {
@@ -440,7 +440,7 @@ enum ModCatalog {
                 expectedSize: (row["size"] as? NSNumber)?.int64Value ?? -1, expectedSha256: modString(row, "sha256").nonempty,
                 group: sanitizeParenFree(modString(row, "group"), multiline: false)))
         }
-        guard !releases.isEmpty else { throw ModError.message("暂无可用版本") }
+        guard !releases.isEmpty else { throw ModError.message(hubText("暂无可用版本")) }
         for index in releases.indices where releases[index].isPatch {
             if let base = releases.indices.first(where: { $0 > index && !releases[$0].isPatch && sameReleaseGroup(releases[index], releases[$0]) }) {
                 releases[index].baseFileId = releases[base].fileId; releases[index].baseVersion = releases[base].version
@@ -454,7 +454,7 @@ enum ModCatalog {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ModError.message("获取失败，请检查网络") }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ModError.message(hubText("获取失败，请检查网络")) }
         return try parseModCatalog(data, cdnBaseURL: game.overlayURL)
     }
 }

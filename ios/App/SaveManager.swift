@@ -12,11 +12,11 @@ final class SaveManager {
         case unsafePath, conversion, swap, invalidName, nameExists
         var errorDescription: String? {
             switch self {
-            case .unsafePath: return "存档路径不安全。"
-            case .conversion: return "转换 PC 存档失败。"
-            case .swap: return "无法替换存档目录。"
-            case .invalidName: return "文件名无效。"
-            case .nameExists: return "同名文件已存在。"
+            case .unsafePath: return hubText("存档路径不安全。")
+            case .conversion: return hubText("转换 PC 存档失败。")
+            case .swap: return hubText("无法替换存档目录。")
+            case .invalidName: return hubText("文件名无效。")
+            case .nameExists: return hubText("同名文件已存在。")
             }
         }
     }
@@ -153,7 +153,7 @@ final class SaveManager {
         catch {
             if existed {
                 do { try move(old, directory) }
-                catch { throw NSError(domain: "SaveManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "恢复失败；原存档保留在 \(old.path)", NSUnderlyingErrorKey: error]) }
+                catch { throw NSError(domain: "SaveManager", code: 1, userInfo: [NSLocalizedDescriptionKey: hubText("恢复失败；原存档保留在 %@", old.path), NSUnderlyingErrorKey: error]) }
             }
             throw error
         }

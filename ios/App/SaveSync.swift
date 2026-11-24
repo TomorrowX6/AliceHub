@@ -17,11 +17,11 @@ final class SaveSync {
         case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged, renameConflict
         var errorDescription: String? {
             switch self {
-            case .folderUnavailable: return "无法访问同步文件夹，请在设置中重新选择。"
-            case .unsafePath: return "同步文件夹中的存档路径不安全。"
-            case .unreadableCloudFile: return "云端存档暂不可读，请在“文件”中下载后重试。"
-            case .targetChanged: return "同步时存档已被修改，未覆盖该文件。请重试。"
-            case .renameConflict: return "同步文件夹中的存档不同或已有同名文件，未重命名。"
+            case .folderUnavailable: return hubText("无法访问同步文件夹，请在设置中重新选择。")
+            case .unsafePath: return hubText("同步文件夹中的存档路径不安全。")
+            case .unreadableCloudFile: return hubText("云端存档暂不可读，请在“文件”中下载后重试。")
+            case .targetChanged: return hubText("同步时存档已被修改，未覆盖该文件。请重试。")
+            case .renameConflict: return hubText("同步文件夹中的存档不同或已有同名文件，未重命名。")
             }
         }
     }

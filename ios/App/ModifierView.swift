@@ -14,7 +14,7 @@ struct ModifierView: View {
         NavigationView {
             Form {
                 Section {
-                    HubSectionHeader(title: "局内修改器", subtitle: game?.name ?? "当前游戏", symbol: "slider.horizontal.3")
+                    HubSectionHeader(title: "局内修改器", subtitle: game?.name ?? hubText("当前游戏"), symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
                 if let gameID = ModifierBridge.displayScaleGame {
                     Section {
@@ -31,7 +31,7 @@ struct ModifierView: View {
                 liveSection
             }
             .modifier(HubListStyle())
-            .navigationTitle(game?.name ?? "修改器")
+            .navigationTitle(game?.name ?? hubText("修改器"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: dismiss) } }
             .task(id: refreshID) {
@@ -51,7 +51,7 @@ struct ModifierView: View {
             HStack {
                 Menu("常用作弊码…") {
                     ForEach(ModifierBridge.cheatCodePresets, id: \.code) { preset in
-                        Button("\(preset.title) · \(preset.code)") { code = preset.code }
+                        Button("\(hubText(preset.title)) · \(preset.code)") { code = preset.code }
                     }
                 }
                 Spacer()
@@ -64,7 +64,7 @@ struct ModifierView: View {
     private func lockSection(_ game: ModifierGame, _ lockGame: modifier_lock_game) -> some View {
         Section {
             ForEach(game.locks) { lock in
-                Toggle(lock.title, isOn: Binding(
+                Toggle(hubText(lock.title), isOn: Binding(
                     get: { mask & lock.bit != 0 },
                     set: { on in setMask(lockGame, on ? mask | lock.bit : mask & ~lock.bit) }))
             }
@@ -77,9 +77,9 @@ struct ModifierView: View {
     private func cheatSection(_ game: ModifierGame) -> some View {
         Section {
             ForEach(game.cheats) { cheat in
-                Button(cheat.title) {
+                Button(hubText(cheat.title)) {
                     ModifierBridge.send(cheat.action)
-                    status = cheat.done
+                    status = hubText(cheat.done)
                 }
             }
             if !game.supportsCheatCodes, let status { Text(status).font(.footnote).foregroundColor(.secondary) }
@@ -104,7 +104,7 @@ struct ModifierView: View {
         if ModifierBridge.applyCheatCode(trimmed) {
             dismiss()
         } else {
-            status = "请输入作弊码"
+            status = hubText("请输入作弊码")
         }
     }
 

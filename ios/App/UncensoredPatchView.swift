@@ -15,20 +15,21 @@ struct UncensoredPatchView: View {
     @State private var notice: String?
     @State private var alertError: String?
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
 
     private var statusSubtitle: String {
         if installed {
             if let info = installedInfo {
                 let parts = [
-                    "已安装",
-                    info.cgCount > 0 ? "\(info.cgCount) 张 CG" : "",
+                    localized("已安装"),
+                    info.cgCount > 0 ? localized("%lld 张 CG", info.cgCount) : "",
                     info.size > 0 ? ModCatalog.formatSize(info.size) : ""
                 ].filter { !$0.isEmpty }
                 return parts.joined(separator: " · ")
             }
-            return "已安装"
+            return localized("已安装")
         }
-        return "未安装"
+        return localized("未安装")
     }
 
     var body: some View {
@@ -38,11 +39,11 @@ struct UncensoredPatchView: View {
                     HubSectionHeader(title: descriptor.title, subtitle: statusSubtitle, symbol: "sparkles")
                     if onlineInstall, let manifest {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(manifest.summary.isEmpty ? "独立增量无码资源包，不修改游戏本体与存档。" : manifest.summary)
+                            Text(manifest.summary.isEmpty ? localized("独立增量无码资源包，不修改游戏本体与存档。") : manifest.summary)
                                 .font(.footnote)
                                 .foregroundColor(HubTheme.secondary)
                             Text([ModCatalog.formatSize(manifest.size),
-                                  manifest.cgCount > 0 ? "\(manifest.cgCount) 张 CG" : "",
+                                  manifest.cgCount > 0 ? localized("%lld 张 CG", manifest.cgCount) : "",
                                   manifest.updatedAt].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundColor(HubTheme.secondary)
@@ -54,7 +55,7 @@ struct UncensoredPatchView: View {
                             installer.install(manifest, to: game.url)
                         } label: {
                             Label(
-                                installed ? "重新安装 · \(ModCatalog.formatSize(manifest.size))" : "下载并安装 · \(ModCatalog.formatSize(manifest.size))",
+                                installed ? localized("重新安装 · %@", ModCatalog.formatSize(manifest.size)) : localized("下载并安装 · %@", ModCatalog.formatSize(manifest.size)),
                                 systemImage: "arrow.down.circle"
                             ).frame(maxWidth: .infinity)
                         }
@@ -67,7 +68,7 @@ struct UncensoredPatchView: View {
                         }
                     } else if onlineInstall {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(loadError ?? "无法获取无码补丁信息").foregroundColor(.secondary)
+                            Text(loadError ?? localized("无法获取无码补丁信息")).foregroundColor(.secondary)
                             Button("重试") { Task { await loadManifest() } }
                         }
                     }
@@ -136,7 +137,7 @@ struct UncensoredPatchView: View {
                 refreshState()
                 library.refresh()
                 if installer.succeeded {
-                    notice = "无码补丁安装成功"
+                    notice = hubText("无码补丁安装成功")
                 } else if let err = installer.failure {
                     alertError = err
                 }
@@ -149,7 +150,7 @@ struct UncensoredPatchView: View {
                     try UncensoredPatchStore.uninstall(from: game.url)
                     refreshState()
                     library.refresh()
-                    notice = "已卸载无码补丁"
+                    notice = hubText("已卸载无码补丁")
                 } catch {
                     alertError = error.localizedDescription
                 }

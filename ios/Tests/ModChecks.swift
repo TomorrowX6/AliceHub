@@ -144,7 +144,7 @@ struct ModChecks {
         try ModManagerPolicy.syncInstalledMeta(noMeta, releases: releases, descriptor: ModGameDescriptor.supported[0])
         precondition(InstalledModInfo.read(noMeta) == nil)
         let manager = ModManagerModel(directory: noMeta, descriptor: ModGameDescriptor.supported[0])
-        precondition(manager.status == "未安装 MOD" && manager.updateDisabled && !manager.canRestore)
+        precondition(manager.status(in: .chinese) == "未安装 MOD" && manager.updateDisabled && !manager.canRestore)
         print("PASS: manager install/switch/reinstall/patch/combo actions, empty/invalid selection, stale metadata sync and empty status")
 
         let game = try directory("game")

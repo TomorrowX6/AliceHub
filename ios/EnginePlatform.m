@@ -6,10 +6,21 @@
 #include "mixer.h"
 
 void savedata_flush_on_background(void);
+void alicehub_ios_localize_modifier_button(void *button);
 
 static void (*gamepad_attach)(UIWindow *);
 static void (*gamepad_command)(int);
 static void (*gamepad_frame)(float, float, bool, bool, bool, bool);
+static __weak UIWindow *engine_window;
+
+void alicehub_ios_open_manual(const char *filename)
+{
+    NSString *path = [NSString stringWithUTF8String:filename];
+    UIViewController *host = engine_window.rootViewController;
+    if (path && host)
+        [NSNotificationCenter.defaultCenter postNotificationName:@"AliceHubOpenManual" object:host
+            userInfo:@{@"path": path}];
+}
 
 void alicehub_ios_set_gamepad_callbacks(
     void (*attach)(UIWindow *), void (*command)(int),
@@ -59,7 +70,7 @@ static void add_modifier_button(UIViewController *root)
     button.layer.cornerRadius = 22;
     button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
     button.tintColor = UIColor.whiteColor;
-    button.accessibilityLabel = @"修改器";
+    alicehub_ios_localize_modifier_button((__bridge void *)button);
     [button setImage:[UIImage systemImageNamed:@"wand.and.stars"] forState:UIControlStateNormal];
     [button addAction:[UIAction actionWithHandler:^(UIAction *action) {
         [NSNotificationCenter.defaultCenter postNotificationName:@"AliceHubOpenModifier" object:root];
@@ -90,6 +101,7 @@ void alicehub_ios_prepare_window(SDL_Window *window)
 {
     SDL_SysWMinfo info = window_info(window);
     UIWindow *native = info.info.uikit.window;
+    engine_window = native;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
             native.windowScene = (UIWindowScene *)scene;

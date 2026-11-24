@@ -9,6 +9,7 @@ case "$mode" in
 esac
 "$root/build-native.sh" "$sdk"
 cmake -E copy_directory "$root/build/$sdk/stage/share/system3" "$root/build/system3"
+"$root/../collect-licenses.sh" "$root/build/$sdk" "$root/build/licenses"
 xcodegen generate --spec "$root/project.yml"
 hvf_ldflags=
 if grep -q '^#define FT_CONFIG_OPTION_HVF' "$root/build/$sdk/stage/include/freetype2/freetype/config/ftoption.h"; then

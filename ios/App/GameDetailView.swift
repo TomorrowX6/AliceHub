@@ -7,6 +7,7 @@ struct GameDetailView: View {
     let catalog: OnlineGame?
     let installations: [Game]
     @Binding var selectedID: String?
+    @HubLocalizedText private var localized
     @State private var destination: Destination?
     @State private var deleting = false
     @State private var modDescriptor: ModGameDescriptor?
@@ -21,22 +22,23 @@ struct GameDetailView: View {
     }
 
     private enum Destination: String, Identifiable {
-        case saves, gamepad, mods, uncensored, editor
+        case saves, gamepad, mods, uncensored, editor, manual
         var id: String { rawValue }
     }
 
     var body: some View {
         let active = currentGame
         let hasChinese = OnlineGame.hasChinese(for: active)
+        let manual = HubToolFiles.manual(in: active.url)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
                     GameArtwork(game: active, catalogID: catalog?.artwork, size: 100)
-                    Text(catalog?.title ?? active.resolvedDisplayName)
+                    Text(catalog?.displayTitle(in: localized.language) ?? OnlineGame.displayTitle(for: active, in: localized.language))
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
-                        HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
+                        HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                         HubBadge(title: active.engine.rawValue)
                     }
                     Button { library.launch(active) } label: {
@@ -64,7 +66,7 @@ struct GameDetailView: View {
 
                 Text("游戏管理").font(.title3.bold())
                 VStack(spacing: 0) {
-                    if let catalog {
+                    if let catalog, onlineInstall {
                         NavigationLink {
                             OnlineGameDetailView(game: catalog, library: library, download: download)
                         } label: {
@@ -90,6 +92,10 @@ struct GameDetailView: View {
                     if supportsSaveEditor {
                         Divider()
                         action("修改存档", "slider.horizontal.3", .editor)
+                    }
+                    if manual != nil {
+                        Divider()
+                        action("游戏说明书", "book", .manual)
                     }
                 }.modifier(HubCard())
 
@@ -127,6 +133,8 @@ struct GameDetailView: View {
                 case .saves: SaveManagerView(game: active)
                 case .gamepad: GamepadEditor(game: active.id)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
+                case .manual:
+                    if let manual { HubManualView(manual: manual) }
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
                         ModManagerView(game: active, descriptor: descriptor, library: library)

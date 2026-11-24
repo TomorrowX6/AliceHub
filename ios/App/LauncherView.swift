@@ -8,13 +8,18 @@ struct LauncherView: View {
     @State private var folderPresented = false
     @State private var archivePresented = false
     @State private var settingsPresented = false
+    @State private var reportPresented = false
+    @State private var reportMessage: String?
     @State private var query = ""
     @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
     @Environment(\.scenePhase) private var scenePhase
+    @HubLocalizedText private var localized
 
     private var filteredGames: [LibraryEntry] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return LibraryEntry.build(games: library.games, sort: sortMode).filter { $0.matches(search) }
+        let language = localized.language
+        return LibraryEntry.build(games: library.games, sort: sortMode, locale: language.locale, language: language)
+            .filter { $0.matches(search, language: language) }
     }
 
     var body: some View {
@@ -76,7 +81,13 @@ struct LauncherView: View {
                 DispatchQueue.main.async { archivePresented = true }
             }
         }
-        .sheet(isPresented: $settingsPresented) { HubSettingsView() }
+        .sheet(isPresented: $settingsPresented) { HubSettingsView(games: library.gamesDirectory) }
+        .sheet(isPresented: $reportPresented, onDismiss: { reportMessage = nil }) {
+            NavigationView {
+                HubErrorReportView(message: reportMessage)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { reportPresented = false } } }
+            }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
+        }
         .sheet(isPresented: $folderPresented) { FolderPicker { library.importFolder($0) } }
         .sheet(isPresented: $archivePresented) {
             FolderPicker(contentTypes: ArchivePicker.contentTypes) { library.importArchive($0) }
@@ -85,6 +96,11 @@ struct LauncherView: View {
             if url.isFileURL && ArchiveExtractor.isSupportedArchiveName(url.lastPathComponent) { library.importArchive(url) }
         }
         .alert("操作失败", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
+            Button("错误报告") {
+                reportMessage = library.error
+                library.error = nil
+                reportPresented = true
+            }
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
@@ -119,17 +135,17 @@ struct LauncherView: View {
         Menu {
             Picker("排序", selection: $sortMode) {
                 ForEach(LibrarySortMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
+                    Text(localized(mode.title)).tag(mode)
                 }
             }
         } label: {
-            Label(sortMode.shortTitle, systemImage: "arrow.up.arrow.down")
+            Label(localized(sortMode.shortTitle), systemImage: "arrow.up.arrow.down")
                 .font(.subheadline.bold()).foregroundColor(HubTheme.primary)
                 .padding(.horizontal, 12).frame(minHeight: 44)
                 .background(HubTheme.surface).clipShape(Capsule())
         }
         .accessibilityLabel("排序")
-        .accessibilityValue(sortMode.shortTitle)
+        .accessibilityValue(localized(sortMode.shortTitle))
     }
 
     private func gameCard(_ entry: LibraryEntry) -> some View {
@@ -138,14 +154,14 @@ struct LauncherView: View {
         return HStack(spacing: 16) {
             GameArtwork(game: entry.primary, catalogID: entry.catalog?.artwork)
             VStack(alignment: .leading, spacing: 10) {
-                Text(entry.title)
+                Text(entry.displayTitle(in: localized.language))
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
                     HubBadge(
                         title: installing ? "下载中" : (entry.primary == nil ? "未安装" : "已安装"),
                         success: !installing && entry.primary != nil
                     )
-                    HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
+                    HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                 }
             }
             Spacer(minLength: 0)
@@ -160,7 +176,7 @@ struct LauncherView: View {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 20) {
                 ProgressView().scaleEffect(1.2)
-                Text(library.importing ? "正在导入游戏" : "正在启动游戏").font(.headline)
+                Text(localized(library.importing ? "正在导入游戏" : "正在启动游戏")).font(.headline)
                 if library.importing {
                     Text(library.importProgress).font(.caption).foregroundColor(HubTheme.secondary)
                         .multilineTextAlignment(.center).lineLimit(4)

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SaveManagerView: View {
     let game: Game
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @State private var entries: [SaveManager.FileEntry] = []
     @State private var backups: [URL] = []
     @State private var picker: SavePickerRequest?
@@ -40,23 +41,23 @@ struct SaveManagerView: View {
                         HubActionLabel(title: "导出存档", symbol: "square.and.arrow.up")
                     }.disabled(entries.isEmpty)
                     Button("清空存档", role: .destructive) {
-                        confirmation = SaveConfirmation(text: "确定清空全部 \(entries.count) 个存档文件吗？此操作不可恢复。") {
-                            operate { try manager.clear(); return "已清空存档" }
+                        confirmation = SaveConfirmation("确定清空全部 %lld 个存档文件吗？此操作不可恢复。", entries.count) {
+                            operate { try manager.clear(); return hubText("已清空存档") }
                         }
                     }.disabled(entries.isEmpty)
                 }.listRowBackground(HubTheme.surface)
                 if !backups.isEmpty {
                     Section(header: Text("恢复备份")) {
                         ForEach(backups, id: \.path) { backup in
-                            Button("恢复备份（\(backupTime(backup))）") {
-                                confirmation = SaveConfirmation(text: "用 \(backupTime(backup)) 的备份替换当前存档吗？当前存档会先自动备份。") {
-                                    operate { try manager.restore(backup); return "已恢复备份" }
+                            Button(localized("恢复备份（%@）", backupTime(backup))) {
+                                confirmation = SaveConfirmation("用 %@ 的备份替换当前存档吗？当前存档会先自动备份。", backupTime(backup)) {
+                                    operate { try manager.restore(backup); return hubText("已恢复备份") }
                                 }
                             }
                         }
                     }
                 }
-                Section(header: Text("\(entries.count) 个文件")) {
+                Section(header: Text(localized("%lld 个文件", entries.count))) {
                     if entries.isEmpty {
                         HubSectionHeader(title: "暂无存档", symbol: "doc")
                     }
@@ -72,8 +73,8 @@ struct SaveManagerView: View {
                             Button("备份存档") { askName(for: entry, copy: true) }
                             Button("重命名") { askName(for: entry, copy: false) }
                             Button("删除存档", role: .destructive) {
-                                confirmation = SaveConfirmation(text: "确定删除 \(entry.path)？") {
-                                    operate { try manager.delete(entry); return "已删除 \(entry.path)" }
+                                confirmation = SaveConfirmation("确定删除 %@？", entry.path) {
+                                    operate { try manager.delete(entry); return hubText("已删除 %@", entry.path) }
                                 }
                             }
                         }
@@ -110,7 +111,7 @@ struct SaveManagerView: View {
                 switch request.kind {
                 case .importFiles, .importFolder:
                     guard !urls.isEmpty else { return }
-                    operate { try manager.importURLs(urls, folder: request.kind == .importFolder); return "存档导入完成" }
+                    operate { try manager.importURLs(urls, folder: request.kind == .importFolder); return hubText("存档导入完成") }
                 case .folder(let pc):
                     guard let url = urls.first else { return }
                     operate {
@@ -128,7 +129,7 @@ struct SaveManagerView: View {
             Button("好", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
         .alert(item: $confirmation) { item in
-            Alert(title: Text("存档管理"), message: Text(item.text), primaryButton: .default(Text("确定"), action: item.action), secondaryButton: .cancel(Text("取消")))
+            Alert(title: Text("存档管理"), message: Text(item.text(in: localized.language)), primaryButton: .default(Text("确定"), action: item.action), secondaryButton: .cancel(Text("取消")))
         }
     }
 
@@ -151,7 +152,7 @@ struct SaveManagerView: View {
         busy = true
         let run: @Sendable () -> Void = {
             let result: String
-            do { result = try work() } catch { result = "操作失败：\(error.localizedDescription)" }
+            do { result = try work() } catch { result = hubText("操作失败：%@", error.localizedDescription) }
             DispatchQueue.main.async { busy = false; refresh(); message = result }
         }
         if onSyncQueue { SaveSyncFolder.enqueue(run) }
@@ -162,12 +163,12 @@ struct SaveManagerView: View {
         let action = { picker = SavePickerRequest(kind: folder ? .importFolder : .importFiles) }
         if entries.isEmpty { action() }
         else {
-            confirmation = SaveConfirmation(text: "同名存档会被覆盖。导入前会先自动备份当前存档，可在“导入存档”里选择“恢复备份”撤销。", action: action)
+            confirmation = SaveConfirmation("同名存档会被覆盖。导入前会先自动备份当前存档，可在“导入存档”里选择“恢复备份”撤销。", action: action)
         }
     }
 
     private func exportMessage(_ counts: (Int, Int), pc: Bool) -> String {
-        pc ? "已导出 \(counts.0) 个 PC 兼容存档文件，其中 \(counts.1) 个已自动转换" : "已导出 \(counts.0) 个存档文件"
+        pc ? hubText("已导出 %lld 个 PC 兼容存档文件，其中 %lld 个已自动转换", counts.0, counts.1) : hubText("已导出 %lld 个存档文件", counts.0)
     }
 
     private func prepareExport(pc: Bool, zip: Bool, single: SaveManager.FileEntry? = nil) {
@@ -257,8 +258,19 @@ private struct SaveNameView: View {
 
 private struct SaveConfirmation: Identifiable {
     let id = UUID()
-    let text: String
+    private let key: String
+    private let arguments: [CVarArg]
     let action: () -> Void
+
+    init(_ key: String, _ arguments: CVarArg..., action: @escaping () -> Void) {
+        self.key = key
+        self.arguments = arguments
+        self.action = action
+    }
+
+    func text(in language: HubLanguage) -> String {
+        language.text(key, arguments: arguments)
+    }
 }
 
 private struct SavePickerRequest: Identifiable {

@@ -4,6 +4,8 @@ struct OnlineGameDetailView: View {
     let game: OnlineGame
     @ObservedObject var library: GameLibrary
     @ObservedObject var download: OnlineGameDownloadModel
+    @HubLocalizedText private var localized
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var manifest: OnlineGameManifest?
     @State private var loading = false
     @State private var failure: String?
@@ -22,21 +24,21 @@ struct OnlineGameDetailView: View {
                 HStack(spacing: 18) {
                     GameArtwork(catalogID: game.artwork, size: 88)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(game.title).font(.title2.bold()).foregroundColor(HubTheme.text)
+                        Text(game.displayTitle(in: localized.language)).font(.title2.bold()).foregroundColor(HubTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 6) {
                             HubBadge(title: installed ? "已安装" : "未安装", success: installed)
                             HubBadge(
-                                title: game.hasChinese ? "熟肉" : "生肉",
+                                title: OnlineGame.chineseBadgeKey(hasChinese: game.hasChinese),
                                 tone: game.hasChinese ? .primary : .warning
                             )
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.modifier(HubCard())
-                if loading {
+                if loading && onlineInstall {
                     HStack { ProgressView(); Text("正在获取游戏清单…") }.frame(maxWidth: .infinity).modifier(HubCard())
                 }
-                if let failure {
+                if let failure, onlineInstall {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("无法获取游戏信息", systemImage: "wifi.exclamationmark").font(.headline)
                         Text(failure).font(.footnote).foregroundColor(HubTheme.secondary)
@@ -44,7 +46,7 @@ struct OnlineGameDetailView: View {
                         Button("重试") { Task { await load() } }
                     }.modifier(HubCard())
                 }
-                if let manifest {
+                if let manifest, onlineInstall {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("下载信息", systemImage: "info.circle").font(.headline)
                         LabeledContentRow(title: "大小", value: ModCatalog.formatSize(manifest.totalBytes))
@@ -74,7 +76,7 @@ struct OnlineGameDetailView: View {
             }.padding(20).frame(maxWidth: 700).frame(maxWidth: .infinity)
         }.background(HubTheme.background.ignoresSafeArea())
             .navigationTitle("游戏详情").navigationBarTitleDisplayMode(.inline)
-            .task { await load() }
+            .task(id: onlineInstall) { if onlineInstall { await load() } }
             .onChange(of: download.running) { running in
                 if !running { confirmCancel = false }
             }
@@ -100,7 +102,7 @@ struct OnlineGameDetailView: View {
 }
 
 private struct LabeledContentRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
     var body: some View {
         HStack { Text(title).foregroundColor(HubTheme.secondary); Spacer(); Text(value).foregroundColor(HubTheme.text) }
