@@ -98,6 +98,59 @@ static void lift(bool finger_first)
 	}
 }
 
+enum { PARTS_MSG_KEY_UP };
+struct parts { int no; };
+static struct parts captured_part = { 5 };
+static bool parts_v2 = true, parts_began_click = true;
+static bool prev_clicking, whole_lclick_down;
+static int click_down_parts;
+static uint64_t click_touch_press_id;
+static struct parts *swipe_candidate;
+static int part_releases, whole_releases, drag_resets;
+
+static struct parts *parts_try_get(int no)
+{
+	return no == captured_part.no ? &captured_part : NULL;
+}
+
+static void parts_msg_push(struct parts *part, int msg, const char *fmt, int key)
+{
+	assert(msg == PARTS_MSG_KEY_UP && fmt[0] == 'i' && key == VK_LBUTTON);
+	assert(!part || part == &captured_part);
+	if (part)
+		part_releases++;
+	else
+		whole_releases++;
+}
+
+static void drag_state_reset(void) { drag_resets++; }
+
+/* PARTS_CAPTURE */
+
+static void capture_current_press(void)
+{
+	input_parts_poll_begin(true);
+	assert(key_is_down(VK_LBUTTON));
+	update_touch_click_capture(true);
+	prev_clicking = whole_lclick_down = true;
+	click_down_parts = captured_part.no;
+	swipe_candidate = &captured_part;
+	input_notify_parts_poll(true, true);
+}
+
+static void release_capture_without_click(bool clicking, int count)
+{
+	update_touch_click_capture(clicking);
+	assert(!prev_clicking && !whole_lclick_down && !click_down_parts && !swipe_candidate);
+	assert(part_releases == count && whole_releases == count && drag_resets == count);
+	input_notify_parts_poll(true, clicking);
+}
+
+static void set_gamepad_click(bool pressed)
+{
+	input_set_virtual_button(0, INPUT_ACTION_MOUSE_BTN, VK_LBUTTON, 0, false, pressed);
+}
+
 int main(void)
 {
 	assert(SDL_Init(SDL_INIT_EVENTS) == 0);
@@ -114,11 +167,14 @@ int main(void)
 	input_set_long_press_ctrl(true);
 	for (int finger_first = 0; finger_first < 2; finger_first++) {
 		press();
+		uint64_t press_id = input_get_touch_press_id();
+		assert(press_id);
 		pump(1000);
 		assert(key_is_down(VK_CONTROL) && !key_is_down(VK_LBUTTON));
 		lift(finger_first);
 		pump(400);
 		assert(!saw_lbutton && !key_is_down(VK_CONTROL));
+		assert(input_take_long_touch_click_cancel() == press_id);
 	}
 
 	press();
@@ -129,9 +185,10 @@ int main(void)
 	pump(400);
 
 	press();
+	uint64_t press_id = input_get_touch_press_id();
 	pump(1000);
 	assert(key_is_down(VK_CONTROL));
-	assert(input_take_long_touch_click_cancel() && !input_take_long_touch_click_cancel());
+	assert(input_take_long_touch_click_cancel() == press_id && !input_take_long_touch_click_cancel());
 	finger(SDL_FINGERMOTION, 7, 0.6f, 0.5f);
 	pump(50);
 	assert(!key_is_down(VK_CONTROL));
@@ -156,6 +213,7 @@ int main(void)
 	lift(false);
 	pump(400);
 	assert(!saw_lbutton && !key_is_down(VK_CONTROL));
+	assert(input_take_long_touch_click_cancel());
 
 	press();
 	input_set_touch_ctrl_skip(true);
@@ -166,6 +224,65 @@ int main(void)
 	input_set_touch_ctrl_skip(false);
 	pump(50);
 	assert(!key_is_down(VK_CONTROL));
+	assert(input_take_long_touch_click_cancel());
+
+	// A lift queued before the deadline must win even if the engine polls late.
+	press();
+	lift(false);
+	SDL_Delay(900);
+	pump(400);
+	assert(!key_is_down(VK_CONTROL) && !input_take_long_touch_click_cancel());
+
+	press();
+	pump(1000);
+	assert(key_is_down(VK_CONTROL));
+	SDL_Event right = { .button = { .type = SDL_MOUSEBUTTONDOWN, .button = SDL_BUTTON_RIGHT,
+					.state = SDL_PRESSED, .clicks = 1 } };
+	SDL_PushEvent(&right);
+	pump(20);
+	assert(key_is_down(VK_RBUTTON) && !key_is_down(VK_CONTROL));
+	right.button.type = SDL_MOUSEBUTTONUP;
+	right.button.state = SDL_RELEASED;
+	SDL_PushEvent(&right);
+	lift(false);
+	pump(400);
+	assert(!key_is_down(VK_CONTROL) && input_take_long_touch_click_cancel());
+
+	// A new touchdown before the next Parts poll must not erase the old cancel.
+	press();
+	capture_current_press();
+	assert(click_touch_press_id);
+	pump(1000);
+	assert(key_is_down(VK_CONTROL));
+	lift(false);
+	button(true);
+	finger(SDL_FINGERDOWN, 7, 0.5f, 0.5f);
+	input_parts_poll_begin(true);
+	assert(!key_is_down(VK_LBUTTON));
+	release_capture_without_click(false, 1);
+	capture_current_press();
+	assert(click_touch_press_id && part_releases == 1);
+	lift(false);
+	pump(600);
+	update_touch_click_capture(false);
+	prev_clicking = whole_lclick_down = false;
+
+	// A gamepad button that overlaps the canceled touch cannot keep its capture alive.
+	press();
+	capture_current_press();
+	set_gamepad_click(true);
+	pump(1000);
+	input_parts_poll_begin(true);
+	assert(key_is_down(VK_CONTROL) && key_is_down(VK_LBUTTON));
+	release_capture_without_click(true, 2);
+	assert(!click_touch_press_id);
+	capture_current_press();
+	assert(!click_touch_press_id);
+	lift(false);
+	set_gamepad_click(false);
+	pump(600);
+	update_touch_click_capture(false);
+	assert(prev_clicking && part_releases == 2 && !key_is_down(VK_LBUTTON));
 	return 0;
 }
 '''
@@ -178,10 +295,13 @@ class LongPressCtrlChecks(unittest.TestCase):
             self.skipTest('Host SDL2 and FreeType development files are required')
         flags = subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl2', 'freetype2'],
                                         text=True).split()
+        parts_input = (ENGINE / 'src/parts/input.c').read_text()
+        signature = 'static void update_touch_click_capture(bool cur_clicking)'
+        parts_capture = signature + parts_input.split(signature, 1)[1].split('\n}\n', 1)[0] + '\n}'
         with tempfile.TemporaryDirectory() as temporary:
             harness = Path(temporary) / 'harness.c'
             binary = Path(temporary) / 'harness'
-            harness.write_text(HARNESS)
+            harness.write_text(HARNESS.replace('/* PARTS_CAPTURE */', parts_capture))
             subprocess.run(['cc', '-std=gnu11', '-DALICEHUB_IOS', '-I' + str(ENGINE / 'include'),
                             '-I' + str(ENGINE / 'subprojects/libsys4/include'), '-I' + str(ROOT / 'ios'),
                             str(harness), str(ENGINE / 'src/input.c'), str(ENGINE / 'src/cJSON.c'),
