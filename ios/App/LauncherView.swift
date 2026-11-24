@@ -88,8 +88,8 @@ struct LauncherView: View {
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { onlineDownload.cancel() }
             guard phase == .active else { return }
+            if OnlineInstall.enabled { onlineDownload.resumePaused(library: library) }
             library.refreshAsync {
 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments

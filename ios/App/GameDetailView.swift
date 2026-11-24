@@ -12,6 +12,7 @@ struct GameDetailView: View {
     @State private var modDescriptor: ModGameDescriptor?
     @State private var uncensoredDescriptor: UncensoredGameDescriptor?
     @State private var uncensoredInstalled = false
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var supportsSaveEditor = false
     @State private var loadedCapabilities = false
 
@@ -77,7 +78,7 @@ struct GameDetailView: View {
                         action(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", "shippingbox", .mods)
                         Divider()
                     }
-                    if uncensoredDescriptor != nil {
+                    if uncensoredDescriptor != nil && (onlineInstall || uncensoredInstalled) {
                         action(uncensoredInstalled ? "无码补丁 · 已安装" : "无码补丁", "sparkles", .uncensored)
                         Divider()
                     }

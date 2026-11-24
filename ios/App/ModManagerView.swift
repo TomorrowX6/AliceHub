@@ -7,6 +7,7 @@ private struct ModImport: Identifiable { let folder: Bool; var id: Bool { folder
 struct ModManagerView: View {
     @ObservedObject var library: GameLibrary
     @StateObject private var model: ModManagerModel
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var localOptions = false
     @State private var switching = false
     @State private var confirmRestore = false
@@ -29,12 +30,14 @@ struct ModManagerView: View {
                     Button { switching = true } label: {
                         HubActionLabel(title: "切换目录", symbol: "folder")
                     }.buttonStyle(.plain)
-                    Button {
-                        if let plan = model.plan { model.install(plan.steps) }
-                        else { Task { await model.loadCatalog() } }
-                    } label: {
-                        Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
-                    }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
+                    if onlineInstall {
+                        Button {
+                            if let plan = model.plan { model.install(plan.steps) }
+                            else { Task { await model.loadCatalog() } }
+                        } label: {
+                            Label(model.updateTitle, systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
+                        }.buttonStyle(HubPrimaryButton()).disabled(model.updateDisabled)
+                    }
                     Button { localMode = true } label: {
                         HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", symbol: "archivebox")
                     }.buttonStyle(.plain)
@@ -49,28 +52,30 @@ struct ModManagerView: View {
                 if let notice = model.notice {
                     Section { Label(notice, systemImage: "checkmark.circle").foregroundColor(.green) }
                 }
-                Section("在线版本") {
-                    if model.availableGroups.count > 1 {
-                        Picker("MOD 系列", selection: Binding(
-                            get: { model.selectedGroup },
-                            set: { model.selectGroup($0) }
-                        )) {
-                            ForEach(model.availableGroups, id: \.self) { group in
-                                Text(group).tag(group)
+                if onlineInstall {
+                    Section("在线版本") {
+                        if model.availableGroups.count > 1 {
+                            Picker("MOD 系列", selection: Binding(
+                                get: { model.selectedGroup },
+                                set: { model.selectGroup($0) }
+                            )) {
+                                ForEach(model.availableGroups, id: \.self) { group in
+                                    Text(group).tag(group)
+                                }
                             }
+                            .pickerStyle(.segmented)
                         }
-                        .pickerStyle(.segmented)
-                    }
-                    if model.visibleReleases.isEmpty {
-                        if model.loading { ProgressView("正在加载…") }
-                        else { Text(model.loadFailed ? "获取失败，请检查网络" : (model.descriptor.isCnPatch ? "暂无可用汉化补丁" : "暂无可用版本")).foregroundColor(.secondary) }
-                    }
-                    ForEach(Array(model.visibleReleases.enumerated()), id: \.offset) { index, entry in
-                        Button { selected = ModSelection(id: index) } label: {
-                            ModReleaseRow(entry: entry, latest: index == 0, installed: model.installedIndex == index, base: isBase(entry, index))
-                        }.buttonStyle(.plain)
-                    }
-                }.listRowBackground(HubTheme.surface)
+                        if model.visibleReleases.isEmpty {
+                            if model.loading { ProgressView("正在加载…") }
+                            else { Text(model.loadFailed ? "获取失败，请检查网络" : (model.descriptor.isCnPatch ? "暂无可用汉化补丁" : "暂无可用版本")).foregroundColor(.secondary) }
+                        }
+                        ForEach(Array(model.visibleReleases.enumerated()), id: \.offset) { index, entry in
+                            Button { selected = ModSelection(id: index) } label: {
+                                ModReleaseRow(entry: entry, latest: index == 0, installed: model.installedIndex == index, base: isBase(entry, index))
+                            }.buttonStyle(.plain)
+                        }
+                    }.listRowBackground(HubTheme.surface)
+                }
             }
             .listStyle(.insetGrouped).modifier(HubListStyle())
             .disabled(model.busy)
@@ -79,8 +84,10 @@ struct ModManagerView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.disabled(model.busy) }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { Task { await model.loadCatalog() } } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("重新获取").disabled(model.busy || model.loading)
+                    if onlineInstall {
+                        Button { Task { await model.loadCatalog() } } label: { Image(systemName: "arrow.clockwise") }
+                            .accessibilityLabel("重新获取").disabled(model.busy || model.loading)
+                    }
                 }
             }
             .overlay { if model.busy { ModInstallProgress(installer: model.installer) } }
@@ -88,7 +95,7 @@ struct ModManagerView: View {
         .navigationViewStyle(.stack)
         .modifier(HubAppearanceModifier())
         .interactiveDismissDisabled(model.busy)
-        .task { await model.loadCatalog(); library.refresh() }
+        .task { if onlineInstall { await model.loadCatalog() }; library.refresh() }
         .onChange(of: model.busy) { busy in if !busy { library.refresh() } }
         .onDisappear { library.refresh() }
         .confirmationDialog(model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", isPresented: $localOptions, titleVisibility: .visible) {
