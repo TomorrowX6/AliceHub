@@ -3,6 +3,7 @@ import SwiftUI
 struct GameDetailView: View {
     let game: Game
     @ObservedObject var library: GameLibrary
+    @ObservedObject var download: OnlineGameDownloadModel
     let catalog: OnlineGame?
     let installations: [Game]
     @Binding var selectedID: String?
@@ -62,6 +63,14 @@ struct GameDetailView: View {
 
                 Text("游戏管理").font(.title3.bold())
                 VStack(spacing: 0) {
+                    if let catalog {
+                        NavigationLink {
+                            OnlineGameDetailView(game: catalog, library: library, download: download)
+                        } label: {
+                            HubActionLabel(title: "在线下载", symbol: "arrow.down.circle")
+                        }.buttonStyle(.plain)
+                        Divider()
+                    }
                     action("存档管理", "externaldrive", .saves)
                     Divider()
                     if let descriptor = modDescriptor {

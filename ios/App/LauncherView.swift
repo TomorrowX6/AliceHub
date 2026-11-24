@@ -181,7 +181,7 @@ private struct LibraryGameDestination: View {
     var body: some View {
         let installations = entry.matchingInstallations(in: library.games)
         if let active = LibraryEntry.installation(in: installations, selectedID: selectedID) {
-            GameDetailView(game: active, library: library, catalog: entry.catalog,
+            GameDetailView(game: active, library: library, download: download, catalog: entry.catalog,
                            installations: installations, selectedID: $selectedID)
                 .id(active.id)
         } else if let catalog = entry.catalog {

@@ -102,6 +102,10 @@ struct OnlineGameChecks {
         let rance41 = entries[0]
         precondition(rance41.installations.map(\.id) == [cnRance41.id, engRance41.id])
         precondition(rance41.matches(engRance41.name) && rance41.matches(rance41.title))
+        precondition(rance41.matches("熟肉") && rance41.matches("生肉"))
+        let uninstalledRance10 = entries[2]
+        precondition(uninstalledRance10.primary == nil && uninstalledRance10.matches("熟肉") &&
+                     !uninstalledRance10.matches("生肉"))
         precondition(LibraryEntry.installation(in: rance41.installations, selectedID: engRance41.id) == engRance41)
         precondition(LibraryEntry.installation(in: rance41.matchingInstallations(in: [cnRance41]), selectedID: engRance41.id) == cnRance41)
         precondition(rance41.matchingInstallations(in: []).isEmpty)

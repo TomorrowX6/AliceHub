@@ -34,11 +34,16 @@ struct LibraryEntry: Identifiable {
 
     func matches(_ search: String) -> Bool {
         if search.isEmpty { return true }
-        let labels = [title, hasChinese ? "熟肉" : "生肉", catalog?.directory, catalog?.id].compactMap { $0 }
+        let labels = [title, catalog?.directory, catalog?.id].compactMap { $0 }
+        func matchesLanguage(_ chinese: Bool) -> Bool {
+            (chinese ? "熟肉" : "生肉").localizedCaseInsensitiveContains(search)
+        }
         return labels.contains { $0.localizedCaseInsensitiveContains(search) } ||
+            (installations.isEmpty && matchesLanguage(hasChinese)) ||
             installations.contains {
                 $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
-                    $0.name.localizedCaseInsensitiveContains(search)
+                    $0.name.localizedCaseInsensitiveContains(search) ||
+                    matchesLanguage(OnlineGame.hasChinese(for: $0))
             }
     }
 
