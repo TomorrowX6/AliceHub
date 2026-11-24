@@ -94,12 +94,12 @@ struct SaveManagerView: View {
             SaveNameView(item: item, manager: manager) { name, overwrite in
                 naming = nil
                 if !item.copy && name == item.entry.url.lastPathComponent { return }
-                operate {
+                operate(onSyncQueue: !item.copy) {
                     if item.copy {
                         try manager.duplicate(item.entry, named: name, overwrite: overwrite)
                         return "已备份为 \(name)"
                     }
-                    try manager.rename(item.entry, named: name)
+                    try SaveSyncFolder.rename(item.entry, named: name, using: manager)
                     return "已重命名为 \(name)"
                 }
             }
@@ -147,13 +147,15 @@ struct SaveManagerView: View {
         catch { message = error.localizedDescription }
     }
 
-    private func operate(_ work: @escaping () throws -> String) {
+    private func operate(onSyncQueue: Bool = false, _ work: @escaping () throws -> String) {
         busy = true
-        DispatchQueue.global(qos: .userInitiated).async {
+        let run: @Sendable () -> Void = {
             let result: String
             do { result = try work() } catch { result = "操作失败：\(error.localizedDescription)" }
             DispatchQueue.main.async { busy = false; refresh(); message = result }
         }
+        if onSyncQueue { SaveSyncFolder.enqueue(run) }
+        else { DispatchQueue.global(qos: .userInitiated).async(execute: run) }
     }
 
     private func confirmImport(folder: Bool) {

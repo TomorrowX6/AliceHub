@@ -1,8 +1,10 @@
 import Foundation
 
 struct GlobalSaveEditor {
-    enum Backup: String {
+    enum Backup: String, CaseIterable {
         case edit, unlock
+
+        var filename: String { ".global-\(rawValue).plist" }
     }
 
     enum Failure: LocalizedError {
@@ -39,7 +41,7 @@ struct GlobalSaveEditor {
     private static let nested = "SaveData/"
 
     private func backupURL(_ kind: Backup) -> URL {
-        directory.appendingPathComponent(".global-\(kind.rawValue).plist")
+        directory.appendingPathComponent(kind.filename)
     }
 
     private func exists(_ url: URL, directory expectedDirectory: Bool = false) throws -> Bool {
@@ -57,6 +59,11 @@ struct GlobalSaveEditor {
 
     private func snapshot(_ names: [String], in root: URL) throws -> [Entry] {
         let paths = try nestedExists(root) ? names + names.map { Self.nested + $0 } : names
+        return try read(paths, in: root)
+    }
+
+    private func read(_ paths: [String], in root: URL) throws -> [Entry] {
+        if paths.contains(where: { $0.hasPrefix(Self.nested) }) { _ = try nestedExists(root) }
         return try paths.map { path in
             let url = root.appendingPathComponent(path)
             return Entry(path: path, data: try exists(url) ? Data(contentsOf: url) : nil)
@@ -96,11 +103,34 @@ struct GlobalSaveEditor {
         try exists(directory, directory: true) && exists(backupURL(kind))
     }
 
+    func discardBackups() throws {
+        for kind in Backup.allCases where try hasBackup(kind) {
+            try files.removeItem(at: backupURL(kind))
+        }
+    }
+
+    private func backupEntries(_ kind: Backup) throws -> [Entry] {
+        let entries = try PropertyListDecoder().decode([Entry].self, from: Data(contentsOf: backupURL(kind)))
+        let names = kind == .edit ? Self.editable : Self.unlockable
+        let validPaths = Set(names + names.map { Self.nested + $0 })
+        let paths = Set(entries.map(\.path))
+        guard !entries.isEmpty, paths.count == entries.count, paths.isSubset(of: validPaths) else {
+            throw Failure.invalidBackup
+        }
+        return entries
+    }
+
     private func saveBackup(_ kind: Backup, entries: [Entry]) throws {
-        let url = backupURL(kind)
-        let exists = try exists(url)
-        if kind == .unlock && exists { return }
-        try PropertyListEncoder().encode(entries).write(to: url, options: .atomic)
+        let hadBackup = try hasBackup(kind)
+        var backup = entries
+        if kind == .unlock && hadBackup {
+            let previous = try backupEntries(kind)
+            let known = Set(previous.map(\.path))
+            let added = entries.filter { !known.contains($0.path) }
+            if added.isEmpty { return }
+            backup = previous + added
+        }
+        try PropertyListEncoder().encode(backup).write(to: backupURL(kind), options: .atomic)
     }
 
     private func apply(_ entries: [Entry], to root: URL) throws {
@@ -146,8 +176,10 @@ struct GlobalSaveEditor {
         let json = String(decoding: try JSONSerialization.data(withJSONObject: changes), as: UTF8.self)
         guard write(paths, json) else { throw Failure.write }
         let after = try snapshot(Self.editable, in: stage)
-        guard before != after else { return }
-        try saveBackup(.edit, entries: before)
+        let staged = Dictionary(uniqueKeysWithValues: after.map { ($0.path, $0) })
+        let changed = before.filter { staged[$0.path] != $0 }
+        guard !changed.isEmpty else { return }
+        try saveBackup(.edit, entries: changed)
         try replace(before, with: after)
     }
 
@@ -167,18 +199,9 @@ struct GlobalSaveEditor {
 
     func restore(_ kind: Backup) throws {
         guard try hasBackup(kind) else { throw Failure.invalidBackup }
-        let backup = backupURL(kind)
-        let entries = try PropertyListDecoder().decode([Entry].self, from: Data(contentsOf: backup))
-        let names = kind == .edit ? Self.editable : Self.unlockable
-        let validPaths = Set(names + names.map { Self.nested + $0 })
-        let paths = Set(entries.map(\.path))
-        guard paths.count == entries.count, paths.isSubset(of: validPaths), Set(names).isSubset(of: paths) else {
-            throw Failure.invalidBackup
-        }
-        var before = try snapshot(names, in: directory)
-        let known = Set(before.map(\.path))
-        before += entries.filter { !known.contains($0.path) }.map { Entry(path: $0.path, data: nil) }
+        let entries = try backupEntries(kind)
+        let before = try read(entries.map(\.path), in: directory)
         try replace(before, with: entries)
-        try files.removeItem(at: backup)
+        try files.removeItem(at: backupURL(kind))
     }
 }

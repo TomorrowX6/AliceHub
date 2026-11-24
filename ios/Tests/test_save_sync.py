@@ -14,6 +14,7 @@ class SaveSyncChecks(unittest.TestCase):
             subprocess.run([
                 'swiftc', '-import-objc-header', str(ROOT / 'ios/Tests/SaveChecks-Bridging-Header.h'),
                 str(ROOT / 'ios/App/SaveZip.swift'), str(ROOT / 'ios/App/SaveManager.swift'),
+                str(ROOT / 'ios/App/GlobalSaveEditor.swift'),
                 str(ROOT / 'ios/App/SaveSync.swift'), str(ROOT / 'ios/Tests/SaveSyncChecks.swift'),
                 '-lz', '-o', str(binary),
             ], check=True)

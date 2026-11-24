@@ -5,7 +5,7 @@ import Foundation
 /// <sync folder>/<game>, where the sync folder is any folder the user picked in
 /// Files (typically iCloud Drive). A file counts as changed only when its content
 /// differs from the last synced version. Conflicting copies are left in place.
-/// Deletions are not propagated.
+/// Ordinary deletions are not propagated.
 final class SaveSync {
     struct Summary: Equatable {
         var pulled = 0
@@ -14,13 +14,14 @@ final class SaveSync {
         var skipped = 0
     }
     enum Failure: LocalizedError {
-        case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged
+        case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged, renameConflict
         var errorDescription: String? {
             switch self {
             case .folderUnavailable: return "无法访问同步文件夹，请在设置中重新选择。"
             case .unsafePath: return "同步文件夹中的存档路径不安全。"
             case .unreadableCloudFile: return "云端存档暂不可读，请在“文件”中下载后重试。"
             case .targetChanged: return "同步时存档已被修改，未覆盖该文件。请重试。"
+            case .renameConflict: return "同步文件夹中的存档不同或已有同名文件，未重命名。"
             }
         }
     }
@@ -200,6 +201,57 @@ final class SaveSync {
         return try result.get()
     }
 
+    func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager) throws {
+        let localTarget = try manager.destination(for: entry, named: name)
+        let newName = localTarget.lastPathComponent
+        guard entry.url.lastPathComponent != newName else { return }
+        let parts = entry.path.split(separator: "/").map(String.init)
+        let newParts = Array(parts.dropLast()) + [newName]
+        let oldPath = [game] + parts
+        let newPath = [game] + newParts
+        let source = try checkedURL(oldPath, under: folder)
+        let target = try checkedURL(newPath, under: folder)
+        guard files.fileExists(atPath: source.deletingLastPathComponent().path) else {
+            try manager.rename(entry, named: name)
+            return
+        }
+
+        var error: NSError?
+        var result: Result<Void, Error> = .failure(Failure.folderUnavailable)
+        coordinator.coordinate(writingItemAt: source, options: .forMoving,
+                               writingItemAt: target, options: .forReplacing, error: &error) { sourceURL, targetURL in
+            result = Result {
+                guard canonical(sourceURL) == canonical(try checkedURL(oldPath, under: folder)),
+                      canonical(targetURL) == canonical(try checkedURL(newPath, under: folder)) else {
+                    throw Failure.unsafePath
+                }
+                guard try existingBytes(at: targetURL) == nil else { throw Failure.renameConflict }
+                guard let bytes = try existingBytes(at: sourceURL) else {
+                    try manager.rename(entry, named: name)
+                    return
+                }
+                var records = loadRecords()
+                guard let base = records[entry.path], base.conflict == nil, Self.digest(bytes) == base.hash else {
+                    throw Failure.renameConflict
+                }
+                try manager.rename(entry, named: name)
+                do {
+                    coordinator.item(at: sourceURL, willMoveTo: targetURL)
+                    try files.moveItem(at: sourceURL, to: targetURL)
+                    coordinator.item(at: sourceURL, didMoveTo: targetURL)
+                } catch {
+                    try files.moveItem(at: localTarget, to: entry.url)
+                    throw error
+                }
+                records.removeValue(forKey: entry.path)
+                records[newParts.joined(separator: "/")] = base
+                try? saveRecords(records)
+            }
+        }
+        if let error { throw error }
+        try result.get()
+    }
+
     @discardableResult func sync(mode: Mode = .twoWay, isCancelled: () -> Bool = { false }) throws -> Summary {
         var summary = Summary()
         guard !isCancelled() else { return summary }
@@ -352,6 +404,15 @@ enum SaveSyncFolder {
         return try withFolder { folder in
             try make(game: game, folder: folder, documents: documents, support: support).sync(mode: mode, isCancelled: isCancelled)
         }
+    }
+
+    static func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager,
+                       documents: URL? = nil, support: URL? = nil) throws {
+        let synced: Void? = try withFolder { folder in
+            try make(game: manager.game, folder: folder, documents: documents, support: support)
+                .rename(entry, named: name, using: manager)
+        }
+        if synced == nil { try manager.rename(entry, named: name) }
     }
 
     /// Uploads every game that has local saves.

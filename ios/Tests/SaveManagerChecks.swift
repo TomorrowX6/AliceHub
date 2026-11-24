@@ -172,8 +172,17 @@ struct SaveManagerChecks {
         try global.unlock(using: template)
         check(try global.paths()?.global == manager.directory.appendingPathComponent("GlobalSave.asd").path)
         check(try global.hasBackup(.unlock))
+        try text("SaveData/Collection.asd", "later nested collection")
+        try global.unlock(using: template)
+        let unlocked = try SaveZip.read(template)
+        for entry in unlocked {
+            check(try Data(contentsOf: manager.directory.appendingPathComponent("SaveData/" + entry.name)) == entry.data)
+        }
         try global.restore(.unlock)
-        check(try global.paths() == nil && !global.hasBackup(.unlock))
+        check(try read("SaveData/Collection.asd") == "later nested collection" && !global.hasBackup(.unlock))
+        check(!files.fileExists(atPath: manager.directory.appendingPathComponent("SaveData/GlobalSave.asd").path))
+        try files.removeItem(at: manager.directory.appendingPathComponent("SaveData/Collection.asd"))
+        check(try global.paths() == nil)
 
         try text("GlobalSave.asd", "root global")
         try text("SaveData/Collection.asd", "nested collection")
@@ -182,7 +191,6 @@ struct SaveManagerChecks {
         check(paths.global == manager.directory.appendingPathComponent("GlobalSave.asd").path)
         check(paths.collection == manager.directory.appendingPathComponent("SaveData/Collection.asd").path)
         try global.unlock(using: template)
-        let unlocked = try SaveZip.read(template)
         for entry in unlocked {
             check(try Data(contentsOf: manager.directory.appendingPathComponent(entry.name)) == entry.data)
             check(try Data(contentsOf: manager.directory.appendingPathComponent("SaveData/" + entry.name)) == entry.data)
@@ -210,12 +218,31 @@ struct SaveManagerChecks {
             }
         }
         check(try read("GlobalSave.asd") == "changed" && read("CommonSystemData.sav") == "created")
+        try text("SaveData/Collection.asd", "later progress")
+        try text("Collection.asd", "new independent collection")
         try global.restore(.edit)
-        check(try read("GlobalSave.asd") == "root global" && read("SaveData/Collection.asd") == "nested collection")
+        check(try read("GlobalSave.asd") == "root global" && read("SaveData/Collection.asd") == "later progress")
+        check(try read("Collection.asd") == "new independent collection")
         check(!files.fileExists(atPath: manager.directory.appendingPathComponent("CommonSystemData.sav").path))
+        try files.removeItem(at: manager.directory.appendingPathComponent("Collection.asd"))
+
+        try global.unlock(using: template)
+        try global.edit(["totalClearPoint": 999]) { staged, _ in
+            let parent = URL(fileURLWithPath: staged.global).deletingLastPathComponent()
+            return (try? Data("edited".utf8).write(to: parent.appendingPathComponent("CommonSystemData.sav"))) != nil
+        }
+        let replaced = root.appendingPathComponent("replace-global.zip")
+        try SaveZip.write([.init(name: "SaveData/GlobalSave.asd", data: Data("ZIP global".utf8))], to: replaced)
+        failedSwap = false
+        rejects { try rollback.restore(replaced) }
+        check(try global.hasBackup(.unlock) && global.hasBackup(.edit))
+        try manager.restore(replaced)
+        check(try !global.hasBackup(.unlock) && !global.hasBackup(.edit) && read(".secret") == "secret")
+        try global.unlock(using: template)
+        try global.restore(.unlock)
+        check(try read("GlobalSave.asd") == "ZIP global")
 
         try files.removeItem(atPath: paths.global)
-        try files.removeItem(atPath: paths.collection)
         try text("SaveData/CommonSystemData.sav", "only common")
         check(try global.paths()?.global == manager.directory.appendingPathComponent("SaveData/GlobalSave.asd").path)
         let unsafe = manager.directory.appendingPathComponent("GlobalSave.asd")
@@ -224,6 +251,7 @@ struct SaveManagerChecks {
         rejects { try global.unlock(using: template) }
         check(try Data(contentsOf: outside) == Data("outside".utf8))
         print("PASS: global unlock and restore with Android bundle, root/nested paths, CSD-only, staged edits and rollback, symlink rejection")
+        print("PASS: scoped edit undo; unlock undo across a new nested directory; ZIP restore invalidation and rollback")
         print("PASS: ZIP round-trip/CRC/stored, empty backup, retention, restore replacement/hidden/traversal/corruption/rollback, import merge/discovery, PC conversion/filtering, raw export, duplicate/delete/clear")
     }
 }

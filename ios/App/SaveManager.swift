@@ -132,6 +132,9 @@ final class SaveManager {
         if existed {
             func preserveHidden(_ source: URL, _ destination: URL) throws {
                 for child in try children(source) {
+                    if source == directory && GlobalSaveEditor.Backup.allCases.contains(where: { $0.filename == child.lastPathComponent }) {
+                        continue
+                    }
                     let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
                     guard values.isSymbolicLink != true else { throw Failure.unsafePath }
                     let target = destination.appendingPathComponent(child.lastPathComponent)
@@ -277,5 +280,6 @@ final class SaveManager {
     func clear() throws {
         try backup()
         for entry in try list() { try delete(entry) }
+        try GlobalSaveEditor(directory: directory).discardBackups()
     }
 }

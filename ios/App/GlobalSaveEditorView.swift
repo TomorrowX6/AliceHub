@@ -8,6 +8,7 @@ struct GlobalSaveEditorView: View {
         var source: String? = nil
         var batch = false
         var decimal = false
+        var flag = false
     }
 
     private enum Action: String, Identifiable {
@@ -31,10 +32,10 @@ struct GlobalSaveEditorView: View {
         .init(id: "BestScore", title: "最高得分", maximum: 999999),
         .init(id: "LeaderSmallestTurn", title: "魔王最少回合", maximum: 1),
         .init(id: "RealSmallestTurn", title: "第二部最少回合", maximum: 1),
-        .init(id: "CollectionClearB", title: "第二部通关（0/1）", maximum: 1),
-        .init(id: "OpenMonsterpedia", title: "魔物图鉴（0/1）", maximum: 1),
-        .init(id: "TrophyComplete", title: "实绩全达成（0/1）", maximum: 1),
-        .init(id: "CardComplete", title: "卡牌全收集（0/1）", maximum: 1),
+        .init(id: "CollectionClearB", title: "第二部通关（0/1）", maximum: 1, flag: true),
+        .init(id: "OpenMonsterpedia", title: "魔物图鉴（0/1）", maximum: 1, flag: true),
+        .init(id: "TrophyComplete", title: "实绩全达成（0/1）", maximum: 1, flag: true),
+        .init(id: "CardComplete", title: "卡牌全收集（0/1）", maximum: 1, flag: true),
         .init(id: "gamePlayCount", title: "周回次数", maximum: 50, source: "hasGlobal"),
         .init(id: "itemStarRank", title: "装备星级上限", maximum: 20, source: "hasGlobal"),
         .init(id: "leaderAtkRatio", title: "首领攻击倍率", maximum: 10, source: "hasCollection", decimal: true),
@@ -121,7 +122,8 @@ struct GlobalSaveEditorView: View {
             guard !value.isEmpty, value != original[field.id] else { continue }
             if field.decimal, let number = Float(value), number.isFinite {
                 changes[field.id] = Double(number)
-            } else if !field.decimal, let number = Int32(value), !field.batch || number >= 0 {
+            } else if !field.decimal, let number = Int32(value),
+                      (!field.batch || number >= 0), (!field.flag || number == 0 || number == 1) {
                 changes[field.id] = Double(number)
             } else {
                 message = "\(field.title)数值无效。"

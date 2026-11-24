@@ -142,6 +142,44 @@ struct SaveSyncChecks {
         check(get(documents, "Saves/其他游戏/LocalSave1.asd") == "other")
         check(get(cloud, "第三个/x.sav") == "third")
 
+        let renames = "rename-checks"
+        let localRenames = documents.appendingPathComponent("Saves/" + renames)
+        let remoteRenames = cloud.appendingPathComponent(renames)
+        let manager = SaveManager(game: renames, documents: documents, support: support) { _, _ in }
+        func rename(_ source: String, to name: String) throws {
+            let entry = try manager.list().first { $0.path == source }!
+            try SaveSyncFolder.rename(entry, named: name, using: manager, documents: documents, support: support)
+        }
+        try put(localRenames, "sub/old.asd", "last synced", 20)
+        try SaveSyncFolder.sync(game: renames, documents: documents, support: support)
+        try put(localRenames, "sub/old.asd", "new local progress", 10)
+        try rename("sub/old.asd", to: "renamed.asd")
+        check(get(localRenames, "sub/old.asd") == nil && get(remoteRenames, "sub/old.asd") == nil)
+        check(get(localRenames, "sub/renamed.asd") == "new local progress")
+        check(get(remoteRenames, "sub/renamed.asd") == "last synced")
+        check(try SaveSyncFolder.sync(game: renames, documents: documents, support: support)! == SaveSync.Summary(pushed: 1))
+        check(get(remoteRenames, "sub/renamed.asd") == "new local progress")
+
+        try put(remoteRenames, "sub/occupied.asd", "keep destination", 0)
+        do { try rename("sub/renamed.asd", to: "occupied.asd"); preconditionFailure("renamed over occupied cloud path") }
+        catch SaveSync.Failure.renameConflict {}
+        check(get(localRenames, "sub/renamed.asd") == "new local progress")
+        check(get(remoteRenames, "sub/occupied.asd") == "keep destination")
+        try put(remoteRenames, "sub/renamed.asd", "new cloud progress", 0)
+        do { try rename("sub/renamed.asd", to: "conflict.asd"); preconditionFailure("moved changed cloud path") }
+        catch SaveSync.Failure.renameConflict {}
+        check(get(localRenames, "sub/renamed.asd") == "new local progress")
+        check(get(remoteRenames, "sub/renamed.asd") == "new cloud progress")
+        check(get(localRenames, "sub/conflict.asd") == nil && get(remoteRenames, "sub/conflict.asd") == nil)
+
+        try put(localRenames, "sub/local-only.asd", "local only", 0)
+        try rename("sub/local-only.asd", to: "unpublished.asd")
+        check(get(localRenames, "sub/local-only.asd") == nil && get(localRenames, "sub/unpublished.asd") == "local only")
+        try files.removeItem(at: localRenames.appendingPathComponent("sub/renamed.asd"))
+        check(try SaveSyncFolder.sync(game: renames, documents: documents, support: support)! == SaveSync.Summary(pulled: 2, pushed: 1))
+        check(get(localRenames, "sub/renamed.asd") == "new cloud progress")
+        print("PASS: synced rename carries version history; cloud conflicts are preserved; ordinary deletion still does not propagate")
+
         try files.createSymbolicLink(at: remote.appendingPathComponent("escape"), withDestinationURL: root)
         do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("symlink accepted") } catch {}
 
