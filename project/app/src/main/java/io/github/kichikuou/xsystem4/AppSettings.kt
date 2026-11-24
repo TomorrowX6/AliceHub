@@ -167,6 +167,36 @@ object AppSettings {
     internal const val DEFAULT_RACHELSAKURA_BYTES = 192743017L
     internal const val DEFAULT_SABAKUNIKA_BYTES = 253327874L
     internal const val DEFAULT_VANISHPALM_BYTES = 336117791L
+    internal const val DEFAULT_BLADEBRIDERS_BYTES = 1897558326L
+    internal const val DEFAULT_DORAPEKO_BYTES = 2610901983L
+    internal const val DEFAULT_HANIWAPETIT_BYTES = 63435418L
+    internal const val DEFAULT_YAKATA456_BYTES = 73754160L
+    internal const val DEFAULT_UMINIOCHITE_BYTES = 9445936L
+    internal const val DEFAULT_GAKUENHYOURYUU2_BYTES = 4151616L
+    internal const val DEFAULT_YOUSEI_BYTES = 29600823L
+    internal const val DEFAULT_TOBIRA_BYTES = 23143915L
+    internal const val DEFAULT_BUROBURO_BYTES = 21702464L
+    internal const val DEFAULT_KUDAKERO_BYTES = 13232381L
+    internal const val DEFAULT_LITTLEVAMPIRE_BYTES = 974162L
+    internal const val DEFAULT_INTRUDER_BYTES = 1285632L
+    internal const val DEFAULT_CRESCENT_BYTES = 2551428L
+    internal const val DEFAULT_TENGU_BYTES = 2701911L
+    internal const val DEFAULT_DPS_BYTES = 1672245L
+    internal const val DEFAULT_YAKATA1_BYTES = 2717929L
+    internal const val DEFAULT_SDPSTONO_BYTES = 1803170L
+    internal const val DEFAULT_SDPSKAIZOKU_BYTES = 1861026L
+    internal const val DEFAULT_PROGOMAKE_BYTES = 8388471L
+    internal const val DEFAULT_AYUMIHINT_BYTES = 1024768L
+    internal const val DEFAULT_AYUMILIVE_BYTES = 80554098L
+    internal const val DEFAULT_NISENAGURI_BYTES = 13989899L
+    internal const val DEFAULT_CAROL_BYTES = 20732992L
+    internal const val DEFAULT_OTHELLOT_BYTES = 20293696L
+    internal const val DEFAULT_MASQUERADE_BYTES = 286016L
+    internal const val DEFAULT_DEKIRUKANA_BYTES = 2525744L
+    internal const val DEFAULT_TATAKIKOROSHI_BYTES = 542256L
+    internal const val DEFAULT_BALLOONPOP_BYTES = 35380L
+    internal const val DEFAULT_HIYOKO2_BYTES = 102330L
+    internal const val DEFAULT_SELFGAME_BYTES = 3694656L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -467,6 +497,36 @@ object AppSettings {
             OnlineInstaller.RACHELSAKURA_CDN_URL -> DEFAULT_RACHELSAKURA_BYTES
             OnlineInstaller.SABAKUNIKA_CDN_URL -> DEFAULT_SABAKUNIKA_BYTES
             OnlineInstaller.VANISHPALM_CDN_URL -> DEFAULT_VANISHPALM_BYTES
+            OnlineInstaller.BLADEBRIDERS_CDN_URL -> DEFAULT_BLADEBRIDERS_BYTES
+            OnlineInstaller.DORAPEKO_CDN_URL -> DEFAULT_DORAPEKO_BYTES
+            OnlineInstaller.HANIWAPETIT_CDN_URL -> DEFAULT_HANIWAPETIT_BYTES
+            OnlineInstaller.YAKATA456_CDN_URL -> DEFAULT_YAKATA456_BYTES
+            OnlineInstaller.UMINIOCHITE_CDN_URL -> DEFAULT_UMINIOCHITE_BYTES
+            OnlineInstaller.GAKUENHYOURYUU2_CDN_URL -> DEFAULT_GAKUENHYOURYUU2_BYTES
+            OnlineInstaller.YOUSEI_CDN_URL -> DEFAULT_YOUSEI_BYTES
+            OnlineInstaller.TOBIRA_CDN_URL -> DEFAULT_TOBIRA_BYTES
+            OnlineInstaller.BUROBURO_CDN_URL -> DEFAULT_BUROBURO_BYTES
+            OnlineInstaller.KUDAKERO_CDN_URL -> DEFAULT_KUDAKERO_BYTES
+            OnlineInstaller.LITTLEVAMPIRE_CDN_URL -> DEFAULT_LITTLEVAMPIRE_BYTES
+            OnlineInstaller.INTRUDER_CDN_URL -> DEFAULT_INTRUDER_BYTES
+            OnlineInstaller.CRESCENT_CDN_URL -> DEFAULT_CRESCENT_BYTES
+            OnlineInstaller.TENGU_CDN_URL -> DEFAULT_TENGU_BYTES
+            OnlineInstaller.DPS_CDN_URL -> DEFAULT_DPS_BYTES
+            OnlineInstaller.YAKATA1_CDN_URL -> DEFAULT_YAKATA1_BYTES
+            OnlineInstaller.SDPSTONO_CDN_URL -> DEFAULT_SDPSTONO_BYTES
+            OnlineInstaller.SDPSKAIZOKU_CDN_URL -> DEFAULT_SDPSKAIZOKU_BYTES
+            OnlineInstaller.PROGOMAKE_CDN_URL -> DEFAULT_PROGOMAKE_BYTES
+            OnlineInstaller.AYUMIHINT_CDN_URL -> DEFAULT_AYUMIHINT_BYTES
+            OnlineInstaller.AYUMILIVE_CDN_URL -> DEFAULT_AYUMILIVE_BYTES
+            OnlineInstaller.NISENAGURI_CDN_URL -> DEFAULT_NISENAGURI_BYTES
+            OnlineInstaller.CAROL_CDN_URL -> DEFAULT_CAROL_BYTES
+            OnlineInstaller.OTHELLOT_CDN_URL -> DEFAULT_OTHELLOT_BYTES
+            OnlineInstaller.MASQUERADE_CDN_URL -> DEFAULT_MASQUERADE_BYTES
+            OnlineInstaller.DEKIRUKANA_CDN_URL -> DEFAULT_DEKIRUKANA_BYTES
+            OnlineInstaller.TATAKIKOROSHI_CDN_URL -> DEFAULT_TATAKIKOROSHI_BYTES
+            OnlineInstaller.BALLOONPOP_CDN_URL -> DEFAULT_BALLOONPOP_BYTES
+            OnlineInstaller.HIYOKO2_CDN_URL -> DEFAULT_HIYOKO2_BYTES
+            OnlineInstaller.SELFGAME_CDN_URL -> DEFAULT_SELFGAME_BYTES
             else -> -1L
         }
     }

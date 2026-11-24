@@ -78,9 +78,12 @@ public class Wave5CatalogTest {
             GameDescriptor desc = GameCatalog.INSTANCE.descriptorForWithResolver(id, null, resId -> id);
             assertEquals(dirName, desc.getDefaultDirName());
             assertNull(id, desc.getExpectedAinName());
-            assertFalse("Deferred upload should keep supportsOnlineBaseInstall=false for " + id,
+            assertTrue("Expected supportsOnlineBaseInstall=true for " + id,
                     desc.getSupportsOnlineBaseInstall());
-            assertNull(id, desc.getOnlineBaseCdnUrl());
+            String expectedUrl = "https://alicehub.000.moe/" + id;
+            assertEquals(id, expectedUrl, desc.getOnlineBaseCdnUrl());
+            assertTrue("Expected default byte size > 0 for " + id,
+                    AppSettings.INSTANCE.defaultBaseGameSizeForUrl(expectedUrl) > 0L);
             assertEquals(id, hasCn, desc.getHasChinese());
 
             GameSortInfo meta = GameSortMetadata.INSTANCE.forGame(id);

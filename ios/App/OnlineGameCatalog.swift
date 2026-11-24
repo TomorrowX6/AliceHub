@@ -16,7 +16,6 @@ struct OnlineGame: Identifiable {
     }
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
-    private static let localOnlyChineseArtworkKeys: Set<String> = ["bladebriders", "dorapeko", "haniwapetit"]
 
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -35,13 +34,8 @@ struct OnlineGame: Identifiable {
         if game.hasExplicitNonChineseEdition {
             return false
         }
-        if let key = game.artworkKey {
-            if let entry = byArtworkKey[key] {
-                return entry.hasChinese
-            }
-            if localOnlyChineseArtworkKeys.contains(key) {
-                return true
-            }
+        if let key = game.artworkKey, let entry = byArtworkKey[key] {
+            return entry.hasChinese
         }
         return false
     }
@@ -173,7 +167,37 @@ struct OnlineGame: Identifiable {
         Self(id: "megane", title: "眼镜梅与暑假", directory: "Megane"),
         Self(id: "rachelsakura", title: "蕾切尔的樱贝", directory: "RachelSakura"),
         Self(id: "sabakunika", title: "沙漠的妮卡", directory: "SabakuNika"),
-        Self(id: "vanishpalm", title: "Vanish! 掌中奇缘", directory: "VanishPalm")
+        Self(id: "vanishpalm", title: "Vanish! 掌中奇缘", directory: "VanishPalm"),
+        Self(id: "bladebriders", title: "武想少女队", directory: "BladeBriders", hasChinese: true),
+        Self(id: "dorapeko", title: "饥饿龙娘！", directory: "Dorapeko", hasChinese: true),
+        Self(id: "haniwapetit", title: "哈尼瓦暗黑开发室 迷你版", directory: "HaniwaPetit", hasChinese: true),
+        Self(id: "yakata456", title: "爱丽丝之馆4・5・6", directory: "Yakata456"),
+        Self(id: "uminiochite", title: "坠入苍海…", directory: "UmiNiOchite"),
+        Self(id: "gakuenhyouryuu2", title: "学园漂流战记 第2话", directory: "GakuenHyouryuu2"),
+        Self(id: "yousei", title: "妖精", directory: "Yousei"),
+        Self(id: "tobira", title: "［扉］ -TOBIRA-", directory: "Tobira"),
+        Self(id: "buroburo", title: "噗咯噗咯", directory: "Buroburo"),
+        Self(id: "kudakero", title: "撞碎吧!!KUDAKERO 预告篇", directory: "Kudakero"),
+        Self(id: "littlevampire", title: "小吸血鬼 Little Vampire", directory: "LittleVampire"),
+        Self(id: "intruder", title: "侵入者 -樱屋敷的探索-", directory: "Intruder"),
+        Self(id: "crescent", title: "新月少女", directory: "CrescentMoonGirl"),
+        Self(id: "tengu", title: "危险的天狗传说", directory: "AbunaiTengu"),
+        Self(id: "dps", title: "D.P.S. 梦幻程序系统", directory: "DPS"),
+        Self(id: "yakata1", title: "爱丽丝之馆", directory: "Yakata1"),
+        Self(id: "sdpstono", title: "Super D.P.S 远野之森", directory: "SuperDpsTono"),
+        Self(id: "sdpskaizoku", title: "Super D.P.S 欢乐海盗生涯", directory: "SuperDpsKaizoku"),
+        Self(id: "progomake", title: "职业学生G 附赠盘", directory: "ProstudentGOmake"),
+        Self(id: "ayumihint", title: "步美物语 提示盘", directory: "AyumiHint"),
+        Self(id: "ayumilive", title: "步美物语 真人版", directory: "AyumiLive"),
+        Self(id: "nisenaguri", title: "伪殴打狂魔塔", directory: "NiseNaguri"),
+        Self(id: "carol", title: "卡萝尔 ～圣钟鸣响之夜～", directory: "Carol"),
+        Self(id: "othellot", title: "黑白棋娘", directory: "Othellot"),
+        Self(id: "masquerade", title: "假面舞会", directory: "Masquerade"),
+        Self(id: "dekirukana", title: "能做到吗？", directory: "Dekirukana"),
+        Self(id: "tatakikoroshi", title: "敲杀太郎", directory: "Tatakikoroshi"),
+        Self(id: "balloonpop", title: "气球爆破", directory: "BalloonPop"),
+        Self(id: "hiyoko2", title: "高速小鸡2", directory: "Hiyoko2"),
+        Self(id: "selfgame", title: "self", directory: "SelfGame")
     ]
 }
 
