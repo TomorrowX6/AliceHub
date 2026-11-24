@@ -38,7 +38,7 @@ struct ModManagerView: View {
                     Button { localMode = true } label: {
                         HubActionLabel(title: model.descriptor.isCnPatch ? "本地安装汉化补丁" : "本地安装 MOD", symbol: "archivebox")
                     }.buttonStyle(.plain)
-                    Button(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", role: .destructive) { confirmRestore = true }
+                    Button(hubText(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD"), role: .destructive) { confirmRestore = true }
                         .disabled(!model.canRestore)
                     if model.switchBlockedByNoBackup {
                         Text("当前整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。")
@@ -63,7 +63,7 @@ struct ModManagerView: View {
                     }
                     if model.visibleReleases.isEmpty {
                         if model.loading { ProgressView("正在加载…") }
-                        else { Text(model.loadFailed ? "获取失败，请检查网络" : (model.descriptor.isCnPatch ? "暂无可用汉化补丁" : "暂无可用版本")).foregroundColor(.secondary) }
+                        else { Text(hubText(model.loadFailed ? "获取失败，请检查网络" : (model.descriptor.isCnPatch ? "暂无可用汉化补丁" : "暂无可用版本"))).foregroundColor(.secondary) }
                     }
                     ForEach(Array(model.visibleReleases.enumerated()), id: \.offset) { index, entry in
                         Button { selected = ModSelection(id: index) } label: {
@@ -74,7 +74,7 @@ struct ModManagerView: View {
             }
             .listStyle(.insetGrouped).modifier(HubListStyle())
             .disabled(model.busy)
-            .navigationTitle(model.descriptor.isCnPatch ? "安装汉化补丁" : "MOD 管理")
+            .navigationTitle(hubText(model.descriptor.isCnPatch ? "安装汉化补丁" : "MOD 管理"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.disabled(model.busy) }
@@ -96,7 +96,7 @@ struct ModManagerView: View {
             Button("从文件夹安装") { importing = ModImport(folder: true) }
             Button("取消", role: .cancel) {}
         } message: {
-            Text(cleanLocal ? "完整安装将先还原原版，再安装所选文件。" : "增量安装保留现有 MOD 文件，请先安装对应基础版本。")
+            Text(hubText(cleanLocal ? "完整安装将先还原原版，再安装所选文件。" : "增量安装保留现有 MOD 文件，请先安装对应基础版本。"))
         }
         .confirmationDialog("选择本地安装方式", isPresented: $localMode, titleVisibility: .visible) {
             Button("完整安装（替换现有 MOD）") { cleanLocal = true; localOptions = true }
@@ -109,10 +109,10 @@ struct ModManagerView: View {
             }
             Button("取消", role: .cancel) {}
         }
-        .alert(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD", isPresented: $confirmRestore) {
+        .alert(hubText(model.descriptor.isCnPatch ? "卸载汉化补丁" : "卸载 MOD"), isPresented: $confirmRestore) {
             Button("取消", role: .cancel) {}
             Button("确定", role: .destructive) { model.restore() }
-        } message: { Text(model.descriptor.isCnPatch ? "确定卸载汉化补丁并还原原版吗？存档会保留。" : "确定卸载 MOD 并还原原版吗？存档会保留。") }
+        } message: { Text(hubText(model.descriptor.isCnPatch ? "确定卸载汉化补丁并还原原版吗？存档会保留。" : "确定卸载 MOD 并还原原版吗？存档会保留。")) }
         .alert("操作失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("好", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }

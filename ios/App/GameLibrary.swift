@@ -55,11 +55,11 @@ enum LibraryError: LocalizedError {
     case notGame, archiveNotGame, alreadyExists, resourcePath, logFile
     var errorDescription: String? {
         switch self {
-        case .notGame: return "所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。"
-        case .archiveNotGame: return "压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。"
-        case .alreadyExists: return "已存在同名游戏文件夹，请先删除或重命名后再导入。"
-        case .resourcePath: return "无法找到游戏引擎资源。"
-        case .logFile: return "无法创建运行日志。"
+        case .notGame: return hubText("所选文件夹不是 System 3.x / System 4 游戏。请确认根目录包含游戏的 INI、AIN、*SA.ALD、ADISK.ALD 或 ADISK.DAT 和 ACG.DAT 文件。")
+        case .archiveNotGame: return hubText("压缩包或光盘镜像中未找到 System 3.x / System 4 游戏。")
+        case .alreadyExists: return hubText("已存在同名游戏文件夹，请先删除或重命名后再导入。")
+        case .resourcePath: return hubText("无法找到游戏引擎资源。")
+        case .logFile: return hubText("无法创建运行日志。")
         }
     }
 }

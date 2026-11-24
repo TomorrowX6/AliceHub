@@ -9,13 +9,15 @@ struct LauncherView: View {
     @State private var folderPresented = false
     @State private var archivePresented = false
     @State private var settingsPresented = false
+    @State private var reportPresented = false
+    @State private var reportMessage: String?
     @State private var query = ""
     @Environment(\.scenePhase) private var scenePhase
 
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            let translationTag = OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉"
+            let translationTag = hubText(OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉")
             return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                 $0.name.localizedCaseInsensitiveContains(search) ||
                 translationTag.localizedCaseInsensitiveContains(search)
@@ -88,7 +90,13 @@ struct LauncherView: View {
             }
         }
         .sheet(isPresented: $onlinePresented) { OnlineGamesView(library: library, download: onlineDownload) }
-        .sheet(isPresented: $settingsPresented) { HubSettingsView() }
+        .sheet(isPresented: $settingsPresented) { HubSettingsView(games: library.gamesDirectory) }
+        .sheet(isPresented: $reportPresented, onDismiss: { reportMessage = nil }) {
+            NavigationView {
+                HubErrorReportView(message: reportMessage)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { reportPresented = false } } }
+            }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
+        }
         .sheet(isPresented: $folderPresented) { FolderPicker { library.importFolder($0) } }
         .sheet(isPresented: $archivePresented) {
             FolderPicker(contentTypes: ArchivePicker.contentTypes) { library.importArchive($0) }
@@ -97,6 +105,11 @@ struct LauncherView: View {
             if url.isFileURL && ArchiveExtractor.isSupportedArchiveName(url.lastPathComponent) { library.importArchive(url) }
         }
         .alert("操作失败", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
+            Button("错误报告") {
+                reportMessage = library.error
+                library.error = nil
+                reportPresented = true
+            }
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
@@ -161,7 +174,7 @@ struct LauncherView: View {
             Color.black.opacity(0.25).ignoresSafeArea()
             VStack(spacing: 20) {
                 ProgressView().scaleEffect(1.2)
-                Text(library.importing ? "正在导入游戏" : "正在启动游戏").font(.headline)
+                Text(hubText(library.importing ? "正在导入游戏" : "正在启动游戏")).font(.headline)
                 if library.importing {
                     Text(library.importProgress).font(.caption).foregroundColor(HubTheme.secondary)
                         .multilineTextAlignment(.center).lineLimit(4)

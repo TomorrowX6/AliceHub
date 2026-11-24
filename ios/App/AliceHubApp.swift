@@ -16,6 +16,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         observers = events.map { name, callback in
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in callback() }
         }
+        observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("AliceHubOpenManual"), object: nil, queue: .main) { note in
+            guard let host = note.object as? UIViewController, host.presentedViewController == nil,
+                  let path = note.userInfo?["path"] as? String else { return }
+            let game = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
+            guard let manual = HubToolFiles.manual(in: game) else { return }
+            let panel = UIHostingController(rootView: HubManualView(index: manual).environment(\.locale, HubLanguage.current.locale))
+            panel.modalPresentationStyle = .formSheet
+            host.present(panel, animated: true)
+        })
         observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("AliceHubOpenModifier"), object: nil, queue: .main) { note in
             guard var host = note.object as? UIViewController else { return }
             while let presented = host.presentedViewController { host = presented }
@@ -30,7 +39,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                         wand.superview?.bringSubviewToFront(wand)
                     }
                 }
-            })
+            }.environment(\.locale, HubLanguage.current.locale))
             weakPanel = panel
             panel.modalPresentationStyle = .formSheet
             panel.isModalInPresentation = true
@@ -46,6 +55,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AliceHubApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @AppStorage(HubLanguage.storageKey) private var language = HubLanguage.system.rawValue
 
     init() {
         GameLibrary.titleResolver = { url, base in
@@ -57,6 +67,10 @@ struct AliceHubApp: App {
     }
 
     var body: some Scene {
-        WindowGroup { LauncherView().modifier(HubAppearanceModifier()) }
+        WindowGroup {
+            LauncherView()
+                .environment(\.locale, (HubLanguage(rawValue: language) ?? .system).locale)
+                .modifier(HubAppearanceModifier())
+        }
     }
 }

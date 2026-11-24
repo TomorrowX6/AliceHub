@@ -25,7 +25,7 @@ struct ModifierView: View {
                 liveSection
             }
             .modifier(HubListStyle())
-            .navigationTitle(game?.name ?? "修改器")
+            .navigationTitle(game?.name ?? hubText("修改器"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: dismiss) } }
             .task(id: refreshID) {

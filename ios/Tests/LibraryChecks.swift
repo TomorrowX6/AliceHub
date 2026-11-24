@@ -22,6 +22,7 @@ struct LibraryChecks {
     static func main() throws {
         try ArchiveChecks.run()
         checkGamepadProfiles()
+        try checkHubTools()
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
@@ -521,6 +522,50 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+    }
+
+    static func checkHubTools() throws {
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["fr-FR", "ja-JP"]) == .japanese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["zh-Hant-TW"]) == .chinese)
+        precondition(HubLanguage.system.resolved(preferredLanguages: ["de-DE"]) == .english)
+        precondition(HubLanguage.english.resolved(preferredLanguages: ["ja"]) == .english)
+
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? files.removeItem(at: root) }
+        let caches = root.appendingPathComponent("Caches")
+        let games = root.appendingPathComponent("Games")
+        let game = games.appendingPathComponent("Installed")
+        let manual = game.appendingPathComponent("Manual")
+        let saves = root.appendingPathComponent("Saves")
+        for directory in [caches, manual, saves] {
+            try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let cached = caches.appendingPathComponent("cache")
+        let resume = games.appendingPathComponent(".online_mod_cache")
+        let scratch = games.appendingPathComponent(".import-remaining")
+        let fresh = games.appendingPathComponent(".import-active")
+        let index = manual.appendingPathComponent("index.html")
+        let save = saves.appendingPathComponent("save.dat")
+        for file in [cached, resume, scratch, fresh, index, save] {
+            try Data("test data".utf8).write(to: file)
+        }
+        try files.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -1200)], ofItemAtPath: scratch.path)
+        let cleanup = HubCacheFiles(caches: caches, games: games)
+        precondition(cleanup.size(of: cleanup.targets(includeDownloads: false)) == 18)
+        try cleanup.clear(includeDownloads: false)
+        precondition(files.fileExists(atPath: resume.path))
+        try cleanup.clear(includeDownloads: true)
+        precondition(!files.fileExists(atPath: resume.path))
+        precondition(!files.fileExists(atPath: cached.path) && !files.fileExists(atPath: scratch.path))
+        precondition(files.fileExists(atPath: fresh.path) && files.fileExists(atPath: save.path))
+        precondition(HubToolFiles.manual(in: game)?.path == index.path)
+        precondition(!HubToolFiles.contains(save, in: manual))
+        try files.removeItem(at: index)
+        try files.createSymbolicLink(at: index, withDestinationURL: save)
+        precondition(HubToolFiles.manual(in: game) == nil)
+        precondition(HubToolFiles.logTail(save, limit: 4) == "data")
+        print("Language, cache cleanup, local manual, and error report file checks passed")
     }
 
     static func checkGamepadProfiles() {

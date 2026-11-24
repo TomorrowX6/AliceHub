@@ -22,6 +22,8 @@ struct GameArtwork: View {
         return image
     }
 
+    static func clearCache() { imageCache.removeAllObjects() }
+
     private var artwork: UIImage? {
         guard let key = catalogID ?? game?.artworkKey else { return nil }
         return Self.cachedImage(forKey: key)

@@ -165,7 +165,7 @@ private struct OnlineGameDetailView: View {
 }
 
 private struct LabeledContentRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
     var body: some View {
         HStack { Text(title).foregroundColor(HubTheme.secondary); Spacer(); Text(value).foregroundColor(HubTheme.text) }

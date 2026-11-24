@@ -10,6 +10,16 @@ void savedata_flush_on_background(void);
 static void (*gamepad_attach)(UIWindow *);
 static void (*gamepad_command)(int);
 static void (*gamepad_frame)(float, float, bool, bool, bool, bool);
+static __weak UIWindow *engine_window;
+
+void alicehub_ios_open_manual(const char *filename)
+{
+    NSString *path = [NSString stringWithUTF8String:filename];
+    UIViewController *host = engine_window.rootViewController;
+    if (path && host)
+        [NSNotificationCenter.defaultCenter postNotificationName:@"AliceHubOpenManual" object:host
+            userInfo:@{@"path": path}];
+}
 
 void alicehub_ios_set_gamepad_callbacks(
     void (*attach)(UIWindow *), void (*command)(int),
@@ -90,6 +100,7 @@ void alicehub_ios_prepare_window(SDL_Window *window)
 {
     SDL_SysWMinfo info = window_info(window);
     UIWindow *native = info.info.uikit.window;
+    engine_window = native;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
             native.windowScene = (UIWindowScene *)scene;

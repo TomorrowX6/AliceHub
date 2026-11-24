@@ -37,7 +37,7 @@ struct UncensoredPatchView: View {
                     HubSectionHeader(title: descriptor.title, subtitle: statusSubtitle, symbol: "sparkles")
                     if let manifest {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(manifest.summary.isEmpty ? "独立增量无码资源包，不修改游戏本体与存档。" : manifest.summary)
+                            Text(manifest.summary.isEmpty ? hubText("独立增量无码资源包，不修改游戏本体与存档。") : manifest.summary)
                                 .font(.footnote)
                                 .foregroundColor(HubTheme.secondary)
                             Text([ModCatalog.formatSize(manifest.size),
@@ -66,7 +66,7 @@ struct UncensoredPatchView: View {
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(loadError ?? "无法获取无码补丁信息").foregroundColor(.secondary)
+                            Text(loadError ?? hubText("无法获取无码补丁信息")).foregroundColor(.secondary)
                             Button("重试") { Task { await loadManifest() } }
                         }
                     }

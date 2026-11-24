@@ -2,8 +2,7 @@ import Foundation
 import CoreGraphics
 
 func padText(_ text: String) -> String {
-    let chinese = Bundle.main.path(forResource: "zh-Hans", ofType: "lproj").flatMap(Bundle.init(path:))
-    return NSLocalizedString(text, tableName: "Gamepad", bundle: chinese ?? .main, comment: "")
+    HubLanguage.current.text(text, table: "Gamepad")
 }
 
 enum PadMode: Int, Codable, CaseIterable, Identifiable {

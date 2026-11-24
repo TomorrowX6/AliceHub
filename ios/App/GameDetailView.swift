@@ -17,13 +17,14 @@ struct GameDetailView: View {
     }
 
     private enum Destination: String, Identifiable {
-        case saves, gamepad, mods, uncensored, editor
+        case saves, gamepad, mods, uncensored, editor, manual
         var id: String { rawValue }
     }
 
     var body: some View {
         let active = currentGame
         let hasChinese = OnlineGame.hasChinese(for: active)
+        let manual = HubToolFiles.manual(in: active.url)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
@@ -61,6 +62,10 @@ struct GameDetailView: View {
                         Divider()
                         action("修改存档", "slider.horizontal.3", .editor)
                     }
+                    if manual != nil {
+                        Divider()
+                        action("游戏说明书", "book", .manual)
+                    }
                 }.modifier(HubCard())
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -93,6 +98,8 @@ struct GameDetailView: View {
                 case .saves: SaveManagerView(game: active)
                 case .gamepad: GamepadEditor(game: active.id)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
+                case .manual:
+                    if let manual { HubManualView(index: manual) }
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
                         ModManagerView(game: active, descriptor: descriptor, library: library)

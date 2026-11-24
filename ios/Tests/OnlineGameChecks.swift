@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 
 func SDL_SetMainReady() {}
+func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
 enum ModifierBridge { static func prepareForLaunch() {} }
 enum SaveSyncSession {
