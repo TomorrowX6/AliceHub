@@ -194,12 +194,13 @@ if (EMSCRIPTEN)
     )
 
 elseif (ANDROID)
-  target_sources(xsystem35 PRIVATE alicehub_bridge.c cJSON.c)
+  target_sources(xsystem35 PRIVATE alicehub_bridge.c escalayer_modifier.c cJSON.c)
   target_link_libraries(xsystem35 PRIVATE ${ndk_log})
   target_link_options(xsystem35 PRIVATE "LINKER:-z,max-page-size=16384")
   install(TARGETS xsystem35 LIBRARY DESTINATION lib)
 
 elseif (ALICEHUB_IOS)
+  target_sources(xsystem35 PRIVATE escalayer_modifier.c cJSON.c)
   install(TARGETS xsystem35 src_lib ARCHIVE DESTINATION lib)
   install(FILES xsystem35_main.h DESTINATION include)
 
