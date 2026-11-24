@@ -157,9 +157,11 @@ CD tracks require the game's `playlist.txt` (or `_inmm.ini`) and audio files.
   for Chinese releases) to PingFang SC Medium, resolved through CoreText as
   `<file>#<PostScript name>` so the right face is picked from the `.ttc`. These
   rank below `.xsys4rc` and CLI fonts and above the bundled fonts, which remain
-  the fallback when a system font is missing or unreadable. PingFang SC Medium is
-  used because iOS ships Regular only as a variable-font instance with a private
-  name that FreeType cannot select by PostScript name.
+  the fallback when a system font is missing or unreadable. Individual glyphs
+  missing from a system font (such as kana in PingFang SC) fall back to the
+  bundled HanaMinA. PingFang SC Medium is used because iOS ships Regular only
+  as a variable-font instance with a private name that FreeType cannot select
+  by PostScript name.
 * Supply an absolute game path so the resource cwd and game directory remain
   independent. Import/extract game files into an accessible sandbox directory
   before launch; document-provider access is the app's responsibility.

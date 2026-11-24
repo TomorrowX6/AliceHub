@@ -38,6 +38,9 @@
 struct font_ft {
 	struct font super;
 	FT_Face font;
+#ifdef ALICEHUB_IOS
+	struct font_ft *fallback;
+#endif
 	unsigned current_size;
 	unsigned nr_sizes;
 	struct font_size sizes[MAX_FONT_SIZES];
@@ -160,13 +163,23 @@ static void ft_font_set_size(struct font_ft *font, unsigned size)
 	font->current_size = size;
 }
 
+static struct font_ft *ft_font_for_char(struct font_ft *font, uint32_t code)
+{
+#ifdef ALICEHUB_IOS
+	if (font->fallback && !FT_Get_Char_Index(font->font, code)
+			&& FT_Get_Char_Index(font->fallback->font, code))
+		return font->fallback;
+#endif
+	return font;
+}
+
 static bool ft_font_get_glyph(struct font_size *size, struct glyph *glyph, uint32_t code, enum font_weight weight)
 {
 	Texture *t = &glyph->t[weight];
 
 	// render bitmap
 	bool half_width = is_half_width(code);
-	struct font_ft *font = (struct font_ft*)size->font;
+	struct font_ft *font = ft_font_for_char((struct font_ft*)size->font, code);
 	ft_font_set_size(font, size->size);
 	if (FT_Load_Char(font->font, code, FT_LOAD_RENDER)) {
 		WARNING("Failed to load glyph for codepoint 0x%x", code);
@@ -237,19 +250,20 @@ static float ft_font_size_char(struct font_size *size, uint32_t code)
 static float ft_font_size_char_kerning(struct font_size *size, uint32_t code,
 		uint32_t code_next)
 {
-	struct font_ft *font = (struct font_ft*)size->font;
+	struct font_ft *primary = (struct font_ft*)size->font;
+	struct font_ft *font = ft_font_for_char(primary, code);
 	ft_font_set_size(font, size->size);
 
 	FT_UInt index = FT_Get_Char_Index(font->font, code);
-	FT_UInt next_index = FT_Get_Char_Index(font->font, code_next);
 
 	FT_Fixed advance;
 	FT_Get_Advance(font->font, index, FT_LOAD_DEFAULT, &advance);
 
-	if (!FT_HAS_KERNING(font->font)) {
+	if (!FT_HAS_KERNING(font->font) || ft_font_for_char(primary, code_next) != font) {
 		return advance / 65536.f;
 	}
 
+	FT_UInt next_index = FT_Get_Char_Index(font->font, code_next);
 	FT_Vector delta;
 	FT_Get_Kerning(font->font, index, next_index, FT_KERNING_DEFAULT, &delta);
 
@@ -340,6 +354,7 @@ static void select_gbk_ttc_face(const char *path, const FT_Byte *mem, FT_Long me
 	}
 }
 
+#ifdef ALICEHUB_IOS
 // Replaces *face_io with the face in a font collection whose PostScript name
 // is ps_name. Returns false if the collection has no such face.
 static bool select_named_ttc_face(const char *path, const char *ps_name, FT_Face *face_io)
@@ -363,16 +378,17 @@ static bool select_named_ttc_face(const char *path, const char *ps_name, FT_Face
 	return false;
 }
 
-static bool select_face(const char *path, const char *ps_name, FT_Face *face_io)
+void ft_font_set_fallback(struct font *font, struct font *fallback)
 {
-	if (ps_name)
-		return select_named_ttc_face(path, ps_name, face_io);
-	select_gbk_ttc_face(path, NULL, 0, face_io);
-	return true;
+	((struct font_ft*)font)->fallback = (struct font_ft*)fallback;
 }
+#endif
 
 static struct font *load_font_file(const char *path, const char *ps_name)
 {
+#ifndef ALICEHUB_IOS
+	(void)ps_name;
+#endif
 	if (path[0] == '/' && !file_exists(path))
 		return NULL;
 #ifdef __ANDROID__
@@ -382,7 +398,8 @@ static struct font *load_font_file(const char *path, const char *ps_name)
 			free(font);
 			return NULL;
 		}
-		if (!select_face(path, ps_name, &font->font) || !font->font->charmap) {
+		select_gbk_ttc_face(path, NULL, 0, &font->font);
+		if (!font->font->charmap) {
 			FT_Done_Face(font->font);
 			free(font);
 			return NULL;
@@ -423,11 +440,16 @@ static struct font *load_font_file(const char *path, const char *ps_name)
 		free(font);
 		return NULL;
 	}
-	if (!select_face(path, ps_name, &font->font)) {
-		FT_Done_Face(font->font);
-		free(font);
-		return NULL;
-	}
+#ifdef ALICEHUB_IOS
+	if (ps_name) {
+		if (!select_named_ttc_face(path, ps_name, &font->font)) {
+			FT_Done_Face(font->font);
+			free(font);
+			return NULL;
+		}
+	} else
+#endif
+		select_gbk_ttc_face(path, NULL, 0, &font->font);
 #endif
 
 	if (!font->font->charmap) {
@@ -453,6 +475,7 @@ struct font *ft_font_load(const char *path)
 {
 	if (!path || !path[0])
 		return NULL;
+#ifdef ALICEHUB_IOS
 	const char *sep = strrchr(path, '#');
 	if (!sep || sep == path || !sep[1] || file_exists(path))
 		return load_font_file(path, NULL);
@@ -461,4 +484,7 @@ struct font *ft_font_load(const char *path)
 	struct font *font = load_font_file(file, sep + 1);
 	free(file);
 	return font;
+#else
+	return load_font_file(path, NULL);
+#endif
 }

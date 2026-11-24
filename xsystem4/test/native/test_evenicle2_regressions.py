@@ -1531,6 +1531,10 @@ struct config config;
 bool game_rance02_mg = false;
 bool game_rance6_mg = false;
 bool game_rance7_mg = false;
+bool game_night_remaster, game_evenicle2, game_evenicle2_rance;
+bool game_evenicle, game_evenicle_rance, game_evenicle_gaiden;
+bool game_ixseal, game_oyakorankan, game_tsumamigui3, game_tsumamigui3_jun, game_tsumamigui3_ntr;
+bool game_haharanman, game_rance01, game_rance03, game_rance8, game_rance9;
 
 static int fnl_open_calls = 0;
 static int rendered_glyph_count = 0;
@@ -1569,6 +1573,9 @@ static bool cjk_is_ascii_only(const char *s) {{
 
 {save_bias_fn}
 
+#ifdef TEST_IOS_FONT_DEFAULTS
+#define ALICEHUB_IOS
+#endif
 #include "font_freetype.c"
 #include "text.c"
 
@@ -1620,18 +1627,57 @@ int main(void)
     /* save_text_gbk_bias must treat valid mai CN save strings/comments as non-GBK. */
     assert(save_text_gbk_bias(mai_cn) < 0);
 
+    const char *spec = XSYS4_DATA_DIR "/fonts/VL-Gothic-Regular.ttf#VL-Gothic-Regular";
+#ifdef ALICEHUB_IOS
+    assert(setenv("XSYSTEM4_FONT_GOTHIC_SC", spec, 1) == 0);
+    config.font_paths[FONT_GOTHIC] = XSYS4_DATA_DIR "/fonts/HanaMinA.ttf";
+    struct font_ft *custom = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(custom && !custom->fallback);
+    assert(strcmp(FT_Get_Postscript_Name(custom->font), "HanaMinA") == 0);
+    config.font_paths[FONT_GOTHIC] = NULL;
+
+    struct font_ft *system = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(system && system->fallback);
+    assert(strcmp(FT_Get_Postscript_Name(system->font), "VL-Gothic-Regular") == 0);
+    assert(strcmp(FT_Get_Postscript_Name(system->fallback->font), "HanaMinA") == 0);
+    /* Use the Roman charmap to simulate a system face with no kana. */
+    assert(FT_Select_Charmap(system->font, FT_ENCODING_APPLE_ROMAN) == 0);
+    assert(FT_Get_Char_Index(system->font, 'A') != 0);
+    assert(FT_Get_Char_Index(system->font, 0x3042) == 0);
+    assert(FT_Get_Char_Index(system->fallback->font, 0x3042) != 0);
+    assert(ft_font_for_char(system, 'A') == system);
+    assert(ft_font_for_char(system, 0x3042) == system->fallback);
+
+    struct font_size *size = system->super.get_size(&system->super, 24);
+    int before = nonzero_glyph_pixels;
+    assert(font_get_glyph(size, 0x3042, FONT_WEIGHT_NORMAL));
+    assert(nonzero_glyph_pixels > before);
+    struct font_size *fallback_size = system->fallback->super.get_size(&system->fallback->super, 24);
+    assert(size->font->size_char_kerning(size, 0x3042, 'A') ==
+           fallback_size->font->size_char_kerning(fallback_size, 0x3042, 0));
+#else
+    assert(!ft_font_load(spec));
+    struct font_ft *before = (struct font_ft *)font_ttf[FONT_GOTHIC];
+    assert(setenv("XSYSTEM4_FONT_GOTHIC_SC", XSYS4_DATA_DIR "/fonts/VL-Gothic-Regular.ttf", 1) == 0);
+    struct font_ft *after = (struct font_ft *)load_font(FONT_GOTHIC);
+    assert(after && strcmp(FT_Get_Postscript_Name(before->font), FT_Get_Postscript_Name(after->font)) == 0);
+#endif
+
     free(mai_cn);
     sys4_reset_mai_word_table();
     puts("OK");
     return 0;
 }}
 """
-        out = compile_and_run(
-            harness,
-            LIBSYS4_CORE,
-            [*ft_cflags, f'-DXSYS4_DATA_DIR="{ROOT}"', *ft_libs, "-lz", "-lm"],
-        )
-        self.assertEqual(out.strip(), "OK")
+        for ios in (False, True):
+            with self.subTest(ios=ios):
+                out = compile_and_run(
+                    harness,
+                    LIBSYS4_CORE,
+                    [*ft_cflags, f'-DXSYS4_DATA_DIR="{ROOT}"',
+                     *(["-DTEST_IOS_FONT_DEFAULTS"] if ios else []), *ft_libs, "-lz", "-lm"],
+                )
+                self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":
