@@ -73,6 +73,9 @@ def build_input_harness(body: str) -> str:
     fns = "\n\n".join([
         extract_function("src/input.c", "sync_gamepad_cursor_norm_from_window"),
         extract_function("src/input.c", "sync_gamepad_cursor_from_window"),
+        extract_function("src/input.c", "sync_ctrl_key_state"),
+        extract_function("src/input.c", "input_cancel_long_touch"),
+        extract_function("src/input.c", "release_long_touch_ctrl"),
         extract_function("src/input.c", "input_parts_poll_begin"),
         extract_function("src/input.c", "input_notify_parts_poll"),
         extract_function("src/input.c", "clear_active_touch_fingers"),
@@ -85,6 +88,7 @@ def build_input_harness(body: str) -> str:
         extract_function("src/input.c", "synthetic_mouse_event"),
         extract_function("src/input.c", "pop_deferred_synthetic_mouse_event"),
         extract_function("src/input.c", "fire_deferred_events"),
+        extract_function("src/input.c", "update_long_touch_ctrl"),
         extract_function("src/input.c", "enqueue_synthetic_mouse_button"),
         extract_function("src/input.c", "handle_touch_mouse_button"),
         extract_function("src/input.c", "handle_touch_finger_event"),
@@ -125,6 +129,7 @@ typedef int64_t SDL_TouchID;
 typedef int64_t SDL_FingerID;
 typedef struct {{ int x, y; }} SDL_Point;
 typedef struct {{ int x, y, w, h; }} SDL_Rect;
+typedef struct {{ float x, y, w, h; }} SDL_FRect;
 typedef struct {{
     uint32_t type;
     uint32_t timestamp;
@@ -199,6 +204,14 @@ static bool prev_gamepad_mouse[VK_NR_KEYCODES];
 static bool suppressed_movie_keys[VK_NR_KEYCODES];
 static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
+static atomic_bool long_press_ctrl_enabled = false;
+static bool long_touch_armed;
+static SDL_FRect long_touch_finger_rect;
+static bool long_touch_ctrl_down;
+static uint64_t next_touch_press_id;
+static uint64_t touch_press_id;
+static uint64_t long_touch_click_cancel;
+#define LONG_TOUCH_DURATION 1000
 static bool gamepad_cursor_active = false;
 static bool gamepad_cursor_visible = false;
 static float gamepad_cursor_norm_x = 0.5f;
@@ -267,6 +280,7 @@ static uint32_t two_finger_tap_start_tick = 0;
 #define TWO_FINGER_TAP_MAX_MS 300
 
 static void fire_deferred_events(bool from_parts_poll, bool allow_press);
+static void update_long_touch_ctrl(void);
 
 static void handle_events(void) {{
     static const enum sact_keycode mouse_btns[] = {{ VK_LBUTTON, VK_RBUTTON, VK_MBUTTON }};
@@ -281,6 +295,7 @@ static void handle_events(void) {{
         }}
     }}
     fire_deferred_events(false, false);
+    update_long_touch_ctrl();
 }}
 
 {fns}
