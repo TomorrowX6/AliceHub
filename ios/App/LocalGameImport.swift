@@ -24,7 +24,8 @@ enum LocalGameImport {
     private static func skipArchive(_ path: String) -> Bool {
         let leaf = (path.replacingOccurrences(of: "\\", with: "/") as NSString).lastPathComponent.lowercased()
         return skip(path) || (["rar", "zip", "7z"].contains((leaf as NSString).pathExtension) &&
-            ["sound album", "(flac)", "ost"].contains(where: leaf.contains))
+            (["sound album", "(flac)"].contains(where: leaf.contains) ||
+             leaf.range(of: #"(?<![a-z0-9])ost(?![a-z0-9])"#, options: .regularExpression) != nil))
     }
 
     private static func entries(_ url: URL) throws -> [URL] {
@@ -71,8 +72,32 @@ enum LocalGameImport {
 
     private static func hasSystem4Root(_ names: Set<String>) -> Bool {
         !names.isDisjoint(with: ["system40.ini", "alicestart.ini", "alicestart2.ini", "alicestart.chs"]) &&
-            (names.contains { $0.hasSuffix(".ain") && $0 != "system39.ain" } ||
-             (names.contains("chs.tbl") && names.contains { $0.hasSuffix(".chs") && $0 != "alicestart.chs" }))
+            !system4Code(names).isEmpty
+    }
+
+    private static func system4Code(_ names: Set<String>) -> Set<String> {
+        names.filter {
+            ($0.hasSuffix(".ain") && $0 != "system39.ain") ||
+                (names.contains("chs.tbl") && $0.hasSuffix(".chs") && $0 != "alicestart.chs")
+        }
+    }
+
+    private static func scenario(_ names: Set<String>) -> String? {
+        names.sorted().first(where: GameLibrary.isSystem35Scenario).map {
+            $0.hasSuffix("_chs.ald") ? String($0.dropLast(8)) + ".ald" : $0
+        }
+    }
+
+    private static func matchesDisc(engine: GameEngine, names: Set<String>, primaryEngine: GameEngine, primaryNames: Set<String>) -> Bool {
+        guard engine == primaryEngine, engine != .legacySystem3 else { return false }
+        if engine == .system3, let primary = scenario(primaryNames), let other = scenario(names) {
+            return primary == other
+        }
+        if engine == .system4 {
+            let primary = system4Code(primaryNames), other = system4Code(names)
+            return primary.isEmpty || other.isEmpty || !primary.isDisjoint(with: other)
+        }
+        return true
     }
 
     private static func contains(_ child: URL, in parent: URL) -> Bool {
@@ -132,8 +157,8 @@ enum LocalGameImport {
     }
 
     static func stageFolder(_ source: URL, to output: URL) throws {
-        var primary: URL?
-        var sources = [(url: URL, data: Bool)]()
+        var primary: (url: URL, engine: GameEngine, names: Set<String>)?
+        var sources = [(url: URL, data: Bool, engine: GameEngine?, names: Set<String>)]()
         var patches = [URL]()
         var pending = [(source, 0)]
         var index = 0
@@ -148,20 +173,20 @@ enum LocalGameImport {
                 (engine == .system3 && local.contains(where: GameLibrary.isSystem35Scenario)) ||
                 engine == .legacySystem3 {
                 if primary == nil {
-                    primary = root
-                    if engine == .legacySystem3 {
-                        sources = [(root, false)]
-                        break
-                    }
+                    primary = (root, engine, local)
+                    if engine == .legacySystem3 { break }
+                } else {
+                    guard let primary, matchesDisc(engine: engine, names: local, primaryEngine: primary.engine,
+                                                   primaryNames: primary.names) else { continue }
+                    sources.append((root, false, engine, local))
                 }
-                sources.append((root, false))
                 if engine == .system4 { patches += children.filter { directory($0) && leaf($0) == "patchcn" } }
                 if depth == 0 { break }
             } else {
                 if depth > 0 && isCompanionData(root, names: local) {
-                    sources.append((root, true))
+                    sources.append((root, true, engine, local))
                 } else if depth > 0 && local.contains(where: { ["ald", "bgi", "alk"].contains(($0 as NSString).pathExtension) }) {
-                    sources.append((root, false))
+                    sources.append((root, false, engine, local))
                 } else if depth < 3 {
                     patches += children.filter { directory($0) && leaf($0) == "patchcn" }
                     pending += gameDirectories(children).map { ($0, depth + 1) }
@@ -169,7 +194,7 @@ enum LocalGameImport {
             }
         }
         guard let primary else { throw LibraryError.notGame }
-        let rules = try LocalImportCleanup(root: primary)
+        let rules = try LocalImportCleanup(root: primary.url)
         if rules.game == .ixseal {
             for patch in patches {
                 for root in try ixsealPatchRoots(patch, folder: true) {
@@ -177,7 +202,11 @@ enum LocalGameImport {
                 }
             }
         }
-        for (root, data) in sources {
+        try merge(primary.url, into: output, exclude: rules.skip)
+        for (root, data, engine, local) in sources where primary.engine != .legacySystem3 {
+            if let engine, !matchesDisc(engine: engine, names: local, primaryEngine: primary.engine, primaryNames: primary.names) {
+                continue
+            }
             if data && rules.game != .galzoo { continue }
             let target = data ? try dataDirectory(in: output) : output
             try merge(root, into: target, prefix: data ? "Data" : "", exclude: rules.skip)
@@ -269,26 +298,34 @@ enum LocalGameImport {
         let all = try directories(work)
         if let engine = try? GameLibrary.launchInfo(root).engine, engine != .system4 {
             let allowed: Set<String> = ["ald", "bgi", "wai", "alk", "s3l", "ini", "ain", "gr", "tbl"]
-            func scenario(_ root: URL) throws -> String? {
-                try names(root).sorted().first { GameLibrary.isSystem35Scenario($0) }.map {
-                    $0.hasSuffix("_chs.ald") ? String($0.dropLast(8)) + ".ald" : $0
-                }
-            }
-            let primary = try scenario(root)
+            let primary = try names(root)
             for sibling in all where sibling.path != root.path {
                 let relative = sibling.path.dropFirst(work.path.count).lowercased()
                 guard relative.contains("disc") || relative.contains("disk") || relative.hasSuffix("/gamedata") else { continue }
-                if let primary, let other = try scenario(sibling), primary != other { continue }
+                if let other = try? GameLibrary.launchInfo(sibling).engine,
+                   !matchesDisc(engine: other, names: try names(sibling), primaryEngine: engine, primaryNames: primary) {
+                    continue
+                }
                 try merge(sibling, into: root, move: true, exclude: { name, dir in
                     dir || (!allowed.contains((name as NSString).pathExtension.lowercased()) && name.lowercased() != "alice.exe")
                 })
             }
         }
         let ain = try names(root).sorted().first { $0.hasSuffix(".ain") }
-        for patch in all where leaf(patch) == "commonfiles" && !contains(patch, in: root) {
+        for patch in all where leaf(patch) == "commonfiles" {
+            let parent = patch.deletingLastPathComponent()
+            let updateFiles = parent.deletingLastPathComponent()
+            let inGame = contains(patch, in: root)
+            if inGame && (leaf(parent) != "files" || leaf(updateFiles) != "updatefiles" || !contains(updateFiles, in: root)) {
+                continue
+            }
             let local = try names(patch)
             if let ain, local.contains(where: { $0.hasSuffix(".ain") }), !local.contains(ain) { continue }
-            try merge(patch, into: root, overwrite: true)
+            let patchPath = patch.resolvingSymlinksInPath().pathComponents
+                .dropFirst(root.resolvingSymlinksInPath().pathComponents.count).map { $0.lowercased() }
+            try merge(patch, into: root, overwrite: true, exclude: { relative, _ in
+                inGame && patchPath.starts(with: relative.lowercased().split(separator: "/").map(String.init))
+            })
         }
         let rules = try LocalImportCleanup(root: root)
         try mergeInstallData(root, searchRoot: work, all: all, rules: rules)
