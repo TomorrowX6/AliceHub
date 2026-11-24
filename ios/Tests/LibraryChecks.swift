@@ -517,6 +517,55 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+
+        // Directory cloning & name validation checks (Rance 10 multi-version MOD / vanilla switch)
+        let r10Src = games.appendingPathComponent("Rance10", isDirectory: true)
+        try files.createDirectory(at: r10Src, withIntermediateDirectories: true)
+        try Data("GameName = \"Rance10\"\n".utf8).write(to: r10Src.appendingPathComponent("AliceStart.ini"))
+        try Data("MOD".utf8).write(to: r10Src.appendingPathComponent("Rance10.ain"))
+        try Data("VANILLA".utf8).write(to: r10Src.appendingPathComponent("Rance10.ain.vanilla.bak"))
+        try Data("stale".utf8).write(to: r10Src.appendingPathComponent(".mod_apply_1.tmp"))
+        library.refresh()
+        guard let r10Game = library.games.first(where: { $0.name == "Rance10" }) else {
+            preconditionFailure("Expected Rance10 game in library")
+        }
+        precondition(r10Game.artworkKey == "rance10")
+        precondition(library.suggestNextDirectoryName(basePrefix: "Rance10") == "Rance10-1")
+        if case .valid(let trimmed) = library.validateNewDirectoryName("  Rance10-原版  ") {
+            precondition(trimmed == "Rance10-原版")
+        } else {
+            preconditionFailure("Expected valid directory name")
+        }
+        for badName in ["", "   ", ".hidden", "..", "a/b", "a:b", "rance10"] {
+            if case .valid = library.validateNewDirectoryName(badName) {
+                preconditionFailure("Expected invalid directory name: \(badName)")
+            }
+        }
+        var clonedGame: Game?
+        library.cloneDirectory(from: r10Game, named: "Rance10-原版", transformStage: { stage in
+            let bak = stage.appendingPathComponent("Rance10.ain.vanilla.bak")
+            let ain = stage.appendingPathComponent("Rance10.ain")
+            try files.removeItem(at: ain)
+            try files.moveItem(at: bak, to: ain)
+        }) { created in
+            clonedGame = created
+        }
+        awaitImport()
+        precondition(library.error == nil, library.error ?? "Clone failed")
+        precondition(clonedGame?.name == "Rance10-原版")
+        let clonedDir = games.appendingPathComponent("Rance10-原版")
+        precondition((try Data(contentsOf: clonedDir.appendingPathComponent("Rance10.ain"))) == Data("VANILLA".utf8))
+        precondition(!files.fileExists(atPath: clonedDir.appendingPathComponent("Rance10.ain.vanilla.bak").path))
+        precondition(!files.fileExists(atPath: clonedDir.appendingPathComponent(".mod_apply_1.tmp").path))
+        precondition((try Data(contentsOf: r10Src.appendingPathComponent("Rance10.ain"))) == Data("MOD".utf8))
+        precondition(library.suggestNextDirectoryName(basePrefix: "Rance10") == "Rance10-1")
+        library.cloneDirectory(from: r10Game, named: "Rance10-1")
+        awaitImport()
+        precondition(library.error == nil)
+        precondition(library.suggestNextDirectoryName(basePrefix: "Rance10") == "Rance10-2")
+        let cloneLeftovers = try files.contentsOfDirectory(atPath: games.path).filter { $0.hasPrefix(".import-") }
+        precondition(cloneLeftovers.isEmpty, "Clone staging directories must be cleaned up")
+        print("PASS: Rance 10 directory naming, validation, cloning with clean-vanilla transform, and stage cleanup")
     }
 
     static func checkGamepadProfiles() {
