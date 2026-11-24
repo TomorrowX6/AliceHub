@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from pe_icon_fixture import pe_icon_fixture
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ARCHIVE = pathlib.Path(subprocess.check_output(["brew", "--prefix", "libarchive"], text=True).strip())
@@ -76,16 +77,31 @@ android = (ROOT / "project/app/src/main/java/io/github/kichikuou/xsystem4/Online
 routes = set(re.findall(r'const val \w+_CDN_URL = "https://alicehub\.000\.moe/([^"/]+)"', android))
 ios = (ROOT / "ios/App/OnlineGameCatalog.swift").read_text()
 assert routes == set(re.findall(r'Self\(id: "([^"]+)"', ios))
+android_root = ROOT / "project/app/src/main/java/io/github/kichikuou/xsystem4"
+android_catalog = (android_root / "GameCatalog.kt").read_text()
+android_ids = dict(re.findall(r'const val (ID_\w+) = "([^"]+)"', android_catalog))
+android_order = re.findall(r'ID_\w+', android_catalog.split("private val BUILT_IN_SELECT_ORDER: List<String> = listOf(")[1].split(")")[0])
+android_metadata = {
+    key: (date, "nil" if score == "null" else score)
+    for key, date, score in re.findall(r'GameCatalog\.(ID_\w+) to GameSortInfo\("([^"]+)", ([\d.]+|null)',
+                                       (android_root / "GameSortMetadata.kt").read_text())
+}
+ios_library = (ROOT / "ios/App/LibraryEntries.swift").read_text()
+assert re.findall(r'\("([^"]+)", "(\d{4}-\d{2}-\d{2})", ([\d.]+|nil)\)', ios_library) == [
+    (android_ids[key], *android_metadata[key]) for key in android_order
+]
 
 with tempfile.TemporaryDirectory() as directory:
     work = pathlib.Path(directory)
     (work / "manifest.json").write_text(json.dumps(MANIFEST))
     (work / "game.ain").write_bytes(PAYLOADS["game.ain"])
+    (work / "icon32.exe").write_bytes(pe_icon_fixture())
+    (work / "icon64.exe").write_bytes(pe_icon_fixture(pe_plus=True))
     for source in ["ArchiveBridge", "ArchiveExtract"]:
         subprocess.run(["xcrun", "clang", "-I" + str(ARCHIVE / "include"), "-c", str(ROOT / f"ios/App/{source}.c"), "-o", str(work / f"{source}.o")], check=True)
     header = work / "Bridging.h"
     header.write_text('#include "' + str(ROOT / "ios/App/ArchiveBridge.h") + '"\n#include "' + str(ROOT / "ios/App/ArchiveExtract.h") + '"\n')
-    sources = ["GameLibrary", "GamepadProfile", "ArchiveExtractor", "Iso9660Extractor", "ModArchiveExtractor", "ModCatalog", "ModOverlay", "ModInstaller", "ModManagerModel", "OnlineGameCatalog", "OnlineGameInstaller"]
+    sources = ["GameLibrary", "GamepadProfile", "ArchiveExtractor", "Iso9660Extractor", "ModArchiveExtractor", "ModCatalog", "ModOverlay", "ModInstaller", "ModManagerModel", "OnlineGameCatalog", "OnlineGameInstaller", "LibraryEntries", "GameExecutableIcon"]
     subprocess.run(["xcrun", "swiftc", "-swift-version", "5", "-import-objc-header", str(header),
                     *[str(ROOT / f"ios/App/{source}.swift") for source in sources], str(ROOT / "ios/Tests/OnlineGameChecks.swift"),
                     str(work / "ArchiveBridge.o"), str(work / "ArchiveExtract.o"), "-L" + str(ARCHIVE / "lib"), "-larchive", "-liconv", "-o", str(work / "checks")], check=True)
@@ -96,5 +112,6 @@ with tempfile.TemporaryDirectory() as directory:
         subprocess.run([str(work / "checks"), str(work), f"http://127.0.0.1:{server.server_port}/"], check=True)
         assert RANGES[0] == 64 and len(RANGES) == 4 and RANGES[1] == 0 and RANGES[2] > 0 and RANGES[3] == 0, RANGES
         print("PASS: Android catalog parity and HTTP Range continuation after cancellation")
+        print("PASS: iOS library ordering, installation grouping and PE artwork")
     finally:
         server.shutdown()

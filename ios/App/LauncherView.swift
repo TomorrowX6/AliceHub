@@ -4,36 +4,30 @@ import UniformTypeIdentifiers
 struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @StateObject private var onlineDownload = OnlineGameDownloadModel()
-    @State private var onlinePresented = false
     @State private var importPresented = false
     @State private var folderPresented = false
     @State private var archivePresented = false
     @State private var settingsPresented = false
     @State private var query = ""
+    @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
     @Environment(\.scenePhase) private var scenePhase
 
-    private var filteredGames: [Game] {
+    private var filteredGames: [LibraryEntry] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return search.isEmpty ? library.games : library.games.filter {
-            let translationTag = OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉"
-            return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
-                $0.name.localizedCaseInsensitiveContains(search) ||
-                translationTag.localizedCaseInsensitiveContains(search)
-        }
+        return LibraryEntry.build(games: library.games, sort: sortMode).filter { $0.matches(search) }
     }
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if !library.games.isEmpty { searchField }
+                    searchField
                     HStack {
-                        Text("我的游戏").font(.title3.bold())
+                        Text("游戏库").font(.title3.bold())
                         Spacer()
-                        Text("\(library.games.count) 款游戏").font(.subheadline).foregroundColor(HubTheme.secondary)
+                        sortMenu
                     }
-                    if library.games.isEmpty { emptyLibrary }
-                    else if filteredGames.isEmpty {
+                    if filteredGames.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "magnifyingglass").font(.largeTitle).foregroundColor(HubTheme.secondary)
                             Text("没有找到相关游戏").font(.headline)
@@ -41,10 +35,10 @@ struct LauncherView: View {
                         }.frame(maxWidth: .infinity).padding(32).modifier(HubCard())
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
-                            ForEach(filteredGames) { game in
+                            ForEach(filteredGames) { entry in
                                 NavigationLink {
-                                    GameDetailView(game: game, library: library)
-                                } label: { gameCard(game) }
+                                    LibraryGameDestination(entry: entry, library: library, download: onlineDownload)
+                                } label: { gameCard(entry) }
                                 .buttonStyle(.plain)
                             }
                         }
@@ -62,10 +56,8 @@ struct LauncherView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button { onlinePresented = true } label: { Label("在线下载", systemImage: "arrow.down.circle") }
-                    Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
-                }.buttonStyle(HubPrimaryButton())
+                Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
+                    .buttonStyle(HubPrimaryButton()).disabled(onlineDownload.running)
                     .padding(.horizontal, 20).padding(.vertical, 12)
                     .frame(maxWidth: 620).frame(maxWidth: .infinity)
                     .background(HubTheme.background.opacity(0.96))
@@ -82,12 +74,8 @@ struct LauncherView: View {
             } archive: {
                 importPresented = false
                 DispatchQueue.main.async { archivePresented = true }
-            } online: {
-                importPresented = false
-                DispatchQueue.main.async { onlinePresented = true }
             }
         }
-        .sheet(isPresented: $onlinePresented) { OnlineGamesView(library: library, download: onlineDownload) }
         .sheet(isPresented: $settingsPresented) { HubSettingsView() }
         .sheet(isPresented: $folderPresented) { FolderPicker { library.importFolder($0) } }
         .sheet(isPresented: $archivePresented) {
@@ -127,17 +115,37 @@ struct LauncherView: View {
             .background(HubTheme.surface).clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func gameCard(_ game: Game) -> some View {
-        let hasChinese = OnlineGame.hasChinese(for: game)
+    private var sortMenu: some View {
+        Menu {
+            Picker("排序", selection: $sortMode) {
+                ForEach(LibrarySortMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+        } label: {
+            Label(sortMode.shortTitle, systemImage: "arrow.up.arrow.down")
+                .font(.subheadline.bold()).foregroundColor(HubTheme.primary)
+                .padding(.horizontal, 12).frame(minHeight: 44)
+                .background(HubTheme.surface).clipShape(Capsule())
+        }
+        .accessibilityLabel("排序")
+        .accessibilityValue(sortMode.shortTitle)
+    }
+
+    private func gameCard(_ entry: LibraryEntry) -> some View {
+        let installing = onlineDownload.running && onlineDownload.activeID == entry.catalog?.id
+        let hasChinese = entry.hasChinese
         return HStack(spacing: 16) {
-            GameArtwork(game: game)
+            GameArtwork(game: entry.primary, catalogID: entry.catalog?.artwork)
             VStack(alignment: .leading, spacing: 10) {
-                Text(game.resolvedDisplayName)
+                Text(entry.title)
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
-                    HubBadge(title: "已安装", success: true)
+                    HubBadge(
+                        title: installing ? "下载中" : (entry.primary == nil ? "未安装" : "已安装"),
+                        success: !installing && entry.primary != nil
+                    )
                     HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
-                    HubBadge(title: game.engine.rawValue)
                 }
             }
             Spacer(minLength: 0)
@@ -145,15 +153,6 @@ struct LauncherView: View {
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(HubTheme.surface).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .accessibilityElement(children: .combine)
-    }
-
-    private var emptyLibrary: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "gamecontroller").font(.system(size: 44, weight: .light))
-                .foregroundColor(HubTheme.primary).frame(width: 104, height: 104)
-                .background(HubTheme.variant).clipShape(RoundedRectangle(cornerRadius: 30))
-            Text("还没有游戏").font(.title2.bold())
-        }.frame(maxWidth: .infinity).padding(.vertical, 32).modifier(HubCard())
     }
 
     private var progressOverlay: some View {
@@ -169,6 +168,27 @@ struct LauncherView: View {
             }.padding(28).frame(maxWidth: 320).background(HubTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 24)).padding()
         }.accessibilityAddTraits(.isModal)
+    }
+}
+
+private struct LibraryGameDestination: View {
+    let entry: LibraryEntry
+    @ObservedObject var library: GameLibrary
+    @ObservedObject var download: OnlineGameDownloadModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedID: String?
+
+    var body: some View {
+        let installations = entry.matchingInstallations(in: library.games)
+        if let active = LibraryEntry.installation(in: installations, selectedID: selectedID) {
+            GameDetailView(game: active, library: library, download: download, catalog: entry.catalog,
+                           installations: installations, selectedID: $selectedID)
+                .id(active.id)
+        } else if let catalog = entry.catalog {
+            OnlineGameDetailView(game: catalog, library: library, download: download)
+        } else {
+            Color.clear.onAppear { dismiss() }
+        }
     }
 }
 

@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 
 func SDL_SetMainReady() {}
+func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
 enum ModifierBridge { static func prepareForLaunch() {} }
 enum SaveSyncSession {
@@ -94,6 +95,48 @@ struct OnlineGameChecks {
         let cnRance41 = Game(url: cnRance41Dir)
         precondition(cnRance41.artworkKey == "rance41" && !cnRance41.hasExplicitNonChineseEdition)
         precondition(OnlineGame.hasChinese(for: cnRance41))
+        let installed = [engRance41, cnRance41, Game(url: rawCustomDir)]
+        let entries = LibraryEntry.build(games: installed, sort: .catalog)
+        precondition(entries.count == OnlineGame.all.count + 1)
+        precondition(entries.prefix(3).map(\.id) == ["catalog:rance41", "local:custom-raw-game", "catalog:rance10"])
+        let rance41 = entries[0]
+        precondition(rance41.installations.map(\.id) == [cnRance41.id, engRance41.id])
+        precondition(rance41.matches(engRance41.name) && rance41.matches(rance41.title))
+        precondition(rance41.matches("熟肉") && rance41.matches("生肉"))
+        let uninstalledRance10 = entries[2]
+        precondition(uninstalledRance10.primary == nil && uninstalledRance10.matches("熟肉") &&
+                     !uninstalledRance10.matches("生肉"))
+        precondition(LibraryEntry.installation(in: rance41.installations, selectedID: engRance41.id) == engRance41)
+        precondition(LibraryEntry.installation(in: rance41.matchingInstallations(in: [cnRance41]), selectedID: engRance41.id) == cnRance41)
+        precondition(rance41.matchingInstallations(in: []).isEmpty)
+        let rating = LibraryEntry.build(games: installed, sort: .rating)
+        precondition(rating.prefix(3).map(\.id) == entries.prefix(3).map(\.id))
+        precondition(rating.last(where: { $0.catalog?.id == "rance03" }).map { $0.primary == nil } == true)
+        precondition(rating.firstIndex { $0.catalog?.id == "rance03" }! < rating.firstIndex { $0.catalog?.id == "rance02" }!)
+        let release = LibraryEntry.build(games: installed, sort: .releaseDate)
+        precondition(release.prefix(2).map(\.id) == entries.prefix(2).map(\.id))
+        precondition(release.firstIndex { $0.catalog?.id == "dohnadohna" }! < release.firstIndex { $0.catalog?.id == "rance10" }!)
+        let names = LibraryEntry.build(games: installed, sort: .name, locale: Locale(identifier: "en"))
+        precondition(zip(names.dropFirst(2), names.dropFirst(3)).allSatisfy {
+            $0.title.compare($1.title, options: .caseInsensitive, locale: Locale(identifier: "en")) != .orderedDescending
+        })
+
+        let icon32 = root.appendingPathComponent("icon32.exe")
+        let icon64 = root.appendingPathComponent("icon64.exe")
+        let ico = GameExecutableIcon.extract(from: icon32)
+        precondition(ico?.prefix(6) == Data([0, 0, 1, 0, 1, 0]))
+        precondition(GameExecutableIcon.extract(from: icon64) == ico)
+        let helper = rawCustomDir.appendingPathComponent("OpenSaveFolder.exe")
+        try files.copyItem(at: icon32, to: helper)
+        precondition(GameExecutableIcon.image(in: rawCustomDir) == nil)
+        let exe = rawCustomDir.appendingPathComponent("Game.exe")
+        try files.copyItem(at: icon64, to: exe)
+        precondition(GameExecutableIcon.image(in: rawCustomDir)?.width == 32)
+        try Data((try Data(contentsOf: icon64)).prefix(512)).write(to: exe)
+        precondition(GameExecutableIcon.extract(from: exe) == nil)
+        try ico?.write(to: rawCustomDir.appendingPathComponent("game.ICO"))
+        precondition(GameExecutableIcon.image(in: rawCustomDir)?.height == 32)
+
         precondition(InstalledModInfo.metaFileName == ".mod_version.json")
         let patchedCustomDir = root.appendingPathComponent("custom-cn-patch-meta")
         try files.createDirectory(at: patchedCustomDir, withIntermediateDirectories: true)

@@ -144,7 +144,6 @@ private struct SyncFolderPicker: UIViewControllerRepresentable {
 struct ImportGameView: View {
     let folder: () -> Void
     let archive: () -> Void
-    let online: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -152,10 +151,6 @@ struct ImportGameView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(spacing: 0) {
-                        Button(action: online) {
-                            HubActionLabel(title: "在线下载", symbol: "arrow.down.circle")
-                        }
-                        Divider()
                         Button(action: folder) {
                             HubActionLabel(title: "文件夹", symbol: "folder.badge.plus")
                         }
