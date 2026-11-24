@@ -13,8 +13,9 @@ struct LauncherView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private var filteredGames: [Game] {
+        let ordered = OnlineGame.defaultSortedInstalled(library.games)
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return search.isEmpty ? library.games : library.games.filter {
+        return search.isEmpty ? ordered : ordered.filter {
             let translationTag = OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉"
             return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                 $0.name.localizedCaseInsensitiveContains(search) ||

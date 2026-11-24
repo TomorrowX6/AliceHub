@@ -7,8 +7,9 @@ struct OnlineGamesView: View {
     @State private var query = ""
 
     private var games: [OnlineGame] {
+        let ordered = OnlineGame.defaultSorted(OnlineGame.all)
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter {
+        return text.isEmpty ? ordered : ordered.filter {
             let translationTag = $0.hasChinese ? "熟肉" : "生肉"
             return $0.title.localizedCaseInsensitiveContains(text) ||
                 $0.id.localizedCaseInsensitiveContains(text) ||
