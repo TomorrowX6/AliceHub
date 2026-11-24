@@ -3,7 +3,9 @@ import SwiftUI
 struct GameDetailView: View {
     let game: Game
     @ObservedObject var library: GameLibrary
-    @Environment(\.dismiss) private var dismiss
+    let catalog: OnlineGame?
+    let installations: [Game]
+    @Binding var selectedID: String?
     @State private var destination: Destination?
     @State private var deleting = false
     @State private var modDescriptor: ModGameDescriptor?
@@ -27,8 +29,8 @@ struct GameDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
-                    GameArtwork(game: active, size: 100)
-                    Text(active.resolvedDisplayName)
+                    GameArtwork(game: active, catalogID: catalog?.artwork, size: 100)
+                    Text(catalog?.title ?? active.resolvedDisplayName)
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
@@ -39,6 +41,24 @@ struct GameDetailView: View {
                         Label("开始游戏", systemImage: "play.fill")
                     }.buttonStyle(HubPrimaryButton()).padding(.top, 8)
                 }.frame(maxWidth: .infinity).modifier(HubCard())
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("本机游戏目录", systemImage: "folder").font(.subheadline.bold())
+                    Text(active.name).foregroundColor(HubTheme.text).textSelection(.enabled)
+                    if installations.count > 1 {
+                        Menu {
+                            Picker("切换目录", selection: Binding(
+                                get: { active.id }, set: { selectedID = $0 }
+                            )) {
+                                ForEach(installations) { installation in
+                                    Text(installationLabel(installation)).tag(installation.id)
+                                }
+                            }
+                        } label: {
+                            Label("切换目录", systemImage: "arrow.left.arrow.right")
+                        }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).modifier(HubCard())
 
                 Text("游戏管理").font(.title3.bold())
                 VStack(spacing: 0) {
@@ -62,11 +82,6 @@ struct GameDetailView: View {
                         action("修改存档", "slider.horizontal.3", .editor)
                     }
                 }.modifier(HubCard())
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("本机游戏目录", systemImage: "folder").font(.subheadline.bold())
-                    Text(active.name).font(.footnote).foregroundColor(HubTheme.secondary).textSelection(.enabled)
-                }.frame(maxWidth: .infinity, alignment: .leading).modifier(HubCard())
 
                 Button(role: .destructive) { deleting = true } label: {
                     Label("删除游戏", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 48)
@@ -108,9 +123,16 @@ struct GameDetailView: View {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {
                 library.delete(active)
-                if !library.games.contains(where: { $0.id == active.id }) { dismiss() }
+                if !library.games.contains(where: { $0.id == active.id }) { selectedID = nil }
             }
         } message: { Text("将删除游戏文件夹，存档不会被删除。") }
+    }
+
+    private func installationLabel(_ game: Game) -> String {
+        guard let mod = InstalledModInfo.read(game.url) else { return game.name }
+        let group = mod.kind != "cn_patch" && mod.group.caseInsensitiveCompare(mod.version) != .orderedSame
+            ? mod.group : ""
+        return [game.name, group, mod.version].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func action(_ title: String, _ symbol: String, _ target: Destination) -> some View {

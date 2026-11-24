@@ -1,71 +1,6 @@
 import SwiftUI
 
-struct OnlineGamesView: View {
-    @ObservedObject var library: GameLibrary
-    @ObservedObject var download: OnlineGameDownloadModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-
-    private var games: [OnlineGame] {
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter {
-            let translationTag = $0.hasChinese ? "熟肉" : "生肉"
-            return $0.title.localizedCaseInsensitiveContains(text) ||
-                $0.id.localizedCaseInsensitiveContains(text) ||
-                translationTag.localizedCaseInsensitiveContains(text)
-        }
-    }
-
-    var body: some View {
-        let installedNames = Set(library.games.map { $0.name.lowercased() })
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 14)], spacing: 14) {
-                        ForEach(games) { game in
-                            NavigationLink {
-                                OnlineGameDetailView(game: game, library: library, download: download)
-                            } label: {
-                                HStack(spacing: 14) {
-                                    GameArtwork(catalogID: game.artwork)
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(game.title).font(.headline).foregroundColor(HubTheme.text)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                        HStack(spacing: 6) {
-                                            if let status = status(game, installedNames: installedNames) {
-                                                HubBadge(title: status, success: status == "已安装")
-                                            }
-                                            HubBadge(
-                                                title: game.hasChinese ? "熟肉" : "生肉",
-                                                tone: game.hasChinese ? .primary : .warning
-                                            )
-                                        }
-                                    }.frame(maxWidth: .infinity, alignment: .leading)
-                                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(HubTheme.secondary)
-                                }.modifier(HubCard())
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                    if games.isEmpty { Text("没有找到相关游戏").foregroundColor(HubTheme.secondary) }
-                }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
-            }.background(HubTheme.background.ignoresSafeArea())
-                .searchable(text: $query, prompt: "搜索在线游戏")
-                .disableAutocorrection(true)
-                .navigationTitle("在线下载").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(download.running) }
-                }
-        }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
-            .interactiveDismissDisabled(download.running)
-    }
-
-    private func status(_ game: OnlineGame, installedNames: Set<String>) -> String? {
-        if download.running && download.activeID == game.id { return "下载中" }
-        return installedNames.contains(game.directory.lowercased()) ? "已安装" : nil
-    }
-}
-
-private struct OnlineGameDetailView: View {
+struct OnlineGameDetailView: View {
     let game: OnlineGame
     @ObservedObject var library: GameLibrary
     @ObservedObject var download: OnlineGameDownloadModel
@@ -90,7 +25,7 @@ private struct OnlineGameDetailView: View {
                         Text(game.title).font(.title2.bold()).foregroundColor(HubTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 6) {
-                            HubBadge(title: installed ? "已安装" : "在线游戏", success: installed)
+                            HubBadge(title: installed ? "已安装" : "未安装", success: installed)
                             HubBadge(
                                 title: game.hasChinese ? "熟肉" : "生肉",
                                 tone: game.hasChinese ? .primary : .warning
