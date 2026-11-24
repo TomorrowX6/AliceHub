@@ -267,7 +267,28 @@ struct LibraryChecks {
             ("Manana2", "まななＶＯＬ２.ain", GameEngine.system4, "manana2"),
             ("Manana3", "まななＶＯＬ３.ain", GameEngine.system4, "manana3"),
             ("Manana4", "まななＶＯＬ４.ain", GameEngine.system4, "manana4"),
-            ("Manana5", "まななＶＯＬ５.ain", GameEngine.system4, "manana5")
+            ("Manana5", "まななＶＯＬ５.ain", GameEngine.system4, "manana5"),
+            ("TsumaSakura", "妻たちの桜貝.ain", GameEngine.system4, "tsumasakura"),
+            ("ShamansSanctuary", "まんくちゅ.ain", GameEngine.system4, "shamanssanctuary"),
+            ("AliveZ", "ＡｌｉｖｅＺ.ain", GameEngine.system4, "alivez"),
+            ("DungeonsDolls", "ドールズ.ain", GameEngine.system4, "dungeonsdolls"),
+            ("Suzumiya", "鈴宮刑務娼館.ain", GameEngine.system4, "suzumiya"),
+            ("Shimaima", "しまいま.ain", GameEngine.system4, "shimaima"),
+            ("DaibanchouGaiden", "大番長外伝.ain", GameEngine.system4, "daibanchougaiden"),
+            ("CosplayLemon", "こすぷれれもん.ain", GameEngine.system4, "cosplaylemon"),
+            ("WhipHoney", "ほいっぷハニー.ain", GameEngine.system4, "whiphoney"),
+            ("Onimusu", "オニむス.ain", GameEngine.system4, "onimusu"),
+            ("ProGrx", "ぷろＧＲＸ.ain", GameEngine.system4, "progrx"),
+            ("DpsVerN", "でーぴーえすVer_N.ain", GameEngine.system4, "dpsvern"),
+            ("Sukiirono", "透色.ain", GameEngine.system4, "sukiirono"),
+            ("Girls", "Ｇｉｒｌｓ.ain", GameEngine.system4, "girls"),
+            ("Debut", "ＤＥＢＵＴ.ain", GameEngine.system4, "debut"),
+            ("HarukaVsEsca", "ハルカVS.ain", GameEngine.system4, "harukavsesca"),
+            ("HarukaNinja", "疾風！？忍者大作戦.ain", GameEngine.system4, "harukaninja"),
+            ("Megane", "眼鏡のメイと夏休み.ain", GameEngine.system4, "megane"),
+            ("RachelSakura", "レイチェルの桜貝.ain", GameEngine.system4, "rachelsakura"),
+            ("SabakuNika", "砂漠のニッカ.ain", GameEngine.system4, "sabakunika"),
+            ("VanishPalm", "ばにしゅ！番外.ain", GameEngine.system4, "vanishpalm")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -375,7 +396,23 @@ struct LibraryChecks {
         let vanish2010Dir = root.appendingPathComponent("ばにしゅ！～この手のひらにおっぱいを～")
         try files.createDirectory(at: vanish2010Dir, withIntermediateDirectories: true)
         try Data().write(to: vanish2010Dir.appendingPathComponent("System40.ini"))
-        precondition(Game(url: vanish2010Dir).artworkKey == nil)
+        precondition(Game(url: vanish2010Dir).artworkKey == "vanishpalm")
+        let harukaVsDir = root.appendingPathComponent("超昂閃忍ハルカ ハルカVSエスカレイヤー")
+        try files.createDirectory(at: harukaVsDir, withIntermediateDirectories: true)
+        try Data().write(to: harukaVsDir.appendingPathComponent("AliceStart.ini"))
+        try Data().write(to: harukaVsDir.appendingPathComponent("HarukaDLL.inc"))
+        try Data().write(to: harukaVsDir.appendingPathComponent("ハルカVS.ain"))
+        precondition(Game(url: harukaVsDir).artworkKey == "harukavsesca")
+        let harukaNinjaDir = root.appendingPathComponent("超昂閃忍ハルカ ―疾風！？忍者大作戦―")
+        try files.createDirectory(at: harukaNinjaDir, withIntermediateDirectories: true)
+        try Data().write(to: harukaNinjaDir.appendingPathComponent("AliceStart.ini"))
+        try Data().write(to: harukaNinjaDir.appendingPathComponent("HarukaDLL.inc"))
+        try Data().write(to: harukaNinjaDir.appendingPathComponent("疾風！？忍者大作戦.ain"))
+        precondition(Game(url: harukaNinjaDir).artworkKey == "harukaninja")
+        let daibanchouGaidenDir = root.appendingPathComponent("大番長外伝")
+        try files.createDirectory(at: daibanchouGaidenDir, withIntermediateDirectories: true)
+        try Data().write(to: daibanchouGaidenDir.appendingPathComponent("System40.ini"))
+        precondition(Game(url: daibanchouGaidenDir).artworkKey == "daibanchougaiden")
         let kamunagara2Dir = root.appendingPathComponent("神武 第弐話")
         try files.createDirectory(at: kamunagara2Dir, withIntermediateDirectories: true)
         try Data().write(to: kamunagara2Dir.appendingPathComponent("System40.ini"))

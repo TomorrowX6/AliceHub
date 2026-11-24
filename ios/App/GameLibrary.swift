@@ -16,6 +16,9 @@ struct Game: Identifiable, Equatable {
     let artworkKey: String?
     let isRance04: Bool
     let isRance5d: Bool
+    let hasLocalChineseMarkers: Bool
+    let hasExplicitNonChineseEdition: Bool
+    let hasInstalledCnPatch: Bool
     var id: String { url.lastPathComponent }
     var name: String { url.lastPathComponent }
 
@@ -28,6 +31,9 @@ struct Game: Identifiable, Equatable {
         self.artworkKey = meta.artworkKey
         self.isRance04 = meta.isRance04
         self.isRance5d = meta.isRance5d
+        self.hasLocalChineseMarkers = meta.hasLocalChineseMarkers
+        self.hasExplicitNonChineseEdition = meta.hasExplicitNonChineseEdition
+        self.hasInstalledCnPatch = meta.hasInstalledCnPatch
     }
 
     fileprivate init(url: URL, meta: GameLibrary.InspectedGame) {
@@ -38,6 +44,9 @@ struct Game: Identifiable, Equatable {
         self.artworkKey = meta.artworkKey
         self.isRance04 = meta.isRance04
         self.isRance5d = meta.isRance5d
+        self.hasLocalChineseMarkers = meta.hasLocalChineseMarkers
+        self.hasExplicitNonChineseEdition = meta.hasExplicitNonChineseEdition
+        self.hasInstalledCnPatch = meta.hasInstalledCnPatch
     }
 }
 
@@ -58,6 +67,9 @@ final class GameLibrary: ObservableObject {
     // Registered by the app entrypoint to apply ModOverlay display names without coupling
     // GameLibrary to ModOverlay in standalone library checks.
     static var titleResolver: ((URL, String) -> String)? = nil
+    // Registered by the app entrypoint to reuse InstalledModInfo.read without coupling
+    // GameLibrary to ModCatalog in standalone library checks.
+    static var cnPatchResolver: ((URL) -> Bool)? = nil
 
     fileprivate struct InspectedGame {
         let isValidGame: Bool
@@ -66,6 +78,46 @@ final class GameLibrary: ObservableObject {
         let artworkKey: String?
         let isRance04: Bool
         let isRance5d: Bool
+        let hasLocalChineseMarkers: Bool
+        let hasExplicitNonChineseEdition: Bool
+        let hasInstalledCnPatch: Bool
+    }
+
+    private static let chineseMarkerAssetExtensions: Set<String> = [
+        "ain", "afa", "ald", "chs", "ex", "fnl", "ini", "dat", "ttf", "otf"
+    ]
+
+    static func hasLocalChineseMarkers<S: Sequence>(fileNames: S) -> Bool where S.Element == String {
+        for rawName in fileNames {
+            let lower = rawName.lowercased()
+            if lower == "alicestart.chs" || lower == "chs.tbl" || lower == "alicecn.ain" ||
+                lower == "haru_c.ain" || lower == "gbk.ain" || lower == "simhei.ttf" ||
+                lower.hasSuffix("_chs.ald") || lower.hasSuffix("chs.afa") ||
+                lower.hasSuffix("chs2.afa") || lower.hasSuffix("_cn.afa") ||
+                lower.hasSuffix("_cn.ain") || lower.hasSuffix("_cn.ald") {
+                return true
+            }
+            let ext = (lower as NSString).pathExtension
+            guard chineseMarkerAssetExtensions.contains(ext) else { continue }
+            if lower.hasPrefix("sourcehansanscn") || lower.contains("_cn_") ||
+                lower.contains("汉化") || lower.contains("中文") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func hasInstalledCnPatch(_ url: URL, regularFiles: [URL]) -> Bool {
+        if let resolver = cnPatchResolver {
+            return resolver(url)
+        }
+        guard let meta = regularFiles.first(where: { $0.lastPathComponent == ".mod_version.json" }),
+              let data = try? Data(contentsOf: meta), data.count <= 256 * 1024,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String,
+              !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let kind = json["kind"] as? String else { return false }
+        return kind.trimmingCharacters(in: .whitespacesAndNewlines) == "cn_patch"
     }
 
     private static let artworkAliases: [(String, [String])] = [
@@ -92,9 +144,12 @@ final class GameLibrary: ObservableObject {
         ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
         ("kichikuou", ["kichiku", "鬼畜王"]),
         ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
+        ("daibanchougaiden", ["daibanchougaiden", "大番長外伝", "大番长外传", "大番長外傳"]),
         ("daibanchou", ["daibanchou", "大番長", "大番长", "bigbangage"]),
         ("daiteikoku", ["daiteikoku", "大帝国", "大帝國"]),
         ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
+        ("harukavsesca", ["harukavsesca", "ハルカvs", "ハルカｖｓ", "遥vs艾斯卡", "遙vs艾斯卡", "harukavsescalayer"]),
+        ("harukaninja", ["harukaninja", "疾風!?忍者大作戦", "疾風！？忍者大作戦", "疾风!?忍者大作战", "疾风！？忍者大作战", "忍者大作戦", "忍者大作战", "shippuu"]),
         ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
         ("tsumamigui3jun", ["tsumamigui3jun", "tsuma3sojunai", "妻みぐい3スピンオフ純愛", "妻みぐい３スピンオフ純愛", "妻みぐい3純愛", "妻中蜜3番外纯爱", "妻中蜜3纯爱"]),
         ("tsumamigui3ntr", ["tsumamigui3ntr", "tsuma3sonetorare", "妻みぐい3スピンオフ寝取", "妻みぐい３スピンオフ寝取", "妻みぐい3寝取", "妻中蜜3番外寝取", "妻中蜜3寝取"]),
@@ -157,6 +212,7 @@ final class GameLibrary: ObservableObject {
         ("doublesensei", ["doublesensei", "だぶる先生らいふ", "双倍教师生活", "雙倍教師生活"]),
         ("ojousama", ["ojousama", "お嬢様をいいなり", "お嬢様.ain", "お嬢様ga.ald", "让大小姐言听计从", "讓大小姐言聽計從"]),
         ("edoranze", ["edoranze", "エドランゼ", "水戸姫様", "江户乱世", "江戶亂世", "水户姬大人"]),
+        ("vanishpalm", ["vanishpalm", "この手のひら", "konotenohira", "ばにしゅ！番外", "ばにしゅ!番外", "掌中奇缘", "掌中奇緣"]),
         ("vanish", ["vanish", "ばにしゅ", "おっぱいの消えた王国", "消失的王国", "消失的王國"]),
         ("hokenshitsu", ["hokenshitsu", "僕だけの保健室", "只属于我的保健室", "只屬於我的保健室", "hoken.alm"]),
         ("kamunagara", ["kamunagara", "カムナガラ", "神武.ain", "神武ga.ald", "神武ba.ald", "神武wa.ald", "神武"]),
@@ -167,6 +223,23 @@ final class GameLibrary: ObservableObject {
         ("manana3", ["manana3", "mananavol3", "mananavol.3", "まななvol3", "まななｖｏｌ３", "まななvol.3", "まなな3", "玛娜娜vol.3", "玛娜娜vol3", "玛娜娜3"]),
         ("manana4", ["manana4", "mananavol4", "mananavol.4", "まななvol4", "まななｖｏｌ４", "まななvol.4", "まなな4", "玛娜娜vol.4", "玛娜娜vol4", "玛娜娜4"]),
         ("manana5", ["manana5", "mananavol5", "mananavol.5", "まななvol5", "まななｖｏｌ５", "まななvol.5", "まなな5", "玛娜娜vol.5", "玛娜娜vol5", "玛娜娜5"]),
+        ("tsumasakura", ["tsumasakura", "tsumatachinosakuragai", "妻たちの桜貝", "妻们的樱贝", "妻們的櫻貝"]),
+        ("shamanssanctuary", ["shamanssanctuary", "shaman'ssanctuary", "しゃーまんず", "さんくちゅあり", "まんくちゅ", "巫女の聖域", "巫女的圣域", "巫女的聖域"]),
+        ("alivez", ["alivez", "ａｌｉｖｅｚ"]),
+        ("dungeonsdolls", ["dungeonsdolls", "dungeons&dolls", "ドールズ"]),
+        ("suzumiya", ["suzumiya", "鈴宮刑務娼館", "铃宫刑务娼馆"]),
+        ("shimaima", ["shimaima", "しまいま"]),
+        ("cosplaylemon", ["cosplaylemon", "こすぷれれもん", "コスプレれもん", "cosplay柠檬", "cosplay檸檬"]),
+        ("whiphoney", ["whiphoney", "ほいっぷハニー", "ホイップハニー", "奶油哈尼"]),
+        ("onimusu", ["onimusu", "オニむス"]),
+        ("progrx", ["progrx", "ぷろgrx", "ぷろｇｒｘ", "职业grx", "職業grx"]),
+        ("dpsvern", ["dpsvern", "d.p.s.vern", "でーぴーえす"]),
+        ("sukiirono", ["sukiirono", "sukiiro", "透色"]),
+        ("girls", ["girls.ain", "ｇｉｒｌｓ.ain", "girlsga.ald", "ｇｉｒｌｓga.ald"]),
+        ("debut", ["debut.ain", "ｄｅｂｕｔ.ain", "debutga.ald", "ｄｅｂｕｔga.ald"]),
+        ("megane", ["megane", "眼鏡のメイ", "眼镜梅与暑假", "眼鏡梅與暑假"]),
+        ("rachelsakura", ["rachelsakura", "rachellnosakuragai", "レイチェルの桜貝", "蕾切尔的樱贝", "蕾切爾的櫻貝"]),
+        ("sabakunika", ["sabakunika", "sabakunonikka", "砂漠のニッカ", "沙漠的妮卡"]),
         ("oyakorankan", ["oyakorankan", "母娘乱館", "母娘乱馆", "母娘亂館"]),
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
@@ -313,7 +386,7 @@ final class GameLibrary: ObservableObject {
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
-            return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false)
+            return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false, hasLocalChineseMarkers: false, hasExplicitNonChineseEdition: false, hasInstalledCnPatch: false)
         }
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
@@ -386,6 +459,10 @@ final class GameLibrary: ObservableObject {
         }
         let erumeiFlower = engine == .system4 && regularNamesLower.contains("エルメイフラワー.ain") && !erumeiWakare
 
+        let dirLower = url.lastPathComponent.lowercased()
+        let isGirls = engine == .system4 && (regularNamesLower.contains("ｇｉｒｌｓ.ain") || regularNamesLower.contains("girls.ain") || dirLower == "girls")
+        let isDebut = engine == .system4 && (regularNamesLower.contains("ｄｅｂｕｔ.ain") || regularNamesLower.contains("debut.ain") || dirLower == "debut")
+
         let detectedArtworkID: String?
         if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
@@ -406,6 +483,8 @@ final class GameLibrary: ObservableObject {
         else if otomeSenki { detectedArtworkID = "otomesenki" }
         else if erumeiWakare { detectedArtworkID = "erumeiwakare" }
         else if erumeiFlower { detectedArtworkID = "erumeiflower" }
+        else if isGirls { detectedArtworkID = "girls" }
+        else if isDebut { detectedArtworkID = "debut" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?
@@ -417,15 +496,23 @@ final class GameLibrary: ObservableObject {
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
             let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("外傳") || normalized.contains("dalkdemo")
-            let isVanishTeNoHira = normalized.contains("この手のひら") || normalized.contains("konotenohira")
+            let isDaibanchouGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("外傳")
+            let isHarukaSpinoff = normalized.contains("harukavsesca") || normalized.contains("ハルカvs") || normalized.contains("ハルカｖｓ") || normalized.contains("harukaninja") || normalized.contains("shippuu") || normalized.contains("疾風") || normalized.contains("疾风") || normalized.contains("忍者大作戦") || normalized.contains("忍者大作战")
+            let isVanishTeNoHira = normalized.contains("この手のひら") || normalized.contains("konotenohira") || normalized.contains("vanishpalm") || normalized.contains("ばにしゅ！番外") || normalized.contains("ばにしゅ!番外")
             let isKamunagara2 = normalized.contains("神武2") || normalized.contains("神武２") || normalized.contains("第弐話") || normalized.contains("第2話")
             artworkKey = artworkAliases.first(where: { key, tokens in
                 if key == "dalk" && isDalkGaiden { return false }
+                if key == "daibanchou" && isDaibanchouGaiden { return false }
+                if (key == "haruka" || key == "escalayer") && isHarukaSpinoff { return false }
                 if key == "vanish" && isVanishTeNoHira { return false }
                 if key == "kamunagara" && isKamunagara2 { return false }
                 return tokens.contains(where: normalized.contains)
             })?.0
         }
+
+        let hasLocalChinese = hasLocalChineseMarkers(fileNames: regularNamesLower)
+        let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
+        let hasCnPatch = hasInstalledCnPatch(url, regularFiles: regularFiles)
 
         return InspectedGame(
             isValidGame: info != nil,
@@ -433,7 +520,10 @@ final class GameLibrary: ObservableObject {
             engine: engine,
             artworkKey: artworkKey,
             isRance04: rance04,
-            isRance5d: rance5d
+            isRance5d: rance5d,
+            hasLocalChineseMarkers: hasLocalChinese,
+            hasExplicitNonChineseEdition: hasExplicitNonChinese,
+            hasInstalledCnPatch: hasCnPatch
         )
     }
 

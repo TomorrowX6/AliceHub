@@ -59,6 +59,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     internal var cachedModInfo: InstalledModInfo? = null
     @Volatile
     internal var cachedIconFingerprint: String? = null
+    @Volatile
+    internal var cachedHasLocalCnMarkers: Boolean? = null
+    @Volatile
+    internal var cachedHasExplicitNonCnEdition: Boolean? = null
 
     internal fun iconFingerprint(): String {
         cachedIconFingerprint?.let { return it }
@@ -73,6 +77,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         cachedModInfoResolved = false
         cachedModInfo = null
         cachedIconFingerprint = null
+        cachedHasLocalCnMarkers = null
+        cachedHasExplicitNonCnEdition = null
     }
 
     companion object {
@@ -93,6 +99,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedModInfo = null
                     cachedModInfoResolved = true
                     cachedIconFingerprint = ""
+                    cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                    cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
             val icon = findIcon(dir)
@@ -132,6 +140,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedModInfo = null
                     cachedModInfoResolved = true
                     cachedIconFingerprint = iconFp
+                    cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                    cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
             val savedir = File(context.filesDir, "saves/${dir.name}")
@@ -176,6 +186,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 cachedModInfo = modMeta
                 cachedModInfoResolved = true
                 cachedIconFingerprint = iconFp
+                cachedHasLocalCnMarkers = GameCatalog.hasLocalChineseMarkers(dir)
+                cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
             }
         }
 
@@ -1582,6 +1594,27 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_MANANA3 -> "Manana3"
                 classifiedId == GameCatalog.ID_MANANA4 -> "Manana4"
                 classifiedId == GameCatalog.ID_MANANA5 -> "Manana5"
+                classifiedId == GameCatalog.ID_TSUMASAKURA -> "TsumaSakura"
+                classifiedId == GameCatalog.ID_SHAMANSSANCTUARY -> "ShamansSanctuary"
+                classifiedId == GameCatalog.ID_ALIVEZ -> "AliveZ"
+                classifiedId == GameCatalog.ID_DUNGEONSDOLLS -> "DungeonsDolls"
+                classifiedId == GameCatalog.ID_SUZUMIYA -> "Suzumiya"
+                classifiedId == GameCatalog.ID_SHIMAIMA -> "Shimaima"
+                classifiedId == GameCatalog.ID_DAIBANCHOUGAIDEN -> "DaibanchouGaiden"
+                classifiedId == GameCatalog.ID_COSPLAYLEMON -> "CosplayLemon"
+                classifiedId == GameCatalog.ID_WHIPHONEY -> "WhipHoney"
+                classifiedId == GameCatalog.ID_ONIMUSU -> "Onimusu"
+                classifiedId == GameCatalog.ID_PROGRX -> "ProGrx"
+                classifiedId == GameCatalog.ID_DPSVERN -> "DpsVerN"
+                classifiedId == GameCatalog.ID_SUKIIRONO -> "Sukiirono"
+                classifiedId == GameCatalog.ID_GIRLS -> "Girls"
+                classifiedId == GameCatalog.ID_DEBUT -> "Debut"
+                classifiedId == GameCatalog.ID_HARUKAVSESCA -> "HarukaVsEsca"
+                classifiedId == GameCatalog.ID_HARUKANINJA -> "HarukaNinja"
+                classifiedId == GameCatalog.ID_MEGANE -> "Megane"
+                classifiedId == GameCatalog.ID_RACHELSAKURA -> "RachelSakura"
+                classifiedId == GameCatalog.ID_SABAKUNIKA -> "SabakuNika"
+                classifiedId == GameCatalog.ID_VANISHPALM -> "VanishPalm"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"

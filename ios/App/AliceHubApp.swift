@@ -51,6 +51,9 @@ struct AliceHubApp: App {
         GameLibrary.titleResolver = { url, base in
             ModOverlay.displayName(url, baseName: base)
         }
+        GameLibrary.cnPatchResolver = { url in
+            InstalledModInfo.read(url)?.kind == "cn_patch"
+        }
     }
 
     var body: some Scene {
