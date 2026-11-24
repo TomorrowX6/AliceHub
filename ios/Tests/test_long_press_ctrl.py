@@ -129,6 +129,17 @@ int main(void)
 	pump(400);
 
 	press();
+	pump(1000);
+	assert(key_is_down(VK_CONTROL));
+	assert(input_take_long_touch_click_cancel() && !input_take_long_touch_click_cancel());
+	finger(SDL_FINGERMOTION, 7, 0.6f, 0.5f);
+	pump(50);
+	assert(!key_is_down(VK_CONTROL));
+	lift(false);
+	pump(400);
+	assert(!key_is_down(VK_CONTROL));
+
+	press();
 	input_cancel_long_touch();
 	pump(1100);
 	assert(saw_lbutton && !key_is_down(VK_CONTROL));

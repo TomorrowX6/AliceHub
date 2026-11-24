@@ -642,6 +642,12 @@ void PE_UpdateInputState(int passed_time)
 		return;
 	}
 	bool cur_clicking = key_is_down(VK_LBUTTON);
+	if (input_take_long_touch_click_cancel() && !cur_clicking) {
+		prev_clicking = false;
+		whole_lclick_down = false;
+		click_down_parts = 0;
+		drag_state_reset();
+	}
 	bool cur_rclicking = key_is_down(VK_RBUTTON);
 	bool cur_mclicking = key_is_down(VK_MBUTTON);
 	int wheel_forward, wheel_back;

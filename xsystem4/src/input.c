@@ -59,6 +59,7 @@ static uint32_t long_touch_start_tick = 0;
 static SDL_FingerID long_touch_finger_id = 0;
 static SDL_FRect long_touch_finger_rect;
 static bool long_touch_ctrl_down = false;
+static bool long_touch_click_cancel = false;
 #define LONG_TOUCH_DURATION 1000
 
 #define MOVIE_HOLD_SKIP_MS 800
@@ -633,6 +634,15 @@ void input_notify_parts_poll(bool allow_press, bool clicking)
 void input_cancel_long_touch(void)
 {
 	long_touch_start_tick = 0;
+}
+
+// Reports once that long press converted the held left button into Ctrl, so
+// PartsEngine can drop the captured press instead of treating it as a click.
+bool input_take_long_touch_click_cancel(void)
+{
+	bool cancel = long_touch_click_cancel;
+	long_touch_click_cancel = false;
+	return cancel;
 }
 
 static void release_long_touch_ctrl(void)
@@ -2616,6 +2626,7 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 	    now - long_touch_start_tick >= LONG_TOUCH_DURATION) {
 		long_touch_start_tick = 0;
 		long_touch_ctrl_down = true;
+		long_touch_click_cancel = true;
 		sdl_mouse_down[VK_LBUTTON] = false;
 		if (!vpad_vk_down[VK_LBUTTON] && !pad_vk_down[VK_LBUTTON])
 			key_state[VK_LBUTTON] = false;
@@ -3040,6 +3051,7 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 				suppress_touch_until_release = true;
 			}
 			release_long_touch_ctrl();
+			long_touch_click_cancel = false;
 			if (atomic_load(&long_press_ctrl_enabled) && !suppress_touch_until_release) {
 				long_touch_start_tick = max(1u, SDL_GetTicks());
 				long_touch_finger_id = tfinger->fingerId;
@@ -3276,9 +3288,10 @@ void handle_events(void)
 			handle_touch_finger_event(&e.tfinger, true);
 			break;
 		case SDL_FINGERMOTION:
-			if (long_touch_start_tick && e.tfinger.fingerId == long_touch_finger_id &&
+			if ((long_touch_start_tick || long_touch_ctrl_down) &&
+			    e.tfinger.fingerId == long_touch_finger_id &&
 			    !SDL_PointInFRect(&(SDL_FPoint){ e.tfinger.x, e.tfinger.y }, &long_touch_finger_rect)) {
-				long_touch_start_tick = 0;
+				release_long_touch_ctrl();
 			}
 			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id && movie_touch_hold_eligible) {
 				float dx = e.tfinger.x - single_touch_start_x;
