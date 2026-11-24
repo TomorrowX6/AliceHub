@@ -5,6 +5,7 @@ struct HubSettingsView: View {
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
     @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
+    @AppStorage("hub.longPressCtrl") private var longPressCtrl = false
     @State private var gamepad = false
 
     private var clampedConcurrency: Binding<Int> {
@@ -39,6 +40,7 @@ struct HubSettingsView: View {
                     Button { gamepad = true } label: {
                         HubActionLabel(title: "手柄设置", symbol: "gamecontroller")
                     }.buttonStyle(.plain)
+                    Toggle(padText("Long Press to Skip (Hold Ctrl)"), isOn: $longPressCtrl)
                 }.listRowBackground(HubTheme.surface)
                 Section("关于") {
                     Link(destination: URL(string: "https://github.com/TomorrowX6/AliceHub")!) {

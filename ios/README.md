@@ -203,6 +203,11 @@ framebuffer instead of framebuffer zero. The viewport remains in window points
 for mouse/touch mapping and is scaled to drawable pixels only for `glViewport`.
 SDL converts single-finger touches to mouse events. Android's window, GL and
 input paths are unchanged.
+For System 4 games, the opt-in "长按快进（按住 Ctrl）" setting (off by default)
+makes a one-finger press held still for one second act as a held Ctrl key for
+message skip until the finger lifts. Moving the finger, a second finger, a
+PartsEngine drag or movie playback cancels it, and the left click of that
+press is dropped once Ctrl engages.
 Tap the gamepad icon in the launcher to edit the global layout and controller
 settings. Swipe right on a game to configure an override for that game. The
 layout editor supports dragging, per-control size, opacity and visibility, and

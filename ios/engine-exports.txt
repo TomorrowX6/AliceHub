@@ -5,3 +5,4 @@ _input_set_virtual_button
 _input_set_virtual_dpad
 _input_set_virtual_stick
 _savedata_export_pc_file
+_input_set_long_press_ctrl

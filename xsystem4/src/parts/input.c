@@ -51,6 +51,7 @@ static bool whole_mclick_down = false;
 static int clicked_parts = 0;
 // the current (partially) clicked parts number
 static int click_down_parts = 0;
+static uint64_t click_touch_press_id = 0;
 
 // drag state
 static struct parts *drag_parts = NULL;
@@ -340,6 +341,7 @@ static void reset_transient_pointer_state(void)
 	whole_mclick_down = false;
 	clicked_parts = 0;
 	click_down_parts = 0;
+	click_touch_press_id = 0;
 	press_hold_ms = 0;
 	click_fired_this_frame = false;
 	drag_state_reset();
@@ -630,6 +632,27 @@ bool PE_IsEnableInput(void)
 	return parts_input_enabled;
 }
 
+static void update_touch_click_capture(bool cur_clicking)
+{
+	uint64_t canceled_press = input_take_long_touch_click_cancel();
+	if (prev_clicking && canceled_press && click_touch_press_id == canceled_press) {
+		struct parts *down = click_down_parts ? parts_try_get(click_down_parts) : NULL;
+		if (down)
+			parts_msg_push(down, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
+		if (parts_v2 && parts_began_click && whole_lclick_down)
+			parts_msg_push(NULL, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
+		prev_clicking = false;
+		whole_lclick_down = false;
+		click_down_parts = 0;
+		drag_state_reset();
+		swipe_candidate = NULL;
+	}
+	if (!cur_clicking || !parts_began_click)
+		click_touch_press_id = 0;
+	else if (!prev_clicking)
+		click_touch_press_id = input_get_touch_press_id();
+}
+
 void PE_UpdateInputState(int passed_time)
 {
 	Point cur_pos;
@@ -637,11 +660,13 @@ void PE_UpdateInputState(int passed_time)
 	input_parts_poll_begin(parts_began_click && parts_input_enabled);
 	mouse_get_pos(&cur_pos.x, &cur_pos.y);
 	if (!parts_input_enabled) {
+		input_take_long_touch_click_cancel();
 		parts_prev_pos = cur_pos;
 		input_notify_parts_poll(false, false);
 		return;
 	}
 	bool cur_clicking = key_is_down(VK_LBUTTON);
+	update_touch_click_capture(cur_clicking);
 	bool cur_rclicking = key_is_down(VK_RBUTTON);
 	bool cur_mclicking = key_is_down(VK_MBUTTON);
 	int wheel_forward, wheel_back;
@@ -1090,6 +1115,7 @@ void PE_EndInput(void)
 		whole_rclick_down = false;
 		whole_mclick_down = false;
 		click_down_parts = 0;
+		click_touch_press_id = 0;
 		swipe_state_reset();
 	}
 	clicked_parts = 0;
