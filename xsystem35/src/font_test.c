@@ -19,6 +19,7 @@
 #include "font.h"
 #include "unittest.h"
 
+#include <stdlib.h>
 #include <unistd.h>
 #include "sdl_compat.h"
 
@@ -154,7 +155,34 @@ static bool surface_has_ink(SDL_Surface *s) {
 	return false;
 }
 
+static int first_ink_row(SDL_Surface *s) {
+	int bpp = sdl_SurfaceBytesPerPixel(s);
+	for (int y = 0; y < s->h; y++) {
+		const uint8_t *p = (uint8_t *)s->pixels + y * s->pitch;
+		for (int x = 0; x < s->w; x++) {
+			if (bpp == 4 ? (*(const uint32_t *)(p + x * 4) >> 24) != 0 : p[x] != 0)
+				return y;
+		}
+	}
+	return -1;
+}
+
+// gfx_drawString() places the surface `font_cell_overhang()` pixels above the
+// requested y. A full-width ideograph must start near the top of the cell, as
+// with MS Gothic / MS Mincho, whatever font renders it.
+static void assert_ideograph_at_cell_top(FontSpec f, const char *ideograph) {
+	SDL_Surface *s = font_render_text(f, ideograph, white, false);
+	ASSERT_TRUE(s);
+	int top = first_ink_row(s) - font_cell_overhang(f);
+	ASSERT_TRUE(top >= 0);
+	ASSERT_TRUE(top <= f.size / 4 + 1);
+	SDL_DestroySurface(s);
+}
+
 static bool has_system_sc_fallback(void) {
+	const char *env_fallback = getenv("XSYSTEM35_FONT_FALLBACK");
+	if (env_fallback && access(env_fallback, R_OK) == 0)
+		return true;
 	static const char *const paths[] = {
 		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
@@ -219,6 +247,17 @@ static void utf8_encoding_test(void) {
 			ASSERT_TRUE(surfaces_differ(sjis_primary, gbk_primary));
 			ASSERT_TRUE(surface_has_ink(gbk_sc));
 			ASSERT_TRUE(surface_has_ink(gbk_zhe));
+		}
+
+		if (has_sc) {
+			static const char *const kou = "\xe5\x8f\xa3";  // 口
+			for (int si = 0; si < NSIZES; si++) {
+				FontSpec fs = {font_types[ti], FONT_WEIGHT_NORMAL, sizes[si]};
+				font_set_encoding(SHIFT_JIS);
+				assert_ideograph_at_cell_top(fs, kou);
+				font_set_encoding(GBK);
+				assert_ideograph_at_cell_top(fs, kou);
+			}
 		}
 
 		SDL_DestroySurface(sjis_primary);

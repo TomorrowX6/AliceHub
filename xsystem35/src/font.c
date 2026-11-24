@@ -322,12 +322,21 @@ static bool font_select(FontSpec spec, Font *font) {
 // Distance from the top of the character cell to the baseline, the same value
 // GDI reports as TEXTMETRIC::tmAscent. The original engine positions text by
 // the cell top, so this determines where a glyph lands on the screen.
+//
+// The games were laid out for MS Gothic / MS Mincho / SimSun, whose cell is
+// the ideographic em box. CJK fonts such as Noto Sans/Serif CJK add line
+// spacing to usWinAscent (1.16em) and keep the em box in the typo metrics
+// (0.88em / -0.12em); use the em box for them, or text sits ~0.28em too low.
 static int cell_ascent(const Font *font) {
 	TT_OS2 *os2 = FT_Get_Sfnt_Table(font->face, FT_SFNT_OS2);
 	if (!os2 || os2->version == 0xffff || !os2->usWinAscent)
 		return font->ascent;
 	int upem = font->face->units_per_EM;
-	return (os2->usWinAscent * font->face->size->metrics.y_ppem + upem / 2) / upem;
+	int ascent = os2->usWinAscent;
+	if (os2->sTypoAscender > 0 && os2->sTypoAscender < ascent &&
+	    os2->sTypoAscender - os2->sTypoDescender == upem)
+		ascent = os2->sTypoAscender;
+	return (ascent * font->face->size->metrics.y_ppem + upem / 2) / upem;
 }
 
 int font_cell_overhang(FontSpec spec) {
