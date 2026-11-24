@@ -8,12 +8,7 @@ struct OnlineGamesView: View {
 
     private var games: [OnlineGame] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter {
-            let translationTag = $0.hasChinese ? "熟肉" : "生肉"
-            return $0.title.localizedCaseInsensitiveContains(text) ||
-                $0.id.localizedCaseInsensitiveContains(text) ||
-                translationTag.localizedCaseInsensitiveContains(text)
-        }
+        return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter { $0.matchesSearch(text) }
     }
 
     var body: some View {

@@ -242,6 +242,11 @@ struct OnlineGameChecks {
         precondition(OnlineGame.all.contains { $0.id == "hiyoko2" && $0.directory == "Hiyoko2" })
         precondition(OnlineGame.all.contains { $0.id == "selfgame" && $0.directory == "SelfGame" })
         precondition(OnlineGame.all.contains { $0.id == "momoiroguardian" && $0.directory == "MomoiroGuardian" && !$0.hasChinese })
+        let momoiro = OnlineGame.all.first { $0.id == "momoiroguardian" }!
+        for q in ["桃色守护者", "Momoiro Guardian", "ももいろガーディアン", "momoiroguardian", "生肉"] {
+            precondition(momoiro.matchesSearch(q), "Expected Momoiro Guardian to match search query: \(q)")
+        }
+        precondition(!momoiro.matchesSearch("熟肉"))
         UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/rance10/")
         UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)
