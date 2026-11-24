@@ -136,6 +136,25 @@ struct SaveManagerChecks {
         check(try read("android.asd.bak") == "android")
         try manager.delete(entry)
         check(!files.fileExists(atPath: entry.url.path))
+        try text("nested/original.asd", "original")
+        let nested = try manager.list().first { $0.path == "nested/original.asd" }!
+        for name in ["", ".", "../escape", "also\\escape", ".hidden", "bad\0name"] {
+            rejects { try manager.rename(nested, named: name) }
+            rejects { try manager.duplicate(nested, named: name) }
+        }
+        rejects { try manager.duplicate(nested, named: "original.asd", overwrite: true) }
+        try manager.duplicate(nested, named: "  副本.asd  ")
+        check(try read("nested/副本.asd") == "original")
+        try text("nested/副本.asd", "copy")
+        rejects { try manager.duplicate(nested, named: "副本.asd") }
+        rejects { try manager.rename(nested, named: "副本.asd") }
+        check(try read("nested/副本.asd") == "copy")
+        try manager.duplicate(nested, named: "副本.asd", overwrite: true)
+        check(try read("nested/副本.asd") == "original")
+        try manager.rename(nested, named: "改名.asd")
+        check(!files.fileExists(atPath: nested.url.path))
+        check(try read("nested/改名.asd") == "original")
+        print("PASS: named copy/overwrite, rename, collision and invalid names")
         try manager.clear()
         check(try manager.list().isEmpty && read(".secret") == "secret")
         check(try manager.backup() == nil)
@@ -146,6 +165,65 @@ struct SaveManagerChecks {
         let broken = SaveManager(game: "失败", documents: documents, support: support) { _, _ in throw SaveManager.Failure.conversion }
         try text("x.asd", "x", under: broken.directory)
         rejects { _ = try broken.export(to: root.appendingPathComponent("failed.zip"), pc: true, zip: true) }
+
+        let global = GlobalSaveEditor(directory: manager.directory)
+        let template = URL(fileURLWithPath: CommandLine.arguments[2])
+        check(try global.paths() == nil)
+        try global.unlock(using: template)
+        check(try global.paths()?.global == manager.directory.appendingPathComponent("GlobalSave.asd").path)
+        check(try global.hasBackup(.unlock))
+        try global.restore(.unlock)
+        check(try global.paths() == nil && !global.hasBackup(.unlock))
+
+        try text("GlobalSave.asd", "root global")
+        try text("SaveData/Collection.asd", "nested collection")
+        try text("SaveData/LocalSave01.asd", "progress")
+        let paths = try global.paths()!
+        check(paths.global == manager.directory.appendingPathComponent("GlobalSave.asd").path)
+        check(paths.collection == manager.directory.appendingPathComponent("SaveData/Collection.asd").path)
+        try global.unlock(using: template)
+        let unlocked = try SaveZip.read(template)
+        for entry in unlocked {
+            check(try Data(contentsOf: manager.directory.appendingPathComponent(entry.name)) == entry.data)
+            check(try Data(contentsOf: manager.directory.appendingPathComponent("SaveData/" + entry.name)) == entry.data)
+        }
+        try global.unlock(using: template)
+        try global.restore(.unlock)
+        check(try read("GlobalSave.asd") == "root global" && read("SaveData/Collection.asd") == "nested collection")
+        check(!files.fileExists(atPath: manager.directory.appendingPathComponent("SaveData/AFBGMMode.asd").path))
+        check(try read("SaveData/LocalSave01.asd") == "progress")
+
+        try global.edit(["totalClearPoint": 999]) { staged, json in
+            check(staged.global != paths.global && staged.collection != paths.collection)
+            check(json == #"{"totalClearPoint":999}"#)
+            do {
+                let parent = URL(fileURLWithPath: staged.global).deletingLastPathComponent()
+                try Data("created".utf8).write(to: parent.appendingPathComponent("CommonSystemData.sav"))
+                try Data("changed".utf8).write(to: URL(fileURLWithPath: staged.global))
+                return true
+            } catch { return false }
+        }
+        rejects {
+            try global.edit(["totalClearPoint": 999]) { staged, _ in
+                try? Data("partial".utf8).write(to: URL(fileURLWithPath: staged.global))
+                return false
+            }
+        }
+        check(try read("GlobalSave.asd") == "changed" && read("CommonSystemData.sav") == "created")
+        try global.restore(.edit)
+        check(try read("GlobalSave.asd") == "root global" && read("SaveData/Collection.asd") == "nested collection")
+        check(!files.fileExists(atPath: manager.directory.appendingPathComponent("CommonSystemData.sav").path))
+
+        try files.removeItem(atPath: paths.global)
+        try files.removeItem(atPath: paths.collection)
+        try text("SaveData/CommonSystemData.sav", "only common")
+        check(try global.paths()?.global == manager.directory.appendingPathComponent("SaveData/GlobalSave.asd").path)
+        let unsafe = manager.directory.appendingPathComponent("GlobalSave.asd")
+        try files.createSymbolicLink(at: unsafe, withDestinationURL: outside)
+        rejects { _ = try global.paths() }
+        rejects { try global.unlock(using: template) }
+        check(try Data(contentsOf: outside) == Data("outside".utf8))
+        print("PASS: global unlock and restore with Android bundle, root/nested paths, CSD-only, staged edits and rollback, symlink rejection")
         print("PASS: ZIP round-trip/CRC/stored, empty backup, retention, restore replacement/hidden/traversal/corruption/rollback, import merge/discovery, PC conversion/filtering, raw export, duplicate/delete/clear")
     }
 }

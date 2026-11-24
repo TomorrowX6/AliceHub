@@ -8778,14 +8778,20 @@ bool modifier_api_write_local_save_mod(const char *path, const char *mod_json)
 
 char *modifier_api_read_global_save_summary(const char *global_path, const char *collection_path)
 {
-	return read_global_save_summary_str(global_path ? global_path : "", collection_path ? collection_path : "");
+	bool previous_gbk = sys4_text_is_gbk;
+	char *summary = read_global_save_summary_str(global_path ? global_path : "", collection_path ? collection_path : "");
+	sys4_set_text_gbk(previous_gbk);
+	return summary;
 }
 
 bool modifier_api_write_global_save_mod(const char *global_path, const char *collection_path, const char *mod_json)
 {
 	if (!mod_json)
 		return false;
-	return write_global_save_mod_str(global_path ? global_path : "", collection_path ? collection_path : "", mod_json);
+	bool previous_gbk = sys4_text_is_gbk;
+	bool written = write_global_save_mod_str(global_path ? global_path : "", collection_path ? collection_path : "", mod_json);
+	sys4_set_text_gbk(previous_gbk);
+	return written;
 }
 
 const char *modifier_api_current_game(void)

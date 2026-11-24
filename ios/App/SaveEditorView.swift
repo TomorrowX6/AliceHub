@@ -32,6 +32,13 @@ struct SaveEditorView: View {
                 Section {
                     HubSectionHeader(title: game.displayName, symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
+                Section {
+                    NavigationLink {
+                        GlobalSaveEditorView(editor: GlobalSaveEditor(directory: directory))
+                    } label: {
+                        Label("全局存档", systemImage: "globe")
+                    }
+                }.listRowBackground(HubTheme.surface)
                 let files = saves
                 if files.isEmpty {
                     HubSectionHeader(title: "暂无可编辑存档", symbol: "doc.text")

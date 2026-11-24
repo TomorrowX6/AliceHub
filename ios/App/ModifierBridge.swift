@@ -198,6 +198,16 @@ enum ModifierBridge {
         return parse(String(cString: raw))
     }
 
+    static func readGlobalSave(_ global: String, _ collection: String) -> [String: Any] {
+        guard let raw = modifier_api_read_global_save_summary(global, collection) else { return [:] }
+        defer { free(raw) }
+        return parse(String(cString: raw))
+    }
+
+    static func writeGlobalSave(_ global: String, _ collection: String, _ json: String) -> Bool {
+        modifier_api_write_global_save_mod(global, collection, json)
+    }
+
     static func writeLocalSave(_ url: URL, changes: [String: Int]) throws {
         let backup = url.appendingPathExtension("mod.bak")
         let fm = FileManager.default

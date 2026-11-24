@@ -10,6 +10,7 @@ struct SaveManagerView: View {
     @State private var busy = false
     @State private var message: String?
     @State private var confirmation: SaveConfirmation?
+    @State private var naming: SaveNaming?
 
     private var manager: SaveManager {
         SaveManager(game: game.name) { source, destination in
@@ -68,12 +69,8 @@ struct SaveManagerView: View {
                         .contextMenu {
                             Button("导出原始存档") { prepareExport(pc: false, zip: false, single: entry) }
                             Button("导出 PC 存档") { prepareExport(pc: true, zip: false, single: entry) }
-                            Button("备份存档") {
-                                let action = { operate { try manager.duplicate(entry); return "已备份为 \(entry.url.lastPathComponent).bak" } }
-                                if FileManager.default.fileExists(atPath: entry.url.appendingPathExtension("bak").path) {
-                                    confirmation = SaveConfirmation(text: "文件“\(entry.url.lastPathComponent).bak”已存在，是否覆盖？", action: action)
-                                } else { action() }
-                            }
+                            Button("备份存档") { askName(for: entry, copy: true) }
+                            Button("重命名") { askName(for: entry, copy: false) }
                             Button("删除存档", role: .destructive) {
                                 confirmation = SaveConfirmation(text: "确定删除 \(entry.path)？") {
                                     operate { try manager.delete(entry); return "已删除 \(entry.path)" }
@@ -93,6 +90,20 @@ struct SaveManagerView: View {
         .navigationViewStyle(.stack).modifier(HubAppearanceModifier())
         .interactiveDismissDisabled(busy)
         .onAppear { refresh() }
+        .sheet(item: $naming) { item in
+            SaveNameView(item: item, manager: manager) { name, overwrite in
+                naming = nil
+                if !item.copy && name == item.entry.url.lastPathComponent { return }
+                operate {
+                    if item.copy {
+                        try manager.duplicate(item.entry, named: name, overwrite: overwrite)
+                        return "已备份为 \(name)"
+                    }
+                    try manager.rename(item.entry, named: name)
+                    return "已重命名为 \(name)"
+                }
+            }
+        }
         .sheet(item: $picker) { request in
             SaveDocumentPicker(request: request) { urls in
                 picker = nil
@@ -125,6 +136,10 @@ struct SaveManagerView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.string(from: (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date())
+    }
+
+    private func askName(for entry: SaveManager.FileEntry, copy: Bool) {
+        naming = SaveNaming(entry: entry, copy: copy)
     }
 
     private func refresh() {
@@ -171,6 +186,70 @@ struct SaveManagerView: View {
                 DispatchQueue.main.async { busy = false; message = error.localizedDescription }
             }
         }
+    }
+}
+
+private struct SaveNaming: Identifiable {
+    let entry: SaveManager.FileEntry
+    let copy: Bool
+    var id: String { entry.id }
+    var title: String { copy ? "备份存档" : "重命名" }
+    var suggested: String { entry.url.lastPathComponent + (copy ? ".bak" : "") }
+}
+
+private struct SaveNameView: View {
+    let item: SaveNaming
+    let manager: SaveManager
+    let submit: (String, Bool) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var filename: String
+    @State private var message: String?
+    @State private var existing: String?
+
+    init(item: SaveNaming, manager: SaveManager, submit: @escaping (String, Bool) -> Void) {
+        self.item = item
+        self.manager = manager
+        self.submit = submit
+        _filename = State(initialValue: item.suggested)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    TextField("文件名", text: $filename)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .onSubmit(confirm)
+                }.listRowBackground(HubTheme.surface)
+                if let message { Text(message).foregroundColor(.red) }
+            }
+            .modifier(HubListStyle())
+            .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("确定", action: confirm) }
+            }
+            .alert("覆盖备份？", isPresented: Binding(get: { existing != nil }, set: { if !$0 { existing = nil } }), presenting: existing) { name in
+                Button("覆盖", role: .destructive) { submit(name, true) }
+                Button("取消", role: .cancel) {}
+            } message: { name in Text("文件“\(name)”已存在。") }
+        }
+        .navigationViewStyle(.stack).modifier(HubAppearanceModifier())
+    }
+
+    private func confirm() {
+        do {
+            let target = try manager.destination(for: item.entry, named: filename)
+            let name = target.lastPathComponent
+            let same = name == item.entry.url.lastPathComponent
+            if item.copy && same { throw SaveManager.Failure.invalidName }
+            if !same && FileManager.default.fileExists(atPath: target.path) {
+                guard item.copy else { throw SaveManager.Failure.nameExists }
+                existing = name
+            } else {
+                submit(name, false)
+            }
+        } catch { message = error.localizedDescription }
     }
 }
 

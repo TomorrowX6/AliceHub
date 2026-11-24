@@ -9,12 +9,14 @@ final class SaveManager {
         var id: String { path }
     }
     enum Failure: LocalizedError {
-        case unsafePath, conversion, swap
+        case unsafePath, conversion, swap, invalidName, nameExists
         var errorDescription: String? {
             switch self {
             case .unsafePath: return "存档路径不安全。"
             case .conversion: return "转换 PC 存档失败。"
             case .swap: return "无法替换存档目录。"
+            case .invalidName: return "文件名无效。"
+            case .nameExists: return "同名文件已存在。"
             }
         }
     }
@@ -230,7 +232,46 @@ final class SaveManager {
 
     func exportName(pc: Bool) -> String { "\(game)_\(pc ? "PC_" : "")SaveData_\(stamp()).zip" }
     func duplicate(_ entry: FileEntry) throws {
-        try Data(contentsOf: entry.url).write(to: entry.url.appendingPathExtension("bak"), options: .atomic)
+        try duplicate(entry, named: entry.url.lastPathComponent + ".bak", overwrite: true)
+    }
+
+    func destination(for entry: FileEntry, named name: String) throws -> URL {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/"),
+              !name.contains("\\"), !name.contains("\0") else { throw Failure.invalidName }
+        let source = directory.appendingPathComponent(entry.path)
+        let root = directory.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = source.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved == entry.url.resolvingSymlinksInPath().standardizedFileURL,
+              resolved.path == root + "/" + entry.path,
+              try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+            throw Failure.unsafePath
+        }
+        return resolved.deletingLastPathComponent().appendingPathComponent(name)
+    }
+
+    func duplicate(_ entry: FileEntry, named name: String, overwrite: Bool = false) throws {
+        let target = try destination(for: entry, named: name)
+        if files.fileExists(atPath: target.path) {
+            let sourceID = try entry.url.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+            let values = try target.resourceValues(forKeys: [.fileResourceIdentifierKey, .isRegularFileKey, .isSymbolicLinkKey])
+            guard target.lastPathComponent != entry.url.lastPathComponent,
+                  sourceID?.isEqual(values.fileResourceIdentifier) != true else { throw Failure.invalidName }
+            guard overwrite, values.isRegularFile == true, values.isSymbolicLink != true else { throw Failure.nameExists }
+            try Data(contentsOf: entry.url).write(to: target, options: .atomic)
+        } else {
+            let staged = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp")
+            defer { try? files.removeItem(at: staged) }
+            try files.copyItem(at: entry.url, to: staged)
+            try move(staged, target)
+        }
+    }
+
+    func rename(_ entry: FileEntry, named name: String) throws {
+        let target = try destination(for: entry, named: name)
+        if target.lastPathComponent == entry.url.lastPathComponent { return }
+        guard !files.fileExists(atPath: target.path) else { throw Failure.nameExists }
+        try move(entry.url, target)
     }
     func delete(_ entry: FileEntry) throws { try files.removeItem(at: entry.url) }
     func clear() throws {
