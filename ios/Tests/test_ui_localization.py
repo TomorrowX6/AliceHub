@@ -60,6 +60,17 @@ def unlocalized_literals(path, source, keys):
 
 
 class UILocalizationChecks(unittest.TestCase):
+    def test_plural_keys_match_across_languages(self):
+        entries = {
+            language: set(plistlib.loads((APP / f"{language}.lproj" / "Localizable.stringsdict").read_bytes()))
+            for language in LANGUAGES
+        }
+        keys = set.union(*entries.values())
+        self.assertTrue(keys)
+        for language, localized in entries.items():
+            with self.subTest(language=language):
+                self.assertEqual(keys - localized, set())
+
     def test_cjk_literals_have_translations(self):
         keys = set.intersection(*(localized_keys(language) for language in LANGUAGES))
         files = sorted(p for p in APP.rglob("*") if p.suffix in (".swift", ".m", ".c", ".h"))

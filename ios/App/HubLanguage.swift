@@ -35,15 +35,15 @@ enum HubLanguage: String, CaseIterable, Identifiable {
 
     var locale: Locale { Locale(identifier: resolved().rawValue) }
 
-    func text(_ key: String, table: String? = nil) -> String {
-        let bundle = Bundle.main.url(forResource: resolved().rawValue, withExtension: "lproj")
-            .flatMap(Bundle.init(url:))
-        return bundle?.localizedString(forKey: key, value: key, table: table) ?? key
+    func text(_ key: String, table: String? = nil, arguments: [CVarArg] = [], bundle: Bundle = .main) -> String {
+        let language = resolved()
+        let url = bundle.resourceURL?.appendingPathComponent(language.rawValue + ".lproj", isDirectory: true)
+        let localizedBundle = url.flatMap(Bundle.init(url:))
+        let format = localizedBundle?.localizedString(forKey: key, value: key, table: table) ?? key
+        return arguments.isEmpty ? format : String(format: format, locale: language.locale, arguments: arguments)
     }
 }
 
 func hubText(_ key: String, _ arguments: CVarArg...) -> String {
-    let language = HubLanguage.current
-    let format = language.text(key)
-    return arguments.isEmpty ? format : String(format: format, locale: language.locale, arguments: arguments)
+    HubLanguage.current.text(key, arguments: arguments)
 }

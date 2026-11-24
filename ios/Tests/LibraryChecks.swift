@@ -602,10 +602,9 @@ struct LibraryChecks {
     static func checkHubPlurals() {
         let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("App", isDirectory: true)
-        let english = Bundle(url: resources.appendingPathComponent("en.lproj", isDirectory: true))!
-        func text(_ key: String, _ count: Int) -> String {
-            let format = english.localizedString(forKey: key, value: key, table: nil)
-            return String(format: format, locale: Locale(identifier: "en"), count)
+        let bundle = Bundle(url: resources)!
+        func text(_ key: String, _ count: Int, language: HubLanguage = .english) -> String {
+            language.text(key, arguments: [count], bundle: bundle)
         }
         precondition(text("%lld 款游戏", 0) == "0 games")
         precondition(text("%lld 款游戏", 1) == "1 game")
@@ -616,7 +615,15 @@ struct LibraryChecks {
         let confirmation = "确定清空全部 %lld 个存档文件吗？此操作不可恢复。"
         precondition(text(confirmation, 1) == "Delete 1 save file? This can’t be undone.")
         precondition(text(confirmation, 2) == "Delete all 2 save files? This can’t be undone.")
-        print("English game and save-file plural checks passed")
+        for count in 0...2 {
+            precondition(text("%lld 款游戏", count, language: .japanese) == "ゲーム \(count) 本")
+            precondition(text("%lld 个文件", count, language: .japanese) == "\(count) 件のファイル")
+            precondition(text(confirmation, count, language: .japanese) == "セーブファイル \(count) 件をすべて削除しますか？この操作は取り消せません。")
+            precondition(text("%lld 款游戏", count, language: .chinese) == "\(count) 款游戏")
+            precondition(text("%lld 个文件", count, language: .chinese) == "\(count) 个文件")
+            precondition(text(confirmation, count, language: .chinese) == "确定清空全部 \(count) 个存档文件吗？此操作不可恢复。")
+        }
+        print("Game count, file count, and clear-save plural checks passed for en, ja, and zh-Hans")
     }
 
     static func checkGamepadProfiles() {
