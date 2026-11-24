@@ -480,7 +480,6 @@ int main(int argc, char **argv) {{
         # Verify NightRemaster widget buttons (clickable == false) still emit PARTS_MSG_MOUSE_CLICK
         # without clobbering clicked_parts (PE_GetClickPartsNumber()), while clickable == true sets it.
         fn_update = extract_function("src/parts/input.c", "parts_update_mouse")
-        self.assertIn("if (parts->clickable)\n\t\t\tclicked_parts = parts->no;", fn_update)
 
         harness = f"""
 #include <assert.h>
@@ -498,6 +497,7 @@ static struct parts_context ctx_storage = {{0}};
 struct parts_context *parts_current = &ctx_storage;
 bool parts_v2 = true;
 bool parts_began_click = true;
+bool game_dohnadohna = false;
 static bool prev_clicking = false;
 static Point parts_prev_pos = {{0, 0}};
 static int click_down_parts = 0;
@@ -565,6 +565,20 @@ int main(void) {{
     parts_update_mouse(&cpart, (Point){{10, 10}}, false, 16, 0, 0, &hover_consumed, &click_consumed);
     assert(msg_click_count == 2 && msg_click_last_parts == 2000020);
     assert(clicked_parts == 2000020);
+
+    game_dohnadohna = true;
+    hover_consumed = false;
+    click_consumed = false;
+    clicked_parts = 0;
+    click_down_parts = 0;
+    prev_clicking = false;
+    parts_update_mouse(&btn, (Point){{10, 10}}, true, 16, 0, 0, &hover_consumed, &click_consumed);
+    hover_consumed = false;
+    click_consumed = false;
+    prev_clicking = true;
+    parts_update_mouse(&btn, (Point){{10, 10}}, false, 16, 0, 0, &hover_consumed, &click_consumed);
+    assert(msg_click_count == 3 && msg_click_last_parts == btn.no);
+    assert(clicked_parts == btn.no);
 
     puts("OK");
     return 0;
