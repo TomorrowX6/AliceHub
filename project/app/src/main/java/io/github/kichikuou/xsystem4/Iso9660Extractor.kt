@@ -180,7 +180,11 @@ object Iso9660Extractor {
                         }
                         val readSmallFile: (String) -> ByteArray? = { name ->
                             entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
-                                readEntrySmallBytes(ch, desc.layout, it)
+                                if (name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true)) {
+                                    readEntryPrefixBytes(ch, desc.layout, it, 256)
+                                } else {
+                                    readEntrySmallBytes(ch, desc.layout, it)
+                                }
                             }
                         }
                         if (GameCatalog.matchesTargetGameFiles(
@@ -212,6 +216,25 @@ object Iso9660Extractor {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun readEntryPrefixBytes(
+        ch: FileChannel,
+        layout: SectorLayout,
+        entry: DirEntry,
+        prefixBytes: Int
+    ): ByteArray? {
+        if (entry.extents.isEmpty() || prefixBytes <= 0) return null
+        val out = ByteArrayOutputStream(prefixBytes)
+        var remaining = prefixBytes.toLong()
+        for ((lba, len) in entry.extents) {
+            if (remaining <= 0L) break
+            val take = minOf(len, remaining)
+            if (take <= 0L) continue
+            out.write(readExtentBytes(ch, layout, lba, take))
+            remaining -= take
+        }
+        return if (out.size() > 0) out.toByteArray() else null
     }
 
     private fun readEntrySmallBytes(

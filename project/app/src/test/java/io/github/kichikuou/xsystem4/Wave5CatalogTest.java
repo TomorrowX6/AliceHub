@@ -178,4 +178,91 @@ public class Wave5CatalogTest {
         assertEquals(GameCatalog.ID_PROGOMAKE, GameCatalog.INSTANCE.classifyDirectory(null, "Prostudent G Omake", null, null));
         assertEquals(GameCatalog.ID_PROSTUDENTG, GameCatalog.INSTANCE.classifyDirectory(null, "ProstudentG", null, null));
     }
+
+    private static byte[] makeBytesWithPrefixCrc32(long targetCrc, int totalLen) {
+        byte[] buf = new byte[Math.max(256, totalLen)];
+        int[] table = new int[256];
+        int[] rev = new int[256];
+        for (int i = 0; i < 256; i++) {
+            int v = i;
+            for (int b = 0; b < 8; b++) {
+                v = ((v & 1) != 0) ? ((v >>> 1) ^ 0xedb88320) : (v >>> 1);
+            }
+            table[i] = v;
+            rev[(v >>> 24) & 0xff] = i;
+        }
+        int forward = 0xffffffff;
+        for (int i = 0; i < 252; i++) {
+            forward = (forward >>> 8) ^ table[(forward ^ (buf[i] & 0xff)) & 0xff];
+        }
+        int r = (int) (targetCrc ^ 0xffffffffL);
+        int[] idx = new int[4];
+        for (int i = 3; i >= 0; i--) {
+            idx[i] = rev[(r >>> 24) & 0xff];
+            r = (r ^ table[idx[i]]) << 8;
+        }
+        for (int i = 0; i < 4; i++) {
+            int b = (forward ^ idx[i]) & 0xff;
+            buf[252 + i] = (byte) b;
+            forward = (forward >>> 8) ^ table[(forward ^ b) & 0xff];
+        }
+        return buf;
+    }
+
+    @Test
+    public void largeBdiskPrefixReadClassifiesSuperDpsFolderImportsWithoutIni() throws Exception {
+        int largeSize = 300 * 1024;
+        assertEquals(Integer.valueOf(256),
+                NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes("ADISK.DAT", largeSize));
+        assertEquals(Integer.valueOf(256),
+                NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes("BDISK.DAT", largeSize));
+        assertNull(NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes("ACG.DAT", largeSize));
+
+        byte[] adisk = makeBytesWithPrefixCrc32(0xc7a20cdfL, largeSize);
+        byte[] bdiskTono = makeBytesWithPrefixCrc32(0xbb1edff1L, largeSize);
+        byte[] bdiskKaizoku = makeBytesWithPrefixCrc32(0xf81829e3L, largeSize);
+        List<String> files = Arrays.asList("ADISK.DAT", "BDISK.DAT", "ACG.DAT");
+
+        // Simulate NativeGameImport.copyTree's boundedPrimaryReadLimitBytes callback for >256 KiB BDISK.DAT
+        assertEquals(GameCatalog.ID_SDPSTONO, GameCatalog.INSTANCE.classifyGameRootFiles(
+                files, Arrays.asList(), name -> {
+                    Integer limit = NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes(name, largeSize);
+                    if (limit == null) return null;
+                    if ("ADISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(adisk, limit);
+                    if ("BDISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(bdiskTono, limit);
+                    return null;
+                }));
+        assertEquals(GameCatalog.ID_SDPSKAIZOKU, GameCatalog.INSTANCE.classifyGameRootFiles(
+                files, Arrays.asList(), name -> {
+                    Integer limit = NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes(name, largeSize);
+                    if (limit == null) return null;
+                    if ("ADISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(adisk, limit);
+                    if ("BDISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(bdiskKaizoku, limit);
+                    return null;
+                }));
+        assertTrue(GameCatalog.INSTANCE.matchesTargetGameFiles(
+                GameCatalog.ID_SDPSTONO, files, Arrays.asList(), name -> {
+                    Integer limit = NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes(name, largeSize);
+                    if (limit == null) return null;
+                    if ("ADISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(adisk, limit);
+                    if ("BDISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(bdiskTono, limit);
+                    return null;
+                }));
+        assertEquals("SuperDpsTono", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                files, GameCatalog.ID_SDPSTONO, GameCatalog.ID_SDPSTONO, false, name -> {
+                    Integer limit = NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes(name, largeSize);
+                    if (limit == null) return null;
+                    if ("ADISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(adisk, limit);
+                    if ("BDISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(bdiskTono, limit);
+                    return null;
+                }, null));
+        assertEquals("SuperDpsKaizoku", NativeGameImport.INSTANCE.resolveCopyTreeBaseName(
+                files, GameCatalog.ID_SDPSKAIZOKU, GameCatalog.ID_SDPSKAIZOKU, false, name -> {
+                    Integer limit = NativeGameImport.INSTANCE.boundedPrimaryReadLimitBytes(name, largeSize);
+                    if (limit == null) return null;
+                    if ("ADISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(adisk, limit);
+                    if ("BDISK.DAT".equalsIgnoreCase(name)) return Arrays.copyOf(bdiskKaizoku, limit);
+                    return null;
+                }, null));
+    }
 }

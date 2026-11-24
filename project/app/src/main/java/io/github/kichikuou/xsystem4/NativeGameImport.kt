@@ -715,6 +715,15 @@ object NativeGameImport {
         return if (isMultiDiscSys3) "System3" else "Game"
     }
 
+    fun boundedPrimaryReadLimitBytes(fileName: String, docSize: Long): Int? {
+        return when {
+            fileName.equals("ADISK.DAT", ignoreCase = true) ||
+                fileName.equals("BDISK.DAT", ignoreCase = true) -> 256
+            docSize < 0L || docSize <= 256L * 1024L -> 256 * 1024
+            else -> null
+        }
+    }
+
     private fun readBoundedDocumentBytes(context: Context, uri: Uri, maxBytes: Int = 256 * 1024): ByteArray? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -751,10 +760,14 @@ object NativeGameImport {
             listChildren = { uri -> children(context, tree, uri).map { TreeEntry(it.uri, it.name, it.folder, it) } },
             readSmallEntry = { entry ->
                 val doc = entry.payload
-                if (!doc.folder && (doc.size < 0 || doc.size <= 256L * 1024L)) {
-                    readBoundedDocumentBytes(context, doc.uri)
-                } else {
+                if (doc.folder) {
                     null
+                } else {
+                    val limit = boundedPrimaryReadLimitBytes(
+                        ArchiveExtractor.repairSjisAsGbkMojibake(doc.name),
+                        doc.size
+                    )
+                    if (limit != null) readBoundedDocumentBytes(context, doc.uri, limit) else null
                 }
             }
         )
@@ -793,12 +806,8 @@ object NativeGameImport {
                 !it.folder && !skip(it.name) &&
                     ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(fileName, ignoreCase = true)
             }
-            when {
-                doc == null -> null
-                fileName.equals("ADISK.DAT", ignoreCase = true) -> readBoundedDocumentBytes(context, doc.uri, 256)
-                doc.size < 0 || doc.size <= 256L * 1024L -> readBoundedDocumentBytes(context, doc.uri)
-                else -> null
-            }
+            val limit = if (doc != null) boundedPrimaryReadLimitBytes(fileName, doc.size) else null
+            if (doc != null && limit != null) readBoundedDocumentBytes(context, doc.uri, limit) else null
         }
         val primaryFileSize: (String) -> Long? = { fileName ->
             resolvedPrimary.firstOrNull {
