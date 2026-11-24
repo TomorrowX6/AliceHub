@@ -67,6 +67,9 @@ final class GameLibrary: ObservableObject {
     // Registered by the app entrypoint to apply ModOverlay display names without coupling
     // GameLibrary to ModOverlay in standalone library checks.
     static var titleResolver: ((URL, String) -> String)? = nil
+    // Registered by the app entrypoint to reuse InstalledModInfo.read without coupling
+    // GameLibrary to ModCatalog in standalone library checks.
+    static var cnPatchResolver: ((URL) -> Bool)? = nil
 
     fileprivate struct InspectedGame {
         let isValidGame: Bool
@@ -104,10 +107,15 @@ final class GameLibrary: ObservableObject {
         return false
     }
 
-    private static func hasInstalledCnPatchFromRegularFiles(_ regularFiles: [URL]) -> Bool {
-        guard let meta = regularFiles.first(where: { $0.lastPathComponent == ".alicehub_mod_meta.json" }),
+    private static func hasInstalledCnPatch(_ url: URL, regularFiles: [URL]) -> Bool {
+        if let resolver = cnPatchResolver {
+            return resolver(url)
+        }
+        guard let meta = regularFiles.first(where: { $0.lastPathComponent == ".mod_version.json" }),
               let data = try? Data(contentsOf: meta), data.count <= 256 * 1024,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String,
+              !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let kind = json["kind"] as? String else { return false }
         return kind.trimmingCharacters(in: .whitespacesAndNewlines) == "cn_patch"
     }
@@ -504,7 +512,7 @@ final class GameLibrary: ObservableObject {
 
         let hasLocalChinese = hasLocalChineseMarkers(fileNames: regularNamesLower)
         let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
-        let hasCnPatch = hasInstalledCnPatchFromRegularFiles(regularFiles)
+        let hasCnPatch = hasInstalledCnPatch(url, regularFiles: regularFiles)
 
         return InspectedGame(
             isValidGame: info != nil,
