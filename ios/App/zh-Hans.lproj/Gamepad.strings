@@ -11,6 +11,17 @@
 "Selected control" = "选中的控件";
 "Add control" = "新增控件";
 "Remove Control" = "移除控件";
+"Control deleted" = "已删除控件";
+"Undo" = "撤销";
+"Edit Layout" = "编辑布局";
+"Custom Combo" = "自定义组合键";
+"First Key" = "按键一";
+"Second Key" = "按键二";
+"Lock Combo" = "锁定";
+"Apply Combo" = "应用";
+"Backspace" = "退格";
+"Insert" = "插入";
+"Delete" = "删除";
 "Button" = "按钮";
 "Button Mapping" = "按键映射";
 "Reset Button Mapping" = "重置按键映射";

@@ -200,6 +200,7 @@ elseif (ANDROID)
   install(TARGETS xsystem35 LIBRARY DESTINATION lib)
 
 elseif (ALICEHUB_IOS)
+  target_sources(xsystem35 PRIVATE alicehub_bridge.c cJSON.c)
   install(TARGETS xsystem35 src_lib ARCHIVE DESTINATION lib)
   install(FILES xsystem35_main.h DESTINATION include)
 

@@ -1026,8 +1026,10 @@ final class GameLibrary: ObservableObject {
                 ModifierBridge.prepareForLaunch()
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     SDL_SetMainReady()
+                    if info.engine != .legacySystem3 {
+                        RuntimeGamepad.prepare(for: game.id, engine: info.engine)
+                    }
                     if info.engine == .system4 {
-                        RuntimeGamepad.prepare(for: game.id)
                         input_set_long_press_ctrl(UserDefaults.standard.bool(forKey: "hub.longPressCtrl"))
                     }
                     var argv = arguments.map { strdup($0) }

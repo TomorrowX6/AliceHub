@@ -7,9 +7,13 @@
 
 #include "config.h"
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 
+#ifdef __ANDROID__
 #include <jni.h>
+#else
+#include "EnginePlatform.h"
+#endif
 #include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -28,6 +32,7 @@
 #include "system.h"
 #include "variable.h"
 #include "alicehub_bridge.h"
+#include "xsystem35_main.h"
 
 // Keep in sync with XSystem4Activity.kt and GamepadBridge.kt
 #define COMMAND_TOGGLE_CTRL_OVERLAY 0x8002
@@ -102,6 +107,7 @@ typedef struct {
 } vpad_slot_t;
 
 static pthread_mutex_t bridge_lock = PTHREAD_MUTEX_INITIALIZER;
+#ifdef __ANDROID__
 static pthread_mutex_t live_state_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *live_state_json;
 
@@ -121,6 +127,7 @@ static void publish_live_state_json(char *out) {
 }
 
 static void update_live_state_sdl_thread(int locks);
+#endif
 
 static struct gamepad_config {
 	bool initialized;
@@ -164,6 +171,7 @@ static int prev_stick_wheel_dir = 0;
 
 static bool ctrl_skip_latched = false;
 static bool ctrl_skip_applied = false;
+static bool bridge_ctrl_down = false;
 static bool pending_ctrl_set = false;
 static bool pending_ctrl_val = false;
 
@@ -171,6 +179,11 @@ static bool bridge_vk_down[256];
 static int bridge_mouse_mask = 0;
 static int bridge_joy_mask = 0;
 
+#ifdef ALICEHUB_IOS
+static unsigned pending_commands;
+#endif
+
+#ifdef __ANDROID__
 // Escalayer modifier state
 static int esc_live_locks = 0;
 #define MAX_PENDING_ACTIONS 16
@@ -198,6 +211,8 @@ static struct {
 	.clear_count = -1, .ed_flags = -1, .cg_seen = -1,
 	.easy_menu = -1, .easy_menu2 = -1, .hard_menu = -1, .hissatsu_flags = -1,
 };
+
+#endif
 
 static void init_cfg_defaults_locked(void) {
 	if (gp_cfg.initialized)
@@ -242,6 +257,7 @@ static void parse_binding_json(cJSON *obj, action_spec_t *out) {
 	out->toggle_mode = cJSON_IsBool(tg) ? cJSON_IsTrue(tg) : false;
 }
 
+#ifdef __ANDROID__
 static int android_keycode_to_pad_slot(int keycode) {
 	switch (keycode) {
 	case 96:  return PAD_A;
@@ -278,6 +294,8 @@ static int android_keycode_to_pad_slot(int keycode) {
 	}
 }
 
+#endif
+
 static int vk_to_sdl_mouse_button(int vk) {
 	switch (vk) {
 	case KEY_MOUSE_LEFT:   return SDL_BUTTON_LEFT;
@@ -289,7 +307,9 @@ static int vk_to_sdl_mouse_button(int vk) {
 }
 
 static void send_cursor_ui_state(bool force) {
+#ifdef __ANDROID__
 	static int last_param = -1;
+#endif
 	SDL_Window *win = gfx_getWindow();
 	int ww = 0, wh = 0;
 	if (win)
@@ -313,6 +333,7 @@ static void send_cursor_ui_state(bool force) {
 	if (ny < 0.0f) ny = 0.0f;
 	if (ny > 1.0f) ny = 1.0f;
 
+#ifdef __ANDROID__
 	int ix = (int)(nx * 16383.0f + 0.5f);
 	int iy = (int)(ny * 16383.0f + 0.5f);
 	int vis = cursor_visible ? 1 : 0;
@@ -321,6 +342,10 @@ static void send_cursor_ui_state(bool force) {
 		last_param = param;
 		SDL_AndroidSendMessage(COMMAND_CURSOR_STATE, param);
 	}
+#else
+	(void)force;
+	alicehub_ios_gamepad_frame(nx, ny, cursor_visible, false, false, ctrl_skip_applied);
+#endif
 }
 
 static void apply_vk_or_mouse(int vk, bool *desired_vk, int *desired_mouse_mask) {
@@ -352,7 +377,12 @@ static void dispatch_emu_cmd(int cmd) {
 			event_inject_mouse_motion((int)(cursor_x + 0.5f), (int)(cursor_y + 0.5f));
 		send_cursor_ui_state(true);
 	} else if (cmd > 0) {
+#ifdef __ANDROID__
 		SDL_AndroidSendMessage(COMMAND_GAMEPAD_UI_EVENT, GAMEPAD_UI_EMU_CMD | ((cmd & 0xFF) << 8));
+#else
+		if (cmd <= EMU_OPEN_EDITOR)
+			pending_commands |= 1u << cmd;
+#endif
 	}
 }
 
@@ -467,6 +497,7 @@ static float apply_deadzone(float v, float dz) {
 	return v < 0.0f ? -s : s;
 }
 
+#ifdef __ANDROID__
 static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	for (int i = 0; i < nact->ain.varnum; i++) {
 		const char *n = v_name(i);
@@ -641,6 +672,8 @@ static void apply_escalayer_locks_sdl_thread(int locks) {
 	}
 }
 
+#endif
+
 void alicehub_on_touch_input(void) {
 	if (cursor_visible) {
 		cursor_visible = false;
@@ -668,9 +701,11 @@ void alicehub_pump_events(void) {
 	if (vw <= 0) vw = 640;
 	if (vh <= 0) vh = 480;
 
+#ifdef __ANDROID__
 	char local_actions[MAX_PENDING_ACTIONS][64];
 	int n_actions = 0;
 	int locks_snapshot = 0;
+#endif
 
 	pthread_mutex_lock(&bridge_lock);
 	init_cfg_defaults_locked();
@@ -690,12 +725,14 @@ void alicehub_pump_events(void) {
 			moved_cursor = true;
 	}
 
+#ifdef __ANDROID__
 	// Snapshot queued live modifier actions
 	n_actions = pending_action_count;
 	for (int i = 0; i < n_actions; i++)
 		memcpy(local_actions[i], pending_actions[i], sizeof(local_actions[i]));
 	pending_action_count = 0;
 	locks_snapshot = esc_live_locks;
+#endif
 
 	// Virtual buttons
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
@@ -776,17 +813,21 @@ void alicehub_pump_events(void) {
 	bool final_ctrl = ctrl_skip_latched || want_ctrl;
 	pthread_mutex_unlock(&bridge_lock);
 
+#ifdef __ANDROID__
 	// Apply Escalayer live actions & locks safely on SDL_main thread
 	for (int i = 0; i < n_actions; i++)
 		apply_single_action_sdl_thread(local_actions[i]);
 	apply_escalayer_locks_sdl_thread(locks_snapshot);
 	update_live_state_sdl_thread(locks_snapshot);
+#endif
 
 	// Emit cursor motion before button events
 	if (moved_cursor && cursor_x >= 0.0f && cursor_y >= 0.0f) {
 		event_inject_mouse_motion((int)(cursor_x + 0.5f), (int)(cursor_y + 0.5f));
 	}
+#ifdef __ANDROID__
 	send_cursor_ui_state(false);
+#endif
 
 	// Emit mouse buttons cleanly on edges
 	for (int btn = 1; btn <= 3; btn++) {
@@ -804,10 +845,14 @@ void alicehub_pump_events(void) {
 	if (wheel_dir != 0)
 		event_inject_mouse_wheel(wheel_dir);
 
-	// Emit Ctrl skip state
+	// Ctrl in a combo is a keyboard modifier, not a skip toggle.
+	bool ctrl_down = final_ctrl || desired_vk[KEY_CTRL];
+	if (ctrl_down != bridge_ctrl_down) {
+		bridge_ctrl_down = ctrl_down;
+		event_inject_rawkey(KEY_CTRL, ctrl_down);
+	}
 	if (final_ctrl != ctrl_skip_applied) {
 		ctrl_skip_applied = final_ctrl;
-		event_inject_rawkey(KEY_CTRL, final_ctrl);
 		msgskip_activate(final_ctrl);
 	}
 
@@ -831,24 +876,26 @@ void alicehub_pump_events(void) {
 		}
 		bridge_joy_mask = desired_joy_mask;
 	}
+#ifdef ALICEHUB_IOS
+	send_cursor_ui_state(false);
+	unsigned commands = pending_commands;
+	pending_commands = 0;
+	for (int cmd = EMU_TOGGLE_VPAD; cmd <= EMU_OPEN_EDITOR; cmd++) {
+		if (commands & (1u << cmd))
+			alicehub_ios_gamepad_command(cmd);
+	}
+#endif
 }
 
 // ---------------------------------------------------------------------------
 // GamepadBridge JNI methods
 // ---------------------------------------------------------------------------
 
-JNIEXPORT void JNICALL
-Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
-	JNIEnv *env, jclass clazz, jstring jjson) {
-	(void)clazz;
-	if (!jjson)
-		return;
-	const char *json = (*env)->GetStringUTFChars(env, jjson, NULL);
+void xsystem35_set_gamepad_config_json(const char *json) {
 	if (!json)
 		return;
 
 	cJSON *root = cJSON_Parse(json);
-	(*env)->ReleaseStringUTFChars(env, jjson, json);
 	if (!root || !cJSON_IsObject(root)) {
 		cJSON_Delete(root);
 		return;
@@ -922,10 +969,7 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 	cJSON_Delete(root);
 }
 
-JNIEXPORT void JNICALL
-Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualStick(
-	JNIEnv *env, jclass clazz, jint stickId, jfloat x, jfloat y) {
-	(void)env; (void)clazz;
+void xsystem35_set_virtual_stick(int stickId, float x, float y) {
 	if (stickId < 0 || stickId > 1)
 		return;
 	if (x < -1.0f) x = -1.0f;
@@ -938,24 +982,18 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualStick(
 	pthread_mutex_unlock(&bridge_lock);
 }
 
-JNIEXPORT void JNICALL
-Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualDPad(
-	JNIEnv *env, jclass clazz, jint stickMode, jboolean left, jboolean right, jboolean up, jboolean down) {
-	(void)env; (void)clazz;
+void xsystem35_set_virtual_dpad(int stickMode, bool left, bool right, bool up, bool down) {
 	pthread_mutex_lock(&bridge_lock);
 	vpad_dpad_mode = stickMode;
-	vpad_dpad_dir[0] = left != JNI_FALSE;
-	vpad_dpad_dir[1] = right != JNI_FALSE;
-	vpad_dpad_dir[2] = up != JNI_FALSE;
-	vpad_dpad_dir[3] = down != JNI_FALSE;
+	vpad_dpad_dir[0] = left;
+	vpad_dpad_dir[1] = right;
+	vpad_dpad_dir[2] = up;
+	vpad_dpad_dir[3] = down;
 	pthread_mutex_unlock(&bridge_lock);
 }
 
-JNIEXPORT void JNICALL
-Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualButton(
-	JNIEnv *env, jclass clazz, jint slotId, jint actionType, jint code, jint code2,
-	jboolean toggleMode, jboolean pressed) {
-	(void)env; (void)clazz;
+void xsystem35_set_virtual_button(int slotId, int actionType, int code, int code2,
+	bool toggleMode, bool pressed) {
 	if (slotId < 0 || slotId >= MAX_VPAD_SLOTS)
 		return;
 	pthread_mutex_lock(&bridge_lock);
@@ -964,31 +1002,84 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualButton(
 		.type = (uint8_t)actionType,
 		.code = (int16_t)code,
 		.code2 = (int16_t)code2,
-		.toggle_mode = (toggleMode != JNI_FALSE),
+		.toggle_mode = toggleMode,
 	};
-	if (pressed != JNI_FALSE && !s->phys_down) {
+	if (pressed && !s->phys_down) {
 		s->pending_press_edge = true;
 		s->pending_action = act;
 	}
 	s->action = act;
-	s->phys_down = (pressed != JNI_FALSE);
+	s->phys_down = pressed;
 	pthread_mutex_unlock(&bridge_lock);
+}
+
+void xsystem35_clear_virtual_inputs(void) {
+	pthread_mutex_lock(&bridge_lock);
+#ifdef ALICEHUB_IOS
+	ctrl_skip_latched = false;
+#endif
+	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
+		vpad_slots[i].phys_down = false;
+		vpad_slots[i].pending_press_edge = false;
+		vpad_slots[i].latched = false;
+#ifdef ALICEHUB_IOS
+		vpad_slots[i].prev_phys_down = false;
+#endif
+	}
+	vpad_stick_x[0] = vpad_stick_y[0] = 0.0f;
+	vpad_stick_x[1] = vpad_stick_y[1] = 0.0f;
+	memset(vpad_dpad_dir, 0, sizeof(vpad_dpad_dir));
+	pthread_mutex_unlock(&bridge_lock);
+}
+
+#ifdef ALICEHUB_IOS
+bool xsystem35_save_screenshot(const char *path) {
+	return save_screenshot(path);
+}
+#endif
+
+#ifdef __ANDROID__
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
+	JNIEnv *env, jclass clazz, jstring jjson) {
+	(void)clazz;
+	if (!jjson)
+		return;
+	const char *json = (*env)->GetStringUTFChars(env, jjson, NULL);
+	if (json) {
+		xsystem35_set_gamepad_config_json(json);
+		(*env)->ReleaseStringUTFChars(env, jjson, json);
+	}
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualStick(
+	JNIEnv *env, jclass clazz, jint stickId, jfloat x, jfloat y) {
+	(void)env; (void)clazz;
+	xsystem35_set_virtual_stick(stickId, x, y);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualDPad(
+	JNIEnv *env, jclass clazz, jint stickMode, jboolean left, jboolean right, jboolean up, jboolean down) {
+	(void)env; (void)clazz;
+	xsystem35_set_virtual_dpad(stickMode, left != JNI_FALSE, right != JNI_FALSE,
+		up != JNI_FALSE, down != JNI_FALSE);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetVirtualButton(
+	JNIEnv *env, jclass clazz, jint slotId, jint actionType, jint code, jint code2,
+	jboolean toggleMode, jboolean pressed) {
+	(void)env; (void)clazz;
+	xsystem35_set_virtual_button(slotId, actionType, code, code2, toggleMode != JNI_FALSE, pressed != JNI_FALSE);
 }
 
 JNIEXPORT void JNICALL
 Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeClearVirtualInputs(
 	JNIEnv *env, jclass clazz) {
 	(void)env; (void)clazz;
-	pthread_mutex_lock(&bridge_lock);
-	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
-		vpad_slots[i].phys_down = false;
-		vpad_slots[i].pending_press_edge = false;
-		vpad_slots[i].latched = false;
-	}
-	vpad_stick_x[0] = vpad_stick_y[0] = 0.0f;
-	vpad_stick_x[1] = vpad_stick_y[1] = 0.0f;
-	memset(vpad_dpad_dir, 0, sizeof(vpad_dpad_dir));
-	pthread_mutex_unlock(&bridge_lock);
+	xsystem35_clear_virtual_inputs();
 }
 
 JNIEXPORT void JNICALL
@@ -1339,3 +1430,4 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 }
 
 #endif // __ANDROID__
+#endif

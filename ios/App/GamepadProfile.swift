@@ -29,7 +29,32 @@ struct PadAction: Codable, Equatable, Hashable {
     static let menu = Self(type: 7, code: 2)
     static let cursor = Self(type: 7, code: 3)
     static let screenshot = Self(type: 7, code: 4)
+    static let editor = Self(type: 7, code: 5)
     static func key(_ code: Int32, toggle: Bool = false) -> Self { Self(type: 1, code: code, toggle: toggle) }
+    static func combo(_ first: Int32, _ second: Int32, toggle: Bool = false) -> Self {
+        Self(type: 6, code: second, code2: first, toggle: toggle)
+    }
+
+    var isCombo: Bool { type == 6 }
+
+    static let comboKeys: [(Int32, String)] = [
+        (17, "Ctrl"), (16, "Shift"), (18, "Alt"), (13, "Enter"), (27, "Esc"),
+        (32, "Space"), (9, "Tab"), (8, "Backspace"), (33, "Page Up"), (34, "Page Down"),
+        (35, "End"), (36, "Home"), (45, "Insert"), (46, "Delete"),
+        (38, "↑"), (40, "↓"), (37, "←"), (39, "→")
+    ] + (65...90).map { (Int32($0), String(UnicodeScalar($0)!)) }
+      + (48...57).map { (Int32($0), String(UnicodeScalar($0)!)) }
+      + (1...12).map { (Int32(111 + $0), "F\($0)") }
+
+    private static func comboKeyTitle(_ code: Int32) -> String {
+        switch code {
+        case 16: return "Shift"
+        case 17: return "Ctrl"
+        default: return comboKeys.first(where: { $0.0 == code }).map { padText($0.1) } ?? String(code)
+        }
+    }
+
+    var comboTitle: String { "\(Self.comboKeyTitle(code2))+\(Self.comboKeyTitle(code))" }
 
     static let choices: [(String, Self)] = [
         ("None", .none), ("Left click", .leftClick), ("Right click", .rightClick),
@@ -39,7 +64,7 @@ struct PadAction: Codable, Equatable, Hashable {
         ("Page Up", .key(33)), ("Page Down", .key(34)),
         ("↑", .key(38)), ("↓", .key(40)), ("←", .key(37)), ("→", .key(39)),
         ("Toggle Virtual Gamepad", .togglePad), ("Menu", .menu), ("Cursor", .cursor),
-        ("Screenshot", .screenshot)
+        ("Screenshot", .screenshot), ("Edit Layout", .editor)
     ]
 }
 
@@ -135,6 +160,12 @@ enum PadPreset: String, Codable, CaseIterable, Identifiable {
 }
 
 struct VirtualPad: Codable, Equatable {
+    struct Deletion {
+        let id = UUID()
+        let control: PadControl
+        let index: Int
+    }
+
     var enabled = false
     var preset: PadPreset = .visualNovel
     var scale = 1.0
@@ -147,10 +178,20 @@ struct VirtualPad: Codable, Equatable {
         controls = preset.controls
     }
 
-    mutating func addControl(_ kind: PadControl.Kind) -> String? {
-        guard kind == .button || !controls.contains(where: { $0.kind == kind }),
-              let slot = (Int32(0)..<32).first(where: { slot in !controls.contains(where: { $0.slot == slot }) })
-        else { return nil }
+    private func freeSlot(for kind: PadControl.Kind, reserving deletion: Deletion?) -> Int32? {
+        guard kind == .button ||
+            (deletion?.control.kind != kind && !controls.contains(where: { $0.kind == kind })) else { return nil }
+        return (Int32(0)..<32).first { slot in
+            deletion?.control.slot != slot && !controls.contains(where: { $0.slot == slot })
+        }
+    }
+
+    func canAddControl(_ kind: PadControl.Kind, reserving deletion: Deletion?) -> Bool {
+        freeSlot(for: kind, reserving: deletion) != nil
+    }
+
+    mutating func addControl(_ kind: PadControl.Kind, reserving deletion: Deletion? = nil) -> String? {
+        guard let slot = freeSlot(for: kind, reserving: deletion) else { return nil }
         let id = UUID().uuidString
         switch kind {
         case .button: controls.append(.init(id, slot, "Button", 0.5, 0.5, 1, 1, .circle, .key(13)))
@@ -159,6 +200,19 @@ struct VirtualPad: Codable, Equatable {
         case .rightStick: controls.append(.init(id, slot, "R", 0.87, 0.77, 1, 1, .circle, kind: kind, mode: .wheel))
         }
         return id
+    }
+
+    mutating func deleteControl(at index: Int) -> Deletion {
+        Deletion(control: controls.remove(at: index), index: index)
+    }
+
+    mutating func restore(_ deletion: Deletion) -> String? {
+        let control = deletion.control
+        guard !controls.contains(where: {
+            $0.id == control.id || $0.slot == control.slot || (control.kind != .button && $0.kind == control.kind)
+        }) else { return nil }
+        controls.insert(control, at: min(deletion.index, controls.count))
+        return control.id
     }
 
     func mode(for kind: PadControl.Kind) -> PadMode {

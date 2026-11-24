@@ -412,16 +412,16 @@ static void window_init(const char *render_driver) {
 
 	gfx_window = sdl_CreateWindow(
 		title, SYS35_DEFAULT_WIDTH, SYS35_DEFAULT_HEIGHT, flags);
-#ifdef ALICEHUB_IOS
-	alicehub_ios_set_background_hook(ios_background_changed);
-	alicehub_ios_prepare_window(gfx_window);
-#endif
 #if XSYSTEM35_SDL_VERSION == 2
 #ifdef __ANDROID__
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 #endif
 #endif
 	gfx_renderer = sdl_CreateRenderer(gfx_window);
+#ifdef ALICEHUB_IOS
+	alicehub_ios_set_background_hook(ios_background_changed);
+	alicehub_ios_prepare_window(gfx_window);
+#endif
 #if XSYSTEM35_SDL_VERSION == 3
 #ifdef __ANDROID__
 	SDL_SetDefaultTextureScaleMode(gfx_renderer, SDL_SCALEMODE_LINEAR);

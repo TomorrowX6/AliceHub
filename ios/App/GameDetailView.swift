@@ -52,7 +52,7 @@ struct GameDetailView: View {
                         action(uncensoredInstalled ? "无码补丁 · 已安装" : "无码补丁", "sparkles", .uncensored)
                         Divider()
                     }
-                    if active.engine == .system4 {
+                    if active.engine != .legacySystem3 {
                         action("手柄设置", "gamecontroller", .gamepad)
                     } else {
                         HubActionLabel(title: "原生触控", symbol: "hand.tap", navigates: false)
@@ -91,7 +91,7 @@ struct GameDetailView: View {
             Group {
                 switch target {
                 case .saves: SaveManagerView(game: active)
-                case .gamepad: GamepadEditor(game: active.id)
+                case .gamepad: GamepadEditor(game: active.id, allowsPhysicalMapping: active.engine == .system4)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
