@@ -1323,16 +1323,14 @@ static struct csd_entry *csd_table_find(struct csd_table *tbl, const char *key)
 
 static bool csd_table_set_int_or_bool(struct csd_table *tbl, const char *key, int32_t val, bool default_bool)
 {
+	if (default_bool && val != 0 && val != 1)
+		return false;
 	struct csd_entry *existing = csd_table_find(tbl, key);
 	if (existing) {
 		free(existing->s_val);
 		existing->s_val = NULL;
 		existing->f_val = 0.0f;
-		if (existing->type == CSD_BOOL && (val == 0 || val == 1)) {
-			existing->i_val = val ? 1 : 0;
-		} else if (existing->type == CSD_INT) {
-			existing->i_val = val;
-		} else if (default_bool && (val == 0 || val == 1)) {
+		if (default_bool || (existing->type == CSD_BOOL && (val == 0 || val == 1))) {
 			existing->type = CSD_BOOL;
 			existing->i_val = val ? 1 : 0;
 		} else {
@@ -1355,7 +1353,7 @@ static bool csd_table_set_int_or_bool(struct csd_table *tbl, const char *key, in
 	struct csd_entry *e = &tbl->entries[tbl->count++];
 	memset(e, 0, sizeof(*e));
 	e->key = kcopy;
-	if (default_bool && (val == 0 || val == 1)) {
+	if (default_bool) {
 		e->type = CSD_BOOL;
 		e->i_val = val ? 1 : 0;
 	} else {
@@ -1801,10 +1799,16 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 		cJSON_GetObjectItemCaseSensitive(mod, "trophyStatusMaxPer");
 	bool want_csd_write = false;
 	for (size_t k = 0; k < NR_CSD_R10_KEYS; k++) {
-		if (cJSON_GetObjectItemCaseSensitive(mod, s_csd_r10_keys[k].key)) {
-			want_csd_write = true;
-			break;
+		const char *key = s_csd_r10_keys[k].key;
+		cJSON *item = cJSON_GetObjectItemCaseSensitive(mod, key);
+		if (!item)
+			continue;
+		if (s_csd_r10_keys[k].default_bool && !cJSON_IsBool(item) &&
+		    !(cJSON_IsNumber(item) && (item->valuedouble == 0 || item->valuedouble == 1))) {
+			cJSON_Delete(mod);
+			return false;
 		}
+		want_csd_write = true;
 	}
 
 	if (want_global) {
@@ -8254,7 +8258,9 @@ static char *vm_build_live_state_json(int lock_mask)
 	struct page *bc    = s_glob_battle_ctx >= 0 ? vm_get_global_page_idx(s_glob_battle_ctx) : vm_get_global_page("g_battleContext", NULL);
 	struct page *enemy = s_glob_enemy >= 0 ? vm_get_global_page_idx(s_glob_enemy) : vm_get_global_page("g_enemy", NULL);
 
-	if (vm_has_mod_streamer_mode()) {
+	bool streamer_mode_supported = vm_has_mod_streamer_mode();
+	cJSON_AddBoolToObject(root, "streamerModeSupported", streamer_mode_supported);
+	if (streamer_mode_supported) {
 		int sm = vm_get_live_streamer_mode(!vm_is_in_card_ui_callstack());
 		if (sm >= 0)
 			cJSON_AddNumberToObject(root, "streamerMode", sm);
@@ -8778,14 +8784,20 @@ bool modifier_api_write_local_save_mod(const char *path, const char *mod_json)
 
 char *modifier_api_read_global_save_summary(const char *global_path, const char *collection_path)
 {
-	return read_global_save_summary_str(global_path ? global_path : "", collection_path ? collection_path : "");
+	bool previous_gbk = sys4_text_is_gbk;
+	char *summary = read_global_save_summary_str(global_path ? global_path : "", collection_path ? collection_path : "");
+	sys4_set_text_gbk(previous_gbk);
+	return summary;
 }
 
 bool modifier_api_write_global_save_mod(const char *global_path, const char *collection_path, const char *mod_json)
 {
 	if (!mod_json)
 		return false;
-	return write_global_save_mod_str(global_path ? global_path : "", collection_path ? collection_path : "", mod_json);
+	bool previous_gbk = sys4_text_is_gbk;
+	bool written = write_global_save_mod_str(global_path ? global_path : "", collection_path ? collection_path : "", mod_json);
+	sys4_set_text_gbk(previous_gbk);
+	return written;
 }
 
 const char *modifier_api_current_game(void)

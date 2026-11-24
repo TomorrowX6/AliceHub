@@ -10977,7 +10977,16 @@ object GameCatalog {
             val desc = descriptorFor(context, cid, gameList)
             entries.add(GameSelectEntry(desc, listOf(item), item))
         }
-        return GameSorting.sorted(entries, AppSettings.getGameSortMode(context), AppSettings.resolveLocale(context))
+        return GameSorting.sorted(
+            entries,
+            AppSettings.getGameSortMode(context),
+            AppSettings.resolveLocale(context),
+            hasChinese = { entry ->
+                val primary = entry.primaryItem
+                val modInfo = if (primary != null) gameList.getInstalledModInfo(primary) else null
+                hasChineseTranslation(entry.descriptor, primary, modInfo)
+            }
+        )
     }
 
     fun writeRunningGameRoot(context: Context, gameRoot: String) {

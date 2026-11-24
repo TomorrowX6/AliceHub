@@ -663,6 +663,7 @@ class GameList(activity: Activity) {
         val discovered = discoverMountedStorageDirs(knownRoots = emptySet(), createDummyIfEmpty = true)
         for ((storagePath, _) in discovered) {
             storageDirs.add(storagePath)
+            Rance10InstanceManager.cleanupStaleCloneStaging(storagePath)
             val homedir = File(storagePath, ".xsystem4")
             val files = storagePath.listFiles() ?: continue
             for (path in files) {
@@ -968,6 +969,137 @@ class GameList(activity: Activity) {
                 setInstallFailed(sessionGen, R.string.online_download_error)
             }
         }
+    }
+
+    fun allExistingDirectoryNames(): Set<String> {
+        val names = HashSet<String>()
+        val roots = LinkedHashSet<File>(storageDirs)
+        for ((mountedRoot, _) in discoverMountedStorageDirs(knownRoots = emptySet(), createDummyIfEmpty = false)) {
+            roots.add(mountedRoot)
+        }
+        for (root in roots) {
+            root.listFiles()?.forEach { child ->
+                if (!child.name.startsWith(".")) {
+                    names.add(child.name)
+                }
+            }
+        }
+        for (item in items) {
+            names.add(item.path.name)
+        }
+        return names
+    }
+
+    fun cloneRance10Directory(
+        sourceItem: Item,
+        targetDirName: String,
+        cleanVanilla: Boolean
+    ): Boolean {
+        if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) {
+            return false
+        }
+        val parentDir = sourceItem.path.parentFile ?: storageDirs[0]
+        val extraUsedNames = allExistingDirectoryNames()
+        val validation = Rance10InstanceManager.validateDirName(parentDir, targetDirName, extraUsedNames)
+        if (!validation.isValid) {
+            return false
+        }
+        val finalName = validation.sanitizedName
+        val stagingRef = java.util.concurrent.atomic.AtomicReference<File?>(null)
+        val committedDirRef = java.util.concurrent.atomic.AtomicReference<File?>(null)
+        val prevBarrier = retiringBarrierJob
+        val (sessionGen, abortHandle) = beginInstallSession(
+            notifTitle = context.getString(R.string.hub_create_instance_notif_title),
+            initialProgress = context.getString(R.string.hub_create_instance_preparing, finalName),
+            initialPermille = 0,
+            cancellable = true,
+            resumable = false,
+            targetGameId = GameCatalog.ID_RANCE10,
+            evictPartialOnCancel = {
+                listOfNotNull(stagingRef.get(), committedDirRef.get())
+                    .mapNotNull { OnlineInstaller.evictFileToTrash(it) }
+            }
+        )
+        val mainHandler = Handler(Looper.getMainLooper())
+        installJob = scope.launch {
+            try {
+                val createdDir = withContext(Dispatchers.IO) {
+                    try {
+                        prevBarrier?.join()
+                    } catch (_: Throwable) {
+                    }
+                    val myJob = kotlin.coroutines.coroutineContext[Job]
+                    val plan = Rance10InstanceManager.planCopy(sourceItem.path, cleanVanilla)
+                    var lastReportMs = 0L
+                    Rance10InstanceManager.executeCopy(
+                        plan = plan,
+                        parentDir = parentDir,
+                        targetDirName = finalName,
+                        onStagingDirCreated = { stagingRef.set(it) },
+                        checkCancelled = {
+                            if (abortHandle.isAborted || myJob?.isActive == false) {
+                                throw CancellationException()
+                            }
+                        },
+                        onProgress = { done, total, relFile ->
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastReportMs >= 100L || done >= total) {
+                                lastReportMs = now
+                                val pct = ((done * 100L) / total.coerceAtLeast(1L)).toInt().coerceIn(0, 100)
+                                val pm = ((done * 1000L) / total.coerceAtLeast(1L)).toInt().coerceIn(0, 1000)
+                                val text = context.getString(
+                                    R.string.hub_create_instance_progress,
+                                    finalName,
+                                    pct,
+                                    OnlineInstaller.formatSize(done),
+                                    OnlineInstaller.formatSize(total),
+                                    relFile
+                                )
+                                mainHandler.post {
+                                    if (!abortHandle.isAborted && myJob?.isActive == true) {
+                                        setInstallProgress(
+                                            sessionGen,
+                                            text,
+                                            pm,
+                                            cancellable = true,
+                                            resumable = false
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        extraUsedNames = extraUsedNames,
+                        onFinalDirCommitted = { committedDirRef.set(it) }
+                    )
+                }
+                committedDirRef.set(null)
+                val homedir = File(parentDir, ".xsystem4")
+                val created = Item.fromDirectory(createdDir, homedir, context)
+                items.removeAll { it.path.canonicalFile == createdDir.canonicalFile }
+                items.add(created)
+                recordItemSignature(created)
+                bumpDataVersion()
+                lastInstalledItem = created
+                GameHubActivity.persistSelectedInstancePath(context, GameCatalog.ID_RANCE10, created.path.path)
+                setInstallSucceeded(sessionGen)
+            } catch (_: CancellationException) {
+                val staged = stagingRef.get()
+                if (staged != null && staged.exists()) {
+                    deleteDirAsyncViaTrash(staged)
+                }
+                val committed = committedDirRef.getAndSet(null)
+                if (committed != null && committed.exists()) {
+                    deleteDirAsyncViaTrash(committed)
+                }
+                setInstallCancelled(sessionGen, wasPaused = false)
+            } catch (e: InstallFailureException) {
+                setInstallFailed(sessionGen, e.msgId)
+            } catch (e: Exception) {
+                Log.e("GameList", "Failed to clone Rance 10 directory", e)
+                setInstallFailed(sessionGen, R.string.hub_create_instance_failed)
+            }
+        }
+        return true
     }
 
     fun installDirectory(

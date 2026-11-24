@@ -15,6 +15,7 @@
  */
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "system4.h"
@@ -27,6 +28,9 @@
 
 #include "gfx/gfx.h"
 #include "gfx/font.h"
+#ifdef ALICEHUB_IOS
+#include "sact.h"
+#endif
 #include "vm.h"
 #include "xsystem4.h"
 
@@ -85,11 +89,29 @@ static struct font *load_font(enum font_face type)
 #endif
 	};
 
+#ifdef ALICEHUB_IOS
+	static const char *const default_font_env[2][2] = {
+		{ [FONT_GOTHIC] = "XSYSTEM4_FONT_GOTHIC", [FONT_MINCHO] = "XSYSTEM4_FONT_MINCHO" },
+		{ [FONT_GOTHIC] = "XSYSTEM4_FONT_GOTHIC_SC", [FONT_MINCHO] = "XSYSTEM4_FONT_MINCHO_SC" },
+	};
+#endif
+
 	struct font *font;
 	bool use_sc_fonts = sys4_text_is_gbk || sys4_has_mai_word_table();
 	// user specified font
 	if (config.font_paths[type] && (font = ft_font_load(config.font_paths[type])))
 		return font;
+#ifdef ALICEHUB_IOS
+	// platform default set by the launcher
+	const char *env_font = getenv(default_font_env[use_sc_fonts][type]);
+	if (env_font && *env_font && (font = ft_font_load(env_font))) {
+		struct font *fallback = ft_font_load(default_font_paths[FONT_MINCHO]);
+		if (!fallback)
+			fallback = ft_font_load(local_font_paths[FONT_MINCHO]);
+		ft_font_set_fallback(font, fallback);
+		return font;
+	}
+#endif
 	if (use_sc_fonts) {
 		const char *const *paths = type == FONT_GOTHIC ? gbk_gothic_paths : gbk_mincho_paths;
 		size_t nr_paths = type == FONT_GOTHIC
@@ -112,6 +134,9 @@ static struct font *load_font(enum font_face type)
 }
 
 static bool font_initialized = false;
+#ifdef ALICEHUB_IOS
+static struct fnl *session_fnl;
+#endif
 
 // Chinese releases (UTF-8, GBK, or CHS.TBL) substitute a TTF for .fnl bitmap
 // fonts, whose glyphs fill only part of the cell (e.g. 0.56–0.81 of cell height).
@@ -295,6 +320,9 @@ void gfx_font_init(void)
 
 	if (config.fnl_path && !fnl_uses_ttf_substitute()) {
 		struct fnl *fnl = fnl_open(config.fnl_path);
+#ifdef ALICEHUB_IOS
+		session_fnl = fnl;
+#endif
 		if (!fnl)
 			ERROR("Failed to load .fnl font library '%s'", config.fnl_path);
 		if (!fnl->nr_fonts)
@@ -706,6 +734,42 @@ static struct font_metrics font_metrics = {
 		.a = 255
 	}
 };
+
+#ifdef ALICEHUB_IOS
+void gfx_font_size_fini(struct font_size *size)
+{
+	if (!size->glyph_table)
+		return;
+	ht_foreach_value(size->glyph_table, free_cached_glyph);
+	ht_free(size->glyph_table);
+}
+
+void gfx_font_fini(void)
+{
+	text_sprite_ts.font_size = NULL;
+	for (unsigned i = 0; i < MAX_FNL_FONTS; i++) {
+		fnl_font_free(font_fnl[i]);
+		font_fnl[i] = NULL;
+	}
+	if (session_fnl)
+		fnl_free(session_fnl);
+	session_fnl = NULL;
+	for (unsigned i = 0; i < sizeof(font_ttf) / sizeof(*font_ttf); i++) {
+		ft_font_free(font_ttf[i]);
+		font_ttf[i] = NULL;
+	}
+	ft_font_fini();
+	free(glyph_cache_trackers);
+	glyph_cache_trackers = NULL;
+	nr_glyph_cache_trackers = cap_glyph_cache_trackers = 0;
+	memset(fnl_substitute_scales, 0, sizeof(fnl_substitute_scales));
+	fnl_substitute_count = 0;
+	gfx_text_advance_edges = false;
+	font_metrics = (struct font_metrics){ .size = 16, .face = FONT_GOTHIC, .weight = FW_BOLD,
+		.color = { 255, 255, 255, 255 } };
+	font_initialized = false;
+}
+#endif
 
 static void gfx_draw_text(Texture *dst, int x, int y, char *text, enum text_render_mode mode)
 {

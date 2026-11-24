@@ -155,7 +155,7 @@ enum Iso9660Extractor {
             try checkCancelled()
             try ArchiveExtractor.checkSpace(extents.reduce(0) { $0 + $1.size }, at: destination)
             guard FileManager.default.createFile(atPath: path.path, contents: nil) else {
-                throw ArchiveError.extraction("无法创建文件：\(name)")
+                throw ArchiveError.extraction(hubText("无法创建文件：%@", name))
             }
             let output = try FileHandle(forWritingTo: path)
             do {

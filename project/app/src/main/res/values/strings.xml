@@ -15,7 +15,7 @@
     <string name="lang_ja" translatable="false">日本語</string>
     <string name="lang_en" translatable="false">English</string>
     <string name="online_disclaimer_title">Disclaimer &amp; Terms of Use</string>
-    <string name="online_disclaimer_msg">Please read and accept all terms below before enabling Online Install:\n\nArticle 1 · Nature of Application\nAliceHub is an open-source cross-platform runtime engine and local asset manager intended for compatibility research and technical study. The application itself bundles no commercial game binaries, artwork, audio, or scripts.\n\nArticle 2 · Resource Origin &amp; Intellectual Property\nAll packages, patches, and mod archives indexed through online channels are aggregated from publicly accessible internet sources. All copyrights, trademarks, and related intellectual property rights belong solely to their respective original creators and publishers. AliceHub and its developers claim no ownership over third-party works and have no affiliation with or endorsement from any copyright holder.\n\nArticle 3 · Permitted Use &amp; Official Licensing\n1. Resources obtained through this feature are strictly limited to personal technical testing, compatibility verification, and backup restoration by users who hold a valid license for the original work;\n2. Commercial use, paid installation services, resale, public redistribution, or unauthorized streaming is strictly prohibited;\n3. Please support official releases. If you do not own a valid license for the corresponding title, you must delete all downloaded files within 24 hours.\n\nArticle 4 · Age &amp; Regional Compliance\nCertain titles may contain mature content intended for adults. By proceeding, you confirm that you have reached the legal age of majority in your jurisdiction and comply with all applicable local laws governing digital content access and possession.\n\nArticle 5 · Assumption of Risk &amp; Limitation of Liability\nOnline delivery is provided strictly on an as-is basis without warranties of availability, completeness, or fitness for any purpose. Users assume full sole responsibility for any network data usage, data loss, device issues, or legal liabilities arising from use of this feature or breach of these terms.\n\nArticle 6 · Acceptance &amp; Revocation\nSelecting Read &amp; Agree constitutes full acceptance of all articles above. Select Cancel to keep Online Install disabled. You may disable this feature at any time in Settings.\n\nArticle 7 · Resource Language\nOnline Install primarily provides Chinese-language game packages and mod resources, while select titles provide the original Japanese edition as labeled on each game page. To play other editions, please import your own files via Local Install.</string>
+    <string name="online_disclaimer_msg">Please read and accept all terms below before enabling Online Install:\n\nArticle 1 · Nature of Application\nAliceHub is an open-source cross-platform runtime engine and local asset manager intended for compatibility research and technical study. The application itself bundles no commercial game binaries, artwork, audio, or scripts.\n\nArticle 2 · Resource Origin &amp; Intellectual Property\nAll packages, patches, and mod archives indexed through online channels are aggregated from publicly accessible internet sources. All copyrights, trademarks, and related intellectual property rights belong solely to their respective original creators and publishers. AliceHub and its developers claim no ownership over third-party works and have no affiliation with or endorsement from any copyright holder.\n\nArticle 3 · Permitted Use &amp; Official Licensing\n1. Resources obtained through this feature are strictly limited to personal technical testing, compatibility verification, and backup restoration by users who hold a valid license for the original work;\n2. Commercial use, paid installation services, resale, public redistribution, or unauthorized streaming is strictly prohibited;\n3. Please support official releases. If you do not own a valid license for the corresponding title, you must delete all downloaded files within 24 hours.\n\nArticle 4 · Age &amp; Regional Compliance\nCertain titles may contain mature content intended for adults. By proceeding, you confirm that you have reached the legal age of majority in your jurisdiction and comply with all applicable local laws governing digital content access and possession.\n\nArticle 5 · Assumption of Risk &amp; Limitation of Liability\nOnline delivery is provided strictly on an as-is basis without warranties of availability, completeness, or fitness for any purpose. Users assume full sole responsibility for any network data usage, data loss, device issues, or legal liabilities arising from use of this feature or breach of these terms.\n\nArticle 6 · Acceptance &amp; Revocation\nSelecting Read &amp; Agree constitutes full acceptance of all articles above. Select Cancel to keep Online Install disabled. You may disable this feature at any time in Settings.</string>
     <string name="online_disclaimer_agree">Read &amp; Agree</string>
     <string name="action_save_manager">Save Manager</string>
     <string name="action_game_modifier">Game Modifier</string>
@@ -133,10 +133,7 @@
     <string name="save_clear_confirm_msg">Delete all %1$d save files? This cannot be undone.</string>
     <string name="save_cleared_toast">Saves cleared</string>
 
-    <string name="settings_online_install">Online Install (Chinese)</string>
-    <string name="settings_download_route">Download Route</string>
-    <string name="download_route_global">International</string>
-    <string name="download_route_cn">China Domestic</string>
+    <string name="settings_online_install">Online Install</string>
     <string name="settings_download_concurrency">Download Concurrency</string>
     <string name="download_concurrency_value">%1$d</string>
     <string name="download_concurrency_summary">Concurrent file and segment download connections (default 8). Lower this if your network is unstable.</string>
@@ -440,6 +437,26 @@
     <string name="hub_btn_install_first">Install Base Game</string>
     <string name="hub_switch_instance">Switch Dir</string>
     <string name="hub_select_instance_title">Switch Directory</string>
+    <string name="hub_instance_vanilla_tag">Vanilla</string>
+    <string name="hub_create_instance">New Directory</string>
+    <string name="hub_create_instance_title">New Rance 10 Directory</string>
+    <string name="hub_create_instance_name_label">Directory name</string>
+    <string name="hub_create_instance_name_hint">e.g. Rance10-1 or Rance10-MOD</string>
+    <string name="hub_create_instance_source_label">Copy from</string>
+    <string name="hub_create_instance_clean_vanilla">Strip MOD files to create a clean vanilla copy (recommended)</string>
+    <string name="hub_create_instance_desc_vanilla">Copies clean vanilla files from \"%1$s\" (~%2$s). The new directory has isolated MODs and saves.</string>
+    <string name="hub_create_instance_desc_copy">Copies files from \"%1$s\" (~%2$s). The new directory has isolated MODs and saves.</string>
+    <string name="hub_create_instance_desc_repack">Source contains a MOD without vanilla backups; all files will be copied as-is (~%1$s).</string>
+    <string name="hub_create_instance_err_empty">Please enter a directory name</string>
+    <string name="hub_create_instance_err_invalid">Directory name cannot start with a dot or contain / \\ : * ? \" &lt; &gt; |</string>
+    <string name="hub_create_instance_err_too_long">Directory name is too long</string>
+    <string name="hub_create_instance_err_exists">A directory with this name already exists</string>
+    <string name="hub_create_instance_progress">Creating %1$s · %2$d%% (%3$s / %4$s)\n%5$s</string>
+    <string name="hub_create_instance_preparing">Preparing %1$s…</string>
+    <string name="hub_create_instance_notif_title">Creating Rance 10 Directory</string>
+    <string name="hub_create_instance_done_toast">Created and switched to: %1$s</string>
+    <string name="hub_create_instance_failed">Failed to create directory. Check free storage and try again.</string>
+    <string name="hub_create_instance_no_space">Insufficient storage space to create a new directory.</string>
     <string name="import_wrong_game">Selected files do not match this game</string>
     <string name="switch_running_game_title">Switch Running Game</string>
     <string name="switch_running_game_msg">Close background game and launch %1$s?</string>

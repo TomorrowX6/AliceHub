@@ -37,7 +37,8 @@ public class GameSortingTest {
         GameDescriptor descriptor = new GameDescriptor(d.getId(), title, d.getDefaultDirName(), d.getExpectedAinName(),
             d.getIconRes(), d.getAccentColor(), d.getAccentBorderColor(), d.getIconFrameColor(),
             d.getSupportsOnlineBaseInstall(), d.getOnlineBaseCdnUrl(), d.getSupportsOnlineMod(), d.getSupportsLocalMod(),
-            d.isRance10(), d.isCnPatch(), d.getOverlayCdnBaseUrl(), d.getOverlayCatalogRelPath());
+            d.isRance10(), d.isCnPatch(), d.getOverlayCdnBaseUrl(), d.getOverlayCatalogRelPath(),
+            d.getSupportsUncensoredPatch(), d.getHasChinese());
         Item item = installed ? new Item(title, new File(activity.getFilesDir(), id), activity.getFilesDir(), null, null, null) : null;
         return new GameSelectEntry(descriptor, item == null ? Collections.emptyList() : Collections.singletonList(item), item);
     }
@@ -75,6 +76,64 @@ public class GameSortingTest {
         }
         assertEquals(Arrays.asList("custom:unknown", GameCatalog.ID_ESCALAYER, GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_DOHNA_DOHNA),
             ids(sort(entries, GameSortMode.CATALOG)));
+    }
+    @Test public void defaultSortPlacesChineseAboveRawWithinInstalledAndUninstalledGroups() {
+        List<GameSelectEntry> uninstalled = Arrays.asList(
+            entry(GameCatalog.ID_ESCALAYER, "Escalayer", false),
+            entry(GameCatalog.ID_HARUKA, "Haruka", false),
+            entry(GameCatalog.ID_DARCROWS, "DARCROWS", false),
+            entry(GameCatalog.ID_SENGOKU_RANCE, "Sengoku", false),
+            entry(GameCatalog.ID_PASCHA3, "Pascha3", false)
+        );
+        // Uninstalled: Chinese (熟肉) first in original catalog order, then raw (生肉) in original order.
+        assertEquals(
+            Arrays.asList(
+                GameCatalog.ID_DARCROWS, GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_PASCHA3,
+                GameCatalog.ID_ESCALAYER, GameCatalog.ID_HARUKA
+            ),
+            ids(sort(uninstalled, GameSortMode.CATALOG))
+        );
+
+        // Installed still precedes uninstalled; within installed, Chinese precedes raw.
+        List<GameSelectEntry> mixed = Arrays.asList(
+            entry(GameCatalog.ID_SENGOKU_RANCE, "Sengoku", false),
+            entry(GameCatalog.ID_ESCALAYER, "Escalayer", true),
+            entry(GameCatalog.ID_HARUKA, "Haruka", false),
+            entry(GameCatalog.ID_EVENICLE, "Evenicle", true),
+            entry("custom:raw", "CustomRaw", true)
+        );
+        assertEquals(
+            Arrays.asList(
+                GameCatalog.ID_EVENICLE, GameCatalog.ID_ESCALAYER, "custom:raw",
+                GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_HARUKA
+            ),
+            ids(sort(mixed, GameSortMode.CATALOG))
+        );
+
+        // Live translation predicate (e.g. installed CN patch on a raw title) promotes it into installed CN tier.
+        assertEquals(
+            Arrays.asList(
+                GameCatalog.ID_EVENICLE, "custom:raw", GameCatalog.ID_ESCALAYER,
+                GameCatalog.ID_SENGOKU_RANCE, GameCatalog.ID_HARUKA
+            ),
+            ids(GameSorting.INSTANCE.sorted(
+                mixed,
+                GameSortMode.CATALOG,
+                Locale.ENGLISH,
+                GameSortMetadata.INSTANCE::forGame,
+                e -> e.getDescriptor().getHasChinese() || "custom:raw".equals(e.getDescriptor().getId())
+            ))
+        );
+
+        // Non-default modes (NAME / RATING / RELEASE_DATE) are NOT partitioned by Chinese status.
+        List<GameSelectEntry> forName = Arrays.asList(
+            entry(GameCatalog.ID_SENGOKU_RANCE, "Zelda", false),
+            entry(GameCatalog.ID_ESCALAYER, "Alpha", false)
+        );
+        assertEquals(
+            Arrays.asList(GameCatalog.ID_ESCALAYER, GameCatalog.ID_SENGOKU_RANCE),
+            ids(sort(forName, GameSortMode.NAME))
+        );
     }
     @Test public void nameUsesLocaleAscendingAndKeepsEqualTitlesStable() {
         List<GameSelectEntry> entries = Arrays.asList(entry("custom:b", "beta", false), entry("custom:a1", "Alpha", false), entry("custom:a2", "alpha", false));

@@ -51,6 +51,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Hashtable;
 import java.util.Locale;
 
@@ -259,6 +260,10 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected String getMainFunction() {
         return "SDL_main";
     }
+
+    protected int getPartsTextInputSession() { return 0; }
+
+    protected void sendPartsTextInput(int session, byte[] text, boolean composing, int backspaces) {}
 
     /**
      * This method is called by SDL before loading the native shared libraries.
@@ -1999,10 +2004,14 @@ class SDLInputConnection extends BaseInputConnection {
 
     protected EditText mEditText;
     protected String mCommittedText = "";
+    private final SDLActivity activity;
+    private int partsSession;
 
     public SDLInputConnection(View targetView, boolean fullEditor) {
         super(targetView, fullEditor);
-        mEditText = new EditText(SDL.getContext());
+        mEditText = new EditText(targetView.getContext());
+        activity = targetView.getContext() instanceof SDLActivity
+                ? (SDLActivity) targetView.getContext() : null;
     }
 
     @Override
@@ -2035,24 +2044,90 @@ class SDLInputConnection extends BaseInputConnection {
 
     @Override
     public boolean commitText(CharSequence text, int newCursorPosition) {
+        int session = updatePartsSession();
         if (!super.commitText(text, newCursorPosition)) {
             return false;
         }
-        updateText();
+        if (session != 0) {
+            sendPartsText(session, text.toString(), false);
+            getEditable().clear();
+        } else {
+            updateText();
+        }
         return true;
     }
 
     @Override
     public boolean setComposingText(CharSequence text, int newCursorPosition) {
+        int session = updatePartsSession();
         if (!super.setComposingText(text, newCursorPosition)) {
             return false;
         }
-        updateText();
+        if (session != 0) {
+            sendPartsText(session, getEditable().toString(), true);
+        } else {
+            updateText();
+        }
         return true;
     }
 
     @Override
+    public boolean finishComposingText() {
+        int session = updatePartsSession();
+        String draft = session != 0 ? getEditable().toString() : "";
+        if (!super.finishComposingText()) {
+            return false;
+        }
+        if (!draft.isEmpty()) {
+            sendPartsText(session, draft, false);
+            getEditable().clear();
+        }
+        return true;
+    }
+
+    private int updatePartsSession() {
+        int session = activity == null ? 0 : activity.getPartsTextInputSession();
+        if (session != partsSession) {
+            getEditable().clear();
+            removeComposingSpans(getEditable());
+            mCommittedText = "";
+            partsSession = session;
+        }
+        return session;
+    }
+
+    private void sendPartsText(int session, String text, boolean composing) {
+        activity.sendPartsTextInput(session, text.getBytes(StandardCharsets.UTF_8), composing, 0);
+    }
+
+    private boolean deletePartsText(int session, int beforeLength, int afterLength, boolean codePoints) {
+        if (getEditable().length() != 0) {
+            boolean deleted = codePoints ? super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+                    : super.deleteSurroundingText(beforeLength, afterLength);
+            if (deleted) {
+                sendPartsText(session, getEditable().toString(), true);
+            }
+            return deleted;
+        }
+        if (beforeLength > 0) {
+            activity.sendPartsTextInput(session, null, false, beforeLength);
+        }
+        return true;
+    }
+
+    @Override
+    public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
+        int session = updatePartsSession();
+        return session != 0 ? deletePartsText(session, beforeLength, afterLength, true)
+                : super.deleteSurroundingTextInCodePoints(beforeLength, afterLength);
+    }
+
+    @Override
     public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+        int session = updatePartsSession();
+        if (session != 0) {
+            return deletePartsText(session, beforeLength, afterLength, false);
+        }
         if (Build.VERSION.SDK_INT <= 29 /* Android 10.0 (Q) */) {
             // Workaround to capture backspace key. Ref: http://stackoverflow.com/questions>/14560344/android-backspace-in-webview-baseinputconnection
             // and https://bugzilla.libsdl.org/show_bug.cgi?id=2265

@@ -54,6 +54,7 @@ static uint32_t mouse_down_timestamp[VK_NR_KEYCODES];
 static bool suppressed_movie_keys[VK_NR_KEYCODES];
 static bool vpad_cursor_btn_down;
 static atomic_bool touch_ctrl_skip;
+static bool long_touch_ctrl_down;
 static bool movie_has_active_playback(void) { return false; }
 static bool is_movie_skip_suppressed_key(int code) { (void)code; return false; }
 %(funcs)s

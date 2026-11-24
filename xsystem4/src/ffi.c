@@ -1039,6 +1039,36 @@ static void link_libraries(void)
 
 bool libraries_initialized = false;
 
+#ifdef ALICEHUB_IOS
+struct hll_replacement {
+	struct static_hll_function *entry;
+	struct static_hll_function original;
+	struct hll_replacement *next;
+};
+static struct hll_replacement *replacements;
+
+void unlink_libraries(void)
+{
+	if (libraries) {
+		for (int i = 0; i < ain->nr_libraries; i++) {
+			if (!libraries[i])
+				continue;
+			for (int j = 0; j < ain->libraries[i].nr_functions; j++)
+				free(libraries[i][j].args);
+			free(libraries[i]);
+		}
+		free(libraries);
+		libraries = NULL;
+	}
+	while (replacements) {
+		struct hll_replacement *replacement = replacements;
+		replacements = replacement->next;
+		*replacement->entry = replacement->original;
+		free(replacement);
+	}
+}
+#endif
+
 void link_libraries_for_audit(void)
 {
 	library_run_all("_PreLink");
@@ -1057,12 +1087,20 @@ void exit_libraries(void)
 {
 	if (libraries_initialized)
 		library_run_all("_ModuleFini");
+#ifdef ALICEHUB_IOS
+	libraries_initialized = false;
+#endif
 }
 
 void static_library_replace(struct static_library *lib, const char *name, void *fun)
 {
 	for (int i = 0; lib->functions[i].name; i++) {
 		if (!strcmp(lib->functions[i].name, name)) {
+#ifdef ALICEHUB_IOS
+			struct hll_replacement *replacement = xmalloc(sizeof(*replacement));
+			*replacement = (struct hll_replacement){ &lib->functions[i], lib->functions[i], replacements };
+			replacements = replacement;
+#endif
 			lib->functions[i].fun = fun;
 			lib->functions[i].resolve = NULL;
 			return;

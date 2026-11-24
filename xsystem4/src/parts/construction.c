@@ -839,11 +839,7 @@ static void cproc_cg_cache_on_gl_reset(void *user)
 
 static Texture *cproc_get_cached_texture(struct string *cg_name)
 {
-	static bool cproc_reset_registered = false;
-	if (!cproc_reset_registered) {
-		gfx_register_reset_callback(cproc_cg_cache_on_gl_reset, NULL);
-		cproc_reset_registered = true;
-	}
+	gfx_register_reset_callback(cproc_cg_cache_on_gl_reset, NULL);
 	if (!cg_name || !cg_name->size)
 		return NULL;
 	for (int i = 0; i < nr_cproc_cg_cache; i++) {

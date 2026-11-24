@@ -7,7 +7,7 @@ struct OnlineGame: Identifiable {
     let hasChinese: Bool
     let aliases: [String]
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
-    var baseURL: URL { URL(string: DownloadRoute.current.gameBaseURLString(for: id) + "/")! }
+    var baseURL: URL { URL(string: AliceHubCDN.gameBaseURLString(for: id) + "/")! }
 
     init(id: String, title: String, directory: String, hasChinese: Bool = false, aliases: [String] = []) {
         self.id = id
@@ -31,6 +31,39 @@ struct OnlineGame: Identifiable {
     }
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
+    private static let byDirectory = Dictionary(uniqueKeysWithValues: all.map { ($0.directory.lowercased(), $0) })
+
+    static func catalogEntry(for game: Game) -> OnlineGame? {
+        game.artworkKey.flatMap { byArtworkKey[$0] } ?? byDirectory[game.name.lowercased()]
+    }
+
+    func displayTitle(in language: HubLanguage, bundle: Bundle = .main) -> String {
+        language.text(title, bundle: bundle)
+    }
+
+    static func displayTitle(for game: Game, in language: HubLanguage, bundle: Bundle = .main) -> String {
+        let name = game.resolvedDisplayName
+        guard let key = game.artworkKey, let entry = byArtworkKey[key] else { return name }
+        let title = entry.displayTitle(in: language, bundle: bundle)
+        for base in [entry.title, entry.directory] {
+            if name.caseInsensitiveCompare(base) == .orderedSame { return title }
+            if let prefix = name.range(of: base + " [", options: [.anchored, .caseInsensitive]),
+               name.hasSuffix("]") {
+                return title + " [" + name[prefix.upperBound...]
+            }
+        }
+        return name
+    }
+
+    static func chineseBadgeKey(hasChinese: Bool) -> String {
+        hasChinese ? "熟肉" : "生肉"
+    }
+
+    static func matchesChineseBadge(_ query: String, hasChinese: Bool, in language: HubLanguage, bundle: Bundle = .main) -> Bool {
+        let key = chineseBadgeKey(hasChinese: hasChinese)
+        return query.localizedCaseInsensitiveCompare(key) == .orderedSame ||
+            query.localizedCaseInsensitiveCompare(language.text(key, bundle: bundle)) == .orderedSame
+    }
 
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -49,10 +82,22 @@ struct OnlineGame: Identifiable {
         if game.hasExplicitNonChineseEdition {
             return false
         }
-        if let key = game.artworkKey, let entry = byArtworkKey[key] {
+        if let entry = catalogEntry(for: game) {
             return entry.hasChinese
         }
         return false
+    }
+
+    static func defaultSorted(_ list: [OnlineGame]) -> [OnlineGame] {
+        let cn = list.filter(\.hasChinese)
+        let raw = list.filter { !$0.hasChinese }
+        return cn + raw
+    }
+
+    static func defaultSortedInstalled(_ list: [Game]) -> [Game] {
+        let cn = list.filter { hasChinese(for: $0) }
+        let raw = list.filter { !hasChinese(for: $0) }
+        return cn + raw
     }
 
     static let all: [Self] = [
@@ -213,84 +258,19 @@ struct OnlineGame: Identifiable {
         Self(id: "balloonpop", title: "气球爆破", directory: "BalloonPop"),
         Self(id: "hiyoko2", title: "高速小鸡2", directory: "Hiyoko2"),
         Self(id: "selfgame", title: "self", directory: "SelfGame"),
-        Self(
-            id: "momoiroguardian",
-            title: "桃色守护者",
-            directory: "MomoiroGuardian",
-            aliases: ["Momoiro Guardian", "ももいろガーディアン", "桃色守護者", "ももんが", "Momonga"]
-        ),
-        Self(
-            id: "rance1classic",
-            title: "兰斯I 寻找小光（原版）",
-            directory: "Rance1Classic",
-            aliases: ["Rance -Hikari o Motomete- (Classic)", "Rance －光を求めて－（原版）", "Rance I", "兰斯1原版", "ランスI"]
-        ),
-        Self(
-            id: "rance2classic",
-            title: "兰斯II 反叛的少女们（原版）",
-            directory: "Rance2Classic",
-            aliases: ["Rance II -Hangyaku no Shoujo-tachi- (Classic)", "ランスII －反逆の少女たち－（原版）", "Rance II", "兰斯2原版", "ランスII"]
-        ),
-        Self(
-            id: "rance3classic",
-            title: "兰斯III 利萨斯陷落（原版）",
-            directory: "Rance3Classic",
-            aliases: ["Rance III -Leazas Kanraku- (Classic)", "ランスIII －リーザス陥落－（原版）", "Rance III", "兰斯3原版", "ランスIII"]
-        ),
-        Self(
-            id: "dpssgfahren",
-            title: "D.P.S. SG 飞翔的梦",
-            directory: "DpsSgFahren",
-            aliases: ["D.P.S. SG - Fahren Fliegen", "D.P.S. SG －Fahren Fliegen－", "Fahren Fliegen", "飛翔的夢"]
-        ),
-        Self(
-            id: "dpssgkatei",
-            title: "D.P.S. SG 家庭教师是美妙的工作",
-            directory: "DpsSgKatei",
-            aliases: ["D.P.S. SG - Kateikyoushi wa Suteki na Oshigoto", "D.P.S. SG －家庭教師はステキなお仕事－", "家庭教師はステキなお仕事", "Kateikyoushi"]
-        ),
-        Self(
-            id: "dpssgnobunaga",
-            title: "D.P.S. SG 信长的淫谋",
-            directory: "DpsSgNobunaga",
-            aliases: ["D.P.S. SG - Nobunaga no Inbou", "D.P.S. SG －信長の淫謀－", "信長の淫謀", "Nobunaga no Inbou"]
-        ),
-        Self(
-            id: "dpssg2antique",
-            title: "D.P.S. SG set2 古董屋",
-            directory: "DpsSg2Antique",
-            aliases: ["D.P.S. SG set2 - ANTIQUE HOUSE", "D.P.S. SG set2 －ANTIQUE HOUSE－", "ANTIQUE HOUSE"]
-        ),
-        Self(
-            id: "dpssg2ikenai",
-            title: "D.P.S. SG set2 不妙的内科体检再临",
-            directory: "DpsSg2Ikenai",
-            aliases: ["D.P.S. SG set2 - Ikenai Naika Kenshin Futatabi", "D.P.S. SG set2 －いけない内科検診再び－", "いけない内科検診再び"]
-        ),
-        Self(
-            id: "dpssg2akai",
-            title: "D.P.S. SG set2 朱红之夜",
-            directory: "DpsSg2Akai",
-            aliases: ["D.P.S. SG set2 - Akai Yoru", "D.P.S. SG set2 －朱い夜－", "朱い夜", "Akai Yoru"]
-        ),
-        Self(
-            id: "dpssg3rabbit",
-            title: "D.P.S. SG set3 Rabbit P4P",
-            directory: "DpsSg3Rabbit",
-            aliases: ["D.P.S. SG set3 - Rabbit P4P", "D.P.S. SG set3 －Rabbit P4P－", "Rabbit P4P"]
-        ),
-        Self(
-            id: "dpssg3shinkon",
-            title: "D.P.S. SG set3 新婚物语",
-            directory: "DpsSg3Shinkon",
-            aliases: ["D.P.S. SG set3 - Shinkon-san Monogatari", "D.P.S. SG set3 －しんこんさんものがたり－", "しんこんさんものがたり", "新婚物語"]
-        ),
-        Self(
-            id: "dpssg3sotsugyou",
-            title: "D.P.S. SG set3 毕业",
-            directory: "DpsSg3Sotsugyou",
-            aliases: ["D.P.S. SG set3 - Sotsugyou", "D.P.S. SG set3 －卒業－", "卒業", "Sotsugyou"]
-        )
+        Self(id: "momoiroguardian", title: "桃色守护者", directory: "MomoiroGuardian", aliases: ["Momoiro Guardian", "ももいろガーディアン", "桃色守護者", "ももんが", "Momonga"]),
+        Self(id: "rance1classic", title: "兰斯I 寻找小光（原版）", directory: "Rance1Classic", aliases: ["Rance -Hikari o Motomete- (Classic)", "Rance －光を求めて－（原版）", "Rance I", "兰斯1原版", "ランスI"]),
+        Self(id: "rance2classic", title: "兰斯II 反叛的少女们（原版）", directory: "Rance2Classic", aliases: ["Rance II -Hangyaku no Shoujo-tachi- (Classic)", "ランスII －反逆の少女たち－（原版）", "Rance II", "兰斯2原版", "ランスII"]),
+        Self(id: "rance3classic", title: "兰斯III 利萨斯陷落（原版）", directory: "Rance3Classic", aliases: ["Rance III -Leazas Kanraku- (Classic)", "ランスIII －リーザス陥落－（原版）", "Rance III", "兰斯3原版", "ランスIII"]),
+        Self(id: "dpssgfahren", title: "D.P.S. SG 飞翔的梦", directory: "DpsSgFahren", aliases: ["D.P.S. SG - Fahren Fliegen", "D.P.S. SG －Fahren Fliegen－", "Fahren Fliegen", "飛翔的夢"]),
+        Self(id: "dpssgkatei", title: "D.P.S. SG 家庭教师是美妙的工作", directory: "DpsSgKatei", aliases: ["D.P.S. SG - Kateikyoushi wa Suteki na Oshigoto", "D.P.S. SG －家庭教師はステキなお仕事－", "家庭教師はステキなお仕事", "Kateikyoushi"]),
+        Self(id: "dpssgnobunaga", title: "D.P.S. SG 信长的淫谋", directory: "DpsSgNobunaga", aliases: ["D.P.S. SG - Nobunaga no Inbou", "D.P.S. SG －信長の淫謀－", "信長の淫謀", "Nobunaga no Inbou"]),
+        Self(id: "dpssg2antique", title: "D.P.S. SG set2 古董屋", directory: "DpsSg2Antique", aliases: ["D.P.S. SG set2 - ANTIQUE HOUSE", "D.P.S. SG set2 －ANTIQUE HOUSE－", "ANTIQUE HOUSE"]),
+        Self(id: "dpssg2ikenai", title: "D.P.S. SG set2 不妙的内科体检再临", directory: "DpsSg2Ikenai", aliases: ["D.P.S. SG set2 - Ikenai Naika Kenshin Futatabi", "D.P.S. SG set2 －いけない内科検診再び－", "いけない内科検診再び"]),
+        Self(id: "dpssg2akai", title: "D.P.S. SG set2 朱红之夜", directory: "DpsSg2Akai", aliases: ["D.P.S. SG set2 - Akai Yoru", "D.P.S. SG set2 －朱い夜－", "朱い夜", "Akai Yoru"]),
+        Self(id: "dpssg3rabbit", title: "D.P.S. SG set3 Rabbit P4P", directory: "DpsSg3Rabbit", aliases: ["D.P.S. SG set3 - Rabbit P4P", "D.P.S. SG set3 －Rabbit P4P－", "Rabbit P4P"]),
+        Self(id: "dpssg3shinkon", title: "D.P.S. SG set3 新婚物语", directory: "DpsSg3Shinkon", aliases: ["D.P.S. SG set3 - Shinkon-san Monogatari", "D.P.S. SG set3 －しんこんさんものがたり－", "しんこんさんものがたり", "新婚物語"]),
+        Self(id: "dpssg3sotsugyou", title: "D.P.S. SG set3 毕业", directory: "DpsSg3Sotsugyou", aliases: ["D.P.S. SG set3 - Sotsugyou", "D.P.S. SG set3 －卒業－", "卒業", "Sotsugyou"])
     ]
 }
 
@@ -316,11 +296,11 @@ struct OnlineGameManifest: Decodable {
     }
 
     static func parse(_ data: Data) throws -> Self {
-        guard data.count <= 4 * 1048576 else { throw ModError.message("下载清单过大") }
+        guard data.count <= 4 * 1048576 else { throw ModError.message(hubText("下载清单过大")) }
         let manifest = try JSONDecoder().decode(Self.self, from: data)
         guard safePath(manifest.baseName), !manifest.baseName.contains("/"), !manifest.baseName.hasPrefix("."),
               !manifest.files.isEmpty, manifest.files.count <= 10000 else {
-            throw ModError.message("游戏清单无效")
+            throw ModError.message(hubText("游戏清单无效"))
         }
         var paths = Set<String>(), total: Int64 = 0
         for entry in manifest.files {
@@ -328,17 +308,17 @@ struct OnlineGameManifest: Decodable {
             let sum = total.addingReportingOverflow(entry.size)
             guard safePath(entry.path), safePath(entry.key), entry.size >= 0, !sum.overflow,
                   entry.sha256.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil,
-                  paths.insert(path).inserted else { throw ModError.message("游戏清单包含不安全或重复的文件") }
+                  paths.insert(path).inserted else { throw ModError.message(hubText("游戏清单包含不安全或重复的文件")) }
             total = sum.partialValue
         }
         for path in paths {
             var parts = path.split(separator: "/"); parts.removeLast()
             while !parts.isEmpty {
-                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message("游戏清单文件路径冲突") }
+                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message(hubText("游戏清单文件路径冲突")) }
                 parts.removeLast()
             }
         }
-        guard total > 0 else { throw ModError.message("游戏清单为空") }
+        guard total > 0 else { throw ModError.message(hubText("游戏清单为空")) }
         return manifest
     }
 
@@ -348,7 +328,7 @@ struct OnlineGameManifest: Decodable {
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw ModError.message("无法获取游戏清单，请检查网络后重试")
+            throw ModError.message(hubText("无法获取游戏清单，请检查网络后重试"))
         }
         return try parse(data)
     }
