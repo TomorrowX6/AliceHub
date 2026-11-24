@@ -152,6 +152,13 @@ struct SaveSyncChecks {
         }
         try put(localRenames, "sub/old.asd", "last synced", 20)
         try SaveSyncFolder.sync(game: renames, documents: documents, support: support)
+        let peer = SaveSync(game: renames, documents: root.appendingPathComponent("Peer"), folder: cloud,
+                            state: support.appendingPathComponent("peer-renames.json"))
+        let editedPeer = SaveSync(game: renames, documents: root.appendingPathComponent("EditedPeer"), folder: cloud,
+                                  state: support.appendingPathComponent("edited-peer-renames.json"))
+        check(try peer.sync() == SaveSync.Summary(pulled: 1))
+        check(try editedPeer.sync() == SaveSync.Summary(pulled: 1))
+        try put(editedPeer.local, "sub/old.asd", "independent progress", 0)
         try put(localRenames, "sub/old.asd", "new local progress", 10)
         try rename("sub/old.asd", to: "renamed.asd")
         check(get(localRenames, "sub/old.asd") == nil && get(remoteRenames, "sub/old.asd") == nil)
@@ -159,6 +166,15 @@ struct SaveSyncChecks {
         check(get(remoteRenames, "sub/renamed.asd") == "last synced")
         check(try SaveSyncFolder.sync(game: renames, documents: documents, support: support)! == SaveSync.Summary(pushed: 1))
         check(get(remoteRenames, "sub/renamed.asd") == "new local progress")
+        check(try peer.sync(mode: .uploadOnly) == SaveSync.Summary())
+        check(get(peer.local, "sub/old.asd") == "last synced")
+        check(try peer.sync() == SaveSync.Summary(pulled: 1))
+        check(get(peer.local, "sub/old.asd") == nil)
+        check(get(peer.local, "sub/renamed.asd") == "new local progress")
+        check(try editedPeer.sync() == SaveSync.Summary(pulled: 1, conflicts: 1))
+        check(get(editedPeer.local, "sub/old.asd") == "independent progress")
+        check(get(editedPeer.local, "sub/renamed.asd") == "new local progress")
+        check(get(remoteRenames, "sub/old.asd") == nil)
 
         try put(remoteRenames, "sub/occupied.asd", "keep destination", 0)
         do { try rename("sub/renamed.asd", to: "occupied.asd"); preconditionFailure("renamed over occupied cloud path") }

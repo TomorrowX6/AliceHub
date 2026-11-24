@@ -67,6 +67,12 @@ final class SaveSync {
         var conflict: [String]?
     }
 
+    private struct Rename: Codable {
+        let source: String
+        let destination: String
+        let hash: String
+    }
+
     private static func digest(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
@@ -201,6 +207,19 @@ final class SaveSync {
         return try result.get()
     }
 
+    private func renameRecordPath(source: String, hash: String) -> [String] {
+        [game, ".alicehub-renames", Self.digest(Data((source + "\n" + hash).utf8)) + ".json"]
+    }
+
+    private func publishedRename(source: String, hash: String) throws -> Bool {
+        let path = renameRecordPath(source: source, hash: hash)
+        let url = try checkedURL(path, under: folder)
+        let placeholder = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
+        guard files.fileExists(atPath: url.path) || files.fileExists(atPath: placeholder.path) else { return false }
+        let rename = try JSONDecoder().decode(Rename.self, from: coordinatedRead(path: path, under: folder).data)
+        return rename.source == source && rename.hash == hash && rename.destination != source
+    }
+
     func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager) throws {
         let localTarget = try manager.destination(for: entry, named: name)
         let newName = localTarget.lastPathComponent
@@ -235,11 +254,23 @@ final class SaveSync {
                     throw Failure.renameConflict
                 }
                 try manager.rename(entry, named: name)
+                var recordToRemove: URL?
                 do {
+                    let destination = newParts.joined(separator: "/")
+                    let markerPath = renameRecordPath(source: entry.path, hash: base.hash)
+                    let markerURL = try checkedURL(markerPath, under: folder)
+                    if try !publishedRename(source: entry.path, hash: base.hash) {
+                        let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
+                        let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
+                        guard try coordinatedWrite(marker, path: markerPath, under: folder, expected: nil,
+                                                   isCancelled: { false }) == .written else { throw Failure.targetChanged }
+                        recordToRemove = markerURL
+                    }
                     coordinator.item(at: sourceURL, willMoveTo: targetURL)
                     try files.moveItem(at: sourceURL, to: targetURL)
                     coordinator.item(at: sourceURL, didMoveTo: targetURL)
                 } catch {
+                    if let recordToRemove { try? files.removeItem(at: recordToRemove) }
                     try files.moveItem(at: localTarget, to: entry.url)
                     throw error
                 }
@@ -281,6 +312,26 @@ final class SaveSync {
             }
             let b = theirs.contains(path) ? try coordinatedRead(path: remotePath, under: folder) : nil
             let base = records[path]
+            if let a, b == nil, let base, try publishedRename(source: path, hash: base.hash) {
+                guard Self.digest(a.data) == base.hash, base.conflict == nil else {
+                    summary.conflicts += 1
+                    continue
+                }
+                guard mode == .twoWay else { continue }
+                if !backedUp {
+                    try beforeLocalChange()
+                    backedUp = true
+                }
+                let source = try checkedURL(localPath, under: documents)
+                guard !isCancelled() else { break }
+                guard let current = stableLocalSnapshot(source), current.data == a.data else {
+                    summary.skipped += 1
+                    continue
+                }
+                try files.removeItem(at: source)
+                records.removeValue(forKey: path)
+                continue
+            }
             let pull: Bool
             if let a, let b {
                 let localHash = Self.digest(a.data)
