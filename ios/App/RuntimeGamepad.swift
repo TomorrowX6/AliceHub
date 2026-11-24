@@ -1,15 +1,16 @@
 import UIKit
+import SwiftUI
 
 final class RuntimeGamepad: UIView {
-    private static var gameID: String?
+    private static var session: (game: String, engine: GameEngine)?
     private static weak var overlay: RuntimeGamepad?
 
-    static func prepare(for game: String) {
-        gameID = game
+    static func prepare(for game: String, engine: GameEngine) {
+        session = (game, engine)
         alicehub_ios_set_gamepad_callbacks({ window in
-            guard let window, let game = RuntimeGamepad.gameID else { return }
+            guard let window, let session = RuntimeGamepad.session else { return }
             RuntimeGamepad.overlay?.removeFromSuperview()
-            let overlay = RuntimeGamepad(game: game)
+            let overlay = RuntimeGamepad(game: session.game, engine: session.engine)
             overlay.frame = window.bounds
             overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             window.addSubview(overlay)
@@ -23,6 +24,7 @@ final class RuntimeGamepad: UIView {
 
     private let store = GamepadProfiles()
     private let game: String
+    private let engine: GameEngine
     private var profile: GamepadProfile
     private var controls: [TouchPadControl] = []
     private var inMovie = false
@@ -30,13 +32,15 @@ final class RuntimeGamepad: UIView {
     private let menuPanel = UIStackView()
     private let virtualToggle = UIButton(type: .system)
     private let physicalToggle = UIButton(type: .system)
+    private weak var editor: UIViewController?
     private let sensitivityLabel = UILabel()
     private let sensitivitySlider = UISlider()
     private let cursorView = UIImageView(image: UIImage(systemName: "cursorarrow.rays"))
     private var cursorPosition = CGPoint(x: 0.5, y: 0.5)
 
-    private init(game: String) {
+    private init(game: String, engine: GameEngine) {
         self.game = game
+        self.engine = engine
         profile = store.active(game)
         super.init(frame: .zero)
         backgroundColor = .clear
@@ -68,6 +72,7 @@ final class RuntimeGamepad: UIView {
             button.tintColor = .white
             menuPanel.addArrangedSubview(button)
         }
+        physicalToggle.isHidden = engine == .system3
         virtualToggle.addAction(UIAction { [weak self] _ in self?.toggleVirtual() }, for: .touchUpInside)
         physicalToggle.addAction(UIAction { [weak self] _ in
             guard let self else { return }
@@ -85,7 +90,7 @@ final class RuntimeGamepad: UIView {
             let pct = Double(Int(self.sensitivitySlider.value.rounded()))
             self.profile.physical.cursorSpeedPct = pct
             self.sensitivityLabel.text = "\(padText("Sensitivity")): \(Int(pct))%"
-            self.profile.engineJSON().withCString { input_set_gamepad_config_json($0) }
+            self.applyEngineProfile()
             if !self.sensitivitySlider.isTracking {
                 self.store.save(self.profile, for: self.store.saved(self.game) == nil ? nil : self.game)
             }
@@ -96,6 +101,11 @@ final class RuntimeGamepad: UIView {
         }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
         menuPanel.addArrangedSubview(sensitivityLabel)
         menuPanel.addArrangedSubview(sensitivitySlider)
+        let edit = UIButton(type: .system)
+        edit.setTitle(padText("Edit Layout"), for: .normal)
+        edit.tintColor = .white
+        edit.addAction(UIAction { [weak self] _ in self?.openEditor() }, for: .touchUpInside)
+        menuPanel.addArrangedSubview(edit)
         let close = UIButton(type: .system)
         close.setTitle(padText("Close"), for: .normal)
         close.tintColor = .white
@@ -131,10 +141,10 @@ final class RuntimeGamepad: UIView {
 
     private func applyProfile() {
         releaseInputs()
-        profile.engineJSON().withCString { input_set_gamepad_config_json($0) }
+        applyEngineProfile()
         controls.forEach { $0.removeFromSuperview() }
         controls = profile.virtual.controls.filter(\.visible).map { spec in
-            let control = TouchPadControl(spec: spec, opacity: profile.virtual.opacity)
+            let control = TouchPadControl(spec: spec, opacity: profile.virtual.opacity, engine: engine)
             insertSubview(control, belowSubview: menuButton)
             return control
         }
@@ -145,6 +155,13 @@ final class RuntimeGamepad: UIView {
         sensitivitySlider.value = Float(speedPct)
         sensitivityLabel.text = "\(padText("Sensitivity")): \(speedPct)%"
         setNeedsLayout()
+    }
+
+    private func applyEngineProfile() {
+        profile.engineJSON().withCString { json in
+            if engine == .system3 { xsystem35_set_gamepad_config_json(json) }
+            else { input_set_gamepad_config_json(json) }
+        }
     }
 
     private func saveProfile() {
@@ -158,7 +175,7 @@ final class RuntimeGamepad: UIView {
     }
 
     private func toggleMenu() {
-        guard !inMovie else { return }
+        guard !inMovie, editor == nil else { return }
         menuPanel.isHidden.toggle()
         refreshVisibility()
     }
@@ -167,24 +184,61 @@ final class RuntimeGamepad: UIView {
         switch command {
         case Int32(INPUT_EMU_TOGGLE_VPAD.rawValue): toggleVirtual()
         case Int32(INPUT_EMU_OPEN_MENU.rawValue): toggleMenu()
+        case Int32(INPUT_EMU_OPEN_EDITOR.rawValue): openEditor()
+        case Int32(INPUT_EMU_SCREENSHOT.rawValue) where engine == .system3: saveScreenshot()
         default: break
         }
     }
 
     private func refreshVisibility() {
-        let hideControls = !profile.virtual.enabled || inMovie || !menuPanel.isHidden
+        let hideControls = !profile.virtual.enabled || inMovie || !menuPanel.isHidden || editor != nil
         if hideControls && controls.contains(where: { !$0.isHidden }) { releaseInputs() }
         controls.forEach { $0.isHidden = hideControls }
-        menuButton.isHidden = inMovie
+        menuButton.isHidden = inMovie || editor != nil
+        if !menuPanel.isHidden || editor != nil { cursorView.isHidden = true }
     }
 
     @objc private func releaseInputs() {
         controls.forEach { $0.reset() }
-        input_clear_virtual_inputs()
+        if engine == .system3 { xsystem35_clear_virtual_inputs() }
+        else { input_clear_virtual_inputs() }
+    }
+
+    private func saveScreenshot() {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let folder = documents.appendingPathComponent("Screenshots", isDirectory: true)
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else { return }
+        let file = folder.appendingPathComponent("System35-\(UUID().uuidString).bmp")
+        _ = file.path.withCString { xsystem35_save_screenshot($0) }
+    }
+
+    private func openEditor() {
+        guard !inMovie, editor == nil, let window, let host = window.rootViewController,
+              host.presentedViewController == nil else { return }
+        releaseInputs()
+        menuPanel.isHidden = true
+        let panel = UIHostingController(rootView: GamepadEditor(game: game, allowsPhysicalMapping: engine == .system4) { [weak self] in
+            self?.closeEditor()
+        })
+        panel.modalPresentationStyle = .overFullScreen
+        panel.isModalInPresentation = true
+        editor = panel
+        refreshVisibility()
+        host.present(panel, animated: true)
+    }
+
+    private func closeEditor() {
+        editor?.dismiss(animated: true) { [weak self] in
+            guard let self else { return }
+            self.editor = nil
+            self.window?.makeKeyAndVisible()
+            self.profile = self.store.active(self.game)
+            self.applyProfile()
+        }
     }
 
     private func update(x: Float, y: Float, cursor: Bool, movie: Bool, ctrl: Bool) {
-        let showCursor = cursor && menuPanel.isHidden
+        let showCursor = cursor && menuPanel.isHidden && editor == nil
         if cursorView.isHidden == showCursor { cursorView.isHidden = !showCursor }
         if showCursor {
             let position = CGPoint(x: Double(x), y: Double(y))
@@ -217,10 +271,12 @@ private final class TouchPadControl: UIView {
     private var axis = CGPoint.zero
     private var latched = false
     private let opacity: Double
+    private let engine: GameEngine
 
-    init(spec: PadControl, opacity: Double) {
+    init(spec: PadControl, opacity: Double, engine: GameEngine) {
         self.spec = spec
         self.opacity = opacity * spec.opacity
+        self.engine = engine
         super.init(frame: .zero)
         label.text = spec.kind == .dpad ? "✚" : padText(spec.label)
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -302,7 +358,8 @@ private final class TouchPadControl: UIView {
 
     private func sendButton(_ pressed: Bool) {
         let action = spec.action
-        input_set_virtual_button(spec.slot, action.type, action.code, action.code2, action.toggle, pressed)
+        let setButton = engine == .system3 ? xsystem35_set_virtual_button : input_set_virtual_button
+        setButton(spec.slot, action.type, action.code, action.code2, action.toggle, pressed)
     }
 
     private func updateAxis(_ point: CGPoint) {
@@ -312,9 +369,11 @@ private final class TouchPadControl: UIView {
         axis = CGPoint(x: x / length, y: y / length)
         switch spec.kind {
         case .dpad:
-            input_set_virtual_dpad(Int32(spec.mode.rawValue), x < -0.26, x > 0.26, y < -0.26, y > 0.26)
+            let setDPad = engine == .system3 ? xsystem35_set_virtual_dpad : input_set_virtual_dpad
+            setDPad(Int32(spec.mode.rawValue), x < -0.26, x > 0.26, y < -0.26, y > 0.26)
         case .leftStick, .rightStick:
-            input_set_virtual_stick(spec.kind == .leftStick ? 0 : 1, Float(axis.x), Float(axis.y))
+            let setStick = engine == .system3 ? xsystem35_set_virtual_stick : input_set_virtual_stick
+            setStick(spec.kind == .leftStick ? 0 : 1, Float(axis.x), Float(axis.y))
             setNeedsLayout()
         case .button: break
         }

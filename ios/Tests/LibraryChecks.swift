@@ -4,7 +4,7 @@ import WebKit
 
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
-enum RuntimeGamepad { static func prepare(for game: String) {} }
+enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
 enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
@@ -872,5 +872,31 @@ struct LibraryChecks {
         precondition(defaultBindings["0"]?["type"] as? Int == 2 && defaultBindings["0"]?["code"] as? Int == 1)
         precondition(defaultBindings["10"]?["code"] as? Int == -1)
         print("Gamepad profile checks passed")
+
+        var custom = GamepadProfile()
+        let combo = PadAction.combo(17, 83, toggle: true)
+        precondition(combo.comboTitle == "Ctrl+S")
+        custom.virtual.controls[2].action = combo
+        custom.physical.bindings[0] = combo
+        profiles.save(custom, for: "combo")
+        precondition(profiles.active("combo") == custom)
+        let customJSON = try! JSONSerialization.jsonObject(with: Data(custom.engineJSON().utf8)) as! [String: Any]
+        let customPhysical = customJSON["physical"] as! [String: Any]
+        let customBindings = customPhysical["bindings"] as! [String: [String: Any]]
+        precondition(customBindings["0"]?["type"] as? Int == 6)
+        precondition(customBindings["0"]?["code"] as? Int == 83 && customBindings["0"]?["code2"] as? Int == 17)
+        precondition(customBindings["0"]?["toggle"] as? Bool == true)
+
+        let original = custom.virtual.controls[2]
+        let deletion = custom.virtual.deleteControl(at: 2)
+        precondition(!custom.virtual.controls.contains(original))
+        precondition(custom.virtual.addControl(.button, reserving: deletion) != nil)
+        precondition(custom.virtual.controls.last?.slot != original.slot)
+        precondition(custom.virtual.restore(deletion) == original.id)
+        precondition(custom.virtual.controls[2] == original && custom.virtual.restore(deletion) == nil)
+        let deletedDPad = custom.virtual.deleteControl(at: 0)
+        precondition(!custom.virtual.canAddControl(.dpad, reserving: deletedDPad))
+        precondition(custom.virtual.restore(deletedDPad) == deletedDPad.control.id)
+        print("Gamepad combo and delete undo checks passed")
     }
 }

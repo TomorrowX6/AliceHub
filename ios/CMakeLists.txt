@@ -144,6 +144,10 @@ function(isolate_engine name)
       -Wl,-exported_symbol,_xsystem35_modifier_get_locks
       -Wl,-exported_symbol,_xsystem35_modifier_set_locks
       -Wl,-exported_symbol,_xsystem35_modifier_apply_action)
+    foreach(symbol set_gamepad_config_json set_virtual_stick set_virtual_dpad
+        set_virtual_button clear_virtual_inputs save_screenshot)
+      list(APPEND exports -Wl,-exported_symbol,_xsystem35_${symbol})
+    endforeach()
   endif()
   add_custom_target(${name}_engine ALL
     COMMAND ${CMAKE_C_COMPILER} -target ${ffi_target} -isysroot ${sdk_path}

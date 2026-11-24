@@ -3,7 +3,7 @@ import CryptoKit
 
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
-enum RuntimeGamepad { static func prepare(for game: String) {} }
+enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
 enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
