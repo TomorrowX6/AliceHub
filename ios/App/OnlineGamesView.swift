@@ -9,7 +9,10 @@ struct OnlineGamesView: View {
     private var games: [OnlineGame] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter {
-            $0.title.localizedCaseInsensitiveContains(text) || $0.id.localizedCaseInsensitiveContains(text)
+            let translationTag = $0.hasChinese ? "熟肉" : "生肉"
+            return $0.title.localizedCaseInsensitiveContains(text) ||
+                $0.id.localizedCaseInsensitiveContains(text) ||
+                translationTag.localizedCaseInsensitiveContains(text)
         }
     }
 
@@ -28,8 +31,14 @@ struct OnlineGamesView: View {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(game.title).font(.headline).foregroundColor(HubTheme.text)
                                             .fixedSize(horizontal: false, vertical: true)
-                                        if let status = status(game, installedNames: installedNames) {
-                                            Text(status).font(.caption).foregroundColor(HubTheme.secondary)
+                                        HStack(spacing: 6) {
+                                            if let status = status(game, installedNames: installedNames) {
+                                                HubBadge(title: status, success: status == "已安装")
+                                            }
+                                            HubBadge(
+                                                title: game.hasChinese ? "熟肉" : "生肉",
+                                                tone: game.hasChinese ? .primary : .warning
+                                            )
                                         }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                     Image(systemName: "chevron.right").font(.caption.bold()).foregroundColor(HubTheme.secondary)
@@ -80,7 +89,13 @@ private struct OnlineGameDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(game.title).font(.title2.bold()).foregroundColor(HubTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
-                        HubBadge(title: installed ? "已安装" : "在线游戏", success: installed)
+                        HStack(spacing: 6) {
+                            HubBadge(title: installed ? "已安装" : "在线游戏", success: installed)
+                            HubBadge(
+                                title: game.hasChinese ? "熟肉" : "生肉",
+                                tone: game.hasChinese ? .primary : .warning
+                            )
+                        }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.modifier(HubCard())
                 if loading {

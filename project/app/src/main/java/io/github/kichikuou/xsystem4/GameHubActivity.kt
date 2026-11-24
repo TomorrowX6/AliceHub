@@ -348,22 +348,6 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 statusText = getString(R.string.game_status_error)
                 statusTone = UiKit.Tone.DANGER
             }
-            curItem != null && gameList.hasInstalledMod(curItem) -> {
-                val modInfo = gameList.getInstalledModInfo(curItem)
-                val isCnPatch = descriptor.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
-                val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
-                val modGroup = modInfo?.group?.takeIf { it.isNotBlank() }
-                val modLabel = if (!isCnPatch && modGroup != null && !modGroup.equals(ver, ignoreCase = true)) {
-                    "$modGroup · $ver"
-                } else {
-                    ver
-                }
-                statusText = getString(
-                    if (isCnPatch) R.string.game_status_installed_cn_patch else R.string.game_status_installed_mod,
-                    modLabel
-                )
-                statusTone = UiKit.Tone.SUCCESS
-            }
             curItem != null -> {
                 statusText = getString(R.string.game_status_installed)
                 statusTone = UiKit.Tone.SUCCESS
@@ -374,12 +358,24 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             }
         }
         val uncensoredInstalled = curItem != null && UncensoredPatchManager.detectInstalled(curItem.path)
-        statusView.text = if (uncensoredInstalled && !isInstallingHere && curItem?.error == null) {
-            "$statusText · ${getString(R.string.game_status_uncensored_suffix)}"
-        } else {
-            statusText
-        }
+        statusView.text = statusText
         UiKit.styleChip(statusView, statusTone, dot = true)
+
+        val translationView = findViewById<TextView>(R.id.hub_translation_badge)
+        val modInfo = if (curItem != null && !descriptor.hasChinese && !descriptor.isCnPatch) {
+            gameList.getInstalledModInfo(curItem)
+        } else {
+            null
+        }
+        val hasChinese = GameCatalog.hasChineseTranslation(descriptor, curItem, modInfo)
+        translationView.text = getString(
+            if (hasChinese) R.string.game_translation_cn else R.string.game_translation_raw
+        )
+        UiKit.styleChip(
+            translationView,
+            if (hasChinese) UiKit.Tone.PRIMARY else UiKit.Tone.WARNING,
+            dot = false
+        )
 
         // With several copies of the game installed, the directory in use gets its own row
         // (next to the button that switches it) instead of being squeezed into the status chip.

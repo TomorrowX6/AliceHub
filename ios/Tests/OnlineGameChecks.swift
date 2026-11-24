@@ -50,6 +50,27 @@ struct OnlineGameChecks {
         huge["size"] = Int64.max; overflow["files"] = [huge, entry]; try rejects(overflow)
         var empty = original; empty["files"] = []; try rejects(empty)
         precondition(OnlineGame.all.count == 127 && Set(OnlineGame.all.map(\.id)).count == 127)
+        let chineseIds = Set(OnlineGame.all.filter(\.hasChinese).map(\.id))
+        precondition(chineseIds.count == 50)
+        for cnId in ["rance10", "dohnadohna", "evenicle", "evenicle2", "sengokurance", "rance01", "rance09", "escalayerreboot", "galzoo", "ixseal", "tsumashibori", "tsumamigui", "tsumamigui2", "tsumamigui3", "darcrows", "sanbiki", "pascha3"] {
+            precondition(chineseIds.contains(cnId), "Expected Chinese: \(cnId)")
+        }
+        for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm"] {
+            precondition(!chineseIds.contains(rawId), "Expected raw: \(rawId)")
+        }
+        let cnMarkerDir = root.appendingPathComponent("custom-cn-markers")
+        try files.createDirectory(at: cnMarkerDir, withIntermediateDirectories: true)
+        precondition(!OnlineGame.hasLocalChineseMarkers(in: cnMarkerDir))
+        try Data().write(to: cnMarkerDir.appendingPathComponent("AliceStart.ini"))
+        try Data().write(to: cnMarkerDir.appendingPathComponent("Custom_cn.afa"))
+        precondition(OnlineGame.hasLocalChineseMarkers(in: cnMarkerDir))
+        precondition(OnlineGame.hasChinese(for: Game(url: cnMarkerDir)))
+        let rawCustomDir = root.appendingPathComponent("custom-raw-game")
+        try files.createDirectory(at: rawCustomDir, withIntermediateDirectories: true)
+        try Data().write(to: rawCustomDir.appendingPathComponent("System40.ini"))
+        try Data().write(to: rawCustomDir.appendingPathComponent("CustomGame.ain"))
+        precondition(!OnlineGame.hasLocalChineseMarkers(in: rawCustomDir))
+        precondition(!OnlineGame.hasChinese(for: Game(url: rawCustomDir)))
         precondition(OnlineGame.all.contains { $0.id == "maman" && $0.directory == "Maman" })
         precondition(OnlineGame.all.contains { $0.id == "eveniclerance" && $0.directory == "EvenicleRance" })
         precondition(OnlineGame.all.contains { $0.id == "haharanman" && $0.directory == "Haharanman" })

@@ -59,6 +59,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
     internal var cachedModInfo: InstalledModInfo? = null
     @Volatile
     internal var cachedIconFingerprint: String? = null
+    @Volatile
+    internal var cachedHasLocalCnMarkers: Boolean? = null
 
     internal fun iconFingerprint(): String {
         cachedIconFingerprint?.let { return it }
@@ -73,6 +75,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         cachedModInfoResolved = false
         cachedModInfo = null
         cachedIconFingerprint = null
+        cachedHasLocalCnMarkers = null
     }
 
     companion object {

@@ -15,8 +15,10 @@ struct LauncherView: View {
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return search.isEmpty ? library.games : library.games.filter {
-            $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
-                $0.name.localizedCaseInsensitiveContains(search)
+            let translationTag = OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉"
+            return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
+                $0.name.localizedCaseInsensitiveContains(search) ||
+                translationTag.localizedCaseInsensitiveContains(search)
         }
     }
 
@@ -126,13 +128,15 @@ struct LauncherView: View {
     }
 
     private func gameCard(_ game: Game) -> some View {
-        HStack(spacing: 16) {
+        let hasChinese = OnlineGame.hasChinese(for: game)
+        return HStack(spacing: 16) {
             GameArtwork(game: game)
             VStack(alignment: .leading, spacing: 10) {
                 Text(game.resolvedDisplayName)
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
                     HubBadge(title: "已安装", success: true)
+                    HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
                     HubBadge(title: game.engine.rawValue)
                 }
             }

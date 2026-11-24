@@ -43,6 +43,8 @@ private class GameSelectAdapter(
         val entry: GameSelectEntry,
         val badgeLabel: String,
         val badgeTone: UiKit.Tone,
+        val translationLabel: String,
+        val translationTone: UiKit.Tone,
         val iconKey: String
     )
 
@@ -51,12 +53,14 @@ private class GameSelectAdapter(
         val iconFrame: View,
         val icon: ImageView,
         val title: TextView,
-        val badge: TextView
+        val badge: TextView,
+        val translationBadge: TextView
     ) {
         var boundAccent: Int = 0
         var boundNight: Boolean? = null
         var boundIconKey: String? = null
         var boundChipTone: UiKit.Tone? = null
+        var boundTranslationTone: UiKit.Tone? = null
     }
 
     private val context: Context = activity
@@ -105,18 +109,6 @@ private class GameSelectAdapter(
                     badgeLabel = context.getString(R.string.game_status_error)
                     badgeTone = UiKit.Tone.DANGER
                 }
-                primary != null && gameList.hasInstalledMod(primary) -> {
-                    val modInfo = gameList.getInstalledModInfo(primary)
-                    val isCnPatch = desc.isCnPatch || modInfo?.kind == InstalledModInfo.KIND_CN_PATCH
-                    val ver = modInfo?.version?.takeIf { it.isNotBlank() } ?: if (isCnPatch) "V1.00" else "MOD"
-                    val statusRes = if (isCnPatch) {
-                        R.string.game_status_installed_cn_patch
-                    } else {
-                        R.string.game_status_installed_mod
-                    }
-                    badgeLabel = context.getString(statusRes, ver)
-                    badgeTone = UiKit.Tone.SUCCESS
-                }
                 primary != null -> {
                     badgeLabel = context.getString(R.string.game_status_installed)
                     badgeTone = UiKit.Tone.SUCCESS
@@ -126,12 +118,22 @@ private class GameSelectAdapter(
                     badgeTone = UiKit.Tone.NEUTRAL
                 }
             }
+            val modInfo = if (primary != null && !desc.hasChinese && !desc.isCnPatch) {
+                gameList.getInstalledModInfo(primary)
+            } else {
+                null
+            }
+            val hasChinese = GameCatalog.hasChineseTranslation(desc, primary, modInfo)
+            val translationLabel = context.getString(
+                if (hasChinese) R.string.game_translation_cn else R.string.game_translation_raw
+            )
+            val translationTone = if (hasChinese) UiKit.Tone.PRIMARY else UiKit.Tone.WARNING
             val iconKey = if (GameCatalog.isBuiltInGameId(desc.id)) {
                 "res:${desc.id}:${desc.iconRes}:${desc.iconFrameColor}"
             } else {
                 "file:${desc.id}:${desc.iconFrameColor}:${primary?.icon?.absolutePath.orEmpty()}:${primary?.iconFingerprint().orEmpty()}"
             }
-            BoundRow(entry, badgeLabel, badgeTone, iconKey)
+            BoundRow(entry, badgeLabel, badgeTone, translationLabel, translationTone, iconKey)
         }
     }
 
@@ -148,7 +150,10 @@ private class GameSelectAdapter(
         rows = if (filterQuery.isEmpty()) {
             allRows
         } else {
-            allRows.filter { matchesQuery(it.entry, filterQuery) }
+            allRows.filter {
+                it.translationLabel.contains(filterQuery, ignoreCase = true) ||
+                    matchesQuery(it.entry, filterQuery)
+            }
         }
         notifyDataSetChanged()
     }
@@ -299,7 +304,8 @@ private class GameSelectAdapter(
                 iconFrame = view.findViewById(R.id.icon_frame),
                 icon = view.findViewById(R.id.icon),
                 title = view.findViewById(R.id.title),
-                badge = view.findViewById(R.id.status_badge)
+                badge = view.findViewById(R.id.status_badge),
+                translationBadge = view.findViewById(R.id.translation_badge)
             )
             view.tag = holder
         } else {
@@ -335,6 +341,13 @@ private class GameSelectAdapter(
         if (holder.boundChipTone != row.badgeTone || holder.boundNight != night) {
             UiKit.styleChip(holder.badge, row.badgeTone, dot = true)
             holder.boundChipTone = row.badgeTone
+        }
+        if (holder.translationBadge.text != row.translationLabel) {
+            holder.translationBadge.text = row.translationLabel
+        }
+        if (holder.boundTranslationTone != row.translationTone || holder.boundNight != night) {
+            UiKit.styleChip(holder.translationBadge, row.translationTone, dot = false)
+            holder.boundTranslationTone = row.translationTone
         }
         holder.boundNight = night
 

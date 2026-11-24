@@ -4,69 +4,108 @@ struct OnlineGame: Identifiable {
     let id: String
     let title: String
     let directory: String
+    let hasChinese: Bool
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
     var baseURL: URL { URL(string: DownloadRoute.current.gameBaseURLString(for: id) + "/")! }
 
+    init(id: String, title: String, directory: String, hasChinese: Bool = false) {
+        self.id = id
+        self.title = title
+        self.directory = directory
+        self.hasChinese = hasChinese
+    }
+
+    private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
+
+    static func hasLocalChineseMarkers(in directory: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey]
+        ) else { return false }
+        for item in contents where (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            let lower = item.lastPathComponent.lowercased()
+            if lower == "alicestart.chs" || lower == "chs.tbl" || lower == "alicecn.ain" ||
+                lower == "haru_c.ain" || lower == "gbk.ain" || lower == "simhei.ttf" ||
+                lower.hasPrefix("sourcehansanscn") || lower.hasSuffix("_chs.ald") ||
+                lower.hasSuffix("chs.afa") || lower.hasSuffix("chs2.afa") ||
+                lower.hasSuffix("_cn.afa") || lower.hasSuffix("_cn.ain") ||
+                lower.hasSuffix("_cn.ald") || lower.contains("_cn_") ||
+                lower.contains("汉化") || lower.contains("中文") {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func hasChinese(for game: Game) -> Bool {
+        if let key = game.artworkKey, let entry = byArtworkKey[key], entry.hasChinese {
+            return true
+        }
+        if InstalledModInfo.read(game.url)?.kind == "cn_patch" {
+            return true
+        }
+        return hasLocalChineseMarkers(in: game.url)
+    }
+
     static let all: [Self] = [
-        Self(id: "rance10", title: "兰斯10 决战", directory: "Rance10"),
-        Self(id: "dohnadohna", title: "多娜多娜 一起来干坏事吧", directory: "dohnadohna"),
-        Self(id: "evenicle", title: "夏娃年代记", directory: "Evenicle"),
-        Self(id: "evenicle2", title: "夏娃年代记2", directory: "Evenicle2"),
-        Self(id: "sengokurance", title: "战国兰斯", directory: "SengokuRance"),
-        Self(id: "rance01", title: "兰斯01 寻找小光", directory: "Rance01"),
-        Self(id: "rance02", title: "兰斯02 反叛的少女们", directory: "Rance02"),
-        Self(id: "rance03", title: "兰斯03 利萨斯陷落", directory: "Rance03"),
-        Self(id: "rance04", title: "兰斯IV 教团的遗产", directory: "Rance04"),
-        Self(id: "rance41", title: "兰斯4.1 拯救制药厂！", directory: "Rance41"),
-        Self(id: "rance42", title: "兰斯4.2 天使组", directory: "Rance42"),
-        Self(id: "rance5d", title: "兰斯5D", directory: "Rance5D"),
-        Self(id: "rance06", title: "兰斯06 赛斯崩坏", directory: "Rance06"),
-        Self(id: "rance08", title: "兰斯08 兰斯Quest Magnum", directory: "Rance08"),
-        Self(id: "rance09", title: "兰斯09 赫尔曼革命", directory: "Rance09"),
+        Self(id: "rance10", title: "兰斯10 决战", directory: "Rance10", hasChinese: true),
+        Self(id: "dohnadohna", title: "多娜多娜 一起来干坏事吧", directory: "dohnadohna", hasChinese: true),
+        Self(id: "evenicle", title: "夏娃年代记", directory: "Evenicle", hasChinese: true),
+        Self(id: "evenicle2", title: "夏娃年代记2", directory: "Evenicle2", hasChinese: true),
+        Self(id: "sengokurance", title: "战国兰斯", directory: "SengokuRance", hasChinese: true),
+        Self(id: "rance01", title: "兰斯01 寻找小光", directory: "Rance01", hasChinese: true),
+        Self(id: "rance02", title: "兰斯02 反叛的少女们", directory: "Rance02", hasChinese: true),
+        Self(id: "rance03", title: "兰斯03 利萨斯陷落", directory: "Rance03", hasChinese: true),
+        Self(id: "rance04", title: "兰斯IV 教团的遗产", directory: "Rance04", hasChinese: true),
+        Self(id: "rance41", title: "兰斯4.1 拯救制药厂！", directory: "Rance41", hasChinese: true),
+        Self(id: "rance42", title: "兰斯4.2 天使组", directory: "Rance42", hasChinese: true),
+        Self(id: "rance5d", title: "兰斯5D", directory: "Rance5D", hasChinese: true),
+        Self(id: "rance06", title: "兰斯06 赛斯崩坏", directory: "Rance06", hasChinese: true),
+        Self(id: "rance08", title: "兰斯08 兰斯Quest Magnum", directory: "Rance08", hasChinese: true),
+        Self(id: "rance09", title: "兰斯09 赫尔曼革命", directory: "Rance09", hasChinese: true),
         Self(id: "escalayer", title: "超昂天使 艾斯卡蕾雅", directory: "Escalayer"),
-        Self(id: "escalayerreboot", title: "超昂天使 艾斯卡蕾雅 Reboot", directory: "EscalayerReboot"),
-        Self(id: "galzoo", title: "GALZOO艾兰德", directory: "GALZOO"),
-        Self(id: "ixseal", title: "超昂神骑", directory: "Ixseal"),
+        Self(id: "escalayerreboot", title: "超昂天使 艾斯卡蕾雅 Reboot", directory: "EscalayerReboot", hasChinese: true),
+        Self(id: "galzoo", title: "GALZOO艾兰德", directory: "GALZOO", hasChinese: true),
+        Self(id: "ixseal", title: "超昂神骑", directory: "Ixseal", hasChinese: true),
         Self(id: "haruka", title: "超昂闪忍遥", directory: "Haruka"),
-        Self(id: "tsumashibori", title: "妻管严", directory: "Tsumashibori"),
-        Self(id: "tsumamigui", title: "妻中蜜", directory: "Tsumamigui"),
-        Self(id: "tsumamigui3", title: "妻中蜜３", directory: "Tsumamigui3"),
-        Self(id: "kichikuou", title: "鬼畜王兰斯", directory: "KichikuRance"),
-        Self(id: "daiakuji", title: "大恶司", directory: "Daiakuji"),
-        Self(id: "daibanchou", title: "大番长 -Big Bang Age-", directory: "Daibanchou"),
-        Self(id: "daiteikoku", title: "大帝国", directory: "Daiteikoku"),
-        Self(id: "kaerunyo", title: "回家扭·帕扭", directory: "Kaerunyo"),
-        Self(id: "atlachnacha", title: "阿特拉克=纳克亚", directory: "AtlachNacha"),
-        Self(id: "reishiki", title: "零式", directory: "Reishiki"),
-        Self(id: "haruurare", title: "校内赤线区", directory: "Haruurare"),
-        Self(id: "okusamajun", title: "太太的恢复术 纯爱篇", directory: "OkusamaJun"),
-        Self(id: "okusamantr", title: "太太的恢复术 夺爱篇", directory: "OkusamaNtr"),
-        Self(id: "evenicle2rance", title: "夏娃年代记2 兰斯版", directory: "Evenicle2Rance"),
-        Self(id: "eveniclegaiden", title: "夏娃年代记外典", directory: "EvenicleGaiden"),
-        Self(id: "waidonyo", title: "异空窟探险", directory: "Waidonyo"),
-        Self(id: "rance6after", title: "兰斯06 后日谈", directory: "Rance6After"),
-        Self(id: "yakata2", title: "爱丽丝之馆2", directory: "Yakata2"),
-        Self(id: "sdpsmaria", title: "Super D.P.S 玛利亚和坎潘", directory: "SuperDpsMaria"),
-        Self(id: "toushin3", title: "斗神都市3", directory: "Toushin3"),
-        Self(id: "oyakorankan", title: "母娘乱馆", directory: "Oyakorankan"),
-        Self(id: "yorugakuru", title: "邪夜将至 Remastered", directory: "Yorugakuru"),
-        Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest"),
-        Self(id: "maman", title: "再婚妈妈", directory: "Maman"),
-        Self(id: "eveniclerance", title: "夏娃年代记 兰斯版", directory: "EvenicleRance"),
-        Self(id: "haharanman", title: "母烂漫", directory: "Haharanman"),
-        Self(id: "tsumamigui2", title: "妻中蜜2", directory: "Tsumamigui2"),
-        Self(id: "tsumamigui3jun", title: "妻中蜜3 番外 纯爱篇", directory: "Tsumamigui3Jun"),
-        Self(id: "tsumamigui3ntr", title: "妻中蜜3 番外 寝取篇", directory: "Tsumamigui3Ntr"),
+        Self(id: "tsumashibori", title: "妻管严", directory: "Tsumashibori", hasChinese: true),
+        Self(id: "tsumamigui", title: "妻中蜜", directory: "Tsumamigui", hasChinese: true),
+        Self(id: "tsumamigui3", title: "妻中蜜３", directory: "Tsumamigui3", hasChinese: true),
+        Self(id: "kichikuou", title: "鬼畜王兰斯", directory: "KichikuRance", hasChinese: true),
+        Self(id: "daiakuji", title: "大恶司", directory: "Daiakuji", hasChinese: true),
+        Self(id: "daibanchou", title: "大番长 -Big Bang Age-", directory: "Daibanchou", hasChinese: true),
+        Self(id: "daiteikoku", title: "大帝国", directory: "Daiteikoku", hasChinese: true),
+        Self(id: "kaerunyo", title: "回家扭·帕扭", directory: "Kaerunyo", hasChinese: true),
+        Self(id: "atlachnacha", title: "阿特拉克=纳克亚", directory: "AtlachNacha", hasChinese: true),
+        Self(id: "reishiki", title: "零式", directory: "Reishiki", hasChinese: true),
+        Self(id: "haruurare", title: "校内赤线区", directory: "Haruurare", hasChinese: true),
+        Self(id: "okusamajun", title: "太太的恢复术 纯爱篇", directory: "OkusamaJun", hasChinese: true),
+        Self(id: "okusamantr", title: "太太的恢复术 夺爱篇", directory: "OkusamaNtr", hasChinese: true),
+        Self(id: "evenicle2rance", title: "夏娃年代记2 兰斯版", directory: "Evenicle2Rance", hasChinese: true),
+        Self(id: "eveniclegaiden", title: "夏娃年代记外典", directory: "EvenicleGaiden", hasChinese: true),
+        Self(id: "waidonyo", title: "异空窟探险", directory: "Waidonyo", hasChinese: true),
+        Self(id: "rance6after", title: "兰斯06 后日谈", directory: "Rance6After", hasChinese: true),
+        Self(id: "yakata2", title: "爱丽丝之馆2", directory: "Yakata2", hasChinese: true),
+        Self(id: "sdpsmaria", title: "Super D.P.S 玛利亚和坎潘", directory: "SuperDpsMaria", hasChinese: true),
+        Self(id: "toushin3", title: "斗神都市3", directory: "Toushin3", hasChinese: true),
+        Self(id: "oyakorankan", title: "母娘乱馆", directory: "Oyakorankan", hasChinese: true),
+        Self(id: "yorugakuru", title: "邪夜将至 Remastered", directory: "Yorugakuru", hasChinese: true),
+        Self(id: "rance1digest", title: "兰斯1 摘要版", directory: "Rance1Digest", hasChinese: true),
+        Self(id: "maman", title: "再婚妈妈", directory: "Maman", hasChinese: true),
+        Self(id: "eveniclerance", title: "夏娃年代记 兰斯版", directory: "EvenicleRance", hasChinese: true),
+        Self(id: "haharanman", title: "母烂漫", directory: "Haharanman", hasChinese: true),
+        Self(id: "tsumamigui2", title: "妻中蜜2", directory: "Tsumamigui2", hasChinese: true),
+        Self(id: "tsumamigui3jun", title: "妻中蜜3 番外 纯爱篇", directory: "Tsumamigui3Jun", hasChinese: true),
+        Self(id: "tsumamigui3ntr", title: "妻中蜜3 番外 寝取篇", directory: "Tsumamigui3Ntr", hasChinese: true),
         Self(id: "diabolique", title: "魔鬼恋曲 DiaboLiQuE", directory: "DiaboLiQuE"),
         Self(id: "gakuenking", title: "学园KING", directory: "GakuenKING"),
         Self(id: "gakuenkingex", title: "学园KING 番外篇", directory: "GakuenKINGEx"),
         Self(id: "oudouyuusha", title: "王道勇者", directory: "OudouYuusha"),
         Self(id: "toushin1", title: "斗神都市", directory: "Toushin1"),
         Self(id: "toushin2", title: "斗神都市II", directory: "Toushin2"),
-        Self(id: "darcrows", title: "暗鸦 DARCROWS", directory: "DARCROWS"),
+        Self(id: "darcrows", title: "暗鸦 DARCROWS", directory: "DARCROWS", hasChinese: true),
         Self(id: "ikusamiko", title: "战巫女", directory: "IkusaMiko"),
         Self(id: "onlyyou", title: "Only You 世纪末的朱丽叶们", directory: "OnlyYou"),
-        Self(id: "sanbiki", title: "战国兰斯 三匹が斬ったり突いたり燃やしたり", directory: "Sanbiki"),
+        Self(id: "sanbiki", title: "战国兰斯 三匹が斬ったり突いたり燃やしたり", directory: "Sanbiki", hasChinese: true),
         Self(id: "persiom", title: "PERSIOM 约定汇聚之所", directory: "PERSIOM"),
         Self(id: "seeinao", title: "SeeIn青 ～Scene AO～", directory: "SeeInAO"),
         Self(id: "hushaby", title: "HUSHABY BABY", directory: "HushabyBaby"),
@@ -86,7 +125,7 @@ struct OnlineGame: Identifiable {
         Self(id: "dalk", title: "DALK", directory: "DALK"),
         Self(id: "ningengari", title: "人间狩猎", directory: "NingenGari"),
         Self(id: "paschacpp", title: "粉彩铃音 C++", directory: "PaschaCpp"),
-        Self(id: "pascha3", title: "粉彩铃音3 封神追寻者", directory: "Pascha3"),
+        Self(id: "pascha3", title: "粉彩铃音3 封神追寻者", directory: "Pascha3", hasChinese: true),
         Self(id: "mamatoto", title: "妈妈托托 ～a record of war～", directory: "Mamatoto"),
         Self(id: "onlyyourecross", title: "Only You -Re Cross-", directory: "OnlyYouReCross"),
         Self(id: "mamorigami", title: "守护神大人", directory: "Mamorigami"),
