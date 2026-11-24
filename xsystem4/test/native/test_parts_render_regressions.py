@@ -27,6 +27,91 @@ def function(path, name):
     return source[start:end]
 
 
+class FontSessionTests(unittest.TestCase):
+    def test_next_game_loads_its_own_fonts(self):
+        harness = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#define ALICEHUB_IOS
+#define MAX_FNL_FONTS 2
+#define FONT_GOTHIC 0
+#define FONT_MINCHO 1
+#define FW_BOLD 1
+#define ERROR(...) abort()
+struct font { int id; };
+struct fnl { unsigned nr_fonts; };
+struct font_metrics { int size, face, weight; unsigned char color[4]; };
+static struct font_metrics font_metrics;
+static struct { const char *fnl_path; } config;
+static struct { int version; } *ain;
+static bool font_initialized, gfx_text_advance_edges, game_rance7_mg;
+static struct font *font_ttf[2], *font_fnl[MAX_FNL_FONTS];
+static struct fnl *session_fnl;
+static float fnl_substitute_scales[MAX_FNL_FONTS];
+static unsigned fnl_substitute_count;
+static void *glyph_cache_trackers;
+static size_t nr_glyph_cache_trackers, cap_glyph_cache_trackers;
+static int game, loaded, released, ft_sessions;
+static void ft_font_init(void) { assert(!ft_sessions); ft_sessions++; }
+static void ft_font_fini(void) { assert(ft_sessions); ft_sessions--; }
+static void init_fnl_substitute_scale(void) {
+    assert(!fnl_substitute_count && fnl_substitute_scales[0] == 0);
+    if (!config.fnl_path) {
+        fnl_substitute_scales[0] = 0.6f;
+        fnl_substitute_count = 1;
+    }
+}
+static struct font *load_font(int face) {
+    struct font *f = malloc(sizeof(*f));
+    f->id = game * 10 + face; loaded++;
+    return f;
+}
+static bool fnl_uses_ttf_substitute(void) { return !config.fnl_path; }
+static struct fnl *fnl_open(const char *path) {
+    struct fnl *lib = malloc(sizeof(*lib)); lib->nr_fonts = 1;
+    assert(!strcmp(path, "second.fnl")); return lib;
+}
+static struct font *fnl_font_load(struct fnl *lib, unsigned index) {
+    assert(index < lib->nr_fonts);
+    return load_font(2);
+}
+static void fnl_free(struct fnl *lib) { assert(!font_fnl[0]); free(lib); }
+static void ft_font_free(struct font *font) { if (font) { released++; free(font); } }
+static void fnl_font_free(struct font *font) { ft_font_free(font); }
+''' + "\n".join(function("src/text.c", name) for name in (
+            "void gfx_font_init", "void gfx_font_fini",
+        )) + r'''
+int main(void) {
+    game = 1;
+    gfx_font_init();
+    gfx_font_init();
+    assert(loaded == 2 && font_ttf[0]->id == 10 && !font_fnl[0]);
+    assert(gfx_text_advance_edges && fnl_substitute_count == 1);
+    glyph_cache_trackers = malloc(16);
+    nr_glyph_cache_trackers = cap_glyph_cache_trackers = 1;
+    font_metrics.size = 99;
+    gfx_font_fini();
+    assert(released == 2 && !glyph_cache_trackers && !nr_glyph_cache_trackers);
+    assert(!font_ttf[0] && !gfx_text_advance_edges && font_metrics.size == 16);
+    game = 2;
+    config.fnl_path = "second.fnl";
+    gfx_font_init();
+    assert(loaded == 5 && font_ttf[0]->id == 20 && font_fnl[0]->id == 22);
+    gfx_font_fini();
+    assert(released == 5 && !ft_sessions && !session_fnl);
+}
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "font.c"
+            binary = Path(temp) / "font"
+            source.write_text(harness)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(source), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+
 FIXTURES = r'''
 #include <assert.h>
 #include <stdbool.h>

@@ -260,3 +260,27 @@ struct font *fnl_font_load(struct fnl *lib, unsigned index)
 
 	return &font->super;
 }
+
+#ifdef ALICEHUB_IOS
+void fnl_font_free(struct font *base)
+{
+	if (!base)
+		return;
+	struct font_fnl *font = (struct font_fnl*)base;
+	for (unsigned i = 0; i < font->nr_sizes; i++)
+		gfx_font_size_fini(&font->sizes[i].super);
+	for (unsigned i = 0; i < font->nr_bitmap_sizes; i++) {
+		struct fnl_bitmap_size *bitmap = &font->bitmap_sizes[i];
+		for (unsigned j = 0; j < bitmap->nr_glyphs; j++) {
+			if (bitmap->glyphs[j]) {
+				free(bitmap->glyphs[j]->pixels);
+				free(bitmap->glyphs[j]);
+			}
+		}
+		free(bitmap->glyphs);
+	}
+	free(font->sizes);
+	free(font->bitmap_sizes);
+	free(font);
+}
+#endif

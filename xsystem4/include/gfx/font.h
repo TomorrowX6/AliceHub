@@ -138,6 +138,11 @@ void ft_font_init(void);
 struct font *ft_font_load(const char *path);
 #ifdef ALICEHUB_IOS
 void ft_font_set_fallback(struct font *font, struct font *fallback);
+void ft_font_free(struct font *font);
+void ft_font_fini(void);
+void fnl_font_free(struct font *font);
+void gfx_font_size_fini(struct font_size *size);
+void gfx_font_fini(void);
 #endif
 struct font *fnl_font_load(struct fnl *lib, unsigned index);
 

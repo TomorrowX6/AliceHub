@@ -43,6 +43,7 @@
 #include "xsystem4.h"
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
+#include "gfx/font.h"
 #include "mixer.h"
 #endif
 
@@ -940,13 +941,16 @@ void gfx_fini(void)
 {
 #ifdef ALICEHUB_IOS
 	bool quit_sdl = mixer_fini();
-	if (!sdl.gl.context)
+	if (!sdl.gl.context) {
+		gfx_font_fini();
 		goto close_sdl;
+	}
 	effect_end_session();
 	parts_end_session();
 	sact_end_session();
 	scene_end_session();
 	sprite_end_session();
+	gfx_font_fini();
 #endif
 #ifdef __ANDROID__
 	android_perf_pacing_fini();
