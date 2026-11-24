@@ -4,15 +4,17 @@ struct OnlineGamesView: View {
     @ObservedObject var library: GameLibrary
     @ObservedObject var download: OnlineGameDownloadModel
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @State private var query = ""
 
     private var games: [OnlineGame] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let language = localized.language
         return text.isEmpty ? OnlineGame.all : OnlineGame.all.filter {
-            let translationTag = $0.hasChinese ? "熟肉" : "生肉"
-            return $0.title.localizedCaseInsensitiveContains(text) ||
+            $0.displayTitle(in: language).localizedCaseInsensitiveContains(text) ||
+                $0.title.localizedCaseInsensitiveContains(text) ||
                 $0.id.localizedCaseInsensitiveContains(text) ||
-                translationTag.localizedCaseInsensitiveContains(text)
+                OnlineGame.matchesChineseBadge(text, hasChinese: $0.hasChinese, in: language)
         }
     }
 
@@ -29,14 +31,14 @@ struct OnlineGamesView: View {
                                 HStack(spacing: 14) {
                                     GameArtwork(catalogID: game.artwork)
                                     VStack(alignment: .leading, spacing: 6) {
-                                        Text(game.title).font(.headline).foregroundColor(HubTheme.text)
+                                        Text(game.displayTitle(in: localized.language)).font(.headline).foregroundColor(HubTheme.text)
                                             .fixedSize(horizontal: false, vertical: true)
                                         HStack(spacing: 6) {
                                             if let status = status(game, installedNames: installedNames) {
                                                 HubBadge(title: status, success: status == "已安装")
                                             }
                                             HubBadge(
-                                                title: game.hasChinese ? "熟肉" : "生肉",
+                                                title: OnlineGame.chineseBadgeKey(hasChinese: game.hasChinese),
                                                 tone: game.hasChinese ? .primary : .warning
                                             )
                                         }
@@ -69,6 +71,7 @@ private struct OnlineGameDetailView: View {
     let game: OnlineGame
     @ObservedObject var library: GameLibrary
     @ObservedObject var download: OnlineGameDownloadModel
+    @HubLocalizedText private var localized
     @State private var manifest: OnlineGameManifest?
     @State private var loading = false
     @State private var failure: String?
@@ -87,12 +90,12 @@ private struct OnlineGameDetailView: View {
                 HStack(spacing: 18) {
                     GameArtwork(catalogID: game.artwork, size: 88)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(game.title).font(.title2.bold()).foregroundColor(HubTheme.text)
+                        Text(game.displayTitle(in: localized.language)).font(.title2.bold()).foregroundColor(HubTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 6) {
                             HubBadge(title: installed ? "已安装" : "在线游戏", success: installed)
                             HubBadge(
-                                title: game.hasChinese ? "熟肉" : "生肉",
+                                title: OnlineGame.chineseBadgeKey(hasChinese: game.hasChinese),
                                 tone: game.hasChinese ? .primary : .warning
                             )
                         }

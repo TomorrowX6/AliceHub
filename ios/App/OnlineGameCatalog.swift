@@ -17,6 +17,34 @@ struct OnlineGame: Identifiable {
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
 
+    func displayTitle(in language: HubLanguage, bundle: Bundle = .main) -> String {
+        language.text(title, bundle: bundle)
+    }
+
+    static func displayTitle(for game: Game, in language: HubLanguage, bundle: Bundle = .main) -> String {
+        let name = game.resolvedDisplayName
+        guard let key = game.artworkKey, let entry = byArtworkKey[key] else { return name }
+        let title = entry.displayTitle(in: language, bundle: bundle)
+        for base in [entry.title, entry.directory] {
+            if name.caseInsensitiveCompare(base) == .orderedSame { return title }
+            if let prefix = name.range(of: base + " [", options: [.anchored, .caseInsensitive]),
+               name.hasSuffix("]") {
+                return title + " [" + name[prefix.upperBound...]
+            }
+        }
+        return name
+    }
+
+    static func chineseBadgeKey(hasChinese: Bool) -> String {
+        hasChinese ? "熟肉" : "生肉"
+    }
+
+    static func matchesChineseBadge(_ query: String, hasChinese: Bool, in language: HubLanguage, bundle: Bundle = .main) -> Bool {
+        let key = chineseBadgeKey(hasChinese: hasChinese)
+        return query.localizedCaseInsensitiveCompare(key) == .orderedSame ||
+            query.localizedCaseInsensitiveCompare(language.text(key, bundle: bundle)) == .orderedSame
+    }
+
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.isRegularFileKey]

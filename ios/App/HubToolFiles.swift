@@ -47,6 +47,14 @@ struct HubCacheFiles {
 
 enum HubToolFiles {
     struct Manual {
+        static let resourceRules = """
+        [
+          {"trigger":{"url-filter":".*"},"action":{"type":"block"}},
+          {"trigger":{"url-filter":"^file:"},"action":{"type":"ignore-previous-rules"}},
+          {"trigger":{"url-filter":"^data:"},"action":{"type":"ignore-previous-rules"}}
+        ]
+        """
+
         let root: URL
         let index: URL
 

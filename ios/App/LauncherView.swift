@@ -17,11 +17,12 @@ struct LauncherView: View {
 
     private var filteredGames: [Game] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let language = localized.language
         return search.isEmpty ? library.games : library.games.filter {
-            let translationTag = localized(OnlineGame.hasChinese(for: $0) ? "熟肉" : "生肉")
-            return $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
+            OnlineGame.displayTitle(for: $0, in: language).localizedCaseInsensitiveContains(search) ||
+                $0.resolvedDisplayName.localizedCaseInsensitiveContains(search) ||
                 $0.name.localizedCaseInsensitiveContains(search) ||
-                translationTag.localizedCaseInsensitiveContains(search)
+                OnlineGame.matchesChineseBadge(search, hasChinese: OnlineGame.hasChinese(for: $0), in: language)
         }
     }
 
@@ -146,11 +147,11 @@ struct LauncherView: View {
         return HStack(spacing: 16) {
             GameArtwork(game: game)
             VStack(alignment: .leading, spacing: 10) {
-                Text(game.resolvedDisplayName)
+                Text(OnlineGame.displayTitle(for: game, in: localized.language))
                     .font(.headline).foregroundColor(HubTheme.text).lineLimit(2)
                 HStack(spacing: 6) {
                     HubBadge(title: "已安装", success: true)
-                    HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
+                    HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                     HubBadge(title: game.engine.rawValue)
                 }
             }

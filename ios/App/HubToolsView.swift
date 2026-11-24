@@ -206,65 +206,98 @@ private struct ReportShareSheet: UIViewControllerRepresentable {
 }
 
 struct HubManualView: View {
-    let manual: HubToolFiles.Manual
     @Environment(\.dismiss) private var dismiss
-    @State private var failed = false
+    @StateObject private var browser: ManualBrowser
+
+    init(manual: HubToolFiles.Manual) {
+        _browser = StateObject(wrappedValue: ManualBrowser(manual: manual))
+    }
 
     var body: some View {
         NavigationView {
-            ManualWebView(manual: manual) { failed = $0 }
+            ManualWebView(webView: browser.webView)
                 .overlay {
-                    if failed {
+                    if browser.failed {
                         Text("无法打开游戏说明书").padding(20).modifier(HubCard()).allowsHitTesting(false)
                     }
                 }
                 .navigationTitle("游戏说明书").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button { browser.goBack() } label: { Label("上一页", systemImage: "chevron.backward") }
+                            .disabled(!browser.canGoBack)
+                    }
+                    ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                }
+                .task { await browser.load() }
         }.navigationViewStyle(.stack).modifier(HubAppearanceModifier())
     }
 }
 
 private struct ManualWebView: UIViewRepresentable {
-    let manual: HubToolFiles.Manual
-    let setFailed: (Bool) -> Void
+    let webView: WKWebView
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(manual: manual, setFailed: setFailed)
-    }
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> WKWebView { webView }
+    func updateUIView(_ webView: WKWebView, context: Context) {}
+}
+
+@MainActor
+private final class ManualBrowser: NSObject, ObservableObject, WKNavigationDelegate {
+    let webView: WKWebView
+    @Published private(set) var canGoBack = false
+    @Published private(set) var failed = false
+    private let manual: HubToolFiles.Manual
+    private var history: NSKeyValueObservation?
+    private var loaded = false
+
+    init(manual: HubToolFiles.Manual) {
+        self.manual = manual
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         configuration.websiteDataStore = .nonPersistent()
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.loadFileURL(manual.index, allowingReadAccessTo: manual.root)
-        return webView
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        webView.navigationDelegate = self
+        history = webView.observe(\.canGoBack, options: .new) { [weak self] _, change in
+            guard let value = change.newValue else { return }
+            Task { @MainActor in self?.canGoBack = value }
+        }
     }
-    func updateUIView(_ webView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        let manual: HubToolFiles.Manual
-        let setFailed: (Bool) -> Void
-
-        init(manual: HubToolFiles.Manual, setFailed: @escaping (Bool) -> Void) {
-            self.manual = manual
-            self.setFailed = setFailed
+    func load() async {
+        guard !loaded else { return }
+        do {
+            let rules = try await WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "AliceHubOfflineManual",
+                encodedContentRuleList: HubToolFiles.Manual.resourceRules
+            )
+            guard !Task.isCancelled, !loaded else { return }
+            guard let rules else { failed = true; return }
+            webView.configuration.userContentController.add(rules)
+            loaded = true
+            webView.loadFileURL(manual.index, allowingReadAccessTo: manual.root)
+        } catch {
+            if !Task.isCancelled { failed = true }
         }
+    }
 
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard action.targetFrame != nil, let url = action.request.url, manual.canNavigate(to: url) else {
-                decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(.allow)
-        }
+    func goBack() {
+        if webView.canGoBack { webView.goBack() }
+    }
 
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled { setFailed(true) }
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard action.targetFrame != nil, let url = action.request.url, manual.canNavigate(to: url) else {
+            decisionHandler(.cancel)
+            return
         }
+        decisionHandler(.allow)
+    }
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            setFailed(false)
-        }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code != NSURLErrorCancelled { failed = true }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        failed = false
     }
 }

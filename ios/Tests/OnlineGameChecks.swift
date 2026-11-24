@@ -22,6 +22,28 @@ struct OnlineGameChecks {
     static func main() async throws {
         let files = FileManager.default
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("App", isDirectory: true)
+        let bundle = Bundle(url: resources)!
+        precondition(OnlineGame.matchesChineseBadge("chinese", hasChinese: true, in: .english, bundle: bundle))
+        precondition(!OnlineGame.matchesChineseBadge("Chinese", hasChinese: false, in: .english, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("No Chinese", hasChinese: false, in: .english, bundle: bundle))
+        precondition(!OnlineGame.matchesChineseBadge("No Chinese", hasChinese: true, in: .english, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("中国語なし", hasChinese: false, in: .japanese, bundle: bundle))
+        precondition(OnlineGame.matchesChineseBadge("熟肉", hasChinese: true, in: .english, bundle: bundle))
+        let ambivalenz = OnlineGame.all.first { $0.id == "ambivalenz" }!
+        precondition(ambivalenz.displayTitle(in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
+        precondition(ambivalenz.displayTitle(in: .japanese, bundle: bundle) == "AmbivalenZ -二律背反-")
+        let installedDirectory = root.appendingPathComponent(ambivalenz.directory)
+        try files.createDirectory(at: installedDirectory, withIntermediateDirectories: true)
+        let installed = Game(url: installedDirectory)
+        precondition(OnlineGame.displayTitle(for: installed, in: .english, bundle: bundle) == "AmbivalenZ -Niritsu Haihan-")
+        let customDirectory = root.appendingPathComponent("My AmbivalenZ Folder")
+        try files.createDirectory(at: customDirectory, withIntermediateDirectories: true)
+        let custom = Game(url: customDirectory)
+        precondition(custom.artworkKey == "ambivalenz")
+        precondition(OnlineGame.displayTitle(for: custom, in: .english, bundle: bundle) == custom.resolvedDisplayName)
+        print("Localized catalog titles, custom names, and exact language-badge searches passed")
         let base = URL(string: CommandLine.arguments[2])!
         let manifestData = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
         let manifest = try OnlineGameManifest.parse(manifestData)

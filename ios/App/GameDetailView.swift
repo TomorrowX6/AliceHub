@@ -4,6 +4,7 @@ struct GameDetailView: View {
     let game: Game
     @ObservedObject var library: GameLibrary
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @State private var destination: Destination?
     @State private var deleting = false
     @State private var modDescriptor: ModGameDescriptor?
@@ -29,11 +30,11 @@ struct GameDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
                     GameArtwork(game: active, size: 100)
-                    Text(active.resolvedDisplayName)
+                    Text(OnlineGame.displayTitle(for: active, in: localized.language))
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
-                        HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
+                        HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                         HubBadge(title: active.engine.rawValue)
                     }
                     Button { library.launch(active) } label: {

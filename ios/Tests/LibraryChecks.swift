@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WebKit
 
 func SDL_SetMainReady() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
@@ -36,6 +37,7 @@ struct LibraryChecks {
         try ArchiveChecks.run()
         checkGamepadProfiles()
         try checkHubTools()
+        try checkManualResourceRules()
         checkHubPlurals()
         if #available(macOS 13.0, *) { checkLiveHubPlurals() }
         let files = FileManager.default
@@ -611,6 +613,24 @@ struct LibraryChecks {
         precondition(HubToolFiles.manual(in: game) == nil)
         precondition(HubToolFiles.logTail(save, limit: 4) == "data")
         print("Language, cache cleanup, local manual, and error report file checks passed")
+    }
+
+    @MainActor
+    static func checkManualResourceRules() throws {
+        var compilation: Result<WKContentRuleList?, Error>?
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "AliceHubOfflineManualChecks",
+            encodedContentRuleList: HubToolFiles.Manual.resourceRules
+        ) { rules, error in
+            compilation = error.map { .failure($0) } ?? .success(rules)
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while compilation == nil && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let rules = try compilation?.get()
+        precondition(rules != nil, "Offline manual content rules did not compile")
+        print("Offline manual content rules compiled")
     }
 
     static func checkHubPlurals() {
