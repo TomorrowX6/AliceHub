@@ -2418,6 +2418,11 @@ static void process_gamepad_frame(void)
 			apply_directional_stick(cfg.phys_right_stick_mode, phys_rx, phys_ry, cfg.deadzone,
 					now, pad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 		}
+#ifdef __SWITCH__
+	} else if (has_sdl_pad && !in_movie) {
+		pad_vk_down[VK_LBUTTON] = raw_phys[PAD_SLOT_A];
+		pad_vk_down[VK_RBUTTON] = raw_phys[PAD_SLOT_B];
+#endif
 	} else if (!has_sdl_pad && has_android_pad && !in_movie) {
 		// Native Android fallback controller pass-through to SACT joypad when custom mapping is disabled
 		for (int b = 0; b < NR_PAD_SLOTS; b++) {
