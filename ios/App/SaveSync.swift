@@ -211,13 +211,17 @@ final class SaveSync {
         [game, ".alicehub-renames", Self.digest(Data((source + "\n" + hash).utf8)) + ".json"]
     }
 
-    private func publishedRename(source: String, hash: String) throws -> Bool {
-        let path = renameRecordPath(source: source, hash: hash)
+    private func renameSnapshot(at path: [String]) throws -> Snapshot? {
         let url = try checkedURL(path, under: folder)
         let placeholder = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
-        guard files.fileExists(atPath: url.path) || files.fileExists(atPath: placeholder.path) else { return false }
-        let rename = try JSONDecoder().decode(Rename.self, from: coordinatedRead(path: path, under: folder).data)
-        return rename.source == source && rename.hash == hash && rename.destination != source
+        guard files.fileExists(atPath: url.path) || files.fileExists(atPath: placeholder.path) else { return nil }
+        return try coordinatedRead(path: path, under: folder)
+    }
+
+    private func publishedRename(source: String, hash: String) throws -> Rename? {
+        guard let marker = try renameSnapshot(at: renameRecordPath(source: source, hash: hash)) else { return nil }
+        let rename = try JSONDecoder().decode(Rename.self, from: marker.data)
+        return rename.source == source && rename.hash == hash && rename.destination != source ? rename : nil
     }
 
     func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager) throws {
@@ -254,23 +258,28 @@ final class SaveSync {
                     throw Failure.renameConflict
                 }
                 try manager.rename(entry, named: name)
-                var recordToRemove: URL?
+                let destination = newParts.joined(separator: "/")
+                let markerPath = renameRecordPath(source: entry.path, hash: base.hash)
+                var published: (previous: Snapshot?, current: Snapshot)?
                 do {
-                    let destination = newParts.joined(separator: "/")
-                    let markerPath = renameRecordPath(source: entry.path, hash: base.hash)
-                    let markerURL = try checkedURL(markerPath, under: folder)
-                    if try !publishedRename(source: entry.path, hash: base.hash) {
-                        let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
-                        let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
-                        guard try coordinatedWrite(marker, path: markerPath, under: folder, expected: nil,
-                                                   isCancelled: { false }) == .written else { throw Failure.targetChanged }
-                        recordToRemove = markerURL
-                    }
+                    let previous = try renameSnapshot(at: markerPath)
+                    let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
+                    let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
+                    guard try coordinatedWrite(marker, path: markerPath, under: folder, expected: previous?.data,
+                                               isCancelled: { false }) == .written else { throw Failure.targetChanged }
+                    published = (previous, marker)
                     coordinator.item(at: sourceURL, willMoveTo: targetURL)
                     try files.moveItem(at: sourceURL, to: targetURL)
                     coordinator.item(at: sourceURL, didMoveTo: targetURL)
                 } catch {
-                    if let recordToRemove { try? files.removeItem(at: recordToRemove) }
+                    if let published {
+                        if let previous = published.previous {
+                            _ = try? coordinatedWrite(previous, path: markerPath, under: folder,
+                                                      expected: published.current.data, isCancelled: { false })
+                        } else if let marker = try? checkedURL(markerPath, under: folder) {
+                            try? files.removeItem(at: marker)
+                        }
+                    }
                     try files.moveItem(at: localTarget, to: entry.url)
                     throw error
                 }
@@ -293,6 +302,8 @@ final class SaveSync {
         var records = loadRecords()
         defer { try? saveRecords(records) }
         var backedUp = false
+        var pendingRenames: [Rename] = []
+        var reconciledRemote: [String: String] = [:]
         paths: for path in mine.union(theirs).sorted() {
             guard !isCancelled() else { break }
             if mode == .uploadOnly && !mine.contains(path) { continue }
@@ -312,24 +323,12 @@ final class SaveSync {
             }
             let b = theirs.contains(path) ? try coordinatedRead(path: remotePath, under: folder) : nil
             let base = records[path]
-            if let a, b == nil, let base, try publishedRename(source: path, hash: base.hash) {
+            if let a, b == nil, let base, let rename = try publishedRename(source: path, hash: base.hash) {
                 guard Self.digest(a.data) == base.hash, base.conflict == nil else {
                     summary.conflicts += 1
                     continue
                 }
-                guard mode == .twoWay else { continue }
-                if !backedUp {
-                    try beforeLocalChange()
-                    backedUp = true
-                }
-                let source = try checkedURL(localPath, under: documents)
-                guard !isCancelled() else { break }
-                guard let current = stableLocalSnapshot(source), current.data == a.data else {
-                    summary.skipped += 1
-                    continue
-                }
-                try files.removeItem(at: source)
-                records.removeValue(forKey: path)
+                if mode == .twoWay { pendingRenames.append(rename) }
                 continue
             }
             let pull: Bool
@@ -338,6 +337,7 @@ final class SaveSync {
                 let remoteHash = Self.digest(b.data)
                 if localHash == remoteHash {
                     records[path] = Record(hash: localHash)
+                    reconciledRemote[path] = localHash
                     continue
                 }
                 let localChanged = localHash != base?.hash
@@ -359,7 +359,9 @@ final class SaveSync {
                 }
                 guard try coordinatedWrite(b, path: localPath, under: documents, expected: a?.data,
                                            isCancelled: isCancelled) == .written else { break }
-                records[path] = Record(hash: Self.digest(b.data))
+                let hash = Self.digest(b.data)
+                records[path] = Record(hash: hash)
+                reconciledRemote[path] = hash
                 summary.pulled += 1
             } else if let a {
                 let hash = Self.digest(a.data)
@@ -380,6 +382,27 @@ final class SaveSync {
                     break paths
                 }
             }
+        }
+        for rename in pendingRenames {
+            guard !isCancelled() else { break }
+            guard let destinationHash = reconciledRemote[rename.destination] else {
+                if records[rename.destination]?.conflict == nil { summary.conflicts += 1 }
+                continue
+            }
+            let source = try checkedURL(["Saves", game] + rename.source.components(separatedBy: "/"), under: documents)
+            let destination = try checkedURL(["Saves", game] + rename.destination.components(separatedBy: "/"), under: documents)
+            if !backedUp {
+                try beforeLocalChange()
+                backedUp = true
+            }
+            guard !isCancelled() else { break }
+            guard let current = stableLocalSnapshot(source), Self.digest(current.data) == rename.hash,
+                  let target = stableLocalSnapshot(destination), Self.digest(target.data) == destinationHash else {
+                summary.skipped += 1
+                continue
+            }
+            try files.removeItem(at: source)
+            records.removeValue(forKey: rename.source)
         }
         return summary
     }

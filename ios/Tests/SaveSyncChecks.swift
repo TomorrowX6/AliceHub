@@ -156,9 +156,13 @@ struct SaveSyncChecks {
                             state: support.appendingPathComponent("peer-renames.json"))
         let editedPeer = SaveSync(game: renames, documents: root.appendingPathComponent("EditedPeer"), folder: cloud,
                                   state: support.appendingPathComponent("edited-peer-renames.json"))
+        let occupiedPeer = SaveSync(game: renames, documents: root.appendingPathComponent("OccupiedPeer"), folder: cloud,
+                                    state: support.appendingPathComponent("occupied-peer-renames.json"))
         check(try peer.sync() == SaveSync.Summary(pulled: 1))
         check(try editedPeer.sync() == SaveSync.Summary(pulled: 1))
+        check(try occupiedPeer.sync() == SaveSync.Summary(pulled: 1))
         try put(editedPeer.local, "sub/old.asd", "independent progress", 0)
+        try put(occupiedPeer.local, "sub/renamed.asd", "different save at destination", 0)
         try put(localRenames, "sub/old.asd", "new local progress", 10)
         try rename("sub/old.asd", to: "renamed.asd")
         check(get(localRenames, "sub/old.asd") == nil && get(remoteRenames, "sub/old.asd") == nil)
@@ -174,6 +178,9 @@ struct SaveSyncChecks {
         check(try editedPeer.sync() == SaveSync.Summary(pulled: 1, conflicts: 1))
         check(get(editedPeer.local, "sub/old.asd") == "independent progress")
         check(get(editedPeer.local, "sub/renamed.asd") == "new local progress")
+        check(try occupiedPeer.sync() == SaveSync.Summary(conflicts: 1))
+        check(get(occupiedPeer.local, "sub/old.asd") == "last synced")
+        check(get(occupiedPeer.local, "sub/renamed.asd") == "different save at destination")
         check(get(remoteRenames, "sub/old.asd") == nil)
 
         try put(remoteRenames, "sub/occupied.asd", "keep destination", 0)
