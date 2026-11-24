@@ -20,6 +20,8 @@
 #include "unittest.h"
 
 #include <stdlib.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include <unistd.h>
 #include "sdl_compat.h"
 
@@ -179,9 +181,24 @@ static void assert_ideograph_at_cell_top(FontSpec f, const char *ideograph) {
 	SDL_DestroySurface(s);
 }
 
+// Mirrors get_fallback_face(), which only accepts a fallback that has U+8FD9.
+static bool font_file_has_sc(const char *path) {
+	FT_Library lib;
+	if (FT_Init_FreeType(&lib))
+		return false;
+	bool found = false;
+	FT_Face face;
+	if (!FT_New_Face(lib, path, 0, &face)) {
+		found = FT_Get_Char_Index(face, 0x8fd9) != 0;
+		FT_Done_Face(face);
+	}
+	FT_Done_FreeType(lib);
+	return found;
+}
+
 static bool has_system_sc_fallback(void) {
 	const char *env_fallback = getenv("XSYSTEM35_FONT_FALLBACK");
-	if (env_fallback && access(env_fallback, R_OK) == 0)
+	if (env_fallback && env_fallback[0] && font_file_has_sc(env_fallback))
 		return true;
 	static const char *const paths[] = {
 		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",

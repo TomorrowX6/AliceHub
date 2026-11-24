@@ -226,7 +226,7 @@ else()  # non-emscripten, non-android
   target_compile_options(src_tests PRIVATE -Wno-pointer-sign -Wall)
   target_compile_definitions(src_tests PRIVATE
       TEST_FONT_DIR="${PROJECT_SOURCE_DIR}/fonts")
-  target_link_libraries(src_tests PRIVATE src_lib sdl)
+  target_link_libraries(src_tests PRIVATE src_lib sdl freetype2)
   add_test(NAME src_tests COMMAND src_tests)
 
   # Exercise message cursor/capture state without a window or game assets.
