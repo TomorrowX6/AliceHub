@@ -957,6 +957,11 @@ static void SystemService_GetSceneNameList(struct string **out)
 	set_out_cstr(out, game_evenicle_gaiden ? "000aa6sd000000320000000d54" : "");
 }
 
+static void SystemService_GetSystemBufferName(struct string **out)
+{
+	set_out_cstr(out, game_bladebriders ? "0002w00:0000-00000f0303" : "");
+}
+
 static char **backup_save_files = NULL;
 static int nr_backup_save_files = 0;
 
@@ -1111,6 +1116,7 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(ScanFloat, SystemService_ScanFloat),
 	    HLL_EXPORT(GetSystemName, SystemService_GetSystemName),
 	    HLL_EXPORT(GetSceneNameList, SystemService_GetSceneNameList),
+	    HLL_EXPORT(GetSystemBufferName, SystemService_GetSystemBufferName),
 	    HLL_EXPORT(AddBackupSaveFileName, SystemService_AddBackupSaveFileName),
 	    HLL_EXPORT(BackupSaveFile, SystemService_BackupSaveFile),
 	    HLL_EXPORT(Save, SystemService_Save),

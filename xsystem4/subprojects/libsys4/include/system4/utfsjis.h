@@ -51,11 +51,13 @@ extern int   cjk_encode_codepoint(int u, bool gbk);
 extern char* utf2cjk(const char *src, size_t len, bool gbk);
 extern char* utf2sjis(const char *src, size_t len);
 extern char* utf2filename_cjk(const char *src, size_t len);
-/* Optional Mai/word.mai or Longinus CHS.TBL custom Shift-JIS table for patched text/UI/saves */
+/* Optional Mai/word.mai, Longinus CHS.TBL, or UIF uif_config.json custom Shift-JIS table */
 extern bool  sys4_load_mai_word_table_mem(const void *data, size_t size);
 extern bool  sys4_load_mai_word_table(const char *path);
 extern bool  sys4_load_chs_tbl_mem(const void *data, size_t size);
 extern bool  sys4_load_chs_tbl(const char *path);
+extern bool  sys4_load_uif_config_mem(const void *data, size_t size);
+extern bool  sys4_load_uif_config(const char *path);
 extern void  sys4_reset_mai_word_table(void);
 extern bool  sys4_has_mai_word_table(void);
 extern char* mai_sjis_char2unicode(const char *src, int *dst);

@@ -16,6 +16,7 @@ struct OnlineGame: Identifiable {
     }
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
+    private static let localOnlyChineseArtworkKeys: Set<String> = ["bladebriders", "dorapeko", "haniwapetit"]
 
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -34,8 +35,13 @@ struct OnlineGame: Identifiable {
         if game.hasExplicitNonChineseEdition {
             return false
         }
-        if let key = game.artworkKey, let entry = byArtworkKey[key] {
-            return entry.hasChinese
+        if let key = game.artworkKey {
+            if let entry = byArtworkKey[key] {
+                return entry.hasChinese
+            }
+            if localOnlyChineseArtworkKeys.contains(key) {
+                return true
+            }
         }
         return false
     }

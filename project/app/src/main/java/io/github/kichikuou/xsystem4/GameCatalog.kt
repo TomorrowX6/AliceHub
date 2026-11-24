@@ -172,6 +172,36 @@ object GameCatalog {
     const val ID_RACHELSAKURA = "rachelsakura"
     const val ID_SABAKUNIKA = "sabakunika"
     const val ID_VANISHPALM = "vanishpalm"
+    const val ID_BLADEBRIDERS = "bladebriders"
+    const val ID_DORAPEKO = "dorapeko"
+    const val ID_HANIWAPETIT = "haniwapetit"
+    const val ID_YAKATA456 = "yakata456"
+    const val ID_UMINIOCHITE = "uminiochite"
+    const val ID_GAKUENHYOURYUU2 = "gakuenhyouryuu2"
+    const val ID_YOUSEI = "yousei"
+    const val ID_TOBIRA = "tobira"
+    const val ID_BUROBURO = "buroburo"
+    const val ID_KUDAKERO = "kudakero"
+    const val ID_LITTLEVAMPIRE = "littlevampire"
+    const val ID_INTRUDER = "intruder"
+    const val ID_CRESCENT = "crescent"
+    const val ID_TENGU = "tengu"
+    const val ID_DPS = "dps"
+    const val ID_YAKATA1 = "yakata1"
+    const val ID_SDPSTONO = "sdpstono"
+    const val ID_SDPSKAIZOKU = "sdpskaizoku"
+    const val ID_PROGOMAKE = "progomake"
+    const val ID_AYUMIHINT = "ayumihint"
+    const val ID_AYUMILIVE = "ayumilive"
+    const val ID_NISENAGURI = "nisenaguri"
+    const val ID_CAROL = "carol"
+    const val ID_OTHELLOT = "othellot"
+    const val ID_MASQUERADE = "masquerade"
+    const val ID_DEKIRUKANA = "dekirukana"
+    const val ID_TATAKIKOROSHI = "tatakikoroshi"
+    const val ID_BALLOONPOP = "balloonpop"
+    const val ID_HIYOKO2 = "hiyoko2"
+    const val ID_SELFGAME = "selfgame"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -205,6 +235,7 @@ object GameCatalog {
                 lower == "haru_c.ain" ||
                 lower == "gbk.ain" ||
                 lower == "simhei.ttf" ||
+                lower == "uif_config.json" ||
                 lower.endsWith("_chs.ald") ||
                 lower.endsWith("chs.afa") ||
                 lower.endsWith("chs2.afa") ||
@@ -339,7 +370,7 @@ object GameCatalog {
 
     private fun hasLegacySystem3Data(fileNames: Collection<String>): Boolean =
         fileNames.any { it.equals("ADISK.DAT", true) } &&
-            fileNames.any { it.equals("ACG.DAT", true) || it.equals("ACG0.DAT", true) }
+            fileNames.any { it.equals("ACG.DAT", true) || it.equals("ACG0.DAT", true) || it.equals("ACG3.DAT", true) }
 
     fun isLegacySystem3GameFiles(fileNames: Collection<String>): Boolean =
         hasLegacySystem3Data(fileNames) && !hasSystem4Markers(fileNames) && !hasSystem35Markers(fileNames)
@@ -761,8 +792,35 @@ object GameCatalog {
         if (isYakata2GameFiles(fileNames, readSmallFile)) {
             return ID_YAKATA2
         }
+        if (isYakata1GameFiles(fileNames, readSmallFile)) {
+            return ID_YAKATA1
+        }
+        if (isLittleVampireGameFiles(fileNames, readSmallFile)) {
+            return ID_LITTLEVAMPIRE
+        }
+        if (isIntruderGameFiles(fileNames, readSmallFile)) {
+            return ID_INTRUDER
+        }
+        if (isCrescentGameFiles(fileNames, readSmallFile)) {
+            return ID_CRESCENT
+        }
+        if (isTenguGameFiles(fileNames, readSmallFile)) {
+            return ID_TENGU
+        }
+        if (isDpsGameFiles(fileNames, readSmallFile)) {
+            return ID_DPS
+        }
+        if (isSdpsTonoGameFiles(fileNames, readSmallFile)) {
+            return ID_SDPSTONO
+        }
+        if (isSdpsKaizokuGameFiles(fileNames, readSmallFile)) {
+            return ID_SDPSKAIZOKU
+        }
         if (isSdpsMariaGameFiles(fileNames, readSmallFile)) {
             return ID_SDPSMARIA
+        }
+        if (isGakuenHyouryuu2GameFiles(fileNames, readSmallFile)) {
+            return ID_GAKUENHYOURYUU2
         }
         if (isGakuenHyouryuuGameFiles(fileNames, readSmallFile)) {
             return ID_GAKUENHYOURYUU
@@ -776,14 +834,26 @@ object GameCatalog {
         if (isOnlyYouGameFiles(fileNames, readSmallFile)) {
             return ID_ONLYYOU
         }
+        if (isAyumiLiveGameFiles(fileNames, readSmallFile)) {
+            return ID_AYUMILIVE
+        }
+        if (isAyumiHintGameFiles(fileNames, readSmallFile)) {
+            return ID_AYUMIHINT
+        }
         if (isAyumiGameFiles(fileNames, readSmallFile)) {
             return ID_AYUMI
         }
         if (isDpsAllGameFiles(fileNames, readSmallFile)) {
             return ID_DPSALL
         }
+        if (isProgOmakeGameFiles(fileNames, readSmallFile)) {
+            return ID_PROGOMAKE
+        }
         if (isProstudentGGameFiles(fileNames, readSmallFile)) {
             return ID_PROSTUDENTG
+        }
+        if (isNiseNaguriGameFiles(fileNames, readSmallFile)) {
+            return ID_NISENAGURI
         }
         if (isYakata3GameFiles(fileNames, readSmallFile)) {
             return ID_YAKATA3
@@ -917,6 +987,57 @@ object GameCatalog {
         if (isSabakuNikaGameFiles(fileNames, readSmallFile)) {
             return ID_SABAKUNIKA
         }
+        if (isBladeBridersGameFiles(fileNames, readSmallFile)) {
+            return ID_BLADEBRIDERS
+        }
+        if (isDorapekoGameFiles(fileNames, readSmallFile)) {
+            return ID_DORAPEKO
+        }
+        if (isHaniwaPetitGameFiles(fileNames, readSmallFile)) {
+            return ID_HANIWAPETIT
+        }
+        if (isYakata456GameFiles(fileNames, readSmallFile)) {
+            return ID_YAKATA456
+        }
+        if (isUmiNiOchiteGameFiles(fileNames, readSmallFile)) {
+            return ID_UMINIOCHITE
+        }
+        if (isYouseiGameFiles(fileNames, readSmallFile)) {
+            return ID_YOUSEI
+        }
+        if (isTobiraGameFiles(fileNames, readSmallFile)) {
+            return ID_TOBIRA
+        }
+        if (isBuroburoGameFiles(fileNames, readSmallFile)) {
+            return ID_BUROBURO
+        }
+        if (isKudakeroGameFiles(fileNames, readSmallFile)) {
+            return ID_KUDAKERO
+        }
+        if (isCarolGameFiles(fileNames, readSmallFile)) {
+            return ID_CAROL
+        }
+        if (isOthellotGameFiles(fileNames, readSmallFile)) {
+            return ID_OTHELLOT
+        }
+        if (isMasqueradeGameFiles(fileNames, readSmallFile)) {
+            return ID_MASQUERADE
+        }
+        if (isDekirukanaGameFiles(fileNames, readSmallFile)) {
+            return ID_DEKIRUKANA
+        }
+        if (isTatakikoroshiGameFiles(fileNames, readSmallFile)) {
+            return ID_TATAKIKOROSHI
+        }
+        if (isBalloonPopGameFiles(fileNames, readSmallFile)) {
+            return ID_BALLOONPOP
+        }
+        if (isHiyoko2GameFiles(fileNames, readSmallFile)) {
+            return ID_HIYOKO2
+        }
+        if (isSelfGameFiles(fileNames, readSmallFile)) {
+            return ID_SELFGAME
+        }
         if (isPascha3GameFiles(fileNames, readSmallFile)) {
             return ID_PASCHA3
         }
@@ -1049,7 +1170,7 @@ object GameCatalog {
                 val f = files.firstOrNull { it.name.equals(name, true) }
                 when {
                     f == null -> null
-                    name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                    name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) -> readFilePrefix(f, 256)
                     f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
                     else -> null
                 }
@@ -2966,7 +3087,19 @@ object GameCatalog {
 
     private val GAKUENKING_ADISK_CRC32S = setOf(0xd1bf243bL)
     private val ONLYYOU_ADISK_CRC32S = setOf(0x832aeb97L)
-    private val AYUMI_ADISK_CRC32S = setOf(0xd2bed9eeL, 0x4e2fed2aL, 0x4e2f5678L, 0x00d15a2bL, 0x5f66ff1dL)
+    private val AYUMI_ADISK_CRC32S = setOf(0xd2bed9eeL, 0x4e2fed2aL, 0x4e2f5678L)
+    private val AYUMILIVE_ADISK_CRC32S = setOf(0x00d15a2bL, 0x5f66ff1dL)
+    private val AYUMIHINT_ADISK_CRC32S = setOf(0xf6bd963aL)
+    private val YAKATA1_ADISK_CRC32S = setOf(0x8cef6fa6L, 0xd8f84e34L)
+    private val LITTLEVAMPIRE_ADISK_CRC32S = setOf(0x957bcfbfL)
+    private val INTRUDER_ADISK_CRC32S = setOf(0xa7520fb2L)
+    private val CRESCENT_ADISK_CRC32S = setOf(0x42351f2cL)
+    private val TENGU_ADISK_CRC32S = setOf(0xc942ff58L)
+    private val DPS_ADISK_CRC32S = setOf(0x69ea4865L)
+    private val SDPS_BASE_ADISK_CRC32S = setOf(0xc7a20cdfL)
+    private val SDPSTONO_BDISK_CRC32S = setOf(0xbb1edff1L)
+    private val SDPSKAIZOKU_BDISK_CRC32S = setOf(0xf81829e3L)
+    private val NISENAGURI_ADISK_CRC32S = setOf(0xfabe6302L)
     private val DPSALL_ADISK_CRC32S = setOf(0xd48b4ec6L)
     private val PROSTUDENTG_ADISK_CRC32S = setOf(0xfb0e4a63L, 0x5ffbfee7L)
     private val YAKATA3_ADISK_CRC32S = setOf(0x7f8f5e2aL, 0x58ebcc99L)
@@ -3538,7 +3671,7 @@ object GameCatalog {
             val raw = runCatching { readSmallFile(iniName) }.getOrNull()
             val game = legacySystem3GameId(raw)
             if (game == "ayumi_cd" || game == "ayumi" || game == "ayumi_fd" ||
-                game == "ayumi_proto" || game == "ayumi_live_256" || game == "ayumi_live_full"
+                game == "ayumi_proto"
             ) return true
             if (game != null) return false
             val title = legacySystem3Title(raw)
@@ -5528,6 +5661,747 @@ object GameCatalog {
 
     fun isVanishPalmGameDir(dir: File?): Boolean = dir?.isDirectory == true && isVanishPalmGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
 
+    // --- Wave 5: System 4 CN (3) + Official System 3.x (7) + Classic System 1-3 (12) + Alice CD Bonus (8) ---
+
+    fun isBladeBridersAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("bladebriders") || n.contains("blade_briders") || n.contains("blade briders") ||
+            n.contains("blade☆briders") || n.contains("burebura") || n.contains("ぶれいど") ||
+            n.contains("ブライダーズ") || n.contains("武想少女隊") || n.contains("武想少女队")
+    }
+
+    @JvmOverloads
+    fun isBladeBridersGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "burebura.ain" || n == "burebura.ex" || n == "bureburacg.afa" ||
+                    n == "bureburawa.afa" || n == "bureburaflat.afa"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isBladeBridersAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isBladeBridersGameDir(dir: File?): Boolean = dir?.isDirectory == true && isBladeBridersGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDorapekoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dorapeko") || n.contains("drapeko") || n.contains("どらぺこ") ||
+            n.contains("おねだりドラゴン") || n.contains("饥饿龙娘") || n.contains("飢餓龍娘")
+    }
+
+    @JvmOverloads
+    fun isDorapekoGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "どらぺこ!.ain" || n == "どらぺこ!.ex" || n == "どらぺこ!cg.afa" ||
+                    n == "どらぺこ!aff.afa" || n == "どらぺこ!wa.ald" || n == "drapeko.ain"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isDorapekoAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isDorapekoGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDorapekoGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isHaniwaPetitAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("haniwapetit") || n.contains("haniwa_petit") || n.contains("haniwa petit") ||
+            n.contains("ハニワ闇開発室") || n.contains("闇開発室ぷち") ||
+            n.contains("哈尼瓦暗黑开发室") || n.contains("哈尼瓦闇開發室")
+    }
+
+    @JvmOverloads
+    fun isHaniwaPetitGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!hasSystem4Markers(fileNames)) return false
+        if (fileNames.any {
+                val n = nfkcLower(it)
+                n == "ハニワ闇開発室ぷち.ain" || n == "ハニワ闇開発室ぷちcg.afa" ||
+                    n == "ハニワ闇開発室ぷちba.ald" || n == "ハニワ闇開発室ぷちwa.ald"
+            }
+        ) return true
+        val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+        if (iniName != null && readSmallFile != null) {
+            val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
+            if (title.isNotEmpty() && isHaniwaPetitAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isHaniwaPetitGameDir(dir: File?): Boolean = dir?.isDirectory == true && isHaniwaPetitGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isYakata456Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("yakata456") || n.contains("yakata_456") || n.contains("456_sa.ald") ||
+            n.contains("アリスの館4") || n.contains("aliceの館4") ||
+            n.contains("爱丽丝之馆4") || n.contains("愛麗絲之館4")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isYakata456GameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "456_sa.ald" || n == "456_ga.ald" || n == "456_ma.ald"
+        }
+    }
+
+    fun isYakata456GameDir(dir: File?): Boolean = dir?.isDirectory == true && isYakata456GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isUmiNiOchiteAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("uminiochite") || n.contains("umi_ni_ochite") || n.contains("umi ni ochite") ||
+            n.contains("蒼海に堕ちて") || n.contains("蒼海sa.ald") ||
+            n.contains("坠入苍海") || n.contains("墜入蒼海")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isUmiNiOchiteGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "蒼海sa.ald" || n == "蒼海ga.ald"
+        }
+    }
+
+    fun isUmiNiOchiteGameDir(dir: File?): Boolean = dir?.isDirectory == true && isUmiNiOchiteGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isGakuenHyouryuu2Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("gakuenhyouryuu2") || n.contains("gakuen_hyouryuu2") || n.contains("gakuenhyouryuusenki2") ||
+            n.contains("学園漂流戦記第2") || n.contains("学園漂流戦記 第2") || n.contains("学園漂流戦記2") ||
+            n.contains("学园漂流战记第2") || n.contains("学园漂流战记 第2") || n.contains("学园漂流战记2") ||
+            n.contains("學園漂流戰記第2") || n.contains("戦記2sa.ald")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isGakuenHyouryuu2GameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "戦記2sa.ald" || n == "戦記2ga.ald"
+        }
+    }
+
+    fun isGakuenHyouryuu2GameDir(dir: File?): Boolean = dir?.isDirectory == true && isGakuenHyouryuu2GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isYouseiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n == "yousei" || n.startsWith("yousei-") || n.startsWith("yousei_") ||
+            n == "妖精" || n.contains("妖精sa.ald") || n.contains("妖精ga.ald")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isYouseiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "妖精sa.ald" || n == "妖精ga.ald"
+        }
+    }
+
+    fun isYouseiGameDir(dir: File?): Boolean = dir?.isDirectory == true && isYouseiGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isTobiraAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n == "tobira" || n.contains("-tobira-") || n.contains("[扉]") ||
+            n.contains("[扉]sa.ald") || n.contains("[扉]ga.ald")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isTobiraGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "[扉]sa.ald" || n == "[扉]ga.ald"
+        }
+    }
+
+    fun isTobiraGameDir(dir: File?): Boolean = dir?.isDirectory == true && isTobiraGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isBuroburoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("buroburo") || n.contains("ぶろぶろ") || n.contains("壁sa.ald") ||
+            n.contains("噗咯噗咯")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isBuroburoGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "壁sa.ald" || n == "壁ga.ald"
+        }
+    }
+
+    fun isBuroburoGameDir(dir: File?): Boolean = dir?.isDirectory == true && isBuroburoGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isKudakeroAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("kudakero") || n.contains("当たって!!kudakero") || n.contains("当砕sa.ald") ||
+            n.contains("撞碎吧")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isKudakeroGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "当砕sa.ald" || n == "当砕ga.ald"
+        }
+    }
+
+    fun isKudakeroGameDir(dir: File?): Boolean = dir?.isDirectory == true && isKudakeroGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    private fun readLegacyDiskPrefix(dir: File, name: String): ByteArray? {
+        val f = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals(name, true) } ?: return null
+        return when {
+            name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) -> readFilePrefix(f, 256)
+            f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
+            else -> null
+        }
+    }
+
+    fun isLittleVampireAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("littlevampire") || n.contains("little_vampire") || n.contains("little vampire") ||
+            n.contains("リトルヴァンパイア") || n.contains("リトル ヴァンパイア") || n.contains("小吸血鬼")
+    }
+
+    @JvmOverloads
+    fun isLittleVampireGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "vampire" || game == "little_vampire" || game == "littlevampire") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isLittleVampireAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in LITTLEVAMPIRE_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isLittleVampireGameDir(dir: File?): Boolean = dir?.isDirectory == true && isLittleVampireGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isIntruderAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("intruder") || n.contains("桜屋敷の探索") || n.contains("樱屋敷的探索") ||
+            n.contains("櫻屋敷的探索")
+    }
+
+    @JvmOverloads
+    fun isIntruderGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "intruder") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isIntruderAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in INTRUDER_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isIntruderGameDir(dir: File?): Boolean = dir?.isDirectory == true && isIntruderGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isCrescentAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("crescentmoongirl") || n.contains("crescent moon") || n == "crescent" ||
+            n.contains("クレセントムーン") || n.contains("新月少女")
+    }
+
+    @JvmOverloads
+    fun isCrescentGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "crescent") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isCrescentAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in CRESCENT_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isCrescentGameDir(dir: File?): Boolean = dir?.isDirectory == true && isCrescentGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isTenguAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("abunaitengu") || n.contains("abunai tengu") || n == "tengu" ||
+            n.contains("あぶないてんぐ") || n.contains("あぶない天狗") ||
+            n.contains("危险的天狗") || n.contains("危險的天狗")
+    }
+
+    @JvmOverloads
+    fun isTenguGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "tengu" || game == "abunai_tengu") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isTenguAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in TENGU_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isTenguGameDir(dir: File?): Boolean = dir?.isDirectory == true && isTenguGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isDpsAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        if (n.contains("super") || n.contains("sdps") || n.contains("全部") || n.contains("zenbu") ||
+            n.contains("これ") || n.contains("这是") || n.contains("這是") || n.contains("ver_n") ||
+            n.contains("vern") || n.contains("dpsall") || n.contains("koredps")
+        ) return false
+        return n == "dps" || n == "d.p.s." || n == "d.p.s" ||
+            n.contains("dream program system") || n.contains("梦幻程序系统") || n.contains("夢幻程序系統")
+    }
+
+    @JvmOverloads
+    fun isDpsGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "dps") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isDpsAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in DPS_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isDpsGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDpsGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isYakata1Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        if (n.contains("館2") || n.contains("館ii") || n.contains("館3") || n.contains("館iii") ||
+            n.contains("館4") || n.contains("館7") || n.contains("yakata2") || n.contains("yakata3") ||
+            n.contains("yakata456") || n.contains("yakata7") || n.contains("之馆2") || n.contains("之馆3") ||
+            n.contains("之馆4") || n.contains("之館2") || n.contains("之館3") || n.contains("之館4")
+        ) return false
+        return n == "yakata1" || n == "yakata" || n == "aliceの館" || n == "アリスの館" ||
+            n == "alice no yakata" || n == "爱丽丝之馆" || n == "愛麗絲之館" ||
+            n.contains("aliceの館1") || n.contains("爱丽丝之馆1")
+    }
+
+    @JvmOverloads
+    fun isYakata1GameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "yakata" || game == "yakata1") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isYakata1Alias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in YAKATA1_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isYakata1GameDir(dir: File?): Boolean = dir?.isDirectory == true && isYakata1GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isSdpsTonoAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("sdpstono") || n.contains("sdps_tono") || n.contains("superdpstono") ||
+            n.contains("遠野の森") || n.contains("远野之森") || n.contains("遠野之森") ||
+            n.contains("tono no mori")
+    }
+
+    @JvmOverloads
+    fun isSdpsTonoGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "sdps_tono" || game == "sdpstono") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isSdpsTonoAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        val bdiskName = fileNames.firstOrNull { it.equals("BDISK.DAT", true) }
+        if (adiskName != null && bdiskName != null && readSmallFile != null) {
+            val acrc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            val bcrc = legacyAdiskCrc32(runCatching { readSmallFile(bdiskName) }.getOrNull())
+            if (acrc != null && acrc in SDPS_BASE_ADISK_CRC32S && bcrc != null && bcrc in SDPSTONO_BDISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isSdpsTonoGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSdpsTonoGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isSdpsKaizokuAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("sdpskaizoku") || n.contains("sdps_kaizoku") || n.contains("superdpskaizoku") ||
+            n.contains("海賊稼業") || n.contains("海盗生涯") || n.contains("海盜生涯") ||
+            n.contains("kaizoku kagyou")
+    }
+
+    @JvmOverloads
+    fun isSdpsKaizokuGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "sdps_kaizoku" || game == "sdpskaizoku") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isSdpsKaizokuAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        val bdiskName = fileNames.firstOrNull { it.equals("BDISK.DAT", true) }
+        if (adiskName != null && bdiskName != null && readSmallFile != null) {
+            val acrc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            val bcrc = legacyAdiskCrc32(runCatching { readSmallFile(bdiskName) }.getOrNull())
+            if (acrc != null && acrc in SDPS_BASE_ADISK_CRC32S && bcrc != null && bcrc in SDPSKAIZOKU_BDISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isSdpsKaizokuGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSdpsKaizokuGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isProgOmakeAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("progomake") || n.contains("prog_omake") || n.contains("prostudentgomake") ||
+            n.contains("prostudent g omake") || n.contains("ぷろすちゅーでんとg おまけ") ||
+            n.contains("职业学生g 附赠") || n.contains("职业学生g附赠") || n.contains("職業學生g 附贈")
+    }
+
+    @JvmOverloads
+    fun isProgOmakeGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "prog_omake" || game == "progomake") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isProgOmakeAlias(title)) return true
+        }
+        return false
+    }
+
+    fun isProgOmakeGameDir(dir: File?): Boolean = dir?.isDirectory == true && isProgOmakeGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isAyumiHintAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("ayumihint") || n.contains("ayumi_hint") || n.contains("ayumi hint") ||
+            n.contains("ヒントディスク") || n.contains("步美物语 提示") || n.contains("步美物语提示") ||
+            n.contains("步美物語 提示")
+    }
+
+    @JvmOverloads
+    fun isAyumiHintGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "ayumi_hint" || game == "ayumihint") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isAyumiHintAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in AYUMIHINT_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isAyumiHintGameDir(dir: File?): Boolean = dir?.isDirectory == true && isAyumiHintGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isAyumiLiveAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("ayumilive") || n.contains("ayumi_live") || n.contains("ayumi live") ||
+            n.contains("実写版") || n.contains("jisshaban") || n.contains("live action") ||
+            n.contains("步美物语 真人") || n.contains("步美物语真人") || n.contains("步美物語 真人")
+    }
+
+    @JvmOverloads
+    fun isAyumiLiveGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "ayumi_live_256" || game == "ayumi_live_full" || game == "ayumi_live" || game == "ayumilive") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isAyumiLiveAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in AYUMILIVE_ADISK_CRC32S) return true
+        }
+        return fileNames.any { it.equals("ACG3.DAT", true) } && fileNames.any { it.equals("ADISK.DAT", true) }
+    }
+
+    fun isAyumiLiveGameDir(dir: File?): Boolean = dir?.isDirectory == true && isAyumiLiveGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isNiseNaguriAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("nisenaguri") || n.contains("nise_naguri") || n.contains("nise naguri") ||
+            n.contains("にせなぐり") || n.contains("偽殴打") || n.contains("伪殴打")
+    }
+
+    @JvmOverloads
+    fun isNiseNaguriGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "nise_naguri" || game == "nisenaguri") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isNiseNaguriAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in NISENAGURI_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isNiseNaguriGameDir(dir: File?): Boolean = dir?.isDirectory == true && isNiseNaguriGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isCarolAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n == "carol" || n.startsWith("carol ") || n.startsWith("carol~") ||
+            n.contains("キャロル") || n.contains("聖なる鐘が響く夜") ||
+            n.contains("卡萝尔") || n.contains("圣钟鸣响之夜")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isCarolGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "キャロルsa.ald" || n == "キャロルga.ald"
+        }
+    }
+
+    fun isCarolGameDir(dir: File?): Boolean = dir?.isDirectory == true && isCarolGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isOthellotAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("othellot") || n.contains("おせろっと") || n.contains("黑白棋娘")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isOthellotGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "おせろっとsa.ald" || n == "おせろっとga.ald"
+        }
+    }
+
+    fun isOthellotGameDir(dir: File?): Boolean = dir?.isDirectory == true && isOthellotGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isMasqueradeAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("masquerade") || n.contains("マスカレイド") || n.contains("mqn_sa.ald") ||
+            n.contains("假面舞会") || n.contains("假面舞會")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isMasqueradeGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "mqn_sa.ald" || n == "mqn_ga.ald"
+        }
+    }
+
+    fun isMasqueradeGameDir(dir: File?): Boolean = dir?.isDirectory == true && isMasqueradeGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isDekirukanaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dekirukana") || n.contains("dekiru kana") || n.contains("できるかな") ||
+            n.contains("できsa.ald") || n.contains("能做到吗") || n.contains("能做到嗎")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isDekirukanaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "できsa.ald" || n == "できga.ald"
+        }
+    }
+
+    fun isDekirukanaGameDir(dir: File?): Boolean = dir?.isDirectory == true && isDekirukanaGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isTatakikoroshiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("tatakikoroshi") || n.contains("たたき殺し") || n.contains("叩き殺し") ||
+            n.contains("敲杀太郎") || n.contains("敲殺太郎")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isTatakikoroshiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "叩き殺しsa.ald" || n == "叩き殺しga.ald"
+        }
+    }
+
+    fun isTatakikoroshiGameDir(dir: File?): Boolean = dir?.isDirectory == true && isTatakikoroshiGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isBalloonPopAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("balloonpop") || n.contains("balloon pop") || n.contains("ばるーんぽっぷ") ||
+            n.contains("風船_sa.ald") || n.contains("气球爆破") || n.contains("氣球爆破")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isBalloonPopGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "風船_sa.ald" || n == "風船_ga.ald"
+        }
+    }
+
+    fun isBalloonPopGameDir(dir: File?): Boolean = dir?.isDirectory == true && isBalloonPopGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isHiyoko2Alias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("hiyoko2") || n.contains("kousoku hiyoko") || n.contains("高速ひよこ") ||
+            n.contains("高速小鸡") || n.contains("高速小雞")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isHiyoko2GameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any { it.equals("piyod.dat", true) } &&
+            fileNames.any { it.equals("sa.ald", true) || it.equals("ga.ald", true) }
+    }
+
+    fun isHiyoko2GameDir(dir: File?): Boolean = dir?.isDirectory == true && isHiyoko2GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
+    fun isSelfGameAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n == "self" || n == "selfgame" || n == "self_game" ||
+            n.contains("selfsa.ald") || n.contains("selfga.ald")
+    }
+
+    @JvmOverloads
+    @Suppress("UNUSED_PARAMETER")
+    fun isSelfGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isSystem3xGameFiles(fileNames)) return false
+        return fileNames.any {
+            val n = nfkcLower(it)
+            n == "selfsa.ald" || n == "selfga.ald"
+        }
+    }
+
+    fun isSelfGameDir(dir: File?): Boolean = dir?.isDirectory == true && isSelfGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
+
     /** Strips any trailing overlay badge tag ([MOD ...] / [汉化 ...]) from a game's display name. */
     fun cleanItemTitle(rawName: String): String {
         val cut = listOf(" [MOD", " [汉化")
@@ -5984,11 +6858,17 @@ object GameCatalog {
         if (isWaidonyoAlias(dirName)) {
             return ID_WAIDONYO
         }
+        if (isYakata456Alias(dirName)) {
+            return ID_YAKATA456
+        }
         if (isYakata3Alias(dirName)) {
             return ID_YAKATA3
         }
         if (isYakata2Alias(dirName)) {
             return ID_YAKATA2
+        }
+        if (isYakata1Alias(dirName)) {
+            return ID_YAKATA1
         }
         if (isKoreDpsAlias(dirName)) {
             return ID_KOREDPS
@@ -5996,8 +6876,17 @@ object GameCatalog {
         if (isDpsAllAlias(dirName)) {
             return ID_DPSALL
         }
+        if (isSdpsTonoAlias(dirName)) {
+            return ID_SDPSTONO
+        }
+        if (isSdpsKaizokuAlias(dirName)) {
+            return ID_SDPSKAIZOKU
+        }
         if (isSdpsMariaAlias(dirName)) {
             return ID_SDPSMARIA
+        }
+        if (isDpsAlias(dirName)) {
+            return ID_DPS
         }
         if (isToushin3Alias(dirName)) {
             return ID_TOUSHIN3
@@ -6013,6 +6902,9 @@ object GameCatalog {
         }
         if (isDiaboliqueAlias(dirName)) {
             return ID_DIABOLIQUE
+        }
+        if (isGakuenHyouryuu2Alias(dirName)) {
+            return ID_GAKUENHYOURYUU2
         }
         if (isGakuenHyouryuuAlias(dirName)) {
             return ID_GAKUENHYOURYUU
@@ -6068,6 +6960,12 @@ object GameCatalog {
         if (isHushabyAlias(dirName)) {
             return ID_HUSHABY
         }
+        if (isAyumiLiveAlias(dirName)) {
+            return ID_AYUMILIVE
+        }
+        if (isAyumiHintAlias(dirName)) {
+            return ID_AYUMIHINT
+        }
         if (isAyumiAlias(dirName)) {
             return ID_AYUMI
         }
@@ -6085,6 +6983,9 @@ object GameCatalog {
         }
         if (isProstudentGoodAlias(dirName)) {
             return ID_PROSTUDENTGOOD
+        }
+        if (isProgOmakeAlias(dirName)) {
+            return ID_PROGOMAKE
         }
         if (isProstudentGAlias(dirName)) {
             return ID_PROSTUDENTG
@@ -6212,6 +7113,69 @@ object GameCatalog {
         if (isSabakuNikaAlias(dirName)) {
             return ID_SABAKUNIKA
         }
+        if (isBladeBridersAlias(dirName)) {
+            return ID_BLADEBRIDERS
+        }
+        if (isDorapekoAlias(dirName)) {
+            return ID_DORAPEKO
+        }
+        if (isHaniwaPetitAlias(dirName)) {
+            return ID_HANIWAPETIT
+        }
+        if (isUmiNiOchiteAlias(dirName)) {
+            return ID_UMINIOCHITE
+        }
+        if (isYouseiAlias(dirName)) {
+            return ID_YOUSEI
+        }
+        if (isTobiraAlias(dirName)) {
+            return ID_TOBIRA
+        }
+        if (isBuroburoAlias(dirName)) {
+            return ID_BUROBURO
+        }
+        if (isKudakeroAlias(dirName)) {
+            return ID_KUDAKERO
+        }
+        if (isLittleVampireAlias(dirName)) {
+            return ID_LITTLEVAMPIRE
+        }
+        if (isIntruderAlias(dirName)) {
+            return ID_INTRUDER
+        }
+        if (isCrescentAlias(dirName)) {
+            return ID_CRESCENT
+        }
+        if (isTenguAlias(dirName)) {
+            return ID_TENGU
+        }
+        if (isNiseNaguriAlias(dirName)) {
+            return ID_NISENAGURI
+        }
+        if (isCarolAlias(dirName)) {
+            return ID_CAROL
+        }
+        if (isOthellotAlias(dirName)) {
+            return ID_OTHELLOT
+        }
+        if (isMasqueradeAlias(dirName)) {
+            return ID_MASQUERADE
+        }
+        if (isDekirukanaAlias(dirName)) {
+            return ID_DEKIRUKANA
+        }
+        if (isTatakikoroshiAlias(dirName)) {
+            return ID_TATAKIKOROSHI
+        }
+        if (isBalloonPopAlias(dirName)) {
+            return ID_BALLOONPOP
+        }
+        if (isHiyoko2Alias(dirName)) {
+            return ID_HIYOKO2
+        }
+        if (isSelfGameAlias(dirName)) {
+            return ID_SELFGAME
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -6307,11 +7271,17 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isWaidonyoAlias(displayName)) {
             return ID_WAIDONYO
         }
+        if (!displayName.isNullOrBlank() && isYakata456Alias(displayName)) {
+            return ID_YAKATA456
+        }
         if (!displayName.isNullOrBlank() && isYakata3Alias(displayName)) {
             return ID_YAKATA3
         }
         if (!displayName.isNullOrBlank() && isYakata2Alias(displayName)) {
             return ID_YAKATA2
+        }
+        if (!displayName.isNullOrBlank() && isYakata1Alias(displayName)) {
+            return ID_YAKATA1
         }
         if (!displayName.isNullOrBlank() && isKoreDpsAlias(displayName)) {
             return ID_KOREDPS
@@ -6319,8 +7289,17 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isDpsAllAlias(displayName)) {
             return ID_DPSALL
         }
+        if (!displayName.isNullOrBlank() && isSdpsTonoAlias(displayName)) {
+            return ID_SDPSTONO
+        }
+        if (!displayName.isNullOrBlank() && isSdpsKaizokuAlias(displayName)) {
+            return ID_SDPSKAIZOKU
+        }
         if (!displayName.isNullOrBlank() && isSdpsMariaAlias(displayName)) {
             return ID_SDPSMARIA
+        }
+        if (!displayName.isNullOrBlank() && isDpsAlias(displayName)) {
+            return ID_DPS
         }
         if (!displayName.isNullOrBlank() && isToushin3Alias(displayName)) {
             return ID_TOUSHIN3
@@ -6336,6 +7315,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isDiaboliqueAlias(displayName)) {
             return ID_DIABOLIQUE
+        }
+        if (!displayName.isNullOrBlank() && isGakuenHyouryuu2Alias(displayName)) {
+            return ID_GAKUENHYOURYUU2
         }
         if (!displayName.isNullOrBlank() && isGakuenHyouryuuAlias(displayName)) {
             return ID_GAKUENHYOURYUU
@@ -6391,6 +7373,12 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isHushabyAlias(displayName)) {
             return ID_HUSHABY
         }
+        if (!displayName.isNullOrBlank() && isAyumiLiveAlias(displayName)) {
+            return ID_AYUMILIVE
+        }
+        if (!displayName.isNullOrBlank() && isAyumiHintAlias(displayName)) {
+            return ID_AYUMIHINT
+        }
         if (!displayName.isNullOrBlank() && isAyumiAlias(displayName)) {
             return ID_AYUMI
         }
@@ -6408,6 +7396,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isProstudentGoodAlias(displayName)) {
             return ID_PROSTUDENTGOOD
+        }
+        if (!displayName.isNullOrBlank() && isProgOmakeAlias(displayName)) {
+            return ID_PROGOMAKE
         }
         if (!displayName.isNullOrBlank() && isProstudentGAlias(displayName)) {
             return ID_PROSTUDENTG
@@ -6534,6 +7525,69 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isSabakuNikaAlias(displayName)) {
             return ID_SABAKUNIKA
+        }
+        if (!displayName.isNullOrBlank() && isBladeBridersAlias(displayName)) {
+            return ID_BLADEBRIDERS
+        }
+        if (!displayName.isNullOrBlank() && isDorapekoAlias(displayName)) {
+            return ID_DORAPEKO
+        }
+        if (!displayName.isNullOrBlank() && isHaniwaPetitAlias(displayName)) {
+            return ID_HANIWAPETIT
+        }
+        if (!displayName.isNullOrBlank() && isUmiNiOchiteAlias(displayName)) {
+            return ID_UMINIOCHITE
+        }
+        if (!displayName.isNullOrBlank() && isYouseiAlias(displayName)) {
+            return ID_YOUSEI
+        }
+        if (!displayName.isNullOrBlank() && isTobiraAlias(displayName)) {
+            return ID_TOBIRA
+        }
+        if (!displayName.isNullOrBlank() && isBuroburoAlias(displayName)) {
+            return ID_BUROBURO
+        }
+        if (!displayName.isNullOrBlank() && isKudakeroAlias(displayName)) {
+            return ID_KUDAKERO
+        }
+        if (!displayName.isNullOrBlank() && isLittleVampireAlias(displayName)) {
+            return ID_LITTLEVAMPIRE
+        }
+        if (!displayName.isNullOrBlank() && isIntruderAlias(displayName)) {
+            return ID_INTRUDER
+        }
+        if (!displayName.isNullOrBlank() && isCrescentAlias(displayName)) {
+            return ID_CRESCENT
+        }
+        if (!displayName.isNullOrBlank() && isTenguAlias(displayName)) {
+            return ID_TENGU
+        }
+        if (!displayName.isNullOrBlank() && isNiseNaguriAlias(displayName)) {
+            return ID_NISENAGURI
+        }
+        if (!displayName.isNullOrBlank() && isCarolAlias(displayName)) {
+            return ID_CAROL
+        }
+        if (!displayName.isNullOrBlank() && isOthellotAlias(displayName)) {
+            return ID_OTHELLOT
+        }
+        if (!displayName.isNullOrBlank() && isMasqueradeAlias(displayName)) {
+            return ID_MASQUERADE
+        }
+        if (!displayName.isNullOrBlank() && isDekirukanaAlias(displayName)) {
+            return ID_DEKIRUKANA
+        }
+        if (!displayName.isNullOrBlank() && isTatakikoroshiAlias(displayName)) {
+            return ID_TATAKIKOROSHI
+        }
+        if (!displayName.isNullOrBlank() && isBalloonPopAlias(displayName)) {
+            return ID_BALLOONPOP
+        }
+        if (!displayName.isNullOrBlank() && isHiyoko2Alias(displayName)) {
+            return ID_HIYOKO2
+        }
+        if (!displayName.isNullOrBlank() && isSelfGameAlias(displayName)) {
+            return ID_SELFGAME
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -8636,6 +9690,459 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_BLADEBRIDERS -> GameDescriptor(
+                id = ID_BLADEBRIDERS,
+                title = stringResolver(R.string.game_bladebriders_title),
+                defaultDirName = "BladeBriders",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_bladebriders,
+                accentColor = 0xFF1976D2.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF0E1D30.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false,
+                hasChinese = true
+            )
+            ID_DORAPEKO -> GameDescriptor(
+                id = ID_DORAPEKO,
+                title = stringResolver(R.string.game_dorapeko_title),
+                defaultDirName = "Dorapeko",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dorapeko,
+                accentColor = 0xFFE65100.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF2D190C.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false,
+                hasChinese = true
+            )
+            ID_HANIWAPETIT -> GameDescriptor(
+                id = ID_HANIWAPETIT,
+                title = stringResolver(R.string.game_haniwapetit_title),
+                defaultDirName = "HaniwaPetit",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_haniwapetit,
+                accentColor = 0xFFFB8C00.toInt(),
+                accentBorderColor = 0x66FFCC80,
+                iconFrameColor = 0xFF2D2010.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false,
+                hasChinese = true
+            )
+            ID_YAKATA456 -> GameDescriptor(
+                id = ID_YAKATA456,
+                title = stringResolver(R.string.game_yakata456_title),
+                defaultDirName = "Yakata456",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_yakata456,
+                accentColor = 0xFF3949AB.toInt(),
+                accentBorderColor = 0x669FA8DA,
+                iconFrameColor = 0xFF151930.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_UMINIOCHITE -> GameDescriptor(
+                id = ID_UMINIOCHITE,
+                title = stringResolver(R.string.game_uminiochite_title),
+                defaultDirName = "UmiNiOchite",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_uminiochite,
+                accentColor = 0xFF0288D1.toInt(),
+                accentBorderColor = 0x664FC3F7,
+                iconFrameColor = 0xFF0C202D.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_GAKUENHYOURYUU2 -> GameDescriptor(
+                id = ID_GAKUENHYOURYUU2,
+                title = stringResolver(R.string.game_gakuenhyouryuu2_title),
+                defaultDirName = "GakuenHyouryuu2",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_gakuenhyouryuu2,
+                accentColor = 0xFFD84315.toInt(),
+                accentBorderColor = 0x66FF8A65,
+                iconFrameColor = 0xFF2D1610.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_YOUSEI -> GameDescriptor(
+                id = ID_YOUSEI,
+                title = stringResolver(R.string.game_yousei_title),
+                defaultDirName = "Yousei",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_yousei,
+                accentColor = 0xFF00838F.toInt(),
+                accentBorderColor = 0x6680DEEA,
+                iconFrameColor = 0xFF0E2326.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TOBIRA -> GameDescriptor(
+                id = ID_TOBIRA,
+                title = stringResolver(R.string.game_tobira_title),
+                defaultDirName = "Tobira",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tobira,
+                accentColor = 0xFF8D6E63.toInt(),
+                accentBorderColor = 0x66BCAAA4,
+                iconFrameColor = 0xFF261E1B.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_BUROBURO -> GameDescriptor(
+                id = ID_BUROBURO,
+                title = stringResolver(R.string.game_buroburo_title),
+                defaultDirName = "Buroburo",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_buroburo,
+                accentColor = 0xFFE53935.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2E1212.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_KUDAKERO -> GameDescriptor(
+                id = ID_KUDAKERO,
+                title = stringResolver(R.string.game_kudakero_title),
+                defaultDirName = "Kudakero",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_kudakero,
+                accentColor = 0xFFF4511E.toInt(),
+                accentBorderColor = 0x66FFAB91,
+                iconFrameColor = 0xFF2E1710.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_LITTLEVAMPIRE -> GameDescriptor(
+                id = ID_LITTLEVAMPIRE,
+                title = stringResolver(R.string.game_littlevampire_title),
+                defaultDirName = "LittleVampire",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_littlevampire,
+                accentColor = 0xFF8E24AA.toInt(),
+                accentBorderColor = 0x66CE93D8,
+                iconFrameColor = 0xFF24102B.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_INTRUDER -> GameDescriptor(
+                id = ID_INTRUDER,
+                title = stringResolver(R.string.game_intruder_title),
+                defaultDirName = "Intruder",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_intruder,
+                accentColor = 0xFF283593.toInt(),
+                accentBorderColor = 0x667986CB,
+                iconFrameColor = 0xFF11162E.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_CRESCENT -> GameDescriptor(
+                id = ID_CRESCENT,
+                title = stringResolver(R.string.game_crescent_title),
+                defaultDirName = "CrescentMoonGirl",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_crescent,
+                accentColor = 0xFF00ACC1.toInt(),
+                accentBorderColor = 0x6680DEEA,
+                iconFrameColor = 0xFF0E262B.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TENGU -> GameDescriptor(
+                id = ID_TENGU,
+                title = stringResolver(R.string.game_tengu_title),
+                defaultDirName = "AbunaiTengu",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tengu,
+                accentColor = 0xFFC62828.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2B1111.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPS -> GameDescriptor(
+                id = ID_DPS,
+                title = stringResolver(R.string.game_dps_title),
+                defaultDirName = "DPS",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dps,
+                accentColor = 0xFF1E88E5.toInt(),
+                accentBorderColor = 0x6690CAF9,
+                iconFrameColor = 0xFF102030.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_YAKATA1 -> GameDescriptor(
+                id = ID_YAKATA1,
+                title = stringResolver(R.string.game_yakata1_title),
+                defaultDirName = "Yakata1",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_yakata1,
+                accentColor = 0xFF43A047.toInt(),
+                accentBorderColor = 0x66A5D6A7,
+                iconFrameColor = 0xFF122814.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SDPSTONO -> GameDescriptor(
+                id = ID_SDPSTONO,
+                title = stringResolver(R.string.game_sdpstono_title),
+                defaultDirName = "SuperDpsTono",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_sdpstono,
+                accentColor = 0xFF5E35B1.toInt(),
+                accentBorderColor = 0x66B39DDB,
+                iconFrameColor = 0xFF1B132E.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SDPSKAIZOKU -> GameDescriptor(
+                id = ID_SDPSKAIZOKU,
+                title = stringResolver(R.string.game_sdpskaizoku_title),
+                defaultDirName = "SuperDpsKaizoku",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_sdpskaizoku,
+                accentColor = 0xFF00897B.toInt(),
+                accentBorderColor = 0x6680CBC4,
+                iconFrameColor = 0xFF0E2623.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_PROGOMAKE -> GameDescriptor(
+                id = ID_PROGOMAKE,
+                title = stringResolver(R.string.game_progomake_title),
+                defaultDirName = "ProstudentGOmake",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_progomake,
+                accentColor = 0xFF546E7A.toInt(),
+                accentBorderColor = 0x66B0BEC5,
+                iconFrameColor = 0xFF1A2226.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_AYUMIHINT -> GameDescriptor(
+                id = ID_AYUMIHINT,
+                title = stringResolver(R.string.game_ayumihint_title),
+                defaultDirName = "AyumiHint",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_ayumihint,
+                accentColor = 0xFFEC407A.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2D121D.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_AYUMILIVE -> GameDescriptor(
+                id = ID_AYUMILIVE,
+                title = stringResolver(R.string.game_ayumilive_title),
+                defaultDirName = "AyumiLive",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_ayumilive,
+                accentColor = 0xFFD81B60.toInt(),
+                accentBorderColor = 0x66F06292,
+                iconFrameColor = 0xFF2B101A.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_NISENAGURI -> GameDescriptor(
+                id = ID_NISENAGURI,
+                title = stringResolver(R.string.game_nisenaguri_title),
+                defaultDirName = "NiseNaguri",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_nisenaguri,
+                accentColor = 0xFF6D4C41.toInt(),
+                accentBorderColor = 0x66BCAAA4,
+                iconFrameColor = 0xFF241916.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_CAROL -> GameDescriptor(
+                id = ID_CAROL,
+                title = stringResolver(R.string.game_carol_title),
+                defaultDirName = "Carol",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_carol,
+                accentColor = 0xFF039BE5.toInt(),
+                accentBorderColor = 0x6681D4FA,
+                iconFrameColor = 0xFF0D212D.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_OTHELLOT -> GameDescriptor(
+                id = ID_OTHELLOT,
+                title = stringResolver(R.string.game_othellot_title),
+                defaultDirName = "Othellot",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_othellot,
+                accentColor = 0xFF2E7D32.toInt(),
+                accentBorderColor = 0x6681C784,
+                iconFrameColor = 0xFF112613.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_MASQUERADE -> GameDescriptor(
+                id = ID_MASQUERADE,
+                title = stringResolver(R.string.game_masquerade_title),
+                defaultDirName = "Masquerade",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_masquerade,
+                accentColor = 0xFFFDD835.toInt(),
+                accentBorderColor = 0x66FFF176,
+                iconFrameColor = 0xFF2B2610.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DEKIRUKANA -> GameDescriptor(
+                id = ID_DEKIRUKANA,
+                title = stringResolver(R.string.game_dekirukana_title),
+                defaultDirName = "Dekirukana",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dekirukana,
+                accentColor = 0xFF78909C.toInt(),
+                accentBorderColor = 0x66CFD8DC,
+                iconFrameColor = 0xFF1C2327.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_TATAKIKOROSHI -> GameDescriptor(
+                id = ID_TATAKIKOROSHI,
+                title = stringResolver(R.string.game_tatakikoroshi_title),
+                defaultDirName = "Tatakikoroshi",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_tatakikoroshi,
+                accentColor = 0xFFAB47BC.toInt(),
+                accentBorderColor = 0x66E1BEE7,
+                iconFrameColor = 0xFF28132C.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_BALLOONPOP -> GameDescriptor(
+                id = ID_BALLOONPOP,
+                title = stringResolver(R.string.game_balloonpop_title),
+                defaultDirName = "BalloonPop",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_balloonpop,
+                accentColor = 0xFFFF7043.toInt(),
+                accentBorderColor = 0x66FFAB91,
+                iconFrameColor = 0xFF2D1912.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_HIYOKO2 -> GameDescriptor(
+                id = ID_HIYOKO2,
+                title = stringResolver(R.string.game_hiyoko2_title),
+                defaultDirName = "Hiyoko2",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_hiyoko2,
+                accentColor = 0xFFFFCA28.toInt(),
+                accentBorderColor = 0x66FFE082,
+                iconFrameColor = 0xFF2B230E.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_SELFGAME -> GameDescriptor(
+                id = ID_SELFGAME,
+                title = stringResolver(R.string.game_selfgame_title),
+                defaultDirName = "SelfGame",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_selfgame,
+                accentColor = 0xFF7E57C2.toInt(),
+                accentBorderColor = 0x66B39DDB,
+                iconFrameColor = 0xFF1F162E.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -8788,7 +10295,37 @@ object GameCatalog {
         ID_MEGANE,
         ID_RACHELSAKURA,
         ID_SABAKUNIKA,
-        ID_VANISHPALM
+        ID_VANISHPALM,
+        ID_BLADEBRIDERS,
+        ID_DORAPEKO,
+        ID_HANIWAPETIT,
+        ID_YAKATA456,
+        ID_UMINIOCHITE,
+        ID_GAKUENHYOURYUU2,
+        ID_YOUSEI,
+        ID_TOBIRA,
+        ID_BUROBURO,
+        ID_KUDAKERO,
+        ID_LITTLEVAMPIRE,
+        ID_INTRUDER,
+        ID_CRESCENT,
+        ID_TENGU,
+        ID_DPS,
+        ID_YAKATA1,
+        ID_SDPSTONO,
+        ID_SDPSKAIZOKU,
+        ID_PROGOMAKE,
+        ID_AYUMIHINT,
+        ID_AYUMILIVE,
+        ID_NISENAGURI,
+        ID_CAROL,
+        ID_OTHELLOT,
+        ID_MASQUERADE,
+        ID_DEKIRUKANA,
+        ID_TATAKIKOROSHI,
+        ID_BALLOONPOP,
+        ID_HIYOKO2,
+        ID_SELFGAME
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

@@ -28,7 +28,7 @@ public class Wave4CatalogTest {
     @Test
     public void wave4CatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(127, order.size());
+        assertEquals(157, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_TSUMASAKURA, "TsumaSakura", OnlineInstaller.TSUMASAKURA_CDN_URL, 33875467L, "2010-07-14", 57.9, "https://vndb.org/v3974", "https://vndb.org/r7680"},

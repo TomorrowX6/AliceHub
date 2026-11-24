@@ -2958,7 +2958,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_GetPartsConstructionProcessCount, PartsEngine_Parts_GetPartsConstructionProcessCount),
 	    HLL_EXPORT(GetPartsConstructionProcess, PartsEngine_GetPartsConstructionProcess),
 	    HLL_EXPORT(Update, PartsEngine_Update),
-	    HLL_TODO_EXPORT(UpdateGUIController, PartsEngine_UpdateGUIController),
+	    HLL_EXPORT(UpdateGUIController, PE_UpdateInputState),
 	    HLL_EXPORT(GetFreeSystemPartsNumber, PE_GetFreeNumber),
 	    // FIXME: what is the difference?
 	    HLL_EXPORT(GetFreeSystemPartsNumberNotSaved, PE_GetFreeNumber),

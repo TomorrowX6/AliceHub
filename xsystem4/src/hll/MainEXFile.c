@@ -125,7 +125,13 @@ static void rebuild_handles(void)
 static void MainEXFile_ModuleInit(void)
 {
 	// load .ex file
-	if (!config.ex_path || !(ex = ex_read_file(config.ex_path)))
+	if (!config.ex_path) {
+		WARNING("No .ex file found; initializing empty MainEXFile");
+		ex = xcalloc(1, sizeof(struct ex));
+		rebuild_handles();
+		return;
+	}
+	if (!(ex = ex_read_file(config.ex_path)))
 		ERROR("Failed to load .ex file: %s", display_utf0(config.ex_path));
 
 	rebuild_handles();

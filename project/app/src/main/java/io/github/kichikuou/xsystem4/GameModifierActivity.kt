@@ -456,6 +456,36 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_RACHELSAKURA ||
                 id == GameCatalog.ID_SABAKUNIKA ||
                 id == GameCatalog.ID_VANISHPALM ||
+                id == GameCatalog.ID_BLADEBRIDERS ||
+                id == GameCatalog.ID_DORAPEKO ||
+                id == GameCatalog.ID_HANIWAPETIT ||
+                id == GameCatalog.ID_YAKATA456 ||
+                id == GameCatalog.ID_UMINIOCHITE ||
+                id == GameCatalog.ID_GAKUENHYOURYUU2 ||
+                id == GameCatalog.ID_YOUSEI ||
+                id == GameCatalog.ID_TOBIRA ||
+                id == GameCatalog.ID_BUROBURO ||
+                id == GameCatalog.ID_KUDAKERO ||
+                id == GameCatalog.ID_LITTLEVAMPIRE ||
+                id == GameCatalog.ID_INTRUDER ||
+                id == GameCatalog.ID_CRESCENT ||
+                id == GameCatalog.ID_TENGU ||
+                id == GameCatalog.ID_DPS ||
+                id == GameCatalog.ID_YAKATA1 ||
+                id == GameCatalog.ID_SDPSTONO ||
+                id == GameCatalog.ID_SDPSKAIZOKU ||
+                id == GameCatalog.ID_PROGOMAKE ||
+                id == GameCatalog.ID_AYUMIHINT ||
+                id == GameCatalog.ID_AYUMILIVE ||
+                id == GameCatalog.ID_NISENAGURI ||
+                id == GameCatalog.ID_CAROL ||
+                id == GameCatalog.ID_OTHELLOT ||
+                id == GameCatalog.ID_MASQUERADE ||
+                id == GameCatalog.ID_DEKIRUKANA ||
+                id == GameCatalog.ID_TATAKIKOROSHI ||
+                id == GameCatalog.ID_BALLOONPOP ||
+                id == GameCatalog.ID_HIYOKO2 ||
+                id == GameCatalog.ID_SELFGAME ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }
