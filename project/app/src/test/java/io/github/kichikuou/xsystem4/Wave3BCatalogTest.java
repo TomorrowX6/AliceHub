@@ -28,7 +28,7 @@ public class Wave3BCatalogTest {
     @Test
     public void wave3bCatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(157, order.size());
+        assertEquals(158, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_DALKGAIDEN, "DalkGaiden", OnlineInstaller.DALKGAIDEN_CDN_URL, 460876218L, "2002-09-27", 58.7, "https://vndb.org/v1807", "https://vndb.org/v1807"},

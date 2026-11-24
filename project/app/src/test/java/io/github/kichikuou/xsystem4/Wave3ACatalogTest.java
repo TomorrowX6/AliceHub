@@ -62,7 +62,7 @@ public class Wave3ACatalogTest {
     @Test
     public void wave3aCatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(157, order.size());
+        assertEquals(158, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_MAMATOTO, "Mamatoto", OnlineInstaller.MAMATOTO_CDN_URL, 186917297L, "1999-07-01", 67.6, "https://vndb.org/v1860", "https://vndb.org/v1860"},

@@ -63,7 +63,7 @@ issues, please let me know or open a pull request to update this table.
 | 闘神都市III                                             | Supported   | JP and CN (GBK fan translation) supported |
 | ばにしゅ！～おっぱいの消えた王国～                      | Supported   | E2E verified (0 unimplemented HLLs, prologue, audio, save/load) |
 | 僕だけの保健室                                          | Supported   |       |
-| ももいろガーディアン                                    | Unknown     |       |
+| ももいろガーディアン                                    | Supported   | E2E verified (staged build: boot, title, ADV gameplay, audio, save/load) |
 | 超昂閃忍ハルカ ハルカVSエスカレイヤー                   | Supported   | From Alice 2010; E2E verified (boot, prologue, audio, quick save/load) |
 | 超昂閃忍ハルカ ―疾風！？忍者大作戦―                     | Supported   | From Alice 2010; E2E verified (boot, ADV, Stage 00 battle, audio, save/load) |
 | 眼鏡のメイと夏休み                                      | Supported   | From Alice 2010; E2E verified (boot, ADV, audio, save/load) |

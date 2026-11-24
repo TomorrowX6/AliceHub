@@ -49,13 +49,13 @@ struct OnlineGameChecks {
         var overflow = original, huge = entry
         huge["size"] = Int64.max; overflow["files"] = [huge, entry]; try rejects(overflow)
         var empty = original; empty["files"] = []; try rejects(empty)
-        precondition(OnlineGame.all.count == 157 && Set(OnlineGame.all.map(\.id)).count == 157)
+        precondition(OnlineGame.all.count == 158 && Set(OnlineGame.all.map(\.id)).count == 158)
         let chineseIds = Set(OnlineGame.all.filter(\.hasChinese).map(\.id))
         precondition(chineseIds.count == 53)
         for cnId in ["rance10", "dohnadohna", "evenicle", "evenicle2", "sengokurance", "rance01", "rance09", "escalayerreboot", "galzoo", "ixseal", "tsumashibori", "tsumamigui", "tsumamigui2", "tsumamigui3", "darcrows", "sanbiki", "pascha3", "bladebriders", "dorapeko", "haniwapetit"] {
             precondition(chineseIds.contains(cnId), "Expected Chinese: \(cnId)")
         }
-        for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm", "yakata456", "ayumilive", "carol", "selfgame"] {
+        for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm", "yakata456", "ayumilive", "carol", "selfgame", "momoiroguardian"] {
             precondition(!chineseIds.contains(rawId), "Expected raw: \(rawId)")
         }
         let cnMarkerDir = root.appendingPathComponent("custom-cn-markers")
@@ -241,6 +241,7 @@ struct OnlineGameChecks {
         precondition(OnlineGame.all.contains { $0.id == "balloonpop" && $0.directory == "BalloonPop" })
         precondition(OnlineGame.all.contains { $0.id == "hiyoko2" && $0.directory == "Hiyoko2" })
         precondition(OnlineGame.all.contains { $0.id == "selfgame" && $0.directory == "SelfGame" })
+        precondition(OnlineGame.all.contains { $0.id == "momoiroguardian" && $0.directory == "MomoiroGuardian" && !$0.hasChinese })
         UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/rance10/")
         UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)

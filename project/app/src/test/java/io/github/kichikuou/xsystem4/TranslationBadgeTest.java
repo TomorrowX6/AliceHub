@@ -84,7 +84,7 @@ public class TranslationBadgeTest {
     @Test
     public void builtInCatalogMatchesVerifiedChineseAndRawClassification() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(157, order.size());
+        assertEquals(158, order.size());
         assertEquals(53, EXPECTED_CHINESE_IDS.size());
 
         int cnCount = 0;
@@ -101,7 +101,7 @@ public class TranslationBadgeTest {
             }
         }
         assertEquals(53, cnCount);
-        assertEquals(104, rawCount);
+        assertEquals(105, rawCount);
 
         // Spot-check titles whose raw vs CN status is non-obvious
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_ESCALAYER, null, r -> "escalayer").getHasChinese());

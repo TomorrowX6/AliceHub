@@ -401,6 +401,7 @@
     <string name="game_balloonpop_title">Balloon Pop</string>
     <string name="game_hiyoko2_title">Kousoku Hiyoko 2</string>
     <string name="game_selfgame_title">self</string>
+    <string name="game_momoiroguardian_title">Momoiro Guardian</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_translation_cn">Chinese</string>

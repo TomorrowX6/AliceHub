@@ -1371,6 +1371,10 @@ object GameModifierBridge {
         GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_SELFGAME
 
     @JvmOverloads
+    fun isMomoiroGuardianGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean =
+        GameCatalog.classifyDirectory(gameDir = gameDir, dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "", saveDir = saveDir, displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "") == GameCatalog.ID_MOMOIROGUARDIAN
+
+    @JvmOverloads
     fun isNonModifierBuiltInGameDir(
         gameDir: File?,
         dirNameFallback: String? = null,
@@ -1520,7 +1524,8 @@ object GameModifierBridge {
         GameCatalog.ID_TATAKIKOROSHI,
         GameCatalog.ID_BALLOONPOP,
         GameCatalog.ID_HIYOKO2,
-        GameCatalog.ID_SELFGAME -> true
+        GameCatalog.ID_SELFGAME,
+        GameCatalog.ID_MOMOIROGUARDIAN -> true
         else -> false
     }
 

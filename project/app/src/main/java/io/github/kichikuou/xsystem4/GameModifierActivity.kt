@@ -486,6 +486,7 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_BALLOONPOP ||
                 id == GameCatalog.ID_HIYOKO2 ||
                 id == GameCatalog.ID_SELFGAME ||
+                id == GameCatalog.ID_MOMOIROGUARDIAN ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

@@ -104,7 +104,7 @@ public class Rance41And42CatalogTest {
         assertFalse(d42.getSupportsLocalMod());
 
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(157, order.size());
+        assertEquals(158, order.size());
         assertEquals(order.indexOf(GameCatalog.ID_RANCE04) + 1, order.indexOf(GameCatalog.ID_RANCE41));
         assertEquals(order.indexOf(GameCatalog.ID_RANCE41) + 1, order.indexOf(GameCatalog.ID_RANCE42));
         assertEquals(order.indexOf(GameCatalog.ID_RANCE42) + 1, order.indexOf(GameCatalog.ID_RANCE5D));

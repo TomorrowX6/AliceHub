@@ -197,7 +197,8 @@ struct OnlineGame: Identifiable {
         Self(id: "tatakikoroshi", title: "敲杀太郎", directory: "Tatakikoroshi"),
         Self(id: "balloonpop", title: "气球爆破", directory: "BalloonPop"),
         Self(id: "hiyoko2", title: "高速小鸡2", directory: "Hiyoko2"),
-        Self(id: "selfgame", title: "self", directory: "SelfGame")
+        Self(id: "selfgame", title: "self", directory: "SelfGame"),
+        Self(id: "momoiroguardian", title: "桃色守护者", directory: "MomoiroGuardian")
     ]
 }
 

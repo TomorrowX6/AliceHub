@@ -400,6 +400,7 @@
     <string name="game_balloonpop_title">ばるーんぽっぷ</string>
     <string name="game_hiyoko2_title">高速ひよこ２</string>
     <string name="game_selfgame_title">self</string>
+    <string name="game_momoiroguardian_title">ももいろガーディアン</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_translation_cn">中国語あり</string>

@@ -167,7 +167,8 @@ object GameSortMetadata {
         GameCatalog.ID_TATAKIKOROSHI to GameSortInfo("1999-07-01", null, null, "https://www.alicesoft.com/"),
         GameCatalog.ID_BALLOONPOP to GameSortInfo("1999-03-25", null, null, "https://www.alicesoft.com/"),
         GameCatalog.ID_HIYOKO2 to GameSortInfo("2000-04-13", null, null, "https://www.alicesoft.com/"),
-        GameCatalog.ID_SELFGAME to GameSortInfo("1999-11-18", null, null, "https://www.alicesoft.com/")
+        GameCatalog.ID_SELFGAME to GameSortInfo("1999-11-18", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_MOMOIROGUARDIAN to GameSortInfo("2009-09-18", 69.2, "https://vndb.org/v2515", "https://vndb.org/v2515")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

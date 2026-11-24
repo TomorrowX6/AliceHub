@@ -303,7 +303,8 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_TATAKIKOROSHI && GameCatalog.isTatakikoroshiAlias(q)) ||
             (desc.id == GameCatalog.ID_BALLOONPOP && GameCatalog.isBalloonPopAlias(q)) ||
             (desc.id == GameCatalog.ID_HIYOKO2 && GameCatalog.isHiyoko2Alias(q)) ||
-            (desc.id == GameCatalog.ID_SELFGAME && GameCatalog.isSelfGameAlias(q))
+            (desc.id == GameCatalog.ID_SELFGAME && GameCatalog.isSelfGameAlias(q)) ||
+            (desc.id == GameCatalog.ID_MOMOIROGUARDIAN && GameCatalog.isMomoiroGuardianAlias(q))
         ) {
             return true
         }
