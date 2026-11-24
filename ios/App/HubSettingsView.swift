@@ -59,7 +59,7 @@ struct HubSettingsView: View {
                             SaveSyncFolder.enqueue {
                                 SaveSyncFolder.clear()
                                 DispatchQueue.main.async {
-                                    syncFolder = nil
+                                    self.syncFolder = nil
                                     syncing = false
                                 }
                             }
