@@ -203,6 +203,18 @@ struct SaveSyncChecks {
         check(get(localRenames, "sub/renamed.asd") == "new cloud progress")
         print("PASS: synced rename carries version history; cloud conflicts are preserved; ordinary deletion still does not propagate")
 
+        let chainPeer = SaveSync(game: renames, documents: root.appendingPathComponent("ChainPeer"), folder: cloud,
+                                 state: support.appendingPathComponent("chain-peer-renames.json"))
+        check(try chainPeer.sync() == SaveSync.Summary(pulled: 3))
+        try rename("sub/renamed.asd", to: "intermediate.asd")
+        try rename("sub/intermediate.asd", to: "final.asd")
+        check(try chainPeer.sync() == SaveSync.Summary(pulled: 1))
+        check(get(chainPeer.local, "sub/renamed.asd") == nil)
+        check(get(chainPeer.local, "sub/intermediate.asd") == nil)
+        check(get(chainPeer.local, "sub/final.asd") == "new cloud progress")
+        check(try chainPeer.sync() == SaveSync.Summary())
+        print("PASS: peers reconcile consecutive renames without restoring old filenames")
+
         try files.createSymbolicLink(at: remote.appendingPathComponent("escape"), withDestinationURL: root)
         do { try SaveSyncFolder.sync(game: game, documents: documents, support: support); preconditionFailure("symlink accepted") } catch {}
 

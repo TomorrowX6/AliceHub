@@ -385,12 +385,20 @@ final class SaveSync {
         }
         for rename in pendingRenames {
             guard !isCancelled() else { break }
-            guard let destinationHash = reconciledRemote[rename.destination] else {
-                if records[rename.destination]?.conflict == nil { summary.conflicts += 1 }
+            var destinationPath = rename.destination
+            var visited: Set<String> = [rename.source]
+            while !theirs.contains(destinationPath), !mine.contains(destinationPath),
+                  visited.insert(destinationPath).inserted, !isCancelled(),
+                  let next = try publishedRename(source: destinationPath, hash: rename.hash) {
+                destinationPath = next.destination
+            }
+            guard !isCancelled() else { break }
+            guard let destinationHash = reconciledRemote[destinationPath] else {
+                if records[destinationPath]?.conflict == nil { summary.conflicts += 1 }
                 continue
             }
             let source = try checkedURL(["Saves", game] + rename.source.components(separatedBy: "/"), under: documents)
-            let destination = try checkedURL(["Saves", game] + rename.destination.components(separatedBy: "/"), under: documents)
+            let destination = try checkedURL(["Saves", game] + destinationPath.components(separatedBy: "/"), under: documents)
             if !backedUp {
                 try beforeLocalChange()
                 backedUp = true
