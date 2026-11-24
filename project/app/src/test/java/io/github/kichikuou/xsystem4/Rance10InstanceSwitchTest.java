@@ -3,6 +3,7 @@ package io.github.kichikuou.xsystem4;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -180,5 +181,71 @@ public class Rance10InstanceSwitchTest {
         Rance10InstanceManager.INSTANCE.cleanupStaleCloneStaging(root);
         assertFalse(stale.exists());
         assertTrue(src.isDirectory());
+
+        // Active staging dir registered during copy must NEVER be deleted by another GameList's cleanup
+        File[] observedStaging = new File[1];
+        File safeClone = Rance10InstanceManager.INSTANCE.executeCopy(
+                plan, root, "Rance10-Protected", 1024L * 1024L * 1024L,
+                staged -> {
+                    observedStaging[0] = staged;
+                    Rance10InstanceManager.INSTANCE.cleanupStaleCloneStaging(root);
+                    assertTrue("Active staging dir must survive concurrent cleanup", staged.isDirectory());
+                    return kotlin.Unit.INSTANCE;
+                },
+                () -> kotlin.Unit.INSTANCE,
+                (d, t, r) -> kotlin.Unit.INSTANCE);
+        assertNotNull(observedStaging[0]);
+        assertTrue(safeClone.isDirectory());
+        assertTrue(new File(safeClone, "Rance10.ain").isFile());
+
+        // Cancellation winning right after renameTo(finalDir) must remove the finalized directory
+        AtomicInteger postCommitChecks = new AtomicInteger(0);
+        boolean[] sawCommit = new boolean[1];
+        try {
+            Rance10InstanceManager.INSTANCE.executeCopy(
+                    plan, root, "Rance10-LateCancel", 1024L * 1024L * 1024L,
+                    null,
+                    () -> {
+                        if (sawCommit[0]) {
+                            throw new CancellationException("late cancel after commit");
+                        }
+                        postCommitChecks.incrementAndGet();
+                        return kotlin.Unit.INSTANCE;
+                    },
+                    (d, t, r) -> kotlin.Unit.INSTANCE,
+                    java.util.Collections.emptyList(),
+                    committed -> {
+                        sawCommit[0] = true;
+                        return kotlin.Unit.INSTANCE;
+                    });
+            fail("Expected CancellationException after commit");
+        } catch (CancellationException expected) {
+        }
+        assertTrue(sawCommit[0]);
+        assertFalse("Late-cancelled committed dir must be removed",
+                new File(root, "Rance10-LateCancel").exists());
+    }
+
+    @Test
+    public void crossVolumeNameCollisionAndLocalizedGamepadProfileKeysAreIsolated() throws Exception {
+        File vol1 = tmp.newFolder("vol1");
+        assertTrue(new File(vol1, "Rance10").mkdir());
+        // Name used on another storage volume is rejected & skipped by suggestNextDirName
+        java.util.List<String> otherVolumeNames = java.util.Arrays.asList("Rance10-1", "Rance10-Custom");
+        assertEquals("Rance10-2",
+                Rance10InstanceManager.INSTANCE.suggestNextDirName(vol1, "Rance10", otherVolumeNames));
+        assertEquals(Rance10InstanceManager.NameValidationError.ALREADY_EXISTS,
+                Rance10InstanceManager.INSTANCE.validateDirName(vol1, "rance10-custom", otherVolumeNames).getError());
+
+        // Localized copy names must not collide in GamepadBridge profile keys, and keys must be idempotent
+        String keyVanilla = GamepadBridge.INSTANCE.normalizeGameProfileKey("Rance10-原版");
+        String keyJp = GamepadBridge.INSTANCE.normalizeGameProfileKey("Rance10-日版");
+        String keyAscii = GamepadBridge.INSTANCE.normalizeGameProfileKey("Rance10-1");
+        assertNotNull(keyVanilla);
+        assertNotNull(keyJp);
+        assertEquals("Rance10-1", keyAscii);
+        assertFalse("Localized keys must not collide: " + keyVanilla, keyVanilla.equals(keyJp));
+        assertEquals(keyVanilla, GamepadBridge.INSTANCE.normalizeGameProfileKey(keyVanilla));
+        assertEquals(keyJp, GamepadBridge.INSTANCE.normalizeGameProfileKey(keyJp));
     }
 }

@@ -42,6 +42,17 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         fun shouldShowInstanceRow(descriptor: GameDescriptor, matchingCount: Int): Boolean {
             return matchingCount > 1 || (descriptor.isRance10 && matchingCount >= 1)
         }
+
+        fun persistSelectedInstancePath(context: android.content.Context, targetGameId: String, path: String?) {
+            val editor = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            val key = KEY_SELECTED_INSTANCE_PREFIX + targetGameId
+            if (path.isNullOrBlank()) {
+                editor.remove(key)
+            } else {
+                editor.putString(key, path)
+            }
+            editor.apply()
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -316,14 +327,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun persistSelectedInstancePath(targetGameId: String, path: String?) {
-        val editor = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-        val key = KEY_SELECTED_INSTANCE_PREFIX + targetGameId
-        if (path.isNullOrBlank()) {
-            editor.remove(key)
-        } else {
-            editor.putString(key, path)
-        }
-        editor.apply()
+        Companion.persistSelectedInstancePath(this, targetGameId, path)
     }
 
     private fun rebindGameState() {
@@ -574,7 +578,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             ?: candidates.indexOfFirst { it.path.path == selectedItem?.path?.path }.coerceAtLeast(0)
         var chosenSource = candidates[defaultSourceIdx]
         val parentDir = chosenSource.path.parentFile ?: chosenSource.path
-        val suggestedName = Rance10InstanceManager.suggestNextDirName(parentDir, descriptor.defaultDirName)
+        val usedNames = gameList.allExistingDirectoryNames()
+        val suggestedName = Rance10InstanceManager.suggestNextDirName(parentDir, descriptor.defaultDirName, usedNames)
 
         val padH = UiKit.dpInt(this, 20)
         val padTop = UiKit.dpInt(this, 12)
@@ -684,7 +689,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
                 val src = chosenSource
                 val targetParent = src.path.parentFile ?: src.path
-                val result = Rance10InstanceManager.validateDirName(targetParent, nameInput.text?.toString().orEmpty())
+                val result = Rance10InstanceManager.validateDirName(
+                    targetParent,
+                    nameInput.text?.toString().orEmpty(),
+                    gameList.allExistingDirectoryNames()
+                )
                 if (!result.isValid) {
                     val errRes = when (result.error) {
                         Rance10InstanceManager.NameValidationError.EMPTY -> R.string.hub_create_instance_err_empty

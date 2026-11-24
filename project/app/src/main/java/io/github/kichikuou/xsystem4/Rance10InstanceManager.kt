@@ -7,6 +7,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Pure, atomic directory cloning helpers for creating additional Rance 10 instances
@@ -17,6 +18,10 @@ object Rance10InstanceManager {
     private const val FREE_SPACE_HEADROOM_BYTES = 64L * 1024L * 1024L
     private const val COPY_BUFFER_BYTES = 256 * 1024
     private const val MAX_DIR_NAME_LENGTH = 80
+    private val activeStagingPaths: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    private fun canonicalKey(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
 
     enum class NameValidationError {
         EMPTY,
@@ -46,8 +51,13 @@ object Rance10InstanceManager {
         val fileCount: Int get() = entries.size
     }
 
-    fun suggestNextDirName(parentDir: File, basePrefix: String = "Rance10"): String {
-        val existingLower = existingEntryNamesLower(parentDir)
+    @JvmOverloads
+    fun suggestNextDirName(
+        parentDir: File,
+        basePrefix: String = "Rance10",
+        extraUsedNames: Collection<String> = emptyList()
+    ): String {
+        val existingLower = existingEntryNamesLower(parentDir, extraUsedNames)
         var suffix = 1
         while (suffix < 10_000) {
             val candidate = "$basePrefix-$suffix"
@@ -59,7 +69,12 @@ object Rance10InstanceManager {
         return "$basePrefix-${System.currentTimeMillis()}"
     }
 
-    fun validateDirName(parentDir: File, rawName: String): NameValidationResult {
+    @JvmOverloads
+    fun validateDirName(
+        parentDir: File,
+        rawName: String,
+        extraUsedNames: Collection<String> = emptyList()
+    ): NameValidationResult {
         val trimmed = rawName.trim()
         if (trimmed.isEmpty()) {
             return NameValidationResult(trimmed, NameValidationError.EMPTY)
@@ -74,15 +89,25 @@ object Rance10InstanceManager {
         if (trimmed.any { it.code < 0x20 || it in forbidden }) {
             return NameValidationResult(trimmed, NameValidationError.INVALID_CHARS)
         }
-        if (existingEntryNamesLower(parentDir).contains(trimmed.lowercase(Locale.ROOT))) {
+        if (existingEntryNamesLower(parentDir, extraUsedNames).contains(trimmed.lowercase(Locale.ROOT))) {
             return NameValidationResult(trimmed, NameValidationError.ALREADY_EXISTS)
         }
         return NameValidationResult(trimmed, null)
     }
 
-    private fun existingEntryNamesLower(parentDir: File): Set<String> {
-        val children = parentDir.listFiles() ?: return emptySet()
-        return children.mapTo(HashSet(children.size)) { it.name.lowercase(Locale.ROOT) }
+    private fun existingEntryNamesLower(
+        parentDir: File,
+        extraUsedNames: Collection<String> = emptyList()
+    ): Set<String> {
+        val result = HashSet<String>()
+        parentDir.listFiles()?.forEach { result.add(it.name.lowercase(Locale.ROOT)) }
+        for (name in extraUsedNames) {
+            val trimmed = name.trim()
+            if (trimmed.isNotEmpty()) {
+                result.add(trimmed.lowercase(Locale.ROOT))
+            }
+        }
+        return result
     }
 
     private fun isTransientFile(name: String): Boolean {
@@ -177,11 +202,15 @@ object Rance10InstanceManager {
         val children = parentDir.listFiles() ?: return
         for (child in children) {
             if (child.isDirectory && child.name.startsWith(CLONE_STAGING_PREFIX)) {
+                if (canonicalKey(child) in activeStagingPaths) {
+                    continue
+                }
                 runCatching { child.deleteRecursively() }
             }
         }
     }
 
+    @JvmOverloads
     fun executeCopy(
         plan: CopyPlan,
         parentDir: File,
@@ -189,9 +218,11 @@ object Rance10InstanceManager {
         availableBytesOverride: Long? = null,
         onStagingDirCreated: ((File) -> Unit)? = null,
         checkCancelled: () -> Unit = {},
-        onProgress: (doneBytes: Long, totalBytes: Long, currentFile: String) -> Unit = { _, _, _ -> }
+        onProgress: (doneBytes: Long, totalBytes: Long, currentFile: String) -> Unit = { _, _, _ -> },
+        extraUsedNames: Collection<String> = emptyList(),
+        onFinalDirCommitted: ((File) -> Unit)? = null
     ): File {
-        val validation = validateDirName(parentDir, targetDirName)
+        val validation = validateDirName(parentDir, targetDirName, extraUsedNames)
         if (!validation.isValid) {
             throw IOException("Invalid target directory name: $targetDirName (${validation.error})")
         }
@@ -208,14 +239,22 @@ object Rance10InstanceManager {
 
         val finalDir = File(parentDir, validation.sanitizedName)
         val stagingDir = File(parentDir, "$CLONE_STAGING_PREFIX${UUID.randomUUID().toString().take(8)}")
-        if (!stagingDir.mkdirs()) {
-            throw IOException("Failed to create staging directory: $stagingDir")
-        }
-        onStagingDirCreated?.invoke(stagingDir)
-
-        var doneBytes = 0L
-        val buf = ByteArray(COPY_BUFFER_BYTES)
+        val stagingKey = canonicalKey(stagingDir)
+        activeStagingPaths.add(stagingKey)
+        var committed = false
         try {
+            if (!stagingDir.mkdirs()) {
+                throw IOException("Failed to create staging directory: $stagingDir")
+            }
+            // Re-register with canonical path after directory creation (resolves any symlinks).
+            val liveStagingKey = canonicalKey(stagingDir)
+            if (liveStagingKey != stagingKey) {
+                activeStagingPaths.add(liveStagingKey)
+            }
+            onStagingDirCreated?.invoke(stagingDir)
+
+            var doneBytes = 0L
+            val buf = ByteArray(COPY_BUFFER_BYTES)
             val total = plan.totalBytes.coerceAtLeast(1L)
             for (entry in plan.entries) {
                 checkCancelled()
@@ -243,16 +282,25 @@ object Rance10InstanceManager {
                 }
             }
             checkCancelled()
-            if (existingEntryNamesLower(parentDir).contains(validation.sanitizedName.lowercase(Locale.ROOT))) {
+            if (existingEntryNamesLower(parentDir, extraUsedNames).contains(validation.sanitizedName.lowercase(Locale.ROOT))) {
                 throw IOException("Target directory already exists: ${validation.sanitizedName}")
             }
             if (!stagingDir.renameTo(finalDir) || !finalDir.isDirectory) {
                 throw IOException("Failed to finalize cloned directory: ${finalDir.name}")
             }
+            committed = true
+            onFinalDirCommitted?.invoke(finalDir)
+            checkCancelled()
             return finalDir
         } catch (t: Throwable) {
             runCatching { stagingDir.deleteRecursively() }
+            if (committed) {
+                runCatching { finalDir.deleteRecursively() }
+            }
             throw t
+        } finally {
+            activeStagingPaths.remove(stagingKey)
+            activeStagingPaths.remove(canonicalKey(stagingDir))
         }
     }
 }

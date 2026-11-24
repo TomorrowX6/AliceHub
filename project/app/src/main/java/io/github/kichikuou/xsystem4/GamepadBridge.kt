@@ -468,12 +468,30 @@ object GamepadBridge {
         ).show()
     }
 
+    private val legacySuffixRegex = Regex("^(.*)_u[0-9a-f]{8}$")
+
     fun normalizeGameProfileKey(gameRootOrId: String?): String? {
         if (gameRootOrId.isNullOrBlank()) return null
         val trimmed = gameRootOrId.trim().trimEnd('/')
         val base = File(trimmed).name.ifBlank { trimmed }
         val sanitized = base.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        return sanitized.takeIf { it.isNotBlank() }
+        if (sanitized.isBlank()) return null
+        // Preserve ASCII keys verbatim (keeps idempotency & existing profiles intact);
+        // append a deterministic UTF-8 CRC32 suffix when non-ASCII/special chars were collapsed
+        // so localized directory names like "Rance10-原版" and "Rance10-日版" never collide.
+        if (sanitized == base) {
+            return sanitized
+        }
+        val crc = java.util.zip.CRC32()
+        crc.update(base.toByteArray(Charsets.UTF_8))
+        val suffix = String.format(java.util.Locale.ROOT, "%08x", crc.value)
+        return "${sanitized}_u$suffix"
+    }
+
+    private fun legacyGameProfileKey(normalizedKey: String): String? {
+        val m = legacySuffixRegex.matchEntire(normalizedKey) ?: return null
+        val prefix = m.groupValues[1]
+        return prefix.takeIf { it.isNotBlank() && it.contains('_') }
     }
 
     private fun profileDir(context: Context): File =
@@ -520,16 +538,23 @@ object GamepadBridge {
         }
     }
 
+    private fun readGameProfileWithLegacyFallback(context: Context, key: String): GamepadProfile? {
+        val direct = readProfileFile(gameProfileFile(context, key))
+        if (direct != null) return direct
+        val legacy = legacyGameProfileKey(key) ?: return null
+        return readProfileFile(gameProfileFile(context, legacy))
+    }
+
     fun hasPerGameOverride(context: Context, profileKey: String?): Boolean {
         val key = normalizeGameProfileKey(profileKey) ?: return false
-        val p = readProfileFile(gameProfileFile(context, key))
+        val p = readGameProfileWithLegacyFallback(context, key)
         return p != null && p.perGameOverride
     }
 
     fun loadProfile(context: Context, profileKey: String? = null): GamepadProfile {
         val key = normalizeGameProfileKey(profileKey)
         if (key != null) {
-            val gameProfile = readProfileFile(gameProfileFile(context, key))
+            val gameProfile = readGameProfileWithLegacyFallback(context, key)
             if (gameProfile != null && gameProfile.perGameOverride) {
                 return gameProfile
             }

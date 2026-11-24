@@ -971,6 +971,21 @@ class GameList(activity: Activity) {
         }
     }
 
+    fun allExistingDirectoryNames(): Set<String> {
+        val names = HashSet<String>()
+        for (root in storageDirs) {
+            root.listFiles()?.forEach { child ->
+                if (!child.name.startsWith(".")) {
+                    names.add(child.name)
+                }
+            }
+        }
+        for (item in items) {
+            names.add(item.path.name)
+        }
+        return names
+    }
+
     fun cloneRance10Directory(
         sourceItem: Item,
         targetDirName: String,
@@ -980,12 +995,14 @@ class GameList(activity: Activity) {
             return false
         }
         val parentDir = sourceItem.path.parentFile ?: storageDirs[0]
-        val validation = Rance10InstanceManager.validateDirName(parentDir, targetDirName)
+        val extraUsedNames = allExistingDirectoryNames()
+        val validation = Rance10InstanceManager.validateDirName(parentDir, targetDirName, extraUsedNames)
         if (!validation.isValid) {
             return false
         }
         val finalName = validation.sanitizedName
         val stagingRef = java.util.concurrent.atomic.AtomicReference<File?>(null)
+        val committedDirRef = java.util.concurrent.atomic.AtomicReference<File?>(null)
         val prevBarrier = retiringBarrierJob
         val (sessionGen, abortHandle) = beginInstallSession(
             notifTitle = context.getString(R.string.hub_create_instance_notif_title),
@@ -995,7 +1012,8 @@ class GameList(activity: Activity) {
             resumable = false,
             targetGameId = GameCatalog.ID_RANCE10,
             evictPartialOnCancel = {
-                stagingRef.get()?.let { listOfNotNull(OnlineInstaller.evictFileToTrash(it)) } ?: emptyList()
+                listOfNotNull(stagingRef.get(), committedDirRef.get())
+                    .mapNotNull { OnlineInstaller.evictFileToTrash(it) }
             }
         )
         val mainHandler = Handler(Looper.getMainLooper())
@@ -1045,9 +1063,12 @@ class GameList(activity: Activity) {
                                     }
                                 }
                             }
-                        }
+                        },
+                        extraUsedNames = extraUsedNames,
+                        onFinalDirCommitted = { committedDirRef.set(it) }
                     )
                 }
+                committedDirRef.set(null)
                 val homedir = File(parentDir, ".xsystem4")
                 val created = Item.fromDirectory(createdDir, homedir, context)
                 items.removeAll { it.path.canonicalFile == createdDir.canonicalFile }
@@ -1055,11 +1076,16 @@ class GameList(activity: Activity) {
                 recordItemSignature(created)
                 bumpDataVersion()
                 lastInstalledItem = created
+                GameHubActivity.persistSelectedInstancePath(context, GameCatalog.ID_RANCE10, created.path.path)
                 setInstallSucceeded(sessionGen)
             } catch (_: CancellationException) {
                 val staged = stagingRef.get()
                 if (staged != null && staged.exists()) {
                     deleteDirAsyncViaTrash(staged)
+                }
+                val committed = committedDirRef.getAndSet(null)
+                if (committed != null && committed.exists()) {
+                    deleteDirAsyncViaTrash(committed)
                 }
                 setInstallCancelled(sessionGen, wasPaused = false)
             } catch (e: InstallFailureException) {

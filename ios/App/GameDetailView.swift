@@ -31,8 +31,12 @@ struct GameDetailView: View {
             ?? game
     }
 
+    private func isRance10Instance(_ item: Game) -> Bool {
+        ModGameDescriptor.classifyGameRootDir(item.url)?.id == "rance10" || item.artworkKey == "rance10"
+    }
+
     private var rance10Instances: [Game] {
-        library.games.filter { $0.artworkKey == "rance10" }
+        library.games.filter { isRance10Instance($0) }
     }
 
     private enum Destination: String, Identifiable {
@@ -42,7 +46,7 @@ struct GameDetailView: View {
 
     var body: some View {
         let active = currentGame
-        let isRance10 = active.artworkKey == "rance10"
+        let isRance10 = isRance10Instance(active)
         let hasChinese = OnlineGame.hasChinese(for: active)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -195,11 +199,11 @@ struct GameDetailView: View {
         .alert("删除游戏？", isPresented: $deleting) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {
-                let wasRance10 = active.artworkKey == "rance10"
+                let wasRance10 = isRance10Instance(active)
                 let deletedID = active.id
                 library.delete(active)
                 if !library.games.contains(where: { $0.id == deletedID }) {
-                    if wasRance10, let remaining = library.games.first(where: { $0.artworkKey == "rance10" }) {
+                    if wasRance10, let remaining = library.games.first(where: { isRance10Instance($0) }) {
                         selectedGameID = remaining.id
                     } else {
                         dismiss()

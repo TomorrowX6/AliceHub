@@ -460,11 +460,13 @@ final class GameLibrary: ObservableObject {
         let erumeiFlower = engine == .system4 && regularNamesLower.contains("エルメイフラワー.ain") && !erumeiWakare
 
         let dirLower = url.lastPathComponent.lowercased()
+        let isRance10 = engine == .system4 && regularNamesLower.contains("rance10.ain")
         let isGirls = engine == .system4 && (regularNamesLower.contains("ｇｉｒｌｓ.ain") || regularNamesLower.contains("girls.ain") || dirLower == "girls")
         let isDebut = engine == .system4 && (regularNamesLower.contains("ｄｅｂｕｔ.ain") || regularNamesLower.contains("debut.ain") || dirLower == "debut")
 
         let detectedArtworkID: String?
-        if rance41 { detectedArtworkID = "rance41" }
+        if isRance10 { detectedArtworkID = "rance10" }
+        else if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
         else if rance04 { detectedArtworkID = "rance04" }
         else if rance5d { detectedArtworkID = "rance5d" }

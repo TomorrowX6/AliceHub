@@ -563,6 +563,14 @@ struct LibraryChecks {
         awaitImport()
         precondition(library.error == nil)
         precondition(library.suggestNextDirectoryName(basePrefix: "Rance10") == "Rance10-2")
+        // Renamed copy whose folder name collides with another game's alias (e.g. "Reboot") must remain Rance 10.
+        var renamedR10: Game?
+        library.cloneDirectory(from: r10Game, named: "Rance10-Reboot") { created in
+            renamedR10 = created
+        }
+        awaitImport()
+        precondition(library.error == nil)
+        precondition(renamedR10?.artworkKey == "rance10")
         let cloneLeftovers = try files.contentsOfDirectory(atPath: games.path).filter { $0.hasPrefix(".import-") }
         precondition(cloneLeftovers.isEmpty, "Clone staging directories must be cleaned up")
         print("PASS: Rance 10 directory naming, validation, cloning with clean-vanilla transform, and stage cleanup")
