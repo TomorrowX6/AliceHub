@@ -5,7 +5,7 @@ import Foundation
 /// <sync folder>/<game>, where the sync folder is any folder the user picked in
 /// Files (typically iCloud Drive). A file counts as changed only when its content
 /// differs from the last synced version. Conflicting copies are left in place.
-/// Deletions are not propagated.
+/// Ordinary deletions are not propagated.
 final class SaveSync {
     struct Summary: Equatable {
         var pulled = 0
@@ -14,13 +14,14 @@ final class SaveSync {
         var skipped = 0
     }
     enum Failure: LocalizedError {
-        case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged
+        case folderUnavailable, unsafePath, unreadableCloudFile, targetChanged, renameConflict
         var errorDescription: String? {
             switch self {
-            case .folderUnavailable: return "无法访问同步文件夹，请在设置中重新选择。"
-            case .unsafePath: return "同步文件夹中的存档路径不安全。"
-            case .unreadableCloudFile: return "云端存档暂不可读，请在“文件”中下载后重试。"
-            case .targetChanged: return "同步时存档已被修改，未覆盖该文件。请重试。"
+            case .folderUnavailable: return hubText("无法访问同步文件夹，请在设置中重新选择。")
+            case .unsafePath: return hubText("同步文件夹中的存档路径不安全。")
+            case .unreadableCloudFile: return hubText("云端存档暂不可读，请在“文件”中下载后重试。")
+            case .targetChanged: return hubText("同步时存档已被修改，未覆盖该文件。请重试。")
+            case .renameConflict: return hubText("同步文件夹中的存档不同或已有同名文件，未重命名。")
             }
         }
     }
@@ -64,6 +65,12 @@ final class SaveSync {
     private struct Record: Codable {
         var hash: String
         var conflict: [String]?
+    }
+
+    private struct Rename: Codable {
+        let source: String
+        let destination: String
+        let hash: String
     }
 
     private static func digest(_ data: Data) -> String {
@@ -200,6 +207,91 @@ final class SaveSync {
         return try result.get()
     }
 
+    private func renameRecordPath(source: String, hash: String) -> [String] {
+        [game, ".alicehub-renames", Self.digest(Data((source + "\n" + hash).utf8)) + ".json"]
+    }
+
+    private func renameSnapshot(at path: [String]) throws -> Snapshot? {
+        let url = try checkedURL(path, under: folder)
+        let placeholder = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
+        guard files.fileExists(atPath: url.path) || files.fileExists(atPath: placeholder.path) else { return nil }
+        return try coordinatedRead(path: path, under: folder)
+    }
+
+    private func publishedRename(source: String, hash: String) throws -> Rename? {
+        guard let marker = try renameSnapshot(at: renameRecordPath(source: source, hash: hash)) else { return nil }
+        let rename = try JSONDecoder().decode(Rename.self, from: marker.data)
+        return rename.source == source && rename.hash == hash && rename.destination != source ? rename : nil
+    }
+
+    func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager) throws {
+        let localTarget = try manager.destination(for: entry, named: name)
+        let newName = localTarget.lastPathComponent
+        guard entry.url.lastPathComponent != newName else { return }
+        let parts = entry.path.split(separator: "/").map(String.init)
+        let newParts = Array(parts.dropLast()) + [newName]
+        let oldPath = [game] + parts
+        let newPath = [game] + newParts
+        let source = try checkedURL(oldPath, under: folder)
+        let target = try checkedURL(newPath, under: folder)
+        guard files.fileExists(atPath: source.deletingLastPathComponent().path) else {
+            try manager.rename(entry, named: name)
+            return
+        }
+
+        var error: NSError?
+        var result: Result<Void, Error> = .failure(Failure.folderUnavailable)
+        coordinator.coordinate(writingItemAt: source, options: .forMoving,
+                               writingItemAt: target, options: .forReplacing, error: &error) { sourceURL, targetURL in
+            result = Result {
+                guard canonical(sourceURL) == canonical(try checkedURL(oldPath, under: folder)),
+                      canonical(targetURL) == canonical(try checkedURL(newPath, under: folder)) else {
+                    throw Failure.unsafePath
+                }
+                guard try existingBytes(at: targetURL) == nil else { throw Failure.renameConflict }
+                guard let bytes = try existingBytes(at: sourceURL) else {
+                    try manager.rename(entry, named: name)
+                    return
+                }
+                var records = loadRecords()
+                guard let base = records[entry.path], base.conflict == nil, Self.digest(bytes) == base.hash else {
+                    throw Failure.renameConflict
+                }
+                try manager.rename(entry, named: name)
+                let destination = newParts.joined(separator: "/")
+                let markerPath = renameRecordPath(source: entry.path, hash: base.hash)
+                var published: (previous: Snapshot?, current: Snapshot)?
+                do {
+                    let previous = try renameSnapshot(at: markerPath)
+                    let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
+                    let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
+                    guard try coordinatedWrite(marker, path: markerPath, under: folder, expected: previous?.data,
+                                               isCancelled: { false }) == .written else { throw Failure.targetChanged }
+                    published = (previous, marker)
+                    coordinator.item(at: sourceURL, willMoveTo: targetURL)
+                    try files.moveItem(at: sourceURL, to: targetURL)
+                    coordinator.item(at: sourceURL, didMoveTo: targetURL)
+                } catch {
+                    if let published {
+                        if let previous = published.previous {
+                            _ = try? coordinatedWrite(previous, path: markerPath, under: folder,
+                                                      expected: published.current.data, isCancelled: { false })
+                        } else if let marker = try? checkedURL(markerPath, under: folder) {
+                            try? files.removeItem(at: marker)
+                        }
+                    }
+                    try files.moveItem(at: localTarget, to: entry.url)
+                    throw error
+                }
+                records.removeValue(forKey: entry.path)
+                records[newParts.joined(separator: "/")] = base
+                try? saveRecords(records)
+            }
+        }
+        if let error { throw error }
+        try result.get()
+    }
+
     @discardableResult func sync(mode: Mode = .twoWay, isCancelled: () -> Bool = { false }) throws -> Summary {
         var summary = Summary()
         guard !isCancelled() else { return summary }
@@ -210,6 +302,8 @@ final class SaveSync {
         var records = loadRecords()
         defer { try? saveRecords(records) }
         var backedUp = false
+        var pendingRenames: [Rename] = []
+        var reconciledRemote: [String: String] = [:]
         paths: for path in mine.union(theirs).sorted() {
             guard !isCancelled() else { break }
             if mode == .uploadOnly && !mine.contains(path) { continue }
@@ -229,12 +323,21 @@ final class SaveSync {
             }
             let b = theirs.contains(path) ? try coordinatedRead(path: remotePath, under: folder) : nil
             let base = records[path]
+            if let a, b == nil, let base, let rename = try publishedRename(source: path, hash: base.hash) {
+                guard Self.digest(a.data) == base.hash, base.conflict == nil else {
+                    summary.conflicts += 1
+                    continue
+                }
+                if mode == .twoWay { pendingRenames.append(rename) }
+                continue
+            }
             let pull: Bool
             if let a, let b {
                 let localHash = Self.digest(a.data)
                 let remoteHash = Self.digest(b.data)
                 if localHash == remoteHash {
                     records[path] = Record(hash: localHash)
+                    reconciledRemote[path] = localHash
                     continue
                 }
                 let localChanged = localHash != base?.hash
@@ -256,7 +359,9 @@ final class SaveSync {
                 }
                 guard try coordinatedWrite(b, path: localPath, under: documents, expected: a?.data,
                                            isCancelled: isCancelled) == .written else { break }
-                records[path] = Record(hash: Self.digest(b.data))
+                let hash = Self.digest(b.data)
+                records[path] = Record(hash: hash)
+                reconciledRemote[path] = hash
                 summary.pulled += 1
             } else if let a {
                 let hash = Self.digest(a.data)
@@ -277,6 +382,35 @@ final class SaveSync {
                     break paths
                 }
             }
+        }
+        for rename in pendingRenames {
+            guard !isCancelled() else { break }
+            var destinationPath = rename.destination
+            var visited: Set<String> = [rename.source]
+            while !theirs.contains(destinationPath), !mine.contains(destinationPath),
+                  visited.insert(destinationPath).inserted, !isCancelled(),
+                  let next = try publishedRename(source: destinationPath, hash: rename.hash) {
+                destinationPath = next.destination
+            }
+            guard !isCancelled() else { break }
+            guard let destinationHash = reconciledRemote[destinationPath] else {
+                if records[destinationPath]?.conflict == nil { summary.conflicts += 1 }
+                continue
+            }
+            let source = try checkedURL(["Saves", game] + rename.source.components(separatedBy: "/"), under: documents)
+            let destination = try checkedURL(["Saves", game] + destinationPath.components(separatedBy: "/"), under: documents)
+            if !backedUp {
+                try beforeLocalChange()
+                backedUp = true
+            }
+            guard !isCancelled() else { break }
+            guard let current = stableLocalSnapshot(source), Self.digest(current.data) == rename.hash,
+                  let target = stableLocalSnapshot(destination), Self.digest(target.data) == destinationHash else {
+                summary.skipped += 1
+                continue
+            }
+            try files.removeItem(at: source)
+            records.removeValue(forKey: rename.source)
         }
         return summary
     }
@@ -352,6 +486,15 @@ enum SaveSyncFolder {
         return try withFolder { folder in
             try make(game: game, folder: folder, documents: documents, support: support).sync(mode: mode, isCancelled: isCancelled)
         }
+    }
+
+    static func rename(_ entry: SaveManager.FileEntry, named name: String, using manager: SaveManager,
+                       documents: URL? = nil, support: URL? = nil) throws {
+        let synced: Void? = try withFolder { folder in
+            try make(game: manager.game, folder: folder, documents: documents, support: support)
+                .rename(entry, named: name, using: manager)
+        }
+        if synced == nil { try manager.rename(entry, named: name) }
     }
 
     /// Uploads every game that has local saves.

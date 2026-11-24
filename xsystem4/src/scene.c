@@ -39,6 +39,18 @@ static TAILQ_HEAD(listhead, sprite) sprite_list = TAILQ_HEAD_INITIALIZER(sprite_
 static Texture wp = {0};
 static bool scene_reset_registered = false;
 
+#ifdef ALICEHUB_IOS
+void scene_end_session(void)
+{
+	while (!TAILQ_EMPTY(&sprite_list))
+		scene_unregister_sprite(TAILQ_FIRST(&sprite_list));
+	gfx_delete_texture(&wp);
+	scene_reset_registered = false;
+	id_counter = 0;
+	scene_dirty();
+}
+#endif
+
 static void scene_on_gl_reset(void *user)
 {
 	(void)user;

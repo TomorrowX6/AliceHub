@@ -144,11 +144,14 @@ void sys_error(char *format, ...) {
 	sys_write_crash_log(buf);
 	sys_show_message_box(MESSAGEBOX_ERROR, "xsystem35", buf);
 
-	sys35_remove();
-	exit(1);
+	sys_exit(1);
 }
 
 void sys_exit(int code) {
+#ifdef ALICEHUB_IOS
+	extern void xsystem35_ios_exit(int code);
+	xsystem35_ios_exit(code);
+#endif
 	sys35_remove();
 	exit(code);
 }

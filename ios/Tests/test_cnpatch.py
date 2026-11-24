@@ -11,7 +11,7 @@ work.mkdir(parents=True)
 libarchive = pathlib.Path(subprocess.check_output(["brew", "--prefix", "libarchive"], text=True).strip())
 subprocess.run(["xcrun", "clang", "-I" + str(libarchive / "include"), "-c", str(ROOT / "ios/App/ArchiveBridge.c"),
                 "-o", str(work / "bridge.o")], check=True)
-sources = ["ios/App/ModArchiveExtractor.swift", "ios/App/ModCatalog.swift", "ios/App/ModOverlay.swift", "ios/Tests/CnPatchChecks.swift"]
+sources = ["ios/App/HubLanguage.swift", "ios/App/ModArchiveExtractor.swift", "ios/App/ModCatalog.swift", "ios/App/ModOverlay.swift", "ios/Tests/CnPatchChecks.swift"]
 subprocess.run(["xcrun", "swiftc", "-swift-version", "5", "-import-objc-header", str(ROOT / "ios/App/ArchiveBridge.h"),
                 *[str(ROOT / source) for source in sources], str(work / "bridge.o"), "-L" + str(libarchive / "lib"),
                 "-larchive", "-liconv", "-o", str(work / "checks")], check=True)

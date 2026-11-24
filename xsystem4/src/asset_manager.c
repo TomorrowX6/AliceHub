@@ -921,6 +921,38 @@ static void _ald_init(enum asset_type type, struct archive *ar)
 	assets[type] = &manager->manager;
 }
 
+#ifdef ALICEHUB_IOS
+void asset_manager_fini(void)
+{
+	for (int type = 0; type < ASSET_TYPE_MAX; type++) {
+		if (!assets[type])
+			continue;
+		if (assets[type]->get_by_name == afa_get_by_name) {
+			struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[type];
+			afa_invalidate_canon_index(manager);
+			for (size_t i = 0; i < manager->nr_archives; i++)
+				archive_free(&manager->archives[i]->ar);
+			free(manager->archives);
+			free(manager->archive_priorities);
+			free(manager->id_archives);
+		} else {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[type];
+			for (size_t i = 0; i < manager->nr_cg_overlays; i++)
+				archive_free(&manager->cg_overlays[i]->ar);
+			free(manager->cg_overlays);
+			archive_free(manager->archive);
+		}
+		free(assets[type]);
+		assets[type] = NULL;
+	}
+	for (size_t i = 0; i < nr_save_cg_names; i++)
+		free(save_cg_names[i]);
+	free(save_cg_names);
+	save_cg_names = NULL;
+	nr_save_cg_names = cap_save_cg_names = 0;
+}
+#endif
+
 static void ald_init(enum asset_type type, char **files, int count)
 {
 	if (count < 1)

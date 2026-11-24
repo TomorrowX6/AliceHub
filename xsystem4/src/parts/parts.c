@@ -1735,7 +1735,7 @@ bool PE_Init(void)
 	return true;
 }
 
-void PE_Reset(void)
+static void parts_clear(void)
 {
 	PE_ClearBackScene();
 	parts_input_reset();
@@ -1745,9 +1745,29 @@ void PE_Reset(void)
 	parts_cproc_cache_clear();
 	parts_flat_cache_clear();
 	PE_ReleaseMessage();
+}
+
+void PE_Reset(void)
+{
+	parts_clear();
 	ctrl_stack_init();
 	sact_ModuleFini();
 }
+
+#ifdef ALICEHUB_IOS
+void parts_end_session(void)
+{
+	if (!parts_engine_initialized)
+		return;
+	parts_clear();
+	ht_free_int(parts_table);
+	parts_table = NULL;
+	root_pos = (Point){0};
+	parts_multi_controller = parts_v2 = false;
+	parts_hierarchical_matrix = true;
+	parts_engine_initialized = false;
+}
+#endif
 
 static bool parts_has_dirty_parent(struct parts *parts)
 {

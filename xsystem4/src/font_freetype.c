@@ -382,6 +382,25 @@ void ft_font_set_fallback(struct font *font, struct font *fallback)
 {
 	((struct font_ft*)font)->fallback = (struct font_ft*)fallback;
 }
+
+void ft_font_free(struct font *base)
+{
+	if (!base)
+		return;
+	struct font_ft *font = (struct font_ft*)base;
+	ft_font_free(font->fallback ? &font->fallback->super : NULL);
+	for (unsigned i = 0; i < font->nr_sizes; i++)
+		gfx_font_size_fini(&font->sizes[i]);
+	FT_Done_Face(font->font);
+	free(font);
+}
+
+void ft_font_fini(void)
+{
+	if (ft_lib)
+		FT_Done_FreeType(ft_lib);
+	ft_lib = NULL;
+}
 #endif
 
 static struct font *load_font_file(const char *path, const char *ps_name)

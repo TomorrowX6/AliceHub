@@ -88,6 +88,13 @@ bool sys_isCharacterEncodingLocked(void) {
 	return encoding_locked;
 }
 
+#ifdef ALICEHUB_IOS
+void sys_resetCharacterEncoding(void) {
+	encoding_locked = false;
+	sys_setDefaultCharacterEncoding(SHIFT_JIS, false);
+}
+#endif
+
 /* 選択肢・通常メッセージ振り分け */
 void sys_addMsg(const char *str) {
 	const char *msg = NULL;
@@ -156,7 +163,7 @@ static void nact_callback() {
 	if (nact->is_cursor_animation) {
 		/* cursor animation */
 	}
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	if (nact->is_quit && !nact->restart) {
 		sys_exit(0);
 	}
