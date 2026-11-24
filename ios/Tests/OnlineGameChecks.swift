@@ -194,11 +194,7 @@ struct OnlineGameChecks {
         precondition(OnlineGame.all.contains { $0.id == "rachelsakura" && $0.directory == "RachelSakura" })
         precondition(OnlineGame.all.contains { $0.id == "sabakunika" && $0.directory == "SabakuNika" })
         precondition(OnlineGame.all.contains { $0.id == "vanishpalm" && $0.directory == "VanishPalm" })
-        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/rance10/")
-        UserDefaults.standard.set(DownloadRoute.cn.rawValue, forKey: DownloadRoute.storageKey)
-        precondition(OnlineGame.all[0].baseURL.absoluteString == "https://alicehub.000.moe/cn/rance10/")
-        UserDefaults.standard.removeObject(forKey: DownloadRoute.storageKey)
         print("PASS: catalog, HTTP manifest, invalid paths/keys/hashes/sizes, Unicode/case duplicates, prefix collisions and overflow")
 
         let game = OnlineGame(id: "fixture", title: "测试游戏", directory: manifest.baseName)

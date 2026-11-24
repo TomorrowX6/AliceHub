@@ -6,7 +6,7 @@ struct OnlineGame: Identifiable {
     let directory: String
     let hasChinese: Bool
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
-    var baseURL: URL { URL(string: DownloadRoute.current.gameBaseURLString(for: id) + "/")! }
+    var baseURL: URL { URL(string: AliceHubCDN.gameBaseURLString(for: id) + "/")! }
 
     init(id: String, title: String, directory: String, hasChinese: Bool = false) {
         self.id = id

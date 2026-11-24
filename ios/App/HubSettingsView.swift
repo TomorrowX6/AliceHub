@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 struct HubSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("hub.appearance") private var appearance = HubAppearance.system.rawValue
-    @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @AppStorage("hub.longPressCtrl") private var longPressCtrl = false
     @State private var gamepad = false
@@ -24,9 +23,6 @@ struct HubSettingsView: View {
         NavigationView {
             List {
                 Section("下载") {
-                    Picker("下载线路", selection: $downloadRoute) {
-                        ForEach(DownloadRoute.allCases) { Text($0.title).tag($0.rawValue) }
-                    }.pickerStyle(.segmented).padding(.vertical, 8)
                     Stepper(value: clampedConcurrency, in: DownloadConcurrency.range) {
                         HStack {
                             Text("并发下载数")

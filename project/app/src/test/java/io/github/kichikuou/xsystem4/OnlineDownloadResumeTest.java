@@ -1,9 +1,6 @@
 package io.github.kichikuou.xsystem4;
 
-import android.app.AlertDialog;
 import android.content.Context;
-import android.view.View;
-import android.widget.TextView;
 
 import org.json.JSONObject;
 import org.junit.After;
@@ -18,7 +15,6 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.ConscryptMode;
-import org.robolectric.shadows.ShadowAlertDialog;
 import org.robolectric.shadows.ShadowStatFs;
 
 import java.io.BufferedReader;
@@ -43,14 +39,12 @@ import kotlin.Unit;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
 @ConscryptMode(ConscryptMode.Mode.OFF)
-public class DownloadRouteTest {
+public class OnlineDownloadResumeTest {
     @Rule
     public final TemporaryFolder tmp = new TemporaryFolder();
 
@@ -164,37 +158,14 @@ public class DownloadRouteTest {
     }
 
     @Test
-    public void defaultRouteIsGlobalAndResolvesUrlsIdempotently() {
-        Context ctx = RuntimeEnvironment.getApplication();
-        assertEquals(AppSettings.ROUTE_GLOBAL, AppSettings.getDownloadRoute(ctx));
-
-        // Default global route keeps base URL unchanged
-        assertEquals("https://alicehub.000.moe/rance10", AppSettings.resolveCdnUrl(ctx, OnlineInstaller.RANCE10_CDN_URL));
-        assertEquals("https://alicehub.000.moe/rance10/files/mods/0.49-patch.rar",
-                AppSettings.resolveCdnUrl(ctx, "https://alicehub.000.moe/cn/rance10/files/mods/0.49-patch.rar"));
-
-        // Switch to China Domestic route
-        AppSettings.setDownloadRoute(ctx, AppSettings.ROUTE_CN);
-        assertEquals(AppSettings.ROUTE_CN, AppSettings.getDownloadRoute(ctx));
-        assertEquals("https://alicehub.000.moe/cn/rance10",
-                AppSettings.resolveCdnUrl(ctx, OnlineInstaller.RANCE10_CDN_URL));
-        // Idempotent when already /cn/
-        assertEquals("https://alicehub.000.moe/cn/rance10/files/uncensored/manifest.json",
-                AppSettings.resolveCdnUrl(ctx, "https://alicehub.000.moe/cn/rance10/files/uncensored/manifest.json"));
-        // Non-AliceHub URLs pass through untouched
-        assertEquals("http://127.0.0.1:8080/rance10",
-                AppSettings.resolveCdnUrl(ctx, "http://127.0.0.1:8080/rance10"));
-
-        // Invalid route value falls back to global
-        AppSettings.setDownloadRoute(ctx, "unknown");
-        assertEquals(AppSettings.ROUTE_GLOBAL, AppSettings.getDownloadRoute(ctx));
-    }
-
-    @Test
-    public void canonicalUrlSharesCachedAndDefaultSizesAcrossRoutes() {
+    public void canonicalUrlNormalizesLegacyPrefixAndSharesCachedSizes() {
         Context ctx = RuntimeEnvironment.getApplication();
         assertEquals(OnlineInstaller.RANCE10_CDN_URL,
                 AppSettings.canonicalCdnUrl("https://alicehub.000.moe/cn/rance10/"));
+        assertEquals("https://alicehub.000.moe/rance10/files/mods/0.49-patch.rar",
+                AppSettings.canonicalCdnUrl("https://alicehub.000.moe/cn/rance10/files/mods/0.49-patch.rar"));
+        assertEquals("http://127.0.0.1:8080/rance10",
+                AppSettings.canonicalCdnUrl("http://127.0.0.1:8080/rance10/"));
         assertEquals(AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.RANCE10_CDN_URL),
                 AppSettings.defaultBaseGameSizeForUrl("https://alicehub.000.moe/cn/rance10"));
 
@@ -203,76 +174,45 @@ public class DownloadRouteTest {
     }
 
     @Test
-    public void settingsActivitySwitchesAndPersistsDownloadRoute() {
+    public void settingsActivityLaunchesCleanlyWithoutRouteSelector() {
         ActivityController<SettingsActivity> controller = Robolectric.buildActivity(SettingsActivity.class).setup();
-        SettingsActivity settings = controller.get();
         try {
-            View row = settings.findViewById(R.id.row_settings_download_route);
-            TextView value = settings.findViewById(R.id.value_settings_download_route);
-            assertEquals(settings.getString(R.string.download_route_global), value.getText().toString());
-            assertEquals(
-                    settings.getString(R.string.settings_download_route) + ", " + settings.getString(R.string.download_route_global),
-                    row.getContentDescription().toString()
-            );
-
-            row.performClick();
-            AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
-            assertTrue(dialog.isShowing());
-            assertEquals(2, dialog.getListView().getCount());
-            assertEquals(settings.getString(R.string.download_route_global), dialog.getListView().getAdapter().getItem(0));
-            assertEquals(settings.getString(R.string.download_route_cn), dialog.getListView().getAdapter().getItem(1));
-
-            dialog.getListView().performItemClick(dialog.getListView().getChildAt(1), 1, 1);
-            assertFalse(dialog.isShowing());
-            assertEquals(AppSettings.ROUTE_CN, AppSettings.getDownloadRoute(settings));
-            assertEquals(settings.getString(R.string.download_route_cn), value.getText().toString());
-            assertEquals(
-                    settings.getString(R.string.settings_download_route) + ", " + settings.getString(R.string.download_route_cn),
-                    row.getContentDescription().toString()
-            );
-
-            // Switch back to International
-            row.performClick();
-            AlertDialog dialog2 = ShadowAlertDialog.getLatestAlertDialog();
-            dialog2.getListView().performItemClick(dialog2.getListView().getChildAt(0), 0, 0);
-            assertEquals(AppSettings.ROUTE_GLOBAL, AppSettings.getDownloadRoute(settings));
-            assertEquals(settings.getString(R.string.download_route_global), value.getText().toString());
+            SettingsActivity settings = controller.get();
+            assertEquals(0, settings.getResources().getIdentifier("row_settings_download_route", "id", settings.getPackageName()));
         } finally {
             controller.pause().stop().destroy();
         }
     }
 
     @Test
-    public void crossRouteResumeOmitsStaleIfRangeAndFollows302WithRange() throws Exception {
+    public void resumeAcrossUrlChangeOmitsStaleIfRangeAndFollows302WithRange() throws Exception {
         byte[] data = new byte[4096];
         for (int i = 0; i < data.length; i++) {
             data[i] = (byte) ((i * 31 + 7) & 0xFF);
         }
         String hash = sha256(data);
 
-        // Simulate CN Worker 302 redirect to asset host with a different ETag than R2
-        redirects.put("/cn/file.bin", localUrl("/cnb-asset/file.bin"));
-        payloads.put("/cnb-asset/file.bin", data);
-        etags.put("/cnb-asset/file.bin", "\"cnb-etag\"");
+        redirects.put("/redirect/file.bin", localUrl("/asset/file.bin"));
+        payloads.put("/asset/file.bin", data);
+        etags.put("/asset/file.bin", "\"asset-etag\"");
 
         File dir = tmp.newFolder("resume");
         ShadowStatFs.registerStats(dir.getPath(), 1024 * 1024, 1024 * 1024, 1024 * 1024);
         File part = new File(dir, "file.bin.part");
         File meta = new File(part.getPath() + ".meta");
 
-        // Pre-seed partial download from the international route (different URL and ETag, matching SHA-256)
         byte[] prefix = new byte[1024];
         System.arraycopy(data, 0, prefix, 0, prefix.length);
         Files.write(part.toPath(), prefix);
         JSONObject savedMeta = new JSONObject()
-                .put("url", localUrl("/global/file.bin"))
-                .put("etag", "\"r2-etag\"")
+                .put("url", localUrl("/old/file.bin"))
+                .put("etag", "\"old-etag\"")
                 .put("totalBytes", data.length)
                 .put("sha256", hash);
         Files.write(meta.toPath(), savedMeta.toString().getBytes(StandardCharsets.UTF_8));
 
         OnlineInstaller.INSTANCE.downloadFileWithResume(
-                localUrl("/cn/file.bin"),
+                localUrl("/redirect/file.bin"),
                 part,
                 data.length,
                 hash,
@@ -283,12 +223,11 @@ public class DownloadRouteTest {
         );
 
         assertArrayEquals(data, Files.readAllBytes(part.toPath()));
-        // Verify redirect hop received Range: bytes=1024- and NO stale R2 If-Range
         Map<String, String> assetReq = recordedRequests.stream()
-                .filter(h -> "/cnb-asset/file.bin".equals(h.get("_path")))
+                .filter(h -> "/asset/file.bin".equals(h.get("_path")))
                 .findFirst()
                 .orElseThrow(AssertionError::new);
         assertEquals("bytes=1024-", assetReq.get("range"));
-        assertNull("Stale ETag from previous route must not be sent as If-Range", assetReq.get("if-range"));
+        assertNull("Stale ETag from previous URL must not be sent as If-Range", assetReq.get("if-range"));
     }
 }

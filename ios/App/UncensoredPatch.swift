@@ -5,7 +5,7 @@ struct UncensoredGameDescriptor: Equatable {
     let id: String
     let title: String
 
-    var cdnBaseURL: String { DownloadRoute.current.gameBaseURLString(for: id) }
+    var cdnBaseURL: String { AliceHubCDN.gameBaseURLString(for: id) }
     var manifestURL: URL { URL(string: cdnBaseURL + "/files/uncensored/manifest.json")! }
 
     static let supported: [Self] = [
@@ -286,7 +286,7 @@ final class UncensoredPatchInstaller: ObservableObject {
                     fileId: 1,
                     version: manifest.version,
                     fileName: manifest.fileName,
-                    downloadUrl: DownloadRoute.current.resolveURL(manifest.downloadUrl),
+                    downloadUrl: AliceHubCDN.canonicalURL(manifest.downloadUrl),
                     expectedSize: manifest.size,
                     expectedSha256: manifest.sha256
                 )
