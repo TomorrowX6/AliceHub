@@ -76,6 +76,9 @@ struct GameDetailView: View {
         .background(HubTheme.background.ignoresSafeArea())
         .navigationTitle("游戏详情").navigationBarTitleDisplayMode(.inline)
         .disabled(library.launching || library.importing)
+        .onChange(of: library.launching) { launching in
+            if !launching { dismiss() }
+        }
         .onAppear {
             if !loadedCapabilities {
                 loadedCapabilities = true

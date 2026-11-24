@@ -33,6 +33,78 @@ void alicehub_ios_gamepad_frame(float x, float y, bool cursor, bool movie, bool 
 }
 
 static void (*background_hook)(SDL_bool);
+static __weak UIWindow *launcher_window;
+static __weak UIWindow *game_window;
+static id inactive_observer;
+static id active_observer;
+
+void alicehub_ios_begin_game(void)
+{
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
+            launcher_window = ((UIWindowScene *)scene).keyWindow;
+            break;
+        }
+    }
+}
+
+void alicehub_ios_end_game(void)
+{
+    NSNotificationCenter *notifications = NSNotificationCenter.defaultCenter;
+    if (inactive_observer)
+        [notifications removeObserver:inactive_observer];
+    if (active_observer)
+        [notifications removeObserver:active_observer];
+    inactive_observer = active_observer = nil;
+    background_hook = NULL;
+    alicehub_ios_set_gamepad_callbacks(NULL, NULL, NULL);
+    game_window.hidden = YES;
+    game_window = nil;
+    [launcher_window makeKeyAndVisible];
+    if (@available(iOS 16.0, *))
+        [launcher_window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+    launcher_window = nil;
+}
+
+void alicehub_ios_request_quit(void)
+{
+    UIViewController *host = game_window.rootViewController;
+    if (!host.view.window || host.presentedViewController)
+        return;
+    UIAlertController *dialog = [UIAlertController
+        alertControllerWithTitle:NSLocalizedString(@"退出游戏", nil)
+        message:nil preferredStyle:UIAlertControllerStyleAlert];
+    [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"取消", nil)
+        style:UIAlertActionStyleCancel handler:nil]];
+    [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"退出", nil)
+        style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            SDL_Event event = {.type = SDL_QUIT};
+            SDL_PushEvent(&event);
+        }]];
+    [host presentViewController:dialog animated:YES completion:nil];
+}
+
+static void add_quit_button(UIView *view)
+{
+    UIButton *quit = [UIButton buttonWithType:UIButtonTypeSystem];
+    [quit setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+    quit.tintColor = UIColor.whiteColor;
+    quit.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
+    quit.layer.cornerRadius = 20;
+    quit.accessibilityLabel = NSLocalizedString(@"退出游戏", nil);
+    [quit addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        SDL_Event event = {.type = SDL_QUIT};
+        SDL_PushEvent(&event);
+    }] forControlEvents:UIControlEventTouchUpInside];
+    quit.translatesAutoresizingMaskIntoConstraints = NO;
+    [view addSubview:quit];
+    [NSLayoutConstraint activateConstraints:@[
+        [quit.topAnchor constraintEqualToAnchor:view.safeAreaLayoutGuide.topAnchor constant:6],
+        [quit.trailingAnchor constraintEqualToAnchor:view.safeAreaLayoutGuide.trailingAnchor constant:-6],
+        [quit.widthAnchor constraintEqualToConstant:40],
+        [quit.heightAnchor constraintEqualToConstant:40],
+    ]];
+}
 
 void alicehub_ios_set_background_hook(void (*hook)(SDL_bool))
 {
@@ -86,45 +158,17 @@ static void add_modifier_button(UIViewController *root)
 }
 @end
 
-void alicehub_ios_prepare_window(SDL_Window *window)
+static void show_game_window(SDL_Window *window, bool show_quit_button)
 {
     SDL_SysWMinfo info = window_info(window);
     UIWindow *native = info.info.uikit.window;
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if ([scene isKindOfClass:UIWindowScene.class] && scene.activationState == UISceneActivationStateForegroundActive) {
-            native.windowScene = (UIWindowScene *)scene;
-            break;
-        }
-    }
+    if (launcher_window.windowScene)
+        native.windowScene = launcher_window.windowScene;
+    game_window = native;
     native.windowLevel = UIWindowLevelNormal + 1;
     [native makeKeyAndVisible];
-    add_modifier_button(native.rootViewController);
-    static id inactiveObserver;
-    if (!inactiveObserver) {
-        inactiveObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneWillDeactivateNotification
-            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
-                if (SDL_GL_GetCurrentContext())
-                    glFinish();
-                if (background_hook) {
-                    background_hook(SDL_TRUE);
-                } else {
-                    mixer_set_app_backgrounded(true);
-                    savedata_flush_on_background();
-                }
-            }];
-    }
-    static id activeObserver;
-    if (!activeObserver) {
-        activeObserver = [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidActivateNotification
-            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
-                if (background_hook)
-                    background_hook(SDL_FALSE);
-                else {
-                    mixer_set_app_backgrounded(false);
-                    mixer_retry_audio_device();
-                }
-            }];
-    }
+    if (show_quit_button)
+        add_quit_button(native.rootViewController.view);
     if (@available(iOS 16.0, *)) {
         [native.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
         UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc]
@@ -136,6 +180,37 @@ void alicehub_ios_prepare_window(SDL_Window *window)
         [UIViewController attemptRotationToDeviceOrientation];
     }
     SDL_Log("iOS window attached: %s", native.windowScene ? "yes" : "no");
+}
+
+void alicehub_ios_prepare_window(SDL_Window *window)
+{
+    show_game_window(window, background_hook != NULL);
+    UIWindow *native = game_window;
+    add_modifier_button(native.rootViewController);
+    if (!inactive_observer) {
+        inactive_observer = [NSNotificationCenter.defaultCenter addObserverForName:UISceneWillDeactivateNotification
+            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
+                if (SDL_GL_GetCurrentContext())
+                    glFinish();
+                if (background_hook) {
+                    background_hook(SDL_TRUE);
+                } else {
+                    mixer_set_app_backgrounded(true);
+                    savedata_flush_on_background();
+                }
+            }];
+    }
+    if (!active_observer) {
+        active_observer = [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidActivateNotification
+            object:native.windowScene queue:nil usingBlock:^(NSNotification *notification) {
+                if (background_hook)
+                    background_hook(SDL_FALSE);
+                else {
+                    mixer_set_app_backgrounded(false);
+                    mixer_retry_audio_device();
+                }
+            }];
+    }
     if (gamepad_attach)
         gamepad_attach(native);
 }

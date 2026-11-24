@@ -10,6 +10,9 @@ struct LauncherView: View {
     @State private var archivePresented = false
     @State private var settingsPresented = false
     @State private var query = ""
+#if DEBUG
+    @State private var didAutoLaunch = false
+#endif
     @Environment(\.scenePhase) private var scenePhase
 
     private var filteredGames: [Game] {
@@ -105,8 +108,12 @@ struct LauncherView: View {
             library.refreshAsync {
 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
-                if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
-                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) { library.launch(game) }
+                if !didAutoLaunch,
+                   let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
+                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) {
+                    didAutoLaunch = true
+                    library.launch(game)
+                }
 #endif
             }
         }

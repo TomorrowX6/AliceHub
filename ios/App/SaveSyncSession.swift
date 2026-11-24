@@ -1,7 +1,7 @@
 import UIKit
 
 /// Syncs the running game's saves with the sync folder at launch, when the app
-/// moves to the background and when the process exits. Only launch may pull.
+/// moves to the background and when the game ends. Only launch may pull.
 /// Failures are logged and never block play.
 enum SaveSyncSession {
     private static var game: String?
@@ -63,7 +63,7 @@ enum SaveSyncSession {
         Self.game = game
         if !registered {
             registered = true
-            atexit { SaveSyncSession.end() }
+            atexit { SaveSyncSession.finishUpload() }
         }
         let notifications = NotificationCenter.default
         observers.append(notifications.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
@@ -91,7 +91,14 @@ enum SaveSyncSession {
         }
     }
 
-    private static func end() {
+    @MainActor
+    static func end() {
+        backgroundTask?.cancel()
+        backgroundTask = nil
+        finishUpload()
+    }
+
+    private static func finishUpload() {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
         guard let game else { return }

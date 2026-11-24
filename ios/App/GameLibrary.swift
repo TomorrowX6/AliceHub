@@ -1008,11 +1008,14 @@ final class GameLibrary: ObservableObject {
             let log = logs.appendingPathComponent("engine.log")
             let descriptor = open(log.path, O_WRONLY | O_CREAT | O_TRUNC, mode_t(0o644))
             guard descriptor >= 0 else { throw LibraryError.logFile }
-            defer { close(descriptor) }
-            guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else { throw LibraryError.logFile }
-            setbuf(stdout, nil)
-            setbuf(stderr, nil)
-            guard chdir(info.engine == .system4 ? resources.path : game.url.path) == 0 else { throw LibraryError.resourcePath }
+            let workingDirectory = info.engine == .system4 ? resources.path : game.url.path
+            let arguments: [String]
+            do {
+                arguments = try Self.launchArguments(game.url, saves: saves)
+            } catch {
+                close(descriptor)
+                throw error
+            }
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             Self.setSystemSansFontDefaults()
@@ -1020,12 +1023,35 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_MINCHO", resources.appendingPathComponent("mincho.ttf").path, 1)
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
-            let arguments = try Self.launchArguments(game.url, saves: saves)
             launching = true
             SaveSyncSession.begin(game: game.name) {
                 ModifierBridge.prepareForLaunch()
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
+                    let previousDirectory = open(".", O_RDONLY)
+                    let previousStdout = dup(STDOUT_FILENO)
+                    let previousStderr = dup(STDERR_FILENO)
+                    defer {
+                        if previousDirectory >= 0 { fchdir(previousDirectory); close(previousDirectory) }
+                        fflush(stdout)
+                        fflush(stderr)
+                        if previousStdout >= 0 { dup2(previousStdout, STDOUT_FILENO); close(previousStdout) }
+                        if previousStderr >= 0 { dup2(previousStderr, STDERR_FILENO); close(previousStderr) }
+                        close(descriptor)
+                        SaveSyncSession.end()
+                        self.launching = false
+                    }
+                    guard previousDirectory >= 0, chdir(workingDirectory) == 0 else {
+                        self.error = LibraryError.resourcePath.localizedDescription
+                        return
+                    }
+                    guard previousStdout >= 0, previousStderr >= 0,
+                          dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else {
+                        self.error = LibraryError.logFile.localizedDescription
+                        return
+                    }
                     SDL_SetMainReady()
+                    alicehub_ios_begin_game()
+                    defer { alicehub_ios_end_game() }
                     if info.engine == .system4 {
                         RuntimeGamepad.prepare(for: game.id)
                         input_set_long_press_ctrl(UserDefaults.standard.bool(forKey: "hub.longPressCtrl"))
@@ -1043,7 +1069,6 @@ final class GameLibrary: ObservableObject {
                         }
                     }
                     for argument in argv { free(argument) }
-                    exit(0)
                 }
             }
         } catch { self.error = error.localizedDescription }

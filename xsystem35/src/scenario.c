@@ -96,7 +96,23 @@ static int stack_pop_dword(void) {
 }
 
 /* initilize stack and load first scenario data */
+#ifdef ALICEHUB_IOS
+void sl_fini(void) {
+	ald_freedata(dfile);
+	ald_freedata(datatbl);
+	dfile = datatbl = NULL;
+	sl_sco = NULL;
+	sl_page = sl_index = 0;
+	free(stack_buf);
+	stack_buf = stack_top = NULL;
+	stack_size = 1024;
+}
+#endif
+
 bool sl_init(void) {
+#ifdef ALICEHUB_IOS
+	free(stack_buf);
+#endif
 	stack_buf = malloc(stack_size);
 	if (stack_buf == NULL)
 		NOMEMERR();

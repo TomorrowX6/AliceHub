@@ -1,14 +1,20 @@
 import Foundation
 
 func SDL_SetMainReady() {}
+func alicehub_ios_begin_game() {}
+func alicehub_ios_end_game() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String) {} }
 enum ModifierBridge { static func prepareForLaunch() {} }
 enum SaveSyncSession {
-    static func begin(game: String, ready: @escaping () -> Void) {}
+    static func begin(game: String, ready: @escaping () -> Void) { ready() }
+    static func end() {}
 }
+private var engineLaunches = [String]()
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
-    fatalError("Library checks must not launch the engine")
+    precondition(argc > 1)
+    engineLaunches.append(String(cString: argv![Int(argc) - 1]!))
+    return 0
 }
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     fatalError("Library checks must not launch the engine")
@@ -25,6 +31,7 @@ struct LibraryChecks {
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
+        try checkRelaunch(root.appendingPathComponent("Relaunch"))
         let rance = root.appendingPathComponent("R6汉硬1.10")
         let data = rance.appendingPathComponent("dAtA")
         try files.createDirectory(at: data, withIntermediateDirectories: true)
@@ -521,6 +528,29 @@ struct LibraryChecks {
         let remaining = try files.contentsOfDirectory(atPath: games.path)
         precondition(!remaining.contains { $0.hasPrefix(".import-") })
         print("PASS: archive-root naming, single game folder, shallowest/deterministic roots, tar.gz → ISO → game, duplicate rejection, no-game/corrupt errors, source preservation and stage cleanup")
+    }
+
+    static func checkRelaunch(_ documents: URL) throws {
+        let library = GameLibrary(documents: documents)
+        let originalDirectory = FileManager.default.currentDirectoryPath
+        for name in ["First", "Second"] {
+            let folder = library.gamesDirectory.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let target = folder.appendingPathComponent("\(name).ain")
+            try Data().write(to: target)
+            library.launch(Game(url: folder))
+            precondition(library.launching)
+            let deadline = Date().addingTimeInterval(2)
+            while library.launching && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(!library.launching && library.error == nil)
+            let launchedTarget = engineLaunches.last.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+            precondition(launchedTarget == target.resolvingSymlinksInPath().path)
+            precondition(FileManager.default.currentDirectoryPath == originalDirectory)
+        }
+        precondition(engineLaunches.count == 2)
+        print("Library relaunch checks passed")
     }
 
     static func checkGamepadProfiles() {

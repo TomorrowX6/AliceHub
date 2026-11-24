@@ -96,6 +96,11 @@ final class RuntimeGamepad: UIView {
         }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
         menuPanel.addArrangedSubview(sensitivityLabel)
         menuPanel.addArrangedSubview(sensitivitySlider)
+        let quit = UIButton(type: .system)
+        quit.setTitle(padText("Quit Game"), for: .normal)
+        quit.tintColor = .systemRed
+        quit.addAction(UIAction { _ in alicehub_ios_request_quit() }, for: .touchUpInside)
+        menuPanel.addArrangedSubview(quit)
         let close = UIButton(type: .system)
         close.setTitle(padText("Close"), for: .normal)
         close.tintColor = .white

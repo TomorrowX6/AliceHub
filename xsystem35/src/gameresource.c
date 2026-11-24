@@ -57,11 +57,31 @@ static void storeSaveName(GameResource *gr, int no, char *src) {
 			*b = '\0';
 			gr->save_path = strdup(src);
 		} else {
-			gr->save_path = ".";
+			gr->save_path = strdup(".");
 		}
 	}
 	if (path) free(path);
 }
+
+#ifdef ALICEHUB_IOS
+void freeGameResource(GameResource *gr) {
+	for (int type = 0; type < DRIFILETYPEMAX; type++)
+		for (int i = 0; i < gr->cnt[type]; i++)
+			free((void *)gr->game_fname[type][i]);
+	for (int i = 0; i < SAVE_MAXNUMBER; i++)
+		free((void *)gr->save_fname[i]);
+	for (int i = 0; i < 10; i++)
+		free((void *)gr->alk[i]);
+	free((void *)gr->gr_fname);
+	free((void *)gr->save_path);
+	free((void *)gr->ain);
+	free((void *)gr->wai);
+	free((void *)gr->bgi);
+	free((void *)gr->sact01);
+	free((void *)gr->init);
+	free((void *)gr->msgskip);
+}
+#endif
 
 static bool is_uncensored_overlay_ald(const char *filename) {
 	if (!filename || !filename[0] || filename[0] == '.')

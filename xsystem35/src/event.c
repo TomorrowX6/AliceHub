@@ -249,6 +249,10 @@ void event_remove(void) {
 		SDL_CloseJoystick(js);
 		js = NULL;
 	}
+#ifdef ALICEHUB_IOS
+	custom_event_type = (uint32_t)-1;
+	memset(RawKeyInfo, 0, sizeof(RawKeyInfo));
+#endif
 }
 
 void event_set_joy_device_index(int index) {

@@ -971,24 +971,39 @@ void mixer_retry_audio_device(void)
 		atomic_store(&retry_device, true);
 }
 
-bool mixer_fini(void)
+void audio_metadata_reset(void);
+
+void mixer_fini(void)
 {
 	atomic_store(&audio_stopping, true);
 	if (audio_clock_thread) {
 		SDL_WaitThread(audio_clock_thread, NULL);
 		audio_clock_thread = NULL;
 	}
-	if (!audio_device_thread)
-		return true;
-	// A stuck CoreAudio call cannot be cancelled safely; leave SDL to process exit.
-	if (atomic_flag_test_and_set(&device_operation))
-		return false;
-	SDL_WaitThread(audio_device_thread, NULL);
-	audio_device_thread = NULL;
+	if (audio_device_thread) {
+		while (atomic_flag_test_and_set(&device_operation)) {
+			SDL_PumpEvents();
+			SDL_Delay(1);
+		}
+		SDL_WaitThread(audio_device_thread, NULL);
+		audio_device_thread = NULL;
+		atomic_flag_clear(&device_operation);
+	}
 	SDL_AudioDeviceID dev = atomic_exchange(&audio_device, 0);
 	if (dev)
 		SDL_CloseAudioDevice(dev);
-	return true;
+	SDL_DestroyMutex(audio_mutex);
+	audio_mutex = NULL;
+	for (int i = 0; i < nr_mixers; i++) {
+		free(mixers[i].name);
+		free(mixers[i].children);
+	}
+	free(mixers);
+	mixers = master = NULL;
+	nr_mixers = 0;
+	atomic_store(&retry_device, false);
+	atomic_store(&remove_device, false);
+	audio_metadata_reset();
 }
 #endif
 
@@ -1097,6 +1112,11 @@ void mixer_init(void)
 
 	// initialize SDL audio
 #ifdef ALICEHUB_IOS
+	atomic_store(&audio_stopping, false);
+	app_backgrounded = false;
+	window_focused = true;
+	global_focus = true;
+	clock_fraction = 0;
 	if (!(audio_mutex = SDL_CreateMutex()))
 		ERROR("SDL_CreateMutex: %s", SDL_GetError());
 	clock_tick = SDL_GetTicks64();

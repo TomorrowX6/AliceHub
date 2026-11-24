@@ -156,7 +156,7 @@ static void nact_callback() {
 	if (nact->is_cursor_animation) {
 		/* cursor animation */
 	}
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	if (nact->is_quit && !nact->restart) {
 		sys_exit(0);
 	}

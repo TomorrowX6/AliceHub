@@ -38,10 +38,10 @@ static struct id_pool bgm;
 #define NR_ANONYMOUS_CHANNELS 64
 static struct channel *anonymous_channels[NR_ANONYMOUS_CHANNELS];
 static bool anonymous_is_system[NR_ANONYMOUS_CHANNELS];
+static bool audio_initialized;
 
 void audio_init(void)
 {
-	static bool audio_initialized = false;
 	if (audio_initialized)
 		return;
 
@@ -86,6 +86,18 @@ void audio_update(void)
 		}
 	}
 }
+
+#ifdef ALICEHUB_IOS
+void audio_end_session(void)
+{
+	if (!audio_initialized)
+		return;
+	audio_reset();
+	id_pool_delete(&wav);
+	id_pool_delete(&bgm);
+	audio_initialized = false;
+}
+#endif
 
 static bool audio_play_sound_ex(int sound_no, bool is_system)
 {
