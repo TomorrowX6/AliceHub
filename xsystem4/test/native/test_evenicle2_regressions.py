@@ -243,6 +243,49 @@ int main(void) {
         out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
 
+    def test_rance_gbk_prologue_with_mixed_message_table(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/utfsjis.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+
+struct config config;
+void message_layout_init_rance03(void) {}
+
+int main(void) {
+    struct ain *ain = ain_new(14, 0);
+    ain_add_function(ain, "C_MedicaMenu@0");
+    ain_add_string(ain, "th74s65a");
+
+    const char *sjis = "\x82\xb1\x82\xea\x82\xcd\x83\x65\x83\x58\x83\x67\x82\xc5\x82\xb7\x81\x42";
+    for (int i = 0; i < 12; i++)
+        ain_add_message(ain, sjis);
+
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle2_rance);
+    assert(!sys4_text_is_gbk);
+
+    const char *gbk = "\xd5\xe2\xca\xc7\xcb\xc0\xcd\xf6\xb3\xa3\xb0\xe9\xc9\xed\xb1\xdf\xb5\xc4\xca\xc0\xbd\xe7\xa1\xa3";
+    ain_add_message(ain, gbk);
+    apply_game_specific_hacks(ain);
+    assert(sys4_text_is_gbk);
+    char *text = sjis2utf(gbk, 0);
+    assert(strcmp(text, "这是死亡常伴身边的世界。") == 0);
+    free(text);
+    ain_free(ain);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):
         harness = r"""
 #include <assert.h>
