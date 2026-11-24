@@ -71,6 +71,21 @@ struct SaveSyncChecks {
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 1, pushed: 0))
         check(get(local, "same.asd") == "remote-edit")
 
+        // An edit that keeps the previous timestamp (e.g. a ZIP import) is still a change.
+        let stamp = try files.attributesOfItem(atPath: local.appendingPathComponent("same.asd").path)[.modificationDate] as! Date
+        try Data("imported".utf8).write(to: local.appendingPathComponent("same.asd"))
+        try files.setAttributes([.modificationDate: stamp], ofItemAtPath: local.appendingPathComponent("same.asd").path)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
+        check(get(remote, "same.asd") == "imported")
+
+        // Different copies with no sync record and tied timestamps are left alone.
+        try put(local, "tie.asd", "tie-local", 40)
+        try put(remote, "tie.asd", "tie-remote", 40)
+        check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 0, conflicts: 1))
+        check(get(local, "tie.asd") == "tie-local" && get(remote, "tie.asd") == "tie-remote")
+        try files.removeItem(at: local.appendingPathComponent("tie.asd"))
+        try files.removeItem(at: remote.appendingPathComponent("tie.asd"))
+
         try files.moveItem(at: remote.appendingPathComponent("only-remote.rsm"), to: remote.appendingPathComponent(".only-remote.rsm.icloud"))
         try put(local, "only-remote.rsm", "edited-locally", 0)
         check(try SaveSyncFolder.sync(game: game, documents: documents, support: support)! == SaveSync.Summary(pulled: 0, pushed: 1))
@@ -87,6 +102,6 @@ struct SaveSyncChecks {
 
         SaveSyncFolder.clear()
         check(!SaveSyncFolder.isConfigured)
-        print("PASS: pull/push, unchanged rewrite and restore handling, conflicts, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
+        print("PASS: pull/push, unchanged rewrite, restore and same-timestamp edits, conflicts and ties, hidden skip, backup before overwrite, idempotence, iCloud placeholder names, sync-all, symlink rejection, /private folder")
     }
 }

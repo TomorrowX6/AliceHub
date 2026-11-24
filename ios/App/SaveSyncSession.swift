@@ -40,7 +40,7 @@ enum SaveSyncSession {
     private static func run(_ game: String, _ reason: String) {
         do {
             if let summary = try SaveSyncFolder.sync(game: game) {
-                print("Save sync (\(reason)): pulled \(summary.pulled), pushed \(summary.pushed)")
+                print("Save sync (\(reason)): pulled \(summary.pulled), pushed \(summary.pushed), conflicts \(summary.conflicts)")
             }
         } catch {
             print("Save sync (\(reason)) failed: \(error.localizedDescription)")

@@ -103,7 +103,10 @@ struct HubSettingsView: View {
             let message: String
             do {
                 let summary = try SaveSyncFolder.syncAll()
-                message = summary.map { "同步完成：下载 \($0.pulled) 个文件，上传 \($0.pushed) 个文件。" } ?? "尚未选择同步文件夹。"
+                message = summary.map {
+                    "同步完成：下载 \($0.pulled) 个文件，上传 \($0.pushed) 个文件。"
+                        + ($0.conflicts > 0 ? "\($0.conflicts) 个文件两边都有不同修改且时间相同，已保持不变。" : "")
+                } ?? "尚未选择同步文件夹。"
             } catch { message = error.localizedDescription }
             DispatchQueue.main.async { syncing = false; syncMessage = message }
         }

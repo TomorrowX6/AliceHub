@@ -4,12 +4,13 @@ import Foundation
 /// Two-way mirror between Documents/Saves/<game> and
 /// <sync folder>/<game>, where the sync folder is any folder the user picked in
 /// Files (typically iCloud Drive). A file counts as changed only when its content
-/// differs from the last synced version; when both sides changed, the newer one wins.
-/// Deletions are not propagated.
+/// differs from the last synced version; when both sides changed, the clearly newer
+/// one wins and near-ties are left alone. Deletions are not propagated.
 final class SaveSync {
     struct Summary: Equatable {
         var pulled = 0
         var pushed = 0
+        var conflicts = 0
     }
     enum Failure: LocalizedError {
         case folderUnavailable, unsafePath
@@ -43,11 +44,11 @@ final class SaveSync {
     private struct Item {
         let url: URL
         let modified: Date
+        let downloaded: Bool
     }
 
     private struct Record: Codable {
         var hash: String
-        var local: Date
         var remote: Date
     }
 
@@ -66,11 +67,6 @@ final class SaveSync {
         try JSONEncoder().encode(records).write(to: state, options: .atomic)
     }
 
-    private func changed(_ item: Item, since stamp: Date?, hash: String?, bytes: () throws -> Data) rethrows -> Bool {
-        guard let stamp, let hash else { return true }
-        if abs(item.modified.timeIntervalSince(stamp)) <= Self.tolerance { return false }
-        return Self.digest(try bytes()) != hash
-    }
 
     /// iCloud Drive lists files that are not downloaded yet as ".<name>.icloud".
     private static func logicalName(_ name: String) -> String? {
@@ -95,7 +91,7 @@ final class SaveSync {
                 } else {
                     let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                         ?? values.contentModificationDate ?? .distantPast
-                    result[prefix + name] = Item(url: url, modified: modified)
+                    result[prefix + name] = Item(url: url, modified: modified, downloaded: name == child.lastPathComponent)
                 }
             }
         }
@@ -149,16 +145,24 @@ final class SaveSync {
             }
             let pull: Bool
             if let a, let b {
-                let localChanged = try changed(a, since: base?.local, hash: base?.hash, bytes: localBytes)
-                let remoteChanged = try changed(b, since: base?.remote, hash: base?.hash, bytes: remoteBytes)
-                if !localChanged && !remoteChanged {
-                    records[path]?.local = a.modified
-                    records[path]?.remote = b.modified
+                // A cloud file that is not downloaded yet and still matches the last sync is
+                // treated as unchanged, so a sync does not download every save.
+                let remoteHash: String?
+                if !b.downloaded, let base, abs(b.modified.timeIntervalSince(base.remote)) <= Self.tolerance {
+                    remoteHash = base.hash
+                } else {
+                    remoteHash = Self.digest(try remoteBytes())
+                }
+                let localHash = Self.digest(try localBytes())
+                if localHash == remoteHash {
+                    records[path] = Record(hash: localHash, remote: b.modified)
                     continue
                 }
+                let localChanged = localHash != base?.hash
+                let remoteChanged = remoteHash != base?.hash
                 if localChanged && remoteChanged {
-                    if try localBytes() == remoteBytes() {
-                        records[path] = Record(hash: Self.digest(try localBytes()), local: a.modified, remote: b.modified)
+                    if abs(b.modified.timeIntervalSince(a.modified)) <= Self.tolerance {
+                        summary.conflicts += 1
                         continue
                     }
                     pull = b.modified > a.modified
@@ -175,12 +179,12 @@ final class SaveSync {
                 }
                 let data = try remoteBytes()
                 try coordinatedWrite(data, to: local.appendingPathComponent(path), modified: b.modified)
-                records[path] = Record(hash: Self.digest(data), local: b.modified, remote: b.modified)
+                records[path] = Record(hash: Self.digest(data), remote: b.modified)
                 summary.pulled += 1
             } else if let a {
                 let data = try localBytes()
                 try coordinatedWrite(data, to: remote.appendingPathComponent(path), modified: a.modified)
-                records[path] = Record(hash: Self.digest(data), local: a.modified, remote: a.modified)
+                records[path] = Record(hash: Self.digest(data), remote: a.modified)
                 summary.pushed += 1
             }
         }
@@ -258,6 +262,7 @@ enum SaveSyncFolder {
                 let result = try make(game: game, folder: folder, documents: documents, support: support).sync()
                 total.pulled += result.pulled
                 total.pushed += result.pushed
+                total.conflicts += result.conflicts
             }
             return total
         }
