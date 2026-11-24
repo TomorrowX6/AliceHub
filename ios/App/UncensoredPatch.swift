@@ -279,6 +279,7 @@ final class UncensoredPatchInstaller: ObservableObject {
         progressText = "准备下载无码补丁…"; fraction = 0
 
         let cache = directory.deletingLastPathComponent().appendingPathComponent(".uncensored_cache", isDirectory: true)
+        let activity = BackgroundActivity(title: "无码补丁") { [weak self] in self?.cancel() }
         queue.async {
             var error: Error?
             do {
@@ -296,6 +297,7 @@ final class UncensoredPatchInstaller: ObservableObject {
                     let doneMB = done / 1048576
                     let totalMB = max(1, effTotal / 1048576)
                     let pct = frac.map { Int($0 * 100) } ?? 0
+                    activity.update(fraction: frac, detail: "\(doneMB) / \(totalMB) MB")
                     DispatchQueue.main.async {
                         self.progressText = "下载中 · \(pct)%\n\(doneMB) / \(totalMB) MB · \(manifest.fileName)"
                         self.fraction = frac
@@ -336,8 +338,14 @@ final class UncensoredPatchInstaller: ObservableObject {
             self.activeTransfer = nil
             self.lock.unlock()
             let finalError = error
+            let wasPaused = finalError is CancellationError && activity.expired
+            activity.end(wasPaused ? .paused : finalError is CancellationError ? .failed("已取消")
+                         : finalError.map { .failed($0.localizedDescription) } ?? .succeeded)
             DispatchQueue.main.async {
-                if finalError is CancellationError {
+                if wasPaused {
+                    self.succeeded = false
+                    self.failure = "下载已暂停，重新安装会继续下载。"
+                } else if finalError is CancellationError {
                     self.succeeded = false
                     self.failure = nil
                     self.progressText = "已取消"

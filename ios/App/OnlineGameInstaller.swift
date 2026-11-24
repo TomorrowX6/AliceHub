@@ -252,28 +252,44 @@ final class OnlineGameDownloadModel: ObservableObject {
     @Published private(set) var succeeded = false
     @Published private(set) var failure: String?
     private var installer: OnlineGameInstaller?
+    private var paused: (game: OnlineGame, manifest: OnlineGameManifest)?
 
-    func cancel() { installer?.cancel() }
+    func cancel() { paused = nil; installer?.cancel() }
+
+    /// Continues a download the system paused while the app was in the background.
+    func resumePaused(library: GameLibrary) {
+        guard let paused, !running else { return }
+        start(paused.game, manifest: paused.manifest, library: library)
+    }
 
     func start(_ game: OnlineGame, manifest: OnlineGameManifest, library: GameLibrary) {
         guard !running && !library.importing && !library.launching else { return }
         let installer = OnlineGameInstaller()
         self.installer = installer
+        paused = nil
         activeID = game.id; running = true; succeeded = false; failure = nil
         completed = 0; total = manifest.totalBytes; progressText = "正在准备下载…"
         let games = library.gamesDirectory
+        let activity = BackgroundActivity(title: game.title) { installer.cancel() }
         DispatchQueue.global(qos: .userInitiated).async {
             var result: Error?
             do {
                 _ = try installer.install(game, manifest: manifest, in: games) { message, completed, total in
+                    activity.update(fraction: total > 0 ? Double(completed) / Double(total) : nil, detail: message)
                     DispatchQueue.main.async {
                         self.progressText = message; self.completed = completed; self.total = total
                     }
                 }
             } catch { result = error }
-            let message = result.map { $0 is CancellationError ? "已取消下载；重试时会复用已下载的文件。" : $0.localizedDescription }
+            let wasPaused = result is CancellationError && activity.expired
+            let message = result.map {
+                wasPaused ? "下载已暂停，回到前台会继续。"
+                    : $0 is CancellationError ? "已取消下载；重试时会复用已下载的文件。" : $0.localizedDescription
+            }
+            activity.end(wasPaused ? .paused : message.map { .failed($0) } ?? .succeeded)
             DispatchQueue.main.async {
                 self.running = false; self.installer = nil; self.failure = message; self.succeeded = message == nil
+                if wasPaused { self.paused = (game, manifest) }
                 library.refresh()
             }
         }

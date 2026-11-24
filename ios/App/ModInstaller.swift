@@ -18,6 +18,7 @@ final class ModInstaller: ObservableObject {
     private var running = false
     private var cancelled = false
     private var activeTasks: [ObjectIdentifier: URLSessionTask] = [:]
+    private var activity: BackgroundActivity?
 
     func cancel() {
         lock.lock()
@@ -42,6 +43,8 @@ final class ModInstaller: ObservableObject {
         lock.unlock()
     }
     private func report(_ text: String, _ fraction: Double? = nil) {
+        lock.lock(); let activity = activity; lock.unlock()
+        activity?.update(fraction: fraction, detail: text)
         DispatchQueue.main.async { self.progressText = text; self.fraction = fraction.map { min(1, max(0, $0)) } }
     }
     @discardableResult
@@ -51,13 +54,19 @@ final class ModInstaller: ObservableObject {
         running = true; cancelled = false; lock.unlock()
         let publishStart = { self.isRunning = true; self.succeeded = false; self.failure = nil; self.progressText = "正在加载…"; self.fraction = nil }
         if Thread.isMainThread { publishStart() } else { DispatchQueue.main.async(execute: publishStart) }
+        let activity = BackgroundActivity(title: "MOD 安装") { [weak self] in self?.cancel() }
+        lock.lock(); self.activity = activity; lock.unlock()
         queue.async {
             var failure: Error?
             do { try self.checkCancelled(); try work() } catch { failure = error }
             let result = failure
+            self.lock.lock(); self.activity = nil; self.lock.unlock()
+            let wasPaused = result is CancellationError && activity.expired
+            activity.end(wasPaused ? .paused : result is CancellationError ? .failed("已取消")
+                         : result.map { .failed($0.localizedDescription) } ?? .succeeded)
             DispatchQueue.main.async {
                 self.isRunning = false; self.succeeded = result == nil
-                self.failure = result is CancellationError ? nil : result?.localizedDescription
+                self.failure = wasPaused ? "安装已暂停，请重新安装。" : result is CancellationError ? nil : result?.localizedDescription
                 if result is CancellationError { self.progressText = "已取消" }
                 else if result == nil { self.fraction = 1 }
                 self.lock.lock(); self.running = false; self.activeTasks.removeAll(); self.lock.unlock()

@@ -147,7 +147,7 @@ private struct OnlineGameDetailView: View {
                 Button("取消", role: .cancel) {}
                 Button("下载") { if let manifest { download.start(game, manifest: manifest, library: library) } }
             } message: {
-                Text("请确认合法拥有此游戏。下载消耗流量，请使用 Wi-Fi 并预留空间；后台会暂停。")
+                Text("请确认合法拥有此游戏。下载消耗流量，请使用 Wi-Fi 并预留空间。")
             }
             .alert("取消当前下载？", isPresented: $confirmCancel) {
                 Button("继续下载", role: .cancel) {}

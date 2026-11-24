@@ -50,6 +50,8 @@
       </dict>
     </dict>
   </array>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array><string>io.github.alicehub.download.*</string></array>
   <key>UIRequiresFullScreen</key><true/>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UIStatusBarHidden</key><true/>

@@ -5,6 +5,7 @@ struct LauncherView: View {
     @StateObject private var library = GameLibrary()
     @StateObject private var onlineDownload = OnlineGameDownloadModel()
     @State private var onlinePresented = false
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var importPresented = false
     @State private var folderPresented = false
     @State private var archivePresented = false
@@ -63,7 +64,9 @@ struct LauncherView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 HStack(spacing: 12) {
-                    Button { onlinePresented = true } label: { Label("在线下载", systemImage: "arrow.down.circle") }
+                    if onlineInstall {
+                        Button { onlinePresented = true } label: { Label("在线下载", systemImage: "arrow.down.circle") }
+                    }
                     Button { importPresented = true } label: { Label("导入游戏", systemImage: "plus") }
                 }.buttonStyle(HubPrimaryButton())
                     .padding(.horizontal, 20).padding(.vertical, 12)
@@ -100,8 +103,8 @@ struct LauncherView: View {
             Button("好", role: .cancel) { library.error = nil }
         } message: { Text(library.error ?? "") }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { onlineDownload.cancel() }
             guard phase == .active else { return }
+            if OnlineInstall.enabled { onlineDownload.resumePaused(library: library) }
             library.refreshAsync {
 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments

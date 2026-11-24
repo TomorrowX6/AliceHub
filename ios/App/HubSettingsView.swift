@@ -7,6 +7,8 @@ struct HubSettingsView: View {
     @AppStorage(DownloadRoute.storageKey) private var downloadRoute = DownloadRoute.global.rawValue
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @AppStorage("hub.longPressCtrl") private var longPressCtrl = false
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
+    @State private var onlineDisclaimer = false
     @State private var gamepad = false
     @State private var choosingSyncFolder = false
     @State private var syncFolder = SaveSyncFolder.displayName
@@ -24,6 +26,10 @@ struct HubSettingsView: View {
         NavigationView {
             List {
                 Section("下载") {
+                    Toggle("在线安装(中文)", isOn: Binding(
+                        get: { onlineInstall },
+                        set: { enabled in if enabled { onlineDisclaimer = true } else { onlineInstall = false } }
+                    ))
                     Picker("下载线路", selection: $downloadRoute) {
                         ForEach(DownloadRoute.allCases) { Text($0.title).tag($0.rawValue) }
                     }.pickerStyle(.segmented).padding(.vertical, 8)
@@ -96,6 +102,10 @@ struct HubSettingsView: View {
                     syncNow(picking: url)
                 }
             }
+            .alert(OnlineInstall.disclaimerTitle, isPresented: $onlineDisclaimer) {
+                Button("取消", role: .cancel) {}
+                Button(OnlineInstall.disclaimerAgree) { onlineInstall = true }
+            } message: { Text(OnlineInstall.disclaimer) }
             .alert("存档同步", isPresented: Binding(get: { syncMessage != nil }, set: { if !$0 { syncMessage = nil } })) {
                 Button("好", role: .cancel) { syncMessage = nil }
             } message: { Text(syncMessage ?? "") }
@@ -145,6 +155,7 @@ struct ImportGameView: View {
     let folder: () -> Void
     let archive: () -> Void
     let online: () -> Void
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -152,10 +163,12 @@ struct ImportGameView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(spacing: 0) {
-                        Button(action: online) {
-                            HubActionLabel(title: "在线下载", symbol: "arrow.down.circle")
+                        if onlineInstall {
+                            Button(action: online) {
+                                HubActionLabel(title: "在线下载", symbol: "arrow.down.circle")
+                            }
+                            Divider()
                         }
-                        Divider()
                         Button(action: folder) {
                             HubActionLabel(title: "文件夹", symbol: "folder.badge.plus")
                         }
