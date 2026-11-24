@@ -282,15 +282,20 @@ final class OnlineGameDownloadModel: ObservableObject {
                 }
             } catch { result = error }
             let wasPaused = result is CancellationError && activity.expired
+            let autoResume = wasPaused && activity.autoResumes
             let message = result.map {
-                wasPaused ? "下载已暂停，回到前台会继续。"
+                autoResume ? "下载已暂停，回到前台会继续。"
+                    : wasPaused ? "下载已暂停；重试时会复用已下载的文件。"
                     : $0 is CancellationError ? "已取消下载；重试时会复用已下载的文件。" : $0.localizedDescription
             }
             activity.end(wasPaused ? .paused : message.map { .failed($0) } ?? .succeeded)
             DispatchQueue.main.async {
                 self.running = false; self.installer = nil; self.failure = message; self.succeeded = message == nil
-                if wasPaused { self.paused = (game, manifest) }
                 library.refresh()
+                if autoResume {
+                    self.paused = (game, manifest)
+                    if BackgroundActivity.appActive && OnlineInstall.enabled { self.resumePaused(library: library) }
+                }
             }
         }
     }

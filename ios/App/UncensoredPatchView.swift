@@ -8,6 +8,7 @@ struct UncensoredPatchView: View {
     @State private var manifest: UncensoredPatchManifest?
     @State private var loading = false
     @State private var loadError: String?
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var installed = false
     @State private var installedInfo: InstalledUncensoredInfo?
     @State private var confirmUninstall = false
@@ -35,7 +36,7 @@ struct UncensoredPatchView: View {
             List {
                 Section {
                     HubSectionHeader(title: descriptor.title, subtitle: statusSubtitle, symbol: "sparkles")
-                    if let manifest {
+                    if onlineInstall, let manifest {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(manifest.summary.isEmpty ? "独立增量无码资源包，不修改游戏本体与存档。" : manifest.summary)
                                 .font(.footnote)
@@ -59,12 +60,12 @@ struct UncensoredPatchView: View {
                         }
                         .buttonStyle(HubPrimaryButton())
                         .disabled(installer.isRunning)
-                    } else if loading {
+                    } else if onlineInstall && loading {
                         HStack(spacing: 12) {
                             ProgressView()
                             Text("正在获取无码补丁信息…").foregroundColor(.secondary)
                         }
-                    } else {
+                    } else if onlineInstall {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(loadError ?? "无法获取无码补丁信息").foregroundColor(.secondary)
                             Button("重试") { Task { await loadManifest() } }
@@ -98,8 +99,10 @@ struct UncensoredPatchView: View {
                     Button("完成") { dismiss() }.disabled(installer.isRunning)
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { Task { await loadManifest() } } label: { Image(systemName: "arrow.clockwise") }
-                        .disabled(installer.isRunning || loading)
+                    if onlineInstall {
+                        Button { Task { await loadManifest() } } label: { Image(systemName: "arrow.clockwise") }
+                            .disabled(installer.isRunning || loading)
+                    }
                 }
             }
             .overlay {
@@ -126,7 +129,7 @@ struct UncensoredPatchView: View {
         .interactiveDismissDisabled(installer.isRunning)
         .task {
             refreshState()
-            await loadManifest()
+            if onlineInstall { await loadManifest() }
         }
         .onChange(of: installer.isRunning) { running in
             if !running {

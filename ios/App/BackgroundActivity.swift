@@ -18,6 +18,7 @@ final class BackgroundActivity {
     private let lock = NSLock()
     private var ended = false
     private var didExpire = false
+    private var resumable = false
     private var fraction: Double?
     private var detail = ""
     private var lastPush = Date.distantPast
@@ -28,6 +29,16 @@ final class BackgroundActivity {
 
     /// Set once the system took the time back; the caller's cancellation then means "paused".
     var expired: Bool { lock.lock(); defer { lock.unlock() }; return didExpire }
+    /// Only the short legacy grace period ending may auto-resume; a continued task can also end because the user cancelled it.
+    var autoResumes: Bool { lock.lock(); defer { lock.unlock() }; return didExpire && resumable }
+
+    static var appActive: Bool {
+#if os(iOS)
+        UIApplication.shared.applicationState == .active
+#else
+        true
+#endif
+    }
 
     init(title: String, onExpire: @escaping () -> Void) {
         self.title = title
@@ -61,10 +72,11 @@ final class BackgroundActivity {
 #endif
     }
 
-    private func expire() {
+    private func expire(resumable: Bool) {
         lock.lock()
         guard !ended && !didExpire else { lock.unlock(); return }
         didExpire = true
+        self.resumable = resumable
         lock.unlock()
         onExpire()
     }
@@ -73,7 +85,7 @@ final class BackgroundActivity {
     private func begin() {
         legacyTask = UIApplication.shared.beginBackgroundTask(withName: title) { [weak self] in
             guard let self else { return }
-            if self.continuedTask == nil { self.expire() }
+            if self.continuedTask == nil { self.expire(resumable: true) }
             self.endLegacyTask()
         }
 #if compiler(>=6.2)
@@ -109,7 +121,7 @@ final class BackgroundActivity {
             return
         }
         task.progress.totalUnitCount = 1000
-        task.expirationHandler = { [weak self] in self?.expire() }
+        task.expirationHandler = { [weak self] in self?.expire(resumable: false) }
         continuedTask = task
         pushProgress()
     }
