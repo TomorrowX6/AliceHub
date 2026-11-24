@@ -10,9 +10,13 @@ esac
 "$root/build-native.sh" "$sdk"
 cmake -E copy_directory "$root/build/$sdk/stage/share/system3" "$root/build/system3"
 xcodegen generate --spec "$root/project.yml"
+hvf_ldflags=
+if grep -q '^#define FT_CONFIG_OPTION_HVF' "$root/build/$sdk/stage/include/freetype2/freetype/config/ftoption.h"; then
+  hvf_ldflags=-weak-lhvf
+fi
 xcodebuild -project "$root/AliceHub.xcodeproj" -scheme AliceHub \
   -configuration "$configuration" -sdk "$sdk" \
-  -derivedDataPath "$root/build/app-$sdk" CODE_SIGNING_ALLOWED=NO \
+  -derivedDataPath "$root/build/app-$sdk" CODE_SIGNING_ALLOWED=NO HVF_LDFLAGS="$hvf_ldflags" \
   CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER:-1}" \
   MARKETING_VERSION="${IOS_MARKETING_VERSION:-0.1.0}" build
 if [[ "$mode" == ipa ]]; then

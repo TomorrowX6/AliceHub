@@ -98,7 +98,7 @@ dependency(SDL2_mixer https://github.com/libsdl-org/SDL_mixer/releases/download/
   -DSDL2MIXER_VORBIS=VORBISFILE -DSDL2MIXER_VORBIS_VORBISFILE_SHARED=OFF)
 ExternalProject_Add_StepDependencies(SDL2_mixer configure SDL2 libogg libvorbis)
 ExternalProject_Add(freetype
-  GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-13-3 GIT_SHALLOW TRUE
+  GIT_REPOSITORY https://github.com/freetype/freetype.git GIT_TAG VER-2-15-0 GIT_SHALLOW TRUE
   CMAKE_ARGS ${common} -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
     -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON)
 ExternalProject_Add(xsystem4
