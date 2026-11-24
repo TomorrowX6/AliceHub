@@ -19,7 +19,7 @@ struct GamepadEditor: View {
         self.allowsPhysicalMapping = allowsPhysicalMapping
         self.onClose = onClose
         _profile = State(initialValue: store.active(game))
-        _override = State(initialValue: game.map { onClose != nil || store.saved($0) != nil } ?? false)
+        _override = State(initialValue: game.map { store.saved($0) != nil } ?? false)
     }
 
     var body: some View {

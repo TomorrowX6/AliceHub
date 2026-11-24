@@ -5,7 +5,7 @@
 
 // Implemented in event.c to update input state without exposing static globals.
 void event_inject_mouse_motion(int x, int y);
-void event_inject_mouse_button(int sdl_button, bool pressed);
+void event_inject_mouse_button(int sdl_button, bool pressed, int x, int y);
 void event_inject_mouse_wheel(int dir);
 void event_inject_rawkey(int keycode, bool pressed);
 void event_inject_joy_mask(int mask, bool pressed);

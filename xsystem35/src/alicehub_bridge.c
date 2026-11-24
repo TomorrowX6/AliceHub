@@ -497,6 +497,13 @@ static float apply_deadzone(float v, float dz) {
 	return v < 0.0f ? -s : s;
 }
 
+#ifdef ALICEHUB_IOS
+static void apply_virtual_stick_deadzone(float *x, float *y) {
+	*x = apply_deadzone(*x, gp_cfg.deadzone);
+	*y = apply_deadzone(*y, gp_cfg.deadzone);
+}
+#endif
+
 #ifdef __ANDROID__
 static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	for (int i = 0; i < nact->ain.varnum; i++) {
@@ -756,10 +763,15 @@ void alicehub_pump_events(void) {
 	}
 
 	// Virtual sticks & D-pad
-	process_directional_mode(gp_cfg.vpad_left_stick_mode, vpad_stick_x[0], vpad_stick_y[0],
-		dt_sec, gp_cfg.cursor_speed_px, vw, vh, desired_vk, &desired_joy_mask, &wheel_dir, &moved_cursor);
-	process_directional_mode(gp_cfg.vpad_right_stick_mode, vpad_stick_x[1], vpad_stick_y[1],
-		dt_sec, gp_cfg.cursor_speed_px, vw, vh, desired_vk, &desired_joy_mask, &wheel_dir, &moved_cursor);
+	for (int stick = 0; stick < 2; stick++) {
+		float x = vpad_stick_x[stick], y = vpad_stick_y[stick];
+#ifdef ALICEHUB_IOS
+		apply_virtual_stick_deadzone(&x, &y);
+#endif
+		int mode = stick == 0 ? gp_cfg.vpad_left_stick_mode : gp_cfg.vpad_right_stick_mode;
+		process_directional_mode(mode, x, y, dt_sec, gp_cfg.cursor_speed_px, vw, vh,
+			desired_vk, &desired_joy_mask, &wheel_dir, &moved_cursor);
+	}
 	float vdx = (vpad_dpad_dir[1] ? 1.0f : 0.0f) - (vpad_dpad_dir[0] ? 1.0f : 0.0f);
 	float vdy = (vpad_dpad_dir[3] ? 1.0f : 0.0f) - (vpad_dpad_dir[2] ? 1.0f : 0.0f);
 	process_directional_mode(vpad_dpad_mode, vdx, vdy,
@@ -835,7 +847,8 @@ void alicehub_pump_events(void) {
 		bool now_down = (desired_mouse_mask & bit) != 0;
 		bool prev = (bridge_mouse_mask & bit) != 0;
 		if (now_down != prev) {
-			event_inject_mouse_button(btn, now_down);
+			event_inject_mouse_button(btn, now_down, cursor_visible ? (int)(cursor_x + 0.5f) : -1,
+				cursor_visible ? (int)(cursor_y + 0.5f) : -1);
 			if (now_down) bridge_mouse_mask |= bit;
 			else bridge_mouse_mask &= ~bit;
 		}

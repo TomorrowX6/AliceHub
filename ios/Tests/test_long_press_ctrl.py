@@ -226,6 +226,13 @@ int main(void)
 	assert(!key_is_down(VK_CONTROL));
 	assert(input_take_long_touch_click_cancel());
 
+	input_set_touch_ctrl_skip(true);
+	pump(50);
+	assert(key_is_down(VK_CONTROL));
+	input_clear_virtual_inputs();
+	pump(50);
+	assert(!input_get_touch_ctrl_skip() && !key_is_down(VK_CONTROL));
+
 	// A lift queued before the deadline must win even if the engine polls late.
 	press();
 	lift(false);

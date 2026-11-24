@@ -18,6 +18,33 @@ class System35Checks(unittest.TestCase):
                             str(source), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], cwd=temporary, check=True)
 
+    def test_virtual_stick_uses_configured_deadzone(self):
+        bridge = 'xsystem35/src/alicehub_bridge.c'
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <math.h>
+static struct { float deadzone; } gp_cfg;
+''' + function(bridge, 'static float apply_deadzone(')
+    + function(bridge, 'static void apply_virtual_stick_deadzone(') + r'''
+int main(void) {
+    float x = 0.2f, y = -0.2f;
+    gp_cfg.deadzone = 0.45f;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x == 0 && y == 0);
+
+    x = 0.2f;
+    y = -0.2f;
+    gp_cfg.deadzone = 0.05f;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x > 0 && x < 0.2f && y == -x);
+
+    x = 1;
+    y = -1;
+    apply_virtual_stick_deadzone(&x, &y);
+    assert(x == 1 && y == -1);
+}
+''')
+
     def test_background_audio_and_render_flush(self):
         self.compile_and_run(r'''
 #include <assert.h>
