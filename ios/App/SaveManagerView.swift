@@ -98,10 +98,10 @@ struct SaveManagerView: View {
                 operate(onSyncQueue: !item.copy) {
                     if item.copy {
                         try manager.duplicate(item.entry, named: name, overwrite: overwrite)
-                        return "已备份为 \(name)"
+                        return hubText("已备份为 %@", name)
                     }
                     try SaveSyncFolder.rename(item.entry, named: name, using: manager)
-                    return "已重命名为 \(name)"
+                    return hubText("已重命名为 %@", name)
                 }
             }
         }
@@ -205,6 +205,7 @@ private struct SaveNameView: View {
     let manager: SaveManager
     let submit: (String, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     @State private var filename: String
     @State private var message: String?
     @State private var existing: String?
@@ -227,7 +228,7 @@ private struct SaveNameView: View {
                 if let message { Text(message).foregroundColor(.red) }
             }
             .modifier(HubListStyle())
-            .navigationTitle(item.title).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(LocalizedStringKey(item.title)).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("确定", action: confirm) }
@@ -235,7 +236,7 @@ private struct SaveNameView: View {
             .alert("覆盖备份？", isPresented: Binding(get: { existing != nil }, set: { if !$0 { existing = nil } }), presenting: existing) { name in
                 Button("覆盖", role: .destructive) { submit(name, true) }
                 Button("取消", role: .cancel) {}
-            } message: { name in Text("文件“\(name)”已存在。") }
+            } message: { name in Text(localized("文件“%@”已存在。", name)) }
         }
         .navigationViewStyle(.stack).modifier(HubAppearanceModifier())
     }

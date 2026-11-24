@@ -14,7 +14,7 @@ struct ModifierCharacters {
 
     var title: String { prefix == "sr" ? "武将属性" : "角色属性" }
 
-    func rows(in state: [String: Any]) -> [ModifierCharacter] {
+    func rows(in state: [String: Any], localize: (String) -> String = { $0 }) -> [ModifierCharacter] {
         let isSengoku = prefix == "sr"
         let characters = (state["\(prefix)Characters"] as? [[String: Any]] ?? []).compactMap { row -> ModifierCharacter? in
             guard let index = ModifierBridge.integer(row[isSengoku ? "charIdx" : "index"]), index >= 0 else { return nil }
@@ -29,7 +29,7 @@ struct ModifierCharacters {
         guard let first = characters.first else { return [] }
         var target = [isSengoku ? "charIdx" : "target": -1]
         target["factionIdx"] = first.target["factionIdx"]
-        return [ModifierCharacter(target: target, name: isSengoku ? "全体武将" : "全体角色", state: [:])] + characters
+        return [ModifierCharacter(target: target, name: localize(isSengoku ? "全体武将" : "全体角色"), state: [:])] + characters
     }
 
     func action(for character: ModifierCharacter, values: [String: Any]) -> [String: Any] {
@@ -64,8 +64,8 @@ struct ModifierGamePanel {
         titles.enumerated().map { ModifierLock(bit: 1 << $0.offset, title: $0.element) }
     }
 
-    private static func cheat(_ title: String, _ action: [String: Any]) -> ModifierCheat {
-        ModifierCheat(title: title, action: action, done: "已提交修改")
+    private static func cheat(_ title: String, _ action: [String: Any], amount: Int? = nil) -> ModifierCheat {
+        ModifierCheat(title: title, action: action, done: "已提交修改", amount: amount)
     }
 
     private static func resource(_ key: String, _ label: String, _ stateKey: String) -> ModifierField {
@@ -73,8 +73,8 @@ struct ModifierGamePanel {
     }
 
     private static func goldCheats(_ prefix: String, max: Int, add: [Int] = [10_000, 100_000]) -> [ModifierCheat] {
-        add.map { cheat("金钱 +\($0 / 10_000) 万", ["\(prefix)AddGold": $0]) }
-            + [cheat("金钱设为 \(max)", ["\(prefix)Gold": max])]
+        add.map { cheat("金钱 +%lld 万", ["\(prefix)AddGold": $0], amount: $0 / 10_000) }
+            + [cheat("金钱设为 %lld", ["\(prefix)Gold": max], amount: max)]
     }
 
     private static func boostAll(_ characters: ModifierCharacters) -> ModifierCheat {

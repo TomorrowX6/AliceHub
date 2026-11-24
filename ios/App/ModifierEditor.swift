@@ -1,7 +1,14 @@
 import SwiftUI
 
+extension ModifierCheat {
+    func label(in language: HubLanguage) -> String {
+        language.text(title, arguments: amount.map { [$0] } ?? [])
+    }
+}
+
 struct ModifierEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @HubLocalizedText private var localized
     let title: String
     let fields: [ModifierField]
     let summary: [String]
@@ -37,7 +44,7 @@ struct ModifierEditor: View {
             Section {
                 ForEach(fields) { field in
                     HStack {
-                        Text(field.title)
+                        Text(localized(field.title))
                         Spacer()
                         TextField("不修改", text: Binding(
                             get: { input[field.id, default: ""] },
@@ -46,13 +53,13 @@ struct ModifierEditor: View {
                         .keyboardType(.numbersAndPunctuation)
                         .multilineTextAlignment(.trailing)
                         .monospacedDigit()
-                        .accessibilityLabel(field.title)
+                        .accessibilityLabel(localized(field.title))
                     }
                 }
             }
             if let quickAction {
                 Section {
-                    Button(quickAction.title) {
+                    Button(quickAction.label(in: localized.language)) {
                         apply(quickAction.action)
                         dismiss()
                     }

@@ -270,7 +270,7 @@ final class OnlineGameDownloadModel: ObservableObject {
         activeID = game.id; running = true; succeeded = false; failure = nil
         completed = 0; total = manifest.totalBytes; progressText = hubText("正在准备下载…")
         let games = library.gamesDirectory
-        let activity = BackgroundActivity(title: game.title) { installer.cancel() }
+        let activity = BackgroundActivity(title: game.displayTitle(in: .current)) { installer.cancel() }
         DispatchQueue.global(qos: .userInitiated).async {
             var result: Error?
             do {

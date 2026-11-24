@@ -3,6 +3,7 @@ import SwiftUI
 struct ModifierView: View {
     let dismiss: () -> Void
     let editScale: (String, GameDisplayScale) -> Void
+    @HubLocalizedText private var localized
     private let system35: Bool
     private let system4Game: ModifierGame?
     @State private var mask: Int32 = 0
@@ -28,7 +29,7 @@ struct ModifierView: View {
         NavigationView {
             Form {
                 Section {
-                    HubSectionHeader(title: "局内修改器", subtitle: game?.name ?? hubText("当前游戏"), symbol: "slider.horizontal.3")
+                    HubSectionHeader(title: "局内修改器", subtitle: game.map { localized($0.name) } ?? localized("当前游戏"), symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
                 if let gameID = ModifierBridge.displayScaleGame {
                     Section {
@@ -49,7 +50,7 @@ struct ModifierView: View {
                 if game?.id == "dohnadohna" || game?.id == "evenicle" { liveSection }
             }
             .modifier(HubListStyle())
-            .navigationTitle(game?.name ?? hubText("修改器"))
+            .navigationTitle(game.map { localized($0.name) } ?? localized("修改器"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", action: dismiss) } }
         }
@@ -70,7 +71,7 @@ struct ModifierView: View {
     private var streamerSection: some View {
         Section {
             if let enabled = ModifierBridge.streamerToggleState(in: live, mask: mask) {
-                Button(enabled ? "主播模式 · 已开启" : "主播模式 · 已关闭") {
+                Button(localized(enabled ? "主播模式 · 已开启" : "主播模式 · 已关闭")) {
                     ModifierBridge.setStreamerMode(!enabled)
                     mask = ModifierBridge.lockMask(MODIFIER_LOCK_RANCE10)
                     live.removeValue(forKey: "streamerMode")
@@ -144,8 +145,8 @@ struct ModifierView: View {
 
     private func editorLink(_ title: String, fields: [ModifierField], requiresBattle: Bool = false, summary: [String] = [],
                             quickAction: ModifierCheat? = nil) -> some View {
-        NavigationLink(title) {
-            ModifierEditor(title, fields: fields, state: live, summary: summary,
+        NavigationLink(localized(title)) {
+            ModifierEditor(localized(title), fields: fields, state: live, summary: summary,
                            quickAction: quickAction, apply: ModifierBridge.send)
         }.disabled(live[requiresBattle ? "inBattle" : "inGame"] as? Bool != true)
     }
@@ -157,7 +158,7 @@ struct ModifierView: View {
                 NavigationLink("战斗指令") {
                     Form {
                         ForEach(ModifierGamePanel.srBattleActions) { action in
-                            Button(action.title) { ModifierBridge.send(action.action) }
+                            Button(action.label(in: localized.language)) { ModifierBridge.send(action.action) }
                                 .disabled(action.action["srResetAllActions"] == nil && live["inBattle"] as? Bool != true)
                         }
                     }
@@ -169,7 +170,7 @@ struct ModifierView: View {
             editorLink(panel.resourceTitle, fields: panel.resources, summary: resourceSummary(panel.game.id),
                        quickAction: panel.resourceAction)
             if let characters = panel.characters {
-                NavigationLink(characters.title) {
+                NavigationLink(localized(characters.title)) {
                     characterPanel(characters)
                 }.disabled(live["inGame"] as? Bool != true)
             }
@@ -180,19 +181,20 @@ struct ModifierView: View {
         func value(_ key: String) -> String { ModifierBridge.integer(live[key]).map(String.init) ?? "—" }
         switch id {
         case "rance01":
-            return ["手持芯片 \(value("handChips")) / \(value("handChipCap"))", "仓库芯片 \(value("storageChips")) / \(value("storageChipCap"))"]
+            return [localized("手持芯片 %@ / %@", value("handChips"), value("handChipCap")),
+                    localized("仓库芯片 %@ / %@", value("storageChips"), value("storageChipCap"))]
         case "rance02":
-            return ["世界药 \(value("worldDrug")) · 回城树 \(value("returnTree")) · 伤药 \(value("potion"))",
-                    "光玉 \(value("light")) · 绳 \(value("rope"))"]
+            return [localized("世界药 %@ · 回城树 %@ · 伤药 %@", value("worldDrug"), value("returnTree"), value("potion")),
+                    localized("光玉 %@ · 绳 %@", value("light"), value("rope"))]
         case "sengokurance":
-            return ["回合 \(value("turn"))"]
+            return [localized("回合 %@", value("turn"))]
         default:
             return []
         }
     }
 
     private func characterPanel(_ characters: ModifierCharacters) -> some View {
-        let rows = characters.rows(in: live)
+        let rows = characters.rows(in: live) { localized($0) }
         return Form {
             if rows.isEmpty { Text("暂无角色数据").foregroundColor(.secondary) }
             ForEach(rows) { character in
@@ -207,7 +209,7 @@ struct ModifierView: View {
             }
         }
         .modifier(HubListStyle())
-        .navigationTitle(characters.title)
+        .navigationTitle(localized(characters.title))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -220,13 +222,13 @@ struct ModifierView: View {
                                       ("def", "防御"), ("rsp", "反应"), ("d2", "D2 污染"), ("peace", "和平度"), ("love", "爱情度")]
                         ForEach(fields, id: \.0) { key, label in
                             if let value = ModifierBridge.integer(live[key]) {
-                                HStack { Text(label); Spacer(); Text(String(value)).monospacedDigit() }
+                                HStack { Text(localized(label)); Spacer(); Text(String(value)).monospacedDigit() }
                             }
                         }
                     }
                     Section {
                         ForEach(ModifierGamePanel.escalayerActions, id: \.1) { label, action in
-                            Button(label) { xsystem35_modifier_apply_action(action) }
+                            Button(localized(label)) { xsystem35_modifier_apply_action(action) }
                         }
                     }
                 }
@@ -258,7 +260,7 @@ struct ModifierView: View {
     private func lockSection(_ game: ModifierGame) -> some View {
         Section {
             ForEach(game.locks) { lock in
-                Toggle(hubText(lock.title), isOn: Binding(
+                Toggle(localized(lock.title), isOn: Binding(
                     get: { mask & lock.bit != 0 },
                     set: { on in setMask(on ? mask | lock.bit : mask & ~lock.bit) }))
             }
@@ -271,7 +273,7 @@ struct ModifierView: View {
     private func cheatSection(_ game: ModifierGame) -> some View {
         Section {
             ForEach(game.cheats) { cheat in
-                Button(hubText(cheat.title)) {
+                Button(cheat.label(in: localized.language)) {
                     ModifierBridge.send(cheat.action)
                     status = hubText(cheat.done)
                 }.disabled(ModifierGamePanel.all.contains(where: { $0.game.id == game.id })

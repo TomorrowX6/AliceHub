@@ -106,7 +106,7 @@ final class BackgroundActivity {
             self.attach(task)
         }
         guard registered else { return }
-        let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: title, subtitle: "正在准备…")
+        let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: title, subtitle: hubText("正在准备…"))
         request.strategy = .fail
         try? BGTaskScheduler.shared.submit(request)
     }
@@ -166,14 +166,14 @@ final class BackgroundActivity {
         let content = UNMutableNotificationContent()
         switch outcome {
         case .succeeded:
-            content.title = "下载完成"
+            content.title = hubText("下载完成")
             content.body = title
         case .failed(let message):
-            content.title = "下载失败"
+            content.title = hubText("下载失败")
             content.body = title + "\n" + message
         case .paused:
-            content.title = "下载已暂停"
-            content.body = title + "\n回到 AliceHub 继续下载"
+            content.title = hubText("下载已暂停")
+            content.body = hubText("%@\n回到 AliceHub 继续下载", title)
         }
         content.sound = .default
         let request = UNNotificationRequest(identifier: Self.taskPrefix + "result", content: content, trigger: nil)

@@ -7,6 +7,11 @@ func alicehub_ios_localize_modifier_button(_ opaqueButton: UnsafeMutableRawPoint
     Unmanaged<UIButton>.fromOpaque(opaqueButton).takeUnretainedValue().accessibilityLabel = hubText("修改器")
 }
 
+@_cdecl("alicehub_ios_copy_localized_text")
+func alicehub_ios_copy_localized_text(_ key: UnsafePointer<CChar>) -> UnsafeMutableRawPointer {
+    Unmanaged.passRetained(hubText(String(cString: key)) as NSString).toOpaque()
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 

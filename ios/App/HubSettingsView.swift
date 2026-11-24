@@ -123,10 +123,10 @@ struct HubSettingsView: View {
                     syncNow(picking: url)
                 }
             }
-            .alert(OnlineInstall.disclaimerTitle, isPresented: $onlineDisclaimer) {
+            .alert("免责声明与使用条款", isPresented: $onlineDisclaimer) {
                 Button("取消", role: .cancel) {}
-                Button(OnlineInstall.disclaimerAgree) { onlineInstall = true }
-            } message: { Text(OnlineInstall.disclaimer) }
+                Button("已阅读并同意") { onlineInstall = true }
+            } message: { Text(LocalizedStringKey(OnlineInstall.disclaimer)) }
             .alert("存档同步", isPresented: Binding(get: { syncMessage != nil }, set: { if !$0 { syncMessage = nil } })) {
                 Button("好", role: .cancel) { syncMessage = nil }
             } message: { Text(syncMessage ?? "") }

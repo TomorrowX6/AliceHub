@@ -46,6 +46,7 @@ struct GlobalSaveEditorView: View {
     ]
 
     let editor: GlobalSaveEditor
+    @HubLocalizedText private var localized
     @State private var fields: [Field] = []
     @State private var original: [String: String] = [:]
     @State private var values: [String: String] = [:]
@@ -53,26 +54,26 @@ struct GlobalSaveEditorView: View {
     @State private var unlockBackup = false
     @State private var action: Action?
     @State private var message: String?
-    @State private var notice = "暂无全局存档"
+    @State private var loadError: String?
 
     var body: some View {
         Form {
             Section {
-                Button(Action.unlock.rawValue) { action = .unlock }
-                if !fields.isEmpty { Button(Action.maximize.rawValue) { action = .maximize } }
-                if editBackup { Button(Action.restoreEdit.rawValue) { action = .restoreEdit } }
-                if unlockBackup { Button(Action.restoreUnlock.rawValue) { action = .restoreUnlock } }
+                Button(localized(Action.unlock.rawValue)) { action = .unlock }
+                if !fields.isEmpty { Button(localized(Action.maximize.rawValue)) { action = .maximize } }
+                if editBackup { Button(localized(Action.restoreEdit.rawValue)) { action = .restoreEdit } }
+                if unlockBackup { Button(localized(Action.restoreUnlock.rawValue)) { action = .restoreUnlock } }
                 if let message { Text(message) }
             }.listRowBackground(HubTheme.surface)
             if fields.isEmpty {
-                Text(notice).listRowBackground(HubTheme.surface)
+                Text(loadError ?? localized("暂无全局存档")).listRowBackground(HubTheme.surface)
             } else {
                 Section {
                     ForEach(fields) { field in
                         HStack {
-                            Text(field.title)
+                            Text(localized(field.title))
                             Spacer()
-                            TextField(field.title, text: Binding(get: { values[field.id] ?? "" }, set: { values[field.id] = $0 }))
+                            TextField(localized(field.title), text: Binding(get: { values[field.id] ?? "" }, set: { values[field.id] = $0 }))
                                 .labelsHidden().keyboardType(.numbersAndPunctuation)
                                 .multilineTextAlignment(.trailing).frame(maxWidth: 120)
                         }
@@ -87,11 +88,11 @@ struct GlobalSaveEditorView: View {
             Button("保存", action: save).disabled(values == original)
         } }
         .onAppear(perform: load)
-        .alert(action?.rawValue ?? "", isPresented: Binding(get: { action != nil }, set: { if !$0 { action = nil } }), presenting: action) { item in
+        .alert(action.map { localized($0.rawValue) } ?? "", isPresented: Binding(get: { action != nil }, set: { if !$0 { action = nil } }), presenting: action) { item in
             Button("确定") { perform(item) }
             Button("取消", role: .cancel) {}
         } message: { item in
-            Text(item == .unlock ? "将替换全局解锁进度，不影响进度存档。" : "此操作仅修改全局存档。")
+            Text(localized(item == .unlock ? "将替换全局解锁进度，不影响进度存档。" : "此操作仅修改全局存档。"))
         }
     }
 
@@ -99,7 +100,7 @@ struct GlobalSaveEditorView: View {
         fields = []
         original = [:]
         values = [:]
-        notice = "暂无全局存档"
+        loadError = nil
         do {
             editBackup = try editor.hasBackup(.edit)
             unlockBackup = try editor.hasBackup(.unlock)
@@ -112,7 +113,7 @@ struct GlobalSaveEditorView: View {
                 (field.id, field.batch ? "" : (info[field.id] as? NSNumber)?.stringValue ?? "0")
             })
             values = original
-        } catch { notice = error.localizedDescription }
+        } catch { loadError = error.localizedDescription }
     }
 
     private func save() {
@@ -126,7 +127,7 @@ struct GlobalSaveEditorView: View {
                       (!field.batch || number >= 0), (!field.flag || number == 0 || number == 1) {
                 changes[field.id] = Double(number)
             } else {
-                message = "\(field.title)数值无效。"
+                message = localized("%@数值无效。", localized(field.title))
                 return
             }
         }
@@ -158,7 +159,7 @@ struct GlobalSaveEditorView: View {
         do {
             try operation()
             load()
-            message = success
+            message = localized(success)
         } catch {
             load()
             message = error.localizedDescription

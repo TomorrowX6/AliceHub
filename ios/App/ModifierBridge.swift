@@ -10,7 +10,9 @@ struct ModifierCheat: Identifiable {
     let title: String
     let action: [String: Any]
     let done: String
-    var id: String { title }
+    var amount: Int? = nil
+    var id: String { amount.map { title + String($0) } ?? title }
+
 }
 
 struct ModifierGame {

@@ -22,6 +22,12 @@ NON_UI = {
         r'regularNamesLower\.contains\(|lastPathComponent\.lowercased\(\) ==|let ainNames =|'
         r'replacingOccurrences\(of: "・")'
     ),
+    "LocalGameImport.swift": r'^\s*"(?:backup|无码补丁备份|dll)"|relative\.allSatisfy\(',
+    "LocalImportCleanup.swift": (
+        r"\b(?:has|matches|titleHas|inPaths)\(|\.contains\((?:leaf|repaired\.last)|"
+        r'\bleaf\s*(?:==|\.hasSuffix\()|repaired\.contains\(|\.hasSuffix\("汉化原版"\)|'
+        r'^\s*(?:let dirs = \[|"(?:无码补丁备份|setup\.bmp|超昂閃忍ハルカdm\.dat|补丁)")'
+    ),
     "ModCatalog.swift": (
         r"\.contains\(|\.hasPrefix\(|\.hasSuffix\(|\.modReplacing\(|\.modMatch\(|"
         r"replacingOccurrences\(|\b(?:evenicle2Aliases|prefix|word|suffix|patch|full|modGroupRibuluo|modGroupBfyy)\b\s*(?:=|in)\s*\[?|"
@@ -86,6 +92,11 @@ class UILocalizationChecks(unittest.TestCase):
         self.assertTrue(list(unlocalized_literals(path, 'message = "已安装"', {"已安装"})))
         self.assertTrue(list(unlocalized_literals(path, 'Text(verbatim: "已安装")', {"已安装"})))
         self.assertFalse(list(unlocalized_literals(path, 'message = hubText("已安装")', {"已安装"})))
+
+    def test_import_filenames_are_not_ui_copy(self):
+        path = Path("LocalImportCleanup.swift")
+        self.assertFalse(list(unlocalized_literals(path, 'return inPaths(["备份文件"])', set())))
+        self.assertTrue(list(unlocalized_literals(path, 'Text("新文案")', set())))
 
 
 if __name__ == "__main__":

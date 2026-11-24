@@ -54,7 +54,7 @@ final class ModInstaller: ObservableObject {
         running = true; cancelled = false; lock.unlock()
         let publishStart = { self.isRunning = true; self.succeeded = false; self.failure = nil; self.progressText = hubText("正在加载…"); self.fraction = nil }
         if Thread.isMainThread { publishStart() } else { DispatchQueue.main.async(execute: publishStart) }
-        let activity = BackgroundActivity(title: "MOD 安装") { [weak self] in self?.cancel() }
+        let activity = BackgroundActivity(title: hubText("MOD 安装")) { [weak self] in self?.cancel() }
         lock.lock(); self.activity = activity; lock.unlock()
         queue.async {
             var failure: Error?

@@ -7,6 +7,12 @@
 
 void savedata_flush_on_background(void);
 void alicehub_ios_localize_modifier_button(void *button);
+void *alicehub_ios_copy_localized_text(const char *key);
+
+static NSString *hub_text(const char *key)
+{
+    return CFBridgingRelease(alicehub_ios_copy_localized_text(key));
+}
 
 static void (*gamepad_attach)(UIWindow *);
 static void (*gamepad_command)(int);
@@ -82,11 +88,11 @@ void alicehub_ios_request_quit(void)
     if (!host.view.window || host.presentedViewController)
         return;
     UIAlertController *dialog = [UIAlertController
-        alertControllerWithTitle:NSLocalizedString(@"退出游戏", nil)
+        alertControllerWithTitle:hub_text("退出游戏")
         message:nil preferredStyle:UIAlertControllerStyleAlert];
-    [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"取消", nil)
+    [dialog addAction:[UIAlertAction actionWithTitle:hub_text("取消")
         style:UIAlertActionStyleCancel handler:nil]];
-    [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"退出", nil)
+    [dialog addAction:[UIAlertAction actionWithTitle:hub_text("退出")
         style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             SDL_Event event = {.type = SDL_QUIT};
             SDL_PushEvent(&event);
@@ -101,7 +107,7 @@ static void add_quit_button(UIView *view)
     quit.tintColor = UIColor.whiteColor;
     quit.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
     quit.layer.cornerRadius = 20;
-    quit.accessibilityLabel = NSLocalizedString(@"退出游戏", nil);
+    quit.accessibilityLabel = hub_text("退出游戏");
     [quit addAction:[UIAction actionWithHandler:^(UIAction *action) {
         SDL_Event event = {.type = SDL_QUIT};
         SDL_PushEvent(&event);

@@ -24,7 +24,7 @@ struct GameDisplayScaleRows: View {
         ForEach(GameDisplayScale.allCases) { scale in
             Button { select(scale) } label: {
                 HStack {
-                    Label(scale.title, systemImage: scale.symbol)
+                    Label(LocalizedStringKey(scale.title), systemImage: scale.symbol)
                     Spacer()
                     Text("\(percent(scale))%").monospacedDigit()
                     if openPreview != nil {
@@ -110,7 +110,7 @@ struct GameDisplayScaleEditor: View {
             .frame(maxWidth: .infinity)
         }
         .background(HubTheme.background.ignoresSafeArea())
-        .navigationTitle(scale.title)
+        .navigationTitle(LocalizedStringKey(scale.title))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { cancelButton }
@@ -120,7 +120,7 @@ struct GameDisplayScaleEditor: View {
 
     @ViewBuilder private var controls: some View {
         HStack {
-            if live { Text(scale.title).font(.headline) }
+            if live { Text(LocalizedStringKey(scale.title)).font(.headline) }
             Text("\(percent)%").font(.title2.bold()).monospacedDigit()
             Spacer()
             Button("−\(scale.step)%") { select(percent - scale.step) }
@@ -131,7 +131,7 @@ struct GameDisplayScaleEditor: View {
         Slider(value: Binding(get: { Double(percent) }, set: { percent = Int($0) }),
                in: Double(scale.range.lowerBound)...Double(scale.range.upperBound), step: 1,
                onEditingChanged: { editing in if !editing { preview(percent) } },
-               label: { Text(scale.title) })
+               label: { Text(LocalizedStringKey(scale.title)) })
         .accessibilityValue(Text("\(percent)%"))
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3)) {
             ForEach(scale.presets, id: \.self) { preset in

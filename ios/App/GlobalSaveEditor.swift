@@ -13,10 +13,10 @@ struct GlobalSaveEditor {
         var errorDescription: String? {
             switch self {
             case .unsafePath: return "存档路径不安全。"
-            case .invalidSave: return "无法读取全局存档。"
-            case .invalidBackup: return "无法读取备份。"
-            case .missingTemplate: return "无法读取全解锁存档。"
-            case .write: return "无法写入全局存档。"
+            case .invalidSave: return hubText("无法读取全局存档。")
+            case .invalidBackup: return hubText("无法读取备份。")
+            case .missingTemplate: return hubText("无法读取全解锁存档。")
+            case .write: return hubText("无法写入全局存档。")
             }
         }
     }

@@ -279,7 +279,7 @@ final class UncensoredPatchInstaller: ObservableObject {
         progressText = hubText("准备下载无码补丁…"); fraction = 0
 
         let cache = directory.deletingLastPathComponent().appendingPathComponent(".uncensored_cache", isDirectory: true)
-        let activity = BackgroundActivity(title: "无码补丁") { [weak self] in self?.cancel() }
+        let activity = BackgroundActivity(title: hubText("无码补丁")) { [weak self] in self?.cancel() }
         queue.async {
             var error: Error?
             do {
@@ -344,7 +344,7 @@ final class UncensoredPatchInstaller: ObservableObject {
             DispatchQueue.main.async {
                 if wasPaused {
                     self.succeeded = false
-                    self.failure = "下载已暂停，重新安装会继续下载。"
+                    self.failure = hubText("下载已暂停，重新安装会继续下载。")
                 } else if finalError is CancellationError {
                     self.succeeded = false
                     self.failure = nil
