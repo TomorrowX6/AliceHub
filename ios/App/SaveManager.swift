@@ -100,8 +100,8 @@ final class SaveManager {
     private func install(_ entry: SaveZip.Entry, path: String, root: URL) throws {
         let target = root.appendingPathComponent(path)
         // resolvingSymlinksInPath only strips "/private" from paths that exist, so
-        // compare the nearest existing ancestor rather than the file to be written.
-        var existing = target.deletingLastPathComponent()
+        // compare the target if it exists, otherwise its nearest existing ancestor.
+        var existing = target
         while !files.fileExists(atPath: existing.path) { existing.deleteLastPathComponent() }
         let base = root.resolvingSymlinksInPath().standardizedFileURL.path
         let resolved = existing.resolvingSymlinksInPath().standardizedFileURL.path
