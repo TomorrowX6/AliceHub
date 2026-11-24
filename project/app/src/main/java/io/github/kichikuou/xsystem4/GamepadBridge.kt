@@ -566,6 +566,26 @@ object GamepadBridge {
     fun loadGlobalProfile(context: Context): GamepadProfile =
         readProfileFile(defaultProfileFile(context)) ?: GamepadProfile()
 
+    private fun disablePerGameOverrideFile(context: Context, key: String) {
+        val legacy = legacyGameProfileKey(key)
+        val hasLegacyFile = legacy != null && synchronized(profileIoLock) {
+            gameProfileFile(context, legacy).isFile
+        }
+        if (hasLegacyFile) {
+            // Preserve the shared legacy file for any other localized directory while writing
+            // an explicit no-override record at this key so readGameProfileWithLegacyFallback
+            // stops falling back and loadProfile uses the global profile.
+            writeProfileFile(
+                gameProfileFile(context, key),
+                GamepadProfile(seq = System.currentTimeMillis(), perGameOverride = false)
+            )
+        } else {
+            synchronized(profileIoLock) {
+                gameProfileFile(context, key).delete()
+            }
+        }
+    }
+
     fun saveProfile(
         context: Context,
         profile: GamepadProfile,
@@ -582,9 +602,7 @@ object GamepadBridge {
             writeProfileFile(gameProfileFile(context, key), stamped)
         } else {
             if (key != null) {
-                synchronized(profileIoLock) {
-                    gameProfileFile(context, key).delete()
-                }
+                disablePerGameOverrideFile(context, key)
             }
             writeProfileFile(defaultProfileFile(context), stamped.copy(perGameOverride = false))
         }
@@ -593,9 +611,7 @@ object GamepadBridge {
 
     fun clearPerGameOverride(context: Context, profileKey: String?) {
         val key = normalizeGameProfileKey(profileKey) ?: return
-        synchronized(profileIoLock) {
-            gameProfileFile(context, key).delete()
-        }
+        disablePerGameOverrideFile(context, key)
     }
 
     fun syncProfileToNative(profile: GamepadProfile) {

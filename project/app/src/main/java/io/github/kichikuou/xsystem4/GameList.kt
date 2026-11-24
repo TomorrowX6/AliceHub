@@ -973,7 +973,11 @@ class GameList(activity: Activity) {
 
     fun allExistingDirectoryNames(): Set<String> {
         val names = HashSet<String>()
-        for (root in storageDirs) {
+        val roots = LinkedHashSet<File>(storageDirs)
+        for ((mountedRoot, _) in discoverMountedStorageDirs(knownRoots = emptySet(), createDummyIfEmpty = false)) {
+            roots.add(mountedRoot)
+        }
+        for (root in roots) {
             root.listFiles()?.forEach { child ->
                 if (!child.name.startsWith(".")) {
                     names.add(child.name)
