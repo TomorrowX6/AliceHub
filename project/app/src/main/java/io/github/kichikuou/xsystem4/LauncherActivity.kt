@@ -224,7 +224,17 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_DALK && GameCatalog.isDalkAlias(q)) ||
             (desc.id == GameCatalog.ID_NINGENGARI && GameCatalog.isNingenGariAlias(q)) ||
             (desc.id == GameCatalog.ID_PASCHACPP && GameCatalog.isPaschaCppAlias(q)) ||
-            (desc.id == GameCatalog.ID_PASCHA3 && GameCatalog.isPascha3Alias(q))
+            (desc.id == GameCatalog.ID_PASCHA3 && GameCatalog.isPascha3Alias(q)) ||
+            (desc.id == GameCatalog.ID_MAMATOTO && GameCatalog.isMamatotoAlias(q)) ||
+            (desc.id == GameCatalog.ID_ONLYYOURECROSS && GameCatalog.isOnlyYouReCrossAlias(q)) ||
+            (desc.id == GameCatalog.ID_MAMORIGAMI && GameCatalog.isMamorigamiAlias(q)) ||
+            (desc.id == GameCatalog.ID_AMBIVALENZ && GameCatalog.isAmbivalenzAlias(q)) ||
+            (desc.id == GameCatalog.ID_FUNNYBEE && GameCatalog.isFunnyBeeAlias(q)) ||
+            (desc.id == GameCatalog.ID_TOUSHIN2SP && GameCatalog.isToushin2SpAlias(q)) ||
+            (desc.id == GameCatalog.ID_MUGENHOUYOU && GameCatalog.isMugenHouyouAlias(q)) ||
+            (desc.id == GameCatalog.ID_OTOMESENKI && GameCatalog.isOtomeSenkiAlias(q)) ||
+            (desc.id == GameCatalog.ID_GAKUENHYOURYUU && GameCatalog.isGakuenHyouryuuAlias(q)) ||
+            (desc.id == GameCatalog.ID_MAIDNOSUSUME && GameCatalog.isMaidNoSusumeAlias(q))
         ) {
             return true
         }

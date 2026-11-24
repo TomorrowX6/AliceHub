@@ -1063,6 +1063,87 @@
         "released": "2013-02-15",
         "title": "Pastel Chime 3 Bind Seeker",
         "votecount": 123
+      },
+      {
+        "alttitle": "ママトト ～a record of war～",
+        "average": 67.6,
+        "id": "v1860",
+        "rating": 67.6,
+        "released": "1999-07-01",
+        "title": "Mamatoto ~a record of war~",
+        "votecount": 178
+      },
+      {
+        "alttitle": "Only you -リ・クルス-",
+        "average": 74.7,
+        "id": "v2000",
+        "rating": 73.5,
+        "released": "2001-07-26",
+        "title": "Only You -Re Cross-",
+        "votecount": 43
+      },
+      {
+        "alttitle": "守り神様",
+        "average": 69.1,
+        "id": "v4746",
+        "rating": 66.1,
+        "released": "1999-03-25",
+        "title": "Mamorigami-sama",
+        "votecount": 11
+      },
+      {
+        "alttitle": "AmbivalenZ -二律背反-",
+        "average": 68.1,
+        "id": "v2048",
+        "rating": 66.5,
+        "released": "1994-04-28",
+        "title": "AmbivalenZ -Niritsu Haihan-",
+        "votecount": 20
+      },
+      {
+        "alttitle": "宇宙快盗ファニーBee",
+        "average": 74.6,
+        "id": "v1723",
+        "rating": 70.5,
+        "released": "1994-08-10",
+        "title": "Uchuu Kaitou Funny Bee",
+        "votecount": 14
+      },
+      {
+        "alttitle": "闘神都市II そして、それから・・・",
+        "average": 73.6,
+        "id": "v6916",
+        "rating": 70.4,
+        "released": "1995-12-08",
+        "title": "Toushin Toshi II - Soshite, Sorekara...",
+        "votecount": 17
+      },
+      {
+        "alttitle": "夢幻泡影",
+        "average": 57.1,
+        "id": "v5933",
+        "rating": 58.2,
+        "released": "1995-07-07",
+        "title": "Mugen Houyou",
+        "votecount": 15
+      },
+      {
+        "alttitle": "学園漂流戦記",
+        "average": 68.9,
+        "id": "v20393",
+        "rating": 65.6,
+        "released": "1999-07-01",
+        "title": "Gakuen Hyouryuu Senki",
+        "votecount": 9
+      },
+      {
+        "alttitle": "メイドのススメ",
+        "average": null,
+        "id": "v20392",
+        "rating": null,
+        "released": "1999-07-01",
+        "title": "Maid no Susume",
+        "votecount": 0
       }
     ]
   },

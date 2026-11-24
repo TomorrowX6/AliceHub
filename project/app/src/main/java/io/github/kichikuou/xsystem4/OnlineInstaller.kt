@@ -380,6 +380,16 @@ object OnlineInstaller {
     const val NINGENGARI_CDN_URL = "https://alicehub.000.moe/ningengari"
     const val PASCHACPP_CDN_URL = "https://alicehub.000.moe/paschacpp"
     const val PASCHA3_CDN_URL = "https://alicehub.000.moe/pascha3"
+    const val MAMATOTO_CDN_URL = "https://alicehub.000.moe/mamatoto"
+    const val ONLYYOURECROSS_CDN_URL = "https://alicehub.000.moe/onlyyourecross"
+    const val MAMORIGAMI_CDN_URL = "https://alicehub.000.moe/mamorigami"
+    const val AMBIVALENZ_CDN_URL = "https://alicehub.000.moe/ambivalenz"
+    const val FUNNYBEE_CDN_URL = "https://alicehub.000.moe/funnybee"
+    const val TOUSHIN2SP_CDN_URL = "https://alicehub.000.moe/toushin2sp"
+    const val MUGENHOUYOU_CDN_URL = "https://alicehub.000.moe/mugenhouyou"
+    const val OTOMESENKI_CDN_URL = "https://alicehub.000.moe/otomesenki"
+    const val GAKUENHYOURYUU_CDN_URL = "https://alicehub.000.moe/gakuenhyouryuu"
+    const val MAIDNOSUSUME_CDN_URL = "https://alicehub.000.moe/maidnosusume"
     const val DEFAULT_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
@@ -1782,6 +1792,16 @@ object OnlineInstaller {
             classifiedStagedId == GameCatalog.ID_NINGENGARI -> sanitizedManifestBase.ifEmpty { "NingenGari" }
             classifiedStagedId == GameCatalog.ID_PASCHACPP -> sanitizedManifestBase.ifEmpty { "PaschaCpp" }
             classifiedStagedId == GameCatalog.ID_PASCHA3 -> sanitizedManifestBase.ifEmpty { "Pascha3" }
+            classifiedStagedId == GameCatalog.ID_MAMATOTO -> sanitizedManifestBase.ifEmpty { "Mamatoto" }
+            classifiedStagedId == GameCatalog.ID_ONLYYOURECROSS -> sanitizedManifestBase.ifEmpty { "OnlyYouReCross" }
+            classifiedStagedId == GameCatalog.ID_MAMORIGAMI -> sanitizedManifestBase.ifEmpty { "Mamorigami" }
+            classifiedStagedId == GameCatalog.ID_AMBIVALENZ -> sanitizedManifestBase.ifEmpty { "AmbivalenZ" }
+            classifiedStagedId == GameCatalog.ID_FUNNYBEE -> sanitizedManifestBase.ifEmpty { "FunnyBee" }
+            classifiedStagedId == GameCatalog.ID_TOUSHIN2SP -> sanitizedManifestBase.ifEmpty { "Toushin2Sp" }
+            classifiedStagedId == GameCatalog.ID_MUGENHOUYOU -> sanitizedManifestBase.ifEmpty { "MugenHouyou" }
+            classifiedStagedId == GameCatalog.ID_OTOMESENKI -> sanitizedManifestBase.ifEmpty { "OtomeSenki" }
+            classifiedStagedId == GameCatalog.ID_GAKUENHYOURYUU -> sanitizedManifestBase.ifEmpty { "GakuenHyouryuu" }
+            classifiedStagedId == GameCatalog.ID_MAIDNOSUSUME -> sanitizedManifestBase.ifEmpty { "MaidNoSusume" }
             sanitizedManifestBase.isNotEmpty() &&
                 (isSys3x || sanitizedAinBase.isEmpty() || sanitizedAinBase.any { it.code >= 0x80 }) ->
                 sanitizedManifestBase
@@ -2196,7 +2216,13 @@ object OnlineInstaller {
                         lower.contains("斗神都市3") ||
                         lower.contains("斗神都市３") ||
                         lower.contains("斗神都市iii")
-                    GameCatalog.ID_TOUSHIN2 -> lower.contains("toushin2") ||
+                    GameCatalog.ID_TOUSHIN2SP -> lower.contains("toushin2sp") ||
+                        lower.contains("toushin2_sp") ||
+                        lower.contains("soshite") ||
+                        lower.contains("そして") ||
+                        lower.contains("然后，从那以后") ||
+                        lower.contains("然后从那以后")
+                    GameCatalog.ID_TOUSHIN2 -> (lower.contains("toushin2") ||
                         lower.contains("toushin_2") ||
                         lower.contains("toushintoshi2") ||
                         lower.contains("闘神都市2") ||
@@ -2204,7 +2230,11 @@ object OnlineInstaller {
                         lower.contains("闘神都市ii") ||
                         lower.contains("斗神都市2") ||
                         lower.contains("斗神都市２") ||
-                        lower.contains("斗神都市ii")
+                        lower.contains("斗神都市ii")) &&
+                        !lower.contains("sp") &&
+                        !lower.contains("soshite") &&
+                        !lower.contains("そして") &&
+                        !lower.contains("然后")
                     GameCatalog.ID_TOUSHIN1 -> (lower.contains("toushin1") ||
                         lower.contains("toushin_1") ||
                         lower.contains("toushintoshi") ||
@@ -2219,6 +2249,10 @@ object OnlineInstaller {
                     GameCatalog.ID_DIABOLIQUE -> lower.contains("diabolique") ||
                         lower.contains("デアボリカ") ||
                         lower.contains("魔鬼恋曲")
+                    GameCatalog.ID_GAKUENHYOURYUU -> lower.contains("gakuenhyouryuu") ||
+                        lower.contains("gakuen_hyouryuu") ||
+                        lower.contains("学園漂流") ||
+                        lower.contains("学园漂流")
                     GameCatalog.ID_GAKUENKINGEX -> lower.contains("gakuenkingex") ||
                         lower.contains("gakuenking_ex") ||
                         lower.contains("学園king番外") ||
@@ -2244,12 +2278,44 @@ object OnlineInstaller {
                         lower.contains("ikusa_miko") ||
                         lower.contains("戦巫女") ||
                         lower.contains("战巫女")
+                    GameCatalog.ID_ONLYYOURECROSS -> lower.contains("onlyyourecross") ||
+                        lower.contains("onlyyou_recross") ||
+                        lower.contains("recross") ||
+                        lower.contains("re-cross") ||
+                        lower.contains("リ・クルス") ||
+                        lower.contains("リクルス")
                     GameCatalog.ID_ONLYYOU -> (lower.contains("onlyyou") ||
                         lower.contains("only_you") ||
                         lower.contains("世纪末的朱丽叶") ||
                         lower.contains("世紀末のジュリエット")) &&
                         !lower.contains("recross") &&
+                        !lower.contains("re-cross") &&
+                        !lower.contains("リ・クルス") &&
                         !lower.contains("リクルス")
+                    GameCatalog.ID_MAMATOTO -> lower.contains("mamatoto") ||
+                        lower.contains("ママトト") ||
+                        lower.contains("妈妈托托")
+                    GameCatalog.ID_MAMORIGAMI -> lower.contains("mamorigami") ||
+                        lower.contains("守り神様") ||
+                        lower.contains("守护神大人")
+                    GameCatalog.ID_AMBIVALENZ -> lower.contains("ambivalenz") ||
+                        lower.contains("二律背反")
+                    GameCatalog.ID_FUNNYBEE -> lower.contains("funnybee") ||
+                        lower.contains("funny_bee") ||
+                        lower.contains("ファニーbee") ||
+                        lower.contains("宇宙快盗")
+                    GameCatalog.ID_MUGENHOUYOU -> lower.contains("mugenhouyou") ||
+                        lower.contains("mugen_houyou") ||
+                        lower.contains("夢幻泡影") ||
+                        lower.contains("梦幻泡影")
+                    GameCatalog.ID_OTOMESENKI -> lower.contains("otomesenki") ||
+                        lower.contains("otome_senki") ||
+                        lower.contains("乙女戦記") ||
+                        lower.contains("乙女战记")
+                    GameCatalog.ID_MAIDNOSUSUME -> lower.contains("maidnosusume") ||
+                        lower.contains("maid_no_susume") ||
+                        lower.contains("メイドのススメ") ||
+                        lower.contains("女仆的推荐")
                     GameCatalog.ID_PERSIOM -> lower.contains("persiom")
                     GameCatalog.ID_SEEINAO -> lower.contains("seeinao") ||
                         lower.contains("seein_ao") ||

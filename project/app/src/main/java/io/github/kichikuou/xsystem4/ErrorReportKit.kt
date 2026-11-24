@@ -1373,6 +1373,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_sdpsmaria_title)
             GameCatalog.isToushin3Alias(lower) ->
                 context.getString(R.string.game_toushin3_title)
+            GameCatalog.isToushin2SpAlias(lower) ->
+                context.getString(R.string.game_toushin2sp_title)
             GameCatalog.isToushin2Alias(lower) ->
                 context.getString(R.string.game_toushin2_title)
             GameCatalog.isToushin1Alias(lower) ->
@@ -1399,6 +1401,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_darcrows_title)
             GameCatalog.isIkusaMikoAlias(lower) ->
                 context.getString(R.string.game_ikusamiko_title)
+            GameCatalog.isOnlyYouReCrossAlias(lower) ->
+                context.getString(R.string.game_onlyyourecross_title)
             GameCatalog.isOnlyYouAlias(lower) ->
                 context.getString(R.string.game_onlyyou_title)
             GameCatalog.isSanbikiAlias(lower) ->
@@ -1435,6 +1439,22 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_dalk_title)
             GameCatalog.isNingenGariAlias(lower) ->
                 context.getString(R.string.game_ningengari_title)
+            GameCatalog.isMamatotoAlias(lower) ->
+                context.getString(R.string.game_mamatoto_title)
+            GameCatalog.isMamorigamiAlias(lower) ->
+                context.getString(R.string.game_mamorigami_title)
+            GameCatalog.isAmbivalenzAlias(lower) ->
+                context.getString(R.string.game_ambivalenz_title)
+            GameCatalog.isFunnyBeeAlias(lower) ->
+                context.getString(R.string.game_funnybee_title)
+            GameCatalog.isMugenHouyouAlias(lower) ->
+                context.getString(R.string.game_mugenhouyou_title)
+            GameCatalog.isOtomeSenkiAlias(lower) ->
+                context.getString(R.string.game_otomesenki_title)
+            GameCatalog.isGakuenHyouryuuAlias(lower) ->
+                context.getString(R.string.game_gakuenhyouryuu_title)
+            GameCatalog.isMaidNoSusumeAlias(lower) ->
+                context.getString(R.string.game_maidnosusume_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

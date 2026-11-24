@@ -115,15 +115,25 @@ final class GameLibrary: ObservableObject {
         ("dpsall", ["dpsall", "d.p.s.全部", "dps全部", "d.p.s.zenbu", "dpszenbu"]),
         ("sdpsmaria", ["sdpsmaria", "superdpsmaria", "superdps", "sdps", "玛利亚和坎潘", "瑪利亞和坎潘", "マリアとカンパン"]),
         ("toushin3", ["toushin3", "toushintoshi3", "toushintoshiiii", "闘神都市3", "闘神都市３", "闘神都市iii", "斗神都市3", "斗神都市３", "斗神都市iii", "鬥神都市3"]),
+        ("toushin2sp", ["toushin2sp", "soshitesorekara", "そしてそれから", "然后从那以后", "然後從那以後"]),
         ("toushin2", ["toushin2", "toushintoshi2", "toushintoshiii", "tt2sa", "闘神都市2", "闘神都市２", "闘神都市ii", "斗神都市2", "斗神都市２", "斗神都市ii", "鬥神都市2"]),
         ("toushin1", ["toushin1", "toushinsa", "toushintoshi", "闘神都市", "斗神都市", "鬥神都市"]),
         ("diabolique", ["diabolique", "diabosa", "デアボリカ", "魔鬼恋曲"]),
+        ("gakuenhyouryuu", ["gakuenhyouryuu", "学園漂流", "学园漂流", "學園漂流"]),
         ("gakuenkingex", ["gakuenkingex", "gakuenkingbangai", "学園番外編", "学園king番外", "学园king番外"]),
         ("gakuenking", ["gakuenking", "学園king", "学园king", "gakuen.com"]),
         ("oudouyuusha", ["oudouyuusha", "王道勇者", "王道sa"]),
         ("darcrows", ["darcrows", "himesa", "ダークロウズ", "暗鸦"]),
         ("ikusamiko", ["ikusamiko", "戦巫女", "战巫女", "vestalvirgin"]),
+        ("onlyyourecross", ["onlyyourecross", "recross", "リクルス", "オンリーsa"]),
         ("onlyyou", ["onlyyou", "世紀末のジュリエット", "世纪末的朱丽叶"]),
+        ("mamatoto", ["mamatoto", "ママトト", "妈妈托托", "媽媽托托"]),
+        ("mamorigami", ["mamorigami", "守り神様", "守神sa", "守护神大人", "守護神大人"]),
+        ("ambivalenz", ["ambivalenz", "二律背反", "niritsuhaihan"]),
+        ("funnybee", ["funnybee", "ファニーbee", "宇宙快盗"]),
+        ("mugenhouyou", ["mugenhouyou", "夢幻泡影", "梦幻泡影"]),
+        ("otomesenki", ["otomesenki", "乙女戦記", "乙女战记", "乙女戰記"]),
+        ("maidnosusume", ["maidnosusume", "メイドのススメ", "メイドsa", "女仆的推荐", "女僕的推薦"]),
         ("persiom", ["persiom", "約束の集う場所", "约定汇聚之所"]),
         ("seeinao", ["seeinao", "seein青", "イルカsa", "シーンao"]),
         ("hushaby", ["hushaby", "幽霊sa"]),
@@ -248,6 +258,41 @@ final class GameLibrary: ObservableObject {
         return adiskCrc == 0x7f8f5e2a || adiskCrc == 0x58ebcc99
     }
 
+    private static func isAmbivalenzFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "ambivalenz_cd" || legacyId == "ambivalenz_fd" || legacyId == "ambivalenz"
+        }
+        return adiskCrc == 0x4b10db69 || adiskCrc == 0xa6b48dfe
+    }
+
+    private static func isFunnyBeeFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "funnybee_cd" || legacyId == "funnybee_fd" || legacyId == "funnybee"
+        }
+        return adiskCrc == 0xe14e3971 || adiskCrc == 0x731267fa
+    }
+
+    private static func isToushin2SpFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "toushin2_sp" || legacyId == "toushin2sp"
+        }
+        return adiskCrc == 0x2172c7b2
+    }
+
+    private static func isMugenHouyouFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "mugen" || legacyId == "mugenhouyou" || legacyId == "mugen_houyou"
+        }
+        return adiskCrc == 0xbb27d1ba
+    }
+
+    private static func isOtomeSenkiFromRegularFiles(legacyId: String?, adiskCrc: UInt32?) -> Bool {
+        if let legacyId {
+            return legacyId == "otome" || legacyId == "otomesenki" || legacyId == "otome_senki"
+        }
+        return adiskCrc == 0x49a4db15
+    }
+
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
@@ -276,6 +321,11 @@ final class GameLibrary: ObservableObject {
         let dpsAll = engine == .legacySystem3 && isDpsAllFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let prostudentG = engine == .legacySystem3 && isProstudentGFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let yakata3 = engine == .legacySystem3 && isYakata3FromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let ambivalenz = engine == .legacySystem3 && isAmbivalenzFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let funnyBee = engine == .legacySystem3 && isFunnyBeeFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let toushin2Sp = engine == .legacySystem3 && isToushin2SpFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let mugenHouyou = engine == .legacySystem3 && isMugenHouyouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
+        let otomeSenki = engine == .legacySystem3 && isOtomeSenkiFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
 
         let displayName: String
         if rance04 { displayName = "兰斯IV 教团的遗产" }
@@ -290,6 +340,11 @@ final class GameLibrary: ObservableObject {
         else if dpsAll { displayName = "D.P.S. 全部" }
         else if prostudentG { displayName = "职业学生G" }
         else if yakata3 { displayName = "爱丽丝之馆3" }
+        else if ambivalenz { displayName = "AmbivalenZ -二律背反-" }
+        else if funnyBee { displayName = "宇宙快盗Funny Bee" }
+        else if toushin2Sp { displayName = "斗神都市II 然后，从那以后…" }
+        else if mugenHouyou { displayName = "梦幻泡影" }
+        else if otomeSenki { displayName = "乙女战记" }
         else { displayName = url.lastPathComponent }
 
         let detectedArtworkID: String?
@@ -305,6 +360,11 @@ final class GameLibrary: ObservableObject {
         else if dpsAll { detectedArtworkID = "dpsall" }
         else if prostudentG { detectedArtworkID = "prostudentg" }
         else if yakata3 { detectedArtworkID = "yakata3" }
+        else if ambivalenz { detectedArtworkID = "ambivalenz" }
+        else if funnyBee { detectedArtworkID = "funnybee" }
+        else if toushin2Sp { detectedArtworkID = "toushin2sp" }
+        else if mugenHouyou { detectedArtworkID = "mugenhouyou" }
+        else if otomeSenki { detectedArtworkID = "otomesenki" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?
@@ -315,10 +375,8 @@ final class GameLibrary: ObservableObject {
             let normalized = names.joined(separator: " ").lowercased()
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
-            let isOnlyYouReCross = normalized.contains("recross") || normalized.contains("リクルス")
             let isDalkGaiden = normalized.contains("gaiden") || normalized.contains("外伝") || normalized.contains("外传") || normalized.contains("dalkdemo")
             artworkKey = artworkAliases.first(where: { key, tokens in
-                if key == "onlyyou" && isOnlyYouReCross { return false }
                 if key == "dalk" && isDalkGaiden { return false }
                 return tokens.contains(where: normalized.contains)
             })?.0
@@ -472,6 +530,51 @@ final class GameLibrary: ObservableObject {
         let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
         let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
         return isYakata3FromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isAmbivalenz(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isAmbivalenzFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isFunnyBee(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isFunnyBeeFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isToushin2Sp(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isToushin2SpFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isMugenHouyou(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isMugenHouyouFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
+    }
+
+    static func isOtomeSenki(_ url: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        let legacyId = legacySystem3GameIdFromRegularFiles(regularFiles)
+        let crc = legacyId == nil ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        return isOtomeSenkiFromRegularFiles(legacyId: legacyId, adiskCrc: crc)
     }
 
     static func isRance5d(_ url: URL) -> Bool {
