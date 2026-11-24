@@ -1283,6 +1283,14 @@ void parts_render(struct parts *parts)
 		state = &checkbox_state;
 	}
 	parts_render_state(parts, state);
+	if (parts->component_type == 4 && parts->text_box_text->size && !parts->text_box_label)
+		parts_text_box_set_display(parts, NULL);
+	if (parts->component_type == 4 && parts->text_box_label) {
+		struct parts_text label = parts->text_box_label->text;
+		label.common.origin_offset.x = label_box->origin_offset.x + 3;
+		label.common.origin_offset.y = label_box->origin_offset.y + (label_height - label.common.h) / 2;
+		parts_render_text(parts, &label, NULL);
+	}
 	if (parts->widget && parts->widget->text->size) {
 		struct parts_widget *w = parts->widget;
 		bool has_skin = w->cg_name->size || w->flat_name->size

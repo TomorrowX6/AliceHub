@@ -229,11 +229,12 @@ void mouse_set_pos(int x, int y);
 void mouse_get_wheel(int *forward, int *back);
 void mouse_clear_wheel(void);
 bool mouse_show_cursor(bool show);
-void register_input_handler(void(*handler)(const char*));
-void clear_input_handler(void);
-void register_editing_handler(void(*handler)(const char*, int, int));
-void clear_editing_handler(void);
-void register_key_handler(void(*handler)(int));
-void clear_key_handler(void);
+struct input_text_handlers {
+	void (*commit)(const char *);
+	void (*edit)(const char *, int, int);
+	void (*key)(int);
+};
+void input_set_legacy_text_handlers(const struct input_text_handlers *handlers);
+void input_set_parts_text_handlers(const struct input_text_handlers *handlers);
 
 #endif /* SYSTEM4_INPUT_H */

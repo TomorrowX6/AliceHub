@@ -102,6 +102,8 @@ static int message_type_v12(int type)
 	case PARTS_MSG_CHECK_CHANGED: return 23;
 	case PARTS_MSG_SCROLL: return 21;
 	case PARTS_MSG_RADIO_BUTTON_BOX: return 22;
+	case PARTS_MSG_TEXT_CHANGED: return 22;
+	case PARTS_MSG_TEXT_FIXED: return 26;
 	case PARTS_MSG_SWIPE_BEGIN: return 27;
 	case PARTS_MSG_SWIPING: return 28;
 	case PARTS_MSG_SWIPE_END: return 29;
