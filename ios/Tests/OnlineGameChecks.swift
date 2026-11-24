@@ -2,11 +2,15 @@ import Foundation
 import CryptoKit
 
 func SDL_SetMainReady() {}
+func alicehub_ios_begin_game() {}
+func alicehub_ios_finish_audio_shutdown() -> Bool { true }
+func alicehub_ios_end_game() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
 enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
+    static func end() {}
 }
 func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 { fatalError() }

@@ -912,7 +912,7 @@ int gfx_init(void)
 	gfx_draw_init();
 	gfx_set_window_logical_size(config.view_width, config.view_height);
 	init_window_size();
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	atexit(gfx_fini);
 #endif
 	gfx_clear();
@@ -928,8 +928,26 @@ void gfx_android_fini(void)
 #endif
 }
 
+#ifdef ALICEHUB_IOS
+void sact_end_session(void);
+void sprite_end_session(void);
+void scene_end_session(void);
+void parts_end_session(void);
+void effect_end_session(void);
+#endif
+
 void gfx_fini(void)
 {
+#ifdef ALICEHUB_IOS
+	bool quit_sdl = mixer_fini();
+	if (!sdl.gl.context)
+		goto close_sdl;
+	effect_end_session();
+	parts_end_session();
+	sact_end_session();
+	scene_end_session();
+	sprite_end_session();
+#endif
 #ifdef __ANDROID__
 	android_perf_pacing_fini();
 #endif
@@ -960,10 +978,21 @@ void gfx_fini(void)
 	free(reset_callbacks);
 	reset_callbacks = NULL;
 	nr_reset_callbacks = 0;
+#ifdef ALICEHUB_IOS
+	SDL_GL_DeleteContext(sdl.gl.context);
+close_sdl:
+#endif
 	SDL_DestroyWindow(sdl.window);
 	SDL_FreeFormat(sdl.format);
 #ifdef ALICEHUB_IOS
-	if (!mixer_fini())
+	memset(&sdl, 0, sizeof(sdl));
+	memset(&default_shader, 0, sizeof(default_shader));
+	memset(&main_surface, 0, sizeof(main_surface));
+	view = &main_surface;
+	gfx_initialized = false;
+	gfx_ctx_gen++;
+	wait_vsync = true;
+	if (!quit_sdl)
 		return;
 #endif
 	SDL_Quit();

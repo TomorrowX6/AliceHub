@@ -12,6 +12,9 @@ struct LauncherView: View {
     @State private var reportMessage: String?
     @State private var query = ""
     @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
+#if DEBUG
+    @State private var didAutoLaunch = false
+#endif
     @Environment(\.scenePhase) private var scenePhase
     @HubLocalizedText private var localized
 
@@ -109,8 +112,12 @@ struct LauncherView: View {
             library.refreshAsync {
 #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
-                if let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
-                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) { library.launch(game) }
+                if !didAutoLaunch,
+                   let index = arguments.firstIndex(of: "-autolaunch"), index + 1 < arguments.count,
+                   let game = library.games.first(where: { $0.name == arguments[index + 1] }) {
+                    didAutoLaunch = true
+                    library.launch(game)
+                }
 #endif
             }
         }

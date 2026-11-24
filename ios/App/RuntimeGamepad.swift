@@ -106,6 +106,12 @@ final class RuntimeGamepad: UIView {
         edit.tintColor = .white
         edit.addAction(UIAction { [weak self] _ in self?.openEditor() }, for: .touchUpInside)
         menuPanel.addArrangedSubview(edit)
+
+        let quit = UIButton(type: .system)
+        quit.setTitle(padText("Quit Game"), for: .normal)
+        quit.tintColor = .systemRed
+        quit.addAction(UIAction { _ in alicehub_ios_request_quit() }, for: .touchUpInside)
+        menuPanel.addArrangedSubview(quit)
         let close = UIButton(type: .system)
         close.setTitle(padText("Close"), for: .normal)
         close.tintColor = .white

@@ -25,6 +25,7 @@
 #ifdef ALICEHUB_IOS
 #include "escalayer_modifier.h"
 #include "xsystem35_main.h"
+#include <setjmp.h>
 #endif
 
 #include <stdio.h>
@@ -102,6 +103,29 @@ static bool integer_scaling = false;
 /* fullscreen on from command line */
 static bool fs_on;
 
+#ifdef ALICEHUB_IOS
+static _Thread_local jmp_buf *exit_target;
+static int exit_code;
+static bool music_started;
+static bool graphics_started;
+
+void xsystem35_ios_exit(int code) {
+	if (exit_target) {
+		exit_code = code;
+		longjmp(*exit_target, 1);
+	}
+}
+
+void sl_fini(void);
+void ald_fini(void);
+void msgskip_fini(void);
+void font_fini(void);
+void cg_fini(void);
+void freeGameResource(GameResource *gr);
+void s39ain_fini(S39AIN *ain);
+void profile_fini(void);
+#endif
+
 static void sys35_usage(bool verbose) {
 	if (verbose) {
 		puts("System35 for X Window System [proj. Rainy Moon]");
@@ -152,7 +176,11 @@ static void sys35_usage(bool verbose) {
 	puts(" -version                : show version");
 	puts(" -h                      : show this message");
 	puts(" --help                  : show this message");
+#ifdef ALICEHUB_IOS
+	sys_exit(1);
+#else
 	exit(1);
+#endif
 }
 
 static void sys35_init() {
@@ -164,6 +192,9 @@ static void sys35_init() {
 
 	v_init();
 	
+#ifdef ALICEHUB_IOS
+	graphics_started = true;
+#endif
 	ags_init(render_driver);
 
 	for (i = 0; i < FONTTYPEMAX; i++)
@@ -308,7 +339,11 @@ static void sys35_ParseOption(int *argc, char **argv) {
 			}
 		} else if (0 == strcmp(argv[i], "-version")) {
 			puts(VERSION);
+#ifdef ALICEHUB_IOS
+			sys_exit(0);
+#else
 			exit(0);
+#endif
 		} else if (0 == strcmp(argv[i], "-integerscale")) {
 			integer_scaling = true;
 		} else if (0 == strcmp(argv[i], "-mute_on_unfocus")) {
@@ -548,8 +583,7 @@ static void registerGameFiles(void) {
 }
 
 #ifdef ALICEHUB_IOS
-int xsystem35_main(int argc, char **argv) {
-	escalayer_modifier_reset(true);
+static int run_xsystem35(int argc, char **argv) {
 #else
 int main(int argc, char **argv) {
 #endif
@@ -603,6 +637,9 @@ int main(int argc, char **argv) {
 	init_signalhandler();
 #endif
 
+#ifdef ALICEHUB_IOS
+	music_started = true;
+#endif
 	mus_init(audio_buffer_size);
 
 #ifdef HAVE_LIBINTL
@@ -642,13 +679,57 @@ int main(int argc, char **argv) {
 		sys_reset();
 	}
 
+#ifndef ALICEHUB_IOS
 	sys35_remove();
-#ifdef ALICEHUB_IOS
-	escalayer_modifier_reset(false);
 #endif
 	
 	return 0;
 }
+
+#ifdef ALICEHUB_IOS
+int xsystem35_main(int argc, char **argv) {
+	escalayer_modifier_reset(true);
+	jmp_buf target;
+	exit_target = &target;
+	if (setjmp(target) == 0)
+		exit_code = run_xsystem35(argc, argv);
+	exit_target = NULL;
+
+	msgskip_fini();
+	s39ain_fini(&nact->ain);
+	if (music_started) {
+		mus_exit();
+		music_started = false;
+	}
+	if (graphics_started) {
+		ags_remove();
+		font_fini();
+		cg_fini();
+		graphics_started = false;
+	} else {
+		SDL_Quit();
+	}
+	sl_fini();
+	v_set_names(0, NULL);
+	v_reset();
+	freeGameResource(&nact->files);
+	ald_fini();
+	memset(nact, 0, sizeof(*nact));
+	profile_fini();
+	gameResourceFile = "xsystem35.gr";
+	render_driver = NULL;
+	savedir = NULL;
+	font_noantialias = integer_scaling = fs_on = false;
+	audio_buffer_size = 0;
+	debugger_mode = DEBUGGER_DISABLED;
+	memset(fontface, 0, sizeof(fontface));
+	fontname_tt[FONT_GOTHIC] = DEFAULT_GOTHIC_TTF;
+	fontname_tt[FONT_MINCHO] = DEFAULT_MINCHO_TTF;
+	sys_resetCharacterEncoding();
+	escalayer_modifier_reset(false);
+	return exit_code;
+}
+#endif
 
 #ifdef __EMSCRIPTEN__
 

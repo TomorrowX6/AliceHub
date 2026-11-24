@@ -341,6 +341,9 @@ int gfx_Initialize(const char *render_driver) {
 }
 
 void gfx_Remove(void) {
+#ifdef ALICEHUB_IOS
+	alicehub_ios_set_background_hook(NULL);
+#endif
 #ifdef __ANDROID__
 	android_perf_pacing_fini();
 #endif
@@ -351,6 +354,14 @@ void gfx_Remove(void) {
 	if (gfx_renderer)
 		SDL_DestroyRenderer(gfx_renderer);
 	SDL_Quit();
+#ifdef ALICEHUB_IOS
+	gfx_texture = NULL;
+	gfx_palette = NULL;
+	main_surface = NULL;
+	gfx_renderer = NULL;
+	gfx_window = NULL;
+	gfx_integer_scaling = gfx_fullscreen = false;
+#endif
 }
 
 /* name is UTF-8 */
