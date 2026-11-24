@@ -90,7 +90,8 @@ struct HubBadge: View {
     }
 
     var body: some View {
-        Text(title).font(.caption.weight(.medium))
+        Text(LocalizedStringKey(title)).font(.caption.weight(.medium))
+            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 9).padding(.vertical, 5)
             .foregroundColor(foreground)
             .background(background)
@@ -108,9 +109,9 @@ struct HubSectionHeader: View {
                 .foregroundColor(HubTheme.primary).frame(width: 48, height: 48)
                 .background(HubTheme.variant).clipShape(RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.headline).foregroundColor(HubTheme.text)
+                Text(LocalizedStringKey(title)).font(.headline).foregroundColor(HubTheme.text)
                 if let subtitle {
-                    Text(subtitle).font(.subheadline).foregroundColor(HubTheme.secondary)
+                    Text(LocalizedStringKey(subtitle)).font(.subheadline).foregroundColor(HubTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -130,7 +131,7 @@ struct HubActionLabel: View {
                 .foregroundColor(destructive ? .red : HubTheme.primary)
                 .frame(width: 42, height: 42).background(HubTheme.variant)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(title).font(.body.weight(.semibold)).foregroundColor(destructive ? .red : HubTheme.text)
+            Text(LocalizedStringKey(title)).font(.body.weight(.semibold)).foregroundColor(destructive ? .red : HubTheme.text)
             Spacer(minLength: 8)
             if navigates {
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(HubTheme.secondary)

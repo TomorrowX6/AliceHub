@@ -3,7 +3,7 @@
 ## Behaviour
 
 - Installed games always precede uninstalled games, in every mode. Presence comes from the existing `GameList` scan / `GameSelectEntry.primaryItem`, exactly as in the launcher badge, not from dates, download history or MOD metadata. A detected installation with a launch error retains its existing error badge and installation grouping.
-- Default retains built-in catalog order, then custom import order, within each installation group. Name is ascending using the active app locale collator (secondary strength).
+- Default places Chinese-translated (`熟肉`) titles ahead of raw (`生肉`) titles within each installation group, retaining built-in catalog order (then custom import order) inside each tier. Name is ascending using the active app locale collator (secondary strength).
 - **Score** sorts by the VNDB API **`rating` (Bayesian rating)**, descending. It does not sort by `votecount` or `average`, and is not an ErogameScape median. The documented raw scale is **10–100**; it is kept as a nullable Double without rounding. Conventional ten-point equivalents in the table are raw / 10. The UI does not display per-game numeric scores, so there is no rounded display value used as a sorting key.
 - Release date is newest first, first Japanese release of the listed game/edition; dates are not later ports, translations, MOD uploads or install dates.
 - Missing scores/dates are last within each installation group, not treated as zero. Equal keys (including missing keys) preserve source order through stable sorting. Custom games have no assigned network metadata.

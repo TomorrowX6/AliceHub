@@ -27,6 +27,96 @@ def function(path, name):
     return source[start:end]
 
 
+class FontSessionTests(unittest.TestCase):
+    def test_next_game_loads_its_own_fonts(self):
+        harness = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#define ALICEHUB_IOS
+#define MAX_FNL_FONTS 2
+#define FONT_GOTHIC 0
+#define FONT_MINCHO 1
+#define FW_BOLD 1
+#define ERROR(...) abort()
+struct font { int id; };
+static struct { int face, size; struct font *font_size; } text_sprite_ts = {0, 16, NULL};
+struct fnl { unsigned nr_fonts; };
+struct font_metrics { int size, face, weight; unsigned char color[4]; };
+static struct font_metrics font_metrics;
+static struct { const char *fnl_path; } config;
+static struct { int version; } *ain;
+static bool font_initialized, gfx_text_advance_edges, game_rance7_mg;
+static struct font *font_ttf[2], *font_fnl[MAX_FNL_FONTS];
+static struct fnl *session_fnl;
+static float fnl_substitute_scales[MAX_FNL_FONTS];
+static unsigned fnl_substitute_count;
+static void *glyph_cache_trackers;
+static size_t nr_glyph_cache_trackers, cap_glyph_cache_trackers;
+static int game, loaded, released, ft_sessions;
+static void ft_font_init(void) { assert(!ft_sessions); ft_sessions++; }
+static void ft_font_fini(void) { assert(ft_sessions); ft_sessions--; }
+static void init_fnl_substitute_scale(void) {
+    assert(!fnl_substitute_count && fnl_substitute_scales[0] == 0);
+    if (!config.fnl_path) {
+        fnl_substitute_scales[0] = 0.6f;
+        fnl_substitute_count = 1;
+    }
+}
+static struct font *load_font(int face) {
+    struct font *f = malloc(sizeof(*f));
+    f->id = game * 10 + face; loaded++;
+    return f;
+}
+static bool fnl_uses_ttf_substitute(void) { return !config.fnl_path; }
+static struct fnl *fnl_open(const char *path) {
+    struct fnl *lib = malloc(sizeof(*lib)); lib->nr_fonts = 1;
+    assert(!strcmp(path, "second.fnl")); return lib;
+}
+static struct font *fnl_font_load(struct fnl *lib, unsigned index) {
+    assert(index < lib->nr_fonts);
+    return load_font(2);
+}
+static void fnl_free(struct fnl *lib) { assert(!font_fnl[0]); free(lib); }
+static void ft_font_free(struct font *font) { if (font) { released++; free(font); } }
+static void fnl_font_free(struct font *font) { ft_font_free(font); }
+''' + "\n".join(function("src/text.c", name) for name in (
+            "void gfx_font_init", "void gfx_font_fini",
+        )) + r'''
+int main(void) {
+    game = 1;
+    gfx_font_init();
+    gfx_font_init();
+    assert(loaded == 2 && font_ttf[0]->id == 10 && !font_fnl[0]);
+    text_sprite_ts.font_size = font_ttf[text_sprite_ts.face];
+    assert(gfx_text_advance_edges && fnl_substitute_count == 1);
+    glyph_cache_trackers = malloc(16);
+    nr_glyph_cache_trackers = cap_glyph_cache_trackers = 1;
+    font_metrics.size = 99;
+    gfx_font_fini();
+    assert(released == 2 && !glyph_cache_trackers && !nr_glyph_cache_trackers);
+    assert(!font_ttf[0] && !gfx_text_advance_edges && font_metrics.size == 16);
+    assert(!text_sprite_ts.font_size && text_sprite_ts.face == 0 && text_sprite_ts.size == 16);
+    game = 2;
+    config.fnl_path = "second.fnl";
+    gfx_font_init();
+    assert(loaded == 5 && font_ttf[0]->id == 20 && font_fnl[0]->id == 22);
+    text_sprite_ts.font_size = font_ttf[text_sprite_ts.face];
+    assert(text_sprite_ts.font_size->id == 20);
+    gfx_font_fini();
+    assert(released == 5 && !ft_sessions && !session_fnl);
+}
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "font.c"
+            binary = Path(temp) / "font"
+            source.write_text(harness)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(source), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+
 FIXTURES = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -964,10 +1054,13 @@ static bool gfx_remap_texture(Texture *t) {
 static void gfx_delete_texture(Texture *t) { t->handle = 0; }
 static void gfx_copy_main_surface(Texture *dst) { static GLuint h = 10; dst->handle = ++h; dst->w = 64; dst->h = 64; }
 static void gfx_set_view(Texture *t) { (void)t; }
+static void gfx_reset_view(void) {}
 ''' + '\n'.join([
             function('src/effect.c', 'static void effect_on_gl_reset'),
             function('src/effect.c', 'static void ensure_effect_reset_registered'),
             function('src/effect.c', 'int effect_init'),
+            function('src/effect.c', 'int effect_fini'),
+            function('src/effect.c', 'void effect_end_session'),
         ]) + r'''
 int main(void) {
     assert(effect_init(EFFECT_CROSSFADE) == 1);
@@ -984,6 +1077,12 @@ int main(void) {
     // Next effect_init lazily reloads the shader program cleanly and does not duplicate registration.
     assert(effect_init(EFFECT_CROSSFADE) == 1);
     assert(register_calls == 1 && shader_loads == 2 && crossfade_shader.s.program == 502);
+
+    effect_end_session();
+    assert(!effect.on && !effect.old.handle && !effect.view.handle);
+    assert(!effect_reset_registered && crossfade_shader.s.program == 0);
+    assert(effect_init(EFFECT_CROSSFADE) == 1);
+    assert(register_calls == 2 && shader_loads == 3 && crossfade_shader.s.program == 503);
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
@@ -1051,7 +1150,7 @@ int main(void) {
 
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
-        self.assertIn('#define CURRENT_SAVE_VERSION 32', save)
+        self.assertIn('#define CURRENT_SAVE_VERSION 33', save)
         for axis in ('lr', 'tb'):
             self.assertIn(f'iarray_write(w, parts->reverse_{axis});', save)
             self.assertIn(f'parts->reverse_{axis} = version >= 32 ? !!iarray_read(r) : false;', save)

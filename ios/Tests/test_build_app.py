@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 class BuildAppChecks(unittest.TestCase):
     def test_native_is_rebuilt_with_or_without_staging(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary) / 'ios'
+            root.mkdir()
             shutil.copyfile(ROOT / 'ios/build-app.sh', root / 'build-app.sh')
             calls = root / 'calls'
             native = root / 'build-native.sh'
@@ -22,6 +23,10 @@ class BuildAppChecks(unittest.TestCase):
                               'mkdir -p "$(dirname "$0")/build/$1/stage/share/system3/mda"\n'
                               'touch "$(dirname "$0")/build/$1/stage/share/system3/mda/AMUS.DAT"\n')
             native.chmod(0o755)
+            collect = root.parent / 'collect-licenses.sh'
+            collect.write_text('#!/bin/bash\nset -eu\ntest -d "$1/stage/lib"\n'
+                               'mkdir -p "$2"\ntouch "$2/xsystem4"\n')
+            collect.chmod(0o755)
             for name in ('xcodegen', 'xcodebuild'):
                 tool = root / name
                 tool.write_text('#!/bin/bash\necho "' + name + '" >> "$CALLS"\n')
@@ -32,6 +37,7 @@ class BuildAppChecks(unittest.TestCase):
             self.assertEqual(calls.read_text().splitlines(),
                              ['native:iphonesimulator', 'xcodegen', 'xcodebuild'] * 2)
             self.assertTrue((root / 'build/system3/mda/AMUS.DAT').is_file())
+            self.assertTrue((root / 'build/licenses/xsystem4').is_file())
             product = root / 'build/app-iphoneos/Build/Products/Release-iphoneos/AliceHub.app'
             product.mkdir(parents=True)
             (product / 'fixture').write_text('app')

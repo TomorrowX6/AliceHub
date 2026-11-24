@@ -201,9 +201,12 @@ SDL_mutex *SDL_CreateMutex(void) { return (SDL_mutex*)1; }
 int SDL_LockMutex(SDL_mutex *m) { return 0; }
 int SDL_UnlockMutex(SDL_mutex *m) { return 0; }
 SDL_Thread *SDL_CreateThread(SDL_ThreadFunction f, const char *n, void *d) { return (SDL_Thread*)1; }
-static int joined_threads;
+static int joined_threads, quit_calls;
 void SDL_WaitThread(SDL_Thread *t, int *status) { assert(t); joined_threads++; }
 void SDL_Delay(Uint32 ms) { test_ticks += ms; }
+void SDL_DestroyMutex(SDL_mutex *m) {}
+void SDL_Quit(void) { quit_calls++; }
+void audio_metadata_reset(void) {}
 #endif
 void SDL_LockAudioDevice(SDL_AudioDeviceID dev) {}
 void SDL_UnlockAudioDevice(SDL_AudioDeviceID dev) {}
@@ -388,17 +391,6 @@ int main(void) {
     advance_audio_clock(test_ticks = 4200);
     assert(!channel_is_playing(&sound));
 
-    int opens = open_calls, closes = close_calls;
-    assert(mixer_fini());
-    assert(joined_threads == 2 && audio_device == 0 && close_calls == closes + 1);
-    mixer_retry_audio_device();
-    assert(open_calls == opens && atomic_load(&audio_stopping));
-    assert(mixer_fini()); assert(joined_threads == 2 && close_calls == closes + 1);
-    audio_device_thread = (SDL_Thread*)1;
-    assert(!mixer_fini()); // SDL_Quit must be skipped while device work is in flight.
-    assert(close_calls == closes + 1);
-    atomic_flag_clear(&device_operation);
-    assert(mixer_fini() && joined_threads == 3);
     puts("Audio clock: failed open, empty/finite sound, stalled callback, fades, pause and recovery passed");
 #endif
 
@@ -457,6 +449,24 @@ int main(void) {
     assert(config.mixer_volumes[0] == 90);
     assert(config.mixer_volumes[1] == 70);
     assert(config.mixer_volumes[2] == 60);
+
+#ifdef ALICEHUB_IOS
+    int opens = open_calls, closes = close_calls;
+    assert(!mixer_fini());
+    assert(master == NULL && joined_threads == 1 && close_calls == closes);
+    mixer_retry_audio_device();
+    assert(open_calls == opens && atomic_load(&audio_stopping));
+    assert(!mixer_fini() && joined_threads == 1 && close_calls == closes);
+    assert(!alicehub_ios_finish_audio_shutdown() && quit_calls == 0);
+    memset(pcm, 0xff, sizeof(pcm));
+    audio_callback(NULL, (Uint8*)pcm, sizeof(pcm));
+    for (size_t i = 0; i < sizeof(pcm) / sizeof(float); i++)
+        assert(pcm[i] == 0);
+    audio_device_main(NULL);
+    assert(audio_device == 0 && close_calls == closes + 1);
+    assert(alicehub_ios_finish_audio_shutdown() && joined_threads == 2 && quit_calls == 1);
+    assert(alicehub_ios_finish_audio_shutdown() && quit_calls == 1);
+#endif
 
     puts("OK");
     return 0;

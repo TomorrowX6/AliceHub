@@ -1176,7 +1176,7 @@ object OnlineInstaller {
     ): File {
         onProgress(OnlineProgressUpdate(context.getString(R.string.online_fetching_manifest), null))
         val canonicalBaseUrl = AppSettings.canonicalCdnUrl(cdnBaseUrl)
-        val fetchBaseUrl = AppSettings.resolveCdnUrl(context, canonicalBaseUrl).trimEnd('/')
+        val fetchBaseUrl = canonicalBaseUrl.trimEnd('/')
         val manifest = fetchManifest(fetchBaseUrl, abortHandle, checkCancelled)
         if (manifest.entries.isEmpty()) {
             throw GameList.InstallFailureException(R.string.online_download_error)
@@ -2030,9 +2030,9 @@ object OnlineInstaller {
     ) {
         val cacheDir = File(storagePath, ".online_mod_cache")
         cacheDir.mkdirs()
-        val effectiveUrl = AppSettings.resolveCdnUrl(context, req.url)
+        val effectiveUrl = AppSettings.canonicalCdnUrl(req.url)
         val cacheId = req.expectedSha256?.takeIf { it.length >= 16 }?.take(16)
-            ?: sha256Hex(AppSettings.canonicalCdnUrl(req.url).toByteArray(Charsets.UTF_8)).take(16)
+            ?: sha256Hex(effectiveUrl.toByteArray(Charsets.UTF_8)).take(16)
         val ext = extractArchiveExtension(req.fileName)
         val partFile = File(cacheDir, "mod_${cacheId}${ext}.part")
         val metaFile = File("${partFile.path}.meta")

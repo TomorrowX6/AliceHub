@@ -37,6 +37,9 @@
 #include "xsystem4.h"
 #include "hll.h"
 #include "system4/file.h"
+#ifdef ALICEHUB_IOS
+#include "EnginePlatform.h"
+#endif
 
 static int SystemService_GetMixerName(int n, struct string **name)
 {
@@ -489,7 +492,7 @@ static bool SystemService_IsExistPlayingManual(void) {
 	return exists;
 }
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(ALICEHUB_IOS)
 static char *percent_encode(const char *str) {
 	const char *hex = "0123456789ABCDEF";
 	// Worst case all characters are percent-encoded
@@ -522,6 +525,10 @@ static void SystemService_OpenPlayingManual(void) {
 #ifdef __ANDROID__
 	const int COMMAND_OPEN_PLAYING_MANUAL = 0x8000;
 	SDL_AndroidSendMessage(COMMAND_OPEN_PLAYING_MANUAL, 0);
+#elif defined(ALICEHUB_IOS)
+	char *filename = get_manual_filename();
+	alicehub_ios_open_manual(filename);
+	free(filename);
 #else
 	char *filename = get_manual_filename();
 

@@ -112,6 +112,18 @@ struct bgi *bgi_get(int no)
 static struct wai *wai_data = NULL;
 static int nr_wai = 0;
 
+#ifdef ALICEHUB_IOS
+void audio_metadata_reset(void)
+{
+	free(bgi_data);
+	bgi_data = NULL;
+	bgi_nfile = bgi_cap = 0;
+	free(wai_data);
+	wai_data = NULL;
+	nr_wai = 0;
+}
+#endif
+
 void wai_load(const char *path)
 {
 	size_t len = 0;

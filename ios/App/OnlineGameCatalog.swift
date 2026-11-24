@@ -6,7 +6,7 @@ struct OnlineGame: Identifiable {
     let directory: String
     let hasChinese: Bool
     var artwork: String { id == "escalayerreboot" ? "escalayer_reboot" : id }
-    var baseURL: URL { URL(string: DownloadRoute.current.gameBaseURLString(for: id) + "/")! }
+    var baseURL: URL { URL(string: AliceHubCDN.gameBaseURLString(for: id) + "/")! }
 
     init(id: String, title: String, directory: String, hasChinese: Bool = false) {
         self.id = id
@@ -16,6 +16,39 @@ struct OnlineGame: Identifiable {
     }
 
     private static let byArtworkKey: [String: OnlineGame] = Dictionary(uniqueKeysWithValues: all.map { ($0.artwork, $0) })
+    private static let byDirectory = Dictionary(uniqueKeysWithValues: all.map { ($0.directory.lowercased(), $0) })
+
+    static func catalogEntry(for game: Game) -> OnlineGame? {
+        game.artworkKey.flatMap { byArtworkKey[$0] } ?? byDirectory[game.name.lowercased()]
+    }
+
+    func displayTitle(in language: HubLanguage, bundle: Bundle = .main) -> String {
+        language.text(title, bundle: bundle)
+    }
+
+    static func displayTitle(for game: Game, in language: HubLanguage, bundle: Bundle = .main) -> String {
+        let name = game.resolvedDisplayName
+        guard let key = game.artworkKey, let entry = byArtworkKey[key] else { return name }
+        let title = entry.displayTitle(in: language, bundle: bundle)
+        for base in [entry.title, entry.directory] {
+            if name.caseInsensitiveCompare(base) == .orderedSame { return title }
+            if let prefix = name.range(of: base + " [", options: [.anchored, .caseInsensitive]),
+               name.hasSuffix("]") {
+                return title + " [" + name[prefix.upperBound...]
+            }
+        }
+        return name
+    }
+
+    static func chineseBadgeKey(hasChinese: Bool) -> String {
+        hasChinese ? "熟肉" : "生肉"
+    }
+
+    static func matchesChineseBadge(_ query: String, hasChinese: Bool, in language: HubLanguage, bundle: Bundle = .main) -> Bool {
+        let key = chineseBadgeKey(hasChinese: hasChinese)
+        return query.localizedCaseInsensitiveCompare(key) == .orderedSame ||
+            query.localizedCaseInsensitiveCompare(language.text(key, bundle: bundle)) == .orderedSame
+    }
 
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
@@ -34,10 +67,22 @@ struct OnlineGame: Identifiable {
         if game.hasExplicitNonChineseEdition {
             return false
         }
-        if let key = game.artworkKey, let entry = byArtworkKey[key] {
+        if let entry = catalogEntry(for: game) {
             return entry.hasChinese
         }
         return false
+    }
+
+    static func defaultSorted(_ list: [OnlineGame]) -> [OnlineGame] {
+        let cn = list.filter(\.hasChinese)
+        let raw = list.filter { !$0.hasChinese }
+        return cn + raw
+    }
+
+    static func defaultSortedInstalled(_ list: [Game]) -> [Game] {
+        let cn = list.filter { hasChinese(for: $0) }
+        let raw = list.filter { !hasChinese(for: $0) }
+        return cn + raw
     }
 
     static let all: [Self] = [
@@ -223,11 +268,11 @@ struct OnlineGameManifest: Decodable {
     }
 
     static func parse(_ data: Data) throws -> Self {
-        guard data.count <= 4 * 1048576 else { throw ModError.message("下载清单过大") }
+        guard data.count <= 4 * 1048576 else { throw ModError.message(hubText("下载清单过大")) }
         let manifest = try JSONDecoder().decode(Self.self, from: data)
         guard safePath(manifest.baseName), !manifest.baseName.contains("/"), !manifest.baseName.hasPrefix("."),
               !manifest.files.isEmpty, manifest.files.count <= 10000 else {
-            throw ModError.message("游戏清单无效")
+            throw ModError.message(hubText("游戏清单无效"))
         }
         var paths = Set<String>(), total: Int64 = 0
         for entry in manifest.files {
@@ -235,17 +280,17 @@ struct OnlineGameManifest: Decodable {
             let sum = total.addingReportingOverflow(entry.size)
             guard safePath(entry.path), safePath(entry.key), entry.size >= 0, !sum.overflow,
                   entry.sha256.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil,
-                  paths.insert(path).inserted else { throw ModError.message("游戏清单包含不安全或重复的文件") }
+                  paths.insert(path).inserted else { throw ModError.message(hubText("游戏清单包含不安全或重复的文件")) }
             total = sum.partialValue
         }
         for path in paths {
             var parts = path.split(separator: "/"); parts.removeLast()
             while !parts.isEmpty {
-                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message("游戏清单文件路径冲突") }
+                guard !paths.contains(parts.joined(separator: "/")) else { throw ModError.message(hubText("游戏清单文件路径冲突")) }
                 parts.removeLast()
             }
         }
-        guard total > 0 else { throw ModError.message("游戏清单为空") }
+        guard total > 0 else { throw ModError.message(hubText("游戏清单为空")) }
         return manifest
     }
 
@@ -255,7 +300,7 @@ struct OnlineGameManifest: Decodable {
         request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw ModError.message("无法获取游戏清单，请检查网络后重试")
+            throw ModError.message(hubText("无法获取游戏清单，请检查网络后重试"))
         }
         return try parse(data)
     }

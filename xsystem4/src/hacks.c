@@ -361,6 +361,17 @@ static bool ain_has_gbk_r03_strings(struct ain *ain)
 	return false;
 }
 
+static bool ain_has_evenicle2_rance_gbk_prologue(struct ain *ain)
+{
+	const char prologue[] =
+		"\xd5\xe2\xca\xc7\xcb\xc0\xcd\xf6\xb3\xa3\xb0\xe9\xc9\xed\xb1\xdf\xb5\xc4\xca\xc0\xbd\xe7\xa1\xa3";
+	for (int i = 0; i < ain->nr_messages; i++) {
+		if (ain->messages[i] && !strcmp(ain->messages[i]->text, prologue))
+			return true;
+	}
+	return false;
+}
+
 static bool ain_messages_look_gbk(struct ain *ain)
 {
 	unsigned long gbk_score = 0;
@@ -842,6 +853,7 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
 		|| (game_evenicle_rance && (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
 			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9")))
+		|| (game_evenicle2_rance && ain_has_evenicle2_rance_gbk_prologue(ain))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
 		|| (game_rance03 && ain_has_gbk_r03_strings(ain))

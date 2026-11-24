@@ -7,10 +7,23 @@ import org.junit.rules.TemporaryFolder;
 import java.io.File;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 
 public class GlobalSaveModFieldsTest {
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
+
+    @Test
+    public void preservesUnchangedLegacyFlagsAndValidatesEdits() {
+        assertNull(GameModifierBridge.INSTANCE.parseGlobalSaveFlagEdit("2", "2"));
+        assertEquals(Integer.valueOf(0), GameModifierBridge.INSTANCE.parseGlobalSaveFlagEdit("0", "2"));
+        assertEquals(Integer.valueOf(1), GameModifierBridge.INSTANCE.parseGlobalSaveFlagEdit("1", "1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameModifierBridge.INSTANCE.parseGlobalSaveFlagEdit("2", "1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> GameModifierBridge.INSTANCE.parseGlobalSaveFlagEdit("-1", "2"));
+    }
 
     private void assertFields(File dir, boolean global, boolean collection, boolean csd) {
         for (String key : new String[]{"gamePlayCount", "itemStarRank", "setAllCharRank", "setTakeOverCardCount"}) {

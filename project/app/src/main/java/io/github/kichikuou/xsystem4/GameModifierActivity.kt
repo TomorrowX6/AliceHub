@@ -1082,7 +1082,8 @@ class GameModifierActivity : ThemedActivity() {
         val label: String,
         val initialText: String,
         val hintText: String = "",
-        val isDecimal: Boolean = false
+        val isDecimal: Boolean = false,
+        val isFlag: Boolean = false
     )
 
     private fun showGlobalSaveCustomDialog(info: JSONObject) {
@@ -1106,10 +1107,10 @@ class GameModifierActivity : ThemedActivity() {
             GlobalFieldSpec("BestScore", tr("最高得分", "最高スコア", "Best Score"), info.optInt("BestScore", 0).toString()),
             GlobalFieldSpec("LeaderSmallestTurn", tr("魔王最少回合", "魔王最小ターン", "Demon Lord Min Turn"), info.optInt("LeaderSmallestTurn", 0).toString()),
             GlobalFieldSpec("RealSmallestTurn", tr("第二部最少回合", "第2部最小ターン", "Part 2 Min Turn"), info.optInt("RealSmallestTurn", 0).toString()),
-            GlobalFieldSpec("CollectionClearB", tr("第二部通关标记 0/1", "第2部クリア 0/1", "Part 2 Clear 0/1"), info.optInt("CollectionClearB", 0).toString()),
-            GlobalFieldSpec("OpenMonsterpedia", tr("魔物图鉴开启 0/1", "魔物図鑑解放 0/1", "Monsterpedia 0/1"), info.optInt("OpenMonsterpedia", 0).toString()),
-            GlobalFieldSpec("TrophyComplete", tr("实绩全达成标记 0/1", "実績コンプ 0/1", "Trophy Complete 0/1"), info.optInt("TrophyComplete", 0).toString()),
-            GlobalFieldSpec("CardComplete", tr("卡牌全收集标记 0/1", "カードコンプ 0/1", "Card Complete 0/1"), info.optInt("CardComplete", 0).toString()),
+            GlobalFieldSpec("CollectionClearB", tr("第二部通关标记 0/1", "第2部クリア 0/1", "Part 2 Clear 0/1"), info.optInt("CollectionClearB", 0).toString(), isFlag = true),
+            GlobalFieldSpec("OpenMonsterpedia", tr("魔物图鉴开启 0/1", "魔物図鑑解放 0/1", "Monsterpedia 0/1"), info.optInt("OpenMonsterpedia", 0).toString(), isFlag = true),
+            GlobalFieldSpec("TrophyComplete", tr("实绩全达成标记 0/1", "実績コンプ 0/1", "Trophy Complete 0/1"), info.optInt("TrophyComplete", 0).toString(), isFlag = true),
+            GlobalFieldSpec("CardComplete", tr("卡牌全收集标记 0/1", "カードコンプ 0/1", "Card Complete 0/1"), info.optInt("CardComplete", 0).toString(), isFlag = true),
             GlobalFieldSpec("gamePlayCount", tr("全局周回计数", "周回プレイ数", "Global Play Count"), info.optInt("gamePlayCount", 0).toString()),
             GlobalFieldSpec("itemStarRank", tr("全局装备星级上限", "装備★ランク", "Global Item Star Rank"), info.optInt("itemStarRank", 0).toString()),
             GlobalFieldSpec("leaderAtkRatio", tr("食券/首领攻击倍率", "リーダー攻撃倍率", "Leader ATK Ratio"), ratioStr, isDecimal = true),
@@ -1180,7 +1181,15 @@ class GameModifierActivity : ThemedActivity() {
                 for ((spec, et) in inputs) {
                     val raw = et.text.toString().trim()
                     if (raw.isEmpty()) continue
-                    if (spec.isDecimal) {
+                    if (spec.isFlag) {
+                        val flag = try {
+                            GameModifierBridge.parseGlobalSaveFlagEdit(raw, spec.initialText)
+                        } catch (_: IllegalArgumentException) {
+                            Toast.makeText(this, tr("解锁标记只能为 0 或 1", "解放フラグは 0 または 1", "Unlock flags must be 0 or 1"), Toast.LENGTH_SHORT).show()
+                            return@setPositiveButton
+                        }
+                        if (flag != null) mod.put(spec.key, flag)
+                    } else if (spec.isDecimal) {
                         val d = raw.toDoubleOrNull()
                         if (d != null && d.isFinite()) mod.put(spec.key, d)
                     } else {
@@ -1199,6 +1208,7 @@ class GameModifierActivity : ThemedActivity() {
         for (key in mod.keys().asSequence().toList()) {
             if (!GameModifierBridge.isGlobalSaveModFieldAvailable(saveDir, key)) mod.remove(key)
         }
+        if (mod.length() == 0) return
         GameModifierBridge.backupGlobalSaveFilesBeforeMod(saveDir)
         val ok = GameModifierBridge.writeGlobalSaveModForDir(saveDir, mod.toString())
         if (ok) {

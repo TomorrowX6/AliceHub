@@ -54,6 +54,15 @@ static unsigned pending_close_requests = 0;
 static uint32_t first_unpopped_close_tick = 0;
 static bool kbd_ctrl_down = false;
 static atomic_bool touch_ctrl_skip = false;
+static atomic_bool long_press_ctrl_enabled = false;
+static bool long_touch_armed = false;
+static uint32_t long_touch_start_tick;
+static SDL_FRect long_touch_finger_rect;
+static bool long_touch_ctrl_down = false;
+static uint64_t next_touch_press_id;
+static uint64_t touch_press_id;
+static uint64_t long_touch_click_cancel;
+#define LONG_TOUCH_DURATION 1000
 
 #define MOVIE_HOLD_SKIP_MS 800
 #define MOVIE_TOUCH_SLOP_SQ (0.05f * 0.05f)
@@ -316,7 +325,7 @@ static void sync_ctrl_key_state(void)
 {
 	kbd_key_state[VK_CONTROL] = kbd_ctrl_down;
 	key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
-		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
+		|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL] || long_touch_ctrl_down;
 }
 
 void input_set_touch_ctrl_skip(bool enabled)
@@ -328,6 +337,11 @@ void input_set_touch_ctrl_skip(bool enabled)
 bool input_get_touch_ctrl_skip(void)
 {
 	return atomic_load(&touch_ctrl_skip);
+}
+
+void input_set_long_press_ctrl(bool enabled)
+{
+	atomic_store(&long_press_ctrl_enabled, enabled);
 }
 static enum sact_keycode sdl_keytable[] = {
 	[SDL_SCANCODE_0] = VK_0,
@@ -582,6 +596,7 @@ static bool deferred_mouse_release[VK_NR_KEYCODES];
 #define SYNTHETIC_MOUSE_RELEASE_FALLBACK_DELAY 250
 
 static void fire_deferred_events(bool from_parts_poll, bool allow_press);
+static void update_long_touch_ctrl(void);
 
 void input_parts_poll_begin(bool allow_press)
 {
@@ -590,6 +605,7 @@ void input_parts_poll_begin(bool allow_press)
 		last_parts_poll_timestamp = SDL_GetTicks();
 	handle_events();
 	fire_deferred_events(true, allow_press);
+	update_long_touch_ctrl();
 }
 
 void input_notify_parts_poll(bool allow_press, bool clicking)
@@ -621,6 +637,28 @@ void input_notify_parts_poll(bool allow_press, bool clicking)
 
 void input_cancel_long_touch(void)
 {
+	long_touch_armed = false;
+}
+
+uint64_t input_get_touch_press_id(void)
+{
+	return touch_press_id;
+}
+
+uint64_t input_take_long_touch_click_cancel(void)
+{
+	uint64_t cancel = long_touch_click_cancel;
+	long_touch_click_cancel = 0;
+	return cancel;
+}
+
+static void release_long_touch_ctrl(void)
+{
+	input_cancel_long_touch();
+	if (long_touch_ctrl_down) {
+		long_touch_ctrl_down = false;
+		sync_ctrl_key_state();
+	}
 }
 
 #define MAX_ACTIVE_TOUCH_FINGERS 16
@@ -703,7 +741,7 @@ bool key_is_down(enum sact_keycode code)
 	}
 	if (code == VK_CONTROL) {
 		key_state[VK_CONTROL] = kbd_ctrl_down || injected_vk_down[VK_CONTROL] || atomic_load(&touch_ctrl_skip)
-			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL];
+			|| vpad_vk_down[VK_CONTROL] || pad_vk_down[VK_CONTROL] || long_touch_ctrl_down;
 	}
 	bool is_mouse_btn = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 	bool parts_polling = last_parts_poll_timestamp != 0 &&
@@ -742,7 +780,7 @@ void key_clear_flag(bool no_ctrl)
 		mouse_down_unobserved[i] = false;
 		deferred_mouse_release[i] = false;
 	}
-	if (atomic_load(&touch_ctrl_skip))
+	if (atomic_load(&touch_ctrl_skip) || long_touch_ctrl_down)
 		key_state[VK_CONTROL] = true;
 }
 
@@ -833,9 +871,66 @@ bool mouse_show_cursor(bool show)
 	return SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE) >= 0;
 }
 
-static void(*input_handler)(const char*);
-static void(*editing_handler)(const char*, int, int);
-static void(*key_handler)(int);
+static const struct input_text_handlers *legacy_text_handlers;
+static const struct input_text_handlers *parts_text_handlers;
+static const struct input_text_handlers *text_handlers;
+
+#ifdef __ANDROID__
+static uint32_t android_parts_text_event;
+static unsigned android_parts_text_generation;
+static atomic_uint android_parts_text_session;
+
+struct android_parts_text {
+	bool composing;
+	int backspaces;
+	char text[];
+};
+
+static void dispatch_android_parts_text(const SDL_UserEvent *event)
+{
+	struct android_parts_text *input = event->data1;
+	if ((unsigned)event->code == atomic_load(&android_parts_text_session)) {
+		if (input->composing) {
+			text_handlers->edit(input->text, 0, 0);
+		} else if (input->backspaces) {
+			for (int i = 0; i < input->backspaces; i++)
+				text_handlers->key(VK_BACK);
+		} else {
+			text_handlers->commit(input->text);
+			if (strpbrk(input->text, "\r\n"))
+				text_handlers->key(VK_RETURN);
+		}
+	}
+	free(input);
+}
+#endif
+
+static void update_text_handlers(void)
+{
+	const struct input_text_handlers *next = legacy_text_handlers ? legacy_text_handlers : parts_text_handlers;
+	if (text_handlers == next)
+		return;
+	if (text_handlers && text_handlers->edit)
+		text_handlers->edit("", 0, 0);
+	if (text_handlers)
+		SDL_StopTextInput();
+	text_handlers = next;
+#ifdef __ANDROID__
+	unsigned session = 0;
+	if (next && next == parts_text_handlers) {
+		if (!android_parts_text_event)
+			android_parts_text_event = SDL_RegisterEvents(1);
+		if (android_parts_text_event != (uint32_t)-1) {
+			if (++android_parts_text_generation == 0)
+				++android_parts_text_generation;
+			session = android_parts_text_generation;
+		}
+	}
+	atomic_store(&android_parts_text_session, session);
+#endif
+	if (text_handlers)
+		SDL_StartTextInput();
+}
 
 static void key_event(SDL_KeyboardEvent *e, bool pressed)
 {
@@ -880,8 +975,8 @@ static void key_event(SDL_KeyboardEvent *e, bool pressed)
 			kbd_key_state[code] = pressed;
 			key_state[code] = pressed || vpad_vk_down[code] || pad_vk_down[code];
 		}
-		if (pressed && key_handler)
-			key_handler(code);
+		if (pressed && text_handlers && text_handlers->key)
+			text_handlers->key(code);
 	}
 }
 
@@ -890,6 +985,8 @@ static void mouse_event(SDL_MouseButtonEvent *e)
 	enum sact_keycode code = sdl_to_sact_button(e->button);
 	if (code) {
 		if (e->state == SDL_PRESSED) {
+			if (code == VK_RBUTTON)
+				release_long_touch_ctrl();
 			sdl_mouse_down[code] = true;
 			deferred_mouse_release[code] = false;
 			key_state[code] = true;
@@ -917,23 +1014,28 @@ static void synthetic_mouse_event(SDL_MouseButtonEvent *e)
 {
 	if (e->state == SDL_PRESSED) {
 		if (e->button == SDL_BUTTON_RIGHT) {
+			release_long_touch_ctrl();
 			sdl_mouse_down[VK_RBUTTON] = true;
 			key_state[VK_RBUTTON] = true;
 			return;
 		}
 		SDL_Point p = { .x = e->x, .y = e->y };
 		if (SDL_PointInRect(&p, &sdl.viewport)) {
+			if (atomic_load(&long_press_ctrl_enabled))
+				touch_press_id = ++next_touch_press_id;
 			sdl_mouse_down[VK_LBUTTON] = true;
 			key_state[VK_LBUTTON] = true;
 		} else {
 #ifdef __ANDROID__
 			SDL_AndroidSendMessage(COMMAND_TOGGLE_CTRL_OVERLAY, 0);
 #else
+			release_long_touch_ctrl();
 			sdl_mouse_down[VK_RBUTTON] = true;
 			key_state[VK_RBUTTON] = true;
 #endif
 		}
 	} else {
+		touch_press_id = 0;
 		sdl_mouse_down[VK_LBUTTON] = false;
 		sdl_mouse_down[VK_RBUTTON] = false;
 		if (!vpad_vk_down[VK_LBUTTON] && !pad_vk_down[VK_LBUTTON])
@@ -1967,7 +2069,7 @@ static void send_cursor_ui_state(bool force)
 static void rebuild_effective_keys(uint32_t now)
 {
 	bool in_movie = movie_has_active_playback();
-	bool ctrl_skip = atomic_load(&touch_ctrl_skip);
+	bool ctrl_skip = atomic_load(&touch_ctrl_skip) || long_touch_ctrl_down;
 	for (int code = 1; code < VK_NR_KEYCODES; code++) {
 		bool is_mouse = (code == VK_LBUTTON || code == VK_RBUTTON || code == VK_MBUTTON);
 		bool pad_mouse = is_mouse && (vpad_vk_down[code] || pad_vk_down[code]);
@@ -2433,34 +2535,16 @@ static void process_gamepad_frame(void)
 #endif
 }
 
-void register_input_handler(void(*handler)(const char*))
+void input_set_legacy_text_handlers(const struct input_text_handlers *handlers)
 {
-	input_handler = handler;
+	legacy_text_handlers = handlers;
+	update_text_handlers();
 }
 
-void clear_input_handler(void)
+void input_set_parts_text_handlers(const struct input_text_handlers *handlers)
 {
-	input_handler = NULL;
-}
-
-void register_editing_handler(void(*handler)(const char*, int, int))
-{
-	editing_handler = handler;
-}
-
-void clear_editing_handler(void)
-{
-	editing_handler = NULL;
-}
-
-void register_key_handler(void(*handler)(int))
-{
-	key_handler = handler;
-}
-
-void clear_key_handler(void)
-{
-	key_handler = NULL;
+	parts_text_handlers = handlers;
+	update_text_handlers();
 }
 
 static void pop_deferred_synthetic_mouse_event(uint32_t now)
@@ -2595,13 +2679,17 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 		struct deferred_keyevent *ev = STAILQ_FIRST(&deferred_keyevent_queue);
 		switch (ev->e.type) {
 		case SDL_TEXTINPUT:
-			if (input_handler)
-				input_handler(ev->e.text.text);
+			if (text_handlers && text_handlers->commit)
+				text_handlers->commit(ev->e.text.text);
 			break;
 		case SDL_KEYDOWN:
 		case SDL_KEYUP:
 			last_keyevent_timestamp = now;
 			key_event(&ev->e.key, ev->e.type == SDL_KEYDOWN);
+			break;
+		default:
+			if (ev->e.type == android_parts_text_event)
+				dispatch_android_parts_text(&ev->e.user);
 			break;
 		}
 		STAILQ_REMOVE_HEAD(&deferred_keyevent_queue, entry);
@@ -2610,8 +2698,48 @@ static void fire_deferred_events(bool from_parts_poll, bool allow_press)
 #endif
 }
 
+static bool long_touch_right_button_down(void)
+{
+	return sdl_mouse_down[VK_RBUTTON] || vpad_vk_down[VK_RBUTTON] || pad_vk_down[VK_RBUTTON];
+}
+
+static void cancel_long_touch_click(void)
+{
+	// Parts can only have captured one press since its last poll.
+	if (!long_touch_click_cancel)
+		long_touch_click_cancel = touch_press_id;
+	touch_press_id = 0;
+	sdl_mouse_down[VK_LBUTTON] = false;
+	if (!vpad_vk_down[VK_LBUTTON] && !pad_vk_down[VK_LBUTTON]) {
+		key_state[VK_LBUTTON] = false;
+		mouse_down_unobserved[VK_LBUTTON] = false;
+		deferred_mouse_release[VK_LBUTTON] = false;
+	}
+	synthetic_mouse_hover_observed = false;
+	synthetic_mouse_up_observed = true;
+}
+
+static void update_long_touch_ctrl(void)
+{
+	if (!long_touch_armed && !long_touch_ctrl_down)
+		return;
+	if (long_touch_right_button_down()) {
+		release_long_touch_ctrl();
+		return;
+	}
+	if (!long_touch_armed || !touch_press_id || nr_deferred_synthetic_mouse_events ||
+	    SDL_GetTicks() - long_touch_start_tick < LONG_TOUCH_DURATION)
+		return;
+
+	long_touch_armed = false;
+	long_touch_ctrl_down = true;
+	cancel_long_touch_click();
+	sync_ctrl_key_state();
+}
+
 static void reset_inputs_on_movie_start(void)
 {
+	touch_press_id = 0;
 	key_state[VK_LBUTTON] = false;
 	key_state[VK_RBUTTON] = false;
 	key_state[VK_MBUTTON] = false;
@@ -2632,6 +2760,7 @@ static void reset_inputs_on_movie_start(void)
 	has_last_touch_down_pos = false;
 	two_finger_tap_candidate = false;
 	two_finger_scrolled = false;
+	release_long_touch_ctrl();
 	movie_pad_holding = false;
 	for (int s = 0; s < NR_PAD_SLOTS; s++) {
 		if (phys_slot_prev_raw[s])
@@ -2789,12 +2918,14 @@ static void on_app_will_enter_background(bool *returned_foreground)
 	atomic_store(&touch_ctrl_skip, false);
 	memset(kbd_key_state, 0, sizeof(kbd_key_state));
 	memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+	touch_press_id = 0;
 	key_state[VK_CONTROL] = false;
 	clear_active_touch_fingers();
 	multi_touch_active = false;
 	two_finger_tap_candidate = false;
 	two_finger_scrolled = false;
 	synthetic_mouse_warped = false;
+	release_long_touch_ctrl();
 	reset_gamepad_transient_state();
 	reset_movie_hold_state();
 	mixer_set_app_backgrounded(true);
@@ -2868,12 +2999,14 @@ static void handle_window_event(SDL_Event *e, bool *did_swap, bool *returned_for
 		atomic_store(&touch_ctrl_skip, false);
 		memset(kbd_key_state, 0, sizeof(kbd_key_state));
 		memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+		touch_press_id = 0;
 		key_state[VK_CONTROL] = false;
 		clear_active_touch_fingers();
 		multi_touch_active = false;
 		two_finger_tap_candidate = false;
 		two_finger_scrolled = false;
 		synthetic_mouse_warped = false;
+		release_long_touch_ctrl();
 		reset_gamepad_transient_state();
 		reset_movie_hold_state();
 		mixer_set_window_focus(false);
@@ -2959,6 +3092,8 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 			if (movie_has_active_playback() || suppress_touch_until_release) {
 				suppress_touch_until_release = true;
 			}
+			release_long_touch_ctrl();
+			touch_press_id = 0;
 			// Multi-touch gesture: cancel single-finger mouse state and
 			// track 2-finger tap (right-click) vs 2-finger scroll.
 			multi_touch_active = true;
@@ -2998,9 +3133,33 @@ static void handle_touch_finger_event(const SDL_TouchFingerEvent *tfinger, bool 
 				movie_hold_token++;
 				suppress_touch_until_release = true;
 			}
+			release_long_touch_ctrl();
+			if (atomic_load(&long_press_ctrl_enabled) && !suppress_touch_until_release) {
+				long_touch_armed = true;
+				long_touch_start_tick = tfinger->timestamp;
+				long_touch_finger_rect = (SDL_FRect) {
+					.x = tfinger->x - 0.01f,
+					.y = tfinger->y - 0.01f,
+					.w = 0.02f,
+					.h = 0.02f
+				};
+			}
 		}
 		return;
 	}
+
+	// SDL can queue the matching synthetic mouse release before FINGERUP.
+	bool only_touch_release_pending = nr_deferred_synthetic_mouse_events == 1 &&
+		deferred_synthetic_mouse_events[0].button == SDL_BUTTON_LEFT &&
+		deferred_synthetic_mouse_events[0].state == SDL_RELEASED;
+	if (long_touch_armed && touch_press_id && !long_touch_right_button_down() &&
+	    nr_active_touch_fingers == 1 && active_touch_fingers[0].touch_id == tfinger->touchId &&
+	    active_touch_fingers[0].finger_id == tfinger->fingerId &&
+	    tfinger->timestamp - long_touch_start_tick >= LONG_TOUCH_DURATION &&
+	    (nr_deferred_synthetic_mouse_events == 0 || only_touch_release_pending)) {
+		cancel_long_touch_click();
+	}
+	release_long_touch_ctrl();
 
 	if (single_touch_down && tfinger->fingerId == single_touch_finger_id) {
 		if (movie_touch_hold_eligible)
@@ -3080,6 +3239,12 @@ void handle_window_events(void)
 				did_swap = true;
 			}
 			break;
+		default:
+#ifdef __ANDROID__
+			if (android_parts_text_event && e.type == android_parts_text_event)
+				free(e.user.data1);
+#endif
+			break;
 		}
 	}
 	finish_event_drain(did_swap, returned_foreground);
@@ -3157,7 +3322,7 @@ void handle_events(void)
 			// fallthrough
 		case SDL_KEYUP:
 #ifdef __ANDROID__
-			if (input_handler && e.key.timestamp < last_keyevent_timestamp + DEFERRED_KEY_DELAY) {
+			if (text_handlers && e.key.timestamp < last_keyevent_timestamp + DEFERRED_KEY_DELAY) {
 				// Input from virtual keyboard is sent as consecutive
 				// SDL_KEYDOWN and SDL_KEYUP events. To give the game a chance
 				// to see the previous key event, delay the event.
@@ -3222,6 +3387,11 @@ void handle_events(void)
 			handle_touch_finger_event(&e.tfinger, true);
 			break;
 		case SDL_FINGERMOTION:
+			if ((long_touch_armed || long_touch_ctrl_down) &&
+			    e.tfinger.fingerId == single_touch_finger_id &&
+			    !SDL_PointInFRect(&(SDL_FPoint){ e.tfinger.x, e.tfinger.y }, &long_touch_finger_rect)) {
+				release_long_touch_ctrl();
+			}
 			if (single_touch_down && e.tfinger.fingerId == single_touch_finger_id && movie_touch_hold_eligible) {
 				float dx = e.tfinger.x - single_touch_start_x;
 				float dy = e.tfinger.y - single_touch_start_y;
@@ -3277,7 +3447,7 @@ void handle_events(void)
 			generic_joy_button_event(&e.jbutton);
 			break;
 		case SDL_TEXTINPUT:
-			if (!input_handler) {
+			if (!text_handlers || !text_handlers->commit) {
 				break;
 #ifdef __ANDROID__
 			} else if (!STAILQ_EMPTY(&deferred_keyevent_queue)) {
@@ -3287,20 +3457,32 @@ void handle_events(void)
 				STAILQ_INSERT_TAIL(&deferred_keyevent_queue, ev, entry);
 #endif
 			} else {
-				input_handler(e.text.text);
+				text_handlers->commit(e.text.text);
 			}
 			break;
 		case SDL_TEXTEDITING:
-			if (editing_handler)
-				editing_handler(e.edit.text, e.edit.start, e.edit.length);
+			if (text_handlers && text_handlers->edit)
+				text_handlers->edit(e.edit.text, e.edit.start, e.edit.length);
 			break;
 		default:
+#ifdef __ANDROID__
+			if (android_parts_text_event && e.type == android_parts_text_event) {
+				if (STAILQ_EMPTY(&deferred_keyevent_queue)) {
+					dispatch_android_parts_text(&e.user);
+				} else {
+					struct deferred_keyevent *ev = xmalloc(sizeof(*ev));
+					ev->e = e;
+					STAILQ_INSERT_TAIL(&deferred_keyevent_queue, ev, entry);
+				}
+			}
+#endif
 			break;
 		}
 	}
 	finish_event_drain(did_swap, returned_foreground);
 	process_gamepad_frame();
 	update_movie_skip_state();
+	update_long_touch_ctrl();
 	if (movie_has_active_playback()) {
 		for (int i = 1; i < VK_NR_KEYCODES; i++) {
 			if (is_movie_skip_suppressed_key(i))
@@ -3452,6 +3634,9 @@ void input_set_virtual_button(int slot_id, int action_type, int code, int code2,
 void input_clear_virtual_inputs(void)
 {
 	pthread_mutex_lock(&gp_mutex);
+#ifdef ALICEHUB_IOS
+	atomic_store(&touch_ctrl_skip, false);
+#endif
 	for (int i = 0; i < MAX_VPAD_SLOTS; i++) {
 		vpad_ui_slots[i].phys_down = false;
 		vpad_ui_slots[i].pending_press_edge = false;
@@ -3719,6 +3904,34 @@ static jstring jni_new_string_utf8_safe(JNIEnv *env, const char *utf8)
 	if (u16 != stack_buf)
 		free(u16);
 	return ret;
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_XSystem4Activity_nativePartsTextInputSession(
+	JNIEnv *env, jobject activity)
+{
+	(void)env;
+	(void)activity;
+	return (jint)atomic_load(&android_parts_text_session);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_XSystem4Activity_sendPartsTextInput(
+	JNIEnv *env, jobject activity, jint session, jbyteArray text, jboolean composing, jint backspaces)
+{
+	(void)activity;
+	if (!session || (unsigned)session != atomic_load(&android_parts_text_session))
+		return;
+	jsize size = text ? (*env)->GetArrayLength(env, text) : 0;
+	struct android_parts_text *input = xmalloc(sizeof(*input) + (size_t)size + 1);
+	input->composing = composing;
+	input->backspaces = backspaces;
+	if (size)
+		(*env)->GetByteArrayRegion(env, text, 0, size, (jbyte *)input->text);
+	input->text[size] = '\0';
+	SDL_Event event = { .user = { .type = android_parts_text_event, .code = session, .data1 = input } };
+	if (SDL_PushEvent(&event) <= 0)
+		free(input);
 }
 
 JNIEXPORT void JNICALL

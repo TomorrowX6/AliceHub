@@ -5,8 +5,8 @@ enum ArchiveExtractionError: LocalizedError {
     case unsafePath(String), native(String)
     var errorDescription: String? {
         switch self {
-        case .unsafePath(let path): return "Archive entry escapes destination: \(path)"
-        case .native(let message): return message
+        case .unsafePath(let path): return hubText("压缩包内的文件路径超出目标目录：%@", path)
+        case .native(let message): return hubText(message)
         }
     }
 }
@@ -166,7 +166,7 @@ private final class ExtractionState {
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         if size > 0,
            let free = try FileManager.default.attributesOfFileSystem(forPath: root.path)[.systemFreeSize] as? NSNumber,
-           size > free.int64Value - 32 * 1024 * 1024 { throw ArchiveExtractionError.native("ENOSPC: Insufficient storage space") }
+           size > free.int64Value - 32 * 1024 * 1024 { throw ArchiveExtractionError.native("存储空间不足") }
         currentPath = relative
         return strdup(output.path)
     }

@@ -2638,6 +2638,13 @@ object GameModifierBridge {
         return File(saveDir, name).isFile || File(File(saveDir, "SaveData"), name).isFile
     }
 
+    fun parseGlobalSaveFlagEdit(input: String, initial: String): Int? {
+        val value = input.toIntOrNull()
+        if (value == 0 || value == 1) return value
+        if (value != null && value == initial.toIntOrNull()) return null
+        throw IllegalArgumentException()
+    }
+
     fun backupGlobalSaveFilesBeforeMod(saveDir: File) {
         val activeDir = resolveActiveGlobalSaveDir(saveDir)
         val sub = File(saveDir, "SaveData")

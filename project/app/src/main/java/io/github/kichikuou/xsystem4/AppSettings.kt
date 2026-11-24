@@ -17,7 +17,6 @@ object AppSettings {
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
-    private const val KEY_DOWNLOAD_ROUTE = "download_route"
     private const val KEY_DOWNLOAD_CONCURRENCY = "download_concurrency"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
@@ -32,8 +31,6 @@ object AppSettings {
     const val LANG_JA = "ja"
     const val LANG_EN = "en"
 
-    const val ROUTE_GLOBAL = "global"
-    const val ROUTE_CN = "cn"
     const val MIN_DOWNLOAD_CONCURRENCY = 1
     const val MAX_DOWNLOAD_CONCURRENCY = 16
     const val DEFAULT_DOWNLOAD_CONCURRENCY = 8
@@ -312,20 +309,6 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_ONLINE_INSTALL, enabled).apply()
     }
 
-    private fun normalizeDownloadRoute(raw: String?): String = when (raw?.trim()?.lowercase(Locale.ROOT)) {
-        ROUTE_CN -> ROUTE_CN
-        else -> ROUTE_GLOBAL
-    }
-
-    @JvmStatic
-    fun getDownloadRoute(context: Context): String =
-        normalizeDownloadRoute(prefs(context).getString(KEY_DOWNLOAD_ROUTE, ROUTE_GLOBAL))
-
-    @JvmStatic
-    fun setDownloadRoute(context: Context, route: String) {
-        prefs(context).edit().putString(KEY_DOWNLOAD_ROUTE, normalizeDownloadRoute(route)).apply()
-    }
-
     @JvmStatic
     fun normalizeDownloadConcurrency(raw: Int): Int =
         raw.coerceIn(MIN_DOWNLOAD_CONCURRENCY, MAX_DOWNLOAD_CONCURRENCY)
@@ -339,7 +322,7 @@ object AppSettings {
         prefs(context).edit().putInt(KEY_DOWNLOAD_CONCURRENCY, normalizeDownloadConcurrency(concurrency)).apply()
     }
 
-    /** Strips any route prefix (/cn/) to recover the canonical game CDN URL for cache keys and install identity. */
+    /** Strips any legacy route prefix (/cn/) to recover the canonical game CDN URL for cache keys and install identity. */
     @JvmStatic
     fun canonicalCdnUrl(url: String): String {
         val trimmed = url.trimEnd('/')
@@ -349,23 +332,6 @@ object AppSettings {
             trimmed
         }
     }
-
-    /** Applies [route] to any AliceHub CDN URL (idempotent); non-AliceHub URLs pass through unchanged. */
-    @JvmStatic
-    fun applyDownloadRoute(url: String, route: String): String {
-        if (!url.startsWith(CDN_ORIGIN_PREFIX)) return url
-        val rest = url.removePrefix(CDN_ORIGIN_PREFIX)
-        val canonicalRest = if (rest.startsWith("cn/")) rest.removePrefix("cn/") else rest
-        return if (normalizeDownloadRoute(route) == ROUTE_CN) {
-            CDN_CN_PREFIX + canonicalRest
-        } else {
-            CDN_ORIGIN_PREFIX + canonicalRest
-        }
-    }
-
-    @JvmStatic
-    fun resolveCdnUrl(context: Context, url: String): String =
-        applyDownloadRoute(url, getDownloadRoute(context))
 
     @JvmStatic
     fun defaultBaseGameSizeForUrl(cdnBaseUrl: String): Long {

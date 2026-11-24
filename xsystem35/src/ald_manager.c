@@ -36,6 +36,31 @@ static drifiles *dri_overlay[DRIFILETYPEMAX];
 
 static Cache *dri_cache;
 
+#ifdef ALICEHUB_IOS
+static void free_dri(drifiles *archive) {
+	if (!archive)
+		return;
+	for (int i = 0; i < DRIFILEMAX; i++) {
+		if (archive->mmap[i])
+			unmap_file(archive->mmap[i]);
+		free(archive->fnames[i]);
+	}
+	free(archive->link);
+	free(archive->offset);
+	free(archive);
+}
+
+void ald_fini(void) {
+	cache_destroy(dri_cache);
+	dri_cache = NULL;
+	for (int i = 0; i < DRIFILETYPEMAX; i++) {
+		free_dri(dri[i]);
+		free_dri(dri_overlay[i]);
+		dri[i] = dri_overlay[i] = NULL;
+	}
+}
+#endif
+
 #ifndef ALD_CACHE_SIZE
 #define ALD_CACHE_SIZE (10 << 20)
 #endif
