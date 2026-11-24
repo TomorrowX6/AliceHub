@@ -37,14 +37,18 @@ struct PadAction: Codable, Equatable, Hashable {
 
     var isCombo: Bool { type == 6 }
 
-    static let comboKeys: [(Int32, String)] = [
-        (17, "Ctrl"), (16, "Shift"), (18, "Alt"), (13, "Enter"), (27, "Esc"),
-        (32, "Space"), (9, "Tab"), (8, "Backspace"), (33, "Page Up"), (34, "Page Down"),
-        (35, "End"), (36, "Home"), (45, "Insert"), (46, "Delete"),
-        (38, "↑"), (40, "↓"), (37, "←"), (39, "→")
-    ] + (65...90).map { (Int32($0), String(UnicodeScalar($0)!)) }
-      + (48...57).map { (Int32($0), String(UnicodeScalar($0)!)) }
-      + (1...12).map { (Int32(111 + $0), "F\($0)") }
+    static let comboKeys: [(Int32, String)] = {
+        var keys: [(Int32, String)] = [
+            (17, "Ctrl"), (16, "Shift"), (18, "Alt"), (13, "Enter"), (27, "Esc"),
+            (32, "Space"), (9, "Tab"), (8, "Backspace"), (33, "Page Up"), (34, "Page Down"),
+            (35, "End"), (36, "Home"), (45, "Insert"), (46, "Delete"),
+            (38, "↑"), (40, "↓"), (37, "←"), (39, "→")
+        ]
+        keys += (65...90).map { (Int32($0), String(UnicodeScalar($0)!)) }
+        keys += (48...57).map { (Int32($0), String(UnicodeScalar($0)!)) }
+        keys += (1...12).map { (Int32(111 + $0), "F\($0)") }
+        return keys
+    }()
 
     private static func comboKeyTitle(_ code: Int32) -> String {
         switch code {
