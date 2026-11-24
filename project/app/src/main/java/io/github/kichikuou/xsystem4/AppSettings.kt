@@ -119,6 +119,16 @@ object AppSettings {
     internal const val DEFAULT_NINGENGARI_BYTES = 17006400L
     internal const val DEFAULT_PASCHACPP_BYTES = 1391660611L
     internal const val DEFAULT_PASCHA3_BYTES = 3638072646L
+    internal const val DEFAULT_MAMATOTO_BYTES = 186917297L
+    internal const val DEFAULT_ONLYYOURECROSS_BYTES = 548617730L
+    internal const val DEFAULT_MAMORIGAMI_BYTES = 147669840L
+    internal const val DEFAULT_AMBIVALENZ_BYTES = 82305908L
+    internal const val DEFAULT_FUNNYBEE_BYTES = 68093371L
+    internal const val DEFAULT_TOUSHIN2SP_BYTES = 41383183L
+    internal const val DEFAULT_MUGENHOUYOU_BYTES = 50736493L
+    internal const val DEFAULT_OTOMESENKI_BYTES = 2849367L
+    internal const val DEFAULT_GAKUENHYOURYUU_BYTES = 3931456L
+    internal const val DEFAULT_MAIDNOSUSUME_BYTES = 21891136L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -371,6 +381,16 @@ object AppSettings {
             OnlineInstaller.NINGENGARI_CDN_URL -> DEFAULT_NINGENGARI_BYTES
             OnlineInstaller.PASCHACPP_CDN_URL -> DEFAULT_PASCHACPP_BYTES
             OnlineInstaller.PASCHA3_CDN_URL -> DEFAULT_PASCHA3_BYTES
+            OnlineInstaller.MAMATOTO_CDN_URL -> DEFAULT_MAMATOTO_BYTES
+            OnlineInstaller.ONLYYOURECROSS_CDN_URL -> DEFAULT_ONLYYOURECROSS_BYTES
+            OnlineInstaller.MAMORIGAMI_CDN_URL -> DEFAULT_MAMORIGAMI_BYTES
+            OnlineInstaller.AMBIVALENZ_CDN_URL -> DEFAULT_AMBIVALENZ_BYTES
+            OnlineInstaller.FUNNYBEE_CDN_URL -> DEFAULT_FUNNYBEE_BYTES
+            OnlineInstaller.TOUSHIN2SP_CDN_URL -> DEFAULT_TOUSHIN2SP_BYTES
+            OnlineInstaller.MUGENHOUYOU_CDN_URL -> DEFAULT_MUGENHOUYOU_BYTES
+            OnlineInstaller.OTOMESENKI_CDN_URL -> DEFAULT_OTOMESENKI_BYTES
+            OnlineInstaller.GAKUENHYOURYUU_CDN_URL -> DEFAULT_GAKUENHYOURYUU_BYTES
+            OnlineInstaller.MAIDNOSUSUME_CDN_URL -> DEFAULT_MAIDNOSUSUME_BYTES
             else -> -1L
         }
     }

@@ -322,6 +322,16 @@
     <string name="game_ningengari_title">人间狩猎</string>
     <string name="game_paschacpp_title">粉彩铃音 C++</string>
     <string name="game_pascha3_title">粉彩铃音3 封神追寻者</string>
+    <string name="game_mamatoto_title">妈妈托托 ～a record of war～</string>
+    <string name="game_onlyyourecross_title">Only You -Re Cross-</string>
+    <string name="game_mamorigami_title">守护神大人</string>
+    <string name="game_ambivalenz_title">AmbivalenZ -二律背反-</string>
+    <string name="game_funnybee_title">宇宙快盗Funny Bee</string>
+    <string name="game_toushin2sp_title">斗神都市II 然后，从那以后…</string>
+    <string name="game_mugenhouyou_title">梦幻泡影</string>
+    <string name="game_otomesenki_title">乙女战记</string>
+    <string name="game_gakuenhyouryuu_title">学园漂流战记</string>
+    <string name="game_maidnosusume_title">女仆的推荐</string>
     <string name="game_status_not_installed">未安装</string>
     <string name="game_status_installed">已安装</string>
     <string name="game_status_installed_mod">已安装 · %1$s</string>

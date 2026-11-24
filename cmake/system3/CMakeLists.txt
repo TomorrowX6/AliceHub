@@ -57,7 +57,7 @@ set(sys3_y254_orig [=[		case 254:
 			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO)) ? 1 : 0;
 			break;]=])
 set(sys3_y254_repl [=[		case 254:
-			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO) || (game_id.is(GameId::PROG_CD) && mako->is_cd_available())) ? 1 : 0;
+			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO) || ((game_id.is(GameId::PROG_CD) || game_id.is(GameId::MUGEN)) && mako->is_cd_available())) ? 1 : 0;
 			break;]=])
 string(REPLACE "${sys3_y254_orig}" "${sys3_y254_repl}" patched_nact_sys3_2 "${patched_nact_sys3}")
 if(patched_nact_sys3_2 STREQUAL patched_nact_sys3)

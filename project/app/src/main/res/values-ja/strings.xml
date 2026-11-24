@@ -322,6 +322,16 @@
     <string name="game_ningengari_title">人間狩り</string>
     <string name="game_paschacpp_title">ぱすちゃC＋＋</string>
     <string name="game_pascha3_title">パステルチャイム3 バインドシーカー</string>
+    <string name="game_mamatoto_title">ママトト ～a record of war～</string>
+    <string name="game_onlyyourecross_title">Only you -リ・クルス-</string>
+    <string name="game_mamorigami_title">守り神様</string>
+    <string name="game_ambivalenz_title">AmbivalenZ -二律背反-</string>
+    <string name="game_funnybee_title">宇宙快盗ファニーBee</string>
+    <string name="game_toushin2sp_title">闘神都市II そして、それから…</string>
+    <string name="game_mugenhouyou_title">夢幻泡影</string>
+    <string name="game_otomesenki_title">乙女戦記</string>
+    <string name="game_gakuenhyouryuu_title">学園漂流戦記</string>
+    <string name="game_maidnosusume_title">メイドのススメ</string>
     <string name="game_status_not_installed">未導入</string>
     <string name="game_status_installed">導入済</string>
     <string name="game_status_installed_mod">導入済 · %1$s</string>

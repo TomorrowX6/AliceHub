@@ -323,6 +323,16 @@
     <string name="game_ningengari_title">Ningen Gari</string>
     <string name="game_paschacpp_title">Pascha C++</string>
     <string name="game_pascha3_title">Pastel Chime 3 Bind Seeker</string>
+    <string name="game_mamatoto_title">Mamatoto ~a record of war~</string>
+    <string name="game_onlyyourecross_title">Only You -Re Cross-</string>
+    <string name="game_mamorigami_title">Mamorigami-sama</string>
+    <string name="game_ambivalenz_title">AmbivalenZ -Niritsu Haihan-</string>
+    <string name="game_funnybee_title">Uchuu Kaitou Funny Bee</string>
+    <string name="game_toushin2sp_title">Toushin Toshi II - Soshite, Sorekara…</string>
+    <string name="game_mugenhouyou_title">Mugen Houyou</string>
+    <string name="game_otomesenki_title">Otome Senki</string>
+    <string name="game_gakuenhyouryuu_title">Gakuen Hyouryuu Senki</string>
+    <string name="game_maidnosusume_title">Maid no Susume</string>
     <string name="game_status_not_installed">Not Installed</string>
     <string name="game_status_installed">Installed</string>
     <string name="game_status_installed_mod">Installed · %1$s</string>

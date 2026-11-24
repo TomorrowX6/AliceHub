@@ -200,7 +200,7 @@ public class TsumashiboriCatalogTest {
         assertFalse(desc.isRance10());
 
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(79, order.size());
+        assertEquals(89, order.size());
         int ixIdx = order.indexOf(GameCatalog.ID_IXSEAL);
         int tsIdx = order.indexOf(GameCatalog.ID_TSUMASHIBORI);
         assertTrue(ixIdx >= 0);

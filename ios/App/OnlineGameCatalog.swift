@@ -86,7 +86,17 @@ struct OnlineGame: Identifiable {
         Self(id: "dalk", title: "DALK", directory: "DALK"),
         Self(id: "ningengari", title: "人间狩猎", directory: "NingenGari"),
         Self(id: "paschacpp", title: "粉彩铃音 C++", directory: "PaschaCpp"),
-        Self(id: "pascha3", title: "粉彩铃音3 封神追寻者", directory: "Pascha3")
+        Self(id: "pascha3", title: "粉彩铃音3 封神追寻者", directory: "Pascha3"),
+        Self(id: "mamatoto", title: "妈妈托托 ～a record of war～", directory: "Mamatoto"),
+        Self(id: "onlyyourecross", title: "Only You -Re Cross-", directory: "OnlyYouReCross"),
+        Self(id: "mamorigami", title: "守护神大人", directory: "Mamorigami"),
+        Self(id: "ambivalenz", title: "AmbivalenZ -二律背反-", directory: "AmbivalenZ"),
+        Self(id: "funnybee", title: "宇宙快盗Funny Bee", directory: "FunnyBee"),
+        Self(id: "toushin2sp", title: "斗神都市II 然后，从那以后…", directory: "Toushin2Sp"),
+        Self(id: "mugenhouyou", title: "梦幻泡影", directory: "MugenHouyou"),
+        Self(id: "otomesenki", title: "乙女战记", directory: "OtomeSenki"),
+        Self(id: "gakuenhyouryuu", title: "学园漂流战记", directory: "GakuenHyouryuu"),
+        Self(id: "maidnosusume", title: "女仆的推荐", directory: "MaidNoSusume")
     ]
 }
 

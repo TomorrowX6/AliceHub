@@ -89,7 +89,17 @@ object GameSortMetadata {
         GameCatalog.ID_DALK to GameSortInfo("1992-12-15", 59.0, "https://vndb.org/v1798", "https://vndb.org/v1798"),
         GameCatalog.ID_NINGENGARI to GameSortInfo("1997-12-18", 57.4, "https://vndb.org/v1827", "https://vndb.org/v1827"),
         GameCatalog.ID_PASCHACPP to GameSortInfo("2005-12-09", 71.7, "https://vndb.org/v4758", "https://vndb.org/v4758"),
-        GameCatalog.ID_PASCHA3 to GameSortInfo("2013-02-15", 74.8, "https://vndb.org/v11292", "https://vndb.org/v11292")
+        GameCatalog.ID_PASCHA3 to GameSortInfo("2013-02-15", 74.8, "https://vndb.org/v11292", "https://vndb.org/v11292"),
+        GameCatalog.ID_MAMATOTO to GameSortInfo("1999-07-01", 67.6, "https://vndb.org/v1860", "https://vndb.org/v1860"),
+        GameCatalog.ID_ONLYYOURECROSS to GameSortInfo("2001-07-26", 73.5, "https://vndb.org/v2000", "https://vndb.org/v2000"),
+        GameCatalog.ID_MAMORIGAMI to GameSortInfo("1999-03-25", 66.1, "https://vndb.org/v4746", "https://vndb.org/v4746"),
+        GameCatalog.ID_AMBIVALENZ to GameSortInfo("1994-04-28", 66.5, "https://vndb.org/v2048", "https://vndb.org/v2048"),
+        GameCatalog.ID_FUNNYBEE to GameSortInfo("1994-08-10", 70.5, "https://vndb.org/v1723", "https://vndb.org/v1723"),
+        GameCatalog.ID_TOUSHIN2SP to GameSortInfo("1995-12-08", 70.4, "https://vndb.org/v6916", "https://vndb.org/v6916"),
+        GameCatalog.ID_MUGENHOUYOU to GameSortInfo("1995-07-07", 58.2, "https://vndb.org/v5933", "https://vndb.org/v5933"),
+        GameCatalog.ID_OTOMESENKI to GameSortInfo("1997-01-01", null, null, "https://www.alicesoft.com/"),
+        GameCatalog.ID_GAKUENHYOURYUU to GameSortInfo("1999-07-01", 65.6, "https://vndb.org/v20393", "https://vndb.org/v20393"),
+        GameCatalog.ID_MAIDNOSUSUME to GameSortInfo("1999-07-01", null, null, "https://vndb.org/v20392")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

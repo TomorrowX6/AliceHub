@@ -246,7 +246,12 @@ struct LibraryChecks {
             ("DALK", "DALK_SA.ALD", GameEngine.system3, "dalk"),
             ("NingenGari", "人間狩りSA.ALD", GameEngine.system3, "ningengari"),
             ("PaschaCpp", "ぱすてる＋.ain", GameEngine.system4, "paschacpp"),
-            ("Pascha3", "パステルチャイム３.ain", GameEngine.system4, "pascha3")
+            ("Pascha3", "パステルチャイム３.ain", GameEngine.system4, "pascha3"),
+            ("Mamatoto", "ママトトSA.ALD", GameEngine.system3, "mamatoto"),
+            ("OnlyYouReCross", "オンリーSA.ALD", GameEngine.system3, "onlyyourecross"),
+            ("Mamorigami", "守神SA.ALD", GameEngine.system3, "mamorigami"),
+            ("GakuenHyouryuu", "学園漂流SA.ALD", GameEngine.system3, "gakuenhyouryuu"),
+            ("MaidNoSusume", "メイドSA.ALD", GameEngine.system3, "maidnosusume")
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -261,7 +266,12 @@ struct LibraryChecks {
             ("AyumiChan", "ayumi_cd", "ACG0.DAT", "步美物语", "ayumi", GameLibrary.isAyumi as (URL) -> Bool),
             ("DpsAll", "dps_all", "ACG.DAT", "D.P.S. 全部", "dpsall", GameLibrary.isDpsAll as (URL) -> Bool),
             ("ProstudentG", "prog_cd", "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
-            ("Yakata3", "yakata3_cd", "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
+            ("Yakata3", "yakata3_cd", "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool),
+            ("AmbivalenZ", "ambivalenz_cd", "ACG.DAT", "AmbivalenZ -二律背反-", "ambivalenz", GameLibrary.isAmbivalenz as (URL) -> Bool),
+            ("FunnyBee", "funnybee_cd", "ACG.DAT", "宇宙快盗Funny Bee", "funnybee", GameLibrary.isFunnyBee as (URL) -> Bool),
+            ("Toushin2Sp", "toushin2_sp", "ACG.DAT", "斗神都市II 然后，从那以后…", "toushin2sp", GameLibrary.isToushin2Sp as (URL) -> Bool),
+            ("MugenHouyou", "mugen", "ACG.DAT", "梦幻泡影", "mugenhouyou", GameLibrary.isMugenHouyou as (URL) -> Bool),
+            ("OtomeSenki", "otome", "ACG.DAT", "乙女战记", "otomesenki", GameLibrary.isOtomeSenki as (URL) -> Bool)
         ] {
             let gDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: gDir, withIntermediateDirectories: true)
@@ -274,8 +284,8 @@ struct LibraryChecks {
         }
         let reCrossDir = root.appendingPathComponent("OnlyYou Re-Cross")
         try files.createDirectory(at: reCrossDir, withIntermediateDirectories: true)
-        try Data().write(to: reCrossDir.appendingPathComponent("OY_SA.ALD"))
-        precondition(GameLibrary.isGame(reCrossDir) && Game(url: reCrossDir).artworkKey == nil)
+        try Data().write(to: reCrossDir.appendingPathComponent("オンリーSA.ALD"))
+        precondition(GameLibrary.isGame(reCrossDir) && Game(url: reCrossDir).artworkKey == "onlyyourecross")
         func make256Bytes(crc32 target: UInt32) -> Data {
             var buf = [UInt8](repeating: 0, count: 256)
             var table = [UInt32](repeating: 0, count: 256)
@@ -310,7 +320,14 @@ struct LibraryChecks {
             ("UnknownFolder5", UInt32(0xfb0e4a63), "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
             ("UnknownFolder5FD", UInt32(0x5ffbfee7), "ACG.DAT", "职业学生G", "prostudentg", GameLibrary.isProstudentG as (URL) -> Bool),
             ("UnknownFolder6", UInt32(0x7f8f5e2a), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool),
-            ("UnknownFolder6FD", UInt32(0x58ebcc99), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool)
+            ("UnknownFolder6FD", UInt32(0x58ebcc99), "ACG.DAT", "爱丽丝之馆3", "yakata3", GameLibrary.isYakata3 as (URL) -> Bool),
+            ("UnknownFolder7", UInt32(0x4b10db69), "ACG.DAT", "AmbivalenZ -二律背反-", "ambivalenz", GameLibrary.isAmbivalenz as (URL) -> Bool),
+            ("UnknownFolder7FD", UInt32(0xa6b48dfe), "ACG.DAT", "AmbivalenZ -二律背反-", "ambivalenz", GameLibrary.isAmbivalenz as (URL) -> Bool),
+            ("UnknownFolder8", UInt32(0xe14e3971), "ACG.DAT", "宇宙快盗Funny Bee", "funnybee", GameLibrary.isFunnyBee as (URL) -> Bool),
+            ("UnknownFolder8FD", UInt32(0x731267fa), "ACG.DAT", "宇宙快盗Funny Bee", "funnybee", GameLibrary.isFunnyBee as (URL) -> Bool),
+            ("UnknownFolder9", UInt32(0x2172c7b2), "ACG.DAT", "斗神都市II 然后，从那以后…", "toushin2sp", GameLibrary.isToushin2Sp as (URL) -> Bool),
+            ("UnknownFolder10", UInt32(0xbb27d1ba), "ACG.DAT", "梦幻泡影", "mugenhouyou", GameLibrary.isMugenHouyou as (URL) -> Bool),
+            ("UnknownFolder11", UInt32(0x49a4db15), "ACG.DAT", "乙女战记", "otomesenki", GameLibrary.isOtomeSenki as (URL) -> Bool)
         ] {
             let cDir = root.appendingPathComponent(dirName)
             try files.createDirectory(at: cDir, withIntermediateDirectories: true)

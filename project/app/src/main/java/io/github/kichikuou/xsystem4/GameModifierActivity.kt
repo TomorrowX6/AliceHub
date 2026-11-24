@@ -408,6 +408,16 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_NINGENGARI ||
                 id == GameCatalog.ID_PASCHACPP ||
                 id == GameCatalog.ID_PASCHA3 ||
+                id == GameCatalog.ID_MAMATOTO ||
+                id == GameCatalog.ID_ONLYYOURECROSS ||
+                id == GameCatalog.ID_MAMORIGAMI ||
+                id == GameCatalog.ID_AMBIVALENZ ||
+                id == GameCatalog.ID_FUNNYBEE ||
+                id == GameCatalog.ID_TOUSHIN2SP ||
+                id == GameCatalog.ID_MUGENHOUYOU ||
+                id == GameCatalog.ID_OTOMESENKI ||
+                id == GameCatalog.ID_GAKUENHYOURYUU ||
+                id == GameCatalog.ID_MAIDNOSUSUME ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

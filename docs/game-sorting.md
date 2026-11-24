@@ -103,8 +103,21 @@ Attribution: [VNDB.org](https://vndb.org/), [Open Database License / Database Co
 | `ningengari` | Ningen Gari | 1997-12-18 | 57.4 | 5.74 | [v1827](https://vndb.org/v1827) | [source](https://vndb.org/v1827) |
 | `paschacpp` | Pascha C++ | 2005-12-09 | 71.7 | 7.17 | [v4758](https://vndb.org/v4758) | [source](https://vndb.org/v4758) |
 | `pascha3` | Pastel Chime 3 Bind Seeker | 2013-02-15 | 74.8 | 7.48 | [v11292](https://vndb.org/v11292) | [source](https://vndb.org/v11292) |
+| `mamatoto` | Mamatoto ~a record of war~ | 1999-07-01 | 67.6 | 6.76 | [v1860](https://vndb.org/v1860) | [source](https://vndb.org/v1860) |
+| `onlyyourecross` | Only You -Re Cross- | 2001-07-26 | 73.5 | 7.35 | [v2000](https://vndb.org/v2000) | [source](https://vndb.org/v2000) |
+| `mamorigami` | Mamorigami-sama | 1999-03-25 | 66.1 | 6.61 | [v4746](https://vndb.org/v4746) | [source](https://vndb.org/v4746) |
+| `ambivalenz` | AmbivalenZ -Niritsu Haihan- | 1994-04-28 | 66.5 | 6.65 | [v2048](https://vndb.org/v2048) | [source](https://vndb.org/v2048) |
+| `funnybee` | Uchuu Kaitou Funny Bee | 1994-08-10 | 70.5 | 7.05 | [v1723](https://vndb.org/v1723) | [source](https://vndb.org/v1723) |
+| `toushin2sp` | Toushin Toshi II - Soshite, Sorekara... | 1995-12-08 | 70.4 | 7.04 | [v6916](https://vndb.org/v6916) | [source](https://vndb.org/v6916) |
+| `mugenhouyou` | Mugen Houyou | 1995-07-07 | 58.2 | 5.82 | [v5933](https://vndb.org/v5933) | [source](https://vndb.org/v5933) |
+| `otomesenki` | Otome Senki | 1997-01-01 | unknown | unknown | not assigned | [source](https://www.alicesoft.com/) |
+| `gakuenhyouryuu` | Gakuen Hyouryuu Senki | 1999-07-01 | 65.6 | 6.56 | [v20393](https://vndb.org/v20393) | [source](https://vndb.org/v20393) |
+| `maidnosusume` | Maid no Susume | 1999-07-01 | unknown | unknown | not assigned | [source](https://vndb.org/v20392) |
 
 ## Edition mapping / missing-score decisions
+
+- `otomesenki` (`乙女戦記`, 1997 AliceSoft free download title) has no standalone VNDB work entry, so its rating and score source remain null.
+- `maidnosusume` ([v20392](https://vndb.org/v20392), released `1999-07-01`) currently returns `rating: null` on VNDB (0 votes), so its rating and score source remain null.
 
 - Rance 01/03 are the 2013/2015 remakes, not the 1989/1991 originals. Rance VI/IX/X use their original work entries.
 - `rance02` groups variants under one card. VNDB splits original II / standard 02 under [v1427](https://vndb.org/v1427) and revised 02 Kai under [v18970](https://vndb.org/v18970). The preserved release evidence maps r85823 to standard 02, r130324 to revised 02, and bundle r64811 to both. The fetched ratings are 61.9 and 60.3 respectively; neither unambiguously describes the whole card. Keep rating/source null, rather than choose one, average them, or substitute the older original. Official remake release date remains 2009-12-18.

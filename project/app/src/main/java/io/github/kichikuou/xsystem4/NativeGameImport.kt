@@ -253,6 +253,11 @@ object NativeGameImport {
             detectedGameId == GameCatalog.ID_DPSALL -> "DpsAll"
             detectedGameId == GameCatalog.ID_PROSTUDENTG -> "ProstudentG"
             detectedGameId == GameCatalog.ID_YAKATA3 -> "Yakata3"
+            detectedGameId == GameCatalog.ID_AMBIVALENZ -> "AmbivalenZ"
+            detectedGameId == GameCatalog.ID_FUNNYBEE -> "FunnyBee"
+            detectedGameId == GameCatalog.ID_TOUSHIN2SP -> "Toushin2Sp"
+            detectedGameId == GameCatalog.ID_MUGENHOUYOU -> "MugenHouyou"
+            detectedGameId == GameCatalog.ID_OTOMESENKI -> "OtomeSenki"
             GameCatalog.isLegacySystem3GameFiles(primaryFileNames) -> {
                 val ini = primaryFileNames.firstOrNull { it.equals("system3.ini", true) }
                 OnlineInstaller.sanitizeInstallDirName(
@@ -396,8 +401,38 @@ object NativeGameImport {
         if (GameCatalog.isIkusaMikoGameFiles(activeFiles, readSmallFile)) {
             return "IkusaMiko"
         }
+        if (GameCatalog.isOnlyYouReCrossGameFiles(activeFiles, readSmallFile)) {
+            return "OnlyYouReCross"
+        }
         if (GameCatalog.isOnlyYouGameFiles(activeFiles, readSmallFile)) {
             return "OnlyYou"
+        }
+        if (GameCatalog.isMamatotoGameFiles(activeFiles, readSmallFile)) {
+            return "Mamatoto"
+        }
+        if (GameCatalog.isMamorigamiGameFiles(activeFiles, readSmallFile)) {
+            return "Mamorigami"
+        }
+        if (GameCatalog.isAmbivalenzGameFiles(activeFiles, readSmallFile)) {
+            return "AmbivalenZ"
+        }
+        if (GameCatalog.isFunnyBeeGameFiles(activeFiles, readSmallFile)) {
+            return "FunnyBee"
+        }
+        if (GameCatalog.isToushin2SpGameFiles(activeFiles, readSmallFile)) {
+            return "Toushin2Sp"
+        }
+        if (GameCatalog.isMugenHouyouGameFiles(activeFiles, readSmallFile)) {
+            return "MugenHouyou"
+        }
+        if (GameCatalog.isOtomeSenkiGameFiles(activeFiles, readSmallFile)) {
+            return "OtomeSenki"
+        }
+        if (GameCatalog.isGakuenHyouryuuGameFiles(activeFiles, readSmallFile)) {
+            return "GakuenHyouryuu"
+        }
+        if (GameCatalog.isMaidNoSusumeGameFiles(activeFiles, readSmallFile)) {
+            return "MaidNoSusume"
         }
         if (GameCatalog.isSanbikiGameFiles(activeFiles, readSmallFile)) {
             return "Sanbiki"
