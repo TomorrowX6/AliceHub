@@ -928,10 +928,10 @@ final class GameLibrary: ObservableObject {
             let arguments = try Self.launchArguments(game.url, saves: saves)
             launching = true
             SaveSyncSession.begin(game: game.name) {
-                ModifierBridge.prepareForLaunch()
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     SDL_SetMainReady()
                     if info.engine == .system4 {
+                        ModifierBridge.prepareForLaunch(gameID: game.id)
                         RuntimeGamepad.prepare(for: game.id)
                         input_set_long_press_ctrl(UserDefaults.standard.bool(forKey: "hub.longPressCtrl"))
                     }

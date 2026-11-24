@@ -93,6 +93,15 @@ struct GameDetailView: View {
                     }
                 }.modifier(HubCard())
 
+                if active.engine == .system4 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("显示").font(.title3.bold())
+                        VStack(spacing: 0) {
+                            GameDisplayScaleRows(gameID: active.id)
+                        }.modifier(HubCard())
+                    }
+                }
+
                 Button(role: .destructive) { deleting = true } label: {
                     Label("删除游戏", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 48)
                 }
