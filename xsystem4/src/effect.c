@@ -293,6 +293,18 @@ static effect_fun effect_functions[NR_EFFECTS] = {
 
 static bool effect_reset_registered = false;
 
+#ifdef ALICEHUB_IOS
+void effect_end_session(void)
+{
+	effect_fini();
+	for (int i = 0; i < NR_EFFECTS; i++) {
+		if (effect_shaders[i])
+			effect_shaders[i]->s.program = 0;
+	}
+	effect_reset_registered = false;
+}
+#endif
+
 static void effect_on_gl_reset(void *user)
 {
 	(void)user;

@@ -54,6 +54,7 @@ enum CustomEventCode {
 	SIMULATE_RIGHT_BUTTON,
 	DEBUGGER_COMMAND,
 	WIN_MENU_COMMAND,
+	VIRTUAL_MENU_COMMAND,
 };
 
 static SDL_Point mouse_pos;
@@ -249,6 +250,10 @@ void event_remove(void) {
 		SDL_CloseJoystick(js);
 		js = NULL;
 	}
+#ifdef ALICEHUB_IOS
+	custom_event_type = (uint32_t)-1;
+	memset(RawKeyInfo, 0, sizeof(RawKeyInfo));
+#endif
 }
 
 void event_set_joy_device_index(int index) {
@@ -357,9 +362,7 @@ static void rance4v2_hack(void) {
 		cancel_yield();
 }
 
-void event_handle_event(SDL_Event *e) {
-	gfx_convertEventCoordinates(e);
-
+static void handle_render_event(SDL_Event *e, bool virtual_input) {
 	if (modal_handle_event(e))
 		return;
 
@@ -465,8 +468,13 @@ void event_handle_event(SDL_Event *e) {
 		mouseb &= (0xffffffff ^ (1 << e->button.button));
 		RawKeyInfo[mouse_to_rawkey(e->button.button)] = false;
 		send_agsevent(AGSEVENT_BUTTON_RELEASE, mouse_to_agsevent(e->button.button));
-		if (e->button.button == 2) {
-			menu_open();
+		if (e->button.button == SDL_BUTTON_MIDDLE) {
+			if (virtual_input) {
+				SDL_Event menu = { .user = { .type = custom_event_type, .code = VIRTUAL_MENU_COMMAND } };
+				SDL_PushEvent(&menu);
+			} else {
+				menu_open();
+			}
 		}
 		break;
 
@@ -593,6 +601,9 @@ void event_handle_event(SDL_Event *e) {
 			case DEBUGGER_COMMAND:
 				dbg_post_command(e->user.data1);
 				break;
+			case VIRTUAL_MENU_COMMAND:
+				menu_open();
+				break;
 #ifdef _WIN32
 			case WIN_MENU_COMMAND:
 				win_menu_onCommand((uintptr_t)e->user.data1);
@@ -602,6 +613,11 @@ void event_handle_event(SDL_Event *e) {
 		}
 		break;
 	}
+}
+
+void event_handle_event(SDL_Event *e) {
+	gfx_convertEventCoordinates(e);
+	handle_render_event(e, false);
 }
 
 /* Event処理 */
@@ -682,10 +698,24 @@ int event_get_joy(void) {
 }
 
 void event_inject_mouse_motion(int x, int y) {
+#ifdef ALICEHUB_IOS
+	SDL_Event e = { .motion = { .type = SDL_EVENT_MOUSE_MOTION, .x = x, .y = y } };
+	handle_render_event(&e, true);
+#else
 	event_set_mouse_internal_location(x, y);
+#endif
 }
 
-void event_inject_mouse_button(int sdl_button, bool pressed) {
+void event_inject_mouse_button(int sdl_button, bool pressed, int x, int y) {
+#ifdef ALICEHUB_IOS
+	SDL_Event e = { .button = {
+		.type = pressed ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP,
+		.button = sdl_button, .x = x >= 0 ? x : mouse_pos.x, .y = y >= 0 ? y : mouse_pos.y,
+	} };
+	handle_render_event(&e, true);
+#else
+	(void)x;
+	(void)y;
 	int rawkey = mouse_to_rawkey(sdl_button);
 	int agsbtn = mouse_to_agsevent(sdl_button);
 	if (pressed)
@@ -696,20 +726,45 @@ void event_inject_mouse_button(int sdl_button, bool pressed) {
 		RawKeyInfo[rawkey] = pressed;
 	if (agsbtn)
 		send_agsevent(pressed ? AGSEVENT_BUTTON_PRESS : AGSEVENT_BUTTON_RELEASE, agsbtn);
+#endif
 }
 
 void event_inject_mouse_wheel(int dir) {
+#ifdef ALICEHUB_IOS
+	SDL_Event e = { .wheel = { .type = SDL_EVENT_MOUSE_WHEEL, .y = dir,
+#if XSYSTEM35_SDL_VERSION >= 3
+		.integer_y = dir,
+#endif
+	} };
+	handle_render_event(&e, true);
+#else
 	if (dir > 0)
 		mouse_wheel_up++;
 	else if (dir < 0)
 		mouse_wheel_down++;
 	if (dir != 0)
 		send_agsevent(AGSEVENT_MOUSE_WHEEL, dir);
+#endif
 }
 
 void event_inject_rawkey(int keycode, bool pressed) {
 	if (keycode <= 0 || keycode >= 256)
 		return;
+#ifdef ALICEHUB_IOS
+	for (int i = 1; i < SDL_SCANCODE_COUNT; i++) {
+		if (keytable[i] != keycode)
+			continue;
+		SDL_Event e = { .key = { .type = pressed ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP,
+#if XSYSTEM35_SDL_VERSION == 2
+			.keysym = { .scancode = i, .sym = SDL_GetKeyFromScancode(i) },
+#else
+			.scancode = i, .key = SDL_GetKeyFromScancode(i, SDL_KMOD_NONE, true),
+#endif
+		} };
+		handle_render_event(&e, true);
+		return;
+	}
+#endif
 	RawKeyInfo[keycode] = pressed;
 	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, keycode);
 }

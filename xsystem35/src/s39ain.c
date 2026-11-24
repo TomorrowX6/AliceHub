@@ -212,8 +212,27 @@ bool s39ain_init(const char *path_to_ain, S39AIN *ain) {
 	for (i = 0; i < ain->dllnum; i++)
 		resolve_module(&ain->dll[i]);
 
+#ifdef ALICEHUB_IOS
+	ain->file_data = buf;
+#endif
 	return true;
 }
+
+#ifdef ALICEHUB_IOS
+void s39ain_fini(S39AIN *ain) {
+	s39ain_reset(ain);
+	for (int i = 0; i < ain->dllnum; i++) {
+		for (int j = 0; j < ain->dll[i].function_num; j++)
+			free(ain->dll[i].function[j].argv);
+		free(ain->dll[i].function);
+	}
+	free(ain->dll);
+	free(ain->fnc);
+	free(ain->var);
+	free(ain->msg);
+	free(ain->file_data);
+}
+#endif
 
 void s39ain_reset(S39AIN *ain) {
 	for (int i = 0; i < ain->dllnum; i++) {

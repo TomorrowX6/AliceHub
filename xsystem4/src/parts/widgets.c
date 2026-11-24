@@ -853,14 +853,51 @@ void PE_ClearRadioButtonBoxChild(int no)
 	p->nr_radio_children = 0;
 }
 
+void parts_text_box_set_display(struct parts *parts, const char *composition)
+{
+	if (parts->component_type != 4)
+		return;
+	if (!parts->text_box_label)
+		parts->text_box_label = xcalloc(1, sizeof(*parts->text_box_label));
+	struct parts_state *label = parts->text_box_label;
+	parts_state_reset(label, PARTS_TEXT);
+	for (const char *p = parts->text_box_text->text; *p;)
+		p = parts_text_append_char(&label->text, p);
+	for (const char *p = composition; p && *p;)
+		p = parts_text_append_char(&label->text, p);
+	parts_text_update_dims(parts, &label->text);
+	parts_dirty(parts);
+}
+
 void PE_SetTextBoxText(int no, struct string *text)
 {
 	struct parts *p = parts_get(no);
 	set_string(&p->text_box_text, text ? text : &EMPTY_STRING);
+	parts_text_box_set_display(p, NULL);
 }
 
 struct string *PE_GetTextBoxText(int no)
 {
 	struct parts *p = parts_get(no);
 	return string_ref(p->text_box_text ? p->text_box_text : &EMPTY_STRING);
+}
+
+void PE_SetTextBoxReadOnly(int no, bool read_only)
+{
+	parts_get(no)->text_box_read_only = read_only;
+}
+
+bool PE_IsTextBoxReadOnly(int no)
+{
+	return parts_get(no)->text_box_read_only;
+}
+
+void PE_SetTextBoxMaxTextLength(int no, int length)
+{
+	parts_get(no)->text_box_max_length = length;
+}
+
+int PE_GetTextBoxMaxTextLength(int no)
+{
+	return parts_get(no)->text_box_max_length;
 }

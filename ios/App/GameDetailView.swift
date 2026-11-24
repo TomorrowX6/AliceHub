@@ -3,8 +3,12 @@ import SwiftUI
 struct GameDetailView: View {
     let game: Game
     @ObservedObject var library: GameLibrary
+    @ObservedObject var download: OnlineGameDownloadModel
+    let catalog: OnlineGame?
+    let installations: [Game]
+    @Binding var selectedID: String?
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedGameID: String
+    @HubLocalizedText private var localized
     @State private var destination: Destination?
     @State private var deleting = false
     @State private var switchingInstance = false
@@ -16,19 +20,12 @@ struct GameDetailView: View {
     @State private var modDescriptor: ModGameDescriptor?
     @State private var uncensoredDescriptor: UncensoredGameDescriptor?
     @State private var uncensoredInstalled = false
+    @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
     @State private var supportsSaveEditor = false
     @State private var loadedCapabilities = false
 
-    init(game: Game, library: GameLibrary) {
-        self.game = game
-        self.library = library
-        _selectedGameID = State(initialValue: game.id)
-    }
-
     private var currentGame: Game {
-        library.games.first(where: { $0.id == selectedGameID })
-            ?? library.games.first(where: { $0.id == game.id })
-            ?? game
+        library.games.first(where: { $0.id == game.id }) ?? game
     }
 
     private func isRance10Instance(_ item: Game) -> Bool {
@@ -40,7 +37,7 @@ struct GameDetailView: View {
     }
 
     private enum Destination: String, Identifiable {
-        case saves, gamepad, mods, uncensored, editor
+        case saves, gamepad, mods, uncensored, editor, manual
         var id: String { rawValue }
     }
 
@@ -48,44 +45,22 @@ struct GameDetailView: View {
         let active = currentGame
         let isRance10 = isRance10Instance(active)
         let hasChinese = OnlineGame.hasChinese(for: active)
+        let manual = HubToolFiles.manual(in: active.url)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(spacing: 16) {
-                    GameArtwork(game: active, size: 100)
-                    Text(active.resolvedDisplayName)
+                    GameArtwork(game: active, catalogID: catalog?.artwork, size: 100)
+                    Text(catalog?.displayTitle(in: localized.language) ?? OnlineGame.displayTitle(for: active, in: localized.language))
                         .font(.title2.bold()).multilineTextAlignment(.center)
                     HStack(spacing: 8) {
                         HubBadge(title: "已安装", success: true)
-                        HubBadge(title: hasChinese ? "熟肉" : "生肉", tone: hasChinese ? .primary : .warning)
+                        HubBadge(title: OnlineGame.chineseBadgeKey(hasChinese: hasChinese), tone: hasChinese ? .primary : .warning)
                         HubBadge(title: active.engine.rawValue)
                     }
                     Button { library.launch(active) } label: {
                         Label("开始游戏", systemImage: "play.fill")
                     }.buttonStyle(HubPrimaryButton()).padding(.top, 8)
                 }.frame(maxWidth: .infinity).modifier(HubCard())
-
-                Text("游戏管理").font(.title3.bold())
-                VStack(spacing: 0) {
-                    action("存档管理", "externaldrive", .saves)
-                    Divider()
-                    if let descriptor = modDescriptor {
-                        action(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", "shippingbox", .mods)
-                        Divider()
-                    }
-                    if uncensoredDescriptor != nil {
-                        action(uncensoredInstalled ? "无码补丁 · 已安装" : "无码补丁", "sparkles", .uncensored)
-                        Divider()
-                    }
-                    if active.engine == .system4 {
-                        action("手柄设置", "gamecontroller", .gamepad)
-                    } else {
-                        HubActionLabel(title: "原生触控", symbol: "hand.tap", navigates: false)
-                    }
-                    if supportsSaveEditor {
-                        Divider()
-                        action("修改存档", "slider.horizontal.3", .editor)
-                    }
-                }.modifier(HubCard())
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -95,7 +70,7 @@ struct GameDetailView: View {
                             HubBadge(title: instanceStatusBadge(active), tone: ModOverlay.detectInstalledMod(active.url) ? .primary : .neutral)
                         }
                     }
-                    Text(active.name).font(.footnote).foregroundColor(HubTheme.secondary).textSelection(.enabled)
+                    Text(active.name).foregroundColor(HubTheme.text).textSelection(.enabled)
                     if isRance10 {
                         HStack(spacing: 10) {
                             Button {
@@ -123,8 +98,64 @@ struct GameDetailView: View {
                             .buttonStyle(.plain)
                         }
                         .padding(.top, 2)
+                    } else if installations.count > 1 {
+                        Menu {
+                            Picker("切换目录", selection: Binding(
+                                get: { active.id }, set: { selectedID = $0 }
+                            )) {
+                                ForEach(installations) { installation in
+                                    Text(installationLabel(installation)).tag(installation.id)
+                                }
+                            }
+                        } label: {
+                            Label("切换目录", systemImage: "arrow.left.arrow.right")
+                        }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).modifier(HubCard())
+
+                Text("游戏管理").font(.title3.bold())
+                VStack(spacing: 0) {
+                    if let catalog, onlineInstall {
+                        NavigationLink {
+                            OnlineGameDetailView(game: catalog, library: library, download: download)
+                        } label: {
+                            HubActionLabel(title: "在线下载", symbol: "arrow.down.circle")
+                        }.buttonStyle(.plain)
+                        Divider()
+                    }
+                    action("存档管理", "externaldrive", .saves)
+                    Divider()
+                    if let descriptor = modDescriptor {
+                        action(descriptor.isCnPatch ? "汉化补丁" : "MOD 管理", "shippingbox", .mods)
+                        Divider()
+                    }
+                    if uncensoredDescriptor != nil && (onlineInstall || uncensoredInstalled) {
+                        action(uncensoredInstalled ? "无码补丁 · 已安装" : "无码补丁", "sparkles", .uncensored)
+                        Divider()
+                    }
+                    if active.engine != .legacySystem3 {
+                        action("手柄设置", "gamecontroller", .gamepad)
+                    } else {
+                        HubActionLabel(title: "原生触控", symbol: "hand.tap", navigates: false)
+                    }
+                    if supportsSaveEditor {
+                        Divider()
+                        action("修改存档", "slider.horizontal.3", .editor)
+                    }
+                    if manual != nil {
+                        Divider()
+                        action("游戏说明书", "book", .manual)
+                    }
+                }.modifier(HubCard())
+
+                if active.engine == .system4 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("显示").font(.title3.bold())
+                        VStack(spacing: 0) {
+                            GameDisplayScaleRows(gameID: active.id)
+                        }.modifier(HubCard())
+                    }
+                }
 
                 Button(role: .destructive) { deleting = true } label: {
                     Label("删除游戏", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 48)
@@ -140,7 +171,7 @@ struct GameDetailView: View {
                     Color.black.opacity(0.25).ignoresSafeArea()
                     VStack(spacing: 16) {
                         ProgressView().scaleEffect(1.2)
-                        Text(library.importProgress.isEmpty ? "正在处理…" : library.importProgress)
+                        Text(library.importProgress.isEmpty ? localized("正在处理…") : library.importProgress)
                             .font(.subheadline).foregroundColor(HubTheme.text)
                             .multilineTextAlignment(.center)
                     }
@@ -150,6 +181,9 @@ struct GameDetailView: View {
                 }
             }
         }
+        .onChange(of: library.launching) { launching in
+            if !launching { dismiss() }
+        }
         .onAppear {
             if !loadedCapabilities {
                 loadedCapabilities = true
@@ -158,13 +192,10 @@ struct GameDetailView: View {
                 uncensoredInstalled = UncensoredPatchStore.isInstalled(active.url)
             }
         }
-        .onChange(of: selectedGameID) { _ in
-            reloadCapabilities(for: currentGame)
-        }
         .confirmationDialog("选择游戏目录", isPresented: $switchingInstance, titleVisibility: .visible) {
             ForEach(rance10Instances) { instance in
                 Button(instance.id == active.id ? "✓ \(instanceLabel(instance))" : instanceLabel(instance)) {
-                    selectedGameID = instance.id
+                    selectedID = instance.id
                 }
             }
             Button("新建目录") {
@@ -183,8 +214,10 @@ struct GameDetailView: View {
             Group {
                 switch target {
                 case .saves: SaveManagerView(game: active)
-                case .gamepad: GamepadEditor(game: active.id)
+                case .gamepad: GamepadEditor(game: active.id, allowsPhysicalMapping: active.engine == .system4)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
+                case .manual:
+                    if let manual { HubManualView(manual: manual) }
                 case .mods:
                     if let descriptor = modDescriptor ?? ModGameDescriptor.classifyDirectory(active.url) {
                         ModManagerView(game: active, descriptor: descriptor, library: library)
@@ -199,16 +232,9 @@ struct GameDetailView: View {
         .alert("删除游戏？", isPresented: $deleting) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {
-                let wasRance10 = isRance10Instance(active)
                 let deletedID = active.id
                 library.delete(active)
-                if !library.games.contains(where: { $0.id == deletedID }) {
-                    if wasRance10, let remaining = library.games.first(where: { isRance10Instance($0) }) {
-                        selectedGameID = remaining.id
-                    } else {
-                        dismiss()
-                    }
-                }
+                if !library.games.contains(where: { $0.id == deletedID }) { selectedID = nil }
             }
         } message: { Text("将删除游戏文件夹，存档不会被删除。") }
     }
@@ -234,7 +260,9 @@ struct GameDetailView: View {
     }
 
     private func instanceLabel(_ item: Game) -> String {
-        "\(item.name) · \(instanceStatusBadge(item))"
+        let badge = instanceStatusBadge(item)
+        let displayBadge = badge == "原版" ? localized("原版") : badge
+        return "\(item.name) · \(displayBadge)"
     }
 
     private func prepareCreateInstanceSheet() {
@@ -288,10 +316,10 @@ struct GameDetailView: View {
                 Section {
                     Text(
                         willBeVanilla
-                            ? "将基于「\(source.name)」创建独立原版目录，用于原版游玩或安装其他版本 MOD。不同目录的存档与 MOD 互不影响。"
+                            ? localized("将基于「%@」创建独立原版目录，用于原版游玩或安装其他版本 MOD。不同目录的存档与 MOD 互不影响。", source.name)
                             : (!canRestoreVanilla && sourceHasMod
-                                ? "当前目录为整合包且无原版备份，将完整复制其游戏文件作为新目录。不同目录的存档互不影响。"
-                                : "将复制「\(source.name)」的当前游戏文件（含已安装 MOD）作为新目录。不同目录的存档与 MOD 互不影响。")
+                                ? localized("当前目录为整合包且无原版备份，将完整复制其游戏文件作为新目录。不同目录的存档互不影响。")
+                                : localized("将复制「%@」的当前游戏文件（含已安装 MOD）作为新目录。不同目录的存档与 MOD 互不影响。", source.name))
                     )
                     .font(.footnote)
                     .foregroundColor(HubTheme.secondary)
@@ -319,7 +347,7 @@ struct GameDetailView: View {
                             } : nil
                             library.cloneDirectory(from: source, named: sanitized, transformStage: transform) { created in
                                 if let created {
-                                    selectedGameID = created.id
+                                    selectedID = created.id
                                 }
                             }
                         }
@@ -327,6 +355,13 @@ struct GameDetailView: View {
                 }
             }
         }
+    }
+
+    private func installationLabel(_ game: Game) -> String {
+        guard let mod = InstalledModInfo.read(game.url) else { return game.name }
+        let group = mod.kind != "cn_patch" && mod.group.caseInsensitiveCompare(mod.version) != .orderedSame
+            ? mod.group : ""
+        return [game.name, group, mod.version].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func action(_ title: String, _ symbol: String, _ target: Destination) -> some View {

@@ -150,7 +150,7 @@ static int MsgSkip_Init(struct string *name)
 	if (!save_hook_registered) {
 #ifdef __ANDROID__
 		SDL_AddEventWatch(msgskip_event_handler, NULL);
-#else
+#elif !defined(ALICEHUB_IOS)
 		atexit(msgskip_save);
 #endif
 		save_hook_registered = true;

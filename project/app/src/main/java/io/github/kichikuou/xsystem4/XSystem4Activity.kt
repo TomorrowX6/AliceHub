@@ -85,6 +85,13 @@ class XSystem4Activity : SDLActivity() {
     private var launchedSaveDir: String? = null
 
     private external fun nativeRequestRedraw()
+    private external fun nativePartsTextInputSession(): Int
+
+    override fun getPartsTextInputSession(): Int {
+        return if (isLegacySystem3Game || isSystem3xGame()) 0 else nativePartsTextInputSession()
+    }
+
+    external override fun sendPartsTextInput(session: Int, text: ByteArray?, composing: Boolean, backspaces: Int)
 
     private fun requestNativeRedrawSafely() {
         if (isFinishing || isDestroyed || isSystem3xGame()) {

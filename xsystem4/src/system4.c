@@ -39,6 +39,8 @@
 #endif
 #ifdef __ANDROID__
 #include <android/log.h>
+#endif
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 #include <pthread.h>
 #include <setjmp.h>
 #endif
@@ -55,6 +57,10 @@
 #include "xsystem4.h"
 #ifdef ALICEHUB_IOS
 #include "xsystem4_main.h"
+extern int optreset;
+void asset_manager_fini(void);
+void audio_end_session(void);
+void vm_end_session(void);
 #endif
 #include "asset_manager.h"
 #include "debugger.h"
@@ -95,6 +101,20 @@ static int android_clean_return(int code)
 }
 #endif
 
+#ifdef ALICEHUB_IOS
+static _Thread_local jmp_buf *ios_exit_target;
+static int ios_exit_code;
+static struct ain *ios_program;
+
+static void ios_exit_handler(int code)
+{
+	if (ios_exit_target) {
+		ios_exit_code = code;
+		longjmp(*ios_exit_target, 1);
+	}
+}
+#endif
+
 struct config config = {
 	.game_name = NULL,
 	.boot_name = NULL,
@@ -124,6 +144,37 @@ struct config config = {
 	.fnl_path = NULL,
 	.font_paths = { NULL, NULL },
 };
+
+#ifdef ALICEHUB_IOS
+static void ios_reset_config(void)
+{
+	free(config.game_name);
+	free(config.boot_name);
+	free(config.ain_filename);
+	free(config.ain_basename_utf8);
+	free(config.vm_name);
+	free(config.game_dir);
+	free(config.save_dir);
+	free(config.home_dir);
+	free(config.bgi_path);
+	free(config.wai_path);
+	free(config.ex_path);
+	free(config.fnl_path);
+	for (size_t i = 0; i < 2; i++)
+		free(config.font_paths[i]);
+	for (size_t i = 0; i < config.mixer_nr_channels; i++)
+		free(config.mixer_channels[i]);
+	free(config.mixer_channels);
+	free(config.mixer_volumes);
+	config = (struct config){
+		.view_width = 800,
+		.view_height = 600,
+		.default_volume = 100,
+		.text_x_scale = 1.0,
+		.save_format = SAVE_FORMAT_RSM,
+	};
+}
+#endif
 
 static struct string *ini_string(struct ini_entry *entry)
 {
@@ -1327,7 +1378,7 @@ static void init_mai_word_table(void)
 }
 
 #ifdef ALICEHUB_IOS
-int xsystem4_main(int argc, char *argv[])
+static int run_xsystem4(int argc, char *argv[])
 #else
 int main(int argc, char *argv[])
 #endif
@@ -1506,11 +1557,23 @@ int main(int argc, char *argv[])
 	// NOTE: some command line options are handled here so that they
 	//       will override settings from .xsys4rc files
 	if (font_mincho)
+#ifdef ALICEHUB_IOS
+		config.font_paths[FONT_MINCHO] = xstrdup(font_mincho);
+#else
 		config.font_paths[FONT_MINCHO] = font_mincho;
+#endif
 	if (font_gothic)
+#ifdef ALICEHUB_IOS
+		config.font_paths[FONT_GOTHIC] = xstrdup(font_gothic);
+#else
 		config.font_paths[FONT_GOTHIC] = font_gothic;
+#endif
 	if (font_fnl)
+#ifdef ALICEHUB_IOS
+		config.fnl_path = xstrdup(font_fnl);
+#else
 		config.fnl_path = font_fnl;
+#endif
 	if (joypad) {
 		if (!strcmp(joypad, "on"))
 			config.joypad = true;
@@ -1543,6 +1606,9 @@ int main(int argc, char *argv[])
 		ain_free(ain);
 		return 0;
 	}
+#ifdef ALICEHUB_IOS
+	ios_program = ain;
+#endif
 
 	mkdir_p(config.save_dir);
 	apply_game_specific_hacks(ain);
@@ -1555,7 +1621,36 @@ int main(int argc, char *argv[])
 	int exec_rc = vm_execute_ain(ain);
 #ifdef __ANDROID__
 	return android_clean_return(exec_rc);
+#elif defined(ALICEHUB_IOS)
+	return exec_rc;
 #else
 	sys_exit(exec_rc);
 #endif
 }
+
+#ifdef ALICEHUB_IOS
+int xsystem4_main(int argc, char **argv)
+{
+	jmp_buf target;
+	ios_exit_target = &target;
+	sys_exit_handler = ios_exit_handler;
+	optind = optreset = 1;
+	set_utf8_release(false);
+	if (setjmp(target) == 0)
+		ios_exit_code = run_xsystem4(argc, argv);
+	vm_end_session();
+	audio_end_session();
+	gfx_fini();
+	asset_manager_fini();
+	if (ios_program) {
+		ain_free(ios_program);
+		ios_program = NULL;
+	}
+	ios_reset_config();
+	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++)
+		sigaction(crash_signals[i], &old_sigactions[i], NULL);
+	sys_exit_handler = NULL;
+	ios_exit_target = NULL;
+	return ios_exit_code;
+}
+#endif

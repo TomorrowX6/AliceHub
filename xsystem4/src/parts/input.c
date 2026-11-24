@@ -21,12 +21,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 
 #include "asset_manager.h"
 #include "audio.h"
 #include "input.h"
 #include "kiwi.h"
 #include "parts.h"
+#include "parts_widgets.h"
 #define VM_PRIVATE
 #include "vm.h"
 #include "xsystem4.h"
@@ -51,6 +53,7 @@ static bool whole_mclick_down = false;
 static int clicked_parts = 0;
 // the current (partially) clicked parts number
 static int click_down_parts = 0;
+static uint64_t click_touch_press_id = 0;
 
 // drag state
 static struct parts *drag_parts = NULL;
@@ -72,6 +75,103 @@ static Point swipe_begin_pos = {0};
 static SDL_FPoint swipe_cur_posf = {0};
 static SDL_FPoint swipe_vel = {0};
 static int swipe_idle_ms = 0;
+static struct parts *text_box_focus;
+static bool text_box_composing;
+
+static bool text_box_can_edit(struct parts *parts)
+{
+	return parts_input_enabled && parts && parts->component_type == 4
+		&& parts->focused && parts->enable_input && !parts->text_box_read_only
+		&& (!parts_v2 || parts->controller_no == ctrl_stack.active)
+		&& parts_is_visible(parts);
+}
+
+static void text_box_commit(const char *text)
+{
+	struct parts *parts = text_box_focus;
+	if (!text_box_can_edit(parts))
+		return;
+	text_box_composing = false;
+	char *encoded = mai_utf2sjis(text, 0);
+	struct string *updated = PE_GetTextBoxText(parts->no);
+	size_t len = strcspn(encoded, "\r\n");
+	if (parts->text_box_max_length > 0) {
+		int remaining = parts->text_box_max_length;
+		for (const char *p = updated->text; *p && remaining > 0; remaining--)
+			p += SJIS_2BYTE(*p) && p[1] ? 2 : 1;
+		int end = sjis_index(encoded, max(0, remaining));
+		if (end >= 0)
+			len = min(len, (size_t)end);
+	}
+	string_append_cstr(&updated, encoded, len);
+	free(encoded);
+	if (len) {
+		PE_SetTextBoxText(parts->no, updated);
+		parts_msg_push(parts, PARTS_MSG_TEXT_CHANGED, "");
+	} else {
+		parts_text_box_set_display(parts, NULL);
+	}
+	free_string(updated);
+}
+
+static void text_box_edit(const char *text, possibly_unused int start, possibly_unused int length)
+{
+	struct parts *parts = text_box_focus;
+	if (!parts || (*text && !text_box_can_edit(parts)))
+		return;
+	text_box_composing = *text != '\0';
+	char *encoded = *text ? mai_utf2sjis(text, 0) : NULL;
+	parts_text_box_set_display(parts, encoded);
+	free(encoded);
+}
+
+static void text_box_key(int key)
+{
+	struct parts *parts = text_box_focus;
+	if (!text_box_can_edit(parts) || text_box_composing)
+		return;
+	if (key == VK_RETURN) {
+		parts_msg_push(parts, PARTS_MSG_TEXT_FIXED, "");
+	} else if (key == VK_BACK && parts->text_box_text->size) {
+		struct string *updated = PE_GetTextBoxText(parts->no);
+		string_pop_back(&updated);
+		PE_SetTextBoxText(parts->no, updated);
+		free_string(updated);
+		parts_msg_push(parts, PARTS_MSG_TEXT_CHANGED, "");
+	}
+}
+
+bool PE_IsTextBoxComposing(void)
+{
+	return text_box_composing;
+}
+
+static void text_box_set_focus(struct parts *parts)
+{
+	static const struct input_text_handlers handlers = { text_box_commit, text_box_edit, text_box_key };
+	if (text_box_focus == parts)
+		return;
+	if (text_box_focus)
+		input_set_parts_text_handlers(NULL);
+	text_box_focus = parts;
+	text_box_composing = false;
+	if (parts)
+		input_set_parts_text_handlers(&handlers);
+}
+
+static void text_box_update_focus(void)
+{
+	if (text_box_can_edit(text_box_focus))
+		return;
+	struct parts *parts;
+	PARTS_LIST_FOREACH_REVERSE(parts) {
+		if (text_box_can_edit(parts)) {
+			text_box_set_focus(parts);
+			return;
+		}
+	}
+	text_box_set_focus(NULL);
+}
 
 bool parts_input_is_busy(void)
 {
@@ -82,6 +182,8 @@ static void parts_set_focus(struct parts *parts, bool focus)
 {
 	if (parts->focused == focus) return;
 	parts->focused = focus;
+	if (!focus && parts == text_box_focus)
+		text_box_set_focus(NULL);
 	parts_msg_push(parts, focus ? PARTS_MSG_FOCUS_IN : PARTS_MSG_FOCUS_OUT, "");
 }
 
@@ -98,8 +200,11 @@ void PE_SetFocus(int no)
 {
 	struct parts *parts = no > 0 ? parts_try_get(no) : NULL;
 	if (!parts) return;
+	if (parts->focused && parts == text_box_focus)
+		return;
 	parts_clear_focus(parts->controller_no);
 	parts_set_focus(parts, true);
+	text_box_update_focus();
 }
 
 bool PE_IsFocus(int no)
@@ -320,6 +425,8 @@ int PE_Parts_GetSwipeType(int parts_no)
 
 void parts_input_reset_part(struct parts *parts)
 {
+	if (parts == text_box_focus)
+		text_box_set_focus(NULL);
 	if (parts == drag_parts)
 		drag_state_reset();
 	else if (parts == drop_target)
@@ -340,6 +447,7 @@ static void reset_transient_pointer_state(void)
 	whole_mclick_down = false;
 	clicked_parts = 0;
 	click_down_parts = 0;
+	click_touch_press_id = 0;
 	press_hold_ms = 0;
 	click_fired_this_frame = false;
 	drag_state_reset();
@@ -349,6 +457,7 @@ static void reset_transient_pointer_state(void)
 void parts_input_reset(void)
 {
 	PE_EndInput();
+	text_box_set_focus(NULL);
 	input_depth = 0;
 	parts_began_click = false;
 	parts_input_enabled = true;
@@ -435,6 +544,8 @@ static struct parts *find_swipe_target(Point pos)
 
 static bool parts_needs_mouse_hittest(struct parts *parts)
 {
+	if (parts->component_type == 4)
+		return true;
 	if (!parts->pass_cursor || parts->clickable || parts->draggable || parts->wheelable || parts->swipe_type > 0)
 		return true;
 	if (parts->delegate_index >= 0 || parts->widget || parts->scrollbar)
@@ -526,7 +637,8 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 	}
 
 	bool enabled = !parts->widget || parts->widget->enabled;
-	bool clickable = enabled && (parts->clickable || parts->widget || parts->scrollbar);
+	bool clickable = enabled && (parts->clickable || parts->widget || parts->scrollbar
+		|| parts->component_type == 4);
 	bool click_eligible = enabled && (clickable || !parts->pass_cursor);
 	if (!click_eligible || *click_consumed) {
 		if (!was_hovered)
@@ -567,7 +679,7 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 	if (clickable && prev_clicking && !cur_clicking
 			&& click_down_parts == parts->no) {
 		parts_play_sound(parts, PARTS_STATE_CLICKED);
-		if (parts->clickable)
+		if (parts->clickable || (game_dohnadohna && parts->widget))
 			clicked_parts = parts->no;
 		click_fired_this_frame = true;
 		if (parts->component_type == 1 && parts->widget)
@@ -630,6 +742,27 @@ bool PE_IsEnableInput(void)
 	return parts_input_enabled;
 }
 
+static void update_touch_click_capture(bool cur_clicking)
+{
+	uint64_t canceled_press = input_take_long_touch_click_cancel();
+	if (prev_clicking && canceled_press && click_touch_press_id == canceled_press) {
+		struct parts *down = click_down_parts ? parts_try_get(click_down_parts) : NULL;
+		if (down)
+			parts_msg_push(down, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
+		if (parts_v2 && parts_began_click && whole_lclick_down)
+			parts_msg_push(NULL, PARTS_MSG_KEY_UP, "i", VK_LBUTTON);
+		prev_clicking = false;
+		whole_lclick_down = false;
+		click_down_parts = 0;
+		drag_state_reset();
+		swipe_candidate = NULL;
+	}
+	if (!cur_clicking || !parts_began_click)
+		click_touch_press_id = 0;
+	else if (!prev_clicking)
+		click_touch_press_id = input_get_touch_press_id();
+}
+
 void PE_UpdateInputState(int passed_time)
 {
 	Point cur_pos;
@@ -637,11 +770,14 @@ void PE_UpdateInputState(int passed_time)
 	input_parts_poll_begin(parts_began_click && parts_input_enabled);
 	mouse_get_pos(&cur_pos.x, &cur_pos.y);
 	if (!parts_input_enabled) {
+		text_box_set_focus(NULL);
+		input_take_long_touch_click_cancel();
 		parts_prev_pos = cur_pos;
 		input_notify_parts_poll(false, false);
 		return;
 	}
 	bool cur_clicking = key_is_down(VK_LBUTTON);
+	update_touch_click_capture(cur_clicking);
 	bool cur_rclicking = key_is_down(VK_RBUTTON);
 	bool cur_mclicking = key_is_down(VK_MBUTTON);
 	int wheel_forward, wheel_back;
@@ -920,6 +1056,7 @@ void PE_UpdateInputState(int passed_time)
 	}
 	parts_prev_pos = cur_pos;
 	input_notify_parts_poll(parts_began_click, cur_clicking || cur_rclicking);
+	text_box_update_focus();
 	if (parts_v2) {
 		parts_update_focus(ctrl_stack.overlay_id);
 		for (int i = 0; i < ctrl_stack.nr_controllers; i++)
@@ -1083,6 +1220,8 @@ void PE_EndInput(void)
 		parts_began_click = input_depth > 0;
 	} else parts_began_click = false;
 	if (!parts_began_click) {
+		if (text_box_focus)
+			parts_set_focus(text_box_focus, false);
 		prev_clicking = false;
 		prev_rclicking = false;
 		prev_mclicking = false;
@@ -1090,6 +1229,7 @@ void PE_EndInput(void)
 		whole_rclick_down = false;
 		whole_mclick_down = false;
 		click_down_parts = 0;
+		click_touch_press_id = 0;
 		swipe_state_reset();
 	}
 	clicked_parts = 0;
