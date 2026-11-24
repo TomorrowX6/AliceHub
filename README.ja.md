@@ -1,7 +1,7 @@
 <div align="center">
   <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
   <h1>AliceHub</h1>
-  <p><strong>System 1–4 対応の Android・iOS 向けアリスソフト作品ランチャー</strong></p>
+  <p><strong>アリスソフトの System 1–4 に対応するマルチプラットフォームのネイティブゲームランチャー</strong></p>
   <p>
     <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
