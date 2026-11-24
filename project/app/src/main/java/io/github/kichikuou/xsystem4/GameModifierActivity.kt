@@ -487,6 +487,18 @@ class GameModifierActivity : ThemedActivity() {
                 id == GameCatalog.ID_HIYOKO2 ||
                 id == GameCatalog.ID_SELFGAME ||
                 id == GameCatalog.ID_MOMOIROGUARDIAN ||
+                id == GameCatalog.ID_RANCE1CLASSIC ||
+                id == GameCatalog.ID_RANCE2CLASSIC ||
+                id == GameCatalog.ID_RANCE3CLASSIC ||
+                id == GameCatalog.ID_DPSSGFAHREN ||
+                id == GameCatalog.ID_DPSSGKATEI ||
+                id == GameCatalog.ID_DPSSGNOBUNAGA ||
+                id == GameCatalog.ID_DPSSG2ANTIQUE ||
+                id == GameCatalog.ID_DPSSG2IKENAI ||
+                id == GameCatalog.ID_DPSSG2AKAI ||
+                id == GameCatalog.ID_DPSSG3RABBIT ||
+                id == GameCatalog.ID_DPSSG3SHINKON ||
+                id == GameCatalog.ID_DPSSG3SOTSUGYOU ||
                 id.startsWith(GameCatalog.PREFIX_CUSTOM)
             )
     }

@@ -168,7 +168,19 @@ object GameSortMetadata {
         GameCatalog.ID_BALLOONPOP to GameSortInfo("1999-03-25", null, null, "https://www.alicesoft.com/"),
         GameCatalog.ID_HIYOKO2 to GameSortInfo("2000-04-13", null, null, "https://www.alicesoft.com/"),
         GameCatalog.ID_SELFGAME to GameSortInfo("1999-11-18", null, null, "https://www.alicesoft.com/"),
-        GameCatalog.ID_MOMOIROGUARDIAN to GameSortInfo("2009-09-18", 69.2, "https://vndb.org/v2515", "https://vndb.org/v2515")
+        GameCatalog.ID_MOMOIROGUARDIAN to GameSortInfo("2009-09-18", 69.2, "https://vndb.org/v2515", "https://vndb.org/v2515"),
+        GameCatalog.ID_RANCE1CLASSIC to GameSortInfo("1989-07-15", 54.4, "https://vndb.org/v1414", "https://vndb.org/v1414"),
+        GameCatalog.ID_RANCE2CLASSIC to GameSortInfo("1990-05-15", 61.9, "https://vndb.org/v1427", "https://vndb.org/v1427"),
+        GameCatalog.ID_RANCE3CLASSIC to GameSortInfo("1991-10-15", 65.5, "https://vndb.org/v1829", "https://vndb.org/v1829"),
+        GameCatalog.ID_DPSSGFAHREN to GameSortInfo("1990-08-15", 58.2, "https://vndb.org/v8667", "https://vndb.org/v8667"),
+        GameCatalog.ID_DPSSGKATEI to GameSortInfo("1990-08-15", 58.2, "https://vndb.org/v8667", "https://vndb.org/v8667"),
+        GameCatalog.ID_DPSSGNOBUNAGA to GameSortInfo("1990-08-15", 58.2, "https://vndb.org/v8667", "https://vndb.org/v8667"),
+        GameCatalog.ID_DPSSG2ANTIQUE to GameSortInfo("1991-04-15", 58.1, "https://vndb.org/v8668", "https://vndb.org/v8668"),
+        GameCatalog.ID_DPSSG2IKENAI to GameSortInfo("1991-04-15", 58.1, "https://vndb.org/v8668", "https://vndb.org/v8668"),
+        GameCatalog.ID_DPSSG2AKAI to GameSortInfo("1991-04-15", 58.1, "https://vndb.org/v8668", "https://vndb.org/v8668"),
+        GameCatalog.ID_DPSSG3RABBIT to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669"),
+        GameCatalog.ID_DPSSG3SHINKON to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669"),
+        GameCatalog.ID_DPSSG3SOTSUGYOU to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

@@ -304,7 +304,19 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_BALLOONPOP && GameCatalog.isBalloonPopAlias(q)) ||
             (desc.id == GameCatalog.ID_HIYOKO2 && GameCatalog.isHiyoko2Alias(q)) ||
             (desc.id == GameCatalog.ID_SELFGAME && GameCatalog.isSelfGameAlias(q)) ||
-            (desc.id == GameCatalog.ID_MOMOIROGUARDIAN && GameCatalog.isMomoiroGuardianAlias(q))
+            (desc.id == GameCatalog.ID_MOMOIROGUARDIAN && GameCatalog.isMomoiroGuardianAlias(q)) ||
+            (desc.id == GameCatalog.ID_RANCE1CLASSIC && GameCatalog.isRance1ClassicAlias(q)) ||
+            (desc.id == GameCatalog.ID_RANCE2CLASSIC && GameCatalog.isRance2ClassicAlias(q)) ||
+            (desc.id == GameCatalog.ID_RANCE3CLASSIC && GameCatalog.isRance3ClassicAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSGFAHREN && GameCatalog.isDpsSgFahrenAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSGKATEI && GameCatalog.isDpsSgKateiAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSGNOBUNAGA && GameCatalog.isDpsSgNobunagaAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG2ANTIQUE && GameCatalog.isDpsSg2AntiqueAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG2IKENAI && GameCatalog.isDpsSg2IkenaiAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG2AKAI && GameCatalog.isDpsSg2AkaiAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG3RABBIT && GameCatalog.isDpsSg3RabbitAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG3SHINKON && GameCatalog.isDpsSg3ShinkonAlias(q)) ||
+            (desc.id == GameCatalog.ID_DPSSG3SOTSUGYOU && GameCatalog.isDpsSg3SotsugyouAlias(q))
         ) {
             return true
         }

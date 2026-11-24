@@ -16,9 +16,9 @@ Game Compatibility
 | 戦巫女                                      | Supported   | Normal / Low-priced edition |
 | 零式                                        | Supported   | From ALICEの館４・５・６ / Low-priced edition; CN GBK fan translation supported |
 | アトラク＝ナクア                            | Supported   | From ALICEの館４・５・６ / Low-priced edition; CN Longinus `CHS.TBL` + `*_CHS.ALD` supported |
-| Rance －光を求めて－                        | Supported   | From ALICEの館４・５・６ |
-| Rance II －反逆の少女達－                   | Supported   | From ALICEの館４・５・６ |
-| Rance III －リーザス陥落－                  | Supported   | From ALICEの館４・５・６ |
+| Rance －光を求めて－                        | Supported   | From ALICEの館４・５・６ (host E2E verified: boot, menu, MIDI/WAV audio) |
+| Rance II －反逆の少女達－                   | Supported   | From ALICEの館４・５・６ (host E2E verified: boot, intro, gameplay, MIDI/WAV audio) |
+| Rance III －リーザス陥落－                  | Supported   | From ALICEの館４・５・６ (host E2E verified: boot, menu, MIDI/WAV audio) |
 | DALK                                        | Supported   | From ALICEの館４・５・６ |
 | 闘神都市                                    | Supported   | From ALICEの館４・５・６ |
 | Dr.STOP                                     | Supported   | From ALICEの館４・５・６ |

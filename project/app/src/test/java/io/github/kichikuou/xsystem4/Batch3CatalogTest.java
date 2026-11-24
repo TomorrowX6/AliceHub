@@ -241,7 +241,7 @@ public class Batch3CatalogTest {
 
     @Test
     public void exposesDescriptorsCdnUrlsDefaultSizesAndVndbSnapshotParity() throws Exception {
-        assertEquals(158, GameCatalog.builtInSelectOrder().size());
+        assertEquals(170, GameCatalog.builtInSelectOrder().size());
 
         Object[][] spec = {
                 {GameCatalog.ID_TOUSHIN3, R.string.game_toushin3_title, "Toushin3", R.drawable.ic_game_toushin3,

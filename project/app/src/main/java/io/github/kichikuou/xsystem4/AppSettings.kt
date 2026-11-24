@@ -195,6 +195,18 @@ object AppSettings {
     internal const val DEFAULT_HIYOKO2_BYTES = 102330L
     internal const val DEFAULT_SELFGAME_BYTES = 3694656L
     internal const val DEFAULT_MOMOIROGUARDIAN_BYTES = 904356575L
+    internal const val DEFAULT_RANCE1CLASSIC_BYTES = 2775360L
+    internal const val DEFAULT_RANCE2CLASSIC_BYTES = 5358400L
+    internal const val DEFAULT_RANCE3CLASSIC_BYTES = 9186896L
+    internal const val DEFAULT_DPSSGFAHREN_BYTES = 847104L
+    internal const val DEFAULT_DPSSGKATEI_BYTES = 938240L
+    internal const val DEFAULT_DPSSGNOBUNAGA_BYTES = 1074176L
+    internal const val DEFAULT_DPSSG2ANTIQUE_BYTES = 1299712L
+    internal const val DEFAULT_DPSSG2IKENAI_BYTES = 1173760L
+    internal const val DEFAULT_DPSSG2AKAI_BYTES = 1177856L
+    internal const val DEFAULT_DPSSG3RABBIT_BYTES = 1313792L
+    internal const val DEFAULT_DPSSG3SHINKON_BYTES = 1176832L
+    internal const val DEFAULT_DPSSG3SOTSUGYOU_BYTES = 1286656L
 
     private val initialSystemLocale: Locale = try {
         Resources.getSystem()?.configuration?.locales?.takeIf { !it.isEmpty }?.get(0)
@@ -495,6 +507,18 @@ object AppSettings {
             OnlineInstaller.HIYOKO2_CDN_URL -> DEFAULT_HIYOKO2_BYTES
             OnlineInstaller.SELFGAME_CDN_URL -> DEFAULT_SELFGAME_BYTES
             OnlineInstaller.MOMOIROGUARDIAN_CDN_URL -> DEFAULT_MOMOIROGUARDIAN_BYTES
+            OnlineInstaller.RANCE1CLASSIC_CDN_URL -> DEFAULT_RANCE1CLASSIC_BYTES
+            OnlineInstaller.RANCE2CLASSIC_CDN_URL -> DEFAULT_RANCE2CLASSIC_BYTES
+            OnlineInstaller.RANCE3CLASSIC_CDN_URL -> DEFAULT_RANCE3CLASSIC_BYTES
+            OnlineInstaller.DPSSGFAHREN_CDN_URL -> DEFAULT_DPSSGFAHREN_BYTES
+            OnlineInstaller.DPSSGKATEI_CDN_URL -> DEFAULT_DPSSGKATEI_BYTES
+            OnlineInstaller.DPSSGNOBUNAGA_CDN_URL -> DEFAULT_DPSSGNOBUNAGA_BYTES
+            OnlineInstaller.DPSSG2ANTIQUE_CDN_URL -> DEFAULT_DPSSG2ANTIQUE_BYTES
+            OnlineInstaller.DPSSG2IKENAI_CDN_URL -> DEFAULT_DPSSG2IKENAI_BYTES
+            OnlineInstaller.DPSSG2AKAI_CDN_URL -> DEFAULT_DPSSG2AKAI_BYTES
+            OnlineInstaller.DPSSG3RABBIT_CDN_URL -> DEFAULT_DPSSG3RABBIT_BYTES
+            OnlineInstaller.DPSSG3SHINKON_CDN_URL -> DEFAULT_DPSSG3SHINKON_BYTES
+            OnlineInstaller.DPSSG3SOTSUGYOU_CDN_URL -> DEFAULT_DPSSG3SOTSUGYOU_BYTES
             else -> -1L
         }
     }

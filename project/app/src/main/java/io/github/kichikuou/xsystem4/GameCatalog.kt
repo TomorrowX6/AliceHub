@@ -203,6 +203,18 @@ object GameCatalog {
     const val ID_HIYOKO2 = "hiyoko2"
     const val ID_SELFGAME = "selfgame"
     const val ID_MOMOIROGUARDIAN = "momoiroguardian"
+    const val ID_RANCE1CLASSIC = "rance1classic"
+    const val ID_RANCE2CLASSIC = "rance2classic"
+    const val ID_RANCE3CLASSIC = "rance3classic"
+    const val ID_DPSSGFAHREN = "dpssgfahren"
+    const val ID_DPSSGKATEI = "dpssgkatei"
+    const val ID_DPSSGNOBUNAGA = "dpssgnobunaga"
+    const val ID_DPSSG2ANTIQUE = "dpssg2antique"
+    const val ID_DPSSG2IKENAI = "dpssg2ikenai"
+    const val ID_DPSSG2AKAI = "dpssg2akai"
+    const val ID_DPSSG3RABBIT = "dpssg3rabbit"
+    const val ID_DPSSG3SHINKON = "dpssg3shinkon"
+    const val ID_DPSSG3SOTSUGYOU = "dpssg3sotsugyou"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -688,6 +700,15 @@ object GameCatalog {
         if (isRance04GameFiles(fileNames)) {
             return ID_RANCE04
         }
+        if (isRance1ClassicGameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE1CLASSIC
+        }
+        if (isRance2ClassicGameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE2CLASSIC
+        }
+        if (isRance3ClassicGameFiles(fileNames, readSmallFile)) {
+            return ID_RANCE3CLASSIC
+        }
         if (isRance41GameFiles(fileNames, readSmallFile)) {
             return ID_RANCE41
         }
@@ -810,6 +831,33 @@ object GameCatalog {
         }
         if (isDpsGameFiles(fileNames, readSmallFile)) {
             return ID_DPS
+        }
+        if (isDpsSgFahrenGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSGFAHREN
+        }
+        if (isDpsSgKateiGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSGKATEI
+        }
+        if (isDpsSgNobunagaGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSGNOBUNAGA
+        }
+        if (isDpsSg2AntiqueGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG2ANTIQUE
+        }
+        if (isDpsSg2IkenaiGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG2IKENAI
+        }
+        if (isDpsSg2AkaiGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG2AKAI
+        }
+        if (isDpsSg3RabbitGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG3RABBIT
+        }
+        if (isDpsSg3ShinkonGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG3SHINKON
+        }
+        if (isDpsSg3SotsugyouGameFiles(fileNames, readSmallFile)) {
+            return ID_DPSSG3SOTSUGYOU
         }
         if (isSdpsTonoGameFiles(fileNames, readSmallFile)) {
             return ID_SDPSTONO
@@ -3100,6 +3148,20 @@ object GameCatalog {
     private val CRESCENT_ADISK_CRC32S = setOf(0x42351f2cL)
     private val TENGU_ADISK_CRC32S = setOf(0xc942ff58L)
     private val DPS_ADISK_CRC32S = setOf(0x69ea4865L)
+    private val DPSSG1_BASE_ADISK_CRC32S = setOf(0xab4cda48L)
+    private val DPSSG3_BASE_ADISK_CRC32S = setOf(0xb77ae133L)
+    private val DPSSGFAHREN_BDISK_CRC32S = setOf(0xe405d57cL)
+    private val DPSSGKATEI_BDISK_CRC32S = setOf(0x23e67d18L)
+    private val DPSSGNOBUNAGA_BDISK_CRC32S = setOf(0x2ec116f2L)
+    private val DPSSG2ANTIQUE_BDISK_CRC32S = setOf(0x41fe8b3dL)
+    private val DPSSG2IKENAI_BDISK_CRC32S = setOf(0x6b562c09L)
+    private val DPSSG2AKAI_BDISK_CRC32S = setOf(0x1098e78cL)
+    private val DPSSG3RABBIT_BDISK_CRC32S = setOf(0xa3228b6cL)
+    private val DPSSG3SHINKON_BDISK_CRC32S = setOf(0x09b4448aL)
+    private val DPSSG3SOTSUGYOU_BDISK_CRC32S = setOf(0xbc4525d8L)
+    private val RANCE1CLASSIC_ADISK_CRC32S = setOf(0x2fffbd60L)
+    private val RANCE2CLASSIC_ADISK_CRC32S = setOf(0x28f8298fL)
+    private val RANCE3CLASSIC_ADISK_CRC32S = setOf(0x47a399a1L)
     private val SDPS_BASE_ADISK_CRC32S = setOf(0xc7a20cdfL)
     private val SDPSTONO_BDISK_CRC32S = setOf(0xbb1edff1L)
     private val SDPSKAIZOKU_BDISK_CRC32S = setOf(0xf81829e3L)
@@ -5774,6 +5836,238 @@ object GameCatalog {
 
     fun isMomoiroGuardianGameDir(dir: File?): Boolean = dir?.isDirectory == true && isMomoiroGuardianGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readSmallRootFile(dir, it) }
 
+    fun isRance1ClassicAlias(raw: String): Boolean {
+        if (raw.isBlank() || isRance1DigestAlias(raw)) return false
+        val n = nfkcLower(raw)
+        if (n.contains("rance01") || n.contains("rance 01") || n.contains("兰斯01") || n.contains("ランス01")) return false
+        return n.contains("rance1classic") || n.contains("rance1_classic") || n.contains("rance 1 classic") ||
+            n.contains("rancesa.ald") || n.contains("rancega.ald") ||
+            n.contains("兰斯1原版") || n.contains("兰斯1 原版") ||
+            n.contains("兰斯1(原版)") || n.contains("兰斯1（原版）") ||
+            Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*i(?![a-z0-9])").containsMatchIn(n) ||
+            ((n.contains("光を求めて") || n.contains("光をもとめて") || n.contains("寻找小光") || n.contains("hikari o motomete")) &&
+                (n.contains("原版") || n.contains("classic") || n.contains("怀旧")))
+    }
+
+    @JvmOverloads
+    fun isRance1ClassicGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (hasSystem4Markers(fileNames)) return false
+        if (isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCESA.ALD", true) }) return true
+        if (isLegacySystem3GameFiles(fileNames) && readSmallFile != null) {
+            val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+            if (iniName != null) {
+                val game = legacySystem3GameId(runCatching { readSmallFile(iniName) }.getOrNull())
+                if (game == "rance") return true
+                if (game != null) return false
+            }
+            val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+            if (adiskName != null) {
+                val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+                if (crc != null && crc in RANCE1CLASSIC_ADISK_CRC32S) return true
+            }
+        }
+        return false
+    }
+
+    fun isRance1ClassicGameDir(dir: File?): Boolean = dir?.isDirectory == true && isRance1ClassicGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isRance2ClassicAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        if (n.contains("rance02") || n.contains("rance 02") || n.contains("兰斯02") || n.contains("ランス02")) return false
+        return n.contains("rance2classic") || n.contains("rance2_classic") || n.contains("rance 2 classic") ||
+            n.contains("rance2sa.ald") || n.contains("rance2ga.ald") ||
+            n.contains("兰斯2原版") || n.contains("兰斯2 原版") ||
+            n.contains("兰斯2(原版)") || n.contains("兰斯2（原版）") ||
+            Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*ii(?![a-z0-9])").containsMatchIn(n) ||
+            ((n.contains("反逆の少女") || n.contains("反叛的少女") || n.contains("hangyaku no shoujo")) &&
+                (n.contains("原版") || n.contains("classic") || n.contains("怀旧")))
+    }
+
+    @JvmOverloads
+    fun isRance2ClassicGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (hasSystem4Markers(fileNames)) return false
+        if (isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCE2SA.ALD", true) }) return true
+        if (isLegacySystem3GameFiles(fileNames) && readSmallFile != null) {
+            val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+            if (iniName != null) {
+                val game = legacySystem3GameId(runCatching { readSmallFile(iniName) }.getOrNull())
+                if (game == "rance2") return true
+                if (game != null) return false
+            }
+            val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+            if (adiskName != null) {
+                val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+                if (crc != null && crc in RANCE2CLASSIC_ADISK_CRC32S) return true
+            }
+        }
+        return false
+    }
+
+    fun isRance2ClassicGameDir(dir: File?): Boolean = dir?.isDirectory == true && isRance2ClassicGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    fun isRance3ClassicAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        if (n.contains("rance03") || n.contains("rance 03") || n.contains("兰斯03") || n.contains("ランス03")) return false
+        return n.contains("rance3classic") || n.contains("rance3_classic") || n.contains("rance 3 classic") ||
+            n.contains("rance3sa.ald") || n.contains("rance3ga.ald") ||
+            n.contains("兰斯3原版") || n.contains("兰斯3 原版") ||
+            n.contains("兰斯3(原版)") || n.contains("兰斯3（原版）") ||
+            Regex("(?<![a-z0-9])(?:rance|兰斯|蘭斯|ランス)\\s*iii(?![a-z0-9])").containsMatchIn(n) ||
+            ((n.contains("リーザス") || n.contains("利萨斯") || n.contains("leazas kanraku")) &&
+                (n.contains("原版") || n.contains("classic") || n.contains("怀旧")))
+    }
+
+    @JvmOverloads
+    fun isRance3ClassicGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (hasSystem4Markers(fileNames)) return false
+        if (isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCE3SA.ALD", true) }) return true
+        if (isLegacySystem3GameFiles(fileNames) && readSmallFile != null) {
+            val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+            if (iniName != null) {
+                val game = legacySystem3GameId(runCatching { readSmallFile(iniName) }.getOrNull())
+                if (game == "rance3") return true
+                if (game != null) return false
+            }
+            val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+            if (adiskName != null) {
+                val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+                if (crc != null && crc in RANCE3CLASSIC_ADISK_CRC32S) return true
+            }
+        }
+        return false
+    }
+
+    fun isRance3ClassicGameDir(dir: File?): Boolean = dir?.isDirectory == true && isRance3ClassicGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
+    private fun isDpsSgScenarioGameFiles(
+        fileNames: Collection<String>,
+        readSmallFile: ((String) -> ByteArray?)?,
+        expectedIds: Set<String>,
+        expectedAdiskCrcs: Set<Long>,
+        expectedBdiskCrcs: Set<Long>,
+        aliasCheck: (String) -> Boolean
+    ): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game != null) return game in expectedIds
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && aliasCheck(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        val bdiskName = fileNames.firstOrNull { it.equals("BDISK.DAT", true) }
+        if (adiskName != null && bdiskName != null && readSmallFile != null) {
+            val acrc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            val bcrc = legacyAdiskCrc32(runCatching { readSmallFile(bdiskName) }.getOrNull())
+            if (acrc != null && acrc in expectedAdiskCrcs && bcrc != null && bcrc in expectedBdiskCrcs) return true
+        }
+        return false
+    }
+
+    fun isDpsSgFahrenAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssgfahren") || n.contains("dps_sg_fahren") || n.contains("fahren fliegen") ||
+            n.contains("fahnen fliegen") || n.contains("飞翔的梦") || n.contains("飛翔的夢")
+    }
+
+    @JvmOverloads
+    fun isDpsSgFahrenGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg_fahren", "dpssgfahren"), DPSSG1_BASE_ADISK_CRC32S, DPSSGFAHREN_BDISK_CRC32S, ::isDpsSgFahrenAlias)
+
+    fun isDpsSgKateiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssgkatei") || n.contains("dps_sg_katei") || n.contains("家庭教師はステキなお仕事") ||
+            n.contains("家庭教师是美妙的工作") || n.contains("家庭教師是美妙的工作") || n.contains("kateikyoushi")
+    }
+
+    @JvmOverloads
+    fun isDpsSgKateiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg_katei", "dpssgkatei"), DPSSG1_BASE_ADISK_CRC32S, DPSSGKATEI_BDISK_CRC32S, ::isDpsSgKateiAlias)
+
+    fun isDpsSgNobunagaAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssgnobunaga") || n.contains("dps_sg_nobunaga") || n.contains("信長の淫謀") ||
+            n.contains("信长的淫谋") || n.contains("信長的淫謀") || n.contains("nobunaga no inbou")
+    }
+
+    @JvmOverloads
+    fun isDpsSgNobunagaGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg_nobunaga", "dpssgnobunaga"), DPSSG1_BASE_ADISK_CRC32S, DPSSGNOBUNAGA_BDISK_CRC32S, ::isDpsSgNobunagaAlias)
+
+    fun isDpsSg2AntiqueAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg2antique") || n.contains("dps_sg2_antique") || n.contains("antique house") ||
+            n.contains("antiquehouse") || n.contains("古董屋")
+    }
+
+    @JvmOverloads
+    fun isDpsSg2AntiqueGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg2_antique", "dpssg2antique"), DPSSG1_BASE_ADISK_CRC32S, DPSSG2ANTIQUE_BDISK_CRC32S, ::isDpsSg2AntiqueAlias)
+
+    fun isDpsSg2IkenaiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg2ikenai") || n.contains("dps_sg2_ikenai") || n.contains("いけない内科検診") ||
+            n.contains("不妙的内科体检") || n.contains("不妙的內科體檢") || n.contains("naika kenshin")
+    }
+
+    @JvmOverloads
+    fun isDpsSg2IkenaiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg2_ikenai", "dpssg2ikenai"), DPSSG1_BASE_ADISK_CRC32S, DPSSG2IKENAI_BDISK_CRC32S, ::isDpsSg2IkenaiAlias)
+
+    fun isDpsSg2AkaiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg2akai") || n.contains("dps_sg2_akai") || n.contains("朱い夜") ||
+            n.contains("朱红之夜") || n.contains("朱紅之夜") || n.contains("akai yoru")
+    }
+
+    @JvmOverloads
+    fun isDpsSg2AkaiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg2_akai", "dpssg2akai"), DPSSG1_BASE_ADISK_CRC32S, DPSSG2AKAI_BDISK_CRC32S, ::isDpsSg2AkaiAlias)
+
+    fun isDpsSg3RabbitAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg3rabbit") || n.contains("dps_sg3_rabbit") || n.contains("rabbit p4p") ||
+            n.contains("rabbitp4p")
+    }
+
+    @JvmOverloads
+    fun isDpsSg3RabbitGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg3_rabbit", "dpssg3rabbit"), DPSSG3_BASE_ADISK_CRC32S, DPSSG3RABBIT_BDISK_CRC32S, ::isDpsSg3RabbitAlias)
+
+    fun isDpsSg3ShinkonAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg3shinkon") || n.contains("dps_sg3_shinkon") || n.contains("しんこんさんものがたり") ||
+            n.contains("新婚物语") || n.contains("新婚物語") || n.contains("shinkon-san") || n.contains("shinkon san")
+    }
+
+    @JvmOverloads
+    fun isDpsSg3ShinkonGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg3_shinkon", "dpssg3shinkon"), DPSSG3_BASE_ADISK_CRC32S, DPSSG3SHINKON_BDISK_CRC32S, ::isDpsSg3ShinkonAlias)
+
+    fun isDpsSg3SotsugyouAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("dpssg3sotsugyou") || n.contains("dps_sg3_sotsugyou") || n.contains("dps sg set3 - sotsugyou") ||
+            n.contains("d.p.s. sg set3 - sotsugyou") || n.contains("d.p.s. sg set3 毕业") || n.contains("d.p.s. sg set3 畢業") ||
+            n.contains("d.p.s. sg set3 －卒業－") || n == "卒業" || n == "sotsugyou"
+    }
+
+    @JvmOverloads
+    fun isDpsSg3SotsugyouGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean =
+        isDpsSgScenarioGameFiles(fileNames, readSmallFile, setOf("dps_sg3_sotsugyou", "dpssg3sotsugyou"), DPSSG3_BASE_ADISK_CRC32S, DPSSG3SOTSUGYOU_BDISK_CRC32S, ::isDpsSg3SotsugyouAlias)
+
     fun isYakata456Alias(raw: String): Boolean {
         if (raw.isBlank()) return false
         val n = nfkcLower(raw)
@@ -6042,7 +6336,9 @@ object GameCatalog {
         val n = nfkcLower(raw)
         if (n.contains("super") || n.contains("sdps") || n.contains("全部") || n.contains("zenbu") ||
             n.contains("これ") || n.contains("这是") || n.contains("這是") || n.contains("ver_n") ||
-            n.contains("vern") || n.contains("dpsall") || n.contains("koredps")
+            n.contains("vern") || n.contains("dpsall") || n.contains("koredps") ||
+            n.contains("dpssg") || n.contains("dps_sg") || n.contains("dps sg") ||
+            n.contains("d.p.s. sg") || n.contains("d.p.s sg")
         ) return false
         return n == "dps" || n == "d.p.s." || n == "d.p.s" ||
             n.contains("dream program system") || n.contains("梦幻程序系统") || n.contains("夢幻程序系統")
@@ -7210,6 +7506,42 @@ object GameCatalog {
         if (isMomoiroGuardianAlias(dirName)) {
             return ID_MOMOIROGUARDIAN
         }
+        if (isRance1ClassicAlias(dirName)) {
+            return ID_RANCE1CLASSIC
+        }
+        if (isRance2ClassicAlias(dirName)) {
+            return ID_RANCE2CLASSIC
+        }
+        if (isRance3ClassicAlias(dirName)) {
+            return ID_RANCE3CLASSIC
+        }
+        if (isDpsSgFahrenAlias(dirName)) {
+            return ID_DPSSGFAHREN
+        }
+        if (isDpsSgKateiAlias(dirName)) {
+            return ID_DPSSGKATEI
+        }
+        if (isDpsSgNobunagaAlias(dirName)) {
+            return ID_DPSSGNOBUNAGA
+        }
+        if (isDpsSg2AntiqueAlias(dirName)) {
+            return ID_DPSSG2ANTIQUE
+        }
+        if (isDpsSg2IkenaiAlias(dirName)) {
+            return ID_DPSSG2IKENAI
+        }
+        if (isDpsSg2AkaiAlias(dirName)) {
+            return ID_DPSSG2AKAI
+        }
+        if (isDpsSg3RabbitAlias(dirName)) {
+            return ID_DPSSG3RABBIT
+        }
+        if (isDpsSg3ShinkonAlias(dirName)) {
+            return ID_DPSSG3SHINKON
+        }
+        if (isDpsSg3SotsugyouAlias(dirName)) {
+            return ID_DPSSG3SOTSUGYOU
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -7625,6 +7957,42 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isMomoiroGuardianAlias(displayName)) {
             return ID_MOMOIROGUARDIAN
+        }
+        if (!displayName.isNullOrBlank() && isRance1ClassicAlias(displayName)) {
+            return ID_RANCE1CLASSIC
+        }
+        if (!displayName.isNullOrBlank() && isRance2ClassicAlias(displayName)) {
+            return ID_RANCE2CLASSIC
+        }
+        if (!displayName.isNullOrBlank() && isRance3ClassicAlias(displayName)) {
+            return ID_RANCE3CLASSIC
+        }
+        if (!displayName.isNullOrBlank() && isDpsSgFahrenAlias(displayName)) {
+            return ID_DPSSGFAHREN
+        }
+        if (!displayName.isNullOrBlank() && isDpsSgKateiAlias(displayName)) {
+            return ID_DPSSGKATEI
+        }
+        if (!displayName.isNullOrBlank() && isDpsSgNobunagaAlias(displayName)) {
+            return ID_DPSSGNOBUNAGA
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg2AntiqueAlias(displayName)) {
+            return ID_DPSSG2ANTIQUE
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg2IkenaiAlias(displayName)) {
+            return ID_DPSSG2IKENAI
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg2AkaiAlias(displayName)) {
+            return ID_DPSSG2AKAI
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg3RabbitAlias(displayName)) {
+            return ID_DPSSG3RABBIT
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg3ShinkonAlias(displayName)) {
+            return ID_DPSSG3SHINKON
+        }
+        if (!displayName.isNullOrBlank() && isDpsSg3SotsugyouAlias(displayName)) {
+            return ID_DPSSG3SOTSUGYOU
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -10195,6 +10563,186 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_RANCE1CLASSIC -> GameDescriptor(
+                id = ID_RANCE1CLASSIC,
+                title = stringResolver(R.string.game_rance1classic_title),
+                defaultDirName = "Rance1Classic",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance1classic,
+                accentColor = 0xFF26A69A.toInt(),
+                accentBorderColor = 0x6680CBC4,
+                iconFrameColor = 0xFF0E2926.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE1CLASSIC_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE2CLASSIC -> GameDescriptor(
+                id = ID_RANCE2CLASSIC,
+                title = stringResolver(R.string.game_rance2classic_title),
+                defaultDirName = "Rance2Classic",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance2classic,
+                accentColor = 0xFF43A047.toInt(),
+                accentBorderColor = 0x6681C784,
+                iconFrameColor = 0xFF102A14.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE2CLASSIC_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_RANCE3CLASSIC -> GameDescriptor(
+                id = ID_RANCE3CLASSIC,
+                title = stringResolver(R.string.game_rance3classic_title),
+                defaultDirName = "Rance3Classic",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_rance3classic,
+                accentColor = 0xFFFB8C00.toInt(),
+                accentBorderColor = 0x66FFB74D,
+                iconFrameColor = 0xFF2E1E0C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.RANCE3CLASSIC_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSGFAHREN -> GameDescriptor(
+                id = ID_DPSSGFAHREN,
+                title = stringResolver(R.string.game_dpssgfahren_title),
+                defaultDirName = "DpsSgFahren",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssgfahren,
+                accentColor = 0xFFE53935.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2C1010.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSGFAHREN_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSGKATEI -> GameDescriptor(
+                id = ID_DPSSGKATEI,
+                title = stringResolver(R.string.game_dpssgkatei_title),
+                defaultDirName = "DpsSgKatei",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssgkatei,
+                accentColor = 0xFF00ACC1.toInt(),
+                accentBorderColor = 0x6680DEEA,
+                iconFrameColor = 0xFF0E272B.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSGKATEI_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSGNOBUNAGA -> GameDescriptor(
+                id = ID_DPSSGNOBUNAGA,
+                title = stringResolver(R.string.game_dpssgnobunaga_title),
+                defaultDirName = "DpsSgNobunaga",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssgnobunaga,
+                accentColor = 0xFF3949AB.toInt(),
+                accentBorderColor = 0x669FA8DA,
+                iconFrameColor = 0xFF121630.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSGNOBUNAGA_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG2ANTIQUE -> GameDescriptor(
+                id = ID_DPSSG2ANTIQUE,
+                title = stringResolver(R.string.game_dpssg2antique_title),
+                defaultDirName = "DpsSg2Antique",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg2antique,
+                accentColor = 0xFF5C6BC0.toInt(),
+                accentBorderColor = 0x669FA8DA,
+                iconFrameColor = 0xFF151930.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG2ANTIQUE_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG2IKENAI -> GameDescriptor(
+                id = ID_DPSSG2IKENAI,
+                title = stringResolver(R.string.game_dpssg2ikenai_title),
+                defaultDirName = "DpsSg2Ikenai",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg2ikenai,
+                accentColor = 0xFFD81B60.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2B101C.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG2IKENAI_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG2AKAI -> GameDescriptor(
+                id = ID_DPSSG2AKAI,
+                title = stringResolver(R.string.game_dpssg2akai_title),
+                defaultDirName = "DpsSg2Akai",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg2akai,
+                accentColor = 0xFFC62828.toInt(),
+                accentBorderColor = 0x66EF9A9A,
+                iconFrameColor = 0xFF2B0E0E.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG2AKAI_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG3RABBIT -> GameDescriptor(
+                id = ID_DPSSG3RABBIT,
+                title = stringResolver(R.string.game_dpssg3rabbit_title),
+                defaultDirName = "DpsSg3Rabbit",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg3rabbit,
+                accentColor = 0xFFEC407A.toInt(),
+                accentBorderColor = 0x66F48FB1,
+                iconFrameColor = 0xFF2D141F.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG3RABBIT_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG3SHINKON -> GameDescriptor(
+                id = ID_DPSSG3SHINKON,
+                title = stringResolver(R.string.game_dpssg3shinkon_title),
+                defaultDirName = "DpsSg3Shinkon",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg3shinkon,
+                accentColor = 0xFFFF7043.toInt(),
+                accentBorderColor = 0x66FFAB91,
+                iconFrameColor = 0xFF2E1810.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG3SHINKON_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
+            ID_DPSSG3SOTSUGYOU -> GameDescriptor(
+                id = ID_DPSSG3SOTSUGYOU,
+                title = stringResolver(R.string.game_dpssg3sotsugyou_title),
+                defaultDirName = "DpsSg3Sotsugyou",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_dpssg3sotsugyou,
+                accentColor = 0xFF43A047.toInt(),
+                accentBorderColor = 0x66A5D6A7,
+                iconFrameColor = 0xFF102A14.toInt(),
+                supportsOnlineBaseInstall = true,
+                onlineBaseCdnUrl = OnlineInstaller.DPSSG3SOTSUGYOU_CDN_URL,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -10378,7 +10926,19 @@ object GameCatalog {
         ID_BALLOONPOP,
         ID_HIYOKO2,
         ID_SELFGAME,
-        ID_MOMOIROGUARDIAN
+        ID_MOMOIROGUARDIAN,
+        ID_RANCE1CLASSIC,
+        ID_RANCE2CLASSIC,
+        ID_RANCE3CLASSIC,
+        ID_DPSSGFAHREN,
+        ID_DPSSGKATEI,
+        ID_DPSSGNOBUNAGA,
+        ID_DPSSG2ANTIQUE,
+        ID_DPSSG2IKENAI,
+        ID_DPSSG2AKAI,
+        ID_DPSSG3RABBIT,
+        ID_DPSSG3SHINKON,
+        ID_DPSSG3SOTSUGYOU
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()
