@@ -1,7 +1,7 @@
 <div align="center">
   <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
   <h1>AliceHub</h1>
-  <p><strong>面向 System 3.x / System 4.x 架构的 Android 双内核原生运行引擎与聚合管理中心</strong></p>
+  <p><strong>支持 System 1–4 的 Android / iOS 原生游戏启动器</strong></p>
   <p>
     <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
@@ -15,7 +15,7 @@
 
 ---
 
-**AliceHub**（`io.github.alicehub`）是在 **Android 和 iOS** 上原生运行 AliceSoft 游戏的开源启动器与管理工具。它使用 SDL2 和原生引擎运行游戏文件，无需 Wine、Winlator 或 x86/x64 指令转译。安装包不包含游戏，请自行准备有权使用的游戏资源。
+**AliceHub**（`io.github.alicehub`）是在 **Android 和 iOS** 上原生运行 AliceSoft **System 1–4** 游戏的开源启动器与管理工具。三套原生引擎通过 SDL2 运行游戏，无需 Wine、Winlator 或 x86/x64 指令转译。安装包不包含游戏，请自行准备有权使用的游戏资源。
 
 ## 下载与快速上手
 
@@ -40,7 +40,7 @@
 
 **在线安装**默认关闭。两端均可在设置中阅读并同意使用条款后开启，再从游戏条目下载可用的资源。准备足够空间存放游戏文件及安装时的临时数据。
 
-## 支持的游戏和功能
+## System 1–4 兼容性与功能
 
 启动器会根据游戏根目录中的文件自动选择引擎。下表列出常见的识别标记，不代表完整游戏只需这些文件。
 
@@ -57,8 +57,9 @@
 
 ## Android 功能详解
 
-### 1. 原生引擎与移动端优化
-- **System 3.x 原生内核（`xsystem35`）**：
+### 1. 三套原生引擎与移动端优化
+- **早期 System 1–3（`system3-sdl2`）**：运行采用 DAT 资源的早期作品，例如《兰斯 I》《兰斯 II》《兰斯 III》的原版。
+- **System 3.5–3.9（`xsystem35`）**：
   - 支持 System 3.5 ~ 3.9 场景字节码与扩展模块（`ShGraph`、`ShSound`、`ShString`、`SACT`、`eDemo` 等）、`ALD` / `ALK` / `DRI` 资源包、`PMS` / `QNT` / `VSP` / `JPEG` / `WebP` 图像渲染，以及 `System 3.9`（`System39.ain`）存档格式。
   - 原生兼容 **Shift-JIS / GBK / Unicode** 多编码文本排版，内置 `SDL2_mixer` 虚拟 CD 音轨播放（支持 `playlist.txt` 挂载 MP3 / Ogg 音轨）与 Android 原生 MIDI 合成器，完整接入局内悬浮窗、虚拟手柄/外设映射与实时状态修改。
 - **System 4.x 原生内核（`xsystem4`）**：
@@ -90,22 +91,22 @@
 
 ### 4. 虚拟手柄、物理控制器与可视化布局编辑
 - **多预设虚拟按键与全屏编辑器**：内置面向视觉小说（GAL / ADV）与迷宫探索（RPG）等多套布局预设；提供全屏可视化拖拽编辑器，支持自由添加/删除按钮、十字键与虚拟摇杆，独立调节坐标、尺寸缩放、不透明度、圆形/胶囊/方形外观、点按/锁定（Toggle）模式、组合键与快捷指令（显隐虚拟键、切换虚拟光标、局内截图、打开菜单），支持网格吸附与撤销操作。
-- **物理外设即插即用**：原生适配蓝牙与 USB 有线手柄（Xbox / PlayStation / Switch Pro 等），支持 A/B 与 X/Y 键位互换、摇杆死区与光标速度调节，可将左右摇杆与十字键灵活映射为虚拟鼠标光标、滚轮翻页、方向键或 WASD，无缝驱动 System 3.x 与 System 4.x 双引擎。
+- **物理外设即插即用**：原生适配蓝牙与 USB 有线手柄（Xbox / PlayStation / Switch Pro 等），支持 A/B 与 X/Y 键位互换、摇杆死区与光标速度调节，可将左右摇杆与十字键映射为虚拟鼠标光标、滚轮、方向键或 WASD。
 
 ### 5. 桌面双向存档互通、局内悬浮工具与诊断报告
 - **存档管理与桌面格式互通**：
-  - 支持 System 3.x（`.asd`）与 System 4.x（`SaveData` v26/v27 `.asd`、`RSave` `.rsd`、`.sav`）多目录隔离管理与压缩包/文件夹/单文件导入导出，关键全局数据采用 `fsync` 原子落盘；导入覆盖前自动备份原存档并支持一键恢复备份。
+  - 按游戏目录隔离存档，支持压缩包、文件夹或单文件导入导出；导入覆盖前自动备份，并支持恢复备份。
   - 针对移动端 `X4SS` 结构化存档，导出时自动转换为桌面端原版 `GD\x01\x01` 序列化格式，实现 PC 与 Android 双向无损互通。
 - **离线修改与局内实时悬浮工具**：
   - **通用移动端增强**：左上角可拖动悬浮球、可锁定快进状态的 **`⏩ Ctrl`** 悬浮键、一键局内截图，以及针对 PartsEngine 的 **字体大小实时缩放（`75%~160%`，防溢出重排）** 与 **滚动条加宽放大（`100%~300%`）**。
-  - **数值编辑与实时锁定**：支持离线存档编辑、全解锁存档导入还原，以及覆盖多款 System 3.x / System 4.x 内置条目的局内实时数值调节与状态锁定开关。
+  - **数值编辑与实时锁定**：部分游戏支持离线存档编辑、全解锁存档导入还原、局内实时数值调节和状态锁定。
 - **结构化错误诊断报告**：运行异常或原生崩溃信号触发时展示结构化诊断卡片，支持一键复制详情、导出 `.txt` 日志文件及调用系统分享。
 
 ---
 
 ## 触控与手柄操作
 
-下表适用于 Android 的 System 3.5–3.9 和 System 4.x。iOS 请在 **设置 → 手柄设置** 中配置手柄；在 System 4 游戏中，可另行开启 **长按快进（按住 Ctrl）**。
+早期 System 1–3 DAT 版作品使用原生触控。下表适用于 Android 的 System 3.5–3.9 和 System 4.x。iOS 请在 **设置 → 手柄设置** 中配置手柄；在 System 4 游戏中，可另行开启 **长按快进（按住 Ctrl）**。
 
 | 运行时操作 | 触控手势 | 物理手柄默认映射（可自定义） |
 | :--- | :--- | :--- |

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
   <h1>AliceHub</h1>
-  <p><strong>A native AliceSoft game launcher and library for Android and iOS</strong></p>
+  <p><strong>A native System 1–4 game launcher for Android and iOS</strong></p>
   <p>
     <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
@@ -14,7 +14,7 @@
 
 ---
 
-**AliceHub** (`io.github.alicehub`) is an open-source launcher and library for running AliceSoft games natively on **Android and iOS**. It uses SDL2 and native engines, without Wine, Winlator, or x86/x64 translation. No games are bundled; use game files you have the right to use.
+**AliceHub** (`io.github.alicehub`) is an open-source launcher and library for running AliceSoft **System 1–4** games natively on **Android and iOS**. It uses SDL2 and three native engines, without Wine, Winlator, or x86/x64 translation. No games are bundled; use game files you have the right to use.
 
 ## Download and quick start
 
@@ -39,7 +39,7 @@ Install the APK and open **AliceHub**. Select a game entry, or choose **Import O
 
 **Online installation** is off by default on both platforms. Enable it in Settings after accepting the terms, then download available files from the game's entry. Leave enough space for the game files and any temporary installation data.
 
-## Supported games and features
+## System 1–4 compatibility and features
 
 The launcher picks the engine from the files in the game's root folder. These are common detection markers, not a complete list of required game files.
 
@@ -56,8 +56,9 @@ The launcher picks the engine from the files in the game's root folder. These ar
 
 ## Android features in detail
 
-### 1. Native engines and mobile optimization
-- **System 3.x Native Kernel (`xsystem35`)**:
+### 1. Three native engines and mobile optimization
+- **Early System 1–3 (`system3-sdl2`):** Runs DAT-based games such as the original releases of Rance I, II, and III.
+- **System 3.5–3.9 (`xsystem35`)**:
   - Supports System 3.5 – 3.9 scenario bytecode and extension modules (`ShGraph`, `ShSound`, `ShString`, `SACT`, `eDemo`, etc.), `ALD` / `ALK` / `DRI` archives, `PMS` / `QNT` / `VSP` / `JPEG` / `WebP` graphics, and the `System 3.9` (`System39.ain`) save format.
   - Native **Shift-JIS / GBK / Unicode** text rendering, `SDL2_mixer` virtual CD audio playback (MP3 / Ogg tracks via `playlist.txt`), and an Android-native MIDI synthesizer, fully integrated with the in-game floating overlay, virtual/physical gamepad bridge, and live state modifiers.
 - **System 4.x Native Engine (`xsystem4`)**:
@@ -88,22 +89,22 @@ The launcher picks the engine from the files in the game's root folder. These ar
 
 ### 4. Virtual Gamepad, Physical Controllers & Visual Layout Editor
 - **Multi-Preset Virtual Controls & Fullscreen Editor**: Includes built-in presets for visual novels (GAL / ADV) and dungeon crawlers (RPG), plus a fullscreen drag-and-drop visual editor to add/remove buttons, D-Pads, and sticks, customize position, scale, opacity, circle/pill/square shapes, tap/toggle modes, key combos, and emulator shortcuts (toggle overlay, toggle virtual cursor, screenshot, open menu) with grid snapping and multi-step undo.
-- **Plug-and-Play Physical Controllers**: Native support for Bluetooth and USB controllers (Xbox, PlayStation, Switch Pro, etc.) with A/B & X/Y swap, stick deadzone and cursor speed tuning, and flexible mapping of sticks and D-Pad to virtual mouse cursor, scroll wheel, arrow keys, or WASD across both System 3.x and System 4.x engines.
+- **Plug-and-Play Physical Controllers**: Supports Bluetooth and USB controllers (Xbox, PlayStation, Switch Pro, etc.), with button swaps, stick deadzone and cursor speed settings, and mappings for virtual mouse, scroll wheel, arrow keys, or WASD.
 
 ### 5. Bidirectional Desktop Save Compatibility, Floating Tools & Diagnostics
 - **Scoped Save Manager & Desktop Format Conversion**:
-  - Manages System 3.x (`.asd`) and System 4.x (`SaveData` v26/v27 `.asd`, `RSave` `.rsd`, `.sav`) saves with atomic `fsync` writes, archive/folder/single-file import & export, and automatic pre-overwrite backup with one-tap restore.
+  - Keeps saves separate for each game folder. Import or export archives, folders, or individual files; existing saves are backed up before overwrite and can be restored.
   - Automatically converts mobile `X4SS` structured saves back into native Windows PC `GD\x01\x01` format upon export for seamless PC ↔ Android interoperability.
 - **Offline & In-Game Floating Tools**:
   - **Mobile Enhancements**: Draggable in-game floating button, latched **`⏩ Ctrl`** fast-forward pill, one-tap screenshot capture, live **Font Size (`75%–160%`)** scaling, and live **Scrollbar (`100%–300%`)** enlargement (PartsEngine).
-  - **Save & Live Modifiers**: Offline save editing, full-unlock save import/restore, and real-time numeric adjustments and state locks across supported System 3.x and System 4.x entries.
+  - **Save & Live Modifiers**: Supported games offer offline save editing, full-unlock save import and restore, and in-game value adjustments and locks.
 - **Structured Diagnostic Reports**: Captures runtime errors and native crash signals into structured diagnostic cards supporting one-tap copy, `.txt` log export, and system share integration.
 
 ---
 
 ## Touch and controller controls
 
-The table below applies to System 3.5–3.9 and System 4.x on Android. On iOS, configure controls in **Settings → Gamepad Settings**. For System 4 games, you can also enable **Long Press to Skip (Hold Ctrl)**.
+Early System 1–3 DAT games use native touch controls. The table below applies to System 3.5–3.9 and System 4.x on Android. On iOS, configure controls in **Settings → Gamepad Settings**. For System 4 games, you can also enable **Long Press to Skip (Hold Ctrl)**.
 
 | Action | Touch Gesture | Default Physical Controller Mapping (Customizable) |
 | :--- | :--- | :--- |
