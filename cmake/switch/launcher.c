@@ -111,6 +111,17 @@ int main(void)
         consoleExit(NULL);
         return 1;
     }
+
+    // The software console and EGL share nvdrv. Keep it open while switching framebuffers.
+    if (R_FAILED(nvInitialize())) {
+        consoleExit(NULL);
+        return 1;
+    }
+    if (atexit(nvExit)) {
+        nvExit();
+        consoleExit(NULL);
+        return 1;
+    }
     consoleExit(NULL);
 
     SDL_SetMainReady();
