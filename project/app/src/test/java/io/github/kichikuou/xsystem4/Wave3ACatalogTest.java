@@ -177,12 +177,17 @@ public class Wave3ACatalogTest {
         assertEquals(GameCatalog.ID_TOUSHIN2SP, GameCatalog.INSTANCE.classifyDirectory(
                 null, "Toushin2Sp", null, "斗神都市II 然后，从那以后…"));
         assertEquals(GameCatalog.ID_TOUSHIN2SP, GameCatalog.INSTANCE.classifyDirectory(
+                null, "UnknownDir", null, "斗神都市II 然后，从那以后…"));
+        assertEquals(GameCatalog.ID_TOUSHIN2SP, GameCatalog.INSTANCE.classifyDirectory(
                 null, "闘神都市II そして、それから…", null, null));
+        assertTrue(GameCatalog.INSTANCE.isToushin2SpAlias("斗神都市II 然后，从那以后…"));
+        assertTrue(GameCatalog.INSTANCE.isToushin2SpAlias("鬥神都市II 然後，從那以後…"));
         assertEquals(GameCatalog.ID_TOUSHIN2, GameCatalog.INSTANCE.classifyDirectory(
                 null, "Toushin2", null, "斗神都市II"));
         assertEquals(GameCatalog.ID_TOUSHIN1, GameCatalog.INSTANCE.classifyDirectory(
                 null, "Toushin1", null, "斗神都市"));
         assertFalse(GameCatalog.INSTANCE.isToushin2Alias("闘神都市II そして、それから…"));
+        assertFalse(GameCatalog.INSTANCE.isToushin2Alias("斗神都市II 然后，从那以后…"));
         assertFalse(GameCatalog.INSTANCE.isToushin1Alias("闘神都市II そして、それから…"));
 
         assertEquals(GameCatalog.ID_GAKUENHYOURYUU, GameCatalog.INSTANCE.classifyDirectory(

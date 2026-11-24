@@ -3739,7 +3739,8 @@ object GameCatalog {
         if (raw.isBlank()) return false
         val n = nfkcLower(raw)
         return n.contains("mamorigami") || n.contains("守り神様") ||
-            n.contains("守神sa") || n.contains("守护神大人") || n.contains("守護神大人")
+            n.contains("守神sa") || n.contains("守护神大人") || n.contains("守護神大人") ||
+            n.contains("守护神明") || n.contains("守護神明")
     }
 
     @JvmOverloads
@@ -3863,8 +3864,8 @@ object GameCatalog {
             n.contains("toushin2-sp") || n.contains("toushin 2 sp") ||
             n.contains("soshite, sorekara") || n.contains("soshitesorekara") ||
             n.contains("そして、それから") || n.contains("そしてそれから") ||
-            n.contains("然后，从那以后") || n.contains("然后从那以后") ||
-            n.contains("然後，從那以後") || n.contains("然後從那以後")
+            n.contains("然后,从那以后") || n.contains("然后从那以后") ||
+            n.contains("然後,從那以後") || n.contains("然後從那以後")
     }
 
     @JvmOverloads
