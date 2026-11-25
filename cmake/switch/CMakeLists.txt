@@ -10,6 +10,7 @@ find_program(MAKE_EXECUTABLE make REQUIRED)
 
 set(stage "${CMAKE_CURRENT_BINARY_DIR}/stage")
 set(artifacts "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
+add_subdirectory(hub)
 set(repo "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(common
   -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}

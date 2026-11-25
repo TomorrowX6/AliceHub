@@ -1,5 +1,6 @@
 function(alicehub_switch_package target romfs)
   target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/launcher.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/model.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/picker_art.c")
   target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
   target_compile_definitions(${target} PRIVATE ALICEHUB_ENGINE="${target}")

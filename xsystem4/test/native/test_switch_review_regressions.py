@@ -20,7 +20,7 @@ class SwitchRegressionTest(unittest.TestCase):
             subprocess.run([str(exe)], cwd=tmp, check=True)
 
     def test_picker_draws_unicode_codepoints_and_respects_stride(self):
-        renderer = "\n".join(extract_function("../cmake/switch/launcher.c", name)
+        renderer = "\n".join(extract_function("../cmake/switch/picker_renderer.h", name)
                              for name in ("picker_rgb", "picker_mix", "picker_text"))
         self.run_c(r"""
 #include <assert.h>
@@ -87,8 +87,7 @@ int main(void)
 """)
 
     def test_picker_uses_bundled_and_shared_fonts_per_glyph(self):
-        launcher = "../cmake/switch/launcher.c"
-        fonts = "\n".join(extract_function(launcher, name)
+        fonts = "\n".join(extract_function("../cmake/switch/picker_renderer.h", name)
                           for name in ("picker_load_fonts", "picker_glyph"))
         self.run_c(r"""
 #include <assert.h>
@@ -199,8 +198,9 @@ int main(void)
 
     def test_picker_presents_cached_frame_without_input(self):
         launcher = "../cmake/switch/launcher.c"
-        loop = "\n".join(extract_function(launcher, name)
-                         for name in ("picker_begin", "compare_names", "validate_game", "choose_game"))
+        loop = "\n".join([extract_function("../cmake/switch/picker_renderer.h", "picker_begin"),
+                          *(extract_function(launcher, name)
+                            for name in ("compare_names", "validate_game", "choose_game"))])
         self.run_c(r"""
 #include <assert.h>
 #include <dirent.h>
@@ -411,7 +411,7 @@ int main(void)
     def test_picker_reopens_only_for_reported_startup_failure(self):
         launcher = "../cmake/switch/launcher.c"
         setter = extract_function(launcher, "alicehub_switch_set_launch_error")
-        main = extract_function(launcher, "int main").replace("int main(", "int launcher_main(", 1)
+        main = extract_function(launcher, "standalone_main")
         self.run_c(r"""
 #include <assert.h>
 #include <stdbool.h>
@@ -458,11 +458,11 @@ static int launch_game(char *game, char *save)
 """ + main + r"""
 int main(void)
 {
-    assert(launcher_main() == 1);
+    assert(standalone_main() == 1);
     assert(selections == 1 && mounts == 1 && unmounts == 1 && !quits);
     selections = mounts = unmounts = 0;
     report_error = true;
-    assert(launcher_main() == 0);
+    assert(standalone_main() == 0);
     assert(selections == 2 && mounts == 2 && unmounts == 2 && quits == 1);
 }
 """)
