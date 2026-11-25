@@ -9,7 +9,6 @@
 #include <switch.h>
 
 #define RELEASE_URL "https://github.com/TomorrowX6/AliceHub/releases/tag/"
-#define RELEASE_API "https://api.github.com/repos/TomorrowX6/AliceHub/releases/latest"
 #define MAX_RESPONSE (256 * 1024)
 
 static Thread worker;
@@ -27,6 +26,7 @@ static size_t receive(char *bytes, size_t size, size_t count, void *context)
         return 0;
     memcpy(body->data + body->length, bytes, length);
     body->length += length;
+    body->data[body->length] = 0;
     return length;
 }
 
@@ -37,12 +37,23 @@ static int interrupted(void *unused, curl_off_t total, curl_off_t current,
     return atomic_load(&stop);
 }
 
+static bool fetch_json(CURL *curl, Response *body, const char *url)
+{
+    if (atomic_load(&stop))
+        return false;
+    body->length = 0;
+    body->data[0] = 0;
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    long status = 0;
+    return curl_easy_perform(curl) == CURLE_OK &&
+           curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status) == CURLE_OK && status == 200;
+}
+
 static void fetch_release(void)
 {
     CURL *curl = curl_easy_init();
     Response *body = calloc(1, sizeof(*body));
     if (curl && body) {
-        curl_easy_setopt(curl, CURLOPT_URL, RELEASE_API);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "AliceHub");
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -50,10 +61,12 @@ static void fetch_release(void)
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, interrupted);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, receive);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, body);
-        long status = 0;
-        if (curl_easy_perform(curl) == CURLE_OK &&
-            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status) == CURLE_OK && status == 200)
-            hub_update_parse(ALICEHUB_GIT_COMMIT, body->data, result);
+        char tag[HUB_UPDATE_TAG_SIZE], url[HUB_UPDATE_COMPARE_URL_SIZE];
+        if (fetch_json(curl, body, HUB_UPDATE_API "/releases/latest") &&
+            hub_update_release_tag(body->data, tag) &&
+            hub_update_compare_url(ALICEHUB_GIT_COMMIT, tag, url) &&
+            fetch_json(curl, body, url) && hub_update_is_behind(body->data))
+            strcpy(result, tag);
     }
     if (curl)
         curl_easy_cleanup(curl);

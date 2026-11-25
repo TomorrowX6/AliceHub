@@ -4,7 +4,6 @@
 
 #include <errno.h>
 #include <string.h>
-#include <strings.h>
 #include <unistd.h>
 
 static bool preference_path(char path[HUB_PATH_SIZE], const char *root)
@@ -42,15 +41,33 @@ bool hub_update_valid_commit(const char *commit)
     return is_sha(commit, HUB_UPDATE_TAG_SIZE - 1);
 }
 
-bool hub_update_parse(const char *commit, const char *json, char tag[HUB_UPDATE_TAG_SIZE])
+bool hub_update_release_tag(const char *json, char tag[HUB_UPDATE_TAG_SIZE])
 {
     cJSON *release = cJSON_ParseWithOpts(json, NULL, true);
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(release, "tag_name");
     const char *value = cJSON_IsString(item) ? item->valuestring : "";
-    bool available = hub_update_valid_commit(commit) && is_sha(value, 7) &&
-                     strncasecmp(commit, value, strlen(value));
-    if (available)
+    bool valid = is_sha(value, 7);
+    if (valid)
         strcpy(tag, value);
     cJSON_Delete(release);
-    return available;
+    return valid;
+}
+
+bool hub_update_compare_url(const char *commit, const char *tag,
+                            char url[HUB_UPDATE_COMPARE_URL_SIZE])
+{
+    if (!hub_update_valid_commit(commit) || !is_sha(tag, 7))
+        return false;
+    int length = snprintf(url, HUB_UPDATE_COMPARE_URL_SIZE, HUB_UPDATE_API "/compare/%s...%s?per_page=1",
+                          tag, commit);
+    return length > 0 && length < HUB_UPDATE_COMPARE_URL_SIZE;
+}
+
+bool hub_update_is_behind(const char *json)
+{
+    cJSON *comparison = cJSON_ParseWithOpts(json, NULL, true);
+    const cJSON *status = cJSON_GetObjectItemCaseSensitive(comparison, "status");
+    bool behind = cJSON_IsString(status) && !strcmp(status->valuestring, "behind");
+    cJSON_Delete(comparison);
+    return behind;
 }

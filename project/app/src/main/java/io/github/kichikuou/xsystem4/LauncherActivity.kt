@@ -35,6 +35,7 @@ private const val LAUNCHER_INSTALL_ARCHIVE_REQ = 31
 private const val LAUNCHER_INSTALL_DIR_REQ = 32
 private const val STATE_SEARCH_VISIBLE = "STATE_SEARCH_VISIBLE"
 private const val STATE_SEARCH_QUERY = "STATE_SEARCH_QUERY"
+private const val STATE_AVAILABLE_RELEASE = "STATE_AVAILABLE_RELEASE"
 
 private class GameSelectAdapter(
     private val activity: Activity,
@@ -499,6 +500,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         }
 
         if (savedInstanceState != null) {
+            availableRelease = savedInstanceState.getString(STATE_AVAILABLE_RELEASE)
             val savedVisible = savedInstanceState.getBoolean(STATE_SEARCH_VISIBLE, false)
             val savedQuery = savedInstanceState.getString(STATE_SEARCH_QUERY, "")
             if (savedVisible || savedQuery.isNotEmpty()) {
@@ -535,6 +537,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putString(STATE_AVAILABLE_RELEASE, availableRelease)
         if (::searchBarContainer.isInitialized) {
             outState.putBoolean(STATE_SEARCH_VISIBLE, searchBarContainer.visibility == View.VISIBLE)
             outState.putString(STATE_SEARCH_QUERY, searchInput.text?.toString().orEmpty())

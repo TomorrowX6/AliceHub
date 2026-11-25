@@ -20,6 +20,18 @@ ENGINE = REPO / "xsystem4"
 SYS4 = ENGINE / "subprojects/libsys4"
 UNLOCK = REPO / "project/app/src/main/res/raw/full_unlock_saves.zip"
 
+class SwitchScreenRegistryTest(unittest.TestCase):
+    def test_registry_has_space_for_all_declared_hub_screens(self):
+        app = (HUB / "app.c").read_text()
+        capacity = int(re.search(r"const HubScreen \*screens\[(\d+)\];", app)[1])
+        count = 0
+        for path in HUB.glob("*.c"):
+            declarations = re.findall(r"static const HubScreen \w+(?:\[\])? = \{(.*?)\};",
+                                      path.read_text(), re.S)
+            count += sum(max(1, initializer.count("{")) for initializer in declarations)
+        self.assertLessEqual(count, capacity, f"{count} hub screens need room in the registry")
+
+
 class SwitchArtworkTest(unittest.TestCase):
     def test_shared_artwork_preserves_catalog_aliases_and_limits_packaged_size(self):
         from PIL import Image
@@ -647,6 +659,7 @@ int main(void)
 
 #define SHA "abcdef0123456789abcdef0123456789abcdef01"
 #define RELEASE(TAG) "{\"tag_name\":\"" TAG "\"}"
+#define COMPARE(STATUS) "{\"status\":\"" STATUS "\"}"
 
 int main(void)
 {
@@ -655,13 +668,21 @@ int main(void)
     assert(!hub_update_enabled("."));
     assert(hub_update_set_enabled(".", true));
     assert(hub_update_enabled("."));
-    char tag[HUB_UPDATE_TAG_SIZE];
-    assert(!hub_update_parse(SHA, RELEASE("ABCDEF0"), tag));
-    assert(hub_update_parse(SHA, RELEASE("1234567"), tag));
+    char tag[HUB_UPDATE_TAG_SIZE], url[HUB_UPDATE_COMPARE_URL_SIZE];
+    assert(hub_update_release_tag(RELEASE("ABCDEF0"), tag));
+    assert(hub_update_release_tag(RELEASE("1234567"), tag));
     assert(!strcmp(tag, "1234567"));
-    assert(!hub_update_parse(SHA, RELEASE("v0.1"), tag));
-    assert(!hub_update_parse(SHA, RELEASE("1234567") "junk", tag));
-    assert(!hub_update_parse("unknown", RELEASE("1234567"), tag));
+    assert(!hub_update_release_tag(RELEASE("v0.1"), tag));
+    assert(!hub_update_release_tag(RELEASE("1234567") "junk", tag));
+    assert(!hub_update_compare_url("unknown", "1234567", url));
+    assert(hub_update_compare_url(SHA, tag, url));
+    assert(!strcmp(url, HUB_UPDATE_API "/compare/1234567..." SHA "?per_page=1"));
+    assert(hub_update_is_behind(COMPARE("behind")));
+    assert(!hub_update_is_behind(COMPARE("identical")));
+    assert(!hub_update_is_behind(COMPARE("ahead")));
+    assert(!hub_update_is_behind(COMPARE("diverged")));
+    assert(!hub_update_is_behind(COMPARE("behind") "junk"));
+    assert(!hub_update_is_behind("{}"));
 }
 """,
                 text=True,

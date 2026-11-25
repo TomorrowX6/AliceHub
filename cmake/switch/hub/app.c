@@ -33,7 +33,7 @@ struct HubApp {
     HubLibrary library;
     HubSettings settings;
     HubHandoff returned;
-    const HubScreen *screens[32];
+    const HubScreen *screens[64];
     const HubActionEntry *actions[HUB_ACTION_GROUPS][32];
     Frame stack[12];
     size_t screen_count, action_count[HUB_ACTION_GROUPS], depth;
@@ -96,9 +96,12 @@ static const u16 *visible_artwork(HubApp *app, size_t slot, size_t index, HubArt
 
 bool hub_register_screen(HubApp *app, const HubScreen *screen)
 {
-    if (!screen || !screen->id || !*screen->id || !screen->draw ||
-        app->screen_count == sizeof(app->screens) / sizeof(*app->screens))
+    if (!screen || !screen->id || !*screen->id || !screen->draw)
         return false;
+    if (app->screen_count == sizeof(app->screens) / sizeof(*app->screens)) {
+        fprintf(stderr, "Hub screen registry full: %s\n", screen->id);
+        return false;
+    }
     for (size_t i = 0; i < app->screen_count; ++i)
         if (!strcmp(app->screens[i]->id, screen->id))
             return false;

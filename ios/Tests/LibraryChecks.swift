@@ -43,10 +43,15 @@ struct LibraryChecks {
     @MainActor
     static func main() throws {
         let commit = "abcdef0123456789abcdef0123456789abcdef01"
-        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "ABCDEF0") == nil)
-        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "1234567") == "1234567")
-        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "v0.1") == nil)
-        precondition(UpdateCheck.newReleaseTag(commit: "unknown", tag: "1234567") == nil)
+        precondition(UpdateCheck.compareURL(commit: commit, tag: "1234567")?.absoluteString ==
+                     "https://api.github.com/repos/TomorrowX6/AliceHub/compare/1234567...\(commit)?per_page=1")
+        precondition(UpdateCheck.compareURL(commit: commit, tag: "v0.1") == nil)
+        precondition(UpdateCheck.compareURL(commit: "unknown", tag: "1234567") == nil)
+        precondition(UpdateCheck.isBehind(Data(#"{"status":"behind"}"#.utf8)))
+        for status in ["identical", "ahead", "diverged", ""] {
+            precondition(!UpdateCheck.isBehind(Data("{\"status\":\"\(status)\"}".utf8)))
+        }
+        precondition(!UpdateCheck.isBehind(Data("{}".utf8)))
         try ArchiveChecks.run()
         checkGamepadProfiles()
         checkDisplayScales()
