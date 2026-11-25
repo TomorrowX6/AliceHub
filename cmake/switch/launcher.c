@@ -41,7 +41,11 @@ static char launch_error[512];
 
 void alicehub_switch_set_launch_error(const char *message)
 {
-    snprintf(launch_error, sizeof(launch_error), "%.*s", (int)strcspn(message, "\r\n"), message);
+    size_t length = strcspn(message, "\r\n");
+    if (length)
+        snprintf(launch_error, sizeof(launch_error), "%.*s", (int)length, message);
+    else
+        snprintf(launch_error, sizeof(launch_error), "Engine startup failed");
 }
 
 static bool picker_load_fonts(Picker *picker)
@@ -383,16 +387,14 @@ int main(void)
         *launch_error = '\0';
         result = launch_game(game, save);
 #if !defined(ALICEHUB_SWITCH_XSYSTEM4) && !defined(ALICEHUB_SWITCH_XSYSTEM35)
-        if (!result)
-            return 0;
+        if (!*launch_error)
+            return result;
         if (R_FAILED(romfsInit()))
             return result;
 #endif
-        if (!result)
+        if (!*launch_error)
             break;
         SDL_Quit();
-        if (!*launch_error)
-            snprintf(launch_error, sizeof(launch_error), "Engine startup failed (error %d)", result);
     }
     romfsExit();
     return result;

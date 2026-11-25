@@ -311,6 +311,140 @@ int main(void)
 }
 """)
 
+    def test_picker_reopens_only_for_reported_startup_failure(self):
+        launcher = "../cmake/switch/launcher.c"
+        setter = extract_function(launcher, "alicehub_switch_set_launch_error")
+        main = extract_function(launcher, "int main").replace("int main(", "int launcher_main(", 1)
+        self.run_c(r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define R_FAILED(result) (result)
+#define SAVES "saves"
+typedef struct { int unused; } Picker;
+static char launch_error[512];
+static bool report_error;
+static int selections, mounts, unmounts, quits;
+static int romfsInit(void) { ++mounts; return 0; }
+static void romfsExit(void) { ++unmounts; }
+static int nvInitialize(void) { return 0; }
+static void nvExit(void) {}
+static bool picker_open(Picker *picker) { (void)picker; return true; }
+static void picker_close(Picker *picker) { (void)picker; }
+static bool prepare_save(const char *game, char *save, size_t size)
+{
+    (void)game; (void)save; (void)size;
+    return true;
+}
+static bool choose_game(Picker *picker, char *game, size_t size, const char *error)
+{
+    (void)picker; (void)game; (void)size;
+    if (++selections == 1) {
+        assert(!error);
+        return true;
+    }
+    assert(report_error && !strcmp(error, "Bad scenario disk"));
+    return false;
+}
+static void SDL_Quit(void) { ++quits; }
+""" + setter + r"""
+static int launch_game(char *game, char *save)
+{
+    (void)game; (void)save;
+    romfsExit();
+    if (report_error)
+        alicehub_switch_set_launch_error("Bad scenario disk");
+    return 1;
+}
+""" + main + r"""
+int main(void)
+{
+    assert(launcher_main() == 1);
+    assert(selections == 1 && mounts == 1 && unmounts == 1 && !quits);
+    selections = mounts = unmounts = 0;
+    report_error = true;
+    assert(launcher_main() == 0);
+    assert(selections == 2 && mounts == 2 && unmounts == 2 && quits == 1);
+}
+""")
+
+    def test_invalid_config_string_keeps_previous_value_owned(self):
+        source = "src/system4.c"
+        signature = "static bool read_config_entries(const char *path)\n{"
+        text = (Path(__file__).resolve().parents[2] / source).read_text(encoding="utf-8")
+        definition = text.split(signature, 1)[1].split("\n}", 1)[0]
+        readers = "\n".join([
+            *(extract_function(source, name) for name in ("ini_string", "ini_integer", "ini_boolean")),
+            signature + definition + "\n}",
+            *(extract_function(source, name) for name in ("user_config_path", "read_user_config_file")),
+        ])
+        self.run_c(r"""
+#include <assert.h>
+#include <math.h>
+#include <setjmp.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+enum { INI_INTEGER, INI_BOOLEAN, INI_STRING };
+enum { FONT_MINCHO, FONT_GOTHIC, SAVE_FORMAT_JSON, SAVE_FORMAT_RSM };
+struct string { const char *text; };
+struct ini_entry { struct string *name; struct { int type, i; struct string *s; } value; };
+static struct {
+    char *game_name, *boot_name, *ain_filename, *vm_name, *save_dir, *font_paths[2], *fnl_path;
+    int view_width, view_height, default_volume, msgskip_delay, save_format;
+    bool view_width_set, view_height_set, manual_text_x_scale, joypad;
+    float text_x_scale;
+} config;
+static struct string key;
+static struct ini_entry entry = { .name = &key };
+static jmp_buf recovery;
+static unsigned frees;
+static void track_free(void *ptr) { ++frees; free(ptr); }
+#define free track_free
+#define ERROR(...) longjmp(recovery, 1)
+#define WARNING(...) ((void)0)
+#define xstrdup strdup
+static struct ini_entry *ini_parse(const char *path, int *count)
+{
+    (void)path;
+    *count = 1;
+    return &entry;
+}
+static void ini_free_entry(struct ini_entry *e) { (void)e; }
+static void read_mixer_channels(struct ini_entry *e) { (void)e; }
+static bool is_absolute_path(const char *path) { return *path == '/'; }
+static char *path_join(const char *dir, const char *path) { (void)dir; return strdup(path); }
+""" + readers + r"""
+static void check(const char *setting, char **slot, bool user_config)
+{
+    key.text = setting;
+    *slot = strdup("original");
+    unsigned before = frees;
+    if (!setjmp(recovery)) {
+        if (user_config)
+            read_user_config_file("game/.xsys4rc", "game");
+        else
+            read_config_entries("game/System40.ini");
+        assert(0);
+    }
+    assert(frees == before);
+    assert(!strcmp(*slot, "original"));
+    free(*slot);
+    *slot = NULL;
+}
+int main(void)
+{
+    check("SaveFolder", &config.save_dir, false);
+    check("CodeName", &config.ain_filename, false);
+    check("save-folder", &config.save_dir, true);
+    check("font-mincho", &config.font_paths[FONT_MINCHO], true);
+    check("font-gothic", &config.font_paths[FONT_GOTHIC], true);
+    check("font-fnl", &config.fnl_path, true);
+}
+""")
+
     def test_face_buttons_keep_sideways_mapping(self):
         helper = extract_function("../cmake/switch/controller.h",
                                   "alicehub_switch_face_button")

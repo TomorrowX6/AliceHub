@@ -364,20 +364,25 @@ static bool read_config_entries(const char *path)
 
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "GameName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.game_name);
-			config.game_name = xstrdup(ini_string(&ini[i])->text);
+			config.game_name = value;
 		} else if (!strcmp(ini[i].name->text, "BootName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.boot_name);
-			config.boot_name = xstrdup(ini_string(&ini[i])->text);
+			config.boot_name = value;
 		} else if (!strcmp(ini[i].name->text, "CodeName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.ain_filename);
-			config.ain_filename = xstrdup(ini_string(&ini[i])->text);
+			config.ain_filename = value;
 		} else if (!strcmp(ini[i].name->text, "MainVM")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.vm_name);
-			config.vm_name = xstrdup(ini_string(&ini[i])->text);
+			config.vm_name = value;
 		} else if (!strcmp(ini[i].name->text, "SaveFolder")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.save_dir);
-			config.save_dir = xstrdup(ini_string(&ini[i])->text);
+			config.save_dir = value;
 		} else if (!strcmp(ini[i].name->text, "ViewWidth")) {
 			config.view_width = ini_integer(&ini[i]);
 			config.view_width_set = true;
@@ -415,14 +420,17 @@ static void read_user_config_file(const char *path, const char *basedir)
 
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "font-mincho")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.font_paths[FONT_MINCHO]);
-			config.font_paths[FONT_MINCHO] = user_config_path(&ini[i], basedir);
+			config.font_paths[FONT_MINCHO] = value;
 		} else if (!strcmp(ini[i].name->text, "font-gothic")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.font_paths[FONT_GOTHIC]);
-			config.font_paths[FONT_GOTHIC] = user_config_path(&ini[i], basedir);
+			config.font_paths[FONT_GOTHIC] = value;
 		} else if (!strcmp(ini[i].name->text, "font-fnl")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.fnl_path);
-			config.fnl_path = user_config_path(&ini[i], basedir);
+			config.fnl_path = value;
 		} else if (!strcmp(ini[i].name->text, "font-x-scale")) {
 			float f = strtof(ini_string(&ini[i])->text, NULL);
 			if (fabsf(f) < 0.01) {
@@ -440,8 +448,9 @@ static void read_user_config_file(const char *path, const char *basedir)
 				config.msgskip_delay = 0;
 			}
 		} else if (!strcmp(ini[i].name->text, "save-folder")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.save_dir);
-			config.save_dir = user_config_path(&ini[i], basedir);
+			config.save_dir = value;
 		} else if (!strcmp(ini[i].name->text, "save-format")) {
 			if (!strcmp(ini_string(&ini[i])->text, "json")) {
 				config.save_format = SAVE_FORMAT_JSON;
