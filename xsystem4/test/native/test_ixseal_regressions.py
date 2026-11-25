@@ -1004,6 +1004,8 @@ bool PE_SetText(int a, struct string *b, int c) {
     return true;
 }
 void PE_SetTextBoxText(int a, struct string *b) {}
+void PE_SetTextBoxReadOnly(int a, bool b) {}
+void PE_SetTextBoxMaxTextLength(int a, int b) {}
 bool PE_SetTextCharSpace(int a, int b, int c) { return true; }
 bool PE_SetTextLineSpace(int a, int b, int c) { return true; }
 bool PE_SetVGaugeRate(int a, float b, float c, int d) { return true; }
@@ -1079,6 +1081,102 @@ int main(int argc, char **argv) {
             ex_path.write_bytes(pact_ex)
             out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"], [str(ex_path)])
             self.assertEqual(out.strip(), "OK")
+
+    def test_parts_inline_construction_record_layouts(self):
+        source = "src/hll/PartsEngine.c"
+        functions = "\n".join(
+            extract_function(source, name)
+            for name in (
+                "PartsEngine_add_construction_process_extended",
+                "PartsEngine_get_construction_process_v6_arrays",
+                "PartsEngine_AddPartsConstructionProcess_v6",
+                "PartsEngine_GetPartsConstructionProcess_v6",
+            )
+        )
+        harness = r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "vm.h"
+#include "vm/page.h"
+
+#undef VM_ERROR
+#define VM_ERROR(...) abort()
+
+static struct page *make_page(int n)
+{
+    struct page *p = calloc(1, sizeof(*p) + n * sizeof(*p->values));
+    assert(p);
+    p->nr_vars = n;
+    return p;
+}
+
+static union vm_value decoded[32];
+static int a2, blur;
+static void PartsEngine_add_construction_process(union vm_value *ints,
+        union vm_value *floats, union vm_value *strings, int alpha2, int radius)
+{
+    memcpy(decoded, ints, sizeof(decoded));
+    assert(floats[0].f == 1.5f && floats[1].f == 2.0f);
+    assert(strings[0].i == 501 && strings[1].i == 502);
+    a2 = alpha2;
+    blur = radius;
+}
+
+static void PartsEngine_GetPartsConstructionProcess(int part, int index,
+        struct page **ints, struct page **floats, struct page **strings, int state)
+{
+    assert(part == 123 && index == 4 && state == 2);
+    *ints = make_page(32);
+    for (int i = 0; i < 32; i++)
+        (*ints)->values[i].i = 100 + i;
+}
+
+void delete_page_vars(struct page *p) {}
+void free_page(struct page *p) { free(p); }
+""" + functions + r"""
+
+int main(void)
+{
+    struct page *floats = make_page(2), *strings = make_page(2);
+    floats->values[0].f = 1.5f;
+    floats->values[1].f = 2.0f;
+    strings->values[0].i = 501;
+    strings->values[1].i = 502;
+
+    // Command 23: alpha-blended text. The extended record has A2 at 21,
+    // followed by spacing, face, size, colors, full-size, and blur.
+    const int extended[] = {
+        123, 2, 23, 0, 0, 0, 0, 0, 6, 8, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 137, 3, -2, 257, 25, 250, 240, 230, 19, 22, 24, 1, 7
+    };
+    for (int is_extended = 0; is_extended <= 1; is_extended++) {
+        struct page *add = make_page(is_extended ? 34 : 32);
+        struct page *get = make_page(is_extended ? 35 : 33);
+        for (int i = 0; i < add->nr_vars; i++)
+            add->values[i].i = extended[i + (!is_extended && i >= 21)];
+        PartsEngine_AddPartsConstructionProcess_v6(&add, &floats, &strings);
+        for (int i = 0; i < 32; i++)
+            assert(decoded[i].i == extended[i + (i >= 21)]);
+        assert(a2 == (is_extended ? 137 : 0));
+        assert(blur == (is_extended ? 7 : 0));
+
+        get->values[0].i = 123;
+        get->values[1].i = 4;
+        get->values[2].i = 2;
+        PartsEngine_GetPartsConstructionProcess_v6(&get, &floats, &strings);
+        assert(get->values[0].i == 123 && get->values[1].i == 4 && get->values[2].i == 2);
+        for (int i = 3; i < get->nr_vars; i++)
+            assert(get->values[i].i == 100 + i - 3 + (!is_extended && i >= 22));
+
+        free_page(add);
+        free_page(get);
+    }
+    free_page(floats);
+    free_page(strings);
+}
+"""
+        compile_and_run(harness, [])
 
     def test_parts_v2_set_active_controller_ignores_invalid_id(self):
         fn_get_idx = extract_function("src/parts/parts.c", "PE_GetControllerIndex")
