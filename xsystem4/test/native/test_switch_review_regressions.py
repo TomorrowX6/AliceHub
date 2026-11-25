@@ -8,13 +8,13 @@ from test_vm_reign_regressions import extract_function
 
 
 class SwitchRegressionTest(unittest.TestCase):
-    def run_c(self, source):
+    def run_c(self, source, *libs):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "test.c"
             exe = Path(tmp) / "test"
             path.write_text(source)
             subprocess.run(["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
-                            str(path), "-o", str(exe)], check=True)
+                            str(path), "-o", str(exe), *libs], check=True)
             subprocess.run([str(exe)], cwd=tmp, check=True)
 
     def test_picker_draws_unicode_codepoints_and_respects_stride(self):
@@ -81,6 +81,116 @@ int main(void)
     assert(drawn[count - 1] == 0x5b57 && pixels[0][56] == 0);
 }
 """)
+
+    def test_picker_uses_bundled_and_shared_fonts_per_glyph(self):
+        launcher = "../cmake/switch/launcher.c"
+        fonts = "\n".join(extract_function(launcher, name)
+                          for name in ("picker_load_fonts", "picker_glyph"))
+        self.run_c(r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <zlib.h>
+#define ALICEHUB_PICKER_COMPRESSED_FONT_SIZE 4
+#define FT_LOAD_RENDER 1
+#define R_SUCCEEDED(r) ((r) == 0)
+enum { PlServiceType_User, PlSharedFontType_Total = 6 };
+typedef uint32_t u32;
+typedef int FT_Library;
+typedef struct { u32 codepoint; } Glyph, *FT_GlyphSlot;
+typedef struct { FT_GlyphSlot glyph; u32 first, last; } Face, *FT_Face;
+typedef struct { const unsigned char *address; int size; } PlFontData;
+typedef struct {
+    FT_Library library;
+    FT_Face bundled[2], shared[PlSharedFontType_Total];
+    unsigned char *fallback_data;
+    bool shared_attempted, shared_open;
+} Picker;
+static Glyph glyph;
+static Face primary = { &glyph, 1, 0 };
+static Face bundled = { &glyph, 0x4e00, 0x9fff };
+static Face shared[PlSharedFontType_Total];
+static int FT_Init_FreeType(FT_Library *library) { *library = 1; return 0; }
+static int FT_Set_Pixel_Sizes(FT_Face face, int width, int height)
+{
+    assert(face && !width && height == 24);
+    return 0;
+}
+static int FT_New_Face(FT_Library library, const char *path, int index, FT_Face *face)
+{
+    assert(library == 1 && index == 0);
+    assert(!strcmp(path, "romfs:/fonts/MTLc3m.ttf"));
+    *face = &primary;
+    return 0;
+}
+static int FT_New_Memory_Face(FT_Library library, const unsigned char *data, int size,
+                              int index, FT_Face *face)
+{
+    assert(library == 1 && index == 0);
+    if (size == 4) {
+        assert(!memcmp(data, "Hana", 4));
+        *face = &bundled;
+    } else {
+        assert(size == 1 && *data < PlSharedFontType_Total);
+        shared[*data] = (Face){ &glyph, 0x10000 + *data, 0x10000 + *data };
+        *face = &shared[*data];
+    }
+    return 0;
+}
+static int FT_Get_Char_Index(FT_Face face, u32 cp)
+{
+    return (face->first <= cp && cp <= face->last) || cp == '?';
+}
+static int FT_Load_Char(FT_Face face, u32 cp, int flags)
+{
+    assert(flags == FT_LOAD_RENDER && FT_Get_Char_Index(face, cp));
+    face->glyph->codepoint = cp;
+    return 0;
+}
+static bool shared_available;
+static int shared_attempts, shared_loaded;
+static int plInitialize(int service)
+{
+    assert(service == PlServiceType_User);
+    ++shared_attempts;
+    return !shared_available;
+}
+static int plGetSharedFontByType(PlFontData *font, int type)
+{
+    static const unsigned char ids[] = { 0, 1, 2, 3, 4, 5 };
+    assert(type == shared_loaded++);
+    *font = (PlFontData){ &ids[type], 1 };
+    return 0;
+}
+""" + fonts + r"""
+int main(void)
+{
+    assert(!mkdir("romfs:", 0700) && !mkdir("romfs:/fonts", 0700));
+    gzFile file = gzopen("romfs:/fonts/HanaMinA.ttf.gz", "wb");
+    assert(file && gzwrite(file, "Hana", 4) == 4 && gzclose(file) == Z_OK);
+    Picker keyless = {0};
+    assert(picker_load_fonts(&keyless));
+    const u32 title[] = { 0x7231, 0x4e3d, 0x4e1d, 0x5b66, 0x56ed };
+    for (size_t i = 0; i < sizeof(title) / sizeof(*title); ++i)
+        assert(picker_glyph(&keyless, title[i])->codepoint == title[i]);
+    assert(shared_attempts == 0);
+    assert(picker_glyph(&keyless, 0xd55c)->codepoint == '?');
+    assert(picker_glyph(&keyless, 0xae00)->codepoint == '?');
+    assert(shared_attempts == 1 && shared_loaded == 0);
+
+    shared_available = true;
+    Picker console = {0};
+    assert(picker_load_fonts(&console));
+    for (u32 i = 0; i < PlSharedFontType_Total; ++i)
+        assert(picker_glyph(&console, 0x10000 + i)->codepoint == 0x10000 + i);
+    assert(shared_attempts == 2 && shared_loaded == PlSharedFontType_Total);
+    free(keyless.fallback_data);
+    free(console.fallback_data);
+}
+""", "-lz")
 
     def test_picker_presents_cached_frame_without_input(self):
         launcher = "../cmake/switch/launcher.c"

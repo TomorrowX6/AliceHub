@@ -11,6 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef ALICEHUB_PICKER_COMPRESSED_FONT_SIZE
+#include <zlib.h>
+#endif
 
 #define ROOT "sdmc:/switch/alicehub/" ALICEHUB_ENGINE
 #define GAMES ROOT "/games"
@@ -22,6 +25,7 @@ typedef struct {
     Framebuffer fb;
     FT_Library library;
     FT_Face bundled[2];
+    unsigned char *fallback_data;
     FT_Face shared[PlSharedFontType_Total];
     bool shared_attempted;
     bool shared_open;
@@ -37,13 +41,31 @@ static bool picker_load_fonts(Picker *picker)
         return false;
 #ifdef ALICEHUB_SWITCH_XSYSTEM4
     const char *font = "romfs:/fonts/VL-Gothic-Regular.ttf";
-    if (!FT_New_Face(picker->library, "romfs:/fonts/HanaMinA.ttf", 0, &picker->bundled[1]))
-        FT_Set_Pixel_Sizes(picker->bundled[1], 0, 24);
 #else
     const char *font = "romfs:/fonts/MTLc3m.ttf";
 #endif
-    return !FT_New_Face(picker->library, font, 0, &picker->bundled[0]) &&
-        !FT_Set_Pixel_Sizes(picker->bundled[0], 0, 24);
+    if (FT_New_Face(picker->library, font, 0, &picker->bundled[0]) ||
+        FT_Set_Pixel_Sizes(picker->bundled[0], 0, 24))
+        return false;
+
+#ifdef ALICEHUB_PICKER_COMPRESSED_FONT_SIZE
+    gzFile compressed = gzopen("romfs:/fonts/HanaMinA.ttf.gz", "rb");
+    if (compressed) {
+        const int size = ALICEHUB_PICKER_COMPRESSED_FONT_SIZE;
+        unsigned char *data = malloc(size);
+        int bytes = data ? gzread(compressed, data, size) : -1;
+        if (gzclose(compressed) == Z_OK && bytes == size &&
+            !FT_New_Memory_Face(picker->library, data, size, 0, &picker->bundled[1]))
+            picker->fallback_data = data;
+        else
+            free(data);
+    }
+#else
+    FT_New_Face(picker->library, "romfs:/fonts/HanaMinA.ttf", 0, &picker->bundled[1]);
+#endif
+    if (picker->bundled[1])
+        FT_Set_Pixel_Sizes(picker->bundled[1], 0, 24);
+    return true;
 }
 
 static FT_GlyphSlot picker_glyph(Picker *picker, u32 codepoint)
@@ -123,6 +145,7 @@ static void picker_close(Picker *picker)
     framebufferClose(&picker->fb);
     if (picker->library)
         FT_Done_FreeType(picker->library);
+    free(picker->fallback_data);
     if (picker->shared_open)
         plExit();
 }
