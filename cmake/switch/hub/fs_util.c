@@ -190,7 +190,7 @@ bool hub_save_publish(const char *stage, const char *destination, bool existed, 
     if (!file)
         return false;
     bool written = fputc(existed ? '1' : '0', file) != EOF && fputs(leaf, file) != EOF;
-    if (fclose(file) || !written || rename(temp, journal))
+    if (fclose(file) || !written || !save_flush() || rename(temp, journal))
         return false;
     *pending = true;
     if (!save_flush())

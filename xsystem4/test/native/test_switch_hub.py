@@ -1078,6 +1078,14 @@ int main(void)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             exe = root / "test"
+            (root / "switch.h").write_text(
+                "int fsdevCommitDevice(const char *device);\n#define R_FAILED(result) ((result) != 0)\n"
+            )
+            fs_util = root / "fs_util.o"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-D__SWITCH__", "-I", str(root), "-c", str(hub / "fs_util.c"),
+                 "-o", str(fs_util)], check=True,
+            )
             subprocess.run(
                 ["cc", "-std=gnu11", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
                  "-Datomic_save_open=hub_codec_atomic_save_open",
@@ -1085,7 +1093,8 @@ int main(void)
                  "-Datomic_save_abort=hub_codec_atomic_save_abort",
                  "-Wl,--wrap=rename,--wrap=mkdir,--wrap=fopen",
                  "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
-                 *(str(hub / name) for name in ("model.c", "fs_util.c", "save_store.c", "save_codec.c")),
+                 *(str(hub / name) for name in ("model.c", "save_store.c", "save_codec.c")),
+                 str(fs_util),
                  str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
                  str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
                 input=r"""
@@ -1102,6 +1111,18 @@ int main(void)
 #define LIVE "xsystem4/saves/ランス"
 
 static bool deny_directory_renames, fail_live_mkdir, crash_live_copy;
+static bool crash_snapshot_commit;
+
+int fsdevCommitDevice(const char *device)
+{
+    assert(!strcmp(device, "sdmc"));
+    if (crash_snapshot_commit) {
+        assert(access("commit-test/.save-stage-0000/publishing", F_OK));
+        assert(!unlink("commit-test/.save-stage-0000/previous/slot2"));
+        _exit(43);
+    }
+    return 0;
+}
 
 FILE *__real_fopen(const char *path, const char *mode);
 FILE *__wrap_fopen(const char *path, const char *mode)
@@ -1153,6 +1174,31 @@ static void expect(const char *path, const char *content)
 
 int main(void)
 {
+    assert(!mkdir("commit-test", 0700) && !mkdir("commit-test/live", 0700));
+    assert(!mkdir("commit-test/.save-stage-0000", 0700));
+    assert(!mkdir("commit-test/.save-stage-0000/next", 0700));
+    put("commit-test/live/slot1", "intact 1");
+    put("commit-test/live/slot2", "intact 2");
+    pid_t interrupted = fork();
+    assert(interrupted >= 0);
+    if (!interrupted) {
+        bool pending;
+        crash_snapshot_commit = true;
+        hub_save_publish("commit-test/.save-stage-0000", "commit-test/live", true, &pending);
+        _exit(99);
+    }
+    int commit_status;
+    assert(waitpid(interrupted, &commit_status, 0) == interrupted && WIFEXITED(commit_status) &&
+           WEXITSTATUS(commit_status) == 43);
+    assert(hub_save_recover("commit-test/live"));
+    expect("commit-test/live/slot1", "intact 1");
+    expect("commit-test/live/slot2", "intact 2");
+    assert(!unlink("commit-test/.save-stage-0000/intent"));
+    assert(!unlink("commit-test/.save-stage-0000/previous/slot1"));
+    assert(!rmdir("commit-test/.save-stage-0000/previous"));
+    assert(!rmdir("commit-test/.save-stage-0000/next"));
+    assert(!rmdir("commit-test/.save-stage-0000"));
+
     HubGame game;
     HubSaveResult result;
     atomic_bool cancelled = false;
