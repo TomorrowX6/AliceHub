@@ -382,7 +382,7 @@ int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gra
 
 
 class PartsRenderingTests(unittest.TestCase):
-    def test_building_empty_parts_v2_construction_erases_surface(self):
+    def test_only_okusama_building_empty_parts_v2_construction_erases_surface(self):
         code = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -397,7 +397,7 @@ struct parts_construction_process {
     bool needs_build, needs_pixel_snapshot;
     TAILQ_HEAD(ops, op) ops;
 };
-static bool parts_v2;
+static bool game_okusama, parts_v2;
 static int builds;
 static void gfx_delete_texture(struct texture *t) { t->handle = 0; }
 static void parts_common_free_alpha_mask(struct parts_common *c) { c->alpha_mask = false; }
@@ -419,13 +419,17 @@ int main(void) {
     assert(build_explicit_construction_process(&p, &c));
     assert(builds == 1 && c.common.texture.handle == 42 && !p.dirty);
     parts_v2 = true;
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 2 && c.common.texture.handle == 42 && c.common.alpha_mask && !p.dirty);
+    assert(c.common.w == 1280 && c.common.h == 820 && c.needs_pixel_snapshot);
+    game_okusama = true;
     struct op op;
     TAILQ_INSERT_TAIL(&c.ops, &op, link);
     assert(build_explicit_construction_process(&p, &c));
-    assert(builds == 2 && c.common.texture.handle == 42 && !p.dirty);
+    assert(builds == 3 && c.common.texture.handle == 42 && !p.dirty);
     TAILQ_REMOVE(&c.ops, &op, link);
     assert(build_explicit_construction_process(&p, &c));
-    assert(builds == 2 && p.dirty && !c.common.texture.handle && !c.common.alpha_mask);
+    assert(builds == 3 && p.dirty && !c.common.texture.handle && !c.common.alpha_mask);
     assert(!c.common.w && !c.common.h && !c.needs_build && !c.needs_pixel_snapshot);
 }
 '''

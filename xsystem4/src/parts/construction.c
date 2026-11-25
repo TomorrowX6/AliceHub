@@ -1681,7 +1681,7 @@ static bool cproc_determine_dims(struct parts_construction_process *cproc, int *
 static bool build_explicit_construction_process(struct parts *parts,
 		struct parts_construction_process *cproc)
 {
-	if (parts_v2 && TAILQ_EMPTY(&cproc->ops)) {
+	if (game_okusama && parts_v2 && TAILQ_EMPTY(&cproc->ops)) {
 		cproc->needs_build = false;
 		cproc->needs_pixel_snapshot = false;
 		gfx_delete_texture(&cproc->common.texture);
