@@ -54,6 +54,7 @@ bool game_rance10 = false;
 bool game_dohnadohna = false;
 bool game_evenicle = false;
 bool game_evenicle_rance = false;
+bool game_evenicle_rance_cn = false;
 bool game_evenicle_gaiden = false;
 bool game_bladebriders = false;
 bool game_evenicle2 = false;
@@ -463,6 +464,7 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 		{ "敗北時やり直し確認", 0x2bc04d54u, DISPLAY_SITES(6) },
 		{ "＆装備アイテムスロット拡張", 0x75ec9f96u, NULL },
 		{ "T_PMenu@Init_SCutCheckButton", 0x5651fc06u, DISPLAY_SITES(1, 2) },
+		{ "ロード確認画面", 0xcb484ee3u, DISPLAY_SITES(2, 3, 4, 5) },
 		{ "アイテム購入確認画面", 0x9505a4d6u, DISPLAY_SITES(2, 3, 4, 5) },
 		{ "購入確認選択肢", 0x3d48e208u, DISPLAY_SITES(2, 3, 4, 7, 8, 9, 10, 11) },
 		{ "購入＆使用確認選択肢", 0xbd974831u,
@@ -538,6 +540,8 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 		{ "T_SkillPlate@GetPlateText", 0x09ebebb4u, NULL },
 		{ "ＰＧＳアイテム魚拓工場", 0x13e11ebbu, DISPLAY_SITES(1, 2) },
 		{ "スキル初期化", 0xc41e014bu, NULL },
+		{ "特典用キャラ設定", 0x9ebc9466u, DISPLAY_SITES(3, 4, 5, 7, 8, 9, 10) },
+		{ "ＳＷ", 0xa975d888u, DISPLAY_SITES(1) },
 		{ "アイテム工場", 0x3cc1efd4u,
 			DISPLAY_SITES(3, 5, 7, 9, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 31, 32, 34, 35,
 				37, 38, 41, 42, 44, 46, 48, 50, 53, 54, 56, 57, 59, 60, 62, 63, 65, 66, 69,
@@ -1036,7 +1040,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		? AIN_ENC_GBK
 		: ain_detect_text_encoding(ain);
 	bool gbk_game_name = config_game_name_has_gbk_marker(config.game_name);
-	bool evenicle_rance_cn = game_evenicle_rance
+	game_evenicle_rance_cn = game_evenicle_rance
 		&& (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
 			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9"));
 	bool gbk_heuristics = gbk_game_name
@@ -1046,7 +1050,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
-		|| evenicle_rance_cn
+		|| game_evenicle_rance_cn
 		|| (game_evenicle2_rance && ain_has_evenicle2_rance_gbk_prologue(ain))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
@@ -1064,7 +1068,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
 		|| ain_messages_look_gbk(ain);
 	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
-	if (evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8)
+	if (game_evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8)
 		apply_evenicle_rance_cn_display_literals(ain);
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);

@@ -355,6 +355,20 @@ int main(void)
     char *item_msg = utf2cjk("を手に入れた！", 0, false);
     const char *const gold_reward[] = { gold_msg };
     const char *const item_reward[] = { item_msg };
+    const char *load_fn = "ロード確認画面";
+    const char *bonus_fn = "特典用キャラ設定";
+    const char *const load[] = { "", "讀取【DATA ", "】？", "是", "否" };
+    const char *const bonus[] = { "", "", "ランスアタック",
+        "ランスの発明した、すごい物理攻撃技r敵全体に５倍の大攻撃", "5.0倍 全体 必殺技", "",
+        "捕獲", "女の子モンスターの体力がr２０％以下の時、まれに捕まえる事が出来る",
+        "１回制限", "弱った女Ｍを捕獲", "" };
+    char *load_name = utf2cjk(load_fn, 0, false);
+    char *bonus_name = utf2cjk(bonus_fn, 0, false);
+    const char *load_literals[5], *bonus_literals[11];
+    for (int i = 0; i < 5; i++)
+        load_literals[i] = utf2cjk(load[i], 0, false);
+    for (int i = 0; i < 11; i++)
+        bonus_literals[i] = utf2cjk(bonus[i], 0, false);
     struct buffer code;
     buffer_init(&code, NULL, 0);
     uint32_t run_skill = add_literal_function(ain, &code, "T_GetItemDisp@RunSkill", notice, 3);
@@ -366,6 +380,8 @@ int main(void)
     uint32_t menu_other = add_literal_function(ain, &code, "OtherMenu", menu, 7);
     uint32_t chest_gold = add_literal_function(ain, &code, gold_fn, gold_reward, 1);
     uint32_t chest_item = add_literal_function(ain, &code, item_fn, item_reward, 1);
+    uint32_t load_confirm = add_literal_function(ain, &code, load_name, load_literals, 5);
+    uint32_t bonus_skills = add_literal_function(ain, &code, bonus_name, bonus_literals, 11);
     ain->code = code.buf;
     ain->code_size = code.index;
 
@@ -378,6 +394,10 @@ int main(void)
     assert(!strcmp(pushed_literal(ain, menu_help, 1), footer));
     assert(!strcmp(pushed_literal(ain, chest_gold, 0), gold_msg));
     assert(!strcmp(pushed_literal(ain, chest_item, 0), item_msg));
+    for (int i = 0; i < 5; i++)
+        assert(!strcmp(pushed_literal(ain, load_confirm, i), load_literals[i]));
+    for (int i = 0; i < 11; i++)
+        assert(!strcmp(pushed_literal(ain, bonus_skills, i), bonus_literals[i]));
 
     ain_add_string(ain, "\xc0\xbc\xcb\xb9"); // 兰斯, CN edition marker
     char *dialogue = utf2cjk("宝箱里面的东西，都是本大爷的。", 0, true);
@@ -399,11 +419,25 @@ int main(void)
     for (int i = 2; i < 7; i++)
         assert(!strcmp(pushed_literal(ain, menu_help, i), menu[i]));
     assert(!strcmp(pushed_literal(ain, menu_other, 0), footer));
+    char prompt[64];
+    snprintf(prompt, sizeof(prompt), "%s01%s", pushed_literal(ain, load_confirm, 1),
+        pushed_literal(ain, load_confirm, 2));
+    assert_gbk(prompt, "讀取【DATA 01】？");
+    assert_gbk(pushed_literal(ain, load_confirm, 3), "是");
+    assert_gbk(pushed_literal(ain, load_confirm, 4), "否");
+    for (int i = 0; i < 11; i++)
+        assert_gbk(pushed_literal(ain, bonus_skills, i), bonus[i]);
+
+    char *already_gbk = utf2cjk("读取【DATA ", 0, true);
+    for (int i = 0; i < 5; i++)
+        LittleEndian_putDW(ain->code, load_confirm + 6 * i + 2,
+            ain_add_string(ain, i == 1 ? already_gbk : load_literals[i]));
 
     for (int i = 0; i < 7; i++)
         LittleEndian_putDW(ain->code, menu_help + 6 * i + 2, ain_add_string(ain, translated[i]));
     apply_game_specific_hacks(ain);
     assert(sys4_text_is_gbk);
+    assert(!strcmp(pushed_literal(ain, load_confirm, 1), already_gbk));
     for (int i = 0; i < 7; i++)
         assert(!strcmp(pushed_literal(ain, menu_help, i), translated[i]));
 
@@ -416,6 +450,13 @@ int main(void)
     assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");
 
     free(item_fn);
+    free(already_gbk);
+    free(load_name);
+    free(bonus_name);
+    for (int i = 0; i < 5; i++)
+        free((char *)load_literals[i]);
+    for (int i = 0; i < 11; i++)
+        free((char *)bonus_literals[i]);
     free(gold_fn);
     free(item_msg);
     free(gold_msg);
