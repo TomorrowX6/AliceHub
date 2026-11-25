@@ -513,12 +513,10 @@ float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct tex
 }
 void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {}
 
-static void check(const char *first, const char *second, const char *expected)
+static void check_bytes(const char *first, const char *second, const char *expected)
 {
-    char *sjis = utf2cjk(first, 0, false);
-    char *gbk = utf2cjk(second, 0, true);
-    struct string *source = make_string(sjis, strlen(sjis));
-    string_append_cstr(&source, gbk, strlen(gbk));
+    struct string *source = make_string(first, strlen(first));
+    string_append_cstr(&source, second, strlen(second));
     struct parts_text parts = {0};
     drawn = make_string("", 0);
     parts_text_append(NULL, &parts, source);
@@ -541,6 +539,13 @@ static void check(const char *first, const char *second, const char *expected)
     free_string(drawn);
     free_string(source);
     parts_text_free(&parts);
+}
+
+static void check(const char *first, const char *second, const char *expected)
+{
+    char *sjis = utf2cjk(first, 0, false);
+    char *gbk = utf2cjk(second, 0, true);
+    check_bytes(sjis, gbk, expected);
     free(gbk);
     free(sjis);
 }
@@ -573,6 +578,10 @@ int main(void)
     check("[　ランス　]", "这是旧存档里的道具说明", "[　ランス　]这是旧存档里的道具说明");
     check("　攻撃力　＋", "３０", "　攻撃力　＋３０");
     check("　魔法力▼２０", "", "　魔法力▼２０");
+    check_bytes("\xa3\xaf", "\x82\x51\x82\x58\x82\x4f\x82\x4f\x82\x4f", "／２９０００");
+    check("－４", "／５０", "－４／５０");
+    check("", "１２２／２９０００", "１２２／２９０００");
+    check("", "俀俋侽侽侽／道具", "俀俋侽侽侽／道具");
     check("", "攻撃力", "攻撃力");
     check("", "呣呣呣", "呣呣呣");
     check("", "「呣呣呣……」", "「呣呣呣……」");

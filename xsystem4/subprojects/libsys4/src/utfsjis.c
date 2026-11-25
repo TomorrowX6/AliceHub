@@ -1288,6 +1288,12 @@ static bool gbk_display_pair(const uint8_t *s)
 	return s[0] >= 0x81 && s[0] <= 0xfe && s[1] >= 0x40 && s[1] <= 0xfe && s[1] != 0x7f;
 }
 
+static bool display_number_char(int u)
+{
+	return (u >= 0xff10 && u <= 0xff19) || u == 0x3000
+		|| u == 0xff0b || u == 0xff0d || u == 0xff0e || u == 0xff0f;
+}
+
 char *cjk_mixed_display_to_gbk(const char *text)
 {
 	const uint8_t *start = (const uint8_t *)text;
@@ -1299,9 +1305,12 @@ char *cjk_mixed_display_to_gbk(const char *text)
 			continue;
 		}
 		const uint8_t *end = s;
-		bool token_has_gbk = false, token_has_gbk_text = false;
+		bool token_has_gbk = false, token_has_gbk_text = false, token_is_numeric = true;
 		while (gbk_display_pair(end)) {
-			if (!sjis_display_pair(end) && gbk_lookup(end[0], end[1])) {
+			int sjis = sjis_display_pair(end);
+			int gbk = gbk_lookup(end[0], end[1]);
+			token_is_numeric &= display_number_char(sjis) || display_number_char(gbk);
+			if (!sjis && gbk) {
 				token_has_gbk = true;
 				token_has_gbk_text |= !(end[0] == 0xa1 && end[1] == 0xa1)
 					&& !(end[0] == 0xa3 && end[1] >= 0xb0 && end[1] <= 0xb9);
@@ -1328,7 +1337,7 @@ char *cjk_mixed_display_to_gbk(const char *text)
 				continue;
 			}
 			// Prefer GBK inside a GB2312 run, and require text evidence next to GBK.
-			if (!has_sjis_only
+			if (!token_is_numeric && !has_sjis_only
 					&& ((common && (!has_kana || extended / 3 < common))
 						|| token_has_gbk_text
 						|| (token_has_gbk && (extended < 2 || (!has_kana && !has_kanji)))))
