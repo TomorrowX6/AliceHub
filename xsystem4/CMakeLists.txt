@@ -32,6 +32,9 @@ set_target_properties(ffi PROPERTIES
 find_package(Freetype REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(SndFile REQUIRED)
+if(NINTENDO_SWITCH AND NOT SndFile_WITH_EXTERNAL_LIBS)
+  message(FATAL_ERROR "The Switch libsndfile build must support Ogg Vorbis")
+endif()
 find_package(ZLIB REQUIRED)
 
 add_subdirectory(subprojects/libsys4)
