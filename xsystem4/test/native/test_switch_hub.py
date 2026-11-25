@@ -307,6 +307,65 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
 
+    def test_support_storage_and_error_export(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "support_files.c"),
+                 "-x", "c", "-", "-o", str(Path(tmp) / "support")],
+                input=r"""
+#include "support_files.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void write_file(const char *path, const char *text)
+{
+    FILE *file = fopen(path, "wb");
+    assert(file && fputs(text, file) >= 0 && !fclose(file));
+}
+
+int main(void)
+{
+    const char *dirs[] = {"system3", "system3/games", "system3/saves", "cache",
+                          "cache/nested", ".downloads"};
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(*dirs); i++)
+        assert(!mkdir(dirs[i], 0700));
+    write_file("system3/games/data", "game");
+    write_file("system3/saves/data", "save!");
+    write_file(".downloads/data", "resume");
+    write_file("cache/nested/data", "tmp");
+    assert(!symlink("../../system3/games", "cache/nested/linked-game"));
+    HubStorage storage = hub_support_storage(".");
+    assert(storage.sizes_ok && storage.volume_ok && storage.capacity > 0);
+    assert(storage.games == 4 && storage.saves == 5 && storage.cache == 3);
+    assert(hub_support_clear_cache("."));
+    assert(access("cache/nested", F_OK) && !access(".downloads/data", F_OK));
+    storage = hub_support_storage(".");
+    assert(storage.sizes_ok && storage.cache == 0 && storage.games == 4 && storage.saves == 5);
+    assert(!rmdir("cache") && !symlink("system3/games", "cache"));
+    assert(!hub_support_clear_cache(".") && !access("system3/games/data", F_OK));
+    assert(!hub_support_export_error("."));
+    HubGame game;
+    assert(hub_game_init(&game, HUB_SYSTEM3, "Rance"));
+    assert(hub_support_record_error(".", &game, "Missing scenario file"));
+    assert(hub_support_export_error("."));
+    assert(hub_support_record_error(".", &game, "Missing fonts"));
+    assert(hub_support_export_error("."));
+    FILE *report = fopen(HUB_SUPPORT_REPORT, "rb");
+    char data[256] = {0};
+    assert(report && fread(data, 1, sizeof(data) - 1, report) && !fclose(report));
+    assert(strstr(data, "Nintendo Switch") && strstr(data, "Game: Rance"));
+    assert(strstr(data, "Missing fonts") && !strstr(data, "Missing scenario file"));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(Path(tmp) / "support")], cwd=tmp, check=True)
+
     def test_model_and_handoff(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,4 +1,5 @@
 #include "hub.h"
+#include "support_files.h"
 #include "../picker_art.h"
 #include "../picker_renderer.h"
 
@@ -128,28 +129,34 @@ void hub_toast(HubApp *app, const char *message)
     app->toast_frames = 150;
 }
 
+static void launch_error(HubApp *app, const HubGame *game, const char *title, const char *detail)
+{
+    hub_support_record_error(HUB_ROOT, game, detail);
+    hub_dialog(app, title, detail);
+}
+
 void hub_launch(HubApp *app, const HubGame *game)
 {
     if (!envHasNextLoad()) {
-        hub_dialog(app, "Cannot start game", "This loader does not support launching another NRO.");
+        launch_error(app, game, "Cannot start game", "This loader does not support launching another NRO.");
         return;
     }
     const char *nro = hub_engines[game->engine].nro;
     if (access(nro, R_OK) != 0) {
-        hub_dialog(app, "Engine NRO not found", nro);
+        launch_error(app, game, "Engine NRO not found", nro);
         return;
     }
     HubHandoff request = {.game = *game};
     hub_handoff_clear(HUB_ROOT, true);
     if (!hub_handoff_write(HUB_ROOT, false, &request)) {
-        hub_dialog(app, "Cannot start game", "Could not write the launch request to the SD card.");
+        launch_error(app, game, "Cannot start game", "Could not write the launch request to the SD card.");
         return;
     }
     char args[128];
     snprintf(args, sizeof(args), "%s %s", nro, HUB_REQUEST_ARG);
     if (R_FAILED(envSetNextLoad(nro, args))) {
         hub_handoff_clear(HUB_ROOT, false);
-        hub_dialog(app, "Cannot start game", "The loader rejected the engine launch.");
+        launch_error(app, game, "Cannot start game", "The loader rejected the engine launch.");
         return;
     }
     app->running = false;
@@ -324,7 +331,7 @@ int main(int argc, char **argv)
         if (!hub_handoff_take(HUB_ROOT, true, &app.returned))
             hub_toast(&app, "Could not read the engine result");
         else if (*app.returned.error)
-            hub_dialog(&app, app.returned.game.name, app.returned.error);
+            launch_error(&app, &app.returned.game, app.returned.game.name, app.returned.error);
     }
 
     const u64 directions = HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
