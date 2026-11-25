@@ -314,6 +314,28 @@ void send_agsevent(enum agsevent_type type, int code) {
 #endif
 }
 
+#ifdef __SWITCH__
+static void sync_switch_ctrl_event(void) {
+	static bool dispatched;
+	bool down = event_rawkey_down(KEY_CTRL);
+	if (down == dispatched)
+		return;
+	dispatched = down;
+	send_agsevent(down ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, KEY_CTRL);
+}
+#endif
+
+static void set_raw_key(int code, bool pressed) {
+	RawKeyInfo[code] = pressed;
+#ifdef __SWITCH__
+	if (code == KEY_CTRL) {
+		sync_switch_ctrl_event();
+		return;
+	}
+#endif
+	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
+}
+
 void event_set_mouse_internal_location(int x, int y) {
 	mouse_pos.x = x;
 	mouse_pos.y = y;
@@ -720,8 +742,7 @@ static void get_event(void) {
 /* キー情報の取得 */
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed) {
 	int code = keytable[sdl_KeyboardEventScancode(e)];
-	RawKeyInfo[code] = pressed;
-	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
+	set_raw_key(code, pressed);
 }
 
 int event_get_key(void) {
@@ -755,6 +776,7 @@ void event_reset_input_state(void) {
 	joyinfo = 0;
 #ifdef __SWITCH__
 	switch_joy_buttons = 0;
+	sync_switch_ctrl_event();
 #endif
 }
 
@@ -860,8 +882,7 @@ void event_inject_rawkey(int keycode, bool pressed) {
 		return;
 	}
 #endif
-	RawKeyInfo[keycode] = pressed;
-	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, keycode);
+	set_raw_key(keycode, pressed);
 }
 
 void event_inject_joy_mask(int mask, bool pressed) {
