@@ -842,19 +842,45 @@ int main(void)
                  "-Datomic_save_open=hub_codec_atomic_save_open",
                  "-Datomic_save_commit=hub_codec_atomic_save_commit",
                  "-Datomic_save_abort=hub_codec_atomic_save_abort",
+                 "-Wl,--wrap=rename,--wrap=mkdir",
                  "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
-                 *(str(hub / name) for name in ("model.c", "save_store.c", "save_codec.c")),
+                 *(str(hub / name) for name in ("model.c", "fs_util.c", "save_store.c", "save_codec.c")),
                  str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
                  str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
                 input=r"""
 #include "save_store.h"
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #define BASE "save-manager/xsystem4/ランス"
 #define LIVE "xsystem4/saves/ランス"
+
+static bool deny_directory_renames, fail_live_mkdir;
+
+int __real_rename(const char *source, const char *destination);
+int __wrap_rename(const char *source, const char *destination)
+{
+    struct stat st;
+    if (deny_directory_renames && !stat(source, &st) && S_ISDIR(st.st_mode)) {
+        errno = EIO;
+        return -1;
+    }
+    return __real_rename(source, destination);
+}
+
+int __real_mkdir(const char *path, mode_t mode);
+int __wrap_mkdir(const char *path, mode_t mode)
+{
+    if (fail_live_mkdir && !strcmp(path, "./" LIVE)) {
+        fail_live_mkdir = false;
+        errno = ENOSPC;
+        return -1;
+    }
+    return __real_mkdir(path, mode);
+}
 
 static void put(const char *path, const char *content)
 {
@@ -888,6 +914,7 @@ int main(void)
     expect(LIVE "/main.asd", "initial");
     assert(access(LIVE "/.hidden", F_OK));
 
+    deny_directory_renames = true;
     put(LIVE "/.internal", "hidden data");
     assert(hub_save_run(".", &game, HUB_SAVE_BACKUP, &cancelled, &result) && result.copied == 2);
     expect(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
@@ -901,6 +928,15 @@ int main(void)
     expect(LIVE "/main.asd", "initial");
     expect(LIVE "/.internal", "hidden data");
     assert(access(LIVE "/extra.asd", F_OK));
+
+    put(LIVE "/main.asd", "keep on rollback");
+    fail_live_mkdir = true;
+    assert(!hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result));
+    assert(!fail_live_mkdir);
+    expect(LIVE "/main.asd", "keep on rollback");
+    expect(LIVE "/.internal", "hidden data");
+    assert(access(LIVE "/extra.asd", F_OK));
+    put(LIVE "/main.asd", "initial");
 
     put(BASE "/Sync/main.asd", "external");
     put(BASE "/Sync/external.asd", "added");
@@ -938,6 +974,21 @@ int main(void)
     assert(!hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result));
     assert(!strcmp(result.error, "Cancelled."));
     expect(LIVE "/main.asd", "not exported");
+    atomic_store(&cancelled, false);
+
+    char component[181], nested[600] = LIVE, exported[700];
+    memset(component, 's', sizeof(component) - 1);
+    component[sizeof(component) - 1] = 0;
+    for (int i = 0; i < 3; ++i) {
+        strcat(nested, "/");
+        strcat(nested, component);
+        assert(!mkdir(nested, 0700));
+    }
+    strcat(nested, "/deep.asd");
+    put(nested, "long path");
+    assert(hub_save_run(".", &game, HUB_SAVE_EXPORT, &cancelled, &result));
+    snprintf(exported, sizeof(exported), BASE "/SaveData%s", nested + strlen(LIVE));
+    expect(exported, "long path");
 }
 """,
                 text=True,

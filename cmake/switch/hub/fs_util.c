@@ -8,9 +8,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static bool child_path(char path[HUB_PATH_SIZE], const char *base, const char *name)
+enum { TREE_PATH_SIZE = 1024 };
+
+static bool child_path(char path[TREE_PATH_SIZE], const char *base, const char *name)
 {
-    if (snprintf(path, HUB_PATH_SIZE, "%s/%s", base, name) < HUB_PATH_SIZE)
+    if (snprintf(path, TREE_PATH_SIZE, "%s/%s", base, name) < TREE_PATH_SIZE)
         return true;
     errno = ENAMETOOLONG;
     return false;
@@ -46,7 +48,7 @@ static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t
         }
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
             continue;
-        char from[HUB_PATH_SIZE], to[HUB_PATH_SIZE];
+        char from[TREE_PATH_SIZE], to[TREE_PATH_SIZE];
         struct stat st;
         bool done = child_path(from, src, entry->d_name) && !lstat(from, &st);
         if (done && !dst) {

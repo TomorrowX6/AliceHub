@@ -1,4 +1,5 @@
 #include "save_store.h"
+#include "fs_util.h"
 #include "savedata.h"
 
 #include <dirent.h>
@@ -277,12 +278,12 @@ static bool install_stage(Store *store, const char *dest, char stage[SAVE_PATH_S
 {
     if (!should_continue(store))
         return false;
-    if (existed && rename(dest, previous))
+    if (existed && hub_rename_dir(dest, previous))
         return false;
-    if (!rename(next, dest))
+    if (!hub_rename_dir(next, dest))
         return true;
     int failure = errno;
-    if (existed && rename(previous, dest)) {
+    if (existed && hub_rename_dir(previous, dest)) {
         snprintf(store->result->error, sizeof(store->result->error),
                  "Original saves are in %.125s/previous.", stage);
         *stage = '\0';
