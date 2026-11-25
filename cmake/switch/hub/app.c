@@ -102,6 +102,11 @@ bool hub_refresh_library(HubApp *app)
 {
     if (!hub_library_scan(&app->library, HUB_ROOT))
         return false;
+    size_t count = 0;
+    for (size_t i = 0; i < app->library.count; ++i)
+        if (!hub_install_pending(HUB_ROOT, &app->library.games[i]))
+            app->library.games[count++] = app->library.games[i];
+    app->library.count = count;
     hub_library_sort(&app->library, app->settings.sort);
     return true;
 }
@@ -326,9 +331,12 @@ int main(int argc, char **argv)
         goto finish;
     if (!hub_settings_load(HUB_ROOT, &app.settings))
         hub_toast(&app, "Unsupported or damaged settings; using defaults");
-    if ((mkdir(HUB_ROOT, 0777) && errno != EEXIST) || !hub_install_recover(HUB_ROOT) ||
-        !hub_refresh_library(&app))
+    bool root_ok = !mkdir(HUB_ROOT, 0777) || errno == EEXIST;
+    bool recovered = root_ok && hub_install_recover(HUB_ROOT);
+    if (!root_ok || !hub_refresh_library(&app))
         hub_toast(&app, "Could not scan the SD card library");
+    else if (!recovered)
+        hub_toast(&app, "Some interrupted installs could not be recovered.");
     if (argc == 2 && !strcmp(argv[1], HUB_RETURN_ARG)) {
         if (!hub_handoff_take(HUB_ROOT, true, &app.returned))
             hub_toast(&app, "Could not read the engine result");

@@ -253,8 +253,7 @@ static bool copy_tree(Store *store, const char *source, const char *dest,
     return ok;
 }
 
-static bool start_stage(const char *dest, char stage[SAVE_PATH_SIZE],
-                        char next[SAVE_PATH_SIZE], char previous[SAVE_PATH_SIZE])
+static bool start_stage(const char *dest, char stage[SAVE_PATH_SIZE], char next[SAVE_PATH_SIZE])
 {
     const char *slash = strrchr(dest, '/');
     for (unsigned i = 0; i < 10000; ++i) {
@@ -264,31 +263,11 @@ static bool start_stage(const char *dest, char stage[SAVE_PATH_SIZE],
             break;
         }
         if (!mkdir(stage, 0700))
-            return path_join(next, stage, "next") && path_join(previous, stage, "previous") &&
-                   ensure_dir(next);
+            return path_join(next, stage, "next") && ensure_dir(next);
         if (errno != EEXIST)
             break;
     }
     *stage = '\0';
-    return false;
-}
-
-static bool install_stage(Store *store, const char *dest, char stage[SAVE_PATH_SIZE],
-                          const char *next, const char *previous, bool existed)
-{
-    if (!should_continue(store))
-        return false;
-    if (existed && hub_rename_dir(dest, previous))
-        return false;
-    if (!hub_rename_dir(next, dest))
-        return true;
-    int failure = errno;
-    if (existed && hub_rename_dir(previous, dest)) {
-        snprintf(store->result->error, sizeof(store->result->error),
-                 "Original saves are in %.125s/previous.", stage);
-        *stage = '\0';
-    }
-    errno = failure;
     return false;
 }
 
@@ -336,7 +315,11 @@ static bool latest_backup(const char *backups, char path[SAVE_PATH_SIZE])
         if (strlen(name) != sizeof(latest) - 1 || strncmp(name, "SaveData-", 9) ||
             strspn(name + 9, "0123456789-") != sizeof(latest) - 10 || strcmp(name, latest) <= 0)
             continue;
-        if (!(ok = path_join(path, backups, name) && inspect(path, &kind)))
+        if (!(ok = path_join(path, backups, name)))
+            break;
+        if (!hub_save_recover(path))
+            continue;
+        if (!(ok = inspect(path, &kind)))
             break;
         if (kind == S_IFDIR)
             strcpy(latest, name);
@@ -356,21 +339,22 @@ static bool latest_backup(const char *backups, char path[SAVE_PATH_SIZE])
 static bool transfer(Store *store, const char *src, const char *dest, const char *backups,
                      enum CopyMode mode, bool merge, bool replace_empty, unsigned *copied)
 {
-    char stage[SAVE_PATH_SIZE] = "", next[SAVE_PATH_SIZE], previous[SAVE_PATH_SIZE];
+    char stage[SAVE_PATH_SIZE] = "", next[SAVE_PATH_SIZE];
+    bool pending = false;
     mode_t source, kind;
-    if (!check_parents(src, false) || !inspect(src, &source))
+    if (!check_parents(src, false) || !hub_save_recover(src) || !inspect(src, &source))
         return false;
     if (source != S_IFDIR) {
         errno = source ? ENOTDIR : ENOENT;
         return false;
     }
-    bool ok = check_parents(dest, true) && inspect(dest, &kind);
+    bool ok = check_parents(dest, true) && hub_save_recover(dest) && inspect(dest, &kind);
     if (ok && kind && kind != S_IFDIR) {
         errno = ENOTDIR;
         return false;
     }
     if (ok)
-        ok = start_stage(dest, stage, next, previous);
+        ok = start_stage(dest, stage, next);
     unsigned old_count = 0;
     if (ok && merge && kind)
         ok = copy_tree(store, dest, next, COPY_ALL, 0, &old_count);
@@ -384,10 +368,13 @@ static bool transfer(Store *store, const char *src, const char *dest, const char
                  transfer(store, dest, backup, NULL, COPY_ALL, false, false, &count);
         }
         if (ok)
-            ok = install_stage(store, dest, stage, next, previous, kind != 0);
+            ok = should_continue(store) && hub_save_publish(stage, dest, kind != 0, &pending);
     }
     int failure = errno;
-    if (*stage)
+    if (pending)
+        snprintf(store->result->error, sizeof(store->result->error),
+                 "Save publication is pending recovery in %.110s.", stage);
+    else if (*stage)
         discard_tree(stage, 0);
     errno = failure;
     return ok;
@@ -439,7 +426,8 @@ static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp o
         return latest_backup(backups, target) &&
                transfer(store, target, local, backups, COPY_ALL, false, true, copied);
     case HUB_SAVE_SYNC: {
-        if (!check_parents(sync, true) || !ensure_dir(sync) || !inspect(local, &kind) ||
+        if (!check_parents(sync, true) || !hub_save_recover(sync) || !ensure_dir(sync) ||
+            !hub_save_recover(local) || !inspect(local, &kind) ||
             !transfer(store, sync, local, backups, COPY_MISSING, true, false, copied))
             return false;
         if (!kind && !*copied)

@@ -143,6 +143,111 @@ int main(void)
             subprocess.run([str(executable)], check=True)
 
 
+    def test_ctrl_skip_during_native_dialogue(self):
+        source = (REPO / "xsystem35/src/input.c").read_text()
+        funcs = "\n".join(re.search(rf"^(?:static )?\w+ {name}\([^\n]*\) \{{\n.*?^\}}",
+                                    source, re.M | re.S).group()
+                          for name in ("menu_skip", "sys_keywait", "sys_hit_any_key"))
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-D__SWITCH__", "-Wall", "-Wextra", "-Werror",
+                 "-x", "c", "-", "-o", str(executable)],
+                input=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <limits.h>
+enum { KEYWAIT_CANCELABLE = 1, KEYWAIT_SKIPPABLE = 2, KEYWAIT_CTRL_CANCELABLE = 4,
+       KEYWAIT_MENU_SKIP = 8, MSGSKIP_STOP_ON_CLICK = 1, KEY_CTRL = 17 };
+static int ticks, polls, marks;
+static bool skip;
+static void callback(void) {}
+static struct { bool is_quit, messagewait_cancelled; void (*callback)(void); }
+    engine = { .callback = callback }, *nact = &engine;
+static int hak_ignore_mask = -1, hak_releasewait_mask = 16;
+static bool switch_menu35_ctrl_skip(void) { return skip; }
+static bool msgskip_isSkipping(void) { return false; }
+static int msgskip_getFlags(void) { return 0; }
+static void msgskip_activate(bool enabled) { assert(!enabled); }
+static void sys_sleep(int duration) { ticks += duration; }
+static void sys_wait_vsync(void) { ticks += 16; }
+static int sys_get_ticks(void) { return ticks; }
+static void texthook_keywait(void) {}
+static void cancel_yield(void) {}
+static void msg_hitAnyKey(void) { ++marks; }
+static bool event_rawkey_down(int code) { assert(code == KEY_CTRL); return true; }
+static int sys_getInputInfo(void)
+{
+    assert(polls < 2);
+    skip = ++polls == 2;
+    return 0;
+}
+""" + funcs + r"""
+int main(void)
+{
+    skip = true;
+    sys_hit_any_key();
+    assert(polls == 0 && marks == 0);
+    skip = false;
+    sys_hit_any_key();
+    assert(polls == 2 && marks == 1 && skip);
+    polls = 0;
+    skip = false;
+    nact->messagewait_cancelled = true;
+    sys_hit_any_key();
+    assert(polls == 2 && marks == 2 && skip && !nact->messagewait_cancelled);
+}
+""", text=True, check=True,
+            )
+            subprocess.run([str(executable)], check=True)
+
+
+    def test_streamer_row_requires_engine_capability(self):
+        source = (HUB / "runtime_menu_system4.c").read_text()
+        locks = source[source.index("enum { CTRL_SKIP"):source.index("static const int font_steps")]
+        options = re.search(r"^static size_t options[^\n]*\n\{\n.*?^\}", source, re.M | re.S).group()
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(ENGINE / "include"),
+                 "-x", "c", "-", "-o", str(executable)],
+                input=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "modifier_api.h"
+#define SDL_arraysize(a) (sizeof(a) / sizeof((a)[0]))
+#define SDL_strlcpy(out, in, size) snprintf(out, size, "%s", in)
+typedef struct { const char *label; int action; bool enabled; char value[32]; } SwitchMenuRow;
+static bool supported;
+bool modifier_api_has_streamer_mode(void) { return supported; }
+bool modifier_api_get_ctrl_skip(void) { return false; }
+int modifier_api_get_font_scale(void) { return 100; }
+int modifier_api_get_scrollbar_scale(void) { return 100; }
+int modifier_api_get_lock_mask(enum modifier_lock_game game)
+{
+    assert(game == MODIFIER_LOCK_RANCE10);
+    return 1 << 10;
+}
+""" + locks + r"""
+static const LiveLocks *current_locks(void) { return supported_locks; }
+""" + options + r"""
+int main(void)
+{
+    SwitchMenuRow rows[12];
+    assert(options(NULL, true, rows) == 11);
+    for (int i = 0; i < 11; i++)
+        assert(rows[i].action == LOCK_BASE + i);
+    assert(!strcmp(rows[10].value, "On"));
+    supported = true;
+    assert(options(NULL, true, rows) == 12);
+    assert(!strcmp(rows[11].label, "Streamer mode") && rows[11].action == LOCK_BASE + 11);
+}
+""", text=True, check=True,
+            )
+            subprocess.run([str(executable)], check=True)
+
+
 class SwitchSaveTest(unittest.TestCase):
     def run_harness(self, source, extra=(), libraries=(), setup=None):
         with tempfile.TemporaryDirectory() as tmp:
@@ -612,6 +717,17 @@ int main(void)
     copy_attempts = 0;
     assert(!hub_install_recover("."));
     assert(!access(WORK "/replacing", F_OK) && !access(WORK "/backup/original.dat", F_OK));
+    HubGame other;
+    assert(hub_game_init(&other, HUB_XSYSTEM4, "Unrelated"));
+    assert(!mkdir("xsystem4/games/Unrelated", 0700));
+    HubLibrary library = {0};
+    assert(hub_library_scan(&library, "."));
+    bool found = false;
+    for (size_t i = 0; i < library.count; ++i)
+        found |= !strcmp(library.games[i].instance_id, other.instance_id);
+    assert(found);
+    assert(hub_install_pending(".", &game) && !hub_install_pending(".", &other));
+    hub_library_free(&library);
     fail_at = 0;
     assert(hub_install_recover(".") && verify(target, &old));
     assert(!access(TARGET "/original.dat", F_OK) && access(TARGET "/added.dat", F_OK) && access(WORK, F_OK));
@@ -967,23 +1083,36 @@ int main(void)
                  "-Datomic_save_open=hub_codec_atomic_save_open",
                  "-Datomic_save_commit=hub_codec_atomic_save_commit",
                  "-Datomic_save_abort=hub_codec_atomic_save_abort",
-                 "-Wl,--wrap=rename,--wrap=mkdir",
+                 "-Wl,--wrap=rename,--wrap=mkdir,--wrap=fopen",
                  "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
                  *(str(hub / name) for name in ("model.c", "fs_util.c", "save_store.c", "save_codec.c")),
                  str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
                  str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
                 input=r"""
 #include "save_store.h"
+#include "fs_util.h"
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define BASE "save-manager/xsystem4/ランス"
 #define LIVE "xsystem4/saves/ランス"
 
-static bool deny_directory_renames, fail_live_mkdir;
+static bool deny_directory_renames, fail_live_mkdir, crash_live_copy;
+
+FILE *__real_fopen(const char *path, const char *mode);
+FILE *__wrap_fopen(const char *path, const char *mode)
+{
+    FILE *file = __real_fopen(path, mode);
+    if (crash_live_copy && !strcmp(path, "./" LIVE "/main.asd") && !strcmp(mode, "wbx")) {
+        assert(file && fputs("partial copy", file) >= 0 && !fclose(file));
+        _exit(42);
+    }
+    return file;
+}
 
 int __real_rename(const char *source, const char *destination);
 int __wrap_rename(const char *source, const char *destination)
@@ -1045,8 +1174,29 @@ int main(void)
     expect(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
     assert(!unlink(BASE "/Backups/.save-stage-0000/previous"));
     assert(!rmdir(BASE "/Backups/.save-stage-0000"));
+    assert(!mkdir(BASE "/Backups/.save-stage-0001", 0700));
+    put(BASE "/Backups/.save-stage-0001/publishing", "0SaveData-99990101-000000-0000");
+    assert(!mkdir(BASE "/Backups/SaveData-99990101-000000-0000", 0700));
+    put(BASE "/Backups/SaveData-99990101-000000-0000/main.asd", "partial backup");
+    assert(hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result));
+    expect(LIVE "/main.asd", "initial");
+    assert(access(BASE "/Backups/SaveData-99990101-000000-0000", F_OK));
     put(BASE "/Import/SaveData/main.asd", "changed");
     put(BASE "/Import/SaveData/extra.asd", "extra");
+    pid_t child = fork();
+    assert(child >= 0);
+    if (!child) {
+        crash_live_copy = true;
+        hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result);
+        _exit(99);
+    }
+    int status;
+    assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 42);
+    expect(LIVE "/main.asd", "partial copy");
+    assert(hub_save_recover("./" LIVE));
+    expect(LIVE "/main.asd", "initial");
+    expect(LIVE "/.internal", "hidden data");
+    assert(access(LIVE "/extra.asd", F_OK));
     assert(hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result) && result.copied == 2);
     expect(LIVE "/main.asd", "changed");
     assert(hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result) && result.copied == 2);

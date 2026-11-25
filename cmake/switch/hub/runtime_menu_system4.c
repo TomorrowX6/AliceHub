@@ -9,6 +9,7 @@
 #include "savedata.h"
 
 enum { CTRL_SKIP, FONT_SCALE, SCROLLBAR_SCALE, LOCK_BASE };
+enum { STREAMER_BIT = 11 };
 
 typedef struct {
     const char *game;
@@ -22,7 +23,7 @@ static const LiveLocks supported_locks[] = {
     {"rance10", MODIFIER_LOCK_RANCE10,
      {"Lock party HP", "Infinite AP", "Lock combo", "Lock battle round to 1", "One-hit defeats",
       "Zero enemy attack", "Boost leader critical rate", "Infinite skill uses", "Infinite Zippo",
-      "Max resources", "Guaranteed treasure", "Streamer mode"}, 1 << 11},
+      "Max resources", "Guaranteed treasure", "Streamer mode"}, 1 << STREAMER_BIT},
     {"dohnadohna", MODIFIER_LOCK_DOHNADOHNA,
      {"Lock party HP", "Lock party MP", "Lock party VP", "One-hit defeats", "Infinite money",
       "Infinite TP", "Best worker condition", "Freeze work timer"}, 0},
@@ -135,12 +136,15 @@ static size_t options(void *context, bool modifiers, SwitchMenuRow *rows)
     if (!locks)
         return 0;
     int mask = modifier_api_get_lock_mask(locks->id) ^ locks->inverted;
-    size_t i;
-    for (i = 0; i < SDL_arraysize(locks->labels) && locks->labels[i]; ++i) {
-        rows[i] = (SwitchMenuRow){locks->labels[i], LOCK_BASE + (int)i, true, {0}};
-        SDL_strlcpy(rows[i].value, (mask & (1 << i)) ? "On" : "Off", sizeof(rows[i].value));
+    size_t count = 0;
+    for (size_t i = 0; i < SDL_arraysize(locks->labels) && locks->labels[i]; ++i) {
+        if (locks->id == MODIFIER_LOCK_RANCE10 && i == STREAMER_BIT && !modifier_api_has_streamer_mode())
+            continue;
+        rows[count] = (SwitchMenuRow){locks->labels[i], LOCK_BASE + (int)i, true, {0}};
+        SDL_strlcpy(rows[count].value, (mask & (1 << i)) ? "On" : "Off", sizeof(rows[count].value));
+        ++count;
     }
-    return i;
+    return count;
 }
 
 static void activate(void *context, int action, int direction, char *status)

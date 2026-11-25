@@ -227,6 +227,15 @@ bool hub_install_recover(const char *root)
     return ok;
 }
 
+bool hub_install_pending(const char *root, const HubGame *game)
+{
+    HubInstallTransaction tx;
+    struct stat st;
+    if (!paths(&tx, root, game))
+        return false;
+    return !lstat(tx.work, &st) || errno != ENOENT;
+}
+
 static void release(HubInstallTransaction *tx)
 {
     free(tx);

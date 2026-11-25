@@ -1,4 +1,5 @@
 #include "hub.h"
+#include "fs_util.h"
 #include "save_presets.h"
 #include "save_storage.h"
 #include "cJSON.h"
@@ -186,7 +187,7 @@ static void *worker(void *unused)
     if (editor.job == SCAN) {
         editor.supported = hub_save_supported(editor.game_dir);
         if (editor.supported)
-            editor.scan_ok = hub_save_scan(editor.dir, &editor.slots);
+            editor.scan_ok = hub_save_recover(editor.dir) && hub_save_scan(editor.dir, &editor.slots);
     } else if (editor.job == INSTALL) {
         editor.notice = hub_save_install_unlock(editor.dir, UNLOCK_ASSETS) ?
             "Full unlock installed" : "Install incomplete; retry or restore the unlock backup";

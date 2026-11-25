@@ -419,7 +419,7 @@ typedef struct {
 } DiscImage;
 
 static bool find_images(const char *dir, DiscImage *images, size_t *count, unsigned depth,
-                        const ImportCallbacks *cb)
+                        const char *set, const ImportCallbacks *cb)
 {
     if (!import_update(cb, "Looking for disc images", 0, 0)) return false;
     DIR *d = opendir(dir);
@@ -438,19 +438,24 @@ static bool find_images(const char *dir, DiscImage *images, size_t *count, unsig
         if (!import_leaf(name) || import_skip(name, true) || excluded_root(name) ||
             !import_path(path, dir, name) || lstat(path, &st))
             continue;
-        if (S_ISDIR(st.st_mode) && depth < 3) {
-            if (!find_images(path, images, count, depth + 1, cb)) {
+        if (S_ISDIR(st.st_mode) && !set && depth < 3) {
+            if (!find_images(path, images, count, depth + 1, NULL, cb)) {
                 ok = false;
                 break;
             }
         } else if (S_ISREG(st.st_mode) && (import_suffix(name, ".iso") || import_suffix(name, ".mdf"))) {
+            char stem[HUB_NAME_SIZE], key[HUB_NAME_SIZE];
+            unsigned number;
+            snprintf(stem, sizeof(stem), "%.*s", (int)strlen(name) - 4, name);
+            if (set && (!disc_key(stem, key, &number) || strcasecmp(set, key)))
+                continue;
             if (*count == 32) {
                 ok = false;
                 break;
             }
             DiscImage *image = &images[(*count)++];
             strcpy(image->path, path);
-            snprintf(image->name, sizeof(image->name), "%.*s", (int)strlen(name) - 4, name);
+            strcpy(image->name, stem);
         }
     }
     closedir(d);
@@ -458,11 +463,11 @@ static bool find_images(const char *dir, DiscImage *images, size_t *count, unsig
 }
 
 static bool extract_images(const char *search, const char *images_dir, const ImportCallbacks *cb,
-                           bool *found)
+                           const char *set, bool *found)
 {
     DiscImage *images = calloc(32, sizeof(*images));
     size_t count = 0;
-    bool ok = images && find_images(search, images, &count, 0, cb);
+    bool ok = images && find_images(search, images, &count, 0, set, cb);
     *found = count != 0;
     if (ok && count) {
         char key[HUB_NAME_SIZE] = "";
@@ -631,6 +636,24 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
         return false;
     }
     bool folder = S_ISDIR(st.st_mode), move = !folder;
+    char set[HUB_NAME_SIZE], image_parent[HUB_PATH_SIZE];
+    unsigned number;
+    bool direct_set = false;
+    if (!folder && (import_suffix(source, ".iso") || import_suffix(source, ".mdf")) &&
+        import_leaf(leaf(source))) {
+        const char *base = leaf(source);
+        char stem[HUB_NAME_SIZE];
+        snprintf(stem, sizeof(stem), "%.*s", (int)strlen(base) - 4, base);
+        direct_set = disc_key(stem, set, &number);
+        if (direct_set) {
+            int n = base == source ? snprintf(image_parent, sizeof(image_parent), ".") :
+                snprintf(image_parent, sizeof(image_parent), "%.*s", (int)(base - source), source);
+            if (n < 0 || n >= (int)sizeof(image_parent)) {
+                strcpy(error, "Disc image path is too long.");
+                return false;
+            }
+        }
+    }
     if (!import_path(work, root, ".local-import-v1") || !remove_tree(work) || mkdir(work, 0777)) {
         strcpy(error, why);
         return false;
@@ -638,19 +661,21 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
     if (!import_path(stage, work, "source"))
         goto done;
     const char *search = folder ? source : stage;
-    if (!folder) {
+    if (!folder && !direct_set) {
         why = "Could not extract archive. It may be invalid, unsupported or too large for the SD card.";
         if (!import_mkdir(stage) || !unpack(source, stage, cb))
             goto done;
     }
     why = "No playable System 3, 3.5 or 4 game data was found.";
-    if (!scan_roots(search, 0, &primary, cb))
+    if (!direct_set && !scan_roots(search, 0, &primary, cb))
         goto done;
     char images_dir[HUB_PATH_SIZE];
-    if (!*primary.path && (folder || import_suffix(source, ".zip"))) {
+    if (!*primary.path && (folder || direct_set || import_suffix(source, ".zip"))) {
         bool found;
         why = "Could not read the disc set. Choose one game folder or one numbered set of ISO images.";
-        if (!import_path(images_dir, work, "discs") || !extract_images(search, images_dir, cb, &found))
+        if (!import_path(images_dir, work, "discs") ||
+            !extract_images(direct_set ? image_parent : search, images_dir, cb,
+                            direct_set ? set : NULL, &found))
             goto done;
         why = "No playable System 3, 3.5 or 4 game data was found.";
         if (!found || !scan_roots(images_dir, 0, &primary, cb))

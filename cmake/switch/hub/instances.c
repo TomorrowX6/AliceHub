@@ -225,7 +225,7 @@ HubInstanceResult hub_instance_delete(const char *root, const HubGame *game, boo
         !hub_game_path(root, &checked, install) || !hub_game_save_path(root, &checked, saves) ||
         !walk_tree(install, NULL, NULL, false))
         return HUB_INSTANCE_DELETE_FAILED;
-    if (delete_saves && !walk_tree(saves, NULL, NULL, false))
+    if (delete_saves && (!hub_save_recover(saves) || !walk_tree(saves, NULL, NULL, false)))
         return HUB_INSTANCE_SAVE_DELETE_FAILED;
     return HUB_INSTANCE_OK;
 }

@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "hub/model.h"
+#include "hub/fs_util.h"
 #include "hub/controller_runtime.h"
 #include "launcher.h"
 #include "picker_art.h"
@@ -296,6 +297,7 @@ static bool prepare_save(const char *game, char *save, size_t size)
     struct stat st;
     return (size_t)snprintf(save, size, SAVES "/%s", name) < size &&
         (!mkdir(SAVES, 0777) || errno == EEXIST) &&
+        hub_save_recover(save) &&
         (!mkdir(save, 0777) || errno == EEXIST) && !stat(save, &st) && S_ISDIR(st.st_mode);
 }
 

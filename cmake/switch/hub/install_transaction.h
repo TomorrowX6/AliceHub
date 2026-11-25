@@ -8,6 +8,7 @@ typedef bool (*HubInstallVerify)(const char *stage, void *context);
 
 /* Call at startup before scanning the library. No transaction may be active. */
 bool hub_install_recover(const char *root);
+bool hub_install_pending(const char *root, const HubGame *game);
 
 /* Serializes all game-tree replacements in the Hub. The stage starts empty.
  * For an overlay, copy the installed tree into the stage before applying files.

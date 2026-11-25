@@ -8,6 +8,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 enum { TREE_PATH_SIZE = 1024 };
 
 static bool child_path(char path[TREE_PATH_SIZE], const char *base, const char *name)
@@ -130,4 +134,139 @@ int hub_rename_dir(const char *source, const char *destination)
     if (walk(source, NULL, NULL, 0))
         rmdir(source);
     return 0;
+}
+
+static bool save_flush(void)
+{
+#ifdef __SWITCH__
+    if (R_FAILED(fsdevCommitDevice("sdmc"))) {
+        errno = EIO;
+        return false;
+    }
+#endif
+    return true;
+}
+
+static bool remove_save_tree(const char *path)
+{
+    struct stat st;
+    if (lstat(path, &st))
+        return errno == ENOENT;
+    if (!S_ISDIR(st.st_mode)) {
+        errno = ENOTDIR;
+        return false;
+    }
+    return walk(path, NULL, NULL, 0) && !rmdir(path);
+}
+
+static bool finish_save_publish(const char *journal)
+{
+    return save_flush() && !unlink(journal) && save_flush();
+}
+
+static bool rollback_save_publish(const char *destination, const char *previous,
+                                  const char *journal, bool existed)
+{
+    struct stat st;
+    if (existed && (lstat(previous, &st) || !S_ISDIR(st.st_mode)))
+        return false;
+    return remove_save_tree(destination) &&
+           (!existed || !hub_copy_dir(previous, destination)) &&
+           finish_save_publish(journal);
+}
+
+bool hub_save_publish(const char *stage, const char *destination, bool existed, bool *pending)
+{
+    char next[TREE_PATH_SIZE], previous[TREE_PATH_SIZE], journal[TREE_PATH_SIZE], temp[TREE_PATH_SIZE];
+    *pending = false;
+    if (!child_path(next, stage, "next") || !child_path(previous, stage, "previous") ||
+        !child_path(journal, stage, "publishing") || !child_path(temp, stage, "intent"))
+        return false;
+    const char *leaf = strrchr(destination, '/');
+    leaf = leaf ? leaf + 1 : destination;
+    if (existed && hub_copy_dir(destination, previous))
+        return false;
+    FILE *file = fopen(temp, "wbx");
+    if (!file)
+        return false;
+    bool written = fputc(existed ? '1' : '0', file) != EOF && fputs(leaf, file) != EOF;
+    if (fclose(file) || !written || rename(temp, journal))
+        return false;
+    *pending = true;
+    if (!save_flush())
+        return false;
+    if ((!existed || remove_save_tree(destination)) &&
+        (!rename(next, destination) || !hub_copy_dir(next, destination))) {
+        if (!finish_save_publish(journal))
+            return false;
+        *pending = false;
+        return true;
+    }
+    int failure = errno;
+    if (rollback_save_publish(destination, previous, journal, existed))
+        *pending = false;
+    errno = failure;
+    return false;
+}
+
+bool hub_save_recover(const char *destination)
+{
+    char parent[TREE_PATH_SIZE], stage[TREE_PATH_SIZE], journal[TREE_PATH_SIZE], previous[TREE_PATH_SIZE];
+    const char *slash = strrchr(destination, '/');
+    const char *leaf = slash ? slash + 1 : destination;
+    int n = slash ? snprintf(parent, sizeof(parent), "%.*s", (int)(slash - destination), destination)
+                  : snprintf(parent, sizeof(parent), ".");
+    if (n >= (int)sizeof(parent)) {
+        errno = ENAMETOOLONG;
+        return false;
+    }
+    DIR *dir = opendir(*parent ? parent : "/");
+    if (!dir)
+        return errno == ENOENT;
+    bool ok = true;
+    for (;;) {
+        errno = 0;
+        struct dirent *entry = readdir(dir);
+        if (!entry) {
+            ok = !errno;
+            break;
+        }
+        const char *name = entry->d_name;
+        if (strlen(name) != 16 || strncmp(name, ".save-stage-", 12) ||
+            strspn(name + 12, "0123456789") != 4)
+            continue;
+        if (!child_path(stage, parent, name) || !child_path(journal, stage, "publishing") ||
+            !child_path(previous, stage, "previous")) {
+            ok = false;
+            break;
+        }
+        FILE *file = fopen(journal, "rb");
+        if (!file) {
+            if (errno == ENOENT)
+                continue;
+            ok = false;
+            break;
+        }
+        int flag = fgetc(file);
+        char target[HUB_NAME_SIZE];
+        size_t length = fread(target, 1, sizeof(target), file);
+        bool valid = (flag == '0' || flag == '1') && length && length < sizeof(target) && !ferror(file);
+        fclose(file);
+        if (!valid) {
+            errno = EINVAL;
+            ok = false;
+            break;
+        }
+        if (strlen(leaf) != length || memcmp(leaf, target, length))
+            continue;
+        if (!rollback_save_publish(destination, previous, journal, flag == '1')) {
+            ok = false;
+            break;
+        }
+        remove_save_tree(stage);
+    }
+    int saved = errno;
+    closedir(dir);
+    errno = saved;
+    return ok;
 }

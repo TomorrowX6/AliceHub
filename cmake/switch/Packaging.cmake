@@ -1,6 +1,7 @@
 function(alicehub_switch_package target romfs)
   target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/launcher.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/model.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/fs_util.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_profile.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_runtime.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/runtime_capture.c"

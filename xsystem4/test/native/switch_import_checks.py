@@ -1,6 +1,7 @@
 """Exercise the hub's local import without libnx or commercial game data."""
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -218,6 +219,11 @@ int main(int argc, char **argv)
         self.assertEqual((installed / "RanceCG.afa").read_bytes(), b"primary")
         self.assertEqual((installed / "RanceSound.afa").read_bytes(), b"companion")
         self.assertFalse((installed / "Other.afa").exists())
+        shutil.rmtree(installed)
+        (images / "Unrelated Disc 1.iso").write_bytes(b"invalid image")
+        self.assertEqual(self.run_import(images / "Rance CD 1.iso"), "local:xsystem4:Rance")
+        self.assertEqual((installed / "RanceCG.afa").read_bytes(), b"primary")
+        self.assertEqual((installed / "RanceSound.afa").read_bytes(), b"companion")
         malformed = self.sd / "short.iso"
         malformed.write_bytes(first[:-2048])
         self.run_import(malformed, result=1)

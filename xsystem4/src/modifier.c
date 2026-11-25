@@ -2655,6 +2655,11 @@ static inline bool vm_has_mod_streamer_mode(void)
 	return s_is_mod_streamer;
 }
 
+bool modifier_api_has_streamer_mode(void)
+{
+	return vm_has_mod_streamer_mode();
+}
+
 static void vm_activate_rcs_popup_override(void)
 {
 	vm_inspect_mod_streamer_ain();
