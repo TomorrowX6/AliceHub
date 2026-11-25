@@ -3,7 +3,7 @@ find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(ZLIB REQUIRED)
 
-add_executable(AliceHub app.c features.c library.c model.c progress.c ../picker_art.c)
+add_executable(AliceHub app.c features.c install_transaction.c library.c model.c progress.c ../picker_art.c)
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ZLIB::ZLIB)
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_SWITCH_HUB)
 

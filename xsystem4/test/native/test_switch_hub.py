@@ -6,6 +6,100 @@ import unittest
 
 
 class SwitchHubTest(unittest.TestCase):
+    def test_install_transaction(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "install_transaction.c"),
+                 "-x", "c", "-", "-o", str(Path(tmp) / "test")],
+                input=r"""
+#include "install_transaction.h"
+#include <assert.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void put(const char *path, int value)
+{
+    FILE *f = fopen(path, "wb");
+    assert(f && fputc(value, f) != EOF && !fclose(f));
+}
+
+static bool verify(const char *dir, void *context)
+{
+    char path[HUB_PATH_SIZE];
+    assert(snprintf(path, sizeof(path), "%s/data/game.dat", dir) < (int)sizeof(path));
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return false;
+    bool ok = fgetc(f) == *(int *)context;
+    fclose(f);
+    return ok;
+}
+
+int main(void)
+{
+    HubGame game;
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "Alice"));
+    assert(hub_install_recover("."));
+    HubInstallTransaction *tx = hub_install_begin(".", &game);
+    assert(tx);
+    assert(!hub_install_begin(".", &game) && errno == EBUSY);
+    assert(!hub_install_recover(".") && errno == EBUSY);
+    char path[HUB_PATH_SIZE], target[HUB_PATH_SIZE];
+    assert(hub_game_path(".", &game, target));
+    assert(access(target, F_OK));
+    assert(!hub_install_stage_file(tx, "../../outside", path));
+    assert(!hub_install_stage_file(tx, "alias. /file", path));
+    assert(hub_install_stage_file(tx, "data/game.dat", path));
+    assert(!symlink("/tmp", path));
+    assert(!hub_install_stage_file(tx, "data/game.dat", path));
+    int old = 1, new = 2;
+    assert(!hub_install_verify(tx, verify, &old));
+    assert(!unlink(path));
+    put(path, old);
+    assert(!hub_install_commit(tx));
+    assert(!hub_install_verify(tx, verify, &new));
+    assert(hub_install_verify(tx, verify, &old));
+    assert(hub_install_commit(tx) && verify(target, &old));
+
+    assert(!mkdir("xsystem4/saves", 0700) && !mkdir("xsystem4/saves/Alice", 0700));
+    put("xsystem4/saves/Alice/save.dat", 3);
+    tx = hub_install_begin(".", &game);
+    assert(tx && hub_install_stage_file(tx, "data/game.dat", path));
+    put(path, new);
+    assert(hub_install_verify(tx, verify, &new));
+    assert(hub_install_rollback(tx) && verify(target, &old));
+
+    const char *work = "xsystem4/.install-v1/Alice";
+    const char *backup = "xsystem4/.install-v1/Alice/backup";
+    tx = hub_install_begin(".", &game);
+    assert(tx && hub_install_stage_file(tx, "data/game.dat", path));
+    put(path, new);
+    assert(!mkdir("xsystem4/.install-v1/Alice/backup", 0700));
+    put("xsystem4/.install-v1/Alice/backup/occupied", 4);
+    assert(hub_install_verify(tx, verify, &new));
+    assert(!hub_install_commit(tx));
+    assert(hub_install_rollback(tx) && verify(target, &old));
+
+    assert(!mkdir(work, 0700) && !rename(target, backup));
+    assert(hub_install_recover(".") && verify(target, &old));
+    assert(!mkdir(work, 0700) && !mkdir(backup, 0700));
+    assert(hub_install_recover(".") && verify(target, &old) && access(backup, F_OK));
+    tx = hub_install_begin(".", &game);
+    assert(tx && hub_install_stage_file(tx, "data/game.dat", path));
+    put(path, new);
+    assert(hub_install_verify(tx, verify, &new));
+    assert(hub_install_commit(tx) && verify(target, &new));
+    assert(!access("xsystem4/saves/Alice/save.dat", F_OK));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
     def test_model_and_handoff(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:
