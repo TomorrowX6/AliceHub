@@ -3,8 +3,10 @@ package io.github.kichikuou.xsystem4
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
@@ -425,6 +427,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     private var lastRenderedSortMode: GameSortMode? = null
     private var lastRenderedLocaleTag: String? = null
     private var lastRenderedRunningRoot: String? = null
+    private var availableRelease: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -439,6 +442,17 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
         val banner = findViewById<TextView>(R.id.active_install_banner)
         banner.setOnClickListener { onActiveInstallBannerClick() }
+        findViewById<TextView>(R.id.update_banner).setOnClickListener {
+            val tag = availableRelease ?: return@setOnClickListener
+            val url = UpdateCheck.releaseUrl(tag)
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                availableRelease = null
+                renderUpdateBanner()
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, url, Toast.LENGTH_LONG).show()
+            }
+        }
 
         searchBarContainer = findViewById(R.id.search_bar_container)
         searchInput = findViewById(R.id.search_input)
@@ -498,6 +512,25 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         }
 
         handleRestoreDialogIntent(intent)
+        if (savedInstanceState == null && AppSettings.isUpdateCheckEnabled(this)) {
+            Thread({
+                val tag = UpdateCheck.fetchNewRelease(BuildConfig.GIT_COMMIT)
+                if (tag != null) runOnUiThread {
+                    if (!isFinishing && !isDestroyed && AppSettings.isUpdateCheckEnabled(this)) {
+                        availableRelease = tag
+                        renderUpdateBanner()
+                    }
+                }
+            }, "AliceHub update check").apply { isDaemon = true }.start()
+        }
+    }
+
+    private fun renderUpdateBanner() {
+        if (!AppSettings.isUpdateCheckEnabled(this)) availableRelease = null
+        val tag = availableRelease
+        val banner = findViewById<TextView>(R.id.update_banner)
+        banner.visibility = if (tag == null) View.GONE else View.VISIBLE
+        if (tag != null) banner.text = getString(R.string.update_available_message, tag)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -693,6 +726,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         pendingPostResumeAction = null
         postAction?.invoke()
         ErrorReportKit.checkAndShowPendingCrash(this)
+        renderUpdateBanner()
     }
 
     override fun onPause() {

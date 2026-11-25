@@ -13,6 +13,9 @@ struct LauncherView: View {
     @State private var query = ""
     @AppStorage("gameSortMode") private var sortMode: LibrarySortMode = .catalog
     @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
+    @AppStorage(UpdateCheck.storageKey) private var checkForUpdates = true
+    @State private var didCheckForUpdates = false
+    @State private var availableRelease: String?
 #if DEBUG
     @State private var didAutoLaunch = false
 #endif
@@ -31,6 +34,16 @@ struct LauncherView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    if checkForUpdates, let tag = availableRelease {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(localized("AliceHub %@ 已发布。", tag)).font(.headline)
+                            HStack {
+                                Link("查看发布页", destination: UpdateCheck.releaseURL(tag: tag))
+                                Spacer()
+                                Button("关闭") { availableRelease = nil }
+                            }
+                        }.padding(12).modifier(HubCard())
+                    }
                     searchField
                     HStack {
                         Text("游戏库").font(.title3.bold())
@@ -76,6 +89,16 @@ struct LauncherView: View {
             .overlay { if library.importing || library.launching { progressOverlay } }
         }
         .navigationViewStyle(.stack)
+        .task {
+            guard !didCheckForUpdates else { return }
+            didCheckForUpdates = true
+            guard checkForUpdates else { return }
+            let tag = await UpdateCheck.latestRelease()
+            if checkForUpdates { availableRelease = tag }
+        }
+        .onChange(of: checkForUpdates) { enabled in
+            if !enabled { availableRelease = nil }
+        }
         .modifier(HubAppearanceModifier())
         .sheet(isPresented: $importPresented) {
             ImportGameView {

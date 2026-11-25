@@ -12,6 +12,7 @@ cmake -E copy_directory "$root/build/$sdk/stage/share/system3" "$root/build/syst
 "$root/../collect-licenses.sh" "$root/build/$sdk" "$root/build/licenses"
 xcodegen generate --spec "$root/project.yml"
 hvf_ldflags=
+git_commit=$(git -C "$root" rev-parse HEAD 2>/dev/null || echo unknown)
 if grep -q '^#define FT_CONFIG_OPTION_HVF' "$root/build/$sdk/stage/include/freetype2/freetype/config/ftoption.h"; then
   hvf_ldflags=-weak-lhvf
 fi
@@ -19,6 +20,7 @@ xcodebuild -project "$root/AliceHub.xcodeproj" -scheme AliceHub \
   -configuration "$configuration" -sdk "$sdk" \
   -derivedDataPath "$root/build/app-$sdk" CODE_SIGNING_ALLOWED=NO HVF_LDFLAGS="$hvf_ldflags" \
   CURRENT_PROJECT_VERSION="${IOS_BUILD_NUMBER:-1}" \
+  ALICEHUB_GIT_COMMIT="$git_commit" \
   MARKETING_VERSION="${IOS_MARKETING_VERSION:-0.1.0}" build
 if [[ "$mode" == ipa ]]; then
   package="$root/build/package"

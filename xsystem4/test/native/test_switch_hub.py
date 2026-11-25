@@ -632,6 +632,43 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
 
+    def test_update_check_defaults_and_release_tags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            test = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(HUB), "-I", str(REPO / "xsystem4/include"),
+                 str(HUB / "update_check.c"), str(REPO / "xsystem4/src/cJSON.c"),
+                 "-x", "c", "-", "-o", str(test)],
+                input=r"""
+#include "update_check.h"
+#include <assert.h>
+#include <string.h>
+
+#define SHA "abcdef0123456789abcdef0123456789abcdef01"
+#define RELEASE(TAG) "{\"tag_name\":\"" TAG "\"}"
+
+int main(void)
+{
+    assert(hub_update_enabled("."));
+    assert(hub_update_set_enabled(".", false));
+    assert(!hub_update_enabled("."));
+    assert(hub_update_set_enabled(".", true));
+    assert(hub_update_enabled("."));
+    char tag[HUB_UPDATE_TAG_SIZE];
+    assert(!hub_update_parse(SHA, RELEASE("ABCDEF0"), tag));
+    assert(hub_update_parse(SHA, RELEASE("1234567"), tag));
+    assert(!strcmp(tag, "1234567"));
+    assert(!hub_update_parse(SHA, RELEASE("v0.1"), tag));
+    assert(!hub_update_parse(SHA, RELEASE("1234567") "junk", tag));
+    assert(!hub_update_parse("unknown", RELEASE("1234567"), tag));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(test)], cwd=tmp, check=True)
+
     def test_install_transaction(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:

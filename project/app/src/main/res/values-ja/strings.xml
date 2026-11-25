@@ -133,6 +133,8 @@
     <string name="save_cleared_toast">セーブを全削除しました</string>
 
     <string name="settings_online_install">オンライン導入</string>
+    <string name="settings_check_for_updates">アップデートを確認</string>
+    <string name="update_available_message">AliceHub %1$s が利用可能です · リリースを表示</string>
     <string name="settings_download_concurrency">同時ダウンロード数</string>
     <string name="download_concurrency_value">%1$d 並列</string>
     <string name="download_concurrency_summary">ファイルや分割データの同時ダウンロード接続数（既定値 8）。回線が不安定な場合は下げてください。</string>

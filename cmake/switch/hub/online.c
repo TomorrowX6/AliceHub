@@ -2,7 +2,6 @@
 #include "install_transaction.h"
 #include "online_install.h"
 
-#include <curl/curl.h>
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -122,19 +121,16 @@ static void work(void *unused)
                 HUB_PROGRESS_ACTIVE, 0);
     if (job.kind == CLEAR) {
         job.okay = online_clear_cache(job.game->id);
-    } else if (R_FAILED(socketInitializeDefault())) {
+    } else if (!hub_socket_acquire()) {
         snprintf(run.transfer.error, sizeof(run.transfer.error), "Network unavailable");
     } else {
-        if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
+        if (!hub_https_ready())
             snprintf(run.transfer.error, sizeof(run.transfer.error), "Could not initialize HTTPS");
-        else {
-            if (job.kind == INSPECT)
-                job.okay = online_inspect(job.game->id, &job.plan, &run.transfer);
-            else
-                job.okay = online_install(job.game->id, &job.plan, &run.transfer, stage);
-            curl_global_cleanup();
-        }
-        socketExit();
+        else if (job.kind == INSPECT)
+            job.okay = online_inspect(job.game->id, &job.plan, &run.transfer);
+        else
+            job.okay = online_install(job.game->id, &job.plan, &run.transfer, stage);
+        hub_socket_release();
     }
     if (!job.okay && job.kind == INSTALL && !run.transfer.rollback_failed &&
         atomic_load(&job.stop) == CANCEL) {

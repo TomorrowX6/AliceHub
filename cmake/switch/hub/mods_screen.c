@@ -1,7 +1,6 @@
 #include "mods.h"
 #include "online_download.h"
 
-#include <curl/curl.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -115,8 +114,8 @@ static void work(void *unused)
     ModTransfer run = {.transfer = {.stopping = stopping, .report = report}};
     run.transfer.context = &run;
     if (online) {
-        socket = R_SUCCEEDED(socketInitializeDefault());
-        curl = socket && curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+        socket = hub_socket_acquire();
+        curl = socket && hub_https_ready();
     }
     if (online && !curl) {
         strcpy(screen.error, socket ? "Could not initialize HTTPS." : "Network unavailable.");
@@ -136,8 +135,7 @@ static void work(void *unused)
                                screen.base.file_id ? &screen.base : NULL,
                                screen.operation == LOCAL ? screen.local : NULL, &cb, screen.error);
     }
-    if (curl) curl_global_cleanup();
-    if (socket) socketExit();
+    if (socket) hub_socket_release();
     snprintf(screen.network_error, sizeof(screen.network_error), "%s", run.transfer.error);
     atomic_store(&screen.done, true);
 }

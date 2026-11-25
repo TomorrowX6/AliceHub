@@ -42,6 +42,11 @@ func system3_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePoint
 struct LibraryChecks {
     @MainActor
     static func main() throws {
+        let commit = "abcdef0123456789abcdef0123456789abcdef01"
+        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "ABCDEF0") == nil)
+        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "1234567") == "1234567")
+        precondition(UpdateCheck.newReleaseTag(commit: commit, tag: "v0.1") == nil)
+        precondition(UpdateCheck.newReleaseTag(commit: "unknown", tag: "1234567") == nil)
         try ArchiveChecks.run()
         checkGamepadProfiles()
         checkDisplayScales()

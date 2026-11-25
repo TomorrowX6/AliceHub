@@ -33,6 +33,32 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
+        <TextView
+            android:id="@+id/update_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/ui_screen_padding_h"
+            android:layout_marginTop="4dp"
+            android:layout_marginEnd="@dimen/ui_screen_padding_h"
+            android:layout_marginBottom="4dp"
+            android:accessibilityLiveRegion="polite"
+            android:background="@drawable/bg_banner"
+            android:drawableStart="@drawable/ic_download"
+            android:drawableEnd="@drawable/ic_chevron_right"
+            android:drawablePadding="10dp"
+            android:drawableTint="@color/tone_info_fg"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="10dp"
+            android:textColor="@color/tone_info_fg"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/search_bar_container"
             android:layout_width="match_parent"
