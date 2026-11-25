@@ -288,7 +288,7 @@ static void DrawEffect() {
 		wEffectkey = getCaliValue();
 	}
 
-	if (sact.waitskiplv > 1 || msgskip_isSkipping())
+	if (sact_wait_skip_level() > 1 || msgskip_isSkipping())
 		sp_update_all(true);
 	else
 		sp_eupdate(wType, wEffectTime, wEffectkey);
@@ -308,7 +308,7 @@ static void DrawEffectAlphaMap() {
 	int wEffectTime = getCaliValue();
 	int wEffectKey  = getCaliValue();
 	
-	if (sact.waitskiplv > 1 || msgskip_isSkipping())
+	if (sact_wait_skip_level() > 1 || msgskip_isSkipping())
 		sp_update_all(true);
 	else
 		sp_eupdate_amap(nIndexAlphaMap, wEffectTime, wEffectKey);
