@@ -1277,7 +1277,10 @@ static int sjis_display_pair(const uint8_t *s)
 	if (!((*s >= 0x81 && *s <= 0x9f) || (*s >= 0xe0 && *s <= 0xfc))
 			|| s[1] < 0x40 || s[1] > 0xfc || s[1] == 0x7f)
 		return 0;
-	return s2u[*s - 0x80][s[1] - 0x40];
+	int u = s2u[*s - 0x80][s[1] - 0x40];
+	if (u == 0x30fb && (s[0] != 0x81 || s[1] != 0x45))
+		return 0;
+	return u;
 }
 
 static bool gbk_display_pair(const uint8_t *s)

@@ -559,6 +559,13 @@ int main(void)
     sys4_set_text_gbk(true);
     free(name);
 
+    char *middle_dot = parts_prepare_display_text("\x81\x45");
+    assert(middle_dot);
+    char *middle_dot_utf8 = cjk2utf_strict(middle_dot, true, NULL);
+    assert(middle_dot_utf8 && !strcmp(middle_dot_utf8, "・"));
+    free(middle_dot_utf8);
+    free(middle_dot);
+
     check("ランス", "", "ランス");
     check("１章：騎士とお姫様／蠢く蛇紋", "", "１章：騎士とお姫様／蠢く蛇紋");
     check("リッシュ・エデン", "", "リッシュ・エデン");
@@ -567,6 +574,7 @@ int main(void)
     check("　攻撃力　＋", "３０", "　攻撃力　＋３０");
     check("　魔法力▼２０", "", "　魔法力▼２０");
     check("", "攻撃力", "攻撃力");
+    check("", "呣呣呣", "呣呣呣");
     check("", "「呣呣呣……」", "「呣呣呣……」");
     check("", "装備武器：点击继续。", "装備武器：点击继续。");
     puts("OK");
