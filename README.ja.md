@@ -3,10 +3,12 @@
   <h1>AliceHub</h1>
   <p><strong>アリスソフトの System 1–4 に対応するマルチプラットフォームのネイティブゲームランチャー</strong></p>
   <p>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK, iOS IPA, and Switch NROs" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
+    <a href="https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_shield"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=shield" alt="FOSSA Status" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
     <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
   </p>
   <p><a href="README.md"><strong>简体中文</strong></a> | <a href="README.en.md"><strong>English</strong></a> | <strong>日本語</strong></p>
@@ -14,16 +16,17 @@
 
 ---
 
-**AliceHub**（`io.github.alicehub`）は、アリスソフトの **System 1–4** 作品を **Android と iOS** でネイティブ実行・管理するオープンソースのランチャーです。SDL2 と3つのネイティブエンジンを使うため、Wine、Winlator、x86/x64 命令変換は不要です。ゲームデータは同梱されません。利用権のあるゲームファイルをご用意ください。
+**AliceHub**は、アリスソフトの **System 1–4** 作品を **Android、iOS / iPadOS、Nintendo Switch（Homebrew）** でネイティブ実行・管理するオープンソースのランチャーです。SDL2 と3つのネイティブエンジンを使うため、Wine、Winlator、x86/x64 命令変換は不要です。ゲームデータは同梱されません。利用権のあるゲームファイルをご用意ください。
 
 ## ダウンロードとクイックスタート
 
-[**最新リリース**](https://github.com/TomorrowX6/AliceHub/releases/latest) から端末に合ったパッケージをダウンロードしてください。
+Android と iOS のパッケージは [**最新リリース**](https://github.com/TomorrowX6/AliceHub/releases/latest)、Nintendo Switch 用のビルドは GitHub Actions からダウンロードできます。
 
 | プラットフォーム | 動作環境 | パッケージ |
 | :--- | :--- | :--- |
 | **Android** | Android 8.0（API 26）以降、`arm64-v8a`、OpenGL ES 3.0 | `AliceHub-<バージョン>-arm64-v8a.apk`（そのままインストール可能） |
 | **iOS / iPadOS** | 15.0 以降、arm64 | `AliceHub-<バージョン>-ios-unsigned.ipa`（**未署名**、署名してサイドロード） |
+| **Nintendo Switch** | Homebrew Menu で NRO を起動できる環境（アプリケーションモードを推奨） | GitHub Actions の成果物 `AliceHub-switch`（ランチャーと3つのエンジン） |
 
 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `re-xsystem4-arm64-v8a` または `AliceHub-ios-unsigned` をダウンロードし、展開して APK / IPA を取得することもできます。成果物のダウンロードには GitHub へのログインが必要です。
 
@@ -37,11 +40,30 @@ APK をインストールして **AliceHub** を開き、ゲームを選択す�
 2. **AliceHub → ゲームをインポート** から **フォルダ / 複数ディスク** または **アーカイブ / ディスクイメージ** を選びます。「ファイル」アプリで端末内の **AliceHub → Games** にゲームフォルダ一式をコピーすることもできます。
 3. ライブラリで取り込んだゲームを開き、**プレイ** をタップします。ゲームを通常終了するとライブラリに戻ります。
 
-**オンラインインストール**は両プラットフォームとも初期状態では無効です。設定で規約に同意して有効にすると、ゲームの項目から利用可能なファイルをダウンロードできます。ゲームファイルとインストール時の一時データに必要な空き容量を確保してください。
+Android と iOS の**オンラインインストール**は初期状態では無効です。設定で規約に同意して有効にすると、ゲームの項目から利用可能なファイルをダウンロードできます。ゲームファイルとインストール時の一時データに必要な空き容量を確保してください。
+
+### Nintendo Switch（Homebrew）
+
+1. [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `AliceHub-switch` をダウンロードして展開します（GitHub へのログインが必要）。`AliceHub.nro`、`system3.nro`、`xsystem35.nro`、`xsystem4.nro` の4つを SD カードの `/switch/` にコピーします。
+2. Homebrew Menu からアプリケーションモードで **AliceHub** を開きます。ライブラリでは **X** で検索、**Y** で設定を開けます。**A** でゲームの詳細を開き、**Start game** を選ぶと起動します。**Settings → Import local game** から SD カード上のフォルダ、`.zip`、`.iso`、`.mdf` を取り込めます。展開済みのゲームを、作品ごとに個別のフォルダに分けて次の場所に置くこともできます。
+
+| エンジン | ゲームフォルダの例 |
+| :--- | :--- |
+| `system3.nro`（初期の System 1–3） | `/switch/alicehub/system3/games/<ゲーム>/` |
+| `xsystem35.nro`（System 3.5–3.9） | `/switch/alicehub/xsystem35/games/<ゲーム>/` |
+| `xsystem4.nro`（System 4） | `/switch/alicehub/xsystem4/games/<ゲーム>/` |
+
+セーブは各エンジンの `saves/<ゲーム>/` に分けて保存されます。ローダーが AliceHub から別の NRO を起動できない場合は、Homebrew Menu から各エンジンの NRO を直接開き、内蔵のゲーム選択画面を使ってください。
+
+#### Switch の機能
+
+- **ライブラリとダウンロード**：3つのエンジンのゲームを1つのライブラリで検索し、名前やエンジンで並べ替えたり、コピーや削除をしたりできます。規約を確認して同意し、**Online access** を有効にすると、**Online Download** からカタログ内のゲームをインストールできます。中断したダウンロードは再開できます。
+- **パッチとセーブ**：対応作品の MOD、翻訳パッチ、単体の修正解除パッチをインストール・削除できます。セーブ管理では SD カード内でのインポート、エクスポート、バックアップ、復元、フォルダ間の同期が可能です。ランス10はオフラインでセーブを編集できます。
+- **操作とゲーム内メニュー**：共通またはゲーム別のコントローラープロファイルと仮想タッチボタンを設定できます。プレイ中に **L + R**（Joy-Con 横持ちの場合は **SL + SR**、キーボードは **F1**）でメニューを開き、スクリーンショット撮影やスキップの切り替えができます。一部の作品ではプレイ中の数値変更ができ、System 4 の PartsEngine 画面では文字とスクロールバーのサイズを調整できます。
 
 ## System 1–4 の互換性と機能
 
-ゲームのルートフォルダにあるファイルから、使用するエンジンを自動で選択します。以下は主な判定用ファイルであり、ゲームに必要なすべてのファイルではありません。
+Android と iOS のランチャー、および Switch のローカル取り込み機能は、ゲームのルートフォルダ内のファイルから使用するエンジンを判定します。以下は主な判定用ファイルであり、ゲームに必要なすべてのファイルではありません。
 
 | ゲームの種類 | ネイティブエンジン | 主な判定用ファイル |
 | :--- | :--- | :--- |
@@ -49,10 +71,19 @@ APK をインストールして **AliceHub** を開き、ゲームを選択す�
 | **System 3.5–3.9** | `xsystem35` | `System39.ini`、`System39.ain`、`*SA.ALD`、`ADISK.ALD` |
 | **System 4.x** | `xsystem4` | `AliceStart.ini`、`System40.ini`、`*.ain`（`System39.ain` を除く） |
 
+### Android と iOS の主な機能
+
 - **ライブラリと取り込み**：検索、並び替え、中国語翻訳版と原語版の表示に対応。カタログ外の作品、複数ディスク、同梱パッチも取り込めます。対応作品では MOD を管理できます。ランス10ではフォルダの新規作成・切り替えができ、セーブと MOD はフォルダごとに管理されます。
 - **セーブと補助機能**：セーブをインポート・エクスポート・バックアップできます。対応作品ではセーブ編集、ゲーム内の改造ツール、配信者モード、表示サイズ調整を利用できます。iOS では「ファイル」で選んだフォルダ（iCloud Drive など）とセーブを同期できます。
 - **操作と音声**：System 3.5–3.9 と System 4.x は編集可能な仮想パッドと物理コントローラーの割り当てに対応し、初期の DAT 形式の作品はネイティブのタッチ操作を使います。`xsystem35` の MIDI 音楽は両プラットフォームで再生できます。
 - **バックグラウンドインストール**：Android はフォアグラウンドサービスを使用します。iOS 26 以降はシステムタスクで継続できます。それ以前の iOS はバックグラウンド実行時間に制限があり、上限に達すると一時停止します。アプリに戻ると再開できます。
+
+### 最近のゲーム互換性修正
+
+- 『ランスVI』でオリジナル版のダンジョン移動データを読み込めない問題を修正し、旧ビルドで正しく書き込まれなかったデータにも対応しました。
+- 『イブニクル ランス版』の中国語翻訳版で宝箱のスキル通知、ロード確認、ボーナススキルの文字化けを修正し、『戦国ランス』の中国語翻訳版でスキップボタンと起動時のクレジット表示を修正しました。
+- 『妻みぐい3』『超昂天使エスカレイヤー・リブート』のバックグラウンドボイス音量調整を修正しました。『ランス02』『戦国ランス』『ランス08』『ランス09』で内蔵の改造ツールを使った後、画面上の該当する数値が更新されるようになりました。
+- 『は～とふるママン』のシーン選択時のクラッシュと、同作および『超昂神騎エクシール』で文字の一部がシアン色で残る問題を修正しました。『奥さまの回復術』の立ち絵の重複とメッセージウィンドウのボタンラベルの位置ずれも修正しました。
 
 ## Android の機能詳細
 
@@ -151,6 +182,19 @@ ios/build-app.sh sim  # arm64 シミュレータ用アプリ
 
 ビルドと開発時の確認方法は [iOS 開発者向けドキュメント](ios/README.md) を参照してください。
 
+### Nintendo Switch NRO
+
+Switch 用 portlibs を含む devkitPro / devkitA64 環境を用意します（CI は `devkitpro/devkita64` イメージを使用）。そのイメージ内でホスト側の依存パッケージをインストールし、リポジトリのルートでビルドします。
+
+```bash
+apt-get update && apt-get install -y --no-install-recommends bison flex gcc libc6-dev python3 python3-pil zlib1g-dev libarchive-dev pkg-config libpng-dev libjpeg-dev
+export PATH="$DEVKITPRO/portlibs/switch/bin:$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$PATH"
+aarch64-none-elf-cmake -G Ninja -S cmake/switch -B build-switch -DCMAKE_BUILD_TYPE=Release
+cmake --build build-switch --parallel 2
+```
+
+4つの NRO は `build-switch/artifacts/` に出力されます。SD カードの `/switch/` にまとめてコピーしてください。詳細は [Switch Hub 開発者向けガイド](cmake/switch/hub/README.md) を参照してください。
+
 ---
 
 ## 謝辞とライセンス
@@ -161,3 +205,5 @@ ios/build-app.sh sim  # arm64 シミュレータ用アプリ
 - [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — Android 移植基盤フレームワーク。
 
 本プロジェクトは [GNU General Public License v2.0 (GPL-2.0)](xsystem4/COPYING) のもとで公開されています（あわせて [xsystem35/COPYING](xsystem35/COPYING) も参照してください）。
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_large)

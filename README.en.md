@@ -3,10 +3,12 @@
   <h1>AliceHub</h1>
   <p><strong>A native, cross-platform game launcher for AliceSoft System 1–4</strong></p>
   <p>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK, iOS IPA, and Switch NROs" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
+    <a href="https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_shield"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=shield" alt="FOSSA Status" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
     <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
   </p>
   <p><a href="README.md"><strong>简体中文</strong></a> | <strong>English</strong> | <a href="README.ja.md"><strong>日本語</strong></a></p>
@@ -14,16 +16,17 @@
 
 ---
 
-**AliceHub** (`io.github.alicehub`) is an open-source launcher and library for running AliceSoft **System 1–4** games natively on **Android and iOS**. It uses SDL2 and three native engines, without Wine, Winlator, or x86/x64 translation. No games are bundled; use game files you have the right to use.
+**AliceHub** is an open-source launcher and library for running AliceSoft **System 1–4** games natively on **Android, iOS / iPadOS, and Nintendo Switch (homebrew)**. It uses SDL2 and three native engines, without Wine, Winlator, or x86/x64 translation. No games are bundled; use game files you have the right to use.
 
 ## Download and quick start
 
-Download the package for your device from the [**latest release**](https://github.com/TomorrowX6/AliceHub/releases/latest):
+Get the Android or iOS package from the [**latest release**](https://github.com/TomorrowX6/AliceHub/releases/latest), or get the Nintendo Switch build from GitHub Actions:
 
 | Platform | Requirements | Package |
 | :--- | :--- | :--- |
 | **Android** | Android 8.0 (API 26) or later, `arm64-v8a`, OpenGL ES 3.0 | `AliceHub-<version>-arm64-v8a.apk`, ready to install |
 | **iOS / iPadOS** | 15.0 or later, arm64 | `AliceHub-<version>-ios-unsigned.ipa`, **unsigned**; sign and sideload it |
+| **Nintendo Switch** | Homebrew Menu with NRO support; application mode recommended | `AliceHub-switch` GitHub Actions artifact (launcher and three engines) |
 
 You can also download `re-xsystem4-arm64-v8a` or `AliceHub-ios-unsigned` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run and unzip the artifact to get the APK or IPA. GitHub sign-in is required for artifacts.
 
@@ -37,11 +40,30 @@ Install the APK and open **AliceHub**. Select a game entry, or choose **Import O
 2. In **AliceHub → Import Game**, choose **Folder / Multiple Discs** or **Archive / Disc Image**. You can also copy a complete game folder into **AliceHub → Games** on your device using Files.
 3. Open the imported entry in the library and tap **Play**. Exiting the game normally returns you to the library.
 
-**Online installation** is off by default on both platforms. Enable it in Settings after accepting the terms, then download available files from the game's entry. Leave enough space for the game files and any temporary installation data.
+**Online installation** is off by default on Android and iOS. Enable it in Settings after accepting the terms, then download available files from the game's entry. Leave enough space for the game files and any temporary installation data.
+
+### Nintendo Switch (homebrew)
+
+1. Download and unzip `AliceHub-switch` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run (GitHub sign-in required). Copy `AliceHub.nro`, `system3.nro`, `xsystem35.nro`, and `xsystem4.nro` together to `/switch/` on the SD card.
+2. Open **AliceHub** from the Homebrew Menu in application mode. In the library, press **X** to search, **Y** for settings, or **A** to open a game's details and select **Start game**. Use **Settings → Import local game** to import a folder, `.zip`, `.iso`, or `.mdf` from the SD card, or put extracted games in the following locations, one folder per game:
+
+| Engine | Example game folder |
+| :--- | :--- |
+| `system3.nro` (early System 1–3) | `/switch/alicehub/system3/games/<game>/` |
+| `xsystem35.nro` (System 3.5–3.9) | `/switch/alicehub/xsystem35/games/<game>/` |
+| `xsystem4.nro` (System 4) | `/switch/alicehub/xsystem4/games/<game>/` |
+
+Saves are stored separately under the corresponding engine's `saves/<game>/`. If your loader can't launch another NRO from AliceHub, open the engine's NRO directly from the Homebrew Menu and use its built-in game picker.
+
+#### Switch features
+
+- **Library and downloads:** Search, sort by name or engine, and copy or delete games in one library across all three engines. After reviewing and accepting the terms, enable **Online access** to install catalog games from **Online Download**. Downloads can be resumed.
+- **Patches and saves:** Install or remove mods, translations, and standalone uncensored patches for compatible games. The save manager can import, export, back up, restore, and sync saves between folders on the SD card. Rance 10 supports offline save editing.
+- **Controls and in-game menu:** Configure global or per-game controller profiles and virtual touch buttons. Press **L + R** in-game (**SL + SR** on a sideways Joy-Con, or **F1** on a keyboard) to open the menu for screenshots and skip controls. Some games offer live modifiers, and System 4 PartsEngine screens support text and scrollbar scaling.
 
 ## System 1–4 compatibility and features
 
-The launcher picks the engine from the files in the game's root folder. These are common detection markers, not a complete list of required game files.
+The Android and iOS launchers and the Switch local importer identify the engine from the files in the game's root folder. These are common detection markers, not a complete list of required game files.
 
 | Game type | Native engine | Common markers |
 | :--- | :--- | :--- |
@@ -49,10 +71,19 @@ The launcher picks the engine from the files in the game's root folder. These ar
 | **System 3.5–3.9** | `xsystem35` | `System39.ini`, `System39.ain`, `*SA.ALD`, `ADISK.ALD` |
 | **System 4.x** | `xsystem4` | `AliceStart.ini`, `System40.ini`, `*.ain` (except `System39.ain`) |
 
+### Android and iOS features at a glance
+
 - **Library and imports:** Search, sort, and identify Chinese-translated and original-language entries. Import games outside the built-in catalog, including multi-disc sets and bundled patches. Manage mods for compatible games. Rance X can create and switch between game folders, keeping saves and mods separate for each version.
 - **Saves and tools:** Import, export, and back up saves. Supported titles offer save editing, in-game modifiers, streamer mode, or display scaling. On iOS, you can sync saves with a folder selected in Files, such as one in iCloud Drive.
 - **Controls and audio:** System 3.5–3.9 and System 4.x support editable virtual controls and physical controller mappings. Early DAT-based games use native touch controls. Both platforms play `xsystem35` MIDI music.
 - **Background installs:** Android uses a foreground service. iOS 26 and later can continue via a system task; older iOS versions have limited background time and pause when it runs out. Return to the app to continue.
+
+### Recent game compatibility fixes
+
+- Rance VI loads original-engine dungeon walk data and also recovers walk data written incorrectly by older builds.
+- Fixed garbled chest skill notices, load confirmations, and bonus skill text in the Chinese translation of Evenicle Rance, and the skip button and startup credit in the Chinese translation of Sengoku Rance.
+- Fixed background voice volume in Tsumamigui 3 and Escalayer Reboot, and refreshed the affected HUD values after using built-in modifiers in Rance 02, Sengoku Rance, Rance 08, and Rance 09.
+- Fixed a scene selection crash in Heartful Maman, cyan text fragments in Heartful Maman and Beat Valkyrie Ixseal, and duplicated character sprites and displaced dialogue-box button labels in Okusama no Kaifuku Jutsu.
 
 ## Android features in detail
 
@@ -151,6 +182,19 @@ ios/build-app.sh sim  # arm64 simulator app
 
 See the [iOS developer documentation](ios/README.md) for build details and development checks.
 
+### Nintendo Switch NRO
+
+Use a devkitPro / devkitA64 environment with Switch portlibs (CI uses the `devkitpro/devkita64` image). In that image, install the host dependencies and build from the repository root:
+
+```bash
+apt-get update && apt-get install -y --no-install-recommends bison flex gcc libc6-dev python3 python3-pil zlib1g-dev libarchive-dev pkg-config libpng-dev libjpeg-dev
+export PATH="$DEVKITPRO/portlibs/switch/bin:$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$PATH"
+aarch64-none-elf-cmake -G Ninja -S cmake/switch -B build-switch -DCMAKE_BUILD_TYPE=Release
+cmake --build build-switch --parallel 2
+```
+
+The four NROs are written to `build-switch/artifacts/`. Copy them together to `/switch/` on the SD card to install. See the [Switch Hub developer guide](cmake/switch/hub/README.md) for development details.
+
 ---
 
 ## Credits & License
@@ -161,3 +205,5 @@ See the [iOS developer documentation](ios/README.md) for build details and devel
 - [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — Original Android port framework.
 
 Licensed under the [GNU General Public License v2.0 (GPL-2.0)](xsystem4/COPYING) (see also [xsystem35/COPYING](xsystem35/COPYING)).
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_large)

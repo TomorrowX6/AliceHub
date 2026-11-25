@@ -3,11 +3,12 @@
   <h1>AliceHub</h1>
   <p><strong>AliceSoft System 1–4 多平台原生游戏启动器</strong></p>
   <p>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK and iOS IPA" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK, iOS IPA, and Switch NROs" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
-<a href="https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_shield" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=shield"/></a>
+    <a href="https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_shield"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=shield" alt="FOSSA Status" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
     <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
     <img src="https://img.shields.io/badge/QQ%20%E4%BA%A4%E6%B5%81%E7%BE%A4-383917628-12B7F5.svg" alt="QQ 交流群: 383917628" />
   </p>
@@ -16,17 +17,17 @@
 
 ---
 
-**AliceHub**（`io.github.alicehub`）是在 **Android 和 iOS** 上原生运行 AliceSoft **System 1–4** 游戏的开源启动器与管理工具。三套原生引擎通过 SDL2 运行游戏，无需 Wine、Winlator 或 x86/x64 指令转译。安装包不包含游戏，请自行准备有权使用的游戏资源。
-
+**AliceHub** 是在 **Android、iOS / iPadOS 和 Nintendo Switch（Homebrew）** 上原生运行 AliceSoft **System 1–4** 游戏的开源启动器与管理工具。三套原生引擎通过 SDL2 运行游戏，无需 Wine、Winlator 或 x86/x64 指令转译。安装包不包含游戏，请自行准备有权使用的游戏资源。
 
 ## 下载与快速上手
 
-从 [**最新 Release**](https://github.com/TomorrowX6/AliceHub/releases/latest) 下载设备对应的安装包：
+Android 和 iOS 安装包见 [**最新 Release**](https://github.com/TomorrowX6/AliceHub/releases/latest)；Nintendo Switch 构建见 GitHub Actions：
 
 | 平台 | 系统要求 | 安装包 |
 | :--- | :--- | :--- |
 | **Android** | Android 8.0（API 26）及以上、`arm64-v8a`、OpenGL ES 3.0 | `AliceHub-<版本>-arm64-v8a.apk`，下载后直接安装 |
 | **iOS / iPadOS** | 15.0 及以上、arm64 | `AliceHub-<版本>-ios-unsigned.ipa`，**未签名**，需自行签名并侧载 |
+| **Nintendo Switch** | 可通过 Homebrew Menu 运行 NRO，建议使用应用模式 | GitHub Actions 产物 `AliceHub-switch`（启动器和三个引擎） |
 
 也可在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载 `re-xsystem4-arm64-v8a` 或 `AliceHub-ios-unsigned`，解压后获取 APK 或 IPA（下载构建产物需登录 GitHub）。
 
@@ -40,11 +41,12 @@
 2. 打开 **AliceHub → 导入游戏**，选择 **文件夹 / 多碟** 或 **压缩包 / 光盘**；也可用「文件」App 将完整游戏文件夹复制到本机 **AliceHub → Games**。
 3. 在游戏库打开已导入的条目并点击 **开始游戏**。正常退出游戏会返回游戏库。
 
-**在线安装**默认关闭。两端均可在设置中阅读并同意使用条款后开启，再从游戏条目下载可用的资源。准备足够空间存放游戏文件及安装时的临时数据。
+Android 和 iOS 的**在线安装**默认关闭。可在设置中阅读并同意使用条款后开启，再从游戏条目下载可用的资源。准备足够空间存放游戏文件及安装时的临时数据。
 
-### Nintendo Switch（Homebrew，实验性）
+### Nintendo Switch（Homebrew）
 
-从 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 下载 `AliceHub-switch` 产物。将三个 `.nro` 复制到 SD 卡的 `/switch/`，再将每个游戏解压到对应引擎的 `games/` 下，保留每个游戏的独立目录：
+1. 从 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载并解压 `AliceHub-switch`（需登录 GitHub）。将 `AliceHub.nro`、`system3.nro`、`xsystem35.nro` 和 `xsystem4.nro` 一并复制到 SD 卡的 `/switch/`。
+2. 从 Homebrew Menu 以应用模式打开 **AliceHub**。在游戏库按 **X** 搜索，按 **Y** 进入设置，或按 **A** 打开游戏详情并选择 **Start game**。可通过 **Settings → Import local game** 从 SD 卡导入文件夹、`.zip`、`.iso` 或 `.mdf`。也可将解压后的游戏放到下列目录，每个游戏单独一个子目录：
 
 | 引擎 | 游戏目录示例 |
 | :--- | :--- |
@@ -52,11 +54,17 @@
 | `xsystem35.nro`（System 3.5–3.9） | `/switch/alicehub/xsystem35/games/<游戏>/` |
 | `xsystem4.nro`（System 4） | `/switch/alicehub/xsystem4/games/<游戏>/` |
 
-从 Homebrew Menu **以应用模式**启动对应引擎；用方向键选择游戏，A 启动，B 或 + 退出选择器。存档写在相应引擎的 `saves/<游戏>/` 下。首版不包含手机在线安装、模组管理或存档同步。
+存档单独写入对应引擎的 `saves/<游戏>/`。如果当前加载器不支持从 AliceHub 启动其他 NRO，可以从 Homebrew Menu 打开对应引擎的 NRO，并使用内置游戏选择器。
+
+#### Switch 功能
+
+- **游戏库与下载**：三个引擎共用一个游戏库，支持搜索、按名称或引擎排序，以及复制和删除游戏。在 **Online access** 中阅读并同意条款后启用网络访问，即可从 **Online Download** 安装目录中的游戏，下载支持断点续传。
+- **补丁与存档**：为兼容作品安装或移除 MOD、汉化补丁和独立去码补丁。存档管理器支持在 SD 卡上导入、导出、备份、恢复及在文件夹之间同步；《兰斯 10》支持离线存档编辑。
+- **操控与局内菜单**：支持全局和单游戏手柄配置及虚拟触控按键。游戏中按 **L + R**（横握 Joy-Con 时为 **SL + SR**，键盘为 **F1**）打开菜单，可截图或快进；部分游戏支持局内修改，System 4 的 PartsEngine 界面可调节文字和滚动条大小。
 
 ## System 1–4 兼容性与功能
 
-启动器会根据游戏根目录中的文件自动选择引擎。下表列出常见的识别标记，不代表完整游戏只需这些文件。
+Android 和 iOS 启动器及 Switch 本地导入功能会根据游戏根目录中的文件识别引擎。下表列出常见的识别标记，不代表完整游戏只需这些文件。
 
 | 游戏类型 | 原生引擎 | 常见识别标记 |
 | :--- | :--- | :--- |
@@ -64,10 +72,19 @@
 | **System 3.5–3.9** | `xsystem35` | `System39.ini`、`System39.ain`、`*SA.ALD`、`ADISK.ALD` |
 | **System 4.x** | `xsystem4` | `AliceStart.ini`、`System40.ini`、`*.ain`（不含 `System39.ain`） |
 
+### Android 与 iOS 功能概览
+
 - **游戏库与导入**：内置目录支持搜索、排序及「熟肉 / 生肉」标识，并可导入目录外的作品。支持多碟导入、随附补丁及兼容作品的 MOD 管理。兰斯 10 可切换或新建目录，分别保留各版本的存档与 MOD。
 - **存档与工具**：支持存档导入、导出与备份；部分游戏支持存档编辑、局内修改器、主播模式或显示缩放。iOS 可选用「文件」中的文件夹（例如 iCloud 云盘）同步存档。
 - **操控与音频**：System 3.5–3.9 和 System 4.x 支持可编辑虚拟手柄与物理手柄映射；早期 DAT 版作品使用原生触控。两端均支持 `xsystem35` 的 MIDI 音乐。
 - **后台安装**：Android 使用前台服务；iOS 26 及以上可通过系统任务继续后台处理。旧版 iOS 的后台时间有限，超时后会暂停，可回到应用继续。
+
+### 近期游戏兼容性修复
+
+- 修复《兰斯 VI》读取原版迷宫行走数据时的载入失败，并兼容受旧版写入问题影响的行走数据。
+- 修复《夏娃年代记 兰斯版》汉化版的宝箱技能提示、读档确认和奖励技能文字乱码，以及《战国兰斯》汉化版的快进按钮和启动署名。
+- 修复《妻中蜜 3》和《超昂天使 艾斯卡蕾雅 Reboot》的背景语音音量控制；在《兰斯 02》《战国兰斯》《兰斯 08》《兰斯 09》中使用内置修改器后，受影响的界面数值会刷新。
+- 修复《再婚妈妈》的场景选择崩溃，以及该作和《超昂神骑》的青色文字残片；修复《太太的恢复术》的重复立绘和对话框按钮文字错位。
 
 ## Android 功能详解
 
@@ -166,6 +183,19 @@ ios/build-app.sh sim  # 构建 arm64 模拟器应用
 ```
 
 构建细节与开发检查见 [iOS 开发文档](ios/README.md)。
+
+### Nintendo Switch NRO
+
+使用带 Switch portlibs 的 devkitPro / devkitA64 环境（CI 使用 `devkitpro/devkita64` 镜像）。在该镜像中安装主机侧依赖，然后从仓库根目录构建：
+
+```bash
+apt-get update && apt-get install -y --no-install-recommends bison flex gcc libc6-dev python3 python3-pil zlib1g-dev libarchive-dev pkg-config libpng-dev libjpeg-dev
+export PATH="$DEVKITPRO/portlibs/switch/bin:$DEVKITPRO/devkitA64/bin:$DEVKITPRO/tools/bin:$PATH"
+aarch64-none-elf-cmake -G Ninja -S cmake/switch -B build-switch -DCMAKE_BUILD_TYPE=Release
+cmake --build build-switch --parallel 2
+```
+
+四个 NRO 文件输出到 `build-switch/artifacts/`，安装时一并复制到 SD 卡的 `/switch/`。开发说明见 [Switch Hub 开发文档](cmake/switch/hub/README.md)。
 
 ---
 
