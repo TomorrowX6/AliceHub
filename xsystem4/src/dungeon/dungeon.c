@@ -608,6 +608,7 @@ int dungeon_calc_conquer(int surface)
  *         int size_x, size_y, size_z;
  *         int cells[size_x * size_y * size_z];
  *     } maps[nr_maps];
+ *     int padding[];  // unused, may be empty
  * };
  *
  * struct DrawDungeon2_WalkData {
@@ -625,10 +626,18 @@ enum {
 	WALK_DATA_BROKEN = -2,
 };
 
-static int dd1_find_walk_data(struct page *array, int map_no, struct dgn *dgn)
+/*
+ * *end is set to the offset after the last intact map and *nr_intact to the
+ * number of maps before it, or -1 and 0 when the header itself is broken.
+ * The original DrawDungeon.dll leaves unused padding after the last map, so
+ * the data of a new map goes to *end, not to the end of the array.
+ */
+static int dd1_find_walk_data(struct page *array, int map_no, struct dgn *dgn, int *end, int *nr_intact)
 {
+	*end = -1;
+	*nr_intact = 0;
 	if (!array)
-		return WALK_DATA_NOT_FOUND;
+		return WALK_DATA_BROKEN;
 	if (array->type != ARRAY_PAGE || array->a_type != AIN_ARRAY_INT || array->array.rank != 1)
 		VM_ERROR("Not a flat integer array");
 
@@ -638,6 +647,7 @@ static int dd1_find_walk_data(struct page *array, int map_no, struct dgn *dgn)
 	int nr_maps = array->values[ptr++].i;
 	if (nr_maps < 0)
 		return WALK_DATA_BROKEN;
+	*end = ptr;
 
 	for (int i = 0; i < nr_maps; i++) {
 		if (array->nr_vars - ptr < 4)
@@ -661,6 +671,8 @@ static int dd1_find_walk_data(struct page *array, int map_no, struct dgn *dgn)
 			return ptr;
 		}
 		ptr += 4 + nr_cells;
+		*end = ptr;
+		*nr_intact = i + 1;
 	}
 	return WALK_DATA_NOT_FOUND;
 }
@@ -670,10 +682,18 @@ static bool dd1_load_walk_data(struct dungeon_context *ctx, int map, struct page
 	if (!page)
 		return false;
 	struct page *array = *page;
+	if (!array)
+		return true;  // no walk data is not an error
 
-	int offset = dd1_find_walk_data(array, map, ctx->dgn);
+	int end, nr_intact;
+	int offset = dd1_find_walk_data(array, map, ctx->dgn, &end, &nr_intact);
+	if (offset == WALK_DATA_BROKEN) {
+		// Older builds saved new maps after the padding; SaveWalkData repairs it.
+		WARNING("DrawDungeon.LoadWalkData: ignoring broken walk data for map %d", map);
+		return true;
+	}
 	if (offset < 0)
-		return offset != WALK_DATA_BROKEN;
+		return true;
 
 	offset += 4;
 	int nr_cells = dgn_nr_cells(ctx->dgn);
@@ -741,12 +761,15 @@ static bool dd1_save_walk_data(struct dungeon_context *ctx, int map, struct page
 	struct page *array = *page;
 	int nr_cells = dgn_nr_cells(ctx->dgn);
 
-	int offset = dd1_find_walk_data(array, map, ctx->dgn);
-	if (offset == WALK_DATA_NOT_FOUND) {
-		offset = array ? array->nr_vars : 0;
+	int end, nr_intact;
+	int offset = dd1_find_walk_data(array, map, ctx->dgn, &end, &nr_intact);
+	if (offset == WALK_DATA_NOT_FOUND || (offset == WALK_DATA_BROKEN && end >= 0)) {
+		if (offset == WALK_DATA_BROKEN)
+			WARNING("Discarding broken walk data after %d intact maps", nr_intact);
+		offset = end;
 		union vm_value dim = { .i = offset + 4 + nr_cells };
 		*page = array = realloc_array(array, 1, &dim, AIN_ARRAY_INT, 0, false);
-		array->values[1].i += 1;
+		array->values[1].i = nr_intact + 1;
 	} else if (offset == WALK_DATA_BROKEN) {
 		if (array)
 			WARNING("Discarding broken walk data");
