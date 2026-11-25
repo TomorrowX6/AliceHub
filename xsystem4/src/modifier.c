@@ -8022,13 +8022,14 @@ static void r02_refresh_hud(void)
 		vm_call_hud_setter(s_r02_fn_disp_stat, -1, 1, 0);
 }
 
-static void vm_enforce_r02_locks(int r02_mask)
+static bool vm_enforce_r02_locks(int r02_mask)
 {
 	if (!s_r02_compatible || s_r02_applying || !vm_globals_ready())
-		return;
+		return false;
 	struct page *cd = r02_get_cd_array();
 	if (!r02_is_in_game(cd))
-		return;
+		return false;
+	bool refresh_hud = false;
 	if ((r02_mask & LOCK_R02_INF_GOLD) && s_r02_gold_glob >= 0) {
 		if (heap[0].page->values[s_r02_gold_glob].i < 999999)
 			heap[0].page->values[s_r02_gold_glob].i = 999999;
@@ -8050,12 +8051,17 @@ static void vm_enforce_r02_locks(int r02_mask)
 			if (!c || !c->values[4].i) continue;
 			struct page *hp = r03_checked_page(c->values[5].i, ARRAY_PAGE, AIN_ARRAY_INT, 0);
 			struct page *st = r03_checked_page(c->values[6].i, ARRAY_PAGE, AIN_ARRAY_INT, 0);
-			if (hp && hp->nr_vars >= 3 && hp->values[2].i > 0 && hp->values[1].i < hp->values[2].i)
+			if (hp && hp->nr_vars >= 3 && hp->values[2].i > 0 && hp->values[1].i < hp->values[2].i) {
 				hp->values[1].i = hp->values[2].i;
-			if (st && st->nr_vars >= 3 && st->values[2].i > 0 && st->values[1].i < st->values[2].i)
+				refresh_hud = true;
+			}
+			if (st && st->nr_vars >= 3 && st->values[2].i > 0 && st->values[1].i < st->values[2].i) {
 				st->values[1].i = st->values[2].i;
+				refresh_hud = true;
+			}
 		}
 	}
+	return refresh_hud;
 }
 
 static void r02_unlock_all_gallery(void)
@@ -8095,13 +8101,13 @@ static void r02_unlock_all_gallery(void)
 	dg_callbegin_pending = saved_dg;
 }
 
-static void vm_execute_r02_action(const char *json_str)
+static bool vm_execute_r02_action(const char *json_str)
 {
 	if (!json_str || !json_str[0])
-		return;
+		return false;
 	cJSON *act = cJSON_Parse(json_str);
 	if (!act)
-		return;
+		return false;
 
 	cJSON *it;
 	bool persist_cfg = false;
@@ -8120,7 +8126,7 @@ static void vm_execute_r02_action(const char *json_str)
 
 	if (!s_r02_compatible || !vm_globals_ready() || s_r02_applying) {
 		cJSON_Delete(act);
-		return;
+		return false;
 	}
 
 	s_r02_applying = true;
@@ -8128,8 +8134,8 @@ static void vm_execute_r02_action(const char *json_str)
 		r02_unlock_all_gallery();
 
 	struct page *cd = r02_get_cd_array();
+	bool refresh_hud = false;
 	if (r02_is_in_game(cd)) {
-		bool refresh_hud = false;
 		if ((it = cJSON_GetObjectItem(act, "r02AddGold")) && cJSON_IsNumber(it) && s_r02_gold_glob >= 0) {
 			int32_t cur = heap[0].page->values[s_r02_gold_glob].i;
 			heap[0].page->values[s_r02_gold_glob].i = vm_dd_clamp((double)cur + it->valuedouble, 0, 99999999);
@@ -8211,11 +8217,10 @@ static void vm_execute_r02_action(const char *json_str)
 				if (target >= 0) break;
 			}
 		}
-		if (refresh_hud)
-			r02_refresh_hud();
 	}
 	s_r02_applying = false;
 	cJSON_Delete(act);
+	return refresh_hud;
 }
 
 static void vm_r02_populate_live_state_json(cJSON *root)
@@ -8555,6 +8560,7 @@ void modifier_on_frame(void)
 		pthread_mutex_unlock(&g_mod_mutex);
 
 		bool action_applied = false;
+		bool refresh_r02_hud = false;
 		if (pending) {
 			if (game_dohnadohna) {
 				vm_execute_dohna_action(pending);
@@ -8569,7 +8575,7 @@ void modifier_on_frame(void)
 				vm_execute_r01_action(pending);
 				action_applied = true;
 			} else if (game_rance02) {
-				vm_execute_r02_action(pending);
+				refresh_r02_hud = vm_execute_r02_action(pending);
 				action_applied = true;
 			} else if (game_rance03) {
 				vm_execute_r03_action(pending);
@@ -8630,7 +8636,7 @@ void modifier_on_frame(void)
 		} else if (game_rance01 && r01_lock_mask != 0) {
 			vm_enforce_r01_locks(r01_lock_mask);
 		} else if (game_rance02 && r02_lock_mask != 0) {
-			vm_enforce_r02_locks(r02_lock_mask);
+			refresh_r02_hud |= vm_enforce_r02_locks(r02_lock_mask);
 		} else if (game_rance03 && r03_lock_mask != 0) {
 			vm_enforce_r03_locks(r03_lock_mask);
 		} else if (game_rance8 && r08_lock_mask != 0) {
@@ -8640,6 +8646,11 @@ void modifier_on_frame(void)
 		}
 		if (game_sengokurance && (action_applied || (sr_lock_mask & (LOCK_SR_INF_GOLD | LOCK_SR_MAX_SAT))))
 			sr_refresh_hud(action_applied);
+		if (refresh_r02_hud) {
+			s_r02_applying = true;
+			r02_refresh_hud();
+			s_r02_applying = false;
+		}
 
 		pthread_mutex_lock(&g_mod_mutex);
 		int lock_mask = g_live_lock_mask;

@@ -12,6 +12,7 @@ from test_modifier_injected_key_regressions import extract_function
 HARNESS = r"""
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef union vm_value { int i; } value;
@@ -75,6 +76,14 @@ static struct page *sr_get_chara_page(int faction, int index) {
     assert(faction == 0 && index == 11);
     return &busho;
 }
+static bool scene_is_dirty, dirty_on_swap;
+static int rendered;
+static void handle_events(void) {}
+static void sprite_call_plugins(void) {}
+static void scene_render(void) { ++rendered; }
+static void modifier_on_frame(void) { scene_is_dirty |= dirty_on_swap; }
+static void gfx_swap(void) { modifier_on_frame(); }
+static uint32_t SDL_GetTicks(void) { return 100; }
 
 %s
 
@@ -113,6 +122,13 @@ int main(void) {
     busho_destroyed = true;
     sr_refresh_battle_hp(true);
     assert(calls == 3);
+
+    scene_is_dirty = dirty_on_swap = true;
+    sact_Update();
+    assert(rendered == 1 && scene_is_dirty);
+    dirty_on_swap = false;
+    sact_Update();
+    assert(rendered == 2 && !scene_is_dirty);
     return 0;
 }
 """
@@ -127,7 +143,7 @@ class ModifierHudTests(unittest.TestCase):
                 "sr_battle_widgets", "sr_is_active_busho", "sr_get_busho_index",
                 "sr_refresh_battle_hp",
             )
-        )
+        ) + "\n" + extract_function("src/hll/SACT2.c", "sact_Update")
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "hud.c"
             binary = Path(tmp) / "hud"
