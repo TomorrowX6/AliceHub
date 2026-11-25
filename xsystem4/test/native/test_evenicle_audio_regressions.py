@@ -152,6 +152,9 @@ static void foreground_test(int bgv_group) {
     assert(mixer_set_volume(bgv_group, 0));
     render(4);
     assert(fabsf(render(4) - peak) < 0.0001f);
+    assert(mixer_set_volume(3, 0));
+    render(4);
+    assert(render(4) == 0);
 }
 
 static void escalayer_bgv_test(void) {
