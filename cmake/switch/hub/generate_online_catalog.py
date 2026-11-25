@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 import re
 import sys
-import textwrap
 import xml.etree.ElementTree as ET
 
 
@@ -32,11 +31,7 @@ def generate(root):
     assert len({game[0] for game in games}) == len(games)
     quote = lambda s: json.dumps(s, ensure_ascii=False)
     rows = [f"    {{{quote(slug)}, {quote(title)}}}," for slug, title in games]
-    terms = [line for paragraph in strings["online_disclaimer_msg"].replace(r"\n", "\n").splitlines()
-             for line in (textwrap.wrap(paragraph, width=48) or [""])]
-    return ("static const OnlineGame online_games[] = {\n" + "\n".join(rows) +
-            "\n};\nstatic const char *const online_terms[] = {\n" +
-            "".join(f"    {quote(line)},\n" for line in terms) + "};\n")
+    return "static const OnlineGame online_games[] = {\n" + "\n".join(rows) + "\n};\n"
 
 
 if __name__ == "__main__":

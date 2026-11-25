@@ -6,6 +6,8 @@
 static char query[257];
 static char selected_id[HUB_ID_SIZE];
 
+enum { ONLINE_DOWNLOAD, FIRST_GAME, GAME_COLUMNS = 4 };
+
 typedef struct {
     const HubLibrary *library;
     size_t count;
@@ -55,12 +57,12 @@ static size_t find_focus(const LibraryView *view, const char *id)
             const HubGame *game = &view->library->games[i];
             if (hub_game_matches(game, query)) {
                 if (!strcmp(game->instance_id, id))
-                    return index;
+                    return FIRST_GAME + index;
                 ++index;
             }
         }
     }
-    return 0;
+    return ONLINE_DOWNLOAD;
 }
 
 static void search(HubApp *app, size_t *focus)
@@ -81,7 +83,7 @@ static void search(HubApp *app, size_t *focus)
     hub_wait_for_release(app);
     if (R_SUCCEEDED(rc)) {
         strcpy(query, text);
-        *focus = 0;
+        *focus = library_view(app).count ? FIRST_GAME : ONLINE_DOWNLOAD;
     } else if (rc != MAKERESULT(Module_Libnx, LibnxError_LibAppletBadExit)) {
         hub_toast(app, "Could not open the software keyboard");
     }
@@ -95,21 +97,22 @@ static void draw(HubApp *app, size_t *focus, const HubGame *unused)
         *focus = find_focus(&view, *selected_id ? selected_id : hub_returned_instance(app));
         *selected_id = 0;
     }
-    if (*focus >= view.count)
-        *focus = view.count ? view.count - 1 : 0;
+    if (*focus > view.count)
+        *focus = view.count;
     char subtitle[sizeof(query) + 48];
     const char *sort = hub_settings(app)->sort == HUB_SORT_ENGINE ? "ENGINE" : "NAME";
     if (*query)
         snprintf(subtitle, sizeof(subtitle), "SEARCH: %s  /  SORT: %s", query, sort);
     else
         snprintf(subtitle, sizeof(subtitle), "ALL ENGINES  /  SORT: %s", sort);
-    hub_heading(app, "Your games", subtitle);
+    hub_library_heading(app, subtitle, *focus == ONLINE_DOWNLOAD);
     if (*query && !view.count)
         hub_empty(app, "No matching games", "Press X to edit your search or B to clear it.");
     else
-        hub_grid_art(app, view.count, *focus, game_item, game_artwork, &view);
-    hub_hints_extra(app, view.count ? "Details" : NULL, *query ? "Clear" : "Exit",
-                    "Search", "Settings", view.count > 4);
+        hub_grid_art(app, view.count, *focus == ONLINE_DOWNLOAD ? SIZE_MAX : *focus - FIRST_GAME,
+                     game_item, game_artwork, &view);
+    hub_hints_extra(app, *focus == ONLINE_DOWNLOAD ? "Open" : "Details", *query ? "Clear" : "Exit",
+                    "Search", "Settings", view.count > GAME_COLUMNS);
 }
 
 static bool input(HubApp *app, size_t *focus, const HubGame *unused, HubInput event)
@@ -121,12 +124,14 @@ static bool input(HubApp *app, size_t *focus, const HubGame *unused, HubInput ev
     }
     if (event == HUB_BACK && *query) {
         *query = 0;
-        *focus = 0;
+        *focus = ONLINE_DOWNLOAD;
         return true;
     }
     const LibraryView view = library_view(app);
+    if (event == HUB_CONFIRM && *focus == ONLINE_DOWNLOAD)
+        return hub_push(app, "online.catalog", NULL);
     if (event == HUB_CONFIRM || event == HUB_SECONDARY) {
-        const HubGame *game = game_at(&view, *focus);
+        const HubGame *game = *focus == ONLINE_DOWNLOAD ? NULL : game_at(&view, *focus - FIRST_GAME);
         if (event == HUB_CONFIRM && !game)
             return false;
         if (event == HUB_CONFIRM ? hub_push(app, "details", game) : hub_push(app, "settings", NULL)) {
@@ -135,7 +140,22 @@ static bool input(HubApp *app, size_t *focus, const HubGame *unused, HubInput ev
         }
         return true;
     }
-    return hub_move_focus(focus, view.count, 4, 4, event);
+    if (*focus == ONLINE_DOWNLOAD) {
+        if (view.count && (event == HUB_DOWN || event == HUB_NEXT_PAGE)) {
+            *focus = FIRST_GAME;
+            return true;
+        }
+        return false;
+    }
+    size_t game = *focus - FIRST_GAME;
+    if (event == HUB_UP && game < GAME_COLUMNS) {
+        *focus = ONLINE_DOWNLOAD;
+        return true;
+    }
+    if (!hub_move_focus(&game, view.count, GAME_COLUMNS, GAME_COLUMNS, event))
+        return false;
+    *focus = FIRST_GAME + game;
+    return true;
 }
 
 bool hub_register_library_screen(HubApp *app)

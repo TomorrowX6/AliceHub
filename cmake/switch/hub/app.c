@@ -230,6 +230,25 @@ void hub_heading(HubApp *app, const char *title, const char *subtitle)
     picker_label(&app->picker, 64, 205, 1216, 45, INK, title);
 }
 
+void hub_library_heading(HubApp *app, const char *subtitle, bool online_focused)
+{
+    Picker *p = &app->picker;
+    picker_panel(p, 64, 122, 1152, 58, 14, online_focused ? PRIMARY : OUTLINE);
+    picker_panel(p, 66, 124, 1148, 54, 12, online_focused ? CHIP : SURFACE);
+    picker_label(p, 88, 160, 850, 28, INK, "Online Download");
+    picker_label(p, 948, 159, 1192, 20, PRIMARY, "Browse the catalog  >");
+    picker_label(p, 64, 226, 370, 36, INK, "Your games");
+    picker_label(p, 375, 223, 1030, 18, PRIMARY, subtitle);
+}
+
+void hub_link_card(HubApp *app, const char *detail, const char *url)
+{
+    Picker *p = &app->picker;
+    picker_panel(p, 64, 242, 1152, 148, 18, SURFACE);
+    picker_label(p, 96, 298, 1184, 25, INK, detail);
+    picker_label(p, 96, 353, 1184, 22, PRIMARY, url);
+}
+
 void hub_hints(HubApp *app, const char *confirm, const char *back, const char *action)
 {
     hub_hints_extra(app, confirm, back, action, NULL, true);
@@ -286,8 +305,11 @@ void hub_grid_art(HubApp *app, size_t count, size_t focus, HubItems items, HubAr
             picker_label(p, x + 17, 550, x + CARD_WIDTH - 17, 18, MUTED, item.subtitle);
     }
     char position[52];
-    snprintf(position, sizeof(position), "%zu of %zu", focus < count ? focus + 1 : 1, count);
-    picker_label(p, 1070, 205, 1216, 21, MUTED, position);
+    if (focus < count)
+        snprintf(position, sizeof(position), "%zu of %zu", focus + 1, count);
+    else
+        snprintf(position, sizeof(position), "%zu games", count);
+    picker_label(p, 1070, 223, 1216, 21, MUTED, position);
 }
 
 void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)

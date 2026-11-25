@@ -6,6 +6,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 import zlib
 
@@ -548,6 +549,25 @@ int main(void)
 
 
 class SwitchHubTest(unittest.TestCase):
+    def test_online_catalog_links_the_published_mobile_terms(self):
+        online = (HUB / "online.c").read_text(encoding="utf-8")
+        path = re.search(r'^#define TERMS_URL "https://github.com/TomorrowX6/AliceHub/blob/main/([^"]+)"$',
+                         online, re.M)[1]
+        terms = (REPO / path).read_text(encoding="utf-8")
+        android = REPO / "project/app/src/main/res"
+        for locale, heading in (("values-zh", "简体中文"), ("values", "English")):
+            strings = ET.parse(android / locale / "strings.xml")
+            mobile = strings.find("./string[@name='online_disclaimer_msg']").text.replace(r"\n", "\n")
+            published = terms.split(f"## {heading}\n\n", 1)[1].split("\n\n## ", 1)[0]
+            self.assertEqual(mobile, published.rstrip("\n"))
+        with tempfile.TemporaryDirectory() as tmp:
+            index = Path(tmp) / "online_catalog.inc"
+            subprocess.run(["python3", str(HUB / "generate_online_catalog.py"), str(REPO), str(index)],
+                           check=True)
+            generated = index.read_text(encoding="utf-8")
+            self.assertIn('{"gakuenking",', generated)
+            self.assertNotIn("online_terms", generated)
+
     def test_online_manifest_and_resume(self):
         repo = Path(__file__).resolve().parents[3]
         hub = repo / "cmake/switch/hub"

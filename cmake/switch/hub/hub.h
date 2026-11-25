@@ -46,6 +46,8 @@ void hub_grid_art(HubApp *, size_t count, size_t focus, HubItems, HubArtworkKey,
 void hub_list(HubApp *, size_t count, size_t focus, HubItems, const void *);
 void hub_list_art(HubApp *, size_t count, size_t focus, HubItems, HubArtworkKey, const void *);
 void hub_heading(HubApp *, const char *title, const char *subtitle);
+void hub_library_heading(HubApp *, const char *subtitle, bool online_focused);
+void hub_link_card(HubApp *, const char *detail, const char *url);
 void hub_hints(HubApp *, const char *confirm, const char *back, const char *action);
 void hub_hints_extra(HubApp *, const char *confirm, const char *back, const char *action,
                      const char *secondary, bool paging);

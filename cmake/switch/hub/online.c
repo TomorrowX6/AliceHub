@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #define CONSENT HUB_ROOT "/.online-consent-v1"
+#define TERMS_URL "https://github.com/TomorrowX6/AliceHub/blob/main/docs/online-download-terms.md"
 #define TASK_ID "online.install"
 #define COUNT(array) (sizeof(array) / sizeof(*(array)))
 
@@ -280,35 +281,27 @@ static bool load_consent(void)
     return okay;
 }
 
-static HubItem term_item(const void *unused, size_t i)
-{
-    (void)unused;
-    return (HubItem){online_terms[i], NULL};
-}
-
 static void terms_draw(HubApp *app, size_t *focus, const HubGame *unused)
 {
+    (void)focus;
     (void)unused;
-    if (*focus >= COUNT(online_terms))
-        *focus = 0;
-    hub_heading(app, "Online Install terms", "Read all terms before enabling the catalog.");
-    hub_list(app, COUNT(online_terms), *focus, term_item, NULL);
-    hub_hints_extra(app, *focus == COUNT(online_terms) - 1 ? "Accept" : NULL,
-                    "Leave disabled", NULL, NULL, true);
+    hub_heading(app, "Online Download terms", "DISCLAIMER & TERMS OF USE");
+    hub_link_card(app, "Read the full terms on GitHub before enabling online downloads.", TERMS_URL);
+    hub_hints_extra(app, "Read & Agree", "Decline", NULL, NULL, false);
 }
 
 static bool terms_input(HubApp *app, size_t *focus, const HubGame *unused, HubInput input)
 {
+    (void)focus;
     (void)unused;
-    if (input == HUB_CONFIRM && *focus == COUNT(online_terms) - 1) {
-        if (save_consent(true)) {
-            consent = true;
-            hub_pop(app);
-        } else
-            hub_toast(app, "Could not save Online Install consent");
-        return true;
-    }
-    return hub_move_focus(focus, COUNT(online_terms), 1, 5, input);
+    if (input != HUB_CONFIRM)
+        return false;
+    if (save_consent(true)) {
+        consent = true;
+        hub_pop(app);
+    } else
+        hub_toast(app, "Could not save Online Install consent");
+    return true;
 }
 
 static void access_draw(HubApp *app, size_t *focus, const HubGame *unused)
