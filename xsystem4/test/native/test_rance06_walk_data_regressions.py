@@ -124,7 +124,7 @@ int main(void)
     expect_loads(&page, 2, 40);
     free(page);
 
-    // Saved by older builds: map 2 appended after the padding.
+    // Saved by older builds: map 2 appended after the padding is recovered.
     int legacy[2 + 2 * (4 + NC) + 18 + 4 + NC] = {
         0, 3,
         0, SX, SY, SZ, 10, 11, 12, 13,
@@ -135,13 +135,35 @@ int main(void)
     memcpy(tail, map2, sizeof(map2));
     page = make(legacy, sizeof(legacy) / sizeof(*legacy));
     expect_loads(&page, 0, 10);
-    set_walked(-100);
-    assert(dd1_load_walk_data(&ctx, 2, &page));
-    expect_walked(-100);
+    expect_loads(&page, 2, 30);
     set_walked(50);
     assert(dd1_save_walk_data(&ctx, 2, &page));
     assert(page->values[1].i == 3);
+    assert(page->nr_vars == 2 + 3 * (4 + NC));
     expect_loads(&page, 2, 50);
+    expect_loads(&page, 1, 20);
+    set_walked(70);
+    assert(dd1_save_walk_data(&ctx, 3, &page));
+    assert(page->values[1].i == 4);
+    expect_loads(&page, 3, 70);
+    expect_loads(&page, 2, 50);
+    expect_loads(&page, 0, 10);
+    free(page);
+
+    // Count claims more maps than are stored: keep the intact ones.
+    int truncated[2 + 2 * (4 + NC) + 18] = {
+        0, 3,
+        0, SX, SY, SZ, 10, 11, 12, 13,
+        1, SX, SY, SZ, 20, 21, 22, 23,
+    };
+    page = make(truncated, sizeof(truncated) / sizeof(*truncated));
+    set_walked(-100);
+    assert(dd1_load_walk_data(&ctx, 2, &page));
+    expect_walked(-100);
+    set_walked(80);
+    assert(dd1_save_walk_data(&ctx, 2, &page));
+    assert(page->values[1].i == 3);
+    expect_loads(&page, 2, 80);
     expect_loads(&page, 1, 20);
     free(page);
 
@@ -163,7 +185,13 @@ class WalkDataTests(unittest.TestCase):
     def test_walk_data_round_trip(self):
         functions = "\n".join(
             extract_function("src/dungeon/dungeon.c", name)
-            for name in ("dd1_find_walk_data", "dd1_load_walk_data", "dd1_save_walk_data")
+            for name in (
+                "dd1_walk_record_cells",
+                "dd1_fix_legacy_walk_data",
+                "dd1_find_walk_data",
+                "dd1_load_walk_data",
+                "dd1_save_walk_data",
+            )
         )
         compile_and_run(PRELUDE + functions + HARNESS)
 

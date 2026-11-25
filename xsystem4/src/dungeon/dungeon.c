@@ -626,6 +626,59 @@ enum {
 	WALK_DATA_BROKEN = -2,
 };
 
+// Number of cells of the map record at ptr, or -1 if it is not a valid record.
+static int dd1_walk_record_cells(struct page *array, int ptr)
+{
+	if (ptr < 0 || array->nr_vars - ptr < 4)
+		return -1;
+	int sx = array->values[ptr + 1].i;
+	int sy = array->values[ptr + 2].i;
+	int sz = array->values[ptr + 3].i;
+	if (sx <= 0 || sy <= 0 || sz <= 0)
+		return -1;
+	uint64_t cells = (uint64_t)sx * (uint64_t)sy * (uint64_t)sz;
+	if (cells > (uint64_t)(array->nr_vars - ptr - 4))
+		return -1;
+	return (int)cells;
+}
+
+/*
+ * Older AliceHub builds appended a new map at the end of the array, after the
+ * original engine's padding, so it could not be read back. Move such a map
+ * (the last one, ending exactly at the end of the array) back to the end of
+ * the previous map.
+ */
+static void dd1_fix_legacy_walk_data(struct page **page)
+{
+	struct page *array = *page;
+	if (!array || array->type != ARRAY_PAGE || array->a_type != AIN_ARRAY_INT ||
+	    array->array.rank != 1 || array->nr_vars < 2 || array->values[0].i != 0)
+		return;
+	int nr_maps = array->values[1].i;
+	if (nr_maps < 2)
+		return;
+	int ptr = 2;
+	for (int i = 0; i < nr_maps - 1; i++) {
+		int nr_cells = dd1_walk_record_cells(array, ptr);
+		if (nr_cells < 0)
+			return;
+		ptr += 4 + nr_cells;
+	}
+	if (dd1_walk_record_cells(array, ptr) >= 0)
+		return;
+	for (int p = ptr + 1; p <= array->nr_vars - 4 && array->values[p - 1].i == 0; p++) {
+		int nr_cells = dd1_walk_record_cells(array, p);
+		if (nr_cells < 0 || p + 4 + nr_cells != array->nr_vars)
+			continue;
+		WARNING("DrawDungeon: recovering walk data of map %d saved after padding",
+			array->values[p].i);
+		memmove(&array->values[ptr], &array->values[p], (4 + nr_cells) * sizeof(union vm_value));
+		union vm_value dim = { .i = ptr + 4 + nr_cells };
+		*page = realloc_array(array, 1, &dim, AIN_ARRAY_INT, 0, false);
+		return;
+	}
+}
+
 /*
  * *end is set to the offset after the last intact map and *nr_intact to the
  * number of maps before it, or -1 and 0 when the header itself is broken.
@@ -650,23 +703,13 @@ static int dd1_find_walk_data(struct page *array, int map_no, struct dgn *dgn, i
 	*end = ptr;
 
 	for (int i = 0; i < nr_maps; i++) {
-		if (array->nr_vars - ptr < 4)
+		int nr_cells = dd1_walk_record_cells(array, ptr);
+		if (nr_cells < 0)
 			return WALK_DATA_BROKEN;
-		int no = array->values[ptr].i;
-		int raw_sx = array->values[ptr + 1].i;
-		int raw_sy = array->values[ptr + 2].i;
-		int raw_sz = array->values[ptr + 3].i;
-		if (raw_sx <= 0 || raw_sy <= 0 || raw_sz <= 0)
-			return WALK_DATA_BROKEN;
-		uint32_t size_x = (uint32_t)raw_sx;
-		uint32_t size_y = (uint32_t)raw_sy;
-		uint32_t size_z = (uint32_t)raw_sz;
-		uint64_t cells64 = (uint64_t)size_x * size_y * size_z;
-		if (cells64 > (uint64_t)(array->nr_vars - ptr - 4))
-			return WALK_DATA_BROKEN;
-		int nr_cells = (int)cells64;
-		if (no == map_no) {
-			if (size_x != dgn->size_x || size_y != dgn->size_y || size_z != dgn->size_z)
+		if (array->values[ptr].i == map_no) {
+			if ((uint32_t)array->values[ptr + 1].i != dgn->size_x ||
+			    (uint32_t)array->values[ptr + 2].i != dgn->size_y ||
+			    (uint32_t)array->values[ptr + 3].i != dgn->size_z)
 				return WALK_DATA_BROKEN;
 			return ptr;
 		}
@@ -684,11 +727,13 @@ static bool dd1_load_walk_data(struct dungeon_context *ctx, int map, struct page
 	struct page *array = *page;
 	if (!array)
 		return true;  // no walk data is not an error
+	dd1_fix_legacy_walk_data(page);
+	array = *page;
 
 	int end, nr_intact;
 	int offset = dd1_find_walk_data(array, map, ctx->dgn, &end, &nr_intact);
 	if (offset == WALK_DATA_BROKEN) {
-		// Older builds saved new maps after the padding; SaveWalkData repairs it.
+		// SaveWalkData repairs it.
 		WARNING("DrawDungeon.LoadWalkData: ignoring broken walk data for map %d", map);
 		return true;
 	}
@@ -758,6 +803,7 @@ static bool dd1_save_walk_data(struct dungeon_context *ctx, int map, struct page
 {
 	if (!page)
 		return false;
+	dd1_fix_legacy_walk_data(page);
 	struct page *array = *page;
 	int nr_cells = dgn_nr_cells(ctx->dgn);
 
