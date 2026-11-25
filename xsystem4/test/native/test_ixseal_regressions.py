@@ -1181,6 +1181,72 @@ int main(void)
 """
         compile_and_run(harness, [])
 
+    def test_location_banner_completes_when_its_root_flat_loops(self):
+        harness = r"""
+#include <assert.h>
+
+#include "parts_internal.h"
+#include "xsystem4.h"
+
+bool game_ixseal = true;
+static struct parts part;
+
+struct parts *parts_get(int no)
+{
+    return &part;
+}
+
+struct parts_flat *parts_get_flat(struct parts *parts, int state)
+{
+    return &parts->states[state].flat;
+}
+
+void parts_dirty(struct parts *parts) {}
+
+int main(void)
+{
+    struct flat_script_key key = { .frame_index = 95, .has_jump = true, .jump_frame = 51 };
+    struct flat_timeline timeline = {
+        .type = FLAT_TIMELINE_SCRIPT, .frame_count = 121,
+        .script = { .keys = &key, .count = 1 },
+    };
+    struct flat asset = { .hdr = { .fps = 25 }, .nr_timelines = 1, .timelines = &timeline };
+    struct parts_flat *flat = &part.states[0].flat;
+    flat->flat = &asset;
+    flat->end_frame = 120;
+    flat->fps_rate = 1;
+    flat->needs_advance = true;
+    flat->root_state = parts_flat_layer_state_new(1);
+
+    parts_flat_update(flat, 0);
+    for (int i = 0; i < 94; i++)
+        parts_flat_update(flat, 40);
+    assert(flat->root_state->current_frame == 94);
+    assert(!PE_IsPartsFlatEnd(0, 1));
+
+    parts_flat_update(flat, 100);
+    assert(flat->root_state->current_frame >= 51);
+    assert(flat->root_state->current_frame < 95);
+    assert(PE_IsPartsFlatEnd(0, 1));
+    parts_flat_update(flat, 100);
+    assert(PE_IsPartsFlatEnd(0, 1));
+
+    game_ixseal = false;
+    assert(!PE_IsPartsFlatEnd(0, 1));
+    flat->root_state->current_frame = flat->end_frame;
+    assert(PE_IsPartsFlatEnd(0, 1));
+    game_ixseal = true;
+    assert(PE_BackPartsFlatBeginFrame(0, 1));
+    assert(!PE_IsPartsFlatEnd(0, 1));
+    parts_flat_layer_state_free(flat->root_state);
+}
+"""
+        compile_and_run(
+            harness,
+            [ROOT / "src/parts/flat.c", ROOT / "subprojects/libsys4/src/system.c"],
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lm"],
+        )
+
     def test_parts_v2_set_active_controller_ignores_invalid_id(self):
         fn_get_idx = extract_function("src/parts/parts.c", "PE_GetControllerIndex")
         fn_set_active = extract_function("src/parts/parts.c", "PE_set_active_controller")

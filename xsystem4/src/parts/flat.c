@@ -338,6 +338,8 @@ static void flat_process_layer_scripts(struct flat_layer_state *state,
 
 		struct flat_script_key *key = &timelines[i].script.keys[matched];
 		if (key->has_jump) {
+			if (key->jump_frame >= 0 && key->jump_frame < state->current_frame)
+				state->has_looped = true;
 			state->jump_target = key->jump_frame;
 		} else if (key->is_stop) {
 			state->stopped = true;
@@ -1489,6 +1491,10 @@ bool PE_IsPartsFlatEnd(int parts_no, int state)
 	struct parts_flat *f = parts_get_flat(parts, state);
 	if (!f->flat || !f->root_state)
 		return true;
+	// Ixseal waits for the opening segment of its location banner to finish
+	// before it can signal the looping FLAT to play the closing segment.
+	if (game_ixseal && f->root_state->has_looped)
+		return true;
 	return f->root_state->current_frame == f->end_frame;
 }
 
@@ -1608,6 +1614,7 @@ bool PE_GoFramePartsFlat(int parts_no, int frame_no, int state)
 		f->root_state->current_frame = min(max(0, frame_no), f->end_frame);
 		f->root_state->stopped = false;
 		f->root_state->suppress_advance = true;
+		f->root_state->has_looped = false;
 		f->pending_seek_delta = 0;
 		f->needs_advance = true;
 	} else {
