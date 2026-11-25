@@ -397,6 +397,7 @@ struct flat_layer_state {
 	int current_frame;
 	bool stopped;
 	bool suppress_advance;
+	bool has_looped;
 	int jump_target;  // pending jump frame, -1 = none
 	// Per-timeline: last matched script key index for change detection
 	// (-2 = uninitialized, -1 = no match, >= 0 = key index)
