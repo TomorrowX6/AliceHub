@@ -182,7 +182,8 @@ int main(int argc, char **argv)
 
     def test_iso_and_numbered_images_merge_only_companion_assets(self):
         source = self.sd / "Standalone.iso"
-        source.write_bytes(iso9660({"System40.ini": b'CodeName="遊戯.chs"', "遊戯.chs": b"code"}, joliet=True))
+        files = {"System40.ini": 'CodeName="遊戯.chs"'.encode(), "遊戯.chs": b"code"}
+        source.write_bytes(iso9660(files, joliet=True))
         self.assertEqual(self.run_import(source), "local:xsystem4:Standalone")
         images = self.sd / "images"
         images.mkdir()
