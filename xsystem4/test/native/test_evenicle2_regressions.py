@@ -828,6 +828,14 @@ int main(int argc, char **argv) {
     def test_mainex_v12_polyex_id1_resolution(self):
         main_ex = build_extf([
             _ex_block(b"MainTitle", 3, _ex_pstr(b"Evenicle2Main")),
+            _ex_block(b"BattleMotion", 6, _ex_tree(b"BattleMotion", [
+                _ex_leaf(b"Offset", 5, _ex_list([
+                    (1, struct.pack("<i", 40)),
+                    (1, struct.pack("<i", 109)),
+                    (2, struct.pack("<f", -2.5)),
+                    (3, _ex_pstr(b"not numeric")),
+                ])),
+            ])),
             _ex_block(b"Scenes", 6, _ex_tree(b"Scenes", [
                 _ex_tree(b"First", []),
                 _ex_tree(b"Second", []),
@@ -882,6 +890,7 @@ int main(int argc, char **argv) {
 
 struct config config;
 bool game_evenicle2 = true;
+bool game_okusama;
 static struct ain program = { .version = 14 };
 struct ain *ain = &program;
 struct vm_pointer *heap;
@@ -988,6 +997,17 @@ int main(int argc, char **argv) {
     struct string *got1_legacy = str_fn(s_main, s_fb, 1);
     assert(strcmp(got1_legacy->text, "Evenicle2Main") == 0);
     free_string(got1_legacy);
+
+    struct string *offset = make_string("BattleMotion.Offset", 19);
+    assert(aflt_fn(offset, 1, -1.0f, 0) == -1.0f);
+    game_okusama = true;
+    assert(aflt_fn(offset, 0, 0.0f, 0) == 40.0f);
+    assert(aflt_fn(offset, 1, 0.0f, 0) == 109.0f);
+    assert(aflt_fn(offset, 2, 0.0f, 0) == -2.5f);
+    assert(aflt_fn(offset, 3, -1.0f, 0) == -1.0f);
+    assert(aflt_fn(offset, 4, -1.0f, 0) == -1.0f);
+    game_okusama = false;
+    free_string(offset);
 
     program.version = 8;
     struct string *scenes = make_string("Scenes", 6);
