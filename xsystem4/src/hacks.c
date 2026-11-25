@@ -733,6 +733,15 @@ static bool config_game_name_has_gbk_marker(const char *name)
 		|| strstr(name, "\xb6\xb7\xc9\xf1");
 }
 
+static bool has_ntr_marker(const char *name)
+{
+	for (const char *p = name; p && *p; p++) {
+		if (strncasecmp(p, "ntr", 3) == 0)
+			return true;
+	}
+	return false;
+}
+
 static void apply_rance03_message_layout(struct ain *ain)
 {
 	// Reflow raw glyph positions before the script applies centre/right alignment.
@@ -961,8 +970,8 @@ void apply_game_specific_hacks(struct ain *ain)
 				&& ain_get_global(ain, "g_resources") >= 0));
 	game_okusama_ntr = game_okusama && (
 		ain_get_function(ain, "\xa3\xc5\xa3\xd6\xa3\xaf\xa3\xce\xa3\xd4\xa3\xd2\xa3\xaf\xcd\xd1\xb4\xa6\xa3\xaf\xa3\xb1") >= 0
-		|| (config.ain_filename && strcasestr(config.ain_filename, "ntr") != NULL)
-		|| (config.game_name && strcasestr(config.game_name, "ntr") != NULL));
+		|| has_ntr_marker(config.ain_filename)
+		|| has_ntr_marker(config.game_name));
 	game_night_remaster = ain->version == 14
 		&& ain_get_function(ain, "C_Monster@nMoonPiece::get") >= 0
 		&& ain_has_gbk_string(ain, "45qsdbdsfq5");

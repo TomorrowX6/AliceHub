@@ -7,6 +7,22 @@ from test_vm_reign_regressions import extract_function
 
 
 class ExtraModifierChecks(unittest.TestCase):
+    def test_okusama_ntr_marker_is_case_insensitive(self):
+        compile_and_run(r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <strings.h>
+""" + extract_function("src/hacks.c", "has_ntr_marker") + r"""
+int main(void)
+{
+    assert(has_ntr_marker("OKUSAMA_NTR.ain"));
+    assert(has_ntr_marker("game_nTr"));
+    assert(!has_ntr_marker("OKUSAMA_NT.ain"));
+    assert(!has_ntr_marker(NULL));
+}
+""", [])
+
     def test_ally_edits_and_galzoo_base_stats(self):
         source = "src/modifier_extra.inc"
         defines = "\n".join(re.findall(
