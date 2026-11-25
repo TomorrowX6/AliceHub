@@ -930,8 +930,10 @@ class SaveManagerActivity : ThemedActivity() {
             pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
             pendingSingleExportAsPc = savedInstanceState.getBoolean(STATE_SINGLE_EXPORT_AS_PC, false)
         }
+        val savedTargetDir = savedInstanceState?.getString(STATE_TARGET_DIR)
         discoverSaveTargets(
-            savedInstanceState?.getString(STATE_TARGET_DIR) ?: intent.getStringExtra(EXTRA_DIR_NAME)
+            preferredDirName = savedTargetDir ?: intent.getStringExtra(EXTRA_DIR_NAME),
+            resolveInstallAlias = savedTargetDir == null
         )
         if (opJob?.isActive == true) {
             showProgress(opProgressMessage ?: getString(R.string.action_save_manager))
@@ -994,7 +996,10 @@ class SaveManagerActivity : ThemedActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun discoverSaveTargets(preferredDirName: String? = null) {
+    private fun discoverSaveTargets(
+        preferredDirName: String? = null,
+        resolveInstallAlias: Boolean = false
+    ) {
         val savesRoot = File(filesDir, "saves")
         savesRoot.mkdirs()
 
@@ -1007,7 +1012,7 @@ class SaveManagerActivity : ThemedActivity() {
                 val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
                 val saveKey = saveDir.name
                 saveDir.mkdirs()
-                if (preferredDirName != null && item.path.name == preferredDirName) {
+                if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
                     resolvedPreferredDirName = saveKey
                 }
                 found[saveKey] = SaveTarget(
