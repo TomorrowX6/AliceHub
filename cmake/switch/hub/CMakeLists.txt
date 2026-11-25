@@ -18,6 +18,17 @@ endforeach()
 target_sources(AliceHub PRIVATE controller_editor.c controller_profile.c)
 target_include_directories(AliceHub PRIVATE "${xsystem4_dir}/include" "${libsys4_dir}/include" ${LIBXML2_INCLUDE_DIRS})
 target_sources(AliceHub PRIVATE instance_actions.c instances.c)
+add_library(AliceHub_save_codec STATIC save_codec.c "${xsystem4_dir}/src/savedata.c")
+target_include_directories(AliceHub_save_codec PRIVATE "${xsystem4_dir}/include" "${libsys4_dir}/include")
+target_compile_options(AliceHub_save_codec PRIVATE -ffunction-sections -fdata-sections)
+target_compile_definitions(AliceHub_save_codec PRIVATE
+  atomic_save_open=hub_codec_atomic_save_open
+  atomic_save_commit=hub_codec_atomic_save_commit
+  atomic_save_abort=hub_codec_atomic_save_abort)
+target_link_libraries(AliceHub_save_codec PRIVATE ZLIB::ZLIB)
+target_sources(AliceHub PRIVATE save_manager.c save_store.c)
+target_link_options(AliceHub PRIVATE -Wl,--gc-sections)
+target_link_libraries(AliceHub PRIVATE AliceHub_save_codec)
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_SWITCH_HUB)
 target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c)

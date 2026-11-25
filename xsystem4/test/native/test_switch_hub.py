@@ -1,9 +1,11 @@
-"""Host tests for the Switch hub's SD model, launch request codec and offline saves."""
+"""Host tests for the Switch hub's SD model, launch requests, and save transfers."""
 from pathlib import Path
+import struct
 import subprocess
 import tempfile
 import unittest
 import zipfile
+import zlib
 
 from switch_import_checks import SwitchImportTest
 
@@ -568,7 +570,6 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
-
     def test_instance_copy_and_delete(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:
@@ -664,3 +665,139 @@ int main(void)
             subprocess.run([str(root / "test")], cwd=root, check=True)
             self.assertEqual(list((root / "xsystem4").glob(".hub-copy-*")), [stale])
             self.assertEqual((stale / "partial.bin").read_text(), "interrupted copy")
+
+    def test_save_transfers_and_pc_codec(self):
+        repo = Path(__file__).resolve().parents[3]
+        hub = repo / "cmake/switch/hub"
+        engine = repo / "xsystem4"
+        libsys4 = engine / "subprojects/libsys4"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+                 "-Datomic_save_open=hub_codec_atomic_save_open",
+                 "-Datomic_save_commit=hub_codec_atomic_save_commit",
+                 "-Datomic_save_abort=hub_codec_atomic_save_abort",
+                 "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
+                 *(str(hub / name) for name in ("model.c", "save_store.c", "save_codec.c")),
+                 str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
+                 str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
+                input=r"""
+#include "save_store.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define BASE "save-manager/xsystem4/ランス"
+#define LIVE "xsystem4/saves/ランス"
+
+static void put(const char *path, const char *content)
+{
+    FILE *out = fopen(path, "wb");
+    assert(out && fputs(content, out) >= 0 && !fclose(out));
+}
+
+static void expect(const char *path, const char *content)
+{
+    FILE *in = fopen(path, "rb");
+    assert(in);
+    char bytes[64];
+    size_t n = fread(bytes, 1, sizeof(bytes), in);
+    assert(n == strlen(content) && !memcmp(bytes, content, n) && !fclose(in));
+}
+
+int main(void)
+{
+    HubGame game;
+    HubSaveResult result;
+    atomic_bool cancelled = false;
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "ランス"));
+    assert(hub_save_run(".", &game, HUB_SAVE_PREPARE, &cancelled, &result));
+    assert(!mkdir(BASE "/Backups", 0700));
+    assert(!mkdir(BASE "/Backups/.save-stage-0000", 0700));
+    put(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
+    assert(!mkdir(BASE "/Import/SaveData", 0700));
+    put(BASE "/Import/SaveData/main.asd", "initial");
+    put(BASE "/Import/SaveData/.hidden", "not imported");
+    assert(hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result) && result.copied == 1);
+    expect(LIVE "/main.asd", "initial");
+    assert(access(LIVE "/.hidden", F_OK));
+
+    put(LIVE "/.internal", "hidden data");
+    assert(hub_save_run(".", &game, HUB_SAVE_BACKUP, &cancelled, &result) && result.copied == 2);
+    expect(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
+    assert(!unlink(BASE "/Backups/.save-stage-0000/previous"));
+    assert(!rmdir(BASE "/Backups/.save-stage-0000"));
+    put(BASE "/Import/SaveData/main.asd", "changed");
+    put(BASE "/Import/SaveData/extra.asd", "extra");
+    assert(hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result) && result.copied == 2);
+    expect(LIVE "/main.asd", "changed");
+    assert(hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result) && result.copied == 2);
+    expect(LIVE "/main.asd", "initial");
+    expect(LIVE "/.internal", "hidden data");
+    assert(access(LIVE "/extra.asd", F_OK));
+
+    put(BASE "/Sync/main.asd", "external");
+    put(BASE "/Sync/external.asd", "added");
+    put(LIVE "/local.asd", "local");
+    assert(hub_save_run(".", &game, HUB_SAVE_SYNC, &cancelled, &result));
+    assert(result.copied == 2 && result.conflicts == 1);
+    expect(LIVE "/external.asd", "added");
+    expect(LIVE "/main.asd", "initial");
+    expect(BASE "/Sync/main.asd", "external");
+    expect(BASE "/Sync/local.asd", "local");
+    assert(hub_save_run(".", &game, HUB_SAVE_PULL, &cancelled, &result));
+    expect(LIVE "/main.asd", "external");
+    put(LIVE "/main.asd", "local edit");
+    assert(hub_save_run(".", &game, HUB_SAVE_PUSH, &cancelled, &result));
+    expect(BASE "/Sync/main.asd", "local edit");
+
+    put(LIVE "/ignored.bak", "backup");
+    assert(!rename("fixture.asd", LIVE "/struct.asd"));
+    assert(hub_save_run(".", &game, HUB_SAVE_EXPORT, &cancelled, &result));
+    expect(BASE "/SaveData/ignored.bak", "backup");
+    assert(hub_save_run(".", &game, HUB_SAVE_EXPORT_PC, &cancelled, &result));
+    assert(result.converted == 1);
+    expect(BASE "/PC_SaveData/main.asd", "local edit");
+    assert(access(BASE "/PC_SaveData/ignored.bak", F_OK));
+
+    put(LIVE "/main.asd", "not exported");
+    assert(!rename("broken.asd", LIVE "/broken.asd"));
+    assert(!hub_save_run(".", &game, HUB_SAVE_EXPORT_PC, &cancelled, &result));
+    assert(strstr(result.error, "Could not convert broken.asd"));
+    expect(BASE "/PC_SaveData/main.asd", "local edit");
+    assert(!symlink("main.asd", BASE "/Import/SaveData/link.asd"));
+    assert(!hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result));
+    expect(LIVE "/main.asd", "not exported");
+    atomic_store(&cancelled, true);
+    assert(!hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result));
+    assert(!strcmp(result.error, "Cancelled."));
+    expect(LIVE "/main.asd", "not exported");
+}
+""",
+                text=True,
+                check=True,
+            )
+            magic = b"X4SS\x01\0\0\0"
+            comment = b"Save comment"
+            raw = (struct.pack("<III", 1, 1, 1) + b"\x01\x04\0\0\0Hero" +
+                   b"\x01\0\0\0\x02\0\0\0HP\x01" + struct.pack("<I", 42))
+            compressed = zlib.compress(raw)
+            (root / "fixture.asd").write_bytes(
+                magic + struct.pack("<I", len(comment)) + comment +
+                struct.pack("<II", len(raw), len(compressed)) + compressed
+            )
+            (root / "broken.asd").write_bytes(magic)
+            subprocess.run([str(exe)], cwd=root, check=True)
+            export_dir = root / "save-manager/xsystem4/ランス"
+            pc = (export_dir / "PC_SaveData/struct.asd").read_bytes()
+            self.assertEqual(pc[:4], b"GD\x01\x01")
+            unpacked = zlib.decompress(pc[8:])
+            self.assertEqual(len(unpacked), struct.unpack("<I", pc[4:8])[0])
+            self.assertTrue(unpacked.startswith(b"serialize_struct\0"))
+            self.assertTrue(unpacked.endswith(comment))
+            self.assertIn(b"Hero\0", unpacked)
+            self.assertEqual((export_dir / "SaveData/struct.asd").read_bytes()[:8], magic)
+            self.assertFalse(any(root.rglob(".save-stage-*")))
