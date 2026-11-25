@@ -188,10 +188,9 @@ static bool replace(const char *temp, const char *path)
                 goto done;
             state = 1;
         }
-        if (!rename(temp, path)) {
-            unlink_if_present(old);
-            ok = true;
-        } else if (errno == EEXIST && state && unlink_if_present(old) && !rename(path, old)) {
+        if (!state) {
+            ok = !rename(temp, path);
+        } else if (unlink_if_present(old) && !rename(path, old)) {
             ok = !rename(temp, path);
             if (ok)
                 unlink_if_present(old);

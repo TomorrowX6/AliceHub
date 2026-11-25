@@ -46,7 +46,7 @@ int __wrap_rename(const char *src, const char *dst)
 {
     struct stat st;
     if (!stat(dst, &st)) {
-        errno = EEXIST;
+        errno = EIO;
         return -1;
     }
     if (fail_publish && !strcmp(dst, "saves/game/LocalSave10.asd") && strstr(src, ".hub-tmp")) {
