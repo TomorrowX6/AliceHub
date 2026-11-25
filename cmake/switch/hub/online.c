@@ -287,13 +287,26 @@ static void terms_draw(HubApp *app, size_t *focus, const HubGame *unused)
     (void)unused;
     hub_heading(app, "Online Download terms", "DISCLAIMER & TERMS OF USE");
     hub_link_card(app, "Read the full terms on GitHub before enabling online downloads.", TERMS_URL);
-    hub_hints_extra(app, "Read & Agree", "Decline", NULL, NULL, false);
+    hub_hints_extra(app, "Read & Agree", "Decline", "Open in browser", NULL, false);
 }
 
 static bool terms_input(HubApp *app, size_t *focus, const HubGame *unused, HubInput input)
 {
     (void)focus;
     (void)unused;
+    if (input == HUB_ACTION) {
+        WebCommonConfig config;
+        WebCommonReply reply;
+        WebExitReason reason;
+        Result rc = webPageCreate(&config, TERMS_URL);
+        if (R_SUCCEEDED(rc))
+            rc = webConfigShow(&config, &reply);
+        hub_wait_for_release(app);
+        if (R_FAILED(rc) || R_FAILED(webReplyGetExitReason(&reply, &reason)) ||
+            reason == WebExitReason_ErrorDialog)
+            hub_toast(app, "Browser unavailable. Use another device.");
+        return true;
+    }
     if (input != HUB_CONFIRM)
         return false;
     if (save_consent(true)) {

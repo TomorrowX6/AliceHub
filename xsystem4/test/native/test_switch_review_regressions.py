@@ -19,6 +19,69 @@ class SwitchRegressionTest(unittest.TestCase):
                             str(path), "-o", str(exe), *libs], check=True)
             subprocess.run([str(exe)], cwd=tmp, check=True)
 
+    def test_terms_browser_keeps_consent_separate(self):
+        terms = extract_function("../cmake/switch/hub/online.c", "terms_input")
+        header = Path(__file__).resolve().parents[3] / "cmake/switch/hub/hub.h"
+        self.run_c(f'#include "{header}"\n' + r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+
+#define TERMS_URL "https://example.invalid/terms"
+#define R_SUCCEEDED(rc) (!(rc))
+#define R_FAILED(rc) ((rc) != 0)
+typedef int Result, WebCommonConfig, WebCommonReply;
+typedef enum { WebExitReason_BackButton, WebExitReason_ErrorDialog } WebExitReason;
+static bool consent;
+static int create_error, show_error, visits, toasts, waits, pops, saves;
+static WebExitReason exit_reason;
+
+static Result webPageCreate(WebCommonConfig *config, const char *url)
+{
+    assert(!strcmp(url, TERMS_URL));
+    *config = 1;
+    return create_error;
+}
+static Result webConfigShow(WebCommonConfig *config, WebCommonReply *reply)
+{
+    assert(*config == 1);
+    ++visits;
+    *reply = exit_reason;
+    return show_error;
+}
+static Result webReplyGetExitReason(WebCommonReply *reply, WebExitReason *reason)
+{
+    *reason = *reply;
+    return 0;
+}
+void hub_wait_for_release(HubApp *app) { (void)app; ++waits; }
+void hub_toast(HubApp *app, const char *message) { (void)app; (void)message; ++toasts; }
+bool hub_pop(HubApp *app) { (void)app; ++pops; return true; }
+static bool save_consent(bool enabled) { assert(enabled); ++saves; return true; }
+""" + terms + r"""
+int main(void)
+{
+    assert(terms_input(NULL, NULL, NULL, HUB_ACTION));
+    assert(visits == 1 && toasts == 0);
+    create_error = 1;
+    assert(terms_input(NULL, NULL, NULL, HUB_ACTION));
+    assert(visits == 1 && toasts == 1);
+    create_error = 0;
+    show_error = 1;
+    assert(terms_input(NULL, NULL, NULL, HUB_ACTION));
+    assert(visits == 2 && toasts == 2);
+    show_error = 0;
+    exit_reason = WebExitReason_ErrorDialog;
+    assert(terms_input(NULL, NULL, NULL, HUB_ACTION));
+    assert(visits == 3 && toasts == 3 && waits == 4);
+    assert(!terms_input(NULL, NULL, NULL, HUB_BACK));
+    assert(!consent && !pops && !saves);
+    assert(terms_input(NULL, NULL, NULL, HUB_CONFIRM));
+    assert(consent && pops == 1 && saves == 1);
+}
+""")
+
     def test_picker_draws_unicode_codepoints_and_respects_stride(self):
         renderer = "\n".join(extract_function("../cmake/switch/picker_renderer.h", name)
                              for name in ("picker_rgb", "picker_mix", "picker_text"))
