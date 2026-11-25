@@ -382,6 +382,110 @@ int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gra
 
 
 class PartsRenderingTests(unittest.TestCase):
+    def test_button_label_uses_authored_area_without_layout_whitespace(self):
+        code = r'''
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <string.h>
+typedef struct { int x, y, w, h; } Rectangle;
+typedef struct { int x, y; } Point;
+struct parts_text_char { char ch[4]; int advance; };
+struct parts_text_line {
+    struct parts_text_char *chars;
+    int nr_chars;
+    unsigned height;
+    float width;
+};
+struct parts_text {
+    struct { Point origin_offset; } common;
+    unsigned nr_lines;
+    struct parts_text_line *lines;
+};
+static bool sys4_text_is_gbk = true;
+''' + function('src/parts/render.c', 'place_button_label') + r'''
+int main(void) {
+    struct parts_text_char chars[] = { {" ", 5}, {"\xa1\xa1", 15}, {"C", 10} };
+    struct parts_text_line lines[] = { {0}, { chars, 3, 16, 30 } };
+    struct parts_text label = { .nr_lines = 2, .lines = lines };
+    struct parts_text_line line;
+    assert(!place_button_label(&label, &line, (Rectangle){0}, (Point){0}));
+    assert(place_button_label(&label, &line, (Rectangle){84, 9, 50, 18}, (Point){3, 4}));
+    assert(label.nr_lines == 1 && label.lines->nr_chars == 1 && label.lines->width == 10);
+    assert(!strcmp(label.lines->chars->ch, "C"));
+    assert(label.common.origin_offset.x == 107 && label.common.origin_offset.y == 14);
+    assert(lines[1].nr_chars == 3 && lines[1].width == 30);
+    label = (struct parts_text){ .nr_lines = 2, .lines = lines };
+    lines[0] = lines[1];
+    assert(!place_button_label(&label, &line, (Rectangle){84, 9, 50, 18}, (Point){3, 4}));
+    assert(label.nr_lines == 2);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'button_label.c', Path(tmp) / 'button_label'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-lm', '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_only_okusama_building_empty_parts_v2_construction_erases_surface(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <sys/queue.h>
+struct parts { bool dirty; };
+struct texture { unsigned handle; };
+struct parts_common { struct texture texture; int w, h; bool alpha_mask; };
+struct op { TAILQ_ENTRY(op) link; };
+struct parts_construction_process {
+    struct parts_common common;
+    bool needs_build, needs_pixel_snapshot;
+    TAILQ_HEAD(ops, op) ops;
+};
+static bool game_okusama, parts_v2;
+static int builds;
+static void gfx_delete_texture(struct texture *t) { t->handle = 0; }
+static void parts_common_free_alpha_mask(struct parts_common *c) { c->alpha_mask = false; }
+static void parts_set_dims(struct parts *p, struct parts_common *c, int w, int h) {
+    (void)p; c->w = w; c->h = h;
+}
+static void parts_dirty(struct parts *p) { p->dirty = true; }
+static bool parts_build_construction_process(struct parts *p, struct parts_construction_process *c) {
+    (void)p; (void)c; builds++; return true;
+}
+''' + function('src/parts/construction.c', 'build_explicit_construction_process') + r'''
+int main(void) {
+    struct parts p = {0};
+    struct parts_construction_process c = {
+        .common = { {42}, 1280, 820, true },
+        .needs_build = true, .needs_pixel_snapshot = true,
+    };
+    TAILQ_INIT(&c.ops);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 1 && c.common.texture.handle == 42 && !p.dirty);
+    parts_v2 = true;
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 2 && c.common.texture.handle == 42 && c.common.alpha_mask && !p.dirty);
+    assert(c.common.w == 1280 && c.common.h == 820 && c.needs_pixel_snapshot);
+    game_okusama = true;
+    struct op op;
+    TAILQ_INSERT_TAIL(&c.ops, &op, link);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 3 && c.common.texture.handle == 42 && !p.dirty);
+    TAILQ_REMOVE(&c.ops, &op, link);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 3 && p.dirty && !c.common.texture.handle && !c.common.alpha_mask);
+    assert(!c.common.w && !c.common.h && !c.needs_build && !c.needs_pixel_snapshot);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'construction.c', Path(tmp) / 'construction'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_production_functions(self):
         code = FIXTURES + '\n'.join([
             function('src/parts/parts.c', 'parts_apply_local_matrix'),

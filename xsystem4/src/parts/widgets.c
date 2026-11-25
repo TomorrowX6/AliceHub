@@ -4,12 +4,15 @@
 #include <string.h>
 
 #include "system4.h"
+#include "system4/cg.h"
 #include "system4/string.h"
 #include "system4/utfsjis.h"
+#include "asset_manager.h"
 #include "parts.h"
 #include "parts_activity.h"
 #include "parts_widgets.h"
 #include "vm.h"
+#include "xsystem4.h"
 #include "parts_internal.h"
 
 static void set_string(struct string **out, struct string *value)
@@ -167,6 +170,39 @@ static bool load_skin_any(struct parts *parts, struct parts_state *state,
 	return false;
 }
 
+static Rectangle button_label_area(struct parts_state *skin)
+{
+	if (skin->type != PARTS_CG || !skin->cg.name || !skin->cg.name->size)
+		return (Rectangle){0};
+	struct string *name = string_dup(skin->cg.name);
+	const char *suffix = parts_utf8_to_cjk_literal("／文字");
+	string_append_cstr(&name, suffix, strlen(suffix));
+	struct cg *cg = asset_cg_load_by_name(name->text, NULL);
+	free_string(name);
+	if (!cg)
+		return (Rectangle){0};
+	Rectangle area = {0};
+	int w = cg->metrics.w, h = cg->metrics.h;
+	if (cg->metrics.has_alpha && w == skin->common.w && h == skin->common.h) {
+		const uint8_t *pixels = cg->pixels;
+		int left = w, right = -1, top = h, bottom = -1;
+		for (int y = 0; y < h; y++) {
+			for (int x = 0; x < w; x++) {
+				if (!pixels[((size_t)y * w + x) * 4 + 3])
+					continue;
+				left = min(left, x);
+				right = max(right, x);
+				top = min(top, y);
+				bottom = max(bottom, y);
+			}
+		}
+		if (right >= left)
+			area = (Rectangle){left, top, right - left + 1, bottom - top + 1};
+	}
+	cg_free(cg);
+	return area;
+}
+
 static void rebuild_background(struct parts *parts)
 {
 	struct parts_widget *w = parts->widget;
@@ -239,6 +275,8 @@ static void rebuild_background(struct parts *parts)
 	}
 	free_string(checked_base);
 	}
+	if (game_okusama && !checkbox)
+		w->label_area = button_label_area(&parts->states[PARTS_STATE_DEFAULT]);
 	parts_recalculate_hitbox(parts);
 	parts_component_dirty(parts);
 	parts_dirty(parts);
@@ -257,7 +295,10 @@ static void rebuild_label(struct parts *parts)
 	w->label.text.ts = style;
 	w->label.text.ts.font_size = NULL;
 	w->label.text.line_space = line_space;
+	if (game_okusama && parts->component_type == 0 && style.face >= 256 && gfx_text_advance_edges)
+		w->label.text.ts.font_spacing -= text_style_edge_width(&style);
 	parts_text_append(parts, &w->label.text, w->text);
+	w->label.text.ts.font_spacing = style.font_spacing;
 	parts_recalculate_hitbox(parts);
 	parts_component_dirty(parts);
 	parts_dirty(parts);

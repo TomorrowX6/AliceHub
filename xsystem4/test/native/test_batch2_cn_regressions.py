@@ -26,6 +26,56 @@ def _gbk(text: str) -> bytes:
 
 
 class Batch2CnNativeTests(unittest.TestCase):
+    def test_okusama_button_label_keeps_outline_without_double_counting_its_advance(self):
+        harness = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+struct text_style { unsigned face; float font_spacing, edge; void *font_size; };
+struct parts_text { struct text_style ts; int line_space; };
+struct parts_state { struct parts_text text; };
+struct string {};
+struct parts_widget {
+    bool defer_rebuild, dirty_label;
+    struct string *text;
+    struct parts_state label;
+};
+struct parts { struct parts_widget *widget; int component_type; };
+enum { PARTS_TEXT };
+static bool game_okusama, gfx_text_advance_edges;
+static float appended_spacing;
+static void parts_state_reset(struct parts_state *s, int type) { s->text = (struct parts_text){0}; }
+static float text_style_edge_width(struct text_style *s) { return s->edge; }
+static void parts_text_append(struct parts *p, struct parts_text *text, struct string *source) {
+    assert(text->ts.edge == 4 && text->line_space == -10);
+    appended_spacing = text->ts.font_spacing;
+}
+static void parts_recalculate_hitbox(struct parts *p) {}
+static void parts_component_dirty(struct parts *p) {}
+static void parts_dirty(struct parts *p) {}
+""" + extract_function("src/parts/widgets.c", "rebuild_label") + r"""
+int main(void) {
+    struct parts_widget widget = { .label.text = { { 256, -3, 4, NULL }, -10 } };
+    struct parts parts = { .widget = &widget };
+    gfx_text_advance_edges = true;
+    rebuild_label(&parts);
+    assert(appended_spacing == -3);
+    game_okusama = true;
+    rebuild_label(&parts);
+    assert(appended_spacing == -7 && widget.label.text.ts.font_spacing == -3);
+    rebuild_label(&parts);
+    assert(appended_spacing == -7 && widget.label.text.ts.font_spacing == -3);
+    parts.component_type = 1;
+    rebuild_label(&parts);
+    assert(appended_spacing == -3);
+    parts.component_type = 0;
+    gfx_text_advance_edges = false;
+    rebuild_label(&parts);
+    assert(appended_spacing == -3);
+}
+"""
+        compile_and_run(harness, [])
+
     def test_hacks_and_system_service_tokens(self):
         fn_gvt = extract_function("src/hll/SystemService.c", "game_version_text")
         fn_gvbt = extract_function("src/hll/SystemService.c", "SystemService_GetGameVersionByText")
