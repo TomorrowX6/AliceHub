@@ -57,7 +57,7 @@ HARNESS = r"""
 
 typedef union vm_value { int i; } value;
 enum { ARRAY_PAGE = 1, STRUCT_PAGE, DELEGATE_PAGE };
-struct page { int type, nr_vars; struct { int rank; } array; value values[2]; };
+struct page { int type, nr_vars; struct { int rank; } array; value values[60]; };
 struct sact_sprite { bool visible; };
 static struct page sprites = { ARRAY_PAGE, 2, { 1 }, {{0}, {7}} };
 static struct page widget, busho, busho_id;
@@ -75,6 +75,27 @@ static int pushed[2], count, calls, function, receiver, live_gold, shown_gold;
 static bool widget_initialized, busho_visible, busho_destroyed;
 static int card_calls, card_function, unit_number;
 static bool card_visible;
+enum {
+    LOCK_R08_INF_GOLD = 1, LOCK_R08_MAGNUM_MAX = 2, LOCK_R08_ALLY_FULL_HP = 4, LOCK_R08_INF_SKILLS = 8,
+    LOCK_R09_INF_RESOURCES = 1, LOCK_R09_ALLY_GOD = 2, LOCK_R09_INF_ACTION = 4,
+    R09_REFRESH_CARDS = 1, R09_REFRESH_SYSTEM_BAR = 2,
+};
+static bool s_r08_compatible = true, s_r09_compatible = true, s_r08_applying, s_r09_applying;
+static int s_r08_gold_glob = -1, s_r08_mag_glob = -1, s_r08_magmax_glob = -1;
+static int s_r08_pta_glob, s_r08_sc_type = 28, s_r09_chara_type = 29;
+static struct page character_indices = { ARRAY_PAGE, 2, {1}, {{10}, {10}} };
+static struct page party_indices = { ARRAY_PAGE, 2, {1}, {{0}, {1}} };
+static struct page resources = { ARRAY_PAGE, 4, {1} };
+static struct page params = { ARRAY_PAGE, 22, {1} };
+static struct { struct page *page; } heap[] = {{0}};
+static bool vm_globals_ready(void) { return true; }
+static struct page *r08_get_c_array(void) { return &character_indices; }
+static struct page *r08_get_pt_array(int idx) { return &party_indices; }
+static void r08_replenish_chara_skills(struct page *page) { assert(false); }
+static struct page *r09_get_save_data_arr(void) { return &resources; }
+static struct page *r09_get_chara_array(void) { return &character_indices; }
+static struct page *r09_get_chara_params(struct page *page) { return &params; }
+static struct page *r09_unwrap_arr_bool(int slot) { assert(false); return 0; }
 
 static bool vm_callstack_has_fno(int fno) { return already_on_stack && fno == 2; }
 static void stack_push(int arg) { assert(count < 2); pushed[count++] = arg; }
@@ -143,7 +164,7 @@ static void vm_dd_call_void_0(int fno, int slot) {
     ++card_calls;
 }
 static struct page *r03_checked_page(int slot, int type, int subtype, int vars) {
-    assert(slot == 10 && type == STRUCT_PAGE && (subtype == 21 || subtype == 24));
+    assert(slot == 10 && type == STRUCT_PAGE && (subtype == 21 || subtype == 24 || subtype == 28 || subtype == 29));
     return &card;
 }
 static struct page *sr_get_chara_page(int faction, int index) {
@@ -222,6 +243,18 @@ int main(void) {
     r09_refresh_system_bar();
     assert(calls == 4 && function == 27 && receiver == -1);
     assert(pushed[0] == 0 && pushed[1] == 0);
+
+    card.values[19].i = 12;
+    card.values[20].i = 355;
+    assert(vm_enforce_r08_locks(LOCK_R08_ALLY_FULL_HP));
+    assert(card.values[19].i == 355);
+    assert(!vm_enforce_r08_locks(LOCK_R08_ALLY_FULL_HP));
+    params.values[10].i = 20;
+    params.values[11].i = 55;
+    assert(vm_enforce_r09_locks(LOCK_R09_ALLY_GOD | LOCK_R09_INF_RESOURCES)
+            == (R09_REFRESH_CARDS | R09_REFRESH_SYSTEM_BAR));
+    assert(params.values[10].i == 55 && resources.values[1].i == 999999);
+    assert(vm_enforce_r09_locks(LOCK_R09_ALLY_GOD | LOCK_R09_INF_RESOURCES) == 0);
     return 0;
 }
 """
@@ -247,6 +280,7 @@ class ModifierHudTests(unittest.TestCase):
                 "sr_battle_widgets", "sr_is_active_busho", "sr_get_busho_index",
                 "sr_refresh_battle_hp",
                 "r08_refresh_battle_cards", "r09_refresh_party_cards", "r09_refresh_system_bar",
+                "vm_enforce_r08_locks", "vm_enforce_r09_locks",
             )
         ) + "\n" + extract_function("src/hll/SACT2.c", "sact_Update")
         with tempfile.TemporaryDirectory() as tmp:

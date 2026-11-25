@@ -7374,10 +7374,10 @@ static void vm_r03_populate_live_state_json(cJSON *root)
  * Rance 08 State / Actions / Frame Locks
  * ========================================================================= */
 
-static void vm_enforce_r08_locks(int r08_mask)
+static bool vm_enforce_r08_locks(int r08_mask)
 {
 	if (!s_r08_compatible || s_r08_applying || !vm_globals_ready())
-		return;
+		return false;
 	if ((r08_mask & LOCK_R08_INF_GOLD) && s_r08_gold_glob >= 0) {
 		if (heap[0].page->values[s_r08_gold_glob].i < 999999)
 			heap[0].page->values[s_r08_gold_glob].i = 999999;
@@ -7388,21 +7388,26 @@ static void vm_enforce_r08_locks(int r08_mask)
 		heap[0].page->values[s_r08_mag_glob].i = mag_max;
 	}
 	if (!(r08_mask & (LOCK_R08_ALLY_FULL_HP | LOCK_R08_INF_SKILLS)))
-		return;
+		return false;
 	struct page *carr = r08_get_c_array();
 	struct page *pta = r08_get_pt_array(s_r08_pta_glob);
 	if (!carr || !pta)
-		return;
+		return false;
+	bool refresh_cards = false;
 	for (int p = 1; p < pta->nr_vars; p++) {
 		int c_idx = pta->values[p].i;
 		if (c_idx <= 0 || c_idx >= carr->nr_vars) continue;
 		struct page *c = r03_checked_page(carr->values[c_idx].i, STRUCT_PAGE, s_r08_sc_type, 45);
 		if (!c) continue;
-		if ((r08_mask & LOCK_R08_ALLY_FULL_HP) && c->values[20].i > 0)
+		if ((r08_mask & LOCK_R08_ALLY_FULL_HP) && c->values[20].i > 0
+				&& c->values[19].i != c->values[20].i) {
 			c->values[19].i = c->values[20].i;
+			refresh_cards = true;
+		}
 		if (r08_mask & LOCK_R08_INF_SKILLS)
 			r08_replenish_chara_skills(c);
 	}
+	return refresh_cards;
 }
 
 static void r08_refresh_battle_cards(void)
@@ -7426,13 +7431,13 @@ static void r08_refresh_battle_cards(void)
 	}
 }
 
-static void vm_execute_r08_action(const char *json_str)
+static bool vm_execute_r08_action(const char *json_str)
 {
 	if (!json_str || !json_str[0])
-		return;
+		return false;
 	cJSON *act = cJSON_Parse(json_str);
 	if (!act)
-		return;
+		return false;
 
 	cJSON *it;
 	bool persist_cfg = false;
@@ -7451,7 +7456,7 @@ static void vm_execute_r08_action(const char *json_str)
 
 	if (!s_r08_compatible || !vm_globals_ready() || s_r08_applying) {
 		cJSON_Delete(act);
-		return;
+		return false;
 	}
 	s_r08_applying = true;
 	if ((it = cJSON_GetObjectItem(act, "r08AddGold")) && cJSON_IsNumber(it) && s_r08_gold_glob >= 0) {
@@ -7470,8 +7475,8 @@ static void vm_execute_r08_action(const char *json_str)
 		heap[0].page->values[s_r08_mag_glob].i = mag_max;
 	}
 	struct page *carr = r08_get_c_array();
+	bool refresh_cards = false;
 	if (carr) {
-		bool refresh_cards = false;
 		if ((it = cJSON_GetObjectItem(act, "r08HealAllParty")) && cJSON_IsTrue(it)) {
 			for (int i = 1; i < carr->nr_vars; i++) {
 				if (!r08_is_ally_c(i)) continue;
@@ -7529,11 +7534,10 @@ static void vm_execute_r08_action(const char *json_str)
 				if (target >= 0) break;
 			}
 		}
-		if (refresh_cards)
-			r08_refresh_battle_cards();
 	}
 	s_r08_applying = false;
 	cJSON_Delete(act);
+	return refresh_cards;
 }
 
 static void vm_r08_populate_live_state_json(cJSON *root)
@@ -7596,34 +7600,42 @@ static void vm_r08_populate_live_state_json(cJSON *root)
  * Rance 09 State / Actions / Frame Locks
  * ========================================================================= */
 
-static void vm_enforce_r09_locks(int r09_mask)
+enum { R09_REFRESH_CARDS = 1, R09_REFRESH_SYSTEM_BAR = 2 };
+
+static int vm_enforce_r09_locks(int r09_mask)
 {
 	if (!s_r09_compatible || s_r09_applying || !vm_globals_ready())
-		return;
+		return 0;
+	int refresh = 0;
 	if (r09_mask & LOCK_R09_INF_RESOURCES) {
 		struct page *sd = r09_get_save_data_arr();
 		if (sd && sd->nr_vars >= 4) {
-			if (sd->values[1].i < 999999) sd->values[1].i = 999999;
-			if (sd->values[2].i < 9999) sd->values[2].i = 9999;
-			if (sd->values[3].i < 999) sd->values[3].i = 999;
+			static const int minimum[] = { 999999, 9999, 999 };
+			for (int i = 1; i <= 3; i++) {
+				if (sd->values[i].i >= minimum[i - 1])
+					continue;
+				sd->values[i].i = minimum[i - 1];
+				refresh |= R09_REFRESH_SYSTEM_BAR;
+			}
 		}
 	}
 	if (!(r09_mask & (LOCK_R09_ALLY_GOD | LOCK_R09_INF_ACTION)))
-		return;
+		return refresh;
 	struct page *carr = r09_get_chara_array();
 	if (!carr)
-		return;
+		return refresh;
 	for (int i = 0; i < carr->nr_vars; i++) {
 		struct page *c = r03_checked_page(carr->values[i].i, STRUCT_PAGE, s_r09_chara_type, 12);
 		if (!c) continue;
 		if (r09_mask & LOCK_R09_ALLY_GOD) {
 			struct page *pv = r09_get_chara_params(c);
 			if (pv && pv->nr_vars >= 22) {
-				if (pv->values[11].i > 0) pv->values[10].i = pv->values[11].i;
-				if (pv->values[13].i > 0) pv->values[12].i = pv->values[13].i;
-				if (pv->values[15].i > 0) pv->values[14].i = pv->values[15].i;
-				if (pv->values[17].i > 0) pv->values[16].i = pv->values[17].i;
-				if (pv->values[19].i > 0) pv->values[18].i = pv->values[19].i;
+				for (int p = 10; p <= 18; p += 2) {
+					if (pv->values[p + 1].i <= 0 || pv->values[p].i == pv->values[p + 1].i)
+						continue;
+					pv->values[p].i = pv->values[p + 1].i;
+					refresh |= R09_REFRESH_CARDS;
+				}
 			}
 		}
 		if (r09_mask & LOCK_R09_INF_ACTION) {
@@ -7632,6 +7644,7 @@ static void vm_enforce_r09_locks(int r09_mask)
 				bf->values[1].i = 0;
 		}
 	}
+	return refresh;
 }
 
 static void r09_refresh_system_bar(void)
@@ -7663,13 +7676,13 @@ static void r09_refresh_party_cards(void)
 	}
 }
 
-static void vm_execute_r09_action(const char *json_str)
+static int vm_execute_r09_action(const char *json_str)
 {
 	if (!json_str || !json_str[0])
-		return;
+		return 0;
 	cJSON *act = cJSON_Parse(json_str);
 	if (!act)
-		return;
+		return 0;
 
 	cJSON *it;
 	bool persist_cfg = false;
@@ -7688,7 +7701,7 @@ static void vm_execute_r09_action(const char *json_str)
 
 	if (!s_r09_compatible || !vm_globals_ready() || s_r09_applying) {
 		cJSON_Delete(act);
-		return;
+		return 0;
 	}
 	s_r09_applying = true;
 	struct page *sd = r09_get_save_data_arr();
@@ -7708,8 +7721,8 @@ static void vm_execute_r09_action(const char *json_str)
 		refresh_system_bar = gold != sd->values[1].i || points != sd->values[2].i || stones != sd->values[3].i;
 	}
 	struct page *carr = r09_get_chara_array();
+	bool refresh_cards = false;
 	if (carr) {
-		bool refresh_cards = false;
 		if ((it = cJSON_GetObjectItem(act, "r09HealAllParty")) && cJSON_IsTrue(it)) {
 			for (int i = 0; i < carr->nr_vars; i++) {
 				struct page *c = r03_checked_page(carr->values[i].i, STRUCT_PAGE, s_r09_chara_type, 12);
@@ -7785,13 +7798,10 @@ static void vm_execute_r09_action(const char *json_str)
 				if (target >= 0) break;
 			}
 		}
-		if (refresh_cards)
-			r09_refresh_party_cards();
 	}
-	if (refresh_system_bar)
-		r09_refresh_system_bar();
 	s_r09_applying = false;
 	cJSON_Delete(act);
+	return (refresh_cards ? R09_REFRESH_CARDS : 0) | (refresh_system_bar ? R09_REFRESH_SYSTEM_BAR : 0);
 }
 
 static void vm_r09_populate_live_state_json(cJSON *root)
@@ -8646,6 +8656,8 @@ void modifier_on_frame(void)
 
 		bool action_applied = false;
 		bool refresh_r02_hud = false;
+		bool refresh_r08_cards = false;
+		int refresh_r09_hud = 0;
 		if (pending) {
 			if (game_dohnadohna) {
 				vm_execute_dohna_action(pending);
@@ -8666,10 +8678,10 @@ void modifier_on_frame(void)
 				vm_execute_r03_action(pending);
 				action_applied = true;
 			} else if (game_rance8) {
-				vm_execute_r08_action(pending);
+				refresh_r08_cards = vm_execute_r08_action(pending);
 				action_applied = true;
 			} else if (game_rance9) {
-				vm_execute_r09_action(pending);
+				refresh_r09_hud = vm_execute_r09_action(pending);
 				action_applied = true;
 			}
 			free(pending);
@@ -8725,9 +8737,9 @@ void modifier_on_frame(void)
 		} else if (game_rance03 && r03_lock_mask != 0) {
 			vm_enforce_r03_locks(r03_lock_mask);
 		} else if (game_rance8 && r08_lock_mask != 0) {
-			vm_enforce_r08_locks(r08_lock_mask);
+			refresh_r08_cards |= vm_enforce_r08_locks(r08_lock_mask);
 		} else if (game_rance9 && r09_lock_mask != 0) {
-			vm_enforce_r09_locks(r09_lock_mask);
+			refresh_r09_hud |= vm_enforce_r09_locks(r09_lock_mask);
 		}
 		if (game_sengokurance && (action_applied || (sr_lock_mask & (LOCK_SR_INF_GOLD | LOCK_SR_MAX_SAT))))
 			sr_refresh_hud(action_applied);
@@ -8735,6 +8747,19 @@ void modifier_on_frame(void)
 			s_r02_applying = true;
 			r02_refresh_hud();
 			s_r02_applying = false;
+		}
+		if (refresh_r08_cards) {
+			s_r08_applying = true;
+			r08_refresh_battle_cards();
+			s_r08_applying = false;
+		}
+		if (refresh_r09_hud) {
+			s_r09_applying = true;
+			if (refresh_r09_hud & R09_REFRESH_CARDS)
+				r09_refresh_party_cards();
+			if (refresh_r09_hud & R09_REFRESH_SYSTEM_BAR)
+				r09_refresh_system_bar();
+			s_r09_applying = false;
 		}
 
 		pthread_mutex_lock(&g_mod_mutex);
