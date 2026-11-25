@@ -67,7 +67,7 @@ enum CustomEventCode {
 static SDL_Point mouse_pos;
 static int mouseb;
 static int mouse_wheel_up, mouse_wheel_down;
-bool RawKeyInfo[256];
+static bool RawKeyInfo[NUM_KEYCODES];
 
 /* SDL Joystick */
 static int joyinfo=0;
@@ -431,7 +431,6 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 #ifdef __SWITCH__
 		switch_menu35_release_skip();
 		event_reset_input_state();
-		event_inject_rawkey(KEY_CTRL, false);
 #endif
 #ifdef __ANDROID__
 		gfx_android_on_background();
@@ -699,7 +698,6 @@ static void get_event(void) {
 		touch_button = 0;
 		mouse_wheel_up = mouse_wheel_down = 0;
 		if (!switch_menu_lifecycle_pending()) {
-			event_inject_rawkey(KEY_CTRL, switch_menu35_ctrl_skip());
 			gfx_requestRedraw();
 			gfx_updateScreen();
 		}
@@ -722,10 +720,6 @@ static void get_event(void) {
 /* キー情報の取得 */
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed) {
 	int code = keytable[sdl_KeyboardEventScancode(e)];
-#ifdef __SWITCH__
-	if (code == KEY_CTRL && switch_menu35_ctrl_skip())
-		pressed = true;
-#endif
 	RawKeyInfo[code] = pressed;
 	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
 }
@@ -745,6 +739,14 @@ int event_get_key(void) {
 	      (RawKeyInfo[KEY_TAB]    << 7));
 	
 	return rt;
+}
+
+bool event_rawkey_down(unsigned code) {
+#ifdef __SWITCH__
+	if (code == KEY_CTRL && switch_menu35_ctrl_skip())
+		return true;
+#endif
+	return code < NUM_KEYCODES && RawKeyInfo[code];
 }
 
 void event_reset_input_state(void) {
