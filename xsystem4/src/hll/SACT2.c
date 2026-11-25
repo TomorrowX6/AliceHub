@@ -236,8 +236,8 @@ int sact_Update(void)
 	sprite_call_plugins();
 	if (scene_is_dirty) {
 		scene_render();
-		gfx_swap();
 		scene_is_dirty = false;
+		gfx_swap();
 		s_last_idle_mod_ms = SDL_GetTicks();
 	} else {
 		uint32_t now = SDL_GetTicks();
