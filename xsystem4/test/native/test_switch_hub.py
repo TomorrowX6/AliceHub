@@ -260,6 +260,70 @@ int main(void)
 
 
 class SwitchHubTest(unittest.TestCase):
+    def test_online_manifest_and_resume(self):
+        repo = Path(__file__).resolve().parents[3]
+        hub = repo / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(hub), "-I", str(repo / "xsystem4/include"),
+                 str(hub / "model.c"), str(hub / "install_transaction.c"),
+                 str(hub / "online_manifest.c"), str(repo / "xsystem4/src/cJSON.c"),
+                 "-x", "c", "-", "-o", str(Path(tmp) / "test")],
+                input=r"""
+#include "online_manifest.h"
+#include <assert.h>
+#include <string.h>
+
+#define SHA "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+#define ENTRY(PATH, BYTES) "{\"path\":\"" PATH "\",\"key\":\"Test/日本 語.ald\"," \
+                           "\"sha256\":\"" SHA "\",\"size\":" BYTES "}"
+#define MANIFEST(ENTRIES) "{\"baseName\":\"Test Game\",\"files\":[" ENTRIES "]}"
+
+int main(void)
+{
+    OnlineManifest doc = {0};
+    assert(online_manifest_parse(MANIFEST(ENTRY("GAMEsa.ALD", "4294967295") ","
+                                         ENTRY("data\\\\sample", "0")), &doc));
+    assert(doc.count == 2 && doc.total == ONLINE_FILE_LIMIT);
+    assert(!strcmp(doc.folder, "Test Game") && !strcmp(doc.files[0].path, "data/sample"));
+    assert(!strcmp(doc.files[1].sha256,
+                   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    assert(online_boot_marker(doc.files[1].path) == HUB_XSYSTEM35);
+    assert(online_boot_marker("ADISK.DAT") == HUB_SYSTEM3);
+    assert(online_boot_marker("AliceStart.ini") == HUB_XSYSTEM4);
+    assert(online_boot_marker("nested/ADISK.DAT") == HUB_ENGINE_COUNT);
+    online_manifest_free(&doc);
+    assert(!online_manifest_parse(MANIFEST(ENTRY("GAMEsa.ALD", "4294967296")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("GAMEsa.ALD", "23.25")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("GAMEsa.ALD", "-1")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("../file", "1")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("AA", "1") "," ENTRY("aa/b", "1")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("FILE", "1") "," ENTRY("file", "1")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY(".AliceHub-online-v1", "1")), &doc));
+    assert(!online_manifest_parse(MANIFEST(ENTRY("n\\u0000ul", "1")), &doc));
+    char url[ONLINE_URL_SIZE];
+    assert(online_payload_url("rance10", NULL, url) &&
+           !strcmp(url, "https://alicehub.000.moe/rance10/manifest.json"));
+    assert(online_payload_url("test", "Test/日本 語.ald", url) &&
+           !strcmp(url, "https://alicehub.000.moe/test/files/Test/%e6%97%a5%e6%9c%ac%20%e8%aa%9e.ald"));
+    assert(!online_payload_url("test", "../file", url));
+    assert(!online_payload_url("https://bad.invalid", "file", url));
+    assert(online_resume_matches("bytes 2-3/4", "\"abc\"", "\"abc\"", 2, 4));
+    assert(!online_resume_matches("bytes 2-3/4", "\"def\"", "\"abc\"", 2, 4));
+    assert(!online_resume_matches("bytes 2-3/4", "W/\"abc\"", "\"abc\"", 2, 4));
+    assert(!online_resume_matches("bytes 0-3/4", "\"abc\"", "\"abc\"", 2, 4));
+    assert(!online_content_range("bytes 2-3/5", 2, 4));
+    assert(!online_content_range("bytes 2-2/4", 2, 4));
+    assert(!online_content_range("bytes 18446744073709551616-3/4", 2, 4));
+    assert(!online_content_range("bytes 2-3/4 trailing", 2, 4));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
     def test_install_transaction(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:

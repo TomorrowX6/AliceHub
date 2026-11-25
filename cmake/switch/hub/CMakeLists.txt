@@ -3,6 +3,8 @@ find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(LibXml2 CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(LibArchive REQUIRED)
 
 add_executable(AliceHub app.c features.c install_transaction.c library.c details.c settings.c model.c progress.c
   support_files.c support_storage.c support_text.c support_ui.c ../picker_art.c)
@@ -32,6 +34,21 @@ target_link_libraries(AliceHub PRIVATE AliceHub_save_codec)
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_SWITCH_HUB)
 target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c)
+
+set(online_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
+set(online_android "${online_root}/project/app/src/main")
+set(online_kotlin "${online_android}/java/io/github/kichikuou/xsystem4")
+set(online_catalog "${CMAKE_CURRENT_BINARY_DIR}/online_catalog.inc")
+add_custom_command(OUTPUT "${online_catalog}"
+  COMMAND Python3::Interpreter "${CMAKE_CURRENT_LIST_DIR}/generate_online_catalog.py"
+    "${online_root}" "${online_catalog}"
+  DEPENDS generate_online_catalog.py "${online_kotlin}/GameCatalog.kt"
+    "${online_kotlin}/OnlineInstaller.kt" "${online_android}/res/values/strings.xml"
+  VERBATIM)
+target_sources(AliceHub PRIVATE online.c online_download.c online_install.c online_manifest.c
+  "${online_catalog}")
+target_include_directories(AliceHub PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(AliceHub PRIVATE curl LibArchive::LibArchive bz2 lzma lz4 zstd expat ZLIB::ZLIB)
 
 set(romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 set(fonts "${CMAKE_CURRENT_LIST_DIR}/../../../xsystem4/fonts")

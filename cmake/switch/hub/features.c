@@ -6,6 +6,7 @@ void hub_register_save_editor(HubApp *);
 void hub_register_support(HubApp *);
 void hub_register_instances(HubApp *);
 void hub_register_controller_profiles(HubApp *app);
+void hub_register_online(HubApp *);
 
 void hub_register_features(HubApp *app)
 {
@@ -18,4 +19,5 @@ void hub_register_features(HubApp *app)
     hub_register_local_import(app);
     hub_register_instances(app);
     hub_register_controller_profiles(app);
+    hub_register_online(app);
 }
