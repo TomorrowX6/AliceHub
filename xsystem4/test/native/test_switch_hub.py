@@ -1480,8 +1480,10 @@ int main(void)
             exe = root / "test"
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
-                 "-I", str(hub), str(hub / "model.c"), "-x", "c", "-", "-o", str(exe)],
+                 "-I", str(hub), str(hub / "model.c"), str(hub / "instances.c"), str(hub / "fs_util.c"),
+                 "-x", "c", "-", "-o", str(exe)],
                 input=r"""
+#include "instances.h"
 #include "model.h"
 #include <assert.h>
 #include <stdio.h>
@@ -1533,6 +1535,15 @@ int main(void)
     assert(!mkdir(dsr_save, 0700));
     put("./xsystem4/saves/SengokuRance__SaveDataDSR/Save001.asd", "dsr-save");
     expect("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
+
+    // Retained DaiSengoku saves under a name block creating a fresh copy with that same name
+    assert(!mkdir("./xsystem4/saves/Challenge__SaveDataDSR", 0700));
+    put("./xsystem4/saves/Challenge__SaveDataDSR/Save001.asd", "retained-dsr");
+    assert(hub_instance_copy(".", &game, "Challenge", NULL) == HUB_INSTANCE_NAME_TAKEN);
+    assert(hub_instance_copy(".", &game, "FreshDSR", NULL) == HUB_INSTANCE_OK);
+    struct stat st;
+    assert(!stat("./xsystem4/saves/FreshDSR__SaveDataDSR", &st) && S_ISDIR(st.st_mode));
+    expect("./xsystem4/saves/Challenge__SaveDataDSR/Save001.asd", "retained-dsr");
 
     put("xsystem4/games/SengokuRance/System40.ini",
         "GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n");

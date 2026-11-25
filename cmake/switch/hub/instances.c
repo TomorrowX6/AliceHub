@@ -129,21 +129,47 @@ static HubInstanceResult name_available(const char *path)
 }
 
 static HubInstanceResult target_paths(const char *root, HubEngine engine, const char *name,
+                                      bool uses_dsr_save,
                                       char games[HUB_PATH_SIZE], char saves[HUB_PATH_SIZE])
 {
     HubGame target;
+    char alt_saves[HUB_PATH_SIZE];
     if (!hub_game_init(&target, engine, name) || strlen(name) > 255 ||
         *name == ' ' || name[strlen(name) - 1] == ' ' || name[strlen(name) - 1] == '.' ||
         strpbrk(name, "\"*<>?|") ||
-        !hub_game_path(root, &target, games) || !hub_game_save_path(root, &target, saves))
+        !hub_game_path(root, &target, games))
+        return HUB_INSTANCE_INVALID_NAME;
+    const char *suffix = (engine == HUB_XSYSTEM4 && uses_dsr_save) ? "__SaveDataDSR" : "";
+    const char *alt_suffix = (engine == HUB_XSYSTEM4 && !uses_dsr_save) ? "__SaveDataDSR" : "";
+    if ((size_t)snprintf(saves, HUB_PATH_SIZE, "%s/%s/saves/%s%s", root,
+                         hub_engines[engine].id, name, suffix) >= HUB_PATH_SIZE)
         return HUB_INSTANCE_INVALID_NAME;
     HubInstanceResult result = name_available(games);
-    return result == HUB_INSTANCE_OK ? name_available(saves) : result;
+    if (result != HUB_INSTANCE_OK)
+        return result;
+    result = name_available(saves);
+    if (result != HUB_INSTANCE_OK)
+        return result;
+    if (engine == HUB_XSYSTEM4 &&
+        (size_t)snprintf(alt_saves, sizeof(alt_saves), "%s/%s/saves/%s%s", root,
+                         hub_engines[engine].id, name, alt_suffix) < sizeof(alt_saves)) {
+        result = name_available(alt_saves);
+    }
+    return result;
+}
+
+static bool source_uses_dsr_save(const char *root, const HubGame *source)
+{
+    char src[HUB_PATH_SIZE];
+    return source->engine == HUB_XSYSTEM4 &&
+           hub_game_path(root, source, src) &&
+           hub_game_uses_daisengoku_save_folder(src);
 }
 
 bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB_NAME_SIZE])
 {
     char games[HUB_PATH_SIZE], saves[HUB_PATH_SIZE];
+    bool uses_dsr = source_uses_dsr_save(root, source);
     size_t len = strlen(source->name);
     if (len > 60) {
         len = 60;
@@ -152,10 +178,10 @@ bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB
     }
     for (unsigned i = 1; i <= 9999; ++i) {
         snprintf(name, HUB_NAME_SIZE, "%.*s-%u", (int)len, source->name, i);
-        HubInstanceResult result = target_paths(root, source->engine, name, games, saves);
+        HubInstanceResult result = target_paths(root, source->engine, name, uses_dsr, games, saves);
         if (result == HUB_INSTANCE_INVALID_NAME) {
             snprintf(name, HUB_NAME_SIZE, "Copy-%u", i);
-            result = target_paths(root, source->engine, name, games, saves);
+            result = target_paths(root, source->engine, name, uses_dsr, games, saves);
         }
         if (result != HUB_INSTANCE_NAME_TAKEN)
             return result == HUB_INSTANCE_OK;
@@ -186,7 +212,8 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
         !hub_game_path(root, &checked, src) || !is_directory(src))
         return HUB_INSTANCE_COPY_FAILED;
 
-    HubInstanceResult result = target_paths(root, source->engine, name, games, saves);
+    bool uses_dsr = source->engine == HUB_XSYSTEM4 && hub_game_uses_daisengoku_save_folder(src);
+    HubInstanceResult result = target_paths(root, source->engine, name, uses_dsr, games, saves);
     if (result != HUB_INSTANCE_OK)
         return result;
     Copy copy = {cancelled, malloc(COPY_BUFFER_SIZE)};
@@ -200,7 +227,8 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
     free(copy.buffer);
     result = HUB_INSTANCE_COPY_FAILED;
     if (ok && (!cancelled || !cancelled())) {
-        result = target_paths(root, source->engine, name, games, saves);
+        bool staged_dsr = source->engine == HUB_XSYSTEM4 && hub_game_uses_daisengoku_save_folder(stage);
+        result = target_paths(root, source->engine, name, staged_dsr, games, saves);
         if (result == HUB_INSTANCE_OK) {
             char parent[HUB_PATH_SIZE];
             strcpy(parent, saves);
