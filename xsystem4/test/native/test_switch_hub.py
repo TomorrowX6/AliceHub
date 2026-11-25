@@ -570,6 +570,7 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
     def test_instance_copy_and_delete(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:
