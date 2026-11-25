@@ -153,6 +153,7 @@ int main(void)
         sources = ("savefile", "buffer", "file", "mt19937int", "string", "system", "utfsjis", "zlib")
         self.run_harness(r"""
 #include "save_storage.h"
+#include "save_presets.h"
 #include "modifier_api.h"
 #include "cJSON.h"
 #include "system4/savefile.h"
@@ -180,6 +181,28 @@ int main(void)
     cJSON *json = read_summary(modifier_api_read_local_save_summary(local));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "valid")));
     assert(cJSON_GetObjectItem(json, "battleCount")->valueint == 3);
+    assert(hub_save_preset_count(false) == 4 && hub_save_preset_count(true) == 1);
+    cJSON *preset = hub_save_preset_changes(false, 0, json);
+    assert(preset && cJSON_GetObjectItem(preset, "foodTicket")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "atkPerPhys")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "statusMaxPer")->valueint == 999);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 1, json);
+    assert(preset && cJSON_GetArraySize(preset) == 3);
+    assert(cJSON_GetObjectItem(preset, "perFindTreasure")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "treasureNotGetCount")->valueint == 99);
+    assert(cJSON_GetObjectItem(preset, "rareLuck")->valueint == 999);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 2, json);
+    assert(preset && cJSON_GetArraySize(preset) == 5);
+    assert(cJSON_GetObjectItem(preset, "setCardCount")->valueint == 99);
+    assert(cJSON_GetObjectItem(preset, "setCharStar")->valueint == 5);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 3, json);
+    assert(preset && cJSON_GetObjectItem(preset, "humanDead")->valueint == 0);
+    assert(cJSON_GetObjectItem(preset, "leazasState")->valueint == 0);
+    assert(cJSON_GetObjectItem(preset, "subHanny")->valueint == 99999);
+    cJSON_Delete(preset);
     cJSON_Delete(json);
     assert(modifier_api_write_local_save_mod(local, "{\"battleCount\":5}"));
     json = read_summary(modifier_api_read_local_save_summary(local));
@@ -196,6 +219,26 @@ int main(void)
     json = read_summary(modifier_api_read_global_save_summary(global, collection));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "hasGlobal")));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "hasCollection")));
+    preset = hub_save_preset_changes(true, 0, json);
+    assert(preset && cJSON_GetArraySize(preset) == 22);
+    assert(cJSON_GetObjectItem(preset, "gamePlayCount")->valueint == 50);
+    assert(cJSON_GetObjectItem(preset, "leaderAtkRatio")->valuedouble == 10);
+    assert(cJSON_GetObjectItem(preset, "totalClearPoint")->valueint == 999);
+    char *preset_text = cJSON_PrintUnformatted(preset);
+    assert(preset_text && modifier_api_write_global_save_mod(global, collection, preset_text));
+    free(preset_text);
+    cJSON_Delete(preset);
+    cJSON_Delete(json);
+    json = read_summary(modifier_api_read_global_save_summary(global, collection));
+    assert(cJSON_GetObjectItem(json, "totalClearPoint")->valueint == 999);
+    assert(cJSON_GetObjectItem(json, "gamePlayCount")->valueint == 50);
+    assert(cJSON_GetObjectItem(json, "leaderAtkRatio")->valuedouble == 10);
+    cJSON_Delete(json);
+    json = cJSON_Parse("{\"hasCommonSystemData\":true}");
+    preset = hub_save_preset_changes(true, 0, json);
+    assert(preset && cJSON_GetArraySize(preset) == 15);
+    assert(!cJSON_GetObjectItem(preset, "gamePlayCount") && !cJSON_GetObjectItem(preset, "leaderAtkRatio"));
+    cJSON_Delete(preset);
     cJSON_Delete(json);
     assert(modifier_api_write_global_save_mod(global, collection,
         "{\"gamePlayCount\":20,\"leaderAtkRatio\":2.5,\"OpenMonsterpedia\":1}"));
@@ -209,7 +252,7 @@ int main(void)
     assert(cJSON_IsFalse(cJSON_GetObjectItem(json, "hasCommonSystemData")));
     cJSON_Delete(json);
 }
-""", extra=["-DMODIFIER_OFFLINE_ONLY", str(ENGINE / "src/modifier.c"),
+""", extra=["-DMODIFIER_OFFLINE_ONLY", str(HUB / "save_presets.c"), str(ENGINE / "src/modifier.c"),
                str(ENGINE / "src/cJSON.c"), *(str(SYS4 / f"src/{s}.c") for s in sources)],
             libraries=["-lz", "-lm"], setup=assets)
 

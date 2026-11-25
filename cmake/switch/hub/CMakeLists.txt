@@ -10,7 +10,7 @@ set(xsystem4_dir "${CMAKE_CURRENT_LIST_DIR}/../../../xsystem4")
 set(libsys4_dir "${xsystem4_dir}/subprojects/libsys4")
 set(modifier_src "${xsystem4_dir}/src/modifier.c")
 set_source_files_properties("${modifier_src}" PROPERTIES COMPILE_DEFINITIONS MODIFIER_OFFLINE_ONLY)
-target_sources(AliceHub PRIVATE save_editor.c save_storage.c "${modifier_src}"
+target_sources(AliceHub PRIVATE save_editor.c save_presets.c save_storage.c "${modifier_src}"
   "${xsystem4_dir}/src/cJSON.c")
 foreach(source savefile buffer file mt19937int string system utfsjis zlib)
   target_sources(AliceHub PRIVATE "${libsys4_dir}/src/${source}.c")
