@@ -310,10 +310,6 @@ static bool mainex_a2exists(struct string *name, int row, int col, int id) { ret
 		struct ex_value *v = value(name, id); \
 		return v && v->type == ex_type ? v->member : fallback; \
 	} \
-	static ctype mainex_a##label(struct string *name, int index, ctype fallback, int id) { \
-		struct ex_value *v = avalue(name, index, id); \
-		return v && v->type == ex_type ? v->member : fallback; \
-	} \
 	static ctype mainex_a2##label(struct string *name, int row, int col, ctype fallback, int id) { \
 		struct ex_value *v = a2value(name, row, col, id); \
 		return v && v->type == ex_type ? v->member : fallback; \
@@ -321,6 +317,20 @@ static bool mainex_a2exists(struct string *name, int row, int col, int id) { ret
 EX_NUMERIC_GETTERS(integer, int, EX_INT, i)
 EX_NUMERIC_GETTERS(floating, float, EX_FLOAT, f)
 #undef EX_NUMERIC_GETTERS
+
+static int mainex_ainteger(struct string *name, int index, int fallback, int id)
+{
+	struct ex_value *v = avalue(name, index, id);
+	return v && v->type == EX_INT ? v->i : fallback;
+}
+
+static float mainex_afloating(struct string *name, int index, float fallback, int id)
+{
+	struct ex_value *v = avalue(name, index, id);
+	if (v && game_okusama && v->type == EX_INT)
+		return (float)v->i;
+	return v && v->type == EX_FLOAT ? v->f : fallback;
+}
 
 static struct string *string_value(struct ex_value *v, struct string *fallback)
 {

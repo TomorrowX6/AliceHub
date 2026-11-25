@@ -382,6 +382,79 @@ int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gra
 
 
 class PartsRenderingTests(unittest.TestCase):
+    def test_okusama_alpha_blend_cut_cg_adds_coverage_to_construction_surface(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+enum { GL_ONE, GL_ZERO };
+enum { PARTS_CP_DRAW_CUT_CG, PARTS_CP_ALPHA_BLEND_CUT_CG };
+typedef struct { int handle, w, h; float alpha; } Texture;
+struct parts_construction_process { struct { Texture texture; } common; };
+struct parts_cp_cut_cg { int cg_name, dx, dy, dw, dh, sx, sy, sw, sh; };
+struct parts_cp_op { int type; struct parts_cp_cut_cg cut_cg; };
+struct copy_data { int dx, dy, dw, dh, sx, sy, sw, sh, dst_texture; };
+#define STRETCH_DATA(...) { __VA_ARGS__, 0 }
+static int copy_straight_alpha_shader;
+static bool game_okusama;
+static Texture source = {1, 64, 220, 1.0f};
+static bool source_alpha_enabled;
+static float under_alpha;
+static Texture *cproc_get_cached_texture(int name) { return name ? &source : 0; }
+static void gfx_init_texture_blank(Texture *dst, int w, int h) {
+    *dst = (Texture){2, w, h, 0};
+}
+static void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src,
+                                    int sx, int sy, int w, int h) {
+    assert(dst->handle == 2 && src->handle == 1 && dx == 0 && dy == 0);
+    assert(sx == 2 && sy == 3 && w == 32 && h == 110);
+    under_alpha = src->alpha;
+}
+static void gfx_delete_texture(Texture *dst) { assert(dst->handle == 2); }
+static void glBlendFuncSeparate(int rgb_src, int rgb_dst, int alpha_src, int alpha_dst) {
+    assert(rgb_src == GL_ONE && rgb_dst == GL_ZERO);
+    assert(alpha_src == GL_ONE && alpha_dst == GL_ZERO);
+    source_alpha_enabled = true;
+}
+static void run_copy_shader(int *shader, Texture *dst, Texture *src, struct copy_data *data) {
+    assert(shader == &copy_straight_alpha_shader && source_alpha_enabled && data->dst_texture == 2);
+    assert(data->dx == 2 && data->dy == 3 && data->dw == 32 && data->dh == 110);
+    assert(data->sx == 4 && data->sy == 5 && data->sw == 64 && data->sh == 220);
+    dst->alpha = src->alpha + (1.0f - src->alpha) * under_alpha;
+}
+static void restore_blend_mode(void) { source_alpha_enabled = false; }
+static void gfx_copy_stretch_blend_amap(Texture *dst, int dx, int dy, int dw, int dh,
+                                      Texture *src, int sx, int sy, int sw, int sh) {
+    assert(dst->alpha == 0 && src == &source);
+    assert(dx == 2 && dy == 3 && dw == 32 && dh == 110);
+    assert(sx == 4 && sy == 5 && sw == 64 && sh == 220);
+}
+''' + function('src/draw.c', 'gfx_copy_stretch_blend_straight_alpha') + '\n' + function(
+            'src/parts/construction.c', 'build_draw_cut_cg'
+        ) + r'''
+int main(void) {
+    struct parts_construction_process cproc = { .common.texture.handle = 1 };
+    struct parts_cp_op cmd = { PARTS_CP_ALPHA_BLEND_CUT_CG, {1, 2, 3, 32, 110, 4, 5, 0, 0} };
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0);
+    game_okusama = true;
+    cmd.type = PARTS_CP_DRAW_CUT_CG;
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0);
+    cmd.type = PARTS_CP_ALPHA_BLEND_CUT_CG;
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 1);
+    source.alpha = 0.5f;
+    cproc.common.texture.alpha = 0;
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0.5f);
+    cproc.common.texture.alpha = 0.5f;
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0.75f);
+    assert(!source_alpha_enabled);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'cut_cg.c', Path(tmp) / 'cut_cg'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_button_label_uses_authored_area_without_layout_whitespace(self):
         code = r'''
 #include <assert.h>

@@ -4,6 +4,7 @@
 // Fixture keys are UTF-8, not game-encoded SJIS/GBK. Encoding conversion is not
 // under test; EX tree lookup, numeric/list decoding and scale application are.
 const char *parts_utf8_to_cjk_literal(const char *key) { return key; }
+void sys4_set_text_gbk(bool enabled) { (void)enabled; }
 
 static struct string *fixture_name(const char *key)
 {

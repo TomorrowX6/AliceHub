@@ -45,6 +45,7 @@ struct copy_data {
 	float r, g, b, a;
 	float threshold;
 	float threshold2;
+	GLuint dst_texture;
 };
 
 #define ROTATE_DATA(dst, _sx, _sy, _w, _h)		\
@@ -59,6 +60,9 @@ struct copy_data {
 	STRETCH_DATA(_dx, _dy, _w, _h, _sx, _sy, _w, _h)
 
 static struct copy_shader copy_shader;
+static Shader copy_straight_alpha_shader;
+static GLint copy_straight_alpha_dst;
+static GLint copy_straight_alpha_origin;
 static struct copy_shader copy_color_reverse_shader;
 static struct copy_shader copy_key_shader;
 static struct copy_shader copy_alpha_key_shader;
@@ -101,11 +105,26 @@ static void load_copy_shader(struct copy_shader *s, const char *v_path, const ch
 	s->s.prepare = prepare_copy_shader;
 }
 
+static void prepare_copy_straight_alpha_shader(possibly_unused struct gfx_render_job *job, void *data)
+{
+	struct copy_data *d = data;
+	glUniform1i(copy_straight_alpha_dst, 1);
+	glUniform2i(copy_straight_alpha_origin, d->dx, d->dy);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, d->dst_texture);
+	glActiveTexture(GL_TEXTURE0);
+}
+
 // load shaders
 static void draw_load_shaders(void)
 {
 	// generic copy shader; discards fragments outside of a given rectangle
 	load_copy_shader(&copy_shader, "shaders/render.v.glsl", "shaders/copy.f.glsl");
+
+	gfx_load_shader(&copy_straight_alpha_shader, "shaders/render.v.glsl", "shaders/copy_straight_alpha.f.glsl");
+	copy_straight_alpha_shader.prepare = prepare_copy_straight_alpha_shader;
+	copy_straight_alpha_dst = glGetUniformLocation(copy_straight_alpha_shader.program, "dst_tex");
+	copy_straight_alpha_origin = glGetUniformLocation(copy_straight_alpha_shader.program, "dst_origin");
 
 	// copy shader which inverts colors
 	load_copy_shader(&copy_color_reverse_shader, "shaders/render.v.glsl", "shaders/copy_color_reverse.f.glsl");
@@ -1335,6 +1354,24 @@ void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rect
 	data.a = 0.0;  // discard threshold
 	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ONE, GL_ZERO);
 	run_copy_shader(&blend_rmap_color_shader.s, dst, glyph, &data);
+	restore_blend_mode();
+}
+
+void gfx_copy_stretch_blend_straight_alpha(Texture *dst, int dx, int dy, int dw, int dh,
+		Texture *src, int sx, int sy, int sw, int sh)
+{
+	if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0)
+		return;
+
+	Texture under = {0};
+	gfx_init_texture_blank(&under, dw, dh);
+	gfx_copy_with_alpha_map(&under, 0, 0, dst, dx, dy, dw, dh);
+
+	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
+	struct copy_data data = STRETCH_DATA(dx, dy, dw, dh, sx, sy, sw, sh);
+	data.dst_texture = under.handle;
+	run_copy_shader(&copy_straight_alpha_shader, dst, src, &data);
+	gfx_delete_texture(&under);
 	restore_blend_mode();
 }
 
