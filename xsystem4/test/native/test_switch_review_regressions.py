@@ -573,6 +573,15 @@ int main(void)
 }
 """)
 
+    def test_system4_dispatches_virtual_touch_before_game_input(self):
+        gameplay = extract_function("src/input.c", "void handle_events")
+        window_only = extract_function("src/input.c", "void handle_window_events")
+        self.assertRegex(gameplay, r"while \(SDL_PollEvent\(&e\)\) \{\s*"
+                         r"#ifdef __SWITCH__\s*"
+                         r"if \(switch_controls_gl_touch_event\(&e, sdl.window\)\)\s*"
+                         r"continue;\s*#endif\s*switch")
+        self.assertNotIn("switch_controls_gl_touch_event", window_only)
+
     def test_save_replace_and_rollback(self):
         helper = extract_function("src/savedata.c", "commit_switch_save")
         self.run_c(r"""

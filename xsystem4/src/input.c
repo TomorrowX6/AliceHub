@@ -3276,10 +3276,6 @@ void handle_window_events(void)
 	bool returned_foreground = false;
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
-#ifdef __SWITCH__
-		if (switch_controls_gl_touch_event(&e, sdl.window))
-			continue;
-#endif
 		switch (e.type) {
 		case SDL_QUIT:
 			handle_quit_event();
@@ -3335,6 +3331,10 @@ void handle_events(void)
 	bool returned_foreground = false;
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
+#ifdef __SWITCH__
+		if (switch_controls_gl_touch_event(&e, sdl.window))
+			continue;
+#endif
 		switch (e.type) {
 		case SDL_QUIT:
 			handle_quit_event();
