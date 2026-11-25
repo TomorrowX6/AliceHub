@@ -82,6 +82,64 @@ int main(void)
 }
 """)
 
+    def test_picker_presents_cached_frame_without_input(self):
+        launcher = "../cmake/switch/launcher.c"
+        loop = "\n".join(extract_function(launcher, name)
+                         for name in ("picker_begin", "compare_names", "choose_game"))
+        self.run_c(r"""
+#include <assert.h>
+#include <dirent.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int PadState;
+typedef struct { int fb; u16 *pixels; u32 stride; } Picker;
+#define GAMES "games"
+#define ALICEHUB_ENGINE "xsystem4"
+enum { PICKER_HEIGHT = 1, PICKER_ROWS = 18, PICKER_LINE = 31 };
+enum { HidNpadStyleSet_NpadStandard, HidNpadButton_A = 1, HidNpadButton_B = 2,
+       HidNpadButton_Plus = 4, HidNpadButton_Up = 8, HidNpadButton_Down = 16 };
+static u16 pixel;
+static int ticks, draws, submitted;
+static bool appletMainLoop(void) { return ticks < 4; }
+static void padConfigureInput(int count, int style) { (void)count; (void)style; }
+static void padInitializeDefault(PadState *pad) { *pad = 0; }
+static void padUpdate(PadState *pad) { *pad = ++ticks; }
+static u64 padGetButtonsDown(PadState *pad) { return *pad == 4 ? HidNpadButton_B : 0; }
+static void svcSleepThread(int ns) { assert(ns == 16000000); }
+static u16 *framebufferBegin(int *fb, u32 *stride)
+{
+    (void)fb;
+    *stride = sizeof(pixel);
+    return &pixel;
+}
+static void picker_text(Picker *picker, int x, int y, const char *text)
+{
+    (void)x; (void)y; (void)text;
+    *picker->pixels = ++draws;
+}
+static void framebufferEnd(int *fb)
+{
+    (void)fb;
+    assert(pixel == 4);
+    ++submitted;
+}
+""" + loop + r"""
+int main(void)
+{
+    Picker picker = {0};
+    char game[512];
+    assert(!choose_game(&picker, game, sizeof(game)));
+    assert(draws == 4 && submitted == 3);
+}
+""")
+
     def test_face_buttons_keep_sideways_mapping(self):
         helper = extract_function("../cmake/switch/controller.h",
                                   "alicehub_switch_face_button")

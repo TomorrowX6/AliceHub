@@ -109,12 +109,13 @@ static void picker_text(Picker *picker, int x, int baseline, const char *text)
     }
 }
 
-static void picker_begin(Picker *picker)
+static void picker_begin(Picker *picker, bool clear)
 {
     u32 stride;
     picker->pixels = framebufferBegin(&picker->fb, &stride);
     picker->stride = stride / sizeof(*picker->pixels);
-    memset(picker->pixels, 0, stride * PICKER_HEIGHT);
+    if (clear)
+        memset(picker->pixels, 0, stride * PICKER_HEIGHT);
 }
 
 static void picker_close(Picker *picker)
@@ -177,8 +178,9 @@ static int choose_game(Picker *picker, char *game, size_t size)
             selected = keys & HidNpadButton_Up ? (selected + count - 1) % count : (selected + 1) % count;
             redraw = 1;
         }
+        // The linear framebuffer retains its pixels between presentations.
+        picker_begin(picker, redraw);
         if (redraw) {
-            picker_begin(picker);
             picker_text(picker, 32, 40, "AliceHub / " ALICEHUB_ENGINE);
             picker_text(picker, 32, 74, "Up/Down: Select   A: Play   B/+: Exit");
             if (!count) {
@@ -192,9 +194,9 @@ static int choose_game(Picker *picker, char *game, size_t size)
                     picker_text(picker, 32, y, ">");
                 picker_text(picker, 56, y, names[i]);
             }
-            framebufferEnd(&picker->fb);
             redraw = 0;
         }
+        framebufferEnd(&picker->fb);
         svcSleepThread(16000000);
     }
     for (size_t i = 0; i < count; ++i)
@@ -228,16 +230,20 @@ int main(void)
     if ((size_t)snprintf(save, sizeof(save), SAVES "/%s", name) >= sizeof(save) ||
         (mkdir(SAVES, 0777) && errno != EEXIST) ||
         (mkdir(save, 0777) && errno != EEXIST) || stat(save, &st) || !S_ISDIR(st.st_mode)) {
-        picker_begin(&picker);
-        picker_text(&picker, 32, 40, "Cannot create a writable save folder under");
-        picker_text(&picker, 32, 74, SAVES);
-        framebufferEnd(&picker.fb);
         PadState pad;
         padInitializeDefault(&pad);
+        bool redraw = true;
         while (appletMainLoop()) {
             padUpdate(&pad);
             if (padGetButtonsDown(&pad) & (HidNpadButton_B | HidNpadButton_Plus))
                 break;
+            picker_begin(&picker, redraw);
+            if (redraw) {
+                picker_text(&picker, 32, 40, "Cannot create a writable save folder under");
+                picker_text(&picker, 32, 74, SAVES);
+                redraw = false;
+            }
+            framebufferEnd(&picker.fb);
             svcSleepThread(16000000);
         }
         picker_close(&picker);
