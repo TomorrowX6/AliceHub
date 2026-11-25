@@ -34,7 +34,9 @@
 #include "modifier.h"
 #include "modifier_api.h"
 #include "parts.h"
+#include "sact.h"
 #include "savedata.h"
+#include "sprite.h"
 #include "xsystem4.h"
 
 static int s_pulse_key0_frames = 0;
@@ -2672,6 +2674,28 @@ static inline bool vm_callstack_has_fno(int target_fno)
 			return true;
 	}
 	return false;
+}
+
+static int vm_find_hud_setter(char *name)
+{
+	int fno = ain_get_function(ain, name);
+	if (fno < 0)
+		return -1;
+	const struct ain_function *f = &ain->functions[fno];
+	return f->return_type.data == AIN_VOID && f->nr_args == 2
+		&& f->vars[0].type.data == AIN_INT && f->vars[1].type.data == AIN_INT ? fno : -1;
+}
+
+static void vm_call_hud_setter(int fno, int slot, int first, int second)
+{
+	if (fno < 0 || vm_callstack_has_fno(fno))
+		return;
+	bool saved_dg = dg_callbegin_pending;
+	dg_callbegin_pending = false;
+	stack_push(first);
+	stack_push(second);
+	vm_call(fno, slot);
+	dg_callbegin_pending = saved_dg;
 }
 
 static inline bool vm_callstack_any_flag(uint8_t flag_mask)
@@ -5960,9 +5984,9 @@ static int s_sr_glob_gold = -1;
 static int s_sr_glob_troop_lim = -1;
 static int s_sr_glob_ap = -1;
 static int s_sr_glob_ap_max = -1;
-static int s_sr_glob_sansen = -1;
-static int s_sr_glob_teki = -1;
 static int s_sr_glob_battle = -1;
+static int s_sr_glob_system_bar = -1, s_sr_glob_battle_place = -1;
+static int s_sr_fn_set_number = -1, s_sr_fn_set_battle_hp = -1, s_sr_fn_get_busho_no = -1;
 static int s_sr_st_chara = -1;
 static int s_sr_st_seiryoku = -1;
 
@@ -5996,9 +6020,17 @@ static void vm_inspect_sr_ain(void)
 	s_sr_glob_troop_lim = vm_find_global_idx(SR_G_TROOP_LIMIT, NULL);
 	s_sr_glob_ap = vm_find_global_idx(SR_G_AP, NULL);
 	s_sr_glob_ap_max = vm_find_global_idx(SR_G_AP_MAX, NULL);
-	s_sr_glob_sansen = vm_find_global_idx("g_sSansen", NULL);
-	s_sr_glob_teki = vm_find_global_idx("g_sTeki", NULL);
 	s_sr_glob_battle = vm_find_global_idx("g_sBattle", NULL);
+	s_sr_glob_system_bar = vm_find_global_idx("g_sSystemBar", NULL);
+	s_sr_glob_battle_place = vm_find_global_idx("g_sPlace", NULL);
+	s_sr_fn_set_number = vm_find_hud_setter("tagNumber@setValue");
+	s_sr_fn_set_battle_hp = vm_find_hud_setter("tagBattleHp@set");
+	s_sr_fn_get_busho_no = ain_get_function(ain, "tagBattleBusho@getBushoNo");
+	if (s_sr_fn_get_busho_no >= 0) {
+		const struct ain_function *f = &ain->functions[s_sr_fn_get_busho_no];
+		if (f->nr_args != 0 || f->return_type.data != AIN_INT)
+			s_sr_fn_get_busho_no = -1;
+	}
 	s_sr_st_chara = ain_get_struct(ain, "s\x83L\x83\x83\x83\x89");
 	s_sr_st_seiryoku = ain_get_struct(ain, "s\x90\xa8\x97\xcd");
 	if (s_sr_glob_gs >= 0 && s_sr_glob_gold >= 0 && s_sr_glob_ap >= 0 && s_sr_glob_ap_max >= 0
@@ -6032,6 +6064,63 @@ static struct page *sr_get_chara_page(int faction, int char_idx)
 	return ch;
 }
 
+static void sr_refresh_number(struct page *bar, const char *field, int global)
+{
+	if (global < 0)
+		return;
+	union vm_value *widget = vm_get_struct_member(bar, field, NULL);
+	struct page *number = widget ? vm_safe_get_page(widget->i) : NULL;
+	if (!vm_get_field_int(number, "m_bActive", NULL, 0))
+		return;
+	int value = global_get(global).i;
+	if (value != vm_get_field_int(number, "m_nValue", NULL, -1))
+		vm_call_hud_setter(s_sr_fn_set_number, widget->i, value, 0);
+}
+
+static struct page *sr_battle_widgets(bool allies)
+{
+	struct page *place = vm_get_global_page_idx(s_sr_glob_battle_place);
+	struct page *widgets = vm_get_field_page(place, allies ? "m_asMikaBusho" : "m_asTekiBusho", NULL);
+	return widgets && widgets->type == ARRAY_PAGE && widgets->array.rank == 1 ? widgets : NULL;
+}
+
+static bool sr_is_active_busho(struct page *busho)
+{
+	return vm_get_field_int(busho, "m_bBattle", NULL, 0)
+		&& !vm_get_field_int(busho, "m_bDestroy", NULL, 0);
+}
+
+static int sr_get_busho_index(int slot, struct page *busho)
+{
+	struct page *id = vm_get_field_page(busho, "m_sBushoNo", NULL);
+	/* m_nCharaNo holds a serial number, not an index into gs. */
+	if (vm_get_field_int(id, "m_nCharaNo", NULL, 0) <= 0 || s_sr_fn_get_busho_no < 0
+			|| vm_callstack_has_fno(s_sr_fn_get_busho_no))
+		return -1;
+	return vm_dd_call_int_0(s_sr_fn_get_busho_no, slot, -1);
+}
+
+static void sr_refresh_battle_hp(bool allies)
+{
+	struct page *widgets = sr_battle_widgets(allies);
+	if (!widgets)
+		return;
+	for (int i = 0; i < widgets->nr_vars; i++) {
+		int slot = widgets->values[i].i;
+		struct page *busho = vm_safe_get_page(slot);
+		if (!sr_is_active_busho(busho) || !vm_get_field_int(busho, "m_bShow", NULL, 0))
+			continue;
+		union vm_value *hp = vm_get_struct_member(busho, "m_sHp", NULL);
+		if (!hp || !vm_get_field_int(vm_safe_get_page(hp->i), "m_bShow", NULL, 0))
+			continue;
+		struct page *id = vm_get_field_page(busho, "m_sBushoNo", NULL);
+		int faction = vm_get_field_int(id, "m_nSeiryokuNo", NULL, -1);
+		int character = sr_get_busho_index(slot, busho);
+		if (sr_get_chara_page(faction, character))
+			vm_call_hud_setter(s_sr_fn_set_battle_hp, hp->i, faction, character);
+	}
+}
+
 static int sr_detect_player_faction(void)
 {
 	struct page *bt = s_sr_glob_battle >= 0 ? vm_get_global_page_idx(s_sr_glob_battle) : NULL;
@@ -6045,16 +6134,13 @@ static int sr_detect_player_faction(void)
 	return 1;
 }
 
-static bool sr_has_active_roster_unit(int glob_idx)
+static bool sr_has_active_roster_unit(bool allies)
 {
-	struct page *list = glob_idx >= 0 ? vm_get_global_page_idx(glob_idx) : NULL;
-	struct page *arr = list ? vm_get_field_page(list, "m_asBusho", NULL) : NULL;
-	if (!arr || arr->type != ARRAY_PAGE)
+	struct page *arr = sr_battle_widgets(allies);
+	if (!arr)
 		return false;
 	for (int i = 0; i < arr->nr_vars; i++) {
-		struct page *bb = vm_safe_get_page(arr->values[i].i);
-		if (bb && vm_get_field_int(bb, "m_bBattle", NULL, 0)
-				&& !vm_get_field_int(bb, "m_bDestroy", NULL, 0))
+		if (sr_is_active_busho(vm_safe_get_page(arr->values[i].i)))
 			return true;
 	}
 	return false;
@@ -6065,27 +6151,39 @@ static bool sr_is_in_battle(void)
 	struct page *bt = s_sr_glob_battle >= 0 ? vm_get_global_page_idx(s_sr_glob_battle) : NULL;
 	if (!bt || vm_get_field_int(bt, "m_nEnable", NULL, 0) <= 0)
 		return false;
-	return sr_has_active_roster_unit(s_sr_glob_teki) || sr_has_active_roster_unit(s_sr_glob_sansen);
+	return sr_has_active_roster_unit(false) || sr_has_active_roster_unit(true);
 }
 
-static void sr_iterate_battle_roster(int glob_idx, bool heal_allies, bool drain_enemies,
+static void sr_refresh_hud(bool refresh_battle_hp)
+{
+	if (!s_sr_compatible)
+		return;
+	struct page *bar = vm_get_global_page_idx(s_sr_glob_system_bar);
+	sr_refresh_number(bar, "m_sGold", s_sr_glob_gold);
+	sr_refresh_number(bar, "m_sManzoku", s_sr_glob_sat);
+	if (refresh_battle_hp && sr_is_in_battle()) {
+		sr_refresh_battle_hp(true);
+		sr_refresh_battle_hp(false);
+	}
+}
+
+static void sr_iterate_battle_roster(bool allies, bool heal_allies, bool drain_enemies,
 		int *out_cnt, int *out_total_troops)
 {
-	struct page *list = glob_idx >= 0 ? vm_get_global_page_idx(glob_idx) : NULL;
-	struct page *arr = list ? vm_get_field_page(list, "m_asBusho", NULL) : NULL;
-	if (!arr || arr->type != ARRAY_PAGE)
+	struct page *arr = sr_battle_widgets(allies);
+	if (!arr)
 		return;
 	int cnt = 0, total = 0;
 	for (int i = 0; i < arr->nr_vars; i++) {
-		struct page *bb = vm_safe_get_page(arr->values[i].i);
-		if (!bb || !vm_get_field_int(bb, "m_bBattle", NULL, 0)
-				|| vm_get_field_int(bb, "m_bDestroy", NULL, 0))
+		int slot = arr->values[i].i;
+		struct page *bb = vm_safe_get_page(slot);
+		if (!sr_is_active_busho(bb))
 			continue;
 		struct page *bno = vm_get_field_page(bb, "m_sBushoNo", NULL);
 		if (!bno)
 			continue;
 		int f = vm_get_field_int(bno, "m_nSeiryokuNo", NULL, -1);
-		int c = vm_get_field_int(bno, "m_nCharaNo", NULL, -1);
+		int c = sr_get_busho_index(slot, bb);
 		struct page *ch = sr_get_chara_page(f, c);
 		if (!ch)
 			continue;
@@ -6149,9 +6247,9 @@ static void vm_enforce_sr_locks(int sr_mask)
 	}
 	if (sr_is_in_battle()) {
 		if (sr_mask & LOCK_SR_ALLY_FULL_HP)
-			sr_iterate_battle_roster(s_sr_glob_sansen, true, false, NULL, NULL);
+			sr_iterate_battle_roster(true, true, false, NULL, NULL);
 		if (sr_mask & LOCK_SR_ONE_HIT_KILL)
-			sr_iterate_battle_roster(s_sr_glob_teki, false, true, NULL, NULL);
+			sr_iterate_battle_roster(false, false, true, NULL, NULL);
 	}
 }
 
@@ -6254,7 +6352,7 @@ static void vm_execute_sr_action(const char *json_str)
 				ch->values[30].i = ch->values[29].i;
 		}
 		if (sr_is_in_battle())
-			sr_iterate_battle_roster(s_sr_glob_sansen, true, false, NULL, NULL);
+			sr_iterate_battle_roster(true, true, false, NULL, NULL);
 	}
 	if ((it = cJSON_GetObjectItem(act, "srBoostAllParty")) && cJSON_IsTrue(it) && row) {
 		for (int c = 1; c < row->nr_vars; c++) {
@@ -6271,7 +6369,7 @@ static void vm_execute_sr_action(const char *json_str)
 		}
 	}
 	if ((it = cJSON_GetObjectItem(act, "srBattle1HpEnemies")) && cJSON_IsTrue(it) && sr_is_in_battle()) {
-		sr_iterate_battle_roster(s_sr_glob_teki, false, true, NULL, NULL);
+		sr_iterate_battle_roster(false, false, true, NULL, NULL);
 	}
 
 	cJSON *ce = cJSON_GetObjectItem(act, "srCharEdit");
@@ -6316,7 +6414,7 @@ static void vm_sr_populate_live_state_json(cJSON *root)
 	cJSON_AddNumberToObject(root, "troopLimit", s_sr_glob_troop_lim >= 0 ? global_get(s_sr_glob_troop_lim).i : 0);
 	if (in_battle) {
 		int ec = 0, et = 0;
-		sr_iterate_battle_roster(s_sr_glob_teki, false, false, &ec, &et);
+		sr_iterate_battle_roster(false, false, false, &ec, &et);
 		cJSON_AddNumberToObject(root, "enemyCount", ec);
 		cJSON_AddNumberToObject(root, "enemyTotalTroops", et);
 	}
@@ -6715,6 +6813,7 @@ static int s_r02_cd_glob = -1, s_r02_gold_glob = -1, s_r02_karma_glob = -1;
 static int s_r02_item_world = -1, s_r02_item_tree = -1, s_r02_item_potion = -1;
 static int s_r02_item_candy = -1, s_r02_item_light = -1, s_r02_item_rope = -1;
 static int s_r02_battle_glob = -1, s_r02_cgdoc_glob = -1;
+static int s_r02_stat_sprites_glob = -1;
 static int s_r02_fn_enemy_dmg = -1, s_r02_fn_ally_dmg = -1, s_r02_fn_heal_all = -1;
 static int s_r02_fn_disp_stat = -1, s_r02_fn_reg_cg = -1, s_r02_fn_reg_rem = -1;
 
@@ -6742,7 +6841,8 @@ static void r02_on_ain_init(void)
 	s_r02_fn_enemy_dmg = ain_get_function(ain, "\x93\x47\x83\x5f\x83\x81\x81[\x83\x57\x8f\x88\x97\x9d");
 	s_r02_fn_ally_dmg  = ain_get_function(ain, "\x96\xa1\x95\xfb\x83\x5f\x83\x81\x81[\x83\x57\x8f\x88\x97\x9d");
 	s_r02_fn_heal_all  = ain_get_function(ain, "\x91\x53\x89\xf1\x95\x9c");
-	s_r02_fn_disp_stat = ain_get_function(ain, "\x94\x5c\x97\xcd\x92\x6c\x95\x5c\x8e\xa6");
+	s_r02_fn_disp_stat = vm_find_hud_setter("\x94\x5c\x97\xcd\x92\x6c\x95\x5c\x8e\xa6");
+	s_r02_stat_sprites_glob = ain_get_global(ain, "sp\x82\x6d");
 	s_r02_fn_reg_cg    = ain_get_function(ain, "\x82\x62\x82\x66\x83\x82\x81[\x83\x68\x93\x6f\x98\x5e");
 	s_r02_fn_reg_rem   = ain_get_function(ain, "\x89\xf1\x91\x7a\x93\x6f\x98\x5e");
 	if (s_r02_chara_type < 0 || s_r02_enemy_type < 0 || s_r02_cd_glob < 0 || s_r02_gold_glob < 0)
@@ -7911,6 +8011,17 @@ static bool r02_is_in_game(struct page *cd)
 	return c1 && c1->values[4].i && hp && hp->nr_vars >= 3 && hp->values[2].i > 0;
 }
 
+static void r02_refresh_hud(void)
+{
+	struct page *sprites = vm_get_global_page_idx(s_r02_stat_sprites_glob);
+	if (!sprites || sprites->type != ARRAY_PAGE || sprites->array.rank != 1 || sprites->nr_vars < 2)
+		return;
+	/* The first HP number exists and is visible only when the status panel is drawn. */
+	struct sact_sprite *hp = sact_try_get_sprite(sprites->values[1].i);
+	if (hp && sprite_get_show(hp))
+		vm_call_hud_setter(s_r02_fn_disp_stat, -1, 1, 0);
+}
+
 static void vm_enforce_r02_locks(int r02_mask)
 {
 	if (!s_r02_compatible || s_r02_applying || !vm_globals_ready())
@@ -8018,6 +8129,7 @@ static void vm_execute_r02_action(const char *json_str)
 
 	struct page *cd = r02_get_cd_array();
 	if (r02_is_in_game(cd)) {
+		bool refresh_hud = false;
 		if ((it = cJSON_GetObjectItem(act, "r02AddGold")) && cJSON_IsNumber(it) && s_r02_gold_glob >= 0) {
 			int32_t cur = heap[0].page->values[s_r02_gold_glob].i;
 			heap[0].page->values[s_r02_gold_glob].i = vm_dd_clamp((double)cur + it->valuedouble, 0, 99999999);
@@ -8035,6 +8147,7 @@ static void vm_execute_r02_action(const char *json_str)
 			if (s_r02_item_rope >= 0) heap[0].page->values[s_r02_item_rope].i = 9;
 		}
 		if ((it = cJSON_GetObjectItem(act, "r02HealAll")) && cJSON_IsTrue(it)) {
+			refresh_hud = true;
 			for (int i = 1; i <= 6 && i < cd->nr_vars; i++) {
 				struct page *c = r03_checked_page(cd->values[i].i, STRUCT_PAGE, s_r02_chara_type, 15);
 				if (!c || !c->values[4].i) continue;
@@ -8072,6 +8185,11 @@ static void vm_execute_r02_action(const char *json_str)
 					if ((f = cJSON_GetObjectItem(ce, "sp")) && cJSON_IsNumber(f))
 						st->values[1].i = vm_dd_clamp(f->valueint, 0, 99999);
 				}
+				refresh_hud |= cJSON_IsNumber(cJSON_GetObjectItem(ce, "hp"))
+					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "hpMax"))
+					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "sp"))
+					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "spMax"))
+					|| cJSON_IsTrue(cJSON_GetObjectItem(ce, "fullHeal"));
 				if (ab && ab->nr_vars >= 7) {
 					if ((f = cJSON_GetObjectItem(ce, "hit")) && cJSON_IsNumber(f))
 						ab->values[1].i = vm_dd_clamp(f->valueint, 0, 9999);
@@ -8093,6 +8211,8 @@ static void vm_execute_r02_action(const char *json_str)
 				if (target >= 0) break;
 			}
 		}
+		if (refresh_hud)
+			r02_refresh_hud();
 	}
 	s_r02_applying = false;
 	cJSON_Delete(act);
@@ -8518,6 +8638,8 @@ void modifier_on_frame(void)
 		} else if (game_rance9 && r09_lock_mask != 0) {
 			vm_enforce_r09_locks(r09_lock_mask);
 		}
+		if (game_sengokurance && (action_applied || (sr_lock_mask & (LOCK_SR_INF_GOLD | LOCK_SR_MAX_SAT))))
+			sr_refresh_hud(action_applied);
 
 		pthread_mutex_lock(&g_mod_mutex);
 		int lock_mask = g_live_lock_mask;
