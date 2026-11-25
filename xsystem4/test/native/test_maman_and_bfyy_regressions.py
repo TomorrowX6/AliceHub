@@ -5,6 +5,7 @@
 3. AIN v8 builtin HLL enablement (String/Int/Float), PartsEngine 5-arg bool IsSkip dispatch,
    Parts message_type_v8 + -1 empty-queue sentinel, and parts_v2 scrollbar no <= 0 guard.
 4. Heartful Maman backlog text and voice HLL return signatures.
+5. Heartful Maman mixed-encoding speaker labels.
 """
 import unittest
 
@@ -35,6 +36,85 @@ def _extract_def(rel_path: str, name: str) -> str:
 
 
 class MamanAndBfyyRegressionsTest(unittest.TestCase):
+    def test_maman_cn_speaker_literals(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/buffer.h"
+#include "system4/instructions.h"
+#include "system4/little_endian.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { return false; }
+void escalayer_reboot_replace_cn_ui_text(struct ain *ain) {}
+
+static size_t add_literal(struct ain *ain, struct buffer *code, const char *name, int literal)
+{
+    int fn = ain_add_function(ain, name);
+    buffer_write_int16(code, FUNC);
+    buffer_write_int32(code, fn);
+    ain->functions[fn].address = code->index;
+    size_t operand = code->index + 2;
+    buffer_write_int16(code, S_PUSH);
+    buffer_write_int32(code, literal);
+    buffer_write_int16(code, ENDFUNC);
+    buffer_write_int32(code, fn);
+    return operand;
+}
+
+static void verify(bool maman, bool gbk)
+{
+    struct ain *ain = ain_new(8, 0);
+    if (maman) {
+        ain_add_struct(ain, "C_BOOT_WARNING");
+        ain_add_struct(ain, "SaveData::C_PARAMETER");
+    }
+    config.game_name = gbk ? "\xb6\xe0\xc4\xc8" : NULL;
+    const char *format = "\x81\x79%s\x81\x7a";
+    const char *placeholder = "\x81\x96\x81\x96\x81\x96";
+    int format_no = ain_add_string(ain, format);
+    int placeholder_no = ain_add_string(ain, placeholder);
+    struct buffer code;
+    buffer_init(&code, NULL, 0);
+    size_t name_op = add_literal(ain, &code, "MessageWindow::C_NAME_PLATE@Open", format_no);
+    size_t scene_op = add_literal(ain, &code, "\x82\x64\x82\x75\x81\x5e" "scene", placeholder_no);
+    size_t unrelated_op = add_literal(ain, &code, "OtherFunction", placeholder_no);
+    ain->code = code.buf;
+    ain->code_size = code.index;
+    apply_game_specific_hacks(ain);
+    assert(sys4_text_is_gbk == gbk);
+    assert(!strcmp(ain->strings[LittleEndian_getDW(ain->code, name_op)]->text,
+                   maman && gbk ? "\xa1\xbe%s\xa1\xbf" : format));
+    assert(!strcmp(ain->strings[LittleEndian_getDW(ain->code, scene_op)]->text,
+                   maman && gbk ? "\xa3\xaa\xa3\xaa\xa3\xaa" : placeholder));
+    assert(LittleEndian_getDW(ain->code, unrelated_op) == placeholder_no);
+    assert(!strcmp(ain->strings[placeholder_no]->text, placeholder));
+    ain_free(ain);
+}
+
+int main(void)
+{
+    verify(true, true);
+    verify(true, false);
+    verify(false, true);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/hacks.c", *LIBSYS4_CORE],
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_maman_backlog_hll_string_returns(self):
         harness = """
 #include <assert.h>

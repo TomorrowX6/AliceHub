@@ -444,7 +444,7 @@ int main(void)
     // The short fixture isn't the audited catalog initializer. Use its own
     // fingerprint to exercise the shared verified-block conversion.
     assert(!strcmp(pushed_literal(ain, init, 0), skills[0]));
-    normalize_evenicle_rance_literals(ain, skill_init, NULL, 0xb090da21u, NULL);
+    normalize_sjis_display_literals(ain, skill_init, NULL, 0xb090da21u, NULL);
     assert_gbk(pushed_literal(ain, init, 0), "ビリビリ");
     assert_gbk(pushed_literal(ain, init, 1), "雷属性の魔法攻撃");
     assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");

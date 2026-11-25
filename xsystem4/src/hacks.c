@@ -373,7 +373,7 @@ static bool ain_has_evenicle2_rance_gbk_prologue(struct ain *ain)
 	return false;
 }
 
-static bool next_evenicle_rance_string_push(struct ain *ain, uint32_t end,
+static bool next_string_push(struct ain *ain, uint32_t end,
 		uint32_t *addr, uint32_t *operand)
 {
 	while (*addr < end && end - *addr >= 2) {
@@ -393,7 +393,7 @@ static bool next_evenicle_rance_string_push(struct ain *ain, uint32_t end,
 	return false;
 }
 
-static void normalize_evenicle_rance_literals(struct ain *ain, const char *function,
+static void normalize_sjis_display_literals(struct ain *ain, const char *function,
 		const char *literal, uint32_t expected_hash, const uint8_t *display_sites)
 {
 	int fno = ain_get_function(ain, (char *)function);
@@ -404,7 +404,7 @@ static void normalize_evenicle_rance_literals(struct ain *ain, const char *funct
 	uint32_t operand;
 	if (expected_hash) {
 		uint32_t hash = 2166136261u;
-		for (uint32_t addr = start; next_evenicle_rance_string_push(ain, end, &addr, &operand); ) {
+		for (uint32_t addr = start; next_string_push(ain, end, &addr, &operand); ) {
 			int no = LittleEndian_getDW(ain->code, operand);
 			if (no < 0 || no >= ain->nr_strings)
 				return;
@@ -418,7 +418,7 @@ static void normalize_evenicle_rance_literals(struct ain *ain, const char *funct
 	}
 
 	unsigned site = 0;
-	for (uint32_t addr = start; next_evenicle_rance_string_push(ain, end, &addr, &operand); ) {
+	for (uint32_t addr = start; next_string_push(ain, end, &addr, &operand); ) {
 		site++;
 		if (display_sites) {
 			if (!*display_sites)
@@ -556,16 +556,29 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 
 	for (size_t i = 0; i < sizeof(functions) / sizeof(*functions); i++) {
 		char *function = utf2cjk(functions[i].function, 0, false);
-		normalize_evenicle_rance_literals(ain, function, NULL,
+		normalize_sjis_display_literals(ain, function, NULL,
 				functions[i].literal_hash, functions[i].display_sites);
 		free(function);
 	}
 
-	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x83\x89\x83\x93\x83\x58", 0, NULL);
-	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x82\xcd", 0, NULL);
-	normalize_evenicle_rance_literals(ain, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b",
+	normalize_sjis_display_literals(ain, "T_GetItemDisp@RunSkill", "\x83\x89\x83\x93\x83\x58", 0, NULL);
+	normalize_sjis_display_literals(ain, "T_GetItemDisp@RunSkill", "\x82\xcd", 0, NULL);
+	normalize_sjis_display_literals(ain, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b",
 			"\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49", 0, NULL);
-	normalize_evenicle_rance_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0, NULL);
+	normalize_sjis_display_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0, NULL);
+}
+
+static void apply_maman_cn_speaker_literals(struct ain *ain)
+{
+	// 【%s】 in the backlog and ＊＊＊ in the scene name plates.
+	normalize_sjis_display_literals(ain, "MessageWindow::C_NAME_PLATE@Open", "\x81\x79%s\x81\x7a", 0, NULL);
+	const char scene_prefix[] = "\x82\x64\x82\x75\x81\x5e"; // ＥＶ／
+	for (int i = 0; i < ain->nr_functions; i++) {
+		const char *name = ain->functions[i].name;
+		if (!strncmp(name, scene_prefix, sizeof(scene_prefix) - 1)) {
+			normalize_sjis_display_literals(ain, name, "\x81\x96\x81\x96\x81\x96", 0, NULL);
+		}
+	}
 }
 
 static bool ain_messages_look_gbk(struct ain *ain)
@@ -1070,6 +1083,8 @@ void apply_game_specific_hacks(struct ain *ain)
 	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
 	if (game_evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8)
 		apply_evenicle_rance_cn_display_literals(ain);
+	if (game_maman && sys4_text_is_gbk && !sys4_source_is_utf8)
+		apply_maman_cn_speaker_literals(ain);
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

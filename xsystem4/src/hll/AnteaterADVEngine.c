@@ -558,6 +558,11 @@ static void AnteaterADVEngine_ADVLogList_AddText_val_with_window(struct string *
 	AnteaterADVEngine_ADVLogList_AddText_val(text);
 }
 
+static void AnteaterADVEngine_ADVLogList_AddText_val_with_window_name(struct string *text, possibly_unused struct string *window_name)
+{
+	AnteaterADVEngine_ADVLogList_AddText_val(text);
+}
+
 static void AnteaterADVEngine_ADVLogList_AddText_with_window(struct string **text, possibly_unused int window_no)
 {
 	ADVLogList_AddText(text);
@@ -628,7 +633,10 @@ static void AnteaterADVEngine_PreLink(void)
 		static_library_replace(&lib_AnteaterADVEngine, "ADVLogList_AddText",
 			AnteaterADVEngine_ADVLogList_AddText_val);
 	} else if (fun && fun->nr_arguments == 2) {
-		if (fun->arguments[0].type.data == AIN_STRING) {
+		if (fun->arguments[0].type.data == AIN_STRING && fun->arguments[1].type.data == AIN_STRING) {
+			static_library_replace(&lib_AnteaterADVEngine, "ADVLogList_AddText",
+				AnteaterADVEngine_ADVLogList_AddText_val_with_window_name);
+		} else if (fun->arguments[0].type.data == AIN_STRING) {
 			static_library_replace(&lib_AnteaterADVEngine, "ADVLogList_AddText",
 				AnteaterADVEngine_ADVLogList_AddText_val_with_window);
 		} else {
