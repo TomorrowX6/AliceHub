@@ -63,7 +63,7 @@ static void storeSaveName(GameResource *gr, int no, char *src) {
 	if (path) free(path);
 }
 
-#ifdef ALICEHUB_IOS
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 void freeGameResource(GameResource *gr) {
 	for (int type = 0; type < DRIFILETYPEMAX; type++)
 		for (int i = 0; i < gr->cnt[type]; i++)
@@ -333,7 +333,11 @@ static bool initGameResourceFromFile(GameResource *gr, FILE *fp, const char *gr_
 	return true;
 
  errexit:
+#ifndef __SWITCH__
 	SYSERROR("Illigal resource at line(%d) file<%s>", linecnt, gr_fname);
+#else
+	WARNING("Invalid resource at line(%d) file<%s>", linecnt, gr_fname);
+#endif
 	return false;
 }
 

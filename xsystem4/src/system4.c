@@ -45,7 +45,12 @@
 #endif
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 #include <pthread.h>
+#endif
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
 #include <setjmp.h>
+#endif
+#ifdef __SWITCH__
+#include "launcher.h"
 #endif
 
 #include "system4.h"
@@ -148,8 +153,8 @@ struct config config = {
 	.font_paths = { NULL, NULL },
 };
 
-#ifdef ALICEHUB_IOS
-static void ios_reset_config(void)
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
+static void reset_config(void)
 {
 	free(config.game_name);
 	free(config.boot_name);
@@ -1397,10 +1402,24 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
-#ifdef ALICEHUB_IOS
+#ifdef __SWITCH__
+static jmp_buf switch_startup;
+void ini_abort_parse(void);
+
+static void switch_startup_error(const char *message)
+{
+	const char *reason = !strncmp(message, "*ERROR*(", 8) ? strstr(message, "): ") : NULL;
+	alicehub_switch_set_launch_error(reason ? reason + 3 : message);
+}
+
+static void switch_startup_exit(int code)
+{
+	longjmp(switch_startup, code);
+}
+#endif
+
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 static int run_xsystem4(int argc, char *argv[])
-#elif defined(__SWITCH__)
-int alicehub_switch_engine_main(int argc, char *argv[])
 #else
 int main(int argc, char *argv[])
 #endif
@@ -1413,7 +1432,12 @@ int main(int argc, char *argv[])
 	}
 	sdl_main_entered = true;
 #endif
+#ifdef __SWITCH__
+	sys_error_handler = switch_startup_error;
+	sys_exit_handler = switch_startup_exit;
+#else
 	sys_error_handler = error_handler;
+#endif
 	sys_warning_handler = warning_handler;
 #ifdef HAVE_POSIX_CRASH_HANDLER
 	install_crash_signal_handlers();
@@ -1569,6 +1593,12 @@ int main(int argc, char *argv[])
 		}
 	}
 	ainfile = resolve_configured_ain_path(native_ain_path);
+#ifdef __SWITCH__
+	if (!ainfile || access(ainfile, R_OK) != 0) {
+		free(ainfile);
+		ERROR("Cannot read the AIN named by the game configuration");
+	}
+#endif
 	if (ainfile && file_exists(ainfile)) {
 		free(config.ain_basename_utf8);
 		config.ain_basename_utf8 = xstrdup(path_basename(ainfile));
@@ -1623,6 +1653,10 @@ int main(int argc, char *argv[])
 	}
 	free(ainfile);
 
+#ifdef __SWITCH__
+	sys_error_handler = error_handler;
+	sys_exit_handler = NULL;
+#endif
 	if (audit) {
 		ain_audit(stdout, ain);
 		ain_free(ain);
@@ -1650,7 +1684,26 @@ int main(int argc, char *argv[])
 #endif
 }
 
-#ifdef ALICEHUB_IOS
+#ifdef __SWITCH__
+int alicehub_switch_engine_main(int argc, char *argv[])
+{
+	optind = 0;
+	if (!setjmp(switch_startup)) {
+		int result = run_xsystem4(argc, argv);
+		sys_error_handler = NULL;
+		sys_exit_handler = NULL;
+		return result;
+	}
+	sys_error_handler = NULL;
+	sys_exit_handler = NULL;
+	ini_abort_parse();
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
+	reset_config();
+	set_utf8_release(false);
+	return 1;
+}
+#elif defined(ALICEHUB_IOS)
 int xsystem4_main(int argc, char **argv)
 {
 	jmp_buf target;
@@ -1668,7 +1721,7 @@ int xsystem4_main(int argc, char **argv)
 		ain_free(ios_program);
 		ios_program = NULL;
 	}
-	ios_reset_config();
+	reset_config();
 	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++)
 		sigaction(crash_signals[i], &old_sigactions[i], NULL);
 	sys_exit_handler = NULL;

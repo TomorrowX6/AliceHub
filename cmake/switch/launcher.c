@@ -3,6 +3,7 @@
 #endif
 #include <SDL.h>
 #include <switch.h>
+#include <ctype.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <dirent.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "launcher.h"
 #ifdef ALICEHUB_PICKER_COMPRESSED_FONT_SIZE
 #include <zlib.h>
 #endif
@@ -34,6 +36,13 @@ typedef struct {
 } Picker;
 
 int alicehub_switch_engine_main(int argc, char **argv);
+
+static char launch_error[512];
+
+void alicehub_switch_set_launch_error(const char *message)
+{
+    snprintf(launch_error, sizeof(launch_error), "%.*s", (int)strcspn(message, "\r\n"), message);
+}
 
 static bool picker_load_fonts(Picker *picker)
 {
@@ -155,8 +164,72 @@ static int compare_names(const void *a, const void *b)
     return strcasecmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-static int choose_game(Picker *picker, char *game, size_t size)
+static const char *validate_game(const char *game)
 {
+    DIR *dir = opendir(game);
+    if (!dir)
+        return "Cannot open the game folder";
+    bool found = false;
+    for (struct dirent *ent = readdir(dir); ent; ent = readdir(dir)) {
+        const char *name = ent->d_name;
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+        if (strcasecmp(name, "System40.ini") && strcasecmp(name, "AliceStart.ini") &&
+            strcasecmp(name, "AliceStart2.ini") && strcasecmp(name, "AliceStart.CHS"))
+            continue;
+#elif defined(ALICEHUB_SWITCH_XSYSTEM35)
+        if (strcasecmp(name, "xsystem35.gr") && strcasecmp(name, "adisk.ald")) {
+            size_t len = strlen(name);
+            size_t suffix = len >= 10 && !strcasecmp(name + len - 8, "_chs.ald") ? 8 : 4;
+            if (len < suffix + 2 || strcasecmp(name + len - 4, ".ald") ||
+                toupper((unsigned char)name[len - suffix - 2]) != 'S' ||
+                toupper((unsigned char)name[len - suffix - 1]) < 'A' ||
+                toupper((unsigned char)name[len - suffix - 1]) > 'Z')
+                continue;
+        }
+#else
+        if (strcasecmp(name, "ADISK.DAT") && strcasecmp(name, "GDISK.DAT") && strcasecmp(name, "AGAME.DAT"))
+            continue;
+#endif
+        char path[768];
+        struct stat st;
+        if ((size_t)snprintf(path, sizeof(path), "%s/%s", game, name) >= sizeof(path) ||
+            stat(path, &st) || !S_ISREG(st.st_mode))
+            continue;
+        FILE *fp = fopen(path, "rb");
+        if (!fp)
+            continue;
+#if !defined(ALICEHUB_SWITCH_XSYSTEM4) && !defined(ALICEHUB_SWITCH_XSYSTEM35)
+        unsigned char header[4];
+        if (fread(header, 1, sizeof(header), fp) == sizeof(header)) {
+            int link = header[0] | header[1] << 8;
+            int data = header[2] | header[3] << 8;
+            found = link > 0 && data > link && (data - 1) * 256L < st.st_size;
+        }
+#else
+        found = fgetc(fp) != EOF;
+#endif
+        fclose(fp);
+        if (found)
+            break;
+    }
+    closedir(dir);
+    if (found)
+        return NULL;
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+    return "No readable System40.ini or AliceStart configuration";
+#elif defined(ALICEHUB_SWITCH_XSYSTEM35)
+    return "No readable scenario ALD or xsystem35.gr";
+#else
+    return "Missing or invalid System 3 scenario disk (ADISK.DAT, GDISK.DAT, or AGAME.DAT)";
+#endif
+}
+
+static int choose_game(Picker *picker, char *game, size_t size, const char *initial_error)
+{
+    char error_game[512];
+    const char *error = initial_error;
+    if (error)
+        snprintf(error_game, sizeof(error_game), "%s", strrchr(game, '/') + 1);
     DIR *dir = opendir(GAMES);
     char **names = NULL;
     size_t count = 0;
@@ -194,8 +267,13 @@ static int choose_game(Picker *picker, char *game, size_t size)
             break;
         if (count && (keys & HidNpadButton_A)) {
             snprintf(game, size, GAMES "/%s", names[selected]);
-            accepted = 1;
-            break;
+            error = validate_game(game);
+            if (!error) {
+                accepted = 1;
+                break;
+            }
+            snprintf(error_game, sizeof(error_game), "%s", names[selected]);
+            redraw = 1;
         }
         if (count && (keys & (HidNpadButton_Up | HidNpadButton_Down))) {
             selected = keys & HidNpadButton_Up ? (selected + count - 1) % count : (selected + 1) % count;
@@ -217,6 +295,10 @@ static int choose_game(Picker *picker, char *game, size_t size)
                     picker_text(picker, 32, y, ">");
                 picker_text(picker, 56, y, names[i]);
             }
+            if (error) {
+                picker_text(picker, 32, 674, error_game);
+                picker_text(picker, 32, 704, error);
+            }
             redraw = 0;
         }
         framebufferEnd(&picker->fb);
@@ -228,66 +310,26 @@ static int choose_game(Picker *picker, char *game, size_t size)
     return accepted;
 }
 
-int main(void)
+static bool picker_open(Picker *picker)
 {
-    char game[512], save[512];
-    Picker picker = {0};
-    if (R_FAILED(romfsInit()))
-        return 1;
     NWindow *window = nwindowGetDefault();
-    if (!picker_load_fonts(&picker) || !window ||
-        R_FAILED(nwindowSetDimensions(window, PICKER_WIDTH, PICKER_HEIGHT)) ||
-        R_FAILED(framebufferCreate(&picker.fb, window, PICKER_WIDTH, PICKER_HEIGHT, PIXEL_FORMAT_RGB_565, 2)) ||
-        R_FAILED(framebufferMakeLinear(&picker.fb))) {
-        picker_close(&picker);
-        romfsExit();
-        return 1;
-    }
-    if (!choose_game(&picker, game, sizeof(game))) {
-        picker_close(&picker);
-        romfsExit();
-        return 0;
-    }
+    return picker_load_fonts(picker) && window &&
+        R_SUCCEEDED(nwindowSetDimensions(window, PICKER_WIDTH, PICKER_HEIGHT)) &&
+        R_SUCCEEDED(framebufferCreate(&picker->fb, window, PICKER_WIDTH, PICKER_HEIGHT, PIXEL_FORMAT_RGB_565, 2)) &&
+        R_SUCCEEDED(framebufferMakeLinear(&picker->fb));
+}
+
+static bool prepare_save(const char *game, char *save, size_t size)
+{
     const char *name = strrchr(game, '/') + 1;
     struct stat st;
-    if ((size_t)snprintf(save, sizeof(save), SAVES "/%s", name) >= sizeof(save) ||
-        (mkdir(SAVES, 0777) && errno != EEXIST) ||
-        (mkdir(save, 0777) && errno != EEXIST) || stat(save, &st) || !S_ISDIR(st.st_mode)) {
-        PadState pad;
-        padInitializeDefault(&pad);
-        bool redraw = true;
-        while (appletMainLoop()) {
-            padUpdate(&pad);
-            if (padGetButtonsDown(&pad) & (HidNpadButton_B | HidNpadButton_Plus))
-                break;
-            picker_begin(&picker, redraw);
-            if (redraw) {
-                picker_text(&picker, 32, 40, "Cannot create a writable save folder under");
-                picker_text(&picker, 32, 74, SAVES);
-                redraw = false;
-            }
-            framebufferEnd(&picker.fb);
-            svcSleepThread(16000000);
-        }
-        picker_close(&picker);
-        romfsExit();
-        return 1;
-    }
+    return (size_t)snprintf(save, size, SAVES "/%s", name) < size &&
+        (!mkdir(SAVES, 0777) || errno == EEXIST) &&
+        (!mkdir(save, 0777) || errno == EEXIST) && !stat(save, &st) && S_ISDIR(st.st_mode);
+}
 
-    // The picker and EGL share nvdrv. Keep it open while switching framebuffers.
-    if (R_FAILED(nvInitialize())) {
-        picker_close(&picker);
-        romfsExit();
-        return 1;
-    }
-    if (atexit(nvExit)) {
-        nvExit();
-        picker_close(&picker);
-        romfsExit();
-        return 1;
-    }
-    picker_close(&picker);
-
+static int launch_game(char *game, char *save)
+{
     SDL_SetMainReady();
 #if defined(ALICEHUB_SWITCH_XSYSTEM4)
     setenv("XSYSTEM4_HOME", ROOT, 1);
@@ -299,9 +341,59 @@ int main(void)
     romfsExit(); // System 3 mounts its own ROMFS at entry.
     char *args[] = { ALICEHUB_ENGINE, "-gamedir", game, "-savedir", save, "-fullscreen", NULL };
 #endif
-    int result = alicehub_switch_engine_main(SDL_arraysize(args) - 1, args);
-#if defined(ALICEHUB_SWITCH_XSYSTEM4) || defined(ALICEHUB_SWITCH_XSYSTEM35)
-    romfsExit();
+    return alicehub_switch_engine_main(SDL_arraysize(args) - 1, args);
+}
+
+int main(void)
+{
+    char game[512], save[512];
+    if (R_FAILED(romfsInit()))
+        return 1;
+    bool retained_nv = false;
+    int result = 1;
+    for (;;) {
+        Picker picker = {0};
+        if (!picker_open(&picker)) {
+            picker_close(&picker);
+            break;
+        }
+        bool selected;
+        while ((selected = choose_game(&picker, game, sizeof(game), *launch_error ? launch_error : NULL)) &&
+               !prepare_save(game, save, sizeof(save)))
+            alicehub_switch_set_launch_error("Cannot create a writable save folder under " SAVES);
+        if (!selected) {
+            picker_close(&picker);
+            result = 0;
+            break;
+        }
+        // The picker and EGL share nvdrv. Keep it open while switching framebuffers.
+        if (!retained_nv) {
+            if (R_FAILED(nvInitialize())) {
+                picker_close(&picker);
+                break;
+            }
+            if (atexit(nvExit)) {
+                picker_close(&picker);
+                nvExit();
+                break;
+            }
+            retained_nv = true;
+        }
+        picker_close(&picker);
+        *launch_error = '\0';
+        result = launch_game(game, save);
+#if !defined(ALICEHUB_SWITCH_XSYSTEM4) && !defined(ALICEHUB_SWITCH_XSYSTEM35)
+        if (!result)
+            return 0;
+        if (R_FAILED(romfsInit()))
+            return result;
 #endif
+        if (!result)
+            break;
+        SDL_Quit();
+        if (!*launch_error)
+            snprintf(launch_error, sizeof(launch_error), "Engine startup failed (error %d)", result);
+    }
+    romfsExit();
     return result;
 }

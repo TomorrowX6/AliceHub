@@ -126,7 +126,24 @@ elseif(NINTENDO_SWITCH)
   file(CONFIGURE OUTPUT nact_input.cpp CONTENT "#include \"controller.h\"\n${switch_input}" @ONLY)
   list(REMOVE_ITEM vm_sources "${nact_input}")
   list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_input.cpp")
-  set_source_files_properties("${src}/sdlmain.cpp" PROPERTIES
+  set(sdlmain "${src}/sdlmain.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${sdlmain}")
+  file(READ "${sdlmain}" switch_main)
+  set(startup_begin "\tg_window = create_window(config, game_id);")
+  set(startup_end "\n\tg_nact.reset(NACT::create(config, game_id));\n")
+  set(fatal_dialog "\tSDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, \"system3\", buf, g_window);")
+  foreach(fragment startup_begin startup_end fatal_dialog)
+    string(FIND "${switch_main}" "${${fragment}}" offset)
+    if(offset EQUAL -1)
+      message(FATAL_ERROR "Could not apply System 3 Switch startup patch: ${fragment}")
+    endif()
+  endforeach()
+  string(REPLACE "${startup_begin}" "\tswitch_starting = true;\n\ttry {\n${startup_begin}" switch_main "${switch_main}")
+  string(REPLACE "${startup_end}" "${startup_end}\n\t} catch (const SwitchStartupError&) {\n\t\tswitch_starting = false;\n\t\tSDL_DestroyRenderer(g_renderer);\n\t\tSDL_DestroyWindow(g_window);\n\t\tSDL_Quit();\n\t\tg_renderer = nullptr;\n\t\tg_window = nullptr;\n\t\tromfsExit();\n\t\treturn 1;\n\t}\n\tswitch_starting = false;" switch_main "${switch_main}")
+  string(REPLACE "${fatal_dialog}" "\tif (switch_starting) {\n\t\talicehub_switch_set_launch_error(buf);\n\t\tthrow SwitchStartupError{};\n\t}\n${fatal_dialog}" switch_main "${switch_main}")
+  set(sdlmain_source "${CMAKE_CURRENT_BINARY_DIR}/sdlmain.cpp")
+  file(CONFIGURE OUTPUT "${sdlmain_source}" CONTENT "#include \"launcher.h\"\nnamespace { struct SwitchStartupError {}; bool switch_starting; }\n${switch_main}" @ONLY)
+  set_source_files_properties("${sdlmain_source}" PROPERTIES
     COMPILE_DEFINITIONS "SDL_MAIN_HANDLED;main=system3_switch_entry")
   include(../switch/Packaging.cmake)
   set(romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
@@ -137,9 +154,12 @@ else()
   add_executable(system3 "${src}/generic/nact_generic.cpp")
 endif()
 
+if(NOT DEFINED sdlmain_source)
+  set(sdlmain_source "${src}/sdlmain.cpp")
+endif()
 target_sources(system3 PRIVATE
   platform.cpp
-  "${src}/sdlmain.cpp"
+  "${sdlmain_source}"
   "${src}/config.cpp"
   "${src}/fileio.cpp"
   "${src}/encoding.cpp"
