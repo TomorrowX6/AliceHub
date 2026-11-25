@@ -20,9 +20,11 @@ static const ModsGame games[] = {
     {"rance03", MODS_UNCENSORED, {"Rance03.ain"}},
     {"rance5d", MODS_UNCENSORED, {"R5D_SA.ald"}},
     {"rance06", MODS_UNCENSORED, {"Rance6.ain", "Rance06.ain", "Rance6.chs", "Rance6GA.ald"}},
-    {"sengokurance", MODS_UNCENSORED, {"Rance7.ain", "SengokuRance.ain", "戦国ランス.ain",
-                                      "戦国ランスGA.ald", "愴崙儔儞僗.ain", "愴崙儔儞僗GA.ald",
-                                      "战国兰斯.ain", "战国兰斯GA.ald"}},
+    {"sengokurance", MODS_ARCHIVE, {"Rance7.ain", "SengokuRance.ain",
+                                    "DaiSengoku.ain", "DaiSengokuGA.ald",
+                                    "戦国ランス.ain", "戦国ランスGA.ald",
+                                    "愴崙儔儞僗.ain", "愴崙儔儞僗GA.ald",
+                                    "战国兰斯.ain", "战国兰斯GA.ald"}},
     {"rance08", MODS_UNCENSORED, {"Rance08.ain", "Rance8.ain", "RanceQuest.ain",
                                  "ランス・クエスト.ain", "儔儞僗丒僋僄僗僩.ain"}},
     {"rance09", MODS_UNCENSORED, {"Rance9.ain", "Rance09.ain"}},
@@ -60,6 +62,13 @@ const ModsGame *mods_game(const char *directory, HubEngine engine)
     }
     closedir(dir);
     return match;
+}
+
+bool mods_game_has_uncensored(const ModsGame *game)
+{
+    return game && (game->kind == MODS_UNCENSORED ||
+                    !strcmp(game->id, "rance10") ||
+                    !strcmp(game->id, "sengokurance"));
 }
 
 const char *mods_catalog_path(ModsKind kind)

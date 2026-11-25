@@ -456,7 +456,7 @@ bool mods_apply(const char *root, const HubGame *game, ModsKind kind,
     const ModsGame *descriptor = mods_game(source, game->engine);
     why = "The patch does not match this installed game.";
     if (!descriptor || (kind != descriptor->kind &&
-        (kind != MODS_UNCENSORED || strcmp(descriptor->id, "rance10"))) ||
+        (kind != MODS_UNCENSORED || !mods_game_has_uncensored(descriptor))) ||
         (release && (release->kind != kind || strcmp(release->id, descriptor->id))) ||
         (local_archive && kind == MODS_UNCENSORED) || (local_archive && release))
         goto done;

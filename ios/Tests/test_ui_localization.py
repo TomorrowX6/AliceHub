@@ -30,7 +30,7 @@ NON_UI = {
     ),
     "ModCatalog.swift": (
         r"\.contains\(|\.hasPrefix\(|\.hasSuffix\(|\.modReplacing\(|\.modMatch\(|"
-        r"replacingOccurrences\(|\b(?:evenicle2Aliases|prefix|word|suffix|patch|full|modGroupRibuluo|modGroupBfyy)\b\s*(?:=|in)\s*\[?|"
+        r"replacingOccurrences\(|\b(?:evenicle2Aliases|prefix|word|suffix|patch|full|modGroupRibuluo|modGroupBfyy|modGroupDaiSengoku)\b\s*(?:=|in)\s*\[?|"
         r"for \(words, label\) in|return \"v\" \+ version|static let supported"
     ),
     "ModOverlay.swift": r"\.contains\(|\.hasPrefix\(|\.replacingOccurrences\(|return \[|\.hasSuffix\(",

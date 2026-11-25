@@ -268,7 +268,8 @@ static ModsKind category(size_t row)
 static size_t categories(void)
 {
     if (!screen.descriptor) return 0;
-    return strcmp(screen.descriptor->id, "rance10") ? 1 : 2;
+    return (screen.descriptor->kind != MODS_UNCENSORED &&
+            mods_game_has_uncensored(screen.descriptor)) ? 2 : 1;
 }
 
 static HubItem category_item(const void *unused, size_t i)

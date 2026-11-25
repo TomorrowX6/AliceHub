@@ -12,7 +12,7 @@ typedef enum { MODS_ARCHIVE, MODS_TRANSLATION, MODS_UNCENSORED } ModsKind;
 typedef struct {
     const char *id;
     ModsKind kind;
-    const char *markers[10];
+    const char *markers[12];
 } ModsGame;
 
 typedef struct {
@@ -29,6 +29,7 @@ typedef struct {
 } ModsCatalog;
 
 const ModsGame *mods_game(const char *directory, HubEngine engine);
+bool mods_game_has_uncensored(const ModsGame *game);
 const char *mods_catalog_path(ModsKind kind);
 bool mods_catalog_parse(ModsCatalog *, const ModsGame *, const char *json);
 bool mods_archive_name(const char *);

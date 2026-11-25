@@ -128,17 +128,28 @@ struct ModUpdatePlan {
 struct ModGameDescriptor: Equatable {
     let id: String
     let title: String
-    var isCnPatch: Bool { id != "rance10" }
+    var isCnPatch: Bool { id == "evenicle" || id == "evenicle2" }
     var overlayKind: String { isCnPatch ? "cn_patch" : "mod" }
     var overlayURL: String { AliceHubCDN.gameBaseURLString(for: id) }
     var catalogPath: String { isCnPatch ? "files/cn-patch/index.json" : "files/mods/index.json" }
 
-    static let supported = [Self(id: "rance10", title: "兰斯10 决战"), Self(id: "evenicle", title: "夏娃年代记"), Self(id: "evenicle2", title: "夏娃年代记2")]
+    static let supported = [
+        Self(id: "rance10", title: "兰斯10 决战"),
+        Self(id: "evenicle", title: "夏娃年代记"),
+        Self(id: "evenicle2", title: "夏娃年代记2"),
+        Self(id: "sengokurance", title: "战国兰斯")
+    ]
 
     static func classifyGameRootDir(_ directory: URL) -> Self? {
         let names = ModFiles.children(directory).filter(ModFiles.isFile).map { $0.lastPathComponent.lowercased() }
         for id in ["rance10", "evenicle2", "evenicle"] where names.contains(id + ".ain") {
             return supported.first { $0.id == id }
+        }
+        if names.contains("sengokurance.ain") || names.contains("rance7.ain") ||
+            names.contains("daisengoku.ain") || names.contains("愴崙儔儞僗.ain") ||
+            names.contains("戦国ランス.ain") || names.contains("战国兰斯.ain") ||
+            names.contains(where: { $0.hasSuffix("ga.ald") && ($0 == "daisengokuga.ald" || $0.contains("愴崙") || $0.contains("戦国") || $0.contains("战国") || $0.contains("sengoku")) }) {
+            return supported.first { $0.id == "sengokurance" }
         }
         return nil
     }
@@ -151,6 +162,7 @@ struct ModGameDescriptor: Equatable {
         if evenicle2Aliases.contains(where: text.contains) { return supported[2] }
         if text.contains("evenicle") || text.contains("夏娃") || text.contains("イブニクル") { return supported[1] }
         if text.contains("rance10") || text.contains("rance 10") || text.contains("兰斯10") || text.contains("兰斯１０") || text.contains("ランス10") || text.contains("ランス１０") { return supported[0] }
+        if text.contains("sengoku") || text.contains("daisengoku") || text.contains("大战国") || text.contains("大戦国") || text.contains("战国兰斯") || text.contains("戦国ランス") || text.contains("愴崙儔儞僗") { return supported[3] }
         return nil
     }
 }
@@ -190,7 +202,7 @@ enum ModCatalog {
         var previous = ""
         while previous != text {
             previous = text
-            for prefix in ["兰斯10日不落mod", "rance10日不落mod", "日不落mod", "日不落", "兰斯10全系列mod", "rance10全系列mod", "r10全系列mod", "全系列mod", "全系列", "bfyy", "兰斯10mod", "rance10mod", "r10mod", "兰斯10", "rance10", "r10"] where text.hasPrefix(prefix) {
+            for prefix in ["兰斯10日不落mod", "rance10日不落mod", "日不落mod", "日不落", "兰斯10全系列mod", "rance10全系列mod", "r10全系列mod", "全系列mod", "全系列", "bfyy", "大战国兰斯mod", "大战国兰斯", "大战国mod", "大战国", "daisengokurancemod", "daisengokurance", "daisengokumod", "daisengoku", "战国兰斯mod", "战国兰斯", "sengokurancemod", "sengokurance", "兰斯10mod", "rance10mod", "r10mod", "兰斯10", "rance10", "r10"] where text.hasPrefix(prefix) {
                 text = String(text.dropFirst(prefix.count)).modReplacing(#"^[-.]+"#, "")
             }
         }
@@ -216,7 +228,7 @@ enum ModCatalog {
         while previous != text {
             previous = text
             text = text.modReplacing(#"^[ \-_·:：]+"#, "")
-            for prefix in ["兰斯10", "兰斯１０", "决战", "rance10", "rance 10", "r10", "日不落mod", "日不落", "全系列mod", "全系列", "bfyy", "mod"] where text.lowercased().hasPrefix(prefix) {
+            for prefix in ["兰斯10", "兰斯１０", "决战", "rance10", "rance 10", "r10", "日不落mod", "日不落", "全系列mod", "全系列", "bfyy", "大战国兰斯mod", "大战国兰斯", "大战国mod", "大战国", "daisengokurancemod", "daisengokurance", "daisengokumod", "daisengoku", "战国兰斯mod", "战国兰斯", "sengokurancemod", "sengokurance", "mod"] where text.lowercased().hasPrefix(prefix) {
                 text = String(text.dropFirst(prefix.count)).modReplacing(#"^[ \-_·:：]+"#, "")
             }
         }
@@ -257,6 +269,7 @@ enum ModCatalog {
 
     static let modGroupRibuluo = "日不落MOD"
     static let modGroupBfyy = "全系列MOD"
+    static let modGroupDaiSengoku = "大战国兰斯MOD"
 
     static func inferModGroup(fileName: String = "", directory: URL? = nil) -> String {
         let lowerName = fileName.lowercased()
@@ -265,6 +278,9 @@ enum ModCatalog {
         }
         if lowerName.contains("日不落") {
             return modGroupRibuluo
+        }
+        if lowerName.contains("大战国") || lowerName.contains("大戦国") || lowerName.contains("daisengoku") {
+            return modGroupDaiSengoku
         }
         if let directory, ModFiles.isDirectory(directory) {
             for file in ModFiles.children(directory).filter(ModFiles.isFile) {
@@ -275,10 +291,17 @@ enum ModCatalog {
                 if (n.hasPrefix("rance10modcg") || n.hasPrefix("rance10modflat")) && n.hasSuffix(".afa") {
                     return modGroupRibuluo
                 }
+                if n == "daisengoku.ain" || n == "daisengokugm.ald" || n == "daisengokubm.ald" ||
+                    (n.hasSuffix("gm.ald") && (n.contains("愴崙") || n.contains("戦国") || n.contains("sengoku"))) {
+                    return modGroupDaiSengoku
+                }
             }
             let ini = ModFiles.ini(directory)
             if ini["savefolder"]?.lowercased() == "savedatabfyy" {
                 return modGroupBfyy
+            }
+            if ini["savefolder"]?.lowercased() == "savedatadsr" {
+                return modGroupDaiSengoku
             }
             let gn = ini["gamename"] ?? ""
             if gn.contains("全系列") || gn.lowercased().contains("bfyy") {
@@ -286,6 +309,9 @@ enum ModCatalog {
             }
             if gn.contains("日不落") || ini["savefolder"]?.lowercased() == "modsavedata" {
                 return modGroupRibuluo
+            }
+            if gn.contains("大战国") || gn.contains("大戦国") || gn.lowercased().contains("daisengoku") {
+                return modGroupDaiSengoku
             }
         }
         return ""

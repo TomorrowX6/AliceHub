@@ -153,12 +153,14 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 val bakIni = File(dir, "AliceStart.ini.vanilla.bak").takeIf { it.exists() }
                     ?: File(dir, "System40.ini.vanilla.bak").takeIf { it.exists() }
                 val baseName = (bakIni?.let { System40Ini.parse(it).gameName }
-                    ?: if (rawName.contains("收费必是倒卖") || rawName.contains("日不落") ||
-                        rawName.contains("全系列") || rawName.contains("bfyy", ignoreCase = true)
-                    ) {
-                        "兰斯10 决战"
-                    } else {
-                        rawName
+                    ?: when {
+                        rawName.contains("收费必是倒卖") || rawName.contains("日不落") ||
+                            rawName.contains("全系列") || rawName.contains("bfyy", ignoreCase = true) ->
+                            "兰斯10 决战"
+                        rawName.contains("大战国") || rawName.contains("大戦国") ||
+                            rawName.contains("daisengoku", ignoreCase = true) ->
+                            "战国兰斯"
+                        else -> rawName
                     })
                     .replace("兰斯１０", "兰斯10")
                     .removeSuffix("[MOD]")
@@ -220,6 +222,10 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                         (lower.startsWith("rance10modflat") && lower.endsWith(".afa")) ||
                         (lower.startsWith("rance10cgbfyy") && lower.endsWith(".afa")) ||
                         (lower.startsWith("rance10flatbfyy") && lower.endsWith(".afa")) ||
+                        lower == "daisengoku.ain" ||
+                        lower == "daisengokugm.ald" ||
+                        lower == "daisengokubm.ald" ||
+                        (lower.endsWith("gm.ald") && (lower.contains("愴崙") || lower.contains("戦国") || lower.contains("sengoku"))) ||
                         lower == "asratest.ini" ||
                         lower == "作弊码.txt" ||
                         (lower == "rance10.ain" && f.length() > 8_000_000L)
@@ -239,13 +245,16 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             }
             if (ini != null) {
                 if (ini.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true ||
-                    ini.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true
+                    ini.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true ||
+                    ini.SaveFolder?.equals("SaveDataDSR", ignoreCase = true) == true
                 ) {
                     return true
                 }
                 val gn = ini.gameName ?: ""
                 if (gn.contains("收费必是倒卖") || gn.contains("日不落") ||
                     gn.contains("全系列") || gn.contains("bfyy", ignoreCase = true) ||
+                    gn.contains("大战国") || gn.contains("大戦国") ||
+                    gn.contains("daisengoku", ignoreCase = true) ||
                     gn.contains("[MOD")
                 ) {
                     return true
@@ -2414,7 +2423,12 @@ private fun isStandaloneFullModDir(modRoot: File): Boolean {
     } && topFiles.any {
         it.name.equals("Rance10FlatBFYY.afa", ignoreCase = true)
     }
-    return hasAin && (hasRibuluo || hasBfyy)
+    val hasDaiSengoku = topFiles.any {
+        it.name.equals("DaiSengokuGA.ald", ignoreCase = true) ||
+            it.name.equals("DaiSengokuGM.ald", ignoreCase = true) ||
+            it.name.endsWith("GM.ald", ignoreCase = true)
+    }
+    return hasAin && (hasRibuluo || hasBfyy || hasDaiSengoku)
 }
 
 private fun findModRootDir(stagingDir: File, isCnPatch: Boolean = false): File {
