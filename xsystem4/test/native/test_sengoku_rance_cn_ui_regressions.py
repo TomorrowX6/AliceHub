@@ -1,3 +1,4 @@
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -69,6 +70,69 @@ int main(void)
 }
 """
         self.compile_and_run(harness)
+
+    def test_alk_rejects_truncated_logo_entries(self):
+        harness = r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/alk.h"
+
+FILE *file_open_utf8(const char *path, const char *mode) { return fopen(path, mode); }
+void sys_warning(const char *fmt, ...) { (void)fmt; }
+void *_xmalloc(size_t size, const char *func) { (void)func; return malloc(size); }
+void *_xcalloc(size_t n, size_t size, const char *func) { (void)func; return calloc(n, size); }
+
+static void check_archive(const char *path, int flags, bool has_logo)
+{
+    int error = ARCHIVE_SUCCESS;
+    struct alk_archive *alk = alk_open(path, flags, &error);
+    assert(alk && error == ARCHIVE_SUCCESS);
+    assert(alk->ar.mmapped == (flags == ARCHIVE_MMAP));
+    struct archive_data *logo = archive_get(&alk->ar, 45);
+    if (has_logo) {
+        assert(logo && logo->size == 4 && !memcmp(logo->data, "logo", 4));
+        archive_free_data(logo);
+    } else {
+        assert(!logo);
+    }
+    archive_free(&alk->ar);
+}
+
+int main(int argc, char **argv)
+{
+    assert(argc == 4);
+    for (int flags = 0; flags <= ARCHIVE_MMAP; flags++) {
+        check_archive(argv[1], flags, true);
+        check_archive(argv[2], flags, false);
+        check_archive(argv[3], flags, false);
+    }
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "test.c"
+            exe = root / "test"
+            source.write_text(harness)
+            header = struct.pack("<4sI", b"ALK0", 46) + bytes(45 * 8)
+            frame_offset = len(header) + 8
+            fixtures = []
+            for name, offset, data in (
+                ("complete", frame_offset, b"logo"),
+                ("truncated", frame_offset, b"lo"),
+                ("missing", frame_offset + 4, b""),
+            ):
+                fixture = root / f"{name}.alk"
+                fixture.write_bytes(header + struct.pack("<II", offset, 4) + data)
+                fixtures.append(str(fixture))
+            libsys4 = ROOT / "subprojects/libsys4"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-I", str(libsys4 / "include"),
+                 str(source), str(libsys4 / "src/alk.c"), "-o", str(exe)],
+                check=True,
+            )
+            subprocess.run([str(exe), *fixtures], check=True)
 
     def test_startup_logo_renders_the_localization_credit_if_available(self):
         run = extract_function("src/hll/AliceLogo2.c", "AliceLogo2_Run")
