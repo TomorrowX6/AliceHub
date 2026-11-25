@@ -466,3 +466,95 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
+    def test_instance_copy_and_delete(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "xsystem4/games/Rance10"
+            nested = source / "patches"
+            nested.mkdir(parents=True)
+            (nested / "data.bin").write_bytes(b"\0AliceHub\xff")
+            original_saves = root / "xsystem4/saves/Rance10"
+            original_saves.mkdir(parents=True)
+            (original_saves / "slot.rsm").write_text("original")
+            retained = original_saves.with_name("Rance10-1")
+            retained.mkdir()
+            (retained / "slot.rsm").write_text("retained")
+            sibling = root / "system3/games/Rance10-2"
+            sibling.mkdir(parents=True)
+            (sibling / "data.bin").write_text("different engine")
+            (source / "external").symlink_to(sibling, target_is_directory=True)
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "instances.c"),
+                 "-x", "c", "-", "-o", str(root / "test")],
+                input=r"""
+#include "instances.h"
+#include <assert.h>
+#include <string.h>
+#include <unistd.h>
+
+static unsigned poll_count;
+
+static bool cancel_in_progress(void)
+{
+    return ++poll_count == 3;
+}
+
+int main(void)
+{
+    HubGame game, clone, other;
+    char suggestion[HUB_NAME_SIZE], path[HUB_PATH_SIZE];
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "Rance10"));
+    assert(hub_game_init(&clone, HUB_XSYSTEM4, "Rance10-2"));
+    assert(hub_game_init(&other, HUB_SYSTEM3, "Rance10-2"));
+    assert(hub_instance_suggest(".", &game, suggestion) && !strcmp(suggestion, clone.name));
+    assert(hub_instance_copy(".", &game, "../escape", NULL) == HUB_INSTANCE_INVALID_NAME);
+    assert(hub_instance_copy(".", &game, "wrong?", NULL) == HUB_INSTANCE_INVALID_NAME);
+    assert(hub_instance_copy(".", &game, "rance10", NULL) == HUB_INSTANCE_NAME_TAKEN);
+    assert(hub_instance_copy(".", &game, "rance10-1", NULL) == HUB_INSTANCE_NAME_TAKEN);
+    assert(hub_instance_copy(".", &game, clone.name, NULL) == HUB_INSTANCE_COPY_FAILED);
+    assert(hub_game_path(".", &clone, path) && access(path, F_OK));
+    assert(!unlink("xsystem4/games/Rance10/external"));
+
+    assert(hub_instance_copy(".", &game, clone.name, cancel_in_progress) == HUB_INSTANCE_COPY_FAILED);
+    assert(poll_count >= 3 && access(path, F_OK));
+    assert(hub_instance_copy(".", &game, clone.name, NULL) == HUB_INSTANCE_OK);
+    assert(!access(path, F_OK));
+    FILE *copied = fopen("xsystem4/games/Rance10-2/patches/data.bin", "rb");
+    unsigned char data[10];
+    assert(copied && fread(data, 1, sizeof(data), copied) == sizeof(data));
+    assert(data[0] == 0 && !memcmp(data + 1, "AliceHub", 8) && data[9] == 255 && !fclose(copied));
+    assert(hub_game_save_path(".", &clone, path) && !access(path, F_OK));
+    assert(access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+    assert(hub_instance_copy(".", &game, "Rance10-3", NULL) == HUB_INSTANCE_OK);
+
+    HubLibrary library = {0};
+    assert(hub_library_scan(&library, ".") && library.count == 4);
+    assert(strcmp(clone.instance_id, game.instance_id));
+    assert(strcmp(clone.instance_id, other.instance_id));
+    hub_library_free(&library);
+
+    FILE *save = fopen("xsystem4/saves/Rance10-2/slot.rsm", "wb");
+    assert(save && fputs("copy save", save) >= 0 && !fclose(save));
+    assert(!symlink("../../../system3/games/Rance10-2", "xsystem4/games/Rance10-2/external"));
+    assert(hub_instance_delete(".", &clone, false) == HUB_INSTANCE_OK);
+    assert(!access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+    assert(access("xsystem4/games/Rance10-2", F_OK));
+    assert(hub_library_scan(&library, ".") && library.count == 3);
+    hub_library_free(&library);
+    assert(!access("system3/games/Rance10-2/data.bin", F_OK));
+    assert(!access("xsystem4/games/Rance10-3/patches/data.bin", F_OK));
+    assert(hub_instance_delete(".", &game, true) == HUB_INSTANCE_OK);
+    assert(access("xsystem4/games/Rance10", F_OK));
+    assert(access("xsystem4/saves/Rance10", F_OK));
+    assert(!access("xsystem4/saves/Rance10-1/slot.rsm", F_OK));
+    assert(!access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(root / "test")], cwd=root, check=True)
+            self.assertEqual(list((root / "xsystem4").glob(".hub-copy-*")), [])
