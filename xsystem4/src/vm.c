@@ -1951,6 +1951,11 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case F_DIV: {
 		float f = stack_pop().f;
+		if (f == 0.0f && stack_peek(0).f == 0.0f && game_evenicle2_rance
+				&& call_stack_ptr > 0 && !strcmp(
+					ain->functions[call_stack[call_stack_ptr - 1].fno].name,
+					"VECTOR3D@Normalize"))
+			f = 1.0f;
 		stack_set(0, stack_peek(0).f / f);
 		break;
 	}

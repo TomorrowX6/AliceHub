@@ -60,6 +60,58 @@ def compile_and_run(c_source: str) -> None:
 
 
 class VmAndReignRegressionTests(unittest.TestCase):
+    def test_evenicle2_rance_zero_vector_normalization(self) -> None:
+        case_block = extract_case_block("src/vm.c", "F_DIV")
+        compile_and_run(f"""
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <string.h>
+
+enum {{ F_DIV }};
+union vm_value {{ float f; }};
+struct ain_function {{ const char *name; }};
+struct ain {{ struct ain_function *functions; }};
+struct function_call {{ int fno; }};
+
+static struct ain_function funcs[] = {{
+    {{ "Other" }}, {{ "VECTOR3D@Normalize" }},
+}};
+static struct ain program = {{ .functions = funcs }};
+static struct ain *ain = &program;
+static struct function_call call_stack[] = {{ {{ 0 }}, {{ 1 }} }};
+static int call_stack_ptr;
+static bool game_evenicle2_rance;
+static union vm_value stack[2];
+static int sp;
+#define stack_pop() stack[--sp]
+#define stack_peek(n) stack[sp - 1 - (n)]
+#define stack_set(n, value) (stack_peek(n).f = (value))
+
+static float divide(float lhs, float rhs, bool rance, int depth)
+{{
+    game_evenicle2_rance = rance;
+    call_stack_ptr = depth;
+    stack[0].f = lhs;
+    stack[1].f = rhs;
+    sp = 2;
+    switch (F_DIV) {{
+        {case_block}
+    }}
+    assert(sp == 1);
+    return stack[0].f;
+}}
+
+int main(void)
+{{
+    assert(divide(0.0f, 0.0f, true, 2) == 0.0f);
+    assert(divide(3.0f, 5.0f, true, 2) == 0.6f);
+    assert(isnan(divide(0.0f, 0.0f, true, 1)));
+    assert(isnan(divide(0.0f, 0.0f, false, 2)));
+    assert(isinf(divide(1.0f, 0.0f, true, 2)));
+}}
+""")
+
     def test_struct_page_slot_and_get_struct_page(self) -> None:
         fn_slot = extract_function("src/vm.c", "struct_page_slot")
         fn_get = extract_function("src/vm.c", "get_struct_page")
