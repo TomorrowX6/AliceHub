@@ -24,6 +24,7 @@
 #include "system4.h"
 #include "system4/hashtable.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "system4/flat.h"
 
 #include "gfx/gfx.h"
@@ -1240,6 +1241,32 @@ static void parts_render_scrollbar(struct parts *parts)
 	}
 }
 
+static bool place_button_label(struct parts_text *label, struct parts_text_line *line,
+		Rectangle area, Point origin)
+{
+	if (area.w <= 0 || area.h <= 0 || !label->nr_lines)
+		return false;
+	unsigned first = 0;
+	while (first < label->nr_lines && !label->lines[first].nr_chars)
+		first++;
+	if (first != label->nr_lines - 1)
+		return false;
+	*line = label->lines[first];
+	while (line->nr_chars && (!strcmp(line->chars->ch, " ")
+			|| !strcmp(line->chars->ch, sys4_text_is_gbk ? "\xa1\xa1" : "\x81\x40"))) {
+		line->width -= line->chars->advance;
+		line->nr_chars--;
+		line->chars++;
+	}
+	if (!line->nr_chars)
+		return false;
+	label->lines = line;
+	label->nr_lines = 1;
+	label->common.origin_offset.x = origin.x + area.x + (area.w - (int)ceilf(line->width)) / 2;
+	label->common.origin_offset.y = origin.y + area.y + (area.h - (int)line->height) / 2;
+	return true;
+}
+
 void parts_render(struct parts *parts)
 {
 	if (parts->textures_suspended || !parts_is_visible(parts))
@@ -1303,6 +1330,9 @@ void parts_render(struct parts *parts)
 					: (label_width - label.common.w) * (mode % 3) / 2);
 			label.common.origin_offset.y = label_box->origin_offset.y
 				+ (label_height - label.common.h) * (mode / 3) / 2;
+			struct parts_text_line line;
+			if (game_okusama && parts->component_type == 0)
+				place_button_label(&label, &line, w->label_area, label_box->origin_offset);
 			parts_render_text(parts, &label, NULL);
 		}
 	}

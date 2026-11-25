@@ -528,6 +528,7 @@ struct parts_widget {
 	bool checked, button_mode;
 	bool defer_rebuild, dirty_bg, dirty_label;
 	int width, height, color[3], text_origin;
+	Rectangle label_area;
 	struct string *cg_name, *flat_name, *text;
 	struct string *override_cg[2], *override_flat[2];
 	struct parts_state disabled, label;

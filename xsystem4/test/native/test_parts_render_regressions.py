@@ -382,6 +382,52 @@ int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gra
 
 
 class PartsRenderingTests(unittest.TestCase):
+    def test_button_label_uses_authored_area_without_layout_whitespace(self):
+        code = r'''
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <string.h>
+typedef struct { int x, y, w, h; } Rectangle;
+typedef struct { int x, y; } Point;
+struct parts_text_char { char ch[4]; int advance; };
+struct parts_text_line {
+    struct parts_text_char *chars;
+    int nr_chars;
+    unsigned height;
+    float width;
+};
+struct parts_text {
+    struct { Point origin_offset; } common;
+    unsigned nr_lines;
+    struct parts_text_line *lines;
+};
+static bool sys4_text_is_gbk = true;
+''' + function('src/parts/render.c', 'place_button_label') + r'''
+int main(void) {
+    struct parts_text_char chars[] = { {" ", 5}, {"\xa1\xa1", 15}, {"C", 10} };
+    struct parts_text_line lines[] = { {0}, { chars, 3, 16, 30 } };
+    struct parts_text label = { .nr_lines = 2, .lines = lines };
+    struct parts_text_line line;
+    assert(!place_button_label(&label, &line, (Rectangle){0}, (Point){0}));
+    assert(place_button_label(&label, &line, (Rectangle){84, 9, 50, 18}, (Point){3, 4}));
+    assert(label.nr_lines == 1 && label.lines->nr_chars == 1 && label.lines->width == 10);
+    assert(!strcmp(label.lines->chars->ch, "C"));
+    assert(label.common.origin_offset.x == 107 && label.common.origin_offset.y == 14);
+    assert(lines[1].nr_chars == 3 && lines[1].width == 30);
+    label = (struct parts_text){ .nr_lines = 2, .lines = lines };
+    lines[0] = lines[1];
+    assert(!place_button_label(&label, &line, (Rectangle){84, 9, 50, 18}, (Point){3, 4}));
+    assert(label.nr_lines == 2);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'button_label.c', Path(tmp) / 'button_label'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-lm', '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_only_okusama_building_empty_parts_v2_construction_erases_surface(self):
         code = r'''
 #include <assert.h>
