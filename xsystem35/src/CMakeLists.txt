@@ -206,6 +206,9 @@ elseif (ALICEHUB_IOS)
 
 elseif (NINTENDO_SWITCH)
   include(../../cmake/switch/Packaging.cmake)
+  target_sources(xsystem35 PRIVATE escalayer_modifier.c cJSON.c
+    ../../cmake/switch/hub/runtime_menu_system35.c)
+  target_include_directories(xsystem35 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(xsystem35 PRIVATE freetype2)
   set(romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
   file(COPY "${PROJECT_SOURCE_DIR}/fonts" "${PROJECT_SOURCE_DIR}/soundfonts" DESTINATION "${romfs}")

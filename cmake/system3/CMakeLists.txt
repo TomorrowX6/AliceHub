@@ -123,7 +123,16 @@ elseif(NINTENDO_SWITCH)
       "SDL_GameControllerGetButton(sdl_gamecontroller, alicehub_switch_face_button(SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(sdl_gamecontroller)), SDL_CONTROLLER_BUTTON_${button}))"
       switch_input "${switch_input}")
   endforeach()
-  file(CONFIGURE OUTPUT nact_input.cpp CONTENT "#include \"controller.h\"\n${switch_input}" @ONLY)
+  set(input_pump "void NACT::pump_events()\n{\n")
+  string(FIND "${switch_input}" "${input_pump}" pump_offset)
+  if(pump_offset EQUAL -1)
+    message(FATAL_ERROR "Could not apply System 3 Switch runtime menu patch")
+  endif()
+  string(REPLACE "${input_pump}"
+    "${input_pump}\tif (switch_menu_system3_poll(ags, msgskip)) {\n\t\ttouch_state = TOUCH_NONE;\n\t\twheel = 0;\n\t}\n"
+    switch_input "${switch_input}")
+  file(CONFIGURE OUTPUT nact_input.cpp CONTENT
+    "#include \"controller.h\"\nclass AGS;\nclass MsgSkip;\nbool switch_menu_system3_poll(AGS *, MsgSkip *);\n${switch_input}" @ONLY)
   list(REMOVE_ITEM vm_sources "${nact_input}")
   list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_input.cpp")
   set(sdlmain "${src}/sdlmain.cpp")
@@ -150,6 +159,7 @@ elseif(NINTENDO_SWITCH)
   file(COPY "${system3_source_SOURCE_DIR}/resources/mda"
             "${system3_source_SOURCE_DIR}/resources/fonts" DESTINATION "${romfs}")
   alicehub_switch_package(system3 "${romfs}")
+  target_sources(system3 PRIVATE ../switch/hub/runtime_menu_system3.cpp)
 else()
   add_executable(system3 "${src}/generic/nact_generic.cpp")
 endif()

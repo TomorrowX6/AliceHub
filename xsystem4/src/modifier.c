@@ -8759,10 +8759,8 @@ void modifier_on_frame(void)
 	s_in_modifier_frame = false;
 }
 
-/* =========================================================================
- * JNI Exports for Android UI (GameModifierBridge)
- * ========================================================================= */
-#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
+/* Native runtime UI entry points. */
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
 
 static void set_game_lock_mask(bool *init_flag, int *target, int mask)
 {
@@ -8815,9 +8813,13 @@ bool modifier_api_write_global_save_mod(const char *global_path, const char *col
 }
 #endif
 
-#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || (defined(__SWITCH__) && !defined(MODIFIER_OFFLINE_ONLY))
 const char *modifier_api_current_game(void)
 {
+#ifdef __SWITCH__
+	if (!vm_is_ready())
+		return "";
+#endif
 	if (game_rance10) return "rance10";
 	if (game_dohnadohna) return "dohnadohna";
 	if (game_evenicle) return "evenicle";
@@ -8927,6 +8929,7 @@ int modifier_api_get_lock_mask(enum modifier_lock_game game)
 	return 0;
 }
 
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 int modifier_api_read_streamer_mode(const char *config_path)
 {
 	return config_path ? read_game_config_streamer_mode(config_path) : -1;
@@ -8936,6 +8939,7 @@ bool modifier_api_write_streamer_mode(const char *config_path, bool enabled)
 {
 	return config_path ? write_game_config_streamer_mode(config_path, enabled) : false;
 }
+#endif
 
 void modifier_api_set_ctrl_skip(bool enabled)
 {
@@ -8988,7 +8992,7 @@ bool modifier_api_export_pc_save_file(const char *src_path, const char *dst_path
 	return (src_path && dst_path) ? savedata_export_pc_file(src_path, dst_path) : false;
 }
 
-#endif /* __ANDROID__ || ALICEHUB_IOS */
+#endif /* __ANDROID__ || ALICEHUB_IOS || __SWITCH__ */
 
 #ifdef __ANDROID__
 

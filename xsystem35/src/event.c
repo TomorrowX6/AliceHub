@@ -44,6 +44,12 @@
 #include "volume.h"
 #include "mixer.h"
 #include "alicehub_bridge.h"
+#ifdef __SWITCH__
+#include "hub/runtime_menu.h"
+#include "hub/runtime_menu_engines.h"
+#include "escalayer_modifier.h"
+#include "gfx_private.h"
+#endif
 
 static void get_event(void);
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed);
@@ -414,6 +420,11 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 		break;
 #endif
 	case SDL_EVENT_WILL_ENTER_BACKGROUND:
+#ifdef __SWITCH__
+		switch_menu35_release_skip();
+		event_reset_input_state();
+		event_inject_rawkey(KEY_CTRL, false);
+#endif
 #ifdef __ANDROID__
 		gfx_android_on_background();
 		msgskip_syncFile();
@@ -640,6 +651,20 @@ void event_handle_event(SDL_Event *e) {
 static void get_event(void) {
 	enum scheduler_event scheduler_event = SCHEDULER_EVENT_INPUT_CHECK_MISS;
 
+#ifdef __SWITCH__
+	if (switch_menu35_poll(gfx_renderer)) {
+		event_reset_input_state();
+		deferred_touch_event.timestamp = 0;
+		touch_button = 0;
+		mouse_wheel_up = mouse_wheel_down = 0;
+		if (!switch_menu_lifecycle_pending()) {
+			event_inject_rawkey(KEY_CTRL, switch_menu35_ctrl_skip());
+			gfx_requestRedraw();
+			gfx_updateScreen();
+		}
+	}
+	escalayer_modifier_tick();
+#endif
 	fire_deferred_touch_event();
 	alicehub_pump_events();
 
@@ -656,6 +681,10 @@ static void get_event(void) {
 /* キー情報の取得 */
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed) {
 	int code = keytable[sdl_KeyboardEventScancode(e)];
+#ifdef __SWITCH__
+	if (code == KEY_CTRL && switch_menu35_ctrl_skip())
+		pressed = true;
+#endif
 	RawKeyInfo[code] = pressed;
 	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
 }
