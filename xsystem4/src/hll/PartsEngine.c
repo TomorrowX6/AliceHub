@@ -1610,16 +1610,16 @@ static void PartsEngine_add_construction_process(union vm_value *ints,
 	}
 }
 
-// The extended record inserts A2 before the text fields and appends Blur.
+// Extended records insert A2 before the text fields and may append Blur.
 static void PartsEngine_add_construction_process_extended(int parts_no, int state,
-		const union vm_value *src, union vm_value *floats, union vm_value *strings)
+		const union vm_value *src, union vm_value *floats, union vm_value *strings, int blur)
 {
 	union vm_value ints[32];
 	ints[0].i = parts_no;
 	ints[1].i = state;
 	memcpy(ints + 2, src, 19 * sizeof(*src));
 	memcpy(ints + 21, src + 20, 11 * sizeof(*src));
-	PartsEngine_add_construction_process(ints, floats, strings, src[19].i, src[31].i);
+	PartsEngine_add_construction_process(ints, floats, strings, src[19].i, blur);
 }
 
 static void PartsEngine_AddPartsConstructionProcess(int parts_no, struct page **array_int,
@@ -1634,7 +1634,7 @@ static void PartsEngine_AddPartsConstructionProcess(int parts_no, struct page **
 	if (command < 0 || command > 29)
 		VM_ERROR("Unimplemented v12 construction process command %d", command);
 	PartsEngine_add_construction_process_extended(parts_no, state, src,
-			(*array_float)->values, (*array_string)->values);
+			(*array_float)->values, (*array_string)->values, src[31].i);
 }
 
 static void PartsEngine_AddPartsConstructionProcess_v14(int parts_no, struct page **array_int,
@@ -1649,7 +1649,7 @@ static void PartsEngine_AddPartsConstructionProcess_v14(int parts_no, struct pag
 	int command = src[0].i;
 	if (command >= 0 && command <= 29) {
 		PartsEngine_add_construction_process_extended(parts_no, state, src,
-				(*array_float)->values, (*array_string)->values);
+				(*array_float)->values, (*array_string)->values, src[31].i);
 		return;
 	}
 	if (command >= 30 && command <= 132) {
@@ -1948,8 +1948,8 @@ static bool PartsEngine_get_construction_process_v6_arrays(union vm_value *ints,
 	PartsEngine_GetPartsConstructionProcess(ints[0].i, ints[1].i, &tmp_int,
 			array_float, array_string, ints[2].i);
 	if (tmp_int && tmp_int->nr_vars >= 32) {
-		if (nr_ints == 35) {
-			memcpy(ints + 3, tmp_int->values, 32 * sizeof(*ints));
+		if (nr_ints == 34 || nr_ints == 35) {
+			memcpy(ints + 3, tmp_int->values, (nr_ints - 3) * sizeof(*ints));
 		} else {
 			memcpy(ints + 3, tmp_int->values, 19 * sizeof(*ints));
 			memcpy(ints + 22, tmp_int->values + 20, 11 * sizeof(*ints));
@@ -2698,7 +2698,7 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		REQUIRE_INTS(33);
 		REQUIRE_FLOATS(2);
 		REQUIRE_STRINGS(2);
-		return PartsEngine_get_construction_process_v6_arrays(ints, nr_ints, array_float, array_string) ? 1 : 0;
+		return PartsEngine_get_construction_process_v6_arrays(ints, 33, array_float, array_string) ? 1 : 0;
 	case 164:  // void GetConstructionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
 		REQUIRE_INTS(6);
 		PartsEngine_GetConstructionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
@@ -2744,10 +2744,10 @@ static void PartsEngine_AddPartsConstructionProcess_v6(struct page **array_int,
 			|| !array_string || !*array_string || (*array_string)->nr_vars < 2)
 		VM_ERROR("Invalid v6 construction process arrays");
 	union vm_value *ints = (*array_int)->values;
-	// Some scripts (e.g. Ixseal) keep part/state inline with the extended record.
-	if ((*array_int)->nr_vars == 34) {
+	int nr_ints = (*array_int)->nr_vars;
+	if (nr_ints == 33 || nr_ints == 34) {
 		PartsEngine_add_construction_process_extended(ints[0].i, ints[1].i, ints + 2,
-				(*array_float)->values, (*array_string)->values);
+				(*array_float)->values, (*array_string)->values, nr_ints == 34 ? ints[33].i : 0);
 	} else {
 		PartsEngine_add_construction_process(ints,
 				(*array_float)->values, (*array_string)->values, 0, 0);

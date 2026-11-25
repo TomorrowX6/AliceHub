@@ -1152,16 +1152,17 @@ int main(void)
         123, 2, 23, 0, 0, 0, 0, 0, 6, 8, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 137, 3, -2, 257, 25, 250, 240, 230, 19, 22, 24, 1, 7
     };
-    for (int is_extended = 0; is_extended <= 1; is_extended++) {
-        struct page *add = make_page(is_extended ? 34 : 32);
-        struct page *get = make_page(is_extended ? 35 : 33);
+    for (int nr_ints = 32; nr_ints <= 34; nr_ints++) {
+        bool is_extended = nr_ints > 32;
+        struct page *add = make_page(nr_ints);
+        struct page *get = make_page(nr_ints + 1);
         for (int i = 0; i < add->nr_vars; i++)
             add->values[i].i = extended[i + (!is_extended && i >= 21)];
         PartsEngine_AddPartsConstructionProcess_v6(&add, &floats, &strings);
         for (int i = 0; i < 32; i++)
             assert(decoded[i].i == extended[i + (i >= 21)]);
         assert(a2 == (is_extended ? 137 : 0));
-        assert(blur == (is_extended ? 7 : 0));
+        assert(blur == (nr_ints == 34 ? 7 : 0));
 
         get->values[0].i = 123;
         get->values[1].i = 4;
