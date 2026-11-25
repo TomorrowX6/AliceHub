@@ -393,7 +393,7 @@ static bool next_evenicle_rance_string_push(struct ain *ain, uint32_t end,
 }
 
 static void normalize_evenicle_rance_literals(struct ain *ain, const char *function,
-		const char *literal, uint32_t expected_hash)
+		const char *literal, uint32_t expected_hash, const uint8_t *display_sites)
 {
 	int fno = ain_get_function(ain, (char *)function);
 	if (fno < 0)
@@ -416,7 +416,16 @@ static void normalize_evenicle_rance_literals(struct ain *ain, const char *funct
 			return;
 	}
 
+	unsigned site = 0;
 	for (uint32_t addr = start; next_evenicle_rance_string_push(ain, end, &addr, &operand); ) {
+		site++;
+		if (display_sites) {
+			if (!*display_sites)
+				break;
+			if (site != *display_sites)
+				continue;
+			display_sites++;
+		}
 		int no = LittleEndian_getDW(ain->code, operand);
 		if (no < 0 || no >= ain->nr_strings)
 			return;
@@ -436,17 +445,123 @@ static void normalize_evenicle_rance_literals(struct ain *ain, const char *funct
 	}
 }
 
-static void apply_evenicle_rance_cn_skill_notice(struct ain *ain)
+static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 {
-	// The CN AIN leaves the skill initializer's display strings in Shift-JIS.
-	// Fingerprint its literal bytes (FNV-1a, including NUL separators), not its
-	// STR0 indexes or bytecode addresses, to leave other translations alone.
-	normalize_evenicle_rance_literals(ain, "\x83\x58\x83\x4c\x83\x8b\x8f\x89\x8a\xfa\x89\xbb", NULL, 0xc41e014bu);
-	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x83\x89\x83\x93\x83\x58", 0);
-	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x82\xcd", 0);
+	// Catalog CN AIN: FNV-1a over each function's literal bytes (including NUL
+	// separators). Sites are one-based S_PUSH ordinals; NULL selects every push.
+	// Keep resource names, comparisons and translated literals on their original operands.
+#define DISPLAY_SITES(...) ((const uint8_t[]){__VA_ARGS__, 0})
+	const struct {
+		const char *function;
+		uint32_t literal_hash;
+		const uint8_t *display_sites;
+	} functions[] = {
+		// Menus and dialog prompts.
+		{ "ゲーム終了", 0xac990d0au, NULL },
+		{ "タイトルに戻る", 0xf2ea0b36u, NULL },
+		{ "T_TextEntryBox@ProgTextEntry", 0x3cf850bdu, DISPLAY_SITES(4) },
+		{ "敗北時やり直し確認", 0x2bc04d54u, DISPLAY_SITES(6) },
+		{ "＆装備アイテムスロット拡張", 0x75ec9f96u, NULL },
+		{ "T_PMenu@Init_SCutCheckButton", 0x5651fc06u, DISPLAY_SITES(1, 2) },
+		{ "アイテム購入確認画面", 0x9505a4d6u, DISPLAY_SITES(2, 3, 4, 5) },
+		{ "購入確認選択肢", 0x3d48e208u, DISPLAY_SITES(2, 3, 4, 7, 8, 9, 10, 11) },
+		{ "購入＆使用確認選択肢", 0xbd974831u,
+			DISPLAY_SITES(6, 7, 8, 10, 11, 13, 14, 15, 16, 17, 20, 21, 24, 25, 26, 27, 28, 30, 32, 33,
+				36, 37) },
+		{ "売却確認選択肢", 0x50b5c297u, DISPLAY_SITES(2, 3, 5, 6, 7) },
+		{ "アイテム使用確認選択肢", 0x0462adcdu,
+			DISPLAY_SITES(6, 7, 8, 10, 11, 13, 14, 15, 16, 17, 20, 21, 24, 25, 26, 27, 28, 30, 32, 33) },
+		{ "アイテム使用選択肢", 0x7909d687u, NULL },
+		{ "T_ItemMenu@InitButton", 0x60f8fcdeu, DISPLAY_SITES(31) },
+		{ "T_ItemMenu@Create", 0xeb736932u, DISPLAY_SITES(1) },
+		{ "T_ItemMenu@ExecuteSortTypeSelect", 0xb54cf1f7u, DISPLAY_SITES(6, 7, 8, 9, 10, 11, 12, 14) },
+		{ "T_ItemMenu@SetSortSeqButton", 0x3463cdc1u, DISPLAY_SITES(1, 3) },
+		{ "T_ItemPlate@GetItemName", 0x751a4839u, DISPLAY_SITES(1) },
+		{ "T_ItemPlate@GetItemTypeName", 0x7e1a91a9u, DISPLAY_SITES(1, 2, 3, 5, 6, 7, 8, 9, 10, 11) },
+		{ "T_ItemPlate@GetItemSetumei", 0x05029c7du, DISPLAY_SITES(1) },
+		{ "T_SaveLoad@Create", 0x576cfbd6u, DISPLAY_SITES(14) },
+		{ "T_SaveLoad@UpdatePageData", 0xb3462b55u, DISPLAY_SITES(9, 11, 13, 15, 17, 27, 28, 29, 30, 31) },
+		{ "T_SaveLoad@ExecuteSave", 0x5186a456u, DISPLAY_SITES(3) },
+		{ "T_Shop@CreateBase", 0x3743314eu, DISPLAY_SITES(4, 8) },
+		{ "T_Shop@CreateChkConfirm", 0xc60f4d68u, DISPLAY_SITES(6, 7) },
+		{ "T_Shop@ProgShopItem", 0x9be3affau, NULL },
+		{ "T_SkillSetting@Create", 0x46090a57u, DISPLAY_SITES(26) },
+		{ "T_StatusDisp@GetCharaName", 0xbad2df74u, DISPLAY_SITES(2) },
+		{ "T_StatusDisp@GetCharaSecName", 0xf8a6c1f0u, DISPLAY_SITES(2) },
+		{ "T_BackData@OpenTypeWindow", 0xd5843c1bu, DISPLAY_SITES(7) },
+		{ "T_NaviMap@Create", 0xe1321917u, DISPLAY_SITES(24, 25) },
+		{ "T_NaviMap@Update", 0x81a8a067u, DISPLAY_SITES(1, 2) },
+		{ "T_Collection@Update_Fish", 0xd1fdf7b3u, DISPLAY_SITES(10, 11, 12, 13) },
+		{ "気球に乗る確認", 0x414ecdb3u, DISPLAY_SITES(1, 2, 4, 5) },
+		// Reward notices, battle results and log text.
+		{ "宝箱からお金", 0x557d207eu, NULL },
+		{ "宝箱からアイテム", 0x559aeddcu, NULL },
+		{ "＆アイテム表示名取得", 0x9053008bu, DISPLAY_SITES(2) },
+		{ "T_GetItemDisp@RunItem", 0xa59dbc38u, DISPLAY_SITES(6) },
+		{ "T_GetItemDisp@RunMoney", 0x6bcd0ef9u, DISPLAY_SITES(3, 8) },
+		{ "T_GetItemDisp@RunUseItem", 0x66af636au, DISPLAY_SITES(5) },
+		{ "T_GetItemDisp@RunAutoSave", 0x27acd488u, DISPLAY_SITES(1, 3) },
+		{ "T_GetItemDisp@RunTrap", 0xbe8dd8f0u, DISPLAY_SITES(3) },
+		{ "T_GetItemDisp@RunPosInfo", 0xbe8dd8f0u, DISPLAY_SITES(3) },
+		{ "T_GetItemDisp@RunNormalInfo", 0xbe8dd8f0u, DISPLAY_SITES(3) },
+		{ "T_LevelUpDisp@SetInfoCharaData", 0xe7567454u,
+			DISPLAY_SITES(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 21) },
+		{ "T_Battle@Run_AfterBattle", 0x7c76fb0au, DISPLAY_SITES(2, 3, 4, 5, 6, 7, 8, 9) },
+		{ "T_Battle@Act_UseItem", 0x9e78dee4u, DISPLAY_SITES(1, 3, 6, 7) },
+		{ "T_BatProg_Sequence@ProgPoison", 0x23cb2090u, DISPLAY_SITES(2, 4) },
+		{ "T_BatProg_Sequence@ProgStone", 0xe1399220u, DISPLAY_SITES(2) },
+		{ "T_BatProg_Sequence@ProgBind", 0xe8646c6fu, DISPLAY_SITES(2) },
+		{ "T_BatProg_Sequence@ProgPara", 0xe6e23a68u, DISPLAY_SITES(2) },
+		{ "T_BatProg_Sequence@ProgRec", 0xf8172616u, DISPLAY_SITES(2) },
+		{ "T_BatProg_Command@ProgEnemy", 0x8c5d593au, DISPLAY_SITES(1, 3) },
+		{ "T_BatProg_Command@NoAction", 0xaa1fc138u, NULL },
+		{ "T_BatProg_TurnEnd@CheckGenCounter", 0x097bcaf2u, DISPLAY_SITES(2, 3) },
+		{ "T_BatProg_TurnEnd@CheckGuriguraPunch", 0x28519488u, NULL },
+		{ "T_BatProg_TurnEnd@CheckTrap", 0xf39cdb9cu, DISPLAY_SITES(2, 3) },
+		{ "T_BatProg_TurnEnd@CheckEnemyDead", 0xae5065bbu, NULL },
+		{ "T_BatProg_TurnEnd@CheckAllyDead", 0xd93ecd16u, DISPLAY_SITES(1, 2, 4, 5, 6, 7) },
+		{ "T_BatProg_Prog@Prog", 0xcb3382e5u, DISPLAY_SITES(1) },
+		{ "T_BatProg_Prog@CulcDamage", 0x053c0743u, NULL },
+		{ "T_BatProg_Prog@SubLastCatch", 0xb0ad50dbu, NULL },
+		{ "T_BattleDispDamage@Set_Escape", 0xb2326b15u, DISPLAY_SITES(2, 3, 4, 5, 6) },
+		{ "T_BattleDispDamage@Set_AllyBind", 0xbcd0ec02u, DISPLAY_SITES(2, 3, 4, 5, 6) },
+		{ "T_BattleDispDamage@Set_GoldDamage", 0x48d076dbu, NULL },
+		{ "T_BattleResult@Create_WinBase", 0x445bb480u, DISPLAY_SITES(17, 19, 22, 23, 24, 25) },
+		{ "T_BattleResult@Create_WinItem", 0x6d94e603u, DISPLAY_SITES(5, 6) },
+		{ "T_BattleResult@Create_Escape", 0xdc38be5cu, DISPLAY_SITES(2, 3) },
+		{ "嫁イベント実行", 0x528cfe73u, DISPLAY_SITES(13, 14, 15, 16) },
+		{ "回復ポイント実行処理", 0x800412fcu, NULL },
+		{ "回復量指定実行処理", 0x82643cafu, NULL },
+		{ "百景ボーナス判定", 0xad8cff76u, DISPLAY_SITES(1, 2, 3) },
+		{ "戦闘割り込み", 0xa99b9043u, DISPLAY_SITES(4) },
+		// Skill and item display data (not item keys or icon names).
+		{ "T_SkillPlate@GetPlateText", 0x09ebebb4u, NULL },
+		{ "ＰＧＳアイテム魚拓工場", 0x13e11ebbu, DISPLAY_SITES(1, 2) },
+		{ "スキル初期化", 0xc41e014bu, NULL },
+		{ "アイテム工場", 0x3cc1efd4u,
+			DISPLAY_SITES(3, 5, 7, 9, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 31, 32, 34, 35,
+				37, 38, 41, 42, 44, 46, 48, 50, 53, 54, 56, 57, 59, 60, 62, 63, 65, 66, 69,
+				70, 72, 73, 75, 76, 79, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102,
+				104, 107, 109, 111, 113, 115, 117, 120, 122, 124, 126, 128, 130, 132, 134,
+				136, 138) },
+		{ "説明に機能追加", 0x65d04c02u,
+			DISPLAY_SITES(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+				23, 24, 25, 26, 27, 28, 29, 30, 31) },
+	};
+#undef DISPLAY_SITES
+
+	for (size_t i = 0; i < sizeof(functions) / sizeof(*functions); i++) {
+		char *function = utf2cjk(functions[i].function, 0, false);
+		normalize_evenicle_rance_literals(ain, function, NULL,
+				functions[i].literal_hash, functions[i].display_sites);
+		free(function);
+	}
+
+	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x83\x89\x83\x93\x83\x58", 0, NULL);
+	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x82\xcd", 0, NULL);
 	normalize_evenicle_rance_literals(ain, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b",
-			"\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49", 0);
-	normalize_evenicle_rance_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0);
+			"\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49", 0, NULL);
+	normalize_evenicle_rance_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0, NULL);
 }
 
 static bool ain_messages_look_gbk(struct ain *ain)
@@ -921,6 +1036,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		? AIN_ENC_GBK
 		: ain_detect_text_encoding(ain);
 	bool gbk_game_name = config_game_name_has_gbk_marker(config.game_name);
+	bool evenicle_rance_cn = game_evenicle_rance
+		&& (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
+			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9"));
 	bool gbk_heuristics = gbk_game_name
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
@@ -928,8 +1046,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
-		|| (game_evenicle_rance && (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
-			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9")))
+		|| evenicle_rance_cn
 		|| (game_evenicle2_rance && ain_has_evenicle2_rance_gbk_prologue(ain))
 		|| (game_rance01 && ain_has_gbk_string(ain, "\xd7\xee\xb4\xf3\xb5\xc8\xbc\xb6"))
 		|| (game_rance02 && ain_has_gbk_string(ain, "\xa5\xe9\xa5\xf3\xa5\xb9\xa3\xb0\xa3\xb2.alm"))
@@ -947,8 +1064,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
 		|| ain_messages_look_gbk(ain);
 	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
-	if (game_evenicle_rance && sys4_text_is_gbk && !sys4_source_is_utf8)
-		apply_evenicle_rance_cn_skill_notice(ain);
+	if (evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8)
+		apply_evenicle_rance_cn_display_literals(ain);
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

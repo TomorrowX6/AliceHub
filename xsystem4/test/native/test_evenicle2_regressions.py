@@ -341,6 +341,20 @@ int main(void)
         "2.0\x94\x7b\x81\x40\x97\x8b\x96\x82\x96\x40",
     };
     const char *skill_init = "\x83\x58\x83\x4c\x83\x8b\x8f\x89\x8a\xfa\x89\xbb";
+    const char *footer_text = "□にチェックを入れると、ショートカットが表示されます（最大４つ）";
+    char *footer = utf2cjk(footer_text, 0, false);
+    char *checkbox_asset = utf2cjk("音楽モード／チェックボックス／", 0, false);
+    char *normal_asset = utf2cjk("通常", 0, false);
+    char *selected_asset = utf2cjk("選択中／", 0, false);
+    const char *const menu[] = { footer, footer, checkbox_asset, normal_asset, "on", "down", selected_asset };
+    // Some translated strings are also legal Shift-JIS; a decoder test alone cannot protect them.
+    const char *const translated[] = { footer, "\xc0\xbc\xcb\xb9", checkbox_asset, normal_asset, "on", "down", selected_asset };
+    char *gold_fn = utf2cjk("宝箱からお金", 0, false);
+    char *item_fn = utf2cjk("宝箱からアイテム", 0, false);
+    char *gold_msg = utf2cjk("手に入れた！", 0, false);
+    char *item_msg = utf2cjk("を手に入れた！", 0, false);
+    const char *const gold_reward[] = { gold_msg };
+    const char *const item_reward[] = { item_msg };
     struct buffer code;
     buffer_init(&code, NULL, 0);
     uint32_t run_skill = add_literal_function(ain, &code, "T_GetItemDisp@RunSkill", notice, 3);
@@ -348,6 +362,10 @@ int main(void)
     uint32_t padding = add_literal_function(ain, &code, "GetSpaceTextFromString", space, 1);
     uint32_t init = add_literal_function(ain, &code, skill_init, skills, 3);
     uint32_t other = add_literal_function(ain, &code, "Other", notice, 3);
+    uint32_t menu_help = add_literal_function(ain, &code, "T_PMenu@Init_SCutCheckButton", menu, 7);
+    uint32_t menu_other = add_literal_function(ain, &code, "OtherMenu", menu, 7);
+    uint32_t chest_gold = add_literal_function(ain, &code, gold_fn, gold_reward, 1);
+    uint32_t chest_item = add_literal_function(ain, &code, item_fn, item_reward, 1);
     ain->code = code.buf;
     ain->code_size = code.index;
 
@@ -356,8 +374,16 @@ int main(void)
     assert(!strcmp(pushed_literal(ain, run_skill, 0), notice[0]));
     assert(!strcmp(pushed_literal(ain, chest, 0), reward[0]));
     assert(!strcmp(pushed_literal(ain, padding, 0), space[0]));
+    assert(!strcmp(pushed_literal(ain, menu_help, 0), footer));
+    assert(!strcmp(pushed_literal(ain, menu_help, 1), footer));
+    assert(!strcmp(pushed_literal(ain, chest_gold, 0), gold_msg));
+    assert(!strcmp(pushed_literal(ain, chest_item, 0), item_msg));
 
     ain_add_string(ain, "\xc0\xbc\xcb\xb9"); // 兰斯, CN edition marker
+    char *dialogue = utf2cjk("宝箱里面的东西，都是本大爷的。", 0, true);
+    for (int i = 0; i < 8; i++)
+        ain_add_message(ain, dialogue);
+    free(dialogue);
     apply_game_specific_hacks(ain);
     assert(game_evenicle_rance && sys4_text_is_gbk);
     assert_gbk(pushed_literal(ain, run_skill, 0), "ランス");
@@ -366,15 +392,37 @@ int main(void)
     assert_gbk(pushed_literal(ain, padding, 0), "　");
     assert(!strcmp(pushed_literal(ain, run_skill, 2), notice[2])); // comparison, not display
     assert(!strcmp(pushed_literal(ain, other, 0), notice[0])); // same STR0 entry, outside notice
+    assert_gbk(pushed_literal(ain, chest_gold, 0), "手に入れた！");
+    assert_gbk(pushed_literal(ain, chest_item, 0), "を手に入れた！");
+    assert_gbk(pushed_literal(ain, menu_help, 0), footer_text);
+    assert_gbk(pushed_literal(ain, menu_help, 1), footer_text);
+    for (int i = 2; i < 7; i++)
+        assert(!strcmp(pushed_literal(ain, menu_help, i), menu[i]));
+    assert(!strcmp(pushed_literal(ain, menu_other, 0), footer));
+
+    for (int i = 0; i < 7; i++)
+        LittleEndian_putDW(ain->code, menu_help + 6 * i + 2, ain_add_string(ain, translated[i]));
+    apply_game_specific_hacks(ain);
+    assert(sys4_text_is_gbk);
+    for (int i = 0; i < 7; i++)
+        assert(!strcmp(pushed_literal(ain, menu_help, i), translated[i]));
 
     // The short fixture isn't the audited catalog initializer. Use its own
     // fingerprint to exercise the shared verified-block conversion.
     assert(!strcmp(pushed_literal(ain, init, 0), skills[0]));
-    normalize_evenicle_rance_literals(ain, skill_init, NULL, 0xb090da21u);
+    normalize_evenicle_rance_literals(ain, skill_init, NULL, 0xb090da21u, NULL);
     assert_gbk(pushed_literal(ain, init, 0), "ビリビリ");
     assert_gbk(pushed_literal(ain, init, 1), "雷属性の魔法攻撃");
     assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");
 
+    free(item_fn);
+    free(gold_fn);
+    free(item_msg);
+    free(gold_msg);
+    free(selected_asset);
+    free(normal_asset);
+    free(checkbox_asset);
+    free(footer);
     ain_free(ain);
     puts("OK");
     return 0;
