@@ -130,7 +130,7 @@ public class UncensoredPatchManagerTest {
     }
 
     @Test
-    public void supportedNineRanceGamesFlaggedInCatalog() {
+    public void supportedGamesFlaggedInCatalog() {
         List<String> expected = Arrays.asList(
                 GameCatalog.ID_RANCE01,
                 GameCatalog.ID_RANCE02,
@@ -140,7 +140,11 @@ public class UncensoredPatchManagerTest {
                 GameCatalog.ID_SENGOKU_RANCE,
                 GameCatalog.ID_RANCE08,
                 GameCatalog.ID_RANCE09,
-                GameCatalog.ID_RANCE10
+                GameCatalog.ID_RANCE10,
+                GameCatalog.ID_DOHNA_DOHNA,
+                GameCatalog.ID_EVENICLE,
+                GameCatalog.ID_IXSEAL,
+                GameCatalog.ID_HARUKA
         );
         for (String id : expected) {
             GameDescriptor d = GameCatalog.INSTANCE.descriptorForWithResolver(
@@ -149,9 +153,9 @@ public class UncensoredPatchManagerTest {
             assertTrue("Expected supportsUncensoredPatch=true for " + id, d.getSupportsUncensoredPatch());
             assertNotNull("Expected onlineBaseCdnUrl for " + id, d.getOnlineBaseCdnUrl());
         }
-        GameDescriptor nonRance = GameCatalog.INSTANCE.descriptorForWithResolver(
-                GameCatalog.ID_DOHNA_DOHNA, null, resId -> "res_" + resId
+        GameDescriptor unsupported = GameCatalog.INSTANCE.descriptorForWithResolver(
+                GameCatalog.ID_EVENICLE2, null, resId -> "res_" + resId
         );
-        assertFalse(nonRance.getSupportsUncensoredPatch());
+        assertFalse(unsupported.getSupportsUncensoredPatch());
     }
 }
