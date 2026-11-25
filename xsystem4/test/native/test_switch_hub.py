@@ -267,7 +267,7 @@ class SwitchHubTest(unittest.TestCase):
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
                  "-I", str(hub), "-I", str(repo / "xsystem4/include"),
-                 str(hub / "model.c"), str(hub / "install_transaction.c"),
+                 str(hub / "model.c"), str(hub / "install_transaction.c"), str(hub / "fs_util.c"),
                  str(hub / "online_manifest.c"), str(repo / "xsystem4/src/cJSON.c"),
                  "-x", "c", "-", "-o", str(Path(tmp) / "test")],
                 input=r"""
