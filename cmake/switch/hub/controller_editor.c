@@ -61,7 +61,7 @@ static void profile_draw(HubApp *app, size_t *focus, const HubGame *game)
     }
     hub_heading(app, "Controller profile", game ? game->name : "Global controls");
     hub_list(app, PROFILE_ITEMS, *focus, profile_item, game);
-    hub_hints(app, *focus >= FIRST_BINDING && *focus < RESET_PROFILE ? "Change binding" : "Select",
+    hub_hints(app, *focus >= FIRST_BINDING && *focus < RESET_PROFILE ? "Remap" : "Select",
               "Back", "Touch layout");
 }
 
@@ -117,7 +117,7 @@ static void touch_draw(HubApp *app, size_t *focus, const HubGame *game)
     }
     hub_heading(app, "Touch layout", game ? game->name : "Global controls");
     hub_list(app, TOUCH_ITEMS, *focus, touch_item, NULL);
-    hub_hints(app, *focus == TOGGLE_TOUCH ? "Toggle overlay" : "Edit button", "Back", "Reset layout");
+    hub_hints(app, *focus == TOGGLE_TOUCH ? "Toggle" : "Edit", "Back", "Reset layout");
 }
 
 static bool touch_input(HubApp *app, size_t *focus, const HubGame *game, HubInput input)
@@ -166,7 +166,7 @@ static void position_draw(HubApp *app, size_t *focus, const HubGame *game)
     const char *values[] = {controller_button_names[button.button], column, row};
     hub_heading(app, labels[touch_slot], "Left / right to change; moving onto another button swaps positions");
     hub_list(app, POSITION_ITEMS, *focus, position_item, values);
-    hub_hints(app, "Change value", "Back", NULL);
+    hub_hints(app, "Change", "Back", NULL);
 }
 
 static bool position_input(HubApp *app, size_t *focus, const HubGame *game, HubInput input)
