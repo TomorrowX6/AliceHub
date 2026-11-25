@@ -43,6 +43,8 @@
 #ifdef __SWITCH__
 #include "controller.h"
 #include "hub/controller_runtime.h"
+#include "hub/runtime_menu.h"
+#include "hub/runtime_menu_engines.h"
 #endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
@@ -3312,6 +3314,30 @@ void handle_window_events(void)
 
 void handle_events(void)
 {
+#ifdef __SWITCH__
+	// Keep the video clock running normally; do not park the VM in a modal
+	// while a movie is using the game's input/render loop.
+	if (!movie_has_active_playback() && switch_menu4_poll()) {
+		kbd_ctrl_down = false;
+		memset(kbd_key_state, 0, sizeof(kbd_key_state));
+		memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+		clear_active_touch_fingers();
+		single_touch_down = multi_touch_active = false;
+		cancel_long_touch_click();
+		reset_inputs_on_movie_start();
+		reset_gamepad_transient_state();
+		pthread_mutex_lock(&gp_mutex);
+		for (size_t i = 0; i < MAX_CONTROLLERS; ++i) {
+			memset(pad_slots[i].btn_down, 0, sizeof(pad_slots[i].btn_down));
+			memset(pad_slots[i].hat_dir, 0, sizeof(pad_slots[i].hat_dir));
+			memset(pad_slots[i].axes, 0, sizeof(pad_slots[i].axes));
+		}
+		pthread_mutex_unlock(&gp_mutex);
+		joy_clear_flag();
+		if (!switch_menu_lifecycle_pending())
+			gfx_swap();
+	}
+#endif
 	update_movie_skip_state();
 	static const enum sact_keycode mouse_btns[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
 	uint32_t poll_now = SDL_GetTicks();

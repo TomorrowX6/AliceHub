@@ -44,6 +44,10 @@
 #include "icon.h"
 #include "modifier.h"
 #include "xsystem4.h"
+#ifdef __SWITCH__
+#include "hub/runtime_menu_engines.h"
+static Texture *switch_menu_surface;
+#endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
 #include "gfx/font.h"
@@ -1377,6 +1381,22 @@ void gfx_swap(void)
 		.view_transform = wv_transform[0],
 		.data = view
 	};
+#ifdef __SWITCH__
+	if (switch_menu_surface) {
+		int width, height;
+		SDL_GL_GetDrawableSize(sdl.window, &width, &height);
+		int w = width, h = (int)((int64_t)width * switch_menu_surface->h / switch_menu_surface->w);
+		if (h > height) {
+			h = height;
+			w = (int)((int64_t)height * switch_menu_surface->w / switch_menu_surface->h);
+		}
+		glViewport((width - w) / 2, (height - h) / 2, w, h);
+		static mat4 identity = GLM_MAT4_IDENTITY_INIT;
+		job.texture = switch_menu_surface->handle;
+		job.world_transform = identity[0];
+		job.data = switch_menu_surface;
+	}
+#endif
 	gfx_render(&job);
 	/* Kick off mobile tile-based GPU rasterization immediately in parallel */
 	glFlush();
@@ -1425,7 +1445,8 @@ void gfx_swap(void)
 #endif
 
 #ifdef __SWITCH__
-	draw_switch_controls();
+	if (!switch_menu_surface)
+		draw_switch_controls();
 #endif
 	SDL_GL_SwapWindow(sdl.window);
 #ifdef __ANDROID__
@@ -1465,8 +1486,40 @@ void gfx_swap(void)
 	glViewport(0, 0, sdl.w, sdl.h);
 
 	gfx_update_frame_rate_counter();
+#ifdef __SWITCH__
+	if (switch_menu_surface)
+		return;
+#endif
 	modifier_on_frame();
 }
+
+#ifdef __SWITCH__
+bool gfx_switch_menu_present(void *context, SDL_Surface *panel)
+{
+	(void)context;
+	if (!gfx_initialized || !ensure_current_gl_context())
+		return false;
+	Texture texture = {0};
+	gfx_init_texture_with_pixels(&texture, panel->w, panel->h, panel->pixels);
+	if (!texture.handle)
+		return false;
+	texture.opaque = true;
+	switch_menu_surface = &texture;
+	gfx_swap();
+	switch_menu_surface = NULL;
+	gfx_delete_texture(&texture);
+	return true;
+}
+
+bool gfx_switch_menu_capture(void *context, const char *path)
+{
+	(void)context;
+	if (!gfx_initialized || !ensure_current_gl_context())
+		return false;
+	Texture *texture = view ? view : &main_surface;
+	return gfx_save_texture(texture, path, ALCG_PNG) != 0;
+}
+#endif
 
 // SDL can recreate Android's EGL window surface while retaining the GL context
 // and our last composited frame. RESTORED does not imply EXPOSED in SDL2, so a

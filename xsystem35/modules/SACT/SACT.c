@@ -1108,7 +1108,7 @@ static void PeekKey() {
 		sys_getKeyInfo();
 	prevKeyCode = nKeyCode;
 
-	*vResult = RawKeyInfo[nKeyCode] ? 1 : 0;
+	*vResult = event_rawkey_down(nKeyCode) ? 1 : 0;
 
 	TRACE("SACT.PeekKey %d,%p:", nKeyCode, vResult);
 }

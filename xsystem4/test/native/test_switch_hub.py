@@ -1,5 +1,6 @@
 """Host tests for the Switch hub's SD model, launch requests, and save transfers."""
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tempfile
@@ -16,6 +17,98 @@ HUB = REPO / "cmake/switch/hub"
 ENGINE = REPO / "xsystem4"
 SYS4 = ENGINE / "subprojects/libsys4"
 UNLOCK = REPO / "project/app/src/main/res/raw/full_unlock_saves.zip"
+
+
+class SwitchRuntimeCaptureTest(unittest.TestCase):
+    def test_captures_do_not_overwrite_and_failures_are_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(HUB),
+                 str(HUB / "runtime_capture.c"), "-x", "c", "-", "-o", str(executable)],
+                input=r"""
+#include "runtime_capture.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+static bool save(void *context, const char *path)
+{
+    FILE *fp = fopen(path, "wb");
+    assert(fp && fputc('X', fp) == 'X' && !fclose(fp));
+    return !context;
+}
+
+int main(void)
+{
+    char path[128];
+    assert(switch_capture_write("screenshots", "bmp", 0, save, NULL, path, sizeof(path)));
+    assert(!strcmp(path, "screenshots/19700101-000000-000.bmp") && !access(path, F_OK));
+    assert(!switch_capture_write("screenshots", "bmp", 0, save, path, path, sizeof(path)));
+    assert(access("screenshots/19700101-000000-001.bmp", F_OK) != 0);
+    assert(switch_capture_write("screenshots", "bmp", 0, save, NULL, path, sizeof(path)));
+    assert(!strcmp(path, "screenshots/19700101-000000-001.bmp") && !access(path, F_OK));
+    assert(!access("screenshots/19700101-000000-000.bmp", F_OK));
+    assert(!switch_capture_write("screenshots", "bmp", 0, save, NULL, path, 1));
+    assert(access("screenshots/19700101-000000-002.bmp", F_OK) != 0);
+}
+""", text=True, check=True,
+            )
+            subprocess.run([str(executable)], cwd=tmp, check=True)
+
+
+class SwitchRuntimeCtrlTest(unittest.TestCase):
+    def test_effective_ctrl_edges_survive_modal_input_reset(self):
+        source = (REPO / "xsystem35/src/event.c").read_text()
+        names = ("event_rawkey_down", "sync_switch_ctrl_event", "set_raw_key", "event_reset_input_state")
+        event = "\n".join(re.search(rf"^(?:static )?\w+ {name}\([^\n]*\) \{{\n.*?^\}}",
+                                     source, re.M | re.S).group() for name in names)
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-D__SWITCH__", "-Wall", "-Wextra", "-Werror",
+                 "-x", "c", "-", "-o", str(executable)],
+                input=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <string.h>
+enum { NUM_KEYCODES = 256, KEY_CTRL = 17, KEY_A = 65 };
+enum { AGSEVENT_KEY_PRESS, AGSEVENT_KEY_RELEASE };
+static int mouseb, joyinfo, switch_joy_buttons, ctrl_events;
+static bool RawKeyInfo[NUM_KEYCODES], skip, last_down;
+static bool switch_menu35_ctrl_skip(void) { return skip; }
+static void send_agsevent(int type, int code)
+{
+    if (code != KEY_CTRL)
+        return;
+    ++ctrl_events;
+    last_down = type == AGSEVENT_KEY_PRESS;
+}
+""" + event + r"""
+int main(void)
+{
+    event_reset_input_state();
+    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 0);
+    skip = true;
+    event_reset_input_state();
+    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 1 && last_down);
+    set_raw_key(KEY_CTRL, true);
+    set_raw_key(KEY_CTRL, false);
+    set_raw_key(KEY_A, true);
+    event_reset_input_state();
+    assert(event_rawkey_down(KEY_CTRL) && !event_rawkey_down(KEY_A) && ctrl_events == 1);
+    skip = false;
+    event_reset_input_state();
+    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 2 && !last_down);
+    set_raw_key(KEY_CTRL, true);
+    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 3 && last_down);
+    set_raw_key(KEY_CTRL, false);
+    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 4 && !last_down);
+}
+""", text=True, check=True,
+            )
+            subprocess.run([str(executable)], check=True)
 
 
 class SwitchSaveTest(unittest.TestCase):

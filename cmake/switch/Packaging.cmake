@@ -3,6 +3,8 @@ function(alicehub_switch_package target romfs)
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/model.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_profile.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_runtime.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/runtime_capture.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/runtime_menu.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/picker_art.c")
   target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
   target_compile_definitions(${target} PRIVATE ALICEHUB_ENGINE="${target}")

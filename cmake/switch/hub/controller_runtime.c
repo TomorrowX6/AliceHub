@@ -24,6 +24,11 @@ void switch_controls_load(const char *engine, const char *game_folder)
     remapping = profile.touch_enabled;
     for (unsigned i = 0; i < CP_BUTTONS; ++i)
         remapping |= profile.binding[i] != i;
+    switch_controls_release_touch();
+}
+
+void switch_controls_release_touch(void)
+{
     memset(fingers, 0, sizeof(fingers));
     new_touch_buttons = 0;
     overlay_mouse = false;
@@ -89,9 +94,7 @@ bool switch_controls_touch(const SDL_Event *event)
     switch (event->type) {
     case SDL_APP_WILLENTERBACKGROUND:
     case SDL_APP_DIDENTERBACKGROUND:
-        memset(fingers, 0, sizeof(fingers));
-        new_touch_buttons = 0;
-        overlay_mouse = false;
+        switch_controls_release_touch();
         return false;
     case SDL_MULTIGESTURE:
         for (size_t i = 0; i < SDL_arraysize(fingers); ++i)

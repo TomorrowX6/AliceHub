@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 void switch_controls_load(const char *engine, const char *game_folder);
+void switch_controls_release_touch(void);
 bool switch_controls_remapping(void);
 bool switch_controls_touch_enabled(void);
 uint32_t switch_controls_buttons(uint32_t physical);

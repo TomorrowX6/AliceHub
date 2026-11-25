@@ -51,6 +51,7 @@
 #endif
 #ifdef __SWITCH__
 #include "launcher.h"
+#include "hub/runtime_menu_engines.h"
 #endif
 
 #include "system4.h"
@@ -1676,6 +1677,9 @@ int main(int argc, char *argv[])
 #endif
 
 	mkdir_p(config.save_dir);
+#ifdef __SWITCH__
+	switch_menu4_load_display(config.save_dir);
+#endif
 	apply_game_specific_hacks(ain);
 	init_mai_word_table();
 	init_text_dict();

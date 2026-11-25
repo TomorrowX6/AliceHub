@@ -46,6 +46,10 @@
 #include "alicehub_bridge.h"
 #ifdef __SWITCH__
 #include "hub/controller_runtime.h"
+#include "hub/runtime_menu.h"
+#include "hub/runtime_menu_engines.h"
+#include "escalayer_modifier.h"
+#include "gfx_private.h"
 #endif
 
 static void get_event(void);
@@ -63,7 +67,7 @@ enum CustomEventCode {
 static SDL_Point mouse_pos;
 static int mouseb;
 static int mouse_wheel_up, mouse_wheel_down;
-bool RawKeyInfo[256];
+static bool RawKeyInfo[NUM_KEYCODES];
 
 /* SDL Joystick */
 static int joyinfo=0;
@@ -310,6 +314,28 @@ void send_agsevent(enum agsevent_type type, int code) {
 #endif
 }
 
+#ifdef __SWITCH__
+static void sync_switch_ctrl_event(void) {
+	static bool dispatched;
+	bool down = event_rawkey_down(KEY_CTRL);
+	if (down == dispatched)
+		return;
+	dispatched = down;
+	send_agsevent(down ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, KEY_CTRL);
+}
+#endif
+
+static void set_raw_key(int code, bool pressed) {
+	RawKeyInfo[code] = pressed;
+#ifdef __SWITCH__
+	if (code == KEY_CTRL) {
+		sync_switch_ctrl_event();
+		return;
+	}
+#endif
+	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
+}
+
 void event_set_mouse_internal_location(int x, int y) {
 	mouse_pos.x = x;
 	mouse_pos.y = y;
@@ -424,6 +450,10 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 		break;
 #endif
 	case SDL_EVENT_WILL_ENTER_BACKGROUND:
+#ifdef __SWITCH__
+		switch_menu35_release_skip();
+		event_reset_input_state();
+#endif
 #ifdef __ANDROID__
 		gfx_android_on_background();
 		msgskip_syncFile();
@@ -683,6 +713,19 @@ void event_handle_event(SDL_Event *e) {
 static void get_event(void) {
 	enum scheduler_event scheduler_event = SCHEDULER_EVENT_INPUT_CHECK_MISS;
 
+#ifdef __SWITCH__
+	if (switch_menu35_poll(gfx_renderer)) {
+		event_reset_input_state();
+		deferred_touch_event.timestamp = 0;
+		touch_button = 0;
+		mouse_wheel_up = mouse_wheel_down = 0;
+		if (!switch_menu_lifecycle_pending()) {
+			gfx_requestRedraw();
+			gfx_updateScreen();
+		}
+	}
+	escalayer_modifier_tick();
+#endif
 	fire_deferred_touch_event();
 	alicehub_pump_events();
 
@@ -699,8 +742,7 @@ static void get_event(void) {
 /* キー情報の取得 */
 static void keyEventProsess(SDL_KeyboardEvent *e, bool pressed) {
 	int code = keytable[sdl_KeyboardEventScancode(e)];
-	RawKeyInfo[code] = pressed;
-	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, code);
+	set_raw_key(code, pressed);
 }
 
 int event_get_key(void) {
@@ -720,12 +762,21 @@ int event_get_key(void) {
 	return rt;
 }
 
+bool event_rawkey_down(unsigned code) {
+#ifdef __SWITCH__
+	if (code == KEY_CTRL && switch_menu35_ctrl_skip())
+		return true;
+#endif
+	return code < NUM_KEYCODES && RawKeyInfo[code];
+}
+
 void event_reset_input_state(void) {
 	memset(RawKeyInfo, 0, sizeof(RawKeyInfo));
 	mouseb = 0;
 	joyinfo = 0;
 #ifdef __SWITCH__
 	switch_joy_buttons = 0;
+	sync_switch_ctrl_event();
 #endif
 }
 
@@ -831,8 +882,7 @@ void event_inject_rawkey(int keycode, bool pressed) {
 		return;
 	}
 #endif
-	RawKeyInfo[keycode] = pressed;
-	send_agsevent(pressed ? AGSEVENT_KEY_PRESS : AGSEVENT_KEY_RELEASE, keycode);
+	set_raw_key(keycode, pressed);
 }
 
 void event_inject_joy_mask(int mask, bool pressed) {
