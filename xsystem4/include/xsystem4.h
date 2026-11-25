@@ -114,6 +114,7 @@ extern bool game_rance10;
 extern bool game_dohnadohna;
 extern bool game_evenicle;
 extern bool game_evenicle_rance;
+extern bool game_evenicle_rance_cn;
 extern bool game_evenicle_gaiden;
 extern bool game_bladebriders;
 extern bool game_evenicle2;

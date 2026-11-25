@@ -291,6 +291,189 @@ int main(void) {
         out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
 
+    def test_evenicle_rance_cn_skill_notice_literals(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+
+#include "hacks.c"
+
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { return false; }
+
+static uint32_t add_literal_function(struct ain *ain, struct buffer *code,
+        const char *name, const char *const *literals, int count)
+{
+    int fno = ain_add_function(ain, name);
+    write_instruction1(code, FUNC, fno);
+    uint32_t start = code->index;
+    ain->functions[fno].address = start;
+    for (int i = 0; i < count; i++)
+        write_instruction1(code, S_PUSH, ain_add_string(ain, literals[i]));
+    write_instruction1(code, ENDFUNC, fno);
+    return start;
+}
+
+static const char *pushed_literal(struct ain *ain, uint32_t start, int index)
+{
+    int no = LittleEndian_getDW(ain->code, start + 6 * index + 2);
+    return ain->strings[no]->text;
+}
+
+static void assert_gbk(const char *bytes, const char *expected)
+{
+    char *utf8 = cjk2utf_strict(bytes, true, NULL);
+    assert(utf8 && !strcmp(utf8, expected));
+    free(utf8);
+}
+
+int main(void)
+{
+    struct ain *ain = ain_new(6, 0);
+    ain_add_struct(ain, "CBigMap");
+    ain_add_string(ain, "56s5d4");
+    const char *const notice[] = { "\x83\x89\x83\x93\x83\x58", "\x82\xcd", "\x83\x41\x83\x58\x83\x5e" };
+    const char *const reward[] = { "\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49" };
+    const char *const space[] = { "\x81\x40" };
+    const char *const skills[] = {
+        "\x83\x72\x83\x8a\x83\x72\x83\x8a",
+        "\x97\x8b\x91\xae\x90\xab\x82\xcc\x96\x82\x96\x40\x8d\x55\x8c\x82",
+        "2.0\x94\x7b\x81\x40\x97\x8b\x96\x82\x96\x40",
+    };
+    const char *skill_init = "\x83\x58\x83\x4c\x83\x8b\x8f\x89\x8a\xfa\x89\xbb";
+    const char *footer_text = "□にチェックを入れると、ショートカットが表示されます（最大４つ）";
+    char *footer = utf2cjk(footer_text, 0, false);
+    char *checkbox_asset = utf2cjk("音楽モード／チェックボックス／", 0, false);
+    char *normal_asset = utf2cjk("通常", 0, false);
+    char *selected_asset = utf2cjk("選択中／", 0, false);
+    const char *const menu[] = { footer, footer, checkbox_asset, normal_asset, "on", "down", selected_asset };
+    // Some translated strings are also legal Shift-JIS; a decoder test alone cannot protect them.
+    const char *const translated[] = { footer, "\xc0\xbc\xcb\xb9", checkbox_asset, normal_asset, "on", "down", selected_asset };
+    char *gold_fn = utf2cjk("宝箱からお金", 0, false);
+    char *item_fn = utf2cjk("宝箱からアイテム", 0, false);
+    char *gold_msg = utf2cjk("手に入れた！", 0, false);
+    char *item_msg = utf2cjk("を手に入れた！", 0, false);
+    const char *const gold_reward[] = { gold_msg };
+    const char *const item_reward[] = { item_msg };
+    const char *load_fn = "ロード確認画面";
+    const char *bonus_fn = "特典用キャラ設定";
+    const char *const load[] = { "", "讀取【DATA ", "】？", "是", "否" };
+    const char *const bonus[] = { "", "", "ランスアタック",
+        "ランスの発明した、すごい物理攻撃技r敵全体に５倍の大攻撃", "5.0倍 全体 必殺技", "",
+        "捕獲", "女の子モンスターの体力がr２０％以下の時、まれに捕まえる事が出来る",
+        "１回制限", "弱った女Ｍを捕獲", "" };
+    char *load_name = utf2cjk(load_fn, 0, false);
+    char *bonus_name = utf2cjk(bonus_fn, 0, false);
+    const char *load_literals[5], *bonus_literals[11];
+    for (int i = 0; i < 5; i++)
+        load_literals[i] = utf2cjk(load[i], 0, false);
+    for (int i = 0; i < 11; i++)
+        bonus_literals[i] = utf2cjk(bonus[i], 0, false);
+    struct buffer code;
+    buffer_init(&code, NULL, 0);
+    uint32_t run_skill = add_literal_function(ain, &code, "T_GetItemDisp@RunSkill", notice, 3);
+    uint32_t chest = add_literal_function(ain, &code, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b", reward, 1);
+    uint32_t padding = add_literal_function(ain, &code, "GetSpaceTextFromString", space, 1);
+    uint32_t init = add_literal_function(ain, &code, skill_init, skills, 3);
+    uint32_t other = add_literal_function(ain, &code, "Other", notice, 3);
+    uint32_t menu_help = add_literal_function(ain, &code, "T_PMenu@Init_SCutCheckButton", menu, 7);
+    uint32_t menu_other = add_literal_function(ain, &code, "OtherMenu", menu, 7);
+    uint32_t chest_gold = add_literal_function(ain, &code, gold_fn, gold_reward, 1);
+    uint32_t chest_item = add_literal_function(ain, &code, item_fn, item_reward, 1);
+    uint32_t load_confirm = add_literal_function(ain, &code, load_name, load_literals, 5);
+    uint32_t bonus_skills = add_literal_function(ain, &code, bonus_name, bonus_literals, 11);
+    ain->code = code.buf;
+    ain->code_size = code.index;
+
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle_rance && !sys4_text_is_gbk);
+    assert(!strcmp(pushed_literal(ain, run_skill, 0), notice[0]));
+    assert(!strcmp(pushed_literal(ain, chest, 0), reward[0]));
+    assert(!strcmp(pushed_literal(ain, padding, 0), space[0]));
+    assert(!strcmp(pushed_literal(ain, menu_help, 0), footer));
+    assert(!strcmp(pushed_literal(ain, menu_help, 1), footer));
+    assert(!strcmp(pushed_literal(ain, chest_gold, 0), gold_msg));
+    assert(!strcmp(pushed_literal(ain, chest_item, 0), item_msg));
+    for (int i = 0; i < 5; i++)
+        assert(!strcmp(pushed_literal(ain, load_confirm, i), load_literals[i]));
+    for (int i = 0; i < 11; i++)
+        assert(!strcmp(pushed_literal(ain, bonus_skills, i), bonus_literals[i]));
+
+    ain_add_string(ain, "\xc0\xbc\xcb\xb9"); // 兰斯, CN edition marker
+    char *dialogue = utf2cjk("宝箱里面的东西，都是本大爷的。", 0, true);
+    for (int i = 0; i < 8; i++)
+        ain_add_message(ain, dialogue);
+    free(dialogue);
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle_rance && sys4_text_is_gbk);
+    assert_gbk(pushed_literal(ain, run_skill, 0), "ランス");
+    assert_gbk(pushed_literal(ain, run_skill, 1), "は");
+    assert_gbk(pushed_literal(ain, chest, 0), "を覚えた！");
+    assert_gbk(pushed_literal(ain, padding, 0), "　");
+    assert(!strcmp(pushed_literal(ain, run_skill, 2), notice[2])); // comparison, not display
+    assert(!strcmp(pushed_literal(ain, other, 0), notice[0])); // same STR0 entry, outside notice
+    assert_gbk(pushed_literal(ain, chest_gold, 0), "手に入れた！");
+    assert_gbk(pushed_literal(ain, chest_item, 0), "を手に入れた！");
+    assert_gbk(pushed_literal(ain, menu_help, 0), footer_text);
+    assert_gbk(pushed_literal(ain, menu_help, 1), footer_text);
+    for (int i = 2; i < 7; i++)
+        assert(!strcmp(pushed_literal(ain, menu_help, i), menu[i]));
+    assert(!strcmp(pushed_literal(ain, menu_other, 0), footer));
+    char prompt[64];
+    snprintf(prompt, sizeof(prompt), "%s01%s", pushed_literal(ain, load_confirm, 1),
+        pushed_literal(ain, load_confirm, 2));
+    assert_gbk(prompt, "讀取【DATA 01】？");
+    assert_gbk(pushed_literal(ain, load_confirm, 3), "是");
+    assert_gbk(pushed_literal(ain, load_confirm, 4), "否");
+    for (int i = 0; i < 11; i++)
+        assert_gbk(pushed_literal(ain, bonus_skills, i), bonus[i]);
+
+    char *already_gbk = utf2cjk("读取【DATA ", 0, true);
+    for (int i = 0; i < 5; i++)
+        LittleEndian_putDW(ain->code, load_confirm + 6 * i + 2,
+            ain_add_string(ain, i == 1 ? already_gbk : load_literals[i]));
+
+    for (int i = 0; i < 7; i++)
+        LittleEndian_putDW(ain->code, menu_help + 6 * i + 2, ain_add_string(ain, translated[i]));
+    apply_game_specific_hacks(ain);
+    assert(sys4_text_is_gbk);
+    assert(!strcmp(pushed_literal(ain, load_confirm, 1), already_gbk));
+    for (int i = 0; i < 7; i++)
+        assert(!strcmp(pushed_literal(ain, menu_help, i), translated[i]));
+
+    // The short fixture isn't the audited catalog initializer. Use its own
+    // fingerprint to exercise the shared verified-block conversion.
+    assert(!strcmp(pushed_literal(ain, init, 0), skills[0]));
+    normalize_evenicle_rance_literals(ain, skill_init, NULL, 0xb090da21u, NULL);
+    assert_gbk(pushed_literal(ain, init, 0), "ビリビリ");
+    assert_gbk(pushed_literal(ain, init, 1), "雷属性の魔法攻撃");
+    assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");
+
+    free(item_fn);
+    free(already_gbk);
+    free(load_name);
+    free(bonus_name);
+    for (int i = 0; i < 5; i++)
+        free((char *)load_literals[i]);
+    for (int i = 0; i < 11; i++)
+        free((char *)bonus_literals[i]);
+    free(gold_fn);
+    free(item_msg);
+    free(gold_msg);
+    free(selected_asset);
+    free(normal_asset);
+    free(checkbox_asset);
+    free(footer);
+    ain_free(ain);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness, [ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"]
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):
         harness = r"""
 #include <assert.h>
@@ -320,6 +503,7 @@ bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = false;
+bool game_escalayer_reboot, game_tsumamigui3;
 bool game_tsumamigui3_jun = false;
 bool game_tsumamigui3_ntr = false;
 
@@ -644,6 +828,10 @@ int main(int argc, char **argv) {
     def test_mainex_v12_polyex_id1_resolution(self):
         main_ex = build_extf([
             _ex_block(b"MainTitle", 3, _ex_pstr(b"Evenicle2Main")),
+            _ex_block(b"Scenes", 6, _ex_tree(b"Scenes", [
+                _ex_tree(b"First", []),
+                _ex_tree(b"Second", []),
+            ])),
         ])
         poly_ex = build_extf([
             _ex_block(
@@ -674,6 +862,7 @@ int main(int argc, char **argv) {
             harness = r"""
 #include <assert.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -682,6 +871,7 @@ int main(int argc, char **argv) {
 #include "reign.h"
 #include "hll/hll.h"
 #include "mainex_v12.h"
+#include "vm.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 #include "vm/v12.h"
@@ -692,6 +882,8 @@ int main(int argc, char **argv) {
 
 struct config config;
 bool game_evenicle2 = true;
+static struct ain program = { .version = 14 };
+struct ain *ain = &program;
 struct vm_pointer *heap;
 size_t heap_size = 256;
 
@@ -716,22 +908,38 @@ static void *find_fn(const char *n) {
 
 char *gamedir_path(const char *p) { return strdup(p); }
 char *gamedir_path_icase(const char *p) { return strdup(p); }
-struct page *v12_array_new(const struct ain_type *type, int size, bool init) {
-    struct page *p = xcalloc(1, sizeof(struct page) + size * sizeof(union vm_value));
-    p->type = ARRAY_PAGE;
-    p->nr_vars = size;
-    for (int i = 0; i < size; i++) {
-        p->values[i].i = next_slot++;
-        heap_slots[p->values[i].i].s = string_ref(&EMPTY_STRING);
-    }
-    return p;
+_Noreturn void _vm_error(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    exit(1);
 }
-void delete_page_vars(struct page *p) {
-    if (!p) return;
-    for (int i = 0; i < p->nr_vars; i++)
-        free_string(heap_slots[p->values[i].i].s);
+int32_t heap_alloc_slot(enum vm_pointer_type type) {
+    assert(next_slot < heap_size);
+    int slot = next_slot++;
+    heap[slot] = (struct vm_pointer){ .type = type, .ref = 1 };
+    return slot;
 }
-void free_page(struct page *p) { free(p); }
+void heap_set_page(int slot, struct page *p) { heap[slot].page = p; }
+int32_t heap_alloc_page(struct page *p) {
+    int slot = heap_alloc_slot(VM_PAGE);
+    heap_set_page(slot, p);
+    return slot;
+}
+void heap_unref(int slot) {
+    assert(heap[slot].type == VM_STRING && heap[slot].ref == 1);
+    heap[slot].ref = 0;
+    free_string(heap[slot].s);
+}
+void exit_unref(int slot) { heap_unref(slot); }
+union vm_value vm_copy(union vm_value v, enum ain_data_type type) {
+    assert(type == AIN_STRING && heap[v.i].type == VM_STRING && heap[v.i].ref == 1);
+    int slot = heap_alloc_slot(VM_STRING);
+    heap[slot].s = string_ref(heap[v.i].s);
+    return vm_int(slot);
+}
+void vm_call(int fn, int obj) { abort(); }
 
 struct archive *RE_open_3d_archive(void) {
     int err = 0;
@@ -781,6 +989,23 @@ int main(int argc, char **argv) {
     assert(strcmp(got1_legacy->text, "Evenicle2Main") == 0);
     free_string(got1_legacy);
 
+    program.version = 8;
+    struct string *scenes = make_string("Scenes", 6);
+    struct page *src = NULL;
+    assert(nodes_fn(scenes, &src, 0));
+    assert(src && src->nr_vars == 2);
+    union vm_value dim = { .i = 1 };
+    struct page *dst = alloc_array(1, &dim, AIN_REF_ARRAY_STRING, -1, true);
+    array_copy(dst, 0, src, 1, 1);
+    assert(src->a_type == AIN_ARRAY_STRING);
+    delete_page_vars(src);
+    free_page(src);
+    assert(strcmp(heap[dst->values[0].i].s->text, "Second") == 0);
+    delete_page_vars(dst);
+    free_page(dst);
+    free_string(scenes);
+    program.version = 14;
+
     // With game_evenicle2=true, ID=1 resolves PolyEX trees in Evenicle23D.afa (with SJIS 0x5c).
     game_evenicle2 = true;
     assert(exists_fn(s_main, 1) == false);
@@ -794,6 +1019,7 @@ int main(int argc, char **argv) {
     struct string *s_mot = make_string(p_mot, strlen(p_mot));
     assert(nodes_fn(s_mot, &list, 1) == true);
     assert(list && list->nr_vars == 1);
+    assert(list->a_type == AIN_ARRAY && list->array.element_type.data == AIN_STRING);
     assert(strcmp(heap[list->values[0].i].s->text, "\x91\xd2\x8b\x40") == 0);
     delete_page_vars(list);
     free_page(list);
@@ -822,8 +1048,13 @@ int main(int argc, char **argv) {
 """
             out = compile_and_run(
                 harness,
-                [ROOT / "src/hll/MainEXFile_v12.c", *LIBSYS4_CORE],
-                ["-lz", "-lm"],
+                [
+                    ROOT / "src/hll/MainEXFile_v12.c",
+                    ROOT / "src/page.c",
+                    ROOT / "src/vm_v12.c",
+                    *LIBSYS4_CORE,
+                ],
+                ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
                 [str(main_ex_path), str(afa_path)],
             )
             self.assertEqual(out.strip(), "OK")

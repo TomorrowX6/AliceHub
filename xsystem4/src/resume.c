@@ -1985,6 +1985,78 @@ static enum savefile_error load_rsave_image(const char *key, const char *path)
 	return SAVEFILE_SUCCESS;
 }
 
+static void repair_evenicle_rance_bonus_skill_string(int slot, const char *text)
+{
+	if (!string_index_valid(slot) || !heap[slot].s)
+		return;
+	char *sjis = utf2cjk(text, 0, false);
+	struct string *old = heap[slot].s;
+	size_t len = strlen(sjis);
+	bool matches = old->size == len && !memcmp(old->text, sjis, len);
+	free(sjis);
+	if (!matches)
+		return;
+
+	char *gbk = utf2cjk(text, 0, true);
+	char *round_trip = cjk2utf_strict(gbk, true, NULL);
+	if (round_trip && !strcmp(round_trip, text) && strcmp(old->text, gbk)) {
+		struct string *replacement = make_string(gbk, strlen(gbk));
+		heap_string_assign(slot, replacement);
+		free_string(replacement);
+	}
+	free(round_trip);
+	free(gbk);
+}
+
+static void repair_evenicle_rance_resume_skills(void)
+{
+	if (!game_evenicle_rance_cn || !sys4_text_is_gbk || sys4_source_is_utf8)
+		return;
+	int skill_type = ain_get_struct(ain, "S_SkillParam");
+	if (skill_type < 0)
+		return;
+	enum { NUMBER = 2, NAME = 3, DESCRIPTION = 19, LONG_DESCRIPTION = 20, DISPLAY_NAME = 34 };
+	const struct ain_struct *type = &ain->structures[skill_type];
+	if (type->nr_members <= DISPLAY_NAME || type->members[NUMBER].type.data != AIN_INT)
+		return;
+
+	// Match the stored spellings of the two bonus skills, not the save's encoding.
+	const struct {
+		int number;
+		const char *name;
+		const char *description;
+		const char *long_description;
+	} bonus_skills[] = {
+		{ 116, "ランスアタック", "5.0倍 全体 必殺技",
+			"ランスの発明した、すごい物理攻撃技\n敵全体に５倍の大攻撃" },
+		{ 128, "捕獲", "弱った女Ｍを捕獲",
+			"女の子モンスターの体力が\n２０％以下の時、まれに捕まえる事が出来る" },
+	};
+	for (size_t i = 0; i < heap_size; i++) {
+		if (!page_index_valid(i))
+			continue;
+		struct page *page = heap[i].page;
+		if (!page || page->type != STRUCT_PAGE || page->index != skill_type || page->nr_vars <= DISPLAY_NAME)
+			continue;
+		for (size_t j = 0; j < sizeof(bonus_skills) / sizeof(bonus_skills[0]); j++) {
+			if (page->values[NUMBER].i != bonus_skills[j].number)
+				continue;
+			const struct { int member; const char *text; } fields[] = {
+				{ NAME, bonus_skills[j].name },
+				{ DISPLAY_NAME, bonus_skills[j].name },
+				{ DESCRIPTION, bonus_skills[j].description },
+				{ LONG_DESCRIPTION, bonus_skills[j].long_description },
+			};
+			for (size_t k = 0; k < sizeof(fields) / sizeof(fields[0]); k++) {
+				int member = fields[k].member;
+				if (type->members[member].type.data == AIN_STRING)
+					repair_evenicle_rance_bonus_skill_string(page->values[member].i, fields[k].text);
+			}
+			break;
+		}
+	}
+}
+
 void vm_load_image(const char *key, const char *path)
 {
 	dg_callbegin_pending = false;
@@ -1992,18 +2064,17 @@ void vm_load_image(const char *key, const char *path)
 	enum savefile_error error = load_rsave_image(key, path);
 	switch (error) {
 	case SAVEFILE_SUCCESS:
-		modifier_on_config_loaded();
-		modifier_on_globals_loaded();
-		return;
+		break;
 	case SAVEFILE_INVALID_SIGNATURE:
 		// If not a System4 resume save file, read as a json.
 		load_json_image(key, path);
-		modifier_on_config_loaded();
-		modifier_on_globals_loaded();
-		return;
+		break;
 	default:
 		VM_ERROR("Failed to read VM image '%s': %s", display_sjis0(path), savefile_strerror(error));
 	}
+	repair_evenicle_rance_resume_skills();
+	modifier_on_config_loaded();
+	modifier_on_globals_loaded();
 }
 
 static struct page *load_json_image_comments(const char *key, const char *path, int *success)
