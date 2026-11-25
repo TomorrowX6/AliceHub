@@ -8,22 +8,26 @@ else {
 }
 apply plugin: 'kotlin-android'
 
-def gitCommitHash = { ->
+def readGitCommit = { boolean shortHash ->
     try {
-        def proc = ['git', 'rev-parse', '--short', 'HEAD'].execute(null, rootProject.projectDir)
+        def args = shortHash ? ['git', 'rev-parse', '--short', 'HEAD'] : ['git', 'rev-parse', 'HEAD']
+        def proc = args.execute(null, rootProject.projectDir)
         proc.waitFor()
         def out = proc.in.text.trim()
-        return out ? out : 'unknown'
+        return out ==~ /[0-9a-f]{4,40}/ ? out : 'unknown'
     } catch (Exception ignored) {
         return 'unknown'
     }
-}()
+}
 
 android {
     if (buildAsApplication) {
         namespace "io.github.kichikuou.xsystem4"
     }
     compileSdkVersion 34
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         applicationId 'io.github.alicehub'
         minSdkVersion 26
@@ -35,7 +39,8 @@ android {
         versionCode (ciRunNumber ? (100 + ciRunNumber.toInteger()) : 4)
         def configuredVersionName = (project.findProperty('APP_VERSION_NAME')
                 ?: System.getenv('APP_VERSION_NAME'))?.toString()?.trim()
-        versionName (configuredVersionName ? configuredVersionName : gitCommitHash)
+        versionName (configuredVersionName ? configuredVersionName : readGitCommit(true))
+        buildConfigField 'String', 'GIT_COMMIT', '"' + readGitCommit(false) + '"'
     }
     def releaseKeystoreFile = rootProject.file('keystore.jks')
     def releaseStorePassword = (project.findProperty('KEYSTORE_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD'))?.toString()?.trim()

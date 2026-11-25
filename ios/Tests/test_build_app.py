@@ -20,6 +20,8 @@ class BuildAppChecks(unittest.TestCase):
             native.write_text('#!/bin/bash\nset -eu\necho "native:$1" >> "$CALLS"\n'
                               'mkdir -p "$(dirname "$0")/build/$1/stage/lib"\n'
                               'touch "$(dirname "$0")/build/$1/stage/lib/libxsystem4.a"\n'
+                              'ft="$(dirname "$0")/build/$1/stage/include/freetype2/freetype/config"\n'
+                              'mkdir -p "$ft"\ntouch "$ft/ftoption.h"\n'
                               'mkdir -p "$(dirname "$0")/build/$1/stage/share/system3/mda"\n'
                               'touch "$(dirname "$0")/build/$1/stage/share/system3/mda/AMUS.DAT"\n')
             native.chmod(0o755)
@@ -27,15 +29,25 @@ class BuildAppChecks(unittest.TestCase):
             collect.write_text('#!/bin/bash\nset -eu\ntest -d "$1/stage/lib"\n'
                                'mkdir -p "$2"\ntouch "$2/xsystem4"\n')
             collect.chmod(0o755)
-            for name in ('xcodegen', 'xcodebuild'):
+            for name in ('xcodegen', 'xcodebuild', 'ditto'):
                 tool = root / name
-                tool.write_text('#!/bin/bash\necho "' + name + '" >> "$CALLS"\n')
+                if name == 'ditto':
+                    tool.write_text('#!/bin/bash\ncp -R "$@"\n')
+                else:
+                    args = 'printf "%s\\n" "$@" > "$CALLS.args"\n' if name == 'xcodebuild' else ''
+                    tool.write_text('#!/bin/bash\necho "' + name + '" >> "$CALLS"\n' + args)
                 tool.chmod(0o755)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True)
+            subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture', '-c',
+                            'user.email=fixture@example.invalid', 'commit', '-q',
+                            '--allow-empty', '-m', 'fixture'], check=True)
+            sha = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], CALLS=str(calls))
             for _ in range(2):
                 subprocess.run(['bash', str(root / 'build-app.sh'), 'sim'], env=env, check=True)
             self.assertEqual(calls.read_text().splitlines(),
                              ['native:iphonesimulator', 'xcodegen', 'xcodebuild'] * 2)
+            self.assertIn('ALICEHUB_GIT_COMMIT=' + sha, Path(str(calls) + '.args').read_text().splitlines())
             self.assertTrue((root / 'build/system3/mda/AMUS.DAT').is_file())
             self.assertTrue((root / 'build/licenses/xsystem4').is_file())
             product = root / 'build/app-iphoneos/Build/Products/Release-iphoneos/AliceHub.app'

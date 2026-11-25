@@ -10,6 +10,7 @@ struct HubSettingsView: View {
     @AppStorage(DownloadConcurrency.storageKey) private var downloadConcurrency = DownloadConcurrency.defaultValue
     @AppStorage("hub.longPressCtrl") private var longPressCtrl = false
     @AppStorage(OnlineInstall.storageKey) private var onlineInstall = false
+    @AppStorage(UpdateCheck.storageKey) private var checkForUpdates = true
     @State private var onlineDisclaimer = false
     @State private var gamepad = false
     @State private var choosingSyncFolder = false
@@ -34,6 +35,7 @@ struct HubSettingsView: View {
                     }
                 }.listRowBackground(HubTheme.surface)
                 Section("下载") {
+                    Toggle("检查更新", isOn: $checkForUpdates)
                     Toggle("在线安装", isOn: Binding(
                         get: { onlineInstall },
                         set: { enabled in if enabled { onlineDisclaimer = true } else { onlineInstall = false } }

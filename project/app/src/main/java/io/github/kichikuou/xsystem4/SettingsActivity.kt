@@ -97,6 +97,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_sort, accent))
         findViewById<ImageView>(R.id.icon_settings_online)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_cloud_download, accent))
+        findViewById<ImageView>(R.id.icon_settings_updates)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_download, accent))
         findViewById<ImageView>(R.id.icon_settings_download_concurrency)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_download_concurrency, accent))
         findViewById<ImageView>(R.id.icon_settings_gamepad)
@@ -122,6 +124,10 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.row_settings_online_install).setOnClickListener {
             onOnlineInstallClicked()
+        }
+        findViewById<View>(R.id.row_settings_updates).setOnClickListener {
+            AppSettings.setUpdateCheckEnabled(this, !AppSettings.isUpdateCheckEnabled(this))
+            refreshSettingsUi()
         }
         findViewById<View>(R.id.row_settings_download_concurrency).setOnClickListener {
             showDownloadConcurrencyDialog()
@@ -184,6 +190,7 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+        findViewById<Switch>(R.id.switch_updates).isChecked = AppSettings.isUpdateCheckEnabled(this)
         val concurrencyLabel = downloadConcurrencyLabel(AppSettings.getDownloadConcurrency(this))
         findViewById<TextView>(R.id.value_settings_download_concurrency).text = concurrencyLabel
         findViewById<View>(R.id.row_settings_download_concurrency).contentDescription =

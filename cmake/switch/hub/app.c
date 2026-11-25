@@ -1,10 +1,14 @@
 #include "hub.h"
 #include "install_transaction.h"
 #include "support_files.h"
+#include "update_screen.h"
 #include "../picker_art.h"
 #include "../picker_renderer.h"
 
+#include <curl/curl.h>
 #include <errno.h>
+#include <pthread.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -29,7 +33,7 @@ struct HubApp {
     HubLibrary library;
     HubSettings settings;
     HubHandoff returned;
-    const HubScreen *screens[32];
+    const HubScreen *screens[64];
     const HubActionEntry *actions[HUB_ACTION_GROUPS][32];
     Frame stack[12];
     size_t screen_count, action_count[HUB_ACTION_GROUPS], depth;
@@ -38,6 +42,30 @@ struct HubApp {
     char dialog_title[128], dialog_detail[512], toast[256];
     unsigned toast_frames;
 };
+
+static bool https_ready;
+static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned socket_users;
+
+bool hub_https_ready(void) { return https_ready; }
+
+bool hub_socket_acquire(void)
+{
+    pthread_mutex_lock(&socket_lock);
+    bool ready = socket_users || R_SUCCEEDED(socketInitializeDefault());
+    if (ready)
+        socket_users++;
+    pthread_mutex_unlock(&socket_lock);
+    return ready;
+}
+
+void hub_socket_release(void)
+{
+    pthread_mutex_lock(&socket_lock);
+    if (!--socket_users)
+        socketExit();
+    pthread_mutex_unlock(&socket_lock);
+}
 
 static void clear_artwork(HubApp *app)
 {
@@ -68,9 +96,12 @@ static const u16 *visible_artwork(HubApp *app, size_t slot, size_t index, HubArt
 
 bool hub_register_screen(HubApp *app, const HubScreen *screen)
 {
-    if (!screen || !screen->id || !*screen->id || !screen->draw ||
-        app->screen_count == sizeof(app->screens) / sizeof(*app->screens))
+    if (!screen || !screen->id || !*screen->id || !screen->draw)
         return false;
+    if (app->screen_count == sizeof(app->screens) / sizeof(*app->screens)) {
+        fprintf(stderr, "Hub screen registry full: %s\n", screen->id);
+        return false;
+    }
     for (size_t i = 0; i < app->screen_count; ++i)
         if (!strcmp(app->screens[i]->id, screen->id))
             return false;
@@ -401,6 +432,9 @@ int main(int argc, char **argv)
     int status = 1;
     if (!picker_open(&app.picker))
         goto finish;
+    https_ready = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+    if (https_ready)
+        atexit(curl_global_cleanup);
     app.logo = picker_art_load("romfs:/alicehub.png", 58, 58);
     hub_register_features(&app);
     if (!hub_push(&app, "library", NULL))
@@ -418,6 +452,8 @@ int main(int argc, char **argv)
             hub_toast(&app, "Could not read the engine result");
         else if (*app.returned.error)
             launch_error(&app, &app.returned.game, app.returned.game.name, app.returned.error);
+    } else {
+        hub_start_update_check();
     }
 
     const u64 directions = HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
@@ -449,12 +485,15 @@ int main(int argc, char **argv)
                 dispatch(&app, inputs[i].event);
                 break;
             }
-        if (app.running)
+        if (app.running) {
+            hub_poll_update_check(&app);
             draw_frame(&app);
+        }
         svcSleepThread(16000000);
     }
     status = 0;
 finish:
+    hub_stop_update_check();
     clear_artwork(&app);
     free(app.logo);
     hub_library_free(&app.library);

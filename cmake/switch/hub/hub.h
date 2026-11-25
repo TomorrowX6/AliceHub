@@ -65,6 +65,9 @@ size_t hub_progress_snapshot(HubProgress *, size_t capacity);
 void hub_progress_remove(const char *id);
 
 void hub_register_features(HubApp *);
+bool hub_https_ready(void);
+bool hub_socket_acquire(void);
+void hub_socket_release(void);
 bool hub_register_library_screen(HubApp *);
 bool hub_register_details_screen(HubApp *);
 bool hub_register_settings_screen(HubApp *);

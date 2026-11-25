@@ -17,6 +17,7 @@ object AppSettings {
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
+    private const val KEY_CHECK_FOR_UPDATES = "check_for_updates"
     private const val KEY_DOWNLOAD_CONCURRENCY = "download_concurrency"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
@@ -317,6 +318,13 @@ object AppSettings {
 
     fun isOnlineInstallEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ONLINE_INSTALL, false)
+
+    fun isUpdateCheckEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_CHECK_FOR_UPDATES, true)
+
+    fun setUpdateCheckEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_CHECK_FOR_UPDATES, enabled).apply()
+    }
 
     fun setOnlineInstallEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_ONLINE_INSTALL, enabled).apply()
