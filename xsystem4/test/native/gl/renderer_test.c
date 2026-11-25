@@ -321,6 +321,22 @@ static void blur_tests(void) {
     }
     puts("PASS: GLES H/V blur, full/subrect, pinned/unpinned, RGBA preservation, two-pass blur");
 }
+static void straight_alpha_cut_test(void) {
+    unsigned char pixel[] = {200,80,40,128};
+    unsigned char base[] = {1,2,3,255, 0,0,0,0, 20,200,100,128, 4,5,6,255};
+    unsigned char expected[] = {1,2,3,255, 200,80,40,128, 140,120,60,192, 4,5,6,255};
+    Texture src={0}, dst={0};
+    gfx_init_texture_with_pixels(&src,1,1,pixel);
+    gfx_init_texture_with_pixels(&dst,4,1,base);
+    gfx_begin_draw_target(&dst);
+    gfx_copy_stretch_blend_straight_alpha(&dst,1,0,2,1,&src,0,0,1,1);
+    gfx_end_draw_target();
+    unsigned char *got=gfx_get_pixels(&dst);
+    check_pixels(got,expected,sizeof(expected),1);
+    free(got);
+    gfx_delete_texture(&dst); gfx_delete_texture(&src); no_error();
+    puts("PASS: GLES translucent construction cut preserves straight color and source-over coverage");
+}
 static void gray_v14_and_fill_shader_tests(void) {
     enum { W=15,H=11,N=W*H*4 };
     unsigned char input[N], expected[N];
@@ -551,7 +567,7 @@ int main(void) {
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
-    flat_emitter_origin_tests(); shader3d_tests(); blur_tests(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
+    flat_emitter_origin_tests(); shader3d_tests(); blur_tests(); straight_alpha_cut_test(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); replacement_context_negative_control();
     replacement_context_recovery_with_backup(); replacement_context_deferred_until_surface_ready(); replacement_context_recovery_without_backup();

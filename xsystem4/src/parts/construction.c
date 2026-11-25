@@ -897,7 +897,7 @@ static bool build_draw_cut_cg(struct parts_construction_process *cproc, struct p
 	int sw = op->sw > 0 ? op->sw : src->w;
 	int sh = op->sh > 0 ? op->sh : src->h;
 	if (game_okusama && cmd->type == PARTS_CP_ALPHA_BLEND_CUT_CG)
-		gfx_copy_stretch_blend_alpha(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
+		gfx_copy_stretch_blend_straight_alpha(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
 				src, op->sx, op->sy, sw, sh);
 	else
 		gfx_copy_stretch_blend_amap(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
