@@ -27,14 +27,22 @@
 #include "system4/savefile.h"
 #include "system4/string.h"
 #include "system4/utfsjis.h"
+#include "modifier_api.h"
+#include "savedata.h"
+
+/* GBK / SJIS names for special Rance 10 globals */
+#define GBK_BATTLE_COUNT  "\xa1\xf4\xd5\xbd\xb6\xb7\xbb\xd8\xca\xfd"
+#define SJIS_BATTLE_COUNT "\x81\x9f\x90\xed\x93\xac\x89\xf1\x90\x94"
+#define GBK_DIFFICULTY    "\xa1\xf4\xc4\xd1\xb6\xc8"
+#define SJIS_DIFFICULTY   "\x81\x9f\x93\xef\x88\xd5\x93\x78"
+
+#ifndef MODIFIER_OFFLINE_ONLY
 #include "vm.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 #include "input.h"
 #include "modifier.h"
-#include "modifier_api.h"
 #include "parts.h"
-#include "savedata.h"
 #include "xsystem4.h"
 
 static int s_pulse_key0_frames = 0;
@@ -174,11 +182,6 @@ void vm_call_method_1(int fno, int struct_page, int value);
 #define EV_F_BASE_SPD_CN   "\xbb\xf9\xb5" "A\xcb\xd8\xd4\xe7\xa4\xb5"
 #define EV_CN_TITLE_FN     "\xa5\xbf\xa5\xa4\xa5\xc8\xa5\xeb\xbb\xad\xc3\xe6"
 
-/* GBK / SJIS names for special Rance 10 globals */
-#define GBK_BATTLE_COUNT  "\xa1\xf4\xd5\xbd\xb6\xb7\xbb\xd8\xca\xfd"
-#define SJIS_BATTLE_COUNT "\x81\x9f\x90\xed\x93\xac\x89\xf1\x90\x94"
-#define GBK_DIFFICULTY    "\xa1\xf4\xc4\xd1\xb6\xc8"
-#define SJIS_DIFFICULTY   "\x81\x9f\x93\xef\x88\xd5\x93\x78"
 /* GBK byte sequences for MOD streamer-mode detection & in-game dialog */
 #define GBK_STREAMER_PASSPHRASE "\xb9\xe0\xd7\xa2\x45\x69\x6e\x73\xb3\xc2\xd0\xbb\xd0\xbb\xdf\xf7"
 #define GBK_CARD_STREAMER       "\xbf\xa8\xc5\xc6\xa3\xaf\xd6\xf7\xb2\xa5"
@@ -276,6 +279,7 @@ static char *g_cached_live_state_json = NULL;
 static char *g_modifier_config_path = NULL;
 static uint32_t g_live_state_req_seq = 0;
 static uint32_t g_live_state_built_seq = 0;
+#endif
 
 /* Validate UTF-8 and replace any invalid/truncated/overlong/surrogate byte
  * sequence with U+FFFD (EF BF BD) so cJSON and JNI never see invalid UTF-8. */
@@ -399,6 +403,7 @@ static struct gsave_keyval *gs_get_record_kv(struct gsave *gs, int32_t rec_idx, 
 	return NULL;
 }
 
+#ifndef MODIFIER_OFFLINE_ONLY
 static bool gs_ensure_adv_shortcut_5_unlocked(struct gsave *gs, int32_t cfg_rec, bool *out_modified)
 {
 	struct gsave_keyval *kv_adv = (cfg_rec >= 0) ? gs_get_record_kv(gs, cfg_rec, "m_isShowAdvShortcut", NULL) : NULL;
@@ -764,7 +769,9 @@ static void persist_modifier_config_from_native(int lock_mask)
 	free(ui_game_key);
 }
 
-#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_STANDALONE_TEST)
+#endif
+
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_STANDALONE_TEST) || defined(MODIFIER_OFFLINE_ONLY)
 
 static int32_t gs_get_field_int(struct gsave *gs, int32_t rec_idx, const char *name1, const char *name2, int32_t def_val)
 {
@@ -1930,6 +1937,7 @@ static bool write_global_save_mod_str(const char *global_path, const char *colle
 	return (want_global || want_collection || want_csd_write) && all_ok;
 }
 
+#ifndef MODIFIER_OFFLINE_ONLY
 static int read_game_config_streamer_mode(const char *config_path)
 {
 	if (!config_path || !config_path[0] || !file_exists(config_path)) return -1;
@@ -1950,7 +1958,10 @@ static int read_game_config_streamer_mode(const char *config_path)
 	return val != 0 ? 1 : 0;
 }
 
-#endif /* __ANDROID__ || ALICEHUB_IOS || MODIFIER_STANDALONE_TEST */
+#endif
+#endif
+
+#ifndef MODIFIER_OFFLINE_ONLY
 
 /* =========================================================================
  * Live In-Game VM Memory Helpers (Executed on VM Thread in modifier_on_frame)
@@ -8771,7 +8782,10 @@ static int get_game_lock_mask(const int *target)
 	pthread_mutex_unlock(&g_mod_mutex);
 	return mask;
 }
+#endif
+#endif
 
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_OFFLINE_ONLY)
 char *modifier_api_read_local_save_summary(const char *path)
 {
 	return path ? read_local_save_summary_str(path) : NULL;
@@ -8799,7 +8813,9 @@ bool modifier_api_write_global_save_mod(const char *global_path, const char *col
 	sys4_set_text_gbk(previous_gbk);
 	return written;
 }
+#endif
 
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 const char *modifier_api_current_game(void)
 {
 	if (game_rance10) return "rance10";
