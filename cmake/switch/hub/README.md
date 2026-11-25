@@ -9,6 +9,12 @@ Use the repository's devkitPro build: configure with
 support `envSetNextLoad`, use the standalone engine NROs. The existing
 `alicehub/<engine>/games` and `saves` paths are unchanged.
 
+In the merged library, **X** opens the system keyboard to search game folder
+names (ASCII case-insensitive; other characters match exactly). **B** clears
+an active search, **A** opens the highlighted game's details, and **Y** opens
+global Settings. Details can launch the game or show its game/save paths.
+Settings changes the saved Name/Engine sort order or rescans game folders.
+
 ## Screens and actions
 
 - Start from the foundation commit on PR #110; use a separate branch/worktree for
@@ -27,6 +33,9 @@ support `envSetNextLoad`, use the standalone engine NROs. The existing
   `hub_list`, `hub_grid`, `hub_dialog` and `hub_toast` rather than drawing
   or presenting another framebuffer. Call `hub_wait_for_release` after
   returning from applets such as swkbd.
+- `HUB_SECONDARY` routes the Y button for screens that opt in.
+  `hub_hints_extra` can show that hint or omit unused paging hints;
+  `hub_empty` shows a custom empty state. The existing widgets are unchanged.
 - In the same feature registration function, call `hub_register_action` with
   a static entry targeting your screen ID: `HUB_DETAIL_ACTION` gets a game,
   `HUB_SETTING_ENTRY` gets no game. An optional availability callback is
@@ -34,6 +43,8 @@ support `envSetNextLoad`, use the standalone engine NROs. The existing
   entries via `hub_action_entry`; no feature edits those screens. Use
   feature-owned versioned settings files for additional settings unless a
   cross-feature setting/schema change is agreed first.
+  Use `hub_apply_settings` to persist the shared settings and apply their sort
+  order; a failed save leaves the current library and settings unchanged.
 - Read `hub_library` and store an instance ID or a game copy, not a pointer
   into the library across rescans. Local IDs are engine + SD folder name,
   scoped separately as game and instance IDs. A rename currently creates a

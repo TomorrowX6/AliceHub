@@ -6,7 +6,7 @@
 typedef struct HubApp HubApp;
 typedef enum {
     HUB_UP, HUB_DOWN, HUB_LEFT, HUB_RIGHT, HUB_CONFIRM, HUB_BACK,
-    HUB_ACTION, HUB_PREV_PAGE, HUB_NEXT_PAGE
+    HUB_ACTION, HUB_PREV_PAGE, HUB_NEXT_PAGE, HUB_SECONDARY
 } HubInput;
 
 typedef struct {
@@ -33,6 +33,7 @@ void hub_toast(HubApp *, const char *message);
 const HubLibrary *hub_library(const HubApp *);
 bool hub_refresh_library(HubApp *);
 HubSettings *hub_settings(HubApp *);
+bool hub_apply_settings(HubApp *, const HubSettings *);
 const char *hub_returned_instance(const HubApp *);
 void hub_launch(HubApp *, const HubGame *);
 
@@ -43,6 +44,9 @@ void hub_grid(HubApp *, size_t count, size_t focus, HubItems, const void *);
 void hub_list(HubApp *, size_t count, size_t focus, HubItems, const void *);
 void hub_heading(HubApp *, const char *title, const char *subtitle);
 void hub_hints(HubApp *, const char *confirm, const char *back, const char *action);
+void hub_hints_extra(HubApp *, const char *confirm, const char *back, const char *action,
+                     const char *secondary, bool paging);
+void hub_empty(HubApp *, const char *title, const char *detail);
 
 typedef enum { HUB_PROGRESS_ACTIVE, HUB_PROGRESS_DONE, HUB_PROGRESS_FAILED } HubProgressState;
 typedef struct {
@@ -57,5 +61,7 @@ void hub_progress_remove(const char *id);
 
 void hub_register_features(HubApp *);
 bool hub_register_library_screen(HubApp *);
+bool hub_register_details_screen(HubApp *);
+bool hub_register_settings_screen(HubApp *);
 
 #endif

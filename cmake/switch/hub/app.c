@@ -96,8 +96,23 @@ bool hub_pop(HubApp *app)
 
 void hub_wait_for_release(HubApp *app) { app->latch_release = true; }
 const HubLibrary *hub_library(const HubApp *app) { return &app->library; }
-bool hub_refresh_library(HubApp *app) { return hub_library_scan(&app->library, HUB_ROOT); }
+bool hub_refresh_library(HubApp *app)
+{
+    if (!hub_library_scan(&app->library, HUB_ROOT))
+        return false;
+    hub_library_sort(&app->library, app->settings.sort);
+    return true;
+}
+
 HubSettings *hub_settings(HubApp *app) { return &app->settings; }
+bool hub_apply_settings(HubApp *app, const HubSettings *settings)
+{
+    if (!hub_settings_save(HUB_ROOT, settings))
+        return false;
+    app->settings = *settings;
+    hub_library_sort(&app->library, settings->sort);
+    return true;
+}
 const char *hub_returned_instance(const HubApp *app) { return app->returned.game.instance_id; }
 
 void hub_dialog(HubApp *app, const char *title, const char *detail)
@@ -168,11 +183,21 @@ void hub_heading(HubApp *app, const char *title, const char *subtitle)
 
 void hub_hints(HubApp *app, const char *confirm, const char *back, const char *action)
 {
+    hub_hints_extra(app, confirm, back, action, NULL, true);
+}
+
+void hub_hints_extra(HubApp *app, const char *confirm, const char *back, const char *action,
+                     const char *secondary, bool paging)
+{
     Picker *p = &app->picker;
     picker_panel(p, 0, 628, PICKER_WIDTH, 1, 0, OUTLINE);
     picker_panel(p, 0, 629, PICKER_WIDTH, 91, 0, SURFACE);
-    picker_hint(p, 64, "L", "Previous page", false);
-    picker_hint(p, 296, "R", "Next page", false);
+    if (paging) {
+        picker_hint(p, 64, "L", "Previous page", false);
+        picker_hint(p, 296, "R", "Next page", false);
+    }
+    if (secondary)
+        picker_hint(p, 506, "Y", secondary, false);
     if (action)
         picker_hint(p, 692, "X", action, false);
     if (confirm)
@@ -180,13 +205,19 @@ void hub_hints(HubApp *app, const char *confirm, const char *back, const char *a
     picker_hint(p, 1094, "B", back, false);
 }
 
+void hub_empty(HubApp *app, const char *title, const char *detail)
+{
+    Picker *p = &app->picker;
+    picker_panel(p, 64, 242, 1152, 334, 22, SURFACE);
+    picker_label(p, 322, 377, 1070, 35, INK, title);
+    picker_label(p, 322, 426, 1070, 22, MUTED, detail);
+}
+
 void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)
 {
     Picker *p = &app->picker;
     if (!count) {
-        picker_panel(p, 64, 242, 1152, 334, 22, SURFACE);
-        picker_label(p, 322, 377, 1070, 35, INK, "No games to show");
-        picker_label(p, 322, 426, 1070, 22, MUTED, "Add a game to its engine's games folder on the SD card.");
+        hub_empty(app, "No games to show", "Add a game to its engine's games folder on the SD card.");
         return;
     }
     size_t first = focus < count ? focus / CARD_COUNT * CARD_COUNT : 0;
@@ -285,10 +316,10 @@ int main(int argc, char **argv)
     hub_register_features(&app);
     if (!hub_push(&app, "library", NULL))
         goto finish;
-    if ((mkdir(HUB_ROOT, 0777) && errno != EEXIST) || !hub_refresh_library(&app))
-        hub_toast(&app, "Could not scan the SD card library");
     if (!hub_settings_load(HUB_ROOT, &app.settings))
         hub_toast(&app, "Unsupported or damaged settings; using defaults");
+    if ((mkdir(HUB_ROOT, 0777) && errno != EEXIST) || !hub_refresh_library(&app))
+        hub_toast(&app, "Could not scan the SD card library");
     if (argc == 2 && !strcmp(argv[1], HUB_RETURN_ARG)) {
         if (!hub_handoff_take(HUB_ROOT, true, &app.returned))
             hub_toast(&app, "Could not read the engine result");
@@ -299,7 +330,8 @@ int main(int argc, char **argv)
     const u64 directions = HidNpadButton_Up | HidNpadButton_Down | HidNpadButton_Left | HidNpadButton_Right;
     const struct { u64 button; HubInput event; } inputs[] = {
         {HidNpadButton_B | HidNpadButton_Plus, HUB_BACK}, {HidNpadButton_A, HUB_CONFIRM},
-        {HidNpadButton_X, HUB_ACTION}, {HidNpadButton_L, HUB_PREV_PAGE}, {HidNpadButton_R, HUB_NEXT_PAGE},
+        {HidNpadButton_X, HUB_ACTION}, {HidNpadButton_Y, HUB_SECONDARY},
+        {HidNpadButton_L, HUB_PREV_PAGE}, {HidNpadButton_R, HUB_NEXT_PAGE},
         {HidNpadButton_Up, HUB_UP}, {HidNpadButton_Down, HUB_DOWN},
         {HidNpadButton_Left, HUB_LEFT}, {HidNpadButton_Right, HUB_RIGHT},
     };

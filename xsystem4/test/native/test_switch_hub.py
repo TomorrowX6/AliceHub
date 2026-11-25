@@ -122,8 +122,33 @@ static bool parse(const char *text, HubHandoff *handoff)
     return ok;
 }
 
+static void test_library_view(void)
+{
+    HubGame games[4];
+    assert(hub_game_init(&games[0], HUB_XSYSTEM4, "爱丽丝学园"));
+    assert(hub_game_init(&games[1], HUB_XSYSTEM35, "King II"));
+    assert(hub_game_init(&games[2], HUB_SYSTEM3, "King II"));
+    assert(hub_game_init(&games[3], HUB_SYSTEM3, "zeta"));
+    assert(hub_game_matches(&games[0], "丽丝"));
+    assert(!hub_game_matches(&games[0], "麗絲"));
+    assert(hub_game_matches(&games[1], "kInG ii"));
+    assert(!hub_game_matches(&games[1], "King III"));
+    assert(hub_game_matches(&games[1], ""));
+
+    HubLibrary library = {games, 4};
+    hub_library_sort(&library, HUB_SORT_NAME);
+    assert(!strcmp(library.games[0].name, "King II"));
+    assert(library.games[0].engine == HUB_SYSTEM3 && library.games[1].engine == HUB_XSYSTEM35);
+    assert(!strcmp(library.games[2].name, "zeta"));
+    hub_library_sort(&library, HUB_SORT_ENGINE);
+    assert(!strcmp(library.games[0].instance_id, "local:system3:King II"));
+    assert(library.games[1].engine == HUB_SYSTEM3 && !strcmp(library.games[1].name, "zeta"));
+    assert(library.games[2].engine == HUB_XSYSTEM35 && library.games[3].engine == HUB_XSYSTEM4);
+}
+
 int main(void)
 {
+    test_library_view();
     const char *dirs[] = {"system3", "system3/games", "system3/games/ランス 1",
                           "xsystem35", "xsystem35/games", "xsystem35/games/ランス 1",
                           "xsystem4", "xsystem4/games", "xsystem4/games/爱丽丝学园",

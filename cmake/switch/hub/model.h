@@ -48,6 +48,8 @@ bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZ
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_library_scan(HubLibrary *library, const char *root);
 void hub_library_free(HubLibrary *library);
+void hub_library_sort(HubLibrary *library, HubSort sort);
+bool hub_game_matches(const HubGame *game, const char *query);
 bool hub_settings_load(const char *root, HubSettings *settings);
 bool hub_settings_save(const char *root, const HubSettings *settings);
 bool hub_handoff_parse(FILE *file, HubHandoff *handoff);

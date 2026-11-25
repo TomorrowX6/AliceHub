@@ -53,6 +53,41 @@ static int by_name(const void *a, const void *b)
     return order ? order : strcmp(x->instance_id, y->instance_id);
 }
 
+static int by_engine(const void *a, const void *b)
+{
+    const HubGame *x = a, *y = b;
+    return x->engine == y->engine ? by_name(a, b) : (int)x->engine - (int)y->engine;
+}
+
+void hub_library_sort(HubLibrary *library, HubSort sort)
+{
+    if (library->count > 1)
+        qsort(library->games, library->count, sizeof(*library->games),
+              sort == HUB_SORT_ENGINE ? by_engine : by_name);
+}
+
+static unsigned char fold_ascii(unsigned char c)
+{
+    return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
+}
+
+bool hub_game_matches(const HubGame *game, const char *query)
+{
+    if (!*query)
+        return true;
+    for (const char *start = game->name; *start; ++start) {
+        const char *title = start;
+        const char *term = query;
+        while (*title && *term && fold_ascii(*title) == fold_ascii(*term)) {
+            ++title;
+            ++term;
+        }
+        if (!*term)
+            return true;
+    }
+    return false;
+}
+
 bool hub_library_scan(HubLibrary *library, const char *root)
 {
     HubLibrary next = {0};
@@ -96,8 +131,7 @@ bool hub_library_scan(HubLibrary *library, const char *root)
             next.games[next.count++] = game;
         }
     }
-    if (next.count > 1)
-        qsort(next.games, next.count, sizeof(*next.games), by_name);
+    hub_library_sort(&next, HUB_SORT_NAME);
     hub_library_free(library);
     *library = next;
     return true;
