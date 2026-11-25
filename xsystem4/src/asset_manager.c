@@ -21,6 +21,7 @@
 #include <dirent.h>
 #include <limits.h>
 #include <assert.h>
+#include <zlib.h>
 
 #include "system4.h"
 #include "system4/ald.h"
@@ -282,6 +283,41 @@ struct archive_data *asset_get_by_name(enum asset_type type, const char *name, i
 	return NULL;
 }
 
+static void localize_sengoku_skip_cg(int id, const struct archive_data *data, struct cg *cg)
+{
+	// CG 10005 contains three 36x20 frames of the Japanese skip button.
+	// Match the original graphic, not just its ID, so translated and modded art wins.
+	if (id != 10005 || !sys4_text_is_gbk
+			|| data->size != 3451 || crc32(0, data->data, data->size) != 0xdd729ed3
+			|| !cg || !cg->pixels || cg->type != ALCG_QNT
+			|| cg->metrics.w != 108 || cg->metrics.h != 20)
+		return;
+
+	// 快进 rasterized from HanaMinA, with two bits of coverage per pixel.
+	static const uint64_t label[] = {
+		0x06180100028060, 0x071c0a00028070, 0x1b1d2c00679470, 0x2fae9400b7d5f8,
+		0x071c000072877d, 0x071c1a40b2857a, 0x7b6d6d42fbe976, 0x5bae6800078470,
+		0x070c280007c070, 0x070a28001dd070, 0x07027d00747470, 0x6aabd782d01d70,
+		0x7ffe02814002a0,
+	};
+	static const uint8_t background[] = { 226, 194, 180 };
+	static const uint8_t ink[][3] = { { 177, 103, 68 }, { 206, 158, 135 }, { 177, 103, 68 } };
+	uint8_t *pixels = cg->pixels;
+	for (int frame = 0; frame < 3; frame++) {
+		int left = 36 * frame + 2 + (frame == 2);
+		int top = 3 + (frame == 2);
+		for (int y = 0; y < 13; y++) {
+			for (int x = 0; x < 30; x++) {
+				unsigned coverage = x > 0 && x < 29 ? (label[y] >> (2 * (x - 1))) & 3 : 0;
+				uint8_t *pixel = pixels + 4 * ((top + y) * 108 + left + x);
+				for (int c = 0; c < 3; c++) {
+					pixel[c] = (ink[frame][c] * coverage + background[c] * (3 - coverage) + 1) / 3;
+				}
+			}
+		}
+	}
+}
+
 struct cg *asset_cg_load(int id)
 {
 	if (is_save_cg_id(id)) {
@@ -294,6 +330,7 @@ struct cg *asset_cg_load(int id)
 	if (!data)
 		return NULL;
 	struct cg *cg = cg_load_data(data);
+	localize_sengoku_skip_cg(id, data, cg);
 	archive_free_data(data);
 	return cg;
 }
