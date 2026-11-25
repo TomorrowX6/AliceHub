@@ -1678,6 +1678,21 @@ static bool cproc_determine_dims(struct parts_construction_process *cproc, int *
 	return true;
 }
 
+static bool build_explicit_construction_process(struct parts *parts,
+		struct parts_construction_process *cproc)
+{
+	if (parts_v2 && TAILQ_EMPTY(&cproc->ops)) {
+		cproc->needs_build = false;
+		cproc->needs_pixel_snapshot = false;
+		gfx_delete_texture(&cproc->common.texture);
+		parts_common_free_alpha_mask(&cproc->common);
+		parts_set_dims(parts, &cproc->common, 0, 0);
+		parts_dirty(parts);
+		return true;
+	}
+	return parts_build_construction_process(parts, cproc);
+}
+
 bool PE_BuildPartsConstructionProcess(int parts_no, int state)
 {
 	if (!parts_state_valid(--state))
@@ -1685,7 +1700,7 @@ bool PE_BuildPartsConstructionProcess(int parts_no, int state)
 
 	struct parts *parts = parts_get(parts_no);
 	struct parts_construction_process *cproc = parts_get_construction_process(parts, state);
-	return parts_build_construction_process(parts, cproc);
+	return build_explicit_construction_process(parts, cproc);
 }
 
 bool PE_BuildPartsConstructionProcessThread(int parts_no, int state)
@@ -1697,7 +1712,7 @@ bool PE_BuildPartsConstructionProcessThread(int parts_no, int state)
 	struct parts_construction_process *cproc = parts_get_construction_process(parts, state);
 	int w = 0, h = 0;
 	if (!cproc_determine_dims(cproc, &w, &h))
-		return parts_build_construction_process(parts, cproc);
+		return build_explicit_construction_process(parts, cproc);
 
 	gfx_delete_texture(&cproc->common.texture);
 	parts_common_free_alpha_mask(&cproc->common);

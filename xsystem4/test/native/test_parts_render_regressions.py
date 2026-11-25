@@ -382,6 +382,60 @@ int main(void) { test_reversal(); test_container_origin(); test_blur(); test_gra
 
 
 class PartsRenderingTests(unittest.TestCase):
+    def test_building_empty_parts_v2_construction_erases_surface(self):
+        code = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <sys/queue.h>
+struct parts { bool dirty; };
+struct texture { unsigned handle; };
+struct parts_common { struct texture texture; int w, h; bool alpha_mask; };
+struct op { TAILQ_ENTRY(op) link; };
+struct parts_construction_process {
+    struct parts_common common;
+    bool needs_build, needs_pixel_snapshot;
+    TAILQ_HEAD(ops, op) ops;
+};
+static bool parts_v2;
+static int builds;
+static void gfx_delete_texture(struct texture *t) { t->handle = 0; }
+static void parts_common_free_alpha_mask(struct parts_common *c) { c->alpha_mask = false; }
+static void parts_set_dims(struct parts *p, struct parts_common *c, int w, int h) {
+    (void)p; c->w = w; c->h = h;
+}
+static void parts_dirty(struct parts *p) { p->dirty = true; }
+static bool parts_build_construction_process(struct parts *p, struct parts_construction_process *c) {
+    (void)p; (void)c; builds++; return true;
+}
+''' + function('src/parts/construction.c', 'build_explicit_construction_process') + r'''
+int main(void) {
+    struct parts p = {0};
+    struct parts_construction_process c = {
+        .common = { {42}, 1280, 820, true },
+        .needs_build = true, .needs_pixel_snapshot = true,
+    };
+    TAILQ_INIT(&c.ops);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 1 && c.common.texture.handle == 42 && !p.dirty);
+    parts_v2 = true;
+    struct op op;
+    TAILQ_INSERT_TAIL(&c.ops, &op, link);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 2 && c.common.texture.handle == 42 && !p.dirty);
+    TAILQ_REMOVE(&c.ops, &op, link);
+    assert(build_explicit_construction_process(&p, &c));
+    assert(builds == 2 && p.dirty && !c.common.texture.handle && !c.common.alpha_mask);
+    assert(!c.common.w && !c.common.h && !c.needs_build && !c.needs_pixel_snapshot);
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            c, exe = Path(tmp) / 'construction.c', Path(tmp) / 'construction'
+            c.write_text(code)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            str(c), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_production_functions(self):
         code = FIXTURES + '\n'.join([
             function('src/parts/parts.c', 'parts_apply_local_matrix'),

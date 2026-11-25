@@ -10,6 +10,7 @@
 #include "parts_activity.h"
 #include "parts_widgets.h"
 #include "vm.h"
+#include "xsystem4.h"
 #include "parts_internal.h"
 
 static void set_string(struct string **out, struct string *value)
@@ -257,7 +258,10 @@ static void rebuild_label(struct parts *parts)
 	w->label.text.ts = style;
 	w->label.text.ts.font_size = NULL;
 	w->label.text.line_space = line_space;
+	if (game_okusama && parts->component_type == 0 && style.face >= 256 && gfx_text_advance_edges)
+		w->label.text.ts.font_spacing -= text_style_edge_width(&style);
 	parts_text_append(parts, &w->label.text, w->text);
+	w->label.text.ts.font_spacing = style.font_spacing;
 	parts_recalculate_hitbox(parts);
 	parts_component_dirty(parts);
 	parts_dirty(parts);
