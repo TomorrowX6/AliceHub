@@ -763,7 +763,7 @@ class GameModifierActivity : ThemedActivity() {
                 }
                 isRance01 -> {
                     val r01LockCount = GameModifierBridge.getR01LiveLockCount(this)
-                    tr(
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
                         "存档 $saveCount 个 · 锁定 $r01LockCount 项",
                         "セーブ $saveCount 個 · ロック $r01LockCount 項目",
                         "$saveCount saves · Locks: $r01LockCount"
@@ -771,7 +771,7 @@ class GameModifierActivity : ThemedActivity() {
                 }
                 isRance02 -> {
                     val r02LockCount = GameModifierBridge.getR02LiveLockCount(this)
-                    tr(
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
                         "存档 $saveCount 个 · 锁定 $r02LockCount 项",
                         "セーブ $saveCount 個 · ロック $r02LockCount 項目",
                         "$saveCount saves · Locks: $r02LockCount"

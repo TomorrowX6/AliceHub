@@ -720,8 +720,12 @@ object GenericModifierRegistry {
     private val byId: Map<String, GenericModifierSpec> = all.associateBy { it.id }
 
     @JvmStatic
-    fun find(gameId: String?): GenericModifierSpec? =
-        if (gameId.isNullOrBlank()) null else byId[gameId]
+    fun find(gameId: String?): GenericModifierSpec? {
+        if (gameId.isNullOrBlank()) return null
+        byId[gameId]?.let { return it }
+        if (gameId == "escalayerreboot") return byId[GameCatalog.ID_ESCALAYER_REBOOT]
+        return null
+    }
 
     @JvmStatic
     fun isEvenicleFamily(gameId: String?): Boolean =

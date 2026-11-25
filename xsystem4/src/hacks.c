@@ -61,6 +61,7 @@ bool game_evenicle2 = false;
 bool game_evenicle2_rance = false;
 bool game_haharanman = false;
 bool game_okusama = false;
+bool game_okusama_ntr = false;
 bool game_night_remaster = false;
 bool game_oyakorankan = false;
 bool game_toushin3 = false;
@@ -958,6 +959,10 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& (ain_has_gbk_string(ain, "4fnd6e97tn9")
 			|| (ain_get_struct(ain, "CharaStatusList") >= 0
 				&& ain_get_global(ain, "g_resources") >= 0));
+	game_okusama_ntr = game_okusama && (
+		ain_get_function(ain, "\xa3\xc5\xa3\xd6\xa3\xaf\xa3\xce\xa3\xd4\xa3\xd2\xa3\xaf\xcd\xd1\xb4\xa6\xa3\xaf\xa3\xb1") >= 0
+		|| (config.ain_filename && strcasestr(config.ain_filename, "ntr") != NULL)
+		|| (config.game_name && strcasestr(config.game_name, "ntr") != NULL));
 	game_night_remaster = ain->version == 14
 		&& ain_get_function(ain, "C_Monster@nMoonPiece::get") >= 0
 		&& ain_has_gbk_string(ain, "45qsdbdsfq5");
@@ -1128,10 +1133,11 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {
 		apply_rance02_hacks(ain);
-	} else if (game_rance6 || !strncmp(game_name, "Rance6", 6)
-			|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
-			|| !strncmp(game_name, "兰斯6", strlen("兰斯6"))
-			|| !strncmp(game_name, "兰斯06", strlen("兰斯06"))) {
+	} else if (game_rance6 || (ain_get_struct(ain, "CDungeon") >= 0 && ain_get_global(ain, "gc") >= 0
+			&& (!strncmp(game_name, "Rance6", 6)
+				|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
+				|| !strncmp(game_name, "兰斯6", strlen("兰斯6"))
+				|| !strncmp(game_name, "兰斯06", strlen("兰斯06"))))) {
 		game_rance6 = true;
 		apply_rance6_hacks(ain);
 	} else if (!strcmp(game_name, "ランス・クエスト") || !strcmp(game_name, "兰斯8")) {

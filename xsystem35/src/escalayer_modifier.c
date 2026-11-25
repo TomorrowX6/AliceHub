@@ -7,6 +7,7 @@
 #include "sdl_compat.h"
 #include "cJSON.h"
 #include "nact.h"
+#include "utfsjis.h"
 #include "variable.h"
 #include "escalayer_modifier.h"
 
@@ -98,13 +99,34 @@ static bool str_contains_icase(const char *hay, const char *needle) {
 static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	if (!nact || nact->ain.varnum <= 0 || !nact->ain.var)
 		return -1;
+	uint8_t *gbk_name = utf8_name ? utf2gbk((const uint8_t *)utf8_name) : NULL;
+	int found = -1;
 	for (int i = 0; i < nact->ain.varnum; i++) {
 		const char *n = v_name(i);
 		if (!n)
 			continue;
 		if ((sjis_name && strcmp(n, sjis_name) == 0) ||
-			(utf8_name && strcmp(n, utf8_name) == 0))
-			return i;
+			(utf8_name && strcmp(n, utf8_name) == 0) ||
+			(gbk_name && strcmp(n, (const char *)gbk_name) == 0)) {
+			found = i;
+			break;
+		}
+	}
+	free(gbk_name);
+	if (found >= 0 || !utf8_name)
+		return found;
+	/* Fallback for GBK VARI tables whose codepoints round-trip via gbk2utf */
+	for (int i = 0; i < nact->ain.varnum; i++) {
+		const char *n = v_name(i);
+		if (!n)
+			continue;
+		uint8_t *u = gbk2utf((const uint8_t *)n);
+		if (u) {
+			bool eq = strcmp((const char *)u, utf8_name) == 0;
+			free(u);
+			if (eq)
+				return i;
+		}
 	}
 	return -1;
 }
@@ -167,8 +189,17 @@ static void refresh_escalayer_cache(void) {
 			esc_cache.game = S35_GAME_ESCALAYER;
 			for (int i = 0; i < nact->ain.varnum && esc_cache.recall_count < 16; i++) {
 				const char *n = v_name(i);
-				if (n && (strncmp(n, "\x81\xa6\x89\xf1\x91\x7a\x81\x5e", 8) == 0 ||
-					strncmp(n, "※回想／", strlen("※回想／")) == 0))
+				if (!n) continue;
+				bool is_recall = strncmp(n, "\x81\xa6\x89\xf1\x91\x7a\x81\x5e", 8) == 0 ||
+					strncmp(n, "※回想／", strlen("※回想／")) == 0;
+				if (!is_recall) {
+					uint8_t *u = gbk2utf((const uint8_t *)n);
+					if (u) {
+						is_recall = strncmp((const char *)u, "※回想／", strlen("※回想／")) == 0;
+						free(u);
+					}
+				}
+				if (is_recall)
 					esc_cache.recall_vars[esc_cache.recall_count++] = i;
 			}
 			return;

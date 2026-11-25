@@ -69,6 +69,12 @@ public class GenericModifierRegistryTest {
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_DAIBANCHOU));
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_DAITEIKOKU));
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_ESCALAYER_REBOOT));
+        assertEquals(
+                GenericModifierRegistry.find(GameCatalog.ID_ESCALAYER_REBOOT),
+                GenericModifierRegistry.find("escalayerreboot")
+        );
+        assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_OKUSAMAJUN));
+        assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_OKUSAMANTR));
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_IXSEAL));
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_DAIAKUJI));
         assertNotNull(GenericModifierRegistry.find(GameCatalog.ID_RANCE5D));

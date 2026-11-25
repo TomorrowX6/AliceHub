@@ -337,7 +337,7 @@ struct ModifierGamePanel {
         ModifierGamePanel("escalayerreboot", "超昂天使 R",
             locks: ["满能量与 Libido", "满和平点与爱情", "常驻 Boost 强化", "全能力强化"],
             cheats: [
-                cheat("和平度设为 100", ["addPeace": 50_000]),
+                cheat("和平点 +50000", ["addPeace": 50_000]),
                 cheat("Libido 全满", ["cheat": "fullHeal"]),
                 cheat("全能力强化", ["cheat": "boostAll"]),
             ],
@@ -491,7 +491,7 @@ struct ModifierGamePanel {
             fields: [("hp", "当前 HP"), ("hpMax", "最大 HP"), ("ap", "行动次数"), ("gold", "金块"), ("expOrb", "经验玉")],
             actions: [
                 ("恢复满 HP", "r5d_heal"), ("全能力强化", "r5d_stats_boost"),
-                ("补满金块与经验玉", "r5d_gold_exp"), ("锁定高爱情度", "r5d_love_max"),
+                ("补满金块与经验玉", "r5d_gold_exp"), ("女主好感度全满", "r5d_love_max"),
                 ("补满道具耐久", "r5d_durability"),
             ]
         ),

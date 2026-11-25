@@ -1687,7 +1687,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     put("intel", 99)
                     put("spd", 99)
                     put("love", 99)
-                    put("resetAction", 1)
+                    put("resetAction", true)
                 }
                 sendDohnaInGameAction(
                     JSONObject().put("srCharEdit", boost),
@@ -1698,8 +1698,11 @@ class FloatingModifierOverlay(private val activity: Activity) {
             if (vals.isEmpty()) return@showDohnaFormDialog
             val ce = JSONObject().put("factionIdx", factionIdx).put("charIdx", charIdx)
             for ((k, v) in vals) {
-                if (k == "resetAction" && v == 0) continue
-                ce.put(k, v)
+                if (k == "resetAction") {
+                    if (v != 0) ce.put(k, true)
+                } else {
+                    ce.put(k, v)
+                }
             }
             sendDohnaInGameAction(
                 JSONObject().put("srCharEdit", ce),

@@ -54,13 +54,22 @@ static struct ex_game_lock_slot *ex_find_lock_slot(const char *game_id)
 {
 	if (!game_id || !game_id[0])
 		return NULL;
-	if (!strcmp(game_id, "okusamantr"))
-		game_id = "okusamajun";
+	if (!strcmp(game_id, "escalayer_reboot"))
+		game_id = "escalayerreboot";
 	for (int i = 0; i < EX_MAX_GAMES && g_ex_locks[i].id; i++) {
 		if (!strcmp(g_ex_locks[i].id, game_id))
 			return &g_ex_locks[i];
 	}
 	return NULL;
+}
+
+static bool ex_all_locks_initialized_locked(void)
+{
+	for (int i = 0; i < EX_MAX_GAMES && g_ex_locks[i].id; i++) {
+		if (!g_ex_locks[i].init)
+			return false;
+	}
+	return true;
 }
 
 static bool ex_is_active_extra_game(void)
@@ -92,6 +101,7 @@ static const char *ex_current_game_id(void)
 	if (game_haruurare) return "haruurare";
 	if (game_oyakorankan) return "oyakorankan";
 	if (game_tsumashibori) return "tsumashibori";
+	if (game_okusama_ntr) return "okusamantr";
 	if (game_okusama) return "okusamajun";
 	if (game_escalayer_reboot) return "escalayerreboot";
 	if (game_ixseal) return "ixseal";
@@ -127,6 +137,8 @@ static void ex_load_locks_from_json_locked(cJSON *root)
 		if (g_ex_locks[i].init)
 			continue;
 		cJSON *v = cJSON_GetObjectItemCaseSensitive(map, g_ex_locks[i].id);
+		if (!v && !strcmp(g_ex_locks[i].id, "escalayerreboot"))
+			v = cJSON_GetObjectItemCaseSensitive(map, "escalayer_reboot");
 		if (v && cJSON_IsNumber(v)) {
 			g_ex_locks[i].mask = v->valueint;
 			g_ex_locks[i].init = true;
@@ -173,6 +185,8 @@ static void ex_save_locks_to_json(cJSON *root, const int *snap_masks, const bool
 			cJSON_AddItemToObject(root, "extra_locks", map);
 		}
 		cJSON_DeleteItemFromObjectCaseSensitive(map, g_ex_locks[i].id);
+		if (!strcmp(g_ex_locks[i].id, "escalayerreboot"))
+			cJSON_DeleteItemFromObjectCaseSensitive(map, "escalayer_reboot");
 		if (snap_masks[i] != 0)
 			cJSON_AddNumberToObject(map, g_ex_locks[i].id, snap_masks[i]);
 	}
@@ -390,7 +404,7 @@ static void ex_r06_populate(cJSON *root)
 	bool in_battle = false;
 	for (int i = 0; i < vm_dd_array_len(pe_chr); i++) {
 		int cno = ex_arr_int_get(pe_chr, i, 0);
-		if (cno > 0 && cno < n) { in_battle = true; break; }
+		if (cno > 0 && (51 + i) < n) { in_battle = true; break; }
 	}
 	cJSON_AddBoolToObject(root, "inBattle", in_battle);
 	cJSON_AddNumberToObject(root, "gold", ex_get_global_int(R06_G_GOLD, NULL, 0));
@@ -398,7 +412,7 @@ static void ex_r06_populate(cJSON *root)
 
 	cJSON *chars = cJSON_CreateArray();
 	int added = 0;
-	for (int i = 1; i < n && added < 48; i++) {
+	for (int i = 1; i < n && i < 51 && added < 48; i++) {
 		struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
 		if (!c) continue;
 		int lv = vm_get_field_int(c, R06_F_LV, NULL, 0);
@@ -453,9 +467,10 @@ static void ex_r06_locks(int mask)
 		struct page *pe = vm_get_global_page(R06_G_PARTY_EN, NULL);
 		struct page *an = vm_get_field_page(pe, "m_anChr", NULL);
 		for (int i = 0; i < vm_dd_array_len(an); i++) {
-			int idx = ex_arr_int_get(an, i, 0);
-			if (idx <= 0 || idx >= n) continue;
-			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, idx));
+			int cno = ex_arr_int_get(an, i, 0);
+			int slot = 51 + i;
+			if (cno <= 0 || slot >= n) continue;
+			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, slot));
 			if (c && vm_get_field_int(c, R06_F_HP, NULL, 0) > 1)
 				vm_set_field_int(c, R06_F_HP, NULL, 1);
 		}
@@ -483,8 +498,9 @@ static void ex_r06_action(cJSON *act)
 
 	struct page *gc = vm_get_global_page("gc", NULL);
 	int n = vm_dd_array_len(gc);
+	int ally_end = n < 51 ? n : 51;
 	if (ex_json_cheat_is(act, "fullHeal")) {
-		for (int i = 1; i < n; i++) {
+		for (int i = 1; i < ally_end; i++) {
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
 			if (!c) continue;
 			int mhp = vm_get_field_int(c, R06_F_HP_MAX, NULL, 0);
@@ -507,7 +523,8 @@ static void ex_r06_action(cJSON *act)
 	if (ce && cJSON_IsObject(ce) && n > 0) {
 		int32_t target = -1;
 		ex_json_int(ce, "target", &target);
-		for (int i = 1; i < n; i++) {
+		int end = (target >= 0) ? n : ally_end;
+		for (int i = 1; i < end; i++) {
 			if (target >= 0 && i != target) continue;
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
 			if (!c || vm_get_field_int(c, R06_F_HP_MAX, NULL, 0) <= 0) continue;
@@ -717,12 +734,24 @@ static void ex_ev2_action(cJSON *act)
 	if (ce && cJSON_IsObject(ce)) {
 		struct page *sarr = vm_get_global_page("g_arfStatus", NULL);
 		int sn = vm_dd_array_len(sarr);
+		struct page *cmgr = vm_get_global_page("g_clCharaInfoManager", NULL);
+		struct page *ilist = vm_get_field_page(cmgr, "m_InfoList", NULL);
+		int ilen = vm_dd_array_len(ilist);
 		int32_t target = -1;
 		ex_json_int(ce, "target", &target);
 		for (int i = 1; i < sn && i < 32; i++) {
 			if (target >= 0 && i != target) continue;
 			struct page *st = ex_ev2_status_at(sarr, i);
 			if (!st || !vm_get_field_int(st, "m_IsUse", NULL, 0)) continue;
+			if (target < 0) {
+				int32_t cno = vm_get_field_int(st, "m_CharaNo", NULL, i);
+				if (cno >= 0 && cno < ilen) {
+					struct page *info = vm_safe_get_page(vm_dd_array_elem_slot(ilist, cno));
+					if (info && (vm_get_field_int(info, EV_F_CHARA_ID, NULL, 0) > 0 ||
+					             vm_get_field_int(info, EV_F_PARTY_SET, NULL, 0) <= 1))
+						continue;
+				}
+			}
 			struct page *mainp = vm_get_field_page(st, "m_clMain", NULL);
 			struct page *subp = vm_get_field_page(st, "m_clSub", NULL);
 			struct page *batp = vm_get_field_page(st, "m_clBattle", NULL);
@@ -747,16 +776,28 @@ static void ex_ev2_action(cJSON *act)
 }
 
 /* =========================================================================
- * 3. Daibanchou (daibanchou) — includes exact nGoldCrc1 & nGoldCrc2!
+ * 3. Daibanchou (daibanchou) — includes exact FilterGold (^1021), nGoldDammy, nGoldCrc1 & nGoldCrc2!
  * ========================================================================= */
+static int32_t ex_db_get_gold(struct page *gv)
+{
+	if (!gv) return 0;
+	int32_t raw = vm_get_field_int(gv, "nGold", NULL, 0);
+	int32_t dammy = vm_get_field_int(gv, "nGoldDammy", NULL, 0);
+	if ((raw ^ 1021) == dammy)
+		return dammy;
+	return dammy >= 0 ? dammy : (raw ^ 1021);
+}
+
 static void ex_db_set_gold(struct page *gv, int32_t val)
 {
 	if (!gv) return;
-	int32_t g = vm_dd_clamp(val, 0, 500000000);
+	int32_t g = vm_dd_clamp(val, 0, 9999999);
+	int32_t filtered = g ^ 1021;
 	uint32_t ug = (uint32_t)g;
 	int32_t crc1 = (int32_t)(((ug & 0xFFu) + ((ug >> 8) & 0xFFu) + ((ug >> 16) & 0xFFu) + ((ug >> 24) & 0xFFu)) & 0xFFu);
-	int32_t crc2 = ((((g * 3) / 7) * 5) & 0xFF);
-	vm_set_field_int(gv, "nGold", NULL, g);
+	int32_t crc2 = ((((filtered * 3) / 7) * 5) & 0xFF);
+	vm_set_field_int(gv, "nGold", NULL, filtered);
+	vm_set_field_int(gv, "nGoldDammy", NULL, g);
 	vm_set_field_int(gv, "nGoldCrc1", NULL, crc1);
 	vm_set_field_int(gv, "nGoldCrc2", NULL, crc2);
 }
@@ -777,7 +818,7 @@ static void ex_db_populate(cJSON *root)
 	int sn = vm_dd_array_len(servs);
 	cJSON_AddBoolToObject(root, "inGame", gv != NULL && sn > 0);
 	cJSON_AddBoolToObject(root, "inBattle", false);
-	cJSON_AddNumberToObject(root, "gold", vm_get_field_int(gv, "nGold", NULL, 0));
+	cJSON_AddNumberToObject(root, "gold", ex_db_get_gold(gv));
 	cJSON_AddNumberToObject(root, "turn", vm_get_field_int(gv, "nTurnCount", NULL, 0));
 	cJSON_AddNumberToObject(root, "turnLimit", vm_get_field_int(gv, "nTurnLimit", NULL, 0));
 
@@ -815,7 +856,7 @@ static void ex_db_locks(int mask)
 	struct page *servs = ex_db_player_servants();
 	int sn = vm_dd_array_len(servs);
 	if (!gv || sn <= 0) return;
-	if ((mask & (1 << 0)) && vm_get_field_int(gv, "nGold", NULL, 0) < 999999)
+	if ((mask & (1 << 0)) && ex_db_get_gold(gv) < 999999)
 		ex_db_set_gold(gv, 999999);
 	if (mask & ((1 << 1) | (1 << 2))) {
 		for (int i = 0; i < sn; i++) {
@@ -838,7 +879,7 @@ static void ex_db_action(cJSON *act)
 	struct page *gv = vm_get_global_page("GlobalVar", NULL);
 	int32_t v;
 	if (ex_json_int(act, "gold", &v)) ex_db_set_gold(gv, v);
-	if (ex_json_int(act, "addGold", &v)) ex_db_set_gold(gv, vm_get_field_int(gv, "nGold", NULL, 0) + v);
+	if (ex_json_int(act, "addGold", &v)) ex_db_set_gold(gv, ex_db_get_gold(gv) + v);
 	if (ex_json_int(act, "turn", &v) && gv) vm_set_field_int(gv, "nTurnCount", NULL, vm_dd_clamp(v, 0, 999));
 	if (ex_json_cheat_is(act, "fullHeal")) ex_db_locks((1 << 1) | (1 << 2));
 
@@ -1022,6 +1063,18 @@ static void ex_dt_action(cJSON *act)
 #define GZ_F_RES_JP    "\x96\x82\x92\xef\x97\xcd"
 #define GZ_F_EVA_CN    "\xbb\xd8\xb1\xdc\xc1\xa6"
 #define GZ_F_EVA_JP    "\x89\xf1\x94\xf0\x97\xcd"
+#define GZ_F_HP_BASE_CN  "\xcc\xe5\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_HP_BASE_JP  "\x91\xcc\x97\xcd\x8a\xee\x91\x62\x92\x6c"
+#define GZ_F_ATK_BASE_CN "\xb9\xa5\xbb\xf7\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_ATK_BASE_JP "\x8d\x55\x8c\x82\x97\xcd\x8a\xee\x91\x62\x92\x6c"
+#define GZ_F_DEF_BASE_CN "\xb7\xc0\xd3\xf9\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_DEF_BASE_JP "\x96\x68\x8c\xe4\x97\xcd\x8a\xee\x91\x62\x92\x6c"
+#define GZ_F_MAG_BASE_CN "\xc4\xa7\xb7\xa8\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_MAG_BASE_JP "\x96\x82\x96\x40\x97\xcd\x8a\xee\x91\x62\x92\x6c"
+#define GZ_F_RES_BASE_CN "\xc4\xa7\xb5\xd6\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_RES_BASE_JP "\x96\x82\x92\xef\x97\xcd\x8a\xee\x91\x62\x92\x6c"
+#define GZ_F_EVA_BASE_CN "\xbb\xd8\xb1\xdc\xc1\xa6\xbb\xf9\xb4\xa1\xd6\xb5"
+#define GZ_F_EVA_BASE_JP "\x89\xf1\x94\xf0\x97\xcd\x8a\xee\x91\x62\x92\x6c"
 #define GZ_F_LV_CN     "\xa3\xcc\xa3\xd6"
 #define GZ_F_EXP_CN    "\xbd\x55\xf2\x59\x82\x8e"
 #define GZ_F_ICNT_CN   "\x82\x80\xca\xfd"
@@ -1033,9 +1086,10 @@ static void ex_gz_populate(cJSON *root)
 	int gn = vm_dd_array_len(gs);
 	cJSON_AddBoolToObject(root, "inGame", gn > 0);
 	bool in_battle = false;
-	for (int i = 0; i < vm_dd_array_len(fi); i++) {
-		struct page *f = vm_safe_get_page(vm_dd_array_elem_slot(fi, i));
-		if (f && vm_get_field_int(f, GZ_F_HP_CN, GZ_F_HP_JP, 0) > 0) { in_battle = true; break; }
+	if (vm_dd_array_len(fi) > 2) {
+		struct page *ef = vm_safe_get_page(vm_dd_array_elem_slot(fi, 2));
+		if (ef && vm_get_field_int(ef, GZ_F_HP_CN, GZ_F_HP_JP, 0) > 0)
+			in_battle = true;
 	}
 	cJSON_AddBoolToObject(root, "inBattle", in_battle);
 	cJSON_AddNumberToObject(root, "gold", ex_get_global_int(GZ_G_GOLD_CN, GZ_G_GOLD_JP, 0));
@@ -1071,11 +1125,12 @@ static void ex_gz_locks(int mask)
 	if ((mask & (1 << 0)) && ex_get_global_int(GZ_G_GOLD_CN, GZ_G_GOLD_JP, 0) < 999999)
 		ex_set_global_int(GZ_G_GOLD_CN, GZ_G_GOLD_JP, 999999);
 	if (mask & (1 << 1)) {
+		/* fi[1] is the player; fi[2] is the active battle enemy. */
 		struct page *fi = vm_get_global_page("fi", NULL);
-		for (int i = 0; i < vm_dd_array_len(fi); i++) {
-			struct page *f = vm_safe_get_page(vm_dd_array_elem_slot(fi, i));
-			if (f && vm_get_field_int(f, GZ_F_HP_CN, GZ_F_HP_JP, 0) > 1)
-				vm_set_field_int(f, GZ_F_HP_CN, GZ_F_HP_JP, 1);
+		if (vm_dd_array_len(fi) > 2) {
+			struct page *ef = vm_safe_get_page(vm_dd_array_elem_slot(fi, 2));
+			if (ef && vm_get_field_int(ef, GZ_F_HP_CN, GZ_F_HP_JP, 0) > 1)
+				vm_set_field_int(ef, GZ_F_HP_CN, GZ_F_HP_JP, 1);
 		}
 	}
 	if (mask & (1 << 2))
@@ -1112,12 +1167,36 @@ static void ex_gz_action(cJSON *act)
 			struct page *g = vm_safe_get_page(vm_dd_array_elem_slot(gs, i));
 			if (!g || (target < 0 && vm_get_field_int(g, GZ_F_CAP_CN, GZ_F_CAP_JP, 0) <= 0)) continue;
 			if (ex_json_int(ce, "lv", &v)) vm_set_field_int(g, GZ_F_LV_CN, EV_F_LV, vm_dd_clamp(v, 1, 999));
-			if (ex_json_int(ce, "hp", &v)) vm_set_field_int(g, GZ_F_HP_CN, GZ_F_HP_JP, vm_dd_clamp(v, 1, 99999));
-			if (ex_json_int(ce, "atk", &v)) vm_set_field_int(g, GZ_F_ATK_CN, GZ_F_ATK_JP, vm_dd_clamp(v, 0, 99999));
-			if (ex_json_int(ce, "def", &v)) vm_set_field_int(g, GZ_F_DEF_CN, GZ_F_DEF_JP, vm_dd_clamp(v, 0, 99999));
-			if (ex_json_int(ce, "mag", &v)) vm_set_field_int(g, GZ_F_MAG_CN, GZ_F_MAG_JP, vm_dd_clamp(v, 0, 99999));
-			if (ex_json_int(ce, "res", &v)) vm_set_field_int(g, GZ_F_RES_CN, GZ_F_RES_JP, vm_dd_clamp(v, 0, 99999));
-			if (ex_json_int(ce, "eva", &v)) vm_set_field_int(g, GZ_F_EVA_CN, GZ_F_EVA_JP, vm_dd_clamp(v, 0, 999));
+			if (ex_json_int(ce, "hp", &v)) {
+				int32_t cv = vm_dd_clamp(v, 1, 99999);
+				vm_set_field_int(g, GZ_F_HP_CN, GZ_F_HP_JP, cv);
+				vm_set_field_int(g, GZ_F_HP_BASE_CN, GZ_F_HP_BASE_JP, cv);
+			}
+			if (ex_json_int(ce, "atk", &v)) {
+				int32_t cv = vm_dd_clamp(v, 0, 99999);
+				vm_set_field_int(g, GZ_F_ATK_CN, GZ_F_ATK_JP, cv);
+				vm_set_field_int(g, GZ_F_ATK_BASE_CN, GZ_F_ATK_BASE_JP, cv);
+			}
+			if (ex_json_int(ce, "def", &v)) {
+				int32_t cv = vm_dd_clamp(v, 0, 99999);
+				vm_set_field_int(g, GZ_F_DEF_CN, GZ_F_DEF_JP, cv);
+				vm_set_field_int(g, GZ_F_DEF_BASE_CN, GZ_F_DEF_BASE_JP, cv);
+			}
+			if (ex_json_int(ce, "mag", &v)) {
+				int32_t cv = vm_dd_clamp(v, 0, 99999);
+				vm_set_field_int(g, GZ_F_MAG_CN, GZ_F_MAG_JP, cv);
+				vm_set_field_int(g, GZ_F_MAG_BASE_CN, GZ_F_MAG_BASE_JP, cv);
+			}
+			if (ex_json_int(ce, "res", &v)) {
+				int32_t cv = vm_dd_clamp(v, 0, 99999);
+				vm_set_field_int(g, GZ_F_RES_CN, GZ_F_RES_JP, cv);
+				vm_set_field_int(g, GZ_F_RES_BASE_CN, GZ_F_RES_BASE_JP, cv);
+			}
+			if (ex_json_int(ce, "eva", &v)) {
+				int32_t cv = vm_dd_clamp(v, 0, 999);
+				vm_set_field_int(g, GZ_F_EVA_CN, GZ_F_EVA_JP, cv);
+				vm_set_field_int(g, GZ_F_EVA_BASE_CN, GZ_F_EVA_BASE_JP, cv);
+			}
 			if (ex_json_int(ce, "love", &v)) {
 				int lmax = vm_get_field_int(g, GZ_F_LMAX_CN, GZ_F_LMAX_JP, 9999);
 				vm_set_field_int(g, GZ_F_LOVE_CN, GZ_F_LOVE_JP, vm_dd_clamp(v, 0, lmax > 0 ? lmax : 9999));
@@ -1357,9 +1436,9 @@ static void ex_yk_populate(cJSON *root)
 	struct page *abs = vm_get_global_page("LAbility::m_pAbilities", NULL);
 	struct page *cds = vm_get_global_page("LAbility::m_aCharacterData", NULL);
 	int n = vm_dd_array_len(abs);
-	cJSON_AddBoolToObject(root, "inGame", n > 0);
-	cJSON_AddBoolToObject(root, "inBattle", false);
 	struct page *ab0 = n > 0 ? vm_safe_get_page(vm_dd_array_elem_slot(abs, 0)) : NULL;
+	cJSON_AddBoolToObject(root, "inGame", n > 0 && ab0 != NULL);
+	cJSON_AddBoolToObject(root, "inBattle", false);
 	cJSON_AddNumberToObject(root, "gold", vm_get_field_int(ab0, "money", NULL, 0));
 
 	cJSON *chars = cJSON_CreateArray();
@@ -2208,7 +2287,8 @@ static void ex_er_locks(int mask)
 	if (mask & (1 << 0)) {
 		int llim = ex_field_cint_read(gp, "m_nLibidoLimit", 100);
 		if (llim <= 0) llim = 100;
-		ex_field_cint_write(gp, "m_nLibido", llim, EX_KEY_ESCALAYER_REBOOT);
+		if (ex_field_cint_read(gp, "m_nLibido", 0) < llim)
+			ex_field_cint_write(gp, "m_nLibido", llim, EX_KEY_ESCALAYER_REBOOT);
 		if (ex_field_cint_read(gp, "m_nEnergy", 0) < 100)
 			ex_field_cint_write(gp, "m_nEnergy", 100, EX_KEY_ESCALAYER_REBOOT);
 	}
@@ -2408,7 +2488,8 @@ static void ex_p3_locks(int mask)
 	if (mask & (1 << 1)) {
 		int apm = ex_field_cint_read(gp, "m_nActionPointLimit", 10);
 		if (apm < 10) apm = 10;
-		ex_field_cint_write(gp, "m_nActionPoint", apm, EX_KEY_PASCHA3);
+		if (ex_field_cint_read(gp, "m_nActionPoint", 0) < apm)
+			ex_field_cint_write(gp, "m_nActionPoint", apm, EX_KEY_PASCHA3);
 	}
 	if (mask & (1 << 2)) {
 		struct page *units = ex_p3_unit_list();
@@ -2636,7 +2717,8 @@ static void ex_mm_locks(int mask)
 	if (mask & (1 << 1)) {
 		int wlim = ex_field_cint_read(gp, "m_nWildLimit", 100);
 		if (wlim <= 0) wlim = 100;
-		ex_field_cint_write(gp, "m_nWild", wlim, EX_KEY_MAMAN);
+		if (ex_field_cint_read(gp, "m_nWild", 0) < wlim)
+			ex_field_cint_write(gp, "m_nWild", wlim, EX_KEY_MAMAN);
 		if (ex_field_cint_read(gp, "m_nHumor", 0) < 100)
 			ex_field_cint_write(gp, "m_nHumor", 100, EX_KEY_MAMAN);
 	}

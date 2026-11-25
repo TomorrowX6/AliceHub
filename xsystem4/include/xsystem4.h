@@ -121,6 +121,7 @@ extern bool game_evenicle2;
 extern bool game_evenicle2_rance;
 extern bool game_haharanman;
 extern bool game_okusama;
+extern bool game_okusama_ntr;
 extern bool game_night_remaster;
 extern bool game_oyakorankan;
 extern bool game_toushin3;

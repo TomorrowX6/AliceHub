@@ -220,6 +220,7 @@ static int g_r02_lock_mask = 0;
 static bool g_has_r02_lock_mask_init = false;
 #define EX_MAX_GAMES 32
 static void ex_snapshot_locks_locked(int *out_masks, bool *out_init);
+static bool ex_all_locks_initialized_locked(void);
 static void ex_load_locks_from_json_locked(cJSON *root);
 static bool ex_locks_differ_from_json(cJSON *root, const int *snap_masks, const bool *snap_init);
 static void ex_save_locks_to_json(cJSON *root, const int *snap_masks, const bool *snap_init);
@@ -3257,7 +3258,7 @@ static void maybe_load_initial_modifier_config(void)
 	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init &&
 	    g_has_sr_lock_mask_init && g_has_r01_lock_mask_init && g_has_r02_lock_mask_init &&
 	    g_has_r03_lock_mask_init && g_has_r08_lock_mask_init && g_has_r09_lock_mask_init &&
-	    g_has_ui_scale_init) {
+	    g_has_ui_scale_init && ex_all_locks_initialized_locked()) {
 		pthread_mutex_unlock(&g_mod_mutex);
 		return;
 	}
@@ -6313,7 +6314,8 @@ static void sr_apply_char_edit(struct page *ch, cJSON *ce)
 		ch->values[29].i = vm_dd_clamp(it->valueint, 0, 99);
 	if ((it = cJSON_GetObjectItem(ce, "wazaNow")) && cJSON_IsNumber(it))
 		ch->values[30].i = vm_dd_clamp(it->valueint, 0, 99);
-	if ((it = cJSON_GetObjectItem(ce, "resetAction")) && cJSON_IsTrue(it))
+	if ((it = cJSON_GetObjectItem(ce, "resetAction")) &&
+	    (cJSON_IsTrue(it) || (cJSON_IsNumber(it) && it->valueint != 0)))
 		ch->values[8].i = 0;
 }
 
@@ -9222,7 +9224,7 @@ void modifier_api_set_game_lock_mask(const char *game_id, int mask)
 	if (!strcmp(game_id, "rance03")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE03, mask); return; }
 	if (!strcmp(game_id, "rance08")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE08, mask); return; }
 	if (!strcmp(game_id, "rance09")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE09, mask); return; }
-	if (!strcmp(game_id, "okusamantr")) game_id = "okusamajun";
+	if (!strcmp(game_id, "escalayer_reboot")) game_id = "escalayerreboot";
 
 	int save_r10_mask = 0;
 	bool updated = false;
@@ -9253,7 +9255,7 @@ int modifier_api_get_game_lock_mask(const char *game_id)
 	if (!strcmp(game_id, "rance03")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE03);
 	if (!strcmp(game_id, "rance08")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE08);
 	if (!strcmp(game_id, "rance09")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE09);
-	if (!strcmp(game_id, "okusamantr")) game_id = "okusamajun";
+	if (!strcmp(game_id, "escalayer_reboot")) game_id = "escalayerreboot";
 
 	pthread_mutex_lock(&g_mod_mutex);
 	int mask = ex_get_lock_mask_locked(game_id);

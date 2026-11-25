@@ -871,7 +871,12 @@ class XSystem4Activity : SDLActivity() {
         }
         if (launchedGameRoot != null && !isLegacySystem3Game) {
             lastSyncedConfigSeq = if (isSystem3xGame()) {
-                GameModifierBridge.syncEscLockMaskFromNative(this)
+                val s35Gid = currentGenericModifierGameId()
+                if (s35Gid != null) {
+                    GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                } else {
+                    GameModifierBridge.syncEscLockMaskFromNative(this)
+                }
             } else {
                 GameModifierBridge.syncLockMaskFromNative(this)
             }
@@ -1456,7 +1461,14 @@ class XSystem4Activity : SDLActivity() {
             try {
                 when {
                     isLegacySystem3Game -> Unit
-                    isSystem3xGame() -> GameModifierBridge.syncEscLockMaskFromNative(this)
+                    isSystem3xGame() -> {
+                        val s35Gid = currentGenericModifierGameId()
+                        if (s35Gid != null) {
+                            GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                        } else {
+                            GameModifierBridge.syncEscLockMaskFromNative(this)
+                        }
+                    }
                     else -> GameModifierBridge.syncLockMaskFromNative(this)
                 }
             } catch (_: Throwable) {
