@@ -693,8 +693,8 @@ static bool name_list(struct string *path, struct page **out, int id, bool leaf)
 	if (!out || !resolve_ex(path, id, &ex, &subpath)) return false;
 	int count;
 	child_name_cstr(ex, subpath, leaf, -1, &count);
-	struct ain_type type = { .data = AIN_STRING, .struc = -1 };
-	struct page *page = v12_array_new(&type, count, false);
+	union vm_value dim = { .i = count };
+	struct page *page = alloc_array(1, &dim, AIN_ARRAY_STRING, -1, false);
 	for (int i = 0; i < count; i++) {
 		int unused;
 		struct string *s = child_name_cstr(ex, subpath, leaf, i, &unused);
