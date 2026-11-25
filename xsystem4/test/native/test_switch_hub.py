@@ -59,25 +59,59 @@ int main(void)
 
 
 class SwitchRuntimeCtrlTest(unittest.TestCase):
-    def test_effective_ctrl_edges_survive_modal_input_reset(self):
+    def test_ctrl_skip_advances_messages_without_sending_key_events(self):
         source = (REPO / "xsystem35/src/event.c").read_text()
-        names = ("event_rawkey_down", "sync_switch_ctrl_event", "set_raw_key", "event_reset_input_state")
-        event = "\n".join(re.search(rf"^(?:static )?\w+ {name}\([^\n]*\) \{{\n.*?^\}}",
-                                     source, re.M | re.S).group() for name in names)
+        sources = [
+            (source, ("event_rawkey_down", "set_raw_key", "event_reset_input_state")),
+            ((REPO / "xsystem35/modules/SACT/sprite_event.c").read_text(), ("sact_wait_skip_level",)),
+            ((REPO / "xsystem35/modules/SACT/sprite_msg.c").read_text(), ("smsg_keywait",)),
+        ]
+        funcs = "\n".join(re.search(rf"^(?:static )?\w+ {name}\([^\n]*\) \{{\n.*?^\}}",
+                                    source, re.M | re.S).group()
+                          for source, names in sources for name in names)
         with tempfile.TemporaryDirectory() as tmp:
             executable = Path(tmp) / "test"
             subprocess.run(
                 ["cc", "-std=gnu11", "-D__SWITCH__", "-Wall", "-Wextra", "-Werror",
-                 "-x", "c", "-", "-o", str(executable)],
+                 "-Wno-unused-parameter", "-x", "c", "-", "-o", str(executable)],
                 input=r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <string.h>
 enum { NUM_KEYCODES = 256, KEY_CTRL = 17, KEY_A = 65 };
 enum { AGSEVENT_KEY_PRESS, AGSEVENT_KEY_RELEASE };
+enum { KEYWAIT_NONE, KEYWAIT_MESSAGE, KEYWAIT_BACKLOG, KEYWAIT_NONCANCELABLE };
 static int mouseb, joyinfo, switch_joy_buttons, ctrl_events;
+static struct { int waittype, waitkey; bool zhiding; } sact;
+static struct { bool is_quit; } engine, *nact = &engine;
+struct markinfo { int interval, sp, cg; };
 static bool RawKeyInfo[NUM_KEYCODES], skip, last_down;
+static int waits, input_polls;
 static bool switch_menu35_ctrl_skip(void) { return skip; }
+static bool msgskip_isSkipping(void) { return false; }
+static int sys_getInputInfo(void) { return ++input_polls; }
+static int sys_get_ticks(void) { return 0; }
+static int setupmark(int a, int b, struct markinfo *m) { return 0; }
+static void update_mark(int sp, int cg) {}
+void event_reset_input_state(void);
+static void sys_keywait(int time, int flags)
+{
+    switch (++waits) {
+    case 1:
+        assert(sact.waittype == KEYWAIT_MESSAGE);
+        sact.waittype = KEYWAIT_BACKLOG;
+        skip = true;
+        event_reset_input_state();
+        break;
+    case 2:
+        assert(sact.waittype == KEYWAIT_BACKLOG);
+        assert(sact.waitkey == -1);
+        sact.waittype = KEYWAIT_MESSAGE;
+        break;
+    default:
+        assert(false);
+    }
+}
 static void send_agsevent(int type, int code)
 {
     if (code != KEY_CTRL)
@@ -85,26 +119,24 @@ static void send_agsevent(int type, int code)
     ++ctrl_events;
     last_down = type == AGSEVENT_KEY_PRESS;
 }
-""" + event + r"""
+""" + funcs + r"""
 int main(void)
 {
     event_reset_input_state();
     assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 0);
-    skip = true;
-    event_reset_input_state();
-    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 1 && last_down);
-    set_raw_key(KEY_CTRL, true);
-    set_raw_key(KEY_CTRL, false);
+    assert(smsg_keywait(0, 0, 0) == 0 && waits == 2 && sact.waittype == KEYWAIT_NONE);
+    assert(smsg_keywait(0, 0, 0) == 0 && waits == 2 && input_polls == 1);
+    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 0);
     set_raw_key(KEY_A, true);
     event_reset_input_state();
-    assert(event_rawkey_down(KEY_CTRL) && !event_rawkey_down(KEY_A) && ctrl_events == 1);
+    assert(event_rawkey_down(KEY_CTRL) && !event_rawkey_down(KEY_A) && ctrl_events == 0);
     skip = false;
     event_reset_input_state();
-    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 2 && !last_down);
+    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 0);
     set_raw_key(KEY_CTRL, true);
-    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 3 && last_down);
+    assert(event_rawkey_down(KEY_CTRL) && ctrl_events == 1 && last_down);
     set_raw_key(KEY_CTRL, false);
-    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 4 && !last_down);
+    assert(!event_rawkey_down(KEY_CTRL) && ctrl_events == 2 && !last_down);
 }
 """, text=True, check=True,
             )
