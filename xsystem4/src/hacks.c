@@ -372,6 +372,83 @@ static bool ain_has_evenicle2_rance_gbk_prologue(struct ain *ain)
 	return false;
 }
 
+static bool next_evenicle_rance_string_push(struct ain *ain, uint32_t end,
+		uint32_t *addr, uint32_t *operand)
+{
+	while (*addr < end && end - *addr >= 2) {
+		unsigned op = (uint16_t)LittleEndian_getW(ain->code, *addr);
+		if (op >= NR_OPCODES || op == ENDFUNC || op == FUNC)
+			return false;
+		uint32_t width = instruction_width(op);
+		if (width > end - *addr)
+			return false;
+		uint32_t pos = *addr + 2;
+		*addr += width;
+		if (op == S_PUSH) {
+			*operand = pos;
+			return true;
+		}
+	}
+	return false;
+}
+
+static void normalize_evenicle_rance_literals(struct ain *ain, const char *function,
+		const char *literal, uint32_t expected_hash)
+{
+	int fno = ain_get_function(ain, (char *)function);
+	if (fno < 0)
+		return;
+	uint32_t start = ain->functions[fno].address;
+	uint32_t end = find_func_end_addr(ain, fno);
+	uint32_t operand;
+	if (expected_hash) {
+		uint32_t hash = 2166136261u;
+		for (uint32_t addr = start; next_evenicle_rance_string_push(ain, end, &addr, &operand); ) {
+			int no = LittleEndian_getDW(ain->code, operand);
+			if (no < 0 || no >= ain->nr_strings)
+				return;
+			const unsigned char *p = (const unsigned char *)ain->strings[no]->text;
+			do {
+				hash = (hash ^ *p) * 16777619u;
+			} while (*p++);
+		}
+		if (hash != expected_hash)
+			return;
+	}
+
+	for (uint32_t addr = start; next_evenicle_rance_string_push(ain, end, &addr, &operand); ) {
+		int no = LittleEndian_getDW(ain->code, operand);
+		if (no < 0 || no >= ain->nr_strings)
+			return;
+		const char *text = ain->strings[no]->text;
+		if (!*text || (literal && strcmp(text, literal)))
+			continue;
+		char *utf8 = cjk2utf_strict(text, false, NULL);
+		if (!utf8)
+			continue;
+		char *gbk = utf2cjk(utf8, 0, true);
+		char *round_trip = cjk2utf_strict(gbk, true, NULL);
+		if (round_trip && !strcmp(utf8, round_trip) && strcmp(text, gbk))
+			LittleEndian_putDW(ain->code, operand, ain_add_string(ain, gbk));
+		free(round_trip);
+		free(gbk);
+		free(utf8);
+	}
+}
+
+static void apply_evenicle_rance_cn_skill_notice(struct ain *ain)
+{
+	// The CN AIN leaves the skill initializer's display strings in Shift-JIS.
+	// Fingerprint its literal bytes (FNV-1a, including NUL separators), not its
+	// STR0 indexes or bytecode addresses, to leave other translations alone.
+	normalize_evenicle_rance_literals(ain, "\x83\x58\x83\x4c\x83\x8b\x8f\x89\x8a\xfa\x89\xbb", NULL, 0xc41e014bu);
+	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x83\x89\x83\x93\x83\x58", 0);
+	normalize_evenicle_rance_literals(ain, "T_GetItemDisp@RunSkill", "\x82\xcd", 0);
+	normalize_evenicle_rance_literals(ain, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b",
+			"\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49", 0);
+	normalize_evenicle_rance_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0);
+}
+
 static bool ain_messages_look_gbk(struct ain *ain)
 {
 	unsigned long gbk_score = 0;
@@ -870,6 +947,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
 		|| ain_messages_look_gbk(ain);
 	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
+	if (game_evenicle_rance && sys4_text_is_gbk && !sys4_source_is_utf8)
+		apply_evenicle_rance_cn_skill_notice(ain);
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

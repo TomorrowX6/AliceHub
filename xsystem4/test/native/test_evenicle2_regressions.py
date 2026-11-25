@@ -291,6 +291,100 @@ int main(void) {
         out = compile_and_run(harness, [ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
 
+    def test_evenicle_rance_cn_skill_notice_literals(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+
+#include "hacks.c"
+
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { return false; }
+
+static uint32_t add_literal_function(struct ain *ain, struct buffer *code,
+        const char *name, const char *const *literals, int count)
+{
+    int fno = ain_add_function(ain, name);
+    write_instruction1(code, FUNC, fno);
+    uint32_t start = code->index;
+    ain->functions[fno].address = start;
+    for (int i = 0; i < count; i++)
+        write_instruction1(code, S_PUSH, ain_add_string(ain, literals[i]));
+    write_instruction1(code, ENDFUNC, fno);
+    return start;
+}
+
+static const char *pushed_literal(struct ain *ain, uint32_t start, int index)
+{
+    int no = LittleEndian_getDW(ain->code, start + 6 * index + 2);
+    return ain->strings[no]->text;
+}
+
+static void assert_gbk(const char *bytes, const char *expected)
+{
+    char *utf8 = cjk2utf_strict(bytes, true, NULL);
+    assert(utf8 && !strcmp(utf8, expected));
+    free(utf8);
+}
+
+int main(void)
+{
+    struct ain *ain = ain_new(6, 0);
+    ain_add_struct(ain, "CBigMap");
+    ain_add_string(ain, "56s5d4");
+    const char *const notice[] = { "\x83\x89\x83\x93\x83\x58", "\x82\xcd", "\x83\x41\x83\x58\x83\x5e" };
+    const char *const reward[] = { "\x82\xf0\x8a\x6f\x82\xa6\x82\xbd\x81\x49" };
+    const char *const space[] = { "\x81\x40" };
+    const char *const skills[] = {
+        "\x83\x72\x83\x8a\x83\x72\x83\x8a",
+        "\x97\x8b\x91\xae\x90\xab\x82\xcc\x96\x82\x96\x40\x8d\x55\x8c\x82",
+        "2.0\x94\x7b\x81\x40\x97\x8b\x96\x82\x96\x40",
+    };
+    const char *skill_init = "\x83\x58\x83\x4c\x83\x8b\x8f\x89\x8a\xfa\x89\xbb";
+    struct buffer code;
+    buffer_init(&code, NULL, 0);
+    uint32_t run_skill = add_literal_function(ain, &code, "T_GetItemDisp@RunSkill", notice, 3);
+    uint32_t chest = add_literal_function(ain, &code, "\x95\xf3\x94\xa0\x82\xa9\x82\xe7\x83\x58\x83\x4c\x83\x8b", reward, 1);
+    uint32_t padding = add_literal_function(ain, &code, "GetSpaceTextFromString", space, 1);
+    uint32_t init = add_literal_function(ain, &code, skill_init, skills, 3);
+    uint32_t other = add_literal_function(ain, &code, "Other", notice, 3);
+    ain->code = code.buf;
+    ain->code_size = code.index;
+
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle_rance && !sys4_text_is_gbk);
+    assert(!strcmp(pushed_literal(ain, run_skill, 0), notice[0]));
+    assert(!strcmp(pushed_literal(ain, chest, 0), reward[0]));
+    assert(!strcmp(pushed_literal(ain, padding, 0), space[0]));
+
+    ain_add_string(ain, "\xc0\xbc\xcb\xb9"); // 兰斯, CN edition marker
+    apply_game_specific_hacks(ain);
+    assert(game_evenicle_rance && sys4_text_is_gbk);
+    assert_gbk(pushed_literal(ain, run_skill, 0), "ランス");
+    assert_gbk(pushed_literal(ain, run_skill, 1), "は");
+    assert_gbk(pushed_literal(ain, chest, 0), "を覚えた！");
+    assert_gbk(pushed_literal(ain, padding, 0), "　");
+    assert(!strcmp(pushed_literal(ain, run_skill, 2), notice[2])); // comparison, not display
+    assert(!strcmp(pushed_literal(ain, other, 0), notice[0])); // same STR0 entry, outside notice
+
+    // The short fixture isn't the audited catalog initializer. Use its own
+    // fingerprint to exercise the shared verified-block conversion.
+    assert(!strcmp(pushed_literal(ain, init, 0), skills[0]));
+    normalize_evenicle_rance_literals(ain, skill_init, NULL, 0xb090da21u);
+    assert_gbk(pushed_literal(ain, init, 0), "ビリビリ");
+    assert_gbk(pushed_literal(ain, init, 1), "雷属性の魔法攻撃");
+    assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");
+
+    ain_free(ain);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness, [ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"]
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):
         harness = r"""
 #include <assert.h>
