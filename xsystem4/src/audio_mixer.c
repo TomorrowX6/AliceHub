@@ -1078,11 +1078,16 @@ void mixer_init(void)
 	//       them in the list become their children. This appears to be
 	//       hardcoded behavior in system 4.
 	struct mixer *parent = master;
+	bool split_voice_mixers = game_escalayer_reboot || game_tsumamigui3;
+	int first_back_voice = game_escalayer_reboot ? 12 : 10;
 	for (int i = 0; i < nr_mixers; i++) {
 		if (&mixers[i] == master)
 			continue;
 		struct mixer *node_parent = parent;
-		if (game_rance03) {
+		if (split_voice_mixers) {
+			// Groups 3 and 5 independently control foreground and background voices.
+			node_parent = i >= first_back_voice ? &mixers[5] : i >= 6 ? &mixers[3] : master;
+		} else if (game_rance03) {
 			// Rance 03 CGroupTree::GetParentGroup: groups 1..5 attach to Master (0),
 			// while VoiceMale (6) and VoiceFemale (7) attach to Voice (3).
 			node_parent = (i >= 6 && nr_mixers > 3) ? &mixers[3] : master;
@@ -1090,7 +1095,7 @@ void mixer_init(void)
 		mixers[i].parent = node_parent;
 		node_parent->children = xrealloc_array(node_parent->children, node_parent->nr_children, node_parent->nr_children+1, sizeof(struct mixer*));
 		node_parent->children[node_parent->nr_children++] = &mixers[i];
-		if (!game_rance10 && !game_evenicle2 && !game_ixseal && !game_rance03 && !game_okusama && !game_haharanman && !game_night_remaster && !game_tsumamigui3_jun && !game_tsumamigui3_ntr && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
+		if (!split_voice_mixers && !game_rance10 && !game_evenicle2 && !game_ixseal && !game_rance03 && !game_okusama && !game_haharanman && !game_night_remaster && !game_tsumamigui3_jun && !game_tsumamigui3_ntr && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
 			parent = &mixers[i];
 		}
 	}

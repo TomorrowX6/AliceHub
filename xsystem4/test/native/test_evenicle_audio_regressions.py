@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evenicle EX mixer configuration and native playback lifecycle regressions."""
+"""EX mixer configuration, native playback lifecycle and BGV volume regressions."""
 
 import struct
 import tempfile
@@ -18,7 +18,7 @@ from test_rance03_volume_regressions import (
 )
 
 
-def group_table(rows):
+def group_table(rows, encoding="cp932"):
     fields = [(b"Group", 1), (b"Voice", 1), (b"Volume", 2)]
     data = bytearray(struct.pack("<I", len(fields)))
     for i, (name, kind) in enumerate(fields):
@@ -27,7 +27,7 @@ def group_table(rows):
     data += struct.pack("<II", len(fields), len(rows))
     for group, volume in rows:
         data += struct.pack("<IiIiIf", 1, group, 1, -1, 2, volume)
-    return _ex_block("Ｅ＿サウンドグループ設定".encode("cp932"), 4, data)
+    return _ex_block("Ｅ＿サウンドグループ設定".encode(encoding), 4, data)
 
 
 HARNESS = r'''
@@ -45,11 +45,15 @@ HARNESS = r'''
 #include "id_pool.h"
 #include "mixer.h"
 #include "system4/archive.h"
+#include "system4/file.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "hll/hll.h"
 
 struct config config;
+struct ain *ain;
 bool game_rance10, game_dohnadohna, game_evenicle2, game_rance03, game_ixseal, game_okusama, game_haharanman, game_night_remaster, game_tsumamigui3_jun, game_tsumamigui3_ntr;
+bool game_escalayer_reboot, game_tsumamigui3;
 static const char *wave_path;
 static Uint32 ticks;
 int SDL_InitSubSystem(Uint32 flags) { return 0; }
@@ -65,22 +69,37 @@ void SDL_UnlockAudioDevice(SDL_AudioDeviceID dev) {}
 const char *SDL_GetError(void) { return ""; }
 Uint32 SDL_GetTicks(void) { return ticks; }
 bool asset_exists_by_name(enum asset_type t, const char *name, int *id) { return false; }
-struct archive_data *asset_get(enum asset_type t, int no) { return NULL; }
+bool asset_exists(enum asset_type t, int no) {
+    return game_escalayer_reboot && t == ASSET_SOUND && (no == 30690 || no == 11773);
+}
 struct archive_data *asset_get_by_name(enum asset_type t, const char *name, int *id) { return NULL; }
 void asset_foreach_file(enum asset_type t, void (*cb)(struct archive_data*, void*), void *u) {}
 void bgi_read(const char *path) {}
 struct bgi *bgi_get(int no) { return NULL; }
 void wai_load(const char *path) {}
-struct wai *wai_get(int no) { return NULL; }
+struct wai *wai_get(int no) {
+    static struct wai bgv = {.channel = 12}, voice = {.channel = 6};
+    return no == 30690 ? &bgv : no == 11773 ? &voice : NULL;
+}
 const char *display_sjis0(const char *s) { return s; }
 char *gamedir_path_icase(const char *name) {
     return strcmp(name, "missing") ? strdup(wave_path) : NULL;
 }
-void audio_init(void) { mixer_init(); }
 void static_library_replace(struct static_library *l, const char *name, void *f) {}
 
 #include "audio_mixer.c"
+#include "audio.c"
+#include "hll/KiwiSoundEngine.c"
 #include "hll/KiwiSoundEngine_v12.c"
+
+struct archive_data *asset_get(enum asset_type t, int no) {
+    if (!asset_exists(t, no)) return NULL;
+    struct archive_data *data = calloc(1, sizeof(*data));
+    data->archive = &memory_archive;
+    data->data = file_read(wave_path, &data->size);
+    assert(data->data);
+    return data;
+}
 
 static int slots(void) {
     int total = 0;
@@ -111,6 +130,41 @@ static void start(int id, const char *name, int group, bool loop) {
     prepare(id, name, group);
     assert(kiwi_loop(id, loop ? 0 : 1));
     assert(kiwi_play(id));
+}
+
+static void bgv_test(int default_volume) {
+    int volume;
+    assert(mixer_get_volume(5, &volume) && volume == default_volume);
+    assert(mixer_set_volume(5, 100));
+    float peak = render(4);
+    assert(peak > 0.01f);
+    assert(mixer_set_volume(5, 30));
+    render(4);
+    assert(fabsf(render(4) - 0.3f * peak) < 0.0001f);
+    assert(mixer_set_volume(5, 0));
+    render(4);
+    assert(render(4) == 0);
+    assert(mixer_set_volume(5, 100));
+    assert(mixer_set_volume(3, 0));
+    render(4);
+    assert(fabsf(render(4) - peak) < 0.0001f);
+    assert(mixer_set_volume(3, 100));
+    assert(mixer_set_volume(5, 0));
+}
+
+static void escalayer_bgv_test(void) {
+    assert(KiwiSoundEngine_GetBackVoiceGroup() == 5);
+    assert(wav_get_group_num_from_data_num(30690) == 12);
+    assert(wav_prepare(12, 30690));
+    assert(wav_set_loop_count(12, 0));
+    assert(wav_play(12));
+    bgv_test(15);
+    assert(wav_unprepare(12));
+    assert(wav_prepare(3, 11773));
+    assert(wav_play(3));
+    assert(render(4) > 0.01f);
+    assert(wav_unprepare(3));
+    printf("Escalayer Reboot: BGV slider controls WAI group 12, independently of voice group 6\n");
 }
 
 static void config_test(bool empty) {
@@ -400,7 +454,19 @@ int main(int argc, char **argv) {
     assert(argc == 5);
     wave_path = argv[3];
     config.default_volume = 80;
-    if (!strcmp(argv[4], "linkfail")) {
+    game_escalayer_reboot = !strcmp(argv[4], "escalayer");
+    game_tsumamigui3 = !strcmp(argv[4], "tsumamigui3");
+    if (game_escalayer_reboot) {
+        const char *names[18] = {"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice"};
+        for (int i = 6; i < 18; i++) names[i] = "Character";
+        set_default_mixers(names, NULL, 18);
+        config.mixer_volumes[5] = 15;
+        audio_init();
+        escalayer_bgv_test();
+        return 0;
+    } else if (game_tsumamigui3) {
+        sys4_set_text_gbk(true);
+    } else if (!strcmp(argv[4], "linkfail")) {
         const char *names[STS_MIXER_VOICES + 2];
         names[0] = "Master";
         for (unsigned i = 1; i < STS_MIXER_VOICES + 2; i++) names[i] = "Group";
@@ -426,7 +492,16 @@ int main(int argc, char **argv) {
     sound_metas[0].info = ex_get_table(sound_metas[0].ex, "SoundInfo");
     nr_sound_metas = 1;
     kiwi_build_sound_row_index();
-    if (!strcmp(argv[4], "life")) lifecycle_test();
+    if (game_tsumamigui3) {
+        assert(config.mixer_nr_channels == 14);
+        start(12, "30031", 10, true);
+        bgv_test(18);
+        assert(kiwi_unprepare(12));
+        start(3, "20580", 6, true);
+        assert(render(4) > 0.01f);
+        assert(kiwi_unprepare(3));
+        printf("Tsumamigui 3: BGV slider controls SoundInfo group 10, independently of voice group 6\n");
+    } else if (!strcmp(argv[4], "life")) lifecycle_test();
     else if (!strcmp(argv[4], "full")) exhaustion_test();
     else if (!strcmp(argv[4], "pressure")) pressure_test();
     else if (!strcmp(argv[4], "bounds")) bounds_test();
@@ -461,11 +536,15 @@ class EvenicleAudioTests(unittest.TestCase):
             rows = [(-1, 0.8), (256, 0.8), (1023, 0.8), (1024, 0.8)] if invalid else list(enumerate(volumes))
             if mode.startswith("limit-") or mode == "authored-implicit":
                 rows = [(255, 0.8), (256, 0.8), (1023, 0.8)]
-            groups.write_bytes(build_extf([] if mode in ("absent", "legacy") else [group_table(rows)]))
+            if mode == "tsumamigui3":
+                rows = list(enumerate([0.8, 0.8, 0.8, 1.0, 0.8, 0.177828] + [0.8] * 8))
+            encoding = "cp936" if mode == "tsumamigui3" else "cp932"
+            groups.write_bytes(build_extf([] if mode in ("absent", "legacy") else [group_table(rows, encoding)]))
             metadata.write_bytes(build_extf([_ex_soundinfo_table(
                 [(b"10001", 11), (b"10101", 10), (b"bgm", 1),
                  (b"se", 2), (b"ambient", 12), (b"master", 0), (b"badgroup", 100), (b"last", 255),
-                 (b"skipped", 256), (b"past-skipped", 1023), (b"after-master", 257), (b"negative", -1)],
+                 (b"skipped", 256), (b"past-skipped", 1023), (b"after-master", 257), (b"negative", -1),
+                 (b"30031", 10), (b"20580", 6)],
                 [(b"Name", 3), (b"Group", 1)],
             )]))
             with wave.open(str(audio), "wb") as stream:
@@ -484,6 +563,12 @@ class EvenicleAudioTests(unittest.TestCase):
 
     def test_ex_without_ini(self):
         self.run_probe("empty")
+
+    def test_tsumamigui3_background_voice_slider(self):
+        self.run_probe("tsumamigui3")
+
+    def test_escalayer_reboot_background_voice_slider(self):
+        self.run_probe("escalayer")
 
     def test_invalid_ex_groups(self):
         self.run_probe("invalid", invalid=True)

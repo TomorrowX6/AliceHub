@@ -23,6 +23,7 @@
 #include "hll.h"
 #include "asset_manager.h"
 #include "audio.h"
+#include "xsystem4.h"
 
 HLL_WARN_UNIMPLEMENTED( , void, KiwiSoundEngine, SetGlobalFocus, possibly_unused int nNum);
 
@@ -56,7 +57,7 @@ static int KiwiSoundEngine_GetGimicSEGroup(void)
 
 static int KiwiSoundEngine_GetBackVoiceGroup(void)
 {
-	return 0;
+	return game_escalayer_reboot ? 5 : 0;
 }
 
 static bool rance9_bgm_exists(int num)
