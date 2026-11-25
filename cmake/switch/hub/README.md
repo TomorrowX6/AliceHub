@@ -15,6 +15,16 @@ an active search, **A** opens the highlighted game's details, and **Y** opens
 global Settings. Details can launch the game or show its game/save paths.
 Settings changes the saved Name/Engine sort order or rescans game folders.
 
+Open **Mods, translation and patches** from a game's details. Supported
+titles are matched by their installed game files, not their folder names.
+Enable **Online access** to browse and install the CDN releases. On the
+mods or translation list, **X** installs a ZIP, RAR or 7z archive from SD;
+**Y** removes a managed overlay and restores the original files. The
+standalone uncensored CG patch is installed and removed independently.
+Keep this screen open during the operation; **B** cancels before publication.
+The SD card needs room for a staged copy of the game and the downloaded
+overlay. The separate saves directory is never modified.
+
 ## Screens and actions
 
 - Start from the foundation commit on PR #110; use a separate branch/worktree for

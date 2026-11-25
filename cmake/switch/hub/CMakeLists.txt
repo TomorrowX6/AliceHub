@@ -48,6 +48,7 @@ add_custom_command(OUTPUT "${online_catalog}"
   VERBATIM)
 target_sources(AliceHub PRIVATE online.c online_download.c online_install.c online_manifest.c
   "${online_catalog}")
+target_sources(AliceHub PRIVATE mods_screen.c mods_catalog.c mods_install.c)
 target_include_directories(AliceHub PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(AliceHub PRIVATE curl LibArchive::LibArchive bz2 lzma lz4 zstd expat ZLIB::ZLIB)
 

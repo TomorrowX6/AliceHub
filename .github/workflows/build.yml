@@ -108,7 +108,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install host build tools
-        run: apt-get update && apt-get install -y --no-install-recommends bison flex gcc libc6-dev python3 zlib1g-dev
+        run: apt-get update && apt-get install -y --no-install-recommends bison flex gcc libc6-dev python3 zlib1g-dev libarchive-dev
 
       - name: Test Switch hub model
         run: python3 -m unittest discover -s xsystem4/test/native -p test_switch_hub.py

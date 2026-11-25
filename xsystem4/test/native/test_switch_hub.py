@@ -8,6 +8,7 @@ import zipfile
 import zlib
 
 from switch_import_checks import SwitchImportTest
+from switch_mod_checks import SwitchModsTest
 
 
 REPO = Path(__file__).resolve().parents[3]

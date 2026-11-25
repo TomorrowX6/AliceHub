@@ -52,14 +52,14 @@ static CURL *connect_to(const char *url, OnlineTransfer *transfer)
 
 typedef struct {
     char *text;
-    size_t length, capacity;
+    size_t length, capacity, limit;
 } ManifestBody;
 
 static size_t manifest_body(char *body, size_t size, size_t count, void *data)
 {
     ManifestBody *buffer = data;
     size_t n = size * count;
-    if (n > ONLINE_MANIFEST_LIMIT - buffer->length || memchr(body, 0, n))
+    if (n > buffer->limit - buffer->length || memchr(body, 0, n))
         return 0;
     size_t required = buffer->length + n + 1;
     if (required > buffer->capacity) {
@@ -87,29 +87,39 @@ static void http_error(OnlineTransfer *transfer, const char *subject, long statu
                  subject, curl_easy_strerror(result));
 }
 
-bool online_fetch_manifest(const char *id, OnlineManifest *manifest, OnlineTransfer *transfer)
+bool online_fetch_json(const char *id, const char *key, size_t limit, char **json, OnlineTransfer *transfer)
 {
     char url[ONLINE_URL_SIZE];
-    if (!online_payload_url(id, NULL, url))
+    if (!limit || limit > ONLINE_MANIFEST_LIMIT || !online_payload_url(id, key, url))
         return false;
     CURL *curl = connect_to(url, transfer);
     if (!curl)
         return false;
-    ManifestBody body = {0};
+    ManifestBody body = {.limit = limit};
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, manifest_body);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
     CURLcode result = curl_easy_perform(curl);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
-    bool okay = false;
-    if (result != CURLE_OK || status != 200)
+    if (result != CURLE_OK || status != 200) {
         http_error(transfer, "Manifest", status, result);
-    else if (!body.text || !online_manifest_parse(body.text, manifest))
+        free(body.text);
+        return false;
+    }
+    *json = body.text;
+    return true;
+}
+
+bool online_fetch_manifest(const char *id, OnlineManifest *manifest, OnlineTransfer *transfer)
+{
+    char *json;
+    if (!online_fetch_json(id, NULL, ONLINE_MANIFEST_LIMIT, &json, transfer))
+        return false;
+    bool okay = json && online_manifest_parse(json, manifest);
+    if (!okay)
         snprintf(transfer->error, sizeof(transfer->error), "Invalid manifest or file exceeds FAT32 limit");
-    else
-        okay = true;
-    free(body.text);
+    free(json);
     return okay;
 }
 
@@ -249,7 +259,7 @@ static bool prepare_payload(Payload *p)
         return false;
     }
     p->output = fopen(p->path, append ? "ab" : "wb");
-    if (!p->output || (!append && !write_resume(p->meta, p->url, p->entry, p->tag))) {
+    if (!p->output || (!append && p->meta && !write_resume(p->meta, p->url, p->entry, p->tag))) {
         p->storage_error = true;
         return false;
     }
@@ -376,5 +386,22 @@ bool online_fetch_file(const char *id, const OnlineEntry *entry, const char *cac
         unlink(meta);
         snprintf(transfer->error, sizeof(transfer->error), "SHA-256 mismatch: %.128s", entry->path);
     }
+    return false;
+}
+
+bool online_fetch_verified_to(const char *id, const OnlineEntry *entry, const char *path,
+                              OnlineTransfer *transfer)
+{
+    char url[ONLINE_URL_SIZE];
+    if (!entry->size || entry->size > ONLINE_FILE_LIMIT ||
+        !online_payload_url(id, entry->key, url) || stop(transfer))
+        return false;
+    Payload p = {.entry = entry, .path = path, .url = url, .transfer = transfer};
+    if (!fetch_payload(&p))
+        return false;
+    if (online_verified_file(path, entry, transfer))
+        return true;
+    if (!stop(transfer))
+        snprintf(transfer->error, sizeof(transfer->error), "SHA-256 mismatch: %.128s", entry->path);
     return false;
 }

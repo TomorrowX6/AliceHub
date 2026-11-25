@@ -51,6 +51,16 @@ static bool consent, recovery_ok;
 static AppletHookCookie applet_hook;
 static char query[65];
 
+bool hub_online_access_enabled(void)
+{
+    return consent;
+}
+
+bool hub_online_worker_busy(void)
+{
+    return job.live && !atomic_load(&job.done);
+}
+
 typedef struct {
     OnlineTransfer transfer;
     char step[128];
