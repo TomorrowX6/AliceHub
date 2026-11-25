@@ -471,14 +471,17 @@ void parts_input_save_state(struct iarray_writer *w)
 {
 	iarray_write(w, input_depth);
 	iarray_write(w, parts_began_click);
+	iarray_write(w, parts_input_enabled);
 }
 
-void parts_input_load_state(struct iarray_reader *r)
+void parts_input_load_state(struct iarray_reader *r, int version)
 {
 	input_depth = iarray_read(r);
 	if (input_depth < 0)
 		input_depth = 0;
 	parts_began_click = iarray_read(r);
+	// Games disable input before loading, then rely on the restored state.
+	PE_SetEnableInput(version >= 34 ? !!iarray_read(r) : true);
 	reset_transient_pointer_state();
 }
 
