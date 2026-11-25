@@ -162,6 +162,20 @@ bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB
     return false;
 }
 
+static bool make_stage(const char *root, HubEngine engine, char stage[TREE_PATH_SIZE])
+{
+    for (unsigned i = 1; i <= 9999; ++i) {
+        if ((size_t)snprintf(stage, TREE_PATH_SIZE, "%s/%s/.hub-copy-%u", root,
+                             hub_engines[engine].id, i) >= TREE_PATH_SIZE)
+            return false;
+        if (!mkdir(stage, 0777))
+            return true;
+        if (errno != EEXIST)
+            return false;
+    }
+    return false;
+}
+
 HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, const char *name,
                                     bool (*cancelled)(void))
 {
@@ -174,13 +188,10 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
     HubInstanceResult result = target_paths(root, source->engine, name, games, saves);
     if (result != HUB_INSTANCE_OK)
         return result;
-    if ((size_t)snprintf(stage, sizeof(stage), "%s/%s/.hub-copy-XXXXXX", root,
-                         hub_engines[source->engine].id) >= sizeof(stage))
-        return HUB_INSTANCE_COPY_FAILED;
     Copy copy = {cancelled, malloc(COPY_BUFFER_SIZE)};
     if (!copy.buffer)
         return HUB_INSTANCE_COPY_FAILED;
-    if (!mkdtemp(stage)) {
+    if (!make_stage(root, source->engine, stage)) {
         free(copy.buffer);
         return HUB_INSTANCE_COPY_FAILED;
     }

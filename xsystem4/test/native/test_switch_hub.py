@@ -485,6 +485,9 @@ int main(void)
             sibling.mkdir(parents=True)
             (sibling / "data.bin").write_text("different engine")
             (source / "external").symlink_to(sibling, target_is_directory=True)
+            stale = root / "xsystem4/.hub-copy-1"
+            stale.mkdir()
+            (stale / "partial.bin").write_text("interrupted copy")
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
                  str(hub / "model.c"), str(hub / "instances.c"),
@@ -557,4 +560,5 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(root / "test")], cwd=root, check=True)
-            self.assertEqual(list((root / "xsystem4").glob(".hub-copy-*")), [])
+            self.assertEqual(list((root / "xsystem4").glob(".hub-copy-*")), [stale])
+            self.assertEqual((stale / "partial.bin").read_text(), "interrupted copy")
