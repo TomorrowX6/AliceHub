@@ -161,7 +161,7 @@ static void GetKeyStatus(void) {
 	
 	*var = 0;
 	for (i = 0; i < NUM_KEYCODES; i++) {
-		*var |= (keymap[no -1][i] * RawKeyInfo[i]);
+		*var |= (keymap[no -1][i] * event_rawkey_down(i));
 	}
 	
 	TRACE("ShPort.GetKeyStatus: %d,%p:", no, var);
