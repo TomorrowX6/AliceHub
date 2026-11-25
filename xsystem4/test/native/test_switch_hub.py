@@ -13,6 +13,45 @@ SYS4 = ENGINE / "subprojects/libsys4"
 UNLOCK = REPO / "project/app/src/main/res/raw/full_unlock_saves.zip"
 
 
+class SwitchRuntimeCaptureTest(unittest.TestCase):
+    def test_captures_do_not_overwrite_and_failures_are_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(HUB),
+                 str(HUB / "runtime_capture.c"), "-x", "c", "-", "-o", str(executable)],
+                input=r"""
+#include "runtime_capture.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+static bool save(void *context, const char *path)
+{
+    FILE *fp = fopen(path, "wb");
+    assert(fp && fputc('X', fp) == 'X' && !fclose(fp));
+    return !context;
+}
+
+int main(void)
+{
+    char path[128];
+    assert(switch_capture_write("screenshots", "bmp", 0, save, NULL, path, sizeof(path)));
+    assert(!strcmp(path, "screenshots/19700101-000000-000.bmp") && !access(path, F_OK));
+    assert(!switch_capture_write("screenshots", "bmp", 0, save, path, path, sizeof(path)));
+    assert(access("screenshots/19700101-000000-001.bmp", F_OK) != 0);
+    assert(switch_capture_write("screenshots", "bmp", 0, save, NULL, path, sizeof(path)));
+    assert(!strcmp(path, "screenshots/19700101-000000-001.bmp") && !access(path, F_OK));
+    assert(!access("screenshots/19700101-000000-000.bmp", F_OK));
+    assert(!switch_capture_write("screenshots", "bmp", 0, save, NULL, path, 1));
+    assert(access("screenshots/19700101-000000-002.bmp", F_OK) != 0);
+}
+""", text=True, check=True,
+            )
+            subprocess.run([str(executable)], cwd=tmp, check=True)
+
+
 class SwitchSaveTest(unittest.TestCase):
     def run_harness(self, source, extra=(), libraries=(), setup=None):
         with tempfile.TemporaryDirectory() as tmp:

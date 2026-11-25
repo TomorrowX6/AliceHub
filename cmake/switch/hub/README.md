@@ -9,6 +9,18 @@ Use the repository's devkitPro build: configure with
 support `envSetNextLoad`, use the standalone engine NROs. The existing
 `alicehub/<engine>/games` and `saves` paths are unchanged.
 
+## In-game menu
+
+Press **L + R** in a running game (**SL + SR** on a sideways Joy-Con, or
+**F1** on a keyboard). Release the chord before navigating. Use the D-pad or
+stick to move, **A** to select, and **B** to go back. The menu runs in each
+engine NRO, including standalone launches; it is not a Hub screen.
+
+Screenshots go to `sdmc:/switch/alicehub/<engine>/screenshots/`. System 1–3
+uses the engine's read-text skip; System 3.5 and System 4 offer Ctrl skip.
+Live modifiers appear for supported games only. System 4 stores text and
+scrollbar scale with the current game's saves.
+
 In the merged library, **X** opens the system keyboard to search game folder
 names (ASCII case-insensitive; other characters match exactly). **B** clears
 an active search, **A** opens the highlighted game's details, and **Y** opens
