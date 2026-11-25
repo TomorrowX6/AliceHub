@@ -1,4 +1,5 @@
 #include "instances.h"
+#include "fs_util.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -205,7 +206,7 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
             strcpy(parent, saves);
             *strrchr(parent, '/') = '\0';
             if ((!mkdir(parent, 0777) || errno == EEXIST) && !mkdir(saves, 0777)) {
-                if (!rename(stage, games))
+                if (!hub_rename_dir(stage, games))
                     return HUB_INSTANCE_OK;
                 rmdir(saves);
             }

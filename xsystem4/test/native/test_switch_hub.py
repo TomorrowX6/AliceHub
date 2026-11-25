@@ -659,15 +659,30 @@ int main(void)
             (stale / "partial.bin").write_text("interrupted copy")
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
-                 str(hub / "model.c"), str(hub / "instances.c"),
+                 str(hub / "model.c"), str(hub / "instances.c"), str(hub / "fs_util.c"),
+                 "-Wl,--wrap=rename",
                  "-x", "c", "-", "-o", str(root / "test")],
                 input=r"""
 #include "instances.h"
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 
 static unsigned poll_count;
+static bool force_fallback;
+static unsigned rejected_renames;
+
+int __real_rename(const char *source, const char *destination);
+
+int __wrap_rename(const char *source, const char *destination)
+{
+    if (!force_fallback)
+        return __real_rename(source, destination);
+    ++rejected_renames;
+    errno = ENOSYS;
+    return -1;
+}
 
 static bool cancel_in_progress(void)
 {
@@ -692,7 +707,10 @@ int main(void)
 
     assert(hub_instance_copy(".", &game, clone.name, cancel_in_progress) == HUB_INSTANCE_COPY_FAILED);
     assert(poll_count >= 3 && access(path, F_OK));
+    force_fallback = true;
     assert(hub_instance_copy(".", &game, clone.name, NULL) == HUB_INSTANCE_OK);
+    assert(rejected_renames == 1);
+    force_fallback = false;
     assert(!access(path, F_OK));
     FILE *copied = fopen("xsystem4/games/Rance10-2/patches/data.bin", "rb");
     unsigned char data[10];
