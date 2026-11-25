@@ -578,9 +578,20 @@ int main(void)
         window_only = extract_function("src/input.c", "void handle_window_events")
         self.assertRegex(gameplay, r"while \(SDL_PollEvent\(&e\)\) \{\s*"
                          r"#ifdef __SWITCH__\s*"
-                         r"if \(switch_controls_gl_touch_event\(&e, sdl.window\)\)\s*"
+                         r"if \(switch_controls_gl_touch_event\(&e, sdl.window, &redraw_switch_controls\)\)\s*"
                          r"continue;\s*#endif\s*switch")
         self.assertNotIn("switch_controls_gl_touch_event", window_only)
+
+    def test_system4_repaints_when_virtual_touch_state_changes(self):
+        touch = extract_function("../cmake/switch/hub/controller_runtime.c",
+                                 "bool switch_controls_gl_touch_event")
+        gameplay = extract_function("src/input.c", "void handle_events")
+        self.assertRegex(touch, r"held = held_touch_buttons\(\);\s*"
+                         r"bool handled = switch_controls_touch\(event\);\s*"
+                         r"\*redraw \|= held != held_touch_buttons\(\);")
+        self.assertRegex(gameplay, r"\}\s*#ifdef __SWITCH__\s*"
+                         r"if \(redraw_switch_controls\) \{\s*gfx_swap\(\);\s*"
+                         r"did_swap = true;\s*\}\s*#endif\s*finish_event_drain")
 
     def test_save_replace_and_rollback(self):
         helper = extract_function("src/savedata.c", "commit_switch_save")

@@ -3329,10 +3329,13 @@ void handle_events(void)
 
 	bool did_swap = false;
 	bool returned_foreground = false;
+#ifdef __SWITCH__
+	bool redraw_switch_controls = false;
+#endif
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
 #ifdef __SWITCH__
-		if (switch_controls_gl_touch_event(&e, sdl.window))
+		if (switch_controls_gl_touch_event(&e, sdl.window, &redraw_switch_controls))
 			continue;
 #endif
 		switch (e.type) {
@@ -3543,6 +3546,12 @@ void handle_events(void)
 			break;
 		}
 	}
+#ifdef __SWITCH__
+	if (redraw_switch_controls) {
+		gfx_swap();
+		did_swap = true;
+	}
+#endif
 	finish_event_drain(did_swap, returned_foreground);
 	process_gamepad_frame();
 	update_movie_skip_state();

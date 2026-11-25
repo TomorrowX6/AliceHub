@@ -141,12 +141,15 @@ int switch_controls_game_fingers(const SDL_TouchFingerEvent *event)
     return count;
 }
 
-bool switch_controls_gl_touch_event(const SDL_Event *event, SDL_Window *window)
+bool switch_controls_gl_touch_event(const SDL_Event *event, SDL_Window *window, bool *redraw)
 {
-    if (switch_controls_touch(event))
-        return true;
     if (!profile.touch_enabled || !window)
         return false;
+    uint32_t held = held_touch_buttons();
+    bool handled = switch_controls_touch(event);
+    *redraw |= held != held_touch_buttons();
+    if (handled)
+        return true;
     // SDL sends the first finger's synthetic mouse down before the finger event.
     if (event->type == SDL_MOUSEBUTTONDOWN && event->button.which == SDL_TOUCH_MOUSEID) {
         int w, h;
