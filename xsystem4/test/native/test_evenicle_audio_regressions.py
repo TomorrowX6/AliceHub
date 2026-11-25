@@ -74,13 +74,7 @@ bool asset_exists(enum asset_type t, int no) {
 }
 struct archive_data *asset_get_by_name(enum asset_type t, const char *name, int *id) { return NULL; }
 void asset_foreach_file(enum asset_type t, void (*cb)(struct archive_data*, void*), void *u) {}
-void bgi_read(const char *path) {}
-struct bgi *bgi_get(int no) { return NULL; }
-void wai_load(const char *path) {}
-struct wai *wai_get(int no) {
-    static struct wai bgv = {.channel = 12}, voice = {.channel = 6};
-    return no == 30690 ? &bgv : no == 11773 ? &voice : NULL;
-}
+const char *display_utf0(const char *s) { return s; }
 const char *display_sjis0(const char *s) { return s; }
 char *gamedir_path_icase(const char *name) {
     return strcmp(name, "missing") ? strdup(wave_path) : NULL;
@@ -132,37 +126,47 @@ static void start(int id, const char *name, int group, bool loop) {
     assert(kiwi_play(id));
 }
 
-static void bgv_test(int default_volume) {
+static void bgv_test(int group, int default_volume) {
     int volume;
-    assert(mixer_get_volume(5, &volume) && volume == default_volume);
-    assert(mixer_set_volume(5, 100));
+    assert(mixer_get_volume(group, &volume) && volume == default_volume);
+    assert(mixer_set_volume(group, 100));
     float peak = render(4);
     assert(peak > 0.01f);
-    assert(mixer_set_volume(5, 30));
+    assert(mixer_set_volume(group, 30));
     render(4);
     assert(fabsf(render(4) - 0.3f * peak) < 0.0001f);
-    assert(mixer_set_volume(5, 0));
+    assert(mixer_set_volume(group, 0));
     render(4);
     assert(render(4) == 0);
-    assert(mixer_set_volume(5, 100));
+    assert(mixer_set_volume(group, 100));
     assert(mixer_set_volume(3, 0));
     render(4);
     assert(fabsf(render(4) - peak) < 0.0001f);
     assert(mixer_set_volume(3, 100));
-    assert(mixer_set_volume(5, 0));
+}
+
+static void foreground_test(int bgv_group) {
+    assert(mixer_set_volume(bgv_group, 100));
+    float peak = render(4);
+    assert(peak > 0.01f);
+    assert(mixer_set_volume(bgv_group, 0));
+    render(4);
+    assert(fabsf(render(4) - peak) < 0.0001f);
 }
 
 static void escalayer_bgv_test(void) {
-    assert(KiwiSoundEngine_GetBackVoiceGroup() == 5);
+    int bgv_group = KiwiSoundEngine_GetBackVoiceGroup();
+    assert(bgv_group == 5);
     assert(wav_get_group_num_from_data_num(30690) == 12);
     assert(wav_prepare(12, 30690));
     assert(wav_set_loop_count(12, 0));
     assert(wav_play(12));
-    bgv_test(15);
+    bgv_test(bgv_group, 15);
     assert(wav_unprepare(12));
     assert(wav_prepare(3, 11773));
+    assert(wav_set_loop_count(3, 0));
     assert(wav_play(3));
-    assert(render(4) > 0.01f);
+    foreground_test(bgv_group);
     assert(wav_unprepare(3));
     printf("Escalayer Reboot: BGV slider controls WAI group 12, independently of voice group 6\n");
 }
@@ -457,10 +461,11 @@ int main(int argc, char **argv) {
     game_escalayer_reboot = !strcmp(argv[4], "escalayer");
     game_tsumamigui3 = !strcmp(argv[4], "tsumamigui3");
     if (game_escalayer_reboot) {
-        const char *names[18] = {"Master", "BGM", "SE", "Voice", "Ambient", "BackVoice"};
+        const char *names[18] = {SJIS_MASTER, "BGM", "SE", SJIS_VOICE, "Ambient", "BackVoice"};
         for (int i = 6; i < 18; i++) names[i] = "Character";
         set_default_mixers(names, NULL, 18);
         config.mixer_volumes[5] = 15;
+        config.wai_path = argv[2];
         audio_init();
         escalayer_bgv_test();
         return 0;
@@ -495,10 +500,10 @@ int main(int argc, char **argv) {
     if (game_tsumamigui3) {
         assert(config.mixer_nr_channels == 14);
         start(12, "30031", 10, true);
-        bgv_test(18);
+        bgv_test(5, 18);
         assert(kiwi_unprepare(12));
         start(3, "20580", 6, true);
-        assert(render(4) > 0.01f);
+        foreground_test(5);
         assert(kiwi_unprepare(3));
         printf("Tsumamigui 3: BGV slider controls SoundInfo group 10, independently of voice group 6\n");
     } else if (!strcmp(argv[4], "life")) lifecycle_test();
@@ -547,12 +552,20 @@ class EvenicleAudioTests(unittest.TestCase):
                  (b"30031", 10), (b"20580", 6)],
                 [(b"Name", 3), (b"Group", 1)],
             )]))
+            if mode == "escalayer":
+                metadata = directory / "sounds.wai"
+                # WAI v4 uses 16-byte records indexed by one-based sound ID.
+                wai = bytearray(40 + 30690 * 16)
+                struct.pack_into("<4sIII", wai, 0, b"XI2\0", 1, 30691, 4)
+                for sound, group in [(11773, 6), (30690, 12)]:
+                    struct.pack_into("<I", wai, 40 + (sound - 1) * 16 + 8, group)
+                metadata.write_bytes(wai)
             with wave.open(str(audio), "wb") as stream:
                 stream.setparams((1, 2, 44100, 22050, "NONE", "not compressed"))
                 stream.writeframes(struct.pack("<h", 8192) * 22050)
             output = compile_and_run(
                 HARNESS,
-                [*LIBSYS4_CORE, ROOT / "src/id_pool.c"],
+                [*LIBSYS4_CORE, ROOT / "src/id_pool.c", ROOT / "src/audio_meta.c"],
                 ["-lz", "-lm", "-lsndfile"],
                 [str(groups), str(metadata), str(audio), mode],
             )
