@@ -1471,3 +1471,80 @@ int main(void)
             self.assertIn(b"Hero\0", unpacked)
             self.assertEqual((export_dir / "SaveData/struct.asd").read_bytes()[:8], magic)
             self.assertFalse(any(root.rglob(".save-stage-*")))
+
+    def test_daisengoku_save_dir_isolation(self):
+        repo = Path(__file__).resolve().parents[3]
+        hub = repo / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(hub), str(hub / "model.c"), "-x", "c", "-", "-o", str(exe)],
+                input=r"""
+#include "model.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+static void put(const char *path, const char *content)
+{
+    FILE *out = fopen(path, "wb");
+    assert(out && fputs(content, out) >= 0 && !fclose(out));
+}
+
+static void expect(const char *path, const char *expected)
+{
+    char buf[128] = {0};
+    FILE *in = fopen(path, "rb");
+    assert(in);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, in);
+    fclose(in);
+    buf[n] = 0;
+    assert(!strcmp(buf, expected));
+}
+
+int main(void)
+{
+    assert(!mkdir("xsystem4", 0700));
+    assert(!mkdir("xsystem4/games", 0700));
+    assert(!mkdir("xsystem4/games/SengokuRance", 0700));
+    assert(!mkdir("xsystem4/saves", 0700));
+
+    HubGame game;
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "SengokuRance"));
+
+    put("xsystem4/games/SengokuRance/System40.ini",
+        "GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n");
+    assert(!hub_game_uses_daisengoku_save_folder("xsystem4/games/SengokuRance"));
+    char vanilla_save[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &game, vanilla_save));
+    assert(!strcmp(vanilla_save, "./xsystem4/saves/SengokuRance"));
+    assert(!mkdir(vanilla_save, 0700));
+    put("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
+
+    put("xsystem4/games/SengokuRance/System40.ini",
+        "GameName = \"大战国兰斯 CN Ver.\"\nCodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n");
+    assert(hub_game_uses_daisengoku_save_folder("xsystem4/games/SengokuRance"));
+    char dsr_save[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &game, dsr_save));
+    assert(!strcmp(dsr_save, "./xsystem4/saves/SengokuRance__SaveDataDSR"));
+    assert(!mkdir(dsr_save, 0700));
+    put("./xsystem4/saves/SengokuRance__SaveDataDSR/Save001.asd", "dsr-save");
+    expect("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
+
+    put("xsystem4/games/SengokuRance/System40.ini",
+        "GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n");
+    char restored_save[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &game, restored_save));
+    assert(!strcmp(restored_save, vanilla_save));
+    expect("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
+    expect("./xsystem4/saves/SengokuRance__SaveDataDSR/Save001.asd", "dsr-save");
+    return 0;
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(exe)], cwd=root, check=True)

@@ -1004,7 +1004,7 @@ class SaveManagerActivity : ThemedActivity() {
             for (i in 0 until gameList.size) {
                 val item = gameList[i]
                 val dirName = item.path.name
-                val saveDir = item.savedir ?: File(savesRoot, dirName)
+                val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
                 saveDir.mkdirs()
                 found[dirName] = SaveTarget(
                     displayName = dirName,
@@ -1014,8 +1014,9 @@ class SaveManagerActivity : ThemedActivity() {
                 )
             }
 
+            val mappedSaveDirs = found.values.mapTo(HashSet()) { it.saveDir.name }
             savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
-                if (!found.containsKey(dir.name)) {
+                if (!found.containsKey(dir.name) && !mappedSaveDirs.contains(dir.name)) {
                     val extDir = getExternalFilesDir(null)?.let { File(it, dir.name) }?.takeIf { it.exists() }
                     found[dir.name] = SaveTarget(
                         displayName = dir.name,

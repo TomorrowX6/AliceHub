@@ -11086,7 +11086,8 @@ object GameCatalog {
                 .show()
             return
         }
-        val saveDir = item.savedir ?: return
+        if (item.savedir == null) return
+        val saveDir = Item.resolveSaveDir(activity.filesDir, item.path).also { it.mkdirs() }
         val targetRoot = item.path.path
         val running = isGameProcessRunning(activity)
         val runningRoot = if (running) getRunningGameRoot(activity) else null

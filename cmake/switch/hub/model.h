@@ -45,6 +45,7 @@ typedef struct {
 
 bool hub_game_init(HubGame *game, HubEngine engine, const char *name);
 bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
+bool hub_game_uses_daisengoku_save_folder(const char *game_dir);
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_library_scan(HubLibrary *library, const char *root);
 void hub_library_free(HubLibrary *library);

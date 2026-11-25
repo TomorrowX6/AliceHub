@@ -38,6 +38,11 @@ public class MamanAndMultiModTest {
         writeFile(file, text.getBytes(StandardCharsets.UTF_8));
     }
 
+    private static String readText(File file) throws Exception {
+        byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
+        return new String(data, StandardCharsets.UTF_8);
+    }
+
     private File makeDir(String folderName, String... fileNames) throws Exception {
         File dir = tmp.newFolder(folderName);
         for (String name : fileNames) {
@@ -340,10 +345,13 @@ public class MamanAndMultiModTest {
         assertFalse(new File(srGame, "愴崙儔儞僗GA.ald.vanilla.bak").exists());
 
         // Standalone DaiSengoku directory (without vanilla AliceCN.ain) still classifies as SengokuRance
-        File standaloneDsr = makeDir("DaiSengokuStandalone", "System40.ini", "DaiSengoku.ain", "DaiSengokuGA.ald", "DaiSengokuGM.ald");
+        // and is recognized by the live modifier detector even with an arbitrary folder name and empty save dir.
+        File standaloneDsr = makeDir("CustomArbDir", "System40.ini", "DaiSengoku.ain", "DaiSengokuGA.ald", "DaiSengokuGM.ald");
         writeText(new File(standaloneDsr, "System40.ini"),
                 "GameName = \"大战国兰斯 CN Ver.\"\nCodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n");
+        File emptySaveDir = makeDir("EmptyDsrSave");
         assertEquals(GameCatalog.ID_SENGOKU_RANCE, GameCatalog.INSTANCE.classifyGameRootDir(standaloneDsr));
+        assertTrue(GameModifierBridge.INSTANCE.isSengokuRanceGameDir(standaloneDsr, "CustomArbDir", emptySaveDir));
         assertTrue(Item.Companion.detectInstalledMod(standaloneDsr, null));
         assertEquals(OnlineInstaller.MOD_GROUP_DAISENGOKU, OnlineInstaller.INSTANCE.inferModGroup("", standaloneDsr));
 
@@ -357,5 +365,50 @@ public class MamanAndMultiModTest {
         assertTrue(new File(srGame, "愴崙儔儞僗GA.ald").isFile());
         assertTrue(new File(srGame, "NSPic/cg10079.QNT").isFile());
         assertFalse(Item.Companion.detectInstalledMod(srGame, null));
+    }
+
+    @Test
+    public void daiSengokuIsolatesSaveDirAcrossVanillaModAndRestore() throws Exception {
+        File filesDir = makeDir("appFiles");
+        File srGame = makeDir(
+                "SengokuRanceSaveIso",
+                "System40.ini",
+                "AliceCN.ain",
+                "愴崙儔儞僗GA.ald"
+        );
+        writeText(new File(srGame, "System40.ini"),
+                "GameName = \"战国兰斯中文版 v1.01\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n");
+
+        File vanillaSaveDir = Item.Companion.resolveSaveDir(filesDir, srGame, null);
+        assertEquals(new File(filesDir, "saves/SengokuRanceSaveIso"), vanillaSaveDir);
+        assertTrue(vanillaSaveDir.mkdirs() || vanillaSaveDir.isDirectory());
+        File vanillaSlot = new File(vanillaSaveDir, "Save001.asd");
+        writeText(vanillaSlot, "vanilla-progress");
+
+        File dsrStage = makeDir(
+                "DaiSengokuSaveIsoStage",
+                "System40.ini",
+                "DaiSengoku.ain",
+                "DaiSengokuGA.ald",
+                "DaiSengokuGM.ald"
+        );
+        writeText(new File(dsrStage, "System40.ini"),
+                "GameName = \"大战国兰斯 CN Ver.\"\nCodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n");
+        assertTrue(GameListKt.applyModStagingToGameDirInternal(dsrStage, srGame, true, false, false));
+
+        File dsrSaveDir = Item.Companion.resolveSaveDir(filesDir, srGame, null);
+        assertEquals(new File(filesDir, "saves/SengokuRanceSaveIso" + Item.DAISENGOKU_SAVE_DIR_SUFFIX), dsrSaveDir);
+        assertTrue(dsrSaveDir.mkdirs() || dsrSaveDir.isDirectory());
+        File dsrSlot = new File(dsrSaveDir, "Save001.asd");
+        writeText(dsrSlot, "daisengoku-progress");
+
+        // Vanilla save must remain intact after DaiSengoku writes the same slot filename.
+        assertEquals("vanilla-progress", readText(vanillaSlot));
+
+        GameListKt.restoreVanillaFromModDir(srGame);
+        File restoredSaveDir = Item.Companion.resolveSaveDir(filesDir, srGame, null);
+        assertEquals(vanillaSaveDir, restoredSaveDir);
+        assertEquals("vanilla-progress", readText(new File(restoredSaveDir, "Save001.asd")));
+        assertEquals("daisengoku-progress", readText(dsrSlot));
     }
 }

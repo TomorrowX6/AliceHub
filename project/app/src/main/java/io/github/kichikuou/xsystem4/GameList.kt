@@ -144,7 +144,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
-            val savedir = File(context.filesDir, "saves/${dir.name}")
+            val savedir = resolveSaveDir(context.filesDir, dir, ini)
             savedir.mkdirs()
             val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
@@ -204,6 +204,21 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         }
 
         const val NON_VANILLA_BASELINE_MARKER = ".mod_non_vanilla_baseline"
+        const val DAISENGOKU_SAVE_DIR_SUFFIX = "__SaveDataDSR"
+
+        fun resolveSaveDir(filesDir: File, gameDir: File, parsedIni: System40Ini? = null): File {
+            val ini = parsedIni ?: run {
+                val iniFile = File(gameDir, "System40.ini").takeIf { it.isFile }
+                    ?: File(gameDir, "AliceStart.ini").takeIf { it.isFile }
+                iniFile?.let { System40Ini.parse(it) }
+            }
+            val suffix = if (ini?.SaveFolder?.equals("SaveDataDSR", ignoreCase = true) == true) {
+                DAISENGOKU_SAVE_DIR_SUFFIX
+            } else {
+                ""
+            }
+            return File(filesDir, "saves/${gameDir.name}$suffix")
+        }
 
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
             if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
@@ -634,7 +649,7 @@ class GameList(activity: Activity) {
         dataVersion++
     }
 
-    private fun resolveSaveDirFor(dir: File): File = File(appContext.filesDir, "saves/${dir.name}")
+    private fun resolveSaveDirFor(dir: File): File = Item.resolveSaveDir(appContext.filesDir, dir)
 
     private fun recordItemSignature(item: Item) {
         val next = HashMap(diskSnapshot)

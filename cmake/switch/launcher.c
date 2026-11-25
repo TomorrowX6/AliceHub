@@ -295,7 +295,12 @@ static bool prepare_save(const char *game, char *save, size_t size)
 {
     const char *name = strrchr(game, '/') + 1;
     struct stat st;
-    return (size_t)snprintf(save, size, SAVES "/%s", name) < size &&
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+    const char *suffix = hub_game_uses_daisengoku_save_folder(game) ? "__SaveDataDSR" : "";
+#else
+    const char *suffix = "";
+#endif
+    return (size_t)snprintf(save, size, SAVES "/%s%s", name, suffix) < size &&
         (!mkdir(SAVES, 0777) || errno == EEXIST) &&
         hub_save_recover(save) &&
         (!mkdir(save, 0777) || errno == EEXIST) && !stat(save, &st) && S_ISDIR(st.st_mode);

@@ -393,9 +393,11 @@ static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp o
         errno = ENAMETOOLONG;
         return false;
     }
+    const char *save_name = strrchr(local, '/');
+    save_name = (save_name && save_name[1]) ? save_name + 1 : validated.name;
     if (!path_join(base, root, "save-manager") ||
         !path_join(engine, base, hub_engines[validated.engine].id) ||
-        !path_join(game_dir, engine, validated.name) ||
+        !path_join(game_dir, engine, save_name) ||
         !path_join(backups, game_dir, "Backups") || !path_join(sync, game_dir, "Sync"))
         return false;
 
