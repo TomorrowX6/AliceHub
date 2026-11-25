@@ -74,7 +74,7 @@ static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t
     return ok;
 }
 
-int hub_rename_dir(const char *source, const char *destination)
+static int check_directory_destination(const char *source, const char *destination)
 {
     struct stat st;
     if (lstat(source, &st)) return -1;
@@ -91,9 +91,11 @@ int hub_rename_dir(const char *source, const char *destination)
         errno = EEXIST;
         return -1;
     }
-    if (errno != ENOENT) return -1;
-    if (!rename(source, destination)) return 0;
+    return errno == ENOENT ? 0 : -1;
+}
 
+static int copy_directory(const char *source, const char *destination)
+{
     size_t capacity = 64 * 1024;
     unsigned char *buffer = malloc(capacity);
     if (!buffer) return -1;
@@ -110,6 +112,19 @@ int hub_rename_dir(const char *source, const char *destination)
         errno = saved ? saved : EIO;
         return -1;
     }
+    return 0;
+}
+
+int hub_copy_dir(const char *source, const char *destination)
+{
+    return check_directory_destination(source, destination) ? -1 : copy_directory(source, destination);
+}
+
+int hub_rename_dir(const char *source, const char *destination)
+{
+    if (check_directory_destination(source, destination)) return -1;
+    if (!rename(source, destination)) return 0;
+    if (copy_directory(source, destination)) return -1;
     if (walk(source, NULL, NULL, 0))
         rmdir(source);
     return 0;

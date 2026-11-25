@@ -331,13 +331,46 @@ int main(void)
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
                  str(hub / "model.c"), str(hub / "install_transaction.c"), str(hub / "fs_util.c"),
-                 "-x", "c", "-", "-o", str(Path(tmp) / "test")],
+                 "-x", "c", "-", "-Wl,--wrap=rename", "-Wl,--wrap=fopen",
+                 "-o", str(Path(tmp) / "test")],
                 input=r"""
 #include "install_transaction.h"
 #include <assert.h>
 #include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+#define TARGET "./xsystem4/games/Alice"
+#define WORK "./xsystem4/.install-v1/Alice"
+static bool no_rename;
+static unsigned copy_attempts, fail_at, crash_at;
+
+int __real_rename(const char *, const char *);
+int __wrap_rename(const char *source, const char *destination)
+{
+    struct stat st;
+    if (no_rename && !lstat(source, &st) && S_ISDIR(st.st_mode)) {
+        errno = ENOSYS;
+        return -1;
+    }
+    return __real_rename(source, destination);
+}
+
+FILE *__real_fopen(const char *, const char *);
+FILE *__wrap_fopen(const char *path, const char *mode)
+{
+    if (!strncmp(path, TARGET "/", sizeof(TARGET)) && !strcmp(mode, "wbx")) {
+        ++copy_attempts;
+        if (copy_attempts == crash_at) _exit(42);
+        if (copy_attempts == fail_at) {
+            errno = EIO;
+            return NULL;
+        }
+    }
+    return __real_fopen(path, mode);
+}
 
 static void put(const char *path, int value)
 {
@@ -355,6 +388,18 @@ static bool verify(const char *dir, void *context)
     bool ok = fgetc(f) == *(int *)context;
     fclose(f);
     return ok;
+}
+
+static HubInstallTransaction *stage_overlay(const HubGame *game, int *value)
+{
+    HubInstallTransaction *tx = hub_install_begin(".", game);
+    char path[HUB_PATH_SIZE];
+    assert(tx && hub_install_stage_file(tx, "data/game.dat", path));
+    put(path, *value);
+    assert(hub_install_stage_file(tx, "added.dat", path));
+    put(path, 9);
+    assert(hub_install_verify(tx, verify, value));
+    return tx;
 }
 
 int main(void)
@@ -411,6 +456,40 @@ int main(void)
     put(path, new);
     assert(hub_install_verify(tx, verify, &new));
     assert(hub_install_commit(tx) && verify(target, &new));
+
+    no_rename = true;
+    tx = stage_overlay(&game, &old);
+    assert(hub_install_commit(tx) && verify(target, &old));
+    assert(!access(TARGET "/added.dat", F_OK) && access(WORK, F_OK));
+    assert(!unlink(TARGET "/added.dat"));
+    put(TARGET "/original.dat", 7);
+
+    tx = stage_overlay(&game, &new);
+    copy_attempts = 0;
+    fail_at = 2;
+    assert(!hub_install_commit(tx) && copy_attempts == 2);
+    assert(!access(WORK "/replacing", F_OK) && !access(WORK "/backup/original.dat", F_OK));
+    assert(hub_install_rollback(tx) && verify(target, &old));
+    assert(!access(TARGET "/original.dat", F_OK) && access(TARGET "/added.dat", F_OK));
+
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0) {
+        copy_attempts = fail_at = 0;
+        crash_at = 2;
+        tx = stage_overlay(&game, &new);
+        hub_install_commit(tx);
+        _exit(99);
+    }
+    int status;
+    assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 42);
+    assert(!access(WORK "/replacing", F_OK) && !access(WORK "/backup/original.dat", F_OK));
+    copy_attempts = 0;
+    assert(!hub_install_recover("."));
+    assert(!access(WORK "/replacing", F_OK) && !access(WORK "/backup/original.dat", F_OK));
+    fail_at = 0;
+    assert(hub_install_recover(".") && verify(target, &old));
+    assert(!access(TARGET "/original.dat", F_OK) && access(TARGET "/added.dat", F_OK) && access(WORK, F_OK));
     assert(!access("xsystem4/saves/Alice/save.dat", F_OK));
 }
 """,

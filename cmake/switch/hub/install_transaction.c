@@ -18,7 +18,8 @@
 struct HubInstallTransaction {
     char target[HUB_PATH_SIZE], work[HUB_PATH_SIZE];
     char stage[HUB_PATH_SIZE], backup[HUB_PATH_SIZE], publishing[HUB_PATH_SIZE];
-    bool verified, backed_up, promoted, publishing_new;
+    char replacing[HUB_PATH_SIZE];
+    bool verified, backed_up, promoted, publishing_new, replacing_copy;
 };
 
 static atomic_flag lock = ATOMIC_FLAG_INIT;
@@ -35,7 +36,8 @@ static bool paths(HubInstallTransaction *tx, const char *root, const HubGame *ga
            join(engine, root, hub_engines[game->engine].id) &&
            join(installs, engine, INSTALL_DIR) && join(tx->work, installs, game->name) &&
            join(tx->stage, tx->work, "stage") && join(tx->backup, tx->work, "backup") &&
-           join(tx->publishing, tx->work, "publishing");
+           join(tx->publishing, tx->work, "publishing") &&
+           join(tx->replacing, tx->work, "replacing");
 }
 
 static bool commit_device(void)
@@ -135,6 +137,25 @@ static bool tree(const char *path, bool remove)
     return ok && (!remove || !rmdir(path));
 }
 
+static bool create_marker(const char *path)
+{
+    FILE *marker = fopen(path, "wbx");
+    return marker && !fclose(marker);
+}
+
+static bool restore_copy(const HubInstallTransaction *tx)
+{
+    bool backup, target;
+    struct stat marker;
+    return directory(tx->backup, &backup) && backup && tree(tx->backup, false) &&
+           stat_optional(tx->replacing, &marker) &&
+           (marker.st_mode ? S_ISREG(marker.st_mode) : create_marker(tx->replacing)) &&
+           commit_device() &&
+           directory(tx->target, &target) && (!target || tree(tx->target, true)) &&
+           !hub_copy_dir(tx->backup, tx->target) && commit_device() &&
+           !unlink(tx->replacing) && commit_device();
+}
+
 static bool recover_one(const HubInstallTransaction *tx)
 {
     bool work, backup, target;
@@ -142,9 +163,12 @@ static bool recover_one(const HubInstallTransaction *tx)
         return false;
     if (!work)
         return true;
-    struct stat journal;
-    if (!stat_optional(tx->publishing, &journal))
+    struct stat journal, replacing;
+    if (!stat_optional(tx->publishing, &journal) || !stat_optional(tx->replacing, &replacing))
         return false;
+    if (replacing.st_mode)
+        return !journal.st_mode && S_ISREG(replacing.st_mode) && restore_copy(tx) &&
+               tree(tx->work, true) && commit_device();
     if (journal.st_mode && (backup || !S_ISREG(journal.st_mode) ||
         !directory(tx->target, &target) || (target && !tree(tx->target, true)) || !commit_device()))
         return false;
@@ -273,7 +297,7 @@ bool hub_install_verify(HubInstallTransaction *tx, HubInstallVerify verify, void
 
 static bool commit(HubInstallTransaction *tx, bool replace)
 {
-    if (!tx->verified || tx->backed_up || tx->promoted || tx->publishing_new) {
+    if (!tx->verified || tx->backed_up || tx->promoted || tx->publishing_new || tx->replacing_copy) {
         errno = EINVAL;
         return false;
     }
@@ -285,16 +309,25 @@ static bool commit(HubInstallTransaction *tx, bool replace)
         return false;
     }
     if (exists) {
-        if (rename(tx->target, tx->backup))
-            return false;
-        tx->backed_up = true;
-        if (!commit_device())
-            return false;
-        if (rename(tx->stage, tx->target))
-            return false;
-        tx->promoted = true;
-        if (!commit_device())
-            return false;
+        if (!rename(tx->target, tx->backup)) {
+            tx->backed_up = true;
+            if (!commit_device() || rename(tx->stage, tx->target))
+                return false;
+            tx->promoted = true;
+            if (!commit_device())
+                return false;
+        } else {
+            if (hub_copy_dir(tx->target, tx->backup) || !commit_device())
+                return false;
+            if (!create_marker(tx->replacing))
+                return false;
+            tx->replacing_copy = true;
+            if (!commit_device() || !tree(tx->target, true) ||
+                hub_copy_dir(tx->stage, tx->target) || !commit_device() ||
+                unlink(tx->replacing) || !commit_device())
+                return false;
+            tx->replacing_copy = false;
+        }
     } else {
         FILE *journal = fopen(tx->publishing, "wbx");
         if (!journal) return false;
@@ -328,7 +361,8 @@ bool hub_install_commit_new(HubInstallTransaction *tx)
 
 bool hub_install_rollback(HubInstallTransaction *tx)
 {
-    bool ok = (!tx->publishing_new || tree(tx->target, true)) &&
+    bool ok = (!tx->replacing_copy || restore_copy(tx)) &&
+              (!tx->publishing_new || tree(tx->target, true)) &&
               (!tx->promoted || !rename(tx->target, tx->stage)) &&
               (!tx->backed_up || !rename(tx->backup, tx->target)) &&
               commit_device() && tree(tx->work, true) && commit_device();
