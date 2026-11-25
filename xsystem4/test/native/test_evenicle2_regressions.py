@@ -320,12 +320,6 @@ static const char *pushed_literal(struct ain *ain, uint32_t start, int index)
     return ain->strings[no]->text;
 }
 
-static int called_function(struct ain *ain, uint32_t addr)
-{
-    assert(LittleEndian_getW(ain->code, addr) == CALLFUNC);
-    return LittleEndian_getDW(ain->code, addr + 2);
-}
-
 static void assert_gbk(const char *bytes, const char *expected)
 {
     char *utf8 = cjk2utf_strict(bytes, true, NULL);
@@ -388,47 +382,6 @@ int main(void)
     uint32_t chest_item = add_literal_function(ain, &code, item_fn, item_reward, 1);
     uint32_t load_confirm = add_literal_function(ain, &code, load_name, load_literals, 5);
     uint32_t bonus_skills = add_literal_function(ain, &code, bonus_name, bonus_literals, 11);
-    char *raw_number_name = utf2cjk("数字を全角文字列", 0, false);
-    char *gbk_number_name = utf2cjk("string全角", 0, false);
-    const char *const formatter[] = { "%D", "" };
-    add_literal_function(ain, &code, raw_number_name, space, 1);
-    add_literal_function(ain, &code, gbk_number_name, formatter, 2);
-    int raw_number = ain_get_function(ain, raw_number_name);
-    int gbk_number = ain_get_function(ain, gbk_number_name);
-    const char *const compare_text[] = { "", "　", "　", "△", "　", "▼", "　", "‐", "" };
-    const char *const count_text[] = { "", "システム／持ち物プレート／空き", "", "",
-        "システム／持ち物プレート／ベース", "", "", "×", "" };
-    const char *const effects[] = { "", "攻撃力", "魔法力", "防御力", "命中率", "回避率", "衝撃率",
-        "耐性率", "必殺率", "連撃率", "魔抵率", "経験率", "炎属性", "氷属性", "雷属性", "光属性",
-        "闇属性", "体力", "素早さ", "体力回復", "毒無効", "宝箱開", "体力最大値ＵＰ", "攻撃力最大値ＵＰ",
-        "魔法力最大値ＵＰ", "経験値ＵＰ", "炎属性", "氷属性", "雷属性", "光属性", "闇属性",
-        "炎レジスト", "氷レジスト", "雷レジスト", "光レジスト", "闇レジスト", "魔法レジスト",
-        "物理レジスト", "ヒーリング倍率", "", "" };
-    char *effects_name = utf2cjk("＆アイテム機能名称取得", 0, false);
-    const char *effects_literals[sizeof(effects) / sizeof(*effects)];
-    for (size_t i = 0; i < sizeof(effects) / sizeof(*effects); i++)
-        effects_literals[i] = utf2cjk(effects[i], 0, false);
-    uint32_t effects_start = add_literal_function(ain, &code, effects_name, effects_literals,
-        sizeof(effects) / sizeof(*effects));
-    uint32_t plates[3], calls[3];
-    const char *const plate_names[] = { "T_ItemPlate@SetSubSetumei", "T_ItemPlate@SetItemData",
-        "アイテム名をアイコン名に変換" };
-    for (int i = 0; i < 3; i++) {
-        char *name = utf2cjk(plate_names[i], 0, false);
-        int fno = ain_add_function(ain, name);
-        free(name);
-        write_instruction1(&code, FUNC, fno);
-        ain->functions[fno].address = plates[i] = code.index;
-        for (int j = 0; j < 9; j++) {
-            char *literal = utf2cjk((i == 1 ? count_text : compare_text)[j], 0, false);
-            write_instruction1(&code, S_PUSH, ain_add_string(ain, literal));
-            free(literal);
-        }
-        calls[i] = code.index;
-        write_instruction1(&code, CALLFUNC, raw_number);
-        write_instruction1(&code, CALLFUNC, raw_number);
-        write_instruction1(&code, ENDFUNC, fno);
-    }
     ain->code = code.buf;
     ain->code_size = code.index;
 
@@ -445,10 +398,6 @@ int main(void)
         assert(!strcmp(pushed_literal(ain, load_confirm, i), load_literals[i]));
     for (int i = 0; i < 11; i++)
         assert(!strcmp(pushed_literal(ain, bonus_skills, i), bonus_literals[i]));
-    for (int i = 0; i < 3; i++) {
-        assert(called_function(ain, calls[i]) == raw_number);
-        assert(called_function(ain, calls[i] + 6) == raw_number);
-    }
 
     ain_add_string(ain, "\xc0\xbc\xcb\xb9"); // 兰斯, CN edition marker
     char *dialogue = utf2cjk("宝箱里面的东西，都是本大爷的。", 0, true);
@@ -478,23 +427,6 @@ int main(void)
     assert_gbk(pushed_literal(ain, load_confirm, 4), "否");
     for (int i = 0; i < 11; i++)
         assert_gbk(pushed_literal(ain, bonus_skills, i), bonus[i]);
-    for (int i = 0; i < 9; i++)
-        assert_gbk(pushed_literal(ain, plates[0], i), compare_text[i]);
-    for (size_t i = 0; i < sizeof(effects) / sizeof(*effects); i++)
-        assert_gbk(pushed_literal(ain, effects_start, i), effects[i]);
-    char compare[64], digits[16];
-    int_to_cstr(digits, sizeof(digits), 20, 0, false, true);
-    snprintf(compare, sizeof(compare), "%s%s%s%s", pushed_literal(ain, plates[0], 1),
-        pushed_literal(ain, effects_start, 1), pushed_literal(ain, plates[0], 5), digits);
-    assert_gbk(compare, "　攻撃力▼２０");
-    assert_gbk(pushed_literal(ain, plates[1], 7), "×");
-    for (int i = 0; i < 3; i++) {
-        assert(called_function(ain, calls[i]) == (i == 2 ? raw_number : gbk_number));
-        assert(called_function(ain, calls[i] + 6) == (i == 2 ? raw_number : gbk_number));
-    }
-    char *asset = utf2cjk(count_text[1], 0, false);
-    assert(!strcmp(pushed_literal(ain, plates[1], 1), asset));
-    free(asset);
 
     char *already_gbk = utf2cjk("读取【DATA ", 0, true);
     for (int i = 0; i < 5; i++)
@@ -518,11 +450,6 @@ int main(void)
     assert_gbk(pushed_literal(ain, init, 2), "2.0倍　雷魔法");
 
     free(item_fn);
-    free(raw_number_name);
-    free(gbk_number_name);
-    free(effects_name);
-    for (size_t i = 0; i < sizeof(effects) / sizeof(*effects); i++)
-        free((char *)effects_literals[i]);
     free(already_gbk);
     free(load_name);
     free(bonus_name);
@@ -544,6 +471,111 @@ int main(void)
 """
         out = compile_and_run(
             harness, [ROOT / "src/escalayer_reboot_cn_ui.c", *LIBSYS4_CORE], ["-lz", "-lm"]
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_evenicle_rance_mixed_parts_display(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "parts/text.c"
+#include "parts/construction.c"
+
+bool game_evenicle_rance_cn;
+bool gfx_text_advance_edges;
+static struct string *drawn;
+static const char *expected_construction;
+
+void gfx_register_reset_callback(gfx_reset_callback cb, void *user) {}
+bool gfx_remap_texture(Texture *t) { return false; }
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) {}
+void gfx_delete_texture(Texture *t) {}
+void gfx_fill_with_alpha(Texture *t, int x, int y, int w, int h, int r, int g, int b, int a) {}
+void gfx_fill_amap(Texture *t, int x, int y, int w, int h, int a) {}
+float gfx_size_text(struct text_style *ts, const char *text)
+{
+    assert(!strcmp(text, expected_construction));
+    return 12;
+}
+float gfx_render_text_mode(Texture *t, float x, int y, char *text, struct text_style *ts, enum text_render_mode mode)
+{
+    assert(!strcmp(text, expected_construction));
+    return 12;
+}
+float gfx_size_char(struct text_style *ts, const char *ch) { return 12; }
+float gfx_render_text_edge_only(Texture *t, float x, int y, char *ch, struct text_style *ts) { return 12; }
+float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct text_style *ts)
+{
+    string_append_cstr(&drawn, ch, strlen(ch));
+    return 12;
+}
+void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {}
+
+static void check(const char *first, const char *second, const char *expected)
+{
+    char *sjis = utf2cjk(first, 0, false);
+    char *gbk = utf2cjk(second, 0, true);
+    struct string *source = make_string(sjis, strlen(sjis));
+    string_append_cstr(&source, gbk, strlen(gbk));
+    struct parts_text parts = {0};
+    drawn = make_string("", 0);
+    parts_text_append(NULL, &parts, source);
+    char *utf = cjk2utf_strict(drawn->text, true, NULL);
+    if (!utf || strcmp(utf, expected))
+        fprintf(stderr, "Expected %s, got %s\n", expected, utf ? utf : "<invalid GBK>");
+    assert(utf && !strcmp(utf, expected));
+    struct string *stored = parts_text_get(&parts);
+    assert(!strcmp(stored->text, source->text));
+
+    char *construction = utf2cjk(expected, 0, true);
+    expected_construction = construction;
+    struct parts_construction_process cproc = { .common.texture.handle = 1 };
+    struct parts_cp_text op = { .text = source };
+    assert(build_text(&cproc, &op, RENDER_COPY));
+    assert(!strcmp(stored->text, source->text));
+    free(construction);
+    free(utf);
+    free_string(stored);
+    free_string(drawn);
+    free_string(source);
+    parts_text_free(&parts);
+    free(gbk);
+    free(sjis);
+}
+
+int main(void)
+{
+    char *name = utf2cjk("ランス", 0, false);
+    sys4_set_text_gbk(true);
+    assert(!parts_prepare_display_text(name));
+    game_evenicle_rance_cn = true;
+    sys4_set_source_utf8(true);
+    assert(!parts_prepare_display_text(name));
+    sys4_set_source_utf8(false);
+    sys4_set_text_gbk(false);
+    assert(!parts_prepare_display_text(name));
+    sys4_set_text_gbk(true);
+    free(name);
+
+    check("ランス", "", "ランス");
+    check("１章：騎士とお姫様／蠢く蛇紋", "", "１章：騎士とお姫様／蠢く蛇紋");
+    check("リッシュ・エデン", "", "リッシュ・エデン");
+    check("[　ランス　]少し物足りない剣", "", "[　ランス　]少し物足りない剣");
+    check("[　ランス　]", "这是旧存档里的道具说明", "[　ランス　]这是旧存档里的道具说明");
+    check("　攻撃力　＋", "３０", "　攻撃力　＋３０");
+    check("　魔法力▼２０", "", "　魔法力▼２０");
+    check("", "攻撃力", "攻撃力");
+    check("", "「呣呣呣……」", "「呣呣呣……」");
+    check("", "装備武器：点击继续。", "装備武器：点击继续。");
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness, LIBSYS4_CORE,
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")
 
