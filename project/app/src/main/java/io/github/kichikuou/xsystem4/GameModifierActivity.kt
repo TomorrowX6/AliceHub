@@ -538,17 +538,22 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun isCurrentTargetEvenicle(): Boolean {
-        if (scopedGameId == GameCatalog.ID_EVENICLE) {
+        if (GenericModifierRegistry.isEvenicleFamily(scopedGameId)) {
             return true
         }
-        if (isOtherScopedGame(GameCatalog.ID_EVENICLE)) {
+        if (scopedGameId != null && !GenericModifierRegistry.isEvenicleFamily(scopedGameId)) {
             return false
         }
-        return GameModifierBridge.isEvenicleGameDir(
+        return GameModifierBridge.isEvenicleFamilyGameDir(
             currentTarget.externalGameDir,
             currentTarget.dirName,
             currentTarget.saveDir
         )
+    }
+
+    private fun currentTargetGenericSpec(): GenericModifierSpec? {
+        val gid = resolvedGameIdForCurrentTarget()
+        return GenericModifierRegistry.find(gid)
     }
 
     private fun isCurrentTargetSengokuRance(): Boolean {
@@ -680,15 +685,17 @@ class GameModifierActivity : ThemedActivity() {
         isRance03: Boolean,
         isRance08: Boolean,
         isRance09: Boolean,
-        isEscalayer: Boolean
+        isEscalayer: Boolean,
+        genericSpec: GenericModifierSpec?
     ) {
         val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
         (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
         val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
         val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance01 || isRance02 || isRance03 || isRance08 || isRance09 || isEscalayer
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance01 || isRance02 || isRance03 || isRance08 || isRance09 || isEscalayer || (genericSpec != null && genericSpec.locks.isNotEmpty())
         val resolvedGameId = resolvedGameIdForCurrentTarget()
         val isSys3x = isEscalayer ||
+            genericSpec?.isSystem35 == true ||
             resolvedGameId == GameCatalog.ID_KICHIKUOU ||
             resolvedGameId == GameCatalog.ID_DAIAKUJI ||
             GameCatalog.isSystem3xGameDir(currentTarget.externalGameDir)
@@ -703,18 +710,19 @@ class GameModifierActivity : ThemedActivity() {
 
     private fun refreshSummaryText() {
         val saveDir = currentTarget.saveDir
-        val isRance10 = isCurrentTargetRance10()
-        val isDohnaDohna = !isRance10 && isCurrentTargetDohnaDohna()
-        val isEvenicle = !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
-        val isSengokuRance = !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance()
-        val isRance01 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance01()
-        val isRance02 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && isCurrentTargetRance02()
-        val isRance03 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && isCurrentTargetRance03()
-        val isRance08 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && isCurrentTargetRance08()
-        val isRance09 = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && isCurrentTargetRance09()
-        val isEscalayer = !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && isCurrentTargetEscalayer()
+        val genericSpec = currentTargetGenericSpec()
+        val isRance10 = genericSpec == null && isCurrentTargetRance10()
+        val isDohnaDohna = genericSpec == null && !isRance10 && isCurrentTargetDohnaDohna()
+        val isEvenicle = genericSpec == null && !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
+        val isSengokuRance = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance()
+        val isRance01 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance01()
+        val isRance02 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && isCurrentTargetRance02()
+        val isRance03 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && isCurrentTargetRance03()
+        val isRance08 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && isCurrentTargetRance08()
+        val isRance09 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && isCurrentTargetRance09()
+        val isEscalayer = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && isCurrentTargetEscalayer()
         refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance01, isRance02, isRance03, isRance08, isRance09, isEscalayer)
+        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance01, isRance02, isRance03, isRance08, isRance09, isEscalayer, genericSpec)
         applyThemeAccent()
 
         findViewById<TextView>(R.id.mod_target_title).text =
@@ -799,6 +807,14 @@ class GameModifierActivity : ThemedActivity() {
                         "存档 $saveCount 个 · 锁定 $escLockCount 项",
                         "セーブ $saveCount 個 · ロック $escLockCount 項目",
                         "$saveCount saves · Locks: $escLockCount"
+                    )
+                }
+                genericSpec != null -> {
+                    val gLockCount = GameModifierBridge.getGenericLiveLockCount(this, genericSpec.id)
+                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
+                        "存档 $saveCount 个 · 锁定 $gLockCount 项",
+                        "セーブ $saveCount 個 · ロック $gLockCount 項目",
+                        "$saveCount saves · Locks: $gLockCount"
                     )
                 }
                 else -> {
@@ -1271,6 +1287,15 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun showFloatingLocksDialog() {
+        val genericSpec = currentTargetGenericSpec()
+        if (genericSpec != null && genericSpec.locks.isNotEmpty()) {
+            val lockDefs = genericSpec.locks.map { it.bit to it.label.resolve(isZh, isJa) }
+            showBitmaskLockDialog(
+                lockDefs,
+                GameModifierBridge.getSavedGenericLockMask(this, genericSpec.id)
+            ) { GameModifierBridge.setSavedGenericLockMask(this, genericSpec.id, it, genericSpec.isSystem35) }
+            return
+        }
         if (!isCurrentTargetRance10() && isCurrentTargetDohnaDohna()) {
             val lockDefs = listOf(
                 GameModifierBridge.LOCK_DD_ALLY_MAX_HP to tr("我方全员满 HP", "味方全員HP最大", "Party Max HP"),

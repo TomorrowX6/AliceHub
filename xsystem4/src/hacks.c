@@ -75,6 +75,9 @@ bool game_tsumamigui3_jun = false;
 bool game_tsumamigui3_ntr = false;
 bool game_maman = false;
 bool game_waidonyo = false;
+bool game_dorapeko = false;
+bool game_pascha3 = false;
+bool game_sanbiki = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -923,6 +926,9 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_tsumamigui3_ntr = false;
 	game_maman = false;
 	game_waidonyo = false;
+	game_dorapeko = false;
+	game_pascha3 = false;
+	game_sanbiki = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -949,7 +955,9 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_has_gbk_string(ain, "83h2mjr");
 	game_okusama = ain->version == 14
 		&& ain_get_function(ain, "AdvGauge@UpdatePregnancy") >= 0
-		&& ain_has_gbk_string(ain, "4fnd6e97tn9");
+		&& (ain_has_gbk_string(ain, "4fnd6e97tn9")
+			|| (ain_get_struct(ain, "CharaStatusList") >= 0
+				&& ain_get_global(ain, "g_resources") >= 0));
 	game_night_remaster = ain->version == 14
 		&& ain_get_function(ain, "C_Monster@nMoonPiece::get") >= 0
 		&& ain_has_gbk_string(ain, "45qsdbdsfq5");
@@ -1030,6 +1038,17 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_library(ain, "ChrLoader") >= 0
 		&& ain_get_library(ain, "MapLoader") >= 0
 		&& ain_get_struct(ain, "T_MamatotoDamage") >= 0;
+	game_dorapeko = ain->version == 6
+		&& ain_get_struct(ain, "ch_data") >= 0
+		&& ain_get_global(ain, "CD") >= 0;
+	game_pascha3 = ain->version == 6
+		&& ain_get_struct(ain, "C_UNIT_PARAMETER_CLASS") >= 0
+		&& ain_get_global(ain, "g_cUnitParamter") >= 0;
+	game_sanbiki = ain->version == 5
+		&& (ain_get_struct(ain, "s\xa5\xad\xa5\xe3\xa5\xe9\xa5\xaf\xa5\xbf") >= 0
+			|| ain_get_struct(ain, "s\x83L\x83\x83\x83\x89\x83N\x83^") >= 0)
+		&& (ain_get_global(ain, "g_n\xbd\xf0") >= 0
+			|| ain_get_global(ain, "g_n\x8b\xe0") >= 0);
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Detect actual AIN text encoding first so Shift-JIS releases/repacks with a Chinese
 	// GameName in AliceStart.ini (e.g. Shift-JIS Rance IX with GameName="兰斯9") are not

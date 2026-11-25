@@ -135,6 +135,9 @@ extern bool game_tsumamigui3_jun;
 extern bool game_tsumamigui3_ntr;
 extern bool game_maman;
 extern bool game_waidonyo;
+extern bool game_dorapeko;
+extern bool game_pascha3;
+extern bool game_sanbiki;
 
 bool sys_is_sdl_main_thread(void);
 

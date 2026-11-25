@@ -1026,6 +1026,25 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetR03LiveLocks(
 	(void)env; (void)clazz;
 	return 0;
 }
+JNIEXPORT jstring JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCurrentGame(
+	JNIEnv *env, jclass clazz) {
+	(void)clazz;
+	const char *gid = xsystem35_modifier_current_game();
+	return (*env)->NewStringUTF(env, gid ? gid : "");
+}
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameLiveLocks(
+	JNIEnv *env, jclass clazz, jstring jgameId, jint mask) {
+	(void)env; (void)clazz; (void)jgameId;
+	xsystem35_modifier_set_locks((int)mask);
+}
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameLiveLocks(
+	JNIEnv *env, jclass clazz, jstring jgameId) {
+	(void)env; (void)clazz; (void)jgameId;
+	return (jint)xsystem35_modifier_get_locks();
+}
 
 JNIEXPORT void JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeApplyLiveAction(

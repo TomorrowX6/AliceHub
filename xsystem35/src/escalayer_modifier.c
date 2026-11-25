@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,16 @@
 #define ESC_LOCK_LIBIDO_MAX  (1 << 1)
 #define ESC_LOCK_ONEHIT      (1 << 2)
 #define ESC_LOCK_LOVE_MAX    (1 << 3)
+
+enum s35_mod_game {
+	S35_GAME_NONE = 0,
+	S35_GAME_ESCALAYER,
+	S35_GAME_DAIAKUJI,
+	S35_GAME_RANCE5D,
+	S35_GAME_TSUMAMIGUI,
+	S35_GAME_KICHIKUOU,
+	S35_GAME_KAERUNYO,
+};
 
 static pthread_mutex_t live_state_lock = PTHREAD_MUTEX_INITIALIZER;
 static char *live_state_json;
@@ -47,8 +58,10 @@ static int pending_action_count = 0;
 static struct {
 	char **ain_ptr;
 	int varnum;
+	const char *sco_fname;
 	bool checked;
-	bool is_escalayer;
+	enum s35_mod_game game;
+	/* Escalayer */
 	int hp, hp_max;
 	int atk, def, rsp;
 	int libido, libido_max;
@@ -58,15 +71,33 @@ static struct {
 	int easy_menu, easy_menu2, hard_menu, hissatsu_flags;
 	int recall_vars[16];
 	int recall_count;
-} esc_cache = {
-	.hp = -1, .hp_max = -1, .atk = -1, .def = -1, .rsp = -1,
-	.libido = -1, .libido_max = -1, .d2 = -1, .love = -1,
-	.training = -1, .peace = -1, .enemy_hp = -1, .enemy_hp_max = -1,
-	.clear_count = -1, .ed_flags = -1, .cg_seen = -1,
-	.easy_menu = -1, .easy_menu2 = -1, .hard_menu = -1, .hissatsu_flags = -1,
-};
+	/* Daiakuji */
+	int da_gold, da_debt, da_subsidy, da_hp, da_karma, da_love, da_security, da_popular, da_ex_item;
+	/* Rance 5D */
+	int r5d_cur_hp, r5d_hp0, r5d_atk0, r5d_def0, r5d_mag0, r5d_res0, r5d_eva0;
+	int r5d_actions, r5d_goldbar, r5d_exporb, r5d_durability;
+	int r5d_love_vars[4];
+	/* Tsumamigui */
+	int tm1_stamina, tm1_kanae, tm1_chiho, tm1_aibu, tm1_paizuri, tm1_fera, tm1_honban, tm1_lv, tm1_exp;
+} esc_cache;
+
+static bool str_contains_icase(const char *hay, const char *needle) {
+	if (!hay || !needle || !needle[0])
+		return false;
+	size_t nlen = strlen(needle);
+	for (const char *p = hay; *p; p++) {
+		size_t i = 0;
+		while (i < nlen && p[i] && tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i]))
+			i++;
+		if (i == nlen)
+			return true;
+	}
+	return false;
+}
 
 static int find_var_names(const char *sjis_name, const char *utf8_name) {
+	if (!nact || nact->ain.varnum <= 0 || !nact->ain.var)
+		return -1;
 	for (int i = 0; i < nact->ain.varnum; i++) {
 		const char *n = v_name(i);
 		if (!n)
@@ -78,50 +109,158 @@ static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	return -1;
 }
 
+static void reset_cache_indices(void) {
+	memset(&esc_cache, 0, sizeof(esc_cache));
+	esc_cache.hp = esc_cache.hp_max = esc_cache.atk = esc_cache.def = esc_cache.rsp = -1;
+	esc_cache.libido = esc_cache.libido_max = esc_cache.d2 = esc_cache.love = -1;
+	esc_cache.training = esc_cache.peace = esc_cache.enemy_hp = esc_cache.enemy_hp_max = -1;
+	esc_cache.clear_count = esc_cache.ed_flags = esc_cache.cg_seen = -1;
+	esc_cache.easy_menu = esc_cache.easy_menu2 = esc_cache.hard_menu = esc_cache.hissatsu_flags = -1;
+	esc_cache.da_gold = esc_cache.da_debt = esc_cache.da_subsidy = esc_cache.da_hp = -1;
+	esc_cache.da_karma = esc_cache.da_love = esc_cache.da_security = esc_cache.da_popular = esc_cache.da_ex_item = -1;
+	esc_cache.r5d_cur_hp = esc_cache.r5d_hp0 = esc_cache.r5d_atk0 = esc_cache.r5d_def0 = -1;
+	esc_cache.r5d_mag0 = esc_cache.r5d_res0 = esc_cache.r5d_eva0 = -1;
+	esc_cache.r5d_actions = esc_cache.r5d_goldbar = esc_cache.r5d_exporb = esc_cache.r5d_durability = -1;
+	for (int i = 0; i < 4; i++) esc_cache.r5d_love_vars[i] = -1;
+	esc_cache.tm1_stamina = esc_cache.tm1_kanae = esc_cache.tm1_chiho = -1;
+	esc_cache.tm1_aibu = esc_cache.tm1_paizuri = esc_cache.tm1_fera = esc_cache.tm1_honban = -1;
+	esc_cache.tm1_lv = esc_cache.tm1_exp = -1;
+}
+
 static void refresh_escalayer_cache(void) {
-	if (!nact || nact->ain.varnum <= 0 || !nact->ain.var)
+	if (!nact)
 		return;
-	if (esc_cache.checked && esc_cache.ain_ptr == nact->ain.var && esc_cache.varnum == nact->ain.varnum)
+	const char *sco0 = (nact->files.cnt[DRIFILE_SCO] > 0) ? nact->files.game_fname[DRIFILE_SCO][0] : NULL;
+	if (esc_cache.checked && esc_cache.ain_ptr == nact->ain.var &&
+	    esc_cache.varnum == nact->ain.varnum && esc_cache.sco_fname == sco0)
 		return;
 
-	memset(&esc_cache, 0, sizeof(esc_cache));
+	reset_cache_indices();
 	esc_cache.ain_ptr = nact->ain.var;
 	esc_cache.varnum = nact->ain.varnum;
+	esc_cache.sco_fname = sco0;
 	esc_cache.checked = true;
 
-	// System39.ain stores VARI names in Shift_JIS (CP932); accept UTF-8 too if symbol file is loaded.
-	esc_cache.hp = find_var_names("\x81\x99\x82\x67\x82\x6f", "☆ＨＰ");
-	esc_cache.hp_max = find_var_names("\x81\x99\x82\x67\x82\x6f\x82\x6c\x82\x60\x82\x77", "☆ＨＰＭＡＸ");
-	esc_cache.atk = find_var_names("\x81\x99\x8d\x55\x8c\x82\x97\xcd", "☆攻撃力");
-	esc_cache.def = find_var_names("\x81\x99\x96\x68\x8c\xe4\x97\xcd", "☆防御力");
-	esc_cache.rsp = find_var_names("\x81\x99\x94\xbd\x89\x9e\x97\xcd", "☆反応力");
-	esc_cache.libido = find_var_names("\x81\x99\x83\x8a\x83\x72\x83\x68\x81\x5b", "☆リビドー");
-	esc_cache.libido_max = find_var_names("\x81\x99\x83\x8a\x83\x72\x83\x68\x81\x5b\x82\x6c\x82\x60\x82\x77", "☆リビドーＭＡＸ");
-	esc_cache.d2 = find_var_names("\x81\x99\x82\x63\x82\x51", "☆Ｄ２");
-	esc_cache.love = find_var_names("\x81\x99\x88\xa4\x8f\xee", "☆愛情");
-	esc_cache.training = find_var_names("\x81\x99\x92\xb2\x8b\xb3", "☆調教");
-	esc_cache.peace = find_var_names("\x81\x99\x83\x73\x81\x5b\x83\x58", "☆ピース");
-	esc_cache.enemy_hp = find_var_names("\x81\x99\x93\x47\x81\x5e\x8c\xbb\x91\xcc\x97\xcd", "☆敵／現体力");
-	esc_cache.enemy_hp_max = find_var_names("\x81\x99\x93\x47\x81\x5e\x91\x8d\x91\xcc\x97\xcd", "☆敵／総体力");
-	esc_cache.clear_count = find_var_names("\x81\xa6\x83\x4e\x83\x8a\x83\x41\x89\xf1\x90\x94", "※クリア回数");
-	esc_cache.easy_menu = find_var_names("\x81\xa6\x83\x43\x81\x5b\x83\x57\x81\x5b\x83\x81\x83\x6a\x83\x85\x81\x5b", "※イージーメニュー");
-	esc_cache.easy_menu2 = find_var_names("\x81\xa6\x83\x43\x81\x5b\x83\x57\x81\x5b\x83\x81\x83\x6a\x83\x85\x81\x5b\x82\x51", "※イージーメニュー２");
-	esc_cache.hard_menu = find_var_names("\x81\xa6\x83\x6e\x81\x5b\x83\x68\x83\x81\x83\x6a\x83\x85\x81\x5b", "※ハードメニュー");
-	esc_cache.ed_flags = find_var_names("\x81\xa6\x82\x64\x82\x63", "※ＥＤ");
-	esc_cache.hissatsu_flags = find_var_names("\x81\xa6\x95\x4b\x8e\x45\x8b\x5a", "※必殺技");
-	esc_cache.cg_seen = find_var_names("\x81\xa6\x82\x62\x82\x66\x8c\xa9\x82\xbd", "※ＣＧ見た");
+	if (nact->ain.varnum > 0 && nact->ain.var) {
+		/* 1. Escalayer */
+		esc_cache.hp = find_var_names("\x81\x99\x82\x67\x82\x6f", "☆ＨＰ");
+		esc_cache.hp_max = find_var_names("\x81\x99\x82\x67\x82\x6f\x82\x6c\x82\x60\x82\x77", "☆ＨＰＭＡＸ");
+		esc_cache.atk = find_var_names("\x81\x99\x8d\x55\x8c\x82\x97\xcd", "☆攻撃力");
+		esc_cache.def = find_var_names("\x81\x99\x96\x68\x8c\xe4\x97\xcd", "☆防御力");
+		esc_cache.rsp = find_var_names("\x81\x99\x94\xbd\x89\x9e\x97\xcd", "☆反応力");
+		esc_cache.libido = find_var_names("\x81\x99\x83\x8a\x83\x72\x83\x68\x81\x5b", "☆リビドー");
+		esc_cache.libido_max = find_var_names("\x81\x99\x83\x8a\x83\x72\x83\x68\x81\x5b\x82\x6c\x82\x60\x82\x77", "☆リビドーＭＡＸ");
+		esc_cache.d2 = find_var_names("\x81\x99\x82\x63\x82\x51", "☆Ｄ２");
+		esc_cache.love = find_var_names("\x81\x99\x88\xa4\x8f\xee", "☆愛情");
+		esc_cache.training = find_var_names("\x81\x99\x92\xb2\x8b\xb3", "☆調教");
+		esc_cache.peace = find_var_names("\x81\x99\x83\x73\x81\x5b\x83\x58", "☆ピース");
+		esc_cache.enemy_hp = find_var_names("\x81\x99\x93\x47\x81\x5e\x8c\xbb\x91\xcc\x97\xcd", "☆敵／現体力");
+		esc_cache.enemy_hp_max = find_var_names("\x81\x99\x93\x47\x81\x5e\x91\x8d\x91\xcc\x97\xcd", "☆敵／総体力");
+		esc_cache.clear_count = find_var_names("\x81\xa6\x83\x4e\x83\x8a\x83\x41\x89\xf1\x90\x94", "※クリア回数");
+		esc_cache.easy_menu = find_var_names("\x81\xa6\x83\x43\x81\x5b\x83\x57\x81\x5b\x83\x81\x83\x6a\x83\x85\x81\x5b", "※イージーメニュー");
+		esc_cache.easy_menu2 = find_var_names("\x81\xa6\x83\x43\x81\x5b\x83\x57\x81\x5b\x83\x81\x83\x6a\x83\x85\x81\x5b\x82\x51", "※イージーメニュー２");
+		esc_cache.hard_menu = find_var_names("\x81\xa6\x83\x6e\x81\x5b\x83\x68\x83\x81\x83\x6a\x83\x85\x81\x5b", "※ハードメニュー");
+		esc_cache.ed_flags = find_var_names("\x81\xa6\x82\x64\x82\x63", "※ＥＤ");
+		esc_cache.hissatsu_flags = find_var_names("\x81\xa6\x95\x4b\x8e\x45\x8b\x5a", "※必殺技");
+		esc_cache.cg_seen = find_var_names("\x81\xa6\x82\x62\x82\x66\x8c\xa9\x82\xbd", "※ＣＧ見た");
+		if (esc_cache.hp >= 0 && esc_cache.libido >= 0 && esc_cache.d2 >= 0) {
+			esc_cache.game = S35_GAME_ESCALAYER;
+			for (int i = 0; i < nact->ain.varnum && esc_cache.recall_count < 16; i++) {
+				const char *n = v_name(i);
+				if (n && (strncmp(n, "\x81\xa6\x89\xf1\x91\x7a\x81\x5e", 8) == 0 ||
+					strncmp(n, "※回想／", strlen("※回想／")) == 0))
+					esc_cache.recall_vars[esc_cache.recall_count++] = i;
+			}
+			return;
+		}
 
-	esc_cache.is_escalayer = (esc_cache.hp >= 0 && esc_cache.libido >= 0 && esc_cache.d2 >= 0);
-	for (int i = 0; i < nact->ain.varnum && esc_cache.recall_count < 16; i++) {
-		const char *n = v_name(i);
-		if (n && (strncmp(n, "\x81\xa6\x89\xf1\x91\x7a\x81\x5e", 8) == 0 ||
-			strncmp(n, "※回想／", strlen("※回想／")) == 0))
-			esc_cache.recall_vars[esc_cache.recall_count++] = i;
+		/* 2. Daiakuji */
+		esc_cache.da_gold = find_var_names("\x81\x99\x8b\xe0\x81\x5e\x8e\x96\x96\xb1\x8f\x8a", "☆金／事務所");
+		esc_cache.da_debt = find_var_names("\x81\x99\x8e\xd8\x8b\xe0", "☆借金");
+		esc_cache.da_subsidy = find_var_names("\x81\x99\x95\xe2\x8f\x95\x8b\xe0", "☆補助金");
+		esc_cache.da_hp = find_var_names("\x81\x9a\x82\x67\x82\x6f", "★ＨＰ");
+		esc_cache.da_karma = find_var_names("\x81\x9a\x83\x4a\x83\x8b\x83\x7d", "★カルマ");
+		esc_cache.da_love = find_var_names("\x81\x9a\x88\xa4", "★愛");
+		esc_cache.da_security = find_var_names("R\x8e\xa1\x88\xc0\x83\x8c\x83\x78\x83\x8b", "R治安レベル");
+		esc_cache.da_popular = find_var_names("\x81\x99\x83\x4d\x83\x83\x83\x8b\x83\x6f\x81\x5b\x83\x4b\x81\x5b\x90\x6c\x8b\x43", "☆ギャルバーガー人気");
+		esc_cache.da_ex_item = find_var_names("\x82\x64\x82\x77\x83\x41\x83\x43\x83\x65\x83\x80", "ＥＸアイテム");
+		if (esc_cache.da_gold >= 0 && esc_cache.da_debt >= 0 && esc_cache.da_hp >= 0) {
+			esc_cache.game = S35_GAME_DAIAKUJI;
+			return;
+		}
+
+		/* 3. Rance 5D */
+		esc_cache.r5d_cur_hp = find_var_names("\x81\x99\x8c\xbb\x91\xcc\x97\xcd", "☆現体力");
+		esc_cache.r5d_hp0 = find_var_names("\x81\x99\x91\xcc\x97\xcd\x82\x4f", "☆体力０");
+		esc_cache.r5d_atk0 = find_var_names("\x81\x99\x8d\x55\x8c\x82\x97\xcd\x82\x4f", "☆攻撃力０");
+		esc_cache.r5d_def0 = find_var_names("\x81\x99\x96\x68\x8c\xe4\x97\xcd\x82\x4f", "☆防御力０");
+		esc_cache.r5d_mag0 = find_var_names("\x81\x99\x96\x82\x96\x40\x97\xcd\x82\x4f", "☆魔法力０");
+		esc_cache.r5d_res0 = find_var_names("\x81\x99\x96\x82\x92\xef\x97\xcd\x82\x4f", "☆魔抵力０");
+		esc_cache.r5d_eva0 = find_var_names("\x81\x99\x89\xf1\x94\xf0\x97\xcd\x82\x4f", "☆回避力０");
+		esc_cache.r5d_actions = find_var_names("\x81\x99\x96\xc0\x8b\x7b\x8d\x73\x93\xae\x89\xf1\x90\x94", "☆迷宮行動回数");
+		esc_cache.r5d_goldbar = find_var_names("\x81\x99\x82\x6a\x8b\xe0\x89\xf2", "☆Ｋ金塊");
+		esc_cache.r5d_exporb = find_var_names("\x81\x99\x82\x6a\x92\xb4\x8c\x6f\x8c\xb1\x8b\xca", "☆Ｋ超経験玉");
+		esc_cache.r5d_durability = find_var_names("\x81\x99\x8e\x9d\x82\xbf\x95\xa8\x81\x5e\x91\xcf\x8b\x76\x93\x78", "☆持ち物／耐久度");
+		esc_cache.r5d_love_vars[0] = find_var_names("\x81\x99\x8a\x43\x91\xdb\x8e\x71\x81\x5e\x88\xa4\x82\x6f", "☆海苔子／愛Ｐ");
+		esc_cache.r5d_love_vars[1] = find_var_names("\x81\x99\x82\xa0\x82\xc4\x82\xc8\x81\x5e\x88\xa4\x82\x6f", "☆あてな／愛Ｐ");
+		esc_cache.r5d_love_vars[2] = find_var_names("\x81\x99\x83\x8a\x83\x59\x83\x69\x81\x5e\x88\xa4\x82\x6f", "☆リズナ／愛Ｐ");
+		esc_cache.r5d_love_vars[3] = find_var_names("\x81\x99\x83\x52\x83\x70\x83\x93\x83\x68\x83\x93\x81\x5e\x88\xa4\x82\x6f", "☆コパンドン／愛Ｐ");
+		if (esc_cache.r5d_cur_hp >= 0 && esc_cache.r5d_actions >= 0 && esc_cache.r5d_goldbar >= 0) {
+			esc_cache.game = S35_GAME_RANCE5D;
+			return;
+		}
+
+		/* 4. Tsumamigui 1 */
+		esc_cache.tm1_stamina = find_var_names("\x91\xcf\x8b\x76\x97\xcd", "耐久力");
+		esc_cache.tm1_kanae = find_var_names("\x8d\x81\x95\x63\x83\x8c\x83\x78\x83\x8b", "香苗レベル");
+		esc_cache.tm1_chiho = find_var_names("\x90\xe7\x95\xe4\x83\x8c\x83\x78\x83\x8b", "千穂レベル");
+		esc_cache.tm1_aibu = find_var_names("\x88\xa4\x95\x8f\x83\x8c\x83\x78\x83\x8b", "愛撫レベル");
+		esc_cache.tm1_paizuri = find_var_names("\x83\x70\x83\x43\x83\x59\x83\x8a\x83\x8c\x83\x78\x83\x8b", "パイズリレベル");
+		esc_cache.tm1_fera = find_var_names("\x83\x74\x83\x46\x83\x89\x83\x8c\x83\x78\x83\x8b", "フェラレベル");
+		esc_cache.tm1_honban = find_var_names("\x96\x7b\x94\xd4\x83\x8c\x83\x78\x83\x8b", "本番レベル");
+		esc_cache.tm1_lv = find_var_names("\x83\x8c\x83\x78\x83\x8b", "レベル");
+		esc_cache.tm1_exp = find_var_names("EXP", "EXP");
+		if (esc_cache.tm1_stamina >= 0 && esc_cache.tm1_kanae >= 0 && esc_cache.tm1_chiho >= 0) {
+			esc_cache.game = S35_GAME_TSUMAMIGUI;
+			return;
+		}
+	}
+
+	/* 5 & 6. Non-System39.ain games verified directly from SA.ALD bytecode */
+	if (sco0) {
+		if (str_contains_icase(sco0, "kichiku") || strstr(sco0, "鬼畜王")) {
+			esc_cache.game = S35_GAME_KICHIKUOU;
+			return;
+		}
+		if (str_contains_icase(sco0, "kaeru") || str_contains_icase(sco0, "panyo") ||
+		    strstr(sco0, "ぱにょ") || strstr(sco0, "\x82\xcf\x82\xc9\x82\xe5") ||
+		    strstr(sco0, "\xa4\xd1\xa4\xcb\xa4\xe7")) {
+			esc_cache.game = S35_GAME_KAERUNYO;
+			return;
+		}
+	}
+}
+
+static const char *game_id_str(enum s35_mod_game g) {
+	switch (g) {
+	case S35_GAME_ESCALAYER:  return "escalayer";
+	case S35_GAME_DAIAKUJI:   return "daiakuji";
+	case S35_GAME_RANCE5D:    return "rance5d";
+	case S35_GAME_TSUMAMIGUI: return "tsumamigui";
+	case S35_GAME_KICHIKUOU:  return "kichikuou";
+	case S35_GAME_KAERUNYO:   return "kaerunyo";
+	default:                  return "";
 	}
 }
 
 static inline bool esc_valid_var(int idx) {
-	return idx >= 0 && idx < nact->ain.varnum && idx < 65537;
+	return idx >= 0 && idx < 65537 && (nact->ain.varnum <= 0 || idx < nact->ain.varnum);
+}
+
+static vmvar_t clamp_u16(int v) {
+	if (v < 0) return 0;
+	if (v > 65535) return 65535;
+	return (vmvar_t)v;
 }
 
 static void esc_unlock_var_all(int var) {
@@ -156,61 +295,195 @@ static int esc_count_unlocked(int var) {
 	return sysVar[var];
 }
 
-static vmvar_t clamp_u16(int v) {
-	if (v < 0) return 0;
-	if (v > 65535) return 65535;
-	return (vmvar_t)v;
+static int s35_read_first(int var) {
+	if (!esc_valid_var(var))
+		return 0;
+	struct VarRef ref;
+	if (v_ref_indexed(var, 0, &ref) && ref.page > 0 && ref.page < 256 && varPage[ref.page].value)
+		return varPage[ref.page].value[ref.index];
+	return sysVar[var];
+}
+
+static void s35_set_var_min_all(int var, vmvar_t min_val, bool nonzero_only) {
+	if (!esc_valid_var(var))
+		return;
+	struct VarRef ref;
+	if (v_ref_indexed(var, 0, &ref) && ref.page > 0 && ref.page < 256 && varPage[ref.page].value) {
+		int len = v_boundSliceSize(&ref);
+		if (len > 512) len = 512;
+		for (int i = ref.index; i < ref.index + len; i++) {
+			vmvar_t cur = varPage[ref.page].value[i];
+			if ((!nonzero_only || cur > 0) && cur < min_val)
+				varPage[ref.page].value[i] = min_val;
+		}
+	} else {
+		if ((!nonzero_only || sysVar[var] > 0) && sysVar[var] < min_val)
+			sysVar[var] = min_val;
+	}
+}
+
+static void s35_copy_array_or_scalar(int dst_var, int src_var) {
+	if (!esc_valid_var(dst_var) || !esc_valid_var(src_var))
+		return;
+	struct VarRef rd, rs;
+	if (v_ref_indexed(dst_var, 0, &rd) && rd.page > 0 && rd.page < 256 && varPage[rd.page].value &&
+	    v_ref_indexed(src_var, 0, &rs) && rs.page > 0 && rs.page < 256 && varPage[rs.page].value) {
+		int len = v_boundSliceSize(&rd);
+		int slen = v_boundSliceSize(&rs);
+		if (slen < len) len = slen;
+		if (len > 512) len = 512;
+		for (int i = 0; i < len; i++) {
+			vmvar_t mv = varPage[rs.page].value[rs.index + i];
+			if (mv > 0 && varPage[rd.page].value[rd.index + i] < mv)
+				varPage[rd.page].value[rd.index + i] = mv;
+		}
+	} else {
+		vmvar_t mv = sysVar[src_var];
+		if (mv > 0 && sysVar[dst_var] < mv)
+			sysVar[dst_var] = mv;
+	}
 }
 
 static void apply_single_action_sdl_thread(const char *spec) {
 	refresh_escalayer_cache();
-	if (!esc_cache.is_escalayer)
+	if (esc_cache.game == S35_GAME_NONE || !spec || !spec[0])
 		return;
 
-	if (strcmp(spec, "esc_heal") == 0) {
-		if (esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max)) {
-			uint16_t maxv = sysVar[esc_cache.hp_max];
-			if (maxv > 0) sysVar[esc_cache.hp] = maxv;
+	if (esc_cache.game == S35_GAME_ESCALAYER) {
+		if (strcmp(spec, "esc_heal") == 0) {
+			if (esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max)) {
+				uint16_t maxv = sysVar[esc_cache.hp_max];
+				if (maxv > 0) sysVar[esc_cache.hp] = maxv;
+			}
+		} else if (strcmp(spec, "esc_libido_max") == 0) {
+			if (esc_valid_var(esc_cache.libido) && esc_valid_var(esc_cache.libido_max)) {
+				uint16_t maxv = sysVar[esc_cache.libido_max];
+				if (maxv > 0) sysVar[esc_cache.libido] = maxv;
+			}
+		} else if (strcmp(spec, "esc_enemy_onehit") == 0) {
+			if (esc_valid_var(esc_cache.enemy_hp) && sysVar[esc_cache.enemy_hp] > 1)
+				sysVar[esc_cache.enemy_hp] = 1;
+		} else if (strcmp(spec, "esc_love_max") == 0) {
+			if (esc_valid_var(esc_cache.love)) sysVar[esc_cache.love] = clamp_u16(sysVar[esc_cache.love] < 100 ? 100 : sysVar[esc_cache.love] + 50);
+			if (esc_valid_var(esc_cache.training)) sysVar[esc_cache.training] = clamp_u16(sysVar[esc_cache.training] + 50);
+		} else if (strcmp(spec, "esc_peace_100") == 0) {
+			if (esc_valid_var(esc_cache.peace)) sysVar[esc_cache.peace] = 100;
+		} else if (strcmp(spec, "esc_stats_boost") == 0) {
+			if (esc_valid_var(esc_cache.hp_max) && sysVar[esc_cache.hp_max] < 9999)
+				sysVar[esc_cache.hp_max] = 9999;
+			if (esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max))
+				sysVar[esc_cache.hp] = sysVar[esc_cache.hp_max];
+			if (esc_valid_var(esc_cache.atk)) sysVar[esc_cache.atk] = clamp_u16(sysVar[esc_cache.atk] + 300);
+			if (esc_valid_var(esc_cache.def)) sysVar[esc_cache.def] = clamp_u16(sysVar[esc_cache.def] + 300);
+			if (esc_valid_var(esc_cache.rsp)) sysVar[esc_cache.rsp] = clamp_u16(sysVar[esc_cache.rsp] + 100);
+		} else if (strcmp(spec, "esc_unlock_gallery") == 0) {
+			esc_unlock_var_all(esc_cache.clear_count);
+			esc_unlock_var_all(esc_cache.easy_menu);
+			esc_unlock_var_all(esc_cache.easy_menu2);
+			esc_unlock_var_all(esc_cache.hard_menu);
+			esc_unlock_var_all(esc_cache.ed_flags);
+			esc_unlock_var_all(esc_cache.hissatsu_flags);
+			esc_unlock_var_all(esc_cache.cg_seen);
+			for (int i = 0; i < esc_cache.recall_count; i++)
+				esc_unlock_var_all(esc_cache.recall_vars[i]);
+		} else if (strncmp(spec, "esc_atk_add=", 12) == 0 && esc_valid_var(esc_cache.atk)) {
+			sysVar[esc_cache.atk] = clamp_u16(sysVar[esc_cache.atk] + atoi(spec + 12));
+		} else if (strncmp(spec, "esc_def_add=", 12) == 0 && esc_valid_var(esc_cache.def)) {
+			sysVar[esc_cache.def] = clamp_u16(sysVar[esc_cache.def] + atoi(spec + 12));
+		} else if (strncmp(spec, "esc_rsp_add=", 12) == 0 && esc_valid_var(esc_cache.rsp)) {
+			sysVar[esc_cache.rsp] = clamp_u16(sysVar[esc_cache.rsp] + atoi(spec + 12));
+		} else if (strncmp(spec, "esc_d2_set=", 11) == 0 && esc_valid_var(esc_cache.d2)) {
+			sysVar[esc_cache.d2] = clamp_u16(atoi(spec + 11));
 		}
-	} else if (strcmp(spec, "esc_libido_max") == 0) {
-		if (esc_valid_var(esc_cache.libido) && esc_valid_var(esc_cache.libido_max)) {
-			uint16_t maxv = sysVar[esc_cache.libido_max];
-			if (maxv > 0) sysVar[esc_cache.libido] = maxv;
+		return;
+	}
+
+	if (esc_cache.game == S35_GAME_DAIAKUJI) {
+		if (strncmp(spec, "da_gold_add=", 12) == 0 && esc_valid_var(esc_cache.da_gold)) {
+			sysVar[esc_cache.da_gold] = clamp_u16(sysVar[esc_cache.da_gold] + atoi(spec + 12));
+		} else if (strcmp(spec, "da_gold_max") == 0 && esc_valid_var(esc_cache.da_gold)) {
+			sysVar[esc_cache.da_gold] = 60000;
+		} else if (strcmp(spec, "da_debt_zero") == 0 && esc_valid_var(esc_cache.da_debt)) {
+			sysVar[esc_cache.da_debt] = 0;
+		} else if (strcmp(spec, "da_hp_boost") == 0) {
+			s35_set_var_min_all(esc_cache.da_hp, 999, true);
+		} else if (strcmp(spec, "da_love_max") == 0) {
+			s35_set_var_min_all(esc_cache.da_love, 100, false);
+			if (esc_valid_var(esc_cache.da_popular)) sysVar[esc_cache.da_popular] = 100;
+		} else if (strcmp(spec, "da_security_max") == 0) {
+			s35_set_var_min_all(esc_cache.da_security, 100, false);
+		} else if (strcmp(spec, "da_items_unlock") == 0) {
+			esc_unlock_var_all(esc_cache.da_ex_item);
 		}
-	} else if (strcmp(spec, "esc_enemy_onehit") == 0) {
-		if (esc_valid_var(esc_cache.enemy_hp) && sysVar[esc_cache.enemy_hp] > 1)
-			sysVar[esc_cache.enemy_hp] = 1;
-	} else if (strcmp(spec, "esc_love_max") == 0) {
-		if (esc_valid_var(esc_cache.love)) sysVar[esc_cache.love] = clamp_u16(sysVar[esc_cache.love] < 100 ? 100 : sysVar[esc_cache.love] + 50);
-		if (esc_valid_var(esc_cache.training)) sysVar[esc_cache.training] = clamp_u16(sysVar[esc_cache.training] + 50);
-	} else if (strcmp(spec, "esc_peace_100") == 0) {
-		if (esc_valid_var(esc_cache.peace)) sysVar[esc_cache.peace] = 100;
-	} else if (strcmp(spec, "esc_stats_boost") == 0) {
-		if (esc_valid_var(esc_cache.hp_max) && sysVar[esc_cache.hp_max] < 9999)
-			sysVar[esc_cache.hp_max] = 9999;
-		if (esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max))
-			sysVar[esc_cache.hp] = sysVar[esc_cache.hp_max];
-		if (esc_valid_var(esc_cache.atk)) sysVar[esc_cache.atk] = clamp_u16(sysVar[esc_cache.atk] + 300);
-		if (esc_valid_var(esc_cache.def)) sysVar[esc_cache.def] = clamp_u16(sysVar[esc_cache.def] + 300);
-		if (esc_valid_var(esc_cache.rsp)) sysVar[esc_cache.rsp] = clamp_u16(sysVar[esc_cache.rsp] + 100);
-	} else if (strcmp(spec, "esc_unlock_gallery") == 0) {
-		esc_unlock_var_all(esc_cache.clear_count);
-		esc_unlock_var_all(esc_cache.easy_menu);
-		esc_unlock_var_all(esc_cache.easy_menu2);
-		esc_unlock_var_all(esc_cache.hard_menu);
-		esc_unlock_var_all(esc_cache.ed_flags);
-		esc_unlock_var_all(esc_cache.hissatsu_flags);
-		esc_unlock_var_all(esc_cache.cg_seen);
-		for (int i = 0; i < esc_cache.recall_count; i++)
-			esc_unlock_var_all(esc_cache.recall_vars[i]);
-	} else if (strncmp(spec, "esc_atk_add=", 12) == 0 && esc_valid_var(esc_cache.atk)) {
-		sysVar[esc_cache.atk] = clamp_u16(sysVar[esc_cache.atk] + atoi(spec + 12));
-	} else if (strncmp(spec, "esc_def_add=", 12) == 0 && esc_valid_var(esc_cache.def)) {
-		sysVar[esc_cache.def] = clamp_u16(sysVar[esc_cache.def] + atoi(spec + 12));
-	} else if (strncmp(spec, "esc_rsp_add=", 12) == 0 && esc_valid_var(esc_cache.rsp)) {
-		sysVar[esc_cache.rsp] = clamp_u16(sysVar[esc_cache.rsp] + atoi(spec + 12));
-	} else if (strncmp(spec, "esc_d2_set=", 11) == 0 && esc_valid_var(esc_cache.d2)) {
-		sysVar[esc_cache.d2] = clamp_u16(atoi(spec + 11));
+		return;
+	}
+
+	if (esc_cache.game == S35_GAME_RANCE5D) {
+		if (strcmp(spec, "r5d_heal") == 0) {
+			s35_copy_array_or_scalar(esc_cache.r5d_cur_hp, esc_cache.r5d_hp0);
+		} else if (strcmp(spec, "r5d_stats_boost") == 0) {
+			s35_set_var_min_all(esc_cache.r5d_hp0, 9999, true);
+			s35_copy_array_or_scalar(esc_cache.r5d_cur_hp, esc_cache.r5d_hp0);
+			s35_set_var_min_all(esc_cache.r5d_atk0, 999, true);
+			s35_set_var_min_all(esc_cache.r5d_def0, 999, true);
+			s35_set_var_min_all(esc_cache.r5d_mag0, 999, true);
+			s35_set_var_min_all(esc_cache.r5d_res0, 999, true);
+			s35_set_var_min_all(esc_cache.r5d_eva0, 99, true);
+		} else if (strcmp(spec, "r5d_gold_exp") == 0) {
+			if (esc_valid_var(esc_cache.r5d_goldbar)) sysVar[esc_cache.r5d_goldbar] = 99;
+			if (esc_valid_var(esc_cache.r5d_exporb)) sysVar[esc_cache.r5d_exporb] = 99;
+		} else if (strcmp(spec, "r5d_love_max") == 0) {
+			for (int i = 0; i < 4; i++)
+				if (esc_valid_var(esc_cache.r5d_love_vars[i]))
+					sysVar[esc_cache.r5d_love_vars[i]] = 100;
+		} else if (strcmp(spec, "r5d_durability") == 0) {
+			s35_set_var_min_all(esc_cache.r5d_durability, 99, true);
+		}
+		return;
+	}
+
+	if (esc_cache.game == S35_GAME_TSUMAMIGUI) {
+		if (strcmp(spec, "tm1_stamina_max") == 0 && esc_valid_var(esc_cache.tm1_stamina)) {
+			sysVar[esc_cache.tm1_stamina] = 999;
+		} else if (strcmp(spec, "tm1_tech_max") == 0) {
+			if (esc_valid_var(esc_cache.tm1_aibu)) sysVar[esc_cache.tm1_aibu] = 10;
+			if (esc_valid_var(esc_cache.tm1_paizuri)) sysVar[esc_cache.tm1_paizuri] = 10;
+			if (esc_valid_var(esc_cache.tm1_fera)) sysVar[esc_cache.tm1_fera] = 10;
+			if (esc_valid_var(esc_cache.tm1_honban)) sysVar[esc_cache.tm1_honban] = 10;
+			if (esc_valid_var(esc_cache.tm1_lv)) sysVar[esc_cache.tm1_lv] = 10;
+		} else if (strcmp(spec, "tm1_heroine_max") == 0) {
+			if (esc_valid_var(esc_cache.tm1_kanae)) sysVar[esc_cache.tm1_kanae] = 10;
+			if (esc_valid_var(esc_cache.tm1_chiho)) sysVar[esc_cache.tm1_chiho] = 10;
+		} else if (strncmp(spec, "tm1_exp_add=", 12) == 0 && esc_valid_var(esc_cache.tm1_exp)) {
+			sysVar[esc_cache.tm1_exp] = clamp_u16(sysVar[esc_cache.tm1_exp] + atoi(spec + 12));
+		}
+		return;
+	}
+
+	if (esc_cache.game == S35_GAME_KICHIKUOU) {
+		if (strncmp(spec, "kr_gold_add=", 12) == 0) {
+			sysVar[522] = clamp_u16(sysVar[522] + atoi(spec + 12));
+		} else if (strcmp(spec, "kr_gold_max") == 0) {
+			sysVar[522] = 60000;
+		} else if (strcmp(spec, "kr_reset_actions") == 0) {
+			s35_copy_array_or_scalar(90, 91);
+		}
+		return;
+	}
+
+	if (esc_cache.game == S35_GAME_KAERUNYO) {
+		if (strncmp(spec, "kn_gold_add=", 12) == 0) {
+			sysVar[171] = clamp_u16(sysVar[171] + atoi(spec + 12));
+		} else if (strcmp(spec, "kn_gold_max") == 0) {
+			sysVar[171] = 60000;
+		} else if (strcmp(spec, "kn_items_max") == 0) {
+			struct VarRef r0, r17;
+			if (v_ref_indexed(399, 0, &r0) && r0.page > 0 && varPage[r0.page].value)
+				varPage[r0.page].value[r0.index] = 99;
+			if (v_ref_indexed(399, 17, &r17) && r17.page > 0 && varPage[r17.page].value)
+				varPage[r17.page].value[r17.index] = 99;
+		}
+		return;
 	}
 }
 
@@ -218,27 +491,79 @@ static void apply_escalayer_locks_sdl_thread(int locks) {
 	if (!locks)
 		return;
 	refresh_escalayer_cache();
-	if (!esc_cache.is_escalayer)
+	if (esc_cache.game == S35_GAME_NONE)
 		return;
-	if ((locks & ESC_LOCK_HP_FULL) && esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max)) {
-		uint16_t m = sysVar[esc_cache.hp_max];
-		if (m > 0 && sysVar[esc_cache.hp] < m)
-			sysVar[esc_cache.hp] = m;
-	}
-	if ((locks & ESC_LOCK_LIBIDO_MAX) && esc_valid_var(esc_cache.libido) && esc_valid_var(esc_cache.libido_max)) {
-		uint16_t m = sysVar[esc_cache.libido_max];
-		if (m > 0 && sysVar[esc_cache.libido] < m)
-			sysVar[esc_cache.libido] = m;
-	}
-	if ((locks & ESC_LOCK_ONEHIT) && esc_valid_var(esc_cache.enemy_hp)) {
-		if (sysVar[esc_cache.enemy_hp] > 1)
-			sysVar[esc_cache.enemy_hp] = 1;
-	}
-	if ((locks & ESC_LOCK_LOVE_MAX) && esc_valid_var(esc_cache.love)) {
-		if (sysVar[esc_cache.love] < 100)
-			sysVar[esc_cache.love] = 100;
+
+	if (esc_cache.game == S35_GAME_ESCALAYER) {
+		if ((locks & ESC_LOCK_HP_FULL) && esc_valid_var(esc_cache.hp) && esc_valid_var(esc_cache.hp_max)) {
+			uint16_t m = sysVar[esc_cache.hp_max];
+			if (m > 0 && sysVar[esc_cache.hp] < m)
+				sysVar[esc_cache.hp] = m;
+		}
+		if ((locks & ESC_LOCK_LIBIDO_MAX) && esc_valid_var(esc_cache.libido) && esc_valid_var(esc_cache.libido_max)) {
+			uint16_t m = sysVar[esc_cache.libido_max];
+			if (m > 0 && sysVar[esc_cache.libido] < m)
+				sysVar[esc_cache.libido] = m;
+		}
+		if ((locks & ESC_LOCK_ONEHIT) && esc_valid_var(esc_cache.enemy_hp)) {
+			if (sysVar[esc_cache.enemy_hp] > 1)
+				sysVar[esc_cache.enemy_hp] = 1;
+		}
+		if ((locks & ESC_LOCK_LOVE_MAX) && esc_valid_var(esc_cache.love)) {
+			if (sysVar[esc_cache.love] < 100)
+				sysVar[esc_cache.love] = 100;
+		}
+	} else if (esc_cache.game == S35_GAME_DAIAKUJI) {
+		if ((locks & (1 << 0)) && esc_valid_var(esc_cache.da_gold) && sysVar[esc_cache.da_gold] < 50000)
+			sysVar[esc_cache.da_gold] = 50000;
+		if ((locks & (1 << 1)) && esc_valid_var(esc_cache.da_debt))
+			sysVar[esc_cache.da_debt] = 0;
+		if (locks & (1 << 2))
+			s35_set_var_min_all(esc_cache.da_hp, 999, true);
+		if (locks & (1 << 3)) {
+			s35_set_var_min_all(esc_cache.da_love, 100, false);
+			if (esc_valid_var(esc_cache.da_popular) && sysVar[esc_cache.da_popular] < 100)
+				sysVar[esc_cache.da_popular] = 100;
+		}
+	} else if (esc_cache.game == S35_GAME_RANCE5D) {
+		if (locks & (1 << 0))
+			s35_copy_array_or_scalar(esc_cache.r5d_cur_hp, esc_cache.r5d_hp0);
+		if ((locks & (1 << 1)) && esc_valid_var(esc_cache.r5d_actions) && sysVar[esc_cache.r5d_actions] < 99)
+			sysVar[esc_cache.r5d_actions] = 99;
+		if (locks & (1 << 2))
+			s35_set_var_min_all(esc_cache.r5d_durability, 99, true);
+		if (locks & (1 << 3)) {
+			if (esc_valid_var(esc_cache.r5d_goldbar) && sysVar[esc_cache.r5d_goldbar] < 99)
+				sysVar[esc_cache.r5d_goldbar] = 99;
+			if (esc_valid_var(esc_cache.r5d_exporb) && sysVar[esc_cache.r5d_exporb] < 99)
+				sysVar[esc_cache.r5d_exporb] = 99;
+		}
+	} else if (esc_cache.game == S35_GAME_TSUMAMIGUI) {
+		if ((locks & (1 << 0)) && esc_valid_var(esc_cache.tm1_stamina) && sysVar[esc_cache.tm1_stamina] < 999)
+			sysVar[esc_cache.tm1_stamina] = 999;
+		if (locks & (1 << 1)) {
+			if (esc_valid_var(esc_cache.tm1_aibu) && sysVar[esc_cache.tm1_aibu] < 10) sysVar[esc_cache.tm1_aibu] = 10;
+			if (esc_valid_var(esc_cache.tm1_paizuri) && sysVar[esc_cache.tm1_paizuri] < 10) sysVar[esc_cache.tm1_paizuri] = 10;
+			if (esc_valid_var(esc_cache.tm1_fera) && sysVar[esc_cache.tm1_fera] < 10) sysVar[esc_cache.tm1_fera] = 10;
+			if (esc_valid_var(esc_cache.tm1_honban) && sysVar[esc_cache.tm1_honban] < 10) sysVar[esc_cache.tm1_honban] = 10;
+		}
+	} else if (esc_cache.game == S35_GAME_KICHIKUOU) {
+		if ((locks & (1 << 0)) && sysVar[522] < 5000)
+			sysVar[522] = 5000;
+		if (locks & (1 << 1))
+			s35_copy_array_or_scalar(90, 91);
+	} else if (esc_cache.game == S35_GAME_KAERUNYO) {
+		if ((locks & (1 << 0)) && sysVar[171] < 50000)
+			sysVar[171] = 50000;
+		if (locks & (1 << 1)) {
+			struct VarRef r0;
+			if (v_ref_indexed(399, 0, &r0) && r0.page > 0 && varPage[r0.page].value &&
+			    varPage[r0.page].value[r0.index] < 99)
+				varPage[r0.page].value[r0.index] = 99;
+		}
 	}
 }
+
 static void update_live_state_sdl_thread(int locks) {
 	uint32_t now = SDL_GetTicks();
 	if (published && (uint32_t)(now - last_publish_tick) < 250)
@@ -246,31 +571,62 @@ static void update_live_state_sdl_thread(int locks) {
 	published = true;
 	last_publish_tick = now;
 	refresh_escalayer_cache();
-	if (!esc_cache.is_escalayer) {
+	if (esc_cache.game == S35_GAME_NONE) {
 		publish_live_state_json(strdup("{\"game\":\"system3\",\"ready\":true}"));
 		return;
 	}
 
 	cJSON *root = cJSON_CreateObject();
-	cJSON_AddStringToObject(root, "game", "escalayer");
+	cJSON_AddStringToObject(root, "game", game_id_str(esc_cache.game));
 	cJSON_AddBoolToObject(root, "ready", true);
-	if (esc_valid_var(esc_cache.hp)) cJSON_AddNumberToObject(root, "hp", sysVar[esc_cache.hp]);
-	if (esc_valid_var(esc_cache.hp_max)) cJSON_AddNumberToObject(root, "hpMax", sysVar[esc_cache.hp_max]);
-	if (esc_valid_var(esc_cache.atk)) cJSON_AddNumberToObject(root, "atk", sysVar[esc_cache.atk]);
-	if (esc_valid_var(esc_cache.def)) cJSON_AddNumberToObject(root, "def", sysVar[esc_cache.def]);
-	if (esc_valid_var(esc_cache.rsp)) cJSON_AddNumberToObject(root, "rsp", sysVar[esc_cache.rsp]);
-	if (esc_valid_var(esc_cache.libido)) cJSON_AddNumberToObject(root, "libido", sysVar[esc_cache.libido]);
-	if (esc_valid_var(esc_cache.libido_max)) cJSON_AddNumberToObject(root, "libidoMax", sysVar[esc_cache.libido_max]);
-	if (esc_valid_var(esc_cache.d2)) cJSON_AddNumberToObject(root, "d2", sysVar[esc_cache.d2]);
-	if (esc_valid_var(esc_cache.love)) cJSON_AddNumberToObject(root, "love", sysVar[esc_cache.love]);
-	if (esc_valid_var(esc_cache.training)) cJSON_AddNumberToObject(root, "training", sysVar[esc_cache.training]);
-	if (esc_valid_var(esc_cache.peace)) cJSON_AddNumberToObject(root, "peace", sysVar[esc_cache.peace]);
-	if (esc_valid_var(esc_cache.enemy_hp)) cJSON_AddNumberToObject(root, "enemyHp", sysVar[esc_cache.enemy_hp]);
-	if (esc_valid_var(esc_cache.enemy_hp_max)) cJSON_AddNumberToObject(root, "enemyHpMax", sysVar[esc_cache.enemy_hp_max]);
-	if (esc_valid_var(esc_cache.clear_count)) cJSON_AddNumberToObject(root, "clearCount", sysVar[esc_cache.clear_count]);
-	if (esc_valid_var(esc_cache.ed_flags)) cJSON_AddNumberToObject(root, "edFlags", esc_count_unlocked(esc_cache.ed_flags));
-	if (esc_valid_var(esc_cache.cg_seen)) cJSON_AddNumberToObject(root, "cgSeen", esc_count_unlocked(esc_cache.cg_seen));
+	cJSON_AddBoolToObject(root, "inGame", true);
 	cJSON_AddNumberToObject(root, "locks", locks);
+
+	if (esc_cache.game == S35_GAME_ESCALAYER) {
+		if (esc_valid_var(esc_cache.hp)) cJSON_AddNumberToObject(root, "hp", sysVar[esc_cache.hp]);
+		if (esc_valid_var(esc_cache.hp_max)) cJSON_AddNumberToObject(root, "hpMax", sysVar[esc_cache.hp_max]);
+		if (esc_valid_var(esc_cache.atk)) cJSON_AddNumberToObject(root, "atk", sysVar[esc_cache.atk]);
+		if (esc_valid_var(esc_cache.def)) cJSON_AddNumberToObject(root, "def", sysVar[esc_cache.def]);
+		if (esc_valid_var(esc_cache.rsp)) cJSON_AddNumberToObject(root, "rsp", sysVar[esc_cache.rsp]);
+		if (esc_valid_var(esc_cache.libido)) cJSON_AddNumberToObject(root, "libido", sysVar[esc_cache.libido]);
+		if (esc_valid_var(esc_cache.libido_max)) cJSON_AddNumberToObject(root, "libidoMax", sysVar[esc_cache.libido_max]);
+		if (esc_valid_var(esc_cache.d2)) cJSON_AddNumberToObject(root, "d2", sysVar[esc_cache.d2]);
+		if (esc_valid_var(esc_cache.love)) cJSON_AddNumberToObject(root, "love", sysVar[esc_cache.love]);
+		if (esc_valid_var(esc_cache.training)) cJSON_AddNumberToObject(root, "training", sysVar[esc_cache.training]);
+		if (esc_valid_var(esc_cache.peace)) cJSON_AddNumberToObject(root, "peace", sysVar[esc_cache.peace]);
+		if (esc_valid_var(esc_cache.enemy_hp)) cJSON_AddNumberToObject(root, "enemyHp", sysVar[esc_cache.enemy_hp]);
+		if (esc_valid_var(esc_cache.enemy_hp_max)) cJSON_AddNumberToObject(root, "enemyHpMax", sysVar[esc_cache.enemy_hp_max]);
+		if (esc_valid_var(esc_cache.clear_count)) cJSON_AddNumberToObject(root, "clearCount", sysVar[esc_cache.clear_count]);
+		if (esc_valid_var(esc_cache.ed_flags)) cJSON_AddNumberToObject(root, "edFlags", esc_count_unlocked(esc_cache.ed_flags));
+		if (esc_valid_var(esc_cache.cg_seen)) cJSON_AddNumberToObject(root, "cgSeen", esc_count_unlocked(esc_cache.cg_seen));
+	} else if (esc_cache.game == S35_GAME_DAIAKUJI) {
+		if (esc_valid_var(esc_cache.da_gold)) cJSON_AddNumberToObject(root, "gold", sysVar[esc_cache.da_gold]);
+		if (esc_valid_var(esc_cache.da_debt)) cJSON_AddNumberToObject(root, "debt", sysVar[esc_cache.da_debt]);
+		if (esc_valid_var(esc_cache.da_subsidy)) cJSON_AddNumberToObject(root, "subsidy", sysVar[esc_cache.da_subsidy]);
+		if (esc_valid_var(esc_cache.da_popular)) cJSON_AddNumberToObject(root, "popular", sysVar[esc_cache.da_popular]);
+		if (esc_valid_var(esc_cache.da_hp)) cJSON_AddNumberToObject(root, "hp", s35_read_first(esc_cache.da_hp));
+	} else if (esc_cache.game == S35_GAME_RANCE5D) {
+		if (esc_valid_var(esc_cache.r5d_cur_hp)) cJSON_AddNumberToObject(root, "hp", s35_read_first(esc_cache.r5d_cur_hp));
+		if (esc_valid_var(esc_cache.r5d_hp0)) cJSON_AddNumberToObject(root, "hpMax", s35_read_first(esc_cache.r5d_hp0));
+		if (esc_valid_var(esc_cache.r5d_actions)) cJSON_AddNumberToObject(root, "ap", sysVar[esc_cache.r5d_actions]);
+		if (esc_valid_var(esc_cache.r5d_goldbar)) cJSON_AddNumberToObject(root, "gold", sysVar[esc_cache.r5d_goldbar]);
+		if (esc_valid_var(esc_cache.r5d_exporb)) cJSON_AddNumberToObject(root, "expOrb", sysVar[esc_cache.r5d_exporb]);
+	} else if (esc_cache.game == S35_GAME_TSUMAMIGUI) {
+		if (esc_valid_var(esc_cache.tm1_stamina)) cJSON_AddNumberToObject(root, "stamina", sysVar[esc_cache.tm1_stamina]);
+		if (esc_valid_var(esc_cache.tm1_lv)) cJSON_AddNumberToObject(root, "lv", sysVar[esc_cache.tm1_lv]);
+		if (esc_valid_var(esc_cache.tm1_exp)) cJSON_AddNumberToObject(root, "exp", sysVar[esc_cache.tm1_exp]);
+		if (esc_valid_var(esc_cache.tm1_kanae)) cJSON_AddNumberToObject(root, "kanaeLv", sysVar[esc_cache.tm1_kanae]);
+		if (esc_valid_var(esc_cache.tm1_chiho)) cJSON_AddNumberToObject(root, "chihoLv", sysVar[esc_cache.tm1_chiho]);
+	} else if (esc_cache.game == S35_GAME_KICHIKUOU) {
+		cJSON_AddNumberToObject(root, "gold", sysVar[522]);
+		cJSON_AddNumberToObject(root, "month", sysVar[546]);
+		cJSON_AddNumberToObject(root, "week", sysVar[547]);
+	} else if (esc_cache.game == S35_GAME_KAERUNYO) {
+		cJSON_AddNumberToObject(root, "gold", sysVar[171]);
+		struct VarRef r0;
+		if (v_ref_indexed(399, 0, &r0) && r0.page > 0 && varPage[r0.page].value)
+			cJSON_AddNumberToObject(root, "ropes", varPage[r0.page].value[r0.index]);
+	}
 
 	char *out = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
@@ -294,6 +650,8 @@ int xsystem35_modifier_get_locks(void)
 
 void xsystem35_modifier_apply_action(const char *action)
 {
+	if (!action)
+		return;
 	pthread_mutex_lock(&action_lock);
 	if (pending_action_count < MAX_PENDING_ACTIONS) {
 		snprintf(pending_actions[pending_action_count], sizeof(pending_actions[0]), "%s", action);
@@ -305,7 +663,13 @@ void xsystem35_modifier_apply_action(const char *action)
 bool escalayer_modifier_available(void)
 {
 	refresh_escalayer_cache();
-	return esc_cache.is_escalayer;
+	return esc_cache.game != S35_GAME_NONE;
+}
+
+const char *xsystem35_modifier_current_game(void)
+{
+	refresh_escalayer_cache();
+	return game_id_str(esc_cache.game);
 }
 
 void escalayer_modifier_tick(void)
@@ -326,7 +690,7 @@ void escalayer_modifier_tick(void)
 
 void escalayer_modifier_reset(bool active)
 {
-	memset(&esc_cache, 0, sizeof(esc_cache));
+	reset_cache_indices();
 	published = false;
 	pthread_mutex_lock(&action_lock);
 	pending_action_count = 0;

@@ -21,8 +21,13 @@ struct ModifierView: View {
         _live = State(initialValue: snapshot.map(ModifierBridge.parse) ?? [:])
     }
 
+    private var system35Panel: System35ModifierPanel? {
+        guard system35, let id = live["game"] as? String else { return nil }
+        return ModifierGamePanel.system35Panels.first { $0.game.id == id }
+    }
+
     private var game: ModifierGame? {
-        system35 && live["game"] as? String == "escalayer" ? ModifierGamePanel.escalayer : system4Game
+        system35 ? system35Panel?.game : system4Game
     }
 
     var body: some View {
@@ -41,13 +46,13 @@ struct ModifierView: View {
                     if game.supportsCheatCodes { cheatCodeSection }
                     if game.id == "rance10" { rance10Panels }
                     if let panel = ModifierGamePanel.all.first(where: { $0.game.id == game.id }) { gamePanels(panel) }
-                    if game.id == "escalayer" { escalayerPanel }
+                    if let s35 = system35Panel { system35Section(s35) }
                     if !game.locks.isEmpty { lockSection(game) }
                     if !game.cheats.isEmpty { cheatSection(game) }
                 } else {
                     Section { Text("当前游戏暂不支持修改器。").foregroundColor(.secondary) }
                 }
-                if game?.id == "dohnadohna" || game?.id == "evenicle" { liveSection }
+                if ["dohnadohna", "evenicle", "eveniclerance", "eveniclegaiden"].contains(game?.id ?? "") { liveSection }
             }
             .modifier(HubListStyle())
             .navigationTitle(game.map { localized($0.name) } ?? localized("修改器"))
@@ -61,6 +66,8 @@ struct ModifierView: View {
                 mask = xsystem35_modifier_get_locks()
             } else if let lockGame = game?.lockGame {
                 mask = ModifierBridge.lockMask(lockGame)
+            } else if let game {
+                mask = ModifierBridge.lockMask(gameID: game.id)
             }
             if system35 || game != nil {
                 await ModifierBridge.observeLiveState(system35: system35) { live = $0 }
@@ -167,8 +174,10 @@ struct ModifierView: View {
                     .navigationBarTitleDisplayMode(.inline)
                 }.disabled(live["inGame"] as? Bool != true)
             }
-            editorLink(panel.resourceTitle, fields: panel.resources, summary: resourceSummary(panel.game.id),
-                       quickAction: panel.resourceAction)
+            if !panel.resources.isEmpty || panel.resourceAction != nil {
+                editorLink(panel.resourceTitle, fields: panel.resources, summary: resourceSummary(panel.game.id),
+                           quickAction: panel.resourceAction)
+            }
             if let characters = panel.characters {
                 NavigationLink(localized(characters.title)) {
                     characterPanel(characters)
@@ -213,21 +222,19 @@ struct ModifierView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var escalayerPanel: some View {
+    private func system35Section(_ panel: System35ModifierPanel) -> some View {
         Section {
             NavigationLink("属性与战斗") {
                 Form {
                     Section {
-                        let fields = [("hp", "当前 HP"), ("hpMax", "最大 HP"), ("enemyHp", "敌方 HP"), ("atk", "攻击"),
-                                      ("def", "防御"), ("rsp", "反应"), ("d2", "D2 污染"), ("peace", "和平度"), ("love", "爱情度")]
-                        ForEach(fields, id: \.0) { key, label in
+                        ForEach(panel.fields, id: \.0) { key, label in
                             if let value = ModifierBridge.integer(live[key]) {
                                 HStack { Text(localized(label)); Spacer(); Text(String(value)).monospacedDigit() }
                             }
                         }
                     }
                     Section {
-                        ForEach(ModifierGamePanel.escalayerActions, id: \.1) { label, action in
+                        ForEach(panel.actions, id: \.1) { label, action in
                             Button(localized(label)) { xsystem35_modifier_apply_action(action) }
                         }
                     }
@@ -311,6 +318,8 @@ struct ModifierView: View {
             xsystem35_modifier_set_locks(value)
         } else if let lockGame = game?.lockGame {
             ModifierBridge.setLockMask(lockGame, value)
+        } else if let game {
+            ModifierBridge.setLockMask(gameID: game.id, value)
         }
         mask = value
     }

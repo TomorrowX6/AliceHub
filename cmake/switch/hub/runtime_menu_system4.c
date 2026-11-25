@@ -13,37 +13,92 @@ enum { STREAMER_BIT = 11 };
 
 typedef struct {
     const char *game;
-    enum modifier_lock_game id;
     const char *labels[12];
     int inverted;
 } LiveLocks;
 
 // In bit order from the engine's modifier lock masks.
 static const LiveLocks supported_locks[] = {
-    {"rance10", MODIFIER_LOCK_RANCE10,
+    {"rance10",
      {"Lock party HP", "Infinite AP", "Lock combo", "Lock battle round to 1", "One-hit defeats",
       "Zero enemy attack", "Boost leader critical rate", "Infinite skill uses", "Infinite Zippo",
       "Max resources", "Guaranteed treasure", "Streamer mode"}, 1 << STREAMER_BIT},
-    {"dohnadohna", MODIFIER_LOCK_DOHNADOHNA,
+    {"dohnadohna",
      {"Lock party HP", "Lock party MP", "Lock party VP", "One-hit defeats", "Infinite money",
       "Infinite TP", "Best worker condition", "Freeze work timer"}, 0},
-    {"evenicle", MODIFIER_LOCK_EVENICLE,
+    {"evenicle",
      {"No encounters", "Lock party HP", "Infinite SP", "Infinite BP", "One-hit defeats",
       "Infinite money"}, 0},
-    {"sengokurance", MODIFIER_LOCK_SENGOKURANCE,
+    {"eveniclerance",
+     {"No encounters", "Lock party HP", "Infinite SP", "Infinite BP", "One-hit defeats",
+      "Infinite money"}, 0},
+    {"eveniclegaiden",
+     {"No encounters", "Lock party HP", "Infinite SP", "Infinite BP", "One-hit defeats",
+      "Infinite money"}, 0},
+    {"evenicle2",
+     {"No encounters", "Lock party HP", "Infinite SP", "Infinite BP", "One-hit defeats",
+      "Infinite money"}, 0},
+    {"evenicle2rance",
+     {"No encounters", "Lock party HP", "Infinite SP", "Infinite BP", "One-hit defeats",
+      "Infinite money"}, 0},
+    {"sengokurance",
      {"Infinite gold", "Infinite AP", "Max satisfaction", "Lock ally HP", "One-hit defeats",
       "Unlimited actions"}, 0},
-    {"rance01", MODIFIER_LOCK_RANCE01,
+    {"rance01",
      {"Lock HP", "One-hit defeats", "Infinite gold", "Guaranteed drops", "Block debuffs"}, 0},
-    {"rance02", MODIFIER_LOCK_RANCE02,
+    {"rance02",
      {"Lock ally HP and SP", "One-hit defeats", "Infinite gold", "Infinite items"}, 0},
-    {"rance03", MODIFIER_LOCK_RANCE03,
+    {"rance03",
      {"Lock HP", "No cooldowns", "Infinite items", "Guaranteed drops", "One-hit defeats"}, 0},
-    {"rance08", MODIFIER_LOCK_RANCE08,
+    {"rance06",
+     {"Infinite gold", "Lock party HP & AP", "One-hit defeats", "Infinite items", "Max luck"}, 0},
+    {"rance08",
      {"Lock ally HP", "One-hit defeats", "Infinite skills", "Max Magnum", "Infinite gold"}, 0},
-    {"rance09", MODIFIER_LOCK_RANCE09,
+    {"rance09",
      {"Ally invulnerability", "One-hit defeats", "Infinite actions", "Guaranteed drops",
       "Infinite resources"}, 0},
+    {"daibanchou",
+     {"Infinite gold", "Lock ally HP & vitality", "Max loyalty", "Freeze turn count"}, 0},
+    {"daiteikoku",
+     {"Infinite resources", "Infinite technology", "Lock admiral HP", "Unlimited moves",
+      "Max star peace"}, 0},
+    {"galzoo",
+     {"Infinite gold", "One-hit defeats", "100% drop rate", "No encounters", "Infinite items"}, 0},
+    {"toushin3",
+     {"Infinite gold", "Lock HP", "One-hit defeats", "No encounters", "Infinite items"}, 0},
+    {"bladebriders",
+     {"Infinite money", "Lock ally HP", "One-hit defeats", "Infinite AP", "Growth bonus"}, 0},
+    {"yorugakuru",
+     {"Infinite money", "Lock party HP", "Block debuffs", "Casual boosts"}, 0},
+    {"waidonyo",
+     {"Lock party HP", "Infinite gold", "One-hit defeats"}, 0},
+    {"sanbiki",
+     {"Infinite gold", "Lock party HP", "Max luck", "Infinite items"}, 0},
+    {"dorapeko",
+     {"Lock party HP", "Max affection", "Unlimited actions"}, 0},
+    {"haruurare",
+     {"Infinite money", "Lock girl HP", "Max credit"}, 0},
+    {"oyakorankan",
+     {"Lock Love Guard", "Max win stars", "Zero fertilization", "Zero enemy power"}, 0},
+    {"tsumashibori",
+     {"Infinite money", "Lock HP & stamina", "Zero misfortune & jealousy",
+      "Weaken rivals", "Infinite items"}, 0},
+    {"okusamajun",
+     {"Infinite money", "Lock HP & MP"}, 0},
+    {"okusamantr",
+     {"Infinite money", "Lock HP & MP"}, 0},
+    {"escalayerreboot",
+     {"Lock energy & libido", "Max peace & love", "Always boost", "Max customize stats"}, 0},
+    {"ixseal",
+     {"Lock HP & energy", "Zero pollution", "Max affection", "Infinite magic plates"}, 0},
+    {"pascha3",
+     {"Infinite money", "Infinite AP", "Lock unit HP & SP", "Max affection", "Infinite items"}, 0},
+    {"haharanman",
+     {"Infinite AP", "Lock mental & refresh", "No spend & EXP boost", "Disable restrictions"}, 0},
+    {"tsumamigui3",
+     {"Infinite money", "Lock energy", "Zero rival semen", "Infinite items"}, 0},
+    {"maman",
+     {"Infinite condoms", "Lock wild & humor", "Max fondness"}, 0},
 };
 
 static const int font_steps[] = {75, 90, 100, 110, 125, 150, 160};
@@ -135,10 +190,10 @@ static size_t options(void *context, bool modifiers, SwitchMenuRow *rows)
     const LiveLocks *locks = current_locks();
     if (!locks)
         return 0;
-    int mask = modifier_api_get_lock_mask(locks->id) ^ locks->inverted;
+    int mask = modifier_api_get_game_lock_mask(locks->game) ^ locks->inverted;
     size_t count = 0;
     for (size_t i = 0; i < SDL_arraysize(locks->labels) && locks->labels[i]; ++i) {
-        if (locks->id == MODIFIER_LOCK_RANCE10 && i == STREAMER_BIT && !modifier_api_has_streamer_mode())
+        if (!strcmp(locks->game, "rance10") && i == STREAMER_BIT && !modifier_api_has_streamer_mode())
             continue;
         rows[count] = (SwitchMenuRow){locks->labels[i], LOCK_BASE + (int)i, true, {0}};
         SDL_strlcpy(rows[count].value, (mask & (1 << i)) ? "On" : "Off", sizeof(rows[count].value));
@@ -166,8 +221,8 @@ static void activate(void *context, int action, int direction, char *status)
     } else {
         const LiveLocks *locks = current_locks();
         if (locks) {
-            int mask = modifier_api_get_lock_mask(locks->id) ^ (1 << (action - LOCK_BASE));
-            modifier_api_set_lock_mask(locks->id, mask);
+            int mask = modifier_api_get_game_lock_mask(locks->game) ^ (1 << (action - LOCK_BASE));
+            modifier_api_set_game_lock_mask(locks->game, mask);
         }
     }
 }

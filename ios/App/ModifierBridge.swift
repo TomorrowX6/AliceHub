@@ -116,24 +116,33 @@ enum ModifierBridge {
             ModifierCheat(title: "全体春销人材精神避孕药回满并治愈崩溃怀孕", action: ["ddCheatWorkersHeal": true], done: "全体人材精神避孕药已回满并治愈异常状态"),
             ModifierCheat(title: "全体春销人材一键 SS 评级·UR 稀有度·四维拉满", action: ["ddCheatWorkersMaxStats": true], done: "全体人材已设为 SS 评级·UR 稀有度·四维拉满"),
         ], supportsCheatCodes: false),
-        ModifierGame(id: "evenicle", name: "イブニクル", lockGame: MODIFIER_LOCK_EVENICLE, locks: [
-            ModifierLock(bit: 1 << 0, title: "禁止随机遇敌 · 安全步数锁定满值"),
-            ModifierLock(bit: 1 << 1, title: "我方全员满 HP 锁定"),
-            ModifierLock(bit: 1 << 2, title: "无限技能点 · SkillP 至少 99"),
-            ModifierLock(bit: 1 << 3, title: "无限 BP · 战斗 BP 满 5 格"),
-            ModifierLock(bit: 1 << 4, title: "战斗敌方全员 1 血秒杀"),
-            ModifierLock(bit: 1 << 5, title: "无限所持金 · 保底 9999999"),
-        ], cheats: [
-            ModifierCheat(title: "所持金增加 10 万", action: ["evCheatAddMoney": 100_000], done: "所持金已增加 10 万"),
-            ModifierCheat(title: "所持金增加 100 万", action: ["evCheatAddMoney": 1_000_000], done: "所持金已增加 100 万"),
-            ModifierCheat(title: "所持金拉满 99999999", action: ["evCheatMaxMoney": true], done: "所持金已拉满 99999999"),
-            ModifierCheat(title: "出战角色全员满 HP 与满 5 BP", action: ["evCheatPartyFullHeal": true], done: "出战角色已回满 HP 与 BP"),
-            ModifierCheat(title: "出战角色技能点全部补满 999", action: ["evCheatPartySkillP999": true], done: "出战角色技能点已设为 999"),
-            ModifierCheat(title: "出战角色一键暴走强化 9999 HP 与 999 四维", action: ["evCheatPartyBoost": true], done: "出战角色一键强化完成"),
-            ModifierCheat(title: "立即触发下次移动遇敌", action: ["evCheatTriggerEncounter": true], done: "下次大地图移动将立即遇敌"),
-            ModifierCheat(title: "清空当前遇敌危险度至安全状态", action: ["evCheatClearEncounter": true], done: "遇敌危险度已重置为安全状态"),
-        ], supportsCheatCodes: false),
+        ModifierGame(id: "evenicle", name: "イブニクル", lockGame: MODIFIER_LOCK_EVENICLE, locks: evenicleLocks,
+                     cheats: evenicleCheats, supportsCheatCodes: false),
+        ModifierGame(id: "eveniclerance", name: "イブニクル ランス", lockGame: MODIFIER_LOCK_EVENICLE, locks: evenicleLocks,
+                     cheats: evenicleCheats, supportsCheatCodes: false),
+        ModifierGame(id: "eveniclegaiden", name: "イブニクル 外伝", lockGame: MODIFIER_LOCK_EVENICLE, locks: evenicleLocks,
+                     cheats: evenicleCheats, supportsCheatCodes: false),
     ] + ModifierGamePanel.all.map(\.game)
+
+    private static let evenicleLocks: [ModifierLock] = [
+        ModifierLock(bit: 1 << 0, title: "禁止随机遇敌 · 安全步数锁定满值"),
+        ModifierLock(bit: 1 << 1, title: "我方全员满 HP 锁定"),
+        ModifierLock(bit: 1 << 2, title: "无限技能点 · SkillP 至少 99"),
+        ModifierLock(bit: 1 << 3, title: "无限 BP · 战斗 BP 满 5 格"),
+        ModifierLock(bit: 1 << 4, title: "战斗敌方全员 1 血秒杀"),
+        ModifierLock(bit: 1 << 5, title: "无限所持金 · 保底 9999999"),
+    ]
+
+    private static let evenicleCheats: [ModifierCheat] = [
+        ModifierCheat(title: "所持金增加 10 万", action: ["evCheatAddMoney": 100_000], done: "所持金已增加 10 万"),
+        ModifierCheat(title: "所持金增加 100 万", action: ["evCheatAddMoney": 1_000_000], done: "所持金已增加 100 万"),
+        ModifierCheat(title: "所持金拉满 99999999", action: ["evCheatMaxMoney": true], done: "所持金已拉满 99999999"),
+        ModifierCheat(title: "出战角色全员满 HP 与满 5 BP", action: ["evCheatPartyFullHeal": true], done: "出战角色已回满 HP 与 BP"),
+        ModifierCheat(title: "出战角色技能点全部补满 999", action: ["evCheatPartySkillP999": true], done: "出战角色技能点已设为 999"),
+        ModifierCheat(title: "出战角色一键暴走强化 9999 HP 与 999 四维", action: ["evCheatPartyBoost": true], done: "出战角色一键强化完成"),
+        ModifierCheat(title: "立即触发下次移动遇敌", action: ["evCheatTriggerEncounter": true], done: "下次大地图移动将立即遇敌"),
+        ModifierCheat(title: "清空当前遇敌危险度至安全状态", action: ["evCheatClearEncounter": true], done: "遇敌危险度已重置为安全状态"),
+    ]
 
     static var configURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -203,6 +212,14 @@ enum ModifierBridge {
 
     static func setLockMask(_ game: modifier_lock_game, _ mask: Int32) {
         modifier_api_set_lock_mask(game, mask)
+    }
+
+    static func lockMask(gameID: String) -> Int32 {
+        modifier_api_get_game_lock_mask(gameID)
+    }
+
+    static func setLockMask(gameID: String, _ mask: Int32) {
+        modifier_api_set_game_lock_mask(gameID, mask)
     }
 
     static func send(_ action: [String: Any]) {
