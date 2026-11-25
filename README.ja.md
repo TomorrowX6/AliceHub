@@ -28,7 +28,7 @@ Android と iOS のパッケージは [**最新リリース**](https://github.co
 | **iOS / iPadOS** | 15.0 以降、arm64 | `AliceHub-<バージョン>-ios-unsigned.ipa`（**未署名**、署名してサイドロード） |
 | **Nintendo Switch** | Homebrew Menu で NRO を起動できる環境（アプリケーションモードを推奨） | GitHub Actions の成果物 `AliceHub-switch`（ランチャーと3つのエンジン） |
 
-[GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `re-xsystem4-arm64-v8a` または `AliceHub-ios-unsigned` をダウンロードし、展開して APK / IPA を取得することもできます。成果物のダウンロードには GitHub へのログインが必要です。
+[GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `AliceHub-arm64-v8a` または `AliceHub-ios-unsigned` をダウンロードし、展開して APK / IPA を取得することもできます。成果物のダウンロードには GitHub へのログインが必要です。
 
 ### Android
 

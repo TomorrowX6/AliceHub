@@ -28,7 +28,7 @@ Get the Android or iOS package from the [**latest release**](https://github.com/
 | **iOS / iPadOS** | 15.0 or later, arm64 | `AliceHub-<version>-ios-unsigned.ipa`, **unsigned**; sign and sideload it |
 | **Nintendo Switch** | Homebrew Menu with NRO support; application mode recommended | `AliceHub-switch` GitHub Actions artifact (launcher and three engines) |
 
-You can also download `re-xsystem4-arm64-v8a` or `AliceHub-ios-unsigned` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run and unzip the artifact to get the APK or IPA. GitHub sign-in is required for artifacts.
+You can also download `AliceHub-arm64-v8a` or `AliceHub-ios-unsigned` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run and unzip the artifact to get the APK or IPA. GitHub sign-in is required for artifacts.
 
 ### Android
 
