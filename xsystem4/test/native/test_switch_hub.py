@@ -329,7 +329,7 @@ int main(void)
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(
                 ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
-                 str(hub / "model.c"), str(hub / "install_transaction.c"),
+                 str(hub / "model.c"), str(hub / "install_transaction.c"), str(hub / "fs_util.c"),
                  "-x", "c", "-", "-o", str(Path(tmp) / "test")],
                 input=r"""
 #include "install_transaction.h"

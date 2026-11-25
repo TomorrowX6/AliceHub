@@ -24,6 +24,8 @@ bool hub_install_stage_file(HubInstallTransaction *, const char *relative,
 bool hub_install_verify(HubInstallTransaction *, HubInstallVerify, void *context);
 /* Success consumes the transaction; on failure call rollback. */
 bool hub_install_commit(HubInstallTransaction *);
+/* Same as commit, but never replace a destination that already exists. */
+bool hub_install_commit_new(HubInstallTransaction *);
 /* Always consumes the transaction. If false, leave recovery to the next run. */
 bool hub_install_rollback(HubInstallTransaction *);
 

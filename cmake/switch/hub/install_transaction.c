@@ -1,4 +1,5 @@
 #include "install_transaction.h"
+#include "fs_util.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -16,8 +17,8 @@
 
 struct HubInstallTransaction {
     char target[HUB_PATH_SIZE], work[HUB_PATH_SIZE];
-    char stage[HUB_PATH_SIZE], backup[HUB_PATH_SIZE];
-    bool verified, backed_up, promoted;
+    char stage[HUB_PATH_SIZE], backup[HUB_PATH_SIZE], publishing[HUB_PATH_SIZE];
+    bool verified, backed_up, promoted, publishing_new;
 };
 
 static atomic_flag lock = ATOMIC_FLAG_INIT;
@@ -33,7 +34,8 @@ static bool paths(HubInstallTransaction *tx, const char *root, const HubGame *ga
     return hub_game_path(root, game, tx->target) &&
            join(engine, root, hub_engines[game->engine].id) &&
            join(installs, engine, INSTALL_DIR) && join(tx->work, installs, game->name) &&
-           join(tx->stage, tx->work, "stage") && join(tx->backup, tx->work, "backup");
+           join(tx->stage, tx->work, "stage") && join(tx->backup, tx->work, "backup") &&
+           join(tx->publishing, tx->work, "publishing");
 }
 
 static bool commit_device(void)
@@ -140,6 +142,12 @@ static bool recover_one(const HubInstallTransaction *tx)
         return false;
     if (!work)
         return true;
+    struct stat journal;
+    if (!stat_optional(tx->publishing, &journal))
+        return false;
+    if (journal.st_mode && (backup || !S_ISREG(journal.st_mode) ||
+        !directory(tx->target, &target) || (target && !tree(tx->target, true)) || !commit_device()))
+        return false;
     if (backup) {
         if (!directory(tx->target, &target))
             return false;
@@ -263,36 +271,65 @@ bool hub_install_verify(HubInstallTransaction *tx, HubInstallVerify verify, void
     return tx->verified;
 }
 
-bool hub_install_commit(HubInstallTransaction *tx)
+static bool commit(HubInstallTransaction *tx, bool replace)
 {
-    if (!tx->verified || tx->backed_up || tx->promoted) {
+    if (!tx->verified || tx->backed_up || tx->promoted || tx->publishing_new) {
         errno = EINVAL;
         return false;
     }
     bool exists;
     if (!directory(tx->target, &exists) || !commit_device())
         return false;
+    if (exists && !replace) {
+        errno = EEXIST;
+        return false;
+    }
     if (exists) {
         if (rename(tx->target, tx->backup))
             return false;
         tx->backed_up = true;
         if (!commit_device())
             return false;
+        if (rename(tx->stage, tx->target))
+            return false;
+        tx->promoted = true;
+        if (!commit_device())
+            return false;
+    } else {
+        FILE *journal = fopen(tx->publishing, "wbx");
+        if (!journal) return false;
+        tx->publishing_new = true;
+        if (fclose(journal) || !commit_device())
+            return false;
+        if (hub_rename_dir(tx->stage, tx->target)) {
+            if (errno == EEXIST)
+                tx->publishing_new = false;
+            return false;
+        }
+        if (!commit_device() || unlink(tx->publishing) || !commit_device())
+            return false;
+        tx->publishing_new = false;
     }
-    if (rename(tx->stage, tx->target))
-        return false;
-    tx->promoted = true;
-    if (!commit_device())
-        return false;
     if (tree(tx->work, true))
         commit_device();
     release(tx);
     return true;
 }
 
+bool hub_install_commit(HubInstallTransaction *tx)
+{
+    return commit(tx, true);
+}
+
+bool hub_install_commit_new(HubInstallTransaction *tx)
+{
+    return commit(tx, false);
+}
+
 bool hub_install_rollback(HubInstallTransaction *tx)
 {
-    bool ok = (!tx->promoted || !rename(tx->target, tx->stage)) &&
+    bool ok = (!tx->publishing_new || tree(tx->target, true)) &&
+              (!tx->promoted || !rename(tx->target, tx->stage)) &&
               (!tx->backed_up || !rename(tx->backup, tx->target)) &&
               commit_device() && tree(tx->work, true) && commit_device();
     release(tx);

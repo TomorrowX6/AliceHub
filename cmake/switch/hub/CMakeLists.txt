@@ -33,6 +33,7 @@ target_link_options(AliceHub PRIVATE -Wl,--gc-sections)
 target_link_libraries(AliceHub PRIVATE AliceHub_save_codec)
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_SWITCH_HUB)
+target_sources(AliceHub PRIVATE fs_util.c)
 target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c)
 
 set(online_root "${CMAKE_CURRENT_LIST_DIR}/../../..")

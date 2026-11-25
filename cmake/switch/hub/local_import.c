@@ -1,4 +1,5 @@
 #include "local_import.h"
+#include "fs_util.h"
 #include "install_transaction.h"
 
 #include <ctype.h>
@@ -684,14 +685,14 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
     if (errno != ENOENT)
         goto done;
     const char *payload = hub_install_stage(tx);
-    if (move ? rmdir(payload) || rename(primary.path, payload) : !copy_tree(primary.path, payload, 0, cb))
+    if (move ? rmdir(payload) || hub_rename_dir(primary.path, payload) : !copy_tree(primary.path, payload, 0, cb))
         goto done;
     if (disc && !merge_discs(parent, member, key, &primary, payload, move, cb))
         goto done;
     why = "Could not publish the game to the library.";
     if (!import_update(cb, "Adding game to the library", 1, 1) ||
         !hub_install_verify(tx, verify_stage, game) || !lstat(dest, &st) ||
-        errno != ENOENT || !hub_install_commit(tx))
+        errno != ENOENT || !hub_install_commit_new(tx))
         goto done;
     tx = NULL;
     ok = true;

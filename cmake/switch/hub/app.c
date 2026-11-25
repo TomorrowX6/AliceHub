@@ -1,4 +1,5 @@
 #include "hub.h"
+#include "install_transaction.h"
 #include "support_files.h"
 #include "../picker_art.h"
 #include "../picker_renderer.h"
@@ -325,7 +326,8 @@ int main(int argc, char **argv)
         goto finish;
     if (!hub_settings_load(HUB_ROOT, &app.settings))
         hub_toast(&app, "Unsupported or damaged settings; using defaults");
-    if ((mkdir(HUB_ROOT, 0777) && errno != EEXIST) || !hub_refresh_library(&app))
+    if ((mkdir(HUB_ROOT, 0777) && errno != EEXIST) || !hub_install_recover(HUB_ROOT) ||
+        !hub_refresh_library(&app))
         hub_toast(&app, "Could not scan the SD card library");
     if (argc == 2 && !strcmp(argv[1], HUB_RETURN_ARG)) {
         if (!hub_handoff_take(HUB_ROOT, true, &app.returned))

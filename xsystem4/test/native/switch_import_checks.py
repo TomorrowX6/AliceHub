@@ -58,11 +58,28 @@ class SwitchImportTest(unittest.TestCase):
         subprocess.run(
             ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
              *(str(hub / source) for source in
-               ("model.c", "install_transaction.c", "local_import.c", "import_zip.c", "import_iso.c")),
-             "-x", "c", "-", *zlib, "-o", str(cls.runner)],
+               ("model.c", "fs_util.c", "install_transaction.c", "local_import.c", "import_zip.c", "import_iso.c")),
+             "-x", "c", "-", *zlib, "-Wl,--wrap=rename", "-o", str(cls.runner)],
             input=r"""
+#include "install_transaction.h"
 #include "local_import.h"
+#include "fs_util.h"
+#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+int __real_rename(const char *, const char *);
+
+int __wrap_rename(const char *source, const char *dest)
+{
+    struct stat st;
+    if (getenv("NO_DIR_RENAME") && !lstat(source, &st) && S_ISDIR(st.st_mode)) {
+        errno = ENOSYS;
+        return -1;
+    }
+    return __real_rename(source, dest);
+}
 
 static bool update(void *data, const char *detail, uint64_t current, uint64_t total)
 {
@@ -72,6 +89,10 @@ static bool update(void *data, const char *detail, uint64_t current, uint64_t to
 
 int main(int argc, char **argv)
 {
+    if (argc == 3 && !strcmp(argv[2], "--recover"))
+        return hub_install_recover(argv[1]) ? 0 : 1;
+    if (argc == 4 && !strcmp(argv[3], "--publish"))
+        return hub_rename_dir(argv[1], argv[2]) ? 1 : 0;
     ImportCallbacks cb = {.data = argc > 3 ? argv[3] : NULL, .update = update};
     HubGame game;
     char error[160];
@@ -92,11 +113,12 @@ int main(int argc, char **argv)
         self.library = self.sd / "library"
         self.library.mkdir()
 
-    def run_import(self, source, *, result=0, cancel=False):
+    def run_import(self, source, *, result=0, cancel=False, no_dir_rename=False):
         args = [self.runner, self.library, source]
         if cancel:
             args.append("cancel")
-        run = subprocess.run(args, text=True, capture_output=True)
+        env = dict(os.environ, NO_DIR_RENAME="1") if no_dir_rename else None
+        run = subprocess.run(args, text=True, capture_output=True, env=env)
         self.assertEqual(run.returncode, result, run.stdout + run.stderr)
         self.assertFalse((self.library / ".local-import-v1").exists())
         return run.stdout.strip()
@@ -210,3 +232,54 @@ int main(int argc, char **argv)
         self.assertEqual(self.run_import(source), "local:xsystem35:Game Set")
         installed = self.library / "xsystem35/games/Game Set"
         self.assertEqual({p.name for p in installed.iterdir()}, {"RanceSA.ALD", "RanceSB.ALD"})
+
+    def test_import_without_directory_rename(self):
+        source = self.sd / "No rename.zip"
+        with zipfile.ZipFile(source, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("System40.ini", 'CodeName = "Demo.ain"')
+            archive.writestr("Demo.ain", "code")
+            archive.writestr("nested/game.dat", "assets")
+        saves = self.library / "xsystem4/saves/No rename"
+        saves.mkdir(parents=True)
+        (saves / "existing.dat").write_bytes(b"save")
+        self.assertEqual(self.run_import(source, no_dir_rename=True), "local:xsystem4:No rename")
+        target = self.library / "xsystem4/games/No rename"
+        self.assertEqual((target / "nested/game.dat").read_bytes(), b"assets")
+        self.assertEqual((saves / "existing.dat").read_bytes(), b"save")
+        self.assertFalse((self.library / "xsystem4/.install-v1/No rename").exists())
+        self.run_import(source, result=1, no_dir_rename=True)
+        self.assertEqual((target / "Demo.ain").read_bytes(), b"code")
+
+    def test_publish_failure_preserves_source_and_existing_destination(self):
+        source = self.sd / "Stage"
+        dest = self.sd / "New"
+        source.mkdir()
+        (source / "Demo.ain").write_bytes(b"code")
+        (source / "invalid").symlink_to(source / "Demo.ain")
+        args = [self.runner, source, dest, "--publish"]
+        env = dict(os.environ, NO_DIR_RENAME="1")
+        self.assertEqual(subprocess.run(args, env=env).returncode, 1)
+        self.assertFalse(dest.exists())
+        self.assertEqual((source / "Demo.ain").read_bytes(), b"code")
+        dest.mkdir()
+        (dest / "Demo.ain").write_bytes(b"existing")
+        self.assertEqual(subprocess.run(args, env=env).returncode, 1)
+        self.assertEqual((dest / "Demo.ain").read_bytes(), b"existing")
+
+    def test_recovery_removes_only_unfinished_install(self):
+        games = self.library / "xsystem4/games"
+        incomplete = games / "Interrupted"
+        incomplete.mkdir(parents=True)
+        (incomplete / "part.dat").touch()
+        (games / "Existing").mkdir()
+        work = self.library / "xsystem4/.install-v1/Interrupted"
+        work.mkdir(parents=True)
+        (work / "publishing").touch()
+        sav = self.library / "xsystem4/saves/Interrupted"
+        sav.mkdir(parents=True)
+        (sav / "save.dat").touch()
+        subprocess.run([self.runner, self.library, "--recover"], check=True)
+        self.assertFalse(incomplete.exists())
+        self.assertFalse(work.exists())
+        self.assertTrue((games / "Existing").is_dir())
+        self.assertTrue((sav / "save.dat").is_file())
