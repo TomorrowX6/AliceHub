@@ -6521,6 +6521,8 @@ static int s_r08_c_glob = -1, s_r08_pta_glob = -1, s_r08_ptb_glob = -1;
 static int s_r08_gold_glob = -1, s_r08_fame_glob = -1, s_r08_famemax_glob = -1;
 static int s_r08_mag_glob = -1, s_r08_magmax_glob = -1, s_r08_dm_glob = -1;
 static int s_r08_fn_c_hp = -1, s_r08_fn_c_skill_cnt = -1;
+static int s_r08_battle_chara_glob = -1, s_r08_battle_chara_type = -1;
+static int s_r08_fn_update_battle_card = -1;
 
 static void r08_on_ain_init(void)
 {
@@ -6541,6 +6543,14 @@ static void r08_on_ain_init(void)
 	s_r08_dm_glob      = ain_get_global(ain, "\x81\x9f\x90\xed\x93\xac\x81\x5e\x82\x63\x82\x6c");
 	s_r08_fn_c_hp      = ain_get_function(ain, "\x82\x62\x91\xcc\x97\xcd");
 	s_r08_fn_c_skill_cnt = ain_get_function(ain, "\x82\x62\x83\x58\x83\x4c\x83\x8b\x8e\x67\x97\x70\x89\xf1\x90\x94");
+	s_r08_battle_chara_glob = ain_get_global(ain, "g_sBattleChara");
+	s_r08_battle_chara_type = ain_get_struct(ain, "T_BattleChara");
+	s_r08_fn_update_battle_card = ain_get_function(ain, "T_BattleChara@updateCard");
+	if (s_r08_fn_update_battle_card >= 0) {
+		const struct ain_function *f = &ain->functions[s_r08_fn_update_battle_card];
+		if (f->nr_args != 0 || f->return_type.data != AIN_BOOL)
+			s_r08_fn_update_battle_card = -1;
+	}
 	if (s_r08_sc_type < 0 || s_r08_skill_type < 0 || s_r08_c_glob < 0
 			|| s_r08_pta_glob < 0 || s_r08_ptb_glob < 0 || s_r08_gold_glob < 0)
 		return;
@@ -6623,6 +6633,8 @@ static int s_r09_arrval_type = -1, s_r09_arrflg_type = -1, s_r09_dmg_type = -1;
 static int s_r09_chara_glob = -1, s_r09_save_glob = -1;
 static int s_r09_fn_ally_dmg = -1, s_r09_fn_mon_dmg = -1, s_r09_fn_obs_dmg = -1;
 static int s_r09_fn_set_pass = -1, s_r09_fn_gold_drop = -1;
+static int s_r09_party_glob = -1, s_r09_party_card_type = -1, s_r09_fn_update_party_card = -1;
+static int s_r09_system_bar_delegate = -1, s_r09_fn_update_system_bar = -1;
 
 static void r09_on_ain_init(void)
 {
@@ -6643,6 +6655,16 @@ static void r09_on_ain_init(void)
 	s_r09_fn_obs_dmg  = ain_get_function(ain, "\x8f\xe1\x8a\x51\x95\xa8\x5f\x83\x5f\x83\x81\x81\x5b\x83\x57\x8f\x88\x97\x9d");
 	s_r09_fn_set_pass = ain_get_function(ain, "T_CharaData@setPass");
 	s_r09_fn_gold_drop = ain_get_function(ain, "\x90\xed\x93\xac\x5f\x82\x66\x82\x6e\x82\x6b\x82\x63\x83\x68\x83\x8d\x83\x62\x83\x76\x8a\x6d\x94\x46");
+	s_r09_party_glob = ain_get_global(ain, "g_sParty");
+	s_r09_party_card_type = ain_get_struct(ain, "T_PartyList");
+	s_r09_fn_update_party_card = ain_get_function(ain, "T_PartyList@update");
+	if (s_r09_fn_update_party_card >= 0) {
+		const struct ain_function *f = &ain->functions[s_r09_fn_update_party_card];
+		if (f->nr_args != 0 || f->return_type.data != AIN_VOID)
+			s_r09_fn_update_party_card = -1;
+	}
+	s_r09_system_bar_delegate = ain_get_global(ain, "g_dgSystemBarUpdate");
+	s_r09_fn_update_system_bar = vm_find_hud_setter("\x83\x56\x83\x58\x83\x65\x83\x80\x83\x6f\x81\x5b\x5f\x8d\x58\x90\x56");
 	if (s_r09_cmgr_type < 0 || s_r09_chara_type < 0 || s_r09_param_type < 0
 			|| s_r09_arrval_type < 0 || s_r09_arrflg_type < 0 || s_r09_dmg_type < 0
 			|| s_r09_chara_glob < 0 || s_r09_save_glob < 0)
@@ -7383,6 +7405,27 @@ static void vm_enforce_r08_locks(int r08_mask)
 	}
 }
 
+static void r08_refresh_battle_cards(void)
+{
+	if (s_r08_battle_chara_type < 0 || s_r08_fn_update_battle_card < 0
+			|| vm_callstack_has_fno(s_r08_fn_update_battle_card))
+		return;
+	struct page *manager = vm_get_global_page_idx(s_r08_battle_chara_glob);
+	struct page *cards = vm_get_field_page(manager, "m_asChara", NULL);
+	if (!cards || cards->type != ARRAY_PAGE || cards->array.rank != 1)
+		return;
+	for (int i = 0; i < cards->nr_vars; i++) {
+		int slot = cards->values[i].i;
+		struct page *unit = r03_checked_page(slot, STRUCT_PAGE, s_r08_battle_chara_type, 1);
+		if (vm_get_field_int(unit, "m_nNo", NULL, -1) <= 0)
+			continue;
+		struct page *card = vm_get_field_page(unit, "m_sCard", NULL);
+		struct page *bar = vm_get_field_page(card, "m_sHpBar", NULL);
+		if (vm_get_field_int(bar, "m_bShow", NULL, 0) && vm_get_field_int(bar, "m_nMax", NULL, 0) > 0)
+			vm_dd_call_int_0(s_r08_fn_update_battle_card, slot, 0);
+	}
+}
+
 static void vm_execute_r08_action(const char *json_str)
 {
 	if (!json_str || !json_str[0])
@@ -7428,6 +7471,7 @@ static void vm_execute_r08_action(const char *json_str)
 	}
 	struct page *carr = r08_get_c_array();
 	if (carr) {
+		bool refresh_cards = false;
 		if ((it = cJSON_GetObjectItem(act, "r08HealAllParty")) && cJSON_IsTrue(it)) {
 			for (int i = 1; i < carr->nr_vars; i++) {
 				if (!r08_is_ally_c(i)) continue;
@@ -7436,6 +7480,7 @@ static void vm_execute_r08_action(const char *json_str)
 				if (c->values[20].i > 0) c->values[19].i = c->values[20].i;
 				c->values[59].i = 0;
 				r08_replenish_chara_skills(c);
+				refresh_cards = true;
 			}
 		}
 		cJSON *ce = cJSON_GetObjectItem(act, "r08CharEdit");
@@ -7480,9 +7525,12 @@ static void vm_execute_r08_action(const char *json_str)
 					if (c->values[20].i > 0) c->values[19].i = c->values[20].i;
 					r08_replenish_chara_skills(c);
 				}
+				refresh_cards = true;
 				if (target >= 0) break;
 			}
 		}
+		if (refresh_cards)
+			r08_refresh_battle_cards();
 	}
 	s_r08_applying = false;
 	cJSON_Delete(act);
@@ -7586,6 +7634,35 @@ static void vm_enforce_r09_locks(int r09_mask)
 	}
 }
 
+static void r09_refresh_system_bar(void)
+{
+	struct page *update = vm_get_global_page_idx(s_r09_system_bar_delegate);
+	if (update && update->type == DELEGATE_PAGE && update->nr_vars > 0)
+		vm_call_hud_setter(s_r09_fn_update_system_bar, -1, 0, 0);
+}
+
+static void r09_refresh_party_cards(void)
+{
+	if (s_r09_party_card_type < 0 || s_r09_fn_update_party_card < 0
+			|| vm_callstack_has_fno(s_r09_fn_update_party_card))
+		return;
+	struct page *party = vm_get_global_page_idx(s_r09_party_glob);
+	struct page *list = vm_get_field_page(party, "m_sList", NULL);
+	struct page *cards = vm_get_field_page(list, "m_asCard", NULL);
+	if (!cards || cards->type != ARRAY_PAGE || cards->array.rank != 1
+			|| !vm_get_field_int(list, "m_bShow", NULL, 0))
+		return;
+	for (int i = 0; i < cards->nr_vars; i++) {
+		int slot = cards->values[i].i;
+		struct page *card = r03_checked_page(slot, STRUCT_PAGE, s_r09_party_card_type, 1);
+		if (!vm_get_field_int(card, "m_bShow", NULL, 0))
+			continue;
+		struct page *status = vm_get_field_page(card, "m_sCard", NULL);
+		if (vm_get_field_int(status, "m_nUnitNo", NULL, -1) > 0)
+			vm_dd_call_void_0(s_r09_fn_update_party_card, slot);
+	}
+}
+
 static void vm_execute_r09_action(const char *json_str)
 {
 	if (!json_str || !json_str[0])
@@ -7615,7 +7692,9 @@ static void vm_execute_r09_action(const char *json_str)
 	}
 	s_r09_applying = true;
 	struct page *sd = r09_get_save_data_arr();
+	bool refresh_system_bar = false;
 	if (sd && sd->nr_vars >= 4) {
+		int gold = sd->values[1].i, points = sd->values[2].i, stones = sd->values[3].i;
 		if ((it = cJSON_GetObjectItem(act, "r09AddGold")) && cJSON_IsNumber(it))
 			sd->values[1].i = vm_dd_clamp((double)sd->values[1].i + it->valuedouble, 0, INT32_MAX);
 		if ((it = cJSON_GetObjectItem(act, "r09Gold")) && cJSON_IsNumber(it))
@@ -7626,9 +7705,11 @@ static void vm_execute_r09_action(const char *json_str)
 			sd->values[2].i = vm_dd_clamp(it->valuedouble, 0, INT32_MAX);
 		if ((it = cJSON_GetObjectItem(act, "r09SeimaStone")) && cJSON_IsNumber(it))
 			sd->values[3].i = vm_dd_clamp(it->valueint, 0, 99999999);
+		refresh_system_bar = gold != sd->values[1].i || points != sd->values[2].i || stones != sd->values[3].i;
 	}
 	struct page *carr = r09_get_chara_array();
 	if (carr) {
+		bool refresh_cards = false;
 		if ((it = cJSON_GetObjectItem(act, "r09HealAllParty")) && cJSON_IsTrue(it)) {
 			for (int i = 0; i < carr->nr_vars; i++) {
 				struct page *c = r03_checked_page(carr->values[i].i, STRUCT_PAGE, s_r09_chara_type, 12);
@@ -7641,14 +7722,17 @@ static void vm_execute_r09_action(const char *json_str)
 				if (pv->values[19].i > 0) pv->values[18].i = pv->values[19].i;
 				struct page *bf = r09_unwrap_arr_bool(c->values[6].i);
 				if (bf && bf->nr_vars > 1) bf->values[1].i = 0;
+				refresh_cards = true;
 			}
 		}
 		if ((it = cJSON_GetObjectItem(act, "r09MaxAllSkillUp")) && cJSON_IsTrue(it)) {
 			for (int i = 0; i < carr->nr_vars; i++) {
 				struct page *c = r03_checked_page(carr->values[i].i, STRUCT_PAGE, s_r09_chara_type, 12);
 				struct page *sp = c ? r09_unwrap_arr_int(c->values[3].i) : NULL;
-				if (sp && sp->nr_vars >= 20)
+				if (sp && sp->nr_vars >= 20) {
 					sp->values[19].i = 9999;
+					refresh_cards = true;
+				}
 			}
 		}
 		cJSON *ce = cJSON_GetObjectItem(act, "r09CharEdit");
@@ -7697,10 +7781,15 @@ static void vm_execute_r09_action(const char *json_str)
 					if (pv->values[17].i > 0) pv->values[16].i = pv->values[17].i;
 					if (pv->values[19].i > 0) pv->values[18].i = pv->values[19].i;
 				}
+				refresh_cards = true;
 				if (target >= 0) break;
 			}
 		}
+		if (refresh_cards)
+			r09_refresh_party_cards();
 	}
+	if (refresh_system_bar)
+		r09_refresh_system_bar();
 	s_r09_applying = false;
 	cJSON_Delete(act);
 }
@@ -8191,11 +8280,7 @@ static bool vm_execute_r02_action(const char *json_str)
 					if ((f = cJSON_GetObjectItem(ce, "sp")) && cJSON_IsNumber(f))
 						st->values[1].i = vm_dd_clamp(f->valueint, 0, 99999);
 				}
-				refresh_hud |= cJSON_IsNumber(cJSON_GetObjectItem(ce, "hp"))
-					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "hpMax"))
-					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "sp"))
-					|| cJSON_IsNumber(cJSON_GetObjectItem(ce, "spMax"))
-					|| cJSON_IsTrue(cJSON_GetObjectItem(ce, "fullHeal"));
+				refresh_hud = true;
 				if (ab && ab->nr_vars >= 7) {
 					if ((f = cJSON_GetObjectItem(ce, "hit")) && cJSON_IsNumber(f))
 						ab->values[1].i = vm_dd_clamp(f->valueint, 0, 9999);
