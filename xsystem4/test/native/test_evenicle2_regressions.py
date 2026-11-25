@@ -644,6 +644,10 @@ int main(int argc, char **argv) {
     def test_mainex_v12_polyex_id1_resolution(self):
         main_ex = build_extf([
             _ex_block(b"MainTitle", 3, _ex_pstr(b"Evenicle2Main")),
+            _ex_block(b"Scenes", 6, _ex_tree(b"Scenes", [
+                _ex_tree(b"First", []),
+                _ex_tree(b"Second", []),
+            ])),
         ])
         poly_ex = build_extf([
             _ex_block(
@@ -674,6 +678,7 @@ int main(int argc, char **argv) {
             harness = r"""
 #include <assert.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -682,6 +687,7 @@ int main(int argc, char **argv) {
 #include "reign.h"
 #include "hll/hll.h"
 #include "mainex_v12.h"
+#include "vm.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 #include "vm/v12.h"
@@ -692,6 +698,8 @@ int main(int argc, char **argv) {
 
 struct config config;
 bool game_evenicle2 = true;
+static struct ain program = { .version = 14 };
+struct ain *ain = &program;
 struct vm_pointer *heap;
 size_t heap_size = 256;
 
@@ -716,22 +724,38 @@ static void *find_fn(const char *n) {
 
 char *gamedir_path(const char *p) { return strdup(p); }
 char *gamedir_path_icase(const char *p) { return strdup(p); }
-struct page *v12_array_new(const struct ain_type *type, int size, bool init) {
-    struct page *p = xcalloc(1, sizeof(struct page) + size * sizeof(union vm_value));
-    p->type = ARRAY_PAGE;
-    p->nr_vars = size;
-    for (int i = 0; i < size; i++) {
-        p->values[i].i = next_slot++;
-        heap_slots[p->values[i].i].s = string_ref(&EMPTY_STRING);
-    }
-    return p;
+_Noreturn void _vm_error(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    exit(1);
 }
-void delete_page_vars(struct page *p) {
-    if (!p) return;
-    for (int i = 0; i < p->nr_vars; i++)
-        free_string(heap_slots[p->values[i].i].s);
+int32_t heap_alloc_slot(enum vm_pointer_type type) {
+    assert(next_slot < heap_size);
+    int slot = next_slot++;
+    heap[slot] = (struct vm_pointer){ .type = type, .ref = 1 };
+    return slot;
 }
-void free_page(struct page *p) { free(p); }
+void heap_set_page(int slot, struct page *p) { heap[slot].page = p; }
+int32_t heap_alloc_page(struct page *p) {
+    int slot = heap_alloc_slot(VM_PAGE);
+    heap_set_page(slot, p);
+    return slot;
+}
+void heap_unref(int slot) {
+    assert(heap[slot].type == VM_STRING && heap[slot].ref == 1);
+    heap[slot].ref = 0;
+    free_string(heap[slot].s);
+}
+void exit_unref(int slot) { heap_unref(slot); }
+union vm_value vm_copy(union vm_value v, enum ain_data_type type) {
+    assert(type == AIN_STRING && heap[v.i].type == VM_STRING && heap[v.i].ref == 1);
+    int slot = heap_alloc_slot(VM_STRING);
+    heap[slot].s = string_ref(heap[v.i].s);
+    return vm_int(slot);
+}
+void vm_call(int fn, int obj) { abort(); }
 
 struct archive *RE_open_3d_archive(void) {
     int err = 0;
@@ -781,6 +805,23 @@ int main(int argc, char **argv) {
     assert(strcmp(got1_legacy->text, "Evenicle2Main") == 0);
     free_string(got1_legacy);
 
+    program.version = 8;
+    struct string *scenes = make_string("Scenes", 6);
+    struct page *src = NULL;
+    assert(nodes_fn(scenes, &src, 0));
+    assert(src && src->nr_vars == 2);
+    union vm_value dim = { .i = 1 };
+    struct page *dst = alloc_array(1, &dim, AIN_REF_ARRAY_STRING, -1, true);
+    array_copy(dst, 0, src, 1, 1);
+    assert(src->a_type == AIN_ARRAY_STRING);
+    delete_page_vars(src);
+    free_page(src);
+    assert(strcmp(heap[dst->values[0].i].s->text, "Second") == 0);
+    delete_page_vars(dst);
+    free_page(dst);
+    free_string(scenes);
+    program.version = 14;
+
     // With game_evenicle2=true, ID=1 resolves PolyEX trees in Evenicle23D.afa (with SJIS 0x5c).
     game_evenicle2 = true;
     assert(exists_fn(s_main, 1) == false);
@@ -794,6 +835,7 @@ int main(int argc, char **argv) {
     struct string *s_mot = make_string(p_mot, strlen(p_mot));
     assert(nodes_fn(s_mot, &list, 1) == true);
     assert(list && list->nr_vars == 1);
+    assert(list->a_type == AIN_ARRAY && list->array.element_type.data == AIN_STRING);
     assert(strcmp(heap[list->values[0].i].s->text, "\x91\xd2\x8b\x40") == 0);
     delete_page_vars(list);
     free_page(list);
@@ -822,8 +864,13 @@ int main(int argc, char **argv) {
 """
             out = compile_and_run(
                 harness,
-                [ROOT / "src/hll/MainEXFile_v12.c", *LIBSYS4_CORE],
-                ["-lz", "-lm"],
+                [
+                    ROOT / "src/hll/MainEXFile_v12.c",
+                    ROOT / "src/page.c",
+                    ROOT / "src/vm_v12.c",
+                    *LIBSYS4_CORE,
+                ],
+                ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
                 [str(main_ex_path), str(afa_path)],
             )
             self.assertEqual(out.strip(), "OK")

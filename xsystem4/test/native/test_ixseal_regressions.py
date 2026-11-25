@@ -326,6 +326,7 @@ void library_export_v12(struct static_library *lib, const struct static_hll_func
     // Allow MainEXFile_PreLink's mainex_v12_prelink() to update existing static_library table or record replacements
 }
 struct page *v12_array_new(const struct ain_type *type, int size, bool init) { return NULL; }
+struct page *alloc_array(int rank, union vm_value *dimensions, enum ain_data_type type, int struc, bool init) { return NULL; }
 void delete_page_vars(struct page *p) {}
 void free_page(struct page *p) {}
 char *gamedir_path(const char *p) { return strdup(p); }
