@@ -884,19 +884,24 @@ static Texture *cproc_get_cached_texture(struct string *cg_name)
 	return &cproc_cg_cache[0].texture;
 }
 
-static bool build_draw_cut_cg(struct parts_construction_process *cproc, struct parts_cp_cut_cg *op)
+static bool build_draw_cut_cg(struct parts_construction_process *cproc, struct parts_cp_op *cmd)
 {
 	if (!cproc->common.texture.handle)
 		return false;
 
+	struct parts_cp_cut_cg *op = &cmd->cut_cg;
 	Texture *src = cproc_get_cached_texture(op->cg_name);
 	if (!src)
 		return false;
 
 	int sw = op->sw > 0 ? op->sw : src->w;
 	int sh = op->sh > 0 ? op->sh : src->h;
-	gfx_copy_stretch_blend_amap(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
-			src, op->sx, op->sy, sw, sh);
+	if (game_okusama && cmd->type == PARTS_CP_ALPHA_BLEND_CUT_CG)
+		gfx_copy_stretch_blend_alpha(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
+				src, op->sx, op->sy, sw, sh);
+	else
+		gfx_copy_stretch_blend_amap(&cproc->common.texture, op->dx, op->dy, op->dw, op->dh,
+				src, op->sx, op->sy, sw, sh);
 	return true;
 }
 
@@ -1578,7 +1583,7 @@ bool parts_build_construction_process(struct parts *parts,
 			break;
 		case PARTS_CP_DRAW_CUT_CG:
 		case PARTS_CP_ALPHA_BLEND_CUT_CG:
-			if (!build_draw_cut_cg(cproc, &op->cut_cg) && !cproc->common.texture.handle)
+			if (!build_draw_cut_cg(cproc, op) && !cproc->common.texture.handle)
 				goto done;
 			break;
 		case PARTS_CP_COPY_CUT_CG:

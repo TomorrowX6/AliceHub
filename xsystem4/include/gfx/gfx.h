@@ -225,6 +225,8 @@ void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rect
 void gfx_draw_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4]);
 
 void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h);
+void gfx_copy_stretch_blend_alpha(Texture *dst, int dx, int dy, int dw, int dh,
+		Texture *src, int sx, int sy, int sw, int sh);
 void gfx_draw_shape_mask(Texture *dst, int dx, int dy, int w, int h, const uint8_t *cov, SDL_Color color, int mode);
 
 #endif /* SYSTEM4_SDL_CORE_H */

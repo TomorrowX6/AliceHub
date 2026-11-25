@@ -1338,12 +1338,18 @@ void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rect
 	restore_blend_mode();
 }
 
-void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
+void gfx_copy_stretch_blend_alpha(Texture *dst, int dx, int dy, int dw, int dh,
+		Texture *src, int sx, int sy, int sw, int sh)
 {
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
+	struct copy_data data = STRETCH_DATA(dx, dy, dw, dh, sx, sy, sw, sh);
 	run_copy_shader(&copy_shader.s, dst, src, &data);
 	restore_blend_mode();
+}
+
+void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
+{
+	gfx_copy_stretch_blend_alpha(dst, dx, dy, w, h, src, sx, sy, w, h);
 }
 
 void gfx_draw_shape_mask(Texture *dst, int dx, int dy, int w, int h, const uint8_t *cov, SDL_Color color, int mode)
