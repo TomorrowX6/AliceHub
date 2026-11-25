@@ -1272,6 +1272,92 @@ int cjk_encode_codepoint(int u, bool gbk)
 	return cjk_encode_codepoint_impl(u, gbk, false);
 }
 
+static int sjis_display_pair(const uint8_t *s)
+{
+	if (!((*s >= 0x81 && *s <= 0x9f) || (*s >= 0xe0 && *s <= 0xfc))
+			|| s[1] < 0x40 || s[1] > 0xfc || s[1] == 0x7f)
+		return 0;
+	int u = s2u[*s - 0x80][s[1] - 0x40];
+	if (u == 0x30fb && (s[0] != 0x81 || s[1] != 0x45))
+		return 0;
+	return u;
+}
+
+static bool gbk_display_pair(const uint8_t *s)
+{
+	return s[0] >= 0x81 && s[0] <= 0xfe && s[1] >= 0x40 && s[1] <= 0xfe && s[1] != 0x7f;
+}
+
+static bool display_number_char(int u)
+{
+	return (u >= 0xff10 && u <= 0xff19) || u == 0x3000
+		|| u == 0xff0b || u == 0xff0d || u == 0xff0e || u == 0xff0f;
+}
+
+char *cjk_mixed_display_to_gbk(const char *text)
+{
+	const uint8_t *start = (const uint8_t *)text;
+	char *out = NULL;
+	const uint8_t *s = start;
+	while (*s) {
+		if (!gbk_display_pair(s)) {
+			s++;
+			continue;
+		}
+		const uint8_t *end = s;
+		bool token_has_gbk = false, token_has_gbk_text = false, token_is_numeric = true;
+		while (gbk_display_pair(end)) {
+			int sjis = sjis_display_pair(end);
+			int gbk = gbk_lookup(end[0], end[1]);
+			token_is_numeric &= display_number_char(sjis) || display_number_char(gbk);
+			if (!sjis && gbk) {
+				token_has_gbk = true;
+				token_has_gbk_text |= !(end[0] == 0xa1 && end[1] == 0xa1)
+					&& !(end[0] == 0xa3 && end[1] >= 0xb0 && end[1] <= 0xb9);
+			}
+			end += 2;
+		}
+		while (s < end) {
+			const uint8_t *run = s;
+			size_t extended = 0, common = 0;
+			bool has_sjis_only = false, has_kana = false, has_kanji = false;
+			int u;
+			while (s < end && (u = sjis_display_pair(s)) > 0) {
+				has_sjis_only |= !gbk_lookup(s[0], s[1]);
+				has_kana |= (u >= 0x3041 && u <= 0x3096) || (u >= 0x30a1 && u <= 0x30fa);
+				has_kanji |= u >= 0x4e00 && u <= 0x9fff;
+				if (s[0] >= 0xa1 && s[0] <= 0xf7 && s[1] >= 0xa1)
+					common++;
+				else
+					extended++;
+				s += 2;
+			}
+			if (run == s) {
+				s += 2;
+				continue;
+			}
+			// Prefer GBK inside a GB2312 run, and require text evidence next to GBK.
+			if (!token_is_numeric && !has_sjis_only
+					&& ((common && (!has_kana || extended / 3 < common))
+						|| token_has_gbk_text
+						|| (token_has_gbk && (extended < 2 || (!has_kana && !has_kanji)))))
+				continue;
+			for (const uint8_t *p = run; p < s; p += 2) {
+				int code = sjis_display_pair(p);
+				int gbk = cjk_encode_codepoint(code, true);
+				if (gbk <= 0xff || gbk_lookup(gbk >> 8, gbk & 0xff) != code
+						|| ((p[0] << 8) | p[1]) == gbk)
+					continue;
+				if (!out)
+					out = xstrdup(text);
+				out[p - start] = gbk >> 8;
+				out[p - start + 1] = gbk & 0xff;
+			}
+		}
+	}
+	return out;
+}
+
 static char *utf2cjk_impl(const char *_src, size_t len, bool gbk, bool use_mai) {
 	if (!_src)
 		return NULL;

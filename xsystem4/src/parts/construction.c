@@ -963,6 +963,20 @@ static bool build_text(struct parts_construction_process *cproc, struct parts_cp
 {
 	if (!cproc->common.texture.handle)
 		return false;
+	const char *source = op->text->text;
+	char *display = parts_prepare_display_text(source);
+	if (parts_uses_mixed_display_text() && strchr(source, '\r')) {
+		if (!display)
+			display = xstrdup(source);
+		char *dst = display;
+		for (const char *src = display; *src; src++) {
+			if (*src != '\r')
+				*dst++ = *src;
+		}
+		*dst = '\0';
+	}
+	if (display)
+		source = display;
 	struct text_style style = op->style;
 	int line_space = op->line_space;
 	int pct = parts_get_modifier_font_scale();
@@ -975,7 +989,7 @@ static bool build_text(struct parts_construction_process *cproc, struct parts_cp
 			float scaled_max_w = 0.0f;
 			int nr_lines = 0;
 			struct text_style orig_style = op->style;
-			char *probe = xstrdup(op->text->text);
+			char *probe = xstrdup(source);
 			for (char *ln = probe; ln;) {
 				char *nxt = strchr(ln, '\n');
 				if (nxt)
@@ -1010,7 +1024,7 @@ static bool build_text(struct parts_construction_process *cproc, struct parts_cp
 					}
 					// Recompute scaled_max_w if style.size stepped down
 					scaled_max_w = 0.0f;
-					char *reprobe = xstrdup(op->text->text);
+					char *reprobe = xstrdup(source);
 					for (char *ln = reprobe; ln;) {
 						char *nxt = strchr(ln, '\n');
 						if (nxt) *nxt++ = '\0';
@@ -1045,7 +1059,7 @@ static bool build_text(struct parts_construction_process *cproc, struct parts_cp
 
 	int h = ceilf(text_style_height(&style));
 	int y = op->y;
-	char *text = xstrdup(op->text->text);
+	char *text = display ? display : xstrdup(source);
 	for (char *line = text; line;) {
 		char *next = strchr(line, '\n');
 		if (next)

@@ -27,6 +27,16 @@
 
 static int s_modifier_font_scale_pct = 100;
 
+bool parts_uses_mixed_display_text(void)
+{
+	return game_evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8;
+}
+
+char *parts_prepare_display_text(const char *text)
+{
+	return parts_uses_mixed_display_text() ? cjk_mixed_display_to_gbk(text) : NULL;
+}
+
 void parts_set_modifier_font_scale(int pct)
 {
 	if (pct < 70) pct = 70;
@@ -236,7 +246,7 @@ static inline float canon_zero(float v)
 	return v == 0.0f ? 0.0f : v;
 }
 
-const char *parts_text_append_char(struct parts_text *t, const char *str)
+static const char *parts_text_append_display_char(struct parts_text *t, const char *str, const char *display)
 {
 	struct text_style eff_ts = parts_get_effective_text_style(&t->ts);
 	if (!t->nr_lines) {
@@ -261,11 +271,17 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 	ch->off = text_style_offset(&eff_ts);
 	memset(ch->ch, 0, sizeof(ch->ch));
 	int len = extract_sjis_char(str, ch->ch);
+	if (*str == '\r' && parts_uses_mixed_display_text()) {
+		*ch = (struct parts_text_char){ .ch = {'\r'}, .cache_idx = -1 };
+		return str + len;
+	}
+	char glyph_bytes[4] = {0};
+	memcpy(glyph_bytes, display, len);
 
 	glyph_cache_init();
 	struct parts_glyph_key key;
 	memset(&key, 0, sizeof(key));
-	memcpy(key.ch, ch->ch, sizeof(key.ch));
+	memcpy(key.ch, glyph_bytes, sizeof(key.ch));
 	key.face = eff_ts.face;
 	key.size = canon_zero(eff_ts.size);
 	key.bold_width = canon_zero(eff_ts.bold_width);
@@ -320,7 +336,7 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 	float sx = max(1.0f, eff_ts.scale_x);
 	int pad_x = (int)ceilf((edge_w + ceilf(eff_ts.bold_width)) * sx) + 2;
 	int pad_y = (int)ceilf(max(eff_ts.edge_up, eff_ts.edge_down) + ceilf(eff_ts.bold_width)) + 2;
-	int base_w = max(1, (int)ceilf(gfx_size_char(&eff_ts, ch->ch)));
+	int base_w = max(1, (int)ceilf(gfx_size_char(&eff_ts, glyph_bytes)));
 	int height = max(1, (int)ceilf(text_style_height(&eff_ts)));
 	int tex_w = base_w + pad_x * 2;
 	int tex_h = height + pad_y * 2;
@@ -337,10 +353,10 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 		memset(&e->t_edge, 0, sizeof(e->t_edge));
 		if (has_edge) {
 			gfx_init_texture_rgba(&e->t_edge, tex_w, tex_h, (SDL_Color){0,0,0,0});
-			gfx_render_text_edge_only(&e->t_edge, (float)pad_x, pad_y, ch->ch, &eff_ts);
+			gfx_render_text_edge_only(&e->t_edge, (float)pad_x, pad_y, glyph_bytes, &eff_ts);
 		}
 		gfx_init_texture_rgba(&e->t, tex_w, tex_h, (SDL_Color){0,0,0,0});
-		e->advance = ceilf(gfx_render_text_core_only(&e->t, (float)pad_x, pad_y, ch->ch, &eff_ts));
+		e->advance = ceilf(gfx_render_text_core_only(&e->t, (float)pad_x, pad_y, glyph_bytes, &eff_ts));
 		e->pad = pad;
 		e->height = height;
 		e->key = key;
@@ -359,10 +375,10 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 		memset(&ch->t_edge, 0, sizeof(ch->t_edge));
 		if (has_edge) {
 			gfx_init_texture_rgba(&ch->t_edge, tex_w, tex_h, (SDL_Color){0,0,0,0});
-			gfx_render_text_edge_only(&ch->t_edge, (float)pad_x, pad_y, ch->ch, &eff_ts);
+			gfx_render_text_edge_only(&ch->t_edge, (float)pad_x, pad_y, glyph_bytes, &eff_ts);
 		}
 		gfx_init_texture_rgba(&ch->t, tex_w, tex_h, (SDL_Color){0,0,0,0});
-		ch->advance = ceilf(gfx_render_text_core_only(&ch->t, (float)pad_x, pad_y, ch->ch, &eff_ts));
+		ch->advance = ceilf(gfx_render_text_core_only(&ch->t, (float)pad_x, pad_y, glyph_bytes, &eff_ts));
 		ch->pad = pad;
 		ch->cache_idx = -1;
 	}
@@ -371,13 +387,26 @@ const char *parts_text_append_char(struct parts_text *t, const char *str)
 	return str + len;
 }
 
+const char *parts_text_append_char(struct parts_text *t, const char *str)
+{
+	return parts_text_append_display_char(t, str, str);
+}
+
+static void parts_text_append_bytes(struct parts_text *t, const char *original, const char *display)
+{
+	const char *msgp = original;
+	while (*msgp) {
+		msgp = parts_text_append_display_char(t, msgp, display ? display + (msgp - original) : msgp);
+	}
+}
+
 void parts_text_append(struct parts *parts, struct parts_text *t, struct string *text)
 {
 	char *dict_mapped = text ? sys4_text_dict_translate_lines(text->text) : NULL;
-	const char *msgp = dict_mapped ? dict_mapped : (text ? text->text : "");
-	while (*msgp) {
-		msgp = parts_text_append_char(t, msgp);
-	}
+	const char *original = dict_mapped ? dict_mapped : (text ? text->text : "");
+	char *display = parts_prepare_display_text(original);
+	parts_text_append_bytes(t, original, display);
+	free(display);
 	free(dict_mapped);
 	parts_text_update_dims(parts, t);
 }
@@ -488,13 +517,47 @@ bool PE_SetText(int parts_no, struct string *text, int state)
 	return true;
 }
 
+static void parts_text_append_fragment(struct parts *parts, struct parts_text *t, struct string *text)
+{
+	if (!parts_uses_mixed_display_text() || !t->nr_lines ||
+			!t->lines[t->nr_lines - 1].nr_chars || !text || !text->size) {
+		parts_text_append(parts, t, text);
+		return;
+	}
+
+	struct parts_text_line *line = &t->lines[t->nr_lines - 1];
+	struct string *prefix = parts_text_line_get(line);
+	char *prefix_display = parts_prepare_display_text(prefix->text);
+	const char *old_display = prefix_display ? prefix_display : prefix->text;
+	char *mapped = sys4_text_dict_translate_lines(text->text);
+	const char *fragment = mapped ? mapped : text->text;
+	struct string *joined = string_ref(prefix);
+	string_append_cstr(&joined, fragment, strlen(fragment));
+	char *display = parts_prepare_display_text(joined->text);
+	const char *new_display = display ? display : joined->text;
+	size_t offset = prefix->size;
+	if (memcmp(old_display, new_display, offset)) {
+		parts_text_line_free(line);
+		line->width = 0;
+		line->height = 0;
+		offset = 0;
+	}
+	parts_text_append_bytes(t, joined->text + offset, new_display + offset);
+	free(display);
+	free(mapped);
+	free(prefix_display);
+	free_string(joined);
+	free_string(prefix);
+	parts_text_update_dims(parts, t);
+}
+
 bool PE_AddPartsText(int parts_no, struct string *text, int state)
 {
 	if (!parts_state_valid(--state))
 		return false;
 
 	struct parts *parts = parts_get(parts_no);
-	parts_text_append(parts, parts_get_text(parts, state), text);
+	parts_text_append_fragment(parts, parts_get_text(parts, state), text);
 	parts_dirty(parts);
 	return true;
 }
@@ -726,5 +789,4 @@ void PE_GetPartsTextFontProperty(int no, int *face, int *size, int *r, int *g, i
 	*er = ts->edge_color.r; *eg = ts->edge_color.g; *eb = ts->edge_color.b;
 	*edge = ts->edge_left;
 }
-
 

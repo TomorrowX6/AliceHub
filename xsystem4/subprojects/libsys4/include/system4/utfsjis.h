@@ -45,6 +45,8 @@ extern char* sjis2utf(const char *src, size_t len);
 extern char* cjk2utf(const char *src, size_t len, bool gbk);
 extern char* cjk2utf_strict(const char *src, bool gbk, bool *valid_out);
 extern char* cjk2utf_strict_buf(const char *src, size_t len, bool gbk, char *buf, size_t buf_cap, bool *valid_out);
+/* Returns a same-length display copy, or NULL if unchanged. */
+extern char* cjk_mixed_display_to_gbk(const char *text);
 extern char* sjis_filename2utf(const char *src, size_t len);
 extern char* cjk_repair_sjis_as_gbk_utf8(const char *utf);
 extern int   cjk_encode_codepoint(int u, bool gbk);

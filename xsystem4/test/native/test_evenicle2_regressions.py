@@ -474,6 +474,171 @@ int main(void)
         )
         self.assertEqual(out.strip(), "OK")
 
+    def test_evenicle_rance_mixed_parts_display(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "parts/text.c"
+#include "parts/construction.c"
+
+bool game_evenicle_rance_cn;
+bool gfx_text_advance_edges;
+static struct string *drawn;
+static const char *expected_construction;
+
+void gfx_register_reset_callback(gfx_reset_callback cb, void *user) {}
+bool gfx_remap_texture(Texture *t) { return false; }
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) {}
+void gfx_delete_texture(Texture *t) {}
+void gfx_fill_with_alpha(Texture *t, int x, int y, int w, int h, int r, int g, int b, int a) {}
+void gfx_fill_amap(Texture *t, int x, int y, int w, int h, int a) {}
+float gfx_size_text(struct text_style *ts, const char *text)
+{
+    assert(!strcmp(text, expected_construction));
+    return 12;
+}
+float gfx_render_text_mode(Texture *t, float x, int y, char *text, struct text_style *ts, enum text_render_mode mode)
+{
+    assert(!strcmp(text, expected_construction));
+    return 12;
+}
+float gfx_size_char(struct text_style *ts, const char *ch) { return 12; }
+float gfx_render_text_edge_only(Texture *t, float x, int y, char *ch, struct text_style *ts) { return 12; }
+float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct text_style *ts)
+{
+    string_append_cstr(&drawn, ch, strlen(ch));
+    return 12;
+}
+void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {}
+void parts_dirty(struct parts *parts) {}
+
+static void check_display(struct string *source, const char *expected)
+{
+    struct parts_text parts = {0};
+    drawn = make_string("", 0);
+    parts_text_append(NULL, &parts, source);
+    char *utf = cjk2utf_strict(drawn->text, true, NULL);
+    if (!utf || strcmp(utf, expected))
+        fprintf(stderr, "Expected %s, got %s\n", expected, utf ? utf : "<invalid GBK>");
+    assert(utf && !strcmp(utf, expected));
+    struct string *stored = parts_text_get(&parts);
+    assert(!strcmp(stored->text, source->text));
+    char *expected_gbk = utf2cjk(expected, 0, true);
+    expected_construction = expected_gbk;
+    struct parts_construction_process cproc = { .common.texture.handle = 1 };
+    struct parts_cp_text op = { .text = source };
+    assert(build_text(&cproc, &op, RENDER_COPY));
+    assert(!strcmp(stored->text, source->text));
+    free(expected_gbk);
+    free(utf);
+    free_string(stored);
+    free_string(drawn);
+    parts_text_free(&parts);
+}
+
+static void check_bytes(const char *first, const char *second, const char *expected)
+{
+    struct string *source = make_string(first, strlen(first));
+    string_append_cstr(&source, second, strlen(second));
+    check_display(source, expected);
+    free_string(source);
+}
+
+static void check(const char *first, const char *second, const char *expected)
+{
+    char *sjis = utf2cjk(first, 0, false);
+    char *gbk = utf2cjk(second, 0, true);
+    check_bytes(sjis, gbk, expected);
+    free(gbk);
+    free(sjis);
+}
+
+static void check_incremental_display(void)
+{
+    char *gbk = utf2cjk("俀俋侽侽侽／道具", 0, true);
+    struct string *prefix = make_string(gbk, 10);
+    struct string *suffix = make_string(gbk + 10, strlen(gbk + 10));
+    struct parts_text parts = {0};
+    drawn = make_string("", 0);
+    parts_text_append_fragment(NULL, &parts, prefix);
+    free_string(drawn);
+    drawn = make_string("", 0);
+    parts_text_append_fragment(NULL, &parts, suffix);
+    assert(!strcmp(drawn->text, gbk));
+    struct string *stored = parts_text_get(&parts);
+    assert(!strcmp(stored->text, gbk));
+    free_string(drawn);
+    drawn = make_string("", 0);
+    parts_text_rerender_all(NULL, &parts);
+    assert(!strcmp(drawn->text, gbk));
+    parts_text_free(&parts);
+    free_string(stored);
+    free_string(drawn);
+    free_string(suffix);
+    free_string(prefix);
+    free(gbk);
+}
+
+int main(void)
+{
+    char *name = utf2cjk("ランス", 0, false);
+    sys4_set_text_gbk(true);
+    assert(!parts_prepare_display_text(name));
+    game_evenicle_rance_cn = true;
+    sys4_set_source_utf8(true);
+    assert(!parts_prepare_display_text(name));
+    sys4_set_source_utf8(false);
+    sys4_set_text_gbk(false);
+    assert(!parts_prepare_display_text(name));
+    sys4_set_text_gbk(true);
+    free(name);
+
+    char *middle_dot = parts_prepare_display_text("\x81\x45");
+    assert(middle_dot);
+    char *middle_dot_utf8 = cjk2utf_strict(middle_dot, true, NULL);
+    assert(middle_dot_utf8 && !strcmp(middle_dot_utf8, "・"));
+    free(middle_dot_utf8);
+    free(middle_dot);
+
+    check("ランス", "", "ランス");
+    check("１章：騎士とお姫様／蠢く蛇紋", "", "１章：騎士とお姫様／蠢く蛇紋");
+    check("リッシュ・エデン", "", "リッシュ・エデン");
+    check("[　ランス　]少し物足りない剣", "", "[　ランス　]少し物足りない剣");
+    check("[　ランス　]", "这是旧存档里的道具说明", "[　ランス　]这是旧存档里的道具说明");
+    check("　攻撃力　＋", "３０", "　攻撃力　＋３０");
+    check("　魔法力▼２０", "", "　魔法力▼２０");
+    check_bytes("\xa3\xaf", "\x82\x51\x82\x58\x82\x4f\x82\x4f\x82\x4f", "／２９０００");
+    check("－４", "／５０", "－４／５０");
+    check("", "１２２／２９０００", "１２２／２９０００");
+    check("", "俀俋侽侽侽／道具", "俀俋侽侽侽／道具");
+    check_incremental_display();
+    check("", "攻撃力", "攻撃力");
+    check("", "呣呣呣", "呣呣呣");
+    check("", "「呣呣呣……」", "「呣呣呣……」");
+    check("", "装備武器：点击继续。", "装備武器：点击继续。");
+    const char *config_labels[] = {
+        " 显示示例信息", " 跳过文本中，削除各种演出使其高速化", " 不启用", " ２ｘ", " ４ｘ", " ８ｘ"
+    };
+    for (size_t i = 0; i < sizeof(config_labels) / sizeof(*config_labels); i++) {
+        char *gbk = utf2cjk(config_labels[i], 0, true);
+        struct string *text = make_string(gbk, strlen(gbk));
+        string_append_cstr(&text, "\r", 1);
+        check_display(text, config_labels[i]);
+        free_string(text);
+        free(gbk);
+    }
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness, LIBSYS4_CORE,
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_kiwi_v12_channels_and_audio_mixer_non_nested_voice(self):
         harness = r"""
 #include <assert.h>
