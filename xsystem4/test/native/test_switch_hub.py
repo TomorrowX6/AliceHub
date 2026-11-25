@@ -1,9 +1,13 @@
-"""Host tests for the Switch hub's SD model, launch request codec and offline saves."""
+"""Host tests for the Switch hub's SD model, launch requests, and save transfers."""
 from pathlib import Path
+import struct
 import subprocess
 import tempfile
 import unittest
 import zipfile
+import zlib
+
+from switch_import_checks import SwitchImportTest
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -83,7 +87,7 @@ int __wrap_rename(const char *src, const char *dst)
 {
     struct stat st;
     if (!stat(dst, &st)) {
-        errno = EEXIST;
+        errno = EIO;
         return -1;
     }
     if (fail_publish && !strcmp(dst, "saves/game/LocalSave10.asd") && strstr(src, ".hub-tmp")) {
@@ -190,6 +194,7 @@ int main(void)
         sources = ("savefile", "buffer", "file", "mt19937int", "string", "system", "utfsjis", "zlib")
         self.run_harness(r"""
 #include "save_storage.h"
+#include "save_presets.h"
 #include "modifier_api.h"
 #include "cJSON.h"
 #include "system4/savefile.h"
@@ -217,6 +222,28 @@ int main(void)
     cJSON *json = read_summary(modifier_api_read_local_save_summary(local));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "valid")));
     assert(cJSON_GetObjectItem(json, "battleCount")->valueint == 3);
+    assert(hub_save_preset_count(false) == 4 && hub_save_preset_count(true) == 1);
+    cJSON *preset = hub_save_preset_changes(false, 0, json);
+    assert(preset && cJSON_GetObjectItem(preset, "foodTicket")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "atkPerPhys")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "statusMaxPer")->valueint == 999);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 1, json);
+    assert(preset && cJSON_GetArraySize(preset) == 3);
+    assert(cJSON_GetObjectItem(preset, "perFindTreasure")->valueint == 999);
+    assert(cJSON_GetObjectItem(preset, "treasureNotGetCount")->valueint == 99);
+    assert(cJSON_GetObjectItem(preset, "rareLuck")->valueint == 999);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 2, json);
+    assert(preset && cJSON_GetArraySize(preset) == 5);
+    assert(cJSON_GetObjectItem(preset, "setCardCount")->valueint == 99);
+    assert(cJSON_GetObjectItem(preset, "setCharStar")->valueint == 5);
+    cJSON_Delete(preset);
+    preset = hub_save_preset_changes(false, 3, json);
+    assert(preset && cJSON_GetObjectItem(preset, "humanDead")->valueint == 0);
+    assert(cJSON_GetObjectItem(preset, "leazasState")->valueint == 0);
+    assert(cJSON_GetObjectItem(preset, "subHanny")->valueint == 99999);
+    cJSON_Delete(preset);
     cJSON_Delete(json);
     assert(modifier_api_write_local_save_mod(local, "{\"battleCount\":5}"));
     json = read_summary(modifier_api_read_local_save_summary(local));
@@ -233,6 +260,26 @@ int main(void)
     json = read_summary(modifier_api_read_global_save_summary(global, collection));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "hasGlobal")));
     assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "hasCollection")));
+    preset = hub_save_preset_changes(true, 0, json);
+    assert(preset && cJSON_GetArraySize(preset) == 22);
+    assert(cJSON_GetObjectItem(preset, "gamePlayCount")->valueint == 50);
+    assert(cJSON_GetObjectItem(preset, "leaderAtkRatio")->valuedouble == 10);
+    assert(cJSON_GetObjectItem(preset, "totalClearPoint")->valueint == 999);
+    char *preset_text = cJSON_PrintUnformatted(preset);
+    assert(preset_text && modifier_api_write_global_save_mod(global, collection, preset_text));
+    free(preset_text);
+    cJSON_Delete(preset);
+    cJSON_Delete(json);
+    json = read_summary(modifier_api_read_global_save_summary(global, collection));
+    assert(cJSON_GetObjectItem(json, "totalClearPoint")->valueint == 999);
+    assert(cJSON_GetObjectItem(json, "gamePlayCount")->valueint == 50);
+    assert(cJSON_GetObjectItem(json, "leaderAtkRatio")->valuedouble == 10);
+    cJSON_Delete(json);
+    json = cJSON_Parse("{\"hasCommonSystemData\":true}");
+    preset = hub_save_preset_changes(true, 0, json);
+    assert(preset && cJSON_GetArraySize(preset) == 15);
+    assert(!cJSON_GetObjectItem(preset, "gamePlayCount") && !cJSON_GetObjectItem(preset, "leaderAtkRatio"));
+    cJSON_Delete(preset);
     cJSON_Delete(json);
     assert(modifier_api_write_global_save_mod(global, collection,
         "{\"gamePlayCount\":20,\"leaderAtkRatio\":2.5,\"OpenMonsterpedia\":1}"));
@@ -246,7 +293,7 @@ int main(void)
     assert(cJSON_IsFalse(cJSON_GetObjectItem(json, "hasCommonSystemData")));
     cJSON_Delete(json);
 }
-""", extra=["-DMODIFIER_OFFLINE_ONLY", str(ENGINE / "src/modifier.c"),
+""", extra=["-DMODIFIER_OFFLINE_ONLY", str(HUB / "save_presets.c"), str(ENGINE / "src/modifier.c"),
                str(ENGINE / "src/cJSON.c"), *(str(SYS4 / f"src/{s}.c") for s in sources)],
             libraries=["-lz", "-lm"], setup=assets)
 
@@ -405,6 +452,65 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "support")], cwd=tmp, check=True)
 
+    def test_controller_profile_inheritance_and_layout(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "controller_profile.c"),
+                 "-x", "c", "-", "-o", str(Path(tmp) / "test")],
+                input=r"""
+#include "controller_profile.h"
+#include <assert.h>
+
+int main(void)
+{
+    HubGame system3, system4;
+    assert(hub_game_init(&system3, HUB_SYSTEM3, "ランス"));
+    assert(hub_game_init(&system4, HUB_XSYSTEM4, "ランス"));
+    ControllerProfile profile;
+    assert(controller_profile_load(".", &system3, &profile) == CP_DEFAULTS);
+    assert(!profile.touch_enabled);
+    assert(controller_profile_map(&profile, 1u << CP_A) == (1u << CP_A));
+    assert(controller_profile_hit(&profile, .9f, .7f) == -1);
+
+    profile.binding[CP_A] = CP_B;
+    profile.binding[CP_B] = CP_B;
+    profile.binding[CP_Y] = CP_BUTTONS;
+    profile.touch_enabled = true;
+    assert(controller_profile_save(".", NULL, &profile));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(controller_profile_map(&profile, (1u << CP_A) | (1u << CP_B) | (1u << CP_Y)) == (1u << CP_B));
+    assert(controller_profile_hit(&profile, .9f, .7f) == 4);
+    assert(controller_profile_hit(&profile, 1.0f, .7f) == -1);
+
+    assert(controller_profile_move(&profile, 4, profile.touch[5].column, profile.touch[5].row));
+    assert(controller_profile_hit(&profile, .9f, .7f) == 5);
+    assert(!controller_profile_move(&profile, 4, CP_COLUMNS, 0));
+    profile.binding[CP_A] = CP_X;
+    assert(controller_profile_save(".", &system3, &profile));
+    assert(controller_profile_load(".", &system4, &profile) == CP_GLOBAL);
+    assert(profile.binding[CP_A] == CP_B);
+    assert(controller_profile_load(".", &system3, &profile) == CP_GAME);
+    assert(profile.binding[CP_A] == CP_X && controller_profile_hit(&profile, .9f, .7f) == 5);
+
+    FILE *bad = fopen("controller-profiles/system3/ランス/profile", "wb");
+    assert(bad && fputs("alicehub-controller 1\n2\n", bad) >= 0 && !fclose(bad));
+    assert(controller_profile_load(".", &system3, &profile) == CP_UNREADABLE);
+    assert(profile.binding[CP_A] == CP_B);
+    assert(controller_profile_reset(".", &system3));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(!rename("controller-profile", "controller-profile.bak"));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(controller_profile_reset(".", NULL));
+    assert(controller_profile_load(".", &system3, &profile) == CP_DEFAULTS);
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
     def test_model_and_handoff(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:
@@ -503,3 +609,235 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
+    def test_instance_copy_and_delete(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "xsystem4/games/Rance10"
+            nested = source / "patches"
+            nested.mkdir(parents=True)
+            (nested / "data.bin").write_bytes(b"\0AliceHub\xff")
+            original_saves = root / "xsystem4/saves/Rance10"
+            original_saves.mkdir(parents=True)
+            (original_saves / "slot.rsm").write_text("original")
+            retained = original_saves.with_name("Rance10-1")
+            retained.mkdir()
+            (retained / "slot.rsm").write_text("retained")
+            sibling = root / "system3/games/Rance10-2"
+            sibling.mkdir(parents=True)
+            (sibling / "data.bin").write_text("different engine")
+            (source / "external").symlink_to(sibling, target_is_directory=True)
+            stale = root / "xsystem4/.hub-copy-1"
+            stale.mkdir()
+            (stale / "partial.bin").write_text("interrupted copy")
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "instances.c"),
+                 "-x", "c", "-", "-o", str(root / "test")],
+                input=r"""
+#include "instances.h"
+#include <assert.h>
+#include <string.h>
+#include <unistd.h>
+
+static unsigned poll_count;
+
+static bool cancel_in_progress(void)
+{
+    return ++poll_count == 3;
+}
+
+int main(void)
+{
+    HubGame game, clone, other;
+    char suggestion[HUB_NAME_SIZE], path[HUB_PATH_SIZE];
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "Rance10"));
+    assert(hub_game_init(&clone, HUB_XSYSTEM4, "Rance10-2"));
+    assert(hub_game_init(&other, HUB_SYSTEM3, "Rance10-2"));
+    assert(hub_instance_suggest(".", &game, suggestion) && !strcmp(suggestion, clone.name));
+    assert(hub_instance_copy(".", &game, "../escape", NULL) == HUB_INSTANCE_INVALID_NAME);
+    assert(hub_instance_copy(".", &game, "wrong?", NULL) == HUB_INSTANCE_INVALID_NAME);
+    assert(hub_instance_copy(".", &game, "rance10", NULL) == HUB_INSTANCE_NAME_TAKEN);
+    assert(hub_instance_copy(".", &game, "rance10-1", NULL) == HUB_INSTANCE_NAME_TAKEN);
+    assert(hub_instance_copy(".", &game, clone.name, NULL) == HUB_INSTANCE_COPY_FAILED);
+    assert(hub_game_path(".", &clone, path) && access(path, F_OK));
+    assert(!unlink("xsystem4/games/Rance10/external"));
+
+    assert(hub_instance_copy(".", &game, clone.name, cancel_in_progress) == HUB_INSTANCE_COPY_FAILED);
+    assert(poll_count >= 3 && access(path, F_OK));
+    assert(hub_instance_copy(".", &game, clone.name, NULL) == HUB_INSTANCE_OK);
+    assert(!access(path, F_OK));
+    FILE *copied = fopen("xsystem4/games/Rance10-2/patches/data.bin", "rb");
+    unsigned char data[10];
+    assert(copied && fread(data, 1, sizeof(data), copied) == sizeof(data));
+    assert(data[0] == 0 && !memcmp(data + 1, "AliceHub", 8) && data[9] == 255 && !fclose(copied));
+    assert(hub_game_save_path(".", &clone, path) && !access(path, F_OK));
+    assert(access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+    assert(hub_instance_copy(".", &game, "Rance10-3", NULL) == HUB_INSTANCE_OK);
+
+    HubLibrary library = {0};
+    assert(hub_library_scan(&library, ".") && library.count == 4);
+    assert(strcmp(clone.instance_id, game.instance_id));
+    assert(strcmp(clone.instance_id, other.instance_id));
+    hub_library_free(&library);
+
+    FILE *save = fopen("xsystem4/saves/Rance10-2/slot.rsm", "wb");
+    assert(save && fputs("copy save", save) >= 0 && !fclose(save));
+    assert(!symlink("../../../system3/games/Rance10-2", "xsystem4/games/Rance10-2/external"));
+    assert(hub_instance_delete(".", &clone, false) == HUB_INSTANCE_OK);
+    assert(!access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+    assert(access("xsystem4/games/Rance10-2", F_OK));
+    assert(hub_library_scan(&library, ".") && library.count == 3);
+    hub_library_free(&library);
+    assert(!access("system3/games/Rance10-2/data.bin", F_OK));
+    assert(!access("xsystem4/games/Rance10-3/patches/data.bin", F_OK));
+    assert(hub_instance_delete(".", &game, true) == HUB_INSTANCE_OK);
+    assert(access("xsystem4/games/Rance10", F_OK));
+    assert(access("xsystem4/saves/Rance10", F_OK));
+    assert(!access("xsystem4/saves/Rance10-1/slot.rsm", F_OK));
+    assert(!access("xsystem4/saves/Rance10-2/slot.rsm", F_OK));
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(root / "test")], cwd=root, check=True)
+            self.assertEqual(list((root / "xsystem4").glob(".hub-copy-*")), [stale])
+            self.assertEqual((stale / "partial.bin").read_text(), "interrupted copy")
+
+    def test_save_transfers_and_pc_codec(self):
+        repo = Path(__file__).resolve().parents[3]
+        hub = repo / "cmake/switch/hub"
+        engine = repo / "xsystem4"
+        libsys4 = engine / "subprojects/libsys4"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
+                 "-Datomic_save_open=hub_codec_atomic_save_open",
+                 "-Datomic_save_commit=hub_codec_atomic_save_commit",
+                 "-Datomic_save_abort=hub_codec_atomic_save_abort",
+                 "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
+                 *(str(hub / name) for name in ("model.c", "save_store.c", "save_codec.c")),
+                 str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
+                 str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
+                input=r"""
+#include "save_store.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define BASE "save-manager/xsystem4/ランス"
+#define LIVE "xsystem4/saves/ランス"
+
+static void put(const char *path, const char *content)
+{
+    FILE *out = fopen(path, "wb");
+    assert(out && fputs(content, out) >= 0 && !fclose(out));
+}
+
+static void expect(const char *path, const char *content)
+{
+    FILE *in = fopen(path, "rb");
+    assert(in);
+    char bytes[64];
+    size_t n = fread(bytes, 1, sizeof(bytes), in);
+    assert(n == strlen(content) && !memcmp(bytes, content, n) && !fclose(in));
+}
+
+int main(void)
+{
+    HubGame game;
+    HubSaveResult result;
+    atomic_bool cancelled = false;
+    assert(hub_game_init(&game, HUB_XSYSTEM4, "ランス"));
+    assert(hub_save_run(".", &game, HUB_SAVE_PREPARE, &cancelled, &result));
+    assert(!mkdir(BASE "/Backups", 0700));
+    assert(!mkdir(BASE "/Backups/.save-stage-0000", 0700));
+    put(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
+    assert(!mkdir(BASE "/Import/SaveData", 0700));
+    put(BASE "/Import/SaveData/main.asd", "initial");
+    put(BASE "/Import/SaveData/.hidden", "not imported");
+    assert(hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result) && result.copied == 1);
+    expect(LIVE "/main.asd", "initial");
+    assert(access(LIVE "/.hidden", F_OK));
+
+    put(LIVE "/.internal", "hidden data");
+    assert(hub_save_run(".", &game, HUB_SAVE_BACKUP, &cancelled, &result) && result.copied == 2);
+    expect(BASE "/Backups/.save-stage-0000/previous", "interrupted stage");
+    assert(!unlink(BASE "/Backups/.save-stage-0000/previous"));
+    assert(!rmdir(BASE "/Backups/.save-stage-0000"));
+    put(BASE "/Import/SaveData/main.asd", "changed");
+    put(BASE "/Import/SaveData/extra.asd", "extra");
+    assert(hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result) && result.copied == 2);
+    expect(LIVE "/main.asd", "changed");
+    assert(hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result) && result.copied == 2);
+    expect(LIVE "/main.asd", "initial");
+    expect(LIVE "/.internal", "hidden data");
+    assert(access(LIVE "/extra.asd", F_OK));
+
+    put(BASE "/Sync/main.asd", "external");
+    put(BASE "/Sync/external.asd", "added");
+    put(LIVE "/local.asd", "local");
+    assert(hub_save_run(".", &game, HUB_SAVE_SYNC, &cancelled, &result));
+    assert(result.copied == 2 && result.conflicts == 1);
+    expect(LIVE "/external.asd", "added");
+    expect(LIVE "/main.asd", "initial");
+    expect(BASE "/Sync/main.asd", "external");
+    expect(BASE "/Sync/local.asd", "local");
+    assert(hub_save_run(".", &game, HUB_SAVE_PULL, &cancelled, &result));
+    expect(LIVE "/main.asd", "external");
+    put(LIVE "/main.asd", "local edit");
+    assert(hub_save_run(".", &game, HUB_SAVE_PUSH, &cancelled, &result));
+    expect(BASE "/Sync/main.asd", "local edit");
+
+    put(LIVE "/ignored.bak", "backup");
+    assert(!rename("fixture.asd", LIVE "/struct.asd"));
+    assert(hub_save_run(".", &game, HUB_SAVE_EXPORT, &cancelled, &result));
+    expect(BASE "/SaveData/ignored.bak", "backup");
+    assert(hub_save_run(".", &game, HUB_SAVE_EXPORT_PC, &cancelled, &result));
+    assert(result.converted == 1);
+    expect(BASE "/PC_SaveData/main.asd", "local edit");
+    assert(access(BASE "/PC_SaveData/ignored.bak", F_OK));
+
+    put(LIVE "/main.asd", "not exported");
+    assert(!rename("broken.asd", LIVE "/broken.asd"));
+    assert(!hub_save_run(".", &game, HUB_SAVE_EXPORT_PC, &cancelled, &result));
+    assert(strstr(result.error, "Could not convert broken.asd"));
+    expect(BASE "/PC_SaveData/main.asd", "local edit");
+    assert(!symlink("main.asd", BASE "/Import/SaveData/link.asd"));
+    assert(!hub_save_run(".", &game, HUB_SAVE_IMPORT, &cancelled, &result));
+    expect(LIVE "/main.asd", "not exported");
+    atomic_store(&cancelled, true);
+    assert(!hub_save_run(".", &game, HUB_SAVE_RESTORE, &cancelled, &result));
+    assert(!strcmp(result.error, "Cancelled."));
+    expect(LIVE "/main.asd", "not exported");
+}
+""",
+                text=True,
+                check=True,
+            )
+            magic = b"X4SS\x01\0\0\0"
+            comment = b"Save comment"
+            raw = (struct.pack("<III", 1, 1, 1) + b"\x01\x04\0\0\0Hero" +
+                   b"\x01\0\0\0\x02\0\0\0HP\x01" + struct.pack("<I", 42))
+            compressed = zlib.compress(raw)
+            (root / "fixture.asd").write_bytes(
+                magic + struct.pack("<I", len(comment)) + comment +
+                struct.pack("<II", len(raw), len(compressed)) + compressed
+            )
+            (root / "broken.asd").write_bytes(magic)
+            subprocess.run([str(exe)], cwd=root, check=True)
+            export_dir = root / "save-manager/xsystem4/ランス"
+            pc = (export_dir / "PC_SaveData/struct.asd").read_bytes()
+            self.assertEqual(pc[:4], b"GD\x01\x01")
+            unpacked = zlib.decompress(pc[8:])
+            self.assertEqual(len(unpacked), struct.unpack("<I", pc[4:8])[0])
+            self.assertTrue(unpacked.startswith(b"serialize_struct\0"))
+            self.assertTrue(unpacked.endswith(comment))
+            self.assertIn(b"Hero\0", unpacked)
+            self.assertEqual((export_dir / "SaveData/struct.asd").read_bytes()[:8], magic)
+            self.assertFalse(any(root.rglob(".save-stage-*")))

@@ -1,5 +1,6 @@
 #include "runtime_menu.h"
 #include "runtime_capture.h"
+#include "controller_runtime.h"
 
 #include <stdio.h>
 #include <switch.h>
@@ -293,5 +294,7 @@ bool switch_menu_poll(const SwitchMenu *menu, void *context)
 done:
     FT_Done_Face(face);
     FT_Done_FreeType(library);
+    if (shown)
+        switch_controls_release_touch();
     return shown;
 }

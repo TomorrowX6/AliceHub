@@ -1,4 +1,5 @@
 #include "hub.h"
+#include "save_presets.h"
 #include "save_storage.h"
 #include "cJSON.h"
 #include "modifier_api.h"
@@ -393,13 +394,23 @@ static void format_value(char *text, size_t size, const Field *field, const cJSO
         snprintf(text, size, "%d", value->valueint);
 }
 
-static HubItem field_item(const void *unused, size_t index)
+static HubItem field_item(const void *data, size_t index)
 {
-    (void)unused;
+    const size_t count = *(const size_t *)data;
     static char text[64];
+    if (count) {
+        if (!index)
+            return (HubItem){"Presets", "Apply multiple changes"};
+        --index;
+    }
+    if (editor.edit_backup) {
+        if (!index)
+            return (HubItem){"Restore previous save", "Undo offline edits"};
+        --index;
+    }
     const Field *field = get_field(index);
     if (!field)
-        return (HubItem){"Restore previous save", "Undo offline edits"};
+        return (HubItem){"", NULL};
     bool changed;
     const cJSON *value = field_value(field, &changed);
     if (!value)
@@ -425,14 +436,14 @@ static void draw_fields(HubApp *app, size_t *focus, const HubGame *game)
     hub_heading(app, editor.global ? "Global save" : name ? name + 1 : "Progress save",
         count ? "Select a value to edit it" :
         editor.global ? "No readable global save data; install full unlock first." : "Could not read this save.");
-    size_t rows = count + editor.edit_backup;
+    size_t rows = count + !!count + editor.edit_backup;
     if (rows) {
         if (*focus >= rows)
             *focus = rows - 1;
-        hub_list(app, rows, *focus, field_item, NULL);
+        hub_list(app, rows, *focus, field_item, &count);
     }
-    hub_hints(app, count || editor.edit_backup ? "Select" : NULL, pending ? "Discard" : "Back",
-        pending ? "Save edits" : NULL);
+    hub_hints_extra(app, rows ? "Select" : NULL, pending ? "Discard" : "Back",
+        pending ? "Save edits" : NULL, NULL, rows > 5);
 }
 
 static void edit_field(HubApp *app, const Field *field)
@@ -481,7 +492,6 @@ static void edit_field(HubApp *app, const Field *field)
 
 static bool input_fields(HubApp *app, size_t *focus, const HubGame *game, HubInput input)
 {
-    (void)game;
     if (editor.busy)
         return true;
     if (input == HUB_BACK) {
@@ -495,13 +505,61 @@ static bool input_fields(HubApp *app, size_t *focus, const HubGame *game, HubInp
         return true;
     }
     size_t count = field_count();
-    if (input == HUB_CONFIRM && *focus < count + editor.edit_backup) {
-        if (*focus == count)
+    size_t rows = count + !!count + editor.edit_backup;
+    if (input == HUB_CONFIRM && *focus < rows) {
+        size_t index = *focus;
+        if (count && index-- == 0) {
+            if (editor.pending && editor.pending->child) {
+                hub_dialog(app, "Unsaved changes", "Save or discard your manual changes before using a preset.");
+                return true;
+            }
+            return hub_push(app, "save-editor.presets", game);
+        }
+        if (editor.edit_backup && index-- == 0)
             return confirm(app, RESTORE_EDIT);
-        edit_field(app, get_field(*focus));
+        edit_field(app, get_field(index));
         return true;
     }
-    return hub_move_focus(focus, count + editor.edit_backup, 1, 5, input);
+    return hub_move_focus(focus, rows, 1, 5, input);
+}
+
+static HubItem preset_item(const void *unused, size_t index)
+{
+    (void)unused;
+    return (HubItem){hub_save_preset_label(editor.global, index), NULL};
+}
+
+static void draw_presets(HubApp *app, size_t *focus, const HubGame *game)
+{
+    (void)game;
+    if (*focus == (size_t)-1)
+        *focus = 0;
+    hub_heading(app, "Save presets", "A applies the preset now and backs up your save.");
+    hub_list(app, hub_save_preset_count(editor.global), *focus, preset_item, NULL);
+    hub_hints_extra(app, "Apply", "Back", NULL, NULL, false);
+}
+
+static bool input_presets(HubApp *app, size_t *focus, const HubGame *game, HubInput input)
+{
+    (void)game;
+    size_t count = hub_save_preset_count(editor.global);
+    if (input == HUB_CONFIRM && *focus < count) {
+        cJSON *changes = hub_save_preset_changes(editor.global, *focus, editor.summary);
+        if (!changes) {
+            hub_dialog(app, "Save presets", "Could not prepare this preset for the selected save.");
+            return true;
+        }
+        cJSON_Delete(editor.pending);
+        editor.pending = changes;
+        if (start(app, APPLY))
+            hub_pop(app);
+        else {
+            cJSON_Delete(editor.pending);
+            editor.pending = NULL;
+        }
+        return true;
+    }
+    return hub_move_focus(focus, count, 1, 5, input);
 }
 
 static HubItem confirm_item(const void *unused, size_t index)
@@ -549,10 +607,12 @@ void hub_register_save_editor(HubApp *app)
     static AppletHookCookie hook;
     static const HubScreen menu = {"save-editor.menu", draw_menu, input_menu};
     static const HubScreen fields_screen = {"save-editor.fields", draw_fields, input_fields};
+    static const HubScreen presets = {"save-editor.presets", draw_presets, input_presets};
     static const HubScreen confirmation = {"save-editor.confirm", draw_confirm, input_confirm};
     static const HubActionEntry action = {"Save editor", "save-editor.menu", available};
     hub_register_screen(app, &menu);
     hub_register_screen(app, &fields_screen);
+    hub_register_screen(app, &presets);
     hub_register_screen(app, &confirmation);
     hub_register_action(app, HUB_DETAIL_ACTION, &action);
     appletHook(&hook, applet_hook, NULL);

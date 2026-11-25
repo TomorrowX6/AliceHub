@@ -45,6 +45,7 @@
 #include "mixer.h"
 #include "alicehub_bridge.h"
 #ifdef __SWITCH__
+#include "hub/controller_runtime.h"
 #include "hub/runtime_menu.h"
 #include "hub/runtime_menu_engines.h"
 #include "escalayer_modifier.h"
@@ -195,6 +196,9 @@ static int keytable[SDL_SCANCODE_COUNT] = {
 
 static int joy_device_index = -1;
 static SDL_Joystick *js;
+#ifdef __SWITCH__
+static uint32_t switch_joy_buttons;
+#endif
 
 // id is a device index in SDL2, and an instance ID in SDL3.
 static bool joy_open(int id) {
@@ -374,6 +378,10 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 		nact_quit(false);
 		return;
 	}
+	if (switch_controls_touch(e)) {
+		gfx_requestRedraw();
+		return;
+	}
 #endif
 	if (modal_handle_event(e))
 		return;
@@ -495,13 +503,18 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 		}
 		break;
 
-	case SDL_EVENT_FINGER_DOWN:
+	case SDL_EVENT_FINGER_DOWN: {
+#ifdef __SWITCH__
+		int fingers = switch_controls_game_fingers(&e->tfinger);
+#else
+		int fingers = sdl_CountTouchFingers(&e->tfinger);
+#endif
 		alicehub_on_touch_input();
-		if (sdl_CountTouchFingers(&e->tfinger) >= 3) {
+		if (fingers >= 3) {
 			touch_button = 0;
 			deferred_touch_event.timestamp = 0;
 			menu_open();
-		} else if (sdl_CountTouchFingers(&e->tfinger) >= 2) {
+		} else if (fingers >= 2) {
 			touch_button = SDL_BUTTON_RIGHT;
 			deferred_touch_event.timestamp = 0;
 			mouseb &= ~(1 << SDL_BUTTON_LEFT);
@@ -528,9 +541,14 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 			send_agsevent(AGSEVENT_BUTTON_PRESS, mouse_to_agsevent(button));
 		}
 		break;
+	}
 
 	case SDL_EVENT_FINGER_UP:
+#ifdef __SWITCH__
+		if (switch_controls_game_fingers(&e->tfinger) == 0) {
+#else
 		if (sdl_CountTouchFingers(&e->tfinger) == 0) {
+#endif
 			int btn = touch_button ? touch_button : ((mouseb & (1 << SDL_BUTTON_LEFT)) ? SDL_BUTTON_LEFT : SDL_BUTTON_RIGHT);
 			touch_button = 0;
 			mouse_pos = event_get_touch_position(&e->tfinger);
@@ -548,6 +566,17 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 	case SDL_EVENT_JOYSTICK_ADDED:
 		joy_open(e->jdevice.which);
 		break;
+
+#ifdef __SWITCH__
+	case SDL_JOYDEVICEREMOVED:
+		if (js && SDL_JoystickInstanceID(js) == e->jdevice.which) {
+			event_remove();
+			joyinfo = 0;
+			switch_joy_buttons = 0;
+			joy_init();
+		}
+		break;
+#endif
 
 	case SDL_EVENT_JOYSTICK_AXIS_MOTION:
 #ifdef __SWITCH__
@@ -584,6 +613,18 @@ static void handle_render_event(SDL_Event *e, bool virtual_input) {
 	case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
 	case SDL_EVENT_JOYSTICK_BUTTON_UP:
 		{
+#ifdef __SWITCH__
+			if (switch_controls_remapping()) {
+				if (js && SDL_JoystickInstanceID(js) == e->jbutton.which) {
+					uint32_t button = switch_controls_joystick_button(e->jbutton.button);
+					if (e->type == SDL_EVENT_JOYSTICK_BUTTON_DOWN)
+						switch_joy_buttons |= button;
+					else
+						switch_joy_buttons &= ~button;
+				}
+				break;
+			}
+#endif
 			int mask = 0;
 			switch (e->jbutton.button) {
 			case 0: case 1: case 2: case 3:
@@ -710,6 +751,9 @@ void event_reset_input_state(void) {
 	memset(RawKeyInfo, 0, sizeof(RawKeyInfo));
 	mouseb = 0;
 	joyinfo = 0;
+#ifdef __SWITCH__
+	switch_joy_buttons = 0;
+#endif
 }
 
 int event_get_mouse(SDL_Point *p) {
@@ -739,6 +783,10 @@ void event_clear_wheel(void) {
 
 int event_get_joy(void) {
 	get_event();
+#ifdef __SWITCH__
+	if (switch_controls_remapping())
+		return joyinfo | (switch_controls_buttons(switch_joy_buttons) & 0xff);
+#endif
 	return joyinfo;
 }
 

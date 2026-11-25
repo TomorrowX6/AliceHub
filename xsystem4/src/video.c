@@ -21,6 +21,9 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#ifdef __SWITCH__
+#include "hub/controller_runtime.h"
+#endif
 #ifdef __ANDROID__
 #include <dlfcn.h>
 #include <time.h>
@@ -52,6 +55,35 @@ static Texture *switch_menu_surface;
 #endif
 
 struct sdl_private sdl;
+
+#ifdef __SWITCH__
+static void draw_switch_rect(void *context, const SDL_Rect *rect, SDL_Color color)
+{
+	int height = *(int *)context;
+	glScissor(rect->x, height - rect->y - rect->h, rect->w, rect->h);
+	glClearColor(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+static void draw_switch_controls(void)
+{
+	if (!switch_controls_touch_enabled())
+		return;
+	int width, height;
+	SDL_GL_GetDrawableSize(sdl.window, &width, &height);
+	GLint scissor[4];
+	GLfloat color[4];
+	GLboolean enabled = glIsEnabled(GL_SCISSOR_TEST);
+	glGetIntegerv(GL_SCISSOR_BOX, scissor);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, color);
+	glEnable(GL_SCISSOR_TEST);
+	switch_controls_draw(width, height, draw_switch_rect, &height);
+	glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+	glClearColor(color[0], color[1], color[2], color[3]);
+	if (!enabled)
+		glDisable(GL_SCISSOR_TEST);
+}
+#endif
 
 static const GLchar glsl_preamble[] =
 #ifdef USE_GLES
@@ -1412,6 +1444,10 @@ void gfx_swap(void)
 	}
 #endif
 
+#ifdef __SWITCH__
+	if (!switch_menu_surface)
+		draw_switch_controls();
+#endif
 	SDL_GL_SwapWindow(sdl.window);
 #ifdef __ANDROID__
 	if (trace_swap)
