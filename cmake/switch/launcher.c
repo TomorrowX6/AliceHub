@@ -475,12 +475,18 @@ static int choose_game(Picker *picker, char *game, size_t size, const char *init
     size_t page = selected / CARD_COUNT * CARD_COUNT, loaded = 0;
     int accepted = 0;
     bool redraw = true;
+    bool wait_for_a_release = initial_error != NULL;
     while (appletMainLoop()) {
         padUpdate(&pad);
         u64 keys = padGetButtonsDown(&pad);
+        u64 held = padGetButtons(&pad);
         if (keys & (HidNpadButton_B | HidNpadButton_Plus))
             break;
-        padRepeaterUpdate(&repeater, padGetButtons(&pad) & directions);
+        if (wait_for_a_release) {
+            keys &= ~HidNpadButton_A;
+            wait_for_a_release = (held & HidNpadButton_A) != 0;
+        }
+        padRepeaterUpdate(&repeater, held & directions);
         keys |= padRepeaterGetButtons(&repeater);
         if (count && (keys & HidNpadButton_A)) {
             if (error) {

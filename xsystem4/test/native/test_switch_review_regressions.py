@@ -227,6 +227,7 @@ static u16 pixel;
 static int ticks, draws, submitted;
 static const u64 *keys;
 static bool saw_name, saw_invalid, saw_startup_error;
+static bool check_error_dismissal;
 static bool appletMainLoop(void) { return ticks < 4; }
 static void padConfigureInput(int count, int style) { (void)count; (void)style; }
 static void padInitializeDefault(PadState *pad) { *pad = 0; }
@@ -235,11 +236,14 @@ static void padRepeaterInitialize(PadRepeater *r, int delay, int interval)
 { *r = 0; assert(delay > interval && interval > 0); }
 static void padRepeaterUpdate(PadRepeater *r, u64 mask) { (void)r; (void)mask; }
 static u64 padRepeaterGetButtons(PadRepeater *r) { (void)r; return 0; }
-static u64 padGetButtonsDown(PadState *pad)
+static u64 padGetButtons(PadState *pad)
 {
     return keys ? keys[*pad - 1] : (*pad == 4 ? HidNpadButton_B : 0);
 }
-static u64 padGetButtons(PadState *pad) { return padGetButtonsDown(pad); }
+static u64 padGetButtonsDown(PadState *pad)
+{
+    return padGetButtons(pad) & ~(keys && *pad > 1 ? keys[*pad - 2] : 0);
+}
 static void svcSleepThread(int ns) { assert(ns == 16000000); }
 static u16 *framebufferBegin(int *fb, u32 *stride)
 {
@@ -264,6 +268,8 @@ static void picker_draw(Picker *picker, char **names, size_t count, size_t selec
     saw_name |= error && !strcmp(game, "bad");
     saw_invalid |= error && strstr(error, "System40.ini");
     saw_startup_error |= error && !strcmp(error, "Broken AIN");
+    if (check_error_dismissal)
+        assert((error != NULL) == (ticks < 4));
 }
 static void framebufferEnd(int *fb)
 {
@@ -296,6 +302,15 @@ int main(void)
     strcpy(game, "games/bad");
     assert(!choose_game(&picker, game, sizeof(game), "Broken AIN"));
     assert(saw_startup_error);
+
+    const u64 held_a[] = { HidNpadButton_A, HidNpadButton_A, 0, HidNpadButton_A };
+    ticks = 0;
+    keys = held_a;
+    check_error_dismissal = true;
+    int prior_draws = draws;
+    strcpy(game, "games/bad");
+    assert(!choose_game(&picker, game, sizeof(game), "Broken AIN"));
+    assert(draws == prior_draws + 2);
 }
 """)
 
