@@ -1,5 +1,7 @@
 """Exercise Switch regressions without the Switch SDK."""
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -18,10 +20,12 @@ class SwitchRegressionTest(unittest.TestCase):
             subprocess.run([str(exe)], cwd=tmp, check=True)
 
     def test_picker_draws_unicode_codepoints_and_respects_stride(self):
-        renderer = extract_function("../cmake/switch/launcher.c", "picker_text")
+        renderer = "\n".join(extract_function("../cmake/switch/launcher.c", name)
+                             for name in ("picker_rgb", "picker_mix", "picker_text"))
         self.run_c(r"""
 #include <assert.h>
 #include <locale.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <uchar.h>
@@ -69,7 +73,7 @@ int main(void)
     assert(setlocale(LC_CTYPE, "C.UTF-8"));
     static u16 pixels[2][PICKER_WIDTH + 16];
     Picker picker = { pixels[0], PICKER_WIDTH + 16 };
-    picker_text(&picker, 56, 2, "ランス1 中文 한글");
+    picker_text(&picker, 56, 2, PICKER_WIDTH, 0xffffff, "ランス1 中文 한글");
     const u32 expected[] = { 0x30e9, 0x30f3, 0x30b9, '1', ' ', 0x4e2d, 0x6587, ' ', 0xd55c, 0xae00 };
     assert(count == (int)(sizeof(expected) / sizeof(*expected)));
     for (int i = 0; i < count; i++) {
@@ -77,7 +81,7 @@ int main(void)
         assert(pixels[1][56 + 2 * i] == 0xffff);
         assert(pixels[0][56 + 2 * i] == 0);
     }
-    picker_text(&picker, 56, 0, "字");
+    picker_text(&picker, 56, 0, PICKER_WIDTH, 0xffffff, "字");
     assert(drawn[count - 1] == 0x5b57 && pixels[0][56] == 0);
 }
 """)
@@ -108,6 +112,7 @@ typedef struct {
     FT_Face bundled[2], shared[PlSharedFontType_Total];
     unsigned char *fallback_data;
     bool shared_attempted, shared_open;
+    int text_size;
 } Picker;
 static Glyph glyph;
 static Face primary = { &glyph, 1, 0 };
@@ -209,13 +214,15 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef int PadState;
+typedef int PadRepeater;
 typedef struct { int fb; u16 *pixels; u32 stride; } Picker;
 #define GAMES "games"
 #define ALICEHUB_ENGINE "xsystem4"
 #define ALICEHUB_SWITCH_XSYSTEM4
-enum { PICKER_HEIGHT = 1, PICKER_ROWS = 18, PICKER_LINE = 31 };
+enum { PICKER_HEIGHT = 1, CARD_COUNT = 4, ART_WIDTH = 250, ART_HEIGHT = 194 };
 enum { HidNpadStyleSet_NpadStandard, HidNpadButton_A = 1, HidNpadButton_B = 2,
-       HidNpadButton_Plus = 4, HidNpadButton_Up = 8, HidNpadButton_Down = 16 };
+       HidNpadButton_Plus = 4, HidNpadButton_Up = 8, HidNpadButton_Down = 16,
+       HidNpadButton_Left = 32, HidNpadButton_Right = 64 };
 static u16 pixel;
 static int ticks, draws, submitted;
 static const u64 *keys;
@@ -224,10 +231,15 @@ static bool appletMainLoop(void) { return ticks < 4; }
 static void padConfigureInput(int count, int style) { (void)count; (void)style; }
 static void padInitializeDefault(PadState *pad) { *pad = 0; }
 static void padUpdate(PadState *pad) { *pad = ++ticks; }
+static void padRepeaterInitialize(PadRepeater *r, int delay, int interval)
+{ *r = 0; assert(delay > interval && interval > 0); }
+static void padRepeaterUpdate(PadRepeater *r, u64 mask) { (void)r; (void)mask; }
+static u64 padRepeaterGetButtons(PadRepeater *r) { (void)r; return 0; }
 static u64 padGetButtonsDown(PadState *pad)
 {
     return keys ? keys[*pad - 1] : (*pad == 4 ? HidNpadButton_B : 0);
 }
+static u64 padGetButtons(PadState *pad) { return padGetButtonsDown(pad); }
 static void svcSleepThread(int ns) { assert(ns == 16000000); }
 static u16 *framebufferBegin(int *fb, u32 *stride)
 {
@@ -235,19 +247,29 @@ static u16 *framebufferBegin(int *fb, u32 *stride)
     *stride = sizeof(pixel);
     return &pixel;
 }
-static void picker_text(Picker *picker, int x, int y, const char *text)
+static u16 *picker_art_load(const char *path, int w, int h)
 {
-    (void)x; (void)y; (void)text;
+    (void)path; (void)w; (void)h;
+    return NULL;
+}
+static u16 *picker_art_cover(const char *path, int w, int h)
+{
+    return picker_art_load(path, w, h);
+}
+static void picker_draw(Picker *picker, char **names, size_t count, size_t selected,
+                        const u16 *logo, u16 *const *covers, const char *game, const char *error)
+{
+    (void)names; (void)count; (void)selected; (void)logo; (void)covers;
     *picker->pixels = ++draws;
-    saw_name |= y == 674 && !strcmp(text, "bad");
-    saw_invalid |= y == 704 && strstr(text, "System40.ini");
-    saw_startup_error |= y == 704 && !strcmp(text, "Broken AIN");
+    saw_name |= error && !strcmp(game, "bad");
+    saw_invalid |= error && strstr(error, "System40.ini");
+    saw_startup_error |= error && !strcmp(error, "Broken AIN");
 }
 static void framebufferEnd(int *fb)
 {
     (void)fb;
     if (!keys)
-        assert(pixel == 4);
+        assert(pixel == 1);
     ++submitted;
 }
 """ + loop + r"""
@@ -256,13 +278,13 @@ int main(void)
     Picker picker = {0};
     char game[512];
     assert(!choose_game(&picker, game, sizeof(game), NULL));
-    assert(draws == 4 && submitted == 3);
+    assert(draws == 1 && submitted == 3);
 
     assert(!mkdir("games", 0700) && !mkdir("games/bad", 0700) && !mkdir("games/good", 0700));
     assert(!mkdir("games/bad/System40.ini", 0700));
     FILE *ini = fopen("games/good/SYSTEM40.INI", "w");
     assert(ini && fputs("CodeName = \"Test.ain\"\n", ini) >= 0 && !fclose(ini));
-    const u64 attempt[] = { 0, HidNpadButton_A, HidNpadButton_Down, HidNpadButton_A };
+    const u64 attempt[] = { 0, HidNpadButton_A, HidNpadButton_Right, HidNpadButton_A };
     ticks = 0;
     keys = attempt;
     assert(choose_game(&picker, game, sizeof(game), NULL));
@@ -310,6 +332,66 @@ int main(void)
     assert(!validate_game("game"));
 }
 """)
+
+    def test_cover_art_decodes_png_and_skips_corrupt_or_missing_files(self):
+        if not shutil.which("pkg-config"):
+            self.skipTest("pkg-config required for host image decoder test")
+        packages = subprocess.run(["pkg-config", "--cflags", "--libs", "libpng", "libjpeg"],
+                                  capture_output=True, text=True)
+        if packages.returncode:
+            self.skipTest("host libpng and libjpeg required for image decoder test")
+        repo = Path(__file__).resolve().parents[3]
+        source = repo / "cmake/switch/picker_art.c"
+        icon = repo / "project/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
+        self.run_c(r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "picker_art.h"
+#include <jpeglib.h>
+
+int main(void)
+{
+    FILE *file = fopen("cover.jpg", "wb");
+    assert(file && fputs("\xff\xd8", file) >= 0 && !fclose(file));
+    assert(!picker_art_cover(".", 58, 58));
+    FILE *original = fopen(ALICEHUB_ICON, "rb");
+    file = fopen("thumbnail.png", "wb");
+    assert(original && file);
+    for (int byte; (byte = fgetc(original)) != EOF;)
+        assert(fputc(byte, file) == byte);
+    fclose(original);
+    fclose(file);
+    uint16_t *png = picker_art_cover(".", 58, 58);
+    assert(png && png[0] != png[29 * 58 + 29]);
+    free(png);
+
+    struct jpeg_compress_struct jpeg;
+    struct jpeg_error_mgr error;
+    jpeg.err = jpeg_std_error(&error);
+    jpeg_create_compress(&jpeg);
+    file = fopen("cover.jpg", "wb");
+    assert(file);
+    jpeg_stdio_dest(&jpeg, file);
+    jpeg.image_width = 1;
+    jpeg.image_height = 1;
+    jpeg.input_components = 3;
+    jpeg.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&jpeg);
+    jpeg_start_compress(&jpeg, TRUE);
+    unsigned char red[] = {255, 0, 0};
+    JSAMPROW row = red;
+    assert(jpeg_write_scanlines(&jpeg, &row, 1) == 1);
+    jpeg_finish_compress(&jpeg);
+    jpeg_destroy_compress(&jpeg);
+    fclose(file);
+    uint16_t *jpg = picker_art_cover(".", 58, 58);
+    assert(jpg && jpg[0] == 0xf800 && jpg[58 * 58 - 1] == 0xf800);
+    free(jpg);
+    assert(!picker_art_load("cover.jpg", 0, 58));
+}
+""", str(source), "-I" + str(source.parent), f'-DALICEHUB_ICON="{icon}"',
+                   *shlex.split(packages.stdout))
 
     def test_picker_reopens_only_for_reported_startup_failure(self):
         launcher = "../cmake/switch/launcher.c"
