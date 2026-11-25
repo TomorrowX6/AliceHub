@@ -39,9 +39,12 @@ void hub_launch(HubApp *, const HubGame *);
 
 typedef struct { const char *title, *subtitle; } HubItem;
 typedef HubItem (*HubItems)(const void *, size_t);
+typedef bool (*HubArtworkKey)(const void *, size_t, char key[HUB_PATH_SIZE]);
 bool hub_move_focus(size_t *, size_t count, size_t columns, size_t page, HubInput);
 void hub_grid(HubApp *, size_t count, size_t focus, HubItems, const void *);
+void hub_grid_art(HubApp *, size_t count, size_t focus, HubItems, HubArtworkKey, const void *);
 void hub_list(HubApp *, size_t count, size_t focus, HubItems, const void *);
+void hub_list_art(HubApp *, size_t count, size_t focus, HubItems, HubArtworkKey, const void *);
 void hub_heading(HubApp *, const char *title, const char *subtitle);
 void hub_hints(HubApp *, const char *confirm, const char *back, const char *action);
 void hub_hints_extra(HubApp *, const char *confirm, const char *back, const char *action,

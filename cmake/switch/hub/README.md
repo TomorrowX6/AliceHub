@@ -90,6 +90,13 @@ overlay. The separate saves directory is never modified.
   suite. Model, storage, parser and worker policy should be buildable without
   libnx whenever possible. Verify controller interactions with the affected screen
   visible; do not use a build as a substitute for that check.
+- Switch builds need Python Pillow (`python3-pil`) to resize the shared
+  Android/iOS artwork and generate the hbmenu JPEG. Catalog artwork ships in
+  ROMFS, so browsing it works offline. Installed games resolve artwork from
+  the game ID in the SD install marker even if the folder was renamed. The
+  library caches the JPEG alongside the marker on first display when writable.
+  A local cover image takes precedence; unknown folders can use an ICO or an
+  icon from a Windows game executable.
 - Screens should not change the shared renderer, pad routing, engine launcher,
   SD handoff protocol, or paths without coordinating with the hub owner.
   Keep installers, sync, downloads and other unrelated features out of the

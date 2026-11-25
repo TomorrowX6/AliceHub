@@ -77,14 +77,16 @@ foreach(asset MTLc3m.txt mincho.txt nanojpeg.txt microui.txt)
 endforeach()
 configure_file("${LIBXML2_INSTALL_PREFIX}/share/doc/libxml2-${LIBXML2_VERSION_STRING}/Copyright"
   "${romfs}/support/libxml2.txt" COPYONLY)
+include(../Artwork.cmake)
+alicehub_switch_artwork(AliceHub "${romfs}")
 dkp_add_asset_target(AliceHub_romfs "${romfs}")
 dkp_track_assets(AliceHub_romfs FILES alicehub.png fonts/VL-Gothic-Regular.ttf
   fonts/VL-Gothic-Regular.license fonts/HanaMinA.ttf.gz fonts/HanaMinA.license
   save-unlock/GlobalSave.asd save-unlock/Collection.asd save-unlock/AFCGMode.asd save-unlock/AFBGMMode.asd
   support/xsystem4.txt support/libsys4.txt support/xsystem35.txt support/MTLc3m.txt
-  support/mincho.txt support/nanojpeg.txt support/microui.txt support/libxml2.txt)
+  support/mincho.txt support/nanojpeg.txt support/microui.txt support/libxml2.txt ${alicehub_artwork_assets})
 nx_generate_nacp(AliceHub.nacp NAME "AliceHub" AUTHOR "AliceHub" VERSION "1.0.0")
-nx_create_nro(AliceHub NACP AliceHub.nacp ROMFS AliceHub_romfs)
+nx_create_nro(AliceHub ICON "${alicehub_nro_icon}" NACP AliceHub.nacp ROMFS AliceHub_romfs)
 add_custom_target(AliceHub_artifact ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "${artifacts}"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_BINARY_DIR}/AliceHub.nro" "${artifacts}/AliceHub.nro"

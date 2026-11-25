@@ -1,6 +1,7 @@
 """Host tests for the Switch hub's SD model, launch requests, and save transfers."""
 from pathlib import Path
 import re
+import shlex
 import struct
 import subprocess
 import tempfile
@@ -18,6 +19,62 @@ ENGINE = REPO / "xsystem4"
 SYS4 = ENGINE / "subprojects/libsys4"
 UNLOCK = REPO / "project/app/src/main/res/raw/full_unlock_saves.zip"
 
+class SwitchArtworkTest(unittest.TestCase):
+    def test_shared_artwork_preserves_catalog_aliases_and_limits_packaged_size(self):
+        from PIL import Image
+
+        android = REPO / "project/app/src/main"
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            subprocess.run(["python3", str(HUB.parent / "generate_artwork.py"),
+                            str(android), tmp, str(output / "romfs")], check=True)
+            aliases = set((output / "artwork_index.inc").read_text(encoding="utf-8").splitlines())
+            for key in ("gakuenking", "rance1digest", "rance10"):
+                self.assertIn(f'    {{"{key}", "{key}"}},', aliases)
+                with Image.open(output / "romfs/artwork" / f"{key}.jpg") as image:
+                    self.assertEqual((image.format, image.size), ("JPEG", (200, 156)))
+            self.assertIn('    {"学园king", "gakuenking"},', aliases)
+            self.assertIn('    {"ranceidigest", "rance1digest"},', aliases)
+            with Image.open(output / "alicehub-icon.jpg") as image:
+                self.assertEqual((image.format, image.size), ("JPEG", (256, 256)))
+            self.assertLess(sum(path.stat().st_size for path in (output / "romfs/artwork").iterdir()),
+                            2 * 1024 * 1024)
+
+            (output / "romfs").rename(output / "romfs:")
+            game = output / "Renamed"
+            game.mkdir()
+            marker = game / ".alicehub-online-v1"
+            marker.write_text("gakuenking")
+            packages = subprocess.run(["pkg-config", "--cflags", "--libs", "libpng", "libjpeg"],
+                                      check=True, capture_output=True, text=True)
+            executable = output / "check"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", tmp,
+                            "-DALICEHUB_BUNDLED_ARTWORK", "-I", str(HUB.parent),
+                            str(HUB.parent / "picker_art.c"), "-x", "c", "-",
+                            "-o", str(executable), *shlex.split(packages.stdout)],
+                           input=r"""
+#include "picker_art.h"
+#include <assert.h>
+#include <stdlib.h>
+
+int main(int argc, char **argv)
+{
+    assert(argc == 2);
+    uint16_t *art = picker_art_cover(argv[1], 250, 194);
+    assert(art);
+    free(art);
+    return 0;
+}
+""", text=True, check=True)
+            for name in ("学园KING", "Rance I Digest"):
+                (output / name).mkdir()
+                subprocess.run([str(executable), name], cwd=output, check=True)
+            subprocess.run([str(executable), "Renamed"], cwd=output, check=True)
+            bundled = output / "romfs:/artwork/gakuenking.jpg"
+            cached = marker.with_suffix(".icon.jpg")
+            self.assertEqual(cached.read_bytes(), bundled.read_bytes())
+            bundled.unlink()
+            subprocess.run([str(executable), "Renamed"], cwd=output, check=True)
 
 class SwitchRuntimeCaptureTest(unittest.TestCase):
     def test_captures_do_not_overwrite_and_failures_are_removed(self):

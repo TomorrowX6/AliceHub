@@ -362,6 +362,7 @@ int main(void)
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "picker_art.h"
 #include <jpeglib.h>
 
@@ -404,6 +405,45 @@ int main(void)
     assert(jpg && jpg[0] == 0xf800 && jpg[58 * 58 - 1] == 0xf800);
     free(jpg);
     assert(!picker_art_load("cover.jpg", 0, 58));
+
+    assert(!remove("thumbnail.png") && !remove("cover.jpg"));
+    const unsigned char ico[] = {
+        0,0,1,0,1,0, 1,1,0,0,1,0,24,0,48,0,0,0,22,0,0,0,
+        40,0,0,0, 1,0,0,0, 2,0,0,0, 1,0,24,0,
+        0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+        0,255,0,0, 0,0,0,0
+    };
+    file = fopen("Game.ICO", "wb");
+    assert(file && fwrite(ico, sizeof(ico), 1, file) == 1 && !fclose(file));
+    uint16_t *art = picker_art_cover(".", 58, 58);
+    assert(art && art[29 * 58 + 29] == 0x07e0 && art[0] != 0x07e0);
+    free(art);
+    file = fopen("Game.ICO", "wb");
+    assert(file && fwrite(ico, sizeof(ico) - 1, 1, file) == 1 && !fclose(file));
+    assert(!picker_art_cover(".", 58, 58));
+
+    unsigned char pe[0x200 + 48] = {
+        [0] = 'M', [1] = 'Z', [0x3c] = 64,
+        [64] = 'P', [65] = 'E', [70] = 1, [84] = 120,
+        [88] = 0x0b, [89] = 1, [180] = 3, [201] = 0x10,
+        [221] = 0x10, [224] = 48, [225] = 1, [229] = 1,
+        [0x10e] = 1, [0x110] = 3, [0x114] = 24, [0x117] = 0x80,
+        [0x126] = 1, [0x128] = 1, [0x12c] = 48, [0x12f] = 0x80,
+        [0x13e] = 1, [0x140] = 9, [0x144] = 72,
+        [0x149] = 0x11, [0x14c] = 48
+    };
+    memcpy(pe + 0x200, ico + 22, 48);
+    pe[0x200 + 40] = 255;
+    pe[0x200 + 41] = 0;
+    file = fopen("System40.exe", "wb");
+    assert(file && fwrite(pe, sizeof(pe), 1, file) == 1 && !fclose(file));
+    art = picker_art_cover(".", 58, 58);
+    assert(art && art[29 * 58 + 29] == 0x001f);
+    free(art);
+    pe[0x147] = 0x80;
+    file = fopen("System40.exe", "wb");
+    assert(file && fwrite(pe, sizeof(pe), 1, file) == 1 && !fclose(file));
+    assert(!picker_art_cover(".", 58, 58));
 }
 """, str(source), "-I" + str(source.parent), f'-DALICEHUB_ICON="{icon}"',
                    *shlex.split(packages.stdout))

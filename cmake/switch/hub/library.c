@@ -42,6 +42,11 @@ static HubItem game_item(const void *data, size_t index)
     return (HubItem){game->name, hub_engines[game->engine].label};
 }
 
+static bool game_artwork(const void *data, size_t index, char key[HUB_PATH_SIZE])
+{
+    return hub_game_path(HUB_ROOT, game_at(data, index), key);
+}
+
 static size_t find_focus(const LibraryView *view, const char *id)
 {
     if (*id) {
@@ -102,7 +107,7 @@ static void draw(HubApp *app, size_t *focus, const HubGame *unused)
     if (*query && !view.count)
         hub_empty(app, "No matching games", "Press X to edit your search or B to clear it.");
     else
-        hub_grid(app, view.count, *focus, game_item, &view);
+        hub_grid_art(app, view.count, *focus, game_item, game_artwork, &view);
     hub_hints_extra(app, view.count ? "Details" : NULL, *query ? "Clear" : "Exit",
                     "Search", "Settings", view.count > 4);
 }

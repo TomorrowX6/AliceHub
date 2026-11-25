@@ -15,9 +15,17 @@ typedef struct {
     bool has_game;
 } Frame;
 
+typedef struct {
+    char key[HUB_PATH_SIZE];
+    u16 *image;
+    bool cover;
+} ArtworkSlot;
+
 struct HubApp {
     Picker picker;
     u16 *logo;
+    ArtworkSlot artwork[5];
+    bool loaded_artwork;
     HubLibrary library;
     HubSettings settings;
     HubHandoff returned;
@@ -30,6 +38,33 @@ struct HubApp {
     char dialog_title[128], dialog_detail[512], toast[256];
     unsigned toast_frames;
 };
+
+static void clear_artwork(HubApp *app)
+{
+    for (size_t i = 0; i < sizeof(app->artwork) / sizeof(*app->artwork); ++i) {
+        free(app->artwork[i].image);
+        app->artwork[i] = (ArtworkSlot){0};
+    }
+}
+
+static const u16 *visible_artwork(HubApp *app, size_t slot, size_t index, HubArtworkKey lookup,
+                                  const void *data, bool cover)
+{
+    char key[HUB_PATH_SIZE];
+    if (!lookup || !lookup(data, index, key))
+        return NULL;
+    ArtworkSlot *cached = &app->artwork[slot];
+    if (cached->cover == cover && !strcmp(cached->key, key))
+        return cached->image;
+    if (app->loaded_artwork)
+        return NULL;
+    app->loaded_artwork = true;
+    free(cached->image);
+    strcpy(cached->key, key);
+    cached->cover = cover;
+    cached->image = cover ? picker_art_cover(key, ART_WIDTH, ART_HEIGHT) : picker_art_catalog(key, 48, 48);
+    return cached->image;
+}
 
 bool hub_register_screen(HubApp *app, const HubScreen *screen)
 {
@@ -108,6 +143,7 @@ bool hub_refresh_library(HubApp *app)
             app->library.games[count++] = app->library.games[i];
     app->library.count = count;
     hub_library_sort(&app->library, app->settings.sort);
+    clear_artwork(app);
     return true;
 }
 
@@ -226,7 +262,7 @@ void hub_empty(HubApp *app, const char *title, const char *detail)
     picker_label(p, 322, 426, 1070, 22, MUTED, detail);
 }
 
-void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)
+void hub_grid_art(HubApp *app, size_t count, size_t focus, HubItems items, HubArtworkKey artwork, const void *data)
 {
     Picker *p = &app->picker;
     if (!count) {
@@ -240,7 +276,11 @@ void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const voi
         HubItem item = items(data, i);
         picker_panel(p, x, 242, CARD_WIDTH, 334, 22, active ? PRIMARY : OUTLINE);
         picker_panel(p, x + 3, 245, CARD_WIDTH - 6, 328, 19, active ? CHIP : SURFACE);
-        picker_placeholder(p, x + 12, 254, item.title);
+        const u16 *image = visible_artwork(app, i - first, i, artwork, data, true);
+        if (image)
+            picker_image(p, x + 12, 254, ART_WIDTH, ART_HEIGHT, 16, image);
+        else
+            picker_placeholder(p, x + 12, 254, item.title);
         picker_label(p, x + 17, 494, x + CARD_WIDTH - 17, 24, INK, item.title);
         if (item.subtitle)
             picker_label(p, x + 17, 550, x + CARD_WIDTH - 17, 18, MUTED, item.subtitle);
@@ -250,7 +290,12 @@ void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const voi
     picker_label(p, 1070, 205, 1216, 21, MUTED, position);
 }
 
-void hub_list(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)
+void hub_grid(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)
+{
+    hub_grid_art(app, count, focus, items, NULL, data);
+}
+
+void hub_list_art(HubApp *app, size_t count, size_t focus, HubItems items, HubArtworkKey artwork, const void *data)
 {
     Picker *p = &app->picker;
     const size_t page = 5;
@@ -259,14 +304,23 @@ void hub_list(HubApp *app, size_t count, size_t focus, HubItems items, const voi
         int y = 239 + (int)(i - first) * 70;
         HubItem item = items(data, i);
         picker_panel(p, 64, y, 1152, 60, 14, i == focus ? CHIP : SURFACE);
-        picker_label(p, 88, y + 38, 850, 26, INK, item.title);
+        const u16 *image = visible_artwork(app, i - first, i, artwork, data, false);
+        if (image)
+            picker_image(p, 74, y + 6, 48, 48, 7, image);
+        picker_label(p, artwork ? 138 : 88, y + 38, 850, 26, INK, item.title);
         if (item.subtitle)
             picker_label(p, 870, y + 38, 1190, 21, MUTED, item.subtitle);
     }
 }
 
+void hub_list(HubApp *app, size_t count, size_t focus, HubItems items, const void *data)
+{
+    hub_list_art(app, count, focus, items, NULL, data);
+}
+
 static void draw_frame(HubApp *app)
 {
+    app->loaded_artwork = false;
     Picker *p = &app->picker;
     picker_begin(p, false);
     for (int y = 0; y < PICKER_HEIGHT; ++y)
@@ -379,6 +433,7 @@ int main(int argc, char **argv)
     }
     status = 0;
 finish:
+    clear_artwork(&app);
     free(app.logo);
     hub_library_free(&app.library);
     picker_close(&app.picker);

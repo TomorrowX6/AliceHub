@@ -368,6 +368,12 @@ static HubItem catalog_item(const void *data, size_t i)
     return (HubItem){game->title, game->id};
 }
 
+static bool catalog_artwork(const void *data, size_t i, char key[HUB_PATH_SIZE])
+{
+    const OnlineGame *game = ((const CatalogView *)data)->games[i];
+    return (size_t)snprintf(key, HUB_PATH_SIZE, "%s", game->id) < HUB_PATH_SIZE;
+}
+
 static void catalog_draw(HubApp *app, size_t *focus, const HubGame *unused)
 {
     (void)unused;
@@ -384,7 +390,7 @@ static void catalog_draw(HubApp *app, size_t *focus, const HubGame *unused)
         if (*focus >= view.count)
             *focus = 0;
         if (view.count)
-            hub_list(app, view.count, *focus, catalog_item, &view);
+            hub_list_art(app, view.count, *focus, catalog_item, catalog_artwork, &view);
         else
             hub_empty(app, "No matching games", "Press Y to change the search.");
         hub_hints_extra(app, view.count ? "Details" : NULL, "Back", "Tasks", "Search", view.count > 5);

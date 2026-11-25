@@ -1,3 +1,5 @@
+include("${CMAKE_CURRENT_LIST_DIR}/Artwork.cmake")
+
 function(alicehub_switch_package target romfs)
   target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/launcher.c"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/model.c"
@@ -23,8 +25,9 @@ function(alicehub_switch_package target romfs)
       PATHS "${font}" FORMAT raw COMPRESSION GZip)
     configure_file("${fonts}/HanaMinA.license" "${romfs}/fonts/HanaMinA.license" COPYONLY)
   endif()
+  alicehub_switch_artwork(${target} "${romfs}")
   dkp_add_asset_target(${target}_romfs "${romfs}")
-  dkp_track_assets(${target}_romfs FILES alicehub.png)
+  dkp_track_assets(${target}_romfs FILES alicehub.png ${alicehub_artwork_assets})
   if(NOT target STREQUAL "xsystem4")
     dkp_track_assets(${target}_romfs FILES fonts/HanaMinA.ttf.gz fonts/HanaMinA.license)
     find_package(ZLIB REQUIRED)
@@ -32,5 +35,5 @@ function(alicehub_switch_package target romfs)
     target_compile_definitions(${target} PRIVATE ALICEHUB_PICKER_COMPRESSED_FONT_SIZE=${font_size})
   endif()
   nx_generate_nacp(${target}.nacp NAME "AliceHub - ${target}" AUTHOR "AliceHub" VERSION "1.0.0")
-  nx_create_nro(${target} NACP ${target}.nacp ROMFS ${target}_romfs)
+  nx_create_nro(${target} ICON "${alicehub_nro_icon}" NACP ${target}.nacp ROMFS ${target}_romfs)
 endfunction()
