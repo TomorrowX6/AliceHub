@@ -2698,8 +2698,7 @@ static int PartsEngine_PartsFunc(int func_id, struct page **array_int,
 		REQUIRE_INTS(33);
 		REQUIRE_FLOATS(2);
 		REQUIRE_STRINGS(2);
-		return PartsEngine_get_construction_process_v6_arrays(ints, nr_ints == 35 ? 35 : 33,
-				array_float, array_string) ? 1 : 0;
+		return PartsEngine_get_construction_process_v6_arrays(ints, 33, array_float, array_string) ? 1 : 0;
 	case 164:  // void GetConstructionSurfaceArea(int no, int *x, int *y, int *w, int *h, int state)
 		REQUIRE_INTS(6);
 		PartsEngine_GetConstructionSurfaceArea(ints[0].i, &ints[1].i, &ints[2].i, &ints[3].i, &ints[4].i, ints[5].i);
