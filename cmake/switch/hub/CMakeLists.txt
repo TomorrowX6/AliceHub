@@ -15,6 +15,7 @@ target_sources(AliceHub PRIVATE save_editor.c save_storage.c "${modifier_src}"
 foreach(source savefile buffer file mt19937int string system utfsjis zlib)
   target_sources(AliceHub PRIVATE "${libsys4_dir}/src/${source}.c")
 endforeach()
+target_sources(AliceHub PRIVATE controller_editor.c controller_profile.c)
 target_include_directories(AliceHub PRIVATE "${xsystem4_dir}/include" "${libsys4_dir}/include" ${LIBXML2_INCLUDE_DIRS})
 target_sources(AliceHub PRIVATE instance_actions.c instances.c)
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ${LIBXML2_LIBRARIES} ZLIB::ZLIB)

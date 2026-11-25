@@ -368,6 +368,65 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "support")], cwd=tmp, check=True)
 
+    def test_controller_profile_inheritance_and_layout(self):
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
+                 str(hub / "model.c"), str(hub / "controller_profile.c"),
+                 "-x", "c", "-", "-o", str(Path(tmp) / "test")],
+                input=r"""
+#include "controller_profile.h"
+#include <assert.h>
+
+int main(void)
+{
+    HubGame system3, system4;
+    assert(hub_game_init(&system3, HUB_SYSTEM3, "ランス"));
+    assert(hub_game_init(&system4, HUB_XSYSTEM4, "ランス"));
+    ControllerProfile profile;
+    assert(controller_profile_load(".", &system3, &profile) == CP_DEFAULTS);
+    assert(!profile.touch_enabled);
+    assert(controller_profile_map(&profile, 1u << CP_A) == (1u << CP_A));
+    assert(controller_profile_hit(&profile, .9f, .7f) == -1);
+
+    profile.binding[CP_A] = CP_B;
+    profile.binding[CP_B] = CP_B;
+    profile.binding[CP_Y] = CP_BUTTONS;
+    profile.touch_enabled = true;
+    assert(controller_profile_save(".", NULL, &profile));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(controller_profile_map(&profile, (1u << CP_A) | (1u << CP_B) | (1u << CP_Y)) == (1u << CP_B));
+    assert(controller_profile_hit(&profile, .9f, .7f) == 4);
+    assert(controller_profile_hit(&profile, 1.0f, .7f) == -1);
+
+    assert(controller_profile_move(&profile, 4, profile.touch[5].column, profile.touch[5].row));
+    assert(controller_profile_hit(&profile, .9f, .7f) == 5);
+    assert(!controller_profile_move(&profile, 4, CP_COLUMNS, 0));
+    profile.binding[CP_A] = CP_X;
+    assert(controller_profile_save(".", &system3, &profile));
+    assert(controller_profile_load(".", &system4, &profile) == CP_GLOBAL);
+    assert(profile.binding[CP_A] == CP_B);
+    assert(controller_profile_load(".", &system3, &profile) == CP_GAME);
+    assert(profile.binding[CP_A] == CP_X && controller_profile_hit(&profile, .9f, .7f) == 5);
+
+    FILE *bad = fopen("controller-profiles/system3/ランス/profile", "wb");
+    assert(bad && fputs("alicehub-controller 1\n2\n", bad) >= 0 && !fclose(bad));
+    assert(controller_profile_load(".", &system3, &profile) == CP_UNREADABLE);
+    assert(profile.binding[CP_A] == CP_B);
+    assert(controller_profile_reset(".", &system3));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(!rename("controller-profile", "controller-profile.bak"));
+    assert(controller_profile_load(".", &system3, &profile) == CP_GLOBAL);
+    assert(controller_profile_reset(".", NULL));
+    assert(controller_profile_load(".", &system3, &profile) == CP_DEFAULTS);
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
+
     def test_model_and_handoff(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:

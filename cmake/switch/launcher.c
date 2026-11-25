@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "hub/model.h"
+#include "hub/controller_runtime.h"
 #include "launcher.h"
 #include "picker_art.h"
 #include "picker_renderer.h"
@@ -301,6 +302,7 @@ static bool prepare_save(const char *game, char *save, size_t size)
 static int launch_game(char *game, char *save)
 {
     SDL_SetMainReady();
+    switch_controls_load(ALICEHUB_ENGINE, game);
 #if defined(ALICEHUB_SWITCH_XSYSTEM4)
     setenv("XSYSTEM4_HOME", ROOT, 1);
     char *args[] = { ALICEHUB_ENGINE, "--save-folder", save, "--save-format=rsm", "--joypad", game, NULL };
