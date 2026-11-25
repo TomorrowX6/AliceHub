@@ -596,6 +596,18 @@ object OnlineInstaller {
                 "全系列mod",
                 "全系列",
                 "bfyy",
+                "大战国兰斯mod",
+                "大战国兰斯",
+                "大战国mod",
+                "大战国",
+                "daisengokurancemod",
+                "daisengokurance",
+                "daisengokumod",
+                "daisengoku",
+                "战国兰斯mod",
+                "战国兰斯",
+                "sengokurancemod",
+                "sengokurance",
                 "兰斯10mod",
                 "rance10mod",
                 "r10mod",
@@ -697,6 +709,18 @@ object OnlineInstaller {
                 "全系列mod",
                 "全系列",
                 "bfyy",
+                "大战国兰斯mod",
+                "大战国兰斯",
+                "大战国mod",
+                "大战国",
+                "daisengokurancemod",
+                "daisengokurance",
+                "daisengokumod",
+                "daisengoku",
+                "战国兰斯mod",
+                "战国兰斯",
+                "sengokurancemod",
+                "sengokurance",
                 "mod"
             )) {
                 if (cleaned.startsWith(prefix, ignoreCase = true)) {
@@ -801,6 +825,7 @@ object OnlineInstaller {
 
     const val MOD_GROUP_RIBULUO = "日不落MOD"
     const val MOD_GROUP_BFYY = "全系列MOD"
+    const val MOD_GROUP_DAISENGOKU = "大战国兰斯MOD"
 
     fun inferModGroup(fileName: String = "", gameDir: File? = null): String {
         val lowerName = fileName.lowercase(Locale.ROOT)
@@ -809,6 +834,9 @@ object OnlineInstaller {
         }
         if (lowerName.contains("日不落")) {
             return MOD_GROUP_RIBULUO
+        }
+        if (lowerName.contains("大战国") || lowerName.contains("大戦国") || lowerName.contains("daisengoku")) {
+            return MOD_GROUP_DAISENGOKU
         }
         if (gameDir != null && gameDir.isDirectory) {
             val children = gameDir.listFiles()
@@ -822,6 +850,11 @@ object OnlineInstaller {
                     if ((n.startsWith("rance10modcg") || n.startsWith("rance10modflat")) && n.endsWith(".afa")) {
                         return MOD_GROUP_RIBULUO
                     }
+                    if (n == "daisengoku.ain" || n == "daisengokugm.ald" || n == "daisengokubm.ald" ||
+                        (n.endsWith("gm.ald") && (n.contains("愴崙") || n.contains("戦国") || n.contains("sengoku")))
+                    ) {
+                        return MOD_GROUP_DAISENGOKU
+                    }
                 }
             }
             val iniFile = resolveModVersionIniFile(gameDir)
@@ -830,12 +863,18 @@ object OnlineInstaller {
                 if (ini?.SaveFolder?.equals("SaveDataBFYY", ignoreCase = true) == true) {
                     return MOD_GROUP_BFYY
                 }
+                if (ini?.SaveFolder?.equals("SaveDataDSR", ignoreCase = true) == true) {
+                    return MOD_GROUP_DAISENGOKU
+                }
                 val gn = ini?.gameName.orEmpty()
                 if (gn.contains("全系列") || gn.contains("bfyy", ignoreCase = true)) {
                     return MOD_GROUP_BFYY
                 }
                 if (gn.contains("日不落") || ini?.SaveFolder?.equals("ModSaveData", ignoreCase = true) == true) {
                     return MOD_GROUP_RIBULUO
+                }
+                if (gn.contains("大战国") || gn.contains("大戦国") || gn.contains("daisengoku", ignoreCase = true)) {
+                    return MOD_GROUP_DAISENGOKU
                 }
             }
         }

@@ -1,5 +1,6 @@
 #include "model.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -41,9 +42,73 @@ bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZ
     return game_path(root, game, "games", path);
 }
 
+bool hub_game_uses_daisengoku_save_folder(const char *game_dir)
+{
+    static const char *const ini_names[] = {"System40.ini", "AliceStart.ini"};
+    if (!game_dir || !*game_dir)
+        return false;
+    for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); ++i) {
+        char ini_path[HUB_PATH_SIZE];
+        if ((size_t)snprintf(ini_path, sizeof(ini_path), "%s/%s", game_dir, ini_names[i]) >= sizeof(ini_path))
+            continue;
+        FILE *fp = fopen(ini_path, "rb");
+        if (!fp)
+            continue;
+        char line[512];
+        bool matched = false;
+        while (fgets(line, sizeof(line), fp)) {
+            char *p = line;
+            while (*p && isspace((unsigned char)*p))
+                ++p;
+            if (!*p || *p == ';' || *p == '#' || (p[0] == '/' && p[1] == '/'))
+                continue;
+            char *eq = strchr(p, '=');
+            if (!eq)
+                continue;
+            char *kend = eq;
+            while (kend > p && isspace((unsigned char)kend[-1]))
+                --kend;
+            if ((size_t)(kend - p) != 10 || strncasecmp(p, "SaveFolder", 10) != 0)
+                continue;
+            char *v = eq + 1;
+            while (*v && isspace((unsigned char)*v))
+                ++v;
+            char *vend = v + strlen(v);
+            if (*v == '"') {
+                ++v;
+                char *q = strchr(v, '"');
+                vend = q ? q : vend;
+            } else {
+                for (char *c = v; *c; ++c) {
+                    if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
+                        vend = c;
+                        break;
+                    }
+                }
+                while (vend > v && isspace((unsigned char)vend[-1]))
+                    --vend;
+            }
+            matched = (size_t)(vend - v) == 11 && strncasecmp(v, "SaveDataDSR", 11) == 0;
+            break;
+        }
+        fclose(fp);
+        return matched;
+    }
+    return false;
+}
+
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
 {
-    return game_path(root, game, "saves", path);
+    if ((unsigned)game->engine >= HUB_ENGINE_COUNT)
+        return false;
+    const char *suffix = "";
+    if (game->engine == HUB_XSYSTEM4) {
+        char game_dir[HUB_PATH_SIZE];
+        if (hub_game_path(root, game, game_dir) && hub_game_uses_daisengoku_save_folder(game_dir))
+            suffix = "__SaveDataDSR";
+    }
+    return (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s/saves/%s%s", root,
+                            hub_engines[game->engine].id, game->name, suffix) < HUB_PATH_SIZE;
 }
 
 static int by_name(const void *a, const void *b)

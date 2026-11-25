@@ -193,7 +193,7 @@ class GameModifierActivity : ThemedActivity() {
         adapter = ModSaveSlotAdapter(this, emptyList(), tr("已备份", "バックアップ済", "Backed up"))
         listView.adapter = adapter
 
-        discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME))
+        discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME), resolveInstallAlias = true)
 
         findViewById<View>(R.id.btn_mod_switch_dir).setOnClickListener { showSwitchTargetDialog() }
         findViewById<View>(R.id.btn_mod_full_unlock).setOnClickListener {
@@ -252,20 +252,27 @@ class GameModifierActivity : ThemedActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun discoverSaveTargets(preferredDirName: String? = null) {
+    private fun discoverSaveTargets(
+        preferredDirName: String? = null,
+        resolveInstallAlias: Boolean = false
+    ) {
         val savesRoot = File(filesDir, "saves")
         savesRoot.mkdirs()
 
         val found = LinkedHashMap<String, SaveTarget>()
+        var resolvedPreferredDirName = preferredDirName
         val gameList = GameList(this)
         for (i in 0 until gameList.size) {
             val item = gameList[i]
-            val dirName = item.path.name
-            val saveDir = item.savedir ?: File(savesRoot, dirName)
+            val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
+            val saveKey = saveDir.name
             saveDir.mkdirs()
-            found[dirName] = SaveTarget(
-                displayName = dirName,
-                dirName = dirName,
+            if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
+                resolvedPreferredDirName = saveKey
+            }
+            found[saveKey] = SaveTarget(
+                displayName = saveKey,
+                dirName = saveKey,
                 saveDir = saveDir,
                 externalGameDir = item.path
             )
@@ -273,7 +280,11 @@ class GameModifierActivity : ThemedActivity() {
 
         savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
             if (!found.containsKey(dir.name)) {
-                val extDir = getExternalFilesDir(null)?.let { File(it, dir.name) }?.takeIf { it.exists() }
+                val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
+                val extDir = getExternalFilesDir(null)?.let { root ->
+                    File(root, dir.name).takeIf { it.exists() }
+                        ?: File(root, baseGameName).takeIf { it.exists() }
+                }
                 found[dir.name] = SaveTarget(
                     displayName = dir.name,
                     dirName = dir.name,
@@ -294,7 +305,7 @@ class GameModifierActivity : ThemedActivity() {
                     saveDir = entry.saveDir,
                     displayName = entry.displayName
                 )
-                if (classified != gid && entry.dirName != preferredDirName) {
+                if (classified != gid && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
                     iter.remove()
                 }
             }
@@ -323,7 +334,9 @@ class GameModifierActivity : ThemedActivity() {
         }
 
         targets = found.values.toMutableList()
-        currentTarget = targets.firstOrNull { it.dirName == preferredDirName } ?: targets.first()
+        currentTarget = targets.firstOrNull { it.dirName == resolvedPreferredDirName }
+            ?: targets.firstOrNull { it.dirName == preferredDirName }
+            ?: targets.first()
     }
 
     private fun isOtherScopedGame(expectedGameId: String): Boolean {
@@ -654,10 +667,16 @@ class GameModifierActivity : ThemedActivity() {
         )
     }
 
+    private fun currentInstallDirName(): String? =
+        if (::currentTarget.isInitialized) {
+            currentTarget.externalGameDir?.name
+                ?: currentTarget.dirName.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
+        } else {
+            intent.getStringExtra(EXTRA_DIR_NAME)
+        }
+
     private fun currentUiScaleGameKey(): String? =
-        GameModifierBridge.normalizeUiScaleGameKey(
-            if (::currentTarget.isInitialized) currentTarget.dirName else intent.getStringExtra(EXTRA_DIR_NAME)
-        )
+        GameModifierBridge.normalizeUiScaleGameKey(currentInstallDirName())
 
     private fun refreshUiScaleButtons() {
         val gameKey = currentUiScaleGameKey()
@@ -877,7 +896,7 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun openGamepadSettings() {
-        val dirName = if (::currentTarget.isInitialized) currentTarget.dirName else null
+        val dirName = currentInstallDirName()
         val gid = resolvedGameIdForCurrentTarget()
         val displayTitle = gid?.let { GameCatalog.descriptorFor(this, it).title } ?: dirName
         val i = Intent(this, GamepadSettingsActivity::class.java)

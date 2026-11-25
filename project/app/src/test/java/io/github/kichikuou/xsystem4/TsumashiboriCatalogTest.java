@@ -582,15 +582,15 @@ public class TsumashiboriCatalogTest {
     public void exposesExpectedOnlineCdnUrlBaseSizeAndStagingEviction() throws Exception {
         assertEquals("https://alicehub.000.moe/tsumashibori", OnlineInstaller.TSUMASHIBORI_CDN_URL);
         assertEquals(
-                2850964030L,
+                2877493822L,
                 AppSettings.DEFAULT_TSUMASHIBORI_BYTES
         );
         assertEquals(
-                2850964030L,
+                2877493822L,
                 AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.TSUMASHIBORI_CDN_URL)
         );
         assertEquals(
-                2850964030L,
+                2877493822L,
                 AppSettings.defaultBaseGameSizeForUrl(OnlineInstaller.TSUMASHIBORI_CDN_URL + "/")
         );
 

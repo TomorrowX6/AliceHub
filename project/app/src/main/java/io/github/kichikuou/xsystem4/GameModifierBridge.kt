@@ -360,11 +360,16 @@ object GameModifierBridge {
                     it.isFile && (
                         it.name.equals("SengokuRance.ain", ignoreCase = true) ||
                             it.name.equals("AliceCN.ain", ignoreCase = true) ||
+                            it.name.equals("DaiSengoku.ain", ignoreCase = true) ||
                             it.name.contains("愴崙儔儞僗") ||
                             it.name.contains("戦国ランス")
                         )
                 } || files.any {
-                    it.isFile && it.name.endsWith("GA.ald", ignoreCase = true) && it.name.contains("愴崙")
+                    it.isFile && (
+                        it.name.equals("DaiSengokuGA.ald", ignoreCase = true) ||
+                            it.name.equals("DaiSengokuGM.ald", ignoreCase = true) ||
+                            (it.name.endsWith("GA.ald", ignoreCase = true) && it.name.contains("愴崙"))
+                        )
                 }
             }
         }
@@ -380,7 +385,8 @@ object GameModifierBridge {
         if (!dirNameFallback.isNullOrBlank()) {
             val lower = dirNameFallback.lowercase()
             if (lower == "sengokurance" || lower.startsWith("sengokurance-") || lower.contains("sengoku") ||
-                lower.contains("战国兰斯") || lower.contains("戦国ランス") || lower.contains("愴崙儔儞僗")
+                lower.contains("战国兰斯") || lower.contains("戦国ランス") || lower.contains("愴崙儔儞僗") ||
+                lower.contains("大战国") || lower.contains("大戦国")
             ) {
                 return true
             }

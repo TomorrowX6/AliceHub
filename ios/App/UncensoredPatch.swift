@@ -58,6 +58,7 @@ struct UncensoredGameDescriptor: Equatable {
             return descriptor(for: "rance02")
         }
         if names.contains("rance7.ain") || names.contains("sengokurance.ain") ||
+            names.contains("daisengoku.ain") || names.contains("daisengokuga.ald") ||
             names.contains("愴崙儔儞僗.ain") || names.contains("愴崙儔儞僗ga.ald") ||
             names.contains("戦国ランス.ain") || names.contains("戦国ランスga.ald") ||
             names.contains("战国兰斯.ain") || names.contains("战国兰斯ga.ald") {

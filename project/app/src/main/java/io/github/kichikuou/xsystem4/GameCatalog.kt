@@ -764,13 +764,15 @@ object GameCatalog {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("SengokuRance.ain", ignoreCase = true) ||
                     it.equals("AliceCN.ain", ignoreCase = true) ||
+                    it.equals("DaiSengoku.ain", ignoreCase = true) ||
                     it.contains("愴崙儔儞僗") ||
                     it.contains("戦国ランス") ||
                     repaired.contains("戦国ランス")
             } || fileNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.endsWith("GA.ald", ignoreCase = true) &&
-                    (it.contains("愴崙") || it.contains("戦国") || repaired.contains("戦国"))
+                    (it.equals("DaiSengokuGA.ald", ignoreCase = true) ||
+                        it.contains("愴崙") || it.contains("戦国") || repaired.contains("戦国"))
             }
         ) {
             return ID_SENGOKU_RANCE
@@ -7092,6 +7094,7 @@ object GameCatalog {
             return ID_SANBIKI
         }
         if (lowerDir == "sengokurance" || lowerDir.startsWith("sengokurance-") || lowerDir.contains("sengoku") ||
+            lowerDir.contains("daisengoku") || lowerDir.contains("大战国") || lowerDir.contains("大戦国") ||
             lowerDir.contains("战国兰斯") || lowerDir.contains("戦国ランス") || lowerDir.contains("愴崙儔儞僗")
         ) {
             return ID_SENGOKU_RANCE
@@ -8076,7 +8079,9 @@ object GameCatalog {
         if (!displayName.isNullOrBlank() && isSanbikiAlias(displayName)) {
             return ID_SANBIKI
         }
-        if (lowerDisp.contains("sengoku") || lowerDisp.contains("战国兰斯") || lowerDisp.contains("戰國蘭斯") ||
+        if (lowerDisp.contains("sengoku") || lowerDisp.contains("daisengoku") ||
+            lowerDisp.contains("大战国") || lowerDisp.contains("大戦国") ||
+            lowerDisp.contains("战国兰斯") || lowerDisp.contains("戰國蘭斯") ||
             lowerDisp.contains("戦国ランス")
         ) {
             return ID_SENGOKU_RANCE
@@ -8209,8 +8214,8 @@ object GameCatalog {
                 iconFrameColor = 0xFF1F1410.toInt(),
                 supportsOnlineBaseInstall = true,
                 onlineBaseCdnUrl = OnlineInstaller.SENGOKU_RANCE_CDN_URL,
-                supportsOnlineMod = false,
-                supportsLocalMod = false,
+                supportsOnlineMod = true,
+                supportsLocalMod = true,
                 isRance10 = false,
                 supportsUncensoredPatch = true,
                 hasChinese = true
@@ -11081,7 +11086,8 @@ object GameCatalog {
                 .show()
             return
         }
-        val saveDir = item.savedir ?: return
+        if (item.savedir == null) return
+        val saveDir = Item.resolveSaveDir(activity.filesDir, item.path).also { it.mkdirs() }
         val targetRoot = item.path.path
         val running = isGameProcessRunning(activity)
         val runningRoot = if (running) getRunningGameRoot(activity) else null

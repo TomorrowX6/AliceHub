@@ -14,7 +14,7 @@ struct SaveManagerView: View {
     @State private var naming: SaveNaming?
 
     private var manager: SaveManager {
-        SaveManager(game: game.name) { source, destination in
+        SaveManager(game: GameLibrary.saveDirectoryName(for: game.url)) { source, destination in
             guard savedata_export_pc_file(source.path, destination.path) else { throw SaveManager.Failure.conversion }
         }
     }

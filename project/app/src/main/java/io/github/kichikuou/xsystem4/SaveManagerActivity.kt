@@ -930,8 +930,10 @@ class SaveManagerActivity : ThemedActivity() {
             pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
             pendingSingleExportAsPc = savedInstanceState.getBoolean(STATE_SINGLE_EXPORT_AS_PC, false)
         }
+        val savedTargetDir = savedInstanceState?.getString(STATE_TARGET_DIR)
         discoverSaveTargets(
-            savedInstanceState?.getString(STATE_TARGET_DIR) ?: intent.getStringExtra(EXTRA_DIR_NAME)
+            preferredDirName = savedTargetDir ?: intent.getStringExtra(EXTRA_DIR_NAME),
+            resolveInstallAlias = savedTargetDir == null
         )
         if (opJob?.isActive == true) {
             showProgress(opProgressMessage ?: getString(R.string.action_save_manager))
@@ -994,21 +996,28 @@ class SaveManagerActivity : ThemedActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun discoverSaveTargets(preferredDirName: String? = null) {
+    private fun discoverSaveTargets(
+        preferredDirName: String? = null,
+        resolveInstallAlias: Boolean = false
+    ) {
         val savesRoot = File(filesDir, "saves")
         savesRoot.mkdirs()
 
         val found = LinkedHashMap<String, SaveTarget>()
+        var resolvedPreferredDirName = preferredDirName
         val gameList = GameList(this)
         try {
             for (i in 0 until gameList.size) {
                 val item = gameList[i]
-                val dirName = item.path.name
-                val saveDir = item.savedir ?: File(savesRoot, dirName)
+                val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
+                val saveKey = saveDir.name
                 saveDir.mkdirs()
-                found[dirName] = SaveTarget(
-                    displayName = dirName,
-                    dirName = dirName,
+                if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
+                    resolvedPreferredDirName = saveKey
+                }
+                found[saveKey] = SaveTarget(
+                    displayName = saveKey,
+                    dirName = saveKey,
                     saveDir = saveDir,
                     externalGameDir = item.path
                 )
@@ -1016,7 +1025,11 @@ class SaveManagerActivity : ThemedActivity() {
 
             savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
                 if (!found.containsKey(dir.name)) {
-                    val extDir = getExternalFilesDir(null)?.let { File(it, dir.name) }?.takeIf { it.exists() }
+                    val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
+                    val extDir = getExternalFilesDir(null)?.let { root ->
+                        File(root, dir.name).takeIf { it.exists() }
+                            ?: File(root, baseGameName).takeIf { it.exists() }
+                    }
                     found[dir.name] = SaveTarget(
                         displayName = dir.name,
                         dirName = dir.name,
@@ -1037,7 +1050,7 @@ class SaveManagerActivity : ThemedActivity() {
                         saveDir = entry.saveDir,
                         displayName = entry.displayName
                     )
-                    if (classified != gid && entry.dirName != preferredDirName) {
+                    if (classified != gid && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
                         iter.remove()
                     }
                 }
@@ -1069,7 +1082,9 @@ class SaveManagerActivity : ThemedActivity() {
         }
 
         targets = found.values.toMutableList()
-        currentTarget = targets.firstOrNull { it.dirName == preferredDirName } ?: targets.first()
+        currentTarget = targets.firstOrNull { it.dirName == resolvedPreferredDirName }
+            ?: targets.firstOrNull { it.dirName == preferredDirName }
+            ?: targets.first()
     }
 
     private fun refreshFileList() {

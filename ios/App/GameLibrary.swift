@@ -1157,8 +1157,51 @@ final class GameLibrary: ObservableObject {
         }
     }
 
+    static let daiSengokuSaveDirSuffix = "__SaveDataDSR"
+
+    static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
+        for fileName in ["System40.ini", "AliceStart.ini"] {
+            let iniURL = gameURL.appendingPathComponent(fileName)
+            guard let data = try? Data(contentsOf: iniURL) else { continue }
+            let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+            for rawLine in text.components(separatedBy: .newlines) {
+                var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") {
+                    continue
+                }
+                guard let eq = line.firstIndex(of: "=") else { continue }
+                let key = line[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard key.caseInsensitiveCompare("SaveFolder") == .orderedSame else { continue }
+                var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
+                if value.hasPrefix("\"") {
+                    let rest = value.dropFirst()
+                    if let close = rest.firstIndex(of: "\"") {
+                        value = String(rest[..<close])
+                    } else {
+                        value = String(rest)
+                    }
+                } else {
+                    for marker in [";", "#", "//"] {
+                        if let range = value.range(of: marker) {
+                            value = String(value[..<range.lowerBound])
+                        }
+                    }
+                    value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return value.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
+            }
+            return false
+        }
+        return false
+    }
+
+    static func saveDirectoryName(for gameURL: URL) -> String {
+        let base = gameURL.lastPathComponent
+        return usesDaiSengokuSaveFolder(gameURL) ? "\(base)\(daiSengokuSaveDirSuffix)" : base
+    }
+
     func savesDirectory(for game: Game) -> URL {
-        documents.appendingPathComponent("Saves").appendingPathComponent(game.name)
+        documents.appendingPathComponent("Saves").appendingPathComponent(Self.saveDirectoryName(for: game.url))
     }
 
     func launch(_ game: Game) {
@@ -1192,7 +1235,7 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
             launching = true
-            SaveSyncSession.begin(game: game.name) {
+            SaveSyncSession.begin(game: Self.saveDirectoryName(for: game.url)) {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     let previousDirectory = open(".", O_RDONLY)
                     let previousStdout = dup(STDOUT_FILENO)
