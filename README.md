@@ -29,7 +29,7 @@ Android 和 iOS 安装包见 [**最新 Release**](https://github.com/TomorrowX6/
 | **iOS / iPadOS** | 15.0 及以上、arm64 | `AliceHub-<版本>-ios-unsigned.ipa`，**未签名**，需自行签名并侧载 |
 | **Nintendo Switch** | 可通过 Homebrew Menu 运行 NRO，建议使用应用模式 | GitHub Actions 产物 `AliceHub-switch`（启动器和三个引擎） |
 
-也可在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载 `re-xsystem4-arm64-v8a` 或 `AliceHub-ios-unsigned`，解压后获取 APK 或 IPA（下载构建产物需登录 GitHub）。
+也可在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载 `AliceHub-arm64-v8a` 或 `AliceHub-ios-unsigned`，解压后获取 APK 或 IPA（下载构建产物需登录 GitHub）。
 
 ### Android
 
