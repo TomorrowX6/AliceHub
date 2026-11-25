@@ -503,6 +503,7 @@ bool game_ixseal = false;
 bool game_okusama = false;
 bool game_haharanman = false;
 bool game_night_remaster = false;
+bool game_escalayer_reboot, game_tsumamigui3;
 bool game_tsumamigui3_jun = false;
 bool game_tsumamigui3_ntr = false;
 
