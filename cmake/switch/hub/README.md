@@ -19,7 +19,8 @@ engine NRO, including standalone launches; it is not a Hub screen.
 Screenshots go to `sdmc:/switch/alicehub/<engine>/screenshots/`. System 1–3
 uses the engine's read-text skip; System 3.5 and System 4 offer Ctrl skip.
 Live modifiers appear for supported games only. System 4 stores text and
-scrollbar scale with the current game's saves.
+scrollbar scale with the current game's saves. Scaling affects screens
+rendered by the Parts Engine, not legacy sprite text or custom scrollbars.
 
 In the merged library, **X** opens the system keyboard to search game folder
 names (ASCII case-insensitive; other characters match exactly). **B** clears

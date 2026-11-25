@@ -125,9 +125,9 @@ static size_t options(void *context, bool modifiers, SwitchMenuRow *rows)
     if (!modifiers) {
         rows[0] = (SwitchMenuRow){"Ctrl skip", CTRL_SKIP, true, {0}};
         SDL_strlcpy(rows[0].value, modifier_api_get_ctrl_skip() ? "On" : "Off", sizeof(rows[0].value));
-        rows[1] = (SwitchMenuRow){"Text scale", FONT_SCALE, true, {0}};
+        rows[1] = (SwitchMenuRow){"Text scale (Parts UI)", FONT_SCALE, true, {0}};
         snprintf(rows[1].value, sizeof(rows[1].value), "%d%%", modifier_api_get_font_scale());
-        rows[2] = (SwitchMenuRow){"Scrollbar scale", SCROLLBAR_SCALE, true, {0}};
+        rows[2] = (SwitchMenuRow){"Scrollbar scale (Parts UI)", SCROLLBAR_SCALE, true, {0}};
         snprintf(rows[2].value, sizeof(rows[2].value), "%d%%", modifier_api_get_scrollbar_scale());
         return 3;
     }
