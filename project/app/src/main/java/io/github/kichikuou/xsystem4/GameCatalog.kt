@@ -8156,6 +8156,7 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
+                supportsUncensoredPatch = true,
                 hasChinese = true
             )
             ID_EVENICLE -> GameDescriptor(
@@ -8175,6 +8176,7 @@ object GameCatalog {
                 isCnPatch = true,
                 overlayCdnBaseUrl = OnlineInstaller.EVENICLE_CDN_URL,
                 overlayCatalogRelPath = "files/cn-patch/index.json",
+                supportsUncensoredPatch = true,
                 hasChinese = true
             )
             ID_EVENICLE2 -> GameDescriptor(
@@ -8456,7 +8458,8 @@ object GameCatalog {
                 onlineBaseCdnUrl = OnlineInstaller.HARUKA_CDN_URL,
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
-                isRance10 = false
+                isRance10 = false,
+                supportsUncensoredPatch = true
             )
             ID_TSUMASHIBORI -> GameDescriptor(
                 id = ID_TSUMASHIBORI,

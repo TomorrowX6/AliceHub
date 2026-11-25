@@ -17,7 +17,10 @@ struct UncensoredGameDescriptor: Equatable {
         Self(id: "sengokurance", title: "战国兰斯"),
         Self(id: "rance08", title: "兰斯08 兰斯Quest Magnum"),
         Self(id: "rance09", title: "兰斯09 赫尔曼革命"),
-        Self(id: "rance10", title: "兰斯10 决战")
+        Self(id: "rance10", title: "兰斯10 决战"),
+        Self(id: "dohnadohna", title: "多娜多娜 一起来干坏事吧"),
+        Self(id: "evenicle", title: "夏娃年代记"),
+        Self(id: "haruka", title: "超昂闪忍遥")
     ]
 
     static func descriptor(for id: String) -> Self? {
@@ -26,8 +29,22 @@ struct UncensoredGameDescriptor: Equatable {
 
     static func classifyDirectory(_ directory: URL) -> Self? {
         let names = Set(ModFiles.children(directory).filter(ModFiles.isFile).map { $0.lastPathComponent.lowercased() })
-        if names.contains("rance6after.ain") || names.contains("rance1.ain") { return nil }
+        if names.contains("rance6after.ain") || names.contains("rance1.ain") ||
+            names.contains("evenicle2.ain") || names.contains("evenicle2rance.ain") ||
+            names.contains("eveniclerance.ain") || names.contains("evenicleapc.ain") ||
+            names.contains("eveniclegaiden.ain") || names.contains("eveniclegaiten.ain") ||
+            names.contains("ハルカvs.ain") || names.contains("疾風!?忍者大作戦.ain") {
+            return nil
+        }
         if names.contains("rance10.ain") { return descriptor(for: "rance10") }
+        if names.contains("dohnadohna.ain") || names.contains("dohnadohnacg.afa") { return descriptor(for: "dohnadohna") }
+        if names.contains("evenicle.ain") || names.contains("eveniclecg.afa") { return descriptor(for: "evenicle") }
+        if names.contains("超昂閃忍ハルカ.ain") || names.contains("超昂閃忍ハルカga.ald") ||
+            names.contains("超昂闪忍遥.ain") || names.contains("超昂闪忍遥ga.ald") ||
+            names.contains("超昂閃忍遥.ain") || names.contains("ハルカ.ain") || names.contains("haruka.ain") ||
+            names.contains("挻峍慚擡僴儖僇.ain") || names.contains("挻峍慚擡僴儖僇ga.ald") {
+            return descriptor(for: "haruka")
+        }
         if names.contains("rance9.ain") || names.contains("rance09.ain") { return descriptor(for: "rance09") }
         if names.contains("rance03.ain") { return descriptor(for: "rance03") }
         if names.contains("rance01.ain") { return descriptor(for: "rance01") }
