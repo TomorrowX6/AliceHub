@@ -31,7 +31,7 @@
 #include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 33
+#define CURRENT_SAVE_VERSION 34
 #define MIN_SINGLE_PART_SAVE_VERSION 32
 
 static struct parts_context *back_scene;
@@ -1922,7 +1922,7 @@ bool PE_Load(struct page **buffer)
 		if (version >= 27) {
 			if (iarray_read(&r)) {
 				parts_activities_load(&r);
-				parts_input_load_state(&r);
+				parts_input_load_state(&r, version);
 			}
 		} else {
 			parts_activities_reconcile_legacy();

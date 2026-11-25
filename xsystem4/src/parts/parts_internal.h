@@ -839,7 +839,7 @@ void parts_input_reset(void);
 struct iarray_writer;
 struct iarray_reader;
 void parts_input_save_state(struct iarray_writer *w);
-void parts_input_load_state(struct iarray_reader *r);
+void parts_input_load_state(struct iarray_reader *r, int version);
 void parts_input_load_legacy_state(void);
 
 // message.c
