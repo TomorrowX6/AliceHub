@@ -11,6 +11,7 @@ class ResumeVmStackRegressionTest(unittest.TestCase):
         names = [
             "static void repair_evenicle_rance_bonus_skill_string",
             "static void repair_evenicle_rance_resume_skills",
+            "static void repair_evenicle_rance_resume_item_descriptions",
             "void vm_load_image",
         ]
         functions = "\n".join(extract_function("src/resume.c", name) for name in names)
@@ -74,6 +75,13 @@ static void expect_string(int slot, const char *utf8, bool gbk) {
     free(bytes);
 }
 
+static void put_mixed_description(int slot, const char *tag, const char *description) {
+    put_string(slot, tag, false);
+    char *suffix = utf2cjk(description, 0, true);
+    string_append_cstr(&slots[slot].s, suffix, strlen(suffix));
+    free(suffix);
+}
+
 int main(void) {
     const char *name = "ランスアタック";
     const char *short_desc = "5.0倍 全体 必殺技";
@@ -102,13 +110,31 @@ int main(void) {
     put_string(3, long_desc, false);
     put_string(4, name, false);
     put_string(5, "兰斯攻击", true);
+    int item_index = ain_add_struct(ain, "S_Item");
+    struct ain_variable item_members[12] = {0};
+    item_members[2].type.data = item_members[11].type.data = AIN_STRING;
+    ain->structures[item_index].nr_members = 12;
+    ain->structures[item_index].members = item_members;
+    struct page *item = calloc(1, sizeof(*item) + 12 * sizeof(item->values[0]));
+    assert(item);
+    item->type = STRUCT_PAGE;
+    item->index = item_index;
+    item->nr_vars = 12;
+    item->values[2].i = 8;
+    item->values[11].i = 9;
+    slots[7] = (struct vm_pointer){ .ref = 1, .type = VM_PAGE, .page = item };
+    put_string(8, "[　ランス　]", false);
+    put_mixed_description(9, "[　ランス　]", "魔法との相性が抜群");
+    struct string *old_description = string_ref(slots[9].s);
 
     load_result = SAVEFILE_SUCCESS;
     vm_load_image("", "");
     expect_string(1, name, false);
+    assert(slots[9].s == old_description);
     sys4_set_text_gbk(true);
     vm_load_image("", "");
     expect_string(1, name, false);
+    assert(slots[9].s == old_description);
     game_evenicle_rance_cn = true;
     skill->values[2].i = 101;
     vm_load_image("", "");
@@ -120,6 +146,19 @@ int main(void) {
     expect_string(3, long_desc, true);
     expect_string(4, name, false);
     expect_string(5, "兰斯攻击", true);
+    expect_string(8, "[　ランス　]", false);
+    expect_string(9, "[　ランス　]魔法との相性が抜群", true);
+    assert(slots[9].s != old_description);
+    free_string(old_description);
+
+    for (int i = 0; i < 2; i++) {
+        const char *tag = i == 0 ? "[ ラミアス ]" : "[ リッシュ ]";
+        free_string(slots[9].s);
+        put_mixed_description(9, tag, "这是说明");
+        vm_load_image("", "");
+        expect_string(9, i == 0 ? "[ ラミアス ]这是说明" : "[ リッシュ ]这是说明", true);
+    }
+    struct string *fixed_description = slots[9].s;
 
     load_result = SAVEFILE_INVALID_SIGNATURE;
     put_string(6, "捕獲", false);
@@ -128,6 +167,12 @@ int main(void) {
     vm_load_image("", "");
     assert(json_loads == 1);
     expect_string(6, "捕獲", true);
+    assert(slots[9].s == fixed_description);
+    free_string(slots[8].s);
+    free_string(slots[9].s);
+    free(item);
+    ain->structures[item_index].nr_members = 0;
+    ain->structures[item_index].members = NULL;
     for (int i = 1; i <= 6; i++)
         free_string(slots[i].s);
     free(skill);

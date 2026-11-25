@@ -2057,6 +2057,53 @@ static void repair_evenicle_rance_resume_skills(void)
 	}
 }
 
+static void repair_evenicle_rance_resume_item_descriptions(void)
+{
+	if (!game_evenicle_rance_cn || !sys4_text_is_gbk || sys4_source_is_utf8)
+		return;
+	int item_type = ain_get_struct(ain, "S_Item");
+	if (item_type < 0)
+		return;
+	enum { DESCRIPTION = 11 };
+	const struct ain_struct *type = &ain->structures[item_type];
+	if (type->nr_members <= DESCRIPTION || type->members[DESCRIPTION].type.data != AIN_STRING)
+		return;
+
+	const char *const tags[] = { "[　ランス　]", "[ ラミアス ]", "[ リッシュ ]" };
+	struct { char *sjis; char *gbk; size_t len; } prefixes[sizeof(tags) / sizeof(*tags)];
+	for (size_t i = 0; i < sizeof(tags) / sizeof(*tags); i++) {
+		prefixes[i].sjis = utf2cjk(tags[i], 0, false);
+		prefixes[i].gbk = utf2cjk(tags[i], 0, true);
+		prefixes[i].len = strlen(prefixes[i].sjis);
+	}
+	// Old snapshots contain the Shift-JIS tag followed by an already-GBK description.
+	for (size_t i = 0; i < heap_size; i++) {
+		if (!page_index_valid(i))
+			continue;
+		struct page *page = heap[i].page;
+		if (!page || page->type != STRUCT_PAGE || page->index != item_type || page->nr_vars <= DESCRIPTION)
+			continue;
+		int slot = page->values[DESCRIPTION].i;
+		if (!string_index_valid(slot) || !heap[slot].s)
+			continue;
+		const struct string *old = heap[slot].s;
+		for (size_t j = 0; j < sizeof(prefixes) / sizeof(*prefixes); j++) {
+			size_t len = prefixes[j].len;
+			if (old->size < len || memcmp(old->text, prefixes[j].sjis, len))
+				continue;
+			struct string *replacement = make_string(prefixes[j].gbk, strlen(prefixes[j].gbk));
+			string_append_cstr(&replacement, old->text + len, old->size - len);
+			heap_string_assign(slot, replacement);
+			free_string(replacement);
+			break;
+		}
+	}
+	for (size_t i = 0; i < sizeof(prefixes) / sizeof(*prefixes); i++) {
+		free(prefixes[i].sjis);
+		free(prefixes[i].gbk);
+	}
+}
+
 void vm_load_image(const char *key, const char *path)
 {
 	dg_callbegin_pending = false;
@@ -2073,6 +2120,7 @@ void vm_load_image(const char *key, const char *path)
 		VM_ERROR("Failed to read VM image '%s': %s", display_sjis0(path), savefile_strerror(error));
 	}
 	repair_evenicle_rance_resume_skills();
+	repair_evenicle_rance_resume_item_descriptions();
 	modifier_on_config_loaded();
 	modifier_on_globals_loaded();
 }

@@ -373,8 +373,8 @@ static bool ain_has_evenicle2_rance_gbk_prologue(struct ain *ain)
 	return false;
 }
 
-static bool next_string_push(struct ain *ain, uint32_t end,
-		uint32_t *addr, uint32_t *operand)
+static bool next_ain_operand(struct ain *ain, uint32_t end,
+		uint32_t *addr, unsigned opcode, uint32_t *operand)
 {
 	while (*addr < end && end - *addr >= 2) {
 		unsigned op = (uint16_t)LittleEndian_getW(ain->code, *addr);
@@ -385,12 +385,29 @@ static bool next_string_push(struct ain *ain, uint32_t end,
 			return false;
 		uint32_t pos = *addr + 2;
 		*addr += width;
-		if (op == S_PUSH) {
+		if (op == opcode) {
 			*operand = pos;
 			return true;
 		}
 	}
 	return false;
+}
+
+static bool ain_literal_hash_matches(struct ain *ain, uint32_t start,
+		uint32_t end, uint32_t expected_hash)
+{
+	uint32_t hash = 2166136261u;
+	uint32_t operand;
+	for (uint32_t addr = start; next_ain_operand(ain, end, &addr, S_PUSH, &operand); ) {
+		int no = LittleEndian_getDW(ain->code, operand);
+		if (no < 0 || no >= ain->nr_strings)
+			return false;
+		const unsigned char *p = (const unsigned char *)ain->strings[no]->text;
+		do {
+			hash = (hash ^ *p) * 16777619u;
+		} while (*p++);
+	}
+	return hash == expected_hash;
 }
 
 static void normalize_sjis_display_literals(struct ain *ain, const char *function,
@@ -401,24 +418,12 @@ static void normalize_sjis_display_literals(struct ain *ain, const char *functio
 		return;
 	uint32_t start = ain->functions[fno].address;
 	uint32_t end = find_func_end_addr(ain, fno);
-	uint32_t operand;
-	if (expected_hash) {
-		uint32_t hash = 2166136261u;
-		for (uint32_t addr = start; next_string_push(ain, end, &addr, &operand); ) {
-			int no = LittleEndian_getDW(ain->code, operand);
-			if (no < 0 || no >= ain->nr_strings)
-				return;
-			const unsigned char *p = (const unsigned char *)ain->strings[no]->text;
-			do {
-				hash = (hash ^ *p) * 16777619u;
-			} while (*p++);
-		}
-		if (hash != expected_hash)
-			return;
-	}
+	if (expected_hash && !ain_literal_hash_matches(ain, start, end, expected_hash))
+		return;
 
+	uint32_t operand;
 	unsigned site = 0;
-	for (uint32_t addr = start; next_string_push(ain, end, &addr, &operand); ) {
+	for (uint32_t addr = start; next_ain_operand(ain, end, &addr, S_PUSH, &operand); ) {
 		site++;
 		if (display_sites) {
 			if (!*display_sites)
@@ -443,6 +448,34 @@ static void normalize_sjis_display_literals(struct ain *ain, const char *functio
 		free(round_trip);
 		free(gbk);
 		free(utf8);
+	}
+}
+
+static void redirect_evenicle_rance_item_plate_numbers(struct ain *ain, const char *function,
+		uint32_t expected_hash)
+{
+	char *from_name = utf2cjk("数字を全角文字列", 0, false);
+	char *to_name = utf2cjk("string全角", 0, false);
+	int from = ain_get_function(ain, from_name);
+	int to = ain_get_function(ain, to_name);
+	free(from_name);
+	free(to_name);
+	int fno = ain_get_function(ain, (char *)function);
+	if (from < 0 || to < 0 || fno < 0)
+		return;
+	uint32_t start = ain->functions[fno].address;
+	uint32_t end = find_func_end_addr(ain, fno);
+	if (!ain_literal_hash_matches(ain, start, end, expected_hash)
+			|| !ain_literal_hash_matches(ain, ain->functions[to].address,
+				find_func_end_addr(ain, to), 0x75883bccu))
+		return;
+
+	// The original digit literals also build resource names. Use the script's
+	// encoding-aware %D formatter only for item-plate display calls.
+	uint32_t operand;
+	for (uint32_t addr = start; next_ain_operand(ain, end, &addr, CALLFUNC, &operand); ) {
+		if (LittleEndian_getDW(ain->code, operand) == from)
+			LittleEndian_putDW(ain->code, operand, to);
 	}
 }
 
@@ -481,6 +514,9 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 		{ "T_ItemPlate@GetItemName", 0x751a4839u, DISPLAY_SITES(1) },
 		{ "T_ItemPlate@GetItemTypeName", 0x7e1a91a9u, DISPLAY_SITES(1, 2, 3, 5, 6, 7, 8, 9, 10, 11) },
 		{ "T_ItemPlate@GetItemSetumei", 0x05029c7du, DISPLAY_SITES(1) },
+		{ "T_ItemPlate@SetItemData", 0x8cc15acdu, DISPLAY_SITES(8) },
+		{ "T_ItemPlate@SetSubSetumei", 0xa4b5a9ceu, NULL },
+		{ "＆アイテム機能名称取得", 0x6cb26ac3u, NULL },
 		{ "T_SaveLoad@Create", 0x576cfbd6u, DISPLAY_SITES(14) },
 		{ "T_SaveLoad@UpdatePageData", 0xb3462b55u, DISPLAY_SITES(9, 11, 13, 15, 17, 27, 28, 29, 30, 31) },
 		{ "T_SaveLoad@ExecuteSave", 0x5186a456u, DISPLAY_SITES(3) },
@@ -543,9 +579,9 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 		{ "特典用キャラ設定", 0x9ebc9466u, DISPLAY_SITES(3, 4, 5, 7, 8, 9, 10) },
 		{ "ＳＷ", 0xa975d888u, DISPLAY_SITES(1) },
 		{ "アイテム工場", 0x3cc1efd4u,
-			DISPLAY_SITES(3, 5, 7, 9, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 31, 32, 34, 35,
-				37, 38, 41, 42, 44, 46, 48, 50, 53, 54, 56, 57, 59, 60, 62, 63, 65, 66, 69,
-				70, 72, 73, 75, 76, 79, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102,
+			DISPLAY_SITES(3, 5, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 29,
+				31, 32, 34, 35, 37, 38, 39, 41, 42, 44, 46, 48, 50, 51, 53, 54, 56, 57, 59, 60, 62, 63,
+				65, 66, 67, 69, 70, 72, 73, 75, 76, 77, 79, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102,
 				104, 107, 109, 111, 113, 115, 117, 120, 122, 124, 126, 128, 130, 132, 134,
 				136, 138) },
 		{ "説明に機能追加", 0x65d04c02u,
@@ -553,6 +589,9 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 				23, 24, 25, 26, 27, 28, 29, 30, 31) },
 	};
 #undef DISPLAY_SITES
+
+	redirect_evenicle_rance_item_plate_numbers(ain, "T_ItemPlate@SetItemData", 0x8cc15acdu);
+	redirect_evenicle_rance_item_plate_numbers(ain, "T_ItemPlate@SetSubSetumei", 0xa4b5a9ceu);
 
 	for (size_t i = 0; i < sizeof(functions) / sizeof(*functions); i++) {
 		char *function = utf2cjk(functions[i].function, 0, false);
