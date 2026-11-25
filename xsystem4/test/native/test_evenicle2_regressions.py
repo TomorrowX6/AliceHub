@@ -512,8 +512,9 @@ float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct tex
     return 12;
 }
 void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {}
+void parts_dirty(struct parts *parts) {}
 
-static void check_display(struct string *source, const char *expected, bool construction)
+static void check_display(struct string *source, const char *expected)
 {
     struct parts_text parts = {0};
     drawn = make_string("", 0);
@@ -524,15 +525,13 @@ static void check_display(struct string *source, const char *expected, bool cons
     assert(utf && !strcmp(utf, expected));
     struct string *stored = parts_text_get(&parts);
     assert(!strcmp(stored->text, source->text));
-    if (construction) {
-        char *expected_gbk = utf2cjk(expected, 0, true);
-        expected_construction = expected_gbk;
-        struct parts_construction_process cproc = { .common.texture.handle = 1 };
-        struct parts_cp_text op = { .text = source };
-        assert(build_text(&cproc, &op, RENDER_COPY));
-        assert(!strcmp(stored->text, source->text));
-        free(expected_gbk);
-    }
+    char *expected_gbk = utf2cjk(expected, 0, true);
+    expected_construction = expected_gbk;
+    struct parts_construction_process cproc = { .common.texture.handle = 1 };
+    struct parts_cp_text op = { .text = source };
+    assert(build_text(&cproc, &op, RENDER_COPY));
+    assert(!strcmp(stored->text, source->text));
+    free(expected_gbk);
     free(utf);
     free_string(stored);
     free_string(drawn);
@@ -543,7 +542,7 @@ static void check_bytes(const char *first, const char *second, const char *expec
 {
     struct string *source = make_string(first, strlen(first));
     string_append_cstr(&source, second, strlen(second));
-    check_display(source, expected, true);
+    check_display(source, expected);
     free_string(source);
 }
 
@@ -554,6 +553,32 @@ static void check(const char *first, const char *second, const char *expected)
     check_bytes(sjis, gbk, expected);
     free(gbk);
     free(sjis);
+}
+
+static void check_incremental_display(void)
+{
+    char *gbk = utf2cjk("俀俋侽侽侽／道具", 0, true);
+    struct string *prefix = make_string(gbk, 10);
+    struct string *suffix = make_string(gbk + 10, strlen(gbk + 10));
+    struct parts_text parts = {0};
+    drawn = make_string("", 0);
+    parts_text_append_fragment(NULL, &parts, prefix);
+    free_string(drawn);
+    drawn = make_string("", 0);
+    parts_text_append_fragment(NULL, &parts, suffix);
+    assert(!strcmp(drawn->text, gbk));
+    struct string *stored = parts_text_get(&parts);
+    assert(!strcmp(stored->text, gbk));
+    free_string(drawn);
+    drawn = make_string("", 0);
+    parts_text_rerender_all(NULL, &parts);
+    assert(!strcmp(drawn->text, gbk));
+    parts_text_free(&parts);
+    free_string(stored);
+    free_string(drawn);
+    free_string(suffix);
+    free_string(prefix);
+    free(gbk);
 }
 
 int main(void)
@@ -588,6 +613,7 @@ int main(void)
     check("－４", "／５０", "－４／５０");
     check("", "１２２／２９０００", "１２２／２９０００");
     check("", "俀俋侽侽侽／道具", "俀俋侽侽侽／道具");
+    check_incremental_display();
     check("", "攻撃力", "攻撃力");
     check("", "呣呣呣", "呣呣呣");
     check("", "「呣呣呣……」", "「呣呣呣……」");
@@ -599,7 +625,7 @@ int main(void)
         char *gbk = utf2cjk(config_labels[i], 0, true);
         struct string *text = make_string(gbk, strlen(gbk));
         string_append_cstr(&text, "\r", 1);
-        check_display(text, config_labels[i], false);
+        check_display(text, config_labels[i]);
         free_string(text);
         free(gbk);
     }

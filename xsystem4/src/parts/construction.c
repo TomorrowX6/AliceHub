@@ -965,6 +965,16 @@ static bool build_text(struct parts_construction_process *cproc, struct parts_cp
 		return false;
 	const char *source = op->text->text;
 	char *display = parts_prepare_display_text(source);
+	if (parts_uses_mixed_display_text() && strchr(source, '\r')) {
+		if (!display)
+			display = xstrdup(source);
+		char *dst = display;
+		for (const char *src = display; *src; src++) {
+			if (*src != '\r')
+				*dst++ = *src;
+		}
+		*dst = '\0';
+	}
 	if (display)
 		source = display;
 	struct text_style style = op->style;

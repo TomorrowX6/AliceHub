@@ -787,6 +787,7 @@ void parts_state_discard_texture_backups(struct parts_state *state);
 int parts_copy_texture_pixels(struct parts_state *state, Texture *texture, struct parts_texture_pixels *out);
 bool parts_cg_set(struct parts *parts, struct parts_cg *cg, struct string *cg_name);
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no);
+bool parts_uses_mixed_display_text(void);
 char *parts_prepare_display_text(const char *text);
 void parts_text_append(struct parts *parts, struct parts_text *t, struct string *text);
 bool parts_animation_set_cg_by_index(struct parts *parts, struct parts_animation *anim,
