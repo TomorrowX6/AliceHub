@@ -513,10 +513,8 @@ float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct tex
 }
 void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {}
 
-static void check_bytes(const char *first, const char *second, const char *expected)
+static void check_display(struct string *source, const char *expected, bool construction)
 {
-    struct string *source = make_string(first, strlen(first));
-    string_append_cstr(&source, second, strlen(second));
     struct parts_text parts = {0};
     drawn = make_string("", 0);
     parts_text_append(NULL, &parts, source);
@@ -526,19 +524,27 @@ static void check_bytes(const char *first, const char *second, const char *expec
     assert(utf && !strcmp(utf, expected));
     struct string *stored = parts_text_get(&parts);
     assert(!strcmp(stored->text, source->text));
-
-    char *construction = utf2cjk(expected, 0, true);
-    expected_construction = construction;
-    struct parts_construction_process cproc = { .common.texture.handle = 1 };
-    struct parts_cp_text op = { .text = source };
-    assert(build_text(&cproc, &op, RENDER_COPY));
-    assert(!strcmp(stored->text, source->text));
-    free(construction);
+    if (construction) {
+        char *expected_gbk = utf2cjk(expected, 0, true);
+        expected_construction = expected_gbk;
+        struct parts_construction_process cproc = { .common.texture.handle = 1 };
+        struct parts_cp_text op = { .text = source };
+        assert(build_text(&cproc, &op, RENDER_COPY));
+        assert(!strcmp(stored->text, source->text));
+        free(expected_gbk);
+    }
     free(utf);
     free_string(stored);
     free_string(drawn);
-    free_string(source);
     parts_text_free(&parts);
+}
+
+static void check_bytes(const char *first, const char *second, const char *expected)
+{
+    struct string *source = make_string(first, strlen(first));
+    string_append_cstr(&source, second, strlen(second));
+    check_display(source, expected, true);
+    free_string(source);
 }
 
 static void check(const char *first, const char *second, const char *expected)
@@ -586,6 +592,17 @@ int main(void)
     check("", "呣呣呣", "呣呣呣");
     check("", "「呣呣呣……」", "「呣呣呣……」");
     check("", "装備武器：点击继续。", "装備武器：点击继续。");
+    const char *config_labels[] = {
+        " 显示示例信息", " 跳过文本中，削除各种演出使其高速化", " 不启用", " ２ｘ", " ４ｘ", " ８ｘ"
+    };
+    for (size_t i = 0; i < sizeof(config_labels) / sizeof(*config_labels); i++) {
+        char *gbk = utf2cjk(config_labels[i], 0, true);
+        struct string *text = make_string(gbk, strlen(gbk));
+        string_append_cstr(&text, "\r", 1);
+        check_display(text, config_labels[i], false);
+        free_string(text);
+        free(gbk);
+    }
     puts("OK");
     return 0;
 }

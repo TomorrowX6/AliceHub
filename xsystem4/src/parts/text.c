@@ -268,6 +268,10 @@ static const char *parts_text_append_display_char(struct parts_text *t, const ch
 	ch->off = text_style_offset(&eff_ts);
 	memset(ch->ch, 0, sizeof(ch->ch));
 	int len = extract_sjis_char(str, ch->ch);
+	if (*str == '\r') {
+		*ch = (struct parts_text_char){ .ch = {'\r'}, .cache_idx = -1 };
+		return str + len;
+	}
 	char glyph_bytes[4] = {0};
 	memcpy(glyph_bytes, display, len);
 
@@ -743,5 +747,4 @@ void PE_GetPartsTextFontProperty(int no, int *face, int *size, int *r, int *g, i
 	*er = ts->edge_color.r; *eg = ts->edge_color.g; *eb = ts->edge_color.b;
 	*edge = ts->edge_left;
 }
-
 
