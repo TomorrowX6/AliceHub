@@ -393,6 +393,7 @@ static bool ex_json_cheat_is(cJSON *act, const char *name)
 #define R06_F_HIT       "\x95\xa8\x97\x9d\x96\xbd\x92\x86\x97\xcd" /* 物理命中力 */
 #define R06_F_EVA       "\x95\xa8\x97\x9d\x89\xf1\x94\xf0\x97\xcd" /* 物理回避力 */
 #define R06_F_ITEM_CNT  "\x8c\xc2\x90\x94" /* 個数 */
+#define R06_ENEMY_SLOT_BASE 51
 
 static void ex_r06_populate(cJSON *root)
 {
@@ -404,7 +405,7 @@ static void ex_r06_populate(cJSON *root)
 	bool in_battle = false;
 	for (int i = 0; i < vm_dd_array_len(pe_chr); i++) {
 		int cno = ex_arr_int_get(pe_chr, i, 0);
-		if (cno > 0 && (51 + i) < n) { in_battle = true; break; }
+		if (cno > 0 && (R06_ENEMY_SLOT_BASE + i) < n) { in_battle = true; break; }
 	}
 	cJSON_AddBoolToObject(root, "inBattle", in_battle);
 	cJSON_AddNumberToObject(root, "gold", ex_get_global_int(R06_G_GOLD, NULL, 0));
@@ -412,7 +413,7 @@ static void ex_r06_populate(cJSON *root)
 
 	cJSON *chars = cJSON_CreateArray();
 	int added = 0;
-	for (int i = 1; i < n && i < 51 && added < 48; i++) {
+	for (int i = 1; i < n && i < R06_ENEMY_SLOT_BASE && added < 48; i++) {
 		struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
 		if (!c) continue;
 		int lv = vm_get_field_int(c, R06_F_LV, NULL, 0);
@@ -468,7 +469,7 @@ static void ex_r06_locks(int mask)
 		struct page *an = vm_get_field_page(pe, "m_anChr", NULL);
 		for (int i = 0; i < vm_dd_array_len(an); i++) {
 			int cno = ex_arr_int_get(an, i, 0);
-			int slot = 51 + i;
+			int slot = R06_ENEMY_SLOT_BASE + i;
 			if (cno <= 0 || slot >= n) continue;
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, slot));
 			if (c && vm_get_field_int(c, R06_F_HP, NULL, 0) > 1)
@@ -498,7 +499,7 @@ static void ex_r06_action(cJSON *act)
 
 	struct page *gc = vm_get_global_page("gc", NULL);
 	int n = vm_dd_array_len(gc);
-	int ally_end = n < 51 ? n : 51;
+	int ally_end = n < R06_ENEMY_SLOT_BASE ? n : R06_ENEMY_SLOT_BASE;
 	if (ex_json_cheat_is(act, "fullHeal")) {
 		for (int i = 1; i < ally_end; i++) {
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
@@ -523,8 +524,7 @@ static void ex_r06_action(cJSON *act)
 	if (ce && cJSON_IsObject(ce) && n > 0) {
 		int32_t target = -1;
 		ex_json_int(ce, "target", &target);
-		int end = (target >= 0) ? n : ally_end;
-		for (int i = 1; i < end; i++) {
+		for (int i = 1; i < ally_end; i++) {
 			if (target >= 0 && i != target) continue;
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(gc, i));
 			if (!c || vm_get_field_int(c, R06_F_HP_MAX, NULL, 0) <= 0) continue;
@@ -1161,7 +1161,9 @@ static void ex_gz_action(cJSON *act)
 	if (ce && cJSON_IsObject(ce)) {
 		struct page *gs = vm_get_global_page("gs", NULL);
 		int32_t target = -1;
+		int32_t boost_base = 0;
 		ex_json_int(ce, "target", &target);
+		ex_json_int(ce, "boostBase", &boost_base);
 		for (int i = 1; i < vm_dd_array_len(gs); i++) {
 			if (target >= 0 && i != target) continue;
 			struct page *g = vm_safe_get_page(vm_dd_array_elem_slot(gs, i));
@@ -1170,32 +1172,32 @@ static void ex_gz_action(cJSON *act)
 			if (ex_json_int(ce, "hp", &v)) {
 				int32_t cv = vm_dd_clamp(v, 1, 99999);
 				vm_set_field_int(g, GZ_F_HP_CN, GZ_F_HP_JP, cv);
-				vm_set_field_int(g, GZ_F_HP_BASE_CN, GZ_F_HP_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_HP_BASE_CN, GZ_F_HP_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "atk", &v)) {
 				int32_t cv = vm_dd_clamp(v, 0, 99999);
 				vm_set_field_int(g, GZ_F_ATK_CN, GZ_F_ATK_JP, cv);
-				vm_set_field_int(g, GZ_F_ATK_BASE_CN, GZ_F_ATK_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_ATK_BASE_CN, GZ_F_ATK_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "def", &v)) {
 				int32_t cv = vm_dd_clamp(v, 0, 99999);
 				vm_set_field_int(g, GZ_F_DEF_CN, GZ_F_DEF_JP, cv);
-				vm_set_field_int(g, GZ_F_DEF_BASE_CN, GZ_F_DEF_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_DEF_BASE_CN, GZ_F_DEF_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "mag", &v)) {
 				int32_t cv = vm_dd_clamp(v, 0, 99999);
 				vm_set_field_int(g, GZ_F_MAG_CN, GZ_F_MAG_JP, cv);
-				vm_set_field_int(g, GZ_F_MAG_BASE_CN, GZ_F_MAG_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_MAG_BASE_CN, GZ_F_MAG_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "res", &v)) {
 				int32_t cv = vm_dd_clamp(v, 0, 99999);
 				vm_set_field_int(g, GZ_F_RES_CN, GZ_F_RES_JP, cv);
-				vm_set_field_int(g, GZ_F_RES_BASE_CN, GZ_F_RES_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_RES_BASE_CN, GZ_F_RES_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "eva", &v)) {
 				int32_t cv = vm_dd_clamp(v, 0, 999);
 				vm_set_field_int(g, GZ_F_EVA_CN, GZ_F_EVA_JP, cv);
-				vm_set_field_int(g, GZ_F_EVA_BASE_CN, GZ_F_EVA_BASE_JP, cv);
+				if (boost_base) vm_set_field_int(g, GZ_F_EVA_BASE_CN, GZ_F_EVA_BASE_JP, cv);
 			}
 			if (ex_json_int(ce, "love", &v)) {
 				int lmax = vm_get_field_int(g, GZ_F_LMAX_CN, GZ_F_LMAX_JP, 9999);
@@ -2568,27 +2570,65 @@ static void ex_hhr_populate(cJSON *root)
 	cJSON_AddNumberToObject(root, "days", ex_hhr_read(gp, "m_nLimitOfDays", 0));
 }
 
-static void ex_hhr_locks(int mask)
+static struct {
+	uint32_t config_seq;
+	int active_mask;
+	int32_t original[6];
+} hhr_assists;
+
+static void ex_hhr_reset_assists(void)
+{
+	hhr_assists.config_seq = 0;
+	hhr_assists.active_mask = 0;
+}
+
+static void ex_hhr_config_assists(int mask, bool one_shot)
+{
+	static const char *const fields[] = {
+		"<SkipSpend>", "<SkipUseCount>", "<BoostExp>",
+		"<DisableTroll>", "<DisableAbleActionTimezone>", "<DisableCounterCondition>",
+	};
+	int idx = vm_find_global_idx("g_cConfigParam", NULL);
+	if (idx < 0 || idx >= heap[0].page->nr_vars)
+		return;
+	int slot = global_get(idx).i;
+	struct page *cfg = vm_safe_get_page(slot);
+	if (!cfg)
+		return;
+	uint32_t seq = heap_get_seq(slot);
+	if (seq != hhr_assists.config_seq) {
+		hhr_assists.active_mask = 0;
+		hhr_assists.config_seq = seq;
+	}
+	for (int i = 0; i < 6; i++) {
+		int bit = 1 << (2 + i / 3);
+		bool was_active = hhr_assists.active_mask & bit;
+		if (mask & bit) {
+			if (one_shot) {
+				if (was_active)
+					hhr_assists.original[i] = 1;
+			} else if (!was_active) {
+				hhr_assists.original[i] = vm_get_field_int(cfg, fields[i], NULL, 0);
+			}
+			vm_set_field_int(cfg, fields[i], NULL, 1);
+		} else if (!one_shot && was_active) {
+			vm_set_field_int(cfg, fields[i], NULL, hhr_assists.original[i]);
+		}
+	}
+	if (!one_shot)
+		hhr_assists.active_mask = mask & 0x0C;
+}
+
+static void ex_hhr_refill(int mask)
 {
 	struct page *gp = vm_get_global_page("g_cGameParam", NULL);
 	struct page *hp = vm_get_global_page("g_cHeroParam", NULL);
-	struct page *cfg = vm_get_global_page("g_cConfigParam", NULL);
 	if (!gp || !hp) return;
 	if ((mask & (1 << 0)) && ex_hhr_read(hp, "m_nActionPoint", 0) < 99)
 		ex_hhr_write(hp, "m_nActionPoint", 99);
 	if (mask & (1 << 1)) {
 		if (ex_hhr_read(gp, "m_nMental", 0) < 100) ex_hhr_write(gp, "m_nMental", 100);
 		if (ex_hhr_read(gp, "m_nRefreshPoint", 0) < 99) ex_hhr_write(gp, "m_nRefreshPoint", 99);
-	}
-	if ((mask & (1 << 2)) && cfg) {
-		vm_set_field_int(cfg, "<SkipSpend>", NULL, 1);
-		vm_set_field_int(cfg, "<SkipUseCount>", NULL, 1);
-		vm_set_field_int(cfg, "<BoostExp>", NULL, 1);
-	}
-	if ((mask & (1 << 3)) && cfg) {
-		vm_set_field_int(cfg, "<DisableTroll>", NULL, 1);
-		vm_set_field_int(cfg, "<DisableAbleActionTimezone>", NULL, 1);
-		vm_set_field_int(cfg, "<DisableCounterCondition>", NULL, 1);
 	}
 }
 
@@ -2604,8 +2644,10 @@ static void ex_hhr_action(cJSON *act)
 	if (ex_json_int(act, "mental", &v)) ex_hhr_write(gp, "m_nMental", vm_dd_clamp(v, 0, 999));
 	if (ex_json_int(act, "refresh", &v)) ex_hhr_write(gp, "m_nRefreshPoint", vm_dd_clamp(v, 0, 999));
 	if (ex_json_int(act, "days", &v)) ex_hhr_write(gp, "m_nLimitOfDays", vm_dd_clamp(v, 1, 999));
-	if (ex_json_cheat_is(act, "fullHeal")) ex_hhr_locks((1 << 0) | (1 << 1));
-	if (ex_json_cheat_is(act, "boostAll")) ex_hhr_locks(0x0F);
+	if (ex_json_cheat_is(act, "fullHeal") || ex_json_cheat_is(act, "boostAll"))
+		ex_hhr_refill((1 << 0) | (1 << 1));
+	if (ex_json_cheat_is(act, "boostAll"))
+		ex_hhr_config_assists((1 << 2) | (1 << 3), true);
 }
 
 /* =========================================================================
@@ -2790,6 +2832,13 @@ static void vm_ex_enforce_locks(void)
 	pthread_mutex_lock(&g_mod_mutex);
 	int mask = ex_get_lock_mask_locked(gid);
 	pthread_mutex_unlock(&g_mod_mutex);
+	if (game_haharanman) {
+		if (mask & 0x03)
+			ex_hhr_refill(mask);
+		if ((mask & 0x0C) || hhr_assists.active_mask)
+			ex_hhr_config_assists(mask, false);
+		return;
+	}
 	if (mask == 0)
 		return;
 
@@ -2811,7 +2860,6 @@ static void vm_ex_enforce_locks(void)
 	else if (game_escalayer_reboot) ex_er_locks(mask);
 	else if (game_ixseal) ex_ix_locks(mask);
 	else if (game_pascha3) ex_p3_locks(mask);
-	else if (game_haharanman) ex_hhr_locks(mask);
 	else if (game_tsumamigui3) ex_t3g_locks(mask);
 	else if (game_maman) ex_mm_locks(mask);
 }

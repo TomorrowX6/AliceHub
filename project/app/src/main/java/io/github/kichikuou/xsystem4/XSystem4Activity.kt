@@ -1413,6 +1413,7 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         if (isSystem3xGame()) {
+            SDLActivity.nativeSetenv("XSYSTEM35_MODIFIER_GAME", currentGenericModifierGameId().orEmpty())
             val rootFile = java.io.File(gameRoot)
             val isSys39 = rootFile.listFiles()?.any { f ->
                 f.isFile && (

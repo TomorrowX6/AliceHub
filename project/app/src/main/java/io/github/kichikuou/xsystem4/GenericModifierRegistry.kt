@@ -245,7 +245,7 @@ object GenericModifierRegistry {
             )
         },
         run {
-            val boost = mapOf("lv" to 99, "hp" to 9999, "atk" to 999, "def" to 999, "mag" to 999, "res" to 999, "eva" to 100, "love" to 999)
+            val boost = mapOf("lv" to 99, "hp" to 9999, "atk" to 999, "def" to 999, "mag" to 999, "res" to 999, "eva" to 100, "love" to 999, "boostBase" to 1)
             GenericModifierSpec(
                 id = GameCatalog.ID_GALZOO,
                 name = t("萌兽岛", "GALZOOアイランド", "Galzoo Island"),

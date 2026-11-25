@@ -96,6 +96,22 @@ static bool str_contains_icase(const char *hay, const char *needle) {
 	return false;
 }
 
+static enum s35_mod_game detect_sco_game(const char *sco, const char *catalog_id) {
+	if (!sco)
+		return S35_GAME_NONE;
+	if (catalog_id && strcmp(catalog_id, "kichikuou") == 0)
+		return S35_GAME_KICHIKUOU;
+	if (catalog_id && strcmp(catalog_id, "kaerunyo") == 0)
+		return S35_GAME_KAERUNYO;
+	if (str_contains_icase(sco, "kichiku") || strstr(sco, "鬼畜王"))
+		return S35_GAME_KICHIKUOU;
+	if (str_contains_icase(sco, "kaeru") || str_contains_icase(sco, "panyo") ||
+	    strstr(sco, "ぱにょ") || strstr(sco, "\x82\xcf\x82\xc9\x82\xe5") ||
+	    strstr(sco, "\xa4\xd1\xa4\xcb\xa4\xe7"))
+		return S35_GAME_KAERUNYO;
+	return S35_GAME_NONE;
+}
+
 static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	if (!nact || nact->ain.varnum <= 0 || !nact->ain.var)
 		return -1;
@@ -257,19 +273,8 @@ static void refresh_escalayer_cache(void) {
 		}
 	}
 
-	/* 5 & 6. Non-System39.ain games verified directly from SA.ALD bytecode */
-	if (sco0) {
-		if (str_contains_icase(sco0, "kichiku") || strstr(sco0, "鬼畜王")) {
-			esc_cache.game = S35_GAME_KICHIKUOU;
-			return;
-		}
-		if (str_contains_icase(sco0, "kaeru") || str_contains_icase(sco0, "panyo") ||
-		    strstr(sco0, "ぱにょ") || strstr(sco0, "\x82\xcf\x82\xc9\x82\xe5") ||
-		    strstr(sco0, "\xa4\xd1\xa4\xcb\xa4\xe7")) {
-			esc_cache.game = S35_GAME_KAERUNYO;
-			return;
-		}
-	}
+	/* 5 & 6. These games can use generic scenario archives. */
+	esc_cache.game = detect_sco_game(sco0, SDL_getenv("XSYSTEM35_MODIFIER_GAME"));
 }
 
 static const char *game_id_str(enum s35_mod_game g) {

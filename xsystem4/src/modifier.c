@@ -6917,6 +6917,8 @@ static struct page *r02_get_cd_array(void)
 	return (p && p->array.rank == 1 && p->array.struct_type == s_r02_chara_type && p->nr_vars >= 7) ? p : NULL;
 }
 
+static void ex_hhr_reset_assists(void);
+
 void modifier_on_ain_init(void)
 {
 	pthread_mutex_lock(&g_mod_mutex);
@@ -6925,6 +6927,7 @@ void modifier_on_ain_init(void)
 	/* Also runs after vm_reset() with the same ain: globals are defaults again. */
 	s_game_config_ready = false;
 	s_game_config_loaded = false;
+	ex_hhr_reset_assists();
 	s_r03_compatible = false;
 	s_r03_applying = false;
 	s_r03_inspected_ain = ain;

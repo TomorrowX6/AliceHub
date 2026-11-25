@@ -149,7 +149,7 @@ struct ModifierGamePanel {
     private static let exGz = ModifierCharacters(prefix: "ex", fields: [
         level, .init("hp", "当前 HP"), .init("atk", "攻击"), .init("def", "防御"),
         .init("mag", "魔力"), .init("res", "魔防"), .init("eva", "回避"), .init("love", "好感度"),
-    ], boost: ["lv": 99, "hp": 9999, "atk": 999, "def": 999, "mag": 999, "res": 999, "eva": 100, "love": 999])
+    ], boost: ["lv": 99, "hp": 9999, "atk": 999, "def": 999, "mag": 999, "res": 999, "eva": 100, "love": 999, "boostBase": 1])
 
     private static let exBb = ModifierCharacters(prefix: "ex", fields: [level, experience] + hp + [
         .init("atk", "攻击"), .init("def", "防御"), .init("hit", "命中"), .init("eva", "回避"), .init("move", "移动力"),
