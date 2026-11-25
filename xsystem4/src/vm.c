@@ -408,6 +408,26 @@ static struct string *stack_peek_string(int n)
 	return string_index_valid(slot) ? heap[slot].s : &EMPTY_STRING;
 }
 
+// GBK-translated games may compare names built with %D/%F (GBK fullwidth
+// digits) against Shift-JIS names from untranslated data files.
+static bool vm_string_equal(struct string *a, struct string *b)
+{
+	if (!strcmp(a->text, b->text))
+		return true;
+	if (!sys4_text_is_gbk || a->size != b->size)
+		return false;
+	char a_buf[256], b_buf[256];
+	bool a_changed = false, b_changed = false;
+	char *a_norm = cjk_gbk_zenkaku_to_sjis_buf(a->text, a->size, a_buf, sizeof(a_buf), &a_changed);
+	char *b_norm = cjk_gbk_zenkaku_to_sjis_buf(b->text, b->size, b_buf, sizeof(b_buf), &b_changed);
+	bool eq = (a_changed || b_changed) && !memcmp(a_norm, b_norm, a->size);
+	if (a_norm != a_buf)
+		free(a_norm);
+	if (b_norm != b_buf)
+		free(b_norm);
+	return eq;
+}
+
 int vm_string_ref(struct string *s)
 {
 	int slot = heap_alloc_slot(VM_STRING);
@@ -1385,7 +1405,13 @@ static enum opcode execute_instruction(enum opcode opcode)
 							init_struct(s->members[i].type.struc, heap_get_page(v.i)->values[i].i);
 					}
 				}
-				vm_call(constructor, v.i);
+				// Run the constructor in the current VM loop so that its frame
+				// can be saved and restored by resume saves.
+				function_call(constructor, instr_ptr + instruction_width(NEW));
+				set_struct_page(v.i);
+				local_page()->local.struct_ptr = v.i;
+				stack_push(v);
+				return CALLFUNC;
 			}
 		} else {
 			create_struct(stack_pop().i, &v);
@@ -2110,14 +2136,14 @@ static enum opcode execute_instruction(enum opcode opcode)
 		break;
 	}
 	case S_NOTE: {
-		bool noteq = !!strcmp(stack_peek_string(1)->text, stack_peek_string(0)->text);
+		bool noteq = !vm_string_equal(stack_peek_string(1), stack_peek_string(0));
 		heap_unref(stack_pop().i);
 		heap_unref(stack_pop().i);
 		stack_push(noteq);
 		break;
 	}
 	case S_EQUALE: {
-		bool eq = !strcmp(stack_peek_string(1)->text, stack_peek_string(0)->text);
+		bool eq = vm_string_equal(stack_peek_string(1), stack_peek_string(0));
 		heap_unref(stack_pop().i);
 		heap_unref(stack_pop().i);
 		stack_push(eq);
