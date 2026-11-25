@@ -20,6 +20,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#ifdef __SWITCH__
+#include <sys/stat.h>
+#endif
 #include <zlib.h>
 #ifdef _WIN32
 #include <io.h>
@@ -267,6 +270,43 @@ void atomic_save_abort(FILE *fp, char *tmp_path)
 	}
 }
 
+#ifdef __SWITCH__
+static int commit_switch_save(const char *tmp_path, const char *path)
+{
+	int rc = rename(tmp_path, path);
+	if (rc == 0 || errno != EEXIST)
+		return rc;
+
+	struct stat st;
+	if (stat(path, &st) != 0)
+		return -1;
+	if (!S_ISREG(st.st_mode)) {
+		errno = EISDIR;
+		return -1;
+	}
+
+	char *recovery = xmalloc(strlen(path) + sizeof(".switch-old"));
+	sprintf(recovery, "%s.switch-old", path);
+	if ((unlink(recovery) != 0 && errno != ENOENT) || rename(path, recovery) != 0) {
+		int error = errno;
+		free(recovery);
+		errno = error;
+		return -1;
+	}
+
+	rc = rename(tmp_path, path);
+	int error = errno;
+	if (rc == 0) {
+		unlink(recovery);
+	} else if (rename(recovery, path) != 0) {
+		WARNING("Previous save remains at %s: %s", display_utf0(recovery), strerror(errno));
+	}
+	free(recovery);
+	errno = error;
+	return rc;
+}
+#endif
+
 bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_backup)
 {
 	bool ok = !ferror(fp) && fflush(fp) == 0;
@@ -299,6 +339,8 @@ bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_ba
 	int rc = _wrename(wtmp, wpath);
 	free(wtmp);
 	free(wpath);
+#elif defined(__SWITCH__)
+	int rc = commit_switch_save(tmp_path, path);
 #else
 	int rc = rename(tmp_path, path);
 #endif

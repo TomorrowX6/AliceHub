@@ -151,9 +151,36 @@ static bool read_index(int volume, drifiles *d, FILE *fp) {
 	return true;
 }
 
+#ifdef __SWITCH__
+bool dri_validate(const char **files, int count, bool scenario)
+{
+	drifiles index = {0};
+	bool valid = true;
+	for (int i = 0; i < count; i++) {
+		if (!files[i])
+			continue;
+		FILE *fp = fopen(files[i], "rb");
+		if (!fp) {
+			valid = false;
+			break;
+		}
+		bool indexed = read_index(i + 1, &index, fp);
+		fclose(fp);
+		if (!indexed && i == 0) {
+			valid = false;
+			break;
+		}
+	}
+	valid = valid && (!scenario || dri_exists(&index, 0));
+	free(index.link);
+	free(index.offset);
+	return valid;
+}
+#endif
+
 drifiles *dri_init(const char **file, int cnt, bool use_mmap) {
 	drifiles *d = calloc(1, sizeof(drifiles));
-#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__)
+#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__) || defined(__SWITCH__)
 	use_mmap = false;
 #endif
 
@@ -201,7 +228,7 @@ drifiles *dri_init_optional(const char *file, bool use_mmap) {
 		fclose(fp);
 		return NULL;
 	}
-#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__)
+#if !defined(HAVE_MEMORY_MAPPED_FILE) || defined(__EMSCRIPTEN__) || defined(__SWITCH__)
 	use_mmap = false;
 #endif
 	if (!read_index(1, d, fp)) {

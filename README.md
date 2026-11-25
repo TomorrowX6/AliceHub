@@ -42,6 +42,18 @@
 
 **在线安装**默认关闭。两端均可在设置中阅读并同意使用条款后开启，再从游戏条目下载可用的资源。准备足够空间存放游戏文件及安装时的临时数据。
 
+### Nintendo Switch（Homebrew，实验性）
+
+从 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 下载 `AliceHub-switch` 产物。将三个 `.nro` 复制到 SD 卡的 `/switch/`，再将每个游戏解压到对应引擎的 `games/` 下，保留每个游戏的独立目录：
+
+| 引擎 | 游戏目录示例 |
+| :--- | :--- |
+| `system3.nro`（早期 System 1–3） | `/switch/alicehub/system3/games/<游戏>/` |
+| `xsystem35.nro`（System 3.5–3.9） | `/switch/alicehub/xsystem35/games/<游戏>/` |
+| `xsystem4.nro`（System 4） | `/switch/alicehub/xsystem4/games/<游戏>/` |
+
+从 Homebrew Menu **以应用模式**启动对应引擎；用方向键选择游戏，A 启动，B 或 + 退出选择器。存档写在相应引擎的 `saves/<游戏>/` 下。首版不包含手机在线安装、模组管理或存档同步。
+
 ## System 1–4 兼容性与功能
 
 启动器会根据游戏根目录中的文件自动选择引擎。下表列出常见的识别标记，不代表完整游戏只需这些文件。

@@ -21,6 +21,9 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#ifdef __SWITCH__
+#include "hub/controller_runtime.h"
+#endif
 #ifdef __ANDROID__
 #include <dlfcn.h>
 #include <time.h>
@@ -41,6 +44,10 @@
 #include "icon.h"
 #include "modifier.h"
 #include "xsystem4.h"
+#ifdef __SWITCH__
+#include "hub/runtime_menu_engines.h"
+static Texture *switch_menu_surface;
+#endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
 #include "gfx/font.h"
@@ -48,6 +55,35 @@
 #endif
 
 struct sdl_private sdl;
+
+#ifdef __SWITCH__
+static void draw_switch_rect(void *context, const SDL_Rect *rect, SDL_Color color)
+{
+	int height = *(int *)context;
+	glScissor(rect->x, height - rect->y - rect->h, rect->w, rect->h);
+	glClearColor(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+static void draw_switch_controls(void)
+{
+	if (!switch_controls_touch_enabled())
+		return;
+	int width, height;
+	SDL_GL_GetDrawableSize(sdl.window, &width, &height);
+	GLint scissor[4];
+	GLfloat color[4];
+	GLboolean enabled = glIsEnabled(GL_SCISSOR_TEST);
+	glGetIntegerv(GL_SCISSOR_BOX, scissor);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, color);
+	glEnable(GL_SCISSOR_TEST);
+	switch_controls_draw(width, height, draw_switch_rect, &height);
+	glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+	glClearColor(color[0], color[1], color[2], color[3]);
+	if (!enabled)
+		glDisable(GL_SCISSOR_TEST);
+}
+#endif
 
 static const GLchar glsl_preamble[] =
 #ifdef USE_GLES
@@ -1345,6 +1381,22 @@ void gfx_swap(void)
 		.view_transform = wv_transform[0],
 		.data = view
 	};
+#ifdef __SWITCH__
+	if (switch_menu_surface) {
+		int width, height;
+		SDL_GL_GetDrawableSize(sdl.window, &width, &height);
+		int w = width, h = (int)((int64_t)width * switch_menu_surface->h / switch_menu_surface->w);
+		if (h > height) {
+			h = height;
+			w = (int)((int64_t)height * switch_menu_surface->w / switch_menu_surface->h);
+		}
+		glViewport((width - w) / 2, (height - h) / 2, w, h);
+		static mat4 identity = GLM_MAT4_IDENTITY_INIT;
+		job.texture = switch_menu_surface->handle;
+		job.world_transform = identity[0];
+		job.data = switch_menu_surface;
+	}
+#endif
 	gfx_render(&job);
 	/* Kick off mobile tile-based GPU rasterization immediately in parallel */
 	glFlush();
@@ -1392,6 +1444,10 @@ void gfx_swap(void)
 	}
 #endif
 
+#ifdef __SWITCH__
+	if (!switch_menu_surface)
+		draw_switch_controls();
+#endif
 	SDL_GL_SwapWindow(sdl.window);
 #ifdef __ANDROID__
 	if (trace_swap)
@@ -1430,8 +1486,40 @@ void gfx_swap(void)
 	glViewport(0, 0, sdl.w, sdl.h);
 
 	gfx_update_frame_rate_counter();
+#ifdef __SWITCH__
+	if (switch_menu_surface)
+		return;
+#endif
 	modifier_on_frame();
 }
+
+#ifdef __SWITCH__
+bool gfx_switch_menu_present(void *context, SDL_Surface *panel)
+{
+	(void)context;
+	if (!gfx_initialized || !ensure_current_gl_context())
+		return false;
+	Texture texture = {0};
+	gfx_init_texture_with_pixels(&texture, panel->w, panel->h, panel->pixels);
+	if (!texture.handle)
+		return false;
+	texture.opaque = true;
+	switch_menu_surface = &texture;
+	gfx_swap();
+	switch_menu_surface = NULL;
+	gfx_delete_texture(&texture);
+	return true;
+}
+
+bool gfx_switch_menu_capture(void *context, const char *path)
+{
+	(void)context;
+	if (!gfx_initialized || !ensure_current_gl_context())
+		return false;
+	Texture *texture = view ? view : &main_surface;
+	return gfx_save_texture(texture, path, ALCG_PNG) != 0;
+}
+#endif
 
 // SDL can recreate Android's EGL window surface while retaining the GL context
 // and our last composited frame. RESTORED does not imply EXPOSED in SDL2, so a

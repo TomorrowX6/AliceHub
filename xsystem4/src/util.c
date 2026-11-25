@@ -143,6 +143,9 @@ bool is_absolute_path(const char *path)
 #if (defined(_WIN32) || defined(__WIN32__))
 	int i = (isalpha((unsigned char)path[0]) && path[1] == ':') ? 2 : 0;
 	return path[i] == '/' || path[i] == '\\';
+#elif defined(__SWITCH__)
+	const char *slash = strchr(path, '/');
+	return slash && (slash == path || slash[-1] == ':');
 #else
 	return path[0] == '/';
 #endif

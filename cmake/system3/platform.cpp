@@ -14,10 +14,21 @@ extern "C" __attribute__((visibility("default"))) int system3_main(int argc, cha
 }
 #endif
 
+#ifdef __SWITCH__
+int system3_switch_entry(int argc, char **argv);
+
+extern "C" int alicehub_switch_engine_main(int argc, char **argv)
+{
+    return system3_switch_entry(argc, argv);
+}
+#endif
+
 SDL_RWops *open_resource(const char *name, const char *type)
 {
     std::string path;
-#ifndef __ANDROID__
+#if defined(__SWITCH__)
+    path = "romfs:/";
+#elif !defined(__ANDROID__)
     char *base = SDL_GetBasePath();
     if (!base)
         return nullptr;

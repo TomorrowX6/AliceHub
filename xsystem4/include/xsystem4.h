@@ -90,7 +90,11 @@ void screenshot_save(void);
 #define XSYS4_DATA_DIR "/usr/local/share/xsystem4"
 #endif
 
+#ifdef __SWITCH__
+#define MMAP_IF_64BIT 0
+#else
 #define MMAP_IF_64BIT (sizeof(void*) >= 8 ? ARCHIVE_MMAP : 0)
+#endif
 
 extern bool game_daibanchou;
 extern bool game_daibanchou_en;

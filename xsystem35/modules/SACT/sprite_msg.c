@@ -253,7 +253,7 @@ void smsg_out(int wNum, int wSize, int wColorR, int wColorG, int wColorB, int wF
 	if (!is_messagesprite(wNum)) return;
 	
 	// MessageSkip中は文字送り速度を最大に
-	if (sact.waitskiplv > 1 || msgskip_isSkipping()) wSpeed = 0;
+	if (sact_wait_skip_level() > 1 || msgskip_isSkipping()) wSpeed = 0;
 	
 	// shortcut
 	sp = sact.sp[wNum];
@@ -417,7 +417,7 @@ int smsg_keywait(int wNum1, int wNum2, int msglen) {
 	struct markinfo minfo[6];
 	int i = 0, j, maxstep;
 	
-	if (sact.waitskiplv > 0 || msgskip_isSkipping()) {
+	if (sact_wait_skip_level() > 0 || msgskip_isSkipping()) {
 		sys_getInputInfo();
 		return 0;
 	}
@@ -444,6 +444,10 @@ int smsg_keywait(int wNum1, int wNum2, int msglen) {
 			i++;
 		} 
 		sys_keywait(interval - (sys_get_ticks() - st), KEYWAIT_NONCANCELABLE);
+#ifdef __SWITCH__
+		if (sact.waitkey == -1 && sact.waittype == KEYWAIT_MESSAGE && sact_wait_skip_level() > 0)
+			sact.waitkey = 0;
+#endif
 	}
 	
 	sact.waittype = KEYWAIT_NONE;

@@ -76,6 +76,10 @@
 #include "msgskip.h"
 #include "texthook.h"
 #include "utfsjis.h"
+#ifdef __SWITCH__
+#include "launcher.h"
+void freeGameResource(GameResource *gr);
+#endif
 
 static char *gameResourceFile = "xsystem35.gr";
 static void    sys35_usage(bool verbose);
@@ -582,8 +586,26 @@ static void registerGameFiles(void) {
 		fc_init(nact->files.save_path);
 }
 
+#ifdef __SWITCH__
+static bool switch_open_game_resources(const char *save_dir)
+{
+	bool resource_ok = initGameResource(&nact->files, gameResourceFile, save_dir);
+	for (int type = 0; resource_ok && type < DRIFILETYPEMAX; type++)
+		resource_ok = dri_validate(nact->files.game_fname[type], nact->files.cnt[type],
+					   type == DRIFILE_SCO);
+	if (resource_ok)
+		return true;
+	alicehub_switch_set_launch_error("Cannot read game data; check the scenario ALDs and xsystem35.gr");
+	freeGameResource(&nact->files);
+	memset(&nact->files, 0, sizeof(nact->files));
+	return false;
+}
+#endif
+
 #ifdef ALICEHUB_IOS
 static int run_xsystem35(int argc, char **argv) {
+#elif defined(__SWITCH__)
+int alicehub_switch_engine_main(int argc, char **argv) {
 #else
 int main(int argc, char **argv) {
 #endif
@@ -602,11 +624,29 @@ int main(int argc, char **argv) {
 	// Handle -gamedir option before loading .xsys35rc from that directory.
 	for (int i = 1; i + 1 < argc; i++) {
 		if (strcmp(argv[i], "-gamedir") == 0 && argv[i + 1] && argv[i + 1][0]) {
-			if (chdir(argv[i + 1]) != 0)
+			if (chdir(argv[i + 1]) != 0) {
+#ifdef __SWITCH__
+				alicehub_switch_set_launch_error("Cannot open the game folder");
+				return 1;
+#else
 				WARNING("Failed to chdir to -gamedir '%s'", argv[i + 1]);
+#endif
+			}
 			break;
 		}
 	}
+
+#ifdef __SWITCH__
+	const char *switch_savedir = NULL;
+	for (int i = 1; i + 1 < argc; ++i) {
+		if (!strcmp(argv[i], "-savedir")) {
+			switch_savedir = argv[i + 1];
+			break;
+		}
+	}
+	if (!switch_open_game_resources(switch_savedir))
+		return 1;
+#endif
 	
 	// Load optional Longinus CHS.TBL character remap table before profile/options.
 	if (chs_tbl_load_from_dir(".")) {
@@ -623,6 +663,7 @@ int main(int argc, char **argv) {
 	check_profile();
 	sys35_ParseOption(&argc, argv);
 	
+#ifndef __SWITCH__
 	if (!initGameResource(&nact->files, gameResourceFile, savedir)) {
 #ifdef _WIN32
 		sys_show_message_box(MESSAGEBOX_ERROR, "xsystem35", "Cannot find scenario file (*SA.ALD)");
@@ -631,6 +672,7 @@ int main(int argc, char **argv) {
 		sys35_usage(true);
 #endif
 	}
+#endif
 	registerGameFiles();
 	
 #ifdef HAVE_SIGACTION

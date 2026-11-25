@@ -302,6 +302,12 @@ void xsystem35_modifier_apply_action(const char *action)
 	pthread_mutex_unlock(&action_lock);
 }
 
+bool escalayer_modifier_available(void)
+{
+	refresh_escalayer_cache();
+	return esc_cache.is_escalayer;
+}
+
 void escalayer_modifier_tick(void)
 {
 	char actions[MAX_PENDING_ACTIONS][sizeof(pending_actions[0])];

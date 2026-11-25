@@ -98,7 +98,15 @@ void screenshot_save(void)
 }
 
 #else
-#ifdef __ANDROID__
+#if defined(__SWITCH__)
+#include "hub/runtime_menu_engines.h"
+
+void screenshot_save(void)
+{
+	switch_menu4_screenshot();
+}
+
+#elif defined(__ANDROID__)
 
 void screenshot_save(void)
 {
@@ -224,5 +232,5 @@ void screenshot_save(void)
 	free(name);
 }
 
-#endif // __ANDROID__
+#endif // __ANDROID__ || __SWITCH__
 #endif // _WIN32

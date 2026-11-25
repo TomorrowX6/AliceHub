@@ -503,7 +503,7 @@ static bool afa_read_metadata(FILE *f, struct afa_archive *ar, int *error, strin
 struct afa_archive *afa_open_conv(const char *file, int flags, int *error,
 				  struct string *(*conv)(const char*,size_t))
 {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__SWITCH__)
 	flags &= ~ARCHIVE_MMAP;
 #endif
 	FILE *fp;

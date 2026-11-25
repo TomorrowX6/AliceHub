@@ -5,10 +5,30 @@ import subprocess
 import tempfile
 import unittest
 
+from test_evenicle2_regressions import LIBSYS4_CORE, compile_and_run
 from test_vm_reign_regressions import extract_function
 
 
 class DungeonDataTests(unittest.TestCase):
+    def test_switch_mount_paths(self):
+        harness = r"""
+#include <assert.h>
+#include <string.h>
+#include "system4/file.h"
+
+int main(void) {
+    assert(!strcmp(path_dirname("sdmc:/game.ain"), "sdmc:/"));
+    assert(!strcmp(path_dirname("sdmc:/switch/game.ain"), "sdmc:/switch"));
+    assert(!strcmp(path_basename("sdmc:/switch/game.ain"), "game.ain"));
+    assert(!strcmp(path_dirname("romfs:/fonts/"), "romfs:/"));
+    assert(!strcmp(path_basename("romfs:/fonts/"), "fonts"));
+    assert(!strcmp(path_dirname("game.ain"), "."));
+    assert(!strcmp(path_basename("game.ain"), "game.ain"));
+    return 0;
+}
+"""
+        compile_and_run(harness, LIBSYS4_CORE, ["-D__SWITCH__", "-lz", "-lm"])
+
     def test_dungeon_data_paths(self):
         function = extract_function("src/dungeon/dungeon.c", "dungeon_data_path")
         harness = r'''

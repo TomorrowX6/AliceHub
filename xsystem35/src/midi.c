@@ -43,7 +43,7 @@ extern mididevice_t midi_emscripten;
 #ifdef __ANDROID__
 extern mididevice_t midi_android;
 #endif
-#ifdef ALICEHUB_IOS
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 extern mididevice_t midi_tsf;
 #endif
 
@@ -60,7 +60,7 @@ bool midi_init(mididevice_t *midi) {
 
 	switch(default_mode) {
 	case 'e':
-#ifdef ALICEHUB_IOS
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 		ret = midi_tsf.init(0);
 		memcpy(midi, &midi_tsf, sizeof(mididevice_t));
 #endif

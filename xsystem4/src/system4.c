@@ -31,18 +31,27 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#if !defined(__SWITCH__)
+#define HAVE_POSIX_CRASH_HANDLER
 #ifndef ALICEHUB_IOS
 #include <ucontext.h>
 #endif
 #include <dlfcn.h>
 #include <unwind.h>
 #endif
+#endif
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS)
 #include <pthread.h>
+#endif
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
 #include <setjmp.h>
+#endif
+#ifdef __SWITCH__
+#include "launcher.h"
+#include "hub/runtime_menu_engines.h"
 #endif
 
 #include "system4.h"
@@ -145,8 +154,8 @@ struct config config = {
 	.font_paths = { NULL, NULL },
 };
 
-#ifdef ALICEHUB_IOS
-static void ios_reset_config(void)
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
+static void reset_config(void)
 {
 	free(config.game_name);
 	free(config.boot_name);
@@ -356,20 +365,25 @@ static bool read_config_entries(const char *path)
 
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "GameName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.game_name);
-			config.game_name = xstrdup(ini_string(&ini[i])->text);
+			config.game_name = value;
 		} else if (!strcmp(ini[i].name->text, "BootName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.boot_name);
-			config.boot_name = xstrdup(ini_string(&ini[i])->text);
+			config.boot_name = value;
 		} else if (!strcmp(ini[i].name->text, "CodeName")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.ain_filename);
-			config.ain_filename = xstrdup(ini_string(&ini[i])->text);
+			config.ain_filename = value;
 		} else if (!strcmp(ini[i].name->text, "MainVM")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.vm_name);
-			config.vm_name = xstrdup(ini_string(&ini[i])->text);
+			config.vm_name = value;
 		} else if (!strcmp(ini[i].name->text, "SaveFolder")) {
+			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.save_dir);
-			config.save_dir = xstrdup(ini_string(&ini[i])->text);
+			config.save_dir = value;
 		} else if (!strcmp(ini[i].name->text, "ViewWidth")) {
 			config.view_width = ini_integer(&ini[i]);
 			config.view_width_set = true;
@@ -407,14 +421,17 @@ static void read_user_config_file(const char *path, const char *basedir)
 
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "font-mincho")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.font_paths[FONT_MINCHO]);
-			config.font_paths[FONT_MINCHO] = user_config_path(&ini[i], basedir);
+			config.font_paths[FONT_MINCHO] = value;
 		} else if (!strcmp(ini[i].name->text, "font-gothic")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.font_paths[FONT_GOTHIC]);
-			config.font_paths[FONT_GOTHIC] = user_config_path(&ini[i], basedir);
+			config.font_paths[FONT_GOTHIC] = value;
 		} else if (!strcmp(ini[i].name->text, "font-fnl")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.fnl_path);
-			config.fnl_path = user_config_path(&ini[i], basedir);
+			config.fnl_path = value;
 		} else if (!strcmp(ini[i].name->text, "font-x-scale")) {
 			float f = strtof(ini_string(&ini[i])->text, NULL);
 			if (fabsf(f) < 0.01) {
@@ -432,8 +449,9 @@ static void read_user_config_file(const char *path, const char *basedir)
 				config.msgskip_delay = 0;
 			}
 		} else if (!strcmp(ini[i].name->text, "save-folder")) {
+			char *value = user_config_path(&ini[i], basedir);
 			free(config.save_dir);
-			config.save_dir = user_config_path(&ini[i], basedir);
+			config.save_dir = value;
 		} else if (!strcmp(ini[i].name->text, "save-format")) {
 			if (!strcmp(ini_string(&ini[i])->text, "json")) {
 				config.save_format = SAVE_FORMAT_JSON;
@@ -854,7 +872,7 @@ static void warning_handler(const char *msg)
 		recent_warning_count++;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 struct backtrace_state {
 	char *buf;
 	size_t size;
@@ -898,7 +916,9 @@ static size_t format_native_backtrace(char *buf, size_t size)
 	_Unwind_Backtrace(unwind_backtrace_cb, &st);
 	return st.off;
 }
+#endif
 
+#ifndef _WIN32
 static bool write_file_raw(const char *path, const char *data, size_t len, bool append)
 {
 	if (!path || !*path)
@@ -918,7 +938,9 @@ static bool write_file_raw(const char *path, const char *data, size_t len, bool 
 	close(fd);
 	return written > 0;
 }
+#endif
 
+#ifdef HAVE_POSIX_CRASH_HANDLER
 static const char *signal_name_str(int sig)
 {
 	switch (sig) {
@@ -1057,7 +1079,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	cbuf_puts(crash_report_buf, cap, &off, kind ? kind : "UNKNOWN");
 	cbuf_puts(crash_report_buf, cap, &off, "\n");
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	if (sig != 0) {
 		siginfo_t *si = (siginfo_t *)siginfo_ptr;
 		cbuf_puts(crash_report_buf, cap, &off, "Signal      : ");
@@ -1121,7 +1143,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	if (off >= cap)
 		off = cap - 1;
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	if (!safe_signal && off + 1 < cap) {
 		cbuf_puts(crash_report_buf, cap, &off, "\n[Native C Backtrace]\n");
 		if (off + 1 < cap)
@@ -1205,7 +1227,7 @@ static void write_crash_report(const char *kind, const char *msg, int sig,
 	in_crash_handler = 0;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 static uint8_t crash_alt_stack_mem[65536];
 static const int crash_signals[] = { SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL };
 #define NR_CRASH_SIGNALS (sizeof(crash_signals) / sizeof(crash_signals[0]))
@@ -1390,7 +1412,23 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
-#ifdef ALICEHUB_IOS
+#ifdef __SWITCH__
+static jmp_buf switch_startup;
+void ini_abort_parse(void);
+
+static void switch_startup_error(const char *message)
+{
+	const char *reason = !strncmp(message, "*ERROR*(", 8) ? strstr(message, "): ") : NULL;
+	alicehub_switch_set_launch_error(reason ? reason + 3 : message);
+}
+
+static void switch_startup_exit(int code)
+{
+	longjmp(switch_startup, code);
+}
+#endif
+
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 static int run_xsystem4(int argc, char *argv[])
 #else
 int main(int argc, char *argv[])
@@ -1404,9 +1442,14 @@ int main(int argc, char *argv[])
 	}
 	sdl_main_entered = true;
 #endif
+#ifdef __SWITCH__
+	sys_error_handler = switch_startup_error;
+	sys_exit_handler = switch_startup_exit;
+#else
 	sys_error_handler = error_handler;
+#endif
 	sys_warning_handler = warning_handler;
-#ifndef _WIN32
+#ifdef HAVE_POSIX_CRASH_HANDLER
 	install_crash_signal_handlers();
 #endif
 #ifdef __ANDROID__
@@ -1560,6 +1603,12 @@ int main(int argc, char *argv[])
 		}
 	}
 	ainfile = resolve_configured_ain_path(native_ain_path);
+#ifdef __SWITCH__
+	if (!ainfile || access(ainfile, R_OK) != 0) {
+		free(ainfile);
+		ERROR("Cannot read the AIN named by the game configuration");
+	}
+#endif
 	if (ainfile && file_exists(ainfile)) {
 		free(config.ain_basename_utf8);
 		config.ain_basename_utf8 = xstrdup(path_basename(ainfile));
@@ -1614,6 +1663,10 @@ int main(int argc, char *argv[])
 	}
 	free(ainfile);
 
+#ifdef __SWITCH__
+	sys_error_handler = error_handler;
+	sys_exit_handler = NULL;
+#endif
 	if (audit) {
 		ain_audit(stdout, ain);
 		ain_free(ain);
@@ -1624,6 +1677,9 @@ int main(int argc, char *argv[])
 #endif
 
 	mkdir_p(config.save_dir);
+#ifdef __SWITCH__
+	switch_menu4_load_display(config.save_dir);
+#endif
 	apply_game_specific_hacks(ain);
 	init_mai_word_table();
 	init_text_dict();
@@ -1641,7 +1697,26 @@ int main(int argc, char *argv[])
 #endif
 }
 
-#ifdef ALICEHUB_IOS
+#ifdef __SWITCH__
+int alicehub_switch_engine_main(int argc, char *argv[])
+{
+	optind = 0;
+	if (!setjmp(switch_startup)) {
+		int result = run_xsystem4(argc, argv);
+		sys_error_handler = NULL;
+		sys_exit_handler = NULL;
+		return result;
+	}
+	sys_error_handler = NULL;
+	sys_exit_handler = NULL;
+	ini_abort_parse();
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
+	reset_config();
+	set_utf8_release(false);
+	return 1;
+}
+#elif defined(ALICEHUB_IOS)
 int xsystem4_main(int argc, char **argv)
 {
 	jmp_buf target;
@@ -1659,7 +1734,7 @@ int xsystem4_main(int argc, char **argv)
 		ain_free(ios_program);
 		ios_program = NULL;
 	}
-	ios_reset_config();
+	reset_config();
 	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++)
 		sigaction(crash_signals[i], &old_sigactions[i], NULL);
 	sys_exit_handler = NULL;

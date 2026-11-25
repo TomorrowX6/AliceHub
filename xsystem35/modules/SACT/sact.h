@@ -262,5 +262,6 @@ typedef struct _sact sact_t;
 // shortcut
 #define sact sactprv
 extern sact_t sact;
+int sact_wait_skip_level(void);
 
 #endif /* __SACT_H__ */

@@ -1,0 +1,39 @@
+include("${CMAKE_CURRENT_LIST_DIR}/Artwork.cmake")
+
+function(alicehub_switch_package target romfs)
+  target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/launcher.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/model.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/fs_util.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_profile.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/controller_runtime.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/runtime_capture.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/hub/runtime_menu.c"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/picker_art.c")
+  target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
+  target_compile_definitions(${target} PRIVATE ALICEHUB_ENGINE="${target}")
+  find_package(PNG REQUIRED)
+  find_package(JPEG REQUIRED)
+  target_link_libraries(${target} PRIVATE PNG::PNG JPEG::JPEG)
+  set(icon "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../project/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png")
+  configure_file("${icon}" "${romfs}/alicehub.png" COPYONLY)
+  if(NOT target STREQUAL "xsystem4")
+    set(fonts "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../xsystem4/fonts")
+    set(font "${fonts}/HanaMinA.ttf")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${font}")
+    file(SIZE "${font}" font_size)
+    file(ARCHIVE_CREATE OUTPUT "${romfs}/fonts/HanaMinA.ttf.gz"
+      PATHS "${font}" FORMAT raw COMPRESSION GZip)
+    configure_file("${fonts}/HanaMinA.license" "${romfs}/fonts/HanaMinA.license" COPYONLY)
+  endif()
+  alicehub_switch_artwork(${target} "${romfs}")
+  dkp_add_asset_target(${target}_romfs "${romfs}")
+  dkp_track_assets(${target}_romfs FILES alicehub.png ${alicehub_artwork_assets})
+  if(NOT target STREQUAL "xsystem4")
+    dkp_track_assets(${target}_romfs FILES fonts/HanaMinA.ttf.gz fonts/HanaMinA.license)
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(${target} PRIVATE ZLIB::ZLIB)
+    target_compile_definitions(${target} PRIVATE ALICEHUB_PICKER_COMPRESSED_FONT_SIZE=${font_size})
+  endif()
+  nx_generate_nacp(${target}.nacp NAME "AliceHub - ${target}" AUTHOR "AliceHub" VERSION "1.0.0")
+  nx_create_nro(${target} ICON "${alicehub_nro_icon}" NACP ${target}.nacp ROMFS ${target}_romfs)
+endfunction()

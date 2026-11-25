@@ -40,6 +40,12 @@
 #include "vm.h"
 #include "xsystem4.h"
 #include "debugger.h"
+#ifdef __SWITCH__
+#include "controller.h"
+#include "hub/controller_runtime.h"
+#include "hub/runtime_menu.h"
+#include "hub/runtime_menu_engines.h"
+#endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
 #endif
@@ -494,6 +500,9 @@ struct pad_device_slot {
 	uint16_t vendor_id;
 	uint16_t product_id;
 	bool btn_down[NR_PAD_SLOTS];
+#ifdef __SWITCH__
+	bool face_swapped_at_press[2];
+#endif
 	bool hat_dir[4]; // U, D, L, R
 	float axes[6];   // LX, LY, RX, RY, LT, RT
 	bool trigger_latched[2];
@@ -1729,11 +1738,20 @@ static void controller_button_event(SDL_ControllerButtonEvent *e)
 	// Only SDL_CONTROLLER_BUTTON_A (0) .. SDL_CONTROLLER_BUTTON_DPAD_RIGHT (14)
 	// correspond to PAD_SLOT_A .. PAD_SLOT_DPAD_RIGHT; 15/16 are MISC1/PADDLE1, not LT/RT.
 	if (e->button < 15) {
-		joybutton_state[e->button] = pressed;
+		int button = e->button;
 		pthread_mutex_lock(&gp_mutex);
 		struct pad_device_slot *s = find_pad_by_instance_locked(e->which);
+#ifdef __SWITCH__
+		if (s && (button == SDL_CONTROLLER_BUTTON_A || button == SDL_CONTROLLER_BUTTON_B)) {
+			if (pressed)
+				s->face_swapped_at_press[button] = alicehub_switch_face_button(e->which, button) != button;
+			if (s->face_swapped_at_press[button])
+				button = button == SDL_CONTROLLER_BUTTON_A ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
+		}
+#endif
+		joybutton_state[button] = pressed;
 		if (s)
-			s->btn_down[e->button] = pressed;
+			s->btn_down[button] = pressed;
 		pthread_mutex_unlock(&gp_mutex);
 	}
 }
@@ -2160,6 +2178,16 @@ static void process_gamepad_frame(void)
 	float phys_lt = 0.0f, phys_rt = 0.0f;
 	bool has_sdl_pad = false;
 	bool has_android_pad = false;
+#ifdef __SWITCH__
+	static const int switch_slots[CP_BUTTONS] = {
+		PAD_SLOT_DPAD_UP, PAD_SLOT_DPAD_DOWN, PAD_SLOT_DPAD_LEFT, PAD_SLOT_DPAD_RIGHT,
+		PAD_SLOT_A, PAD_SLOT_B, PAD_SLOT_X, PAD_SLOT_Y,
+		PAD_SLOT_LB, PAD_SLOT_RB, PAD_SLOT_LT, PAD_SLOT_RT,
+		PAD_SLOT_BACK, PAD_SLOT_START, PAD_SLOT_L3, PAD_SLOT_R3
+	};
+	bool use_switch_profile = switch_controls_remapping();
+	uint32_t switch_physical = 0;
+#endif
 	uint32_t cur_vpad_gen = 0;
 	uint32_t cur_phys_gen = 0;
 	bool do_cursor_reset = false;
@@ -2179,6 +2207,17 @@ static void process_gamepad_frame(void)
 		if (pad_slots[i].hat_dir[1]) raw_phys[PAD_SLOT_DPAD_DOWN] = true;
 		if (pad_slots[i].hat_dir[2]) raw_phys[PAD_SLOT_DPAD_LEFT] = true;
 		if (pad_slots[i].hat_dir[3]) raw_phys[PAD_SLOT_DPAD_RIGHT] = true;
+#ifdef __SWITCH__
+		if (use_switch_profile) {
+			if (pad_slots[i].is_game_controller) {
+				switch_physical |= switch_controls_gamecontroller(pad_slots[i].ctrl);
+			} else {
+				for (unsigned b = 0; b < CP_BUTTONS; ++b)
+					if (pad_slots[i].btn_down[switch_slots[b]])
+						switch_physical |= 1u << b;
+			}
+		}
+#endif
 		if (fabsf(pad_slots[i].axes[0]) > fabsf(phys_lx)) phys_lx = pad_slots[i].axes[0];
 		if (fabsf(pad_slots[i].axes[1]) > fabsf(phys_ly)) phys_ly = pad_slots[i].axes[1];
 		if (fabsf(pad_slots[i].axes[2]) > fabsf(phys_rx)) phys_rx = pad_slots[i].axes[2];
@@ -2245,6 +2284,18 @@ static void process_gamepad_frame(void)
 	vdmode = vpad_dpad_cfg_mode;
 	memcpy(vddir, vpad_dpad_dir, sizeof(vddir));
 	pthread_mutex_unlock(&gp_mutex);
+
+#ifdef __SWITCH__
+	if (use_switch_profile) {
+		uint32_t mapped = switch_controls_buttons(switch_physical);
+		has_sdl_pad |= mapped != 0;
+		for (unsigned b = 0; b < CP_BUTTONS; ++b) {
+			int slot = switch_slots[b];
+			raw_phys[slot] = (mapped & (1u << b)) != 0;
+			joybutton_state[slot] = raw_phys[slot];
+		}
+	}
+#endif
 
 	if (cur_vpad_gen != seen_vpad_latch_reset_gen) {
 		seen_vpad_latch_reset_gen = cur_vpad_gen;
@@ -2418,6 +2469,17 @@ static void process_gamepad_frame(void)
 			apply_directional_stick(cfg.phys_right_stick_mode, phys_rx, phys_ry, cfg.deadzone,
 					now, pad_vk_down, &mouse_vx, &mouse_vy, &joy_vx, &joy_vy, &has_joy_stick_source);
 		}
+#ifdef __SWITCH__
+	} else if (has_sdl_pad && !in_movie) {
+		pad_vk_down[VK_LBUTTON] = raw_phys[PAD_SLOT_A];
+		pad_vk_down[VK_RBUTTON] = raw_phys[PAD_SLOT_B];
+		if (use_switch_profile) {
+			pad_vk_down[VK_UP] = raw_phys[PAD_SLOT_DPAD_UP];
+			pad_vk_down[VK_DOWN] = raw_phys[PAD_SLOT_DPAD_DOWN];
+			pad_vk_down[VK_LEFT] = raw_phys[PAD_SLOT_DPAD_LEFT];
+			pad_vk_down[VK_RIGHT] = raw_phys[PAD_SLOT_DPAD_RIGHT];
+		}
+#endif
 	} else if (!has_sdl_pad && has_android_pad && !in_movie) {
 		// Native Android fallback controller pass-through to SACT joypad when custom mapping is disabled
 		for (int b = 0; b < NR_PAD_SLOTS; b++) {
@@ -3252,6 +3314,30 @@ void handle_window_events(void)
 
 void handle_events(void)
 {
+#ifdef __SWITCH__
+	// Keep the video clock running normally; do not park the VM in a modal
+	// while a movie is using the game's input/render loop.
+	if (!movie_has_active_playback() && switch_menu4_poll()) {
+		kbd_ctrl_down = false;
+		memset(kbd_key_state, 0, sizeof(kbd_key_state));
+		memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+		clear_active_touch_fingers();
+		single_touch_down = multi_touch_active = false;
+		cancel_long_touch_click();
+		reset_inputs_on_movie_start();
+		reset_gamepad_transient_state();
+		pthread_mutex_lock(&gp_mutex);
+		for (size_t i = 0; i < MAX_CONTROLLERS; ++i) {
+			memset(pad_slots[i].btn_down, 0, sizeof(pad_slots[i].btn_down));
+			memset(pad_slots[i].hat_dir, 0, sizeof(pad_slots[i].hat_dir));
+			memset(pad_slots[i].axes, 0, sizeof(pad_slots[i].axes));
+		}
+		pthread_mutex_unlock(&gp_mutex);
+		joy_clear_flag();
+		if (!switch_menu_lifecycle_pending())
+			gfx_swap();
+	}
+#endif
 	update_movie_skip_state();
 	static const enum sact_keycode mouse_btns[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
 	uint32_t poll_now = SDL_GetTicks();
@@ -3269,8 +3355,15 @@ void handle_events(void)
 
 	bool did_swap = false;
 	bool returned_foreground = false;
+#ifdef __SWITCH__
+	bool redraw_switch_controls = false;
+#endif
 	SDL_Event e;
 	while (SDL_PollEvent(&e)) {
+#ifdef __SWITCH__
+		if (switch_controls_gl_touch_event(&e, sdl.window, &redraw_switch_controls))
+			continue;
+#endif
 		switch (e.type) {
 		case SDL_QUIT:
 			handle_quit_event();
@@ -3479,6 +3572,12 @@ void handle_events(void)
 			break;
 		}
 	}
+#ifdef __SWITCH__
+	if (redraw_switch_controls) {
+		gfx_swap();
+		did_swap = true;
+	}
+#endif
 	finish_event_drain(did_swap, returned_foreground);
 	process_gamepad_frame();
 	update_movie_skip_state();

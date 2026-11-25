@@ -57,7 +57,7 @@ bool mixer_init(int num_channels, int buffer_size) {
 		return false;
 	Mix_QuerySpec(&output_rate, NULL, NULL);
 	Mix_AllocateChannels(num_channels);
-#ifdef ALICEHUB_IOS
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 	extern void midi_tsf_audio_ready(void);
 	midi_tsf_audio_ready();
 #endif
@@ -213,7 +213,7 @@ void mixer_music_set_gain(mixer_music *music, float gain) {
 }
 
 void mixer_pause_all(bool paused) {
-#ifdef ALICEHUB_IOS
+#if defined(ALICEHUB_IOS) || defined(__SWITCH__)
 	extern void midi_tsf_pause_all(bool paused);
 	midi_tsf_pause_all(paused);
 #endif
