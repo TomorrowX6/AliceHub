@@ -5,6 +5,8 @@ import tempfile
 import unittest
 import zipfile
 
+from switch_import_checks import SwitchImportTest
+
 
 REPO = Path(__file__).resolve().parents[3]
 HUB = REPO / "cmake/switch/hub"
@@ -210,7 +212,6 @@ int main(void)
 """, extra=["-DMODIFIER_OFFLINE_ONLY", str(ENGINE / "src/modifier.c"),
                str(ENGINE / "src/cJSON.c"), *(str(SYS4 / f"src/{s}.c") for s in sources)],
             libraries=["-lz", "-lm"], setup=assets)
-
 
 class SwitchHubTest(unittest.TestCase):
     def test_install_transaction(self):

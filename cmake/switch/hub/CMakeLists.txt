@@ -18,6 +18,7 @@ endforeach()
 target_include_directories(AliceHub PRIVATE "${xsystem4_dir}/include" "${libsys4_dir}/include" ${LIBXML2_INCLUDE_DIRS})
 target_link_libraries(AliceHub PRIVATE Freetype::Freetype PNG::PNG JPEG::JPEG ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_SWITCH_HUB)
+target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c)
 
 set(romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 set(fonts "${CMAKE_CURRENT_LIST_DIR}/../../../xsystem4/fonts")
