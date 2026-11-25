@@ -143,7 +143,6 @@ public class UncensoredPatchManagerTest {
                 GameCatalog.ID_RANCE10,
                 GameCatalog.ID_DOHNA_DOHNA,
                 GameCatalog.ID_EVENICLE,
-                GameCatalog.ID_IXSEAL,
                 GameCatalog.ID_HARUKA
         );
         for (String id : expected) {

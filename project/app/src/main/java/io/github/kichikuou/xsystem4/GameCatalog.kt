@@ -8443,7 +8443,6 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true,
                 hasChinese = true
             )
             ID_HARUKA -> GameDescriptor(

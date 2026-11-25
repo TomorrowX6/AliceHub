@@ -20,7 +20,6 @@ struct UncensoredGameDescriptor: Equatable {
         Self(id: "rance10", title: "兰斯10 决战"),
         Self(id: "dohnadohna", title: "多娜多娜 一起来干坏事吧"),
         Self(id: "evenicle", title: "夏娃年代记"),
-        Self(id: "ixseal", title: "超昂神骑"),
         Self(id: "haruka", title: "超昂闪忍遥")
     ]
 
@@ -40,7 +39,6 @@ struct UncensoredGameDescriptor: Equatable {
         if names.contains("rance10.ain") { return descriptor(for: "rance10") }
         if names.contains("dohnadohna.ain") || names.contains("dohnadohnacg.afa") { return descriptor(for: "dohnadohna") }
         if names.contains("evenicle.ain") || names.contains("eveniclecg.afa") { return descriptor(for: "evenicle") }
-        if names.contains("ixseal.ain") || names.contains("ixsealcg.afa") { return descriptor(for: "ixseal") }
         if names.contains("超昂閃忍ハルカ.ain") || names.contains("超昂閃忍ハルカga.ald") ||
             names.contains("超昂闪忍遥.ain") || names.contains("超昂闪忍遥ga.ald") ||
             names.contains("超昂閃忍遥.ain") || names.contains("ハルカ.ain") || names.contains("haruka.ain") ||
