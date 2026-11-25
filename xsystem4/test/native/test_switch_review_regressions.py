@@ -1,4 +1,4 @@
-"""Exercise Switch controller and save handling without the Switch SDK."""
+"""Exercise Switch regressions without the Switch SDK."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,6 +16,71 @@ class SwitchRegressionTest(unittest.TestCase):
             subprocess.run(["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
                             str(path), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], cwd=tmp, check=True)
+
+    def test_picker_draws_unicode_codepoints_and_respects_stride(self):
+        renderer = extract_function("../cmake/switch/launcher.c", "picker_text")
+        self.run_c(r"""
+#include <assert.h>
+#include <locale.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <uchar.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+enum { PICKER_WIDTH = 1280, PICKER_HEIGHT = 720, FT_PIXEL_MODE_GRAY = 2 };
+#define RGB565_FROM_RGB8(r, g, b) (((r) >> 3) | (((g) >> 2) << 5) | (((b) >> 3) << 11))
+typedef struct {
+    unsigned rows, width;
+    int pitch, pixel_mode;
+    const u8 *buffer;
+} FT_Bitmap;
+typedef struct {
+    int bitmap_top, bitmap_left;
+    FT_Bitmap bitmap;
+    struct { int x; } advance;
+} Glyph, *FT_GlyphSlot;
+typedef struct {
+    u16 *pixels;
+    u32 stride;
+} Picker;
+static ssize_t decode_utf8(u32 *out, const u8 *text)
+{
+    char32_t cp;
+    size_t n = mbrtoc32(&cp, (const char *)text, 4, NULL);
+    if (n == (size_t)-1 || n == (size_t)-2)
+        return -1;
+    *out = cp;
+    return (ssize_t)n;
+}
+static u32 drawn[12];
+static int count;
+static FT_GlyphSlot picker_glyph(Picker *picker, u32 cp)
+{
+    (void)picker;
+    static const u8 bitmap[] = { 255 };
+    static Glyph glyph = { 1, 0, { 1, 1, 1, FT_PIXEL_MODE_GRAY, bitmap }, { 2 * 64 } };
+    drawn[count++] = cp;
+    return &glyph;
+}
+""" + renderer + r"""
+int main(void)
+{
+    assert(setlocale(LC_CTYPE, "C.UTF-8"));
+    static u16 pixels[2][PICKER_WIDTH + 16];
+    Picker picker = { pixels[0], PICKER_WIDTH + 16 };
+    picker_text(&picker, 56, 2, "ランス1 中文 한글");
+    const u32 expected[] = { 0x30e9, 0x30f3, 0x30b9, '1', ' ', 0x4e2d, 0x6587, ' ', 0xd55c, 0xae00 };
+    assert(count == (int)(sizeof(expected) / sizeof(*expected)));
+    for (int i = 0; i < count; i++) {
+        assert(drawn[i] == expected[i]);
+        assert(pixels[1][56 + 2 * i] == 0xffff);
+        assert(pixels[0][56 + 2 * i] == 0);
+    }
+    picker_text(&picker, 56, 0, "字");
+    assert(drawn[count - 1] == 0x5b57 && pixels[0][56] == 0);
+}
+""")
 
     def test_face_buttons_keep_sideways_mapping(self):
         helper = extract_function("../cmake/switch/controller.h",

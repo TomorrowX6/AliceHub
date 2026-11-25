@@ -206,6 +206,7 @@ elseif (ALICEHUB_IOS)
 
 elseif (NINTENDO_SWITCH)
   include(../../cmake/switch/Packaging.cmake)
+  target_link_libraries(xsystem35 PRIVATE freetype2)
   set(romfs "${CMAKE_CURRENT_BINARY_DIR}/romfs")
   file(COPY "${PROJECT_SOURCE_DIR}/fonts" "${PROJECT_SOURCE_DIR}/soundfonts" DESTINATION "${romfs}")
   target_compile_definitions(xsystem35 PRIVATE ALICEHUB_SWITCH_XSYSTEM35 SDL_MAIN_HANDLED)
