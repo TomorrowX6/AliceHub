@@ -294,9 +294,9 @@ bool modifier_api_has_streamer_mode(void) { return supported; }
 bool modifier_api_get_ctrl_skip(void) { return false; }
 int modifier_api_get_font_scale(void) { return 100; }
 int modifier_api_get_scrollbar_scale(void) { return 100; }
-int modifier_api_get_lock_mask(enum modifier_lock_game game)
+int modifier_api_get_game_lock_mask(const char *game)
 {
-    assert(game == MODIFIER_LOCK_RANCE10);
+    assert(!strcmp(game, "rance10"));
     return 1 << 10;
 }
 """ + locks + r"""

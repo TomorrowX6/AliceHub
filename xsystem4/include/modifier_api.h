@@ -34,6 +34,8 @@ void modifier_api_set_config_path(const char *path);
 void modifier_api_apply_live_action(const char *action_json);
 void modifier_api_set_lock_mask(enum modifier_lock_game game, int mask);
 int modifier_api_get_lock_mask(enum modifier_lock_game game);
+void modifier_api_set_game_lock_mask(const char *game_id, int mask);
+int modifier_api_get_game_lock_mask(const char *game_id);
 bool modifier_api_has_streamer_mode(void);
 
 int modifier_api_read_streamer_mode(const char *config_path);

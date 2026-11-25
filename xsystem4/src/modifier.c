@@ -218,6 +218,16 @@ static int g_r01_lock_mask = 0;
 static bool g_has_r01_lock_mask_init = false;
 static int g_r02_lock_mask = 0;
 static bool g_has_r02_lock_mask_init = false;
+#define EX_MAX_GAMES 32
+static void ex_snapshot_locks_locked(int *out_masks, bool *out_init);
+static bool ex_all_locks_initialized_locked(void);
+static void ex_load_locks_from_json_locked(cJSON *root);
+static bool ex_locks_differ_from_json(cJSON *root, const int *snap_masks, const bool *snap_init);
+static void ex_save_locks_to_json(cJSON *root, const int *snap_masks, const bool *snap_init);
+static inline bool vm_is_evenicle_family(void)
+{
+	return game_evenicle || game_evenicle_rance || game_evenicle_gaiden;
+}
 static int g_font_scale_pct = 100;
 static int g_scrollbar_scale_pct = 100;
 static bool g_has_ui_scale_init = false;
@@ -587,6 +597,8 @@ static void persist_modifier_config_from_native(int lock_mask)
 	bool has_r09_init = false;
 	bool has_r01_init = false;
 	bool has_r02_init = false;
+	int cur_ex_masks[EX_MAX_GAMES];
+	bool has_ex_init[EX_MAX_GAMES];
 
 	pthread_mutex_lock(&g_mod_mutex);
 	if (g_modifier_config_path && g_modifier_config_path[0])
@@ -612,6 +624,7 @@ static void persist_modifier_config_from_native(int lock_mask)
 	has_r09_init = g_has_r09_lock_mask_init;
 	has_r01_init = g_has_r01_lock_mask_init;
 	has_r02_init = g_has_r02_lock_mask_init;
+	ex_snapshot_locks_locked(cur_ex_masks, has_ex_init);
 	pthread_mutex_unlock(&g_mod_mutex);
 
 #ifndef __ANDROID__
@@ -691,6 +704,7 @@ static void persist_modifier_config_from_native(int lock_mask)
 	    (!has_r09_init || (j_r09_mask && disk_r09_mask == cur_r09_mask)) &&
 	    (!has_r01_init || (j_r01_mask && disk_r01_mask == cur_r01_mask)) &&
 	    (!has_r02_init || (j_r02_mask && disk_r02_mask == cur_r02_mask)) &&
+	    !ex_locks_differ_from_json(root, cur_ex_masks, has_ex_init) &&
 	    (!persist_per_game_ui || (disk_font == cur_font_pct && disk_sb == cur_sb_pct))) {
 		cJSON_Delete(root);
 		pthread_mutex_unlock(&g_cfg_io_mutex);
@@ -738,6 +752,7 @@ static void persist_modifier_config_from_native(int lock_mask)
 		cJSON_DeleteItemFromObject(root, "rance02_lock_mask");
 		cJSON_AddNumberToObject(root, "rance02_lock_mask", has_r02_init ? cur_r02_mask : disk_r02_mask);
 	}
+	ex_save_locks_to_json(root, cur_ex_masks, has_ex_init);
 	cJSON_DeleteItemFromObject(root, "font_scale_pct");
 	cJSON_DeleteItemFromObject(root, "scrollbar_scale_pct");
 	if (persist_per_game_ui) {
@@ -3243,7 +3258,7 @@ static void maybe_load_initial_modifier_config(void)
 	if (g_has_lock_mask_init && g_has_dohna_lock_mask_init && g_has_evenicle_lock_mask_init &&
 	    g_has_sr_lock_mask_init && g_has_r01_lock_mask_init && g_has_r02_lock_mask_init &&
 	    g_has_r03_lock_mask_init && g_has_r08_lock_mask_init && g_has_r09_lock_mask_init &&
-	    g_has_ui_scale_init) {
+	    g_has_ui_scale_init && ex_all_locks_initialized_locked()) {
 		pthread_mutex_unlock(&g_mod_mutex);
 		return;
 	}
@@ -3311,11 +3326,12 @@ static void maybe_load_initial_modifier_config(void)
 		mask |= LOCK_DISABLE_STREAMER_MODE;
 	int font_pct = cjson_get_per_game_scale(root, "game_font_scale_pct", ui_game_key, 100, clamp_font_scale_pct);
 	int sb_pct   = cjson_get_per_game_scale(root, "game_scrollbar_scale_pct", ui_game_key, 100, clamp_scrollbar_scale_pct);
-	cJSON_Delete(root);
 	free(ui_game_key);
 
 	bool apply_initial_scale = false;
 	pthread_mutex_lock(&g_mod_mutex);
+	ex_load_locks_from_json_locked(root);
+	cJSON_Delete(root);
 	if (!g_has_lock_mask_init) {
 		g_has_lock_mask_init = true;
 		g_live_lock_mask = mask;
@@ -6298,7 +6314,8 @@ static void sr_apply_char_edit(struct page *ch, cJSON *ce)
 		ch->values[29].i = vm_dd_clamp(it->valueint, 0, 99);
 	if ((it = cJSON_GetObjectItem(ce, "wazaNow")) && cJSON_IsNumber(it))
 		ch->values[30].i = vm_dd_clamp(it->valueint, 0, 99);
-	if ((it = cJSON_GetObjectItem(ce, "resetAction")) && cJSON_IsTrue(it))
+	if ((it = cJSON_GetObjectItem(ce, "resetAction")) &&
+	    (cJSON_IsTrue(it) || (cJSON_IsNumber(it) && it->valueint != 0)))
 		ch->values[8].i = 0;
 }
 
@@ -6900,6 +6917,8 @@ static struct page *r02_get_cd_array(void)
 	return (p && p->array.rank == 1 && p->array.struct_type == s_r02_chara_type && p->nr_vars >= 7) ? p : NULL;
 }
 
+static void ex_hhr_reset_assists(void);
+
 void modifier_on_ain_init(void)
 {
 	pthread_mutex_lock(&g_mod_mutex);
@@ -6908,6 +6927,7 @@ void modifier_on_ain_init(void)
 	/* Also runs after vm_reset() with the same ain: globals are defaults again. */
 	s_game_config_ready = false;
 	s_game_config_loaded = false;
+	ex_hhr_reset_assists();
 	s_r03_compatible = false;
 	s_r03_applying = false;
 	s_r03_inspected_ain = ain;
@@ -8384,12 +8404,14 @@ static void vm_r02_populate_live_state_json(cJSON *root)
 	cJSON_AddItemToObject(root, "r02Characters", j_chars);
 }
 
+#include "modifier_extra.inc"
+
 static char *vm_build_live_state_json(int lock_mask)
 {
 	cJSON *root = cJSON_CreateObject();
 	cJSON_AddBoolToObject(root, "isRance10", game_rance10);
 	cJSON_AddBoolToObject(root, "isDohnaDohna", game_dohnadohna);
-	cJSON_AddBoolToObject(root, "isEvenicle", game_evenicle);
+	cJSON_AddBoolToObject(root, "isEvenicle", vm_is_evenicle_family());
 	cJSON_AddBoolToObject(root, "isSengokuRance", game_sengokurance);
 	cJSON_AddBoolToObject(root, "isRance01", game_rance01);
 	cJSON_AddBoolToObject(root, "isRance02", game_rance02);
@@ -8427,7 +8449,7 @@ static char *vm_build_live_state_json(int lock_mask)
 		return out;
 	}
 
-	if (game_evenicle) {
+	if (vm_is_evenicle_family()) {
 		vm_ev_populate_live_state_json(root);
 		char *out = cJSON_PrintUnformatted(root);
 		cJSON_Delete(root);
@@ -8471,6 +8493,13 @@ static char *vm_build_live_state_json(int lock_mask)
 
 	if (game_rance9) {
 		vm_r09_populate_live_state_json(root);
+		char *out = cJSON_PrintUnformatted(root);
+		cJSON_Delete(root);
+		return out;
+	}
+
+	if (ex_is_active_extra_game()) {
+		vm_ex_populate_live_state_json(root);
 		char *out = cJSON_PrintUnformatted(root);
 		cJSON_Delete(root);
 		return out;
@@ -8678,7 +8707,7 @@ void modifier_on_frame(void)
 			if (game_dohnadohna) {
 				vm_execute_dohna_action(pending);
 				action_applied = true;
-			} else if (game_evenicle) {
+			} else if (vm_is_evenicle_family()) {
 				vm_execute_evenicle_action(pending);
 				action_applied = true;
 			} else if (game_sengokurance) {
@@ -8698,6 +8727,9 @@ void modifier_on_frame(void)
 				action_applied = true;
 			} else if (game_rance9) {
 				refresh_r09_hud = vm_execute_r09_action(pending);
+				action_applied = true;
+			} else if (ex_is_active_extra_game()) {
+				vm_ex_execute_action(pending);
 				action_applied = true;
 			}
 			free(pending);
@@ -8742,7 +8774,7 @@ void modifier_on_frame(void)
 
 		if (game_dohnadohna && dd_lock_mask != 0) {
 			vm_enforce_dohna_locks(dd_lock_mask, s_frame_tick);
-		} else if (game_evenicle && ev_lock_mask != 0) {
+		} else if (vm_is_evenicle_family() && ev_lock_mask != 0) {
 			vm_enforce_evenicle_locks(ev_lock_mask);
 		} else if (game_sengokurance && sr_lock_mask != 0) {
 			vm_enforce_sr_locks(sr_lock_mask);
@@ -8756,6 +8788,8 @@ void modifier_on_frame(void)
 			refresh_r08_cards |= vm_enforce_r08_locks(r08_lock_mask);
 		} else if (game_rance9 && r09_lock_mask != 0) {
 			refresh_r09_hud |= vm_enforce_r09_locks(r09_lock_mask);
+		} else if (ex_is_active_extra_game()) {
+			vm_ex_enforce_locks();
 		}
 		if (game_sengokurance && (action_applied || (sr_lock_mask & (LOCK_SR_INF_GOLD | LOCK_SR_MAX_SAT))))
 			sr_refresh_hud(action_applied);
@@ -9070,16 +9104,16 @@ const char *modifier_api_current_game(void)
 #endif
 	if (game_rance10) return "rance10";
 	if (game_dohnadohna) return "dohnadohna";
+	if (game_evenicle_rance) return "eveniclerance";
+	if (game_evenicle_gaiden) return "eveniclegaiden";
 	if (game_evenicle) return "evenicle";
-	if (game_evenicle2) return "evenicle2";
 	if (game_sengokurance) return "sengokurance";
 	if (game_rance01) return "rance01";
 	if (game_rance02) return "rance02";
 	if (game_rance03) return "rance03";
 	if (game_rance8) return "rance08";
 	if (game_rance9) return "rance09";
-	if (game_escalayer_reboot) return "escalayer";
-	return "";
+	return ex_current_game_id();
 }
 
 char *modifier_api_get_live_state_json(void)
@@ -9175,6 +9209,61 @@ int modifier_api_get_lock_mask(enum modifier_lock_game game)
 	case MODIFIER_LOCK_RANCE09: return get_game_lock_mask(&g_r09_lock_mask);
 	}
 	return 0;
+}
+
+void modifier_api_set_game_lock_mask(const char *game_id, int mask)
+{
+	if (!game_id || !game_id[0])
+		return;
+	if (!strcmp(game_id, "rance10")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE10, mask); return; }
+	if (!strcmp(game_id, "dohnadohna")) { modifier_api_set_lock_mask(MODIFIER_LOCK_DOHNADOHNA, mask); return; }
+	if (!strcmp(game_id, "evenicle") || !strcmp(game_id, "eveniclerance") || !strcmp(game_id, "eveniclegaiden")) {
+		modifier_api_set_lock_mask(MODIFIER_LOCK_EVENICLE, mask);
+		return;
+	}
+	if (!strcmp(game_id, "sengokurance")) { modifier_api_set_lock_mask(MODIFIER_LOCK_SENGOKURANCE, mask); return; }
+	if (!strcmp(game_id, "rance01")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE01, mask); return; }
+	if (!strcmp(game_id, "rance02")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE02, mask); return; }
+	if (!strcmp(game_id, "rance03")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE03, mask); return; }
+	if (!strcmp(game_id, "rance08")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE08, mask); return; }
+	if (!strcmp(game_id, "rance09")) { modifier_api_set_lock_mask(MODIFIER_LOCK_RANCE09, mask); return; }
+	if (!strcmp(game_id, "escalayer_reboot")) game_id = "escalayerreboot";
+
+	int save_r10_mask = 0;
+	bool updated = false;
+	pthread_mutex_lock(&g_mod_mutex);
+	struct ex_game_lock_slot *slot = ex_find_lock_slot(game_id);
+	if (slot) {
+		slot->mask = mask;
+		slot->init = true;
+		updated = true;
+	}
+	save_r10_mask = g_live_lock_mask;
+	pthread_mutex_unlock(&g_mod_mutex);
+	if (updated)
+		persist_modifier_config_from_native(save_r10_mask);
+}
+
+int modifier_api_get_game_lock_mask(const char *game_id)
+{
+	if (!game_id || !game_id[0])
+		return 0;
+	if (!strcmp(game_id, "rance10")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE10);
+	if (!strcmp(game_id, "dohnadohna")) return modifier_api_get_lock_mask(MODIFIER_LOCK_DOHNADOHNA);
+	if (!strcmp(game_id, "evenicle") || !strcmp(game_id, "eveniclerance") || !strcmp(game_id, "eveniclegaiden"))
+		return modifier_api_get_lock_mask(MODIFIER_LOCK_EVENICLE);
+	if (!strcmp(game_id, "sengokurance")) return modifier_api_get_lock_mask(MODIFIER_LOCK_SENGOKURANCE);
+	if (!strcmp(game_id, "rance01")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE01);
+	if (!strcmp(game_id, "rance02")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE02);
+	if (!strcmp(game_id, "rance03")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE03);
+	if (!strcmp(game_id, "rance08")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE08);
+	if (!strcmp(game_id, "rance09")) return modifier_api_get_lock_mask(MODIFIER_LOCK_RANCE09);
+	if (!strcmp(game_id, "escalayer_reboot")) game_id = "escalayerreboot";
+
+	pthread_mutex_lock(&g_mod_mutex);
+	int mask = ex_get_lock_mask_locked(game_id);
+	pthread_mutex_unlock(&g_mod_mutex);
+	return mask;
 }
 
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS)
@@ -9571,6 +9660,43 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetR02LiveLocks(
 	(void)env;
 	(void)clazz;
 	return (jint)get_game_lock_mask(&g_r02_lock_mask);
+}
+
+JNIEXPORT jstring JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCurrentGame(
+	JNIEnv *env, jclass clazz)
+{
+	(void)clazz;
+	const char *gid = modifier_api_current_game();
+	return jni_new_string_utf8_safe(env, gid ? gid : "");
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameLiveLocks(
+	JNIEnv *env, jclass clazz, jstring jgameId, jint mask)
+{
+	(void)clazz;
+	if (!jgameId)
+		return;
+	const char *gid = (*env)->GetStringUTFChars(env, jgameId, NULL);
+	if (gid) {
+		modifier_api_set_game_lock_mask(gid, (int)mask);
+		(*env)->ReleaseStringUTFChars(env, jgameId, gid);
+	}
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameLiveLocks(
+	JNIEnv *env, jclass clazz, jstring jgameId)
+{
+	(void)clazz;
+	if (!jgameId)
+		return 0;
+	const char *gid = (*env)->GetStringUTFChars(env, jgameId, NULL);
+	int mask = gid ? modifier_api_get_game_lock_mask(gid) : 0;
+	if (gid)
+		(*env)->ReleaseStringUTFChars(env, jgameId, gid);
+	return (jint)mask;
 }
 
 JNIEXPORT void JNICALL

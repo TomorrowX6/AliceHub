@@ -237,20 +237,23 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val ctrlVisible = ctrlEnabled && (xsAct?.isCtrlOverlayCurrentlyVisible()
             ?: GameModifierBridge.isCtrlOverlayVisible(activity))
         val j = readLiveJson()
-        val isEscalayerReboot = xsAct?.isEscalayerRebootGame() ?: false
-        val isNonModifierBuiltIn = !isEscalayerReboot && (xsAct?.isNonModifierBuiltInGame() ?: false)
-        val isDohnaDohna = !isEscalayerReboot && !isNonModifierBuiltIn && j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
-        val isEvenicle = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && j.optBoolean("isEvenicle", xsAct?.isEvenicleGame() ?: false)
-        val isSengokuRance = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
-        val isRance01 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance01", xsAct?.isRance01Game() ?: false)
-        val isRance02 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && j.optBoolean("isRance02", xsAct?.isRance02Game() ?: false)
-        val isRance03 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
-        val isRance08 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
-        val isRance09 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
-        val isEscalayer = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 &&
+        val genericSpec = GenericModifierRegistry.find(j.optString("game"))
+            ?: xsAct?.currentGenericModifierGameId()?.let { GenericModifierRegistry.find(it) }
+        val isEvenicleFamily = genericSpec == null &&
+            (j.optBoolean("isEvenicle", false) || (xsAct?.isEvenicleFamilyGame() ?: false))
+        val isNonModifierBuiltIn = genericSpec == null && !isEvenicleFamily && (xsAct?.isNonModifierBuiltInGame() ?: false)
+        val isDohnaDohna = genericSpec == null && !isEvenicleFamily && !isNonModifierBuiltIn && j.optBoolean("isDohnaDohna", xsAct?.isDohnaDohnaGame() ?: false)
+        val isEvenicle = isEvenicleFamily && !isDohnaDohna
+        val isSengokuRance = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && j.optBoolean("isSengokuRance", xsAct?.isSengokuRanceGame() ?: false)
+        val isRance01 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && j.optBoolean("isRance01", xsAct?.isRance01Game() ?: false)
+        val isRance02 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && j.optBoolean("isRance02", xsAct?.isRance02Game() ?: false)
+        val isRance03 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && j.optBoolean("isRance03", xsAct?.isRance03Game() ?: false)
+        val isRance08 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && j.optBoolean("isRance08", xsAct?.isRance08Game() ?: false)
+        val isRance09 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && j.optBoolean("isRance09", xsAct?.isRance09Game() ?: false)
+        val isEscalayer = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 &&
             (j.optString("game") == "escalayer" || (xsAct?.isEscalayerGame() ?: false))
-        val isSys3x = xsAct?.isSystem3xGame() ?: isEscalayer
-        val isRance10 = !isEscalayerReboot && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
+        val isSys3x = xsAct?.isSystem3xGame() ?: (isEscalayer || (genericSpec?.isSystem35 == true))
+        val isRance10 = genericSpec == null && !isNonModifierBuiltIn && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && !isEscalayer && !isSys3x &&
             j.optBoolean("isRance10", xsAct?.isRance10Game() ?: false)
         val inGame = j.optBoolean("inGame", false)
         val inBattle = j.optBoolean("inBattle", false)
@@ -265,11 +268,23 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val r08LockCount = GameModifierBridge.getR08LiveLockCount(activity)
         val r09LockCount = GameModifierBridge.getR09LiveLockCount(activity)
         val escLockCount = GameModifierBridge.getEscLiveLockCount(activity)
+        val genericLockCount = genericSpec?.let { GameModifierBridge.getGenericLiveLockCount(activity, it.id) } ?: 0
         val streamerLockOff = (savedMask and GameModifierBridge.LOCK_DISABLE_STREAMER_MODE) != 0
         val liveStreamerMode = j.optInt("streamerMode", if (streamerLockOff) 0 else 1)
         val isStreamerDisabled = if (j.has("streamerMode")) (liveStreamerMode == 0) else streamerLockOff
 
-        val titleText = if (isDohnaDohna) {
+        val titleText = if (genericSpec != null) {
+            val gName = genericSpec.name.resolve(isZh, isJa)
+            if (!genericSpec.isSystem35 && !inGame) {
+                tr("$gName · 未进入游戏", "$gName · 未開始", "$gName · Title")
+            } else {
+                val stats = genericSpec.summaryFields.mapNotNull { (k, lbl) ->
+                    if (j.has(k)) "${lbl.resolve(isZh, isJa)}:${j.optInt(k, 0)}" else null
+                }
+                if (stats.isNotEmpty()) "$gName · ${stats.joinToString(" · ")}"
+                else tr("$gName · 锁定 $genericLockCount 项", "$gName · ロック $genericLockCount", "$gName · Locks:$genericLockCount")
+            }
+        } else if (isDohnaDohna) {
             if (!inGame) {
                 tr("修改器 · 未进入存档", "改造 · 未ロード", "Modifier · Not Loaded")
             } else if (inBattle) {
@@ -544,6 +559,29 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     tr("属性与战斗修改…", "能力・戦闘チート…", "Stats & Battle Cheats…") to { showEscalayerCheatsDialog(j) }
                 )
             )
+        } else if (genericSpec != null) {
+            if (genericSpec.locks.isNotEmpty()) {
+                menuEntries.add(
+                    tr("实时锁定 · $genericLockCount 项…", "リアルタイムロック · $genericLockCount 項目…", "Live Locks · $genericLockCount…") to {
+                        showGenericLocksDialog(genericSpec)
+                    }
+                )
+            }
+            if (genericSpec.cheats.isNotEmpty()) {
+                menuEntries.add(
+                    tr("常用作弊…", "定番チート…", "Common Cheats…") to { showGenericCheatsDialog(genericSpec) }
+                )
+            }
+            if (!genericSpec.isSystem35 && genericSpec.resources.isNotEmpty()) {
+                menuEntries.add(
+                    tr("数值与资源…", "数値・リソース…", "Edit Resources…") to { showGenericResourcesDialog(genericSpec) }
+                )
+            }
+            if (!genericSpec.isSystem35 && genericSpec.charFields.isNotEmpty()) {
+                menuEntries.add(
+                    tr("角色属性…", "キャラ編集…", "Edit Characters…") to { showGenericSelectCharDialog(genericSpec) }
+                )
+            }
         }
         if (!isSys3x) {
             menuEntries.add(
@@ -765,6 +803,128 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 persistAndApply()
             }
             .show()
+    }
+
+    private fun showGenericLocksDialog(spec: GenericModifierSpec) {
+        var mask = GameModifierBridge.getSavedGenericLockMask(activity, spec.id)
+        val labels = spec.locks.map { it.label.resolve(isZh, isJa) }.toTypedArray()
+        val checked = BooleanArray(spec.locks.size) { idx -> (mask and spec.locks[idx].bit) != 0 }
+        dialogBuilder()
+            .setTitle("${spec.name.resolve(isZh, isJa)} · ${tr("实时锁定", "リアルタイムロック", "Live Locks")}")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val bit = spec.locks[which].bit
+                mask = if (isChecked) (mask or bit) else (mask and bit.inv())
+            }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                GameModifierBridge.setSavedGenericLockMask(activity, spec.id, mask, spec.isSystem35)
+                Toast.makeText(activity, tr("已更新锁定项", "ロックを更新しました", "Locks updated"), Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(tr("全部关闭", "全解除", "Clear All")) { _, _ ->
+                GameModifierBridge.setSavedGenericLockMask(activity, spec.id, 0, spec.isSystem35)
+                Toast.makeText(activity, tr("已关闭全部锁定", "全解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showGenericCheatsDialog(spec: GenericModifierSpec) {
+        val j = readLiveJson()
+        if (!spec.isSystem35 && !j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Please enter game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = spec.cheats.map { it.label.resolve(isZh, isJa) }.toTypedArray()
+        dialogBuilder()
+            .setTitle("${spec.name.resolve(isZh, isJa)} · ${tr("常用作弊", "定番チート", "Common Cheats")}")
+            .setItems(labels) { _, which ->
+                val item = spec.cheats[which]
+                try {
+                    val payload = item.s35Action ?: item.toJsonString()
+                    GameModifierBridge.nativeApplyLiveAction(payload)
+                    Toast.makeText(activity, tr("已应用修改", "適用しました", "Applied"), Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showGenericResourcesDialog(spec: GenericModifierSpec) {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Please enter game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val fields = spec.resources.map { f ->
+            Triple(f.key, f.label.resolve(isZh, isJa), j.optInt(f.key, 0))
+        }
+        showNumberInputDialog("${spec.name.resolve(isZh, isJa)} · ${tr("数值与资源", "数値・リソース", "Resources")}", fields)
+    }
+
+    private fun showGenericSelectCharDialog(spec: GenericModifierSpec) {
+        val j = readLiveJson()
+        if (!j.optBoolean("inGame", false)) {
+            Toast.makeText(activity, tr("请先进入游戏", "先にゲームを開始してください", "Please enter game first"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val arr = j.optJSONArray("exCharacters")
+        if (arr == null || arr.length() == 0) {
+            Toast.makeText(activity, tr("暂无可编辑角色", "編集可能なキャラがいません", "No editable characters yet"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val entries = mutableListOf<Pair<String, Int>>()
+        val charObjs = HashMap<Int, JSONObject>()
+        entries.add(tr("全体角色（批量修改）", "全キャラ一括編集", "All Characters (Batch)") to -1)
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val idx = c.optInt("index", -1)
+            if (idx < 0) continue
+            charObjs[idx] = c
+            val nm = c.optString("name", "#$idx").ifBlank { "#$idx" }
+            val lv = if (c.has("lv")) " Lv${c.optInt("lv")}" else ""
+            val hp = if (c.has("hpMax")) " HP ${c.optInt("hp")}/${c.optInt("hpMax")}" else if (c.has("hp")) " HP ${c.optInt("hp")}" else ""
+            entries.add("$nm$lv$hp" to idx)
+        }
+        dialogBuilder()
+            .setTitle("${spec.name.resolve(isZh, isJa)} · ${tr("选择角色", "キャラ選択", "Select Character")}")
+            .setItems(entries.map { it.first }.toTypedArray()) { _, which ->
+                val (label, targetIdx) = entries[which]
+                showGenericEditCharDialog(spec, targetIdx, label, charObjs[targetIdx])
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showGenericEditCharDialog(
+        spec: GenericModifierSpec,
+        targetIdx: Int,
+        label: String,
+        charObj: JSONObject?
+    ) {
+        val isBatch = targetIdx < 0
+        val fields = spec.charFields.map { f ->
+            Triple(f.key, f.label.resolve(isZh, isJa), charObj?.optInt(f.key, 0) ?: 0)
+        }
+        val boostAction: (() -> Unit)? = if (spec.charBoost.isNotEmpty()) {
+            {
+                val ce = JSONObject().put("target", targetIdx)
+                spec.charBoost.forEach { (k, v) -> ce.put(k, v) }
+                sendAction(JSONObject().put("exCharEdit", ce), tr("已强化角色属性", "強化しました", "Character boosted"))
+            }
+        } else null
+        showDohnaFormDialog(
+            title = label,
+            summary = null,
+            fields = fields,
+            prefillValues = !isBatch,
+            neutralActionLabel = if (boostAction != null) tr("一键强化", "一括強化", "Boost") else null,
+            onNeutralAction = boostAction
+        ) { edited ->
+            if (edited.isEmpty()) return@showDohnaFormDialog
+            val ce = JSONObject().put("target", targetIdx)
+            edited.forEach { (k, v) -> ce.put(k, v) }
+            sendAction(JSONObject().put("exCharEdit", ce), tr("角色属性已更新", "更新しました", "Updated"))
+        }
     }
 
     private fun showEscalayerLocksDialog() {
@@ -1527,7 +1687,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     put("intel", 99)
                     put("spd", 99)
                     put("love", 99)
-                    put("resetAction", 1)
+                    put("resetAction", true)
                 }
                 sendDohnaInGameAction(
                     JSONObject().put("srCharEdit", boost),
@@ -1538,8 +1698,11 @@ class FloatingModifierOverlay(private val activity: Activity) {
             if (vals.isEmpty()) return@showDohnaFormDialog
             val ce = JSONObject().put("factionIdx", factionIdx).put("charIdx", charIdx)
             for ((k, v) in vals) {
-                if (k == "resetAction" && v == 0) continue
-                ce.put(k, v)
+                if (k == "resetAction") {
+                    if (v != 0) ce.put(k, true)
+                } else {
+                    ce.put(k, v)
+                }
             }
             sendDohnaInGameAction(
                 JSONObject().put("srCharEdit", ce),

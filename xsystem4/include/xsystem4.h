@@ -121,6 +121,7 @@ extern bool game_evenicle2;
 extern bool game_evenicle2_rance;
 extern bool game_haharanman;
 extern bool game_okusama;
+extern bool game_okusama_ntr;
 extern bool game_night_remaster;
 extern bool game_oyakorankan;
 extern bool game_toushin3;
@@ -135,6 +136,9 @@ extern bool game_tsumamigui3_jun;
 extern bool game_tsumamigui3_ntr;
 extern bool game_maman;
 extern bool game_waidonyo;
+extern bool game_dorapeko;
+extern bool game_pascha3;
+extern bool game_sanbiki;
 
 bool sys_is_sdl_main_thread(void);
 

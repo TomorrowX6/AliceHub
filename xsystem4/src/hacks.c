@@ -61,6 +61,7 @@ bool game_evenicle2 = false;
 bool game_evenicle2_rance = false;
 bool game_haharanman = false;
 bool game_okusama = false;
+bool game_okusama_ntr = false;
 bool game_night_remaster = false;
 bool game_oyakorankan = false;
 bool game_toushin3 = false;
@@ -75,6 +76,9 @@ bool game_tsumamigui3_jun = false;
 bool game_tsumamigui3_ntr = false;
 bool game_maman = false;
 bool game_waidonyo = false;
+bool game_dorapeko = false;
+bool game_pascha3 = false;
+bool game_sanbiki = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -742,6 +746,15 @@ static bool config_game_name_has_gbk_marker(const char *name)
 		|| strstr(name, "\xb6\xb7\xc9\xf1");
 }
 
+static bool has_ntr_marker(const char *name)
+{
+	for (const char *p = name; p && *p; p++) {
+		if (strncasecmp(p, "ntr", 3) == 0)
+			return true;
+	}
+	return false;
+}
+
 static void apply_rance03_message_layout(struct ain *ain)
 {
 	// Reflow raw glyph positions before the script applies centre/right alignment.
@@ -936,6 +949,9 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_tsumamigui3_ntr = false;
 	game_maman = false;
 	game_waidonyo = false;
+	game_dorapeko = false;
+	game_pascha3 = false;
+	game_sanbiki = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -962,7 +978,13 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_has_gbk_string(ain, "83h2mjr");
 	game_okusama = ain->version == 14
 		&& ain_get_function(ain, "AdvGauge@UpdatePregnancy") >= 0
-		&& ain_has_gbk_string(ain, "4fnd6e97tn9");
+		&& (ain_has_gbk_string(ain, "4fnd6e97tn9")
+			|| (ain_get_struct(ain, "CharaStatusList") >= 0
+				&& ain_get_global(ain, "g_resources") >= 0));
+	game_okusama_ntr = game_okusama && (
+		ain_get_function(ain, "\xa3\xc5\xa3\xd6\xa3\xaf\xa3\xce\xa3\xd4\xa3\xd2\xa3\xaf\xcd\xd1\xb4\xa6\xa3\xaf\xa3\xb1") >= 0
+		|| has_ntr_marker(config.ain_filename)
+		|| has_ntr_marker(config.game_name));
 	game_night_remaster = ain->version == 14
 		&& ain_get_function(ain, "C_Monster@nMoonPiece::get") >= 0
 		&& ain_has_gbk_string(ain, "45qsdbdsfq5");
@@ -1043,6 +1065,17 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_library(ain, "ChrLoader") >= 0
 		&& ain_get_library(ain, "MapLoader") >= 0
 		&& ain_get_struct(ain, "T_MamatotoDamage") >= 0;
+	game_dorapeko = ain->version == 6
+		&& ain_get_struct(ain, "ch_data") >= 0
+		&& ain_get_global(ain, "CD") >= 0;
+	game_pascha3 = ain->version == 6
+		&& ain_get_struct(ain, "C_UNIT_PARAMETER_CLASS") >= 0
+		&& ain_get_global(ain, "g_cUnitParamter") >= 0;
+	game_sanbiki = ain->version == 5
+		&& (ain_get_struct(ain, "s\xa5\xad\xa5\xe3\xa5\xe9\xa5\xaf\xa5\xbf") >= 0
+			|| ain_get_struct(ain, "s\x83L\x83\x83\x83\x89\x83N\x83^") >= 0)
+		&& (ain_get_global(ain, "g_n\xbd\xf0") >= 0
+			|| ain_get_global(ain, "g_n\x8b\xe0") >= 0);
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Detect actual AIN text encoding first so Shift-JIS releases/repacks with a Chinese
 	// GameName in AliceStart.ini (e.g. Shift-JIS Rance IX with GameName="兰斯9") are not
@@ -1124,10 +1157,11 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {
 		apply_rance02_hacks(ain);
-	} else if (game_rance6 || !strncmp(game_name, "Rance6", 6)
-			|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
-			|| !strncmp(game_name, "兰斯6", strlen("兰斯6"))
-			|| !strncmp(game_name, "兰斯06", strlen("兰斯06"))) {
+	} else if (game_rance6 || (ain_get_struct(ain, "CDungeon") >= 0 && ain_get_global(ain, "gc") >= 0
+			&& (!strncmp(game_name, "Rance6", 6)
+				|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
+				|| !strncmp(game_name, "兰斯6", strlen("兰斯6"))
+				|| !strncmp(game_name, "兰斯06", strlen("兰斯06"))))) {
 		game_rance6 = true;
 		apply_rance6_hacks(ain);
 	} else if (!strcmp(game_name, "ランス・クエスト") || !strcmp(game_name, "兰斯8")) {

@@ -162,6 +162,18 @@ class XSystem4Activity : SDLActivity() {
         return GameModifierBridge.isEvenicleGameDir(root, saveDir?.name, saveDir)
     }
 
+    fun isEvenicleFamilyGame(): Boolean {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.isEvenicleFamilyGameDir(root, saveDir?.name, saveDir)
+    }
+
+    fun currentGenericModifierGameId(): String? {
+        val root = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return GameModifierBridge.resolveGenericModifierGameId(root, saveDir?.name, saveDir)
+    }
+
     fun isSengokuRanceGame(): Boolean {
         val root = effectiveGameRootFile()
         val saveDir = effectiveSaveDirFile()
@@ -257,7 +269,13 @@ class XSystem4Activity : SDLActivity() {
 
     private fun syncAllLocksToNative() {
         if (isSystem3xGame()) {
-            GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedEscLockMask(this))
+            val gid = currentGenericModifierGameId()
+            val mask = if (gid != null) {
+                GameModifierBridge.getSavedGenericLockMask(this, gid)
+            } else {
+                GameModifierBridge.getSavedEscLockMask(this)
+            }
+            GameModifierBridge.nativeSetLiveLocks(mask)
             return
         }
         GameModifierBridge.nativeSetLiveLocks(GameModifierBridge.getSavedLockMask(this))
@@ -269,6 +287,11 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.setR03LiveLocks(GameModifierBridge.getSavedR03LockMask(this))
         GameModifierBridge.setR08LiveLocks(GameModifierBridge.getSavedR08LockMask(this))
         GameModifierBridge.setR09LiveLocks(GameModifierBridge.getSavedR09LockMask(this))
+        for (spec in GenericModifierRegistry.all) {
+            if (!spec.isSystem35) {
+                GameModifierBridge.setGenericLiveLocks(spec.id, GameModifierBridge.getSavedGenericLockMask(this, spec.id))
+            }
+        }
     }
 
     private fun applyImmersiveFullscreen() {
@@ -848,7 +871,12 @@ class XSystem4Activity : SDLActivity() {
         }
         if (launchedGameRoot != null && !isLegacySystem3Game) {
             lastSyncedConfigSeq = if (isSystem3xGame()) {
-                GameModifierBridge.syncEscLockMaskFromNative(this)
+                val s35Gid = currentGenericModifierGameId()
+                if (s35Gid != null) {
+                    GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                } else {
+                    GameModifierBridge.syncEscLockMaskFromNative(this)
+                }
             } else {
                 GameModifierBridge.syncLockMaskFromNative(this)
             }
@@ -1385,6 +1413,7 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         if (isSystem3xGame()) {
+            SDLActivity.nativeSetenv("XSYSTEM35_MODIFIER_GAME", currentGenericModifierGameId().orEmpty())
             val rootFile = java.io.File(gameRoot)
             val isSys39 = rootFile.listFiles()?.any { f ->
                 f.isFile && (
@@ -1433,7 +1462,14 @@ class XSystem4Activity : SDLActivity() {
             try {
                 when {
                     isLegacySystem3Game -> Unit
-                    isSystem3xGame() -> GameModifierBridge.syncEscLockMaskFromNative(this)
+                    isSystem3xGame() -> {
+                        val s35Gid = currentGenericModifierGameId()
+                        if (s35Gid != null) {
+                            GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                        } else {
+                            GameModifierBridge.syncEscLockMaskFromNative(this)
+                        }
+                    }
                     else -> GameModifierBridge.syncLockMaskFromNative(this)
                 }
             } catch (_: Throwable) {

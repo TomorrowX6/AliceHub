@@ -12,6 +12,7 @@ let MODIFIER_LOCK_RANCE08 = modifier_lock_game(rawValue: 7)
 let MODIFIER_LOCK_RANCE09 = modifier_lock_game(rawValue: 8)
 
 var masks: [UInt32: Int32] = [:]
+var gameMasks: [String: Int32] = [:]
 var actions: [String] = []
 var writes: [String] = []
 var liveReplies = ["{\"inGame\":true,\"money\":5}"]
@@ -27,6 +28,8 @@ func modifier_api_get_live_state_json() -> UnsafeMutablePointer<CChar>! {
 }
 func modifier_api_get_lock_mask(_ game: modifier_lock_game) -> Int32 { masks[game.rawValue] ?? 0 }
 func modifier_api_set_lock_mask(_ game: modifier_lock_game, _ mask: Int32) { masks[game.rawValue] = mask }
+func modifier_api_get_game_lock_mask(_ gameID: UnsafePointer<CChar>!) -> Int32 { gameMasks[String(cString: gameID)] ?? 0 }
+func modifier_api_set_game_lock_mask(_ gameID: UnsafePointer<CChar>!, _ mask: Int32) { gameMasks[String(cString: gameID)] = mask }
 func modifier_api_apply_live_action(_ json: UnsafePointer<CChar>!) { actions.append(String(cString: json)) }
 func modifier_api_read_local_save_summary(_ path: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CChar>! {
     strdup("{\"valid\":true,\"ok\":true,\"turn\":3,\"foodTicket\":10,\"cardCount\":4,\"comment\":\"x\"}")
@@ -62,7 +65,11 @@ struct ModifierChecks {
         ModifierBridge.setStreamerMode(true)
         precondition(masks[0] == ModifierBridge.rance10TreasureBit)
 
-        precondition(ModifierGamePanel.all.map(\.game.id) == ["sengokurance", "rance01", "rance02", "rance03", "rance08", "rance09"])
+        precondition(ModifierGamePanel.corePanels.map(\.game.id) == ["sengokurance", "rance01", "rance02", "rance03", "rance08", "rance09"])
+        precondition(ModifierGamePanel.extraPanels.count == 23)
+        precondition(ModifierGamePanel.system35Panels.count == 6)
+        ModifierBridge.setLockMask(gameID: "rance06", 5)
+        precondition(ModifierBridge.lockMask(gameID: "rance06") == 5)
         let sr = ModifierGamePanel.all[0]
         precondition(sr.resources.first?.initialValue(in: ["gold": 123]) == "123")
         precondition(sr.resources.first?.initialValue(in: ["gold": true]) == "")

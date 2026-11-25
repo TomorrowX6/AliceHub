@@ -18,6 +18,28 @@ class System35Checks(unittest.TestCase):
                             str(source), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], cwd=temporary, check=True)
 
+    def test_modifier_detection_with_generic_scenario_archive(self):
+        modifier = 'xsystem35/src/escalayer_modifier.c'
+        source = (ROOT / modifier).read_text()
+        game_enum = source[source.index('enum s35_mod_game {'):source.index('static pthread_mutex_t')]
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <string.h>
+''' + game_enum
+    + function(modifier, 'static bool str_contains_icase(')
+    + function(modifier, 'static enum s35_mod_game detect_sco_game(') + r'''
+int main(void) {
+    assert(detect_sco_game("ADISK.ALD", "kichikuou") == S35_GAME_KICHIKUOU);
+    assert(detect_sco_game("ADISK.ALD", "kaerunyo") == S35_GAME_KAERUNYO);
+    assert(detect_sco_game("ADISK.ALD", "escalayer") == S35_GAME_NONE);
+    assert(detect_sco_game(NULL, "kichikuou") == S35_GAME_NONE);
+    assert(detect_sco_game("KichikuRanceSA.ALD", NULL) == S35_GAME_KICHIKUOU);
+    assert(detect_sco_game("ぱにょSA.ALD", "") == S35_GAME_KAERUNYO);
+}
+''')
+
     def test_virtual_stick_uses_configured_deadzone(self):
         bridge = 'xsystem35/src/alicehub_bridge.c'
         self.compile_and_run(r'''

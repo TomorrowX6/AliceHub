@@ -32,6 +32,7 @@ object GameModifierBridge {
     private const val KEY_R08_LOCK_MASK = "rance08_lock_mask"
     private const val KEY_R09_LOCK_MASK = "rance09_lock_mask"
     private const val KEY_ESC_LOCK_MASK = "escalayer_lock_mask"
+    private const val KEY_EXTRA_LOCKS = "extra_locks"
     private const val KEY_FONT_SCALE_PCT = "font_scale_pct"
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
     private const val KEY_GAME_FONT_SCALE_PCT = "game_font_scale_pct"
@@ -1655,6 +1656,29 @@ object GameModifierBridge {
         return false
     }
 
+    @JvmOverloads
+    fun isEvenicleFamilyGameDir(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): Boolean {
+        val id = GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        )
+        if (GenericModifierRegistry.isEvenicleFamily(id)) return true
+        return isEvenicleGameDir(gameDir, dirNameFallback, saveDir)
+    }
+
+    @JvmOverloads
+    fun resolveGenericModifierGameId(gameDir: File?, dirNameFallback: String? = null, saveDir: File? = null): String? {
+        val id = GameCatalog.classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: "",
+            saveDir = saveDir,
+            displayName = dirNameFallback ?: gameDir?.name ?: saveDir?.name ?: ""
+        )
+        return GenericModifierRegistry.find(id)?.id
+    }
+
     fun syncNativeConfigPath(context: Context) {
         if (!loaded) return
         try {
@@ -1772,6 +1796,7 @@ object GameModifierBridge {
             val r08Mask = prefs.getInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
             val r09Mask = prefs.getInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
             val escMask = prefs.getInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
+            val extraLocksMap = parseExtraLocksMap(prefs.getString(KEY_EXTRA_LOCKS, null))
             val fontScaleMap = parseScaleMapFromPrefs(
                 prefs.getString(KEY_GAME_FONT_SCALE_PCT, null),
                 DEFAULT_FONT_SCALE_PCT,
@@ -1800,6 +1825,7 @@ object GameModifierBridge {
                 put(KEY_R08_LOCK_MASK, r08Mask)
                 put(KEY_R09_LOCK_MASK, r09Mask)
                 put(KEY_ESC_LOCK_MASK, escMask)
+                if (extraLocksMap.length() > 0) put(KEY_EXTRA_LOCKS, extraLocksMap)
                 put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
                 put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
                 put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
@@ -1908,6 +1934,7 @@ object GameModifierBridge {
                 .putInt(KEY_R08_LOCK_MASK, r08Mask)
                 .putInt(KEY_R09_LOCK_MASK, r09Mask)
                 .putInt(KEY_ESC_LOCK_MASK, escMask)
+                .putString(KEY_EXTRA_LOCKS, (json.optJSONObject(KEY_EXTRA_LOCKS) ?: JSONObject()).toString())
                 .remove(KEY_FONT_SCALE_PCT)
                 .remove(KEY_SCROLLBAR_SCALE_PCT)
                 .putString(KEY_GAME_FONT_SCALE_PCT, fontScaleMap.toString())
@@ -2061,6 +2088,18 @@ object GameModifierBridge {
             val r03LiveMask = getR03LiveLocks()
             val r08LiveMask = getR08LiveLocks()
             val r09LiveMask = getR09LiveLocks()
+            val extraLiveMasks = LinkedHashMap<String, Int>()
+            for (spec in GenericModifierRegistry.all) {
+                if (!spec.isSystem35) {
+                    val key = normalizeGenericLockKey(spec.id)
+                    val m = try {
+                        nativeGetGameLiveLocks(key) and spec.allLocksMask
+                    } catch (_: Throwable) {
+                        0
+                    }
+                    extraLiveMasks[key] = m
+                }
+            }
             synchronized(configLock) {
                 val json = readConfigJson(context)
                 val savedMask = json.optInt(KEY_LOCK_MASK, 0)
@@ -2072,6 +2111,15 @@ object GameModifierBridge {
                 val savedR03Mask = json.optInt(KEY_R03_LOCK_MASK, 0) and LOCK_R03_ALL_MASK
                 val savedR08Mask = json.optInt(KEY_R08_LOCK_MASK, 0) and LOCK_R08_ALL_MASK
                 val savedR09Mask = json.optInt(KEY_R09_LOCK_MASK, 0) and LOCK_R09_ALL_MASK
+                val extraMap = json.optJSONObject(KEY_EXTRA_LOCKS) ?: JSONObject()
+                var extraChanged = false
+                for ((key, liveVal) in extraLiveMasks) {
+                    val savedVal = extraMap.optInt(key, 0)
+                    if (liveVal != savedVal) {
+                        extraChanged = true
+                        if (liveVal == 0) extraMap.remove(key) else extraMap.put(key, liveVal)
+                    }
+                }
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val prefsMask = prefs.getInt(KEY_LOCK_MASK, -1)
                 val prefsDohnaMask = prefs.getInt(KEY_DOHNA_LOCK_MASK, -1)
@@ -2082,7 +2130,7 @@ object GameModifierBridge {
                 val prefsR03Mask = prefs.getInt(KEY_R03_LOCK_MASK, -1)
                 val prefsR08Mask = prefs.getInt(KEY_R08_LOCK_MASK, -1)
                 val prefsR09Mask = prefs.getInt(KEY_R09_LOCK_MASK, -1)
-                if (liveMask != savedMask || liveMask != prefsMask ||
+                if (extraChanged || liveMask != savedMask || liveMask != prefsMask ||
                     dohnaLiveMask != savedDohnaMask || dohnaLiveMask != prefsDohnaMask ||
                     evenicleLiveMask != savedEvenicleMask || evenicleLiveMask != prefsEvenicleMask ||
                     srLiveMask != savedSrMask || srLiveMask != prefsSrMask ||
@@ -2102,6 +2150,7 @@ object GameModifierBridge {
                     json.put(KEY_R03_LOCK_MASK, r03LiveMask)
                     json.put(KEY_R08_LOCK_MASK, r08LiveMask)
                     json.put(KEY_R09_LOCK_MASK, r09LiveMask)
+                    json.put(KEY_EXTRA_LOCKS, extraMap)
                     writeConfigJson(context, json)
                 }
                 json.optInt(KEY_CONFIG_SEQ, 0)
@@ -2478,6 +2527,99 @@ object GameModifierBridge {
             }
         }
 
+    private fun parseExtraLocksMap(raw: String?): JSONObject {
+        if (raw.isNullOrBlank()) return JSONObject()
+        return try {
+            val parsed = JSONObject(raw)
+            val clean = JSONObject()
+            val it = parsed.keys()
+            while (it.hasNext()) {
+                val k = it.next()
+                val v = parsed.optInt(k, 0)
+                if (v != 0) clean.put(k, v)
+            }
+            clean
+        } catch (_: Throwable) {
+            JSONObject()
+        }
+    }
+
+    private fun normalizeGenericLockKey(gameId: String): String =
+        if (gameId == GameCatalog.ID_ESCALAYER_REBOOT) "escalayerreboot" else gameId
+
+    fun getSavedGenericLockMask(context: Context, gameId: String): Int {
+        val spec = GenericModifierRegistry.find(gameId)
+        val key = normalizeGenericLockKey(gameId)
+        val map = readConfigJson(context).optJSONObject(KEY_EXTRA_LOCKS) ?: return 0
+        val raw = map.optInt(key, map.optInt(gameId, 0))
+        return if (spec != null) (raw and spec.allLocksMask) else raw
+    }
+
+    fun getGenericLiveLockCount(context: Context, gameId: String): Int =
+        Integer.bitCount(getSavedGenericLockMask(context, gameId))
+
+    fun setSavedGenericLockMask(context: Context, gameId: String, mask: Int, isSystem35: Boolean = false) {
+        val spec = GenericModifierRegistry.find(gameId)
+        val clean = if (spec != null) (mask and spec.allLocksMask) else mask
+        val key = normalizeGenericLockKey(gameId)
+        synchronized(configLock) {
+            val json = readConfigJson(context)
+            val map = json.optJSONObject(KEY_EXTRA_LOCKS) ?: JSONObject()
+            if (key != gameId) map.remove(gameId)
+            if (clean == 0) {
+                map.remove(key)
+            } else {
+                map.put(key, clean)
+            }
+            json.put(KEY_EXTRA_LOCKS, map)
+            writeConfigJson(context, json)
+        }
+        if (loaded) {
+            try {
+                if (isSystem35) {
+                    nativeSetLiveLocks(clean)
+                } else {
+                    nativeSetConfigPath(getConfigFilePath(context))
+                    nativeSetGameLiveLocks(key, clean)
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun setGenericLiveLocks(gameId: String, mask: Int) {
+        if (!loaded) return
+        val spec = GenericModifierRegistry.find(gameId)
+        val clean = if (spec != null) (mask and spec.allLocksMask) else mask
+        try {
+            nativeSetGameLiveLocks(normalizeGenericLockKey(gameId), clean)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun syncGenericS35LockMaskFromNative(context: Context, gameId: String): Int {
+        if (!loaded) return getConfigSeq(context)
+        val spec = GenericModifierRegistry.find(gameId) ?: return getConfigSeq(context)
+        val key = normalizeGenericLockKey(gameId)
+        return try {
+            val live = nativeGetLiveLocks() and spec.allLocksMask
+            synchronized(configLock) {
+                val json = readConfigJson(context)
+                val map = json.optJSONObject(KEY_EXTRA_LOCKS) ?: JSONObject()
+                val saved = map.optInt(key, map.optInt(gameId, 0)) and spec.allLocksMask
+                if (live != saved || (key != gameId && map.has(gameId))) {
+                    if (key != gameId) map.remove(gameId)
+                    if (live == 0) map.remove(key) else map.put(key, live)
+                    json.put(KEY_EXTRA_LOCKS, map)
+                    writeConfigJson(context, json)
+                }
+                json.optInt(KEY_CONFIG_SEQ, 0)
+            }
+        } catch (_: Throwable) {
+            getConfigSeq(context)
+        }
+    }
+
     fun syncEscLockMaskFromNative(context: Context): Int {
         if (!loaded) return getConfigSeq(context)
         return try {
@@ -2820,6 +2962,15 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetR09LiveLocks(): Int
+
+    @JvmStatic
+    external fun nativeGetCurrentGame(): String
+
+    @JvmStatic
+    external fun nativeSetGameLiveLocks(gameId: String, mask: Int)
+
+    @JvmStatic
+    external fun nativeGetGameLiveLocks(gameId: String): Int
 
     @JvmStatic
     external fun nativeApplyLiveAction(actionSpec: String)
