@@ -509,7 +509,7 @@ static void confirm_draw(HubApp *app, size_t *focus, const HubGame *unused)
     bool update = preview.plan.installed;
     hub_heading(app, update ? "Update game" : "Install game", preview.game->title);
     hub_empty(app, update ? "Replace installed game files?" : "Download and install?",
-              update ? "This replaces mods and other edits in the game folder. Separate saves are kept." :
+              update ? "Mods and game edits are replaced. Separate saves are kept." :
                        "The download is verified before adding the game to your library.");
     hub_hints(app, update ? "Update" : "Install", "Back", NULL);
 }
