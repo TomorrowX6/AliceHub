@@ -4,6 +4,7 @@
 2. Heartful Maman (は～とふるママン) game detection & 1280x720 default viewport in hacks.c.
 3. AIN v8 builtin HLL enablement (String/Int/Float), PartsEngine 5-arg bool IsSkip dispatch,
    Parts message_type_v8 + -1 empty-queue sentinel, and parts_v2 scrollbar no <= 0 guard.
+4. Heartful Maman backlog text and voice HLL return signatures.
 """
 import unittest
 
@@ -34,6 +35,117 @@ def _extract_def(rel_path: str, name: str) -> str:
 
 
 class MamanAndBfyyRegressionsTest(unittest.TestCase):
+    def test_maman_backlog_hll_string_returns(self):
+        harness = """
+#include <assert.h>
+#include "AnteaterADVEngine.h"
+#include "hll.h"
+#include "system4/string.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+
+struct ain *ain;
+extern struct static_library lib_AnteaterADVEngine;
+
+_Noreturn void _vm_error(const char *fmt, ...) { abort(); }
+struct page *alloc_array(int r, union vm_value *d, enum ain_data_type t, int s, bool i) { abort(); }
+struct page *alloc_page(enum page_type t, int i, int n) { abort(); }
+enum ain_data_type array_type(enum ain_data_type t) { abort(); }
+void delete_page_vars(struct page *p) { abort(); }
+void free_page(struct page *p) { abort(); }
+int32_t heap_alloc_page(struct page *p) { abort(); }
+int32_t heap_alloc_string(struct string *s) { abort(); }
+struct page *heap_get_page(int i) { abort(); }
+struct string *heap_get_string(int i) { abort(); }
+
+static struct static_hll_function *find_export(const char *name) {
+    for (struct static_hll_function *f = lib_AnteaterADVEngine.functions; f->name; f++)
+        if (!strcmp(f->name, name))
+            return f;
+    abort();
+}
+
+void static_library_replace(struct static_library *lib, const char *name, void *fun) {
+    assert(lib == &lib_AnteaterADVEngine);
+    find_export(name)->fun = fun;
+}
+
+int main(void) {
+    struct ain_hll_argument window_args[] = {
+        { .type.data = AIN_STRING }, { .type.data = AIN_STRING },
+    };
+    struct ain_hll_argument getter_args[] = {
+        { .type.data = AIN_INT }, { .type.data = AIN_INT }, { .type.data = AIN_REF_STRING },
+    };
+    struct ain_hll_function functions[] = {
+        { .name = "ADVLogList_AddText", .nr_arguments = 2, .arguments = window_args },
+        { .name = "ADVLogList_AddVoice", .nr_arguments = 1, .arguments = window_args },
+        { .name = "ADVLogList_GetADVLogText", .return_type.data = AIN_STRING,
+          .nr_arguments = 2, .arguments = getter_args },
+        { .name = "ADVLogList_GetADVLogVoice", .return_type.data = AIN_STRING,
+          .nr_arguments = 2, .arguments = getter_args },
+    };
+    struct ain_library library = {
+        .name = "AnteaterADVEngine", .nr_functions = 4, .functions = functions,
+    };
+    struct ain maman = { .version = 8, .nr_libraries = 1, .libraries = &library };
+    ain = &maman;
+    ((void (*)(void))find_export("_PreLink")->fun)();
+
+    struct string *line = make_string("dialogue", 8);
+    struct string *name = make_string("voice_01", 8);
+    ((void (*)(struct string *, struct string *))find_export("ADVLogList_AddText")->fun)
+        (line, &EMPTY_STRING);
+    ((void (*)(struct string *))find_export("ADVLogList_AddVoice")->fun)(name);
+    free_string(line);
+    free_string(name);
+
+    struct static_hll_function *text = find_export(functions[2].name);
+    struct static_hll_function *voice = find_export(functions[3].name);
+    assert(text->resolve && voice->resolve);
+    struct string *(*get_text)(int, int) = text->resolve(&functions[2]);
+    struct string *(*get_voice)(int, int) = voice->resolve(&functions[3]);
+    line = get_text(0, 0);
+    name = get_voice(0, 0);
+    struct string *missing = get_voice(0, 1);
+    assert(!missing->size);
+    free_string(missing);
+
+    struct ain_hll_function ref_string = {
+        .nr_arguments = 3, .arguments = getter_args, .return_type.data = AIN_VOID,
+    };
+    void (*get_text_ref)(int, int, struct string **) = text->resolve(&ref_string);
+    void (*get_voice_ref)(int, int, struct string **) = voice->resolve(&ref_string);
+    struct string *ref = NULL;
+    get_text_ref(0, 0, &ref);
+    assert(ref == line);
+    get_voice_ref(0, 0, &ref);
+    assert(ref == name);
+    free_string(ref);
+    ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
+    assert(!strcmp(line->text, "dialogue"));
+    assert(!strcmp(name->text, "voice_01"));
+    free_string(line);
+    free_string(name);
+
+    struct ain_hll_function int_voice = {
+        .nr_arguments = 2, .arguments = getter_args, .return_type.data = AIN_INT,
+    };
+    int (*get_int_voice)(int, int) = voice->resolve(&int_voice);
+    ADVLogList_AddVoice(42);
+    assert(get_int_voice(0, 0) == 42);
+    ADVLogList_Clear();
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_bfyy_mod_archive_and_maman_hacks(self):
         afa_fn = _extract_def("src/asset_manager.c", "afa_is_mod_archive")
         harness = f"""

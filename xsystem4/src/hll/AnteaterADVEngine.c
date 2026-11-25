@@ -186,16 +186,22 @@ int ADVLogList_GetNumofADVLogText(int log_no)
 	return log_entry(log_no)->nr_lines;
 }
 
-void ADVLogList_GetADVLogText(int log_no, int line_no, struct string **text)
+static struct string *ADVLogList_GetADVLogText_value(int log_no, int line_no)
 {
 	struct adv_log *log = log_entry(log_no);
 	// NOTE: AnteaterADVEngine.dll segfaults on invalid index
 	if (line_no < 0 || (unsigned)line_no >= log->nr_lines)
 		VM_ERROR("Invalid line number: %d", line_no);
 
+	return string_ref(log->lines[line_no]);
+}
+
+void ADVLogList_GetADVLogText(int log_no, int line_no, struct string **text)
+{
+	struct string *line = ADVLogList_GetADVLogText_value(log_no, line_no);
 	if (*text)
 		free_string(*text);
-	*text = string_ref(log->lines[line_no]);
+	*text = line;
 }
 
 int ADVLogList_GetNumofADVLogVoice(int log_no)
@@ -212,18 +218,22 @@ int ADVLogList_GetADVLogVoice(int log_no, int voice_no)
 	return log->voices[voice_no];
 }
 
-static void ADVLogList_GetADVLogVoice_str(int log_no, int voice_no, struct string **voice_out)
+static struct string *ADVLogList_GetADVLogVoice_value(int log_no, int voice_no)
 {
 	struct adv_log *log = log_entry(log_no);
+	if (voice_no < 0 || (unsigned)voice_no >= log->nr_voices || !log->voice_names)
+		return string_ref(&EMPTY_STRING);
+	return string_ref(log->voice_names[voice_no]);
+}
+
+static void ADVLogList_GetADVLogVoice_str(int log_no, int voice_no, struct string **voice_out)
+{
 	if (!voice_out)
 		return;
+	struct string *name = ADVLogList_GetADVLogVoice_value(log_no, voice_no);
 	if (*voice_out)
 		free_string(*voice_out);
-	if (voice_no < 0 || (unsigned)voice_no >= log->nr_voices || !log->voice_names) {
-		*voice_out = string_ref(&EMPTY_STRING);
-		return;
-	}
-	*voice_out = string_ref(log->voice_names[voice_no]);
+	*voice_out = name;
 }
 
 int ADVLogList_GetADVLogVoiceLast(int log_no)
@@ -553,6 +563,28 @@ static void AnteaterADVEngine_ADVLogList_AddText_with_window(struct string **tex
 	ADVLogList_AddText(text);
 }
 
+static bool returns_log_string(const struct ain_hll_function *fun)
+{
+	return fun->return_type.data == AIN_STRING && fun->nr_arguments == 2
+		&& fun->arguments[0].type.data == AIN_INT && fun->arguments[1].type.data == AIN_INT;
+}
+
+static void *resolve_log_text(const struct ain_hll_function *fun)
+{
+	if (returns_log_string(fun))
+		return ADVLogList_GetADVLogText_value;
+	return ADVLogList_GetADVLogText;
+}
+
+static void *resolve_log_voice(const struct ain_hll_function *fun)
+{
+	if (returns_log_string(fun))
+		return ADVLogList_GetADVLogVoice_value;
+	if (fun->nr_arguments == 3 && fun->arguments[2].type.data == AIN_REF_STRING)
+		return ADVLogList_GetADVLogVoice_str;
+	return ADVLogList_GetADVLogVoice;
+}
+
 HLL_LIBRARY(AnteaterADVEngine,
 	    HLL_EXPORT(_PreLink, AnteaterADVEngine_PreLink),
 	    HLL_EXPORT(_ModuleFini, AnteaterADVEngine_ModuleFini),
@@ -565,9 +597,9 @@ HLL_LIBRARY(AnteaterADVEngine,
 	    HLL_EXPORT(ADVLogList_IsEnable, ADVLogList_IsEnable),
 	    HLL_EXPORT(ADVLogList_GetNumofADVLog, ADVLogList_GetNumofADVLog),
 	    HLL_EXPORT(ADVLogList_GetNumofADVLogText, ADVLogList_GetNumofADVLogText),
-	    HLL_EXPORT(ADVLogList_GetADVLogText, ADVLogList_GetADVLogText),
+	    HLL_OVERLOAD(ADVLogList_GetADVLogText, resolve_log_text),
 	    HLL_EXPORT(ADVLogList_GetNumofADVLogVoice, ADVLogList_GetNumofADVLogVoice),
-	    HLL_EXPORT(ADVLogList_GetADVLogVoice, ADVLogList_GetADVLogVoice),
+	    HLL_OVERLOAD(ADVLogList_GetADVLogVoice, resolve_log_voice),
 	    HLL_EXPORT(ADVLogList_Save, ADVLogList_Save),
 	    HLL_EXPORT(ADVLogList_Load, ADVLogList_Load),
 	    HLL_EXPORT(ADVSceneKeeper_AddADVScene, ADVSceneKeeper_AddADVScene),
@@ -609,10 +641,5 @@ static void AnteaterADVEngine_PreLink(void)
 	if (fun && fun->nr_arguments == 1 && fun->arguments[0].type.data == AIN_STRING) {
 		adv_string_voices = true;
 		static_library_replace(&lib_AnteaterADVEngine, "ADVLogList_AddVoice", ADVLogList_AddVoice_str);
-	}
-
-	fun = get_fun(libno, "ADVLogList_GetADVLogVoice");
-	if (fun && fun->nr_arguments == 3 && fun->arguments[2].type.data == AIN_REF_STRING) {
-		static_library_replace(&lib_AnteaterADVEngine, "ADVLogList_GetADVLogVoice", ADVLogList_GetADVLogVoice_str);
 	}
 }
