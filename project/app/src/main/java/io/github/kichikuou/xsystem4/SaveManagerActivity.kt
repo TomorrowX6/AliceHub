@@ -28,6 +28,7 @@ import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -344,46 +345,18 @@ class SaveManagerActivity : ThemedActivity() {
             return result
         }
 
-        private fun safeChildNameStatic(raw: String): String? {
-            val name = ArchiveExtractor.repairSjisAsGbkMojibake(raw)
-                .substringAfterLast('/').substringAfterLast('\\').trim()
-            if (name.isEmpty() || name.startsWith(".") || name == "." || name == ".." || name.contains('\u0000')) {
-                return null
-            }
-            return name
-        }
-
         private fun isInsideStatic(root: File, file: File): Boolean {
             val r = root.canonicalPath
             val f = file.canonicalPath
             return f.startsWith(r + File.separator)
         }
 
-        private fun findNormalizedSaveRootStatic(tempDir: File): File {
-            val saveDataDir = tempDir.walkTopDown().maxDepth(3).firstOrNull {
-                it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
-            }
-            if (saveDataDir != null) {
-                return saveDataDir
-            }
-            var cur = tempDir
-            while (true) {
-                val children = cur.listFiles()?.filter { !it.name.startsWith(".") } ?: break
-                val files = children.filter { it.isFile }
-                val dirs = children.filter { it.isDirectory }
-                if (files.isEmpty() && dirs.size == 1) {
-                    cur = dirs[0]
-                } else {
-                    break
-                }
-            }
-            return cur
-        }
-
         private fun extractSaveArchiveToTargetStatic(
             context: Context,
             uri: Uri,
-            targetDir: File
+            targetDir: File,
+            paths: SaveImportPaths,
+            writes: SaveImportPaths.ImportWrites
         ): Int {
             val tempDir = File(context.filesDir, "$SAVE_IMPORT_TMP_PREFIX${System.nanoTime()}")
             tempDir.mkdirs()
@@ -395,29 +368,7 @@ class SaveManagerActivity : ThemedActivity() {
                     tempScratchParent = context.cacheDir
                 )
                 ensureProcessStoppedOnIo(context)
-                val normalizedRoot = findNormalizedSaveRootStatic(tempDir)
-                val rootCanonical = targetDir.canonicalFile
-                var copied = 0
-                normalizedRoot.walkTopDown().forEach { src ->
-                    if (src.isFile && !src.name.startsWith(".")) {
-                        val relPath = ArchiveExtractor.repairSjisAsGbkMojibake(src.relativeTo(normalizedRoot).path)
-                        val dst = File(rootCanonical, relPath).canonicalFile
-                        if (!dst.path.startsWith(rootCanonical.path + File.separator)) return@forEach
-                        dst.parentFile?.mkdirs()
-                        val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
-                        try {
-                            src.copyTo(tmpDst, overwrite = true)
-                            if (!tmpDst.renameTo(dst)) {
-                                tmpDst.copyTo(dst, overwrite = true)
-                                tmpDst.delete()
-                            }
-                            copied++
-                        } finally {
-                            tmpDst.delete()
-                        }
-                    }
-                }
-                return copied
+                return paths.importExtractedArchive(tempDir, targetDir, writes)
             } finally {
                 tempDir.deleteRecursively()
             }
@@ -428,17 +379,19 @@ class SaveManagerActivity : ThemedActivity() {
             treeUri: Uri,
             parentDocId: String,
             destDir: File,
+            paths: SaveImportPaths,
+            writes: SaveImportPaths.ImportWrites,
             rootDir: File = destDir
         ): Int {
             destDir.mkdirs()
             var count = 0
             for (child in listDocumentChildrenFor(context, treeUri, parentDocId)) {
                 if (child.name.startsWith(".")) continue
-                val cleanName = safeChildNameStatic(child.name) ?: continue
+                val cleanName = paths.nameForImport(child.name, destDir == rootDir && !child.isDirectory) ?: continue
                 if (child.isDirectory) {
                     val subDir = File(destDir, cleanName)
                     if (!isInsideStatic(rootDir, subDir)) continue
-                    count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, rootDir)
+                    count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, paths, writes, rootDir)
                 } else {
                     val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
                     val outFile = File(destDir, cleanName)
@@ -449,10 +402,7 @@ class SaveManagerActivity : ThemedActivity() {
                             tmpFile.outputStream().buffered().use { output ->
                                 input.copyTo(output)
                             }
-                            if (!tmpFile.renameTo(outFile)) {
-                                tmpFile.copyTo(outFile, overwrite = true)
-                                tmpFile.delete()
-                            }
+                            writes.write(tmpFile, outFile)
                             count++
                         }
                     } finally {
@@ -558,33 +508,26 @@ class SaveManagerActivity : ThemedActivity() {
         private fun startImportDirectoryOp(
             appCtx: Context,
             treeUri: Uri,
-            targetDir: File,
-            targetDirName: String
+            target: SaveTarget
         ): Job = launchSaveOp {
             try {
                 val count = withContext(Dispatchers.IO) {
                     ensureProcessStoppedOnIo(appCtx)
+                    val targetDir = target.saveDir
                     targetDir.mkdirs()
-                    backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                    backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
+                    val paths = SaveImportPaths(target.externalGameDir)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-                    val children = listDocumentChildrenFor(appCtx, treeUri, rootDocId)
-                    val saveDataSubdir = children.firstOrNull {
-                        it.isDirectory && it.name.equals("SaveData", ignoreCase = true)
-                    }
-                    val hasDirectSaveFiles = children.any {
-                        !it.isDirectory && (
-                            it.name.endsWith(".asd", true) ||
-                                it.name.endsWith(".sav", true) ||
-                                it.name.endsWith(".rsm", true)
-                            )
-                    }
-                    val sourceDocId = if (saveDataSubdir != null && !hasDirectSaveFiles) {
-                        saveDataSubdir.documentId
-                    } else {
-                        rootDocId
-                    }
+                    val source = paths.sourceRoot(
+                        DocNode(rootDocId, "", true),
+                        { listDocumentChildrenFor(appCtx, treeUri, it.documentId) },
+                        DocNode::name,
+                        DocNode::isDirectory
+                    )
                     ensureProcessStoppedOnIo(appCtx)
-                    copyDocumentTreeToInternalStatic(appCtx, treeUri, sourceDocId, targetDir)
+                    copyDocumentTreeToInternalStatic(
+                        appCtx, treeUri, source.documentId, targetDir, paths, SaveImportPaths.ImportWrites()
+                    )
                 }
                 onHost {
                     it.dismissProgress()
@@ -612,23 +555,25 @@ class SaveManagerActivity : ThemedActivity() {
         private fun startImportFilesOp(
             appCtx: Context,
             uris: List<Uri>,
-            targetDir: File,
-            targetDirName: String
+            target: SaveTarget
         ): Job = launchSaveOp {
+            val writes = SaveImportPaths.ImportWrites()
             try {
                 val count = withContext(Dispatchers.IO) {
                     ensureProcessStoppedOnIo(appCtx)
+                    val targetDir = target.saveDir
                     targetDir.mkdirs()
-                    backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                    backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
+                    val paths = SaveImportPaths(target.externalGameDir)
                     val rootCanonical = targetDir.canonicalFile
                     var imported = 0
                     for (uri in uris) {
                         ensureProcessStoppedOnIo(appCtx)
                         val fileName = queryDisplayNameStatic(appCtx, uri)
                             ?: "save_${System.currentTimeMillis()}.asd"
-                        val safeName = safeChildNameStatic(fileName) ?: continue
+                        val safeName = paths.nameForImport(fileName, atRoot = true) ?: continue
                         if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
-                            imported += extractSaveArchiveToTargetStatic(appCtx, uri, targetDir)
+                            imported += extractSaveArchiveToTargetStatic(appCtx, uri, targetDir, paths, writes)
                         } else {
                             val dst = File(rootCanonical, safeName).canonicalFile
                             if (!dst.path.startsWith(rootCanonical.path + File.separator)) continue
@@ -638,10 +583,7 @@ class SaveManagerActivity : ThemedActivity() {
                                     tmpDst.outputStream().buffered().use { output ->
                                         input.copyTo(output)
                                     }
-                                    if (!tmpDst.renameTo(dst)) {
-                                        tmpDst.copyTo(dst, overwrite = true)
-                                        tmpDst.delete()
-                                    }
+                                    writes.write(tmpDst, dst)
                                     imported++
                                 }
                             } finally {
@@ -649,7 +591,7 @@ class SaveManagerActivity : ThemedActivity() {
                             }
                         }
                     }
-                    imported
+                    imported + writes.finishFallbacks()
                 }
                 onHost {
                     it.dismissProgress()
@@ -671,6 +613,8 @@ class SaveManagerActivity : ThemedActivity() {
                     appCtx.getString(R.string.save_import_failed_title),
                     formatArchiveImportErrorForContext(appCtx, e)
                 )
+            } finally {
+                withContext(Dispatchers.IO + NonCancellable) { writes.close() }
             }
         }
 
@@ -1090,7 +1034,7 @@ class SaveManagerActivity : ThemedActivity() {
     private fun refreshFileList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
-        migrateMojibakeSaveTree(saveDir)
+        SaveImportPaths(currentTarget.externalGameDir).migrateExistingSaves(saveDir)
 
         val list = mutableListOf<SaveFileEntry>()
         collectSaveFiles(saveDir, saveDir, list)
@@ -1158,24 +1102,6 @@ class SaveManagerActivity : ThemedActivity() {
                         tag = classifySaveFile(child.name)
                     )
                 )
-            }
-        }
-    }
-
-    /** Renames legacy Shift-JIS-as-GBK mojibake save filenames/dirs in [dir] without clobbering existing targets. */
-    private fun migrateMojibakeSaveTree(dir: File) {
-        val children = dir.listFiles() ?: return
-        for (child in children) {
-            if (child.name.startsWith(".")) continue
-            if (child.isDirectory) {
-                migrateMojibakeSaveTree(child)
-            }
-            val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
-            if (repaired != child.name && !repaired.contains('/') && !repaired.contains('\\')) {
-                val target = File(dir, repaired)
-                if (!target.exists()) {
-                    child.renameTo(target)
-                }
             }
         }
     }
@@ -1464,20 +1390,16 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun runImportDirectory(treeUri: Uri) {
         if (activeJob?.isActive == true) return
-        val targetDir = currentTarget.saveDir
-        val targetDirName = currentTarget.dirName
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_import_dir))
-        activeJob = startImportDirectoryOp(appCtx, treeUri, targetDir, targetDirName)
+        activeJob = startImportDirectoryOp(appCtx, treeUri, currentTarget)
     }
 
     private fun runImportFiles(uris: List<Uri>) {
         if (activeJob?.isActive == true) return
-        val targetDir = currentTarget.saveDir
-        val targetDirName = currentTarget.dirName
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_import_files))
-        activeJob = startImportFilesOp(appCtx, uris, targetDir, targetDirName)
+        activeJob = startImportFilesOp(appCtx, uris, currentTarget)
     }
 
     private fun runExportZip(uri: Uri, asPc: Boolean) {

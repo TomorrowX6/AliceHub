@@ -265,8 +265,9 @@ public class GameSortingTest {
         } finally { controller.pause().stop().destroy(); }
     }
     private BaseAdapter adapter(GameList list) throws Exception {
-        java.lang.reflect.Constructor<?> ctor = Class.forName("io.github.kichikuou.xsystem4.GameSelectAdapter").getDeclaredConstructor(Activity.class, GameList.class);
-        ctor.setAccessible(true); return (BaseAdapter) ctor.newInstance(activity, list);
+        java.lang.reflect.Constructor<?> ctor = Class.forName("io.github.kichikuou.xsystem4.GameSelectAdapter")
+                .getDeclaredConstructor(Activity.class, GameList.class, String.class);
+        ctor.setAccessible(true); return (BaseAdapter) ctor.newInstance(activity, list, GameCatalog.INSTANCE.getRunningGameRoot(activity));
     }
     private void call(Object target, String name, Object... args) throws Exception {
         Class<?>[] types = Arrays.stream(args).map(Object::getClass).toArray(Class<?>[]::new);
@@ -297,7 +298,9 @@ public class GameSortingTest {
             call(adapter, "setFilter", "rance");
             Set<String> first = new HashSet<>(ids(entries(adapter)));
             AppSettings.INSTANCE.setGameSortMode(activity, GameSortMode.RELEASE_DATE);
-            call(adapter, "reload");
+            java.lang.reflect.Method reload = adapter.getClass().getDeclaredMethod("reload", String.class);
+            reload.setAccessible(true);
+            reload.invoke(adapter, GameCatalog.INSTANCE.getRunningGameRoot(activity));
             List<GameSelectEntry> filtered = entries(adapter);
             assertEquals(first, new HashSet<>(ids(filtered)));
             assertEquals(GameCatalog.ID_RANCE10, filtered.get(0).getDescriptor().getId());

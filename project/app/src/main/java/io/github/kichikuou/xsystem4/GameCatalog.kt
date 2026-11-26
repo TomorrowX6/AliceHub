@@ -6946,14 +6946,13 @@ object GameCatalog {
             ) {
                 return ID_RANCE06
             }
-            if ((File(saveDir, "keyfile.dat").isFile ||
-                    File(saveDir, "MsgSkipFlag.sav").isFile ||
-                    saveDir.listFiles()?.any {
-                        if (!it.isFile) return@any false
+            if ((File(saveDir, "MsgSkipFlag.sav").isFile ||
+                    saveFiles.any {
+                        if (it.name.equals("keyfile.dat", ignoreCase = true)) return@any true
                         val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it.name)
                         GALZOO_SAVE_SLOT_REGEX.matches(it.name) ||
                             GALZOO_SAVE_SLOT_REGEX.matches(repaired)
-                    } == true) &&
+                    }) &&
                 !File(saveDir, "Progress.asd").isFile &&
                 !File(saveDir, "Config.asd").isFile &&
                 !File(saveDir, "CommonSystemData.sav").isFile &&
