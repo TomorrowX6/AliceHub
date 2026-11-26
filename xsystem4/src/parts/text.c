@@ -34,7 +34,8 @@ bool parts_uses_mixed_display_text(void)
 
 char *parts_prepare_display_text(const char *text)
 {
-	return parts_uses_mixed_display_text() ? cjk_mixed_display_to_gbk(text) : NULL;
+	return sys4_text_is_gbk && !sys4_source_is_utf8
+		? cjk_mixed_display_to_gbk(text, parts_uses_mixed_display_text()) : NULL;
 }
 
 void parts_set_modifier_font_scale(int pct)

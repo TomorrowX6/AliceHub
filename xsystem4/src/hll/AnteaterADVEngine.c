@@ -193,7 +193,7 @@ static struct string *ADVLogList_GetADVLogText_value(int log_no, int line_no)
 	if (line_no < 0 || (unsigned)line_no >= log->nr_lines)
 		VM_ERROR("Invalid line number: %d", line_no);
 
-	return string_ref(log->lines[line_no]);
+	return cjk_display_log_line(log->lines[line_no]);
 }
 
 void ADVLogList_GetADVLogText(int log_no, int line_no, struct string **text)

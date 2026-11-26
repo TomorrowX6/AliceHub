@@ -1291,10 +1291,10 @@ static bool gbk_display_pair(const uint8_t *s)
 static bool display_number_char(int u)
 {
 	return (u >= 0xff10 && u <= 0xff19) || u == 0x3000
-		|| u == 0xff0b || u == 0xff0d || u == 0xff0e || u == 0xff0f;
+		|| u == 0xff0b || u == 0xff0d || u == 0xff0e || u == 0xff0f || u == 0xff1a;
 }
 
-char *cjk_mixed_display_to_gbk(const char *text)
+char *cjk_mixed_display_to_gbk(const char *text, bool allow_ambiguous)
 {
 	const uint8_t *start = (const uint8_t *)text;
 	char *out = NULL;
@@ -1306,16 +1306,23 @@ char *cjk_mixed_display_to_gbk(const char *text)
 		}
 		const uint8_t *end = s;
 		bool token_has_gbk = false, token_has_gbk_text = false, token_is_numeric = true;
+		bool has_gbk_digit = false, has_sjis_separator = false;
 		while (gbk_display_pair(end)) {
 			int sjis = sjis_display_pair(end);
 			int gbk = gbk_lookup(end[0], end[1]);
 			token_is_numeric &= display_number_char(sjis) || display_number_char(gbk);
+			has_gbk_digit |= gbk >= 0xff10 && gbk <= 0xff19;
+			has_sjis_separator |= sjis == 0xff0f || sjis == 0xff1a;
 			if (!sjis && gbk) {
 				token_has_gbk = true;
 				token_has_gbk_text |= !(end[0] == 0xa1 && end[1] == 0xa1)
 					&& !(end[0] == 0xa3 && end[1] >= 0xb0 && end[1] <= 0xb9);
 			}
 			end += 2;
+		}
+		if (!allow_ambiguous && !(token_is_numeric && has_gbk_digit && has_sjis_separator)) {
+			s = end;
+			continue;
 		}
 		while (s < end) {
 			const uint8_t *run = s;
@@ -1344,6 +1351,8 @@ char *cjk_mixed_display_to_gbk(const char *text)
 				continue;
 			for (const uint8_t *p = run; p < s; p += 2) {
 				int code = sjis_display_pair(p);
+				if (!allow_ambiguous && code != 0xff0f && code != 0xff1a)
+					continue;
 				int gbk = cjk_encode_codepoint(code, true);
 				if (gbk <= 0xff || gbk_lookup(gbk >> 8, gbk & 0xff) != code
 						|| ((p[0] << 8) | p[1]) == gbk)
@@ -1356,6 +1365,35 @@ char *cjk_mixed_display_to_gbk(const char *text)
 		}
 	}
 	return out;
+}
+
+struct string *cjk_display_log_line(struct string *line)
+{
+	const uint8_t *text = (const uint8_t *)line->text;
+	if (!sys4_text_is_gbk || sys4_source_is_utf8 || line->size < 4
+			|| text[0] != 0x81 || text[1] != 0x79)
+		return string_ref(line);
+
+	// Backlog name lines can wrap a GBK speaker in the original Shift-JIS 【%s】.
+	const uint8_t *end = text + line->size - 2;
+	if (end[0] != 0x81 || end[1] != 0x7a)
+		return string_ref(line);
+	for (const uint8_t *p = text + 2; p < end;) {
+		if (*p >= 0x20 && *p <= 0x80) {
+			p++;
+		} else if (end - p >= 2 && gbk_display_pair(p) && gbk_lookup(p[0], p[1])) {
+			p += 2;
+		} else {
+			return string_ref(line);
+		}
+	}
+
+	struct string *display = string_dup(line);
+	display->text[0] = (char)0xa1;
+	display->text[1] = (char)0xbe;
+	display->text[line->size - 2] = (char)0xa1;
+	display->text[line->size - 1] = (char)0xbf;
+	return display;
 }
 
 static char *utf2cjk_impl(const char *_src, size_t len, bool gbk, bool use_mai) {

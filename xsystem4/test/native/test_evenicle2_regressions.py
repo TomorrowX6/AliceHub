@@ -602,6 +602,16 @@ int main(void)
     free(middle_dot_utf8);
     free(middle_dot);
 
+    game_evenicle_rance_cn = false;
+    /* Escalayer Reboot's save slot formats GBK digits with CP932 separators. */
+    check_bytes("\xa3\xb2\xa3\xb0\xa3\xb2\xa3\xb6\x81\x5e",
+                "\xa3\xb0\xa3\xb5\x81\x5e\xa3\xb0\xa3\xb7", "２０２６／０５／０７");
+    check_bytes("\xa3\xb1\xa3\xb2\x81\x46",
+                "\xa3\xb3\xa3\xb4", "１２：３４");
+    check("", "俀俋侽侽侽／道具", "俀俋侽侽侽／道具");
+    check("", "１２：３４", "１２：３４");
+    game_evenicle_rance_cn = true;
+
     check("ランス", "", "ランス");
     check("１章：騎士とお姫様／蠢く蛇紋", "", "１章：騎士とお姫様／蠢く蛇紋");
     check("リッシュ・エデン", "", "リッシュ・エデン");

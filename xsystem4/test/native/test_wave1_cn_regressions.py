@@ -18,9 +18,105 @@ from test_evenicle2_regressions import (
     compile_and_run,
 )
 from test_font_and_draw_scissor_regressions import extract_function
+from test_vm_reign_regressions import extract_case_block
 
 
 class Wave1CnNativeTests(unittest.TestCase):
+    def test_vm_mixed_encoding_equality_dispatch(self):
+        vm = "src/vm.c"
+        compare = "\n".join(extract_function(vm, name) for name in (
+            "vm_string_equal_gbk", "vm_string_equal", "get_strswitch_address",
+        ))
+        cases = "\n".join(extract_case_block(vm, op) for op in (
+            "SH_IF_SREF_NE_STR0", "SH_STRUCTSREF_EQ_LOCALSREF", "SH_LOCALSREF_EQ_STR0",
+            "SH_STRUCTSREF_NE_LOCALSREF", "SH_LOCALSREF_NE_STR0", "SH_STRUCTSREF_NE_STR0",
+            "SH_GLOBALSREF_NE_STR0",
+        ))
+        harness = rf"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "system4/ain.h"
+#include "system4/instructions.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+
+static struct ain program;
+static struct ain *ain = &program;
+static uint32_t instr_ptr;
+static struct string *operands[2];
+static int literal;
+typedef struct {{ int i; }} value;
+static value left = {{ 0 }};
+#define stack_pop_var() (&left)
+#define heap_get_string(n) (operands[n])
+#define get_argument(n) (literal ? (n) : (n) ? 100 : 1)
+#define member_get(n) ((value){{ 0 }})
+#define global_get(n) ((value){{ 0 }})
+#define local_get(n) ((value){{ n }})
+#define stack_push(v) (result = (v))
+
+{compare}
+
+static int run(enum opcode opcode)
+{{
+    int result = -1;
+    instr_ptr = 0;
+    literal = opcode != SH_IF_SREF_NE_STR0;
+    switch (opcode) {{
+    {cases}
+    default: abort();
+    }}
+    return result;
+}}
+
+int main(void)
+{{
+    /* Escalayer Reboot's フーマン０１ comparison literal, with a synthetic GBK suffix. */
+    const char prefix[] = "\x83\x74\x81\x5b\x83\x7d\x83\x93";
+    char sjis[16], gbk[16], miss[16];
+    snprintf(sjis, sizeof(sjis), "%s\x82\x4f\x82\x50", prefix);
+    snprintf(gbk, sizeof(gbk), "%s\xa3\xb0\xa3\xb1", prefix);
+    snprintf(miss, sizeof(miss), "%s\xa3\xb0\xa3\xb2", prefix);
+    struct string *table[] = {{
+        make_string(gbk, strlen(gbk)), make_string(sjis, strlen(sjis)),
+        make_string(miss, strlen(miss)),
+    }};
+    struct ain_switch_case entries[] = {{ {{ .value = 1, .address = 10 }},
+                                         {{ .value = 0, .address = 20 }} }};
+    struct ain_switch sw = {{ .cases = entries, .nr_cases = 1, .default_address = 30 }};
+    program.strings = table;
+    program.switches = &sw;
+    operands[0] = table[0];
+    operands[1] = table[1];
+
+    sys4_set_text_gbk(false);
+    assert(run(SH_LOCALSREF_EQ_STR0) == 0);
+    assert(get_strswitch_address(0, table[0]) == 30);
+    sys4_set_text_gbk(true);
+    assert(vm_string_equal(table[0], table[1]));
+    assert(run(SH_LOCALSREF_EQ_STR0) == 1);
+    assert(run(SH_STRUCTSREF_EQ_LOCALSREF) == 1);
+    assert(run(SH_LOCALSREF_NE_STR0) == 0);
+    assert(run(SH_STRUCTSREF_NE_LOCALSREF) == 0);
+    assert(run(SH_STRUCTSREF_NE_STR0) == 0);
+    assert(run(SH_GLOBALSREF_NE_STR0) == 0);
+    run(SH_IF_SREF_NE_STR0);
+    assert(instr_ptr == instruction_width(SH_IF_SREF_NE_STR0));
+    assert(get_strswitch_address(0, table[0]) == 10);
+    assert(get_strswitch_address(0, table[2]) == 30);
+    sw.nr_cases = 2;
+    assert(get_strswitch_address(0, table[0]) == 20);
+    operands[0] = table[2];
+    assert(run(SH_LOCALSREF_EQ_STR0) == 0);
+    run(SH_IF_SREF_NE_STR0);
+    assert(instr_ptr == 100);
+    for (int i = 0; i < 3; i++) free_string(table[i]);
+    puts("OK");
+}}
+"""
+        self.assertEqual(compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"]).strip(), "OK")
+
     def test_wave1_hacks_tokens_and_fnl_fallback(self):
         fn_gvt = extract_function("src/hll/SystemService.c", "game_version_text")
         fn_gvbt = extract_function("src/hll/SystemService.c", "SystemService_GetGameVersionByText")

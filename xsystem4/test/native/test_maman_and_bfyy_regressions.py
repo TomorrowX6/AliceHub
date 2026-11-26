@@ -116,16 +116,20 @@ int main(void)
         self.assertEqual(out.strip(), "OK")
 
     def test_maman_backlog_hll_string_returns(self):
-        harness = """
+        harness = r"""
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
 #include "AnteaterADVEngine.h"
 #include "hll.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 
 struct ain *ain;
 extern struct static_library lib_AnteaterADVEngine;
+extern struct static_library lib_AnteaterADVLogList;
 
 _Noreturn void _vm_error(const char *fmt, ...) { abort(); }
 struct page *alloc_array(int r, union vm_value *d, enum ain_data_type t, int s, bool i) { abort(); }
@@ -208,6 +212,43 @@ int main(void) {
     free_string(line);
     free_string(name);
 
+    const char mixed[] = "\x81\x79\xc4\xe3\xba\xc3\x81\x7a";
+    const char expected[] = "\xa1\xbe\xc4\xe3\xba\xc3\xa1\xbf";
+    line = make_string(mixed, sizeof(mixed) - 1);
+    ((void (*)(struct string *, struct string *))find_export("ADVLogList_AddText")->fun)
+        (line, &EMPTY_STRING);
+    void (*add_list_text)(struct string *, struct string *) = NULL;
+    struct string *(*get_list_text)(int, int) = NULL;
+    void (*clear_list)(void) = NULL;
+    for (struct static_hll_function *f = lib_AnteaterADVLogList.functions; f->name; f++) {
+        if (!strcmp(f->name, "AddText")) add_list_text = f->fun;
+        if (!strcmp(f->name, "GetADVLogText")) get_list_text = f->fun;
+        if (!strcmp(f->name, "Clear")) clear_list = f->fun;
+    }
+    assert(add_list_text && get_list_text && clear_list);
+    add_list_text(line, &EMPTY_STRING);
+    struct string *display = get_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    sys4_set_text_gbk(true);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, expected));
+    free_string(display);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, expected));
+    free_string(display);
+    sys4_set_source_utf8(true);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    sys4_set_source_utf8(false);
+    free_string(line);
+    clear_list();
+    ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
+
     struct ain_hll_function int_voice = {
         .nr_arguments = 2, .arguments = getter_args, .return_type.data = AIN_INT,
     };
@@ -221,7 +262,8 @@ int main(void) {
 """
         out = compile_and_run(
             harness,
-            [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
+            [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/AnteaterADVLogList.c",
+             ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
             ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")
