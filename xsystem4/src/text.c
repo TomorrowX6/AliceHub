@@ -194,6 +194,9 @@ static void apply_fallback_fnl_substitute_scale(void)
 	} else if (game_rance01) {
 		static const float s[] = { 309.f / 384.f };
 		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
+	} else if (game_rance03) {
+		static const float s[] = { 268.f / 384.f };
+		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
 	} else if (game_rance8) {
 		static const float s[] = { 134.f / 192.f, 149.f / 192.f, 90.f / 128.f };
 		set_fnl_substitute_scales(s, sizeof(s) / sizeof(s[0]));
@@ -230,7 +233,7 @@ static void init_fnl_substitute_scale(void)
 		fnl_substitute_scales[i] = 1.0f;
 	// The Rance 03 CN release draws its TTF at the full requested size; its
 	// Japanese *Font.fnl ratio (0.70) shrinks the text and offsets its layout.
-	if (!fnl_uses_ttf_substitute() || game_rance03)
+	if (!fnl_uses_ttf_substitute() || (game_rance03 && sys4_text_is_gbk))
 		return;
 	if (!config.fnl_path) {
 		apply_fallback_fnl_substitute_scale();

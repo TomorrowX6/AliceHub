@@ -247,8 +247,8 @@ int main(int argc, char **argv) {{
     assert(fabsf(get_fnl_substitute_scale(260) - (156.0f / 192.0f)) < 1e-3f);
     assert(gfx_get_fnl_substitute_y_pad(256, 60.0f) == 13);
 
-    // Rance 03's CN release draws its TTF at full size, so neither the on-disk
-    // .fnl ratio nor a fallback may shrink its text.
+    // Rance 03's CN (GBK) release draws its TTF at full size, so neither the
+    // on-disk .fnl ratio nor a fallback may shrink its text.
     reset_games();
     game_rance03 = true;
     sys4_set_text_gbk(true);
@@ -260,6 +260,20 @@ int main(int argc, char **argv) {{
     config.fnl_path = NULL;
     init_fnl_substitute_scale();
     assert(fnl_substitute_count == 0);
+
+    // A stripped-FNL Japanese Rance 03 keeps the measured 268/384 fallback.
+    reset_games();
+    game_rance03 = true;
+    sys4_set_text_gbk(false);
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 1);
+    assert(fabsf(get_fnl_substitute_scale(256) - (268.0f / 384.0f)) < 1e-3f);
+    assert(gfx_get_fnl_substitute_y_pad(256, 30.0f) == 5);
+    // With its .fnl present, Japanese Rance 03 draws the native bitmap font.
+    config.fnl_path = argv[1];
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+    config.fnl_path = NULL;
 
     reset_games();
     game_rance9 = true;

@@ -874,7 +874,7 @@ static void apply_rance03_card_caption_layout(struct ain *ain)
 		return;
 	uint32_t end = find_func_end_addr(ain, fno);
 	uint32_t found = 0;
-	union { float f; uint32_t i; } old = { .f = 125.f }, replacement = { .f = 129.f };
+	union { float f; uint32_t i; } old = { .f = 125.f }, replacement = { .f = sys4_text_is_gbk ? 129.f : 121.f };
 	for (uint32_t address = ain->functions[fno].address; address + 2 <= end;) {
 		enum opcode op = LittleEndian_getW(ain->code, address);
 		if (op >= NR_OPCODES)
