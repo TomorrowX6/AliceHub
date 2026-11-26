@@ -101,6 +101,7 @@
 
     <string name="save_export_done_title">エクスポート完了</string>
     <string name="save_export_failed_title">エクスポート失敗</string>
+    <string name="save_export_live_directory_error">使用中のセーブデータを保護するため、AliceHub/saves フォルダーの外を選択してください。</string>
     <string name="save_export_zip_done_msg">%1$d 個のファイルを出力しました</string>
     <string name="save_export_dir_done_msg">%1$d 個のファイルを出力しました</string>
     <string name="save_export_pc_converted_done_msg">PC互換セーブ %1$d 個を出力しました・%2$d 個を変換</string>
@@ -507,10 +508,24 @@
     <string name="game_sort_name_short">名前</string>
     <string name="game_sort_rating_short">評価</string>
     <string name="game_sort_release_date_short">発売日</string>
-    <string name="public_storage_title">ゲームとセーブを共有ストレージに保存</string>
     <string name="public_storage_permission_message">ファイルへのアクセスを許可すると、端末の内部ストレージにある AliceHub フォルダを使い、既存のゲームとセーブを移動します。許可しない場合は、引き続きアプリ専用のストレージを使います。</string>
-    <string name="public_storage_allow">ファイルへのアクセスを許可</string>
     <string name="public_storage_migrating">ゲームとセーブを共有ストレージに移動しています…</string>
     <string name="public_storage_migration_incomplete">一部のファイルを移動できなかったため、元の場所に残しました。</string>
     <string name="public_storage_settings_unavailable">ファイルへのアクセス設定を開けませんでした。</string>
+    <string name="onboarding_step">初期設定 · %1$d / %2$d</string>
+    <string name="onboarding_welcome">AliceHub へようこそ</string>
+    <string name="onboarding_intro">Android でアリスソフトのゲームを遊べます。保存先とオンラインインストールを設定しましょう。</string>
+    <string name="onboarding_back">戻る</string>
+    <string name="onboarding_next">次へ</string>
+    <string name="onboarding_finish">AliceHub をはじめる</string>
+    <string name="storage_location">保存先</string>
+    <string name="onboarding_storage_intro">ゲームとセーブの保存先を選んでください。後から設定で変更できます。</string>
+    <string name="public_storage_option">共有ストレージに AliceHub フォルダを作成</string>
+    <string name="public_storage_benefits">• AliceHub をアンインストールしてもデータが残る\n• バックアップ、移行、パソコンへのコピーが簡単</string>
+    <string name="private_storage_option">スキップ（アプリ専用ストレージを使用）</string>
+    <string name="public_storage_why">なぜ保存先を選ぶの？</string>
+    <string name="storage_location_public">共有</string>
+    <string name="storage_location_private">アプリ専用</string>
+    <string name="storage_location_pending">アクセス許可が必要</string>
+    <string name="onboarding_online_intro">AliceHub からゲームやアップデートを直接ダウンロードできます。設定でいつでも変更できます。</string>
 </resources>

@@ -91,6 +91,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name="io.github.kichikuou.xsystem4.OnboardingActivity"
+            android:exported="false" />
+
         <activity android:name="io.github.kichikuou.xsystem4.GameHubActivity"
             android:parentActivityName="io.github.kichikuou.xsystem4.LauncherActivity"
             android:exported="false">

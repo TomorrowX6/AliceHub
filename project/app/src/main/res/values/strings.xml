@@ -102,6 +102,7 @@
 
     <string name="save_export_done_title">Export Complete</string>
     <string name="save_export_failed_title">Export Failed</string>
+    <string name="save_export_live_directory_error">Choose a destination outside the AliceHub/saves folder to protect your active saves.</string>
     <string name="save_export_zip_done_msg">Exported %1$d save files</string>
     <string name="save_export_dir_done_msg">Exported %1$d save files</string>
     <string name="save_export_pc_converted_done_msg">Exported %1$d PC-compatible save files, %2$d converted</string>
@@ -508,10 +509,24 @@
     <string name="game_sort_name_short">Name</string>
     <string name="game_sort_rating_short">Score</string>
     <string name="game_sort_release_date_short">Release date</string>
-    <string name="public_storage_title">Store games and saves in shared storage</string>
     <string name="public_storage_permission_message">Allow file access to use AliceHub in your device’s internal storage. Existing games and saves will be moved there. If you decline, AliceHub will continue to use app-specific storage.</string>
-    <string name="public_storage_allow">Allow file access</string>
     <string name="public_storage_migrating">Moving games and saves to shared storage…</string>
     <string name="public_storage_migration_incomplete">Some files could not be moved and were kept in their original location.</string>
     <string name="public_storage_settings_unavailable">Could not open file access settings.</string>
+    <string name="onboarding_step">SETUP · %1$d / %2$d</string>
+    <string name="onboarding_welcome">Welcome to AliceHub</string>
+    <string name="onboarding_intro">Play AliceSoft games on Android. Let’s set up storage and choose whether to enable online installation.</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_finish">Start using AliceHub</string>
+    <string name="storage_location">Storage location</string>
+    <string name="onboarding_storage_intro">Choose where AliceHub keeps your games and saves. You can change this in Settings.</string>
+    <string name="public_storage_option">Create the AliceHub folder in shared storage</string>
+    <string name="public_storage_benefits">• Data stays after uninstalling AliceHub\n• Easier to back up, move, or copy to a computer</string>
+    <string name="private_storage_option">Skip (use app-specific storage)</string>
+    <string name="public_storage_why">Why choose a location?</string>
+    <string name="storage_location_public">Shared</string>
+    <string name="storage_location_private">App-specific</string>
+    <string name="storage_location_pending">Access needed</string>
+    <string name="onboarding_online_intro">Download games and updates directly from AliceHub. You can enable or disable this anytime in Settings.</string>
 </resources>

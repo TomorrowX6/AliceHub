@@ -3,14 +3,17 @@ package io.github.kichikuou.xsystem4
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.util.Log
 import java.io.DataInputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.util.Locale
 
 object AppStorage {
     private const val GAMES = "games"
@@ -18,17 +21,33 @@ object AppStorage {
     private const val SAVE_BACKUPS = "save_backups"
     private const val PATH_PREFS = "public_storage_paths"
     private const val MIGRATION_ROOT_KEY = "completed_root"
+    private const val MIGRATION_STAGING_PREFIX = ".alicehub-migration-"
 
     fun hasPermission(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager(Environment.getExternalStorageDirectory())
         else context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
     fun publicRoot(context: Context): File? =
-        if (hasPermission(context) && Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED) {
-            File(Environment.getExternalStorageDirectory(), "AliceHub")
+        if (AppSettings.prefersPublicStorage(context) && hasPermission(context) &&
+            Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED
+        ) {
+            sharedStorageDirectory()
         } else {
             null
         }
+
+    private fun sharedStorageDirectory(): File = File(Environment.getExternalStorageDirectory(), "AliceHub")
+
+    fun isSharedSaveDocument(uri: Uri, tree: Boolean = false): Boolean {
+        if (uri.authority != "com.android.externalstorage.documents") return false
+        val id = if (tree) DocumentsContract.getTreeDocumentId(uri) else DocumentsContract.getDocumentId(uri)
+        if (!id.startsWith("primary:")) return false
+        val relativePath = id.removePrefix("primary:")
+        if (relativePath.isEmpty()) return false
+        val destination = File(Environment.getExternalStorageDirectory(), relativePath).canonicalPath.lowercase(Locale.ROOT)
+        val saves = File(sharedStorageDirectory(), SAVES).canonicalPath.lowercase(Locale.ROOT)
+        return destination == saves || destination.startsWith(saves + File.separator)
+    }
 
     private fun mountedLegacyGameRoots(context: Context): List<File> =
         context.getExternalFilesDirs(null).filterNotNull().filter {
@@ -67,7 +86,10 @@ object AppStorage {
     private fun dataHome(context: Context, root: String, name: String): File {
         val legacy = File(context.filesDir, "$root/$name")
         val shared = dataRoot(context, root)
-        return if (legacy.exists()) context.filesDir else shared.parentFile ?: context.filesDir
+        val emptyLegacyWithSharedData = shared != legacy.parentFile &&
+            File(shared, name).list()?.isNotEmpty() == true && legacy.list()?.isEmpty() == true
+        return if (legacy.exists() && !emptyLegacyWithSharedData) context.filesDir
+        else shared.parentFile ?: context.filesDir
     }
 
     fun resolveGamePath(context: Context, path: String): String {
@@ -91,9 +113,12 @@ object AppStorage {
         val root = publicRoot(context) ?: return false
         val preparedRoot = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
             .getString(MIGRATION_ROOT_KEY, null)
-        return preparedRoot != root.absolutePath ||
-            listOf(GAMES, SAVES, SAVE_BACKUPS).any { !File(root, it).isDirectory }
+        return preparedRoot != root.absolutePath || !publicLayoutExists(context)
     }
+
+    fun publicLayoutExists(context: Context): Boolean = publicRoot(context)?.let { root ->
+        listOf(GAMES, SAVES, SAVE_BACKUPS).all { File(root, it).isDirectory }
+    } == true
 
     fun resetPublicStoragePreparation(context: Context) {
         val prefs = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
@@ -108,6 +133,16 @@ object AppStorage {
         val saves = File(shared, SAVES)
         var complete = true
         val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+        for (target in listOf(games, backup, saves)) {
+            target.listFiles()?.filter { it.name.startsWith(MIGRATION_STAGING_PREFIX) }?.forEach {
+                try {
+                    deleteStaging(it)
+                } catch (e: IOException) {
+                    Log.w("AppStorage", "Could not remove interrupted migration staging", e)
+                    complete = false
+                }
+            }
+        }
         fun migrateRoot(source: File, target: File, include: (File) -> Boolean = { true }) {
             if (!target.isDirectory && !target.mkdirs()) {
                 complete = false
@@ -122,6 +157,12 @@ object AppStorage {
             for (entry in entries.filter { !it.name.startsWith(".migrated-") && include(it) }) {
                 val destination = File(target, entry.name)
                 try {
+                    if (target != games && destination.isDirectory &&
+                        Files.isDirectory(entry.toPath(), LinkOption.NOFOLLOW_LINKS) && entry.list()?.isEmpty() == true
+                    ) {
+                        Files.deleteIfExists(entry.toPath())
+                        continue
+                    }
                     val migrated = migrateEntry(entry, destination) {
                         if (target == games && !entry.name.startsWith('.')) {
                             System4BootEntry.copySelectedEntry(context, entry, destination)
@@ -178,10 +219,11 @@ object AppStorage {
                     if (exists(destination) || !exists(source)) throw e
                 }
             }
-            val staging = Files.createTempDirectory(destination.parentFile!!.toPath(), ".migration-").toFile()
+            val staging = Files.createTempDirectory(destination.parentFile!!.toPath(), MIGRATION_STAGING_PREFIX).toFile()
             try {
                 val copied = File(staging, "data")
                 copyEntry(source, copied)
+                if (!sameContents(source, copied)) return false
                 Files.move(copied.toPath(), destination.toPath())
             } finally {
                 staging.deleteRecursively()
@@ -197,6 +239,13 @@ object AppStorage {
     }
 
     private fun exists(file: File): Boolean = Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+    private fun deleteStaging(file: File) {
+        if (Files.isDirectory(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            for (child in file.listFiles() ?: throw IOException("Cannot list $file")) deleteStaging(child)
+        }
+        Files.deleteIfExists(file.toPath())
+    }
 
     private fun copyEntry(source: File, destination: File) {
         when {

@@ -79,18 +79,19 @@ internal fun discoverSaveTargets(
         }
 
         AppStorage.saveRoots(activity).flatMap { it.listFiles().orEmpty().asList() }
-            .filter { it.isDirectory && !it.name.startsWith('.') }.forEach { dir ->
-            if (!found.containsKey(dir.name)) {
-                val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
-                val extDir = findGameDir(dir.name, baseGameName)
-                found[dir.name] = SaveTarget(
-                    displayName = dir.name,
-                    dirName = dir.name,
-                    saveDir = dir,
-                    externalGameDir = extDir
-                )
+            .filter { it.isDirectory && !it.name.startsWith('.') && it == AppStorage.saveDir(activity, it.name) }
+            .forEach { dir ->
+                if (!found.containsKey(dir.name)) {
+                    val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
+                    val extDir = findGameDir(dir.name, baseGameName)
+                    found[dir.name] = SaveTarget(
+                        displayName = dir.name,
+                        dirName = dir.name,
+                        saveDir = dir,
+                        externalGameDir = extDir
+                    )
+                }
             }
-        }
 
         val gid = scopedGameId
         if (!gid.isNullOrBlank()) {

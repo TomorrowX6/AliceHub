@@ -668,6 +668,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, uri)
                     val outStream = appCtx.contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to create target ZIP file")
                     ZipOutputStream(outStream.buffered()).use { zos ->
@@ -707,6 +708,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, treeUri, tree = true)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     var exported = 0
                     var convCount = 0
@@ -716,6 +718,7 @@ class SaveManagerActivity : ThemedActivity() {
                         if (parts.isEmpty()) continue
                         var parentDocId = rootDocId
                         for (i in 0 until parts.size - 1) {
+                            requireSafeExportDestination(appCtx, DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId))
                             parentDocId = getOrCreateSubdirStatic(appCtx, treeUri, parentDocId, parts[i])
                         }
                         val fileName = parts.last()
@@ -723,12 +726,14 @@ class SaveManagerActivity : ThemedActivity() {
                             .firstOrNull { !it.isDirectory && it.name == fileName }
                         if (existing != null) {
                             val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
+                            requireSafeExportDestination(appCtx, existingUri)
                             try {
                                 DocumentsContract.deleteDocument(appCtx.contentResolver, existingUri)
                             } catch (_: Exception) {
                             }
                         }
                         val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+                        requireSafeExportDestination(appCtx, parentUri)
                         val newDocUri = DocumentsContract.createDocument(
                             appCtx.contentResolver,
                             parentUri,
@@ -783,6 +788,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, destUri)
                     appCtx.contentResolver.openOutputStream(destUri)?.use { out ->
                         copyExportFileStatic(appCtx, srcFile, out, asPc)
                     } ?: throw IOException("Failed to write target file")
@@ -800,6 +806,12 @@ class SaveManagerActivity : ThemedActivity() {
                     appCtx.getString(R.string.save_export_failed_title),
                     e.localizedMessage ?: appCtx.getString(R.string.error)
                 )
+            }
+        }
+
+        private fun requireSafeExportDestination(context: Context, uri: Uri, tree: Boolean = false) {
+            if (AppStorage.isSharedSaveDocument(uri, tree)) {
+                throw IOException(context.getString(R.string.save_export_live_directory_error))
             }
         }
 
