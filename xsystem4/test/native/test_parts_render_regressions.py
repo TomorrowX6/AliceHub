@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+from test_vm_reign_regressions import compile_and_run
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -1455,6 +1457,58 @@ int main(void) {
             subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror',
                             str(c), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
+
+
+class DrawFieldLockTests(unittest.TestCase):
+    def test_door_lock_returns_success_only_when_door_exists(self):
+        source = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+struct dgn_cell {
+    int north_door, east_door, south_door, west_door;
+    int north_door_lock, east_door_lock, south_door_lock, west_door_lock;
+};
+struct dgn { struct dgn_cell cell; };
+struct dungeon_context { struct dgn *dgn; };
+static struct dgn map;
+static struct dungeon_context ctx = {&map};
+static int updates;
+static struct dungeon_context *dungeon_get_context(int surface) { return surface == 1 ? &ctx : NULL; }
+static bool dgn_is_in_map(struct dgn *dgn, int x, int y, int z) {
+    return dgn == &map && x == 0 && y == 0 && z == 0;
+}
+static struct dgn_cell *dgn_cell_at(struct dgn *dgn, int x, int y, int z) {
+    assert(dgn_is_in_map(dgn, x, y, z));
+    return &dgn->cell;
+}
+static void dungeon_map_update_cell(struct dungeon_context *c, int x, int y, int z) {
+    assert(c == &ctx && dgn_is_in_map(c->dgn, x, y, z));
+    updates++;
+}
+'''
+        source += "\n".join(function(
+            "src/hll/DrawDungeon.c", f"static bool DrawField_SetDoor{direction}Lock"
+        ) for direction in "NESW")
+        source += r'''
+int main(void) {
+    bool (*setters[])(int, int, int, int, int) = {
+        DrawField_SetDoorNLock, DrawField_SetDoorELock, DrawField_SetDoorSLock, DrawField_SetDoorWLock
+    };
+    struct dgn_cell *c = &map.cell;
+    int *doors[] = {&c->north_door, &c->east_door, &c->south_door, &c->west_door};
+    int *locks[] = {&c->north_door_lock, &c->east_door_lock, &c->south_door_lock, &c->west_door_lock};
+    for (int i = 0; i < 4; i++) {
+        *doors[i] = -1;
+        assert(!setters[i](1, 0, 0, 0, 3) && *locks[i] == 0 && updates == i);
+        *doors[i] = 1;
+        assert(!setters[i](0, 0, 0, 0, 3) && !setters[i](1, -1, 0, 0, 3) && updates == i);
+        assert(setters[i](1, 0, 0, 0, 3) && *locks[i] == 3 && updates == i + 1);
+    }
+    return 0;
+}
+'''
+        compile_and_run(source)
 
 
 if __name__ == '__main__':

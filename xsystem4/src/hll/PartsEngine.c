@@ -40,6 +40,47 @@
 
 static struct id_pool user_parts_numbers;
 
+static bool PartsEngine_ReadActivityFile_legacy(struct string *name, struct string *file)
+{
+	return PE_ReadActivityFile(name, file, false);
+}
+
+static void *PartsEngine_ResolveReadActivityFile(const struct ain_hll_function *f)
+{
+	if (f->return_type.data != AIN_BOOL || (f->nr_arguments != 2 && f->nr_arguments != 3)
+			|| f->arguments[0].type.data != AIN_STRING || f->arguments[1].type.data != AIN_STRING)
+		return NULL;
+	if (f->nr_arguments == 2)
+		return PartsEngine_ReadActivityFile_legacy;
+	return f->arguments[2].type.data == AIN_BOOL ? PE_ReadActivityFile : NULL;
+}
+
+static void *PartsEngine_ResolveGaugeRate(const struct ain_hll_function *f)
+{
+	if (f->return_type.data != AIN_BOOL || f->nr_arguments != 4
+			|| f->arguments[0].type.data != AIN_INT || f->arguments[3].type.data != AIN_INT)
+		return NULL;
+	bool horizontal = !strcmp(f->name, "SetHGaugeRate");
+	enum ain_data_type ratio_type = f->arguments[1].type.data;
+	if (f->arguments[2].type.data != ratio_type)
+		return NULL;
+	if (ratio_type == AIN_FLOAT)
+		return horizontal ? PE_SetHGaugeRate : PE_SetVGaugeRate;
+	if (ratio_type == AIN_INT)
+		return horizontal ? PE_SetHGaugeRate_int : PE_SetVGaugeRate_int;
+	return NULL;
+}
+
+static void *PartsEngine_ResolveSetNumeralFont(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 13 && f->return_type.data == AIN_BOOL
+			&& f->arguments[11].type.data == AIN_BOOL && f->arguments[12].type.data == AIN_INT)
+		return PE_SetNumeralFontWithPitch;
+	if (f->nr_arguments == 12 && f->return_type.data == AIN_VOID && f->arguments[11].type.data == AIN_INT)
+		return PE_SetNumeralFont;
+	return NULL;
+}
+
 static void PartsEngine_ModuleInit(void)
 {
 	PE_Init();
@@ -2987,7 +3028,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetClickMissSoundName, PE_GetClickMissSoundName),
 	    HLL_EXPORT(IsExistActivity, PE_IsExistActivity),
 	    HLL_EXPORT(CreateActivity, PE_CreateActivity),
-	    HLL_EXPORT(ReadActivityFile, PE_ReadActivityFile),
+	    HLL_OVERLOAD(ReadActivityFile, PartsEngine_ResolveReadActivityFile),
 	    HLL_EXPORT(IsExistActivityFile, PE_IsExistActivityFile),
 	    HLL_EXPORT(AddActivityParts, PE_AddActivityParts),
 	    HLL_EXPORT(RemoveActivityParts, PE_RemoveActivityParts),
@@ -3053,14 +3094,14 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetTextCharSpace, PE_SetTextCharSpace),
 	    HLL_EXPORT(SetTextLineSpace, PE_SetTextLineSpace),
 	    HLL_EXPORT(SetHGaugeCG, PE_SetHGaugeCG),
-	    HLL_EXPORT(SetHGaugeRate, PE_SetHGaugeRate_int),
+	    HLL_OVERLOAD(SetHGaugeRate, PartsEngine_ResolveGaugeRate),
 	    HLL_EXPORT(SetVGaugeCG, PE_SetVGaugeCG),
-	    HLL_EXPORT(SetVGaugeRate, PE_SetVGaugeRate_int),
+	    HLL_OVERLOAD(SetVGaugeRate, PartsEngine_ResolveGaugeRate),
 	    HLL_EXPORT(SetHGaugeSurfaceArea, PE_SetHGaugeSurfaceArea),
 	    HLL_EXPORT(SetVGaugeSurfaceArea, PE_SetVGaugeSurfaceArea),
 	    HLL_EXPORT(SetNumeralCG, PE_SetNumeralCG),
 	    HLL_EXPORT(SetNumeralLinkedCGNumberWidthWidthList, PE_SetNumeralLinkedCGNumberWidthWidthList),
-	    HLL_EXPORT(SetNumeralFont, PE_SetNumeralFont),
+	    HLL_OVERLOAD(SetNumeralFont, PartsEngine_ResolveSetNumeralFont),
 	    HLL_EXPORT(GetNumeralFont, PE_GetNumeralFont),
 	    HLL_EXPORT(SetNumeralFullPitch, PE_SetNumeralFullPitch),
 	    HLL_EXPORT(SetNumeralShowType, PE_SetNumeralShowType),

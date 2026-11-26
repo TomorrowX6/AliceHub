@@ -531,52 +531,56 @@ HLL_LIBRARY(DrawDungeon14,
 //bool DrawField_SetDoorSAngle(int nSurface, int nX, int nY, int nZ, float fAngle);
 //bool DrawField_SetDoorEAngle(int nSurface, int nX, int nY, int nZ, float fAngle);
 
-static void DrawField_SetDoorNLock(int surface, int x, int y, int z, int value)
+static bool DrawField_SetDoorNLock(int surface, int x, int y, int z, int value)
 {
 	struct dungeon_context *ctx = dungeon_get_context(surface);
 	if (!ctx || !ctx->dgn || !dgn_is_in_map(ctx->dgn, x, y, z))
-		return;
+		return false;
 	struct dgn_cell *cell = dgn_cell_at(ctx->dgn, x, y, z);
-	if (cell->north_door != -1) {
-		cell->north_door_lock = value;
-		dungeon_map_update_cell(ctx, x, y, z);
-	}
+	if (cell->north_door == -1)
+		return false;
+	cell->north_door_lock = value;
+	dungeon_map_update_cell(ctx, x, y, z);
+	return true;
 }
 
-static void DrawField_SetDoorWLock(int surface, int x, int y, int z, int value)
+static bool DrawField_SetDoorWLock(int surface, int x, int y, int z, int value)
 {
 	struct dungeon_context *ctx = dungeon_get_context(surface);
 	if (!ctx || !ctx->dgn || !dgn_is_in_map(ctx->dgn, x, y, z))
-		return;
+		return false;
 	struct dgn_cell *cell = dgn_cell_at(ctx->dgn, x, y, z);
-	if (cell->west_door != -1) {
-		cell->west_door_lock = value;
-		dungeon_map_update_cell(ctx, x, y, z);
-	}
+	if (cell->west_door == -1)
+		return false;
+	cell->west_door_lock = value;
+	dungeon_map_update_cell(ctx, x, y, z);
+	return true;
 }
 
-static void DrawField_SetDoorSLock(int surface, int x, int y, int z, int value)
+static bool DrawField_SetDoorSLock(int surface, int x, int y, int z, int value)
 {
 	struct dungeon_context *ctx = dungeon_get_context(surface);
 	if (!ctx || !ctx->dgn || !dgn_is_in_map(ctx->dgn, x, y, z))
-		return;
+		return false;
 	struct dgn_cell *cell = dgn_cell_at(ctx->dgn, x, y, z);
-	if (cell->south_door != -1) {
-		cell->south_door_lock = value;
-		dungeon_map_update_cell(ctx, x, y, z);
-	}
+	if (cell->south_door == -1)
+		return false;
+	cell->south_door_lock = value;
+	dungeon_map_update_cell(ctx, x, y, z);
+	return true;
 }
 
-static void DrawField_SetDoorELock(int surface, int x, int y, int z, int value)
+static bool DrawField_SetDoorELock(int surface, int x, int y, int z, int value)
 {
 	struct dungeon_context *ctx = dungeon_get_context(surface);
 	if (!ctx || !ctx->dgn || !dgn_is_in_map(ctx->dgn, x, y, z))
-		return;
+		return false;
 	struct dgn_cell *cell = dgn_cell_at(ctx->dgn, x, y, z);
-	if (cell->east_door != -1) {
-		cell->east_door_lock = value;
-		dungeon_map_update_cell(ctx, x, y, z);
-	}
+	if (cell->east_door == -1)
+		return false;
+	cell->east_door_lock = value;
+	dungeon_map_update_cell(ctx, x, y, z);
+	return true;
 }
 
 static bool DrawField_GetDoorNLock(int surface, int x, int y, int z, int *lock)
