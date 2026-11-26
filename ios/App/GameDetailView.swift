@@ -214,7 +214,7 @@ struct GameDetailView: View {
         }) { target in
             Group {
                 switch target {
-                case .saves: SaveManagerView(game: active)
+                case .saves: SaveManagerView(game: active, saveDirectoryName: library.saveDirectoryName(for: active))
                 case .gamepad: GamepadEditor(game: active.id, allowsPhysicalMapping: active.engine == .system4)
                 case .editor: SaveEditorView(game: active, directory: library.savesDirectory(for: active))
                 case .manual:

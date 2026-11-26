@@ -9,6 +9,8 @@ enum GameEngine: String {
     case system4 = "System 4"
 }
 
+typealias GameLaunchInfo = (engine: GameEngine, target: URL, system39: Bool)
+
 struct Game: Identifiable, Equatable {
     let url: URL
     let displayName: String
@@ -305,13 +307,37 @@ final class GameLibrary: ObservableObject {
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private static func system4BootConfigurations(_ regularFiles: [URL], scripts: [URL]) -> [(ini: URL, script: URL)] {
-        guard !scripts.isEmpty else { return [] }
+    private static func system4ConfiguredScript(_ codeName: String, in root: URL) -> URL? {
+        let path = codeName.replacingOccurrences(of: "\\", with: "/")
+        let components = path.split(separator: "/").filter { $0 != "." }
+        guard !path.hasPrefix("/"), !path.contains("\0"), components.first?.contains(":") == false,
+              !components.contains(".."), let name = components.last?.lowercased(),
+              (name.hasSuffix(".ain") && name != "system39.ain") ||
+                (name.hasSuffix(".chs") && name != "alicestart.chs") else { return nil }
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
+        var directory = root
+        for (index, component) in components.enumerated() {
+            let leaf = String(component)
+            guard let children = try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: Array(keys)
+            ), let match = children.first(where: { $0.lastPathComponent == leaf }) ??
+                children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(leaf) == .orderedSame }),
+                let values = try? match.resourceValues(forKeys: keys),
+                values.isSymbolicLink != true else { return nil }
+            if index == components.count - 1 { return values.isRegularFile == true ? match : nil }
+            guard values.isDirectory == true else { return nil }
+            directory = match
+        }
+        return nil
+    }
+
+    private static func system4BootConfigurations(_ regularFiles: [URL], in root: URL) -> [(ini: URL, script: URL)] {
         let codeName = #"(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)""#
         return regularFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file in
             let name = file.lastPathComponent.lowercased()
             guard !name.hasPrefix("."), name != "system39.ini", name != "system3.ini",
                   name.hasSuffix(".ini") || name == "alicestart.chs",
+                  (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
                   let handle = try? FileHandle(forReadingFrom: file) else { return nil }
             defer { try? handle.close() }
             let limit = 256 * 1024
@@ -324,8 +350,8 @@ final class GameLibrary: ObservableObject {
                 let text = decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
                 guard let range = text.range(of: codeName, options: .regularExpression),
                       let firstQuote = text[range].firstIndex(of: "\"") else { continue }
-                let code = text[text.index(after: firstQuote)..<range.upperBound].dropLast().lowercased()
-                if let script = scripts.first(where: { $0.lastPathComponent.lowercased() == code }) {
+                let code = text[text.index(after: firstQuote)..<range.upperBound].dropLast()
+                if let script = system4ConfiguredScript(String(code), in: root) {
                     return (file, script)
                 }
             }
@@ -333,12 +359,12 @@ final class GameLibrary: ObservableObject {
         }
     }
 
-    private static func launchInfoFromRegularFiles(_ url: URL, regularFiles: [URL]) throws -> (engine: GameEngine, target: URL, system39: Bool) {
+    private static func launchInfoFromRegularFiles(_ url: URL, regularFiles: [URL]) throws -> GameLaunchInfo {
         if regularFiles.contains(where: { system4BootIniNames.contains($0.lastPathComponent.lowercased()) }) {
             return (.system4, url, false)
         }
         let scripts = system4ScriptFiles(regularFiles)
-        if let config = system4BootConfigurations(regularFiles, scripts: scripts).first {
+        if let config = system4BootConfigurations(regularFiles, in: url).first {
             return (.system4, config.ini, false)
         }
         if let ain = scripts.first(where: { $0.pathExtension.lowercased() == "ain" }) ?? scripts.first {
@@ -921,13 +947,15 @@ final class GameLibrary: ObservableObject {
         try launchInfo(url).target
     }
 
-    static func launchInfo(_ url: URL) throws -> (engine: GameEngine, target: URL, system39: Bool) {
+    static func launchInfo(_ url: URL, bootEntry: String = "") throws -> GameLaunchInfo {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
               let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { throw LibraryError.notGame }
         let regularFiles = contents.filter {
             (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        return try launchInfoFromRegularFiles(url, regularFiles: regularFiles)
+        let info = try launchInfoFromRegularFiles(url, regularFiles: regularFiles)
+        guard info.engine == .system4, !bootEntry.isEmpty, system4BootEntries(url).contains(bootEntry) else { return info }
+        return (.system4, url.appendingPathComponent(bootEntry), false)
     }
 
     static func system4BootEntries(_ url: URL) -> [String] {
@@ -939,9 +967,13 @@ final class GameLibrary: ObservableObject {
             return values.isRegularFile == true && values.isSymbolicLink != true
         }
         let scripts = system4ScriptFiles(regularFiles)
-        let configurations = system4BootConfigurations(regularFiles, scripts: scripts)
-        let configured = Set(configurations.map(\.script))
-        let entries = configurations.map(\.ini) + scripts.filter { !configured.contains($0) }
+        let configurations = system4BootConfigurations(regularFiles, in: url)
+        let configured = Set(configurations.map { $0.script.path })
+        let hasIsolatedSaves = usesDaiSengokuSaveFolder(url) ||
+            configurations.contains { iniUsesDaiSengokuSaveFolder($0.ini) == true }
+        let entries = configurations.map(\.ini) + scripts.filter {
+            !configured.contains($0.path) && (!hasIsolatedSaves || $0.lastPathComponent.lowercased() == "alicecn.ain")
+        }
         let hasStandardIni = regularFiles.contains { system4BootIniNames.contains($0.lastPathComponent.lowercased()) }
         guard entries.count > 1 ||
                 (hasStandardIni && entries.contains { !system4BootIniNames.contains($0.lastPathComponent.lowercased()) }) else { return [] }
@@ -960,16 +992,17 @@ final class GameLibrary: ObservableObject {
     }
 
     static func launchArguments(_ url: URL, saves: URL, bootEntry: String = "") throws -> [String] {
-        let info = try launchInfo(url)
+        launchArguments(url, saves: saves, info: try launchInfo(url, bootEntry: bootEntry))
+    }
+
+    private static func launchArguments(_ url: URL, saves: URL, info: GameLaunchInfo) -> [String] {
         switch info.engine {
         case .legacySystem3:
             return ["system3", "-gamedir", url.path, "-savedir", saves.path]
         case .system3:
             return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
         case .system4:
-            let target = !bootEntry.isEmpty && system4BootEntries(url).contains(bootEntry)
-                ? url.appendingPathComponent(bootEntry) : info.target
-            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", target.path]
+            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
         }
     }
 
@@ -1227,59 +1260,80 @@ final class GameLibrary: ObservableObject {
 
     static let daiSengokuSaveDirSuffix = "__SaveDataDSR"
 
-    static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
+    private static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
         for fileName in ["System40.ini", "AliceStart.ini"] {
-            let iniURL = gameURL.appendingPathComponent(fileName)
-            guard let data = try? Data(contentsOf: iniURL) else { continue }
-            let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-            for rawLine in text.components(separatedBy: .newlines) {
-                var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") {
-                    continue
-                }
-                guard let eq = line.firstIndex(of: "=") else { continue }
-                let key = line[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
-                guard key.caseInsensitiveCompare("SaveFolder") == .orderedSame else { continue }
-                var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
-                if value.hasPrefix("\"") {
-                    let rest = value.dropFirst()
-                    if let close = rest.firstIndex(of: "\"") {
-                        value = String(rest[..<close])
-                    } else {
-                        value = String(rest)
-                    }
-                } else {
-                    for marker in [";", "#", "//"] {
-                        if let range = value.range(of: marker) {
-                            value = String(value[..<range.lowerBound])
-                        }
-                    }
-                    value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                return value.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
-            }
-            return false
+            if let usesDSR = iniUsesDaiSengokuSaveFolder(gameURL.appendingPathComponent(fileName)) { return usesDSR }
         }
         return false
     }
 
-    static func saveDirectoryName(for gameURL: URL) -> String {
+    private static func iniUsesDaiSengokuSaveFolder(_ iniURL: URL) -> Bool? {
+        guard let data = try? Data(contentsOf: iniURL) else { return nil }
+        let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") {
+                continue
+            }
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key.caseInsensitiveCompare("SaveFolder") == .orderedSame else { continue }
+            var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.hasPrefix("\"") {
+                let rest = value.dropFirst()
+                if let close = rest.firstIndex(of: "\"") {
+                    value = String(rest[..<close])
+                } else {
+                    value = String(rest)
+                }
+            } else {
+                for marker in [";", "#", "//"] {
+                    if let range = value.range(of: marker) {
+                        value = String(value[..<range.lowerBound])
+                    }
+                }
+                value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return value.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
+        }
+        return false
+    }
+
+    private static func saveDirectoryName(for gameURL: URL, target: URL) -> String {
         let base = gameURL.lastPathComponent
-        return usesDaiSengokuSaveFolder(gameURL) ? "\(base)\(daiSengokuSaveDirSuffix)" : base
+        let usesDSR: Bool
+        if target.path == gameURL.path {
+            usesDSR = usesDaiSengokuSaveFolder(gameURL)
+        } else if target.pathExtension.lowercased() == "ini" || target.lastPathComponent.lowercased() == "alicestart.chs" {
+            usesDSR = iniUsesDaiSengokuSaveFolder(target) == true
+        } else {
+            usesDSR = false
+        }
+        return usesDSR ? "\(base)\(daiSengokuSaveDirSuffix)" : base
+    }
+
+    func saveDirectoryName(for game: Game) -> String {
+        let target = (try? Self.launchInfo(game.url, bootEntry: bootEntry(for: game)))?.target ?? game.url
+        return Self.saveDirectoryName(for: game.url, target: target)
+    }
+
+    private func savesDirectory(named name: String) -> URL {
+        documents.appendingPathComponent("Saves").appendingPathComponent(name)
     }
 
     func savesDirectory(for game: Game) -> URL {
-        documents.appendingPathComponent("Saves").appendingPathComponent(Self.saveDirectoryName(for: game.url))
+        savesDirectory(named: saveDirectoryName(for: game))
     }
 
     func launch(_ game: Game) {
         guard !launching else { return }
         do {
             guard alicehub_ios_finish_audio_shutdown() else { throw LibraryError.audioStopping }
-            let info = try Self.launchInfo(game.url)
+            let info = try Self.launchInfo(game.url, bootEntry: bootEntry(for: game))
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
-            let saves = savesDirectory(for: game)
+            let saveName = Self.saveDirectoryName(for: game.url, target: info.target)
+            let saves = savesDirectory(named: saveName)
             let logs = documents.appendingPathComponent("Logs")
             for directory in [home, saves, logs] {
                 try files.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1288,13 +1342,7 @@ final class GameLibrary: ObservableObject {
             let descriptor = open(log.path, O_WRONLY | O_CREAT | O_TRUNC, mode_t(0o644))
             guard descriptor >= 0 else { throw LibraryError.logFile }
             let workingDirectory = info.engine == .system4 ? resources.path : game.url.path
-            let arguments: [String]
-            do {
-                arguments = try Self.launchArguments(game.url, saves: saves, bootEntry: bootEntry(for: game))
-            } catch {
-                close(descriptor)
-                throw error
-            }
+            let arguments = Self.launchArguments(game.url, saves: saves, info: info)
             setenv("XSYSTEM4_HOME", home.path, 1)
             setenv("XSYSTEM4_CRASH_LOG_PATH", logs.appendingPathComponent("crash.log").path, 1)
             Self.setSystemSansFontDefaults()
@@ -1303,7 +1351,7 @@ final class GameLibrary: ObservableObject {
             setenv("XSYSTEM35_FONT_FALLBACK", resources.appendingPathComponent("fonts/HanaMinA.ttf").path, 1)
             setenv("XSYSTEM35_SOUNDFONT", resources.appendingPathComponent("soundfonts/TimGM6mb.sf2").path, 1)
             launching = true
-            SaveSyncSession.begin(game: Self.saveDirectoryName(for: game.url)) {
+            SaveSyncSession.begin(game: saveName) {
                 Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in
                     let previousDirectory = open(".", O_RDONLY)
                     let previousStdout = dup(STDOUT_FILENO)
