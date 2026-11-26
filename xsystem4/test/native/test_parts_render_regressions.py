@@ -1459,6 +1459,110 @@ int main(void) {
             subprocess.run([str(exe)], check=True)
 
 
+class WidgetTextureRecoveryTests(unittest.TestCase):
+    def test_gl_reset_restores_all_cg_skins_and_keeps_suspended_skins_unloaded(self):
+        source = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+enum { PARTS_UNINITIALIZED, PARTS_CG, PARTS_FLAT, PARTS_NR_STATES = 3 };
+struct texture { int handle, w; };
+struct common { struct texture texture; };
+struct string { int size; const char *text; };
+struct cg { int id; };
+struct parts_cg { struct common common; int no; struct string *name; };
+struct parts_text_char { struct texture t, t_edge; };
+struct parts_text_line { int nr_chars; struct parts_text_char *chars; };
+struct parts_text { struct common common; unsigned nr_lines; struct parts_text_line *lines; };
+struct parts_flat { int unused; };
+struct parts_state {
+    int type;
+    union {
+        struct common common;
+        struct parts_cg cg;
+        struct parts_text text;
+        struct parts_flat flat;
+    };
+};
+struct parts_widget {
+    struct parts_state disabled, checked_disabled, checked_states[PARTS_NR_STATES], label;
+};
+struct parts {
+    struct parts_widget *widget;
+    struct parts_state states[PARTS_NR_STATES];
+    bool textures_suspended;
+};
+static int loaded, labels_rebuilt;
+static bool gfx_remap_texture(struct texture *t) {
+    if (t->handle == -1)
+        t->handle = 0;
+    return t->handle != 0;
+}
+static struct cg *asset_cg_load(int no) {
+    static struct cg cg;
+    cg.id = no;
+    loaded++;
+    return &cg;
+}
+static struct cg *asset_cg_load_by_name(const char *name, int *no) {
+    assert(name[0] == 'd');
+    return asset_cg_load(*no = 99);
+}
+static void gfx_init_texture_with_cg(struct texture *t, struct cg *cg) { t->handle = cg->id; }
+static void cg_free(struct cg *cg) { assert(cg); }
+static void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended) {
+    (void)f; (void)suspended; assert(false);
+}
+static void parts_widget_restore_plain_skin(struct parts *p, struct parts_state *s,
+                                            int index, bool checked) {
+    assert(p->widget && index == 2 && checked);
+    s->common.texture.handle = 200;
+}
+static void parts_widget_rebuild_label(struct parts *p) { assert(p->widget); labels_rebuilt++; }
+''' + "\n".join(function("src/parts/parts.c", signature) for signature in (
+            "static void recover_cg_state",
+            "static void recover_widget_skin",
+            "static bool recover_text_state",
+            "static void recover_widget_states",
+        )) + r'''
+int main(void) {
+    struct string disabled = {1, "disabled"};
+    struct parts_text_char ch = {.t = {-1, 8}, .t_edge = {7, 8}};
+    struct parts_text_line line = {1, &ch};
+    struct parts_widget w = {
+        .disabled = {.type = PARTS_CG, .cg = {{{-1, 44}}, 0, &disabled}},
+        .checked_disabled = {.type = PARTS_CG, .cg = {{{-1, 44}}, 10, NULL}},
+        .label.text = {.nr_lines = 1, .lines = &line},
+    };
+    struct parts p = {.widget = &w};
+    for (int i = 0; i < PARTS_NR_STATES; i++) {
+        p.states[i] = (struct parts_state){.type = PARTS_CG, .cg = {{{-1, 44}}, i+1, NULL}};
+        w.checked_states[i] = (struct parts_state){.type = PARTS_CG, .cg = {{{-1, 44}}, i+4, NULL}};
+    }
+    p.states[1].common.texture.handle = 42;
+    w.checked_states[2].cg.no = 0;
+    recover_widget_states(&p);
+    assert(p.states[0].common.texture.handle == 1);
+    assert(p.states[1].common.texture.handle == 42);
+    assert(p.states[2].common.texture.handle == 3);
+    assert(w.checked_states[0].common.texture.handle == 4);
+    assert(w.checked_states[1].common.texture.handle == 5);
+    assert(w.checked_states[2].common.texture.handle == 200);
+    assert(w.disabled.common.texture.handle == 99);
+    assert(w.checked_disabled.common.texture.handle == 10);
+    assert(loaded == 6 && labels_rebuilt == 1);
+    assert(!ch.t.handle && ch.t_edge.handle == 7);
+    p.textures_suspended = true;
+    p.states[0].common.texture.handle = 0;
+    w.disabled.common.texture.handle = 0;
+    recover_widget_states(&p);
+    assert(!p.states[0].common.texture.handle && !w.disabled.common.texture.handle);
+    assert(loaded == 6 && labels_rebuilt == 1);
+}
+'''
+        compile_and_run(source)
+
+
 class DrawFieldLockTests(unittest.TestCase):
     def test_door_lock_returns_success_only_when_door_exists(self):
         source = r'''

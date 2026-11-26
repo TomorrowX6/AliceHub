@@ -160,6 +160,15 @@ static void draw_plain_button(struct parts *parts, struct parts_state *state,
 	free(pixels);
 }
 
+void parts_widget_restore_plain_skin(struct parts *parts, struct parts_state *state,
+		int index, bool checked)
+{
+	struct parts_widget *w = parts->widget;
+	bool depressed = index == PARTS_STATE_CLICKED || (checked && w->button_mode);
+	draw_plain_button(parts, state, index == PARTS_STATE_HOVERED, depressed,
+			checked && !w->button_mode);
+}
+
 static bool load_skin_any(struct parts *parts, struct parts_state *state,
 		struct string *base, bool flat, const char *const suffixes[], int n)
 {
@@ -267,11 +276,8 @@ static void rebuild_background(struct parts *parts)
 			if (!loaded)
 				loaded = load_skin(parts, state, checked_base, flat, "");
 		}
-		if (!base->size) {
-			bool depressed = (i == PARTS_STATE_CLICKED) || (checked && w->button_mode);
-			draw_plain_button(parts, state, i == PARTS_STATE_HOVERED, depressed,
-					checked && !w->button_mode);
-		}
+		if (!base->size)
+			parts_widget_restore_plain_skin(parts, state, i, checked);
 	}
 	free_string(checked_base);
 	}

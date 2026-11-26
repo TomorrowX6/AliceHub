@@ -752,6 +752,8 @@ void parts_widget_end_batch(struct parts *parts);
 const char *parts_utf8_to_cjk_literal(const char *literal);
 void parts_widget_free(struct parts *parts);
 void parts_widget_rebuild(struct parts *parts);
+void parts_widget_restore_plain_skin(struct parts *parts, struct parts_state *state,
+		int index, bool checked);
 void parts_widget_get_size(struct parts *parts, int *width, int *height);
 void parts_widget_check(struct parts *parts, bool checked);
 void parts_panel_create(struct parts *parts);
@@ -897,6 +899,7 @@ bool parts_flash_seek(struct parts_flash *f, int frame);
 void parts_flat_free(struct parts_flat *f);
 void parts_flat_cache_clear(void);
 bool parts_flat_load(struct parts *parts, struct parts_flat *f, struct string *filename);
+void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended);
 bool parts_flat_update(struct parts_flat *f, int passed_time);
 struct flat_layer_state *parts_flat_layer_state_new(size_t nr_timelines);
 void parts_flat_layer_state_free(struct flat_layer_state *s);
