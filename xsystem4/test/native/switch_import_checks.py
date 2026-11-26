@@ -158,6 +158,16 @@ int main(int argc, char **argv)
         (legacy / "ACG0.DAT").write_bytes(b"data")
         self.assertEqual(self.run_import(legacy), "local:system3:Legacy")
 
+    def test_custom_system4_launcher_with_nested_code(self):
+        source = self.sd / "Wrapper"
+        data = source / "Translated" / "Data"
+        data.mkdir(parents=True)
+        (data.parent / "ChineseLauncher.ini").write_text('CodeName = ".\\dAtA\\PATCH.CHS"\n')
+        (data / "Patch.chs").write_bytes(b"code")
+        self.assertEqual(self.run_import(source), "local:xsystem4:Translated")
+        installed = self.library / "xsystem4/games/Translated"
+        self.assertEqual((installed / "Data/Patch.chs").read_bytes(), b"code")
+
     def test_zip_wrapped_game_descriptors_and_zip64(self):
         class StreamingZip:
             def __init__(self, file):

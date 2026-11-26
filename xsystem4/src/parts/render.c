@@ -93,11 +93,17 @@ void parts_render_pass_begin(void)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
 
 	glBindVertexArray(sdl.gl.vao);
-	glEnableVertexAttribArray(parts_shader.shader.vertex_pos);
-	glEnableVertexAttribArray(parts_shader.shader.vertex_uv);
 	glBindBuffer(GL_ARRAY_BUFFER, sdl.gl.vbo);
-	glVertexAttribPointer(parts_shader.shader.vertex_pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
-	glVertexAttribPointer(parts_shader.shader.vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	GLint pos = parts_shader.shader.vertex_pos;
+	GLint uv = parts_shader.shader.vertex_uv;
+	if (pos >= 0) {
+		glEnableVertexAttribArray(pos);
+		glVertexAttribPointer(pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
+	}
+	if (uv >= 0) {
+		glEnableVertexAttribArray(uv);
+		glVertexAttribPointer(uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	}
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sdl.gl.rect_ibo);
 
 	glActiveTexture(GL_TEXTURE0);
@@ -128,8 +134,10 @@ void parts_render_pass_end(void)
 		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
 	}
 	glActiveTexture(GL_TEXTURE0);
-	glDisableVertexAttribArray(parts_shader.shader.vertex_pos);
-	glDisableVertexAttribArray(parts_shader.shader.vertex_uv);
+	if (parts_shader.shader.vertex_pos >= 0)
+		glDisableVertexAttribArray(parts_shader.shader.vertex_pos);
+	if (parts_shader.shader.vertex_uv >= 0)
+		glDisableVertexAttribArray(parts_shader.shader.vertex_uv);
 	glBindVertexArray(0);
 	glUseProgram(0);
 }

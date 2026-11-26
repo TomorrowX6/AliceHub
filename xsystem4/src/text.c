@@ -231,7 +231,9 @@ static void init_fnl_substitute_scale(void)
 	fnl_substitute_count = 0;
 	for (unsigned i = 0; i < MAX_FNL_FONTS; i++)
 		fnl_substitute_scales[i] = 1.0f;
-	if (!fnl_uses_ttf_substitute())
+	// The Rance 03 CN release draws its TTF at the full requested size; its
+	// Japanese *Font.fnl ratio (0.70) shrinks the text and offsets its layout.
+	if (!fnl_uses_ttf_substitute() || (game_rance03 && sys4_text_is_gbk))
 		return;
 	if (!config.fnl_path) {
 		apply_fallback_fnl_substitute_scale();

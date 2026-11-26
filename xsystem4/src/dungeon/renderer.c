@@ -265,10 +265,14 @@ static void geometry_init_gl(struct geometry *g, struct dungeon_renderer *r)
 	glGenBuffers(1, &g->attr_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, g->attr_buffer);
 
-	glEnableVertexAttribArray(r->shader.vertex_pos);
-	glVertexAttribPointer(r->shader.vertex_pos, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)0);
-	glEnableVertexAttribArray(r->shader.vertex_uv);
-	glVertexAttribPointer(r->shader.vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)(3 * sizeof(GLfloat)));
+	if (r->shader.vertex_pos >= 0) {
+		glEnableVertexAttribArray(r->shader.vertex_pos);
+		glVertexAttribPointer(r->shader.vertex_pos, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)0);
+	}
+	if (r->shader.vertex_uv >= 0) {
+		glEnableVertexAttribArray(r->shader.vertex_uv);
+		glVertexAttribPointer(r->shader.vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (const void *)(3 * sizeof(GLfloat)));
+	}
 	glBufferData(GL_ARRAY_BUFFER, g->vertices_size, g->vertices, GL_STATIC_DRAW);
 
 	glBindVertexArray(0);

@@ -17,6 +17,9 @@
 
 #include <SDL.h>
 #include "gfx/gl.h"
+#if defined(USE_GLES) && defined(__linux__)
+#include <GLES2/gl2ext.h>
+#endif
 #include <cglm/cglm.h>
 #include <string.h>
 #include <errno.h>
@@ -735,8 +738,13 @@ void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const c
 
 	GLint link_success;
 	glGetProgramiv(program, GL_LINK_STATUS, &link_success);
-	if (!link_success)
-		ERROR("Failed to link shader: %s, %s", vertex_shader_path, fragment_shader_path);
+	if (!link_success) {
+		GLint len;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+		char *infolog = xcalloc(len + 1, 1);
+		glGetProgramInfoLog(program, len, NULL, infolog);
+		ERROR("Failed to link shader %s, %s: %s", vertex_shader_path, fragment_shader_path, infolog);
+	}
 
 	dst->program = program;
 	dst->world_transform = glGetUniformLocation(program, "world_transform");
@@ -747,8 +755,63 @@ void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const c
 	dst->prepare = NULL;
 }
 
+#if defined(USE_GLES) && defined(__linux__)
+static void GL_APIENTRY gl_diagnostic_message(GLenum source, GLenum type, GLuint id,
+		GLenum severity, GLsizei length, const GLchar *message, const void *user)
+{
+	(void)user;
+	if (type == GL_DEBUG_TYPE_ERROR_KHR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR)
+		WARNING("GLES debug message (source=0x%x type=0x%x id=%u severity=0x%x): %.*s",
+			source, type, id, severity, length, message);
+}
+
+static bool gl_diagnostics_requested(void)
+{
+#ifdef __ANDROID__
+	char value[PROP_VALUE_MAX] = {0};
+	__system_property_get("log.tag.AliceHubGLES", value);
+	return !strcmp(value, "DEBUG") || !strcmp(value, "VERBOSE");
+#else
+	const char *value = SDL_getenv("ALICEHUB_GLES_DEBUG");
+	return value && !strcmp(value, "1");
+#endif
+}
+
+static void gl_enable_diagnostics(void)
+{
+	if (!gl_diagnostics_requested())
+		return;
+
+	if (!SDL_GL_ExtensionSupported("GL_KHR_debug")) {
+		WARNING("GLES diagnostics: GL_KHR_debug is unavailable");
+		return;
+	}
+	PFNGLDEBUGMESSAGECALLBACKKHRPROC callback = (PFNGLDEBUGMESSAGECALLBACKKHRPROC)
+		SDL_GL_GetProcAddress("glDebugMessageCallbackKHR");
+	if (!callback) {
+		WARNING("GLES diagnostics: glDebugMessageCallbackKHR is unavailable");
+		return;
+	}
+	callback(gl_diagnostic_message, NULL);
+	glEnable(GL_DEBUG_OUTPUT_KHR);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_KHR);
+}
+#endif
+
 static int gl_initialize(void)
 {
+#ifdef USE_GLES
+#ifdef __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "libsys4", "GLES driver: vendor=%s renderer=%s version=%s",
+		glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
+#else
+	NOTICE("GLES driver: vendor=%s renderer=%s version=%s", glGetString(GL_VENDOR),
+		glGetString(GL_RENDERER), glGetString(GL_VERSION));
+#endif
+#endif
+#if defined(USE_GLES) && defined(__linux__)
+	gl_enable_diagnostics();
+#endif
 	gfx_load_shader(&default_shader, "shaders/render.v.glsl", "shaders/render.f.glsl");
 
 	const struct gfx_vertex vertex_data[] = {
@@ -884,6 +947,49 @@ static void init_window_size(void)
 #endif
 }
 
+static void gfx_create_window_and_context(uint32_t window_flags)
+{
+#if defined(USE_GLES) && defined(__linux__)
+	int context_flags = 0;
+	bool debug_context = false;
+	if (gl_diagnostics_requested()) {
+		if (SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &context_flags) == 0 &&
+				SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, context_flags | SDL_GL_CONTEXT_DEBUG_FLAG) == 0) {
+			debug_context = true;
+		} else {
+			WARNING("GLES diagnostics: could not request a debug context: %s", SDL_GetError());
+			SDL_ClearError();
+		}
+	}
+#endif
+
+	for (;;) {
+		sdl.window = SDL_CreateWindow("XSystem4", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+				config.view_width, config.view_height, window_flags);
+		if (sdl.window) {
+			set_window_title();
+			sdl.gl.context = SDL_GL_CreateContext(sdl.window);
+			if (sdl.gl.context)
+				return;
+		}
+#if defined(USE_GLES) && defined(__linux__)
+		if (debug_context) {
+			WARNING("GLES diagnostics: debug context creation failed; retrying without the debug flag: %s",
+				SDL_GetError());
+			if (sdl.window)
+				SDL_DestroyWindow(sdl.window);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, context_flags & ~SDL_GL_CONTEXT_DEBUG_FLAG);
+			SDL_ClearError();
+			debug_context = false;
+			continue;
+		}
+#endif
+		if (!sdl.window)
+			ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
+		ERROR("SDL_GL_CreateContext failed: %s", SDL_GetError());
+	}
+}
+
 int gfx_init(void)
 {
 	if (gfx_initialized)
@@ -916,20 +1022,7 @@ int gfx_init(void)
 #ifdef ALICEHUB_IOS
 	window_flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_ALLOW_HIGHDPI;
 #endif
-	sdl.window =  SDL_CreateWindow("XSystem4",
-				       SDL_WINDOWPOS_UNDEFINED,
-				       SDL_WINDOWPOS_UNDEFINED,
-				       config.view_width,
-				       config.view_height,
-				       window_flags);
-	if (!sdl.window)
-		ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
-
-	set_window_title();
-
-	sdl.gl.context = SDL_GL_CreateContext(sdl.window);
-	if (!sdl.gl.context)
-		ERROR("SDL_GL_CreateContext failed: %s", SDL_GetError());
+	gfx_create_window_and_context(window_flags);
 #ifdef ALICEHUB_IOS
 	alicehub_ios_prepare_window(sdl.window);
 #endif
@@ -1713,13 +1806,18 @@ void gfx_prepare_job(struct gfx_render_job *job)
  */
 void gfx_run_job(struct gfx_render_job *job)
 {
+	GLint pos = job->shader->vertex_pos;
+	GLint uv = job->shader->vertex_uv;
 	glBindVertexArray(sdl.gl.vao);
-	glEnableVertexAttribArray(job->shader->vertex_pos);
-	glEnableVertexAttribArray(job->shader->vertex_uv);
-
 	glBindBuffer(GL_ARRAY_BUFFER, job->shape == GFX_QUADRILATERAL ? sdl.gl.quad_vbo : sdl.gl.vbo);
-	glVertexAttribPointer(job->shader->vertex_pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
-	glVertexAttribPointer(job->shader->vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	if (pos >= 0) {
+		glEnableVertexAttribArray(pos);
+		glVertexAttribPointer(pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
+	}
+	if (uv >= 0) {
+		glEnableVertexAttribArray(uv);
+		glVertexAttribPointer(uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	}
 
 	switch (job->shape) {
 	case GFX_RECTANGLE:
@@ -1733,8 +1831,10 @@ void gfx_run_job(struct gfx_render_job *job)
 		break;
 	}
 
-	glDisableVertexAttribArray(job->shader->vertex_pos);
-	glDisableVertexAttribArray(job->shader->vertex_uv);
+	if (pos >= 0)
+		glDisableVertexAttribArray(pos);
+	if (uv >= 0)
+		glDisableVertexAttribArray(uv);
 	glBindVertexArray(0);
 	glUseProgram(0);
 }

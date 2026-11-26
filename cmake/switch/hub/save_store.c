@@ -382,8 +382,8 @@ static bool transfer(Store *store, const char *src, const char *dest, const char
 
 static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp op)
 {
-    char local[HUB_PATH_SIZE], engine[SAVE_PATH_SIZE], game_dir[SAVE_PATH_SIZE],
-         base[SAVE_PATH_SIZE], target[SAVE_PATH_SIZE], sync[SAVE_PATH_SIZE], backups[SAVE_PATH_SIZE];
+    char local[HUB_PATH_SIZE], game_dir[HUB_PATH_SIZE], target[SAVE_PATH_SIZE],
+         sync[SAVE_PATH_SIZE], backups[SAVE_PATH_SIZE];
     HubGame validated;
     if (!hub_game_init(&validated, game->engine, game->name)) {
         errno = EINVAL;
@@ -393,11 +393,7 @@ static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp o
         errno = ENAMETOOLONG;
         return false;
     }
-    const char *save_name = strrchr(local, '/');
-    save_name = (save_name && save_name[1]) ? save_name + 1 : validated.name;
-    if (!path_join(base, root, "save-manager") ||
-        !path_join(engine, base, hub_engines[validated.engine].id) ||
-        !path_join(game_dir, engine, save_name) ||
+    if (!hub_game_save_manager_path(root, &validated, game_dir) ||
         !path_join(backups, game_dir, "Backups") || !path_join(sync, game_dir, "Sync"))
         return false;
 

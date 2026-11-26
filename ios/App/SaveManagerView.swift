@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct SaveManagerView: View {
     let game: Game
+    let saveDirectoryName: String
     @Environment(\.dismiss) private var dismiss
     @HubLocalizedText private var localized
     @State private var entries: [SaveManager.FileEntry] = []
@@ -14,7 +15,7 @@ struct SaveManagerView: View {
     @State private var naming: SaveNaming?
 
     private var manager: SaveManager {
-        SaveManager(game: GameLibrary.saveDirectoryName(for: game.url)) { source, destination in
+        SaveManager(game: saveDirectoryName) { source, destination in
             guard savedata_export_pc_file(source.path, destination.path) else { throw SaveManager.Failure.conversion }
         }
     }

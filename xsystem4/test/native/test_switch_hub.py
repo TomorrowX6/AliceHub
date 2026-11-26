@@ -1091,6 +1091,158 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
 
+    def test_system4_engine_resolves_nested_launcher_paths_on_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "sdmc:/switch/Game"
+            data = game / "Data"
+            data.mkdir(parents=True)
+            (data / "Patch.ain").touch()
+            (data / "Font.ttf").touch()
+            exe = root / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-D__SWITCH__", "-ffunction-sections", "-fdata-sections",
+                 "-I", str(ENGINE / "include"), "-I", str(SYS4 / "include"),
+                 str(ENGINE / "src/util.c"),
+                 *(str(SYS4 / "src" / name) for name in ("file.c", "system.c", "utfsjis.c")),
+                 "-Wl,--gc-sections", "-x", "c", "-", "-o", str(exe)],
+                input=r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/file.h"
+#include "xsystem4.h"
+
+struct config config = {.game_dir = "sdmc:/switch/Game"};
+
+int main(void)
+{
+    assert(!file_exists("sdmc:/switch/Game/./dAtA/PATCH.AIN"));
+    assert(file_exists("sdmc:/switch/Game/Data/Patch.ain"));
+
+    char *code = gamedir_path(".\\dAtA\\PATCH.AIN");
+    assert(!strcmp(code, "sdmc:/switch/Game/Data/Patch.ain") && file_exists(code));
+    free(code);
+    char *font = gamedir_path_icase("sdmc:/SWITCH/Game/data/font.ttf");
+    assert(font && !strcmp(font, "sdmc:/switch/Game/Data/Font.ttf"));
+    free(font);
+    assert(!gamedir_path_icase("Missing\\PATCH.AIN"));
+    return 0;
+}
+""",
+                text=True, check=True,
+            )
+            subprocess.run([str(exe)], cwd=root, check=True)
+
+    def test_system4_boot_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(HUB),
+                 str(HUB / "model.c"), "-x", "c", "-", "-o", str(exe)],
+                input=r"""
+#include "model.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void put(const char *path, const char *content)
+{
+    FILE *out = fopen(path, "wb");
+    assert(out && fputs(content, out) >= 0 && !fclose(out));
+}
+
+int main(void)
+{
+    assert(!mkdir("xsystem4", 0700));
+    assert(!mkdir("xsystem4/games", 0700));
+    assert(!chdir("xsystem4/games"));
+    assert(!mkdir("Game", 0700));
+    assert(!mkdir("Other", 0700));
+    assert(!mkdir("Game/Data", 0700));
+    put("Game/System40.ini", "CodeName = \"Original.ain\"\n");
+    put("Game/Original.ain", "");
+    put("Game/AliceStart.CHS", "CodeName = \"OYA.CHS\"\n");
+    put("Game/Oya.chs", "");
+    put("Game/ChineseLauncher.ini", "\xef\xbb\xbf\tCodeName = \".\\dAtA\\PATCH.AIN\"\n");
+    put("Game/Data/Patch.ain", "");
+    put("Game/Encoded.ini", "CodeName = \"\xd6\xd0\xce\xc4.ain\"\n");
+    put("Game/中文.ain", "");
+    put("Game/Unconfigured.chs", "");
+    put("Game/Missing.ini", "CodeName = \"missing.ain\"\n");
+    put("Outside.ain", "");
+    put("Game/Outside.ini", "CodeName = \"../Outside.ain\"\n");
+    assert(!symlink("..", "Game/Alias"));
+    put("Game/Alias.ini", "CodeName = \"Alias/Outside.ain\"\n");
+    put("Game/ChineseLauncher.exe", "");
+    put("Game/system39.ini", "CodeName = \"Original.ain\"\n");
+    put("Game/system39.ain", "");
+
+    HubBootEntries entries;
+    assert(hub_system4_boot_entries("Game", &entries) && entries.count == 4);
+    assert(!strcmp(entries.names[0], "AliceStart.CHS"));
+    assert(!strcmp(entries.names[1], "ChineseLauncher.ini"));
+    assert(!strcmp(entries.names[2], "Encoded.ini"));
+    assert(!strcmp(entries.names[3], "System40.ini"));
+    hub_boot_entries_free(&entries);
+
+    bool dsr;
+    char target[HUB_PATH_SIZE], entry[HUB_NAME_SIZE];
+    assert(hub_system4_resolve("Game", target, &dsr) && !dsr && !strcmp(target, "Game"));
+    assert(hub_game_boot_set("Game", "AliceStart.CHS"));
+    assert(hub_game_boot_get("Game", entry) && !strcmp(entry, "AliceStart.CHS"));
+    assert(!hub_game_boot_get("Other", entry));
+    assert(hub_system4_resolve("Game", target, &dsr) && !dsr && !strcmp(target, "Game/AliceStart.CHS"));
+    assert(!unlink("Game/AliceStart.CHS"));
+    assert(hub_system4_resolve("Game", target, &dsr) && !strcmp(target, "Game"));
+    assert(hub_game_boot_set("Game", "ChineseLauncher.ini"));
+    assert(hub_system4_resolve("Game", target, &dsr) && !strcmp(target, "Game/ChineseLauncher.ini"));
+    assert(!hub_game_boot_set("Game", "../Outside.ain"));
+    assert(hub_game_boot_set("Game", ""));
+    assert(hub_system4_resolve("Game", target, &dsr) && !strcmp(target, "Game"));
+    assert(!unlink("Game/System40.ini"));
+    assert(hub_system4_resolve("Game", target, &dsr) && !strcmp(target, "Game/ChineseLauncher.ini"));
+
+    put("Other/Original.ain", "");
+    assert(hub_system4_boot_entries("Other", &entries) && !entries.count);
+    assert(hub_system4_resolve("Other", target, &dsr) && !strcmp(target, "Other/Original.ain"));
+    put("Other/CHS.TBL", "");
+    put("Other/Alternative.chs", "");
+    assert(hub_system4_boot_entries("Other", &entries) && entries.count == 2);
+    assert(!strcmp(entries.names[0], "Alternative.chs"));
+    hub_boot_entries_free(&entries);
+
+    assert(!mkdir("Standard", 0700));
+    put("Standard/System40.ini", "CodeName = \"Missing.ain\"\n");
+    put("Standard/AliceStart2.ini", "CodeName = \"Missing.ain\"\nCodeName = \"Present.ain\"\n");
+    put("Standard/AliceStart.ini", "CodeName = \"Present.ain\"\nCodeName = \"Missing.ain\"\n");
+    put("Standard/Present.ain", "");
+    assert(!hub_system4_configured_script("Standard", "AliceStart.ini", target));
+    assert(hub_system4_configured_script("Standard", "AliceStart2.ini", target));
+    assert(hub_system4_boot_entries("Standard", &entries) && entries.count == 1);
+    assert(!strcmp(entries.names[0], "AliceStart2.ini"));
+    hub_boot_entries_free(&entries);
+    assert(hub_game_boot_set("Standard", "AliceStart2.ini"));
+    assert(hub_system4_resolve("Standard", target, &dsr) && !strcmp(target, "Standard/AliceStart2.ini"));
+
+    char long_dir[HUB_PATH_SIZE] = "Other";
+    const char *component = "/01234567890123456789012345678901234567890123456789";
+    while (strlen(long_dir) + strlen(component) < HUB_PATH_SIZE - 10) {
+        strcat(long_dir, component);
+        assert(!mkdir(long_dir, 0700));
+    }
+    char long_script[2 * HUB_PATH_SIZE];
+    assert(snprintf(long_script, sizeof(long_script), "%s/%080d.ain", long_dir, 0) >= HUB_PATH_SIZE);
+    put(long_script, "");
+    assert(!hub_system4_resolve(long_dir, target, &dsr) && !*target);
+    return 0;
+}
+""",
+                text=True, check=True,
+            )
+            subprocess.run([str(exe)], cwd=tmp, check=True)
+
     def test_instance_copy_and_delete(self):
         hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         with tempfile.TemporaryDirectory() as tmp:
@@ -1489,6 +1641,7 @@ int main(void)
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static void put(const char *path, const char *content)
 {
@@ -1545,6 +1698,28 @@ int main(void)
     assert(!stat("./xsystem4/saves/FreshDSR__SaveDataDSR", &st) && S_ISDIR(st.st_mode));
     expect("./xsystem4/saves/Challenge__SaveDataDSR/Save001.asd", "retained-dsr");
 
+    const char *dir = "xsystem4/games/SengokuRance";
+    put("xsystem4/games/SengokuRance/DaiSengoku.ain", "");
+    put("xsystem4/games/SengokuRance/AliceCN.ain", "");
+    put("xsystem4/games/SengokuRance/Unrecognized.ain", "");
+    HubBootEntries entries;
+    assert(hub_system4_boot_entries(dir, &entries) && entries.count == 2);
+    assert(!strcmp(entries.names[0], "System40.ini") && !strcmp(entries.names[1], "AliceCN.ain"));
+    hub_boot_entries_free(&entries);
+    char target[HUB_PATH_SIZE], entry[HUB_NAME_SIZE], selected_save[HUB_PATH_SIZE];
+    bool selected_dsr;
+    assert(hub_game_boot_set(dir, "System40.ini"));
+    assert(hub_system4_resolve(dir, target, &selected_dsr) && selected_dsr);
+    assert(!strcmp(target, "xsystem4/games/SengokuRance/System40.ini"));
+    assert(hub_game_boot_set(dir, "AliceCN.ain"));
+    assert(hub_game_save_path(".", &game, selected_save) && !strcmp(selected_save, vanilla_save));
+    assert(hub_system4_resolve(dir, target, &selected_dsr) && !selected_dsr);
+    assert(!strcmp(target, "xsystem4/games/SengokuRance/AliceCN.ain"));
+    assert(hub_instance_copy(".", &game, "Independent", NULL) == HUB_INSTANCE_OK);
+    assert(!hub_game_boot_get("xsystem4/games/Independent", entry));
+    assert(hub_game_boot_set(dir, "Unrecognized.ain"));
+    assert(hub_game_save_path(".", &game, selected_save) && !strcmp(selected_save, dsr_save));
+
     put("xsystem4/games/SengokuRance/System40.ini",
         "GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n");
     char restored_save[HUB_PATH_SIZE];
@@ -1552,6 +1727,39 @@ int main(void)
     assert(!strcmp(restored_save, vanilla_save));
     expect("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
     expect("./xsystem4/saves/SengokuRance__SaveDataDSR/Save001.asd", "dsr-save");
+
+    put("xsystem4/games/SengokuRance/Mod.ini",
+        "CodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\nSaveFolder = \"../ModSaveData\"\n");
+    put("xsystem4/games/SengokuRance/OtherMod.ini",
+        "CodeName = \"AliceCN.ain\"\nSaveFolder = \"OtherModSaveData\"\n");
+    put("xsystem4/games/SengokuRance/DSR.ini",
+        "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n");
+    assert(hub_game_boot_set(dir, "Mod.ini"));
+    char mod_save[HUB_PATH_SIZE], manager[HUB_PATH_SIZE], key[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &game, mod_save));
+    assert(strstr(mod_save, "/saves/.launch-entries/SengokuRance/") && !strstr(mod_save, "../"));
+    assert(hub_system4_resolve(dir, target, &selected_dsr));
+    assert(hub_system4_save_key(game.name, dir, target, key));
+    assert(!strcmp(mod_save + strlen("./xsystem4/saves/"), key));
+    assert(hub_game_save_manager_path(".", &game, manager));
+    assert(!strcmp(manager + strlen("./save-manager/xsystem4/"), key));
+    assert(!mkdir("./xsystem4/saves/.launch-entries", 0700));
+    assert(!mkdir("./xsystem4/saves/.launch-entries/SengokuRance", 0700));
+    assert(!mkdir(mod_save, 0700));
+    assert(hub_game_boot_set(dir, "OtherMod.ini"));
+    assert(hub_game_save_path(".", &game, selected_save) && strcmp(selected_save, mod_save));
+    assert(!mkdir(selected_save, 0700));
+    assert(!unlink("xsystem4/games/SengokuRance/Mod.ini"));
+
+    assert(!mkdir("xsystem4/games/Independent__SaveDataDSR", 0700));
+    HubGame independent;
+    assert(hub_game_init(&independent, HUB_XSYSTEM4, "Independent"));
+    assert(hub_instance_delete(".", &independent, true) == HUB_INSTANCE_OK);
+    assert(!access("xsystem4/saves/Independent__SaveDataDSR", F_OK));
+    assert(hub_instance_delete(".", &game, true) == HUB_INSTANCE_OK);
+    assert(access(vanilla_save, F_OK) && access(dsr_save, F_OK));
+    assert(access(mod_save, F_OK) && access(selected_save, F_OK));
+    assert(!access("xsystem4/saves/Challenge__SaveDataDSR/Save001.asd", F_OK));
     return 0;
 }
 """,
