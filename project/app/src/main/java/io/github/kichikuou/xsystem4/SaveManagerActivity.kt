@@ -837,6 +837,9 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val loader = SaveScreenLoader(scope)
+    private var firstResume = true
+    private var restoredTargetDir: String? = null
     private var activeJob: Job?
         get() = opJob
         set(value) { opJob = value }
@@ -844,7 +847,6 @@ class SaveManagerActivity : ThemedActivity() {
     private val trackedDialogs = mutableListOf<Dialog>()
 
     private var scopedGameId: String? = null
-    private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: SaveFileAdapter
     private var currentEntries: List<SaveFileEntry> = emptyList()
@@ -896,17 +898,9 @@ class SaveManagerActivity : ThemedActivity() {
             pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
             pendingSingleExportAsPc = savedInstanceState.getBoolean(STATE_SINGLE_EXPORT_AS_PC, false)
         }
-        val savedTargetDir = savedInstanceState?.getString(STATE_TARGET_DIR)
-        discoverSaveTargets(
-            preferredDirName = savedTargetDir ?: intent.getStringExtra(EXTRA_DIR_NAME),
-            resolveInstallAlias = savedTargetDir == null
-        )
+        restoredTargetDir = savedInstanceState?.getString(STATE_TARGET_DIR)
         if (opJob?.isActive == true) {
             showProgress(opProgressMessage ?: getString(R.string.action_save_manager))
-        } else {
-            // Leftovers of an import interrupted by a process death.
-            filesDir.listFiles()?.filter { it.name.startsWith(SAVE_IMPORT_TMP_PREFIX) }
-                ?.forEach { it.deleteRecursively() }
         }
 
         findViewById<View>(R.id.btn_switch_game).setOnClickListener { showSwitchTargetDialog() }
@@ -920,25 +914,27 @@ class SaveManagerActivity : ThemedActivity() {
 
         listView.setOnItemClickListener { _, _, pos, _ ->
             val index = pos - listView.headerViewsCount
-            if (index in 0 until adapter.count) {
+            if (!loader.isLoading && index in 0 until adapter.count) {
                 showSingleFileManageDialog(adapter.getItem(index))
             }
         }
 
-        refreshFileList()
+        loadFileList(cleanInterruptedImports = opJob?.isActive != true)
     }
 
     override fun onResume() {
         super.onResume()
         liveHostRef = java.lang.ref.WeakReference(this)
-        if (::currentTarget.isInitialized) {
-            refreshFileList()
-        }
+        if (!firstResume && !loader.isLoading) refreshFileList()
+        firstResume = false
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if (::currentTarget.isInitialized) outState.putString(STATE_TARGET_DIR, currentTarget.dirName)
+        outState.putString(
+            STATE_TARGET_DIR,
+            if (::currentTarget.isInitialized) currentTarget.dirName else restoredTargetDir
+        )
         outState.putBoolean(STATE_EXPORT_AS_PC, pendingExportAsPc)
         pendingSingleExportFile?.let { outState.putString(STATE_SINGLE_EXPORT_FILE, it.absolutePath) }
         outState.putBoolean(STATE_SINGLE_EXPORT_AS_PC, pendingSingleExportAsPc)
@@ -962,101 +958,77 @@ class SaveManagerActivity : ThemedActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun discoverSaveTargets(
-        preferredDirName: String? = null,
-        resolveInstallAlias: Boolean = false
-    ) {
-        val savesRoot = File(filesDir, "saves")
-        savesRoot.mkdirs()
-
-        val found = LinkedHashMap<String, SaveTarget>()
-        var resolvedPreferredDirName = preferredDirName
-        val gameList = GameList(this)
-        try {
-            for (i in 0 until gameList.size) {
-                val item = gameList[i]
-                val saveDir = item.savedir ?: Item.resolveSaveDir(this, item.path)
-                val saveKey = saveDir.name
-                saveDir.mkdirs()
-                if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
-                    resolvedPreferredDirName = saveKey
-                }
-                found[saveKey] = SaveTarget(
-                    displayName = saveKey,
-                    dirName = saveKey,
-                    saveDir = saveDir,
-                    externalGameDir = item.path
-                )
-            }
-
-            savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
-                if (!found.containsKey(dir.name)) {
-                    val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
-                    val extDir = getExternalFilesDir(null)?.let { root ->
-                        File(root, dir.name).takeIf { it.exists() }
-                            ?: File(root, baseGameName).takeIf { it.exists() }
-                    }
-                    found[dir.name] = SaveTarget(
-                        displayName = dir.name,
-                        dirName = dir.name,
-                        saveDir = dir,
-                        externalGameDir = extDir
-                    )
-                }
-            }
-
-            val gid = scopedGameId
-            if (!gid.isNullOrBlank()) {
-                val iter = found.entries.iterator()
-                while (iter.hasNext()) {
-                    val entry = iter.next().value
-                    val classified = GameCatalog.classifyDirectory(
-                        gameDir = entry.externalGameDir,
-                        dirName = entry.dirName,
-                        saveDir = entry.saveDir,
-                        displayName = entry.displayName
-                    )
-                    if (classified != gid && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
-                        iter.remove()
-                    }
-                }
-                if (found.isEmpty()) {
-                    val desc = GameCatalog.descriptorFor(this, gid, gameList)
-                    val defaultDir = File(savesRoot, desc.defaultDirName)
-                    defaultDir.mkdirs()
-                    val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
-                    found[desc.defaultDirName] = SaveTarget(
-                        displayName = desc.defaultDirName,
-                        dirName = desc.defaultDirName,
-                        saveDir = defaultDir,
-                        externalGameDir = extDir
-                    )
-                }
-            } else if (found.isEmpty()) {
-                val defaultDir = File(savesRoot, "Rance10")
-                defaultDir.mkdirs()
-                val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
-                found["Rance10"] = SaveTarget(
-                    displayName = "Rance10",
-                    dirName = "Rance10",
-                    saveDir = defaultDir,
-                    externalGameDir = extDir
-                )
-            }
-        } finally {
-            gameList.close()
-        }
-
-        targets = found.values.toMutableList()
-        currentTarget = targets.firstOrNull { it.dirName == resolvedPreferredDirName }
-            ?: targets.firstOrNull { it.dirName == preferredDirName }
-            ?: targets.first()
-    }
 
     private fun refreshFileList() {
-        val saveDir = currentTarget.saveDir
+        loadFileList(target = if (::currentTarget.isInitialized) currentTarget else null)
+    }
+
+    private data class FileListSnapshot(
+        val target: SaveTarget,
+        val entries: List<SaveFileEntry>,
+        val accentColor: Int,
+        val targetChoices: List<Pair<SaveTarget, String>>?
+    )
+
+    private fun loadFileList(
+        target: SaveTarget? = null,
+        preferredDir: String? = if (::currentTarget.isInitialized) currentTarget.dirName else restoredTargetDir,
+        cleanInterruptedImports: Boolean = false,
+        showPicker: Boolean = false
+    ) {
+        val summary = findViewById<TextView>(R.id.save_target_summary)
+        val initial = !::currentTarget.isInitialized
+        if (initial) summary.setText(R.string.loading_game)
+        setSaveActionsEnabled(false)
+        loader.load(
+            read = {
+                if (cleanInterruptedImports) {
+                    filesDir.listFiles()?.filter { it.name.startsWith(SAVE_IMPORT_TMP_PREFIX) }
+                        ?.forEach { it.deleteRecursively() }
+                }
+                val discovery = if (target == null) {
+                    discoverSaveTargets(
+                        this, scopedGameId, preferredDir ?: intent.getStringExtra(EXTRA_DIR_NAME),
+                        resolveInstallAlias = preferredDir == null
+                    )
+                } else null
+                val selected = target ?: checkNotNull(discovery).selected
+                val entries = readSaveFiles(selected)
+                val accent = UiKit.resolveGameAccentColor(
+                    this, scopedGameId, selected.externalGameDir, selected.dirName, selected.saveDir
+                )
+                val choices = if (showPicker) checkNotNull(discovery).all.map { choice ->
+                    val count = choice.saveDir.walkTopDown()
+                        .count { it.isFile && !it.name.startsWith(".") && !it.name.startsWith("crash") }
+                    choice to getString(R.string.save_dir_item_count, choice.displayName, count)
+                } else null
+                FileListSnapshot(selected, entries, accent, choices)
+            },
+            render = { snapshot ->
+                if (!isFinishing) {
+                    currentTarget = snapshot.target
+                    renderFileList(snapshot.entries, snapshot.accentColor)
+                    setSaveActionsEnabled(true)
+                    snapshot.targetChoices?.let { showSwitchTargetDialog(it) }
+                }
+            },
+            onError = {
+                if (initial) summary.setText(R.string.error)
+                else setSaveActionsEnabled(true)
+                if (!isFinishing) Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    private fun setSaveActionsEnabled(enabled: Boolean) {
+        listOf(R.id.btn_switch_game, R.id.btn_import_saves, R.id.btn_export_saves, R.id.btn_clear_saves)
+            .forEach { findViewById<View>(it).isEnabled = enabled }
+    }
+
+    private fun readSaveFiles(target: SaveTarget): List<SaveFileEntry> {
+        val saveDir = target.saveDir
         saveDir.mkdirs()
-        saveImportPathsForTarget(this, currentTarget).migrateExistingSaves(saveDir)
+        saveImportPathsForTarget(this, target).migrateExistingSaves(saveDir)
 
         val list = mutableListOf<SaveFileEntry>()
         collectSaveFiles(saveDir, saveDir, list)
@@ -1070,7 +1042,11 @@ class SaveManagerActivity : ThemedActivity() {
                 else -> 3
             }
         }.thenByDescending { it.lastModified }.thenBy { it.relativePath })
+        return list
+    }
 
+    private fun renderFileList(list: List<SaveFileEntry>, accent: Int) {
+        applyThemeAccent(accent)
         currentEntries = list
         adapter.update(list)
 
@@ -1079,7 +1055,6 @@ class SaveManagerActivity : ThemedActivity() {
             getString(R.string.save_manager_current_dir, currentTarget.dirName)
         findViewById<TextView>(R.id.save_target_summary).text =
             getString(R.string.save_manager_dir_summary, list.size, formatFileSize(totalBytes))
-        applyThemeAccent()
 
         val emptyView = findViewById<TextView>(R.id.save_empty_view)
         if (list.isEmpty()) {
@@ -1090,14 +1065,7 @@ class SaveManagerActivity : ThemedActivity() {
         }
     }
 
-    private fun applyThemeAccent() {
-        val accent = UiKit.resolveGameAccentColor(
-            this,
-            scopedGameId,
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
-        )
+    private fun applyThemeAccent(accent: Int) {
         adapter.accentColor = accent
         findViewById<View>(R.id.save_header_card)?.background =
             UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)
@@ -1157,24 +1125,19 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun showSwitchTargetDialog() {
-        discoverSaveTargets(currentTarget.dirName)
-        val labels = targets.map { target ->
-            val count = target.saveDir.walkTopDown()
-                .filter { it.isFile && !it.name.startsWith(".") && !it.name.startsWith("crash") }
-                .count()
-            getString(R.string.save_dir_item_count, target.displayName, count)
-        }.toMutableList()
-        labels.add(getString(R.string.save_dir_new_option))
+        loadFileList(showPicker = true)
+    }
 
+    private fun showSwitchTargetDialog(choices: List<Pair<SaveTarget, String>>) {
+        val labels = choices.map { it.second } + getString(R.string.save_dir_new_option)
         trackDialog(
             AlertDialog.Builder(this)
                 .setTitle(R.string.save_dir_select_title)
                 .setItems(labels.toTypedArray()) { _, which ->
-                    if (which == targets.size) {
+                    if (which == choices.size) {
                         showCreateTargetDialog()
                     } else {
-                        currentTarget = targets[which]
-                        refreshFileList()
+                        loadFileList(target = choices[which].first)
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
@@ -1202,8 +1165,7 @@ class SaveManagerActivity : ThemedActivity() {
                     }
                     val newDir = File(File(filesDir, "saves"), safeName)
                     newDir.mkdirs()
-                    discoverSaveTargets(safeName)
-                    refreshFileList()
+                    loadFileList(preferredDir = safeName)
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -1360,6 +1322,13 @@ class SaveManagerActivity : ThemedActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK || data == null) return
 
+        scope.launch {
+            loader.awaitLatest()
+            if (!isFinishing && ::currentTarget.isInitialized) handlePickerResult(requestCode, data)
+        }
+    }
+
+    private fun handlePickerResult(requestCode: Int, data: Intent) {
         when (requestCode) {
             REQ_IMPORT_DIR -> {
                 val uri = data.data ?: return
