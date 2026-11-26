@@ -214,6 +214,28 @@ public class GalzooCatalogTest {
     }
 
     @Test
+    public void customSaveFolderStillClassifiesAfterImportingMixedCaseKeyFile() throws Exception {
+        File saveDir = tmp.newFolder("CustomSave");
+        File original = new File(saveDir, "keyfile.dat");
+        File imported = new File(saveDir, "KeyFile.dat");
+        writeFile(original, new byte[]{1});
+        File staged = tmp.newFile();
+        writeFile(staged, new byte[]{2});
+
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            writes.write(staged, imported);
+        }
+        assertFalse(original.exists());
+        assertEquals(GameCatalog.ID_GALZOO,
+                GameCatalog.INSTANCE.classifyDirectory(null, "CustomSave", saveDir, null));
+
+        assertTrue(imported.delete());
+        assertTrue(new File(saveDir, "KeyFile.dat.import-conflict.bak").isFile());
+        assertNotEquals(GameCatalog.ID_GALZOO,
+                GameCatalog.INSTANCE.classifyDirectory(null, "CustomSave", saveDir, null));
+    }
+
+    @Test
     public void classifiesGalzooBySaveDirAndAliasesWithoutCollisions() throws Exception {
         File saveFull = tmp.newFolder("GalzooSaveFull");
         writeFile(new File(saveFull, "keyfile.dat"), new byte[]{1});
