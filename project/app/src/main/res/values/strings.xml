@@ -522,7 +522,7 @@
     <string name="onboarding_finish">Start using AliceHub</string>
     <string name="storage_location">Storage location</string>
     <string name="onboarding_storage_intro">Choose where AliceHub keeps your games and saves. You can change this in Settings.</string>
-    <string name="public_storage_option">Create the AliceHub folder in shared storage\n<small>Requires additional storage permission</small></string>
+    <string name="public_storage_option">Use shared storage\n<small>Requires additional storage permission</small></string>
     <string name="public_storage_benefits">• Files in AliceHub stay after uninstalling the app\n• Easier to back up, move, or copy to a computer\n• Automatically migrate saves from older versions</string>
     <string name="private_storage_option">Skip (use app-specific storage)\n<small>No additional storage permission required</small></string>
     <string name="private_storage_drawbacks">• Uninstalling AliceHub removes games and saves stored here\n• Less convenient to back up or transfer with a file manager or computer</string>

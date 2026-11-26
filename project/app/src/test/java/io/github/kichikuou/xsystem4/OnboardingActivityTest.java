@@ -194,7 +194,7 @@ public class OnboardingActivityTest {
         TextView benefits = activity.findViewById(R.id.storage_public_benefits);
         assertTrue(shared.isShown());
         assertTrue(skip.isShown());
-        assertTrue(shared.getText().toString().endsWith("\nRequires additional storage permission"));
+        assertEquals("Use shared storage\nRequires additional storage permission", shared.getText().toString());
         assertTrue(skip.getText().toString().endsWith("\nNo additional storage permission required"));
         assertTrue(benefits.getText().toString().contains("Automatically migrate saves from older versions"));
         assertEquals(usePublic ? View.VISIBLE : View.GONE,

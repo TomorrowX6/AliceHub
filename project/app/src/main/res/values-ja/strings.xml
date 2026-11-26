@@ -521,7 +521,7 @@
     <string name="onboarding_finish">AliceHub をはじめる</string>
     <string name="storage_location">保存先</string>
     <string name="onboarding_storage_intro">ゲームとセーブの保存先を選んでください。後から設定で変更できます。</string>
-    <string name="public_storage_option">共有ストレージに AliceHub フォルダを作成\n<small>追加のストレージ権限が必要</small></string>
+    <string name="public_storage_option">共有ストレージを使用\n<small>追加のストレージ権限が必要</small></string>
     <string name="public_storage_benefits">• アプリをアンインストールしても AliceHub フォルダー内のデータは残る\n• バックアップ、移行、パソコンへのコピーが簡単\n• 旧バージョンのセーブデータを自動で移行</string>
     <string name="private_storage_option">スキップ（アプリ専用ストレージを使用）\n<small>追加のストレージ権限は不要</small></string>
     <string name="private_storage_drawbacks">• AliceHub をアンインストールすると、ここにあるゲームとセーブデータが削除される\n• ファイル管理アプリやパソコンでのバックアップや移行がしにくい</string>
