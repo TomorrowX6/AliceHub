@@ -69,10 +69,10 @@ struct OnlineGame: Identifiable {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.isRegularFileKey]
         ) else { return false }
-        let fileNames = contents.compactMap { item -> String? in
-            (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true ? item.lastPathComponent : nil
+        let regularFiles = contents.filter { item in
+            (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        return GameLibrary.hasLocalChineseMarkers(fileNames: fileNames)
+        return GameLibrary.hasLocalChineseMarkers(regularFiles: regularFiles)
     }
 
     static func hasChinese(for game: Game) -> Bool {
@@ -82,10 +82,8 @@ struct OnlineGame: Identifiable {
         if game.hasExplicitNonChineseEdition {
             return false
         }
-        if let entry = catalogEntry(for: game) {
-            return entry.hasChinese
-        }
-        return false
+        guard let entry = catalogEntry(for: game), entry.id != "haruka" else { return false }
+        return entry.hasChinese
     }
 
     static func defaultSorted(_ list: [OnlineGame]) -> [OnlineGame] {

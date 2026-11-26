@@ -7,6 +7,7 @@ import org.junit.rules.TemporaryFolder;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -153,6 +154,21 @@ public class HarukaCatalogTest {
         assertFalse(desc.getSupportsLocalMod());
         assertFalse(desc.isRance10());
         assertTrue(desc.getHasChinese());
+        assertTrue(GameCatalog.hasChineseTranslation(desc));
+        assertFalse(GameCatalog.hasChineseTranslation(desc, new Item("JP", jpDir, jpDir, null, null, null)));
+        assertFalse(GameCatalog.hasChineseTranslation(desc, new Item("EN", enDir, enDir, null, null, null)));
+        assertTrue(GameCatalog.hasChineseTranslation(desc, new Item("CN", cnRepackDir, cnRepackDir, null, null, null)));
+    }
+
+    @Test
+    public void doesNotInferChineseFromDirectoryOrScriptNameAndSize() throws Exception {
+        GameDescriptor desc = GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_HARUKA, null, r -> "Haruka");
+        File dir = tmp.newFolder("Haruka");
+        assertFalse(GameCatalog.hasChineseTranslation(desc, new Item("Haruka", dir, dir, null, null, null)));
+        try (RandomAccessFile script = new RandomAccessFile(new File(dir, "haruka.ain"), "rw")) {
+            script.setLength(2759127L);
+        }
+        assertFalse(GameCatalog.hasChineseTranslation(desc, new Item("Haruka", dir, dir, null, null, null)));
     }
 
     @Test
