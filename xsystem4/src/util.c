@@ -187,7 +187,43 @@ static char *join_dir_and_rel(const char *dir, const char *utf_rel)
 	return resolved;
 }
 
-static char *resolve_path(const char *dir, const char *path)
+static char *relative_path_get_icase(const char *dir, char *relative)
+{
+	char *resolved = xstrdup(dir);
+	char *component = relative;
+	for (;;) {
+		char *slash = strchr(component, '/');
+		if (slash)
+			*slash = '\0';
+		if (*component) {
+			char *next = path_join(resolved, component);
+			free(resolved);
+			resolved = next;
+			if (!file_exists(next)) {
+				resolved = path_get_icase(next);
+				free(next);
+			}
+		}
+		if (!slash)
+			return resolved;
+		*slash = '/';
+		if (!is_directory(resolved)) {
+			free(resolved);
+			return NULL;
+		}
+		component = slash + 1;
+	}
+}
+
+static char *find_path_icase(const char *resolved, const char *dir, char *relative, bool nested_icase)
+{
+	char *match = path_get_icase(resolved);
+	if (!match && nested_icase && !is_absolute_path(relative) && strchr(relative, '/'))
+		return relative_path_get_icase(dir, relative);
+	return match;
+}
+
+static char *resolve_path(const char *dir, const char *path, bool nested_icase)
 {
 	const char *target = path;
 	const char *stripped_rel = NULL;
@@ -197,12 +233,14 @@ static char *resolve_path(const char *dir, const char *path)
 
 	char *utf_primary = unix_path_with(target, false);
 	char *resolved_primary = join_dir_and_rel(dir, utf_primary);
-	free(utf_primary);
 
-	if (file_exists(resolved_primary))
+	if (file_exists(resolved_primary)) {
+		free(utf_primary);
 		return resolved_primary;
+	}
 
-	char *icase_primary = path_get_icase(resolved_primary);
+	char *icase_primary = find_path_icase(resolved_primary, dir, utf_primary, nested_icase);
+	free(utf_primary);
 	if (icase_primary) {
 		free(resolved_primary);
 		return icase_primary;
@@ -211,19 +249,21 @@ static char *resolve_path(const char *dir, const char *path)
 	if (sys4_text_is_gbk) {
 		char *utf_legacy = unix_path_with(target, true);
 		char *resolved_legacy = join_dir_and_rel(dir, utf_legacy);
-		free(utf_legacy);
 		if (strcmp(resolved_legacy, resolved_primary) != 0) {
 			if (file_exists(resolved_legacy)) {
+				free(utf_legacy);
 				free(resolved_primary);
 				return resolved_legacy;
 			}
-			char *icase_legacy = path_get_icase(resolved_legacy);
+			char *icase_legacy = find_path_icase(resolved_legacy, dir, utf_legacy, nested_icase);
 			if (icase_legacy) {
+				free(utf_legacy);
 				free(resolved_primary);
 				free(resolved_legacy);
 				return icase_legacy;
 			}
 		}
+		free(utf_legacy);
 		free(resolved_legacy);
 	}
 
@@ -232,12 +272,12 @@ static char *resolve_path(const char *dir, const char *path)
 
 char *gamedir_path(const char *path)
 {
-	return resolve_path(config.game_dir, path);
+	return resolve_path(config.game_dir, path, true);
 }
 
 char *gamedir_path_icase(const char *path)
 {
-	char *resolved = resolve_path(config.game_dir, path);
+	char *resolved = gamedir_path(path);
 	if (!file_exists(resolved)) {
 		char *tmp = path_get_icase(resolved);
 		free(resolved);
@@ -248,7 +288,7 @@ char *gamedir_path_icase(const char *path)
 
 char *savedir_path(const char *path)
 {
-	return resolve_path(config.save_dir, path);
+	return resolve_path(config.save_dir, path, false);
 }
 
 static void get_local_tm(struct tm *tm_out, long *nsec_out)

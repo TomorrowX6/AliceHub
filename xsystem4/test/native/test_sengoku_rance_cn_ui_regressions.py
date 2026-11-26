@@ -1,5 +1,6 @@
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,65 @@ class SengokuRanceChineseUiRegressionTest(unittest.TestCase):
                 check=True,
             )
             subprocess.run([str(exe)], check=True)
+
+    def test_native_codename_resolves_nested_directory_casing(self):
+        harness = r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/file.h"
+#include "xsystem4.h"
+
+struct config config;
+
+static void check_path(const char *code_name, const char *expected, char *(*resolve)(const char *))
+{
+    char *path = resolve(code_name);
+    assert(path && file_exists(path));
+    assert(strcmp(path, expected) == 0);
+    free(path);
+}
+
+int main(int argc, char **argv)
+{
+    assert(argc == 4);
+    config.game_dir = argv[1];
+    check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path);
+    check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path_icase);
+    check_path("LAUNCHERS\\eNtRiEs\\PATCH.AIN", argv[3], gamedir_path);
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "Data"
+            data.mkdir()
+            if (root / "DATA").exists():
+                self.skipTest("requires a case-sensitive filesystem")
+            script = data / "Patches" / "Patch.ain"
+            script.parent.mkdir()
+            script.touch()
+            other_script = root / "Launchers" / "Entries" / "Patch.ain"
+            other_script.parent.mkdir(parents=True)
+            other_script.touch()
+            exact_script = root / "LAUNCHERS" / "Entries" / "Patch.ain"
+            exact_script.parent.mkdir(parents=True)
+            exact_script.touch()
+
+            libsys4 = ROOT / "subprojects/libsys4"
+            source = root / "test.c"
+            source.write_text(harness)
+            exe = root / "test"
+            linker = ["-Wl,-dead_strip", "-framework", "CoreFoundation"] if sys.platform == "darwin" else ["-Wl,--gc-sections"]
+            subprocess.run(
+                ["cc", "-std=gnu11", "-ffunction-sections", "-fdata-sections",
+                 "-I", str(ROOT / "include"), "-I", str(libsys4 / "include"),
+                 str(source), str(ROOT / "src/util.c"),
+                 *(str(libsys4 / "src" / name) for name in ("file.c", "system.c", "utfsjis.c")),
+                 *linker, "-o", str(exe)],
+                check=True,
+            )
+            subprocess.run([str(exe), str(root), str(script), str(exact_script)], check=True)
 
     def test_skip_graphic_only_relabels_the_original_chinese_session_button(self):
         fix = extract_function("src/asset_manager.c", "localize_sengoku_skip_cg")
