@@ -247,6 +247,20 @@ int main(int argc, char **argv) {{
     assert(fabsf(get_fnl_substitute_scale(260) - (156.0f / 192.0f)) < 1e-3f);
     assert(gfx_get_fnl_substitute_y_pad(256, 60.0f) == 13);
 
+    // Rance 03's CN release draws its TTF at full size, so neither the on-disk
+    // .fnl ratio nor a fallback may shrink its text.
+    reset_games();
+    game_rance03 = true;
+    sys4_set_text_gbk(true);
+    config.fnl_path = argv[1];
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+    assert(fabsf(get_fnl_substitute_scale(256) - 1.0f) < 1e-4f);
+    assert(gfx_get_fnl_substitute_y_pad(256, 30.0f) == 0);
+    config.fnl_path = NULL;
+    init_fnl_substitute_scale();
+    assert(fnl_substitute_count == 0);
+
     reset_games();
     game_rance9 = true;
     sys4_set_text_gbk(true);
