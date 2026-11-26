@@ -567,7 +567,7 @@ class SwitchHubTest(unittest.TestCase):
                          online, re.M)[1]
         terms = (REPO / path).read_text(encoding="utf-8")
         android = REPO / "project/app/src/main/res"
-        for locale, heading in (("values-zh", "简体中文"), ("values", "English")):
+        for locale, heading in (("values-zh", "简体中文"), ("values", "English"), ("values-ja", "日本語")):
             strings = ET.parse(android / locale / "strings.xml")
             mobile = strings.find("./string[@name='online_disclaimer_msg']").text.replace(r"\n", "\n")
             published = terms.split(f"## {heading}\n\n", 1)[1].split("\n\n## ", 1)[0]
