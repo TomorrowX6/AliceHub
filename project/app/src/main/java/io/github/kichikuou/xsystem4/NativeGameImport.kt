@@ -828,7 +828,25 @@ object NativeGameImport {
         if (!expectedAinName.isNullOrBlank() &&
             resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
         ) {
-            throw GameList.InstallFailureException(R.string.import_wrong_game)
+            val primaryTreeEntries = resolvedPrimary.map { TreeEntry(it.uri, it.name, it.folder, it) }
+            val hasNestedExpected = primaryTreeEntries.any { entry ->
+                if (entry.folder || skip(entry.name) || !System4BootEntry.isCandidateIniFile(entry.name)) {
+                    return@any false
+                }
+                val doc = entry.payload
+                val limit = boundedPrimaryReadLimitBytes(doc.name, doc.size) ?: return@any false
+                val bytes = readBoundedDocumentBytes(context, doc.uri, limit) ?: return@any false
+                System4BootEntry.extractCodeNames(bytes).any { codeName ->
+                    val leaf = codeName.replace('\\', '/').substringAfterLast('/')
+                    leaf.equals(expectedAinName, ignoreCase = true) &&
+                        hasConfiguredTreeScript(codeName, primaryTreeEntries) { dirUri ->
+                            children(context, tree, dirUri).map { TreeEntry(it.uri, it.name, it.folder, it) }
+                        }
+                }
+            }
+            if (!hasNestedExpected) {
+                throw GameList.InstallFailureException(R.string.import_wrong_game)
+            }
         }
         val primaryFileNames = resolvedPrimary
             .filter { !it.folder && !skip(it.name) }

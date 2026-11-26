@@ -212,6 +212,65 @@ public class System4BootEntryTest {
     }
 
     @Test
+    public void utf8BomBeforeSaveFolderIsParsedAndSaveManagerRespectsTargetEdition() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        File srDir = tmp.newFolder("BomSengokuRance");
+        File bomIni = new File(srDir, "System40.ini");
+        writeUtf8(bomIni, "\uFEFFSaveFolder = \"SaveDataDSR\"\nCodeName = \"DaiSengoku.ain\"\n");
+        writeUtf8(new File(srDir, "DaiSengoku.ain"), "");
+        writeUtf8(new File(srDir, "AliceCN.ain"), "");
+
+        assertEquals(Boolean.TRUE, System4BootEntry.iniUsesDaiSengokuSaveFolder(bomIni));
+
+        // Backup containing both vanilla SaveData and DaiSengoku SaveDataDSR.
+        File backupRoot = tmp.newFolder("DualSaveBackup");
+        writeUtf8(new File(backupRoot, "SaveData/Save001.asd"), "vanilla");
+        writeUtf8(new File(backupRoot, "SaveDataDSR/Save001.asd"), "dsr");
+
+        // Vanilla selected in Hub, but user picks DaiSengoku save destination in SaveManager.
+        System4BootEntry.setSelectedEntry(context, srDir, "AliceCN.ain");
+        File dsrSaveDir = new File(context.getFilesDir(), "saves/" + srDir.getName() + Item.DAISENGOKU_SAVE_DIR_SUFFIX);
+        SaveTarget dsrTarget = new SaveTarget(
+                dsrSaveDir.getName(), dsrSaveDir.getName(), dsrSaveDir, srDir
+        );
+        SaveImportPaths dsrPaths = SaveManagerActivity.Companion.saveImportPathsForTarget(context, dsrTarget);
+        File dsrPicked = dsrPaths.sourceRoot(
+                backupRoot,
+                f -> f.listFiles() != null ? Arrays.asList(f.listFiles()) : Collections.emptyList(),
+                File::getName,
+                File::isDirectory
+        );
+        assertEquals("SaveDataDSR", dsrPicked.getName());
+
+        // DaiSengoku selected in Hub, but user picks vanilla save destination in SaveManager.
+        System4BootEntry.setSelectedEntry(context, srDir, "System40.ini");
+        File vanillaSaveDir = new File(context.getFilesDir(), "saves/" + srDir.getName());
+        SaveTarget vanillaTarget = new SaveTarget(
+                vanillaSaveDir.getName(), vanillaSaveDir.getName(), vanillaSaveDir, srDir
+        );
+        SaveImportPaths vanillaPaths = SaveManagerActivity.Companion.saveImportPathsForTarget(context, vanillaTarget);
+        File vanillaPicked = vanillaPaths.sourceRoot(
+                backupRoot,
+                f -> f.listFiles() != null ? Arrays.asList(f.listFiles()) : Collections.emptyList(),
+                File::getName,
+                File::isDirectory
+        );
+        assertEquals("SaveData", vanillaPicked.getName());
+
+        System4BootEntry.clearSelectedEntry(context, srDir);
+    }
+
+    @Test
+    public void nestedCodeNamePassesImportedGameDirValidation() throws Exception {
+        File nestedDir = tmp.newFolder("NestedImportedDir");
+        writeUtf8(new File(nestedDir, "Nested.ini"), "CodeName = \".\\Data\\Expected.ain\"\n");
+        writeUtf8(new File(nestedDir, "Data/Expected.ain"), "x");
+
+        assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(nestedDir, "Expected.ain", null));
+        assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(nestedDir, "Other.ain", null));
+    }
+
+    @Test
     public void gameHubShowsBootEntryPickerAndPersistsSelection() throws Exception {
         Context context = RuntimeEnvironment.getApplication();
         File extRoot = context.getExternalFilesDir(null);

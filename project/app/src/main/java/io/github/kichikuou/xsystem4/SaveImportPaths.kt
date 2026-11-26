@@ -12,17 +12,18 @@ import java.util.Locale
 
 class SaveImportPaths @JvmOverloads constructor(
     gameDir: File?,
-    launchTarget: File? = null
+    launchTarget: File? = null,
+    saveFolderOverride: String? = null
 ) {
     private val gameFiles = gameDir?.listFiles().orEmpty().filter { it.isFile }
     private val system35Prefix = findSystem35Prefix()
-    private val saveFolder = gameDir?.let { dir ->
+    private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
         if (launchTarget != null) {
             System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
         } else {
             resolveLaunchIniFile(dir).takeIf { it.isFile }
         }
-    }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() }
+    }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() })
         ?.takeIf { isSafeComponent(it) }
 
     private fun findSystem35Prefix(): String? {

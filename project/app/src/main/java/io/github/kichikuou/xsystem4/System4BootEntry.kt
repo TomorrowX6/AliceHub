@@ -175,8 +175,8 @@ object System4BootEntry {
     @JvmStatic
     fun iniUsesDaiSengokuSaveFolder(iniFile: File): Boolean? {
         val raw = readBoundedFile(iniFile) ?: return null
-        val text = runCatching { String(raw, Charsets.UTF_8) }.getOrNull()
-            ?: String(raw, Charsets.ISO_8859_1)
+        val text = (runCatching { String(raw, Charsets.UTF_8) }.getOrNull()
+            ?: String(raw, Charsets.ISO_8859_1)).removePrefix("\uFEFF")
         for (rawLine in text.lineSequence()) {
             val line = rawLine.trim()
             if (line.isEmpty() || line.startsWith(";") || line.startsWith("#") || line.startsWith("//")) {

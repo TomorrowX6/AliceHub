@@ -1622,19 +1622,22 @@ class GameList(activity: Activity) {
             mergeSiblingMultiDiscDirs(tempDir, srcDir, checkCancelled)
             val srcFiles = srcDir.listFiles()?.filter { it.isFile }.orEmpty()
             val srcFileNames = srcFiles.map { it.name }
+            val configuredBootScripts = System4BootEntry.bootConfigurations(srcDir).map { it.script }
             val ainFile = srcFiles.firstOrNull { GameCatalog.isSystem4AinFile(it.name) }
                 ?: srcFiles.firstOrNull {
                     GameCatalog.isSystem4CodeFile(it.name, srcFileNames) { name ->
                         GameCatalog.readSmallRootFile(srcDir, name)
                     }
                 }
+                ?: configuredBootScripts.firstOrNull()
             val sys3Scenario = srcFiles.firstOrNull { GameCatalog.isSystem35Scenario(it.name) }
             val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
             if (ainFile == null && sys3Scenario == null && !legacySystem3) {
                 throw InstallFailureException(R.string.directory_no_game)
             }
             if (!expectedAinName.isNullOrBlank() &&
-                srcFiles.none { it.name.equals(expectedAinName, ignoreCase = true) }
+                srcFiles.none { it.name.equals(expectedAinName, ignoreCase = true) } &&
+                configuredBootScripts.none { it.name.equals(expectedAinName, ignoreCase = true) }
             ) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }

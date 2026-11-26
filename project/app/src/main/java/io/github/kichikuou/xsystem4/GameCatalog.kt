@@ -1269,7 +1269,10 @@ object GameCatalog {
                     it.name.equals(expectedAinName, ignoreCase = true) ||
                         ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(expectedAinName, ignoreCase = true)
                     )
-            } == true
+            } == true || System4BootEntry.bootConfigurations(gameDir).any {
+                it.script.name.equals(expectedAinName, ignoreCase = true) ||
+                    ArchiveExtractor.repairSjisAsGbkMojibake(it.script.name).equals(expectedAinName, ignoreCase = true)
+            }
             if (!hasExpected) return false
         }
         return matchesTargetGame(targetGameId, gameDir)
