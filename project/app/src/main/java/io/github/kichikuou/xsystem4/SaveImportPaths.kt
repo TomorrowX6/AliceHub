@@ -12,6 +12,8 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+internal const val SAVE_LAYOUT_MARKER = ".alicehub-save-layout-v1"
+
 class SaveImportPaths @JvmOverloads constructor(
     gameDir: File?,
     launchTarget: File? = null,
@@ -47,6 +49,7 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     private fun system35Name(name: String): String? {
+        if (isSystem35 && name.equals("Volume.sav", ignoreCase = true)) return "Volume.sav"
         val prefix = system35Prefix ?: return null
         val slot = slotFile.matchEntire(name)
         if (slot != null && equivalent(slot.groupValues[1], prefix)) {
@@ -61,11 +64,13 @@ class SaveImportPaths @JvmOverloads constructor(
     fun normalizedName(name: String, atRoot: Boolean): String =
         name.takeIf { atRoot }?.let(::system35Name) ?: normalizeScriptName(name)
 
-    private fun normalizeScriptName(name: String): String =
-        if (isSystem35) name else ArchiveExtractor.repairSjisAsGbkMojibake(name)
+    private fun normalizeScriptName(name: String): String {
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(name)
+        return if (!isSystem35 || system35MapFile.matches(repaired)) repaired else name
+    }
 
     fun decodeArchivePath(rawPath: ByteArray): String =
-        normalizeScriptName(ArchiveExtractor.decodeBestCjkText(rawPath))
+        if (isSystem35) ArchiveExtractor.decodeBestCjkText(rawPath) else ArchiveExtractor.decodeEntryPath(rawPath)
 
     fun migrateExistingSaves(root: File) {
         fun migrate(dir: File, atRoot: Boolean) {
@@ -73,8 +78,11 @@ class SaveImportPaths @JvmOverloads constructor(
                 if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
                 if (child.isDirectory) migrate(child, atRoot = false)
                 val slotName = if (atRoot && child.isFile) system35Name(child.name) else null
-                val legacyName = if (slotName != null) ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
-                    else normalizeScriptName(child.name)
+                val legacyName = when {
+                    slotName == "Volume.sav" -> slotName
+                    slotName != null -> ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                    else -> normalizeScriptName(child.name)
+                }
                 val repaired = slotName ?: legacyName
                 if (repaired == child.name || !isSafeComponent(repaired)) continue
 
@@ -110,6 +118,9 @@ class SaveImportPaths @JvmOverloads constructor(
         isDirectory: (T) -> Boolean,
         fromArchive: Boolean
     ): Source<T> {
+        if (!fromArchive && children(root).any { !isDirectory(it) && name(it) == SAVE_LAYOUT_MARKER }) {
+            return Source(root)
+        }
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
@@ -146,7 +157,9 @@ class SaveImportPaths @JvmOverloads constructor(
 
         fun explicitSource(node: T, ancestors: List<T>): Source<T> {
             val visible = visibleChildren(node)
-            if (ancestors.size < 3 && !hasLooseSave(visible, ::isPotentialSlot)) {
+            val competes = if (fromArchive) hasLooseSave(visible, ::isPotentialSlot)
+                else hasLooseSave(visible, saveExtension::matches)
+            if (ancestors.size < 3 && !competes) {
                 val child = visible.filter(isDirectory).singleOrNull()
                 if (child != null && explicitSaveFolder(listOf(child)) != null && containsSave(child)) {
                     return explicitSource(child, ancestors + node)
@@ -172,15 +185,11 @@ class SaveImportPaths @JvmOverloads constructor(
 
         fun find(node: T, depth: Int, ancestors: List<T>, isSave: (String) -> Boolean): Source<T>? {
             val visible = visibleChildren(node)
-            val hasSave = hasLooseSave(visible, isSave)
-            if (depth == 0 || hasSave && hasLooseSave(visible, ::isPotentialSlot)) {
-                return if (hasSave) sourceWithState(node, ancestors) else null
-            }
+            if (hasLooseSave(visible, isSave)) return sourceWithState(node, ancestors)
+            if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
             val parents = ancestors + node
-            if (!fromArchive) explicitSaveFolder(dirs) { !hasSave || containsSave(it) }
-                ?.let { return explicitSource(it, parents) }
-            if (hasSave) return sourceWithState(node, ancestors)
+            if (!fromArchive) explicitSaveFolder(dirs)?.let { return explicitSource(it, parents) }
             return dirs.singleOrNull()?.let { find(it, depth - 1, parents, isSave) }
         }
         find(root, 3, emptyList(), saveExtension::matches)?.let { return it }
@@ -295,6 +304,7 @@ class SaveImportPaths @JvmOverloads constructor(
         const val conflictBackupSuffix = ".import-conflict.bak"
         val scenarioArchive = Regex("^(.*)S[A-Z](_chs)?\\.ald$", RegexOption.IGNORE_CASE)
         val slotFile = Regex("^(.*)(s[a-z]\\.asd)$", RegexOption.IGNORE_CASE)
+        val system35MapFile = Regex("王子_M-?\\d+\\.asd", RegexOption.IGNORE_CASE)
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
         val numberedSlot = Regex("(?:.*[ _.-])?(?:(?:save(?:data)?|slot)[ _.-]*)?\\d+", RegexOption.IGNORE_CASE)
         val namedState = Regex(
@@ -349,14 +359,13 @@ class SaveImportPaths @JvmOverloads constructor(
 
 internal object SaveZipLayout {
     private const val wrapper = "SaveData"
-    private const val marker = ".alicehub-save-layout-v1"
 
     fun write(
         zip: ZipOutputStream,
         entries: List<SaveFileEntry>,
         copy: (File, ZipOutputStream) -> Boolean
     ): Pair<Int, Int> {
-        zip.putNextEntry(ZipEntry(marker))
+        zip.putNextEntry(ZipEntry(SAVE_LAYOUT_MARKER))
         zip.closeEntry()
         var exported = 0
         var converted = 0
@@ -373,7 +382,7 @@ internal object SaveZipLayout {
     }
 
     fun exportedRoot(root: File): File? {
-        val layout = File(root, marker)
+        val layout = File(root, SAVE_LAYOUT_MARKER)
         if (!layout.isFile || layout.length() != 0L) return null
         return root.listFiles()?.singleOrNull { !it.name.startsWith('.') }
             ?.takeIf { it.isDirectory && it.name == wrapper }

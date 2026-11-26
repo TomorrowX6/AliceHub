@@ -103,6 +103,20 @@ public class SaveImportPathsTest {
         assertEquals(Collections.singletonList("Collection.asd"), Arrays.asList(target.list()));
     }
 
+    @Test public void folderRestoresKeepGenuineSaveDataPaths() throws IOException {
+        File export = temporary.newFolder("exported-folder");
+        File nested = new File(export, "SaveData");
+        assertTrue(nested.mkdir());
+        write(new File(nested, "01.asd"), "progress");
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(nested, sourceRoot(paths, export));
+        touch(export, "GlobalSave.asd");
+        assertEquals(export, sourceRoot(paths, export));
+        assertTrue(new File(export, "GlobalSave.asd").delete());
+        touch(export, ".alicehub-save-layout-v1");
+        assertEquals(export, sourceRoot(paths, export));
+    }
+
     @Test public void windowsSlotsMatchTheScenarioArchiveForBothTsumamiguiGames() throws IOException {
         for (String prefix : new String[]{"妻みぐい", "妻みぐい２"}) {
             File game = temporary.newFolder(prefix);
@@ -191,6 +205,26 @@ public class SaveImportPathsTest {
         paths.migrateExistingSaves(target);
         assertEquals("script records", read(new File(target, engineName)));
         assertFalse(new File(target, "名前.ASD").exists());
+    }
+
+    @Test public void nativeSystem35SaveNamesWinOverImportedAliases() throws IOException {
+        File game = temporary.newFolder("System39");
+        touch(game, "System39.ain");
+        touch(game, "OriginalSA.ald");
+        SaveImportPaths paths = new SaveImportPaths(game);
+        File source = temporary.newFolder("extracted");
+        write(new File(source, "墹巕_M1.asd"), "map data");
+        write(new File(source, "volume.sav"), "imported volume");
+        File target = temporary.newFolder();
+        write(new File(target, "Volume.sav"), "old volume");
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(source, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        assertEquals("map data", read(new File(target, "王子_M1.asd")));
+        assertEquals("imported volume", read(new File(target, "Volume.sav")));
+        assertFalse(new File(target, "墹巕_M1.asd").exists());
+        assertFalse(new File(target, "volume.sav").exists());
     }
 
     @Test public void importKeepsBothSpellingsOfOneSlotWithoutOverwritingTheFirstCopy() throws IOException {
@@ -400,7 +434,7 @@ public class SaveImportPathsTest {
 
         SaveImportPaths paths = new SaveImportPaths(null);
         assertEquals(saveData, sourceRoot(paths, root, true));
-        assertEquals(saveData, sourceRoot(paths, wrapper));
+        assertEquals(wrapper, sourceRoot(paths, wrapper));
         File target = temporary.newFolder();
         try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
             assertEquals(2, paths.importExtractedArchive(root, target, writes));

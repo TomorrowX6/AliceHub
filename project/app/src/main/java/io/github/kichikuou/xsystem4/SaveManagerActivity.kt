@@ -744,6 +744,14 @@ class SaveManagerActivity : ThemedActivity() {
                         } ?: throw IOException("Failed to write file: $fileName")
                         exported++
                     }
+                    if (exported > 0 && listDocumentChildrenFor(appCtx, treeUri, rootDocId).none {
+                            !it.isDirectory && it.name == SAVE_LAYOUT_MARKER
+                        }) {
+                        val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+                        DocumentsContract.createDocument(
+                            appCtx.contentResolver, rootUri, "application/octet-stream", SAVE_LAYOUT_MARKER
+                        ) ?: throw IOException("Failed to mark exported save directory")
+                    }
                     exported to convCount
                 }
                 onHost { it.dismissProgress() }
