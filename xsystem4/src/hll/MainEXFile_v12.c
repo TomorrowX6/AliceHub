@@ -327,7 +327,7 @@ static int mainex_ainteger(struct string *name, int index, int fallback, int id)
 static float mainex_afloating(struct string *name, int index, float fallback, int id)
 {
 	struct ex_value *v = avalue(name, index, id);
-	if (v && game_okusama && v->type == EX_INT)
+	if (v && (game_okusama || game_haharanman) && v->type == EX_INT)
 		return (float)v->i;
 	return v && v->type == EX_FLOAT ? v->f : fallback;
 }

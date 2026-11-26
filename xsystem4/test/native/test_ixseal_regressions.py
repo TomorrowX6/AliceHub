@@ -302,6 +302,7 @@ struct vm_pointer *heap = NULL;
 size_t heap_size = 0;
 bool game_evenicle2 = false;
 bool game_okusama = false;
+bool game_haharanman = false;
 
 extern struct static_library lib_MainEXFile;
 extern struct static_library lib_AFAFactory;
