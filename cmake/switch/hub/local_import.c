@@ -100,12 +100,6 @@ static bool excluded_root(const char *name)
     return false;
 }
 
-static bool launch_ini(const char *name)
-{
-    return !strcasecmp(name, "system40.ini") || !strcasecmp(name, "alicestart.ini") ||
-           !strcasecmp(name, "alicestart2.ini") || !strcasecmp(name, "alicestart.chs");
-}
-
 static bool ain(const char *name)
 {
     return import_suffix(name, ".ain") && strcasecmp(name, "system39.ain");
@@ -177,7 +171,7 @@ static bool markers(const char *dir, Markers *m)
     *m = (Markers){.engine = HUB_ENGINE_COUNT};
     DIR *d = opendir(dir);
     if (!d) return false;
-    char chs_file[HUB_NAME_SIZE] = "", configured[HUB_NAME_SIZE] = "";
+    char chs_file[HUB_NAME_SIZE] = "", configured[HUB_NAME_SIZE] = "", configured_script[HUB_NAME_SIZE] = "";
     bool sys35 = false, ok = true;
     for (;;) {
         errno = 0;
@@ -192,7 +186,7 @@ static bool markers(const char *dir, Markers *m)
         struct stat st;
         if (!import_path(path, dir, name) || lstat(path, &st) || !S_ISREG(st.st_mode) || !st.st_size)
             continue;
-        if (launch_ini(name)) {
+        if (hub_system4_standard_ini(name)) {
             m->ini = true;
             m->chs_config |= !strcasecmp(name, "alicestart.chs");
             if (!*configured) configured_code(path, configured);
@@ -213,8 +207,15 @@ static bool markers(const char *dir, Markers *m)
                    !strcasecmp(name, "acg3.dat")) {
             m->graphics = true;
         }
+        char script[HUB_PATH_SIZE];
+        if (hub_system4_configured_script(dir, name, script) && !lstat(script, &st) && st.st_size) {
+            m->ini = true;
+            pick_name(configured_script, leaf(script));
+        }
     }
     closedir(d);
+    if (!*m->code && *configured_script)
+        strcpy(m->code, configured_script);
     if (!*m->code && *chs_file) {
         if (*configured) {
             d = opendir(dir);

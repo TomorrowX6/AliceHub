@@ -70,6 +70,7 @@ bool hub_socket_acquire(void);
 void hub_socket_release(void);
 bool hub_register_library_screen(HubApp *);
 bool hub_register_details_screen(HubApp *);
+void hub_details_invalidate(void);
 bool hub_register_settings_screen(HubApp *);
 
 #endif

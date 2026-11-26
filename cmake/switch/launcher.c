@@ -115,19 +115,20 @@ static int compare_names(const void *a, const void *b)
     return strcasecmp(*(const char *const *)a, *(const char *const *)b);
 }
 
-static const char *validate_game(const char *game)
+static const char *resolve_game(const char *game, char target[HUB_PATH_SIZE], bool *uses_dsr)
 {
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+    return hub_system4_resolve(game, target, uses_dsr) ? NULL : "No readable System 4 launcher or script";
+#else
+    strcpy(target, game);
+    *uses_dsr = false;
     DIR *dir = opendir(game);
     if (!dir)
         return "Cannot open the game folder";
     bool found = false;
     for (struct dirent *ent = readdir(dir); ent; ent = readdir(dir)) {
         const char *name = ent->d_name;
-#if defined(ALICEHUB_SWITCH_XSYSTEM4)
-        if (strcasecmp(name, "System40.ini") && strcasecmp(name, "AliceStart.ini") &&
-            strcasecmp(name, "AliceStart2.ini") && strcasecmp(name, "AliceStart.CHS"))
-            continue;
-#elif defined(ALICEHUB_SWITCH_XSYSTEM35)
+#if defined(ALICEHUB_SWITCH_XSYSTEM35)
         if (strcasecmp(name, "xsystem35.gr") && strcasecmp(name, "adisk.ald")) {
             size_t len = strlen(name);
             size_t suffix = len >= 10 && !strcasecmp(name + len - 8, "_chs.ald") ? 8 : 4;
@@ -149,7 +150,7 @@ static const char *validate_game(const char *game)
         FILE *fp = fopen(path, "rb");
         if (!fp)
             continue;
-#if !defined(ALICEHUB_SWITCH_XSYSTEM4) && !defined(ALICEHUB_SWITCH_XSYSTEM35)
+#if !defined(ALICEHUB_SWITCH_XSYSTEM35)
         unsigned char header[4];
         if (fread(header, 1, sizeof(header), fp) == sizeof(header)) {
             int link = header[0] | header[1] << 8;
@@ -166,16 +167,16 @@ static const char *validate_game(const char *game)
     closedir(dir);
     if (found)
         return NULL;
-#if defined(ALICEHUB_SWITCH_XSYSTEM4)
-    return "No readable System40.ini or AliceStart configuration";
-#elif defined(ALICEHUB_SWITCH_XSYSTEM35)
+#if defined(ALICEHUB_SWITCH_XSYSTEM35)
     return "No readable scenario ALD or xsystem35.gr";
 #else
     return "Missing or invalid System 3 scenario disk (ADISK.DAT, GDISK.DAT, or AGAME.DAT)";
 #endif
+#endif
 }
 
-static int choose_game(Picker *picker, char *game, size_t size, const char *initial_error)
+static int choose_game(Picker *picker, char game[HUB_PATH_SIZE], char target[HUB_PATH_SIZE],
+                       bool *uses_dsr, const char *initial_error)
 {
     char error_game[512];
     const char *error = initial_error;
@@ -188,7 +189,7 @@ static int choose_game(Picker *picker, char *game, size_t size, const char *init
         for (struct dirent *ent; (ent = readdir(dir));) {
             struct stat st;
             if (ent->d_name[0] == '.' ||
-                (size_t)snprintf(game, size, GAMES "/%s", ent->d_name) >= size ||
+                (size_t)snprintf(game, HUB_PATH_SIZE, GAMES "/%s", ent->d_name) >= HUB_PATH_SIZE ||
                 stat(game, &st) || !S_ISDIR(st.st_mode))
                 continue;
             char *name = strdup(ent->d_name);
@@ -239,8 +240,8 @@ static int choose_game(Picker *picker, char *game, size_t size, const char *init
             if (error) {
                 error = NULL;
             } else {
-                snprintf(game, size, GAMES "/%s", names[selected]);
-                error = validate_game(game);
+                snprintf(game, HUB_PATH_SIZE, GAMES "/%s", names[selected]);
+                error = resolve_game(game, target, uses_dsr);
                 if (!error) {
                     accepted = 1;
                     break;
@@ -291,43 +292,61 @@ static int choose_game(Picker *picker, char *game, size_t size, const char *init
     return accepted;
 }
 
-static bool prepare_save(const char *game, char *save, size_t size)
+static bool ensure_save_dir(const char *path)
 {
-    const char *name = strrchr(game, '/') + 1;
     struct stat st;
-#if defined(ALICEHUB_SWITCH_XSYSTEM4)
-    const char *suffix = hub_game_uses_daisengoku_save_folder(game) ? "__SaveDataDSR" : "";
-#else
-    const char *suffix = "";
-#endif
-    return (size_t)snprintf(save, size, SAVES "/%s%s", name, suffix) < size &&
-        (!mkdir(SAVES, 0777) || errno == EEXIST) &&
-        hub_save_recover(save) &&
-        (!mkdir(save, 0777) || errno == EEXIST) && !stat(save, &st) && S_ISDIR(st.st_mode);
+    return (!mkdir(path, 0777) || errno == EEXIST) && !lstat(path, &st) && S_ISDIR(st.st_mode);
 }
 
-static int launch_game(char *game, char *save)
+static bool prepare_save(const char *game, const char *target, char *save, size_t size)
+{
+    const char *name = strrchr(game, '/') + 1;
+    char key[HUB_PATH_SIZE];
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+    HubGame checked;
+    if (!hub_game_init(&checked, HUB_XSYSTEM4, name) ||
+        !hub_system4_save_key(checked.name, game, target, key))
+        return false;
+#else
+    (void)target;
+    if ((size_t)snprintf(key, sizeof(key), "%s", name) >= sizeof(key))
+        return false;
+#endif
+    if ((size_t)snprintf(save, size, SAVES "/%s", key) >= size || !ensure_save_dir(SAVES))
+        return false;
+    for (char *slash = strchr(save + sizeof(SAVES), '/'); slash; slash = strchr(slash + 1, '/')) {
+        *slash = '\0';
+        bool ok = ensure_save_dir(save);
+        *slash = '/';
+        if (!ok)
+            return false;
+    }
+    return hub_save_recover(save) && ensure_save_dir(save);
+}
+
+static int launch_game(const char *game, char *target, char *save)
 {
     SDL_SetMainReady();
     switch_controls_load(ALICEHUB_ENGINE, game);
 #if defined(ALICEHUB_SWITCH_XSYSTEM4)
     setenv("XSYSTEM4_HOME", ROOT, 1);
-    char *args[] = { ALICEHUB_ENGINE, "--save-folder", save, "--save-format=rsm", "--joypad", game, NULL };
+    char *args[] = { ALICEHUB_ENGINE, "--save-folder", save, "--save-format=rsm", "--joypad", target, NULL };
 #elif defined(ALICEHUB_SWITCH_XSYSTEM35)
     setenv("XSYSTEM35_SOUNDFONT", "romfs:/soundfonts/TimGM6mb.sf2", 1);
-    char *args[] = { ALICEHUB_ENGINE, "-gamedir", game, "-savedir", save, NULL };
+    char *args[] = { ALICEHUB_ENGINE, "-gamedir", target, "-savedir", save, NULL };
 #else
     romfsExit(); // System 3 mounts its own ROMFS at entry.
     char literal_save[HUB_PATH_SIZE + 1];
     snprintf(literal_save, sizeof(literal_save), "%s/", save);
-    char *args[] = { ALICEHUB_ENGINE, "-gamedir", game, "-savedir", literal_save, "-fullscreen", NULL };
+    char *args[] = { ALICEHUB_ENGINE, "-gamedir", target, "-savedir", literal_save, "-fullscreen", NULL };
 #endif
     return alicehub_switch_engine_main(SDL_arraysize(args) - 1, args);
 }
 
 static int standalone_main(void)
 {
-    char game[512], save[512];
+    char game[HUB_PATH_SIZE], target[HUB_PATH_SIZE], save[HUB_PATH_SIZE];
+    bool uses_dsr;
     if (R_FAILED(romfsInit()))
         return 1;
     bool retained_nv = false;
@@ -339,8 +358,8 @@ static int standalone_main(void)
             break;
         }
         bool selected;
-        while ((selected = choose_game(&picker, game, sizeof(game), *launch_error ? launch_error : NULL)) &&
-               !prepare_save(game, save, sizeof(save)))
+        while ((selected = choose_game(&picker, game, target, &uses_dsr, *launch_error ? launch_error : NULL)) &&
+               !prepare_save(game, target, save, sizeof(save)))
             alicehub_switch_set_launch_error("Cannot create a writable save folder under " SAVES);
         if (!selected) {
             picker_close(&picker);
@@ -362,7 +381,7 @@ static int standalone_main(void)
         }
         picker_close(&picker);
         *launch_error = '\0';
-        result = launch_game(game, save);
+        result = launch_game(game, target, save);
 #if !defined(ALICEHUB_SWITCH_XSYSTEM4) && !defined(ALICEHUB_SWITCH_XSYSTEM35)
         if (!*launch_error)
             return result;
@@ -399,17 +418,18 @@ int main(int argc, char **argv)
         return standalone_main();
     if (atexit(return_to_hub))
         return 1;
-    char game[HUB_PATH_SIZE], save[HUB_PATH_SIZE];
+    char game[HUB_PATH_SIZE], target[HUB_PATH_SIZE], save[HUB_PATH_SIZE];
     if (!hub_game_path(HUB_ROOT, &request.game, game)) {
         alicehub_switch_set_launch_error("Game path is too long");
         return 1;
     }
-    const char *reason = validate_game(game);
+    bool uses_dsr;
+    const char *reason = resolve_game(game, target, &uses_dsr);
     if (reason) {
         alicehub_switch_set_launch_error(reason);
         return 1;
     }
-    if (!prepare_save(game, save, sizeof(save))) {
+    if (!prepare_save(game, target, save, sizeof(save))) {
         alicehub_switch_set_launch_error("Cannot create a writable save folder under " SAVES);
         return 1;
     }
@@ -417,5 +437,5 @@ int main(int argc, char **argv)
         alicehub_switch_set_launch_error("Cannot open engine resources");
         return 1;
     }
-    return launch_game(game, save);
+    return launch_game(game, target, save);
 }

@@ -185,10 +185,9 @@ static bool input(HubApp *app, size_t *focus, const HubGame *game, HubInput even
         return hub_move_focus(focus, library->count, 1, 5, event);
     }
     if (event == HUB_ACTION) {
-        char path[1024];
-        snprintf(path, sizeof(path), HUB_ROOT "/save-manager/%s/%s",
-                 hub_engines[game->engine].id, game->name);
-        hub_dialog(app, "Save manager folder", path);
+        char path[HUB_PATH_SIZE];
+        if (hub_game_save_manager_path(HUB_ROOT, game, path))
+            hub_dialog(app, "Save manager folder", path);
         return true;
     }
     if (event == HUB_CONFIRM && *focus < HUB_SAVE_OP_COUNT) {

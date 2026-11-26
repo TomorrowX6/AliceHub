@@ -3,10 +3,17 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+
+#if defined(__SWITCH__) && (defined(ALICEHUB_SWITCH_HUB) || defined(ALICEHUB_SWITCH_XSYSTEM4))
+#include "system4/utfsjis.h"
+#elif !defined(__SWITCH__)
+#include <iconv.h>
+#endif
 
 const HubEngineInfo hub_engines[HUB_ENGINE_COUNT] = {
     [HUB_SYSTEM3] = {"system3", "System 3", "sdmc:/switch/system3.nro"},
@@ -42,73 +49,447 @@ bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZ
     return game_path(root, game, "games", path);
 }
 
-bool hub_game_uses_daisengoku_save_folder(const char *game_dir)
+static char *ini_value(const char *ini_path, const char *key, bool quoted)
 {
-    static const char *const ini_names[] = {"System40.ini", "AliceStart.ini"};
-    if (!game_dir || !*game_dir)
-        return false;
-    for (size_t i = 0; i < sizeof(ini_names) / sizeof(ini_names[0]); ++i) {
-        char ini_path[HUB_PATH_SIZE];
-        if ((size_t)snprintf(ini_path, sizeof(ini_path), "%s/%s", game_dir, ini_names[i]) >= sizeof(ini_path))
+    struct stat st;
+    if (lstat(ini_path, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024)
+        return NULL;
+    FILE *fp = fopen(ini_path, "rb");
+    if (!fp)
+        return NULL;
+    size_t size = (size_t)st.st_size;
+    char *contents = malloc(size + 1);
+    if (contents)
+        contents[fread(contents, 1, size, fp)] = '\0';
+    fclose(fp);
+    if (!contents)
+        return NULL;
+    char *state, *value = NULL;
+    size_t key_len = strlen(key);
+    for (char *line = strtok_r(contents, "\n", &state); line; line = strtok_r(NULL, "\n", &state)) {
+        char *p = !strncmp(line, "\xef\xbb\xbf", 3) ? line + 3 : line;
+        while (*p && isspace((unsigned char)*p))
+            ++p;
+        if (!*p || *p == ';' || *p == '#' || (p[0] == '/' && p[1] == '/'))
             continue;
-        FILE *fp = fopen(ini_path, "rb");
-        if (!fp)
+        char *eq = strchr(p, '=');
+        if (!eq)
             continue;
-        char line[512];
-        bool matched = false;
-        while (fgets(line, sizeof(line), fp)) {
-            char *p = line;
-            while (*p && isspace((unsigned char)*p))
-                ++p;
-            if (!*p || *p == ';' || *p == '#' || (p[0] == '/' && p[1] == '/'))
-                continue;
-            char *eq = strchr(p, '=');
-            if (!eq)
-                continue;
-            char *kend = eq;
-            while (kend > p && isspace((unsigned char)kend[-1]))
-                --kend;
-            if ((size_t)(kend - p) != 10 || strncasecmp(p, "SaveFolder", 10) != 0)
-                continue;
-            char *v = eq + 1;
-            while (*v && isspace((unsigned char)*v))
-                ++v;
-            char *vend = v + strlen(v);
-            if (*v == '"') {
-                ++v;
-                char *q = strchr(v, '"');
-                vend = q ? q : vend;
-            } else {
-                for (char *c = v; *c; ++c) {
-                    if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
-                        vend = c;
-                        break;
-                    }
+        char *kend = eq;
+        while (kend > p && isspace((unsigned char)kend[-1]))
+            --kend;
+        if ((size_t)(kend - p) != key_len ||
+            (quoted ? strncmp(p, key, key_len) : strncasecmp(p, key, key_len)))
+            continue;
+        char *v = eq + 1;
+        while (*v && isspace((unsigned char)*v))
+            ++v;
+        char *vend = v + strlen(v);
+        if (*v == '"') {
+            ++v;
+            char *q = strchr(v, '"');
+            vend = q ? q : v;
+        } else if (!quoted) {
+            for (char *c = v; *c; ++c) {
+                if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
+                    vend = c;
+                    break;
                 }
-                while (vend > v && isspace((unsigned char)vend[-1]))
-                    --vend;
             }
-            matched = (size_t)(vend - v) == 11 && strncasecmp(v, "SaveDataDSR", 11) == 0;
+            while (vend > v && isspace((unsigned char)vend[-1]))
+                --vend;
+        } else {
+            vend = v;
+        }
+        free(value);
+        value = vend > v ? strndup(v, (size_t)(vend - v)) : NULL;
+    }
+    free(contents);
+    return value;
+}
+
+static const char *const standard_ini[] = {"System40.ini", "AliceStart.ini", "AliceStart2.ini", "AliceStart.CHS"};
+
+static bool suffix(const char *name, const char *end)
+{
+    size_t n = strlen(name), len = strlen(end);
+    return n >= len && !strcasecmp(name + n - len, end);
+}
+
+static bool boot_leaf(const char *name)
+{
+    if (!*name || *name == '.' || strlen(name) >= HUB_NAME_SIZE)
+        return false;
+    for (const unsigned char *p = (const unsigned char *)name; *p; ++p)
+        if (*p < 32 || *p == 127 || *p == '/' || *p == '\\' || *p == ':')
+            return false;
+    return true;
+}
+
+static bool boot_path(char path[HUB_PATH_SIZE], const char *dir, const char *name)
+{
+    if ((size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s", dir, name) < HUB_PATH_SIZE)
+        return true;
+    *path = '\0';
+    return false;
+}
+
+static bool boot_regular(const char *path)
+{
+    struct stat st;
+    return !lstat(path, &st) && S_ISREG(st.st_mode);
+}
+
+static bool boot_match(char path[HUB_PATH_SIZE], const char *dir, const char *name, bool directory)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return false;
+    char match[HUB_NAME_SIZE] = "";
+    for (struct dirent *e; (e = readdir(d)); ) {
+        if (strlen(e->d_name) >= sizeof(match))
+            continue;
+        if (!strcmp(e->d_name, name)) {
+            strcpy(match, e->d_name);
             break;
         }
-        fclose(fp);
-        return matched;
+        if (!*match && !strcasecmp(e->d_name, name))
+            strcpy(match, e->d_name);
+    }
+    closedir(d);
+    struct stat st;
+    return *match && boot_path(path, dir, match) && !lstat(path, &st) &&
+           (directory ? S_ISDIR(st.st_mode) : S_ISREG(st.st_mode));
+}
+
+bool hub_system4_standard_ini(const char *name)
+{
+    for (size_t i = 0; i < sizeof(standard_ini) / sizeof(*standard_ini); ++i)
+        if (!strcasecmp(name, standard_ini[i]))
+            return true;
+    return false;
+}
+
+static bool script_name(const char *name, bool chs)
+{
+    return (suffix(name, ".ain") && strcasecmp(name, "system39.ain")) ||
+           (chs && suffix(name, ".chs") && strcasecmp(name, "AliceStart.CHS"));
+}
+
+static bool config_name(const char *name)
+{
+    return !strcasecmp(name, "AliceStart.CHS") || (suffix(name, ".ini") &&
+           strcasecmp(name, "system3.ini") && strcasecmp(name, "system39.ini"));
+}
+
+static bool configured_path(const char *dir, char *code, char path[HUB_PATH_SIZE])
+{
+    if (*code == '/' || *code == '\\' || strchr(code, ':'))
+        return false;
+    char current[HUB_PATH_SIZE];
+    if ((size_t)snprintf(current, sizeof(current), "%s", dir) >= sizeof(current))
+        return false;
+    char *state;
+    for (char *p = strtok_r(code, "/\\", &state); p; ) {
+        char *next = strtok_r(NULL, "/\\", &state);
+        if (strcmp(p, ".")) {
+            if (!strcmp(p, "..") || (!next && !script_name(p, true)) ||
+                !boot_match(path, current, p, next != NULL))
+                return false;
+            if (!next)
+                return true;
+            strcpy(current, path);
+        }
+        p = next;
     }
     return false;
 }
 
-bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+static bool decoded_path(const char *dir, const char *code, char path[HUB_PATH_SIZE])
+{
+    char decoded[HUB_PATH_SIZE];
+    if (strlen(code) >= sizeof(decoded))
+        return false;
+    strcpy(decoded, code);
+    if (configured_path(dir, decoded, path))
+        return true;
+#if !defined(__SWITCH__) || defined(ALICEHUB_SWITCH_HUB) || defined(ALICEHUB_SWITCH_XSYSTEM4)
+    for (int gbk = 0; gbk <= 1; ++gbk) {
+        bool valid = false;
+#ifdef __SWITCH__
+        char *converted = cjk2utf_strict_buf(code, strlen(code), gbk, decoded, sizeof(decoded), &valid);
+        bool found = valid && strcmp(code, converted) && configured_path(dir, converted, path);
+        if (converted != decoded)
+            free(converted);
+#else
+        iconv_t cvt = iconv_open("UTF-8", gbk ? "GBK" : "CP932");
+        if (cvt != (iconv_t)-1) {
+            char *in = (char *)code, *out = decoded;
+            size_t remaining = strlen(code), space = sizeof(decoded) - 1;
+            valid = iconv(cvt, &in, &remaining, &out, &space) != (size_t)-1;
+            *out = '\0';
+            iconv_close(cvt);
+        }
+        bool found = valid && strcmp(code, decoded) && configured_path(dir, decoded, path);
+#endif
+        if (found)
+            return true;
+    }
+#endif
+    return false;
+}
+
+bool hub_system4_configured_script(const char *dir, const char *ini, char script[HUB_PATH_SIZE])
+{
+    char path[HUB_PATH_SIZE];
+    if (!boot_leaf(ini) || !config_name(ini) || !boot_path(path, dir, ini))
+        return false;
+    char *code = ini_value(path, "CodeName", true);
+    bool found = code && decoded_path(dir, code, script);
+    free(code);
+    return found;
+}
+
+static bool default_ini(const char *dir, char path[HUB_PATH_SIZE])
+{
+    char unused[HUB_PATH_SIZE];
+    if ((boot_match(unused, dir, "CHS.TBL", false) && boot_match(path, dir, standard_ini[3], false)) ||
+        (boot_match(unused, dir, "haru_c.ain", false) && boot_match(path, dir, standard_ini[2], false)))
+        return true;
+    for (size_t i = 0; i < sizeof(standard_ini) / sizeof(*standard_ini); ++i)
+        if (boot_match(path, dir, standard_ini[i], false))
+            return true;
+    return false;
+}
+
+static bool ini_uses_dsr(const char *path)
+{
+    char *value = ini_value(path, "SaveFolder", false);
+    bool dsr = value && !strcasecmp(value, "SaveDataDSR");
+    free(value);
+    return dsr;
+}
+
+typedef struct {
+    char *name;
+    char *script;
+    bool listed;
+} BootFile;
+
+static int boot_order(const void *a, const void *b)
+{
+    return strcmp(((const BootFile *)a)->name, ((const BootFile *)b)->name);
+}
+
+static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_PATH_SIZE],
+                      bool *uses_dsr, bool *has_dsr)
+{
+    *entries = (HubBootEntries){0};
+    *target = '\0';
+    *uses_dsr = false;
+    DIR *d = opendir(dir);
+    if (!d)
+        return false;
+    char path[HUB_PATH_SIZE], preferred[HUB_PATH_SIZE];
+    bool standard = default_ini(dir, preferred);
+    bool isolated = standard && ini_uses_dsr(preferred);
+    *uses_dsr = isolated;
+    if (standard && strlen(dir) >= HUB_PATH_SIZE) {
+        closedir(d);
+        return false;
+    }
+    bool chs = boot_match(path, dir, "CHS.TBL", false);
+    size_t count = 0, capacity = 0;
+    BootFile *files = NULL;
+    bool ok = true;
+    for (;;) {
+        errno = 0;
+        struct dirent *e = readdir(d);
+        if (!e) {
+            ok = !errno;
+            break;
+        }
+        const char *name = e->d_name;
+        if (!boot_leaf(name) || (!config_name(name) && !script_name(name, chs)) ||
+            !boot_path(path, dir, name) || !boot_regular(path))
+            continue;
+        char script[HUB_PATH_SIZE];
+        bool ini = config_name(name);
+        if (ini && !hub_system4_configured_script(dir, name, script))
+            continue;
+        if (count == capacity) {
+            size_t next = capacity ? capacity * 2 : 8;
+            BootFile *p = realloc(files, next * sizeof(*p));
+            if (!p) { ok = false; break; }
+            files = p;
+            capacity = next;
+        }
+        BootFile *file = &files[count++];
+        *file = (BootFile){.name = strdup(name), .script = ini ? strdup(script) : NULL};
+        if (!file->name || (ini && !file->script)) { ok = false; break; }
+        isolated |= ini && ini_uses_dsr(path);
+    }
+    closedir(d);
+    if (ok && count) {
+        entries->names = calloc(count, sizeof(*entries->names));
+        ok = entries->names != NULL;
+    }
+    if (ok) {
+        if (count > 1)
+            qsort(files, count, sizeof(*files), boot_order);
+        const char *config = NULL, *ain = NULL, *other_script = NULL;
+        bool alternate = false;
+        for (size_t i = 0; i < count; ++i) {
+            BootFile *file = &files[i];
+            if (file->script) {
+                if (!config) config = file->name;
+                file->listed = true;
+                entries->names[entries->count++] = file->name;
+                alternate |= standard && strcmp(strrchr(preferred, '/') + 1, file->name);
+            }
+        }
+        for (size_t i = 0; i < count; ++i) {
+            BootFile *file = &files[i];
+            if (file->script)
+                continue;
+            if (!other_script) other_script = file->name;
+            if (!ain && suffix(file->name, ".ain")) ain = file->name;
+            if (isolated && strcasecmp(file->name, "AliceCN.ain"))
+                continue;
+            if (!boot_path(path, dir, file->name))
+                continue;
+            bool configured = false;
+            for (size_t j = 0; j < count; ++j)
+                if (files[j].script && !strcmp(path, files[j].script)) {
+                    configured = true;
+                    break;
+                }
+            if (!configured) {
+                file->listed = true;
+                entries->names[entries->count++] = file->name;
+                alternate = true;
+            }
+        }
+        const char *automatic = config ? config : ain ? ain : other_script;
+        if (standard)
+            strcpy(target, dir);
+        else if (automatic && boot_path(target, dir, automatic)) {
+            *uses_dsr = config && ini_uses_dsr(target);
+        }
+        if (entries->count < 2 && !(standard && alternate))
+            hub_boot_entries_free(entries);
+        if (has_dsr)
+            *has_dsr = isolated;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (!files[i].listed)
+            free(files[i].name);
+        free(files[i].script);
+    }
+    free(files);
+    return ok;
+}
+
+bool hub_system4_boot_entries(const char *dir, HubBootEntries *entries)
+{
+    char target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    return scan_boot(dir, entries, target, &uses_dsr, NULL);
+}
+
+void hub_boot_entries_free(HubBootEntries *entries)
+{
+    for (size_t i = 0; i < entries->count; ++i)
+        free(entries->names[i]);
+    free(entries->names);
+    *entries = (HubBootEntries){0};
+}
+
+bool hub_system4_resolve(const char *dir, char target[HUB_PATH_SIZE], bool *uses_dsr)
+{
+    HubBootEntries entries;
+    if (!scan_boot(dir, &entries, target, uses_dsr, NULL))
+        return false;
+    char selected[HUB_NAME_SIZE];
+    if (hub_game_boot_get(dir, selected))
+        for (size_t i = 0; i < entries.count; ++i)
+            if (!strcmp(selected, entries.names[i])) {
+                if (boot_path(target, dir, selected))
+                    *uses_dsr = config_name(selected) && ini_uses_dsr(target);
+                break;
+            }
+    hub_boot_entries_free(&entries);
+    return *target != '\0';
+}
+
+bool hub_game_uses_daisengoku_save_folder(const char *game_dir)
+{
+    char target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    return game_dir && *game_dir && hub_system4_resolve(game_dir, target, &uses_dsr) && uses_dsr;
+}
+
+bool hub_system4_has_daisengoku_entry(const char *dir, bool *has_dsr)
+{
+    HubBootEntries entries;
+    char target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    bool ok = scan_boot(dir, &entries, target, &uses_dsr, has_dsr);
+    hub_boot_entries_free(&entries);
+    return ok;
+}
+
+bool hub_system4_save_key(const char *name, const char *dir, const char *target,
+                          char key[HUB_PATH_SIZE])
+{
+    char *folder = NULL, ini[HUB_PATH_SIZE];
+    if (target && !strcmp(dir, target) && default_ini(dir, ini))
+        folder = ini_value(ini, "SaveFolder", false);
+    else if (target && strcmp(dir, target) && config_name(target))
+        folder = ini_value(target, "SaveFolder", false);
+    int length;
+    if (folder && !strcasecmp(folder, "SaveDataDSR")) {
+        length = snprintf(key, HUB_PATH_SIZE, "%s" HUB_DSR_SUFFIX, name);
+    } else if (!folder || !strcasecmp(folder, "SaveData")) {
+        length = snprintf(key, HUB_PATH_SIZE, "%s", name);
+    } else {
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
+            hash = (hash ^ *p) * UINT64_C(1099511628211);
+        length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
+    }
+    free(folder);
+    return (size_t)length < HUB_PATH_SIZE;
+}
+
+static bool selected_save_key(const char *root, const HubGame *game, char key[HUB_PATH_SIZE])
 {
     if ((unsigned)game->engine >= HUB_ENGINE_COUNT)
         return false;
-    const char *suffix = "";
-    if (game->engine == HUB_XSYSTEM4) {
-        char game_dir[HUB_PATH_SIZE];
-        if (hub_game_path(root, game, game_dir) && hub_game_uses_daisengoku_save_folder(game_dir))
-            suffix = "__SaveDataDSR";
-    }
-    return (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s/saves/%s%s", root,
-                            hub_engines[game->engine].id, game->name, suffix) < HUB_PATH_SIZE;
+    if (game->engine != HUB_XSYSTEM4)
+        return (size_t)snprintf(key, HUB_PATH_SIZE, "%s", game->name) < HUB_PATH_SIZE;
+    char dir[HUB_PATH_SIZE], target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    if (!hub_game_path(root, game, dir))
+        return false;
+    bool found = hub_system4_resolve(dir, target, &uses_dsr);
+    return hub_system4_save_key(game->name, dir, found ? target : NULL, key);
+}
+
+bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+{
+    char key[HUB_PATH_SIZE];
+    return selected_save_key(root, game, key) &&
+           (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s/saves/%s", root,
+                            hub_engines[game->engine].id, key) < HUB_PATH_SIZE;
+}
+
+bool hub_game_save_manager_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+{
+    char key[HUB_PATH_SIZE];
+    return selected_save_key(root, game, key) &&
+           (size_t)snprintf(path, HUB_PATH_SIZE, "%s/save-manager/%s/%s", root,
+                            hub_engines[game->engine].id, key) < HUB_PATH_SIZE;
 }
 
 static int by_name(const void *a, const void *b)
@@ -259,6 +640,34 @@ static bool publish(const char *root, const char *name, const char *record)
     }
     remove(backup);
     return true;
+}
+
+bool hub_game_boot_get(const char *dir, char entry[HUB_NAME_SIZE])
+{
+    char path[HUB_PATH_SIZE], saved[HUB_NAME_SIZE];
+    *entry = '\0';
+    if (!storage_path(path, dir, HUB_BOOT_SETTING, ""))
+        return false;
+    FILE *file = boot_regular(path) ? fopen(path, "rb") : NULL;
+    if (!file && storage_path(path, dir, HUB_BOOT_SETTING, ".bak") && boot_regular(path))
+        file = fopen(path, "rb");
+    if (!file)
+        return false;
+    bool ok = read_line(file, saved, sizeof(saved)) && (!*saved || boot_leaf(saved)) &&
+              fgetc(file) == EOF && !ferror(file);
+    fclose(file);
+    if (ok)
+        strcpy(entry, saved);
+    return ok;
+}
+
+bool hub_game_boot_set(const char *dir, const char *entry)
+{
+    char record[HUB_NAME_SIZE + 1];
+    if (*entry && !boot_leaf(entry))
+        return false;
+    snprintf(record, sizeof(record), "%s\n", entry);
+    return publish(dir, HUB_BOOT_SETTING, record);
 }
 
 bool hub_settings_load(const char *root, HubSettings *settings)

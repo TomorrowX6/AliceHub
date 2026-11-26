@@ -175,6 +175,7 @@ bool hub_refresh_library(HubApp *app)
     app->library.count = count;
     hub_library_sort(&app->library, app->settings.sort);
     clear_artwork(app);
+    hub_details_invalidate();
     return true;
 }
 
@@ -494,6 +495,7 @@ int main(int argc, char **argv)
     status = 0;
 finish:
     hub_stop_update_check();
+    hub_details_invalidate();
     clear_artwork(&app);
     free(app.logo);
     hub_library_free(&app.library);
