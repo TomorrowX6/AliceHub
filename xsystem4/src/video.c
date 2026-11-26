@@ -17,6 +17,9 @@
 
 #include <SDL.h>
 #include "gfx/gl.h"
+#if defined(USE_GLES) && defined(__linux__)
+#include <GLES2/gl2ext.h>
+#endif
 #include <cglm/cglm.h>
 #include <string.h>
 #include <errno.h>
@@ -735,8 +738,13 @@ void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const c
 
 	GLint link_success;
 	glGetProgramiv(program, GL_LINK_STATUS, &link_success);
-	if (!link_success)
-		ERROR("Failed to link shader: %s, %s", vertex_shader_path, fragment_shader_path);
+	if (!link_success) {
+		GLint len;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+		char *infolog = xcalloc(len + 1, 1);
+		glGetProgramInfoLog(program, len, NULL, infolog);
+		ERROR("Failed to link shader %s, %s: %s", vertex_shader_path, fragment_shader_path, infolog);
+	}
 
 	dst->program = program;
 	dst->world_transform = glGetUniformLocation(program, "world_transform");
@@ -747,8 +755,59 @@ void gfx_load_shader(struct shader *dst, const char *vertex_shader_path, const c
 	dst->prepare = NULL;
 }
 
+#if defined(USE_GLES) && defined(__linux__)
+static void GL_APIENTRY gl_diagnostic_message(GLenum source, GLenum type, GLuint id,
+		GLenum severity, GLsizei length, const GLchar *message, const void *user)
+{
+	(void)user;
+	if (type == GL_DEBUG_TYPE_ERROR_KHR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR)
+		WARNING("GLES debug message (source=0x%x type=0x%x id=%u severity=0x%x): %.*s",
+			source, type, id, severity, length, message);
+}
+
+static void gl_enable_diagnostics(void)
+{
+#ifdef __ANDROID__
+	char value[PROP_VALUE_MAX] = {0};
+	__system_property_get("log.tag.AliceHubGLES", value);
+	if (strcmp(value, "DEBUG") && strcmp(value, "VERBOSE"))
+		return;
+#else
+	const char *value = SDL_getenv("ALICEHUB_GLES_DEBUG");
+	if (!value || strcmp(value, "1"))
+		return;
+#endif
+
+	if (!SDL_GL_ExtensionSupported("GL_KHR_debug")) {
+		WARNING("GLES diagnostics: GL_KHR_debug is unavailable");
+		return;
+	}
+	PFNGLDEBUGMESSAGECALLBACKKHRPROC callback = (PFNGLDEBUGMESSAGECALLBACKKHRPROC)
+		SDL_GL_GetProcAddress("glDebugMessageCallbackKHR");
+	if (!callback) {
+		WARNING("GLES diagnostics: glDebugMessageCallbackKHR is unavailable");
+		return;
+	}
+	callback(gl_diagnostic_message, NULL);
+	glEnable(GL_DEBUG_OUTPUT_KHR);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_KHR);
+}
+#endif
+
 static int gl_initialize(void)
 {
+#ifdef USE_GLES
+#ifdef __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "libsys4", "GLES driver: vendor=%s renderer=%s version=%s",
+		glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
+#else
+	NOTICE("GLES driver: vendor=%s renderer=%s version=%s", glGetString(GL_VENDOR),
+		glGetString(GL_RENDERER), glGetString(GL_VERSION));
+#endif
+#endif
+#if defined(USE_GLES) && defined(__linux__)
+	gl_enable_diagnostics();
+#endif
 	gfx_load_shader(&default_shader, "shaders/render.v.glsl", "shaders/render.f.glsl");
 
 	const struct gfx_vertex vertex_data[] = {
@@ -1713,13 +1772,18 @@ void gfx_prepare_job(struct gfx_render_job *job)
  */
 void gfx_run_job(struct gfx_render_job *job)
 {
+	GLint pos = job->shader->vertex_pos;
+	GLint uv = job->shader->vertex_uv;
 	glBindVertexArray(sdl.gl.vao);
-	glEnableVertexAttribArray(job->shader->vertex_pos);
-	glEnableVertexAttribArray(job->shader->vertex_uv);
-
 	glBindBuffer(GL_ARRAY_BUFFER, job->shape == GFX_QUADRILATERAL ? sdl.gl.quad_vbo : sdl.gl.vbo);
-	glVertexAttribPointer(job->shader->vertex_pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
-	glVertexAttribPointer(job->shader->vertex_uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	if (pos >= 0) {
+		glEnableVertexAttribArray(pos);
+		glVertexAttribPointer(pos, 4, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), NULL);
+	}
+	if (uv >= 0) {
+		glEnableVertexAttribArray(uv);
+		glVertexAttribPointer(uv, 2, GL_FLOAT, GL_FALSE, sizeof(struct gfx_vertex), (void*)offsetof(struct gfx_vertex, u));
+	}
 
 	switch (job->shape) {
 	case GFX_RECTANGLE:
@@ -1733,8 +1797,10 @@ void gfx_run_job(struct gfx_render_job *job)
 		break;
 	}
 
-	glDisableVertexAttribArray(job->shader->vertex_pos);
-	glDisableVertexAttribArray(job->shader->vertex_uv);
+	if (pos >= 0)
+		glDisableVertexAttribArray(pos);
+	if (uv >= 0)
+		glDisableVertexAttribArray(uv);
 	glBindVertexArray(0);
 	glUseProgram(0);
 }

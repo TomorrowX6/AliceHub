@@ -31,6 +31,9 @@ independently computed pixels:
   matrix arithmetic; no game-specific offsets or assets are included.
 * Construction H/V blur, full-size/subrect, pinned/unpinned draw target,
   RGB results, alpha preservation, two-pass blur.
+* Drawing a solid fill with no active UV attribute, then copying it with a
+  textured shader: verify pixels, no GL errors, and no enabled job attributes
+  left on the shared VAO.
 * Normal/LR/TB/combined sprite rendering through the real HLL setters,
   cached world matrix and CG renderer, including exact output position.
 * Activity EX flag/list loading and CG output in **legacy and v2 modes**, all
@@ -57,6 +60,14 @@ Generated `*-gles-synthetic.ppm` files are raw GL readbacks of synthetic art.
 They are useful diagnostic images, **not proof of the supplied game scenes**.
 The plain C fixture/source-contract suite in the parent directory remains
 complementary coverage for rotation and save-version handling.
+
+On Android, the GLES vendor, renderer, and version are logged at startup.
+Enable opt-in driver messages with
+`adb shell setprop log.tag.AliceHubGLES DEBUG` before launching the game.
+Reproduce the issue while capturing `adb logcat -s libsys4:I` for errors and
+undefined-behavior messages where the driver supports `GL_KHR_debug`.
+Set the property back to `INFO` and relaunch
+when done. Linux GLES builds accept `ALICEHUB_GLES_DEBUG=1` before launch.
 
 A replacement-context negative control verifies that a new unshared context
 starts with none of the previous context's textures. Two replacement-context
