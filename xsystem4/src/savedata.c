@@ -1951,6 +1951,14 @@ static int *resolve_gsave_globals(struct gsave *save, const char *group_name)
 	return resolved;
 }
 
+static bool gsave_uses_raw_lookup_keys(const char *keyname, const char *group_name)
+{
+	// These GBK releases keep CP932 identifiers in their progress arrays.
+	return sys4_text_is_gbk
+		&& ((game_maman && !strcmp(keyname, "MAMAN_EXTRA") && !strcmp(group_name, "MAMAN_EXTRA_DATA"))
+			|| (game_haharanman && !strcmp(keyname, "MIBOUJIN_EXTRA") && !strcmp(group_name, "MIBOUJIN_EXTRA_DATA")));
+}
+
 static bool gsave_detect_is_gbk(const struct gsave *save, const int *resolved,
 		const char *keyname, const char *group_name)
 {
@@ -2008,7 +2016,8 @@ int load_globals_from_gsave(struct gsave *save, const char *keyname, const char 
 		VM_ERROR("Attempted to load save data with wrong group name: '%s'", display_sjis0(group_name));
 
 	int *resolved = resolve_gsave_globals(save, group_name);
-	bool src_is_gbk = gsave_detect_is_gbk(save, resolved, keyname, group_name);
+	bool src_is_gbk = gsave_uses_raw_lookup_keys(keyname, group_name)
+		|| gsave_detect_is_gbk(save, resolved, keyname, group_name);
 	int retval = 1;
 	for (int gi = 0; gi < save->nr_globals; gi++) {
 		struct gsave_global *g = &save->globals[gi];
