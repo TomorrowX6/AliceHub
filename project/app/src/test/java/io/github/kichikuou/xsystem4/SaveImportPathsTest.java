@@ -88,6 +88,8 @@ public class SaveImportPathsTest {
         write(existingBackup, "older");
         File secondSlot = new File(saves, "妻みぐいsb.asd");
         write(secondSlot, "second");
+        File garbled = new File(saves, "嵢傒偖偄sc.asd");
+        write(garbled, "third");
 
         SaveImportPaths paths = new SaveImportPaths(game);
         paths.migrateExistingSaves(saves);
@@ -95,6 +97,8 @@ public class SaveImportPathsTest {
         assertFalse(alias.exists());
         assertEquals("older", read(existingBackup));
         assertEquals("old", read(backup));
+        assertFalse(garbled.exists());
+        assertEquals("third", read(new File(saves, "妻みぐいsc.asd")));
 
         assertTrue(canonical.delete());
         File renamed = new File(saves, "妻みぐいSB.ASD");
@@ -174,6 +178,19 @@ public class SaveImportPathsTest {
         assertTrue(looseSlot.delete());
         touch(saveData, "KeyFile.dat");
         assertEquals(saveData, sourceRoot(paths, root, true));
+    }
+
+    @Test public void archivePrefersVsfAndKeyfileInsideSaveDataOverLooseSlots() throws IOException {
+        for (String name : new String[]{"EscalayerReboot_87.vsf", "KeyFile.dat"}) {
+            File root = temporary.newFolder(name);
+            File saveData = new File(root, "SaveData");
+            assertTrue(saveData.mkdir());
+            touch(root, "old.asd");
+            touch(saveData, name);
+            SaveImportPaths paths = new SaveImportPaths(null);
+            assertEquals(saveData, sourceRoot(paths, root, true));
+            assertEquals(root, sourceRoot(paths, root));
+        }
     }
 
     @Test public void usesTheLocalizedLaunchIniAndTheWinningScenarioArchive() throws IOException {

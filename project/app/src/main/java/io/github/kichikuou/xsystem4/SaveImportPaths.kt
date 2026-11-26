@@ -53,14 +53,15 @@ class SaveImportPaths(gameDir: File?) {
                 if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
                 if (child.isDirectory) migrate(child, atRoot = false)
                 val slotName = if (atRoot && child.isFile) system35Name(child.name) else null
-                val repaired = slotName ?: ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                val legacyName = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                val repaired = slotName ?: legacyName
                 if (repaired == child.name || !isSafeComponent(repaired)) continue
 
                 val target = File(dir, repaired)
                 try {
                     if (target.exists()) {
                         if (child.isFile) moveToConflictBackup(child, target)
-                    } else if (slotName == null) {
+                    } else if (repaired == legacyName) {
                         Files.move(child.toPath(), target.toPath())
                     }
                 } catch (_: IOException) {
@@ -79,8 +80,11 @@ class SaveImportPaths(gameDir: File?) {
         fromArchive: Boolean = false
     ): T {
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
+        fun isSave(name: String): Boolean =
+            saveExtension.matches(name) ||
+                (fromArchive && (name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)))
         fun hasLooseSave(nodes: List<T>): Boolean =
-            nodes.any { !isDirectory(it) && saveExtension.matches(name(it)) }
+            nodes.any { !isDirectory(it) && isSave(name(it)) }
 
         fun explicitSaveFolder(dirs: List<T>, eligible: (T) -> Boolean = { true }): T? {
             val configured = saveFolder?.let { expected ->
