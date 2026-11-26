@@ -765,18 +765,22 @@ static void GL_APIENTRY gl_diagnostic_message(GLenum source, GLenum type, GLuint
 			source, type, id, severity, length, message);
 }
 
-static void gl_enable_diagnostics(void)
+static bool gl_diagnostics_requested(void)
 {
 #ifdef __ANDROID__
 	char value[PROP_VALUE_MAX] = {0};
 	__system_property_get("log.tag.AliceHubGLES", value);
-	if (strcmp(value, "DEBUG") && strcmp(value, "VERBOSE"))
-		return;
+	return !strcmp(value, "DEBUG") || !strcmp(value, "VERBOSE");
 #else
 	const char *value = SDL_getenv("ALICEHUB_GLES_DEBUG");
-	if (!value || strcmp(value, "1"))
-		return;
+	return value && !strcmp(value, "1");
 #endif
+}
+
+static void gl_enable_diagnostics(void)
+{
+	if (!gl_diagnostics_requested())
+		return;
 
 	if (!SDL_GL_ExtensionSupported("GL_KHR_debug")) {
 		WARNING("GLES diagnostics: GL_KHR_debug is unavailable");
@@ -943,6 +947,49 @@ static void init_window_size(void)
 #endif
 }
 
+static void gfx_create_window_and_context(uint32_t window_flags)
+{
+#if defined(USE_GLES) && defined(__linux__)
+	int context_flags = 0;
+	bool debug_context = false;
+	if (gl_diagnostics_requested()) {
+		if (SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS, &context_flags) == 0 &&
+				SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, context_flags | SDL_GL_CONTEXT_DEBUG_FLAG) == 0) {
+			debug_context = true;
+		} else {
+			WARNING("GLES diagnostics: could not request a debug context: %s", SDL_GetError());
+			SDL_ClearError();
+		}
+	}
+#endif
+
+	for (;;) {
+		sdl.window = SDL_CreateWindow("XSystem4", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+				config.view_width, config.view_height, window_flags);
+		if (sdl.window) {
+			set_window_title();
+			sdl.gl.context = SDL_GL_CreateContext(sdl.window);
+			if (sdl.gl.context)
+				return;
+		}
+#if defined(USE_GLES) && defined(__linux__)
+		if (debug_context) {
+			WARNING("GLES diagnostics: debug context creation failed; retrying without the debug flag: %s",
+				SDL_GetError());
+			if (sdl.window)
+				SDL_DestroyWindow(sdl.window);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, context_flags & ~SDL_GL_CONTEXT_DEBUG_FLAG);
+			SDL_ClearError();
+			debug_context = false;
+			continue;
+		}
+#endif
+		if (!sdl.window)
+			ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
+		ERROR("SDL_GL_CreateContext failed: %s", SDL_GetError());
+	}
+}
+
 int gfx_init(void)
 {
 	if (gfx_initialized)
@@ -975,20 +1022,7 @@ int gfx_init(void)
 #ifdef ALICEHUB_IOS
 	window_flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_ALLOW_HIGHDPI;
 #endif
-	sdl.window =  SDL_CreateWindow("XSystem4",
-				       SDL_WINDOWPOS_UNDEFINED,
-				       SDL_WINDOWPOS_UNDEFINED,
-				       config.view_width,
-				       config.view_height,
-				       window_flags);
-	if (!sdl.window)
-		ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
-
-	set_window_title();
-
-	sdl.gl.context = SDL_GL_CreateContext(sdl.window);
-	if (!sdl.gl.context)
-		ERROR("SDL_GL_CreateContext failed: %s", SDL_GetError());
+	gfx_create_window_and_context(window_flags);
 #ifdef ALICEHUB_IOS
 	alicehub_ios_prepare_window(sdl.window);
 #endif

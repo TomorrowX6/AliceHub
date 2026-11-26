@@ -66,6 +66,8 @@ Enable opt-in driver messages with
 `adb shell setprop log.tag.AliceHubGLES DEBUG` before launching the game.
 Reproduce the issue while capturing `adb logcat -s libsys4:I` for errors and
 undefined-behavior messages where the driver supports `GL_KHR_debug`.
+Opting in requests a GLES debug context; if the driver rejects it, startup
+logs the failure and retries with a normal context, which may emit fewer messages.
 Set the property back to `INFO` and relaunch
 when done. Linux GLES builds accept `ALICEHUB_GLES_DEBUG=1` before launch.
 

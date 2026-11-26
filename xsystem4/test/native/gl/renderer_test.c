@@ -35,13 +35,21 @@ _Noreturn void sys_error(const char *fmt, ...) {
 void sys_message(const char *fmt, ...) {
     va_list ap; va_start(ap,fmt); vfprintf(stdout,fmt,ap); va_end(ap);
 }
-static int diagnostic_test_messages;
+char *sjis_filename2utf(const char *src, size_t len) {
+    (void)src; (void)len;
+    return strdup("Synthetic renderer regression");
+}
+static int diagnostic_test_messages, diagnostic_driver_errors;
 void sys_warning(const char *fmt, ...) {
     char message[1024];
     va_list ap; va_start(ap,fmt); vsnprintf(message,sizeof(message),fmt,ap); va_end(ap);
     fputs(message,stderr);
-    if (strstr(message,"GLES debug message") && strstr(message,"native diagnostic fixture"))
-        diagnostic_test_messages++;
+    if (strstr(message,"GLES debug message")) {
+        if (strstr(message,"native diagnostic fixture"))
+            diagnostic_test_messages++;
+        else
+            diagnostic_driver_errors++;
+    }
 }
 static int draws, feedbacks;
 void __real_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
@@ -58,6 +66,34 @@ void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *
     __real_glDrawElements(mode,count,type,indices);
 }
 static void no_error(void) { GLenum e=glGetError(); if(e)fprintf(stderr,"GL error 0x%x\n",e); assert(e==GL_NO_ERROR); }
+static bool reject_debug_context;
+static int context_attempts, debug_context_attempts;
+SDL_GLContext __real_SDL_GL_CreateContext(SDL_Window *window);
+SDL_GLContext __wrap_SDL_GL_CreateContext(SDL_Window *window) {
+    int flags;
+    assert(SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS,&flags)==0);
+    context_attempts++;
+    if (flags & SDL_GL_CONTEXT_DEBUG_FLAG) {
+        debug_context_attempts++;
+        if (reject_debug_context) {
+            SDL_SetError("synthetic driver rejection of debug context");
+            return NULL;
+        }
+    }
+    return __real_SDL_GL_CreateContext(window);
+}
+static void gles_debug_context_test(void) {
+    assert(SDL_setenv("ALICEHUB_GLES_DEBUG","1",1)==0);
+    reject_debug_context=true;
+    gfx_create_window_and_context(SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+    reject_debug_context=false;
+    assert(sdl.window && sdl.gl.context && SDL_GL_GetCurrentContext()==sdl.gl.context);
+    assert(context_attempts==2 && debug_context_attempts==1);
+    SDL_GL_DeleteContext(sdl.gl.context);
+    SDL_DestroyWindow(sdl.window);
+    assert(SDL_setenv("ALICEHUB_GLES_DEBUG","0",1)==0);
+    puts("PASS: diagnostic startup requests a debug context and retries without the flag");
+}
 static void gles_diagnostic_test(void) {
     if (!SDL_GL_ExtensionSupported("GL_KHR_debug")) {
         puts("SKIP: GL_KHR_debug not supported");
@@ -82,6 +118,26 @@ static void gles_diagnostic_test(void) {
     assert(SDL_setenv("ALICEHUB_GLES_DEBUG","0",1)==0);
     no_error();
     puts("PASS: opt-in GLES diagnostics report errors but not informational messages");
+}
+static void gles_driver_diagnostic_test(void) {
+    assert(SDL_setenv("ALICEHUB_GLES_DEBUG","1",1)==0);
+    gfx_create_window_and_context(SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+    int flags;
+    assert(SDL_GL_GetAttribute(SDL_GL_CONTEXT_FLAGS,&flags)==0);
+    if ((flags & SDL_GL_CONTEXT_DEBUG_FLAG) && SDL_GL_ExtensionSupported("GL_KHR_debug")) {
+        gl_enable_diagnostics();
+        int before=diagnostic_driver_errors;
+        glEnable(GL_TEXTURE_2D);
+        assert(glGetError()==GL_INVALID_ENUM);
+        assert(diagnostic_driver_errors>before);
+        puts("PASS: GLES debug context reports a real driver-generated GL error");
+    } else {
+        puts("SKIP: debug context with GL_KHR_debug not supported");
+    }
+    SDL_GL_DeleteContext(sdl.gl.context);
+    SDL_DestroyWindow(sdl.window);
+    assert(SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,flags & ~SDL_GL_CONTEXT_DEBUG_FLAG)==0);
+    assert(SDL_setenv("ALICEHUB_GLES_DEBUG","0",1)==0);
 }
 static void write_ppm(const char *name, const unsigned char *px, int w, int h) {
     FILE *f=fopen(name,"wb"); assert(f); fprintf(f,"P6\n%d %d\n255\n",w,h);
@@ -623,10 +679,11 @@ int main(void) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,SDL_GL_CONTEXT_PROFILE_ES);
-    sdl.window=SDL_CreateWindow("Synthetic renderer regression",0,0,128,128,SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
-    if(!sdl.window)sys_error("SDL: %s",SDL_GetError());
-    sdl.gl.context=SDL_GL_CreateContext(sdl.window);
-    if(!sdl.gl.context)sys_error("GLES: %s",SDL_GetError());
+    gles_debug_context_test();
+    gles_driver_diagnostic_test();
+    int attempts_before=context_attempts, debug_attempts_before=debug_context_attempts;
+    gfx_create_window_and_context(SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+    assert(context_attempts==attempts_before+1 && debug_context_attempts==debug_attempts_before);
     printf("GL_VERSION=%s\nGL_RENDERER=%s\n",glGetString(GL_VERSION),glGetString(GL_RENDERER));
     gles_diagnostic_test();
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
