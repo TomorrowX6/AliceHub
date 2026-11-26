@@ -142,8 +142,8 @@ static HubInstanceResult target_paths(const char *root, HubEngine engine, const 
         strpbrk(name, "\"*<>?|") ||
         !hub_game_path(root, &target, games))
         return HUB_INSTANCE_INVALID_NAME;
-    const char *suffix = (engine == HUB_XSYSTEM4 && uses_dsr_save) ? "__SaveDataDSR" : "";
-    const char *alt_suffix = (engine == HUB_XSYSTEM4 && !uses_dsr_save) ? "__SaveDataDSR" : "";
+    const char *suffix = (engine == HUB_XSYSTEM4 && uses_dsr_save) ? HUB_DSR_SUFFIX : "";
+    const char *alt_suffix = (engine == HUB_XSYSTEM4 && !uses_dsr_save) ? HUB_DSR_SUFFIX : "";
     if ((size_t)snprintf(saves, HUB_PATH_SIZE, "%s/%s/saves/%s%s", root,
                          hub_engines[engine].id, name, suffix) >= HUB_PATH_SIZE)
         return HUB_INSTANCE_INVALID_NAME;
@@ -153,9 +153,16 @@ static HubInstanceResult target_paths(const char *root, HubEngine engine, const 
     result = name_available(saves);
     if (result != HUB_INSTANCE_OK)
         return result;
-    if (engine == HUB_XSYSTEM4 &&
-        (size_t)snprintf(alt_saves, sizeof(alt_saves), "%s/%s/saves/%s%s", root,
-                         hub_engines[engine].id, name, alt_suffix) < sizeof(alt_saves)) {
+    if (engine == HUB_XSYSTEM4) {
+        if ((size_t)snprintf(alt_saves, sizeof(alt_saves), "%s/xsystem4/saves/%s%s",
+                             root, name, alt_suffix) >= sizeof(alt_saves))
+            return HUB_INSTANCE_INVALID_NAME;
+        result = name_available(alt_saves);
+        if (result != HUB_INSTANCE_OK)
+            return result;
+        if ((size_t)snprintf(alt_saves, sizeof(alt_saves), "%s/xsystem4/saves/" HUB_ENTRY_SAVES "/%s",
+                             root, name) >= sizeof(alt_saves))
+            return HUB_INSTANCE_INVALID_NAME;
         result = name_available(alt_saves);
     }
     return result;
@@ -248,15 +255,76 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
     return result;
 }
 
+static bool save_claim(const char *root, const char *name, bool *claimed)
+{
+    HubGame other;
+    char install[HUB_PATH_SIZE];
+    *claimed = false;
+    if (!hub_game_init(&other, HUB_XSYSTEM4, name))
+        return true;
+    if (!hub_game_path(root, &other, install))
+        return false;
+    HubInstanceResult available = name_available(install);
+    *claimed = available == HUB_INSTANCE_NAME_TAKEN;
+    return available == HUB_INSTANCE_OK || *claimed;
+}
+
+static bool save_locations(const char *root, const HubGame *game, const char *install,
+                           char paths[3][TREE_PATH_SIZE])
+{
+    char base[HUB_PATH_SIZE], other[HUB_NAME_SIZE];
+    if ((size_t)snprintf(base, sizeof(base), "%s/%s/saves", root,
+                         hub_engines[game->engine].id) >= sizeof(base))
+        return false;
+    struct stat st;
+    if (lstat(base, &st))
+        return errno == ENOENT;
+    if (!S_ISDIR(st.st_mode))
+        return false;
+    size_t len = strlen(game->name);
+    bool claimed = false;
+    if (game->engine == HUB_XSYSTEM4 && len > strlen(HUB_DSR_SUFFIX) &&
+        !strcasecmp(game->name + len - strlen(HUB_DSR_SUFFIX), HUB_DSR_SUFFIX)) {
+        snprintf(other, sizeof(other), "%.*s", (int)(len - strlen(HUB_DSR_SUFFIX)), game->name);
+        if (!save_claim(root, other, &claimed))
+            return false;
+    }
+    if (!claimed && (size_t)snprintf(paths[0], TREE_PATH_SIZE, "%s/%s", base, game->name) >= TREE_PATH_SIZE)
+        return false;
+    if (game->engine != HUB_XSYSTEM4)
+        return true;
+    bool dsr = false;
+    if (is_directory(install) && !hub_system4_has_daisengoku_entry(install, &dsr))
+        return false;
+    if (dsr && (size_t)snprintf(other, sizeof(other), "%s" HUB_DSR_SUFFIX, game->name) < sizeof(other)) {
+        if (!save_claim(root, other, &claimed))
+            return false;
+        if (!claimed && (size_t)snprintf(paths[1], TREE_PATH_SIZE, "%s/%s", base, other) >= TREE_PATH_SIZE)
+            return false;
+    }
+    char entries[HUB_PATH_SIZE];
+    if ((size_t)snprintf(entries, sizeof(entries), "%s/" HUB_ENTRY_SAVES, base) >= sizeof(entries))
+        return false;
+    if (lstat(entries, &st))
+        return errno == ENOENT;
+    return S_ISDIR(st.st_mode) &&
+           (size_t)snprintf(paths[2], TREE_PATH_SIZE, "%s/%s", entries, game->name) < TREE_PATH_SIZE;
+}
+
 HubInstanceResult hub_instance_delete(const char *root, const HubGame *game, bool delete_saves)
 {
     HubGame checked;
-    char install[TREE_PATH_SIZE], saves[TREE_PATH_SIZE];
+    char install[TREE_PATH_SIZE], saves[3][TREE_PATH_SIZE] = {{0}};
     if (!hub_game_init(&checked, game->engine, game->name) ||
-        !hub_game_path(root, &checked, install) || !hub_game_save_path(root, &checked, saves) ||
-        !walk_tree(install, NULL, NULL, false))
+        !hub_game_path(root, &checked, install))
         return HUB_INSTANCE_DELETE_FAILED;
-    if (delete_saves && (!hub_save_recover(saves) || !walk_tree(saves, NULL, NULL, false)))
+    bool mapped = !delete_saves || save_locations(root, &checked, install, saves);
+    if (!walk_tree(install, NULL, NULL, false))
+        return HUB_INSTANCE_DELETE_FAILED;
+    if (!mapped)
         return HUB_INSTANCE_SAVE_DELETE_FAILED;
+    for (size_t i = 0; i < sizeof(saves) / sizeof(*saves); ++i)
+        if (*saves[i] && ((i < 2 && !hub_save_recover(saves[i])) || !walk_tree(saves[i], NULL, NULL, false)))
+            return HUB_INSTANCE_SAVE_DELETE_FAILED;
     return HUB_INSTANCE_OK;
 }

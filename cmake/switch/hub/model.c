@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -48,14 +49,24 @@ bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZ
     return game_path(root, game, "games", path);
 }
 
-static bool ini_uses_dsr(const char *ini_path)
+static char *ini_value(const char *ini_path, const char *key, bool quoted)
 {
+    struct stat st;
+    if (lstat(ini_path, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024)
+        return NULL;
     FILE *fp = fopen(ini_path, "rb");
     if (!fp)
-        return false;
-    char line[512];
-    bool matched = false;
-    while (fgets(line, sizeof(line), fp)) {
+        return NULL;
+    size_t size = (size_t)st.st_size;
+    char *contents = malloc(size + 1);
+    if (contents)
+        contents[fread(contents, 1, size, fp)] = '\0';
+    fclose(fp);
+    if (!contents)
+        return NULL;
+    char *state, *value = NULL;
+    size_t key_len = strlen(key);
+    for (char *line = strtok_r(contents, "\n", &state); line; line = strtok_r(NULL, "\n", &state)) {
         char *p = !strncmp(line, "\xef\xbb\xbf", 3) ? line + 3 : line;
         while (*p && isspace((unsigned char)*p))
             ++p;
@@ -67,7 +78,8 @@ static bool ini_uses_dsr(const char *ini_path)
         char *kend = eq;
         while (kend > p && isspace((unsigned char)kend[-1]))
             --kend;
-        if ((size_t)(kend - p) != 10 || strncasecmp(p, "SaveFolder", 10) != 0)
+        if ((size_t)(kend - p) != key_len ||
+            (quoted ? strncmp(p, key, key_len) : strncasecmp(p, key, key_len)))
             continue;
         char *v = eq + 1;
         while (*v && isspace((unsigned char)*v))
@@ -76,8 +88,8 @@ static bool ini_uses_dsr(const char *ini_path)
         if (*v == '"') {
             ++v;
             char *q = strchr(v, '"');
-            vend = q ? q : vend;
-        } else {
+            vend = q ? q : v;
+        } else if (!quoted) {
             for (char *c = v; *c; ++c) {
                 if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
                     vend = c;
@@ -86,12 +98,14 @@ static bool ini_uses_dsr(const char *ini_path)
             }
             while (vend > v && isspace((unsigned char)vend[-1]))
                 --vend;
+        } else {
+            vend = v;
         }
-        matched = (size_t)(vend - v) == 11 && strncasecmp(v, "SaveDataDSR", 11) == 0;
-        break;
+        free(value);
+        value = vend > v ? strndup(v, (size_t)(vend - v)) : NULL;
     }
-    fclose(fp);
-    return matched;
+    free(contents);
+    return value;
 }
 
 static const char *const standard_ini[] = {"System40.ini", "AliceStart.ini", "AliceStart2.ini", "AliceStart.CHS"};
@@ -114,7 +128,10 @@ static bool boot_leaf(const char *name)
 
 static bool boot_path(char path[HUB_PATH_SIZE], const char *dir, const char *name)
 {
-    return (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s", dir, name) < HUB_PATH_SIZE;
+    if ((size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s", dir, name) < HUB_PATH_SIZE)
+        return true;
+    *path = '\0';
+    return false;
 }
 
 static bool boot_regular(const char *path)
@@ -225,32 +242,11 @@ static bool decoded_path(const char *dir, const char *code, char path[HUB_PATH_S
 bool hub_system4_configured_script(const char *dir, const char *ini, char script[HUB_PATH_SIZE])
 {
     char path[HUB_PATH_SIZE];
-    struct stat st;
-    if (!boot_leaf(ini) || !config_name(ini) || !boot_path(path, dir, ini) ||
-        lstat(path, &st) || !S_ISREG(st.st_mode) || st.st_size > 256 * 1024)
+    if (!boot_leaf(ini) || !config_name(ini) || !boot_path(path, dir, ini))
         return false;
-    FILE *fp = fopen(path, "rb");
-    if (!fp)
-        return false;
-    char line[HUB_PATH_SIZE * 2];
-    bool found = false;
-    while (fgets(line, sizeof(line), fp)) {
-        char *p = !strncmp(line, "\xef\xbb\xbf", 3) ? line + 3 : line;
-        while (*p == ' ' || *p == '\t') ++p;
-        if (strncmp(p, "CodeName", 8)) continue;
-        p += 8;
-        while (*p == ' ' || *p == '\t') ++p;
-        if (*p++ != '=') continue;
-        while (*p == ' ' || *p == '\t') ++p;
-        if (*p++ != '"') break;
-        char *end = strchr(p, '"');
-        if (end) {
-            *end = '\0';
-            found = decoded_path(dir, p, script);
-        }
-        break;
-    }
-    fclose(fp);
+    char *code = ini_value(path, "CodeName", true);
+    bool found = code && decoded_path(dir, code, script);
+    free(code);
     return found;
 }
 
@@ -266,6 +262,14 @@ static bool default_ini(const char *dir, char path[HUB_PATH_SIZE])
     return false;
 }
 
+static bool ini_uses_dsr(const char *path)
+{
+    char *value = ini_value(path, "SaveFolder", false);
+    bool dsr = value && !strcasecmp(value, "SaveDataDSR");
+    free(value);
+    return dsr;
+}
+
 typedef struct {
     char *name;
     char *script;
@@ -277,7 +281,8 @@ static int boot_order(const void *a, const void *b)
     return strcmp(((const BootFile *)a)->name, ((const BootFile *)b)->name);
 }
 
-static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_PATH_SIZE], bool *uses_dsr)
+static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_PATH_SIZE],
+                      bool *uses_dsr, bool *has_dsr)
 {
     *entries = (HubBootEntries){0};
     *target = '\0';
@@ -285,9 +290,9 @@ static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_
     DIR *d = opendir(dir);
     if (!d)
         return false;
-    char path[HUB_PATH_SIZE];
-    bool standard = default_ini(dir, path);
-    bool isolated = standard && ini_uses_dsr(path);
+    char path[HUB_PATH_SIZE], preferred[HUB_PATH_SIZE];
+    bool standard = default_ini(dir, preferred);
+    bool isolated = standard && ini_uses_dsr(preferred);
     *uses_dsr = isolated;
     if (standard && strlen(dir) >= HUB_PATH_SIZE) {
         closedir(d);
@@ -340,7 +345,7 @@ static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_
                 if (!config) config = file->name;
                 file->listed = true;
                 entries->names[entries->count++] = file->name;
-                alternate |= !hub_system4_standard_ini(file->name);
+                alternate |= standard && strcmp(strrchr(preferred, '/') + 1, file->name);
             }
         }
         for (size_t i = 0; i < count; ++i) {
@@ -351,7 +356,8 @@ static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_
             if (!ain && suffix(file->name, ".ain")) ain = file->name;
             if (isolated && strcasecmp(file->name, "AliceCN.ain"))
                 continue;
-            boot_path(path, dir, file->name);
+            if (!boot_path(path, dir, file->name))
+                continue;
             bool configured = false;
             for (size_t j = 0; j < count; ++j)
                 if (files[j].script && !strcmp(path, files[j].script)) {
@@ -367,12 +373,13 @@ static bool scan_boot(const char *dir, HubBootEntries *entries, char target[HUB_
         const char *automatic = config ? config : ain ? ain : other_script;
         if (standard)
             strcpy(target, dir);
-        else if (automatic) {
-            boot_path(target, dir, automatic);
+        else if (automatic && boot_path(target, dir, automatic)) {
             *uses_dsr = config && ini_uses_dsr(target);
         }
         if (entries->count < 2 && !(standard && alternate))
             hub_boot_entries_free(entries);
+        if (has_dsr)
+            *has_dsr = isolated;
     }
     for (size_t i = 0; i < count; ++i) {
         if (!files[i].listed)
@@ -387,7 +394,7 @@ bool hub_system4_boot_entries(const char *dir, HubBootEntries *entries)
 {
     char target[HUB_PATH_SIZE];
     bool uses_dsr;
-    return scan_boot(dir, entries, target, &uses_dsr);
+    return scan_boot(dir, entries, target, &uses_dsr, NULL);
 }
 
 void hub_boot_entries_free(HubBootEntries *entries)
@@ -401,14 +408,14 @@ void hub_boot_entries_free(HubBootEntries *entries)
 bool hub_system4_resolve(const char *dir, char target[HUB_PATH_SIZE], bool *uses_dsr)
 {
     HubBootEntries entries;
-    if (!scan_boot(dir, &entries, target, uses_dsr))
+    if (!scan_boot(dir, &entries, target, uses_dsr, NULL))
         return false;
     char selected[HUB_NAME_SIZE];
     if (hub_game_boot_get(dir, selected))
         for (size_t i = 0; i < entries.count; ++i)
             if (!strcmp(selected, entries.names[i])) {
-                boot_path(target, dir, selected);
-                *uses_dsr = config_name(selected) && ini_uses_dsr(target);
+                if (boot_path(target, dir, selected))
+                    *uses_dsr = config_name(selected) && ini_uses_dsr(target);
                 break;
             }
     hub_boot_entries_free(&entries);
@@ -422,18 +429,67 @@ bool hub_game_uses_daisengoku_save_folder(const char *game_dir)
     return game_dir && *game_dir && hub_system4_resolve(game_dir, target, &uses_dsr) && uses_dsr;
 }
 
-bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+bool hub_system4_has_daisengoku_entry(const char *dir, bool *has_dsr)
+{
+    HubBootEntries entries;
+    char target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    bool ok = scan_boot(dir, &entries, target, &uses_dsr, has_dsr);
+    hub_boot_entries_free(&entries);
+    return ok;
+}
+
+bool hub_system4_save_key(const char *name, const char *dir, const char *target,
+                          char key[HUB_PATH_SIZE])
+{
+    char *folder = NULL, ini[HUB_PATH_SIZE];
+    if (target && !strcmp(dir, target) && default_ini(dir, ini))
+        folder = ini_value(ini, "SaveFolder", false);
+    else if (target && strcmp(dir, target) && config_name(target))
+        folder = ini_value(target, "SaveFolder", false);
+    int length;
+    if (folder && !strcasecmp(folder, "SaveDataDSR")) {
+        length = snprintf(key, HUB_PATH_SIZE, "%s" HUB_DSR_SUFFIX, name);
+    } else if (!folder || !strcasecmp(folder, "SaveData")) {
+        length = snprintf(key, HUB_PATH_SIZE, "%s", name);
+    } else {
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
+            hash = (hash ^ *p) * UINT64_C(1099511628211);
+        length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
+    }
+    free(folder);
+    return (size_t)length < HUB_PATH_SIZE;
+}
+
+static bool selected_save_key(const char *root, const HubGame *game, char key[HUB_PATH_SIZE])
 {
     if ((unsigned)game->engine >= HUB_ENGINE_COUNT)
         return false;
-    const char *suffix = "";
-    if (game->engine == HUB_XSYSTEM4) {
-        char game_dir[HUB_PATH_SIZE];
-        if (hub_game_path(root, game, game_dir) && hub_game_uses_daisengoku_save_folder(game_dir))
-            suffix = "__SaveDataDSR";
-    }
-    return (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s/saves/%s%s", root,
-                            hub_engines[game->engine].id, game->name, suffix) < HUB_PATH_SIZE;
+    if (game->engine != HUB_XSYSTEM4)
+        return (size_t)snprintf(key, HUB_PATH_SIZE, "%s", game->name) < HUB_PATH_SIZE;
+    char dir[HUB_PATH_SIZE], target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    if (!hub_game_path(root, game, dir))
+        return false;
+    bool found = hub_system4_resolve(dir, target, &uses_dsr);
+    return hub_system4_save_key(game->name, dir, found ? target : NULL, key);
+}
+
+bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+{
+    char key[HUB_PATH_SIZE];
+    return selected_save_key(root, game, key) &&
+           (size_t)snprintf(path, HUB_PATH_SIZE, "%s/%s/saves/%s", root,
+                            hub_engines[game->engine].id, key) < HUB_PATH_SIZE;
+}
+
+bool hub_game_save_manager_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE])
+{
+    char key[HUB_PATH_SIZE];
+    return selected_save_key(root, game, key) &&
+           (size_t)snprintf(path, HUB_PATH_SIZE, "%s/save-manager/%s/%s", root,
+                            hub_engines[game->engine].id, key) < HUB_PATH_SIZE;
 }
 
 static int by_name(const void *a, const void *b)

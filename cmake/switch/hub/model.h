@@ -13,6 +13,8 @@
 #define HUB_ID_SIZE 544
 #define HUB_PATH_SIZE 512
 #define HUB_BOOT_SETTING ".alicehub-launch-entry"
+#define HUB_ENTRY_SAVES ".launch-entries"
+#define HUB_DSR_SUFFIX "__SaveDataDSR"
 
 typedef enum { HUB_SYSTEM3, HUB_XSYSTEM35, HUB_XSYSTEM4, HUB_ENGINE_COUNT } HubEngine;
 
@@ -59,7 +61,11 @@ void hub_boot_entries_free(HubBootEntries *entries);
 bool hub_game_boot_get(const char *dir, char entry[HUB_NAME_SIZE]);
 bool hub_game_boot_set(const char *dir, const char *entry);
 bool hub_system4_resolve(const char *dir, char target[HUB_PATH_SIZE], bool *uses_dsr);
+bool hub_system4_has_daisengoku_entry(const char *dir, bool *has_dsr);
+bool hub_system4_save_key(const char *name, const char *dir, const char *target,
+                          char key[HUB_PATH_SIZE]);
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
+bool hub_game_save_manager_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_library_scan(HubLibrary *library, const char *root);
 void hub_library_free(HubLibrary *library);
 void hub_library_sort(HubLibrary *library, HubSort sort);

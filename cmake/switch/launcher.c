@@ -292,15 +292,36 @@ static int choose_game(Picker *picker, char game[HUB_PATH_SIZE], char target[HUB
     return accepted;
 }
 
-static bool prepare_save(const char *game, bool uses_dsr, char *save, size_t size)
+static bool ensure_save_dir(const char *path)
+{
+    struct stat st;
+    return (!mkdir(path, 0777) || errno == EEXIST) && !lstat(path, &st) && S_ISDIR(st.st_mode);
+}
+
+static bool prepare_save(const char *game, const char *target, char *save, size_t size)
 {
     const char *name = strrchr(game, '/') + 1;
-    struct stat st;
-    const char *suffix = uses_dsr ? "__SaveDataDSR" : "";
-    return (size_t)snprintf(save, size, SAVES "/%s%s", name, suffix) < size &&
-        (!mkdir(SAVES, 0777) || errno == EEXIST) &&
-        hub_save_recover(save) &&
-        (!mkdir(save, 0777) || errno == EEXIST) && !stat(save, &st) && S_ISDIR(st.st_mode);
+    char key[HUB_PATH_SIZE];
+#if defined(ALICEHUB_SWITCH_XSYSTEM4)
+    HubGame checked;
+    if (!hub_game_init(&checked, HUB_XSYSTEM4, name) ||
+        !hub_system4_save_key(checked.name, game, target, key))
+        return false;
+#else
+    (void)target;
+    if ((size_t)snprintf(key, sizeof(key), "%s", name) >= sizeof(key))
+        return false;
+#endif
+    if ((size_t)snprintf(save, size, SAVES "/%s", key) >= size || !ensure_save_dir(SAVES))
+        return false;
+    for (char *slash = strchr(save + sizeof(SAVES), '/'); slash; slash = strchr(slash + 1, '/')) {
+        *slash = '\0';
+        bool ok = ensure_save_dir(save);
+        *slash = '/';
+        if (!ok)
+            return false;
+    }
+    return hub_save_recover(save) && ensure_save_dir(save);
 }
 
 static int launch_game(const char *game, char *target, char *save)
@@ -338,7 +359,7 @@ static int standalone_main(void)
         }
         bool selected;
         while ((selected = choose_game(&picker, game, target, &uses_dsr, *launch_error ? launch_error : NULL)) &&
-               !prepare_save(game, uses_dsr, save, sizeof(save)))
+               !prepare_save(game, target, save, sizeof(save)))
             alicehub_switch_set_launch_error("Cannot create a writable save folder under " SAVES);
         if (!selected) {
             picker_close(&picker);
@@ -408,7 +429,7 @@ int main(int argc, char **argv)
         alicehub_switch_set_launch_error(reason);
         return 1;
     }
-    if (!prepare_save(game, uses_dsr, save, sizeof(save))) {
+    if (!prepare_save(game, target, save, sizeof(save))) {
         alicehub_switch_set_launch_error("Cannot create a writable save folder under " SAVES);
         return 1;
     }

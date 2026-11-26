@@ -542,9 +542,9 @@ static int nvInitialize(void) { return 0; }
 static void nvExit(void) {}
 static bool picker_open(Picker *picker) { (void)picker; return true; }
 static void picker_close(Picker *picker) { (void)picker; }
-static bool prepare_save(const char *game, bool uses_dsr, char *save, size_t size)
+static bool prepare_save(const char *game, const char *target, char *save, size_t size)
 {
-    (void)game; (void)uses_dsr; (void)save; (void)size;
+    (void)game; (void)target; (void)save; (void)size;
     return true;
 }
 static bool choose_game(Picker *picker, char *game, char *target, bool *uses_dsr, const char *error)

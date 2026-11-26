@@ -1212,6 +1212,30 @@ int main(void)
     assert(hub_system4_boot_entries("Other", &entries) && entries.count == 2);
     assert(!strcmp(entries.names[0], "Alternative.chs"));
     hub_boot_entries_free(&entries);
+
+    assert(!mkdir("Standard", 0700));
+    put("Standard/System40.ini", "CodeName = \"Missing.ain\"\n");
+    put("Standard/AliceStart2.ini", "CodeName = \"Missing.ain\"\nCodeName = \"Present.ain\"\n");
+    put("Standard/AliceStart.ini", "CodeName = \"Present.ain\"\nCodeName = \"Missing.ain\"\n");
+    put("Standard/Present.ain", "");
+    assert(!hub_system4_configured_script("Standard", "AliceStart.ini", target));
+    assert(hub_system4_configured_script("Standard", "AliceStart2.ini", target));
+    assert(hub_system4_boot_entries("Standard", &entries) && entries.count == 1);
+    assert(!strcmp(entries.names[0], "AliceStart2.ini"));
+    hub_boot_entries_free(&entries);
+    assert(hub_game_boot_set("Standard", "AliceStart2.ini"));
+    assert(hub_system4_resolve("Standard", target, &dsr) && !strcmp(target, "Standard/AliceStart2.ini"));
+
+    char long_dir[HUB_PATH_SIZE] = "Other";
+    const char *component = "/01234567890123456789012345678901234567890123456789";
+    while (strlen(long_dir) + strlen(component) < HUB_PATH_SIZE - 10) {
+        strcat(long_dir, component);
+        assert(!mkdir(long_dir, 0700));
+    }
+    char long_script[2 * HUB_PATH_SIZE];
+    assert(snprintf(long_script, sizeof(long_script), "%s/%080d.ain", long_dir, 0) >= HUB_PATH_SIZE);
+    put(long_script, "");
+    assert(!hub_system4_resolve(long_dir, target, &dsr) && !*target);
     return 0;
 }
 """,
@@ -1617,6 +1641,7 @@ int main(void)
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static void put(const char *path, const char *content)
 {
@@ -1702,6 +1727,39 @@ int main(void)
     assert(!strcmp(restored_save, vanilla_save));
     expect("./xsystem4/saves/SengokuRance/Save001.asd", "vanilla-save");
     expect("./xsystem4/saves/SengokuRance__SaveDataDSR/Save001.asd", "dsr-save");
+
+    put("xsystem4/games/SengokuRance/Mod.ini",
+        "CodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\nSaveFolder = \"../ModSaveData\"\n");
+    put("xsystem4/games/SengokuRance/OtherMod.ini",
+        "CodeName = \"AliceCN.ain\"\nSaveFolder = \"OtherModSaveData\"\n");
+    put("xsystem4/games/SengokuRance/DSR.ini",
+        "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n");
+    assert(hub_game_boot_set(dir, "Mod.ini"));
+    char mod_save[HUB_PATH_SIZE], manager[HUB_PATH_SIZE], key[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &game, mod_save));
+    assert(strstr(mod_save, "/saves/.launch-entries/SengokuRance/") && !strstr(mod_save, "../"));
+    assert(hub_system4_resolve(dir, target, &selected_dsr));
+    assert(hub_system4_save_key(game.name, dir, target, key));
+    assert(!strcmp(mod_save + strlen("./xsystem4/saves/"), key));
+    assert(hub_game_save_manager_path(".", &game, manager));
+    assert(!strcmp(manager + strlen("./save-manager/xsystem4/"), key));
+    assert(!mkdir("./xsystem4/saves/.launch-entries", 0700));
+    assert(!mkdir("./xsystem4/saves/.launch-entries/SengokuRance", 0700));
+    assert(!mkdir(mod_save, 0700));
+    assert(hub_game_boot_set(dir, "OtherMod.ini"));
+    assert(hub_game_save_path(".", &game, selected_save) && strcmp(selected_save, mod_save));
+    assert(!mkdir(selected_save, 0700));
+    assert(!unlink("xsystem4/games/SengokuRance/Mod.ini"));
+
+    assert(!mkdir("xsystem4/games/Independent__SaveDataDSR", 0700));
+    HubGame independent;
+    assert(hub_game_init(&independent, HUB_XSYSTEM4, "Independent"));
+    assert(hub_instance_delete(".", &independent, true) == HUB_INSTANCE_OK);
+    assert(!access("xsystem4/saves/Independent__SaveDataDSR", F_OK));
+    assert(hub_instance_delete(".", &game, true) == HUB_INSTANCE_OK);
+    assert(access(vanilla_save, F_OK) && access(dsr_save, F_OK));
+    assert(access(mod_save, F_OK) && access(selected_save, F_OK));
+    assert(!access("xsystem4/saves/Challenge__SaveDataDSR/Save001.asd", F_OK));
     return 0;
 }
 """,
