@@ -146,9 +146,8 @@ public class AppStorageTest {
         assertEquals(legacySave, storage.saveDir(context, "Game"));
         assertEquals(legacyGame.getPath(), storage.resolveGamePath(context, legacyGame.getPath()));
         assertTrue(publicSave.isDirectory());
-        storage.resetPublicStoragePreparation(context);
         setStorageAccess(context, AppOpsManager.MODE_ALLOWED);
-        assertTrue(storage.needsPublicStoragePreparation(context));
+        assertFalse(storage.needsPublicStoragePreparation(context));
         AppSettings.INSTANCE.setPublicStorage(context, false);
         assertFalse(storage.needsPublicStoragePreparation(context));
         assertEquals(legacyGame.getParentFile(), storage.gameRoots(context).get(0));
@@ -245,6 +244,102 @@ public class AppStorageTest {
         assertFalse(legacy.exists());
         assertTrue(AppStorage.migrateEntry(legacy, shared));
         assertEquals("old", read(new File(shared, "slot.asd")));
+    }
+
+    @Test
+    public void retainedConflictDoesNotTriggerStartupAgainAndDoesNotBlockNewBackups() throws IOException {
+        Context context = RuntimeEnvironment.getApplication();
+        File volume = enableSharedStorage(context);
+        File privateSave = new File(context.getFilesDir(), "saves/Game/SaveData/slot.asd");
+        File sharedSave = new File(volume, "AliceHub/saves/Game/SaveData/slot.asd");
+        write(privateSave, "private version");
+        write(sharedSave, "shared version");
+        AppStorage storage = AppStorage.INSTANCE;
+
+        assertTrue(storage.needsPublicStoragePreparation(context));
+        assertFalse(storage.preparePublicStorage(context));
+        assertFalse(storage.needsPublicStoragePreparation(context));
+        assertTrue(storage.needsPublicStoragePreparation(context, true));
+        assertEquals("private version", read(privateSave));
+        assertEquals("shared version", read(sharedSave));
+
+        File privateBackup = new File(context.getFilesDir(), "save_backups/NewGame/backup.zip");
+        write(privateBackup, "backup");
+        assertTrue(storage.needsPublicStoragePreparation(context));
+        List<String> attempted = new ArrayList<>();
+        assertFalse(storage.preparePublicStorage(context, status -> {
+            attempted.add(status.getItemName());
+            return Unit.INSTANCE;
+        }));
+        assertTrue(attempted.contains("NewGame"));
+        assertFalse(attempted.contains("Game"));
+        assertEquals("backup", read(new File(volume, "AliceHub/save_backups/NewGame/backup.zip")));
+        assertFalse(storage.needsPublicStoragePreparation(context));
+
+        File additionalSlot = new File(privateSave.getParentFile(), "new-slot.asd");
+        write(additionalSlot, "new save");
+        assertTrue(storage.needsPublicStoragePreparation(context));
+        assertFalse(storage.preparePublicStorage(context));
+        assertFalse(storage.needsPublicStoragePreparation(context));
+
+        assertTrue(sharedSave.delete());
+        assertFalse(storage.needsPublicStoragePreparation(context));
+        write(sharedSave, "private version");
+        write(new File(sharedSave.getParentFile(), additionalSlot.getName()), "new save");
+        assertTrue(storage.preparePublicStorage(context, true, progress -> Unit.INSTANCE));
+        assertFalse(privateSave.exists());
+        assertFalse(storage.needsPublicStoragePreparation(context, true));
+    }
+
+    @Test
+    public void emptySharedPlaceholderAcceptsLegacySaveAndNewPrivatePlaceholderDoesNotTriggerMigration() throws IOException {
+        Context context = RuntimeEnvironment.getApplication();
+        File volume = enableSharedStorage(context);
+        File privateSave = new File(context.getFilesDir(), "saves/Game/slot.asd");
+        File sharedDir = new File(volume, "AliceHub/saves/Game");
+        write(privateSave, "save");
+        assertTrue(sharedDir.mkdirs());
+        AppStorage storage = AppStorage.INSTANCE;
+
+        assertTrue(storage.preparePublicStorage(context));
+        assertEquals("save", read(new File(sharedDir, "slot.asd")));
+        assertFalse(privateSave.exists());
+        assertTrue(new File(context.getFilesDir(), "saves/Placeholder").mkdirs());
+        assertFalse(storage.needsPublicStoragePreparation(context));
+        assertEquals(new File(volume, "AliceHub/saves/Placeholder"), storage.saveDir(context, "Placeholder"));
+    }
+
+    @Test
+    public void blockedLayoutIsNotRetriedUntilItChangesAndWarningCanOnlyBeConsumedOnce() throws IOException {
+        Context context = RuntimeEnvironment.getApplication();
+        File volume = enableSharedStorage(context);
+        File blocked = new File(volume, "AliceHub/saves");
+        write(blocked, "path occupied");
+        File privateSave = new File(context.getFilesDir(), "saves/Game/slot.asd");
+        write(privateSave, "save");
+        AppStorage storage = AppStorage.INSTANCE;
+
+        assertFalse(storage.preparePublicStorage(context));
+        assertFalse(storage.needsPublicStoragePreparation(context));
+        assertTrue(storage.consumePublicStorageFailureNotice(context));
+        AppSettings.INSTANCE.setPublicStorage(context, false);
+        AppSettings.INSTANCE.setPublicStorage(context, true);
+        assertFalse(storage.consumePublicStorageFailureNotice(context));
+        assertFalse(storage.needsPublicStoragePreparation(context));
+
+        assertTrue(blocked.delete());
+        assertTrue(storage.needsPublicStoragePreparation(context));
+        assertTrue(storage.preparePublicStorage(context));
+        assertEquals("save", read(new File(blocked, "Game/slot.asd")));
+    }
+
+    private File enableSharedStorage(Context context) throws IOException {
+        File volume = tmp.newFolder();
+        ShadowEnvironment.setExternalStorageDirectory(volume.toPath());
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED);
+        setStorageAccess(context, AppOpsManager.MODE_ALLOWED);
+        AppSettings.INSTANCE.setPublicStorage(context, true);
+        return volume;
     }
 
     @Test

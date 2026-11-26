@@ -403,27 +403,15 @@ private class GameSelectAdapter(
 class LauncherActivity : ThemedActivity(), GameListObserver {
     companion object {
         private var savedGameList: GameList? = null
-        private var storagePreparationIncomplete = false
 
         internal fun showStorageMigration(activity: Activity, retry: Boolean = false, onComplete: () -> Unit): Boolean {
             if (SharedStorageMigration.attach(activity, onComplete)) return true
-            if (!AppSettings.prefersPublicStorage(activity)) {
-                storagePreparationIncomplete = false
-                return false
-            }
-            if (!AppStorage.hasPermission(activity)) {
-                storagePreparationIncomplete = false
-                AppStorage.resetPublicStoragePreparation(activity)
-                return false
-            }
-            if (!AppStorage.needsPublicStoragePreparation(activity) ||
-                (!retry && storagePreparationIncomplete && AppStorage.publicLayoutExists(activity)) ||
+            if (!AppStorage.needsPublicStoragePreparation(activity, retry) ||
                 savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
                 GameCatalog.isGameProcessRunning(activity)
             ) return false
 
-            SharedStorageMigration.start(activity, onFinished = { complete ->
-                storagePreparationIncomplete = !complete
+            SharedStorageMigration.start(activity, retry, onFinished = {
                 savedGameList?.close()
                 savedGameList = null
             }, onComplete = onComplete)

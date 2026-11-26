@@ -52,7 +52,7 @@ internal object SharedStorageMigration {
         running?.dialogs?.remove(activity)?.dialog?.dismiss()
     }
 
-    fun start(activity: Activity, onFinished: (Boolean) -> Unit, onComplete: () -> Unit) {
+    fun start(activity: Activity, retry: Boolean, onFinished: () -> Unit, onComplete: () -> Unit) {
         if (attach(activity, onComplete)) return
         val session = Session()
         running = session
@@ -60,7 +60,7 @@ internal object SharedStorageMigration {
         val context = activity.applicationContext
         Thread({
             val complete = try {
-                AppStorage.preparePublicStorage(context) { status ->
+                AppStorage.preparePublicStorage(context, retry) { status ->
                     if (session.latest.getAndSet(status) == null) handler.post {
                         session.latest.getAndSet(null)?.let { current ->
                             session.displayed = current
@@ -74,12 +74,18 @@ internal object SharedStorageMigration {
             }
             handler.post {
                 running = null
-                onFinished(complete)
+                onFinished()
+                var resultShown = false
                 for ((host, binding) in session.dialogs) {
                     binding.dialog.dismiss()
                     if (host.isFinishing || host.isDestroyed) continue
-                    Toast.makeText(host, if (complete) R.string.public_storage_migration_done
-                        else R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
+                    if (!resultShown) {
+                        resultShown = true
+                        if (complete || AppStorage.consumePublicStorageFailureNotice(context)) {
+                            Toast.makeText(host, if (complete) R.string.public_storage_migration_done
+                                else R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
+                        }
+                    }
                     binding.onComplete()
                 }
             }
