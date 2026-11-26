@@ -1072,6 +1072,7 @@ int main(int argc, char **argv) {
 struct config config;
 bool game_evenicle2 = true;
 bool game_okusama;
+bool game_haharanman;
 static struct ain program = { .version = 14 };
 struct ain *ain = &program;
 struct vm_pointer *heap;
@@ -1188,6 +1189,13 @@ int main(int argc, char **argv) {
     assert(aflt_fn(offset, 3, -1.0f, 0) == -1.0f);
     assert(aflt_fn(offset, 4, -1.0f, 0) == -1.0f);
     game_okusama = false;
+    game_haharanman = true;
+    assert(aflt_fn(offset, 0, 0.0f, 0) == 40.0f);
+    assert(aflt_fn(offset, 1, 0.0f, 0) == 109.0f);
+    assert(aflt_fn(offset, 2, 0.0f, 0) == -2.5f);
+    assert(aflt_fn(offset, 3, -1.0f, 0) == -1.0f);
+    assert(aflt_fn(offset, 4, -1.0f, 0) == -1.0f);
+    game_haharanman = false;
     free_string(offset);
 
     program.version = 8;
