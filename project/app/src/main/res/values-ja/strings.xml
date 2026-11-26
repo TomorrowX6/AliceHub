@@ -101,6 +101,7 @@
 
     <string name="save_export_done_title">エクスポート完了</string>
     <string name="save_export_failed_title">エクスポート失敗</string>
+    <string name="save_export_live_directory_error">使用中のセーブデータを保護するため、AliceHub/saves フォルダーの外を選択してください。</string>
     <string name="save_export_zip_done_msg">%1$d 個のファイルを出力しました</string>
     <string name="save_export_dir_done_msg">%1$d 個のファイルを出力しました</string>
     <string name="save_export_pc_converted_done_msg">PC互換セーブ %1$d 個を出力しました・%2$d 個を変換</string>
@@ -507,4 +508,27 @@
     <string name="game_sort_name_short">名前</string>
     <string name="game_sort_rating_short">評価</string>
     <string name="game_sort_release_date_short">発売日</string>
+    <string name="public_storage_migrating">セーブとバックアップを共有ストレージに移動しています…</string>
+    <string name="public_storage_migration_preparing">ファイルを準備しています…</string>
+    <string name="public_storage_migration_done">共有ストレージの準備ができました。</string>
+    <string name="public_storage_migration_incomplete">一部のファイルを移動できなかったため、元の場所に残しました。</string>
+    <string name="public_storage_settings_unavailable">ファイルへのアクセス設定を開けませんでした。</string>
+    <string name="onboarding_step">初期設定 · %1$d / %2$d</string>
+    <string name="onboarding_welcome">AliceHub へようこそ</string>
+    <string name="onboarding_intro">Android でアリスソフトのゲームを遊べます。数ステップでセットアップが完了します。</string>
+    <string name="onboarding_back">戻る</string>
+    <string name="onboarding_next">次へ</string>
+    <string name="onboarding_finish">AliceHub をはじめる</string>
+    <string name="storage_location">保存先</string>
+    <string name="onboarding_storage_intro">ゲームとセーブの保存先を選んでください。後から設定で変更できます。</string>
+    <string name="public_storage_option">共有ストレージを使用\n<small>追加のストレージ権限が必要</small></string>
+    <string name="public_storage_benefits">• アプリをアンインストールしても AliceHub フォルダー内のデータは残る\n• バックアップ、移行、パソコンへのコピーが簡単\n• 旧バージョンのセーブデータを自動で移行</string>
+    <string name="private_storage_option">スキップ（アプリ専用ストレージを使用）\n<small>追加のストレージ権限は不要</small></string>
+    <string name="private_storage_drawbacks">• AliceHub をアンインストールすると、ここにあるゲームとセーブデータが削除される\n• ファイル管理アプリやパソコンでのバックアップや移行がしにくい</string>
+    <string name="storage_option_shared_directory">共有ストレージのフォルダー</string>
+    <string name="storage_option_app_directory">アプリ専用フォルダー</string>
+    <string name="storage_location_public">共有</string>
+    <string name="storage_location_private">アプリ専用</string>
+    <string name="storage_location_pending">アクセス許可が必要</string>
+    <string name="onboarding_online_intro">AliceHub からゲームやアップデートを直接ダウンロードできます。設定でいつでも変更できます。</string>
 </resources>

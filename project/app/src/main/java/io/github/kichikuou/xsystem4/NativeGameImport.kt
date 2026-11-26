@@ -997,8 +997,9 @@ object NativeGameImport {
                 throw GameList.InstallFailureException(R.string.import_wrong_game)
             }
             var destination = File(storageCanonical, baseName).canonicalFile
+            val reserved = AppStorage.privateGameNamesForInstall(context, storageCanonical)
             var index = 1
-            while (destination.exists()) {
+            while (destination.exists() || AppStorage.gameDirectoryKey(destination.name) in reserved) {
                 destination = File(storageCanonical, "$baseName-${index++}").canonicalFile
             }
             if (destination.parentFile != storageCanonical) {

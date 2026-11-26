@@ -95,7 +95,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val pathExtra = savedInstanceState?.getString(STATE_TARGET_PATH)?.takeIf { it.isNotBlank() }
             ?: srcIntent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
         if (pathExtra != null) {
-            currentTargetPath = pathExtra
+            currentTargetPath = AppStorage.resolveGamePath(this, pathExtra)
         }
         val idExtra = savedInstanceState?.getString(STATE_TARGET_GAME_ID)?.takeIf { it.isNotBlank() }
             ?: srcIntent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
@@ -327,7 +327,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private fun rebindCurrentTarget() {
         val candidates = overlayGameItems()
         if (candidates.isEmpty()) return
-        currentTarget = candidates.firstOrNull { it.path.path == currentTargetPath } ?: candidates[0]
+        val resolved = AppStorage.resolveGamePath(this, currentTargetPath)
+        currentTarget = candidates.firstOrNull { it.path.path == resolved } ?: candidates[0]
         currentTargetPath = currentTarget.path.path
     }
 

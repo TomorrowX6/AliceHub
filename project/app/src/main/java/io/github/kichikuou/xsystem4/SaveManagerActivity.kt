@@ -42,7 +42,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 internal const val SAVE_IMPORT_TMP_PREFIX = ".save_import_tmp"
-private const val SAVE_BACKUP_ROOT = "save_backups"
 private const val SAVE_BACKUP_KEEP = 5
 private const val REQ_IMPORT_DIR = 102
 private const val REQ_IMPORT_FILES = 103
@@ -207,6 +206,8 @@ class SaveManagerActivity : ThemedActivity() {
         private var opProgressMessage: String? = null
         private var liveHostRef: java.lang.ref.WeakReference<SaveManagerActivity>? = null
 
+        internal fun hasActiveSaveOperation(): Boolean = opJob?.isActive == true
+
         private fun launchSaveOp(block: suspend CoroutineScope.() -> Unit): Job =
             opScope.launch(block = block)
 
@@ -243,11 +244,8 @@ class SaveManagerActivity : ThemedActivity() {
         private fun hasExistingSavesInDir(dir: File): Boolean =
             dir.walkTopDown().any { it.isFile && !it.name.startsWith(".") }
 
-        private fun saveBackupDirFor(filesDir: File, dirName: String): File =
-            File(File(filesDir, SAVE_BACKUP_ROOT), File(dirName).name)
-
-        private fun listSaveBackupsFor(filesDir: File, dirName: String): List<File> =
-            saveBackupDirFor(filesDir, dirName).listFiles()
+        private fun listSaveBackupsFor(context: Context, dirName: String): List<File> =
+            AppStorage.backupDir(context, dirName).listFiles()
                 ?.filter { it.isFile && it.name.endsWith(".zip") }
                 ?.sortedByDescending { it.name }
                 .orEmpty()
@@ -257,10 +255,10 @@ class SaveManagerActivity : ThemedActivity() {
          * overwrites them, keeping the newest [SAVE_BACKUP_KEEP]. Returns null if there was
          * nothing to back up. Runs on an IO thread without capturing an Activity reference.
          */
-        private fun backupSavesInDir(filesDir: File, saveDir: File, dirName: String): File? {
+        private fun backupSavesInDir(context: Context, saveDir: File, dirName: String): File? {
             val files = saveDir.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.toList()
             if (files.isEmpty()) return null
-            val dir = saveBackupDirFor(filesDir, dirName)
+            val dir = AppStorage.backupDir(context, dirName)
             dir.mkdirs()
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
             val out = File(dir, "SaveData_$stamp.zip")
@@ -283,7 +281,7 @@ class SaveManagerActivity : ThemedActivity() {
                 tmp.delete()
                 throw e
             }
-            listSaveBackupsFor(filesDir, dirName).drop(SAVE_BACKUP_KEEP).forEach { it.delete() }
+            listSaveBackupsFor(context, dirName).drop(SAVE_BACKUP_KEEP).forEach { it.delete() }
             return out
         }
 
@@ -296,7 +294,7 @@ class SaveManagerActivity : ThemedActivity() {
             ensureProcessStoppedOnIo(appCtx)
             return SaveBackupRestore.restore(backup, saveDir, beforeSwap = {
                 ensureProcessStoppedOnIo(appCtx)
-                backupSavesInDir(appCtx.filesDir, saveDir, dirName)
+                backupSavesInDir(appCtx, saveDir, dirName)
             })
         }
 
@@ -549,7 +547,7 @@ class SaveManagerActivity : ThemedActivity() {
                     ensureProcessStoppedOnIo(appCtx)
                     val targetDir = target.saveDir
                     targetDir.mkdirs()
-                    backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
+                    backupSavesInDir(appCtx, targetDir, target.dirName)
                     val paths = saveImportPathsForTarget(appCtx, target)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     val source = paths.selectSource(
@@ -607,7 +605,7 @@ class SaveManagerActivity : ThemedActivity() {
                     ensureProcessStoppedOnIo(appCtx)
                     val targetDir = target.saveDir
                     targetDir.mkdirs()
-                    backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
+                    backupSavesInDir(appCtx, targetDir, target.dirName)
                     val paths = saveImportPathsForTarget(appCtx, target)
                     val rootCanonical = targetDir.canonicalFile
                     var imported = 0
@@ -670,6 +668,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, uri)
                     val outStream = appCtx.contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to create target ZIP file")
                     ZipOutputStream(outStream.buffered()).use { zos ->
@@ -709,6 +708,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 val (count, converted) = withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, treeUri, tree = true)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     var exported = 0
                     var convCount = 0
@@ -718,6 +718,7 @@ class SaveManagerActivity : ThemedActivity() {
                         if (parts.isEmpty()) continue
                         var parentDocId = rootDocId
                         for (i in 0 until parts.size - 1) {
+                            requireSafeExportDestination(appCtx, DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId))
                             parentDocId = getOrCreateSubdirStatic(appCtx, treeUri, parentDocId, parts[i])
                         }
                         val fileName = parts.last()
@@ -725,12 +726,14 @@ class SaveManagerActivity : ThemedActivity() {
                             .firstOrNull { !it.isDirectory && it.name == fileName }
                         if (existing != null) {
                             val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
+                            requireSafeExportDestination(appCtx, existingUri)
                             try {
                                 DocumentsContract.deleteDocument(appCtx.contentResolver, existingUri)
                             } catch (_: Exception) {
                             }
                         }
                         val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+                        requireSafeExportDestination(appCtx, parentUri)
                         val newDocUri = DocumentsContract.createDocument(
                             appCtx.contentResolver,
                             parentUri,
@@ -785,6 +788,7 @@ class SaveManagerActivity : ThemedActivity() {
         ): Job = launchSaveOp {
             try {
                 withContext(Dispatchers.IO) {
+                    requireSafeExportDestination(appCtx, destUri)
                     appCtx.contentResolver.openOutputStream(destUri)?.use { out ->
                         copyExportFileStatic(appCtx, srcFile, out, asPc)
                     } ?: throw IOException("Failed to write target file")
@@ -805,6 +809,12 @@ class SaveManagerActivity : ThemedActivity() {
             }
         }
 
+        private fun requireSafeExportDestination(context: Context, uri: Uri, tree: Boolean = false) {
+            if (AppStorage.isSharedSaveDocument(uri, tree)) {
+                throw IOException(context.getString(R.string.save_export_live_directory_error))
+            }
+        }
+
         private fun startClearSavesOp(
             appCtx: Context,
             targetDir: File,
@@ -814,7 +824,7 @@ class SaveManagerActivity : ThemedActivity() {
                 withContext(Dispatchers.IO) {
                     ensureProcessStoppedOnIo(appCtx)
                     if (hasExistingSavesInDir(targetDir)) {
-                        val backup = backupSavesInDir(appCtx.filesDir, targetDir, targetDirName)
+                        val backup = backupSavesInDir(appCtx, targetDir, targetDirName)
                         if (backup == null || !backup.isFile || backup.length() <= 0L) {
                             throw IOException(
                                 GamepadBridge.tr(
@@ -914,7 +924,8 @@ class SaveManagerActivity : ThemedActivity() {
         liveHostRef = java.lang.ref.WeakReference(this)
         if (savedInstanceState != null) {
             pendingExportAsPc = savedInstanceState.getBoolean(STATE_EXPORT_AS_PC, false)
-            pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)?.let { File(it) }
+            pendingSingleExportFile = savedInstanceState.getString(STATE_SINGLE_EXPORT_FILE)
+                ?.let { File(AppStorage.resolveSavePath(this, it)) }
             pendingSingleExportAsPc = savedInstanceState.getBoolean(STATE_SINGLE_EXPORT_AS_PC, false)
         }
         restoredTargetDir = savedInstanceState?.getString(STATE_TARGET_DIR)
@@ -1182,7 +1193,7 @@ class SaveManagerActivity : ThemedActivity() {
                         Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
-                    val newDir = File(File(filesDir, "saves"), safeName)
+                    val newDir = AppStorage.saveDir(this, safeName)
                     newDir.mkdirs()
                     loadFileList(preferredDir = safeName)
                 }
@@ -1193,7 +1204,7 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun showImportDialog() {
         if (activeJob?.isActive == true) return
-        val latestBackup = listSaveBackupsFor(filesDir, currentTarget.dirName).firstOrNull()
+        val latestBackup = listSaveBackupsFor(this, currentTarget.dirName).firstOrNull()
         val options = mutableListOf(
             getString(R.string.save_import_opt_files),
             getString(R.string.save_import_opt_dir)

@@ -30,6 +30,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.RadioGroup
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Switch
@@ -105,6 +106,8 @@ class SettingsActivity : ThemedActivity() {
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_gamepad, accent))
         findViewById<ImageView>(R.id.icon_settings_clear_cache)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_clear_cache, accent))
+        findViewById<ImageView>(R.id.icon_settings_storage)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_folder_open, accent))
 
         val btnQqGroup = findViewById<Button>(R.id.btn_settings_qq_group)
         val btnLicenses = findViewById<Button>(R.id.btn_settings_licenses)
@@ -138,6 +141,9 @@ class SettingsActivity : ThemedActivity() {
         findViewById<View>(R.id.row_settings_clear_cache).setOnClickListener {
             onClearCacheClicked()
         }
+        findViewById<View>(R.id.row_settings_storage).setOnClickListener {
+            showStorageLocationDialog()
+        }
         btnQqGroup.setOnClickListener {
             showQqGroupDialog()
         }
@@ -154,9 +160,53 @@ class SettingsActivity : ThemedActivity() {
     override fun onResume() {
         super.onResume()
         refreshSettingsUi()
+        SharedStorageMigration.attach(this, ::refreshStorageLabel)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(code, permissions, grantResults)
+        if (code == STORAGE_PERMISSION_REQUEST) applyStoragePermission()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == STORAGE_PERMISSION_REQUEST) applyStoragePermission()
+    }
+
+    private fun applyStoragePermission() {
+        refreshStorageLabel()
+        LauncherActivity.showStorageMigration(this, retry = true, onComplete = ::refreshStorageLabel)
+    }
+
+    private fun refreshStorageLabel() {
+        val label = when {
+            !AppSettings.prefersPublicStorage(this) -> R.string.storage_location_private
+            !AppStorage.hasPermission(this) -> R.string.storage_location_pending
+            else -> R.string.storage_location_public
+        }
+        findViewById<TextView>(R.id.value_settings_storage).setText(label)
+    }
+
+    private fun showStorageLocationDialog() {
+        val options = createStorageOptions(AppSettings.prefersPublicStorage(this))
+        options.findViewById<TextView>(R.id.storage_option_public).setText(R.string.storage_option_shared_directory)
+        options.findViewById<TextView>(R.id.storage_option_private).setText(R.string.storage_option_app_directory)
+        trackDialog(AlertDialog.Builder(this)
+            .setTitle(R.string.storage_location)
+            .setView(UiKit.dialogContent(this, options))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val selected = options.findViewById<RadioGroup>(R.id.storage_options).checkedRadioButtonId
+                val usePublic = selected == R.id.storage_option_public
+                AppSettings.setPublicStorage(this, usePublic)
+                refreshStorageLabel()
+                if (usePublic && !requestSharedStorageAccess()) applyStoragePermission()
+            }
+            .show())
     }
 
     override fun onDestroy() {
+        SharedStorageMigration.detach(this)
         dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
@@ -190,6 +240,7 @@ class SettingsActivity : ThemedActivity() {
         }
         findViewById<Switch>(R.id.switch_online_install).isChecked =
             AppSettings.isOnlineInstallEnabled(this)
+        refreshStorageLabel()
         findViewById<Switch>(R.id.switch_updates).isChecked = AppSettings.isUpdateCheckEnabled(this)
         val concurrencyLabel = downloadConcurrencyLabel(AppSettings.getDownloadConcurrency(this))
         findViewById<TextView>(R.id.value_settings_download_concurrency).text = concurrencyLabel
@@ -394,14 +445,7 @@ class SettingsActivity : ThemedActivity() {
                 (f.lastModified() <= 0L || nowMs - f.lastModified() >= 600_000L)
         }?.forEach { routine.add(it) }
 
-        val storageRoots = LinkedHashSet<File>()
-        context.getExternalFilesDirs(null)?.filterNotNull()?.forEach { storageRoots.add(it) }
-        val internalGames = File(context.filesDir, "games")
-        if (internalGames.isDirectory) {
-            storageRoots.add(internalGames)
-        }
-
-        for (root in storageRoots) {
+        for (root in AppStorage.gameRoots(context)) {
             val children = root.listFiles() ?: continue
             for (f in children) {
                 val n = f.name

@@ -319,6 +319,24 @@ object AppSettings {
     fun isOnlineInstallEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ONLINE_INSTALL, false)
 
+    fun isOnboardingComplete(context: Context): Boolean =
+        prefs(context).getBoolean("onboarding_complete", false)
+
+    fun completeOnboarding(context: Context, onlineInstallEnabled: Boolean) {
+        prefs(context).edit()
+            .putBoolean(KEY_ONLINE_INSTALL, onlineInstallEnabled)
+            .putBoolean("onboarding_complete", true)
+            .apply()
+    }
+
+    fun prefersPublicStorage(context: Context): Boolean =
+        prefs(context).getBoolean("public_storage", false)
+
+    fun setPublicStorage(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("public_storage", enabled).apply()
+        if (!enabled) AppStorage.resetPublicStoragePreparation(context)
+    }
+
     fun isUpdateCheckEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_CHECK_FOR_UPDATES, true)
 

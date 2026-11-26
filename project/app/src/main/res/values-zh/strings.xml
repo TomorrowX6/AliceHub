@@ -101,6 +101,7 @@
 
     <string name="save_export_done_title">导出成功</string>
     <string name="save_export_failed_title">导出失败</string>
+    <string name="save_export_live_directory_error">为保护当前存档，请选择 AliceHub/saves 目录以外的位置。</string>
     <string name="save_export_zip_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_dir_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_pc_converted_done_msg">已导出 %1$d 个 PC 兼容存档文件，其中 %2$d 个已自动转换</string>
@@ -507,4 +508,27 @@
     <string name="game_sort_name_short">名称</string>
     <string name="game_sort_rating_short">评分</string>
     <string name="game_sort_release_date_short">发行时间</string>
+    <string name="public_storage_migrating">正在将存档和备份迁移到共享存储…</string>
+    <string name="public_storage_migration_preparing">正在准备文件…</string>
+    <string name="public_storage_migration_done">共享存储已准备就绪。</string>
+    <string name="public_storage_migration_incomplete">部分文件未能迁移，已保留在原位置。</string>
+    <string name="public_storage_settings_unavailable">无法打开文件访问权限设置。</string>
+    <string name="onboarding_step">初始设置 · %1$d / %2$d</string>
+    <string name="onboarding_welcome">欢迎使用 AliceHub</string>
+    <string name="onboarding_intro">在安卓设备上游玩 AliceSoft 的游戏。只需几步即可完成设置。</string>
+    <string name="onboarding_back">上一步</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_finish">开始使用 AliceHub</string>
+    <string name="storage_location">储存位置</string>
+    <string name="onboarding_storage_intro">请选择游戏和存档的储存位置，之后也可以在设置中更改。</string>
+    <string name="public_storage_option">使用公共储存目录\n<small>需要授予额外储存权限</small></string>
+    <string name="public_storage_benefits">• 卸载应用后仍保留 AliceHub 文件夹中的数据\n• 更容易备份、转移或复制到电脑\n• 自动迁移旧版存档</string>
+    <string name="private_storage_option">我想跳过（仅使用应用专属目录）\n<small>无需授予额外储存权限</small></string>
+    <string name="private_storage_drawbacks">• 卸载 AliceHub 会删除此处的游戏和存档\n• 使用文件管理器或电脑备份、转移不方便</string>
+    <string name="storage_option_shared_directory">公共储存目录</string>
+    <string name="storage_option_app_directory">应用专属目录</string>
+    <string name="storage_location_public">公共储存</string>
+    <string name="storage_location_private">应用专属</string>
+    <string name="storage_location_pending">待授权</string>
+    <string name="onboarding_online_intro">直接在 AliceHub 中下载游戏与更新，之后可在设置中开启或关闭。</string>
 </resources>

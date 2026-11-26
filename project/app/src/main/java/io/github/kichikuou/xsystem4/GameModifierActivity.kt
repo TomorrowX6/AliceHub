@@ -885,7 +885,7 @@ class GameModifierActivity : ThemedActivity() {
                     Toast.makeText(this, R.string.save_dir_invalid_name, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                val newDir = File(File(filesDir, "saves"), safeName)
+                val newDir = AppStorage.saveDir(this, safeName)
                 newDir.mkdirs()
                 loadList(preferredDir = safeName)
             }
