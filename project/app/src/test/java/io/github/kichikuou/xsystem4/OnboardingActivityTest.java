@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4;
 
+import android.animation.ValueAnimator;
 import android.app.AlertDialog;
 import android.app.AppOpsManager;
 import android.content.Intent;
@@ -22,6 +23,7 @@ import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowAlertDialog;
+import org.robolectric.util.ReflectionHelpers;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,6 +37,34 @@ import static org.junit.Assert.assertTrue;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
 public class OnboardingActivityTest {
+    @Test
+    public void welcomeHasNoHaloAndShowsTextWithAnimationsDisabled() {
+        float durationScale = ValueAnimator.getDurationScale();
+        setAnimatorDurationScale(0f);
+        try (ActivityController<OnboardingActivity> controller =
+                     Robolectric.buildActivity(OnboardingActivity.class).setup()) {
+            OnboardingActivity activity = controller.get();
+            ViewGroup page = activity.findViewById(R.id.onboarding_page);
+            ViewGroup content = (ViewGroup) page.getChildAt(0);
+            View icon = content.getChildAt(0);
+            View title = content.getChildAt(1);
+            View subtitle = content.getChildAt(2);
+            assertNull(icon.getBackground());
+            assertFalse(ValueAnimator.areAnimatorsEnabled());
+            assertNull(ReflectionHelpers.getField(activity, "welcomeAnimation"));
+            assertEquals(1f, title.getAlpha(), 0f);
+            assertEquals(1f, subtitle.getAlpha(), 0f);
+            assertEquals(0f, subtitle.getTranslationY(), 0f);
+        } finally {
+            setAnimatorDurationScale(durationScale);
+        }
+    }
+
+    private static void setAnimatorDurationScale(float value) {
+        ReflectionHelpers.callStaticMethod(ValueAnimator.class, "setDurationScale",
+                ReflectionHelpers.ClassParameter.from(float.class, value));
+    }
+
     @Test
     public void upgradeCanKeepExistingFilesPrivateWithoutRequestingPermission() throws IOException {
         try (ActivityController<OnboardingActivity> controller =
@@ -90,6 +120,8 @@ public class OnboardingActivityTest {
             OnboardingActivity activity = controller.get();
             activity.findViewById(R.id.onboarding_next).performClick();
             assertPageIcon(activity, R.drawable.ic_folder_open);
+            ViewGroup storageCard = activity.findViewById(R.id.storage_options);
+            assertEquals(1, ((ViewGroup) storageCard.getParent()).getChildCount());
             assertStorageDetails(activity, true);
             activity.findViewById(R.id.storage_option_private).performClick();
             assertStorageDetails(activity, false);

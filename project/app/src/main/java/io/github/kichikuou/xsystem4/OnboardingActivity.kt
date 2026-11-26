@@ -7,11 +7,12 @@ import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RadialGradient
-import android.graphics.Shader
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -37,8 +38,12 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.random.Random
 
 internal const val STORAGE_PERMISSION_REQUEST = 33
+private const val WELCOME_DURATION_MS = 1750L
 
 internal fun Activity.requestSharedStorageAccess(): Boolean {
     if (AppStorage.hasPermission(this)) return false
@@ -82,13 +87,6 @@ internal fun Activity.createStorageOptions(publicSelected: Boolean, onSelection:
             }
             showDetails(usePublic)
             onSelection(usePublic)
-        }
-        findViewById<View>(R.id.storage_help).setOnClickListener {
-            AlertDialog.Builder(this@createStorageOptions)
-                .setTitle(R.string.public_storage_why)
-                .setMessage(R.string.public_storage_permission_message)
-                .setPositiveButton(R.string.ok, null)
-                .show()
         }
     }
 
@@ -229,95 +227,113 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun showIntro(content: LinearLayout) {
-        val halo = WelcomeHalo()
-        val icon = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_launcher)
+        val icon = WelcomeIcon().apply {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        val stage = FrameLayout(this).apply {
-            addView(halo, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ))
-            addView(icon, FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER))
-        }
-        content.addView(stage, LinearLayout.LayoutParams(dp(170), dp(170)).apply {
+        content.addView(icon, LinearLayout.LayoutParams(dp(170), dp(170)).apply {
             gravity = Gravity.CENTER_HORIZONTAL
             bottomMargin = dp(8)
         })
         val (title, subtitle) = content.addHeading(R.string.onboarding_welcome, R.string.onboarding_intro, center = true)
         if (!ValueAnimator.areAnimatorsEnabled()) return
-        val bounce = OvershootInterpolator(1.8f)
         val ease = DecelerateInterpolator()
-        fun progress(time: Float, start: Float, end: Float): Float = ((time - start) / (end - start)).coerceIn(0f, 1f)
-        fun reveal(view: View, fraction: Float) {
+        val textOffset = dp(16)
+        fun reveal(view: View, time: Float, start: Float, end: Float) {
+            val fraction = ease.getInterpolation(phase(time, start, end))
             view.alpha = fraction
-            view.translationY = dp(16) * (1f - fraction)
+            view.translationY = textOffset * (1f - fraction)
         }
         fun render(time: Float) {
-            val arrival = bounce.getInterpolation(progress(time, 0f, 0.59f))
-            icon.alpha = progress(time, 0f, 0.21f)
-            icon.scaleX = 0.35f + 0.65f * arrival
-            icon.scaleY = icon.scaleX
-            icon.rotation = -24f * (1f - arrival)
-            reveal(title, ease.getInterpolation(progress(time, 0.33f, 0.68f)))
-            reveal(subtitle, ease.getInterpolation(progress(time, 0.45f, 0.81f)))
-            halo.reveal = progress(time, 0.02f, 0.46f)
-            halo.pulse = progress(time, 0.21f, 0.91f)
-            halo.sweep = progress(time, 0.31f, 1f)
-            halo.invalidate()
+            icon.playTime = time
+            reveal(title, time, 1110f, 1510f)
+            reveal(subtitle, time, 1300f, WELCOME_DURATION_MS.toFloat())
         }
         render(0f)
-        welcomeAnimation = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1450L
+        welcomeAnimation = ValueAnimator.ofFloat(0f, WELCOME_DURATION_MS.toFloat()).apply {
+            duration = WELCOME_DURATION_MS
             interpolator = LinearInterpolator()
-            addUpdateListener { render(it.animatedFraction) }
+            addUpdateListener { render(it.animatedValue as Float) }
             start()
         }
     }
 
-    private inner class WelcomeHalo : View(this@OnboardingActivity) {
-        private val accent = getColor(R.color.ui_primary)
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private lateinit var glow: RadialGradient
-        var reveal = 1f
-        var pulse = 1f
-        var sweep = 1f
+    private fun phase(time: Float, start: Float, end: Float): Float =
+        ((time - start) / (end - start)).coerceIn(0f, 1f)
 
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            val radius = minOf(w, h) / 2f
-            if (radius > 0f) {
-                glow = RadialGradient(w / 2f, h / 2f, radius, withOpacity(accent, 90), withOpacity(accent, 0), Shader.TileMode.CLAMP)
+    private data class Tile(val source: Rect, val start: Float, val offsetX: Int, val offsetY: Int)
+
+    private inner class WelcomeIcon : View(this@OnboardingActivity) {
+        private val bitmap = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher,
+            BitmapFactory.Options().apply { inScaled = false })
+        private val paint = Paint().apply { isFilterBitmap = false }
+        private val destination = RectF()
+        private val bounce = OvershootInterpolator(2f)
+        private val tiles = buildList {
+            val random = Random(42)
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            for (y in 0 until bitmap.height step 16) {
+                for (x in 0 until bitmap.width step 16) {
+                    val right = minOf(x + 16, bitmap.width)
+                    val bottom = minOf(y + 16, bitmap.height)
+                    if (!(y until bottom).any { row ->
+                            (x until right).any { column -> pixels[row * bitmap.width + column] ushr 24 != 0 }
+                        }) continue
+                    val start = 360f * (x + y) / (bitmap.width + bitmap.height) + random.nextInt(125)
+                    add(Tile(Rect(x, y, right, bottom), start, random.nextInt(-20, 21), random.nextInt(-20, 21)))
+                }
             }
         }
+        var playTime = WELCOME_DURATION_MS.toFloat()
+            set(value) {
+                field = value
+                invalidate()
+            }
 
         override fun onDraw(canvas: Canvas) {
-            if (!::glow.isInitialized) return
             val x = width / 2f
             val y = height / 2f
-            val radius = minOf(x, y)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.WHITE
-            paint.shader = glow
-            paint.alpha = (reveal * 220 + (1f - pulse) * pulse * 130).toInt().coerceAtMost(255)
-            canvas.drawCircle(x, y, radius, paint)
-            paint.shader = null
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(1).toFloat()
-            paint.color = withOpacity(accent, (reveal * 49).toInt())
-            val orbit = radius * 0.80f
-            canvas.drawCircle(x, y, orbit, paint)
-            if (pulse > 0f && pulse < 1f) {
-                paint.color = withOpacity(accent, (115 * (1f - pulse)).toInt())
-                canvas.drawCircle(x, y, radius * (0.58f + 0.38f * pulse), paint)
-            }
-            if (sweep > 0f && sweep < 1f) {
-                val start = -170f + sweep * 420f
-                paint.strokeWidth = dp(2).toFloat()
-                paint.strokeCap = Paint.Cap.ROUND
-                for (segment in 0..6) {
-                    paint.color = withOpacity(accent, (segment * 32 * 4f * sweep * (1f - sweep)).toInt())
-                    canvas.drawArc(x - orbit, y - orbit, x + orbit, y + orbit, start + segment * 13f, 12f, false, paint)
+            val size = minOf(width, height) * (112f / 170f)
+            val left = x - size / 2f
+            val top = y - size / 2f
+            if (playTime < 940f) {
+                val scaleX = size / bitmap.width
+                val scaleY = size / bitmap.height
+                for (tile in tiles) {
+                    val progress = phase(playTime, tile.start, tile.start + 450f)
+                    if (progress == 0f) continue
+                    val remaining = 1f - progress
+                    val dx = (tile.offsetX * size / 112f * remaining * remaining).roundToInt()
+                    val dy = (tile.offsetY * size / 112f * remaining * remaining).roundToInt()
+                    val src = tile.source
+                    destination.set(left + src.left * scaleX + dx, top + src.top * scaleY + dy,
+                        left + src.right * scaleX + dx, top + src.bottom * scaleY + dy)
+                    paint.alpha = (255 * (1f - remaining * remaining)).toInt()
+                    canvas.drawBitmap(bitmap, src, destination, paint)
                 }
+            } else {
+                val settle = bounce.getInterpolation(phase(playTime, 940f, 1220f))
+                val scale = 1f + 0.14f * (settle - 1f) * phase(playTime, 940f, 990f)
+                canvas.save()
+                canvas.scale(scale, scale, x, y)
+                destination.set(left, top, left + size, top + size)
+                paint.alpha = 255
+                canvas.drawBitmap(bitmap, null, destination, paint)
+                canvas.restore()
+            }
+            val glint = phase(playTime, 1140f, 1390f)
+            if (glint > 0f && glint < 1f) {
+                val peak = 1f - abs(2f * glint - 1f)
+                val pixel = size / 38f
+                val cx = x + 0.48f * size
+                val cy = y - 0.46f * size
+                val arm = pixel * (1f + 2f * peak)
+                paint.color = withOpacity(Color.DKGRAY, (220 * peak).toInt())
+                canvas.drawRect(cx - arm, cy - pixel, cx + arm, cy + pixel, paint)
+                canvas.drawRect(cx - pixel, cy - arm, cx + pixel, cy + arm, paint)
+                paint.color = withOpacity(Color.WHITE, (255 * peak).toInt())
+                canvas.drawRect(cx - pixel / 2, cy - arm, cx + pixel / 2, cy + arm, paint)
+                canvas.drawRect(cx - arm, cy - pixel / 2, cx + arm, cy + pixel / 2, paint)
             }
         }
     }

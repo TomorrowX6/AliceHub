@@ -508,7 +508,6 @@
     <string name="game_sort_name_short">名称</string>
     <string name="game_sort_rating_short">评分</string>
     <string name="game_sort_release_date_short">发行时间</string>
-    <string name="public_storage_permission_message">授权后，仅将已有存档和备份迁移到「内部存储 / AliceHub」。已安装的游戏留在原处，新下载和导入的游戏将存入 AliceHub/games。不授权则继续使用应用专用存储。</string>
     <string name="public_storage_migrating">正在将存档和备份迁移到共享存储…</string>
     <string name="public_storage_migration_preparing">正在准备文件…</string>
     <string name="public_storage_migration_done">共享存储已准备就绪。</string>
@@ -526,7 +525,6 @@
     <string name="public_storage_benefits">• 卸载应用后仍保留 AliceHub 文件夹中的数据\n• 更容易备份、转移或复制到电脑</string>
     <string name="private_storage_option">我想跳过（仅使用应用专属目录）</string>
     <string name="private_storage_drawbacks">• 卸载 AliceHub 会删除此处的游戏和存档\n• 使用文件管理器或电脑备份、转移不方便</string>
-    <string name="public_storage_why">为什么要设置？</string>
     <string name="storage_location_public">公共储存</string>
     <string name="storage_location_private">应用专属</string>
     <string name="storage_location_pending">待授权</string>

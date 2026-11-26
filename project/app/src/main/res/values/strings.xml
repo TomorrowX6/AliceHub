@@ -509,7 +509,6 @@
     <string name="game_sort_name_short">Name</string>
     <string name="game_sort_rating_short">Score</string>
     <string name="game_sort_release_date_short">Release date</string>
-    <string name="public_storage_permission_message">Only existing saves and backups move to Internal storage / AliceHub. Installed games stay where they are; new downloads and imports go to AliceHub/games. If you decline file access, app-specific storage is used.</string>
     <string name="public_storage_migrating">Moving saves and backups to shared storage…</string>
     <string name="public_storage_migration_preparing">Preparing files…</string>
     <string name="public_storage_migration_done">Shared storage is ready.</string>
@@ -527,7 +526,6 @@
     <string name="public_storage_benefits">• Files in AliceHub stay after uninstalling the app\n• Easier to back up, move, or copy to a computer</string>
     <string name="private_storage_option">Skip (use app-specific storage)</string>
     <string name="private_storage_drawbacks">• Uninstalling AliceHub removes games and saves stored here\n• Less convenient to back up or transfer with a file manager or computer</string>
-    <string name="public_storage_why">Why choose a location?</string>
     <string name="storage_location_public">Shared</string>
     <string name="storage_location_private">App-specific</string>
     <string name="storage_location_pending">Access needed</string>
