@@ -1465,9 +1465,16 @@ class WidgetTextureRecoveryTests(unittest.TestCase):
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#define xmalloc malloc
 enum { PARTS_UNINITIALIZED, PARTS_CG, PARTS_FLAT, PARTS_NR_STATES = 3 };
+enum { PARTS_STATE_DEFAULT, PARTS_STATE_HOVERED, PARTS_STATE_CLICKED };
 struct texture { int handle, w; };
-struct common { struct texture texture; };
+struct rect { int x, y, w, h; };
+struct common { struct texture texture; int w, h; struct rect surface_area, hitbox; };
 struct string { int size; const char *text; };
 struct cg { int id; };
 struct parts_cg { struct common common; int no; struct string *name; };
@@ -1486,6 +1493,8 @@ struct parts_state {
 };
 struct parts_widget {
     struct parts_state disabled, checked_disabled, checked_states[PARTS_NR_STATES], label;
+    int color[3];
+    bool button_mode;
 };
 struct parts {
     struct parts_widget *widget;
@@ -1513,13 +1522,15 @@ static void cg_free(struct cg *cg) { assert(cg); }
 static void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended) {
     (void)f; (void)suspended; assert(false);
 }
-static void parts_widget_restore_plain_skin(struct parts *p, struct parts_state *s,
-                                            int index, bool checked) {
-    assert(p->widget && index == 2 && checked);
-    s->common.texture.handle = 200;
+static void gfx_init_texture_with_pixels(struct texture *t, int w, int h, void *pixels) {
+    assert(!t->handle && w == 44 && h == 30 && pixels);
+    t->handle = 200;
 }
 static void parts_widget_rebuild_label(struct parts *p) { assert(p->widget); labels_rebuilt++; }
-''' + "\n".join(function("src/parts/parts.c", signature) for signature in (
+''' + "\n".join(function("src/parts/widgets.c", signature) for signature in (
+            "static void fill_rgba_rect",
+            "void parts_widget_restore_plain_skin",
+        )) + "\n" + "\n".join(function("src/parts/parts.c", signature) for signature in (
             "static void recover_cg_state",
             "static void recover_widget_skin",
             "static bool recover_text_state",
@@ -1530,17 +1541,22 @@ int main(void) {
     struct parts_text_char ch = {.t = {-1, 8}, .t_edge = {7, 8}};
     struct parts_text_line line = {1, &ch};
     struct parts_widget w = {
-        .disabled = {.type = PARTS_CG, .cg = {{{-1, 44}}, 0, &disabled}},
-        .checked_disabled = {.type = PARTS_CG, .cg = {{{-1, 44}}, 10, NULL}},
+        .disabled = {.type = PARTS_CG, .cg = {.common.texture = {-1, 44}, .name = &disabled}},
+        .checked_disabled = {.type = PARTS_CG, .cg = {.common.texture = {-1, 44}, .no = 10}},
         .label.text = {.nr_lines = 1, .lines = &line},
     };
     struct parts p = {.widget = &w};
     for (int i = 0; i < PARTS_NR_STATES; i++) {
-        p.states[i] = (struct parts_state){.type = PARTS_CG, .cg = {{{-1, 44}}, i+1, NULL}};
-        w.checked_states[i] = (struct parts_state){.type = PARTS_CG, .cg = {{{-1, 44}}, i+4, NULL}};
+        p.states[i] = (struct parts_state){.type = PARTS_CG, .cg = {.common.texture = {-1, 44}, .no = i+1}};
+        w.checked_states[i] = (struct parts_state){.type = PARTS_CG, .cg = {.common.texture = {-1, 44}, .no = i+4}};
     }
     p.states[1].common.texture.handle = 42;
     w.checked_states[2].cg.no = 0;
+    struct common *plain = &w.checked_states[2].common;
+    plain->w = 44;
+    plain->h = 30;
+    plain->surface_area = (struct rect){2, 3, 20, 10};
+    plain->hitbox = (struct rect){5, 6, 20, 10};
     recover_widget_states(&p);
     assert(p.states[0].common.texture.handle == 1);
     assert(p.states[1].common.texture.handle == 42);
@@ -1548,6 +1564,10 @@ int main(void) {
     assert(w.checked_states[0].common.texture.handle == 4);
     assert(w.checked_states[1].common.texture.handle == 5);
     assert(w.checked_states[2].common.texture.handle == 200);
+    assert(plain->surface_area.x == 2 && plain->surface_area.y == 3);
+    assert(plain->surface_area.w == 20 && plain->surface_area.h == 10);
+    assert(plain->hitbox.x == 5 && plain->hitbox.y == 6);
+    assert(plain->hitbox.w == 20 && plain->hitbox.h == 10);
     assert(w.disabled.common.texture.handle == 99);
     assert(w.checked_disabled.common.texture.handle == 10);
     assert(loaded == 6 && labels_rebuilt == 1);
