@@ -3902,6 +3902,70 @@ static void remap_flash_bitmap(void *val)
 		gfx_remap_texture(t);
 }
 
+static void recover_cg_state(struct parts_cg *state, bool suspended)
+{
+	if (state->common.texture.handle)
+		gfx_remap_texture(&state->common.texture);
+	if (state->common.texture.handle || suspended)
+		return;
+	struct cg *cg = NULL;
+	if (state->no > 0) {
+		cg = asset_cg_load(state->no);
+	} else if (state->name && state->name->size > 0) {
+		int no = 0;
+		cg = asset_cg_load_by_name(state->name->text, &no);
+	}
+	if (cg) {
+		gfx_init_texture_with_cg(&state->common.texture, cg);
+		cg_free(cg);
+	}
+}
+
+static void recover_widget_skin(struct parts *p, struct parts_state *state, int index, bool checked)
+{
+	if (state->type == PARTS_CG) {
+		recover_cg_state(&state->cg, p->textures_suspended);
+		if (!p->textures_suspended && !state->common.texture.handle &&
+		    state->common.texture.w > 0 && !state->cg.no && !state->cg.name)
+			parts_widget_restore_plain_skin(p, state, index, checked);
+	} else if (state->type == PARTS_FLAT) {
+		parts_flat_recover_widget_skin(&state->flat, p->textures_suspended);
+	}
+}
+
+static bool recover_text_state(struct parts_text *text)
+{
+	if (text->common.texture.handle)
+		gfx_remap_texture(&text->common.texture);
+	bool missing_texture = false;
+	for (unsigned li = 0; li < text->nr_lines; li++) {
+		struct parts_text_line *line = &text->lines[li];
+		for (int ci = 0; ci < line->nr_chars; ci++) {
+			struct parts_text_char *ch = &line->chars[ci];
+			if (ch->t.handle && !gfx_remap_texture(&ch->t))
+				missing_texture = true;
+			if (ch->t_edge.handle && !gfx_remap_texture(&ch->t_edge))
+				missing_texture = true;
+		}
+	}
+	return missing_texture;
+}
+
+static void recover_widget_states(struct parts *p)
+{
+	struct parts_widget *w = p->widget;
+	if (!w)
+		return;
+	for (int i = 0; i < PARTS_NR_STATES; i++) {
+		recover_widget_skin(p, &p->states[i], i, false);
+		recover_widget_skin(p, &w->checked_states[i], i, true);
+	}
+	recover_widget_skin(p, &w->disabled, PARTS_NR_STATES, false);
+	recover_widget_skin(p, &w->checked_disabled, PARTS_NR_STATES, true);
+	if (recover_text_state(&w->label.text) && !p->textures_suspended)
+		parts_widget_rebuild_label(p);
+}
+
 static void recover_parts_in_current_context(void)
 {
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
@@ -3918,44 +3982,14 @@ static void recover_parts_in_current_context(void)
 		for (int st = 0; st < PARTS_NR_STATES; st++) {
 			struct parts_state *s = &p->states[st];
 			switch (s->type) {
-			case PARTS_CG: {
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (!s->common.texture.handle && !p->textures_suspended) {
-					struct cg *cg = NULL;
-					if (s->cg.no > 0) {
-						cg = asset_cg_load(s->cg.no);
-					} else if (s->cg.name && s->cg.name->size > 0) {
-						int no = 0;
-						cg = asset_cg_load_by_name(s->cg.name->text, &no);
-					}
-					if (cg) {
-						gfx_init_texture_with_cg(&s->common.texture, cg);
-						cg_free(cg);
-					}
-				}
+			case PARTS_CG:
+				if (!p->widget)
+					recover_cg_state(&s->cg, p->textures_suspended);
 				break;
-			}
-			case PARTS_TEXT: {
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				bool need_text_rerender = false;
-				for (unsigned li = 0; li < s->text.nr_lines; li++) {
-					struct parts_text_line *line = &s->text.lines[li];
-					for (int ci = 0; ci < line->nr_chars; ci++) {
-						struct parts_text_char *ch = &line->chars[ci];
-						bool had_t = ch->t.handle != 0;
-						bool had_edge = ch->t_edge.handle != 0;
-						if (had_t && !gfx_remap_texture(&ch->t))
-							need_text_rerender = true;
-						if (had_edge && !gfx_remap_texture(&ch->t_edge))
-							need_text_rerender = true;
-					}
-				}
-				if (need_text_rerender && !p->textures_suspended)
+			case PARTS_TEXT:
+				if (recover_text_state(&s->text) && !p->textures_suspended)
 					parts_text_rerender_all(p, &s->text);
 				break;
-			}
 			case PARTS_ANIMATION:
 				if (s->common.texture.handle)
 					gfx_remap_texture(&s->common.texture);
@@ -3992,6 +4026,8 @@ static void recover_parts_in_current_context(void)
 					ht_foreach_value(s->flash.bitmaps, remap_flash_bitmap);
 				break;
 			case PARTS_FLAT:
+				if (p->widget)
+					break;
 				if (s->common.texture.handle)
 					gfx_remap_texture(&s->common.texture);
 				if (s->flat.textures) {
@@ -4007,6 +4043,7 @@ static void recover_parts_in_current_context(void)
 				break;
 			}
 		}
+		recover_widget_states(p);
 		parts_component_dirty(p);
 		parts_dirty(p);
 	}

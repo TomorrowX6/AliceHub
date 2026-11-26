@@ -591,22 +591,9 @@ static void parts_flat_load_atlases(struct flat *flat, Texture *textures, size_t
 	}
 }
 
-static struct parts_flat_asset *flat_asset_acquire(struct string *filename)
+static struct parts_flat_asset *flat_asset_load(struct string *filename)
 {
 	size_t len = (size_t)filename->size;
-	for (struct parts_flat_asset *a = flat_asset_head; a; a = a->next) {
-		if (a->name_len == len && memcmp(a->name, filename->text, len) == 0) {
-			if (a->ref == 0)
-				flat_asset_idle_count--;
-			a->ref++;
-			if (a != flat_asset_head) {
-				flat_asset_unlink(a);
-				flat_asset_push_front(a);
-			}
-			return a;
-		}
-	}
-
 	struct archive_data *dfile = asset_get_by_name(ASSET_FLAT, filename->text, NULL);
 	if (!dfile)
 		return NULL;
@@ -687,8 +674,72 @@ static struct parts_flat_asset *flat_asset_acquire(struct string *filename)
 	a->height = max(0, h);
 
 	archive_free_data(dfile);
-	flat_asset_push_front(a);
 	return a;
+}
+
+static struct parts_flat_asset *flat_asset_acquire(struct string *filename)
+{
+	size_t len = (size_t)filename->size;
+	for (struct parts_flat_asset *a = flat_asset_head; a; a = a->next) {
+		if (a->name_len == len && memcmp(a->name, filename->text, len) == 0) {
+			if (a->ref == 0)
+				flat_asset_idle_count--;
+			a->ref++;
+			if (a != flat_asset_head) {
+				flat_asset_unlink(a);
+				flat_asset_push_front(a);
+			}
+			return a;
+		}
+	}
+	struct parts_flat_asset *a = flat_asset_load(filename);
+	if (a)
+		flat_asset_push_front(a);
+	return a;
+}
+
+void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended)
+{
+	if (f->common.texture.handle)
+		gfx_remap_texture(&f->common.texture);
+	struct parts_flat_asset *source = NULL;
+	bool tried_load = false;
+	for (size_t i = 0; f->textures && i < f->nr_libraries; i++) {
+		Texture *t = &f->textures[i];
+		if (t->handle && gfx_remap_texture(t))
+			continue;
+		if (suspended || !f->asset || t->w <= 0)
+			continue;
+		struct string *proxy = f->proxy_cg_names ? f->proxy_cg_names[i] : NULL;
+		if (f->owns_texture && f->owns_texture[i]) {
+			if (proxy) {
+				int no;
+				struct cg *cg = asset_cg_load_by_name(proxy->text, &no);
+				if (cg) {
+					gfx_init_texture_with_cg(t, cg);
+					cg_free(cg);
+				}
+			}
+			continue;
+		}
+		int index = proxy ? parts_flat_find_library(f->flat, proxy->text) : (int)i;
+		if (index < 0 || (size_t)index >= f->asset->nr_libraries)
+			continue;
+		Texture *base = &f->asset->base_textures[index];
+		if (!gfx_remap_texture(base)) {
+			if (!tried_load) {
+				source = flat_asset_load(f->name);
+				tried_load = true;
+			}
+			if (source && (size_t)index < source->nr_libraries) {
+				*base = source->base_textures[index];
+				source->base_textures[index].handle = 0;
+			}
+		}
+		*t = *base;
+	}
+	if (source)
+		flat_asset_destroy(source);
 }
 
 bool parts_flat_load(struct parts *parts, struct parts_flat *f, struct string *filename)

@@ -123,18 +123,17 @@ static void fill_rgba_rect(uint8_t *pixels, int tex_w, int x0, int y0, int rw, i
 	}
 }
 
-static void draw_plain_button(struct parts *parts, struct parts_state *state,
-		bool hovered, bool depressed, bool draw_checkmark)
+void parts_widget_restore_plain_skin(struct parts *parts, struct parts_state *state,
+		int index, bool checked)
 {
 	struct parts_widget *w = parts->widget;
-	parts_state_reset(state, PARTS_CG);
-	int width = max(0, w->width), height = max(0, w->height);
-	parts_set_dims(parts, &state->common, width, height);
+	int width = state->common.w, height = state->common.h;
 	if (!width || !height) return;
+	bool depressed = index == PARTS_STATE_CLICKED || (checked && w->button_mode);
 	int r = min(255, max(0, w->color[0]));
 	int g = min(255, max(0, w->color[1]));
 	int b = min(255, max(0, w->color[2]));
-	if (hovered) {
+	if (index == PARTS_STATE_HOVERED) {
 		r = min(255, r + 16); g = min(255, g + 16); b = min(255, b + 16);
 	}
 	uint8_t *pixels = xmalloc((size_t)width * (size_t)height * 4);
@@ -145,7 +144,7 @@ static void draw_plain_button(struct parts *parts, struct parts_state *state,
 	fill_rgba_rect(pixels, width, 0, 0, 1, height, upper, upper, upper, 255);
 	fill_rgba_rect(pixels, width, 0, height - 1, width, 1, lower, lower, lower, 255);
 	fill_rgba_rect(pixels, width, width - 1, 0, 1, height, lower, lower, lower, 255);
-	if (draw_checkmark) {
+	if (checked && !w->button_mode) {
 		for (int x = 3; x < width - 3; x++) {
 			int y = x < width / 2 ? height / 2 + x - 3
 				: height - 4 - (x - width / 2) * 2;
@@ -268,9 +267,9 @@ static void rebuild_background(struct parts *parts)
 				loaded = load_skin(parts, state, checked_base, flat, "");
 		}
 		if (!base->size) {
-			bool depressed = (i == PARTS_STATE_CLICKED) || (checked && w->button_mode);
-			draw_plain_button(parts, state, i == PARTS_STATE_HOVERED, depressed,
-					checked && !w->button_mode);
+			parts_state_reset(state, PARTS_CG);
+			parts_set_dims(parts, &state->common, max(0, w->width), max(0, w->height));
+			parts_widget_restore_plain_skin(parts, state, i, checked);
 		}
 	}
 	free_string(checked_base);
