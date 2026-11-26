@@ -53,7 +53,7 @@ internal fun discoverSaveTargets(
     preferredDirName: String?,
     resolveInstallAlias: Boolean
 ): SaveTargets {
-    val gameRoots = AppStorage.gameRoots(activity)
+    val gameRoots = AppStorage.gameScanRoots(activity)
     fun findGameDir(vararg names: String): File? = gameRoots.firstNotNullOfOrNull { root ->
         names.firstNotNullOfOrNull { name -> File(root, name).takeIf { it.isDirectory } }
     }

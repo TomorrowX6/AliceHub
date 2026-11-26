@@ -1670,7 +1670,8 @@ object OnlineInstaller {
             isSys3x = isSys3x
         )
         recoverInterruptedReinstalls(storageCanonical)
-        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, canonicalBaseUrl)
+        val reserved = AppStorage.privateGameNamesForInstall(context, storageCanonical)
+        val dstDir = resolveBaseInstallDestination(storageCanonical, dirBaseName, canonicalBaseUrl, reserved)
         if (dstDir.parentFile != storageCanonical) {
             throw IOException("Destination directory escapes storage path: $dstDir")
         }
@@ -1694,11 +1695,18 @@ object OnlineInstaller {
      * refreshed in place instead of duplicated as "<Name>-N"; manually imported or other
      * copies are never touched and the first free "<Name>-N" name is used instead.
      */
-    internal fun resolveBaseInstallDestination(storageDir: File, dirBaseName: String, sourceUrl: String): File {
+    internal fun resolveBaseInstallDestination(
+        storageDir: File,
+        dirBaseName: String,
+        sourceUrl: String,
+        reservedNames: Set<String> = emptySet()
+    ): File {
         var dstDir = File(storageDir, dirBaseName).canonicalFile
         var suffix = 1
-        while (dstDir.exists()) {
-            if (dstDir.isDirectory && readOnlineInstallSource(dstDir) == sourceUrl) return dstDir
+        while (dstDir.exists() || AppStorage.gameDirectoryKey(dstDir.name) in reservedNames) {
+            if (AppStorage.gameDirectoryKey(dstDir.name) !in reservedNames && dstDir.isDirectory &&
+                readOnlineInstallSource(dstDir) == sourceUrl
+            ) return dstDir
             dstDir = File(storageDir, "$dirBaseName-${suffix++}").canonicalFile
         }
         return dstDir

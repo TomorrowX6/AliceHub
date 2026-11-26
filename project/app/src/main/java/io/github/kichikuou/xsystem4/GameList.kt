@@ -661,6 +661,23 @@ class GameList(activity: Activity) {
         dataVersion++
     }
 
+    private fun scanInstalledDirectories(roots: List<File>): List<Pair<File, File>> {
+        val shared = AppStorage.publicGamesRoot(appContext)
+        val privateNames = HashSet<String>()
+        val result = ArrayList<Pair<File, File>>()
+        for (root in AppStorage.gameScanRoots(appContext, roots)) {
+            val homedir = File(root, ".xsystem4")
+            for (game in root.listFiles().orEmpty()) {
+                if (game.name.startsWith(".") || !game.isDirectory || game.absolutePath in uninstallingPaths) continue
+                val key = AppStorage.gameDirectoryKey(game.name)
+                if (root == shared && key in privateNames) continue
+                if (root != shared) privateNames.add(key)
+                result.add(game to homedir)
+            }
+        }
+        return result
+    }
+
     private fun resolveSaveDirFor(dir: File): File = Item.resolveSaveDir(appContext, dir)
 
     private fun recordItemSignature(item: Item) {
@@ -700,13 +717,9 @@ class GameList(activity: Activity) {
         for ((storagePath, _) in discovered) {
             storageDirs.add(storagePath)
             Rance10InstanceManager.cleanupStaleCloneStaging(storagePath)
-            val homedir = File(storagePath, ".xsystem4")
-            val files = storagePath.listFiles() ?: continue
-            for (path in files) {
-                if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
-                    items.add(Item.fromDirectory(path, homedir, context))
-                }
-            }
+        }
+        for ((path, homedir) in scanInstalledDirectories(storageDirs)) {
+            items.add(Item.fromDirectory(path, homedir, context))
         }
         val initialSnap = HashMap<String, DirSignature>(items.size)
         for (item in items) {
@@ -731,18 +744,11 @@ class GameList(activity: Activity) {
                 val discovered = discoverMountedStorageDirs(knownRoots = prevRootSet, createDummyIfEmpty = false)
                 val newStorageDirs = discovered.map { it.first }
                 val newRootPaths = newStorageDirs.map { it.absolutePath }
-                val scannedEntries = ArrayList<Pair<File, File>>() // (gameDir, homedir)
+                val scannedEntries = scanInstalledDirectories(newStorageDirs)
                 val newSnap = HashMap<String, DirSignature>()
-                for (storagePath in newStorageDirs) {
-                    val homedir = File(storagePath, ".xsystem4")
-                    val files = storagePath.listFiles() ?: continue
-                    for (path in files) {
-                        if (!path.name.startsWith(".") && path.isDirectory && !uninstallingPaths.contains(path.absolutePath)) {
-                            scannedEntries.add(path to homedir)
-                            val saveDir = existingByPath[path.absolutePath]?.savedir ?: resolveSaveDirFor(path)
-                            newSnap[path.absolutePath] = computeDirSignature(path, saveDir)
-                        }
-                    }
+                for ((path, _) in scannedEntries) {
+                    val saveDir = existingByPath[path.absolutePath]?.savedir ?: resolveSaveDirFor(path)
+                    newSnap[path.absolutePath] = computeDirSignature(path, saveDir)
                 }
                 if (newRootPaths == prevRoots && newSnap == prevSnap && newSnap.size == existingByPath.size) {
                     return@withContext null
@@ -1850,8 +1856,9 @@ class GameList(activity: Activity) {
                 else -> "Game"
             }
             var dstDir = File(storagePath, baseName)
+            val reserved = AppStorage.privateGameNamesForInstall(appContext, storagePath)
             var i = 1
-            while (dstDir.exists()) {
+            while (dstDir.exists() || AppStorage.gameDirectoryKey(dstDir.name) in reserved) {
                 dstDir = File(storagePath, "$baseName-${i++}")
             }
             if (!srcDir.renameTo(dstDir)) {

@@ -509,14 +509,10 @@
     <string name="game_sort_name_short">Name</string>
     <string name="game_sort_rating_short">Score</string>
     <string name="game_sort_release_date_short">Release date</string>
-    <string name="public_storage_permission_message">Allow file access to use AliceHub in your device’s internal storage. Existing games and saves will be moved there. If you decline, AliceHub will continue to use app-specific storage.</string>
-    <string name="public_storage_migrating">Moving games and saves to shared storage…</string>
+    <string name="public_storage_permission_message">Only existing saves and backups move to Internal storage / AliceHub. Installed games stay where they are; new downloads and imports go to AliceHub/games. If you decline file access, app-specific storage is used.</string>
+    <string name="public_storage_migrating">Moving saves and backups to shared storage…</string>
     <string name="public_storage_migration_preparing">Preparing files…</string>
     <string name="public_storage_migration_done">Shared storage is ready.</string>
-    <string name="storage_upgrade_title">Move existing games and saves?</string>
-    <string name="storage_upgrade_message">AliceHub can move your existing games and saves to Internal storage / AliceHub. Once moved, those files will stay even if you uninstall the app.</string>
-    <string name="storage_upgrade_move">Start migration</string>
-    <string name="storage_upgrade_private">Use app storage</string>
     <string name="public_storage_migration_incomplete">Some files could not be moved and were kept in their original location.</string>
     <string name="public_storage_settings_unavailable">Could not open file access settings.</string>
     <string name="onboarding_step">SETUP · %1$d / %2$d</string>
@@ -528,7 +524,7 @@
     <string name="storage_location">Storage location</string>
     <string name="onboarding_storage_intro">Choose where AliceHub keeps your games and saves. You can change this in Settings.</string>
     <string name="public_storage_option">Create the AliceHub folder in shared storage</string>
-    <string name="public_storage_benefits">• Data stays after uninstalling AliceHub\n• Easier to back up, move, or copy to a computer</string>
+    <string name="public_storage_benefits">• Files in AliceHub stay after uninstalling the app\n• Easier to back up, move, or copy to a computer</string>
     <string name="private_storage_option">Skip (use app-specific storage)</string>
     <string name="private_storage_drawbacks">• Uninstalling AliceHub removes games and saves stored here\n• Less convenient to back up or transfer with a file manager or computer</string>
     <string name="public_storage_why">Why choose a location?</string>

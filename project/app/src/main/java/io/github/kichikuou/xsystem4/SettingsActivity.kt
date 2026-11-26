@@ -196,27 +196,11 @@ class SettingsActivity : ThemedActivity() {
             .setPositiveButton(R.string.ok) { _, _ ->
                 val selected = options.findViewById<RadioGroup>(R.id.storage_options).checkedRadioButtonId
                 val usePublic = selected == R.id.storage_option_public
-                if (usePublic && AppSettings.isStorageUpgradeNoticePending(this) && AppStorage.hasLegacyData(this)) {
-                    trackDialog(showStorageUpgradeNotice(
-                        onMove = { applyStorageChoice(true) },
-                        onPrivate = { applyStorageChoice(false) }
-                    ))
-                } else {
-                    setStorageChoice(usePublic)
-                }
+                AppSettings.setPublicStorage(this, usePublic)
+                refreshStorageLabel()
+                if (usePublic && !requestSharedStorageAccess()) applyStoragePermission()
             }
             .show())
-    }
-
-    private fun applyStorageChoice(usePublic: Boolean) {
-        AppSettings.acknowledgeStorageUpgradeNotice(this)
-        setStorageChoice(usePublic)
-    }
-
-    private fun setStorageChoice(usePublic: Boolean) {
-        AppSettings.setPublicStorage(this, usePublic)
-        refreshStorageLabel()
-        if (usePublic && !requestSharedStorageAccess()) applyStoragePermission()
     }
 
     override fun onDestroy() {

@@ -322,19 +322,11 @@ object AppSettings {
     fun isOnboardingComplete(context: Context): Boolean =
         prefs(context).getBoolean("onboarding_complete", false)
 
-    fun completeOnboarding(context: Context, onlineInstallEnabled: Boolean, storageUpgradeNoticePending: Boolean) {
+    fun completeOnboarding(context: Context, onlineInstallEnabled: Boolean) {
         prefs(context).edit()
             .putBoolean(KEY_ONLINE_INSTALL, onlineInstallEnabled)
             .putBoolean("onboarding_complete", true)
-            .putBoolean("storage_upgrade_notice_pending", storageUpgradeNoticePending)
             .apply()
-    }
-
-    fun isStorageUpgradeNoticePending(context: Context): Boolean =
-        prefs(context).getBoolean("storage_upgrade_notice_pending", false)
-
-    fun acknowledgeStorageUpgradeNotice(context: Context) {
-        prefs(context).edit().remove("storage_upgrade_notice_pending").apply()
     }
 
     fun prefersPublicStorage(context: Context): Boolean =

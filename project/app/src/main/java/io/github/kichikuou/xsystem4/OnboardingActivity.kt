@@ -59,14 +59,6 @@ internal fun Activity.requestSharedStorageAccess(): Boolean {
     }
 }
 
-internal fun Activity.showStorageUpgradeNotice(onMove: () -> Unit, onPrivate: () -> Unit): AlertDialog =
-    AlertDialog.Builder(this)
-        .setTitle(R.string.storage_upgrade_title)
-        .setMessage(R.string.storage_upgrade_message)
-        .setNegativeButton(R.string.storage_upgrade_private) { _, _ -> onPrivate() }
-        .setPositiveButton(R.string.storage_upgrade_move) { _, _ -> onMove() }
-        .show()
-
 internal fun Activity.createStorageOptions(publicSelected: Boolean, onSelection: (Boolean) -> Unit = {}): View =
     (layoutInflater.inflate(R.layout.storage_options, null) as ViewGroup).apply {
         val group = findViewById<RadioGroup>(R.id.storage_options)
@@ -106,8 +98,6 @@ class OnboardingActivity : ThemedActivity() {
     private var onlineEnabled = false
     private var awaitingPermission = false
     private var disclaimer: AlertDialog? = null
-    private var upgradeNotice: AlertDialog? = null
-    private var upgradeNoticeAnswered = false
     private var welcomeAnimation: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -123,7 +113,6 @@ class OnboardingActivity : ThemedActivity() {
         publicSelected = savedInstanceState?.getBoolean("public_selected") ?: true
         onlineEnabled = savedInstanceState?.getBoolean("online_enabled") ?: AppSettings.isOnlineInstallEnabled(this)
         awaitingPermission = savedInstanceState?.getBoolean("awaiting_permission") ?: false
-        upgradeNoticeAnswered = savedInstanceState?.getBoolean("upgrade_notice_answered") ?: false
         showPage()
     }
 
@@ -133,14 +122,12 @@ class OnboardingActivity : ThemedActivity() {
         outState.putBoolean("public_selected", publicSelected)
         outState.putBoolean("online_enabled", onlineEnabled)
         outState.putBoolean("awaiting_permission", awaitingPermission)
-        outState.putBoolean("upgrade_notice_answered", upgradeNoticeAnswered)
     }
 
     override fun onDestroy() {
         welcomeAnimation?.cancel()
         SharedStorageMigration.detach(this)
         disclaimer?.dismiss()
-        upgradeNotice?.dismiss()
         super.onDestroy()
     }
 
@@ -170,7 +157,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun finishStorageSelection() {
-        if (upgradeNoticeAnswered && publicSelected &&
+        if (publicSelected &&
             LauncherActivity.showStorageMigration(this, onComplete = ::showOnlinePage)
         ) return
         showOnlinePage()
@@ -221,8 +208,7 @@ class OnboardingActivity : ThemedActivity() {
                 showOnline(content)
                 next.setText(R.string.onboarding_finish)
                 next.setOnClickListener {
-                    AppSettings.completeOnboarding(this, onlineEnabled,
-                        !upgradeNoticeAnswered && AppStorage.hasLegacyData(this))
+                    AppSettings.completeOnboarding(this, onlineEnabled)
                     setResult(RESULT_OK)
                     finish()
                 }
@@ -236,27 +222,10 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun confirmStorageSelection(next: Button) {
-        fun proceed(usePublic: Boolean) {
-            publicSelected = usePublic
-            AppSettings.setPublicStorage(this, usePublic)
-            awaitingPermission = usePublic
-            next.isEnabled = !awaitingPermission
-            if (!awaitingPermission || !requestSharedStorageAccess()) finishStorageSelection()
-        }
-        if (publicSelected && !upgradeNoticeAnswered && AppStorage.hasLegacyData(this)) {
-            upgradeNotice = showStorageUpgradeNotice(
-                onMove = {
-                    upgradeNoticeAnswered = true
-                    proceed(true)
-                },
-                onPrivate = {
-                    upgradeNoticeAnswered = true
-                    proceed(false)
-                }
-            )
-        } else {
-            proceed(publicSelected)
-        }
+        AppSettings.setPublicStorage(this, publicSelected)
+        awaitingPermission = publicSelected
+        next.isEnabled = !awaitingPermission
+        if (!awaitingPermission || !requestSharedStorageAccess()) finishStorageSelection()
     }
 
     private fun showIntro(content: LinearLayout) {

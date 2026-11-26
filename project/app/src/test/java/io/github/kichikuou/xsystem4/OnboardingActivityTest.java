@@ -41,8 +41,9 @@ public class OnboardingActivityTest {
                      Robolectric.buildActivity(OnboardingActivity.class).setup()) {
             OnboardingActivity activity = controller.get();
             File save = seedLegacySave(activity);
-            AlertDialog notice = openUpgradeNotice(activity);
-            notice.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();
+            activity.findViewById(R.id.onboarding_next).performClick();
+            activity.findViewById(R.id.storage_option_private).performClick();
+            activity.findViewById(R.id.onboarding_next).performClick();
             Shadows.shadowOf(Looper.getMainLooper()).idle();
 
             assertStep(activity, 3);
@@ -54,7 +55,7 @@ public class OnboardingActivityTest {
     }
 
     @Test
-    public void upgradeRequestsPermissionOnlyAfterStartingMigration() throws IOException {
+    public void confirmingSharedStorageOnUpgradeDirectlyRequestsPermission() throws IOException {
         try (ActivityController<OnboardingActivity> controller =
                      Robolectric.buildActivity(OnboardingActivity.class).setup()) {
             OnboardingActivity activity = controller.get();
@@ -70,11 +71,12 @@ public class OnboardingActivityTest {
             resolver.activityInfo.packageName = "com.android.settings";
             resolver.activityInfo.name = "AllFilesAccess";
             Shadows.shadowOf(activity.getPackageManager()).addResolveInfoForIntent(permission, resolver);
-            AlertDialog notice = openUpgradeNotice(activity);
+            activity.findViewById(R.id.onboarding_next).performClick();
             assertNull(Shadows.shadowOf(activity).getNextStartedActivityForResult());
 
-            notice.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            activity.findViewById(R.id.onboarding_next).performClick();
             Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNull(ShadowAlertDialog.getLatestAlertDialog());
             assertTrue(AppSettings.INSTANCE.prefersPublicStorage(activity));
             assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                     Shadows.shadowOf(activity).getNextStartedActivityForResult().intent.getAction());
@@ -151,12 +153,6 @@ public class OnboardingActivityTest {
         Files.createDirectories(file.getParentFile().toPath());
         Files.write(file.toPath(), new byte[] { 1 });
         return file;
-    }
-
-    private static AlertDialog openUpgradeNotice(OnboardingActivity activity) {
-        activity.findViewById(R.id.onboarding_next).performClick();
-        activity.findViewById(R.id.onboarding_next).performClick();
-        return ShadowAlertDialog.getLatestAlertDialog();
     }
 
     private static void assertStorageDetails(OnboardingActivity activity, boolean usePublic) {
