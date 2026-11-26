@@ -42,6 +42,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34)
@@ -189,8 +190,8 @@ public class OnlineDownloadResumeTest {
                 String disclaimer = localized.getString(R.string.online_disclaimer_msg);
                 assertFalse("Unexpected language suffix in " + label,
                         label.contains("Chinese") || label.contains("中文") || label.contains("中国語"));
-                assertFalse("Article 7 should be removed in " + lang,
-                        disclaimer.contains("Article 7") || disclaimer.contains("第七条") || disclaimer.contains("第7条"));
+                String finalArticle = lang.equals("zh") ? "第七条" : lang.equals("ja") ? "第7条" : "Article 7";
+                assertTrue("Missing localized Article 7 in " + lang, disclaimer.contains("\n" + finalArticle + " · "));
             }
         } finally {
             controller.pause().stop().destroy();
