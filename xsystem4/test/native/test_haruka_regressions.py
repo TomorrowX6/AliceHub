@@ -602,14 +602,6 @@ int main(void) {
         for i in range(nr_waves):
             struct.pack_into("<III", wai_buf, 36 + i * 12, i + 1, 0, i % 6)
 
-        hacks_src = (ROOT / "src/hacks.c").read_text(encoding="utf-8", errors="ignore")
-        extracted_hacks = "\n\n".join(
-            [
-                extract_c_function(hacks_src, "static bool ain_has_gbk_string("),
-                extract_c_function(hacks_src, "void apply_game_specific_hacks("),
-            ]
-        )
-
         harness = f"""
 #include <assert.h>
 #include <math.h>
@@ -620,51 +612,20 @@ int main(void) {
 #include <string.h>
 #include "system4.h"
 #include "system4/ain.h"
-#include "system4/buffer.h"
-#include "system4/instructions.h"
 #include "system4/string.h"
 #include "system4/utfsjis.h"
 #include "hll/hll.h"
+#include "message_layout.h"
 #include "mixer.h"
 #include "xsystem4.h"
 
 struct config config;
-bool game_daibanchou_en = false;
-bool game_rance01 = false;
-bool game_rance02 = false;
-bool game_rance02_mg = false;
-bool game_rance6 = false;
-bool game_rance6_mg = false;
-bool game_rance7_mg = false;
-bool game_sengokurance = false;
-bool game_rance8 = false;
-bool game_rance8_mg = false;
-bool game_rance9 = false;
-bool game_rance10 = false;
-bool game_dohnadohna = false;
-bool game_evenicle = false;
-bool game_evenicle2 = false;
-bool game_rance03 = false;
-bool game_dungeons_and_dolls = false;
-bool game_escalayer_reboot = false;
-bool game_galzoo = false;
-bool game_ixseal = false;
-bool game_tsumashibori = false;
+
+void apply_game_specific_hacks(struct ain *ain);
 
 const char *display_utf0(const char *utf) {{ return utf; }}
 
-static bool ain_has_gbk_r03_strings(struct ain *ain) {{ (void)ain; return false; }}
-static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance6_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
-static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
-
-{extracted_hacks}
+bool message_layout_init_rance03(struct ain *ain) {{ (void)ain; abort(); }}
 
 extern struct static_library lib_Confirm3;
 
@@ -728,7 +689,7 @@ int main(int argc, char **argv) {{
     }};
     for (size_t i = 0; i < sizeof(haruka_libs) / sizeof(haruka_libs[0]); i++)
         ain_add_library(ain, haruka_libs[i]);
-    ain_add_string(ain, "\\x92\\xb4\\x8d\\x56\\x91\\x4d\\x94\\x45\\x83\\x6e\\x83\\x8b\\x83\\x4aDM.DAT");
+    ain_add_string(ain, "\\x92\\xb4\\x8d\\x56\\x91\\x4d\\x94\\x45\\x83\\x6e\\x83\\x8b\\x83\\x4a" "DM.DAT");
     ain_add_string(ain, "Data\\\\CGMode.acx");
     ain_init_member_functions(ain, strdup);
 
@@ -760,9 +721,16 @@ int main(int argc, char **argv) {{
             wai_path.write_bytes(bytes(wai_buf))
             out = compile_and_run(
                 harness,
-                [*LIBSYS4_AIN, ROOT / "src/audio_meta.c", ROOT / "src/hll/Confirm3.c"],
+                [
+                    *LIBSYS4_AIN,
+                    ROOT / "src/audio_meta.c",
+                    ROOT / "src/escalayer_reboot_cn_ui.c",
+                    ROOT / "src/hacks.c",
+                    ROOT / "src/hll/Confirm3.c",
+                ],
                 ["-lz", "-lm"],
                 [str(bgi_path), str(wai_path)],
+                pkgs=("sdl2", "cglm"),
             )
             self.assertEqual(out.strip(), "OK")
 
