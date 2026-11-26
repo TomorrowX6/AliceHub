@@ -50,6 +50,21 @@ ExternalProject_Add(
 ExternalProject_Add_StepDependencies(libvorbis configure libogg)
 
 ExternalProject_Add(
+  libopus
+  URL https://github.com/xiph/opus/releases/download/v1.5.2/opus-1.5.2.tar.gz
+  URL_HASH SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
+  CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+             -DCMAKE_INSTALL_LIBDIR=lib
+             -DBUILD_SHARED_LIBS=OFF
+             -DOPUS_BUILD_SHARED_LIBRARY=OFF
+             -DOPUS_BUILD_PROGRAMS=OFF
+             -DOPUS_BUILD_TESTING=OFF
+             -DOPUS_DISABLE_INTRINSICS=ON
+             -DOPUS_INSTALL_PKG_CONFIG_MODULE=ON
+             -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=ON
+)
+
+ExternalProject_Add(
   libjpeg-turbo
   URL https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.0/libjpeg-turbo-3.1.0.tar.gz
   URL_HASH SHA1=ba3c0152f14a504018de19c9f62250d8f3351525
@@ -108,17 +123,28 @@ ExternalProject_Add(
     STRIP=${CMAKE_STRIP}
 )
 
-# This fork disables FLAC and Opus support.
+# This fork disables FLAC; AliceHub re-enables Ogg Opus via patch-libsndfile-opus.cmake.
 ExternalProject_Add(
   libsndfile
-  GIT_REPOSITORY https://github.com/kichikuou/libsndfile.git
-  GIT_TAG be82f4be73c77f1e759bda9dfe1625204441465a
+  URL https://codeload.github.com/kichikuou/libsndfile/tar.gz/be82f4be73c77f1e759bda9dfe1625204441465a
+  URL_HASH SHA256=926d146673bb6a9a9c1b600289e911e0f08cdc90bb9c6e54aef3a33c9e9bccb5
   CMAKE_ARGS ${COMMON_CMAKE_ARGS}
+             -DENABLE_EXTERNAL_LIBS=ON
+             -DENABLE_MPEG=OFF
              -DBUILD_SHARED_LIBS=OFF
              -DBUILD_PROGRAMS=OFF
              -DBUILD_EXAMPLES=OFF
              -DBUILD_TESTING=OFF
              -DENABLE_CPACK=OFF
+)
+
+ExternalProject_Add_Step(
+  libsndfile alicehub_opus_patch
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+    -P ${CMAKE_CURRENT_LIST_DIR}/cmake/patch-libsndfile-opus.cmake
+  DEPENDEES patch
+  DEPENDERS configure
+  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/cmake/patch-libsndfile-opus.cmake
 )
 
 ExternalProject_Add(
@@ -132,7 +158,7 @@ ExternalProject_Add(
              -DLIBDEFLATE_BUILD_GZIP=OFF
 )
 
-ExternalProject_Add_StepDependencies(libsndfile configure libvorbis)
+ExternalProject_Add_StepDependencies(libsndfile configure libvorbis libopus)
 
 ExternalProject_Add(
   xz

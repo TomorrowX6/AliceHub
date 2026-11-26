@@ -42,6 +42,11 @@ dependency(libarchive https://github.com/libarchive/libarchive/releases/download
 ExternalProject_Add_StepDependencies(libarchive configure xz)
 dependency(libvorbis https://github.com/xiph/vorbis/releases/download/v1.3.7/libvorbis-1.3.7.tar.xz SHA1=0a2dd71a999656b8091506839e8007a61a8fda1f)
 ExternalProject_Add_StepDependencies(libvorbis configure libogg)
+dependency(libopus https://github.com/xiph/opus/releases/download/v1.5.2/opus-1.5.2.tar.gz SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
+  -DCMAKE_INSTALL_LIBDIR=lib
+  -DOPUS_BUILD_SHARED_LIBRARY=OFF -DOPUS_BUILD_PROGRAMS=OFF
+  -DOPUS_DISABLE_INTRINSICS=ON
+  -DOPUS_INSTALL_PKG_CONFIG_MODULE=ON -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=ON)
 dependency(libjpeg-turbo https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.0/libjpeg-turbo-3.1.0.tar.gz SHA1=ba3c0152f14a504018de19c9f62250d8f3351525
   -DCMAKE_PROJECT_INCLUDE=${CMAKE_CURRENT_LIST_DIR}/target-processor.cmake
   -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DWITH_TOOLS=OFF -DWITH_TESTS=OFF)
@@ -71,10 +76,16 @@ ExternalProject_Add(libffi
     gcc_cv_as_cfi_pseudo_op=no
   BUILD_COMMAND make -j4 INSTALL_COMMAND make install)
 ExternalProject_Add(libsndfile
-  GIT_REPOSITORY https://github.com/kichikuou/libsndfile.git
-  GIT_TAG be82f4be73c77f1e759bda9dfe1625204441465a
-  CMAKE_ARGS ${common} -DBUILD_PROGRAMS=OFF -DBUILD_EXAMPLES=OFF -DENABLE_CPACK=OFF)
-ExternalProject_Add_StepDependencies(libsndfile configure libvorbis)
+  URL https://codeload.github.com/kichikuou/libsndfile/tar.gz/be82f4be73c77f1e759bda9dfe1625204441465a
+  URL_HASH SHA256=926d146673bb6a9a9c1b600289e911e0f08cdc90bb9c6e54aef3a33c9e9bccb5
+  CMAKE_ARGS ${common} -DENABLE_EXTERNAL_LIBS=ON -DENABLE_MPEG=OFF
+    -DBUILD_PROGRAMS=OFF -DBUILD_EXAMPLES=OFF -DENABLE_CPACK=OFF)
+ExternalProject_Add_Step(libsndfile alicehub_opus_patch
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+    -P ${CMAKE_CURRENT_LIST_DIR}/../cmake/patch-libsndfile-opus.cmake
+  DEPENDEES patch DEPENDERS configure
+  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/../cmake/patch-libsndfile-opus.cmake)
+ExternalProject_Add_StepDependencies(libsndfile configure libvorbis libopus)
 dependency(libdeflate https://github.com/ebiggers/libdeflate/releases/download/v1.25/libdeflate-1.25.tar.gz SHA1=7e70557d094b54c3ee16f6c012976dc8d685b22a
   -DLIBDEFLATE_BUILD_SHARED_LIB=OFF -DLIBDEFLATE_GZIP_SUPPORT=OFF -DLIBDEFLATE_BUILD_GZIP=OFF)
 dependency(SDL2 https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz SHA1=9403df0573d47f62f2de074b582b87576bb4abbc

@@ -31,9 +31,12 @@ set_target_properties(ffi PROPERTIES
 
 find_package(Freetype REQUIRED)
 find_package(SDL2 REQUIRED)
+if(NINTENDO_SWITCH AND CMAKE_STAGING_PREFIX)
+  list(PREPEND CMAKE_FIND_ROOT_PATH "${CMAKE_STAGING_PREFIX}")
+endif()
 find_package(SndFile REQUIRED)
-if(NINTENDO_SWITCH AND NOT SndFile_WITH_EXTERNAL_LIBS)
-  message(FATAL_ERROR "The Switch libsndfile build must support Ogg Vorbis")
+if(NOT SndFile_WITH_EXTERNAL_LIBS OR NOT SndFile_WITH_OPUS)
+  message(FATAL_ERROR "libsndfile must be built with Ogg Vorbis and Ogg Opus support")
 endif()
 find_package(ZLIB REQUIRED)
 

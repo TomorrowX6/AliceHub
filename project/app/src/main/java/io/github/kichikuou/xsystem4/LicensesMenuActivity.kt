@@ -18,6 +18,7 @@ class LicensesMenuActivity : ThemedActivity() {
         Entry("libffi", "libffi", "https://sourceware.org/libffi/"),
         Entry("libjpeg-turbo", "libjpeg-turbo", "https://libjpeg-turbo.org/"),
         Entry("libogg", "libogg", "https://xiph.org/ogg/"),
+        Entry("libopus", "libopus", "https://opus-codec.org/"),
         Entry("libpng", "libpng", "http://www.libpng.org/pub/png/libpng.html"),
         Entry("libsndfile", "libsndfile", "https://libsndfile.github.io/libsndfile/"),
         Entry("libvorbis", "libvorbis", "https://xiph.org/vorbis/"),

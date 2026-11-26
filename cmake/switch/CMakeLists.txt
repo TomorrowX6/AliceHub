@@ -31,15 +31,34 @@ ExternalProject_Add(libffi
   BUILD_COMMAND ${MAKE_EXECUTABLE}
   INSTALL_COMMAND ${MAKE_EXECUTABLE} install)
 
+ExternalProject_Add(libopus
+  URL https://github.com/xiph/opus/releases/download/v1.5.2/opus-1.5.2.tar.gz
+  URL_HASH SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
+  CMAKE_ARGS ${common} -DCMAKE_INSTALL_PREFIX=${stage}
+    -DCMAKE_INSTALL_LIBDIR=lib
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    -DBUILD_SHARED_LIBS=OFF -DOPUS_BUILD_SHARED_LIBRARY=OFF
+    -DOPUS_BUILD_PROGRAMS=OFF -DOPUS_BUILD_TESTING=OFF
+    -DOPUS_DISABLE_INTRINSICS=ON
+    -DOPUS_STACK_PROTECTOR=OFF -DOPUS_FORTIFY_SOURCE=OFF
+    -DOPUS_INSTALL_PKG_CONFIG_MODULE=ON -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=ON)
+
 ExternalProject_Add(libsndfile
   URL https://codeload.github.com/kichikuou/libsndfile/tar.gz/be82f4be73c77f1e759bda9dfe1625204441465a
   URL_HASH SHA256=926d146673bb6a9a9c1b600289e911e0f08cdc90bb9c6e54aef3a33c9e9bccb5
   CMAKE_ARGS ${common} -DCMAKE_INSTALL_PREFIX=${stage}
     -DCMAKE_PROJECT_libsndfile_INCLUDE=${CMAKE_CURRENT_LIST_DIR}/ConfigureLibsndfile.cmake
+    -DOPUS_ROOT=${stage}
     -DENABLE_EXTERNAL_LIBS=ON
     -DBUILD_SHARED_LIBS=OFF -DBUILD_PROGRAMS=OFF -DBUILD_EXAMPLES=OFF
     -DBUILD_TESTING=OFF -DENABLE_CPACK=OFF -DENABLE_MPEG=OFF
     -DINSTALL_MANPAGES=OFF -DINSTALL_PKGCONFIG_MODULE=OFF)
+ExternalProject_Add_Step(libsndfile alicehub_opus_patch
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+    -P "${repo}/cmake/patch-libsndfile-opus.cmake"
+  DEPENDEES patch DEPENDERS configure
+  DEPENDS "${repo}/cmake/patch-libsndfile-opus.cmake")
+ExternalProject_Add_StepDependencies(libsndfile configure libopus)
 
 function(add_engine name source artifact)
   ExternalProject_Add(${name}
@@ -54,5 +73,6 @@ endfunction()
 add_engine(system3 cmake/system3 system3.nro)
 add_engine(xsystem35 xsystem35 src/xsystem35.nro -DXSYSTEM35_SDL_VERSION=2 -DENABLE_DEBUGGER=OFF)
 add_engine(xsystem4 xsystem4 xsystem4.nro
-  -DCMAKE_STAGING_PREFIX=${stage} -DSndFile_DIR=${stage}/lib/cmake/SndFile)
-add_dependencies(xsystem4 libffi libsndfile)
+  -DCMAKE_STAGING_PREFIX=${stage} -DSndFile_DIR=${stage}/lib/cmake/SndFile
+  -DOPUS_ROOT=${stage})
+add_dependencies(xsystem4 libffi libopus libsndfile)
