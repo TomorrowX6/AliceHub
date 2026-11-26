@@ -114,6 +114,7 @@ public class OnboardingActivityTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS")
     public void storageDetailsFollowBothChoicesAndSurviveRecreation() {
         try (ActivityController<OnboardingActivity> controller =
                      Robolectric.buildActivity(OnboardingActivity.class).setup()) {
@@ -188,8 +189,16 @@ public class OnboardingActivityTest {
     }
 
     private static void assertStorageDetails(OnboardingActivity activity, boolean usePublic) {
+        TextView shared = activity.findViewById(R.id.storage_option_public);
+        TextView skip = activity.findViewById(R.id.storage_option_private);
+        TextView benefits = activity.findViewById(R.id.storage_public_benefits);
+        assertTrue(shared.isShown());
+        assertTrue(skip.isShown());
+        assertTrue(shared.getText().toString().endsWith("\nRequires additional storage permission"));
+        assertTrue(skip.getText().toString().endsWith("\nNo additional storage permission required"));
+        assertTrue(benefits.getText().toString().contains("Automatically migrate saves from older versions"));
         assertEquals(usePublic ? View.VISIBLE : View.GONE,
-                activity.findViewById(R.id.storage_public_benefits).getVisibility());
+                benefits.getVisibility());
         assertEquals(usePublic ? View.GONE : View.VISIBLE,
                 activity.findViewById(R.id.storage_private_drawbacks).getVisibility());
     }
