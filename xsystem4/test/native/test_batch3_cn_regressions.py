@@ -477,7 +477,7 @@ int main(int argc, char **argv) {{
             )
             self.assertEqual(out.strip(), "OK")
 
-    def test_parts_input_widget_click_respects_parts_clickable_flag(self):
+    def test_parts_input_focus_and_click_delivery(self):
         # Verify NightRemaster widget buttons (clickable == false) still emit PARTS_MSG_MOUSE_CLICK
         # without clobbering clicked_parts (PE_GetClickPartsNumber()), while clickable == true sets it.
         fn_update = extract_function("src/parts/input.c", "parts_update_mouse")
@@ -498,6 +498,7 @@ static struct parts_context ctx_storage = {{0}};
 struct parts_context *parts_current = &ctx_storage;
 bool parts_v2 = true;
 bool parts_began_click = true;
+bool game_rance10 = false;
 bool game_dohnadohna = false;
 static bool prev_clicking = false;
 static Point parts_prev_pos = {{0, 0}};
@@ -509,6 +510,7 @@ static SDL_FPoint drag_initial_pos = {{0.0f, 0.0f}};
 static Point drag_start_cursor = {{0, 0}};
 static int msg_click_count = 0;
 static int msg_click_last_parts = 0;
+static int focused_parts = 0;
 
 void parts_set_state(struct parts *p, enum parts_state_type s) {{ p->state = s; }}
 static void parts_play_sound(struct parts *p, enum parts_state_type s) {{ (void)p; (void)s; }}
@@ -522,7 +524,7 @@ void parts_scrollbar_input(struct parts *p, Point pt, bool h, bool c, bool pd, i
 struct parts *parts_try_get(int no) {{ (void)no; return NULL; }}
 void parts_dirty(struct parts *p) {{ (void)p; }}
 void parts_engine_dirty(void) {{}}
-void PE_SetFocus(int no) {{ (void)no; }}
+void PE_SetFocus(int no) {{ focused_parts = no; }}
 void parts_widget_check(struct parts *p, bool c) {{ (void)p; (void)c; }}
 void parts_msg_push(struct parts *p, int type, const char *fmt, ...) {{
     (void)fmt;
@@ -580,6 +582,29 @@ int main(void) {{
     parts_update_mouse(&btn, (Point){{10, 10}}, false, 16, 0, 0, &hover_consumed, &click_consumed);
     assert(msg_click_count == 3 && msg_click_last_parts == btn.no);
     assert(clicked_parts == btn.no);
+
+    // The Rance 10 choice script needs focus on the captured backdrop, not a native click.
+    struct parts backdrop = {{ .no = 3000030, .enable_input = true, .linked_from = -1 }};
+    for (int rance10 = 0; rance10 <= 1; rance10++) {{
+        for (int pass_cursor = 0; pass_cursor <= 1; pass_cursor++) {{
+            game_rance10 = rance10;
+            backdrop.pass_cursor = pass_cursor;
+            hover_consumed = click_consumed = false;
+            clicked_parts = click_down_parts = focused_parts = 0;
+            prev_clicking = false;
+            parts_update_mouse(&backdrop, (Point){{10, 10}}, true, 16, 0, 0,
+                    &hover_consumed, &click_consumed);
+            assert(click_down_parts == (pass_cursor ? 0 : backdrop.no));
+            assert(focused_parts == (rance10 && !pass_cursor ? backdrop.no : 0));
+
+            hover_consumed = click_consumed = false;
+            prev_clicking = true;
+            parts_update_mouse(&backdrop, (Point){{10, 10}}, false, 16, 0, 0,
+                    &hover_consumed, &click_consumed);
+            assert(focused_parts == (rance10 && !pass_cursor ? backdrop.no : 0));
+            assert(msg_click_count == 3 && clicked_parts == 0);
+        }}
+    }}
 
     puts("OK");
     return 0;
