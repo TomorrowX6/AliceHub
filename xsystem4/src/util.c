@@ -204,8 +204,13 @@ static char *relative_path_get_icase(const char *dir, char *relative)
 				free(next);
 			}
 		}
-		if (!slash)
-			return resolved;
+		if (!slash) {
+			if (*component)
+				return resolved;
+			char *with_separator = path_join(resolved, "");
+			free(resolved);
+			return with_separator;
+		}
 		*slash = '/';
 		if (!is_directory(resolved)) {
 			free(resolved);

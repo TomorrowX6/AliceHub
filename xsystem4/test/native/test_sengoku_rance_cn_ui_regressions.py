@@ -41,11 +41,12 @@ static void check_path(const char *code_name, const char *expected, char *(*reso
 
 int main(int argc, char **argv)
 {
-    assert(argc == 4);
+    assert(argc == 5);
     config.game_dir = argv[1];
     check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path);
     check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path_icase);
     check_path("LAUNCHERS\\eNtRiEs\\PATCH.AIN", argv[3], gamedir_path);
+    check_path("dAtA\\pAtChEs\\", argv[4], gamedir_path);
     return 0;
 }
 """
@@ -78,7 +79,7 @@ int main(int argc, char **argv)
                  *linker, "-o", str(exe)],
                 check=True,
             )
-            subprocess.run([str(exe), str(root), str(script), str(exact_script)], check=True)
+            subprocess.run([str(exe), str(root), str(script), str(exact_script), f"{script.parent}/"], check=True)
 
     def test_skip_graphic_only_relabels_the_original_chinese_session_button(self):
         fix = extract_function("src/asset_manager.c", "localize_sengoku_skip_cg")
