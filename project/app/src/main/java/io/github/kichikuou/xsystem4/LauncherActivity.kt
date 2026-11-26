@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
@@ -9,8 +10,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -33,6 +36,8 @@ import android.widget.Toast
 
 private const val LAUNCHER_INSTALL_ARCHIVE_REQ = 31
 private const val LAUNCHER_INSTALL_DIR_REQ = 32
+private const val LAUNCHER_STORAGE_PERMISSION_REQ = 33
+private const val STATE_STORAGE_PROMPT_SHOWN = "STATE_STORAGE_PROMPT_SHOWN"
 private const val STATE_SEARCH_VISIBLE = "STATE_SEARCH_VISIBLE"
 private const val STATE_SEARCH_QUERY = "STATE_SEARCH_QUERY"
 private const val STATE_AVAILABLE_RELEASE = "STATE_AVAILABLE_RELEASE"
@@ -400,10 +405,14 @@ private class GameSelectAdapter(
 class LauncherActivity : ThemedActivity(), GameListObserver {
     companion object {
         private var savedGameList: GameList? = null
+        private var storagePrepared = false
 
         fun obtainGameList(activity: Activity, refresh: Boolean = false): GameList {
             val existing = savedGameList
-            if (existing == null || (refresh && existing.installState is InstallState.Idle && !existing.isRestoringMod)) {
+            if (existing == null ||
+                (refresh && existing.installState is InstallState.Idle && !existing.isRestoringMod) ||
+                (existing.publicStorageRoot != AppStorage.publicRoot(activity) && existing.canRelocateStorage())
+            ) {
                 existing?.close()
                 val created = GameList(activity)
                 savedGameList = created
@@ -429,13 +438,24 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     private var lastRenderedLocaleTag: String? = null
     private var lastRenderedRunningRoot: String? = null
     private var availableRelease: String? = null
+    private var initialState: Bundle? = null
+    private var storagePromptShown = false
+    private var storageProgress: AlertDialog? = null
+    private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppSettings.applyPlatformNightMode(this)
         setContentView(R.layout.launcher)
         title = getString(R.string.select_game_title)
+        initialState = savedInstanceState
+        storagePromptShown = savedInstanceState?.getBoolean(STATE_STORAGE_PROMPT_SHOWN) == true
+        if (!prepareStorageIfNeeded()) initializeLauncher()
+    }
 
+    private fun initializeLauncher() {
+        val savedInstanceState = initialState
+        initialState = null
         gameList = obtainGameList(this, refresh = false)
         val initialRunningRoot = GameCatalog.getRunningGameRoot(this)
         adapter = GameSelectAdapter(this, gameList, initialRunningRoot)
@@ -537,6 +557,8 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        initialState?.let { outState.putAll(it) }
+        outState.putBoolean(STATE_STORAGE_PROMPT_SHOWN, storagePromptShown)
         outState.putString(STATE_AVAILABLE_RELEASE, availableRelease)
         if (::searchBarContainer.isInitialized) {
             outState.putBoolean(STATE_SEARCH_VISIBLE, searchBarContainer.visibility == View.VISIBLE)
@@ -638,6 +660,8 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == InstallForegroundService.REQ_POST_NOTIFICATIONS) {
             InstallForegroundService.flushLatestNotification(this)
+        } else if (requestCode == LAUNCHER_STORAGE_PERMISSION_REQ && resumed) {
+            prepareStorageIfNeeded()
         }
     }
 
@@ -696,6 +720,75 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
+        if (prepareStorageIfNeeded()) return
+        if (!::gameList.isInitialized) initializeLauncher()
+        resumeLauncher()
+    }
+
+    private fun prepareStorageIfNeeded(): Boolean {
+        if (storageProgress != null) return true
+        if (!AppStorage.hasPermission(this)) {
+            storagePrepared = false
+            AppStorage.resetPublicStoragePreparation(this)
+            return false
+        }
+        if (storagePrepared || !AppStorage.needsPublicStoragePreparation(this) ||
+            savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
+            GameCatalog.isGameProcessRunning(this)
+        ) return false
+
+        storageProgress = AlertDialog.Builder(this)
+            .setMessage(R.string.public_storage_migrating)
+            .setCancelable(false)
+            .show()
+        val ctx = applicationContext
+        Thread({
+            val complete = try {
+                AppStorage.preparePublicStorage(ctx)
+            } catch (e: Exception) {
+                Log.w("LauncherActivity", "Could not prepare shared storage", e)
+                false
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                storagePrepared = true
+                storageProgress?.dismiss()
+                storageProgress = null
+                savedGameList?.close()
+                savedGameList = null
+                if (!complete) Toast.makeText(this, R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
+                if (resumed) {
+                    if (!::gameList.isInitialized) initializeLauncher()
+                    resumeLauncher()
+                }
+            }
+        }, "AliceHub storage migration").start()
+        return true
+    }
+
+    private fun promptForStoragePermission() {
+        if (storagePromptShown || AppStorage.hasPermission(this)) return
+        storagePromptShown = true
+        AlertDialog.Builder(this)
+            .setTitle(R.string.public_storage_title)
+            .setMessage(R.string.public_storage_permission_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.public_storage_allow) { _, _ ->
+                if (Build.VERSION.SDK_INT >= 30) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(this, R.string.public_storage_settings_unavailable, Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), LAUNCHER_STORAGE_PERMISSION_REQ)
+                }
+            }
+            .show()
+    }
+
+    private fun resumeLauncher() {
         val latestList = obtainGameList(this, refresh = false)
         val runningRoot = GameCatalog.getRunningGameRoot(this)
         if (latestList !== gameList) {
@@ -730,9 +823,11 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         postAction?.invoke()
         ErrorReportKit.checkAndShowPendingCrash(this)
         renderUpdateBanner()
+        promptForStoragePermission()
     }
 
     override fun onPause() {
+        resumed = false
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null
         }
@@ -741,6 +836,8 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onDestroy() {
+        storageProgress?.dismiss()
+        storageProgress = null
         syncSearchBackCallback(false)
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null
@@ -755,6 +852,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (!::gameList.isInitialized) return super.onOptionsItemSelected(item)
         return when (item.itemId) {
             R.id.action_search -> {
                 setSearchVisible(searchBarContainer.visibility != View.VISIBLE)

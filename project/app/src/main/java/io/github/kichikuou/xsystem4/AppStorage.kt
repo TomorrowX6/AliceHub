@@ -1,0 +1,245 @@
+package io.github.kichikuou.xsystem4
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Environment
+import android.util.Log
+import java.io.DataInputStream
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.LinkOption
+
+object AppStorage {
+    private const val GAMES = "games"
+    private const val SAVES = "saves"
+    private const val SAVE_BACKUPS = "save_backups"
+    private const val PATH_PREFS = "public_storage_paths"
+    private const val MIGRATION_ROOT_KEY = "completed_root"
+
+    fun hasPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager(Environment.getExternalStorageDirectory())
+        else context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+    fun publicRoot(context: Context): File? =
+        if (hasPermission(context) && Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED) {
+            File(Environment.getExternalStorageDirectory(), "AliceHub")
+        } else {
+            null
+        }
+
+    private fun mountedLegacyGameRoots(context: Context): List<File> =
+        context.getExternalFilesDirs(null).filterNotNull().filter {
+            val state = Environment.getExternalStorageState(it)
+            state == Environment.MEDIA_MOUNTED || state == Environment.MEDIA_MOUNTED_READ_ONLY
+        }
+
+    fun gameRoots(context: Context): List<File> {
+        val legacy = mountedLegacyGameRoots(context)
+        val internal = File(context.filesDir, GAMES)
+        val shared = publicGamesRoot(context)
+        val first = shared ?: legacy.firstOrNull {
+            Environment.getExternalStorageState(it) == Environment.MEDIA_MOUNTED
+        } ?: internal.apply { mkdirs() }
+        return (listOf(first) + legacy + listOfNotNull(internal.takeIf { it.isDirectory })).distinct()
+    }
+
+    fun publicGamesRoot(context: Context): File? =
+        publicRoot(context)?.let { File(it, GAMES) }?.takeIf { it.isDirectory }
+
+    fun savesRoot(context: Context): File = dataRoot(context, SAVES)
+
+    fun saveRoots(context: Context): List<File> =
+        listOf(File(context.filesDir, SAVES), savesRoot(context)).distinct()
+
+    fun saveDir(context: Context, name: String): File = File(dataHome(context, SAVES, name), "$SAVES/$name")
+
+    fun backupDir(context: Context, name: String): File {
+        val safeName = File(name).name
+        return File(dataHome(context, SAVE_BACKUPS, safeName), "$SAVE_BACKUPS/$safeName")
+    }
+
+    private fun dataRoot(context: Context, name: String): File =
+        publicRoot(context)?.let { File(it, name) }?.takeIf { it.isDirectory } ?: File(context.filesDir, name)
+
+    private fun dataHome(context: Context, root: String, name: String): File {
+        val legacy = File(context.filesDir, "$root/$name")
+        val shared = dataRoot(context, root)
+        return if (legacy.exists()) context.filesDir else shared.parentFile ?: context.filesDir
+    }
+
+    fun resolveGamePath(context: Context, path: String): String {
+        if (publicRoot(context) == null || File(path).exists()) return path
+        val moved = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE).getString(path, null)
+        return moved?.takeIf { File(it).isDirectory } ?: path
+    }
+
+    fun resolveSavePath(context: Context, path: String): String {
+        val from = File(context.filesDir, SAVES).toPath()
+        val candidate = File(path).toPath().normalize()
+        if (!candidate.startsWith(from) || candidate == from) return path
+        val suffix = from.relativize(candidate)
+        val saveName = suffix.getName(0).toString()
+        val resolved = saveDir(context, saveName).toPath()
+        return if (suffix.nameCount == 1) resolved.toString()
+        else resolved.resolve(suffix.subpath(1, suffix.nameCount)).toString()
+    }
+
+    fun needsPublicStoragePreparation(context: Context): Boolean {
+        val root = publicRoot(context) ?: return false
+        val preparedRoot = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+            .getString(MIGRATION_ROOT_KEY, null)
+        return preparedRoot != root.absolutePath ||
+            listOf(GAMES, SAVES, SAVE_BACKUPS).any { !File(root, it).isDirectory }
+    }
+
+    fun resetPublicStoragePreparation(context: Context) {
+        val prefs = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+        if (prefs.contains(MIGRATION_ROOT_KEY)) prefs.edit().remove(MIGRATION_ROOT_KEY).apply()
+    }
+
+    @Synchronized
+    fun preparePublicStorage(context: Context): Boolean {
+        val shared = publicRoot(context) ?: return true
+        val games = File(shared, GAMES)
+        val backup = File(shared, SAVE_BACKUPS)
+        val saves = File(shared, SAVES)
+        var complete = true
+        val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+        fun migrateRoot(source: File, target: File, include: (File) -> Boolean = { true }) {
+            if (!target.isDirectory && !target.mkdirs()) {
+                complete = false
+                return
+            }
+            if (!source.exists()) return
+            val entries = source.listFiles()
+            if (entries == null) {
+                complete = false
+                return
+            }
+            for (entry in entries.filter { !it.name.startsWith(".migrated-") && include(it) }) {
+                val destination = File(target, entry.name)
+                try {
+                    val migrated = migrateEntry(entry, destination) {
+                        if (target == games && !entry.name.startsWith('.')) {
+                            System4BootEntry.copySelectedEntry(context, entry, destination)
+                            if (!paths.edit().putString(entry.absolutePath, destination.absolutePath).commit()) {
+                                throw IOException("Could not record migrated game path")
+                            }
+                        }
+                    }
+                    if (!migrated) complete = false
+                } catch (e: IOException) {
+                    Log.w("AppStorage", "Could not migrate $entry", e)
+                    complete = false
+                } catch (e: SecurityException) {
+                    Log.w("AppStorage", "Could not migrate $entry", e)
+                    complete = false
+                }
+            }
+        }
+        migrateRoot(File(context.filesDir, SAVES), saves)
+        migrateRoot(File(context.filesDir, SAVE_BACKUPS), backup)
+        val internalGames = File(context.filesDir, GAMES)
+        for (legacy in mountedLegacyGameRoots(context) + internalGames) {
+            if (legacy.isDirectory && legacy.canWrite()) OnlineInstaller.recoverInterruptedReinstalls(legacy)
+            migrateRoot(legacy, games) {
+                (it.isDirectory && !it.name.startsWith('.') &&
+                    (legacy == internalGames || it.name != Environment.DIRECTORY_PICTURES)) ||
+                    it.name == ".xsystem4" || it.name.startsWith(".online_base_staging_") ||
+                    it.name == ".online_mod_cache" || it.name == UncensoredPatchManager.CACHE_DIR_NAME
+            }
+        }
+        if (complete) paths.edit().putString(MIGRATION_ROOT_KEY, shared.absolutePath).apply()
+        return complete
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun migrateEntry(source: File, destination: File): Boolean = migrateEntry(source, destination) {}
+
+    private fun migrateEntry(source: File, destination: File, beforeMove: () -> Unit): Boolean {
+        if (!exists(source)) return true
+        if (Files.isSymbolicLink(source.toPath())) return false
+        val alreadyCopied = exists(destination)
+        if (alreadyCopied && !sameContents(source, destination)) return false
+        beforeMove()
+        if (!alreadyCopied) {
+            val sameFileStore = runCatching {
+                Files.getFileStore(source.toPath()) == Files.getFileStore(destination.parentFile!!.toPath())
+            }.getOrDefault(false)
+            if (sameFileStore) {
+                try {
+                    Files.move(source.toPath(), destination.toPath())
+                    return true
+                } catch (e: IOException) {
+                    if (exists(destination) || !exists(source)) throw e
+                }
+            }
+            val staging = Files.createTempDirectory(destination.parentFile!!.toPath(), ".migration-").toFile()
+            try {
+                val copied = File(staging, "data")
+                copyEntry(source, copied)
+                Files.move(copied.toPath(), destination.toPath())
+            } finally {
+                staging.deleteRecursively()
+            }
+        }
+        val retired = Files.createTempDirectory(source.parentFile!!.toPath(), ".migrated-").toFile()
+        try {
+            Files.move(source.toPath(), File(retired, "data").toPath())
+        } finally {
+            retired.deleteRecursively()
+        }
+        return true
+    }
+
+    private fun exists(file: File): Boolean = Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+    private fun copyEntry(source: File, destination: File) {
+        when {
+            Files.isSymbolicLink(source.toPath()) -> throw IOException("Unexpected symbolic link: $source")
+            source.isDirectory -> {
+                Files.createDirectory(destination.toPath())
+                for (child in source.listFiles() ?: throw IOException("Cannot list $source")) {
+                    copyEntry(child, File(destination, child.name))
+                }
+                destination.setLastModified(source.lastModified())
+            }
+            source.isFile -> {
+                Files.copy(source.toPath(), destination.toPath())
+                destination.setLastModified(source.lastModified())
+            }
+            else -> throw IOException("Cannot copy $source")
+        }
+    }
+
+    private fun sameContents(first: File, second: File): Boolean {
+        if (Files.isSymbolicLink(first.toPath()) || Files.isSymbolicLink(second.toPath())) return false
+        if (first.isDirectory && second.isDirectory) {
+            val children = first.listFiles() ?: return false
+            val others = second.list()?.toSet() ?: return false
+            return children.size == others.size && children.all {
+                it.name in others && sameContents(it, File(second, it.name))
+            }
+        }
+        if (!first.isFile || !second.isFile || first.length() != second.length()) return false
+        return DataInputStream(first.inputStream().buffered()).use { a ->
+            DataInputStream(second.inputStream().buffered()).use { b ->
+                val expected = ByteArray(65536)
+                val actual = ByteArray(expected.size)
+                var left = first.length()
+                while (left > 0) {
+                    val count = minOf(left, expected.size.toLong()).toInt()
+                    a.readFully(expected, 0, count)
+                    b.readFully(actual, 0, count)
+                    if (!expected.contentEquals(actual)) return false
+                    left -= count
+                }
+                a.read() == -1 && b.read() == -1
+            }
+        }
+    }
+}

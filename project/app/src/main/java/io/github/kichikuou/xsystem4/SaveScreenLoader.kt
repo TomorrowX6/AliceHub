@@ -53,8 +53,10 @@ internal fun discoverSaveTargets(
     preferredDirName: String?,
     resolveInstallAlias: Boolean
 ): SaveTargets {
-    val savesRoot = File(activity.filesDir, "saves")
-    savesRoot.mkdirs()
+    val gameRoots = AppStorage.gameRoots(activity)
+    fun findGameDir(vararg names: String): File? = gameRoots.firstNotNullOfOrNull { root ->
+        names.firstNotNullOfOrNull { name -> File(root, name).takeIf { it.isDirectory } }
+    }
 
     val found = LinkedHashMap<String, SaveTarget>()
     var resolvedPreferredDirName = preferredDirName
@@ -76,13 +78,11 @@ internal fun discoverSaveTargets(
             )
         }
 
-        savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
+        AppStorage.saveRoots(activity).flatMap { it.listFiles().orEmpty().asList() }
+            .filter { it.isDirectory && !it.name.startsWith('.') }.forEach { dir ->
             if (!found.containsKey(dir.name)) {
                 val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
-                val extDir = activity.getExternalFilesDir(null)?.let { root ->
-                    File(root, dir.name).takeIf { it.exists() }
-                        ?: File(root, baseGameName).takeIf { it.exists() }
-                }
+                val extDir = findGameDir(dir.name, baseGameName)
                 found[dir.name] = SaveTarget(
                     displayName = dir.name,
                     dirName = dir.name,
@@ -109,9 +109,9 @@ internal fun discoverSaveTargets(
             }
             if (found.isEmpty()) {
                 val desc = GameCatalog.descriptorFor(activity, gid, gameList)
-                val defaultDir = File(savesRoot, desc.defaultDirName)
+                val defaultDir = AppStorage.saveDir(activity, desc.defaultDirName)
                 defaultDir.mkdirs()
-                val extDir = activity.getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
+                val extDir = findGameDir(desc.defaultDirName)
                 found[desc.defaultDirName] = SaveTarget(
                     displayName = desc.defaultDirName,
                     dirName = desc.defaultDirName,
@@ -120,9 +120,9 @@ internal fun discoverSaveTargets(
                 )
             }
         } else if (found.isEmpty()) {
-            val defaultDir = File(savesRoot, "Rance10")
+            val defaultDir = AppStorage.saveDir(activity, "Rance10")
             defaultDir.mkdirs()
-            val extDir = activity.getExternalFilesDir(null)?.let { File(it, "Rance10") }
+            val extDir = findGameDir("Rance10")
             found["Rance10"] = SaveTarget(
                 displayName = "Rance10",
                 dirName = "Rance10",

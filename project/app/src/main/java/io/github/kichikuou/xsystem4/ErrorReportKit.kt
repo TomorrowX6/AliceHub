@@ -1104,13 +1104,14 @@ internal object ErrorReportKit {
     private fun collectCrashLogCandidates(context: Context): List<File> {
         val out = LinkedHashSet<File>()
         out.add(File(context.filesDir, "crash.log"))
-        val savesRoot = File(context.filesDir, "saves")
-        savesRoot.listFiles()?.forEach { sub ->
-            if (sub.isDirectory && !sub.name.startsWith(".")) {
-                out.add(File(sub, "crash.log"))
+        for (savesRoot in AppStorage.saveRoots(context)) {
+            savesRoot.listFiles()?.forEach { sub ->
+                if (sub.isDirectory && !sub.name.startsWith(".")) {
+                    out.add(File(sub, "crash.log"))
+                }
             }
         }
-        context.getExternalFilesDirs(null).filterNotNull().forEach { ext ->
+        AppStorage.gameRoots(context).forEach { ext ->
             out.add(File(ext, "crash.log"))
             ext.listFiles()?.forEach { sub ->
                 if (sub.isDirectory && !sub.name.startsWith(".")) {

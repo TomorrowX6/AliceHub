@@ -336,7 +336,10 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         matchingItems = GameCatalog.matchingItems(gameList, descriptor.id)
         val effectivePath = selectedPath?.takeIf { it.isNotBlank() }
             ?: loadPersistedInstancePath(descriptor.id)
-        val matchedByPath = effectivePath?.let { p -> matchingItems.firstOrNull { it.path.path == p } }
+        val matchedByPath = effectivePath?.let { p ->
+            val resolved = AppStorage.resolveGamePath(this, p)
+            matchingItems.firstOrNull { it.path.path == resolved }
+        }
         selectedItem = matchedByPath ?: matchingItems.firstOrNull()
         selectedPath = selectedItem?.path?.path
     }
@@ -734,7 +737,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
                 val src = chosenSource
-                val targetParent = src.path.parentFile ?: src.path
+                val targetParent = gameList.cloneInstallRoot(src)
                 val result = Rance10InstanceManager.validateDirName(
                     targetParent,
                     nameInput.text?.toString().orEmpty(),

@@ -11130,7 +11130,7 @@ object GameCatalog {
         val selectedBootEntry = System4BootEntry.getSelectedEntry(activity, item.path)
         val launchTarget = System4BootEntry.resolveLaunchTarget(item.path, selectedBootEntry)
         val effectiveBootEntry = selectedBootEntry.takeIf { it.isNotBlank() && it in System4BootEntry.listEntries(item.path) }.orEmpty()
-        val saveDir = Item.resolveSaveDirForTarget(activity.filesDir, item.path, launchTarget).also { it.mkdirs() }
+        val saveDir = Item.resolveSaveDirForTarget(activity, item.path, launchTarget).also { it.mkdirs() }
         val targetRoot = item.path.path
         val running = isGameProcessRunning(activity)
         val runningRoot = if (running) getRunningGameRoot(activity) else null

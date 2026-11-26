@@ -508,4 +508,10 @@
     <string name="game_sort_name_short">Name</string>
     <string name="game_sort_rating_short">Score</string>
     <string name="game_sort_release_date_short">Release date</string>
+    <string name="public_storage_title">Store games and saves in shared storage</string>
+    <string name="public_storage_permission_message">Allow file access to use AliceHub in your device’s internal storage. Existing games and saves will be moved there. If you decline, AliceHub will continue to use app-specific storage.</string>
+    <string name="public_storage_allow">Allow file access</string>
+    <string name="public_storage_migrating">Moving games and saves to shared storage…</string>
+    <string name="public_storage_migration_incomplete">Some files could not be moved and were kept in their original location.</string>
+    <string name="public_storage_settings_unavailable">Could not open file access settings.</string>
 </resources>

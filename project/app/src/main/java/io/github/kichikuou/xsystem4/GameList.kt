@@ -145,7 +145,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                 }
             }
             val launchTarget = System4BootEntry.resolveLaunchTarget(context, dir)
-            val savedir = resolveSaveDirForTarget(context.filesDir, dir, launchTarget)
+            val savedir = resolveSaveDirForTarget(context, dir, launchTarget)
             savedir.mkdirs()
             val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
@@ -222,17 +222,20 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             return File(filesDir, "saves/${gameDir.name}$suffix")
         }
 
-        fun resolveSaveDirForTarget(filesDir: File, gameDir: File, target: File): File {
+        private fun saveDirName(gameDir: File, target: File): String {
             val suffix = if (System4BootEntry.usesDaiSengokuSaveFolder(gameDir, target)) {
                 DAISENGOKU_SAVE_DIR_SUFFIX
             } else {
                 ""
             }
-            return File(filesDir, "saves/${gameDir.name}$suffix")
+            return "${gameDir.name}$suffix"
         }
 
+        fun resolveSaveDirForTarget(context: Context, gameDir: File, target: File): File =
+            AppStorage.saveDir(context, saveDirName(gameDir, target))
+
         fun resolveSaveDir(context: Context, gameDir: File): File =
-            resolveSaveDirForTarget(context.filesDir, gameDir, System4BootEntry.resolveLaunchTarget(context, gameDir))
+            resolveSaveDirForTarget(context, gameDir, System4BootEntry.resolveLaunchTarget(context, gameDir))
 
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
             if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
@@ -526,6 +529,7 @@ private val backgroundCleanupScope = CoroutineScope(SupervisorJob() + Dispatcher
 
 class GameList(activity: Activity) {
     private val appContext: Context = activity.applicationContext
+    internal val publicStorageRoot = AppStorage.publicRoot(appContext)
     private val context: Context
         get() = AppSettings.wrapThemeContext(appContext)
     private val items: ArrayList<Item> = arrayListOf()
@@ -627,17 +631,16 @@ class GameList(activity: Activity) {
         createDummyIfEmpty: Boolean = false
     ): List<Pair<File, Boolean>> {
         val result = ArrayList<Pair<File, Boolean>>()
-        for (storagePath in appContext.getExternalFilesDirs(null).filterNotNull()) {
+        for (storagePath in AppStorage.gameRoots(appContext)) {
             val state = Environment.getExternalStorageState(storagePath)
-            if (state != Environment.MEDIA_MOUNTED && state != Environment.MEDIA_MOUNTED_READ_ONLY) {
-                continue
-            }
-            val writable = state == Environment.MEDIA_MOUNTED
+            val writable = state != Environment.MEDIA_MOUNTED_READ_ONLY
             result.add(storagePath to writable)
             if (writable && storagePath.absolutePath !in knownRoots) {
                 OnlineInstaller.recoverInterruptedReinstalls(storagePath)
             }
-            if (createDummyIfEmpty && writable) {
+            if (createDummyIfEmpty && writable && storagePath.parentFile != AppStorage.publicRoot(appContext) &&
+                storagePath.parentFile != appContext.filesDir
+            ) {
                 val files = storagePath.listFiles()
                 if (files != null && files.isEmpty()) {
                     val dummyFile = File(storagePath, "dummy.txt")
@@ -650,11 +653,6 @@ class GameList(activity: Activity) {
                     )
                 }
             }
-        }
-        if (result.isEmpty()) {
-            val storage = File(appContext.filesDir, "games")
-            storage.mkdirs()
-            result.add(storage to true)
         }
         return result
     }
@@ -788,6 +786,10 @@ class GameList(activity: Activity) {
             scope.cancel()
         }
     }
+
+    internal fun canRelocateStorage(): Boolean =
+        installState !is InstallState.Installing && installJob?.isActive != true && !isRestoringMod &&
+            retiringBarrierJob?.isActive != true && uninstallingPaths.isEmpty()
 
     fun minimizeInstallProgress() {
         if (installState is InstallState.Installing) {
@@ -1036,7 +1038,7 @@ class GameList(activity: Activity) {
         if (installState is InstallState.Installing || installJob?.isActive == true || isRestoringMod) {
             return false
         }
-        val parentDir = sourceItem.path.parentFile ?: storageDirs[0]
+        val parentDir = cloneInstallRoot(sourceItem)
         val extraUsedNames = allExistingDirectoryNames()
         val validation = Rance10InstanceManager.validateDirName(parentDir, targetDirName, extraUsedNames)
         if (!validation.isValid) {
@@ -1139,6 +1141,9 @@ class GameList(activity: Activity) {
         }
         return true
     }
+
+    internal fun cloneInstallRoot(sourceItem: Item): File =
+        AppStorage.publicGamesRoot(appContext) ?: sourceItem.path.parentFile ?: storageDirs[0]
 
     fun installDirectory(
         uri: Uri,

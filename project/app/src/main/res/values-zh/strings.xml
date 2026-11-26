@@ -507,4 +507,10 @@
     <string name="game_sort_name_short">名称</string>
     <string name="game_sort_rating_short">评分</string>
     <string name="game_sort_release_date_short">发行时间</string>
+    <string name="public_storage_title">将游戏和存档放在共享存储</string>
+    <string name="public_storage_permission_message">允许文件访问权限后，AliceHub 将使用内部存储中的 AliceHub 文件夹，并迁移已有的游戏和存档。如果不授权，应用将继续使用专属存储。</string>
+    <string name="public_storage_allow">允许文件访问</string>
+    <string name="public_storage_migrating">正在将游戏和存档迁移到共享存储…</string>
+    <string name="public_storage_migration_incomplete">部分文件未能迁移，已保留在原位置。</string>
+    <string name="public_storage_settings_unavailable">无法打开文件访问权限设置。</string>
 </resources>

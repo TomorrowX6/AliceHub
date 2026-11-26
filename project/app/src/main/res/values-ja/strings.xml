@@ -507,4 +507,10 @@
     <string name="game_sort_name_short">名前</string>
     <string name="game_sort_rating_short">評価</string>
     <string name="game_sort_release_date_short">発売日</string>
+    <string name="public_storage_title">ゲームとセーブを共有ストレージに保存</string>
+    <string name="public_storage_permission_message">ファイルへのアクセスを許可すると、端末の内部ストレージにある AliceHub フォルダを使い、既存のゲームとセーブを移動します。許可しない場合は、引き続きアプリ専用のストレージを使います。</string>
+    <string name="public_storage_allow">ファイルへのアクセスを許可</string>
+    <string name="public_storage_migrating">ゲームとセーブを共有ストレージに移動しています…</string>
+    <string name="public_storage_migration_incomplete">一部のファイルを移動できなかったため、元の場所に残しました。</string>
+    <string name="public_storage_settings_unavailable">ファイルへのアクセス設定を開けませんでした。</string>
 </resources>

@@ -315,4 +315,12 @@ object System4BootEntry {
     fun clearSelectedEntry(context: Context, gameDir: File) {
         setSelectedEntry(context, gameDir, null)
     }
+
+    internal fun copySelectedEntry(context: Context, from: File, to: File) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val oldValue = prefs.getString(prefKey(from), null) ?: return
+        if (!prefs.contains(prefKey(to)) && !prefs.edit().putString(prefKey(to), oldValue).commit()) {
+            throw java.io.IOException("Could not migrate boot entry preference")
+        }
+    }
 }

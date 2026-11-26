@@ -394,14 +394,7 @@ class SettingsActivity : ThemedActivity() {
                 (f.lastModified() <= 0L || nowMs - f.lastModified() >= 600_000L)
         }?.forEach { routine.add(it) }
 
-        val storageRoots = LinkedHashSet<File>()
-        context.getExternalFilesDirs(null)?.filterNotNull()?.forEach { storageRoots.add(it) }
-        val internalGames = File(context.filesDir, "games")
-        if (internalGames.isDirectory) {
-            storageRoots.add(internalGames)
-        }
-
-        for (root in storageRoots) {
+        for (root in AppStorage.gameRoots(context)) {
             val children = root.listFiles() ?: continue
             for (f in children) {
                 val n = f.name
