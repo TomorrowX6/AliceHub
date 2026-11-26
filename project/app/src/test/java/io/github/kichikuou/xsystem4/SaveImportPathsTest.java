@@ -2,11 +2,16 @@ package io.github.kichikuou.xsystem4;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,6 +47,60 @@ public class SaveImportPathsTest {
             File[] files = dir.listFiles();
             return files == null ? Collections.emptyList() : Arrays.asList(files);
         }, File::getName, File::isDirectory, fromArchive);
+    }
+
+    private File importZip(File archive) throws IOException {
+        File extracted = temporary.newFolder();
+        try (ZipFile zip = new ZipFile(archive)) {
+            for (ZipEntry entry : Collections.list(zip.entries())) {
+                File output = new File(extracted, entry.getName());
+                Files.createDirectories(output.getParentFile().toPath());
+                try (InputStream input = zip.getInputStream(entry)) {
+                    Files.copy(input, output.toPath());
+                }
+            }
+        }
+        File target = temporary.newFolder();
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, new SaveImportPaths(null).importExtractedArchive(extracted, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        return target;
+    }
+
+    @Test public void exportedZipPreservesALoneSaveDataSubdirectory() throws IOException {
+        File source = temporary.newFile("Collection.asd");
+        write(source, "collection progress");
+        File archive = temporary.newFile("export.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive.toPath()))) {
+            SaveFileEntry entry = new SaveFileEntry(source, "SaveData/Collection.asd",
+                    source.length(), source.lastModified(), "collection");
+            SaveZipLayout.INSTANCE.write(zip, Collections.singletonList(entry), (file, output) -> {
+                try {
+                    Files.copy(file.toPath(), output);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return false;
+            });
+        }
+
+        File target = importZip(archive);
+        assertEquals("collection progress", read(new File(target, "SaveData/Collection.asd")));
+        assertEquals(Collections.singletonList("SaveData"), Arrays.asList(target.list()));
+    }
+
+    @Test public void unmarkedZipStillUnwrapsRedundantSaveDataDirectories() throws IOException {
+        File archive = temporary.newFile("external.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive.toPath()))) {
+            zip.putNextEntry(new ZipEntry("SaveData/SaveData/Collection.asd"));
+            zip.write("external progress".getBytes(StandardCharsets.US_ASCII));
+            zip.closeEntry();
+        }
+
+        File target = importZip(archive);
+        assertEquals("external progress", read(new File(target, "Collection.asd")));
+        assertEquals(Collections.singletonList("Collection.asd"), Arrays.asList(target.list()));
     }
 
     @Test public void windowsSlotsMatchTheScenarioArchiveForBothTsumamiguiGames() throws IOException {

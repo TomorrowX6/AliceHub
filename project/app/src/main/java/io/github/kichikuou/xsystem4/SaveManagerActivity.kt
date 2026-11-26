@@ -671,22 +671,11 @@ class SaveManagerActivity : ThemedActivity() {
                 val (count, converted) = withContext(Dispatchers.IO) {
                     val outStream = appCtx.contentResolver.openOutputStream(uri)
                         ?: throw IOException("Failed to create target ZIP file")
-                    var exported = 0
-                    var convCount = 0
                     ZipOutputStream(outStream.buffered()).use { zos ->
-                        for (entry in entriesToExport) {
-                            if (!entry.file.exists()) continue
-                            val zipEntry = ZipEntry("SaveData/${entry.relativePath}")
-                            zipEntry.time = entry.lastModified
-                            zos.putNextEntry(zipEntry)
-                            if (copyExportFileStatic(appCtx, entry.file, zos, asPc)) {
-                                convCount++
-                            }
-                            zos.closeEntry()
-                            exported++
+                        SaveZipLayout.write(zos, entriesToExport) { file, output ->
+                            copyExportFileStatic(appCtx, file, output, asPc)
                         }
                     }
-                    exported to convCount
                 }
                 onHost { it.dismissProgress() }
                 hostMessage(

@@ -9,6 +9,8 @@ import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class SaveImportPaths @JvmOverloads constructor(
     gameDir: File?,
@@ -181,7 +183,7 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     fun importExtractedArchive(root: File, targetDir: File, writes: ImportWrites): Int {
-        val source = selectSource(
+        val source = SaveZipLayout.exportedRoot(root)?.let { Source(it) } ?: selectSource(
             root, { it.listFiles()?.toList().orEmpty() }, File::getName, File::isDirectory, fromArchive = true
         )
         val rootCanonical = targetDir.canonicalFile
@@ -316,5 +318,38 @@ class SaveImportPaths @JvmOverloads constructor(
                     aCharset.newEncoder().encode(CharBuffer.wrap(a)) ==
                         bCharset.newEncoder().encode(CharBuffer.wrap(b))
                 }.getOrDefault(false)
+    }
+}
+
+internal object SaveZipLayout {
+    private const val wrapper = "SaveData"
+    private const val marker = ".alicehub-save-layout-v1"
+
+    fun write(
+        zip: ZipOutputStream,
+        entries: List<SaveFileEntry>,
+        copy: (File, ZipOutputStream) -> Boolean
+    ): Pair<Int, Int> {
+        zip.putNextEntry(ZipEntry(marker))
+        zip.closeEntry()
+        var exported = 0
+        var converted = 0
+        for (entry in entries) {
+            if (!entry.file.exists()) continue
+            val zipEntry = ZipEntry("$wrapper/${entry.relativePath}")
+            zipEntry.time = entry.lastModified
+            zip.putNextEntry(zipEntry)
+            if (copy(entry.file, zip)) converted++
+            zip.closeEntry()
+            exported++
+        }
+        return exported to converted
+    }
+
+    fun exportedRoot(root: File): File? {
+        val layout = File(root, marker)
+        if (!layout.isFile || layout.length() != 0L) return null
+        return root.listFiles()?.singleOrNull { !it.name.startsWith('.') }
+            ?.takeIf { it.isDirectory && it.name == wrapper }
     }
 }
