@@ -80,10 +80,10 @@ class SaveImportPaths(gameDir: File?) {
         fromArchive: Boolean = false
     ): T {
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
-        fun isSave(name: String): Boolean =
+        fun isArchiveSave(name: String): Boolean =
             saveExtension.matches(name) ||
-                (fromArchive && (name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)))
-        fun hasLooseSave(nodes: List<T>): Boolean =
+                name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
+        fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
 
         fun explicitSaveFolder(dirs: List<T>, eligible: (T) -> Boolean = { true }): T? {
@@ -105,7 +105,7 @@ class SaveImportPaths(gameDir: File?) {
                 pending.add(node)
                 while (pending.isNotEmpty()) {
                     val visible = visibleChildren(pending.removeLast())
-                    if (hasLooseSave(visible)) return true
+                    if (hasLooseSave(visible, ::isArchiveSave)) return true
                     pending.addAll(visible.filter(isDirectory))
                 }
                 return false
@@ -114,7 +114,7 @@ class SaveImportPaths(gameDir: File?) {
             repeat(3) {
                 level = level.flatMap { (node, ancestorHasSave) ->
                     val visible = visibleChildren(node)
-                    val competes = ancestorHasSave || hasLooseSave(visible)
+                    val competes = ancestorHasSave || hasLooseSave(visible, ::isArchiveSave)
                     visible.filter(isDirectory).map { it to competes }
                 }
                 val competingByDir = level.toMap()
@@ -124,15 +124,17 @@ class SaveImportPaths(gameDir: File?) {
             }
         }
 
-        fun find(node: T, depth: Int): T? {
+        fun find(node: T, depth: Int, isSave: (String) -> Boolean): T? {
             val visible = visibleChildren(node)
-            if (hasLooseSave(visible)) return node
+            if (hasLooseSave(visible, isSave)) return node
             if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
-            return explicitSaveFolder(dirs) ?: dirs.singleOrNull()?.let { find(it, depth - 1) }
+            if (!fromArchive) explicitSaveFolder(dirs)?.let { return it }
+            return dirs.singleOrNull()?.let { find(it, depth - 1, isSave) }
         }
-        find(root, 3)?.let { return it }
+        find(root, 3, saveExtension::matches)?.let { return it }
         if (!fromArchive) return root
+        find(root, 3, ::isArchiveSave)?.let { return it }
 
         var node = root
         while (true) {

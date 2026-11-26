@@ -214,6 +214,17 @@ public class SaveImportPathsTest {
         assertEquals(winner + "sa.asd", new SaveImportPaths(system35).nameForImport(winner + "SA.ASD", true));
     }
 
+    @Test public void looseArchiveConfigDoesNotHideWrappedSaveSlots() throws IOException {
+        for (String name : new String[]{"3DConfig.VSF", "KeyFile.dat"}) {
+            File root = temporary.newFolder(name);
+            File wrapper = new File(root, "backup");
+            assertTrue(wrapper.mkdir());
+            touch(root, name);
+            touch(wrapper, "CommonSystemData.sav");
+            assertEquals(wrapper, sourceRoot(new SaveImportPaths(null), root, true));
+        }
+    }
+
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {
         File root = temporary.newFolder("archive");
         File wrapper = new File(root, "backup");
