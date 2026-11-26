@@ -183,10 +183,12 @@ public class PerGameUiScaleTest {
     @Test
     public void gameModifierActivityDisplaysPerGameScaleButtons() {
         GameModifierBridge bridge = GameModifierBridge.INSTANCE;
+        String dohnaDefaultDir = GameCatalog.INSTANCE
+                .descriptorFor(context, GameCatalog.ID_DOHNA_DOHNA, null).getDefaultDirName();
         bridge.setFontScalePercent(context, "Rance10", 125);
         bridge.setScrollbarScalePercent(context, "Rance10", 180);
-        bridge.setFontScalePercent(context, "DohnaDohna", 90);
-        bridge.setScrollbarScalePercent(context, "DohnaDohna", 140);
+        bridge.setFontScalePercent(context, dohnaDefaultDir, 90);
+        bridge.setScrollbarScalePercent(context, dohnaDefaultDir, 140);
 
         Intent r10Intent = new Intent(context, GameModifierActivity.class)
                 .putExtra(GameModifierActivity.EXTRA_DIR_NAME, "Rance10")
@@ -199,7 +201,7 @@ public class PerGameUiScaleTest {
         assertTrue("Expected 180% in " + r10SbBtn.getText(), r10SbBtn.getText().toString().contains("180%"));
 
         Intent ddIntent = new Intent(context, GameModifierActivity.class)
-                .putExtra(GameModifierActivity.EXTRA_DIR_NAME, "DohnaDohna")
+                .putExtra(GameModifierActivity.EXTRA_DIR_NAME, dohnaDefaultDir)
                 .putExtra(GameModifierActivity.EXTRA_GAME_ID, GameCatalog.ID_DOHNA_DOHNA);
         GameModifierActivity ddAct = Robolectric.buildActivity(GameModifierActivity.class, ddIntent)
                 .create().get();
