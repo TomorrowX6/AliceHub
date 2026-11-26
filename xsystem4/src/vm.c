@@ -101,6 +101,21 @@ bool dg_callbegin_pending = false;
 
 bool vm_reset_once = false;
 
+static bool vm_zero_vector_div_guard(void)
+{
+	if (call_stack_ptr <= 0 || !ain)
+		return false;
+	int fno = call_stack[call_stack_ptr - 1].fno;
+	if (fno < 0 || fno >= ain->nr_functions || !ain->functions[fno].name)
+		return false;
+	const char *name = ain->functions[fno].name;
+	return !strcmp(name, "VECTOR3D@Normalize")
+		|| !strcmp(name, "VECTOR2D@Normalize")
+		|| !strcmp(name, "VECTOR3D@SetLength")
+		|| !strcmp(name, "VECTOR2D@SetLength")
+		|| !strcmp(name, "fxyz_t@Normalize");
+}
+
 static const char *current_instruction_name(void)
 {
 	int16_t opcode = get_opcode(instr_ptr);
@@ -1961,10 +1976,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case F_DIV: {
 		float f = stack_pop().f;
-		if (f == 0.0f && stack_peek(0).f == 0.0f && game_evenicle2_rance
-				&& call_stack_ptr > 0 && !strcmp(
-					ain->functions[call_stack[call_stack_ptr - 1].fno].name,
-					"VECTOR3D@Normalize"))
+		if (unlikely(f == 0.0f && stack_peek(0).f == 0.0f) && vm_zero_vector_div_guard())
 			f = 1.0f;
 		stack_set(0, stack_peek(0).f / f);
 		break;
@@ -2017,7 +2029,10 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case F_DIVA: {
 		float n = stack_pop().f;
-		stack_push(stack_pop_var()->f /= n);
+		union vm_value *var = stack_pop_var();
+		if (unlikely(n == 0.0f && var->f == 0.0f) && vm_zero_vector_div_guard())
+			n = 1.0f;
+		stack_push(var->f /= n);
 		break;
 	}
 	//
