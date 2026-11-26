@@ -261,9 +261,10 @@ int main(void)
 
     def test_picker_presents_cached_frame_without_input(self):
         launcher = "../cmake/switch/launcher.c"
+        hub = Path(__file__).resolve().parents[3] / "cmake/switch/hub"
         loop = "\n".join([extract_function("../cmake/switch/picker_renderer.h", "picker_begin"),
                           *(extract_function(launcher, name)
-                            for name in ("compare_names", "validate_game", "choose_game"))])
+                            for name in ("compare_names", "resolve_game", "choose_game"))])
         self.run_c(r"""
 #include <assert.h>
 #include <dirent.h>
@@ -273,6 +274,7 @@ int main(void)
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "model.h"
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
@@ -329,7 +331,7 @@ static void picker_draw(Picker *picker, char **names, size_t count, size_t selec
     (void)names; (void)count; (void)selected; (void)logo; (void)covers;
     *picker->pixels = ++draws;
     saw_name |= error && !strcmp(game, "bad");
-    saw_invalid |= error && strstr(error, "System40.ini");
+    saw_invalid |= error && strstr(error, "System 4 launcher or script");
     saw_startup_error |= error && !strcmp(error, "Broken AIN");
     if (check_error_dismissal)
         assert((error != NULL) == (ticks < 4));
@@ -345,8 +347,9 @@ static void framebufferEnd(int *fb)
 int main(void)
 {
     Picker picker = {0};
-    char game[512];
-    assert(!choose_game(&picker, game, sizeof(game), NULL));
+    char game[HUB_PATH_SIZE], target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    assert(!choose_game(&picker, game, target, &uses_dsr, NULL));
     assert(draws == 1 && submitted == 3);
 
     assert(!mkdir("games", 0700) && !mkdir("games/bad", 0700) && !mkdir("games/good", 0700));
@@ -356,14 +359,15 @@ int main(void)
     const u64 attempt[] = { 0, HidNpadButton_A, HidNpadButton_Right, HidNpadButton_A };
     ticks = 0;
     keys = attempt;
-    assert(choose_game(&picker, game, sizeof(game), NULL));
+    assert(choose_game(&picker, game, target, &uses_dsr, NULL));
     assert(!strcmp(game, "games/good") && saw_name && saw_invalid);
+    assert(!strcmp(target, game) && !uses_dsr);
 
     const u64 retry[] = { 0, HidNpadButton_B };
     ticks = 0;
     keys = retry;
     strcpy(game, "games/bad");
-    assert(!choose_game(&picker, game, sizeof(game), "Broken AIN"));
+    assert(!choose_game(&picker, game, target, &uses_dsr, "Broken AIN"));
     assert(saw_startup_error);
 
     const u64 held_a[] = { HidNpadButton_A, HidNpadButton_A, 0, HidNpadButton_A };
@@ -372,13 +376,13 @@ int main(void)
     check_error_dismissal = true;
     int prior_draws = draws;
     strcpy(game, "games/bad");
-    assert(!choose_game(&picker, game, sizeof(game), "Broken AIN"));
+    assert(!choose_game(&picker, game, target, &uses_dsr, "Broken AIN"));
     assert(draws == prior_draws + 2);
 }
-""")
+""", str(hub / "model.c"), "-I" + str(hub))
 
     def test_system3_engines_require_a_readable_scenario_source(self):
-        validator = extract_function("../cmake/switch/launcher.c", "validate_game")
+        validator = extract_function("../cmake/switch/launcher.c", "resolve_game")
         for engine in ("", "#define ALICEHUB_SWITCH_XSYSTEM35"):
             self.run_c(engine + r"""
 #include <assert.h>
@@ -388,26 +392,30 @@ int main(void)
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#define HUB_PATH_SIZE 512
 """ + validator + r"""
 int main(void)
 {
     assert(!mkdir("game", 0700));
     FILE *other = fopen("game/GraphicsGA.ald", "wb");
     assert(other && fputs("not a scenario", other) >= 0 && !fclose(other));
-    assert(validate_game("game"));
+    char target[HUB_PATH_SIZE];
+    bool uses_dsr;
+    assert(resolve_game("game", target, &uses_dsr));
 #ifdef ALICEHUB_SWITCH_XSYSTEM35
     FILE *scenario = fopen("game/TestSA_chs.ALD", "wb");
     assert(scenario && fputs("scenario", scenario) >= 0 && !fclose(scenario));
 #else
     FILE *scenario = fopen("game/adisk.dat", "wb");
     assert(scenario && fputc(1, scenario) != EOF && !fclose(scenario));
-    assert(validate_game("game"));
+    assert(resolve_game("game", target, &uses_dsr));
     scenario = fopen("game/adisk.dat", "wb");
     const unsigned char header[] = { 2, 0, 3, 0 };
     assert(scenario && fwrite(header, 1, sizeof(header), scenario) == sizeof(header));
     assert(!fseek(scenario, 512, SEEK_SET) && fputc(0, scenario) != EOF && !fclose(scenario));
 #endif
-    assert(!validate_game("game"));
+    assert(!resolve_game("game", target, &uses_dsr));
+    assert(!strcmp(target, "game") && !uses_dsr);
 }
 """)
 
@@ -523,6 +531,7 @@ int main(void)
 #include <string.h>
 #define R_FAILED(result) (result)
 #define SAVES "saves"
+#define HUB_PATH_SIZE 512
 typedef struct { int unused; } Picker;
 static char launch_error[512];
 static bool report_error;
@@ -533,14 +542,15 @@ static int nvInitialize(void) { return 0; }
 static void nvExit(void) {}
 static bool picker_open(Picker *picker) { (void)picker; return true; }
 static void picker_close(Picker *picker) { (void)picker; }
-static bool prepare_save(const char *game, char *save, size_t size)
+static bool prepare_save(const char *game, bool uses_dsr, char *save, size_t size)
 {
-    (void)game; (void)save; (void)size;
+    (void)game; (void)uses_dsr; (void)save; (void)size;
     return true;
 }
-static bool choose_game(Picker *picker, char *game, size_t size, const char *error)
+static bool choose_game(Picker *picker, char *game, char *target, bool *uses_dsr, const char *error)
 {
-    (void)picker; (void)game; (void)size;
+    (void)picker; (void)game; (void)target;
+    *uses_dsr = false;
     if (++selections == 1) {
         assert(!error);
         return true;
@@ -550,9 +560,9 @@ static bool choose_game(Picker *picker, char *game, size_t size, const char *err
 }
 static void SDL_Quit(void) { ++quits; }
 """ + setter + r"""
-static int launch_game(char *game, char *save)
+static int launch_game(const char *game, char *target, char *save)
 {
-    (void)game; (void)save;
+    (void)game; (void)target; (void)save;
     romfsExit();
     if (report_error)
         alicehub_switch_set_launch_error("Bad scenario disk");

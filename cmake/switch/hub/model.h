@@ -12,6 +12,7 @@
 #define HUB_NAME_SIZE 512
 #define HUB_ID_SIZE 544
 #define HUB_PATH_SIZE 512
+#define HUB_BOOT_SETTING ".alicehub-launch-entry"
 
 typedef enum { HUB_SYSTEM3, HUB_XSYSTEM35, HUB_XSYSTEM4, HUB_ENGINE_COUNT } HubEngine;
 
@@ -35,6 +36,11 @@ typedef struct {
     size_t count;
 } HubLibrary;
 
+typedef struct {
+    char **names;
+    size_t count;
+} HubBootEntries;
+
 typedef enum { HUB_SORT_NAME, HUB_SORT_ENGINE, HUB_SORT_COUNT } HubSort;
 typedef struct { HubSort sort; } HubSettings;
 
@@ -46,6 +52,13 @@ typedef struct {
 bool hub_game_init(HubGame *game, HubEngine engine, const char *name);
 bool hub_game_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_game_uses_daisengoku_save_folder(const char *game_dir);
+bool hub_system4_standard_ini(const char *name);
+bool hub_system4_configured_script(const char *dir, const char *ini, char script[HUB_PATH_SIZE]);
+bool hub_system4_boot_entries(const char *dir, HubBootEntries *entries);
+void hub_boot_entries_free(HubBootEntries *entries);
+bool hub_game_boot_get(const char *dir, char entry[HUB_NAME_SIZE]);
+bool hub_game_boot_set(const char *dir, const char *entry);
+bool hub_system4_resolve(const char *dir, char target[HUB_PATH_SIZE], bool *uses_dsr);
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_library_scan(HubLibrary *library, const char *root);
 void hub_library_free(HubLibrary *library);

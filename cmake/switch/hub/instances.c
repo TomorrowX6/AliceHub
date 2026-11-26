@@ -81,6 +81,9 @@ static bool walk_tree(char *src, char *dst, const Copy *copy, bool make_dir)
         const char *name = entry->d_name;
         if (!strcmp(name, ".") || !strcmp(name, ".."))
             continue;
+        if (copying && !make_dir && (!strcasecmp(name, HUB_BOOT_SETTING) ||
+            !strcasecmp(name, HUB_BOOT_SETTING ".tmp") || !strcasecmp(name, HUB_BOOT_SETTING ".bak")))
+            continue;
         ok = append(src, sl, name) && (!copying || append(dst, dl, name));
         if (ok)
             ok = walk_tree(src, dst, copy, true);
