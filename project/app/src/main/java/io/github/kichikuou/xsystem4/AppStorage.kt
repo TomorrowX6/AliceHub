@@ -2,6 +2,7 @@ package io.github.kichikuou.xsystem4
 
 import android.Manifest
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -14,6 +15,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.util.Locale
+import java.util.UUID
 
 object AppStorage {
     private const val GAMES = "games"
@@ -21,6 +23,7 @@ object AppStorage {
     private const val SAVE_BACKUPS = "save_backups"
     private const val PATH_PREFS = "public_storage_paths"
     private const val MIGRATION_ROOT_KEY = "completed_root"
+    private const val MIGRATION_STAGING_KEY = "active_staging"
     private const val MIGRATION_STAGING_PREFIX = ".alicehub-migration-"
 
     fun hasPermission(context: Context): Boolean =
@@ -133,14 +136,16 @@ object AppStorage {
         val saves = File(shared, SAVES)
         var complete = true
         val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
-        for (target in listOf(games, backup, saves)) {
-            target.listFiles()?.filter { it.name.startsWith(MIGRATION_STAGING_PREFIX) }?.forEach {
-                try {
-                    deleteStaging(it)
-                } catch (e: IOException) {
-                    Log.w("AppStorage", "Could not remove interrupted migration staging", e)
-                    complete = false
-                }
+        paths.getString(MIGRATION_STAGING_KEY, null)?.let { path ->
+            val staging = File(path)
+            try {
+                if (staging.parentFile in listOf(games, backup, saves) &&
+                    staging.name.startsWith(MIGRATION_STAGING_PREFIX)
+                ) deleteStaging(staging)
+                forgetStaging(paths)
+            } catch (e: IOException) {
+                Log.w("AppStorage", "Could not remove interrupted migration staging", e)
+                return false
             }
         }
         fun migrateRoot(source: File, target: File, include: (File) -> Boolean = { true }) {
@@ -163,7 +168,7 @@ object AppStorage {
                         Files.deleteIfExists(entry.toPath())
                         continue
                     }
-                    val migrated = migrateEntry(entry, destination) {
+                    val migrated = migrateEntry(entry, destination, paths) {
                         if (target == games && !entry.name.startsWith('.')) {
                             System4BootEntry.copySelectedEntry(context, entry, destination)
                             if (!paths.edit().putString(entry.absolutePath, destination.absolutePath).commit()) {
@@ -199,9 +204,14 @@ object AppStorage {
 
     @JvmStatic
     @Throws(IOException::class)
-    fun migrateEntry(source: File, destination: File): Boolean = migrateEntry(source, destination) {}
+    fun migrateEntry(source: File, destination: File): Boolean = migrateEntry(source, destination, null) {}
 
-    private fun migrateEntry(source: File, destination: File, beforeMove: () -> Unit): Boolean {
+    private fun migrateEntry(
+        source: File,
+        destination: File,
+        paths: SharedPreferences?,
+        beforeMove: () -> Unit
+    ): Boolean {
         if (!exists(source)) return true
         if (Files.isSymbolicLink(source.toPath())) return false
         val alreadyCopied = exists(destination)
@@ -219,14 +229,15 @@ object AppStorage {
                     if (exists(destination) || !exists(source)) throw e
                 }
             }
-            val staging = Files.createTempDirectory(destination.parentFile!!.toPath(), MIGRATION_STAGING_PREFIX).toFile()
+            val staging = createStaging(destination.parentFile!!, paths)
             try {
                 val copied = File(staging, "data")
                 copyEntry(source, copied)
                 if (!sameContents(source, copied)) return false
                 Files.move(copied.toPath(), destination.toPath())
             } finally {
-                staging.deleteRecursively()
+                deleteStaging(staging)
+                if (paths != null) forgetStaging(paths)
             }
         }
         val retired = Files.createTempDirectory(source.parentFile!!.toPath(), ".migrated-").toFile()
@@ -239,6 +250,25 @@ object AppStorage {
     }
 
     private fun exists(file: File): Boolean = Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+    private fun createStaging(parent: File, paths: SharedPreferences?): File {
+        if (paths == null) return Files.createTempDirectory(parent.toPath(), MIGRATION_STAGING_PREFIX).toFile()
+        val staging = File(parent, MIGRATION_STAGING_PREFIX + UUID.randomUUID())
+        if (exists(staging) || paths.contains(MIGRATION_STAGING_KEY) ||
+            !paths.edit().putString(MIGRATION_STAGING_KEY, staging.absolutePath).commit()
+        ) throw IOException("Could not record migration staging")
+        try {
+            Files.createDirectory(staging.toPath())
+        } catch (e: IOException) {
+            forgetStaging(paths)
+            throw e
+        }
+        return staging
+    }
+
+    private fun forgetStaging(paths: SharedPreferences) {
+        if (!paths.edit().remove(MIGRATION_STAGING_KEY).commit()) throw IOException("Could not clear migration staging")
+    }
 
     private fun deleteStaging(file: File) {
         if (Files.isDirectory(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {

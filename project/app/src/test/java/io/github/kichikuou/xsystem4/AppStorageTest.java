@@ -134,10 +134,15 @@ public class AppStorageTest {
         write(new File(sharedSave, "slot.asd"), "shared");
         File staging = new File(volume, "AliceHub/games/.alicehub-migration-abandoned");
         write(new File(staging, "data/partial.ain"), "partial");
+        context.getSharedPreferences("public_storage_paths", Context.MODE_PRIVATE).edit()
+                .putString("active_staging", staging.getAbsolutePath()).commit();
+        File unrelated = new File(volume, "AliceHub/games/.alicehub-migration-user-copy/data/backup.ain");
+        write(unrelated, "keep");
 
         assertEquals(sharedSave, storage.saveDir(context, "Game"));
         assertTrue(storage.preparePublicStorage(context));
         assertFalse(staging.exists());
+        assertEquals("keep", read(unrelated));
         assertFalse(legacySave.exists());
         assertEquals("shared", read(new File(storage.saveDir(context, "Game"), "slot.asd")));
     }
