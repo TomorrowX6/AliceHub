@@ -52,6 +52,7 @@ void sys_warning(const char *fmt, ...) {
     }
 }
 static int draws, feedbacks;
+static bool zero_blend_constant;
 void __real_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
 void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices) {
     GLint fbo=0, dst=0, src=0, active=0;
@@ -63,6 +64,7 @@ void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *
                                                   GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,&dst);
     draws++;
     if (dst && dst==src) { feedbacks++; fprintf(stderr,"framebuffer feedback detected\n"); abort(); }
+    if (zero_blend_constant) glBlendColor(0,0,0,0);
     __real_glDrawElements(mode,count,type,indices);
 }
 static void no_error(void) { GLenum e=glGetError(); if(e)fprintf(stderr,"GL error 0x%x\n",e); assert(e==GL_NO_ERROR); }
@@ -420,6 +422,7 @@ static void blur_tests(void) {
         input[i]=(x%3==0)?255:0; input[i+1]=(y%3==0)?255:0;
         input[i+2]=((x+y)%4==0)?255:0; input[i+3]=(x*11+y*13)%256;
     }
+    zero_blend_constant=true;
     for(int vertical=0;vertical<2;vertical++)for(int full=0;full<2;full++)for(int pinned=0;pinned<2;pinned++) {
         struct parts_construction_process cp={0};
         gfx_init_texture_with_pixels(&cp.common.texture,W,H,input);
@@ -438,7 +441,9 @@ static void blur_tests(void) {
         }
         gfx_delete_texture(&cp.common.texture); no_error();
     }
+    zero_blend_constant=false;
     puts("PASS: GLES H/V blur, full/subrect, pinned/unpinned, RGBA preservation, two-pass blur");
+    puts("PASS: RGB blur remains correct with a zero fixed-function blend constant");
 }
 static void straight_alpha_cut_test(void) {
     unsigned char pixel[] = {200,80,40,128};
