@@ -20,6 +20,7 @@
             android:text="@string/public_storage_option" />
 
         <TextView
+            android:id="@+id/storage_public_benefits"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingStart="32dp"
@@ -36,6 +37,19 @@
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/private_storage_option" />
+
+        <TextView
+            android:id="@+id/storage_private_drawbacks"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="32dp"
+            android:paddingEnd="4dp"
+            android:paddingBottom="12dp"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/private_storage_drawbacks"
+            android:textColor="@color/ui_text_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
     </RadioGroup>
 
     <Button

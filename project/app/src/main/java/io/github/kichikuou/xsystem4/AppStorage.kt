@@ -14,6 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardOpenOption
 import java.util.Locale
 import java.util.UUID
 
@@ -128,8 +129,26 @@ object AppStorage {
         if (prefs.contains(MIGRATION_ROOT_KEY)) prefs.edit().remove(MIGRATION_ROOT_KEY).apply()
     }
 
+    data class MigrationProgress(val itemName: String, val percent: Int)
+
+    fun hasLegacyData(context: Context): Boolean {
+        fun hasContents(entry: File): Boolean = entry.isFile || !entry.list().isNullOrEmpty()
+        val internal = File(context.filesDir, GAMES)
+        return listOf(SAVES, SAVE_BACKUPS).any { name ->
+            File(context.filesDir, name).listFiles()?.any(::hasContents) == true
+        } || (mountedLegacyGameRoots(context) + internal).any { root ->
+            root.listFiles()?.any { isMigratableGameEntry(it, root == internal) && hasContents(it) } == true
+        }
+    }
+
+    private fun isMigratableGameEntry(entry: File, internal: Boolean): Boolean =
+        (entry.isDirectory && !entry.name.startsWith('.') && (internal || entry.name != Environment.DIRECTORY_PICTURES)) ||
+            entry.name == ".xsystem4" || entry.name.startsWith(".online_base_staging_") ||
+            entry.name == ".online_mod_cache" || entry.name == UncensoredPatchManager.CACHE_DIR_NAME
+
+    @JvmOverloads
     @Synchronized
-    fun preparePublicStorage(context: Context): Boolean {
+    fun preparePublicStorage(context: Context, onProgress: (MigrationProgress) -> Unit = {}): Boolean {
         val shared = publicRoot(context) ?: return true
         val games = File(shared, GAMES)
         val backup = File(shared, SAVE_BACKUPS)
@@ -148,7 +167,8 @@ object AppStorage {
                 return false
             }
         }
-        fun migrateRoot(source: File, target: File, include: (File) -> Boolean = { true }) {
+        val entriesToMove = mutableListOf<Pair<File, File>>()
+        fun queueRoot(source: File, target: File, include: (File) -> Boolean = { true }) {
             if (!target.isDirectory && !target.mkdirs()) {
                 complete = false
                 return
@@ -160,43 +180,47 @@ object AppStorage {
                 return
             }
             for (entry in entries.filter { !it.name.startsWith(".migrated-") && include(it) }) {
-                val destination = File(target, entry.name)
-                try {
-                    if (target != games && destination.isDirectory &&
-                        Files.isDirectory(entry.toPath(), LinkOption.NOFOLLOW_LINKS) && entry.list()?.isEmpty() == true
-                    ) {
-                        Files.deleteIfExists(entry.toPath())
-                        continue
-                    }
-                    val migrated = migrateEntry(entry, destination, paths) {
-                        if (target == games && !entry.name.startsWith('.')) {
-                            System4BootEntry.copySelectedEntry(context, entry, destination)
-                            if (!paths.edit().putString(entry.absolutePath, destination.absolutePath).commit()) {
-                                throw IOException("Could not record migrated game path")
-                            }
-                        }
-                    }
-                    if (!migrated) complete = false
-                } catch (e: IOException) {
-                    Log.w("AppStorage", "Could not migrate $entry", e)
-                    complete = false
-                } catch (e: SecurityException) {
-                    Log.w("AppStorage", "Could not migrate $entry", e)
-                    complete = false
-                }
+                entriesToMove.add(entry to File(target, entry.name))
             }
         }
-        migrateRoot(File(context.filesDir, SAVES), saves)
-        migrateRoot(File(context.filesDir, SAVE_BACKUPS), backup)
+        queueRoot(File(context.filesDir, SAVES), saves)
+        queueRoot(File(context.filesDir, SAVE_BACKUPS), backup)
         val internalGames = File(context.filesDir, GAMES)
         for (legacy in mountedLegacyGameRoots(context) + internalGames) {
             if (legacy.isDirectory && legacy.canWrite()) OnlineInstaller.recoverInterruptedReinstalls(legacy)
-            migrateRoot(legacy, games) {
-                (it.isDirectory && !it.name.startsWith('.') &&
-                    (legacy == internalGames || it.name != Environment.DIRECTORY_PICTURES)) ||
-                    it.name == ".xsystem4" || it.name.startsWith(".online_base_staging_") ||
-                    it.name == ".online_mod_cache" || it.name == UncensoredPatchManager.CACHE_DIR_NAME
+            queueRoot(legacy, games) { isMigratableGameEntry(it, legacy == internalGames) }
+        }
+        entriesToMove.forEachIndexed { index, (entry, destination) ->
+            var lastPercent = -1
+            fun report(fraction: Double) {
+                val percent = ((index + fraction) * 100 / entriesToMove.size).toInt()
+                if (percent > lastPercent) {
+                    lastPercent = percent
+                    onProgress(MigrationProgress(entry.name, percent))
+                }
             }
+            report(0.0)
+            try {
+                if (destination.parentFile != games && destination.isDirectory &&
+                    Files.isDirectory(entry.toPath(), LinkOption.NOFOLLOW_LINKS) && entry.list()?.isEmpty() == true
+                ) {
+                    Files.deleteIfExists(entry.toPath())
+                } else if (!migrateEntry(entry, destination, paths, ::report) {
+                    if (destination.parentFile == games && !entry.name.startsWith('.')) {
+                        System4BootEntry.copySelectedEntry(context, entry, destination)
+                        if (!paths.edit().putString(entry.absolutePath, destination.absolutePath).commit()) {
+                            throw IOException("Could not record migrated game path")
+                        }
+                    }
+                }) complete = false
+            } catch (e: IOException) {
+                Log.w("AppStorage", "Could not migrate $entry", e)
+                complete = false
+            } catch (e: SecurityException) {
+                Log.w("AppStorage", "Could not migrate $entry", e)
+                complete = false
+            }
+            report(1.0)
         }
         if (complete) paths.edit().putString(MIGRATION_ROOT_KEY, shared.absolutePath).apply()
         return complete
@@ -204,18 +228,27 @@ object AppStorage {
 
     @JvmStatic
     @Throws(IOException::class)
-    fun migrateEntry(source: File, destination: File): Boolean = migrateEntry(source, destination, null) {}
+    fun migrateEntry(source: File, destination: File): Boolean = migrateEntry(source, destination, null, {}) {}
 
     private fun migrateEntry(
         source: File,
         destination: File,
         paths: SharedPreferences?,
+        report: (Double) -> Unit,
         beforeMove: () -> Unit
     ): Boolean {
         if (!exists(source)) return true
         if (Files.isSymbolicLink(source.toPath())) return false
+        fun byteProgress(passes: Int): (Int) -> Unit {
+            val total = (entrySize(source).toDouble() * passes).coerceAtLeast(1.0)
+            var processed = 0L
+            return { count ->
+                processed += count
+                report((processed / total * 0.99).coerceAtMost(0.99))
+            }
+        }
         val alreadyCopied = exists(destination)
-        if (alreadyCopied && !sameContents(source, destination)) return false
+        if (alreadyCopied && !sameContents(source, destination, byteProgress(1))) return false
         beforeMove()
         if (!alreadyCopied) {
             val sameFileStore = runCatching {
@@ -232,8 +265,9 @@ object AppStorage {
             val staging = createStaging(destination.parentFile!!, paths)
             try {
                 val copied = File(staging, "data")
-                copyEntry(source, copied)
-                if (!sameContents(source, copied)) return false
+                val countBytes = byteProgress(2)
+                copyEntry(source, copied, countBytes)
+                if (!sameContents(source, copied, countBytes)) return false
                 Files.move(copied.toPath(), destination.toPath())
             } finally {
                 deleteStaging(staging)
@@ -277,31 +311,47 @@ object AppStorage {
         Files.deleteIfExists(file.toPath())
     }
 
-    private fun copyEntry(source: File, destination: File) {
+    private fun entrySize(file: File): Long = when {
+        Files.isSymbolicLink(file.toPath()) -> 0L
+        file.isDirectory -> file.listFiles()?.sumOf(::entrySize) ?: 0L
+        else -> file.length()
+    }
+
+    private fun copyEntry(source: File, destination: File, onBytes: (Int) -> Unit) {
         when {
             Files.isSymbolicLink(source.toPath()) -> throw IOException("Unexpected symbolic link: $source")
             source.isDirectory -> {
                 Files.createDirectory(destination.toPath())
                 for (child in source.listFiles() ?: throw IOException("Cannot list $source")) {
-                    copyEntry(child, File(destination, child.name))
+                    copyEntry(child, File(destination, child.name), onBytes)
                 }
                 destination.setLastModified(source.lastModified())
             }
             source.isFile -> {
-                Files.copy(source.toPath(), destination.toPath())
+                source.inputStream().use { input ->
+                    Files.newOutputStream(destination.toPath(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { output ->
+                        val buffer = ByteArray(65536)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count == -1) break
+                            output.write(buffer, 0, count)
+                            onBytes(count)
+                        }
+                    }
+                }
                 destination.setLastModified(source.lastModified())
             }
             else -> throw IOException("Cannot copy $source")
         }
     }
 
-    private fun sameContents(first: File, second: File): Boolean {
+    private fun sameContents(first: File, second: File, onBytes: (Int) -> Unit): Boolean {
         if (Files.isSymbolicLink(first.toPath()) || Files.isSymbolicLink(second.toPath())) return false
         if (first.isDirectory && second.isDirectory) {
             val children = first.listFiles() ?: return false
             val others = second.list()?.toSet() ?: return false
             return children.size == others.size && children.all {
-                it.name in others && sameContents(it, File(second, it.name))
+                it.name in others && sameContents(it, File(second, it.name), onBytes)
             }
         }
         if (!first.isFile || !second.isFile || first.length() != second.length()) return false
@@ -316,6 +366,7 @@ object AppStorage {
                     b.readFully(actual, 0, count)
                     if (!expected.contentEquals(actual)) return false
                     left -= count
+                    onBytes(count)
                 }
                 a.read() == -1 && b.read() == -1
             }

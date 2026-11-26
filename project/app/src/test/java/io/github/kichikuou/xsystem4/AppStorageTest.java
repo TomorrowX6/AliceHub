@@ -19,6 +19,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+
+import kotlin.Unit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -44,6 +48,35 @@ public class AppStorageTest {
         Shadows.shadowOf(context.getSystemService(AppOpsManager.class)).setMode(
                 "android:manage_external_storage",
                 context.getApplicationInfo().uid, context.getPackageName(), mode);
+    }
+
+    @Test
+    public void migrationReportsCurrentItemAndIntermediatePercent() throws IOException {
+        Context context = RuntimeEnvironment.getApplication();
+        File volume = tmp.newFolder();
+        ShadowEnvironment.setExternalStorageDirectory(volume.toPath());
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED);
+        setStorageAccess(context, AppOpsManager.MODE_ALLOWED);
+        AppSettings.INSTANCE.setPublicStorage(context, true);
+        File original = new File(context.getFilesDir(), "saves/LegacyGame/slot.asd");
+        File shared = new File(volume, "AliceHub/saves/LegacyGame/slot.asd");
+        byte[] data = new byte[128 * 1024];
+        Files.createDirectories(original.getParentFile().toPath());
+        Files.createDirectories(shared.getParentFile().toPath());
+        Files.write(original.toPath(), data);
+        Files.write(shared.toPath(), data);
+        List<Integer> percentages = new ArrayList<>();
+
+        assertTrue(AppStorage.INSTANCE.preparePublicStorage(context, status -> {
+            assertEquals("LegacyGame", status.getItemName());
+            percentages.add(status.getPercent());
+            return Unit.INSTANCE;
+        }));
+        assertEquals(Integer.valueOf(0), percentages.get(0));
+        assertTrue(percentages.stream().anyMatch(percent -> percent > 0 && percent < 100));
+        assertEquals(Integer.valueOf(100), percentages.get(percentages.size() - 1));
+        assertFalse(original.exists());
+        assertTrue(shared.isFile());
     }
 
     @Test

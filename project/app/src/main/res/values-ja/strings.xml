@@ -510,11 +510,17 @@
     <string name="game_sort_release_date_short">発売日</string>
     <string name="public_storage_permission_message">ファイルへのアクセスを許可すると、端末の内部ストレージにある AliceHub フォルダを使い、既存のゲームとセーブを移動します。許可しない場合は、引き続きアプリ専用のストレージを使います。</string>
     <string name="public_storage_migrating">ゲームとセーブを共有ストレージに移動しています…</string>
+    <string name="public_storage_migration_preparing">ファイルを準備しています…</string>
+    <string name="public_storage_migration_done">共有ストレージの準備ができました。</string>
+    <string name="storage_upgrade_title">既存のゲームとセーブを移動しますか？</string>
+    <string name="storage_upgrade_message">既存のゲームとセーブを内部ストレージの AliceHub フォルダーに移動できます。移動したファイルは、アプリをアンインストールしても残ります。</string>
+    <string name="storage_upgrade_move">移行を開始</string>
+    <string name="storage_upgrade_private">アプリ専用領域を使う</string>
     <string name="public_storage_migration_incomplete">一部のファイルを移動できなかったため、元の場所に残しました。</string>
     <string name="public_storage_settings_unavailable">ファイルへのアクセス設定を開けませんでした。</string>
     <string name="onboarding_step">初期設定 · %1$d / %2$d</string>
     <string name="onboarding_welcome">AliceHub へようこそ</string>
-    <string name="onboarding_intro">Android でアリスソフトのゲームを遊べます。保存先とオンラインインストールを設定しましょう。</string>
+    <string name="onboarding_intro">Android でアリスソフトのゲームを遊べます。数ステップでセットアップが完了します。</string>
     <string name="onboarding_back">戻る</string>
     <string name="onboarding_next">次へ</string>
     <string name="onboarding_finish">AliceHub をはじめる</string>
@@ -523,6 +529,7 @@
     <string name="public_storage_option">共有ストレージに AliceHub フォルダを作成</string>
     <string name="public_storage_benefits">• AliceHub をアンインストールしてもデータが残る\n• バックアップ、移行、パソコンへのコピーが簡単</string>
     <string name="private_storage_option">スキップ（アプリ専用ストレージを使用）</string>
+    <string name="private_storage_drawbacks">• AliceHub をアンインストールすると、ここにあるゲームとセーブデータが削除される\n• ファイル管理アプリやパソコンでのバックアップや移行がしにくい</string>
     <string name="public_storage_why">なぜ保存先を選ぶの？</string>
     <string name="storage_location_public">共有</string>
     <string name="storage_location_private">アプリ専用</string>

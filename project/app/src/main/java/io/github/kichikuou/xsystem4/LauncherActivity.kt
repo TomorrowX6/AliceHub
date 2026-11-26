@@ -405,6 +405,31 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         private var savedGameList: GameList? = null
         private var storagePreparationIncomplete = false
 
+        internal fun showStorageMigration(activity: Activity, retry: Boolean = false, onComplete: () -> Unit): Boolean {
+            if (SharedStorageMigration.attach(activity, onComplete)) return true
+            if (!AppSettings.prefersPublicStorage(activity)) {
+                storagePreparationIncomplete = false
+                return false
+            }
+            if (!AppStorage.hasPermission(activity)) {
+                storagePreparationIncomplete = false
+                AppStorage.resetPublicStoragePreparation(activity)
+                return false
+            }
+            if (!AppStorage.needsPublicStoragePreparation(activity) ||
+                (!retry && storagePreparationIncomplete && AppStorage.publicLayoutExists(activity)) ||
+                savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
+                GameCatalog.isGameProcessRunning(activity)
+            ) return false
+
+            SharedStorageMigration.start(activity, onFinished = { complete ->
+                storagePreparationIncomplete = !complete
+                savedGameList?.close()
+                savedGameList = null
+            }, onComplete = onComplete)
+            return true
+        }
+
         fun obtainGameList(activity: Activity, refresh: Boolean = false): GameList {
             val existing = savedGameList
             if (existing == null ||
@@ -438,7 +463,6 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     private var availableRelease: String? = null
     private var initialState: Bundle? = null
     private var onboardingLaunched = false
-    private var storageProgress: AlertDialog? = null
     private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -734,50 +758,11 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         resumeLauncher()
     }
 
-    private fun prepareStorageIfNeeded(): Boolean {
-        if (storageProgress != null) return true
-        if (!AppSettings.prefersPublicStorage(this)) {
-            storagePreparationIncomplete = false
-            return false
+    private fun prepareStorageIfNeeded(): Boolean = showStorageMigration(this) {
+        if (resumed) {
+            if (!::gameList.isInitialized) initializeLauncher()
+            resumeLauncher()
         }
-        if (!AppStorage.hasPermission(this)) {
-            storagePreparationIncomplete = false
-            AppStorage.resetPublicStoragePreparation(this)
-            return false
-        }
-        if (!AppStorage.needsPublicStoragePreparation(this) ||
-            (storagePreparationIncomplete && AppStorage.publicLayoutExists(this)) ||
-            savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
-            GameCatalog.isGameProcessRunning(this)
-        ) return false
-
-        storageProgress = AlertDialog.Builder(this)
-            .setMessage(R.string.public_storage_migrating)
-            .setCancelable(false)
-            .show()
-        val ctx = applicationContext
-        Thread({
-            val complete = try {
-                AppStorage.preparePublicStorage(ctx)
-            } catch (e: Exception) {
-                Log.w("LauncherActivity", "Could not prepare shared storage", e)
-                false
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                storagePreparationIncomplete = !complete
-                storageProgress?.dismiss()
-                storageProgress = null
-                savedGameList?.close()
-                savedGameList = null
-                if (!complete) Toast.makeText(this, R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
-                if (resumed) {
-                    if (!::gameList.isInitialized) initializeLauncher()
-                    resumeLauncher()
-                }
-            }
-        }, "AliceHub storage migration").start()
-        return true
     }
 
     private fun resumeLauncher() {
@@ -827,8 +812,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     override fun onDestroy() {
-        storageProgress?.dismiss()
-        storageProgress = null
+        SharedStorageMigration.detach(this)
         syncSearchBackCallback(false)
         if (::gameList.isInitialized && gameList.observer === this) {
             gameList.observer = null

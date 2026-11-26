@@ -160,11 +160,22 @@ class SettingsActivity : ThemedActivity() {
     override fun onResume() {
         super.onResume()
         refreshSettingsUi()
+        SharedStorageMigration.attach(this, ::refreshStorageLabel)
     }
 
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(code, permissions, grantResults)
-        if (code == STORAGE_PERMISSION_REQUEST) refreshStorageLabel()
+        if (code == STORAGE_PERMISSION_REQUEST) applyStoragePermission()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == STORAGE_PERMISSION_REQUEST) applyStoragePermission()
+    }
+
+    private fun applyStoragePermission() {
+        refreshStorageLabel()
+        LauncherActivity.showStorageMigration(this, retry = true, onComplete = ::refreshStorageLabel)
     }
 
     private fun refreshStorageLabel() {
@@ -185,14 +196,31 @@ class SettingsActivity : ThemedActivity() {
             .setPositiveButton(R.string.ok) { _, _ ->
                 val selected = options.findViewById<RadioGroup>(R.id.storage_options).checkedRadioButtonId
                 val usePublic = selected == R.id.storage_option_public
-                AppSettings.setPublicStorage(this, usePublic)
-                refreshStorageLabel()
-                if (usePublic) requestSharedStorageAccess()
+                if (usePublic && AppSettings.isStorageUpgradeNoticePending(this) && AppStorage.hasLegacyData(this)) {
+                    trackDialog(showStorageUpgradeNotice(
+                        onMove = { applyStorageChoice(true) },
+                        onPrivate = { applyStorageChoice(false) }
+                    ))
+                } else {
+                    setStorageChoice(usePublic)
+                }
             }
             .show())
     }
 
+    private fun applyStorageChoice(usePublic: Boolean) {
+        AppSettings.acknowledgeStorageUpgradeNotice(this)
+        setStorageChoice(usePublic)
+    }
+
+    private fun setStorageChoice(usePublic: Boolean) {
+        AppSettings.setPublicStorage(this, usePublic)
+        refreshStorageLabel()
+        if (usePublic && !requestSharedStorageAccess()) applyStoragePermission()
+    }
+
     override fun onDestroy() {
+        SharedStorageMigration.detach(this)
         dismissTrackedDialogs()
         scope.cancel()
         super.onDestroy()
