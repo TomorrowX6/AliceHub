@@ -354,7 +354,8 @@ class SaveManagerActivity : ThemedActivity() {
             context: Context,
             uri: Uri,
             targetDir: File,
-            paths: SaveImportPaths
+            paths: SaveImportPaths,
+            writes: SaveImportPaths.ImportWrites
         ): Int {
             val tempDir = File(context.filesDir, "$SAVE_IMPORT_TMP_PREFIX${System.nanoTime()}")
             tempDir.mkdirs()
@@ -382,10 +383,7 @@ class SaveManagerActivity : ThemedActivity() {
                         val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
                         try {
                             src.copyTo(tmpDst, overwrite = true)
-                            if (!tmpDst.renameTo(dst)) {
-                                tmpDst.copyTo(dst, overwrite = true)
-                                tmpDst.delete()
-                            }
+                            writes.write(tmpDst, dst)
                             copied++
                         } finally {
                             tmpDst.delete()
@@ -404,6 +402,7 @@ class SaveManagerActivity : ThemedActivity() {
             parentDocId: String,
             destDir: File,
             paths: SaveImportPaths,
+            writes: SaveImportPaths.ImportWrites,
             rootDir: File = destDir
         ): Int {
             destDir.mkdirs()
@@ -414,7 +413,7 @@ class SaveManagerActivity : ThemedActivity() {
                 if (child.isDirectory) {
                     val subDir = File(destDir, cleanName)
                     if (!isInsideStatic(rootDir, subDir)) continue
-                    count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, paths, rootDir)
+                    count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, paths, writes, rootDir)
                 } else {
                     val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
                     val outFile = File(destDir, cleanName)
@@ -425,10 +424,7 @@ class SaveManagerActivity : ThemedActivity() {
                             tmpFile.outputStream().buffered().use { output ->
                                 input.copyTo(output)
                             }
-                            if (!tmpFile.renameTo(outFile)) {
-                                tmpFile.copyTo(outFile, overwrite = true)
-                                tmpFile.delete()
-                            }
+                            writes.write(tmpFile, outFile)
                             count++
                         }
                     } finally {
@@ -551,7 +547,9 @@ class SaveManagerActivity : ThemedActivity() {
                         DocNode::isDirectory
                     )
                     ensureProcessStoppedOnIo(appCtx)
-                    copyDocumentTreeToInternalStatic(appCtx, treeUri, source.documentId, targetDir, paths)
+                    copyDocumentTreeToInternalStatic(
+                        appCtx, treeUri, source.documentId, targetDir, paths, SaveImportPaths.ImportWrites()
+                    )
                 }
                 onHost {
                     it.dismissProgress()
@@ -588,6 +586,7 @@ class SaveManagerActivity : ThemedActivity() {
                     targetDir.mkdirs()
                     backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
                     val paths = SaveImportPaths(target.externalGameDir)
+                    val writes = SaveImportPaths.ImportWrites()
                     val rootCanonical = targetDir.canonicalFile
                     var imported = 0
                     for (uri in uris) {
@@ -596,7 +595,7 @@ class SaveManagerActivity : ThemedActivity() {
                             ?: "save_${System.currentTimeMillis()}.asd"
                         val safeName = paths.nameForImport(fileName, atRoot = true) ?: continue
                         if (ArchiveExtractor.isSupportedArchiveName(safeName)) {
-                            imported += extractSaveArchiveToTargetStatic(appCtx, uri, targetDir, paths)
+                            imported += extractSaveArchiveToTargetStatic(appCtx, uri, targetDir, paths, writes)
                         } else {
                             val dst = File(rootCanonical, safeName).canonicalFile
                             if (!dst.path.startsWith(rootCanonical.path + File.separator)) continue
@@ -606,10 +605,7 @@ class SaveManagerActivity : ThemedActivity() {
                                     tmpDst.outputStream().buffered().use { output ->
                                         input.copyTo(output)
                                     }
-                                    if (!tmpDst.renameTo(dst)) {
-                                        tmpDst.copyTo(dst, overwrite = true)
-                                        tmpDst.delete()
-                                    }
+                                    writes.write(tmpDst, dst)
                                     imported++
                                 }
                             } finally {

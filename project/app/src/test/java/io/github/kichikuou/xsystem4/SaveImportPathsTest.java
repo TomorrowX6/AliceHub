@@ -25,6 +25,14 @@ public class SaveImportPathsTest {
         assertTrue(new File(dir, name).createNewFile());
     }
 
+    private static void write(File file, String value) throws IOException {
+        Files.write(file.toPath(), value.getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private static String read(File file) throws IOException {
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.US_ASCII);
+    }
+
     private static File sourceRoot(SaveImportPaths paths, File root) {
         return sourceRoot(paths, root, false);
     }
@@ -75,23 +83,48 @@ public class SaveImportPathsTest {
         File alias = new File(saves, "妻みぐいSA.ASD");
         File existingBackup = new File(saves, canonical.getName() + ".import-conflict.bak");
         File backup = new File(saves, canonical.getName() + ".1.import-conflict.bak");
-        Files.write(canonical.toPath(), "new".getBytes(StandardCharsets.US_ASCII));
-        Files.write(alias.toPath(), "old".getBytes(StandardCharsets.US_ASCII));
-        Files.write(existingBackup.toPath(), "older".getBytes(StandardCharsets.US_ASCII));
-        touch(saves, "妻みぐいSB.ASD");
+        write(canonical, "new");
+        write(alias, "old");
+        write(existingBackup, "older");
+        File secondSlot = new File(saves, "妻みぐいsb.asd");
+        write(secondSlot, "second");
 
         SaveImportPaths paths = new SaveImportPaths(game);
         paths.migrateExistingSaves(saves);
-        assertEquals("new", new String(Files.readAllBytes(canonical.toPath()), StandardCharsets.US_ASCII));
+        assertEquals("new", read(canonical));
         assertFalse(alias.exists());
-        assertEquals("older", new String(Files.readAllBytes(existingBackup.toPath()), StandardCharsets.US_ASCII));
-        assertEquals("old", new String(Files.readAllBytes(backup.toPath()), StandardCharsets.US_ASCII));
-        assertTrue(new File(saves, "妻みぐいsb.asd").isFile());
+        assertEquals("older", read(existingBackup));
+        assertEquals("old", read(backup));
 
         assertTrue(canonical.delete());
+        File renamed = new File(saves, "妻みぐいSB.ASD");
+        assertTrue(secondSlot.renameTo(renamed));
         paths.migrateExistingSaves(saves);
         assertFalse(canonical.exists());
-        assertEquals("old", new String(Files.readAllBytes(backup.toPath()), StandardCharsets.US_ASCII));
+        assertEquals("old", read(backup));
+        assertFalse(secondSlot.exists());
+        assertEquals("second", read(renamed));
+    }
+
+    @Test public void importKeepsBothSpellingsOfOneSlotWithoutOverwritingTheFirstCopy() throws IOException {
+        File game = temporary.newFolder("game");
+        touch(game, "System39.ain");
+        touch(game, "妻みぐいSA.ALD");
+        File saves = temporary.newFolder("saves");
+        SaveImportPaths paths = new SaveImportPaths(game);
+        SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites();
+        File canonical = new File(saves, paths.nameForImport("妻みぐいsa.asd", true));
+        File aliasDestination = new File(saves, paths.nameForImport("嵢傒偖偄SA.ASD", true));
+        assertEquals(canonical, aliasDestination);
+        write(canonical, "previous");
+        File first = temporary.newFile();
+        File second = temporary.newFile();
+        write(first, "first");
+        write(second, "second");
+        writes.write(first, canonical);
+        writes.write(second, aliasDestination);
+        assertEquals("first", read(canonical));
+        assertEquals("second", read(new File(saves, canonical.getName() + ".import-conflict.bak")));
     }
 
     @Test public void findsMamanPcSaveDataInsideAWrapper() throws IOException {
@@ -125,6 +158,43 @@ public class SaveImportPathsTest {
         SaveImportPaths paths = new SaveImportPaths(null);
         assertEquals(root, sourceRoot(paths, root));
         assertEquals(saveData, sourceRoot(paths, root, true));
+    }
+
+    @Test public void archiveDoesNotPreferALogOnlySaveDataFolderOverLooseSlots() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "backup");
+        File saveData = new File(wrapper, "SaveData");
+        assertTrue(saveData.mkdirs());
+        touch(saveData, "session.log");
+        File looseSlot = new File(wrapper, "01.asd");
+        assertTrue(looseSlot.createNewFile());
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(wrapper, sourceRoot(paths, root, true));
+        assertTrue(looseSlot.delete());
+        touch(saveData, "KeyFile.dat");
+        assertEquals(saveData, sourceRoot(paths, root, true));
+    }
+
+    @Test public void usesTheLocalizedLaunchIniAndTheWinningScenarioArchive() throws IOException {
+        File system4 = temporary.newFolder("Haruka");
+        touch(system4, "haru_c.ain");
+        write(new File(system4, "System40.ini"), "SaveFolder = \"Untranslated\"\n");
+        write(new File(system4, "AliceStart2.ini"), "SaveFolder = \"Translated\"\n");
+        File source = temporary.newFolder("source");
+        assertTrue(new File(source, "Untranslated").mkdir());
+        File translated = new File(source, "Translated");
+        assertTrue(translated.mkdir());
+        assertEquals(translated, sourceRoot(new SaveImportPaths(system4), source));
+
+        File system35 = temporary.newFolder("System39");
+        touch(system35, "System39.ain");
+        touch(system35, "OriginalSA.ALD");
+        touch(system35, "TranslationOneSA_chs.ald");
+        touch(system35, "TranslationTwoSB_chs.ald");
+        String winner = Arrays.stream(system35.list()).filter(name -> name.endsWith("_chs.ald"))
+                .reduce((first, last) -> last).get().split("S[A-Z]_chs")[0];
+        assertEquals(winner + "sa.asd", new SaveImportPaths(system35).nameForImport(winner + "SA.ASD", true));
     }
 
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {

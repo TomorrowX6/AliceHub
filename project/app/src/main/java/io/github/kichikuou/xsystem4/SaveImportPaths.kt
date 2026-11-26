@@ -11,8 +11,7 @@ import java.util.Locale
 class SaveImportPaths(gameDir: File?) {
     private val gameFiles = gameDir?.listFiles().orEmpty().filter { it.isFile }
     private val system35Prefix = findSystem35Prefix()
-    private val saveFolder = listOf("System40.ini", "AliceStart.ini")
-        .firstNotNullOfOrNull { ini -> gameFiles.firstOrNull { it.name.equals(ini, true) } }
+    private val saveFolder = gameDir?.let(::resolveLaunchIniFile)?.takeIf { it.isFile }
         ?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() }
         ?.takeIf { isSafeComponent(it) }
 
@@ -24,8 +23,7 @@ class SaveImportPaths(gameDir: File?) {
         val scenarios = names.filterNot { it.contains("uncensored", true) }
             .mapNotNull(scenarioArchive::matchEntire)
             .map { it.groupValues[1] to it.groupValues[2].isNotEmpty() }
-        return (scenarios.filter { it.second }.ifEmpty { scenarios })
-            .map { it.first }.distinct().singleOrNull()
+        return (scenarios.lastOrNull { it.second } ?: scenarios.firstOrNull())?.first
     }
 
     fun nameForImport(raw: String, atRoot: Boolean): String? {
@@ -34,54 +32,42 @@ class SaveImportPaths(gameDir: File?) {
         return normalizedName(name, atRoot).takeIf(::isSafeComponent)
     }
 
-    fun normalizedName(name: String, atRoot: Boolean): String {
-        val prefix = system35Prefix
-        if (atRoot && prefix != null) {
-            val slot = slotFile.matchEntire(name)
-            if (slot != null && equivalent(slot.groupValues[1], prefix)) {
-                return prefix + slot.groupValues[2].lowercase(Locale.ROOT)
-            }
-            if (name.endsWith(".msgskip", true) && equivalent(name.dropLast(8), prefix)) {
-                return "$prefix.msgskip"
-            }
+    private fun system35Name(name: String): String? {
+        val prefix = system35Prefix ?: return null
+        val slot = slotFile.matchEntire(name)
+        if (slot != null && equivalent(slot.groupValues[1], prefix)) {
+            return prefix + slot.groupValues[2].lowercase(Locale.ROOT)
         }
-        return ArchiveExtractor.repairSjisAsGbkMojibake(name)
+        if (name.endsWith(".msgskip", true) && equivalent(name.dropLast(8), prefix)) {
+            return "$prefix.msgskip"
+        }
+        return null
     }
+
+    fun normalizedName(name: String, atRoot: Boolean): String =
+        name.takeIf { atRoot }?.let(::system35Name) ?: ArchiveExtractor.repairSjisAsGbkMojibake(name)
 
     fun migrateExistingSaves(root: File) {
         fun migrate(dir: File, atRoot: Boolean) {
             for (child in dir.listFiles().orEmpty()) {
                 if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
                 if (child.isDirectory) migrate(child, atRoot = false)
-                val repaired = normalizedName(child.name, atRoot && child.isFile)
+                val slotName = if (atRoot && child.isFile) system35Name(child.name) else null
+                val repaired = slotName ?: ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
                 if (repaired == child.name || !isSafeComponent(repaired)) continue
 
                 val target = File(dir, repaired)
                 try {
-                    Files.move(child.toPath(), target.toPath())
-                } catch (_: FileAlreadyExistsException) {
-                    if (child.isFile) moveToConflictBackup(child, target)
+                    if (target.exists()) {
+                        if (child.isFile) moveToConflictBackup(child, target)
+                    } else if (slotName == null) {
+                        Files.move(child.toPath(), target.toPath())
+                    }
                 } catch (_: IOException) {
                 }
             }
         }
         migrate(root, atRoot = true)
-    }
-
-    private fun moveToConflictBackup(alias: File, target: File) {
-        var index = 0
-        while (true) {
-            val suffix = if (index == 0) "" else ".$index"
-            val backup = File(target.parentFile, target.name + suffix + conflictBackupSuffix)
-            try {
-                Files.move(alias.toPath(), backup.toPath())
-                return
-            } catch (_: FileAlreadyExistsException) {
-                index++
-            } catch (_: IOException) {
-                return
-            }
-        }
     }
 
     @JvmOverloads
@@ -93,14 +79,16 @@ class SaveImportPaths(gameDir: File?) {
         fromArchive: Boolean = false
     ): T {
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
+        fun hasLooseSave(nodes: List<T>): Boolean =
+            nodes.any { !isDirectory(it) && saveExtension.matches(name(it)) }
 
-        fun explicitSaveFolder(dirs: List<T>): T? {
+        fun explicitSaveFolder(dirs: List<T>, eligible: (T) -> Boolean = { true }): T? {
             val configured = saveFolder?.let { expected ->
-                dirs.firstOrNull { name(it) == expected }
-                    ?: dirs.singleOrNull { equivalent(name(it), expected) }
+                dirs.firstOrNull { name(it) == expected && eligible(it) }
+                    ?: dirs.singleOrNull { equivalent(name(it), expected) && eligible(it) }
             }
             val conventional = if (fromArchive) {
-                dirs.firstOrNull { name(it).equals("SaveData", true) }
+                dirs.firstOrNull { name(it).equals("SaveData", true) && eligible(it) }
             } else {
                 dirs.singleOrNull { name(it).equals("SaveData", true) }
             }
@@ -108,16 +96,33 @@ class SaveImportPaths(gameDir: File?) {
         }
 
         if (fromArchive) {
-            var level = listOf(root)
+            fun containsSave(node: T): Boolean {
+                val pending = ArrayDeque<T>()
+                pending.add(node)
+                while (pending.isNotEmpty()) {
+                    val visible = visibleChildren(pending.removeLast())
+                    if (hasLooseSave(visible)) return true
+                    pending.addAll(visible.filter(isDirectory))
+                }
+                return false
+            }
+            var level = listOf(root to false)
             repeat(3) {
-                level = level.flatMap { visibleChildren(it).filter(isDirectory) }
-                explicitSaveFolder(level)?.let { return it }
+                level = level.flatMap { (node, ancestorHasSave) ->
+                    val visible = visibleChildren(node)
+                    val competes = ancestorHasSave || hasLooseSave(visible)
+                    visible.filter(isDirectory).map { it to competes }
+                }
+                val competingByDir = level.toMap()
+                explicitSaveFolder(level.map { it.first }) { node ->
+                    competingByDir[node] != true || containsSave(node)
+                }?.let { return it }
             }
         }
 
         fun find(node: T, depth: Int): T? {
             val visible = visibleChildren(node)
-            if (visible.any { !isDirectory(it) && saveExtension.matches(name(it)) }) return node
+            if (hasLooseSave(visible)) return node
             if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
             return explicitSaveFolder(dirs) ?: dirs.singleOrNull()?.let { find(it, depth - 1) }
@@ -132,6 +137,20 @@ class SaveImportPaths(gameDir: File?) {
         }
     }
 
+    class ImportWrites {
+        private val written = mutableSetOf<File>()
+
+        fun write(staged: File, destination: File) {
+            val target = destination.canonicalFile
+            if (target in written) {
+                written.add(moveToConflictBackup(staged, target))
+            } else {
+                if (!staged.renameTo(target)) staged.copyTo(target, overwrite = true)
+                written.add(target)
+            }
+        }
+    }
+
     private companion object {
         const val conflictBackupSuffix = ".import-conflict.bak"
         val scenarioArchive = Regex("^(.*)S[A-Z](_chs)?\\.ald$", RegexOption.IGNORE_CASE)
@@ -139,6 +158,20 @@ class SaveImportPaths(gameDir: File?) {
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
         val cp932 = runCatching { Charset.forName("windows-31j") }.getOrElse { Charset.forName("Shift_JIS") }
         val gbk = Charset.forName("GBK")
+
+        fun moveToConflictBackup(alias: File, target: File): File {
+            var index = 0
+            while (true) {
+                val suffix = if (index == 0) "" else ".$index"
+                val backup = File(target.parentFile, target.name + suffix + conflictBackupSuffix)
+                try {
+                    Files.move(alias.toPath(), backup.toPath())
+                    return backup
+                } catch (_: FileAlreadyExistsException) {
+                    index++
+                }
+            }
+        }
 
         fun isSafeComponent(name: String): Boolean =
             name.isNotEmpty() && !name.startsWith('.') && name.none { it == '/' || it == '\\' || it == '\u0000' }
