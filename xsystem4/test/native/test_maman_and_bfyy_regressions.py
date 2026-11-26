@@ -115,6 +115,111 @@ int main(void)
         )
         self.assertEqual(out.strip(), "OK")
 
+    def test_haharanman_cn_name_plate(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/buffer.h"
+#include "system4/instructions.h"
+#include "system4/little_endian.h"
+#include "system4/string.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { return false; }
+void escalayer_reboot_replace_cn_ui_text(struct ain *ain) {}
+
+static void instruction(struct buffer *code, int op, int arg)
+{
+    buffer_write_int16(code, op);
+    buffer_write_int32(code, arg);
+}
+
+static void verify(bool game, bool gbk, bool real_getter)
+{
+    struct ain *ain = ain_new(14, 0);
+    if (game)
+        ain_add_string(ain, "83h2mjr");
+    config.game_name = gbk ? "\xb6\xe0\xc4\xc8" : NULL;
+    int cp932_ihisa = ain_add_string(ain, "\x88\xc9\x8d\xb2\x95\x90");
+    int cp932_haru = ain_add_string(ain, "\x83\x6e\x83\x8b");
+    int gbk_weina = ain_add_string(ain, "\xc6\xdf\xce\xb2");
+    int fn = ain_add_function(ain, "AdvLayer::MessageWindow::nameplate::CText@Text::get");
+    ain->functions[fn].return_type.data = AIN_STRING;
+    struct buffer code;
+    buffer_init(&code, NULL, 0);
+    instruction(&code, FUNC, fn);
+    unsigned start = code.index;
+    ain->functions[fn].address = start;
+    buffer_write_int16(&code, PUSHSTRUCTPAGE);
+    instruction(&code, PUSH, real_getter ? 4 : 5);
+    instruction(&code, X_REF, 1);
+    buffer_write_int16(&code, A_REF);
+    buffer_write_int16(&code, RETURN);
+    instruction(&code, ENDFUNC, fn);
+    ain->code = code.buf;
+    ain->code_size = code.index;
+    apply_game_specific_hacks(ain);
+    unsigned addr = ain->functions[fn].address;
+    assert(!strcmp(ain->strings[cp932_ihisa]->text, "\x88\xc9\x8d\xb2\x95\x90"));
+    assert(!strcmp(ain->strings[gbk_weina]->text, "\xc6\xdf\xce\xb2"));
+    if (game && gbk && real_getter) {
+        assert(addr != start);
+        assert(!memcmp(ain->code + start, ain->code + addr, 16));
+        addr += 16;
+        assert(LittleEndian_getW(ain->code, addr) == DUP);
+        assert(LittleEndian_getW(ain->code, addr + 2) == PUSH);
+        assert(LittleEndian_getDW(ain->code, addr + 4) == -1);
+        assert(LittleEndian_getW(ain->code, addr + 8) == EQUALE);
+        assert(LittleEndian_getW(ain->code, addr + 10) == IFNZ);
+        unsigned null_branch = LittleEndian_getDW(ain->code, addr + 12);
+        addr += 16;
+        const int sources[] = { cp932_haru, cp932_ihisa };
+        const char *targets[] = { "\xa5\xcf\xa5\xeb", "\xd2\xc1\xd7\xf4\xce\xe4" };
+        for (int i = 0; i < 2; i++) {
+            assert(LittleEndian_getW(ain->code, addr) == DUP);
+            assert(LittleEndian_getW(ain->code, addr + 2) == DUP);
+            assert(LittleEndian_getW(ain->code, addr + 4) == SP_INC);
+            assert(LittleEndian_getW(ain->code, addr + 6) == S_PUSH);
+            assert(LittleEndian_getDW(ain->code, addr + 8) == sources[i]);
+            assert(LittleEndian_getW(ain->code, addr + 12) == S_EQUALE);
+            assert(LittleEndian_getW(ain->code, addr + 14) == IFZ);
+            assert(LittleEndian_getDW(ain->code, addr + 16) == addr + 30);
+            assert(LittleEndian_getW(ain->code, addr + 20) == DELETE);
+            assert(LittleEndian_getW(ain->code, addr + 22) == S_PUSH);
+            assert(!strcmp(ain->strings[LittleEndian_getDW(ain->code, addr + 24)]->text, targets[i]));
+            assert(LittleEndian_getW(ain->code, addr + 28) == RETURN);
+            addr += 30;
+        }
+        assert(null_branch == addr);
+        assert(LittleEndian_getW(ain->code, addr) == RETURN);
+    } else {
+        assert(addr == start);
+    }
+    ain_free(ain);
+}
+
+int main(void)
+{
+    verify(true, true, true);
+    verify(true, false, true);
+    verify(false, true, true);
+    verify(true, true, false);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/hacks.c", *LIBSYS4_CORE],
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
     def test_maman_backlog_hll_string_returns(self):
         harness = r"""
 #include <assert.h>
