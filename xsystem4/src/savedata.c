@@ -2008,7 +2008,11 @@ int load_globals_from_gsave(struct gsave *save, const char *keyname, const char 
 		VM_ERROR("Attempted to load save data with wrong group name: '%s'", display_sjis0(group_name));
 
 	int *resolved = resolve_gsave_globals(save, group_name);
-	bool src_is_gbk = gsave_detect_is_gbk(save, resolved, keyname, group_name);
+	// Maman's extra data stores lookup keys, including CP932 identifiers in its GBK release.
+	bool raw_maman_keys = game_maman && !strcmp(keyname, "MAMAN_EXTRA")
+		&& !strcmp(group_name, "MAMAN_EXTRA_DATA");
+	bool src_is_gbk = raw_maman_keys ? sys4_text_is_gbk
+		: gsave_detect_is_gbk(save, resolved, keyname, group_name);
 	int retval = 1;
 	for (int gi = 0; gi < save->nr_globals; gi++) {
 		struct gsave_global *g = &save->globals[gi];

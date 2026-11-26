@@ -6,6 +6,7 @@
    Parts message_type_v8 + -1 empty-queue sentinel, and parts_v2 scrollbar no <= 0 guard.
 4. Heartful Maman backlog text and voice HLL return signatures.
 5. Heartful Maman mixed-encoding speaker labels.
+6. Heartful Maman extra-save lookup keys.
 """
 import unittest
 
@@ -390,6 +391,91 @@ int main(void) {
             [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/AnteaterADVLogList.c",
              ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
             ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_maman_extra_save_preserves_lookup_keys(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "savedata.h"
+#include "system4/savefile.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "vm.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+
+bool game_maman = true;
+int load_globals_from_gsave(struct gsave *save, const char *key, const char *group, int *count);
+struct ain *ain;
+union vm_value *stack;
+int32_t stack_ptr;
+
+union vm_value global_get(int i) { return heap[0].page->values[i]; }
+void global_set(int i, union vm_value val, bool dtors) { heap[0].page->values[i] = val; }
+union vm_value stack_pop(void) { abort(); }
+union vm_value vm_copy(union vm_value val, enum ain_data_type type) { abort(); }
+void vm_call(int fno, int slot) { abort(); }
+struct page *v12_array_new(const struct ain_type *type, int count, bool construct) { abort(); }
+
+int main(void)
+{
+    const char key[] = "\x83\x6c\x83\x62\x83\x67\x83\x8f\x81\x5b\x83\x4e"
+                       "\x90\xda\x91\xb1\x81\x5e\x8f\x89\x89\xf1";
+    char *groups[] = { "MAMAN_EXTRA_DATA" };
+    struct ain_variable global = {
+        .name = "keys", .group_index = 0, .type = { .data = AIN_ARRAY_STRING, .rank = 1 },
+    };
+    struct ain script = {
+        .version = 8, .nr_globals = 1, .globals = &global,
+        .nr_global_groups = 1, .global_group_names = groups,
+    };
+    ain = &script;
+    sys4_set_text_gbk(true);
+    heap_init();
+    heap[0].ref = 1;
+    heap_set_page(0, alloc_page(GLOBAL_PAGE, 0, 1));
+
+    struct gsave *save = gsave_create(7, "MAMAN_EXTRA", 1, groups[0]);
+    struct string *literal = make_string(key, strlen(key));
+    int slot = heap_alloc_slot(VM_STRING);
+    heap[slot].s = literal;
+    struct gsave_array_value *value = xmalloc(sizeof(*value));
+    *value = (struct gsave_array_value) {
+        .type = AIN_STRING, .value = gsave_add_string(save, literal),
+    };
+    int32_t *dimension = xmalloc(sizeof(*dimension));
+    *dimension = 1;
+    struct gsave_flat_array *flat = xmalloc(sizeof(*flat));
+    *flat = (struct gsave_flat_array) { .type = AIN_STRING, .nr_values = 1, .values = value };
+    struct gsave_array array = {
+        .rank = 1, .dimensions = dimension, .nr_flat_arrays = 1, .flat_arrays = flat,
+    };
+    gsave_add_globals_record(save, 1);
+    save->globals[0] = (struct gsave_global) {
+        .name = xstrdup(global.name), .type = global.type.data, .value = gsave_add_array(save, &array),
+    };
+
+    int count = 0;
+    assert(load_globals_from_gsave(save, save->key, groups[0], &count) && count == 1);
+    assert(array_find(heap_get_page(global_get(0).i), 0, 1, vm_int(slot), 0, -1) == 0);
+
+    game_maman = false;
+    count = 0;
+    assert(load_globals_from_gsave(save, save->key, groups[0], &count) && count == 1);
+    assert(array_find(heap_get_page(global_get(0).i), 0, 1, vm_int(slot), 0, -1) == -1);
+    gsave_free(save);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/savedata.c", ROOT / "src/util.c", ROOT / "src/heap.c", ROOT / "src/page.c",
+             ROOT / "subprojects/libsys4/src/savefile.c", *LIBSYS4_CORE],
+            ["-DRELEASE", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")
 
