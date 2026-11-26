@@ -868,7 +868,7 @@ enum {
     DTX_SKYBOX = 5, DTX_NR_CELL_TEXTURE_TYPES = 7, DRAW_FIELD = 3, DRAW_DUNGEON_14 = 2
 };
 typedef struct texture { GLuint handle; int w, h; bool opaque; uint32_t ctx_gen; } Texture;
-struct shader { GLuint program, world_transform, view_transform, texture, vertex_pos, vertex_uv; void (*prepare)(void*, void*); };
+struct shader { GLuint program, world_transform, view_transform, texture; GLint vertex_pos, vertex_uv; void (*prepare)(void*, void*); };
 struct dtx { int nr_columns; };
 struct polyobj { int nr_textures; };
 struct dgn { int size_y; };

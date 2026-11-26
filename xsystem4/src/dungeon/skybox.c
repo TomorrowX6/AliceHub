@@ -93,8 +93,10 @@ static void skybox_init_gl(struct skybox *s, struct dtx *dtx)
 	glGenBuffers(1, &s->attr_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, s->attr_buffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(s->shader.vertex_pos);
-	glVertexAttribPointer(s->shader.vertex_pos, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	if (s->shader.vertex_pos >= 0) {
+		glEnableVertexAttribArray(s->shader.vertex_pos);
+		glVertexAttribPointer(s->shader.vertex_pos, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	}
 	glGenBuffers(1, &s->index_buffer);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->index_buffer);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
