@@ -60,55 +60,107 @@ def compile_and_run(c_source: str) -> None:
 
 
 class VmAndReignRegressionTests(unittest.TestCase):
-    def test_evenicle2_rance_zero_vector_normalization(self) -> None:
-        case_block = extract_case_block("src/vm.c", "F_DIV")
+    def test_zero_vector_normalization_and_set_length(self) -> None:
+        guard_fn = extract_function("src/vm.c", "vm_zero_vector_div_guard")
+        fdiv_block = extract_case_block("src/vm.c", "F_DIV")
+        fdiva_block = extract_case_block("src/vm.c", "F_DIVA")
         compile_and_run(f"""
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
-enum {{ F_DIV }};
+#define unlikely(x) (x)
+enum {{ F_DIV, F_DIVA }};
 union vm_value {{ float f; }};
 struct ain_function {{ const char *name; }};
-struct ain {{ struct ain_function *functions; }};
+struct ain {{ int nr_functions; struct ain_function *functions; }};
 struct function_call {{ int fno; }};
 
 static struct ain_function funcs[] = {{
-    {{ "Other" }}, {{ "VECTOR3D@Normalize" }},
+    {{ "Other" }},
+    {{ "VECTOR3D@Normalize" }},
+    {{ "VECTOR2D@Normalize" }},
+    {{ "VECTOR3D@SetLength" }},
+    {{ "VECTOR2D@SetLength" }},
+    {{ "fxyz_t@Normalize" }},
 }};
-static struct ain program = {{ .functions = funcs }};
+static struct ain program = {{
+    .nr_functions = (int)(sizeof(funcs) / sizeof(funcs[0])),
+    .functions = funcs,
+}};
 static struct ain *ain = &program;
-static struct function_call call_stack[] = {{ {{ 0 }}, {{ 1 }} }};
+static struct function_call call_stack[2];
 static int call_stack_ptr;
-static bool game_evenicle2_rance;
-static union vm_value stack[2];
+static union vm_value stack[4];
 static int sp;
+static union vm_value target_var;
 #define stack_pop() stack[--sp]
 #define stack_peek(n) stack[sp - 1 - (n)]
 #define stack_set(n, value) (stack_peek(n).f = (value))
-
-static float divide(float lhs, float rhs, bool rance, int depth)
+#define stack_push(value) (stack[sp++].f = (value))
+static union vm_value *stack_pop_var(void)
 {{
-    game_evenicle2_rance = rance;
+    return &target_var;
+}}
+
+{guard_fn}
+
+static float divide(float lhs, float rhs, int fno, int depth)
+{{
+    call_stack[0].fno = 0;
+    call_stack[1].fno = fno;
     call_stack_ptr = depth;
     stack[0].f = lhs;
     stack[1].f = rhs;
     sp = 2;
     switch (F_DIV) {{
-        {case_block}
+        {fdiv_block}
     }}
     assert(sp == 1);
     return stack[0].f;
 }}
 
+static float divide_assign(float lhs, float rhs, int fno, int depth)
+{{
+    call_stack[0].fno = 0;
+    call_stack[1].fno = fno;
+    call_stack_ptr = depth;
+    target_var.f = lhs;
+    stack[0].f = rhs;
+    sp = 1;
+    switch (F_DIVA) {{
+        {fdiva_block}
+    }}
+    assert(sp == 1);
+    assert(isnan(stack[0].f) ? isnan(target_var.f) : stack[0].f == target_var.f);
+    return target_var.f;
+}}
+
 int main(void)
 {{
-    assert(divide(0.0f, 0.0f, true, 2) == 0.0f);
-    assert(divide(3.0f, 5.0f, true, 2) == 0.6f);
-    assert(isnan(divide(0.0f, 0.0f, true, 1)));
-    assert(isnan(divide(0.0f, 0.0f, false, 2)));
-    assert(isinf(divide(1.0f, 0.0f, true, 2)));
+    // VECTOR3D@Normalize and VECTOR2D@Normalize keep 0/0 finite across all games
+    assert(divide(0.0f, 0.0f, 1, 2) == 0.0f);
+    assert(divide(0.0f, 0.0f, 2, 2) == 0.0f);
+    assert(divide(-0.0f, 0.0f, 1, 2) == 0.0f);
+    assert(divide(3.0f, 5.0f, 1, 2) == 0.6f);
+    assert(isinf(divide(1.0f, 0.0f, 1, 2)));
+
+    // SetLength and fxyz_t@Normalize (F_DIVA) keep 0/=0 finite
+    assert(divide_assign(0.0f, 0.0f, 3, 2) == 0.0f);
+    assert(divide_assign(0.0f, 0.0f, 4, 2) == 0.0f);
+    assert(divide_assign(0.0f, 0.0f, 5, 2) == 0.0f);
+    assert(divide_assign(3.0f, 5.0f, 3, 2) == 0.6f);
+    assert(isinf(divide_assign(1.0f, 0.0f, 3, 2)));
+
+    // Unrelated functions, empty call stack, and out-of-range fno remain IEEE NaN
+    assert(isnan(divide(0.0f, 0.0f, 0, 2)));
+    assert(isnan(divide(0.0f, 0.0f, 1, 1)));
+    assert(isnan(divide(0.0f, 0.0f, 1, 0)));
+    assert(isnan(divide(0.0f, 0.0f, 99, 2)));
+    assert(isnan(divide_assign(0.0f, 0.0f, 0, 2)));
+    assert(isnan(divide_assign(0.0f, 0.0f, 3, 0)));
 }}
 """)
 
