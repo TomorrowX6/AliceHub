@@ -276,6 +276,29 @@ public class SaveImportPathsTest {
         }
     }
 
+    @Test public void wrappedProgressReplacesAnExistingCaseVariant() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "backup");
+        assertTrue(wrapper.mkdir());
+        String activeName = "EscalayerReboot_87.vsf";
+        String wrappedName = "EscalayerReboot_87.VSF";
+        write(new File(root, activeName), "outer");
+        write(new File(wrapper, wrappedName), "wrapped");
+        touch(wrapper, "01.asd");
+        File target = temporary.newFolder();
+        File active = new File(target, activeName);
+        write(active, "previous");
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(root, target, writes));
+            assertEquals(1, writes.finishFallbacks());
+        }
+        assertEquals("wrapped", read(active));
+        assertFalse(new File(target, wrappedName).exists());
+        assertEquals("outer", read(new File(target, activeName + ".import-conflict.bak")));
+    }
+
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {
         File root = temporary.newFolder("archive");
         File wrapper = new File(root, "backup");
