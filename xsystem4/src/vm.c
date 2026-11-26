@@ -410,11 +410,9 @@ static struct string *stack_peek_string(int n)
 
 // GBK-translated games may compare names built with %D/%F (GBK fullwidth
 // digits) against Shift-JIS names from untranslated data files.
-static bool vm_string_equal(struct string *a, struct string *b)
+static bool vm_string_equal_gbk(const struct string *a, const struct string *b)
 {
-	if (!strcmp(a->text, b->text))
-		return true;
-	if (!sys4_text_is_gbk || a->size != b->size)
+	if (a->size != b->size)
 		return false;
 	char a_buf[256], b_buf[256];
 	bool a_changed = false, b_changed = false;
@@ -426,6 +424,12 @@ static bool vm_string_equal(struct string *a, struct string *b)
 	if (b_norm != b_buf)
 		free(b_norm);
 	return eq;
+}
+
+static bool vm_string_equal(const struct string *a, const struct string *b)
+{
+	return !strcmp(a->text, b->text)
+		|| (sys4_text_is_gbk && vm_string_equal_gbk(a, b));
 }
 
 int vm_string_ref(struct string *s)
@@ -1206,6 +1210,12 @@ uint32_t get_strswitch_address(int no, struct string *str)
 	for (int i = 0; i < s->nr_cases; i++) {
 		if (!strcmp(str->text, ain->strings[s->cases[i].value]->text)) {
 			return s->cases[i].address;
+		}
+	}
+	if (sys4_text_is_gbk) {
+		for (int i = 0; i < s->nr_cases; i++) {
+			if (vm_string_equal_gbk(str, ain->strings[s->cases[i].value]))
+				return s->cases[i].address;
 		}
 	}
 	if (s->default_address > 0)
@@ -2716,7 +2726,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case SH_IF_SREF_NE_STR0: {
 		struct string *a = heap_get_string(stack_pop_var()->i);
 		struct string *b = ain->strings[get_argument(0)];
-		if (strcmp(a->text, b->text))
+		if (!vm_string_equal(a, b))
 			instr_ptr = get_argument(1);
 		else
 			instr_ptr += instruction_width(SH_IF_SREF_NE_STR0);
@@ -2743,25 +2753,25 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case SH_STRUCTSREF_EQ_LOCALSREF: {
 		struct string *a = heap_get_string(member_get(get_argument(0)).i);
 		struct string *b = heap_get_string(local_get(get_argument(1)).i);
-		stack_push(!strcmp(a->text, b->text));
+		stack_push(vm_string_equal(a, b));
 		break;
 	}
 	case SH_LOCALSREF_EQ_STR0: {
 		struct string *a = heap_get_string(local_get(get_argument(0)).i);
 		struct string *b = ain->strings[get_argument(1)];
-		stack_push(!strcmp(a->text, b->text));
+		stack_push(vm_string_equal(a, b));
 		break;
 	}
 	case SH_STRUCTSREF_NE_LOCALSREF: {
 		struct string *a = heap_get_string(member_get(get_argument(0)).i);
 		struct string *b = heap_get_string(local_get(get_argument(1)).i);
-		stack_push(!!strcmp(a->text, b->text));
+		stack_push(!vm_string_equal(a, b));
 		break;
 	}
 	case SH_LOCALSREF_NE_STR0: {
 		struct string *a = heap_get_string(local_get(get_argument(0)).i);
 		struct string *b = ain->strings[get_argument(1)];
-		stack_push(!!strcmp(a->text, b->text));
+		stack_push(!vm_string_equal(a, b));
 		break;
 	}
 	case SH_STRUCT_SR_REF: {
@@ -2872,13 +2882,13 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case SH_STRUCTSREF_NE_STR0: {
 		struct string *a = heap_get_string(member_get(get_argument(0)).i);
 		struct string *b = ain->strings[get_argument(1)];
-		stack_push(!!strcmp(a->text, b->text));
+		stack_push(!vm_string_equal(a, b));
 		break;
 	}
 	case SH_GLOBALSREF_NE_STR0: {
 		struct string *a = heap_get_string(global_get(get_argument(0)).i);
 		struct string *b = ain->strings[get_argument(1)];
-		stack_push(!!strcmp(a->text, b->text));
+		stack_push(!vm_string_equal(a, b));
 		break;
 	}
 	case SH_LOC_LT_IMM_OR_LOC_GE_IMM: {

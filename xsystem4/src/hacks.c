@@ -572,6 +572,93 @@ static void apply_evenicle_rance_cn_display_literals(struct ain *ain)
 	normalize_sjis_display_literals(ain, "GetSpaceTextFromString", "\x81\x40", 0, NULL);
 }
 
+static void apply_haharanman_cn_name_plate(struct ain *ain)
+{
+	// Retained CP932 names in the CN AIN's dialogue calls (including portrait prefixes).
+	static const char *const names[] = {
+		"\x83\x6e\x83\x8b", "\x8e\x4f\x92\x4a", "\x89\xba\x8b\x89\x8c\x52\x90\x6c",
+		"\x92\x86\x94\x4e\x8b\xb3\x8e\xf6", "\x88\xc9\x8d\xb2\x95\x90", "\x8d\xe7\x8b\x47",
+		"\x91\xe5\x90\x6c\x89\x48\x89\xd8", "\x91\xe5\x96\xd8\x8b\x76", "\x8f\x97\x8a\x77\x90\xb6",
+		"\x96\x5c\x8a\xbf", "\x96\x5c\x8a\xbf\x82\xbd\x82\xbf", "\x89\x69\xe2\x58",
+		"\x92\x6a\x8e\x71\x8a\x77\x90\xb6\x88\xea\x93\xaf", "\x90\x5e\x90\xb6", "\x90\xce\x90\xec",
+		"\x96\x9a\x8e\x71", "\x89\x48\x89\xd8", "\x98\x56\x94\x6b", "\x90\xd4\x90\xa3",
+		"\x8c\x52\x90\x6c", "\x97\xb2\x95\xb6", "\x8e\x47\x8b\x9b", "\x96\x83\x88\xdf",
+	};
+	if (ain_get_string_no(ain, "\x88\xc9\x8d\xb2\x95\x90") < 0)
+		return;
+
+	const char *getters[] = {
+		"AdvLayer::MessageWindow::nameplate::CText@Text::get",
+		"AdvLayer::MessageWindow::nameplate::CText@Text::get#1",
+	};
+	for (size_t g = 0; g < sizeof(getters) / sizeof(*getters); g++) {
+		int fno = ain_get_function(ain, (char *)getters[g]);
+		if (fno < 0 || ain->functions[fno].nr_args || ain->functions[fno].return_type.data != AIN_STRING)
+			continue;
+		uint32_t start = ain->functions[fno].address;
+		uint32_t end = find_func_end_addr(ain, fno);
+		if (end < start || end - start < 24
+				|| LittleEndian_getW(ain->code, start) != PUSHSTRUCTPAGE
+				|| LittleEndian_getW(ain->code, start + 2) != PUSH
+				|| LittleEndian_getDW(ain->code, start + 4) != 4
+				|| LittleEndian_getW(ain->code, start + 8) != X_REF
+				|| LittleEndian_getDW(ain->code, start + 10) != 1
+				|| LittleEndian_getW(ain->code, start + 14) != A_REF
+				|| LittleEndian_getW(ain->code, start + 16) != RETURN
+				|| LittleEndian_getW(ain->code, start + 18) != ENDFUNC)
+			continue;
+
+		struct buffer out;
+		buffer_init(&out, NULL, 0);
+		write_instruction1(&out, FUNC, fno);
+		// Leave the backing Text property (and the speaker's script name) untouched.
+		buffer_write_bytes(&out, ain->code + start, 16);
+		write_instruction0(&out, DUP);
+		write_instruction1(&out, PUSH, -1);
+		write_instruction0(&out, EQUALE);
+		size_t null_branch = out.index + 2;
+		write_instruction1(&out, IFNZ, 0);
+		for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
+			int source = ain_get_string_no(ain, names[i]);
+			if (source < 0)
+				continue;
+			char *utf8 = cjk2utf_strict(names[i], false, NULL);
+			if (!utf8)
+				continue;
+			char *sjis = utf2cjk(utf8, 0, false);
+			char *gbk = utf2cjk(utf8, 0, true);
+			char *round_trip = cjk2utf_strict(gbk, true, NULL);
+			int target = round_trip && !strcmp(sjis, names[i]) && !strcmp(utf8, round_trip)
+				? ain_add_string(ain, gbk) : source;
+			free(round_trip);
+			free(gbk);
+			free(sjis);
+			free(utf8);
+			if (source == target)
+				continue;
+			write_instruction0(&out, DUP);
+			write_instruction0(&out, DUP);
+			write_instruction0(&out, SP_INC);
+			write_instruction1(&out, S_PUSH, source);
+			write_instruction0(&out, S_EQUALE);
+			size_t branch = out.index + 2;
+			write_instruction1(&out, IFZ, 0);
+			write_instruction0(&out, DELETE);
+			write_instruction1(&out, S_PUSH, target);
+			write_instruction0(&out, RETURN);
+			LittleEndian_putDW(out.buf, branch, ain->code_size + out.index);
+		}
+		LittleEndian_putDW(out.buf, null_branch, ain->code_size + out.index);
+		write_instruction0(&out, RETURN);
+		write_instruction1(&out, ENDFUNC, fno);
+		ain->functions[fno].address = ain->code_size + 6;
+		ain->code = xrealloc(ain->code, ain->code_size + out.index);
+		memcpy(ain->code + ain->code_size, out.buf, out.index);
+		ain->code_size += out.index;
+		free(out.buf);
+	}
+}
+
 static void apply_maman_cn_speaker_literals(struct ain *ain)
 {
 	// 【%s】 in the backlog and ＊＊＊ in the scene name plates.
@@ -1118,6 +1205,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_evenicle_rance_cn_display_literals(ain);
 	if (game_maman && sys4_text_is_gbk && !sys4_source_is_utf8)
 		apply_maman_cn_speaker_literals(ain);
+	if (game_haharanman && sys4_text_is_gbk && !sys4_source_is_utf8)
+		apply_haharanman_cn_name_plate(ain);
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

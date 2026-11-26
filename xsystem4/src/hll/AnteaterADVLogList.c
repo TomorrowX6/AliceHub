@@ -7,6 +7,7 @@
 #include "system4/buffer.h"
 #include "system4/little_endian.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "vm/page.h"
 #include "hll.h"
 
@@ -135,7 +136,7 @@ static int GetNumofADVLogText(int index)
 static struct string *GetADVLogText(int index, int line)
 {
 	struct history_entry *e = entry(index);
-	return string_ref(e && line >= 0 && line < e->nr_lines ? e->lines[line] : &EMPTY_STRING);
+	return cjk_display_log_line(e && line >= 0 && line < e->nr_lines ? e->lines[line] : &EMPTY_STRING);
 }
 
 static int GetNumofADVLogVoice(int index)

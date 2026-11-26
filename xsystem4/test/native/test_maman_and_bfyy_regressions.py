@@ -115,17 +115,126 @@ int main(void)
         )
         self.assertEqual(out.strip(), "OK")
 
-    def test_maman_backlog_hll_string_returns(self):
-        harness = """
+    def test_haharanman_cn_name_plate(self):
+        harness = r"""
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/buffer.h"
+#include "system4/instructions.h"
+#include "system4/little_endian.h"
+#include "system4/string.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { return false; }
+void escalayer_reboot_replace_cn_ui_text(struct ain *ain) {}
+
+static void instruction(struct buffer *code, int op, int arg)
+{
+    buffer_write_int16(code, op);
+    buffer_write_int32(code, arg);
+}
+
+static void verify(bool game, bool gbk, bool real_getter)
+{
+    struct ain *ain = ain_new(14, 0);
+    if (game)
+        ain_add_string(ain, "83h2mjr");
+    config.game_name = gbk ? "\xb6\xe0\xc4\xc8" : NULL;
+    int cp932_ihisa = ain_add_string(ain, "\x88\xc9\x8d\xb2\x95\x90");
+    int cp932_haru = ain_add_string(ain, "\x83\x6e\x83\x8b");
+    int gbk_weina = ain_add_string(ain, "\xc6\xdf\xce\xb2");
+    int fn = ain_add_function(ain, "AdvLayer::MessageWindow::nameplate::CText@Text::get");
+    ain->functions[fn].return_type.data = AIN_STRING;
+    struct buffer code;
+    buffer_init(&code, NULL, 0);
+    instruction(&code, FUNC, fn);
+    unsigned start = code.index;
+    ain->functions[fn].address = start;
+    buffer_write_int16(&code, PUSHSTRUCTPAGE);
+    instruction(&code, PUSH, real_getter ? 4 : 5);
+    instruction(&code, X_REF, 1);
+    buffer_write_int16(&code, A_REF);
+    buffer_write_int16(&code, RETURN);
+    instruction(&code, ENDFUNC, fn);
+    ain->code = code.buf;
+    ain->code_size = code.index;
+    apply_game_specific_hacks(ain);
+    unsigned addr = ain->functions[fn].address;
+    assert(!strcmp(ain->strings[cp932_ihisa]->text, "\x88\xc9\x8d\xb2\x95\x90"));
+    assert(!strcmp(ain->strings[gbk_weina]->text, "\xc6\xdf\xce\xb2"));
+    if (game && gbk && real_getter) {
+        assert(addr != start);
+        assert(!memcmp(ain->code + start, ain->code + addr, 16));
+        addr += 16;
+        assert(LittleEndian_getW(ain->code, addr) == DUP);
+        assert(LittleEndian_getW(ain->code, addr + 2) == PUSH);
+        assert(LittleEndian_getDW(ain->code, addr + 4) == -1);
+        assert(LittleEndian_getW(ain->code, addr + 8) == EQUALE);
+        assert(LittleEndian_getW(ain->code, addr + 10) == IFNZ);
+        unsigned null_branch = LittleEndian_getDW(ain->code, addr + 12);
+        addr += 16;
+        const int sources[] = { cp932_haru, cp932_ihisa };
+        const char *targets[] = { "\xa5\xcf\xa5\xeb", "\xd2\xc1\xd7\xf4\xce\xe4" };
+        for (int i = 0; i < 2; i++) {
+            assert(LittleEndian_getW(ain->code, addr) == DUP);
+            assert(LittleEndian_getW(ain->code, addr + 2) == DUP);
+            assert(LittleEndian_getW(ain->code, addr + 4) == SP_INC);
+            assert(LittleEndian_getW(ain->code, addr + 6) == S_PUSH);
+            assert(LittleEndian_getDW(ain->code, addr + 8) == sources[i]);
+            assert(LittleEndian_getW(ain->code, addr + 12) == S_EQUALE);
+            assert(LittleEndian_getW(ain->code, addr + 14) == IFZ);
+            assert(LittleEndian_getDW(ain->code, addr + 16) == addr + 30);
+            assert(LittleEndian_getW(ain->code, addr + 20) == DELETE);
+            assert(LittleEndian_getW(ain->code, addr + 22) == S_PUSH);
+            assert(!strcmp(ain->strings[LittleEndian_getDW(ain->code, addr + 24)]->text, targets[i]));
+            assert(LittleEndian_getW(ain->code, addr + 28) == RETURN);
+            addr += 30;
+        }
+        assert(null_branch == addr);
+        assert(LittleEndian_getW(ain->code, addr) == RETURN);
+    } else {
+        assert(addr == start);
+    }
+    ain_free(ain);
+}
+
+int main(void)
+{
+    verify(true, true, true);
+    verify(true, false, true);
+    verify(false, true, true);
+    verify(true, true, false);
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/hacks.c", *LIBSYS4_CORE],
+            ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_maman_backlog_hll_string_returns(self):
+        harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
 #include "AnteaterADVEngine.h"
 #include "hll.h"
 #include "system4/string.h"
+#include "system4/utfsjis.h"
 #include "vm/heap.h"
 #include "vm/page.h"
 
 struct ain *ain;
 extern struct static_library lib_AnteaterADVEngine;
+extern struct static_library lib_AnteaterADVLogList;
 
 _Noreturn void _vm_error(const char *fmt, ...) { abort(); }
 struct page *alloc_array(int r, union vm_value *d, enum ain_data_type t, int s, bool i) { abort(); }
@@ -208,6 +317,63 @@ int main(void) {
     free_string(line);
     free_string(name);
 
+    const char mixed[] = "\x81\x79\xc4\xe3\xba\xc3\x81\x7a";
+    const char expected[] = "\xa1\xbe\xc4\xe3\xba\xc3\xa1\xbf";
+    line = make_string(mixed, sizeof(mixed) - 1);
+    ((void (*)(struct string *, struct string *))find_export("ADVLogList_AddText")->fun)
+        (line, &EMPTY_STRING);
+    void (*add_list_text)(struct string *, struct string *) = NULL;
+    struct string *(*get_list_text)(int, int) = NULL;
+    void (*clear_list)(void) = NULL;
+    for (struct static_hll_function *f = lib_AnteaterADVLogList.functions; f->name; f++) {
+        if (!strcmp(f->name, "AddText")) add_list_text = f->fun;
+        if (!strcmp(f->name, "GetADVLogText")) get_list_text = f->fun;
+        if (!strcmp(f->name, "Clear")) clear_list = f->fun;
+    }
+    assert(add_list_text && get_list_text && clear_list);
+    add_list_text(line, &EMPTY_STRING);
+    struct string *display = get_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    sys4_set_text_gbk(true);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, expected));
+    free_string(display);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, expected));
+    free_string(display);
+    sys4_set_source_utf8(true);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, mixed));
+    free_string(display);
+    sys4_set_source_utf8(false);
+    free_string(line);
+    clear_list();
+    ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
+
+    const char sjis_speaker[] = "\x81\x79\x88\xc9\x8d\xb2\x95\x90\x81\x7a";
+    const char gbk_speaker[] = "\xa1\xbe\xd2\xc1\xd7\xf4\xce\xe4\xa1\xbf";
+    line = make_string(sjis_speaker, sizeof(sjis_speaker) - 1);
+    add_list_text(line, &EMPTY_STRING);
+    ((void (*)(struct string *, struct string *))find_export("ADVLogList_AddText")->fun)
+        (line, &EMPTY_STRING);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, gbk_speaker));
+    free_string(display);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, gbk_speaker));
+    free_string(display);
+    sys4_set_text_gbk(false);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, sjis_speaker));
+    free_string(display);
+    free_string(line);
+    clear_list();
+    ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
+
     struct ain_hll_function int_voice = {
         .nr_arguments = 2, .arguments = getter_args, .return_type.data = AIN_INT,
     };
@@ -221,7 +387,8 @@ int main(void) {
 """
         out = compile_and_run(
             harness,
-            [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
+            [ROOT / "src/hll/AnteaterADVEngine.c", ROOT / "src/hll/AnteaterADVLogList.c",
+             ROOT / "src/hll/iarray.c", *LIBSYS4_CORE],
             ["-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")
