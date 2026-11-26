@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host C and build-contract regression tests for Ogg Opus voice support (Beat Blades Haruka)."""
 
+import re
 import shutil
 import struct
 import subprocess
@@ -74,7 +75,56 @@ LIBSYS4_AUDIO_META = [
 
 
 class HarukaOpusAudioRegressionsTest(unittest.TestCase):
+    def require_host_packages(self, *pkgs: str):
+        if not (shutil.which("cc") or shutil.which("gcc")):
+            self.skipTest("C compiler not available")
+        if not shutil.which("pkg-config"):
+            self.skipTest("pkg-config not available")
+        if subprocess.run(["pkg-config", "--exists", *pkgs]).returncode:
+            self.skipTest(f"Host development packages not available: {', '.join(pkgs)}")
+
     def test_haruka_ogg_opus_voice_decoding_and_mixing(self):
+        self.require_host_packages("sdl2", "sndfile")
+        sndfile_libs = subprocess.check_output(
+            ["pkg-config", "--libs", "sndfile"], text=True
+        ).split()
+        self.check_haruka_playback(sndfile_libs, pkgs=("sdl2", "sndfile"))
+
+    def test_haruka_playback_with_shipping_sndfile(self):
+        cmake = shutil.which("cmake")
+        if not cmake:
+            self.skipTest("CMake not available to build AliceHub's audio dependencies")
+        self.require_host_packages("sdl2")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            build = Path(tmpdir)
+            config = subprocess.run(
+                [cmake, "-S", str(ROOT.parent), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            self.assertEqual(config.returncode, 0, config.stdout)
+            # Build just the production Android audio dependency graph with the host toolchain.
+            result = subprocess.run(
+                [cmake, "--build", str(build), "--target", "libsndfile", "--parallel", "2"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            if result.returncode and "Each download failed!" in result.stdout:
+                network_error = re.search(
+                    r'status_code: (?:5|6|7|28|35|55|56|60|77|92)\b'
+                    r'|HTTP/[\d.]+ (?:403|407|429|5\d\d)\b',
+                    result.stdout,
+                )
+                if network_error:
+                    self.skipTest(f"Network unavailable for CMake dependency downloads ({network_error[0]})")
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            stage = build / "stage"
+            archives = [stage / "lib" / f"lib{name}.a" for name in ("sndfile", "vorbisenc", "vorbis", "opus", "ogg")]
+            for archive in archives:
+                self.assertTrue(archive.is_file(), f"Missing staged static archive: {archive}")
+            self.check_haruka_playback([f"-I{stage / 'include'}", *map(str, archives)], pkgs=("sdl2",))
+
+    def check_haruka_playback(self, sndfile_flags: list[str], pkgs: tuple[str, ...]):
         # MangaGamer's Beat Blades Haruka (and its CN translation) stores 24,047 character voices
         # in harukaWB.ald as 48 kHz mono Ogg Opus while keeping BGM/SFX as 44.1 kHz Ogg Vorbis.
         # Verify xsystem4's real audio_mixer.c + audio.c + audio_meta.c pipeline decodes, resamples
@@ -263,9 +313,6 @@ int main(int argc, char **argv) {
             struct.pack_into("<III", wai_buf, 36 + 10002 * 12, 10003, 0, 2)  # ID 10003 -> Haruka
             wai_path.write_bytes(bytes(wai_buf))
 
-            sndfile_libs = subprocess.check_output(
-                ["pkg-config", "--libs", "sndfile"], text=True
-            ).split()
             out = compile_and_run(
                 harness,
                 [
@@ -273,13 +320,16 @@ int main(int argc, char **argv) {
                     ROOT / "src/id_pool.c",
                     ROOT / "subprojects/libsys4/src/archive.c",
                 ],
-                [*sndfile_libs, "-lm"],
+                [*sndfile_flags, "-lm"],
                 [str(tmp / "sfx.ogg"), str(tmp / "voice.opus"), str(wai_path)],
-                pkgs=("sdl2", "sndfile"),
+                pkgs=pkgs,
             )
             self.assertEqual(out.strip(), "OK")
 
     def test_cross_platform_opus_build_contract(self):
+        cmake = shutil.which("cmake")
+        if not cmake:
+            self.skipTest("CMake not available to verify the libsndfile patch")
         repo = ROOT.parent
         patch_script = repo / "cmake/patch-libsndfile-opus.cmake"
         self.assertTrue(patch_script.is_file())
@@ -335,7 +385,7 @@ int main(int argc, char **argv) {
             )
             for _ in range(2):
                 subprocess.run(
-                    ["cmake", f"-DSOURCE_DIR={src}", "-P", str(patch_script)],
+                    [cmake, f"-DSOURCE_DIR={src}", "-P", str(patch_script)],
                     check=True,
                     capture_output=True,
                     text=True,
