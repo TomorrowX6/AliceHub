@@ -189,6 +189,8 @@ class SettingsActivity : ThemedActivity() {
 
     private fun showStorageLocationDialog() {
         val options = createStorageOptions(AppSettings.prefersPublicStorage(this))
+        options.findViewById<TextView>(R.id.storage_option_public).setText(R.string.storage_option_shared_directory)
+        options.findViewById<TextView>(R.id.storage_option_private).setText(R.string.storage_option_app_directory)
         trackDialog(AlertDialog.Builder(this)
             .setTitle(R.string.storage_location)
             .setView(UiKit.dialogContent(this, options))

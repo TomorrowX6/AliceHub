@@ -139,6 +139,21 @@ public class OnboardingActivityTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS")
+    public void settingsStorageDialogUsesDirectoryLabelsWithoutOnboardingCopy() {
+        try (ActivityController<SettingsActivity> controller =
+                     Robolectric.buildActivity(SettingsActivity.class).setup()) {
+            controller.get().findViewById(R.id.row_settings_storage).performClick();
+            AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(dialog.isShowing());
+            TextView shared = dialog.findViewById(R.id.storage_option_public);
+            TextView appSpecific = dialog.findViewById(R.id.storage_option_private);
+            assertEquals("Shared storage directory", shared.getText().toString());
+            assertEquals("App-specific directory", appSpecific.getText().toString());
+        }
+    }
+
+    @Test
     public void skipStorageAndAcceptOnlineInstallPersistsAfterFinishing() {
         try (ActivityController<OnboardingActivity> controller =
                      Robolectric.buildActivity(OnboardingActivity.class).setup()) {

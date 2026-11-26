@@ -525,6 +525,8 @@
     <string name="public_storage_benefits">• アプリをアンインストールしても AliceHub フォルダー内のデータは残る\n• バックアップ、移行、パソコンへのコピーが簡単\n• 旧バージョンのセーブデータを自動で移行</string>
     <string name="private_storage_option">スキップ（アプリ専用ストレージを使用）\n<small>追加のストレージ権限は不要</small></string>
     <string name="private_storage_drawbacks">• AliceHub をアンインストールすると、ここにあるゲームとセーブデータが削除される\n• ファイル管理アプリやパソコンでのバックアップや移行がしにくい</string>
+    <string name="storage_option_shared_directory">共有ストレージのフォルダー</string>
+    <string name="storage_option_app_directory">アプリ専用フォルダー</string>
     <string name="storage_location_public">共有</string>
     <string name="storage_location_private">アプリ専用</string>
     <string name="storage_location_pending">アクセス許可が必要</string>
