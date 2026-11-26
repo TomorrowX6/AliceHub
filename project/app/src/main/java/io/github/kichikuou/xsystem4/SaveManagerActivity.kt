@@ -1058,7 +1058,7 @@ class SaveManagerActivity : ThemedActivity() {
     private fun refreshFileList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
-        migrateMojibakeSaveTree(saveDir, SaveImportPaths(currentTarget.externalGameDir))
+        SaveImportPaths(currentTarget.externalGameDir).migrateExistingSaves(saveDir)
 
         val list = mutableListOf<SaveFileEntry>()
         collectSaveFiles(saveDir, saveDir, list)
@@ -1126,23 +1126,6 @@ class SaveManagerActivity : ThemedActivity() {
                         tag = classifySaveFile(child.name)
                     )
                 )
-            }
-        }
-    }
-
-    private fun migrateMojibakeSaveTree(dir: File, paths: SaveImportPaths, atRoot: Boolean = true) {
-        val children = dir.listFiles() ?: return
-        for (child in children) {
-            if (child.name.startsWith(".")) continue
-            if (child.isDirectory) {
-                migrateMojibakeSaveTree(child, paths, atRoot = false)
-            }
-            val repaired = paths.normalizedName(child.name, atRoot && child.isFile)
-            if (repaired != child.name && !repaired.contains('/') && !repaired.contains('\\')) {
-                val target = File(dir, repaired)
-                if (!target.exists()) {
-                    child.renameTo(target)
-                }
             }
         }
     }

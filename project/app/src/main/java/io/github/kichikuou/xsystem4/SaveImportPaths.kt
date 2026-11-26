@@ -1,8 +1,11 @@
 package io.github.kichikuou.xsystem4
 
 import java.io.File
+import java.io.IOException
 import java.nio.CharBuffer
 import java.nio.charset.Charset
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
 import java.util.Locale
 
 class SaveImportPaths(gameDir: File?) {
@@ -45,6 +48,42 @@ class SaveImportPaths(gameDir: File?) {
         return ArchiveExtractor.repairSjisAsGbkMojibake(name)
     }
 
+    fun migrateExistingSaves(root: File) {
+        fun migrate(dir: File, atRoot: Boolean) {
+            for (child in dir.listFiles().orEmpty()) {
+                if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
+                if (child.isDirectory) migrate(child, atRoot = false)
+                val repaired = normalizedName(child.name, atRoot && child.isFile)
+                if (repaired == child.name || !isSafeComponent(repaired)) continue
+
+                val target = File(dir, repaired)
+                try {
+                    Files.move(child.toPath(), target.toPath())
+                } catch (_: FileAlreadyExistsException) {
+                    if (child.isFile) moveToConflictBackup(child, target)
+                } catch (_: IOException) {
+                }
+            }
+        }
+        migrate(root, atRoot = true)
+    }
+
+    private fun moveToConflictBackup(alias: File, target: File) {
+        var index = 0
+        while (true) {
+            val suffix = if (index == 0) "" else ".$index"
+            val backup = File(target.parentFile, target.name + suffix + conflictBackupSuffix)
+            try {
+                Files.move(alias.toPath(), backup.toPath())
+                return
+            } catch (_: FileAlreadyExistsException) {
+                index++
+            } catch (_: IOException) {
+                return
+            }
+        }
+    }
+
     @JvmOverloads
     fun <T> sourceRoot(
         root: T,
@@ -55,26 +94,37 @@ class SaveImportPaths(gameDir: File?) {
     ): T {
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
 
+        fun explicitSaveFolder(dirs: List<T>): T? {
+            val configured = saveFolder?.let { expected ->
+                dirs.firstOrNull { name(it) == expected }
+                    ?: dirs.singleOrNull { equivalent(name(it), expected) }
+            }
+            val conventional = if (fromArchive) {
+                dirs.firstOrNull { name(it).equals("SaveData", true) }
+            } else {
+                dirs.singleOrNull { name(it).equals("SaveData", true) }
+            }
+            return configured ?: conventional
+        }
+
+        if (fromArchive) {
+            var level = listOf(root)
+            repeat(3) {
+                level = level.flatMap { visibleChildren(it).filter(isDirectory) }
+                explicitSaveFolder(level)?.let { return it }
+            }
+        }
+
         fun find(node: T, depth: Int): T? {
             val visible = visibleChildren(node)
             if (visible.any { !isDirectory(it) && saveExtension.matches(name(it)) }) return node
             if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
-            val configured = saveFolder?.let { expected ->
-                dirs.firstOrNull { name(it) == expected }
-                    ?: dirs.singleOrNull { equivalent(name(it), expected) }
-            }
-            val conventional = dirs.singleOrNull { name(it).equals("SaveData", true) }
-            return configured ?: conventional ?: dirs.singleOrNull()?.let { find(it, depth - 1) }
+            return explicitSaveFolder(dirs) ?: dirs.singleOrNull()?.let { find(it, depth - 1) }
         }
         find(root, 3)?.let { return it }
         if (!fromArchive) return root
 
-        var level = listOf(root)
-        repeat(3) {
-            level = level.flatMap { visibleChildren(it).filter(isDirectory) }
-            level.firstOrNull { name(it).equals("SaveData", true) }?.let { return it }
-        }
         var node = root
         while (true) {
             val child = visibleChildren(node).singleOrNull()?.takeIf(isDirectory) ?: return node
@@ -83,6 +133,7 @@ class SaveImportPaths(gameDir: File?) {
     }
 
     private companion object {
+        const val conflictBackupSuffix = ".import-conflict.bak"
         val scenarioArchive = Regex("^(.*)S[A-Z](_chs)?\\.ald$", RegexOption.IGNORE_CASE)
         val slotFile = Regex("^(.*)(s[a-z]\\.asd)$", RegexOption.IGNORE_CASE)
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)

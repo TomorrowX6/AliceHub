@@ -12,6 +12,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SaveImportPathsTest {
@@ -65,6 +66,34 @@ public class SaveImportPathsTest {
         assertEquals(prefix + "sa.asd", paths.normalizedName(prefix + "sa.asd", true));
     }
 
+    @Test public void migrationPreservesConflictingAliasWithoutRevivingDeletedSlot() throws IOException {
+        File game = temporary.newFolder("Tsumamigui");
+        touch(game, "System39.ain");
+        touch(game, "妻みぐいSA.ALD");
+        File saves = temporary.newFolder("saves");
+        File canonical = new File(saves, "妻みぐいsa.asd");
+        File alias = new File(saves, "妻みぐいSA.ASD");
+        File existingBackup = new File(saves, canonical.getName() + ".import-conflict.bak");
+        File backup = new File(saves, canonical.getName() + ".1.import-conflict.bak");
+        Files.write(canonical.toPath(), "new".getBytes(StandardCharsets.US_ASCII));
+        Files.write(alias.toPath(), "old".getBytes(StandardCharsets.US_ASCII));
+        Files.write(existingBackup.toPath(), "older".getBytes(StandardCharsets.US_ASCII));
+        touch(saves, "妻みぐいSB.ASD");
+
+        SaveImportPaths paths = new SaveImportPaths(game);
+        paths.migrateExistingSaves(saves);
+        assertEquals("new", new String(Files.readAllBytes(canonical.toPath()), StandardCharsets.US_ASCII));
+        assertFalse(alias.exists());
+        assertEquals("older", new String(Files.readAllBytes(existingBackup.toPath()), StandardCharsets.US_ASCII));
+        assertEquals("old", new String(Files.readAllBytes(backup.toPath()), StandardCharsets.US_ASCII));
+        assertTrue(new File(saves, "妻みぐいsb.asd").isFile());
+
+        assertTrue(canonical.delete());
+        paths.migrateExistingSaves(saves);
+        assertFalse(canonical.exists());
+        assertEquals("old", new String(Files.readAllBytes(backup.toPath()), StandardCharsets.US_ASCII));
+    }
+
     @Test public void findsMamanPcSaveDataInsideAWrapper() throws IOException {
         File game = temporary.newFolder("Maman");
         touch(game, "Maman.ain");
@@ -83,6 +112,19 @@ public class SaveImportPathsTest {
         assertEquals("01.asd", paths.nameForImport("01.asd", true));
         touch(root, "02.rsm");
         assertEquals(root, sourceRoot(paths, root));
+        assertEquals(saveData, sourceRoot(paths, root, true));
+    }
+
+    @Test public void archivePrefersExplicitSaveDataBesideLooseSlots() throws IOException {
+        File root = temporary.newFolder("mixed");
+        File saveData = new File(root, "SaveData");
+        assertTrue(saveData.mkdir());
+        touch(saveData, "01.asd");
+        touch(root, "old.asd");
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(root, sourceRoot(paths, root));
+        assertEquals(saveData, sourceRoot(paths, root, true));
     }
 
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {
@@ -105,5 +147,8 @@ public class SaveImportPathsTest {
 
         assertEquals(saveData, sourceRoot(new SaveImportPaths(game), root));
         assertEquals(root, sourceRoot(new SaveImportPaths(null), root));
+        touch(root, "old.sav");
+        assertEquals(root, sourceRoot(new SaveImportPaths(game), root));
+        assertEquals(saveData, sourceRoot(new SaveImportPaths(game), root, true));
     }
 }
