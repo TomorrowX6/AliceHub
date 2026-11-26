@@ -310,6 +310,37 @@ public class AppStorageTest {
     }
 
     @Test
+    public void blockedSharedSaveAndBackupPathsFallBackToPrivateStorage() throws IOException {
+        Context context = RuntimeEnvironment.getApplication();
+        File volume = enableSharedStorage(context);
+        File privateSaveDir = new File(context.getFilesDir(), "saves/Game");
+        assertTrue(privateSaveDir.mkdirs());
+        File sharedSave = new File(volume, "AliceHub/saves/Game");
+        File sharedBackup = new File(volume, "AliceHub/save_backups/Game");
+        write(sharedSave, "occupied");
+        write(sharedBackup, "occupied");
+        AppStorage storage = AppStorage.INSTANCE;
+
+        assertFalse(storage.preparePublicStorage(context));
+        assertEquals(privateSaveDir, storage.saveDir(context, "Game"));
+        assertEquals(new File(context.getFilesDir(), "save_backups/Game"), storage.backupDir(context, "Game"));
+        assertEquals("occupied", read(sharedSave));
+        assertEquals("occupied", read(sharedBackup));
+    }
+
+    @Test
+    public void incompleteWarningStillShowsWhenItsPreferenceCannotBeWritten() throws IOException {
+        Context context = RuntimeEnvironment.getApplication().createDeviceProtectedStorageContext();
+        context.getSharedPreferences("public_storage_paths", Context.MODE_PRIVATE);
+        File prefsDir = new File(context.getDataDir(), "shared_prefs");
+        assertTrue(prefsDir.delete());
+        write(prefsDir, "occupied");
+
+        assertTrue(AppStorage.INSTANCE.consumePublicStorageFailureNotice(context));
+        assertFalse(AppStorage.INSTANCE.consumePublicStorageFailureNotice(context));
+    }
+
+    @Test
     public void blockedLayoutIsNotRetriedUntilItChangesAndWarningCanOnlyBeConsumedOnce() throws IOException {
         Context context = RuntimeEnvironment.getApplication();
         File volume = enableSharedStorage(context);

@@ -110,10 +110,10 @@ object AppStorage {
     private fun dataHome(context: Context, root: String, name: String): File {
         val legacy = File(context.filesDir, "$root/$name")
         val shared = dataRoot(context, root)
-        val emptyLegacy = shared != legacy.parentFile &&
-            Files.isDirectory(legacy.toPath(), LinkOption.NOFOLLOW_LINKS) && legacy.list()?.isEmpty() == true
-        return if (legacy.exists() && !emptyLegacy) context.filesDir
-        else shared.parentFile ?: context.filesDir
+        if (shared == legacy.parentFile || (legacy.exists() && !isEmptyDirectory(legacy))) return context.filesDir
+        val sharedDir = File(shared, name)
+        if (exists(sharedDir) && !sharedDir.isDirectory) return context.filesDir
+        return shared.parentFile ?: context.filesDir
     }
 
     fun resolveGamePath(context: Context, path: String): String {
@@ -203,7 +203,10 @@ object AppStorage {
     fun consumePublicStorageFailureNotice(context: Context): Boolean {
         val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
         if (paths.getBoolean(MIGRATION_NOTICE_KEY, false)) return false
-        return paths.edit().putBoolean(MIGRATION_NOTICE_KEY, true).commit()
+        if (!paths.edit().putBoolean(MIGRATION_NOTICE_KEY, true).commit()) {
+            Log.w("AppStorage", "Could not persist the incomplete migration notice")
+        }
+        return true
     }
 
     data class MigrationProgress(val itemName: String, val percent: Int)
