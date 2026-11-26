@@ -195,6 +195,7 @@ public class PerGameUiScaleTest {
                 .putExtra(GameModifierActivity.EXTRA_GAME_ID, GameCatalog.ID_RANCE10);
         GameModifierActivity r10Act = Robolectric.buildActivity(GameModifierActivity.class, r10Intent)
                 .create().get();
+        SaveScreenLoadingTest.await(() -> r10Act.findViewById(R.id.btn_mod_font_size).isEnabled());
         Button r10FontBtn = r10Act.findViewById(R.id.btn_mod_font_size);
         Button r10SbBtn = r10Act.findViewById(R.id.btn_mod_scrollbar);
         assertTrue("Expected 125% in " + r10FontBtn.getText(), r10FontBtn.getText().toString().contains("125%"));
@@ -205,6 +206,7 @@ public class PerGameUiScaleTest {
                 .putExtra(GameModifierActivity.EXTRA_GAME_ID, GameCatalog.ID_DOHNA_DOHNA);
         GameModifierActivity ddAct = Robolectric.buildActivity(GameModifierActivity.class, ddIntent)
                 .create().get();
+        SaveScreenLoadingTest.await(() -> ddAct.findViewById(R.id.btn_mod_font_size).isEnabled());
         Button ddFontBtn = ddAct.findViewById(R.id.btn_mod_font_size);
         Button ddSbBtn = ddAct.findViewById(R.id.btn_mod_scrollbar);
         assertTrue("Expected 90% in " + ddFontBtn.getText(), ddFontBtn.getText().toString().contains("90%"));
@@ -215,6 +217,7 @@ public class PerGameUiScaleTest {
                 .putExtra(GameModifierActivity.EXTRA_GAME_ID, GameCatalog.ID_EVENICLE);
         GameModifierActivity evAct = Robolectric.buildActivity(GameModifierActivity.class, evIntent)
                 .create().get();
+        SaveScreenLoadingTest.await(() -> evAct.findViewById(R.id.btn_mod_font_size).isEnabled());
         Button evFontBtn = evAct.findViewById(R.id.btn_mod_font_size);
         Button evSbBtn = evAct.findViewById(R.id.btn_mod_scrollbar);
         assertTrue("Expected 100% in " + evFontBtn.getText(), evFontBtn.getText().toString().contains("100%"));

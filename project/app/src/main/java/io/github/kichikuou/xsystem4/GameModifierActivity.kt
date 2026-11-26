@@ -21,6 +21,10 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -33,7 +37,8 @@ data class ModSaveSlotEntry(
     val slotNum: Int,
     val tag: String,
     val sizeBytes: Long,
-    val lastModified: Long
+    val lastModified: Long,
+    val hasBackup: Boolean
 )
 
 private class ModSaveSlotAdapter(
@@ -62,7 +67,7 @@ private class ModSaveSlotAdapter(
         view.findViewById<TextView>(R.id.title).text = entry.relativePath
         val primaryTone = slotTone(entry.slotNum)
         val chips = mutableListOf(UiKit.Chip(entry.tag, primaryTone))
-        if (GameModifierBridge.hasModBackup(entry.file)) {
+        if (entry.hasBackup) {
             chips.add(UiKit.Chip(backupLabel, UiKit.Tone.SUCCESS))
         }
         UiKit.bindChips(view, chips)
@@ -94,11 +99,12 @@ class GameModifierActivity : ThemedActivity() {
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val loader = SaveScreenLoader(scope)
+    private var firstResume = true
     private var scopedGameId: String? = null
-    private var targets: MutableList<SaveTarget> = mutableListOf()
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: ModSaveSlotAdapter
-    private var currentEntries: List<ModSaveSlotEntry> = emptyList()
     private var updatingSwitches = false
     private val trackedDialogs = mutableListOf<android.app.Dialog>()
 
@@ -172,28 +178,26 @@ class GameModifierActivity : ThemedActivity() {
         findViewById<Button>(R.id.btn_mod_full_unlock).text = tr("全解锁存档", "全解放セーブ", "Full Unlock")
         findViewById<Button>(R.id.btn_mod_global_save).text = tr("全局存档", "全体セーブ", "Global Save")
         findViewById<Button>(R.id.btn_mod_floating_cfg).text = tr("实时锁定", "リアルタイムロック", "Live Locks")
-        refreshUiScaleButtons()
 
         val floatingSwitch = findViewById<Switch>(R.id.switch_floating_modifier)
         val ctrlOverlaySwitch = findViewById<Switch>(R.id.switch_ctrl_overlay)
-        syncTopSwitches()
+        floatingSwitch.isSaveEnabled = false
+        ctrlOverlaySwitch.isSaveEnabled = false
 
         floatingSwitch.setOnCheckedChangeListener { _, isChecked ->
             if (updatingSwitches) return@setOnCheckedChangeListener
             GameModifierBridge.setFloatingEnabled(this, isChecked)
-            refreshSummaryText()
+            refreshList()
         }
 
         ctrlOverlaySwitch.setOnCheckedChangeListener { _, isChecked ->
             if (updatingSwitches) return@setOnCheckedChangeListener
             GameModifierBridge.setCtrlOverlayEnabled(this, isChecked)
-            refreshSummaryText()
+            refreshList()
         }
 
         adapter = ModSaveSlotAdapter(this, emptyList(), tr("已备份", "バックアップ済", "Backed up"))
         listView.adapter = adapter
-
-        discoverSaveTargets(intent.getStringExtra(EXTRA_DIR_NAME), resolveInstallAlias = true)
 
         findViewById<View>(R.id.btn_mod_switch_dir).setOnClickListener { showSwitchTargetDialog() }
         findViewById<View>(R.id.btn_mod_full_unlock).setOnClickListener {
@@ -209,36 +213,34 @@ class GameModifierActivity : ThemedActivity() {
 
         listView.setOnItemClickListener { _, _, pos, _ ->
             val index = pos - listView.headerViewsCount
-            if (index in 0 until adapter.count) {
+            if (!loader.isLoading && index in 0 until adapter.count) {
                 val slot = adapter.getItem(index)
                 ensureGameNotRunning(this) { showLocalSaveMenuDialog(slot) }
             }
         }
 
-        refreshList()
+        loadList()
     }
 
     override fun onResume() {
         super.onResume()
-        syncTopSwitches()
-        if (::currentTarget.isInitialized) {
-            discoverSaveTargets(currentTarget.dirName)
-            refreshList()
-        }
+        if (!firstResume && !loader.isLoading) loadList()
+        firstResume = false
     }
 
     override fun onDestroy() {
+        scope.cancel()
         dismissTrackedDialogs()
         super.onDestroy()
     }
 
-    private fun syncTopSwitches() {
+    private fun syncTopSwitches(floatingEnabled: Boolean, ctrlEnabled: Boolean) {
         updatingSwitches = true
         try {
             findViewById<Switch>(R.id.switch_floating_modifier)?.isChecked =
-                GameModifierBridge.isFloatingEnabled(this)
+                floatingEnabled
             findViewById<Switch>(R.id.switch_ctrl_overlay)?.isChecked =
-                GameModifierBridge.isCtrlOverlayEnabled(this)
+                ctrlEnabled
         } finally {
             updatingSwitches = false
         }
@@ -252,92 +254,6 @@ class GameModifierActivity : ThemedActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun discoverSaveTargets(
-        preferredDirName: String? = null,
-        resolveInstallAlias: Boolean = false
-    ) {
-        val savesRoot = File(filesDir, "saves")
-        savesRoot.mkdirs()
-
-        val found = LinkedHashMap<String, SaveTarget>()
-        var resolvedPreferredDirName = preferredDirName
-        val gameList = GameList(this)
-        for (i in 0 until gameList.size) {
-            val item = gameList[i]
-            val saveDir = item.savedir ?: Item.resolveSaveDir(this, item.path)
-            val saveKey = saveDir.name
-            saveDir.mkdirs()
-            if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
-                resolvedPreferredDirName = saveKey
-            }
-            found[saveKey] = SaveTarget(
-                displayName = saveKey,
-                dirName = saveKey,
-                saveDir = saveDir,
-                externalGameDir = item.path
-            )
-        }
-
-        savesRoot.listFiles()?.filter { it.isDirectory && !it.name.startsWith('.') }?.forEach { dir ->
-            if (!found.containsKey(dir.name)) {
-                val baseGameName = dir.name.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
-                val extDir = getExternalFilesDir(null)?.let { root ->
-                    File(root, dir.name).takeIf { it.exists() }
-                        ?: File(root, baseGameName).takeIf { it.exists() }
-                }
-                found[dir.name] = SaveTarget(
-                    displayName = dir.name,
-                    dirName = dir.name,
-                    saveDir = dir,
-                    externalGameDir = extDir
-                )
-            }
-        }
-
-        val gid = scopedGameId
-        if (!gid.isNullOrBlank()) {
-            val iter = found.entries.iterator()
-            while (iter.hasNext()) {
-                val entry = iter.next().value
-                val classified = GameCatalog.classifyDirectory(
-                    gameDir = entry.externalGameDir,
-                    dirName = entry.dirName,
-                    saveDir = entry.saveDir,
-                    displayName = entry.displayName
-                )
-                if (classified != gid && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
-                    iter.remove()
-                }
-            }
-            if (found.isEmpty()) {
-                val desc = GameCatalog.descriptorFor(this, gid, gameList)
-                val defaultDir = File(savesRoot, desc.defaultDirName)
-                defaultDir.mkdirs()
-                val extDir = getExternalFilesDir(null)?.let { File(it, desc.defaultDirName) }?.takeIf { it.exists() }
-                found[desc.defaultDirName] = SaveTarget(
-                    displayName = desc.defaultDirName,
-                    dirName = desc.defaultDirName,
-                    saveDir = defaultDir,
-                    externalGameDir = extDir
-                )
-            }
-        } else if (found.isEmpty()) {
-            val defaultDir = File(savesRoot, "Rance10")
-            defaultDir.mkdirs()
-            val extDir = getExternalFilesDir(null)?.let { File(it, "Rance10") }
-            found["Rance10"] = SaveTarget(
-                displayName = "Rance10",
-                dirName = "Rance10",
-                saveDir = defaultDir,
-                externalGameDir = extDir
-            )
-        }
-
-        targets = found.values.toMutableList()
-        currentTarget = targets.firstOrNull { it.dirName == resolvedPreferredDirName }
-            ?: targets.firstOrNull { it.dirName == preferredDirName }
-            ?: targets.first()
-    }
 
     private fun isOtherScopedGame(expectedGameId: String): Boolean {
         val id = scopedGameId ?: return false
@@ -516,27 +432,27 @@ class GameModifierActivity : ThemedActivity() {
             )
     }
 
-    private fun isCurrentTargetRance10(): Boolean {
+    private fun isCurrentTargetRance10(target: SaveTarget = currentTarget): Boolean {
         if (isOtherScopedGame(GameCatalog.ID_RANCE10)) {
             return false
         }
         if (scopedGameId == GameCatalog.ID_RANCE10) {
             return true
         }
-        val extDir = currentTarget.externalGameDir
+        val extDir = target.externalGameDir
         if (GameCatalog.isSystem3xGameDir(extDir)) {
             return false
         }
         if (extDir == null &&
-            File(currentTarget.saveDir, "GlobalSaveData.asd").isFile &&
-            !File(currentTarget.saveDir, "GlobalSave.asd").isFile
+            File(target.saveDir, "GlobalSaveData.asd").isFile &&
+            !File(target.saveDir, "GlobalSave.asd").isFile
         ) {
             return false
         }
-        return GameModifierBridge.isRance10GameDir(extDir, currentTarget.dirName, currentTarget.saveDir)
+        return GameModifierBridge.isRance10GameDir(extDir, target.dirName, target.saveDir)
     }
 
-    private fun isCurrentTargetDohnaDohna(): Boolean {
+    private fun isCurrentTargetDohnaDohna(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_DOHNA_DOHNA) {
             return true
         }
@@ -544,13 +460,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isDohnaDohnaGameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetEvenicle(): Boolean {
+    private fun isCurrentTargetEvenicle(target: SaveTarget = currentTarget): Boolean {
         if (GenericModifierRegistry.isEvenicleFamily(scopedGameId)) {
             return true
         }
@@ -558,18 +474,18 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isEvenicleFamilyGameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun currentTargetGenericSpec(): GenericModifierSpec? {
-        val gid = resolvedGameIdForCurrentTarget()
+    private fun currentTargetGenericSpec(target: SaveTarget = currentTarget): GenericModifierSpec? {
+        val gid = resolvedGameIdForCurrentTarget(target)
         return GenericModifierRegistry.find(gid)
     }
 
-    private fun isCurrentTargetSengokuRance(): Boolean {
+    private fun isCurrentTargetSengokuRance(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_SENGOKU_RANCE) {
             return true
         }
@@ -577,13 +493,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isSengokuRanceGameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetRance01(): Boolean {
+    private fun isCurrentTargetRance01(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_RANCE01) {
             return true
         }
@@ -591,13 +507,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isRance01GameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetRance02(): Boolean {
+    private fun isCurrentTargetRance02(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_RANCE02) {
             return true
         }
@@ -605,13 +521,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isRance02GameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetRance03(): Boolean {
+    private fun isCurrentTargetRance03(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_RANCE03) {
             return true
         }
@@ -619,13 +535,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isRance03GameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetRance08(): Boolean {
+    private fun isCurrentTargetRance08(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_RANCE08) {
             return true
         }
@@ -633,13 +549,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isRance08GameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetRance09(): Boolean {
+    private fun isCurrentTargetRance09(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_RANCE09) {
             return true
         }
@@ -647,13 +563,13 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isRance09GameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun isCurrentTargetEscalayer(): Boolean {
+    private fun isCurrentTargetEscalayer(target: SaveTarget = currentTarget): Boolean {
         if (scopedGameId == GameCatalog.ID_ESCALAYER) {
             return true
         }
@@ -661,222 +577,127 @@ class GameModifierActivity : ThemedActivity() {
             return false
         }
         return GameModifierBridge.isEscalayerGameDir(
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+            target.externalGameDir,
+            target.dirName,
+            target.saveDir
         )
     }
 
-    private fun currentInstallDirName(): String? =
-        if (::currentTarget.isInitialized) {
-            currentTarget.externalGameDir?.name
-                ?: currentTarget.dirName.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
-        } else {
-            intent.getStringExtra(EXTRA_DIR_NAME)
-        }
+    private fun currentInstallDirName(target: SaveTarget = currentTarget): String =
+        target.externalGameDir?.name ?: target.dirName.removeSuffix(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
 
-    private fun currentUiScaleGameKey(): String? =
-        GameModifierBridge.normalizeUiScaleGameKey(currentInstallDirName())
+    private fun currentUiScaleGameKey(target: SaveTarget = currentTarget): String? =
+        GameModifierBridge.normalizeUiScaleGameKey(currentInstallDirName(target))
 
-    private fun refreshUiScaleButtons() {
-        val gameKey = currentUiScaleGameKey()
-        val fontPct = GameModifierBridge.getFontScalePercent(this, gameKey)
-        val sbPct = GameModifierBridge.getScrollbarScalePercent(this, gameKey)
-        findViewById<Button>(R.id.btn_mod_font_size)?.text = tr(
+    private fun renderUiScaleButtons(fontPct: Int, sbPct: Int) {
+        findViewById<Button>(R.id.btn_mod_font_size).text = tr(
             "字体大小 · $fontPct%",
             "文字サイズ · $fontPct%",
             "Font · $fontPct%"
         )
-        findViewById<Button>(R.id.btn_mod_scrollbar)?.text = tr(
+        findViewById<Button>(R.id.btn_mod_scrollbar).text = tr(
             "滚动条 · $sbPct%",
             "スクロールバー · $sbPct%",
             "Scrollbar · $sbPct%"
         )
     }
 
-    private fun refreshTargetControlsVisibility(
-        isRance10: Boolean,
-        isDohnaDohna: Boolean,
-        isEvenicle: Boolean,
-        isSengokuRance: Boolean,
-        isRance01: Boolean,
-        isRance02: Boolean,
-        isRance03: Boolean,
-        isRance08: Boolean,
-        isRance09: Boolean,
-        isEscalayer: Boolean,
-        genericSpec: GenericModifierSpec?
-    ) {
-        val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
-        (fullUnlockBtn?.parent as? View)?.visibility = if (isRance10) View.VISIBLE else View.GONE
-        val floatingCfgBtn = findViewById<View>(R.id.btn_mod_floating_cfg)
-        val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
-        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance || isRance01 || isRance02 || isRance03 || isRance08 || isRance09 || isEscalayer || (genericSpec != null && genericSpec.locks.isNotEmpty())
-        val resolvedGameId = resolvedGameIdForCurrentTarget()
-        val isSys3x = isEscalayer ||
+    private data class ModifierSummary(
+        val text: String,
+        val isRance10: Boolean,
+        val showLocks: Boolean,
+        val isSystem3x: Boolean
+    )
+
+    private fun readSummary(target: SaveTarget, entryCount: Int): ModifierSummary {
+        val saveDir = target.saveDir
+        val genericSpec = currentTargetGenericSpec(target)
+        val isRance10 = genericSpec == null && isCurrentTargetRance10(target)
+        val isDohnaDohna = genericSpec == null && !isRance10 && isCurrentTargetDohnaDohna(target)
+        val isEvenicle = genericSpec == null && !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle(target)
+        val isSengokuRance = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance(target)
+        val isRance01 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance01(target)
+        val isRance02 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && isCurrentTargetRance02(target)
+        val isRance03 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && isCurrentTargetRance03(target)
+        val isRance08 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && isCurrentTargetRance08(target)
+        val isRance09 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && isCurrentTargetRance09(target)
+        val isEscalayer = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && isCurrentTargetEscalayer(target)
+        val showLocks = isRance10 || isDohnaDohna || isEvenicle || isSengokuRance ||
+            isRance01 || isRance02 || isRance03 || isRance08 || isRance09 || isEscalayer ||
+            (genericSpec != null && genericSpec.locks.isNotEmpty())
+        val resolvedGameId = resolvedGameIdForCurrentTarget(target)
+        val isSystem3x = isEscalayer ||
             genericSpec?.isSystem35 == true ||
             resolvedGameId == GameCatalog.ID_KICHIKUOU ||
             resolvedGameId == GameCatalog.ID_DAIAKUJI ||
-            GameCatalog.isSystem3xGameDir(currentTarget.externalGameDir)
-        (findViewById<View>(R.id.btn_mod_font_size)?.parent as? View)?.visibility =
-            if (isSys3x) View.GONE else View.VISIBLE
-        floatingCfgBtn?.visibility = if (showLocks) View.VISIBLE else View.GONE
-        (switchDirBtn?.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-            lp.marginStart = if (showLocks) dp(4) else 0
-            switchDirBtn.layoutParams = lp
-        }
-    }
+            GameCatalog.isSystem3xGameDir(target.externalGameDir)
 
-    private fun refreshSummaryText() {
-        val saveDir = currentTarget.saveDir
-        val genericSpec = currentTargetGenericSpec()
-        val isRance10 = genericSpec == null && isCurrentTargetRance10()
-        val isDohnaDohna = genericSpec == null && !isRance10 && isCurrentTargetDohnaDohna()
-        val isEvenicle = genericSpec == null && !isRance10 && !isDohnaDohna && isCurrentTargetEvenicle()
-        val isSengokuRance = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && isCurrentTargetSengokuRance()
-        val isRance01 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && isCurrentTargetRance01()
-        val isRance02 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && isCurrentTargetRance02()
-        val isRance03 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && isCurrentTargetRance03()
-        val isRance08 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && isCurrentTargetRance08()
-        val isRance09 = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && isCurrentTargetRance09()
-        val isEscalayer = genericSpec == null && !isRance10 && !isDohnaDohna && !isEvenicle && !isSengokuRance && !isRance01 && !isRance02 && !isRance03 && !isRance08 && !isRance09 && isCurrentTargetEscalayer()
-        refreshUiScaleButtons()
-        refreshTargetControlsVisibility(isRance10, isDohnaDohna, isEvenicle, isSengokuRance, isRance01, isRance02, isRance03, isRance08, isRance09, isEscalayer, genericSpec)
-        applyThemeAccent()
-
-        findViewById<TextView>(R.id.mod_target_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.dirName)
-        if (!isRance10) {
-            val saveCount = saveDir.walkTopDown()
-                .filter {
-                    it.isFile && (
-                        it.name.endsWith(".asd", ignoreCase = true) ||
-                            ((isEvenicle || isRance01 || isRance03 || isRance08 || isRance09) && it.name.endsWith(".sav", ignoreCase = true))
-                        )
-                }
-                .count()
-            when {
-                isDohnaDohna -> {
-                    val ddLockCount = GameModifierBridge.getDohnaLiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $ddLockCount 项",
-                        "セーブ $saveCount 個 · ロック $ddLockCount 項目",
-                        "$saveCount saves · Locks: $ddLockCount"
-                    )
-                }
-                isEvenicle -> {
-                    val evLockCount = GameModifierBridge.getEvenicleLiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $evLockCount 项",
-                        "セーブ $saveCount 個 · ロック $evLockCount 項目",
-                        "$saveCount saves · Locks: $evLockCount"
-                    )
-                }
-                isSengokuRance -> {
-                    val srLockCount = GameModifierBridge.getSrLiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $srLockCount 项",
-                        "セーブ $saveCount 個 · ロック $srLockCount 項目",
-                        "$saveCount saves · Locks: $srLockCount"
-                    )
-                }
-                isRance01 -> {
-                    val r01LockCount = GameModifierBridge.getR01LiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $r01LockCount 项",
-                        "セーブ $saveCount 個 · ロック $r01LockCount 項目",
-                        "$saveCount saves · Locks: $r01LockCount"
-                    )
-                }
-                isRance02 -> {
-                    val r02LockCount = GameModifierBridge.getR02LiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $r02LockCount 项",
-                        "セーブ $saveCount 個 · ロック $r02LockCount 項目",
-                        "$saveCount saves · Locks: $r02LockCount"
-                    )
-                }
-                isRance03 -> {
-                    val r03LockCount = GameModifierBridge.getR03LiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $r03LockCount 项",
-                        "セーブ $saveCount 個 · ロック $r03LockCount 項目",
-                        "$saveCount saves · Locks: $r03LockCount"
-                    )
-                }
-                isRance08 -> {
-                    val r08LockCount = GameModifierBridge.getR08LiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $r08LockCount 项",
-                        "セーブ $saveCount 個 · ロック $r08LockCount 項目",
-                        "$saveCount saves · Locks: $r08LockCount"
-                    )
-                }
-                isRance09 -> {
-                    val r09LockCount = GameModifierBridge.getR09LiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $r09LockCount 项",
-                        "セーブ $saveCount 個 · ロック $r09LockCount 項目",
-                        "$saveCount saves · Locks: $r09LockCount"
-                    )
-                }
-                isEscalayer -> {
-                    val escLockCount = GameModifierBridge.getEscLiveLockCount(this)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $escLockCount 项",
-                        "セーブ $saveCount 個 · ロック $escLockCount 項目",
-                        "$saveCount saves · Locks: $escLockCount"
-                    )
-                }
-                genericSpec != null -> {
-                    val gLockCount = GameModifierBridge.getGenericLiveLockCount(this, genericSpec.id)
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个 · 锁定 $gLockCount 项",
-                        "セーブ $saveCount 個 · ロック $gLockCount 項目",
-                        "$saveCount saves · Locks: $gLockCount"
-                    )
-                }
-                else -> {
-                    findViewById<TextView>(R.id.mod_target_summary).text = tr(
-                        "存档 $saveCount 个",
-                        "セーブ $saveCount 個",
-                        "$saveCount saves"
-                    )
-                }
-            }
-            return
-        }
-
-        val hasGlobal = GameModifierBridge.hasGlobalSaveFiles(saveDir)
-        val lockCount = GameModifierBridge.getLiveLockCount(this)
-        findViewById<TextView>(R.id.mod_target_summary).text = tr(
-            "进度存档 ${currentEntries.size} 个 · 全局存档：${if (hasGlobal) "有" else "无"} · 锁定 $lockCount 项",
-            "進行セーブ ${currentEntries.size} 個 · 全体：${if (hasGlobal) "あり" else "なし"} · ロック $lockCount 項目",
-            "${currentEntries.size} progress saves · Global: ${if (hasGlobal) "Yes" else "No"} · Locks: $lockCount"
-        )
-    }
-
-    private fun resolvedGameIdForCurrentTarget(): String? =
-        scopedGameId ?: if (::currentTarget.isInitialized) {
-            GameCatalog.classifyDirectory(
-                gameDir = currentTarget.externalGameDir,
-                dirName = currentTarget.dirName,
-                saveDir = currentTarget.saveDir,
-                displayName = currentTarget.displayName
+        val summary = if (isRance10) {
+            val hasGlobal = GameModifierBridge.hasGlobalSaveFiles(saveDir)
+            val lockCount = GameModifierBridge.getLiveLockCount(this)
+            tr(
+                "进度存档 $entryCount 个 · 全局存档：${if (hasGlobal) "有" else "无"} · 锁定 $lockCount 项",
+                "進行セーブ $entryCount 個 · 全体：${if (hasGlobal) "あり" else "なし"} · ロック $lockCount 項目",
+                "$entryCount progress saves · Global: ${if (hasGlobal) "Yes" else "No"} · Locks: $lockCount"
             )
         } else {
-            null
+            val includeSav = isEvenicle || isRance01 || isRance03 || isRance08 || isRance09
+            val saveCount = saveDir.walkTopDown().count {
+                it.isFile && (it.name.endsWith(".asd", ignoreCase = true) ||
+                    (includeSav && it.name.endsWith(".sav", ignoreCase = true)))
+            }
+            val lockCount = when {
+                isDohnaDohna -> GameModifierBridge.getDohnaLiveLockCount(this)
+                isEvenicle -> GameModifierBridge.getEvenicleLiveLockCount(this)
+                isSengokuRance -> GameModifierBridge.getSrLiveLockCount(this)
+                isRance01 -> GameModifierBridge.getR01LiveLockCount(this)
+                isRance02 -> GameModifierBridge.getR02LiveLockCount(this)
+                isRance03 -> GameModifierBridge.getR03LiveLockCount(this)
+                isRance08 -> GameModifierBridge.getR08LiveLockCount(this)
+                isRance09 -> GameModifierBridge.getR09LiveLockCount(this)
+                isEscalayer -> GameModifierBridge.getEscLiveLockCount(this)
+                genericSpec != null -> GameModifierBridge.getGenericLiveLockCount(this, genericSpec.id)
+                else -> null
+            }
+            if (lockCount == null) {
+                tr("存档 $saveCount 个", "セーブ $saveCount 個", "$saveCount saves")
+            } else {
+                tr(
+                    "存档 $saveCount 个 · 锁定 $lockCount 项",
+                    "セーブ $saveCount 個 · ロック $lockCount 項目",
+                    "$saveCount saves · Locks: $lockCount"
+                )
+            }
         }
+        return ModifierSummary(summary, isRance10, showLocks, isSystem3x)
+    }
 
-    private fun applyThemeAccent() {
-        if (!::currentTarget.isInitialized) return
-        val accent = UiKit.resolveGameAccentColor(
-            this,
-            scopedGameId,
-            currentTarget.externalGameDir,
-            currentTarget.dirName,
-            currentTarget.saveDir
+    private fun renderSummary(summary: ModifierSummary) {
+        val fullUnlockBtn = findViewById<View>(R.id.btn_mod_full_unlock)
+        (fullUnlockBtn.parent as? View)?.visibility = if (summary.isRance10) View.VISIBLE else View.GONE
+        val scaleBtn = findViewById<View>(R.id.btn_mod_font_size)
+        (scaleBtn.parent as? View)?.visibility = if (summary.isSystem3x) View.GONE else View.VISIBLE
+        findViewById<View>(R.id.btn_mod_floating_cfg).visibility =
+            if (summary.showLocks) View.VISIBLE else View.GONE
+        val switchDirBtn = findViewById<View>(R.id.btn_mod_switch_dir)
+        (switchDirBtn.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = if (summary.showLocks) dp(4) else 0
+            switchDirBtn.layoutParams = lp
+        }
+        findViewById<TextView>(R.id.mod_target_title).text =
+            getString(R.string.save_manager_current_dir, currentTarget.dirName)
+        findViewById<TextView>(R.id.mod_target_summary).text = summary.text
+    }
+
+    private fun resolvedGameIdForCurrentTarget(target: SaveTarget = currentTarget): String? =
+        scopedGameId ?: GameCatalog.classifyDirectory(
+            gameDir = target.externalGameDir,
+            dirName = target.dirName,
+            saveDir = target.saveDir,
+            displayName = target.displayName
         )
+
+    private fun applyThemeAccent(accent: Int) {
         adapter.accentColor = accent
         findViewById<View>(R.id.mod_header_card)?.background =
             UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)
@@ -906,19 +727,89 @@ class GameModifierActivity : ThemedActivity() {
         startActivity(i)
     }
 
+    private data class ModifierSnapshot(
+        val target: SaveTarget,
+        val slots: List<ModSaveSlotEntry>?,
+        val summary: ModifierSummary,
+        val accentColor: Int,
+        val floatingEnabled: Boolean,
+        val ctrlEnabled: Boolean,
+        val fontPercent: Int,
+        val scrollbarPercent: Int,
+        val targetChoices: List<Pair<SaveTarget, String>>?
+    )
+
     private fun refreshList() {
-        val saveDir = currentTarget.saveDir
-        saveDir.mkdirs()
+        loadList(target = if (::currentTarget.isInitialized) currentTarget else null)
+    }
 
-        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
-        if (!isCurrentTargetRance10()) {
-            currentEntries = emptyList()
-            adapter.update(emptyList())
-            refreshSummaryText()
-            emptyView.visibility = View.GONE
-            return
-        }
+    private fun loadList(
+        target: SaveTarget? = null,
+        preferredDir: String? = if (::currentTarget.isInitialized) currentTarget.dirName else null,
+        showPicker: Boolean = false
+    ) {
+        val summary = findViewById<TextView>(R.id.mod_target_summary)
+        val initial = !::currentTarget.isInitialized
+        if (initial) summary.setText(R.string.loading_game)
+        setModifierActionsEnabled(false)
+        loader.load(
+            read = {
+                val discovery = if (target == null) {
+                    discoverSaveTargets(
+                        this, scopedGameId, preferredDir ?: intent.getStringExtra(EXTRA_DIR_NAME),
+                        resolveInstallAlias = preferredDir == null
+                    )
+                } else null
+                val selected = target ?: checkNotNull(discovery).selected
+                selected.saveDir.mkdirs()
+                val slots = if (isCurrentTargetRance10(selected)) readSlots(selected.saveDir) else null
+                val key = currentUiScaleGameKey(selected)
+                val accent = UiKit.resolveGameAccentColor(
+                    this, scopedGameId, selected.externalGameDir, selected.dirName, selected.saveDir
+                )
+                val choices = if (showPicker) checkNotNull(discovery).all.map { choice ->
+                    val count = choice.saveDir.walkTopDown()
+                        .count { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
+                    choice to getString(R.string.save_dir_item_count, choice.dirName, count)
+                } else null
+                ModifierSnapshot(
+                    selected, slots, readSummary(selected, slots?.size ?: 0), accent,
+                    GameModifierBridge.isFloatingEnabled(this),
+                    GameModifierBridge.isCtrlOverlayEnabled(this),
+                    GameModifierBridge.getFontScalePercent(this, key),
+                    GameModifierBridge.getScrollbarScalePercent(this, key),
+                    choices
+                )
+            },
+            render = { snapshot ->
+                if (!isFinishing) {
+                    currentTarget = snapshot.target
+                    applyThemeAccent(snapshot.accentColor)
+                    syncTopSwitches(snapshot.floatingEnabled, snapshot.ctrlEnabled)
+                    renderUiScaleButtons(snapshot.fontPercent, snapshot.scrollbarPercent)
+                    renderSummary(snapshot.summary)
+                    renderSlots(snapshot.slots)
+                    setModifierActionsEnabled(true)
+                    snapshot.targetChoices?.let { showSwitchTargetDialog(it) }
+                }
+            },
+            onError = {
+                if (initial) summary.setText(R.string.error)
+                else setModifierActionsEnabled(true)
+                if (!isFinishing) Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
+    private fun setModifierActionsEnabled(enabled: Boolean) {
+        listOf(
+            R.id.switch_floating_modifier, R.id.switch_ctrl_overlay, R.id.btn_mod_switch_dir,
+            R.id.btn_mod_full_unlock, R.id.btn_mod_global_save, R.id.btn_mod_floating_cfg,
+            R.id.btn_mod_font_size, R.id.btn_mod_scrollbar, R.id.btn_mod_gamepad
+        ).forEach { findViewById<View>(it)?.isEnabled = enabled }
+    }
+
+    private fun readSlots(saveDir: File): List<ModSaveSlotEntry> {
         val regex = Regex("localsave(\\d+)\\.asd", RegexOption.IGNORE_CASE)
         val slots = mutableListOf<ModSaveSlotEntry>()
         saveDir.walkTopDown().forEach { f ->
@@ -933,16 +824,20 @@ class GameModifierActivity : ThemedActivity() {
                         num >= 100 -> tr("自动存档", "オート", "Auto")
                         else -> tr("普通存档", "通常", "Normal")
                     }
-                    slots.add(ModSaveSlotEntry(f, rel, num, tag, f.length(), f.lastModified()))
+                    slots.add(
+                        ModSaveSlotEntry(f, rel, num, tag, f.length(), f.lastModified(), GameModifierBridge.hasModBackup(f))
+                    )
                 }
             }
         }
         slots.sortBy { it.slotNum }
-        currentEntries = slots
-        adapter.update(slots)
-        refreshSummaryText()
+        return slots
+    }
 
-        if (slots.isEmpty()) {
+    private fun renderSlots(slots: List<ModSaveSlotEntry>?) {
+        adapter.update(slots.orEmpty())
+        val emptyView = findViewById<TextView>(R.id.mod_empty_view)
+        if (slots != null && slots.isEmpty()) {
             UiKit.bindEmptyState(
                 emptyView,
                 R.drawable.ic_save,
@@ -955,23 +850,18 @@ class GameModifierActivity : ThemedActivity() {
     }
 
     private fun showSwitchTargetDialog() {
-        discoverSaveTargets(currentTarget.dirName)
-        val labels = targets.map { target ->
-            val count = target.saveDir.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".asd", ignoreCase = true) }
-                .count()
-            getString(R.string.save_dir_item_count, target.dirName, count)
-        }.toMutableList()
-        labels.add(getString(R.string.save_dir_new_option))
+        loadList(showPicker = true)
+    }
 
+    private fun showSwitchTargetDialog(choices: List<Pair<SaveTarget, String>>) {
+        val labels = choices.map { it.second } + getString(R.string.save_dir_new_option)
         dialogBuilder()
             .setTitle(R.string.save_dir_select_title)
             .setItems(labels.toTypedArray()) { _, which ->
-                if (which == targets.size) {
+                if (which == choices.size) {
                     showCreateTargetDialog()
                 } else {
-                    currentTarget = targets[which]
-                    refreshList()
+                    loadList(target = choices[which].first)
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -997,8 +887,7 @@ class GameModifierActivity : ThemedActivity() {
                 }
                 val newDir = File(File(filesDir, "saves"), safeName)
                 newDir.mkdirs()
-                discoverSaveTargets(safeName)
-                refreshList()
+                loadList(preferredDir = safeName)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -1260,7 +1149,7 @@ class GameModifierActivity : ThemedActivity() {
         GameModifierBridge.backupGlobalSaveFilesBeforeMod(saveDir)
         val ok = GameModifierBridge.writeGlobalSaveModForDir(saveDir, mod.toString())
         if (ok) {
-            refreshSummaryText()
+            refreshList()
         }
         Toast.makeText(
             this,
@@ -1291,14 +1180,12 @@ class GameModifierActivity : ThemedActivity() {
             }
             .setPositiveButton(R.string.ok) { _, _ ->
                 saveMask(lockMask)
-                syncTopSwitches()
-                refreshSummaryText()
+                refreshList()
                 Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
                 saveMask(0)
-                syncTopSwitches()
-                refreshSummaryText()
+                refreshList()
                 Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -1473,14 +1360,12 @@ class GameModifierActivity : ThemedActivity() {
             }
             .setPositiveButton(R.string.ok) { _, _ ->
                 GameModifierBridge.setLiveLocksOnlyMask(this, lockMask)
-                syncTopSwitches()
-                refreshSummaryText()
+                refreshList()
                 Toast.makeText(this, tr("锁定设置已保存", "設定を保存しました", "Locks saved"), Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton(tr("全部关闭", "すべて解除", "Clear All")) { _, _ ->
                 GameModifierBridge.setLiveLocksOnlyMask(this, 0)
-                syncTopSwitches()
-                refreshSummaryText()
+                refreshList()
                 Toast.makeText(this, tr("已关闭全部锁定", "すべてのロックを解除しました", "All locks cleared"), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -1773,7 +1658,7 @@ class GameModifierActivity : ThemedActivity() {
             presets = listOf(80, 90, 100, 115, 130, 150),
             onApply = { pct, isReset ->
                 GameModifierBridge.setFontScalePercent(this, gameKey, pct)
-                refreshSummaryText()
+                refreshList()
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
@@ -1801,7 +1686,7 @@ class GameModifierActivity : ThemedActivity() {
             presets = listOf(100, 130, 160, 200, 250, 300),
             onApply = { pct, isReset ->
                 GameModifierBridge.setScrollbarScalePercent(this, gameKey, pct)
-                refreshSummaryText()
+                refreshList()
                 val msg = if (isReset) {
                     tr("已恢复默认 100%", "100% に戻しました", "Reset to 100%")
                 } else {
