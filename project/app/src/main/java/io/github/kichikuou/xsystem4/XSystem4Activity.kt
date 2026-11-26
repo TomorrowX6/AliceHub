@@ -57,6 +57,11 @@ class XSystem4Activity : SDLActivity() {
     companion object {
         const val EXTRA_GAME_ROOT = "GAME_ROOT"
         const val EXTRA_SAVE_DIR = "SAVE_DIR"
+        const val EXTRA_BOOT_ENTRY = "BOOT_ENTRY"
+
+        @JvmStatic
+        fun resolveSystem4LaunchArg(gameRoot: String, bootEntry: String?): String =
+            System4BootEntry.resolveLaunchTarget(java.io.File(gameRoot), bootEntry).path
         const val COMMAND_OPEN_PLAYING_MANUAL = 0x8000  // xsystem4/src/hll/SystemService.c
         const val COMMAND_SHOW_WAIT_MESSAGE = 0x8001
         const val COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002  // xsystem4/src/input.c
@@ -83,6 +88,8 @@ class XSystem4Activity : SDLActivity() {
     private var launchedGameRoot: String? = null
     @Volatile
     private var launchedSaveDir: String? = null
+    @Volatile
+    private var launchedBootEntry: String? = null
 
     private external fun nativeRequestRedraw()
     private external fun nativePartsTextInputSession(): Int
@@ -332,6 +339,9 @@ class XSystem4Activity : SDLActivity() {
         val saveDir = (intent?.getStringExtra(EXTRA_SAVE_DIR)
             ?: savedInstanceState?.getString(EXTRA_SAVE_DIR))
             ?.takeIf { it.isNotBlank() }
+        val bootEntry = (intent?.getStringExtra(EXTRA_BOOT_ENTRY)
+            ?: savedInstanceState?.getString(EXTRA_BOOT_ENTRY))
+            ?.takeIf { it.isNotBlank() }
         if (root.isNullOrEmpty() || saveDir.isNullOrEmpty()) {
             super.onCreate(savedInstanceState)
             finish()
@@ -339,7 +349,11 @@ class XSystem4Activity : SDLActivity() {
         }
         launchedGameRoot = root
         launchedSaveDir = saveDir
+        launchedBootEntry = bootEntry
         GameCatalog.writeRunningGameRoot(this, root)
+        if (!isLegacySystem3Game && !isSystem3xGame()) {
+            GameCatalog.writeRunningLaunchTarget(this, resolveSystem4LaunchArg(root, bootEntry))
+        }
 
         super.onCreate(savedInstanceState)
         // Apply immersive fullscreen directly without blocking UI thread on SDL wait(500)
@@ -380,6 +394,7 @@ class XSystem4Activity : SDLActivity() {
         super.onSaveInstanceState(outState)
         launchedGameRoot?.let { outState.putString(EXTRA_GAME_ROOT, it) }
         launchedSaveDir?.let { outState.putString(EXTRA_SAVE_DIR, it) }
+        launchedBootEntry?.let { outState.putString(EXTRA_BOOT_ENTRY, it) }
     }
 
     fun currentGamepadProfileKey(): String? =
@@ -1427,7 +1442,9 @@ class XSystem4Activity : SDLActivity() {
                 arrayOf("-gamedir", gameRoot, "-savedir", saveFolder)
             }
         }
-        return arrayOf("--save-folder", saveFolder, "--save-format=rsm", gameRoot)
+        val launchTarget = resolveSystem4LaunchArg(gameRoot, launchedBootEntry)
+        GameCatalog.writeRunningLaunchTarget(this, launchTarget)
+        return arrayOf("--save-folder", saveFolder, "--save-format=rsm", launchTarget)
     }
 
     override fun finish() {

@@ -144,7 +144,8 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                     cachedHasExplicitNonCnEdition = GameCatalog.hasExplicitNonChineseEdition(dir)
                 }
             }
-            val savedir = resolveSaveDir(context.filesDir, dir, ini)
+            val launchTarget = System4BootEntry.resolveLaunchTarget(context, dir)
+            val savedir = resolveSaveDirForTarget(context.filesDir, dir, launchTarget)
             savedir.mkdirs()
             val modMeta = InstalledModInfo.readOrInfer(dir)
             val hasModMarker = modMeta != null || detectInstalledMod(dir, ini)
@@ -196,6 +197,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
         fun resolveFallbackSystem4Name(dir: File, ini: System40Ini): String? {
             val fileNames = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
             val matchedCodeFile = GameCatalog.matchConfiguredSystem4CodeFileName(ini.codeName, fileNames)
+                ?: ini.codeName?.let { System4BootEntry.resolveConfiguredScript(it, dir)?.name }
                 ?: return null
             val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(matchedCodeFile)
             return repaired.substringBeforeLast('.').takeIf { it.isNotBlank() }
@@ -219,6 +221,18 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
             }
             return File(filesDir, "saves/${gameDir.name}$suffix")
         }
+
+        fun resolveSaveDirForTarget(filesDir: File, gameDir: File, target: File): File {
+            val suffix = if (System4BootEntry.usesDaiSengokuSaveFolder(gameDir, target)) {
+                DAISENGOKU_SAVE_DIR_SUFFIX
+            } else {
+                ""
+            }
+            return File(filesDir, "saves/${gameDir.name}$suffix")
+        }
+
+        fun resolveSaveDir(context: Context, gameDir: File): File =
+            resolveSaveDirForTarget(context.filesDir, gameDir, System4BootEntry.resolveLaunchTarget(context, gameDir))
 
         fun detectInstalledMod(dir: File, parsedIni: System40Ini? = null): Boolean {
             if (File(dir, InstalledModInfo.META_FILE_NAME).isFile ||
@@ -649,7 +663,7 @@ class GameList(activity: Activity) {
         dataVersion++
     }
 
-    private fun resolveSaveDirFor(dir: File): File = Item.resolveSaveDir(appContext.filesDir, dir)
+    private fun resolveSaveDirFor(dir: File): File = Item.resolveSaveDir(appContext, dir)
 
     private fun recordItemSignature(item: Item) {
         val next = HashMap(diskSnapshot)
@@ -1873,6 +1887,7 @@ class GameList(activity: Activity) {
                     !item.path.exists()
                 }
                 if (deleted) {
+                    System4BootEntry.clearSelectedEntry(appContext, item.path)
                     items.removeAll { it.path.absolutePath == key }
                     removeItemSignature(key)
                     bumpDataVersion()
@@ -2837,6 +2852,7 @@ internal fun resolveLaunchIniFile(dir: File): File {
         ?: findIni("AliceStart2.ini")
         ?: findIni("AliceStart.CHS")
         ?: findIni("System39.ini")
+        ?: System4BootEntry.bootConfigurations(dir).firstOrNull()?.ini
         ?: File(dir, "System40.ini")
 }
 
@@ -3107,7 +3123,7 @@ internal fun isSystem4GameRoot(dir: File): Boolean {
             GameCatalog.readSmallRootFile(dir, name)
         }
     }
-    return hasIni && hasAin
+    return (hasIni && hasAin) || System4BootEntry.bootConfigurations(dir).isNotEmpty()
 }
 
 internal fun isSystem3GameRoot(dir: File): Boolean {

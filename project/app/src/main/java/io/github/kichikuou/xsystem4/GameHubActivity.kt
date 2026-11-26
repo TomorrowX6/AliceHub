@@ -122,6 +122,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         rebindGameState()
 
         findViewById<View>(R.id.btn_hub_switch_instance).setOnClickListener { showSwitchInstanceDialog() }
+        findViewById<View>(R.id.btn_hub_switch_boot_entry).setOnClickListener { showBootEntryDialog() }
         findViewById<View>(R.id.btn_hub_play).setOnClickListener { onPrimaryPlayClicked() }
         findViewById<View>(R.id.btn_hub_online_install).setOnClickListener { openOnlineInstall() }
         findViewById<View>(R.id.btn_hub_local_install).setOnClickListener { openLocalInstall() }
@@ -365,7 +366,11 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             }
 
         val runningRoot = GameCatalog.getRunningGameRoot(this)
-        val isRunning = curItem != null && runningRoot == curItem.path.path
+        val runningTarget = GameCatalog.getRunningLaunchTarget(this)
+        val selectedTarget = curItem?.let { System4BootEntry.resolveLaunchTarget(this, it.path).path }
+        val isRunning = curItem != null &&
+            runningRoot == curItem.path.path &&
+            (GameCatalog.isSystem3xGameDir(curItem.path) || runningTarget == null || runningTarget == selectedTarget)
         val isInstallingHere = isInstallingCurrentHubGame()
 
         val statusView = findViewById<TextView>(R.id.hub_status)
@@ -417,6 +422,23 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             if (showInstanceRow) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.hub_instance_dir).text =
             if (showInstanceRow) curItem?.path?.name.orEmpty() else ""
+
+        val bootEntries = if (curItem != null && curItem.error == null && !GameCatalog.isSystem3xGameDir(curItem.path)) {
+            System4BootEntry.listEntries(curItem.path)
+        } else {
+            emptyList()
+        }
+        val bootEntryRow = findViewById<View>(R.id.hub_boot_entry_row)
+        val bootEntryValue = findViewById<TextView>(R.id.hub_boot_entry_value)
+        if (curItem != null && bootEntries.isNotEmpty()) {
+            val selected = System4BootEntry.getSelectedEntry(this, curItem.path)
+            val effective = selected.takeIf { it.isNotEmpty() && it in bootEntries }
+            bootEntryRow.visibility = View.VISIBLE
+            bootEntryValue.text = effective ?: getString(R.string.hub_boot_entry_default)
+        } else {
+            bootEntryRow.visibility = View.GONE
+            bootEntryValue.text = ""
+        }
 
         val playBtn = findViewById<Button>(R.id.btn_hub_play)
         playBtn.setTextColor(Color.WHITE)
@@ -554,6 +576,30 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             }
         }
         trackDialog(builder.show())
+    }
+
+    private fun showBootEntryDialog() {
+        val item = selectedItem ?: return
+        if (item.error != null || GameCatalog.isSystem3xGameDir(item.path)) return
+        val entries = System4BootEntry.listEntries(item.path)
+        if (entries.isEmpty()) return
+        val labels = Array(entries.size + 1) { idx ->
+            if (idx == 0) getString(R.string.hub_boot_entry_default) else entries[idx - 1]
+        }
+        val selected = System4BootEntry.getSelectedEntry(this, item.path)
+        val curIdx = entries.indexOf(selected).let { if (it >= 0) it + 1 else 0 }
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.hub_boot_entry)
+                .setSingleChoiceItems(labels, curIdx) { dlg, which ->
+                    val chosen = if (which > 0 && which <= entries.size) entries[which - 1] else ""
+                    System4BootEntry.setSelectedEntry(this, item.path, chosen)
+                    refreshUi()
+                    dlg.dismiss()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
     }
 
     private fun showCreateRance10InstanceDialog() {

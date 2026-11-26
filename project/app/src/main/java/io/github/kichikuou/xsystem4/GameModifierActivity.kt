@@ -264,7 +264,7 @@ class GameModifierActivity : ThemedActivity() {
         val gameList = GameList(this)
         for (i in 0 until gameList.size) {
             val item = gameList[i]
-            val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
+            val saveDir = item.savedir ?: Item.resolveSaveDir(this, item.path)
             val saveKey = saveDir.name
             saveDir.mkdirs()
             if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {

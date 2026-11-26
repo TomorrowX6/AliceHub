@@ -438,6 +438,8 @@
     <string name="hub_btn_install_first">ゲーム本体を導入</string>
     <string name="hub_switch_instance">ディレクトリ切替</string>
     <string name="hub_select_instance_title">ディレクトリ切替</string>
+    <string name="hub_boot_entry">起動エントリ</string>
+    <string name="hub_boot_entry_default">既定の起動エントリ</string>
     <string name="hub_instance_vanilla_tag">バニラ</string>
     <string name="hub_create_instance">新規ディレクトリ</string>
     <string name="hub_create_instance_title">ランス10 ディレクトリ新規作成</string>

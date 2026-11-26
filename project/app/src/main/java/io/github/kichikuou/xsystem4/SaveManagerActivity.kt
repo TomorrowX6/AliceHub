@@ -516,7 +516,10 @@ class SaveManagerActivity : ThemedActivity() {
                     val targetDir = target.saveDir
                     targetDir.mkdirs()
                     backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
-                    val paths = SaveImportPaths(target.externalGameDir)
+                    val paths = SaveImportPaths(
+                        target.externalGameDir,
+                        target.externalGameDir?.let { System4BootEntry.resolveLaunchTarget(appCtx, it) }
+                    )
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     val source = paths.sourceRoot(
                         DocNode(rootDocId, "", true),
@@ -564,7 +567,10 @@ class SaveManagerActivity : ThemedActivity() {
                     val targetDir = target.saveDir
                     targetDir.mkdirs()
                     backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
-                    val paths = SaveImportPaths(target.externalGameDir)
+                    val paths = SaveImportPaths(
+                        target.externalGameDir,
+                        target.externalGameDir?.let { System4BootEntry.resolveLaunchTarget(appCtx, it) }
+                    )
                     val rootCanonical = targetDir.canonicalFile
                     var imported = 0
                     for (uri in uris) {
@@ -953,7 +959,7 @@ class SaveManagerActivity : ThemedActivity() {
         try {
             for (i in 0 until gameList.size) {
                 val item = gameList[i]
-                val saveDir = item.savedir ?: Item.resolveSaveDir(filesDir, item.path)
+                val saveDir = item.savedir ?: Item.resolveSaveDir(this, item.path)
                 val saveKey = saveDir.name
                 saveDir.mkdirs()
                 if (resolveInstallAlias && preferredDirName != null && item.path.name == preferredDirName) {
@@ -1034,7 +1040,10 @@ class SaveManagerActivity : ThemedActivity() {
     private fun refreshFileList() {
         val saveDir = currentTarget.saveDir
         saveDir.mkdirs()
-        SaveImportPaths(currentTarget.externalGameDir).migrateExistingSaves(saveDir)
+        SaveImportPaths(
+            currentTarget.externalGameDir,
+            currentTarget.externalGameDir?.let { System4BootEntry.resolveLaunchTarget(this, it) }
+        ).migrateExistingSaves(saveDir)
 
         val list = mutableListOf<SaveFileEntry>()
         collectSaveFiles(saveDir, saveDir, list)
