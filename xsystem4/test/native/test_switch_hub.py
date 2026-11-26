@@ -1091,6 +1091,49 @@ int main(void)
             )
             subprocess.run([str(Path(tmp) / "test")], cwd=tmp, check=True)
 
+    def test_system4_engine_resolves_nested_launcher_paths_on_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / "sdmc:/switch/Game"
+            data = game / "Data"
+            data.mkdir(parents=True)
+            (data / "Patch.ain").touch()
+            (data / "Font.ttf").touch()
+            exe = root / "test"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-D__SWITCH__", "-ffunction-sections", "-fdata-sections",
+                 "-I", str(ENGINE / "include"), "-I", str(SYS4 / "include"),
+                 str(ENGINE / "src/util.c"),
+                 *(str(SYS4 / "src" / name) for name in ("file.c", "system.c", "utfsjis.c")),
+                 "-Wl,--gc-sections", "-x", "c", "-", "-o", str(exe)],
+                input=r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/file.h"
+#include "xsystem4.h"
+
+struct config config = {.game_dir = "sdmc:/switch/Game"};
+
+int main(void)
+{
+    assert(!file_exists("sdmc:/switch/Game/./dAtA/PATCH.AIN"));
+    assert(file_exists("sdmc:/switch/Game/Data/Patch.ain"));
+
+    char *code = gamedir_path(".\\dAtA\\PATCH.AIN");
+    assert(!strcmp(code, "sdmc:/switch/Game/Data/Patch.ain") && file_exists(code));
+    free(code);
+    char *font = gamedir_path_icase("sdmc:/SWITCH/Game/data/font.ttf");
+    assert(font && !strcmp(font, "sdmc:/switch/Game/Data/Font.ttf"));
+    free(font);
+    assert(!gamedir_path_icase("Missing\\PATCH.AIN"));
+    return 0;
+}
+""",
+                text=True, check=True,
+            )
+            subprocess.run([str(exe)], cwd=root, check=True)
+
     def test_system4_boot_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
             exe = Path(tmp) / "test"

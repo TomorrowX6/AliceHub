@@ -431,15 +431,11 @@ struct string *path_join_string(struct string *dir, struct string *base)
 	return out;
 }
 
-char *path_get_icase(const char *path)
+static char *path_find_icase(const char *dir_name, const char *base_name)
 {
-	char *dir_name = path_dirname(path);
-	char *base_name = path_basename(path);
 	DIR *d = opendir(dir_name);
-	if (!d) {
-		// FIXME: shouldn't assume case of dir_name is correct
+	if (!d)
 		return NULL;
-	}
 
 	struct dirent *dir;
 	while ((dir = readdir(d)) != NULL) {
@@ -459,6 +455,49 @@ char *path_get_icase(const char *path)
 
 	closedir(d);
 	return NULL;
+}
+
+char *path_get_icase(const char *path)
+{
+#ifdef __SWITCH__
+	if (!path || !*path)
+		return NULL;
+	char *parts = xstrdup(path);
+	char *slash = strchr(parts, '/');
+	char *rest = parts;
+	char *resolved;
+	if (slash && (slash == parts || slash[-1] == ':')) {
+		const size_t len = slash + 1 - parts;
+		resolved = xmalloc(len + 1);
+		memcpy(resolved, parts, len);
+		resolved[len] = '\0';
+		rest = slash + 1;
+	} else {
+		resolved = xstrdup(".");
+	}
+	char *state;
+	for (char *part = strtok_r(rest, "/", &state); part; part = strtok_r(NULL, "/", &state)) {
+		if (!strcmp(part, "."))
+			continue;
+		char *next = path_join(resolved, part);
+		if (!file_exists(next)) {
+			free(next);
+			next = path_find_icase(resolved, part);
+		}
+		free(resolved);
+		resolved = next;
+		if (!resolved)
+			break;
+	}
+	free(parts);
+	if (resolved && !file_exists(resolved)) {
+		free(resolved);
+		return NULL;
+	}
+	return resolved;
+#else
+	return path_find_icase(path_dirname(path), path_basename(path));
+#endif
 }
 
 const char *file_extension(const char *path)
