@@ -50,6 +50,16 @@ public class SaveImportPathsTest {
     }
 
     private File importZip(File archive) throws IOException {
+        File extracted = extractZip(archive);
+        File target = temporary.newFolder();
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, new SaveImportPaths(null).importExtractedArchive(extracted, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        return target;
+    }
+
+    private File extractZip(File archive) throws IOException {
         File extracted = temporary.newFolder();
         try (ZipFile zip = new ZipFile(archive)) {
             for (ZipEntry entry : Collections.list(zip.entries())) {
@@ -60,12 +70,7 @@ public class SaveImportPathsTest {
                 }
             }
         }
-        File target = temporary.newFolder();
-        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
-            assertEquals(1, new SaveImportPaths(null).importExtractedArchive(extracted, target, writes));
-            assertEquals(0, writes.finishFallbacks());
-        }
-        return target;
+        return extracted;
     }
 
     @Test public void exportedZipPreservesALoneSaveDataSubdirectory() throws IOException {
@@ -88,6 +93,10 @@ public class SaveImportPathsTest {
         File target = importZip(archive);
         assertEquals("collection progress", read(new File(target, "SaveData/Collection.asd")));
         assertEquals(Collections.singletonList("SaveData"), Arrays.asList(target.list()));
+        File extracted = extractZip(archive);
+        File folderSource = sourceRoot(new SaveImportPaths(null), extracted);
+        assertEquals(new File(extracted, "SaveData"), folderSource);
+        assertEquals("collection progress", read(new File(folderSource, "SaveData/Collection.asd")));
     }
 
     @Test public void unmarkedZipStillUnwrapsRedundantSaveDataDirectories() throws IOException {
@@ -113,7 +122,7 @@ public class SaveImportPathsTest {
         touch(export, "GlobalSave.asd");
         assertEquals(export, sourceRoot(paths, export));
         assertTrue(new File(export, "GlobalSave.asd").delete());
-        touch(export, ".alicehub-save-layout-v1");
+        touch(export, ".alicehub-save-folder-layout-v1");
         assertEquals(export, sourceRoot(paths, export));
     }
 

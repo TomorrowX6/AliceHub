@@ -745,11 +745,11 @@ class SaveManagerActivity : ThemedActivity() {
                         exported++
                     }
                     if (exported > 0 && listDocumentChildrenFor(appCtx, treeUri, rootDocId).none {
-                            !it.isDirectory && it.name == SAVE_LAYOUT_MARKER
+                            !it.isDirectory && it.name == SAVE_FOLDER_LAYOUT_MARKER
                         }) {
                         val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
                         DocumentsContract.createDocument(
-                            appCtx.contentResolver, rootUri, "application/octet-stream", SAVE_LAYOUT_MARKER
+                            appCtx.contentResolver, rootUri, "application/octet-stream", SAVE_FOLDER_LAYOUT_MARKER
                         ) ?: throw IOException("Failed to mark exported save directory")
                     }
                     exported to convCount

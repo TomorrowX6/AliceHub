@@ -12,7 +12,7 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-internal const val SAVE_LAYOUT_MARKER = ".alicehub-save-layout-v1"
+internal const val SAVE_FOLDER_LAYOUT_MARKER = ".alicehub-save-folder-layout-v1"
 
 class SaveImportPaths @JvmOverloads constructor(
     gameDir: File?,
@@ -118,8 +118,12 @@ class SaveImportPaths @JvmOverloads constructor(
         isDirectory: (T) -> Boolean,
         fromArchive: Boolean
     ): Source<T> {
-        if (!fromArchive && children(root).any { !isDirectory(it) && name(it) == SAVE_LAYOUT_MARKER }) {
-            return Source(root)
+        if (!fromArchive) {
+            val rootChildren = children(root)
+            if (rootChildren.any { !isDirectory(it) && name(it) == SAVE_FOLDER_LAYOUT_MARKER }) {
+                return Source(root)
+            }
+            SaveZipLayout.exportedRoot(rootChildren, name, isDirectory)?.let { return Source(it) }
         }
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
@@ -359,13 +363,14 @@ class SaveImportPaths @JvmOverloads constructor(
 
 internal object SaveZipLayout {
     private const val wrapper = "SaveData"
+    private const val marker = ".alicehub-save-layout-v1"
 
     fun write(
         zip: ZipOutputStream,
         entries: List<SaveFileEntry>,
         copy: (File, ZipOutputStream) -> Boolean
     ): Pair<Int, Int> {
-        zip.putNextEntry(ZipEntry(SAVE_LAYOUT_MARKER))
+        zip.putNextEntry(ZipEntry(marker))
         zip.closeEntry()
         var exported = 0
         var converted = 0
@@ -381,10 +386,19 @@ internal object SaveZipLayout {
         return exported to converted
     }
 
-    fun exportedRoot(root: File): File? {
-        val layout = File(root, SAVE_LAYOUT_MARKER)
-        if (!layout.isFile || layout.length() != 0L) return null
-        return root.listFiles()?.singleOrNull { !it.name.startsWith('.') }
-            ?.takeIf { it.isDirectory && it.name == wrapper }
+    fun exportedRoot(root: File): File? =
+        exportedRoot(root.listFiles()?.toList().orEmpty(), File::getName, File::isDirectory) {
+            it.isFile && it.length() == 0L
+        }
+
+    fun <T> exportedRoot(
+        children: List<T>,
+        name: (T) -> String,
+        isDirectory: (T) -> Boolean,
+        isMarkerFile: (T) -> Boolean = { !isDirectory(it) }
+    ): T? {
+        if (children.none { name(it) == marker && isMarkerFile(it) }) return null
+        return children.singleOrNull { !name(it).startsWith('.') }
+            ?.takeIf { isDirectory(it) && name(it) == wrapper }
     }
 }
