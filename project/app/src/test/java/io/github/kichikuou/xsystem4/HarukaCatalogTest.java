@@ -152,6 +152,7 @@ public class HarukaCatalogTest {
         assertFalse(desc.getSupportsOnlineMod());
         assertFalse(desc.getSupportsLocalMod());
         assertFalse(desc.isRance10());
+        assertTrue(desc.getHasChinese());
     }
 
     @Test
@@ -741,7 +742,7 @@ public class HarukaCatalogTest {
     public void exposesExpectedOnlineCdnUrlBaseSizeAndStagingEviction() throws Exception {
         assertEquals("https://alicehub.000.moe/haruka", OnlineInstaller.HARUKA_CDN_URL);
         assertEquals(
-                3797821541L,
+                1037465188L,
                 AppSettings.INSTANCE.defaultBaseGameSizeForUrl(OnlineInstaller.HARUKA_CDN_URL)
         );
         assertEquals(

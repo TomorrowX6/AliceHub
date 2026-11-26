@@ -120,7 +120,7 @@ struct OnlineGame: Identifiable {
         Self(id: "escalayerreboot", title: "超昂天使 艾斯卡蕾雅 Reboot", directory: "EscalayerReboot", hasChinese: true),
         Self(id: "galzoo", title: "GALZOO艾兰德", directory: "GALZOO", hasChinese: true),
         Self(id: "ixseal", title: "超昂神骑", directory: "Ixseal", hasChinese: true),
-        Self(id: "haruka", title: "超昂闪忍遥", directory: "Haruka"),
+        Self(id: "haruka", title: "超昂闪忍遥", directory: "Haruka", hasChinese: true),
         Self(id: "tsumashibori", title: "妻管严", directory: "Tsumashibori", hasChinese: true),
         Self(id: "tsumamigui", title: "妻中蜜", directory: "Tsumamigui", hasChinese: true),
         Self(id: "tsumamigui3", title: "妻中蜜３", directory: "Tsumamigui3", hasChinese: true),

@@ -8467,7 +8467,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_TSUMASHIBORI -> GameDescriptor(
                 id = ID_TSUMASHIBORI,
