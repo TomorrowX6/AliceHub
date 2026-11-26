@@ -193,9 +193,10 @@ enum LocalGameImport {
             index += 1
             let children = try entries(root)
             let local = Set(children.filter { !directory($0) }.map(leaf))
-            let engine = try? GameLibrary.launchInfo(root).engine
+            let launch = try? GameLibrary.launchInfo(root)
+            let engine = launch?.engine
             if let engine, depth == 0 ||
-                (engine == .system4 && hasSystem4Root(local)) ||
+                (engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini")) ||
                 (engine == .system3 && local.contains(where: GameLibrary.isSystem35Scenario)) ||
                 engine == .legacySystem3 {
                 if primary == nil {

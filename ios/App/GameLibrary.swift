@@ -294,19 +294,55 @@ final class GameLibrary: ObservableObject {
         ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
     ]
 
+    private static let system4BootIniNames: Set<String> = ["alicestart.chs", "alicestart.ini", "alicestart2.ini", "system40.ini"]
+
+    private static func system4ScriptFiles(_ regularFiles: [URL]) -> [URL] {
+        let hasChsTable = regularFiles.contains { $0.lastPathComponent.lowercased() == "chs.tbl" }
+        return regularFiles.filter {
+            let name = $0.lastPathComponent.lowercased()
+            return (name.hasSuffix(".ain") && name != "system39.ain") ||
+                (hasChsTable && name.hasSuffix(".chs") && name != "alicestart.chs")
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private static func system4BootConfigurations(_ regularFiles: [URL], scripts: [URL]) -> [(ini: URL, script: URL)] {
+        guard !scripts.isEmpty else { return [] }
+        let codeName = #"(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)""#
+        return regularFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file in
+            let name = file.lastPathComponent.lowercased()
+            guard !name.hasPrefix("."), name != "system39.ini", name != "system3.ini",
+                  name.hasSuffix(".ini") || name == "alicestart.chs",
+                  let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+            defer { try? handle.close() }
+            let limit = 256 * 1024
+            guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
+            for decoded in [
+                ArchiveExtractor.decodeBestCjkText(data),
+                String(data: data, encoding: .shiftJIS),
+                String(data: data, encoding: String.Encoding(rawValue: ArchiveExtractor.gbk)),
+            ].compactMap({ $0 }) {
+                let text = decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
+                guard let range = text.range(of: codeName, options: .regularExpression),
+                      let firstQuote = text[range].firstIndex(of: "\"") else { continue }
+                let code = text[text.index(after: firstQuote)..<range.upperBound].dropLast().lowercased()
+                if let script = scripts.first(where: { $0.lastPathComponent.lowercased() == code }) {
+                    return (file, script)
+                }
+            }
+            return nil
+        }
+    }
+
     private static func launchInfoFromRegularFiles(_ url: URL, regularFiles: [URL]) throws -> (engine: GameEngine, target: URL, system39: Bool) {
-        if regularFiles.contains(where: { ["alicestart.chs", "alicestart.ini", "alicestart2.ini", "system40.ini"].contains($0.lastPathComponent.lowercased()) }) {
+        if regularFiles.contains(where: { system4BootIniNames.contains($0.lastPathComponent.lowercased()) }) {
             return (.system4, url, false)
         }
-        if let ain = regularFiles.filter({ $0.pathExtension.lowercased() == "ain" && $0.lastPathComponent.lowercased() != "system39.ain" })
-            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
-            return (.system4, ain, false)
+        let scripts = system4ScriptFiles(regularFiles)
+        if let config = system4BootConfigurations(regularFiles, scripts: scripts).first {
+            return (.system4, config.ini, false)
         }
-        if regularFiles.contains(where: { $0.lastPathComponent.lowercased() == "chs.tbl" }),
-           let chsAin = regularFiles.filter({
-               $0.pathExtension.lowercased() == "chs" && $0.lastPathComponent.lowercased() != "alicestart.chs"
-           }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first {
-            return (.system4, chsAin, false)
+        if let ain = scripts.first(where: { $0.pathExtension.lowercased() == "ain" }) ?? scripts.first {
+            return (.system4, ain, false)
         }
         let names = regularFiles.map { $0.lastPathComponent.lowercased() }
         let system39 = names.contains("system39.ini") || names.contains("system39.ain")
@@ -894,7 +930,36 @@ final class GameLibrary: ObservableObject {
         return try launchInfoFromRegularFiles(url, regularFiles: regularFiles)
     }
 
-    static func launchArguments(_ url: URL, saves: URL) throws -> [String] {
+    static func system4BootEntries(_ url: URL) -> [String] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: .skipsHiddenFiles
+        ) else { return [] }
+        let regularFiles = contents.filter {
+            guard let values = try? $0.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
+            return values.isRegularFile == true && values.isSymbolicLink != true
+        }
+        let scripts = system4ScriptFiles(regularFiles)
+        let configurations = system4BootConfigurations(regularFiles, scripts: scripts)
+        let configured = Set(configurations.map(\.script))
+        let entries = configurations.map(\.ini) + scripts.filter { !configured.contains($0) }
+        let hasStandardIni = regularFiles.contains { system4BootIniNames.contains($0.lastPathComponent.lowercased()) }
+        guard entries.count > 1 ||
+                (hasStandardIni && entries.contains { !system4BootIniNames.contains($0.lastPathComponent.lowercased()) }) else { return [] }
+        return entries.map(\.lastPathComponent)
+    }
+
+    private static func bootEntryKey(_ game: Game) -> String { "hub.system4BootEntry." + game.id }
+
+    func bootEntry(for game: Game) -> String {
+        UserDefaults.standard.string(forKey: Self.bootEntryKey(game)) ?? ""
+    }
+
+    func setBootEntry(_ entry: String, for game: Game) {
+        objectWillChange.send()
+        UserDefaults.standard.set(entry.isEmpty ? nil : entry, forKey: Self.bootEntryKey(game))
+    }
+
+    static func launchArguments(_ url: URL, saves: URL, bootEntry: String = "") throws -> [String] {
         let info = try launchInfo(url)
         switch info.engine {
         case .legacySystem3:
@@ -902,7 +967,9 @@ final class GameLibrary: ObservableObject {
         case .system3:
             return ["xsystem35", "-gamedir", url.path, "-savedir", saves.path] + (info.system39 ? ["-saveformat", "system39"] : [])
         case .system4:
-            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", info.target.path]
+            let target = !bootEntry.isEmpty && system4BootEntries(url).contains(bootEntry)
+                ? url.appendingPathComponent(bootEntry) : info.target
+            return ["xsystem4", "--joypad=on", "--save-folder", saves.path, "--save-format=rsm", target.path]
         }
     }
 
@@ -1131,6 +1198,7 @@ final class GameLibrary: ObservableObject {
     func delete(_ game: Game) {
         do {
             try files.removeItem(at: game.url)
+            setBootEntry("", for: game)
             refresh()
         } catch { self.error = error.localizedDescription }
     }
@@ -1222,7 +1290,7 @@ final class GameLibrary: ObservableObject {
             let workingDirectory = info.engine == .system4 ? resources.path : game.url.path
             let arguments: [String]
             do {
-                arguments = try Self.launchArguments(game.url, saves: saves)
+                arguments = try Self.launchArguments(game.url, saves: saves, bootEntry: bootEntry(for: game))
             } catch {
                 close(descriptor)
                 throw error

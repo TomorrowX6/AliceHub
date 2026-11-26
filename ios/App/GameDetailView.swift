@@ -60,6 +60,7 @@ struct GameDetailView: View {
                     Button { library.launch(active) } label: {
                         Label("开始游戏", systemImage: "play.fill")
                     }.buttonStyle(HubPrimaryButton()).padding(.top, 8)
+                    bootEntryPicker(for: active)
                 }.frame(maxWidth: .infinity).modifier(HubCard())
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -237,6 +238,26 @@ struct GameDetailView: View {
                 if !library.games.contains(where: { $0.id == deletedID }) { selectedID = nil }
             }
         } message: { Text("将删除游戏文件夹，存档不会被删除。") }
+    }
+
+    @ViewBuilder
+    private func bootEntryPicker(for game: Game) -> some View {
+        let entries = game.engine == .system4 ? GameLibrary.system4BootEntries(game.url) : []
+        if !entries.isEmpty {
+            Picker("启动入口", selection: Binding(
+                get: {
+                    let selected = library.bootEntry(for: game)
+                    return entries.contains(selected) ? selected : ""
+                },
+                set: { library.setBootEntry($0, for: game) }
+            )) {
+                Text("默认启动入口").tag("")
+                ForEach(entries, id: \.self) { entry in
+                    Text(verbatim: entry).tag(entry)
+                }
+            }
+            .pickerStyle(.menu)
+        }
     }
 
     private func reloadCapabilities(for target: Game) {
