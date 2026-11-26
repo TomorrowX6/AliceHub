@@ -294,9 +294,59 @@ public class SaveImportPathsTest {
             assertEquals(2, paths.importExtractedArchive(root, target, writes));
             assertEquals(1, writes.finishFallbacks());
         }
-        assertEquals("wrapped", read(active));
-        assertFalse(new File(target, wrappedName).exists());
-        assertEquals("outer", read(new File(target, activeName + ".import-conflict.bak")));
+        assertEquals("wrapped", read(new File(target, wrappedName)));
+        assertFalse(active.exists());
+        assertEquals("previous", read(new File(target, wrappedName + ".import-conflict.bak")));
+        assertEquals("outer", read(new File(target, wrappedName + ".1.import-conflict.bak")));
+    }
+
+    @Test public void archivePreservesDistinctPrimaryMarkerSpellings() throws IOException {
+        SaveImportPaths paths = new SaveImportPaths(null);
+        for (String first : new String[]{"slot0.VSF", "slot0.vsf"}) {
+            File root = temporary.newFolder();
+            File target = temporary.newFolder();
+            String second = first.equals("slot0.VSF") ? "slot0.vsf" : "slot0.VSF";
+            write(new File(root, first), "first");
+            write(new File(root, second), "second");
+            try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+                assertEquals(2, paths.importExtractedArchive(root, target, writes));
+                assertEquals(0, writes.finishFallbacks());
+            }
+            assertEquals("first", read(new File(target, first)));
+            assertEquals("second", read(new File(target, second)));
+        }
+    }
+
+    @Test public void importedBackupCannotOverwriteAnAliasPreservedInTheSameBatch() throws IOException {
+        File target = temporary.newFolder();
+        File active = new File(target, "slot0.vsf");
+        File backup = new File(target, "slot0.vsf.import-conflict.bak");
+        write(new File(target, "slot0.VSF"), "previous");
+        File staged = temporary.newFile();
+        File stagedBackup = temporary.newFile();
+        write(staged, "progress");
+        write(stagedBackup, "archive backup");
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            writes.write(staged, active);
+            writes.write(stagedBackup, backup);
+        }
+        assertEquals("progress", read(active));
+        assertEquals("previous", read(backup));
+        assertEquals("archive backup", read(new File(target, backup.getName() + ".import-conflict.bak")));
+    }
+
+    @Test public void markerMatchingDoesNotFoldNonAsciiBasenames() throws IOException {
+        File target = temporary.newFolder();
+        File existing = new File(target, "Ä.vsf");
+        File imported = new File(target, "ä.VSF");
+        write(existing, "previous");
+        File staged = temporary.newFile();
+        write(staged, "imported");
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            writes.write(staged, imported);
+        }
+        assertEquals("previous", read(existing));
+        assertEquals("imported", read(imported));
     }
 
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {

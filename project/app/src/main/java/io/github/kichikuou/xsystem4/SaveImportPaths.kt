@@ -201,33 +201,29 @@ class SaveImportPaths(gameDir: File?) {
         private val existingMarkers = mutableMapOf<File, Map<String, List<File>>>()
         private val fallbacks = mutableListOf<Pair<File, File>>()
 
-        private fun markerName(file: File) = file.name.lowercase(Locale.ROOT)
+        private fun markerName(file: File): String = buildString(file.name.length) {
+            for (char in file.name) append(if (char in 'A'..'Z') char.lowercaseChar() else char)
+        }
+        private fun markerKey(file: File) = file.parentFile!! to markerName(file)
 
         fun write(staged: File, destination: File) {
-            val requested = destination.canonicalFile
-            val key = if (isArchiveMarker(requested.name)) requested.parentFile!! to markerName(requested) else null
-            val writtenMarker = key?.let(markers::get)
-            val existing = if (key != null && writtenMarker == null) {
-                existingMarkers.getOrPut(key.first) {
-                    key.first.listFiles().orEmpty().filter {
-                        isArchiveMarker(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
-                    }
-                        .sortedBy { it.name }.groupBy(::markerName)
-                }[key.second].orEmpty()
-            } else {
-                emptyList()
-            }
-            val target = writtenMarker ?: existing.firstOrNull { it == requested }
-                ?: existing.firstOrNull() ?: requested
+            val target = destination.canonicalFile
             if (target in written) {
                 written.add(moveToConflictBackup(staged, target))
             } else {
                 if (!staged.renameTo(target)) staged.copyTo(target, overwrite = true)
                 written.add(target)
-                if (key != null) {
-                    markers[key] = target
-                    for (alias in existing) {
-                        if (alias != target) moveToConflictBackup(alias, target)
+                if (isArchiveMarker(target.name)) {
+                    val key = markerKey(target)
+                    if (markers.putIfAbsent(key, target) == null) {
+                        val existing = existingMarkers.getOrPut(key.first) {
+                            key.first.listFiles().orEmpty().filter {
+                                isArchiveMarker(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
+                            }.sortedBy { it.name }.groupBy(::markerName)
+                        }[key.second].orEmpty()
+                        for (alias in existing) {
+                            if (alias != target) written.add(moveToConflictBackup(alias, target))
+                        }
                     }
                 }
             }
@@ -248,7 +244,8 @@ class SaveImportPaths(gameDir: File?) {
             val count = fallbacks.size
             try {
                 for ((staged, destination) in fallbacks) {
-                    write(staged, destination)
+                    val target = destination.canonicalFile
+                    write(staged, markers[markerKey(target)] ?: target)
                 }
             } finally {
                 close()
