@@ -654,7 +654,9 @@ static void parts_update_mouse(struct parts *parts, Point cur_pos, bool cur_clic
 	if (cur_clicking && !prev_clicking) {
 		click_down_parts = parts->no;
 		*click_consumed = true;
-		if (parts_v2 && clickable) PE_SetFocus(parts->no);
+		// Rance 10's script-handled choices use the active backdrop to confirm a click.
+		if (parts_v2 && (clickable || game_rance10))
+			PE_SetFocus(parts->no);
 
 		drag_parts = parts;
 		drag_initial_pos = parts->local.pos;
