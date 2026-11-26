@@ -18,6 +18,10 @@ class SaveImportPaths @JvmOverloads constructor(
     saveFolderOverride: String? = null
 ) {
     private val gameFiles = gameDir?.listFiles().orEmpty().filter { it.isFile }
+    private val isSystem35 = gameFiles.map { it.name }.let { names ->
+        GameCatalog.isSystem3xGameFiles(names) && !GameCatalog.isLegacySystem3GameFiles(names) &&
+            names.none { it == "xsystem35.gr" }
+    }
     private val system35Prefix = findSystem35Prefix()
     private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
         if (launchTarget != null) {
@@ -29,11 +33,8 @@ class SaveImportPaths @JvmOverloads constructor(
         ?.takeIf { isSafeComponent(it) }
 
     private fun findSystem35Prefix(): String? {
-        val names = gameFiles.map { it.name }
-        if (!GameCatalog.isSystem3xGameFiles(names) || GameCatalog.isLegacySystem3GameFiles(names) ||
-            names.any { it == "xsystem35.gr" }
-        ) return null
-        val scenarios = names.filterNot { it.contains("uncensored", true) }
+        if (!isSystem35) return null
+        val scenarios = gameFiles.map { it.name }.filterNot { it.contains("uncensored", true) }
             .mapNotNull(scenarioArchive::matchEntire)
             .map { it.groupValues[1] to it.groupValues[2].isNotEmpty() }
         return (scenarios.lastOrNull { it.second } ?: scenarios.firstOrNull())?.first
@@ -58,7 +59,13 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     fun normalizedName(name: String, atRoot: Boolean): String =
-        name.takeIf { atRoot }?.let(::system35Name) ?: ArchiveExtractor.repairSjisAsGbkMojibake(name)
+        name.takeIf { atRoot }?.let(::system35Name) ?: normalizeScriptName(name)
+
+    private fun normalizeScriptName(name: String): String =
+        if (isSystem35) name else ArchiveExtractor.repairSjisAsGbkMojibake(name)
+
+    fun decodeArchivePath(rawPath: ByteArray): String =
+        normalizeScriptName(ArchiveExtractor.decodeBestCjkText(rawPath))
 
     fun migrateExistingSaves(root: File) {
         fun migrate(dir: File, atRoot: Boolean) {
@@ -66,7 +73,8 @@ class SaveImportPaths @JvmOverloads constructor(
                 if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
                 if (child.isDirectory) migrate(child, atRoot = false)
                 val slotName = if (atRoot && child.isFile) system35Name(child.name) else null
-                val legacyName = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                val legacyName = if (slotName != null) ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                    else normalizeScriptName(child.name)
                 val repaired = slotName ?: legacyName
                 if (repaired == child.name || !isSafeComponent(repaired)) continue
 
@@ -93,7 +101,7 @@ class SaveImportPaths @JvmOverloads constructor(
         fromArchive: Boolean = false
     ): T = selectSource(root, children, name, isDirectory, fromArchive).root
 
-    internal data class Source<T>(val root: T, val outerMarkers: List<T> = emptyList())
+    internal data class Source<T>(val root: T, val outerState: List<T> = emptyList())
 
     internal fun <T> selectSource(
         root: T,
@@ -106,9 +114,9 @@ class SaveImportPaths @JvmOverloads constructor(
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
 
-        fun sourceWithMarkers(node: T, ancestors: List<T>): Source<T> = Source(
+        fun sourceWithState(node: T, ancestors: List<T>): Source<T> = Source(
             node, ancestors.asReversed().flatMap { parent ->
-                visibleChildren(parent).filter { !isDirectory(it) && isArchiveMarker(name(it)) }
+                visibleChildren(parent).filter { !isDirectory(it) && isFallbackState(name(it)) }
             }
         )
 
@@ -120,7 +128,7 @@ class SaveImportPaths @JvmOverloads constructor(
             val conventional = if (fromArchive) {
                 dirs.firstOrNull { name(it).equals("SaveData", true) && eligible(it) }
             } else {
-                dirs.singleOrNull { name(it).equals("SaveData", true) }
+                dirs.singleOrNull { name(it).equals("SaveData", true) }?.takeIf(eligible)
             }
             return configured ?: conventional
         }
@@ -138,13 +146,13 @@ class SaveImportPaths @JvmOverloads constructor(
 
         fun explicitSource(node: T, ancestors: List<T>): Source<T> {
             val visible = visibleChildren(node)
-            if (ancestors.size < 3 && !hasLooseSave(visible, saveExtension::matches)) {
+            if (ancestors.size < 3 && !hasLooseSave(visible, ::isPotentialSlot)) {
                 val child = visible.filter(isDirectory).singleOrNull()
                 if (child != null && explicitSaveFolder(listOf(child)) != null && containsSave(child)) {
                     return explicitSource(child, ancestors + node)
                 }
             }
-            return sourceWithMarkers(node, ancestors)
+            return sourceWithState(node, ancestors)
         }
 
         if (fromArchive) {
@@ -164,11 +172,15 @@ class SaveImportPaths @JvmOverloads constructor(
 
         fun find(node: T, depth: Int, ancestors: List<T>, isSave: (String) -> Boolean): Source<T>? {
             val visible = visibleChildren(node)
-            if (hasLooseSave(visible, isSave)) return sourceWithMarkers(node, ancestors)
-            if (depth == 0) return null
+            val hasSave = hasLooseSave(visible, isSave)
+            if (depth == 0 || hasSave && hasLooseSave(visible, ::isPotentialSlot)) {
+                return if (hasSave) sourceWithState(node, ancestors) else null
+            }
             val dirs = visible.filter(isDirectory)
             val parents = ancestors + node
-            if (!fromArchive) explicitSaveFolder(dirs)?.let { return explicitSource(it, parents) }
+            if (!fromArchive) explicitSaveFolder(dirs) { !hasSave || containsSave(it) }
+                ?.let { return explicitSource(it, parents) }
+            if (hasSave) return sourceWithState(node, ancestors)
             return dirs.singleOrNull()?.let { find(it, depth - 1, parents, isSave) }
         }
         find(root, 3, emptyList(), saveExtension::matches)?.let { return it }
@@ -211,7 +223,7 @@ class SaveImportPaths @JvmOverloads constructor(
                 copy(src, src.relativeTo(source.root).invariantSeparatorsPath.split('/'))
             }
         }
-        source.outerMarkers.filter(File::isFile).forEach { copy(it, listOf(it.name), fallback = true) }
+        source.outerState.filter(File::isFile).forEach { copy(it, listOf(it.name), fallback = true) }
         return copied
     }
 
@@ -233,12 +245,12 @@ class SaveImportPaths @JvmOverloads constructor(
             } else {
                 if (!staged.renameTo(target)) staged.copyTo(target, overwrite = true)
                 written.add(target)
-                if (isArchiveMarker(target.name)) {
+                if (isFallbackState(target.name)) {
                     val key = markerKey(target)
                     if (markers.putIfAbsent(key, target) == null) {
                         val existing = existingMarkers.getOrPut(key.first) {
                             key.first.listFiles().orEmpty().filter {
-                                isArchiveMarker(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
+                                isFallbackState(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
                             }.sortedBy { it.name }.groupBy(::markerName)
                         }[key.second].orEmpty()
                         for (alias in existing) {
@@ -284,6 +296,12 @@ class SaveImportPaths @JvmOverloads constructor(
         val scenarioArchive = Regex("^(.*)S[A-Z](_chs)?\\.ald$", RegexOption.IGNORE_CASE)
         val slotFile = Regex("^(.*)(s[a-z]\\.asd)$", RegexOption.IGNORE_CASE)
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
+        val numberedSlot = Regex("(?:.*[ _.-])?(?:(?:save(?:data)?|slot)[ _.-]*)?\\d+", RegexOption.IGNORE_CASE)
+        val namedState = Regex(
+            "(?:.*[_-])?(?:af[a-z]+|config|settings?|system(?:data)?|sys|common(?:system)?(?:data)?|" +
+                "global(?:save)?(?:data)?|collection|extra|progress|volume|msgskip(?:flag)?)",
+            RegexOption.IGNORE_CASE
+        )
         val cp932 = runCatching { Charset.forName("windows-31j") }.getOrElse { Charset.forName("Shift_JIS") }
         val gbk = Charset.forName("GBK")
 
@@ -291,6 +309,14 @@ class SaveImportPaths @JvmOverloads constructor(
             name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
 
         fun isArchiveSave(name: String): Boolean = saveExtension.matches(name) || isArchiveMarker(name)
+
+        fun isPotentialSlot(name: String): Boolean = saveExtension.matches(name) &&
+            !name.endsWith(".msgskip", true) && !namedState.matches(name.substringBeforeLast('.'))
+
+        fun isFallbackState(name: String): Boolean = isArchiveMarker(name) ||
+            name.endsWith(".msgskip", true) ||
+            name.endsWith(".sav", true) && !numberedSlot.matches(name.substringBeforeLast('.')) ||
+            saveExtension.matches(name) && namedState.matches(name.substringBeforeLast('.'))
 
         fun moveToConflictBackup(alias: File, target: File): File {
             var index = 0

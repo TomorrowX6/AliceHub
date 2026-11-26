@@ -169,6 +169,30 @@ public class SaveImportPathsTest {
         assertEquals("second", read(renamed));
     }
 
+    @Test public void scriptManagedSystem39SavesKeepTheirEngineSpelling() throws IOException {
+        File game = temporary.newFolder("Tsumamigui");
+        touch(game, "System39.ain");
+        touch(game, "妻みぐいSA.ALD");
+        SaveImportPaths paths = new SaveImportPaths(game);
+        File archive = temporary.newFolder("extracted");
+        File saveData = new File(archive, "SaveData");
+        assertTrue(saveData.mkdir());
+        File target = temporary.newFolder();
+        String engineName = "柤慜.ASD";
+        String decodedPath = paths.decodeArchivePath(("SaveData/" + engineName).getBytes(StandardCharsets.UTF_8));
+        assertEquals("SaveData/" + engineName, decodedPath);
+        write(new File(archive, decodedPath), "script records");
+        assertEquals(engineName, paths.nameForImport(engineName, true));
+        assertEquals("名前.ASD", paths.nameForImport("名前.ASD", true));
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, paths.importExtractedArchive(archive, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        paths.migrateExistingSaves(target);
+        assertEquals("script records", read(new File(target, engineName)));
+        assertFalse(new File(target, "名前.ASD").exists());
+    }
+
     @Test public void importKeepsBothSpellingsOfOneSlotWithoutOverwritingTheFirstCopy() throws IOException {
         File game = temporary.newFolder("game");
         touch(game, "System39.ain");
@@ -355,6 +379,45 @@ public class SaveImportPathsTest {
             assertFalse(new File(target, "3DConfig.vsf").exists());
             assertEquals("outer", read(new File(target, "3DConfig.VSF.import-conflict.bak")));
         }
+    }
+
+    @Test public void nestedSaveDataCarriesOnlyOuterStateAndPrefersInnerCopies() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "SaveData");
+        File saveData = new File(wrapper, "SaveData");
+        assertTrue(saveData.mkdirs());
+        write(new File(root, "Collection.sav"), "outer collection");
+        write(new File(wrapper, "Extra.sav"), "outer extra");
+        write(new File(wrapper, "CommonSystemData.sav"), "outer common");
+        write(new File(wrapper, "AFConfig.asd"), "outer config");
+        write(new File(wrapper, "Volume.sav"), "outer volume");
+        touch(root, "SaveData02.sav");
+        touch(root, "03.asd");
+        touch(root, "readme.txt");
+        touch(wrapper, "System40.ini");
+        write(new File(saveData, "collection.SAV"), "inner collection");
+        write(new File(saveData, "01.asd"), "inner slot");
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(saveData, sourceRoot(paths, root, true));
+        assertEquals(saveData, sourceRoot(paths, wrapper));
+        File target = temporary.newFolder();
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(root, target, writes));
+            assertEquals(5, writes.finishFallbacks());
+        }
+        assertEquals("inner slot", read(new File(target, "01.asd")));
+        assertEquals("inner collection", read(new File(target, "collection.SAV")));
+        assertEquals("outer collection", read(new File(target, "collection.SAV.import-conflict.bak")));
+        assertEquals("outer extra", read(new File(target, "Extra.sav")));
+        assertEquals("outer common", read(new File(target, "CommonSystemData.sav")));
+        assertEquals("outer config", read(new File(target, "AFConfig.asd")));
+        assertEquals("outer volume", read(new File(target, "Volume.sav")));
+        assertFalse(new File(target, "Collection.sav").exists());
+        assertFalse(new File(target, "SaveData02.sav").exists());
+        assertFalse(new File(target, "03.asd").exists());
+        assertFalse(new File(target, "readme.txt").exists());
+        assertFalse(new File(target, "System40.ini").exists());
     }
 
     @Test public void wrappedProgressReplacesAnExistingCaseVariant() throws IOException {

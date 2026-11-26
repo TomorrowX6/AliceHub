@@ -365,7 +365,8 @@ class SaveManagerActivity : ThemedActivity() {
                     context = context,
                     uri = uri,
                     destDir = tempDir,
-                    tempScratchParent = context.cacheDir
+                    tempScratchParent = context.cacheDir,
+                    decodePath = paths::decodeArchivePath
                 )
                 ensureProcessStoppedOnIo(context)
                 return paths.importExtractedArchive(tempDir, targetDir, writes)
@@ -563,11 +564,11 @@ class SaveManagerActivity : ThemedActivity() {
                         val copied = copyDocumentTreeToInternalStatic(
                             appCtx, treeUri, source.root.documentId, targetDir, paths, writes
                         )
-                        for (marker in source.outerMarkers) {
-                            val name = paths.nameForImport(marker.name, atRoot = true) ?: continue
+                        for (state in source.outerState) {
+                            val name = paths.nameForImport(state.name, atRoot = true) ?: continue
                             val outFile = File(targetDir, name)
                             if (!isInsideStatic(targetDir, outFile)) continue
-                            copyDocumentToInternalStatic(appCtx, treeUri, marker, outFile, writes, fallback = true)
+                            copyDocumentToInternalStatic(appCtx, treeUri, state, outFile, writes, fallback = true)
                         }
                         copied + writes.finishFallbacks()
                     }
