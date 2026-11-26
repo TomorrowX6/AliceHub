@@ -276,7 +276,8 @@ object ArchiveExtractor {
         throwInstallFailureOnNoSpace: Boolean = false,
         checkCancelled: (() -> Unit)? = null,
         onEntryAccepted: ((outFile: File, normalizedRelPath: String) -> Unit)? = null,
-        onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)? = null
+        onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)? = null,
+        decodePath: (ByteArray) -> String = ::decodeEntryPath
     ): Int {
         ensureLoaded()
         val trackingCallback = createTrackingCallback(
@@ -285,7 +286,8 @@ object ArchiveExtractor {
             throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
             checkCancelled = checkCancelled,
             onEntryAccepted = onEntryAccepted,
-            onProgress = onProgress
+            onProgress = onProgress,
+            decodePath = decodePath
         )
 
         var directPfd: ParcelFileDescriptor? = null
@@ -371,7 +373,8 @@ object ArchiveExtractor {
         throwInstallFailureOnNoSpace: Boolean,
         checkCancelled: (() -> Unit)?,
         onEntryAccepted: ((outFile: File, normalizedRelPath: String) -> Unit)?,
-        onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)?
+        onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)?,
+        decodePath: (ByteArray) -> String = ::decodeEntryPath
     ): NativeCallback {
         destDir.mkdirs()
         val destCanonical = destDir.canonicalFile
@@ -385,7 +388,7 @@ object ArchiveExtractor {
         return object : NativeCallback {
             override fun onEntry(rawPath: ByteArray, entrySize: Long): String? {
                 checkCancelled?.invoke()
-                val decoded = decodeEntryPath(rawPath)
+                val decoded = decodePath(rawPath)
                 if ('\u0000' in decoded) {
                     throw IOException("Archive entry contains NUL character")
                 }

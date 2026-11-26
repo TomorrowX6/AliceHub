@@ -9,6 +9,10 @@ import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+internal const val SAVE_FOLDER_LAYOUT_MARKER = ".alicehub-save-folder-layout-v1"
 
 class SaveImportPaths @JvmOverloads constructor(
     gameDir: File?,
@@ -16,6 +20,10 @@ class SaveImportPaths @JvmOverloads constructor(
     saveFolderOverride: String? = null
 ) {
     private val gameFiles = gameDir?.listFiles().orEmpty().filter { it.isFile }
+    private val isSystem35 = gameFiles.map { it.name }.let { names ->
+        GameCatalog.isSystem3xGameFiles(names) && !GameCatalog.isLegacySystem3GameFiles(names) &&
+            names.none { it == "xsystem35.gr" }
+    }
     private val system35Prefix = findSystem35Prefix()
     private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
         if (launchTarget != null) {
@@ -27,11 +35,8 @@ class SaveImportPaths @JvmOverloads constructor(
         ?.takeIf { isSafeComponent(it) }
 
     private fun findSystem35Prefix(): String? {
-        val names = gameFiles.map { it.name }
-        if (!GameCatalog.isSystem3xGameFiles(names) || GameCatalog.isLegacySystem3GameFiles(names) ||
-            names.any { it == "xsystem35.gr" }
-        ) return null
-        val scenarios = names.filterNot { it.contains("uncensored", true) }
+        if (!isSystem35) return null
+        val scenarios = gameFiles.map { it.name }.filterNot { it.contains("uncensored", true) }
             .mapNotNull(scenarioArchive::matchEntire)
             .map { it.groupValues[1] to it.groupValues[2].isNotEmpty() }
         return (scenarios.lastOrNull { it.second } ?: scenarios.firstOrNull())?.first
@@ -44,6 +49,7 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     private fun system35Name(name: String): String? {
+        if (isSystem35 && name.equals("Volume.sav", ignoreCase = true)) return "Volume.sav"
         val prefix = system35Prefix ?: return null
         val slot = slotFile.matchEntire(name)
         if (slot != null && equivalent(slot.groupValues[1], prefix)) {
@@ -56,7 +62,15 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     fun normalizedName(name: String, atRoot: Boolean): String =
-        name.takeIf { atRoot }?.let(::system35Name) ?: ArchiveExtractor.repairSjisAsGbkMojibake(name)
+        name.takeIf { atRoot }?.let(::system35Name) ?: normalizeScriptName(name)
+
+    private fun normalizeScriptName(name: String): String {
+        val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(name)
+        return if (!isSystem35 || system35MapFile.matches(repaired)) repaired else name
+    }
+
+    fun decodeArchivePath(rawPath: ByteArray): String =
+        if (isSystem35) ArchiveExtractor.decodeBestCjkText(rawPath) else ArchiveExtractor.decodeEntryPath(rawPath)
 
     fun migrateExistingSaves(root: File) {
         fun migrate(dir: File, atRoot: Boolean) {
@@ -64,7 +78,11 @@ class SaveImportPaths @JvmOverloads constructor(
                 if (child.name.startsWith('.') || child.name.endsWith(conflictBackupSuffix)) continue
                 if (child.isDirectory) migrate(child, atRoot = false)
                 val slotName = if (atRoot && child.isFile) system35Name(child.name) else null
-                val legacyName = ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                val legacyName = when {
+                    slotName == "Volume.sav" -> slotName
+                    slotName != null -> ArchiveExtractor.repairSjisAsGbkMojibake(child.name)
+                    else -> normalizeScriptName(child.name)
+                }
                 val repaired = slotName ?: legacyName
                 if (repaired == child.name || !isSafeComponent(repaired)) continue
 
@@ -91,18 +109,31 @@ class SaveImportPaths @JvmOverloads constructor(
         fromArchive: Boolean = false
     ): T = selectSource(root, children, name, isDirectory, fromArchive).root
 
-    private data class Source<T>(val root: T, val keepOuterMarkers: Boolean = false)
+    internal data class Source<T>(val root: T, val outerState: List<T> = emptyList())
 
-    private fun <T> selectSource(
+    internal fun <T> selectSource(
         root: T,
         children: (T) -> List<T>,
         name: (T) -> String,
         isDirectory: (T) -> Boolean,
         fromArchive: Boolean
     ): Source<T> {
+        if (!fromArchive) {
+            val rootChildren = children(root)
+            if (rootChildren.any { !isDirectory(it) && name(it) == SAVE_FOLDER_LAYOUT_MARKER }) {
+                return Source(root)
+            }
+            SaveZipLayout.exportedRoot(rootChildren, name, isDirectory)?.let { return Source(it) }
+        }
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
+
+        fun sourceWithState(node: T, ancestors: List<T>): Source<T> = Source(
+            node, ancestors.asReversed().flatMap { parent ->
+                visibleChildren(parent).filter { !isDirectory(it) && isFallbackState(name(it)) }
+            }
+        )
 
         fun explicitSaveFolder(dirs: List<T>, eligible: (T) -> Boolean = { true }): T? {
             val configured = saveFolder?.let { expected ->
@@ -112,47 +143,62 @@ class SaveImportPaths @JvmOverloads constructor(
             val conventional = if (fromArchive) {
                 dirs.firstOrNull { name(it).equals("SaveData", true) && eligible(it) }
             } else {
-                dirs.singleOrNull { name(it).equals("SaveData", true) }
+                dirs.singleOrNull { name(it).equals("SaveData", true) }?.takeIf(eligible)
             }
             return configured ?: conventional
         }
 
-        if (fromArchive) {
-            fun containsSave(node: T): Boolean {
-                val pending = ArrayDeque<T>()
-                pending.add(node)
-                while (pending.isNotEmpty()) {
-                    val visible = visibleChildren(pending.removeLast())
-                    if (hasLooseSave(visible, ::isArchiveSave)) return true
-                    pending.addAll(visible.filter(isDirectory))
-                }
-                return false
+        fun containsSave(node: T): Boolean {
+            val pending = ArrayDeque<T>()
+            pending.add(node)
+            while (pending.isNotEmpty()) {
+                val visible = visibleChildren(pending.removeLast())
+                if (hasLooseSave(visible, ::isArchiveSave)) return true
+                pending.addAll(visible.filter(isDirectory))
             }
-            var level = listOf(root to false)
+            return false
+        }
+
+        fun explicitSource(node: T, ancestors: List<T>): Source<T> {
+            val visible = visibleChildren(node)
+            val competes = if (fromArchive) hasLooseSave(visible, ::isPotentialSlot)
+                else hasLooseSave(visible, saveExtension::matches)
+            if (ancestors.size < 3 && !competes) {
+                val child = visible.filter(isDirectory).singleOrNull()
+                if (child != null && explicitSaveFolder(listOf(child)) != null && containsSave(child)) {
+                    return explicitSource(child, ancestors + node)
+                }
+            }
+            return sourceWithState(node, ancestors)
+        }
+
+        if (fromArchive) {
+            var level = listOf(Triple(root, false, emptyList<T>()))
             repeat(3) {
-                level = level.flatMap { (node, ancestorHasSave) ->
+                level = level.flatMap { (node, ancestorHasSave, ancestors) ->
                     val visible = visibleChildren(node)
                     val competes = ancestorHasSave || hasLooseSave(visible, ::isArchiveSave)
-                    visible.filter(isDirectory).map { it to competes }
+                    visible.filter(isDirectory).map { Triple(it, competes, ancestors + node) }
                 }
-                val competingByDir = level.toMap()
+                val byDir = level.associateBy { it.first }
                 explicitSaveFolder(level.map { it.first }) { node ->
-                    competingByDir[node] != true || containsSave(node)
-                }?.let { return Source(it) }
+                    !byDir.getValue(node).second || containsSave(node)
+                }?.let { return explicitSource(it, byDir.getValue(it).third) }
             }
         }
 
-        fun find(node: T, depth: Int, isSave: (String) -> Boolean): T? {
+        fun find(node: T, depth: Int, ancestors: List<T>, isSave: (String) -> Boolean): Source<T>? {
             val visible = visibleChildren(node)
-            if (hasLooseSave(visible, isSave)) return node
+            if (hasLooseSave(visible, isSave)) return sourceWithState(node, ancestors)
             if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
-            if (!fromArchive) explicitSaveFolder(dirs)?.let { return it }
-            return dirs.singleOrNull()?.let { find(it, depth - 1, isSave) }
+            val parents = ancestors + node
+            if (!fromArchive) explicitSaveFolder(dirs)?.let { return explicitSource(it, parents) }
+            return dirs.singleOrNull()?.let { find(it, depth - 1, parents, isSave) }
         }
-        find(root, 3, saveExtension::matches)?.let { return Source(it, keepOuterMarkers = fromArchive) }
+        find(root, 3, emptyList(), saveExtension::matches)?.let { return it }
         if (!fromArchive) return Source(root)
-        find(root, 3, ::isArchiveSave)?.let { return Source(it) }
+        find(root, 3, emptyList(), ::isArchiveSave)?.let { return it }
 
         var node = root
         while (true) {
@@ -162,7 +208,7 @@ class SaveImportPaths @JvmOverloads constructor(
     }
 
     fun importExtractedArchive(root: File, targetDir: File, writes: ImportWrites): Int {
-        val source = selectSource(
+        val source = SaveZipLayout.exportedRoot(root)?.let { Source(it) } ?: selectSource(
             root, { it.listFiles()?.toList().orEmpty() }, File::getName, File::isDirectory, fromArchive = true
         )
         val rootCanonical = targetDir.canonicalFile
@@ -190,17 +236,7 @@ class SaveImportPaths @JvmOverloads constructor(
                 copy(src, src.relativeTo(source.root).invariantSeparatorsPath.split('/'))
             }
         }
-        if (source.keepOuterMarkers) {
-            var ancestor = source.root
-            while (ancestor != root) {
-                ancestor = checkNotNull(ancestor.parentFile)
-                for (src in ancestor.listFiles().orEmpty()) {
-                    if (src.isFile && !src.name.startsWith('.') && isArchiveMarker(src.name)) {
-                        copy(src, listOf(src.name), fallback = true)
-                    }
-                }
-            }
-        }
+        source.outerState.filter(File::isFile).forEach { copy(it, listOf(it.name), fallback = true) }
         return copied
     }
 
@@ -222,12 +258,12 @@ class SaveImportPaths @JvmOverloads constructor(
             } else {
                 if (!staged.renameTo(target)) staged.copyTo(target, overwrite = true)
                 written.add(target)
-                if (isArchiveMarker(target.name)) {
+                if (isFallbackState(target.name)) {
                     val key = markerKey(target)
                     if (markers.putIfAbsent(key, target) == null) {
                         val existing = existingMarkers.getOrPut(key.first) {
                             key.first.listFiles().orEmpty().filter {
-                                isArchiveMarker(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
+                                isFallbackState(it.name) && Files.isRegularFile(it.toPath(), LinkOption.NOFOLLOW_LINKS)
                             }.sortedBy { it.name }.groupBy(::markerName)
                         }[key.second].orEmpty()
                         for (alias in existing) {
@@ -272,7 +308,14 @@ class SaveImportPaths @JvmOverloads constructor(
         const val conflictBackupSuffix = ".import-conflict.bak"
         val scenarioArchive = Regex("^(.*)S[A-Z](_chs)?\\.ald$", RegexOption.IGNORE_CASE)
         val slotFile = Regex("^(.*)(s[a-z]\\.asd)$", RegexOption.IGNORE_CASE)
+        val system35MapFile = Regex("王子_M-?\\d+\\.asd", RegexOption.IGNORE_CASE)
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
+        val numberedSlot = Regex("(?:.*[ _.-])?(?:(?:save(?:data)?|slot)[ _.-]*)?\\d+", RegexOption.IGNORE_CASE)
+        val namedState = Regex(
+            "(?:.*[_-])?(?:af[a-z]+|config|settings?|system(?:data)?|sys|common(?:system)?(?:data)?|" +
+                "global(?:save)?(?:data)?|collection|extra|progress|volume|msgskip(?:flag)?)",
+            RegexOption.IGNORE_CASE
+        )
         val cp932 = runCatching { Charset.forName("windows-31j") }.getOrElse { Charset.forName("Shift_JIS") }
         val gbk = Charset.forName("GBK")
 
@@ -280,6 +323,14 @@ class SaveImportPaths @JvmOverloads constructor(
             name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
 
         fun isArchiveSave(name: String): Boolean = saveExtension.matches(name) || isArchiveMarker(name)
+
+        fun isPotentialSlot(name: String): Boolean = saveExtension.matches(name) &&
+            !name.endsWith(".msgskip", true) && !namedState.matches(name.substringBeforeLast('.'))
+
+        fun isFallbackState(name: String): Boolean = isArchiveMarker(name) ||
+            name.endsWith(".msgskip", true) ||
+            name.endsWith(".sav", true) && !numberedSlot.matches(name.substringBeforeLast('.')) ||
+            saveExtension.matches(name) && namedState.matches(name.substringBeforeLast('.'))
 
         fun moveToConflictBackup(alias: File, target: File): File {
             var index = 0
@@ -307,5 +358,47 @@ class SaveImportPaths @JvmOverloads constructor(
                     aCharset.newEncoder().encode(CharBuffer.wrap(a)) ==
                         bCharset.newEncoder().encode(CharBuffer.wrap(b))
                 }.getOrDefault(false)
+    }
+}
+
+internal object SaveZipLayout {
+    private const val wrapper = "SaveData"
+    private const val marker = ".alicehub-save-layout-v1"
+
+    fun write(
+        zip: ZipOutputStream,
+        entries: List<SaveFileEntry>,
+        copy: (File, ZipOutputStream) -> Boolean
+    ): Pair<Int, Int> {
+        zip.putNextEntry(ZipEntry(marker))
+        zip.closeEntry()
+        var exported = 0
+        var converted = 0
+        for (entry in entries) {
+            if (!entry.file.exists()) continue
+            val zipEntry = ZipEntry("$wrapper/${entry.relativePath}")
+            zipEntry.time = entry.lastModified
+            zip.putNextEntry(zipEntry)
+            if (copy(entry.file, zip)) converted++
+            zip.closeEntry()
+            exported++
+        }
+        return exported to converted
+    }
+
+    fun exportedRoot(root: File): File? =
+        exportedRoot(root.listFiles()?.toList().orEmpty(), File::getName, File::isDirectory) {
+            it.isFile && it.length() == 0L
+        }
+
+    fun <T> exportedRoot(
+        children: List<T>,
+        name: (T) -> String,
+        isDirectory: (T) -> Boolean,
+        isMarkerFile: (T) -> Boolean = { !isDirectory(it) }
+    ): T? {
+        if (children.none { name(it) == marker && isMarkerFile(it) }) return null
+        return children.singleOrNull { !name(it).startsWith('.') }
+            ?.takeIf { isDirectory(it) && name(it) == wrapper }
     }
 }

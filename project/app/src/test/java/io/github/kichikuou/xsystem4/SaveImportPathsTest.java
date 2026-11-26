@@ -2,11 +2,16 @@ package io.github.kichikuou.xsystem4;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,6 +47,83 @@ public class SaveImportPathsTest {
             File[] files = dir.listFiles();
             return files == null ? Collections.emptyList() : Arrays.asList(files);
         }, File::getName, File::isDirectory, fromArchive);
+    }
+
+    private File importZip(File archive) throws IOException {
+        File extracted = extractZip(archive);
+        File target = temporary.newFolder();
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, new SaveImportPaths(null).importExtractedArchive(extracted, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        return target;
+    }
+
+    private File extractZip(File archive) throws IOException {
+        File extracted = temporary.newFolder();
+        try (ZipFile zip = new ZipFile(archive)) {
+            for (ZipEntry entry : Collections.list(zip.entries())) {
+                File output = new File(extracted, entry.getName());
+                Files.createDirectories(output.getParentFile().toPath());
+                try (InputStream input = zip.getInputStream(entry)) {
+                    Files.copy(input, output.toPath());
+                }
+            }
+        }
+        return extracted;
+    }
+
+    @Test public void exportedZipPreservesALoneSaveDataSubdirectory() throws IOException {
+        File source = temporary.newFile("Collection.asd");
+        write(source, "collection progress");
+        File archive = temporary.newFile("export.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive.toPath()))) {
+            SaveFileEntry entry = new SaveFileEntry(source, "SaveData/Collection.asd",
+                    source.length(), source.lastModified(), "collection");
+            SaveZipLayout.INSTANCE.write(zip, Collections.singletonList(entry), (file, output) -> {
+                try {
+                    Files.copy(file.toPath(), output);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return false;
+            });
+        }
+
+        File target = importZip(archive);
+        assertEquals("collection progress", read(new File(target, "SaveData/Collection.asd")));
+        assertEquals(Collections.singletonList("SaveData"), Arrays.asList(target.list()));
+        File extracted = extractZip(archive);
+        File folderSource = sourceRoot(new SaveImportPaths(null), extracted);
+        assertEquals(new File(extracted, "SaveData"), folderSource);
+        assertEquals("collection progress", read(new File(folderSource, "SaveData/Collection.asd")));
+    }
+
+    @Test public void unmarkedZipStillUnwrapsRedundantSaveDataDirectories() throws IOException {
+        File archive = temporary.newFile("external.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive.toPath()))) {
+            zip.putNextEntry(new ZipEntry("SaveData/SaveData/Collection.asd"));
+            zip.write("external progress".getBytes(StandardCharsets.US_ASCII));
+            zip.closeEntry();
+        }
+
+        File target = importZip(archive);
+        assertEquals("external progress", read(new File(target, "Collection.asd")));
+        assertEquals(Collections.singletonList("Collection.asd"), Arrays.asList(target.list()));
+    }
+
+    @Test public void folderRestoresKeepGenuineSaveDataPaths() throws IOException {
+        File export = temporary.newFolder("exported-folder");
+        File nested = new File(export, "SaveData");
+        assertTrue(nested.mkdir());
+        write(new File(nested, "01.asd"), "progress");
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(nested, sourceRoot(paths, export));
+        touch(export, "GlobalSave.asd");
+        assertEquals(export, sourceRoot(paths, export));
+        assertTrue(new File(export, "GlobalSave.asd").delete());
+        touch(export, ".alicehub-save-folder-layout-v1");
+        assertEquals(export, sourceRoot(paths, export));
     }
 
     @Test public void windowsSlotsMatchTheScenarioArchiveForBothTsumamiguiGames() throws IOException {
@@ -108,6 +190,50 @@ public class SaveImportPathsTest {
         assertEquals("old", read(backup));
         assertFalse(secondSlot.exists());
         assertEquals("second", read(renamed));
+    }
+
+    @Test public void scriptManagedSystem39SavesKeepTheirEngineSpelling() throws IOException {
+        File game = temporary.newFolder("Tsumamigui");
+        touch(game, "System39.ain");
+        touch(game, "妻みぐいSA.ALD");
+        SaveImportPaths paths = new SaveImportPaths(game);
+        File archive = temporary.newFolder("extracted");
+        File saveData = new File(archive, "SaveData");
+        assertTrue(saveData.mkdir());
+        File target = temporary.newFolder();
+        String engineName = "柤慜.ASD";
+        String decodedPath = paths.decodeArchivePath(("SaveData/" + engineName).getBytes(StandardCharsets.UTF_8));
+        assertEquals("SaveData/" + engineName, decodedPath);
+        write(new File(archive, decodedPath), "script records");
+        assertEquals(engineName, paths.nameForImport(engineName, true));
+        assertEquals("名前.ASD", paths.nameForImport("名前.ASD", true));
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, paths.importExtractedArchive(archive, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        paths.migrateExistingSaves(target);
+        assertEquals("script records", read(new File(target, engineName)));
+        assertFalse(new File(target, "名前.ASD").exists());
+    }
+
+    @Test public void nativeSystem35SaveNamesWinOverImportedAliases() throws IOException {
+        File game = temporary.newFolder("System39");
+        touch(game, "System39.ain");
+        touch(game, "OriginalSA.ald");
+        SaveImportPaths paths = new SaveImportPaths(game);
+        File source = temporary.newFolder("extracted");
+        write(new File(source, "墹巕_M1.asd"), "map data");
+        write(new File(source, "volume.sav"), "imported volume");
+        File target = temporary.newFolder();
+        write(new File(target, "Volume.sav"), "old volume");
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(source, target, writes));
+            assertEquals(0, writes.finishFallbacks());
+        }
+        assertEquals("map data", read(new File(target, "王子_M1.asd")));
+        assertEquals("imported volume", read(new File(target, "Volume.sav")));
+        assertFalse(new File(target, "墹巕_M1.asd").exists());
+        assertFalse(new File(target, "volume.sav").exists());
     }
 
     @Test public void importKeepsBothSpellingsOfOneSlotWithoutOverwritingTheFirstCopy() throws IOException {
@@ -252,6 +378,28 @@ public class SaveImportPathsTest {
         assertEquals("outer", read(new File(target, "EscalayerReboot_87.VSF.import-conflict.bak")));
     }
 
+    @Test public void explicitSaveDataDoesNotDiscardNetworkSettingsOutsideTheFolder() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "SaveData");
+        File saveData = new File(wrapper, "SaveData");
+        assertTrue(saveData.mkdirs());
+        write(new File(root, "NetUserID.vsf"), "outer profile");
+        write(new File(wrapper, "NetUserID.vsf"), "game profile");
+        write(new File(saveData, "AFCommon.asd"), "progress");
+        File target = temporary.newFolder();
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(saveData, sourceRoot(paths, root));
+        assertEquals(saveData, sourceRoot(paths, root, true));
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, paths.importExtractedArchive(root, target, writes));
+            assertEquals(2, writes.finishFallbacks());
+        }
+        assertEquals("progress", read(new File(target, "AFCommon.asd")));
+        assertEquals("game profile", read(new File(target, "NetUserID.vsf")));
+        assertEquals("outer profile", read(new File(target, "NetUserID.vsf.import-conflict.bak")));
+    }
+
     @Test public void selectedMarkerWinsOverArchiveFallbackInEitherOrder() throws IOException {
         File root = temporary.newFolder("archive");
         File wrapper = new File(root, "backup");
@@ -274,6 +422,45 @@ public class SaveImportPathsTest {
             assertFalse(new File(target, "3DConfig.vsf").exists());
             assertEquals("outer", read(new File(target, "3DConfig.VSF.import-conflict.bak")));
         }
+    }
+
+    @Test public void nestedSaveDataCarriesOnlyOuterStateAndPrefersInnerCopies() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "SaveData");
+        File saveData = new File(wrapper, "SaveData");
+        assertTrue(saveData.mkdirs());
+        write(new File(root, "Collection.sav"), "outer collection");
+        write(new File(wrapper, "Extra.sav"), "outer extra");
+        write(new File(wrapper, "CommonSystemData.sav"), "outer common");
+        write(new File(wrapper, "AFConfig.asd"), "outer config");
+        write(new File(wrapper, "Volume.sav"), "outer volume");
+        touch(root, "SaveData02.sav");
+        touch(root, "03.asd");
+        touch(root, "readme.txt");
+        touch(wrapper, "System40.ini");
+        write(new File(saveData, "collection.SAV"), "inner collection");
+        write(new File(saveData, "01.asd"), "inner slot");
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(saveData, sourceRoot(paths, root, true));
+        assertEquals(wrapper, sourceRoot(paths, wrapper));
+        File target = temporary.newFolder();
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(root, target, writes));
+            assertEquals(5, writes.finishFallbacks());
+        }
+        assertEquals("inner slot", read(new File(target, "01.asd")));
+        assertEquals("inner collection", read(new File(target, "collection.SAV")));
+        assertEquals("outer collection", read(new File(target, "collection.SAV.import-conflict.bak")));
+        assertEquals("outer extra", read(new File(target, "Extra.sav")));
+        assertEquals("outer common", read(new File(target, "CommonSystemData.sav")));
+        assertEquals("outer config", read(new File(target, "AFConfig.asd")));
+        assertEquals("outer volume", read(new File(target, "Volume.sav")));
+        assertFalse(new File(target, "Collection.sav").exists());
+        assertFalse(new File(target, "SaveData02.sav").exists());
+        assertFalse(new File(target, "03.asd").exists());
+        assertFalse(new File(target, "readme.txt").exists());
+        assertFalse(new File(target, "System40.ini").exists());
     }
 
     @Test public void wrappedProgressReplacesAnExistingCaseVariant() throws IOException {
