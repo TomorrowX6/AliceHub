@@ -438,6 +438,8 @@
     <string name="hub_btn_install_first">安装游戏本体</string>
     <string name="hub_switch_instance">切换目录</string>
     <string name="hub_select_instance_title">切换目录</string>
+    <string name="hub_boot_entry">启动入口</string>
+    <string name="hub_boot_entry_default">默认启动入口</string>
     <string name="hub_instance_vanilla_tag">原版</string>
     <string name="hub_create_instance">新建目录</string>
     <string name="hub_create_instance_title">新建兰斯10目录</string>

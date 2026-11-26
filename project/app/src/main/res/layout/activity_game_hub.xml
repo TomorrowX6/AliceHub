@@ -121,6 +121,42 @@
                     android:layout_marginStart="12dp"
                     android:text="@string/hub_switch_instance" />
             </LinearLayout>
+
+            <!-- Only shown when a System 4 installation has selectable alternate launch entries. -->
+            <LinearLayout
+                android:id="@+id/hub_boot_entry_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_play_arrow"
+                    android:tint="@color/ui_text_secondary" />
+
+                <TextView
+                    android:id="@+id/hub_boot_entry_value"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:ellipsize="middle"
+                    android:singleLine="true"
+                    android:textAppearance="@style/TextAppearance.Launcher.Body" />
+
+                <Button
+                    android:id="@+id/btn_hub_switch_boot_entry"
+                    style="@style/Widget.Launcher.Button.Small"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="@string/hub_boot_entry" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Primary action. Accent background, icon and label are set in code. -->

@@ -439,6 +439,8 @@
     <string name="hub_btn_install_first">Install Base Game</string>
     <string name="hub_switch_instance">Switch Dir</string>
     <string name="hub_select_instance_title">Switch Directory</string>
+    <string name="hub_boot_entry">Launch entry</string>
+    <string name="hub_boot_entry_default">Default launch entry</string>
     <string name="hub_instance_vanilla_tag">Vanilla</string>
     <string name="hub_create_instance">New Directory</string>
     <string name="hub_create_instance_title">New Rance 10 Directory</string>

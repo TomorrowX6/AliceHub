@@ -10,11 +10,20 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.util.Locale
 
-class SaveImportPaths(gameDir: File?) {
+class SaveImportPaths @JvmOverloads constructor(
+    gameDir: File?,
+    launchTarget: File? = null,
+    saveFolderOverride: String? = null
+) {
     private val gameFiles = gameDir?.listFiles().orEmpty().filter { it.isFile }
     private val system35Prefix = findSystem35Prefix()
-    private val saveFolder = gameDir?.let(::resolveLaunchIniFile)?.takeIf { it.isFile }
-        ?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() }
+    private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
+        if (launchTarget != null) {
+            System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
+        } else {
+            resolveLaunchIniFile(dir).takeIf { it.isFile }
+        }
+    }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() })
         ?.takeIf { isSafeComponent(it) }
 
     private fun findSystem35Prefix(): String? {

@@ -1269,13 +1269,17 @@ object GameCatalog {
                     it.name.equals(expectedAinName, ignoreCase = true) ||
                         ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(expectedAinName, ignoreCase = true)
                     )
-            } == true
+            } == true || System4BootEntry.bootConfigurations(gameDir).any {
+                it.script.name.equals(expectedAinName, ignoreCase = true) ||
+                    ArchiveExtractor.repairSjisAsGbkMojibake(it.script.name).equals(expectedAinName, ignoreCase = true)
+            }
             if (!hasExpected) return false
         }
         return matchesTargetGame(targetGameId, gameDir)
     }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
+    private const val RUNNING_LAUNCH_TARGET_FILE = ".running_launch_target"
     private val RANCE01_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?1(?![0-9０-９])")
     private val RANCE02_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?2(?![0-9０-９])")
     private val RANCE03_CN_ALIAS_REGEX = Regex("(?<![0-9０-９])兰斯0?3(?![0-9０-９])")
@@ -11003,10 +11007,34 @@ object GameCatalog {
         }
     }
 
+    fun writeRunningLaunchTarget(context: Context, launchTarget: String) {
+        try {
+            File(context.filesDir, RUNNING_LAUNCH_TARGET_FILE).writeText(launchTarget, Charsets.UTF_8)
+        } catch (_: Throwable) {
+        }
+    }
+
     fun clearRunningGameRoot(context: Context) {
         try {
             File(context.filesDir, RUNNING_GAME_FILE).delete()
         } catch (_: Throwable) {
+        }
+        try {
+            File(context.filesDir, RUNNING_LAUNCH_TARGET_FILE).delete()
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun getRunningLaunchTarget(context: Context): String? {
+        if (!isGameProcessRunning(context)) {
+            clearRunningGameRoot(context)
+            return null
+        }
+        return try {
+            val f = File(context.filesDir, RUNNING_LAUNCH_TARGET_FILE)
+            if (f.isFile) f.readText(Charsets.UTF_8).trim().takeIf { it.isNotEmpty() } else null
+        } catch (_: Throwable) {
+            null
         }
     }
 
@@ -11086,12 +11114,20 @@ object GameCatalog {
             return
         }
         if (item.savedir == null) return
-        val saveDir = Item.resolveSaveDir(activity.filesDir, item.path).also { it.mkdirs() }
+        val selectedBootEntry = System4BootEntry.getSelectedEntry(activity, item.path)
+        val launchTarget = System4BootEntry.resolveLaunchTarget(item.path, selectedBootEntry)
+        val effectiveBootEntry = selectedBootEntry.takeIf { it.isNotBlank() && it in System4BootEntry.listEntries(item.path) }.orEmpty()
+        val saveDir = Item.resolveSaveDirForTarget(activity.filesDir, item.path, launchTarget).also { it.mkdirs() }
         val targetRoot = item.path.path
         val running = isGameProcessRunning(activity)
         val runningRoot = if (running) getRunningGameRoot(activity) else null
+        val runningTarget = if (running) getRunningLaunchTarget(activity) else null
+        val targetMismatch = runningRoot != null && (
+            runningRoot != targetRoot ||
+                (!isSystem3xGameDir(item.path) && runningTarget != null && runningTarget != launchTarget.path)
+            )
 
-        if (running && runningRoot != null && runningRoot != targetRoot) {
+        if (running && targetMismatch) {
             val cleanName = cleanItemTitle(item.name)
             AlertDialog.Builder(activity)
                 .setTitle(R.string.switch_running_game_title)
@@ -11101,7 +11137,7 @@ object GameCatalog {
                     waitForGameProcessExit(
                         activity = activity,
                         onExited = {
-                            startXSystem4Activity(activity, targetRoot, saveDir.path)
+                            startXSystem4Activity(activity, targetRoot, saveDir.path, effectiveBootEntry)
                         }
                     )
                 }
@@ -11115,13 +11151,13 @@ object GameCatalog {
             waitForGameProcessExit(
                 activity = activity,
                 onExited = {
-                    startXSystem4Activity(activity, targetRoot, saveDir.path)
+                    startXSystem4Activity(activity, targetRoot, saveDir.path, effectiveBootEntry)
                 }
             )
             return
         }
 
-        startXSystem4Activity(activity, targetRoot, saveDir.path)
+        startXSystem4Activity(activity, targetRoot, saveDir.path, effectiveBootEntry)
     }
 
     fun killRunningGameProcess(context: Context) {
@@ -11176,12 +11212,20 @@ object GameCatalog {
             .show()
     }
 
-    private fun startXSystem4Activity(context: Context, gameRoot: String, saveDir: String) {
+    private fun startXSystem4Activity(
+        context: Context,
+        gameRoot: String,
+        saveDir: String,
+        bootEntry: String = ""
+    ) {
         val i = Intent().apply {
             setClass(context.applicationContext, XSystem4Activity::class.java)
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(XSystem4Activity.EXTRA_GAME_ROOT, gameRoot)
             putExtra(XSystem4Activity.EXTRA_SAVE_DIR, saveDir)
+            if (bootEntry.isNotBlank()) {
+                putExtra(XSystem4Activity.EXTRA_BOOT_ENTRY, bootEntry)
+            }
         }
         context.startActivity(i)
     }

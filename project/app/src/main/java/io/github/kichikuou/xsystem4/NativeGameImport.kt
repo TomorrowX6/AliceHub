@@ -68,28 +68,72 @@ object NativeGameImport {
         return result
     }
 
+    private fun <T, D> hasConfiguredTreeScript(
+        codeName: String,
+        docs: List<TreeEntry<T, D>>,
+        listChildren: ((T) -> List<TreeEntry<T, D>>)?
+    ): Boolean {
+        val path = codeName.replace('\\', '/')
+        if (path.startsWith("/") || path.contains('\u0000')) return false
+        val components = path.split('/').filter { it.isNotEmpty() && it != "." }
+        if (components.isEmpty() || components.first().contains(':') || components.any { it == ".." }) return false
+        val leafLower = components.last().lowercase()
+        val validLeaf = (leafLower.endsWith(".ain") && leafLower != "system39.ain") ||
+            (leafLower.endsWith(".chs") && leafLower != "alicestart.chs")
+        if (!validLeaf) return false
+
+        var current = docs
+        for (i in components.indices) {
+            val part = components[i]
+            val match = current.firstOrNull { !skip(it.name) && it.name == part }
+                ?: current.firstOrNull { !skip(it.name) && it.name.equals(part, ignoreCase = true) }
+                ?: current.firstOrNull {
+                    !skip(it.name) && ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(part, ignoreCase = true)
+                }
+                ?: return false
+            if (i == components.lastIndex) {
+                return !match.folder
+            }
+            if (!match.folder || listChildren == null) return false
+            current = listChildren(match.id)
+        }
+        return false
+    }
+
     private fun <T, D> isSys4RootEntries(
         docs: List<TreeEntry<T, D>>,
-        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null
+        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null,
+        listChildren: ((T) -> List<TreeEntry<T, D>>)? = null
     ): Boolean {
         val activeDocs = docs.filter { !it.folder && !skip(it.name) }
         val activeNames = activeDocs.map { it.name }
         val hasIni = activeNames.any { GameCatalog.isSystem4LaunchIni(it) }
-        if (!hasIni) return false
         val readSmallByName: ((String) -> ByteArray?)? = readSmallEntry?.let { reader ->
             { targetName ->
                 activeDocs.firstOrNull { it.name.equals(targetName, true) }?.let(reader)
             }
         }
-        val hasAin = activeNames.any { GameCatalog.isSystem4CodeFile(it, activeNames, readSmallByName) }
-        return hasAin
+        if (hasIni && activeNames.any { GameCatalog.isSystem4CodeFile(it, activeNames, readSmallByName) }) {
+            return true
+        }
+        if (readSmallEntry != null) {
+            for (doc in activeDocs) {
+                if (!System4BootEntry.isCandidateIniFile(doc.name)) continue
+                val raw = runCatching { readSmallEntry(doc) }.getOrNull() ?: continue
+                if (System4BootEntry.extractCodeNames(raw).any { hasConfiguredTreeScript(it, docs, listChildren) }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private fun <T, D> isIxsealPatchRootEntries(
         docs: List<TreeEntry<T, D>>,
-        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null
+        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null,
+        listChildren: ((T) -> List<TreeEntry<T, D>>)? = null
     ): Boolean {
-        if (isSys4RootEntries(docs, readSmallEntry)) return true
+        if (isSys4RootEntries(docs, readSmallEntry, listChildren)) return true
         return docs.any {
             !it.folder && !skip(it.name) &&
                 (it.name.equals("Ixseal.ain", true) || it.name.equals("IxsealCG.afa", true))
@@ -98,9 +142,10 @@ object NativeGameImport {
 
     private fun <T, D> isSys3RootEntries(
         docs: List<TreeEntry<T, D>>,
-        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null
+        readSmallEntry: ((TreeEntry<T, D>) -> ByteArray?)? = null,
+        listChildren: ((T) -> List<TreeEntry<T, D>>)? = null
     ): Boolean {
-        if (isSys4RootEntries(docs, readSmallEntry)) return false
+        if (isSys4RootEntries(docs, readSmallEntry, listChildren)) return false
         val names = docs.filter { !it.folder && !skip(it.name) }.map { it.name }
         return names.any(GameCatalog::isSystem35Scenario) || GameCatalog.isLegacySystem3GameFiles(names)
     }
@@ -145,7 +190,7 @@ object NativeGameImport {
             while (patchQueue.isNotEmpty()) {
                 val (dirId, depth) = patchQueue.removeFirst()
                 val docs = listChildren(dirId)
-                if (isIxsealPatchRootEntries(docs, readSmallEntry)) {
+                if (isIxsealPatchRootEntries(docs, readSmallEntry, listChildren)) {
                     if (seenPatchIds.add(dirId)) {
                         ixsealPatchTrees.add(docs)
                     }
@@ -157,10 +202,10 @@ object NativeGameImport {
             }
         }
 
-        if (isSys4RootEntries(rootEntries, readSmallEntry) || isSys3RootEntries(rootEntries, readSmallEntry)) {
+        if (isSys4RootEntries(rootEntries, readSmallEntry, listChildren) || isSys3RootEntries(rootEntries, readSmallEntry, listChildren)) {
             primaryEntries = rootEntries
             sourceTrees = listOf(Triple(rootId, rootEntries, ""))
-            if (isSys4RootEntries(rootEntries, readSmallEntry)) {
+            if (isSys4RootEntries(rootEntries, readSmallEntry, listChildren)) {
                 collectPatchCn(rootEntries)
             }
         } else {
@@ -183,13 +228,13 @@ object NativeGameImport {
             while (queue.isNotEmpty()) {
                 val (dirId, dirName, depth) = queue.removeFirst()
                 val docs = listChildren(dirId)
-                if (isSys4RootEntries(docs, readSmallEntry) || isSys3RootEntries(docs, readSmallEntry)) {
+                if (isSys4RootEntries(docs, readSmallEntry, listChildren) || isSys3RootEntries(docs, readSmallEntry, listChildren)) {
                     if (primaryEntries == null && GameCatalog.isLegacySystem3GameFiles(docs.filter { !it.folder }.map { it.name })) {
                         return DiscoveredImportSources(docs, listOf(Triple(dirId, docs, "")), emptyList())
                     }
                     if (primaryEntries == null) primaryEntries = docs
                     discRoots.add(Triple(dirId, docs, ""))
-                    if (isSys4RootEntries(docs, readSmallEntry)) {
+                    if (isSys4RootEntries(docs, readSmallEntry, listChildren)) {
                         collectPatchCn(docs)
                     }
                 } else if (dirName.equals("Data", ignoreCase = true) &&
@@ -783,7 +828,25 @@ object NativeGameImport {
         if (!expectedAinName.isNullOrBlank() &&
             resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
         ) {
-            throw GameList.InstallFailureException(R.string.import_wrong_game)
+            val primaryTreeEntries = resolvedPrimary.map { TreeEntry(it.uri, it.name, it.folder, it) }
+            val hasNestedExpected = primaryTreeEntries.any { entry ->
+                if (entry.folder || skip(entry.name) || !System4BootEntry.isCandidateIniFile(entry.name)) {
+                    return@any false
+                }
+                val doc = entry.payload
+                val limit = boundedPrimaryReadLimitBytes(doc.name, doc.size) ?: return@any false
+                val bytes = readBoundedDocumentBytes(context, doc.uri, limit) ?: return@any false
+                System4BootEntry.extractCodeNames(bytes).any { codeName ->
+                    val leaf = codeName.replace('\\', '/').substringAfterLast('/')
+                    leaf.equals(expectedAinName, ignoreCase = true) &&
+                        hasConfiguredTreeScript(codeName, primaryTreeEntries) { dirUri ->
+                            children(context, tree, dirUri).map { TreeEntry(it.uri, it.name, it.folder, it) }
+                        }
+                }
+            }
+            if (!hasNestedExpected) {
+                throw GameList.InstallFailureException(R.string.import_wrong_game)
+            }
         }
         val primaryFileNames = resolvedPrimary
             .filter { !it.folder && !skip(it.name) }
