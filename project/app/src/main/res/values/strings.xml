@@ -135,7 +135,7 @@
 
     <string name="settings_online_install">Online Install</string>
     <string name="settings_check_for_updates">Check for updates</string>
-    <string name="update_available_message">AliceHub %1$s is available · View release</string>
+    <string name="update_available_message">AliceHub %1$s is available</string>
     <string name="settings_download_concurrency">Download Concurrency</string>
     <string name="download_concurrency_value">%1$d</string>
     <string name="download_concurrency_summary">Concurrent file and segment download connections (default 8). Lower this if your network is unstable.</string>
