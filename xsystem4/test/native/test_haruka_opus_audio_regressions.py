@@ -166,17 +166,29 @@ static void write_tone(const char *path, int format, int samplerate, float freq_
     assert(sf_close(sf) == 0);
 }
 
-static float mix_chunks(int chunks) {
+static float mix_chunks(int chunks, float *capture) {
     float buf[CHUNK_SIZE * 2];
     float peak = 0.0f;
     for (int i = 0; i < chunks; i++) {
         audio_callback(NULL, (Uint8 *)buf, sizeof(buf));
+        if (capture) memcpy(capture + i * CHUNK_SIZE * 2, buf, sizeof(buf));
         for (int j = 0; j < CHUNK_SIZE * 2; j++) {
             float v = fabsf(buf[j]);
             if (v > peak) peak = v;
         }
     }
     return peak;
+}
+
+static double tone_amplitude(const float *stereo, int frames, double hz) {
+    double in_phase = 0.0;
+    double quadrature = 0.0;
+    for (int i = 0; i < frames; i++) {
+        double phase = 2.0 * 3.141592653589793 * hz * i / 44100.0;
+        in_phase += stereo[i * 2] * cos(phase);
+        quadrature += stereo[i * 2] * sin(phase);
+    }
+    return 2.0 * hypot(in_phase, quadrature) / frames;
 }
 
 int main(int argc, char **argv) {
@@ -210,21 +222,28 @@ int main(int argc, char **argv) {
     int voice_ms = wav_get_time_length(0);
     assert(voice_ms >= 450 && voice_ms <= 550);
     assert(wav_play(0) == 1);
-    float voice_peak = mix_chunks(6);
+    float voice_peak = mix_chunks(6, NULL);
     assert(voice_peak > 0.1f);
 
     // 2. Character volume slider (channel 2) independently silences the Opus voice.
     assert(mixer_set_volume(2, 0) == 1);
-    mix_chunks(4);
-    assert(mix_chunks(4) == 0.0f);
+    mix_chunks(4, NULL);
+    assert(mix_chunks(4, NULL) == 0.0f);
     assert(mixer_set_volume(2, 100) == 1);
     assert(wav_unprepare(0) == 1);
 
     // 3. Ogg Vorbis SFX (ID 1 -> WAI channel 1) and Ogg Opus voice (ID 10003 -> channel 2) mix simultaneously.
     assert(wav_prepare(1, 1) == 1);
+    assert(wav_get_group_num(1) == 1);
     assert(wav_prepare(2, 10003) == 1);
     assert(wav_play(1) == 1 && wav_play(2) == 1);
-    assert(mix_chunks(6) > 0.1f);
+    enum { MIX_CHUNKS = 8 };
+    float combined[MIX_CHUNKS * CHUNK_SIZE * 2];
+    assert(mix_chunks(MIX_CHUNKS, combined) > 0.1f);
+    // Skip buffered startup; a 100 ms window contains whole cycles of both tones.
+    const float *steady_mix = combined + 2 * CHUNK_SIZE * 2;
+    assert(tone_amplitude(steady_mix, 4410, 440.0) > 0.1);  // Vorbis SFX
+    assert(tone_amplitude(steady_mix, 4410, 660.0) > 0.1);  // Opus voice
     assert(wav_unprepare(1) == 1 && wav_unprepare(2) == 1);
 
     free(g_sfx_buf);
