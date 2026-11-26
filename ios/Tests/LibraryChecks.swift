@@ -11,7 +11,11 @@ func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
 enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
 enum SaveSyncSession {
-    static func begin(game: String, ready: @escaping () -> Void) { ready() }
+    static var syncedGames = [String]()
+    static func begin(game: String, ready: @escaping () -> Void) {
+        syncedGames.append(game)
+        ready()
+    }
     static func end() {}
 }
 
@@ -26,9 +30,14 @@ private struct HubLocaleProbe: View {
 }
 
 private var engineLaunches = [String]()
+private var engineSavePaths = [String]()
 func xsystem4_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
     precondition(argc > 1)
     engineLaunches.append(String(cString: argv![Int(argc) - 1]!))
+    let arguments = (0..<Int(argc)).map { String(cString: argv![$0]!) }
+    if let saveOption = arguments.firstIndex(of: "--save-folder"), saveOption + 1 < arguments.count {
+        engineSavePaths.append(arguments[saveOption + 1])
+    }
     return 0
 }
 func xsystem35_main(_ argc: Int32, _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32 {
@@ -63,6 +72,7 @@ struct LibraryChecks {
         let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? files.removeItem(at: root) }
         try checkRelaunch(root.appendingPathComponent("Relaunch"))
+        try checkSystem4BootEntries(root.appendingPathComponent("BootEntries"))
         let rance = root.appendingPathComponent("R6汉硬1.10")
         let data = rance.appendingPathComponent("dAtA")
         try files.createDirectory(at: data, withIntermediateDirectories: true)
@@ -187,6 +197,27 @@ struct LibraryChecks {
         let dsrSlot = dsrSaveDir.appendingPathComponent("Save001.asd")
         try Data("dsr-save".utf8).write(to: dsrSlot)
         precondition(try Data(contentsOf: vanillaSlot) == Data("vanilla-save".utf8))
+
+        try Data().write(to: srDir.appendingPathComponent("DaiSengoku.ain"))
+        try Data().write(to: srDir.appendingPathComponent("Unknown.ain"))
+        precondition(GameLibrary.system4BootEntries(srDir) == ["System40.ini", "AliceCN.ain"])
+        defer { library.setBootEntry("", for: srGame) }
+        for (entry, expectedSaves) in [("System40.ini", dsrSaveDir), ("AliceCN.ain", vanillaSaveDir), ("Unknown.ain", dsrSaveDir)] {
+            library.setBootEntry(entry, for: srGame)
+            precondition(library.savesDirectory(for: srGame) == expectedSaves)
+            precondition(library.saveDirectoryName(for: srGame) == expectedSaves.lastPathComponent)
+            let previousLaunches = engineLaunches.count
+            library.launch(srGame)
+            let deadline = Date().addingTimeInterval(2)
+            while library.launching && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(!library.launching && library.error == nil)
+            precondition(engineLaunches.count == previousLaunches + 1)
+            precondition(engineSavePaths.last == expectedSaves.path)
+            precondition(SaveSyncSession.syncedGames.last == expectedSaves.lastPathComponent)
+        }
+        library.setBootEntry("", for: srGame)
 
         try Data("GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n".utf8).write(to: srIni)
         let restoredSaveDir = library.savesDirectory(for: srGame)
@@ -1064,6 +1095,101 @@ struct LibraryChecks {
         precondition(engineLaunches.count == 2)
         audioShutdownFinished = true
         print("Library relaunch checks passed")
+    }
+
+    static func checkSystem4BootEntries(_ root: URL) throws {
+        let files = FileManager.default
+        let source = root.appendingPathComponent("Source")
+        let documents = root.appendingPathComponent("Documents")
+        let library = GameLibrary(documents: documents)
+        let installed = library.gamesDirectory.appendingPathComponent(UUID().uuidString)
+        try files.createDirectory(at: source, withIntermediateDirectories: true)
+        let original = "System40.ini"
+        let patch = "ChineseLauncher.ini"
+        for (name, body) in [
+            (original, "CodeName = \"Original.ain\"\n"),
+            (patch, "GameName = \"Translated edition\"\n\tCodeName = \"ALICECN.AIN\"\n"),
+            ("ChineseLauncher.exe", ""),
+            ("Config.ini", "UseJoypad = true\n"),
+            ("Missing.ini", "CodeName = \"Missing.ain\"\n"),
+            ("Original.ain", ""),
+            ("AliceCN.ain", ""),
+        ] {
+            try Data(body.utf8).write(to: source.appendingPathComponent(name))
+        }
+        try LocalGameImport.stageFolder(source, to: installed)
+        let game = Game(url: installed)
+        let saves = library.savesDirectory(for: game)
+        precondition(GameLibrary.system4BootEntries(installed) == [patch, original])
+        let automatic = try GameLibrary.launchArguments(installed, saves: saves)
+        precondition(automatic.last == installed.path)
+        library.setBootEntry(patch, for: game)
+        defer { library.setBootEntry("", for: game) }
+        let reopened = GameLibrary(documents: documents)
+        precondition(reopened.bootEntry(for: game) == patch)
+        precondition(reopened.bootEntry(for: Game(url: source)).isEmpty)
+        let selected = try GameLibrary.launchArguments(installed, saves: saves, bootEntry: reopened.bootEntry(for: game))
+        precondition(selected.dropLast() == automatic.dropLast())
+        precondition(selected.last == installed.appendingPathComponent(patch).path)
+
+        let previousLaunches = engineLaunches.count
+        reopened.launch(game)
+        let deadline = Date().addingTimeInterval(2)
+        while reopened.launching && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        precondition(!reopened.launching && reopened.error == nil)
+        precondition(engineLaunches.count == previousLaunches + 1 && engineLaunches.last == selected.last)
+
+        try files.removeItem(at: installed.appendingPathComponent(patch))
+        precondition(GameLibrary.system4BootEntries(installed) == [original, "AliceCN.ain"])
+        let fallback = try GameLibrary.launchArguments(installed, saves: saves, bootEntry: patch)
+        precondition(fallback == automatic)
+        let raw = try GameLibrary.launchArguments(installed, saves: saves, bootEntry: "AliceCN.ain")
+        precondition(raw.last == installed.appendingPathComponent("AliceCN.ain").path)
+        let rejected = try GameLibrary.launchArguments(installed, saves: saves, bootEntry: "ChineseLauncher.exe")
+        precondition(rejected == automatic)
+        library.delete(game)
+        precondition(library.bootEntry(for: game).isEmpty)
+
+        let wrapper = root.appendingPathComponent("Wrapper")
+        let nested = wrapper.appendingPathComponent("Game")
+        try files.createDirectory(at: wrapper, withIntermediateDirectories: true)
+        try files.moveItem(at: source, to: nested)
+        try files.removeItem(at: nested.appendingPathComponent(original))
+        try LocalGameImport.stageFolder(wrapper, to: installed)
+        let customDefault = try GameLibrary.launchArguments(installed, saves: saves)
+        precondition(customDefault.last == installed.appendingPathComponent(patch).path)
+
+        let bilingual = root.appendingPathComponent("Bilingual")
+        let data = bilingual.appendingPathComponent("Data")
+        try files.createDirectory(at: data, withIntermediateDirectories: true)
+        for (name, contents) in [
+            ("AliceStart.ini", "CodeName = \"Original.ain\"\n"),
+            ("AliceStart.CHS", "CodeName = \"Oya.CHS\"\n"),
+            ("Nested.ini", "CodeName = \".\\dAtA\\PATCH.AIN\"\n"),
+            ("Original.ain", ""),
+            ("Oya.CHS", ""),
+            ("Unconfigured.CHS", ""),
+            ("Data/Patch.ain", ""),
+        ] {
+            try Data(contents.utf8).write(to: bilingual.appendingPathComponent(name))
+        }
+        let bilingualInstall = library.gamesDirectory.appendingPathComponent("Bilingual")
+        try LocalGameImport.stageFolder(bilingual, to: bilingualInstall)
+        try Data("CodeName = \"../Outside.ain\"\n".utf8).write(to: bilingualInstall.appendingPathComponent("Outside.ini"))
+        try Data().write(to: library.gamesDirectory.appendingPathComponent("Outside.ain"))
+        try files.createSymbolicLink(at: bilingualInstall.appendingPathComponent("Alias"), withDestinationURL: library.gamesDirectory)
+        try Data("CodeName = \"Alias/Outside.ain\"\n".utf8).write(to: bilingualInstall.appendingPathComponent("Alias.ini"))
+        let configuredEntries = ["AliceStart.CHS", "AliceStart.ini", "Nested.ini"]
+        precondition(GameLibrary.system4BootEntries(bilingualInstall) == configuredEntries)
+        for entry in ["AliceStart.CHS", "Nested.ini"] {
+            let args = try GameLibrary.launchArguments(bilingualInstall, saves: saves, bootEntry: entry)
+            precondition(args.last == bilingualInstall.appendingPathComponent(entry).path)
+        }
+        try Data().write(to: bilingualInstall.appendingPathComponent("CHS.TBL"))
+        precondition(GameLibrary.system4BootEntries(bilingualInstall) == configuredEntries + ["Unconfigured.CHS"])
+        print("System 4 launch entry checks passed")
     }
 
     static func checkGamepadProfiles() {

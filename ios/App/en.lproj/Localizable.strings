@@ -173,6 +173,8 @@
 "应用语言" = "App Language";
 "开始下载游戏？" = "Download this game?";
 "开始游戏" = "Play";
+"启动入口" = "Launch entry";
+"默认启动入口" = "Default launch entry";
 "开源许可证" = "Open Source Licenses";
 "异空窟探险" = "Waidonyo";
 "当前整合包无原版备份，无法原地切换其他 MOD 系列，请先安装原版游戏后再安装。" = "No original backup is available. Install the original game before switching MOD series.";
