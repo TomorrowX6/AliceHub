@@ -249,6 +249,26 @@ int main(void) {
     clear_list();
     ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
 
+    const char sjis_speaker[] = "\x81\x79\x88\xc9\x8d\xb2\x95\x90\x81\x7a";
+    const char gbk_speaker[] = "\xa1\xbe\xd2\xc1\xd7\xf4\xce\xe4\xa1\xbf";
+    line = make_string(sjis_speaker, sizeof(sjis_speaker) - 1);
+    add_list_text(line, &EMPTY_STRING);
+    ((void (*)(struct string *, struct string *))find_export("ADVLogList_AddText")->fun)
+        (line, &EMPTY_STRING);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, gbk_speaker));
+    free_string(display);
+    display = get_text(0, 0);
+    assert(!strcmp(display->text, gbk_speaker));
+    free_string(display);
+    sys4_set_text_gbk(false);
+    display = get_list_text(0, 0);
+    assert(!strcmp(display->text, sjis_speaker));
+    free_string(display);
+    free_string(line);
+    clear_list();
+    ((void (*)(void))find_export("ADVLogList_Clear")->fun)();
+
     struct ain_hll_function int_voice = {
         .nr_arguments = 2, .arguments = getter_args, .return_type.data = AIN_INT,
     };
