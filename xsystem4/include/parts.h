@@ -99,6 +99,8 @@ bool PE_SetNumeralLength(int parts_no, int length, int state);
 bool PE_SetNumeralSurfaceArea(int parts_no, int x, int y, int w, int h, int state);
 void PE_SetNumeralFont(int no, int face, int size, int r, int g, int b, float bold,
 		int er, int eg, int eb, float edge, int state);
+bool PE_SetNumeralFontWithPitch(int no, int face, int size, int r, int g, int b, float bold,
+		int er, int eg, int eb, float edge, bool full_pitch, int state);
 void PE_GetNumeralFont(int no, int *face, int *size, int *r, int *g, int *b, float *bold,
 		int *er, int *eg, int *eb, float *edge, int state);
 void PE_SetNumeralFullPitch(int no, bool full_pitch, int state);

@@ -19,6 +19,106 @@ from test_font_and_draw_scissor_regressions import extract_function
 
 
 class Wave2Pascha3NativeTests(unittest.TestCase):
+    def test_parts_engine_hll_signatures(self):
+        source = r'''
+#include <assert.h>
+#include <string.h>
+#include "system4/ain.h"
+#include "system4/string.h"
+#include "hll.h"
+#include "parts.h"
+#include "parts_activity.h"
+#include "parts_internal.h"
+
+static struct parts part;
+static int numeral_updates;
+static bool activity_edit;
+
+struct parts *parts_get(int no) { assert(no == 42); return &part; }
+struct parts_gauge *parts_get_hgauge(struct parts *p, int state) { return &p->states[state].gauge; }
+struct parts_gauge *parts_get_vgauge(struct parts *p, int state) { return &p->states[state].gauge; }
+struct parts_numeral *parts_get_numeral(struct parts *p, int state) { return &p->states[state].num; }
+void parts_hgauge_set_rate(struct parts *p, struct parts_gauge *g, float rate) { assert(0); }
+void parts_vgauge_set_rate(struct parts *p, struct parts_gauge *g, float rate) { assert(0); }
+static bool parts_numeral_update(struct parts *p, struct parts_numeral *n) {
+    assert(p == &part && n == &p->states[2].num);
+    numeral_updates++;
+    return true;
+}
+bool PE_ReadActivityFile(struct string *name, struct string *file, bool edit) {
+    assert(name && file);
+    activity_edit = edit;
+    return true;
+}
+'''
+        source += "\n".join(extract_function("src/parts/parts.c", name) for name in (
+            "PE_SetHGaugeRate", "PE_SetVGaugeRate", "PE_SetHGaugeRate_int", "PE_SetVGaugeRate_int",
+            "parts_set_numeral_font", "PE_SetNumeralFont", "PE_SetNumeralFontWithPitch",
+        ))
+        source += "\n".join(extract_function("src/hll/PartsEngine.c", name) for name in (
+            "PartsEngine_ReadActivityFile_legacy", "PartsEngine_ResolveReadActivityFile",
+            "PartsEngine_ResolveGaugeRate", "PartsEngine_ResolveSetNumeralFont",
+        ))
+        hll = (ROOT / "src/hll/PartsEngine.c").read_text()
+        source += "\nHLL_LIBRARY(PartsEngine,\n" + "\n".join(
+            line.strip() for line in hll.splitlines()
+            if any(line.strip().startswith(f"HLL_OVERLOAD({name},") for name in (
+                "ReadActivityFile", "SetHGaugeRate", "SetVGaugeRate", "SetNumeralFont",
+            ))
+        ).rstrip(",") + ");\n"
+        source += r'''
+static void *resolve(char *name, enum ain_data_type result, int count, const enum ain_data_type *types) {
+    struct ain_hll_argument args[13] = {0};
+    for (int i = 0; i < count; i++)
+        args[i].type.data = types[i];
+    struct ain_hll_function f = {.name = name, .return_type = {.data = result},
+                                .nr_arguments = count, .arguments = args};
+    for (struct static_hll_function *e = lib_PartsEngine.functions; e->name; e++)
+        if (!strcmp(e->name, name))
+            return e->resolve(&f);
+    return NULL;
+}
+
+int main(void) {
+    const enum ain_data_type fractional[] = {AIN_INT, AIN_FLOAT, AIN_FLOAT, AIN_INT};
+    bool (*horizontal)(int, float, float, int) = resolve("SetHGaugeRate", AIN_BOOL, 4, fractional);
+    bool (*vertical)(int, float, float, int) = resolve("SetVGaugeRate", AIN_BOOL, 4, fractional);
+    assert(horizontal && horizontal(42, 0.5f, 2.0f, 1));
+    assert(vertical && vertical(42, 1.5f, 2.0f, 2));
+    assert(part.states[0].gauge.rate == 0.25f && part.states[1].gauge.rate == 0.75f);
+    const enum ain_data_type integral[] = {AIN_INT, AIN_INT, AIN_INT, AIN_INT};
+    bool (*legacy_gauge)(int, int, int, int) = resolve("SetHGaugeRate", AIN_BOOL, 4, integral);
+    assert(legacy_gauge && legacy_gauge(42, 2, 4, 1) && part.states[0].gauge.rate == 0.5f);
+
+    enum ain_data_type numeral[] = {AIN_INT, AIN_INT, AIN_INT, AIN_INT, AIN_INT, AIN_INT,
+                                    AIN_FLOAT, AIN_INT, AIN_INT, AIN_INT, AIN_FLOAT, AIN_BOOL, AIN_INT};
+    bool (*set_font)(int, int, int, int, int, int, float, int, int, int, float, bool, int) =
+        resolve("SetNumeralFont", AIN_BOOL, 13, numeral);
+    struct parts_numeral *n = &part.states[2].num;
+    assert(set_font && set_font(42, 2, 24, 10, 20, 30, 1.0f, 40, 50, 60, 2.0f, true, 3));
+    assert(n->full_pitch && n->ts.size == 24 && numeral_updates == 1);
+    assert(!set_font(42, 2, 12, 0, 0, 0, 0, 0, 0, 0, 0, false, 0));
+    assert(n->full_pitch && numeral_updates == 1);
+    numeral[11] = AIN_INT;
+    void (*set_font_legacy)(int, int, int, int, int, int, float, int, int, int, float, int) =
+        resolve("SetNumeralFont", AIN_VOID, 12, numeral);
+    assert(set_font_legacy);
+    set_font_legacy(42, 2, 16, 0, 0, 0, 0, 0, 0, 0, 0, 3);
+    assert(n->full_pitch && n->ts.size == 16 && numeral_updates == 2);
+    assert(set_font(42, 2, 12, 0, 0, 0, 0, 0, 0, 0, 0, false, 3));
+    assert(!n->full_pitch && numeral_updates == 3);
+
+    const enum ain_data_type activity[] = {AIN_STRING, AIN_STRING, AIN_BOOL};
+    struct string name = {0}, file = {0};
+    bool (*read_activity)(struct string *, struct string *, bool) = resolve("ReadActivityFile", AIN_BOOL, 3, activity);
+    bool (*read_activity_legacy)(struct string *, struct string *) = resolve("ReadActivityFile", AIN_BOOL, 2, activity);
+    assert(read_activity && read_activity(&name, &file, true) && activity_edit);
+    assert(read_activity_legacy && read_activity_legacy(&name, &file) && !activity_edit);
+    return 0;
+}
+'''
+        compile_and_run(source, [])
+
     def test_system4_pascha3_gbk_trigger(self):
         src = (ROOT / "src/system4.c").read_text(encoding="utf-8", errors="ignore")
         self.assertIn(r'"\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4"', src)

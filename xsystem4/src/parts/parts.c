@@ -2628,13 +2628,15 @@ static struct parts_numeral *try_get_numeral(int no, int state)
 	return p && p->states[state].type == PARTS_NUMERAL ? &p->states[state].num : NULL;
 }
 
-void PE_SetNumeralFont(int no, int face, int size, int r, int g, int b, float bold,
-		int er, int eg, int eb, float edge, int state)
+static bool parts_set_numeral_font(int no, int face, int size, int r, int g, int b, float bold,
+		int er, int eg, int eb, float edge, int state, const bool *full_pitch)
 {
-	if (!parts_state_valid(--state)) return;
+	if (!parts_state_valid(--state)) return false;
 	struct parts *p = parts_get(no);
 	struct parts_numeral *n = parts_get_numeral(p, state);
 	n->show_type = 2;
+	if (full_pitch)
+		n->full_pitch = *full_pitch;
 	n->ts.face = face;
 	n->ts.size = size;
 	n->ts.font_size = NULL;
@@ -2643,7 +2645,19 @@ void PE_SetNumeralFont(int no, int face, int size, int r, int g, int b, float bo
 	n->ts.weight = bold * 1000;
 	n->ts.edge_color = (SDL_Color){er, eg, eb, 255};
 	text_style_set_edge_width(&n->ts, edge);
-	parts_numeral_update(p, n);
+	return parts_numeral_update(p, n);
+}
+
+void PE_SetNumeralFont(int no, int face, int size, int r, int g, int b, float bold,
+		int er, int eg, int eb, float edge, int state)
+{
+	parts_set_numeral_font(no, face, size, r, g, b, bold, er, eg, eb, edge, state, NULL);
+}
+
+bool PE_SetNumeralFontWithPitch(int no, int face, int size, int r, int g, int b, float bold,
+		int er, int eg, int eb, float edge, bool full_pitch, int state)
+{
+	return parts_set_numeral_font(no, face, size, r, g, b, bold, er, eg, eb, edge, state, &full_pitch);
 }
 
 void PE_GetNumeralFont(int no, int *face, int *size, int *r, int *g, int *b, float *bold,
