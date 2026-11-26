@@ -224,7 +224,10 @@ public class SaveImportPathsTest {
             File target = temporary.newFolder();
             SaveImportPaths paths = new SaveImportPaths(null);
             assertEquals(wrapper, sourceRoot(paths, root, true));
-            assertEquals(2, paths.importExtractedArchive(root, target, new SaveImportPaths.ImportWrites()));
+            try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+                assertEquals(1, paths.importExtractedArchive(root, target, writes));
+                assertEquals(1, writes.finishFallbacks());
+            }
             assertEquals("progress", read(new File(target, "CommonSystemData.sav")));
             assertEquals("outer", read(new File(target, name)));
         }
@@ -235,14 +238,42 @@ public class SaveImportPathsTest {
         File wrapper = new File(root, "backup");
         assertTrue(wrapper.mkdir());
         write(new File(root, "EscalayerReboot_87.vsf"), "outer");
-        write(new File(wrapper, "EscalayerReboot_87.vsf"), "wrapped");
+        write(new File(wrapper, "EscalayerReboot_87.VSF"), "wrapped");
         touch(wrapper, "01.asd");
         File target = temporary.newFolder();
 
         SaveImportPaths paths = new SaveImportPaths(null);
-        assertEquals(3, paths.importExtractedArchive(root, target, new SaveImportPaths.ImportWrites()));
-        assertEquals("wrapped", read(new File(target, "EscalayerReboot_87.vsf")));
-        assertEquals("outer", read(new File(target, "EscalayerReboot_87.vsf.import-conflict.bak")));
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(2, paths.importExtractedArchive(root, target, writes));
+            assertEquals(1, writes.finishFallbacks());
+        }
+        assertEquals("wrapped", read(new File(target, "EscalayerReboot_87.VSF")));
+        assertFalse(new File(target, "EscalayerReboot_87.vsf").exists());
+        assertEquals("outer", read(new File(target, "EscalayerReboot_87.VSF.import-conflict.bak")));
+    }
+
+    @Test public void selectedMarkerWinsOverArchiveFallbackInEitherOrder() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "backup");
+        assertTrue(wrapper.mkdir());
+        write(new File(root, "3DConfig.vsf"), "outer");
+        touch(wrapper, "01.asd");
+        SaveImportPaths paths = new SaveImportPaths(null);
+        for (boolean archiveFirst : new boolean[]{false, true}) {
+            File target = temporary.newFolder();
+            File staged = temporary.newFile();
+            write(staged, "selected");
+            File selected = new File(target, "3DConfig.VSF");
+            try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+                if (!archiveFirst) writes.write(staged, selected);
+                assertEquals(1, paths.importExtractedArchive(root, target, writes));
+                if (archiveFirst) writes.write(staged, selected);
+                assertEquals(1, writes.finishFallbacks());
+            }
+            assertEquals("selected", read(selected));
+            assertFalse(new File(target, "3DConfig.vsf").exists());
+            assertEquals("outer", read(new File(target, "3DConfig.VSF.import-conflict.bak")));
+        }
     }
 
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {

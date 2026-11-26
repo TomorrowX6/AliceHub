@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.nio.CharBuffer
@@ -156,11 +157,15 @@ class SaveImportPaths(gameDir: File?) {
         )
         val rootCanonical = targetDir.canonicalFile
         var copied = 0
-        fun copy(src: File, parts: List<String>) {
+        fun copy(src: File, parts: List<String>, fallback: Boolean = false) {
             val relPath = parts.map { normalizedName(it, atRoot = parts.size == 1) }.joinToString("/")
             val dst = File(rootCanonical, relPath).canonicalFile
             if (!dst.path.startsWith(rootCanonical.path + File.separator)) return
             dst.parentFile?.mkdirs()
+            if (fallback) {
+                writes.stageFallback(src, dst)
+                return
+            }
             val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
             try {
                 src.copyTo(tmpDst, overwrite = true)
@@ -181,7 +186,7 @@ class SaveImportPaths(gameDir: File?) {
                 ancestor = checkNotNull(ancestor.parentFile)
                 for (src in ancestor.listFiles().orEmpty()) {
                     if (src.isFile && !src.name.startsWith('.') && isArchiveMarker(src.name)) {
-                        copy(src, listOf(src.name))
+                        copy(src, listOf(src.name), fallback = true)
                     }
                 }
             }
@@ -189,8 +194,12 @@ class SaveImportPaths(gameDir: File?) {
         return copied
     }
 
-    class ImportWrites {
+    class ImportWrites : Closeable {
         private val written = mutableSetOf<File>()
+        private val markers = mutableMapOf<Pair<File, String>, File>()
+        private val fallbacks = mutableListOf<Pair<File, File>>()
+
+        private fun markerKey(target: File) = target.parentFile!! to target.name.lowercase(Locale.ROOT)
 
         fun write(staged: File, destination: File) {
             val target = destination.canonicalFile
@@ -199,7 +208,37 @@ class SaveImportPaths(gameDir: File?) {
             } else {
                 if (!staged.renameTo(target)) staged.copyTo(target, overwrite = true)
                 written.add(target)
+                if (isArchiveMarker(target.name)) markers.putIfAbsent(markerKey(target), target)
             }
+        }
+
+        fun stageFallback(source: File, destination: File) {
+            val staged = Files.createTempFile(destination.parentFile!!.toPath(), ".imp_", ".tmp").toFile()
+            try {
+                source.copyTo(staged, overwrite = true)
+                fallbacks.add(staged to destination)
+            } catch (e: Exception) {
+                staged.delete()
+                throw e
+            }
+        }
+
+        fun finishFallbacks(): Int {
+            val count = fallbacks.size
+            try {
+                for ((staged, destination) in fallbacks) {
+                    val target = destination.canonicalFile
+                    write(staged, markers[markerKey(target)] ?: target)
+                }
+            } finally {
+                close()
+            }
+            return count
+        }
+
+        override fun close() {
+            fallbacks.forEach { (staged, _) -> staged.delete() }
+            fallbacks.clear()
         }
     }
 

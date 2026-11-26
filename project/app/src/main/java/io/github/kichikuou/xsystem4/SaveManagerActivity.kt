@@ -28,6 +28,7 @@ import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -556,6 +557,7 @@ class SaveManagerActivity : ThemedActivity() {
             uris: List<Uri>,
             target: SaveTarget
         ): Job = launchSaveOp {
+            val writes = SaveImportPaths.ImportWrites()
             try {
                 val count = withContext(Dispatchers.IO) {
                     ensureProcessStoppedOnIo(appCtx)
@@ -563,7 +565,6 @@ class SaveManagerActivity : ThemedActivity() {
                     targetDir.mkdirs()
                     backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
                     val paths = SaveImportPaths(target.externalGameDir)
-                    val writes = SaveImportPaths.ImportWrites()
                     val rootCanonical = targetDir.canonicalFile
                     var imported = 0
                     for (uri in uris) {
@@ -590,7 +591,7 @@ class SaveManagerActivity : ThemedActivity() {
                             }
                         }
                     }
-                    imported
+                    imported + writes.finishFallbacks()
                 }
                 onHost {
                     it.dismissProgress()
@@ -612,6 +613,8 @@ class SaveManagerActivity : ThemedActivity() {
                     appCtx.getString(R.string.save_import_failed_title),
                     formatArchiveImportErrorForContext(appCtx, e)
                 )
+            } finally {
+                withContext(Dispatchers.IO + NonCancellable) { writes.close() }
             }
         }
 
