@@ -61,7 +61,7 @@ object AppSettings {
     private const val DEFAULT_ESCALAYER_REBOOT_BYTES = 2470174002L
     internal const val DEFAULT_GALZOO_BYTES = 4027583522L
     internal const val DEFAULT_IXSEAL_BYTES = 4729863037L
-    internal const val DEFAULT_HARUKA_BYTES = 3797821541L
+    internal const val DEFAULT_HARUKA_BYTES = 1037465188L
     internal const val DEFAULT_TSUMASHIBORI_BYTES = 2877493822L
     internal const val DEFAULT_TSUMAMIGUI_BYTES = 1400592703L
     internal const val DEFAULT_TSUMAMIGUI3_BYTES = 2403975825L

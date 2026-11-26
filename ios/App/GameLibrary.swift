@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreText
+import CryptoKit
 import Darwin
 
 enum GameEngine: String {
@@ -110,6 +111,20 @@ final class GameLibrary: ObservableObject {
             }
         }
         return false
+    }
+
+    static func hasLocalChineseMarkers(regularFiles: [URL]) -> Bool {
+        hasLocalChineseMarkers(fileNames: regularFiles.map(\.lastPathComponent)) ||
+            regularFiles.contains(where: isHarukaChineseScript)
+    }
+
+    private static func isHarukaChineseScript(_ file: URL) -> Bool {
+        // The cloud CN edition keeps the English INI and script filename.
+        guard file.lastPathComponent.lowercased() == "haruka.ain",
+              (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) == 2759127,
+              let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { return false }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() ==
+            "c05bb31b0e46c276c7766dd00a76e90367c65fa5d395d4cc45d11983e03ee576"
     }
 
     private static func hasInstalledCnPatch(_ url: URL, regularFiles: [URL]) -> Bool {
@@ -732,7 +747,7 @@ final class GameLibrary: ObservableObject {
             })?.0
         }
 
-        let hasLocalChinese = hasLocalChineseMarkers(fileNames: regularNamesLower)
+        let hasLocalChinese = hasLocalChineseMarkers(regularFiles: regularFiles)
         let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
         let hasCnPatch = hasInstalledCnPatch(url, regularFiles: regularFiles)
 

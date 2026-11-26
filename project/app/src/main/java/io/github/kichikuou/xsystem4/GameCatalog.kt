@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.Process
 import android.widget.Toast
 import java.io.File
+import java.security.MessageDigest
 
 data class GameDescriptor @JvmOverloads constructor(
     val id: String,
@@ -272,8 +273,18 @@ object GameCatalog {
     @JvmStatic
     fun hasLocalChineseMarkers(dir: File?): Boolean {
         if (dir == null || !dir.isDirectory) return false
-        val names = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
-        return hasLocalChineseMarkers(names)
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        return hasLocalChineseMarkers(files.map { it.name }) || files.any(::isHarukaChineseScript)
+    }
+
+    private fun isHarukaChineseScript(file: File): Boolean {
+        // The cloud CN edition keeps the English INI and script filename.
+        if (!file.name.equals("haruka.ain", true) || file.length() != 2759127L) return false
+        return runCatching {
+            MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+                .joinToString("") { "%02x".format(it) } ==
+                "c05bb31b0e46c276c7766dd00a76e90367c65fa5d395d4cc45d11983e03ee576"
+        }.getOrDefault(false)
     }
 
     @JvmStatic
@@ -299,6 +310,7 @@ object GameCatalog {
                 item.cachedHasLocalCnMarkers = it
             }
             if (localCn) return true
+            if (descriptor.id == ID_HARUKA) return false
             val explicitNonCn = item.cachedHasExplicitNonCnEdition ?: hasExplicitNonChineseEdition(item.path).also {
                 item.cachedHasExplicitNonCnEdition = it
             }
@@ -8467,7 +8479,8 @@ object GameCatalog {
                 supportsOnlineMod = false,
                 supportsLocalMod = false,
                 isRance10 = false,
-                supportsUncensoredPatch = true
+                supportsUncensoredPatch = true,
+                hasChinese = true
             )
             ID_TSUMASHIBORI -> GameDescriptor(
                 id = ID_TSUMASHIBORI,

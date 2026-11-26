@@ -82,11 +82,11 @@ struct OnlineGameChecks {
         var empty = original; empty["files"] = []; try rejects(empty)
         precondition(OnlineGame.all.count == 170 && Set(OnlineGame.all.map(\.id)).count == 170)
         let chineseIds = Set(OnlineGame.all.filter(\.hasChinese).map(\.id))
-        precondition(chineseIds.count == 53)
-        for cnId in ["rance10", "dohnadohna", "evenicle", "evenicle2", "sengokurance", "rance01", "rance09", "escalayerreboot", "galzoo", "ixseal", "tsumashibori", "tsumamigui", "tsumamigui2", "tsumamigui3", "darcrows", "sanbiki", "pascha3", "bladebriders", "dorapeko", "haniwapetit"] {
+        precondition(chineseIds.count == 54)
+        for cnId in ["rance10", "dohnadohna", "evenicle", "evenicle2", "sengokurance", "rance01", "rance09", "escalayerreboot", "galzoo", "ixseal", "haruka", "tsumashibori", "tsumamigui", "tsumamigui2", "tsumamigui3", "darcrows", "sanbiki", "pascha3", "bladebriders", "dorapeko", "haniwapetit"] {
             precondition(chineseIds.contains(cnId), "Expected Chinese: \(cnId)")
         }
-        for rawId in ["escalayer", "haruka", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm", "yakata456", "ayumilive", "carol", "selfgame", "momoiroguardian", "rance1classic", "rance2classic", "rance3classic", "dpssgfahren", "dpssgkatei", "dpssgnobunaga", "dpssg2antique", "dpssg2ikenai", "dpssg2akai", "dpssg3rabbit", "dpssg3shinkon", "dpssg3sotsugyou"] {
+        for rawId in ["escalayer", "toushin1", "toushin2", "paschacpp", "mamatoto", "mamorigami", "dalkgaiden", "vanishpalm", "yakata456", "ayumilive", "carol", "selfgame", "momoiroguardian", "rance1classic", "rance2classic", "rance3classic", "dpssgfahren", "dpssgkatei", "dpssgnobunaga", "dpssg2antique", "dpssg2ikenai", "dpssg2akai", "dpssg3rabbit", "dpssg3shinkon", "dpssg3sotsugyou"] {
             precondition(!chineseIds.contains(rawId), "Expected raw: \(rawId)")
         }
         let rance1ClassicEntry = OnlineGame.all.first { $0.id == "rance1classic" }!
@@ -106,6 +106,22 @@ struct OnlineGameChecks {
         try Data().write(to: cnMarkerDir.appendingPathComponent("Custom_cn.afa"))
         precondition(OnlineGame.hasLocalChineseMarkers(in: cnMarkerDir))
         precondition(OnlineGame.hasChinese(for: Game(url: cnMarkerDir)))
+        let rawHarukaDir = root.appendingPathComponent("Haruka")
+        try files.createDirectory(at: rawHarukaDir, withIntermediateDirectories: true)
+        precondition(!OnlineGame.hasChinese(for: Game(url: rawHarukaDir)))
+        try Data("GameName = \"Beat Blades Haruka\"\n".utf8).write(to: rawHarukaDir.appendingPathComponent("System40.ini"))
+        try Data(count: 2759127).write(to: rawHarukaDir.appendingPathComponent("Haruka.ain"))
+        let rawHaruka = Game(url: rawHarukaDir)
+        precondition(rawHaruka.artworkKey == "haruka" && !OnlineGame.hasChinese(for: rawHaruka))
+        let jpHarukaDir = root.appendingPathComponent("HarukaJP")
+        try files.createDirectory(at: jpHarukaDir, withIntermediateDirectories: true)
+        try Data().write(to: jpHarukaDir.appendingPathComponent("System40.ini"))
+        try Data().write(to: jpHarukaDir.appendingPathComponent("超昂閃忍ハルカ.ain"))
+        let jpHaruka = Game(url: jpHarukaDir)
+        precondition(jpHaruka.artworkKey == "haruka" && !OnlineGame.hasChinese(for: jpHaruka))
+        try Data().write(to: rawHarukaDir.appendingPathComponent("AliceCN.ain"))
+        precondition(OnlineGame.hasLocalChineseMarkers(in: rawHarukaDir))
+        precondition(OnlineGame.hasChinese(for: Game(url: rawHarukaDir)))
         let uifMarkerDir = root.appendingPathComponent("custom-uif-cn")
         try files.createDirectory(at: uifMarkerDir, withIntermediateDirectories: true)
         try Data().write(to: uifMarkerDir.appendingPathComponent("AliceStart.ini"))

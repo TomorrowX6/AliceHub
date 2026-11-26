@@ -48,6 +48,7 @@ public class TranslationBadgeTest {
             GameCatalog.ID_ESCALAYER_REBOOT,
             GameCatalog.ID_GALZOO,
             GameCatalog.ID_IXSEAL,
+            GameCatalog.ID_HARUKA,
             GameCatalog.ID_TSUMASHIBORI,
             GameCatalog.ID_TSUMAMIGUI,
             GameCatalog.ID_TSUMAMIGUI3,
@@ -85,7 +86,7 @@ public class TranslationBadgeTest {
     public void builtInCatalogMatchesVerifiedChineseAndRawClassification() {
         List<String> order = GameCatalog.builtInSelectOrder();
         assertEquals(170, order.size());
-        assertEquals(53, EXPECTED_CHINESE_IDS.size());
+        assertEquals(54, EXPECTED_CHINESE_IDS.size());
 
         int cnCount = 0;
         int rawCount = 0;
@@ -100,12 +101,12 @@ public class TranslationBadgeTest {
                 rawCount++;
             }
         }
-        assertEquals(53, cnCount);
-        assertEquals(117, rawCount);
+        assertEquals(54, cnCount);
+        assertEquals(116, rawCount);
 
         // Spot-check titles whose raw vs CN status is non-obvious
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_ESCALAYER, null, r -> "escalayer").getHasChinese());
-        assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_HARUKA, null, r -> "haruka").getHasChinese());
+        assertTrue(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_HARUKA, null, r -> "haruka").getHasChinese());
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_TOUSHIN1, null, r -> "toushin1").getHasChinese());
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_TOUSHIN2, null, r -> "toushin2").getHasChinese());
         assertFalse(GameCatalog.INSTANCE.descriptorForWithResolver(GameCatalog.ID_PASCHACPP, null, r -> "paschacpp").getHasChinese());
