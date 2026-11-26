@@ -78,11 +78,18 @@ class SaveImportPaths(gameDir: File?) {
         name: (T) -> String,
         isDirectory: (T) -> Boolean,
         fromArchive: Boolean = false
-    ): T {
+    ): T = selectSource(root, children, name, isDirectory, fromArchive).root
+
+    private data class Source<T>(val root: T, val keepOuterMarkers: Boolean = false)
+
+    private fun <T> selectSource(
+        root: T,
+        children: (T) -> List<T>,
+        name: (T) -> String,
+        isDirectory: (T) -> Boolean,
+        fromArchive: Boolean
+    ): Source<T> {
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
-        fun isArchiveSave(name: String): Boolean =
-            saveExtension.matches(name) ||
-                name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
 
@@ -120,7 +127,7 @@ class SaveImportPaths(gameDir: File?) {
                 val competingByDir = level.toMap()
                 explicitSaveFolder(level.map { it.first }) { node ->
                     competingByDir[node] != true || containsSave(node)
-                }?.let { return it }
+                }?.let { return Source(it) }
             }
         }
 
@@ -132,15 +139,54 @@ class SaveImportPaths(gameDir: File?) {
             if (!fromArchive) explicitSaveFolder(dirs)?.let { return it }
             return dirs.singleOrNull()?.let { find(it, depth - 1, isSave) }
         }
-        find(root, 3, saveExtension::matches)?.let { return it }
-        if (!fromArchive) return root
-        find(root, 3, ::isArchiveSave)?.let { return it }
+        find(root, 3, saveExtension::matches)?.let { return Source(it, keepOuterMarkers = fromArchive) }
+        if (!fromArchive) return Source(root)
+        find(root, 3, ::isArchiveSave)?.let { return Source(it) }
 
         var node = root
         while (true) {
-            val child = visibleChildren(node).singleOrNull()?.takeIf(isDirectory) ?: return node
+            val child = visibleChildren(node).singleOrNull()?.takeIf(isDirectory) ?: return Source(node)
             node = child
         }
+    }
+
+    fun importExtractedArchive(root: File, targetDir: File, writes: ImportWrites): Int {
+        val source = selectSource(
+            root, { it.listFiles()?.toList().orEmpty() }, File::getName, File::isDirectory, fromArchive = true
+        )
+        val rootCanonical = targetDir.canonicalFile
+        var copied = 0
+        fun copy(src: File, parts: List<String>) {
+            val relPath = parts.map { normalizedName(it, atRoot = parts.size == 1) }.joinToString("/")
+            val dst = File(rootCanonical, relPath).canonicalFile
+            if (!dst.path.startsWith(rootCanonical.path + File.separator)) return
+            dst.parentFile?.mkdirs()
+            val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
+            try {
+                src.copyTo(tmpDst, overwrite = true)
+                writes.write(tmpDst, dst)
+                copied++
+            } finally {
+                tmpDst.delete()
+            }
+        }
+        source.root.walkTopDown().forEach { src ->
+            if (src.isFile && !src.name.startsWith('.')) {
+                copy(src, src.relativeTo(source.root).invariantSeparatorsPath.split('/'))
+            }
+        }
+        if (source.keepOuterMarkers) {
+            var ancestor = source.root
+            while (ancestor != root) {
+                ancestor = checkNotNull(ancestor.parentFile)
+                for (src in ancestor.listFiles().orEmpty()) {
+                    if (src.isFile && !src.name.startsWith('.') && isArchiveMarker(src.name)) {
+                        copy(src, listOf(src.name))
+                    }
+                }
+            }
+        }
+        return copied
     }
 
     class ImportWrites {
@@ -164,6 +210,11 @@ class SaveImportPaths(gameDir: File?) {
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
         val cp932 = runCatching { Charset.forName("windows-31j") }.getOrElse { Charset.forName("Shift_JIS") }
         val gbk = Charset.forName("GBK")
+
+        fun isArchiveMarker(name: String): Boolean =
+            name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
+
+        fun isArchiveSave(name: String): Boolean = saveExtension.matches(name) || isArchiveMarker(name)
 
         fun moveToConflictBackup(alias: File, target: File): File {
             var index = 0

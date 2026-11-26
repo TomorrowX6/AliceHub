@@ -367,30 +367,7 @@ class SaveManagerActivity : ThemedActivity() {
                     tempScratchParent = context.cacheDir
                 )
                 ensureProcessStoppedOnIo(context)
-                val normalizedRoot = paths.sourceRoot(
-                    tempDir, { it.listFiles()?.toList().orEmpty() }, File::getName, File::isDirectory, fromArchive = true
-                )
-                val rootCanonical = targetDir.canonicalFile
-                var copied = 0
-                normalizedRoot.walkTopDown().forEach { src ->
-                    if (src.isFile && !src.name.startsWith(".")) {
-                        val parts = src.relativeTo(normalizedRoot).invariantSeparatorsPath.split('/')
-                        val relPath = parts.map { paths.normalizedName(it, atRoot = parts.size == 1) }
-                            .joinToString("/")
-                        val dst = File(rootCanonical, relPath).canonicalFile
-                        if (!dst.path.startsWith(rootCanonical.path + File.separator)) return@forEach
-                        dst.parentFile?.mkdirs()
-                        val tmpDst = File(dst.parentFile, ".imp_${System.nanoTime()}.tmp")
-                        try {
-                            src.copyTo(tmpDst, overwrite = true)
-                            writes.write(tmpDst, dst)
-                            copied++
-                        } finally {
-                            tmpDst.delete()
-                        }
-                    }
-                }
-                return copied
+                return paths.importExtractedArchive(tempDir, targetDir, writes)
             } finally {
                 tempDir.deleteRecursively()
             }

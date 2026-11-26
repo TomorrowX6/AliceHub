@@ -219,10 +219,30 @@ public class SaveImportPathsTest {
             File root = temporary.newFolder(name);
             File wrapper = new File(root, "backup");
             assertTrue(wrapper.mkdir());
-            touch(root, name);
-            touch(wrapper, "CommonSystemData.sav");
-            assertEquals(wrapper, sourceRoot(new SaveImportPaths(null), root, true));
+            write(new File(root, name), "outer");
+            write(new File(wrapper, "CommonSystemData.sav"), "progress");
+            File target = temporary.newFolder();
+            SaveImportPaths paths = new SaveImportPaths(null);
+            assertEquals(wrapper, sourceRoot(paths, root, true));
+            assertEquals(2, paths.importExtractedArchive(root, target, new SaveImportPaths.ImportWrites()));
+            assertEquals("progress", read(new File(target, "CommonSystemData.sav")));
+            assertEquals("outer", read(new File(target, name)));
         }
+    }
+
+    @Test public void wrappedArchiveMarkerWinsOverAnOuterCopy() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "backup");
+        assertTrue(wrapper.mkdir());
+        write(new File(root, "EscalayerReboot_87.vsf"), "outer");
+        write(new File(wrapper, "EscalayerReboot_87.vsf"), "wrapped");
+        touch(wrapper, "01.asd");
+        File target = temporary.newFolder();
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(3, paths.importExtractedArchive(root, target, new SaveImportPaths.ImportWrites()));
+        assertEquals("wrapped", read(new File(target, "EscalayerReboot_87.vsf")));
+        assertEquals("outer", read(new File(target, "EscalayerReboot_87.vsf.import-conflict.bak")));
     }
 
     @Test public void archiveStillUnwrapsSingleFoldersWithOtherSaveExtensions() throws IOException {
