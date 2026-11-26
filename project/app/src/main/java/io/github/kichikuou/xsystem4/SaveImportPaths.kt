@@ -91,9 +91,9 @@ class SaveImportPaths @JvmOverloads constructor(
         fromArchive: Boolean = false
     ): T = selectSource(root, children, name, isDirectory, fromArchive).root
 
-    private data class Source<T>(val root: T, val keepOuterMarkers: Boolean = false)
+    internal data class Source<T>(val root: T, val outerMarkers: List<T> = emptyList())
 
-    private fun <T> selectSource(
+    internal fun <T> selectSource(
         root: T,
         children: (T) -> List<T>,
         name: (T) -> String,
@@ -103,6 +103,12 @@ class SaveImportPaths @JvmOverloads constructor(
         fun visibleChildren(node: T): List<T> = children(node).filterNot { name(it).startsWith('.') }
         fun hasLooseSave(nodes: List<T>, isSave: (String) -> Boolean): Boolean =
             nodes.any { !isDirectory(it) && isSave(name(it)) }
+
+        fun sourceWithMarkers(node: T, ancestors: List<T>): Source<T> = Source(
+            node, ancestors.asReversed().flatMap { parent ->
+                visibleChildren(parent).filter { !isDirectory(it) && isArchiveMarker(name(it)) }
+            }
+        )
 
         fun explicitSaveFolder(dirs: List<T>, eligible: (T) -> Boolean = { true }): T? {
             val configured = saveFolder?.let { expected ->
@@ -117,42 +123,55 @@ class SaveImportPaths @JvmOverloads constructor(
             return configured ?: conventional
         }
 
-        if (fromArchive) {
-            fun containsSave(node: T): Boolean {
-                val pending = ArrayDeque<T>()
-                pending.add(node)
-                while (pending.isNotEmpty()) {
-                    val visible = visibleChildren(pending.removeLast())
-                    if (hasLooseSave(visible, ::isArchiveSave)) return true
-                    pending.addAll(visible.filter(isDirectory))
-                }
-                return false
+        fun containsSave(node: T): Boolean {
+            val pending = ArrayDeque<T>()
+            pending.add(node)
+            while (pending.isNotEmpty()) {
+                val visible = visibleChildren(pending.removeLast())
+                if (hasLooseSave(visible, ::isArchiveSave)) return true
+                pending.addAll(visible.filter(isDirectory))
             }
-            var level = listOf(root to false)
+            return false
+        }
+
+        fun explicitSource(node: T, ancestors: List<T>): Source<T> {
+            val visible = visibleChildren(node)
+            if (ancestors.size < 3 && !hasLooseSave(visible, saveExtension::matches)) {
+                val child = visible.filter(isDirectory).singleOrNull()
+                if (child != null && explicitSaveFolder(listOf(child)) != null && containsSave(child)) {
+                    return explicitSource(child, ancestors + node)
+                }
+            }
+            return sourceWithMarkers(node, ancestors)
+        }
+
+        if (fromArchive) {
+            var level = listOf(Triple(root, false, emptyList<T>()))
             repeat(3) {
-                level = level.flatMap { (node, ancestorHasSave) ->
+                level = level.flatMap { (node, ancestorHasSave, ancestors) ->
                     val visible = visibleChildren(node)
                     val competes = ancestorHasSave || hasLooseSave(visible, ::isArchiveSave)
-                    visible.filter(isDirectory).map { it to competes }
+                    visible.filter(isDirectory).map { Triple(it, competes, ancestors + node) }
                 }
-                val competingByDir = level.toMap()
+                val byDir = level.associateBy { it.first }
                 explicitSaveFolder(level.map { it.first }) { node ->
-                    competingByDir[node] != true || containsSave(node)
-                }?.let { return Source(it) }
+                    !byDir.getValue(node).second || containsSave(node)
+                }?.let { return explicitSource(it, byDir.getValue(it).third) }
             }
         }
 
-        fun find(node: T, depth: Int, isSave: (String) -> Boolean): T? {
+        fun find(node: T, depth: Int, ancestors: List<T>, isSave: (String) -> Boolean): Source<T>? {
             val visible = visibleChildren(node)
-            if (hasLooseSave(visible, isSave)) return node
+            if (hasLooseSave(visible, isSave)) return sourceWithMarkers(node, ancestors)
             if (depth == 0) return null
             val dirs = visible.filter(isDirectory)
-            if (!fromArchive) explicitSaveFolder(dirs)?.let { return it }
-            return dirs.singleOrNull()?.let { find(it, depth - 1, isSave) }
+            val parents = ancestors + node
+            if (!fromArchive) explicitSaveFolder(dirs)?.let { return explicitSource(it, parents) }
+            return dirs.singleOrNull()?.let { find(it, depth - 1, parents, isSave) }
         }
-        find(root, 3, saveExtension::matches)?.let { return Source(it, keepOuterMarkers = fromArchive) }
+        find(root, 3, emptyList(), saveExtension::matches)?.let { return it }
         if (!fromArchive) return Source(root)
-        find(root, 3, ::isArchiveSave)?.let { return Source(it) }
+        find(root, 3, emptyList(), ::isArchiveSave)?.let { return it }
 
         var node = root
         while (true) {
@@ -190,17 +209,7 @@ class SaveImportPaths @JvmOverloads constructor(
                 copy(src, src.relativeTo(source.root).invariantSeparatorsPath.split('/'))
             }
         }
-        if (source.keepOuterMarkers) {
-            var ancestor = source.root
-            while (ancestor != root) {
-                ancestor = checkNotNull(ancestor.parentFile)
-                for (src in ancestor.listFiles().orEmpty()) {
-                    if (src.isFile && !src.name.startsWith('.') && isArchiveMarker(src.name)) {
-                        copy(src, listOf(src.name), fallback = true)
-                    }
-                }
-            }
-        }
+        source.outerMarkers.filter(File::isFile).forEach { copy(it, listOf(it.name), fallback = true) }
         return copied
     }
 

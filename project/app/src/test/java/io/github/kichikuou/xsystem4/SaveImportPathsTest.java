@@ -252,6 +252,28 @@ public class SaveImportPathsTest {
         assertEquals("outer", read(new File(target, "EscalayerReboot_87.VSF.import-conflict.bak")));
     }
 
+    @Test public void explicitSaveDataDoesNotDiscardNetworkSettingsOutsideTheFolder() throws IOException {
+        File root = temporary.newFolder("archive");
+        File wrapper = new File(root, "SaveData");
+        File saveData = new File(wrapper, "SaveData");
+        assertTrue(saveData.mkdirs());
+        write(new File(root, "NetUserID.vsf"), "outer profile");
+        write(new File(wrapper, "NetUserID.vsf"), "game profile");
+        write(new File(saveData, "AFCommon.asd"), "progress");
+        File target = temporary.newFolder();
+
+        SaveImportPaths paths = new SaveImportPaths(null);
+        assertEquals(saveData, sourceRoot(paths, root));
+        assertEquals(saveData, sourceRoot(paths, root, true));
+        try (SaveImportPaths.ImportWrites writes = new SaveImportPaths.ImportWrites()) {
+            assertEquals(1, paths.importExtractedArchive(root, target, writes));
+            assertEquals(2, writes.finishFallbacks());
+        }
+        assertEquals("progress", read(new File(target, "AFCommon.asd")));
+        assertEquals("game profile", read(new File(target, "NetUserID.vsf")));
+        assertEquals("outer profile", read(new File(target, "NetUserID.vsf.import-conflict.bak")));
+    }
+
     @Test public void selectedMarkerWinsOverArchiveFallbackInEitherOrder() throws IOException {
         File root = temporary.newFolder("archive");
         File wrapper = new File(root, "backup");

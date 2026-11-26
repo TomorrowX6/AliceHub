@@ -393,24 +393,35 @@ class SaveManagerActivity : ThemedActivity() {
                     if (!isInsideStatic(rootDir, subDir)) continue
                     count += copyDocumentTreeToInternalStatic(context, treeUri, child.documentId, subDir, paths, writes, rootDir)
                 } else {
-                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
                     val outFile = File(destDir, cleanName)
                     if (!isInsideStatic(rootDir, outFile)) continue
-                    val tmpFile = File(destDir, ".imp_${System.nanoTime()}.tmp")
-                    try {
-                        context.contentResolver.openInputStream(docUri)?.use { input ->
-                            tmpFile.outputStream().buffered().use { output ->
-                                input.copyTo(output)
-                            }
-                            writes.write(tmpFile, outFile)
-                            count++
-                        }
-                    } finally {
-                        tmpFile.delete()
+                    if (copyDocumentToInternalStatic(context, treeUri, child, outFile, writes)) {
+                        count++
                     }
                 }
             }
             return count
+        }
+
+        private fun copyDocumentToInternalStatic(
+            context: Context,
+            treeUri: Uri,
+            child: DocNode,
+            outFile: File,
+            writes: SaveImportPaths.ImportWrites,
+            fallback: Boolean = false
+        ): Boolean {
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
+            val tmpFile = File(outFile.parentFile, ".imp_${System.nanoTime()}.tmp")
+            try {
+                context.contentResolver.openInputStream(docUri)?.use { input ->
+                    tmpFile.outputStream().buffered().use { output -> input.copyTo(output) }
+                } ?: return false
+                if (fallback) writes.stageFallback(tmpFile, outFile) else writes.write(tmpFile, outFile)
+                return true
+            } finally {
+                tmpFile.delete()
+            }
         }
 
         private fun queryDisplayNameStatic(context: Context, uri: Uri): String? {
@@ -540,16 +551,26 @@ class SaveManagerActivity : ThemedActivity() {
                     backupSavesInDir(appCtx.filesDir, targetDir, target.dirName)
                     val paths = saveImportPathsForTarget(appCtx, target)
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-                    val source = paths.sourceRoot(
+                    val source = paths.selectSource(
                         DocNode(rootDocId, "", true),
                         { listDocumentChildrenFor(appCtx, treeUri, it.documentId) },
                         DocNode::name,
-                        DocNode::isDirectory
+                        DocNode::isDirectory,
+                        fromArchive = false
                     )
                     ensureProcessStoppedOnIo(appCtx)
-                    copyDocumentTreeToInternalStatic(
-                        appCtx, treeUri, source.documentId, targetDir, paths, SaveImportPaths.ImportWrites()
-                    )
+                    SaveImportPaths.ImportWrites().use { writes ->
+                        val copied = copyDocumentTreeToInternalStatic(
+                            appCtx, treeUri, source.root.documentId, targetDir, paths, writes
+                        )
+                        for (marker in source.outerMarkers) {
+                            val name = paths.nameForImport(marker.name, atRoot = true) ?: continue
+                            val outFile = File(targetDir, name)
+                            if (!isInsideStatic(targetDir, outFile)) continue
+                            copyDocumentToInternalStatic(appCtx, treeUri, marker, outFile, writes, fallback = true)
+                        }
+                        copied + writes.finishFallbacks()
+                    }
                 }
                 onHost {
                     it.dismissProgress()
