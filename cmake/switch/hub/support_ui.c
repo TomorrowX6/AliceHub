@@ -107,12 +107,13 @@ static const HubItem licenses[] = {
     {"AliceHub / xsystem4", "GPL-2.0"}, {"libsys4", "GPL-2.0"},
     {"xsystem35", "GPL-2.0"}, {"VL Gothic", NULL}, {"HanaMinA", NULL},
     {"MTLc3m", NULL}, {"Mincho", NULL}, {"nanojpeg", NULL}, {"microui", NULL}, {"libxml2", NULL},
+    {"libopus", "BSD-3-Clause"},
 };
 static const char *const license_paths[] = {
     "romfs:/support/xsystem4.txt", "romfs:/support/libsys4.txt", "romfs:/support/xsystem35.txt",
     "romfs:/fonts/VL-Gothic-Regular.license", "romfs:/fonts/HanaMinA.license",
     "romfs:/support/MTLc3m.txt", "romfs:/support/mincho.txt", "romfs:/support/nanojpeg.txt",
-    "romfs:/support/microui.txt", "romfs:/support/libxml2.txt",
+    "romfs:/support/microui.txt", "romfs:/support/libxml2.txt", "romfs:/support/libopus.txt",
 };
 #define COUNT(array) (sizeof(array) / sizeof(*(array)))
 _Static_assert(COUNT(licenses) == COUNT(license_paths), "license entries require a path");

@@ -371,6 +371,12 @@ int main(int argc, char **argv) {
             repo / "project/app/src/main/java/io/github/kichikuou/xsystem4/LicensesMenuActivity.kt"
         ).read_text(encoding="utf-8")
         self.assertIn('Entry("libopus"', licenses_kt)
+        self.assertIn("dkp_set_target_file(libopus_license", sw_cm)
+        sw_hub_cm = (repo / "cmake/switch/hub/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("dkp_install_assets(AliceHub_romfs DESTINATION support TARGETS libopus_license)", sw_hub_cm)
+        sw_support_ui = (repo / "cmake/switch/hub/support_ui.c").read_text(encoding="utf-8")
+        self.assertIn('"libopus"', sw_support_ui)
+        self.assertIn('"romfs:/support/libopus.txt"', sw_support_ui)
 
 
 if __name__ == "__main__":

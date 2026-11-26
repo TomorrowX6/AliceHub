@@ -93,6 +93,7 @@ dkp_track_assets(AliceHub_romfs FILES alicehub.png fonts/VL-Gothic-Regular.ttf
   save-unlock/GlobalSave.asd save-unlock/Collection.asd save-unlock/AFCGMode.asd save-unlock/AFBGMMode.asd
   support/xsystem4.txt support/libsys4.txt support/xsystem35.txt support/MTLc3m.txt
   support/mincho.txt support/nanojpeg.txt support/microui.txt support/libxml2.txt ${alicehub_artwork_assets})
+dkp_install_assets(AliceHub_romfs DESTINATION support TARGETS libopus_license)
 nx_generate_nacp(AliceHub.nacp NAME "AliceHub" AUTHOR "AliceHub" VERSION "1.0.0")
 nx_create_nro(AliceHub ICON "${alicehub_nro_icon}" NACP AliceHub.nacp ROMFS AliceHub_romfs)
 add_custom_target(AliceHub_artifact ALL

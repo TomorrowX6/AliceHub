@@ -10,7 +10,6 @@ find_program(MAKE_EXECUTABLE make REQUIRED)
 
 set(stage "${CMAKE_CURRENT_BINARY_DIR}/stage")
 set(artifacts "${CMAKE_CURRENT_BINARY_DIR}/artifacts")
-add_subdirectory(hub)
 set(repo "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(common
   -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
@@ -42,6 +41,16 @@ ExternalProject_Add(libopus
     -DOPUS_DISABLE_INTRINSICS=ON
     -DOPUS_STACK_PROTECTOR=OFF -DOPUS_FORTIFY_SOURCE=OFF
     -DOPUS_INSTALL_PKG_CONFIG_MODULE=ON -DOPUS_INSTALL_CMAKE_CONFIG_MODULE=ON)
+set(libopus_license "${stage}/share/licenses/libopus/libopus.txt")
+ExternalProject_Add_Step(libopus stage_license
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${stage}/share/licenses/libopus"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "<SOURCE_DIR>/COPYING" "${libopus_license}"
+  BYPRODUCTS "${libopus_license}"
+  DEPENDEES patch DEPENDERS configure)
+add_custom_target(libopus_license DEPENDS libopus "${libopus_license}")
+dkp_set_target_file(libopus_license "${libopus_license}")
+
+add_subdirectory(hub)
 
 ExternalProject_Add(libsndfile
   URL https://codeload.github.com/kichikuou/libsndfile/tar.gz/be82f4be73c77f1e759bda9dfe1625204441465a
