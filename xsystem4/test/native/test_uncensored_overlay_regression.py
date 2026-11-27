@@ -213,7 +213,7 @@ int main(void) {{
     cg_free(cg_mod);
 
     // Verify DCF base CG loader resolves hcg_01 through asset_manager -> uncensored base!
-    struct cg *dcf_base = cg_load_base_by_name("hcg_01");
+    struct cg *dcf_base = cg_load_base_by_name(NULL, "hcg_01");
     assert_rgb(dcf_base, 200, 100, 50);
     cg_free(dcf_base);
 

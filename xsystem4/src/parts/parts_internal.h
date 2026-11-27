@@ -820,6 +820,8 @@ bool parts_cg_set(struct parts *parts, struct parts_cg *cg, struct string *cg_na
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no);
 void parts_cg_suspend(struct parts_cg *cg);
 void parts_cg_resume(struct parts_cg *cg);
+void parts_cg_async_flush_part(int parts_no);
+void parts_cg_async_flush_all(void);
 bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state);
 bool PE_IsThreadLoading(int parts_no, int state);
 bool PE_IsExistWorkerThread(void);

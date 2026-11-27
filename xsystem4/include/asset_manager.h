@@ -18,6 +18,7 @@
 #define SYSTEM4_ASSET_MANAGER_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 struct archive_data;
 struct cg;
@@ -48,6 +49,7 @@ struct archive_data *asset_get_by_name(enum asset_type type, const char *name, i
 struct cg *asset_cg_load(int no);
 struct cg *asset_cg_load_by_name(const char *name, int *id_out);
 bool asset_cg_supports_name(void);
+uint64_t asset_cg_archive_gen(void);
 bool asset_cg_get_metrics(int no, struct cg_metrics *metrics);
 bool asset_cg_get_metrics_by_name(const char *name, struct cg_metrics *metrics);
 

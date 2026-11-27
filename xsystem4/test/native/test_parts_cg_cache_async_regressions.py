@@ -106,6 +106,60 @@ def make_afa_v2(entries):
     return header + comp_table + bytes(data_blob)
 
 
+def make_ald(entries):
+    """Build a single-volume ALD archive from [(no_0based, name_ascii, payload), ...]."""
+    entries = sorted(entries, key=lambda x: x[0])
+    nr_slots = entries[-1][0] + 1
+    ofssize = (((len(entries) + 2) * 3) + 255) & ~255
+    linksize = ((nr_slots * 3) + 255) & ~255
+    otbl = bytearray(ofssize)
+    ltbl = bytearray(linksize)
+
+    def put_u24(buf, off, val):
+        buf[off] = val & 0xFF
+        buf[off + 1] = (val >> 8) & 0xFF
+        buf[off + 2] = (val >> 16) & 0xFF
+
+    put_u24(otbl, 0, ofssize >> 8)
+    cur = ofssize + linksize
+    body = bytearray()
+    for i, (no, name, data) in enumerate(entries):
+        put_u24(otbl, (i + 1) * 3, cur >> 8)
+        ltbl[no * 3] = 1
+        ltbl[no * 3 + 1] = (i + 1) & 0xFF
+        ltbl[no * 3 + 2] = ((i + 1) >> 8) & 0xFF
+        eh = bytearray(32)
+        struct.pack_into("<II", eh, 0, 32, len(data))
+        nb = name.encode("ascii")[:15]
+        eh[16 : 16 + len(nb)] = nb
+        body += eh + data
+        total = 32 + len(data)
+        pad = ((total + 255) & ~255) - total
+        body += b"\x00" * pad
+        cur += total + pad
+
+    put_u24(otbl, (len(entries) + 1) * 3, cur >> 8)
+    body += b"\x00" * 256
+    return bytes(otbl) + bytes(ltbl) + bytes(body)
+
+
+def make_dcf(width, height, base_name_ascii, chunk_bits, diff_qnt):
+    """Build a valid DCF file referencing base_name_ascii with 16x16 chunk_bits and diff_qnt."""
+    name_raw = base_name_ascii.encode("ascii")
+    rot = (len(name_raw) % 7) + 1
+    # dcf_read_header rotates LEFT by rot, so encode by rotating RIGHT by rot.
+    enc_name = bytes(((b >> rot) | ((b << (8 - rot)) & 0xFF)) for b in name_raw)
+    hdr_payload = struct.pack("<IIIII", 1, width, height, 32, len(enc_name)) + enc_name
+    hdr = b"dcf " + struct.pack("<I", len(hdr_payload)) + hdr_payload
+
+    chunk_map_uncomp = struct.pack("<I", len(chunk_bits)) + bytes(chunk_bits)
+    chunk_map_comp = zlib.compress(chunk_map_uncomp)
+    dfdl = b"dfdl" + struct.pack("<II", 4 + len(chunk_map_comp), len(chunk_map_uncomp)) + chunk_map_comp
+
+    dcgd = b"dcgd" + struct.pack("<I", len(diff_qnt)) + diff_qnt
+    return hdr + dfdl + dcgd
+
+
 PARTS_HARNESS = r'''
 #include <assert.h>
 #include <limits.h>
@@ -118,6 +172,7 @@ PARTS_HARNESS = r'''
 #include <string.h>
 #include <SDL.h>
 
+#define USE_GLES
 #define ALICEHUB_IOS
 #include "system4.h"
 #include "system4/ain.h"
@@ -138,6 +193,7 @@ PARTS_HARNESS = r'''
 #include "parts.h"
 #include "parts_activity.h"
 #include "parts/parts_internal.h"
+#include "hll/iarray.h"
 
 /* --- Minimal engine stubs --- */
 struct config config = { .view_width = 1280, .view_height = 720 };
@@ -258,6 +314,7 @@ void glTexParameteri(GLenum target, GLenum pname, GLint param) {
     (void)target; (void)pname; (void)param;
 }
 void glGetIntegerv(GLenum pname, GLint *data) { (void)pname; *data = 0; }
+void glGenerateMipmap(GLenum target) { (void)target; }
 
 /* Unused engine stubs required to link parts.c */
 void gfx_init_texture_rgba(struct texture *t, int w, int h, SDL_Color c) {
@@ -301,14 +358,84 @@ void audio_update(void) {}
 void movie_free(struct movie_context *mc) { (void)mc; }
 bool movie_draw(struct movie_context *mc, struct sact_sprite *sp) { (void)mc;(void)sp; return false; }
 int ReignEngine_create_plugin(enum RE_plugin_version t) { (void)t; return -1; }
+int ReignEngine_create_plugin_at(int h, enum RE_plugin_version t) { (void)h;(void)t; return -1; }
 bool ReignEngine_BindPlugin(int h, int s) { (void)h;(void)s; return false; }
 bool ReignEngine_ReleasePlugin(int h) { (void)h; return false; }
+struct RE_plugin *RE_get_plugin(int h) { (void)h; return NULL; }
+void RE_plugin_save(struct RE_plugin *p, struct iarray_writer *w) { (void)p;(void)w; }
+bool RE_plugin_load(struct RE_plugin *p, struct iarray_reader *r) { (void)p;(void)r; return false; }
 struct page *array_pushback(struct page *p, union vm_value v, enum ain_data_type t, int s) {
     (void)v;(void)t;(void)s; return p;
 }
 struct page *alloc_page(enum page_type t, int idx, int nr) { (void)t;(void)idx;(void)nr; return NULL; }
 void delete_page_vars(struct page *p) { (void)p; }
-void free_page(struct page *p) { (void)p; }
+void free_page(struct page *p) { free(p); }
+void iarray_init_writer(struct iarray_writer *w, const char *s) {
+    *w = (struct iarray_writer){0};
+    do { iarray_write(w, *s); } while (*s++);
+}
+void iarray_write(struct iarray_writer *w, int v) {
+    if (w->size >= w->allocated) {
+        w->allocated = w->allocated ? w->allocated * 2 : 64;
+        w->data = realloc(w->data, w->allocated * sizeof(int));
+    }
+    w->data[w->size++] = v;
+}
+void iarray_write_at(struct iarray_writer *w, unsigned pos, int v) { w->data[pos] = v; }
+void iarray_free_writer(struct iarray_writer *w) { free(w->data); w->data = NULL; }
+struct page *iarray_to_page(struct iarray_writer *w) {
+    struct page *p = calloc(1, sizeof(*p) + w->size * sizeof(union vm_value));
+    p->type = ARRAY_PAGE;
+    p->a_type = AIN_ARRAY_INT;
+    p->array.rank = 1;
+    p->nr_vars = (int)w->size;
+    for (unsigned i = 0; i < w->size; i++)
+        p->values[i].i = w->data[i];
+    return p;
+}
+bool iarray_init_reader(struct iarray_reader *r, struct page *p, const char *s) {
+    *r = (struct iarray_reader){ .data = p->values, .size = (unsigned)p->nr_vars };
+    do { if (iarray_read(r) != *s) return false; } while (*s++);
+    return !r->error;
+}
+int iarray_read(struct iarray_reader *r) {
+    if (r->pos >= r->size) { r->error = 1; return 0; }
+    return r->data[r->pos++].i;
+}
+void iarray_write_float(struct iarray_writer *w, float f) { union vm_value v = { .f = f }; iarray_write(w, v.i); }
+float iarray_read_float(struct iarray_reader *r) { union vm_value v = { .i = iarray_read(r) }; return v.f; }
+void iarray_write_string(struct iarray_writer *w, struct string *s) {
+    for (int i = 0; s && i < s->size; i++) iarray_write(w, (unsigned char)s->text[i]);
+    iarray_write(w, 0);
+}
+struct string *iarray_read_string(struct iarray_reader *r) {
+    char buf[512]; int n = 0, c;
+    while ((c = iarray_read(r)) && n < 511) buf[n++] = (char)c;
+    return make_string(buf, (size_t)n);
+}
+void iarray_write_string_or_null(struct iarray_writer *w, struct string *s) { iarray_write_string(w, s); }
+struct string *iarray_read_string_or_null(struct iarray_reader *r) {
+    struct string *s = iarray_read_string(r);
+    if (!s->size) { free_string(s); return NULL; }
+    return s;
+}
+void iarray_write_point(struct iarray_writer *w, Point *p) { iarray_write(w, p->x); iarray_write(w, p->y); }
+void iarray_read_point(struct iarray_reader *r, Point *p) { p->x = iarray_read(r); p->y = iarray_read(r); }
+void iarray_write_rectangle(struct iarray_writer *w, Rectangle *rc) {
+    iarray_write(w, rc->x); iarray_write(w, rc->y); iarray_write(w, rc->w); iarray_write(w, rc->h);
+}
+void iarray_read_rectangle(struct iarray_reader *r, Rectangle *rc) {
+    rc->x = iarray_read(r); rc->y = iarray_read(r); rc->w = iarray_read(r); rc->h = iarray_read(r);
+}
+void iarray_write_color(struct iarray_writer *w, SDL_Color *c) {
+    iarray_write(w, c->r); iarray_write(w, c->g); iarray_write(w, c->b); iarray_write(w, c->a);
+}
+void iarray_read_color(struct iarray_reader *r, SDL_Color *c) {
+    c->r = (Uint8)iarray_read(r); c->g = (Uint8)iarray_read(r);
+    c->b = (Uint8)iarray_read(r); c->a = (Uint8)iarray_read(r);
+}
+void iarray_write_text_style(struct iarray_writer *w, struct text_style *s) { (void)w;(void)s; }
+void iarray_read_text_style(struct iarray_reader *r, struct text_style *s) { (void)r;(void)s; }
 void parts_render_init(void) {}
 void parts_render_update(void) {}
 float parts_message_window_mul_color_rate = 1.0f;
@@ -325,27 +452,48 @@ void parts_render(struct parts *p) { (void)p; }
 void parts_debug_init(void) {}
 cJSON *parts_sprite_to_json(struct sprite *sp, bool v) { (void)sp;(void)v; return NULL; }
 void parts_clear_motion(struct parts *p) { (void)p; }
+void parts_add_motion(struct parts *p, struct parts_motion *m) { (void)p;(void)m; }
 void parts_input_reset_part(struct parts *p) { (void)p; }
 void parts_input_reset(void) {}
 bool parts_input_is_busy(void) { return false; }
+void parts_input_save_state(struct iarray_writer *w) { (void)w; }
+void parts_input_load_state(struct iarray_reader *r, int v) { (void)r;(void)v; }
+void parts_input_load_legacy_state(void) {}
 void PE_UpdateInputState(int t) { (void)t; }
-void PE_ClearBackScene(void) {}
-struct parts_context *parts_get_back_scene(void) { return NULL; }
 void PE_ReleaseActivities(void) {}
+void parts_activities_save(struct iarray_writer *w) { (void)w; }
+void parts_activities_load(struct iarray_reader *r) { (void)r; }
+void parts_activities_reconcile_legacy(void) {}
 void PE_ReleaseMessage(void) {}
+struct string *PE_GetClickMissSoundName(void) { return string_ref(&EMPTY_STRING); }
+void PE_SetClickMissSoundName(struct string *s) { (void)s; }
 void parts_cproc_cache_clear(void) {}
+void parts_add_cp_op(struct parts_construction_process *c, struct parts_cp_op *op) { (void)c; free(op); }
 bool parts_clear_construction_process(struct parts_construction_process *c) { (void)c; return true; }
 bool parts_build_construction_process(struct parts *p, struct parts_construction_process *c) { (void)p;(void)c; return true; }
 void parts_flat_cache_clear(void) {}
 void parts_flat_free(struct parts_flat *f) { (void)f; }
+bool parts_flat_load(struct parts *p, struct parts_flat *f, struct string *n) { (void)p;(void)f;(void)n; return false; }
 bool parts_flat_update(struct parts_flat *f, int t) { (void)f;(void)t; return false; }
 void parts_flat_recover_widget_skin(struct parts_flat *f, bool s) { (void)f;(void)s; }
+int parts_flat_find_library(struct flat *fl, const char *n) { (void)fl;(void)n; return -1; }
+struct flat_layer_state *parts_flat_layer_state_new(size_t n) { (void)n; return NULL; }
+void parts_flat_layer_state_free(struct flat_layer_state *s) { (void)s; }
+struct flat_emitter_birth *parts_flat_get_emitter_birth(struct flat_layer_state *s,
+        const struct flat_timeline *t, int i, int f, unsigned inst, bool c) {
+    (void)s;(void)t;(void)i;(void)f;(void)inst;(void)c; return NULL;
+}
 void parts_flash_free(struct parts_flash *f) { (void)f; }
+bool parts_flash_load(struct parts *p, struct parts_flash *f, struct string *n) { (void)p;(void)f;(void)n; return false; }
+bool parts_flash_seek(struct parts_flash *f, int fr) { (void)f;(void)fr; return false; }
 bool parts_flash_update(struct parts_flash *f, int t) { (void)f;(void)t; return false; }
 void parts_text_free(struct parts_text *t) { (void)t; }
+void parts_text_append(struct parts *p, struct parts_text *t, struct string *s) { (void)p;(void)t;(void)s; }
+struct string *parts_text_line_get(struct parts_text_line *l) { (void)l; return string_ref(&EMPTY_STRING); }
 void parts_text_rerender_all(struct parts *p, struct parts_text *t) { (void)p;(void)t; }
 struct text_style parts_get_effective_text_style(const struct text_style *s) { return *s; }
 void parts_widget_free(struct parts *p) { (void)p; }
+void parts_widget_rebuild(struct parts *p) { (void)p; }
 void parts_widget_get_size(struct parts *p, int *w, int *h) { (void)p; *w = 0; *h = 0; }
 void parts_widget_rebuild_label(struct parts *p) { (void)p; }
 void parts_widget_restore_plain_skin(struct parts *p, struct parts_state *s, int i, bool c) { (void)p;(void)s;(void)i;(void)c; }
@@ -370,8 +518,11 @@ struct string *string_format(struct string *f, union vm_value a, enum string_for
 }
 bool asset_exists(enum asset_type t, int no) { (void)t;(void)no; return true; }
 bool asset_exists_by_name(enum asset_type t, const char *n, int *id) { (void)t;(void)n; if (id) *id = 1; return true; }
+struct archive_data *asset_get(enum asset_type t, int no) { (void)t;(void)no; return NULL; }
 static bool mock_cg_supports_name = true;
 bool asset_cg_supports_name(void) { return mock_cg_supports_name; }
+static atomic_uint_fast64_t mock_cg_archive_gen = 1;
+uint64_t asset_cg_archive_gen(void) { return atomic_load(&mock_cg_archive_gen); }
 struct cg *cg_load_file(const char *path) { (void)path; return NULL; }
 void cg_free(struct cg *cg) { if (cg) { free(cg->pixels); free(cg); } }
 
@@ -381,6 +532,10 @@ static atomic_int mock_in_flight = 0;
 static atomic_int mock_max_concurrent = 0;
 static atomic_int mock_async_delay_ms = 0;
 static atomic_int mock_per_cg_decodes[64];
+static const char *mock_barrier_name = NULL;
+static atomic_uint_fast64_t mock_barrier_gen = 0;
+static atomic_int mock_barrier_entered = 0;
+static atomic_int mock_barrier_release = 0;
 
 static struct cg *make_mock_cg(int w, int h, bool has_alpha, bool transparent_top_left) {
     struct cg *cg = calloc(1, sizeof(*cg));
@@ -429,6 +584,15 @@ struct cg *asset_cg_load(int no) {
 
 struct cg *asset_cg_load_by_name(const char *name, int *id_out) {
     assert(mock_cg_supports_name && "asset_cg_load_by_name must not be called when ASSET_CG lacks name lookup (ALD)");
+    uint64_t gen_at_start = atomic_load(&mock_cg_archive_gen);
+    if (mock_barrier_name && !strcmp(name, mock_barrier_name)) {
+        uint64_t bgen = atomic_load(&mock_barrier_gen);
+        if (bgen == 0 || bgen == gen_at_start) {
+            atomic_fetch_add(&mock_barrier_entered, 1);
+            while (!atomic_load(&mock_barrier_release))
+                SDL_Delay(1);
+        }
+    }
     record_concurrency_enter();
     atomic_fetch_add(&mock_decode_total, 1);
     struct cg *res = NULL;
@@ -444,6 +608,9 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out) {
     } else if (!strncmp(name, "evict_", 6)) {
         id = 2000 + (unsigned char)name[6];
         res = make_mock_cg(64, 64, true, false);
+    } else if (!strcmp(name, "<save>alpha_slot.qnt")) {
+        id = 0x7f000002;
+        res = make_mock_cg(32, 32, true, true);
     } else if (!strncmp(name, "<save>", 6)) {
         id = 0x7f000001;
         res = make_mock_cg(32, 32, true, false);
@@ -468,6 +635,13 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out) {
     } else if (!strcmp(name, "override_sync_cg")) {
         id = 6001;
         res = make_mock_cg(32, 32, true, false);
+    } else if (!strcmp(name, "override_gen_cg") || !strcmp(name, "async_gen_cg")) {
+        id = (!strcmp(name, "override_gen_cg") ? 6100 : 6110) + (int)gen_at_start;
+        int dim = (gen_at_start >= 2) ? 48 : 32;
+        res = make_mock_cg(dim, dim, true, false);
+    } else if (!strcmp(name, "idle_gen_cg")) {
+        id = 6120;
+        res = make_mock_cg(24, 24, true, false);
     } else if (!strncmp(name, "async_cg_", 9)) {
         int k = atoi(name + 9);
         assert(k >= 0 && k < 64);
@@ -484,15 +658,21 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out) {
     return res;
 }
 
-/* Include REAL production parts.c and texture.c directly! */
+/* Include REAL production parts.c, texture.c, and save.c directly! */
 #include "parts/parts.c"
 #include "parts/texture.c"
+#include "parts/save.c"
 
 static void reset_counters(void) {
     atomic_store(&mock_decode_total, 0);
     atomic_store(&mock_in_flight, 0);
     atomic_store(&mock_max_concurrent, 0);
     atomic_store(&mock_async_delay_ms, 0);
+    atomic_store(&mock_cg_archive_gen, 1);
+    mock_barrier_name = NULL;
+    atomic_store(&mock_barrier_gen, 0);
+    atomic_store(&mock_barrier_entered, 0);
+    atomic_store(&mock_barrier_release, 0);
     for (int i = 0; i < 64; i++)
         atomic_store(&mock_per_cg_decodes[i], 0);
     mock_upload_count = 0;
@@ -949,11 +1129,245 @@ static void test_short_cg_names_and_string_index_resume(void) {
     assert(mock_live_textures == 0);
 }
 
+static int delayed_barrier_releaser(void *arg) {
+    int delay_ms = (int)(intptr_t)arg;
+    SDL_Delay((Uint32)delay_ms);
+    atomic_store(&mock_barrier_release, 1);
+    return 0;
+}
+
+static void test_transparent_save_cg_alpha_mask(void) {
+    reset_counters();
+    PE_Init();
+    parts_v2 = true;
+
+    // Force gfx_get_pixels to fail so we prove alpha_mask is populated directly from cg->pixels
+    // in _parts_cg_set's uncached (<save>) branch with zero GPU readback!
+    mock_get_pixels_fail = true;
+    struct string *s_save_alpha = make_string("<save>alpha_slot.qnt", 20);
+    assert(PE_SetPartsCG(750, s_save_alpha, 0, 1));
+    struct parts *p = parts_try_get(750);
+    assert(p != NULL);
+    assert(p->states[0].cg.cg_asset == NULL);
+    assert(p->states[0].common.alpha_mask != NULL);
+    assert(p->states[0].common.alpha_w == 32 && p->states[0].common.alpha_h == 32);
+
+    // Top-left quadrant [0..16) x [0..16) is transparent -> must NOT intercept clicks!
+    assert(parts_common_check_alpha(&p->states[0], 0, 0) == false);
+    assert(parts_common_check_alpha(&p->states[0], 15, 15) == false);
+    // Opaque regions must intercept clicks!
+    assert(parts_common_check_alpha(&p->states[0], 16, 16) == true);
+    assert(parts_common_check_alpha(&p->states[0], 31, 31) == true);
+    assert(parts_common_check_alpha(&p->states[0], 20, 4) == true);
+    assert(mock_get_pixels_calls == 0);
+
+    free_string(s_save_alpha);
+    parts_end_session();
+    assert(TAILQ_EMPTY(&cg_asset_all));
+    assert(mock_live_textures == 0);
+}
+
+static void test_load_archive_gen_invalidates_live_cache_and_async_dedup(void) {
+    reset_counters();
+    PE_Init();
+    parts_v2 = true;
+
+    struct string *s_ovr = make_string("override_gen_cg", 15);
+    struct string *s_idle = make_string("idle_gen_cg", 11);
+    struct string *s_async = make_string("async_gen_cg", 12);
+
+    // Gen 1: Part A holds live "override_gen_cg" (32x32), idle_gen_cg sits in idle LRU.
+    assert(PE_SetPartsCG(760, s_ovr, 0, 1));
+    assert(PE_SetPartsCG(761, s_idle, 0, 1));
+    PE_ReleaseParts(761);
+    assert(cg_asset_idle_count == 1);
+    GLuint h1 = parts_try_get(760)->states[0].common.texture.handle;
+    assert(h1 != 0 && parts_try_get(760)->states[0].common.w == 32);
+
+    // Gen 1: Start an async load for "async_gen_cg" held mid-decode at barrier.
+    mock_barrier_name = "async_gen_cg";
+    atomic_store(&mock_barrier_gen, 1);
+    atomic_store(&mock_barrier_entered, 0);
+    atomic_store(&mock_barrier_release, 0);
+    assert(PE_SetPartsCGThread(762, s_async, 1));
+    int spins = 0;
+    while (atomic_load(&mock_barrier_entered) < 1) {
+        SDL_Delay(1);
+        assert(++spins < 2000);
+    }
+
+    // Simulate CGManager.LoadArchive bumping archive generation to 2!
+    atomic_store(&mock_cg_archive_gen, 2);
+
+    // Part B loads "override_gen_cg" under gen 2:
+    //  - idle LRU entry is evicted immediately
+    //  - Part A keeps its old gen-1 texture handle (32x32)
+    //  - Part B gets the NEW gen-2 override texture (48x48)
+    assert(PE_SetPartsCG(763, s_ovr, 0, 1));
+    assert(cg_asset_idle_count == 0);
+    assert(parts_try_get(760)->states[0].common.texture.handle == h1);
+    assert(parts_try_get(760)->states[0].common.w == 32);
+    GLuint h2 = parts_try_get(763)->states[0].common.texture.handle;
+    assert(h2 != 0 && h2 != h1);
+    assert(parts_try_get(763)->states[0].common.w == 48);
+
+    // Re-setting "override_gen_cg" on Part A itself must NOT short-circuit to old gen-1 texture,
+    // and releasing the last reference to the unlinked gen-1 asset must destroy it immediately!
+    int del_before = mock_delete_count;
+    assert(PE_SetPartsCG(760, s_ovr, 0, 1));
+    assert(parts_try_get(760)->states[0].common.texture.handle == h2);
+    assert(parts_try_get(760)->states[0].common.w == 48);
+    assert(mock_delete_count == del_before + 1);
+    assert(cg_asset_idle_count == 0);
+
+    // While part 762's gen-1 async job for "async_gen_cg" is STILL blocked mid-decode,
+    // enqueue Part C (764) at gen 2: must NOT coalesce onto the gen-1 job!
+    assert(PE_SetPartsCGThread(764, s_async, 1));
+    // Wait until Part C finishes its gen-2 decode on another worker (barrier only blocks gen 1!)
+    spins = 0;
+    while (PE_IsThreadLoading(764, 1)) {
+        PE_UpdateComponent(16);
+        SDL_Delay(1);
+        assert(++spins < 2000);
+    }
+    GLuint h_async_gen2 = parts_try_get(764)->states[0].common.texture.handle;
+    assert(h_async_gen2 != 0 && parts_try_get(764)->states[0].common.w == 48);
+
+    // Now release the gen-1 worker barrier and drain:
+    //  - Part 762 finishes with its gen-1 32x32 texture (unlinked from tables)
+    //  - Gen-2 cache is NOT poisoned by the late gen-1 completion!
+    atomic_store(&mock_barrier_release, 1);
+    spins = 0;
+    while (PE_IsExistWorkerThread()) {
+        PE_UpdateComponent(16);
+        SDL_Delay(1);
+        assert(++spins < 2000);
+    }
+    GLuint h_async_gen1 = parts_try_get(762)->states[0].common.texture.handle;
+    assert(h_async_gen1 != 0 && h_async_gen1 != h_async_gen2);
+    assert(parts_try_get(762)->states[0].common.w == 32);
+
+    // New Part D loading "async_gen_cg" hits gen-2 cache (48x48, zero extra decode!)
+    int dec_before_d = atomic_load(&mock_decode_total);
+    assert(PE_SetPartsCG(765, s_async, 0, 1));
+    assert(atomic_load(&mock_decode_total) == dec_before_d);
+    assert(parts_try_get(765)->states[0].common.texture.handle == h_async_gen2);
+    assert(parts_try_get(765)->states[0].common.w == 48);
+
+    // Releasing part 762 immediately destroys its unlinked stale gen-1 asset!
+    int del_before_762 = mock_delete_count;
+    PE_ReleaseParts(762);
+    assert(mock_delete_count == del_before_762 + 1);
+
+    free_string(s_ovr);
+    free_string(s_idle);
+    free_string(s_async);
+    parts_end_session();
+    assert(TAILQ_EMPTY(&cg_asset_all));
+    assert(mock_live_textures == 0);
+}
+
+static void test_async_cg_flushed_before_single_part_and_scene_save(void) {
+    reset_counters();
+    PE_Init();
+    parts_v2 = true;
+
+    // 1. Single-part PE_SaveParts while state 1 is held mid-decode and state 2 is also async-queued!
+    struct string *s_mid = make_string("save_mid_cg", 11);
+    struct string *s_hov = make_string("save_hover_cg", 13);
+    mock_barrier_name = "save_mid_cg";
+    atomic_store(&mock_barrier_gen, 0);
+    atomic_store(&mock_barrier_entered, 0);
+    atomic_store(&mock_barrier_release, 0);
+
+    assert(PE_SetPartsCGThread(800, s_mid, 1));
+    assert(PE_SetPartsCGThread(800, s_hov, 2));
+    int spins = 0;
+    while (atomic_load(&mock_barrier_entered) < 1) {
+        SDL_Delay(1);
+        assert(++spins < 2000);
+    }
+    // Worker is confirmed mid-decode; release it 15ms later while PE_SaveParts waits!
+    SDL_Thread *rel1 = SDL_CreateThread(delayed_barrier_releaser, "rel1", (void *)(intptr_t)15);
+    assert(rel1 != NULL);
+
+    struct page *part_buf = NULL;
+    assert(PE_SaveParts(800, &part_buf));
+    SDL_WaitThread(rel1, NULL);
+    assert(part_buf != NULL);
+    assert(PE_IsThreadLoading(800, 1) == false);
+    assert(PE_IsThreadLoading(800, 2) == false);
+    assert(parts_try_get(800)->states[0].cg.name && !strcmp(parts_try_get(800)->states[0].cg.name->text, "save_mid_cg"));
+    assert(parts_try_get(800)->states[1].cg.name && !strcmp(parts_try_get(800)->states[1].cg.name->text, "save_hover_cg"));
+
+    // Restore into part 801 via PE_LoadParts and verify BOTH async CGs were serialized!
+    assert(PE_LoadParts(801, &part_buf));
+    struct parts *p801 = parts_try_get(801);
+    assert(p801 != NULL);
+    assert(p801->states[0].type == PARTS_CG && p801->states[0].cg.name != NULL);
+    assert(!strcmp(p801->states[0].cg.name->text, "save_mid_cg"));
+    assert(p801->states[0].common.texture.handle != 0);
+    assert(p801->states[1].type == PARTS_CG && p801->states[1].cg.name != NULL);
+    assert(!strcmp(p801->states[1].cg.name->text, "save_hover_cg"));
+    assert(p801->states[1].common.texture.handle != 0);
+    free_page(part_buf);
+
+    // 2. Whole-scene PE_Save while a part is held mid-decode and another is queued!
+    struct string *s_sc1 = make_string("scene_mid_cg", 12);
+    struct string *s_sc2 = make_string("scene_queued_cg", 15);
+    mock_barrier_name = "scene_mid_cg";
+    atomic_store(&mock_barrier_entered, 0);
+    atomic_store(&mock_barrier_release, 0);
+    atomic_store(&mock_async_delay_ms, 5);
+
+    assert(PE_SetPartsCGThread(810, s_sc1, 1));
+    assert(PE_SetPartsCGThread(811, s_sc2, 1));
+    spins = 0;
+    while (atomic_load(&mock_barrier_entered) < 1) {
+        SDL_Delay(1);
+        assert(++spins < 2000);
+    }
+    SDL_Thread *rel2 = SDL_CreateThread(delayed_barrier_releaser, "rel2", (void *)(intptr_t)15);
+    assert(rel2 != NULL);
+
+    struct page *scene_buf = NULL;
+    assert(PE_Save(&scene_buf));
+    SDL_WaitThread(rel2, NULL);
+    assert(scene_buf != NULL);
+    assert(PE_IsExistWorkerThread() == false);
+
+    // Clear all parts, then PE_Load and verify BOTH async CGs were saved and restored!
+    mock_barrier_name = NULL;
+    atomic_store(&mock_async_delay_ms, 0);
+    PE_ReleaseAllParts();
+    assert(PE_Load(&scene_buf));
+    struct parts *p810 = parts_try_get(810);
+    struct parts *p811 = parts_try_get(811);
+    assert(p810 && p810->states[0].type == PARTS_CG && p810->states[0].cg.name != NULL);
+    assert(!strcmp(p810->states[0].cg.name->text, "scene_mid_cg"));
+    assert(p810->states[0].common.texture.handle != 0);
+    assert(p811 && p811->states[0].type == PARTS_CG && p811->states[0].cg.name != NULL);
+    assert(!strcmp(p811->states[0].cg.name->text, "scene_queued_cg"));
+    assert(p811->states[0].common.texture.handle != 0);
+    free_page(scene_buf);
+
+    free_string(s_mid);
+    free_string(s_hov);
+    free_string(s_sc1);
+    free_string(s_sc2);
+    parts_end_session();
+    assert(TAILQ_EMPTY(&cg_asset_all));
+    assert(mock_live_textures == 0);
+}
+
 int main(void) {
     test_shared_cache_lru_suspend_gl_reset();
     test_lazy_alpha_mask();
     test_async_worker_pool_dedup_cancel_sync_collision();
     test_short_cg_names_and_string_index_resume();
+    test_transparent_save_cg_alpha_mask();
+    test_load_archive_gen_invalidates_live_cache_and_async_dedup();
+    test_async_cg_flushed_before_single_part_and_scene_save();
     puts("PARTS_CG_CACHE_ASYNC_OK");
     return 0;
 }
@@ -1085,12 +1499,12 @@ static int worker_fn(void *arg) {
 
         // Exercise locked base-CG lookups (both hit and miss) concurrently with workers
         if ((iter & 7) == 0) {
-            struct cg *miss = cg_load_base_by_name("no_such_base_cg");
+            struct cg *miss = cg_load_base_by_name(NULL, "no_such_base_cg");
             if (miss) {
                 atomic_fetch_add(&failures, 1);
                 cg_free(miss);
             }
-            struct cg *hit = cg_load_base_by_name("cg_00");
+            struct cg *hit = cg_load_base_by_name(NULL, "cg_00");
             if (!hit || hit->metrics.w != 16)
                 atomic_fetch_add(&failures, 1);
             cg_free(hit);
@@ -1147,7 +1561,124 @@ int main(int argc, char **argv) {
     struct cg *b_miss = cg_load_base_by_id(&ar->ar, 9999);
     assert(b_miss == NULL);
 
+    // Verify asset_cg_archive_gen() bumps on new CG archive load, not on missing/duplicate load
+    uint64_t g0 = asset_cg_archive_gen();
+    assert(!asset_manager_load_archive(ASSET_CG, "NoSuchArchive"));
+    assert(asset_cg_archive_gen() == g0);
+    assert(asset_manager_load_archive(ASSET_CG, "TestGameOverrideCG"));
+    uint64_t g1 = asset_cg_archive_gen();
+    assert(g1 > g0);
+    assert(asset_manager_load_archive(ASSET_CG, "TestGameOverrideCG"));
+    assert(asset_cg_archive_gen() == g1);
+
     puts("ASSET_MANAGER_MT_OK");
+    return 0;
+}
+'''
+
+DCF_FALLBACK_HARNESS = r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define ALICEHUB_IOS
+#include "system4.h"
+#include "system4/afa.h"
+#include "system4/archive.h"
+#include "system4/cg.h"
+#include "system4/file.h"
+#include "system4/string.h"
+#include "xsystem4.h"
+#include "asset_manager.h"
+
+struct config config;
+
+const char *display_utf0(const char *s) { return s ? s : ""; }
+const char *display_sjis0(const char *s) { return s ? s : ""; }
+char *gamedir_path(const char *path) { return path_join(config.game_dir, path); }
+char *gamedir_path_icase(const char *path) { return path_join(config.game_dir, path); }
+char *savedir_path(const char *path) { return path_join(config.game_dir, path); }
+void save_cjk_canon_forms_buf(const char *s, char *sb, size_t sc, char **so,
+        char *gb, size_t gc, char **go) {
+    (void)s;(void)sb;(void)sc;(void)gb;(void)gc;
+    if (so) *so = NULL;
+    if (go) *go = NULL;
+}
+char *save_transcode_cstr_strict(const char *s, size_t n, bool sg, bool dg, size_t *ol) {
+    (void)s;(void)n;(void)sg;(void)dg;(void)ol; return NULL;
+}
+
+#include "asset_manager.c"
+
+static void check_dcf_composite(struct afa_archive *extra_ar,
+        uint8_t exp_left_r, uint8_t exp_left_g, uint8_t exp_left_b,
+        uint8_t exp_right_r, uint8_t exp_right_g, uint8_t exp_right_b) {
+    struct archive_data *d = archive_get_by_basename(&extra_ar->ar, "diff_img");
+    assert(d != NULL);
+    struct cg *cg = cg_load_data(d);
+    archive_free_data(d);
+    assert(cg != NULL && cg->pixels != NULL);
+    assert(cg->metrics.w == 32 && cg->metrics.h == 16);
+    uint8_t *px = cg->pixels;
+    // Left 16x16 chunk (x=0,y=0) comes from base CG; right 16x16 chunk (x=16,y=0) comes from diff QNT!
+    assert(px[0] == exp_left_r && px[1] == exp_left_g && px[2] == exp_left_b);
+    size_t r_off = 16u * 4u;
+    assert(px[r_off + 0] == exp_right_r && px[r_off + 1] == exp_right_g && px[r_off + 2] == exp_right_b);
+    cg_free(cg);
+}
+
+int main(int argc, char **argv) {
+    assert(argc == 5);
+    const char *ald_dir = argv[1];
+    const char *ald_ovr_dir = argv[2];
+    const char *afa_dir = argv[3];
+    const char *extra_afa_path = argv[4];
+
+    int err = 0;
+    struct afa_archive *extra_ar = afa_open(extra_afa_path, MMAP_IF_64BIT, &err);
+    assert(extra_ar != NULL);
+
+    // 1. ALD-backed ASSET_CG with NO overlay: asset_manager_init installs asset_cg_load_base_by_name,
+    //    cg_has_base_loader_by_name() is true, yet DCF base CG MUST still fall back to extra_ar!
+    memset(&config, 0, sizeof(config));
+    config.game_dir = (char *)ald_dir;
+    config.ain_filename = "AldGame.ain";
+    asset_manager_init();
+    assert(cg_has_base_loader_by_name() == true);
+    assert(asset_cg_supports_name() == false);
+    check_dcf_composite(extra_ar, 10, 200, 30, 220, 40, 50);
+
+    // Also verify non-mmapped FILE* fallback on extra_ar!
+    if (extra_ar->ar.mmapped) {
+        extra_ar->f = fopen(extra_ar->filename, "rb");
+        assert(extra_ar->f != NULL);
+        extra_ar->ar.mmapped = false;
+    }
+    check_dcf_composite(extra_ar, 10, 200, 30, 220, 40, 50);
+    asset_manager_fini();
+
+    // 2. ALD-backed ASSET_CG WITH uncensored overlay overriding "base_img": overlay MUST win!
+    config.game_dir = (char *)ald_ovr_dir;
+    config.ain_filename = "AldGame.ain";
+    asset_manager_init();
+    assert(asset_cg_supports_name() == false);
+    check_dcf_composite(extra_ar, 50, 90, 240, 220, 40, 50);
+    asset_manager_fini();
+
+    // 3. AFA-backed ASSET_CG that does NOT contain "base_img": DCF from external extra_ar
+    //    MUST still fall back to extra_ar instead of failing!
+    config.game_dir = (char *)afa_dir;
+    config.ain_filename = "AfaGame.ain";
+    asset_manager_init();
+    assert(asset_cg_supports_name() == true);
+    check_dcf_composite(extra_ar, 10, 200, 30, 220, 40, 50);
+    asset_manager_fini();
+
+    archive_free(&extra_ar->ar);
+    puts("DCF_ARCHIVE_FALLBACK_OK");
     return 0;
 }
 '''
@@ -1165,16 +1696,27 @@ class PartsCGCacheAndAsyncTests(unittest.TestCase):
                 "typedef unsigned int GLuint;\n"
                 "typedef unsigned int GLenum;\n"
                 "typedef int GLint;\n"
+                "typedef float GLfloat;\n"
                 "#define GL_TEXTURE_2D 0x0DE1\n"
                 "#define GL_TEXTURE_MIN_FILTER 0x2801\n"
                 "#define GL_TEXTURE_MAG_FILTER 0x2800\n"
                 "#define GL_TEXTURE_WRAP_S 0x2802\n"
                 "#define GL_TEXTURE_WRAP_T 0x2803\n"
                 "#define GL_TEXTURE_BINDING_2D 0x8069\n"
+                "#define GL_NEAREST 0x2600\n"
+                "#define GL_LINEAR 0x2601\n"
+                "#define GL_NEAREST_MIPMAP_NEAREST 0x2700\n"
+                "#define GL_LINEAR_MIPMAP_NEAREST 0x2701\n"
+                "#define GL_NEAREST_MIPMAP_LINEAR 0x2702\n"
+                "#define GL_LINEAR_MIPMAP_LINEAR 0x2703\n"
+                "#define GL_REPEAT 0x2901\n"
+                "#define GL_CLAMP_TO_EDGE 0x812F\n"
+                "#define GL_MIRRORED_REPEAT 0x8370\n"
                 "void glBindTexture(GLenum, GLuint);\n"
                 "void glGetTexParameteriv(GLenum, GLenum, GLint *);\n"
                 "void glTexParameteri(GLenum, GLenum, GLint);\n"
-                "void glGetIntegerv(GLenum, GLint *);\n",
+                "void glGetIntegerv(GLenum, GLint *);\n"
+                "void glGenerateMipmap(GLenum);\n",
                 encoding="utf-8",
             )
             harness_c = td / "parts_cg_test.c"
@@ -1217,6 +1759,9 @@ class PartsCGCacheAndAsyncTests(unittest.TestCase):
                 qnt = make_qnt_v1(16, 16, rgba)
                 entries.append((f"cg_{idx:02d}.qnt".encode("ascii"), qnt))
             (td / "TestGameCG.afa").write_bytes(make_afa_v2(entries))
+            (td / "TestGameOverrideCG.afa").write_bytes(
+                make_afa_v2([(b"cg_00.qnt", make_qnt_v1(16, 16, (99, 88, 77, 255)))])
+            )
 
             harness_c = td / "asset_mt_test.c"
             harness_c.write_text(ASSET_THREAD_HARNESS, encoding="utf-8")
@@ -1253,6 +1798,80 @@ class PartsCGCacheAndAsyncTests(unittest.TestCase):
             subprocess.run(cmd, check=True)
             out = subprocess.check_output([str(exe), str(td)], text=True)
             self.assertEqual(out.strip(), "ASSET_MANAGER_MT_OK")
+
+    def test_dcf_base_cg_archive_fallback_with_ald_and_afa_asset_manager(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            base_qnt = make_qnt_v1(32, 16, (10, 200, 30, 255))
+            ovr_qnt = make_qnt_v1(32, 16, (50, 90, 240, 255))
+            diff_qnt = make_qnt_v1(32, 16, (220, 40, 50, 255))
+            # chunk 0 (left 16x16) = 1 (keep base), chunk 1 (right 16x16) = 0 (use diff)
+            dcf_blob = make_dcf(32, 16, "base_img", [1, 0], diff_qnt)
+
+            extra_afa = td / "Extra.afa"
+            extra_afa.write_bytes(
+                make_afa_v2([(b"base_img.qnt", base_qnt), (b"diff_img.dcf", dcf_blob)])
+            )
+
+            # 1. ALD game with NO overlay
+            ald_dir = td / "ald_plain"
+            ald_dir.mkdir()
+            (ald_dir / "AldGame.ain").write_bytes(b"VERS")
+            (ald_dir / "AldGameGA.ald").write_bytes(make_ald([(0, "DUMMY.QNT", diff_qnt)]))
+
+            # 2. ALD game WITH AliceHubUncensoredCG.afa overriding base_img
+            ald_ovr_dir = td / "ald_ovr"
+            ald_ovr_dir.mkdir()
+            (ald_ovr_dir / "AldGame.ain").write_bytes(b"VERS")
+            (ald_ovr_dir / "AldGameGA.ald").write_bytes(make_ald([(0, "DUMMY.QNT", diff_qnt)]))
+            (ald_ovr_dir / "AliceHubUncensoredCG.afa").write_bytes(
+                make_afa_v2([(b"base_img.qnt", ovr_qnt)])
+            )
+
+            # 3. AFA game that does NOT contain base_img
+            afa_dir = td / "afa_other"
+            afa_dir.mkdir()
+            (afa_dir / "AfaGame.ain").write_bytes(b"VERS")
+            (afa_dir / "AfaGameCG.afa").write_bytes(make_afa_v2([(b"unrelated.qnt", diff_qnt)]))
+
+            harness_c = td / "dcf_fallback_test.c"
+            harness_c.write_text(DCF_FALLBACK_HARNESS, encoding="utf-8")
+            exe = td / "dcf_fallback_test"
+            libsys4_files = [
+                LIBSYS4_SRC / f"{name}.c"
+                for name in (
+                    "afa", "afa3", "ald", "archive", "buffer", "file", "hashtable",
+                    "string", "system", "utfsjis", "zlib",
+                    "cg", "qnt", "ajp", "png", "webp", "dcf", "pms", "jpeg", "pcf", "rou", "tga",
+                )
+            ]
+            cmd = [
+                os.environ.get("CC", "cc"),
+                "-std=gnu11",
+                "-O2",
+                "-Wall",
+                "-Wextra",
+                "-Wno-unused-parameter",
+                f"-I{ROOT / 'include'}",
+                f"-I{ROOT / 'src'}",
+                f"-I{LIBSYS4_INC}",
+                str(harness_c),
+                *(str(p) for p in libsys4_files),
+                *sdl2_flags(),
+                "-lz",
+                "-lm",
+                "-lpng16",
+                "-lturbojpeg",
+                "-lwebp",
+                "-o",
+                str(exe),
+            ]
+            subprocess.run(cmd, check=True)
+            out = subprocess.check_output(
+                [str(exe), str(ald_dir), str(ald_ovr_dir), str(afa_dir), str(extra_afa)],
+                text=True,
+            )
+            self.assertEqual(out.strip(), "DCF_ARCHIVE_FALLBACK_OK")
 
 
 if __name__ == "__main__":

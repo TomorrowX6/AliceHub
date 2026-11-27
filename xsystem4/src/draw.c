@@ -14,6 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <SDL.h>
 #include "gfx/gl.h"
@@ -157,14 +158,20 @@ static const GLchar box_blur_frag_src[] =
 	"void main() {\n"
 	"\tivec2 tex_size = textureSize(tex, 0);\n"
 	"\tivec2 base = ivec2(floor(tex_coord * vec2(tex_size)));\n"
-	"\tint lo = (blur_dir.x != 0) ? max(-blur_radius, rect_min.x - base.x)\n"
-	"\t                           : max(-blur_radius, rect_min.y - base.y);\n"
-	"\tint hi = (blur_dir.x != 0) ? min(blur_radius, rect_max.x - 1 - base.x)\n"
-	"\t                           : min(blur_radius, rect_max.y - 1 - base.y);\n"
+	"\tivec2 valid_min = max(rect_min, ivec2(0));\n"
+	"\tivec2 valid_max = min(rect_max, tex_size);\n"
 	"\tvec4 sum = vec4(0.0);\n"
-	"\tfor (int i = lo; i <= hi; i++) {\n"
-	"\t\tivec2 p = clamp(base + blur_dir * i, ivec2(0), tex_size - ivec2(1));\n"
-	"\t\tsum += texelFetch(tex, p, 0);\n"
+	"\tbool ortho_ok = (blur_dir.x != 0)\n"
+	"\t\t? (base.y >= valid_min.y && base.y < valid_max.y)\n"
+	"\t\t: (base.x >= valid_min.x && base.x < valid_max.x);\n"
+	"\tif (ortho_ok) {\n"
+	"\t\tint lo = (blur_dir.x != 0) ? max(-blur_radius, valid_min.x - base.x)\n"
+	"\t\t                           : max(-blur_radius, valid_min.y - base.y);\n"
+	"\t\tint hi = (blur_dir.x != 0) ? min(blur_radius, valid_max.x - 1 - base.x)\n"
+	"\t\t                           : min(blur_radius, valid_max.y - 1 - base.y);\n"
+	"\t\tfor (int i = lo; i <= hi; i++) {\n"
+	"\t\t\tsum += texelFetch(tex, base + blur_dir * i, 0);\n"
+	"\t\t}\n"
 	"\t}\n"
 	"\tfrag_color = sum / (float(blur_radius) * 2.0 + 1.0);\n"
 	"}\n";
@@ -185,11 +192,22 @@ static GLuint compile_inline_shader(const char *label, GLenum type, const GLchar
 	return sh;
 }
 
+static GLint clamp_i64_to_glint(int64_t v)
+{
+	if (v < INT_MIN)
+		return INT_MIN;
+	if (v > INT_MAX)
+		return INT_MAX;
+	return (GLint)v;
+}
+
 static void prepare_box_blur_shader(possibly_unused struct gfx_render_job *job, void *data)
 {
 	struct copy_data *d = data;
 	glUniform2i(box_blur_shader.rect_min, d->sx, d->sy);
-	glUniform2i(box_blur_shader.rect_max, d->sx + d->w, d->sy + d->h);
+	glUniform2i(box_blur_shader.rect_max,
+			clamp_i64_to_glint((int64_t)d->sx + d->w),
+			clamp_i64_to_glint((int64_t)d->sy + d->h));
 	glUniform2i(box_blur_shader.blur_dir, d->blur_dx, d->blur_dy);
 	glUniform1i(box_blur_shader.blur_radius, d->blur_radius);
 }
@@ -1188,17 +1206,19 @@ static void run_box_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int
 	int blur_sx = sx;
 	int blur_sy = sy;
 	if (src->handle == dst->handle) {
-		if (sx < 0 || sy < 0 ||
-				(int64_t)sx + w > src->w ||
-				(int64_t)sy + h > src->h) {
-			gfx_init_texture_rgba(&tmp, w, h, (SDL_Color){0, 0, 0, 0});
-		} else {
-			gfx_init_texture_blank(&tmp, w, h);
-		}
-		gfx_copy_with_alpha_map(&tmp, 0, 0, src, sx, sy, w, h);
+		int64_t cx0 = max((int64_t)sx, (int64_t)0);
+		int64_t cy0 = max((int64_t)sy, (int64_t)0);
+		int64_t cx1 = min((int64_t)sx + w, (int64_t)src->w);
+		int64_t cy1 = min((int64_t)sy + h, (int64_t)src->h);
+		if (cx1 <= cx0 || cy1 <= cy0)
+			return;
+		int cw = (int)(cx1 - cx0);
+		int ch = (int)(cy1 - cy0);
+		gfx_init_texture_blank(&tmp, cw, ch);
+		gfx_copy_with_alpha_map(&tmp, 0, 0, src, (int)cx0, (int)cy0, cw, ch);
 		blur_src = &tmp;
-		blur_sx = 0;
-		blur_sy = 0;
+		blur_sx = sx - (int)cx0;
+		blur_sy = sy - (int)cy0;
 	}
 
 	if (blur <= 0) {

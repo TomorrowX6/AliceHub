@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include <stdatomic.h>
 #include <zlib.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -113,6 +114,17 @@ struct asset_manager_afa {
 
 static struct asset_manager *assets[ASSET_TYPE_MAX] = {0};
 static struct asset_manager_afa *afa_create_manager(void);
+static _Atomic uint64_t cg_archive_gen = 1;
+
+uint64_t asset_cg_archive_gen(void)
+{
+	return atomic_load_explicit(&cg_archive_gen, memory_order_acquire);
+}
+
+static inline void asset_cg_bump_archive_gen(void)
+{
+	atomic_fetch_add_explicit(&cg_archive_gen, 1, memory_order_release);
+}
 
 // Serializes ASSET_CG archive index lookup and raw byte reads across the main
 // thread and PartsEngine CG decode worker threads. Never held during CPU decode
@@ -835,6 +847,8 @@ static bool afa_load_archive_prio(struct asset_manager_afa *manager, const char 
 	manager->nr_archives++;
 	afa_register_id_archive(manager, ar);
 	afa_invalidate_canon_index(manager);
+	if (&manager->manager == assets[ASSET_CG])
+		asset_cg_bump_archive_gen();
 	return true;
 }
 
@@ -1304,6 +1318,7 @@ void asset_manager_fini(void)
 	free(save_cg_names);
 	save_cg_names = NULL;
 	nr_save_cg_names = cap_save_cg_names = 0;
+	asset_cg_bump_archive_gen();
 	asset_cg_archive_unlock(ASSET_CG);
 }
 #endif
@@ -1488,30 +1503,64 @@ static bool is_valid_fnl_file(const char *path)
 	return ok;
 }
 
-static struct cg *asset_cg_load_base_by_name(const char *name)
+static struct cg *asset_cg_load_base_by_name(struct archive *src_ar, const char *name)
 {
 	if (!name || !name[0])
 		return NULL;
+	struct archive_data *data = NULL;
+	bool try_afa_by_name = false;
+	bool src_in_afa = false;
+
 	asset_cg_archive_lock(ASSET_CG);
-	bool has_get_by_name = assets[ASSET_CG] && assets[ASSET_CG]->get_by_name != NULL;
-	struct archive_data *overlay_data = NULL;
-	if (!has_get_by_name && assets[ASSET_CG] && assets[ASSET_CG]->get_by_id == ald_get_by_id) {
-		struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
-		if (manager->nr_cg_overlays > 0) {
+	if (assets[ASSET_CG]) {
+		if (assets[ASSET_CG]->get_by_name != NULL) {
+			try_afa_by_name = true;
+			if (src_ar && assets[ASSET_CG]->get_by_name == afa_get_by_name) {
+				struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
+				for (size_t i = 0; i < manager->nr_archives; i++) {
+					if (&manager->archives[i]->ar == src_ar) {
+						src_in_afa = true;
+						break;
+					}
+				}
+			}
+		} else if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
 			char base_buf[512];
 			char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
-			for (size_t i = 0; i < manager->nr_cg_overlays && !overlay_data; i++)
-				overlay_data = archive_get_by_basename(&manager->cg_overlays[i]->ar, basename);
+			for (size_t i = 0; i < manager->nr_cg_overlays && !data; i++)
+				data = archive_get_by_basename(&manager->cg_overlays[i]->ar, basename);
+			if (!data && src_ar)
+				data = archive_get_by_basename(src_ar, basename);
+			if (!data && manager->archive && manager->archive != src_ar)
+				data = archive_get_by_basename(manager->archive, basename);
 			if (basename != base_buf)
 				free(basename);
 		}
+	} else if (src_ar) {
+		char base_buf[512];
+		char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
+		data = archive_get_by_basename(src_ar, basename);
+		if (basename != base_buf)
+			free(basename);
 	}
 	asset_cg_archive_unlock(ASSET_CG);
-	if (has_get_by_name)
-		return asset_cg_load_by_name(name, NULL);
-	if (overlay_data) {
-		struct cg *cg = cg_load_data(overlay_data);
-		archive_free_data(overlay_data);
+
+	if (try_afa_by_name) {
+		struct cg *cg = asset_cg_load_by_name(name, NULL);
+		if (cg || !src_ar || src_in_afa)
+			return cg;
+		asset_cg_archive_lock(ASSET_CG);
+		char base_buf[512];
+		char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
+		data = archive_get_by_basename(src_ar, basename);
+		if (basename != base_buf)
+			free(basename);
+		asset_cg_archive_unlock(ASSET_CG);
+	}
+	if (data) {
+		struct cg *cg = cg_load_data(data);
+		archive_free_data(data);
 		return cg;
 	}
 	return NULL;
@@ -1572,7 +1621,7 @@ static struct cg *asset_cg_load_base_by_id(struct archive *src_ar, int id)
 	asset_cg_archive_unlock(ASSET_CG);
 
 	if (base_name) {
-		struct cg *cg = asset_cg_load_base_by_name(base_name);
+		struct cg *cg = asset_cg_load_base_by_name(src_ar, base_name);
 		free(base_name);
 		return cg;
 	}
@@ -1823,6 +1872,7 @@ void asset_manager_init(void)
 		free(nspic_dir);
 	}
 
+	asset_cg_bump_archive_gen();
 	cg_set_base_loader_by_name(asset_cg_load_base_by_name);
 	cg_set_base_loader_by_id(asset_cg_load_base_by_id);
 }

@@ -1724,6 +1724,7 @@ bool PE_SaveParts(int parts_no, struct page **buffer)
 	struct parts *parts = parts_try_get(parts_no);
 	if (!parts || !buffer)
 		return false;
+	parts_cg_async_flush_part(parts_no);
 	PE_UpdateComponent(0);
 	struct iarray_writer w;
 	iarray_init_writer(&w, "XPP2");
@@ -1841,6 +1842,8 @@ static bool parts_has_3dlayer(const struct parts *parts)
 
 static bool parts_engine_save(struct page **buffer, bool save_hidden, bool backscene)
 {
+	// wait for any pending async CG loads before serializing parts
+	parts_cg_async_flush_all();
 	// get parts into clean state first
 	PE_UpdateComponent(0);
 

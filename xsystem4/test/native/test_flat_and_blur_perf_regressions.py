@@ -984,12 +984,20 @@ void __wrap_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *
 }
 
 static void cpu_box_blur(uint8_t *dst, const uint8_t *src,
-        int dst_w, int src_w, int dx, int dy, int sx, int sy,
+        int dst_w, int dst_h, int src_w, int src_h, int dx, int dy, int sx, int sy,
         int w, int h, int blur, bool vertical, bool amap) {
     int r = blur > 0 ? blur : 0;
     double denom = (double)(r * 2 + 1);
     for (int y = 0; y < h; y++) {
+        int dst_y = dy + y;
+        int base_y = sy + y;
+        if (dst_y < 0 || dst_y >= dst_h || base_y < 0 || base_y >= src_h)
+            continue;
         for (int x = 0; x < w; x++) {
+            int dst_x = dx + x;
+            int base_x = sx + x;
+            if (dst_x < 0 || dst_x >= dst_w || base_x < 0 || base_x >= src_w)
+                continue;
             int c_lo = amap ? 3 : 0;
             int c_hi = amap ? 4 : 3;
             for (int c = c_lo; c < c_hi; c++) {
@@ -997,14 +1005,17 @@ static void cpu_box_blur(uint8_t *dst, const uint8_t *src,
                 for (int k = -r; k <= r; k++) {
                     int xx = x + (vertical ? 0 : k);
                     int yy = y + (vertical ? k : 0);
-                    if (xx >= 0 && xx < w && yy >= 0 && yy < h) {
-                        sum += src[((sy + yy) * src_w + (sx + xx)) * 4 + c];
+                    int sxx = sx + xx;
+                    int syy = sy + yy;
+                    if (xx >= 0 && xx < w && yy >= 0 && yy < h &&
+                            sxx >= 0 && sxx < src_w && syy >= 0 && syy < src_h) {
+                        sum += src[(syy * src_w + sxx) * 4 + c];
                     }
                 }
                 int val = (int)llround(sum / denom);
                 if (val < 0) val = 0;
                 if (val > 255) val = 255;
-                dst[((dy + y) * dst_w + (dx + x)) * 4 + c] = (uint8_t)val;
+                dst[(dst_y * dst_w + dst_x) * 4 + c] = (uint8_t)val;
             }
         }
     }
@@ -1044,7 +1055,7 @@ static void run_blur_matrix(void) {
 
                     gfx_update_texture_with_pixels(&dst, base_dst);
                     memcpy(expected, base_dst, sizeof(expected));
-                    cpu_box_blur(expected, src_px, DW, SW, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
+                    cpu_box_blur(expected, src_px, DW, DH, SW, SH, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
 
                     g_draw_calls = 0;
                     if (!amap && !vertical)
@@ -1091,7 +1102,7 @@ static void run_blur_matrix(void) {
 
                     gfx_update_texture_with_pixels(&inplace, base_dst);
                     memcpy(expected, base_dst, sizeof(expected));
-                    cpu_box_blur(expected, base_dst, DW, DW, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
+                    cpu_box_blur(expected, base_dst, DW, DH, DW, DH, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
 
                     if (!amap && !vertical)
                         gfx_copy_width_blur(&inplace, dx, dy, &inplace, sx, sy, w, h, blur);
@@ -1117,6 +1128,104 @@ static void run_blur_matrix(void) {
                 }
             }
         }
+    }
+
+    // Out-of-bounds source rectangles (negative sx/sy and past-end sx+w/sy+h):
+    // out-of-bounds taps MUST contribute 0 (never clamp/repeat the edge texel!),
+    // matching both distinct src/dst and in-place src == dst!
+    struct { int dx, dy, sx, sy, w, h; } oob_cases[] = {
+        { 0, 0, -1,  0, SW + 2, SH     },
+        { 0, 0, -3, -2, SW + 6, SH + 4 },
+        { 2, 1, SW - 6, SH - 5, 12, 10 },
+        { 1, 2, -4, -3, 10, 10         },
+        { 0, 0, -20, 0, 10, 10         },
+    };
+    const int oob_radii[] = { 0, 1, 3, 8 };
+    for (size_t ci = 0; ci < sizeof(oob_cases) / sizeof(oob_cases[0]); ci++) {
+        int dx = oob_cases[ci].dx, dy = oob_cases[ci].dy;
+        int sx = oob_cases[ci].sx, sy = oob_cases[ci].sy;
+        int w  = oob_cases[ci].w,  h  = oob_cases[ci].h;
+        for (size_t ri = 0; ri < sizeof(oob_radii) / sizeof(oob_radii[0]); ri++) {
+            int blur = oob_radii[ri];
+            for (int amap = 0; amap < 2; amap++) {
+                for (int vertical = 0; vertical < 2; vertical++) {
+                    // Distinct src != dst
+                    gfx_update_texture_with_pixels(&dst, base_dst);
+                    memcpy(expected, base_dst, sizeof(expected));
+                    cpu_box_blur(expected, src_px, DW, DH, SW, SH, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
+
+                    if (!amap && !vertical)
+                        gfx_copy_width_blur(&dst, dx, dy, &src, sx, sy, w, h, blur);
+                    else if (!amap && vertical)
+                        gfx_copy_height_blur(&dst, dx, dy, &src, sx, sy, w, h, blur);
+                    else if (amap && !vertical)
+                        gfx_copy_amap_width_blur(&dst, dx, dy, &src, sx, sy, w, h, blur);
+                    else
+                        gfx_copy_amap_height_blur(&dst, dx, dy, &src, sx, sy, w, h, blur);
+
+                    uint8_t *got = gfx_get_pixels(&dst);
+                    for (int i = 0; i < DW * DH * 4; i++) {
+                        int diff = abs((int)got[i] - (int)expected[i]);
+                        if (diff > 1) {
+                            int px = i / 4;
+                            fprintf(stderr,
+                                "OOB BLUR MISMATCH case=%zu blur=%d amap=%d vert=%d (%d,%d) ch=%d got=%u exp=%u\n",
+                                ci, blur, amap, vertical, px % DW, px / DW, i % 4, got[i], expected[i]);
+                            abort();
+                        }
+                    }
+                    free(got);
+
+                    // In-place src == dst
+                    gfx_update_texture_with_pixels(&inplace, base_dst);
+                    memcpy(expected, base_dst, sizeof(expected));
+                    cpu_box_blur(expected, base_dst, DW, DH, DW, DH, dx, dy, sx, sy, w, h, blur, vertical != 0, amap != 0);
+
+                    if (!amap && !vertical)
+                        gfx_copy_width_blur(&inplace, dx, dy, &inplace, sx, sy, w, h, blur);
+                    else if (!amap && vertical)
+                        gfx_copy_height_blur(&inplace, dx, dy, &inplace, sx, sy, w, h, blur);
+                    else if (amap && !vertical)
+                        gfx_copy_amap_width_blur(&inplace, dx, dy, &inplace, sx, sy, w, h, blur);
+                    else
+                        gfx_copy_amap_height_blur(&inplace, dx, dy, &inplace, sx, sy, w, h, blur);
+
+                    got = gfx_get_pixels(&inplace);
+                    for (int i = 0; i < DW * DH * 4; i++) {
+                        int diff = abs((int)got[i] - (int)expected[i]);
+                        if (diff > 1) {
+                            int px = i / 4;
+                            fprintf(stderr,
+                                "OOB INPLACE BLUR MISMATCH case=%zu blur=%d amap=%d vert=%d (%d,%d) ch=%d got=%u exp=%u\n",
+                                ci, blur, amap, vertical, px % DW, px / DW, i % 4, got[i], expected[i]);
+                            abort();
+                        }
+                    }
+                    free(got);
+                }
+            }
+        }
+    }
+
+    // Explicit edge-repeat regression guard: solid white 10x10 blurred with sx=-2, blur=2
+    // must produce 3/5 * 255 = 153 at the left edge of src (dst x=2), NOT 255!
+    {
+        uint8_t white_px[10 * 10 * 4];
+        memset(white_px, 255, sizeof(white_px));
+        Texture wsrc = {0}, wdst = {0};
+        gfx_init_texture_with_pixels(&wsrc, 10, 10, white_px);
+        gfx_init_texture_rgba(&wdst, 14, 10, (SDL_Color){ 0, 0, 0, 255 });
+        gfx_copy_width_blur(&wdst, 0, 0, &wsrc, -2, 0, 14, 10, 2);
+        uint8_t *got = gfx_get_pixels(&wdst);
+        // dst x=2 maps to src x=0: taps i=-2,-1 are OOB (0), i=0,1,2 are 255 -> 765/5 = 153!
+        int edge_r = got[(5 * 14 + 2) * 4 + 0];
+        assert(abs(edge_r - 153) <= 1);
+        // dst x=11 maps to src x=9: taps i=1,2 are OOB (0) -> 765/5 = 153!
+        int redge_r = got[(5 * 14 + 11) * 4 + 0];
+        assert(abs(redge_r - 153) <= 1);
+        free(got);
+        gfx_delete_texture(&wdst);
+        gfx_delete_texture(&wsrc);
     }
 
     // Large radius that would overflow signed 32-bit int `blur_radius * 2 + 1` in GLSL:

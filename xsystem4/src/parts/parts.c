@@ -307,6 +307,7 @@ void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg
 struct parts_cg_asset {
 	char *name;
 	int cg_no;
+	uint64_t archive_gen;
 	Texture texture;
 	int w, h;
 	bool has_alpha;
@@ -335,6 +336,7 @@ static size_t cg_asset_idle_vram_bytes = 0;
 static size_t parts_cg_idle_vram_budget = PARTS_CG_IDLE_VRAM_BUDGET;
 static int parts_cg_idle_max_count = PARTS_CG_IDLE_MAX_COUNT;
 static uint64_t next_cg_load_gen = 1;
+static uint64_t cg_cache_archive_gen = 0;
 
 static unsigned cg_hash_str(const char *s)
 {
@@ -429,6 +431,19 @@ static void parts_cg_asset_evict_idle(size_t max_bytes, int max_count)
 	}
 }
 
+static void parts_cg_cache_sync_archive_gen(void)
+{
+	uint64_t gen = asset_cg_archive_gen();
+	if (gen == cg_cache_archive_gen)
+		return;
+	cg_cache_archive_gen = gen;
+	parts_cg_asset_evict_idle(0, 0);
+	struct parts_cg_asset *asset;
+	TAILQ_FOREACH(asset, &cg_asset_all, all_entry) {
+		parts_cg_asset_remove_tables(asset);
+	}
+}
+
 static void parts_cg_asset_ref(struct parts_cg_asset *asset)
 {
 	if (!asset)
@@ -449,7 +464,7 @@ static void parts_cg_asset_unref(struct parts_cg_asset *asset)
 	assert(asset->refcount > 0);
 	asset->refcount--;
 	if (asset->refcount == 0) {
-		if (!asset->texture.handle) {
+		if (!asset->texture.handle || (!asset->in_name_table && !asset->in_id_table)) {
 			parts_cg_asset_destroy(asset);
 			return;
 		}
@@ -497,7 +512,8 @@ static struct parts_cg_asset *parts_cg_asset_find_by_id(int cg_no)
 	return NULL;
 }
 
-static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int cg_no, const char *name)
+static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int cg_no,
+		const char *name, uint64_t archive_gen, bool insert_tables)
 {
 	struct parts_cg_asset *asset = xcalloc(1, sizeof(*asset));
 	gfx_init_texture_with_cg(&asset->texture, cg);
@@ -505,13 +521,15 @@ static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int c
 	asset->h = cg->metrics.h;
 	asset->has_alpha = cg->metrics.has_alpha;
 	asset->cg_no = cg_no;
+	asset->archive_gen = archive_gen;
 	if (name && name[0])
 		asset->name = xstrdup(name);
 	asset->vram_bytes = (asset->w > 0 && asset->h > 0)
 		? (size_t)asset->w * (size_t)asset->h * 4u : 0u;
 	asset->refcount = 1;
 	TAILQ_INSERT_TAIL(&cg_asset_all, asset, all_entry);
-	parts_cg_asset_insert_tables(asset);
+	if (insert_tables)
+		parts_cg_asset_insert_tables(asset);
 	return asset;
 }
 
@@ -645,6 +663,7 @@ void parts_cg_resume(struct parts_cg *cg)
 	const char *name = (cg->name && cg->name->size > 0) ? cg->name->text : NULL;
 	if (is_save_cg_name(name))
 		return;
+	parts_cg_cache_sync_archive_gen();
 	struct parts_cg_asset *asset = name ? parts_cg_asset_find_by_name(name) : NULL;
 	if (!asset && cg->no > 0)
 		asset = parts_cg_asset_find_by_id(cg->no);
@@ -669,7 +688,7 @@ void parts_cg_resume(struct parts_cg *cg)
 	}
 	if (!loaded)
 		return;
-	asset = parts_cg_asset_create_from_cg(loaded, cg_no, cache_name);
+	asset = parts_cg_asset_create_from_cg(loaded, cg_no, cache_name, cg_cache_archive_gen, true);
 	cg_free(loaded);
 	cg->cg_asset = asset;
 	cg->common.texture = asset->texture;
@@ -706,6 +725,7 @@ struct parts_cg_async_target {
 
 struct parts_cg_async_job {
 	char *cg_name;
+	uint64_t archive_gen;
 	enum parts_cg_job_state state;
 	struct cg *cg;
 	int cg_no;
@@ -735,11 +755,11 @@ static struct {
 static void parts_cg_attach_asset(struct parts *parts, struct parts_cg *parts_cg,
 		struct parts_cg_asset *asset, struct string *name);
 
-static struct parts_cg_async_job *cg_async_find_job_locked(const char *cg_name)
+static struct parts_cg_async_job *cg_async_find_job_locked(const char *cg_name, uint64_t archive_gen)
 {
 	unsigned b = cg_hash_str(cg_name) & (PARTS_CG_ASYNC_BUCKETS - 1);
 	for (struct parts_cg_async_job *j = cg_async.active_buckets[b]; j; j = j->hash_next) {
-		if (!strcmp(j->cg_name, cg_name))
+		if (j->archive_gen == archive_gen && !strcmp(j->cg_name, cg_name))
 			return j;
 	}
 	return NULL;
@@ -910,6 +930,8 @@ static void parts_cg_async_shutdown(void)
 
 static struct parts_cg_asset *parts_cg_async_finish_job(struct parts_cg_async_job *job, bool retain_asset)
 {
+	parts_cg_cache_sync_archive_gen();
+	bool current_gen = (job->archive_gen == cg_cache_archive_gen);
 	bool any_live = false;
 	for (struct parts_cg_async_target *t = job->targets; t; t = t->next) {
 		struct parts *p = parts_try_get(t->parts_no);
@@ -922,11 +944,18 @@ static struct parts_cg_asset *parts_cg_async_finish_job(struct parts_cg_async_jo
 
 	struct parts_cg_asset *asset = NULL;
 	if (job->cg && (any_live || retain_asset)) {
-		asset = parts_cg_asset_find_by_name(job->cg_name);
-		if (asset) {
-			parts_cg_asset_ref(asset);
+		if (current_gen) {
+			asset = parts_cg_asset_find_by_name(job->cg_name);
+			if (asset) {
+				parts_cg_asset_ref(asset);
+			} else {
+				asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
+						job->cg_name, job->archive_gen, true);
+				parts_frame_did_heavy_load = true;
+			}
 		} else {
-			asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no, job->cg_name);
+			asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
+					job->cg_name, job->archive_gen, false);
 			parts_frame_did_heavy_load = true;
 		}
 	}
@@ -952,6 +981,102 @@ static struct parts_cg_asset *parts_cg_async_finish_job(struct parts_cg_async_jo
 		return NULL;
 	}
 	return asset;
+}
+
+static bool parts_has_pending_async_cg(int parts_no)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts)
+		return false;
+	for (int st = 0; st < PARTS_NR_STATES; st++) {
+		if (parts->states[st].type == PARTS_CG && parts->states[st].cg.async_gen != 0)
+			return true;
+	}
+	return false;
+}
+
+static bool cg_async_job_targets_live_part(const struct parts_cg_async_job *job, int parts_no)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts)
+		return false;
+	for (const struct parts_cg_async_target *t = job->targets; t; t = t->next) {
+		if (t->parts_no == parts_no && parts->states[t->state].type == PARTS_CG
+				&& parts->states[t->state].cg.load_gen == t->gen)
+			return true;
+	}
+	return false;
+}
+
+void parts_cg_async_flush_part(int parts_no)
+{
+	if (!cg_async.initialized || parts_current != &live_context)
+		return;
+	if (!parts_has_pending_async_cg(parts_no))
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	while (parts_has_pending_async_cg(parts_no)) {
+		if (!TAILQ_EMPTY(&cg_async.ready_q)) {
+			struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+			TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+			cg_async.nr_ready--;
+			cg_async_remove_job_locked(job);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			parts_cg_async_finish_job(job, false);
+
+			SDL_LockMutex(cg_async.mutex);
+			continue;
+		}
+		struct parts_cg_async_job *queued = NULL;
+		TAILQ_FOREACH(queued, &cg_async.pending_q, queue_entry) {
+			if (cg_async_job_targets_live_part(queued, parts_no))
+				break;
+		}
+		if (queued) {
+			TAILQ_REMOVE(&cg_async.pending_q, queued, queue_entry);
+			cg_async.nr_queued--;
+			cg_async_remove_job_locked(queued);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			queued->archive_gen = asset_cg_archive_gen();
+			int cg_no = 0;
+			queued->cg = asset_cg_load_by_name(queued->cg_name, &cg_no);
+			queued->cg_no = cg_no;
+			parts_cg_async_finish_job(queued, false);
+
+			SDL_LockMutex(cg_async.mutex);
+			continue;
+		}
+		if (cg_async.shutdown || (cg_async.nr_queued == 0 && cg_async.nr_decoding == 0))
+			break;
+		SDL_CondWait(cg_async.done_cond, cg_async.mutex);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+}
+
+void parts_cg_async_flush_all(void)
+{
+	if (!cg_async.initialized || parts_current != &live_context)
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	for (;;) {
+		while (!TAILQ_EMPTY(&cg_async.ready_q)) {
+			struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+			TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+			cg_async.nr_ready--;
+			cg_async_remove_job_locked(job);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			parts_cg_async_finish_job(job, false);
+
+			SDL_LockMutex(cg_async.mutex);
+		}
+		if (cg_async.shutdown || (cg_async.nr_queued == 0 && cg_async.nr_decoding == 0))
+			break;
+		SDL_CondWait(cg_async.done_cond, cg_async.mutex);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
 }
 
 static void parts_cg_async_drain_ready(int budget_ms)
@@ -992,8 +1117,10 @@ static bool parts_cg_async_claim_sync(const char *cg_name, struct parts_cg_asset
 	*asset_out = NULL;
 	if (!cg_async.initialized || parts_current != &live_context)
 		return false;
+	parts_cg_cache_sync_archive_gen();
+	uint64_t archive_gen = cg_cache_archive_gen;
 	SDL_LockMutex(cg_async.mutex);
-	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name);
+	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name, archive_gen);
 	if (!job) {
 		SDL_UnlockMutex(cg_async.mutex);
 		return false;
@@ -1817,8 +1944,9 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 	bool cacheable = !(name && is_save_cg_name(name->text))
 		&& ((name && name->size > 0) || cg_no > 0);
 	if (cacheable) {
+		parts_cg_cache_sync_archive_gen();
 		struct parts_cg_asset *asset = parts_cg_asset_create_from_cg(
-				cg, cg_no, name ? name->text : NULL);
+				cg, cg_no, name ? name->text : NULL, cg_cache_archive_gen, true);
 		parts_cg_attach_asset(parts, parts_cg, asset, name);
 		parts_cg_asset_unref(asset);
 		parts_frame_did_heavy_load = true;
@@ -1827,6 +1955,7 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 	}
 	parts_cg_detach(parts_cg);
 	gfx_init_texture_with_cg(&parts_cg->common.texture, cg);
+	parts_common_set_alpha_from_cg(&parts_cg->common, cg);
 	parts_set_dims(parts, &parts_cg->common, cg->metrics.w, cg->metrics.h);
 	parts_cg->no = cg_no;
 	parts_cg->name = name;
@@ -1839,9 +1968,11 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no)
 {
 	assert(cg_no);
+	parts_cg_cache_sync_archive_gen();
 	cg->load_gen = ++next_cg_load_gen;
 	cg->async_gen = 0;
-	if (cg->no == cg_no && cg->common.texture.handle) {
+	if (cg->cg_asset && cg->cg_asset->archive_gen == cg_cache_archive_gen
+			&& cg->no == cg_no && cg->common.texture.handle) {
 		if (cg->name) {
 			free_string(cg->name);
 			cg->name = NULL;
@@ -1868,8 +1999,10 @@ bool parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct string 
 	if (is_save_cg_name(cg_name->text)) {
 		cg = asset_cg_load_by_name(cg_name->text, &no);
 	} else {
-		if (parts_cg->cg_asset && parts_cg->common.texture.handle &&
-				parts_cg->name && !strcmp(parts_cg->name->text, cg_name->text)) {
+		parts_cg_cache_sync_archive_gen();
+		if (parts_cg->cg_asset && parts_cg->cg_asset->archive_gen == cg_cache_archive_gen
+				&& parts_cg->common.texture.handle
+				&& parts_cg->name && !strcmp(parts_cg->name->text, cg_name->text)) {
 			parts_set_dims(parts, &parts_cg->common,
 					parts_cg->common.texture.w, parts_cg->common.texture.h);
 			parts_dirty(parts);
@@ -2500,6 +2633,7 @@ static void parts_clear(void)
 	PE_ReleaseActivities();
 	PE_ReleaseAllParts();
 	parts_cg_cache_clear();
+	cg_cache_archive_gen = 0;
 	parts_cproc_cache_clear();
 	parts_flat_cache_clear();
 	PE_ReleaseMessage();
@@ -2825,9 +2959,13 @@ bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state)
 		return parts_cg_set(parts, cg, cg_name);
 	}
 
+	parts_cg_cache_sync_archive_gen();
+	uint64_t archive_gen = cg_cache_archive_gen;
+
 	struct parts_cg *pcg = parts_get_cg(parts, state);
-	if (pcg->cg_asset && pcg->common.texture.handle &&
-			pcg->name && !strcmp(pcg->name->text, cg_name->text)) {
+	if (pcg->cg_asset && pcg->cg_asset->archive_gen == archive_gen
+			&& pcg->common.texture.handle
+			&& pcg->name && !strcmp(pcg->name->text, cg_name->text)) {
 		pcg->load_gen = ++next_cg_load_gen;
 		pcg->async_gen = 0;
 		parts_set_dims(parts, &pcg->common, pcg->common.texture.w, pcg->common.texture.h);
@@ -2854,7 +2992,7 @@ bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state)
 	target->gen = gen;
 
 	SDL_LockMutex(cg_async.mutex);
-	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name->text);
+	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name->text, archive_gen);
 	if (job) {
 		if (job->targets_tail)
 			job->targets_tail->next = target;
@@ -2864,6 +3002,7 @@ bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state)
 	} else {
 		job = xcalloc(1, sizeof(*job));
 		job->cg_name = xstrdup(cg_name->text);
+		job->archive_gen = archive_gen;
 		job->state = CG_JOB_QUEUED;
 		job->targets = job->targets_tail = target;
 		cg_async_insert_job_locked(job);
@@ -5081,6 +5220,7 @@ static void recover_parts_in_current_context(void)
 
 static void parts_cg_asset_on_gl_reset(void)
 {
+	parts_cg_cache_sync_archive_gen();
 	struct parts_cg_asset *asset = TAILQ_FIRST(&cg_asset_all);
 	while (asset) {
 		struct parts_cg_asset *next = TAILQ_NEXT(asset, all_entry);
