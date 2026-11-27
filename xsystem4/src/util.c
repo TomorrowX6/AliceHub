@@ -793,15 +793,12 @@ static bool savedir_owner_is_dead(uint64_t pid, uint32_t seq, uint64_t my_pid, u
 #endif
 }
 
-static char *savedir_format_memory_basename_opts(const char *utf_rest, bool preserve_wildcard,
-		size_t *session_prefix_len_out)
+static char *savedir_format_memory_basename(const char *utf_rest)
 {
 	static const char hex[] = "0123456789abcdef";
 	char pfx[64];
 	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx),
 		savedir_current_pid(), savedir_current_mem_session_seq());
-	if (session_prefix_len_out)
-		*session_prefix_len_out = pfx_len;
 	const size_t max_body = 140;
 	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
 	if (!rest_len) {
@@ -820,8 +817,7 @@ static char *savedir_format_memory_basename_opts(const char *utf_rest, bool pres
 			|| (c >= 'a' && c <= 'z')
 			|| (c >= '0' && c <= '9')
 			|| c == '_' || c == '-'
-			|| (c == '.' && i + 1 < rest_len)
-			|| (preserve_wildcard && c == '*');
+			|| (c == '.' && i + 1 < rest_len);
 		if (safe) {
 			enc[enc_len++] = (char)c;
 		} else {
@@ -832,7 +828,7 @@ static char *savedir_format_memory_basename_opts(const char *utf_rest, bool pres
 	}
 	enc[enc_len] = '\0';
 
-	if (preserve_wildcard || enc_len <= max_body) {
+	if (enc_len <= max_body) {
 		char *out = xmalloc(pfx_len + enc_len + 1);
 		memcpy(out, pfx, pfx_len);
 		memcpy(out + pfx_len, enc, enc_len + 1);
@@ -859,28 +855,118 @@ static char *savedir_format_memory_basename_opts(const char *utf_rest, bool pres
 	return out;
 }
 
-static char *savedir_format_memory_basename(const char *utf_rest)
+struct savedir_mem_entry {
+	char *logical_name;
+	char *logical_utf8;
+	char *disk_path;
+};
+
+static struct savedir_mem_entry *savedir_mem_entries = NULL;
+static size_t savedir_mem_entry_count = 0;
+static size_t savedir_mem_entry_cap = 0;
+
+static void savedir_mem_registry_clear(void)
 {
-	return savedir_format_memory_basename_opts(utf_rest, false, NULL);
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		free(savedir_mem_entries[i].logical_name);
+		free(savedir_mem_entries[i].logical_utf8);
+		free(savedir_mem_entries[i].disk_path);
+	}
+	free(savedir_mem_entries);
+	savedir_mem_entries = NULL;
+	savedir_mem_entry_count = 0;
+	savedir_mem_entry_cap = 0;
+	savedir_unlock();
 }
 
-static int savedir_hex_val(char c)
+static bool savedir_ascii_ieq_n(const char *a, const char *b, size_t n)
 {
-	if (c >= '0' && c <= '9')
-		return c - '0';
-	if (c >= 'a' && c <= 'f')
-		return c - 'a' + 10;
-	if (c >= 'A' && c <= 'F')
-		return c - 'A' + 10;
-	return -1;
+	for (size_t i = 0; i < n; i++) {
+		unsigned char ca = (unsigned char)a[i];
+		unsigned char cb = (unsigned char)b[i];
+		if (ca >= 'A' && ca <= 'Z')
+			ca = (unsigned char)(ca - 'A' + 'a');
+		if (cb >= 'A' && cb <= 'Z')
+			cb = (unsigned char)(cb - 'A' + 'a');
+		if (ca != cb)
+			return false;
+	}
+	return true;
 }
 
-bool savedir_memory_find_pattern(const char *path, char **dir_out, char **pattern_out,
-		size_t *session_prefix_len_out)
+static bool savedir_ascii_ieq(const char *a, const char *b)
 {
-	if (!path || !dir_out || !pattern_out)
+	size_t la = strlen(a);
+	if (la != strlen(b))
 		return false;
-	const char *target = path;
+	return savedir_ascii_ieq_n(a, b, la);
+}
+
+static bool savedir_wildcard_match_icase(const char *pat, const char *s)
+{
+	const char *star = strchr(pat, '*');
+	if (!star)
+		return savedir_ascii_ieq(pat, s);
+	size_t pre = (size_t)(star - pat);
+	size_t suf = strlen(star + 1);
+	size_t slen = strlen(s);
+	if (slen < pre + suf)
+		return false;
+	return savedir_ascii_ieq_n(pat, s, pre)
+		&& savedir_ascii_ieq_n(star + 1, s + slen - suf, suf);
+}
+
+static void savedir_mem_registry_record(const char *raw_rest, const char *utf_rest, const char *disk_path)
+{
+	if (!disk_path)
+		return;
+	static const char tag[] = "<memory>";
+	const size_t tag_len = sizeof(tag) - 1;
+	size_t raw_len = raw_rest ? strlen(raw_rest) : 0;
+	char *logical = xmalloc(tag_len + raw_len + 1);
+	memcpy(logical, tag, tag_len);
+	if (raw_len)
+		memcpy(logical + tag_len, raw_rest, raw_len);
+	logical[tag_len + raw_len] = '\0';
+
+	const char *utf = utf_rest ? utf_rest : "";
+
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		if (savedir_ascii_ieq(savedir_mem_entries[i].disk_path, disk_path)) {
+			if (!file_exists(savedir_mem_entries[i].disk_path)) {
+				free(savedir_mem_entries[i].logical_name);
+				free(savedir_mem_entries[i].logical_utf8);
+				free(savedir_mem_entries[i].disk_path);
+				savedir_mem_entries[i].logical_name = logical;
+				savedir_mem_entries[i].logical_utf8 = xstrdup(utf);
+				savedir_mem_entries[i].disk_path = xstrdup(disk_path);
+			} else {
+				free(logical);
+			}
+			savedir_unlock();
+			return;
+		}
+	}
+	if (savedir_mem_entry_count == savedir_mem_entry_cap) {
+		size_t ncap = savedir_mem_entry_cap ? savedir_mem_entry_cap * 2 : 16;
+		savedir_mem_entries = xrealloc(savedir_mem_entries, ncap * sizeof(*savedir_mem_entries));
+		savedir_mem_entry_cap = ncap;
+	}
+	savedir_mem_entries[savedir_mem_entry_count++] = (struct savedir_mem_entry) {
+		.logical_name = logical,
+		.logical_utf8 = xstrdup(utf),
+		.disk_path = xstrdup(disk_path),
+	};
+	savedir_unlock();
+}
+
+int savedir_memory_find(const char *pattern, int *count, char **match_out)
+{
+	if (!pattern || !count || !match_out)
+		return -1;
+	const char *target = pattern;
 	if (config.save_dir && config.save_dir[0]) {
 		const char *stripped_rel = NULL;
 		if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
@@ -888,48 +974,28 @@ bool savedir_memory_find_pattern(const char *path, char **dir_out, char **patter
 	}
 	const char *mem_rest = NULL;
 	if (!savedir_strip_memory_prefix(target, &mem_rest))
-		return false;
-	char *utf_rest = unix_path_with(mem_rest, false);
-	char *pat = savedir_format_memory_basename_opts(utf_rest, true, session_prefix_len_out);
-	free(utf_rest);
-	const char *dir = (config.save_dir && config.save_dir[0]) ? config.save_dir : ".";
-	*dir_out = xstrdup(dir);
-	*pattern_out = pat;
-	return true;
-}
+		return -1;
 
-char *savedir_memory_decode_name(const char *d_name, size_t session_prefix_len)
-{
-	static const char tag[] = "<memory>";
-	const size_t tag_len = sizeof(tag) - 1;
-	if (!d_name || strlen(d_name) < session_prefix_len)
-		return xstrdup(tag);
-	const char *enc = d_name + session_prefix_len;
-	if (!strcmp(enc, "_empty"))
-		return xstrdup(tag);
-	size_t enc_len = strlen(enc);
-	char *utf = xmalloc(enc_len + 1);
-	size_t ulen = 0;
-	for (size_t i = 0; i < enc_len; ) {
-		int hi, lo;
-		if (enc[i] == '%' && i + 2 < enc_len
-				&& (hi = savedir_hex_val(enc[i + 1])) >= 0
-				&& (lo = savedir_hex_val(enc[i + 2])) >= 0) {
-			utf[ulen++] = (char)((hi << 4) | lo);
-			i += 3;
-		} else {
-			utf[ulen++] = enc[i++];
+	char *pat_utf8 = unix_path_with(mem_rest, false);
+	int found = 0;
+	int visible_idx = 0;
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		if (!file_exists(savedir_mem_entries[i].disk_path))
+			continue;
+		if (visible_idx >= *count) {
+			*count = visible_idx;
+			if (savedir_wildcard_match_icase(pat_utf8, savedir_mem_entries[i].logical_utf8)) {
+				*match_out = xstrdup(savedir_mem_entries[i].logical_name);
+				found = 1;
+				break;
+			}
 		}
+		visible_idx++;
 	}
-	utf[ulen] = '\0';
-	char *cjk = utf2filename_cjk(utf, ulen);
-	free(utf);
-	size_t cjk_len = strlen(cjk);
-	char *out = xmalloc(tag_len + cjk_len + 1);
-	memcpy(out, tag, tag_len);
-	memcpy(out + tag_len, cjk, cjk_len + 1);
-	free(cjk);
-	return out;
+	savedir_unlock();
+	free(pat_utf8);
+	return found;
 }
 
 static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
@@ -958,6 +1024,7 @@ static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
 
 void savedir_begin_memory_session(void)
 {
+	savedir_mem_registry_clear();
 	uint32_t prev = atomic_fetch_add_explicit(&g_savedir_mem_session_seq, 1u, memory_order_acq_rel);
 	uint32_t seq = prev + 1u;
 	if (seq == 0)
@@ -967,6 +1034,7 @@ void savedir_begin_memory_session(void)
 
 void savedir_cleanup_memory_saves(void)
 {
+	savedir_mem_registry_clear();
 	if (!config.save_dir || !config.save_dir[0])
 		return;
 	uint32_t my_seq = atomic_load_explicit(&g_savedir_mem_session_seq, memory_order_acquire);
@@ -1011,36 +1079,37 @@ static char *resolve_savedir_path(const char *path, bool *exists_out)
 	if (savedir_strip_memory_prefix(target, &mem_rest)) {
 		char *utf_rest = unix_path_with(mem_rest, false);
 		char *mem_base = savedir_format_memory_basename(utf_rest);
-		free(utf_rest);
 		const char *dir = (config.save_dir && config.save_dir[0]) ? config.save_dir : ".";
 		char *resolved_mem = join_dir_and_rel(dir, mem_base);
 		free(mem_base);
+		char *final_mem = resolved_mem;
 		if (!config.save_dir || !config.save_dir[0]) {
 			if (exists_out)
 				*exists_out = file_exists(resolved_mem);
-			return resolved_mem;
-		}
-		char *matched = NULL;
-		bool dir_missing = false;
-		if (!savedir_cache_lookup(resolved_mem, &matched, &dir_missing)) {
-			if (exists_out)
-				*exists_out = file_exists(resolved_mem);
-			return resolved_mem;
-		}
-		if (matched) {
-			if (!exists_out) {
-				free(resolved_mem);
-				return matched;
+		} else {
+			char *matched = NULL;
+			bool dir_missing = false;
+			if (!savedir_cache_lookup(resolved_mem, &matched, &dir_missing)) {
+				if (exists_out)
+					*exists_out = file_exists(resolved_mem);
+			} else if (matched) {
+				if (!exists_out) {
+					free(resolved_mem);
+					final_mem = matched;
+				} else if (file_exists(matched)) {
+					*exists_out = true;
+					free(resolved_mem);
+					final_mem = matched;
+				} else {
+					file_note_fs_mutation();
+					free(matched);
+				}
 			}
-			if (file_exists(matched)) {
-				*exists_out = true;
-				free(resolved_mem);
-				return matched;
-			}
-			file_note_fs_mutation();
-			free(matched);
 		}
-		return resolved_mem;
+		if (!exists_out)
+			savedir_mem_registry_record(mem_rest, utf_rest, final_mem);
+		free(utf_rest);
+		return final_mem;
 	}
 
 	if (!config.save_dir || !config.save_dir[0]) {

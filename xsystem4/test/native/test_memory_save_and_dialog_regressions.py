@@ -264,25 +264,87 @@ int main(void)
     assert(strcmp(strip_session_prefix(p_esca_s2 + strlen(dir) + 1, pfx, sizeof(pfx), 2u),
         "MemoryMode_EscalayerReboot_.asd") == 0);
 
-    // 5b. Memory-save wildcard find pattern preserves '*' and round-trips decoded names cleanly
-    //     while ignoring other PIDs' memory snapshots.
+    // 5b. savedir_memory_find(): wildcard + case-insensitive exact + long hashed (>140B) +
+    //     GBK-mode CP932 Japanese round-trip, while hiding other PIDs and deleted snapshots.
     assert(file_write(p_esca_s2, payload, 4));
-    char *find_dir = NULL, *find_pat = NULL;
-    size_t find_pfx_len = 0;
-    assert(savedir_memory_find_pattern("<memory>MemoryMode_*.asd", &find_dir, &find_pat, &find_pfx_len));
-    assert(strcmp(find_dir, dir) == 0);
-    assert(strchr(find_pat, '*') != NULL);
-    const char *s2_base = p_esca_s2 + strlen(dir) + 1;
-    assert(strncmp(s2_base, find_pat, find_pfx_len) == 0);
-    // Live other PID's snapshot must NOT match this session's prefix.
-    const char *live_base = live_other + strlen(dir) + 1;
-    assert(strncmp(live_base, find_pat, find_pfx_len) != 0);
-    char *decoded = savedir_memory_decode_name(s2_base, find_pfx_len);
-    assert(strcmp(decoded, "<memory>MemoryMode_EscalayerReboot_.asd") == 0);
-    free(decoded);
-    free(find_dir);
-    free(find_pat);
+
+    // Wildcard match returns exact original logical name and ignores live_other (different PID).
+    int fcnt = 0;
+    char *found = NULL;
+    assert(savedir_memory_find("<memory>MemoryMode_*.asd", &fcnt, &found) == 1);
+    assert(strcmp(found, "<memory>MemoryMode_EscalayerReboot_.asd") == 0);
+    free(found);
+    found = NULL;
+    fcnt++;
+    assert(savedir_memory_find("<memory>MemoryMode_*.asd", &fcnt, &found) == 0);
+
+    // Case-insensitive exact match works consistently with savedir_path().
+    fcnt = 0;
+    assert(savedir_memory_find("<MEMORY>memorymode_escalayerreboot_.ASD", &fcnt, &found) == 1);
+    assert(strcmp(found, "<memory>MemoryMode_EscalayerReboot_.asd") == 0);
+    char *reopened = savedir_path(found);
+    assert(strcmp(reopened, p_esca_s2) == 0);
+    free(reopened);
+    free(found);
+    found = NULL;
+
+    // Non-<memory> patterns return -1 so vmFile_Find handles disk enumeration.
+    fcnt = 0;
+    assert(savedir_memory_find("*.asd", &fcnt, &found) == -1);
+
+    // GBK-mode CP932 Japanese snapshot (<memory>戦闘.asd -> 90 ed 93 ac) round-trips via Find -> savedir_path().
+    const char cp932_sentou[] = "<memory>\x90\xed\x93\xac.asd";
+    char *p_sentou = savedir_path(cp932_sentou);
+    assert(file_write(p_sentou, payload, 4));
+    fcnt = 0;
+    assert(savedir_memory_find("<memory>\x90\xed*.asd", &fcnt, &found) == 1);
+    assert(strcmp(found, cp932_sentou) == 0);
+    reopened = savedir_path(found);
+    assert(strcmp(reopened, p_sentou) == 0);
+    assert(file_exists(reopened));
+    free(reopened);
+    free(found);
+    found = NULL;
+
+    // Long (>140 encoded bytes) hashed snapshot (16 Japanese CP932 chars + .asd) is found by BOTH
+    // exact query and <memory>*.asd, and the returned name reopens the exact hashed disk file.
+    char long_jp[128];
+    strcpy(long_jp, "<memory>");
+    for (int i = 0; i < 8; i++)
+        strcat(long_jp, "\x90\xed\x93\xac"); // 16 Japanese chars = 144 percent-encoded bytes > 140
+    strcat(long_jp, ".asd");
+    char *p_long_jp = savedir_path(long_jp);
+    assert(strchr(p_long_jp, '~') != NULL); // confirms hashed truncation on disk
+    assert(file_write(p_long_jp, payload, 4));
+    fcnt = 0;
+    assert(savedir_memory_find(long_jp, &fcnt, &found) == 1);
+    assert(strcmp(found, long_jp) == 0);
+    reopened = savedir_path(found);
+    assert(strcmp(reopened, p_long_jp) == 0);
+    free(reopened);
+    free(found);
+    found = NULL;
+
+    // Wildcard <memory>*.asd enumerates all 3 active snapshots including the hashed long_jp one.
+    int seen_esca = 0, seen_sentou = 0, seen_long_jp = 0;
+    for (fcnt = 0; savedir_memory_find("<memory>*.asd", &fcnt, &found) == 1; fcnt++) {
+        if (!strcmp(found, "<memory>MemoryMode_EscalayerReboot_.asd")) seen_esca++;
+        else if (!strcmp(found, cp932_sentou)) seen_sentou++;
+        else if (!strcmp(found, long_jp)) seen_long_jp++;
+        else assert(!"unexpected memory find match");
+        free(found);
+        found = NULL;
+    }
+    assert(seen_esca == 1 && seen_sentou == 1 && seen_long_jp == 1);
+
+    // Deleted snapshots are immediately omitted from savedir_memory_find().
+    remove_utf8(p_sentou);
+    remove_utf8(p_long_jp);
     remove_utf8(p_esca_s2);
+    fcnt = 0;
+    assert(savedir_memory_find("<memory>*.asd", &fcnt, &found) == 0);
+    free(p_sentou);
+    free(p_long_jp);
     free(p_esca_s2);
 
     // 6. Fallback when config.save_dir is unset still never leaks '<' or '>'.
@@ -578,6 +640,14 @@ int main(void)
     check_decode("gbk_dual_valid_jieyi", gbk_jieyi_save, sizeof(gbk_jieyi_save) - 1,
         "\xe5\x82\x91\xe5\x84\x80, \xe5\xad\x98\xe6\xa1\xa3");
 
+    const uint8_t gbk_counterfeit_detector[] = {
+        // 偽鈔偵測機 (82 ce e2 6e 82 c9 9c 79 99 43 -> 5-pair dual-valid GBK must stay Chinese)
+        0x82, 0xce, 0xe2, 0x6e, 0x82, 0xc9, 0x9c, 0x79, 0x99, 0x43, 0x00
+    };
+    check_decode("gbk_five_pair_dual_valid", gbk_counterfeit_detector,
+        sizeof(gbk_counterfeit_detector) - 1,
+        "\xe5\x81\xbd\xe9\x88\x94\xe5\x81\xb5\xe6\xb8\xac\xe6\xa9\x9f");
+
     // 5. Mixed GBK Chinese filename (both GB2312 and dual-valid GBK extension) embedded inside
     //    a CP932 system error message: Japanese prompt decodes while Chinese filename is preserved.
     const uint8_t mixed[] = {
@@ -655,6 +725,10 @@ int main(void)
         copy_start = vm_src.index("case SYS_COPY_SAVE_FILE:")
         copy_snippet = vm_src[copy_start:copy_start + 500]
         self.assertIn("mkdir_p(", copy_snippet)
+
+        vmfile_src = (ROOT / "src/hll/vmFile.c").read_text(encoding="utf-8", errors="ignore")
+        self.assertIn("savedir_memory_find(", vmfile_src)
+        self.assertIn("savedir_is_memory_save_path(", vmfile_src)
 
         self.assertIn("cjk_dialog_text_to_utf8(", vmdialog_src)
         self.assertNotIn("mai_sjis2utf(", vmdialog_src)

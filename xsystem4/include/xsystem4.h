@@ -86,8 +86,7 @@ bool savedir_file_exists(const char *path);
 void savedir_cache_invalidate(void);
 void savedir_begin_memory_session(void);
 void savedir_cleanup_memory_saves(void);
-bool savedir_memory_find_pattern(const char *path, char **dir_out, char **pattern_out, size_t *session_prefix_len_out);
-char *savedir_memory_decode_name(const char *d_name, size_t session_prefix_len);
+int savedir_memory_find(const char *pattern, int *count, char **match_out);
 
 static inline bool savedir_is_memory_save_path(const char *path)
 {
