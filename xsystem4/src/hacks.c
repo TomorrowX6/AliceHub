@@ -998,6 +998,280 @@ static void apply_rance03_skill_cooldown_layout(struct ain *ain)
 	}
 }
 
+static uint32_t hack_instruction_width(const struct ain *ain, enum opcode op)
+{
+	switch (op) {
+	case NEW:
+		return ain->version >= 11 ? 2u + 2u * 4u : 2u;
+	case CALLHLL:
+		return ain->version >= 11 ? 2u + 3u * 4u : 2u + 2u * 4u;
+	case S_MOD:
+	case OBJSWAP:
+	case DG_STR_TO_METHOD:
+		return ain->version >= 11 ? 2u + 1u * 4u : 2u;
+	default:
+		return 2u + (uint32_t)instructions[op].nr_args * 4u;
+	}
+}
+
+static bool is_array_hll_call(const struct ain *ain, uint32_t addr, const char *func_name)
+{
+	int32_t lib = LittleEndian_getDW(ain->code, addr + 2);
+	int32_t fn = LittleEndian_getDW(ain->code, addr + 6);
+	if (lib < 0 || lib >= ain->nr_libraries || !ain->libraries)
+		return false;
+	if (!ain->libraries[lib].name || strcmp(ain->libraries[lib].name, "Array"))
+		return false;
+	if (fn < 0 || fn >= ain->libraries[lib].nr_functions || !ain->libraries[lib].functions)
+		return false;
+	return ain->libraries[lib].functions[fn].name
+		&& !strcmp(ain->libraries[lib].functions[fn].name, func_name);
+}
+
+static bool match_evenicle2_reverse_erase_loop(const struct ain *ain, uint32_t p, uint32_t end,
+		uint32_t *patch_addr_out, enum opcode *patch_op_out)
+{
+	// Evenicle 2 (AIN v14) CReservePolyMotion@EraseUnnecessaryInList:
+	//   for (int i = eraseIDList.Numof() - 1; i >= 0; i++) { m_ReserveList.Erase(i, 1); }
+	// Init (52 bytes):
+	//   PUSHLOCALPAGE; PUSH var; PUSHLOCALPAGE; PUSH list; X_REF 1;
+	//   CALLHLL Array Numof <type>; PUSH 1; SUB; X_ASSIGN 1; POP
+	// Cond (28 bytes at cond_addr = p + 52):
+	//   PUSHLOCALPAGE; PUSH var; X_REF 1; PUSH 0; GTE; IFZ exit_addr
+	// Body (cond_addr + 28 .. step_addr):
+	//   ... CALLHLL Array Erase <type> ...
+	// Step (26 bytes at step_addr = exit_addr - 26):
+	//   PUSHLOCALPAGE; PUSH var; X_DUP 2; INC; POP; POP; JUMP cond_addr
+	if (end - p < 52u + 28u + 26u)
+		return false;
+	if ((uint16_t)LittleEndian_getW(ain->code, p) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 2) != PUSH
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 8) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 10) != PUSH
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 16) != X_REF
+			|| LittleEndian_getDW(ain->code, p + 18) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 22) != CALLHLL
+			|| !is_array_hll_call(ain, p + 22, "Numof")
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 36) != PUSH
+			|| LittleEndian_getDW(ain->code, p + 38) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 42) != SUB
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 44) != X_ASSIGN
+			|| LittleEndian_getDW(ain->code, p + 46) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 50) != POP)
+		return false;
+
+	int32_t loop_var = LittleEndian_getDW(ain->code, p + 4);
+	uint32_t cond_addr = p + 52u;
+	if ((uint16_t)LittleEndian_getW(ain->code, cond_addr) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 2) != PUSH
+			|| LittleEndian_getDW(ain->code, cond_addr + 4) != loop_var
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 8) != X_REF
+			|| LittleEndian_getDW(ain->code, cond_addr + 10) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 14) != PUSH
+			|| LittleEndian_getDW(ain->code, cond_addr + 16) != 0
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 20) != GTE
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 22) != IFZ)
+		return false;
+
+	int32_t exit_raw = LittleEndian_getDW(ain->code, cond_addr + 24);
+	uint32_t body_addr = cond_addr + 28u;
+	if (exit_raw < 0)
+		return false;
+	uint32_t exit_addr = (uint32_t)exit_raw;
+	if (exit_addr > end || exit_addr <= body_addr + 26u)
+		return false;
+
+	uint32_t step_addr = exit_addr - 26u;
+	if ((uint16_t)LittleEndian_getW(ain->code, step_addr) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 2) != PUSH
+			|| LittleEndian_getDW(ain->code, step_addr + 4) != loop_var
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 8) != X_DUP
+			|| LittleEndian_getDW(ain->code, step_addr + 10) != 2
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 14) != INC
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 16) != POP
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 18) != POP
+			|| (uint16_t)LittleEndian_getW(ain->code, step_addr + 20) != JUMP
+			|| (uint32_t)LittleEndian_getDW(ain->code, step_addr + 22) != cond_addr)
+		return false;
+
+	// Walk body instructions to confirm step_addr is instruction-aligned and contains Array.Erase.
+	bool saw_erase = false;
+	uint32_t q = body_addr;
+	while (q < step_addr) {
+		if (step_addr - q < 2u)
+			return false;
+		unsigned op = (uint16_t)LittleEndian_getW(ain->code, q);
+		if (op >= NR_OPCODES || op == FUNC || op == ENDFUNC)
+			return false;
+		uint32_t w = hack_instruction_width(ain, (enum opcode)op);
+		if (w == 0 || w > step_addr - q)
+			return false;
+		if (op == CALLHLL && is_array_hll_call(ain, q, "Erase"))
+			saw_erase = true;
+		q += w;
+	}
+	if (q != step_addr || !saw_erase)
+		return false;
+
+	*patch_addr_out = step_addr + 14u;
+	*patch_op_out = DEC;
+	return true;
+}
+
+static bool match_evenicle1_reverse_erase_loop(const struct ain *ain, uint32_t p, uint32_t end,
+		uint32_t *patch_addr_out, enum opcode *patch_op_out)
+{
+	// Evenicle 1 family (AIN v6) WaitAllOrderCharaMotionFinish:
+	//   for (i = noNumList.Numof() - 1; i >= 0; i++) { g_orderList.Erase(i); }
+	// Init (36 bytes):
+	//   PUSHLOCALPAGE; PUSH var; PUSHLOCALPAGE; PUSH list; PUSH 1; A_NUMOF;
+	//   PUSH 1; SUB; ASSIGN; POP
+	// Cond (30 bytes at cond_addr = p + 36):
+	//   PUSHLOCALPAGE; PUSH var; REF; PUSH 0; GTE; IFZ exit_addr; JUMP body_addr
+	// Step (at step_addr = cond_addr + 30):
+	//   PUSHLOCALPAGE; PUSH var; DUP2; INC; POP; POP; JUMP cond_addr   (22 bytes)
+	//   (or SH_LOCALINC var; JUMP cond_addr                            (12 bytes))
+	// Body (body_addr .. exit_addr):
+	//   ... A_ERASE ... JUMP step_addr
+	if (end - p < 36u + 30u + 12u)
+		return false;
+	if ((uint16_t)LittleEndian_getW(ain->code, p) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 2) != PUSH
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 8) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 10) != PUSH
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 16) != PUSH
+			|| LittleEndian_getDW(ain->code, p + 18) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 22) != A_NUMOF
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 24) != PUSH
+			|| LittleEndian_getDW(ain->code, p + 26) != 1
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 30) != SUB
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 32) != ASSIGN
+			|| (uint16_t)LittleEndian_getW(ain->code, p + 34) != POP)
+		return false;
+
+	int32_t loop_var = LittleEndian_getDW(ain->code, p + 4);
+	uint32_t cond_addr = p + 36u;
+	if ((uint16_t)LittleEndian_getW(ain->code, cond_addr) != PUSHLOCALPAGE
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 2) != PUSH
+			|| LittleEndian_getDW(ain->code, cond_addr + 4) != loop_var
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 8) != REF
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 10) != PUSH
+			|| LittleEndian_getDW(ain->code, cond_addr + 12) != 0
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 16) != GTE
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 18) != IFZ
+			|| (uint16_t)LittleEndian_getW(ain->code, cond_addr + 24) != JUMP)
+		return false;
+
+	int32_t exit_raw = LittleEndian_getDW(ain->code, cond_addr + 20);
+	int32_t body_raw = LittleEndian_getDW(ain->code, cond_addr + 26);
+	if (exit_raw < 0 || body_raw < 0)
+		return false;
+	uint32_t exit_addr = (uint32_t)exit_raw;
+	uint32_t body_addr = (uint32_t)body_raw;
+	uint32_t step_addr = cond_addr + 30u;
+
+	uint32_t candidate_addr = 0;
+	enum opcode candidate_op = DEC;
+	if (body_addr == step_addr + 22u && end - step_addr >= 22u
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr) == PUSHLOCALPAGE
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 2) == PUSH
+			&& LittleEndian_getDW(ain->code, step_addr + 4) == loop_var
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 8) == DUP2
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 10) == INC
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 12) == POP
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 14) == POP
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 16) == JUMP
+			&& (uint32_t)LittleEndian_getDW(ain->code, step_addr + 18) == cond_addr) {
+		candidate_addr = step_addr + 10u;
+		candidate_op = DEC;
+	} else if (body_addr == step_addr + 12u && end - step_addr >= 12u
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr) == SH_LOCALINC
+			&& LittleEndian_getDW(ain->code, step_addr + 2) == loop_var
+			&& (uint16_t)LittleEndian_getW(ain->code, step_addr + 6) == JUMP
+			&& (uint32_t)LittleEndian_getDW(ain->code, step_addr + 8) == cond_addr) {
+		candidate_addr = step_addr;
+		candidate_op = SH_LOCALDEC;
+	} else {
+		return false;
+	}
+
+	if (exit_addr > end || exit_addr <= body_addr + 6u)
+		return false;
+
+	// Walk body instructions to confirm A_ERASE and trailing JUMP step_addr.
+	bool saw_erase = false;
+	uint32_t q = body_addr;
+	uint32_t last_q = 0;
+	unsigned last_op = NR_OPCODES;
+	while (q < exit_addr) {
+		if (exit_addr - q < 2u)
+			return false;
+		unsigned op = (uint16_t)LittleEndian_getW(ain->code, q);
+		if (op >= NR_OPCODES || op == FUNC || op == ENDFUNC)
+			return false;
+		uint32_t w = hack_instruction_width(ain, (enum opcode)op);
+		if (w == 0 || w > exit_addr - q)
+			return false;
+		if (op == A_ERASE)
+			saw_erase = true;
+		last_q = q;
+		last_op = op;
+		q += w;
+	}
+	if (q != exit_addr || !saw_erase || last_op != JUMP
+			|| (uint32_t)LittleEndian_getDW(ain->code, last_q + 2) != step_addr)
+		return false;
+
+	*patch_addr_out = candidate_addr;
+	*patch_op_out = candidate_op;
+	return true;
+}
+
+static void fix_evenicle_reverse_erase_loop(struct ain *ain, const char *func_name)
+{
+	if (!ain || !ain->code || ain->code_size == 0)
+		return;
+	int fno = ain_get_function(ain, (char *)func_name);
+	if (fno < 0 || ain->functions[fno].address < 0)
+		return;
+	uint32_t begin = (uint32_t)ain->functions[fno].address;
+	uint32_t end = find_func_end_addr(ain, fno);
+	if (end > ain->code_size)
+		end = (uint32_t)ain->code_size;
+	if (end <= begin)
+		return;
+
+	uint32_t patch_addr = 0;
+	enum opcode patch_op = DEC;
+	int matches = 0;
+	for (uint32_t p = begin; end - p >= 2u; ) {
+		unsigned op = (uint16_t)LittleEndian_getW(ain->code, p);
+		if (op >= NR_OPCODES || op == FUNC)
+			return;
+		uint32_t w = hack_instruction_width(ain, (enum opcode)op);
+		if (w == 0 || w > end - p)
+			return;
+
+		uint32_t cand_addr = 0;
+		enum opcode cand_op = DEC;
+		bool matched = ain->version >= 14
+			? match_evenicle2_reverse_erase_loop(ain, p, end, &cand_addr, &cand_op)
+			: match_evenicle1_reverse_erase_loop(ain, p, end, &cand_addr, &cand_op);
+		if (matched) {
+			patch_addr = cand_addr;
+			patch_op = cand_op;
+			matches++;
+		}
+		if (op == ENDFUNC)
+			break;
+		p += w;
+	}
+	if (matches != 1)
+		return;
+	LittleEndian_putW(ain->code, patch_addr, (uint16_t)patch_op);
+	NOTICE("Patched reverse-erase loop INC->DEC in %s at 0x%x", func_name, patch_addr);
+}
+
 void apply_game_specific_hacks(struct ain *ain)
 {
 	game_daibanchou = false;
@@ -1207,6 +1481,10 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_maman_cn_speaker_literals(ain);
 	if (game_haharanman && sys4_text_is_gbk && !sys4_source_is_utf8)
 		apply_haharanman_cn_name_plate(ain);
+	if (game_evenicle || game_evenicle_rance || game_evenicle_gaiden)
+		fix_evenicle_reverse_erase_loop(ain, "WaitAllOrderCharaMotionFinish");
+	if (game_evenicle2)
+		fix_evenicle_reverse_erase_loop(ain, "CReservePolyMotion@EraseUnnecessaryInList");
 	if (game_rance03) {
 		apply_rance03_message_layout(ain);
 		apply_rance03_card_caption_layout(ain);

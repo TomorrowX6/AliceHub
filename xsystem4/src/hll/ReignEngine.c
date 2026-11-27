@@ -479,6 +479,7 @@ static bool ReignEngine_SetInstanceMotionBlendRate(int plugin, int instance, flo
 	if (!ri)
 		return false;
 	ri->motion_blend_rate = rate;
+	ri->bones_dirty = true;
 	return true;
 }
 
@@ -488,6 +489,7 @@ static bool ReignEngine_SetInstanceMotionBlend(int plugin, int instance, bool mo
 	if (!ri)
 		return false;
 	ri->motion_blend = motion_blend;
+	ri->bones_dirty = true;
 	return true;
 }
 
@@ -508,6 +510,7 @@ static bool ReignEngine_SwapInstanceMotion(int plugin, int instance)
 	struct motion *tmp = ri->motion;
 	ri->motion = ri->next_motion;
 	ri->next_motion = tmp;
+	ri->bones_dirty = true;
 	return true;
 }
 
@@ -2494,7 +2497,7 @@ static bool SealEngine_GetInstanceName(int plugin, int instance, struct string *
 	if (name) {
 		if (*name)
 			free_string(*name);
-		*name = string_ref(&EMPTY_STRING);
+		*name = (ri && ri->load_name) ? cstr_to_string(ri->load_name) : string_ref(&EMPTY_STRING);
 	}
 	return !!ri;
 }

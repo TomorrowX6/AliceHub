@@ -615,15 +615,20 @@ void PE_BeginMotion(void)
 	parts_init_all_motion();
 }
 
-void PE_EndMotion(void)
+static void parts_end_motion(void)
 {
-	if (parts_began_click)
-		return;
 	motion_t = 0;
 	motion_end_t = 0;
 	is_motion = false;
 	is_motion_paused = false;
 	parts_fini_all_motion();
+}
+
+void PE_EndMotion(void)
+{
+	if (parts_began_click)
+		return;
+	parts_end_motion();
 }
 
 void PE_SetMotionTime(int t)
@@ -635,7 +640,7 @@ void PE_SetMotionTime(int t)
 	motion_t = t;
 	parts_update_all_motion();
 	if (t >= motion_end_t)
-		PE_EndMotion();
+		parts_end_motion();
 }
 
 void PE_SeekEndMotion(void)
@@ -679,7 +684,7 @@ int PE_GetMotionEndTime(void)
 
 void PE_PauseMotion(bool pause)
 {
-	if (parts_began_click)
+	if (pause && parts_began_click)
 		return;
 	if (!is_motion)
 		return;

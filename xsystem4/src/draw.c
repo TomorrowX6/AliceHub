@@ -262,7 +262,13 @@ static void run_fill_shader(Shader *s, Texture *dst, struct copy_data *data)
 	// is never simultaneously bound as the draw FBO attachment and GL_TEXTURE0
 	// (avoiding GLES 3.0 feedback loops) and UVs map directly to `(dx, dy, w, h)`.
 	Texture tmp = {0};
-	gfx_init_texture_blank(&tmp, data->w, data->h);
+	if (data->dx < 0 || data->dy < 0 ||
+			(int64_t)data->dx + data->w > dst->w ||
+			(int64_t)data->dy + data->h > dst->h) {
+		gfx_init_texture_rgba(&tmp, data->w, data->h, (SDL_Color){0, 0, 0, 0});
+	} else {
+		gfx_init_texture_blank(&tmp, data->w, data->h);
+	}
 	glBindTexture(GL_TEXTURE_2D, tmp.handle);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -1365,11 +1371,17 @@ void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rect
 void gfx_copy_stretch_blend_straight_alpha(Texture *dst, int dx, int dy, int dw, int dh,
 		Texture *src, int sx, int sy, int sw, int sh)
 {
-	if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0)
+	if (!dst || !dst->handle || dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0)
 		return;
 
 	Texture under = {0};
-	gfx_init_texture_blank(&under, dw, dh);
+	if (dx < 0 || dy < 0 ||
+			(int64_t)dx + dw > dst->w ||
+			(int64_t)dy + dh > dst->h) {
+		gfx_init_texture_rgba(&under, dw, dh, (SDL_Color){0, 0, 0, 0});
+	} else {
+		gfx_init_texture_blank(&under, dw, dh);
+	}
 	gfx_copy_with_alpha_map(&under, 0, 0, dst, dx, dy, dw, dh);
 
 	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);

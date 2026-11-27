@@ -19,6 +19,9 @@ extern void test_activity_scale(struct parts *, bool, bool, float, float);
 extern GLuint test_load_3d_shader(const char *, const char *, int);
 int test_bone_texture_unit(void);
 GLuint test_create_bone_texture(void);
+extern void test_height_detector_gles3(void);
+extern void test_skinned_shader_normals_and_unweighted(void);
+extern void test_skinned_identity_bone_texture_reset(void (*)(void));
 extern void *test_re_renderer_create_with_billboard(int);
 extern GLuint test_re_renderer_get_billboard_tex(void *, int);
 extern void test_re_renderer_assert_valid(void *, int);
@@ -414,6 +417,42 @@ static void shader3d_tests(void) {
     glDeleteTextures(1,&tex); no_error();
     puts("PASS: 9 production 3D shader pairs link; 308-bone RGBA32F bone texture is bound to its own unit");
 }
+static void height_detector_gles3_test(void) {
+    int before=diagnostic_driver_errors;
+    if (SDL_GL_ExtensionSupported("GL_KHR_debug")) {
+        assert(SDL_setenv("ALICEHUB_GLES_DEBUG","1",1)==0);
+        gl_enable_diagnostics();
+    }
+    test_height_detector_gles3();
+    no_error();
+    assert(diagnostic_driver_errors==before);
+    if (SDL_GL_ExtensionSupported("GL_KHR_debug")) {
+        glDisable(GL_DEBUG_OUTPUT_KHR);
+        glDisable(GL_DEBUG_OUTPUT_SYNCHRONOUS_KHR);
+        assert(SDL_setenv("ALICEHUB_GLES_DEBUG","0",1)==0);
+    }
+    puts("PASS: GLES3 height detector reads R16UI via RGBA_INTEGER/UNSIGNED_INT with 0 GL errors and preserves FBO/GL state");
+}
+static void skinned_shader_gles3_test(void) {
+    test_skinned_shader_normals_and_unweighted();
+    no_error();
+    puts("PASS: skinned reign.v.glsl rotates normals accurately (+Y not transposed -Y) and preserves unweighted vertices");
+}
+static void trigger_unshared_context_reset(void) {
+    gfx_release_context_backup();
+    SDL_GLContext old_ctx=sdl.gl.context;
+    assert(SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT,0)==0);
+    SDL_GLContext rep=SDL_GL_CreateContext(sdl.window);
+    assert(rep && rep!=old_ctx && SDL_GL_GetCurrentContext()==rep);
+    gfx_restore_window();
+    assert(sdl.gl.context==rep);
+    SDL_GL_DeleteContext(old_ctx);
+}
+static void skinned_identity_bone_reset_test(void) {
+    test_skinned_identity_bone_texture_reset(trigger_unshared_context_reset);
+    no_error();
+    puts("PASS: identity RGBA32F bone texture upload and context reset retain valid non-zero skinned output");
+}
 static void blur_tests(void) {
     enum { W=15,H=11,N=W*H*4 };
     unsigned char input[N], expected[N], next[N];
@@ -694,10 +733,11 @@ int main(void) {
     sdl.format=SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32); sdl.w=sdl.h=128;
     gl_initialize(); main_surface_init(128,128); gfx_draw_init(); parts_render_init(); no_error();
     job_attribute_test();
-    flat_emitter_origin_tests(); shader3d_tests(); blur_tests(); straight_alpha_cut_test(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
+    flat_emitter_origin_tests(); shader3d_tests(); height_detector_gles3_test(); skinned_shader_gles3_test(); blur_tests(); straight_alpha_cut_test(); gray_v14_and_fill_shader_tests(); sprite_tests(false,true);
     sprite_tests(true,false); sprite_tests(true,true);
     resume_surface_tests(); replacement_context_negative_control();
     replacement_context_recovery_with_backup(); replacement_context_deferred_until_surface_ready(); replacement_context_recovery_without_backup();
+    skinned_identity_bone_reset_test();
     blur_tests(); sprite_tests(false,true); no_error();
     puts("PASS: 2D copy shaders and Parts CG shader render cleanly on recovered replacement context");
     printf("PASS: %d actual GL draws; %d feedback loops\n",draws,feedbacks);

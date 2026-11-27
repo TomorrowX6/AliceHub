@@ -31,7 +31,7 @@
 #include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 34
+#define CURRENT_SAVE_VERSION 35
 #define MIN_SINGLE_PART_SAVE_VERSION 32
 
 static struct parts_context *back_scene;
@@ -189,7 +189,8 @@ static void load_parts_numeral(struct iarray_reader *r, struct parts *parts,
 		num->full_pitch = iarray_read(r);
 		num->show_padding = iarray_read(r);
 		iarray_read_text_style(r, &num->ts);
-		free_string(num->cg_name);
+		if (num->cg_name)
+			free_string(num->cg_name);
 		num->cg_name = iarray_read_string(r);
 	} else if (num->font_no >= 0 && num->font_no < parts_nr_numeral_fonts) {
 		num->show_type = parts_numeral_fonts[num->font_no].type == PARTS_NUMERAL_FONT_COMBINED;
@@ -206,6 +207,22 @@ static void load_parts_numeral(struct iarray_reader *r, struct parts *parts,
 		}
 		if (num->font_no < 0)
 			r->error = 1;
+	}
+	if (!r->error && version >= 16 && version < 35 && num->show_type != 2
+			&& num->cg_name && num->cg_name->size > 0) {
+		if (num->show_type == 1 && num->font_no >= 0 && num->font_no < parts_nr_numeral_fonts) {
+			int w[12];
+			memcpy(w, parts_numeral_fonts[num->font_no].width, sizeof(w));
+			int resolved = parts_load_numeral_font_combined_by_name(num->cg_name, w);
+			if (resolved >= 0)
+				num->font_no = resolved;
+		} else if (num->show_type == 0 && (num->font_no < 0
+				|| (num->font_no < parts_nr_numeral_fonts
+					&& parts_numeral_fonts[num->font_no].type == PARTS_NUMERAL_FONT_SEPARATE2))) {
+			int resolved = parts_load_numeral_font_separate_string(num->cg_name);
+			if (resolved >= 0)
+				num->font_no = resolved;
+		}
 	}
 	if (num->have_num && !r->error)
 		parts_numeral_set_number(parts, num, num->num);
@@ -1631,11 +1648,12 @@ static bool save_part_fonts(struct iarray_writer *w, struct parts *parts)
 		iarray_write(w, font->type);
 		iarray_write(w, font->cg_no);
 		for (int j = 0; j < 12; j++) iarray_write(w, font->width[j]);
+		iarray_write_string_or_null(w, font->cg_name);
 	}
 	return true;
 }
 
-static bool load_part_fonts(struct iarray_reader *r, struct numeral_font_map *fonts)
+static bool load_part_fonts(struct iarray_reader *r, int version, struct numeral_font_map *fonts)
 {
 	for (int i = 0; i < PARTS_SAVED_FONTS; i++)
 		fonts[i] = (struct numeral_font_map){-1, -1};
@@ -1648,14 +1666,37 @@ static bool load_part_fonts(struct iarray_reader *r, struct numeral_font_map *fo
 		font.type = iarray_read(r);
 		font.cg_no = iarray_read(r);
 		for (int j = 0; j < 12; j++) font.width[j] = iarray_read(r);
-		if (r->error || fonts[i].source < 0 || font.type > PARTS_NUMERAL_FONT_SEPARATE2)
+		font.cg_name = version >= 35 ? iarray_read_string_or_null(r) : NULL;
+		if (r->error || fonts[i].source < 0 || (unsigned)font.type > PARTS_NUMERAL_FONT_SEPARATE2) {
+			if (font.cg_name) free_string(font.cg_name);
 			return false;
-		for (int j = 0; j < i; j++)
-			if (fonts[j].source == fonts[i].source) return false;
+		}
+		for (int j = 0; j < i; j++) {
+			if (fonts[j].source == fonts[i].source) {
+				if (font.cg_name) free_string(font.cg_name);
+				return false;
+			}
+		}
 		for (int j = 0; j < parts_nr_numeral_fonts; j++) {
 			struct parts_numeral_font *existing = &parts_numeral_fonts[j];
-			if (font.type == existing->type && font.cg_no == existing->cg_no
-					&& !memcmp(font.width, existing->width, sizeof(font.width))) {
+			const char *fn = (font.cg_name && font.cg_name->size > 0) ? font.cg_name->text : "";
+			const char *en = (existing->cg_name && existing->cg_name->size > 0) ? existing->cg_name->text : "";
+			if (font.type != existing->type || strcmp(fn, en) != 0)
+				continue;
+			bool match = false;
+			if (fn[0] != '\0') {
+				if (font.type == PARTS_NUMERAL_FONT_SEPARATE2)
+					match = true;
+				else if (font.type == PARTS_NUMERAL_FONT_COMBINED)
+					match = !memcmp(font.width, existing->width, sizeof(font.width));
+				else
+					match = font.cg_no == existing->cg_no
+						&& !memcmp(font.width, existing->width, sizeof(font.width));
+			} else {
+				match = font.cg_no == existing->cg_no
+					&& !memcmp(font.width, existing->width, sizeof(font.width));
+			}
+			if (match) {
 				fonts[i].target = j;
 				break;
 			}
@@ -1667,6 +1708,8 @@ static bool load_part_fonts(struct iarray_reader *r, struct numeral_font_map *fo
 			parts_numeral_font_init(&parts_numeral_fonts[n]);
 			parts_nr_numeral_fonts++;
 			fonts[i].target = n;
+		} else if (font.cg_name) {
+			free_string(font.cg_name);
 		}
 	}
 	return !r->error;
@@ -1720,7 +1763,7 @@ bool PE_LoadParts(int parts_no, struct page **buffer)
 			|| size != (*buffer)->nr_vars)
 		return false;
 	struct numeral_font_map fonts[PARTS_SAVED_FONTS];
-	if (!load_part_fonts(&r, fonts))
+	if (!load_part_fonts(&r, version, fonts))
 		return false;
 	parts_release(parts_no);
 	load_parts(&r, version, parts_no, fonts);
@@ -1748,23 +1791,30 @@ static void save_numeral_fonts(struct iarray_writer *w)
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
 		iarray_write(w, font->type);
 		iarray_write(w, font->cg_no);
-		for (int i = 0; i < 12; i++) {
-			iarray_write(w, font->width[i]);
+		for (int j = 0; j < 12; j++) {
+			iarray_write(w, font->width[j]);
 		}
+		iarray_write_string_or_null(w, font->cg_name);
 	}
 }
 
-static void load_numeral_fonts(struct iarray_reader *r)
+static void load_numeral_fonts(struct iarray_reader *r, int version)
 {
 	parts_nr_numeral_fonts = iarray_read(r);
+	if (parts_nr_numeral_fonts <= 0) {
+		parts_nr_numeral_fonts = 0;
+		parts_numeral_fonts = NULL;
+		return;
+	}
 	parts_numeral_fonts = xcalloc(parts_nr_numeral_fonts, sizeof(struct parts_numeral_font));
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
 		font->type = iarray_read(r);
 		font->cg_no = iarray_read(r);
-		for (int i = 0; i < 12; i++) {
-			font->width[i] = iarray_read(r);
+		for (int j = 0; j < 12; j++) {
+			font->width[j] = iarray_read(r);
 		}
+		font->cg_name = version >= 35 ? iarray_read_string_or_null(r) : NULL;
 		parts_numeral_font_init(font);
 	}
 }
@@ -1875,7 +1925,7 @@ bool PE_Load(struct page **buffer)
 	parts_release_all();
 
 	if (version > 1)
-		load_numeral_fonts(&r);
+		load_numeral_fonts(&r, version);
 
 	if (version > 3 || (version == 3 && parts_multi_controller)) {
 		ctrl_stack.active = iarray_read(&r);

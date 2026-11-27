@@ -247,6 +247,7 @@ struct RE_instance {
 	mat3 normal_transform;
 	mat3x4 *bone_transforms;  // row-major, model->nr_bones elements
 	GLuint bone_transforms_texture;  // RGBA32F, 3 texels per bone
+	bool bones_dirty;
 	vec4 bounding_sphere;
 	struct RE_instance *shadow_volume_instance;
 	float z_from_camera;
@@ -276,6 +277,7 @@ struct archive *RE_open_3d_archive(void);
 struct archive_data *RE_archive_find_txtex(struct archive *ar, const char *model_dir);
 bool RE_instance_data_exists(struct RE_instance *instance, const char *name);
 bool RE_instance_load(struct RE_instance *instance, const char *name);
+void RE_instance_sync_bones(struct RE_instance *inst);
 bool RE_instance_motion_exists(struct RE_instance *instance, const char *name);
 bool RE_instance_load_motion(struct RE_instance *instance, const char *name);
 bool RE_instance_load_next_motion(struct RE_instance *instance, const char *name);

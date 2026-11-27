@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host C regression tests for Evenicle 2 compatibility fixes in xsystem4."""
 
+import re
 import shutil
 import struct
 import subprocess
@@ -855,6 +856,7 @@ void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) {}
 void glBufferSubData(GLenum t, GLintptr o, GLsizeiptr s, const void *d) {}
 void glDeleteBuffers(GLsizei n, const GLuint *b) {}
 void glGenBuffers(GLsizei n, GLuint *b) { for (int i = 0; i < n; i++) b[i] = 1; }
+void glActiveTexture(GLenum t) {}
 void glBindTexture(GLenum t, GLuint tx) {}
 void glBindVertexArray(GLuint v) {}
 void glDeleteTextures(GLsizei n, const GLuint *t) {}
@@ -864,6 +866,8 @@ void glEnableVertexAttribArray(GLuint i) {}
 void glGenTextures(GLsizei n, GLuint *t) {}
 void glGenVertexArrays(GLsizei n, GLuint *v) {}
 void glTexImage2D(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLint b, GLenum f, GLenum ty, const void *d) {}
+void glTexParameteri(GLenum t, GLenum p, GLint v) {}
+void glTexSubImage2D(GLenum t, GLint l, GLint x, GLint y, GLsizei w, GLsizei h, GLenum f, GLenum ty, const void *d) {}
 void glVertexAttrib1f(GLuint i, GLfloat v) {}
 void glVertexAttrib2f(GLuint i, GLfloat x, GLfloat y) {}
 void glVertexAttrib3f(GLuint i, GLfloat x, GLfloat y, GLfloat z) {}
@@ -1337,7 +1341,9 @@ void glUseProgram(GLuint p) {}
 void glVertexAttribPointer(GLuint i, GLint s, GLenum t, GLboolean n, GLsizei st, const void *p) {}
 
 bool scene_is_dirty = false;
+bool game_okusama = false;
 struct parts_context *parts_current = NULL;
+void parts_text_box_set_display(struct parts *p, const char *c) {}
 
 struct sact_sprite *sact_try_get_sprite(int sp) { return sp == 99 ? &fake_sp : NULL; }
 struct texture *sprite_get_texture(struct sact_sprite *sp) { return &fake_tex; }
@@ -1729,6 +1735,8 @@ bool PE_SetText(int a, struct string *b, int c) {
     return true;
 }
 void PE_SetTextBoxText(int a, struct string *b) {}
+void PE_SetTextBoxReadOnly(int a, bool b) {}
+void PE_SetTextBoxMaxTextLength(int a, int b) {}
 bool PE_SetTextCharSpace(int a, int b, int c) { return true; }
 bool PE_SetTextLineSpace(int a, int b, int c) { return true; }
 bool PE_SetVGaugeRate(int a, float b, float c, int d) { return true; }
@@ -2030,6 +2038,9 @@ static int nonzero_glyph_pixels = 0;
 
 struct fnl *fnl_open(const char *path) {{ (void)path; fnl_open_calls++; return NULL; }}
 struct font *fnl_font_load(struct fnl *lib, unsigned index) {{ (void)lib; (void)index; return NULL; }}
+void fnl_font_free(struct font *font) {{ (void)font; }}
+void fnl_free(struct fnl *lib) {{ (void)lib; }}
+struct text_style text_sprite_ts;
 unsigned fnl_char_to_index(uint16_t code) {{ (void)code; return 0; }}
 
 const char *display_sjis0(const char *sjis) {{ return sjis ? sjis : ""; }}
@@ -2063,6 +2074,7 @@ static bool cjk_is_ascii_only(const char *s) {{
 
 #ifdef TEST_IOS_FONT_DEFAULTS
 #define ALICEHUB_IOS
+void gfx_font_size_fini(struct font_size *size);
 #endif
 #include "font_freetype.c"
 #include "text.c"
@@ -2166,6 +2178,890 @@ int main(void)
                      *(["-DTEST_IOS_FONT_DEFAULTS"] if ios else []), *ft_libs, "-lz", "-lm"],
                 )
                 self.assertEqual(out.strip(), "OK")
+
+    def test_numeral_font_cpu_slicing_save_v35_and_legacy_v34_healing(self):
+        parts_fns = "\n".join(
+            _extract_c_fn("src/parts/parts.c", sig)
+            for sig in (
+                "void parts_numeral_font_init",
+                "static bool parts_numeral_font_has_texture",
+                "static int parts_load_numeral_font_separate",
+                "int parts_load_numeral_font_separate_string",
+                "static int parts_load_numeral_font_combined",
+                "int parts_load_numeral_font_combined_by_name",
+                "static bool parts_numeral_update",
+                "bool parts_numeral_set_number",
+            )
+        )
+        save_fns = "\n".join(
+            _extract_c_fn("src/parts/save.c", sig)
+            for sig in (
+                "static void save_parts_numeral",
+                "static void load_parts_numeral",
+                "static bool save_part_fonts",
+                "static bool load_part_fonts",
+                "static void save_numeral_fonts",
+                "static void load_numeral_fonts",
+            )
+        )
+        harness = f"""
+#include <assert.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/cg.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "asset_manager.h"
+#include "vm.h"
+#include "parts/parts_internal.h"
+#include "hll/iarray.h"
+
+#define PARTS_SAVED_FONTS (PARTS_NR_STATES + 1)
+struct numeral_font_map {{ int source; int target; }};
+
+static struct parts_context ctx = {{
+    .list = TAILQ_HEAD_INITIALIZER(ctx.list),
+    .dirty = TAILQ_HEAD_INITIALIZER(ctx.dirty),
+}};
+struct parts_context *parts_current = &ctx;
+
+// Captured uploaded pixel buffers indexed by synthetic texture handle.
+struct tex_capture {{
+    int w, h;
+    uint8_t *rgba;
+}};
+static struct tex_capture captures[256];
+static GLuint next_tex_handle = 1;
+static int blank_texture_calls = 0;
+
+void gfx_delete_texture(Texture *t) {{
+    if (t && t->handle > 0 && t->handle < 256) {{
+        free(captures[t->handle].rgba);
+        captures[t->handle] = (struct tex_capture){{0}};
+    }}
+    if (t) *t = (Texture){{0}};
+}}
+void gfx_init_texture_blank(Texture *t, int w, int h) {{
+    (void)t; (void)w; (void)h;
+    blank_texture_calls++;
+    assert(!"combined numeral font must never call gfx_init_texture_blank");
+}}
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) {{
+    GLuint hnd = next_tex_handle++;
+    assert(hnd < 256);
+    captures[hnd].w = w;
+    captures[hnd].h = h;
+    captures[hnd].rgba = calloc((size_t)w * (size_t)h, 4);
+    for (int i = 0; i < w * h; i++) {{
+        captures[hnd].rgba[i * 4 + 0] = color.r;
+        captures[hnd].rgba[i * 4 + 1] = color.g;
+        captures[hnd].rgba[i * 4 + 2] = color.b;
+        captures[hnd].rgba[i * 4 + 3] = color.a;
+    }}
+    *t = (Texture){{ .handle = hnd, .w = w, .h = h }};
+}}
+void gfx_init_texture_with_pixels(Texture *t, int w, int h, void *pixels) {{
+    GLuint hnd = next_tex_handle++;
+    assert(hnd < 256);
+    captures[hnd].w = w;
+    captures[hnd].h = h;
+    captures[hnd].rgba = malloc((size_t)w * (size_t)h * 4);
+    memcpy(captures[hnd].rgba, pixels, (size_t)w * (size_t)h * 4);
+    *t = (Texture){{ .handle = hnd, .w = w, .h = h }};
+}}
+void gfx_init_texture_with_cg(Texture *t, struct cg *cg) {{
+    gfx_init_texture_with_pixels(t, cg->metrics.w, cg->metrics.h, cg->pixels);
+}}
+void gfx_begin_draw_target(Texture *t) {{ (void)t; }}
+void gfx_end_draw_target(void) {{}}
+float gfx_size_char(struct text_style *ts, const char *ch) {{ (void)ts; (void)ch; return 8.0f; }}
+float gfx_render_textf(Texture *dst, float x, int y, char *str, struct text_style *ts, bool blend) {{
+    (void)dst; (void)x; (void)y; (void)str; (void)ts; (void)blend; return 8.0f;
+}}
+void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h) {{
+    (void)dst; (void)dx; (void)dy; (void)src; (void)sx; (void)sy; (void)w; (void)h;
+}}
+void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {{
+    (void)parts; common->w = w; common->h = h;
+}}
+void parts_dirty(struct parts *parts) {{ (void)parts; }}
+struct text_style parts_get_effective_text_style(const struct text_style *src) {{ return *src; }}
+const char *display_sjis0(const char *s) {{ return s ? s : ""; }}
+
+struct string *string_format(struct string *fmt, union vm_value arg, enum string_format_type type) {{
+    assert(type == STRFMT_INT);
+    char buf[128];
+    snprintf(buf, sizeof(buf), fmt->text, arg.i);
+    return make_string(buf, strlen(buf));
+}}
+
+// Synthetic CG asset table whose IDs can be shifted to simulate archive repacks.
+struct mock_cg_entry {{
+    int no;
+    const char *name;
+    int w, h;
+    uint8_t tag;
+}};
+static struct mock_cg_entry cg_assets[32];
+static int nr_cg_assets = 0;
+
+static void add_cg_asset(int no, const char *name, int w, int h, uint8_t tag) {{
+    cg_assets[nr_cg_assets++] = (struct mock_cg_entry){{ no, name, w, h, tag }};
+}}
+
+static struct cg *make_tagged_cg(int w, int h, uint8_t tag) {{
+    struct cg *cg = calloc(1, sizeof(*cg));
+    cg->metrics.w = w;
+    cg->metrics.h = h;
+    cg->metrics.has_alpha = true;
+    uint8_t *px = malloc((size_t)w * (size_t)h * 4);
+    for (int y = 0; y < h; y++) {{
+        for (int x = 0; x < w; x++) {{
+            size_t o = ((size_t)y * (size_t)w + (size_t)x) * 4;
+            px[o + 0] = (uint8_t)((x + 1) & 0xff);
+            px[o + 1] = (uint8_t)((y + 1) & 0xff);
+            px[o + 2] = tag;
+            px[o + 3] = 255;
+        }}
+    }}
+    cg->pixels = px;
+    return cg;
+}}
+
+void cg_free(struct cg *cg) {{
+    if (!cg) return;
+    free(cg->pixels);
+    free(cg);
+}}
+
+bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out) {{
+    (void)type;
+    for (int i = 0; i < nr_cg_assets; i++) {{
+        if (!strcmp(cg_assets[i].name, name)) {{
+            if (id_out) *id_out = cg_assets[i].no;
+            return true;
+        }}
+    }}
+    return false;
+}}
+
+struct cg *asset_cg_load(int no) {{
+    for (int i = 0; i < nr_cg_assets; i++) {{
+        if (cg_assets[i].no == no)
+            return make_tagged_cg(cg_assets[i].w, cg_assets[i].h, cg_assets[i].tag);
+    }}
+    return NULL;
+}}
+
+struct cg *asset_cg_load_by_name(const char *name, int *id_out) {{
+    for (int i = 0; i < nr_cg_assets; i++) {{
+        if (!strcmp(cg_assets[i].name, name)) {{
+            if (id_out) *id_out = cg_assets[i].no;
+            return make_tagged_cg(cg_assets[i].w, cg_assets[i].h, cg_assets[i].tag);
+        }}
+    }}
+    return NULL;
+}}
+
+// Minimal in-memory iarray writer/reader matching real src/hll/iarray.c.
+void iarray_write(struct iarray_writer *w, int v) {{
+    w->data = realloc(w->data, (w->size + 1) * sizeof(int));
+    w->data[w->size++] = v;
+}}
+void iarray_write_string(struct iarray_writer *w, struct string *s) {{
+    for (int i = 0; s && i < s->size; i++) iarray_write(w, (unsigned char)s->text[i]);
+    iarray_write(w, 0);
+}}
+void iarray_write_string_or_null(struct iarray_writer *w, struct string *s) {{
+    iarray_write_string(w, s ? s : &EMPTY_STRING);
+}}
+void iarray_write_text_style(struct iarray_writer *w, struct text_style *ts) {{ (void)w; (void)ts; }}
+int iarray_read(struct iarray_reader *r) {{
+    if (r->pos >= r->size) {{ r->error = 1; return 0; }}
+    return r->data[r->pos++].i;
+}}
+struct string *iarray_read_string(struct iarray_reader *r) {{
+    char buf[256];
+    int n = 0, c;
+    while ((c = iarray_read(r)) != 0) {{
+        assert(n < 255);
+        buf[n++] = (char)c;
+    }}
+    return make_string(buf, n);
+}}
+struct string *iarray_read_string_or_null(struct iarray_reader *r) {{
+    struct string *s = iarray_read_string(r);
+    if (!s->size) {{
+        free_string(s);
+        return NULL;
+    }}
+    return s;
+}}
+void iarray_read_text_style(struct iarray_reader *r, struct text_style *ts) {{ (void)r; (void)ts; }}
+
+static void clear_all_fonts(void) {{
+    for (int i = 0; i < parts_nr_numeral_fonts; i++) {{
+        for (int j = 0; j < 12; j++)
+            if (parts_numeral_fonts[i].cg[j].handle)
+                gfx_delete_texture(&parts_numeral_fonts[i].cg[j]);
+        if (parts_numeral_fonts[i].cg_name)
+            free_string(parts_numeral_fonts[i].cg_name);
+    }}
+    free(parts_numeral_fonts);
+    parts_numeral_fonts = NULL;
+    parts_nr_numeral_fonts = 0;
+}}
+
+{parts_fns}
+{save_fns}
+
+static void assert_all_zero(const struct tex_capture *cap, int x0, int x1) {{
+    for (int y = 0; y < cap->h; y++) {{
+        for (int x = x0; x < x1; x++) {{
+            const uint8_t *p = cap->rgba + ((size_t)y * (size_t)cap->w + (size_t)x) * 4;
+            assert(p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 0);
+        }}
+    }}
+}}
+
+static void assert_slice_matches(const struct tex_capture *cap, int src_x0, int copy_w, uint8_t tag) {{
+    for (int y = 0; y < cap->h; y++) {{
+        for (int x = 0; x < copy_w; x++) {{
+            const uint8_t *p = cap->rgba + ((size_t)y * (size_t)cap->w + (size_t)x) * 4;
+            assert(p[0] == (uint8_t)((src_x0 + x + 1) & 0xff));
+            assert(p[1] == (uint8_t)((y + 1) & 0xff));
+            assert(p[2] == tag);
+            assert(p[3] == 255);
+        }}
+    }}
+}}
+
+int main(void) {{
+    // 1. Evenicle 2 combined numeral font: 130x19 sheet with 12x13 = 156px widths.
+    add_cg_asset(10, "ev2_num13", 130, 19, 0xA1);
+    // 2. Evenicle 1 combined numeral font: 113x14 sheet with 12x10 = 120px widths (partial overflow on glyph 11).
+    add_cg_asset(11, "ev1_num10", 113, 14, 0xB2);
+    // 3. Separate2 digits for "sep_%d"
+    add_cg_asset(20, "sep_0", 8, 12, 0xC0);
+    add_cg_asset(21, "sep_1", 8, 12, 0xC1);
+
+    struct string *s_ev2 = make_string("ev2_num13", 9);
+    int w13[12];
+    for (int i = 0; i < 12; i++) w13[i] = 13;
+    int f_ev2 = parts_load_numeral_font_combined_by_name(s_ev2, w13);
+    assert(f_ev2 == 0 && blank_texture_calls == 0);
+    assert(parts_numeral_fonts[f_ev2].cg_name && !strcmp(parts_numeral_fonts[f_ev2].cg_name->text, "ev2_num13"));
+    // Deduplication returns same index.
+    assert(parts_load_numeral_font_combined_by_name(s_ev2, w13) == f_ev2);
+    for (int i = 0; i < 10; i++) {{
+        GLuint h = parts_numeral_fonts[f_ev2].cg[i].handle;
+        assert(h > 0 && captures[h].w == 13 && captures[h].h == 19);
+        assert_slice_matches(&captures[h], i * 13, 13, 0xA1);
+    }}
+    // Glyphs 10 ('-') and 11 (',') lie completely past src_w=130 -> clean zero-alpha RGBA!
+    for (int i = 10; i < 12; i++) {{
+        GLuint h = parts_numeral_fonts[f_ev2].cg[i].handle;
+        assert(h > 0 && captures[h].w == 13 && captures[h].h == 19);
+        assert_all_zero(&captures[h], 0, 13);
+    }}
+
+    // Evenicle 1 partial overflow: glyph 11 starts at x=110 in 113px sheet -> 3 copied cols + 7 zero cols.
+    struct string *s_ev1 = make_string("ev1_num10", 9);
+    int w10[12];
+    for (int i = 0; i < 12; i++) w10[i] = 10;
+    int f_ev1 = parts_load_numeral_font_combined_by_name(s_ev1, w10);
+    assert(f_ev1 == 1 && blank_texture_calls == 0);
+    for (int i = 0; i < 11; i++) {{
+        GLuint h = parts_numeral_fonts[f_ev1].cg[i].handle;
+        assert(h > 0 && captures[h].w == 10 && captures[h].h == 14);
+        assert_slice_matches(&captures[h], i * 10, 10, 0xB2);
+    }}
+    GLuint h11 = parts_numeral_fonts[f_ev1].cg[11].handle;
+    assert(h11 > 0 && captures[h11].w == 10 && captures[h11].h == 14);
+    assert_slice_matches(&captures[h11], 110, 3, 0xB2);
+    assert_all_zero(&captures[h11], 3, 10);
+
+    // Separate2: missing name returns -1; valid name loads & deduplicates.
+    struct string *s_missing = make_string("missing_%d", 10);
+    assert(parts_load_numeral_font_separate_string(s_missing) == -1);
+    struct string *s_sep = make_string("sep_%d", 6);
+    int f_sep = parts_load_numeral_font_separate_string(s_sep);
+    assert(f_sep == 2 && parts_load_numeral_font_separate_string(s_sep) == f_sep);
+    assert(parts_numeral_fonts[f_sep].cg[0].handle > 0 && parts_numeral_fonts[f_sep].cg[1].handle > 0);
+    assert(parts_numeral_fonts[f_sep].cg[2].handle == 0);
+
+    // 2. Save v35 font->cg_name persistence across archive CG index shift!
+    struct iarray_writer w35 = {{0}};
+    save_numeral_fonts(&w35);
+    struct parts dummy_part = {{0}};
+    struct parts_numeral num_src = {{
+        .have_num = true, .num = 123, .font_no = f_ev2, .show_type = 1, .cg_name = string_dup(s_ev2)
+    }};
+    save_parts_numeral(&w35, &num_src);
+    struct parts_numeral sep_src = {{
+        .have_num = true, .num = 10, .font_no = f_sep, .show_type = 0, .cg_name = string_dup(s_sep)
+    }};
+    save_parts_numeral(&w35, &sep_src);
+
+    // Shift archive CG numbers: ev2_num13 moves 10 -> 42 (tag 0x55), sep_0/1 move 20/21 -> 50/51 (tag 0x66).
+    // Put a decoy CG at old index 10 to prove v35 loads by cg_name, NOT stale cg_no!
+    nr_cg_assets = 0;
+    add_cg_asset(10, "wrong_cg_at_old_index", 130, 19, 0xEE);
+    add_cg_asset(42, "ev2_num13", 130, 19, 0x55);
+    add_cg_asset(11, "ev1_num10", 113, 14, 0xB2);
+    add_cg_asset(50, "sep_0", 8, 12, 0x66);
+    add_cg_asset(51, "sep_1", 8, 12, 0x67);
+
+    clear_all_fonts();
+    union vm_value *vals35 = calloc(w35.size, sizeof(*vals35));
+    for (unsigned i = 0; i < w35.size; i++) vals35[i].i = w35.data[i];
+    struct iarray_reader r35 = {{ .data = vals35, .size = w35.size }};
+    load_numeral_fonts(&r35, 35);
+    assert(!r35.error && parts_nr_numeral_fonts == 3);
+    assert(parts_numeral_fonts[0].cg_name && !strcmp(parts_numeral_fonts[0].cg_name->text, "ev2_num13"));
+    assert(parts_numeral_fonts[0].cg_no == 42);
+    assert_slice_matches(&captures[parts_numeral_fonts[0].cg[0].handle], 0, 13, 0x55);
+    assert(parts_numeral_fonts[2].cg_no == 50 && parts_numeral_fonts[2].width[1] == 51);
+    assert_slice_matches(&captures[parts_numeral_fonts[2].cg[0].handle], 0, 8, 0x66);
+
+    struct parts_numeral num_dst35 = {{0}}, sep_dst35 = {{0}};
+    load_parts_numeral(&r35, &dummy_part, &num_dst35, 35, NULL);
+    load_parts_numeral(&r35, &dummy_part, &sep_dst35, 35, NULL);
+    assert(!r35.error && num_dst35.font_no == 0 && sep_dst35.font_no == 2);
+
+    // 3. Legacy v34 save auto-healing: font table has NO cg_name and stale cg_no=10 / width={{20,21,-1...}},
+    //    while num->cg_name carries "ev2_num13" and "sep_%d"!
+    clear_all_fonts();
+    struct iarray_writer w34 = {{0}};
+    iarray_write(&w34, 2);
+    // font 0: COMBINED with stale cg_no = 10 (now points to wrong_cg_at_old_index tag 0xEE!)
+    iarray_write(&w34, PARTS_NUMERAL_FONT_COMBINED);
+    iarray_write(&w34, 10);
+    for (int j = 0; j < 12; j++) iarray_write(&w34, 13);
+    // font 1: SEPARATE2 with stale width[0..1] = 20, 21 (no longer exist!)
+    iarray_write(&w34, PARTS_NUMERAL_FONT_SEPARATE2);
+    iarray_write(&w34, 20);
+    iarray_write(&w34, 20);
+    iarray_write(&w34, 21);
+    for (int j = 2; j < 12; j++) iarray_write(&w34, -1);
+    struct parts_numeral leg_comb = {{ .have_num = true, .num = 99, .font_no = 0, .show_type = 1, .cg_name = string_dup(s_ev2) }};
+    struct parts_numeral leg_sep = {{ .have_num = true, .num = 10, .font_no = 1, .show_type = 0, .cg_name = string_dup(s_sep) }};
+    save_parts_numeral(&w34, &leg_comb);
+    save_parts_numeral(&w34, &leg_sep);
+
+    union vm_value *vals34 = calloc(w34.size, sizeof(*vals34));
+    for (unsigned i = 0; i < w34.size; i++) vals34[i].i = w34.data[i];
+    struct iarray_reader r34 = {{ .data = vals34, .size = w34.size }};
+    load_numeral_fonts(&r34, 34);
+    assert(parts_nr_numeral_fonts == 2);
+    assert(parts_numeral_fonts[0].cg_name == NULL && parts_numeral_fonts[0].cg_no == 10);
+    assert(parts_numeral_fonts[1].cg_name == NULL && parts_numeral_fonts[1].cg[0].handle == 0);
+
+    struct parts_numeral healed_comb = {{0}}, healed_sep = {{0}};
+    load_parts_numeral(&r34, &dummy_part, &healed_comb, 34, NULL);
+    load_parts_numeral(&r34, &dummy_part, &healed_sep, 34, NULL);
+    assert(!r34.error);
+    assert(healed_comb.font_no >= 2);
+    assert(parts_numeral_fonts[healed_comb.font_no].cg_no == 42);
+    assert(parts_numeral_fonts[healed_comb.font_no].cg_name &&
+           !strcmp(parts_numeral_fonts[healed_comb.font_no].cg_name->text, "ev2_num13"));
+    assert_slice_matches(&captures[parts_numeral_fonts[healed_comb.font_no].cg[0].handle], 0, 13, 0x55);
+    assert_all_zero(&captures[parts_numeral_fonts[healed_comb.font_no].cg[10].handle], 0, 13);
+
+    assert(healed_sep.font_no >= 2 && healed_sep.font_no != healed_comb.font_no);
+    assert(parts_numeral_fonts[healed_sep.font_no].cg_no == 50);
+    assert_slice_matches(&captures[parts_numeral_fonts[healed_sep.font_no].cg[0].handle], 0, 8, 0x66);
+    assert_slice_matches(&captures[parts_numeral_fonts[healed_sep.font_no].cg[1].handle], 0, 8, 0x67);
+
+    free_string(num_src.cg_name); free_string(sep_src.cg_name);
+    free_string(num_dst35.cg_name); free_string(sep_dst35.cg_name);
+    free_string(leg_comb.cg_name); free_string(leg_sep.cg_name);
+    free_string(healed_comb.cg_name); free_string(healed_sep.cg_name);
+    free_string(s_ev2); free_string(s_ev1); free_string(s_missing); free_string(s_sep);
+    free(w35.data); free(vals35); free(w34.data); free(vals34);
+    clear_all_fonts();
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
+    def test_gl_reset_recovery_numeral_fonts_non_widget_flats_and_subcomponents(self):
+        parts_fns = "\n".join(
+            _extract_c_fn("src/parts/parts.c", sig)
+            for sig in (
+                "static void remap_flash_bitmap",
+                "static void recover_cg_state",
+                "static void recover_widget_skin",
+                "static bool recover_text_state",
+                "static void recover_widget_states",
+                "static void recover_parts_state",
+                "static void recover_parts_in_current_context",
+            )
+        )
+        harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/cg.h"
+#include "system4/hashtable.h"
+#include "system4/string.h"
+#include "asset_manager.h"
+#include "parts/parts_internal.h"
+
+static struct parts_context ctx = {{
+    .list = TAILQ_HEAD_INITIALIZER(ctx.list),
+    .dirty = TAILQ_HEAD_INITIALIZER(ctx.dirty),
+}};
+struct parts_context *parts_current = &ctx;
+#define parts_table (parts_current->table)
+
+static int font_reinit_calls = 0;
+static int numeral_update_calls = 0;
+static int flat_recover_calls = 0;
+static int anim_reload_name_calls = 0;
+static int gauge_set_cg_calls = 0;
+static int hgauge_rate_calls = 0;
+static int vgauge_rate_calls = 0;
+static int panel_rebuild_calls = 0;
+static int scrollbar_rebuild_calls = 0;
+static int msgbox_rebuild_calls = 0;
+static int text_rerender_calls = 0;
+static int cg_by_name_calls = 0;
+static int cg_by_no_calls = 0;
+static GLuint next_handle = 100;
+
+bool gfx_remap_texture(Texture *t) {{
+    if (t->handle == 999) {{
+        t->handle = 0;
+        return false;
+    }}
+    return t->handle != 0;
+}}
+void gfx_init_texture_with_cg(Texture *t, struct cg *cg) {{
+    t->handle = next_handle++;
+    t->w = cg->metrics.w;
+    t->h = cg->metrics.h;
+}}
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color c) {{
+    (void)c;
+    t->handle = next_handle++;
+    t->w = w;
+    t->h = h;
+}}
+void cg_free(struct cg *cg) {{ free(cg); }}
+struct cg *asset_cg_load(int no) {{
+    cg_by_no_calls++;
+    struct cg *cg = calloc(1, sizeof(*cg));
+    cg->metrics.w = no;
+    cg->metrics.h = 16;
+    return cg;
+}}
+struct cg *asset_cg_load_by_name(const char *name, int *id_out) {{
+    (void)name;
+    cg_by_name_calls++;
+    if (id_out) *id_out = 77;
+    struct cg *cg = calloc(1, sizeof(*cg));
+    cg->metrics.w = 77;
+    cg->metrics.h = 16;
+    return cg;
+}}
+void parts_numeral_font_init(struct parts_numeral_font *font) {{
+    font_reinit_calls++;
+    font->cg[0].handle = next_handle++;
+    font->cg[0].w = 13;
+}}
+static bool parts_numeral_update(struct parts *p, struct parts_numeral *n) {{
+    (void)p;
+    numeral_update_calls++;
+    n->common.texture.handle = next_handle++;
+    return true;
+}}
+void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended) {{
+    flat_recover_calls++;
+    if (!suspended && f->textures && f->nr_libraries > 0)
+        f->textures[0].handle = next_handle++;
+}}
+bool parts_animation_set_cg(struct parts *p, struct parts_animation *anim,
+        struct string *cg_name, int start_no, int nr_frames, int frame_time) {{
+    (void)p; (void)cg_name; (void)start_no; (void)frame_time;
+    anim_reload_name_calls++;
+    for (int i = 0; i < nr_frames; i++) anim->frames[i].handle = next_handle++;
+    anim->elapsed = 0;
+    anim->current_frame = 0;
+    return true;
+}}
+bool parts_animation_set_cg_by_index(struct parts *p, struct parts_animation *anim,
+        int cg_no, int nr_frames, int frame_time) {{
+    (void)p; (void)cg_no; (void)nr_frames; (void)frame_time;
+    return false;
+}}
+bool parts_gauge_set_cg(struct parts *p, struct parts_gauge *g, struct string *cg_name) {{
+    (void)p; (void)cg_name;
+    gauge_set_cg_calls++;
+    g->cg.handle = next_handle++;
+    g->cg.w = 100;
+    g->cg.h = 16;
+    g->common.texture.handle = next_handle++;
+    return true;
+}}
+bool parts_gauge_set_cg_by_index(struct parts *p, struct parts_gauge *g, int cg_no) {{
+    (void)p; (void)g; (void)cg_no; return false;
+}}
+void parts_hgauge_set_rate(struct parts *p, struct parts_gauge *g, float rate) {{
+    (void)p; assert(g->common.texture.handle != 0); g->rate = rate; hgauge_rate_calls++;
+}}
+void parts_vgauge_set_rate(struct parts *p, struct parts_gauge *g, float rate) {{
+    (void)p; assert(g->common.texture.handle != 0); g->rate = rate; vgauge_rate_calls++;
+}}
+void parts_widget_restore_plain_skin(struct parts *p, struct parts_state *s, int i, bool c) {{
+    (void)p; (void)s; (void)i; (void)c;
+}}
+void parts_widget_rebuild_label(struct parts *p) {{ (void)p; }}
+void parts_panel_rebuild(struct parts *p) {{
+    panel_rebuild_calls++;
+    p->states[0].common.texture.handle = next_handle++;
+}}
+void parts_scrollbar_rebuild(struct parts *p) {{
+    scrollbar_rebuild_calls++;
+    p->scrollbar->skins[0][0].common.texture.handle = next_handle++;
+}}
+void parts_message_window_rebuild_text(struct parts *p) {{
+    msgbox_rebuild_calls++;
+    p->message_box->elapsed = 0;
+    p->message_box->fixed = false;
+}}
+void parts_text_rerender_all(struct parts *p, struct parts_text *t) {{
+    (void)p; (void)t; text_rerender_calls++;
+}}
+void parts_component_dirty(struct parts *p) {{ (void)p; }}
+void parts_dirty(struct parts *p) {{ (void)p; }}
+void parts_engine_dirty(void) {{}}
+
+{parts_fns}
+
+int main(void) {{
+    parts_table = ht_create(16);
+
+    parts_nr_numeral_fonts = 2;
+    parts_numeral_fonts = calloc(2, sizeof(*parts_numeral_fonts));
+    parts_numeral_fonts[0].cg[0] = (Texture){{ .handle = 999, .w = 13, .h = 19 }};
+    parts_numeral_fonts[1].cg[0] = (Texture){{ .handle = 50, .w = 13, .h = 19 }};
+
+    struct parts p_cg = {{0}};
+    p_cg.states[0].type = PARTS_CG;
+    p_cg.states[0].cg.common.texture = (Texture){{ .handle = 999, .w = 32, .h = 32 }};
+    p_cg.states[0].cg.no = 12;
+    p_cg.states[0].cg.name = make_string("hero_cg", 7);
+    TAILQ_INSERT_TAIL(&parts_list, &p_cg, parts_list_entry);
+
+    Texture flat_tex = {{ .handle = 999, .w = 64, .h = 64 }};
+    struct parts p_flat = {{0}};
+    p_flat.states[0].type = PARTS_FLAT;
+    p_flat.states[0].flat.nr_libraries = 1;
+    p_flat.states[0].flat.textures = &flat_tex;
+    TAILQ_INSERT_TAIL(&parts_list, &p_flat, parts_list_entry);
+
+    struct parts p_num = {{0}};
+    p_num.states[0].type = PARTS_NUMERAL;
+    p_num.states[0].common.texture = (Texture){{ .handle = 999, .w = 26, .h = 19 }};
+    p_num.states[0].num.have_num = true;
+    TAILQ_INSERT_TAIL(&parts_list, &p_num, parts_list_entry);
+
+    Texture anim_frames[3] = {{
+        {{ .handle = 999, .w = 16, .h = 16 }},
+        {{ .handle = 999, .w = 16, .h = 16 }},
+        {{ .handle = 999, .w = 16, .h = 16 }},
+    }};
+    struct parts p_anim = {{0}};
+    p_anim.states[0].type = PARTS_ANIMATION;
+    p_anim.states[0].anim.cg_name = make_string("anim_%d", 7);
+    p_anim.states[0].anim.start_no = 1;
+    p_anim.states[0].anim.nr_frames = 3;
+    p_anim.states[0].anim.frames = anim_frames;
+    p_anim.states[0].anim.frame_time = 100;
+    p_anim.states[0].anim.elapsed = 45;
+    p_anim.states[0].anim.current_frame = 2;
+    p_anim.states[0].common.texture = anim_frames[2];
+    TAILQ_INSERT_TAIL(&parts_list, &p_anim, parts_list_entry);
+
+    struct parts p_gauge = {{0}};
+    p_gauge.states[0].type = PARTS_HGAUGE;
+    p_gauge.states[0].gauge.cg = (Texture){{ .handle = 999, .w = 100, .h = 16 }};
+    p_gauge.states[0].gauge.common.texture = (Texture){{ .handle = 999, .w = 100, .h = 16 }};
+    p_gauge.states[0].gauge.cg_name = make_string("hp_bar", 6);
+    p_gauge.states[0].gauge.rate = 0.6f;
+    p_gauge.states[1].type = PARTS_VGAUGE;
+    p_gauge.states[1].gauge.cg = (Texture){{ .handle = 55, .w = 16, .h = 100 }};
+    p_gauge.states[1].gauge.common.texture = (Texture){{ .handle = 999, .w = 16, .h = 100 }};
+    p_gauge.states[1].gauge.rate = 0.35f;
+    TAILQ_INSERT_TAIL(&parts_list, &p_gauge, parts_list_entry);
+
+    struct parts_panel panel = {{ .width = 120, .height = 80 }};
+    struct parts p_panel = {{ .panel = &panel }};
+    p_panel.states[0].type = PARTS_CG;
+    p_panel.states[0].common.texture = (Texture){{ .handle = 999, .w = 120, .h = 80 }};
+    TAILQ_INSERT_TAIL(&parts_list, &p_panel, parts_list_entry);
+
+    struct parts_scrollbar sb = {{0}};
+    sb.skins[0][0].type = PARTS_CG;
+    sb.skins[0][0].common.w = 1;
+    sb.skins[0][0].common.texture = (Texture){{ .handle = 999, .w = 1, .h = 1 }};
+    struct parts p_sb = {{ .scrollbar = &sb }};
+    TAILQ_INSERT_TAIL(&parts_list, &p_sb, parts_list_entry);
+
+    struct parts_text_char mb_ch = {{ .t = {{ .handle = 999, .w = 12 }} }};
+    struct parts_text_line mb_line = {{ .chars = &mb_ch, .nr_chars = 1 }};
+    Texture kw_tex = {{ .handle = 999, .w = 16, .h = 16 }};
+    struct parts_message_window mb = {{
+        .elapsed = 321, .fixed = true,
+        .label = {{ .type = PARTS_TEXT, .text = {{ .nr_lines = 1, .lines = &mb_line }} }},
+        .key_wait = {{ .type = PARTS_FLAT, .flat = {{ .nr_libraries = 1, .textures = &kw_tex }} }},
+    }};
+    struct parts p_mb = {{ .message_box = &mb }};
+    TAILQ_INSERT_TAIL(&parts_list, &p_mb, parts_list_entry);
+
+    struct parts_text_char tb_ch = {{ .t = {{ .handle = 999, .w = 10 }} }};
+    struct parts_text_line tb_line = {{ .chars = &tb_ch, .nr_chars = 1 }};
+    struct parts_state tb_label = {{ .type = PARTS_TEXT, .text = {{ .nr_lines = 1, .lines = &tb_line }} }};
+    struct parts p_tb = {{ .text_box_label = &tb_label }};
+    TAILQ_INSERT_TAIL(&parts_list, &p_tb, parts_list_entry);
+
+    recover_parts_in_current_context();
+
+    assert(font_reinit_calls == 1 && parts_numeral_fonts[0].cg[0].handle >= 100);
+    assert(cg_by_name_calls == 1 && cg_by_no_calls == 0 && p_cg.states[0].cg.no == 77);
+    assert(flat_recover_calls == 2 && flat_tex.handle >= 100 && kw_tex.handle >= 100);
+    assert(numeral_update_calls == 1 && p_num.states[0].common.texture.handle >= 100);
+    assert(anim_reload_name_calls == 1 && p_anim.states[0].anim.elapsed == 45 && p_anim.states[0].anim.current_frame == 2);
+    assert(p_anim.states[0].common.texture.handle == anim_frames[2].handle && anim_frames[2].handle >= 100);
+    assert(gauge_set_cg_calls == 1 && hgauge_rate_calls == 1 && vgauge_rate_calls == 1);
+    assert(p_gauge.states[0].gauge.rate == 0.6f && p_gauge.states[1].gauge.rate == 0.35f);
+    assert(p_gauge.states[1].common.texture.handle >= 100);
+    assert(panel_rebuild_calls == 1 && p_panel.states[0].common.texture.handle >= 100);
+    assert(scrollbar_rebuild_calls == 1 && sb.skins[0][0].common.texture.handle >= 100);
+    assert(msgbox_rebuild_calls == 1 && mb.elapsed == 321 && mb.fixed == true);
+    assert(text_rerender_calls == 1);
+
+    free_string(p_cg.states[0].cg.name);
+    free_string(p_anim.states[0].anim.cg_name);
+    free_string(p_gauge.states[0].gauge.cg_name);
+    free(parts_numeral_fonts);
+    ht_free_int(parts_table);
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
+    def test_post_dialogue_occluded_flat_motion_end_and_forward_seek_fixes(self):
+        update_loop_fn = _extract_c_fn("src/parts/parts.c", "static void parts_update_loop")
+        motion_fns = "\n".join(
+            _extract_c_fn("src/parts/motion.c", sig)
+            for sig in (
+                "void PE_BeginMotion",
+                "static void parts_end_motion",
+                "void PE_EndMotion",
+                "void PE_SetMotionTime",
+                "void PE_UpdateMotionTime",
+                "bool PE_IsMotion",
+                "void PE_PauseMotion",
+            )
+        )
+        flat_fns = "\n".join(
+            _extract_c_fn("src/parts/flat.c", sig)
+            for sig in (
+                "struct flat_layer_state *parts_flat_layer_state_new",
+                "void parts_flat_clear_emitter_births",
+                "struct flat_emitter_birth *parts_flat_get_emitter_birth",
+                "void parts_flat_layer_state_free",
+                "int parts_flat_find_library",
+                "static int flat_compute_max_frame",
+                "static void flat_process_layer_scripts",
+                "static bool flat_advance_layer",
+                "static bool flat_advance_children",
+                "bool parts_flat_update",
+                "bool PE_GoFramePartsFlat",
+            )
+        )
+        harness = f"""
+#include <assert.h>
+#include <limits.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/flat.h"
+#include "system4/string.h"
+#include "parts/parts_internal.h"
+
+static struct parts_context ctx = {{
+    .list = TAILQ_HEAD_INITIALIZER(ctx.list),
+    .dirty = TAILQ_HEAD_INITIALIZER(ctx.dirty),
+}};
+struct parts_context *parts_current = &ctx;
+
+static bool is_motion = false;
+static bool is_motion_paused = false;
+static int motion_t = 0;
+static int motion_end_t = 0;
+static int msgskip_speedup_rate = 1;
+bool parts_began_click = false;
+static int motion_init_calls = 0;
+static int motion_update_calls = 0;
+static int motion_fini_calls = 0;
+static int global_pos_resets = 0;
+
+static void parts_init_all_motion(void) {{ motion_init_calls++; }}
+static void parts_update_all_motion(void) {{ motion_update_calls++; }}
+static void parts_fini_all_motion(void) {{ motion_fini_calls++; }}
+void parts_set_global_pos(Point pos) {{ (void)pos; global_pos_resets++; }}
+
+{motion_fns}
+
+static struct parts test_part;
+static bool mock_visible = false;
+static int dirty_calls = 0;
+
+struct parts *parts_get(int parts_no) {{ assert(parts_no == 1); return &test_part; }}
+struct parts_flat *parts_get_flat(struct parts *parts, int state) {{ return &parts->states[state].flat; }}
+bool parts_is_visible(struct parts *parts) {{ (void)parts; return mock_visible; }}
+struct parts_state *parts_display_state(struct parts *parts) {{ return &parts->states[parts->state]; }}
+bool parts_scrollbar_update(struct parts *p, int t) {{ (void)p; (void)t; return false; }}
+bool parts_message_window_update(struct parts *p, int t) {{ (void)p; (void)t; return false; }}
+void parts_dirty(struct parts *p) {{ (void)p; dirty_calls++; }}
+unsigned parts_flat_key_count(const struct flat_timeline *tl, int frame) {{ (void)tl; (void)frame; return 0; }}
+const struct flat_key_data_graphic *parts_flat_key(const struct flat_timeline *tl, int frame, unsigned inst) {{
+    (void)tl; (void)frame; (void)inst; return NULL;
+}}
+
+static bool flat_advance_children(struct flat *fl, struct flat_layer_state *state,
+        struct flat_timeline *timelines, size_t nr_timelines, struct flat_key_stack *key_stack);
+
+{flat_fns}
+
+bool parts_state_update(struct parts_state *state, int passed_time) {{
+    if (state->type == PARTS_FLAT)
+        return parts_flat_update(&state->flat, passed_time);
+    return false;
+}}
+
+{update_loop_fn}
+
+int main(void) {{
+    struct flat_script_key stop_key = {{ .frame_index = 3, .is_stop = true }};
+    struct flat_timeline timelines[2] = {{
+        {{ .type = FLAT_TIMELINE_GRAPHIC, .begin_frame = 0, .frame_count = 20, .library_name = &EMPTY_STRING }},
+        {{ .type = FLAT_TIMELINE_SCRIPT, .begin_frame = 0, .frame_count = 20, .script = {{ .count = 1, .keys = &stop_key }} }},
+    }};
+    struct flat fl = {{
+        .hdr = {{ .fps = 60 }},
+        .nr_timelines = 2,
+        .timelines = timelines,
+    }};
+
+    test_part = (struct parts){{0}};
+    test_part.states[0].type = PARTS_FLAT;
+    struct parts_flat *f = &test_part.states[0].flat;
+    f->flat = &fl;
+    f->fps_rate = 1.0f;
+    f->end_frame = 19;
+    f->root_state = parts_flat_layer_state_new(2);
+    f->root_state->suppress_advance = false;
+
+    // Occluded/hidden FLAT advances timeline without marking parts_dirty.
+    mock_visible = false;
+    dirty_calls = 0;
+    parts_update_loop(&test_part, 100, true);
+    assert(f->root_state->current_frame == 3);
+    assert(f->root_state->stopped == true);
+    assert(dirty_calls == 0);
+
+    // Forward PE_GoFramePartsFlat on a script-stopped FLAT clears root_state->stopped.
+    assert(PE_GoFramePartsFlat(1, 10, 1));
+    assert(f->root_state->stopped == false);
+    assert(f->pending_seek_delta == 7);
+    dirty_calls = 0;
+    parts_update_loop(&test_part, 16, true);
+    assert(f->root_state->current_frame == 10);
+    assert(f->pending_seek_delta == 0);
+    assert(dirty_calls == 0);
+
+    mock_visible = true;
+    parts_update_loop(&test_part, 50, false);
+    assert(f->root_state->current_frame > 10);
+    assert(dirty_calls == 1);
+
+    parts_flat_layer_state_free(f->root_state);
+
+    // Motion completion while parts_began_click == true:
+    parts_began_click = false;
+    motion_end_t = 100;
+    PE_BeginMotion();
+    assert(PE_IsMotion() && motion_init_calls == 1);
+
+    parts_began_click = true;
+    PE_EndMotion();
+    assert(PE_IsMotion() && motion_fini_calls == 0);
+
+    PE_SetMotionTime(100);
+    assert(!PE_IsMotion() && motion_fini_calls == 1);
+
+    // PE_PauseMotion(false) unpauses even while parts_began_click == true.
+    parts_began_click = false;
+    motion_end_t = 50;
+    PE_BeginMotion();
+    parts_began_click = true;
+    PE_PauseMotion(true);
+    assert(!is_motion_paused);
+    parts_began_click = false;
+    PE_PauseMotion(true);
+    assert(is_motion_paused && global_pos_resets == 1);
+    parts_began_click = true;
+    PE_PauseMotion(false);
+    assert(!is_motion_paused);
+    PE_UpdateMotionTime(60, false);
+    assert(!PE_IsMotion() && motion_fini_calls == 2);
+
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
+
+def _extract_c_fn(rel_path: str, signature_prefix: str) -> str:
+    source = (ROOT / rel_path).read_text(encoding="utf-8")
+    pattern = re.compile(r"^" + re.escape(signature_prefix) + r"\([^;]*?\)\s*\{", re.MULTILINE)
+    match = pattern.search(source)
+    assert match is not None, f"Function definition not found: {signature_prefix} in {rel_path}"
+    start = match.start()
+    brace = source.index("{", start)
+    depth = 1
+    end = brace + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[start:end]
 
 
 if __name__ == "__main__":
