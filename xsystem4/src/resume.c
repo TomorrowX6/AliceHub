@@ -116,6 +116,18 @@ static enum ain_data_type normalize_v12_array_leaf_type(enum ain_data_type type)
 static const char *array_leaf_type_name(enum ain_data_type leaf_data, int struct_type)
 {
 	switch (leaf_data) {
+	case AIN_VOID:
+	case AIN_INT:
+	case AIN_REF_INT:
+	case AIN_FLOAT:
+	case AIN_REF_FLOAT:
+	case AIN_STRING:
+	case AIN_REF_STRING:
+	case AIN_BOOL:
+	case AIN_REF_BOOL:
+	case AIN_LONG_INT:
+	case AIN_REF_LONG_INT:
+		return "";
 	case AIN_STRUCT:
 	case AIN_REF_STRUCT:
 	case AIN_IFACE:
@@ -139,6 +151,16 @@ static const char *array_leaf_type_name(enum ain_data_type leaf_data, int struct
 		return (struct_type >= 0 && struct_type < ain->nr_structures)
 			? ain->structures[struct_type].name : "";
 	}
+}
+
+static bool v14_array_needs_x4_type(const struct ain_type *t)
+{
+	while (t && t->data == AIN_ARRAY && t->array_type)
+		t = t->array_type;
+	if (!t)
+		return false;
+	return t->array_type != NULL || t->data == AIN_WRAP || t->data == AIN_OPTION
+		|| t->data == AIN_REF_ARRAY || t->data == AIN_REF_OPTION;
 }
 
 struct interned_x4_type {
@@ -830,7 +852,7 @@ static struct rsave_heap_array *array_page_to_rsave(struct page *page, int slot)
 		leaf_data = normalize_v12_array_leaf_type(leaf_data);
 		o->rank_minus_1 = depth;
 		o->data_type = leaf_data;
-		if (ain->version >= 14) {
+		if (ain->version >= 14 && v14_array_needs_x4_type(&page->array.element_type)) {
 			o->struct_type.name = encode_x4_type(&page->array.element_type);
 		} else {
 			o->struct_type.name = xstrdup(array_leaf_type_name(leaf_data, struct_type));
@@ -1049,7 +1071,7 @@ static int save_rsave_image(const char *key, const char *path)
 		return 0;
 	}
 
-	bool encrypt = true;
+	bool encrypt = !AIN_VERSION_GTE(ain, 6, 0);
 	int compression_level = 1;
 	enum savefile_error error = rsave_write(save, fp, encrypt, compression_level);
 	rsave_free(save);
@@ -2210,7 +2232,7 @@ static int write_rsave_image_comments(const char *key, const char *path, struct 
 		return 0;
 	}
 
-	bool encrypt = true;
+	bool encrypt = !AIN_VERSION_GTE(ain, 6, 0);
 	int compression_level = 1;
 	error = rsave_write(save, fp, encrypt, compression_level);
 	rsave_free(save);

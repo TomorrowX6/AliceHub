@@ -25,14 +25,20 @@ class SaveImportPaths @JvmOverloads constructor(
             names.none { it == "xsystem35.gr" }
     }
     private val system35Prefix = findSystem35Prefix()
-    private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
-        if (launchTarget != null) {
-            System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
-        } else {
-            resolveLaunchIniFile(dir).takeIf { it.isFile }
-        }
-    }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() })
-        ?.takeIf { isSafeComponent(it) }
+    private val saveFolder = (saveFolderOverride ?: if (isSystem35) {
+        null
+    } else {
+        gameDir?.let { dir ->
+            if (launchTarget != null) {
+                System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
+            } else {
+                resolveLaunchIniFile(dir).takeIf { it.isFile }
+            }
+        }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() }
+    })?.takeIf { isSafeComponent(it) }
+
+    val pcSaveFolderName: String?
+        get() = if (isSystem35) saveFolder else (saveFolder ?: SaveZipLayout.defaultWrapper)
 
     private fun findSystem35Prefix(): String? {
         if (!isSystem35) return null
@@ -362,21 +368,34 @@ class SaveImportPaths @JvmOverloads constructor(
 }
 
 internal object SaveZipLayout {
-    private const val wrapper = "SaveData"
-    private const val marker = ".alicehub-save-layout-v1"
+    internal const val defaultWrapper = "SaveData"
+    internal const val marker = ".alicehub-save-layout-v1"
 
     fun write(
         zip: ZipOutputStream,
         entries: List<SaveFileEntry>,
         copy: (File, ZipOutputStream) -> Boolean
+    ): Pair<Int, Int> = write(zip, entries, includeMarker = true, wrapperDir = defaultWrapper, copy = copy)
+
+    fun write(
+        zip: ZipOutputStream,
+        entries: List<SaveFileEntry>,
+        includeMarker: Boolean,
+        wrapperDir: String = defaultWrapper,
+        copy: (File, ZipOutputStream) -> Boolean
     ): Pair<Int, Int> {
-        zip.putNextEntry(ZipEntry(marker))
-        zip.closeEntry()
+        val dir = wrapperDir.takeIf {
+            it.isNotEmpty() && !it.startsWith('.') && it.none { c -> c == '/' || c == '\\' || c == '\u0000' }
+        } ?: defaultWrapper
+        if (includeMarker) {
+            zip.putNextEntry(ZipEntry(marker))
+            zip.closeEntry()
+        }
         var exported = 0
         var converted = 0
         for (entry in entries) {
             if (!entry.file.exists()) continue
-            val zipEntry = ZipEntry("$wrapper/${entry.relativePath}")
+            val zipEntry = ZipEntry("$dir/${entry.relativePath}")
             zipEntry.time = entry.lastModified
             zip.putNextEntry(zipEntry)
             if (copy(entry.file, zip)) converted++
@@ -399,6 +418,6 @@ internal object SaveZipLayout {
     ): T? {
         if (children.none { name(it) == marker && isMarkerFile(it) }) return null
         return children.singleOrNull { !name(it).startsWith('.') }
-            ?.takeIf { isDirectory(it) && name(it) == wrapper }
+            ?.takeIf { isDirectory(it) && name(it) == defaultWrapper }
     }
 }

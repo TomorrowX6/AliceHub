@@ -9822,4 +9822,40 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFileWithAin(
+	JNIEnv *env, jclass clazz, jstring jsrcPath, jstring jdstPath, jstring jainPath)
+{
+	(void)clazz;
+	if (!jsrcPath || !jdstPath) return JNI_FALSE;
+	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
+	const char *ain_path = jainPath ? (*env)->GetStringUTFChars(env, jainPath, NULL) : NULL;
+	if (!src_path || !dst_path || (jainPath && !ain_path)) {
+		if (src_path) (*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+		if (dst_path) (*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+		if (ain_path) (*env)->ReleaseStringUTFChars(env, jainPath, ain_path);
+		return JNI_FALSE;
+	}
+	const char *effective_ain = (ain_path && ain_path[0]) ? ain_path : NULL;
+	bool ok = savedata_export_pc_file_with_ain(src_path, dst_path, effective_ain);
+	(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+	(*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+	if (ain_path) (*env)->ReleaseStringUTFChars(env, jainPath, ain_path);
+	return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSaveFileHasXSystem4OnlyState(
+	JNIEnv *env, jclass clazz, jstring jsrcPath)
+{
+	(void)clazz;
+	if (!jsrcPath) return JNI_FALSE;
+	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	if (!src_path) return JNI_FALSE;
+	bool has_only_state = src_path[0] ? savedata_file_has_xsystem4_only_state(src_path) : false;
+	(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+	return has_only_state ? JNI_TRUE : JNI_FALSE;
+}
+
 #endif /* __ANDROID__ */

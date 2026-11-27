@@ -3011,6 +3011,12 @@ object GameModifierBridge {
     @JvmStatic
     external fun nativeExportPcSaveFile(srcPath: String, dstPath: String): Boolean
 
+    @JvmStatic
+    external fun nativeExportPcSaveFileWithAin(srcPath: String, dstPath: String, ainPath: String?): Boolean
+
+    @JvmStatic
+    external fun nativeSaveFileHasXSystem4OnlyState(srcPath: String): Boolean
+
     fun isX4ssSaveFile(file: File): Boolean {
         if (!file.isFile || file.length() < 8L) return false
         return try {
@@ -3031,32 +3037,129 @@ object GameModifierBridge {
         }
     }
 
-    /**
-     * Streams [srcFile] to [dstStream], converting X4SS StructSave files to Windows PC
-     * GD\x01\x01 serialize_struct format when needed. Returns true when converted.
-     */
-    fun copySaveFileForPc(srcFile: File, dstStream: java.io.OutputStream, scratchDir: File): Boolean {
-        if (!isX4ssSaveFile(srcFile)) {
-            srcFile.inputStream().buffered().use { input ->
-                input.copyTo(dstStream)
+    fun hasXSystem4OnlyState(file: File): Boolean {
+        if (!file.isFile || file.length() < 4L) return false
+        if (!ensureLoaded()) return false
+        return try {
+            nativeSaveFileHasXSystem4OnlyState(file.absolutePath)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun filesDiffer(a: File, b: File): Boolean {
+        if (a.length() != b.length()) return true
+        a.inputStream().buffered().use { inA ->
+            b.inputStream().buffered().use { inB ->
+                while (true) {
+                    val byteA = inA.read()
+                    val byteB = inB.read()
+                    if (byteA != byteB) return true
+                    if (byteA < 0) return false
+                }
             }
-            return false
         }
-        if (!ensureLoaded()) {
-            throw java.io.IOException("Failed to load native library for PC save conversion")
-        }
+    }
+
+    @Throws(java.io.IOException::class)
+    internal fun stageSaveFileForPcInternal(
+        srcFile: File,
+        scratchDir: File,
+        ainPath: String? = null,
+        exporter: (File, File, String?) -> Boolean
+    ): Pair<File, Boolean> {
+        val isX4ss = isX4ssSaveFile(srcFile)
         scratchDir.mkdirs()
         val tmpOut = File.createTempFile("pc_conv_", ".bin", scratchDir)
+        var keep = false
         try {
-            if (!nativeExportPcSaveFile(srcFile.absolutePath, tmpOut.absolutePath)) {
-                throw java.io.IOException("Failed to convert ${srcFile.name} to PC format")
+            val effectiveAin = ainPath?.takeIf { it.isNotBlank() }
+            if (!exporter(srcFile, tmpOut, effectiveAin)) {
+                val kind = if (isX4ss) "X4SS save" else "save"
+                throw java.io.IOException("Failed to convert $kind ${srcFile.name} to PC format")
             }
+            if (!tmpOut.isFile || isX4ssSaveFile(tmpOut)) {
+                throw java.io.IOException("Refused to export unconverted X4SS save ${srcFile.name}")
+            }
+            val converted = isX4ss || filesDiffer(srcFile, tmpOut)
+            keep = true
+            return tmpOut to converted
+        } finally {
+            if (!keep) tmpOut.delete()
+        }
+    }
+
+    @Throws(java.io.IOException::class)
+    fun stageSaveFileForPc(
+        srcFile: File,
+        scratchDir: File,
+        ainPath: String? = null
+    ): Pair<File, Boolean> {
+        return stageSaveFileForPcInternal(
+            srcFile = srcFile,
+            scratchDir = scratchDir,
+            ainPath = ainPath,
+            exporter = { src, dst, ain ->
+                if (!ensureLoaded()) {
+                    throw java.io.IOException("Failed to load native library for PC save conversion")
+                }
+                nativeExportPcSaveFileWithAin(src.absolutePath, dst.absolutePath, ain)
+            }
+        )
+    }
+
+    @JvmStatic
+    @JvmName("copySaveFileForPcWithExporter")
+    @Throws(java.io.IOException::class)
+    internal fun copySaveFileForPcInternal(
+        srcFile: File,
+        dstStream: java.io.OutputStream,
+        scratchDir: File,
+        ainPath: String? = null,
+        exporter: (File, File, String?) -> Boolean
+    ): Boolean {
+        val (tmpOut, converted) = stageSaveFileForPcInternal(
+            srcFile = srcFile,
+            scratchDir = scratchDir,
+            ainPath = ainPath,
+            exporter = exporter
+        )
+        try {
             tmpOut.inputStream().buffered().use { input ->
                 input.copyTo(dstStream)
             }
-            return true
+            return converted
         } finally {
             tmpOut.delete()
         }
+    }
+
+    /**
+     * Streams [srcFile] to [dstStream], exporting in Windows PC-compatible format using
+     * [ainPath] when available (converting X4SS StructSave files, repairing GD\x01\x01
+     * schemas, folding `.comment` sidecars into gsave v8, and decrypting v6+ RSM files).
+     * Returns true when the exported output was converted/modified relative to [srcFile].
+     * Never silently copies an unconverted X4SS file on failure.
+     */
+    @JvmOverloads
+    @Throws(java.io.IOException::class)
+    fun copySaveFileForPc(
+        srcFile: File,
+        dstStream: java.io.OutputStream,
+        scratchDir: File,
+        ainPath: String? = null
+    ): Boolean {
+        return copySaveFileForPcInternal(
+            srcFile = srcFile,
+            dstStream = dstStream,
+            scratchDir = scratchDir,
+            ainPath = ainPath,
+            exporter = { src, dst, ain ->
+                if (!ensureLoaded()) {
+                    throw java.io.IOException("Failed to load native library for PC save conversion")
+                }
+                nativeExportPcSaveFileWithAin(src.absolutePath, dst.absolutePath, ain)
+            }
+        )
     }
 }

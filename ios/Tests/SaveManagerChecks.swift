@@ -164,7 +164,72 @@ struct SaveManagerChecks {
         check(try manager.list().isEmpty && read(".secret") == "secret")
         let broken = SaveManager(game: "失败", documents: documents, support: support) { _, _ in throw SaveManager.Failure.conversion }
         try text("x.asd", "x", under: broken.directory)
-        rejects { _ = try broken.export(to: root.appendingPathComponent("failed.zip"), pc: true, zip: true) }
+        do {
+            _ = try broken.export(to: root.appendingPathComponent("failed.zip"), pc: true, zip: true)
+            preconditionFailure("Expected rejection")
+        } catch let error as SaveManager.Failure {
+            if case .conversionFile(let name) = error { check(name == "x.asd") }
+            else { preconditionFailure("Expected conversionFile error") }
+        }
+
+        // PC export compat checks: .comment skipped, non-X4SS repair counted, XPE reported, unconverted X4SS rejected, AIN resolution
+        var pcCalls: [String] = []
+        let pcCompat = SaveManager(
+            game: "pc-compat",
+            documents: documents,
+            support: support,
+            hasXSystem4OnlyState: { $0.lastPathComponent == "00.asd" }
+        ) { source, target in
+            pcCalls.append(source.lastPathComponent)
+            let data = try Data(contentsOf: source)
+            if source.lastPathComponent == "01.asd" {
+                try (data + Data("-folded-comment".utf8)).write(to: target)
+            } else {
+                try data.write(to: target)
+            }
+        }
+        try text("00.asd", "resume-xpe", under: pcCompat.directory)
+        try text("01.asd", "gsave-v8", under: pcCompat.directory)
+        try text("01.asd.comment", "sidecar", under: pcCompat.directory)
+        try text("old.asd.bak", "bak", under: pcCompat.directory)
+        try text("GlobalSave.asd.mod.absent", "", under: pcCompat.directory)
+        let compatZip = root.appendingPathComponent("pc-compat.zip")
+        let summary = try pcCompat.exportWithReport(to: compatZip, pc: true, zip: true)
+        check(summary == SaveManager.ExportSummary(exported: 2, converted: 1, xsystem4OnlyFiles: ["00.asd"]))
+        check(pcCalls.sorted() == ["00.asd", "01.asd"])
+        let compatEntries = try SaveZip.read(compatZip)
+        check(compatEntries.map(\.name).sorted() == ["SaveData/00.asd", "SaveData/01.asd"])
+        check(compatEntries.first { $0.name == "SaveData/01.asd" }!.data == Data("gsave-v8-folded-comment".utf8))
+        let rawCompatZip = root.appendingPathComponent("raw-compat.zip")
+        let rawSummary = try pcCompat.exportWithReport(to: rawCompatZip, pc: false, zip: true)
+        check(rawSummary.exported == 5 && rawSummary.converted == 0 && rawSummary.xsystem4OnlyFiles.isEmpty)
+
+        let passthroughX4ss = SaveManager(game: "x4ss-fail", documents: documents, support: support) { source, target in
+            try files.copyItem(at: source, to: target)
+        }
+        try write("bad.asd", SaveManager.magic + Data([9, 9]), under: passthroughX4ss.directory)
+        rejects { _ = try passthroughX4ss.exportWithReport(to: root.appendingPathComponent("bad-x4ss.zip"), pc: true, zip: true) }
+
+        let ainGameDir = root.appendingPathComponent("DohnaGame")
+        try files.createDirectory(at: ainGameDir, withIntermediateDirectories: true)
+        let dohnaAin = ainGameDir.appendingPathComponent("dohnadohna.ain")
+        try Data().write(to: dohnaAin)
+        try Data("CodeName = \"dohnadohna.ain\"\nSaveFolder = \"SaveData\"\n".utf8).write(to: ainGameDir.appendingPathComponent("System40.ini"))
+        let resolvedDohna = SaveManager.resolveAinPath(in: ainGameDir)
+        check(resolvedDohna.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == dohnaAin.resolvingSymlinksInPath().path)
+        let sys39Dir = root.appendingPathComponent("Sys39Game")
+        try files.createDirectory(at: sys39Dir, withIntermediateDirectories: true)
+        try Data().write(to: sys39Dir.appendingPathComponent("System39.ain"))
+        check(SaveManager.resolveAinPath(in: sys39Dir) == nil)
+
+        let mojibakeDir = root.appendingPathComponent("MojibakeGame")
+        try files.createDirectory(at: mojibakeDir, withIntermediateDirectories: true)
+        try Data().write(to: mojibakeDir.appendingPathComponent("00_fallback.ain"))
+        let mojibakeAin = mojibakeDir.appendingPathComponent("儔儞僗丒僋僄僗僩.ain")
+        try Data().write(to: mojibakeAin)
+        try Data("CodeName = \"ランス・クエスト.ain\"\n".utf8).write(to: mojibakeDir.appendingPathComponent("System40.ini"))
+        let resolvedMojibake = SaveManager.resolveAinPath(in: mojibakeDir)
+        check(resolvedMojibake.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == mojibakeAin.resolvingSymlinksInPath().path)
 
         let global = GlobalSaveEditor(directory: manager.directory)
         let template = URL(fileURLWithPath: CommandLine.arguments[2])

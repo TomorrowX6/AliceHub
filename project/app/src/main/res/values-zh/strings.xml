@@ -105,6 +105,9 @@
     <string name="save_export_zip_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_dir_done_msg">已导出 %1$d 个存档文件</string>
     <string name="save_export_pc_converted_done_msg">已导出 %1$d 个 PC 兼容存档文件，其中 %2$d 个已自动转换</string>
+    <string name="save_export_pc_done_msg">已导出 %1$d 个 PC 兼容存档文件</string>
+    <string name="save_export_pc_xsystem4_only_notice">提示：常规槽位存档和全局存档已兼容 PC，但其中 %1$d 个中途恢复快照文件（%2$s）包含仅 xsystem4 支持的界面状态，无法在 Windows PC 版读取。</string>
+    <string name="save_export_single_xsystem4_only_notice">已导出 %1$s。\n\n提示：该文件是包含 xsystem4 专用界面状态的中途恢复快照，无法在 Windows PC 版读取。转移到 PC 请使用常规存档位或全局存档。</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">导出文件</string>

@@ -5,6 +5,8 @@ _input_set_virtual_button
 _input_set_virtual_dpad
 _input_set_virtual_stick
 _savedata_export_pc_file
+_savedata_export_pc_file_with_ain
+_savedata_file_has_xsystem4_only_state
 _input_set_long_press_ctrl
 _alicehub_ios_begin_game
 _alicehub_ios_finish_audio_shutdown

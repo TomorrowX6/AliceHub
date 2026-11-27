@@ -106,6 +106,9 @@
     <string name="save_export_zip_done_msg">Exported %1$d save files</string>
     <string name="save_export_dir_done_msg">Exported %1$d save files</string>
     <string name="save_export_pc_converted_done_msg">Exported %1$d PC-compatible save files, %2$d converted</string>
+    <string name="save_export_pc_done_msg">Exported %1$d PC-compatible save files</string>
+    <string name="save_export_pc_xsystem4_only_notice">Note: Regular slot and global saves are PC-compatible, but %1$d mid-scene resume snapshot file(s) (%2$s) contain xsystem4-only UI state and cannot be loaded on Windows PC.</string>
+    <string name="save_export_single_xsystem4_only_notice">Exported %1$s.\n\nNote: This mid-scene resume snapshot contains xsystem4-only UI state and cannot be loaded on Windows PC. Use regular in-game save slots or global saves for PC transfer.</string>
 
     <string name="save_file_dialog_title">%1$s · %2$s</string>
     <string name="save_file_opt_export">Export File</string>

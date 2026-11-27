@@ -433,14 +433,109 @@ class SaveManagerActivity : ThemedActivity() {
             return uri.lastPathSegment
         }
 
+        internal data class ExportResult(
+            val exported: Int,
+            val converted: Int,
+            val xsystem4OnlyFiles: List<String> = emptyList()
+        )
+
+        @JvmStatic
+        fun isExcludedFromPcExport(fileName: String): Boolean {
+            val lower = fileName.lowercase(Locale.ROOT)
+            return lower.endsWith(".bak") ||
+                lower.endsWith(".log") ||
+                lower.endsWith(".comment") ||
+                lower.endsWith(".mod.absent")
+        }
+
+        @JvmStatic
+        fun filterEntriesForExport(
+            entries: List<SaveFileEntry>,
+            asPc: Boolean
+        ): List<SaveFileEntry> {
+            if (!asPc) return entries.toList()
+            return entries.filter { entry -> !isExcludedFromPcExport(entry.file.name) }
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun resolveAinFile(
+            gameDir: File?,
+            launchTarget: File? = null,
+            isDsrTarget: Boolean = false
+        ): File? {
+            if (gameDir == null || !gameDir.isDirectory || GameCatalog.isSystem3xGameDir(gameDir)) {
+                return null
+            }
+            if (isDsrTarget) {
+                System4BootEntry.bootConfigurations(gameDir)
+                    .firstOrNull { System4BootEntry.iniUsesDaiSengokuSaveFolder(it.ini) == true }
+                    ?.script
+                    ?.takeIf { it.isFile }
+                    ?.let { return it }
+            }
+            val effectiveTarget = launchTarget ?: System4BootEntry.resolveDefaultLaunchTarget(gameDir)
+            val targetUsesDsr = !isDsrTarget && System4BootEntry.usesDaiSengokuSaveFolder(gameDir, effectiveTarget)
+            if (!targetUsesDsr) {
+                val targetLower = effectiveTarget.name.lowercase(Locale.ROOT)
+                if (effectiveTarget.isFile &&
+                    ((targetLower.endsWith(".ain") && targetLower != "system39.ain") ||
+                        (targetLower.endsWith(".chs") && targetLower != "alicestart.chs"))
+                ) {
+                    return effectiveTarget
+                }
+                val iniFile = System4BootEntry.resolveIniForSaveFolder(gameDir, effectiveTarget)
+                if (iniFile != null && iniFile.isFile && iniFile.length() <= 256L * 1024L) {
+                    val raw = runCatching { iniFile.readBytes() }.getOrNull()
+                    if (raw != null) {
+                        for (code in System4BootEntry.extractCodeNames(raw)) {
+                            val script = System4BootEntry.resolveConfiguredScript(code, gameDir)
+                            if (script != null && script.isFile) return script
+                        }
+                    }
+                }
+            } else {
+                System4BootEntry.bootConfigurations(gameDir)
+                    .firstOrNull { System4BootEntry.iniUsesDaiSengokuSaveFolder(it.ini) != true }
+                    ?.script
+                    ?.takeIf { it.isFile }
+                    ?.let { return it }
+                gameDir.listFiles()
+                    ?.firstOrNull { it.isFile && it.name.equals("AliceCN.ain", ignoreCase = true) }
+                    ?.let { return it }
+            }
+            System4BootEntry.bootConfigurations(gameDir)
+                .firstOrNull { isDsrTarget || System4BootEntry.iniUsesDaiSengokuSaveFolder(it.ini) != true }
+                ?.script
+                ?.takeIf { it.isFile }
+                ?.let { return it }
+            val regularFiles = gameDir.listFiles()?.filter { it.isFile && !it.name.startsWith(".") }.orEmpty()
+            return regularFiles
+                .filter {
+                    val lower = it.name.lowercase(Locale.ROOT)
+                    lower.endsWith(".ain") && lower != "system39.ain"
+                }
+                .sortedBy { it.name }
+                .firstOrNull()
+        }
+
+        @JvmStatic
+        fun resolveAinFileForTarget(appCtx: Context, target: SaveTarget): File? {
+            val gameDir = target.externalGameDir ?: return null
+            val isDsrTarget = target.dirName.endsWith(Item.DAISENGOKU_SAVE_DIR_SUFFIX)
+            val launchTarget = if (isDsrTarget) null else System4BootEntry.resolveLaunchTarget(appCtx, gameDir)
+            return resolveAinFile(gameDir, launchTarget, isDsrTarget)
+        }
+
         private fun copyExportFileStatic(
             context: Context,
             srcFile: File,
             outStream: java.io.OutputStream,
-            asPc: Boolean
+            asPc: Boolean,
+            ainPath: String? = null
         ): Boolean {
             if (asPc) {
-                return GameModifierBridge.copySaveFileForPc(srcFile, outStream, context.cacheDir)
+                return GameModifierBridge.copySaveFileForPc(srcFile, outStream, context.cacheDir, ainPath)
             }
             srcFile.inputStream().buffered().use { input ->
                 input.copyTo(outStream)
@@ -468,18 +563,30 @@ class SaveManagerActivity : ThemedActivity() {
             return DocumentsContract.getDocumentId(createdUri)
         }
 
-        private fun formatExportDoneMessageForContext(
+        @JvmStatic
+        @JvmName("formatExportDoneMessage")
+        internal fun formatExportDoneMessageForContext(
             context: Context,
-            exported: Int,
-            converted: Int,
+            result: ExportResult,
             asPc: Boolean,
             defaultMsgResId: Int
         ): String {
-            return if (asPc && converted > 0) {
-                context.getString(R.string.save_export_pc_converted_done_msg, exported, converted)
+            val base = if (asPc && result.converted > 0) {
+                context.getString(R.string.save_export_pc_converted_done_msg, result.exported, result.converted)
+            } else if (asPc) {
+                context.getString(R.string.save_export_pc_done_msg, result.exported)
             } else {
-                context.getString(defaultMsgResId, exported)
+                context.getString(defaultMsgResId, result.exported)
             }
+            if (!asPc || result.xsystem4OnlyFiles.isEmpty()) return base
+            val names = result.xsystem4OnlyFiles.take(5).joinToString(", ") +
+                if (result.xsystem4OnlyFiles.size > 5) "…" else ""
+            val notice = context.getString(
+                R.string.save_export_pc_xsystem4_only_notice,
+                result.xsystem4OnlyFiles.size,
+                names
+            )
+            return "$base\n\n$notice"
         }
 
         private fun startRestoreBackupOp(
@@ -663,18 +770,47 @@ class SaveManagerActivity : ThemedActivity() {
         private fun startExportZipOp(
             appCtx: Context,
             uri: Uri,
+            target: SaveTarget,
             entriesToExport: List<SaveFileEntry>,
             asPc: Boolean
         ): Job = launchSaveOp {
             try {
-                val (count, converted) = withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     requireSafeExportDestination(appCtx, uri)
-                    val outStream = appCtx.contentResolver.openOutputStream(uri)
-                        ?: throw IOException("Failed to create target ZIP file")
-                    ZipOutputStream(outStream.buffered()).use { zos ->
-                        SaveZipLayout.write(zos, entriesToExport) { file, output ->
-                            copyExportFileStatic(appCtx, file, output, asPc)
+                    val ainPath = if (asPc) resolveAinFileForTarget(appCtx, target)?.absolutePath else null
+                    val wrapperDir = if (asPc) {
+                        saveImportPathsForTarget(appCtx, target).pcSaveFolderName ?: SaveZipLayout.defaultWrapper
+                    } else {
+                        SaveZipLayout.defaultWrapper
+                    }
+                    val relPathByFile = entriesToExport.associate { it.file to it.relativePath }
+                    val xsystem4OnlyFiles = mutableListOf<String>()
+                    appCtx.cacheDir.mkdirs()
+                    val tmpZip = File.createTempFile("save_export_", ".zip", appCtx.cacheDir)
+                    try {
+                        val (count, converted) = ZipOutputStream(tmpZip.outputStream().buffered()).use { zos ->
+                            SaveZipLayout.write(
+                                zos,
+                                entriesToExport,
+                                includeMarker = !asPc,
+                                wrapperDir = wrapperDir
+                            ) { file, output ->
+                                if (asPc && GameModifierBridge.hasXSystem4OnlyState(file)) {
+                                    xsystem4OnlyFiles.add(relPathByFile[file] ?: file.name)
+                                }
+                                copyExportFileStatic(appCtx, file, output, asPc, ainPath)
+                            }
                         }
+                        val outStream = appCtx.contentResolver.openOutputStream(uri)
+                            ?: throw IOException("Failed to create target ZIP file")
+                        outStream.buffered().use { out ->
+                            tmpZip.inputStream().buffered().use { input ->
+                                input.copyTo(out)
+                            }
+                        }
+                        ExportResult(count, converted, xsystem4OnlyFiles)
+                    } finally {
+                        tmpZip.delete()
                     }
                 }
                 onHost { it.dismissProgress() }
@@ -683,8 +819,7 @@ class SaveManagerActivity : ThemedActivity() {
                     appCtx.getString(R.string.save_export_done_title),
                     formatExportDoneMessageForContext(
                         appCtx,
-                        count,
-                        converted,
+                        result,
                         asPc,
                         R.string.save_export_zip_done_msg
                     )
@@ -703,51 +838,95 @@ class SaveManagerActivity : ThemedActivity() {
         private fun startExportDirectoryOp(
             appCtx: Context,
             treeUri: Uri,
+            target: SaveTarget,
             entriesToExport: List<SaveFileEntry>,
             asPc: Boolean
         ): Job = launchSaveOp {
             try {
-                val (count, converted) = withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     requireSafeExportDestination(appCtx, treeUri, tree = true)
+                    val ainPath = if (asPc) resolveAinFileForTarget(appCtx, target)?.absolutePath else null
+                    val pcFolderName = if (asPc) saveImportPathsForTarget(appCtx, target).pcSaveFolderName else null
                     val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                    val baseDocId = if (asPc && pcFolderName != null) {
+                        val pickedName = runCatching {
+                            queryDisplayNameStatic(
+                                appCtx,
+                                DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+                            )
+                        }.getOrNull()?.substringAfterLast('/')?.substringAfterLast(':')
+                        if (pickedName != null && pickedName.equals(pcFolderName, ignoreCase = true)) {
+                            rootDocId
+                        } else {
+                            requireSafeExportDestination(
+                                appCtx,
+                                DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+                            )
+                            getOrCreateSubdirStatic(appCtx, treeUri, rootDocId, pcFolderName)
+                        }
+                    } else {
+                        rootDocId
+                    }
                     var exported = 0
                     var convCount = 0
+                    val xsystem4OnlyFiles = mutableListOf<String>()
                     for (entry in entriesToExport) {
                         if (!entry.file.exists()) continue
                         val parts = entry.relativePath.split('/').filter { it.isNotEmpty() }
                         if (parts.isEmpty()) continue
-                        var parentDocId = rootDocId
-                        for (i in 0 until parts.size - 1) {
-                            requireSafeExportDestination(appCtx, DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId))
-                            parentDocId = getOrCreateSubdirStatic(appCtx, treeUri, parentDocId, parts[i])
+                        val staged = if (asPc) {
+                            GameModifierBridge.stageSaveFileForPc(entry.file, appCtx.cacheDir, ainPath)
+                        } else {
+                            null
                         }
-                        val fileName = parts.last()
-                        val existing = listDocumentChildrenFor(appCtx, treeUri, parentDocId)
-                            .firstOrNull { !it.isDirectory && it.name == fileName }
-                        if (existing != null) {
-                            val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
-                            requireSafeExportDestination(appCtx, existingUri)
-                            try {
-                                DocumentsContract.deleteDocument(appCtx.contentResolver, existingUri)
-                            } catch (_: Exception) {
+                        try {
+                            var parentDocId = baseDocId
+                            for (i in 0 until parts.size - 1) {
+                                requireSafeExportDestination(appCtx, DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId))
+                                parentDocId = getOrCreateSubdirStatic(appCtx, treeUri, parentDocId, parts[i])
                             }
-                        }
-                        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
-                        requireSafeExportDestination(appCtx, parentUri)
-                        val newDocUri = DocumentsContract.createDocument(
-                            appCtx.contentResolver,
-                            parentUri,
-                            "application/octet-stream",
-                            fileName
-                        ) ?: throw IOException("Failed to create file: $fileName")
-                        appCtx.contentResolver.openOutputStream(newDocUri)?.use { out ->
-                            if (copyExportFileStatic(appCtx, entry.file, out, asPc)) {
+                            val fileName = parts.last()
+                            val existing = listDocumentChildrenFor(appCtx, treeUri, parentDocId)
+                                .firstOrNull { !it.isDirectory && it.name == fileName }
+                            if (existing != null) {
+                                val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.documentId)
+                                requireSafeExportDestination(appCtx, existingUri)
+                                try {
+                                    DocumentsContract.deleteDocument(appCtx.contentResolver, existingUri)
+                                } catch (_: Exception) {
+                                }
+                            }
+                            val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+                            requireSafeExportDestination(appCtx, parentUri)
+                            val newDocUri = DocumentsContract.createDocument(
+                                appCtx.contentResolver,
+                                parentUri,
+                                "application/octet-stream",
+                                fileName
+                            ) ?: throw IOException("Failed to create file: $fileName")
+                            if (asPc && GameModifierBridge.hasXSystem4OnlyState(entry.file)) {
+                                xsystem4OnlyFiles.add(entry.relativePath)
+                            }
+                            val sourceFile = staged?.first ?: entry.file
+                            try {
+                                appCtx.contentResolver.openOutputStream(newDocUri)?.use { out ->
+                                    sourceFile.inputStream().buffered().use { input ->
+                                        input.copyTo(out)
+                                    }
+                                } ?: throw IOException("Failed to write file: $fileName")
+                            } catch (e: Exception) {
+                                runCatching { DocumentsContract.deleteDocument(appCtx.contentResolver, newDocUri) }
+                                throw e
+                            }
+                            if (staged?.second == true) {
                                 convCount++
                             }
-                        } ?: throw IOException("Failed to write file: $fileName")
-                        exported++
+                            exported++
+                        } finally {
+                            staged?.first?.delete()
+                        }
                     }
-                    if (exported > 0 && listDocumentChildrenFor(appCtx, treeUri, rootDocId).none {
+                    if (!asPc && exported > 0 && listDocumentChildrenFor(appCtx, treeUri, rootDocId).none {
                             !it.isDirectory && it.name == SAVE_FOLDER_LAYOUT_MARKER
                         }) {
                         val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
@@ -755,7 +934,7 @@ class SaveManagerActivity : ThemedActivity() {
                             appCtx.contentResolver, rootUri, "application/octet-stream", SAVE_FOLDER_LAYOUT_MARKER
                         ) ?: throw IOException("Failed to mark exported save directory")
                     }
-                    exported to convCount
+                    ExportResult(exported, convCount, xsystem4OnlyFiles)
                 }
                 onHost { it.dismissProgress() }
                 hostMessage(
@@ -763,8 +942,7 @@ class SaveManagerActivity : ThemedActivity() {
                     appCtx.getString(R.string.save_export_done_title),
                     formatExportDoneMessageForContext(
                         appCtx,
-                        count,
-                        converted,
+                        result,
                         asPc,
                         R.string.save_export_dir_done_msg
                     )
@@ -782,23 +960,47 @@ class SaveManagerActivity : ThemedActivity() {
 
         private fun startExportSingleFileOp(
             appCtx: Context,
+            target: SaveTarget,
             srcFile: File,
             destUri: Uri,
             asPc: Boolean
         ): Job = launchSaveOp {
             try {
-                withContext(Dispatchers.IO) {
+                val hasXSystem4OnlyState = withContext(Dispatchers.IO) {
                     requireSafeExportDestination(appCtx, destUri)
-                    appCtx.contentResolver.openOutputStream(destUri)?.use { out ->
-                        copyExportFileStatic(appCtx, srcFile, out, asPc)
-                    } ?: throw IOException("Failed to write target file")
+                    val ainPath = if (asPc) resolveAinFileForTarget(appCtx, target)?.absolutePath else null
+                    val xsystem4Only = asPc && GameModifierBridge.hasXSystem4OnlyState(srcFile)
+                    val staged = if (asPc) {
+                        GameModifierBridge.stageSaveFileForPc(srcFile, appCtx.cacheDir, ainPath)
+                    } else {
+                        null
+                    }
+                    try {
+                        val sourceFile = staged?.first ?: srcFile
+                        appCtx.contentResolver.openOutputStream(destUri)?.use { out ->
+                            sourceFile.inputStream().buffered().use { input ->
+                                input.copyTo(out)
+                            }
+                        } ?: throw IOException("Failed to write target file")
+                    } finally {
+                        staged?.first?.delete()
+                    }
+                    xsystem4Only
                 }
                 onHost { it.dismissProgress() }
-                Toast.makeText(
-                    appCtx,
-                    appCtx.getString(R.string.save_file_exported_toast, srcFile.name),
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (hasXSystem4OnlyState) {
+                    hostMessage(
+                        appCtx,
+                        appCtx.getString(R.string.save_export_done_title),
+                        appCtx.getString(R.string.save_export_single_xsystem4_only_notice, srcFile.name)
+                    )
+                } else {
+                    Toast.makeText(
+                        appCtx,
+                        appCtx.getString(R.string.save_file_exported_toast, srcFile.name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             } catch (e: Exception) {
                 onHost { it.dismissProgress() }
                 hostMessage(
@@ -1267,13 +1469,8 @@ class SaveManagerActivity : ThemedActivity() {
         activeJob = startRestoreBackupOp(appCtx, backup, target.saveDir, target.dirName)
     }
 
-    private fun entriesForExport(asPc: Boolean): List<SaveFileEntry> {
-        if (!asPc) return currentEntries.toList()
-        return currentEntries.filter { entry ->
-            val lower = entry.file.name.lowercase(Locale.ROOT)
-            !lower.endsWith(".bak") && !lower.endsWith(".log")
-        }
-    }
+    private fun entriesForExport(asPc: Boolean): List<SaveFileEntry> =
+        filterEntriesForExport(currentEntries, asPc)
 
     private fun showExportDialog() {
         if (activeJob?.isActive == true) return
@@ -1428,7 +1625,7 @@ class SaveManagerActivity : ThemedActivity() {
         val entriesToExport = entriesForExport(asPc)
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_zip))
-        activeJob = startExportZipOp(appCtx, uri, entriesToExport, asPc)
+        activeJob = startExportZipOp(appCtx, uri, currentTarget, entriesToExport, asPc)
     }
 
     private fun runExportDirectory(treeUri: Uri, asPc: Boolean) {
@@ -1436,7 +1633,7 @@ class SaveManagerActivity : ThemedActivity() {
         val entriesToExport = entriesForExport(asPc)
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_dir))
-        activeJob = startExportDirectoryOp(appCtx, treeUri, entriesToExport, asPc)
+        activeJob = startExportDirectoryOp(appCtx, treeUri, currentTarget, entriesToExport, asPc)
     }
 
     private fun showSingleFileManageDialog(entry: SaveFileEntry) {
@@ -1469,7 +1666,12 @@ class SaveManagerActivity : ThemedActivity() {
         items.add(getString(R.string.save_file_opt_export) to {
             startSingleFileExport(entry.file, mimeType = "application/octet-stream", asPc = false)
         })
-        if (GameModifierBridge.isX4ssSaveFile(entry.file)) {
+        val lowerName = entry.file.name.lowercase(Locale.ROOT)
+        val canExportPc = GameModifierBridge.isX4ssSaveFile(entry.file) ||
+            (!isExcludedFromPcExport(entry.file.name) &&
+                !lowerName.endsWith(".qnt") &&
+                !lowerName.endsWith(".png"))
+        if (canExportPc) {
             items.add(getString(R.string.save_file_opt_export_pc) to {
                 startSingleFileExport(entry.file, mimeType = "application/octet-stream", asPc = true)
             })
@@ -1511,7 +1713,7 @@ class SaveManagerActivity : ThemedActivity() {
         if (activeJob?.isActive == true) return
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
         showProgress(getString(R.string.save_progress_export_file))
-        activeJob = startExportSingleFileOp(appCtx, srcFile, destUri, asPc)
+        activeJob = startExportSingleFileOp(appCtx, currentTarget, srcFile, destUri, asPc)
     }
 
     private fun isValidUserSaveFileName(name: String): Boolean {
