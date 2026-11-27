@@ -1469,14 +1469,7 @@ static bool gbk_display_pair_bounded(const uint8_t *s, const uint8_t *end)
 struct cjk_dialog_run_stats {
 	size_t common;
 	size_t extended;
-	size_t hira_count;
-	size_t kanji_count;
-	size_t max_hira;
-	size_t max_kata_run;
-	size_t kata_count;
 	bool has_sjis_only;
-	bool has_prolonged;
-	bool all_kata_or_prolonged;
 	bool all_sjis_punct;
 };
 
@@ -1484,67 +1477,68 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 		struct cjk_dialog_run_stats *st)
 {
 	memset(st, 0, sizeof(*st));
-	st->all_kata_or_prolonged = (run < end);
 	st->all_sjis_punct = (run < end);
-	size_t cur_hira = 0, cur_kata = 0;
 	for (const uint8_t *p = run; p < end; p += 2) {
-		int u = sjis_display_pair(p);
 		if (!gbk_lookup(p[0], p[1]))
 			st->has_sjis_only = true;
 		if (p[0] >= 0xa1 && p[0] <= 0xf7 && p[1] >= 0xa1)
 			st->common++;
 		else
 			st->extended++;
-
-		bool is_hira = (u >= 0x3041 && u <= 0x3096);
-		bool is_kata = (u >= 0x30a1 && u <= 0x30fa);
-		bool is_prolonged = (u == 0x30fc);
-		if (u >= 0x4e00 && u <= 0x9fff)
-			st->kanji_count++;
-		if (is_hira) {
-			st->hira_count++;
-			cur_hira++;
-			if (cur_hira > st->max_hira)
-				st->max_hira = cur_hira;
-		} else {
-			cur_hira = 0;
-		}
-		if (is_kata || is_prolonged) {
-			cur_kata++;
-			if (cur_kata > st->max_kata_run)
-				st->max_kata_run = cur_kata;
-			if (is_kata)
-				st->kata_count++;
-			if (is_prolonged)
-				st->has_prolonged = true;
-		} else {
-			cur_kata = 0;
-			st->all_kata_or_prolonged = false;
-		}
 		if (p[0] != 0x81)
 			st->all_sjis_punct = false;
 	}
 }
 
-static bool cjk_dialog_run_is_strong_sjis(const struct cjk_dialog_run_stats *st)
+/* Recognized CP932 System 4 dialog keywords and sentence endings.
+ * Matched strictly on 2-byte pair boundaries inside valid Shift-JIS runs so
+ * arbitrary dual-valid GBK text (e.g. 傑傑傑傑, 偽鈔偵測機) is never overridden. */
+static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *end)
+{
+	static const struct {
+		const uint8_t bytes[10];
+		uint8_t len;
+	} phrases[] = {
+		{ { 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75 }, 6 },                         // セーブ
+		{ { 0x83, 0x8d, 0x81, 0x5b, 0x83, 0x68 }, 6 },                         // ロード
+		{ { 0x83, 0x66, 0x81, 0x5b, 0x83, 0x5e }, 6 },                         // データ
+		{ { 0x83, 0x47, 0x83, 0x89, 0x81, 0x5b }, 6 },                         // エラー
+		{ { 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b }, 8 },             // ファイル
+		{ { 0x83, 0x56, 0x83, 0x58, 0x83, 0x65, 0x83, 0x80 }, 8 },             // システム
+		{ { 0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b }, 8 },             // タイトル
+		{ { 0x83, 0x81, 0x83, 0x62, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x57 }, 10 },// メッセージ
+		{ { 0x83, 0x81, 0x83, 0x82, 0x83, 0x8a }, 6 },                         // メモリ
+		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // しました
+		{ { 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ますか？
+		{ { 0x82, 0xc5, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ですか？
+		{ { 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48 }, 6 },                         // する？
+		{ { 0x82, 0xdc, 0x82, 0xb9, 0x82, 0xf1 }, 6 },                         // ません
+		{ { 0x82, 0xc4, 0x82, 0xa2, 0x82, 0xdc, 0x82, 0xb7 }, 8 },             // ています
+		{ { 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73 }, 6 },                         // に失敗
+		{ { 0x82, 0xad, 0x82, 0xbe, 0x82, 0xb3, 0x82, 0xa2 }, 8 },             // ください
+		{ { 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42 }, 8 },             // ました。
+	};
+	size_t run_len = (size_t)(end - run);
+	for (size_t i = 0; i < sizeof(phrases) / sizeof(phrases[0]); i++) {
+		size_t plen = phrases[i].len;
+		if (plen > run_len)
+			continue;
+		for (const uint8_t *p = run; p + plen <= end; p += 2) {
+			if (!memcmp(p, phrases[i].bytes, plen))
+				return true;
+		}
+	}
+	return false;
+}
+
+static bool cjk_dialog_run_is_strong_sjis(const uint8_t *run, const uint8_t *end,
+		const struct cjk_dialog_run_stats *st)
 {
 	if (st->has_sjis_only)
 		return true;
 	if (st->common && st->extended / 3 < st->common)
 		return false;
-	return st->max_hira >= 4
-		|| (st->max_kata_run >= 4 && st->kata_count >= 3)
-		|| (st->all_kata_or_prolonged && st->kata_count >= 2 && st->has_prolonged);
-}
-
-static bool cjk_dialog_run_is_contextual_sjis(const struct cjk_dialog_run_stats *st)
-{
-	if (cjk_dialog_run_is_strong_sjis(st))
-		return true;
-	if (st->common && st->extended / 3 < st->common)
-		return false;
-	return st->all_sjis_punct
-		|| (!st->common && st->extended >= 5 && st->hira_count >= 2 && st->kanji_count >= 2);
+	return cjk_dialog_run_has_sjis_phrase(run, end);
 }
 
 static bool cjk_dialog_has_sjis_evidence(const uint8_t *src, const uint8_t *end)
@@ -1576,7 +1570,7 @@ static bool cjk_dialog_has_sjis_evidence(const uint8_t *src, const uint8_t *end)
 			}
 			struct cjk_dialog_run_stats st;
 			cjk_dialog_scan_sjis_run(run, s, &st);
-			if (st.has_sjis_only || (!token_has_gbk_text && cjk_dialog_run_is_strong_sjis(&st)))
+			if (st.has_sjis_only || (!token_has_gbk_text && cjk_dialog_run_is_strong_sjis(run, s, &st)))
 				return true;
 		}
 	}
@@ -1640,7 +1634,8 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 			struct cjk_dialog_run_stats st;
 			cjk_dialog_scan_sjis_run(run, s, &st);
 			bool decode_as_sjis = st.has_sjis_only
-				|| (!token_has_gbk_text && cjk_dialog_run_is_contextual_sjis(&st));
+				|| (!token_has_gbk_text
+					&& (cjk_dialog_run_is_strong_sjis(run, s, &st) || st.all_sjis_punct));
 			for (const uint8_t *p = run; p < s; p += 2) {
 				int code = decode_as_sjis ? sjis_display_pair(p) : gbk_lookup(p[0], p[1]);
 				encode_utf8_bmp(code ? code : 0xfffd, &dstp);

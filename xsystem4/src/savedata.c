@@ -91,15 +91,12 @@ static char *make_atomic_tmp_path(const char *path)
 	size_t dir_len = slash ? (size_t)(slash - path + 1) : 0;
 	const char *base = slash ? slash + 1 : path;
 	size_t base_len = strlen(base);
-	bool add_dot = (base[0] != '.');
-	char *tmp = xmalloc(dir_len + (add_dot ? 1 : 0) + base_len + 4 + 1);
+	char *tmp = xmalloc(dir_len + 1 + base_len + 4 + 1);
 	if (dir_len)
 		memcpy(tmp, path, dir_len);
-	size_t pos = dir_len;
-	if (add_dot)
-		tmp[pos++] = '.';
-	memcpy(tmp + pos, base, base_len);
-	memcpy(tmp + pos + base_len, ".tmp", 5);
+	tmp[dir_len] = '.';
+	memcpy(tmp + dir_len + 1, base, base_len);
+	memcpy(tmp + dir_len + 1 + base_len, ".tmp", 5);
 	return tmp;
 }
 

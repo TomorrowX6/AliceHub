@@ -511,6 +511,20 @@ int main(void)
     snprintf(bak, sizeof(bak), "%s.bak", mapped);
     assert(!file_exists(bak));
 
+    // Saving <memory>foo.asd must NOT collide with a distinct <memory>foo.asd.tmp snapshot
+    // via make_atomic_tmp_path() (atomic temp uses "..alicehub-mem.*.tmp").
+    const char *mem_tmp_name = "<memory>MemoryMode_EscalayerReboot_.asd.tmp";
+    heap[0].page->values[0].i = 9999;
+    assert(save_globals("ESCA_KEY", mem_tmp_name, "MEM_GRP", &n) == 1);
+    heap[0].page->values[0].i = 4242;
+    assert(save_globals("ESCA_KEY", mem_name, "MEM_GRP", &n) == 1);
+    assert(savedir_file_exists(mem_tmp_name));
+    assert(savedir_file_exists(mem_name));
+    heap[0].page->values[0].i = 0;
+    assert(load_globals("ESCA_KEY", mem_tmp_name, "MEM_GRP", &n) == 1);
+    assert(heap[0].page->values[0].i == 9999);
+    assert(delete_save_file(mem_tmp_name) == 1);
+
     // Mutate in-memory global, reload from <memory>, confirm value restored.
     heap[0].page->values[0].i = 0;
     n = 0;
@@ -601,6 +615,13 @@ int main(void)
     check_decode("quit_cp932", quit_cp932, sizeof(quit_cp932) - 1,
         "\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
 
+    const uint8_t quit_plain_cp932[] = {
+        // 本当に終了する？ (standalone plain-form CP932 confirmation without 4-kana run)
+        0x96, 0x7b, 0x93, 0x96, 0x82, 0xc9, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48, 0x00
+    };
+    check_decode("quit_plain_cp932", quit_plain_cp932, sizeof(quit_plain_cp932) - 1,
+        "\xe6\x9c\xac\xe5\xbd\x93\xe3\x81\xab\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x99\xe3\x82\x8b\xef\xbc\x9f");
+
     const uint8_t non_gbk_cp932[] = {
         // セーブ㈱に失敗しました
         0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x87, 0x8a,
@@ -632,6 +653,13 @@ int main(void)
     };
     check_decode("gbk_dual_valid_jiejie", gbk_jiejie, sizeof(gbk_jiejie) - 1,
         "\xe5\x82\x91\xe5\x82\x91");
+
+    const uint8_t gbk_jiejie4[] = {
+        // 傑傑傑傑 (82 dc x4 -> must NOT be misdecoded as まままま)
+        0x82, 0xdc, 0x82, 0xdc, 0x82, 0xdc, 0x82, 0xdc, 0x00
+    };
+    check_decode("gbk_dual_valid_jiejie4", gbk_jiejie4, sizeof(gbk_jiejie4) - 1,
+        "\xe5\x82\x91\xe5\x82\x91\xe5\x82\x91\xe5\x82\x91");
 
     const uint8_t gbk_jieyi_save[] = {
         // 傑儀, 存档 (82 dc 83 78 2c 20 b4 e6 b5 b5 -> must NOT become まベ, 存档)
