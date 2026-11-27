@@ -100,6 +100,9 @@ void gfx_set_clear_color(int r, int g, int b, int a);
 void gfx_set_view_offset(int x, int y);
 void gfx_clear(void);
 void gfx_swap(void);
+void gfx_mark_frame_presented(void);
+void gfx_clear_frame_presented(void);
+bool gfx_consume_frame_presented(void);
 typedef void (*gfx_reset_callback)(void *user);
 void gfx_register_reset_callback(gfx_reset_callback cb, void *user);
 void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user);
@@ -204,6 +207,7 @@ void gfx_copy_width_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int
 void gfx_copy_height_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur);
 void gfx_copy_amap_width_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur);
 void gfx_copy_amap_height_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur);
+void gfx_blur_rgb_to_fresh(Texture *dst, Texture *src, int blur, bool vertical);
 void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h);
 void gfx_fill_with_alpha(Texture *dst, int x, int y, int w, int h, int r, int g, int b, int a);
 void gfx_copy_stretch_with_alpha_map(Texture *dst, int dx, int dy, int dw, int dh, Texture *src, int sx, int sy, int sw, int sh);

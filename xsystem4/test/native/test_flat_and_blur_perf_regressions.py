@@ -1247,14 +1247,135 @@ static void run_blur_matrix(void) {
     gfx_delete_texture(&inplace);
     gfx_delete_texture(&dst);
     gfx_delete_texture(&src);
+
+    // 5. gfx_blur_rgb_to_fresh (blur_mode=1, GL_BLEND disabled): single pass H/V + paired H+V (blur=10)
+    //    must match cpu_box_blur within +/-1 LSB for RGB and preserve source alpha EXACTLY (0 LSB diff),
+    //    with strictly 1 draw call per pass!
+    {
+        Texture fsrc = {0}, ftmp = {0}, fdst = {0};
+        uint8_t mid_exp[SW * SH * 4];
+        uint8_t pair_exp[SW * SH * 4];
+        gfx_init_texture_with_pixels(&fsrc, SW, SH, src_px);
+        gfx_init_texture_blank(&ftmp, SW, SH);
+        gfx_init_texture_blank(&fdst, SW, SH);
+
+        // Single pass H and V for radii 1, 5, 10
+        const int fradii[] = { 1, 5, 10 };
+        for (size_t ri = 0; ri < sizeof(fradii) / sizeof(fradii[0]); ri++) {
+            int br = fradii[ri];
+            for (int vert = 0; vert < 2; vert++) {
+                memcpy(mid_exp, src_px, sizeof(mid_exp));
+                cpu_box_blur(mid_exp, src_px, SW, SH, SW, SH, 0, 0, 0, 0, SW, SH, br, vert != 0, false);
+                g_draw_calls = 0;
+                gfx_blur_rgb_to_fresh(&ftmp, &fsrc, br, vert != 0);
+                assert(g_draw_calls == 1);
+                uint8_t *got = gfx_get_pixels(&ftmp);
+                for (int i = 0; i < SW * SH * 4; i++) {
+                    int diff = abs((int)got[i] - (int)mid_exp[i]);
+                    if ((i % 4) == 3)
+                        assert(diff == 0); // exact source alpha preservation!
+                    else
+                        assert(diff <= 1);
+                }
+                free(got);
+            }
+        }
+
+        // Paired H+V (blur=10, Dohna Dohna Config Tab blur pattern): 2 draws total, zero copy passes!
+        memcpy(mid_exp, src_px, sizeof(mid_exp));
+        cpu_box_blur(mid_exp, src_px, SW, SH, SW, SH, 0, 0, 0, 0, SW, SH, 10, false, false);
+        memcpy(pair_exp, mid_exp, sizeof(pair_exp));
+        cpu_box_blur(pair_exp, mid_exp, SW, SH, SW, SH, 0, 0, 0, 0, SW, SH, 10, true, false);
+        g_draw_calls = 0;
+        gfx_blur_rgb_to_fresh(&ftmp, &fsrc, 10, false);
+        gfx_blur_rgb_to_fresh(&fdst, &ftmp, 10, true);
+        assert(g_draw_calls == 2);
+        uint8_t *got = gfx_get_pixels(&fdst);
+        for (int i = 0; i < SW * SH * 4; i++) {
+            int diff = abs((int)got[i] - (int)pair_exp[i]);
+            if ((i % 4) == 3)
+                assert(diff == 0);
+            else
+                assert(diff <= 2); // two sequential rounded passes -> at most +/-2 LSB vs double-precision CPU
+        }
+        free(got);
+
+        gfx_delete_texture(&fdst);
+        gfx_delete_texture(&ftmp);
+        gfx_delete_texture(&fsrc);
+    }
+
+    // 6. RGB-only (pixel-only) texture blurred in-place via copy+blur retains RGB format so
+    //    subsequent gfx_fill_amap(..., 0) writes are discarded (alpha stays 255).
+    {
+        Texture rgb = {0}, snap = {0};
+        gfx_init_texture_rgb(&rgb, SW, SH, (SDL_Color){ 120, 180, 220, 255 });
+        gfx_init_texture_blank(&snap, SW, SH);
+        gfx_copy_with_alpha_map(&snap, 0, 0, &rgb, 0, 0, SW, SH);
+        gfx_copy_width_blur(&rgb, 0, 0, &snap, 0, 0, SW, SH, 4);
+        gfx_fill_amap(&rgb, 0, 0, SW, SH, 0);
+        uint8_t *got = gfx_get_pixels(&rgb);
+        for (int i = 0; i < SW * SH; i++)
+            assert(got[i * 4 + 3] == 255);
+        free(got);
+        gfx_delete_texture(&snap);
+        gfx_delete_texture(&rgb);
+    }
+
     assert(glGetError() == GL_NO_ERROR);
+}
+
+static void test_frame_presented_state_machine(void) {
+    // Verify gfx_mark_frame_presented / gfx_consume_frame_presented / gfx_clear_frame_presented
+    // and automatic invalidation on draw/view operations outside gfx_swap().
+    assert(gfx_consume_frame_presented() == false);
+
+    // Dirty SACT2/Chipmunk frame: gfx_swap() then gfx_mark_frame_presented() -> UpdateView consumes once!
+    gfx_swap();
+    gfx_mark_frame_presented();
+    assert(gfx_consume_frame_presented() == true);
+    assert(gfx_consume_frame_presented() == false);
+
+    // Clean SACT2/Chipmunk frame: gfx_clear_frame_presented() -> UpdateView swaps normally.
+    gfx_mark_frame_presented();
+    gfx_clear_frame_presented();
+    assert(gfx_consume_frame_presented() == false);
+
+    // Drawing to main_surface or clearing or setting view offset clears the flag so direct draws are never skipped!
+    gfx_mark_frame_presented();
+    gfx_clear();
+    assert(gfx_consume_frame_presented() == false);
+
+    gfx_mark_frame_presented();
+    gfx_set_view_offset(4, 2);
+    assert(gfx_consume_frame_presented() == false);
+    gfx_set_view_offset(0, 0);
+
+    gfx_mark_frame_presented();
+    gfx_reset_view();
+    assert(gfx_consume_frame_presented() == false);
+
+    Texture off = {0};
+    gfx_init_texture_blank(&off, 16, 16);
+    gfx_mark_frame_presented();
+    GLuint fb = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, &off, 0, 0, 16, 16);
+    gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fb);
+    // Drawing to main_surface (including via a copied handle struct like vmSurface_New) clears it!
+    assert(gfx_consume_frame_presented() == true);
+    gfx_mark_frame_presented();
+    Texture alias_main = *gfx_main_surface();
+    fb = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, &alias_main, 0, 0, 128, 128);
+    gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fb);
+    assert(gfx_consume_frame_presented() == false);
+    gfx_delete_texture(&off);
 }
 
 int main(void) {
     gfx_init();
 
-    // 1. Run full matrix before GL context reset
+    // 1. Run full matrix before GL context reset + frame_presented state machine
     run_blur_matrix();
+    test_frame_presented_state_machine();
 
     // 2. Simulate replacement GLES context reset and verify draw_on_gl_reset rebuilds box_blur_shader!
     gfx_release_context_backup();

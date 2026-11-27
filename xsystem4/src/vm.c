@@ -1091,10 +1091,8 @@ void vm_system_call(int code)
 	}
 	case SYS_EXISTS_SAVE_FILE: {
 		int slot = stack_pop().i;
-		char *path = savedir_path(heap_get_string(slot)->text);
-		stack_push(file_exists(path));
+		stack_push(savedir_file_exists(heap_get_string(slot)->text));
 		heap_unref(slot);
-		free(path);
 		break;
 	}
 	case SYS_IS_DEBUG_MODE: {// system.IsDebugMode(void)

@@ -69,6 +69,16 @@ public class MamanAndMultiModTest {
         assertFalse(GameCatalog.INSTANCE.isSystem3xGameDir(maman));
         assertEquals(GameCatalog.ID_MAMAN, GameCatalog.INSTANCE.classifyGameRootDir(maman));
         assertEquals(GameCatalog.ID_MAMAN, GameCatalog.INSTANCE.classifyDirectory(maman, "UnknownFolder", null, null));
+        File mamanSaveDir = makeDir(
+                "UnknownSaveFolder",
+                "Maman_Extra.sav",
+                "Maman_User.sav",
+                "Maman_AFConfig.asd",
+                "Maman_AFCommon.asd",
+                "Maman_AFBGMMode.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(GameCatalog.ID_MAMAN, GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", mamanSaveDir, null));
         assertTrue(GameCatalog.INSTANCE.validateImportedGameDir(maman, null, GameCatalog.ID_MAMAN));
         assertFalse(GameCatalog.INSTANCE.validateImportedGameDir(maman, null, GameCatalog.ID_RANCE10));
         assertEquals("Maman", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(maman, "Maman"));

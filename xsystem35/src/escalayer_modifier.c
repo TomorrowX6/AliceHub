@@ -73,7 +73,9 @@ static struct {
 	int recall_vars[16];
 	int recall_count;
 	/* Daiakuji */
-	int da_gold, da_debt, da_subsidy, da_hp, da_karma, da_love, da_security, da_popular, da_ex_item;
+	int da_gold, da_debt, da_debt_monthly, da_subsidy;
+	int da_hp, da_hp_max, da_loyalty, da_unit_ctrl, da_unit_cnt, da_unit_max;
+	int da_security, da_popular, da_item_equip, da_sit;
 	/* Rance 5D */
 	int r5d_cur_hp, r5d_hp0, r5d_atk0, r5d_def0, r5d_mag0, r5d_res0, r5d_eva0;
 	int r5d_actions, r5d_goldbar, r5d_exporb, r5d_durability;
@@ -154,8 +156,10 @@ static void reset_cache_indices(void) {
 	esc_cache.training = esc_cache.peace = esc_cache.enemy_hp = esc_cache.enemy_hp_max = -1;
 	esc_cache.clear_count = esc_cache.ed_flags = esc_cache.cg_seen = -1;
 	esc_cache.easy_menu = esc_cache.easy_menu2 = esc_cache.hard_menu = esc_cache.hissatsu_flags = -1;
-	esc_cache.da_gold = esc_cache.da_debt = esc_cache.da_subsidy = esc_cache.da_hp = -1;
-	esc_cache.da_karma = esc_cache.da_love = esc_cache.da_security = esc_cache.da_popular = esc_cache.da_ex_item = -1;
+	esc_cache.da_gold = esc_cache.da_debt = esc_cache.da_debt_monthly = esc_cache.da_subsidy = -1;
+	esc_cache.da_hp = esc_cache.da_hp_max = esc_cache.da_loyalty = esc_cache.da_unit_ctrl = -1;
+	esc_cache.da_unit_cnt = esc_cache.da_unit_max = -1;
+	esc_cache.da_security = esc_cache.da_popular = esc_cache.da_item_equip = esc_cache.da_sit = -1;
 	esc_cache.r5d_cur_hp = esc_cache.r5d_hp0 = esc_cache.r5d_atk0 = esc_cache.r5d_def0 = -1;
 	esc_cache.r5d_mag0 = esc_cache.r5d_res0 = esc_cache.r5d_eva0 = -1;
 	esc_cache.r5d_actions = esc_cache.r5d_goldbar = esc_cache.r5d_exporb = esc_cache.r5d_durability = -1;
@@ -222,15 +226,20 @@ static void refresh_escalayer_cache(void) {
 		}
 
 		/* 2. Daiakuji */
-		esc_cache.da_gold = find_var_names("\x81\x99\x8b\xe0\x81\x5e\x8e\x96\x96\xb1\x8f\x8a", "☆金／事務所");
+		esc_cache.da_gold = find_var_names("GOLD", "GOLD");
 		esc_cache.da_debt = find_var_names("\x81\x99\x8e\xd8\x8b\xe0", "☆借金");
+		esc_cache.da_debt_monthly = find_var_names("\x81\x99\x8c\x8e\x95\xa5\x82\xa2", "☆月払い");
 		esc_cache.da_subsidy = find_var_names("\x81\x99\x95\xe2\x8f\x95\x8b\xe0", "☆補助金");
-		esc_cache.da_hp = find_var_names("\x81\x9a\x82\x67\x82\x6f", "★ＨＰ");
-		esc_cache.da_karma = find_var_names("\x81\x9a\x83\x4a\x83\x8b\x83\x7d", "★カルマ");
-		esc_cache.da_love = find_var_names("\x81\x9a\x88\xa4", "★愛");
+		esc_cache.da_hp = find_var_names("B\x91\xcc\x97\xcd", "B体力");
+		esc_cache.da_hp_max = find_var_names("B\x8d\xc5\x91\xe5\x91\xcc\x97\xcd", "B最大体力");
+		esc_cache.da_loyalty = find_var_names("B\x92\x89\x90\xbd\x90\x53", "B忠誠心");
+		esc_cache.da_unit_ctrl = find_var_names("B\x90\xa7\x8c\xe4", "B制御");
+		esc_cache.da_unit_cnt = find_var_names("G\x95\x94\x89\xba\x90\x94", "G部下数");
+		esc_cache.da_unit_max = find_var_names("G\x95\x94\x89\xba\x8d\xc5\x91\xe5\x90\x94", "G部下最大数");
 		esc_cache.da_security = find_var_names("R\x8e\xa1\x88\xc0\x83\x8c\x83\x78\x83\x8b", "R治安レベル");
 		esc_cache.da_popular = find_var_names("\x81\x99\x83\x4d\x83\x83\x83\x8b\x83\x6f\x81\x5b\x83\x4b\x81\x5b\x90\x6c\x8b\x43", "☆ギャルバーガー人気");
-		esc_cache.da_ex_item = find_var_names("\x82\x64\x82\x77\x83\x41\x83\x43\x83\x65\x83\x80", "ＥＸアイテム");
+		esc_cache.da_item_equip = find_var_names("I\x91\x95\x94\xf5", "I装備");
+		esc_cache.da_sit = find_var_names("SIT", "SIT");
 		if (esc_cache.da_gold >= 0 && esc_cache.da_debt >= 0 && esc_cache.da_hp >= 0) {
 			esc_cache.game = S35_GAME_DAIAKUJI;
 			return;
@@ -380,6 +389,116 @@ static void s35_copy_array_or_scalar(int dst_var, int src_var) {
 	}
 }
 
+/*
+ * Daiakuji unit arrays (B体力/B最大体力/B忠誠心/B制御) share dedicated varPages
+ * across all organizations, with 組織設定 dynamically rebinding DS offset to
+ * 部下位置. Org 1 (the player's faction) always occupies 1-based indices
+ * [1 .. G部下数[1]] at offset 0 of each backing page.
+ */
+static struct VarPage *da_bound_page(int var) {
+	if (!esc_valid_var(var))
+		return NULL;
+	struct VarRef ref;
+	if (!v_ref_indexed(var, 0, &ref) || ref.page <= 0 || ref.page >= 256 || !varPage[ref.page].value)
+		return NULL;
+	return &varPage[ref.page];
+}
+
+static int da_ally_count(void) {
+	struct VarPage *cnt_pg = da_bound_page(esc_cache.da_unit_cnt);
+	int cnt = (cnt_pg && cnt_pg->size > 1) ? cnt_pg->value[1] : 0;
+	struct VarPage *max_pg = da_bound_page(esc_cache.da_unit_max);
+	int cap = (max_pg && max_pg->size > 1 && max_pg->value[1] > 0) ? max_pg->value[1] : 60;
+	if (cnt > cap)
+		cnt = cap;
+	return cnt;
+}
+
+static bool da_ally_active(const struct VarPage *ctrl_pg, const struct VarPage *hp_max_pg, int i) {
+	if (ctrl_pg && i < ctrl_pg->size && ctrl_pg->value[i] == 0)
+		return false;
+	if (hp_max_pg && i < hp_max_pg->size && hp_max_pg->value[i] == 0)
+		return false;
+	return true;
+}
+
+static void da_clear_debt(void) {
+	if (esc_valid_var(esc_cache.da_debt))
+		sysVar[esc_cache.da_debt] = 0;
+	if (esc_valid_var(esc_cache.da_debt_monthly))
+		sysVar[esc_cache.da_debt_monthly] = 0;
+}
+
+static void da_boost_ally_hp(bool raise_max) {
+	struct VarPage *hp_pg = da_bound_page(esc_cache.da_hp);
+	struct VarPage *hp_max_pg = da_bound_page(esc_cache.da_hp_max);
+	struct VarPage *ctrl_pg = da_bound_page(esc_cache.da_unit_ctrl);
+	if (!hp_pg)
+		return;
+	int cnt = da_ally_count();
+	for (int i = 1; i <= cnt && i < hp_pg->size; i++) {
+		if (!da_ally_active(ctrl_pg, hp_max_pg, i))
+			continue;
+		if (hp_max_pg && i < hp_max_pg->size) {
+			if (raise_max && hp_max_pg->value[i] < 999)
+				hp_max_pg->value[i] = 999;
+			vmvar_t target = hp_max_pg->value[i];
+			if (target > 0 && hp_pg->value[i] < target)
+				hp_pg->value[i] = target;
+		} else if (hp_pg->value[i] > 0 && hp_pg->value[i] < 999) {
+			hp_pg->value[i] = 999;
+		}
+	}
+}
+
+static void da_max_loyalty_and_popular(void) {
+	struct VarPage *loy_pg = da_bound_page(esc_cache.da_loyalty);
+	struct VarPage *ctrl_pg = da_bound_page(esc_cache.da_unit_ctrl);
+	struct VarPage *hp_max_pg = da_bound_page(esc_cache.da_hp_max);
+	if (loy_pg) {
+		int cnt = da_ally_count();
+		for (int i = 1; i <= cnt && i < loy_pg->size; i++) {
+			if (!da_ally_active(ctrl_pg, hp_max_pg, i))
+				continue;
+			if (loy_pg->value[i] < 99)
+				loy_pg->value[i] = 99;
+		}
+	}
+	if (esc_valid_var(esc_cache.da_popular) && sysVar[esc_cache.da_popular] < 100)
+		sysVar[esc_cache.da_popular] = 100;
+}
+
+static void da_restore_security(void) {
+	/* R治安レベル: 0 = 良好 (best), 1 = 普通, 2 = 恶化 (half rev), 3 = 无法 (0 rev) */
+	struct VarPage *sec_pg = da_bound_page(esc_cache.da_security);
+	if (!sec_pg)
+		return;
+	int end = sec_pg->size;
+	if (end > 38)
+		end = 38;
+	for (int i = 1; i < end; i++)
+		sec_pg->value[i] = 0;
+}
+
+static void da_unlock_all_items(void) {
+	/* I装備[1..48]: 99 = unowned, 0 = owned in inventory, 1..98 = equipped on ally #n */
+	struct VarPage *eq_pg = da_bound_page(esc_cache.da_item_equip);
+	if (eq_pg) {
+		for (int i = 1; i <= 48 && i < eq_pg->size; i++) {
+			if (eq_pg->value[i] == 99)
+				eq_pg->value[i] = 0;
+		}
+	}
+	/* SIT[1..48]: Special Item obtained/gallery flags */
+	struct VarPage *sit_pg = da_bound_page(esc_cache.da_sit);
+	if (sit_pg) {
+		for (int i = 1; i <= 48 && i < sit_pg->size; i++) {
+			if (sit_pg->value[i] == 0)
+				sit_pg->value[i] = 1;
+		}
+	}
+}
+
 static void apply_single_action_sdl_thread(const char *spec) {
 	refresh_escalayer_cache();
 	if (esc_cache.game == S35_GAME_NONE || !spec || !spec[0])
@@ -439,17 +558,16 @@ static void apply_single_action_sdl_thread(const char *spec) {
 			sysVar[esc_cache.da_gold] = clamp_u16(sysVar[esc_cache.da_gold] + atoi(spec + 12));
 		} else if (strcmp(spec, "da_gold_max") == 0 && esc_valid_var(esc_cache.da_gold)) {
 			sysVar[esc_cache.da_gold] = 60000;
-		} else if (strcmp(spec, "da_debt_zero") == 0 && esc_valid_var(esc_cache.da_debt)) {
-			sysVar[esc_cache.da_debt] = 0;
+		} else if (strcmp(spec, "da_debt_zero") == 0) {
+			da_clear_debt();
 		} else if (strcmp(spec, "da_hp_boost") == 0) {
-			s35_set_var_min_all(esc_cache.da_hp, 999, true);
+			da_boost_ally_hp(true);
 		} else if (strcmp(spec, "da_love_max") == 0) {
-			s35_set_var_min_all(esc_cache.da_love, 100, false);
-			if (esc_valid_var(esc_cache.da_popular)) sysVar[esc_cache.da_popular] = 100;
+			da_max_loyalty_and_popular();
 		} else if (strcmp(spec, "da_security_max") == 0) {
-			s35_set_var_min_all(esc_cache.da_security, 100, false);
+			da_restore_security();
 		} else if (strcmp(spec, "da_items_unlock") == 0) {
-			esc_unlock_var_all(esc_cache.da_ex_item);
+			da_unlock_all_items();
 		}
 		return;
 	}
@@ -552,15 +670,12 @@ static void apply_escalayer_locks_sdl_thread(int locks) {
 	} else if (esc_cache.game == S35_GAME_DAIAKUJI) {
 		if ((locks & (1 << 0)) && esc_valid_var(esc_cache.da_gold) && sysVar[esc_cache.da_gold] < 50000)
 			sysVar[esc_cache.da_gold] = 50000;
-		if ((locks & (1 << 1)) && esc_valid_var(esc_cache.da_debt))
-			sysVar[esc_cache.da_debt] = 0;
+		if (locks & (1 << 1))
+			da_clear_debt();
 		if (locks & (1 << 2))
-			s35_set_var_min_all(esc_cache.da_hp, 999, true);
-		if (locks & (1 << 3)) {
-			s35_set_var_min_all(esc_cache.da_love, 100, false);
-			if (esc_valid_var(esc_cache.da_popular) && sysVar[esc_cache.da_popular] < 100)
-				sysVar[esc_cache.da_popular] = 100;
-		}
+			da_boost_ally_hp(false);
+		if (locks & (1 << 3))
+			da_max_loyalty_and_popular();
 	} else if (esc_cache.game == S35_GAME_RANCE5D) {
 		if (locks & (1 << 0))
 			s35_copy_array_or_scalar(esc_cache.r5d_cur_hp, esc_cache.r5d_hp0);
@@ -640,7 +755,9 @@ static void update_live_state_sdl_thread(int locks) {
 		if (esc_valid_var(esc_cache.da_debt)) cJSON_AddNumberToObject(root, "debt", sysVar[esc_cache.da_debt]);
 		if (esc_valid_var(esc_cache.da_subsidy)) cJSON_AddNumberToObject(root, "subsidy", sysVar[esc_cache.da_subsidy]);
 		if (esc_valid_var(esc_cache.da_popular)) cJSON_AddNumberToObject(root, "popular", sysVar[esc_cache.da_popular]);
-		if (esc_valid_var(esc_cache.da_hp)) cJSON_AddNumberToObject(root, "hp", s35_read_first(esc_cache.da_hp));
+		struct VarPage *hp_pg = da_bound_page(esc_cache.da_hp);
+		if (hp_pg && hp_pg->size > 1 && da_ally_count() > 0)
+			cJSON_AddNumberToObject(root, "hp", hp_pg->value[1]);
 	} else if (esc_cache.game == S35_GAME_RANCE5D) {
 		if (esc_valid_var(esc_cache.r5d_cur_hp)) cJSON_AddNumberToObject(root, "hp", s35_read_first(esc_cache.r5d_cur_hp));
 		if (esc_valid_var(esc_cache.r5d_hp0)) cJSON_AddNumberToObject(root, "hpMax", s35_read_first(esc_cache.r5d_hp0));

@@ -629,6 +629,9 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out) {
     } else if (!strcmp(name, "alpha_fallback")) {
         id = 5002;
         res = make_mock_cg(16, 16, true, true);
+    } else if (!strcmp(name, "alpha_async_btn")) {
+        id = 5004;
+        res = make_mock_cg(16, 16, true, true);
     } else if (!strcmp(name, "opaque_bg")) {
         id = 5003;
         res = make_mock_cg(16, 16, false, false);
@@ -878,6 +881,7 @@ static void test_lazy_alpha_mask(void) {
     struct string *s_alpha = make_string("alpha_btn", 9);
     struct string *s_opaque = make_string("opaque_bg", 9);
     struct string *s_fb = make_string("alpha_fallback", 14);
+    struct string *s_async_alpha = make_string("alpha_async_btn", 15);
 
     assert(PE_SetPartsCG(200, s_alpha, 0, 1));
     assert(PE_SetPartsCG(201, s_alpha, 0, 1));
@@ -885,42 +889,59 @@ static void test_lazy_alpha_mask(void) {
     struct parts *p201 = parts_try_get(201);
     struct parts_cg_asset *asset = p200->states[0].cg.cg_asset;
 
-    // Must NOT eagerly scan pixels or build alpha_mask during SetPartsCG!
+    // 1-bit alpha_mask is built directly from CPU cg->pixels during SetPartsCG:
+    // zero glReadPixels GPU stalls during UI hover/click hit-testing!
     assert(asset != NULL);
-    assert(asset->alpha_mask_built == false);
-    assert(asset->alpha_mask == NULL);
-    assert(p200->states[0].common.alpha_mask == NULL);
-    assert(mock_get_pixels_calls == 0);
-
-    // First hit-test builds shared 1-bit alpha_mask ONCE
-    assert(parts_common_check_alpha(&p200->states[0], 0, 0) == false);  // top-left transparent
     assert(asset->alpha_mask_built == true);
     assert(asset->alpha_mask != NULL);
     assert(asset->alpha_w == 16 && asset->alpha_h == 16);
-    assert(mock_get_pixels_calls == 1);
+    assert(p200->states[0].common.alpha_mask == NULL);
+    assert(mock_get_pixels_calls == 0);
 
-    // Subsequent hit-tests across BOTH parts reuse the shared mask (no extra readback)
+    // Hit-tests across BOTH parts reuse the shared CPU-built mask with ZERO glReadPixels!
+    assert(parts_common_check_alpha(&p200->states[0], 0, 0) == false);  // top-left transparent
     assert(parts_common_check_alpha(&p200->states[0], 7, 7) == false);
     assert(parts_common_check_alpha(&p200->states[0], 8, 8) == true);
     assert(parts_common_check_alpha(&p201->states[0], 2, 3) == false);
     assert(parts_common_check_alpha(&p201->states[0], 15, 15) == true);
     assert(parts_common_check_alpha(&p201->states[0], -1, 0) == false);
     assert(parts_common_check_alpha(&p201->states[0], 16, 0) == false);
-    assert(mock_get_pixels_calls == 1);
+    assert(mock_get_pixels_calls == 0);
 
     // Opaque CG (has_alpha == false): zero GPU readback, zero mask allocation!
     assert(PE_SetPartsCG(202, s_opaque, 0, 1));
     struct parts *p202 = parts_try_get(202);
     struct parts_cg_asset *op_asset = p202->states[0].cg.cg_asset;
-    assert(op_asset->alpha_mask_built == false);
-    assert(parts_common_check_alpha(&p202->states[0], 0, 0) == true);
     assert(op_asset->alpha_mask_built == true);
     assert(op_asset->alpha_w == -1 && op_asset->alpha_mask == NULL);
-    assert(mock_get_pixels_calls == 1);
+    assert(parts_common_check_alpha(&p202->states[0], 0, 0) == true);
+    assert(mock_get_pixels_calls == 0);
 
-    // Fallback path when gfx_get_pixels returns NULL (e.g. headless): reloads CG once
+    // Async SetPartsCGThread builds the 1-bit alpha_mask on the worker thread:
+    // main thread takes ownership with ZERO glReadPixels!
+    atomic_store(&mock_async_delay_ms, 1);
+    assert(PE_SetPartsCGThread(204, s_async_alpha, 1));
+    int polls = 0;
+    while (PE_IsExistWorkerThread()) {
+        PE_UpdateComponent(16);
+        SDL_Delay(1);
+        assert(++polls < 1000);
+    }
+    struct parts *p204 = parts_try_get(204);
+    struct parts_cg_asset *async_asset = p204->states[0].cg.cg_asset;
+    assert(async_asset != NULL && async_asset->alpha_mask_built == true && async_asset->alpha_mask != NULL);
+    assert(parts_common_check_alpha(&p204->states[0], 0, 0) == false);
+    assert(parts_common_check_alpha(&p204->states[0], 12, 12) == true);
+    assert(mock_get_pixels_calls == 0);
+
+    // Defensive fallback path (if alpha_mask_built is ever false): gfx_get_pixels readback or CG reload
     assert(PE_SetPartsCG(203, s_fb, 0, 1));
     struct parts *p203 = parts_try_get(203);
+    struct parts_cg_asset *fb_asset = p203->states[0].cg.cg_asset;
+    free(fb_asset->alpha_mask);
+    fb_asset->alpha_mask = NULL;
+    fb_asset->alpha_w = fb_asset->alpha_h = 0;
+    fb_asset->alpha_mask_built = false;
     int dec_before = atomic_load(&mock_decode_total);
     mock_get_pixels_fail = true;
     assert(parts_common_check_alpha(&p203->states[0], 1, 1) == false);
@@ -928,7 +949,7 @@ static void test_lazy_alpha_mask(void) {
     mock_get_pixels_fail = false;
     assert(atomic_load(&mock_decode_total) == dec_before + 1);
 
-    free_string(s_alpha); free_string(s_opaque); free_string(s_fb);
+    free_string(s_alpha); free_string(s_opaque); free_string(s_fb); free_string(s_async_alpha);
     parts_end_session();
     assert(mock_live_textures == 0);
 }

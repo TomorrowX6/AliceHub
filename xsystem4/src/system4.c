@@ -83,6 +83,7 @@ void vm_end_session(void);
 
 void set_msgskip_delay(struct ain *ain, unsigned ms);
 void apply_game_specific_hacks(struct ain *ain);
+void parts_set_mixed_display_text(bool enable);
 
 #ifdef __ANDROID__
 static pthread_t android_sdl_main_thread;
@@ -1681,6 +1682,7 @@ int main(int argc, char *argv[])
 	switch_menu4_load_display(config.save_dir);
 #endif
 	apply_game_specific_hacks(ain);
+	parts_set_mixed_display_text(game_maman);
 	init_mai_word_table();
 	init_text_dict();
 	if (config.msgskip_delay)

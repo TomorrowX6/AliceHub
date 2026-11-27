@@ -178,6 +178,8 @@ static void sprite_call_plugins(void) {}
 static void scene_render(void) { ++rendered; }
 static void modifier_on_frame(void) { scene_is_dirty |= dirty_on_swap; }
 static void gfx_swap(void) { modifier_on_frame(); }
+static void gfx_mark_frame_presented(void) {}
+static void gfx_clear_frame_presented(void) {}
 static uint32_t SDL_GetTicks(void) { return 100; }
 
 %s

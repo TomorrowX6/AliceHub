@@ -238,8 +238,10 @@ int sact_Update(void)
 		scene_render();
 		scene_is_dirty = false;
 		gfx_swap();
+		gfx_mark_frame_presented();
 		s_last_idle_mod_ms = SDL_GetTicks();
 	} else {
+		gfx_clear_frame_presented();
 		uint32_t now = SDL_GetTicks();
 		if (now - s_last_idle_mod_ms >= 30) {
 			s_last_idle_mod_ms = now;

@@ -567,6 +567,8 @@ static bool write_config_atomic_unique(const char *cfg_path, const char *data, s
 	if (ok) {
 		if (rename(tmp_path, cfg_path) != 0)
 			ok = false;
+		else
+			file_note_fs_mutation();
 	}
 	if (!ok)
 		remove(tmp_path);

@@ -187,6 +187,8 @@ HLL_WARN_UNIMPLEMENTED(false, bool, SystemService, InitMainWindowPosAndSize);
 
 static bool SystemService_UpdateView(void)
 {
+	if (gfx_consume_frame_presented())
+		return true;
 	gfx_swap();
 	return true;
 }
@@ -327,6 +329,31 @@ enum window_settings_id {
 #define WAIT_VSYNC_JSON_KEY "wait_vsync"
 #endif
 
+static bool window_settings_uses_v14_layout(void)
+{
+	if (!ain || ain->version < 14)
+		return false;
+	int libno = ain_get_library(ain, "SystemService");
+	if (libno >= 0 && ain_get_library_function(ain, libno, "SetWaitVSyncMode") >= 0)
+		return false;
+	return true;
+}
+
+static int resolve_window_setting_id(int type)
+{
+	if (window_settings_uses_v14_layout()) {
+		switch (type) {
+		case 0: return WINDOW_SETTINGS_ASPECT_RATIO;
+		case 1: return WINDOW_SETTINGS_SCALING_TYPE;
+		case 2: return WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE;
+		case 3: return WINDOW_SETTINGS_BACK_TO_TITLE_CONFIRM;
+		case 4: return WINDOW_SETTINGS_CLOSE_GAME_CONFIRM;
+		default: return -1;
+		}
+	}
+	return (type >= 0 && type <= WINDOW_SETTINGS_CLOSE_GAME_CONFIRM) ? type : -1;
+}
+
 static void save_window_settings(void)
 {
 	cJSON *root = cJSON_CreateObject();
@@ -337,57 +364,68 @@ static void save_window_settings(void)
 
 static void load_window_settings(void)
 {
-	cJSON *root = load_json("WindowSetting.json");
-	if (root) {
-		cJSON *v;
-		if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY)))
-			window_settings.wait_vsync = cJSON_IsTrue(v);
-		cJSON_Delete(root);
+	if (!window_settings_uses_v14_layout()) {
+		cJSON *root = load_json("WindowSetting.json");
+		if (root) {
+			cJSON *v;
+			if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY)))
+				window_settings.wait_vsync = cJSON_IsTrue(v);
+			cJSON_Delete(root);
+		}
 	}
 	gfx_set_wait_vsync(window_settings.wait_vsync);
 }
 
 static bool SystemService_SetWindowSetting(int type, int value)
 {
-	switch (type) {
+	bool vsync_changed = false;
+	int resolved = resolve_window_setting_id(type);
+	switch (resolved) {
 	case WINDOW_SETTINGS_ASPECT_RATIO:
 		window_settings.aspect_ratio = value;
 		break;
 	case WINDOW_SETTINGS_SCALING_TYPE:
 		window_settings.scaling_type = value;
 		break;
-	case WINDOW_SETTINGS_WAIT_VSYNC:
-		window_settings.wait_vsync = value;
-		gfx_set_wait_vsync(value);
+	case WINDOW_SETTINGS_WAIT_VSYNC: {
+		bool want = !!value;
+		if (window_settings.wait_vsync != want) {
+			window_settings.wait_vsync = want;
+			gfx_set_wait_vsync(want);
+			vsync_changed = true;
+		}
 		break;
+	}
 	case WINDOW_SETTINGS_RECORD_POS_SIZE:
-		window_settings.record_pos_size = value;
+		window_settings.record_pos_size = !!value;
 		break;
 	case WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE:
 #ifdef SYSTEMSERVICE_MOBILE_PLATFORM
 		(void)value;
 		window_settings.minimize_by_full_screen_inactive = false;
 #else
-		window_settings.minimize_by_full_screen_inactive = value;
+		window_settings.minimize_by_full_screen_inactive = !!value;
 #endif
 		break;
 	case WINDOW_SETTINGS_BACK_TO_TITLE_CONFIRM:
-		window_settings.back_to_title_confirm = value;
+		window_settings.back_to_title_confirm = !!value;
 		break;
 	case WINDOW_SETTINGS_CLOSE_GAME_CONFIRM:
-		window_settings.close_game_confirm = value;
+		window_settings.close_game_confirm = !!value;
 		break;
 	default:
 		WARNING("Invalid window setting type: %d", type);
 		return false;
 	}
-	save_window_settings();
+	if (vsync_changed)
+		save_window_settings();
 	return true;
 }
 
 static bool SystemService_GetWindowSetting(int type, int *value)
 {
-	switch (type) {
+	int resolved = resolve_window_setting_id(type);
+	switch (resolved) {
 	case WINDOW_SETTINGS_ASPECT_RATIO:
 		*value = window_settings.aspect_ratio;
 		break;
@@ -800,9 +838,19 @@ static bool SystemService_IsViewResizableMode(void)
 
 static bool SystemService_SetWaitVSyncMode(int mode)
 {
-	window_settings.wait_vsync = !!mode;
-	gfx_set_wait_vsync(window_settings.wait_vsync);
+	bool want = !!mode;
+	if (window_settings.wait_vsync != want) {
+		window_settings.wait_vsync = want;
+		gfx_set_wait_vsync(want);
+		save_window_settings();
+	}
 	return true;
+}
+
+void system_service_sync_wait_vsync(bool wait_vsync)
+{
+	window_settings.wait_vsync = wait_vsync;
+	gfx_set_wait_vsync(wait_vsync);
 }
 
 static int SystemService_GetWaitVSyncMode(void)

@@ -256,16 +256,31 @@ static void build_alpha_mask_bits(const uint8_t *rgba, int w, int h, bool has_al
 		*ah_out = -1;
 		return;
 	}
-	uint8_t *mask = xcalloc((n + 7) >> 3, 1);
+	size_t nr_bytes = (n + 7) >> 3;
+	uint8_t *mask = xmalloc(nr_bytes);
 	size_t full_bytes = first_zero >> 3;
 	if (full_bytes > 0)
 		memset(mask, 0xff, full_bytes);
-	unsigned rem = (unsigned)(first_zero & 7);
-	if (rem > 0)
-		mask[full_bytes] = (uint8_t)((1u << rem) - 1u);
-	for (size_t i = first_zero + 1; i < n; i++) {
-		if (rgba[i * 4 + 3] != 0)
-			mask[i >> 3] |= (uint8_t)(1u << (i & 7));
+	for (size_t b = full_bytes; b < nr_bytes; b++) {
+		size_t base = b << 3;
+		uint8_t bits = 0;
+		if (base + 8 <= n) {
+			const uint8_t *p = rgba + base * 4 + 3;
+			if (p[0])  bits |= 1u << 0;
+			if (p[4])  bits |= 1u << 1;
+			if (p[8])  bits |= 1u << 2;
+			if (p[12]) bits |= 1u << 3;
+			if (p[16]) bits |= 1u << 4;
+			if (p[20]) bits |= 1u << 5;
+			if (p[24]) bits |= 1u << 6;
+			if (p[28]) bits |= 1u << 7;
+		} else {
+			for (size_t k = 0; base + k < n; k++) {
+				if (rgba[(base + k) * 4 + 3] != 0)
+					bits |= (uint8_t)(1u << k);
+			}
+		}
+		mask[b] = bits;
 	}
 	*mask_out = mask;
 	*aw_out = w;
@@ -293,15 +308,19 @@ void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg
 #define PARTS_CG_HASH_BUCKETS 2048
 
 #ifndef PARTS_CG_IDLE_VRAM_BUDGET
-#ifdef __SWITCH__
-#define PARTS_CG_IDLE_VRAM_BUDGET (128u * 1024u * 1024u)
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
+#define PARTS_CG_IDLE_VRAM_BUDGET (96u * 1024u * 1024u)
 #else
 #define PARTS_CG_IDLE_VRAM_BUDGET (192u * 1024u * 1024u)
 #endif
 #endif
 
 #ifndef PARTS_CG_IDLE_MAX_COUNT
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
+#define PARTS_CG_IDLE_MAX_COUNT 256
+#else
 #define PARTS_CG_IDLE_MAX_COUNT 512
+#endif
 #endif
 
 struct parts_cg_asset {
@@ -512,8 +531,9 @@ static struct parts_cg_asset *parts_cg_asset_find_by_id(int cg_no)
 	return NULL;
 }
 
-static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int cg_no,
-		const char *name, uint64_t archive_gen, bool insert_tables)
+static struct parts_cg_asset *parts_cg_asset_create_from_cg_with_mask(struct cg *cg, int cg_no,
+		const char *name, uint64_t archive_gen, bool insert_tables,
+		bool has_prebuilt_mask, uint8_t *alpha_mask, int alpha_w, int alpha_h)
 {
 	struct parts_cg_asset *asset = xcalloc(1, sizeof(*asset));
 	gfx_init_texture_with_cg(&asset->texture, cg);
@@ -526,11 +546,28 @@ static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int c
 		asset->name = xstrdup(name);
 	asset->vram_bytes = (asset->w > 0 && asset->h > 0)
 		? (size_t)asset->w * (size_t)asset->h * 4u : 0u;
+	asset->alpha_mask_built = true;
+	if (has_prebuilt_mask) {
+		asset->alpha_mask = alpha_mask;
+		asset->alpha_w = alpha_w;
+		asset->alpha_h = alpha_h;
+	} else {
+		build_alpha_mask_bits(cg->pixels, cg->metrics.w, cg->metrics.h,
+				cg->metrics.has_alpha, &asset->alpha_mask,
+				&asset->alpha_w, &asset->alpha_h);
+	}
 	asset->refcount = 1;
 	TAILQ_INSERT_TAIL(&cg_asset_all, asset, all_entry);
 	if (insert_tables)
 		parts_cg_asset_insert_tables(asset);
 	return asset;
+}
+
+static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int cg_no,
+		const char *name, uint64_t archive_gen, bool insert_tables)
+{
+	return parts_cg_asset_create_from_cg_with_mask(cg, cg_no, name, archive_gen,
+			insert_tables, false, NULL, 0, 0);
 }
 
 static void parts_cg_asset_ensure_alpha_mask(struct parts_cg_asset *asset)
@@ -753,6 +790,9 @@ struct parts_cg_async_job {
 	enum parts_cg_job_state state;
 	struct cg *cg;
 	int cg_no;
+	uint8_t *alpha_mask;
+	int alpha_w, alpha_h;
+	bool alpha_mask_built;
 	bool sync_claimed;
 	struct parts_cg_async_target *targets;
 	struct parts_cg_async_target *targets_tail;
@@ -814,6 +854,7 @@ static void parts_cg_async_free_job(struct parts_cg_async_job *job)
 		return;
 	if (job->cg)
 		cg_free(job->cg);
+	free(job->alpha_mask);
 	struct parts_cg_async_target *t = job->targets;
 	while (t) {
 		struct parts_cg_async_target *next = t->next;
@@ -844,10 +885,22 @@ static int parts_cg_worker_main(void *unused)
 
 		int cg_no = 0;
 		struct cg *cg = asset_cg_load_by_name(name, &cg_no);
+		uint8_t *alpha_mask = NULL;
+		int alpha_w = 0, alpha_h = 0;
+		bool alpha_built = false;
+		if (cg) {
+			build_alpha_mask_bits(cg->pixels, cg->metrics.w, cg->metrics.h,
+					cg->metrics.has_alpha, &alpha_mask, &alpha_w, &alpha_h);
+			alpha_built = true;
+		}
 
 		SDL_LockMutex(cg_async.mutex);
 		job->cg = cg;
 		job->cg_no = cg_no;
+		job->alpha_mask = alpha_mask;
+		job->alpha_w = alpha_w;
+		job->alpha_h = alpha_h;
+		job->alpha_mask_built = alpha_built;
 		job->state = CG_JOB_DONE;
 		cg_async.nr_decoding--;
 		if (!job->sync_claimed) {
@@ -973,13 +1026,25 @@ static struct parts_cg_asset *parts_cg_async_finish_job(struct parts_cg_async_jo
 			if (asset) {
 				parts_cg_asset_ref(asset);
 			} else {
-				asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
-						job->cg_name, job->archive_gen, true);
+				asset = parts_cg_asset_create_from_cg_with_mask(job->cg, job->cg_no,
+						job->cg_name, job->archive_gen, true,
+						job->alpha_mask_built, job->alpha_mask,
+						job->alpha_w, job->alpha_h);
+				if (job->alpha_mask_built) {
+					job->alpha_mask = NULL;
+					job->alpha_mask_built = false;
+				}
 				parts_frame_did_heavy_load = true;
 			}
 		} else {
-			asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
-					job->cg_name, job->archive_gen, false);
+			asset = parts_cg_asset_create_from_cg_with_mask(job->cg, job->cg_no,
+					job->cg_name, job->archive_gen, false,
+					job->alpha_mask_built, job->alpha_mask,
+					job->alpha_w, job->alpha_h);
+			if (job->alpha_mask_built) {
+				job->alpha_mask = NULL;
+				job->alpha_mask_built = false;
+			}
 			parts_frame_did_heavy_load = true;
 		}
 	}

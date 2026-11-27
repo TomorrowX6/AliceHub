@@ -218,6 +218,13 @@ static void gfx_copy_height_blur(Texture *d, int dx, int dy, Texture *s, int sx,
                                 int w, int h, int r) { blur(d,dx,dy,s,sx,sy,w,h,r,true); }
 static void gfx_copy_width_blur(Texture *d, int dx, int dy, Texture *s, int sx, int sy,
                                int w, int h, int r) { blur(d,dx,dy,s,sx,sy,w,h,r,false); }
+static void gfx_blur_rgb_to_fresh(Texture *d, Texture *s, int r, bool vertical) {
+    assert(s->handle != d->handle && d->w == s->w && d->h == s->h);
+    // Preserve source alpha in the fresh destination texture, matching box_blur_shader blur_mode=1.
+    for (int i = 0; i < s->w * s->h; i++)
+        d->pixels[i * 4 + 3] = s->pixels[i * 4 + 3];
+    blur(d, 0, 0, s, 0, 0, s->w, s->h, r, vertical);
+}
 static int grays;
 static void gfx_copy_grayscale(Texture *d, int dx, int dy, Texture *s, int sx, int sy,
                                int w, int h) {
@@ -339,6 +346,17 @@ static void test_blur(void) {
              full?7:4, full?5:3, 1, vertical);
         assert(build_blur_filter(&cp, &op, vertical));
         assert(!memcmp(expected.pixels, cp.common.texture.pixels, sizeof original));
+        // Format-preserving full-texture blur (RGB pixel-only target) keeps the original handle!
+        if (full) {
+            struct parts_construction_process cp_rgb = {0};
+            gfx_init_texture_blank(&cp_rgb.common.texture, 7, 5);
+            memcpy(cp_rgb.common.texture.pixels, original, sizeof original);
+            int rgb_handle = cp_rgb.common.texture.handle;
+            assert(build_blur_filter_ex(&cp_rgb, &op, vertical, true));
+            assert(cp_rgb.common.texture.handle == rgb_handle);
+            assert(!memcmp(expected.pixels, cp_rgb.common.texture.pixels, sizeof original));
+            gfx_delete_texture(&cp_rgb.common.texture);
+        }
         // A zero radius or empty rect does not allocate/copy or touch the target.
         int before = allocated;
         op.blur = 0;
@@ -350,6 +368,38 @@ static void test_blur(void) {
     struct parts_construction_process missing = {0};
     struct parts_cp_filter op = {0, 0, 7, 5, 2, true};
     assert(!build_blur_filter(&missing, &op, false));
+    // Paired full-texture H+V blur: 1 temp alloc, exact match to sequential H then V blur.
+    {
+        struct parts_construction_process cp = {0};
+        gfx_init_texture_blank(&cp.common.texture, 7, 5);
+        unsigned char original[7*5*4];
+        for (int i = 0; i < 7*5*4; i++) original[i] = cp.common.texture.pixels[i] = (i * 19 + 7) % 251;
+        Texture mid = {0}, expected = {0}, src = {0};
+        gfx_init_texture_blank(&src, 7, 5);
+        gfx_init_texture_blank(&mid, 7, 5);
+        gfx_init_texture_blank(&expected, 7, 5);
+        memcpy(src.pixels, original, sizeof original);
+        memcpy(mid.pixels, original, sizeof original);
+        memcpy(expected.pixels, original, sizeof original);
+        blur(&mid, 0, 0, &src, 0, 0, 7, 5, 2, false);
+        blur(&expected, 0, 0, &mid, 0, 0, 7, 5, 1, true);
+
+        struct parts_cp_filter op_h = {0, 0, 7, 5, 2, true};
+        struct parts_cp_filter op_v = {0, 0, 7, 5, 1, false};
+        assert(blur_op_is_full_texture(&cp, &op_h));
+        assert(blur_op_is_full_texture(&cp, &op_v));
+        int alloc_before = allocated;
+        int handle_before = cp.common.texture.handle;
+        assert(build_blur_filter_pair(&cp, &op_h, false, &op_v, true));
+        assert(allocated == alloc_before + 1);
+        assert(cp.common.texture.handle == handle_before);
+        assert(!memcmp(expected.pixels, cp.common.texture.pixels, sizeof original));
+
+        gfx_delete_texture(&cp.common.texture);
+        gfx_delete_texture(&expected);
+        gfx_delete_texture(&mid);
+        gfx_delete_texture(&src);
+    }
     assert(allocated == deleted);
 }
 static void test_gray(void) {
@@ -580,6 +630,9 @@ int main(void) {
             function('src/parts/parts.c', 'parts_apply_local_matrix'),
             function('src/hll/PartsEngine.c', 'PartsEngine_SetComponentReverseLR'),
             function('src/hll/PartsEngine.c', 'PartsEngine_SetComponentReverseTB'),
+            function('src/parts/construction.c', 'blur_op_is_full_texture'),
+            function('src/parts/construction.c', 'build_blur_filter_pair'),
+            function('src/parts/construction.c', 'build_blur_filter_ex'),
             function('src/parts/construction.c', 'build_blur_filter'),
             function('src/parts/construction.c', 'build_gray_filter'),
         ]) + TESTS

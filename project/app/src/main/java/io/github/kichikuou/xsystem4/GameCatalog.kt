@@ -6826,6 +6826,18 @@ object GameCatalog {
                 return ID_IXSEAL
             }
             if (saveDir.listFiles()?.any {
+                    it.isFile && (
+                        it.name.equals("Maman_Extra.sav", ignoreCase = true) ||
+                            it.name.equals("Maman_User.sav", ignoreCase = true) ||
+                            it.name.lowercase().startsWith("maman_")
+                        )
+                } == true &&
+                !File(saveDir, "GlobalSave.asd").isFile &&
+                !File(saveDir, "GlobalSaveData.asd").isFile
+            ) {
+                return ID_MAMAN
+            }
+            if (saveDir.listFiles()?.any {
                     it.isFile && isHarukaSystemSaveFileName(it.name)
                 } == true &&
                 !File(saveDir, "GlobalSave.asd").isFile &&

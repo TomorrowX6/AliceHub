@@ -372,13 +372,14 @@ class OnboardingActivity : ThemedActivity() {
                 toggle.isChecked = false
                 disclaimer = AlertDialog.Builder(this)
                     .setTitle(R.string.online_disclaimer_title)
-                    .setMessage(R.string.online_disclaimer_msg)
+                    .setMessage(buildOnlineDisclaimerText())
                     .setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(R.string.online_disclaimer_agree) { _, _ ->
                         onlineEnabled = true
                         toggle.isChecked = true
                     }
                     .show()
+                    .applyOnlineDisclaimerTypography()
             }
         }
         content.addView(toggle)
