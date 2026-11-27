@@ -94,10 +94,13 @@ fun discoverSaveTargets(
             }
 
         val gid = scopedGameId
+        var scopedDefaultDirName: String? = null
         if (!gid.isNullOrBlank()) {
+            var hasNonAmbiguousTarget = false
             val iter = found.entries.iterator()
             while (iter.hasNext()) {
                 val entry = iter.next().value
+                val isPreferred = entry.dirName == resolvedPreferredDirName || entry.dirName == preferredDirName
                 val matchesScope = GameCatalog.matchesScopedSaveDirectory(
                     scopedGameId = gid,
                     gameDir = entry.externalGameDir,
@@ -105,21 +108,32 @@ fun discoverSaveTargets(
                     saveDir = entry.saveDir,
                     displayName = entry.displayName
                 )
-                if (!matchesScope && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
+                if (!matchesScope && !isPreferred) {
                     iter.remove()
+                } else if (isPreferred || !GameCatalog.isAmbiguousOkusamaSaveDir(
+                        gameDir = entry.externalGameDir,
+                        dirName = entry.dirName,
+                        saveDir = entry.saveDir,
+                        displayName = entry.displayName
+                    )
+                ) {
+                    hasNonAmbiguousTarget = true
                 }
             }
-            if (found.isEmpty()) {
+            if (!hasNonAmbiguousTarget) {
                 val desc = GameCatalog.descriptorFor(activity, gid, gameList)
-                val defaultDir = AppStorage.saveDir(activity, desc.defaultDirName)
-                defaultDir.mkdirs()
-                val extDir = findGameDir(desc.defaultDirName)
-                found[desc.defaultDirName] = SaveTarget(
-                    displayName = desc.defaultDirName,
-                    dirName = desc.defaultDirName,
-                    saveDir = defaultDir,
-                    externalGameDir = extDir
-                )
+                scopedDefaultDirName = desc.defaultDirName
+                if (!found.containsKey(desc.defaultDirName)) {
+                    val defaultDir = AppStorage.saveDir(activity, desc.defaultDirName)
+                    defaultDir.mkdirs()
+                    val extDir = findGameDir(desc.defaultDirName)
+                    found[desc.defaultDirName] = SaveTarget(
+                        displayName = desc.defaultDirName,
+                        dirName = desc.defaultDirName,
+                        saveDir = defaultDir,
+                        externalGameDir = extDir
+                    )
+                }
             }
         } else if (found.isEmpty()) {
             val defaultDir = AppStorage.saveDir(activity, "Rance10")
@@ -139,6 +153,10 @@ fun discoverSaveTargets(
     val targets = found.values.toList()
     val currentTarget = targets.firstOrNull { it.dirName == resolvedPreferredDirName }
         ?: targets.firstOrNull { it.dirName == preferredDirName }
+        ?: scopedDefaultDirName?.let { def -> targets.firstOrNull { it.dirName == def } }
+        ?: targets.firstOrNull {
+            !GameCatalog.isAmbiguousOkusamaSaveDir(it.externalGameDir, it.dirName, it.saveDir, it.displayName)
+        }
         ?: targets.first()
     return SaveTargets(targets, currentTarget)
 }

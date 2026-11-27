@@ -14,6 +14,7 @@ import java.io.FileOutputStream;
 import java.util.HashSet;
 import java.util.Set;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -74,6 +75,38 @@ public class SavePickerOkusamaTest {
                     activity, GameCatalog.ID_DOHNA_DOHNA, "DohnaDohna", true
             ));
             assertFalse("Dohna Dohna picker must not claim Okusama WeekendBackup", dohnaDirs.contains("WeekendBackup"));
+        }
+    }
+
+    @Test
+    public void onlyNeutralBackupStillCreatesAndSelectsScopedDefaultTarget() throws Exception {
+        try (ActivityController<Activity> controller =
+                     Robolectric.buildActivity(Activity.class).create()) {
+            Activity activity = controller.get();
+
+            seedFiles(
+                    AppStorage.INSTANCE.saveDir(activity, "WeekendBackup"),
+                    "MemModeInfo.asd", "CommonGameData.asd", "AFInfo.asd"
+            );
+
+            // Opening NTR Save Manager before installing NTR must create & select OkusamaNtr
+            // instead of selecting WeekendBackup as the import target, while keeping both selectable.
+            SaveTargets ntrResult = SaveScreenLoaderKt.discoverSaveTargets(
+                    activity, GameCatalog.ID_OKUSAMANTR, "OkusamaNtr", true
+            );
+            Set<String> ntrDirs = dirNames(ntrResult);
+            assertTrue("WeekendBackup must remain selectable in NTR picker", ntrDirs.contains("WeekendBackup"));
+            assertTrue("Default OkusamaNtr target must be created", ntrDirs.contains("OkusamaNtr"));
+            assertEquals("OkusamaNtr", ntrResult.getSelected().getDirName());
+
+            // Same when preferredDirName is null (e.g. direct scoped launch) for Jun.
+            SaveTargets junResult = SaveScreenLoaderKt.discoverSaveTargets(
+                    activity, GameCatalog.ID_OKUSAMAJUN, null, true
+            );
+            Set<String> junDirs = dirNames(junResult);
+            assertTrue("WeekendBackup must remain selectable in Jun picker", junDirs.contains("WeekendBackup"));
+            assertTrue("Default OkusamaJun target must be created", junDirs.contains("OkusamaJun"));
+            assertEquals("OkusamaJun", junResult.getSelected().getDirName());
         }
     }
 }
