@@ -1461,6 +1461,128 @@ char *cjk_mixed_display_to_gbk(const char *text, bool allow_ambiguous)
 	return out;
 }
 
+static bool gbk_display_pair_bounded(const uint8_t *s, const uint8_t *end)
+{
+	return s + 1 < end && gbk_display_pair(s);
+}
+
+static bool cjk_dialog_has_sjis_evidence(const uint8_t *src, const uint8_t *end)
+{
+	size_t strong_kana = 0;
+	const uint8_t *s = src;
+	while (s < end) {
+		if (!gbk_display_pair_bounded(s, end)) {
+			s++;
+			continue;
+		}
+		const uint8_t *tok_end = s;
+		bool all_sjis = true;
+		bool has_gbk_only = false;
+		size_t common = 0, extended = 0, kana = 0;
+		while (gbk_display_pair_bounded(tok_end, end)) {
+			int u = sjis_display_pair(tok_end);
+			int g = gbk_lookup(tok_end[0], tok_end[1]);
+			if (!u) {
+				all_sjis = false;
+				if (g)
+					has_gbk_only = true;
+			} else {
+				if ((u >= 0x3041 && u <= 0x3096) || (u >= 0x30a1 && u <= 0x30fa))
+					kana++;
+				if (tok_end[0] >= 0xa1 && tok_end[0] <= 0xf7 && tok_end[1] >= 0xa1)
+					common++;
+				else
+					extended++;
+			}
+			tok_end += 2;
+		}
+		if (all_sjis && !has_gbk_only && kana > 0 && (!common || extended >= common * 3))
+			strong_kana += kana;
+		s = tok_end;
+	}
+	return strong_kana >= 2;
+}
+
+char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
+{
+	if (!_src)
+		return NULL;
+	if (!len) {
+		len = strlen(_src);
+	} else {
+		const char *nul = memchr(_src, '\0', len);
+		if (nul)
+			len = (size_t)(nul - _src);
+	}
+	if (!len || !sys4_text_is_gbk || sys4_mai_active)
+		return mai_sjis2utf(_src, len);
+
+	const uint8_t *src = (const uint8_t *)_src;
+	const uint8_t *end = src + len;
+	if (!cjk_dialog_has_sjis_evidence(src, end))
+		return mai_sjis2utf(_src, len);
+
+	uint8_t *dst = xmalloc(len * 3 + 1);
+	uint8_t *dstp = dst;
+	const uint8_t *s = src;
+	while (s < end) {
+		if (!gbk_display_pair_bounded(s, end)) {
+			if (*s <= 0x7f)
+				*dstp++ = *s;
+			else if (*s == 0x80)
+				encode_utf8_bmp(0x20ac, &dstp);
+			else
+				encode_utf8_bmp(0xfffd, &dstp);
+			s++;
+			continue;
+		}
+		const uint8_t *tok_end = s;
+		bool token_has_gbk = false, token_has_gbk_text = false;
+		while (gbk_display_pair_bounded(tok_end, end)) {
+			int sjis = sjis_display_pair(tok_end);
+			int gbk = gbk_lookup(tok_end[0], tok_end[1]);
+			if (!sjis && gbk) {
+				token_has_gbk = true;
+				token_has_gbk_text |= !(tok_end[0] == 0xa1 && tok_end[1] == 0xa1)
+					&& !(tok_end[0] == 0xa3 && tok_end[1] >= 0xb0 && tok_end[1] <= 0xb9);
+			}
+			tok_end += 2;
+		}
+		while (s < tok_end) {
+			const uint8_t *run = s;
+			size_t extended = 0, common = 0;
+			bool has_sjis_only = false, has_kana = false, has_kanji = false;
+			int u;
+			while (s < tok_end && (u = sjis_display_pair(s)) > 0) {
+				has_sjis_only |= !gbk_lookup(s[0], s[1]);
+				has_kana |= (u >= 0x3041 && u <= 0x3096) || (u >= 0x30a1 && u <= 0x30fa);
+				has_kanji |= u >= 0x4e00 && u <= 0x9fff;
+				if (s[0] >= 0xa1 && s[0] <= 0xf7 && s[1] >= 0xa1)
+					common++;
+				else
+					extended++;
+				s += 2;
+			}
+			if (run == s) {
+				int g = gbk_lookup(s[0], s[1]);
+				encode_utf8_bmp(g ? g : 0xfffd, &dstp);
+				s += 2;
+				continue;
+			}
+			bool prefer_gbk = !has_sjis_only
+				&& ((common && (!has_kana || extended / 3 < common))
+					|| token_has_gbk_text
+					|| (token_has_gbk && (extended < 2 || (!has_kana && !has_kanji))));
+			for (const uint8_t *p = run; p < s; p += 2) {
+				int code = prefer_gbk ? gbk_lookup(p[0], p[1]) : sjis_display_pair(p);
+				encode_utf8_bmp(code ? code : 0xfffd, &dstp);
+			}
+		}
+	}
+	*dstp = '\0';
+	return (char *)dst;
+}
+
 struct string *cjk_display_log_line(struct string *line)
 {
 	const uint8_t *text = (const uint8_t *)line->text;

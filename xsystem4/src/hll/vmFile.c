@@ -386,7 +386,11 @@ static int vmFile_Find(struct string *wild_string, struct string **fname_out, in
 	if (dir) {
 		char *d_name;
 		const char *pattern = path_basename(wild_path);
-		for (int i = 0; !found && (d_name = readdir_utf8(dir)) != NULL; i++) {
+		for (int i = 0; !found && (d_name = readdir_utf8(dir)) != NULL; ) {
+			if (savedir_is_memory_save_path(d_name) && !savedir_is_memory_save_path(pattern)) {
+				free(d_name);
+				continue;
+			}
 			if (i >= *count) {
 				*count = i;
 				if (wildcard_match(pattern, d_name)) {
@@ -396,6 +400,7 @@ static int vmFile_Find(struct string *wild_string, struct string **fname_out, in
 					found = 1;
 				}
 			}
+			i++;
 			free(d_name);
 		}
 		closedir_utf8(dir);

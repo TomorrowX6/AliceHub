@@ -640,21 +640,174 @@ void savedir_cache_invalidate(void)
 	file_note_fs_mutation();
 }
 
+static bool savedir_strip_memory_prefix(const char *path, const char **rest_out)
+{
+	if (!path)
+		return false;
+	const char *p = path;
+	while (p[0] == '.' && (p[1] == '/' || p[1] == '\\'))
+		p += 2;
+	static const char tag[] = "<memory>";
+	for (size_t i = 0; i < sizeof(tag) - 1; i++) {
+		unsigned char c = (unsigned char)p[i];
+		if (!c)
+			return false;
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		if (c != (unsigned char)tag[i])
+			return false;
+	}
+	*rest_out = p + (sizeof(tag) - 1);
+	return true;
+}
+
+static uint64_t savedir_fnv1a64_ascii_icase(const char *s, size_t len)
+{
+	uint64_t h = 14695981039346656037ULL;
+	for (size_t i = 0; i < len; i++) {
+		unsigned char c = (unsigned char)s[i];
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		h ^= c;
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+static char *savedir_format_memory_basename(const char *utf_rest)
+{
+	static const char hex[] = "0123456789abcdef";
+	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
+	const size_t max_body = 160;
+	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
+	if (!rest_len)
+		return xstrdup(SAVEDIR_MEMORY_PREFIX "_empty");
+
+	size_t enc_cap = rest_len * 3 + 1;
+	char *enc = xmalloc(enc_cap);
+	size_t enc_len = 0;
+	for (size_t i = 0; i < rest_len; i++) {
+		unsigned char c = (unsigned char)utf_rest[i];
+		bool safe = (c >= 'A' && c <= 'Z')
+			|| (c >= 'a' && c <= 'z')
+			|| (c >= '0' && c <= '9')
+			|| c == '_' || c == '-'
+			|| (c == '.' && i + 1 < rest_len);
+		if (safe) {
+			enc[enc_len++] = (char)c;
+		} else {
+			enc[enc_len++] = '%';
+			enc[enc_len++] = hex[c >> 4];
+			enc[enc_len++] = hex[c & 0x0f];
+		}
+	}
+	enc[enc_len] = '\0';
+
+	if (enc_len <= max_body) {
+		char *out = xmalloc(pfx_len + enc_len + 1);
+		memcpy(out, SAVEDIR_MEMORY_PREFIX, pfx_len);
+		memcpy(out + pfx_len, enc, enc_len + 1);
+		free(enc);
+		return out;
+	}
+
+	// Keep filename comfortably under 255-byte component limits even with
+	// atomic .tmp / .switch-old suffixes, while avoiding collisions via hash.
+	size_t cut = max_body - 17; // reserve '~' + 16 hex chars
+	if (cut >= 1 && enc[cut - 1] == '%')
+		cut -= 1;
+	else if (cut >= 2 && enc[cut - 2] == '%')
+		cut -= 2;
+	uint64_t h = savedir_fnv1a64_ascii_icase(utf_rest, rest_len);
+	char *out = xmalloc(pfx_len + cut + 1 + 16 + 1);
+	memcpy(out, SAVEDIR_MEMORY_PREFIX, pfx_len);
+	memcpy(out + pfx_len, enc, cut);
+	out[pfx_len + cut] = '~';
+	for (int i = 0; i < 16; i++)
+		out[pfx_len + cut + 1 + i] = hex[(h >> ((15 - i) * 4)) & 0x0f];
+	out[pfx_len + cut + 17] = '\0';
+	free(enc);
+	return out;
+}
+
+void savedir_cleanup_memory_saves(void)
+{
+	if (!config.save_dir || !config.save_dir[0])
+		return;
+	UDIR *d = opendir_utf8(config.save_dir);
+	if (!d)
+		return;
+	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
+	char *d_name;
+	while ((d_name = readdir_utf8(d)) != NULL) {
+		bool match = !strncmp(d_name, SAVEDIR_MEMORY_PREFIX, pfx_len)
+			|| (d_name[0] == '.' && !strncmp(d_name + 1, SAVEDIR_MEMORY_PREFIX, pfx_len));
+		if (match) {
+			char *full = path_join(config.save_dir, d_name);
+			ustat st;
+			if (stat_utf8(full, &st) == 0 && S_ISREG(st.st_mode))
+				remove_utf8(full);
+			free(full);
+		}
+		free(d_name);
+	}
+	closedir_utf8(d);
+}
+
 static char *resolve_savedir_path(const char *path, bool *exists_out)
 {
 	if (exists_out)
 		*exists_out = false;
+
+	const char *target = path ? path : "";
+	if (config.save_dir && config.save_dir[0]) {
+		const char *stripped_rel = NULL;
+		if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
+			target = stripped_rel;
+	}
+
+	const char *mem_rest = NULL;
+	if (savedir_strip_memory_prefix(target, &mem_rest)) {
+		char *utf_rest = unix_path_with(mem_rest, false);
+		char *mem_base = savedir_format_memory_basename(utf_rest);
+		free(utf_rest);
+		const char *dir = (config.save_dir && config.save_dir[0]) ? config.save_dir : ".";
+		char *resolved_mem = join_dir_and_rel(dir, mem_base);
+		free(mem_base);
+		if (!config.save_dir || !config.save_dir[0]) {
+			if (exists_out)
+				*exists_out = file_exists(resolved_mem);
+			return resolved_mem;
+		}
+		char *matched = NULL;
+		bool dir_missing = false;
+		if (!savedir_cache_lookup(resolved_mem, &matched, &dir_missing)) {
+			if (exists_out)
+				*exists_out = file_exists(resolved_mem);
+			return resolved_mem;
+		}
+		if (matched) {
+			if (!exists_out) {
+				free(resolved_mem);
+				return matched;
+			}
+			if (file_exists(matched)) {
+				*exists_out = true;
+				free(resolved_mem);
+				return matched;
+			}
+			file_note_fs_mutation();
+			free(matched);
+		}
+		return resolved_mem;
+	}
+
 	if (!config.save_dir || !config.save_dir[0]) {
 		char *p = resolve_path(config.save_dir ? config.save_dir : ".", path, false);
 		if (exists_out)
 			*exists_out = p && file_exists(p);
 		return p;
 	}
-
-	const char *target = path ? path : "";
-	const char *stripped_rel = NULL;
-	if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
-		target = stripped_rel;
 
 	char *utf_primary = unix_path_with(target, false);
 	char *resolved_primary = join_dir_and_rel(config.save_dir, utf_primary);

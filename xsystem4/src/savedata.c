@@ -91,12 +91,15 @@ static char *make_atomic_tmp_path(const char *path)
 	size_t dir_len = slash ? (size_t)(slash - path + 1) : 0;
 	const char *base = slash ? slash + 1 : path;
 	size_t base_len = strlen(base);
-	char *tmp = xmalloc(dir_len + 1 + base_len + 4 + 1);
+	bool add_dot = (base[0] != '.');
+	char *tmp = xmalloc(dir_len + (add_dot ? 1 : 0) + base_len + 4 + 1);
 	if (dir_len)
 		memcpy(tmp, path, dir_len);
-	tmp[dir_len] = '.';
-	memcpy(tmp + dir_len + 1, base, base_len);
-	memcpy(tmp + dir_len + 1 + base_len, ".tmp", 5);
+	size_t pos = dir_len;
+	if (add_dot)
+		tmp[pos++] = '.';
+	memcpy(tmp + pos, base, base_len);
+	memcpy(tmp + pos + base_len, ".tmp", 5);
 	return tmp;
 }
 
@@ -309,12 +312,13 @@ static int commit_switch_save(const char *tmp_path, const char *path)
 
 bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_backup)
 {
+	bool volatile_mem = savedir_is_memory_save_path(path);
 	bool ok = !ferror(fp) && fflush(fp) == 0;
 #ifdef _WIN32
-	if (ok && _commit(_fileno(fp)) != 0)
+	if (ok && !volatile_mem && _commit(_fileno(fp)) != 0)
 		ok = false;
 #else
-	if (ok && fsync(fileno(fp)) != 0 && errno != EINVAL && errno != EROFS)
+	if (ok && !volatile_mem && fsync(fileno(fp)) != 0 && errno != EINVAL && errno != EROFS)
 		ok = false;
 #endif
 	if (fclose(fp) != 0)
@@ -326,7 +330,7 @@ bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_ba
 		return false;
 	}
 
-	if (keep_backup && file_exists(path) && file_size(path) > 16) {
+	if (!volatile_mem && keep_backup && file_exists(path) && file_size(path) > 16) {
 		char *bak = make_backup_path(path);
 		file_copy(path, bak);
 		free(bak);
