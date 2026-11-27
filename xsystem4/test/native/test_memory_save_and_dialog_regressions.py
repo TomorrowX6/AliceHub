@@ -81,6 +81,7 @@ class MemorySaveAndDialogRegressionTests(unittest.TestCase):
     def test_memory_save_path_mapping_and_cleanup(self) -> None:
         c_code = r"""
 #include <assert.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -88,6 +89,7 @@ class MemorySaveAndDialogRegressionTests(unittest.TestCase):
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include "system4.h"
 #include "system4/file.h"
@@ -110,6 +112,15 @@ static bool has_illegal_fat_chars(const char *base)
     return len == 0 || base[len - 1] == '.' || base[len - 1] == ' ';
 }
 
+static const char *strip_session_prefix(const char *base, char *expected_pfx, size_t cap, uint32_t seq)
+{
+    snprintf(expected_pfx, cap, "%sp%" PRIu64 ".%" PRIu32 ".",
+        SAVEDIR_MEMORY_PREFIX, (uint64_t)getpid(), seq);
+    size_t n = strlen(expected_pfx);
+    assert(strncmp(base, expected_pfx, n) == 0);
+    return base + n;
+}
+
 int main(void)
 {
     char tmpl[] = "/tmp/xsystem4_memsave_XXXXXX";
@@ -118,19 +129,43 @@ int main(void)
     config.save_dir = strdup(dir);
     sys4_set_text_gbk(true);
 
-    // 1. Escalayer Reboot replay snapshot maps to a flat hidden dotfile with no '<' or '>'.
+    // 0. Concurrent-instance isolation: create a file owned by a guaranteed-live other PID
+    //    (our parent process) and a file owned by a guaranteed-dead child PID.
+    pid_t dead_pid = fork();
+    assert(dead_pid >= 0);
+    if (dead_pid == 0)
+        _exit(0);
+    int st = 0;
+    assert(waitpid(dead_pid, &st, 0) == dead_pid);
+
+    uint8_t payload[] = "replay-snapshot-ok";
+    char live_other[512], dead_other[512];
+    snprintf(live_other, sizeof(live_other), "%s/%sp%" PRIu64 ".1.LiveOther.asd",
+        dir, SAVEDIR_MEMORY_PREFIX, (uint64_t)getppid());
+    snprintf(dead_other, sizeof(dead_other), "%s/%sp%" PRIu64 ".1.DeadCrash.asd",
+        dir, SAVEDIR_MEMORY_PREFIX, (uint64_t)dead_pid);
+    assert(file_write(live_other, payload, 4));
+    assert(file_write(dead_other, payload, 4));
+
+    // Starting session 1 sweeps dead_other but preserves live_other!
+    savedir_begin_memory_session();
+    assert(!file_exists(dead_other));
+    assert(file_exists(live_other));
+
+    // 1. Escalayer Reboot replay snapshot maps to a per-session flat hidden dotfile with no '<' or '>'.
+    char pfx[64];
     char *p_esca = savedir_path("<memory>MemoryMode_EscalayerReboot_.asd");
     assert(p_esca != NULL);
     assert(savedir_is_memory_save_path(p_esca));
     assert(strncmp(p_esca, dir, strlen(dir)) == 0);
     assert(p_esca[strlen(dir)] == '/');
     const char *base_esca = p_esca + strlen(dir) + 1;
-    assert(strcmp(base_esca, ".alicehub-mem.MemoryMode_EscalayerReboot_.asd") == 0);
+    assert(strcmp(strip_session_prefix(base_esca, pfx, sizeof(pfx), 1u),
+        "MemoryMode_EscalayerReboot_.asd") == 0);
     assert(!has_illegal_fat_chars(base_esca));
     assert(!savedir_file_exists("<memory>MemoryMode_EscalayerReboot_.asd"));
 
     // Write via mapped path and verify exists + case-insensitive lookup + copy + delete.
-    uint8_t payload[] = "replay-snapshot-ok";
     assert(file_write(p_esca, payload, sizeof(payload) - 1));
     assert(savedir_file_exists("<memory>MemoryMode_EscalayerReboot_.asd"));
     assert(savedir_file_exists("<MEMORY>memorymode_escalayerreboot_.ASD"));
@@ -167,16 +202,16 @@ int main(void)
     char *p_dot = savedir_path("<memory>trailing.");
     const char *base_dot = p_dot + strlen(dir) + 1;
     assert(!has_illegal_fat_chars(base_dot));
-    assert(strcmp(base_dot, ".alicehub-mem.trailing%2e") == 0);
+    assert(strcmp(strip_session_prefix(base_dot, pfx, sizeof(pfx), 1u), "trailing%2e") == 0);
     free(p_dot);
 
     char *p_empty = savedir_path("<memory>");
     const char *base_empty = p_empty + strlen(dir) + 1;
     assert(!has_illegal_fat_chars(base_empty));
-    assert(strcmp(base_empty, ".alicehub-mem._empty") == 0);
+    assert(strcmp(strip_session_prefix(base_empty, pfx, sizeof(pfx), 1u), "_empty") == 0);
     free(p_empty);
 
-    // 3. Long names (>160 bytes) stay bounded (<200 bytes) and distinct via hash.
+    // 3. Long names (>140 bytes) stay bounded (<190 bytes) and distinct via hash.
     char long1[300], long2[300], long1_upper[300];
     memcpy(long1, "<memory>", 8);
     memset(long1 + 8, 'a', 220);
@@ -201,11 +236,11 @@ int main(void)
     free(p_long1);
     free(p_long2);
 
-    // 4. Create stray atomic .tmp and .switch-old memory artifacts and verify cleanup removes
-    //    all memory files/artifacts while keeping normal saves untouched.
+    // 4. Create stray atomic .tmp and .switch-old memory artifacts for THIS session and verify
+    //    teardown removes only THIS session's artifacts while preserving live_other and normal saves.
     char tmp_art[512], old_art[512];
-    snprintf(tmp_art, sizeof(tmp_art), "%s/.alicehub-mem.stale.asd.tmp", dir);
-    snprintf(old_art, sizeof(old_art), "%s/.alicehub-mem.stale.asd.switch-old", dir);
+    snprintf(tmp_art, sizeof(tmp_art), "%s/%s.tmp", dir, base_esca);
+    snprintf(old_art, sizeof(old_art), "%s/%s.switch-old", dir, base_esca);
     assert(file_write(tmp_art, payload, 3));
     assert(file_write(old_art, payload, 3));
 
@@ -214,10 +249,23 @@ int main(void)
     assert(!file_exists(p_esca));
     assert(!file_exists(tmp_art));
     assert(!file_exists(old_art));
+    assert(file_exists(live_other));
     assert(savedir_file_exists("SaveData01.asd"));
     assert(file_exists(p_normal));
 
-    // 5. Fallback when config.save_dir is unset still never leaks '<' or '>'.
+    // 5. Starting a second session in the same process (e.g. iOS re-launch) sweeps any leftover
+    //    from session 1 while still keeping live_other intact.
+    assert(file_write(p_esca, payload, 4));
+    savedir_begin_memory_session();
+    assert(!file_exists(p_esca));
+    assert(file_exists(live_other));
+    char *p_esca_s2 = savedir_path("<memory>MemoryMode_EscalayerReboot_.asd");
+    assert(strcmp(p_esca_s2, p_esca) != 0);
+    assert(strcmp(strip_session_prefix(p_esca_s2 + strlen(dir) + 1, pfx, sizeof(pfx), 2u),
+        "MemoryMode_EscalayerReboot_.asd") == 0);
+    free(p_esca_s2);
+
+    // 6. Fallback when config.save_dir is unset still never leaks '<' or '>'.
     free(config.save_dir);
     config.save_dir = NULL;
     char *p_nodir = savedir_path("<memory>Fallback.asd");
@@ -226,6 +274,7 @@ int main(void)
     free(p_nodir);
 
     // Cleanup temp directory
+    remove_utf8(live_other);
     remove_utf8(p_normal);
     free(p_normal);
     free(p_esca);
@@ -435,7 +484,8 @@ int main(void)
     check_decode("sc_gbk", sc_gbk, sizeof(sc_gbk) - 1,
         "\xe5\xad\x98\xe6\xa1\xa3\xe4\xbf\x9d\xe5\xad\x98\xe5\xa4\xb1\xe8\xb4\xa5");
 
-    // 4. Traditional Chinese GBK containing '傑' (0x82 0xdc, which is SJIS 'ま') remains untouched.
+    // 4. Traditional Chinese GBK containing dual-valid extension pairs remains untouched
+    //    (including isolated 2-char GBK names whose bytes happen to overlap Shift-JIS kana).
     const uint8_t tc_gbk[] = {
         // 傑克已加入隊伍
         0x82, 0xdc, 0xbf, 0xcb, 0xd2, 0xd1, 0xbc, 0xd3, 0xc8, 0xeb, 0xea, 0xa0, 0xce, 0xe9, 0x00
@@ -443,19 +493,52 @@ int main(void)
     check_decode("tc_gbk_with_82dc", tc_gbk, sizeof(tc_gbk) - 1,
         "\xe5\x82\x91\xe5\x85\x8b\xe5\xb7\xb2\xe5\x8a\xa0\xe5\x85\xa5\xe9\x9a\x8a\xe4\xbc\x8d");
 
-    // 5. Mixed GBK Chinese filename embedded inside CP932 system error message.
+    const uint8_t gbk_jiejie[] = {
+        // 傑傑 (82 dc 82 dc -> must NOT be misdecoded as まま)
+        0x82, 0xdc, 0x82, 0xdc, 0x00
+    };
+    check_decode("gbk_dual_valid_jiejie", gbk_jiejie, sizeof(gbk_jiejie) - 1,
+        "\xe5\x82\x91\xe5\x82\x91");
+
+    const uint8_t gbk_jieyi_save[] = {
+        // 傑儀, 存档 (82 dc 83 78 2c 20 b4 e6 b5 b5 -> must NOT become まベ, 存档)
+        0x82, 0xdc, 0x83, 0x78, ',', ' ', 0xb4, 0xe6, 0xb5, 0xb5, 0x00
+    };
+    check_decode("gbk_dual_valid_jieyi", gbk_jieyi_save, sizeof(gbk_jieyi_save) - 1,
+        "\xe5\x82\x91\xe5\x84\x80, \xe5\xad\x98\xe6\xa1\xa3");
+
+    // 5. Mixed GBK Chinese filename (both GB2312 and dual-valid GBK extension) embedded inside
+    //    a CP932 system error message: Japanese prompt decodes while Chinese filename is preserved.
     const uint8_t mixed[] = {
-        // セーブファイル 【 存档.asd 】 の保存に失敗しました
+        // セーブ 【 存档.asd 】 の保存に失敗しました
         0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x79, ' ',
         0xb4, 0xe6, 0xb5, 0xb5, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
-        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73, 0x00
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
     };
     check_decode("mixed_gbk_cp932", mixed, sizeof(mixed) - 1,
-        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe5\xad\x98\xe6\xa1\xa3.asd \xe3\x80\x91 \xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe5\xad\x98\xe6\xa1\xa3.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t mixed_jieyi[] = {
+        // セーブファイル 【 傑儀.asd 】 の保存に失敗しました
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b,
+        ' ', 0x81, 0x79, ' ', 0x82, 0xdc, 0x83, 0x78, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("mixed_dual_valid_gbk_in_cp932", mixed_jieyi, sizeof(mixed_jieyi) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab "
+        "\xe3\x80\x90 \xe5\x82\x91\xe5\x84\x80.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
 
     // 6. Bounded length without NUL terminator + empty string + NULL input.
-    const uint8_t bounded[] = { 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 'X', 'Y', 'Z' };
-    check_decode("bounded_no_nul", bounded, 6, "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96");
+    const uint8_t bounded[] = {
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b,
+        'X', 'Y', 'Z'
+    };
+    check_decode("bounded_no_nul", bounded, 14,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab");
     check_decode("empty", (const uint8_t *)"", 0, "");
     assert(cjk_dialog_text_to_utf8(NULL, 0) == NULL);
 
@@ -485,7 +568,10 @@ int main(void)
         self.assertIn("cjk_dialog_text_to_utf8(", vmdialog_src)
         self.assertNotIn("mai_sjis2utf(", vmdialog_src)
 
-        self.assertGreaterEqual(sys4_src.count("savedir_cleanup_memory_saves()"), 5)
+        self.assertIn("savedir_begin_memory_session()", sys4_src)
+        self.assertIn("#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)", sys4_src)
+        self.assertIn("atexit(savedir_cleanup_memory_saves);", sys4_src)
+        self.assertGreaterEqual(sys4_src.count("savedir_cleanup_memory_saves()"), 4)
 
 
 if __name__ == "__main__":

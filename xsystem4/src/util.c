@@ -15,6 +15,9 @@
  */
 
 #include <stdarg.h>
+#include <stdatomic.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +29,10 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#ifndef __SWITCH__
+#include <signal.h>
+#include <unistd.h>
+#endif
 #endif
 
 #include "system4.h"
@@ -674,14 +681,123 @@ static uint64_t savedir_fnv1a64_ascii_icase(const char *s, size_t len)
 	return h;
 }
 
+static _Atomic uint32_t g_savedir_mem_session_seq = 0;
+
+static uint64_t savedir_current_pid(void)
+{
+#ifdef _WIN32
+	return (uint64_t)GetCurrentProcessId();
+#elif defined(__SWITCH__)
+	return 1ULL;
+#else
+	return (uint64_t)getpid();
+#endif
+}
+
+static uint32_t savedir_current_mem_session_seq(void)
+{
+	uint32_t seq = atomic_load_explicit(&g_savedir_mem_session_seq, memory_order_acquire);
+	if (seq != 0)
+		return seq;
+	uint32_t expected = 0;
+	if (atomic_compare_exchange_strong_explicit(&g_savedir_mem_session_seq, &expected, 1u,
+			memory_order_acq_rel, memory_order_acquire))
+		return 1u;
+	return expected;
+}
+
+static size_t savedir_format_session_prefix(char *buf, size_t cap, uint64_t pid, uint32_t seq)
+{
+	int n = snprintf(buf, cap, "%sp%" PRIu64 ".%" PRIu32 ".", SAVEDIR_MEMORY_PREFIX, pid, seq);
+	if (n < 0 || (size_t)n >= cap)
+		return 0;
+	return (size_t)n;
+}
+
+static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, uint32_t *seq_out)
+{
+	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
+	const char *p = d_name;
+	if (p[0] == '.' && !strncmp(p + 1, SAVEDIR_MEMORY_PREFIX, pfx_len))
+		p += 1 + pfx_len;
+	else if (!strncmp(p, SAVEDIR_MEMORY_PREFIX, pfx_len))
+		p += pfx_len;
+	else
+		return false;
+
+	if (*p != 'p')
+		return false;
+	p++;
+	if (*p < '0' || *p > '9')
+		return false;
+	uint64_t pid = 0;
+	while (*p >= '0' && *p <= '9') {
+		uint64_t digit = (uint64_t)(*p - '0');
+		if (pid > (UINT64_MAX - digit) / 10)
+			return false;
+		pid = pid * 10 + digit;
+		p++;
+	}
+	if (*p != '.')
+		return false;
+	p++;
+	if (*p < '0' || *p > '9')
+		return false;
+	uint64_t seq = 0;
+	while (*p >= '0' && *p <= '9') {
+		uint64_t digit = (uint64_t)(*p - '0');
+		if (seq > (UINT32_MAX - digit) / 10)
+			return false;
+		seq = seq * 10 + digit;
+		p++;
+	}
+	if (*p != '.' || seq == 0)
+		return false;
+	*pid_out = pid;
+	*seq_out = (uint32_t)seq;
+	return true;
+}
+
+static bool savedir_owner_is_dead(uint64_t pid, uint32_t seq, uint64_t my_pid, uint32_t my_seq)
+{
+	if (pid == my_pid)
+		return seq != my_seq;
+#ifdef __SWITCH__
+	return true;
+#elif defined(_WIN32)
+	if (pid == 0 || pid > UINT32_MAX)
+		return false;
+	HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+	if (h) {
+		DWORD exit_code = 0;
+		bool dead = GetExitCodeProcess(h, &exit_code) && exit_code != STILL_ACTIVE;
+		CloseHandle(h);
+		return dead;
+	}
+	return GetLastError() == ERROR_INVALID_PARAMETER;
+#else
+	if (pid == 0 || pid > (uint64_t)INT32_MAX)
+		return false;
+	if (kill((pid_t)pid, 0) == 0)
+		return false;
+	return errno == ESRCH;
+#endif
+}
+
 static char *savedir_format_memory_basename(const char *utf_rest)
 {
 	static const char hex[] = "0123456789abcdef";
-	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
-	const size_t max_body = 160;
+	char pfx[64];
+	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx),
+		savedir_current_pid(), savedir_current_mem_session_seq());
+	const size_t max_body = 140;
 	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
-	if (!rest_len)
-		return xstrdup(SAVEDIR_MEMORY_PREFIX "_empty");
+	if (!rest_len) {
+		char *out = xmalloc(pfx_len + sizeof("_empty"));
+		memcpy(out, pfx, pfx_len);
+		memcpy(out + pfx_len, "_empty", sizeof("_empty"));
+		return out;
+	}
 
 	size_t enc_cap = rest_len * 3 + 1;
 	char *enc = xmalloc(enc_cap);
@@ -705,7 +821,7 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 
 	if (enc_len <= max_body) {
 		char *out = xmalloc(pfx_len + enc_len + 1);
-		memcpy(out, SAVEDIR_MEMORY_PREFIX, pfx_len);
+		memcpy(out, pfx, pfx_len);
 		memcpy(out + pfx_len, enc, enc_len + 1);
 		free(enc);
 		return out;
@@ -720,7 +836,7 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 		cut -= 2;
 	uint64_t h = savedir_fnv1a64_ascii_icase(utf_rest, rest_len);
 	char *out = xmalloc(pfx_len + cut + 1 + 16 + 1);
-	memcpy(out, SAVEDIR_MEMORY_PREFIX, pfx_len);
+	memcpy(out, pfx, pfx_len);
 	memcpy(out + pfx_len, enc, cut);
 	out[pfx_len + cut] = '~';
 	for (int i = 0; i < 16; i++)
@@ -730,18 +846,57 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 	return out;
 }
 
-void savedir_cleanup_memory_saves(void)
+static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
 {
 	if (!config.save_dir || !config.save_dir[0])
 		return;
 	UDIR *d = opendir_utf8(config.save_dir);
 	if (!d)
 		return;
-	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
 	char *d_name;
 	while ((d_name = readdir_utf8(d)) != NULL) {
-		bool match = !strncmp(d_name, SAVEDIR_MEMORY_PREFIX, pfx_len)
-			|| (d_name[0] == '.' && !strncmp(d_name + 1, SAVEDIR_MEMORY_PREFIX, pfx_len));
+		uint64_t owner_pid = 0;
+		uint32_t owner_seq = 0;
+		if (savedir_parse_memory_owner(d_name, &owner_pid, &owner_seq)
+				&& savedir_owner_is_dead(owner_pid, owner_seq, my_pid, my_seq)) {
+			char *full = path_join(config.save_dir, d_name);
+			ustat st;
+			if (stat_utf8(full, &st) == 0 && S_ISREG(st.st_mode))
+				remove_utf8(full);
+			free(full);
+		}
+		free(d_name);
+	}
+	closedir_utf8(d);
+}
+
+void savedir_begin_memory_session(void)
+{
+	uint32_t prev = atomic_fetch_add_explicit(&g_savedir_mem_session_seq, 1u, memory_order_acq_rel);
+	uint32_t seq = prev + 1u;
+	if (seq == 0)
+		seq = atomic_fetch_add_explicit(&g_savedir_mem_session_seq, 1u, memory_order_acq_rel) + 1u;
+	savedir_cleanup_stale_memory_saves(savedir_current_pid(), seq);
+}
+
+void savedir_cleanup_memory_saves(void)
+{
+	if (!config.save_dir || !config.save_dir[0])
+		return;
+	uint32_t my_seq = atomic_load_explicit(&g_savedir_mem_session_seq, memory_order_acquire);
+	if (my_seq == 0)
+		return;
+	char pfx[64];
+	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx), savedir_current_pid(), my_seq);
+	if (!pfx_len)
+		return;
+	UDIR *d = opendir_utf8(config.save_dir);
+	if (!d)
+		return;
+	char *d_name;
+	while ((d_name = readdir_utf8(d)) != NULL) {
+		bool match = !strncmp(d_name, pfx, pfx_len)
+			|| (d_name[0] == '.' && !strncmp(d_name + 1, pfx, pfx_len));
 		if (match) {
 			char *full = path_join(config.save_dir, d_name);
 			ustat st;

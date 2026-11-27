@@ -1679,8 +1679,8 @@ int main(int argc, char *argv[])
 #endif
 
 	mkdir_p(config.save_dir);
-	savedir_cleanup_memory_saves();
-#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS) && !defined(__SWITCH__)
+	savedir_begin_memory_session();
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
 	static bool mem_cleanup_registered = false;
 	if (!mem_cleanup_registered) {
 		atexit(savedir_cleanup_memory_saves);
