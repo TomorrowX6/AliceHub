@@ -858,8 +858,12 @@ class Wave2StructuralRegressionsTest(unittest.TestCase):
         rac_fn = gse.split("private func replaceAndCommit(", 1)[1].split("func edit(", 1)[0]
         self.assertLess(rac_fn.index("try apply([entry], to: directory)"), rac_fn.index("commitStagedBackup"))
         self.assertIn("if rollback(applied), let stagedBackup", rac_fn)
+        active_fn = gse.split("private func activeBackupURL(", 1)[1].split("private func exists(", 1)[0]
+        self.assertIn("liveEntries == pendingEntries", active_fn)
+        self.assertIn("rename(pending.path, committed.path)", active_fn)
         restore_fn = gse.split("func restore(", 1)[1]
-        self.assertIn("pendingBackupURL(kind)", restore_fn)
+        self.assertIn("activeBackupURL(kind)", restore_fn)
+        self.assertIn("removeItem(at: url)", restore_fn)
 
         # S2-15: Iso9660Extractor overflow checks
         iso = (IOS_APP / "Iso9660Extractor.swift").read_text(encoding="utf-8")

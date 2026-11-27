@@ -409,8 +409,9 @@ object UncensoredPatchManager {
                     backupFile = bak
                     if (!renameFn(tmpFile, destFile)) {
                         try {
-                            renameFn(bak, destFile)
-                            backupFile = null
+                            if (renameFn(bak, destFile)) {
+                                backupFile = null
+                            }
                         } catch (_: Throwable) {
                         }
                         throw IOException("Cannot finalize atomic copy to ${destFile.name}")
