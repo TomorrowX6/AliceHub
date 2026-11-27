@@ -1695,18 +1695,89 @@ static bool gsave_struct_matches(const struct ain_struct *st, const char *struct
 	return true;
 }
 
-static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type type, int struct_type, int array_rank, int32_t value, bool src_is_gbk, bool dst_is_gbk);
-static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct ain_type *type, int32_t value, bool src_is_gbk, bool dst_is_gbk);
+static bool ain_has_function_name(const char *name)
+{
+	if (!ain || !name || !name[0])
+		return false;
+	for (int i = 0; i < ain->nr_functions; i++) {
+		const char *fn = ain->functions[i].name;
+		if (fn && fn[0] == name[0] && !strcmp(fn, name))
+			return true;
+	}
+	return false;
+}
+
+struct gsave_str_ctx {
+	bool src_is_gbk;
+	bool dst_is_gbk;
+	bool raw_lookup_keys;
+};
+
+static struct string *save_decode_raw_lookup_key(const char *s, size_t len,
+		bool default_src_is_gbk, bool dst_is_gbk)
+{
+	if (!s || len == 0)
+		return make_string("", 0);
+	if (cjk_is_ascii_only(s))
+		return make_string(s, len);
+
+	// 1. Exact native AIN function name (Recall / EventSkip keys): never rewrite.
+	if (ain_has_function_name(s))
+		return make_string(s, len);
+
+	// 2. Opposite-encoding candidate verified against AIN function table.
+	size_t cand_len = 0;
+	char *cand = save_transcode_cstr_strict(s, len, !dst_is_gbk, dst_is_gbk, &cand_len);
+	if (cand && ain_has_function_name(cand)) {
+		struct string *str = make_string(cand, cand_len);
+		free(cand);
+		return str;
+	}
+
+	// 3. Per-string encoding classification for non-function keys (e.g. CG keys
+	//    from .ex) so a mixed-encoding save never corrupts already-native keys
+	//    when opposite-encoding entries outnumber them.
+	int bias = save_text_gbk_bias(s);
+	bool convert = false;
+	if (cand) {
+		if (!dst_is_gbk) {
+			// Target CP932: convert only keys that clearly look GBK; keep
+			// native CP932 and unverified ambiguous bytes untouched.
+			convert = (bias > 0);
+		} else {
+			// Target GBK: convert keys that look CP932 (or neutral in a CP932 save);
+			// never corrupt keys that already look GBK.
+			convert = (bias < 0) || (bias == 0 && !default_src_is_gbk);
+		}
+	}
+	if (!convert) {
+		free(cand);
+		return make_string(s, len);
+	}
+	struct string *str = make_string(cand, cand_len);
+	free(cand);
+	return str;
+}
+
+static struct string *save_decode_gsave_string(const char *s, size_t len, const struct gsave_str_ctx *ctx)
+{
+	if (ctx->raw_lookup_keys)
+		return save_decode_raw_lookup_key(s, len, ctx->src_is_gbk, ctx->dst_is_gbk);
+	return save_decode_vm_string_to(s, len, ctx->src_is_gbk, ctx->dst_is_gbk);
+}
+
+static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type type, int struct_type, int array_rank, int32_t value, const struct gsave_str_ctx *ctx);
+static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct ain_type *type, int32_t value, const struct gsave_str_ctx *ctx);
 
 static struct gsave_flat_array *gsave_load_array(struct gsave *save, struct page *page,
 		struct gsave_flat_array *flat_array, struct gsave_flat_array *flat_end,
-		bool src_is_gbk, bool dst_is_gbk)
+		const struct gsave_str_ctx *ctx)
 {
 	if (!page || page->type != ARRAY_PAGE)
 		VM_ERROR("Bad save file: invalid array page");
 	if (nested_array(page)) {
 		for (int i = 0; i < page->nr_vars; i++)
-			flat_array = gsave_load_array(save, heap_get_page(page->values[i].i), flat_array, flat_end, src_is_gbk, dst_is_gbk);
+			flat_array = gsave_load_array(save, heap_get_page(page->values[i].i), flat_array, flat_end, ctx);
 		return flat_array;
 	}
 
@@ -1721,15 +1792,15 @@ static struct gsave_flat_array *gsave_load_array(struct gsave *save, struct page
 		    !(data_type == AIN_REF_STRUCT && flat_array->values[i].type == AIN_STRUCT))
 			VM_ERROR("Bad save file: unexpected array element type");
 		const struct ain_type *type = variable_full_type(page, i);
-		union vm_value val = type ? gsave_to_vm_value_typed(save, type, flat_array->values[i].value, src_is_gbk, dst_is_gbk)
-			: gsave_to_vm_value(save, data_type, struct_type, array_rank, flat_array->values[i].value, src_is_gbk, dst_is_gbk);
+		union vm_value val = type ? gsave_to_vm_value_typed(save, type, flat_array->values[i].value, ctx)
+			: gsave_to_vm_value(save, data_type, struct_type, array_rank, flat_array->values[i].value, ctx);
 		variable_fini(page->values[i], data_type, false);
 		page->values[i] = val;
 	}
 	return flat_array + 1;
 }
 
-static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type type, int struct_type, int array_rank, int32_t value, bool src_is_gbk, bool dst_is_gbk)
+static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type type, int struct_type, int array_rank, int32_t value, const struct gsave_str_ctx *ctx)
 {
 	switch (type) {
 	case AIN_VOID:
@@ -1756,8 +1827,8 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 				if (!save->strings[value]->size) {
 					heap[slot].s = string_ref(&EMPTY_STRING);
 				} else {
-					heap[slot].s = save_decode_vm_string_to(save->strings[value]->text,
-						save->strings[value]->size, src_is_gbk, dst_is_gbk);
+					heap[slot].s = save_decode_gsave_string(save->strings[value]->text,
+						save->strings[value]->size, ctx);
 				}
 			}
 			return vm_int(slot);
@@ -1806,7 +1877,7 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 				enum ain_data_type data_type = variable_type(page, index, &m_struct_type, &m_array_rank);
 				if (data_type != field_type)
 					VM_ERROR("Bad save file: structure member type mismatch");
-				union vm_value val = gsave_to_vm_value_typed(save, &st->members[index].type, kv->value, src_is_gbk, dst_is_gbk);
+				union vm_value val = gsave_to_vm_value_typed(save, &st->members[index].type, kv->value, ctx);
 				variable_fini(page->values[index], data_type, false);
 				page->values[index] = val;
 			}
@@ -1838,7 +1909,7 @@ static union vm_value gsave_to_vm_value(struct gsave *save, enum ain_data_type t
 			free(dims);
 			struct gsave_flat_array *flat_end = array->flat_arrays
 				? array->flat_arrays + array->nr_flat_arrays : NULL;
-			gsave_load_array(save, page, array->flat_arrays, flat_end, src_is_gbk, dst_is_gbk);
+			gsave_load_array(save, page, array->flat_arrays, flat_end, ctx);
 			return vm_int(slot);
 		}
 	case AIN_REF_TYPE:
@@ -1867,10 +1938,10 @@ static struct page *v12_saved_array_new(const struct ain_type *type, int rank, i
 	return page;
 }
 
-static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct ain_type *type, int32_t value, bool src_is_gbk, bool dst_is_gbk)
+static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct ain_type *type, int32_t value, const struct gsave_str_ctx *ctx)
 {
 	if (type->data != AIN_ARRAY)
-		return gsave_to_vm_value(save, type->data, type->struc, type->rank, value, src_is_gbk, dst_is_gbk);
+		return gsave_to_vm_value(save, type->data, type->struc, type->rank, value, ctx);
 	if (value < 0 || value >= save->nr_arrays)
 		VM_ERROR("Bad save file: invalid generic array index %d", value);
 	struct gsave_array *array = &save->arrays[value];
@@ -1878,7 +1949,7 @@ static union vm_value gsave_to_vm_value_typed(struct gsave *save, const struct a
 	struct page *page = v12_saved_array_new(type, array->rank, array->dimensions);
 	struct gsave_flat_array *flat_end = array->flat_arrays
 		? array->flat_arrays + array->nr_flat_arrays : NULL;
-	gsave_load_array(save, page, array->flat_arrays, flat_end, src_is_gbk, dst_is_gbk);
+	gsave_load_array(save, page, array->flat_arrays, flat_end, ctx);
 	return vm_int(heap_alloc_page(page));
 }
 
@@ -2096,7 +2167,11 @@ int load_globals_from_gsave(struct gsave *save, const char *keyname, const char 
 
 	int *resolved = resolve_gsave_globals(save, group_name);
 	bool dst_is_gbk = gsave_target_is_gbk(keyname, group_name);
-	bool src_is_gbk = gsave_detect_is_gbk(save, resolved, keyname, group_name, dst_is_gbk);
+	struct gsave_str_ctx str_ctx = {
+		.src_is_gbk = gsave_detect_is_gbk(save, resolved, keyname, group_name, dst_is_gbk),
+		.dst_is_gbk = dst_is_gbk,
+		.raw_lookup_keys = gsave_is_raw_lookup_extra_group(keyname, group_name),
+	};
 	int retval = 1;
 	for (int gi = 0; gi < save->nr_globals; gi++) {
 		struct gsave_global *g = &save->globals[gi];
@@ -2119,7 +2194,7 @@ int load_globals_from_gsave(struct gsave *save, const char *keyname, const char 
 			continue;
 		}
 		bool call_dtors = false; // Destructors for old objects should not be called.
-		global_set(global_index, gsave_to_vm_value_typed(save, type, g->value, src_is_gbk, dst_is_gbk), call_dtors);
+		global_set(global_index, gsave_to_vm_value_typed(save, type, g->value, &str_ctx), call_dtors);
 		if (n)
 			(*n)++;
 	}

@@ -1174,6 +1174,115 @@ int main(void)
     run_case(false, false, false, rec_cp, cg_cp, rec_cp, cg_cp, 0);
     run_case(false, false, false, rec_gb, cg_gb, rec_cp, cg_cp, 0);
 
+    // 8. Mixed-encoding Maman_Extra.sav (native CP932 Recall + native CP932 CG alongside
+    //    20 dominant GBK CG entries): must preserve native CP932 entries verbatim AND
+    //    normalize imported GBK entries to CP932, then survive a resave+reload cleanly!
+    {{
+        sys4_set_text_gbk(true);
+        sys4_set_source_utf8(false);
+        game_maman = true;
+        game_haharanman = false;
+        char *groups[] = {{ "MAMAN_EXTRA_DATA", "{c_esc(cfg_group.encode('cp932'))}" }};
+        struct ain_function funcs[] = {{
+            {{ .name = "{c_esc(fn_name.encode('cp932'))}" }},
+            {{ .name = (char *)rec_cp }},
+        }};
+        struct ain_variable key_list_member = {{
+            .name = "m_aszList", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }},
+        }};
+        struct ain_variable cg_members[] = {{
+            {{ .name = "m_aszBase", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }} }},
+            {{ .name = "m_aszCutIn", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }} }},
+        }};
+        struct ain_struct structures[] = {{
+            {{ .name = "C_KEY_LIST", .constructor = -1, .destructor = -1, .nr_members = 1, .members = &key_list_member }},
+            {{ .name = "C_COLLECTED_CG_LIST", .constructor = -1, .destructor = -1, .nr_members = 2, .members = cg_members }},
+        }};
+        struct ain_variable globals[] = {{
+            {{ .name = "g_cGlobalKeyList", .group_index = 0, .type = {{ .data = AIN_STRUCT, .struc = 0 }} }},
+            {{ .name = "g_cCollectedCgList", .group_index = 0, .type = {{ .data = AIN_STRUCT, .struc = 1 }} }},
+        }};
+        struct ain script = {{
+            .version = 8,
+            .nr_globals = 2, .globals = globals,
+            .nr_structures = 2, .structures = structures,
+            .nr_global_groups = 2, .global_group_names = groups,
+            .nr_functions = 2, .functions = funcs,
+        }};
+        ain = &script;
+
+        struct gsave *save = gsave_create(7, "MAMAN_EXTRA", 1, "MAMAN_EXTRA_DATA");
+        // Dominant GBK strings first so file-level gsave_detect_is_gbk() chooses GBK!
+        int32_t cg_indices[22];
+        for (int i = 0; i < 20; i++) {{
+            struct string *sg = make_string(cg_gb, strlen(cg_gb));
+            cg_indices[i] = gsave_add_string(save, sg);
+            free_string(sg);
+        }}
+        struct string *sc_cp = make_string(cg_cp, strlen(cg_cp));
+        cg_indices[20] = gsave_add_string(save, sc_cp);
+        free_string(sc_cp);
+        struct string *sr_cp = make_string(rec_cp, strlen(rec_cp));
+        int32_t rec_cp_idx = gsave_add_string(save, sr_cp);
+        free_string(sr_cp);
+        struct string *sr_gb = make_string(rec_gb, strlen(rec_gb));
+        int32_t rec_gb_idx = gsave_add_string(save, sr_gb);
+        free_string(sr_gb);
+
+        struct gsave_array_value *rec_vals = xmalloc(2 * sizeof(*rec_vals));
+        rec_vals[0] = (struct gsave_array_value){{ .type = AIN_STRING, .value = rec_cp_idx }};
+        rec_vals[1] = (struct gsave_array_value){{ .type = AIN_STRING, .value = rec_gb_idx }};
+        int32_t *rec_dim = xmalloc(sizeof(*rec_dim)); *rec_dim = 2;
+        struct gsave_flat_array *rec_flat = xmalloc(sizeof(*rec_flat));
+        *rec_flat = (struct gsave_flat_array){{ .type = AIN_STRING, .nr_values = 2, .values = rec_vals }};
+        struct gsave_array rec_arr = {{ .rank = 1, .dimensions = rec_dim, .nr_flat_arrays = 1, .flat_arrays = rec_flat }};
+        struct gsave_keyval rec_kv = {{ .name = xstrdup("m_aszList"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &rec_arr) }};
+        struct gsave_record rec_record = {{
+            .type = GSAVE_RECORD_STRUCT, .nr_indices = 1, .indices = xmalloc(sizeof(int32_t)),
+            .struct_index = gsave_add_struct_def(save, &structures[0]),
+        }};
+        rec_record.indices[0] = gsave_add_keyval(save, &rec_kv);
+
+        struct gsave_array_value *cg_vals = xmalloc(21 * sizeof(*cg_vals));
+        for (int i = 0; i < 21; i++)
+            cg_vals[i] = (struct gsave_array_value){{ .type = AIN_STRING, .value = cg_indices[i] }};
+        int32_t *cg_dim = xmalloc(sizeof(*cg_dim)); *cg_dim = 21;
+        struct gsave_flat_array *cg_flat = xmalloc(sizeof(*cg_flat));
+        *cg_flat = (struct gsave_flat_array){{ .type = AIN_STRING, .nr_values = 21, .values = cg_vals }};
+        struct gsave_array cg_arr = {{ .rank = 1, .dimensions = cg_dim, .nr_flat_arrays = 1, .flat_arrays = cg_flat }};
+        struct gsave_array empty_arr = {{ .rank = -1 }};
+        struct gsave_keyval cg_kv0 = {{ .name = xstrdup("m_aszBase"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &cg_arr) }};
+        struct gsave_keyval cg_kv1 = {{ .name = xstrdup("m_aszCutIn"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &empty_arr) }};
+        struct gsave_record cg_record = {{
+            .type = GSAVE_RECORD_STRUCT, .nr_indices = 2, .indices = xmalloc(2 * sizeof(int32_t)),
+            .struct_index = gsave_add_struct_def(save, &structures[1]),
+        }};
+        cg_record.indices[0] = gsave_add_keyval(save, &cg_kv0);
+        cg_record.indices[1] = gsave_add_keyval(save, &cg_kv1);
+
+        gsave_add_globals_record(save, 2);
+        save->globals[0] = (struct gsave_global){{
+            .name = xstrdup("g_cGlobalKeyList"), .type = AIN_STRUCT, .value = gsave_add_record(save, &rec_record),
+        }};
+        save->globals[1] = (struct gsave_global){{
+            .name = xstrdup("g_cCollectedCgList"), .type = AIN_STRUCT, .value = gsave_add_record(save, &cg_record),
+        }};
+
+        int count = 0;
+        assert(load_globals_from_gsave(save, "MAMAN_EXTRA", "MAMAN_EXTRA_DATA", &count) && count == 2);
+        struct page *loaded_rec = heap_get_page(heap_get_page(global_get(0).i)->values[0].i);
+        struct page *loaded_cg = heap_get_page(heap_get_page(global_get(1).i)->values[0].i);
+        // BOTH the originally-CP932 and originally-GBK recall & CG entries must equal native CP932!
+        assert(!strcmp(heap[loaded_rec->values[0].i].s->text, rec_cp));
+        assert(!strcmp(heap[loaded_rec->values[1].i].s->text, rec_cp));
+        for (int i = 0; i < 21; i++)
+            assert(!strcmp(heap[loaded_cg->values[i].i].s->text, cg_cp));
+
+        heap_unref(global_get(0).i);
+        heap_unref(global_get(1).i);
+        gsave_free(save);
+    }}
+
     puts("OK");
     return 0;
 }}
